@@ -1,0 +1,22 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build_and_run",
+            "type": "shell",
+            "command": "cmd.exe /C nim r src/ast.nim"
+        },
+        {
+            "label": "run",
+            "type": "shell",
+            "command": "cmd.exe /C nim r src/ast.nim"
+        },
+        {
+            "label": "build",
+            "type": "shell",
+            "command": "cmd.exe /C nim -o:ast.exe c src/ast.nim"
+        }
+    ]
+}
