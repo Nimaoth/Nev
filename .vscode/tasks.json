@@ -6,17 +6,17 @@
         {
             "label": "build_and_run",
             "type": "shell",
-            "command": "cmd.exe /C nim r src/ast.nim"
+            "command": "nim c -d:mingw -o:ast.exe src/ast.nim && ./ast.exe"
         },
         {
             "label": "run",
             "type": "shell",
-            "command": "cmd.exe /C nim r src/ast.nim"
+            "command": "./ast.exe"
         },
         {
             "label": "build",
             "type": "shell",
-            "command": "cmd.exe /C nim -o:ast.exe c src/ast.nim"
+            "command": "nim c -d:mingw -o:ast.exe src/ast.nim"
         }
     ]
 }
