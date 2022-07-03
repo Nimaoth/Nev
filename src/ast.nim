@@ -1,30 +1,15 @@
 import boxy, opengl, times, windy
-import winim/lean
+import monitors
 
 let window = newWindow("Windy + Boxy", ivec2(1280, 800))
 
 proc centerWindowOnMonitor(window: Window, monitor: int) =
-  type MonitorSizeHelper = object
-    index: int
-    targetIndex: int
-    rect: windef.RECT
+  let monitorPos = getMonitorRect(monitor)
 
-  proc enumMonitor(monitor: HMONITOR, hdc: HDC, rect: LPRECT, data: LPARAM): WINBOOL {.stdcall.} =
-    let helper = cast[ptr MonitorSizeHelper](data)
-    if helper.index == helper.targetIndex:
-      helper.rect = rect[]
-      return 0
-
-    inc helper.index
-    return 1
-
-  var helper = MonitorSizeHelper(index: 0, targetIndex: monitor, rect: windef.RECT(left: 0, right: 1920, top: 0, bottom: 1080))
-  EnumDisplayMonitors(0, nil, enumMonitor, cast[LPARAM](addr helper))
-
-  let left = float(helper.rect.left)
-  let right = float(helper.rect.right)
-  let top = float(helper.rect.top)
-  let bottom = float(helper.rect.bottom)
+  let left = float(monitorPos.left)
+  let right = float(monitorPos.right)
+  let top = float(monitorPos.top)
+  let bottom = float(monitorPos.bottom)
 
   let windowWidth = float(window.size.x)
   let windowHeight = float(window.size.y)
