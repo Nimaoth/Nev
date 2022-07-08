@@ -17,8 +17,8 @@ type
     Super
   Modifiers* = set[Modifier]
   DFAInput = object
-    # length 8 because there are 3 modifiers and so 2^3 = 8 possible combinations
-    next: array[8, int]
+    # length 16 because there are 4 modifiers and so 2^4 = 16 possible combinations
+    next: array[16, int]
   InputKey = int64
   DFAState = object
     isTerminal: bool
@@ -47,6 +47,27 @@ proc isTerminal*(dfa: CommandDFA, state: int): bool =
 
 proc getAction*(dfa: CommandDFA, state: int): string =
   return dfa.states[state].function
+
+proc inputAsString(input: int64): string =
+  result = case input:
+    of INPUT_ENTER: "ENTER"
+    of INPUT_ESCAPE: "ESCAPE"
+    of INPUT_BACKSPACE: "BACKSPACE"
+    of INPUT_SPACE: "SPACE"
+    of INPUT_DELETE: "DELETE"
+    else: "<" & $input & ">"
+
+proc inputToString*(input: int64, modifiers: Modifiers): string =
+  if Control in modifiers: result.add "C"
+  if Shift in modifiers: result.add "S"
+  if Alt in modifiers: result.add "A"
+  if result.len > 0: result.add "-"
+
+  if input > 0 and input <= int32.high:
+    let ch = Rune(input)
+    result.add $ch
+  else:
+    result.add inputAsString(input)
 
 proc getInputCodeFromSpecialKey(specialKey: string): int64 =
   if specialKey.len == 1:
@@ -140,13 +161,20 @@ proc handleNextInput(dfa: var CommandDFA, input: seq[Rune], function: string, in
       let nextState = createOrUpdateState(dfa, currentState, inputCode, mods)
       next.add((index: i + 1, state: nextState))
 
-      let bIsLower = rune.isLower
-      if not bIsLower:
-        linkState(dfa, currentState, nextState, rune.toLower.int64, mods + {Modifier.Shift})
-        linkState(dfa, currentState, nextState, inputCode, mods + {Modifier.Shift})
+      # echo "inputCode: ", inputCode, ", mods: ", mods
 
-      if bIsLower and Modifier.Shift in mods:
-        linkState(dfa, currentState, nextState, rune.toUpper.int64, mods - {Modifier.Shift})
+      if inputCode > 0 and (mods == {} or mods == {Shift}):
+        let rune = Rune(inputCode)
+        let bIsLower = rune.isLower
+        if not bIsLower:
+          # echo rune, " ", rune.toLower, " ", rune.toLower.int64, " ", inputToString(rune.toLower.int64, mods)
+          linkState(dfa, currentState, nextState, rune.toLower.int64, mods + {Shift})
+          linkState(dfa, currentState, nextState, inputCode, mods + {Shift})
+
+        if bIsLower and Shift in mods:
+          # echo rune, " ", rune.toUpper, " ", rune.toUpper.int64, " ", inputToString(rune.toUpper.int64, mods)
+          linkState(dfa, currentState, nextState, rune.toUpper.int64, mods - {Shift})
+          linkState(dfa, currentState, nextState, rune.toUpper.int64, mods)
       break
 
   for n in next:
@@ -168,27 +196,6 @@ proc buildDFA*(commands: seq[(string, string)]): CommandDFA =
 
     if input.len > 0:
       handleNextInput(result, input.toRunes, function, 0, 0)
-
-proc inputAsString(input: int64): string =
-  result = case input:
-    of INPUT_ENTER: "ENTER"
-    of INPUT_ESCAPE: "ESCAPE"
-    of INPUT_BACKSPACE: "BACKSPACE"
-    of INPUT_SPACE: "SPACE"
-    of INPUT_DELETE: "DELETE"
-    else: "<" & $input & ">"
-
-proc inputToString*(input: int64, modifiers: Modifiers): string =
-  if Control in modifiers: result.add "C"
-  if Shift in modifiers: result.add "S"
-  if Alt in modifiers: result.add "A"
-  if result.len > 0: result.add "-"
-
-  if input > 0 and input <= int32.high:
-    let ch = Rune(input)
-    result.add $ch
-  else:
-    result.add inputAsString(input)
 
 proc dump*(dfa: CommandDFA, currentState: int, currentInput: int64, currentMods: Modifiers): void =
   stdout.write "        "
