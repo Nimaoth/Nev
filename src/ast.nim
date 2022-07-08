@@ -46,6 +46,7 @@ proc drawText(
 ) =
   if text == "":
     return
+
   var font = newFont(typeface)
   font.size = size
   font.paint = color
@@ -75,24 +76,6 @@ window.onFrame = proc() =
   # bxy.drawImage("bg", rect = rect(vec2(0, 0), window.size.vec2))
 
   bxy.drawText(
-    "main-image",
-    translate(vec2(100, 100)),
-    typeface,
-    "Current time:",
-    80,
-    color(1, 1, 1, 1)
-  )
-
-  bxy.drawText(
-    "main-image2",
-    translate(vec2(100, 200)),
-    typeface,
-    now().format("hh:mm:ss"),
-    80,
-    color(1, 1, 1, 1)
-  )
-
-  bxy.drawText(
     "main-image3",
     translate(vec2(100, 300)),
     typeface,
@@ -107,24 +90,13 @@ window.onFrame = proc() =
   window.swapBuffers()
 
 var commands: seq[(string, string)] = @[]
-for c in 'a'..'z':
-  commands.add ($c, $c)
-  commands.add ($c.toUpperAscii, $c.toUpperAscii)
-for c in '0'..'9':
-  commands.add ($c, $c)
-commands.add ("ä", "ä")
-commands.add ("Ä", "Ä")
-commands.add ("ö", "ö")
-commands.add ("Ö", "Ö")
-commands.add ("ü", "ü")
-commands.add ("Ü", "Ü")
-commands.add ("<SPACE>", " ")
-commands.add ("<ENTER>", "\n")
+commands.add ("<SPACE>", "insert  ")
+commands.add ("<ENTER>", "insert \n")
 commands.add ("<BACKSPACE>", "backspace")
 commands.add ("<DELETE>", "delete")
 commands.add ("<ESCAPE>", "escape")
 commands.add ("<C-x>", "quit")
-commands.add ("<C-x>", "quit")
+commands.add ("<C-n>ä", "insert äöüÄÖÜ")
 var dfa = buildDFA(commands)
 dfa.dump(0, 0, {})
 var state = 0
@@ -160,23 +132,30 @@ proc getCurrentModifiers(): Modifiers =
   if window.buttonDown[KeyLeftSuper] or window.buttonDown[KeyRightSuper]:
     result = result + {Super}
 
-proc handleTerminalState(state: int) =
-  let action = dfa.getAction(state)
+proc handleTextInput(text: string) =
+  inputBuffer.add text
+
+proc handleAction(action: string, arg: string) =
   case action
   of "quit":
     window.closeRequested = true
   of "backspace":
     if inputBuffer.len > 0:
       inputBuffer = inputBuffer[0..<inputBuffer.len-1]
+  of "insert":
+    handleTextInput arg
   else:
-    let runes = action.toRunes
-    if runes.len == 1:
-      inputBuffer.add runes[0]
-    else:
-      echo "Action: '", action, "'"
+    echo "Action: '", action, "' with parameter '", arg, "'"
+
+proc handleTerminalState(state: int) =
+  let action = dfa.getAction(state)
+  let spaceIndex = action.find(' ')
+  if spaceIndex == -1:
+    handleAction(action, "")
+  else:
+    handleAction(action[0..<spaceIndex], action[spaceIndex + 1..^1])
 
 window.onFocusChange = proc() =
-  echo "onFocusChange ", window.focused
   currentModifiers = {}
 
 window.onRune = proc(rune: Rune) =
@@ -189,9 +168,13 @@ window.onRune = proc(rune: Rune) =
   if input != 0:
     let modifiers = if rune.int64.isAscii and rune.char.isAlphaNumeric: currentModifiers else: {}
 
+    let prevState = state
     state = dfa.step(state, input, modifiers)
     if state == 0:
-      echo "Invalid input: ", inputToString(input, modifiers)
+      if prevState == 0:
+        handleTextInput($rune)
+      else:
+        echo "Invalid input: ", inputToString(input, modifiers)
 
     if dfa.isTerminal(state):
       handleTerminalState(state)
