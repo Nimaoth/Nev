@@ -1,2 +1,4 @@
 *.exe
 *.ttf
+src/input_tests
+ast
