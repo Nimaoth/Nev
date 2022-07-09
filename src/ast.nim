@@ -2,7 +2,7 @@ import std/[strformat, bitops, strutils, tables, algorithm, math]
 import boxy, opengl, times, windy
 import monitors
 import sugar
-import input
+import input, editor, editor_render
 
 let window = newWindow("Windy + Boxy", ivec2(1280, 800))
 window.runeInputEnabled = true
@@ -30,42 +30,10 @@ loadExtensions()
 
 let bxy = newBoxy()
 
+var ed = newEditor(window, bxy)
+
 # Load the images.
 # bxy.addImage("bg", readImage("examples/data/bg.png"))
-
-let typeface = readTypeface("fonts/FiraCode-Regular.ttf")
-
-proc drawText(
-  bxy: Boxy,
-  imageKey: string,
-  transform: Mat3,
-  typeface: Typeface,
-  text: string,
-  size: float32,
-  color: Color
-) =
-  if text == "":
-    return
-
-  var font = newFont(typeface)
-  font.size = size
-  font.paint = color
-  let
-    arrangement = typeset(@[newSpan(text, font)], bounds = vec2(1280, 800))
-    globalBounds = arrangement.computeBounds(transform).snapToPixels()
-
-  if globalBounds.w.int == 0 or globalBounds.h.int == 0:
-    return
-
-  let
-    textImage = newImage(globalBounds.w.int, globalBounds.h.int)
-    imageSpace = translate(-globalBounds.xy) * transform
-  textImage.fillText(arrangement, imageSpace)
-
-  bxy.addImage(imageKey, textImage)
-  bxy.drawImage(imageKey, globalBounds.xy)
-
-var inputBuffer = ""
 
 # Called when it is time to draw a new frame.
 window.onFrame = proc() =
@@ -75,85 +43,14 @@ window.onFrame = proc() =
   # Draw the bg.
   # bxy.drawImage("bg", rect = rect(vec2(0, 0), window.size.vec2))
 
-  bxy.drawText(
-    "main-image3",
-    translate(vec2(100, 300)),
-    typeface,
-    inputBuffer,
-    80,
-    color(1, 1, 1, 1)
-  )
+  ed.render()
 
   # End this frame, flushing the draw commands.
   bxy.endFrame()
   # Swap buffers displaying the new Boxy frame.
   window.swapBuffers()
 
-var commands: seq[(string, string)] = @[]
-commands.add ("<SPACE>", "insert  ")
-commands.add ("<ENTER>", "insert \n")
-commands.add ("<BACKSPACE>", "backspace")
-commands.add ("<DELETE>", "delete")
-commands.add ("<ESCAPE>", "escape")
-commands.add ("<C-x>", "quit")
-commands.add ("<C-n>ä", "insert äöüÄÖÜ")
-var dfa = buildDFA(commands)
-dfa.dump(0, 0, {})
-var state = 0
-
-proc toInput(rune: Rune): int64 =
-  return rune.int64
-
-proc toInput(button: Button): int64 =
-  return case button
-  of KeyEnter: INPUT_ENTER
-  of KeyEscape: INPUT_ESCAPE
-  of KeyBackspace: INPUT_BACKSPACE
-  of KeySpace: INPUT_SPACE
-  of KeyDelete: INPUT_DELETE
-  of KeyA..KeyZ: ord(button) - ord(KeyA) + ord('a')
-  of Key0..Key9: ord(button) - ord(Key0) + ord('0')
-  of Numpad0..Numpad9: ord(button) - ord(Numpad0) + ord('0')
-  of NumpadAdd: ord '+'
-  of NumpadSubtract: ord '-'
-  of NumpadMultiply: ord '*'
-  of NumpadDivide: ord '/'
-  else: 0
-
 var currentModifiers: Modifiers = {}
-
-proc getCurrentModifiers(): Modifiers =
-  if window.buttonDown[KeyLeftShift] or window.buttonDown[KeyRightShift]:
-    result = result + {Shift}
-  if window.buttonDown[KeyLeftControl] or window.buttonDown[KeyRightControl]:
-    result = result + {Control}
-  if window.buttonDown[KeyLeftAlt] or window.buttonDown[KeyRightAlt]:
-    result = result + {Alt}
-  if window.buttonDown[KeyLeftSuper] or window.buttonDown[KeyRightSuper]:
-    result = result + {Super}
-
-proc handleTextInput(text: string) =
-  inputBuffer.add text
-
-proc handleAction(action: string, arg: string) =
-  case action
-  of "quit":
-    window.closeRequested = true
-  of "backspace":
-    if inputBuffer.len > 0:
-      inputBuffer = inputBuffer[0..<inputBuffer.len-1]
-  of "insert":
-    handleTextInput arg
-  else:
-    echo "Action: '", action, "' with parameter '", arg, "'"
-
-proc handleTerminalState(state: int) =
-  let action = dfa.getAction(state)
-  let spaceIndex = action.find(' ')
-  if spaceIndex == -1:
-    handleAction(action, "")
-  else:
-    handleAction(action[0..<spaceIndex], action[spaceIndex + 1..^1])
 
 window.onFocusChange = proc() =
   currentModifiers = {}
@@ -164,21 +61,7 @@ window.onRune = proc(rune: Rune) =
     of ' ': return
     else: discard
 
-  let input = rune.toInput()
-  if input != 0:
-    let modifiers = if rune.int64.isAscii and rune.char.isAlphaNumeric: currentModifiers else: {}
-
-    let prevState = state
-    state = dfa.step(state, input, modifiers)
-    if state == 0:
-      if prevState == 0:
-        handleTextInput($rune)
-      else:
-        echo "Invalid input: ", inputToString(input, modifiers)
-
-    if dfa.isTerminal(state):
-      handleTerminalState(state)
-      state = 0
+  ed.handleRune(rune, currentModifiers)
 
 window.onButtonPress = proc(button: Button) =
   # If the key event would also generate a char afterwards then ignore it, except for some special keys
@@ -193,18 +76,7 @@ window.onButtonPress = proc(button: Button) =
   of KeyLeftAlt, KeyRightAlt: currentModifiers = currentModifiers + {Alt}
   of KeyLeftSuper, KeyRightSuper: currentModifiers = currentModifiers + {Super}
   else:
-    let input = button.toInput()
-    if input != 0:
-      state = dfa.step(state, input, currentModifiers)
-      if state == 0:
-        echo "Invalid input: ", inputToString(input, currentModifiers)
-
-
-      if dfa.isTerminal(state):
-        handleTerminalState(state)
-        state = 0
-    else:
-      echo "Unknown button: ", button
+    ed.handleKeyPress(button, currentModifiers)
 
 window.onButtonRelease = proc(button: Button) =
   case button
@@ -213,7 +85,7 @@ window.onButtonRelease = proc(button: Button) =
   of KeyLeftAlt, KeyRightAlt: currentModifiers = currentModifiers - {Alt}
   of KeyLeftSuper, KeyRightSuper: currentModifiers = currentModifiers - {Super}
   else:
-    discard
+    ed.handleKeyRelease(button, currentModifiers)
 
 while not window.closeRequested:
   pollEvents()
