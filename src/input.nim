@@ -2,12 +2,12 @@ import std/[json, jsonutils, strformat, bitops, strutils, tables, algorithm, mat
 import os, osproc
 
 const
-  INPUT_COUNT* = 256 + 10
   INPUT_ENTER* = -1
   INPUT_ESCAPE* = -2
   INPUT_BACKSPACE* = -3
   INPUT_SPACE* = -4
   INPUT_DELETE* = -5
+  INPUT_TAB* = -6
 
 type
   Modifier* = enum
@@ -18,7 +18,7 @@ type
   Modifiers* = set[Modifier]
   DFAInput = object
     # length 16 because there are 4 modifiers and so 2^4 = 16 possible combinations
-    next: array[16, int]
+    next: Table[Modifiers, int]
   InputKey = int64
   DFAState = object
     isTerminal: bool
@@ -40,7 +40,10 @@ proc step*(dfa: CommandDFA, currentState: int, currentInput: int64, mods: Modifi
   if not (currentInput in dfa.states[currentState].inputs):
     return 0
 
-  return dfa.states[currentState].inputs[currentInput].next[cast[int](mods)]
+  if not (mods in dfa.states[currentState].inputs[currentInput].next):
+    return 0
+
+  return dfa.states[currentState].inputs[currentInput].next[mods]
 
 proc isTerminal*(dfa: CommandDFA, state: int): bool =
   return dfa.states[state].isTerminal
@@ -55,19 +58,22 @@ proc inputAsString(input: int64): string =
     of INPUT_BACKSPACE: "BACKSPACE"
     of INPUT_SPACE: "SPACE"
     of INPUT_DELETE: "DELETE"
+    of INPUT_TAB: "TAB"
     else: "<" & $input & ">"
 
 proc inputToString*(input: int64, modifiers: Modifiers): string =
+  if modifiers != {} or input < 0: result.add "<"
   if Control in modifiers: result.add "C"
   if Shift in modifiers: result.add "S"
   if Alt in modifiers: result.add "A"
-  if result.len > 0: result.add "-"
+  if modifiers != {}: result.add "-"
 
   if input > 0 and input <= int32.high:
     let ch = Rune(input)
     result.add $ch
   else:
     result.add inputAsString(input)
+  if modifiers != {} or input < 0: result.add ">"
 
 proc getInputCodeFromSpecialKey(specialKey: string): int64 =
   if specialKey.len == 1:
@@ -79,21 +85,19 @@ proc getInputCodeFromSpecialKey(specialKey: string): int64 =
       of "BACKSPACE": INPUT_BACKSPACE
       of "SPACE": INPUT_SPACE
       of "DELETE": INPUT_DELETE
+      of "TAB": INPUT_TAB
       else:
         echo "Invalid key '", specialKey, "'"
         0
 
 proc linkState(dfa: var CommandDFA, currentState: int, nextState: int, inputCode: int64, mods: Modifiers) =
-  let modsInt = cast[int](mods)
-
   if not (inputCode in dfa.states[currentState].inputs):
     dfa.states[currentState].inputs[inputCode] = DFAInput()
-  dfa.states[currentState].inputs[inputCode].next[modsInt] = nextState
+  dfa.states[currentState].inputs[inputCode].next[mods] = nextState
 
 proc createOrUpdateState(dfa: var CommandDFA, currentState: int, inputCode: int64, mods: Modifiers): int =
-  let modsInt = cast[int](mods)
-  let nextState = if inputCode in dfa.states[currentState].inputs and dfa.states[currentState].inputs[inputCode].next[modsInt] != 0:
-    dfa.states[currentState].inputs[inputCode].next[modsInt]
+  let nextState = if inputCode in dfa.states[currentState].inputs and dfa.states[currentState].inputs[inputCode].next[mods] != 0:
+    dfa.states[currentState].inputs[inputCode].next[mods]
   else:
     dfa.states.add DFAState()
     dfa.states.len - 1
@@ -197,6 +201,20 @@ proc buildDFA*(commands: seq[(string, string)]): CommandDFA =
     if input.len > 0:
       handleNextInput(result, input.toRunes, function, 0, 0)
 
+proc autoCompleteRec(dfa: CommandDFA, result: var seq[(string, string)], currentInputs: string, currentState: int) =
+  let state = dfa.states[currentState]
+  if state.isTerminal:
+    result.add (currentInputs, state.function)
+  for input in state.inputs.keys:
+    for mods in state.inputs[input].next.keys:
+      let newInput = currentInputs & inputToString(input, mods)
+      dfa.autoCompleteRec(result, newInput, state.inputs[input].next[mods])
+
+
+proc autoComplete*(dfa: CommandDFA, currentState: int): seq[(string, string)] =
+  result = @[]
+  dfa.autoCompleteRec(result, "", currentState)
+
 proc dump*(dfa: CommandDFA, currentState: int, currentInput: int64, currentMods: Modifiers): void =
   stdout.write "        "
   for state in 0..<dfa.states.len:
@@ -232,23 +250,22 @@ proc dump*(dfa: CommandDFA, currentState: int, currentInput: int64, currentMods:
       # Input
       var chStr = inputToString(input, modifiers)
 
-      if currentInput != 0 and input == currentInput and modifiersNum == cast[int](currentMods):
+      if currentInput != 0 and input == currentInput and modifiers == currentMods:
         chStr = fmt"({chStr})"
       line.add fmt"{chStr:^7.7}|"
 
       # Next state
       var notEmpty = false
       for state in 0..<dfa.states.len:
-
         let nextState = if input in dfa.states[state].inputs:
-          dfa.states[state].inputs[input].next[modifiersNum]
+          dfa.states[state].inputs[input].next.getOrDefault(modifiers, 0)
         else: 0
 
-        if nextState == 0 and (state != currentState or input != currentInput or modifiersNum != cast[int](currentMods)):
+        if nextState == 0 and (state != currentState or input != currentInput or modifiers != currentMods):
           line.add "       |"
         else:
           var nextStateStr = $nextState
-          if state == currentState and currentInput != 0 and input == currentInput and modifiersNum == cast[int](currentMods):
+          if state == currentState and currentInput != 0 and input == currentInput and modifiers == currentMods:
             nextStateStr = fmt"({nextStateStr})"
           line.add fmt"{nextStateStr:^7.7}|"
           notEmpty = true
