@@ -76,3 +76,8 @@ proc splitV*(r: Rect, x: Measurement): tuple[a, b: Rect] =
 proc splitVInv*(r: Rect, x: Measurement): tuple[a, b: Rect] =
   let temp = r.splitV(x)
   result = (temp[1], temp[0])
+
+proc shrink*(r: Rect, amount: Measurement): Rect =
+  let x = amount.apply(0, r.w)
+  let y = amount.apply(0, r.h)
+  return rect(r.x + x, r.y + y, r.w - x - x, r.h - y - y)
