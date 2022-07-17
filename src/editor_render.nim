@@ -43,9 +43,24 @@ proc renderStatusBar*(ed: Editor, bounds: Rect) =
   ed.ctx.fillStyle = rgb(75, 75, 75)
   ed.ctx.fillText(ed.inputBuffer, vec2(bounds.x, bounds.y))
 
+proc renderView*(ed: Editor, bounds: Rect, view: View, selected: bool) =
+  # let bounds = bounds.shrink(0.2.relative)
+  let bounds = bounds.shrink(10.absolute)
+  ed.ctx.fillStyle = if selected: rgb(100, 200, 100) else: rgb(75, 150, 75)
+  ed.ctx.fillRect(bounds.x, bounds.y, bounds.w, bounds.h)
+  ed.ctx.fillStyle = rgb(255, 255, 255)
+  ed.ctx.fillText(view.document, vec2(bounds.x, bounds.y))
+
 proc renderMainWindow*(ed: Editor, bounds: Rect) =
   ed.ctx.fillStyle = rgb(0, 255, 0)
   ed.ctx.fillRect(bounds)
+
+  let rects = ed.layout.layoutViews(bounds, ed.views)
+  for i, view in ed.views:
+    if i >= rects.len:
+      break
+    ed.renderView(rects[i], view, i == ed.currentView)
+
   ed.renderCommandAutoCompletion(bounds)
 
 proc render*(ed: Editor) =

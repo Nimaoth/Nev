@@ -1,4 +1,4 @@
-import std/[json, jsonutils, strformat, bitops, strutils, tables, algorithm, math, unicode]
+import std/[json, jsonutils, strformat, bitops, strutils, tables, algorithm, math, unicode, sequtils]
 import os, osproc
 
 const
@@ -76,8 +76,9 @@ proc inputToString*(input: int64, modifiers: Modifiers): string =
   if modifiers != {} or input < 0: result.add ">"
 
 proc getInputCodeFromSpecialKey(specialKey: string): int64 =
-  if specialKey.len == 1:
-    result = ord(specialKey[0])
+  let runes = specialKey.toRunes
+  if runes.len == 1:
+    result = runes[0].int32
   else:
     result = case specialKey:
       of "ENTER": INPUT_ENTER
@@ -96,8 +97,13 @@ proc linkState(dfa: var CommandDFA, currentState: int, nextState: int, inputCode
   dfa.states[currentState].inputs[inputCode].next[mods] = nextState
 
 proc createOrUpdateState(dfa: var CommandDFA, currentState: int, inputCode: int64, mods: Modifiers): int =
-  let nextState = if inputCode in dfa.states[currentState].inputs and dfa.states[currentState].inputs[inputCode].next[mods] != 0:
-    dfa.states[currentState].inputs[inputCode].next[mods]
+  let nextState = if inputCode in dfa.states[currentState].inputs:
+    if mods in dfa.states[currentState].inputs[inputCode].next:
+      dfa.states[currentState].inputs[inputCode].next[mods]
+    else:
+      dfa.states.add DFAState()
+      dfa.states[currentState].inputs[inputCode].next[mods] = dfa.states.len - 1
+      dfa.states.len - 1
   else:
     dfa.states.add DFAState()
     dfa.states.len - 1
@@ -239,7 +245,9 @@ proc dump*(dfa: CommandDFA, currentState: int, currentInput: int64, currentMods:
       allUsedInputs.add key
 
   allUsedInputs.sort
-  echo allUsedInputs
+  allUsedInputs = allUsedInputs.deduplicate(isSorted = true)
+  
+  # echo allUsedInputs
 
   for input in allUsedInputs:
     for modifiersNum in 0..0b111:
