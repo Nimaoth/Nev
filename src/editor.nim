@@ -15,6 +15,7 @@ commands.add ("<ENTER>", "insert \n")
 commands.add ("<C-n>ä", "insert äöüÄÖÜ")
 commands.add ("<C-h>", "change-font-size -1")
 commands.add ("<C-f>", "change-font-size 1")
+commands.add ("<C-g>", "toggle-status-bar-location")
 commands.add ("<C-r>a", "insert a")
 commands.add ("<C-r>b", "insert b")
 commands.add ("<C-r>ca", "insert ca")
@@ -50,16 +51,25 @@ type Editor* = ref object
   window*: Window
   boxy*: Boxy
   inputBuffer*: string
-  fontSize*: float32
   logger: Logger
+  statusBarOnTop*: bool
+  ctx*: Context
 
 proc newEditor*(window: Window, boxy: Boxy): Editor =
   result = Editor()
   result.window = window
   result.boxy = boxy
   result.inputBuffer = ""
-  result.fontSize = 20
+  result.statusBarOnTop = false
   result.logger = newConsoleLogger()
+
+  let image = newImage(window.size.x, window.size.y)
+  result.ctx = newContext(1, 1)
+  result.ctx.fillStyle = rgb(255, 255, 255)
+  result.ctx.strokeStyle = rgb(255, 255, 255)
+  result.ctx.font = "fonts/FiraCode-Regular.ttf"
+  result.ctx.fontSize = 20
+  result.ctx.textBaseline = TopBaseline
 
 proc handleTextInput(ed: Editor, text: string) =
   ed.inputBuffer.add text
@@ -75,7 +85,9 @@ proc handleAction(ed: Editor, action: string, arg: string) =
   of "insert":
     ed.handleTextInput arg
   of "change-font-size":
-    ed.fontSize = ed.fontSize + arg.parseFloat()
+    ed.ctx.fontSize = ed.ctx.fontSize + arg.parseFloat()
+  of "toggle-status-bar-location":
+    ed.statusBarOnTop = not ed.statusBarOnTop
   else:
     echo "Action: '", action, "' with parameter '", arg, "'"
 
