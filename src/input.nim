@@ -8,6 +8,14 @@ const
   INPUT_SPACE* = -4
   INPUT_DELETE* = -5
   INPUT_TAB* = -6
+  INPUT_LEFT* = -7
+  INPUT_RIGHT* = -8
+  INPUT_UP* = -9
+  INPUT_DOWN* = -10
+  INPUT_HOME* = -11
+  INPUT_END* = -12
+  INPUT_PAGE_UP* = -13
+  INPUT_PAGE_DOWN* = -14
 
 type
   Modifier* = enum
@@ -24,7 +32,7 @@ type
     isTerminal: bool
     function: string
     inputs: Table[InputKey, DFAInput]
-  CommandDFA = ref object
+  CommandDFA* = ref object
     states: seq[DFAState]
 
 proc isAscii*(input: int64): bool =
@@ -59,6 +67,14 @@ proc inputAsString(input: int64): string =
     of INPUT_SPACE: "SPACE"
     of INPUT_DELETE: "DELETE"
     of INPUT_TAB: "TAB"
+    of INPUT_LEFT: "LEFT"
+    of INPUT_RIGHT: "RIGHT"
+    of INPUT_UP: "UP"
+    of INPUT_DOWN: "DOWN"
+    of INPUT_HOME: "HOME"
+    of INPUT_END: "END"
+    of INPUT_PAGE_UP: "PAGE_UP"
+    of INPUT_PAGE_DOWN: "PAGE_DOWN"
     else: "<" & $input & ">"
 
 proc inputToString*(input: int64, modifiers: Modifiers): string =
@@ -66,6 +82,7 @@ proc inputToString*(input: int64, modifiers: Modifiers): string =
   if Control in modifiers: result.add "C"
   if Shift in modifiers: result.add "S"
   if Alt in modifiers: result.add "A"
+  if Super in modifiers: result.add "M"
   if modifiers != {}: result.add "-"
 
   if input > 0 and input <= int32.high:
@@ -87,6 +104,14 @@ proc getInputCodeFromSpecialKey(specialKey: string): int64 =
       of "SPACE": INPUT_SPACE
       of "DELETE": INPUT_DELETE
       of "TAB": INPUT_TAB
+      of "LEFT": INPUT_LEFT
+      of "RIGHT": INPUT_RIGHT
+      of "UP": INPUT_UP
+      of "DOWN": INPUT_DOWN
+      of "HOME": INPUT_HOME
+      of "END": INPUT_END
+      of "PAGE_UP": INPUT_PAGE_UP
+      of "PAGE_DOWN": INPUT_PAGE_DOWN
       else:
         echo "Invalid key '", specialKey, "'"
         0
@@ -222,7 +247,9 @@ proc autoComplete*(dfa: CommandDFA, currentState: int): seq[(string, string)] =
   dfa.autoCompleteRec(result, "", currentState)
 
 proc dump*(dfa: CommandDFA, currentState: int, currentInput: int64, currentMods: Modifiers): void =
-  stdout.write "        "
+  stdout.write '_'.repeat(dfa.states.len * 8 + 8)
+  echo ""
+  stdout.write "cmd\\sta|"
   for state in 0..<dfa.states.len:
     var stateStr = $state
     if state == currentState:
@@ -230,7 +257,7 @@ proc dump*(dfa: CommandDFA, currentState: int, currentInput: int64, currentMods:
     stdout.write fmt"{stateStr:^7.7}|"
   echo ""
 
-  stdout.write "        "
+  stdout.write "       |"
   for state in dfa.states:
     if state.isTerminal:
       stdout.write fmt"{state.function:^7.7}|"
@@ -280,3 +307,6 @@ proc dump*(dfa: CommandDFA, currentState: int, currentInput: int64, currentMods:
 
       if notEmpty:
         echo line
+
+  stdout.write '_'.repeat(dfa.states.len * 8 + 8)
+  echo ""
