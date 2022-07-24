@@ -12,12 +12,14 @@ commands.add ("<DELETE>", "delete")
 commands.add ("<ESCAPE>", "escape")
 commands.add ("<SPACE>", "insert  ")
 commands.add ("<ENTER>", "insert \n")
-commands.add ("<C-h>", "change-font-size -1")
-commands.add ("<C-f>", "change-font-size 1")
+commands.add ("<C-l><C-h>", "change-font-size -1")
+commands.add ("<C-l><C-f>", "change-font-size 1")
 commands.add ("<C-g>", "toggle-status-bar-location")
 commands.add ("<C-l><C-n>", "set-layout horizontal")
 commands.add ("<C-l><C-r>", "set-layout vertical")
 commands.add ("<C-l><C-t>", "set-layout fibonacci")
+commands.add ("<C-h>", "change-layout-prop main-split -0.05")
+commands.add ("<C-f>", "change-layout-prop main-split +0.05")
 commands.add ("<CA-n>", "create-view")
 commands.add ("<CA-a>", "create-keybind-autocomplete-view")
 commands.add ("<CA-x>", "close-view")
@@ -26,7 +28,11 @@ commands.add ("<C-t>", "next-view")
 commands.add ("<CS-n>", "move-view-prev")
 commands.add ("<CS-t>", "move-view-next")
 commands.add ("<C-r>", "move-current-view-to-top")
-commands.add ("rrr", "uiae")
+commands.add ("<C-p>", "command-line")
+
+var commandLineCommands: seq[(string, string)] = @[]
+commandLineCommands.add ("<ESCAPE>", "exit-command-line")
+commandLineCommands.add ("<ENTER>", "execute-command-line")
 
 proc toInput(rune: Rune): int64 =
   return rune.int64
@@ -76,6 +82,8 @@ type
     discard
   FibonacciLayout* = ref object of Layout
     discard
+  LayoutProperties = ref object
+    props: Table[string, float32]
 
 type Editor* = ref object
   window*: Window
@@ -90,8 +98,11 @@ type Editor* = ref object
   currentView*: int
   views*: seq[View]
   layout*: Layout
+  layout_props*: LayoutProperties
 
   eventHandler*: EventHandler
+  commandLineEventHandler*: EventHandler
+  commandLineMode*: bool
 
   editor_defaults: seq[DocumentEditor]
 
@@ -129,32 +140,35 @@ proc handleInput(input: string): EventResponse =
   echo "input: " & input
   return Handled
 
-method layoutViews*(layout: Layout, bounds: Rect, views: openArray[View]): seq[Rect] {.base.} =
+method layoutViews*(layout: Layout, props: LayoutProperties, bounds: Rect, views: openArray[View]): seq[Rect] {.base.} =
   return @[bounds]
 
-method layoutViews*(layout: HorizontalLayout, bounds: Rect, views: openArray[View]): seq[Rect] =
+method layoutViews*(layout: HorizontalLayout, props: LayoutProperties, bounds: Rect, views: openArray[View]): seq[Rect] =
+  let mainSplit = props.props.getOrDefault("main-split", 0.5)
   result = @[]
   var rect = bounds
   for i, view in views:
-    let ratio = 1.0 / (views.len - i).float32
+    let ratio = if i == 0: mainSplit else: 1.0 / (views.len - i).float32
     let (view_rect, remaining) = rect.splitV(ratio.relative)
     rect = remaining
     result.add view_rect
 
-method layoutViews*(layout: VerticalLayout, bounds: Rect, views: openArray[View]): seq[Rect] =
+method layoutViews*(layout: VerticalLayout, props: LayoutProperties, bounds: Rect, views: openArray[View]): seq[Rect] =
+  let mainSplit = props.props.getOrDefault("main-split", 0.5)
   result = @[]
   var rect = bounds
   for i, view in views:
-    let ratio = 1.0 / (views.len - i).float32
+    let ratio = if i == 0: mainSplit else: 1.0 / (views.len - i).float32
     let (view_rect, remaining) = rect.splitH(ratio.relative)
     rect = remaining
     result.add view_rect
 
-method layoutViews*(layout: FibonacciLayout, bounds: Rect, views: openArray[View]): seq[Rect] =
+method layoutViews*(layout: FibonacciLayout, props: LayoutProperties, bounds: Rect, views: openArray[View]): seq[Rect] =
+  let mainSplit = props.props.getOrDefault("main-split", 0.5)
   result = @[]
   var rect = bounds
   for i, view in views:
-    let ratio = if i == views.len - 1: 1.0 else: 0.5
+    let ratio = if i == 0: mainSplit elif i == views.len - 1: 1.0 else: 0.5
     let (view_rect, remaining) = if i mod 2 == 0: rect.splitV(ratio.relative) else: rect.splitH(ratio.relative)
     rect = remaining
     result.add view_rect
@@ -193,6 +207,7 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
 
   # ed.views = @[View(document: "1"), View(document: "2"), View(document: "3")]
   ed.layout = HorizontalLayout()
+  ed.layout_props = LayoutProperties(props: {"main-split": 0.5.float32}.toTable)
 
   let image = newImage(window.size.x, window.size.y)
   ed.ctx = newContext(1, 1)
@@ -215,6 +230,14 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
     onInput:
       ed.handleTextInput(input)
       Handled
+  ed.commandLineEventHandler = eventHandler(buildDFA(commandLineCommands)):
+    onAction:
+      ed.handleAction(action, arg)
+      Handled
+    onInput:
+      ed.handleTextInput(input)
+      Handled
+  ed.commandLineMode = false
 
   return ed
 
@@ -286,6 +309,24 @@ proc handleAction(ed: Editor, action: string, arg: string) =
       of "vertical": VerticalLayout()
       of "fibonacci": FibonacciLayout()
       else: HorizontalLayout()
+  of "change-layout-prop":
+    let args = arg.split(' ')
+    if args.len == 2:
+      let prop = args[0]
+      let change = try: args[1].parseFloat
+      except: 0.float32
+      ed.layout_props.props.mgetOrPut(prop, 0) += change
+  of "command-line":
+    ed.inputBuffer = arg
+    ed.commandLineMode = true
+  of "exit-command-line":
+    ed.inputBuffer = ""
+    ed.commandLineMode = false
+  of "execute-command-line":
+    ed.commandLineMode = false
+    let (action, arg) = ed.inputBuffer.parseAction
+    ed.inputBuffer = ""
+    ed.handleAction(action, arg)
   else:
     ed.logger.log(lvlError, "[ed] Unknown Action '$1 $2'" % [action, arg])
 
@@ -316,7 +357,9 @@ proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifier
 
 proc currentEventHandlers*(ed: Editor): seq[EventHandler] =
   result = @[ed.eventHandler]
-  if ed.currentView >= 0 and ed.currentView < ed.views.len:
+  if ed.commandLineMode:
+    result.add ed.commandLineEventHandler
+  elif ed.currentView >= 0 and ed.currentView < ed.views.len:
     result.add ed.views[ed.currentView].editor.getEventHandlers()
 
 proc handleKeyPress*(ed: Editor, button: Button, modifiers: Modifiers) =
