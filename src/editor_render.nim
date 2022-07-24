@@ -17,7 +17,7 @@ proc renderCommandAutoCompletion*(ed: Editor, handler: EventHandler, bounds: Rec
     if kv[1].len > longestCommand: longestCommand = kv[1].len
 
   let lineSpacing: float32 = 2
-  let horizontalSizeModifier: float32 = 0.65
+  let horizontalSizeModifier: float32 = 0.615
   let gap: float32 = 10
   let height = nextPossibleInputs.len.float32 * (ctx.fontSize + lineSpacing)
   let inputsOrigin = vec2(0, 0)
@@ -40,11 +40,16 @@ proc renderCommandAutoCompletion*(ed: Editor, handler: EventHandler, bounds: Rec
   return bounds.splitH(height.absolute)[1]
 
 proc renderStatusBar*(ed: Editor, bounds: Rect) =
-  ed.ctx.fillStyle = rgb(40, 25, 25)
+  ed.ctx.fillStyle = if ed.commandLineMode: rgb(60, 45, 45) else: rgb(40, 25, 25)
   ed.ctx.fillRect(bounds)
 
   ed.ctx.fillStyle = rgb(200, 200, 225)
   ed.ctx.fillText(ed.inputBuffer, vec2(bounds.x, bounds.y))
+
+  if ed.commandLineMode:
+    ed.ctx.strokeStyle = rgb(255, 255, 255)
+    let horizontalSizeModifier: float32 = 0.615
+    ed.ctx.strokeRect(rect(bounds.x + ed.inputBuffer.len.float32 * ed.ctx.fontSize * horizontalSizeModifier, bounds.y, ed.ctx.fontSize * 0.05, ed.ctx.fontSize))
 
 method renderDocumentEditor(editor: DocumentEditor, ed: Editor, bounds: Rect, selected: bool) {.base.} =
   discard
@@ -97,7 +102,7 @@ proc renderMainWindow*(ed: Editor, bounds: Rect) =
   ed.ctx.fillStyle = rgb(25, 25, 25)
   ed.ctx.fillRect(bounds)
 
-  let rects = ed.layout.layoutViews(bounds, ed.views)
+  let rects = ed.layout.layoutViews(ed.layout_props, bounds, ed.views)
   for i, view in ed.views:
     if i >= rects.len:
       break
