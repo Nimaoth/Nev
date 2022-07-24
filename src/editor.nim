@@ -1,7 +1,7 @@
-import std/[strformat, bitops, strutils, tables, algorithm, math, logging]
-import boxy, times, windy
+import std/[strformat, bitops, strutils, tables, algorithm, math, logging, unicode]
+import boxy, times, windy, print
 import sugar
-import input, rect_utils
+import input, events, rect_utils, document, document_editor, text_document
 
 var glogger = newConsoleLogger()
 
@@ -25,10 +25,7 @@ commands.add ("<C-t>", "next-view")
 commands.add ("<CS-n>", "move-view-prev")
 commands.add ("<CS-t>", "move-view-next")
 commands.add ("<C-r>", "move-current-view-to-top")
-
-var dfa* = buildDFA(commands)
-dfa.dump(0, 0, {})
-var state* = 0
+commands.add ("rrr", "uiae")
 
 proc toInput(rune: Rune): int64 =
   return rune.int64
@@ -41,6 +38,14 @@ proc toInput(button: Button): int64 =
   of KeySpace: INPUT_SPACE
   of KeyDelete: INPUT_DELETE
   of KeyTab: INPUT_TAB
+  of KeyLeft: INPUT_LEFT
+  of KeyRight: INPUT_RIGHT
+  of KeyUp: INPUT_UP
+  of KeyDown: INPUT_DOWN
+  of KeyHome: INPUT_HOME
+  of KeyEnd: INPUT_END
+  of KeyPageUp: INPUT_PAGE_UP
+  of KeyPageDown: INPUT_PAGE_DOWN
   of KeyA..KeyZ: ord(button) - ord(KeyA) + ord('a')
   of Key0..Key9: ord(button) - ord(Key0) + ord('0')
   of Numpad0..Numpad9: ord(button) - ord(Numpad0) + ord('0')
@@ -50,8 +55,16 @@ proc toInput(button: Button): int64 =
   of NumpadDivide: ord '/'
   else: 0
 
+proc parseAction(action: string): tuple[action: string, arg: string] =
+  let spaceIndex = action.find(' ')
+  if spaceIndex == -1:
+    return (action, "")
+  else:
+    return (action[0..<spaceIndex], action[spaceIndex + 1..^1])
+
 type View* = ref object
-  document*: string
+  document*: Document
+  editor*: DocumentEditor
 
 type
   Layout* = ref object of RootObj
@@ -63,7 +76,59 @@ type
   FibonacciLayout* = ref object of Layout
     discard
 
-method layoutViews*(layout: Layout, bounds: Rect, views: openArray[View]): seq[Rect] =
+type Editor* = ref object
+  window*: Window
+  boxy*: Boxy
+  ctx*: Context
+
+  logger: Logger
+
+  statusBarOnTop*: bool
+  inputBuffer*: string
+
+  currentView*: int
+  views*: seq[View]
+  layout*: Layout
+
+  eventHandler*: EventHandler
+
+  editor_defaults: seq[DocumentEditor]
+
+proc reset*(handler: var EventHandler) =
+  handler.state = 0
+
+proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers): EventResponse =
+  if input != 0:
+    let prevState = handler.state
+    handler.state = handler.dfa.step(handler.state, input, modifiers)
+    if handler.state == 0:
+      if prevState == 0:
+        # undefined input in state 0
+        if input > 0 and modifiers + {Shift} == {Shift} and handler.handleInput != nil:
+          return handler.handleInput(inputToString(input, {}))
+        return Ignored
+      else:
+        # undefined input in state n
+        return Canceled
+
+    elif handler.dfa.isTerminal(handler.state):
+      let (action, arg) = handler.dfa.getAction(handler.state).parseAction
+      handler.state = 0
+      return handler.handleAction(action, arg)
+    else:
+      return Progress
+  else:
+    return Failed
+
+proc handleAction(action: string, arg: string): EventResponse =
+  echo "event: " & action & " - " & arg
+  return Handled
+
+proc handleInput(input: string): EventResponse =
+  echo "input: " & input
+  return Handled
+
+method layoutViews*(layout: Layout, bounds: Rect, views: openArray[View]): seq[Rect] {.base.} =
   return @[bounds]
 
 method layoutViews*(layout: HorizontalLayout, bounds: Rect, views: openArray[View]): seq[Rect] =
@@ -93,44 +158,57 @@ method layoutViews*(layout: FibonacciLayout, bounds: Rect, views: openArray[View
     rect = remaining
     result.add view_rect
 
-type Editor* = ref object
-  window*: Window
-  boxy*: Boxy
-  inputBuffer*: string
-  logger: Logger
-  statusBarOnTop*: bool
-  ctx*: Context
+proc handleTextInput(ed: Editor, text: string)
+proc handleAction(ed: Editor, action: string, arg: string)
 
-  currentView*: int
-  views*: seq[View]
-  layout*: Layout
+proc createEditorForDocument(ed: Editor, document: Document): DocumentEditor =
+  for editor in ed.editor_defaults:
+    if editor.canEdit document:
+      return editor.createWithDocument document
 
-proc createView(ed: Editor, document: string) =
-  ed.views.add View(document: document)
+  echo "No editor found which can edit " & $document
+  return nil
+
+proc createView(ed: Editor, document: Document) =
+  var editor = ed.createEditorForDocument document
+  var view = View(document: document, editor: editor)
+
+  ed.views.add view
   ed.currentView = ed.views.len - 1
 
 proc newEditor*(window: Window, boxy: Boxy): Editor =
-  result = Editor()
-  result.window = window
-  result.boxy = boxy
-  result.inputBuffer = ""
-  result.statusBarOnTop = false
-  result.logger = newConsoleLogger()
+  var ed = Editor()
+  ed.window = window
+  ed.boxy = boxy
+  ed.inputBuffer = ""
+  ed.statusBarOnTop = false
+  ed.logger = newConsoleLogger()
 
-  # result.views = @[View(document: "1"), View(document: "2"), View(document: "3")]
-  result.layout = HorizontalLayout()
+  # ed.views = @[View(document: "1"), View(document: "2"), View(document: "3")]
+  ed.layout = HorizontalLayout()
 
   let image = newImage(window.size.x, window.size.y)
-  result.ctx = newContext(1, 1)
-  result.ctx.fillStyle = rgb(255, 255, 255)
-  result.ctx.strokeStyle = rgb(255, 255, 255)
-  result.ctx.font = "fonts/FiraCode-Regular.ttf"
-  result.ctx.fontSize = 20
-  result.ctx.textBaseline = TopBaseline
-  
-  result.createView("a")
-  result.createView("b")
-  result.createView("c")
+  ed.ctx = newContext(1, 1)
+  ed.ctx.fillStyle = rgb(255, 255, 255)
+  ed.ctx.strokeStyle = rgb(255, 255, 255)
+  ed.ctx.font = "fonts/FiraCode-Regular.ttf"
+  ed.ctx.fontSize = 20
+  ed.ctx.textBaseline = TopBaseline
+
+  ed.editor_defaults = @[TextDocumentEditor(), AstDocumentEditor()]
+
+  ed.createView(TextDocument(filename: "a.txt", content: @["uiae"]))
+  ed.createView(TextDocument(filename: "b.txt", content: @["xvlc"]))
+
+  ed.eventHandler = eventHandler(buildDFA(commands)):
+    onAction:
+      ed.handleAction(action, arg)
+      Handled
+    onInput:
+      ed.handleTextInput(input)
+      Handled
+
+  return ed
 
 proc closeCurrentView(ed: Editor) =
   ed.views.delete ed.currentView
@@ -160,6 +238,7 @@ proc moveCurrentViewNext(ed: Editor) =
     ed.currentView = index
 
 proc handleTextInput(ed: Editor, text: string) =
+  echo "handleTextInput '" & text & "'"
   ed.inputBuffer.add text
 
 proc handleAction(ed: Editor, action: string, arg: string) =
@@ -169,7 +248,8 @@ proc handleAction(ed: Editor, action: string, arg: string) =
     ed.window.closeRequested = true
   of "backspace":
     if ed.inputBuffer.len > 0:
-      ed.inputBuffer = ed.inputBuffer[0..<ed.inputBuffer.len-1]
+      let (rune, l) = ed.inputBuffer.lastRune(ed.inputBuffer.len - 1)
+      ed.inputBuffer = ed.inputBuffer[0..<ed.inputBuffer.len-l]
   of "insert":
     ed.handleTextInput arg
   of "change-font-size":
@@ -177,7 +257,7 @@ proc handleAction(ed: Editor, action: string, arg: string) =
   of "toggle-status-bar-location":
     ed.statusBarOnTop = not ed.statusBarOnTop
   of "create-view":
-    ed.createView($ed.views.len)
+    ed.createView(TextDocument(filename: "", content: @[]))
   of "close-view":
     ed.closeCurrentView()
   of "move-current-view-to-top":
@@ -197,46 +277,46 @@ proc handleAction(ed: Editor, action: string, arg: string) =
       of "fibonacci": FibonacciLayout()
       else: HorizontalLayout()
   else:
-    echo "Action: '", action, "' with parameter '", arg, "'"
+    ed.logger.log(lvlError, "[ed] Unknown Action '$1 $2'" % [action, arg])
 
-proc handleTerminalState(ed: Editor, state: int) =
-  let action = dfa.getAction(state)
-  let spaceIndex = action.find(' ')
-  if spaceIndex == -1:
-    ed.handleAction(action, "")
-  else:
-    ed.handleAction(action[0..<spaceIndex], action[spaceIndex + 1..^1])
+proc anyInProgress*(handlers: openArray[EventHandler]): bool =
+  for h in handlers:
+    if h.state != 0:
+      return true
+  return false
+
+proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifiers) =
+  let anyInProgress = handlers.anyInProgress
+
+  for i in 0..<handlers.len:
+    var handler = handlers[handlers.len - i - 1]
+    let response = if (anyInProgress and handler.state != 0) or (not anyInProgress and handler.state == 0):
+      handler.handleEvent(input, modifiers)
+    else:
+      Ignored
+    echo i, ": ", response
+    case response
+    of Handled:
+      for h in handlers:
+        var h = h
+        h.reset()
+      break
+    else:
+      discard
+
+proc currentEventHandlers*(ed: Editor): seq[EventHandler] =
+  result = @[ed.eventHandler]
+  if ed.currentView >= 0 and ed.currentView < ed.views.len:
+    result.add ed.views[ed.currentView].editor.getEventHandlers()
 
 proc handleKeyPress*(ed: Editor, button: Button, modifiers: Modifiers) =
   let input = button.toInput()
-  if input != 0:
-    state = dfa.step(state, input, modifiers)
-    if state == 0:
-      echo "Invalid input: ", inputToString(input, modifiers)
-
-
-    if dfa.isTerminal(state):
-      ed.handleTerminalState(state)
-      state = 0
-  else:
-    echo "Unknown button: ", button
+  ed.currentEventHandlers.handleEvent(input, modifiers)
 
 proc handleKeyRelease*(ed: Editor, button: Button, modifiers: Modifiers) =
   discard
 
 proc handleRune*(ed: Editor, rune: Rune, modifiers: Modifiers) =
+  let modifiers = if rune.int64.isAscii and rune.char.isAlphaNumeric: modifiers else: {}
   let input = rune.toInput()
-  if input != 0:
-    let modifiers = if rune.int64.isAscii and rune.char.isAlphaNumeric: modifiers else: {}
-
-    let prevState = state
-    state = dfa.step(state, input, modifiers)
-    if state == 0:
-      if prevState == 0:
-        ed.handleTextInput($rune)
-      else:
-        echo "Invalid input: ", inputToString(input, modifiers)
-
-    if dfa.isTerminal(state):
-      ed.handleTerminalState(state)
-      state = 0
+  ed.currentEventHandlers.handleEvent(input, modifiers)

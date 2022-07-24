@@ -22,7 +22,7 @@ proc centerWindowOnMonitor(window: Window, monitor: int) =
   window.pos = ivec2(int32(left + (monitorWidth - windowWidth) / 2),
                      int32(top + (monitorHeight - windowHeight) / 2))
 
-window.centerWindowOnMonitor(2)
+window.centerWindowOnMonitor(0)
 
 makeContextCurrent(window)
 
@@ -74,7 +74,7 @@ window.onButtonPress = proc(button: Button) =
   of KeyLeftShift, KeyRightShift: currentModifiers = currentModifiers + {Shift}
   of KeyLeftControl, KeyRightControl: currentModifiers = currentModifiers + {Control}
   of KeyLeftAlt, KeyRightAlt: currentModifiers = currentModifiers + {Alt}
-  of KeyLeftSuper, KeyRightSuper: currentModifiers = currentModifiers + {Super}
+  # of KeyLeftSuper, KeyRightSuper: currentModifiers = currentModifiers + {Super}
   else:
     ed.handleKeyPress(button, currentModifiers)
 
@@ -83,7 +83,7 @@ window.onButtonRelease = proc(button: Button) =
   of KeyLeftShift, KeyRightShift: currentModifiers = currentModifiers - {Shift}
   of KeyLeftControl, KeyRightControl: currentModifiers = currentModifiers - {Control}
   of KeyLeftAlt, KeyRightAlt: currentModifiers = currentModifiers - {Alt}
-  of KeyLeftSuper, KeyRightSuper: currentModifiers = currentModifiers - {Super}
+  # of KeyLeftSuper, KeyRightSuper: currentModifiers = currentModifiers - {Super}
   else:
     ed.handleKeyRelease(button, currentModifiers)
 
