@@ -14,44 +14,46 @@ type EventHandler* = ref object
   handleInput*: proc(input: string): EventResponse
 
 template eventHandler*(commandDFA: CommandDFA, handlerBody: untyped): untyped =
-  var handler = EventHandler()
-  handler.dfa = commandDFA
-  
-  template onAction(actionBody: untyped): untyped =
-    handler.handleAction = proc(action: string, arg: string): EventResponse =
-      let action {.inject.} = action
-      let arg {.inject.} = arg
-      return actionBody
+  block:
+    var handler = EventHandler()
+    handler.dfa = commandDFA
+    
+    template onAction(actionBody: untyped): untyped =
+      handler.handleAction = proc(action: string, arg: string): EventResponse =
+        let action {.inject.} = action
+        let arg {.inject.} = arg
+        return actionBody
 
-  template onInput(inputBody: untyped): untyped =
-    handler.handleInput = proc(input: string): EventResponse =
-      let input {.inject.} = input
-      return inputBody
+    template onInput(inputBody: untyped): untyped =
+      handler.handleInput = proc(input: string): EventResponse =
+        let input {.inject.} = input
+        return inputBody
 
-  handlerBody
-  handler.dfa.dump(0, 0, {})
-  handler
+    handlerBody
+    handler.dfa.dump(0, 0, {})
+    handler
 
 template eventHandler2*(handlerBody: untyped): untyped =
-  var handler = EventHandler()
+  block:
+    var handler = EventHandler()
 
-  template onAction(actionBody: untyped): untyped =
-    handler.handleAction = proc(action: string, arg: string): EventResponse =
-      let action {.inject.} = action
-      let arg {.inject.} = arg
-      return actionBody
+    template onAction(actionBody: untyped): untyped =
+      handler.handleAction = proc(action: string, arg: string): EventResponse =
+        let action {.inject.} = action
+        let arg {.inject.} = arg
+        return actionBody
 
-  template onInput(inputBody: untyped): untyped =
-    handler.handleInput = proc(input: string): EventResponse =
-      let input {.inject.} = input
-      return inputBody
+    template onInput(inputBody: untyped): untyped =
+      handler.handleInput = proc(input: string): EventResponse =
+        let input {.inject.} = input
+        return inputBody
 
-  var commands: seq[(string, string)] = @[]
+    var commands: seq[(string, string)] = @[]
 
-  template command(cmd: string, a: string): untyped =
-    commands.add (cmd, a)
+    template command(cmd: string, a: string): untyped =
+      commands.add (cmd, a)
 
-  handlerBody
-  handler.dfa = buildDFA(commands)
-  handler.dfa.dump(0, 0, {})
-  handler
+    handlerBody
+    handler.dfa = buildDFA(commands)
+    handler.dfa.dump(0, 0, {})
+    handler
