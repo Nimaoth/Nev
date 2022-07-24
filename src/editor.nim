@@ -1,7 +1,7 @@
 import std/[strformat, bitops, strutils, tables, algorithm, math, logging, unicode]
 import boxy, times, windy, print
 import sugar
-import input, events, rect_utils, document, document_editor, text_document
+import input, events, rect_utils, document, document_editor, text_document, keybind_autocomplete
 
 var glogger = newConsoleLogger()
 
@@ -19,6 +19,7 @@ commands.add ("<C-l><C-n>", "set-layout horizontal")
 commands.add ("<C-l><C-r>", "set-layout vertical")
 commands.add ("<C-l><C-t>", "set-layout fibonacci")
 commands.add ("<CA-n>", "create-view")
+commands.add ("<CA-a>", "create-keybind-autocomplete-view")
 commands.add ("<CA-x>", "close-view")
 commands.add ("<C-n>", "prev-view")
 commands.add ("<C-t>", "next-view")
@@ -169,6 +170,12 @@ proc createEditorForDocument(ed: Editor, document: Document): DocumentEditor =
   echo "No editor found which can edit " & $document
   return nil
 
+proc createView(ed: Editor, editor: DocumentEditor) =
+  var view = View(document: nil, editor: editor)
+
+  ed.views.add view
+  ed.currentView = ed.views.len - 1
+
 proc createView(ed: Editor, document: Document) =
   var editor = ed.createEditorForDocument document
   var view = View(document: document, editor: editor)
@@ -197,8 +204,9 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
 
   ed.editor_defaults = @[TextDocumentEditor(), AstDocumentEditor()]
 
-  ed.createView(TextDocument(filename: "a.txt", content: @["uiae"]))
-  ed.createView(TextDocument(filename: "b.txt", content: @["xvlc"]))
+  ed.createView(TextDocument(filename: "a.txt", content: @[""]))
+  ed.createView(newKeybindAutocompletion())
+  ed.currentView = 0
 
   ed.eventHandler = eventHandler(buildDFA(commands)):
     onAction:
@@ -258,6 +266,8 @@ proc handleAction(ed: Editor, action: string, arg: string) =
     ed.statusBarOnTop = not ed.statusBarOnTop
   of "create-view":
     ed.createView(TextDocument(filename: "", content: @[]))
+  of "create-keybind-autocomplete-view":
+    ed.createView(newKeybindAutocompletion())
   of "close-view":
     ed.closeCurrentView()
   of "move-current-view-to-top":

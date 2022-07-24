@@ -1,7 +1,7 @@
 import std/[strformat, bitops, strutils, tables, algorithm, math, macros]
 import boxy, times, windy
 import sugar
-import input, events, editor, rect_utils, document, document_editor, text_document
+import input, events, editor, rect_utils, document, document_editor, text_document, keybind_autocomplete
 
 let typeface = readTypeface("fonts/FiraCode-Regular.ttf")
 
@@ -19,10 +19,11 @@ proc renderCommandAutoCompletion*(ed: Editor, handler: EventHandler, bounds: Rec
   let lineSpacing: float32 = 2
   let horizontalSizeModifier: float32 = 0.65
   let gap: float32 = 10
-  let commandsOrigin = vec2(bounds.w - (longestCommand.float32 * ctx.fontSize * horizontalSizeModifier), bounds.h - (nextPossibleInputs.len.float32 * (ctx.fontSize + lineSpacing)))
-  let inputsOrigin = vec2(commandsOrigin.x.float32 - gap - (longestInput.float32 * ctx.fontSize * horizontalSizeModifier), commandsOrigin.y.float32)
+  let height = nextPossibleInputs.len.float32 * (ctx.fontSize + lineSpacing)
+  let inputsOrigin = vec2(0, 0)
+  let commandsOrigin = vec2(gap + (longestInput.float32 * ctx.fontSize * horizontalSizeModifier), inputsOrigin.y.float32)
 
-  ctx.fillStyle = rgb(75, 75, 75)
+  ctx.fillStyle = rgb(200, 200, 225)
 
   for i, kv in nextPossibleInputs:
     let (remainingInput, action) = kv
@@ -30,19 +31,19 @@ proc renderCommandAutoCompletion*(ed: Editor, handler: EventHandler, bounds: Rec
     ctx.fillText(remainingInput, vec2(bounds.x + inputsOrigin.x, bounds.y + inputsOrigin.y + i.float * (ctx.fontSize + lineSpacing)))
     ctx.fillText(action, vec2(bounds.x + commandsOrigin.x, bounds.y + commandsOrigin.y + i.float * (ctx.fontSize + lineSpacing)))
 
-  ctx.strokeRect(rect(inputsOrigin + vec2(bounds.x, bounds.y), vec2(bounds.w - inputsOrigin.x, bounds.h - inputsOrigin.y)))
+  ctx.strokeRect(rect(inputsOrigin + vec2(bounds.x, bounds.y), vec2(bounds.w, height)))
   ctx.beginPath()
-  ctx.moveTo(bounds.x + commandsOrigin.x - gap * 0.5, bounds.y + commandsOrigin.y)
-  ctx.lineTo(bounds.x + commandsOrigin.x - gap * 0.5, bounds.y + bounds.h)
+  ctx.moveTo(bounds.x + commandsOrigin.x - gap * 0.5, bounds.y)
+  ctx.lineTo(bounds.x + commandsOrigin.x - gap * 0.5, bounds.y + height)
   ctx.stroke()
 
-  return bounds.splitH(inputsOrigin.y.absolute)[0]
+  return bounds.splitH(height.absolute)[1]
 
 proc renderStatusBar*(ed: Editor, bounds: Rect) =
-  ed.ctx.fillStyle = rgb(255, 0, 0)
+  ed.ctx.fillStyle = rgb(40, 25, 25)
   ed.ctx.fillRect(bounds)
 
-  ed.ctx.fillStyle = rgb(75, 75, 75)
+  ed.ctx.fillStyle = rgb(200, 200, 225)
   ed.ctx.fillText(ed.inputBuffer, vec2(bounds.x, bounds.y))
 
 method renderDocumentEditor(editor: DocumentEditor, ed: Editor, bounds: Rect, selected: bool) {.base.} =
@@ -53,23 +54,22 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
 
   let (headerBounds, contentBounds) = bounds.splitH ed.ctx.fontSize.absolute
 
-  ed.ctx.fillStyle = if selected: rgb(100, 200, 100) else: rgb(75, 150, 75)
+  ed.ctx.fillStyle = if selected: rgb(45, 45, 60) else: rgb(45, 45, 45)
   ed.ctx.fillRect(headerBounds)
 
-  ed.ctx.fillStyle = if selected: rgb(75, 175, 75) else: rgb(50, 150, 50)
+  ed.ctx.fillStyle = if selected: rgb(25, 25, 40) else: rgb(25, 25, 25)
   ed.ctx.fillRect(contentBounds)
 
-  ed.ctx.fillStyle = rgb(0, 0, 0)
+  ed.ctx.fillStyle = rgb(255, 225, 255)
   ed.ctx.fillText(document.filename, vec2(headerBounds.x, headerBounds.y))
-
-  ed.ctx.fillStyle = rgb(0, 0, 0)
   ed.ctx.fillText($editor.selection, vec2(headerBounds.splitV(0.3.relative)[1].x, headerBounds.y))
 
+  ed.ctx.fillStyle = rgb(225, 200, 200)
   for i, line in document.content:
     ed.ctx.fillText(line, vec2(contentBounds.x, contentBounds.y + i.float32 * ed.ctx.fontSize))
 
   let horizontalSizeModifier: float32 = 0.615
-  ed.ctx.strokeStyle = rgb(175, 175, 175)
+  ed.ctx.strokeStyle = rgb(210, 210, 210)
   ed.ctx.strokeRect(rect(contentBounds.x + editor.selection.first.column.float32 * ed.ctx.fontSize * horizontalSizeModifier, contentBounds.y + editor.selection.first.line.float32 * ed.ctx.fontSize, ed.ctx.fontSize * 0.05, ed.ctx.fontSize))
   ed.ctx.strokeStyle = rgb(255, 255, 255)
   ed.ctx.strokeRect(rect(contentBounds.x + editor.selection.last.column.float32 * ed.ctx.fontSize * horizontalSizeModifier, contentBounds.y + editor.selection.last.line.float32 * ed.ctx.fontSize, ed.ctx.fontSize * 0.05, ed.ctx.fontSize))
@@ -77,16 +77,24 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
 method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect, selected: bool) =
   discard
 
+method renderDocumentEditor(editor: KeybindAutocompletion, ed: Editor, bounds: Rect, selected: bool) =
+  let eventHandlers = ed.currentEventHandlers
+  let anyInProgress = eventHandlers.anyInProgress
+  var r = bounds
+  for h in eventHandlers:
+    if anyInProgress == (h.state != 0):
+      r = ed.renderCommandAutoCompletion(h, r)
+
 proc renderView*(ed: Editor, bounds: Rect, view: View, selected: bool) =
   # let bounds = bounds.shrink(0.2.relative)
   let bounds = bounds.shrink(10.absolute)
-  ed.ctx.fillStyle = if selected: rgb(100, 200, 100) else: rgb(75, 150, 75)
+  ed.ctx.fillStyle = if selected: rgb(25, 25, 40) else: rgb(25, 25, 25)
   ed.ctx.fillRect(bounds)
 
   view.editor.renderDocumentEditor(ed, bounds, selected)
 
 proc renderMainWindow*(ed: Editor, bounds: Rect) =
-  ed.ctx.fillStyle = rgb(0, 255, 0)
+  ed.ctx.fillStyle = rgb(25, 25, 25)
   ed.ctx.fillRect(bounds)
 
   let rects = ed.layout.layoutViews(bounds, ed.views)
@@ -94,13 +102,6 @@ proc renderMainWindow*(ed: Editor, bounds: Rect) =
     if i >= rects.len:
       break
     ed.renderView(rects[i], view, i == ed.currentView)
-
-  let eventHandlers = ed.currentEventHandlers
-  let anyInProgress = eventHandlers.anyInProgress
-  var r = bounds
-  for h in eventHandlers:
-    if anyInProgress == (h.state != 0):
-      r = ed.renderCommandAutoCompletion(h, r)
 
 proc render*(ed: Editor) =
   ed.ctx.image = newImage(ed.window.size.x, ed.window.size.y)
