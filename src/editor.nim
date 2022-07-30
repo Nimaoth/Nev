@@ -1,7 +1,7 @@
 import std/[strformat, bitops, strutils, tables, algorithm, math, logging, unicode]
 import boxy, times, windy, print
 import sugar
-import input, events, rect_utils, document, document_editor, text_document, keybind_autocomplete
+import input, events, rect_utils, document, document_editor, text_document, ast_document, keybind_autocomplete
 
 var glogger = newConsoleLogger()
 
@@ -28,7 +28,9 @@ commands.add ("<C-t>", "next-view")
 commands.add ("<CS-n>", "move-view-prev")
 commands.add ("<CS-t>", "move-view-next")
 commands.add ("<C-r>", "move-current-view-to-top")
-commands.add ("<C-p>", "command-line")
+commands.add ("<C-s>", "write-file")
+commands.add ("<C-r>", "load-file")
+commands.add ("<C-m>", "command-line")
 
 var commandLineCommands: seq[(string, string)] = @[]
 commandLineCommands.add ("<ESCAPE>", "exit-command-line")
@@ -109,14 +111,15 @@ type Editor* = ref object
 proc reset*(handler: var EventHandler) =
   handler.state = 0
 
-proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers): EventResponse =
+proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers, handleUnknownAsInput: bool): EventResponse =
   if input != 0:
     let prevState = handler.state
     handler.state = handler.dfa.step(handler.state, input, modifiers)
+    # echo prevState, " -> ", handler.state
     if handler.state == 0:
       if prevState == 0:
         # undefined input in state 0
-        if input > 0 and modifiers + {Shift} == {Shift} and handler.handleInput != nil:
+        if handleUnknownAsInput and input > 0 and modifiers + {Shift} == {Shift} and handler.handleInput != nil:
           return handler.handleInput(inputToString(input, {}))
         return Ignored
       else:
@@ -149,7 +152,7 @@ method layoutViews*(layout: HorizontalLayout, props: LayoutProperties, bounds: R
   var rect = bounds
   for i, view in views:
     let ratio = if i == 0: mainSplit else: 1.0 / (views.len - i).float32
-    let (view_rect, remaining) = rect.splitV(ratio.relative)
+    let (view_rect, remaining) = rect.splitV(ratio.percent)
     rect = remaining
     result.add view_rect
 
@@ -159,7 +162,7 @@ method layoutViews*(layout: VerticalLayout, props: LayoutProperties, bounds: Rec
   var rect = bounds
   for i, view in views:
     let ratio = if i == 0: mainSplit else: 1.0 / (views.len - i).float32
-    let (view_rect, remaining) = rect.splitH(ratio.relative)
+    let (view_rect, remaining) = rect.splitH(ratio.percent)
     rect = remaining
     result.add view_rect
 
@@ -169,7 +172,7 @@ method layoutViews*(layout: FibonacciLayout, props: LayoutProperties, bounds: Re
   var rect = bounds
   for i, view in views:
     let ratio = if i == 0: mainSplit elif i == views.len - 1: 1.0 else: 0.5
-    let (view_rect, remaining) = if i mod 2 == 0: rect.splitV(ratio.relative) else: rect.splitH(ratio.relative)
+    let (view_rect, remaining) = if i mod 2 == 0: rect.splitV(ratio.percent) else: rect.splitH(ratio.percent)
     rect = remaining
     result.add view_rect
 
@@ -219,6 +222,7 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
 
   ed.editor_defaults = @[TextDocumentEditor(), AstDocumentEditor()]
 
+  ed.createView(newAstDocument("b.txt"))
   ed.createView(TextDocument(filename: "a.txt", content: @[""]))
   ed.createView(newKeybindAutocompletion())
   ed.currentView = 0
@@ -327,6 +331,25 @@ proc handleAction(ed: Editor, action: string, arg: string) =
     let (action, arg) = ed.inputBuffer.parseAction
     ed.inputBuffer = ""
     ed.handleAction(action, arg)
+  of "open-file":
+    try:
+      let file = readFile(arg)
+      ed.createView(TextDocument(filename: arg, content: collect file.splitLines))
+    except:
+      ed.logger.log(lvlError, "[ed] Failed to load file '$1'" % [arg])
+  of "write-file":
+    if ed.currentView >= 0 and ed.currentView < ed.views.len and ed.views[ed.currentView].document != nil:
+      try:
+        ed.views[ed.currentView].document.save(arg)
+      except:
+        ed.logger.log(lvlError, "[ed] Failed to write file '$1'" % [arg])
+  of "load-file":
+    if ed.currentView >= 0 and ed.currentView < ed.views.len and ed.views[ed.currentView].document != nil:
+      try:
+        ed.views[ed.currentView].document.load(arg)
+        ed.views[ed.currentView].editor.handleDocumentChanged()
+      except:
+        ed.logger.log(lvlError, "[ed] Failed to load file '$1'" % [arg])
   else:
     ed.logger.log(lvlError, "[ed] Unknown Action '$1 $2'" % [action, arg])
 
@@ -339,19 +362,23 @@ proc anyInProgress*(handlers: openArray[EventHandler]): bool =
 proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifiers) =
   let anyInProgress = handlers.anyInProgress
 
+  var allowHandlingUnknownAsInput = true
   for i in 0..<handlers.len:
     var handler = handlers[handlers.len - i - 1]
     let response = if (anyInProgress and handler.state != 0) or (not anyInProgress and handler.state == 0):
-      handler.handleEvent(input, modifiers)
+      handler.handleEvent(input, modifiers, allowHandlingUnknownAsInput)
     else:
       Ignored
     echo i, ": ", response
     case response
     of Handled:
+      allowHandlingUnknownAsInput = false
       for h in handlers:
         var h = h
         h.reset()
       break
+    of Progress:
+      allowHandlingUnknownAsInput = false
     else:
       discard
 

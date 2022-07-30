@@ -3,12 +3,14 @@ import bumpy
 
 type
   MeasurementKind* = enum
-    Relative,
+    Relative
     Absolute
+    Percent
   Measurement* = object
     case kind: MeasurementKind
     of Relative: rel: float32
     of Absolute: abs: float32
+    of Percent: per: float32
 
 proc relative*(value: float32): Measurement =
   return Measurement(kind: Relative, rel: value)
@@ -16,12 +18,17 @@ proc relative*(value: float32): Measurement =
 proc absolute*(value: float32): Measurement =
   return Measurement(kind: Absolute, abs: value)
 
+proc percent*(value: float32): Measurement =
+  return Measurement(kind: Percent, per: value)
+
 proc value*(m: Measurement): float32 =
   case m.kind:
   of Relative:
     return m.rel
   of Absolute:
     return m.abs
+  of Percent:
+    return m.per
 
 macro case_measurement*(m: Measurement, n: varargs[untyped]): untyped =
   var matchcase = newTree nnkCaseStmt
@@ -51,14 +58,17 @@ macro case_measurement*(m: Measurement, n: varargs[untyped]): untyped =
 proc apply*(m: Measurement, a, b: float32): float32 =
   case_measurement m:
   of Relative(v):
-    return a + v * (b - a)
-  of Absolute(v):
     return a + v
+  of Absolute(v):
+    return v
+  of Percent(v):
+    return a + v * (b - a)
 
 proc splitH*(r: Rect, y: Measurement): tuple[a, b: Rect] =
   result.a = r
   result.b = r
-  result.a.h = y.apply(0, r.h)
+  # result.a.h = y.apply(0, r.h)
+  result.a.h = y.apply(r.y, r.y + r.h) - r.y
   result.b.y = result.a.y + result.a.h
   result.b.h = result.b.h - result.a.h
 
@@ -69,7 +79,8 @@ proc splitHInv*(r: Rect, y: Measurement): tuple[a, b: Rect] =
 proc splitV*(r: Rect, x: Measurement): tuple[a, b: Rect] =
   result.a = r
   result.b = r
-  result.a.w = x.apply(0, r.w)
+  # result.a.w = x.apply(0, r.w)
+  result.a.w = x.apply(r.x, r.x + r.w) - r.x
   result.b.x = result.a.x + result.a.w
   result.b.w = result.b.w - result.a.w
 
@@ -81,3 +92,8 @@ proc shrink*(r: Rect, amount: Measurement): Rect =
   let x = amount.apply(0, r.w)
   let y = amount.apply(0, r.h)
   return rect(r.x + x, r.y + y, r.w - x - x, r.h - y - y)
+
+proc grow*(r: Rect, amount: Measurement): Rect =
+  let x = amount.apply(0, r.w)
+  let y = amount.apply(0, r.h)
+  return rect(r.x - x, r.y - y, r.w + x + x, r.h + y + y)
