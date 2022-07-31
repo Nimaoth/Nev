@@ -5,7 +5,7 @@ import input, document, document_editor, text_document, events, id, ast_ids
 var logger = newConsoleLogger()
 
 template getSome*[T](opt: Option[T], injected: untyped): bool =
-  opt.isSome() and ((let injected {.inject.} = opt.get(); true))
+  ((let o = opt; o.isSome())) and ((let injected {.inject.} = o.get(); true))
 
 type Cursor = seq[int]
 
@@ -16,10 +16,10 @@ type
     NumberLiteral
     StringLiteral
     Declaration
-    Infix
-    Prefix
-    Postfix
     NodeList
+    Call
+    If
+
   AstNode* = ref object
     parent*: AstNode
     id*: Id
@@ -37,9 +37,16 @@ when false:
     echo $newId()
     sleep(100)
 
-type Symbol = ref object
-  name*: string
-  node*: AstNode
+type
+  OperatorKind* = enum
+    Regular
+    Prefix
+    Postfix
+    Infix
+  Symbol* = ref object
+    name*: string
+    node*: AstNode
+    opKind*: OperatorKind
 
 type AstDocument* = ref object of Document
   filename*: string
@@ -84,15 +91,66 @@ func prev*(node: AstNode): Option[AstNode] =
     return none[AstNode]()
   return some(node.parent[i - 1])
 
+func lastOrSelf*(node: AstNode): AstNode =
+  if node.len > 0:
+    return node[node.len - 1]
+  return node
+
+func path*(node: AstNode): seq[int] =
+  result = @[]
+  var node = node
+  while node.parent != nil:
+    result.add node.index
+    node = node.parent
+  result.reverse
+
+proc `$`(node: AstNode): string =
+  case node
+  of Declaration():
+    result = "Declaration(id: " & $node.id & "):"
+    if node.len > 0:
+      result.add "\n"
+      result.add indent($node[0], 2)
+
+  of Call():
+    result = "Call():"
+    for child in node.children:
+      result.add "\n"
+      result.add indent($child, 2)
+
+  of If():
+    result = "If()"
+    for child in node.children:
+      result.add "\n"
+      result.add indent($child, 2)
+
+  of NodeList():
+    result = "NodeList()"
+    for child in node.children:
+      result.add "\n"
+      result.add indent($child, 2)
+
+  of StringLiteral():
+    result = "StringLiteral(text: '" & node.text & "')"
+
+  of Identifier():
+    result = "Identifier(id: " & $node.id & ", text: '" & node.text & "')"
+
+  else:
+    return "other"
+
 proc newAstDocument*(filename: string = ""): AstDocument =
   new(result)
   result.filename = filename
   result.globalScope.add IdPrint, Symbol(name: "print")
-  result.globalScope.add IdAdd, Symbol(name: "+")
-  result.globalScope.add IdSub, Symbol(name: "-")
-  result.globalScope.add IdMul, Symbol(name: "*")
-  result.globalScope.add IdDiv, Symbol(name: "/")
-  result.globalScope.add IdMod, Symbol(name: "%")
+  result.globalScope.add IdAdd, Symbol(name: "+", opKind: Infix)
+  result.globalScope.add IdSub, Symbol(name: "-", opKind: Infix)
+  result.globalScope.add IdMul, Symbol(name: "*", opKind: Infix)
+  result.globalScope.add IdDiv, Symbol(name: "/", opKind: Infix)
+  result.globalScope.add IdMod, Symbol(name: "%", opKind: Infix)
+  result.globalScope.add IdNegate, Symbol(name: "-", opKind: Prefix)
+  result.globalScope.add IdNot, Symbol(name: "!", opKind: Prefix)
+  result.globalScope.add IdDeref, Symbol(name: "->", opKind: Postfix)
 
 proc getSymbol*(doc: AstDocument, id: Id): Option[Symbol] =
   let symbol = doc.globalScope.getOrDefault(id, nil)
@@ -184,20 +242,25 @@ method getEventHandlers*(self: AstDocumentEditor): seq[EventHandler] =
 method handleDocumentChanged*(self: AstDocumentEditor) =
   discard
 
-proc getNextChild(node: AstNode, min: int = -1): Option[AstNode] =
+proc getNextChild*(document: AstDocument, node: AstNode, min: int = -1): Option[AstNode] =
   if node.len == 0:
     return none[AstNode]()
 
   case node
-  of Infix():
-    if min == 0: return some(node[2])
-    if min == 1: return some(node[0])
-    if min == 2: return none[AstNode]()
-    return some(node[1])
-  of Postfix():
-    if min == 0: return none[AstNode]()
-    if min == 1: return some(node[0])
-    return some(node[1])
+  of Call():
+    if document.getSymbol(node[0].id).getSome(symbol):
+      case symbol.opKind
+      of Infix:
+        if min == 0: return some(node[2])
+        if min == 1: return some(node[0])
+        if min == 2: return none[AstNode]()
+        return some(node[1])
+      of Postfix:
+        if min == 0: return none[AstNode]()
+        if min == 1: return some(node[0])
+        return some(node[1])
+      else: discard
+  else: discard
 
   if min < 0:
     return some(node[0])
@@ -205,26 +268,174 @@ proc getNextChild(node: AstNode, min: int = -1): Option[AstNode] =
     return none[AstNode]()
   return some(node[min + 1])
 
-proc getPrevChild(node: AstNode, max: int = -1): Option[AstNode] =
+proc getNextChildRec*(document: AstDocument, node: AstNode, min: int = -1): Option[AstNode] =
+  # var node = node
+  # var min = min
+  # while document.getNextChild(node, min).getSome(child):
+  #   if child.kind == Call:
+  #     node = child
+  #     min = -1
+  #     continue
+  #   return some(child)
+
+  # return none[AstNode]()
+  var node = node
+  var idx = -1
+
+  if document.getNextChild(node, min).getSome(child):
+    idx = -1
+    node = child
+  elif node.parent != nil:
+    idx = node.index
+    node = node.parent
+  else:
+    return some(node)
+
+  while node.kind == Call or node.kind == NodeList:
+    if document.getNextChild(node, idx).getSome(child):
+      idx = -1
+      node = child
+    elif node.parent != nil:
+      idx = node.index
+      node = node.parent
+    else:
+      break
+
+  return some(node)
+
+proc getPrevChild*(document: AstDocument, node: AstNode, max: int = -1): Option[AstNode] =
   if node.len == 0:
     return none[AstNode]()
 
   case node
-  of Infix():
-    if max == 0: return some(node[1])
-    if max == 1: return none[AstNode]()
-    if max == 2: return some(node[0])
-    return some(node[2])
-  of Postfix():
-    if max == 0: return some(node[1])
-    if max == 1: return none[AstNode]()
-    return some(node[0])
+  of Call():
+    if document.getSymbol(node[0].id).getSome(symbol):
+      case symbol.opKind
+      of Infix:
+        if max == 0: return some(node[1])
+        if max == 1: return none[AstNode]()
+        if max == 2: return some(node[0])
+        return some(node[2])
+      of Postfix:
+        if max == 0: return some(node[1])
+        if max == 1: return none[AstNode]()
+        return some(node[0])
+      else: discard
+  else: discard
 
   if max < 0:
     return some(node[node.len - 1])
   elif max == 0:
     return none[AstNode]()
   return some(node[max - 1])
+
+proc getPrevChildRec*(document: AstDocument, node: AstNode, max: int = -1): Option[AstNode] =
+  var node = node
+  var idx = -1
+  var down = true
+
+  if document.getPrevChild(node, max).getSome(child):
+    idx = -1
+    node = child
+    down = true
+  elif node.parent != nil:
+    idx = node.index
+    node = node.parent
+    down = false
+  else:
+    return some(node)
+
+  while node.kind == Call or node.kind == NodeList:
+    if document.getPrevChild(node, idx).getSome(child):
+      idx = -1
+      node = child
+      down = true
+    elif node.parent != nil:
+      idx = node.index
+      node = node.parent
+      down = false
+    else:
+      break
+
+  return some(node)
+
+proc findChildRec*(node: AstNode, kind: AstNodeKind): Option[AstNode] =
+  for c in node.children:
+    if c.kind == kind:
+      return some(c)
+    if c.findChildRec(kind).getSome(c):
+      return some(c)
+
+  return none[AstNode]()
+
+# Returns a the closest parent node which has itself a parent with kind
+proc findWithParentRec*(node: AstNode, kind: AstNodeKind): Option[AstNode] =
+  if node.parent == nil:
+    return none[AstNode]()
+  if node.parent.kind == kind:
+    return some(node)
+  return node.parent.findWithParentRec(kind)
+
+iterator nextPreOrder(self: AstDocument, node: AstNode): AstNode =
+  var n = node
+  var idx = -1
+
+  while true:
+    if idx == -1:
+      yield n
+    if idx + 1 < n.len:
+      n = n[idx + 1]
+      idx = -1
+    elif n.next.getSome(ne):
+      n = ne
+      idx = -1
+    elif n.parent != nil:
+      idx = n.index
+      n = n.parent
+    else:
+      break
+
+iterator prevPostOrder(self: AstDocument, node: AstNode): AstNode =
+  var idx = 0
+  var n = node
+
+  while n != nil:
+    if idx - 1 in 0..<n.len:
+      n = n[idx - 1]
+      idx = n.len
+    elif n.prev.getSome(ne):
+      yield n
+      n = ne
+      idx = n.len
+    else:
+      yield n
+      idx = n.index
+      n = n.parent
+
+proc getNextLine*(document: AstDocument, node: AstNode): Option[AstNode] =
+  for n in document.nextPreOrder(node):
+    if n == node:
+      continue
+    if n.parent != nil and n.parent.kind == NodeList:
+      if n.kind == NodeList and n.len == 0:
+        return some(n)
+      elif n.kind != NodeList:
+        return some(n)
+
+  return none[AstNode]()
+
+proc getPrevLine*(document: AstDocument, node: AstNode): Option[AstNode] =
+  var i = 0
+  for n in document.prevPostOrder(node):
+    if n == node:
+      continue
+    if n.parent != nil and n.parent.kind == NodeList:
+      if n.kind == NodeList and n.len == 0:
+        return some(n)
+      elif n.kind != NodeList:
+        return some(n)
+
+  return none[AstNode]()
 
 proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventResponse =
   echo "handleAction ", action, " '", arg, "', ", self.cursor
@@ -248,35 +459,23 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
 
   of "cursor.next":
     var node = self.node
-    let nextChild = node.getNextChild
+    let nextChild = self.document.getNextChildRec node
     if nextChild.getSome(child):
       self.node = child
-    else:
-      while node.parent != nil:
-        let nextChild = node.parent.getNextChild node.index
-        if nextChild.getSome(child):
-          self.node = child
-          break
-        elif self.node.parent != self.document.rootNode:
-          node = node.parent
-      # elif self.node.parent != self.document.rootNode and self.node.parent != nil:
-      #   self.node = node.parent
 
   of "cursor.prev":
     var node = self.node
-    let nextChild = node.getPrevChild
+    let nextChild = self.document.getPrevChildRec node
     if nextChild.getSome(child):
       self.node = child
-    else:
-      while node.parent != nil:
-        let nextChild = node.parent.getPrevChild node.index
-        if nextChild.getSome(child):
-          self.node = child
-          break
-        elif self.node.parent != self.document.rootNode:
-          node = node.parent
-        # elif self.node.parent != self.document.rootNode and self.node.parent != nil:
-        #   self.node = node.parent
+
+  of "cursor.next-line":
+    if self.document.getNextLine(self.node).getSome(next):
+      self.node = next
+
+  of "cursor.prev-line":
+    if self.document.getPrevLine(self.node).getSome(prev):
+      self.node = prev
 
   of "insert":
     case arg
@@ -307,7 +506,6 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
   else:
     logger.log(lvlError, "[textedit] Unknown action '$1 $2'" % [action, arg])
 
-  echo self.cursor
   return Handled
 
 proc handleInput(self: AstDocumentEditor, input: string): EventResponse =
@@ -320,23 +518,62 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
   editor.cursor = @[0]
 
   if editor.document.rootNode == nil:
-    editor.document.rootNode = AstNode(parent: nil, id: newId())
+    editor.document.rootNode = AstNode(kind: NodeList, parent: nil, id: newId())
   if editor.document.rootNode.len == 0:
     let node = makeTree(AstNode):
       Declaration(id: == newId()):
-        Infix:
-          Identifier(id: == IdAdd)
+        Call():
+          Identifier(id: == IdPrint)
           StringLiteral(text: "hi")
-          Prefix:
-            Identifier(id: == IdMod)
-            NumberLiteral(text: "123456")
+          Call:
+            Identifier(id: == IdMul)
+            Call:
+              Identifier(id: == IdNegate)
+              NumberLiteral(text: "123456")
+            Call:
+              Identifier(id: == IdDiv)
+              StringLiteral(text: "")
+              NumberLiteral(text: "42069")
+          Identifier(id: == IdAdd)
+          Call:
+            Identifier(id: == IdDeref)
+            Identifier(id: == IdPrint)
 
     editor.document.globalScope.add node.id, Symbol(name: "foo", node: node)
     editor.document.rootNode.add node
 
     editor.document.rootNode.add makeTree(AstNode) do:
-      Postfix:
-        Identifier(id: == IdDiv)
+      If:
+        Call:
+          Empty(text: "bar")
+          Identifier(id: == node.id)
+          StringLiteral(text: "bar")
+        NodeList:
+          Call:
+            Identifier(id: == IdPrint)
+            StringLiteral(text: "hi")
+            Call:
+              Identifier(id: == IdMul)
+              Call:
+                Identifier(id: == IdNegate)
+                NumberLiteral(text: "123456")
+              Call:
+                Identifier(id: == IdDiv)
+                StringLiteral(text: "")
+                NumberLiteral(text: "42069")
+            Identifier(id: == IdAdd)
+            Call:
+              Identifier(id: == IdDeref)
+              Identifier(id: == IdPrint)
+          Call:
+            Identifier(id: == IdDeref)
+            Identifier(id: == node.id)
+          Declaration(id: == newId()):
+            NumberLiteral(text: "6")
+
+    editor.document.rootNode.add makeTree(AstNode) do:
+      Call:
+        Identifier(id: == IdDeref)
         Identifier(id: == node.id)
 
     editor.document.globalScope.add node.id, Symbol(name: "foo", node: node)
@@ -344,14 +581,18 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
   editor.node = editor.document.rootNode[0]
 
   editor.eventHandler = eventHandler2:
-    command "<LEFT>", "cursor.left"
-    command "<RIGHT>", "cursor.right"
-    command "<UP>", "cursor.up"
-    command "<DOWN>", "cursor.down"
+    command "<A-LEFT>", "cursor.left"
+    command "<A-RIGHT>", "cursor.right"
+    command "<A-UP>", "cursor.up"
+    command "<A-DOWN>", "cursor.down"
     command "<HOME>", "cursor.home"
     command "<END>", "cursor.end"
-    command "t", "cursor.next"
+    command "<UP>", "cursor.prev-line"
+    command "<DOWN>", "cursor.next-line"
+    command "<LEFT>", "cursor.prev"
+    command "<RIGHT>", "cursor.next"
     command "n", "cursor.prev"
+    command "t", "cursor.next"
     command "<S-LEFT>", "cursor.left last"
     command "<S-RIGHT>", "cursor.right last"
     command "<S-UP>", "cursor.up last"

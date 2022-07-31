@@ -151,7 +151,7 @@ method layoutViews*(layout: HorizontalLayout, props: LayoutProperties, bounds: R
   result = @[]
   var rect = bounds
   for i, view in views:
-    let ratio = if i == 0: mainSplit else: 1.0 / (views.len - i).float32
+    let ratio = if i == 0 and views.len > 1: mainSplit else: 1.0 / (views.len - i).float32
     let (view_rect, remaining) = rect.splitV(ratio.percent)
     rect = remaining
     result.add view_rect
@@ -161,7 +161,7 @@ method layoutViews*(layout: VerticalLayout, props: LayoutProperties, bounds: Rec
   result = @[]
   var rect = bounds
   for i, view in views:
-    let ratio = if i == 0: mainSplit else: 1.0 / (views.len - i).float32
+    let ratio = if i == 0 and views.len > 1: mainSplit else: 1.0 / (views.len - i).float32
     let (view_rect, remaining) = rect.splitH(ratio.percent)
     rect = remaining
     result.add view_rect
@@ -171,7 +171,7 @@ method layoutViews*(layout: FibonacciLayout, props: LayoutProperties, bounds: Re
   result = @[]
   var rect = bounds
   for i, view in views:
-    let ratio = if i == 0: mainSplit elif i == views.len - 1: 1.0 else: 0.5
+    let ratio = if i == 0 and views.len > 1: mainSplit elif i == views.len - 1: 1.0 else: 0.5
     let (view_rect, remaining) = if i mod 2 == 0: rect.splitV(ratio.percent) else: rect.splitH(ratio.percent)
     rect = remaining
     result.add view_rect
