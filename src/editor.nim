@@ -223,8 +223,8 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
   ed.editor_defaults = @[TextDocumentEditor(), AstDocumentEditor()]
 
   ed.createView(newAstDocument("b.txt"))
-  ed.createView(TextDocument(filename: "a.txt", content: @[""]))
-  ed.createView(newKeybindAutocompletion())
+  # ed.createView(TextDocument(filename: "a.txt", content: @[""]))
+  # ed.createView(newKeybindAutocompletion())
   ed.currentView = 0
 
   ed.eventHandler = eventHandler(buildDFA(commands)):

@@ -7,7 +7,7 @@
         "name": "Debug Nim Project",
         "type": "gdb",
         "request": "launch",
-        "target": "./ast",
+        "target": "./absytree",
         "cwd": "${workspaceRoot}",
         "valuesFormatting": "parseText"
     }]
