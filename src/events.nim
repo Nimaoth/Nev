@@ -30,7 +30,7 @@ template eventHandler*(commandDFA: CommandDFA, handlerBody: untyped): untyped =
         return inputBody
 
     handlerBody
-    handler.dfa.dump(0, 0, {})
+    # handler.dfa.dump(0, 0, {})
     handler
 
 template eventHandler2*(handlerBody: untyped): untyped =
@@ -55,5 +55,5 @@ template eventHandler2*(handlerBody: untyped): untyped =
 
     handlerBody
     handler.dfa = buildDFA(commands)
-    handler.dfa.dump(0, 0, {})
+    # handler.dfa.dump(0, 0, {})
     handler

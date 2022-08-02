@@ -31,6 +31,10 @@ func add(node: AstNode, child: AstNode) =
   child.parent = node
   node.children.add child
 
+func insert(node: AstNode, child: AstNode, idx: int) =
+  child.parent = node
+  node.children.insert child, idx
+
 # Generate new IDs
 when false:
   for i in 0..100:
@@ -44,14 +48,32 @@ type
     Postfix
     Infix
   Symbol* = ref object
+    id*: Id
     name*: string
     node*: AstNode
     opKind*: OperatorKind
+
+type
+  UndoOpKind = enum
+    Delete
+    Replace
+    Insert
+    TextChange
+    SymbolNameChange
+  UndoOp = ref object
+    kind: UndoOpKind
+    parent: AstNode
+    idx: int
+    node: AstNode
+    text: string
 
 type AstDocument* = ref object of Document
   filename*: string
   globalScope*: Table[Id, Symbol]
   rootNode*: AstNode
+
+  undoOps*: seq[UndoOp]
+  redoOps*: seq[UndoOp]
 
 type AstDocumentEditor* = ref object of DocumentEditor
   document*: AstDocument
@@ -96,6 +118,44 @@ func lastOrSelf*(node: AstNode): AstNode =
     return node[node.len - 1]
   return node
 
+proc `[]=`(node: AstNode, index: int, newNode: AstNode) =
+  newNode.parent = node
+  node.children[index] = newNode
+
+func delete(node: AstNode, index: int): AstNode =
+  if index < 0 or index >= node.len:
+    return node
+  case node
+  of If():
+    if index == 0:
+      node[0] = AstNode(kind: Empty)
+      return node[0]
+    elif index == 1:
+      node[1] = AstNode(kind: Empty)
+      return node[1]
+    else:
+      return node
+  of Declaration():
+    if index == 0:
+      node[0] = AstNode(kind: Empty)
+      return node[0]
+    else:
+      return node
+  of Call():
+    if index == 0:
+      node[0] = AstNode(kind: Empty)
+      return node[0]
+  else:
+    discard
+
+  node.children.delete index
+  if index < node.len:
+    return node[index]
+  elif node.len > 0:
+    return node[index - 1]
+  else:
+    return node
+
 func path*(node: AstNode): seq[int] =
   result = @[]
   var node = node
@@ -136,21 +196,15 @@ proc `$`(node: AstNode): string =
   of Identifier():
     result = "Identifier(id: " & $node.id & ", text: '" & node.text & "')"
 
+  of Empty():
+    result = "Empty()"
+
   else:
     return "other"
 
-proc newAstDocument*(filename: string = ""): AstDocument =
-  new(result)
-  result.filename = filename
-  result.globalScope.add IdPrint, Symbol(name: "print")
-  result.globalScope.add IdAdd, Symbol(name: "+", opKind: Infix)
-  result.globalScope.add IdSub, Symbol(name: "-", opKind: Infix)
-  result.globalScope.add IdMul, Symbol(name: "*", opKind: Infix)
-  result.globalScope.add IdDiv, Symbol(name: "/", opKind: Infix)
-  result.globalScope.add IdMod, Symbol(name: "%", opKind: Infix)
-  result.globalScope.add IdNegate, Symbol(name: "-", opKind: Prefix)
-  result.globalScope.add IdNot, Symbol(name: "!", opKind: Prefix)
-  result.globalScope.add IdDeref, Symbol(name: "->", opKind: Postfix)
+proc addSymbol*(doc: AstDocument, symbol: Symbol): Symbol =
+  doc.globalScope.add symbol.id, symbol
+  return symbol
 
 proc getSymbol*(doc: AstDocument, id: Id): Option[Symbol] =
   let symbol = doc.globalScope.getOrDefault(id, nil)
@@ -160,6 +214,19 @@ proc getSymbol*(doc: AstDocument, id: Id): Option[Symbol] =
 
 method `$`*(document: AstDocument): string =
   return document.filename
+
+proc newAstDocument*(filename: string = ""): AstDocument =
+  new(result)
+  result.filename = filename
+  discard result.addSymbol Symbol(id: IdPrint, name: "print")
+  discard result.addSymbol Symbol(id: IdAdd, name: "+", opKind: Infix)
+  discard result.addSymbol Symbol(id: IdSub, name: "-", opKind: Infix)
+  discard result.addSymbol Symbol(id: IdMul, name: "*", opKind: Infix)
+  discard result.addSymbol Symbol(id: IdDiv, name: "/", opKind: Infix)
+  discard result.addSymbol Symbol(id: IdMod, name: "%", opKind: Infix)
+  discard result.addSymbol Symbol(id: IdNegate, name: "-", opKind: Prefix)
+  discard result.addSymbol Symbol(id: IdNot, name: "!", opKind: Prefix)
+  discard result.addSymbol Symbol(id: IdDeref, name: "->", opKind: Postfix)
 
 # proc `$`*(cursor: Cursor): string =
 #   return
@@ -199,11 +266,25 @@ proc editNode*(self: AstDocumentEditor, node: AstNode) =
   self.textEditor.renderHeader = false
   self.textEditor.fillAvailableSpace = false
 
+proc tryEdit*(self: AstDocumentEditor, node: AstNode): bool =
+  if self.document.getSymbol(node.id).getSome(sym):
+    self.editSymbol(sym)
+    return true
+  else:
+    case node.kind:
+    of Empty, NumberLiteral, StringLiteral:
+      self.editNode(node)
+      return true
+    else:
+      return false
+
 proc finishEdit*(self: AstDocumentEditor, apply: bool) =
   if apply:
     if self.currentlyEditedSymbol != nil:
+      self.document.undoOps.add UndoOp(kind: SymbolNameChange, node: AstNode(kind: Empty, id: self.currentlyEditedSymbol.id), text: self.currentlyEditedSymbol.name)
       self.currentlyEditedSymbol.name = self.textDocument.content.join
     elif self.currentlyEditedNode != nil:
+      self.document.undoOps.add UndoOp(kind: TextChange, node: self.currentlyEditedNode, text: self.currentlyEditedNode.text)
       self.currentlyEditedNode.text = self.textDocument.content.join "\n"
 
   self.textEditor = nil
@@ -376,26 +457,36 @@ proc findWithParentRec*(node: AstNode, kind: AstNodeKind): Option[AstNode] =
     return some(node)
   return node.parent.findWithParentRec(kind)
 
-iterator nextPreOrder(self: AstDocument, node: AstNode): AstNode =
+iterator nextPreOrder*(self: AstDocument, node: AstNode, endNode: AstNode = nil): tuple[key: int, value: AstNode] =
   var n = node
   var idx = -1
+  var i = 0
 
   while true:
+    defer: inc i
     if idx == -1:
-      yield n
+      yield (i, n)
     if idx + 1 < n.len:
       n = n[idx + 1]
       idx = -1
     elif n.next.getSome(ne):
       n = ne
       idx = -1
-    elif n.parent != nil:
+    elif n.parent != nil and n.parent != endNode:
       idx = n.index
       n = n.parent
     else:
       break
 
-iterator prevPostOrder(self: AstDocument, node: AstNode): AstNode =
+
+iterator nextPreOrderWhere*(self: AstDocument, node: AstNode, predicate: proc(node: AstNode): bool, endNode: AstNode = nil): tuple[key: int, value: AstNode] =
+  var i = 0
+  for _, child in self.nextPreOrder(node, endNode = endNode):
+    if predicate(child):
+      yield (i, child)
+      inc i
+
+iterator prevPostOrder*(self: AstDocument, node: AstNode): AstNode =
   var idx = 0
   var n = node
 
@@ -413,7 +504,7 @@ iterator prevPostOrder(self: AstDocument, node: AstNode): AstNode =
       n = n.parent
 
 proc getNextLine*(document: AstDocument, node: AstNode): Option[AstNode] =
-  for n in document.nextPreOrder(node):
+  for _, n in document.nextPreOrder(node):
     if n == node:
       continue
     if n.parent != nil and n.parent.kind == NodeList:
@@ -425,7 +516,6 @@ proc getNextLine*(document: AstDocument, node: AstNode): Option[AstNode] =
   return none[AstNode]()
 
 proc getPrevLine*(document: AstDocument, node: AstNode): Option[AstNode] =
-  var i = 0
   for n in document.prevPostOrder(node):
     if n == node:
       continue
@@ -436,6 +526,210 @@ proc getPrevLine*(document: AstDocument, node: AstNode): Option[AstNode] =
         return some(n)
 
   return none[AstNode]()
+
+proc replaceNode*(document: AstDocument, node: AstNode, newNode: AstNode): AstNode =
+  if node.parent == nil:
+    raise newException(Defect, "lol")
+
+  document.undoOps.add UndoOp(kind: Replace, parent: node.parent, idx: node.index, node: node)
+  document.redoOps = @[]
+  node.parent[node.index] = newNode
+  return newNode
+
+proc deleteNode*(document: AstDocument, node: AstNode): AstNode =
+  if node.parent == nil:
+    raise newException(Defect, "lol")
+
+  case node.parent
+  of If():
+    return document.replaceNode(node, AstNode(kind: Empty))
+  of Declaration():
+    return document.replaceNode(node, AstNode(kind: Empty))
+  of Call():
+    if document.getSymbol(node.parent[0].id).getSome(symbol):
+      let idx = node.index
+      let isFixed = case symbol.opKind
+      of Infix: idx in 0..2
+      of Prefix: idx in 0..1
+      of Postfix: idx in 0..1
+      of Regular: idx in 0..0
+      if isFixed:
+        return document.replaceNode(node, AstNode(kind: Empty))
+
+  document.undoOps.add UndoOp(kind: Delete, parent: node.parent, idx: node.index, node: node)
+  document.redoOps = @[]
+  return node.parent.delete node.index
+
+proc insertNode*(document: AstDocument, node: AstNode, index: int, newNode: AstNode): Option[AstNode] =
+  echo fmt"insertNode {node}, {index}, {newNode}"
+  case node
+  of If():
+    return none[AstNode]()
+  of Declaration():
+    return none[AstNode]()
+  of Call():
+    if document.getSymbol(node.parent[0].id).getSome(symbol):
+      let idx = node.index
+      let isFixed = case symbol.opKind
+      of Infix: idx in 0..2
+      of Prefix: idx in 0..1
+      of Postfix: idx in 0..1
+      of Regular: idx in 0..0
+      if isFixed:
+        return none[AstNode]()
+
+  node.insert(newNode, index)
+  document.undoOps.add UndoOp(kind: Insert, parent: node, idx: index, node: newNode)
+  document.redoOps = @[]
+  return some(newNode)
+
+proc insertOrReplaceNode*(document: AstDocument, node: AstNode, index: int, newNode: AstNode): Option[AstNode] =
+  case node
+  of If():
+    return some document.replaceNode(node[index], newNode)
+  of Declaration():
+    return some document.replaceNode(node[index], newNode)
+  of Call():
+    if document.getSymbol(node.parent[0].id).getSome(symbol):
+      let idx = node.index
+      let isFixed = case symbol.opKind
+      of Infix: idx in 0..2
+      of Prefix: idx in 0..1
+      of Postfix: idx in 0..1
+      of Regular: idx in 0..0
+      if isFixed:
+        return some document.replaceNode(node[index], newNode)
+
+  node.insert(newNode, index)
+  document.undoOps.add UndoOp(kind: Insert, parent: node, idx: index, node: newNode)
+  document.redoOps = @[]
+  return some(newNode)
+
+
+proc undo*(document: AstDocument): Option[AstNode] =
+  if document.undoOps.len == 0:
+    return none[AstNode]()
+
+  let undoOp = document.undoOps.pop
+  case undoOp.kind:
+  of Delete:
+    undoOp.parent.insert(undoOp.node, undoOp.idx)
+    document.redoOps.add undoOp
+    return some(undoOp.node)
+  of Replace:
+    let oldNode = undoOp.parent[undoOp.idx]
+    undoOp.parent[undoOp.idx] = undoOp.node
+    document.redoOps.add UndoOp(kind: Replace, parent: undoOp.parent, idx: undoOp.idx, node: oldNode)
+    return some(undoOp.node)
+  of Insert: # @todo
+    discard undoOp.parent.delete undoOp.idx
+    document.redoOps.add undoOp
+    return some(undoOp.parent)
+  of SymbolNameChange:
+    if document.getSymbol(undoOp.node.id).getSome(symbol):
+      document.redoOps.add UndoOp(kind: SymbolNameChange, node: undoOp.node, text: symbol.name)
+      symbol.name = undoOp.text
+  of TextChange:
+    document.redoOps.add UndoOp(kind: TextChange, node: undoOp.node, text: undoOp.node.text)
+    undoOp.node.text = undoOp.text
+
+  return none[AstNode]()
+
+proc redo*(document: AstDocument): Option[AstNode] =
+  if document.redoOps.len == 0:
+    return none[AstNode]()
+
+  let redoOp = document.redoOps.pop
+  case redoOp.kind:
+  of Delete:
+    document.undoOps.add UndoOp(kind: Delete, parent: redoOp.parent, idx: redoOp.idx, node: redoOp.node)
+    return some(redoOp.parent.delete redoOp.idx)
+  of Replace:
+    let oldNode = redoOp.parent[redoOp.idx]
+    redoOp.parent[redoOp.idx] = redoOp.node
+    document.undoOps.add UndoOp(kind: Replace, parent: redoOp.parent, idx: redoOp.idx, node: oldNode)
+    return some(redoOp.node)
+  of Insert: # @todo
+    redoOp.parent.insert redoOp.node, redoOp.idx
+    document.undoOps.add redoOp
+    return some(redoOp.node)
+  of SymbolNameChange:
+    if document.getSymbol(redoOp.node.id).getSome(symbol):
+      document.undoOps.add UndoOp(kind: SymbolNameChange, node: redoOp.node, text: symbol.name)
+      symbol.name = redoOp.text
+  of TextChange:
+    document.undoOps.add UndoOp(kind: TextChange, node: redoOp.node, text: redoOp.node.text)
+    redoOp.node.text = redoOp.text
+
+  return none[AstNode]()
+
+proc createNodeFromAction*(editor: AstDocumentEditor, arg: string): Option[(AstNode, int)] =
+  case arg
+  of "empty":
+    return some((AstNode(kind: Empty, id: newId(), text: "new empty"), 0))
+  of "identifier":
+    return some((AstNode(kind: Identifier, text: "todo"), 0))
+  of "number-literal":
+    return some((AstNode(kind: NumberLiteral, text: "123"), 0))
+  of "declaration":
+    return some((AstNode(kind: Declaration, id: newId(), children: @[AstNode(kind: Empty, text: "name"), AstNode(kind: Empty, text: "value")]), 0))
+
+  of "call-func":
+    let node = makeTree(AstNode) do:
+      Call:
+        Empty()
+    return some (node, 0)
+
+  of "call-arg":
+    let node = makeTree(AstNode) do:
+      Call:
+        Empty()
+        Empty()
+    return some (node, 1)
+
+  of "+":
+    let node = makeTree(AstNode) do:
+      Call:
+        Identifier(id: == IdAdd)
+        Empty()
+        Empty()
+    return some (node, 0)
+  of "-":
+    let node = makeTree(AstNode) do:
+      Call:
+        Identifier(id: == IdSub)
+        Empty()
+        Empty()
+    return some (node, 0)
+  of "*":
+    let node = makeTree(AstNode) do:
+      Call:
+        Identifier(id: == IdMul)
+        Empty()
+        Empty()
+    return some (node, 0)
+  of "/":
+    let node = makeTree(AstNode) do:
+      Call:
+        Identifier(id: == IdDiv)
+        Empty()
+        Empty()
+    return some (node, 0)
+  of "%":
+    let node = makeTree(AstNode) do:
+      Call:
+        Identifier(id: == IdMod)
+        Empty()
+        Empty()
+    return some (node, 0)
+
+  of "\"":
+    let node = makeTree(AstNode) do:
+        StringLiteral(text: "")
+    return some (node, 0)
+
+  else:
+    return none[(AstNode, int)]()
 
 proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventResponse =
   echo "handleAction ", action, " '", arg, "', ", self.cursor
@@ -477,25 +771,74 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
     if self.document.getPrevLine(self.node).getSome(prev):
       self.node = prev
 
-  of "insert":
-    case arg
-    of "empty":
-      self.document.rootNode.add AstNode(kind: Empty, id: newId(), text: "new empty")
-    of "identifier":
-      self.document.rootNode.add AstNode(kind: Identifier, text: "todo")
-    of "number-literal":
-      self.document.rootNode.add AstNode(kind: NumberLiteral, text: "123")
-    of "declaration":
-      self.document.rootNode.add AstNode(kind: Declaration, id: newId(), children: @[AstNode(kind: Empty, text: "name"), AstNode(kind: Empty, text: "value")])
-    else:
-      discard
+  of "selected.delete":
+    self.node = self.document.deleteNode self.node
+
+  of "undo":
+    if self.document.undo.getSome(node):
+      self.node = node
+
+  of "redo":
+    if self.document.redo.getSome(node):
+      self.node = node
+
+  of "insert-after":
+    let index = self.node.index
+    if self.createNodeFromAction(arg).getSome(newNodeIndex):
+      let (newNode, _) = newNodeIndex
+      if self.document.insertNode(self.node.parent, index + 1, newNode).getSome(node):
+        self.node = node
+
+        for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => n.kind == Empty and n.text == "", endNode = newNode):
+          self.node = emptyNode
+          break
+
+        discard self.tryEdit self.node
+      else:
+        logger.log(lvlError, fmt"Failed to insert node {newNode} into {self.node.parent} at {index + 1}")
+
+  of "insert-before":
+    let index = self.node.index
+    if self.createNodeFromAction(arg).getSome(newNodeIndex):
+      let (newNode, _) = newNodeIndex
+      if self.document.insertNode(self.node.parent, index, newNode).getSome(node):
+        self.node = node
+
+        for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => n.kind == Empty and n.text == "", endNode = newNode):
+          self.node = emptyNode
+          break
+
+        discard self.tryEdit self.node
+      else:
+        logger.log(lvlError, fmt"Failed to insert node {newNode} into {self.node.parent} at {index}")
+
+  of "replace":
+    if self.createNodeFromAction(arg).getSome(newNodeIndex):
+      let (newNode, _) = newNodeIndex
+      self.node = self.document.replaceNode(self.node, newNode)
+
+      for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => n.kind == Empty and n.text == "", endNode = newNode):
+        self.node = emptyNode
+        break
+      discard self.tryEdit self.node
+
+  of "wrap":
+    if self.createNodeFromAction(arg).getSome(newNodeIndex):
+      var (newNode, index) = newNodeIndex
+      echo index
+      let oldNode = self.node
+      self.node = self.document.replaceNode(self.node, newNode)
+      for i, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => n.kind == Empty and n.text == "", endNode = newNode):
+        if i == index:
+          self.node = self.document.replaceNode(emptyNode, oldNode)
+          break
+      for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => n.kind == Empty and n.text == "", endNode = newNode):
+        self.node = emptyNode
+        break
+      discard self.tryEdit self.node
 
   of "rename":
-    let node = self.getNodeAt(self.cursor)
-    if self.document.getSymbol(node.id).getSome(sym):
-      self.editSymbol(sym)
-    else:
-      self.editNode(node)
+    discard self.tryEdit self.node
 
   of "apply-rename":
     self.finishEdit(true)
@@ -539,7 +882,7 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
             Identifier(id: == IdDeref)
             Identifier(id: == IdPrint)
 
-    editor.document.globalScope.add node.id, Symbol(name: "foo", node: node)
+    discard editor.document.addSymbol Symbol(id: node.id, name: "foo", node: node)
     editor.document.rootNode.add node
 
     editor.document.rootNode.add makeTree(AstNode) do:
@@ -576,7 +919,7 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
         Identifier(id: == IdDeref)
         Identifier(id: == node.id)
 
-    editor.document.globalScope.add node.id, Symbol(name: "foo", node: node)
+    discard editor.document.addSymbol Symbol(id: node.id, name: "foo", node: node)
 
   editor.node = editor.document.rootNode[0]
 
@@ -603,10 +946,41 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     command "<SPACE>", "editor.insert  "
     command "<BACKSPACE>", "backspace"
     command "<DELETE>", "delete"
+
     command "rr", "rename"
-    command "ie", "insert empty"
-    command "in", "insert number-literal"
-    command "id", "insert declaration"
+    command "e", "rename"
+
+    command "ae", "insert-after empty"
+    command "an", "insert-after number-literal"
+    command "ad", "insert-after declaration"
+    command "a+", "insert-after +"
+    command "af", "insert-after call-func"
+
+    command "ie", "insert-before empty"
+    command "in", "insert-before number-literal"
+    command "id", "insert-before declaration"
+    command "i+", "insert-before +"
+    command "if", "insert-before call-func"
+
+    command "re", "replace empty"
+    command "rn", "replace number-literal"
+    command "rd", "replace declaration"
+    command "r+", "replace +"
+    command "rf", "replace call-func"
+    command "\"", "replace \""
+    command "'", "replace \""
+
+    command "+", "wrap +"
+    command "-", "wrap -"
+    command "*", "wrap *"
+    command "/", "wrap /"
+    command "%", "wrap %"
+    command "(", "wrap call-func"
+    command ")", "wrap call-arg"
+
+    command "u", "undo"
+    command "U", "redo"
+    command "d", "selected.delete"
     onAction:
       editor.handleAction action, arg
     onInput:
