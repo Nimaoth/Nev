@@ -1,4 +1,5 @@
 import std/oids
+import system
 import hashes, times
 
 type Id* = distinct Oid
@@ -22,3 +23,8 @@ proc parseId*(s: string): Id =
 
 proc timestamp*(id: Id): Time =
   return id.Oid.generatedTime
+
+proc idNone*(): Id =
+  zeroMem(addr result, sizeof(Id))
+
+let null* = idNone()

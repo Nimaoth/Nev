@@ -1,5 +1,5 @@
 import std/[strformat, strutils, algorithm, math, logging, unicode, sequtils, sugar, tables, macros, options, os]
-import print, fusion/matching
+import print, fusion/matching, fuzzy
 import util, input, document, document_editor, text_document, events, id, ast_ids, ast
 
 var logger = newConsoleLogger()
@@ -46,6 +46,21 @@ type AstDocument* = ref object of Document
   undoOps*: seq[UndoOp]
   redoOps*: seq[UndoOp]
 
+type
+  CompletionKind* = enum
+    SymbolCompletion
+    AstCompletion
+  Completion* = object
+    score*: float
+    case kind*: CompletionKind
+    of SymbolCompletion:
+      id*: Id
+    of AstCompletion:
+      nodeKind*: AstNodeKind
+      name*: string
+
+proc `<`(a, b: Completion): bool = a.score < b.score
+
 type AstDocumentEditor* = ref object of DocumentEditor
   document*: AstDocument
   cursor*: Cursor
@@ -57,6 +72,11 @@ type AstDocumentEditor* = ref object of DocumentEditor
   textDocument*: TextDocument
   textEditEventHandler*: EventHandler
 
+  completionText: string
+  completions*: seq[Completion]
+  selectedCompletion*: int
+
+proc updateCompletions(editor: AstDocumentEditor)
 
 proc addSymbol*(doc: AstDocument, symbol: Symbol): Symbol =
   doc.globalScope.add symbol.id, symbol
@@ -101,8 +121,25 @@ method load*(self: AstDocument, filename: string = "") =
 
   self.filename = filename
 
-  # let file = readFile(self.filename)
-  # self.content = collect file.splitLines
+proc handleNodeInserted*(doc: AstDocument, node: AstNode) =
+  if node.parent == doc.rootNode:
+    if node.kind == Declaration:
+      if node.id == null:
+        node.id = newId()
+
+      if doc.getSymbol(node.id).getSome(symbol):
+        symbol.node = node
+      else:
+        discard doc.addSymbol Symbol(id: node.id, node: node, name: "", opKind: Regular)
+
+proc handleNodeDelete*(doc: AstDocument, node: AstNode) =
+  if node.parent == doc.rootNode:
+    if node.kind == Declaration:
+      if doc.getSymbol(node.id).getSome(symbol):
+        symbol.node = nil
+
+proc handleTextDocumentChanged*(self: AstDocumentEditor) =
+  self.updateCompletions()
 
 proc editSymbol*(self: AstDocumentEditor, symbol: Symbol) =
   self.currentlyEditedNode = nil
@@ -112,6 +149,8 @@ proc editSymbol*(self: AstDocumentEditor, symbol: Symbol) =
   self.textEditor = newTextEditor(self.textDocument)
   self.textEditor.renderHeader = false
   self.textEditor.fillAvailableSpace = false
+  self.textDocument.textChanged = (doc: Document) => self.handleTextDocumentChanged()
+  self.updateCompletions()
 
 proc editNode*(self: AstDocumentEditor, node: AstNode) =
   self.currentlyEditedNode = node
@@ -121,6 +160,8 @@ proc editNode*(self: AstDocumentEditor, node: AstNode) =
   self.textEditor = newTextEditor(self.textDocument)
   self.textEditor.renderHeader = false
   self.textEditor.fillAvailableSpace = false
+  self.textDocument.textChanged = (doc: Document) => self.handleTextDocumentChanged()
+  self.updateCompletions()
 
 proc tryEdit*(self: AstDocumentEditor, node: AstNode): bool =
   if self.document.getSymbol(node.id).getSome(sym):
@@ -147,25 +188,61 @@ proc finishEdit*(self: AstDocumentEditor, apply: bool) =
   self.textDocument = nil
   self.currentlyEditedSymbol = nil
   self.currentlyEditedNode = nil
+  self.updateCompletions()
+
+proc getCompletions*(editor: AstDocumentEditor, text: string, contextNode: Option[AstNode] = none[AstNode]()): seq[Completion] =
+  result = @[]
+
+  # Find everything matching text
+  if contextNode.isNone or contextNode.get.kind == Identifier or contextNode.get.kind == Empty:
+    for symbol in editor.document.globalScope.values:
+      let score = fuzzyMatch(text, symbol.name)
+      result.add Completion(kind: SymbolCompletion, score: score, id: symbol.id)
+  if contextNode.getSome(node) and node.kind == Empty:
+    result.add Completion(kind: AstCompletion, nodeKind: If, name: "if", score: fuzzyMatch(text, "if"))
+    result.add Completion(kind: AstCompletion, nodeKind: Declaration, name: "let", score: fuzzyMatch(text, "let"))
+    result.add Completion(kind: AstCompletion, nodeKind: StringLiteral, name: "string literal", score: fuzzyMatch(text, "\""))
+    result.add Completion(kind: AstCompletion, nodeKind: NodeList, name: "block", score: fuzzyMatch(text, "{"))
+
+    try:
+      discard text.parseFloat
+      result.add Completion(kind: AstCompletion, nodeKind: NumberLiteral, name: "number literal", score: 1.1)
+    except: discard
+
+  result.sort((a, b) => cmp(a.score, b.score), Descending)
+
+  return result
+
+proc updateCompletions(editor: AstDocumentEditor) =
+  if editor.textDocument == nil:
+    editor.completions = @[]
+    editor.selectedCompletion = 0
+    return
+
+  let text = editor.textDocument.content.join
+
+  editor.completions = editor.getCompletions(text, some(editor.node))
+  editor.completionText = text
+
+  if editor.completions.len > 0:
+    editor.selectedCompletion = editor.selectedCompletion.clamp(0, editor.completions.len - 1)
+  else:
+    editor.selectedCompletion = 0
+
+proc selectNextCompletion(editor: AstDocumentEditor) =
+  if editor.completions.len > 0:
+    editor.selectedCompletion = (editor.selectedCompletion + 1).clamp(0, editor.completions.len - 1)
+  else:
+    editor.selectedCompletion = 0
+
+proc selectPrevCompletion(editor: AstDocumentEditor) =
+  if editor.completions.len > 0:
+    editor.selectedCompletion = (editor.selectedCompletion - 1).clamp(0, editor.completions.len - 1)
+  else:
+    editor.selectedCompletion = 0
 
 proc getNodeAt*(self: AstDocumentEditor, cursor: Cursor, index: int = -1): AstNode =
   return self.node
-  # var nodes = self.document.nodes
-
-  # let actualIndex = if index > 0: index else: cursor.len + index
-
-  # # echo $cursor, ": ", actualIndex
-
-  # for i, nodeIndex in cursor:
-  #   if nodes.len == 0 or nodeIndex < 0 or nodeIndex >= nodes.len:
-  #     break
-
-  #   if i == actualIndex:
-  #     return some(nodes[nodeIndex])
-  #   else:
-  #     nodes = nodes[nodeIndex].children
-
-  # return none[AstNode]()
 
 method canEdit*(self: AstDocumentEditor, document: Document): bool =
   if document of AstDocument: return true
@@ -206,16 +283,6 @@ proc getNextChild*(document: AstDocument, node: AstNode, min: int = -1): Option[
   return some(node[min + 1])
 
 proc getNextChildRec*(document: AstDocument, node: AstNode, min: int = -1): Option[AstNode] =
-  # var node = node
-  # var min = min
-  # while document.getNextChild(node, min).getSome(child):
-  #   if child.kind == Call:
-  #     node = child
-  #     min = -1
-  #     continue
-  #   return some(child)
-
-  # return none[AstNode]()
   var node = node
   var idx = -1
 
@@ -370,9 +437,13 @@ proc replaceNode*(document: AstDocument, node: AstNode, newNode: AstNode): AstNo
   if node.parent == nil:
     raise newException(Defect, "lol")
 
-  document.undoOps.add UndoOp(kind: Replace, parent: node.parent, idx: node.index, node: node)
+  let idx = node.index
+  document.undoOps.add UndoOp(kind: Replace, parent: node.parent, idx: idx, node: node)
   document.redoOps = @[]
-  node.parent[node.index] = newNode
+
+  document.handleNodeDelete node
+  node.parent[idx] = newNode
+  document.handleNodeInserted newNode
   return newNode
 
 proc deleteNode*(document: AstDocument, node: AstNode): AstNode =
@@ -397,6 +468,7 @@ proc deleteNode*(document: AstDocument, node: AstNode): AstNode =
 
   document.undoOps.add UndoOp(kind: Delete, parent: node.parent, idx: node.index, node: node)
   document.redoOps = @[]
+  document.handleNodeDelete node
   return node.parent.delete node.index
 
 proc insertNode*(document: AstDocument, node: AstNode, index: int, newNode: AstNode): Option[AstNode] =
@@ -417,9 +489,10 @@ proc insertNode*(document: AstDocument, node: AstNode, index: int, newNode: AstN
       if isFixed:
         return none[AstNode]()
 
-  node.insert(newNode, index)
   document.undoOps.add UndoOp(kind: Insert, parent: node, idx: index, node: newNode)
   document.redoOps = @[]
+  node.insert(newNode, index)
+  document.handleNodeInserted newNode
   return some(newNode)
 
 proc insertOrReplaceNode*(document: AstDocument, node: AstNode, index: int, newNode: AstNode): Option[AstNode] =
@@ -439,11 +512,11 @@ proc insertOrReplaceNode*(document: AstDocument, node: AstNode, index: int, newN
       if isFixed:
         return some document.replaceNode(node[index], newNode)
 
-  node.insert(newNode, index)
   document.undoOps.add UndoOp(kind: Insert, parent: node, idx: index, node: newNode)
   document.redoOps = @[]
+  node.insert(newNode, index)
+  document.handleNodeInserted newNode
   return some(newNode)
-
 
 proc undo*(document: AstDocument): Option[AstNode] =
   if document.undoOps.len == 0:
@@ -520,6 +593,7 @@ proc createNodeFromAction*(editor: AstDocumentEditor, arg: string): Option[(AstN
     let node = makeTree(AstNode) do:
       Call:
         Empty()
+        Empty()
     return some (node, 0)
 
   of "call-arg":
@@ -570,8 +644,91 @@ proc createNodeFromAction*(editor: AstDocumentEditor, arg: string): Option[(AstN
         StringLiteral(text: "")
     return some (node, 0)
 
+  of "{":
+    let node = makeTree(AstNode) do:
+      NodeList:
+        Empty()
+    return some (node, 0)
+
   else:
     return none[(AstNode, int)]()
+
+proc createDefaultNode*(editor: AstDocumentEditor, kind: AstNodeKind): Option[(AstNode, int)] =
+  case kind
+  of Empty:
+    return some((AstNode(kind: Empty, id: newId(), text: ""), 0))
+  of Identifier:
+    return some((AstNode(kind: Identifier, text: ""), 0))
+  of NumberLiteral:
+    return some((AstNode(kind: NumberLiteral, text: ""), 0))
+  of StringLiteral:
+    return some((AstNode(kind: StringLiteral, text: ""), 0))
+  of Declaration:
+    let node = makeTree(AstNode) do:
+      Declaration(id: == newId()):
+        Empty()
+    return some (node, 0)
+  of If:
+    let node = makeTree(AstNode) do:
+      If:
+        Empty()
+        Empty()
+    return some (node, 0)
+  of NodeList:
+    let node = makeTree(AstNode) do:
+      NodeList:
+        Empty()
+    return some (node, 0)
+
+  else:
+    return none[(AstNode, int)]()
+
+proc shouldEditNode(doc: AstDocument, node: AstNode): bool =
+  if node.kind == Empty and node.text == "":
+    return true
+  if node.kind == Declaration:
+    return doc.getSymbol(node.id).getSome(symbol) and symbol.name == ""
+  return false
+
+
+proc applySelectedCompletion(editor: AstDocumentEditor) =
+  if editor.textDocument == nil:
+    return
+
+  if editor.completions.len == 0:
+    return
+
+  let com = editor.completions[editor.selectedCompletion]
+  let completionText = editor.completionText
+
+  logger.log(lvlInfo, fmt"[astedit] Applying completion {editor.selectedCompletion} ({completionText})")
+
+  editor.finishEdit false
+
+  case com.kind
+  of SymbolCompletion:
+    if editor.document.getSymbol(com.id).getSome(symbol):
+      editor.node = editor.document.replaceNode(editor.node, AstNode(kind: Identifier, id: symbol.id))
+  of AstCompletion:
+    if editor.createDefaultNode(com.nodeKind).getSome(nodeIndex):
+      let (newNode, _) = nodeIndex
+      discard editor.document.replaceNode(editor.node, newNode)
+      editor.node = newNode
+      echo nodeIndex
+
+      if newNode.kind == NumberLiteral:
+        newNode.text = completionText
+      elif newNode.kind == StringLiteral:
+        assert completionText[0] == '"'
+        newNode.text = completionText[1..^1]
+
+      for _, emptyNode in editor.document.nextPreOrderWhere(newNode, (n) => editor.document.shouldEditNode(n), endNode = newNode):
+        echo emptyNode
+        editor.node = emptyNode
+        discard editor.tryEdit editor.node
+        break
+  else:
+    discard
 
 proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventResponse =
   echo "handleAction ", action, " '", arg, "', ", self.cursor
@@ -617,10 +774,12 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
     self.node = self.document.deleteNode self.node
 
   of "undo":
+    self.finishEdit false
     if self.document.undo.getSome(node):
       self.node = node
 
   of "redo":
+    self.finishEdit false
     if self.document.redo.getSome(node):
       self.node = node
 
@@ -631,11 +790,11 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
       if self.document.insertNode(self.node.parent, index + 1, newNode).getSome(node):
         self.node = node
 
-        for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => n.kind == Empty and n.text == "", endNode = newNode):
+        for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => self.document.shouldEditNode(n), endNode = newNode):
           self.node = emptyNode
+          discard self.tryEdit self.node
           break
 
-        discard self.tryEdit self.node
       else:
         logger.log(lvlError, fmt"Failed to insert node {newNode} into {self.node.parent} at {index + 1}")
 
@@ -646,11 +805,11 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
       if self.document.insertNode(self.node.parent, index, newNode).getSome(node):
         self.node = node
 
-        for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => n.kind == Empty and n.text == "", endNode = newNode):
+        for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => self.document.shouldEditNode(n), endNode = newNode):
           self.node = emptyNode
+          discard self.tryEdit self.node
           break
 
-        discard self.tryEdit self.node
       else:
         logger.log(lvlError, fmt"Failed to insert node {newNode} into {self.node.parent} at {index}")
 
@@ -659,25 +818,40 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
       let (newNode, _) = newNodeIndex
       self.node = self.document.replaceNode(self.node, newNode)
 
-      for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => n.kind == Empty and n.text == "", endNode = newNode):
+      for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => self.document.shouldEditNode(n), endNode = newNode):
         self.node = emptyNode
+        discard self.tryEdit self.node
         break
-      discard self.tryEdit self.node
+
+  of "replace-empty":
+    if self.node.kind == Empty and self.createNodeFromAction(arg).getSome(newNodeIndex):
+      let (newNode, _) = newNodeIndex
+      self.node = self.document.replaceNode(self.node, newNode)
+
+      for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => self.document.shouldEditNode(n), endNode = newNode):
+        self.node = emptyNode
+        discard self.tryEdit self.node
+        break
 
   of "wrap":
     if self.createNodeFromAction(arg).getSome(newNodeIndex):
       var (newNode, index) = newNodeIndex
-      echo index
       let oldNode = self.node
       self.node = self.document.replaceNode(self.node, newNode)
-      for i, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => n.kind == Empty and n.text == "", endNode = newNode):
+      for i, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => self.document.shouldEditNode(n), endNode = newNode):
         if i == index:
           self.node = self.document.replaceNode(emptyNode, oldNode)
           break
-      for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => n.kind == Empty and n.text == "", endNode = newNode):
+      for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => self.document.shouldEditNode(n), endNode = newNode):
         self.node = emptyNode
+        discard self.tryEdit self.node
         break
+
+  of "edit-next-empty":
+    for _, emptyNode in self.document.nextPreOrderWhere(self.node, (n) => self.document.shouldEditNode(n)):
+      self.node = emptyNode
       discard self.tryEdit self.node
+      break
 
   of "rename":
     discard self.tryEdit self.node
@@ -687,6 +861,15 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
 
   of "cancel-rename":
     self.finishEdit(false)
+
+  of "prev-completion":
+    self.selectPrevCompletion()
+
+  of "next-completion":
+    self.selectNextCompletion()
+
+  of "apply-completion":
+    self.applySelectedCompletion()
 
   else:
     logger.log(lvlError, "[textedit] Unknown action '$1 $2'" % [action, arg])
@@ -701,6 +884,9 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
   let editor = AstDocumentEditor(eventHandler: nil, document: AstDocument(document), textDocument: nil, textEditor: nil)
   editor.init()
   editor.cursor = @[0]
+
+  editor.selectedCompletion = 0
+  editor.completions = @[]
 
   if editor.document.rootNode == nil:
     editor.document.rootNode = AstNode(kind: NodeList, parent: nil, id: newId())
@@ -788,6 +974,7 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     command "<SPACE>", "editor.insert  "
     command "<BACKSPACE>", "backspace"
     command "<DELETE>", "delete"
+    command "<TAB>", "edit-next-empty"
 
     command "rr", "rename"
     command "e", "rename"
@@ -809,8 +996,10 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     command "rd", "replace declaration"
     command "r+", "replace +"
     command "rf", "replace call-func"
-    command "\"", "replace \""
-    command "'", "replace \""
+
+    command "\"", "replace-empty \""
+    command "'", "replace-empty \""
+    command "{", "replace-empty {"
 
     command "+", "wrap +"
     command "-", "wrap -"
@@ -831,6 +1020,9 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
   editor.textEditEventHandler = eventHandler2:
     command "<ENTER>", "apply-rename"
     command "<ESCAPE>", "cancel-rename"
+    command "<UP>", "prev-completion"
+    command "<DOWN>", "next-completion"
+    command "<TAB>", "apply-completion"
     onAction:
       editor.handleAction action, arg
     onInput:

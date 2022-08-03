@@ -1,4 +1,4 @@
-import std/[options, algorithm, strutils]
+import std/[options, algorithm, strutils, hashes, enumutils]
 import fusion/matching
 import util, id
 
@@ -124,6 +124,14 @@ func path*(node: AstNode): seq[int] =
   result.reverse
 
 proc `$`*(node: AstNode): string =
+  result = node.kind.symbolName & "("
+  result.add $node.id & ", '"
+  result.add node.text & "', "
+  result.add $node.len & "', "
+  result.add $node.path
+  result.add ")"
+
+proc `$$`*(node: AstNode): string =
   case node
   of Declaration():
     result = "Declaration(id: " & $node.id & "):"
@@ -160,3 +168,5 @@ proc `$`*(node: AstNode): string =
 
   else:
     return "other"
+
+proc hash*(node: AstNode): Hash = cast[int](addr node[])
