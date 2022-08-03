@@ -1,7 +1,7 @@
 import std/[strformat, bitops, strutils, tables, algorithm, math, macros]
 import boxy, times, windy, fusion/matching, print
 import sugar
-import input, events, editor, rect_utils, document, document_editor, text_document, ast_document, keybind_autocomplete, id
+import util, input, events, editor, rect_utils, document, document_editor, text_document, ast_document, keybind_autocomplete, id, ast
 
 let typeface = readTypeface("fonts/FiraCode-Regular.ttf")
 
