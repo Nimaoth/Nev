@@ -11,6 +11,8 @@ type TextDocument* = ref object of Document
   filename*: string
   content*: seq[string]
 
+  textChanged*: (document: Document) -> void
+
 type TextDocumentEditor* = ref object of DocumentEditor
   document*: TextDocument
   selection*: Selection
@@ -70,7 +72,11 @@ method load*(self: TextDocument, filename: string = "") =
   let file = readFile(self.filename)
   self.content = collect file.splitLines
 
-proc delete(self: TextDocument, selection: Selection): Cursor =
+proc notifyTextChanged(self: TextDocument) =
+  if self.textChanged != nil:
+    self.textChanged self
+
+proc delete(self: TextDocument, selection: Selection, notify: bool = true): Cursor =
   if selection.isEmpty:
     return selection.first
 
@@ -88,9 +94,12 @@ proc delete(self: TextDocument, selection: Selection): Cursor =
     # Delete all lines in between
     self.content.delete (first.line + 1)..last.line
 
+  if notify:
+    self.notifyTextChanged()
+
   return selection.first
 
-proc insert(self: TextDocument, cursor: Cursor, text: string): Cursor =
+proc insert(self: TextDocument, cursor: Cursor, text: string, notify: bool = true): Cursor =
   var cursor = cursor
   var i: int = 0
   # echo "insert ", cursor, ": ", text
@@ -107,13 +116,15 @@ proc insert(self: TextDocument, cursor: Cursor, text: string): Cursor =
       self.content[cursor.line].insert(line, cursor.column)
       cursor.column += line.len
 
+  if notify:
+    self.notifyTextChanged()
+
   return cursor
 
-
-proc edit(self: TextDocument, selection: Selection, text: string): Cursor =
+proc edit(self: TextDocument, selection: Selection, text: string, notify: bool = true): Cursor =
   let selection = selection.normalized
   # echo "edit ", selection, ": ", self.content
-  var cursor = self.delete(selection)
+  var cursor = self.delete(selection, false)
   # echo "after delete ", cursor, ": ", self.content
   cursor = self.insert(cursor, text)
   # echo "after insert ", cursor, ": ", self.content
