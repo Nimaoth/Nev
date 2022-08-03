@@ -939,15 +939,11 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
           Call:
             Identifier(id: == IdDeref)
             Identifier(id: == node.id)
-          Declaration(id: == newId()):
-            NumberLiteral(text: "6")
 
     editor.document.rootNode.add makeTree(AstNode) do:
       Call:
         Identifier(id: == IdDeref)
         Identifier(id: == node.id)
-
-    discard editor.document.addSymbol Symbol(id: node.id, name: "foo", node: node)
 
   editor.node = editor.document.rootNode[0]
 
