@@ -349,18 +349,23 @@ proc renderCompletions(editor: AstDocumentEditor, ed: Editor, bounds: Rect): Rec
   let completions = editor.completions
   let selected = editor.selectedCompletion
 
-  let renderedCompletions = min(completions.len, 10)
+  let renderedCompletions = min(completions.len, 5)
 
   let width = min(bounds.w, 250)
+
+  let firstCompletion = if selected >= renderedCompletions:
+    selected - renderedCompletions + 1
+  else:
+    0
 
   ed.ctx.fillStyle = rgb(25, 40, 25)
   ed.ctx.fillRect(bounds.splitH((renderedCompletions.float32 * ed.ctx.fontSize).relative)[0].splitV(width.relative)[0])
   ed.ctx.fillStyle = rgb(40, 40, 40)
-  ed.ctx.fillRect(bounds.splitH((selected.float32 * ed.ctx.fontSize).relative)[1].splitH(ed.ctx.fontSize.relative)[0].splitV(width.relative)[0])
+  ed.ctx.fillRect(bounds.splitH(((selected - firstCompletion).float32 * ed.ctx.fontSize).relative)[1].splitH(ed.ctx.fontSize.relative)[0].splitV(width.relative)[0])
   ed.ctx.strokeStyle = rgb(255, 255, 255)
   ed.ctx.strokeRect(bounds.splitH((renderedCompletions.float32 * ed.ctx.fontSize).relative)[0].splitV(width.relative)[0])
 
-  for i, com in completions[0..<renderedCompletions]:
+  for i, com in completions[firstCompletion..<(firstCompletion + renderedCompletions)]:
     ed.ctx.fillStyle = rgb(255, 225, 255)
     case com.kind
     of SymbolCompletion:
