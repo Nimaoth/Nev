@@ -1,39 +1,10 @@
 import std/[strformat, strutils, algorithm, math, logging, unicode, sequtils, sugar, tables, macros, options, os]
 import print, fusion/matching
-import input, document, document_editor, text_document, events, id, ast_ids
+import util, input, document, document_editor, text_document, events, id, ast_ids, ast
 
 var logger = newConsoleLogger()
 
-template getSome*[T](opt: Option[T], injected: untyped): bool =
-  ((let o = opt; o.isSome())) and ((let injected {.inject.} = o.get(); true))
-
 type Cursor = seq[int]
-
-type
-  AstNodeKind* = enum
-    Empty
-    Identifier
-    NumberLiteral
-    StringLiteral
-    Declaration
-    NodeList
-    Call
-    If
-
-  AstNode* = ref object
-    parent*: AstNode
-    id*: Id
-    kind*: AstNodeKind
-    text*: string
-    children*: seq[AstNode]
-
-func add(node: AstNode, child: AstNode) =
-  child.parent = node
-  node.children.add child
-
-func insert(node: AstNode, child: AstNode, idx: int) =
-  child.parent = node
-  node.children.insert child, idx
 
 # Generate new IDs
 when false:
@@ -86,121 +57,6 @@ type AstDocumentEditor* = ref object of DocumentEditor
   textDocument*: TextDocument
   textEditEventHandler*: EventHandler
 
-func `[]`*(node: AstNode, index: int): AstNode =
-  return node.children[index]
-
-func len*(node: AstNode): int =
-  return node.children.len
-
-func index*(node: AstNode): int =
-  if node.parent == nil:
-    return -1
-  return node.parent.children.find node
-
-func next*(node: AstNode): Option[AstNode] =
-  if node.parent == nil:
-    return none[AstNode]()
-  let i = node.index
-  if i >= node.parent.len - 1:
-    return none[AstNode]()
-  return some(node.parent[i + 1])
-
-func prev*(node: AstNode): Option[AstNode] =
-  if node.parent == nil:
-    return none[AstNode]()
-  let i = node.index
-  if i <= 0:
-    return none[AstNode]()
-  return some(node.parent[i - 1])
-
-func lastOrSelf*(node: AstNode): AstNode =
-  if node.len > 0:
-    return node[node.len - 1]
-  return node
-
-proc `[]=`(node: AstNode, index: int, newNode: AstNode) =
-  newNode.parent = node
-  node.children[index] = newNode
-
-func delete(node: AstNode, index: int): AstNode =
-  if index < 0 or index >= node.len:
-    return node
-  case node
-  of If():
-    if index == 0:
-      node[0] = AstNode(kind: Empty)
-      return node[0]
-    elif index == 1:
-      node[1] = AstNode(kind: Empty)
-      return node[1]
-    else:
-      return node
-  of Declaration():
-    if index == 0:
-      node[0] = AstNode(kind: Empty)
-      return node[0]
-    else:
-      return node
-  of Call():
-    if index == 0:
-      node[0] = AstNode(kind: Empty)
-      return node[0]
-  else:
-    discard
-
-  node.children.delete index
-  if index < node.len:
-    return node[index]
-  elif node.len > 0:
-    return node[index - 1]
-  else:
-    return node
-
-func path*(node: AstNode): seq[int] =
-  result = @[]
-  var node = node
-  while node.parent != nil:
-    result.add node.index
-    node = node.parent
-  result.reverse
-
-proc `$`(node: AstNode): string =
-  case node
-  of Declaration():
-    result = "Declaration(id: " & $node.id & "):"
-    if node.len > 0:
-      result.add "\n"
-      result.add indent($node[0], 2)
-
-  of Call():
-    result = "Call():"
-    for child in node.children:
-      result.add "\n"
-      result.add indent($child, 2)
-
-  of If():
-    result = "If()"
-    for child in node.children:
-      result.add "\n"
-      result.add indent($child, 2)
-
-  of NodeList():
-    result = "NodeList()"
-    for child in node.children:
-      result.add "\n"
-      result.add indent($child, 2)
-
-  of StringLiteral():
-    result = "StringLiteral(text: '" & node.text & "')"
-
-  of Identifier():
-    result = "Identifier(id: " & $node.id & ", text: '" & node.text & "')"
-
-  of Empty():
-    result = "Empty()"
-
-  else:
-    return "other"
 
 proc addSymbol*(doc: AstDocument, symbol: Symbol): Symbol =
   doc.globalScope.add symbol.id, symbol
@@ -440,23 +296,6 @@ proc getPrevChildRec*(document: AstDocument, node: AstNode, max: int = -1): Opti
 
   return some(node)
 
-proc findChildRec*(node: AstNode, kind: AstNodeKind): Option[AstNode] =
-  for c in node.children:
-    if c.kind == kind:
-      return some(c)
-    if c.findChildRec(kind).getSome(c):
-      return some(c)
-
-  return none[AstNode]()
-
-# Returns a the closest parent node which has itself a parent with kind
-proc findWithParentRec*(node: AstNode, kind: AstNodeKind): Option[AstNode] =
-  if node.parent == nil:
-    return none[AstNode]()
-  if node.parent.kind == kind:
-    return some(node)
-  return node.parent.findWithParentRec(kind)
-
 iterator nextPreOrder*(self: AstDocument, node: AstNode, endNode: AstNode = nil): tuple[key: int, value: AstNode] =
   var n = node
   var idx = -1
@@ -666,13 +505,16 @@ proc redo*(document: AstDocument): Option[AstNode] =
 proc createNodeFromAction*(editor: AstDocumentEditor, arg: string): Option[(AstNode, int)] =
   case arg
   of "empty":
-    return some((AstNode(kind: Empty, id: newId(), text: "new empty"), 0))
+    return some((AstNode(kind: Empty, id: newId(), text: ""), 0))
   of "identifier":
     return some((AstNode(kind: Identifier, text: "todo"), 0))
   of "number-literal":
-    return some((AstNode(kind: NumberLiteral, text: "123"), 0))
+    return some((AstNode(kind: NumberLiteral, text: ""), 0))
   of "declaration":
-    return some((AstNode(kind: Declaration, id: newId(), children: @[AstNode(kind: Empty, text: "name"), AstNode(kind: Empty, text: "value")]), 0))
+    let node = makeTree(AstNode) do:
+      Declaration(id: == newId()):
+        Empty()
+    return some (node, 0)
 
   of "call-func":
     let node = makeTree(AstNode) do:
