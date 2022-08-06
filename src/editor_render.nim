@@ -1,4 +1,4 @@
-import std/[strformat, bitops, strutils, tables, algorithm, math, macros]
+import std/[strformat, bitops, strutils, tables, algorithm, math, macros, enumutils, sets]
 import boxy, times, windy, fusion/matching, print
 import sugar
 import util, input, events, editor, rect_utils, document, document_editor, text_document, ast_document, keybind_autocomplete, id, ast
@@ -7,7 +7,7 @@ let typeface = readTypeface("fonts/FiraCode-Regular.ttf")
 
 let gap = 0.0
 let horizontalGap = 2.0
-let indent = 10.0
+let indent = 15.0
 let padding = 5.0
 
 proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds: Rect, selectedNode: AstNode, nodeBounds: var Table[AstNode, Rect]): Rect
@@ -111,9 +111,9 @@ proc renderInfixNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bound
   ed.ctx.fillStyle = rgb(175, 175, 175)
   ed.ctx.fillText("(", vec2(bounds.x, bounds.y))
 
-  let lhsBounds = renderAstNode(node.children[1], editor, ed, subBounds.splitV(parenWidth.relative)[1], selectedNode, nodeBounds)
-  let opBounds = renderAstNode(node.children[0], editor, ed, subBounds.splitV((lhsBounds.x + lhsBounds.w + horizontalGap).absolute)[1], selectedNode, nodeBounds)
-  let rhsBounds = renderAstNode(node.children[2], editor, ed, subBounds.splitV((opBounds.x + opBounds.w + horizontalGap).absolute)[1], selectedNode, nodeBounds)
+  let lhsBounds = renderAstNode(node[1], editor, ed, subBounds.splitV(parenWidth.relative)[1], selectedNode, nodeBounds)
+  let opBounds = renderAstNode(node[0], editor, ed, subBounds.splitV((lhsBounds.x + lhsBounds.w + horizontalGap).absolute)[1], selectedNode, nodeBounds)
+  let rhsBounds = renderAstNode(node[2], editor, ed, subBounds.splitV((opBounds.x + opBounds.w + horizontalGap).absolute)[1], selectedNode, nodeBounds)
 
   ed.ctx.fillStyle = rgb(175, 175, 175)
   ed.ctx.fillText(")", vec2(rhsBounds.x + rhsBounds.w, bounds.y))
@@ -128,8 +128,8 @@ proc renderInfixNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bound
 proc renderPrefixNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds: Rect, selectedNode: AstNode, nodeBounds: var Table[AstNode, Rect]): Rect =
   let subBounds = bounds.shrink gap.relative
 
-  let opBounds = renderAstNode(node.children[0], editor, ed, subBounds, selectedNode, nodeBounds)
-  let rhsBounds = renderAstNode(node.children[1], editor, ed, subBounds.splitV((opBounds.w + horizontalGap).relative)[1], selectedNode, nodeBounds)
+  let opBounds = renderAstNode(node[0], editor, ed, subBounds, selectedNode, nodeBounds)
+  let rhsBounds = renderAstNode(node[1], editor, ed, subBounds.splitV((opBounds.w + horizontalGap).relative)[1], selectedNode, nodeBounds)
 
   let myBounds = rect(bounds.x, bounds.y, opBounds.w + rhsBounds.w + horizontalGap * 3, max([opBounds.h, rhsBounds.h]) + gap * 2)
 
@@ -141,8 +141,8 @@ proc renderPrefixNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, boun
 proc renderPostfixNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds: Rect, selectedNode: AstNode, nodeBounds: var Table[AstNode, Rect]): Rect =
   let subBounds = bounds.shrink gap.relative
 
-  let rhsBounds = renderAstNode(node.children[1], editor, ed, subBounds, selectedNode, nodeBounds)
-  let opBounds = renderAstNode(node.children[0], editor, ed, subBounds.splitV((rhsBounds.w + horizontalGap).relative)[1], selectedNode, nodeBounds)
+  let rhsBounds = renderAstNode(node[1], editor, ed, subBounds, selectedNode, nodeBounds)
+  let opBounds = renderAstNode(node[0], editor, ed, subBounds.splitV((rhsBounds.w + horizontalGap).relative)[1], selectedNode, nodeBounds)
 
   let myBounds = rect(bounds.x, bounds.y, opBounds.w + rhsBounds.w + horizontalGap * 3, max([opBounds.h, rhsBounds.h]) + gap * 2)
 
@@ -157,7 +157,7 @@ proc renderCallNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds
   let subBounds = bounds.shrink gap.relative
 
   if document.getSymbol(function.id).getSome(symbol):
-    case symbol.opKind
+    case symbol.kind
     of Infix: return renderInfixNode(node, editor, ed, bounds, selectedNode, nodeBounds)
     of Prefix: return renderPrefixNode(node, editor, ed, bounds, selectedNode, nodeBounds)
     of Postfix: return renderPostfixNode(node, editor, ed, bounds, selectedNode, nodeBounds)
@@ -171,6 +171,7 @@ proc renderCallNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds
   ed.ctx.fillStyle = rgb(175, 175, 175)
   ed.ctx.fillText("(", vec2(lastRect.x + lastRect.w, lastRect.y))
   lastRect.w += parenWidth
+  var maxHeight = 0.0
 
   for i in 1..<node.len:
     if i > 1:
@@ -179,12 +180,13 @@ proc renderCallNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds
       lastRect.w += parenWidth * 2
 
     lastRect = renderAstNode(node[i], editor, ed, subBounds.splitV((lastRect.x + lastRect.w + horizontalGap).absolute)[1], selectedNode, nodeBounds)
+    maxHeight = max(maxHeight, lastRect.h)
 
   ed.ctx.fillStyle = rgb(175, 175, 175)
   ed.ctx.fillText(")", vec2(lastRect.x + lastRect.w, lastRect.y))
   lastRect.w += parenWidth
 
-  return rect(bounds.x, bounds.y, lastRect.x + lastRect.w - bounds.x, lastRect.h + gap * 2)
+  return rect(bounds.x, bounds.y, lastRect.x + lastRect.w - bounds.x, maxHeight + gap * 2)
 
 proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds: Rect, selectedNode: AstNode, nodeBounds: var Table[AstNode, Rect]): Rect =
   let document = editor.document
@@ -193,7 +195,7 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
     let docRect = renderDocumentEditor(editor.textEditor, ed, bounds, true)
     nodeBounds[node] = docRect
     return docRect
-  elif node.children.len == 0 and document.getSymbol(node.id).getSome(symbol) and symbol == editor.currentlyEditedSymbol:
+  elif node.len == 0 and document.getSymbol(node.id).getSome(symbol) and symbol == editor.currentlyEditedSymbol:
     let docRect = renderDocumentEditor(editor.textEditor, ed, bounds, true)
     nodeBounds[node] = docRect
     return docRect
@@ -229,8 +231,8 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
     # body
     var bodyBounds = bounds
     if node[1].kind == NodeList:
-      # Move body to next line + indent
-      bodyBounds = bodyBounds.splitH(ed.ctx.fontSize.relative)[1].splitV(indent.relative)[1]
+      # Move body to next line
+      bodyBounds = bodyBounds.splitH(max(ed.ctx.fontSize, condRect.h + padding).relative)[1]
     else:
       bodyBounds = bodyBounds.splitV((condRect.x + condRect.w + colonWidth).absolute)[1]
     let bodyRect = renderAstNode(node[1], editor, ed, bodyBounds, selectedNode, nodeBounds)
@@ -240,12 +242,20 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
   of NodeList():
     var lastNodeRect = rect(bounds.x, bounds.y, 0, 0)
     var maxWidth = 0.0
-    for n in node.children:
-      let y = lastNodeRect.y + lastNodeRect.h - bounds.y + padding
-      lastNodeRect = renderAstNode(n, editor, ed, bounds.splitH(y.relative)[1], selectedNode, nodeBounds)
-      maxWidth = max(maxWidth, lastNodeRect.w)
+    for i, n in node.children:
+      let y = lastNodeRect.y + lastNodeRect.h - bounds.y + padding * sgn(i).float32
+      lastNodeRect = renderAstNode(n, editor, ed, bounds.splitV(indent.relative)[1].splitH(y.relative)[1], selectedNode, nodeBounds)
+      maxWidth = max(maxWidth, lastNodeRect.w + indent)
     
-    rect(bounds.x, bounds.y, maxWidth, lastNodeRect.y + lastNodeRect.h - bounds.y)
+    let r = rect(bounds.x, bounds.y, maxWidth, lastNodeRect.y + lastNodeRect.h - bounds.y)
+
+    ed.ctx.beginPath()
+    ed.ctx.strokeStyle = rgb(150, 150, 150)
+    ed.ctx.moveTo vec2(r.x + min(3, indent / 3), r.y)
+    ed.ctx.lineTo vec2(r.x + min(3, indent / 3), r.y + r.h)
+    ed.ctx.stroke()
+
+    r
 
   of Identifier():
     let symbol = document.getSymbol(node.id)
@@ -290,7 +300,7 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
     ed.ctx.fillStyle = rgb(200, 200, 200)
     ed.ctx.fillText(text, vec2(subBounds.x + symbolSize.x, subBounds.y))
 
-    let valueBounds = renderAstNode(node.children[0], editor, ed, subBounds.splitV((symbolSize.x + width).relative)[1], selectedNode, nodeBounds)
+    let valueBounds = renderAstNode(node[0], editor, ed, subBounds.splitV((symbolSize.x + width).relative)[1], selectedNode, nodeBounds)
 
     let myBounds = rect(bounds.x, bounds.y, symbolSize.x + width + valueBounds.w + gap * 3, max([symbolSize.y, ed.ctx.fontSize, valueBounds.h]) + gap * 2)
 
@@ -376,6 +386,21 @@ proc renderCompletions(editor: AstDocumentEditor, ed: Editor, bounds: Rect): Rec
     else:
       discard
 
+proc renderSymbol(symbol: Symbol, editor: AstDocumentEditor, ed: Editor, bounds: Rect, selectedNode: AstNode): Rect =
+  var lastNodeRect = bounds
+
+  if symbol.node == selectedNode:
+    ed.ctx.strokeStyle = rgb(0, 255, 0)
+  else:
+    ed.ctx.strokeStyle = rgb(255, 255, 255)
+
+  ed.ctx.fillText(fmt"{symbol.name} ({symbol.id} : {symbol.parent})", vec2(bounds.x + 500, bounds.y))
+  var i = 0.0
+  for c in symbol.children.items:
+    ed.ctx.fillText(fmt"{c}", vec2(bounds.x + 550, bounds.y + (i + 1) * ed.ctx.fontSize))
+    i += 1
+  return bounds.splitH(((symbol.children.len.float32 + 1) * ed.ctx.fontSize).relative)[0]
+
 method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect, selected: bool): Rect =
   let document = editor.document
 
@@ -393,7 +418,7 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
   var lastNodeRect = contentBounds
   lastNodeRect.h = padding
 
-  let selectedNode = editor.getNodeAt(editor.cursor, -1)
+  let selectedNode = editor.node
 
   var nodeBounds: Table[AstNode, Rect] = initTable[AstNode, Rect]()
 
@@ -401,11 +426,25 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
     let y = lastNodeRect.y + lastNodeRect.h - contentBounds.y + padding
     lastNodeRect = renderAstNode(node, editor, ed, contentBounds.splitH(y.relative)[1], selectedNode, nodeBounds)
 
-
   if editor.completions.len > 0:
     let bounds = nodeBounds.getOrDefault(editor.node, rect(0, 0, 0, 0))
     if bounds.h > 0:
       discard renderCompletions(editor, ed, contentBounds.splitH((bounds.y + bounds.h).absolute)[1].splitV(bounds.x.absolute)[1])
+
+    let selectedCompletion = editor.completions[editor.selectedCompletion]
+    if selectedCompletion.kind == SymbolCompletion and document.getSymbol(selectedCompletion.id).getSome(symbol) and symbol.node != nil:
+      let selectedDeclRect = nodeBounds[symbol.node]
+      ed.ctx.strokeStyle = rgb(150, 150, 220)
+      ed.ctx.strokeRect(selectedDeclRect)
+
+  elif document.getSymbol(selectedNode.id).getSome(symbol) and symbol.node != nil:
+    let selectedDeclRect = nodeBounds[symbol.node]
+    ed.ctx.strokeStyle = rgb(150, 150, 220)
+    ed.ctx.strokeRect(selectedDeclRect)
+
+  # for symbol in document.symbols.values:
+  #   let y = lastNodeRect.y + lastNodeRect.h - contentBounds.y + padding
+  #   lastNodeRect = renderSymbol(symbol, editor, ed, contentBounds.splitH(y.relative)[1], selectedNode)
 
   return bounds
 

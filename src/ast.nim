@@ -34,6 +34,11 @@ func `[]`*(node: AstNode, index: int): AstNode =
 func len*(node: AstNode): int =
   return node.children.len
 
+func base*(node: AstNode): AstNode =
+  if node.parent == nil:
+    return node
+  return node.parent.base
+
 func index*(node: AstNode): int =
   if node.parent == nil:
     return -1
@@ -62,11 +67,15 @@ func lastOrSelf*(node: AstNode): AstNode =
 
 proc `[]=`*(node: AstNode, index: int, newNode: AstNode) =
   newNode.parent = node
+  node.children[index].parent = nil
   node.children[index] = newNode
 
 func delete*(node: AstNode, index: int): AstNode =
   if index < 0 or index >= node.len:
     return node
+
+  node[index].parent = nil
+
   case node
   of If():
     if index == 0:
@@ -107,7 +116,7 @@ proc findChildRec*(node: AstNode, kind: AstNodeKind): Option[AstNode] =
 
   return none[AstNode]()
 
-# Returns a the closest parent node which has itself a parent with kind
+# Returns the closest parent node which has itself a parent with the given kind
 proc findWithParentRec*(node: AstNode, kind: AstNodeKind): Option[AstNode] =
   if node.parent == nil:
     return none[AstNode]()
