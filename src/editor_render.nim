@@ -102,21 +102,34 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
 
   return usedBounds
 
+proc getPrecedenceForNode(doc: AstDocument, node: AstNode): int =
+  if node.kind != Call:
+    return 0
+  if doc.getSymbol(node[0].id).getSome(sym):
+    return sym.precedence
+  return 0
+
 proc renderInfixNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds: Rect, selectedNode: AstNode, nodeBounds: var Table[AstNode, Rect]): Rect =
   let horizontalGap = horizontalGap * 4
   let subBounds = bounds.shrink gap.relative
 
-  let parenWidth = ed.ctx.measureText("(").width
+  let parentPrecedence = editor.document.getPrecedenceForNode node.parent
+  let precedence = editor.document.getPrecedenceForNode node
+  let renderParens = precedence < parentPrecedence
 
-  ed.ctx.fillStyle = rgb(175, 175, 175)
-  ed.ctx.fillText("(", vec2(bounds.x, bounds.y))
+  let parenWidth = if renderParens: ed.ctx.measureText("(").width else: 0
+
+  if renderParens:
+    ed.ctx.fillStyle = rgb(175, 175, 175)
+    ed.ctx.fillText("(", vec2(bounds.x, bounds.y))
 
   let lhsBounds = renderAstNode(node[1], editor, ed, subBounds.splitV(parenWidth.relative)[1], selectedNode, nodeBounds)
   let opBounds = renderAstNode(node[0], editor, ed, subBounds.splitV((lhsBounds.x + lhsBounds.w + horizontalGap).absolute)[1], selectedNode, nodeBounds)
   let rhsBounds = renderAstNode(node[2], editor, ed, subBounds.splitV((opBounds.x + opBounds.w + horizontalGap).absolute)[1], selectedNode, nodeBounds)
 
-  ed.ctx.fillStyle = rgb(175, 175, 175)
-  ed.ctx.fillText(")", vec2(rhsBounds.x + rhsBounds.w, bounds.y))
+  if renderParens:
+    ed.ctx.fillStyle = rgb(175, 175, 175)
+    ed.ctx.fillText(")", vec2(rhsBounds.x + rhsBounds.w, bounds.y))
 
   let myBounds = rect(bounds.x, bounds.y, rhsBounds.x + rhsBounds.w + parenWidth - bounds.x, max([lhsBounds.h, opBounds.h, rhsBounds.h]) + gap * 2)
 
@@ -295,7 +308,7 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
       ed.ctx.fillText(name, vec2(subBounds.x, subBounds.y))
       vec2(nameWidth, ed.ctx.fontSize)
 
-    let text = " = "
+    let text = " := "
     let width = ed.ctx.measureText(text).width
     ed.ctx.fillStyle = rgb(200, 200, 200)
     ed.ctx.fillText(text, vec2(subBounds.x + symbolSize.x, subBounds.y))

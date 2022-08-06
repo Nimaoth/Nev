@@ -26,6 +26,7 @@ type
     node*: AstNode
     parent*: Id
     children*: HashSet[Id]
+    precedence*: int
 
 type
   UndoOpKind = enum
@@ -151,14 +152,14 @@ proc newAstDocument*(filename: string = ""): AstDocument =
   result.symbols = initTable[Id, Symbol]()
   result.symbols.add(result.rootNode.id, Symbol(id: result.rootNode.id, parent: null, kind: Scope, name: "::", node: result.rootNode, children: initHashSet[Id]()))
   discard result.addSymbol Symbol(id: IdPrint, name: "print")
-  discard result.addSymbol Symbol(id: IdAdd, name: "+", kind: Infix)
-  discard result.addSymbol Symbol(id: IdSub, name: "-", kind: Infix)
-  discard result.addSymbol Symbol(id: IdMul, name: "*", kind: Infix)
-  discard result.addSymbol Symbol(id: IdDiv, name: "/", kind: Infix)
-  discard result.addSymbol Symbol(id: IdMod, name: "%", kind: Infix)
-  discard result.addSymbol Symbol(id: IdNegate, name: "-", kind: Prefix)
-  discard result.addSymbol Symbol(id: IdNot, name: "!", kind: Prefix)
-  discard result.addSymbol Symbol(id: IdDeref, name: "->", kind: Postfix)
+  discard result.addSymbol Symbol(id: IdAdd, name: "+", kind: Infix, precedence: 1)
+  discard result.addSymbol Symbol(id: IdSub, name: "-", kind: Infix, precedence: 1)
+  discard result.addSymbol Symbol(id: IdMul, name: "*", kind: Infix, precedence: 2)
+  discard result.addSymbol Symbol(id: IdDiv, name: "/", kind: Infix, precedence: 2)
+  discard result.addSymbol Symbol(id: IdMod, name: "%", kind: Infix, precedence: 2)
+  discard result.addSymbol Symbol(id: IdNegate, name: "-", kind: Prefix, precedence: 0)
+  discard result.addSymbol Symbol(id: IdNot, name: "!", kind: Prefix, precedence: 0)
+  discard result.addSymbol Symbol(id: IdDeref, name: "->", kind: Postfix, precedence: 0)
 
 # proc `$`*(cursor: Cursor): string =
 #   return
@@ -829,7 +830,6 @@ proc shouldEditNode(doc: AstDocument, node: AstNode): bool =
   if node.kind == Empty and node.text == "":
     return true
   if node.kind == Declaration:
-    print doc.getSymbol(node.id)
     return doc.getSymbol(node.id).getSome(symbol) and symbol.name == ""
   return false
 
@@ -1037,7 +1037,7 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
 
   if editor.document.rootNode.len == 0:
     let node = makeTree(AstNode):
-      Declaration(id: == newId()):
+      Declaration(id: == newId(), text: "foo"):
         Call():
           Identifier(id: == IdPrint)
           StringLiteral(text: "hi")
