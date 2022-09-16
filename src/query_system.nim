@@ -7,7 +7,7 @@ import ast, id, util
 
 {.experimental: "dynamicBindSym".}
 
-var currentIndent = 0
+var currentIndent* = 0
 
 type
   Fingerprint* = seq[int64]
@@ -134,8 +134,8 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     )
   )
 
-  for query in body:
-    echo query.treeRepr
+  # for query in body:
+  #   echo query.treeRepr
 
   for query in body:
     if not isQuery query: continue
@@ -168,7 +168,6 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
   let uiae = quote do:
     type Context* = object
       discard
-  echo uiae.astGenRepr
 
   result.add nnkTypeSection.newTree(
     nnkTypeDef.newTree(
