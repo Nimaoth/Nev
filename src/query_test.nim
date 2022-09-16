@@ -6,35 +6,33 @@ import fusion/matching
 import ast, id, util
 import query_system
 
-var currentIndent = 0
-
 let IdAdd = newId()
 
 type Type* = enum
-  Error
-  String
-  Int
+  tError
+  tString
+  tInt
 
 type
-  ValueKind = enum ValueError, Number, VKString
+  ValueKind = enum vkError, vkNumber, vkString
   Value* = object
     case kind: ValueKind
-    of ValueError: discard
-    of Number: intValue: int
-    of VKString: stringValue: string
+    of vkError: discard
+    of vkNumber: intValue: int
+    of vkString: stringValue: string
 
-func errorValue(): Value = Value(kind: ValueError)
+func errorValue(): Value = Value(kind: vkError)
 
 proc `$`(value: Value): string =
   case value.kind
-  of Number: return $value.intValue
-  of VKString: return value.stringValue
-  else: return "<ValueError>"
+  of vkNumber: return $value.intValue
+  of vkString: return value.stringValue
+  else: return "<vkError>"
 
 proc hash(value: Value): Hash =
   case value.kind
-  of Number: return value.intValue.hash
-  of VKString: return value.stringValue.hash
+  of vkNumber: return value.intValue.hash
+  of vkString: return value.stringValue.hash
   else: return 0
 
 proc fingerprint(typ: Type, res: var Fingerprint) =
@@ -48,32 +46,8 @@ proc fingerprint(value: Value): Fingerprint =
   result = @[cast[int64](value.kind), value.hash]
 
 CreateContext Context:
-  let a*: Type = String
-  proc uiae(ctx: Context, node: AstNode): Type = String
   proc computeTypeImpl*(ctx: Context, node: AstNode): Type
   proc computeValueImpl*(ctx: Context, node: AstNode): Value
-
-# proc computeTypeImpl*(ctx: Context, node: AstNode): Type =
-#   return String
-
-# proc computeValueImpl*(ctx: Context, node: AstNode): Value =
-#   return Value()
-
-echo computeTypeImpl(newContext(), AstNode())
-let customIndentation = "| "
-
-# proc `$`(ctx: Context): string =
-#   result = "Context\n"
-
-#   # result.add customIndent(1) & "Cache\n"
-#   # for (key, value) in ctx.queryCacheType.pairs:
-#   #   result.add customIndent(2) & $key & " -> " & $value & "\n"
-
-#   result.add customIndent(1) & "Input Changed\n"
-#   for (key, value) in ctx.inputChanged.pairs:
-#     result.add customIndent(2) & $key & " -> " & $value & "\n"
-
-#   result.add indent($ctx.depGraph, 1, customIndentation)
 
 proc computeTypeImpl(ctx: Context, node: AstNode): Type =
   inc currentIndent, 1
@@ -82,18 +56,18 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
   
   case node
   of NumberLiteral():
-    return Int
+    return tInt
 
   of StringLiteral():
-    return String
+    return tString
 
   of Call():
     let function = node[0]
 
     if function.id != IdAdd:
-      return Error
+      return tError
     if node.len != 3:
-      return Error
+      return tError
 
     let left = node[1]
     let right = node[2]
@@ -101,16 +75,16 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
     let leftType = ctx.computeType(left)
     let rightType = ctx.computeType(right)
 
-    if leftType == Int and rightType == Int:
-      return Int
+    if leftType == tInt and rightType == tInt:
+      return tInt
 
-    if leftType == String:
-      return String
+    if leftType == tString:
+      return tString
 
-    return Error
+    return tError
 
   else:
-    return Error
+    return tError
 
 proc computeValueImpl(ctx: Context, node: AstNode): Value =
   inc currentIndent, 1
@@ -119,10 +93,10 @@ proc computeValueImpl(ctx: Context, node: AstNode): Value =
   
   case node
   of NumberLiteral():
-    return Value(kind: Number, intValue: node.text.parseInt)
+    return Value(kind: vkNumber, intValue: node.text.parseInt)
 
   of StringLiteral():
-    return Value(kind: VKString, stringValue: node.text)
+    return Value(kind: vkString, stringValue: node.text)
 
   of Call():
     let function = node[0]
@@ -141,18 +115,18 @@ proc computeValueImpl(ctx: Context, node: AstNode): Value =
     let leftValue = ctx.computeValue(left)
     let rightValue = ctx.computeValue(right)
 
-    if leftType == Int and rightType == Int:
-      if leftValue.kind != Number or rightValue.kind != Number:
+    if leftType == tInt and rightType == tInt:
+      if leftValue.kind != vkNumber or rightValue.kind != vkNumber:
         return errorValue()
       let newValue = leftValue.intValue + rightValue.intValue
-      return Value(kind: Number, intValue: newValue)
+      return Value(kind: vkNumber, intValue: newValue)
 
-    if leftType == String:
-      if leftValue.kind != VKString:
+    if leftType == tString:
+      if leftValue.kind != vkString:
         return errorValue()
       let rightValueString = $rightValue
       let newValue = leftValue.stringValue & rightValueString
-      return Value(kind: VKString, stringValue: newValue)
+      return Value(kind: vkString, stringValue: newValue)
 
     return errorValue()
 
@@ -201,7 +175,6 @@ proc replaceNode(ctx: Context, node: AstNode, newNode: AstNode) =
   ctx.insertNode(newNode)
 
 let node = makeTree(AstNode):
-  # Declaration(id: == newId(), text: "foo"):
   Call():
     Identifier(id: == IdAdd)
     Call():
@@ -226,16 +199,18 @@ echo ctx, "\n--------------------------------------"
 echo "type ", ctx.computeType(node), "\n--------------------------------------"
 echo "value ", ctx.computeValue(node), "\n--------------------------------------"
 
-# echo "\n\n ============================= Update Node 2 =================================\n\n"
-# var newNode = makeTree(AstNode): StringLiteral(text: "lol")
-# ctx.replaceNode(node[1][1], newNode)
-# node[1][1] = newNode
-# echo ctx, "\n--------------------------------------"
+echo "\n\n ============================= Update Node 2 =================================\n\n"
+var newNode = makeTree(AstNode): StringLiteral(text: "lol")
+ctx.replaceNode(node[1][1], newNode)
+node[1][1] = newNode
+echo ctx, "\n--------------------------------------"
 
-# echo "\n\n ============================= Compute Type 3 =================================\n\n"
-# echo ctx.computeType(node), "\n--------------------------------------"
-# echo ctx, "\n--------------------------------------"
-# echo ctx.computeType(node), "\n--------------------------------------"
+echo "\n\n ============================= Compute Type 3 =================================\n\n"
+echo "type ", ctx.computeType(node), "\n--------------------------------------"
+echo "value ", ctx.computeValue(node), "\n--------------------------------------"
+echo ctx, "\n--------------------------------------"
+echo "type ", ctx.computeType(node), "\n--------------------------------------"
+echo "value ", ctx.computeValue(node), "\n--------------------------------------"
 
 # echo "\n\n ============================= Update Node 4 =================================\n\n"
 # newNode = makeTree(AstNode): StringLiteral(text: "bar")
