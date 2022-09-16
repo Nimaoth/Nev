@@ -63,8 +63,6 @@ type
       nodeKind*: AstNodeKind
       name*: string
 
-proc `<`(a, b: Completion): bool = a.score < b.score
-
 type AstDocumentEditor* = ref object of DocumentEditor
   document*: AstDocument
   selectedNode: AstNode
@@ -80,6 +78,12 @@ type AstDocumentEditor* = ref object of DocumentEditor
   completionText: string
   completions*: seq[Completion]
   selectedCompletion*: int
+
+proc `<`(a, b: Completion): bool = a.score < b.score
+
+proc updateCompletions(editor: AstDocumentEditor)
+proc getPrevChild*(document: AstDocument, node: AstNode, max: int = -1): Option[AstNode]
+proc getNextChild*(document: AstDocument, node: AstNode, min: int = -1): Option[AstNode]
 
 proc `node=`*(editor: AstDocumentEditor, node: AstNode) =
   if node == editor.selectedNode:
@@ -112,8 +116,6 @@ proc selectNextNode*(editor: AstDocumentEditor) =
       editor.selectionHistory.addLast editor.selectedNode
       editor.selectedNode = node
       return
-
-proc updateCompletions(editor: AstDocumentEditor)
 
 proc getSymbol*(doc: AstDocument, id: Id): Option[Symbol] =
   let s = doc.symbols.getOrDefault(id, nil)
@@ -205,6 +207,45 @@ iterator nextPreOrderWhere*(self: AstDocument, node: AstNode, predicate: proc(no
     if predicate(child):
       yield (i, child)
       inc i
+
+iterator nextPreVisualOrder*(self: AstDocument, node: AstNode): tuple[key: int, value: AstNode] =
+  var n = node
+  var idx = -1
+  var i = 0
+  var gotoChild = true
+
+  while n != nil:
+    echo gotoChild, ", ", n
+    if gotoChild and n.len > 0:
+      n = self.getNextChild(n, -1).get
+      yield (i, n)
+      gotoChild = true
+    elif n.parent != nil and self.getNextChild(n.parent, n.index).getSome(ne):
+    # elif n.prev.getSome(ne):
+      n = ne
+      yield (i, n)
+      gotoChild = true
+    else:
+      gotoChild = false
+      n = n.parent
+
+iterator prevPostVisualOrder*(self: AstDocument, node: AstNode, gotoChild: bool = true): AstNode =
+  var gotoChild = gotoChild
+  var n = node
+
+  while n != nil:
+    # echo gotoChild, ", ", n
+    if gotoChild and n.len > 0:
+      n = self.getPrevChild(n, -1).get
+      gotoChild = true
+    elif n.parent != nil and self.getPrevChild(n.parent, n.index).getSome(ne):
+      yield n
+      n = ne
+      gotoChild = true
+    else:
+      yield n
+      gotoChild = false
+      n = n.parent
 
 iterator prevPostOrder*(self: AstDocument, node: AstNode): AstNode =
   var idx = 0
@@ -478,34 +519,40 @@ proc getPrevChild*(document: AstDocument, node: AstNode, max: int = -1): Option[
   return some(node[max - 1])
 
 proc getPrevChildRec*(document: AstDocument, node: AstNode, max: int = -1): Option[AstNode] =
-  var node = node
-  var idx = -1
-  var down = true
+  for n in document.prevPostOrder node:
+    if n.len == 0 and n != node:
+      return some(n)
 
-  if document.getPrevChild(node, max).getSome(child):
-    idx = -1
-    node = child
-    down = true
-  elif node.parent != nil:
-    idx = node.index
-    node = node.parent
-    down = false
-  else:
-    return some(node)
+  return none[AstNode]()
 
-  while node.kind == Call or node.kind == NodeList:
-    if document.getPrevChild(node, idx).getSome(child):
-      idx = -1
-      node = child
-      down = true
-    elif node.parent != nil:
-      idx = node.index
-      node = node.parent
-      down = false
-    else:
-      break
+  # var node = node
+  # var idx = -1
+  # var down = true
 
-  return some(node)
+  # if document.getPrevChild(node, max).getSome(child):
+  #   idx = -1
+  #   node = child
+  #   down = true
+  # elif node.parent != nil:
+  #   idx = node.index
+  #   node = node.parent
+  #   down = false
+  # else:
+  #   return some(node)
+
+  # while node.kind == Call or node.kind == NodeList:
+  #   if document.getPrevChild(node, idx).getSome(child):
+  #     idx = -1
+  #     node = child
+  #     down = true
+  #   elif node.parent != nil:
+  #     idx = node.index
+  #     node = node.parent
+  #     down = false
+  #   else:
+  #     break
+
+  # return some(node)
 
 proc getNextLine*(document: AstDocument, node: AstNode): Option[AstNode] =
   for _, n in document.nextPreOrder(node):
@@ -647,7 +694,7 @@ proc undo*(document: AstDocument): Option[AstNode] =
     document.handleNodeInserted undoOp.node
     document.redoOps.add UndoOp(kind: Replace, parent: undoOp.parent, idx: undoOp.idx, node: oldNode)
     return some(undoOp.node)
-  of Insert: # @todo
+  of Insert:
     document.handleNodeDelete undoOp.parent[undoOp.idx]
     discard undoOp.parent.delete undoOp.idx
     document.redoOps.add undoOp
@@ -688,7 +735,7 @@ proc redo*(document: AstDocument): Option[AstNode] =
     document.handleNodeInserted redoOp.node
     document.undoOps.add UndoOp(kind: Replace, parent: redoOp.parent, idx: redoOp.idx, node: oldNode)
     return some(redoOp.node)
-  of Insert: # @todo
+  of Insert:
     redoOp.parent.insert redoOp.node, redoOp.idx
     document.handleNodeInserted redoOp.node
     document.undoOps.add redoOp
@@ -894,15 +941,24 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
 
   of "cursor.next":
     var node = self.node
-    let nextChild = self.document.getNextChildRec node
-    if nextChild.getSome(child):
-      self.node = child
+    # let nextChild = self.document.getNextChildRec node
+    # if nextChild.getSome(child):
+    #   self.node = child
+    for _, n in self.document.nextPreVisualOrder(self.node):
+      if n.kind == Call or n.kind == NodeList:
+        continue
+      if n != self.node:
+        self.node = n
+        break
 
   of "cursor.prev":
     var node = self.node
-    let nextChild = self.document.getPrevChildRec node
-    if nextChild.getSome(child):
-      self.node = child
+    for n in self.document.prevPostVisualOrder(self.node, gotoChild = false):
+      if n.kind == Call or n.kind == NodeList:
+        continue
+      if n != self.node:
+        self.node = n
+        break
 
   of "cursor.next-line":
     if self.document.getNextLine(self.node).getSome(next):
@@ -1018,6 +1074,24 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
 
   of "select-next":
     self.selectNextNode()
+
+  of "goto":
+    case arg
+    of "definition":
+      if self.document.getSymbol(self.node.id).getSome(sym):
+        if sym.node != nil and sym.node != self.document.rootNode:
+          self.node = sym.node
+    of "next-usage":
+      let id = self.node.id
+      for _, n in self.document.nextPreOrderWhere(self.node, n => n != self.node and n.id == id):
+        self.node = n
+        break
+    of "prev-usage":
+      let id = self.node.id
+      for n in self.document.prevPostOrder(self.node):
+        if n != self.node and n.id == id:
+          self.node = n
+          break
 
   else:
     logger.log(lvlError, "[textedit] Unknown action '$1 $2'" % [action, arg])
@@ -1138,6 +1212,10 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     command "rd", "replace declaration"
     command "r+", "replace +"
     command "rf", "replace call-func"
+
+    command "gd", "goto definition"
+    command "gn", "goto next-usage"
+    command "gp", "goto prev-usage"
 
     command "\"", "replace-empty \""
     command "'", "replace-empty \""

@@ -134,9 +134,12 @@ func path*(node: AstNode): seq[int] =
 
 proc `$`*(node: AstNode): string =
   result = node.kind.symbolName & "("
-  result.add $node.id & ", '"
-  result.add node.text & "', "
-  result.add $node.len & "', "
+  if node.id != null:
+    result.add $node.id & ", "
+  if node.text.len > 0:
+    result.add "'" & node.text & "', "
+  if node.len > 0:
+    result.add $node.len & ", "
   result.add $node.path
   result.add ")"
 
@@ -144,33 +147,36 @@ proc `$$`*(node: AstNode): string =
   case node
   of Declaration():
     result = "Declaration(id: " & $node.id & "):"
-    if node.len > 0:
+    for child in node.children:
       result.add "\n"
-      result.add indent($node[0], 2)
+      result.add indent($$child, 2)
 
   of Call():
     result = "Call():"
     for child in node.children:
       result.add "\n"
-      result.add indent($child, 2)
+      result.add indent($$child, 2)
 
   of If():
     result = "If()"
     for child in node.children:
       result.add "\n"
-      result.add indent($child, 2)
+      result.add indent($$child, 2)
 
   of NodeList():
     result = "NodeList()"
     for child in node.children:
       result.add "\n"
-      result.add indent($child, 2)
+      result.add indent($$child, 2)
 
   of StringLiteral():
     result = "StringLiteral(text: '" & node.text & "')"
 
   of Identifier():
     result = "Identifier(id: " & $node.id & ", text: '" & node.text & "')"
+
+  of NumberLiteral():
+    result = "NumberLiteral(text: '" & node.text & "')"
 
   of Empty():
     result = "Empty()"
