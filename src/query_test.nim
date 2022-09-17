@@ -251,7 +251,7 @@ proc computeSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, Symbol] =
       assert child.id != null
 
       ctx.recordDependency(child.getItem)
-      let symbol = ctx.newData(Symbol(kind: skAstNode, id: child.id, node: child))
+      let symbol = ctx.newSymbol(Symbol(kind: skAstNode, id: child.id, node: child))
       result.add(child.id, symbol)
 
   for symbol in ctx.globalScope.values:
@@ -413,7 +413,7 @@ ctx.globalScope.add(IdMul, Symbol(id: IdMul, kind: skBuiltin, typ: typeMulIntInt
 ctx.globalScope.add(IdDiv, Symbol(id: IdDiv, kind: skBuiltin, typ: typeDivIntInt, value: funcSubIntInt))
 ctx.globalScope.add(IdAppendString, Symbol(id: IdAppendString, kind: skBuiltin, typ: typeAddStringInt, value: funcAddStringInt))
 for symbol in ctx.globalScope.values:
-  discard ctx.newData(symbol)
+  discard ctx.newSymbol(symbol)
 
 proc `$`(ctx: Context): string = $$ctx
 
