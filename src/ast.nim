@@ -17,15 +17,24 @@ type
   AstNode* = ref object
     parent*: AstNode
     id*: Id
+    reff*: Id
     kind*: AstNodeKind
     text*: string
     children*: seq[AstNode]
 
-func add*(node: AstNode, child: AstNode) =
+proc add*(node: AstNode, child: AstNode) =
+  if node.id == null:
+    node.id = newId()
+  if child.id == null:
+    child.id = newId()
   child.parent = node
   node.children.add child
 
-func insert*(node: AstNode, child: AstNode, idx: int) =
+proc insert*(node: AstNode, child: AstNode, idx: int) =
+  if node.id == null:
+    node.id = newId()
+  if child.id == null:
+    child.id = newId()
   child.parent = node
   node.children.insert child, idx
 
@@ -157,6 +166,8 @@ proc `$`*(node: AstNode): string =
   result = node.kind.symbolName & "("
   if node.id != null:
     result.add $node.id & ", "
+  if node.reff != null:
+    result.add "reff: " & $node.reff & ", "
   if node.text.len > 0:
     result.add "'" & node.text & "', "
   if node.len > 0:
@@ -164,45 +175,48 @@ proc `$`*(node: AstNode): string =
   result.add $node.path
   result.add ")"
 
-proc `$$`*(node: AstNode): string =
+proc treeRepr*(node: AstNode): string =
   case node
   of Declaration():
     result = "Declaration(id: " & $node.id & "):"
     for child in node.children:
       result.add "\n"
-      result.add indent($$child, 2)
+      result.add indent(child.treeRepr, 2)
 
   of Call():
-    result = "Call():"
+    result = "Call(id: " & $node.id & "):"
     for child in node.children:
       result.add "\n"
-      result.add indent($$child, 2)
+      result.add indent(child.treeRepr, 2)
 
   of If():
-    result = "If()"
+    result = "If(id: " & $node.id & "):"
     for child in node.children:
       result.add "\n"
-      result.add indent($$child, 2)
+      result.add indent(child.treeRepr, 2)
 
   of NodeList():
-    result = "NodeList()"
+    result = "NodeList(id: " & $node.id & "):"
     for child in node.children:
       result.add "\n"
-      result.add indent($$child, 2)
+      result.add indent(child.treeRepr, 2)
 
   of StringLiteral():
-    result = "StringLiteral(text: '" & node.text & "')"
+    result = "StringLiteral(id: " & $node.id & ", text: '" & node.text & "')"
 
   of Identifier():
-    result = "Identifier(id: " & $node.id & ", text: '" & node.text & "')"
+    result = "Identifier(id: " & $node.id & ", reff: " & $node.reff & ", text: '" & node.text & "')"
 
   of NumberLiteral():
-    result = "NumberLiteral(text: '" & node.text & "')"
+    result = "NumberLiteral(id: " & $node.id & ", text: '" & node.text & "')"
 
   of Empty():
-    result = "Empty()"
+    result = "Empty(id: " & $node.id & ")"
 
   else:
     return "other"
+
+proc `$$`*(node: AstNode): string =
+  return node.treeRepr
 
 proc hash*(node: AstNode): Hash = cast[int](addr node[])
