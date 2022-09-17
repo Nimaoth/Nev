@@ -241,10 +241,10 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       let prevFingerprint = ctx.depGraph.fingerprint(key)
 
       if fingerprint == prevFingerprint:
-        echo repeat("| ", currentIndent - 1), "force ", key.node, ", mark green"
+        echo repeat("| ", currentIndent), "mark green"
         ctx.depGraph.markGreen(key)
       else:
-        echo repeat("| ", currentIndent - 1), "force ", key.node, ", mark red"
+        echo repeat("| ", currentIndent), "mark red"
         ctx.depGraph.markRed(key, fingerprint)
 
   # proc tryMarkGreen(ctx: Context, key: Key): bool
@@ -264,21 +264,24 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       echo repeat("| ", currentIndent - 1), "tryMarkGreen ", key, ", deps: ", ctx.depGraph.getDependencies(key)
 
       for i, dep in ctx.depGraph.getDependencies(key):
-        echo repeat("| ", currentIndent - 1), dep, ": ", ctx.depGraph.nodeColor(dep)
         case ctx.depGraph.nodeColor(dep)
         of Green:
+          echo repeat("| ", currentIndent), "Dependency ", dep.node, " is green, skip"
           discard
         of Red:
+          echo repeat("| ", currentIndent), "Dependency ", dep.node, " is red, failed"
           return false
         of Grey:
+          echo repeat("| ", currentIndent), "Dependency ", dep.node, " is grey"
           if not ctx.tryMarkGreen(dep):
-            echo repeat("| ", currentIndent - 1), "tryMarkGreen ", dep.node, ", mark green failed"
+            echo repeat("| ", currentIndent), "Dependency ", dep.node, ", mark green failed"
             ctx.force(dep)
 
             if ctx.depGraph.nodeColor(dep) == Red:
+              echo repeat("| ", currentIndent), "Dependency ", dep.node, ", value changed"
               return false
 
-      echo repeat("| ", currentIndent - 1), "tryMarkGreen ", key, ", mark green"
+      echo repeat("| ", currentIndent), "mark green"
       ctx.depGraph.markGreen(key)
 
       return true
@@ -313,21 +316,32 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
         if color == Green:
           if not ctx.`queryCache`.contains(node):
+            echo repeat("| ", currentIndent), "green, not in cache"
             ctx.force(key)
-          echo repeat("| ", currentIndent), "green, use cache: ", ctx.`queryCache`[node]
+            echo repeat("| ", currentIndent), "result: ", $ctx.`queryCache`[node]
+          else:
+            echo repeat("| ", currentIndent), "green, in cache, result: ", $ctx.`queryCache`[node]
           return ctx.`queryCache`[node]
 
         if color == Grey:
-          if ctx.`queryCache`.contains(node) and ctx.tryMarkGreen(key):
-            echo repeat("| ", currentIndent), "grey, use cache: ", ctx.`queryCache`[node]
+          if not ctx.`queryCache`.contains(node):
+            echo repeat("| ", currentIndent), "grey, not in cache"
+            ctx.force(key)
+            echo repeat("| ", currentIndent), "result: ", $ctx.`queryCache`[node]
+            return ctx.`queryCache`[node]
+
+          echo repeat("| ", currentIndent), "grey, in cache"
+          if ctx.tryMarkGreen(key):
+            echo repeat("| ", currentIndent), "green, result: ", $ctx.`queryCache`[node]
             return ctx.`queryCache`[node]
           else:
+            echo repeat("| ", currentIndent), "failed to mark green"
             ctx.force(key)
-            echo repeat("| ", currentIndent), "grey, use cache: ", ctx.`queryCache`[node]
+            echo repeat("| ", currentIndent), "result: ", $ctx.`queryCache`[node]
             return ctx.`queryCache`[node]
 
         assert color == Red
-        echo repeat("| ", currentIndent), "red, use cache: ", ctx.`queryCache`[node]
+        echo repeat("| ", currentIndent), "red, in cache, result: ", $ctx.`queryCache`[node]
         return ctx.`queryCache`[node]
 
   # Create $ for each query
