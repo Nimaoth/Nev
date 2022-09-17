@@ -145,13 +145,13 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     if arg[0].strVal != "data": return false
     return true
 
-  for query in body:
-    if isQuery query:
-      continue
-    if isInputDefinition query:
-      echo "input: ", query.treeRepr
-    if isDataDefinition query:
-      echo "data: ", query.treeRepr
+  proc isCustomMemberDefinition(arg: NimNode): bool =
+    return arg.kind == nnkVarSection
+
+  # for arg in body:
+  #   if not isCustomMemberDefinition arg:
+  #     continue
+  #   echo "customMember: ", arg.treeRepr
 
   # List of members of the final Context type
   # depGraph: DependencyGraph
@@ -181,6 +181,14 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       quote do: Table[ItemId, `name`],
       newEmptyNode()
     )
+
+  # Add member declarations for custom members
+  for customMembers in body:
+    if not isCustomMemberDefinition customMembers: continue
+
+    for member in customMembers:
+      # memberList.add member
+      memberList.add nnkIdentDefs.newTree(member[0], member[1], newEmptyNode())
 
   # Add member for each data
   # data: Table[Data, int]
@@ -282,6 +290,17 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
         return value.fingerprint
       `ctx`.depGraph.queryNames[`ctx`.`updateName`] = `name`
 
+  ## Add initializers for custom members
+  for customMembers in body:
+    if not isCustomMemberDefinition customMembers: continue
+
+    for member in customMembers:
+      if member[2].kind == nnkEmpty: continue
+      let name = member[0]
+      let initValue = member[2]
+      queryInitializers.add quote do:
+        `ctx`.`name` = `initValue`
+
   # Add the per query data initializers to the body of the newContext function
   for queryInitializer in queryInitializers:
     newContextFn[6].add queryInitializer
@@ -318,9 +337,6 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       inc currentIndent, 1
       defer: dec currentIndent, 1
       echo repeat("| ", currentIndent - 1), "force ", key.item
-
-      if ctx.dependencyStack.len > 10:
-        return
 
       ctx.depGraph.clearEdges(key)
       ctx.dependencyStack.add(@[])

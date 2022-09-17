@@ -3,24 +3,24 @@ import sugar
 import system
 import print
 import fusion/matching
-import ast, id, util
+import ast, ast_ids, id, util
 import query_system
-
-let IdAdd = newId()
 
 type Type* = enum
   tError
   tVoid
   tString
   tInt
+  tFunction
 
 type
-  ValueKind = enum vkError, vkNumber, vkString
+  ValueKind = enum vkError, vkNumber, vkString, vkFunction
   Value* = object
     case kind: ValueKind
     of vkError: discard
     of vkNumber: intValue: int
     of vkString: stringValue: string
+    of vkFunction: impl: proc(): Value
 
 type
   SymbolKind = enum skAstNode, skBuiltin
@@ -35,10 +35,17 @@ type
       value*: Value
 
 proc `$`(symbol: Symbol): string =
-  return "Sym(" & $symbol.id & ", " & $symbol.reff & ", " & $symbol.node & ")"
+  case symbol.kind
+  of skAstNode:
+    return "Sym(AstNode, " & $symbol.id & ", " & $symbol.reff & ", " & $symbol.node & ")"
+  of skBuiltin:
+    return "Sym(Builtin, " & $symbol.id & ", " & $symbol.typ & ", " & $symbol.value & ")"
 
 proc hash(symbol: Symbol): Hash =
   return symbol.id.hash
+
+proc `==`(a: Symbol, b: Symbol): bool =
+  return a.id == b.id
 
 func errorValue(): Value = Value(kind: vkError)
 
@@ -64,7 +71,7 @@ proc fingerprint(symbols: TableRef[Id, Symbol]): Fingerprint =
   result = @[]
   for (key, value) in symbols.pairs:
     result.add(key.hash)
-    result.add(value.node.hash)
+    result.add(value.hash)
 
 proc getItem*(node: AstNode): ItemId =
   if node.id == null:
@@ -80,11 +87,13 @@ CreateContext Context:
   input AstNode
   data Symbol
 
+  var globalScope: Table[Id, Symbol] = initTable[Id, Symbol]()
+
   proc computeTypeImpl(ctx: Context, node: AstNode): Type {.query("Type").}
   proc computeValueImpl(ctx: Context, node: AstNode): Value {.query("Value").}
   proc computeSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, Symbol] {.query("Symbols").}
   proc computeSymbolTypeImpl(ctx: Context, symbol: Symbol): Type {.query("SymbolType").}
-  # proc computeSymbolValueImpl(ctx: Context, symbol: Symbol): Value {.query("SymbolValue").}
+  proc computeSymbolValueImpl(ctx: Context, symbol: Symbol): Value {.query("SymbolValue").}
 
 proc computeSymbolTypeImpl(ctx: Context, symbol: Symbol): Type =
   case symbol.kind:
@@ -93,12 +102,12 @@ proc computeSymbolTypeImpl(ctx: Context, symbol: Symbol): Type =
   of skBuiltin:
     return symbol.typ
 
-# proc computeSymbolValueImpl(ctx: Context, symbol: Symbol): Value =
-#   case symbol.kind:
-#   of skAstNode:
-#     return ctx.computeValue(symbol.node)
-#   of skBuiltin:
-#     return symbol.value
+proc computeSymbolValueImpl(ctx: Context, symbol: Symbol): Value =
+  case symbol.kind:
+  of skAstNode:
+    return ctx.computeValue(symbol.node)
+  of skBuiltin:
+    return symbol.value
 
 proc computeTypeImpl(ctx: Context, node: AstNode): Type =
   inc currentIndent, 1
@@ -114,6 +123,10 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
 
   of Call():
     let function = node[0]
+
+    let functionType = ctx.computeType(function)
+    if functionType == tError:
+      return tError
 
     if function.reff != IdAdd:
       return tError
@@ -145,8 +158,8 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
     if symbols.contains(id):
       let symbol = symbols[id]
       return ctx.computeSymbolType(symbol)
-      # return ctx.computeType(symbol.node)
 
+    echo "Unkown symbol ", id
     return tError
 
   of NodeList():
@@ -177,6 +190,10 @@ proc computeSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, Symbol] =
       let symbol = ctx.newData(Symbol(kind: skAstNode, id: child.id, node: child))
       result.add(child.id, symbol)
 
+  for symbol in ctx.globalScope.values:
+    ctx.recordDependency(symbol.getItem)
+    result.add(symbol.id, symbol)
+
 proc computeValueImpl(ctx: Context, node: AstNode): Value =
   inc currentIndent, 1
   defer: dec currentIndent, 1
@@ -191,6 +208,10 @@ proc computeValueImpl(ctx: Context, node: AstNode): Value =
 
   of Call():
     let function = node[0]
+
+    let functionType = ctx.computeType(function)
+    if functionType == tError:
+      return errorValue()
 
     if function.reff != IdAdd:
       return errorValue()
@@ -236,7 +257,8 @@ proc computeValueImpl(ctx: Context, node: AstNode): Value =
     let symbols = ctx.computeSymbols(node)
     if symbols.contains(id):
       let symbol = symbols[id]
-      return ctx.computeValue(symbol.node)
+      return ctx.computeSymbolValue(symbol)
+
     return errorValue()
 
   else:
@@ -300,10 +322,14 @@ let node = makeTree(AstNode):
       Identifier(reff: == IdAdd)
       Identifier(reff: == tempId)
       NumberLiteral(text: "4")
+    # Identifier(reff: == IdAdd)
 
 echo node.treeRepr
 
 let ctx = newContext()
+ctx.globalScope.add(IdAdd, Symbol(id: IdAdd, kind: skBuiltin, typ: tFunction, value: errorValue()))
+for symbol in ctx.globalScope.values:
+  discard ctx.newData(symbol)
 
 proc `$`(ctx: Context): string = $$ctx
 
@@ -323,13 +349,13 @@ echo "\n\n ============================= Update Node 2 =========================
 var newNode = makeTree(AstNode): StringLiteral(text: "lol")
 ctx.replaceNode(node[0][0][1][1], newNode)
 node[0][0][1][1] = newNode
-echo ctx, "\n--------------------------------------"
+# echo ctx, "\n--------------------------------------"
 echo node.treeRepr
 
 echo "\n\n ============================= Compute Type 3 =================================\n\n"
 echo "type ", ctx.computeType(node), "\n--------------------------------------"
 echo "value ", ctx.computeValue(node), "\n--------------------------------------"
-echo ctx, "\n--------------------------------------"
+# echo ctx, "\n--------------------------------------"
 # echo "type ", ctx.computeType(node), "\n--------------------------------------"
 # echo "value ", ctx.computeValue(node), "\n--------------------------------------"
 
