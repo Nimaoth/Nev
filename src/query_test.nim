@@ -26,7 +26,7 @@ func errorValue(): Value = Value(kind: vkError)
 proc `$`(value: Value): string =
   case value.kind
   of vkNumber: return $value.intValue
-  of vkString: return value.stringValue
+  of vkString: return "\"" & value.stringValue & "\""
   else: return "<vkError>"
 
 proc hash(value: Value): Hash =
@@ -35,25 +35,21 @@ proc hash(value: Value): Hash =
   of vkString: return value.stringValue.hash
   else: return 0
 
-proc fingerprint(typ: Type, res: var Fingerprint) =
-  res.add(typ.hash)
-
 proc fingerprint(typ: Type): Fingerprint =
-  result = @[]
-  typ.fingerprint(result)
+  result = @[typ.hash.int64]
 
 proc fingerprint(value: Value): Fingerprint =
-  result = @[cast[int64](value.kind), value.hash]
+  result = @[value.kind.int64, value.hash]
 
 CreateContext Context:
-  proc computeTypeImpl*(ctx: Context, node: AstNode): Type
-  proc computeValueImpl*(ctx: Context, node: AstNode): Value
+  proc computeTypeImpl(ctx: Context, node: AstNode): Type {.query("Type").}
+  proc computeValueImpl(ctx: Context, node: AstNode): Value {.query("Value").}
 
 proc computeTypeImpl(ctx: Context, node: AstNode): Type =
   inc currentIndent, 1
   defer: dec currentIndent, 1
   echo repeat("| ", currentIndent - 1), "computeTypeImpl ", node
-  
+
   case node
   of NumberLiteral():
     return tInt
@@ -90,7 +86,7 @@ proc computeValueImpl(ctx: Context, node: AstNode): Value =
   inc currentIndent, 1
   defer: dec currentIndent, 1
   echo repeat("| ", currentIndent - 1), "computeValueImpl ", node
-  
+
   case node
   of NumberLiteral():
     return Value(kind: vkNumber, intValue: node.text.parseInt)
@@ -224,12 +220,14 @@ echo "value ", ctx.computeValue(node), "\n--------------------------------------
 # echo ctx.computeType(node), "\n--------------------------------------"
 
 
-# echo "\n\n ============================= Update Node 6 =================================\n\n"
-# node[2].text = "99"
-# ctx.updateNode(node[2])
-# echo ctx, "\n--------------------------------------"
+echo "\n\n ============================= Update Node 6 =================================\n\n"
+node[1][1].text = "2 and 3 is "
+ctx.updateNode(node[1][1])
+echo ctx, "\n--------------------------------------"
 
-# echo "\n\n ============================= Compute Type 7 =================================\n\n"
-# echo ctx.computeType(node), "\n--------------------------------------"
-# echo ctx, "\n--------------------------------------"
-# echo ctx.computeType(node), "\n--------------------------------------"
+echo "\n\n ============================= Compute Type 7 =================================\n\n"
+echo "type ", ctx.computeType(node), "\n--------------------------------------"
+echo "value ", ctx.computeValue(node), "\n--------------------------------------"
+echo ctx, "\n--------------------------------------"
+echo "type ", ctx.computeType(node), "\n--------------------------------------"
+echo "value ", ctx.computeValue(node), "\n--------------------------------------"
