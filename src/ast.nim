@@ -1,4 +1,5 @@
 import std/[options, algorithm, strutils, hashes, enumutils]
+import system
 import fusion/matching
 import util, id
 
@@ -59,6 +60,18 @@ func prev*(node: AstNode): Option[AstNode] =
   if i <= 0:
     return none[AstNode]()
   return some(node.parent[i - 1])
+
+func first*(node: AstNode): AstNode =
+  if node.len > 0:
+    return node[0]
+  # raise IndexDefect(msg: "Node has no children")
+  return nil
+
+func last*(node: AstNode): AstNode =
+  if node.len > 0:
+    return node[node.len - 1]
+  # raise Defect(msg: "Node has no children")
+  return nil
 
 func lastOrSelf*(node: AstNode): AstNode =
   if node.len > 0:
@@ -123,6 +136,14 @@ proc findWithParentRec*(node: AstNode, kind: AstNodeKind): Option[AstNode] =
   if node.parent.kind == kind:
     return some(node)
   return node.parent.findWithParentRec(kind)
+
+# Returns the closest parent node which has itself a parent with the given kind
+proc isChildRec*(node: AstNode, parent: AstNode): bool =
+  if node.parent == nil:
+    return false
+  if node.parent == parent:
+    return true
+  return node.parent.isChildRec(parent)
 
 func path*(node: AstNode): seq[int] =
   result = @[]

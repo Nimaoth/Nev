@@ -10,6 +10,7 @@ let IdAdd = newId()
 
 type Type* = enum
   tError
+  tVoid
   tString
   tInt
 
@@ -20,6 +21,20 @@ type
     of vkError: discard
     of vkNumber: intValue: int
     of vkString: stringValue: string
+
+type
+  SymbolKind = enum skAstNode, skBuiltin
+  Symbol* = ref object
+    id: Id
+    case kind: SymbolKind
+    of skAstNode:
+      node*: AstNode
+    of skBuiltin:
+      typ*: Type
+      value*: Value
+
+proc `$`(symbol: Symbol): string =
+  return $symbol.id & " - " & $symbol.node
 
 func errorValue(): Value = Value(kind: vkError)
 
@@ -41,9 +56,16 @@ proc fingerprint(typ: Type): Fingerprint =
 proc fingerprint(value: Value): Fingerprint =
   result = @[value.kind.int64, value.hash]
 
+proc fingerprint(symbols: TableRef[Id, Symbol]): Fingerprint =
+  result = @[]
+  for (key, value) in symbols.pairs:
+    result.add(key.hash)
+    result.add(value.node.hash)
+
 CreateContext Context:
   proc computeTypeImpl(ctx: Context, node: AstNode): Type {.query("Type").}
   proc computeValueImpl(ctx: Context, node: AstNode): Value {.query("Value").}
+  proc computeSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, Symbol] {.query("Symbols").}
 
 proc computeTypeImpl(ctx: Context, node: AstNode): Type =
   inc currentIndent, 1
@@ -79,8 +101,43 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
 
     return tError
 
+  of Declaration():
+    if node.len == 0:
+      return tError
+    return ctx.computeType(node[0])
+
+  of Identifier():
+    let id = node.id
+    let symbols = ctx.computeSymbols(node)
+    if symbols.contains(id):
+      let symbol = symbols[id]
+      return ctx.computeType(symbol.node)
+
+    return tError
+
+  of NodeList():
+    if node.len == 0:
+      return tVoid
+    return ctx.computeType(node.last)
+
   else:
     return tError
+
+proc computeSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, Symbol] =
+  inc currentIndent, 1
+  defer: dec currentIndent, 1
+  echo repeat("| ", currentIndent - 1), "computeSymbolsImpl ", node
+
+  result = newTable[Id, Symbol]()
+
+  if node.findWithParentRec(NodeList).getSome(parentInNodeList):
+    for child in parentInNodeList.parent.children:
+      if child == parentInNodeList:
+        break
+      if child.kind != Declaration:
+        continue
+      assert child.id != null
+      result.add(child.id, Symbol(kind: skAstNode, node: child))
 
 proc computeValueImpl(ctx: Context, node: AstNode): Value =
   inc currentIndent, 1
@@ -124,6 +181,24 @@ proc computeValueImpl(ctx: Context, node: AstNode): Value =
       let newValue = leftValue.stringValue & rightValueString
       return Value(kind: vkString, stringValue: newValue)
 
+    return errorValue()
+
+  of NodeList():
+    if node.len == 0:
+      return errorValue()
+    return ctx.computeValue(node.last)
+
+  of Declaration():
+    if node.len == 0:
+      return errorValue()
+    return ctx.computeValue(node[0])
+
+  of Identifier():
+    let id = node.id
+    let symbols = ctx.computeSymbols(node)
+    if symbols.contains(id):
+      let symbol = symbols[id]
+      return ctx.computeValue(symbol.node)
     return errorValue()
 
   else:
@@ -170,14 +245,21 @@ proc replaceNode(ctx: Context, node: AstNode, newNode: AstNode) =
 
   ctx.insertNode(newNode)
 
+let tempId = newId()
 let node = makeTree(AstNode):
-  Call():
-    Identifier(id: == IdAdd)
+  NodeList():
+    Declaration(id: == tempId):
+      Call():
+        Identifier(id: == IdAdd)
+        Call():
+          Identifier(id: == IdAdd)
+          NumberLiteral(text: "1")
+          NumberLiteral(text: "2")
+        NumberLiteral(text: "3")
     Call():
       Identifier(id: == IdAdd)
-      NumberLiteral(text: "1")
-      NumberLiteral(text: "2")
-    NumberLiteral(text: "3")
+      Identifier(id: == tempId)
+      NumberLiteral(text: "4")
 
 let ctx = newContext()
 
@@ -191,27 +273,27 @@ echo ctx, "\n--------------------------------------"
 echo "\n\n ============================= Compute Type 1 =================================\n\n"
 echo "type ", ctx.computeType(node), "\n--------------------------------------"
 echo "value ", ctx.computeValue(node), "\n--------------------------------------"
-echo ctx, "\n--------------------------------------"
-echo "type ", ctx.computeType(node), "\n--------------------------------------"
-echo "value ", ctx.computeValue(node), "\n--------------------------------------"
+# echo ctx, "\n--------------------------------------"
+# echo "type ", ctx.computeType(node), "\n--------------------------------------"
+# echo "value ", ctx.computeValue(node), "\n--------------------------------------"
 
 echo "\n\n ============================= Update Node 2 =================================\n\n"
 var newNode = makeTree(AstNode): StringLiteral(text: "lol")
-ctx.replaceNode(node[1][1], newNode)
-node[1][1] = newNode
-echo ctx, "\n--------------------------------------"
+ctx.replaceNode(node[0][0][1][1], newNode)
+node[0][0][1][1] = newNode
+# echo ctx, "\n--------------------------------------"
 
 echo "\n\n ============================= Compute Type 3 =================================\n\n"
 echo "type ", ctx.computeType(node), "\n--------------------------------------"
 echo "value ", ctx.computeValue(node), "\n--------------------------------------"
-echo ctx, "\n--------------------------------------"
-echo "type ", ctx.computeType(node), "\n--------------------------------------"
-echo "value ", ctx.computeValue(node), "\n--------------------------------------"
+# echo ctx, "\n--------------------------------------"
+# echo "type ", ctx.computeType(node), "\n--------------------------------------"
+# echo "value ", ctx.computeValue(node), "\n--------------------------------------"
 
 # echo "\n\n ============================= Update Node 4 =================================\n\n"
 # newNode = makeTree(AstNode): StringLiteral(text: "bar")
-# ctx.replaceNode(node[1][2], newNode)
-# node[1][2] = newNode
+# ctx.replaceNode(node[0][0][1][2], newNode)
+# node[0][0][1][2] = newNode
 # echo ctx, "\n--------------------------------------"
 
 # echo "\n\n ============================= Compute Type 5 =================================\n\n"
@@ -220,14 +302,14 @@ echo "value ", ctx.computeValue(node), "\n--------------------------------------
 # echo ctx.computeType(node), "\n--------------------------------------"
 
 
-echo "\n\n ============================= Update Node 6 =================================\n\n"
-node[1][1].text = "2 and 3 is "
-ctx.updateNode(node[1][1])
-echo ctx, "\n--------------------------------------"
+# echo "\n\n ============================= Update Node 6 =================================\n\n"
+# node[0][0][1][1].text = "2 and 3 is "
+# ctx.updateNode(node[0][0][1][1])
+# echo ctx, "\n--------------------------------------"
 
-echo "\n\n ============================= Compute Type 7 =================================\n\n"
-echo "type ", ctx.computeType(node), "\n--------------------------------------"
-echo "value ", ctx.computeValue(node), "\n--------------------------------------"
-echo ctx, "\n--------------------------------------"
-echo "type ", ctx.computeType(node), "\n--------------------------------------"
-echo "value ", ctx.computeValue(node), "\n--------------------------------------"
+# echo "\n\n ============================= Compute Type 7 =================================\n\n"
+# echo "type ", ctx.computeType(node), "\n--------------------------------------"
+# echo "value ", ctx.computeValue(node), "\n--------------------------------------"
+# echo ctx, "\n--------------------------------------"
+# echo "type ", ctx.computeType(node), "\n--------------------------------------"
+# echo "value ", ctx.computeValue(node), "\n--------------------------------------"
