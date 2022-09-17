@@ -165,7 +165,7 @@ proc computeSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, Symbol] =
   result = newTable[Id, Symbol]()
 
   if node.findWithParentRec(NodeList).getSome(parentInNodeList):
-    ctx.recordDependency(parentInNodeList.parent.getItem, ctx.updateSymbols)
+    ctx.recordDependency(parentInNodeList.parent.getItem)
     for child in parentInNodeList.parent.children:
       if child == parentInNodeList:
         break
@@ -173,7 +173,7 @@ proc computeSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, Symbol] =
         continue
       assert child.id != null
 
-      ctx.recordDependency(child.getItem, ctx.updateSymbols)
+      ctx.recordDependency(child.getItem)
       let symbol = ctx.newData(Symbol(kind: skAstNode, id: child.id, node: child))
       result.add(child.id, symbol)
 
@@ -265,18 +265,18 @@ iterator nextPreOrder*(node: AstNode): tuple[key: int, value: AstNode] =
 
 proc insertNode(ctx: Context, node: AstNode) =
   ctx.depGraph.revision += 1
-  ctx.inputChanged[node.getItem] = ctx.depGraph.revision
+  ctx.depGraph.changed[(node.getItem, nil)] = ctx.depGraph.revision
   ctx.itemsAstNode[node.getItem] = node
   for (key, child) in node.nextPreOrder:
-    ctx.inputChanged[child.getItem] = ctx.depGraph.revision
+    ctx.depGraph.changed[(child.getItem, nil)] = ctx.depGraph.revision
     ctx.itemsAstNode[child.getItem] = child
 
 proc updateNode(ctx: Context, node: AstNode) =
   ctx.depGraph.revision += 1
-  ctx.inputChanged[node.getItem] = ctx.depGraph.revision
+  ctx.depGraph.changed[(node.getItem, nil)] = ctx.depGraph.revision
 
 proc replaceNode(ctx: Context, node: AstNode, newNode: AstNode) =
-  ctx.inputChanged.del(node.getItem)
+  ctx.depGraph.changed.del((node.getItem, nil))
 
   for key in ctx.depGraph.dependencies.keys:
     for i, dep in ctx.depGraph.dependencies[key]:
@@ -308,14 +308,14 @@ let ctx = newContext()
 proc `$`(ctx: Context): string = $$ctx
 
 echo "\n\n ============================= Insert node =================================\n\n"
-echo ctx, "\n--------------------------------------"
+# echo ctx, "\n--------------------------------------"
 ctx.insertNode(node)
 echo ctx, "\n--------------------------------------"
 
 echo "\n\n ============================= Compute Type 1 =================================\n\n"
 echo "type ", ctx.computeType(node), "\n--------------------------------------"
 echo "value ", ctx.computeValue(node), "\n--------------------------------------"
-echo ctx, "\n--------------------------------------"
+# echo ctx, "\n--------------------------------------"
 # echo "type ", ctx.computeType(node), "\n--------------------------------------"
 # echo "value ", ctx.computeValue(node), "\n--------------------------------------"
 
@@ -324,6 +324,7 @@ var newNode = makeTree(AstNode): StringLiteral(text: "lol")
 ctx.replaceNode(node[0][0][1][1], newNode)
 node[0][0][1][1] = newNode
 echo ctx, "\n--------------------------------------"
+echo node.treeRepr
 
 echo "\n\n ============================= Compute Type 3 =================================\n\n"
 echo "type ", ctx.computeType(node), "\n--------------------------------------"
