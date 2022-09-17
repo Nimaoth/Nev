@@ -35,11 +35,11 @@ proc newDependencyGraph*(): DependencyGraph =
   result.revision = 0
   result.queryNames.add(nil, "")
 
-proc nodeColor*(graph: DependencyGraph, key: Dependency): NodeColor =
+proc nodeColor*(graph: DependencyGraph, key: Dependency, parentVerified: int = 0): NodeColor =
   if key.update == nil:
     # Input
     let inputChangedRevision = graph.changed.getOrDefault(key, graph.revision)
-    if inputChangedRevision >= graph.revision:
+    if inputChangedRevision > parentVerified:
       return Red
     else:
       return Green
@@ -166,7 +166,8 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       newIdentNode("dependencyStack"),
       quote do: seq[seq[Dependency]],
       newEmptyNode()
-    )
+    ),
+    nnkIdentDefs.newTree(newIdentNode("enableLogging"), bindSym"bool", newEmptyNode()),
   )
 
   # Add member for each input
@@ -334,9 +335,9 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
   # proc force(ctx: Context, key: Dependency)
   result.add quote do:
     proc force(ctx: `contextName`, key: Dependency) =
-      inc currentIndent, 1
-      defer: dec currentIndent, 1
-      echo repeat("| ", currentIndent - 1), "force ", key.item
+      inc currentIndent, if ctx.enableLogging: 1 else: 0
+      defer: dec currentIndent, if ctx.enableLogging: 1 else: 0
+      if ctx.enableLogging: echo repeat("| ", currentIndent - 1), "force ", key.item
 
       ctx.depGraph.clearEdges(key)
       ctx.dependencyStack.add(@[])
@@ -349,39 +350,40 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       let prevFingerprint = ctx.depGraph.fingerprint(key)
 
       if fingerprint == prevFingerprint:
-        echo repeat("| ", currentIndent), "mark green"
+        if ctx.enableLogging: echo repeat("| ", currentIndent), "mark green"
         ctx.depGraph.markGreen(key)
       else:
-        echo repeat("| ", currentIndent), "mark red"
+        if ctx.enableLogging: echo repeat("| ", currentIndent), "mark red"
         ctx.depGraph.markRed(key, fingerprint)
 
   # proc tryMarkGreen(ctx: Context, key: Dependency): bool
   result.add quote do:
     proc tryMarkGreen(ctx: `contextName`, key: Dependency): bool =
-      inc currentIndent, 1
-      defer: dec currentIndent, 1
+      inc currentIndent, if ctx.enableLogging: 1 else: 0
+      defer: dec currentIndent, if ctx.enableLogging: 1 else: 0
+      if ctx.enableLogging: echo repeat("| ", currentIndent - 1), "tryMarkGreen ", ctx.depGraph.queryNames[key.update] & ":" & $key.item, ", deps: ", ctx.depGraph.getDependencies(key)
 
-      echo repeat("| ", currentIndent - 1), "tryMarkGreen ", ctx.depGraph.queryNames[key.update] & ":" & $key.item, ", deps: ", ctx.depGraph.getDependencies(key)
+      let verified = ctx.depGraph.verified.getOrDefault(key, 0)
 
       for i, dep in ctx.depGraph.getDependencies(key):
-        case ctx.depGraph.nodeColor(dep)
+        case ctx.depGraph.nodeColor(dep, verified)
         of Green:
-          echo repeat("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, " is green, skip"
+          if ctx.enableLogging: echo repeat("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, " is green, skip"
           discard
         of Red:
-          echo repeat("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, " is red, failed"
+          if ctx.enableLogging: echo repeat("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, " is red, failed"
           return false
         of Grey:
-          echo repeat("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, " is grey"
+          if ctx.enableLogging: echo repeat("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, " is grey"
           if not ctx.tryMarkGreen(dep):
-            echo repeat("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, ", mark green failed"
+            if ctx.enableLogging: echo repeat("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, ", mark green failed"
             ctx.force(dep)
 
-            if ctx.depGraph.nodeColor(dep) == Red:
-              echo repeat("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, ", value changed"
+            if ctx.depGraph.nodeColor(dep, verified) == Red:
+              if ctx.enableLogging: echo repeat("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, ", value changed"
               return false
 
-      echo repeat("| ", currentIndent), "mark green"
+      if ctx.enableLogging: echo repeat("| ", currentIndent), "mark green"
       ctx.depGraph.markGreen(key)
 
       return true
@@ -410,38 +412,38 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
         let color = ctx.depGraph.nodeColor(key)
 
-        inc currentIndent, 1
-        defer: dec currentIndent, 1
-        echo repeat("| ", currentIndent - 1), "compute", `nameString`, " ", color, ", ", item
+        inc currentIndent, if ctx.enableLogging: 1 else: 0
+        defer: dec currentIndent, if ctx.enableLogging: 1 else: 0
+        if ctx.enableLogging: echo repeat("| ", currentIndent - 1), "compute", `nameString`, " ", color, ", ", item
 
         if color == Green:
           if not ctx.`queryCache`.contains(input):
-            echo repeat("| ", currentIndent), "green, not in cache"
+            if ctx.enableLogging: echo repeat("| ", currentIndent), "green, not in cache"
             ctx.force(key)
-            echo repeat("| ", currentIndent), "result: ", $ctx.`queryCache`[input]
+            if ctx.enableLogging: echo repeat("| ", currentIndent), "result: ", $ctx.`queryCache`[input]
           else:
-            echo repeat("| ", currentIndent), "green, in cache, result: ", $ctx.`queryCache`[input]
+            if ctx.enableLogging: echo repeat("| ", currentIndent), "green, in cache, result: ", $ctx.`queryCache`[input]
           return ctx.`queryCache`[input]
 
         if color == Grey:
           if not ctx.`queryCache`.contains(input):
-            echo repeat("| ", currentIndent), "grey, not in cache"
+            if ctx.enableLogging: echo repeat("| ", currentIndent), "grey, not in cache"
             ctx.force(key)
-            echo repeat("| ", currentIndent), "result: ", $ctx.`queryCache`[input]
+            if ctx.enableLogging: echo repeat("| ", currentIndent), "result: ", $ctx.`queryCache`[input]
             return ctx.`queryCache`[input]
 
-          echo repeat("| ", currentIndent), "grey, in cache"
+          if ctx.enableLogging: echo repeat("| ", currentIndent), "grey, in cache"
           if ctx.tryMarkGreen(key):
-            echo repeat("| ", currentIndent), "green, result: ", $ctx.`queryCache`[input]
+            if ctx.enableLogging: echo repeat("| ", currentIndent), "green, result: ", $ctx.`queryCache`[input]
             return ctx.`queryCache`[input]
           else:
-            echo repeat("| ", currentIndent), "failed to mark green"
+            if ctx.enableLogging: echo repeat("| ", currentIndent), "failed to mark green"
             ctx.force(key)
-            echo repeat("| ", currentIndent), "result: ", $ctx.`queryCache`[input]
+            if ctx.enableLogging: echo repeat("| ", currentIndent), "result: ", $ctx.`queryCache`[input]
             return ctx.`queryCache`[input]
 
         assert color == Red
-        echo repeat("| ", currentIndent), "red, in cache, result: ", $ctx.`queryCache`[input]
+        if ctx.enableLogging: echo repeat("| ", currentIndent), "red, in cache, result: ", $ctx.`queryCache`[input]
         return ctx.`queryCache`[input]
 
   # Create $ for each query
