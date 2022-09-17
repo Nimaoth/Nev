@@ -188,7 +188,6 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     if not isCustomMemberDefinition customMembers: continue
 
     for member in customMembers:
-      # memberList.add member
       memberList.add nnkIdentDefs.newTree(member[0], member[1], newEmptyNode())
 
   # Add member for each data
@@ -207,7 +206,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
   # Add two members for each query
   # queryCache: Table[QueryInput, QueryOutput]
-  # update: proc(arg: QueryInput): Fingerprint
+  # update: proc(item: ItemId): Fingerprint
   for query in body:
     if not isQuery query: continue
 
@@ -253,7 +252,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
   # Add all statements in the input body of this macro as is to the output
   for query in body:
-    if isInputDefinition(query) or isDataDefinition(query):
+    if not isQuery(query):
       continue
     result.add query
 
@@ -320,9 +319,10 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
     let name = inputName data
     let items = ident "items" & name.strVal
+    let functionName = ident "new" & name.strVal
 
     result.add quote do:
-      proc newData*(ctx: `contextName`, data: `name`): `name` =
+      proc `functionName`*(ctx: `contextName`, data: `name`): `name` =
         let item = data.getItem
         let key: Dependency = (item, nil)
         if ctx.depGraph.changed.contains(key):
