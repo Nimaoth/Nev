@@ -20,9 +20,8 @@ type
   NodeColor* = enum Grey, Red, Green
 
   DependencyGraph* = ref object
-    colors: Table[Dependency, NodeColor]
     verified: Table[Dependency, int]
-    changed: Table[Dependency, int]
+    changed*: Table[Dependency, int]
     fingerprints: Table[Dependency, Fingerprint]
     dependencies*: Table[Dependency, seq[Dependency]]
     queryNames*: Table[UpdateFunction, string]
@@ -34,14 +33,59 @@ proc `==`(a: ItemId, b: ItemId): bool = a.id == b.id and a.typ == b.typ
 proc newDependencyGraph*(): DependencyGraph =
   new result
   result.revision = 0
+  result.queryNames.add(nil, "")
+
+proc nodeColor*(graph: DependencyGraph, key: Dependency): NodeColor =
+  if key.update == nil:
+    # Input
+    let inputChangedRevision = graph.changed.getOrDefault(key, graph.revision)
+    if inputChangedRevision >= graph.revision:
+      return Red
+    else:
+      return Green
+
+  # Computed data
+  let verified = graph.verified.getOrDefault(key, 0)
+  if verified != graph.revision:
+    return Grey
+
+  let changed = graph.changed.getOrDefault(key, 0)
+  if changed == graph.revision:
+    return Red
+
+  return Green
+
+proc getDependencies*(graph: DependencyGraph, key: Dependency): seq[Dependency] =
+  result = graph.dependencies.getOrDefault(key, @[])
+  if result.len == 0 and key.update != nil:
+    result.add (key.item, nil)
+
+proc clearEdges*(graph: DependencyGraph, key: Dependency) =
+  graph.dependencies[key] = @[]
+
+proc setDependencies*(graph: DependencyGraph, key: Dependency, deps: seq[Dependency]) =
+  graph.dependencies[key] = deps
+
+proc fingerprint*(graph: DependencyGraph, key: Dependency): Fingerprint =
+  if graph.fingerprints.contains(key):
+    return graph.fingerprints[key]
+
+proc markGreen*(graph: DependencyGraph, key: Dependency) =
+  graph.verified[key] = graph.revision
+
+proc markRed*(graph: DependencyGraph, key: Dependency, fingerprint: Fingerprint) =
+  graph.verified[key] = graph.revision
+  graph.changed[key] = graph.revision
+  graph.fingerprints[key] = fingerprint
 
 proc `$`*(graph: DependencyGraph): string =
   result = "Dependency Graph\n"
   result.add indent("revision: " & $graph.revision, 1, "| ") & "\n"
 
   result.add indent("colors:", 1, "| ") & "\n"
-  for (key, value) in graph.colors.pairs:
-    result.add indent(graph.queryNames[key.update] & ":" & $key.item & " -> " & $value, 2, "| ") & "\n"
+  for (key, value) in graph.changed.pairs:
+    let color = graph.nodeColor key
+    result.add indent(graph.queryNames[key.update] & ":" & $key.item & " -> " & $color, 2, "| ") & "\n"
 
   result.add indent("verified:", 1, "| ") & "\n"
   for (key, value) in graph.verified.pairs:
@@ -64,41 +108,6 @@ proc `$`*(graph: DependencyGraph): string =
 
     deps.add "]"
     result.add indent(graph.queryNames[key.update] & ":" & $key.item & " -> " & deps, 2, "| ") & "\n"
-
-proc nodeColor*(graph: DependencyGraph, key: Dependency): NodeColor =
-  # return graph.colors.getOrDefault(key, Grey)
-  let verified = graph.verified.getOrDefault(key, 0)
-  if verified != graph.revision:
-    return Grey
-
-  let changed = graph.changed.getOrDefault(key, 0)
-  if changed == graph.revision:
-    return Red
-
-  return Green
-
-proc getDependencies*(graph: DependencyGraph, key: Dependency): seq[Dependency] =
-  return graph.dependencies.getOrDefault(key, @[])
-
-proc clearEdges*(graph: DependencyGraph, key: Dependency) =
-  graph.dependencies[key] = @[]
-
-proc setDependencies*(graph: DependencyGraph, key: Dependency, deps: seq[Dependency]) =
-  graph.dependencies[key] = deps
-
-proc fingerprint*(graph: DependencyGraph, key: Dependency): Fingerprint =
-  if graph.fingerprints.contains(key):
-    return graph.fingerprints[key]
-
-proc markGreen*(graph: DependencyGraph, key: Dependency) =
-  graph.colors[key] = Green
-  graph.verified[key] = graph.revision
-
-proc markRed*(graph: DependencyGraph, key: Dependency, fingerprint: Fingerprint) =
-  graph.colors[key] = Red
-  graph.verified[key] = graph.revision
-  graph.changed[key] = graph.revision
-  graph.fingerprints[key] = fingerprint
 
 template query*(name: string) {.pragma.}
 
@@ -145,15 +154,9 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       echo "data: ", query.treeRepr
 
   # List of members of the final Context type
-  # inputChanged: Table[AstNode, int]
   # depGraph: DependencyGraph
   # dependencyStack: seq[seq[Key]]
   let memberList = nnkRecList.newTree(
-    nnkIdentDefs.newTree(
-      newIdentNode("inputChanged"),
-      quote do: Table[ItemId, int],
-      newEmptyNode()
-    ),
     nnkIdentDefs.newTree(
       newIdentNode("depGraph"),
       quote do: DependencyGraph,
@@ -285,6 +288,12 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
   newContextFn[6].add quote do: return `ctx`
   result.add newContextFn
 
+  # proc recordDependency(ctx: Context, item: ItemId, update: UpdateFunction)
+  result.add quote do:
+    proc recordDependency*(ctx: `contextName`, item: ItemId, update: UpdateFunction = nil) =
+      if ctx.dependencyStack.len > 0:
+        ctx.dependencyStack[ctx.dependencyStack.high].add (item, update)
+
   # Add newData function for each data
   for data in body:
     if not isDataDefinition data: continue
@@ -295,10 +304,11 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     result.add quote do:
       proc newData*(ctx: `contextName`, data: `name`): `name` =
         let item = data.getItem
-        if ctx.inputChanged.contains(item):
-          ctx.inputChanged[item] = ctx.depGraph.revision
+        let key: Dependency = (item, nil)
+        if ctx.depGraph.changed.contains(key):
+          ctx.depGraph.changed[key] = ctx.depGraph.revision
         else:
-          ctx.inputChanged.add(item, ctx.depGraph.revision)
+          ctx.depGraph.changed.add(key, ctx.depGraph.revision)
         ctx.`items`.add(item, data)
         return data
 
@@ -314,6 +324,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
       ctx.depGraph.clearEdges(key)
       ctx.dependencyStack.add(@[])
+      ctx.recordDependency(key.item)
 
       let fingerprint = key.update(key.item)
 
@@ -333,14 +344,6 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     proc tryMarkGreen(ctx: `contextName`, key: Dependency): bool =
       inc currentIndent, 1
       defer: dec currentIndent, 1
-
-      let inputChangedRevision = ctx.inputChanged.getOrDefault(key.item, ctx.depGraph.revision)
-      let verified = ctx.depGraph.verified.getOrDefault(key, 0)
-
-      if inputChangedRevision > verified:
-        # Input changed after this current query got verified
-        echo repeat("| ", currentIndent - 1), "tryMarkGreen ", ctx.depGraph.queryNames[key.update] & ":" & $key.item, ", input changed"
-        return false
 
       echo repeat("| ", currentIndent - 1), "tryMarkGreen ", ctx.depGraph.queryNames[key.update] & ":" & $key.item, ", deps: ", ctx.depGraph.getDependencies(key)
 
@@ -366,12 +369,6 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       ctx.depGraph.markGreen(key)
 
       return true
-
-  # proc recordDependency(ctx: Context, item: ItemId, update: UpdateFunction)
-  result.add quote do:
-    proc recordDependency*(ctx: `contextName`, item: ItemId, update: UpdateFunction) =
-      if ctx.dependencyStack.len > 0:
-        ctx.dependencyStack[ctx.dependencyStack.high].add (item, update)
 
   # Add compute function for every query
   # proc compute(ctx: Context, item: QueryInput): QueryOutput
@@ -464,10 +461,6 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       var `toStringResult` = "Context\n"
 
       `queryCachesToString`
-
-      `toStringResult`.add repeat("| ", 1) & "Input Changed\n"
-      for (key, value) in `toStringCtx`.inputChanged.pairs:
-        `toStringResult`.add repeat("| ", 2) & $key & " -> " & $value & "\n"
 
       `toStringResult`.add indent($`toStringCtx`.depGraph, 1, "| ")
 
