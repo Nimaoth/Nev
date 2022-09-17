@@ -26,6 +26,7 @@ type
   SymbolKind = enum skAstNode, skBuiltin
   Symbol* = ref object
     id: Id
+    reff: Id
     case kind: SymbolKind
     of skAstNode:
       node*: AstNode
@@ -34,7 +35,10 @@ type
       value*: Value
 
 proc `$`(symbol: Symbol): string =
-  return $symbol.id & " - " & $symbol.node
+  return "Sym(" & $symbol.id & ", " & $symbol.reff & ", " & $symbol.node & ")"
+
+proc hash(symbol: Symbol): Hash =
+  return symbol.id.hash
 
 func errorValue(): Value = Value(kind: vkError)
 
@@ -62,10 +66,39 @@ proc fingerprint(symbols: TableRef[Id, Symbol]): Fingerprint =
     result.add(key.hash)
     result.add(value.node.hash)
 
+proc getItem*(node: AstNode): ItemId =
+  if node.id == null:
+    node.id = newId()
+  return (node.id, 0)
+
+proc getItem*(symbol: Symbol): ItemId =
+  if symbol.id == null:
+    symbol.id = newId()
+  return (symbol.id, 1)
+
 CreateContext Context:
+  input AstNode
+  data Symbol
+
   proc computeTypeImpl(ctx: Context, node: AstNode): Type {.query("Type").}
   proc computeValueImpl(ctx: Context, node: AstNode): Value {.query("Value").}
   proc computeSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, Symbol] {.query("Symbols").}
+  proc computeSymbolTypeImpl(ctx: Context, symbol: Symbol): Type {.query("SymbolType").}
+  # proc computeSymbolValueImpl(ctx: Context, symbol: Symbol): Value {.query("SymbolValue").}
+
+proc computeSymbolTypeImpl(ctx: Context, symbol: Symbol): Type =
+  case symbol.kind:
+  of skAstNode:
+    return ctx.computeType(symbol.node)
+  of skBuiltin:
+    return symbol.typ
+
+# proc computeSymbolValueImpl(ctx: Context, symbol: Symbol): Value =
+#   case symbol.kind:
+#   of skAstNode:
+#     return ctx.computeValue(symbol.node)
+#   of skBuiltin:
+#     return symbol.value
 
 proc computeTypeImpl(ctx: Context, node: AstNode): Type =
   inc currentIndent, 1
@@ -82,7 +115,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
   of Call():
     let function = node[0]
 
-    if function.id != IdAdd:
+    if function.reff != IdAdd:
       return tError
     if node.len != 3:
       return tError
@@ -107,11 +140,12 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
     return ctx.computeType(node[0])
 
   of Identifier():
-    let id = node.id
+    let id = node.reff
     let symbols = ctx.computeSymbols(node)
     if symbols.contains(id):
       let symbol = symbols[id]
-      return ctx.computeType(symbol.node)
+      return ctx.computeSymbolType(symbol)
+      # return ctx.computeType(symbol.node)
 
     return tError
 
@@ -131,13 +165,17 @@ proc computeSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, Symbol] =
   result = newTable[Id, Symbol]()
 
   if node.findWithParentRec(NodeList).getSome(parentInNodeList):
+    ctx.recordDependency(parentInNodeList.parent.getItem, ctx.updateSymbols)
     for child in parentInNodeList.parent.children:
       if child == parentInNodeList:
         break
       if child.kind != Declaration:
         continue
       assert child.id != null
-      result.add(child.id, Symbol(kind: skAstNode, node: child))
+
+      ctx.recordDependency(child.getItem, ctx.updateSymbols)
+      let symbol = ctx.newData(Symbol(kind: skAstNode, id: child.id, node: child))
+      result.add(child.id, symbol)
 
 proc computeValueImpl(ctx: Context, node: AstNode): Value =
   inc currentIndent, 1
@@ -154,7 +192,7 @@ proc computeValueImpl(ctx: Context, node: AstNode): Value =
   of Call():
     let function = node[0]
 
-    if function.id != IdAdd:
+    if function.reff != IdAdd:
       return errorValue()
     if node.len != 3:
       return errorValue()
@@ -194,7 +232,7 @@ proc computeValueImpl(ctx: Context, node: AstNode): Value =
     return ctx.computeValue(node[0])
 
   of Identifier():
-    let id = node.id
+    let id = node.reff
     let symbols = ctx.computeSymbols(node)
     if symbols.contains(id):
       let symbol = symbols[id]
@@ -227,21 +265,23 @@ iterator nextPreOrder*(node: AstNode): tuple[key: int, value: AstNode] =
 
 proc insertNode(ctx: Context, node: AstNode) =
   ctx.depGraph.revision += 1
-  ctx.inputChanged[node] = ctx.depGraph.revision
+  ctx.inputChanged[node.getItem] = ctx.depGraph.revision
+  ctx.itemsAstNode[node.getItem] = node
   for (key, child) in node.nextPreOrder:
-    ctx.inputChanged[child] = ctx.depGraph.revision
+    ctx.inputChanged[child.getItem] = ctx.depGraph.revision
+    ctx.itemsAstNode[child.getItem] = child
 
 proc updateNode(ctx: Context, node: AstNode) =
   ctx.depGraph.revision += 1
-  ctx.inputChanged[node] = ctx.depGraph.revision
+  ctx.inputChanged[node.getItem] = ctx.depGraph.revision
 
 proc replaceNode(ctx: Context, node: AstNode, newNode: AstNode) =
-  ctx.inputChanged.del(node)
+  ctx.inputChanged.del(node.getItem)
 
   for key in ctx.depGraph.dependencies.keys:
     for i, dep in ctx.depGraph.dependencies[key]:
-      if dep.node == node:
-        ctx.depGraph.dependencies[key][i].node = newNode
+      if dep.item == node.getItem:
+        ctx.depGraph.dependencies[key][i].item = newNode.getItem
 
   ctx.insertNode(newNode)
 
@@ -250,16 +290,18 @@ let node = makeTree(AstNode):
   NodeList():
     Declaration(id: == tempId):
       Call():
-        Identifier(id: == IdAdd)
+        Identifier(reff: == IdAdd)
         Call():
-          Identifier(id: == IdAdd)
+          Identifier(reff: == IdAdd)
           NumberLiteral(text: "1")
           NumberLiteral(text: "2")
         NumberLiteral(text: "3")
     Call():
-      Identifier(id: == IdAdd)
-      Identifier(id: == tempId)
+      Identifier(reff: == IdAdd)
+      Identifier(reff: == tempId)
       NumberLiteral(text: "4")
+
+echo node.treeRepr
 
 let ctx = newContext()
 
@@ -273,7 +315,7 @@ echo ctx, "\n--------------------------------------"
 echo "\n\n ============================= Compute Type 1 =================================\n\n"
 echo "type ", ctx.computeType(node), "\n--------------------------------------"
 echo "value ", ctx.computeValue(node), "\n--------------------------------------"
-# echo ctx, "\n--------------------------------------"
+echo ctx, "\n--------------------------------------"
 # echo "type ", ctx.computeType(node), "\n--------------------------------------"
 # echo "value ", ctx.computeValue(node), "\n--------------------------------------"
 
@@ -281,12 +323,12 @@ echo "\n\n ============================= Update Node 2 =========================
 var newNode = makeTree(AstNode): StringLiteral(text: "lol")
 ctx.replaceNode(node[0][0][1][1], newNode)
 node[0][0][1][1] = newNode
-# echo ctx, "\n--------------------------------------"
+echo ctx, "\n--------------------------------------"
 
 echo "\n\n ============================= Compute Type 3 =================================\n\n"
 echo "type ", ctx.computeType(node), "\n--------------------------------------"
 echo "value ", ctx.computeValue(node), "\n--------------------------------------"
-# echo ctx, "\n--------------------------------------"
+echo ctx, "\n--------------------------------------"
 # echo "type ", ctx.computeType(node), "\n--------------------------------------"
 # echo "value ", ctx.computeValue(node), "\n--------------------------------------"
 
