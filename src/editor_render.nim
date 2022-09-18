@@ -259,7 +259,7 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
       let y = lastNodeRect.y + lastNodeRect.h - bounds.y + padding * sgn(i).float32
       lastNodeRect = renderAstNode(n, editor, ed, bounds.splitV(indent.relative)[1].splitH(y.relative)[1], selectedNode, nodeBounds)
       maxWidth = max(maxWidth, lastNodeRect.w + indent)
-    
+
     let r = rect(bounds.x, bounds.y, maxWidth, lastNodeRect.y + lastNodeRect.h - bounds.y)
 
     ed.ctx.beginPath()

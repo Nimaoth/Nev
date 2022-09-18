@@ -923,21 +923,21 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
   echo "handleAction ", action, " '", arg, "'"
   case action
   of "cursor.left":
-    if self.node != self.document.rootNode and self.node.parent != self.document.rootNode and self.node.parent != nil:
-      self.node = self.node.parent
-  of "cursor.right":
-    if self.node.len > 0:
-      self.node = self.node[0]
-
-  of "cursor.up":
     let index = self.node.index
     if index > 0:
       self.node = self.node.parent[index - 1]
-
-  of "cursor.down":
+  of "cursor.right":
     let index = self.node.index
     if index >= 0 and index < self.node.parent.len - 1:
       self.node = self.node.parent[index + 1]
+
+  of "cursor.up":
+    if self.node != self.document.rootNode and self.node.parent != self.document.rootNode and self.node.parent != nil:
+      self.node = self.node.parent
+
+  of "cursor.down":
+    if self.node.len > 0:
+      self.node = self.node[0]
 
   of "cursor.next":
     var node = self.node
