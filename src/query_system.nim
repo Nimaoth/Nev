@@ -148,6 +148,11 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
   proc isCustomMemberDefinition(arg: NimNode): bool =
     return arg.kind == nnkVarSection
 
+  proc customMemberName(arg: NimNode): NimNode =
+    if arg[0].kind == nnkPostfix:
+      return arg[0][1]
+    return arg[0]
+
   # for arg in body:
   #   if not isCustomMemberDefinition arg:
   #     continue
@@ -261,7 +266,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
   var ctx = genSym(nskVar, "ctx")
   let newContextFnName = ident "new" & contextName.strVal
   var newContextFn = quote do:
-    proc `newContextFnName`(): `contextName` =
+    proc `newContextFnName`*(): `contextName` =
       var `ctx`: `contextName`
       new `ctx`
       `ctx`.depGraph = newDependencyGraph()
@@ -296,7 +301,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
     for member in customMembers:
       if member[2].kind == nnkEmpty: continue
-      let name = member[0]
+      let name = customMemberName member
       let initValue = member[2]
       queryInitializers.add quote do:
         `ctx`.`name` = `initValue`
@@ -471,7 +476,6 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       `toStringResult`.add repeat("| ", 1) & "Cache: " & `name` & "\n"
       for (key, value) in `toStringCtx`.`queryCache`.pairs:
         `toStringResult`.add repeat("| ", 2) & $key & " -> " & $value & "\n"
-
 
   # Create $ implementation for Context
   result.add quote do:
