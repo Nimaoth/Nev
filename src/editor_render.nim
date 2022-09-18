@@ -108,7 +108,7 @@ proc getPrecedenceForNode(doc: AstDocument, node: AstNode): int =
     return 0
   case node
   of Identifier():
-    if ctx.computeNewSymbol(node).getSome(symbol):
+    if ctx.computeSymbol(node).getSome(symbol):
       case symbol.kind
       of skBuiltin:
         return symbol.precedence
@@ -177,7 +177,7 @@ proc renderCallNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds
   let function = node[0]
   let subBounds = bounds.shrink gap.relative
 
-  if ctx.computeNewSymbol(function).getSome(sym):
+  if ctx.computeSymbol(function).getSome(sym):
     case sym.operatorNotation
     of Infix: return renderInfixNode(node, editor, ed, bounds, selectedNode, nodeBounds)
     of Prefix: return renderPrefixNode(node, editor, ed, bounds, selectedNode, nodeBounds)
@@ -280,7 +280,7 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
 
   of Identifier():
     var text = ""
-    if ctx.computeNewSymbol(node).getSome(symbol):
+    if ctx.computeSymbol(node).getSome(symbol):
       text = symbol.name
     else:
       text = $node.reff & " (" & node.text & ")"
@@ -299,7 +299,7 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
 
     let typ = ctx.computeType(node)
 
-    let symbol = ctx.computeNewSymbol(node)
+    let symbol = ctx.computeSymbol(node)
     let symbolSize = if symbol.getSome(symbol) and symbol.id == editor.currentlyEditedSymbol:
       let docRect = renderDocumentEditor(editor.textEditor, ed, subBounds, true)
       vec2(docRect.w, docRect.h)
@@ -416,14 +416,14 @@ proc renderCompletions(editor: AstDocumentEditor, ed: Editor, bounds: Rect): Rec
     ed.ctx.fillStyle = rgb(255, 225, 255)
     case com.kind
     of SymbolCompletion:
-      if ctx.getNewSymbol(com.id).getSome(symbol):
+      if ctx.getSymbol(com.id).getSome(symbol):
         ed.ctx.fillText(symbol.name, vec2(bounds.x, bounds.y + i.float32 * ed.ctx.fontSize))
     of AstCompletion:
       ed.ctx.fillText(com.name, vec2(bounds.x, bounds.y + i.float32 * ed.ctx.fontSize))
     else:
       discard
 
-proc renderSymbol(symbol: NewSymbol, editor: AstDocumentEditor, ed: Editor, bounds: Rect, selectedNode: AstNode): Rect =
+proc renderSymbol(symbol: Symbol, editor: AstDocumentEditor, ed: Editor, bounds: Rect, selectedNode: AstNode): Rect =
   var lastNodeRect = bounds
 
   if symbol.kind == skAstNode and symbol.node == selectedNode:
@@ -466,12 +466,12 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
       discard renderCompletions(editor, ed, contentBounds.splitH((bounds.y + bounds.h).absolute)[1].splitV(bounds.x.absolute)[1])
 
     let selectedCompletion = editor.completions[editor.selectedCompletion]
-    if selectedCompletion.kind == SymbolCompletion and ctx.getNewSymbol(selectedCompletion.id).getSome(symbol) and symbol.kind == skAstNode and nodeBounds.contains(symbol.node):
+    if selectedCompletion.kind == SymbolCompletion and ctx.getSymbol(selectedCompletion.id).getSome(symbol) and symbol.kind == skAstNode and nodeBounds.contains(symbol.node):
       let selectedDeclRect = nodeBounds[symbol.node]
       ed.ctx.strokeStyle = rgb(150, 150, 220)
       ed.ctx.strokeRect(selectedDeclRect)
 
-  elif ctx.getNewSymbol(selectedNode.id).getSome(symbol) and symbol.kind == skAstNode and nodeBounds.contains(symbol.node):
+  elif ctx.getSymbol(selectedNode.id).getSome(symbol) and symbol.kind == skAstNode and nodeBounds.contains(symbol.node):
     let selectedDeclRect = nodeBounds[symbol.node]
     ed.ctx.strokeStyle = rgb(150, 150, 220)
     ed.ctx.strokeRect(selectedDeclRect)
