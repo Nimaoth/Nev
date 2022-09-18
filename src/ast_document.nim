@@ -209,6 +209,7 @@ proc newAstDocument*(filename: string = ""): AstDocument =
   discard result.addSymbol Symbol(id: IdNegate, name: "-", kind: Prefix, precedence: 0)
   discard result.addSymbol Symbol(id: IdNot, name: "!", kind: Prefix, precedence: 0)
   discard result.addSymbol Symbol(id: IdDeref, name: "->", kind: Postfix, precedence: 0)
+  discard result.addSymbol Symbol(id: IdAppendString, name: "&", kind: Infix, precedence: 0)
 
 # proc `$`*(cursor: Cursor): string =
 #   return
@@ -812,7 +813,7 @@ proc redo*(document: AstDocument): Option[AstNode] =
 
   return none[AstNode]()
 
-proc createNodeFromAction*(editor: AstDocumentEditor, arg: string, node: AstNode): Option[(AstNode, int)] =
+proc createNodeFromAction*(editor: AstDocumentEditor, arg: string, node: AstNode, typ: Type): Option[(AstNode, int)] =
   case arg
   of "empty":
     return some((AstNode(kind: Empty, id: newId(), text: ""), 0))
@@ -857,9 +858,10 @@ proc createNodeFromAction*(editor: AstDocumentEditor, arg: string, node: AstNode
     return some (node, 1)
 
   of "+":
+    let operator = if typ.kind == tString: IdAppendString else: IdAdd
     let node = makeTree(AstNode) do:
       Call:
-        Identifier(reff: == IdAdd)
+        Identifier(reff: == operator)
         Empty()
         Empty()
     return some (node, 0)
@@ -1048,7 +1050,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
 
   of "insert-after":
     let index = self.node.index
-    if self.createNodeFromAction(arg, self.node).getSome(newNodeIndex):
+    if self.createNodeFromAction(arg, self.node, errorType()).getSome(newNodeIndex):
       let (newNode, _) = newNodeIndex
       if self.document.insertNode(self.node.parent, index + 1, newNode).getSome(node):
         self.node = node
@@ -1063,7 +1065,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
 
   of "insert-before":
     let index = self.node.index
-    if self.createNodeFromAction(arg, self.node).getSome(newNodeIndex):
+    if self.createNodeFromAction(arg, self.node, errorType()).getSome(newNodeIndex):
       let (newNode, _) = newNodeIndex
       if self.document.insertNode(self.node.parent, index, newNode).getSome(node):
         self.node = node
@@ -1077,7 +1079,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
         logger.log(lvlError, fmt"Failed to insert node {newNode} into {self.node.parent} at {index}")
 
   of "replace":
-    if self.createNodeFromAction(arg, self.node).getSome(newNodeIndex):
+    if self.createNodeFromAction(arg, self.node, errorType()).getSome(newNodeIndex):
       let (newNode, _) = newNodeIndex
       self.node = self.document.replaceNode(self.node, newNode)
 
@@ -1087,7 +1089,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
         break
 
   of "replace-empty":
-    if self.node.kind == Empty and self.createNodeFromAction(arg, self.node).getSome(newNodeIndex):
+    if self.node.kind == Empty and self.createNodeFromAction(arg, self.node, errorType()).getSome(newNodeIndex):
       let (newNode, _) = newNodeIndex
       self.node = self.document.replaceNode(self.node, newNode)
 
@@ -1097,7 +1099,9 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
         break
 
   of "wrap":
-    if self.createNodeFromAction(arg, self.node).getSome(newNodeIndex):
+    let typ = ctx.computeType(self.node)
+
+    if self.createNodeFromAction(arg, self.node, typ).getSome(newNodeIndex):
       var (newNode, index) = newNodeIndex
       let oldNode = self.node
       self.node = self.document.replaceNode(self.node, newNode)

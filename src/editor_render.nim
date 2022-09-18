@@ -214,7 +214,7 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
     nodeBounds[node] = docRect
     return docRect
 
-  let nodeRect = case node
+  var nodeRect = case node
   of Empty():
     let width = ed.ctx.measureText(node.text).width
 
@@ -374,6 +374,15 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
   if node == selectedNode:
     ed.ctx.strokeStyle = rgb(255, 0, 255)
     ed.ctx.strokeRect(nodeRect)
+
+  if node == selectedNode or node.kind == Declaration:
+    let val = ctx.computeValue(node)
+    let valStr = $val
+    let textWidth = ed.ctx.measureText(valStr).width
+    ed.ctx.fillStyle = rgb(100, 100, 255)
+    ed.ctx.fillText(valStr, vec2(nodeRect.x, nodeRect.y + nodeRect.h + padding))
+    nodeRect.h += ed.ctx.fontSize + padding * 2
+    nodeRect.w = max(nodeRect.w, textWidth)
 
   nodeBounds[node] = nodeRect
 
