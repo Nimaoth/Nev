@@ -42,11 +42,11 @@ type
     Infix
     Scope
 
-  NewSymbolKind* = enum skAstNode, skBuiltin
-  NewSymbol* = ref object
+  SymbolKind* = enum skAstNode, skBuiltin
+  Symbol* = ref object
     id*: Id
     name*: string
-    case kind*: NewSymbolKind
+    case kind*: SymbolKind
     of skAstNode:
       node*: AstNode
     of skBuiltin:
@@ -107,17 +107,17 @@ proc hash*(value: Value): Hash =
   else: return 0
 
 
-proc `$`*(symbol: NewSymbol): string =
+proc `$`*(symbol: Symbol): string =
   case symbol.kind
   of skAstNode:
     return "Sym(AstNode, " & $symbol.id & ", " & $symbol.node & ")"
   of skBuiltin:
     return "Sym(Builtin, " & $symbol.id & ", " & $symbol.typ & ", " & $symbol.value & ")"
 
-proc hash*(symbol: NewSymbol): Hash =
+proc hash*(symbol: Symbol): Hash =
   return symbol.id.hash
 
-proc `==`*(a: NewSymbol, b: NewSymbol): bool =
+proc `==`*(a: Symbol, b: Symbol): bool =
   return a.id == b.id
 
 func errorValue*(): Value = Value(kind: vkError)
@@ -128,45 +128,45 @@ proc fingerprint*(typ: Type): Fingerprint =
 proc fingerprint*(value: Value): Fingerprint =
   result = @[value.kind.int64, value.hash]
 
-proc fingerprint*(symbol: NewSymbol): Fingerprint =
+proc fingerprint*(symbol: Symbol): Fingerprint =
   case symbol.kind
   of skAstNode:
     result = @[symbol.id.hash.int64, symbol.kind.int64]
   of skBuiltin:
     result = @[symbol.id.hash.int64, symbol.kind.int64, symbol.precedence, symbol.operatorNotation.int64]
 
-proc fingerprint*(symbols: TableRef[Id, NewSymbol]): Fingerprint =
+proc fingerprint*(symbols: TableRef[Id, Symbol]): Fingerprint =
   result = @[]
   for (key, value) in symbols.pairs:
     result.add value.fingerprint
 
-proc fingerprint*(symbol: Option[NewSymbol]): Fingerprint =
+proc fingerprint*(symbol: Option[Symbol]): Fingerprint =
   if symbol.getSome(s):
     return s.fingerprint
   return @[]
 
 CreateContext Context:
   input AstNode
-  data NewSymbol
+  data Symbol
 
-  var globalScope*: Table[Id, NewSymbol] = initTable[Id, NewSymbol]()
+  var globalScope*: Table[Id, Symbol] = initTable[Id, Symbol]()
   var enableQueryLogging*: bool = false
 
   proc computeTypeImpl(ctx: Context, node: AstNode): Type {.query("Type").}
   proc computeValueImpl(ctx: Context, node: AstNode): Value {.query("Value").}
-  proc computeNewSymbolImpl(ctx: Context, node: AstNode): Option[NewSymbol] {.query("NewSymbol").}
-  proc computeNewSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, NewSymbol] {.query("NewSymbols").}
-  proc computeNewSymbolTypeImpl(ctx: Context, symbol: NewSymbol): Type {.query("NewSymbolType").}
-  proc computeNewSymbolValueImpl(ctx: Context, symbol: NewSymbol): Value {.query("NewSymbolValue").}
+  proc computeSymbolImpl(ctx: Context, node: AstNode): Option[Symbol] {.query("Symbol").}
+  proc computeSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, Symbol] {.query("Symbols").}
+  proc computeSymbolTypeImpl(ctx: Context, symbol: Symbol): Type {.query("SymbolType").}
+  proc computeSymbolValueImpl(ctx: Context, symbol: Symbol): Value {.query("SymbolValue").}
 
-proc computeNewSymbolTypeImpl(ctx: Context, symbol: NewSymbol): Type =
+proc computeSymbolTypeImpl(ctx: Context, symbol: Symbol): Type =
   case symbol.kind:
   of skAstNode:
     return ctx.computeType(symbol.node)
   of skBuiltin:
     return symbol.typ
 
-proc computeNewSymbolValueImpl(ctx: Context, symbol: NewSymbol): Value =
+proc computeSymbolValueImpl(ctx: Context, symbol: Symbol): Value =
   case symbol.kind:
   of skAstNode:
     return ctx.computeValue(symbol.node)
@@ -227,10 +227,10 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
 
   of Identifier():
     let id = node.reff
-    let symbols = ctx.computeNewSymbols(node)
+    let symbols = ctx.computeSymbols(node)
     if symbols.contains(id):
       let symbol = symbols[id]
-      return ctx.computeNewSymbolType(symbol)
+      return ctx.computeSymbolType(symbol)
 
     echo node, ": Unkown symbol ", id
     return Type(kind: tError)
@@ -243,30 +243,30 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
   else:
     return Type(kind: tError)
 
-proc computeNewSymbolImpl(ctx: Context, node: AstNode): Option[NewSymbol] =
+proc computeSymbolImpl(ctx: Context, node: AstNode): Option[Symbol] =
   case node
   of Identifier():
-    let symbols = ctx.computeNewSymbols(node)
+    let symbols = ctx.computeSymbols(node)
     if symbols.contains(node.reff):
       return some(symbols[node.reff])
 
   of Declaration():
     logger.log(lvlDebug, fmt"computeSymbol {node}")
-    return some(ctx.newNewSymbol(NewSymbol(kind: skAstNode, id: node.id, node: node, name: node.text)))
+    return some(ctx.newSymbol(Symbol(kind: skAstNode, id: node.id, node: node, name: node.text)))
 
   else:
     logger.log(lvlError, fmt"Failed to get symbol from node {node}")
-    return none[NewSymbol]()
+    return none[Symbol]()
 
-proc computeNewSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, NewSymbol] =
+proc computeSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, Symbol] =
   if ctx.enableLogging or ctx.enableQueryLogging: inc currentIndent, 1
   defer:
     if ctx.enableLogging or ctx.enableQueryLogging: dec currentIndent, 1
-  if ctx.enableLogging or ctx.enableQueryLogging: echo repeat("| ", currentIndent - 1), "computeNewSymbolsImpl ", node
+  if ctx.enableLogging or ctx.enableQueryLogging: echo repeat("| ", currentIndent - 1), "computeSymbolsImpl ", node
   defer:
     if ctx.enableLogging or ctx.enableQueryLogging: echo repeat("| ", currentIndent), "-> ", result
 
-  result = newTable[Id, NewSymbol]()
+  result = newTable[Id, Symbol]()
 
   if node.findWithParentRec(NodeList).getSome(parentInNodeList):
     ctx.recordDependency(parentInNodeList.parent.getItem)
@@ -278,8 +278,8 @@ proc computeNewSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, NewSymbol]
       assert child.id != null
 
       ctx.recordDependency(child.getItem)
-      # let symbol = ctx.newNewSymbol(NewSymbol(kind: skAstNode, id: child.id, node: child))
-      if ctx.computeNewSymbol(child).getSome(symbol):
+      # let symbol = ctx.newSymbol(Symbol(kind: skAstNode, id: child.id, node: child))
+      if ctx.computeSymbol(child).getSome(symbol):
         result.add(child.id, symbol)
 
   for symbol in ctx.globalScope.values:
@@ -329,10 +329,10 @@ proc computeValueImpl(ctx: Context, node: AstNode): Value =
 
   of Identifier():
     let id = node.reff
-    let symbols = ctx.computeNewSymbols(node)
+    let symbols = ctx.computeSymbols(node)
     if symbols.contains(id):
       let symbol = symbols[id]
-      return ctx.computeNewSymbolValue(symbol)
+      return ctx.computeSymbolValue(symbol)
 
     return errorValue()
 
@@ -360,7 +360,7 @@ iterator nextPreOrder*(node: AstNode): tuple[key: int, value: AstNode] =
     else:
       break
 
-proc notifySymbolChanged*(ctx: Context, sym: NewSymbol) =
+proc notifySymbolChanged*(ctx: Context, sym: Symbol) =
   ctx.depGraph.revision += 1
   ctx.depGraph.changed[(sym.getItem, nil)] = ctx.depGraph.revision
 
