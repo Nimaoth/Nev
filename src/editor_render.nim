@@ -115,8 +115,6 @@ proc getPrecedenceForNode(doc: AstDocument, node: AstNode): int =
       of skAstNode:
         discard
 
-  # if doc.getSymbol(node[0].id).getSome(sym):
-    # return sym.precedence
   return 0
 
 proc renderInfixNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds: Rect, selectedNode: AstNode, nodeBounds: var Table[AstNode, Rect]): Rect =
@@ -218,7 +216,7 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
     let docRect = renderDocumentEditor(editor.textEditor, ed, bounds, true)
     nodeBounds[node] = docRect
     return docRect
-  elif node.len == 0 and document.getSymbol(node.id).getSome(symbol) and symbol.id == editor.currentlyEditedSymbol:
+  elif node.len == 0 and editor.currentlyEditedSymbol != null and (node.id == editor.currentlyEditedSymbol or node.reff == editor.currentlyEditedSymbol):
     let docRect = renderDocumentEditor(editor.textEditor, ed, bounds, true)
     nodeBounds[node] = docRect
     return docRect
@@ -435,10 +433,6 @@ proc renderSymbol(symbol: NewSymbol, editor: AstDocumentEditor, ed: Editor, boun
 
   ed.ctx.fillText(fmt"{symbol.name} ({symbol.id})", vec2(bounds.x + 500, bounds.y))
   var i = 0.0
-  # for c in symbol.children.items:
-  #   ed.ctx.fillText(fmt"{c}", vec2(bounds.x + 550, bounds.y + (i + 1) * ed.ctx.fontSize))
-  #   i += 1
-  # return bounds.splitH(((symbol.children.len.float32 + 1) * ed.ctx.fontSize).relative)[0]
   return bounds
 
 method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect, selected: bool): Rect =
@@ -472,12 +466,12 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
       discard renderCompletions(editor, ed, contentBounds.splitH((bounds.y + bounds.h).absolute)[1].splitV(bounds.x.absolute)[1])
 
     let selectedCompletion = editor.completions[editor.selectedCompletion]
-    if selectedCompletion.kind == SymbolCompletion and document.getSymbol(selectedCompletion.id).getSome(symbol) and symbol.node != nil and nodeBounds.contains(symbol.node):
+    if selectedCompletion.kind == SymbolCompletion and ctx.getNewSymbol(selectedCompletion.id).getSome(symbol) and symbol.kind == skAstNode and nodeBounds.contains(symbol.node):
       let selectedDeclRect = nodeBounds[symbol.node]
       ed.ctx.strokeStyle = rgb(150, 150, 220)
       ed.ctx.strokeRect(selectedDeclRect)
 
-  elif document.getSymbol(selectedNode.id).getSome(symbol) and symbol.node != nil and nodeBounds.contains(symbol.node):
+  elif ctx.getNewSymbol(selectedNode.id).getSome(symbol) and symbol.kind == skAstNode and nodeBounds.contains(symbol.node):
     let selectedDeclRect = nodeBounds[symbol.node]
     ed.ctx.strokeStyle = rgb(150, 150, 220)
     ed.ctx.strokeRect(selectedDeclRect)

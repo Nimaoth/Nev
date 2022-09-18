@@ -181,28 +181,6 @@ proc selectNextNode*(editor: AstDocumentEditor) =
       editor.selectedNode = node
       return
 
-proc getSymbol*(doc: AstDocument, id: Id): Option[Symbol] =
-  let s = doc.symbols.getOrDefault(id, nil)
-  if s == nil:
-    return none[Symbol]()
-  return some(s)
-
-proc addSymbol*(doc: AstDocument, symbol: Symbol): Symbol =
-  if symbol.id == null:
-    symbol.id = newId()
-  if symbol.parent == null:
-    symbol.parent = doc.rootNode.id
-  doc.symbols.add(symbol.id, symbol)
-  if doc.getSymbol(symbol.parent).getSome(parent):
-    parent.children.incl(symbol.id)
-  return symbol
-
-proc removeSymbol*(doc: AstDocument, id: Id) =
-  if doc.getSymbol(id).getSome(symbol):
-    assert symbol.children.len == 0
-
-  doc.symbols.del id
-
 method `$`*(document: AstDocument): string =
   return document.filename
 
@@ -211,28 +189,11 @@ proc newAstDocument*(filename: string = ""): AstDocument =
   result.filename = filename
   result.rootNode = AstNode(kind: NodeList, parent: nil, id: newId())
   result.symbols = initTable[Id, Symbol]()
-  # todo-now
-  result.symbols.add(result.rootNode.id, Symbol(id: result.rootNode.id, parent: null, node: result.rootNode, children: initHashSet[Id]()))
-  discard result.addSymbol Symbol(id: IdPrint)
-  discard result.addSymbol Symbol(id: IdAdd)
-  discard result.addSymbol Symbol(id: IdSub)
-  discard result.addSymbol Symbol(id: IdMul)
-  discard result.addSymbol Symbol(id: IdDiv)
-  discard result.addSymbol Symbol(id: IdMod)
-  discard result.addSymbol Symbol(id: IdNegate)
-  discard result.addSymbol Symbol(id: IdNot)
-  discard result.addSymbol Symbol(id: IdDeref)
-  discard result.addSymbol Symbol(id: IdAppendString)
-
-# proc `$`*(cursor: Cursor): string =
-#   return
 
 method save*(self: AstDocument, filename: string = "") =
   self.filename = if filename.len > 0: filename else: self.filename
   if self.filename.len == 0:
     raise newException(IOError, "Missing filename")
-
-  # writeFile(self.filename, self.content.join "\n")
 
 method load*(self: AstDocument, filename: string = "") =
   let filename = if filename.len > 0: filename else: self.filename
@@ -335,27 +296,12 @@ proc handleNodeInserted*(doc: AstDocument, node: AstNode) =
     if node.kind == NodeList:
       if node.id == null:
         node.id = newId()
-      if doc.getSymbol(node.id).getSome(symbol):
-        symbol.node = node
-        # todo-now
-        # symbol.kind = Scope
-      else:
-        # todo-now kind: Scope
-        discard doc.addSymbol Symbol(id: node.id, parent: null, node: node, children: initHashSet[Id]())
-      doc.getSymbol(parent.id).get.children.incl node.id
 
       parent = node
 
     elif node.kind == Declaration:
       if node.id == null:
         node.id = newId()
-      if doc.getSymbol(node.id).getSome(symbol):
-        symbol.parent = parent.id
-        symbol.node = node
-      else:
-        # todo-now kind: Regular
-        discard doc.addSymbol Symbol(id: node.id, parent: parent.id, node: node)
-      doc.getSymbol(parent.id).get.children.incl node.id
 
   ctx.insertNode(node)
 
@@ -366,17 +312,6 @@ proc handleNodeDelete*(doc: AstDocument, node: AstNode) =
     doc.handleNodeDelete child
 
   ctx.deleteNode(node)
-
-  if node.kind in {Declaration, NodeList} and doc.getSymbol(node.id).getSome(symbol):
-    assert symbol.children.len == 0
-
-    # Store the symbol text in the node so that when we reinsert the node it has the original name
-    # node.text = symbol.name
-
-    if doc.getSymbol(symbol.parent).getSome(parent):
-      parent.children.excl node.id
-
-    doc.removeSymbol(symbol.id)
 
 proc handleTextDocumentChanged*(self: AstDocumentEditor) =
   self.updateCompletions()
@@ -537,20 +472,18 @@ proc getNextChild*(document: AstDocument, node: AstNode, min: int = -1): Option[
 
   case node
   of Call():
-    # todo: use reff?
-    if document.getSymbol(node[0].reff).getSome(symbol):
-      if ctx.computeNewSymbol(node[0]).getSome(sym):
-        case sym.operatorNotation
-        of Infix:
-          if min == 0: return some(node[2])
-          if min == 1: return some(node[0])
-          if min == 2: return none[AstNode]()
-          return some(node[1])
-        of Postfix:
-          if min == 0: return none[AstNode]()
-          if min == 1: return some(node[0])
-          return some(node[1])
-        else: discard
+    if ctx.computeNewSymbol(node[0]).getSome(sym):
+      case sym.operatorNotation
+      of Infix:
+        if min == 0: return some(node[2])
+        if min == 1: return some(node[0])
+        if min == 2: return none[AstNode]()
+        return some(node[1])
+      of Postfix:
+        if min == 0: return none[AstNode]()
+        if min == 1: return some(node[0])
+        return some(node[1])
+      else: discard
   else: discard
 
   if min < 0:
@@ -590,20 +523,18 @@ proc getPrevChild*(document: AstDocument, node: AstNode, max: int = -1): Option[
 
   case node
   of Call():
-    # todo: use reff?
-    if document.getSymbol(node[0].reff).getSome(symbol):
-      if ctx.computeNewSymbol(node[0]).getSome(sym):
-        case sym.operatorNotation
-        of Infix:
-          if max == 0: return some(node[1])
-          if max == 1: return none[AstNode]()
-          if max == 2: return some(node[0])
-          return some(node[2])
-        of Postfix:
-          if max == 0: return some(node[1])
-          if max == 1: return none[AstNode]()
-          return some(node[0])
-        else: discard
+    if ctx.computeNewSymbol(node[0]).getSome(sym):
+      case sym.operatorNotation
+      of Infix:
+        if max == 0: return some(node[1])
+        if max == 1: return none[AstNode]()
+        if max == 2: return some(node[0])
+        return some(node[2])
+      of Postfix:
+        if max == 0: return some(node[1])
+        if max == 1: return none[AstNode]()
+        return some(node[0])
+      else: discard
   else: discard
 
   if max < 0:
@@ -699,18 +630,16 @@ proc deleteNode*(document: AstDocument, node: AstNode): AstNode =
   of Declaration():
     return document.replaceNode(node, AstNode(kind: Empty))
   of Call():
-    # todo: use reff?
-    if document.getSymbol(node.parent[0].id).getSome(symbol):
-      let idx = node.index
-      if ctx.computeNewSymbol(node.parent[0]).getSome(sym):
-        let isFixed = case sym.operatorNotation
-        of Infix: idx in 0..2
-        of Prefix: idx in 0..1
-        of Postfix: idx in 0..1
-        of Regular: idx in 0..0
-        of Scope: false
-        if isFixed:
-          return document.replaceNode(node, AstNode(kind: Empty))
+    let idx = node.index
+    if ctx.computeNewSymbol(node.parent[0]).getSome(sym):
+      let isFixed = case sym.operatorNotation
+      of Infix: idx in 0..2
+      of Prefix: idx in 0..1
+      of Postfix: idx in 0..1
+      of Regular: idx in 0..0
+      of Scope: false
+      if isFixed:
+        return document.replaceNode(node, AstNode(kind: Empty))
 
   document.undoOps.add UndoOp(kind: Delete, parent: node.parent, idx: node.index, node: node)
   document.redoOps = @[]
@@ -731,18 +660,16 @@ proc insertNode*(document: AstDocument, node: AstNode, index: int, newNode: AstN
   of Declaration():
     return none[AstNode]()
   of Call():
-    # todo: use reff?
-    if document.getSymbol(node.parent[0].id).getSome(symbol):
-      let idx = node.index
-      if ctx.computeNewSymbol(node.parent[0]).getSome(sym):
-        let isFixed = case sym.operatorNotation
-        of Infix: idx in 0..2
-        of Prefix: idx in 0..1
-        of Postfix: idx in 0..1
-        of Regular: idx in 0..0
-        of Scope: false
-        if isFixed:
-          return none[AstNode]()
+    let idx = node.index
+    if ctx.computeNewSymbol(node.parent[0]).getSome(sym):
+      let isFixed = case sym.operatorNotation
+      of Infix: idx in 0..2
+      of Prefix: idx in 0..1
+      of Postfix: idx in 0..1
+      of Regular: idx in 0..0
+      of Scope: false
+      if isFixed:
+        return none[AstNode]()
 
   document.undoOps.add UndoOp(kind: Insert, parent: node, idx: index, node: newNode)
   document.redoOps = @[]
@@ -757,18 +684,16 @@ proc insertOrReplaceNode*(document: AstDocument, node: AstNode, index: int, newN
   of Declaration():
     return some document.replaceNode(node[index], newNode)
   of Call():
-    # todo: use reff?
-    if document.getSymbol(node.parent[0].id).getSome(symbol):
-      let idx = node.index
-      if ctx.computeNewSymbol(node.parent[0]).getSome(sym):
-        let isFixed = case sym.operatorNotation
-        of Infix: idx in 0..2
-        of Prefix: idx in 0..1
-        of Postfix: idx in 0..1
-        of Regular: idx in 0..0
-        of Scope: false
-        if isFixed:
-          return some document.replaceNode(node[index], newNode)
+    let idx = node.index
+    if ctx.computeNewSymbol(node.parent[0]).getSome(sym):
+      let isFixed = case sym.operatorNotation
+      of Infix: idx in 0..2
+      of Prefix: idx in 0..1
+      of Postfix: idx in 0..1
+      of Regular: idx in 0..0
+      of Scope: false
+      if isFixed:
+        return some document.replaceNode(node[index], newNode)
 
   document.undoOps.add UndoOp(kind: Insert, parent: node, idx: index, node: newNode)
   document.redoOps = @[]
@@ -1014,7 +939,7 @@ proc applySelectedCompletion(editor: AstDocumentEditor) =
 
   case com.kind
   of SymbolCompletion:
-    if editor.document.getSymbol(com.id).getSome(symbol):
+    if ctx.getNewSymbol(com.id).getSome(symbol):
       editor.node = editor.document.replaceNode(editor.node, AstNode(kind: Identifier, reff: symbol.id))
   of AstCompletion:
     if editor.createDefaultNode(com.nodeKind).getSome(nodeIndex):
@@ -1059,9 +984,6 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
 
   of "cursor.next":
     var node = self.node
-    # let nextChild = self.document.getNextChildRec node
-    # if nextChild.getSome(child):
-    #   self.node = child
     for _, n in self.document.nextPreVisualOrder(self.node):
       if n.kind == Call or n.kind == NodeList:
         continue
@@ -1198,9 +1120,8 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
   of "goto":
     case arg
     of "definition":
-      # todo: use reff?
-      if self.document.getSymbol(self.node.id).getSome(sym):
-        if sym.node != nil and sym.node != self.document.rootNode:
+      if ctx.computeNewSymbol(self.node).getSome(sym):
+        if sym.kind == skAstNode and sym.node != self.document.rootNode:
           self.node = sym.node
     of "next-usage":
       # todo: use reff?
