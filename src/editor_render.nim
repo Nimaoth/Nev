@@ -2,6 +2,7 @@ import std/[strformat, bitops, strutils, tables, algorithm, math, macros, enumut
 import boxy, times, windy, fusion/matching, print
 import sugar
 import util, input, events, editor, rect_utils, document, document_editor, text_document, ast_document, keybind_autocomplete, id, ast
+import compiler
 
 let typeface = readTypeface("fonts/FiraCode-Regular.ttf")
 
@@ -169,7 +170,7 @@ proc renderCallNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds
   let function = node[0]
   let subBounds = bounds.shrink gap.relative
 
-  if document.getSymbol(function.id).getSome(symbol):
+  if document.getSymbol(function.reff).getSome(symbol):
     case symbol.kind
     of Infix: return renderInfixNode(node, editor, ed, bounds, selectedNode, nodeBounds)
     of Prefix: return renderPrefixNode(node, editor, ed, bounds, selectedNode, nodeBounds)
@@ -271,13 +272,13 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
     r
 
   of Identifier():
-    let symbol = document.getSymbol(node.id)
+    let symbol = document.getSymbol(node.reff)
     var text = ""
     case symbol
     of Some(@symbol):
       text = symbol.name
     else:
-      text = $node.id & " (" & node.text & ")"
+      text = $node.reff & " (" & node.text & ")"
 
     let width = ed.ctx.measureText(text).width
 
@@ -290,6 +291,8 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
 
   of Declaration():
     let subBounds = bounds.shrink gap.relative
+
+    let typ = ctx.computeType(node)
 
     let symbol = document.getSymbol(node.id)
     let symbolSize = if symbol.getSome(symbol) and symbol == editor.currentlyEditedSymbol:
@@ -308,10 +311,18 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
       ed.ctx.fillText(name, vec2(subBounds.x, subBounds.y))
       vec2(nameWidth, ed.ctx.fontSize)
 
-    let text = " := "
-    let width = ed.ctx.measureText(text).width
+    let text1 = " : "
+    let text2 = " = "
+    let textType = $typ
+    var width = ed.ctx.measureText(text1).width
     ed.ctx.fillStyle = rgb(200, 200, 200)
-    ed.ctx.fillText(text, vec2(subBounds.x + symbolSize.x, subBounds.y))
+    ed.ctx.fillText(text1, vec2(subBounds.x + symbolSize.x, subBounds.y))
+    ed.ctx.fillStyle = rgb(100, 250, 100)
+    ed.ctx.fillText(textType, vec2(subBounds.x + symbolSize.x + width, subBounds.y))
+    width += ed.ctx.measureText(textType).width
+    ed.ctx.fillStyle = rgb(200, 200, 200)
+    ed.ctx.fillText(text2, vec2(subBounds.x + symbolSize.x + width, subBounds.y))
+    width += ed.ctx.measureText(text2).width
 
     let valueBounds = renderAstNode(node[0], editor, ed, subBounds.splitV((symbolSize.x + width).relative)[1], selectedNode, nodeBounds)
 
