@@ -1,8 +1,55 @@
 import std/[strformat, strutils, algorithm, math, logging, unicode, sequtils, sugar, tables, macros, options, os, deques, sets]
 import print, fusion/matching, fuzzy
 import util, input, document, document_editor, text_document, events, id, ast_ids, ast
+import compiler
 
 var logger = newConsoleLogger()
+
+let typeAddIntInt = newFunctionType(@[intType(), intType()], intType())
+let typeSubIntInt = newFunctionType(@[intType(), intType()], intType())
+let typeMulIntInt = newFunctionType(@[intType(), intType()], intType())
+let typeDivIntInt = newFunctionType(@[intType(), intType()], intType())
+let typeAddStringInt = newFunctionType(@[stringType(), intType()], stringType())
+
+proc newFunctionValue(impl: ValueImpl): Value =
+  return Value(kind: vkFunction, impl: impl)
+
+let ctx* = newContext()
+ctx.enableLogging = false
+
+proc createBinaryIntOperator(operator: proc(a: int, b: int): int): Value =
+  return newFunctionValue proc(node: AstNode): Value =
+    let leftValue = ctx.computeValue(node[1])
+    let rightValue = ctx.computeValue(node[2])
+
+    if leftValue.kind != vkNumber or rightValue.kind != vkNumber:
+      echo "left: ", leftValue.kind, ", right: ", rightValue.kind
+      return errorValue()
+    return Value(kind: vkNumber, intValue: operator(leftValue.intValue, rightValue.intValue))
+
+let funcAddIntInt = createBinaryIntOperator (a: int, b: int) => a + b
+let funcSubIntInt = createBinaryIntOperator (a: int, b: int) => a - b
+let funcMulIntInt = createBinaryIntOperator (a: int, b: int) => a * b
+let funcDivIntInt = createBinaryIntOperator (a: int, b: int) => a div b
+
+let funcAddStringInt = newFunctionValue proc(node: AstNode): Value =
+  let leftValue = ctx.computeValue(node[1])
+  let rightValue = ctx.computeValue(node[2])
+  if leftValue.kind != vkString:
+    return errorValue()
+  return Value(kind: vkString, stringValue: leftValue.stringValue & $rightValue)
+
+ctx.globalScope.add(IdAdd, NewSymbol(id: IdAdd, kind: skBuiltin, typ: typeAddIntInt, value: funcAddIntInt))
+ctx.globalScope.add(IdSub, NewSymbol(id: IdSub, kind: skBuiltin, typ: typeSubIntInt, value: funcSubIntInt))
+ctx.globalScope.add(IdMul, NewSymbol(id: IdMul, kind: skBuiltin, typ: typeMulIntInt, value: funcMulIntInt))
+ctx.globalScope.add(IdDiv, NewSymbol(id: IdDiv, kind: skBuiltin, typ: typeDivIntInt, value: funcSubIntInt))
+ctx.globalScope.add(IdAppendString, NewSymbol(id: IdAppendString, kind: skBuiltin, typ: typeAddStringInt, value: funcAddStringInt))
+for symbol in ctx.globalScope.values:
+  discard ctx.newNewSymbol(symbol)
+
+proc `$`(ctx: Context): string = ctx.toString
+
+############################################################################################
 
 type Cursor = seq[int]
 
@@ -293,11 +340,15 @@ proc handleNodeInserted*(doc: AstDocument, node: AstNode) =
         discard doc.addSymbol Symbol(id: node.id, parent: parent.id, kind: Regular, name: node.text, node: node)
       doc.getSymbol(parent.id).get.children.incl node.id
 
+  ctx.insertNode(node)
+
 proc insertNode*(document: AstDocument, node: AstNode, index: int, newNode: AstNode): Option[AstNode]
 
 proc handleNodeDelete*(doc: AstDocument, node: AstNode) =
   for child in node.children:
     doc.handleNodeDelete child
+
+  ctx.deleteNode(node)
 
   if node.kind in {Declaration, NodeList} and doc.getSymbol(node.id).getSome(symbol):
     assert symbol.children.len == 0
@@ -336,6 +387,7 @@ proc editNode*(self: AstDocumentEditor, node: AstNode) =
   self.updateCompletions()
 
 proc tryEdit*(self: AstDocumentEditor, node: AstNode): bool =
+  # todo: use reff?
   if self.document.getSymbol(node.id).getSome(sym):
     self.editSymbol(sym)
     return true
@@ -355,6 +407,7 @@ proc finishEdit*(self: AstDocumentEditor, apply: bool) =
     elif self.currentlyEditedNode != nil:
       self.document.undoOps.add UndoOp(kind: TextChange, node: self.currentlyEditedNode, text: self.currentlyEditedNode.text)
       self.currentlyEditedNode.text = self.textDocument.content.join "\n"
+      ctx.updateNode(self.currentlyEditedNode)
 
   self.textEditor = nil
   self.textDocument = nil
@@ -368,6 +421,7 @@ proc getCompletions*(editor: AstDocumentEditor, text: string, contextNode: Optio
   # Find everything matching text
   if contextNode.isNone or contextNode.get.kind == Identifier or contextNode.get.kind == Empty:
     for symbol in editor.document.symbols.values:
+      # todo: use reff?
       if symbol.kind == Scope or symbol.parent != editor.document.rootNode.id:
         continue
       let score = fuzzyMatch(text, symbol.name)
@@ -381,6 +435,7 @@ proc getCompletions*(editor: AstDocumentEditor, text: string, contextNode: Optio
 
     var scope = node.findWithParentRec(NodeList).get.parent
     while scope != editor.document.rootNode:
+      # todo: use reff?
       if editor.document.getSymbol(scope.id).getSome(scopeSym):
         for childSymId in scopeSym.children:
           if editor.document.getSymbol(childSymId).getSome(childSym):
@@ -447,7 +502,8 @@ proc getNextChild*(document: AstDocument, node: AstNode, min: int = -1): Option[
 
   case node
   of Call():
-    if document.getSymbol(node[0].id).getSome(symbol):
+    # todo: use reff?
+    if document.getSymbol(node[0].reff).getSome(symbol):
       case symbol.kind
       of Infix:
         if min == 0: return some(node[2])
@@ -498,7 +554,8 @@ proc getPrevChild*(document: AstDocument, node: AstNode, max: int = -1): Option[
 
   case node
   of Call():
-    if document.getSymbol(node[0].id).getSome(symbol):
+    # todo: use reff?
+    if document.getSymbol(node[0].reff).getSome(symbol):
       case symbol.kind
       of Infix:
         if max == 0: return some(node[1])
@@ -605,6 +662,7 @@ proc deleteNode*(document: AstDocument, node: AstNode): AstNode =
   of Declaration():
     return document.replaceNode(node, AstNode(kind: Empty))
   of Call():
+    # todo: use reff?
     if document.getSymbol(node.parent[0].id).getSome(symbol):
       let idx = node.index
       let isFixed = case symbol.kind
@@ -635,6 +693,7 @@ proc insertNode*(document: AstDocument, node: AstNode, index: int, newNode: AstN
   of Declaration():
     return none[AstNode]()
   of Call():
+    # todo: use reff?
     if document.getSymbol(node.parent[0].id).getSome(symbol):
       let idx = node.index
       let isFixed = case symbol.kind
@@ -659,6 +718,7 @@ proc insertOrReplaceNode*(document: AstDocument, node: AstNode, index: int, newN
   of Declaration():
     return some document.replaceNode(node[index], newNode)
   of Call():
+    # todo: use reff?
     if document.getSymbol(node.parent[0].id).getSome(symbol):
       let idx = node.index
       let isFixed = case symbol.kind
@@ -704,6 +764,7 @@ proc undo*(document: AstDocument): Option[AstNode] =
       return some(undoOp.parent[undoOp.idx - 1])
     return some(undoOp.parent)
   of SymbolNameChange:
+    # todo: use reff?
     if document.getSymbol(undoOp.node.id).getSome(symbol):
       document.redoOps.add UndoOp(kind: SymbolNameChange, node: undoOp.node, text: symbol.name)
       symbol.name = undoOp.text
@@ -741,6 +802,7 @@ proc redo*(document: AstDocument): Option[AstNode] =
     document.undoOps.add redoOp
     return some(redoOp.node)
   of SymbolNameChange:
+    # todo: use reff?
     if document.getSymbol(redoOp.node.id).getSome(symbol):
       document.undoOps.add UndoOp(kind: SymbolNameChange, node: redoOp.node, text: symbol.name)
       symbol.name = redoOp.text
@@ -765,6 +827,7 @@ proc createNodeFromAction*(editor: AstDocumentEditor, arg: string, node: AstNode
     return some (node, 0)
 
   of "call-func":
+    # todo: use reff?
     let kind = if editor.document.getSymbol(node.id).getSome(symbol):
       symbol.kind
     else:
@@ -796,35 +859,35 @@ proc createNodeFromAction*(editor: AstDocumentEditor, arg: string, node: AstNode
   of "+":
     let node = makeTree(AstNode) do:
       Call:
-        Identifier(id: == IdAdd)
+        Identifier(reff: == IdAdd)
         Empty()
         Empty()
     return some (node, 0)
   of "-":
     let node = makeTree(AstNode) do:
       Call:
-        Identifier(id: == IdSub)
+        Identifier(reff: == IdSub)
         Empty()
         Empty()
     return some (node, 0)
   of "*":
     let node = makeTree(AstNode) do:
       Call:
-        Identifier(id: == IdMul)
+        Identifier(reff: == IdMul)
         Empty()
         Empty()
     return some (node, 0)
   of "/":
     let node = makeTree(AstNode) do:
       Call:
-        Identifier(id: == IdDiv)
+        Identifier(reff: == IdDiv)
         Empty()
         Empty()
     return some (node, 0)
   of "%":
     let node = makeTree(AstNode) do:
       Call:
-        Identifier(id: == IdMod)
+        Identifier(reff: == IdMod)
         Empty()
         Empty()
     return some (node, 0)
@@ -877,6 +940,7 @@ proc shouldEditNode(doc: AstDocument, node: AstNode): bool =
   if node.kind == Empty and node.text == "":
     return true
   if node.kind == Declaration:
+    # todo: use reff?
     return doc.getSymbol(node.id).getSome(symbol) and symbol.name == ""
   return false
 
@@ -896,6 +960,7 @@ proc applySelectedCompletion(editor: AstDocumentEditor) =
 
   case com.kind
   of SymbolCompletion:
+    # todo: use reff?
     if editor.document.getSymbol(com.id).getSome(symbol):
       editor.node = editor.document.replaceNode(editor.node, AstNode(kind: Identifier, id: symbol.id))
   of AstCompletion:
@@ -1078,20 +1143,26 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
   of "goto":
     case arg
     of "definition":
+      # todo: use reff?
       if self.document.getSymbol(self.node.id).getSome(sym):
         if sym.node != nil and sym.node != self.document.rootNode:
           self.node = sym.node
     of "next-usage":
+      # todo: use reff?
       let id = self.node.id
       for _, n in self.document.nextPreOrderWhere(self.node, n => n != self.node and n.id == id):
         self.node = n
         break
     of "prev-usage":
+      # todo: use reff?
       let id = self.node.id
       for n in self.document.prevPostOrder(self.node):
         if n != self.node and n.id == id:
           self.node = n
           break
+
+  of "toggle-logging":
+    ctx.enableLogging = not ctx.enableLogging
 
   else:
     logger.log(lvlError, "[textedit] Unknown action '$1 $2'" % [action, arg])
@@ -1113,59 +1184,77 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     let node = makeTree(AstNode):
       Declaration(id: == newId(), text: "foo"):
         Call():
-          Identifier(id: == IdPrint)
-          StringLiteral(text: "hi")
-          Call:
-            Identifier(id: == IdMul)
-            Call:
-              Identifier(id: == IdNegate)
-              NumberLiteral(text: "123456")
-            Call:
-              Identifier(id: == IdDiv)
-              StringLiteral(text: "")
-              NumberLiteral(text: "42069")
-          Identifier(id: == IdAdd)
-          Call:
-            Identifier(id: == IdDeref)
-            Identifier(id: == IdPrint)
+      #     Identifier(reff: == IdPrint)
+      #     StringLiteral(text: "hi")
+      #     Call:
+      #       Identifier(reff: == IdMul)
+      #       Call:
+      #         Identifier(reff: == IdNegate)
+      #         NumberLiteral(text: "123456")
+      #       Call:
+      #         Identifier(reff: == IdDiv)
+      #         StringLiteral(text: "")
+      #         NumberLiteral(text: "42069")
+      #     Identifier(reff: == IdAdd)
+      #     Call:
+      #       Identifier(reff: == IdDeref)
+      #       Identifier(reff: == IdPrint)
+          Identifier(reff: == IdMul)
+          Call():
+            Identifier(reff: == IdAdd)
+            NumberLiteral(text: "1")
+            NumberLiteral(text: "2")
+          NumberLiteral(text: "3")
 
     editor.document.rootNode.add node
 
     editor.document.rootNode.add makeTree(AstNode) do:
-      If:
-        Call:
-          Empty(text: "bar")
-          Identifier(id: == node.id)
-          StringLiteral(text: "bar")
-        NodeList:
-          Call:
-            Identifier(id: == IdPrint)
-            StringLiteral(text: "hi")
-            Call:
-              Identifier(id: == IdMul)
-              Call:
-                Identifier(id: == IdNegate)
-                NumberLiteral(text: "123456")
-              Call:
-                Identifier(id: == IdDiv)
-                StringLiteral(text: "")
-                NumberLiteral(text: "42069")
-            Identifier(id: == IdAdd)
-            Call:
-              Identifier(id: == IdDeref)
-              Identifier(id: == IdPrint)
-          Call:
-            Identifier(id: == IdDeref)
-            Identifier(id: == node.id)
+      # If:
+      #   Call:
+      #     Empty(text: "bar")
+      #     Identifier(reff: == node.id)
+      #     StringLiteral(text: "bar")
+      #   NodeList:
+      #     Call:
+      #       Identifier(reff: == IdPrint)
+      #       StringLiteral(text: "hi")
+      #       Call:
+      #         Identifier(reff: == IdMul)
+      #         Call:
+      #           Identifier(reff: == IdNegate)
+      #           NumberLiteral(text: "123456")
+      #         Call:
+      #           Identifier(reff: == IdDiv)
+      #           StringLiteral(text: "")
+      #           NumberLiteral(text: "42069")
+      #       Identifier(reff: == IdAdd)
+      #       Call:
+      #         Identifier(reff: == IdDeref)
+      #         Identifier(reff: == IdPrint)
+      #     Call:
+      #       Identifier(reff: == IdDeref)
+      #       Identifier(reff: == node.id)
+      Declaration(text: "bar"):
+        Call():
+          Identifier(reff: == IdAdd)
+          Identifier(reff: == node.id)
+          NumberLiteral(text: "4")
 
     editor.document.rootNode.add makeTree(AstNode) do:
-      Call:
-        Identifier(id: == IdDeref)
-        Identifier(id: == node.id)
+    #   Call:
+    #     Identifier(reff: == IdDeref)
+    #     Identifier(reff: == node.id)
+      Declaration(text: "baz"):
+        Call():
+          Identifier(reff: == IdAdd)
+          Identifier(reff: == editor.document.rootNode.last.id)
+          NumberLiteral(text: "4")
 
   editor.node = editor.document.rootNode[0]
   for c in editor.document.rootNode.children:
     editor.document.handleNodeInserted c
+
+  ctx.insertNode(editor.document.rootNode)
 
   editor.eventHandler = eventHandler2:
     command "<A-LEFT>", "cursor.left"
@@ -1236,6 +1325,7 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
 
     command "<C-LEFT>", "select-prev"
     command "<C-RIGHT>", "select-next"
+    command "<C-e>l", "toggle-logging"
 
     onAction:
       editor.handleAction action, arg

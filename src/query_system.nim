@@ -172,7 +172,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       quote do: seq[seq[Dependency]],
       newEmptyNode()
     ),
-    nnkIdentDefs.newTree(newIdentNode("enableLogging"), bindSym"bool", newEmptyNode()),
+    nnkIdentDefs.newTree(nnkPostfix.newTree(ident"*", newIdentNode("enableLogging")), bindSym"bool", newEmptyNode()),
   )
 
   # Add member for each input
@@ -312,6 +312,43 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
   newContextFn[6].add quote do: return `ctx`
   result.add newContextFn
 
+  # Create $ for each query
+  var queryCachesToString = nnkStmtList.newTree()
+  let toStringCtx = genSym(nskParam)
+  let toStringResult = genSym(nskVar)
+  for input in body:
+    if not (isInputDefinition(input) or isDataDefinition(input)): continue
+
+    let name = inputName(input).strVal
+    let items = ident "items" & name
+
+    queryCachesToString.add quote do:
+      `toStringResult`.add repeat("| ", 1) & "Items: " & `name` & "\n"
+      for (key, value) in `toStringCtx`.`items`.pairs:
+        `toStringResult`.add repeat("| ", 2) & $key & " -> " & $value & "\n"
+
+  for query in body:
+    if not isQuery query: continue
+
+    let name = queryName query
+    let queryCache = ident "queryCache" & name
+
+    queryCachesToString.add quote do:
+      `toStringResult`.add repeat("| ", 1) & "Cache: " & `name` & "\n"
+      for (key, value) in `toStringCtx`.`queryCache`.pairs:
+        `toStringResult`.add repeat("| ", 2) & $key & " -> " & $value & "\n"
+
+  # Create $ implementation for Context
+  result.add quote do:
+    proc toString*(`toStringCtx`: `contextName`): string =
+      var `toStringResult` = "Context\n"
+
+      `queryCachesToString`
+
+      `toStringResult`.add indent($`toStringCtx`.depGraph, 1, "| ")
+
+      return `toStringResult`
+
   # proc recordDependency(ctx: Context, item: ItemId, update: UpdateFunction)
   result.add quote do:
     proc recordDependency*(ctx: `contextName`, item: ItemId, update: UpdateFunction = nil) =
@@ -371,6 +408,9 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       let verified = ctx.depGraph.verified.getOrDefault(key, 0)
 
       for i, dep in ctx.depGraph.getDependencies(key):
+        if dep.item.id == null:
+          if ctx.enableLogging: echo repeat("| ", currentIndent), "Dependency got deleted -> red, failed"
+          return false
         case ctx.depGraph.nodeColor(dep, verified)
         of Green:
           if ctx.enableLogging: echo repeat("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, " is green, skip"
@@ -450,42 +490,5 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
         assert color == Red
         if ctx.enableLogging: echo repeat("| ", currentIndent), "red, in cache, result: ", $ctx.`queryCache`[input]
         return ctx.`queryCache`[input]
-
-  # Create $ for each query
-  var queryCachesToString = nnkStmtList.newTree()
-  let toStringCtx = genSym(nskParam)
-  let toStringResult = genSym(nskVar)
-  for input in body:
-    if not (isInputDefinition(input) or isDataDefinition(input)): continue
-
-    let name = inputName(input).strVal
-    let items = ident "items" & name
-
-    queryCachesToString.add quote do:
-      `toStringResult`.add repeat("| ", 1) & "Items: " & `name` & "\n"
-      for (key, value) in `toStringCtx`.`items`.pairs:
-        `toStringResult`.add repeat("| ", 2) & $key & " -> " & $value & "\n"
-
-  for query in body:
-    if not isQuery query: continue
-
-    let name = queryName query
-    let queryCache = ident "queryCache" & name
-
-    queryCachesToString.add quote do:
-      `toStringResult`.add repeat("| ", 1) & "Cache: " & `name` & "\n"
-      for (key, value) in `toStringCtx`.`queryCache`.pairs:
-        `toStringResult`.add repeat("| ", 2) & $key & " -> " & $value & "\n"
-
-  # Create $ implementation for Context
-  result.add quote do:
-    proc `$$`*(`toStringCtx`: `contextName`): string =
-      var `toStringResult` = "Context\n"
-
-      `queryCachesToString`
-
-      `toStringResult`.add indent($`toStringCtx`.depGraph, 1, "| ")
-
-      return `toStringResult`
 
   echo result.repr
