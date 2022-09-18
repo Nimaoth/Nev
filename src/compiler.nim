@@ -35,6 +35,26 @@ type
     of vkString: stringValue*: string
     of vkFunction: impl*: ValueImpl
 
+  OperatorNotation* = enum
+    Regular
+    Prefix
+    Postfix
+    Infix
+    Scope
+
+  NewSymbolKind* = enum skAstNode, skBuiltin
+  NewSymbol* = ref object
+    id*: Id
+    name*: string
+    case kind*: NewSymbolKind
+    of skAstNode:
+      node*: AstNode
+    of skBuiltin:
+      typ*: Type
+      value*: Value
+      operatorNotation*: OperatorNotation
+      precedence*: int
+
 proc `$`*(typ: Type): string =
   case typ.kind
   of tError: return "error"
@@ -86,22 +106,11 @@ proc hash*(value: Value): Hash =
   of vkFunction: return value.impl.hash
   else: return 0
 
-type
-  NewSymbolKind* = enum skAstNode, skBuiltin
-  NewSymbol* = ref object
-    id*: Id
-    reff*: Id
-    case kind*: NewSymbolKind
-    of skAstNode:
-      node*: AstNode
-    of skBuiltin:
-      typ*: Type
-      value*: Value
 
 proc `$`*(symbol: NewSymbol): string =
   case symbol.kind
   of skAstNode:
-    return "Sym(AstNode, " & $symbol.id & ", " & $symbol.reff & ", " & $symbol.node & ")"
+    return "Sym(AstNode, " & $symbol.id & ", " & $symbol.node & ")"
   of skBuiltin:
     return "Sym(Builtin, " & $symbol.id & ", " & $symbol.typ & ", " & $symbol.value & ")"
 
@@ -119,21 +128,22 @@ proc fingerprint*(typ: Type): Fingerprint =
 proc fingerprint*(value: Value): Fingerprint =
   result = @[value.kind.int64, value.hash]
 
+proc fingerprint*(symbol: NewSymbol): Fingerprint =
+  case symbol.kind
+  of skAstNode:
+    result = @[symbol.id.hash.int64, symbol.kind.int64]
+  of skBuiltin:
+    result = @[symbol.id.hash.int64, symbol.kind.int64, symbol.precedence, symbol.operatorNotation.int64]
+
 proc fingerprint*(symbols: TableRef[Id, NewSymbol]): Fingerprint =
   result = @[]
   for (key, value) in symbols.pairs:
-    result.add(key.hash)
-    result.add(value.hash)
+    result.add value.fingerprint
 
-proc getItem*(node: AstNode): ItemId =
-  if node.id == null:
-    node.id = newId()
-  return (node.id, 0)
-
-proc getItem*(symbol: NewSymbol): ItemId =
-  if symbol.id == null:
-    symbol.id = newId()
-  return (symbol.id, 1)
+proc fingerprint*(symbol: Option[NewSymbol]): Fingerprint =
+  if symbol.getSome(s):
+    return s.fingerprint
+  return @[]
 
 CreateContext Context:
   input AstNode
@@ -144,6 +154,7 @@ CreateContext Context:
 
   proc computeTypeImpl(ctx: Context, node: AstNode): Type {.query("Type").}
   proc computeValueImpl(ctx: Context, node: AstNode): Value {.query("Value").}
+  proc computeNewSymbolImpl(ctx: Context, node: AstNode): Option[NewSymbol] {.query("NewSymbol").}
   proc computeNewSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, NewSymbol] {.query("NewSymbols").}
   proc computeNewSymbolTypeImpl(ctx: Context, symbol: NewSymbol): Type {.query("NewSymbolType").}
   proc computeNewSymbolValueImpl(ctx: Context, symbol: NewSymbol): Value {.query("NewSymbolValue").}
@@ -232,6 +243,21 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
   else:
     return Type(kind: tError)
 
+proc computeNewSymbolImpl(ctx: Context, node: AstNode): Option[NewSymbol] =
+  case node
+  of Identifier():
+    let symbols = ctx.computeNewSymbols(node)
+    if symbols.contains(node.reff):
+      return some(symbols[node.reff])
+
+  of Declaration():
+    logger.log(lvlDebug, fmt"computeSymbol {node}")
+    return some(ctx.newNewSymbol(NewSymbol(kind: skAstNode, id: node.id, node: node, name: node.text)))
+
+  else:
+    logger.log(lvlError, fmt"Failed to get symbol from node {node}")
+    return none[NewSymbol]()
+
 proc computeNewSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, NewSymbol] =
   if ctx.enableLogging or ctx.enableQueryLogging: inc currentIndent, 1
   defer:
@@ -252,8 +278,9 @@ proc computeNewSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, NewSymbol]
       assert child.id != null
 
       ctx.recordDependency(child.getItem)
-      let symbol = ctx.newNewSymbol(NewSymbol(kind: skAstNode, id: child.id, node: child))
-      result.add(child.id, symbol)
+      # let symbol = ctx.newNewSymbol(NewSymbol(kind: skAstNode, id: child.id, node: child))
+      if ctx.computeNewSymbol(child).getSome(symbol):
+        result.add(child.id, symbol)
 
   for symbol in ctx.globalScope.values:
     ctx.recordDependency(symbol.getItem)
@@ -332,6 +359,10 @@ iterator nextPreOrder*(node: AstNode): tuple[key: int, value: AstNode] =
       n = n.parent
     else:
       break
+
+proc notifySymbolChanged*(ctx: Context, sym: NewSymbol) =
+  ctx.depGraph.revision += 1
+  ctx.depGraph.changed[(sym.getItem, nil)] = ctx.depGraph.revision
 
 proc insertNode*(ctx: Context, node: AstNode) =
   ctx.depGraph.revision += 1

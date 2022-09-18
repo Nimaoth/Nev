@@ -106,8 +106,17 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
 proc getPrecedenceForNode(doc: AstDocument, node: AstNode): int =
   if node.kind != Call:
     return 0
-  if doc.getSymbol(node[0].id).getSome(sym):
-    return sym.precedence
+  case node
+  of Identifier():
+    if ctx.computeNewSymbol(node).getSome(symbol):
+      case symbol.kind
+      of skBuiltin:
+        return symbol.precedence
+      of skAstNode:
+        discard
+
+  # if doc.getSymbol(node[0].id).getSome(sym):
+    # return sym.precedence
   return 0
 
 proc renderInfixNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds: Rect, selectedNode: AstNode, nodeBounds: var Table[AstNode, Rect]): Rect =
@@ -170,8 +179,8 @@ proc renderCallNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds
   let function = node[0]
   let subBounds = bounds.shrink gap.relative
 
-  if document.getSymbol(function.reff).getSome(symbol):
-    case symbol.kind
+  if ctx.computeNewSymbol(function).getSome(sym):
+    case sym.operatorNotation
     of Infix: return renderInfixNode(node, editor, ed, bounds, selectedNode, nodeBounds)
     of Prefix: return renderPrefixNode(node, editor, ed, bounds, selectedNode, nodeBounds)
     of Postfix: return renderPostfixNode(node, editor, ed, bounds, selectedNode, nodeBounds)
@@ -209,7 +218,7 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
     let docRect = renderDocumentEditor(editor.textEditor, ed, bounds, true)
     nodeBounds[node] = docRect
     return docRect
-  elif node.len == 0 and document.getSymbol(node.id).getSome(symbol) and symbol == editor.currentlyEditedSymbol:
+  elif node.len == 0 and document.getSymbol(node.id).getSome(symbol) and symbol.id == editor.currentlyEditedSymbol:
     let docRect = renderDocumentEditor(editor.textEditor, ed, bounds, true)
     nodeBounds[node] = docRect
     return docRect
@@ -272,10 +281,8 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
     r
 
   of Identifier():
-    let symbol = document.getSymbol(node.reff)
     var text = ""
-    case symbol
-    of Some(@symbol):
+    if ctx.computeNewSymbol(node).getSome(symbol):
       text = symbol.name
     else:
       text = $node.reff & " (" & node.text & ")"
@@ -294,14 +301,13 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
 
     let typ = ctx.computeType(node)
 
-    let symbol = document.getSymbol(node.id)
-    let symbolSize = if symbol.getSome(symbol) and symbol == editor.currentlyEditedSymbol:
+    let symbol = ctx.computeNewSymbol(node)
+    let symbolSize = if symbol.getSome(symbol) and symbol.id == editor.currentlyEditedSymbol:
       let docRect = renderDocumentEditor(editor.textEditor, ed, subBounds, true)
       vec2(docRect.w, docRect.h)
     else:
       var name = ""
-      case symbol
-      of Some(@symbol):
+      if symbol.getSome(symbol):
         name = symbol.name
       else:
         name = $node.id & " (" & node.text & ")"
@@ -412,27 +418,28 @@ proc renderCompletions(editor: AstDocumentEditor, ed: Editor, bounds: Rect): Rec
     ed.ctx.fillStyle = rgb(255, 225, 255)
     case com.kind
     of SymbolCompletion:
-      if editor.document.getSymbol(com.id).getSome(symbol):
+      if ctx.getNewSymbol(com.id).getSome(symbol):
         ed.ctx.fillText(symbol.name, vec2(bounds.x, bounds.y + i.float32 * ed.ctx.fontSize))
     of AstCompletion:
       ed.ctx.fillText(com.name, vec2(bounds.x, bounds.y + i.float32 * ed.ctx.fontSize))
     else:
       discard
 
-proc renderSymbol(symbol: Symbol, editor: AstDocumentEditor, ed: Editor, bounds: Rect, selectedNode: AstNode): Rect =
+proc renderSymbol(symbol: NewSymbol, editor: AstDocumentEditor, ed: Editor, bounds: Rect, selectedNode: AstNode): Rect =
   var lastNodeRect = bounds
 
-  if symbol.node == selectedNode:
+  if symbol.kind == skAstNode and symbol.node == selectedNode:
     ed.ctx.strokeStyle = rgb(0, 255, 0)
   else:
     ed.ctx.strokeStyle = rgb(255, 255, 255)
 
-  ed.ctx.fillText(fmt"{symbol.name} ({symbol.id} : {symbol.parent})", vec2(bounds.x + 500, bounds.y))
+  ed.ctx.fillText(fmt"{symbol.name} ({symbol.id})", vec2(bounds.x + 500, bounds.y))
   var i = 0.0
-  for c in symbol.children.items:
-    ed.ctx.fillText(fmt"{c}", vec2(bounds.x + 550, bounds.y + (i + 1) * ed.ctx.fontSize))
-    i += 1
-  return bounds.splitH(((symbol.children.len.float32 + 1) * ed.ctx.fontSize).relative)[0]
+  # for c in symbol.children.items:
+  #   ed.ctx.fillText(fmt"{c}", vec2(bounds.x + 550, bounds.y + (i + 1) * ed.ctx.fontSize))
+  #   i += 1
+  # return bounds.splitH(((symbol.children.len.float32 + 1) * ed.ctx.fontSize).relative)[0]
+  return bounds
 
 method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect, selected: bool): Rect =
   let document = editor.document
@@ -465,12 +472,12 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
       discard renderCompletions(editor, ed, contentBounds.splitH((bounds.y + bounds.h).absolute)[1].splitV(bounds.x.absolute)[1])
 
     let selectedCompletion = editor.completions[editor.selectedCompletion]
-    if selectedCompletion.kind == SymbolCompletion and document.getSymbol(selectedCompletion.id).getSome(symbol) and symbol.node != nil:
+    if selectedCompletion.kind == SymbolCompletion and document.getSymbol(selectedCompletion.id).getSome(symbol) and symbol.node != nil and nodeBounds.contains(symbol.node):
       let selectedDeclRect = nodeBounds[symbol.node]
       ed.ctx.strokeStyle = rgb(150, 150, 220)
       ed.ctx.strokeRect(selectedDeclRect)
 
-  elif document.getSymbol(selectedNode.id).getSome(symbol) and symbol.node != nil:
+  elif document.getSymbol(selectedNode.id).getSome(symbol) and symbol.node != nil and nodeBounds.contains(symbol.node):
     let selectedDeclRect = nodeBounds[symbol.node]
     ed.ctx.strokeStyle = rgb(150, 150, 220)
     ed.ctx.strokeRect(selectedDeclRect)

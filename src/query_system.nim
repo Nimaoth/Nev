@@ -158,6 +158,12 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
   #     continue
   #   echo "customMember: ", arg.treeRepr
 
+  var dataIndices = initTable[string, int]()
+
+  for data in body:
+    if not isDataDefinition(data) and not isInputDefinition(data): continue
+    dataIndices[data.inputName.strVal] = dataIndices.len
+
   # List of members of the final Context type
   # depGraph: DependencyGraph
   # dependencyStack: seq[seq[Key]]
@@ -188,15 +194,8 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       newEmptyNode()
     )
 
-  # Add member declarations for custom members
-  for customMembers in body:
-    if not isCustomMemberDefinition customMembers: continue
-
-    for member in customMembers:
-      memberList.add nnkIdentDefs.newTree(member[0], member[1], newEmptyNode())
-
   # Add member for each data
-  # data: Table[Data, int]
+  # data: Table[ItemId, Input]
   for data in body:
     if not isDataDefinition data: continue
 
@@ -208,6 +207,13 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       quote do: Table[ItemId, `name`],
       newEmptyNode()
     )
+
+  # Add member declarations for custom members
+  for customMembers in body:
+    if not isCustomMemberDefinition customMembers: continue
+
+    for member in customMembers:
+      memberList.add nnkIdentDefs.newTree(member[0], member[1], newEmptyNode())
 
   # Add two members for each query
   # queryCache: Table[QueryInput, QueryOutput]
@@ -354,6 +360,28 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     proc recordDependency*(ctx: `contextName`, item: ItemId, update: UpdateFunction = nil) =
       if ctx.dependencyStack.len > 0:
         ctx.dependencyStack[ctx.dependencyStack.high].add (item, update)
+
+  # Generate functions getData and getItem
+  for data in body:
+    if not isDataDefinition(data) and not isInputDefinition(data): continue
+
+    let name = inputName data
+    let items = ident "items" & name.strVal
+    let functionName = ident "get" & name.strVal
+    let itemIndex = newLit dataIndices[data.inputName.strVal]
+
+    result.add quote do:
+      proc `functionName`*(ctx: `contextName`, id: Id): Option[`name`] =
+        let item: ItemId = (id, `itemIndex`)
+        if ctx.`items`.contains(item):
+          return some(ctx.`items`[item])
+        return none[`name`]()
+
+    result.add quote do:
+      proc getItem*(self: `name`): ItemId =
+        if self.id == null:
+          self.id = newId()
+        return (self.id, `itemIndex`)
 
   # Add newData function for each data
   for data in body:
