@@ -1,4 +1,4 @@
-import std/[options, algorithm, strutils, hashes, enumutils]
+import std/[options, algorithm, strutils, hashes, enumutils, json, jsonutils]
 import system
 import fusion/matching
 import util, id
@@ -215,6 +215,33 @@ proc treeRepr*(node: AstNode): string =
 
   else:
     return "other"
+
+proc toJson*(node: AstNode, opt = initToJsonOptions()): JsonNode =
+  result = newJObject()
+  result["kind"] = toJson(node.kind, opt)
+  result["id"] = toJson(node.id, opt)
+  if node.reff != null: result["reff"] = toJson(node.reff, opt)
+  if node.text.len > 0: result["text"] = toJson(node.text, opt)
+
+  if node.len > 0:
+    let children = newJArray()
+    for child in node.children:
+      children.add child.toJson opt
+    result["children"] = children
+
+proc jsonToAstNode*(json: JsonNode, opt = Joptions()): AstNode =
+  result = AstNode()
+  result.kind = json["kind"].jsonTo AstNodeKind
+  result.id = json["id"].jsonTo Id
+
+  if json.hasKey("reff"):
+    result.reff = json["reff"].jsonTo Id
+  if json.hasKey("text"):
+    result.text = json["text"].jsonTo string
+
+  if json.hasKey("children"):
+    for child in json["children"].items:
+      result.add child.jsonToAstNode
 
 proc `$$`*(node: AstNode): string =
   return node.treeRepr

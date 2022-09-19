@@ -1,4 +1,4 @@
-import std/[strformat, strutils, algorithm, math, logging, unicode, sequtils, sugar, tables, macros, options, os, deques, sets]
+import std/[strformat, strutils, algorithm, math, logging, unicode, sequtils, sugar, tables, macros, options, os, deques, sets, json, jsonutils]
 import print, fusion/matching, fuzzy
 import util, input, document, document_editor, text_document, events, id, ast_ids, ast
 import compiler
@@ -188,10 +188,23 @@ proc newAstDocument*(filename: string = ""): AstDocument =
   result.rootNode = AstNode(kind: NodeList, parent: nil, id: newId())
   result.symbols = initTable[Id, Symbol]()
 
+  echo "reading: ", result.filename
+  try:
+    let file = readFile(result.filename)
+    let jsn = file.parseJson
+    result.rootNode = jsn.jsonToAstNode
+    echo "ast: ", result.rootNode.treeRepr
+  except:
+    echo "failed to load ast file"
+
 method save*(self: AstDocument, filename: string = "") =
   self.filename = if filename.len > 0: filename else: self.filename
   if self.filename.len == 0:
     raise newException(IOError, "Missing filename")
+
+  echo "saving as ", self.filename
+  let serialized = self.rootNode.toJson
+  writeFile(self.filename, serialized.pretty)
 
 method load*(self: AstDocument, filename: string = "") =
   let filename = if filename.len > 0: filename else: self.filename
@@ -199,6 +212,18 @@ method load*(self: AstDocument, filename: string = "") =
     raise newException(IOError, "Missing filename")
 
   self.filename = filename
+
+  echo "reading: ", self.filename
+  let file = readFile(self.filename)
+  let uiae = file.parseJson
+  let newAst = uiae.jsonToAstNode
+  echo "ast: ", newAst.treeRepr
+
+  ctx.deleteAllNodesAndSymbols()
+  self.rootNode = newAst
+  ctx.insertNode(self.rootNode)
+  self.undoOps.setLen 0
+  self.redoOps.setLen 0
 
 iterator nextPreOrder*(self: AstDocument, node: AstNode, endNode: AstNode = nil): tuple[key: int, value: AstNode] =
   var n = node
@@ -444,7 +469,13 @@ method getEventHandlers*(self: AstDocumentEditor): seq[EventHandler] =
   return @[self.eventHandler]
 
 method handleDocumentChanged*(self: AstDocumentEditor) =
-  discard
+  logger.log(lvlInfo, fmt"[ast-editor] Document changed")
+  self.node = self.document.rootNode[0]
+  self.selectionHistory.clear
+  self.selectionFuture.clear
+  self.finishEdit false
+  for symbol in ctx.globalScope.values:
+    discard ctx.newSymbol(symbol)
 
 proc getNextChild*(document: AstDocument, node: AstNode, min: int = -1): Option[AstNode] =
   if node.len == 0:

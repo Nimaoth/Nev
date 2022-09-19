@@ -20,9 +20,9 @@ type
   NodeColor* = enum Grey, Red, Green
 
   DependencyGraph* = ref object
-    verified: Table[Dependency, int]
+    verified*: Table[Dependency, int]
     changed*: Table[Dependency, int]
-    fingerprints: Table[Dependency, Fingerprint]
+    fingerprints*: Table[Dependency, Fingerprint]
     dependencies*: Table[Dependency, seq[Dependency]]
     queryNames*: Table[UpdateFunction, string]
     revision*: int
