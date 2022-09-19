@@ -341,7 +341,6 @@ proc editNode*(self: AstDocumentEditor, node: AstNode) =
   self.updateCompletions()
 
 proc tryEdit*(self: AstDocumentEditor, node: AstNode): bool =
-  # todo: use reff?
   if ctx.getSymbol(node.id).getSome(sym):
     self.editSymbol(sym)
     return true
@@ -362,7 +361,6 @@ proc finishEdit*(self: AstDocumentEditor, apply: bool) =
       if ctx.getSymbol(self.currentlyEditedSymbol).getSome(sym):
         self.document.undoOps.add UndoOp(kind: SymbolNameChange, id: self.currentlyEditedSymbol, text: sym.name)
         sym.name = self.textDocument.content.join
-        # todo: notify context that symbol name changed
 
         if sym.kind == skAstNode:
           sym.node.text = sym.name
@@ -385,13 +383,8 @@ proc getCompletions*(editor: AstDocumentEditor, text: string, contextNode: Optio
 
   # Find everything matching text
   if contextNode.isNone or contextNode.get.kind == Identifier or contextNode.get.kind == Empty:
-    # for symbol in editor.document.symbols.values:
     let symbols = ctx.computeSymbols(contextNode.get)
     for symbol in symbols.values:
-      # todo: use reff?
-      # todo-now
-      # if symbol.kind == Scope or symbol.parent != editor.document.rootNode.id:
-      #   continue
       let score = fuzzyMatch(text, symbol.name)
       result.add Completion(kind: SymbolCompletion, score: score, id: symbol.id)
 
@@ -400,17 +393,6 @@ proc getCompletions*(editor: AstDocumentEditor, text: string, contextNode: Optio
     result.add Completion(kind: AstCompletion, nodeKind: Declaration, name: "let", score: fuzzyMatch(text, "let"))
     result.add Completion(kind: AstCompletion, nodeKind: StringLiteral, name: "string literal", score: if text.startsWith("\""): 1.1 else: 0)
     result.add Completion(kind: AstCompletion, nodeKind: NodeList, name: "block", score: fuzzyMatch(text, "{"))
-
-    # var scope = node.findWithParentRec(NodeList).get.parent
-    # while scope != editor.document.rootNode:
-    #   # todo: use reff?
-    #   if editor.document.getSymbol(scope.id).getSome(scopeSym):
-    #     for childSymId in scopeSym.children:
-    #       if editor.document.getSymbol(childSymId).getSome(childSym):
-    #         let score = fuzzyMatch(text, childSym.name)
-    #         result.add Completion(kind: SymbolCompletion, score: score, id: childSym.id)
-
-    #   scope = scope.findWithParentRec(NodeList).get.parent
 
     try:
       discard text.parseFloat
@@ -582,26 +564,48 @@ proc getPrevChildRec*(document: AstDocument, node: AstNode, max: int = -1): Opti
   # return some(node)
 
 proc getNextLine*(document: AstDocument, node: AstNode): Option[AstNode] =
+  echo "getNextLine ", node
   for _, n in document.nextPreOrder(node):
-    if n == node:
+    if n == node or n.parent == nil:
       continue
-    if n.parent != nil and n.parent.kind == NodeList:
+
+    if n.parent.kind == NodeList:
       if n.kind == NodeList and n.len == 0:
         return some(n)
       elif n.kind != NodeList:
+        return some(n)
+
+    if n.parent.kind == If:
+      let isElse = n == n.parent.last and n.parent.len mod 2 != 0
+      let isCondition = not isElse and n.index mod 2 == 0
+      if n.kind == NodeList and n.len == 0:
+        return some(n)
+      elif n.kind != NodeList and (not isCondition or n.index > 0):
         return some(n)
 
   return none[AstNode]()
 
 proc getPrevLine*(document: AstDocument, node: AstNode): Option[AstNode] =
   for n in document.prevPostOrder(node):
-    if n == node:
+    if n == node or n.parent == nil:
       continue
-    if n.parent != nil and n.parent.kind == NodeList:
+
+    if n.parent.kind == NodeList:
       if n.kind == NodeList and n.len == 0:
         return some(n)
       elif n.kind != NodeList:
         return some(n)
+
+    if n.parent.kind == If:
+      let isElse = n == n.parent.last and n.parent.len mod 2 != 0
+      let isCondition = not isElse and n.index mod 2 == 0
+      if n.kind == NodeList and n.len == 0:
+        return some(n)
+      elif n.kind != NodeList and (not isCondition or n.index > 0):
+        return some(n)
+
+    if n.kind == If:
+      return some(n)
 
   return none[AstNode]()
 
@@ -657,8 +661,6 @@ proc insertNode*(document: AstDocument, node: AstNode, index: int, newNode: AstN
 
   echo fmt"insertNode {node}, {index}, {newNode}"
   case node
-  of If():
-    return none[AstNode]()
   of Declaration():
     return none[AstNode]()
   of Call():
@@ -733,11 +735,9 @@ proc undo*(document: AstDocument): Option[AstNode] =
       return some(undoOp.parent[undoOp.idx - 1])
     return some(undoOp.parent)
   of SymbolNameChange:
-    # todo: use reff?
     if ctx.getSymbol(undoOp.id).getSome(symbol):
       document.redoOps.add UndoOp(kind: SymbolNameChange, id: undoOp.id, text: symbol.name)
       symbol.name = undoOp.text
-      # todo: notify context that symbol name changed
       if symbol.kind == skAstNode:
         symbol.node.text = symbol.name
         ctx.updateNode(symbol.node)
@@ -779,7 +779,6 @@ proc redo*(document: AstDocument): Option[AstNode] =
     document.undoOps.add redoOp
     return some(redoOp.node)
   of SymbolNameChange:
-    # todo: use reff?
     if ctx.getSymbol(redoOp.id).getSome(symbol):
       document.undoOps.add UndoOp(kind: SymbolNameChange, id: redoOp.id, text: symbol.name)
       symbol.name = redoOp.text
@@ -920,6 +919,8 @@ proc createDefaultNode*(editor: AstDocumentEditor, kind: AstNodeKind): Option[(A
 
 proc shouldEditNode(doc: AstDocument, node: AstNode): bool =
   if node.kind == Empty and node.text == "":
+    return true
+  if node.kind == NumberLiteral and node.text == "":
     return true
   if node.kind == Declaration:
     return ctx.computeSymbol(node).getSome(symbol) and symbol.name == ""
@@ -1126,16 +1127,28 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
         if sym.kind == skAstNode and sym.node != self.document.rootNode:
           self.node = sym.node
     of "next-usage":
-      # todo: use reff?
-      let id = self.node.id
-      for _, n in self.document.nextPreOrderWhere(self.node, n => n != self.node and n.id == id):
+      let id = case self.node
+      of Identifier(): self.node.reff
+      else: self.node.id
+      for _, n in self.document.nextPreOrderWhere(self.node, n => n != self.node and (n.id == id or n.reff == id)):
         self.node = n
         break
     of "prev-usage":
-      # todo: use reff?
-      let id = self.node.id
+      let id = case self.node
+      of Identifier(): self.node.reff
+      else: self.node.id
       for n in self.document.prevPostOrder(self.node):
-        if n != self.node and n.id == id:
+        if n != self.node and (n.id == id or n.reff == id):
+          self.node = n
+          break
+
+    of "next-error":
+      for _, n in self.document.nextPreOrderWhere(self.node, n => n != self.node and ctx.computeType(n).kind == tError):
+        self.node = n
+        break
+    of "prev-error":
+      for n in self.document.prevPostOrder(self.node):
+        if n != self.node and ctx.computeType(n).kind == tError:
           self.node = n
           break
 
@@ -1167,21 +1180,6 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     let node = makeTree(AstNode):
       Declaration(id: == newId(), text: "foo"):
         Call():
-      #     Identifier(reff: == IdPrint)
-      #     StringLiteral(text: "hi")
-      #     Call:
-      #       Identifier(reff: == IdMul)
-      #       Call:
-      #         Identifier(reff: == IdNegate)
-      #         NumberLiteral(text: "123456")
-      #       Call:
-      #         Identifier(reff: == IdDiv)
-      #         StringLiteral(text: "")
-      #         NumberLiteral(text: "42069")
-      #     Identifier(reff: == IdAdd)
-      #     Call:
-      #       Identifier(reff: == IdDeref)
-      #       Identifier(reff: == IdPrint)
           Identifier(reff: == IdMul)
           Call():
             Identifier(reff: == IdAdd)
@@ -1192,31 +1190,6 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     editor.document.rootNode.add node
 
     editor.document.rootNode.add makeTree(AstNode) do:
-      # If:
-      #   Call:
-      #     Empty(text: "bar")
-      #     Identifier(reff: == node.id)
-      #     StringLiteral(text: "bar")
-      #   NodeList:
-      #     Call:
-      #       Identifier(reff: == IdPrint)
-      #       StringLiteral(text: "hi")
-      #       Call:
-      #         Identifier(reff: == IdMul)
-      #         Call:
-      #           Identifier(reff: == IdNegate)
-      #           NumberLiteral(text: "123456")
-      #         Call:
-      #           Identifier(reff: == IdDiv)
-      #           StringLiteral(text: "")
-      #           NumberLiteral(text: "42069")
-      #       Identifier(reff: == IdAdd)
-      #       Call:
-      #         Identifier(reff: == IdDeref)
-      #         Identifier(reff: == IdPrint)
-      #     Call:
-      #       Identifier(reff: == IdDeref)
-      #       Identifier(reff: == node.id)
       Declaration(text: "bar"):
         Call():
           Identifier(reff: == IdAdd)
@@ -1224,14 +1197,39 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
           NumberLiteral(text: "4")
 
     editor.document.rootNode.add makeTree(AstNode) do:
-    #   Call:
-    #     Identifier(reff: == IdDeref)
-    #     Identifier(reff: == node.id)
       Declaration(text: "baz"):
         Call():
           Identifier(reff: == IdAdd)
           Identifier(reff: == editor.document.rootNode.last.id)
           NumberLiteral(text: "4")
+
+    editor.document.rootNode.add makeTree(AstNode) do:
+      If():
+        NumberLiteral(text: "69")
+        Call():
+          Identifier(reff: == IdAdd)
+          Identifier(reff: == editor.document.rootNode.last.id)
+          NumberLiteral(text: "4")
+        NumberLiteral(text: "420")
+        Call():
+          Identifier(reff: == IdSub)
+          Identifier(reff: == editor.document.rootNode.last.id)
+          NumberLiteral(text: "13")
+        Call():
+          Identifier(reff: == IdAppendString)
+          StringLiteral(text: "1 + 3 = ")
+          NumberLiteral(text: "4")
+
+    editor.document.rootNode.add makeTree(AstNode) do:
+      If():
+        NumberLiteral(text: "69")
+        NodeList():
+          NumberLiteral(text: "4")
+        NumberLiteral(text: "420")
+        NodeList():
+          NumberLiteral(text: "13")
+        NodeList():
+          StringLiteral(text: "1 + 3 = ")
 
   editor.node = editor.document.rootNode[0]
   for c in editor.document.rootNode.children:
@@ -1279,6 +1277,7 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     command "i+", "insert-before +"
     command "if", "insert-before call-func"
 
+    command "s", "replace empty"
     command "re", "replace empty"
     command "rn", "replace number-literal"
     command "rd", "replace declaration"
@@ -1286,8 +1285,10 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     command "rf", "replace call-func"
 
     command "gd", "goto definition"
-    command "gn", "goto next-usage"
     command "gp", "goto prev-usage"
+    command "gn", "goto next-usage"
+    command "GE", "goto prev-error"
+    command "ge", "goto next-error"
 
     command "\"", "replace-empty \""
     command "'", "replace-empty \""

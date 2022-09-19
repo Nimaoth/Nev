@@ -11,11 +11,18 @@ let horizontalGap = 2.0
 let indent = 15.0
 let padding = 5.0
 
-proc fillText(ctx: contexts.Context, text: string, paint: Paint, location: Vec2): Rect =
+proc fillText(ctx: contexts.Context, location: Vec2, text: string, paint: Paint): Rect =
   let textWidth = ctx.measureText(text).width
   ctx.fillStyle = paint
   ctx.fillText(text, location)
   return rect(location, vec2(textWidth, ctx.fontSize))
+
+proc fillText(ctx: contexts.Context, location: Vec2, texts: openArray[tuple[text: string, paint: Paint]]): Rect =
+  var bounds = rect(location, vec2(0, ctx.fontSize))
+  for (text, paint) in texts:
+    let newBounds = ctx.fillText(vec2(bounds.xw, bounds.y), text, paint)
+    bounds.w += newBounds.w
+  return bounds
 
 proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds: Rect, selectedNode: AstNode, nodeBounds: var Table[AstNode, Rect]): Rect
 
@@ -245,32 +252,55 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
     rect(bounds.x, bounds.y, width, ed.ctx.fontSize)
 
   of If():
-    let ifText = "if "
-    let ifWidth = ed.ctx.measureText(ifText).width
-    let colonText = ":"
-    let colonWidth = ed.ctx.measureText(colonText).width
+    var ifBodyRect = rect(bounds.xy, vec2())
+    var finalRect = ifBodyRect
 
-    # if
-    ed.ctx.fillStyle = rgb(225, 175, 255)
-    ed.ctx.fillText(ifText, vec2(bounds.x, bounds.y))
+    var index = 0
+    while index + 1 < node.len:
+      defer: index += 2
 
-    # Condition
-    let condRect = renderAstNode(node[0], editor, ed, bounds.splitV(ifWidth.relative)[1], selectedNode, nodeBounds)
+      # if
+      let ifText = if index == 0: "if   " else: "elif "
+      let ifTextRect = ed.ctx.fillText(ifBodyRect.xyh, ifText, rgb(225, 175, 255))
 
-    # :
-    ed.ctx.fillStyle = rgb(175, 175, 175)
-    ed.ctx.fillText(colonText, vec2(condRect.x + condRect.w, bounds.y))
+      # Condition
+      let condRect = renderAstNode(node[index], editor, ed, bounds.splitH(ifBodyRect.yh.absolute)[1].splitV(ifTextRect.xw.absolute)[1], selectedNode, nodeBounds)
 
-    # body
-    var bodyBounds = bounds
-    if node[1].kind == NodeList:
-      # Move body to next line
-      bodyBounds = bodyBounds.splitH(max(ed.ctx.fontSize, condRect.h + padding).relative)[1]
-    else:
-      bodyBounds = bodyBounds.splitV((condRect.x + condRect.w + colonWidth).absolute)[1]
-    let bodyRect = renderAstNode(node[1], editor, ed, bodyBounds, selectedNode, nodeBounds)
+      # :
+      let colonTextRect = ed.ctx.fillText(condRect.xwy, ": ", rgb(175, 175, 175))
 
-    rect(bounds.x, bounds.y, max(bodyRect.x + bodyRect.w, condRect.x + condRect.y + colonWidth) - bounds.x, max(bodyRect.y + bodyRect.h, condRect.y + condRect.h) - bounds.y)
+      let condLineRect = ifTextRect or condRect or colonTextRect
+
+      # body
+      var bodyBounds = bounds.splitH(ifBodyRect.yh.absolute)[1]
+      if node[index + 1].kind == NodeList:
+        # Move body to next line
+        bodyBounds = bodyBounds.splitH(max(ed.ctx.fontSize, condRect.h + padding).relative)[1]
+      else:
+        bodyBounds = bodyBounds.splitV(colonTextRect.xw.absolute)[1]
+
+      ifBodyRect = ifBodyRect or condLineRect or renderAstNode(node[index + 1], editor, ed, bodyBounds, selectedNode, nodeBounds)
+      finalRect = finalRect or ifBodyRect
+
+    var elseBodyRect = ifBodyRect
+    if node.len > 2 and node.len mod 2 != 0:
+      let origin = ifBodyRect.xyh
+      let elseTextRect = ed.ctx.fillText(origin, [("else", rgb(225, 175, 255).newPaint), (": ", rgb(175, 175, 175).newPaint)])
+
+      # body
+      var bodyBounds = bounds.splitH(origin.y.absolute)[1]
+      if node.last.kind == NodeList:
+        # Move body to next line
+        bodyBounds = bodyBounds.splitH((ed.ctx.fontSize + padding).relative)[1]
+      else:
+        bodyBounds = bodyBounds.splitV(elseTextRect.xw.absolute)[1]
+
+      elseBodyRect = renderAstNode(node.last, editor, ed, bodyBounds, selectedNode, nodeBounds)
+      finalRect = finalRect or elseBodyRect
+
+    let bodyRect = ifBodyRect or elseBodyRect
+    # rect(bounds.x, bounds.y, max(bodyRect.x + bodyRect.w, condRect.x + condRect.y + colonWidth) - bounds.x, max(bodyRect.y + bodyRect.h, condRect.y + condRect.h) - bounds.y)
+    finalRect
 
   of NodeList():
     var lastNodeRect = rect(bounds.x, bounds.y, 0, 0)
@@ -373,15 +403,8 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
     rect(bounds.x, bounds.y, quoteWidth * 2 + textWidth + horizontalGap * 2, ed.ctx.fontSize)
 
   of NumberLiteral():
-    let text = node.text
-    let width = ed.ctx.measureText(text).width
-
-    # ed.ctx.strokeStyle = rgb(255, 0, 255)
-    # ed.ctx.strokeRect(bounds.splitV(width.relative)[0].splitH(ed.ctx.fontSize.relative)[0])
-    ed.ctx.fillStyle = rgb(200, 255, 200)
-    ed.ctx.fillText(text, vec2(bounds.x, bounds.y))
-
-    rect(bounds.x, bounds.y, width, ed.ctx.fontSize)
+    let r = ed.ctx.fillText(bounds.xy, node.text, rgb(200, 255, 200))
+    r
 
   else:
     rect(0, 0, 0, 0)
@@ -389,17 +412,29 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
   # print selectedNode
   if node == selectedNode:
     ed.ctx.strokeStyle = rgb(255, 0, 255)
-    ed.ctx.strokeRect(nodeRect)
+    ed.ctx.lineWidth = 2
+    ed.ctx.strokeRect(nodeRect.grow(2.absolute))
+    ed.ctx.lineWidth = 1
 
   if node == selectedNode or node.kind == Declaration:
+    let typ = ctx.computeType(node)
     let val = ctx.computeValue(node)
 
-    let valueRect = ed.ctx.fillText($val, rgb(100, 100, 255), vec2(nodeRect.x, nodeRect.y + nodeRect.h + padding))
-    let colonRect = ed.ctx.fillText(" : ", rgb(200, 200, 200), vec2(valueRect.xw, valueRect.y))
-    let idRect = ed.ctx.fillText(fmt"{node.id}", rgb(250, 175, 200), vec2(colonRect.xw, valueRect.y))
-    nodeRect.h += max(valueRect.h, max(colonRect.h, idRect.h)) + padding * 2
+    var lastRect = ed.ctx.fillText(vec2(nodeRect.x, nodeRect.y + nodeRect.h + padding), $val, rgb(100, 100, 255))
+    lastRect = ed.ctx.fillText(vec2(lastRect.xw, lastRect.y), " : ", rgb(200, 200, 200))
+    lastRect = ed.ctx.fillText(vec2(lastRect.xw, lastRect.y), $typ, rgb(250, 175, 200))
+    # lastRect = ed.ctx.fillText(vec2(lastRect.xw, lastRect.y), fmt"{node.id}", rgb(250, 175, 200))
+    nodeRect.h += lastRect.h + padding * 2
 
-    nodeRect.w = max(nodeRect.w, idRect.xw - valueRect.x)
+    # nodeRect.w = max(nodeRect.w, lastRect.xw - nodeRect.x)
+
+  nodeRect.w = max(nodeRect.w, ed.ctx.measureText(" ").width)
+  nodeRect.h = max(nodeRect.h, ed.ctx.fontSize)
+
+  if ctx.computeType(node).kind == tError:
+    ed.ctx.strokeStyle = rgb(255, 50, 50)
+    ed.ctx.strokeRect(nodeRect)
+    nodeRect = nodeRect.grow(1.absolute)
 
   nodeBounds[node] = nodeRect
 
