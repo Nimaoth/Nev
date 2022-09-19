@@ -117,16 +117,14 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
   return usedBounds
 
 proc getPrecedenceForNode(doc: AstDocument, node: AstNode): int =
-  if node.kind != Call:
+  if node.kind != Call or node.len == 0:
     return 0
-  case node
-  of Identifier():
-    if ctx.computeSymbol(node).getSome(symbol):
-      case symbol.kind
-      of skBuiltin:
-        return symbol.precedence
-      of skAstNode:
-        discard
+  if ctx.computeSymbol(node[0]).getSome(symbol):
+    case symbol.kind
+    of skBuiltin:
+      return symbol.precedence
+    of skAstNode:
+      discard
 
   return 0
 

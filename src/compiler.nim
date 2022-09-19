@@ -499,6 +499,15 @@ proc deleteNode*(ctx: Context, node: AstNode) =
       if dep.item == node.getItem:
         ctx.depGraph.dependencies[key][i] = ((null, -1), nil)
 
+proc deleteAllNodesAndSymbols*(ctx: Context) =
+  ctx.depGraph.revision += 1
+  ctx.depGraph.changed.clear
+  ctx.depGraph.verified.clear
+  ctx.depGraph.fingerprints.clear
+  ctx.depGraph.dependencies.clear
+  ctx.itemsAstNode.clear
+  ctx.itemsSymbol.clear
+
 proc replaceNodeChild*(ctx: Context, parent: AstNode, index: int, newNode: AstNode) =
   let node = parent[index]
   parent[index] = newNode

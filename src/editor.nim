@@ -336,7 +336,7 @@ proc handleAction(ed: Editor, action: string, arg: string) =
       let file = readFile(arg)
       ed.createView(TextDocument(filename: arg, content: collect file.splitLines))
     except:
-      ed.logger.log(lvlError, "[ed] Failed to load file '$1'" % [arg])
+      ed.logger.log(lvlError, fmt"[ed] Failed to load file '{arg}': {getCurrentExceptionMsg()}")
   of "write-file":
     if ed.currentView >= 0 and ed.currentView < ed.views.len and ed.views[ed.currentView].document != nil:
       try:
@@ -349,7 +349,7 @@ proc handleAction(ed: Editor, action: string, arg: string) =
         ed.views[ed.currentView].document.load(arg)
         ed.views[ed.currentView].editor.handleDocumentChanged()
       except:
-        ed.logger.log(lvlError, "[ed] Failed to load file '$1'" % [arg])
+        ed.logger.log(lvlError, fmt"[ed] Failed to load file '{arg}': {getCurrentExceptionMsg()}")
   else:
     ed.logger.log(lvlError, "[ed] Unknown Action '$1 $2'" % [action, arg])
 
