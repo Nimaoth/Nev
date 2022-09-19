@@ -13,6 +13,9 @@ ctx.enableLogging = false
 
 proc createBinaryIntOperator(operator: proc(a: int, b: int): int): Value =
   return newFunctionValue proc(node: AstNode): Value =
+    if node.len < 3:
+      return errorValue()
+
     let leftValue = ctx.computeValue(node[1])
     let rightValue = ctx.computeValue(node[2])
 
@@ -23,6 +26,9 @@ proc createBinaryIntOperator(operator: proc(a: int, b: int): int): Value =
 
 proc createUnityIntOperator(operator: proc(a: int): int): Value =
   return newFunctionValue proc(node: AstNode): Value =
+    if node.len < 2:
+      return errorValue()
+
     let value = ctx.computeValue(node[1])
 
     if value.kind != vkNumber:
@@ -467,14 +473,16 @@ proc getNextChild*(document: AstDocument, node: AstNode, min: int = -1): Option[
     if ctx.computeSymbol(node[0]).getSome(sym):
       case sym.operatorNotation
       of Infix:
-        if min == 0: return some(node[2])
-        if min == 1: return some(node[0])
-        if min == 2: return none[AstNode]()
-        return some(node[1])
+        if node.len == 3:
+          if min == 0: return some(node[2])
+          if min == 1: return some(node[0])
+          if min == 2: return none[AstNode]()
+          return some(node[1])
       of Postfix:
-        if min == 0: return none[AstNode]()
-        if min == 1: return some(node[0])
-        return some(node[1])
+        if node.len == 2:
+          if min == 0: return none[AstNode]()
+          if min == 1: return some(node[0])
+          return some(node[1])
       else: discard
   else: discard
 
@@ -518,14 +526,16 @@ proc getPrevChild*(document: AstDocument, node: AstNode, max: int = -1): Option[
     if ctx.computeSymbol(node[0]).getSome(sym):
       case sym.operatorNotation
       of Infix:
-        if max == 0: return some(node[1])
-        if max == 1: return none[AstNode]()
-        if max == 2: return some(node[0])
-        return some(node[2])
+        if node.len == 3:
+          if max == 0: return some(node[1])
+          if max == 1: return none[AstNode]()
+          if max == 2: return some(node[0])
+          return some(node[2])
       of Postfix:
-        if max == 0: return some(node[1])
-        if max == 1: return none[AstNode]()
-        return some(node[0])
+        if node.len == 2:
+          if max == 0: return some(node[1])
+          if max == 1: return none[AstNode]()
+          return some(node[0])
       else: discard
   else: discard
 
@@ -1132,6 +1142,11 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
   of "toggle-logging":
     ctx.enableLogging = not ctx.enableLogging
 
+  of "dump-context":
+    echo "================================================="
+    echo ctx.toString
+    echo "================================================="
+
   else:
     logger.log(lvlError, "[textedit] Unknown action '$1 $2'" % [action, arg])
 
@@ -1294,6 +1309,7 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     command "<C-LEFT>", "select-prev"
     command "<C-RIGHT>", "select-next"
     command "<C-e>l", "toggle-logging"
+    command "<C-e>dc", "dump-context"
 
     onAction:
       editor.handleAction action, arg

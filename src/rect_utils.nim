@@ -1,5 +1,5 @@
 import std/[macros, strformat, strutils]
-import bumpy
+import bumpy, boxy
 
 type
   MeasurementKind* = enum
@@ -97,3 +97,7 @@ proc grow*(r: Rect, amount: Measurement): Rect =
   let x = amount.apply(0, r.w)
   let y = amount.apply(0, r.h)
   return rect(r.x - x, r.y - y, r.w + x + x, r.h + y + y)
+
+template xw*(r: Rect): float32 = r.x + r.w
+template yh*(r: Rect): float32 = r.y + r.h
+template xwyh*(r: Rect): Vec2 = vec2(r.xw, r.yh)
