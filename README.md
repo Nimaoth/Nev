@@ -10,3 +10,4 @@ the abstract syntac tree (AST) is edited directly by a custom editor.
 ## Screenshots
 
 ![alt](screenshots/screenshot1.png)
+![alt](screenshots/screenshot2.png)
