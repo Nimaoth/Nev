@@ -27,12 +27,19 @@ type
       paramTypes*: seq[Type]
 
   ValueImpl* = proc(node: AstNode): Value
-  ValueKind* = enum vkError, vkNumber, vkString, vkFunction
+  ValueKind* = enum
+    vkError
+    vkVoid
+    vkString
+    vkNumber
+    vkFunction
+
   Value* = object
     case kind*: ValueKind
     of vkError: discard
-    of vkNumber: intValue*: int
+    of vkVoid: discard
     of vkString: stringValue*: string
+    of vkNumber: intValue*: int
     of vkFunction: impl*: ValueImpl
 
   OperatorNotation* = enum
@@ -81,40 +88,36 @@ proc `==`*(a: Value, b: Value): bool =
   if a.kind != b.kind: return false
   case a.kind
   of vkError: return true
+  of vkVoid: return true
   of vkNumber: return a.intValue == b.intValue
   of vkString: return a.stringValue == b.stringValue
   of vkFunction: return a.impl == b.impl
-  else:
-    return true
 
-func newFunctionType*(paramTypes: seq[Type], returnType: Type): Type =
-  return Type(kind: tFunction, returnType: returnType, paramTypes: paramTypes)
+func errorType*(): Type = Type(kind: tError)
+func voidType*(): Type = Type(kind: tVoid)
+func intType*(): Type = Type(kind: tInt)
+func stringType*(): Type = Type(kind: tString)
+func newFunctionType*(paramTypes: seq[Type], returnType: Type): Type = Type(kind: tFunction, returnType: returnType, paramTypes: paramTypes)
 
-func intType*(): Type =
-  return Type(kind: tInt)
-
-func stringType*(): Type =
-  return Type(kind: tString)
-
-func voidType*(): Type =
-  return Type(kind: tVoid)
-
-func errorType*(): Type =
-  return Type(kind: tError)
+func errorValue*(): Value = Value(kind: vkError)
+func voidValue*(): Value = Value(kind: vkVoid)
+func intValue*(value: int): Value = Value(kind: vkNumber, intValue: value)
+func stringValue*(value: string): Value = Value(kind: vkString, stringValue: value)
 
 proc `$`*(value: Value): string =
   case value.kind
-  of vkNumber: return $value.intValue
-  of vkString: return value.stringValue
-  of vkFunction: return "function"
   of vkError: return "<vkError>"
+  of vkVoid: return "void"
+  of vkString: return value.stringValue
+  of vkNumber: return $value.intValue
+  of vkFunction: return "function"
 
 proc hash*(value: Value): Hash =
   case value.kind
   of vkNumber: return value.intValue.hash
   of vkString: return value.stringValue.hash
   of vkFunction: return value.impl.hash
-  else: return 0
+  else: return value.kind.hash
 
 
 proc `$`*(symbol: Symbol): string =
@@ -136,8 +139,6 @@ proc `==`*(a: Symbol, b: Symbol): bool =
     return a.typ == b.typ and a.value == b.value and a.operatorNotation == b.operatorNotation and a.precedence == b.precedence
   of skAstNode:
     return a.node == b.node
-
-func errorValue*(): Value = Value(kind: vkError)
 
 proc fingerprint*(typ: Type): Fingerprint =
   result = @[typ.hash.int64]
@@ -199,11 +200,18 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
     if ctx.enableLogging or ctx.enableQueryLogging: echo repeat("| ", currentIndent), "-> ", result
 
   case node
+  of Empty():
+    return voidType()
+
   of NumberLiteral():
-    return Type(kind: tInt)
+    try:
+      discard node.text.parseInt
+      return intType()
+    except:
+      return errorType()
 
   of StringLiteral():
-    return Type(kind: tString)
+    return stringType()
 
   of Call():
     let function = node[0]
@@ -233,13 +241,13 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
         allArgsOk = false
 
     if not allArgsOk:
-      return Type(kind: tError)
+      return errorType()
 
     return functionType.returnType
 
   of Declaration():
     if node.len == 0:
-      return Type(kind: tError)
+      return errorType()
     return ctx.computeType(node[0])
 
   of Identifier():
@@ -250,15 +258,64 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
       return ctx.computeSymbolType(symbol)
 
     echo node, ": Unkown symbol ", id
-    return Type(kind: tError)
+    return errorType()
 
   of NodeList():
     if node.len == 0:
-      return Type(kind: tVoid)
+      return voidType()
     return ctx.computeType(node.last)
 
+  of If():
+    if node.len < 2:
+      return errorType()
+
+    var ok = true
+
+    var commonType = none[Type]()
+
+    # Iterate through all ifs/elifs
+    var index: int = 0
+    while index + 1 < node.len:
+      defer: index += 2
+
+      let condition = node[index]
+      let trueCase = node[index + 1]
+
+      let conditionType = ctx.computeType(condition)
+      if conditionType.kind == tError:
+        ok = false
+      elif conditionType.kind != tInt:
+        logger.log(lvlError, fmt"[compiler] Condition of if statement must be an int but is {conditionType}")
+        ok = false
+
+      let trueCaseType = ctx.computeType(trueCase)
+      if trueCaseType.kind == tError:
+        ok = false
+        continue
+
+      if commonType.isNone or trueCaseType == commonType.get:
+        commonType = some(trueCaseType)
+      else:
+        commonType = some(voidType())
+
+    # else case
+    if node.len mod 2 != 0:
+      let falseCaseType = ctx.computeType(node.last)
+      if falseCaseType.kind == tError:
+        return errorType()
+
+      if commonType.isNone or falseCaseType == commonType.get:
+        commonType = some(falseCaseType)
+      else:
+        commonType = some(voidType())
+
+    if not ok:
+      return errorType()
+
+    return commonType.get voidType()
+
   else:
-    return Type(kind: tError)
+    return errorType()
 
 proc computeSymbolImpl(ctx: Context, node: AstNode): Option[Symbol] =
   case node
@@ -317,7 +374,8 @@ proc computeValueImpl(ctx: Context, node: AstNode): Value =
 
   case node
   of NumberLiteral():
-    return Value(kind: vkNumber, intValue: node.text.parseInt)
+    let value = try: node.text.parseInt except: return errorValue()
+    return Value(kind: vkNumber, intValue: value)
 
   of StringLiteral():
     return Value(kind: vkString, stringValue: node.text)
@@ -356,6 +414,37 @@ proc computeValueImpl(ctx: Context, node: AstNode): Value =
       return ctx.computeSymbolValue(symbol)
 
     return errorValue()
+
+  of If():
+    if node.len < 2:
+      return errorValue()
+
+    # Iterate through all ifs/elifs
+    var index: int = 0
+    while index + 1 < node.len:
+      defer: index += 2
+
+      let condition = node[index]
+      let trueCase = node[index + 1]
+
+      let conditionValue = ctx.computeValue(condition)
+      if conditionValue.kind == vkError:
+        return errorValue()
+
+      if conditionValue.kind != vkNumber:
+        logger.log(lvlError, fmt"[compiler] Condition of if statement must be an int but is {conditionValue}")
+        return errorValue()
+
+      if conditionValue.intValue != 0:
+        let trueCaseValue = ctx.computeValue(trueCase)
+        return trueCaseValue
+
+    # else case
+    if node.len mod 2 != 0:
+      let falseCaseValue = ctx.computeValue(node.last)
+      return falseCaseValue
+
+    return voidValue()
 
   else:
     return errorValue()
