@@ -101,3 +101,5 @@ proc grow*(r: Rect, amount: Measurement): Rect =
 template xw*(r: Rect): float32 = r.x + r.w
 template yh*(r: Rect): float32 = r.y + r.h
 template xwyh*(r: Rect): Vec2 = vec2(r.xw, r.yh)
+template xwy*(r: Rect): Vec2 = vec2(r.xw, r.y)
+template xyh*(r: Rect): Vec2 = vec2(r.x, r.yh)
