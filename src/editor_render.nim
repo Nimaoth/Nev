@@ -11,6 +11,12 @@ let horizontalGap = 2.0
 let indent = 15.0
 let padding = 5.0
 
+proc fillText(ctx: contexts.Context, text: string, paint: Paint, location: Vec2): Rect =
+  let textWidth = ctx.measureText(text).width
+  ctx.fillStyle = paint
+  ctx.fillText(text, location)
+  return rect(location, vec2(textWidth, ctx.fontSize))
+
 proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds: Rect, selectedNode: AstNode, nodeBounds: var Table[AstNode, Rect]): Rect
 
 proc renderCommandAutoCompletion*(ed: Editor, handler: EventHandler, bounds: Rect): Rect =
@@ -178,11 +184,17 @@ proc renderCallNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds
   let subBounds = bounds.shrink gap.relative
 
   if ctx.computeSymbol(function).getSome(sym):
-    case sym.operatorNotation
-    of Infix: return renderInfixNode(node, editor, ed, bounds, selectedNode, nodeBounds)
-    of Prefix: return renderPrefixNode(node, editor, ed, bounds, selectedNode, nodeBounds)
-    of Postfix: return renderPostfixNode(node, editor, ed, bounds, selectedNode, nodeBounds)
-    else: discard
+    let arity = case sym.operatorNotation
+    of Infix: 2
+    of Prefix, Postfix: 1
+    else: -1
+
+    if node.len == arity + 1:
+      case sym.operatorNotation
+      of Infix: return renderInfixNode(node, editor, ed, bounds, selectedNode, nodeBounds)
+      of Prefix: return renderPrefixNode(node, editor, ed, bounds, selectedNode, nodeBounds)
+      of Postfix: return renderPostfixNode(node, editor, ed, bounds, selectedNode, nodeBounds)
+      else: discard
 
   let parenWidth = ed.ctx.measureText("(").width
 
@@ -381,12 +393,13 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
 
   if node == selectedNode or node.kind == Declaration:
     let val = ctx.computeValue(node)
-    let valStr = $val
-    let textWidth = ed.ctx.measureText(valStr).width
-    ed.ctx.fillStyle = rgb(100, 100, 255)
-    ed.ctx.fillText(valStr, vec2(nodeRect.x, nodeRect.y + nodeRect.h + padding))
-    nodeRect.h += ed.ctx.fontSize + padding * 2
-    nodeRect.w = max(nodeRect.w, textWidth)
+
+    let valueRect = ed.ctx.fillText($val, rgb(100, 100, 255), vec2(nodeRect.x, nodeRect.y + nodeRect.h + padding))
+    let colonRect = ed.ctx.fillText(" : ", rgb(200, 200, 200), vec2(valueRect.xw, valueRect.y))
+    let idRect = ed.ctx.fillText(fmt"{node.id}", rgb(250, 175, 200), vec2(colonRect.xw, valueRect.y))
+    nodeRect.h += max(valueRect.h, max(colonRect.h, idRect.h)) + padding * 2
+
+    nodeRect.w = max(nodeRect.w, idRect.xw - valueRect.x)
 
   nodeBounds[node] = nodeRect
 

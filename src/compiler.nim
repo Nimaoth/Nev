@@ -77,6 +77,16 @@ proc `==`*(a: Type, b: Type): bool =
   else:
     return true
 
+proc `==`*(a: Value, b: Value): bool =
+  if a.kind != b.kind: return false
+  case a.kind
+  of vkError: return true
+  of vkNumber: return a.intValue == b.intValue
+  of vkString: return a.stringValue == b.stringValue
+  of vkFunction: return a.impl == b.impl
+  else:
+    return true
+
 func newFunctionType*(paramTypes: seq[Type], returnType: Type): Type =
   return Type(kind: tFunction, returnType: returnType, paramTypes: paramTypes)
 
@@ -118,7 +128,14 @@ proc hash*(symbol: Symbol): Hash =
   return symbol.id.hash
 
 proc `==`*(a: Symbol, b: Symbol): bool =
-  return a.id == b.id
+  if a.id != b.id: return false
+  if a.kind != b.kind: return false
+  if a.name != b.name: return false
+  case a.kind
+  of skBuiltin:
+    return a.typ == b.typ and a.value == b.value and a.operatorNotation == b.operatorNotation and a.precedence == b.precedence
+  of skAstNode:
+    return a.node == b.node
 
 func errorValue*(): Value = Value(kind: vkError)
 
@@ -131,9 +148,9 @@ proc fingerprint*(value: Value): Fingerprint =
 proc fingerprint*(symbol: Symbol): Fingerprint =
   case symbol.kind
   of skAstNode:
-    result = @[symbol.id.hash.int64, symbol.kind.int64]
+    result = @[symbol.id.hash.int64, symbol.name.hash.int64, symbol.kind.int64]
   of skBuiltin:
-    result = @[symbol.id.hash.int64, symbol.kind.int64, symbol.precedence, symbol.operatorNotation.int64]
+    result = @[symbol.id.hash.int64, symbol.name.hash.int64, symbol.kind.int64, symbol.precedence, symbol.operatorNotation.int64]
 
 proc fingerprint*(symbols: TableRef[Id, Symbol]): Fingerprint =
   result = @[]
@@ -269,6 +286,10 @@ proc computeSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, Symbol] =
   result = newTable[Id, Symbol]()
 
   if node.findWithParentRec(NodeList).getSome(parentInNodeList):
+    let parentSymbols = ctx.computeSymbols(parentInNodeList.parent)
+    for (id, sym) in parentSymbols.pairs:
+      result.add(id, sym)
+
     ctx.recordDependency(parentInNodeList.parent.getItem)
     for child in parentInNodeList.parent.children:
       if child == parentInNodeList:
@@ -363,10 +384,13 @@ iterator nextPreOrder*(node: AstNode): tuple[key: int, value: AstNode] =
 proc notifySymbolChanged*(ctx: Context, sym: Symbol) =
   ctx.depGraph.revision += 1
   ctx.depGraph.changed[(sym.getItem, nil)] = ctx.depGraph.revision
+  logger.log(lvlInfo, fmt"[compiler] Invalidating symbol {sym.name} ({sym.id})")
 
 proc insertNode*(ctx: Context, node: AstNode) =
   ctx.depGraph.revision += 1
   ctx.depGraph.changed[(node.getItem, nil)] = ctx.depGraph.revision
+  if node.parent != nil:
+    ctx.depGraph.changed[(node.parent.getItem, nil)] = ctx.depGraph.revision
   ctx.itemsAstNode[node.getItem] = node
   for (key, child) in node.nextPreOrder:
     ctx.depGraph.changed[(child.getItem, nil)] = ctx.depGraph.revision
@@ -375,6 +399,7 @@ proc insertNode*(ctx: Context, node: AstNode) =
 proc updateNode*(ctx: Context, node: AstNode) =
   ctx.depGraph.revision += 1
   ctx.depGraph.changed[(node.getItem, nil)] = ctx.depGraph.revision
+  logger.log(lvlInfo, fmt"[compiler] Invalidating node {node}")
 
 proc deleteNode*(ctx: Context, node: AstNode) =
   ctx.depGraph.revision += 1
