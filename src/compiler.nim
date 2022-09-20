@@ -217,9 +217,9 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
   if ctx.enableLogging or ctx.enableQueryLogging: inc currentIndent, 1
   defer:
     if ctx.enableLogging or ctx.enableQueryLogging: dec currentIndent, 1
-  if ctx.enableLogging or ctx.enableQueryLogging: echo repeat("| ", currentIndent - 1), "computeTypeImpl ", node
+  if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent - 1), "computeTypeImpl ", node
   defer:
-    if ctx.enableLogging or ctx.enableQueryLogging: echo repeat("| ", currentIndent), "-> ", result
+    if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent), "-> ", result
 
   case node
   of Empty():
@@ -234,6 +234,9 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
 
   of StringLiteral():
     return stringType()
+
+  of Params():
+    return voidType()
 
   of FunctionDefinition():
     if node.len < 3:
@@ -277,6 +280,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
     let function = node[0]
 
     let functionType = ctx.computeType(function)
+
     if functionType.kind == tError:
       return Type(kind: tError)
 
@@ -287,7 +291,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
     # Check arg num
     let numArgs = node.len - 1
     if numArgs != functionType.paramTypes.len:
-      echo node, ": trying to call with wrong number of arguments. Expected ", functionType.paramTypes.len, ", got ", numArgs
+      logger.log(lvlError, fmt"Trying to call with wrong number of arguments. Expected {functionType.paramTypes.len} got {numArgs}")
       return Type(kind: tError)
 
     var allArgsOk = true
@@ -297,7 +301,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
         allArgsOk = false
         continue
       if argType != functionType.paramTypes[i - 1]:
-        echo node, ": Argument ", i, " has the wrong type. Expected ", functionType.paramTypes[i - 1], ", got ", argType
+        logger.log(lvlError, fmt"Argument {i} has the wrong type. Expected {functionType.paramTypes[i - 1]} got {argType}")
         allArgsOk = false
 
     if not allArgsOk:
@@ -362,7 +366,14 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
   of NodeList():
     if node.len == 0:
       return voidType()
-    return ctx.computeType(node.last)
+
+    var lastType: Type = nil
+    for child in node.children:
+      lastType = ctx.computeType(child)
+      if lastType.kind == tError:
+        return errorType()
+
+    return lastType
 
   of If():
     if node.len < 2:
@@ -442,9 +453,9 @@ proc computeSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, Symbol] =
   if ctx.enableLogging or ctx.enableQueryLogging: inc currentIndent, 1
   defer:
     if ctx.enableLogging or ctx.enableQueryLogging: dec currentIndent, 1
-  if ctx.enableLogging or ctx.enableQueryLogging: echo repeat("| ", currentIndent - 1), "computeSymbolsImpl ", node
+  if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent - 1), "computeSymbolsImpl ", node
   defer:
-    if ctx.enableLogging or ctx.enableQueryLogging: echo repeat("| ", currentIndent), "-> ", result
+    if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent), "-> ", result
 
   result = newTable[Id, Symbol]()
 
@@ -457,23 +468,33 @@ proc computeSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, Symbol] =
         if ctx.computeSymbol(param).getSome(symbol):
           result[param.id] = symbol
 
-
-  elif node.findWithParentRec(NodeList).getSome(parentInNodeList):
+  elif node.findWithParentRec(NodeList).getSome(parentInNodeList) and parentInNodeList.parent.parent != nil:
     let parentSymbols = ctx.computeSymbols(parentInNodeList.parent)
     for (id, sym) in parentSymbols.pairs:
       result[id] = sym
 
     ctx.recordDependency(parentInNodeList.parent.getItem)
+
+    let bIsOrderDependent = parentInNodeList.parent.parent != nil
     for child in parentInNodeList.parent.children:
-      if child == parentInNodeList:
+      if bIsOrderDependent and child == parentInNodeList:
         break
+
       if child.kind != ConstDecl and child.kind != LetDecl and child.kind != VarDecl:
         continue
-      assert child.id != null
 
-      ctx.recordDependency(child.getItem)
       if ctx.computeSymbol(child).getSome(symbol):
         result[symbol.id] = symbol
+
+  # Add symbols from global scope
+  let root = node.base
+  ctx.recordDependency(root.getItem)
+  for child in root.children:
+    if child.kind != ConstDecl and child.kind != LetDecl and child.kind != VarDecl:
+      continue
+
+    if ctx.computeSymbol(child).getSome(symbol):
+      result[symbol.id] = symbol
 
   for (key, symbol) in ctx.globalScope.pairs:
     ctx.recordDependency(symbol.getItem)
@@ -483,9 +504,9 @@ proc computeValueImpl(ctx: Context, node: AstNode): Value =
   if ctx.enableLogging or ctx.enableQueryLogging: inc currentIndent, 1
   defer:
     if ctx.enableLogging or ctx.enableQueryLogging: dec currentIndent, 1
-  if ctx.enableLogging or ctx.enableQueryLogging: echo repeat("| ", currentIndent - 1), "computeValueImpl ", node
+  if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent - 1), "computeValueImpl ", node
   defer:
-    if ctx.enableLogging or ctx.enableQueryLogging: echo repeat("| ", currentIndent), "-> ", result
+    if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent), "-> ", result
 
   case node
   of NumberLiteral():
@@ -593,8 +614,10 @@ proc notifySymbolChanged*(ctx: Context, sym: Symbol) =
 proc insertNode*(ctx: Context, node: AstNode) =
   ctx.depGraph.revision += 1
   ctx.depGraph.changed[(node.getItem, nil)] = ctx.depGraph.revision
+
   if node.parent != nil:
     ctx.depGraph.changed[(node.parent.getItem, nil)] = ctx.depGraph.revision
+
   ctx.itemsAstNode[node.getItem] = node
   for (key, child) in node.nextPreOrder:
     ctx.depGraph.changed[(child.getItem, nil)] = ctx.depGraph.revision
@@ -608,6 +631,9 @@ proc updateNode*(ctx: Context, node: AstNode) =
 proc deleteNode*(ctx: Context, node: AstNode) =
   ctx.depGraph.revision += 1
   ctx.depGraph.changed.del((node.getItem, nil))
+
+  if node.parent != nil:
+    ctx.depGraph.changed[(node.parent.getItem, nil)] = ctx.depGraph.revision
 
   for key in ctx.depGraph.dependencies.keys:
     for i, dep in ctx.depGraph.dependencies[key]:
