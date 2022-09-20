@@ -9,10 +9,14 @@ type
     Identifier
     NumberLiteral
     StringLiteral
-    Declaration
+    ConstDecl
+    LetDecl
+    VarDecl
     NodeList
     Call
     If
+    FunctionDefinition
+    Params
 
   AstNode* = ref object
     parent*: AstNode
@@ -108,7 +112,7 @@ func delete*(node: AstNode, index: int): AstNode =
       return node[1]
     else:
       return node
-  of Declaration():
+  of ConstDecl():
     if index == 0:
       node[0] = AstNode(kind: Empty)
       return node[0]
@@ -177,8 +181,8 @@ proc `$`*(node: AstNode): string =
 
 proc treeRepr*(node: AstNode): string =
   case node
-  of Declaration():
-    result = "Declaration(id: " & $node.id & "):"
+  of ConstDecl():
+    result = "ConstDecl(id: " & $node.id & "):"
     for child in node.children:
       result.add "\n"
       result.add indent(child.treeRepr, 2)

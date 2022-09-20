@@ -15,6 +15,7 @@ type
     tString
     tInt
     tFunction
+    tType
 
   Type* = ref object
     case kind*: TypeKind
@@ -22,6 +23,7 @@ type
     of tVoid: discard
     of tString: discard
     of tInt: discard
+    of tType: discard
     of tFunction:
       returnType*: Type
       paramTypes*: seq[Type]
@@ -33,6 +35,7 @@ type
     vkString
     vkNumber
     vkFunction
+    vkType
 
   Value* = object
     case kind*: ValueKind
@@ -41,6 +44,7 @@ type
     of vkString: stringValue*: string
     of vkNumber: intValue*: int
     of vkFunction: impl*: ValueImpl
+    of vkType: typ*: Type
 
   OperatorNotation* = enum
     Regular
@@ -62,6 +66,13 @@ type
       operatorNotation*: OperatorNotation
       precedence*: int
 
+func errorType*(): Type = Type(kind: tError)
+func voidType*(): Type = Type(kind: tVoid)
+func intType*(): Type = Type(kind: tInt)
+func stringType*(): Type = Type(kind: tString)
+func newFunctionType*(paramTypes: seq[Type], returnType: Type): Type = Type(kind: tFunction, returnType: returnType, paramTypes: paramTypes)
+func typeType*(): Type = Type(kind: tType)
+
 proc `$`*(typ: Type): string =
   case typ.kind
   of tError: return "error"
@@ -69,6 +80,7 @@ proc `$`*(typ: Type): string =
   of tString: return "string"
   of tInt: return "int"
   of tFunction: return "function " & $typ.paramTypes & " -> " & $typ.returnType & ""
+  of tType: return "type"
 
 proc hash*(typ: Type): Hash =
   case typ.kind
@@ -84,25 +96,20 @@ proc `==`*(a: Type, b: Type): bool =
   else:
     return true
 
-proc `==`*(a: Value, b: Value): bool =
-  if a.kind != b.kind: return false
-  case a.kind
-  of vkError: return true
-  of vkVoid: return true
-  of vkNumber: return a.intValue == b.intValue
-  of vkString: return a.stringValue == b.stringValue
-  of vkFunction: return a.impl == b.impl
-
-func errorType*(): Type = Type(kind: tError)
-func voidType*(): Type = Type(kind: tVoid)
-func intType*(): Type = Type(kind: tInt)
-func stringType*(): Type = Type(kind: tString)
-func newFunctionType*(paramTypes: seq[Type], returnType: Type): Type = Type(kind: tFunction, returnType: returnType, paramTypes: paramTypes)
+proc fingerprint*(typ: Type): Fingerprint =
+  case typ.kind
+  of tFunction:
+    result = @[typ.kind.int64] & typ.returnType.fingerprint
+    for param in typ.paramTypes:
+      result.add param.fingerprint
+  else:
+    result = @[typ.kind.int64]
 
 func errorValue*(): Value = Value(kind: vkError)
 func voidValue*(): Value = Value(kind: vkVoid)
 func intValue*(value: int): Value = Value(kind: vkNumber, intValue: value)
 func stringValue*(value: string): Value = Value(kind: vkString, stringValue: value)
+func typeValue*(typ: Type): Value = Value(kind: vkType, typ: typ)
 
 proc `$`*(value: Value): string =
   case value.kind
@@ -111,14 +118,35 @@ proc `$`*(value: Value): string =
   of vkString: return value.stringValue
   of vkNumber: return $value.intValue
   of vkFunction: return "function"
+  of vkType: return $value.typ
 
 proc hash*(value: Value): Hash =
   case value.kind
+  of vkError: return value.kind.hash
+  of vkVoid: return value.kind.hash
   of vkNumber: return value.intValue.hash
   of vkString: return value.stringValue.hash
   of vkFunction: return value.impl.hash
-  else: return value.kind.hash
+  of vkType: return value.typ.hash
 
+proc `==`*(a: Value, b: Value): bool =
+  if a.kind != b.kind: return false
+  case a.kind
+  of vkError: return true
+  of vkVoid: return true
+  of vkNumber: return a.intValue == b.intValue
+  of vkString: return a.stringValue == b.stringValue
+  of vkFunction: return a.impl == b.impl
+  of vkType: return a.typ == b.typ
+
+proc fingerprint*(value: Value): Fingerprint =
+  case value.kind
+  of vkError: return @[value.kind.int64]
+  of vkVoid: return @[value.kind.int64]
+  of vkNumber: return @[value.kind.int64, value.intValue]
+  of vkString: return @[value.kind.int64, value.stringValue.hash]
+  of vkFunction: return @[value.kind.int64, value.impl.hash]
+  of vkType: return @[value.kind.int64] & value.typ.fingerprint
 
 proc `$`*(symbol: Symbol): string =
   case symbol.kind
@@ -140,18 +168,12 @@ proc `==`*(a: Symbol, b: Symbol): bool =
   of skAstNode:
     return a.node == b.node
 
-proc fingerprint*(typ: Type): Fingerprint =
-  result = @[typ.hash.int64]
-
-proc fingerprint*(value: Value): Fingerprint =
-  result = @[value.kind.int64, value.hash]
-
 proc fingerprint*(symbol: Symbol): Fingerprint =
   case symbol.kind
   of skAstNode:
-    result = @[symbol.id.hash.int64, symbol.name.hash.int64, symbol.kind.int64]
+    result = @[symbol.id.hash.int64, symbol.name.hash.int64, symbol.kind.int64, symbol.node.id.hash.int64]
   of skBuiltin:
-    result = @[symbol.id.hash.int64, symbol.name.hash.int64, symbol.kind.int64, symbol.precedence, symbol.operatorNotation.int64]
+    result = @[symbol.id.hash.int64, symbol.name.hash.int64, symbol.kind.int64, symbol.precedence, symbol.operatorNotation.int64] & symbol.typ.fingerprint & symbol.value.fingerprint
 
 proc fingerprint*(symbols: TableRef[Id, Symbol]): Fingerprint =
   result = @[]
@@ -213,6 +235,44 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
   of StringLiteral():
     return stringType()
 
+  of FunctionDefinition():
+    if node.len < 3:
+      return errorType()
+
+    let params = node[0]
+    let returnTypeNode = node[1]
+
+    var paramTypes: seq[Type] = @[]
+
+    var ok = true
+    for param in params.children:
+      let paramType = ctx.computeType(param)
+      if paramType.kind == tError:
+        ok = false
+        continue
+
+      paramTypes.add paramType
+
+    let returnTypeType = ctx.computeType(returnTypeNode)
+    if returnTypeType.kind == tError:
+      return errorType()
+
+    if returnTypeType.kind != tType:
+      logger.log(lvlError, fmt"[compiler] Expected type, got {returnTypeType}")
+      return errorType()
+
+    let returnTypeValue = ctx.computeValue(returnTypeNode)
+    if returnTypeValue.kind == vkError:
+      return errorType()
+
+    if returnTypeValue.kind != vkType:
+      logger.log(lvlError, fmt"[compiler] Expected type value, got {returnTypeValue}")
+      return errorType()
+
+    let returnType = returnTypeValue.typ
+
+    return newFunctionType(paramTypes, returnType)
+
   of Call():
     let function = node[0]
 
@@ -245,10 +305,49 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
 
     return functionType.returnType
 
-  of Declaration():
+  of ConstDecl():
     if node.len == 0:
       return errorType()
     return ctx.computeType(node[0])
+
+  of LetDecl():
+    if node.len < 2:
+      return errorType()
+
+    let typeNode = node[0]
+    let valueNode = node[1]
+
+    var typ = voidType()
+    if typeNode.kind != Empty:
+      let typeNodeType = ctx.computeType(typeNode)
+      if typeNodeType.kind == tError:
+        return errorType()
+      if typeNodeType.kind != tType:
+        logger.log(lvlError, fmt"[compiler] Expected type, got {typeNodeType}")
+        return errorType()
+
+      let typeNodeValue = ctx.computeValue(typeNode)
+      if typeNodeValue.kind == vkError:
+        return errorType()
+      if typeNodeValue.kind == vkError:
+        logger.log(lvlFatal, fmt"[compiler] Expected type value, got {typeNodeValue}")
+        return errorType()
+
+      typ = typeNodeValue.typ
+
+    if valueNode.kind != Empty:
+      let valueNodeType = ctx.computeType(valueNode)
+      if valueNodeType.kind == tError:
+        return errorType()
+
+      if typ.kind == tVoid:
+        typ = valueNodeType
+
+      if valueNodeType != typ:
+        logger.log(lvlError, fmt"[compiler] Expected {typ}, got {valueNodeType}")
+        return errorType()
+
+    return typ
 
   of Identifier():
     let id = node.reff
@@ -321,11 +420,18 @@ proc computeSymbolImpl(ctx: Context, node: AstNode): Option[Symbol] =
   case node
   of Identifier():
     let symbols = ctx.computeSymbols(node)
+
     if symbols.contains(node.reff):
       return some(symbols[node.reff])
 
-  of Declaration():
+  of ConstDecl():
     logger.log(lvlDebug, fmt"computeSymbol {node}")
+    return some(ctx.newSymbol(Symbol(kind: skAstNode, id: node.id, node: node, name: node.text)))
+
+  of LetDecl():
+    return some(ctx.newSymbol(Symbol(kind: skAstNode, id: node.id, node: node, name: node.text)))
+
+  of VarDecl():
     return some(ctx.newSymbol(Symbol(kind: skAstNode, id: node.id, node: node, name: node.text)))
 
   else:
@@ -342,27 +448,36 @@ proc computeSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, Symbol] =
 
   result = newTable[Id, Symbol]()
 
-  if node.findWithParentRec(NodeList).getSome(parentInNodeList):
+  if node.parent != nil and node.parent.kind == FunctionDefinition:
+    if node.parent.len > 0:
+      let params = node.parent[0]
+      ctx.recordDependency(params.getItem)
+      for param in params.children:
+        ctx.recordDependency(param.getItem)
+        if ctx.computeSymbol(param).getSome(symbol):
+          result[param.id] = symbol
+
+
+  elif node.findWithParentRec(NodeList).getSome(parentInNodeList):
     let parentSymbols = ctx.computeSymbols(parentInNodeList.parent)
     for (id, sym) in parentSymbols.pairs:
-      result.add(id, sym)
+      result[id] = sym
 
     ctx.recordDependency(parentInNodeList.parent.getItem)
     for child in parentInNodeList.parent.children:
       if child == parentInNodeList:
         break
-      if child.kind != Declaration:
+      if child.kind != ConstDecl and child.kind != LetDecl and child.kind != VarDecl:
         continue
       assert child.id != null
 
       ctx.recordDependency(child.getItem)
-      # let symbol = ctx.newSymbol(Symbol(kind: skAstNode, id: child.id, node: child))
       if ctx.computeSymbol(child).getSome(symbol):
-        result.add(child.id, symbol)
+        result[symbol.id] = symbol
 
-  for symbol in ctx.globalScope.values:
+  for (key, symbol) in ctx.globalScope.pairs:
     ctx.recordDependency(symbol.getItem)
-    result.add(symbol.id, symbol)
+    result[symbol.id] = symbol
 
 proc computeValueImpl(ctx: Context, node: AstNode): Value =
   if ctx.enableLogging or ctx.enableQueryLogging: inc currentIndent, 1
@@ -401,7 +516,7 @@ proc computeValueImpl(ctx: Context, node: AstNode): Value =
       return errorValue()
     return ctx.computeValue(node.last)
 
-  of Declaration():
+  of ConstDecl():
     if node.len == 0:
       return errorValue()
     return ctx.computeValue(node[0])

@@ -9,7 +9,7 @@ import query_system, compiler
 let tempId = newId()
 let node = makeTree(AstNode):
   NodeList():
-    Declaration(id: == tempId):
+    ConstDecl(id: == tempId):
       Call():
         Identifier(reff: == IdMul)
         Call():

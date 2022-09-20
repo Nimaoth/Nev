@@ -33,7 +33,7 @@ proc `==`(a: ItemId, b: ItemId): bool = a.id == b.id and a.typ == b.typ
 proc newDependencyGraph*(): DependencyGraph =
   new result
   result.revision = 0
-  result.queryNames.add(nil, "")
+  result.queryNames[nil] = ""
 
 proc nodeColor*(graph: DependencyGraph, key: Dependency, parentVerified: int = 0): NodeColor =
   if key.update == nil:
@@ -395,11 +395,8 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       proc `functionName`*(ctx: `contextName`, data: `name`): `name` =
         let item = data.getItem
         let key: Dependency = (item, nil)
-        if ctx.depGraph.changed.contains(key):
-          ctx.depGraph.changed[key] = ctx.depGraph.revision
-        else:
-          ctx.depGraph.changed.add(key, ctx.depGraph.revision)
-        ctx.`items`.add(item, data)
+        ctx.depGraph.changed[key] = ctx.depGraph.revision
+        ctx.`items`[item] = data
         return data
 
   # proc force(ctx: Context, key: Dependency)
