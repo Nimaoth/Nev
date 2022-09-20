@@ -44,6 +44,7 @@ let typeModIntInt = newFunctionType(@[intType(), intType()], intType())
 let typeAddStringInt = newFunctionType(@[stringType(), intType()], stringType())
 let typeNegInt = newFunctionType(@[intType()], intType())
 let typeNotInt = newFunctionType(@[intType()], intType())
+let typeFnIntIntInt = newFunctionType(@[intType(), intType()], intType())
 
 let funcAddIntInt = createBinaryIntOperator (a: int, b: int) => a + b
 let funcSubIntInt = createBinaryIntOperator (a: int, b: int) => a - b
@@ -52,6 +53,15 @@ let funcDivIntInt = createBinaryIntOperator (a: int, b: int) => a div b
 let funcModIntInt = createBinaryIntOperator (a: int, b: int) => a mod b
 let funcNegInt = createUnityIntOperator (a: int) => -a
 let funcNotInt = createUnityIntOperator (a: int) => (if a != 0: 0 else: 1)
+let funcLessIntInt = createBinaryIntOperator (a: int, b: int) => (if a < b: 1 else: 0)
+let funcLessEqualIntInt = createBinaryIntOperator (a: int, b: int) => (if a <= b: 1 else: 0)
+let funcGreaterIntInt = createBinaryIntOperator (a: int, b: int) => (if a > b: 1 else: 0)
+let funcGreaterEqualIntInt = createBinaryIntOperator (a: int, b: int) => (if a >= b: 1 else: 0)
+let funcEqualIntInt = createBinaryIntOperator (a: int, b: int) => (if a == b: 1 else: 0)
+let funcNotEqualIntInt = createBinaryIntOperator (a: int, b: int) => (if a != b: 1 else: 0)
+let funcAndIntInt = createBinaryIntOperator (a: int, b: int) => (if a != 0 and b != 0: 1 else: 0)
+let funcOrIntInt = createBinaryIntOperator (a: int, b: int) => (if a != 0 or b != 0: 1 else: 0)
+let funcOrderIntInt = createBinaryIntOperator (a: int, b: int) => (if a < b: -1 elif a > b: 1 else: 0)
 
 let funcAddStringInt = newFunctionValue proc(node: AstNode): Value =
   let leftValue = ctx.computeValue(node[1])
@@ -60,14 +70,26 @@ let funcAddStringInt = newFunctionValue proc(node: AstNode): Value =
     return errorValue()
   return Value(kind: vkString, stringValue: leftValue.stringValue & $rightValue)
 
-ctx.globalScope.add(IdAdd, Symbol(id: IdAdd, name: "+", kind: skBuiltin, typ: typeAddIntInt, value: funcAddIntInt, operatorNotation: Infix, precedence: 1))
-ctx.globalScope.add(IdSub, Symbol(id: IdSub, name: "-", kind: skBuiltin, typ: typeSubIntInt, value: funcSubIntInt, operatorNotation: Infix, precedence: 1))
-ctx.globalScope.add(IdMul, Symbol(id: IdMul, name: "*", kind: skBuiltin, typ: typeMulIntInt, value: funcMulIntInt, operatorNotation: Infix, precedence: 2))
-ctx.globalScope.add(IdDiv, Symbol(id: IdDiv, name: "/", kind: skBuiltin, typ: typeDivIntInt, value: funcSubIntInt, operatorNotation: Infix, precedence: 2))
-ctx.globalScope.add(IdMod, Symbol(id: IdMod, name: "%", kind: skBuiltin, typ: typeModIntInt, value: funcModIntInt, operatorNotation: Infix, precedence: 2))
-ctx.globalScope.add(IdNegate, Symbol(id: IdNegate, name: "-", kind: skBuiltin, typ: typeNegInt, value: funcNegInt, operatorNotation: Prefix))
-ctx.globalScope.add(IdNot, Symbol(id: IdNot, name: "!", kind: skBuiltin, typ: typeNotInt, value: funcNotInt, operatorNotation: Prefix))
-ctx.globalScope.add(IdAppendString, Symbol(id: IdAppendString, name: "&", kind: skBuiltin, typ: typeAddStringInt, value: funcAddStringInt, operatorNotation: Infix, precedence: 0))
+ctx.globalScope[IdAdd] = Symbol(id: IdAdd, name: "+", kind: skBuiltin, typ: typeAddIntInt, value: funcAddIntInt, operatorNotation: Infix, precedence: 10)
+ctx.globalScope[IdSub] = Symbol(id: IdSub, name: "-", kind: skBuiltin, typ: typeSubIntInt, value: funcSubIntInt, operatorNotation: Infix, precedence: 10)
+ctx.globalScope[IdMul] = Symbol(id: IdMul, name: "*", kind: skBuiltin, typ: typeMulIntInt, value: funcMulIntInt, operatorNotation: Infix, precedence: 20)
+ctx.globalScope[IdDiv] = Symbol(id: IdDiv, name: "/", kind: skBuiltin, typ: typeDivIntInt, value: funcSubIntInt, operatorNotation: Infix, precedence: 20)
+ctx.globalScope[IdMod] = Symbol(id: IdMod, name: "%", kind: skBuiltin, typ: typeModIntInt, value: funcModIntInt, operatorNotation: Infix, precedence: 20)
+ctx.globalScope[IdNegate] = Symbol(id: IdNegate, name: "-", kind: skBuiltin, typ: typeNegInt, value: funcNegInt, operatorNotation: Prefix)
+ctx.globalScope[IdNot] = Symbol(id: IdNot, name: "!", kind: skBuiltin, typ: typeNotInt, value: funcNotInt, operatorNotation: Prefix)
+ctx.globalScope[IdAppendString] = Symbol(id: IdAppendString, name: "&", kind: skBuiltin, typ: typeAddStringInt, value: funcAddStringInt, operatorNotation: Infix, precedence: 0)
+ctx.globalScope[IdLess] = Symbol(id: IdLess, name: "<", kind: skBuiltin, typ: typeFnIntIntInt, value: funcLessIntInt, operatorNotation: Infix, precedence: 5)
+ctx.globalScope[IdLessEqual] = Symbol(id: IdLessEqual, name: "<=", kind: skBuiltin, typ: typeFnIntIntInt, value: funcLessEqualIntInt, operatorNotation: Infix, precedence: 5)
+ctx.globalScope[IdGreater] = Symbol(id: IdGreater, name: ">", kind: skBuiltin, typ: typeFnIntIntInt, value: funcGreaterIntInt, operatorNotation: Infix, precedence: 5)
+ctx.globalScope[IdGreaterEqual] = Symbol(id: IdGreaterEqual, name: ">=", kind: skBuiltin, typ: typeFnIntIntInt, value: funcGreaterEqualIntInt, operatorNotation: Infix, precedence: 5)
+ctx.globalScope[IdEqual] = Symbol(id: IdEqual, name: "==", kind: skBuiltin, typ: typeFnIntIntInt, value: funcEqualIntInt, operatorNotation: Infix, precedence: 5)
+ctx.globalScope[IdNotEqual] = Symbol(id: IdNotEqual, name: "!=", kind: skBuiltin, typ: typeFnIntIntInt, value: funcNotEqualIntInt, operatorNotation: Infix, precedence: 5)
+ctx.globalScope[IdAnd] = Symbol(id: IdAnd, name: "and", kind: skBuiltin, typ: typeFnIntIntInt, value: funcAndIntInt, operatorNotation: Infix, precedence: 5)
+ctx.globalScope[IdOr] = Symbol(id: IdOr, name: "or", kind: skBuiltin, typ: typeFnIntIntInt, value: funcOrIntInt, operatorNotation: Infix, precedence: 5)
+ctx.globalScope[IdOrder] = Symbol(id: IdOrder, name: "<=>", kind: skBuiltin, typ: typeFnIntIntInt, value: funcOrderIntInt, operatorNotation: Infix, precedence: 5)
+ctx.globalScope[IdInt] = Symbol(id: IdInt, name: "int", kind: skBuiltin, typ: typeType(), value: typeValue(intType()))
+ctx.globalScope[IdString] = Symbol(id: IdString, name: "string", kind: skBuiltin, typ: typeType(), value: typeValue(stringType()))
+ctx.globalScope[IdVoid] = Symbol(id: IdVoid, name: "void", kind: skBuiltin, typ: typeType(), value: typeValue(voidType()))
 for symbol in ctx.globalScope.values:
   discard ctx.newSymbol(symbol)
 
@@ -260,7 +282,6 @@ iterator nextPreVisualOrder*(self: AstDocument, node: AstNode): tuple[key: int, 
   var gotoChild = true
 
   while n != nil:
-    echo gotoChild, ", ", n
     if gotoChild and n.len > 0:
       n = self.getNextChild(n, -1).get
       yield (i, n)
@@ -279,7 +300,6 @@ iterator prevPostVisualOrder*(self: AstDocument, node: AstNode, gotoChild: bool 
   var n = node
 
   while n != nil:
-    # echo gotoChild, ", ", n
     if gotoChild and n.len > 0:
       n = self.getPrevChild(n, -1).get
       gotoChild = true
@@ -314,7 +334,6 @@ proc handleNodeInserted*(doc: AstDocument, node: AstNode) =
 
   for _, node in doc.nextPreOrder(node, node):
     var parent = node.findWithParentRec(NodeList).get.parent
-    echo "handle ", node, ", parent  = ", parent
 
     if node.kind == NodeList:
       if node.id == null:
@@ -322,7 +341,7 @@ proc handleNodeInserted*(doc: AstDocument, node: AstNode) =
 
       parent = node
 
-    elif node.kind == Declaration:
+    elif node.kind == ConstDecl:
       if node.id == null:
         node.id = newId()
 
@@ -409,15 +428,18 @@ proc getCompletions*(editor: AstDocumentEditor, text: string, contextNode: Optio
   # Find everything matching text
   if contextNode.isNone or contextNode.get.kind == Identifier or contextNode.get.kind == Empty:
     let symbols = ctx.computeSymbols(contextNode.get)
-    for symbol in symbols.values:
+    for (key, symbol) in symbols.pairs:
       let score = fuzzyMatch(text, symbol.name)
       result.add Completion(kind: SymbolCompletion, score: score, id: symbol.id)
 
   if contextNode.getSome(node) and node.kind == Empty:
     result.add Completion(kind: AstCompletion, nodeKind: If, name: "if", score: fuzzyMatch(text, "if"))
-    result.add Completion(kind: AstCompletion, nodeKind: Declaration, name: "let", score: fuzzyMatch(text, "let"))
+    result.add Completion(kind: AstCompletion, nodeKind: ConstDecl, name: "const", score: fuzzyMatch(text, "const"))
+    result.add Completion(kind: AstCompletion, nodeKind: LetDecl, name: "let", score: fuzzyMatch(text, "let"))
+    result.add Completion(kind: AstCompletion, nodeKind: ConstDecl, name: "var", score: fuzzyMatch(text, "var"))
     result.add Completion(kind: AstCompletion, nodeKind: StringLiteral, name: "string literal", score: if text.startsWith("\""): 1.1 else: 0)
     result.add Completion(kind: AstCompletion, nodeKind: NodeList, name: "block", score: fuzzyMatch(text, "{"))
+    result.add Completion(kind: AstCompletion, nodeKind: FunctionDefinition, name: "fn", score: fuzzyMatch(text, "fn"))
 
     try:
       discard text.parseFloat
@@ -483,7 +505,7 @@ proc getNextChild*(document: AstDocument, node: AstNode, min: int = -1): Option[
 
   case node
   of Call():
-    if ctx.computeSymbol(node[0]).getSome(sym):
+    if ctx.computeSymbol(node[0]).getSome(sym) and sym.kind == skBuiltin:
       case sym.operatorNotation
       of Infix:
         if node.len == 3:
@@ -536,7 +558,7 @@ proc getPrevChild*(document: AstDocument, node: AstNode, max: int = -1): Option[
 
   case node
   of Call():
-    if ctx.computeSymbol(node[0]).getSome(sym):
+    if ctx.computeSymbol(node[0]).getSome(sym) and sym.kind == skBuiltin:
       case sym.operatorNotation
       of Infix:
         if node.len == 3:
@@ -595,7 +617,6 @@ proc getPrevChildRec*(document: AstDocument, node: AstNode, max: int = -1): Opti
   # return some(node)
 
 proc getNextLine*(document: AstDocument, node: AstNode): Option[AstNode] =
-  echo "getNextLine ", node
   for _, n in document.nextPreOrder(node):
     if n == node or n.parent == nil:
       continue
@@ -664,11 +685,11 @@ proc deleteNode*(document: AstDocument, node: AstNode): AstNode =
   case node.parent
   of If():
     return document.replaceNode(node, AstNode(kind: Empty))
-  of Declaration():
+  of ConstDecl():
     return document.replaceNode(node, AstNode(kind: Empty))
   of Call():
     let idx = node.index
-    if ctx.computeSymbol(node.parent[0]).getSome(sym):
+    if ctx.computeSymbol(node.parent[0]).getSome(sym) and sym.kind == skBuiltin:
       let isFixed = case sym.operatorNotation
       of Infix: idx in 0..2
       of Prefix: idx in 0..1
@@ -692,11 +713,11 @@ proc insertNode*(document: AstDocument, node: AstNode, index: int, newNode: AstN
 
   echo fmt"insertNode {node}, {index}, {newNode}"
   case node
-  of Declaration():
+  of ConstDecl():
     return none[AstNode]()
   of Call():
     let idx = node.index
-    if ctx.computeSymbol(node.parent[0]).getSome(sym):
+    if ctx.computeSymbol(node.parent[0]).getSome(sym) and sym.kind == skBuiltin:
       let isFixed = case sym.operatorNotation
       of Infix: idx in 0..2
       of Prefix: idx in 0..1
@@ -716,11 +737,11 @@ proc insertOrReplaceNode*(document: AstDocument, node: AstNode, index: int, newN
   case node
   of If():
     return some document.replaceNode(node[index], newNode)
-  of Declaration():
+  of ConstDecl():
     return some document.replaceNode(node[index], newNode)
   of Call():
     let idx = node.index
-    if ctx.computeSymbol(node.parent[0]).getSome(sym):
+    if ctx.computeSymbol(node.parent[0]).getSome(sym) and sym.kind == skBuiltin:
       let isFixed = case sym.operatorNotation
       of Infix: idx in 0..2
       of Prefix: idx in 0..1
@@ -834,12 +855,12 @@ proc createNodeFromAction*(editor: AstDocumentEditor, arg: string, node: AstNode
     return some((AstNode(kind: NumberLiteral, text: ""), 0))
   of "declaration":
     let node = makeTree(AstNode) do:
-      Declaration(id: == newId()):
+      ConstDecl(id: == newId()):
         Empty()
     return some (node, 0)
 
   of "call-func":
-    let kind = if ctx.computeSymbol(node).getSome(sym):
+    let kind = if ctx.computeSymbol(node).getSome(sym) and sym.kind == skBuiltin:
       sym.operatorNotation
     else:
       Regular
@@ -928,11 +949,36 @@ proc createDefaultNode*(editor: AstDocumentEditor, kind: AstNodeKind): Option[(A
     return some((AstNode(kind: NumberLiteral, text: ""), 0))
   of StringLiteral:
     return some((AstNode(kind: StringLiteral, text: ""), 0))
-  of Declaration:
+
+  of ConstDecl:
     let node = makeTree(AstNode) do:
-      Declaration(id: == newId()):
+      ConstDecl(id: == newId()):
         Empty()
     return some (node, 0)
+
+  of LetDecl:
+    let node = makeTree(AstNode) do:
+      LetDecl(id: == newId()):
+        Empty()
+        Empty()
+    return some (node, 0)
+
+  of VarDecl:
+    let node = makeTree(AstNode) do:
+      VarDecl(id: == newId()):
+        Empty()
+        Empty()
+    return some (node, 0)
+
+  of FunctionDefinition:
+    let node = makeTree(AstNode) do:
+      FunctionDefinition():
+        Params()
+        Empty()
+        NodeList():
+          Empty()
+    return some (node, 0)
+
   of If:
     let node = makeTree(AstNode) do:
       If:
@@ -953,7 +999,7 @@ proc shouldEditNode(doc: AstDocument, node: AstNode): bool =
     return true
   if node.kind == NumberLiteral and node.text == "":
     return true
-  if node.kind == Declaration:
+  if node.kind == ConstDecl:
     return ctx.computeSymbol(node).getSome(symbol) and symbol.name == ""
   return false
 
@@ -980,7 +1026,6 @@ proc applySelectedCompletion(editor: AstDocumentEditor) =
       let (newNode, _) = nodeIndex
       discard editor.document.replaceNode(editor.node, newNode)
       editor.node = newNode
-      echo nodeIndex
 
       if newNode.kind == NumberLiteral:
         newNode.text = completionText
@@ -989,7 +1034,6 @@ proc applySelectedCompletion(editor: AstDocumentEditor) =
         newNode.text = completionText[1..^1]
 
       for _, emptyNode in editor.document.nextPreOrderWhere(newNode, (n) => editor.document.shouldEditNode(n), endNode = newNode):
-        echo emptyNode
         editor.node = emptyNode
         discard editor.tryEdit editor.node
         break
@@ -1208,59 +1252,84 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
   editor.completions = @[]
 
   if editor.document.rootNode.len == 0:
-    let node = makeTree(AstNode):
-      Declaration(id: == newId(), text: "foo"):
-        Call():
-          Identifier(reff: == IdMul)
-          Call():
-            Identifier(reff: == IdAdd)
-            NumberLiteral(text: "1")
-            NumberLiteral(text: "2")
-          NumberLiteral(text: "3")
-
-    editor.document.rootNode.add node
-
+    let paramA = newId()
+    let paramB = newId()
+    let resultId = newId()
     editor.document.rootNode.add makeTree(AstNode) do:
-      Declaration(text: "bar"):
-        Call():
-          Identifier(reff: == IdAdd)
-          Identifier(reff: == node.id)
-          NumberLiteral(text: "4")
+      ConstDecl(text: "add"):
+        FunctionDefinition():
+          Params():
+            LetDecl(id: == paramA, text: "a"):
+              Identifier(reff: == IdInt)
+              Empty()
+            LetDecl(id: == paramB, text: "b"):
+              Identifier(reff: == IdInt)
+              Empty()
+          Identifier(reff: == IdInt)
+          NodeList():
+            LetDecl(id: == resultId, text: "result"):
+              Empty()
+              Call():
+                Identifier(reff: == IdAdd)
+                Identifier(reff: == paramA)
+                Identifier(reff: == paramB)
+            Identifier(reff: == resultId)
 
-    editor.document.rootNode.add makeTree(AstNode) do:
-      Declaration(text: "baz"):
-        Call():
-          Identifier(reff: == IdAdd)
-          Identifier(reff: == editor.document.rootNode.last.id)
-          NumberLiteral(text: "4")
 
-    editor.document.rootNode.add makeTree(AstNode) do:
-      If():
-        NumberLiteral(text: "69")
-        Call():
-          Identifier(reff: == IdAdd)
-          Identifier(reff: == editor.document.rootNode.last.id)
-          NumberLiteral(text: "4")
-        NumberLiteral(text: "420")
-        Call():
-          Identifier(reff: == IdSub)
-          Identifier(reff: == editor.document.rootNode.last.id)
-          NumberLiteral(text: "13")
-        Call():
-          Identifier(reff: == IdAppendString)
-          StringLiteral(text: "1 + 3 = ")
-          NumberLiteral(text: "4")
 
-    editor.document.rootNode.add makeTree(AstNode) do:
-      If():
-        NumberLiteral(text: "69")
-        NodeList():
-          NumberLiteral(text: "4")
-        NumberLiteral(text: "420")
-        NodeList():
-          NumberLiteral(text: "13")
-        NodeList():
-          StringLiteral(text: "1 + 3 = ")
+    # let node = makeTree(AstNode):
+    #   ConstDecl(id: == newId(), text: "foo"):
+    #     Call():
+    #       Identifier(reff: == IdMul)
+    #       Call():
+    #         Identifier(reff: == IdAdd)
+    #         NumberLiteral(text: "1")
+    #         NumberLiteral(text: "2")
+    #       NumberLiteral(text: "3")
+
+    # editor.document.rootNode.add node
+
+    # editor.document.rootNode.add makeTree(AstNode) do:
+    #   ConstDecl(text: "bar"):
+    #     Call():
+    #       Identifier(reff: == IdAdd)
+    #       Identifier(reff: == node.id)
+    #       NumberLiteral(text: "4")
+
+    # editor.document.rootNode.add makeTree(AstNode) do:
+    #   ConstDecl(text: "baz"):
+    #     Call():
+    #       Identifier(reff: == IdAdd)
+    #       Identifier(reff: == editor.document.rootNode.last.id)
+    #       NumberLiteral(text: "4")
+
+    # editor.document.rootNode.add makeTree(AstNode) do:
+    #   If():
+    #     NumberLiteral(text: "69")
+    #     Call():
+    #       Identifier(reff: == IdAdd)
+    #       Identifier(reff: == editor.document.rootNode.last.id)
+    #       NumberLiteral(text: "4")
+    #     NumberLiteral(text: "420")
+    #     Call():
+    #       Identifier(reff: == IdSub)
+    #       Identifier(reff: == editor.document.rootNode.last.id)
+    #       NumberLiteral(text: "13")
+    #     Call():
+    #       Identifier(reff: == IdAppendString)
+    #       StringLiteral(text: "1 + 3 = ")
+    #       NumberLiteral(text: "4")
+
+    # editor.document.rootNode.add makeTree(AstNode) do:
+    #   If():
+    #     NumberLiteral(text: "69")
+    #     NodeList():
+    #       NumberLiteral(text: "4")
+    #     NumberLiteral(text: "420")
+    #     NodeList():
+    #       NumberLiteral(text: "13")
+    #     NodeList():
+    #       StringLiteral(text: "1 + 3 = ")
 
   editor.node = editor.document.rootNode[0]
   for c in editor.document.rootNode.children:

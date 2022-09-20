@@ -188,7 +188,7 @@ proc renderCallNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds
   let function = node[0]
   let subBounds = bounds.shrink gap.relative
 
-  if ctx.computeSymbol(function).getSome(sym):
+  if ctx.computeSymbol(function).getSome(sym) and sym.kind == skBuiltin:
     let arity = case sym.operatorNotation
     of Infix: 2
     of Prefix, Postfix: 1
@@ -300,6 +300,43 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
     # rect(bounds.x, bounds.y, max(bodyRect.x + bodyRect.w, condRect.x + condRect.y + colonWidth) - bounds.x, max(bodyRect.y + bodyRect.h, condRect.y + condRect.h) - bounds.y)
     finalRect
 
+  of FunctionDefinition():
+    var finalRect = rect(bounds.xy, vec2())
+
+    var last = finalRect
+
+    last = ed.ctx.fillText(last.xwy, [("fn ", rgb(225, 175, 225).newPaint), ("(", rgb(175, 175, 175).newPaint)])
+    finalRect = finalRect or last
+
+    var paramsFinalRect = rect(last.xwy, vec2())
+
+    # Parameters
+    if node.len > 0:
+      let params = node[0]
+      for i, param in params.children:
+        if i > 0:
+          last = ed.ctx.fillText(last.xwy, ", ", rgb(175, 175, 175))
+          paramsFinalRect = finalRect or last
+
+        let paramBounds = bounds.splitV(last.xw.absolute)[1]
+        last = renderAstNode(param, editor, ed, paramBounds, selectedNode, nodeBounds)
+        paramsFinalRect = finalRect or last
+
+      finalRect = finalRect or paramsFinalRect
+      nodeBounds[params] = paramsFinalRect
+
+    last = ed.ctx.fillText(last.xwy, ") -> ", rgb(175, 175, 175))
+    finalRect = finalRect or last
+
+    last = renderAstNode(node[1], editor, ed, bounds.splitV(last.xw.absolute)[1], selectedNode, nodeBounds)
+    finalRect = finalRect or last
+
+    last = finalRect
+    last = renderAstNode(node[2], editor, ed, bounds.splitH(finalRect.yh.absolute)[1], selectedNode, nodeBounds)
+    finalRect = finalRect or last
+
+    finalRect
+
   of NodeList():
     var lastNodeRect = rect(bounds.x, bounds.y, 0, 0)
     var maxWidth = 0.0
@@ -334,7 +371,7 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
 
     rect(bounds.x, bounds.y, width, ed.ctx.fontSize)
 
-  of Declaration():
+  of ConstDecl():
     let subBounds = bounds.shrink gap.relative
 
     let typ = ctx.computeType(node)
@@ -355,8 +392,8 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
       ed.ctx.fillText(name, vec2(subBounds.x, subBounds.y))
       vec2(nameWidth, ed.ctx.fontSize)
 
-    let text1 = " : "
-    let text2 = " = "
+    let text1 = ":"
+    let text2 = ":"
     let textType = $typ
     var width = ed.ctx.measureText(text1).width
     ed.ctx.fillStyle = rgb(200, 200, 200)
@@ -376,6 +413,51 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
     # ed.ctx.strokeRect(myBounds)
 
     myBounds
+
+  of LetDecl():
+    let subBounds = bounds.shrink gap.relative
+
+    let typ = ctx.computeType(node)
+
+    let symbol = ctx.computeSymbol(node)
+    let symbolSize = if symbol.getSome(symbol) and symbol.id == editor.currentlyEditedSymbol:
+      let docRect = renderDocumentEditor(editor.textEditor, ed, subBounds, true)
+      vec2(docRect.w, docRect.h)
+    else:
+      var name = ""
+      if symbol.getSome(symbol):
+        name = symbol.name
+      else:
+        name = $node.id & " (" & node.text & ")"
+
+      let nameWidth = ed.ctx.measureText(name).width
+      ed.ctx.fillStyle = rgb(200, 200, 200)
+      ed.ctx.fillText(name, vec2(subBounds.x, subBounds.y))
+      vec2(nameWidth, ed.ctx.fontSize)
+
+    var finalRect = rect(subBounds.xy, symbolSize)
+
+    var last = finalRect
+
+    last = ed.ctx.fillText(last.xwy, ": ", rgb(175, 175, 175))
+    finalRect = finalRect or last
+
+    if node.len > 0:
+      let typeNode = node[0]
+      let typeBounds = bounds.splitV(last.xw.absolute)[1]
+      last = renderAstNode(typeNode, editor, ed, typeBounds, selectedNode, nodeBounds)
+      finalRect = finalRect or last
+
+    if node.len > 1:
+      last = ed.ctx.fillText(last.xwy, " = ", rgb(175, 175, 175))
+      finalRect = finalRect or last
+
+      let valueNode = node[1]
+      let valueBounds = bounds.splitV(last.xw.absolute)[1]
+      last = renderAstNode(valueNode, editor, ed, valueBounds, selectedNode, nodeBounds)
+      finalRect = finalRect or last
+
+    finalRect
 
   of Call():
     renderCallNode(node, editor, ed, bounds, selectedNode, nodeBounds)
@@ -414,7 +496,7 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
     ed.ctx.strokeRect(nodeRect.grow(2.absolute))
     ed.ctx.lineWidth = 1
 
-  if node == selectedNode or node.kind == Declaration:
+  if node == selectedNode or node.kind == ConstDecl:
     let typ = ctx.computeType(node)
     let val = ctx.computeValue(node)
 
