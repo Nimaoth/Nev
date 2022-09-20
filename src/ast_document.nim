@@ -163,6 +163,8 @@ type AstDocumentEditor* = ref object of DocumentEditor
   completions*: seq[Completion]
   selectedCompletion*: int
 
+  renderSelectedNodeValue*: bool
+
 proc `<`(a, b: Completion): bool = a.score < b.score
 
 proc updateCompletions(editor: AstDocumentEditor)
@@ -210,14 +212,14 @@ proc newAstDocument*(filename: string = ""): AstDocument =
   result.rootNode = AstNode(kind: NodeList, parent: nil, id: newId())
   result.symbols = initTable[Id, Symbol]()
 
-  echo "reading: ", result.filename
-  try:
-    let file = readFile(result.filename)
-    let jsn = file.parseJson
-    result.rootNode = jsn.jsonToAstNode
-    echo "ast: ", result.rootNode.treeRepr
-  except:
-    echo "failed to load ast file"
+  # echo "reading: ", result.filename
+  # try:
+  #   let file = readFile(result.filename)
+  #   let jsn = file.parseJson
+  #   result.rootNode = jsn.jsonToAstNode
+  #   echo "ast: ", result.rootNode.treeRepr
+  # except:
+  #   echo "failed to load ast file"
 
 method save*(self: AstDocument, filename: string = "") =
   self.filename = if filename.len > 0: filename else: self.filename
@@ -331,20 +333,6 @@ iterator prevPostOrder*(self: AstDocument, node: AstNode): AstNode =
 
 proc handleNodeInserted*(doc: AstDocument, node: AstNode) =
   echo "Node inserted: ", node
-
-  for _, node in doc.nextPreOrder(node, node):
-    var parent = node.findWithParentRec(NodeList).get.parent
-
-    if node.kind == NodeList:
-      if node.id == null:
-        node.id = newId()
-
-      parent = node
-
-    elif node.kind == ConstDecl:
-      if node.id == null:
-        node.id = newId()
-
   ctx.insertNode(node)
 
 proc insertNode*(document: AstDocument, node: AstNode, index: int, newNode: AstNode): Option[AstNode]
@@ -357,6 +345,8 @@ proc handleNodeDelete*(doc: AstDocument, node: AstNode) =
 
 proc handleTextDocumentChanged*(self: AstDocumentEditor) =
   self.updateCompletions()
+
+proc isEditing*(self: AstDocumentEditor): bool = self.textEditor != nil
 
 proc editSymbol*(self: AstDocumentEditor, symbol: Symbol) =
   logger.log(lvlInfo, fmt"Editing symbol {symbol.name} ({symbol.kind}, {symbol.id})")
@@ -540,7 +530,7 @@ proc getNextChildRec*(document: AstDocument, node: AstNode, min: int = -1): Opti
   else:
     return some(node)
 
-  while node.kind == Call or node.kind == NodeList:
+  while node.kind == Call or node.kind == NodeList or node.kind == Params:
     if document.getNextChild(node, idx).getSome(child):
       idx = -1
       node = child
@@ -602,7 +592,7 @@ proc getPrevChildRec*(document: AstDocument, node: AstNode, max: int = -1): Opti
   # else:
   #   return some(node)
 
-  # while node.kind == Call or node.kind == NodeList:
+  # while node.kind == Call or node.kind == NodeList or node.kind == Params:
   #   if document.getPrevChild(node, idx).getSome(child):
   #     idx = -1
   #     node = child
@@ -1044,62 +1034,75 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
   echo "handleAction ", action, " '", arg, "'"
   case action
   of "cursor.left":
+    if self.isEditing: return
     let index = self.node.index
     if index > 0:
       self.node = self.node.parent[index - 1]
+
   of "cursor.right":
+    if self.isEditing: return
     let index = self.node.index
     if index >= 0 and index < self.node.parent.len - 1:
       self.node = self.node.parent[index + 1]
 
   of "cursor.up":
+    if self.isEditing: return
     if self.node != self.document.rootNode and self.node.parent != self.document.rootNode and self.node.parent != nil:
       self.node = self.node.parent
 
   of "cursor.down":
+    if self.isEditing: return
     if self.node.len > 0:
       self.node = self.node[0]
 
   of "cursor.next":
+    if self.isEditing: return
     var node = self.node
     for _, n in self.document.nextPreVisualOrder(self.node):
-      if n.kind == Call or n.kind == NodeList:
+      if n.kind == Call or n.kind == NodeList or n.kind == Params:
         continue
       if n != self.node:
         self.node = n
         break
 
   of "cursor.prev":
+    if self.isEditing: return
     var node = self.node
     for n in self.document.prevPostVisualOrder(self.node, gotoChild = false):
-      if n.kind == Call or n.kind == NodeList:
+      if n.kind == Call or n.kind == NodeList or n.kind == Params:
         continue
       if n != self.node:
         self.node = n
         break
 
   of "cursor.next-line":
+    if self.isEditing: return
     if self.document.getNextLine(self.node).getSome(next):
       self.node = next
 
   of "cursor.prev-line":
+    if self.isEditing: return
     if self.document.getPrevLine(self.node).getSome(prev):
       self.node = prev
 
   of "selected.delete":
+    if self.isEditing: return
     self.node = self.document.deleteNode self.node
 
   of "undo":
+    if self.isEditing: return
     self.finishEdit false
     if self.document.undo.getSome(node):
       self.node = node
 
   of "redo":
+    if self.isEditing: return
     self.finishEdit false
     if self.document.redo.getSome(node):
       self.node = node
 
   of "insert-after":
+    if self.isEditing: return
     let index = self.node.index
     if self.createNodeFromAction(arg, self.node, errorType()).getSome(newNodeIndex):
       let (newNode, _) = newNodeIndex
@@ -1115,6 +1118,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
         logger.log(lvlError, fmt"Failed to insert node {newNode} into {self.node.parent} at {index + 1}")
 
   of "insert-before":
+    if self.isEditing: return
     let index = self.node.index
     if self.createNodeFromAction(arg, self.node, errorType()).getSome(newNodeIndex):
       let (newNode, _) = newNodeIndex
@@ -1130,6 +1134,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
         logger.log(lvlError, fmt"Failed to insert node {newNode} into {self.node.parent} at {index}")
 
   of "replace":
+    if self.isEditing: return
     if self.createNodeFromAction(arg, self.node, errorType()).getSome(newNodeIndex):
       let (newNode, _) = newNodeIndex
       self.node = self.document.replaceNode(self.node, newNode)
@@ -1140,6 +1145,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
         break
 
   of "replace-empty":
+    if self.isEditing: return
     if self.node.kind == Empty and self.createNodeFromAction(arg, self.node, errorType()).getSome(newNodeIndex):
       let (newNode, _) = newNodeIndex
       self.node = self.document.replaceNode(self.node, newNode)
@@ -1150,6 +1156,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
         break
 
   of "wrap":
+    if self.isEditing: return
     let typ = ctx.computeType(self.node)
 
     if self.createNodeFromAction(arg, self.node, typ).getSome(newNodeIndex):
@@ -1166,12 +1173,14 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
         break
 
   of "edit-next-empty":
+    if self.isEditing: return
     for _, emptyNode in self.document.nextPreOrderWhere(self.node, (n) => self.document.shouldEditNode(n)):
       self.node = emptyNode
       discard self.tryEdit self.node
       break
 
   of "rename":
+    if self.isEditing: return
     discard self.tryEdit self.node
 
   of "apply-rename":
@@ -1196,6 +1205,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
     self.selectNextNode()
 
   of "goto":
+    if self.isEditing: return
     case arg
     of "definition":
       if ctx.computeSymbol(self.node).getSome(sym):
@@ -1229,6 +1239,9 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
 
   of "toggle-logging":
     ctx.enableLogging = not ctx.enableLogging
+
+  of "toggle-render-selected-value":
+    self.renderSelectedNodeValue = not self.renderSelectedNodeValue
 
   of "dump-context":
     echo "================================================="
@@ -1275,7 +1288,18 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
                 Identifier(reff: == paramB)
             Identifier(reff: == resultId)
 
+    let addId = editor.document.rootNode.last.id
 
+    editor.document.rootNode.add makeTree(AstNode) do:
+      ConstDecl(text: "main"):
+        FunctionDefinition():
+          Params()
+          Identifier(reff: == IdVoid)
+          NodeList():
+            Call():
+              Identifier(reff: == addId)
+              NumberLiteral(text: "69")
+              NumberLiteral(text: "420")
 
     # let node = makeTree(AstNode):
     #   ConstDecl(id: == newId(), text: "foo"):
@@ -1411,6 +1435,7 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     command "<C-RIGHT>", "select-next"
     command "<C-e>l", "toggle-logging"
     command "<C-e>dc", "dump-context"
+    command "<C-e>v", "toggle-render-selected-value"
 
     onAction:
       editor.handleAction action, arg
