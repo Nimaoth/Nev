@@ -187,6 +187,18 @@ proc treeRepr*(node: AstNode): string =
       result.add "\n"
       result.add indent(child.treeRepr, 2)
 
+  of LetDecl():
+    result = "LetDecl(id: " & $node.id & "):"
+    for child in node.children:
+      result.add "\n"
+      result.add indent(child.treeRepr, 2)
+
+  of VarDecl():
+    result = "VarDecl(id: " & $node.id & "):"
+    for child in node.children:
+      result.add "\n"
+      result.add indent(child.treeRepr, 2)
+
   of Call():
     result = "Call(id: " & $node.id & "):"
     for child in node.children:
@@ -205,17 +217,29 @@ proc treeRepr*(node: AstNode): string =
       result.add "\n"
       result.add indent(child.treeRepr, 2)
 
+  of Params():
+    result = "Params(id: " & $node.id & "):"
+    for child in node.children:
+      result.add "\n"
+      result.add indent(child.treeRepr, 2)
+
+  of FunctionDefinition():
+    result = "FunctionDefinition(id: " & $node.id & "):"
+    for child in node.children:
+      result.add "\n"
+      result.add indent(child.treeRepr, 2)
+
   of StringLiteral():
     result = "StringLiteral(id: " & $node.id & ", text: '" & node.text & "')"
 
   of Identifier():
-    result = "Identifier(id: " & $node.id & ", reff: " & $node.reff & ", text: '" & node.text & "')"
+    result = "Identifier(id: " & $node.id & ", reff: " & $node.reff & ")"
 
   of NumberLiteral():
     result = "NumberLiteral(id: " & $node.id & ", text: '" & node.text & "')"
 
   of Empty():
-    result = "Empty(id: " & $node.id & ")"
+    result = "Empty(id: " & $node.id & ", text: '" & node.text & "')"
 
   else:
     return "other"
