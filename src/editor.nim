@@ -29,7 +29,7 @@ commands.add ("<CS-n>", "move-view-prev")
 commands.add ("<CS-t>", "move-view-next")
 commands.add ("<C-r>", "move-current-view-to-top")
 commands.add ("<C-s>", "write-file")
-commands.add ("<C-r>", "load-file")
+commands.add ("<CS-r>", "load-file")
 commands.add ("<C-m>", "command-line")
 
 var commandLineCommands: seq[(string, string)] = @[]
