@@ -5,7 +5,7 @@
     "tasks": [{
             "label": "build_and_run",
             "type": "shell",
-            "command": "nim c -d:mingw -o:absytree.exe src/ast.nim && ./absytree.exe",
+            "command": "nim c -d:mingw -d:release --stackTrace:on --lineTrace:on --lineDir:on -o:ast.exe src/absytree.nim && ./ast.exe",
             "problemMatcher": [
                 "$nim"
             ]
@@ -13,7 +13,7 @@
         {
             "label": "run",
             "type": "shell",
-            "command": "./absytree.exe",
+            "command": "./ast.exe",
             "problemMatcher": [
                 "$nim"
             ]
@@ -21,7 +21,15 @@
         {
             "label": "build",
             "type": "shell",
-            "command": "nim c -d:mingw -o:absytree.exe src/absytree.nim",
+            "command": "nim c -d:mingw -d:release --stackTrace:on --lineTrace:on --lineDir:on -o:ast.exe src/absytree.nim",
+            "problemMatcher": [
+                "$nim"
+            ]
+        },
+        {
+            "label": "build_release",
+            "type": "shell",
+            "command": "nim c -d:mingw -d:release --app:gui -o:ast.exe src/absytree.nim",
             "problemMatcher": [
                 "$nim"
             ]
