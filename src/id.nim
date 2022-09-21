@@ -1,4 +1,4 @@
-import std/oids
+import std/[oids, json, jsonutils]
 import system
 import hashes, times
 
@@ -28,3 +28,12 @@ proc idNone*(): Id =
   zeroMem(addr result, sizeof(Id))
 
 let null* = idNone()
+
+proc fromJsonHook*(id: var Id, json: JsonNode) =
+  if json.kind == JString:
+    id = json.str.parseId
+  else:
+    id = null
+
+proc toJson*(id: Id, opt = initToJsonOptions()): JsonNode =
+  return newJString $id
