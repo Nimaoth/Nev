@@ -337,12 +337,14 @@ proc handleAction(ed: Editor, action: string, arg: string) =
       ed.createView(TextDocument(filename: arg, content: collect file.splitLines))
     except:
       ed.logger.log(lvlError, fmt"[ed] Failed to load file '{arg}': {getCurrentExceptionMsg()}")
+      echo getCurrentException().getStackTrace()
   of "write-file":
     if ed.currentView >= 0 and ed.currentView < ed.views.len and ed.views[ed.currentView].document != nil:
       try:
         ed.views[ed.currentView].document.save(arg)
       except:
-        ed.logger.log(lvlError, "[ed] Failed to write file '$1'" % [arg])
+        ed.logger.log(lvlError, fmt"[ed] Failed to write file '{arg}': {getCurrentExceptionMsg()}")
+        echo getCurrentException().getStackTrace()
   of "load-file":
     if ed.currentView >= 0 and ed.currentView < ed.views.len and ed.views[ed.currentView].document != nil:
       try:
@@ -350,8 +352,9 @@ proc handleAction(ed: Editor, action: string, arg: string) =
         ed.views[ed.currentView].editor.handleDocumentChanged()
       except:
         ed.logger.log(lvlError, fmt"[ed] Failed to load file '{arg}': {getCurrentExceptionMsg()}")
+        echo getCurrentException().getStackTrace()
   else:
-    ed.logger.log(lvlError, "[ed] Unknown Action '$1 $2'" % [action, arg])
+    ed.logger.log(lvlError, fmt"[ed] Unknown Action '{action} {arg}'")
 
 proc anyInProgress*(handlers: openArray[EventHandler]): bool =
   for h in handlers:
