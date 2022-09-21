@@ -256,6 +256,9 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
     while index + 1 < node.len:
       defer: index += 2
 
+      if index > 0:
+        ifBodyRect.h += lineDistance
+
       # if
       let ifText = if index == 0: "if   " else: "elif "
       let ifTextRect = ed.ctx.fillText(ifBodyRect.xyh, ifText, rgb(225, 175, 255))
@@ -279,6 +282,7 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
       ifBodyRect = ifBodyRect or condLineRect or renderAstNode(node[index + 1], editor, ed, bodyBounds, selectedNode, nodeBounds)
       finalRect = finalRect or ifBodyRect
 
+    ifBodyRect.h += lineDistance
     var elseBodyRect = ifBodyRect
     if node.len > 2 and node.len mod 2 != 0:
       let origin = ifBodyRect.xyh

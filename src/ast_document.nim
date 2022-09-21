@@ -426,7 +426,7 @@ proc getCompletions*(editor: AstDocumentEditor, text: string, contextNode: Optio
     result.add Completion(kind: AstCompletion, nodeKind: If, name: "if", score: fuzzyMatch(text, "if"))
     result.add Completion(kind: AstCompletion, nodeKind: ConstDecl, name: "const", score: fuzzyMatch(text, "const"))
     result.add Completion(kind: AstCompletion, nodeKind: LetDecl, name: "let", score: fuzzyMatch(text, "let"))
-    result.add Completion(kind: AstCompletion, nodeKind: ConstDecl, name: "var", score: fuzzyMatch(text, "var"))
+    result.add Completion(kind: AstCompletion, nodeKind: VarDecl, name: "var", score: fuzzyMatch(text, "var"))
     result.add Completion(kind: AstCompletion, nodeKind: StringLiteral, name: "string literal", score: if text.startsWith("\""): 1.1 else: 0)
     result.add Completion(kind: AstCompletion, nodeKind: NodeList, name: "block", score: fuzzyMatch(text, "{"))
     result.add Completion(kind: AstCompletion, nodeKind: FunctionDefinition, name: "fn", score: fuzzyMatch(text, "fn"))
@@ -990,6 +990,10 @@ proc shouldEditNode(doc: AstDocument, node: AstNode): bool =
   if node.kind == NumberLiteral and node.text == "":
     return true
   if node.kind == ConstDecl:
+    return ctx.computeSymbol(node).getSome(symbol) and symbol.name == ""
+  if node.kind == LetDecl:
+    return ctx.computeSymbol(node).getSome(symbol) and symbol.name == ""
+  if node.kind == VarDecl:
     return ctx.computeSymbol(node).getSome(symbol) and symbol.name == ""
   return false
 
