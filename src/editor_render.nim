@@ -4,12 +4,14 @@ import sugar
 import util, input, events, editor, rect_utils, document, document_editor, text_document, ast_document, keybind_autocomplete, id, ast
 import compiler
 
-let typeface = readTypeface("fonts/FiraCode-Regular.ttf")
-
 let gap = 0.0
 let horizontalGap = 2.0
 let indent = 15.0
 let lineDistance = 15.0
+
+proc newPaint(col: ColorRGB): Paint =
+  result = newPaint(SolidPaint)
+  result.color = col.color
 
 proc fillText(ctx: contexts.Context, location: Vec2, text: string, paint: Paint): Rect =
   let textWidth = ctx.measureText(text).width
@@ -550,9 +552,10 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
     let val = ctx.computeValue(node)
 
     var lastRect = ed.ctx.fillText(vec2(nodeRect.x, nodeRect.y + nodeRect.h + lineDistance), $val, rgb(100, 100, 255))
-    lastRect = ed.ctx.fillText(vec2(lastRect.xw, lastRect.y), " : ", rgb(200, 200, 200))
+    lastRect = ed.ctx.fillText(vec2(lastRect.xw, lastRect.y), " : ", rgb(175, 175, 175))
     lastRect = ed.ctx.fillText(vec2(lastRect.xw, lastRect.y), $typ, rgb(250, 175, 200))
     lastRect = ed.ctx.fillText(vec2(lastRect.xw, lastRect.y), fmt" ({node.id})", rgb(250, 175, 200))
+    lastRect = ed.ctx.fillText(vec2(lastRect.xw, lastRect.y), fmt" {node.path}", rgb(250, 175, 200))
     nodeRect.h += lastRect.h + lineDistance * 2
 
   nodeRect.w = max(nodeRect.w, ed.ctx.measureText(" ").width)

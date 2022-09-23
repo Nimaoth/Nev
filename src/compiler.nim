@@ -66,6 +66,11 @@ type
       operatorNotation*: OperatorNotation
       precedence*: int
 
+type FunctionExecutionContext* = ref object
+  id*: Id
+  node*: AstNode
+  arguments*: seq[Value]
+
 func errorType*(): Type = Type(kind: tError)
 func voidType*(): Type = Type(kind: tVoid)
 func intType*(): Type = Type(kind: tInt)
@@ -110,6 +115,7 @@ func voidValue*(): Value = Value(kind: vkVoid)
 func intValue*(value: int): Value = Value(kind: vkNumber, intValue: value)
 func stringValue*(value: string): Value = Value(kind: vkString, stringValue: value)
 func typeValue*(typ: Type): Value = Value(kind: vkType, typ: typ)
+proc newFunctionValue*(impl: ValueImpl): Value = return Value(kind: vkFunction, impl: impl)
 
 proc `$`*(value: Value): string =
   case value.kind
@@ -148,6 +154,19 @@ proc fingerprint*(value: Value): Fingerprint =
   of vkFunction: return @[value.kind.int64, value.impl.hash]
   of vkType: return @[value.kind.int64] & value.typ.fingerprint
 
+proc `$`*(fec: FunctionExecutionContext): string =
+  return fmt"Call {fec.node}({fec.arguments})"
+
+proc hash*(fec: FunctionExecutionContext): Hash =
+  return fec.node.hash xor fec.arguments.hash
+
+proc `==`*(a: FunctionExecutionContext, b: FunctionExecutionContext): bool =
+  if a.node != b.node:
+    return false
+  if a.arguments != b.arguments:
+    return false
+  return true
+
 proc `$`*(symbol: Symbol): string =
   case symbol.kind
   of skAstNode:
@@ -185,12 +204,16 @@ proc fingerprint*(symbol: Option[Symbol]): Fingerprint =
     return s.fingerprint
   return @[]
 
+
 CreateContext Context:
   input AstNode
   data Symbol
+  data FunctionExecutionContext
 
   var globalScope*: Table[Id, Symbol] = initTable[Id, Symbol]()
   var enableQueryLogging*: bool = false
+
+  proc recoverValue(ctx: Context, item: ItemId)
 
   proc computeTypeImpl(ctx: Context, node: AstNode): Type {.query("Type").}
   proc computeValueImpl(ctx: Context, node: AstNode): Value {.query("Value").}
@@ -198,6 +221,64 @@ CreateContext Context:
   proc computeSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, Symbol] {.query("Symbols").}
   proc computeSymbolTypeImpl(ctx: Context, symbol: Symbol): Type {.query("SymbolType").}
   proc computeSymbolValueImpl(ctx: Context, symbol: Symbol): Value {.query("SymbolValue").}
+  proc executeFunctionImpl(ctx: Context, fec: FunctionExecutionContext): Value {.query("FunctionExecution", useCache = false, useFingerprinting = false).}
+
+proc recoverValue(ctx: Context, key: Dependency) =
+  echo ">>>>>>>>>>>>>>>>>>>>>>>>>>> Recovering ", key
+  if ctx.getAstNode(key.item.id).getSome(node):
+    ctx.queryCacheValue[node] = errorValue()
+
+proc cacheValuesInFunction(ctx: Context, node: AstNode, values: var Table[Id, Value]) =
+  let value = ctx.computeValue(node)
+  if value.kind == vkError:
+    for child in node.children:
+      ctx.cacheValuesInFunction(child, values)
+  else:
+    values[node.id] = value
+
+proc executeNodeRec(ctx: Context, node: AstNode, variables: var Table[Id, Value]): Value =
+  logger.log(lvlInfo, fmt"executeNodeRec {node}")
+  case node
+  of NodeList():
+    var lastValue = errorValue()
+    for child in node.children:
+      lastValue = ctx.executeNodeRec(child, variables)
+    return lastValue
+
+  of Identifier():
+    let id = node.reff
+    if variables.contains(id):
+      return variables[id]
+
+    logger.log(lvlError, fmt"executeNodeRec {node}: Failed to look up value for identifier")
+    return errorValue()
+
+  of Call():
+    let function = ctx.executeNodeRec(node[0], variables)
+    if function.kind != vkFunction:
+      return errorValue()
+
+    echo function
+
+  else:
+    logger.log(lvlError, fmt"executeNodeRec not implemented for {node}")
+    return errorValue()
+
+proc executeFunctionImpl(ctx: Context, fec: FunctionExecutionContext): Value =
+  echo ">>>>>>>>>>>>>>>>>>>>>>>>>> executeFunctionImpl ", fec.node
+
+  let body = fec.node[2]
+
+  var variables = initTable[Id, Value]()
+  for (key, sym) in ctx.globalScope.pairs:
+    let value = ctx.computeSymbolValue(sym)
+    if value.kind != vkError:
+      variables[key] = value
+  ctx.cacheValuesInFunction(body, variables)
+
+  echo "Cached variables: ", variables
+
+  return ctx.executeNodeRec(body, variables)
 
 proc computeSymbolTypeImpl(ctx: Context, symbol: Symbol): Type =
   case symbol.kind:
@@ -581,6 +662,12 @@ proc computeValueImpl(ctx: Context, node: AstNode): Value =
       return falseCaseValue
 
     return voidValue()
+
+  of FunctionDefinition():
+    let impl = proc(node: AstNode): Value =
+      echo "Running function ", node
+      return errorValue()
+    return newFunctionValue(impl)
 
   else:
     return errorValue()

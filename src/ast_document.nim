@@ -5,9 +5,6 @@ import compiler
 
 var logger = newConsoleLogger()
 
-proc newFunctionValue(impl: ValueImpl): Value =
-  return Value(kind: vkFunction, impl: impl)
-
 let ctx* = newContext()
 ctx.enableLogging = false
 
@@ -1034,6 +1031,32 @@ proc applySelectedCompletion(editor: AstDocumentEditor) =
   else:
     discard
 
+proc runSelectedFunction(self: AstDocumentEditor) =
+  let node = self.node
+  if node.kind != ConstDecl or node.len < 1 or node[0].kind != FunctionDefinition:
+    logger.log(lvlError, fmt"Can't run non-function definition: {node}")
+    return
+
+  let functionType = ctx.computeType(node)
+  if functionType.kind == tError:
+    logger.log(lvlError, fmt"Function failed to compile: {node}")
+    return
+
+  if functionType.kind != tFunction:
+    logger.log(lvlError, fmt"Function has wrong type: {node}, type is {functionType}")
+    return
+
+  if functionType.paramTypes.len > 0:
+    logger.log(lvlError, fmt"Can't call function with arguments directly {node}, type is {functionType}")
+    return
+
+  logger.log(lvlInfo, fmt"Calling function {node} ({functionType})")
+
+  let fec = ctx.newFunctionExecutionContext(FunctionExecutionContext(node: node[0], arguments: @[]))
+  let result = ctx.computeFunctionExecution(fec)
+  logger.log(lvlInfo, fmt"Function {node} returned {result}")
+
+
 proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventResponse =
   echo "handleAction ", action, " '", arg, "'"
   case action
@@ -1241,6 +1264,9 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
           self.node = n
           break
 
+  of "run-selected-function":
+    self.runSelectedFunction()
+
   of "toggle-logging":
     ctx.enableLogging = not ctx.enableLogging
 
@@ -1305,60 +1331,6 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
               NumberLiteral(text: "69")
               NumberLiteral(text: "420")
 
-    # let node = makeTree(AstNode):
-    #   ConstDecl(id: == newId(), text: "foo"):
-    #     Call():
-    #       Identifier(reff: == IdMul)
-    #       Call():
-    #         Identifier(reff: == IdAdd)
-    #         NumberLiteral(text: "1")
-    #         NumberLiteral(text: "2")
-    #       NumberLiteral(text: "3")
-
-    # editor.document.rootNode.add node
-
-    # editor.document.rootNode.add makeTree(AstNode) do:
-    #   ConstDecl(text: "bar"):
-    #     Call():
-    #       Identifier(reff: == IdAdd)
-    #       Identifier(reff: == node.id)
-    #       NumberLiteral(text: "4")
-
-    # editor.document.rootNode.add makeTree(AstNode) do:
-    #   ConstDecl(text: "baz"):
-    #     Call():
-    #       Identifier(reff: == IdAdd)
-    #       Identifier(reff: == editor.document.rootNode.last.id)
-    #       NumberLiteral(text: "4")
-
-    # editor.document.rootNode.add makeTree(AstNode) do:
-    #   If():
-    #     NumberLiteral(text: "69")
-    #     Call():
-    #       Identifier(reff: == IdAdd)
-    #       Identifier(reff: == editor.document.rootNode.last.id)
-    #       NumberLiteral(text: "4")
-    #     NumberLiteral(text: "420")
-    #     Call():
-    #       Identifier(reff: == IdSub)
-    #       Identifier(reff: == editor.document.rootNode.last.id)
-    #       NumberLiteral(text: "13")
-    #     Call():
-    #       Identifier(reff: == IdAppendString)
-    #       StringLiteral(text: "1 + 3 = ")
-    #       NumberLiteral(text: "4")
-
-    # editor.document.rootNode.add makeTree(AstNode) do:
-    #   If():
-    #     NumberLiteral(text: "69")
-    #     NodeList():
-    #       NumberLiteral(text: "4")
-    #     NumberLiteral(text: "420")
-    #     NodeList():
-    #       NumberLiteral(text: "13")
-    #     NodeList():
-    #       StringLiteral(text: "1 + 3 = ")
-
   editor.node = editor.document.rootNode[0]
   for c in editor.document.rootNode.children:
     editor.document.handleNodeInserted c
@@ -1417,6 +1389,8 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     command "gn", "goto next-usage"
     command "GE", "goto prev-error"
     command "ge", "goto next-error"
+
+    command "<F5>", "run-selected-function"
 
     command "\"", "replace-empty \""
     command "'", "replace-empty \""
