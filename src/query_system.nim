@@ -18,6 +18,7 @@ type
 
   UpdateFunction = proc(item: ItemId): Fingerprint
   Dependency* = tuple[item: ItemId, update: UpdateFunction]
+  RecursionRecoveryFunction = proc(key: Dependency)
 
   NodeColor* = enum Grey, Red, Green
 
@@ -111,7 +112,7 @@ proc `$`*(graph: DependencyGraph): string =
     deps.add "]"
     result.add indent(graph.queryNames[key.update] & ":" & $key.item & " -> " & deps, 2, "| ") & "\n"
 
-template query*(name: string) {.pragma.}
+template query*(name: string, useCache: bool = true, useFingerprinting: bool = true) {.pragma.}
 
 macro CreateContext*(contextName: untyped, body: untyped): untyped =
   result = nnkStmtList.newTree()
@@ -121,20 +122,40 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     if query[0].kind == nnkPostfix:
       return query[0][1]
     return query[0]
-  proc queryName(query: NimNode): string =
-    return query[4][0][1].strVal
   proc queryArgType(query: NimNode): NimNode = query[3][2][1]
   proc queryValueType(query: NimNode): NimNode = query[3][0]
   proc inputName(input: NimNode): NimNode = input[1]
 
-  proc isQuery(arg: NimNode): bool =
-    if arg.len < 5: return false
+  proc getQueryPragma(arg: NimNode): Option[NimNode] =
+    if arg.len < 5: return none[NimNode]()
     let pragmas = arg[4]
-    if pragmas.kind != nnkPragma or pragmas.len < 1: return false
+    if pragmas.kind != nnkPragma or pragmas.len < 1: return none[NimNode]()
     for pragma in pragmas:
-      if pragma.kind != nnkCall or pragma.len != 2: continue
+      if pragma.kind != nnkCall: continue
       if pragma[0].strVal == "query":
-        return true
+        return some(pragma)
+    return none[NimNode]()
+
+  proc queryName(query: NimNode): string =
+    return query[4][0][1].strVal
+
+  proc queryUseCache(query: NimNode): bool =
+    if query.getQueryPragma.getSome(pragma):
+      for setting in pragma:
+        if setting.kind == nnkExprEqExpr and setting.len == 2 and setting[0].strVal == "useCache":
+          return setting[1].boolVal
+    return true
+
+  proc queryUseFingerprinting(query: NimNode): bool =
+    if query.getQueryPragma.getSome(pragma):
+      for setting in pragma:
+        if setting.kind == nnkExprEqExpr and setting.len == 2 and setting[0].strVal == "useFingerprinting":
+          return setting[1].boolVal
+    return true
+
+  proc isQuery(arg: NimNode): bool =
+    if arg.getQueryPragma.isSome:
+      return true
     return false
 
   proc isInputDefinition(arg: NimNode): bool =
@@ -155,10 +176,10 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       return arg[0][1]
     return arg[0]
 
-  # for arg in body:
-  #   if not isCustomMemberDefinition arg:
-  #     continue
-  #   echo "customMember: ", arg.treeRepr
+  for arg in body:
+    if not isQuery arg:
+      continue
+    echo "query: ", arg.treeRepr
 
   var dataIndices = initTable[string, int]()
 
@@ -188,6 +209,11 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     nnkIdentDefs.newTree(
       newIdentNode("activeQueryStack"),
       quote do: seq[Dependency],
+      newEmptyNode()
+    ),
+    nnkIdentDefs.newTree(
+      newIdentNode("recoveryFunctions"),
+      quote do: Table[UpdateFunction, RecursionRecoveryFunction],
       newEmptyNode()
     ),
     nnkIdentDefs.newTree(nnkPostfix.newTree(ident"*", newIdentNode("enableLogging")), bindSym"bool", newEmptyNode()),
@@ -304,6 +330,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     let queryCache = ident "queryCache" & name
     let queryFunction = queryFunctionName query
     let items = ident "items" & key.strVal
+    let recoveryFunction = ident "recover" & name
 
     queryInitializers.add quote do:
       `ctx`.`updateName` = proc (item: ItemId): Fingerprint =
@@ -312,6 +339,11 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
         `ctx`.`queryCache`[arg] = value
         return value.fingerprint
       `ctx`.depGraph.queryNames[`ctx`.`updateName`] = `name`
+
+      when compiles(`recoveryFunction`(`ctx`, Dependency())):
+        `ctx`.recoveryFunctions[`ctx`.`updateName`] = proc(key: Dependency) =
+          `recoveryFunction`(`ctx`, key)
+
 
   ## Add initializers for custom members
   for customMembers in body:
@@ -427,9 +459,14 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
           let i = ctx.activeQueryStack.len - k - 1
           echo "[query_system:force] [", k, "] Parent: ", ctx.activeQueryStack[i].item, ", ", ctx.depGraph.queryNames.getOrDefault ctx.activeQueryStack[i].update
 
-
         if ctx.enableLogging: echo repeat2("| ", currentIndent), "recursion detected"
-        return
+
+        if not ctx.recoveryFunctions.contains(key.update):
+          return
+
+        ctx.recoveryFunctions[key.update](key)
+        ctx.depGraph.markRed(key, @[])
+
       ctx.activeQuerySet.incl key
       ctx.activeQueryStack.add key
 
@@ -520,47 +557,70 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
     let nameString = name
 
-    result.add quote do:
-      proc `computeName`*(ctx: `contextName`, input: `key`): `value` =
-        let item = getItem input
-        let key = (item, ctx.`updateName`)
+    let useCache = queryUseCache query
+    let useFingerprinting = newLit queryUseFingerprinting query
 
-        ctx.recordDependency(item, ctx.`updateName`)
+    if useCache:
+      result.add quote do:
+        proc `computeName`*(ctx: `contextName`, input: `key`): `value` =
+          let item = getItem input
+          let key = (item, ctx.`updateName`)
 
-        let color = ctx.depGraph.nodeColor(key)
+          ctx.recordDependency(item, ctx.`updateName`)
 
-        inc currentIndent, if ctx.enableLogging: 1 else: 0
-        defer: dec currentIndent, if ctx.enableLogging: 1 else: 0
-        if ctx.enableLogging: echo repeat2("| ", currentIndent - 1), "compute", `nameString`, " ", color, ", ", item
+          let color = ctx.depGraph.nodeColor(key)
 
-        if color == Green:
-          if not ctx.`queryCache`.contains(input):
-            if ctx.enableLogging: echo repeat2("| ", currentIndent), "green, not in cache"
-            ctx.force(key)
-            if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "result: ", $ctx.`queryCache`[input]
-          else:
-            if ctx.enableLogging: echo repeat2("| ", currentIndent), "green, in cache, result: ", $ctx.`queryCache`[input]
+          inc currentIndent, if ctx.enableLogging: 1 else: 0
+          defer: dec currentIndent, if ctx.enableLogging: 1 else: 0
+          if ctx.enableLogging: echo repeat2("| ", currentIndent - 1), "compute", `nameString`, " ", color, ", ", item
+
+          if color == Green:
+            if not ctx.`queryCache`.contains(input):
+              if ctx.enableLogging: echo repeat2("| ", currentIndent), "green, not in cache"
+              ctx.force(key)
+              if not `useFingerprinting`: ctx.depGraph.markRed(key, @[])
+              if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "result: ", $ctx.`queryCache`[input]
+            else:
+              if ctx.enableLogging: echo repeat2("| ", currentIndent), "green, in cache, result: ", $ctx.`queryCache`[input]
+            return ctx.`queryCache`[input]
+
+          if color == Grey:
+            if not ctx.`queryCache`.contains(input):
+              if ctx.enableLogging: echo repeat2("| ", currentIndent), "grey, not in cache"
+              ctx.force(key)
+              if not `useFingerprinting`: ctx.depGraph.markRed(key, @[])
+              if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "result: ", $ctx.`queryCache`[input]
+              return ctx.`queryCache`[input]
+
+            if ctx.enableLogging: echo repeat2("| ", currentIndent), "grey, in cache"
+            if ctx.tryMarkGreen(key):
+              if ctx.enableLogging: echo repeat2("| ", currentIndent), "green, result: ", $ctx.`queryCache`[input]
+              return ctx.`queryCache`[input]
+            else:
+              if ctx.enableLogging: echo repeat2("| ", currentIndent), "failed to mark green"
+              ctx.force(key)
+              if not `useFingerprinting`: ctx.depGraph.markRed(key, @[])
+              if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "result: ", $ctx.`queryCache`[input]
+              return ctx.`queryCache`[input]
+
+          assert color == Red
+          if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "red, in cache, result: ", $ctx.`queryCache`[input]
           return ctx.`queryCache`[input]
 
-        if color == Grey:
-          if not ctx.`queryCache`.contains(input):
-            if ctx.enableLogging: echo repeat2("| ", currentIndent), "grey, not in cache"
-            ctx.force(key)
-            if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "result: ", $ctx.`queryCache`[input]
-            return ctx.`queryCache`[input]
+    else:
+      result.add quote do:
+        proc `computeName`*(ctx: `contextName`, input: `key`): `value` =
+          let item = getItem input
+          let key = (item, ctx.`updateName`)
 
-          if ctx.enableLogging: echo repeat2("| ", currentIndent), "grey, in cache"
-          if ctx.tryMarkGreen(key):
-            if ctx.enableLogging: echo repeat2("| ", currentIndent), "green, result: ", $ctx.`queryCache`[input]
-            return ctx.`queryCache`[input]
-          else:
-            if ctx.enableLogging: echo repeat2("| ", currentIndent), "failed to mark green"
-            ctx.force(key)
-            if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "result: ", $ctx.`queryCache`[input]
-            return ctx.`queryCache`[input]
+          ctx.recordDependency(item, ctx.`updateName`)
 
-        assert color == Red
-        if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "red, in cache, result: ", $ctx.`queryCache`[input]
-        return ctx.`queryCache`[input]
+          inc currentIndent, if ctx.enableLogging: 1 else: 0
+          defer: dec currentIndent, if ctx.enableLogging: 1 else: 0
+          if ctx.enableLogging: echo repeat2("| ", currentIndent - 1), "compute", `nameString`, ", ", item
+
+          ctx.force(key)
+          return ctx.`queryCache`[input]
+
 
   echo result.repr
