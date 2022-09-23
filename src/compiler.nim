@@ -213,7 +213,10 @@ CreateContext Context:
   var globalScope*: Table[Id, Symbol] = initTable[Id, Symbol]()
   var enableQueryLogging*: bool = false
 
-  proc recoverValue(ctx: Context, item: ItemId)
+  proc recoverValue(ctx: Context, key: Dependency) {.recover("Value").}
+  proc recoverType(ctx: Context, key: Dependency) {.recover("Type").}
+  proc recoverSymbol(ctx: Context, key: Dependency) {.recover("Symbol").}
+  proc recoverSymbols(ctx: Context, key: Dependency) {.recover("Symbols").}
 
   proc computeTypeImpl(ctx: Context, node: AstNode): Type {.query("Type").}
   proc computeValueImpl(ctx: Context, node: AstNode): Value {.query("Value").}
@@ -224,9 +227,24 @@ CreateContext Context:
   proc executeFunctionImpl(ctx: Context, fec: FunctionExecutionContext): Value {.query("FunctionExecution", useCache = false, useFingerprinting = false).}
 
 proc recoverValue(ctx: Context, key: Dependency) =
-  echo ">>>>>>>>>>>>>>>>>>>>>>>>>>> Recovering ", key
+  logger.log(lvlInfo, fmt"[compiler] Recovering value for {key}")
   if ctx.getAstNode(key.item.id).getSome(node):
     ctx.queryCacheValue[node] = errorValue()
+
+proc recoverType(ctx: Context, key: Dependency) =
+  logger.log(lvlInfo, fmt"[compiler] Recovering type for {key}")
+  if ctx.getAstNode(key.item.id).getSome(node):
+    ctx.queryCacheType[node] = errorType()
+
+proc recoverSymbol(ctx: Context, key: Dependency) =
+  logger.log(lvlInfo, fmt"[compiler] Recovering symbol for {key}")
+  if ctx.getAstNode(key.item.id).getSome(node):
+    ctx.queryCacheSymbol[node] = none[Symbol]()
+
+proc recoverSymbols(ctx: Context, key: Dependency) =
+  logger.log(lvlInfo, fmt"[compiler] Recovering symbols for {key}")
+  if ctx.getAstNode(key.item.id).getSome(node):
+    ctx.queryCacheSymbols[node] = newTable[Id, Symbol]()
 
 proc cacheValuesInFunction(ctx: Context, node: AstNode, values: var Table[Id, Value]) =
   let value = ctx.computeValue(node)

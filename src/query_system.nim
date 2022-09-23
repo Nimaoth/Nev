@@ -113,6 +113,7 @@ proc `$`*(graph: DependencyGraph): string =
     result.add indent(graph.queryNames[key.update] & ":" & $key.item & " -> " & deps, 2, "| ") & "\n"
 
 template query*(name: string, useCache: bool = true, useFingerprinting: bool = true) {.pragma.}
+template recover*(name: string) {.pragma.}
 
 macro CreateContext*(contextName: untyped, body: untyped): untyped =
   result = nnkStmtList.newTree()
@@ -126,13 +127,13 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
   proc queryValueType(query: NimNode): NimNode = query[3][0]
   proc inputName(input: NimNode): NimNode = input[1]
 
-  proc getQueryPragma(arg: NimNode): Option[NimNode] =
+  proc getPragma(arg: NimNode, name: string): Option[NimNode] =
     if arg.len < 5: return none[NimNode]()
     let pragmas = arg[4]
     if pragmas.kind != nnkPragma or pragmas.len < 1: return none[NimNode]()
     for pragma in pragmas:
       if pragma.kind != nnkCall: continue
-      if pragma[0].strVal == "query":
+      if pragma[0].strVal == name:
         return some(pragma)
     return none[NimNode]()
 
@@ -140,21 +141,26 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     return query[4][0][1].strVal
 
   proc queryUseCache(query: NimNode): bool =
-    if query.getQueryPragma.getSome(pragma):
+    if query.getPragma("query").getSome(pragma):
       for setting in pragma:
         if setting.kind == nnkExprEqExpr and setting.len == 2 and setting[0].strVal == "useCache":
           return setting[1].boolVal
     return true
 
   proc queryUseFingerprinting(query: NimNode): bool =
-    if query.getQueryPragma.getSome(pragma):
+    if query.getPragma("query").getSome(pragma):
       for setting in pragma:
         if setting.kind == nnkExprEqExpr and setting.len == 2 and setting[0].strVal == "useFingerprinting":
           return setting[1].boolVal
     return true
 
   proc isQuery(arg: NimNode): bool =
-    if arg.getQueryPragma.isSome:
+    if arg.getPragma("query").isSome:
+      return true
+    return false
+
+  proc isRecoveryFunction(arg: NimNode): bool =
+    if arg.getPragma("recover").isSome:
       return true
     return false
 
@@ -301,7 +307,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
   # Add all statements in the input body of this macro as is to the output
   for query in body:
-    if not isQuery(query):
+    if not isQuery(query) and not isRecoveryFunction(query):
       continue
     result.add query
 
@@ -330,7 +336,6 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     let queryCache = ident "queryCache" & name
     let queryFunction = queryFunctionName query
     let items = ident "items" & key.strVal
-    let recoveryFunction = ident "recover" & name
 
     queryInitializers.add quote do:
       `ctx`.`updateName` = proc (item: ItemId): Fingerprint =
@@ -340,10 +345,16 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
         return value.fingerprint
       `ctx`.depGraph.queryNames[`ctx`.`updateName`] = `name`
 
-      when compiles(`recoveryFunction`(`ctx`, Dependency())):
-        `ctx`.recoveryFunctions[`ctx`.`updateName`] = proc(key: Dependency) =
-          `recoveryFunction`(`ctx`, key)
+  # Add recovery functions to ctx.recoveryFunctions
+  for query in body:
+    if not isRecoveryFunction query: continue
 
+    let name = queryName query
+    let updateName = ident "update" & name
+    let recoveryFunction = queryFunctionName query
+    queryInitializers.add quote do:
+      `ctx`.recoveryFunctions[`ctx`.`updateName`] = proc(key: Dependency) =
+        `recoveryFunction`(`ctx`, key)
 
   ## Add initializers for custom members
   for customMembers in body:
@@ -461,11 +472,10 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
         if ctx.enableLogging: echo repeat2("| ", currentIndent), "recursion detected"
 
-        if not ctx.recoveryFunctions.contains(key.update):
-          return
-
-        ctx.recoveryFunctions[key.update](key)
-        ctx.depGraph.markRed(key, @[])
+        if ctx.recoveryFunctions.contains(key.update):
+          ctx.recoveryFunctions[key.update](key)
+          ctx.depGraph.markRed(key, @[])
+        return
 
       ctx.activeQuerySet.incl key
       ctx.activeQueryStack.add key
@@ -505,9 +515,13 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
           let i = ctx.activeQueryStack.len - k - 1
           echo "[query_system:tryMarkGreen] [", k, "] Parent: ", ctx.activeQueryStack[i].item, ", ", ctx.depGraph.queryNames.getOrDefault ctx.activeQueryStack[i].update
 
-
         if ctx.enableLogging: echo repeat2("| ", currentIndent), "recursion detected"
+
+        if ctx.recoveryFunctions.contains(key.update):
+          ctx.recoveryFunctions[key.update](key)
+          ctx.depGraph.markRed(key, @[])
         return
+
       ctx.activeQuerySet.incl key
       ctx.activeQueryStack.add key
       defer:
