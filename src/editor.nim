@@ -217,7 +217,7 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
   ed.ctx = newContext(1, 1)
   ed.ctx.fillStyle = rgb(255, 255, 255)
   ed.ctx.strokeStyle = rgb(255, 255, 255)
-  ed.ctx.font = "fonts/consola.ttf"
+  ed.ctx.font = "fonts/FiraCode-Regular.ttf"
   ed.ctx.fontSize = 20
   ed.ctx.textBaseline = TopBaseline
 
