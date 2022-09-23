@@ -209,21 +209,21 @@ proc newAstDocument*(filename: string = ""): AstDocument =
   result.rootNode = AstNode(kind: NodeList, parent: nil, id: newId())
   result.symbols = initTable[Id, Symbol]()
 
-  # echo "reading: ", result.filename
-  # try:
-  #   let file = readFile(result.filename)
-  #   let jsn = file.parseJson
-  #   result.rootNode = jsn.jsonToAstNode
-  #   echo "ast: ", result.rootNode.treeRepr
-  # except:
-  #   echo "failed to load ast file"
+  if filename.len > 0:
+    logger.log lvlInfo, fmt"[astdoc] Loading ast source file '{result.filename}'"
+    try:
+      let file = readFile(result.filename)
+      let jsn = file.parseJson
+      result.rootNode = jsn.jsonToAstNode
+    except:
+      logger.log lvlError, fmt"[astdoc] Failed to load ast source file '{result.filename}'"
 
 method save*(self: AstDocument, filename: string = "") =
   self.filename = if filename.len > 0: filename else: self.filename
   if self.filename.len == 0:
     raise newException(IOError, "Missing filename")
 
-  echo "saving as ", self.filename
+  logger.log lvlInfo, fmt"[astdoc] Saving ast source file '{self.filename}'"
   let serialized = self.rootNode.toJson
   writeFile(self.filename, serialized.pretty)
 
@@ -234,11 +234,10 @@ method load*(self: AstDocument, filename: string = "") =
 
   self.filename = filename
 
-  echo "reading: ", self.filename
-  let file = readFile(self.filename)
-  let uiae = file.parseJson
-  let newAst = uiae.jsonToAstNode
-  echo "ast: ", newAst.treeRepr
+  logger.log lvlInfo, fmt"[astdoc] Loading ast source file '{self.filename}'"
+  let jsonText = readFile(self.filename)
+  let json = jsonText.parseJson
+  let newAst = json.jsonToAstNode
 
   ctx.deleteAllNodesAndSymbols()
   self.rootNode = newAst
@@ -329,7 +328,7 @@ iterator prevPostOrder*(self: AstDocument, node: AstNode): AstNode =
       n = n.parent
 
 proc handleNodeInserted*(doc: AstDocument, node: AstNode) =
-  echo "Node inserted: ", node
+  logger.log lvlInfo, fmt"[astdoc] Node inserted: {node}"
   ctx.insertNode(node)
 
 proc insertNode*(document: AstDocument, node: AstNode, index: int, newNode: AstNode): Option[AstNode]
@@ -698,7 +697,6 @@ proc insertNode*(document: AstDocument, node: AstNode, index: int, newNode: AstN
     node = document.rootNode
     index = 0
 
-  echo fmt"insertNode {node}, {index}, {newNode}"
   case node
   of ConstDecl():
     return none[AstNode]()
@@ -1057,7 +1055,7 @@ proc runSelectedFunction(self: AstDocumentEditor) =
   logger.log(lvlInfo, fmt"[asteditor] Function {node} returned {result}")
 
 proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventResponse =
-  echo "handleAction ", action, " '", arg, "'"
+  logger.log lvlInfo, fmt"[asteditor]: Handle action {action}, '{arg}'"
   case action
   of "cursor.left":
     if self.isEditing: return
@@ -1283,7 +1281,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
   return Handled
 
 proc handleInput(self: AstDocumentEditor, input: string): EventResponse =
-  echo "handleInput '", input, "'"
+  logger.log lvlInfo, fmt"[asteditor]: Handle input '{input}'"
   return Handled
 
 method createWithDocument*(self: AstDocumentEditor, document: Document): DocumentEditor =
@@ -1408,6 +1406,8 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     command "u", "undo"
     command "U", "redo"
 
+    command "<C-r>", "select-prev"
+    command "<C-t>", "select-next"
     command "<C-LEFT>", "select-prev"
     command "<C-RIGHT>", "select-next"
     command "<C-e>l", "toggle-logging"

@@ -558,7 +558,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
       let symbol = symbols[id]
       return ctx.computeSymbolType(symbol)
 
-    echo node, ": Unkown symbol ", id
+    logger.log lvlError, fmt"[compiler]: Unknown symbol '{id}' at {node}"
     return errorType()
 
   of NodeList():
@@ -725,7 +725,7 @@ proc computeValueImpl(ctx: Context, node: AstNode): Value =
       return errorValue()
 
     if functionValue.impl == nil:
-      echo node, ": Can't call function at compile time: ", function.id
+      logger.log lvlError, fmt"[compiler]: Can't call function at compile time '{function.id}' at {node}"
       return errorValue()
 
     var args: seq[Value] = @[]
