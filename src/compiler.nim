@@ -15,6 +15,7 @@ type
     tString
     tInt
     tFunction
+    tAny
     tType
 
   Type* = ref object
@@ -24,17 +25,19 @@ type
     of tString: discard
     of tInt: discard
     of tType: discard
+    of tAny: open: bool
     of tFunction:
       returnType*: Type
       paramTypes*: seq[Type]
 
-  ValueImpl* = proc(node: AstNode): Value
+  ValueImpl* = proc(values: seq[Value]): Value
   ValueKind* = enum
     vkError
     vkVoid
     vkString
     vkNumber
-    vkFunction
+    vkBuiltinFunction
+    vkAstFunction
     vkType
 
   Value* = object
@@ -43,7 +46,8 @@ type
     of vkVoid: discard
     of vkString: stringValue*: string
     of vkNumber: intValue*: int
-    of vkFunction: impl*: ValueImpl
+    of vkBuiltinFunction: impl*: ValueImpl
+    of vkAstFunction: node*: AstNode
     of vkType: typ*: Type
 
   OperatorNotation* = enum
@@ -77,8 +81,9 @@ func intType*(): Type = Type(kind: tInt)
 func stringType*(): Type = Type(kind: tString)
 func newFunctionType*(paramTypes: seq[Type], returnType: Type): Type = Type(kind: tFunction, returnType: returnType, paramTypes: paramTypes)
 func typeType*(): Type = Type(kind: tType)
+func anyType*(open: bool): Type = Type(kind: tAny, open: open)
 
-proc `$`*(typ: Type): string =
+func `$`*(typ: Type): string =
   case typ.kind
   of tError: return "error"
   of tVoid: return "void"
@@ -86,27 +91,33 @@ proc `$`*(typ: Type): string =
   of tInt: return "int"
   of tFunction: return "function " & $typ.paramTypes & " -> " & $typ.returnType & ""
   of tType: return "type"
+  of tAny: return fmt"any({typ.open})"
 
-proc hash*(typ: Type): Hash =
+func hash*(typ: Type): Hash =
   case typ.kind
   of tFunction: typ.kind.hash xor typ.returnType.hash xor typ.paramTypes.hash
+  of tAny: typ.kind.hash xor typ.open.hash
   else:
     return typ.kind.hash
 
-proc `==`*(a: Type, b: Type): bool =
+func `==`*(a: Type, b: Type): bool =
   if a.kind != b.kind: return false
   case a.kind
   of tFunction:
     return a.returnType == b.returnType and a.paramTypes == b.paramTypes
+  of tAny:
+    return a.open == b.open
   else:
     return true
 
-proc fingerprint*(typ: Type): Fingerprint =
+func fingerprint*(typ: Type): Fingerprint =
   case typ.kind
   of tFunction:
     result = @[typ.kind.int64] & typ.returnType.fingerprint
     for param in typ.paramTypes:
       result.add param.fingerprint
+  of tAny:
+    result = @[typ.kind.int64, typ.open.int64]
   else:
     result = @[typ.kind.int64]
 
@@ -115,69 +126,74 @@ func voidValue*(): Value = Value(kind: vkVoid)
 func intValue*(value: int): Value = Value(kind: vkNumber, intValue: value)
 func stringValue*(value: string): Value = Value(kind: vkString, stringValue: value)
 func typeValue*(typ: Type): Value = Value(kind: vkType, typ: typ)
-proc newFunctionValue*(impl: ValueImpl): Value = return Value(kind: vkFunction, impl: impl)
+func newFunctionValue*(impl: ValueImpl): Value = return Value(kind: vkBuiltinFunction, impl: impl)
+func newAstFunctionValue*(node: AstNode): Value = return Value(kind: vkAstFunction, node: node)
 
-proc `$`*(value: Value): string =
+func `$`*(value: Value): string =
   case value.kind
   of vkError: return "<vkError>"
   of vkVoid: return "void"
   of vkString: return value.stringValue
   of vkNumber: return $value.intValue
-  of vkFunction: return "function"
+  of vkBuiltinFunction: return "<builtin-function>"
+  of vkAstFunction: return "<ast-function " & $value.node & ">"
   of vkType: return $value.typ
 
-proc hash*(value: Value): Hash =
+func hash*(value: Value): Hash =
   case value.kind
   of vkError: return value.kind.hash
   of vkVoid: return value.kind.hash
   of vkNumber: return value.intValue.hash
   of vkString: return value.stringValue.hash
-  of vkFunction: return value.impl.hash
+  of vkBuiltinFunction: return value.impl.hash
+  of vkAstFunction: return value.node.hash
   of vkType: return value.typ.hash
 
-proc `==`*(a: Value, b: Value): bool =
+func `==`*(a: Value, b: Value): bool =
   if a.kind != b.kind: return false
   case a.kind
   of vkError: return true
   of vkVoid: return true
   of vkNumber: return a.intValue == b.intValue
   of vkString: return a.stringValue == b.stringValue
-  of vkFunction: return a.impl == b.impl
+  of vkBuiltinFunction: return a.impl == b.impl
+  of vkAstFunction: return a.node == b.node
   of vkType: return a.typ == b.typ
 
-proc fingerprint*(value: Value): Fingerprint =
+func fingerprint*(value: Value): Fingerprint =
   case value.kind
   of vkError: return @[value.kind.int64]
   of vkVoid: return @[value.kind.int64]
   of vkNumber: return @[value.kind.int64, value.intValue]
   of vkString: return @[value.kind.int64, value.stringValue.hash]
-  of vkFunction: return @[value.kind.int64, value.impl.hash]
+  of vkBuiltinFunction: return @[value.kind.int64, value.impl.hash]
+  of vkAstFunction: return @[value.kind.int64, value.node.hash]
   of vkType: return @[value.kind.int64] & value.typ.fingerprint
 
-proc `$`*(fec: FunctionExecutionContext): string =
+func `$`*(fec: FunctionExecutionContext): string =
   return fmt"Call {fec.node}({fec.arguments})"
 
-proc hash*(fec: FunctionExecutionContext): Hash =
+func hash*(fec: FunctionExecutionContext): Hash =
   return fec.node.hash xor fec.arguments.hash
 
-proc `==`*(a: FunctionExecutionContext, b: FunctionExecutionContext): bool =
+func `==`*(a: FunctionExecutionContext, b: FunctionExecutionContext): bool =
   if a.node != b.node:
     return false
   if a.arguments != b.arguments:
     return false
   return true
 
-proc `$`*(symbol: Symbol): string =
+func `$`*(symbol: Symbol): string =
   case symbol.kind
   of skAstNode:
     return "Sym(AstNode, " & $symbol.id & ", " & $symbol.node & ")"
   of skBuiltin:
     return "Sym(Builtin, " & $symbol.id & ", " & $symbol.typ & ", " & $symbol.value & ")"
 
-proc hash*(symbol: Symbol): Hash =
+func hash*(symbol: Symbol): Hash =
   return symbol.id.hash
 
-proc `==`*(a: Symbol, b: Symbol): bool =
+func `==`*(a: Symbol, b: Symbol): bool =
   if a.id != b.id: return false
   if a.kind != b.kind: return false
   if a.name != b.name: return false
@@ -187,19 +203,19 @@ proc `==`*(a: Symbol, b: Symbol): bool =
   of skAstNode:
     return a.node == b.node
 
-proc fingerprint*(symbol: Symbol): Fingerprint =
+func fingerprint*(symbol: Symbol): Fingerprint =
   case symbol.kind
   of skAstNode:
     result = @[symbol.id.hash.int64, symbol.name.hash.int64, symbol.kind.int64, symbol.node.id.hash.int64]
   of skBuiltin:
     result = @[symbol.id.hash.int64, symbol.name.hash.int64, symbol.kind.int64, symbol.precedence, symbol.operatorNotation.int64] & symbol.typ.fingerprint & symbol.value.fingerprint
 
-proc fingerprint*(symbols: TableRef[Id, Symbol]): Fingerprint =
+func fingerprint*(symbols: TableRef[Id, Symbol]): Fingerprint =
   result = @[]
   for (key, value) in symbols.pairs:
     result.add value.fingerprint
 
-proc fingerprint*(symbol: Option[Symbol]): Fingerprint =
+func fingerprint*(symbol: Option[Symbol]): Fingerprint =
   if symbol.getSome(s):
     return s.fingerprint
   return @[]
@@ -212,6 +228,7 @@ CreateContext Context:
 
   var globalScope*: Table[Id, Symbol] = initTable[Id, Symbol]()
   var enableQueryLogging*: bool = false
+  var enableExecutionLogging*: bool = false
 
   proc recoverValue(ctx: Context, key: Dependency) {.recover("Value").}
   proc recoverType(ctx: Context, key: Dependency) {.recover("Type").}
@@ -255,13 +272,26 @@ proc cacheValuesInFunction(ctx: Context, node: AstNode, values: var Table[Id, Va
     values[node.id] = value
 
 proc executeNodeRec(ctx: Context, node: AstNode, variables: var Table[Id, Value]): Value =
-  logger.log(lvlInfo, fmt"executeNodeRec {node}")
+  if ctx.enableExecutionLogging: inc currentIndent, 1
+  defer:
+    if ctx.enableExecutionLogging: dec currentIndent, 1
+  if ctx.enableExecutionLogging: echo repeat2("| ", currentIndent - 1), "executeNodeRec ", node
+  defer:
+    if ctx.enableExecutionLogging: echo repeat2("| ", currentIndent), "-> ", result
+
   case node
   of NodeList():
     var lastValue = errorValue()
     for child in node.children:
       lastValue = ctx.executeNodeRec(child, variables)
     return lastValue
+
+  of StringLiteral():
+    return Value(kind: vkString, stringValue: node.text)
+
+  of NumberLiteral():
+    let value = try: node.text.parseInt except: return errorValue()
+    return Value(kind: vkNumber, intValue: value)
 
   of Identifier():
     let id = node.reff
@@ -273,28 +303,87 @@ proc executeNodeRec(ctx: Context, node: AstNode, variables: var Table[Id, Value]
 
   of Call():
     let function = ctx.executeNodeRec(node[0], variables)
-    if function.kind != vkFunction:
+
+    case function.kind:
+    of vkError:
       return errorValue()
 
-    echo function
+    of vkBuiltinFunction:
+      var args: seq[Value] = @[]
+      for arg in node.children[1..^1]:
+        let value = ctx.executeNodeRec(arg, variables)
+        if value.kind == vkError:
+          return errorValue()
+        args.add value
+      return function.impl(args)
+
+    of vkAstFunction:
+      var args: seq[Value] = @[]
+      for arg in node.children[1..^1]:
+        let value = ctx.executeNodeRec(arg, variables)
+        if value.kind == vkError:
+          return errorValue()
+        args.add value
+      let fec = ctx.newFunctionExecutionContext(FunctionExecutionContext(node: function.node, arguments: args))
+      return ctx.computeFunctionExecution(fec)
+
+    else:
+      return errorValue()
+
+  of LetDecl():
+    if node.len < 2:
+      return errorValue()
+    let valueNode = node[1]
+    let value = ctx.executeNodeRec(valueNode, variables)
+    variables[node.id] = value
+    return value
+
+  of ConstDecl():
+    let id = node.id
+    if variables.contains(id):
+      return variables[id]
+
+    logger.log(lvlError, fmt"executeNodeRec {node}: Failed to look up value for const decl")
+    return errorValue()
 
   else:
     logger.log(lvlError, fmt"executeNodeRec not implemented for {node}")
     return errorValue()
 
 proc executeFunctionImpl(ctx: Context, fec: FunctionExecutionContext): Value =
-  echo ">>>>>>>>>>>>>>>>>>>>>>>>>> executeFunctionImpl ", fec.node
+  if ctx.enableQueryLogging or ctx.enableExecutionLogging: inc currentIndent, 1
+  defer:
+    if ctx.enableQueryLogging or ctx.enableExecutionLogging: dec currentIndent, 1
+  if ctx.enableQueryLogging or ctx.enableExecutionLogging: echo repeat2("| ", currentIndent - 1), "executeFunctionImpl ", fec
+  defer:
+    if ctx.enableQueryLogging or ctx.enableExecutionLogging: echo repeat2("| ", currentIndent), "-> ", result
 
   let body = fec.node[2]
 
+  # Add values of all symbols in the global scope
   var variables = initTable[Id, Value]()
   for (key, sym) in ctx.globalScope.pairs:
     let value = ctx.computeSymbolValue(sym)
     if value.kind != vkError:
       variables[key] = value
-  ctx.cacheValuesInFunction(body, variables)
 
-  echo "Cached variables: ", variables
+  # Add values of all symbols in the scope of the function we're trying to call
+  let scope = ctx.computeSymbols(fec.node)
+  for (key, sym) in scope.pairs:
+    let value = ctx.computeSymbolValue(sym)
+    if value.kind != vkError:
+      variables[key] = value
+
+  # Add values of all arguments
+  let params = fec.node[0]
+  for i, arg in fec.arguments:
+    if i >= params.len:
+      logger.log(lvlError, fmt"Wrong number of arguments, expected {params.len}, got {fec.arguments.len}")
+      return errorValue()
+    let param = params[i]
+    variables[param.id] = arg
+
+  ctx.cacheValuesInFunction(body, variables)
 
   return ctx.executeNodeRec(body, variables)
 
@@ -387,9 +476,15 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
       logger.log(lvlError, fmt"[compiler] Trying to call non-function type {functionType} at {node}")
       return Type(kind: tError)
 
-    # Check arg num
     let numArgs = node.len - 1
-    if numArgs != functionType.paramTypes.len:
+
+    # Check if last param is open any
+    let isValidOpenAnyCall = functionType.paramTypes.len > 0 and
+        functionType.paramTypes[functionType.paramTypes.high] == anyType(true) and
+        numArgs >= functionType.paramTypes.len - 1
+
+    # Check arg num
+    if numArgs != functionType.paramTypes.len and not isValidOpenAnyCall:
       logger.log(lvlError, fmt"Trying to call with wrong number of arguments. Expected {functionType.paramTypes.len} got {numArgs}")
       return Type(kind: tError)
 
@@ -399,6 +494,10 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
       if argType.kind == tError:
         allArgsOk = false
         continue
+
+      if isValidOpenAnyCall and i > functionType.paramTypes.high:
+        continue
+
       if argType != functionType.paramTypes[i - 1]:
         logger.log(lvlError, fmt"Argument {i} has the wrong type. Expected {functionType.paramTypes[i - 1]} got {argType}")
         allArgsOk = false
@@ -622,14 +721,21 @@ proc computeValueImpl(ctx: Context, node: AstNode): Value =
     if functionValue.kind == vkError:
       return errorValue()
 
-    if functionValue.kind != vkFunction:
+    if functionValue.kind != vkBuiltinFunction:
       return errorValue()
 
     if functionValue.impl == nil:
       echo node, ": Can't call function at compile time: ", function.id
       return errorValue()
 
-    return functionValue.impl(node)
+    var args: seq[Value] = @[]
+    for arg in node.children[1..^1]:
+      let value = ctx.computeValue(arg)
+      if value.kind == vkError:
+        return errorValue()
+      args.add value
+
+    return functionValue.impl(args)
 
   of NodeList():
     if node.len == 0:
@@ -682,10 +788,7 @@ proc computeValueImpl(ctx: Context, node: AstNode): Value =
     return voidValue()
 
   of FunctionDefinition():
-    let impl = proc(node: AstNode): Value =
-      echo "Running function ", node
-      return errorValue()
-    return newFunctionValue(impl)
+    return newAstFunctionValue(node)
 
   else:
     return errorValue()

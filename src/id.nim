@@ -7,7 +7,7 @@ type Id* = distinct Oid
 proc newId*(): Id =
   return genOid().Id
 
-proc `$`*(id: Id): string =
+func `$`*(id: Id): string =
   return $id.Oid
 
 proc `==`*(idA: Id, idB: Id): bool =

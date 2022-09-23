@@ -9,7 +9,7 @@ import ast, id, util
 
 var currentIndent* = 0
 
-func repeat2*(s: string, n: Natural): string = ""
+func repeat2*(s: string, n: Natural): string = repeat s, n
 
 type
   Fingerprint* = seq[int64]

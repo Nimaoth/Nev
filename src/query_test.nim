@@ -31,7 +31,7 @@ let typeDivIntInt = newFunctionType(@[intType(), intType()], intType())
 let typeAddStringInt = newFunctionType(@[stringType(), intType()], stringType())
 
 proc newFunctionValue(impl: ValueImpl): Value =
-  return Value(kind: vkFunction, impl: impl)
+  return Value(kind: vkBuiltinFunction, impl: impl)
 
 let ctx = newContext()
 
