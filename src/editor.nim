@@ -58,6 +58,7 @@ proc toInput(button: Button): int64 =
   of KeyA..KeyZ: ord(button) - ord(KeyA) + ord('a')
   of Key0..Key9: ord(button) - ord(Key0) + ord('0')
   of Numpad0..Numpad9: ord(button) - ord(Numpad0) + ord('0')
+  of KeyF1..KeyF12: INPUT_F1 - (ord(button) - ord(KeyF1))
   of NumpadAdd: ord '+'
   of NumpadSubtract: ord '-'
   of NumpadMultiply: ord '*'

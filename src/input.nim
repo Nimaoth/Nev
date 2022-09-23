@@ -16,6 +16,18 @@ const
   INPUT_END* = -12
   INPUT_PAGE_UP* = -13
   INPUT_PAGE_DOWN* = -14
+  INPUT_F1* = -20
+  INPUT_F2* = -21
+  INPUT_F3* = -22
+  INPUT_F4* = -23
+  INPUT_F5* = -24
+  INPUT_F6* = -25
+  INPUT_F7* = -26
+  INPUT_F8* = -27
+  INPUT_F9* = -28
+  INPUT_F10* = -29
+  INPUT_F11* = -30
+  INPUT_F12* = -31
 
 type
   Modifier* = enum
@@ -75,6 +87,18 @@ proc inputAsString(input: int64): string =
     of INPUT_END: "END"
     of INPUT_PAGE_UP: "PAGE_UP"
     of INPUT_PAGE_DOWN: "PAGE_DOWN"
+    of INPUT_F1: "F1"
+    of INPUT_F2: "F2"
+    of INPUT_F3: "F3"
+    of INPUT_F4: "F4"
+    of INPUT_F5: "F5"
+    of INPUT_F6: "F6"
+    of INPUT_F7: "F7"
+    of INPUT_F8: "F8"
+    of INPUT_F9: "F9"
+    of INPUT_F10: "F10"
+    of INPUT_F11: "F11"
+    of INPUT_F12: "F12"
     else: "<" & $input & ">"
 
 proc inputToString*(input: int64, modifiers: Modifiers): string =
@@ -112,6 +136,18 @@ proc getInputCodeFromSpecialKey(specialKey: string): int64 =
       of "END": INPUT_END
       of "PAGE_UP": INPUT_PAGE_UP
       of "PAGE_DOWN": INPUT_PAGE_DOWN
+      of "F1": INPUT_F1
+      of "F2": INPUT_F2
+      of "F3": INPUT_F3
+      of "F4": INPUT_F4
+      of "F5": INPUT_F5
+      of "F6": INPUT_F6
+      of "F7": INPUT_F7
+      of "F8": INPUT_F8
+      of "F9": INPUT_F9
+      of "F10": INPUT_F10
+      of "F11": INPUT_F11
+      of "F12": INPUT_F12
       else:
         echo "Invalid key '", specialKey, "'"
         0
@@ -146,7 +182,7 @@ proc handleNextInput(dfa: var CommandDFA, input: seq[Rune], function: string, in
 
   var next: seq[tuple[index: int, state: int]] = @[]
   var lastIndex = 0
-  
+
   if index >= input.len:
     # Mark last state as terminal state.
     dfa.states[currentState].isTerminal = true
@@ -273,7 +309,7 @@ proc dump*(dfa: CommandDFA, currentState: int, currentInput: int64, currentMods:
 
   allUsedInputs.sort
   allUsedInputs = allUsedInputs.deduplicate(isSorted = true)
-  
+
   # echo allUsedInputs
 
   for input in allUsedInputs:
