@@ -166,11 +166,11 @@ func path*(node: AstNode): seq[int] =
     node = node.parent
   result.reverse
 
-proc `$`*(node: AstNode): string =
+func `$`*(node: AstNode): string =
   result = node.kind.symbolName & "("
-  if node.id != null:
+  if node.id != idNone():
     result.add $node.id & ", "
-  if node.reff != null:
+  if node.reff != idNone():
     result.add "reff: " & $node.reff & ", "
   if node.text.len > 0:
     result.add "'" & node.text & "', "

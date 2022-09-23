@@ -9,27 +9,19 @@ let ctx* = newContext()
 ctx.enableLogging = false
 
 proc createBinaryIntOperator(operator: proc(a: int, b: int): int): Value =
-  return newFunctionValue proc(node: AstNode): Value =
-    if node.len < 3:
+  return newFunctionValue proc(values: seq[Value]): Value =
+    if values.len < 2:
       return errorValue()
-
-    let leftValue = ctx.computeValue(node[1])
-    let rightValue = ctx.computeValue(node[2])
-
-    if leftValue.kind != vkNumber or rightValue.kind != vkNumber:
-      echo "left: ", leftValue.kind, ", right: ", rightValue.kind
+    if values[0].kind != vkNumber or values[1].kind != vkNumber:
       return errorValue()
-    return Value(kind: vkNumber, intValue: operator(leftValue.intValue, rightValue.intValue))
+    return Value(kind: vkNumber, intValue: operator(values[0].intValue, values[1].intValue))
 
 proc createUnityIntOperator(operator: proc(a: int): int): Value =
-  return newFunctionValue proc(node: AstNode): Value =
-    if node.len < 2:
+  return newFunctionValue proc(values: seq[Value]): Value =
+    if values.len < 1:
       return errorValue()
-
-    let value = ctx.computeValue(node[1])
-
+    let value = values[1]
     if value.kind != vkNumber:
-      echo "left: ", value.kind
       return errorValue()
     return Value(kind: vkNumber, intValue: operator(value.intValue))
 
@@ -60,12 +52,19 @@ let funcAndIntInt = createBinaryIntOperator (a: int, b: int) => (if a != 0 and b
 let funcOrIntInt = createBinaryIntOperator (a: int, b: int) => (if a != 0 or b != 0: 1 else: 0)
 let funcOrderIntInt = createBinaryIntOperator (a: int, b: int) => (if a < b: -1 elif a > b: 1 else: 0)
 
-let funcAddStringInt = newFunctionValue proc(node: AstNode): Value =
-  let leftValue = ctx.computeValue(node[1])
-  let rightValue = ctx.computeValue(node[2])
+let funcAddStringInt = newFunctionValue proc(values: seq[Value]): Value =
+  if values.len < 2:
+    return errorValue()
+  let leftValue = values[0]
+  let rightValue = values[1]
   if leftValue.kind != vkString:
     return errorValue()
   return Value(kind: vkString, stringValue: leftValue.stringValue & $rightValue)
+
+let funcPrintAny = newFunctionValue proc(values: seq[Value]): Value =
+  let result = stringValue(values.join "")
+  logger.log(lvlNotice, fmt"{result}")
+  return result
 
 ctx.globalScope[IdAdd] = Symbol(id: IdAdd, name: "+", kind: skBuiltin, typ: typeAddIntInt, value: funcAddIntInt, operatorNotation: Infix, precedence: 10)
 ctx.globalScope[IdSub] = Symbol(id: IdSub, name: "-", kind: skBuiltin, typ: typeSubIntInt, value: funcSubIntInt, operatorNotation: Infix, precedence: 10)
@@ -87,6 +86,7 @@ ctx.globalScope[IdOrder] = Symbol(id: IdOrder, name: "<=>", kind: skBuiltin, typ
 ctx.globalScope[IdInt] = Symbol(id: IdInt, name: "int", kind: skBuiltin, typ: typeType(), value: typeValue(intType()))
 ctx.globalScope[IdString] = Symbol(id: IdString, name: "string", kind: skBuiltin, typ: typeType(), value: typeValue(stringType()))
 ctx.globalScope[IdVoid] = Symbol(id: IdVoid, name: "void", kind: skBuiltin, typ: typeType(), value: typeValue(voidType()))
+ctx.globalScope[IdPrint] = Symbol(id: IdPrint, name: "print", kind: skBuiltin, typ: newFunctionType(@[anyType(true)], stringType()), value: funcPrintAny)
 for symbol in ctx.globalScope.values:
   discard ctx.newSymbol(symbol)
 
@@ -1034,28 +1034,27 @@ proc applySelectedCompletion(editor: AstDocumentEditor) =
 proc runSelectedFunction(self: AstDocumentEditor) =
   let node = self.node
   if node.kind != ConstDecl or node.len < 1 or node[0].kind != FunctionDefinition:
-    logger.log(lvlError, fmt"Can't run non-function definition: {node}")
+    logger.log(lvlError, fmt"[asteditor] Can't run non-function definition: {node}")
     return
 
   let functionType = ctx.computeType(node)
   if functionType.kind == tError:
-    logger.log(lvlError, fmt"Function failed to compile: {node}")
+    logger.log(lvlError, fmt"[asteditor] Function failed to compile: {node}")
     return
 
   if functionType.kind != tFunction:
-    logger.log(lvlError, fmt"Function has wrong type: {node}, type is {functionType}")
+    logger.log(lvlError, fmt"[asteditor] Function has wrong type: {node}, type is {functionType}")
     return
 
   if functionType.paramTypes.len > 0:
-    logger.log(lvlError, fmt"Can't call function with arguments directly {node}, type is {functionType}")
+    logger.log(lvlError, fmt"[asteditor] Can't call function with arguments directly {node}, type is {functionType}")
     return
 
-  logger.log(lvlInfo, fmt"Calling function {node} ({functionType})")
+  logger.log(lvlInfo, fmt"[asteditor] Calling function {node} ({functionType})")
 
   let fec = ctx.newFunctionExecutionContext(FunctionExecutionContext(node: node[0], arguments: @[]))
   let result = ctx.computeFunctionExecution(fec)
-  logger.log(lvlInfo, fmt"Function {node} returned {result}")
-
+  logger.log(lvlInfo, fmt"[asteditor] Function {node} returned {result}")
 
 proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventResponse =
   echo "handleAction ", action, " '", arg, "'"
@@ -1142,7 +1141,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
           break
 
       else:
-        logger.log(lvlError, fmt"Failed to insert node {newNode} into {self.node.parent} at {index + 1}")
+        logger.log(lvlError, fmt"[astedit] Failed to insert node {newNode} into {self.node.parent} at {index + 1}")
 
   of "insert-before":
     if self.isEditing: return
@@ -1158,7 +1157,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
           break
 
       else:
-        logger.log(lvlError, fmt"Failed to insert node {newNode} into {self.node.parent} at {index}")
+        logger.log(lvlError, fmt"[astedit] Failed to insert node {newNode} into {self.node.parent} at {index}")
 
   of "replace":
     if self.isEditing: return
