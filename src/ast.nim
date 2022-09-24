@@ -1,4 +1,4 @@
-import std/[options, algorithm, strutils, hashes, enumutils, json, jsonutils]
+import std/[options, algorithm, strutils, hashes, enumutils, json, jsonutils, tables]
 import fusion/matching
 import util, id
 
@@ -131,6 +131,26 @@ func delete*(node: AstNode, index: int): AstNode =
     return node[index - 1]
   else:
     return node
+
+proc clone*(node: AstNode, idMap: var Table[Id, Id]): AstNode =
+  let newNodeId = newId()
+  result = AstNode(kind: node.kind, id: newNodeId, reff: node.reff, text: node.text)
+  idMap[node.id] = newNodeId
+  for child in node.children:
+    result.add child.clone(idMap)
+
+proc replaceReferences*(node: AstNode, idMap: var Table[Id, Id]) =
+  if idMap.contains(node.reff):
+    node.reff = idMap[node.reff]
+  for child in node.children:
+    child.replaceReferences(idMap)
+
+proc cloneAndMapIds*(node: AstNode): AstNode =
+  var idMap = initTable[Id, Id]()
+  let newNode = node.clone(idMap)
+  newNode.replaceReferences(idMap)
+  return newNode
+
 
 proc findChildRec*(node: AstNode, kind: AstNodeKind): Option[AstNode] =
   for c in node.children:
