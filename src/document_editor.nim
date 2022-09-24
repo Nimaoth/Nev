@@ -1,5 +1,4 @@
-import std/[strformat, strutils, algorithm, math, logging, unicode]
-import input, document, events
+import document, events
 
 
 type DocumentEditor* = ref object of RootObj
@@ -14,11 +13,11 @@ proc init*(self: DocumentEditor) =
 method canEdit*(self: DocumentEditor, document: Document): bool {.base.} =
   return false
 
-method createWithDocument*(self: DocumentEditor, document: Document): DocumentEditor {.base.} =
+method createWithDocument*(self: DocumentEditor, document: Document): DocumentEditor {.base, locks: "unknown".} =
   return nil
 
 method getEventHandlers*(self: DocumentEditor): seq[EventHandler] {.base.} =
   return @[]
 
-method handleDocumentChanged*(self: DocumentEditor) {.base.} =
+method handleDocumentChanged*(self: DocumentEditor) {.base, locks: "unknown".} =
   discard

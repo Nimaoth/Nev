@@ -1,4 +1,4 @@
-import std/[macros, strformat, strutils]
+import std/[macros]
 import bumpy, boxy
 
 type

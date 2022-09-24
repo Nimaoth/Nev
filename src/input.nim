@@ -1,5 +1,4 @@
-import std/[json, jsonutils, strformat, bitops, strutils, tables, algorithm, math, unicode, sequtils]
-import os, osproc
+import std/[strformat, strutils, tables, algorithm, unicode, sequtils]
 
 const
   INPUT_ENTER* = -1

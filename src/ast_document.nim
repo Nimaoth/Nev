@@ -1,5 +1,5 @@
-import std/[strformat, strutils, algorithm, math, logging, unicode, sequtils, sugar, tables, macros, options, os, deques, sets, json, jsonutils]
-import print, fusion/matching, fuzzy
+import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros, options, deques, sets, json]
+import fusion/matching, fuzzy
 import util, input, document, document_editor, text_document, events, id, ast_ids, ast
 import compiler
 
@@ -62,7 +62,7 @@ let funcAddStringInt = newFunctionValue proc(values: seq[Value]): Value =
   return Value(kind: vkString, stringValue: leftValue.stringValue & $rightValue)
 
 let funcPrintAny = newFunctionValue proc(values: seq[Value]): Value =
-  let result = stringValue(values.join "")
+  result = stringValue(values.join "")
   logger.log(lvlNotice, fmt"{result}")
   return result
 
@@ -71,7 +71,7 @@ let funcBuildStringAny = newFunctionValue (values) => stringValue(values.join ""
 ctx.globalScope[IdAdd] = Symbol(id: IdAdd, name: "+", kind: skBuiltin, typ: typeAddIntInt, value: funcAddIntInt, operatorNotation: Infix, precedence: 10)
 ctx.globalScope[IdSub] = Symbol(id: IdSub, name: "-", kind: skBuiltin, typ: typeSubIntInt, value: funcSubIntInt, operatorNotation: Infix, precedence: 10)
 ctx.globalScope[IdMul] = Symbol(id: IdMul, name: "*", kind: skBuiltin, typ: typeMulIntInt, value: funcMulIntInt, operatorNotation: Infix, precedence: 20)
-ctx.globalScope[IdDiv] = Symbol(id: IdDiv, name: "/", kind: skBuiltin, typ: typeDivIntInt, value: funcSubIntInt, operatorNotation: Infix, precedence: 20)
+ctx.globalScope[IdDiv] = Symbol(id: IdDiv, name: "/", kind: skBuiltin, typ: typeDivIntInt, value: funcDivIntInt, operatorNotation: Infix, precedence: 20)
 ctx.globalScope[IdMod] = Symbol(id: IdMod, name: "%", kind: skBuiltin, typ: typeModIntInt, value: funcModIntInt, operatorNotation: Infix, precedence: 20)
 ctx.globalScope[IdNegate] = Symbol(id: IdNegate, name: "-", kind: skBuiltin, typ: typeNegInt, value: funcNegInt, operatorNotation: Prefix)
 ctx.globalScope[IdNot] = Symbol(id: IdNot, name: "!", kind: skBuiltin, typ: typeNotInt, value: funcNotInt, operatorNotation: Prefix)
@@ -92,8 +92,6 @@ ctx.globalScope[IdPrint] = Symbol(id: IdPrint, name: "print", kind: skBuiltin, t
 ctx.globalScope[IdBuildString] = Symbol(id: IdBuildString, name: "build", kind: skBuiltin, typ: newFunctionType(@[anyType(true)], stringType()), value: funcBuildStringAny)
 for symbol in ctx.globalScope.values:
   discard ctx.newSymbol(symbol)
-
-proc `$`(ctx: Context): string = ctx.toString
 
 ############################################################################################
 
@@ -126,13 +124,17 @@ proc `$`(op: UndoOp): string =
   if op.node != nil: result.add fmt", node = {op.node}"
   if op.parent != nil: result.add fmt", parent = {op.parent}, index = {op.idx}"
 
-type AstDocument* = ref object of Document
-  filename*: string
-  symbols*: Table[Id, Symbol]
-  rootNode*: AstNode
+type
+  OnNodeInserted = proc(doc: AstDocument, node: AstNode)
+  AstDocument* = ref object of Document
+    filename*: string
+    symbols*: Table[Id, Symbol]
+    rootNode*: AstNode
 
-  undoOps*: seq[UndoOp]
-  redoOps*: seq[UndoOp]
+    onNodeInserted*: seq[OnNodeInserted]
+
+    undoOps*: seq[UndoOp]
+    redoOps*: seq[UndoOp]
 
 type
   CompletionKind* = enum
@@ -153,6 +155,8 @@ type AstDocumentEditor* = ref object of DocumentEditor
   selectionHistory: Deque[AstNode]
   selectionFuture: Deque[AstNode]
 
+  deletedNode: Option[AstNode]
+
   currentlyEditedSymbol*: Id
   currentlyEditedNode*: AstNode
   textEditor*: TextDocumentEditor
@@ -164,8 +168,6 @@ type AstDocumentEditor* = ref object of DocumentEditor
   selectedCompletion*: int
 
   renderSelectedNodeValue*: bool
-
-proc `<`(a, b: Completion): bool = a.score < b.score
 
 proc updateCompletions(editor: AstDocumentEditor)
 proc getPrevChild*(document: AstDocument, node: AstNode, max: int = -1): Option[AstNode]
@@ -278,7 +280,6 @@ iterator nextPreOrderWhere*(self: AstDocument, node: AstNode, predicate: proc(no
 
 iterator nextPreVisualOrder*(self: AstDocument, node: AstNode): tuple[key: int, value: AstNode] =
   var n = node
-  var idx = -1
   var i = 0
   var gotoChild = true
 
@@ -288,7 +289,6 @@ iterator nextPreVisualOrder*(self: AstDocument, node: AstNode): tuple[key: int, 
       yield (i, n)
       gotoChild = true
     elif n.parent != nil and self.getNextChild(n.parent, n.index).getSome(ne):
-    # elif n.prev.getSome(ne):
       n = ne
       yield (i, n)
       gotoChild = true
@@ -333,6 +333,8 @@ iterator prevPostOrder*(self: AstDocument, node: AstNode): AstNode =
 proc handleNodeInserted*(doc: AstDocument, node: AstNode) =
   logger.log lvlInfo, fmt"[astdoc] Node inserted: {node}"
   ctx.insertNode(node)
+  for handler in doc.onNodeInserted:
+    handler(doc, node)
 
 proc insertNode*(document: AstDocument, node: AstNode, index: int, newNode: AstNode): Option[AstNode]
 
@@ -342,8 +344,15 @@ proc handleNodeDelete*(doc: AstDocument, node: AstNode) =
 
   ctx.deleteNode(node)
 
+proc handleNodeInserted*(self: AstDocumentEditor, doc: AstDocument, node: AstNode) =
+  logger.log lvlInfo, fmt"[asteditor] Node inserted: {node}, {self.deletedNode}"
+  if self.deletedNode.getSome(deletedNode) and deletedNode == node:
+    self.deletedNode = AstNode.none
+    logger.log lvlInfo, fmt"[asteditor] Clearing editor.deletedNode because it was just inserted"
+
 proc handleTextDocumentChanged*(self: AstDocumentEditor) =
   self.updateCompletions()
+  self.document.onNodeInserted.add (doc: AstDocument, node: AstNode) => self.handleNodeInserted(doc, node)
 
 proc isEditing*(self: AstDocumentEditor): bool = self.textEditor != nil
 
@@ -835,6 +844,12 @@ proc redo*(document: AstDocument): Option[AstNode] =
 
 proc createNodeFromAction*(editor: AstDocumentEditor, arg: string, node: AstNode, typ: Type): Option[(AstNode, int)] =
   case arg
+  of "deleted":
+    if editor.deletedNode.getSome(node):
+      editor.deletedNode = none[AstNode]()
+      return some (node, 0)
+    return none (AstNode, int)
+
   of "empty":
     return some((AstNode(kind: Empty, id: newId(), text: ""), 0))
   of "identifier":
@@ -1044,8 +1059,6 @@ proc applySelectedCompletion(editor: AstDocumentEditor) =
         editor.node = emptyNode
         discard editor.tryEdit editor.node
         break
-  else:
-    discard
 
 proc runSelectedFunction(self: AstDocumentEditor) =
   let node = self.node
@@ -1129,6 +1142,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
 
   of "selected.delete":
     if self.isEditing: return
+    self.deletedNode = some(self.node)
     self.node = self.document.deleteNode self.node
 
   of "undo":
@@ -1196,6 +1210,14 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
         self.node = emptyNode
         discard self.tryEdit self.node
         break
+
+  of "replace-parent":
+    if self.isEditing: return
+    let node = self.node
+    if node.parent == nil or node.parent == self.document.rootNode: return
+    let parent = node.parent
+    discard self.document.deleteNode(self.node)
+    self.node = self.document.replaceNode(parent, node)
 
   of "wrap":
     if self.isEditing: return
@@ -1305,6 +1327,7 @@ proc handleInput(self: AstDocumentEditor, input: string): EventResponse =
 method createWithDocument*(self: AstDocumentEditor, document: Document): DocumentEditor =
   let editor = AstDocumentEditor(eventHandler: nil, document: AstDocument(document), textDocument: nil, textEditor: nil)
   editor.init()
+  editor.document.onNodeInserted.add (doc: AstDocument, node: AstNode) => editor.handleNodeInserted(doc, node)
 
   editor.selectedCompletion = 0
   editor.completions = @[]
@@ -1377,7 +1400,6 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     command "<DELETE>", "delete"
     command "<TAB>", "edit-next-empty"
 
-    command "rr", "rename"
     command "e", "rename"
 
     command "ae", "insert-after empty"
@@ -1385,19 +1407,22 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     command "ad", "insert-after const-decl"
     command "a+", "insert-after +"
     command "af", "insert-after call-func"
+    command "ap", "insert-after deleted"
 
     command "ie", "insert-before empty"
     command "in", "insert-before number-literal"
     command "id", "insert-before const-decl"
     command "i+", "insert-before +"
     command "if", "insert-before call-func"
+    command "ip", "insert-before deleted"
 
     command "s", "replace empty"
     command "re", "replace empty"
     command "rn", "replace number-literal"
-    command "rd", "replace const-decl"
-    command "r+", "replace +"
     command "rf", "replace call-func"
+    command "rp", "replace deleted"
+
+    command "rr", "replace-parent"
 
     command "gd", "goto definition"
     command "gp", "goto prev-usage"
@@ -1449,5 +1474,6 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     onAction:
       editor.handleAction action, arg
     onInput:
+      discard input
       Ignored
   return editor

@@ -1,7 +1,4 @@
-import std/[tables, sets, strutils, hashes, options, macros, sequtils, strformat]
-import sugar
-import system
-import print
+import std/[tables, sets, strutils, hashes, options, macros, strformat]
 import fusion/matching
 import ast, id, util
 
@@ -182,10 +179,10 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       return arg[0][1]
     return arg[0]
 
-  for arg in body:
-    if not isQuery arg:
-      continue
-    echo "query: ", arg.treeRepr
+  # for arg in body:
+  #   if not isQuery arg:
+  #     continue
+  #   echo "query: ", arg.treeRepr
 
   var dataIndices = initTable[string, int]()
 
@@ -637,4 +634,4 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
           return ctx.`queryCache`[input]
 
 
-  echo result.repr
+  # echo result.repr
