@@ -427,7 +427,6 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
       let name = queryName query
       let executionTime = ident "executionTime" & name
-      let queryFunction = queryFunctionName query
 
       executionTimeResets.add quote do:
         `ctx`.`executionTime` = 0
@@ -605,10 +604,9 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     if useCache:
       result.add quote do:
         proc `computeName`*(ctx: `contextName`, input: `key`): `value` =
-          let now = getTicks()
+          let timer = startTimer()
           defer:
-            let now2 = getTicks()
-            ctx.`executionTime` += now2 - now
+            ctx.`executionTime` += timer.elapsed
 
           let item = getItem input
           let key = (item, ctx.`updateName`)

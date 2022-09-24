@@ -611,14 +611,11 @@ proc renderCompletions(editor: AstDocumentEditor, ed: Editor, bounds: Rect): Rec
 method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect, selected: bool): Rect =
   let document = editor.document
 
-  let now = getTicks()
+  let timer = startTimer()
   defer:
-    let now2 = getTicks()
-    let diff = (now2 - now).float64 / 1000000
-
     if logRenderDuration:
       let queryExecutionTimes = fmt"Type: {ctx.executionTimeType.ms:.2}, Value: {ctx.executionTimeValue.ms:.2}, Symbol: {ctx.executionTimeSymbol.ms:.2}, Symbols: {ctx.executionTimeSymbols.ms:.2}, SymbolType: {ctx.executionTimeSymbolType.ms:.2}, SymbolValue: {ctx.executionTimeSymbolValue.ms:.2}"
-      echo fmt"Render duration: {diff:.2}ms, {queryExecutionTimes}"
+      echo fmt"Render duration: {timer.elapsed.ms:.2}ms, {queryExecutionTimes}"
 
     ctx.resetExecutionTimes()
 

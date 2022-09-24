@@ -99,3 +99,9 @@ else:
                     int64(t.tv_usec) * 1000'i64)
 
   proc `-`*(a, b: Ticks): Nanos {.borrow.}
+
+type Timer* = object
+  start: Ticks
+
+proc startTimer*(): Timer = Timer(start: getTicks())
+proc elapsed*(timer: Timer): Nanos = getTicks() - timer.start
