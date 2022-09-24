@@ -20,7 +20,7 @@ proc createUnityIntOperator(operator: proc(a: int): int): Value =
   return newFunctionValue proc(values: seq[Value]): Value =
     if values.len < 1:
       return errorValue()
-    let value = values[1]
+    let value = values[0]
     if value.kind != vkNumber:
       return errorValue()
     return Value(kind: vkNumber, intValue: operator(value.intValue))
@@ -347,7 +347,7 @@ proc handleNodeDelete*(doc: AstDocument, node: AstNode) =
 proc handleNodeInserted*(self: AstDocumentEditor, doc: AstDocument, node: AstNode) =
   logger.log lvlInfo, fmt"[asteditor] Node inserted: {node}, {self.deletedNode}"
   if self.deletedNode.getSome(deletedNode) and deletedNode == node:
-    self.deletedNode = AstNode.none
+    self.deletedNode = some(node.cloneAndMapIds())
     logger.log lvlInfo, fmt"[asteditor] Clearing editor.deletedNode because it was just inserted"
 
 proc handleTextDocumentChanged*(self: AstDocumentEditor) =
@@ -845,7 +845,7 @@ proc createNodeFromAction*(editor: AstDocumentEditor, arg: string, node: AstNode
   case arg
   of "deleted":
     if editor.deletedNode.getSome(node):
-      editor.deletedNode = none[AstNode]()
+      editor.deletedNode = some(node.cloneAndMapIds())
       return some (node, 0)
     return none (AstNode, int)
 
@@ -1113,7 +1113,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
     if self.isEditing: return
     var node = self.node
     for _, n in self.document.nextPreVisualOrder(self.node):
-      if (n.kind == Call or n.kind == NodeList or n.kind == Params) and node.len > 0:
+      if (n.kind == Call or n.kind == NodeList or n.kind == Params) and n.len > 0:
         continue
       if n != self.node:
         self.node = n
@@ -1123,7 +1123,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
     if self.isEditing: return
     var node = self.node
     for n in self.document.prevPostVisualOrder(self.node, gotoChild = false):
-      if (n.kind == Call or n.kind == NodeList or n.kind == Params) and node.len > 0:
+      if (n.kind == Call or n.kind == NodeList or n.kind == Params) and n.len > 0:
         continue
       if n != self.node:
         self.node = n
@@ -1143,6 +1143,10 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
     if self.isEditing: return
     self.deletedNode = some(self.node)
     self.node = self.document.deleteNode self.node
+
+  of "selected.copy":
+    if self.isEditing: return
+    self.deletedNode = some(self.node.cloneAndMapIds())
 
   of "undo":
     if self.isEditing: return
@@ -1277,9 +1281,11 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
     self.applySelectedCompletion()
 
   of "select-prev":
+    if self.isEditing: return
     self.selectPrevNode()
 
   of "select-next":
+    if self.isEditing: return
     self.selectNextNode()
 
   of "goto":
@@ -1316,6 +1322,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
           break
 
   of "run-selected-function":
+    if self.isEditing: return
     self.runSelectedFunction()
 
   of "toggle-logging":
@@ -1459,6 +1466,7 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     command "vv", "wrap var-decl"
 
     command "d", "selected.delete"
+    command "y", "selected.copy"
 
     command "u", "undo"
     command "U", "redo"

@@ -290,6 +290,37 @@ proc executeNodeRec(ctx: Context, node: AstNode, variables: var Table[Id, Value]
     let value = try: node.text.parseInt except: return errorValue()
     return Value(kind: vkNumber, intValue: value)
 
+  of If():
+    if node.len < 2:
+      return errorValue()
+
+    # Iterate through all ifs/elifs
+    var index: int = 0
+    while index + 1 < node.len:
+      defer: index += 2
+
+      let condition = node[index]
+      let trueCase = node[index + 1]
+
+      let conditionValue = ctx.executeNodeRec(condition, variables)
+      if conditionValue.kind == vkError:
+        return errorValue()
+
+      if conditionValue.kind != vkNumber:
+        logger.log(lvlError, fmt"[compiler] Condition of if statement must be an int but is {conditionValue}")
+        return errorValue()
+
+      if conditionValue.intValue != 0:
+        let trueCaseValue = ctx.executeNodeRec(trueCase, variables)
+        return trueCaseValue
+
+    # else case
+    if node.len mod 2 != 0:
+      let falseCaseValue = ctx.executeNodeRec(node.last, variables)
+      return falseCaseValue
+
+    return voidValue()
+
   of Identifier():
     let id = node.reff
     if variables.contains(id):
@@ -428,6 +459,8 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
       return errorType()
 
     let params = node[0]
+    ctx.recordDependency(params.getItem)
+
     let returnTypeNode = node[1]
 
     var paramTypes: seq[Type] = @[]
