@@ -352,7 +352,6 @@ proc handleNodeInserted*(self: AstDocumentEditor, doc: AstDocument, node: AstNod
 
 proc handleTextDocumentChanged*(self: AstDocumentEditor) =
   self.updateCompletions()
-  self.document.onNodeInserted.add (doc: AstDocument, node: AstNode) => self.handleNodeInserted(doc, node)
 
 proc isEditing*(self: AstDocumentEditor): bool = self.textEditor != nil
 
@@ -538,7 +537,7 @@ proc getNextChildRec*(document: AstDocument, node: AstNode, min: int = -1): Opti
   else:
     return some(node)
 
-  while node.kind == Call or node.kind == NodeList or node.kind == Params:
+  while (node.kind == Call or node.kind == NodeList or node.kind == Params) and node.len > 0:
     if document.getNextChild(node, idx).getSome(child):
       idx = -1
       node = child
@@ -1114,7 +1113,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
     if self.isEditing: return
     var node = self.node
     for _, n in self.document.nextPreVisualOrder(self.node):
-      if n.kind == Call or n.kind == NodeList or n.kind == Params:
+      if (n.kind == Call or n.kind == NodeList or n.kind == Params) and node.len > 0:
         continue
       if n != self.node:
         self.node = n
@@ -1124,7 +1123,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
     if self.isEditing: return
     var node = self.node
     for n in self.document.prevPostVisualOrder(self.node, gotoChild = false):
-      if n.kind == Call or n.kind == NodeList or n.kind == Params:
+      if (n.kind == Call or n.kind == NodeList or n.kind == Params) and node.len > 0:
         continue
       if n != self.node:
         self.node = n
@@ -1188,6 +1187,21 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
 
       else:
         logger.log(lvlError, fmt"[astedit] Failed to insert node {newNode} into {self.node.parent} at {index}")
+
+  of "insert-child":
+    if self.isEditing: return
+    if self.createNodeFromAction(arg, self.node, errorType()).getSome(newNodeIndex):
+      let (newNode, _) = newNodeIndex
+      if self.document.insertNode(self.node, self.node.len, newNode).getSome(node):
+        self.node = node
+
+        for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => self.document.shouldEditNode(n), endNode = newNode):
+          self.node = emptyNode
+          discard self.tryEdit self.node
+          break
+
+      else:
+        logger.log(lvlError, fmt"[astedit] Failed to insert node {newNode} into {self.node} at {self.node.len}")
 
   of "replace":
     if self.isEditing: return
@@ -1404,17 +1418,14 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
 
     command "ae", "insert-after empty"
     command "an", "insert-after number-literal"
-    command "ad", "insert-after const-decl"
-    command "a+", "insert-after +"
-    command "af", "insert-after call-func"
     command "ap", "insert-after deleted"
 
     command "ie", "insert-before empty"
     command "in", "insert-before number-literal"
-    command "id", "insert-before const-decl"
-    command "i+", "insert-before +"
-    command "if", "insert-before call-func"
     command "ip", "insert-before deleted"
+
+    command "ke", "insert-child empty"
+    command "kp", "insert-child deleted"
 
     command "s", "replace empty"
     command "re", "replace empty"
