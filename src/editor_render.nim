@@ -1,4 +1,5 @@
 import std/[strformat, tables, algorithm, math]
+import timer
 import boxy, windy, fusion/matching
 import util, input, events, editor, rect_utils, document_editor, text_document, ast_document, keybind_autocomplete, id, ast
 import compiler
@@ -7,6 +8,8 @@ let gap = 0.0
 let horizontalGap = 2.0
 let indent = 15.0
 let lineDistance = 15.0
+
+let logRenderDuration = false
 
 proc newPaint(col: ColorRGB): Paint =
   result = newPaint(SolidPaint)
@@ -607,6 +610,17 @@ proc renderCompletions(editor: AstDocumentEditor, ed: Editor, bounds: Rect): Rec
 
 method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect, selected: bool): Rect =
   let document = editor.document
+
+  let now = getTicks()
+  defer:
+    let now2 = getTicks()
+    let diff = (now2 - now).float64 / 1000000
+
+    if logRenderDuration:
+      let queryExecutionTimes = fmt"Type: {ctx.executionTimeType.ms:.2}, Value: {ctx.executionTimeValue.ms:.2}, Symbol: {ctx.executionTimeSymbol.ms:.2}, Symbols: {ctx.executionTimeSymbols.ms:.2}, SymbolType: {ctx.executionTimeSymbolType.ms:.2}, SymbolValue: {ctx.executionTimeSymbolValue.ms:.2}"
+      echo fmt"Render duration: {diff:.2}ms, {queryExecutionTimes}"
+
+    ctx.resetExecutionTimes()
 
   let (headerBounds, contentBounds) = bounds.splitH ed.ctx.fontSize.relative
 
