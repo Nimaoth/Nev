@@ -1,4 +1,5 @@
 import std/[tables, sets, strutils, hashes, options, macros, strformat]
+import timer
 import fusion/matching
 import ast, id, util
 
@@ -285,6 +286,12 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       newEmptyNode()
     )
 
+    memberList.add nnkIdentDefs.newTree(
+      nnkPostfix.newTree(ident"*", ident("executionTime" & name)),
+      quote do: Nanos,
+      newEmptyNode()
+    )
+
   # Create Context type
   # type Context* = ref object
   #   memberList...
@@ -406,6 +413,29 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       `toStringResult`.add indent($`toStringCtx`.depGraph, 1, "| ")
 
       return `toStringResult`
+
+  # Add function resetExecutionTimes(ctx: Context) which resets the accumulated times of each query
+  block:
+    var ctx = genSym(nskParam, "ctx")
+    var resetExecutionTimesFn = quote do:
+      proc resetExecutionTimes*(`ctx`: `contextName`) =
+        discard
+
+    var executionTimeResets: seq[NimNode] = @[]
+    for query in body:
+      if not isQuery query: continue
+
+      let name = queryName query
+      let executionTime = ident "executionTime" & name
+      let queryFunction = queryFunctionName query
+
+      executionTimeResets.add quote do:
+        `ctx`.`executionTime` = 0
+
+    resetExecutionTimesFn[6].del 0
+    for node in executionTimeResets:
+      resetExecutionTimesFn[6].add node
+    result.add resetExecutionTimesFn
 
   # proc recordDependency(ctx: Context, item: ItemId, update: UpdateFunction)
   result.add quote do:
@@ -565,6 +595,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     let updateName = ident "update" & name
     let computeName = ident "compute" & name
     let queryCache = ident "queryCache" & name
+    let executionTime = ident "executionTime" & name
 
     let nameString = name
 
@@ -574,6 +605,11 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     if useCache:
       result.add quote do:
         proc `computeName`*(ctx: `contextName`, input: `key`): `value` =
+          let now = getTicks()
+          defer:
+            let now2 = getTicks()
+            ctx.`executionTime` += now2 - now
+
           let item = getItem input
           let key = (item, ctx.`updateName`)
 
