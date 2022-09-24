@@ -1,5 +1,4 @@
-import std/[strformat, strutils, algorithm, math, logging, unicode, sequtils, sugar]
-import print
+import std/[strutils, logging, sequtils, sugar]
 import input, document, document_editor, events
 
 var logger = newConsoleLogger()
@@ -55,14 +54,14 @@ proc normalized(selection: Selection): Selection =
   else:
     return selection
 
-method save*(self: TextDocument, filename: string = "") =
+method save*(self: TextDocument, filename: string = "") {.locks: "unknown".} =
   self.filename = if filename.len > 0: filename else: self.filename
   if self.filename.len == 0:
     raise newException(IOError, "Missing filename")
 
   writeFile(self.filename, self.content.join "\n")
 
-method load*(self: TextDocument, filename: string = "") =
+method load*(self: TextDocument, filename: string = "") {.locks: "unknown".} =
   let filename = if filename.len > 0: filename else: self.filename
   if filename.len == 0:
     raise newException(IOError, "Missing filename")
@@ -150,7 +149,7 @@ method canEdit*(self: TextDocumentEditor, document: Document): bool =
 method getEventHandlers*(self: TextDocumentEditor): seq[EventHandler] =
   return @[self.eventHandler]
 
-method handleDocumentChanged*(self: TextDocumentEditor) =
+method handleDocumentChanged*(self: TextDocumentEditor) {.locks: "unknown".} =
   self.selection = (self.clampCursor self.selection.first, self.clampCursor self.selection.last)
 
 proc moveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor =

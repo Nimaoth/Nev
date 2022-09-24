@@ -1,5 +1,4 @@
 import std/[options, algorithm, strutils, hashes, enumutils, json, jsonutils]
-import system
 import fusion/matching
 import util, id
 

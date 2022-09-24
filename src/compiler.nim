@@ -1,9 +1,6 @@
-import std/[tables, sets, strutils, hashes, options, macros, logging, strformat]
-import sugar
-import system
-import print
+import std/[tables, sets, strutils, hashes, options, logging, strformat]
 import fusion/matching
-import ast, ast_ids, id, util
+import ast, id, util
 import query_system
 
 var logger = newConsoleLogger()

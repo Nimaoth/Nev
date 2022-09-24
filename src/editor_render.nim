@@ -1,7 +1,6 @@
-import std/[strformat, bitops, strutils, tables, algorithm, math, macros, enumutils, sets]
-import boxy, times, windy, fusion/matching, print
-import sugar
-import util, input, events, editor, rect_utils, document, document_editor, text_document, ast_document, keybind_autocomplete, id, ast
+import std/[strformat, tables, algorithm, math]
+import boxy, windy, fusion/matching
+import util, input, events, editor, rect_utils, document_editor, text_document, ast_document, keybind_autocomplete, id, ast
 import compiler
 
 let gap = 0.0
@@ -74,7 +73,7 @@ proc renderStatusBar*(ed: Editor, bounds: Rect) =
     let horizontalSizeModifier: float32 = 0.615
     ed.ctx.strokeRect(rect(bounds.x + ed.inputBuffer.len.float32 * ed.ctx.fontSize * horizontalSizeModifier, bounds.y, ed.ctx.fontSize * 0.05, ed.ctx.fontSize))
 
-method renderDocumentEditor(editor: DocumentEditor, ed: Editor, bounds: Rect, selected: bool): Rect {.base.} =
+method renderDocumentEditor(editor: DocumentEditor, ed: Editor, bounds: Rect, selected: bool): Rect {.base, locks: "unknown".} =
   return rect(0, 0, 0, 0)
 
 method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect, selected: bool): Rect =
@@ -186,7 +185,6 @@ proc renderPostfixNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bou
   return myBounds
 
 proc renderCallNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds: Rect, selectedNode: AstNode, nodeBounds: var Table[AstNode, Rect]): Rect =
-  let document = editor.document
   let function = node[0]
   let subBounds = bounds.shrink gap.relative
 
@@ -212,8 +210,6 @@ proc renderCallNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds
   last = ed.ctx.fillText(last.xwy, "(", rgb(175, 175, 175))
   finalRect = finalRect or last
 
-  var maxHeight = 0.0
-
   for i in 1..<node.len:
     if i > 1:
       last = ed.ctx.fillText(last.xwy, ", ", rgb(175, 175, 175))
@@ -228,8 +224,6 @@ proc renderCallNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds
   return finalRect
 
 proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds: Rect, selectedNode: AstNode, nodeBounds: var Table[AstNode, Rect]): Rect =
-  let document = editor.document
-
   if node == editor.currentlyEditedNode:
     let docRect = renderDocumentEditor(editor.textEditor, ed, bounds, true)
     nodeBounds[node] = docRect
@@ -301,7 +295,6 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
       elseBodyRect = renderAstNode(node.last, editor, ed, bodyBounds, selectedNode, nodeBounds)
       finalRect = finalRect or elseBodyRect
 
-    let bodyRect = ifBodyRect or elseBodyRect
     finalRect
 
   of Params():
@@ -423,8 +416,6 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
   of LetDecl():
     let subBounds = bounds.shrink gap.relative
 
-    let typ = ctx.computeType(node)
-
     let symbol = ctx.computeSymbol(node)
     let symbolSize = if symbol.getSome(symbol) and symbol.id == editor.currentlyEditedSymbol:
       let docRect = renderDocumentEditor(editor.textEditor, ed, subBounds, true)
@@ -467,8 +458,6 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
 
   of VarDecl():
     let subBounds = bounds.shrink gap.relative
-
-    let typ = ctx.computeType(node)
 
     let symbol = ctx.computeSymbol(node)
     let symbolSize = if symbol.getSome(symbol) and symbol.id == editor.currentlyEditedSymbol:
@@ -515,10 +504,6 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
 
   of StringLiteral():
     let text = node.text
-    let width = ed.ctx.measureText(text).width
-
-    # ed.ctx.strokeStyle = rgb(255, 0, 255)
-    # ed.ctx.strokeRect(bounds.splitV(width.relative)[0].splitH(ed.ctx.fontSize.relative)[0])
     let quoteWidth = ed.ctx.measureText("\"").width
     let textWidth = ed.ctx.measureText(text).width
 
@@ -598,20 +583,6 @@ proc renderCompletions(editor: AstDocumentEditor, ed: Editor, bounds: Rect): Rec
         ed.ctx.fillText(symbol.name, vec2(bounds.x, bounds.y + i.float32 * ed.ctx.fontSize))
     of AstCompletion:
       ed.ctx.fillText(com.name, vec2(bounds.x, bounds.y + i.float32 * ed.ctx.fontSize))
-    else:
-      discard
-
-proc renderSymbol(symbol: Symbol, editor: AstDocumentEditor, ed: Editor, bounds: Rect, selectedNode: AstNode): Rect =
-  var lastNodeRect = bounds
-
-  if symbol.kind == skAstNode and symbol.node == selectedNode:
-    ed.ctx.strokeStyle = rgb(0, 255, 0)
-  else:
-    ed.ctx.strokeStyle = rgb(255, 255, 255)
-
-  ed.ctx.fillText(fmt"{symbol.name} ({symbol.id})", vec2(bounds.x + 500, bounds.y))
-  var i = 0.0
-  return bounds
 
 method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect, selected: bool): Rect =
   let document = editor.document

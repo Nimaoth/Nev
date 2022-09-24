@@ -5,8 +5,8 @@ type Document* = ref object of RootObj
 method `$`*(document: Document): string {.base.} =
   return ""
 
-method save*(self: Document, filename: string = "") {.base.} =
+method save*(self: Document, filename: string = "") {.base, locks: "unknown".} =
   discard
 
-method load*(self: Document, filename: string = "") {.base.} =
+method load*(self: Document, filename: string = "") {.base, locks: "unknown".} =
   discard

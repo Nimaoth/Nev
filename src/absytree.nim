@@ -1,7 +1,5 @@
-import std/[strformat, bitops, strutils, tables, algorithm, math]
-import boxy, opengl, times, windy
+import boxy, opengl, windy
 import monitors
-import sugar
 import input, editor, editor_render
 
 let window = newWindow("Windy + Boxy", ivec2(1280, 800))

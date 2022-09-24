@@ -1,9 +1,7 @@
-import std/[strformat, bitops, strutils, tables, algorithm, math, logging, unicode]
-import boxy, times, windy, print
+import std/[strformat, strutils, tables, logging, unicode]
+import boxy, windy
 import sugar
 import input, events, rect_utils, document, document_editor, text_document, ast_document, keybind_autocomplete
-
-var glogger = newConsoleLogger()
 
 var commands: seq[(string, string)] = @[]
 commands.add ("<C-x><C-x>", "quit")
@@ -213,7 +211,6 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
   ed.layout = HorizontalLayout()
   ed.layout_props = LayoutProperties(props: {"main-split": 0.5.float32}.toTable)
 
-  let image = newImage(window.size.x, window.size.y)
   ed.ctx = newContext(1, 1)
   ed.ctx.fillStyle = rgb(255, 255, 255)
   ed.ctx.strokeStyle = rgb(255, 255, 255)
@@ -284,7 +281,7 @@ proc handleAction(ed: Editor, action: string, arg: string) =
     ed.window.closeRequested = true
   of "backspace":
     if ed.inputBuffer.len > 0:
-      let (rune, l) = ed.inputBuffer.lastRune(ed.inputBuffer.len - 1)
+      let (_, l) = ed.inputBuffer.lastRune(ed.inputBuffer.len - 1)
       ed.inputBuffer = ed.inputBuffer[0..<ed.inputBuffer.len-l]
   of "insert":
     ed.handleTextInput arg

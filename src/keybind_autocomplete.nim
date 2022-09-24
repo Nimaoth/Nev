@@ -1,6 +1,5 @@
-import std/[strformat, strutils, algorithm, math, logging, unicode, sequtils]
-import print
-import input, document, document_editor, events
+import std/[strutils, logging]
+import input, document_editor, events
 
 var logger = newConsoleLogger()
 
