@@ -16,6 +16,7 @@ type
     If
     FunctionDefinition
     Params
+    Assignment
 
   AstNode* = ref object
     parent*: AstNode
@@ -238,6 +239,12 @@ proc treeRepr*(node: AstNode): string =
 
   of Params():
     result = "Params(id: " & $node.id & "):"
+    for child in node.children:
+      result.add "\n"
+      result.add indent(child.treeRepr, 2)
+
+  of Assignment():
+    result = "Assignment(id: " & $node.id & "):"
     for child in node.children:
       result.add "\n"
       result.add indent(child.treeRepr, 2)

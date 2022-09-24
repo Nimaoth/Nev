@@ -277,6 +277,9 @@ proc executeNodeRec(ctx: Context, node: AstNode, variables: var Table[Id, Value]
     if ctx.enableExecutionLogging: echo repeat2("| ", currentIndent), "-> ", result
 
   case node
+  of Empty():
+    return voidValue()
+
   of NodeList():
     var lastValue = errorValue()
     for child in node.children:
@@ -366,13 +369,31 @@ proc executeNodeRec(ctx: Context, node: AstNode, variables: var Table[Id, Value]
     variables[node.id] = value
     return value
 
+  of VarDecl():
+    if node.len < 2:
+      return errorValue()
+    let valueNode = node[1]
+    let value = ctx.executeNodeRec(valueNode, variables)
+    variables[node.id] = value
+    return value
+
   of ConstDecl():
     let id = node.id
     if variables.contains(id):
       return variables[id]
 
-    logger.log(lvlError, fmt"executeNodeRec {node}: Failed to look up value for const decl")
-    return errorValue()
+  of Assignment():
+    if node.len < 2:
+      return errorValue()
+    let targetNode = node[0]
+    let valueNode = node[1]
+    if ctx.computeSymbol(targetNode).getSome(sym):
+      let value = ctx.executeNodeRec(valueNode, variables)
+      variables[sym.id] = value
+      return voidValue()
+    else:
+      logger.log(lvlError, fmt"executeNodeRec {node}: Failed to assign to {targetNode}: no symbol found")
+      return errorValue()
 
   else:
     logger.log(lvlError, fmt"executeNodeRec not implemented for {node}")
@@ -581,6 +602,45 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
 
     return typ
 
+  of VarDecl():
+    if node.len < 2:
+      return errorType()
+
+    let typeNode = node[0]
+    let valueNode = node[1]
+
+    var typ = voidType()
+    if typeNode.kind != Empty:
+      let typeNodeType = ctx.computeType(typeNode)
+      if typeNodeType.kind == tError:
+        return errorType()
+      if typeNodeType.kind != tType:
+        logger.log(lvlError, fmt"[compiler] Expected type, got {typeNodeType}")
+        return errorType()
+
+      let typeNodeValue = ctx.computeValue(typeNode)
+      if typeNodeValue.kind == vkError:
+        return errorType()
+      if typeNodeValue.kind == vkError:
+        logger.log(lvlFatal, fmt"[compiler] Expected type value, got {typeNodeValue}")
+        return errorType()
+
+      typ = typeNodeValue.typ
+
+    if valueNode.kind != Empty:
+      let valueNodeType = ctx.computeType(valueNode)
+      if valueNodeType.kind == tError:
+        return errorType()
+
+      if typ.kind == tVoid:
+        typ = valueNodeType
+
+      if valueNodeType != typ:
+        logger.log(lvlError, fmt"[compiler] Expected {typ}, got {valueNodeType}")
+        return errorType()
+
+    return typ
+
   of Identifier():
     let id = node.reff
     let symbols = ctx.computeSymbols(node)
@@ -651,6 +711,37 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
       return errorType()
 
     return commonType.get voidType()
+
+  of Assignment():
+    if node.len < 2:
+      return errorType()
+
+    let target =  node[0]
+    let value = node[1]
+
+    let targetType = ctx.computeType(target)
+    if targetType.kind == tError:
+      return errorType()
+
+    let valueType = ctx.computeType(value)
+    if valueType.kind == tError:
+      return errorType()
+
+    if targetType != valueType:
+      logger.log(lvlError, fmt"[compiler] Can't assign {valueType} to {targetType}")
+      return errorType()
+
+    if ctx.computeSymbol(target).getSome(sym):
+      if sym.kind == skBuiltin:
+        logger.log(lvlError, fmt"[compiler] Can't assign to builtin symbol {sym}")
+        return errorType()
+
+      assert sym.kind == skAstNode
+      if sym.node.kind != VarDecl:
+        logger.log(lvlError, fmt"[compiler] Can't assign to non-mutable symbol {sym}")
+        return errorType()
+
+    return voidType()
 
   else:
     return errorType()
