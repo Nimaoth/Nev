@@ -502,6 +502,25 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
   of Call():
     renderCallNode(node, editor, ed, bounds, selectedNode, nodeBounds)
 
+  of Assignment():
+    let subBounds = bounds.shrink gap.relative
+
+    var finalRect = rect(subBounds.xy, vec2())
+    var last = finalRect
+
+    if node.len > 0:
+      last = renderAstNode(node[0], editor, ed, subBounds.splitV(last.xw.absolute)[1], selectedNode, nodeBounds)
+      finalRect = finalRect or last
+
+    last = ed.ctx.fillText(last.xwy, " <- ", rgb(175, 175, 175))
+    finalRect = finalRect or last
+
+    if node.len > 1:
+      last = renderAstNode(node[1], editor, ed, subBounds.splitV(last.xw.absolute)[1], selectedNode, nodeBounds)
+      finalRect = finalRect or last
+
+    finalRect
+
   of StringLiteral():
     let text = node.text
     let quoteWidth = ed.ctx.measureText("\"").width
@@ -525,12 +544,14 @@ proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds:
   else:
     rect(0, 0, 0, 0)
 
-  # print selectedNode
   if node == selectedNode:
     ed.ctx.strokeStyle = rgb(255, 0, 255)
     ed.ctx.lineWidth = 2
     ed.ctx.strokeRect(nodeRect.grow(2.absolute))
     ed.ctx.lineWidth = 1
+  elif selectedNode != nil and ((node.reff != null and node.reff == selectedNode.reff) or node.reff == selectedNode.id or node.id == selectedNode.reff):
+    ed.ctx.strokeStyle = rgb(150, 150, 220)
+    ed.ctx.strokeRect(nodeRect.grow(2.absolute))
 
   if node == selectedNode and editor.renderSelectedNodeValue:
     let typ = ctx.computeType(node)

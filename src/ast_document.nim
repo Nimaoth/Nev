@@ -63,7 +63,7 @@ let funcAddStringInt = newFunctionValue proc(values: seq[Value]): Value =
 
 let funcPrintAny = newFunctionValue proc(values: seq[Value]): Value =
   result = stringValue(values.join "")
-  logger.log(lvlNotice, fmt"{result}")
+  echo result
   return result
 
 let funcBuildStringAny = newFunctionValue (values) => stringValue(values.join "")
@@ -524,6 +524,13 @@ proc getNextChild*(document: AstDocument, node: AstNode, min: int = -1): Option[
     return none[AstNode]()
   return some(node[min + 1])
 
+func shouldSelectNode(node: AstNode): bool =
+  case node.kind
+  of Call, NodeList, Params, Assignment:
+    return node.len == 0
+  else:
+    return true
+
 proc getNextChildRec*(document: AstDocument, node: AstNode, min: int = -1): Option[AstNode] =
   var node = node
   var idx = -1
@@ -537,7 +544,7 @@ proc getNextChildRec*(document: AstDocument, node: AstNode, min: int = -1): Opti
   else:
     return some(node)
 
-  while (node.kind == Call or node.kind == NodeList or node.kind == Params) and node.len > 0:
+  while not shouldSelectNode(node):
     if document.getNextChild(node, idx).getSome(child):
       idx = -1
       node = child
@@ -583,35 +590,6 @@ proc getPrevChildRec*(document: AstDocument, node: AstNode, max: int = -1): Opti
       return some(n)
 
   return none[AstNode]()
-
-  # var node = node
-  # var idx = -1
-  # var down = true
-
-  # if document.getPrevChild(node, max).getSome(child):
-  #   idx = -1
-  #   node = child
-  #   down = true
-  # elif node.parent != nil:
-  #   idx = node.index
-  #   node = node.parent
-  #   down = false
-  # else:
-  #   return some(node)
-
-  # while node.kind == Call or node.kind == NodeList or node.kind == Params:
-  #   if document.getPrevChild(node, idx).getSome(child):
-  #     idx = -1
-  #     node = child
-  #     down = true
-  #   elif node.parent != nil:
-  #     idx = node.index
-  #     node = node.parent
-  #     down = false
-  #   else:
-  #     break
-
-  # return some(node)
 
 proc getNextLine*(document: AstDocument, node: AstNode): Option[AstNode] =
   for _, n in document.nextPreOrder(node):
@@ -953,6 +931,13 @@ proc createNodeFromAction*(editor: AstDocumentEditor, arg: string, node: AstNode
         Empty()
     return some (node, 0)
 
+  of "=":
+    let node = makeTree(AstNode) do:
+      Assignment:
+        Empty()
+        Empty()
+    return some (node, 0)
+
   else:
     return none[(AstNode, int)]()
 
@@ -1113,7 +1098,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
     if self.isEditing: return
     var node = self.node
     for _, n in self.document.nextPreVisualOrder(self.node):
-      if (n.kind == Call or n.kind == NodeList or n.kind == Params) and n.len > 0:
+      if not shouldSelectNode(n):
         continue
       if n != self.node:
         self.node = n
@@ -1123,7 +1108,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
     if self.isEditing: return
     var node = self.node
     for n in self.document.prevPostVisualOrder(self.node, gotoChild = false):
-      if (n.kind == Call or n.kind == NodeList or n.kind == Params) and n.len > 0:
+      if not shouldSelectNode(n):
         continue
       if n != self.node:
         self.node = n
@@ -1461,6 +1446,7 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     command "(", "wrap call-func"
     command ")", "wrap call-arg"
     command "{", "wrap {"
+    command "=", "wrap ="
     command "vc", "wrap const-decl"
     command "vl", "wrap let-decl"
     command "vv", "wrap var-decl"
