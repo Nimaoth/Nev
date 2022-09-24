@@ -2,7 +2,7 @@ import boxy, opengl, windy
 import monitors
 import input, editor, editor_render
 
-let window = newWindow("Windy + Boxy", ivec2(1280, 800))
+let window = newWindow("Absytree", ivec2(1280, 800))
 window.runeInputEnabled = true
 
 proc centerWindowOnMonitor(window: Window, monitor: int) =
