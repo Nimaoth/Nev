@@ -1,4 +1,5 @@
 import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros, options, deques, sets, json]
+import timer
 import fusion/matching, fuzzy
 import util, input, document, document_editor, text_document, events, id, ast_ids, ast
 import compiler
@@ -1065,9 +1066,11 @@ proc runSelectedFunction(self: AstDocumentEditor) =
 
   logger.log(lvlInfo, fmt"[asteditor] Calling function {node} ({functionType})")
 
+  let timer = startTimer()
+
   let fec = ctx.newFunctionExecutionContext(FunctionExecutionContext(node: node[0], arguments: @[]))
   let result = ctx.computeFunctionExecution(fec)
-  logger.log(lvlInfo, fmt"[asteditor] Function {node} returned {result}")
+  logger.log(lvlInfo, fmt"[asteditor] Function {node} returned {result} (Took {timer.elapsed.ms}ms)")
 
 proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventResponse =
   logger.log lvlInfo, fmt"[asteditor]: Handle action {action}, '{arg}'"

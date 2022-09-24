@@ -1,4 +1,5 @@
 import std/[tables, sets, strutils, hashes, options, logging, strformat]
+import timer
 import fusion/matching
 import ast, id, util
 import query_system
