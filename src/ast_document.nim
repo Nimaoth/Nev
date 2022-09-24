@@ -66,6 +66,8 @@ let funcPrintAny = newFunctionValue proc(values: seq[Value]): Value =
   logger.log(lvlNotice, fmt"{result}")
   return result
 
+let funcBuildStringAny = newFunctionValue (values) => stringValue(values.join "")
+
 ctx.globalScope[IdAdd] = Symbol(id: IdAdd, name: "+", kind: skBuiltin, typ: typeAddIntInt, value: funcAddIntInt, operatorNotation: Infix, precedence: 10)
 ctx.globalScope[IdSub] = Symbol(id: IdSub, name: "-", kind: skBuiltin, typ: typeSubIntInt, value: funcSubIntInt, operatorNotation: Infix, precedence: 10)
 ctx.globalScope[IdMul] = Symbol(id: IdMul, name: "*", kind: skBuiltin, typ: typeMulIntInt, value: funcMulIntInt, operatorNotation: Infix, precedence: 20)
@@ -87,6 +89,7 @@ ctx.globalScope[IdInt] = Symbol(id: IdInt, name: "int", kind: skBuiltin, typ: ty
 ctx.globalScope[IdString] = Symbol(id: IdString, name: "string", kind: skBuiltin, typ: typeType(), value: typeValue(stringType()))
 ctx.globalScope[IdVoid] = Symbol(id: IdVoid, name: "void", kind: skBuiltin, typ: typeType(), value: typeValue(voidType()))
 ctx.globalScope[IdPrint] = Symbol(id: IdPrint, name: "print", kind: skBuiltin, typ: newFunctionType(@[anyType(true)], stringType()), value: funcPrintAny)
+ctx.globalScope[IdBuildString] = Symbol(id: IdBuildString, name: "build", kind: skBuiltin, typ: newFunctionType(@[anyType(true)], stringType()), value: funcBuildStringAny)
 for symbol in ctx.globalScope.values:
   discard ctx.newSymbol(symbol)
 
@@ -257,10 +260,10 @@ iterator nextPreOrder*(self: AstDocument, node: AstNode, endNode: AstNode = nil)
     if idx + 1 < n.len:
       n = n[idx + 1]
       idx = -1
-    elif n.next.getSome(ne):
+    elif n.next.getSome(ne) and n != endNode:
       n = ne
       idx = -1
-    elif n.parent != nil and n.parent != endNode:
+    elif n.parent != nil and n != endNode and n.parent != endNode:
       idx = n.index
       n = n.parent
     else:
@@ -835,14 +838,29 @@ proc createNodeFromAction*(editor: AstDocumentEditor, arg: string, node: AstNode
   of "empty":
     return some((AstNode(kind: Empty, id: newId(), text: ""), 0))
   of "identifier":
-    return some((AstNode(kind: Identifier, text: "todo"), 0))
+    return some((AstNode(kind: Identifier), 0))
   of "number-literal":
     return some((AstNode(kind: NumberLiteral, text: ""), 0))
-  of "declaration":
+
+  of "const-decl":
     let node = makeTree(AstNode) do:
       ConstDecl(id: == newId()):
         Empty()
     return some (node, 0)
+
+  of "let-decl":
+    let node = makeTree(AstNode) do:
+      LetDecl(id: == newId()):
+        Empty()
+        Empty()
+    return some (node, 1)
+
+  of "var-decl":
+    let node = makeTree(AstNode) do:
+      VarDecl(id: == newId()):
+        Empty()
+        Empty()
+    return some (node, 1)
 
   of "call-func":
     let kind = if ctx.computeSymbol(node).getSome(sym) and sym.kind == skBuiltin:
@@ -1187,7 +1205,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
       var (newNode, index) = newNodeIndex
       let oldNode = self.node
       self.node = self.document.replaceNode(self.node, newNode)
-      for i, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => self.document.shouldEditNode(n), endNode = newNode):
+      for i, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => n.kind == Empty, endNode = newNode):
         if i == index:
           self.node = self.document.replaceNode(emptyNode, oldNode)
           break
@@ -1364,20 +1382,20 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
 
     command "ae", "insert-after empty"
     command "an", "insert-after number-literal"
-    command "ad", "insert-after declaration"
+    command "ad", "insert-after const-decl"
     command "a+", "insert-after +"
     command "af", "insert-after call-func"
 
     command "ie", "insert-before empty"
     command "in", "insert-before number-literal"
-    command "id", "insert-before declaration"
+    command "id", "insert-before const-decl"
     command "i+", "insert-before +"
     command "if", "insert-before call-func"
 
     command "s", "replace empty"
     command "re", "replace empty"
     command "rn", "replace number-literal"
-    command "rd", "replace declaration"
+    command "rd", "replace const-decl"
     command "r+", "replace +"
     command "rf", "replace call-func"
 
@@ -1400,6 +1418,9 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     command "(", "wrap call-func"
     command ")", "wrap call-arg"
     command "{", "wrap {"
+    command "vc", "wrap const-decl"
+    command "vl", "wrap let-decl"
+    command "vv", "wrap var-decl"
 
     command "d", "selected.delete"
 
