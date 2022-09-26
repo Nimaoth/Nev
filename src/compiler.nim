@@ -1,7 +1,8 @@
-import std/[tables, sets, strutils, hashes, options, logging, strformat]
+import std/[tables, sets, strutils, sequtils, sugar, hashes, options, logging, strformat]
 import timer
 import fusion/matching
-import ast, id, util
+import bumpy, chroma, vmath, pixie/fonts
+import ast, id, util, rect_utils
 import query_system
 
 var logger = newConsoleLogger()
@@ -218,6 +219,105 @@ func fingerprint*(symbol: Option[Symbol]): Fingerprint =
     return s.fingerprint
   return @[]
 
+type
+  VisualNode* = ref object
+    parent*: VisualNode
+    node*: AstNode
+    text*: string
+    color*: Color
+    bounds*: Rect
+    indent*: float32
+    font*: Font
+    children*: seq[VisualNode]
+
+  VisualNodeRange* = object
+    parent*: VisualNode
+    first*: int
+    last*: int
+
+  NodeLayout* = object
+    root*: VisualNode
+    nodeToVisualNode*: Table[Id, VisualNodeRange]
+
+func size*(node: VisualNode): Vec2 = node.bounds.wh
+func relativeBounds*(node: VisualNode, parent: VisualNode): Rect =
+  if node == parent:
+    result = rect(vec2(), node.bounds.wh)
+  elif node.parent == nil:
+    result = node.bounds
+  else:
+    result = rect(node.parent.relativeBounds(parent).xy + node.bounds.xy, node.bounds.wh)
+
+func absoluteBounds*(node: VisualNode): Rect =
+  if node.parent == nil:
+    result = node.bounds
+  else:
+    result = rect(node.parent.absoluteBounds.xy + node.bounds.xy, node.bounds.wh)
+
+func bounds*(nodeRange: VisualNodeRange): Rect =
+  result = nodeRange.parent.children[nodeRange.first].bounds
+  for i in (nodeRange.first + 1)..<nodeRange.last:
+    result = result or nodeRange.parent.children[i].bounds
+  result.xy = result.xy + nodeRange.parent.absoluteBounds.xy
+
+func `$`*(vnode: VisualNode): string =
+  result = "VNode" & "('"
+  result.add vnode.text & "', "
+  result.add $vnode.bounds & ", "
+  if vnode.node != nil:
+    result.add $vnode.node & ", "
+  result.add $vnode.color & ", "
+  result.add ")"
+  if vnode.children.len > 0:
+    result.add ":"
+    for child in vnode.children:
+      result.add "\n" & indent($child, 1, "| ")
+
+func hash*(vnode: VisualNode): Hash =
+  result = vnode.text.hash xor vnode.color.hash or vnode.bounds.hash or vnode.children.hash
+  result = !$result
+
+func fingerprint*(vnode: VisualNode): Fingerprint =
+  let h = vnode.text.hash xor vnode.color.hash or vnode.bounds.hash or vnode.children.hash
+  result = @[h.int64] & vnode.children.map(c => c.fingerprint).foldl(a & b, @[0.int64])
+
+func `==`*(a: VisualNode, b: VisualNode): bool =
+  if a.text != b.text:
+    return false
+  if a.node != b.node:
+    return false
+  if a.color != b.color:
+    return false
+  if a.bounds != b.bounds:
+    return false
+  return a.children == b.children
+
+proc add*(node: var VisualNode, child: VisualNode): VisualNodeRange =
+  node.children.add child
+  child.bounds.x = node.bounds.w
+  node.bounds = node.bounds or (child.bounds + node.bounds.xy)
+  return VisualNodeRange(parent: node, first: node.children.high, last: node.children.len)
+
+proc addLine*(node: var VisualNode, child: var VisualNode) =
+  node.children.add child
+  child.bounds.y = node.bounds.h
+  node.bounds = node.bounds or (child.bounds + node.bounds.xy)
+
+func `$`*(nodeLayout: NodeLayout): string =
+  result = nodeLayout.root.children.join "\n"
+
+func hash*(nodeLayout: NodeLayout): Hash =
+  result = nodeLayout.root.hash
+  result = !$result
+
+func `==`*(a: NodeLayout, b: NodeLayout): bool =
+  return a.root == b.root
+
+func fingerprint*(nodeLayout: NodeLayout): Fingerprint =
+  result = nodeLayout.root.fingerprint
+
+func bounds*(nodeLayout: NodeLayout): Rect =
+  return nodeLayout.root.bounds
 
 CreateContext Context:
   input AstNode
@@ -240,6 +340,13 @@ CreateContext Context:
   proc computeSymbolTypeImpl(ctx: Context, symbol: Symbol): Type {.query("SymbolType").}
   proc computeSymbolValueImpl(ctx: Context, symbol: Symbol): Value {.query("SymbolValue").}
   proc executeFunctionImpl(ctx: Context, fec: FunctionExecutionContext): Value {.query("FunctionExecution", useCache = false, useFingerprinting = false).}
+
+  proc computeNodeLayoutImpl(ctx: Context, node: AstNode): NodeLayout {.query("NodeLayout", useCache = false, useFingerprinting = false).}
+
+import node_layout
+
+proc computeNodeLayoutImpl(ctx: Context, node: AstNode): NodeLayout =
+  return computeNodeLayoutImpl2(ctx, node)
 
 proc recoverValue(ctx: Context, key: Dependency) =
   logger.log(lvlInfo, fmt"[compiler] Recovering value for {key}")
