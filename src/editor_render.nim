@@ -2,7 +2,7 @@ import std/[strformat, tables, algorithm, math]
 import timer
 import boxy, windy, fusion/matching
 import util, input, events, editor, rect_utils, document_editor, text_document, ast_document, keybind_autocomplete, id, ast
-import compiler
+import compiler, node_layout
 
 let gap = 0.0
 let horizontalGap = 2.0
@@ -15,8 +15,11 @@ proc newPaint(col: ColorRGB): Paint =
   result = newPaint(SolidPaint)
   result.color = col.color
 
-proc fillText(ctx: contexts.Context, location: Vec2, text: string, paint: Paint): Rect =
+proc fillText(ctx: contexts.Context, location: Vec2, text: string, paint: Paint, font: Font = nil): Rect =
   let textWidth = ctx.measureText(text).width
+  if font != nil:
+    ctx.font = font.typeface.filePath
+    ctx.fontSize = font.size
   ctx.fillStyle = paint
   ctx.fillText(text, location)
   return rect(location, vec2(textWidth, ctx.fontSize))
@@ -608,6 +611,17 @@ proc renderCompletions(editor: AstDocumentEditor, ed: Editor, bounds: Rect): Rec
     of AstCompletion:
       ed.ctx.fillText(com.name, vec2(bounds.x, bounds.y + i.float32 * ed.ctx.fontSize))
 
+proc renderVisualNode(editor: AstDocumentEditor, ed: Editor, drawCtx: contexts.Context, node: VisualNode, offset: Vec2, selected: AstNode) =
+  let bounds = node.bounds
+  if node.text.len > 0:
+    discard drawCtx.fillText(bounds.xy + offset, node.text, node.color, node.font)
+  elif node.node != nil and node.node.kind == Empty:
+    drawCtx.strokeStyle = rgb(255, 100, 100)
+    drawCtx.strokeRect(bounds + offset)
+
+  for child in node.children:
+    editor.renderVisualNode(ed, drawCtx, child, offset + bounds.xy, selected)
+
 method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect, selected: bool): Rect =
   let document = editor.document
 
@@ -635,27 +649,56 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
 
   let selectedNode = editor.node
 
-  var nodeBounds: Table[AstNode, Rect] = initTable[AstNode, Rect]()
+  var drawCtx = newContext(nil)
 
-  for node in document.rootNode.children:
-    let y = lastNodeRect.y + lastNodeRect.h - contentBounds.y + lineDistance
-    lastNodeRect = renderAstNode(node, editor, ed, contentBounds.splitH(y.relative)[1], selectedNode, nodeBounds)
+  var offset = contentBounds.xy
+  for i, node in editor.document.rootNode.children:
+    let layout = ctx.computeNodeLayout(node)
+    let nodeBounds = layout.bounds
+    if nodeBounds.w <= 0 or nodeBounds.h <= 0:
+      continue
 
-  if editor.completions.len > 0:
-    let bounds = nodeBounds.getOrDefault(editor.node, rect(0, 0, 0, 0))
-    if bounds.h > 0:
-      discard renderCompletions(editor, ed, contentBounds.splitH((bounds.y + bounds.h).absolute)[1].splitV(bounds.x.absolute)[1])
+    drawCtx.image = newImage(nodeBounds.w.int, nodeBounds.h.int)
+    drawCtx.font = ed.ctx.font
+    drawCtx.fontSize = ed.ctx.fontSize
+    drawCtx.textBaseline = ed.ctx.textBaseline
 
-    let selectedCompletion = editor.completions[editor.selectedCompletion]
-    if selectedCompletion.kind == SymbolCompletion and ctx.getSymbol(selectedCompletion.id).getSome(symbol) and symbol.kind == skAstNode and nodeBounds.contains(symbol.node):
-      let selectedDeclRect = nodeBounds[symbol.node]
-      ed.ctx.strokeStyle = rgb(150, 150, 220)
-      ed.ctx.strokeRect(selectedDeclRect)
+    for line in layout.root.children:
+      # ed.ctx.save()
+      # ed.ctx.translate(offset)
+      # defer: ed.ctx.restore()
+      editor.renderVisualNode(ed, ed.ctx, line, offset, selectedNode)
 
-  elif ctx.getSymbol(selectedNode.id).getSome(symbol) and symbol.kind == skAstNode and nodeBounds.contains(symbol.node):
-    let selectedDeclRect = nodeBounds[symbol.node]
-    ed.ctx.strokeStyle = rgb(150, 150, 220)
-    ed.ctx.strokeRect(selectedDeclRect)
+    if layout.nodeToVisualNode.contains(selectedNode.id):
+      let visualRange = layout.nodeToVisualNode[selectedNode.id]
+      ed.ctx.strokeStyle = rgb(255, 0, 255)
+      ed.ctx.strokeRect(visualRange.bounds + offset)
+
+    # ed.boxy.addImage($node.id, drawCtx.image)
+    # ed.boxy.drawImage($node.id, offset)
+    offset.y += drawCtx.image.height.float32 + lineDistance
+
+  # var nodeBounds: Table[AstNode, Rect] = initTable[AstNode, Rect]()
+
+  # for node in document.rootNode.children:
+  #   let y = lastNodeRect.y + lastNodeRect.h - contentBounds.y + lineDistance
+  #   lastNodeRect = renderAstNode(node, editor, ed, contentBounds.splitH(y.relative)[1], selectedNode, nodeBounds)
+
+  # if editor.completions.len > 0:
+  #   let bounds = nodeBounds.getOrDefault(editor.node, rect(0, 0, 0, 0))
+  #   if bounds.h > 0:
+  #     discard renderCompletions(editor, ed, contentBounds.splitH((bounds.y + bounds.h).absolute)[1].splitV(bounds.x.absolute)[1])
+
+  #   let selectedCompletion = editor.completions[editor.selectedCompletion]
+  #   if selectedCompletion.kind == SymbolCompletion and ctx.getSymbol(selectedCompletion.id).getSome(symbol) and symbol.kind == skAstNode and nodeBounds.contains(symbol.node):
+  #     let selectedDeclRect = nodeBounds[symbol.node]
+  #     ed.ctx.strokeStyle = rgb(150, 150, 220)
+  #     ed.ctx.strokeRect(selectedDeclRect)
+
+  # elif ctx.getSymbol(selectedNode.id).getSome(symbol) and symbol.kind == skAstNode and nodeBounds.contains(symbol.node):
+  #   let selectedDeclRect = nodeBounds[symbol.node]
+  #   ed.ctx.strokeStyle = rgb(150, 150, 220)
+  #   ed.ctx.strokeRect(selectedDeclRect)
 
   # for symbol in document.symbols.values:
   #   let y = lastNodeRect.y + lastNodeRect.h - contentBounds.y + lineDistance

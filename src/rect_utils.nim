@@ -98,6 +98,12 @@ proc grow*(r: Rect, amount: Measurement): Rect =
   let y = amount.apply(0, r.h)
   return rect(r.x - x, r.y - y, r.w + x + x, r.h + y + y)
 
+proc `+`*(a: Rect, b: Vec2): Rect =
+  result.x = a.x + b.x
+  result.y = a.y + b.y
+  result.w = a.w
+  result.h = a.h
+
 template xw*(r: Rect): float32 = r.x + r.w
 template yh*(r: Rect): float32 = r.y + r.h
 template xwyh*(r: Rect): Vec2 = vec2(r.xw, r.yh)
