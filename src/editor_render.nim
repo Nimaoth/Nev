@@ -628,7 +628,7 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
   let timer = startTimer()
   defer:
     if logRenderDuration:
-      let queryExecutionTimes = fmt"Type: {ctx.executionTimeType.ms:.2}, Value: {ctx.executionTimeValue.ms:.2}, Symbol: {ctx.executionTimeSymbol.ms:.2}, Symbols: {ctx.executionTimeSymbols.ms:.2}, SymbolType: {ctx.executionTimeSymbolType.ms:.2}, SymbolValue: {ctx.executionTimeSymbolValue.ms:.2}"
+      let queryExecutionTimes = fmt"NodeLayout: {ctx.executionTimeNodeLayout.ms:.5}, Type: {ctx.executionTimeType.ms:.2}, Value: {ctx.executionTimeValue.ms:.2}, Symbol: {ctx.executionTimeSymbol.ms:.2}, Symbols: {ctx.executionTimeSymbols.ms:.2}, SymbolType: {ctx.executionTimeSymbolType.ms:.2}, SymbolValue: {ctx.executionTimeSymbolValue.ms:.2}"
       echo fmt"Render duration: {timer.elapsed.ms:.2}ms, {queryExecutionTimes}"
 
     ctx.resetExecutionTimes()
