@@ -655,6 +655,10 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     else:
       result.add quote do:
         proc `computeName`*(ctx: `contextName`, input: `key`): `value` =
+          let timer = startTimer()
+          defer:
+            ctx.`executionTime` += timer.elapsed
+
           let item = getItem input
           let key = (item, ctx.`updateName`)
 
