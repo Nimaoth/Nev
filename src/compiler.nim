@@ -75,6 +75,7 @@ type FunctionExecutionContext* = ref object
   arguments*: seq[Value]
 
 type
+  VisualNodeRenderFunc* = proc(bounds: Rect)
   VisualNode* = ref object
     parent*: VisualNode
     node*: AstNode
@@ -83,6 +84,7 @@ type
     bounds*: Rect
     indent*: float32
     font*: Font
+    render*: VisualNodeRenderFunc
     children*: seq[VisualNode]
 
   VisualNodeRange* = object
@@ -254,6 +256,7 @@ func clone*(node: VisualNode): VisualNode =
   result.bounds = node.bounds
   result.indent = node.indent
   result.font = node.font
+  result.render = node.render
   result.children = node.children.map c => c.clone
 
 func size*(node: VisualNode): Vec2 = node.bounds.wh
@@ -291,11 +294,11 @@ func `$`*(vnode: VisualNode): string =
       result.add "\n" & indent($child, 1, "| ")
 
 func hash*(vnode: VisualNode): Hash =
-  result = vnode.text.hash xor vnode.color.hash or vnode.bounds.hash or vnode.children.hash
+  result = vnode.text.hash !& vnode.color.hash !& vnode.bounds.hash !& vnode.children.hash
   result = !$result
 
 func fingerprint*(vnode: VisualNode): Fingerprint =
-  let h = vnode.text.hash xor vnode.color.hash or vnode.bounds.hash or vnode.children.hash
+  let h = vnode.text.hash !& vnode.color.hash !& vnode.bounds.hash !& vnode.children.hash
   result = @[h.int64] & vnode.children.map(c => c.fingerprint).foldl(a & b, @[0.int64])
 
 func `==`*(a: VisualNode, b: VisualNode): bool =
@@ -306,6 +309,8 @@ func `==`*(a: VisualNode, b: VisualNode): bool =
   if a.color != b.color:
     return false
   if a.bounds != b.bounds:
+    return false
+  if a.render != b.render:
     return false
   return a.children == b.children
 

@@ -1,4 +1,4 @@
-import std/[strformat, tables, algorithm, math]
+import std/[strformat, tables, algorithm, math, sugar]
 import timer
 import boxy, windy, fusion/matching
 import util, input, events, editor, rect_utils, document_editor, text_document, ast_document, keybind_autocomplete, id, ast
@@ -81,6 +81,25 @@ proc renderStatusBar*(ed: Editor, bounds: Rect) =
 
 method renderDocumentEditor(editor: DocumentEditor, ed: Editor, bounds: Rect, selected: bool): Rect {.base, locks: "unknown".} =
   return rect(0, 0, 0, 0)
+
+proc measureEditorBounds(editor: TextDocumentEditor, ed: Editor, bounds: Rect): Rect =
+  let document = editor.document
+
+  let headerHeight = if editor.renderHeader: ed.ctx.fontSize else: 0
+
+  let (headerBounds, contentBounds) = bounds.splitH headerHeight.relative
+
+  var usedBounds = rect(bounds.x, bounds.y, 0, 0)
+
+  for i, line in document.content:
+    let textWidth = ed.ctx.measureText(line).width
+    usedBounds.w = max(usedBounds.w, textWidth)
+    usedBounds.h += ed.ctx.fontSize
+
+  if editor.fillAvailableSpace:
+    usedBounds = bounds
+
+  return usedBounds
 
 method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect, selected: bool): Rect =
   let document = editor.document
@@ -619,6 +638,9 @@ proc renderVisualNode(editor: AstDocumentEditor, ed: Editor, drawCtx: contexts.C
     drawCtx.strokeStyle = rgb(255, 100, 100)
     drawCtx.strokeRect(bounds + offset)
 
+  if not isNil node.render:
+    node.render(node.bounds + offset)
+
   for child in node.children:
     editor.renderVisualNode(ed, drawCtx, child, offset + bounds.xy, selected)
 
@@ -654,11 +676,11 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
   var replacements = initTable[Id, VisualNode]()
 
   if not isNil editor.currentlyEditedNode:
-    # let docRect = renderDocumentEditor(editor.textEditor, ed, bounds, true)
-    replacements[editor.currentlyEditedNode.id] = newTextNode(editor.textDocument.contentString, rgb(255, 255, 255).color, config.font)
+    let textEditorBounds = editor.textEditor.measureEditorBounds(ed, rect(vec2(), contentBounds.wh))
+    replacements[editor.currentlyEditedNode.id] = newFunctionNode(textEditorBounds, (bounds: Rect) => (discard renderDocumentEditor(editor.textEditor, ed, bounds, true)))
   elif editor.currentlyEditedSymbol != null:
-    # let docRect = renderDocumentEditor(editor.textEditor, ed, bounds, true)
-    replacements[editor.currentlyEditedSymbol] = newTextNode(editor.textDocument.contentString, rgb(255, 255, 255).color, config.font)
+    let textEditorBounds = editor.textEditor.measureEditorBounds(ed, rect(vec2(), contentBounds.wh))
+    replacements[editor.currentlyEditedSymbol] = newFunctionNode(textEditorBounds, (bounds: Rect) => (discard renderDocumentEditor(editor.textEditor, ed, bounds, true)))
 
   var offset = contentBounds.xy
   for i, node in editor.document.rootNode.children:
