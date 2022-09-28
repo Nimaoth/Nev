@@ -62,6 +62,9 @@ proc newTextNode*(text: string, color: Color, font: Font, node: AstNode = nil): 
   result = VisualNode(text: text, color: color, font: font, node: node)
   result.bounds.wh = font.measureText(text)
 
+proc newFunctionNode*(bounds: Rect, render: VisualNodeRenderFunc): VisualNode =
+  result = VisualNode(bounds: bounds, render: render)
+
 proc createReplacement(input: NodeLayoutInput, node: AstNode, layout: var NodeLayout, line: var VisualNode): bool =
   if input.replacements.contains(node.id):
     layout.nodeToVisualNode[node.id] = line.add input.replacements[node.id].clone
