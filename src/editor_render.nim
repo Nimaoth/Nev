@@ -9,7 +9,7 @@ let horizontalGap = 2.0
 let indent = 15.0
 let lineDistance = 15.0
 
-let logRenderDuration = false
+let logRenderDuration = true
 
 proc newPaint(col: ColorRGB): Paint =
   result = newPaint(SolidPaint)
@@ -630,19 +630,25 @@ proc renderCompletions(editor: AstDocumentEditor, ed: Editor, bounds: Rect): Rec
     of AstCompletion:
       ed.ctx.fillText(com.name, vec2(bounds.x, bounds.y + i.float32 * ed.ctx.fontSize))
 
-proc renderVisualNode(editor: AstDocumentEditor, ed: Editor, drawCtx: contexts.Context, node: VisualNode, offset: Vec2, selected: AstNode) =
-  let bounds = node.bounds
+proc renderVisualNode(editor: AstDocumentEditor, ed: Editor, drawCtx: contexts.Context, node: VisualNode, offset: Vec2, selected: AstNode, globalBounds: Rect) =
+  let bounds = node.bounds + offset
+  let intersection = bounds and globalBounds
+  if intersection.w < 1 or intersection.h < 1:
+    return
+
   if node.text.len > 0:
-    discard drawCtx.fillText(bounds.xy + offset, node.text, node.color, node.font)
+    discard drawCtx.fillText(bounds.xy, node.text, node.color, node.font)
   elif node.node != nil and node.node.kind == Empty:
     drawCtx.strokeStyle = rgb(255, 100, 100)
-    drawCtx.strokeRect(bounds + offset)
+    drawCtx.strokeRect(bounds)
 
   if not isNil node.render:
-    node.render(node.bounds + offset)
+    node.render(node.bounds)
 
   for child in node.children:
-    editor.renderVisualNode(ed, drawCtx, child, offset + bounds.xy, selected)
+    editor.renderVisualNode(ed, drawCtx, child, bounds.xy, selected, globalBounds)
+
+var previousBaseIndex = 0
 
 method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect, selected: bool): Rect =
   let document = editor.document
@@ -682,13 +688,35 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
     let textEditorBounds = editor.textEditor.measureEditorBounds(ed, rect(vec2(), contentBounds.wh))
     replacements[editor.currentlyEditedSymbol] = newFunctionNode(textEditorBounds, (bounds: Rect) => (discard renderDocumentEditor(editor.textEditor, ed, bounds, true)))
 
-  var offset = contentBounds.xy
-  for i, node in editor.document.rootNode.children:
+  let base = selectedNode.subbase
+  let baseIndex = base.index
+
+  previousBaseIndex = previousBaseIndex.clamp(0..editor.document.rootNode.len)
+
+  while editor.scrollOffset < 0 and previousBaseIndex + 1 < editor.document.rootNode.len:
+    let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: editor.document.rootNode[previousBaseIndex], selectedNode: selectedNode.id, replacements: replacements)
+    let layout = ctx.computeNodeLayout(input)
+    previousBaseIndex += 1
+    editor.scrollOffset += layout.bounds.h + lineDistance
+
+  while editor.scrollOffset > contentBounds.h and previousBaseIndex > 0:
+    let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: editor.document.rootNode[previousBaseIndex], selectedNode: selectedNode.id, replacements: replacements)
+    let layout = ctx.computeNodeLayout(input)
+    previousBaseIndex -= 1
+    editor.scrollOffset -= layout.bounds.h + lineDistance
+
+  var offset = contentBounds.xy + vec2(0, editor.scrollOffset)
+  for i in previousBaseIndex..<editor.document.rootNode.len:
+    let node = editor.document.rootNode[i]
     let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node, selectedNode: selectedNode.id, replacements: replacements)
     let layout = ctx.computeNodeLayout(input)
     let nodeBounds = layout.bounds
     if nodeBounds.w <= 0 or nodeBounds.h <= 0:
       continue
+
+    let intersection = (nodeBounds + offset) and contentBounds
+    if intersection.w < 1 or intersection.h < 1:
+      break
 
     drawCtx.image = newImage(nodeBounds.w.int, nodeBounds.h.int)
     drawCtx.font = ed.ctx.font
@@ -699,7 +727,7 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
       # ed.ctx.save()
       # ed.ctx.translate(offset)
       # defer: ed.ctx.restore()
-      editor.renderVisualNode(ed, ed.ctx, line, offset, selectedNode)
+      editor.renderVisualNode(ed, ed.ctx, line, offset, selectedNode, contentBounds)
 
     if layout.nodeToVisualNode.contains(selectedNode.id):
       let visualRange = layout.nodeToVisualNode[selectedNode.id]
@@ -709,6 +737,43 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
     # ed.boxy.addImage($node.id, drawCtx.image)
     # ed.boxy.drawImage($node.id, offset)
     offset.y += drawCtx.image.height.float32 + lineDistance
+
+  offset = contentBounds.xy + vec2(0, editor.scrollOffset)
+  for k in 0..previousBaseIndex:
+    let i = previousBaseIndex - k
+
+    let node = editor.document.rootNode[i]
+    let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node, selectedNode: selectedNode.id, replacements: replacements)
+    let layout = ctx.computeNodeLayout(input)
+
+    offset.y -= layout.bounds.h + lineDistance
+
+    let nodeBounds = layout.bounds
+    if nodeBounds.w <= 0 or nodeBounds.h <= 0:
+      continue
+
+    let intersection = (nodeBounds + offset) and contentBounds
+    if intersection.w < 1 or intersection.h < 1:
+      break
+
+    drawCtx.image = newImage(nodeBounds.w.int, nodeBounds.h.int)
+    drawCtx.font = ed.ctx.font
+    drawCtx.fontSize = ed.ctx.fontSize
+    drawCtx.textBaseline = ed.ctx.textBaseline
+
+    for line in layout.root.children:
+      # ed.ctx.save()
+      # ed.ctx.translate(offset)
+      # defer: ed.ctx.restore()
+      editor.renderVisualNode(ed, ed.ctx, line, offset, selectedNode, contentBounds)
+
+    if layout.nodeToVisualNode.contains(selectedNode.id):
+      let visualRange = layout.nodeToVisualNode[selectedNode.id]
+      ed.ctx.strokeStyle = rgb(255, 0, 255)
+      ed.ctx.strokeRect(visualRange.bounds + offset)
+
+    # ed.boxy.addImage($node.id, drawCtx.image)
+    # ed.boxy.drawImage($node.id, offset)
 
   # var nodeBounds: Table[AstNode, Rect] = initTable[AstNode, Rect]()
 

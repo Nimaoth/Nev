@@ -53,6 +53,11 @@ func base*(node: AstNode): AstNode =
     return node
   return node.parent.base
 
+func subbase*(node: AstNode): AstNode =
+  if node.parent.parent == nil:
+    return node
+  return node.parent.subbase
+
 func index*(node: AstNode): int =
   if node.parent == nil:
     return -1

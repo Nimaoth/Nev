@@ -169,6 +169,7 @@ type AstDocumentEditor* = ref object of DocumentEditor
   selectedCompletion*: int
 
   renderSelectedNodeValue*: bool
+  scrollOffset*: float
 
 proc updateCompletions(editor: AstDocumentEditor)
 proc getPrevChild*(document: AstDocument, node: AstNode, max: int = -1): Option[AstNode]
@@ -1319,6 +1320,12 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
   of "toggle-render-selected-value":
     self.renderSelectedNodeValue = not self.renderSelectedNodeValue
 
+  of "scroll-down":
+    self.scrollOffset -= 50
+
+  of "scroll-up":
+    self.scrollOffset += 50
+
   of "dump-context":
     echo "================================================="
     echo ctx.toString
@@ -1459,6 +1466,9 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
 
     command "u", "undo"
     command "U", "redo"
+
+    command "<C-d>", "scroll-down"
+    command "<C-u>", "scroll-up"
 
     command "<C-r>", "select-prev"
     command "<C-t>", "select-next"
