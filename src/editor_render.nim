@@ -643,7 +643,7 @@ proc renderVisualNode(editor: AstDocumentEditor, ed: Editor, drawCtx: contexts.C
     drawCtx.strokeRect(bounds)
 
   if not isNil node.render:
-    node.render(node.bounds)
+    node.render(bounds)
 
   for child in node.children:
     editor.renderVisualNode(ed, drawCtx, child, bounds.xy, selected, globalBounds)
@@ -739,7 +739,7 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
     offset.y += drawCtx.image.height.float32 + lineDistance
 
   offset = contentBounds.xy + vec2(0, editor.scrollOffset)
-  for k in 0..previousBaseIndex:
+  for k in 1..previousBaseIndex:
     let i = previousBaseIndex - k
 
     let node = editor.document.rootNode[i]
