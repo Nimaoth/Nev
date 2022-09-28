@@ -288,10 +288,10 @@ func `$`*(vnode: VisualNode): string =
     result.add $vnode.node & ", "
   result.add $vnode.color & ", "
   result.add ")"
-  if vnode.children.len > 0:
-    result.add ":"
-    for child in vnode.children:
-      result.add "\n" & indent($child, 1, "| ")
+  # if vnode.children.len > 0:
+  #   result.add ":"
+  #   for child in vnode.children:
+  #     result.add "\n" & indent($child, 1, "| ")
 
 func hash*(vnode: VisualNode): Hash =
   result = vnode.text.hash !& vnode.color.hash !& vnode.bounds.hash !& vnode.children.hash
