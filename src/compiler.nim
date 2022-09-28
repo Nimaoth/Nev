@@ -74,6 +74,32 @@ type FunctionExecutionContext* = ref object
   node*: AstNode
   arguments*: seq[Value]
 
+type
+  VisualNode* = ref object
+    parent*: VisualNode
+    node*: AstNode
+    text*: string
+    color*: Color
+    bounds*: Rect
+    indent*: float32
+    font*: Font
+    children*: seq[VisualNode]
+
+  VisualNodeRange* = object
+    parent*: VisualNode
+    first*: int
+    last*: int
+
+  NodeLayout* = object
+    root*: VisualNode
+    nodeToVisualNode*: Table[Id, VisualNodeRange]
+
+  NodeLayoutInput* = ref object
+    id*: Id
+    node*: AstNode
+    selectedNode*: Id
+    replacements*: Table[Id, VisualNode]
+
 func errorType*(): Type = Type(kind: tError)
 func voidType*(): Type = Type(kind: tVoid)
 func intType*(): Type = Type(kind: tInt)
@@ -219,25 +245,16 @@ func fingerprint*(symbol: Option[Symbol]): Fingerprint =
     return s.fingerprint
   return @[]
 
-type
-  VisualNode* = ref object
-    parent*: VisualNode
-    node*: AstNode
-    text*: string
-    color*: Color
-    bounds*: Rect
-    indent*: float32
-    font*: Font
-    children*: seq[VisualNode]
-
-  VisualNodeRange* = object
-    parent*: VisualNode
-    first*: int
-    last*: int
-
-  NodeLayout* = object
-    root*: VisualNode
-    nodeToVisualNode*: Table[Id, VisualNodeRange]
+func clone*(node: VisualNode): VisualNode =
+  new result
+  result.parent = node.parent
+  result.node = node.node
+  result.text = node.text
+  result.color = node.color
+  result.bounds = node.bounds
+  result.indent = node.indent
+  result.font = node.font
+  result.children = node.children.map c => c.clone
 
 func size*(node: VisualNode): Vec2 = node.bounds.wh
 func relativeBounds*(node: VisualNode, parent: VisualNode): Rect =
@@ -319,8 +336,22 @@ func fingerprint*(nodeLayout: NodeLayout): Fingerprint =
 func bounds*(nodeLayout: NodeLayout): Rect =
   return nodeLayout.root.bounds
 
+func `$`*(input: NodeLayoutInput): string =
+  return fmt"NodeLayoutInput({input.id}, node: {input.node}, selected: {input.selectedNode})"
+
+func hash*(input: NodeLayoutInput): Hash =
+  return input.node.hash !& input.selectedNode.hash
+
+func `==`*(a: NodeLayoutInput, b: NodeLayoutInput): bool =
+  # We don't care about the id of the NodeLayoutInput
+  if a.node != b.node: return false
+  if a.selectedNode != b.selectedNode: return false
+  if a.replacements != b.replacements: return false
+  return true
+
 CreateContext Context:
   input AstNode
+  input NodeLayoutInput
   data Symbol
   data FunctionExecutionContext
 
@@ -341,12 +372,12 @@ CreateContext Context:
   proc computeSymbolValueImpl(ctx: Context, symbol: Symbol): Value {.query("SymbolValue").}
   proc executeFunctionImpl(ctx: Context, fec: FunctionExecutionContext): Value {.query("FunctionExecution", useCache = false, useFingerprinting = false).}
 
-  proc computeNodeLayoutImpl(ctx: Context, node: AstNode): NodeLayout {.query("NodeLayout", useCache = false, useFingerprinting = false).}
+  proc computeNodeLayoutImpl(ctx: Context, nodeLayoutInput: NodeLayoutInput): NodeLayout {.query("NodeLayout", useCache = false, useFingerprinting = false).}
 
 import node_layout
 
-proc computeNodeLayoutImpl(ctx: Context, node: AstNode): NodeLayout =
-  return computeNodeLayoutImpl2(ctx, node)
+proc computeNodeLayoutImpl(ctx: Context, nodeLayoutInput: NodeLayoutInput): NodeLayout =
+  return computeNodeLayoutImpl2(ctx, nodeLayoutInput)
 
 proc recoverValue(ctx: Context, key: Dependency) =
   logger.log(lvlInfo, fmt"[compiler] Recovering value for {key}")

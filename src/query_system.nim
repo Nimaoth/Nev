@@ -31,6 +31,11 @@ type
 proc hash(value: ItemId): Hash = value.id.hash xor value.typ.hash
 proc `==`(a: ItemId, b: ItemId): bool = a.id == b.id and a.typ == b.typ
 
+func fingerprint*(id: Id): Fingerprint =
+  let p: ptr array[3, int32] = cast[ptr array[3, int32]](addr id)
+  let p2: ptr int64 = cast[ptr int64](addr id)
+  return @[p2[], p[2]]
+
 proc newDependencyGraph*(): DependencyGraph =
   new result
   result.revision = 0
@@ -450,6 +455,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     let items = ident "items" & name.strVal
     let functionName = ident "get" & name.strVal
     let itemIndex = newLit dataIndices[data.inputName.strVal]
+    let getOrCreateFunction = ident "getOrCreate" & name.strVal
 
     result.add quote do:
       proc `functionName`*(ctx: `contextName`, id: Id): Option[`name`] =
@@ -464,6 +470,18 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
           self.id = newId()
         return (self.id, `itemIndex`)
 
+    result.add quote do:
+      proc `getOrCreateFunction`*(ctx: `contextName`, data: `name`): `name` =
+        for (item, existing) in ctx.`items`.pairs:
+          if existing.hash == data.hash and existing == data:
+            return existing
+
+        let item = data.getItem
+        let key: Dependency = (item, nil)
+        ctx.depGraph.changed[key] = ctx.depGraph.revision
+        ctx.`items`[item] = data
+        return data
+
   # Add newData function for each data
   for data in body:
     if not isDataDefinition data: continue
@@ -471,9 +489,22 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     let name = inputName data
     let items = ident "items" & name.strVal
     let functionName = ident "new" & name.strVal
+    let getOrCreateFunction = ident "getOrCreate" & name.strVal
 
     result.add quote do:
       proc `functionName`*(ctx: `contextName`, data: `name`): `name` =
+        let item = data.getItem
+        let key: Dependency = (item, nil)
+        ctx.depGraph.changed[key] = ctx.depGraph.revision
+        ctx.`items`[item] = data
+        return data
+
+    result.add quote do:
+      proc `getOrCreateFunction`*(ctx: `contextName`, data: `name`): `name` =
+        for (item, existing) in ctx.`items`.pairs:
+          if existing.hash == data.hash and existing == data:
+            return existing
+
         let item = data.getItem
         let key: Dependency = (item, nil)
         ctx.depGraph.changed[key] = ctx.depGraph.revision
