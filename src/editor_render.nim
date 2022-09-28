@@ -651,9 +651,19 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
 
   var drawCtx = newContext(nil)
 
+  var replacements = initTable[Id, VisualNode]()
+
+  if not isNil editor.currentlyEditedNode:
+    # let docRect = renderDocumentEditor(editor.textEditor, ed, bounds, true)
+    replacements[editor.currentlyEditedNode.id] = newTextNode(editor.textDocument.contentString, rgb(255, 255, 255).color, config.font)
+  elif editor.currentlyEditedSymbol != null:
+    # let docRect = renderDocumentEditor(editor.textEditor, ed, bounds, true)
+    replacements[editor.currentlyEditedSymbol] = newTextNode(editor.textDocument.contentString, rgb(255, 255, 255).color, config.font)
+
   var offset = contentBounds.xy
   for i, node in editor.document.rootNode.children:
-    let layout = ctx.computeNodeLayout(node)
+    let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node, selectedNode: selectedNode.id, replacements: replacements)
+    let layout = ctx.computeNodeLayout(input)
     let nodeBounds = layout.bounds
     if nodeBounds.w <= 0 or nodeBounds.h <= 0:
       continue

@@ -29,6 +29,8 @@ proc `$`*(cursor: Cursor): string =
 proc `$`*(selection: Selection): string =
   return "$1:$2-$3:$4" % [$selection.first.line, $selection.first.column, $selection.last.line, $selection.last.column]
 
+proc contentString*(doc: TextDocument): string = doc.content.join
+
 proc toSelection(cursor: Cursor): Selection =
   (cursor, cursor)
 
