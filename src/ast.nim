@@ -107,29 +107,6 @@ func delete*(node: AstNode, index: int): AstNode =
 
   node[index].parent = nil
 
-  case node
-  of If():
-    if index == 0:
-      node[0] = AstNode(kind: Empty)
-      return node[0]
-    elif index == 1:
-      node[1] = AstNode(kind: Empty)
-      return node[1]
-    else:
-      return node
-  of ConstDecl():
-    if index == 0:
-      node[0] = AstNode(kind: Empty)
-      return node[0]
-    else:
-      return node
-  of Call():
-    if index == 0:
-      node[0] = AstNode(kind: Empty)
-      return node[0]
-  else:
-    discard
-
   node.children.delete index
   if index < node.len:
     return node[index]
