@@ -1,7 +1,7 @@
 import std/[tables]
 import fusion/matching
 import pixie/fonts, bumpy, chroma, vmath
-import compiler, ast, util, id, rect_utils
+import compiler, ast, util, id
 
 proc measureText*(font: Font, text: string): Vec2 = font.typeset(text).layoutBounds()
 
@@ -255,7 +255,6 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
     for child in node.children:
       parent.addLine(line)
       line = VisualNode(parent: parent, bounds: rect(prevIndent, 0, config.indent, 0), indent: prevIndent + config.indent, node: child)
-      let first = parent.children.len
       ctx.createLayoutLineForNode(input, child, result, line)
 
     parent.addLine(line)

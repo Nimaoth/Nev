@@ -4,16 +4,9 @@ import boxy, windy, fusion/matching
 import util, input, events, editor, rect_utils, document_editor, text_document, ast_document, keybind_autocomplete, id, ast
 import compiler, node_layout
 
-let gap = 0.0
-let horizontalGap = 2.0
-let indent = 15.0
 let lineDistance = 15.0
 
 let logRenderDuration = false
-
-proc newPaint(col: ColorRGB): Paint =
-  result = newPaint(SolidPaint)
-  result.color = col.color
 
 proc fillText(ctx: contexts.Context, location: Vec2, text: string, paint: Paint, font: Font = nil): Rect =
   let textWidth = ctx.measureText(text).width
@@ -23,15 +16,6 @@ proc fillText(ctx: contexts.Context, location: Vec2, text: string, paint: Paint,
   ctx.fillStyle = paint
   ctx.fillText(text, location)
   return rect(location, vec2(textWidth, ctx.fontSize))
-
-proc fillText(ctx: contexts.Context, location: Vec2, texts: openArray[tuple[text: string, paint: Paint]]): Rect =
-  var bounds = rect(location, vec2(0, ctx.fontSize))
-  for (text, paint) in texts:
-    let newBounds = ctx.fillText(vec2(bounds.xw, bounds.y), text, paint)
-    bounds.w += newBounds.w
-  return bounds
-
-proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds: Rect, selectedNode: AstNode, nodeBounds: var Table[AstNode, Rect]): Rect
 
 proc renderCommandAutoCompletion*(ed: Editor, handler: EventHandler, bounds: Rect): Rect =
   let ctx = ed.ctx
@@ -87,8 +71,6 @@ proc measureEditorBounds(editor: TextDocumentEditor, ed: Editor, bounds: Rect): 
 
   let headerHeight = if editor.renderHeader: ed.ctx.fontSize else: 0
 
-  let (headerBounds, contentBounds) = bounds.splitH headerHeight.relative
-
   var usedBounds = rect(bounds.x, bounds.y, 0, 0)
 
   for i, line in document.content:
@@ -111,9 +93,6 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
   if headerHeight > 0:
     ed.ctx.fillStyle = if selected: rgb(45, 45, 60) else: rgb(45, 45, 45)
     ed.ctx.fillRect(headerBounds)
-
-  # ed.ctx.fillStyle = if selected: rgb(25, 25, 40) else: rgb(25, 25, 25)
-  # ed.ctx.fillRect(contentBounds)
 
   if headerHeight > 0:
     ed.ctx.fillStyle = rgb(255, 225, 255)
@@ -141,465 +120,6 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
   ed.ctx.strokeRect(rect(contentBounds.x + editor.selection.last.column.float32 * ed.ctx.fontSize * horizontalSizeModifier, contentBounds.y + editor.selection.last.line.float32 * ed.ctx.fontSize, ed.ctx.fontSize * 0.05, ed.ctx.fontSize))
 
   return usedBounds
-
-proc getPrecedenceForNode(doc: AstDocument, node: AstNode): int =
-  if node.kind != Call or node.len == 0:
-    return 0
-  if ctx.computeSymbol(node[0]).getSome(symbol):
-    case symbol.kind
-    of skBuiltin:
-      return symbol.precedence
-    of skAstNode:
-      discard
-
-  return 0
-
-proc renderInfixNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds: Rect, selectedNode: AstNode, nodeBounds: var Table[AstNode, Rect]): Rect =
-  let horizontalGap = horizontalGap * 4
-  let subBounds = bounds.shrink gap.relative
-
-  let parentPrecedence = editor.document.getPrecedenceForNode node.parent
-  let precedence = editor.document.getPrecedenceForNode node
-  let renderParens = precedence < parentPrecedence
-
-  let parenWidth = if renderParens: ed.ctx.measureText("(").width else: 0
-
-  if renderParens:
-    ed.ctx.fillStyle = rgb(175, 175, 175)
-    ed.ctx.fillText("(", vec2(bounds.x, bounds.y))
-
-  let lhsBounds = renderAstNode(node[1], editor, ed, subBounds.splitV(parenWidth.relative)[1], selectedNode, nodeBounds)
-  let opBounds = renderAstNode(node[0], editor, ed, subBounds.splitV((lhsBounds.x + lhsBounds.w + horizontalGap).absolute)[1], selectedNode, nodeBounds)
-  let rhsBounds = renderAstNode(node[2], editor, ed, subBounds.splitV((opBounds.x + opBounds.w + horizontalGap).absolute)[1], selectedNode, nodeBounds)
-
-  if renderParens:
-    ed.ctx.fillStyle = rgb(175, 175, 175)
-    ed.ctx.fillText(")", vec2(rhsBounds.x + rhsBounds.w, bounds.y))
-
-  let myBounds = rect(bounds.x, bounds.y, rhsBounds.x + rhsBounds.w + parenWidth - bounds.x, max([lhsBounds.h, opBounds.h, rhsBounds.h]) + gap * 2)
-
-  # ed.ctx.strokeStyle = rgb(0, 255, 255)
-  # ed.ctx.strokeRect(myBounds)
-
-  return myBounds
-
-proc renderPrefixNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds: Rect, selectedNode: AstNode, nodeBounds: var Table[AstNode, Rect]): Rect =
-  let subBounds = bounds.shrink gap.relative
-
-  let opBounds = renderAstNode(node[0], editor, ed, subBounds, selectedNode, nodeBounds)
-  let rhsBounds = renderAstNode(node[1], editor, ed, subBounds.splitV((opBounds.w + horizontalGap).relative)[1], selectedNode, nodeBounds)
-
-  let myBounds = rect(bounds.x, bounds.y, opBounds.w + rhsBounds.w + horizontalGap * 3, max([opBounds.h, rhsBounds.h]) + gap * 2)
-
-  # ed.ctx.strokeStyle = rgb(0, 255, 255)
-  # ed.ctx.strokeRect(myBounds)
-
-  return myBounds
-
-proc renderPostfixNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds: Rect, selectedNode: AstNode, nodeBounds: var Table[AstNode, Rect]): Rect =
-  let subBounds = bounds.shrink gap.relative
-
-  let rhsBounds = renderAstNode(node[1], editor, ed, subBounds, selectedNode, nodeBounds)
-  let opBounds = renderAstNode(node[0], editor, ed, subBounds.splitV((rhsBounds.w + horizontalGap).relative)[1], selectedNode, nodeBounds)
-
-  let myBounds = rect(bounds.x, bounds.y, opBounds.w + rhsBounds.w + horizontalGap * 3, max([opBounds.h, rhsBounds.h]) + gap * 2)
-
-  # ed.ctx.strokeStyle = rgb(0, 255, 255)
-  # ed.ctx.strokeRect(myBounds)
-
-  return myBounds
-
-proc renderCallNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds: Rect, selectedNode: AstNode, nodeBounds: var Table[AstNode, Rect]): Rect =
-  let function = node[0]
-  let subBounds = bounds.shrink gap.relative
-
-  if ctx.computeSymbol(function).getSome(sym) and sym.kind == skBuiltin:
-    let arity = case sym.operatorNotation
-    of Infix: 2
-    of Prefix, Postfix: 1
-    else: -1
-
-    if node.len == arity + 1:
-      case sym.operatorNotation
-      of Infix: return renderInfixNode(node, editor, ed, bounds, selectedNode, nodeBounds)
-      of Prefix: return renderPrefixNode(node, editor, ed, bounds, selectedNode, nodeBounds)
-      of Postfix: return renderPostfixNode(node, editor, ed, bounds, selectedNode, nodeBounds)
-      else: discard
-
-  var finalRect = rect(subBounds.xy, vec2())
-  var last = finalRect
-
-  last = renderAstNode(node[0], editor, ed, subBounds, selectedNode, nodeBounds)
-  finalRect = finalRect or last
-
-  last = ed.ctx.fillText(last.xwy, "(", rgb(175, 175, 175))
-  finalRect = finalRect or last
-
-  for i in 1..<node.len:
-    if i > 1:
-      last = ed.ctx.fillText(last.xwy, ", ", rgb(175, 175, 175))
-      finalRect = finalRect or last
-
-    last = renderAstNode(node[i], editor, ed, subBounds.splitV(last.xw.absolute)[1], selectedNode, nodeBounds)
-    finalRect = finalRect or last
-
-  last = ed.ctx.fillText(last.xwy, ")", rgb(175, 175, 175))
-  finalRect = finalRect or last
-
-  return finalRect
-
-proc renderAstNode(node: AstNode, editor: AstDocumentEditor, ed: Editor, bounds: Rect, selectedNode: AstNode, nodeBounds: var Table[AstNode, Rect]): Rect =
-  if node == editor.currentlyEditedNode:
-    let docRect = renderDocumentEditor(editor.textEditor, ed, bounds, true)
-    nodeBounds[node] = docRect
-    return docRect
-  elif node.len == 0 and editor.currentlyEditedSymbol != null and (node.id == editor.currentlyEditedSymbol or node.reff == editor.currentlyEditedSymbol):
-    let docRect = renderDocumentEditor(editor.textEditor, ed, bounds, true)
-    nodeBounds[node] = docRect
-    return docRect
-
-  var nodeRect = case node
-  of Empty():
-    let width = ed.ctx.measureText(node.text).width
-
-    ed.ctx.strokeStyle = rgb(255, 0, 0)
-    ed.ctx.strokeRect(bounds.splitV(width.relative)[0].splitH(ed.ctx.fontSize.relative)[0])
-    ed.ctx.fillStyle = rgb(255, 225, 255)
-    ed.ctx.fillText(node.text, vec2(bounds.x, bounds.y))
-
-    rect(bounds.x, bounds.y, width, ed.ctx.fontSize)
-
-  of If():
-    var ifBodyRect = rect(bounds.xy, vec2())
-    var finalRect = ifBodyRect
-
-    var index = 0
-    while index + 1 < node.len:
-      defer: index += 2
-
-      if index > 0:
-        ifBodyRect.h += lineDistance
-
-      # if
-      let ifText = if index == 0: "if   " else: "elif "
-      let ifTextRect = ed.ctx.fillText(ifBodyRect.xyh, ifText, rgb(225, 175, 255))
-
-      # Condition
-      let condRect = renderAstNode(node[index], editor, ed, bounds.splitH(ifBodyRect.yh.absolute)[1].splitV(ifTextRect.xw.absolute)[1], selectedNode, nodeBounds)
-
-      # :
-      let colonTextRect = ed.ctx.fillText(condRect.xwy, ": ", rgb(175, 175, 175))
-
-      var condLineRect = ifTextRect or condRect or colonTextRect
-
-      # body
-      var bodyBounds = bounds.splitH(ifBodyRect.yh.absolute)[1]
-      if node[index + 1].kind == NodeList:
-        # Move body to next line
-        bodyBounds = bodyBounds.splitH(max(ed.ctx.fontSize, condRect.h + lineDistance).relative)[1]
-      else:
-        bodyBounds = bodyBounds.splitV(colonTextRect.xw.absolute)[1]
-
-      ifBodyRect = ifBodyRect or condLineRect or renderAstNode(node[index + 1], editor, ed, bodyBounds, selectedNode, nodeBounds)
-      finalRect = finalRect or ifBodyRect
-
-    ifBodyRect.h += lineDistance
-    var elseBodyRect = ifBodyRect
-    if node.len > 2 and node.len mod 2 != 0:
-      let origin = ifBodyRect.xyh
-      let elseTextRect = ed.ctx.fillText(origin, [("else", rgb(225, 175, 255).newPaint), (": ", rgb(175, 175, 175).newPaint)])
-
-      # body
-      var bodyBounds = bounds.splitH(origin.y.absolute)[1]
-      if node.last.kind == NodeList:
-        # Move body to next line
-        bodyBounds = bodyBounds.splitH((ed.ctx.fontSize + lineDistance).relative)[1]
-      else:
-        bodyBounds = bodyBounds.splitV(elseTextRect.xw.absolute)[1]
-
-      elseBodyRect = renderAstNode(node.last, editor, ed, bodyBounds, selectedNode, nodeBounds)
-      finalRect = finalRect or elseBodyRect
-
-    finalRect
-
-  of Params():
-    bounds
-
-  of FunctionDefinition():
-    var finalRect = rect(bounds.xy, vec2())
-
-    var last = finalRect
-
-    last = ed.ctx.fillText(last.xwy, [("fn ", rgb(225, 175, 225).newPaint), ("(", rgb(175, 175, 175).newPaint)])
-    finalRect = finalRect or last
-
-    var paramsFinalRect = rect(last.xwy, vec2())
-
-    # Parameters
-    if node.len > 0:
-      let params = node[0]
-      for i, param in params.children:
-        if i > 0:
-          last = ed.ctx.fillText(last.xwy, ", ", rgb(175, 175, 175))
-          paramsFinalRect = paramsFinalRect or last
-
-        let paramBounds = bounds.splitV(last.xw.absolute)[1]
-        last = renderAstNode(param, editor, ed, paramBounds, selectedNode, nodeBounds)
-        paramsFinalRect = paramsFinalRect or last
-
-      finalRect = finalRect or paramsFinalRect
-      last = renderAstNode(params, editor, ed, paramsFinalRect, selectedNode, nodeBounds)
-
-    last = ed.ctx.fillText(last.xwy, ") -> ", rgb(175, 175, 175))
-    finalRect = finalRect or last
-
-    last = renderAstNode(node[1], editor, ed, bounds.splitV(last.xw.absolute)[1], selectedNode, nodeBounds)
-    finalRect = finalRect or last
-
-    finalRect.h += lineDistance
-
-    last = finalRect
-    last = renderAstNode(node[2], editor, ed, bounds.splitH(finalRect.yh.absolute)[1], selectedNode, nodeBounds)
-    finalRect = finalRect or last
-
-    finalRect
-
-  of NodeList():
-    var lastNodeRect = rect(bounds.x, bounds.y, 0, 0)
-    var maxWidth = 0.0
-    for i, n in node.children:
-      let y = lastNodeRect.y + lastNodeRect.h - bounds.y + lineDistance * sgn(i).float32
-      lastNodeRect = renderAstNode(n, editor, ed, bounds.splitV(indent.relative)[1].splitH(y.relative)[1], selectedNode, nodeBounds)
-      maxWidth = max(maxWidth, lastNodeRect.w + indent)
-
-    let r = rect(bounds.x, bounds.y, maxWidth, lastNodeRect.y + lastNodeRect.h - bounds.y)
-
-    ed.ctx.beginPath()
-    ed.ctx.strokeStyle = rgb(150, 150, 150)
-    ed.ctx.moveTo vec2(r.x + min(3, indent / 3), r.y)
-    ed.ctx.lineTo vec2(r.x + min(3, indent / 3), r.y + r.h)
-    ed.ctx.stroke()
-
-    r
-
-  of Identifier():
-    var text = ""
-    if ctx.computeSymbol(node).getSome(symbol):
-      text = symbol.name
-    else:
-      text = $node.reff & " (" & node.text & ")"
-
-    let width = ed.ctx.measureText(text).width
-
-    # ed.ctx.strokeStyle = rgb(0, 255, 0)
-    # ed.ctx.strokeRect(bounds.splitV(width.relative)[0].splitH(ed.ctx.fontSize.relative)[0])
-    ed.ctx.fillStyle = rgb(255, 225, 255)
-    ed.ctx.fillText(text, vec2(bounds.x, bounds.y))
-
-    rect(bounds.x, bounds.y, width, ed.ctx.fontSize)
-
-  of ConstDecl():
-    let subBounds = bounds.shrink gap.relative
-
-    let typ = ctx.computeType(node)
-
-    let symbol = ctx.computeSymbol(node)
-    let symbolSize = if symbol.getSome(symbol) and symbol.id == editor.currentlyEditedSymbol:
-      let docRect = renderDocumentEditor(editor.textEditor, ed, subBounds, true)
-      vec2(docRect.w, docRect.h)
-    else:
-      var name = ""
-      if symbol.getSome(symbol):
-        name = symbol.name
-      else:
-        name = $node.id & " (" & node.text & ")"
-
-      let nameWidth = ed.ctx.measureText(name).width
-      ed.ctx.fillStyle = rgb(200, 200, 200)
-      ed.ctx.fillText(name, vec2(subBounds.x, subBounds.y))
-      vec2(nameWidth, ed.ctx.fontSize)
-
-    var finalRect = rect(subBounds.xy, symbolSize)
-    var last = finalRect
-
-    if typ.kind == tFunction:
-      last = ed.ctx.fillText(last.xwy, " :: ", rgb(200, 200, 200))
-      finalRect = finalRect or last
-    else:
-      last = ed.ctx.fillText(last.xwy, " : ", rgb(200, 200, 200))
-      finalRect = finalRect or last
-      last = ed.ctx.fillText(last.xwy, $typ, rgb(100, 250, 100))
-      finalRect = finalRect or last
-      last = ed.ctx.fillText(last.xwy, " : ", rgb(200, 200, 200))
-      finalRect = finalRect or last
-
-    let valueBounds = renderAstNode(node[0], editor, ed, subBounds.splitV(last.xw.absolute)[1], selectedNode, nodeBounds)
-    finalRect = finalRect or valueBounds
-
-    finalRect
-
-  of LetDecl():
-    let subBounds = bounds.shrink gap.relative
-
-    let symbol = ctx.computeSymbol(node)
-    let symbolSize = if symbol.getSome(symbol) and symbol.id == editor.currentlyEditedSymbol:
-      let docRect = renderDocumentEditor(editor.textEditor, ed, subBounds, true)
-      vec2(docRect.w, docRect.h)
-    else:
-      var name = ""
-      if symbol.getSome(symbol):
-        name = symbol.name
-      else:
-        name = $node.id & " (" & node.text & ")"
-
-      let nameWidth = ed.ctx.measureText(name).width
-      ed.ctx.fillStyle = rgb(200, 200, 200)
-      ed.ctx.fillText(name, vec2(subBounds.x, subBounds.y))
-      vec2(nameWidth, ed.ctx.fontSize)
-
-    var finalRect = rect(subBounds.xy, symbolSize)
-
-    var last = finalRect
-
-    last = ed.ctx.fillText(last.xwy, ": ", rgb(175, 175, 175))
-    finalRect = finalRect or last
-
-    if node.len > 0:
-      let typeNode = node[0]
-      let typeBounds = bounds.splitV(last.xw.absolute)[1]
-      last = renderAstNode(typeNode, editor, ed, typeBounds, selectedNode, nodeBounds)
-      finalRect = finalRect or last
-
-    if node.len > 1:
-      last = ed.ctx.fillText(last.xwy, " = ", rgb(175, 175, 175))
-      finalRect = finalRect or last
-
-      let valueNode = node[1]
-      let valueBounds = bounds.splitV(last.xw.absolute)[1]
-      last = renderAstNode(valueNode, editor, ed, valueBounds, selectedNode, nodeBounds)
-      finalRect = finalRect or last
-
-    finalRect
-
-  of VarDecl():
-    let subBounds = bounds.shrink gap.relative
-
-    let symbol = ctx.computeSymbol(node)
-    let symbolSize = if symbol.getSome(symbol) and symbol.id == editor.currentlyEditedSymbol:
-      let docRect = renderDocumentEditor(editor.textEditor, ed, subBounds, true)
-      vec2(docRect.w, docRect.h)
-    else:
-      var name = ""
-      if symbol.getSome(symbol):
-        name = symbol.name
-      else:
-        name = $node.id & " (" & node.text & ")"
-
-      let nameWidth = ed.ctx.measureText(name).width
-      ed.ctx.fillStyle = rgb(200, 200, 200)
-      ed.ctx.fillText(name, vec2(subBounds.x, subBounds.y))
-      vec2(nameWidth, ed.ctx.fontSize)
-
-    var finalRect = rect(subBounds.xy, symbolSize)
-
-    var last = finalRect
-
-    last = ed.ctx.fillText(last.xwy, ":mut ", rgb(175, 175, 175))
-    finalRect = finalRect or last
-
-    if node.len > 0:
-      let typeNode = node[0]
-      let typeBounds = bounds.splitV(last.xw.absolute)[1]
-      last = renderAstNode(typeNode, editor, ed, typeBounds, selectedNode, nodeBounds)
-      finalRect = finalRect or last
-
-    if node.len > 1:
-      last = ed.ctx.fillText(last.xwy, " = ", rgb(175, 175, 175))
-      finalRect = finalRect or last
-
-      let valueNode = node[1]
-      let valueBounds = bounds.splitV(last.xw.absolute)[1]
-      last = renderAstNode(valueNode, editor, ed, valueBounds, selectedNode, nodeBounds)
-      finalRect = finalRect or last
-
-    finalRect
-
-  of Call():
-    renderCallNode(node, editor, ed, bounds, selectedNode, nodeBounds)
-
-  of Assignment():
-    let subBounds = bounds.shrink gap.relative
-
-    var finalRect = rect(subBounds.xy, vec2())
-    var last = finalRect
-
-    if node.len > 0:
-      last = renderAstNode(node[0], editor, ed, subBounds.splitV(last.xw.absolute)[1], selectedNode, nodeBounds)
-      finalRect = finalRect or last
-
-    last = ed.ctx.fillText(last.xwy, " <- ", rgb(175, 175, 175))
-    finalRect = finalRect or last
-
-    if node.len > 1:
-      last = renderAstNode(node[1], editor, ed, subBounds.splitV(last.xw.absolute)[1], selectedNode, nodeBounds)
-      finalRect = finalRect or last
-
-    finalRect
-
-  of StringLiteral():
-    let text = node.text
-    let quoteWidth = ed.ctx.measureText("\"").width
-    let textWidth = ed.ctx.measureText(text).width
-
-    ed.ctx.fillStyle = rgb(175, 200, 245)
-    ed.ctx.fillText("\"", vec2(bounds.x, bounds.y))
-
-    ed.ctx.fillStyle = rgb(255, 225, 200)
-    ed.ctx.fillText(text, vec2(bounds.x + quoteWidth + horizontalGap, bounds.y))
-
-    ed.ctx.fillStyle = rgb(175, 200, 245)
-    ed.ctx.fillText("\"", vec2(bounds.x + quoteWidth + textWidth + horizontalGap * 2, bounds.y))
-
-    rect(bounds.x, bounds.y, quoteWidth * 2 + textWidth + horizontalGap * 2, ed.ctx.fontSize)
-
-  of NumberLiteral():
-    let r = ed.ctx.fillText(bounds.xy, node.text, rgb(200, 255, 200))
-    r
-
-  else:
-    rect(0, 0, 0, 0)
-
-  if node == selectedNode:
-    ed.ctx.strokeStyle = rgb(255, 0, 255)
-    ed.ctx.lineWidth = 2
-    ed.ctx.strokeRect(nodeRect.grow(2.absolute))
-    ed.ctx.lineWidth = 1
-  elif selectedNode != nil and ((node.reff != null and node.reff == selectedNode.reff) or node.reff == selectedNode.id or node.id == selectedNode.reff):
-    ed.ctx.strokeStyle = rgb(150, 150, 220)
-    ed.ctx.strokeRect(nodeRect.grow(2.absolute))
-
-  if node == selectedNode and editor.renderSelectedNodeValue:
-    let typ = ctx.computeType(node)
-    let val = ctx.computeValue(node)
-
-    var lastRect = ed.ctx.fillText(vec2(nodeRect.x, nodeRect.y + nodeRect.h + lineDistance), $val, rgb(100, 100, 255))
-    lastRect = ed.ctx.fillText(vec2(lastRect.xw, lastRect.y), " : ", rgb(175, 175, 175))
-    lastRect = ed.ctx.fillText(vec2(lastRect.xw, lastRect.y), $typ, rgb(250, 175, 200))
-    lastRect = ed.ctx.fillText(vec2(lastRect.xw, lastRect.y), fmt" ({node.id})", rgb(250, 175, 200))
-    lastRect = ed.ctx.fillText(vec2(lastRect.xw, lastRect.y), fmt" {node.path}", rgb(250, 175, 200))
-    nodeRect.h += lastRect.h + lineDistance * 2
-
-  nodeRect.w = max(nodeRect.w, ed.ctx.measureText(" ").width)
-  nodeRect.h = max(nodeRect.h, ed.ctx.fontSize)
-
-  if ctx.computeType(node).kind == tError:
-    ed.ctx.strokeStyle = rgb(255, 50, 50)
-    ed.ctx.strokeRect(nodeRect)
-    nodeRect = nodeRect.grow(1.absolute)
-
-  nodeBounds[node] = nodeRect
-
-  return nodeRect
 
 proc renderCompletions(editor: AstDocumentEditor, ed: Editor, bounds: Rect): Rect =
   let completions = editor.completions
@@ -660,7 +180,6 @@ proc renderVisualNode(editor: AstDocumentEditor, ed: Editor, drawCtx: contexts.C
     ed.ctx.strokeStyle = rgb(175, 255, 200)
     ed.ctx.strokeRect(bounds)
 
-
 proc renderVisualNodeLayout(editor: AstDocumentEditor, ed: Editor, contentBounds: Rect, layout: NodeLayout, offset: var Vec2) =
   editor.lastLayouts.add (layout, offset - contentBounds.xy)
 
@@ -718,8 +237,6 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
 
   let selectedNode = editor.node
 
-  var drawCtx = newContext(nil)
-
   var replacements = initTable[Id, VisualNode]()
 
   if not isNil editor.currentlyEditedNode:
@@ -728,9 +245,6 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
   elif editor.currentlyEditedSymbol != null:
     let textEditorBounds = editor.textEditor.measureEditorBounds(ed, rect(vec2(), contentBounds.wh))
     replacements[editor.currentlyEditedSymbol] = newFunctionNode(textEditorBounds, (bounds: Rect) => (discard renderDocumentEditor(editor.textEditor, ed, bounds, true)))
-
-  let base = selectedNode.subbase
-  let baseIndex = base.index
 
   editor.previousBaseIndex = editor.previousBaseIndex.clamp(0..editor.document.rootNode.len)
 
