@@ -179,19 +179,11 @@ proc updateCompletions(editor: AstDocumentEditor)
 proc getPrevChild*(document: AstDocument, node: AstNode, max: int = -1): Option[AstNode]
 proc getNextChild*(document: AstDocument, node: AstNode, min: int = -1): Option[AstNode]
 
-proc `node=`*(editor: AstDocumentEditor, node: AstNode) =
-  if node == editor.selectedNode:
-    return
+proc node*(editor: AstDocumentEditor): AstNode =
+  return editor.selectedNode
 
-  if node.parent == nil or node.base != editor.document.rootNode:
-    return
-
-  if editor.selectedNode != nil:
-    editor.selectionHistory.addLast editor.selectedNode
-  if editor.selectionHistory.len > 100:
-    discard editor.selectionHistory.popFirst
-  editor.selectedNode = node
-
+proc handleSelectedNodeChanged(editor: AstDocumentEditor) =
+  let node = editor.node
   var foundNode = false
   for (layout, offset) in editor.lastLayouts:
     if layout.nodeToVisualNode.contains(node.id):
@@ -225,8 +217,19 @@ proc `node=`*(editor: AstDocumentEditor, node: AstNode) =
       editor.previousBaseIndex = subbase.index
       editor.scrollOffset = -bounds.y + editor.lastBounds.h * 0.5
 
-proc node*(editor: AstDocumentEditor): AstNode =
-  return editor.selectedNode
+proc `node=`*(editor: AstDocumentEditor, node: AstNode) =
+  if node == editor.selectedNode:
+    return
+
+  if node.parent == nil or node.base != editor.document.rootNode:
+    return
+
+  if editor.selectedNode != nil:
+    editor.selectionHistory.addLast editor.selectedNode
+  if editor.selectionHistory.len > 100:
+    discard editor.selectionHistory.popFirst
+  editor.selectedNode = node
+  editor.handleSelectedNodeChanged()
 
 proc selectPrevNode*(editor: AstDocumentEditor) =
   while editor.selectionHistory.len > 0:
@@ -234,6 +237,7 @@ proc selectPrevNode*(editor: AstDocumentEditor) =
     if node != nil and node.parent != nil and node.base == editor.document.rootNode:
       editor.selectionHistory.addFirst editor.selectedNode
       editor.selectedNode = node
+      editor.handleSelectedNodeChanged()
       return
 
 proc selectNextNode*(editor: AstDocumentEditor) =
@@ -242,6 +246,7 @@ proc selectNextNode*(editor: AstDocumentEditor) =
     if node != nil and node.parent != nil and node.base == editor.document.rootNode:
       editor.selectionHistory.addLast editor.selectedNode
       editor.selectedNode = node
+      editor.handleSelectedNodeChanged()
       return
 
 method `$`*(document: AstDocument): string =
@@ -1070,13 +1075,16 @@ proc applySelectedCompletion(editor: AstDocumentEditor) =
     if editor.createDefaultNode(com.nodeKind).getSome(nodeIndex):
       let (newNode, _) = nodeIndex
       discard editor.document.replaceNode(editor.node, newNode)
-      editor.node = newNode
 
       if newNode.kind == NumberLiteral:
         newNode.text = completionText
+        ctx.updateNode(newNode)
       elif newNode.kind == StringLiteral:
         assert completionText[0] == '"'
         newNode.text = completionText[1..^1]
+        ctx.updateNode(newNode)
+
+      editor.node = newNode
 
       for _, emptyNode in editor.document.nextPreOrderWhere(newNode, (n) => editor.document.shouldEditNode(n), endNode = newNode):
         editor.node = emptyNode
