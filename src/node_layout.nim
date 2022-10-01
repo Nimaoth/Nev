@@ -160,9 +160,8 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
       else:
         ctx.createLayoutLineForNode(input, node[0], result, line)
 
-    discard line.add newTextNode(" = ", config.colors.separator, config.font)
-
     if node.len > 1:
+      discard line.add newTextNode(" = ", config.colors.separator, config.font)
       ctx.createLayoutLineForNode(input, node[1], result, line)
 
   of VarDecl():
@@ -181,9 +180,8 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
       else:
         ctx.createLayoutLineForNode(input, node[0], result, line)
 
-    discard line.add newTextNode(" = ", config.colors.separator, config.font)
-
     if node.len > 1:
+      discard line.add newTextNode(" = ", config.colors.separator, config.font)
       ctx.createLayoutLineForNode(input, node[1], result, line)
 
   of FunctionDefinition():

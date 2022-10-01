@@ -566,12 +566,12 @@ method getEventHandlers*(self: AstDocumentEditor): seq[EventHandler] =
 
 method handleDocumentChanged*(self: AstDocumentEditor) =
   logger.log(lvlInfo, fmt"[ast-editor] Document changed")
-  self.node = self.document.rootNode[0]
   self.selectionHistory.clear
   self.selectionFuture.clear
   self.finishEdit false
   for symbol in ctx.globalScope.values:
     discard ctx.newSymbol(symbol)
+  self.node = self.document.rootNode[0]
 
 proc getNextChild*(document: AstDocument, node: AstNode, min: int = -1): Option[AstNode] =
   if node.len == 0:
@@ -734,23 +734,6 @@ proc deleteNode*(document: AstDocument, node: AstNode): AstNode =
     # We're trying to delete the last child of the root node, replace with empty instead
     return document.replaceNode(node, AstNode(kind: Empty))
 
-  case node.parent
-  of If():
-    return document.replaceNode(node, AstNode(kind: Empty))
-  of ConstDecl():
-    return document.replaceNode(node, AstNode(kind: Empty))
-  of Call():
-    let idx = node.index
-    if ctx.computeSymbol(node.parent[0]).getSome(sym) and sym.kind == skBuiltin:
-      let isFixed = case sym.operatorNotation
-      of Infix: idx in 0..2
-      of Prefix: idx in 0..1
-      of Postfix: idx in 0..1
-      of Regular: idx in 0..0
-      of Scope: false
-      if isFixed:
-        return document.replaceNode(node, AstNode(kind: Empty))
-
   document.undoOps.add UndoOp(kind: Delete, parent: node.parent, idx: node.index, node: node)
   document.redoOps = @[]
   document.handleNodeDelete node
@@ -763,21 +746,6 @@ proc insertNode*(document: AstDocument, node: AstNode, index: int, newNode: AstN
     node = document.rootNode
     index = 0
 
-  case node
-  of ConstDecl():
-    return none[AstNode]()
-  of Call():
-    let idx = node.index
-    if ctx.computeSymbol(node.parent[0]).getSome(sym) and sym.kind == skBuiltin:
-      let isFixed = case sym.operatorNotation
-      of Infix: idx in 0..2
-      of Prefix: idx in 0..1
-      of Postfix: idx in 0..1
-      of Regular: idx in 0..0
-      of Scope: false
-      if isFixed:
-        return none[AstNode]()
-
   document.undoOps.add UndoOp(kind: Insert, parent: node, idx: index, node: newNode)
   document.redoOps = @[]
   node.insert(newNode, index)
@@ -785,23 +753,6 @@ proc insertNode*(document: AstDocument, node: AstNode, index: int, newNode: AstN
   return some(newNode)
 
 proc insertOrReplaceNode*(document: AstDocument, node: AstNode, index: int, newNode: AstNode): Option[AstNode] =
-  case node
-  of If():
-    return some document.replaceNode(node[index], newNode)
-  of ConstDecl():
-    return some document.replaceNode(node[index], newNode)
-  of Call():
-    let idx = node.index
-    if ctx.computeSymbol(node.parent[0]).getSome(sym) and sym.kind == skBuiltin:
-      let isFixed = case sym.operatorNotation
-      of Infix: idx in 0..2
-      of Prefix: idx in 0..1
-      of Postfix: idx in 0..1
-      of Regular: idx in 0..0
-      of Scope: false
-      if isFixed:
-        return some document.replaceNode(node[index], newNode)
-
   document.undoOps.add UndoOp(kind: Insert, parent: node, idx: index, node: newNode)
   document.redoOps = @[]
   node.insert(newNode, index)
