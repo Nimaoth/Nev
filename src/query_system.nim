@@ -499,18 +499,6 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
         ctx.`items`[item] = data
         return data
 
-    result.add quote do:
-      proc `getOrCreateFunction`*(ctx: `contextName`, data: `name`): `name` =
-        for (item, existing) in ctx.`items`.pairs:
-          if existing.hash == data.hash and existing == data:
-            return existing
-
-        let item = data.getItem
-        let key: Dependency = (item, nil)
-        ctx.depGraph.changed[key] = ctx.depGraph.revision
-        ctx.`items`[item] = data
-        return data
-
   # proc force(ctx: Context, key: Dependency)
   result.add quote do:
     proc force(ctx: `contextName`, key: Dependency) =

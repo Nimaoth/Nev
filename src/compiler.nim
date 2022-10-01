@@ -442,7 +442,7 @@ CreateContext Context:
   proc computeSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, Symbol] {.query("Symbols").}
   proc computeSymbolTypeImpl(ctx: Context, symbol: Symbol): Type {.query("SymbolType").}
   proc computeSymbolValueImpl(ctx: Context, symbol: Symbol): Value {.query("SymbolValue").}
-  proc executeFunctionImpl(ctx: Context, fec: FunctionExecutionContext): Value {.query("FunctionExecution", useCache = false, useFingerprinting = false).}
+  proc computeFunctionExecutionImpl(ctx: Context, fec: FunctionExecutionContext): Value {.query("FunctionExecution", useCache = false, useFingerprinting = false).}
 
   proc computeNodeLayoutImpl(ctx: Context, nodeLayoutInput: NodeLayoutInput): NodeLayout {.query("NodeLayout", useCache = false, useFingerprinting = false).}
 
@@ -472,12 +472,13 @@ proc recoverSymbols(ctx: Context, key: Dependency) =
     ctx.queryCacheSymbols[node] = newTable[Id, Symbol]()
 
 proc cacheValuesInFunction(ctx: Context, node: AstNode, values: var Table[Id, Value]) =
-  let value = ctx.computeValue(node)
-  if value.kind == vkError:
+  case node.kind:
+  of ConstDecl:
+    let value = ctx.computeValue(node)
+    values[node.id] = value
+  else:
     for child in node.children:
       ctx.cacheValuesInFunction(child, values)
-  else:
-    values[node.id] = value
 
 proc executeNodeRec(ctx: Context, node: AstNode, variables: var Table[Id, Value]): Value =
   if ctx.enableExecutionLogging: inc currentIndent, 1
@@ -610,11 +611,11 @@ proc executeNodeRec(ctx: Context, node: AstNode, variables: var Table[Id, Value]
     logger.log(lvlError, fmt"executeNodeRec not implemented for {node}")
     return errorValue()
 
-proc executeFunctionImpl(ctx: Context, fec: FunctionExecutionContext): Value =
+proc computeFunctionExecutionImpl(ctx: Context, fec: FunctionExecutionContext): Value =
   if ctx.enableQueryLogging or ctx.enableExecutionLogging: inc currentIndent, 1
   defer:
     if ctx.enableQueryLogging or ctx.enableExecutionLogging: dec currentIndent, 1
-  if ctx.enableQueryLogging or ctx.enableExecutionLogging: echo repeat2("| ", currentIndent - 1), "executeFunctionImpl ", fec
+  if ctx.enableQueryLogging or ctx.enableExecutionLogging: echo repeat2("| ", currentIndent - 1), "computeFunctionExecutionImpl ", fec
   defer:
     if ctx.enableQueryLogging or ctx.enableExecutionLogging: echo repeat2("| ", currentIndent), "-> ", result
 
@@ -1053,13 +1054,6 @@ proc computeValueImpl(ctx: Context, node: AstNode): Value =
     if functionValue.kind == vkError:
       return errorValue()
 
-    if functionValue.kind != vkBuiltinFunction:
-      return errorValue()
-
-    if functionValue.impl == nil:
-      logger.log lvlError, fmt"[compiler]: Can't call function at compile time '{function.id}' at {node}"
-      return errorValue()
-
     var args: seq[Value] = @[]
     for arg in node.children[1..^1]:
       let value = ctx.computeValue(arg)
@@ -1067,7 +1061,17 @@ proc computeValueImpl(ctx: Context, node: AstNode): Value =
         return errorValue()
       args.add value
 
-    return functionValue.impl(args)
+    if functionValue.kind == vkBuiltinFunction:
+      if functionValue.impl == nil:
+        logger.log lvlError, fmt"[compiler]: Can't call function at compile time '{function.id}' at {node}"
+        return errorValue()
+      return functionValue.impl(args)
+
+    if functionValue.kind == vkAstFunction:
+      let fec = ctx.getOrCreateFunctionExecutionContext(FunctionExecutionContext(node: functionValue.node, arguments: args))
+      return ctx.computeFunctionExecution(fec)
+
+    return errorValue()
 
   of NodeList():
     if node.len == 0:
