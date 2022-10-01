@@ -109,3 +109,7 @@ template yh*(r: Rect): float32 = r.y + r.h
 template xwyh*(r: Rect): Vec2 = vec2(r.xw, r.yh)
 template xwy*(r: Rect): Vec2 = vec2(r.xw, r.y)
 template xyh*(r: Rect): Vec2 = vec2(r.x, r.yh)
+
+proc intersects*(a, b: Rect): bool =
+  let intersection = a and b
+  return intersection.w > 0 and intersection.h > 0

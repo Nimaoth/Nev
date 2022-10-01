@@ -102,6 +102,59 @@ type
     selectedNode*: Id
     replacements*: Table[Id, VisualNode]
 
+func index*(node: VisualNode): int =
+  if node.parent == nil:
+    return -1
+
+  result = 0
+  for i in node.parent.children:
+    if cast[pointer](i) == cast[pointer](node): return
+    inc(result)
+
+func `[]`*(node: VisualNode, index: int): VisualNode =
+  return node.children[index]
+
+func len*(node: VisualNode): int =
+  return node.children.len
+
+func next*(node: VisualNode): Option[VisualNode] =
+  if node.parent == nil:
+    return none[VisualNode]()
+  let i = node.index
+  if i >= node.parent.len - 1:
+    return none[VisualNode]()
+  return some(node.parent[i + 1])
+
+func prev*(node: VisualNode): Option[VisualNode] =
+  if node.parent == nil:
+    return none[VisualNode]()
+  let i = node.index
+  if i <= 0:
+    return none[VisualNode]()
+  return some(node.parent[i - 1])
+
+iterator nextPreOrder*(node: VisualNode, endNode: VisualNode = nil): tuple[key: int, value: VisualNode] =
+  var n = node
+  var idx = -1
+  var i = 0
+
+  while true:
+    defer: inc i
+    if idx == -1:
+      yield (i, n)
+    if idx + 1 < n.len:
+      n = n[idx + 1]
+      idx = -1
+    elif n.next.getSome(ne) and n != endNode:
+      n = ne
+      idx = -1
+    elif n.parent != nil and n != endNode and n.parent != endNode:
+      idx = n.index
+      n = n.parent
+    else:
+      break
+
+
 func errorType*(): Type = Type(kind: tError)
 func voidType*(): Type = Type(kind: tVoid)
 func intType*(): Type = Type(kind: tInt)
@@ -258,6 +311,8 @@ func clone*(node: VisualNode): VisualNode =
   result.font = node.font
   result.render = node.render
   result.children = node.children.map c => c.clone
+  for c in result.children:
+    c.parent = result
 
 func size*(node: VisualNode): Vec2 = node.bounds.wh
 func relativeBounds*(node: VisualNode, parent: VisualNode): Rect =
@@ -274,7 +329,7 @@ func absoluteBounds*(node: VisualNode): Rect =
   else:
     result = rect(node.parent.absoluteBounds.xy + node.bounds.xy, node.bounds.wh)
 
-func bounds*(nodeRange: VisualNodeRange): Rect =
+func absoluteBounds*(nodeRange: VisualNodeRange): Rect =
   result = nodeRange.parent.children[nodeRange.first].bounds
   for i in (nodeRange.first + 1)..<nodeRange.last:
     result = result or nodeRange.parent.children[i].bounds
@@ -316,12 +371,14 @@ func `==`*(a: VisualNode, b: VisualNode): bool =
 
 proc add*(node: var VisualNode, child: VisualNode): VisualNodeRange =
   node.children.add child
+  child.parent = node
   child.bounds.x = node.bounds.w
   node.bounds = node.bounds or (child.bounds + node.bounds.xy)
   return VisualNodeRange(parent: node, first: node.children.high, last: node.children.len)
 
 proc addLine*(node: var VisualNode, child: var VisualNode) =
   node.children.add child
+  child.parent = node
   child.bounds.y = node.bounds.h
   node.bounds = node.bounds or (child.bounds + node.bounds.xy)
 
