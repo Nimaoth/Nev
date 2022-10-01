@@ -489,7 +489,6 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     let name = inputName data
     let items = ident "items" & name.strVal
     let functionName = ident "new" & name.strVal
-    let getOrCreateFunction = ident "getOrCreate" & name.strVal
 
     result.add quote do:
       proc `functionName`*(ctx: `contextName`, data: `name`): `name` =
