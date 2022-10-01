@@ -5,11 +5,7 @@ import input, events, rect_utils, document, document_editor, text_document, ast_
 
 var commands: seq[(string, string)] = @[]
 commands.add ("<C-x><C-x>", "quit")
-commands.add ("<BACKSPACE>", "backspace")
-commands.add ("<DELETE>", "delete")
 commands.add ("<ESCAPE>", "escape")
-commands.add ("<SPACE>", "insert  ")
-commands.add ("<ENTER>", "insert \n")
 commands.add ("<C-l><C-h>", "change-font-size -1")
 commands.add ("<C-l><C-f>", "change-font-size 1")
 commands.add ("<C-g>", "toggle-status-bar-location")
