@@ -180,7 +180,6 @@ proc handleNextInput(dfa: var CommandDFA, input: seq[Rune], function: string, in
   var specialKey = ""
 
   var next: seq[tuple[index: int, state: int]] = @[]
-  var lastIndex = 0
 
   if index >= input.len:
     # Mark last state as terminal state.
@@ -189,42 +188,43 @@ proc handleNextInput(dfa: var CommandDFA, input: seq[Rune], function: string, in
     return
 
   for i in index..<input.len:
-    lastIndex = i
-    # echo i, ": ", input[i]
+    var rune = input[i]
+    var ascii = if rune.int64.isAscii: rune.char else: '\0'
 
-    let rune = input[i]
-    let ascii = if rune.int64.isAscii: rune.char else: '\0'
-    let inputCode: int64 = case ascii:
-      of '<':
-        state = State.Special
-        0.int64
-      of '>':
-        if state != State.Special:
-          echo "Error: > without <"
-          return
-        let inputCode = getInputCodeFromSpecialKey(specialKey)
-        state = State.Normal
-        specialKey = ""
-        inputCode
+    let isEscaped = i > 0 and input[i - 1].int64.isAscii and input[i - 1].char == '\\'
+    if not isEscaped and ascii == '\\':
+      continue
 
-      else:
-        if state == State.Special:
-          if ascii == '-':
-            # Parse stuff so far as mods
-            mods = {}
-            for m in specialKey:
-              case m:
-                of 'C': mods = mods + {Modifier.Control}
-                of 'S': mods = mods + {Modifier.Shift}
-                of 'A': mods = mods + {Modifier.Alt}
-                else: echo "Invalid modifier '", m, "'"
-            specialKey = ""
-          else:
-            specialKey.add rune
-          0.int64
-        else:
+    let inputCode: int64 = if not isEscaped and ascii == '<':
+      state = State.Special
+      0.int64
+    elif not isEscaped and ascii == '>':
+      if state != State.Special:
+        echo "Error: > without <"
+        return
+      let inputCode = getInputCodeFromSpecialKey(specialKey)
+      state = State.Normal
+      specialKey = ""
+      inputCode
+
+    else:
+      if state == State.Special:
+        if not isEscaped and ascii == '-':
+          # Parse stuff so far as mods
           mods = {}
-          rune.int64
+          for m in specialKey:
+            case m:
+              of 'C': mods = mods + {Modifier.Control}
+              of 'S': mods = mods + {Modifier.Shift}
+              of 'A': mods = mods + {Modifier.Alt}
+              else: echo "Invalid modifier '", m, "'"
+          specialKey = ""
+        else:
+          specialKey.add rune
+        0.int64
+      else:
+        mods = {}
+        rune.int64
 
     # echo inputCode, ", ", mods
     if inputCode != 0:

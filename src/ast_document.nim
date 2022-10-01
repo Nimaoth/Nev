@@ -184,8 +184,41 @@ proc node*(editor: AstDocumentEditor): AstNode =
 
 proc handleSelectedNodeChanged(editor: AstDocumentEditor) =
   let node = editor.node
+
   var foundNode = false
-  for (layout, offset) in editor.lastLayouts:
+  var i = 0
+  while i < editor.lastLayouts.len:
+    defer: inc i
+    var layout = editor.lastLayouts[i].layout
+    var offset = editor.lastLayouts[i].offset
+
+    if not layout.nodeToVisualNode.contains(node.id):
+      var targetNode = node
+      while targetNode != nil and not layout.nodeToVisualNode.contains(targetNode.id):
+        targetNode = targetNode.parent
+
+      if targetNode != nil:
+        # New node is not in layout yet but there is a parent which has a layout already
+        let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: targetNode.subbase, selectedNode: node.id)
+        layout = ctx.computeNodeLayout(input)
+
+      elif node.parent == editor.document.rootNode and node.prev.getSome(prev) and layout.nodeToVisualNode.contains(prev.id):
+        let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node.subbase, selectedNode: node.id)
+        offset += layout.bounds.h
+        layout = ctx.computeNodeLayout(input)
+
+        editor.lastLayouts.insert((layout, offset), i + 1)
+        for k in (i + 1)..editor.lastLayouts.high:
+          editor.lastLayouts[k].offset.y += layout.bounds.h
+
+      elif node.parent == editor.document.rootNode and node.next.getSome(next) and layout.nodeToVisualNode.contains(next.id):
+        let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node.subbase, selectedNode: node.id)
+        layout = ctx.computeNodeLayout(input)
+
+        editor.lastLayouts.insert((layout, offset), i)
+        for k in i..editor.lastLayouts.high:
+          editor.lastLayouts[k].offset.y += layout.bounds.h
+
     if layout.nodeToVisualNode.contains(node.id):
       # Node layout was already computed for the last selection
       let visualNode = layout.nodeToVisualNode[node.id]
@@ -982,6 +1015,78 @@ proc createNodeFromAction*(editor: AstDocumentEditor, arg: string, node: AstNode
         Empty()
     return some (node, 0)
 
+  of "==":
+    let node = makeTree(AstNode) do:
+      Call:
+        Identifier(reff: == IdEqual)
+        Empty()
+        Empty()
+    return some (node, 0)
+
+  of "!=":
+    let node = makeTree(AstNode) do:
+      Call:
+        Identifier(reff: == IdNotEqual)
+        Empty()
+        Empty()
+    return some (node, 0)
+
+  of "<=":
+    let node = makeTree(AstNode) do:
+      Call:
+        Identifier(reff: == IdLessEqual)
+        Empty()
+        Empty()
+    return some (node, 0)
+
+  of ">=":
+    let node = makeTree(AstNode) do:
+      Call:
+        Identifier(reff: == IdGreaterEqual)
+        Empty()
+        Empty()
+    return some (node, 0)
+
+  of "<":
+    let node = makeTree(AstNode) do:
+      Call:
+        Identifier(reff: == IdLess)
+        Empty()
+        Empty()
+    return some (node, 0)
+
+  of ">":
+    let node = makeTree(AstNode) do:
+      Call:
+        Identifier(reff: == IdGreater)
+        Empty()
+        Empty()
+    return some (node, 0)
+
+  of "<>":
+    let node = makeTree(AstNode) do:
+      Call:
+        Identifier(reff: == IdOrder)
+        Empty()
+        Empty()
+    return some (node, 0)
+
+  of "and":
+    let node = makeTree(AstNode) do:
+      Call:
+        Identifier(reff: == IdAnd)
+        Empty()
+        Empty()
+    return some (node, 0)
+
+  of "or":
+    let node = makeTree(AstNode) do:
+      Call:
+        Identifier(reff: == IdOr)
+        Empty()
+        Empty()
+    return some (node, 0)
+
   else:
     return none[(AstNode, int)]()
 
@@ -1400,8 +1505,8 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
   return Handled
 
 proc handleInput(self: AstDocumentEditor, input: string): EventResponse =
-  logger.log lvlInfo, fmt"[asteditor]: Handle input '{input}'"
-  return Handled
+  # logger.log lvlInfo, fmt"[asteditor]: Handle input '{input}'"
+  return Ignored
 
 method createWithDocument*(self: AstDocumentEditor, document: Document): DocumentEditor =
   let editor = AstDocumentEditor(eventHandler: nil, document: AstDocument(document), textDocument: nil, textEditor: nil)
@@ -1474,8 +1579,6 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     command "<S-DOWN>", "cursor.down last"
     command "<S-HOME>", "cursor.home last"
     command "<S-END>", "cursor.end last"
-    command "<ENTER>", "editor.insert \n"
-    command "<SPACE>", "editor.insert  "
     command "<BACKSPACE>", "backspace"
     command "<DELETE>", "delete"
     command "<TAB>", "edit-next-empty"
@@ -1520,7 +1623,17 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     command "(", "wrap call-func"
     command ")", "wrap call-arg"
     command "{", "wrap {"
-    command "=", "wrap ="
+    command "=<ENTER>", "wrap ="
+    command "==", "wrap =="
+    command "!=", "wrap !="
+    command "\\<\\>", "wrap <>"
+    command "\\<=", "wrap <="
+    command "\\>=", "wrap >="
+    command "\\<<ENTER>", "wrap <"
+    command "\\><ENTER>", "wrap >"
+    command "<SPACE>and", "wrap and"
+    command "<SPACE>or", "wrap or"
+
     command "vc", "wrap const-decl"
     command "vl", "wrap let-decl"
     command "vv", "wrap var-decl"
