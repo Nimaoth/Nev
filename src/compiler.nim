@@ -181,6 +181,8 @@ func hash*(typ: Type): Hash =
     return typ.kind.hash
 
 func `==`*(a: Type, b: Type): bool =
+  if a.isNil: return b.isNil
+  if b.isNil: return false
   if a.kind != b.kind: return false
   case a.kind
   of tFunction:
@@ -257,6 +259,8 @@ func hash*(fec: FunctionExecutionContext): Hash =
   return fec.node.hash xor fec.arguments.hash
 
 func `==`*(a: FunctionExecutionContext, b: FunctionExecutionContext): bool =
+  if a.isNil: return b.isNil
+  if b.isNil: return false
   if a.node != b.node:
     return false
   if a.arguments != b.arguments:
@@ -274,6 +278,8 @@ func hash*(symbol: Symbol): Hash =
   return symbol.id.hash
 
 func `==`*(a: Symbol, b: Symbol): bool =
+  if a.isNil: return b.isNil
+  if b.isNil: return false
   if a.id != b.id: return false
   if a.kind != b.kind: return false
   if a.name != b.name: return false
@@ -357,6 +363,8 @@ func fingerprint*(vnode: VisualNode): Fingerprint =
   result = @[h.int64] & vnode.children.map(c => c.fingerprint).foldl(a & b, @[0.int64])
 
 func `==`*(a: VisualNode, b: VisualNode): bool =
+  if a.isNil: return b.isNil
+  if b.isNil: return false
   if a.text != b.text:
     return false
   if a.node != b.node:
@@ -405,6 +413,8 @@ func hash*(input: NodeLayoutInput): Hash =
   return input.node.hash !& input.selectedNode.hash
 
 func `==`*(a: NodeLayoutInput, b: NodeLayoutInput): bool =
+  if a.isNil: return b.isNil
+  if b.isNil: return false
   # We don't care about the id of the NodeLayoutInput
   if a.node != b.node: return false
   if a.selectedNode != b.selectedNode: return false
