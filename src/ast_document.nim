@@ -173,7 +173,7 @@ type AstDocumentEditor* = ref object of DocumentEditor
   previousBaseIndex*: int
 
   lastBounds*: Rect
-  lastLayouts*: seq[tuple[layout: NodeLayout, offset: float32]]
+  lastLayouts*: seq[tuple[layout: NodeLayout, offset: Vec2]]
 
 proc updateCompletions(editor: AstDocumentEditor)
 proc getPrevChild*(document: AstDocument, node: AstNode, max: int = -1): Option[AstNode]
@@ -189,7 +189,7 @@ proc handleSelectedNodeChanged(editor: AstDocumentEditor) =
     if layout.nodeToVisualNode.contains(node.id):
       # Node layout was already computed for the last selection
       let visualNode = layout.nodeToVisualNode[node.id]
-      let bounds = visualNode.absoluteBounds + vec2(0, offset)
+      let bounds = visualNode.absoluteBounds + vec2(0, offset.y)
 
       if not bounds.intersects(editor.lastBounds):
         continue
@@ -199,11 +199,11 @@ proc handleSelectedNodeChanged(editor: AstDocumentEditor) =
       if bounds.y < 50:
         let subbase = node.subbase
         editor.previousBaseIndex = subbase.index
-        editor.scrollOffset = 50 - (bounds.y - offset)
+        editor.scrollOffset = 50 - (bounds.y - offset.y)
       elif bounds.yh > editor.lastBounds.h - 50:
         let subbase = node.subbase
         editor.previousBaseIndex = subbase.index
-        editor.scrollOffset = -(bounds.y - offset) + editor.lastBounds.h - 50
+        editor.scrollOffset = -(bounds.y - offset.y) + editor.lastBounds.h - 50
 
       break
 
@@ -1371,8 +1371,8 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
       for (i, node) in layout.root.nextPreOrder:
         if not isNil(node.node) and node.len > 0:
           let bounds = node.absoluteBounds
-          if self.lastBounds.intersects(bounds + vec2(0, offset)):
-            nodes.add (bounds.y + offset, node)
+          if self.lastBounds.intersects(bounds + vec2(0, offset.y)):
+            nodes.add (bounds.y + offset.y, node)
 
     nodes.sort (a, b) => cmp(a.y, b.y)
 

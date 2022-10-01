@@ -652,6 +652,44 @@ proc renderVisualNode(editor: AstDocumentEditor, ed: Editor, drawCtx: contexts.C
   for child in node.children:
     editor.renderVisualNode(ed, drawCtx, child, bounds.xy, selected, globalBounds)
 
+  if node.node != nil and (editor.node.id == node.node.reff or (editor.node.reff == node.node.reff and node.node.reff != null)):
+    ed.ctx.strokeStyle = rgb(175, 175, 255)
+    ed.ctx.strokeRect(bounds)
+
+  if node.node != nil and editor.node.reff == node.node.id:
+    ed.ctx.strokeStyle = rgb(175, 255, 200)
+    ed.ctx.strokeRect(bounds)
+
+
+proc renderVisualNodeLayout(editor: AstDocumentEditor, ed: Editor, contentBounds: Rect, layout: NodeLayout, offset: var Vec2) =
+  editor.lastLayouts.add (layout, offset - contentBounds.xy)
+
+  let nodeBounds = layout.bounds
+  let intersection = (nodeBounds + offset) and contentBounds
+  if intersection.w < 1 or intersection.h < 1:
+    return
+
+  # drawCtx.image = newImage(nodeBounds.w.int, nodeBounds.h.int)
+  # drawCtx.font = ed.ctx.font
+  # drawCtx.fontSize = ed.ctx.fontSize
+  # drawCtx.textBaseline = ed.ctx.textBaseline
+
+  for line in layout.root.children:
+    # ed.ctx.save()
+    # ed.ctx.translate(offset)
+    # defer: ed.ctx.restore()
+    editor.renderVisualNode(ed, ed.ctx, line, offset, editor.node, contentBounds)
+
+  if layout.nodeToVisualNode.contains(editor.node.id):
+    let visualRange = layout.nodeToVisualNode[editor.node.id]
+    let bounds = visualRange.absoluteBounds + offset
+
+    ed.ctx.strokeStyle = rgb(255, 0, 255)
+    ed.ctx.strokeRect(bounds)
+
+  # ed.boxy.addImage($node.id, drawCtx.image)
+  # ed.boxy.drawImage($node.id, offset)
+
 method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect, selected: bool): Rect =
   let document = editor.document
 
@@ -715,95 +753,30 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
     let node = editor.document.rootNode[i]
     let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node, selectedNode: selectedNode.id, replacements: replacements)
     let layout = ctx.computeNodeLayout(input)
-
-    editor.lastLayouts.add (layout, offset.y - contentBounds.y)
-
-    let nodeBounds = layout.bounds
-    let intersection = (nodeBounds + offset) and contentBounds
-    if intersection.w < 1 or intersection.h < 1:
-      break
-
-    drawCtx.image = newImage(nodeBounds.w.int, nodeBounds.h.int)
-    drawCtx.font = ed.ctx.font
-    drawCtx.fontSize = ed.ctx.fontSize
-    drawCtx.textBaseline = ed.ctx.textBaseline
-
-    for line in layout.root.children:
-      # ed.ctx.save()
-      # ed.ctx.translate(offset)
-      # defer: ed.ctx.restore()
-      editor.renderVisualNode(ed, ed.ctx, line, offset, selectedNode, contentBounds)
-
-    if layout.nodeToVisualNode.contains(selectedNode.id):
-      let visualRange = layout.nodeToVisualNode[selectedNode.id]
-      ed.ctx.strokeStyle = rgb(255, 0, 255)
-      ed.ctx.strokeRect(visualRange.absoluteBounds + offset)
-
-    # ed.boxy.addImage($node.id, drawCtx.image)
-    # ed.boxy.drawImage($node.id, offset)
-    offset.y += drawCtx.image.height.float32 + lineDistance
+    editor.renderVisualNodeLayout(ed, contentBounds, layout, offset)
+    offset.y += layout.bounds.h + lineDistance
 
   offset = contentBounds.xy + vec2(0, editor.scrollOffset)
   for k in 1..editor.previousBaseIndex:
     let i = editor.previousBaseIndex - k
-
     let node = editor.document.rootNode[i]
     let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node, selectedNode: selectedNode.id, replacements: replacements)
     let layout = ctx.computeNodeLayout(input)
-
     offset.y -= layout.bounds.h + lineDistance
+    editor.renderVisualNodeLayout(ed, contentBounds, layout, offset)
 
-    editor.lastLayouts.add (layout, offset.y - contentBounds.y)
+  if editor.completions.len > 0:
+    for (layout, offset) in editor.lastLayouts:
+      if layout.nodeToVisualNode.contains(editor.node.id):
+        let visualRange = layout.nodeToVisualNode[editor.node.id]
+        let bounds = visualRange.absoluteBounds + offset + contentBounds.xy
+        discard renderCompletions(editor, ed, contentBounds.splitH(bounds.yh.absolute)[1].splitV(bounds.x.absolute)[1])
 
-    let nodeBounds = layout.bounds
-    let intersection = (nodeBounds + offset) and contentBounds
-    if intersection.w < 1 or intersection.h < 1:
-      break
-
-    drawCtx.image = newImage(nodeBounds.w.int, nodeBounds.h.int)
-    drawCtx.font = ed.ctx.font
-    drawCtx.fontSize = ed.ctx.fontSize
-    drawCtx.textBaseline = ed.ctx.textBaseline
-
-    for line in layout.root.children:
-      # ed.ctx.save()
-      # ed.ctx.translate(offset)
-      # defer: ed.ctx.restore()
-      editor.renderVisualNode(ed, ed.ctx, line, offset, selectedNode, contentBounds)
-
-    if layout.nodeToVisualNode.contains(selectedNode.id):
-      let visualRange = layout.nodeToVisualNode[selectedNode.id]
-      ed.ctx.strokeStyle = rgb(255, 0, 255)
-      ed.ctx.strokeRect(visualRange.absoluteBounds + offset)
-
-    # ed.boxy.addImage($node.id, drawCtx.image)
-    # ed.boxy.drawImage($node.id, offset)
-
-  # var nodeBounds: Table[AstNode, Rect] = initTable[AstNode, Rect]()
-
-  # for node in document.rootNode.children:
-  #   let y = lastNodeRect.y + lastNodeRect.h - contentBounds.y + lineDistance
-  #   lastNodeRect = renderAstNode(node, editor, ed, contentBounds.splitH(y.relative)[1], selectedNode, nodeBounds)
-
-  # if editor.completions.len > 0:
-  #   let bounds = nodeBounds.getOrDefault(editor.node, rect(0, 0, 0, 0))
-  #   if bounds.h > 0:
-  #     discard renderCompletions(editor, ed, contentBounds.splitH((bounds.y + bounds.h).absolute)[1].splitV(bounds.x.absolute)[1])
-
-  #   let selectedCompletion = editor.completions[editor.selectedCompletion]
-  #   if selectedCompletion.kind == SymbolCompletion and ctx.getSymbol(selectedCompletion.id).getSome(symbol) and symbol.kind == skAstNode and nodeBounds.contains(symbol.node):
-  #     let selectedDeclRect = nodeBounds[symbol.node]
-  #     ed.ctx.strokeStyle = rgb(150, 150, 220)
-  #     ed.ctx.strokeRect(selectedDeclRect)
-
-  # elif ctx.getSymbol(selectedNode.id).getSome(symbol) and symbol.kind == skAstNode and nodeBounds.contains(symbol.node):
-  #   let selectedDeclRect = nodeBounds[symbol.node]
-  #   ed.ctx.strokeStyle = rgb(150, 150, 220)
-  #   ed.ctx.strokeRect(selectedDeclRect)
-
-  # for symbol in document.symbols.values:
-  #   let y = lastNodeRect.y + lastNodeRect.h - contentBounds.y + lineDistance
-  #   lastNodeRect = renderSymbol(symbol, editor, ed, contentBounds.splitH(y.relative)[1], selectedNode)
+      let selectedCompletion = editor.completions[editor.selectedCompletion]
+      if selectedCompletion.kind == SymbolCompletion and ctx.getSymbol(selectedCompletion.id).getSome(symbol) and symbol.kind == skAstNode and layout.nodeToVisualNode.contains(symbol.node.id):
+        let selectedDeclRect = layout.nodeToVisualNode[symbol.node.id]
+        ed.ctx.strokeStyle = rgb(150, 150, 220)
+        ed.ctx.strokeRect(selectedDeclRect.absoluteBounds + offset + contentBounds.xy)
 
   return bounds
 
