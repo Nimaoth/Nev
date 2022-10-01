@@ -254,7 +254,7 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
     let prevIndent = line.indent
     for child in node.children:
       parent.addLine(line)
-      line = VisualNode(parent: parent, bounds: rect(prevIndent, 0, config.indent, 0), indent: prevIndent + config.indent)
+      line = VisualNode(parent: parent, bounds: rect(prevIndent, 0, config.indent, 0), indent: prevIndent + config.indent, node: child)
       let first = parent.children.len
       ctx.createLayoutLineForNode(input, child, result, line)
 

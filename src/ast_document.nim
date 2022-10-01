@@ -1,6 +1,6 @@
 import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros, options, deques, sets, json]
 import timer
-import fusion/matching, fuzzy
+import fusion/matching, fuzzy, bumpy, rect_utils, vmath
 import util, input, document, document_editor, text_document, events, id, ast_ids, ast
 import compiler
 
@@ -170,6 +170,10 @@ type AstDocumentEditor* = ref object of DocumentEditor
 
   renderSelectedNodeValue*: bool
   scrollOffset*: float
+  previousBaseIndex*: int
+
+  lastBounds*: Rect
+  lastLayouts*: seq[tuple[layout: NodeLayout, offset: float32]]
 
 proc updateCompletions(editor: AstDocumentEditor)
 proc getPrevChild*(document: AstDocument, node: AstNode, max: int = -1): Option[AstNode]
@@ -187,6 +191,39 @@ proc `node=`*(editor: AstDocumentEditor, node: AstNode) =
   if editor.selectionHistory.len > 100:
     discard editor.selectionHistory.popFirst
   editor.selectedNode = node
+
+  var foundNode = false
+  for (layout, offset) in editor.lastLayouts:
+    if layout.nodeToVisualNode.contains(node.id):
+      # Node layout was already computed for the last selection
+      let visualNode = layout.nodeToVisualNode[node.id]
+      let bounds = visualNode.absoluteBounds + vec2(0, offset)
+
+      if not bounds.intersects(editor.lastBounds):
+        continue
+
+      foundNode = true
+
+      if bounds.y < 50:
+        let subbase = node.subbase
+        editor.previousBaseIndex = subbase.index
+        editor.scrollOffset = 50 - (bounds.y - offset)
+      elif bounds.yh > editor.lastBounds.h - 50:
+        let subbase = node.subbase
+        editor.previousBaseIndex = subbase.index
+        editor.scrollOffset = -(bounds.y - offset) + editor.lastBounds.h - 50
+
+      break
+
+  if not foundNode:
+    let subbase = node.subbase
+    let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: subbase, selectedNode: node.id)
+    let layout = ctx.computeNodeLayout(input)
+    if layout.nodeToVisualNode.contains(node.id):
+      let visualNode = layout.nodeToVisualNode[node.id]
+      let bounds = visualNode.absoluteBounds
+      editor.previousBaseIndex = subbase.index
+      editor.scrollOffset = -bounds.y + editor.lastBounds.h * 0.5
 
 proc node*(editor: AstDocumentEditor): AstNode =
   return editor.selectedNode
@@ -1320,11 +1357,29 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
   of "toggle-render-selected-value":
     self.renderSelectedNodeValue = not self.renderSelectedNodeValue
 
-  of "scroll-down":
-    self.scrollOffset -= 50
+  of "select-center-node":
+    var nodes: seq[tuple[y: float32, node: VisualNode]] = @[]
+    for (layout, offset) in self.lastLayouts:
+      for (i, node) in layout.root.nextPreOrder:
+        if not isNil(node.node) and node.len > 0:
+          let bounds = node.absoluteBounds
+          if self.lastBounds.intersects(bounds + vec2(0, offset)):
+            nodes.add (bounds.y + offset, node)
 
-  of "scroll-up":
-    self.scrollOffset += 50
+    nodes.sort (a, b) => cmp(a.y, b.y)
+
+    if nodes.len > 0:
+      let firstY = nodes[0].y
+      let lastY = nodes[nodes.high].y
+      let middleY = (firstY + lastY) * 0.5
+
+      for i, (y, node) in nodes:
+        if i == nodes.high or nodes[i + 1].y > middleY:
+          self.node = node.node
+          break
+
+  of "scroll":
+    self.scrollOffset += arg.parseFloat
 
   of "dump-context":
     echo "================================================="
@@ -1385,11 +1440,12 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
               NumberLiteral(text: "69")
               NumberLiteral(text: "420")
 
-  editor.node = editor.document.rootNode[0]
   for c in editor.document.rootNode.children:
     editor.document.handleNodeInserted c
 
   ctx.insertNode(editor.document.rootNode)
+
+  editor.node = editor.document.rootNode[0]
 
   editor.eventHandler = eventHandler2:
     command "<A-LEFT>", "cursor.left"
@@ -1467,8 +1523,12 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     command "u", "undo"
     command "U", "redo"
 
-    command "<C-d>", "scroll-down"
-    command "<C-u>", "scroll-up"
+    command "<C-d>", "scroll -150"
+    command "<C-u>", "scroll 150"
+
+    command "<PAGE_DOWN>", "scroll -450"
+    command "<PAGE_UP>", "scroll 450"
+    command "<C-f>", "select-center-node"
 
     command "<C-r>", "select-prev"
     command "<C-t>", "select-next"

@@ -9,7 +9,7 @@ let horizontalGap = 2.0
 let indent = 15.0
 let lineDistance = 15.0
 
-let logRenderDuration = true
+let logRenderDuration = false
 
 proc newPaint(col: ColorRGB): Paint =
   result = newPaint(SolidPaint)
@@ -632,9 +632,13 @@ proc renderCompletions(editor: AstDocumentEditor, ed: Editor, bounds: Rect): Rec
 
 proc renderVisualNode(editor: AstDocumentEditor, ed: Editor, drawCtx: contexts.Context, node: VisualNode, offset: Vec2, selected: AstNode, globalBounds: Rect) =
   let bounds = node.bounds + offset
-  let intersection = bounds and globalBounds
-  if intersection.w < 1 or intersection.h < 1:
-    return
+
+  if node.len == 0:
+    if (bounds or globalBounds) != globalBounds:
+      return
+  else:
+    if not bounds.intersects(globalBounds):
+      return
 
   if node.text.len > 0:
     discard drawCtx.fillText(bounds.xy, node.text, node.color, node.font)
@@ -648,8 +652,6 @@ proc renderVisualNode(editor: AstDocumentEditor, ed: Editor, drawCtx: contexts.C
   for child in node.children:
     editor.renderVisualNode(ed, drawCtx, child, bounds.xy, selected, globalBounds)
 
-var previousBaseIndex = 0
-
 method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect, selected: bool): Rect =
   let document = editor.document
 
@@ -662,6 +664,7 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
     ctx.resetExecutionTimes()
 
   let (headerBounds, contentBounds) = bounds.splitH ed.ctx.fontSize.relative
+  editor.lastBounds = rect(vec2(), contentBounds.wh)
 
   ed.ctx.fillStyle = if selected: rgb(45, 45, 60) else: rgb(45, 45, 45)
   ed.ctx.fillRect(headerBounds)
@@ -691,29 +694,31 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
   let base = selectedNode.subbase
   let baseIndex = base.index
 
-  previousBaseIndex = previousBaseIndex.clamp(0..editor.document.rootNode.len)
+  editor.previousBaseIndex = editor.previousBaseIndex.clamp(0..editor.document.rootNode.len)
 
-  while editor.scrollOffset < 0 and previousBaseIndex + 1 < editor.document.rootNode.len:
-    let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: editor.document.rootNode[previousBaseIndex], selectedNode: selectedNode.id, replacements: replacements)
+  while editor.scrollOffset < 0 and editor.previousBaseIndex + 1 < editor.document.rootNode.len:
+    let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: editor.document.rootNode[editor.previousBaseIndex], selectedNode: selectedNode.id, replacements: replacements)
     let layout = ctx.computeNodeLayout(input)
-    previousBaseIndex += 1
+    editor.previousBaseIndex += 1
     editor.scrollOffset += layout.bounds.h + lineDistance
 
-  while editor.scrollOffset > contentBounds.h and previousBaseIndex > 0:
-    let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: editor.document.rootNode[previousBaseIndex], selectedNode: selectedNode.id, replacements: replacements)
+  while editor.scrollOffset > contentBounds.h and editor.previousBaseIndex > 0:
+    let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: editor.document.rootNode[editor.previousBaseIndex], selectedNode: selectedNode.id, replacements: replacements)
     let layout = ctx.computeNodeLayout(input)
-    previousBaseIndex -= 1
+    editor.previousBaseIndex -= 1
     editor.scrollOffset -= layout.bounds.h + lineDistance
 
+  editor.lastLayouts.setLen 0
+
   var offset = contentBounds.xy + vec2(0, editor.scrollOffset)
-  for i in previousBaseIndex..<editor.document.rootNode.len:
+  for i in editor.previousBaseIndex..<editor.document.rootNode.len:
     let node = editor.document.rootNode[i]
     let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node, selectedNode: selectedNode.id, replacements: replacements)
     let layout = ctx.computeNodeLayout(input)
-    let nodeBounds = layout.bounds
-    if nodeBounds.w <= 0 or nodeBounds.h <= 0:
-      continue
 
+    editor.lastLayouts.add (layout, offset.y - contentBounds.y)
+
+    let nodeBounds = layout.bounds
     let intersection = (nodeBounds + offset) and contentBounds
     if intersection.w < 1 or intersection.h < 1:
       break
@@ -732,15 +737,15 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
     if layout.nodeToVisualNode.contains(selectedNode.id):
       let visualRange = layout.nodeToVisualNode[selectedNode.id]
       ed.ctx.strokeStyle = rgb(255, 0, 255)
-      ed.ctx.strokeRect(visualRange.bounds + offset)
+      ed.ctx.strokeRect(visualRange.absoluteBounds + offset)
 
     # ed.boxy.addImage($node.id, drawCtx.image)
     # ed.boxy.drawImage($node.id, offset)
     offset.y += drawCtx.image.height.float32 + lineDistance
 
   offset = contentBounds.xy + vec2(0, editor.scrollOffset)
-  for k in 1..previousBaseIndex:
-    let i = previousBaseIndex - k
+  for k in 1..editor.previousBaseIndex:
+    let i = editor.previousBaseIndex - k
 
     let node = editor.document.rootNode[i]
     let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node, selectedNode: selectedNode.id, replacements: replacements)
@@ -748,10 +753,9 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
 
     offset.y -= layout.bounds.h + lineDistance
 
-    let nodeBounds = layout.bounds
-    if nodeBounds.w <= 0 or nodeBounds.h <= 0:
-      continue
+    editor.lastLayouts.add (layout, offset.y - contentBounds.y)
 
+    let nodeBounds = layout.bounds
     let intersection = (nodeBounds + offset) and contentBounds
     if intersection.w < 1 or intersection.h < 1:
       break
@@ -770,7 +774,7 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
     if layout.nodeToVisualNode.contains(selectedNode.id):
       let visualRange = layout.nodeToVisualNode[selectedNode.id]
       ed.ctx.strokeStyle = rgb(255, 0, 255)
-      ed.ctx.strokeRect(visualRange.bounds + offset)
+      ed.ctx.strokeRect(visualRange.absoluteBounds + offset)
 
     # ed.boxy.addImage($node.id, drawCtx.image)
     # ed.boxy.drawImage($node.id, offset)
