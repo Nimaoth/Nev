@@ -29,6 +29,9 @@ commands.add ("<C-m>", "command-line")
 var commandLineCommands: seq[(string, string)] = @[]
 commandLineCommands.add ("<ESCAPE>", "exit-command-line")
 commandLineCommands.add ("<ENTER>", "execute-command-line")
+commandLineCommands.add ("<BACKSPACE>", "backspace")
+commandLineCommands.add ("<DELETE>", "delete")
+commandLineCommands.add ("<SPACE>", "insert  ")
 
 proc toInput(rune: Rune): int64 =
   return rune.int64
@@ -216,8 +219,7 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
 
   ed.editor_defaults = @[TextDocumentEditor(), AstDocumentEditor()]
 
-  ed.createView(newAstDocument("b.txt"))
-  # ed.createView(TextDocument(filename: "a.txt", content: @[""]))
+  ed.createView(newAstDocument("a.ast"))
   # ed.createView(newKeybindAutocompletion())
   ed.currentView = 0
 
@@ -327,8 +329,11 @@ proc handleAction(ed: Editor, action: string, arg: string) =
     ed.handleAction(action, arg)
   of "open-file":
     try:
-      let file = readFile(arg)
-      ed.createView(TextDocument(filename: arg, content: collect file.splitLines))
+      if arg.endsWith(".ast"):
+        ed.createView(newAstDocument(arg))
+      else:
+        let file = readFile(arg)
+        ed.createView(TextDocument(filename: arg, content: collect file.splitLines))
     except:
       ed.logger.log(lvlError, fmt"[ed] Failed to load file '{arg}': {getCurrentExceptionMsg()}")
       echo getCurrentException().getStackTrace()
