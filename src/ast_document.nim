@@ -8,6 +8,7 @@ var logger = newConsoleLogger()
 
 let ctx* = newContext()
 ctx.enableLogging = false
+ctx.enableQueryLogging = false
 
 proc createBinaryIntOperator(operator: proc(a: int, b: int): int): Value =
   return newFunctionValue proc(values: seq[Value]): Value =
