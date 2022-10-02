@@ -252,12 +252,19 @@ proc treeRepr*(node: AstNode): string =
   else:
     return "other"
 
+proc toJson*(kind: AstNodeKind, opt = initToJsonOptions()): JsonNode =
+  return newJString($kind)
+
+proc fromJsonHook*(t: var AstNodeKind, jsonNode: JsonNode) =
+  t = jsonNode.str.parseEnum(Empty)
+
 proc toJson*(node: AstNode, opt = initToJsonOptions()): JsonNode =
   result = newJObject()
   result["kind"] = toJson(node.kind, opt)
   result["id"] = toJson(node.id, opt)
   if node.reff != null: result["reff"] = toJson(node.reff, opt)
   if node.text.len > 0: result["text"] = toJson(node.text, opt)
+  result["path"] = newJString(node.path.join ", ")
 
   if node.len > 0:
     let children = newJArray()
