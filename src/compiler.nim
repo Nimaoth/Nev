@@ -649,6 +649,13 @@ proc computeFunctionExecutionImpl(ctx: Context, fec: FunctionExecutionContext): 
   return ctx.executeNodeRec(body, variables)
 
 proc computeSymbolTypeImpl(ctx: Context, symbol: Symbol): Type =
+  if ctx.enableLogging or ctx.enableQueryLogging: inc currentIndent, 1
+  defer:
+    if ctx.enableLogging or ctx.enableQueryLogging: dec currentIndent, 1
+  if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent - 1), "computeSymbolTypeImpl ", symbol
+  defer:
+    if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent), "-> ", result
+
   case symbol.kind:
   of skAstNode:
     return ctx.computeType(symbol.node)
@@ -656,6 +663,13 @@ proc computeSymbolTypeImpl(ctx: Context, symbol: Symbol): Type =
     return symbol.typ
 
 proc computeSymbolValueImpl(ctx: Context, symbol: Symbol): Value =
+  if ctx.enableLogging or ctx.enableQueryLogging: inc currentIndent, 1
+  defer:
+    if ctx.enableLogging or ctx.enableQueryLogging: dec currentIndent, 1
+  if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent - 1), "computeSymbolValueImpl ", symbol
+  defer:
+    if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent), "-> ", result
+
   case symbol.kind:
   of skAstNode:
     return ctx.computeValue(symbol.node)
@@ -961,6 +975,13 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
     return errorType()
 
 proc computeSymbolImpl(ctx: Context, node: AstNode): Option[Symbol] =
+  if ctx.enableLogging or ctx.enableQueryLogging: inc currentIndent, 1
+  defer:
+    if ctx.enableLogging or ctx.enableQueryLogging: dec currentIndent, 1
+  if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent - 1), "computeSymbolImpl ", node
+  defer:
+    if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent), "-> ", result
+
   case node
   of Identifier():
     let symbols = ctx.computeSymbols(node)

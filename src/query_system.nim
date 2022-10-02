@@ -221,6 +221,11 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       newEmptyNode()
     ),
     nnkIdentDefs.newTree(
+      newIdentNode("recursiveQueries"),
+      quote do: HashSet[Dependency],
+      newEmptyNode()
+    ),
+    nnkIdentDefs.newTree(
       newIdentNode("recoveryFunctions"),
       quote do: Table[UpdateFunction, RecursionRecoveryFunction],
       newEmptyNode()
@@ -507,6 +512,8 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
       if key in ctx.activeQuerySet:
         # Recursion detected
+        ctx.recursiveQueries.incl key
+
         let item = key.item
         let query = ctx.depGraph.queryNames[key.update]
         echo "[query_system:force] Detected recursion at ", item, " (", query, ")"
@@ -552,6 +559,8 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
       if key in ctx.activeQuerySet:
         # Recursion detected
+        ctx.recursiveQueries.incl key
+
         let item = key.item
         let query = ctx.depGraph.queryNames[key.update]
         echo "[query_system:tryMarkGreen] Detected recursion at ", item, " (", query, ")"
@@ -564,7 +573,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
         if ctx.recoveryFunctions.contains(key.update):
           ctx.recoveryFunctions[key.update](key)
           ctx.depGraph.markRed(key, @[])
-        return
+        return false
 
       ctx.activeQuerySet.incl key
       ctx.activeQueryStack.add key
@@ -590,6 +599,11 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
           if not ctx.tryMarkGreen(dep):
             if ctx.enableLogging: echo repeat2("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, ", mark green failed"
             ctx.force(dep)
+
+            if key in ctx.recursiveQueries:
+              ctx.recursiveQueries.excl key
+              if ctx.enableLogging: echo repeat2("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, ", recursively called " & $key & ", failed"
+              return false
 
             if ctx.depGraph.nodeColor(dep, verified) == Red:
               if ctx.enableLogging: echo repeat2("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, ", value changed"
@@ -631,8 +645,13 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       result.add quote do:
         proc `computeName`*(ctx: `contextName`, input: `key`): `value` =
           let timer = startTimer()
+
           defer:
             ctx.`executionTime` += timer.elapsed
+
+          defer:
+            if ctx.dependencyStack.len == 0:
+              ctx.recursiveQueries.clear()
 
           let item = getItem input
           let key = (item, ctx.`updateName`)
@@ -684,6 +703,10 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
           let timer = startTimer()
           defer:
             ctx.`executionTime` += timer.elapsed
+
+          defer:
+            if ctx.dependencyStack.len == 0:
+              ctx.recursiveQueries.clear()
 
           let item = getItem input
           let key = (item, ctx.`updateName`)
