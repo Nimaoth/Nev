@@ -7,7 +7,7 @@ import query_system, compiler_types
 
 export compiler_types
 
-var logger = newConsoleLogger()
+var logger* = newConsoleLogger()
 
 CreateContext Context:
   input AstNode
@@ -35,9 +35,13 @@ CreateContext Context:
   proc computeNodeLayoutImpl(ctx: Context, nodeLayoutInput: NodeLayoutInput): NodeLayout {.query("NodeLayout", useCache = false, useFingerprinting = false).}
 
 import node_layout
+import treewalk_interpreter
 
 proc computeNodeLayoutImpl(ctx: Context, nodeLayoutInput: NodeLayoutInput): NodeLayout =
   return computeNodeLayoutImpl2(ctx, nodeLayoutInput)
+
+proc computeFunctionExecutionImpl(ctx: Context, fec: FunctionExecutionContext): Value =
+  return computeFunctionExecutionImpl2(ctx, fec)
 
 proc recoverValue(ctx: Context, key: Dependency) =
   logger.log(lvlInfo, fmt"[compiler] Recovering value for {key}")
@@ -58,183 +62,6 @@ proc recoverSymbols(ctx: Context, key: Dependency) =
   logger.log(lvlInfo, fmt"[compiler] Recovering symbols for {key}")
   if ctx.getAstNode(key.item.id).getSome(node):
     ctx.queryCacheSymbols[node] = newTable[Id, Symbol]()
-
-proc cacheValuesInFunction(ctx: Context, node: AstNode, values: var Table[Id, Value]) =
-  case node.kind:
-  of ConstDecl:
-    let value = ctx.computeValue(node)
-    values[node.id] = value
-  else:
-    for child in node.children:
-      ctx.cacheValuesInFunction(child, values)
-
-proc executeNodeRec(ctx: Context, node: AstNode, variables: var Table[Id, Value]): Value =
-  if ctx.enableExecutionLogging: inc currentIndent, 1
-  defer:
-    if ctx.enableExecutionLogging: dec currentIndent, 1
-  if ctx.enableExecutionLogging: echo repeat2("| ", currentIndent - 1), "executeNodeRec ", node
-  defer:
-    if ctx.enableExecutionLogging: echo repeat2("| ", currentIndent), "-> ", result
-
-  case node
-  of Empty():
-    return voidValue()
-
-  of NodeList():
-    var lastValue = errorValue()
-    for child in node.children:
-      lastValue = ctx.executeNodeRec(child, variables)
-    return lastValue
-
-  of StringLiteral():
-    return Value(kind: vkString, stringValue: node.text)
-
-  of NumberLiteral():
-    let value = try: node.text.parseInt except: return errorValue()
-    return Value(kind: vkNumber, intValue: value)
-
-  of If():
-    if node.len < 2:
-      return errorValue()
-
-    # Iterate through all ifs/elifs
-    var index: int = 0
-    while index + 1 < node.len:
-      defer: index += 2
-
-      let condition = node[index]
-      let trueCase = node[index + 1]
-
-      let conditionValue = ctx.executeNodeRec(condition, variables)
-      if conditionValue.kind == vkError:
-        return errorValue()
-
-      if conditionValue.kind != vkNumber:
-        logger.log(lvlError, fmt"[compiler] Condition of if statement must be an int but is {conditionValue}")
-        return errorValue()
-
-      if conditionValue.intValue != 0:
-        let trueCaseValue = ctx.executeNodeRec(trueCase, variables)
-        return trueCaseValue
-
-    # else case
-    if node.len mod 2 != 0:
-      let falseCaseValue = ctx.executeNodeRec(node.last, variables)
-      return falseCaseValue
-
-    return voidValue()
-
-  of Identifier():
-    let id = node.reff
-    if variables.contains(id):
-      return variables[id]
-
-    logger.log(lvlError, fmt"executeNodeRec {node}: Failed to look up value for identifier")
-    return errorValue()
-
-  of Call():
-    let function = ctx.executeNodeRec(node[0], variables)
-
-    case function.kind:
-    of vkError:
-      return errorValue()
-
-    of vkBuiltinFunction:
-      var args: seq[Value] = @[]
-      for arg in node.children[1..^1]:
-        let value = ctx.executeNodeRec(arg, variables)
-        if value.kind == vkError:
-          return errorValue()
-        args.add value
-      return function.impl(args)
-
-    of vkAstFunction:
-      var args: seq[Value] = @[]
-      for arg in node.children[1..^1]:
-        let value = ctx.executeNodeRec(arg, variables)
-        if value.kind == vkError:
-          return errorValue()
-        args.add value
-      let fec = ctx.newFunctionExecutionContext(FunctionExecutionContext(node: function.node, arguments: args))
-      return ctx.computeFunctionExecution(fec)
-
-    else:
-      return errorValue()
-
-  of LetDecl():
-    if node.len < 2:
-      return errorValue()
-    let valueNode = node[1]
-    let value = ctx.executeNodeRec(valueNode, variables)
-    variables[node.id] = value
-    return value
-
-  of VarDecl():
-    if node.len < 2:
-      return errorValue()
-    let valueNode = node[1]
-    let value = ctx.executeNodeRec(valueNode, variables)
-    variables[node.id] = value
-    return value
-
-  of ConstDecl():
-    let id = node.id
-    if variables.contains(id):
-      return variables[id]
-
-  of Assignment():
-    if node.len < 2:
-      return errorValue()
-    let targetNode = node[0]
-    let valueNode = node[1]
-    if ctx.computeSymbol(targetNode).getSome(sym):
-      let value = ctx.executeNodeRec(valueNode, variables)
-      variables[sym.id] = value
-      return voidValue()
-    else:
-      logger.log(lvlError, fmt"executeNodeRec {node}: Failed to assign to {targetNode}: no symbol found")
-      return errorValue()
-
-  else:
-    logger.log(lvlError, fmt"executeNodeRec not implemented for {node}")
-    return errorValue()
-
-proc computeFunctionExecutionImpl(ctx: Context, fec: FunctionExecutionContext): Value =
-  if ctx.enableQueryLogging or ctx.enableExecutionLogging: inc currentIndent, 1
-  defer:
-    if ctx.enableQueryLogging or ctx.enableExecutionLogging: dec currentIndent, 1
-  if ctx.enableQueryLogging or ctx.enableExecutionLogging: echo repeat2("| ", currentIndent - 1), "computeFunctionExecutionImpl ", fec
-  defer:
-    if ctx.enableQueryLogging or ctx.enableExecutionLogging: echo repeat2("| ", currentIndent), "-> ", result
-
-  let body = fec.node[2]
-
-  # Add values of all symbols in the global scope
-  var variables = initTable[Id, Value]()
-  for (key, sym) in ctx.globalScope.pairs:
-    let value = ctx.computeSymbolValue(sym)
-    if value.kind != vkError:
-      variables[key] = value
-
-  # Add values of all symbols in the scope of the function we're trying to call
-  let scope = ctx.computeSymbols(fec.node)
-  for (key, sym) in scope.pairs:
-    let value = ctx.computeSymbolValue(sym)
-    if value.kind != vkError:
-      variables[key] = value
-
-  # Add values of all arguments
-  let params = fec.node[0]
-  for i, arg in fec.arguments:
-    if i >= params.len:
-      logger.log(lvlError, fmt"Wrong number of arguments, expected {params.len}, got {fec.arguments.len}")
-      return errorValue()
-    let param = params[i]
-    variables[param.id] = arg
-
-  ctx.cacheValuesInFunction(body, variables)
-
-  return ctx.executeNodeRec(body, variables)
 
 proc computeSymbolTypeImpl(ctx: Context, symbol: Symbol): Type =
   if ctx.enableLogging or ctx.enableQueryLogging: inc currentIndent, 1
@@ -562,87 +389,6 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
   else:
     return errorType()
 
-proc computeSymbolImpl(ctx: Context, node: AstNode): Option[Symbol] =
-  if ctx.enableLogging or ctx.enableQueryLogging: inc currentIndent, 1
-  defer:
-    if ctx.enableLogging or ctx.enableQueryLogging: dec currentIndent, 1
-  if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent - 1), "computeSymbolImpl ", node
-  defer:
-    if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent), "-> ", result
-
-  case node
-  of Identifier():
-    let symbols = ctx.computeSymbols(node)
-
-    if symbols.contains(node.reff):
-      return some(symbols[node.reff])
-
-  of ConstDecl():
-    logger.log(lvlDebug, fmt"computeSymbol {node}")
-    return some(ctx.newSymbol(Symbol(kind: skAstNode, id: node.id, node: node, name: node.text)))
-
-  of LetDecl():
-    return some(ctx.newSymbol(Symbol(kind: skAstNode, id: node.id, node: node, name: node.text)))
-
-  of VarDecl():
-    return some(ctx.newSymbol(Symbol(kind: skAstNode, id: node.id, node: node, name: node.text)))
-
-  else:
-    logger.log(lvlError, fmt"Failed to get symbol from node {node}")
-    return none[Symbol]()
-
-proc computeSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, Symbol] =
-  if ctx.enableLogging or ctx.enableQueryLogging: inc currentIndent, 1
-  defer:
-    if ctx.enableLogging or ctx.enableQueryLogging: dec currentIndent, 1
-  if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent - 1), "computeSymbolsImpl ", node
-  defer:
-    if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent), "-> ", result
-
-  result = newTable[Id, Symbol]()
-
-  if node.findWithParentRec(NodeList).getSome(parentInNodeList) and parentInNodeList.parent.parent != nil:
-    let parentSymbols = ctx.computeSymbols(parentInNodeList.parent)
-    for (id, sym) in parentSymbols.pairs:
-      result[id] = sym
-
-    ctx.recordDependency(parentInNodeList.parent.getItem)
-
-    let bIsOrderDependent = parentInNodeList.parent.parent != nil
-    for child in parentInNodeList.parent.children:
-      if bIsOrderDependent and child == parentInNodeList:
-        break
-
-      if child.kind != ConstDecl and child.kind != LetDecl and child.kind != VarDecl:
-        continue
-
-      if ctx.computeSymbol(child).getSome(symbol):
-        result[symbol.id] = symbol
-
-  elif node.findWithParentRec(FunctionDefinition).getSome(parentInFunctionDef):
-    let functionDefinition = parentInFunctionDef.parent
-    if functionDefinition.len > 0:
-      let params = functionDefinition[0]
-      ctx.recordDependency(params.getItem)
-      for param in params.children:
-        ctx.recordDependency(param.getItem)
-        if ctx.computeSymbol(param).getSome(symbol):
-          result[param.id] = symbol
-
-  # Add symbols from global scope
-  let root = node.base
-  ctx.recordDependency(root.getItem)
-  for child in root.children:
-    if child.kind != ConstDecl and child.kind != LetDecl and child.kind != VarDecl:
-      continue
-
-    if ctx.computeSymbol(child).getSome(symbol):
-      result[symbol.id] = symbol
-
-  for (key, symbol) in ctx.globalScope.pairs:
-    ctx.recordDependency(symbol.getItem)
-    result[symbol.id] = symbol
-
 proc computeValueImpl(ctx: Context, node: AstNode): Value =
   if ctx.enableLogging or ctx.enableQueryLogging: inc currentIndent, 1
   defer:
@@ -741,26 +487,86 @@ proc computeValueImpl(ctx: Context, node: AstNode): Value =
   else:
     return errorValue()
 
-iterator nextPreOrder*(node: AstNode): tuple[key: int, value: AstNode] =
-  var n = node
-  var idx = -1
-  var i = 0
+proc computeSymbolImpl(ctx: Context, node: AstNode): Option[Symbol] =
+  if ctx.enableLogging or ctx.enableQueryLogging: inc currentIndent, 1
+  defer:
+    if ctx.enableLogging or ctx.enableQueryLogging: dec currentIndent, 1
+  if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent - 1), "computeSymbolImpl ", node
+  defer:
+    if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent), "-> ", result
 
-  while true:
-    defer: inc i
-    if idx == -1:
-      yield (i, n)
-    if idx + 1 < n.len:
-      n = n[idx + 1]
-      idx = -1
-    elif n.next.getSome(ne):
-      n = ne
-      idx = -1
-    elif n.parent != nil and n.parent != node:
-      idx = n.index
-      n = n.parent
-    else:
-      break
+  case node
+  of Identifier():
+    let symbols = ctx.computeSymbols(node)
+
+    if symbols.contains(node.reff):
+      return some(symbols[node.reff])
+
+  of ConstDecl():
+    logger.log(lvlDebug, fmt"computeSymbol {node}")
+    return some(ctx.newSymbol(Symbol(kind: skAstNode, id: node.id, node: node, name: node.text)))
+
+  of LetDecl():
+    return some(ctx.newSymbol(Symbol(kind: skAstNode, id: node.id, node: node, name: node.text)))
+
+  of VarDecl():
+    return some(ctx.newSymbol(Symbol(kind: skAstNode, id: node.id, node: node, name: node.text)))
+
+  else:
+    logger.log(lvlError, fmt"Failed to get symbol from node {node}")
+    return none[Symbol]()
+
+proc computeSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, Symbol] =
+  if ctx.enableLogging or ctx.enableQueryLogging: inc currentIndent, 1
+  defer:
+    if ctx.enableLogging or ctx.enableQueryLogging: dec currentIndent, 1
+  if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent - 1), "computeSymbolsImpl ", node
+  defer:
+    if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent), "-> ", result
+
+  result = newTable[Id, Symbol]()
+
+  if node.findWithParentRec(NodeList).getSome(parentInNodeList) and parentInNodeList.parent.parent != nil:
+    let parentSymbols = ctx.computeSymbols(parentInNodeList.parent)
+    for (id, sym) in parentSymbols.pairs:
+      result[id] = sym
+
+    ctx.recordDependency(parentInNodeList.parent.getItem)
+
+    let bIsOrderDependent = parentInNodeList.parent.parent != nil
+    for child in parentInNodeList.parent.children:
+      if bIsOrderDependent and child == parentInNodeList:
+        break
+
+      if child.kind != ConstDecl and child.kind != LetDecl and child.kind != VarDecl:
+        continue
+
+      if ctx.computeSymbol(child).getSome(symbol):
+        result[symbol.id] = symbol
+
+  elif node.findWithParentRec(FunctionDefinition).getSome(parentInFunctionDef):
+    let functionDefinition = parentInFunctionDef.parent
+    if functionDefinition.len > 0:
+      let params = functionDefinition[0]
+      ctx.recordDependency(params.getItem)
+      for param in params.children:
+        ctx.recordDependency(param.getItem)
+        if ctx.computeSymbol(param).getSome(symbol):
+          result[param.id] = symbol
+
+  # Add symbols from global scope
+  let root = node.base
+  ctx.recordDependency(root.getItem)
+  for child in root.children:
+    if child.kind != ConstDecl and child.kind != LetDecl and child.kind != VarDecl:
+      continue
+
+    if ctx.computeSymbol(child).getSome(symbol):
+      result[symbol.id] = symbol
+
+  for (key, symbol) in ctx.globalScope.pairs:
+    ctx.recordDependency(symbol.getItem)
+    result[symbol.id] = symbol
 
 proc notifySymbolChanged*(ctx: Context, sym: Symbol) =
   ctx.depGraph.revision += 1
