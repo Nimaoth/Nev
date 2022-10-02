@@ -1,4 +1,4 @@
-import std/[strformat, tables, algorithm, math, sugar]
+import std/[strformat, tables, algorithm, math, sugar, strutils]
 import timer
 import boxy, windy, fusion/matching
 import util, input, events, editor, rect_utils, document_editor, text_document, ast_document, keybind_autocomplete, id, ast
@@ -81,6 +81,9 @@ proc measureEditorBounds(editor: TextDocumentEditor, ed: Editor, bounds: Rect): 
   if editor.fillAvailableSpace:
     usedBounds = bounds
 
+  usedBounds.w = max(usedBounds.w, config.font.size * 0.5)
+  usedBounds.h = max(usedBounds.h, config.font.size)
+
   return usedBounds
 
 method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect, selected: bool): Rect =
@@ -125,7 +128,7 @@ proc renderCompletions(editor: AstDocumentEditor, ed: Editor, bounds: Rect): Rec
   let completions = editor.completions
   let selected = editor.selectedCompletion
 
-  let renderedCompletions = min(completions.len, 5)
+  let renderedCompletions = min(completions.len, 15)
 
   let width = min(bounds.w, 250)
 
@@ -134,21 +137,60 @@ proc renderCompletions(editor: AstDocumentEditor, ed: Editor, bounds: Rect): Rec
   else:
     0
 
-  ed.ctx.fillStyle = rgb(25, 40, 25)
-  ed.ctx.fillRect(bounds.splitH((renderedCompletions.float32 * ed.ctx.fontSize).relative)[0].splitV(width.relative)[0])
-  ed.ctx.fillStyle = rgb(40, 40, 40)
-  ed.ctx.fillRect(bounds.splitH(((selected - firstCompletion).float32 * ed.ctx.fontSize).relative)[1].splitH(ed.ctx.fontSize.relative)[0].splitV(width.relative)[0])
-  ed.ctx.strokeStyle = rgb(255, 255, 255)
-  ed.ctx.strokeRect(bounds.splitH((renderedCompletions.float32 * ed.ctx.fontSize).relative)[0].splitV(width.relative)[0])
+  var entries: seq[tuple[name: string, typ: string, value: string]] = @[]
 
-  for i, com in completions[firstCompletion..<(firstCompletion + renderedCompletions)]:
-    ed.ctx.fillStyle = rgb(255, 225, 255)
+  for i, com in completions[firstCompletion..completions.high]:
     case com.kind
     of SymbolCompletion:
       if ctx.getSymbol(com.id).getSome(symbol):
-        ed.ctx.fillText(symbol.name, vec2(bounds.x, bounds.y + i.float32 * ed.ctx.fontSize))
+        let typ = ctx.computeSymbolType(symbol)
+        var valueString = ""
+        let value = ctx.computeSymbolValue(symbol)
+        if value.kind != vkError and value.kind != vkBuiltinFunction and value.kind != vkAstFunction and value.kind != vkVoid:
+          valueString = $value
+        entries.add (symbol.name, $typ, valueString)
+
     of AstCompletion:
-      ed.ctx.fillText(com.name, vec2(bounds.x, bounds.y + i.float32 * ed.ctx.fontSize))
+      entries.add (com.name, "snippet", $com.nodeKind)
+
+    if entries.len >= renderedCompletions:
+      break
+
+  var maxNameLen = 10
+  var maxTypeLen = 10
+  var maxValueLen = 0
+  for (name, typ, value) in entries:
+    maxNameLen = max(maxNameLen, name.len)
+    maxTypeLen = max(maxTypeLen, typ.len)
+    maxValueLen = max(maxValueLen, value.len)
+
+  let sepWidth = config.font.typeset("###").layoutBounds().x
+  let nameWidth = config.font.typeset('#'.repeat(maxNameLen)).layoutBounds().x
+  let typeWidth = config.font.typeset('#'.repeat(maxTypeLen)).layoutBounds().x
+  let valueWidth = config.font.typeset('#'.repeat(maxValueLen)).layoutBounds().x
+  let totalWidth = nameWidth + typeWidth + valueWidth + sepWidth * 2
+
+  ed.ctx.fillStyle = rgb(30, 30, 30)
+  ed.ctx.fillRect(rect(bounds.xy, vec2(totalWidth, renderedCompletions.float32 * config.font.size)))
+  ed.ctx.strokeStyle = rgb(255, 255, 255)
+  ed.ctx.strokeRect(rect(bounds.xy, vec2(totalWidth, renderedCompletions.float32 * config.font.size)))
+
+
+  for i, (name, typ, value) in entries:
+    if i mod 2 == 1:
+      ed.ctx.fillStyle = rgb(40, 40, 40)
+      ed.ctx.fillRect(rect(bounds.xy + vec2(0, i.float32 * config.font.size), vec2(totalWidth, config.font.size)))
+
+    var lastRect = ed.ctx.fillText(vec2(bounds.x, bounds.y + i.float32 * config.font.size), name, rgb(255, 255, 255), config.font)
+    lastRect = ed.ctx.fillText(vec2(lastRect.x + nameWidth, bounds.y + i.float32 * config.font.size), " : ", rgb(175, 175, 175), config.font)
+    lastRect = ed.ctx.fillText(vec2(lastRect.xw, bounds.y + i.float32 * config.font.size), typ, rgb(255, 175, 175), config.font)
+
+    if value.len > 0:
+      lastRect = ed.ctx.fillText(vec2(lastRect.x + typeWidth, bounds.y + i.float32 * config.font.size), " = ", rgb(175, 175, 175), config.font)
+      lastRect = ed.ctx.fillText(vec2(lastRect.xw, bounds.y + i.float32 * config.font.size), value, rgb(175, 255, 175), config.font)
+
+  ed.ctx.strokeStyle = rgb(200, 200, 200)
+  ed.ctx.strokeRect(rect(bounds.xy + vec2(0, (selected - firstCompletion).float32 * config.font.size), vec2(totalWidth, config.font.size)))
 
 proc renderVisualNode(editor: AstDocumentEditor, ed: Editor, drawCtx: contexts.Context, node: VisualNode, offset: Vec2, selected: AstNode, globalBounds: Rect) =
   let bounds = node.bounds + offset
@@ -184,8 +226,7 @@ proc renderVisualNodeLayout(editor: AstDocumentEditor, ed: Editor, contentBounds
   editor.lastLayouts.add (layout, offset - contentBounds.xy)
 
   let nodeBounds = layout.bounds
-  let intersection = (nodeBounds + offset) and contentBounds
-  if intersection.w < 1 or intersection.h < 1:
+  if not contentBounds.intersects(nodeBounds + offset):
     return
 
   # drawCtx.image = newImage(nodeBounds.w.int, nodeBounds.h.int)
@@ -203,8 +244,10 @@ proc renderVisualNodeLayout(editor: AstDocumentEditor, ed: Editor, contentBounds
     let visualRange = layout.nodeToVisualNode[editor.node.id]
     let bounds = visualRange.absoluteBounds + offset
 
-    ed.ctx.strokeStyle = rgb(255, 0, 255)
+    ed.ctx.strokeStyle = rgb(255, 255, 255)
+    ed.ctx.lineWidth = 2.5
     ed.ctx.strokeRect(bounds)
+    ed.ctx.lineWidth = 1
 
   # ed.boxy.addImage($node.id, drawCtx.image)
   # ed.boxy.drawImage($node.id, offset)
@@ -281,16 +324,18 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
 
   if editor.completions.len > 0:
     for (layout, offset) in editor.lastLayouts:
-      if layout.nodeToVisualNode.contains(editor.node.id):
-        let visualRange = layout.nodeToVisualNode[editor.node.id]
-        let bounds = visualRange.absoluteBounds + offset + contentBounds.xy
-        discard renderCompletions(editor, ed, contentBounds.splitH(bounds.yh.absolute)[1].splitV(bounds.x.absolute)[1])
-
       let selectedCompletion = editor.completions[editor.selectedCompletion]
       if selectedCompletion.kind == SymbolCompletion and ctx.getSymbol(selectedCompletion.id).getSome(symbol) and symbol.kind == skAstNode and layout.nodeToVisualNode.contains(symbol.node.id):
         let selectedDeclRect = layout.nodeToVisualNode[symbol.node.id]
         ed.ctx.strokeStyle = rgb(150, 150, 220)
         ed.ctx.strokeRect(selectedDeclRect.absoluteBounds + offset + contentBounds.xy)
+
+    for (layout, offset) in editor.lastLayouts:
+      if layout.nodeToVisualNode.contains(editor.node.id):
+        let visualRange = layout.nodeToVisualNode[editor.node.id]
+        let bounds = visualRange.absoluteBounds + offset + contentBounds.xy
+        discard renderCompletions(editor, ed, contentBounds.splitH(bounds.yh.absolute)[1].splitV(bounds.x.absolute)[1])
+
 
   return bounds
 

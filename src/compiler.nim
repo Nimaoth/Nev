@@ -169,7 +169,7 @@ func `$`*(typ: Type): string =
   of tVoid: return "void"
   of tString: return "string"
   of tInt: return "int"
-  of tFunction: return "function " & $typ.paramTypes & " -> " & $typ.returnType & ""
+  of tFunction: return $typ.paramTypes & " -> " & $typ.returnType
   of tType: return "type"
   of tAny: return fmt"any({typ.open})"
 
@@ -776,11 +776,10 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
     return ctx.computeType(node[0])
 
   of LetDecl():
-    if node.len < 2:
+    if node.len < 1:
       return errorType()
 
     let typeNode = node[0]
-    let valueNode = node[1]
 
     var typ = voidType()
     if typeNode.kind != Empty:
@@ -800,26 +799,27 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
 
       typ = typeNodeValue.typ
 
-    if valueNode.kind != Empty:
-      let valueNodeType = ctx.computeType(valueNode)
-      if valueNodeType.kind == tError:
-        return errorType()
+    if node.len >= 2:
+      let valueNode = node[1]
+      if valueNode.kind != Empty:
+        let valueNodeType = ctx.computeType(valueNode)
+        if valueNodeType.kind == tError:
+          return errorType()
 
-      if typ.kind == tVoid:
-        typ = valueNodeType
+        if typ.kind == tVoid:
+          typ = valueNodeType
 
-      if valueNodeType != typ:
-        logger.log(lvlError, fmt"[compiler] Expected {typ}, got {valueNodeType}")
-        return errorType()
+        if valueNodeType != typ:
+          logger.log(lvlError, fmt"[compiler] Expected {typ}, got {valueNodeType}")
+          return errorType()
 
     return typ
 
   of VarDecl():
-    if node.len < 2:
+    if node.len < 1:
       return errorType()
 
     let typeNode = node[0]
-    let valueNode = node[1]
 
     var typ = voidType()
     if typeNode.kind != Empty:
@@ -839,17 +839,19 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
 
       typ = typeNodeValue.typ
 
-    if valueNode.kind != Empty:
-      let valueNodeType = ctx.computeType(valueNode)
-      if valueNodeType.kind == tError:
-        return errorType()
+    if node.len >= 2:
+      let valueNode = node[1]
+      if valueNode.kind != Empty:
+        let valueNodeType = ctx.computeType(valueNode)
+        if valueNodeType.kind == tError:
+          return errorType()
 
-      if typ.kind == tVoid:
-        typ = valueNodeType
+        if typ.kind == tVoid:
+          typ = valueNodeType
 
-      if valueNodeType != typ:
-        logger.log(lvlError, fmt"[compiler] Expected {typ}, got {valueNodeType}")
-        return errorType()
+        if valueNodeType != typ:
+          logger.log(lvlError, fmt"[compiler] Expected {typ}, got {valueNodeType}")
+          return errorType()
 
     return typ
 
@@ -990,16 +992,7 @@ proc computeSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, Symbol] =
 
   result = newTable[Id, Symbol]()
 
-  if node.parent != nil and node.parent.kind == FunctionDefinition:
-    if node.parent.len > 0:
-      let params = node.parent[0]
-      ctx.recordDependency(params.getItem)
-      for param in params.children:
-        ctx.recordDependency(param.getItem)
-        if ctx.computeSymbol(param).getSome(symbol):
-          result[param.id] = symbol
-
-  elif node.findWithParentRec(NodeList).getSome(parentInNodeList) and parentInNodeList.parent.parent != nil:
+  if node.findWithParentRec(NodeList).getSome(parentInNodeList) and parentInNodeList.parent.parent != nil:
     let parentSymbols = ctx.computeSymbols(parentInNodeList.parent)
     for (id, sym) in parentSymbols.pairs:
       result[id] = sym
@@ -1016,6 +1009,16 @@ proc computeSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, Symbol] =
 
       if ctx.computeSymbol(child).getSome(symbol):
         result[symbol.id] = symbol
+
+  elif node.findWithParentRec(FunctionDefinition).getSome(parentInFunctionDef):
+    let functionDefinition = parentInFunctionDef.parent
+    if functionDefinition.len > 0:
+      let params = functionDefinition[0]
+      ctx.recordDependency(params.getItem)
+      for param in params.children:
+        ctx.recordDependency(param.getItem)
+        if ctx.computeSymbol(param).getSome(symbol):
+          result[param.id] = symbol
 
   # Add symbols from global scope
   let root = node.base
@@ -1179,11 +1182,6 @@ proc deleteNode*(ctx: Context, node: AstNode) =
   if node.parent != nil:
     ctx.depGraph.changed[(node.parent.getItem, nil)] = ctx.depGraph.revision
 
-  for key in ctx.depGraph.dependencies.keys:
-    for i, dep in ctx.depGraph.dependencies[key]:
-      if dep.item == node.getItem:
-        ctx.depGraph.dependencies[key][i] = ((null, -1), nil)
-
 proc deleteAllNodesAndSymbols*(ctx: Context) =
   ctx.depGraph.revision += 1
   ctx.depGraph.changed.clear
@@ -1197,10 +1195,5 @@ proc replaceNodeChild*(ctx: Context, parent: AstNode, index: int, newNode: AstNo
   let node = parent[index]
   parent[index] = newNode
   ctx.depGraph.changed.del((node.getItem, nil))
-
-  for key in ctx.depGraph.dependencies.keys:
-    for i, dep in ctx.depGraph.dependencies[key]:
-      if dep.item == node.getItem:
-        ctx.depGraph.dependencies[key][i].item = newNode.getItem
 
   ctx.insertNode(newNode)

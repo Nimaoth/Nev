@@ -611,6 +611,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
     let updateName = ident "update" & name
     let computeName = ident "compute" & name
+    let getFunctionName = ident "get" & name
     let queryCache = ident "queryCache" & name
     let executionTime = ident "executionTime" & name
 
@@ -618,6 +619,13 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
     let useCache = queryUseCache query
     let useFingerprinting = newLit queryUseFingerprinting query
+
+    result.add quote do:
+      proc `getFunctionName`*(ctx: `contextName`, input: `key`): Option[`value`] =
+        if ctx.`queryCache`.contains(input):
+          return some(ctx.`queryCache`[input])
+        return none[`value`]()
+
 
     if useCache:
       result.add quote do:
