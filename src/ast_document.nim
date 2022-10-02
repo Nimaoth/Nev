@@ -445,6 +445,7 @@ proc handleNodeInserted*(doc: AstDocument, node: AstNode) =
 proc insertNode*(document: AstDocument, node: AstNode, index: int, newNode: AstNode): Option[AstNode]
 
 proc handleNodeDelete*(doc: AstDocument, node: AstNode) =
+  logger.log lvlInfo, fmt"[astdoc] Node deleted: {node}"
   for child in node.children:
     doc.handleNodeDelete child
 
@@ -1382,6 +1383,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
     if self.isEditing: return
     let typ = ctx.computeType(self.node)
 
+    # ctx.enableQueryLogging = true
     if self.createNodeFromAction(arg, self.node, typ).getSome(newNodeIndex):
       var (newNode, index) = newNodeIndex
       let oldNode = self.node
@@ -1394,6 +1396,10 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
         self.node = emptyNode
         discard self.tryEdit self.node
         break
+
+    # let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: self.node.subbase.next.get.next.get, selectedNode: self.node.id)
+    # discard ctx.computeNodeLayout(input)
+    # ctx.enableQueryLogging = false
 
   of "edit-next-empty":
     if self.isEditing: return
