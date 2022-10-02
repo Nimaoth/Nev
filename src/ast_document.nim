@@ -183,6 +183,7 @@ proc node*(editor: AstDocumentEditor): AstNode =
   return editor.selectedNode
 
 proc handleSelectedNodeChanged(editor: AstDocumentEditor) =
+  echo "handleSelectedNodeChanged"
   let node = editor.node
 
   var foundNode = false
@@ -192,40 +193,67 @@ proc handleSelectedNodeChanged(editor: AstDocumentEditor) =
     var layout = editor.lastLayouts[i].layout
     var offset = editor.lastLayouts[i].offset
 
-    if not layout.nodeToVisualNode.contains(node.id):
-      var targetNode = node
-      while targetNode != nil and not layout.nodeToVisualNode.contains(targetNode.id):
-        targetNode = targetNode.parent
-
-      if targetNode != nil:
-        # New node is not in layout yet but there is a parent which has a layout already
-        let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: targetNode.subbase, selectedNode: node.id)
-        layout = ctx.computeNodeLayout(input)
-
-      elif node.parent == editor.document.rootNode and node.prev.getSome(prev) and layout.nodeToVisualNode.contains(prev.id):
-        let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node.subbase, selectedNode: node.id)
-        offset += layout.bounds.h
-        layout = ctx.computeNodeLayout(input)
-
-        editor.lastLayouts.insert((layout, offset), i + 1)
-        for k in (i + 1)..editor.lastLayouts.high:
-          editor.lastLayouts[k].offset.y += layout.bounds.h
-
-      elif node.parent == editor.document.rootNode and node.next.getSome(next) and layout.nodeToVisualNode.contains(next.id):
-        let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node.subbase, selectedNode: node.id)
-        layout = ctx.computeNodeLayout(input)
-
-        editor.lastLayouts.insert((layout, offset), i)
-        for k in i..editor.lastLayouts.high:
-          editor.lastLayouts[k].offset.y += layout.bounds.h
-
     if layout.nodeToVisualNode.contains(node.id):
       # Node layout was already computed for the last selection
       let visualNode = layout.nodeToVisualNode[node.id]
       let bounds = visualNode.absoluteBounds + vec2(0, offset.y)
 
       if not bounds.intersects(editor.lastBounds):
-        continue
+        break
+
+      if bounds.y < 50:
+        let subbase = node.subbase
+        editor.previousBaseIndex = subbase.index
+        editor.scrollOffset = 50 - (bounds.y - offset.y)
+      elif bounds.yh > editor.lastBounds.h - 50:
+        let subbase = node.subbase
+        editor.previousBaseIndex = subbase.index
+        editor.scrollOffset = -(bounds.y - offset.y) + editor.lastBounds.h - 50
+
+      return
+
+  # Loop through the nodes again and check if a parent or neighbor is in the existing layouts
+  i = 0
+  while i < editor.lastLayouts.len:
+    defer: inc i
+    var layout = editor.lastLayouts[i].layout
+    var offset = editor.lastLayouts[i].offset
+
+    var targetNode = node
+    while targetNode != nil and not layout.nodeToVisualNode.contains(targetNode.id):
+      targetNode = targetNode.parent
+
+    if targetNode != nil:
+      # New node is not in layout yet but there is a parent which has a layout already
+      let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: targetNode.subbase, selectedNode: node.id)
+      layout = ctx.computeNodeLayout(input)
+      foundNode = true
+
+    elif node.parent == editor.document.rootNode and node.prev.getSome(prev) and layout.nodeToVisualNode.contains(prev.id):
+      let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node.subbase, selectedNode: node.id)
+      layout = ctx.computeNodeLayout(input)
+
+      offset += layout.bounds.h
+      editor.lastLayouts.insert((layout, offset), i + 1)
+      for k in (i + 1)..editor.lastLayouts.high:
+        editor.lastLayouts[k].offset.y += layout.bounds.h
+      foundNode = true
+
+    elif node.parent == editor.document.rootNode and node.next.getSome(next) and layout.nodeToVisualNode.contains(next.id):
+      let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node.subbase, selectedNode: node.id)
+      layout = ctx.computeNodeLayout(input)
+
+      editor.lastLayouts.insert((layout, offset), i)
+      for k in i..editor.lastLayouts.high:
+        editor.lastLayouts[k].offset.y += layout.bounds.h
+      foundNode = true
+
+    if foundNode:
+      let visualNode = layout.nodeToVisualNode[node.id]
+      let bounds = visualNode.absoluteBounds + vec2(0, offset.y)
+
+      if not bounds.intersects(editor.lastBounds):
+        break
 
       foundNode = true
 
@@ -238,17 +266,17 @@ proc handleSelectedNodeChanged(editor: AstDocumentEditor) =
         editor.previousBaseIndex = subbase.index
         editor.scrollOffset = -(bounds.y - offset.y) + editor.lastBounds.h - 50
 
-      break
+      return
 
-  if not foundNode:
-    let subbase = node.subbase
-    let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: subbase, selectedNode: node.id)
-    let layout = ctx.computeNodeLayout(input)
-    if layout.nodeToVisualNode.contains(node.id):
-      let visualNode = layout.nodeToVisualNode[node.id]
-      let bounds = visualNode.absoluteBounds
-      editor.previousBaseIndex = subbase.index
-      editor.scrollOffset = -bounds.y + editor.lastBounds.h * 0.5
+  # Still didn't find a node
+  let subbase = node.subbase
+  let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: subbase, selectedNode: node.id)
+  let layout = ctx.computeNodeLayout(input)
+  if layout.nodeToVisualNode.contains(node.id):
+    let visualNode = layout.nodeToVisualNode[node.id]
+    let bounds = visualNode.absoluteBounds
+    editor.previousBaseIndex = subbase.index
+    editor.scrollOffset = -bounds.y + editor.lastBounds.h * 0.5
 
 proc `node=`*(editor: AstDocumentEditor, node: AstNode) =
   if node == editor.selectedNode:
@@ -883,13 +911,14 @@ proc createNodeFromAction*(editor: AstDocumentEditor, arg: string, node: AstNode
     return some (node, 1)
 
   of "call-func":
-    let kind = if ctx.computeSymbol(node).getSome(sym) and sym.kind == skBuiltin:
+    let sym = ctx.computeSymbol(node)
+    let kind = if sym.getSome(sym) and sym.kind == skBuiltin:
       sym.operatorNotation
     else:
       Regular
 
     let node = case kind:
-      of Prefix, Postfix, Regular:
+      of Prefix, Postfix:
         makeTree(AstNode) do:
           Call:
             Empty()
@@ -900,6 +929,27 @@ proc createNodeFromAction*(editor: AstDocumentEditor, arg: string, node: AstNode
             Empty()
             Empty()
             Empty()
+      of Regular:
+        # if sym.getSome(sym):
+        let typ = ctx.computeType(node)
+        if typ.kind == tError:
+          makeTree(AstNode) do:
+            Call:
+              Empty()
+              Empty()
+              Empty()
+        elif typ.kind != tFunction:
+          makeTree(AstNode) do:
+            Call:
+              Empty()
+        else:
+          var newNode = makeTree(AstNode) do:
+            Call:
+              Empty()
+          for _ in typ.paramTypes:
+            newNode.add makeTree(AstNode) do: Empty()
+          newNode
+
       else:
         return none[(AstNode, int)]()
     return some (node, 0)

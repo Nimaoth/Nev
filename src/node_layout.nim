@@ -189,6 +189,8 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
     discard line.add newTextNode("(", config.colors.separator, config.font)
 
     if node.len > 0:
+      var parent = line
+      let first = parent.len
       for i, param in node[0].children:
         if i > 0:
           discard line.add newTextNode(", ", config.colors.separator, config.font)
@@ -197,6 +199,9 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
 
       if node[0].len == 0:
         result.nodeToVisualNode[node[0].id] = line.add newTextNode(" ", config.colors.empty, config.font, node[0])
+      else:
+        result.nodeToVisualNode[node[0].id] = VisualNodeRange(parent: parent, first: first, last: parent.len)
+
 
     discard line.add newTextNode(") ", config.colors.separator, config.font)
 
