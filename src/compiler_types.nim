@@ -1,5 +1,4 @@
-import std/[tables, sets, strutils, sequtils, sugar, hashes, options, logging, strformat]
-import timer
+import std/[tables, strutils, sequtils, sugar, hashes, options, logging, strformat]
 import fusion/matching
 import bumpy, chroma, vmath, pixie/fonts
 import ast, id, util, rect_utils

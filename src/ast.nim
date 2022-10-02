@@ -283,3 +283,24 @@ proc `$$`*(node: AstNode): string =
   return node.treeRepr
 
 proc hash*(node: AstNode): Hash = cast[int](addr node[])
+
+iterator nextPreOrder*(node: AstNode): tuple[key: int, value: AstNode] =
+  var n = node
+  var idx = -1
+  var i = 0
+
+  while true:
+    defer: inc i
+    if idx == -1:
+      yield (i, n)
+    if idx + 1 < n.len:
+      n = n[idx + 1]
+      idx = -1
+    elif n.next.getSome(ne):
+      n = ne
+      idx = -1
+    elif n.parent != nil and n.parent != node:
+      idx = n.index
+      n = n.parent
+    else:
+      break
