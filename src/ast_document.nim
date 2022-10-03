@@ -1,10 +1,23 @@
-import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros, options, deques, sets, json]
+import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros, options, deques, sets, json, sequtils]
 import timer
-import fusion/matching, fuzzy, bumpy, rect_utils, vmath
+import fusion/matching, fuzzy, bumpy, rect_utils, vmath, chroma
 import util, input, document, document_editor, text_document, events, id, ast_ids, ast
 import compiler
 
 var logger = newConsoleLogger()
+
+type ExecutionOutput* = ref object
+  lines*: seq[(string, Color)]
+  scroll*: int
+
+proc addOutput(self: ExecutionOutput, line: string, color: SomeColor = Color(r: 1, g: 1, b: 1, a: 1)) =
+  if self.lines.len >= 1500:
+    self.lines.delete(0..(self.lines.len - 1000))
+  if self.scroll > 0:
+    self.scroll += 1
+  self.lines.add (line, color.color)
+
+var executionOutput* = ExecutionOutput()
 
 let ctx* = newContext()
 ctx.enableLogging = false
@@ -65,6 +78,7 @@ let funcAddStringInt = newFunctionValue proc(values: seq[Value]): Value =
 
 let funcPrintAny = newFunctionValue proc(values: seq[Value]): Value =
   result = stringValue(values.join "")
+  executionOutput.addOutput $result
   echo result
   return result
 
@@ -174,6 +188,7 @@ type AstDocumentEditor* = ref object of DocumentEditor
   previousBaseIndex*: int
 
   renderDebugInfo*: bool
+  renderExecutionOutput*: bool
 
   lastBounds*: Rect
   lastLayouts*: seq[tuple[layout: NodeLayout, offset: Vec2]]
@@ -1223,6 +1238,7 @@ proc runSelectedFunction(self: AstDocumentEditor) =
     # Update node to force recomputation of value
     ctx.updateNode(node)
     let result = ctx.computeValue(node)
+    executionOutput.addOutput($result, if result.kind == vkError: rgb(255, 50, 50) else: rgb(50, 255, 50))
     logger.log(lvlInfo, fmt"[asteditor] {node} returned {result} (Took {timer.elapsed.ms}ms)")
     return
 
@@ -1255,6 +1271,7 @@ proc runSelectedFunction(self: AstDocumentEditor) =
 
   let fec = ctx.newFunctionExecutionContext(FunctionExecutionContext(node: node[0], arguments: @[]))
   let result = ctx.computeFunctionExecution(fec)
+  executionOutput.addOutput($result, if result.kind == vkError: rgb(255, 50, 50) else: rgb(50, 255, 50))
   logger.log(lvlInfo, fmt"[asteditor] Function {node} returned {result} (Took {timer.elapsed.ms}ms)")
 
 proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventResponse =
@@ -1550,14 +1567,16 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
     self.runSelectedFunction()
     self.lastOtherCommand = (action, arg)
 
-  of "toggle-logging":
-    ctx.enableLogging = not ctx.enableLogging
-
-  of "toggle-render-selected-value":
-    self.renderSelectedNodeValue = not self.renderSelectedNodeValue
-
-  of "toggle-render-debug-info":
-    self.renderDebugInfo = not self.renderDebugInfo
+  of "toggle-option":
+    case arg
+    of "logging":
+      ctx.enableLogging = not ctx.enableLogging
+    of "render-selected-value":
+      self.renderSelectedNodeValue = not self.renderSelectedNodeValue
+    of "render-debug-info":
+      self.renderDebugInfo = not self.renderDebugInfo
+    of "render-execution-output":
+      self.renderExecutionOutput = not self.renderExecutionOutput
 
   of "run-last-command":
     case arg
@@ -1594,6 +1613,17 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
 
   of "scroll":
     self.scrollOffset += arg.parseFloat
+
+  of "scroll-output":
+    case arg
+    of "home":
+      executionOutput.scroll = executionOutput.lines.len
+
+    of "end":
+      executionOutput.scroll = 0
+
+    else:
+      executionOutput.scroll = clamp(executionOutput.scroll + arg.parseInt, 0, executionOutput.lines.len)
 
   of "dump-context":
     echo "================================================="
@@ -1761,10 +1791,16 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     command "<C-t>", "select-next"
     command "<C-LEFT>", "select-prev"
     command "<C-RIGHT>", "select-next"
-    command "<SPACE>l", "toggle-logging"
+    command "<SPACE>l", "toggle-option logging"
     command "<SPACE>dc", "dump-context"
-    command "<SPACE>rv", "toggle-render-selected-value"
-    command "<SPACE>rd", "toggle-render-debug-info"
+    command "<SPACE>rv", "toggle-option render-selected-value"
+    command "<SPACE>rd", "toggle-option render-debug-info"
+    command "<SPACE>ro", "toggle-option render-execution-output"
+
+    command "<CA-DOWN>", "scroll-output -5"
+    command "<CA-UP>", "scroll-output 5"
+    command "<CA-HOME>", "scroll-output home"
+    command "<CA-END>", "scroll-output end"
 
     command ".", "run-last-command edit"
     command ",", "run-last-command move"
