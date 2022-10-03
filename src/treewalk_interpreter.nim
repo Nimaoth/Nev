@@ -6,8 +6,8 @@ import compiler, ast, util, id, query_system
 proc cacheValuesInFunction(ctx: Context, node: AstNode, values: var Table[Id, Value]) =
   case node.kind:
   of ConstDecl:
-    let value = ctx.computeValue(node)
-    values[node.id] = value
+    if ctx.getValue(node).getSome(value):
+      values[node.id] = value
   else:
     for child in node.children:
       ctx.cacheValuesInFunction(child, values)
@@ -72,6 +72,11 @@ proc executeNodeRec(ctx: Context, node: AstNode, variables: var Table[Id, Value]
     let id = node.reff
     if variables.contains(id):
       return variables[id]
+
+    if ctx.computeSymbol(node).getSome(sym):
+      let value = ctx.computeSymbolValue(sym)
+      variables[id] = value
+      return value
 
     logger.log(lvlError, fmt"executeNodeRec {node}: Failed to look up value for identifier")
     return errorValue()
@@ -153,19 +158,7 @@ proc computeFunctionExecutionImpl2*(ctx: Context, fec: FunctionExecutionContext)
 
   let body = fec.node[2]
 
-  # Add values of all symbols in the global scope
   var variables = initTable[Id, Value]()
-  for (key, sym) in ctx.globalScope.pairs:
-    let value = ctx.computeSymbolValue(sym)
-    if value.kind != vkError:
-      variables[key] = value
-
-  # Add values of all symbols in the scope of the function we're trying to call
-  let scope = ctx.computeSymbols(fec.node)
-  for (key, sym) in scope.pairs:
-    let value = ctx.computeSymbolValue(sym)
-    if value.kind != vkError:
-      variables[key] = value
 
   # Add values of all arguments
   let params = fec.node[0]
@@ -175,7 +168,5 @@ proc computeFunctionExecutionImpl2*(ctx: Context, fec: FunctionExecutionContext)
       return errorValue()
     let param = params[i]
     variables[param.id] = arg
-
-  ctx.cacheValuesInFunction(body, variables)
 
   return ctx.executeNodeRec(body, variables)

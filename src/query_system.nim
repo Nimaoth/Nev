@@ -19,6 +19,7 @@ type
   RecursionRecoveryFunction = proc(key: Dependency)
 
   NodeColor* = enum Grey, Red, Green
+  MarkGreenResult* = enum Ok, Error, Recursion
 
   DependencyGraph* = ref object
     verified*: Table[Dependency, int]
@@ -201,32 +202,32 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
   # dependencyStack: seq[seq[Key]]
   let memberList = nnkRecList.newTree(
     nnkIdentDefs.newTree(
-      newIdentNode("depGraph"),
+      nnkPostfix.newTree(ident"*", newIdentNode("depGraph")),
       quote do: DependencyGraph,
       newEmptyNode()
     ),
     nnkIdentDefs.newTree(
-      newIdentNode("dependencyStack"),
+      nnkPostfix.newTree(ident"*", newIdentNode("dependencyStack")),
       quote do: seq[seq[Dependency]],
       newEmptyNode()
     ),
     nnkIdentDefs.newTree(
-      newIdentNode("activeQuerySet"),
+      nnkPostfix.newTree(ident"*", newIdentNode("activeQuerySet")),
       quote do: HashSet[Dependency],
       newEmptyNode()
     ),
     nnkIdentDefs.newTree(
-      newIdentNode("activeQueryStack"),
+      nnkPostfix.newTree(ident"*", newIdentNode("activeQueryStack")),
       quote do: seq[Dependency],
       newEmptyNode()
     ),
     nnkIdentDefs.newTree(
-      newIdentNode("recursiveQueries"),
+      nnkPostfix.newTree(ident"*", newIdentNode("recursiveQueries")),
       quote do: HashSet[Dependency],
       newEmptyNode()
     ),
     nnkIdentDefs.newTree(
-      newIdentNode("recoveryFunctions"),
+      nnkPostfix.newTree(ident"*", newIdentNode("recoveryFunctions")),
       quote do: Table[UpdateFunction, RecursionRecoveryFunction],
       newEmptyNode()
     ),
@@ -241,7 +242,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     let name = inputName input
 
     memberList.add nnkIdentDefs.newTree(
-      ident("items" & name.strVal),
+      nnkPostfix.newTree(ident"*", ident("items" & name.strVal)),
       quote do: Table[ItemId, `name`],
       newEmptyNode()
     )
@@ -255,7 +256,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     let items = ident "items" & name.strVal
 
     memberList.add nnkIdentDefs.newTree(
-      items,
+      nnkPostfix.newTree(ident"*", items),
       quote do: Table[ItemId, `name`],
       newEmptyNode()
     )
@@ -278,7 +279,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     let value = queryValueType query
 
     memberList.add nnkIdentDefs.newTree(
-      ident("queryCache" & name),
+      nnkPostfix.newTree(ident"*", ident("queryCache" & name)),
       quote do: Table[`key`, `value`],
       newEmptyNode()
     )
@@ -506,9 +507,9 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
   # proc force(ctx: Context, key: Dependency)
   result.add quote do:
     proc force(ctx: `contextName`, key: Dependency) =
-      inc currentIndent, if ctx.enableLogging: 1 else: 0
-      defer: dec currentIndent, if ctx.enableLogging: 1 else: 0
-      if ctx.enableLogging: echo repeat2("| ", currentIndent - 1), "force ", key.item
+      inc currentIndent, if ctx.enableLogging or ctx.enableQueryLogging: 1 else: 0
+      defer: dec currentIndent, if ctx.enableLogging or ctx.enableQueryLogging: 1 else: 0
+      if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent - 1), "force ", ctx.depGraph.queryNames[key.update], key.item
 
       if key in ctx.activeQuerySet:
         # Recursion detected
@@ -552,10 +553,10 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
   # proc tryMarkGreen(ctx: Context, key: Dependency): bool
   result.add quote do:
-    proc tryMarkGreen(ctx: `contextName`, key: Dependency): bool =
-      inc currentIndent, if ctx.enableLogging: 1 else: 0
-      defer: dec currentIndent, if ctx.enableLogging: 1 else: 0
-      if ctx.enableLogging: echo repeat2("| ", currentIndent - 1), "tryMarkGreen ", ctx.depGraph.queryNames[key.update] & ":" & $key.item, ", deps: ", ctx.depGraph.getDependencies(key)
+    proc tryMarkGreen(ctx: `contextName`, key: Dependency): MarkGreenResult =
+      inc currentIndent, if ctx.enableLogging or ctx.enableQueryLogging: 1 else: 0
+      defer: dec currentIndent, if ctx.enableLogging or ctx.enableQueryLogging: 1 else: 0
+      if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent - 1), "tryMarkGreen ", ctx.depGraph.queryNames[key.update] & ":" & $key.item, ", deps: ", ctx.depGraph.getDependencies(key)
 
       if key in ctx.activeQuerySet:
         # Recursion detected
@@ -573,7 +574,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
         if ctx.recoveryFunctions.contains(key.update):
           ctx.recoveryFunctions[key.update](key)
           ctx.depGraph.markRed(key, @[])
-        return false
+        return Recursion
 
       ctx.activeQuerySet.incl key
       ctx.activeQueryStack.add key
@@ -586,33 +587,42 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       for i, dep in ctx.depGraph.getDependencies(key):
         if dep.item.id == null:
           if ctx.enableLogging: echo repeat2("| ", currentIndent), "Dependency got deleted -> red, failed"
-          return false
+          return Error
         case ctx.depGraph.nodeColor(dep, verified)
         of Green:
           if ctx.enableLogging: echo repeat2("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, " is green, skip"
           discard
         of Red:
           if ctx.enableLogging: echo repeat2("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, " is red, failed"
-          return false
+          return Error
         of Grey:
           if ctx.enableLogging: echo repeat2("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, " is grey"
-          if not ctx.tryMarkGreen(dep):
+          case ctx.tryMarkGreen(dep)
+          of Recursion:
+            if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, ", recursively called 1 " & $key & ", failed"
+            return Recursion
+
+          of Error:
             if ctx.enableLogging: echo repeat2("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, ", mark green failed"
+
+
             ctx.force(dep)
 
             if key in ctx.recursiveQueries:
               ctx.recursiveQueries.excl key
-              if ctx.enableLogging: echo repeat2("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, ", recursively called " & $key & ", failed"
-              return false
+              if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, ", recursively called 2 " & $key & ", failed"
+              return Error
 
             if ctx.depGraph.nodeColor(dep, verified) == Red:
               if ctx.enableLogging: echo repeat2("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, ", value changed"
-              return false
+              return Error
+
+          else: discard
 
       if ctx.enableLogging: echo repeat2("| ", currentIndent), "mark green"
       ctx.depGraph.markGreen(key)
 
-      return true
+      return Ok
 
   # Add compute function for every query
   # proc compute(ctx: Context, item: QueryInput): QueryOutput
@@ -660,9 +670,9 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
           let color = ctx.depGraph.nodeColor(key)
 
-          inc currentIndent, if ctx.enableLogging: 1 else: 0
-          defer: dec currentIndent, if ctx.enableLogging: 1 else: 0
-          if ctx.enableLogging: echo repeat2("| ", currentIndent - 1), "compute", `nameString`, " ", color, ", ", item
+          inc currentIndent, if ctx.enableLogging or ctx.enableQueryLogging: 1 else: 0
+          defer: dec currentIndent, if ctx.enableLogging or ctx.enableQueryLogging: 1 else: 0
+          if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent - 1), "compute", `nameString`, " ", color, ", ", item
 
           if color == Green:
             if not ctx.`queryCache`.contains(input):
@@ -683,7 +693,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
               return ctx.`queryCache`[input]
 
             if ctx.enableLogging: echo repeat2("| ", currentIndent), "grey, in cache"
-            if ctx.tryMarkGreen(key):
+            if ctx.tryMarkGreen(key) == Ok:
               if ctx.enableLogging: echo repeat2("| ", currentIndent), "green, result: ", $ctx.`queryCache`[input]
               return ctx.`queryCache`[input]
             else:
