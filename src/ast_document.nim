@@ -177,6 +177,10 @@ type AstDocumentEditor* = ref object of DocumentEditor
 
   lastBounds*: Rect
   lastLayouts*: seq[tuple[layout: NodeLayout, offset: Vec2]]
+  lastEditCommand*: (string, string)
+  lastMoveCommand*: (string, string)
+  lastOtherCommand*: (string, string)
+  lastCommand*: (string, string)
 
 proc updateCompletions(editor: AstDocumentEditor)
 proc getPrevChild*(document: AstDocument, node: AstNode, max: int = -1): Option[AstNode]
@@ -1201,7 +1205,14 @@ proc applySelectedCompletion(editor: AstDocumentEditor) =
         break
 
 proc runSelectedFunction(self: AstDocumentEditor) =
-  let node = self.node
+  var node = self.node
+
+  if node.kind != ConstDecl or node.len < 1 or node[0].kind != FunctionDefinition:
+    # Find outer containing function to run
+    while node.parent != nil and (node.kind != FunctionDefinition or node.parent.kind != ConstDecl):
+      node = node.parent
+    node = node.parent
+
   if node.kind != ConstDecl or node.len < 1 or node[0].kind != FunctionDefinition:
     logger.log(lvlError, fmt"[asteditor] Can't run non-function definition: {node}")
     return
@@ -1229,28 +1240,35 @@ proc runSelectedFunction(self: AstDocumentEditor) =
 
 proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventResponse =
   # logger.log lvlInfo, fmt"[asteditor]: Handle action {action}, '{arg}'"
+  var newLastCommand = (action, arg)
+  defer: self.lastCommand = newLastCommand
+
   case action
   of "cursor.left":
     if self.isEditing: return
     let index = self.node.index
     if index > 0:
       self.node = self.node.parent[index - 1]
+    self.lastMoveCommand = (action, arg)
 
   of "cursor.right":
     if self.isEditing: return
     let index = self.node.index
     if index >= 0 and index < self.node.parent.len - 1:
       self.node = self.node.parent[index + 1]
+    self.lastMoveCommand = (action, arg)
 
   of "cursor.up":
     if self.isEditing: return
     if self.node != self.document.rootNode and self.node.parent != self.document.rootNode and self.node.parent != nil:
       self.node = self.node.parent
+    self.lastMoveCommand = (action, arg)
 
   of "cursor.down":
     if self.isEditing: return
     if self.node.len > 0:
       self.node = self.node[0]
+    self.lastMoveCommand = (action, arg)
 
   of "cursor.next":
     if self.isEditing: return
@@ -1261,6 +1279,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
       if n != self.node:
         self.node = n
         break
+    self.lastMoveCommand = (action, arg)
 
   of "cursor.prev":
     if self.isEditing: return
@@ -1271,21 +1290,45 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
       if n != self.node:
         self.node = n
         break
+    self.lastMoveCommand = (action, arg)
 
   of "cursor.next-line":
     if self.isEditing: return
     if self.document.getNextLine(self.node).getSome(next):
       self.node = next
+    self.lastMoveCommand = (action, arg)
 
   of "cursor.prev-line":
     if self.isEditing: return
     if self.document.getPrevLine(self.node).getSome(prev):
       self.node = prev
+    self.lastMoveCommand = (action, arg)
+
+  of "select-containing":
+    if self.isEditing: return
+    case arg
+    of "function":
+      if self.node.findWithParentRec(FunctionDefinition).getSome(child):
+        self.node = child.parent
+    of "const-decl":
+      if self.node.findWithParentRec(ConstDecl).getSome(child):
+        self.node = child.parent
+    of "line":
+      if self.node.findWithParentRec(NodeList).getSome(child):
+        self.node = child
+    of "node-list":
+      if self.node.findWithParentRec(NodeList).getSome(child):
+        self.node = child.parent
+    of "if":
+      if self.node.findWithParentRec(If).getSome(child):
+        self.node = child.parent
+    self.lastMoveCommand = (action, arg)
 
   of "selected.delete":
     if self.isEditing: return
     self.deletedNode = some(self.node)
     self.node = self.document.deleteNode self.node
+    self.lastEditCommand = (action, arg)
 
   of "selected.copy":
     if self.isEditing: return
@@ -1318,6 +1361,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
 
       else:
         logger.log(lvlError, fmt"[astedit] Failed to insert node {newNode} into {self.node.parent} at {index + 1}")
+    self.lastEditCommand = (action, arg)
 
   of "insert-before":
     if self.isEditing: return
@@ -1334,6 +1378,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
 
       else:
         logger.log(lvlError, fmt"[astedit] Failed to insert node {newNode} into {self.node.parent} at {index}")
+    self.lastEditCommand = (action, arg)
 
   of "insert-child":
     if self.isEditing: return
@@ -1349,6 +1394,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
 
       else:
         logger.log(lvlError, fmt"[astedit] Failed to insert node {newNode} into {self.node} at {self.node.len}")
+    self.lastEditCommand = (action, arg)
 
   of "replace":
     if self.isEditing: return
@@ -1360,6 +1406,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
         self.node = emptyNode
         discard self.tryEdit self.node
         break
+    self.lastEditCommand = (action, arg)
 
   of "replace-empty":
     if self.isEditing: return
@@ -1371,6 +1418,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
         self.node = emptyNode
         discard self.tryEdit self.node
         break
+    self.lastEditCommand = (action, arg)
 
   of "replace-parent":
     if self.isEditing: return
@@ -1379,6 +1427,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
     let parent = node.parent
     discard self.document.deleteNode(self.node)
     self.node = self.document.replaceNode(parent, node)
+    self.lastEditCommand = (action, arg)
 
   of "wrap":
     if self.isEditing: return
@@ -1401,6 +1450,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
     # let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: self.node.subbase.next.get.next.get, selectedNode: self.node.id)
     # discard ctx.computeNodeLayout(input)
     # ctx.enableQueryLogging = false
+    self.lastEditCommand = (action, arg)
 
   of "edit-next-empty":
     if self.isEditing: return
@@ -1408,6 +1458,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
       self.node = emptyNode
       discard self.tryEdit self.node
       break
+    self.lastEditCommand = (action, arg)
 
   of "rename":
     if self.isEditing: return
@@ -1431,10 +1482,12 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
   of "select-prev":
     if self.isEditing: return
     self.selectPrevNode()
+    self.lastMoveCommand = (action, arg)
 
   of "select-next":
     if self.isEditing: return
     self.selectNextNode()
+    self.lastMoveCommand = (action, arg)
 
   of "goto":
     if self.isEditing: return
@@ -1468,10 +1521,12 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
         if n != self.node and ctx.computeType(n).kind == tError:
           self.node = n
           break
+    self.lastMoveCommand = (action, arg)
 
   of "run-selected-function":
     if self.isEditing: return
     self.runSelectedFunction()
+    self.lastOtherCommand = (action, arg)
 
   of "toggle-logging":
     ctx.enableLogging = not ctx.enableLogging
@@ -1481,6 +1536,18 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
 
   of "toggle-render-debug-info":
     self.renderDebugInfo = not self.renderDebugInfo
+
+  of "run-last-command":
+    case arg
+    of "":
+      discard self.handleAction(self.lastCommand[0], self.lastCommand[1])
+    of "move":
+      discard self.handleAction(self.lastMoveCommand[0], self.lastMoveCommand[1])
+    of "edit":
+      discard self.handleAction(self.lastEditCommand[0], self.lastEditCommand[1])
+    of "other":
+      discard self.handleAction(self.lastOtherCommand[0], self.lastOtherCommand[1])
+    newLastCommand = self.lastCommand
 
   of "select-center-node":
     var nodes: seq[tuple[y: float32, node: VisualNode]] = @[]
@@ -1594,6 +1661,11 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     command "<BACKSPACE>", "backspace"
     command "<DELETE>", "delete"
     command "<TAB>", "edit-next-empty"
+    command "<A-f>", "select-containing function"
+    command "<A-c>", "select-containing const-decl"
+    command "<A-n>", "select-containing node-list"
+    command "<A-i>", "select-containing if"
+    command "<A-l>", "select-containing line"
 
     command "e", "rename"
 
@@ -1671,6 +1743,10 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     command "<SPACE>dc", "dump-context"
     command "<SPACE>rv", "toggle-render-selected-value"
     command "<SPACE>rd", "toggle-render-debug-info"
+
+    command ".", "run-last-command edit"
+    command ",", "run-last-command move"
+    command ";", "run-last-command"
 
     onAction:
       editor.handleAction action, arg
