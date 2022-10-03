@@ -356,6 +356,28 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
 
     return commonType.get voidType()
 
+  of While():
+    if node.len < 2:
+      return errorType()
+
+    var ok = true
+
+    let conditionType = ctx.computeType(node[0])
+    if conditionType.kind == tError:
+      ok = false
+    elif conditionType.kind != tInt:
+      logger.log(lvlError, fmt"[compiler] Condition of while statement must be an int but is {conditionType}")
+      ok = false
+
+    let bodyType = ctx.computeType(node[1])
+    if bodyType.kind == tError:
+      ok = false
+
+    if ok:
+      return voidType()
+    else:
+      return errorType()
+
   of Assignment():
     if node.len < 2:
       return errorType()

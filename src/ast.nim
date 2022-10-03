@@ -14,6 +14,7 @@ type
     NodeList
     Call
     If
+    While
     FunctionDefinition
     Params
     Assignment
@@ -209,6 +210,12 @@ proc treeRepr*(node: AstNode): string =
 
   of If():
     result = "If(id: " & $node.id & "):"
+    for child in node.children:
+      result.add "\n"
+      result.add indent(child.treeRepr, 2)
+
+  of While():
+    result = "While(id: " & $node.id & "):"
     for child in node.children:
       result.add "\n"
       result.add indent(child.treeRepr, 2)

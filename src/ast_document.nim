@@ -543,6 +543,7 @@ proc getCompletions*(editor: AstDocumentEditor, text: string, contextNode: Optio
 
   if contextNode.getSome(node) and node.kind == Empty:
     result.add Completion(kind: AstCompletion, nodeKind: If, name: "if", score: fuzzyMatch(text, "if"))
+    result.add Completion(kind: AstCompletion, nodeKind: While, name: "while", score: fuzzyMatch(text, "while"))
     result.add Completion(kind: AstCompletion, nodeKind: ConstDecl, name: "const", score: fuzzyMatch(text, "const"))
     result.add Completion(kind: AstCompletion, nodeKind: LetDecl, name: "let", score: fuzzyMatch(text, "let"))
     result.add Completion(kind: AstCompletion, nodeKind: VarDecl, name: "var", score: fuzzyMatch(text, "var"))
@@ -1144,6 +1145,14 @@ proc createDefaultNode*(editor: AstDocumentEditor, kind: AstNodeKind): Option[(A
         Empty()
         Empty()
     return some (node, 0)
+
+  of While:
+    let node = makeTree(AstNode) do:
+      While:
+        Empty()
+        Empty()
+    return some (node, 0)
+
   of NodeList:
     let node = makeTree(AstNode) do:
       NodeList:
@@ -1206,6 +1215,16 @@ proc applySelectedCompletion(editor: AstDocumentEditor) =
 
 proc runSelectedFunction(self: AstDocumentEditor) =
   var node = self.node
+
+  if node.parent == self.document.rootNode and node.kind == Call:
+    let timer = startTimer()
+    logger.log(lvlInfo, fmt"[asteditor] Executing call {node}")
+
+    # Update node to force recomputation of value
+    ctx.updateNode(node)
+    let result = ctx.computeValue(node)
+    logger.log(lvlInfo, fmt"[asteditor] {node} returned {result} (Took {timer.elapsed.ms}ms)")
+    return
 
   if node.kind != ConstDecl or node.len < 1 or node[0].kind != FunctionDefinition:
     # Find outer containing function to run
@@ -1321,6 +1340,9 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
         self.node = child.parent
     of "if":
       if self.node.findWithParentRec(If).getSome(child):
+        self.node = child.parent
+    of "while":
+      if self.node.findWithParentRec(While).getSome(child):
         self.node = child.parent
     self.lastMoveCommand = (action, arg)
 

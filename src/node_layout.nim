@@ -75,7 +75,7 @@ proc createReplacement(input: NodeLayoutInput, node: AstNode, layout: var NodeLa
   return false
 
 proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode, result: var NodeLayout, line: var VisualNode) =
-  let renderInline = node.kind in {If, NodeList} and node.parent.kind in {Call}
+  let renderInline = node.kind in {While, If, NodeList} and node.parent.kind in {Call}
 
   var prevLine = line
   let first = prevLine.children.len
@@ -246,6 +246,17 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
 
     parent.addLine(line)
     line = VisualNode(parent: parent, bounds: rect(prevIndent, 0, 0, 0), indent: prevIndent)
+
+  of While():
+    discard line.add newTextNode("while ", config.colors.keyword, config.font)
+
+    if node.len >= 1:
+      ctx.createLayoutLineForNode(input, node[0], result, line)
+
+    discard line.add newTextNode(": ", config.colors.separator, config.font)
+
+    if node.len >= 2:
+      ctx.createLayoutLineForNode(input, node[1], result, line)
 
   of NodeList():
     var parent = line.parent
