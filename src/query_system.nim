@@ -2,6 +2,7 @@ import std/[tables, sets, strutils, hashes, options, macros, strformat]
 import timer
 import fusion/matching
 import ast, id, util
+import lru_cache
 
 {.experimental: "dynamicBindSym".}
 
@@ -9,12 +10,20 @@ var currentIndent* = 0
 
 func repeat2*(s: string, n: Natural): string = repeat s, n
 
+type Cache[K, V] = LruCache[K, V]
+proc newCache[K, V](capacity: int): Cache[K, V] = newLRUCache[K, V](capacity)
+# type Cache[K, V] = Table[K, V]
+# proc newCache[K, V](capacity: int): Cache[K, V] = initTable[K, V]()
+
+proc init[K, V](result: var Cache[K, V], capacity: int) =
+  result = newCache[K, V](capacity)
+
 type
   Fingerprint* = seq[int64]
 
   ItemId* = tuple[id: Id, typ: int]
 
-  UpdateFunction = proc(item: ItemId): Fingerprint
+  UpdateFunction* = proc(item: ItemId): Fingerprint
   Dependency* = tuple[item: ItemId, update: UpdateFunction]
   RecursionRecoveryFunction = proc(key: Dependency)
 
@@ -22,12 +31,15 @@ type
   MarkGreenResult* = enum Ok, Error, Recursion
 
   DependencyGraph* = ref object
-    verified*: Table[Dependency, int]
-    changed*: Table[Dependency, int]
-    fingerprints*: Table[Dependency, Fingerprint]
-    dependencies*: Table[Dependency, seq[Dependency]]
+    verified*: Cache[Dependency, int]
+    changed*: Cache[Dependency, int]
+    fingerprints*: Cache[Dependency, Fingerprint]
+    dependencies*: Cache[Dependency, seq[Dependency]]
     queryNames*: Table[UpdateFunction, string]
     revision*: int
+
+proc `$`*(item: ItemId): string =
+  return fmt"({item.id}, {item.typ})"
 
 proc hash(value: ItemId): Hash = value.id.hash xor value.typ.hash
 proc `==`(a: ItemId, b: ItemId): bool = a.id == b.id and a.typ == b.typ
@@ -41,6 +53,10 @@ proc newDependencyGraph*(): DependencyGraph =
   new result
   result.revision = 0
   result.queryNames[nil] = ""
+  result.verified = newCache[Dependency, int](2000)
+  result.changed = newCache[Dependency, int](2000)
+  result.fingerprints = newCache[Dependency, Fingerprint](2000)
+  result.dependencies = newCache[Dependency, seq[Dependency]](2000)
 
 proc nodeColor*(graph: DependencyGraph, key: Dependency, parentVerified: int = 0): NodeColor =
   if key.update == nil:
@@ -56,7 +72,7 @@ proc nodeColor*(graph: DependencyGraph, key: Dependency, parentVerified: int = 0
   if verified != graph.revision:
     return Grey
 
-  let changed = graph.changed.getOrDefault(key, 0)
+  let changed = graph.changed.getOrDefault(key, graph.revision)
   if changed == graph.revision:
     return Red
 
@@ -90,31 +106,31 @@ proc `$`*(graph: DependencyGraph): string =
   result.add indent("revision: " & $graph.revision, 1, "| ") & "\n"
 
   result.add indent("colors:", 1, "| ") & "\n"
-  for (key, value) in graph.changed.pairs:
-    let color = graph.nodeColor key
-    result.add indent(graph.queryNames[key.update] & ":" & $key.item & " -> " & $color, 2, "| ") & "\n"
+  # for (key, value) in graph.changed.pairs:
+  #   let color = graph.nodeColor key
+  #   result.add indent(graph.queryNames[key.update] & ":" & $key.item & " -> " & $color, 2, "| ") & "\n"
 
   result.add indent("verified:", 1, "| ") & "\n"
-  for (key, value) in graph.verified.pairs:
-    result.add indent(graph.queryNames[key.update] & ":" & $key.item & " -> " & $value, 2, "| ") & "\n"
+  # for (key, value) in graph.verified.pairs:
+  #   result.add indent(graph.queryNames[key.update] & ":" & $key.item & " -> " & $value, 2, "| ") & "\n"
 
   result.add indent("changed:", 1, "| ") & "\n"
-  for (key, value) in graph.changed.pairs:
-    result.add indent(graph.queryNames[key.update] & ":" & $key.item & " -> " & $value, 2, "| ") & "\n"
+  # for (key, value) in graph.changed.pairs:
+  #   result.add indent(graph.queryNames[key.update] & ":" & $key.item & " -> " & $value, 2, "| ") & "\n"
 
   result.add indent("fingerprints:", 1, "| ") & "\n"
-  for (key, value) in graph.fingerprints.pairs:
-    result.add indent(graph.queryNames[key.update] & ":" & $key.item & " -> " & $value, 2, "| ") & "\n"
+  # for (key, value) in graph.fingerprints.pairs:
+  #   result.add indent(graph.queryNames[key.update] & ":" & $key.item & " -> " & $value, 2, "| ") & "\n"
 
   result.add indent("dependencies:", 1, "| ") & "\n"
-  for (key, value) in graph.dependencies.pairs:
-    var deps = "["
-    for i, dep in value:
-      if i > 0: deps.add ", "
-      deps.add graph.queryNames[dep.update] & ":" & $dep.item
+  # for (key, value) in graph.dependencies.pairs:
+  #   var deps = "["
+  #   for i, dep in value:
+  #     if i > 0: deps.add ", "
+  #     deps.add graph.queryNames[dep.update] & ":" & $dep.item
 
-    deps.add "]"
-    result.add indent(graph.queryNames[key.update] & ":" & $key.item & " -> " & deps, 2, "| ") & "\n"
+  #   deps.add "]"
+  #   result.add indent(graph.queryNames[key.update] & ":" & $key.item & " -> " & deps, 2, "| ") & "\n"
 
 template query*(name: string, useCache: bool = true, useFingerprinting: bool = true) {.pragma.}
 template recover*(name: string) {.pragma.}
@@ -234,30 +250,16 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     nnkIdentDefs.newTree(nnkPostfix.newTree(ident"*", newIdentNode("enableLogging")), bindSym"bool", newEmptyNode()),
   )
 
-  # Add member for each input
+  # Add member for each input and data
   # items: Table[ItemId, Input]
   for input in body:
-    if not isInputDefinition input: continue
+    if not isInputDefinition(input) and not isDataDefinition(input): continue
 
     let name = inputName input
 
     memberList.add nnkIdentDefs.newTree(
       nnkPostfix.newTree(ident"*", ident("items" & name.strVal)),
-      quote do: Table[ItemId, `name`],
-      newEmptyNode()
-    )
-
-  # Add member for each data
-  # data: Table[ItemId, Input]
-  for data in body:
-    if not isDataDefinition data: continue
-
-    let name = inputName data
-    let items = ident "items" & name.strVal
-
-    memberList.add nnkIdentDefs.newTree(
-      nnkPostfix.newTree(ident"*", items),
-      quote do: Table[ItemId, `name`],
+      quote do: Cache[ItemId, `name`],
       newEmptyNode()
     )
 
@@ -280,7 +282,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
     memberList.add nnkIdentDefs.newTree(
       nnkPostfix.newTree(ident"*", ident("queryCache" & name)),
-      quote do: Table[`key`, `value`],
+      quote do: Cache[`key`, `value`],
       newEmptyNode()
     )
     memberList.add nnkIdentDefs.newTree(
@@ -354,11 +356,14 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
     queryInitializers.add quote do:
       `ctx`.`updateName` = proc (item: ItemId): Fingerprint =
+        if not `ctx`.`items`.contains(item):
+          raise newException(Defect, "update" & `name` & "(" & $item & "): not in cache anymore")
         let arg = `ctx`.`items`[item]
         let value: `value` = `queryFunction`(`ctx`, arg)
         `ctx`.`queryCache`[arg] = value
         return value.fingerprint
       `ctx`.depGraph.queryNames[`ctx`.`updateName`] = `name`
+      `ctx`.`queryCache`.init(2000)
 
   # Add recovery functions to ctx.recoveryFunctions
   for query in body:
@@ -370,6 +375,17 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     queryInitializers.add quote do:
       `ctx`.recoveryFunctions[`ctx`.`updateName`] = proc(key: Dependency) =
         `recoveryFunction`(`ctx`, key)
+
+  # Add initializer for each input and data
+  # items: Table[ItemId, Input]
+  for input in body:
+    if not isInputDefinition(input) and not isDataDefinition(input): continue
+
+    let name = inputName input
+    let items = ident "items" & name.strVal
+
+    queryInitializers.add quote do:
+      `ctx`.`items`.init(2000)
 
   ## Add initializers for custom members
   for customMembers in body:
@@ -478,7 +494,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
     result.add quote do:
       proc `getOrCreateFunction`*(ctx: `contextName`, data: `name`): `name` =
-        for (item, existing) in ctx.`items`.pairs:
+        for existing in ctx.`items`.values:
           if existing.hash == data.hash and existing == data:
             return existing
 
@@ -681,7 +697,9 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
               if not `useFingerprinting`: ctx.depGraph.markRed(key, @[])
               if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "result: ", $ctx.`queryCache`[input]
             else:
-              if ctx.enableLogging: echo repeat2("| ", currentIndent), "green, in cache, result: ", $ctx.`queryCache`[input]
+              if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "green, in cache, result: ", $ctx.`queryCache`[input]
+            if not ctx.`queryCache`.contains(input):
+              raise newException(Defect, "compute" & `name` & "(" & $input & "): not in cache anymore")
             return ctx.`queryCache`[input]
 
           if color == Grey:
@@ -690,21 +708,29 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
               ctx.force(key)
               if not `useFingerprinting`: ctx.depGraph.markRed(key, @[])
               if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "result: ", $ctx.`queryCache`[input]
+              if not ctx.`queryCache`.contains(input):
+                raise newException(Defect, "compute" & `name` & "(" & $input & "): not in cache anymore")
               return ctx.`queryCache`[input]
 
             if ctx.enableLogging: echo repeat2("| ", currentIndent), "grey, in cache"
             if ctx.tryMarkGreen(key) == Ok:
-              if ctx.enableLogging: echo repeat2("| ", currentIndent), "green, result: ", $ctx.`queryCache`[input]
+              if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "green, result: ", $ctx.`queryCache`[input]
+              if not ctx.`queryCache`.contains(input):
+                raise newException(Defect, "compute" & `name` & "(" & $input & "): not in cache anymore")
               return ctx.`queryCache`[input]
             else:
               if ctx.enableLogging: echo repeat2("| ", currentIndent), "failed to mark green"
               ctx.force(key)
               if not `useFingerprinting`: ctx.depGraph.markRed(key, @[])
               if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "result: ", $ctx.`queryCache`[input]
+              if not ctx.`queryCache`.contains(input):
+                raise newException(Defect, "compute" & `name` & "(" & $input & "): not in cache anymore")
               return ctx.`queryCache`[input]
 
           assert color == Red
           if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "red, in cache, result: ", $ctx.`queryCache`[input]
+          if not ctx.`queryCache`.contains(input):
+            raise newException(Defect, "compute" & `name` & "(" & $input & "): not in cache anymore")
           return ctx.`queryCache`[input]
 
     else:
@@ -728,6 +754,8 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
           if ctx.enableLogging: echo repeat2("| ", currentIndent - 1), "compute", `nameString`, ", ", item
 
           ctx.force(key)
+          if not ctx.`queryCache`.contains(input):
+            raise newException(Defect, "compute" & `name` & "(" & $input & "): not in cache anymore")
           return ctx.`queryCache`[input]
 
 

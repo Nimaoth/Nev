@@ -4,6 +4,7 @@ import fusion/matching
 import bumpy, chroma, vmath, pixie/fonts
 import ast, id, util, rect_utils
 import query_system, compiler_types
+import lru_cache
 
 export compiler_types
 
@@ -504,7 +505,6 @@ proc computeSymbolImpl(ctx: Context, node: AstNode): Option[Symbol] =
       return some(symbols[node.reff])
 
   of ConstDecl():
-    logger.log(lvlDebug, fmt"computeSymbol {node}")
     return some(ctx.newSymbol(Symbol(kind: skAstNode, id: node.id, node: node, name: node.text)))
 
   of LetDecl():
@@ -625,6 +625,16 @@ proc deleteAllNodesAndSymbols*(ctx: Context) =
   ctx.depGraph.dependencies.clear
   ctx.itemsAstNode.clear
   ctx.itemsSymbol.clear
+  ctx.itemsNodeLayoutInput.clear
+  ctx.itemsFunctionExecutionContext.clear
+  ctx.queryCacheType.clear
+  ctx.queryCacheValue.clear
+  ctx.queryCacheSymbolType.clear
+  ctx.queryCacheSymbolValue.clear
+  ctx.queryCacheSymbol.clear
+  ctx.queryCacheSymbols.clear
+  ctx.queryCacheFunctionExecution.clear
+  ctx.queryCacheNodeLayout.clear
 
 proc replaceNodeChild*(ctx: Context, parent: AstNode, index: int, newNode: AstNode) =
   let node = parent[index]

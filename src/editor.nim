@@ -371,7 +371,9 @@ proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifier
       handler.handleEvent(input, modifiers, allowHandlingUnknownAsInput)
     else:
       Ignored
-    echo i, ": ", response
+
+    # echo i, ": ", response
+
     case response
     of Handled:
       allowHandlingUnknownAsInput = false

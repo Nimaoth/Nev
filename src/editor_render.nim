@@ -3,6 +3,7 @@ import timer
 import boxy, windy, fusion/matching
 import util, input, events, editor, rect_utils, document_editor, text_document, ast_document, keybind_autocomplete, id, ast
 import compiler, node_layout
+import lru_cache
 
 let lineDistance = 15.0
 
@@ -336,34 +337,52 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
         let bounds = visualRange.absoluteBounds + offset + contentBounds.xy
         discard renderCompletions(editor, ed, contentBounds.splitH(bounds.yh.absolute)[1].splitV(bounds.x.absolute)[1])
 
-  block:
+  if editor.renderDebugInfo:
     let bounds = contentBounds.splitV(relative(contentBounds.w - 400))[1]
     ed.ctx.strokeStyle = rgb(225, 225, 225)
     ed.ctx.strokeRect(bounds)
 
-    var last = ed.ctx.fillText(bounds.xy, fmt"DepGraph:", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  revision:      {ctx.depGraph.revision}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  verified:      {ctx.depGraph.verified.len}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  changed:       {ctx.depGraph.changed.len}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  fingerprints:  {ctx.depGraph.fingerprints.len}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  dependencies:  {ctx.depGraph.dependencies.len}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  query names:   {ctx.depGraph.queryNames.len}", rgb(255, 255, 255))
+    var last = rect(bounds.xy, vec2())
 
     last.y += ed.ctx.fontSize
-    last = ed.ctx.fillText(last.xyh,       fmt"AstNodes:        {ctx.itemsAstNode.len}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"NodeLayoutInput: {ctx.itemsNodeLayoutInput.len}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"Symbols:         {ctx.itemsSymbol.len}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"FuncExecContext: {ctx.itemsFunctionExecutionContext.len}", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"DepGraph:", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  revision:        {ctx.depGraph.revision}", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  verified:        {ctx.depGraph.verified.len}", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  changed:         {ctx.depGraph.changed.len}", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  fingerprints:    {ctx.depGraph.fingerprints.len}", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  dependencies:    {ctx.depGraph.dependencies.len}", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  query names:     {ctx.depGraph.queryNames.len}", rgb(255, 255, 255))
 
     last.y += ed.ctx.fontSize
-    last = ed.ctx.fillText(last.xyh,       fmt"Type:            {ctx.queryCacheType.len}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"Value:           {ctx.queryCacheValue.len}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"SymbolType:      {ctx.queryCacheSymbolType.len}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"SymbolsValue:    {ctx.queryCacheSymbolValue.len}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"Symbol:          {ctx.queryCacheSymbol.len}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"Symbols:         {ctx.queryCacheSymbols.len}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"FunctionExec:    {ctx.queryCacheFunctionExecution.len}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"NodeLayout:      {ctx.queryCacheNodeLayout.len}", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"Inputs:", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  AstNodes:        {ctx.itemsAstNode.len}", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  NodeLayoutInput: {ctx.itemsNodeLayoutInput.len}", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"Data:", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  Symbols:         {ctx.itemsSymbol.len}", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  FuncExecContext: {ctx.itemsFunctionExecutionContext.len}", rgb(255, 255, 255))
+
+    last.y += ed.ctx.fontSize
+    last = ed.ctx.fillText(last.xyh,       fmt"QueryCaches:", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  Type:            {ctx.queryCacheType.len}", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  Value:           {ctx.queryCacheValue.len}", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  SymbolType:      {ctx.queryCacheSymbolType.len}", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  SymbolValue:     {ctx.queryCacheSymbolValue.len}", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  Symbol:          {ctx.queryCacheSymbol.len}", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  Symbols:         {ctx.queryCacheSymbols.len}", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  FunctionExec:    {ctx.queryCacheFunctionExecution.len}", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  NodeLayout:      {ctx.queryCacheNodeLayout.len}", rgb(255, 255, 255))
+
+    last.y += ed.ctx.fontSize
+    last = ed.ctx.fillText(last.xyh,       fmt"Timings:", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  Rendering:       {timer.elapsed.ms:.2}ms", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  Type:            {ctx.executionTimeType.ms:.2}ms", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  Value:           {ctx.executionTimeValue.ms:.2}ms", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  Symbol:          {ctx.executionTimeSymbol.ms:.2}ms", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  Symbols:         {ctx.executionTimeSymbols.ms:.2}ms", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  SymbolType:      {ctx.executionTimeSymbolType.ms:.2}ms", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  SymbolValue:     {ctx.executionTimeSymbolValue.ms:.2}ms", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  NodeLayout:      {ctx.executionTimeNodeLayout.ms:.2}ms", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  FunctionExec:    {ctx.executionTimeFunctionExecution.ms:.2}ms", rgb(255, 255, 255))
 
   return bounds
 
