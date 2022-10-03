@@ -337,6 +337,21 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
         let bounds = visualRange.absoluteBounds + offset + contentBounds.xy
         discard renderCompletions(editor, ed, contentBounds.splitH(bounds.yh.absolute)[1].splitV(bounds.x.absolute)[1])
 
+  if editor.renderExecutionOutput:
+    let bounds = contentBounds.splitV(relative(contentBounds.w - 500))[1]
+    ed.ctx.strokeStyle = rgb(225, 225, 225)
+    ed.ctx.strokeRect(bounds)
+
+    let linesToRender = min(executionOutput.lines.len, int(bounds.h / ed.ctx.fontSize))
+    let offset = min(executionOutput.lines.len - linesToRender, executionOutput.scroll)
+    executionOutput.scroll = offset
+    let firstIndex = linesToRender + offset
+    let lastIndex = 1 + offset
+
+    var last = rect(bounds.xy, vec2())
+    for (line, color) in executionOutput.lines[^firstIndex..^lastIndex]:
+      last = ed.ctx.fillText(last.xyh, line, color)
+
   if editor.renderDebugInfo:
     let bounds = contentBounds.splitV(relative(contentBounds.w - 400))[1]
     ed.ctx.strokeStyle = rgb(225, 225, 225)
