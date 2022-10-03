@@ -482,7 +482,8 @@ proc computeValueImpl(ctx: Context, node: AstNode): Value =
     return voidValue()
 
   of FunctionDefinition():
-    return newAstFunctionValue(node)
+    let currentRev = if ctx.getValue(node).getSome(value) and value.kind == vkAstFunction: value.rev else: 0
+    return newAstFunctionValue(node, currentRev + 1)
 
   else:
     return errorValue()
@@ -585,9 +586,22 @@ proc insertNode*(ctx: Context, node: AstNode) =
     ctx.depGraph.changed[(child.getItem, nil)] = ctx.depGraph.revision
     ctx.itemsAstNode[child.getItem] = child
 
+  var parent = node.parent
+  while parent != nil and parent.findWithParentRec(FunctionDefinition).getSome(child):
+    let functionDefinition = child.parent
+    ctx.depGraph.changed[(functionDefinition.getItem, nil)] = ctx.depGraph.revision
+    parent = functionDefinition.parent
+
 proc updateNode*(ctx: Context, node: AstNode) =
   ctx.depGraph.revision += 1
   ctx.depGraph.changed[(node.getItem, nil)] = ctx.depGraph.revision
+
+  var parent = node.parent
+  while parent != nil and parent.findWithParentRec(FunctionDefinition).getSome(child):
+    let functionDefinition = child.parent
+    ctx.depGraph.changed[(functionDefinition.getItem, nil)] = ctx.depGraph.revision
+    parent = functionDefinition.parent
+
   logger.log(lvlInfo, fmt"[compiler] Invalidating node {node}")
 
 proc deleteNode*(ctx: Context, node: AstNode) =
@@ -596,6 +610,12 @@ proc deleteNode*(ctx: Context, node: AstNode) =
 
   if node.parent != nil:
     ctx.depGraph.changed[(node.parent.getItem, nil)] = ctx.depGraph.revision
+
+  var parent = node.parent
+  while parent != nil and parent.findWithParentRec(FunctionDefinition).getSome(child):
+    let functionDefinition = child.parent
+    ctx.depGraph.changed[(functionDefinition.getItem, nil)] = ctx.depGraph.revision
+    parent = functionDefinition.parent
 
 proc deleteAllNodesAndSymbols*(ctx: Context) =
   ctx.depGraph.revision += 1

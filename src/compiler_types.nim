@@ -43,7 +43,9 @@ type
     of vkString: stringValue*: string
     of vkNumber: intValue*: int
     of vkBuiltinFunction: impl*: ValueImpl
-    of vkAstFunction: node*: AstNode
+    of vkAstFunction:
+      node*: AstNode
+      rev*: int
     of vkType: typ*: Type
 
   OperatorNotation* = enum
@@ -206,7 +208,7 @@ func intValue*(value: int): Value = Value(kind: vkNumber, intValue: value)
 func stringValue*(value: string): Value = Value(kind: vkString, stringValue: value)
 func typeValue*(typ: Type): Value = Value(kind: vkType, typ: typ)
 func newFunctionValue*(impl: ValueImpl): Value = return Value(kind: vkBuiltinFunction, impl: impl)
-func newAstFunctionValue*(node: AstNode): Value = return Value(kind: vkAstFunction, node: node)
+func newAstFunctionValue*(node: AstNode, rev: int): Value = return Value(kind: vkAstFunction, node: node, rev: rev)
 
 func `$`*(value: Value): string =
   case value.kind
@@ -246,7 +248,7 @@ func fingerprint*(value: Value): Fingerprint =
   of vkNumber: return @[value.kind.int64, value.intValue]
   of vkString: return @[value.kind.int64, value.stringValue.hash]
   of vkBuiltinFunction: return @[value.kind.int64, value.impl.hash]
-  of vkAstFunction: return @[value.kind.int64, value.node.hash]
+  of vkAstFunction: return @[value.kind.int64, value.node.hash, value.rev.int64]
   of vkType: return @[value.kind.int64] & value.typ.fingerprint
 
 func `$`*(fec: FunctionExecutionContext): string =
