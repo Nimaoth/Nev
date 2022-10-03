@@ -68,6 +68,37 @@ proc executeNodeRec(ctx: Context, node: AstNode, variables: var Table[Id, Value]
 
     return voidValue()
 
+  of While():
+    if node.len < 2:
+      return errorValue()
+
+    let condition = node[0]
+    let body = node[1]
+
+    var index: int = 0
+    while true:
+      defer: index += 1
+      if index > 1000:
+        logger.log(lvlError, fmt"[compiler] Max loop iterations reached for {node}")
+        return errorValue()
+
+      let conditionValue = ctx.executeNodeRec(condition, variables)
+      if conditionValue.kind == vkError:
+        return errorValue()
+
+      if conditionValue.kind != vkNumber:
+        logger.log(lvlError, fmt"[compiler] Condition of if statement must be an int but is {conditionValue}")
+        return errorValue()
+
+      if conditionValue.intValue == 0:
+        break
+
+      let bodyValue = ctx.executeNodeRec(body, variables)
+      if bodyValue.kind == vkError:
+        return errorValue()
+
+    return voidValue()
+
   of Identifier():
     let id = node.reff
     if variables.contains(id):
