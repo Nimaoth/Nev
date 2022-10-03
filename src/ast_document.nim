@@ -1231,48 +1231,45 @@ proc applySelectedCompletion(editor: AstDocumentEditor) =
 proc runSelectedFunction(self: AstDocumentEditor) =
   var node = self.node
 
-  if node.parent == self.document.rootNode and node.kind == Call:
-    let timer = startTimer()
-    logger.log(lvlInfo, fmt"[asteditor] Executing call {node}")
+  while node.parent != nil:
+    if node.parent == self.document.rootNode and node.kind == Call:
+      let timer = startTimer()
+      logger.log(lvlInfo, fmt"[asteditor] Executing call {node}")
 
-    # Update node to force recomputation of value
-    ctx.updateNode(node)
-    let result = ctx.computeValue(node)
-    executionOutput.addOutput($result, if result.kind == vkError: rgb(255, 50, 50) else: rgb(50, 255, 50))
-    logger.log(lvlInfo, fmt"[asteditor] {node} returned {result} (Took {timer.elapsed.ms}ms)")
-    return
+      # Update node to force recomputation of value
+      ctx.updateNode(node)
+      let result = ctx.computeValue(node)
+      executionOutput.addOutput($result, if result.kind == vkError: rgb(255, 50, 50) else: rgb(50, 255, 50))
+      logger.log(lvlInfo, fmt"[asteditor] {node} returned {result} (Took {timer.elapsed.ms}ms)")
+      return
 
-  if node.kind != ConstDecl or node.len < 1 or node[0].kind != FunctionDefinition:
-    # Find outer containing function to run
-    while node.parent != nil and (node.kind != FunctionDefinition or node.parent.kind != ConstDecl):
-      node = node.parent
+    if node.kind == ConstDecl and node.len > 0 and node[0].kind == FunctionDefinition:
+      let functionType = ctx.computeType(node)
+      if functionType.kind == tError:
+        logger.log(lvlError, fmt"[asteditor] Function failed to compile: {node}")
+        return
+
+      if functionType.kind != tFunction:
+        logger.log(lvlError, fmt"[asteditor] Function has wrong type: {node}, type is {functionType}")
+        return
+
+      if functionType.paramTypes.len > 0:
+        logger.log(lvlError, fmt"[asteditor] Can't call function with arguments directly {node}, type is {functionType}")
+        return
+
+      logger.log(lvlInfo, fmt"[asteditor] Calling function {node} ({functionType})")
+
+      let timer = startTimer()
+
+      let fec = ctx.newFunctionExecutionContext(FunctionExecutionContext(node: node[0], arguments: @[]))
+      let result = ctx.computeFunctionExecution(fec)
+      executionOutput.addOutput($result, if result.kind == vkError: rgb(255, 50, 50) else: rgb(50, 255, 50))
+      logger.log(lvlInfo, fmt"[asteditor] Function {node} returned {result} (Took {timer.elapsed.ms}ms)")
+      return
+
     node = node.parent
 
-  if node.kind != ConstDecl or node.len < 1 or node[0].kind != FunctionDefinition:
-    logger.log(lvlError, fmt"[asteditor] Can't run non-function definition: {node}")
-    return
-
-  let functionType = ctx.computeType(node)
-  if functionType.kind == tError:
-    logger.log(lvlError, fmt"[asteditor] Function failed to compile: {node}")
-    return
-
-  if functionType.kind != tFunction:
-    logger.log(lvlError, fmt"[asteditor] Function has wrong type: {node}, type is {functionType}")
-    return
-
-  if functionType.paramTypes.len > 0:
-    logger.log(lvlError, fmt"[asteditor] Can't call function with arguments directly {node}, type is {functionType}")
-    return
-
-  logger.log(lvlInfo, fmt"[asteditor] Calling function {node} ({functionType})")
-
-  let timer = startTimer()
-
-  let fec = ctx.newFunctionExecutionContext(FunctionExecutionContext(node: node[0], arguments: @[]))
-  let result = ctx.computeFunctionExecution(fec)
-  executionOutput.addOutput($result, if result.kind == vkError: rgb(255, 50, 50) else: rgb(50, 255, 50))
-  logger.log(lvlInfo, fmt"[asteditor] Function {node} returned {result} (Took {timer.elapsed.ms}ms)")
+  logger.log(lvlError, fmt"[asteditor] No function or call found to execute for {self.node}")
 
 proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventResponse =
   # logger.log lvlInfo, fmt"[asteditor]: Handle action {action}, '{arg}'"
