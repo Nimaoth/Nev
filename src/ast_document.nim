@@ -1239,7 +1239,8 @@ proc runSelectedFunction(self: AstDocumentEditor) =
       # Update node to force recomputation of value
       ctx.updateNode(node)
       let result = ctx.computeValue(node)
-      executionOutput.addOutput($result, if result.kind == vkError: rgb(255, 50, 50) else: rgb(50, 255, 50))
+      if result.kind != vkVoid:
+        executionOutput.addOutput($result, if result.kind == vkError: rgb(255, 50, 50) else: rgb(50, 255, 50))
       logger.log(lvlInfo, fmt"[asteditor] {node} returned {result} (Took {timer.elapsed.ms}ms)")
       return
 
@@ -1263,7 +1264,8 @@ proc runSelectedFunction(self: AstDocumentEditor) =
 
       let fec = ctx.newFunctionExecutionContext(FunctionExecutionContext(node: node[0], arguments: @[]))
       let result = ctx.computeFunctionExecution(fec)
-      executionOutput.addOutput($result, if result.kind == vkError: rgb(255, 50, 50) else: rgb(50, 255, 50))
+      if result.kind != vkVoid:
+        executionOutput.addOutput($result, if result.kind == vkError: rgb(255, 50, 50) else: rgb(50, 255, 50))
       logger.log(lvlInfo, fmt"[asteditor] Function {node} returned {result} (Took {timer.elapsed.ms}ms)")
       return
 

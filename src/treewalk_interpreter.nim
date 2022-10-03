@@ -200,4 +200,12 @@ proc computeFunctionExecutionImpl2*(ctx: Context, fec: FunctionExecutionContext)
     let param = params[i]
     variables[param.id] = arg
 
-  return ctx.executeNodeRec(body, variables)
+  let bodyResult = ctx.executeNodeRec(body, variables)
+  if bodyResult.kind == vkError:
+    return errorValue()
+
+  let functionType = ctx.computeType(fec.node)
+  if functionType.kind == tFunction and functionType.returnType.kind == tVoid:
+    return voidValue()
+
+  return bodyResult
