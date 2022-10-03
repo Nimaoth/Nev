@@ -173,6 +173,8 @@ type AstDocumentEditor* = ref object of DocumentEditor
   scrollOffset*: float
   previousBaseIndex*: int
 
+  renderDebugInfo*: bool
+
   lastBounds*: Rect
   lastLayouts*: seq[tuple[layout: NodeLayout, offset: Vec2]]
 
@@ -184,7 +186,6 @@ proc node*(editor: AstDocumentEditor): AstNode =
   return editor.selectedNode
 
 proc handleSelectedNodeChanged(editor: AstDocumentEditor) =
-  echo "handleSelectedNodeChanged"
   let node = editor.node
 
   var foundNode = false
@@ -1227,7 +1228,7 @@ proc runSelectedFunction(self: AstDocumentEditor) =
   logger.log(lvlInfo, fmt"[asteditor] Function {node} returned {result} (Took {timer.elapsed.ms}ms)")
 
 proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventResponse =
-  logger.log lvlInfo, fmt"[asteditor]: Handle action {action}, '{arg}'"
+  # logger.log lvlInfo, fmt"[asteditor]: Handle action {action}, '{arg}'"
   case action
   of "cursor.left":
     if self.isEditing: return
@@ -1478,6 +1479,9 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
   of "toggle-render-selected-value":
     self.renderSelectedNodeValue = not self.renderSelectedNodeValue
 
+  of "toggle-render-debug-info":
+    self.renderDebugInfo = not self.renderDebugInfo
+
   of "select-center-node":
     var nodes: seq[tuple[y: float32, node: VisualNode]] = @[]
     for (layout, offset) in self.lastLayouts:
@@ -1663,9 +1667,10 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     command "<C-t>", "select-next"
     command "<C-LEFT>", "select-prev"
     command "<C-RIGHT>", "select-next"
-    command "<C-e>l", "toggle-logging"
-    command "<C-e>dc", "dump-context"
-    command "<C-e>v", "toggle-render-selected-value"
+    command "<SPACE>l", "toggle-logging"
+    command "<SPACE>dc", "dump-context"
+    command "<SPACE>rv", "toggle-render-selected-value"
+    command "<SPACE>rd", "toggle-render-debug-info"
 
     onAction:
       editor.handleAction action, arg
