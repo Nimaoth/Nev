@@ -10,7 +10,8 @@ type TextDocument* = ref object of Document
   filename*: string
   content*: seq[string]
 
-  textChanged*: (document: Document) -> void
+  textChanged*: (document: TextDocument) -> void
+  singleLine*: bool
 
 type TextDocumentEditor* = ref object of DocumentEditor
   document*: TextDocument
@@ -104,18 +105,27 @@ proc insert(self: TextDocument, cursor: Cursor, text: string, notify: bool = tru
   var cursor = cursor
   var i: int = 0
   # echo "insert ", cursor, ": ", text
-  for line in text.splitLines(false):
-    defer: inc i
-    if i > 0:
-      # Split line
-      self.content.insert(self.content[cursor.line][cursor.column..^1], cursor.line + 1)
-      if cursor.column < self.lineLength cursor.line:
-        self.content[cursor.line].delete(cursor.column..<(self.lineLength cursor.line))
-      cursor = (cursor.line + 1, 0)
+  if self.singleLine:
+    let text = text.replace("\n", " ")
+    if self.content.len == 0:
+      self.content.add text
+    else:
+      self.content[0].insert(text, cursor.column)
+    cursor.column += text.len
 
-    if line.len > 0:
-      self.content[cursor.line].insert(line, cursor.column)
-      cursor.column += line.len
+  else:
+    for line in text.splitLines(false):
+      defer: inc i
+      if i > 0:
+        # Split line
+        self.content.insert(self.content[cursor.line][cursor.column..^1], cursor.line + 1)
+        if cursor.column < self.lineLength cursor.line:
+          self.content[cursor.line].delete(cursor.column..<(self.lineLength cursor.line))
+        cursor = (cursor.line + 1, 0)
+
+      if line.len > 0:
+        self.content[cursor.line].insert(line, cursor.column)
+        cursor.column += line.len
 
   if notify:
     self.notifyTextChanged()
@@ -218,12 +228,26 @@ proc handleAction(self: TextDocumentEditor, action: string, arg: string): EventR
       self.selection = self.document.delete((self.selection.first, self.moveCursorColumn(self.selection.first, 1))).toSelection
     else:
       self.selection = self.document.edit(self.selection, "").toSelection
-  of "editor.insert": self.selection = self.document.edit(self.selection, arg).toSelection
-  of "editor.newline": self.selection = self.document.edit(self.selection, "\n").toSelection
+
+  of "editor.insert":
+    if self.document.singleLine and arg == "\n":
+      return Ignored
+
+    self.selection = self.document.edit(self.selection, arg).toSelection
+
   of "cursor.left": self.moveCursor(arg, moveCursorColumn, -1)
   of "cursor.right": self.moveCursor(arg, moveCursorColumn, 1)
-  of "cursor.up": self.moveCursor(arg, moveCursorLine, -1)
-  of "cursor.down": self.moveCursor(arg, moveCursorLine, 1)
+
+  of "cursor.up":
+    if self.document.singleLine:
+      return Ignored
+    self.moveCursor(arg, moveCursorLine, -1)
+
+  of "cursor.down":
+    if self.document.singleLine:
+      return Ignored
+    self.moveCursor(arg, moveCursorLine, 1)
+
   of "cursor.home": self.moveCursor(arg, moveCursorHome, 0)
   of "cursor.end": self.moveCursor(arg, moveCursorEnd, 0)
   else:

@@ -1,7 +1,7 @@
 import std/[strformat, strutils, tables, logging, unicode]
 import boxy, windy
 import sugar
-import input, events, rect_utils, document, document_editor, text_document, ast_document, keybind_autocomplete
+import input, events, rect_utils, document, document_editor, text_document, keybind_autocomplete, popup
 
 var commands: seq[(string, string)] = @[]
 commands.add ("<C-x><C-x>", "quit")
@@ -100,11 +100,16 @@ type Editor* = ref object
   layout*: Layout
   layout_props*: LayoutProperties
 
+  popups*: seq[Popup]
+
   eventHandler*: EventHandler
   commandLineEventHandler*: EventHandler
   commandLineMode*: bool
 
   editor_defaults: seq[DocumentEditor]
+
+method injectDependencies*(self: DocumentEditor, ed: Editor) {.base.} =
+  discard
 
 proc reset*(handler: var EventHandler) =
   handler.state = 0
@@ -193,10 +198,20 @@ proc createView(ed: Editor, editor: DocumentEditor) =
 
 proc createView(ed: Editor, document: Document) =
   var editor = ed.createEditorForDocument document
+  editor.injectDependencies ed
   var view = View(document: document, editor: editor)
 
   ed.views.add view
   ed.currentView = ed.views.len - 1
+
+proc pushPopup*(ed: Editor, popup: Popup) =
+  ed.popups.add popup
+
+proc popPopup*(ed: Editor, popup: Popup) =
+  if ed.popups.len > 0 and ed.popups[ed.popups.high] == popup:
+    discard ed.popups.pop
+
+import ast_document
 
 proc newEditor*(window: Window, boxy: Boxy): Editor =
   var ed = Editor()
@@ -390,6 +405,8 @@ proc currentEventHandlers*(ed: Editor): seq[EventHandler] =
   result = @[ed.eventHandler]
   if ed.commandLineMode:
     result.add ed.commandLineEventHandler
+  elif ed.popups.len > 0:
+    result.add ed.popups[ed.popups.high].getEventHandlers()
   elif ed.currentView >= 0 and ed.currentView < ed.views.len:
     result.add ed.views[ed.currentView].editor.getEventHandlers()
 
