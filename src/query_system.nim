@@ -523,9 +523,9 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
   # proc force(ctx: Context, key: Dependency)
   result.add quote do:
     proc force(ctx: `contextName`, key: Dependency) =
-      inc currentIndent, if ctx.enableLogging or ctx.enableQueryLogging: 1 else: 0
-      defer: dec currentIndent, if ctx.enableLogging or ctx.enableQueryLogging: 1 else: 0
-      if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent - 1), "force ", ctx.depGraph.queryNames[key.update], key.item
+      inc currentIndent, if ctx.enableLogging: 1 else: 0
+      defer: dec currentIndent, if ctx.enableLogging: 1 else: 0
+      if ctx.enableLogging: echo repeat2("| ", currentIndent - 1), "force ", ctx.depGraph.queryNames[key.update], key.item
 
       if key in ctx.activeQuerySet:
         # Recursion detected
@@ -570,9 +570,9 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
   # proc tryMarkGreen(ctx: Context, key: Dependency): bool
   result.add quote do:
     proc tryMarkGreen(ctx: `contextName`, key: Dependency): MarkGreenResult =
-      inc currentIndent, if ctx.enableLogging or ctx.enableQueryLogging: 1 else: 0
-      defer: dec currentIndent, if ctx.enableLogging or ctx.enableQueryLogging: 1 else: 0
-      if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent - 1), "tryMarkGreen ", ctx.depGraph.queryNames[key.update] & ":" & $key.item, ", deps: ", ctx.depGraph.getDependencies(key)
+      inc currentIndent, if ctx.enableLogging: 1 else: 0
+      defer: dec currentIndent, if ctx.enableLogging: 1 else: 0
+      if ctx.enableLogging: echo repeat2("| ", currentIndent - 1), "tryMarkGreen ", ctx.depGraph.queryNames[key.update] & ":" & $key.item, ", deps: ", ctx.depGraph.getDependencies(key)
 
       if key in ctx.activeQuerySet:
         # Recursion detected
@@ -615,7 +615,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
           if ctx.enableLogging: echo repeat2("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, " is grey"
           case ctx.tryMarkGreen(dep)
           of Recursion:
-            if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, ", recursively called 1 " & $key & ", failed"
+            if ctx.enableLogging: echo repeat2("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, ", recursively called 1 " & $key & ", failed"
             return Recursion
 
           of Error:
@@ -626,7 +626,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
             if key in ctx.recursiveQueries:
               ctx.recursiveQueries.excl key
-              if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, ", recursively called 2 " & $key & ", failed"
+              if ctx.enableLogging: echo repeat2("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, ", recursively called 2 " & $key & ", failed"
               return Error
 
             if ctx.depGraph.nodeColor(dep, verified) == Red:
@@ -686,9 +686,9 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
           let color = ctx.depGraph.nodeColor(key)
 
-          inc currentIndent, if ctx.enableLogging or ctx.enableQueryLogging: 1 else: 0
-          defer: dec currentIndent, if ctx.enableLogging or ctx.enableQueryLogging: 1 else: 0
-          if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent - 1), "compute", `nameString`, " ", color, ", ", item
+          inc currentIndent, if ctx.enableLogging: 1 else: 0
+          defer: dec currentIndent, if ctx.enableLogging: 1 else: 0
+          if ctx.enableLogging: echo repeat2("| ", currentIndent - 1), "compute", `nameString`, " ", color, ", ", item
 
           if color == Green:
             if not ctx.`queryCache`.contains(input):

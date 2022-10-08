@@ -10,6 +10,13 @@ export compiler_types
 
 var logger* = newConsoleLogger()
 
+type
+  Diagnostic* = object
+    message*: string
+
+  Diagnostics* = object
+    queries*: Table[Dependency, seq[Diagnostic]]
+
 CreateContext Context:
   input AstNode
   input NodeLayoutInput
@@ -19,6 +26,8 @@ CreateContext Context:
   var globalScope*: Table[Id, Symbol] = initTable[Id, Symbol]()
   var enableQueryLogging*: bool = false
   var enableExecutionLogging*: bool = false
+  var diagnosticsPerNode*: Table[Id, Diagnostics] = initTable[Id, Diagnostics]()
+  var diagnosticsPerQuery*: Table[Dependency, seq[Id]] = initTable[Dependency, seq[Id]]()
 
   proc recoverValue(ctx: Context, key: Dependency) {.recover("Value").}
   proc recoverType(ctx: Context, key: Dependency) {.recover("Type").}
@@ -93,12 +102,49 @@ proc computeSymbolValueImpl(ctx: Context, symbol: Symbol): Value =
     return symbol.value
 
 proc computeTypeImpl(ctx: Context, node: AstNode): Type =
-  if ctx.enableLogging or ctx.enableQueryLogging: inc currentIndent, 1
+  if node.kind == ConstDecl and node.text == "main":
+    ctx.enableQueryLogging = true
   defer:
-    if ctx.enableLogging or ctx.enableQueryLogging: dec currentIndent, 1
-  if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent - 1), "computeTypeImpl ", node
+    if node.kind == ConstDecl and node.text == "main":
+      ctx.enableQueryLogging = false
+  let logQuery = false
+  if ctx.enableLogging or ctx.enableQueryLogging or logQuery: inc currentIndent, 1
   defer:
-    if ctx.enableLogging or ctx.enableQueryLogging: echo repeat2("| ", currentIndent), "-> ", result
+    if ctx.enableLogging or ctx.enableQueryLogging or logQuery: dec currentIndent, 1
+  if ctx.enableLogging or ctx.enableQueryLogging or logQuery: echo repeat2("| ", currentIndent - 1), "computeTypeImpl ", node
+  defer:
+    if ctx.enableLogging or ctx.enableQueryLogging or logQuery: echo repeat2("| ", currentIndent), "-> ", result
+
+  let key: Dependency = (node.getItem, ctx.updateType)
+
+  # Delete old diagnostics
+  if ctx.diagnosticsPerQuery.contains(key):
+    for id in ctx.diagnosticsPerQuery[key]:
+      ctx.diagnosticsPerNode[id].queries.del key
+
+  var diagnostics: seq[Diagnostic] = @[]
+  var ids: seq[Id] = @[]
+  defer:
+    if diagnostics.len > 0:
+      echo diagnostics
+      ctx.diagnosticsPerQuery[key] = ids
+
+      for i in 0..ids.high:
+        let id = ids[i]
+        let diag = diagnostics[i]
+        if not ctx.diagnosticsPerNode.contains(id):
+          ctx.diagnosticsPerNode[id] = Diagnostics()
+        if not ctx.diagnosticsPerNode[id].queries.contains(key):
+          ctx.diagnosticsPerNode[id].queries[key] = @[]
+
+        ctx.diagnosticsPerNode[id].queries[key].add diag
+    else:
+      ctx.diagnosticsPerQuery.del key
+
+  template addDiagnostic(node: AstNode, msg: untyped) =
+    # echo "------------------------------------\naddDiagnostic ", node, ": ", msg
+    ids.add(node.id)
+    diagnostics.add Diagnostic(message: msg)
 
   case node
   of Empty():
@@ -143,6 +189,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
 
     if returnTypeType.kind != tType:
       logger.log(lvlError, fmt"[compiler] Expected type, got {returnTypeType}")
+      addDiagnostic(returnTypeNode, fmt"Expected type, got {returnTypeType}")
       return errorType()
 
     let returnTypeValue = ctx.computeValue(returnTypeNode)
@@ -151,6 +198,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
 
     if returnTypeValue.kind != vkType:
       logger.log(lvlError, fmt"[compiler] Expected type value, got {returnTypeValue}")
+      addDiagnostic(returnTypeNode, fmt"Expected type value, got {returnTypeValue}")
       return errorType()
 
     let returnType = returnTypeValue.typ
@@ -158,6 +206,10 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
     return newFunctionType(paramTypes, returnType)
 
   of Call():
+    if node.len == 0:
+      addDiagnostic(node, fmt"Empty call node")
+      return errorType()
+
     let function = node[0]
 
     let functionType = ctx.computeType(function)
@@ -167,6 +219,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
 
     if functionType.kind != tFunction:
       logger.log(lvlError, fmt"[compiler] Trying to call non-function type {functionType} at {node}")
+      addDiagnostic(function, fmt"Trying to call non-function type {functionType}")
       return Type(kind: tError)
 
     let numArgs = node.len - 1
@@ -179,6 +232,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
     # Check arg num
     if numArgs != functionType.paramTypes.len and not isValidOpenAnyCall:
       logger.log(lvlError, fmt"Trying to call with wrong number of arguments. Expected {functionType.paramTypes.len} got {numArgs}")
+      addDiagnostic(node, fmt"Wrong number of arguments. Expected {functionType.paramTypes.len} got {numArgs}")
       return Type(kind: tError)
 
     var allArgsOk = true
@@ -193,6 +247,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
 
       if argType != functionType.paramTypes[i - 1]:
         logger.log(lvlError, fmt"Argument {i} has the wrong type. Expected {functionType.paramTypes[i - 1]} got {argType}")
+        addDiagnostic(node[i], fmt"Argument {i} has the wrong type. Expected {functionType.paramTypes[i - 1]} got {argType}")
         allArgsOk = false
 
     if not allArgsOk:
@@ -218,6 +273,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
         return errorType()
       if typeNodeType.kind != tType:
         logger.log(lvlError, fmt"[compiler] Expected type, got {typeNodeType}")
+        addDiagnostic(typeNode, fmt"Expected type, got {typeNodeType}")
         return errorType()
 
       let typeNodeValue = ctx.computeValue(typeNode)
@@ -225,6 +281,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
         return errorType()
       if typeNodeValue.kind == vkError:
         logger.log(lvlFatal, fmt"[compiler] Expected type value, got {typeNodeValue}")
+        addDiagnostic(typeNode, fmt"Expected type value, got {typeNodeValue}")
         return errorType()
 
       typ = typeNodeValue.typ
@@ -241,6 +298,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
 
         if valueNodeType != typ:
           logger.log(lvlError, fmt"[compiler] Expected {typ}, got {valueNodeType}")
+          addDiagnostic(valueNode, fmt"Expected {typ}, got {valueNodeType}")
           return errorType()
 
     return typ
@@ -258,6 +316,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
         return errorType()
       if typeNodeType.kind != tType:
         logger.log(lvlError, fmt"[compiler] Expected type, got {typeNodeType}")
+        addDiagnostic(typeNode, fmt"Expected type, got {typeNodeType}")
         return errorType()
 
       let typeNodeValue = ctx.computeValue(typeNode)
@@ -265,6 +324,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
         return errorType()
       if typeNodeValue.kind == vkError:
         logger.log(lvlFatal, fmt"[compiler] Expected type value, got {typeNodeValue}")
+        addDiagnostic(typeNode, fmt"Expected type value, got {typeNodeValue}")
         return errorType()
 
       typ = typeNodeValue.typ
@@ -281,6 +341,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
 
         if valueNodeType != typ:
           logger.log(lvlError, fmt"[compiler] Expected {typ}, got {valueNodeType}")
+          addDiagnostic(valueNode, fmt"Expected {typ}, got {valueNodeType}")
           return errorType()
 
     return typ
@@ -293,6 +354,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
       return ctx.computeSymbolType(symbol)
 
     logger.log lvlError, fmt"[compiler]: Unknown symbol '{id}' at {node}"
+    addDiagnostic(node, fmt"Unknown symbol '{id}'")
     return errorType()
 
   of NodeList():
@@ -328,6 +390,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
         ok = false
       elif conditionType.kind != tInt:
         logger.log(lvlError, fmt"[compiler] Condition of if statement must be an int but is {conditionType}")
+        addDiagnostic(condition, fmt"Condition of if statement must be an int but is {conditionType}")
         ok = false
 
       let trueCaseType = ctx.computeType(trueCase)
@@ -367,6 +430,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
       ok = false
     elif conditionType.kind != tInt:
       logger.log(lvlError, fmt"[compiler] Condition of while statement must be an int but is {conditionType}")
+      addDiagnostic(node[0], fmt"Condition of while statement must be an int but is {conditionType}")
       ok = false
 
     let bodyType = ctx.computeType(node[1])
@@ -395,16 +459,19 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
 
     if targetType != valueType:
       logger.log(lvlError, fmt"[compiler] Can't assign {valueType} to {targetType}")
+      addDiagnostic(value, fmt"Can't assign {valueType} to {targetType}")
       return errorType()
 
     if ctx.computeSymbol(target).getSome(sym):
       if sym.kind == skBuiltin:
         logger.log(lvlError, fmt"[compiler] Can't assign to builtin symbol {sym}")
+        addDiagnostic(target, fmt"Can't assign to builtin symbol {sym}")
         return errorType()
 
       assert sym.kind == skAstNode
       if sym.node.kind != VarDecl:
         logger.log(lvlError, fmt"[compiler] Can't assign to non-mutable symbol {sym}")
+        addDiagnostic(target, fmt"Can't assign to non-mutable symbol {sym}")
         return errorType()
 
     return voidType()
