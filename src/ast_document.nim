@@ -80,7 +80,7 @@ let funcPrintAny = newFunctionValue proc(values: seq[Value]): Value =
   result = stringValue(values.join "")
   executionOutput.addOutput $result
   echo result
-  return result
+  return voidValue()
 
 let funcBuildStringAny = newFunctionValue (values) => stringValue(values.join "")
 
@@ -104,7 +104,7 @@ ctx.globalScope[IdOrder] = Symbol(id: IdOrder, name: "<=>", kind: skBuiltin, typ
 ctx.globalScope[IdInt] = Symbol(id: IdInt, name: "int", kind: skBuiltin, typ: typeType(), value: typeValue(intType()))
 ctx.globalScope[IdString] = Symbol(id: IdString, name: "string", kind: skBuiltin, typ: typeType(), value: typeValue(stringType()))
 ctx.globalScope[IdVoid] = Symbol(id: IdVoid, name: "void", kind: skBuiltin, typ: typeType(), value: typeValue(voidType()))
-ctx.globalScope[IdPrint] = Symbol(id: IdPrint, name: "print", kind: skBuiltin, typ: newFunctionType(@[anyType(true)], stringType()), value: funcPrintAny)
+ctx.globalScope[IdPrint] = Symbol(id: IdPrint, name: "print", kind: skBuiltin, typ: newFunctionType(@[anyType(true)], voidType()), value: funcPrintAny)
 ctx.globalScope[IdBuildString] = Symbol(id: IdBuildString, name: "build", kind: skBuiltin, typ: newFunctionType(@[anyType(true)], stringType()), value: funcBuildStringAny)
 for symbol in ctx.globalScope.values:
   discard ctx.newSymbol(symbol)
