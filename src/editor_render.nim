@@ -234,17 +234,6 @@ proc renderVisualNode(editor: AstDocumentEditor, ed: Editor, drawCtx: contexts.C
     ed.ctx.strokeStyle = rgb(175, 255, 200)
     ed.ctx.strokeRect(bounds)
 
-  if node.node != nil and ctx.diagnosticsPerNode.contains(node.node.id):
-    var foundErrors = false
-    var last = rect(bounds.xy, vec2())
-    for diagnostics in ctx.diagnosticsPerNode[node.node.id].queries.values:
-      for diagnostic in diagnostics:
-        last = drawCtx.fillTextRight(vec2(globalBounds.xw, last.yh), diagnostic.message, rgb(255, 0, 0), node.font)
-        foundErrors = true
-    if foundErrors:
-      ed.ctx.strokeStyle = rgb(255, 0, 0)
-      ed.ctx.strokeRect(bounds.grow(3.relative))
-
 proc renderVisualNodeLayout(editor: AstDocumentEditor, ed: Editor, contentBounds: Rect, layout: NodeLayout, offset: var Vec2) =
   editor.lastLayouts.add (layout, offset - contentBounds.xy)
 
@@ -271,6 +260,20 @@ proc renderVisualNodeLayout(editor: AstDocumentEditor, ed: Editor, contentBounds
     ed.ctx.lineWidth = 2.5
     ed.ctx.strokeRect(bounds)
     ed.ctx.lineWidth = 1
+
+  # Draw diagnostics
+  for (id, visualRange) in layout.nodeToVisualNode.pairs:
+    if ctx.diagnosticsPerNode.contains(id):
+      var foundErrors = false
+      let bounds = visualRange.absoluteBounds + offset
+      var last = rect(bounds.xy, vec2())
+      for diagnostics in ctx.diagnosticsPerNode[id].queries.values:
+        for diagnostic in diagnostics:
+          last = ed.ctx.fillTextRight(vec2(contentBounds.xw, last.yh), diagnostic.message, rgb(255, 0, 0), config.font)
+          foundErrors = true
+      if foundErrors:
+        ed.ctx.strokeStyle = rgb(255, 0, 0)
+        ed.ctx.strokeRect(bounds.grow(3.relative))
 
   # ed.boxy.addImage($node.id, drawCtx.image)
   # ed.boxy.drawImage($node.id, offset)
