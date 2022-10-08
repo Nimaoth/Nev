@@ -286,7 +286,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       newEmptyNode()
     )
     memberList.add nnkIdentDefs.newTree(
-      ident("update" & name),
+      nnkPostfix.newTree(ident"*", ident("update" & name)),
       nnkPar.newTree(
         nnkProcTy.newTree(
           nnkFormalParams.newTree(

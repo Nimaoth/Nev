@@ -94,6 +94,9 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
       result.nodeToVisualNode[node.id] = oldLine.add(containerLine)
       line = oldLine
 
+  # force computation of type so that errors diagnostics can be generated
+  discard ctx.computeType(node)
+
   case node
   of Empty():
     if not input.createReplacement(node, result, line):

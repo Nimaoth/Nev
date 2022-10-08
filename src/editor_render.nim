@@ -18,6 +18,15 @@ proc fillText(ctx: contexts.Context, location: Vec2, text: string, paint: Paint,
   ctx.fillText(text, location)
   return rect(location, vec2(textWidth, ctx.fontSize))
 
+proc fillTextRight(ctx: contexts.Context, location: Vec2, text: string, paint: Paint, font: Font = nil): Rect =
+  let textWidth = ctx.measureText(text).width
+  if font != nil:
+    ctx.font = font.typeface.filePath
+    ctx.fontSize = font.size
+  ctx.fillStyle = paint
+  ctx.fillText(text, location - vec2(textWidth, 0))
+  return rect(location - vec2(textWidth, 0), vec2(textWidth, ctx.fontSize))
+
 proc renderCommandAutoCompletion*(ed: Editor, handler: EventHandler, bounds: Rect): Rect =
   let ctx = ed.ctx
   let nextPossibleInputs = handler.dfa.autoComplete(handler.state).sortedByIt(it[0])
@@ -227,14 +236,14 @@ proc renderVisualNode(editor: AstDocumentEditor, ed: Editor, drawCtx: contexts.C
 
   if node.node != nil and ctx.diagnosticsPerNode.contains(node.node.id):
     var foundErrors = false
-    var last = rect(bounds.xyh, vec2())
+    var last = rect(bounds.xy, vec2())
     for diagnostics in ctx.diagnosticsPerNode[node.node.id].queries.values:
       for diagnostic in diagnostics:
-        last = drawCtx.fillText(last.xyh, diagnostic.message, rgb(255, 0, 0), node.font)
+        last = drawCtx.fillTextRight(vec2(globalBounds.xw, last.yh), diagnostic.message, rgb(255, 0, 0), node.font)
         foundErrors = true
     if foundErrors:
       ed.ctx.strokeStyle = rgb(255, 0, 0)
-      ed.ctx.strokeRect(bounds.grow(1.relative))
+      ed.ctx.strokeRect(bounds.grow(3.relative))
 
 proc renderVisualNodeLayout(editor: AstDocumentEditor, ed: Editor, contentBounds: Rect, layout: NodeLayout, offset: var Vec2) =
   editor.lastLayouts.add (layout, offset - contentBounds.xy)
