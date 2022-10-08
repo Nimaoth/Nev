@@ -225,6 +225,17 @@ proc renderVisualNode(editor: AstDocumentEditor, ed: Editor, drawCtx: contexts.C
     ed.ctx.strokeStyle = rgb(175, 255, 200)
     ed.ctx.strokeRect(bounds)
 
+  if node.node != nil and ctx.diagnosticsPerNode.contains(node.node.id):
+    var foundErrors = false
+    var last = rect(bounds.xyh, vec2())
+    for diagnostics in ctx.diagnosticsPerNode[node.node.id].queries.values:
+      for diagnostic in diagnostics:
+        last = drawCtx.fillText(last.xyh, diagnostic.message, rgb(255, 0, 0), node.font)
+        foundErrors = true
+    if foundErrors:
+      ed.ctx.strokeStyle = rgb(255, 0, 0)
+      ed.ctx.strokeRect(bounds.grow(1.relative))
+
 proc renderVisualNodeLayout(editor: AstDocumentEditor, ed: Editor, contentBounds: Rect, layout: NodeLayout, offset: var Vec2) =
   editor.lastLayouts.add (layout, offset - contentBounds.xy)
 

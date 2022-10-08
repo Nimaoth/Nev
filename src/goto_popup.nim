@@ -18,7 +18,7 @@ proc getCompletions*(self: AstGotoDefinitionPopup, text: string): seq[Completion
   for (key, symbol) in symbols.pairs:
     if symbol.kind != skAstNode:
       continue
-    let score = fuzzyMatch(text, symbol.name)
+    let score = fuzzyMatchSmart(text, symbol.name)
     result.add Completion(kind: SymbolCompletion, score: score, id: symbol.id)
 
   result.sort((a, b) => cmp(a.score, b.score), Descending)
