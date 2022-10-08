@@ -477,6 +477,15 @@ proc handleNodeDelete*(doc: AstDocument, node: AstNode) =
 
   ctx.deleteNode(node)
 
+  # Remove diagnostics added by the removed node
+  let updates = @[ctx.updateType]
+  for update in updates:
+    let key = (node.getItem, update)
+    if ctx.diagnosticsPerQuery.contains(key):
+      for id in ctx.diagnosticsPerQuery[key]:
+        ctx.diagnosticsPerNode[id].queries.del key
+      ctx.diagnosticsPerQuery.del(key)
+
 proc handleNodeInserted*(self: AstDocumentEditor, doc: AstDocument, node: AstNode) =
   logger.log lvlInfo, fmt"[asteditor] Node inserted: {node}, {self.deletedNode}"
   if self.deletedNode.getSome(deletedNode) and deletedNode == node:
@@ -1563,6 +1572,30 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
           self.node = n
           break
 
+    of "next-error-diagnostic":
+      for _, n in self.document.nextPreOrderWhere(self.node, n => n != self.node):
+        if ctx.diagnosticsPerNode.contains(n.id):
+          var found = false
+          for diags in ctx.diagnosticsPerNode[n.id].queries.values:
+            if diags.len > 0:
+              found = true
+          if found:
+            self.node = n
+          break
+
+    of "prev-error-diagnostic":
+      for n in self.document.prevPostOrder(self.node):
+        if n == self.node:
+          continue
+        if ctx.diagnosticsPerNode.contains(n.id):
+          var found = false
+          for diags in ctx.diagnosticsPerNode[n.id].queries.values:
+            if diags.len > 0:
+              found = true
+          if found:
+            self.node = n
+            break
+
     of "symbol":
       var popup = newGotoPopup(self.editor, self.document)
       popup.handleSymbolSelected = proc(id: Id) =
@@ -1756,6 +1789,8 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     command "GE", "goto prev-error"
     command "ge", "goto next-error"
     command "gs", "goto symbol"
+    command "<F12>", "goto next-error-diagnostic"
+    command "<S-F12>", "goto prev-error-diagnostic"
 
     command "<F5>", "run-selected-function"
 

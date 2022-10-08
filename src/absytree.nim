@@ -20,7 +20,7 @@ proc centerWindowOnMonitor(window: Window, monitor: int) =
   window.pos = ivec2(int32(left + (monitorWidth - windowWidth) / 2),
                      int32(top + (monitorHeight - windowHeight) / 2))
 
-window.centerWindowOnMonitor(0)
+window.centerWindowOnMonitor(1)
 
 makeContextCurrent(window)
 

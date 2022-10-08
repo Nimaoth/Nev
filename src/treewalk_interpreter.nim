@@ -179,13 +179,6 @@ proc executeNodeRec(ctx: Context, node: AstNode, variables: var Table[Id, Value]
     return errorValue()
 
 proc computeFunctionExecutionImpl2*(ctx: Context, fec: FunctionExecutionContext): Value =
-  if ctx.enableQueryLogging or ctx.enableExecutionLogging: inc currentIndent, 1
-  defer:
-    if ctx.enableQueryLogging or ctx.enableExecutionLogging: dec currentIndent, 1
-  if ctx.enableQueryLogging or ctx.enableExecutionLogging: echo repeat2("| ", currentIndent - 1), "computeFunctionExecutionImpl ", fec
-  defer:
-    if ctx.enableQueryLogging or ctx.enableExecutionLogging: echo repeat2("| ", currentIndent), "-> ", result
-
   let body = fec.node[2]
 
   var variables = initTable[Id, Value]()
