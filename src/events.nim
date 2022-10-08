@@ -17,7 +17,7 @@ template eventHandler*(commandDFA: CommandDFA, handlerBody: untyped): untyped =
   block:
     var handler = EventHandler()
     handler.dfa = commandDFA
-    
+
     template onAction(actionBody: untyped): untyped =
       handler.handleAction = proc(action: string, arg: string): EventResponse =
         let action {.inject.} = action
@@ -39,13 +39,13 @@ template eventHandler2*(handlerBody: untyped): untyped =
 
     template onAction(actionBody: untyped): untyped =
       handler.handleAction = proc(action: string, arg: string): EventResponse =
-        let action {.inject.} = action
-        let arg {.inject.} = arg
+        let action {.inject, used.} = action
+        let arg {.inject, used.} = arg
         return actionBody
 
     template onInput(inputBody: untyped): untyped =
       handler.handleInput = proc(input: string): EventResponse =
-        let input {.inject.} = input
+        let input {.inject, used.} = input
         return inputBody
 
     var commands: seq[(string, string)] = @[]

@@ -1,8 +1,8 @@
-import std/[tables, sets, strutils, sequtils, sugar, hashes, options, logging, strformat]
+import std/[tables, sets, strutils, hashes, options, logging, strformat]
 import timer
 import fusion/matching
-import bumpy, chroma, vmath, pixie/fonts
-import ast, id, util, rect_utils
+import vmath
+import ast, id, util
 import query_system, compiler_types
 import lru_cache
 

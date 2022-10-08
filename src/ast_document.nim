@@ -1,7 +1,7 @@
 import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros, options, deques, sets, json, sequtils]
 import timer
 import fusion/matching, fuzzy, bumpy, rect_utils, vmath, chroma
-import util, input, document, document_editor, text_document, events, id, ast_ids, ast
+import editor, util, input, document, document_editor, text_document, events, id, ast_ids, ast
 import compiler
 
 var logger = newConsoleLogger()
@@ -166,6 +166,7 @@ type
       name*: string
 
 type AstDocumentEditor* = ref object of DocumentEditor
+  editor*: Editor
   document*: AstDocument
   selectedNode: AstNode
   selectionHistory: Deque[AstNode]
@@ -196,6 +197,11 @@ type AstDocumentEditor* = ref object of DocumentEditor
   lastMoveCommand*: (string, string)
   lastOtherCommand*: (string, string)
   lastCommand*: (string, string)
+
+import goto_popup
+
+method injectDependencies*(self: AstDocumentEditor, ed: Editor) =
+  self.editor = ed
 
 proc updateCompletions(editor: AstDocumentEditor)
 proc getPrevChild*(document: AstDocument, node: AstNode, max: int = -1): Option[AstNode]
@@ -493,7 +499,7 @@ proc editSymbol*(self: AstDocumentEditor, symbol: Symbol) =
   self.textEditor = newTextEditor(self.textDocument)
   self.textEditor.renderHeader = false
   self.textEditor.fillAvailableSpace = false
-  self.textDocument.textChanged = (doc: Document) => self.handleTextDocumentChanged()
+  self.textDocument.textChanged = (doc: TextDocument) => self.handleTextDocumentChanged()
   self.updateCompletions()
 
 proc editNode*(self: AstDocumentEditor, node: AstNode) =
@@ -505,7 +511,7 @@ proc editNode*(self: AstDocumentEditor, node: AstNode) =
   self.textEditor = newTextEditor(self.textDocument)
   self.textEditor.renderHeader = false
   self.textEditor.fillAvailableSpace = false
-  self.textDocument.textChanged = (doc: Document) => self.handleTextDocumentChanged()
+  self.textDocument.textChanged = (doc: TextDocument) => self.handleTextDocumentChanged()
   self.updateCompletions()
 
 proc tryEdit*(self: AstDocumentEditor, node: AstNode): bool =
@@ -1471,7 +1477,6 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
     if self.isEditing: return
     let typ = ctx.computeType(self.node)
 
-    # ctx.enableQueryLogging = true
     if self.createNodeFromAction(arg, self.node, typ).getSome(newNodeIndex):
       var (newNode, index) = newNodeIndex
       let oldNode = self.node
@@ -1485,14 +1490,12 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
         discard self.tryEdit self.node
         break
 
-    # let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: self.node.subbase.next.get.next.get, selectedNode: self.node.id)
-    # discard ctx.computeNodeLayout(input)
-    # ctx.enableQueryLogging = false
     self.lastEditCommand = (action, arg)
 
   of "edit-next-empty":
     if self.isEditing: return
-    for _, emptyNode in self.document.nextPreOrderWhere(self.node, (n) => self.document.shouldEditNode(n)):
+    let current = self.node
+    for _, emptyNode in self.document.nextPreOrderWhere(self.node, (n) => n != current and self.document.shouldEditNode(n)):
       self.node = emptyNode
       discard self.tryEdit self.node
       break
@@ -1559,6 +1562,14 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
         if n != self.node and ctx.computeType(n).kind == tError:
           self.node = n
           break
+
+    of "symbol":
+      var popup = newGotoPopup(self.editor, self.document)
+      popup.handleSymbolSelected = proc(id: Id) =
+        if ctx.getAstNode(id).getSome(node) and node.base == self.document.rootNode:
+          self.node = node
+      self.editor.pushPopup popup
+
     self.lastMoveCommand = (action, arg)
 
   of "run-selected-function":
@@ -1744,6 +1755,7 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     command "gn", "goto next-usage"
     command "GE", "goto prev-error"
     command "ge", "goto next-error"
+    command "gs", "goto symbol"
 
     command "<F5>", "run-selected-function"
 

@@ -1,8 +1,8 @@
 import std/[strformat, tables, algorithm, math, sugar, strutils]
 import timer
 import boxy, windy, fusion/matching
-import util, input, events, editor, rect_utils, document_editor, text_document, ast_document, keybind_autocomplete, id, ast
-import compiler, node_layout
+import util, input, events, editor, popup, rect_utils, document_editor, text_document, ast_document, keybind_autocomplete, id, ast
+import compiler, node_layout, goto_popup
 import lru_cache
 
 let lineDistance = 15.0
@@ -70,8 +70,6 @@ method renderDocumentEditor(editor: DocumentEditor, ed: Editor, bounds: Rect, se
 proc measureEditorBounds(editor: TextDocumentEditor, ed: Editor, bounds: Rect): Rect =
   let document = editor.document
 
-  let headerHeight = if editor.renderHeader: ed.ctx.fontSize else: 0
-
   var usedBounds = rect(bounds.x, bounds.y, 0, 0)
 
   for i, line in document.content:
@@ -125,13 +123,15 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
 
   return usedBounds
 
-proc renderCompletions(editor: AstDocumentEditor, ed: Editor, bounds: Rect): Rect =
-  let completions = editor.completions
-  let selected = editor.selectedCompletion
+proc renderCompletions(ed: Editor, completions: seq[Completion], selected: int, bounds: Rect, fill: bool) =
+  if completions.len == 0:
+    return
 
-  let renderedCompletions = min(completions.len, 15)
+  let maxRenderedCompletions = if fill:
+    int(bounds.h / ed.ctx.fontSize)
+  else: 15
 
-  let width = min(bounds.w, 250)
+  let renderedCompletions = min(completions.len, maxRenderedCompletions)
 
   let firstCompletion = if selected >= renderedCompletions:
     selected - renderedCompletions + 1
@@ -169,7 +169,9 @@ proc renderCompletions(editor: AstDocumentEditor, ed: Editor, bounds: Rect): Rec
   let nameWidth = config.font.typeset('#'.repeat(maxNameLen)).layoutBounds().x
   let typeWidth = config.font.typeset('#'.repeat(maxTypeLen)).layoutBounds().x
   let valueWidth = config.font.typeset('#'.repeat(maxValueLen)).layoutBounds().x
-  let totalWidth = nameWidth + typeWidth + valueWidth + sepWidth * 2
+  var totalWidth = nameWidth + typeWidth + valueWidth + sepWidth * 2
+  if fill and totalWidth < bounds.w:
+    totalWidth = bounds.w
 
   ed.ctx.fillStyle = rgb(30, 30, 30)
   ed.ctx.fillRect(rect(bounds.xy, vec2(totalWidth, renderedCompletions.float32 * config.font.size)))
@@ -335,7 +337,7 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
       if layout.nodeToVisualNode.contains(editor.node.id):
         let visualRange = layout.nodeToVisualNode[editor.node.id]
         let bounds = visualRange.absoluteBounds + offset + contentBounds.xy
-        discard renderCompletions(editor, ed, contentBounds.splitH(bounds.yh.absolute)[1].splitV(bounds.x.absolute)[1])
+        ed.renderCompletions(editor.completions, editor.selectedCompletion, contentBounds.splitH(bounds.yh.absolute)[1].splitV(bounds.x.absolute)[1], false)
 
   if editor.renderExecutionOutput:
     let bounds = contentBounds.splitV(relative(contentBounds.w - 500))[1]
@@ -419,6 +421,17 @@ proc renderView*(ed: Editor, bounds: Rect, view: View, selected: bool) =
 
   discard view.editor.renderDocumentEditor(ed, bounds, selected)
 
+method renderPopup*(popup: Popup, ed: Editor, bounds: Rect) {.base, locks: "unknown".} =
+  discard
+
+method renderPopup*(popup: AstGotoDefinitionPopup, ed: Editor, bounds: Rect) =
+  let bounds = bounds.shrink(0.15.percent)
+  ed.ctx.fillStyle = rgb(25, 25, 25)
+  ed.ctx.fillRect(bounds)
+  let (textBounds, contentBounds) = bounds.splitH(ed.ctx.fontSize.relative)
+  discard popup.textEditor.renderDocumentEditor(ed, textBounds, true)
+  ed.renderCompletions(popup.completions, popup.selected, contentBounds, true)
+
 proc renderMainWindow*(ed: Editor, bounds: Rect) =
   ed.ctx.fillStyle = rgb(25, 25, 25)
   ed.ctx.fillRect(bounds)
@@ -428,6 +441,9 @@ proc renderMainWindow*(ed: Editor, bounds: Rect) =
     if i >= rects.len:
       break
     ed.renderView(rects[i], view, i == ed.currentView)
+
+  for i, popup in ed.popups:
+    popup.renderPopup(ed, bounds)
 
 proc render*(ed: Editor) =
   ed.ctx.image = newImage(ed.window.size.x, ed.window.size.y)

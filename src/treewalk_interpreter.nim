@@ -1,6 +1,5 @@
-import std/[tables, strutils, sequtils, sugar, hashes, options, logging, strformat]
+import std/[tables, strutils, hashes, options, logging, strformat]
 import fusion/matching
-import pixie/fonts, bumpy, chroma, vmath
 import compiler, ast, util, id, query_system
 
 proc cacheValuesInFunction(ctx: Context, node: AstNode, values: var Table[Id, Value]) =
