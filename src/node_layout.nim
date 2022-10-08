@@ -157,7 +157,7 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
     discard line.add newTextNode(" : ", config.colors.separator, config.font)
 
     if node.len > 0:
-      if node[0].kind == Empty and node[0].text.len == 0:
+      if node[0].kind == Empty and node[0].text.len == 0 and not input.replacements.contains(node[0].id):
         let typ = ctx.computeType(node)
         result.nodeToVisualNode[node[0].id] = line.add newTextNode($typ, config.colors.typ, config.font, node[0])
       else:
@@ -177,7 +177,7 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
     discard line.add newTextNode(" : mut ", config.colors.separator, config.font)
 
     if node.len > 0:
-      if node[0].kind == Empty and node[0].text.len == 0:
+      if node[0].kind == Empty and node[0].text.len == 0 and not input.replacements.contains(node[0].id):
         let typ = ctx.computeType(node)
         result.nodeToVisualNode[node[0].id] = line.add newTextNode($typ, config.colors.typ, config.font, node[0])
       else:
