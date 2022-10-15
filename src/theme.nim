@@ -71,6 +71,12 @@ proc tokenBackgroundColor*(theme: Theme, name: string, default: SomeColor = Colo
 proc tokenFontStyle*(theme: Theme, name: string): set[FontStyle] =
   return (theme.tokenColors.getOrDefault(name, Style(fontStyle: {}))).fontStyle
 
+proc tokenFontStyle*(theme: Theme, names: seq[string]): set[FontStyle] =
+  for name in names:
+    if theme.tokenColors.contains(name):
+      return theme.tokenColors[name].fontStyle
+  return {}
+
 proc anyColor*(theme: Theme, color: string, default: SomeColor = Color(r: 0, g: 0, b: 0, a: 1)): Color =
   return if color.startsWith "#":
     parseHexVar color
