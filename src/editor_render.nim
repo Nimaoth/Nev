@@ -1,7 +1,7 @@
 import std/[strformat, tables, algorithm, math, sugar, strutils]
 import timer
 import boxy, windy, fusion/matching
-import util, input, events, editor, popup, rect_utils, document_editor, text_document, ast_document, keybind_autocomplete, id, ast
+import util, input, events, editor, popup, rect_utils, document_editor, text_document, ast_document, keybind_autocomplete, id, ast, theme
 import compiler, node_layout, goto_popup
 import lru_cache
 
@@ -215,10 +215,19 @@ proc renderVisualNode(editor: AstDocumentEditor, ed: Editor, drawCtx: contexts.C
       return
 
   if node.text.len > 0:
-    discard drawCtx.fillText(bounds.xy, node.text, node.color, node.font)
+    let color = if node.color.startsWith "#":
+      parseHexVar node.color
+    elif node.color.startsWith "&":
+      ed.theme.color(node.color[1..^1], rgb(255, 255, 255))
+    else:
+      ed.theme.tokenColor(node.color, rgb(255, 255, 255))
+    discard drawCtx.fillText(bounds.xy, node.text, color, node.font)
   elif node.node != nil and node.node.kind == Empty:
     drawCtx.strokeStyle = rgb(255, 100, 100)
     drawCtx.strokeRect(bounds)
+
+  # if node.node == selected:
+  #   discard drawCtx.fillText(bounds.xy, node.color, rgb(255, 255, 255), node.font)
 
   if not isNil node.render:
     node.render(bounds)
@@ -280,6 +289,7 @@ proc renderVisualNodeLayout(editor: AstDocumentEditor, ed: Editor, contentBounds
 
 method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect, selected: bool): Rect =
   let document = editor.document
+  let theme = ed.theme
 
   let timer = startTimer()
   defer:
@@ -292,13 +302,13 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
   let (headerBounds, contentBounds) = bounds.splitH ed.ctx.fontSize.relative
   editor.lastBounds = rect(vec2(), contentBounds.wh)
 
-  ed.ctx.fillStyle = if selected: rgb(45, 45, 60) else: rgb(45, 45, 45)
+  ed.ctx.fillStyle = if selected: theme.color("", rgb(45, 45, 60)) else: theme.color("", rgb(45, 45, 45))
   ed.ctx.fillRect(headerBounds)
 
-  ed.ctx.fillStyle = if selected: rgb(25, 25, 40) else: rgb(25, 25, 25)
+  ed.ctx.fillStyle = if selected: theme.color("editor.background", rgb(25, 25, 40)) else: theme.color("editor.background", rgb(25, 25, 25))
   ed.ctx.fillRect(contentBounds)
 
-  ed.ctx.fillStyle = rgb(255, 225, 255)
+  ed.ctx.fillStyle = theme.color("editor.foreground", rgb(255, 255, 255))
   ed.ctx.fillText("AST - " & document.filename, vec2(headerBounds.x, headerBounds.y))
 
   var lastNodeRect = contentBounds
@@ -456,7 +466,7 @@ method renderPopup*(popup: AstGotoDefinitionPopup, ed: Editor, bounds: Rect) =
   ed.renderCompletions(popup.completions, popup.selected, contentBounds, true)
 
 proc renderMainWindow*(ed: Editor, bounds: Rect) =
-  ed.ctx.fillStyle = rgb(25, 25, 25)
+  ed.ctx.fillStyle = ed.theme.color("editorPane.background", rgb(25, 25, 25))
   ed.ctx.fillRect(bounds)
 
   let rects = ed.layout.layoutViews(ed.layout_props, bounds, ed.views)

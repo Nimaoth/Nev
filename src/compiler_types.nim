@@ -79,12 +79,13 @@ type
     parent*: VisualNode
     node*: AstNode
     text*: string
-    color*: Color
     bounds*: Rect
     indent*: float32
     font*: Font
     render*: VisualNodeRenderFunc
     children*: seq[VisualNode]
+    color*: string
+
 
   VisualNodeRange* = object
     parent*: VisualNode
@@ -310,7 +311,6 @@ func clone*(node: VisualNode): VisualNode =
   result.parent = node.parent
   result.node = node.node
   result.text = node.text
-  result.color = node.color
   result.bounds = node.bounds
   result.indent = node.indent
   result.font = node.font
