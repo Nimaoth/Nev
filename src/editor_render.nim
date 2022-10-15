@@ -62,14 +62,14 @@ proc renderCommandAutoCompletion*(ed: Editor, handler: EventHandler, bounds: Rec
   return bounds.splitH(height.relative)[1]
 
 proc renderStatusBar*(ed: Editor, bounds: Rect) =
-  ed.ctx.fillStyle = if ed.commandLineMode: rgb(60, 45, 45) else: rgb(40, 25, 25)
+  ed.ctx.fillStyle = if ed.commandLineMode: ed.theme.color("statusBar.background", rgb(60, 45, 45)) else: ed.theme.color("statusBarItem.activeBackground", rgb(40, 25, 25))
   ed.ctx.fillRect(bounds)
 
-  ed.ctx.fillStyle = rgb(200, 200, 225)
+  ed.ctx.fillStyle = ed.theme.color("statusBar.foreground", rgb(200, 200, 225))
   ed.ctx.fillText(ed.inputBuffer, vec2(bounds.x, bounds.y))
 
   if ed.commandLineMode:
-    ed.ctx.strokeStyle = rgb(255, 255, 255)
+    ed.ctx.strokeStyle = ed.theme.color("statusBar.foreground", rgb(255, 255, 255))
     let horizontalSizeModifier: float32 = 0.615
     ed.ctx.strokeRect(rect(bounds.x + ed.inputBuffer.len.float32 * ed.ctx.fontSize * horizontalSizeModifier, bounds.y, ed.ctx.fontSize * 0.05, ed.ctx.fontSize))
 
@@ -102,17 +102,16 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
   let (headerBounds, contentBounds) = bounds.splitH headerHeight.relative
 
   if headerHeight > 0:
-    ed.ctx.fillStyle = if selected: rgb(45, 45, 60) else: rgb(45, 45, 45)
+    ed.ctx.fillStyle = if selected: ed.theme.color("tab.activeBackground", rgb(45, 45, 60)) else: ed.theme.color("tab.inactiveBackground", rgb(45, 45, 45))
     ed.ctx.fillRect(headerBounds)
 
-  if headerHeight > 0:
-    ed.ctx.fillStyle = rgb(255, 225, 255)
+    ed.ctx.fillStyle = if selected: ed.theme.color("tab.activeForeground", rgb(255, 225, 255)) else: ed.theme.color("tab.inactiveForeground", rgb(255, 225, 255))
     ed.ctx.fillText(document.filename, vec2(headerBounds.x, headerBounds.y))
     ed.ctx.fillText($editor.selection, vec2(headerBounds.splitV(0.3.relative)[1].x, headerBounds.y))
 
   var usedBounds = rect(bounds.x, bounds.y, 0, 0)
 
-  ed.ctx.fillStyle = rgb(225, 200, 200)
+  ed.ctx.fillStyle = ed.theme.color("editor.foreground", rgb(225, 200, 200))
   for i, line in document.content:
     let textWidth = ed.ctx.measureText(line).width
     usedBounds.w = max(usedBounds.w, textWidth)
@@ -125,9 +124,9 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
     ed.ctx.strokeRect(usedBounds.grow(1.relative))
 
   let horizontalSizeModifier: float32 = 0.615
-  ed.ctx.strokeStyle = rgb(210, 210, 210)
+  ed.ctx.strokeStyle = ed.theme.color("editorCursor.foreground", rgb(210, 210, 210))
   ed.ctx.strokeRect(rect(contentBounds.x + editor.selection.first.column.float32 * ed.ctx.fontSize * horizontalSizeModifier, contentBounds.y + editor.selection.first.line.float32 * ed.ctx.fontSize, ed.ctx.fontSize * 0.05, ed.ctx.fontSize))
-  ed.ctx.strokeStyle = rgb(255, 255, 255)
+  ed.ctx.strokeStyle = ed.theme.color("editorCursor.foreground", rgb(255, 255, 255))
   ed.ctx.strokeRect(rect(contentBounds.x + editor.selection.last.column.float32 * ed.ctx.fontSize * horizontalSizeModifier, contentBounds.y + editor.selection.last.line.float32 * ed.ctx.fontSize, ed.ctx.fontSize * 0.05, ed.ctx.fontSize))
 
   return usedBounds
@@ -147,21 +146,21 @@ proc renderCompletions(ed: Editor, completions: seq[Completion], selected: int, 
   else:
     0
 
-  var entries: seq[tuple[name: string, typ: string, value: string]] = @[]
+  var entries: seq[tuple[name: string, typ: string, value: string, color1: string, color2: string, color3: string]] = @[]
 
   for i, com in completions[firstCompletion..completions.high]:
     case com.kind
     of SymbolCompletion:
-      if ctx.getSymbol(com.id).getSome(symbol):
-        let typ = ctx.computeSymbolType(symbol)
+      if ctx.getSymbol(com.id).getSome(sym):
+        let typ = ctx.computeSymbolType(sym)
         var valueString = ""
-        let value = ctx.computeSymbolValue(symbol)
+        let value = ctx.computeSymbolValue(sym)
         if value.kind != vkError and value.kind != vkBuiltinFunction and value.kind != vkAstFunction and value.kind != vkVoid:
           valueString = $value
-        entries.add (symbol.name, $typ, valueString)
+        entries.add (sym.name, $typ, valueString, ctx.getColorForSymbol(sym), "storage.type", "string")
 
     of AstCompletion:
-      entries.add (com.name, "snippet", $com.nodeKind)
+      entries.add (com.name, "snippet", $com.nodeKind, "entity.name.label", "storage", "string")
 
     if entries.len >= renderedCompletions:
       break
@@ -169,7 +168,7 @@ proc renderCompletions(ed: Editor, completions: seq[Completion], selected: int, 
   var maxNameLen = 10
   var maxTypeLen = 10
   var maxValueLen = 0
-  for (name, typ, value) in entries:
+  for (name, typ, value, color1, color2, color3) in entries:
     maxNameLen = max(maxNameLen, name.len)
     maxTypeLen = max(maxTypeLen, typ.len)
     maxValueLen = max(maxValueLen, value.len)
@@ -182,24 +181,26 @@ proc renderCompletions(ed: Editor, completions: seq[Completion], selected: int, 
   if fill and totalWidth < bounds.w:
     totalWidth = bounds.w
 
-  ed.ctx.fillStyle = rgb(30, 30, 30)
+  ed.ctx.fillStyle = ed.theme.color("panel.background", rgb(30, 30, 30))
   ed.ctx.fillRect(rect(bounds.xy, vec2(totalWidth, renderedCompletions.float32 * config.font.size)))
-  ed.ctx.strokeStyle = rgb(255, 255, 255)
+  ed.ctx.strokeStyle = ed.theme.color("panel.border", rgb(255, 255, 255))
   ed.ctx.strokeRect(rect(bounds.xy, vec2(totalWidth, renderedCompletions.float32 * config.font.size)))
 
+  for i, (name, typ, value, color1, color2, color3) in entries:
+    # if i == (selected - firstCompletion):
+    #   ed.ctx.fillStyle = ed.theme.color("list.activeSelectionBackground", rgb(40, 40, 40))
+    #   ed.ctx.fillRect(rect(bounds.xy + vec2(0, i.float32 * config.font.size), vec2(totalWidth, config.font.size)))
+    # elif i mod 2 == 1:
+    #   ed.ctx.fillStyle = ed.theme.color("list.inactiveSelectionBackground", rgb(40, 40, 40))
+    #   ed.ctx.fillRect(rect(bounds.xy + vec2(0, i.float32 * config.font.size), vec2(totalWidth, config.font.size)))
 
-  for i, (name, typ, value) in entries:
-    if i mod 2 == 1:
-      ed.ctx.fillStyle = rgb(40, 40, 40)
-      ed.ctx.fillRect(rect(bounds.xy + vec2(0, i.float32 * config.font.size), vec2(totalWidth, config.font.size)))
-
-    var lastRect = ed.ctx.fillText(vec2(bounds.x, bounds.y + i.float32 * config.font.size), name, rgb(255, 255, 255), config.font)
-    lastRect = ed.ctx.fillText(vec2(lastRect.x + nameWidth, bounds.y + i.float32 * config.font.size), " : ", rgb(175, 175, 175), config.font)
-    lastRect = ed.ctx.fillText(vec2(lastRect.xw, bounds.y + i.float32 * config.font.size), typ, rgb(255, 175, 175), config.font)
+    var lastRect = ed.ctx.fillText(vec2(bounds.x, bounds.y + i.float32 * config.font.size), name, ed.theme.tokenColor(color1, rgb(255, 255, 255)), config.font)
+    lastRect = ed.ctx.fillText(vec2(lastRect.x + nameWidth, bounds.y + i.float32 * config.font.size), " : ", ed.theme.color("list.inactiveSelectionForeground", rgb(175, 175, 175)), config.font)
+    lastRect = ed.ctx.fillText(vec2(lastRect.xw, bounds.y + i.float32 * config.font.size), typ, ed.theme.tokenColor(color2, rgb(255, 175, 175)), config.font)
 
     if value.len > 0:
-      lastRect = ed.ctx.fillText(vec2(lastRect.x + typeWidth, bounds.y + i.float32 * config.font.size), " = ", rgb(175, 175, 175), config.font)
-      lastRect = ed.ctx.fillText(vec2(lastRect.xw, bounds.y + i.float32 * config.font.size), value, rgb(175, 255, 175), config.font)
+      lastRect = ed.ctx.fillText(vec2(lastRect.x + typeWidth, bounds.y + i.float32 * config.font.size), " = ", ed.theme.color("list.inactiveSelectionForeground", rgb(175, 175, 175)), config.font)
+      lastRect = ed.ctx.fillText(vec2(lastRect.xw, bounds.y + i.float32 * config.font.size), value, ed.theme.tokenColor(color3, rgb(175, 255, 175)), config.font)
 
   ed.ctx.strokeStyle = rgb(200, 200, 200)
   ed.ctx.strokeRect(rect(bounds.xy + vec2(0, (selected - firstCompletion).float32 * config.font.size), vec2(totalWidth, config.font.size)))
@@ -215,32 +216,30 @@ proc renderVisualNode(editor: AstDocumentEditor, ed: Editor, drawCtx: contexts.C
       return
 
   if node.text.len > 0:
-    let color = if node.color.startsWith "#":
-      parseHexVar node.color
-    elif node.color.startsWith "&":
-      ed.theme.color(node.color[1..^1], rgb(255, 255, 255))
-    else:
-      ed.theme.tokenColor(node.color, rgb(255, 255, 255))
+    let color = ed.theme.anyColor(node.color, rgb(255, 255, 255))
     discard drawCtx.fillText(bounds.xy, node.text, color, node.font)
   elif node.node != nil and node.node.kind == Empty:
-    drawCtx.strokeStyle = rgb(255, 100, 100)
+    drawCtx.strokeStyle = ed.theme.color("editorError.foreground", rgb(255, 100, 100))
     drawCtx.strokeRect(bounds)
 
   # if node.node == selected:
   #   discard drawCtx.fillText(bounds.xy, node.color, rgb(255, 255, 255), node.font)
 
+  # Render custom stuff
   if not isNil node.render:
     node.render(bounds)
 
   for child in node.children:
     editor.renderVisualNode(ed, drawCtx, child, bounds.xy, selected, globalBounds)
 
+  # Draw outline around node if it refers to the selected node or the same thing the selected node refers to
   if node.node != nil and (editor.node.id == node.node.reff or (editor.node.reff == node.node.reff and node.node.reff != null)):
-    ed.ctx.strokeStyle = rgb(175, 175, 255)
+    ed.ctx.strokeStyle = ed.theme.color("inputValidation.infoBorder", rgb(175, 175, 255))
     ed.ctx.strokeRect(bounds)
 
+  # Draw outline around node it is being refered to by the selected node
   if node.node != nil and editor.node.reff == node.node.id:
-    ed.ctx.strokeStyle = rgb(175, 255, 200)
+    ed.ctx.strokeStyle = ed.theme.color("inputValidation.warningBorder", rgb(175, 255, 200))
     ed.ctx.strokeRect(bounds)
 
 proc renderVisualNodeLayout(editor: AstDocumentEditor, ed: Editor, contentBounds: Rect, layout: NodeLayout, offset: var Vec2) =
@@ -261,11 +260,12 @@ proc renderVisualNodeLayout(editor: AstDocumentEditor, ed: Editor, contentBounds
     # defer: ed.ctx.restore()
     editor.renderVisualNode(ed, ed.ctx, line, offset, editor.node, contentBounds)
 
+  # Render outline for selected node
   if layout.nodeToVisualNode.contains(editor.node.id):
     let visualRange = layout.nodeToVisualNode[editor.node.id]
     let bounds = visualRange.absoluteBounds + offset
 
-    ed.ctx.strokeStyle = rgb(255, 255, 255)
+    ed.ctx.strokeStyle = ed.theme.color("foreground", rgb(255, 255, 255))
     ed.ctx.lineWidth = 2.5
     ed.ctx.strokeRect(bounds)
     ed.ctx.lineWidth = 1
@@ -278,10 +278,10 @@ proc renderVisualNodeLayout(editor: AstDocumentEditor, ed: Editor, contentBounds
       var last = rect(bounds.xy, vec2())
       for diagnostics in ctx.diagnosticsPerNode[id].queries.values:
         for diagnostic in diagnostics:
-          last = ed.ctx.fillTextRight(vec2(contentBounds.xw, last.yh), diagnostic.message, rgb(255, 0, 0), config.font)
+          last = ed.ctx.fillTextRight(vec2(contentBounds.xw, last.yh), diagnostic.message, ed.theme.color("editorError.foreground", rgb(255, 0, 0)), config.font)
           foundErrors = true
       if foundErrors:
-        ed.ctx.strokeStyle = rgb(255, 0, 0)
+        ed.ctx.strokeStyle = ed.theme.color("editorError.foreground", rgb(255, 0, 0))
         ed.ctx.strokeRect(bounds.grow(3.relative))
 
   # ed.boxy.addImage($node.id, drawCtx.image)
@@ -302,13 +302,13 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
   let (headerBounds, contentBounds) = bounds.splitH ed.ctx.fontSize.relative
   editor.lastBounds = rect(vec2(), contentBounds.wh)
 
-  ed.ctx.fillStyle = if selected: theme.color("", rgb(45, 45, 60)) else: theme.color("", rgb(45, 45, 45))
+  ed.ctx.fillStyle = if selected: theme.color("tab.activeBackground", rgb(45, 45, 60)) else: theme.color("tab.inactiveBackground", rgb(45, 45, 45))
   ed.ctx.fillRect(headerBounds)
 
   ed.ctx.fillStyle = if selected: theme.color("editor.background", rgb(25, 25, 40)) else: theme.color("editor.background", rgb(25, 25, 25))
   ed.ctx.fillRect(contentBounds)
 
-  ed.ctx.fillStyle = theme.color("editor.foreground", rgb(255, 255, 255))
+  ed.ctx.fillStyle = if selected: theme.color("tab.activeForeground", rgb(255, 225, 255)) else: theme.color("tab.inactiveForeground", rgb(255, 225, 255))
   ed.ctx.fillText("AST - " & document.filename, vec2(headerBounds.x, headerBounds.y))
 
   var lastNodeRect = contentBounds
@@ -358,14 +358,17 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
     offset.y -= layout.bounds.h + lineDistance
     editor.renderVisualNodeLayout(ed, contentBounds, layout, offset)
 
+
   if editor.completions.len > 0:
+    # Render outline around all nodes which reference the selected symbol in the completion list
     for (layout, offset) in editor.lastLayouts:
       let selectedCompletion = editor.completions[editor.selectedCompletion]
       if selectedCompletion.kind == SymbolCompletion and ctx.getSymbol(selectedCompletion.id).getSome(symbol) and symbol.kind == skAstNode and layout.nodeToVisualNode.contains(symbol.node.id):
         let selectedDeclRect = layout.nodeToVisualNode[symbol.node.id]
-        ed.ctx.strokeStyle = rgb(150, 150, 220)
+        ed.ctx.strokeStyle = ed.theme.color("editor.findMatchBorder", rgb(150, 150, 220))
         ed.ctx.strokeRect(selectedDeclRect.absoluteBounds + offset + contentBounds.xy)
 
+    # Render completion window under the currently edited node
     for (layout, offset) in editor.lastLayouts:
       if layout.nodeToVisualNode.contains(editor.node.id):
         let visualRange = layout.nodeToVisualNode[editor.node.id]
@@ -449,7 +452,7 @@ method renderDocumentEditor(editor: KeybindAutocompletion, ed: Editor, bounds: R
 proc renderView*(ed: Editor, bounds: Rect, view: View, selected: bool) =
   # let bounds = bounds.shrink(0.2.relative)
   let bounds = bounds.shrink(10.relative)
-  ed.ctx.fillStyle = if selected: rgb(25, 25, 40) else: rgb(25, 25, 25)
+  ed.ctx.fillStyle = if selected: ed.theme.color("editorPane.background", rgb(25, 25, 40)) else: ed.theme.color("editorPane.background", rgb(25, 25, 25))
   ed.ctx.fillRect(bounds)
 
   discard view.editor.renderDocumentEditor(ed, bounds, selected)
@@ -459,9 +462,9 @@ method renderPopup*(popup: Popup, ed: Editor, bounds: Rect) {.base, locks: "unkn
 
 method renderPopup*(popup: AstGotoDefinitionPopup, ed: Editor, bounds: Rect) =
   let bounds = bounds.shrink(0.15.percent)
-  ed.ctx.fillStyle = rgb(25, 25, 25)
-  ed.ctx.fillRect(bounds)
   let (textBounds, contentBounds) = bounds.splitH(ed.ctx.fontSize.relative)
+  ed.ctx.fillStyle = ed.theme.color("panel.background", rgb(25, 25, 25))
+  ed.ctx.fillRect(textBounds)
   discard popup.textEditor.renderDocumentEditor(ed, textBounds, true)
   ed.renderCompletions(popup.completions, popup.selected, contentBounds, true)
 

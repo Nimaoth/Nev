@@ -80,7 +80,7 @@ proc createReplacement(input: NodeLayoutInput, node: AstNode, layout: var NodeLa
     return true
   return false
 
-proc getColorForSymbol(ctx: Context, sym: Symbol): string =
+proc getColorForSymbol*(ctx: Context, sym: Symbol): string =
   let typ = ctx.computeSymbolType sym
   case typ.kind
   of tError: return "invalid"

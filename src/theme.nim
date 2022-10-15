@@ -16,6 +16,15 @@ type
     colors*: Table[string, Color]
     tokenColors*: Table[string, Style]
 
+proc parseHexVar*(text: string): Color =
+  let offset = if text.startsWith "#": 1 else: 0
+  if text.len == 6 + offset:
+    return parseHex text[offset..^1]
+  elif text.len == 8 + offset:
+    return parseHexAlpha text[offset..^1]
+  assert false
+  return Color()
+
 proc color*(theme: Theme, name: string, default: SomeColor = Color(r: 0, g: 0, b: 0, a: 1)): Color =
   return theme.colors.getOrDefault(name, default.color)
 
@@ -28,14 +37,13 @@ proc tokenBackgroundColor*(theme: Theme, name: string, default: SomeColor = Colo
 proc tokenFontStyle*(theme: Theme, name: string): set[FontStyle] =
   return (theme.tokenColors.getOrDefault(name, Style(fontStyle: {}))).fontStyle
 
-proc parseHexVar*(text: string): Color =
-  let offset = if text.startsWith "#": 1 else: 0
-  if text.len == 6 + offset:
-    return parseHex text[offset..^1]
-  elif text.len == 8 + offset:
-    return parseHexAlpha text[offset..^1]
-  assert false
-  return Color()
+proc anyColor*(theme: Theme, color: string, default: SomeColor = Color(r: 0, g: 0, b: 0, a: 1)): Color =
+  return if color.startsWith "#":
+    parseHexVar color
+  elif color.startsWith "&":
+    theme.color(color[1..^1], default)
+  else:
+    theme.tokenColor(color, default)
 
 proc fromJsonHook*(color: var Color, jsonNode: JsonNode) =
   let text = jsonNode.str
