@@ -1,5 +1,5 @@
-import std/[strformat, strutils, tables, logging, unicode, options, os]
-import boxy, windy, print
+import std/[strformat, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils]
+import boxy, windy, print, fuzzy
 import sugar
 import input, events, rect_utils, document, document_editor, text_document, keybind_autocomplete, popup
 import theme, util
@@ -87,10 +87,22 @@ type
   LayoutProperties = ref object
     props: Table[string, float32]
 
+type EditorState = object
+  theme: string
+  fontSize: float32
+  fontRegular: string
+  fontBold: string
+  fontItalic: string
+  fontBoldItalic: string
+
 type Editor* = ref object
   window*: Window
   boxy*: Boxy
   ctx*: Context
+  fontRegular*: string
+  fontBold*: string
+  fontItalic*: string
+  fontBoldItalic*: string
 
   logger: Logger
 
@@ -219,8 +231,13 @@ import ast_document
 import selector_popup
 
 type ThemeSelectorItem* = ref object of SelectorItem
+  score*: float32
   name*: string
   path*: string
+
+proc setTheme*(ed: Editor, path: string) =
+  if loadFromFile(path).getSome(theme):
+    ed.theme = theme
 
 proc newEditor*(window: Window, boxy: Boxy): Editor =
   var ed = Editor()
@@ -230,7 +247,6 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
   ed.statusBarOnTop = false
   ed.logger = newConsoleLogger()
 
-  # ed.views = @[View(document: "1"), View(document: "2"), View(document: "3")]
   ed.layout = HorizontalLayout()
   ed.layout_props = LayoutProperties(props: {"main-split": 0.5.float32}.toTable)
 
@@ -241,11 +257,15 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
   ed.ctx.fontSize = 20
   ed.ctx.textBaseline = TopBaseline
 
+  ed.fontRegular = "./fonts/DejaVuSansMono.ttf"
+  ed.fontBold = "./fonts/DejaVuSansMono-Bold.ttf"
+  ed.fontItalic = "./fonts/DejaVuSansMono-Oblique.ttf"
+  ed.fontBoldItalic = "./fonts/DejaVuSansMono-BoldOblique.ttf"
+
   ed.editor_defaults = @[TextDocumentEditor(), AstDocumentEditor()]
 
   ed.theme = defaultTheme()
-  if loadFromFile("./themes/Monokai Pro.json").getSome(theme):
-    ed.theme = theme
+  ed.setTheme("./themes/tokyo-night-color-theme.json")
 
   ed.createView(newAstDocument("a.ast"))
   # ed.createView(newKeybindAutocompletion())
@@ -267,7 +287,33 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
       Handled
   ed.commandLineMode = false
 
+  try:
+    let state = readFile("config.json").parseJson.jsonTo EditorState
+    ed.setTheme(state.theme)
+    ed.ctx.fontSize = state.fontSize
+    ed.ctx.font = state.fontRegular
+    if state.fontRegular.len > 0: ed.fontRegular = state.fontRegular
+    if state.fontBold.len > 0: ed.fontBold = state.fontBold
+    if state.fontItalic.len > 0: ed.fontItalic = state.fontItalic
+    if state.fontBoldItalic.len > 0: ed.fontBoldItalic = state.fontBoldItalic
+
+  except:
+    echo "Failed to load previous state from config file"
+
   return ed
+
+proc shutdown*(ed: Editor) =
+  # Save some state
+  var state = EditorState()
+  state.theme = ed.theme.path
+  state.fontSize = ed.ctx.fontSize
+  state.fontRegular = ed.fontRegular
+  state.fontBold = ed.fontBold
+  state.fontItalic = ed.fontItalic
+  state.fontBoldItalic = ed.fontBoldItalic
+
+  let serialized = state.toJson
+  writeFile("config.json", serialized.pretty)
 
 proc closeCurrentView(ed: Editor) =
   ed.views.delete ed.currentView
@@ -390,7 +436,11 @@ proc handleAction(ed: Editor, action: string, arg: string) =
     var popup = ed.newSelectorPopup proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
       for file in walkDirRec("./themes", relative=true):
         if file.endsWith ".json":
-          result.add ThemeSelectorItem(name: file.splitFile[1], path: fmt"./themes/{file}")
+          let name = file.splitFile[1]
+          let score = fuzzyMatchSmart(text, name)
+          result.add ThemeSelectorItem(name: name, path: fmt"./themes/{file}", score: score)
+
+      result.sort((a, b) => cmp(a.ThemeSelectorItem.score, b.ThemeSelectorItem.score), Descending)
 
     popup.handleItemSelected = proc(item: SelectorItem) =
       if theme.loadFromFile(item.ThemeSelectorItem.path).getSome(theme):

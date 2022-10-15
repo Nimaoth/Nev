@@ -156,7 +156,8 @@ proc loadFromFile*(path: string): Option[Theme] =
   try:
     let jsonText = readFile(path)
     let json = jsonText.parseJson
-    let newTheme = json.jsonToTheme
+    var newTheme = json.jsonToTheme
+    newTheme.path = path
     return some(newTheme)
   except:
     echo getCurrentExceptionMsg()

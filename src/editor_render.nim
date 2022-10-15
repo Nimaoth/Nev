@@ -558,6 +558,11 @@ proc render*(ed: Editor) =
   let lineHeight = ed.ctx.fontSize
   let windowRect = rect(vec2(), ed.window.size.vec2)
 
+  config.fontRegular = ed.fontRegular
+  config.fontBold = ed.fontBold
+  config.fontItalic = ed.fontItalic
+  config.fontBoldItalic = ed.fontBoldItalic
+
   ed.ctx.font = config.fontRegular
   if config.font.typeface.filePath != ed.ctx.font:
     config.font = newFont(readTypeface(ed.ctx.font))
