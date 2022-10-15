@@ -1,7 +1,8 @@
-import std/[strformat, strutils, tables, logging, unicode]
+import std/[strformat, strutils, tables, logging, unicode, options]
 import boxy, windy
 import sugar
 import input, events, rect_utils, document, document_editor, text_document, keybind_autocomplete, popup
+import theme, util
 
 var commands: seq[(string, string)] = @[]
 commands.add ("<C-x><C-x>", "quit")
@@ -25,6 +26,8 @@ commands.add ("<CA-r>", "move-current-view-to-top")
 commands.add ("<C-s>", "write-file")
 commands.add ("<CS-r>", "load-file")
 commands.add ("<C-p>", "command-line")
+commands.add ("<C-l>tmp", "load-theme Monokai Pro")
+commands.add ("<C-l>tmc", "load-theme Monokai Classic")
 
 var commandLineCommands: seq[(string, string)] = @[]
 commandLineCommands.add ("<ESCAPE>", "exit-command-line")
@@ -99,6 +102,8 @@ type Editor* = ref object
   views*: seq[View]
   layout*: Layout
   layout_props*: LayoutProperties
+
+  theme*: Theme
 
   popups*: seq[Popup]
 
@@ -234,6 +239,10 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
 
   ed.editor_defaults = @[TextDocumentEditor(), AstDocumentEditor()]
 
+  ed.theme = defaultTheme()
+  if loadFromFile("./themes/Monokai Pro.json").getSome(theme):
+    ed.theme = theme
+
   ed.createView(newAstDocument("a.ast"))
   # ed.createView(newKeybindAutocompletion())
   ed.currentView = 0
@@ -367,6 +376,11 @@ proc handleAction(ed: Editor, action: string, arg: string) =
       except:
         ed.logger.log(lvlError, fmt"[ed] Failed to load file '{arg}': {getCurrentExceptionMsg()}")
         echo getCurrentException().getStackTrace()
+  of "load-theme":
+    if theme.loadFromFile(fmt"./themes/{arg}.json").getSome(theme):
+      ed.theme = theme
+    else:
+      ed.logger.log(lvlError, fmt"[ed] Failed to load theme {arg}")
   else:
     ed.logger.log(lvlError, fmt"[ed] Unknown Action '{action} {arg}'")
 
