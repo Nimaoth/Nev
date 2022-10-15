@@ -2,7 +2,7 @@ import std/[strformat, tables, algorithm, math, sugar, strutils]
 import timer
 import boxy, windy, fusion/matching
 import util, input, events, editor, popup, rect_utils, document_editor, text_document, ast_document, keybind_autocomplete, id, ast, theme
-import compiler, node_layout, goto_popup
+import compiler, node_layout, goto_popup, selector_popup
 import lru_cache
 
 let lineDistance = 15.0
@@ -146,7 +146,7 @@ proc renderCompletions(ed: Editor, completions: seq[Completion], selected: int, 
   else:
     0
 
-  var entries: seq[tuple[name: string, typ: string, value: string, color1: string, color2: string, color3: string]] = @[]
+  var entries: seq[tuple[name: string, typ: string, value: string, color1: seq[string], color2: string, color3: string]] = @[]
 
   for i, com in completions[firstCompletion..completions.high]:
     case com.kind
@@ -160,7 +160,7 @@ proc renderCompletions(ed: Editor, completions: seq[Completion], selected: int, 
         entries.add (sym.name, $typ, valueString, ctx.getColorForSymbol(sym), "storage.type", "string")
 
     of AstCompletion:
-      entries.add (com.name, "snippet", $com.nodeKind, "entity.name.label", "storage", "string")
+      entries.add (com.name, "snippet", $com.nodeKind, @["entity.name.label", "entity.name"], "storage", "string")
 
     if entries.len >= renderedCompletions:
       break
@@ -205,6 +205,64 @@ proc renderCompletions(ed: Editor, completions: seq[Completion], selected: int, 
   ed.ctx.strokeStyle = rgb(200, 200, 200)
   ed.ctx.strokeRect(rect(bounds.xy + vec2(0, (selected - firstCompletion).float32 * config.font.size), vec2(totalWidth, config.font.size)))
 
+method computeBounds(item: SelectorItem, ed: Editor): Rect =
+  discard
+
+method computeBounds(item: ThemeSelectorItem, ed: Editor): Rect =
+  let nameWidth = ed.ctx.measureText(item.name).width
+  return rect(vec2(), vec2(nameWidth, ed.ctx.fontSize))
+
+method renderItem(item: SelectorItem, ed: Editor, bounds: Rect) =
+  discard
+
+method renderItem(item: ThemeSelectorItem, ed: Editor, bounds: Rect) =
+  let color = ed.theme.color(@["list.activeSelectionForeground", "editor.foreground"], rgb(255, 255, 255))
+  discard ed.ctx.fillText(bounds.xy, item.name, color, config.font)
+
+proc renderItems(ed: Editor, completions: seq[SelectorItem], selected: int, bounds: Rect, fill: bool) =
+  if completions.len == 0:
+    return
+
+  let maxRenderedCompletions = if fill:
+    int(bounds.h / ed.ctx.fontSize)
+  else: 15
+
+  let renderedCompletions = min(completions.len, maxRenderedCompletions)
+
+  let firstCompletion = if selected >= renderedCompletions:
+    selected - renderedCompletions + 1
+  else:
+    0
+
+  var entries: seq[Rect] = @[]
+
+  var maxWidth: float32 = 0
+  var totalHeight: float32 = 0
+  for i, com in completions[firstCompletion..completions.high]:
+    let rect = com.computeBounds(ed)
+    entries.add(rect + bounds.xy + vec2(0, totalHeight))
+    maxWidth = max(maxWidth, rect.w)
+    totalHeight += rect.h
+
+    if entries.len >= renderedCompletions:
+      break
+
+  var totalWidth = maxWidth
+  if fill and totalWidth < bounds.w:
+    totalWidth = bounds.w
+
+  ed.ctx.fillStyle = ed.theme.color("panel.background", rgb(30, 30, 30))
+  ed.ctx.fillRect(rect(bounds.xy, vec2(totalWidth, totalHeight)))
+  ed.ctx.strokeStyle = ed.theme.color("panel.border", rgb(255, 255, 255))
+  ed.ctx.strokeRect(rect(bounds.xy, vec2(totalWidth, totalHeight)))
+
+  for i, rect in entries:
+    let com = completions[firstCompletion + i]
+    com.renderItem(ed, rect)
+
+  ed.ctx.strokeStyle = rgb(200, 200, 200)
+  ed.ctx.strokeRect(rect(entries[selected - firstCompletion].xy, vec2(totalWidth, entries[selected - firstCompletion].h)))
+
 proc renderVisualNode(editor: AstDocumentEditor, ed: Editor, drawCtx: contexts.Context, node: VisualNode, offset: Vec2, selected: AstNode, globalBounds: Rect) =
   let bounds = node.bounds + offset
 
@@ -216,14 +274,16 @@ proc renderVisualNode(editor: AstDocumentEditor, ed: Editor, drawCtx: contexts.C
       return
 
   if node.text.len > 0:
-    let color = ed.theme.anyColor(node.color, rgb(255, 255, 255))
+    let color = ed.theme.anyColor(node.colors, rgb(255, 255, 255))
     discard drawCtx.fillText(bounds.xy, node.text, color, node.font)
   elif node.node != nil and node.node.kind == Empty:
     drawCtx.strokeStyle = ed.theme.color("editorError.foreground", rgb(255, 100, 100))
     drawCtx.strokeRect(bounds)
 
   # if node.node == selected:
-  #   discard drawCtx.fillText(bounds.xy, node.color, rgb(255, 255, 255), node.font)
+    # drawCtx.fillStyle = ed.theme.color("editorError.background", rgb(0, 0, 0))
+    # drawCtx.fillRect(rect(bounds.xyh, vec2(200, 200)))
+    # discard drawCtx.fillText(bounds.xyh, $node.colors, ed.theme.color("editorError.foreground", rgb(255, 100, 100)), node.font)
 
   # Render custom stuff
   if not isNil node.render:
@@ -467,6 +527,15 @@ method renderPopup*(popup: AstGotoDefinitionPopup, ed: Editor, bounds: Rect) =
   ed.ctx.fillRect(textBounds)
   discard popup.textEditor.renderDocumentEditor(ed, textBounds, true)
   ed.renderCompletions(popup.completions, popup.selected, contentBounds, true)
+
+method renderPopup*(popup: SelectorPopup, ed: Editor, bounds: Rect) =
+  let bounds = bounds.shrink(0.15.percent)
+  let (textBounds, contentBounds) = bounds.splitH(ed.ctx.fontSize.relative)
+  ed.ctx.fillStyle = ed.theme.color("panel.background", rgb(25, 25, 25))
+  ed.ctx.fillRect(textBounds)
+  discard popup.textEditor.renderDocumentEditor(ed, textBounds, true)
+  ed.renderItems(popup.completions, popup.selected, contentBounds, true)
+
 
 proc renderMainWindow*(ed: Editor, bounds: Rect) =
   ed.ctx.fillStyle = ed.theme.color("editorPane.background", rgb(25, 25, 25))

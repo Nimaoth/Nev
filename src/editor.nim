@@ -1,5 +1,5 @@
-import std/[strformat, strutils, tables, logging, unicode, options]
-import boxy, windy
+import std/[strformat, strutils, tables, logging, unicode, options, os]
+import boxy, windy, print
 import sugar
 import input, events, rect_utils, document, document_editor, text_document, keybind_autocomplete, popup
 import theme, util
@@ -26,8 +26,7 @@ commands.add ("<CA-r>", "move-current-view-to-top")
 commands.add ("<C-s>", "write-file")
 commands.add ("<CS-r>", "load-file")
 commands.add ("<C-p>", "command-line")
-commands.add ("<C-l>tmp", "load-theme Monokai Pro")
-commands.add ("<C-l>tmc", "load-theme Monokai Classic")
+commands.add ("<C-l>tt", "choose-theme")
 
 var commandLineCommands: seq[(string, string)] = @[]
 commandLineCommands.add ("<ESCAPE>", "exit-command-line")
@@ -217,6 +216,11 @@ proc popPopup*(ed: Editor, popup: Popup) =
     discard ed.popups.pop
 
 import ast_document
+import selector_popup
+
+type ThemeSelectorItem* = ref object of SelectorItem
+  name*: string
+  path*: string
 
 proc newEditor*(window: Window, boxy: Boxy): Editor =
   var ed = Editor()
@@ -381,6 +385,23 @@ proc handleAction(ed: Editor, action: string, arg: string) =
       ed.theme = theme
     else:
       ed.logger.log(lvlError, fmt"[ed] Failed to load theme {arg}")
+
+  of "choose-theme":
+    var popup = ed.newSelectorPopup proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
+      for file in walkDirRec("./themes", relative=true):
+        if file.endsWith ".json":
+          result.add ThemeSelectorItem(name: file.splitFile[1], path: fmt"./themes/{file}")
+
+    popup.handleItemSelected = proc(item: SelectorItem) =
+      if theme.loadFromFile(item.ThemeSelectorItem.path).getSome(theme):
+        ed.theme = theme
+
+    popup.handleItemConfirmed = proc(item: SelectorItem) =
+      if theme.loadFromFile(item.ThemeSelectorItem.path).getSome(theme):
+        ed.theme = theme
+
+    ed.pushPopup popup
+
   else:
     ed.logger.log(lvlError, fmt"[ed] Unknown Action '{action} {arg}'")
 

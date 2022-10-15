@@ -27,9 +27,9 @@ type
     letDecl: string
     varDecl: string
     separator: string
-    separatorParen: string
-    separatorBrace: string
-    separatorBracket: string
+    separatorParen: seq[string]
+    separatorBrace: seq[string]
+    separatorBracket: seq[string]
     numberLiteral: string
     stringLiteral: string
     empty: string
@@ -44,16 +44,17 @@ type
     indent*: float32
 
 let config* =  VisualLayoutConfig(
-  font: newFont(readTypeface("fonts/FiraCode-Regular.ttf"), 20),
+  # font: newFont(readTypeface("fonts/FiraCode-Regular.ttf"), 20),
+  font: newFont(readTypeface("fonts/ARIALI.TTF"), 20),
   indent: 15,
   colors: VisualLayoutColorConfig(
     constDecl: "entity.name.constant",
     letDecl: "entity.name",
     varDecl: "entity.name",
     separator: "punctuation",
-    separatorParen: "meta.brace.round",
-    separatorBrace: "meta.brace.curly",
-    separatorBracket: "meta.brace.square",
+    separatorParen: @["meta.brace.round", "punctuation", "&editor.foreground"],
+    separatorBrace: @["meta.brace.curly", "punctuation", "&editor.foreground"],
+    separatorBracket: @["meta.brace.square", "punctuation", "&editor.foreground"],
     numberLiteral: "constant.numeric",
     stringLiteral: "string",
     empty: "string",
@@ -65,7 +66,11 @@ let config* =  VisualLayoutConfig(
 )
 
 proc newTextNode*(text: string, color: string, font: Font, node: AstNode = nil): VisualNode =
-  result = VisualNode(text: text, color: color, font: font, node: node)
+  result = VisualNode(text: text, colors: @[color], font: font, node: node)
+  result.bounds.wh = font.measureText(text)
+
+proc newTextNode*(text: string, colors: seq[string], font: Font, node: AstNode = nil): VisualNode =
+  result = VisualNode(text: text, colors: colors, font: font, node: node)
   result.bounds.wh = font.measureText(text)
 
 proc newFunctionNode*(bounds: Rect, render: VisualNodeRenderFunc): VisualNode =
@@ -80,25 +85,25 @@ proc createReplacement(input: NodeLayoutInput, node: AstNode, layout: var NodeLa
     return true
   return false
 
-proc getColorForSymbol*(ctx: Context, sym: Symbol): string =
+proc getColorForSymbol*(ctx: Context, sym: Symbol): seq[string] =
   let typ = ctx.computeSymbolType sym
   case typ.kind
-  of tError: return "invalid"
-  of tType: return "storage.type"
+  of tError: return @["invalid"]
+  of tType: return @["storage.type"]
   of tFunction:
     if sym.kind == skBuiltin:
       case sym.operatorNotation
-      of Prefix, Infix, Postfix: return "keyword.operator"
-      else: return "variable.function"
-    return "variable.function"
+      of Prefix, Infix, Postfix: return @["keyword.operator"]
+      else: return @["variable.function", "variable"]
+    return @["variable.function", "variable"]
   elif sym.kind == skAstNode:
-    if sym.node.kind == ConstDecl: return "variable.other.constant"
+    if sym.node.kind == ConstDecl: return @["variable.other.constant", "variable"]
     elif sym.node.kind == VarDecl or sym.node.kind == LetDecl:
-      if sym.node.parent.kind == Params: return "variable.parameter"
-      else: return "variable"
-    else: return "variable.other"
+      if sym.node.parent.kind == Params: return @["variable.parameter", "variable"]
+      else: return @["variable"]
+    else: return @["variable.other", "variable"]
 
-  return "variable.other"
+  return @["variable.other", "variable"]
 
 proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode, result: var NodeLayout, line: var VisualNode) =
   let renderInline = node.kind in {While, If, NodeList} and node.parent.kind in {Call}
@@ -126,17 +131,17 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
   case node
   of Empty():
     if not input.createReplacement(node, result, line):
-      result.nodeToVisualNode[node.id] = line.add VisualNode(color: config.colors.empty, node: node, bounds: rect(vec2(), vec2(config.font.size * 0.5, config.font.size)))
+      result.nodeToVisualNode[node.id] = line.add VisualNode(colors: @[config.colors.empty], node: node, bounds: rect(vec2(), vec2(config.font.size * 0.5, config.font.size)))
 
   of NumberLiteral():
     if not input.createReplacement(node, result, line):
       result.nodeToVisualNode[node.id] = line.add newTextNode(node.text, config.colors.numberLiteral, config.font, node)
 
   of StringLiteral():
-    discard line.add newTextNode("\"", config.colors.separator, config.font)
+    discard line.add newTextNode("\"", @["punctuation.definition.string", config.colors.separator, "&editor.foreground"], config.font)
     if not input.createReplacement(node, result, line):
       discard line.add newTextNode(node.text, config.colors.stringLiteral, config.font, node)
-    discard line.add newTextNode("\"", config.colors.separator, config.font)
+    discard line.add newTextNode("\"", @["punctuation.definition.string", config.colors.separator, "&editor.foreground"], config.font)
 
   of Identifier():
     if not input.createReplacement(node, result, line):
@@ -148,7 +153,7 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
   of ConstDecl():
     if not input.createReplacement(node, result, line):
       let color = if ctx.computeSymbol(node).getSome(sym): ctx.getColorForSymbol(sym)
-      else: config.colors.constDecl
+      else: @[config.colors.constDecl]
 
       if ctx.computeSymbol(node).getSome(sym):
         discard line.add newTextNode(sym.name, color, config.font, node)
@@ -157,11 +162,11 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
 
     let typ = ctx.computeType(node)
     if typ.kind == tFunction:
-      discard line.add newTextNode(" :: ", config.colors.separator, config.font)
+      discard line.add newTextNode(" :: ", @[config.colors.separator, "&editor.foreground"], config.font)
     else:
-      discard line.add newTextNode(" : ", config.colors.separator, config.font)
+      discard line.add newTextNode(" : ", @[config.colors.separator, "&editor.foreground"], config.font)
       discard line.add newTextNode($typ, config.colors.typ, config.font)
-      discard line.add newTextNode(" : ", config.colors.separator, config.font)
+      discard line.add newTextNode(" : ", @[config.colors.separator, "&editor.foreground"], config.font)
 
     if node.len > 0:
       ctx.createLayoutLineForNode(input, node[0], result, line)
@@ -173,17 +178,17 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
         case node[0].kind
         of StringLiteral, NumberLiteral: discard
         else:
-          discard line.add newTextNode(" = ", config.colors.separator, config.font)
+          discard line.add newTextNode(" = ", @[config.colors.separator, "&editor.foreground"], config.font)
           discard line.add newTextNode($value, config.colors.value, config.font)
 
   of LetDecl():
     if not input.createReplacement(node, result, line):
       let color = if ctx.computeSymbol(node).getSome(sym): ctx.getColorForSymbol(sym)
-      else: "variable"
+      else: @["variable"]
 
       discard line.add newTextNode(node.text, color, config.font, node)
 
-    discard line.add newTextNode(" : ", config.colors.separator, config.font)
+    discard line.add newTextNode(" : ", @[config.colors.separator, "&editor.foreground"], config.font)
 
     if node.len > 0:
       if node[0].kind == Empty and node[0].text.len == 0 and not input.replacements.contains(node[0].id):
@@ -193,17 +198,17 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
         ctx.createLayoutLineForNode(input, node[0], result, line)
 
     if node.len > 1:
-      discard line.add newTextNode(" = ", config.colors.separator, config.font)
+      discard line.add newTextNode(" = ", @[config.colors.separator, "&editor.foreground"], config.font)
       ctx.createLayoutLineForNode(input, node[1], result, line)
 
   of VarDecl():
     if not input.createReplacement(node, result, line):
       let color = if ctx.computeSymbol(node).getSome(sym): ctx.getColorForSymbol(sym)
-      else: "variable"
+      else: @["variable"]
 
       discard line.add newTextNode(node.text, color, config.font, node)
 
-    discard line.add newTextNode(" : mut ", config.colors.separator, config.font)
+    discard line.add newTextNode(" : mut ", @[config.colors.separator, "&editor.foreground"], config.font)
 
     if node.len > 0:
       if node[0].kind == Empty and node[0].text.len == 0 and not input.replacements.contains(node[0].id):
@@ -213,7 +218,7 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
         ctx.createLayoutLineForNode(input, node[0], result, line)
 
     if node.len > 1:
-      discard line.add newTextNode(" = ", config.colors.separator, config.font)
+      discard line.add newTextNode(" = ", @[config.colors.separator, "&editor.foreground"], config.font)
       ctx.createLayoutLineForNode(input, node[1], result, line)
 
   of FunctionDefinition():
@@ -225,7 +230,7 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
       let first = parent.len
       for i, param in node[0].children:
         if i > 0:
-          discard line.add newTextNode(", ", config.colors.separator, config.font)
+          discard line.add newTextNode(", ", @[config.colors.separator, "&editor.foreground"], config.font)
 
         ctx.createLayoutLineForNode(input, param, result, line)
 
@@ -235,12 +240,12 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
         result.nodeToVisualNode[node[0].id] = VisualNodeRange(parent: parent, first: first, last: parent.len)
 
 
-    discard line.add newTextNode(") ", config.colors.separator, config.font)
+    discard line.add newTextNode(") ", config.colors.separatorParen, config.font)
 
     if node.len > 1:
       ctx.createLayoutLineForNode(input, node[1], result, line)
 
-    discard line.add newTextNode(" = ", config.colors.separator, config.font)
+    discard line.add newTextNode(" = ", @[config.colors.separator, "&editor.foreground"], config.font)
 
     if node.len > 2:
       ctx.createLayoutLineForNode(input, node[2], result, line)
@@ -266,7 +271,7 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
         discard line.add newTextNode("elif ", config.colors.keyword, config.font)
 
       ctx.createLayoutLineForNode(input, node[i], result, line)
-      discard line.add newTextNode(": ", config.colors.separator, config.font)
+      discard line.add newTextNode(": ", @[config.colors.separator, "&editor.foreground"], config.font)
 
       ctx.createLayoutLineForNode(input, node[i + 1], result, line)
 
@@ -285,7 +290,7 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
     if node.len >= 1:
       ctx.createLayoutLineForNode(input, node[0], result, line)
 
-    discard line.add newTextNode(": ", config.colors.separator, config.font)
+    discard line.add newTextNode(": ", @[config.colors.separator, "&editor.foreground"], config.font)
 
     if node.len >= 2:
       ctx.createLayoutLineForNode(input, node[1], result, line)
@@ -309,7 +314,7 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
   of Assignment():
     if node.len > 0:
       ctx.createLayoutLineForNode(input, node[0], result, line)
-    discard line.add newTextNode(" = ", config.colors.separator, config.font)
+    discard line.add newTextNode(" = ", @[config.colors.separator, "&editor.foreground"], config.font)
     if node.len > 0:
       ctx.createLayoutLineForNode(input, node[1], result, line)
 
@@ -364,7 +369,7 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
 
       for i in 1..<node.len:
         if i > 1:
-          discard line.add newTextNode(", ", config.colors.separator, config.font)
+          discard line.add newTextNode(", ", @[config.colors.separator, "&editor.foreground"], config.font)
         ctx.createLayoutLineForNode(input, node[i], result, line)
 
       discard line.add newTextNode(")", config.colors.separatorParen, config.font)
