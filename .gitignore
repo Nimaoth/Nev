@@ -2,3 +2,5 @@
 *.ttf
 src/input_tests
 ast
+absytree
+themes/**
