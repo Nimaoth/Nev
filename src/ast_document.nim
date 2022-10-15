@@ -1501,6 +1501,16 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
 
     self.lastEditCommand = (action, arg)
 
+  of "edit-prev-empty":
+    if self.isEditing: return
+    let current = self.node
+    for emptyNode in self.document.prevPostOrder(self.node):
+      if emptyNode != current and self.document.shouldEditNode(emptyNode):
+        self.node = emptyNode
+        discard self.tryEdit self.node
+        break
+    self.lastEditCommand = (action, arg)
+
   of "edit-next-empty":
     if self.isEditing: return
     let current = self.node
@@ -1528,6 +1538,14 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
 
   of "apply-completion":
     self.applySelectedCompletion()
+
+  of "cancel-and-next-completion":
+    self.finishEdit(false)
+    discard self.handleAction("edit-next-empty", "")
+
+  of "cancel-and-prev-completion":
+    self.finishEdit(false)
+    discard self.handleAction("edit-prev-empty", "")
 
   of "select-prev":
     if self.isEditing: return
@@ -1756,6 +1774,7 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     command "<BACKSPACE>", "backspace"
     command "<DELETE>", "delete"
     command "<TAB>", "edit-next-empty"
+    command "<S-TAB>", "edit-prev-empty"
     command "<A-f>", "select-containing function"
     command "<A-c>", "select-containing const-decl"
     command "<A-n>", "select-containing node-list"
@@ -1793,6 +1812,7 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     command "<S-F12>", "goto prev-error-diagnostic"
 
     command "<F5>", "run-selected-function"
+
 
     command "\"", "replace-empty \""
     command "'", "replace-empty \""
@@ -1863,6 +1883,8 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
     command "<UP>", "prev-completion"
     command "<DOWN>", "next-completion"
     command "<TAB>", "apply-completion"
+    command "<C-TAB>", "cancel-and-next-completion"
+    command "<CS-TAB>", "cancel-and-prev-completion"
     onAction:
       editor.handleAction action, arg
     onInput:
