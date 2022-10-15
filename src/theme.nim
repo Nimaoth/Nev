@@ -4,7 +4,7 @@ import print, chroma
 type
   FontStyle* = enum Italic, Underline, Bold
   Style* = object
-    foreground*: Color
+    foreground*: Option[Color]
     background*: Option[Color]
     fontStyle*: set[FontStyle]
 
@@ -22,14 +22,48 @@ proc parseHexVar*(text: string): Color =
     return parseHex text[offset..^1]
   elif text.len == 8 + offset:
     return parseHexAlpha text[offset..^1]
+  elif text.len == 3 + offset:
+    return parseHtmlHexTiny ("#" & text[offset..^1])
+  elif text.len == 4 + offset:
+    result = parseHtmlHexTiny ("#" & text[offset..^2])
+    result.a = parseHexInt(text[^1..^1]).float32 / 255
+    return
+  echo "Failed to parse hex color '", text, "'"
   assert false
   return Color()
 
 proc color*(theme: Theme, name: string, default: SomeColor = Color(r: 0, g: 0, b: 0, a: 1)): Color =
   return theme.colors.getOrDefault(name, default.color)
 
+proc color*(theme: Theme, names: seq[string], default: SomeColor = Color(r: 0, g: 0, b: 0, a: 1)): Color =
+  for name in names:
+    if theme.colors.contains(name):
+      return theme.colors[name]
+  return default.color
+
 proc tokenColor*(theme: Theme, name: string, default: SomeColor = Color(r: 0, g: 0, b: 0, a: 1)): Color =
-  return theme.tokenColors.getOrDefault(name, Style(foreground: default.color)).foreground
+  return theme.tokenColors.getOrDefault(name, Style()).foreground.get default.color
+
+proc tokenColor*(theme: Theme, names: seq[string], default: SomeColor = Color(r: 0, g: 0, b: 0, a: 1)): Color =
+  for name in names:
+    if theme.tokenColors.contains(name):
+      let style = theme.tokenColors[name]
+      if style.foreground.isSome:
+        return style.foreground.get
+  return default.color
+
+proc anyColor*(theme: Theme, names: seq[string], default: SomeColor = Color(r: 0, g: 0, b: 0, a: 1)): Color =
+  for name in names:
+    if name.startsWith "#":
+      return parseHexVar name
+    elif name.startsWith("&") and theme.colors.contains(name[1..^1]):
+      return theme.colors[name[1..^1]]
+    elif theme.tokenColors.contains(name):
+      let style = theme.tokenColors[name]
+      if style.foreground.isSome:
+        return style.foreground.get
+
+  return default.color
 
 proc tokenBackgroundColor*(theme: Theme, name: string, default: SomeColor = Color(r: 0, g: 0, b: 0, a: 1)): Color =
   return (theme.tokenColors.getOrDefault(name, Style())).background.get default.color
@@ -46,12 +80,11 @@ proc anyColor*(theme: Theme, color: string, default: SomeColor = Color(r: 0, g: 
     theme.tokenColor(color, default)
 
 proc fromJsonHook*(color: var Color, jsonNode: JsonNode) =
-  let text = jsonNode.str
-  if text.startsWith "#":
-    if text.len == 7:
-      color = text[1..^1].parseHexVar
-    if text.len > 7:
-      color = text[1..6].parseHexVar
+  if jsonNode.kind == JNull:
+    color = parseHex "000000"
+    return
+
+  color = parseHexVar jsonNode.str
 
 proc fromJsonHook*(style: var set[FontStyle], jsonNode: JsonNode) =
   style = {}
@@ -62,7 +95,7 @@ proc fromJsonHook*(style: var set[FontStyle], jsonNode: JsonNode) =
 
 proc fromJsonHook*(style: var Style, jsonNode: JsonNode) =
   if jsonNode.hasKey("foreground"):
-    style.foreground = jsonNode["foreground"].jsonTo Color
+    style.foreground = some(jsonNode["foreground"].jsonTo Color)
   if jsonNode.hasKey("background"):
     style.background = some(jsonNode["background"].jsonTo Color)
   else:
@@ -86,27 +119,44 @@ proc jsonToTheme*(json: JsonNode, opt = Joptions()): Theme =
 
   if json.hasKey("tokenColors"):
     for item in json["tokenColors"].elems:
-      let scope = item["scope"]
       var scopes: seq[string] = @[]
-      if scope.kind == JString:
-        scopes.add scope.str
-      else:
-        for scopeName in scope.elems:
-          scopes.add scopeName.str
 
-      let style = item["settings"].jsonTo Style
+      if item.hasKey("scope"):
+        let scope = item["scope"]
+        if scope.kind == JString:
+          scopes.add scope.str
+        else:
+          for scopeName in scope.elems:
+            scopes.add scopeName.str
+      else:
+        scopes.add "."
+
+      let settings = item["settings"]
       for scope in scopes:
-        result.tokenColors[scope] = style
+        if not result.tokenColors.contains(scope):
+          result.tokenColors[scope] = Style(foreground: Color.none, background: Color.none)
+        if settings.hasKey("foreground"):
+          result.tokenColors[scope].foreground = some(settings["foreground"].jsonTo Color)
+        if settings.hasKey("background"):
+          result.tokenColors[scope].background = some(settings["background"].jsonTo Color)
+        if settings.hasKey("fontStyle"):
+          result.tokenColors[scope].fontStyle = settings["fontStyle"].jsonTo set[FontStyle]
+
 
 proc loadFromFile*(path: string): Option[Theme] =
   if path.len == 0:
-    raise newException(IOError, "Missing path")
+    return Theme.none
 
-  let jsonText = readFile(path)
-  let json = jsonText.parseJson
-  let newTheme = json.jsonToTheme
+  try:
+    let jsonText = readFile(path)
+    let json = jsonText.parseJson
+    let newTheme = json.jsonToTheme
+    return some(newTheme)
+  except:
+    echo getCurrentExceptionMsg()
+    echo getCurrentException().getStackTrace()
+    return Theme.none
 
-  return some(newTheme)
 
 # let theme = loadFromFile("themes/Monokai Pro.json")
 # print theme
@@ -595,4 +645,4 @@ proc defaultTheme*(): Theme =
   result.colors["welcomePage.tileShadow"] = parseHexVar "19181a"
   result.colors["widget.shadow"] = parseHexVar "19181a"
 
-  result.tokenColors["comment"] = Style(foreground: parseHexVar "727072", fontStyle: {Italic})
+  result.tokenColors["comment"] = Style(foreground: some(parseHexVar "727072"), fontStyle: {Italic})

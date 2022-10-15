@@ -84,7 +84,7 @@ type
     font*: Font
     render*: VisualNodeRenderFunc
     children*: seq[VisualNode]
-    color*: string
+    colors*: seq[string]
 
 
   VisualNodeRange* = object
@@ -346,7 +346,7 @@ func `$`*(vnode: VisualNode): string =
   result.add $vnode.bounds & ", "
   if vnode.node != nil:
     result.add $vnode.node & ", "
-  result.add $vnode.color & ", "
+  result.add $vnode.colors & ", "
   result.add ")"
   # if vnode.children.len > 0:
   #   result.add ":"
@@ -354,11 +354,11 @@ func `$`*(vnode: VisualNode): string =
   #     result.add "\n" & indent($child, 1, "| ")
 
 func hash*(vnode: VisualNode): Hash =
-  result = vnode.text.hash !& vnode.color.hash !& vnode.bounds.hash !& vnode.children.hash
+  result = vnode.text.hash !& vnode.colors.hash !& vnode.bounds.hash !& vnode.children.hash
   result = !$result
 
 func fingerprint*(vnode: VisualNode): Fingerprint =
-  let h = vnode.text.hash !& vnode.color.hash !& vnode.bounds.hash !& vnode.children.hash
+  let h = vnode.text.hash !& vnode.colors.hash !& vnode.bounds.hash !& vnode.children.hash
   result = @[h.int64] & vnode.children.map(c => c.fingerprint).foldl(a & b, @[0.int64])
 
 func `==`*(a: VisualNode, b: VisualNode): bool =
@@ -368,7 +368,7 @@ func `==`*(a: VisualNode, b: VisualNode): bool =
     return false
   if a.node != b.node:
     return false
-  if a.color != b.color:
+  if a.colors != b.colors:
     return false
   if a.bounds != b.bounds:
     return false
