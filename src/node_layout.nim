@@ -1,6 +1,6 @@
 import std/[tables]
 import fusion/matching
-import pixie/fonts, bumpy, chroma, vmath
+import pixie/fonts, bumpy, chroma, vmath, theme
 import compiler, ast, util, id
 
 proc measureText*(font: Font, text: string): Vec2 = font.typeset(text).layoutBounds()
@@ -41,11 +41,18 @@ type
   VisualLayoutConfig* = object
     colors*: VisualLayoutColorConfig
     font*: Font
+    fontRegular*: string
+    fontBold*: string
+    fontItalic*: string
+    fontBoldItalic*: string
     indent*: float32
 
-let config* =  VisualLayoutConfig(
-  # font: newFont(readTypeface("fonts/FiraCode-Regular.ttf"), 20),
-  font: newFont(readTypeface("fonts/ARIALI.TTF"), 20),
+var config* =  VisualLayoutConfig(
+  font: newFont(readTypeface("fonts/DejaVuSansMono.ttf"), 20),
+  fontRegular: "fonts/DejaVuSansMono.ttf",
+  fontBold: "fonts/DejaVuSansMono-Bold.ttf",
+  fontItalic: "fonts/DejaVuSansMono-Oblique.ttf",
+  fontBoldItalic: "fonts/DejaVuSansMono-BoldOblique.ttf",
   indent: 15,
   colors: VisualLayoutColorConfig(
     constDecl: "entity.name.constant",
@@ -64,6 +71,15 @@ let config* =  VisualLayoutConfig(
     value: "string",
   ),
 )
+
+proc getFont*(config: VisualLayoutConfig, style: set[FontStyle]): string =
+  if Italic in style and Bold in style:
+    return config.fontBoldItalic
+  if Italic in style:
+    return config.fontItalic
+  if Bold in style or Underline in style:
+    return config.fontBold
+  return config.fontRegular
 
 proc newTextNode*(text: string, color: string, font: Font, node: AstNode = nil): VisualNode =
   result = VisualNode(text: text, colors: @[color], font: font, node: node)

@@ -1,6 +1,6 @@
 import std/[strformat, tables, algorithm, math, sugar, strutils]
 import timer
-import boxy, windy, fusion/matching
+import boxy, windy, pixie/fonts, fusion/matching
 import util, input, events, editor, popup, rect_utils, document_editor, text_document, ast_document, keybind_autocomplete, id, ast, theme
 import compiler, node_layout, goto_popup, selector_popup
 import lru_cache
@@ -275,7 +275,10 @@ proc renderVisualNode(editor: AstDocumentEditor, ed: Editor, drawCtx: contexts.C
 
   if node.text.len > 0:
     let color = ed.theme.anyColor(node.colors, rgb(255, 255, 255))
-    discard drawCtx.fillText(bounds.xy, node.text, color, node.font)
+    let style = ed.theme.tokenFontStyle(node.colors)
+    ed.ctx.font = config.getFont(style)
+    discard drawCtx.fillText(bounds.xy, node.text, color)
+    ed.ctx.font = config.getFont({})
   elif node.node != nil and node.node.kind == Empty:
     drawCtx.strokeStyle = ed.theme.color("editorError.foreground", rgb(255, 100, 100))
     drawCtx.strokeRect(bounds)
@@ -554,6 +557,13 @@ proc render*(ed: Editor) =
   ed.ctx.image = newImage(ed.window.size.x, ed.window.size.y)
   let lineHeight = ed.ctx.fontSize
   let windowRect = rect(vec2(), ed.window.size.vec2)
+
+  ed.ctx.font = config.fontRegular
+  if config.font.typeface.filePath != ed.ctx.font:
+    config.font = newFont(readTypeface(ed.ctx.font))
+    config.font.size = ed.ctx.fontSize
+  elif config.font.size != ed.ctx.fontSize:
+    config.font.size = ed.ctx.fontSize
 
   let (mainRect, statusRect) = if not ed.statusBarOnTop: windowRect.splitH(relative(windowRect.h - lineHeight))
   else: windowRect.splitHInv(relative(lineHeight))
