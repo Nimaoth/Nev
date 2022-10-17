@@ -200,9 +200,6 @@ type AstDocumentEditor* = ref object of DocumentEditor
 
 import goto_popup
 
-method injectDependencies*(self: AstDocumentEditor, ed: Editor) =
-  self.editor = ed
-
 proc updateCompletions(editor: AstDocumentEditor)
 proc getPrevChild*(document: AstDocument, node: AstNode, max: int = -1): Option[AstNode]
 proc getNextChild*(document: AstDocument, node: AstNode, min: int = -1): Option[AstNode]
@@ -505,7 +502,7 @@ proc editSymbol*(self: AstDocumentEditor, symbol: Symbol) =
   self.currentlyEditedSymbol = symbol.id
   self.textDocument = newTextDocument()
   self.textDocument.content = @[symbol.name]
-  self.textEditor = newTextEditor(self.textDocument)
+  self.textEditor = newTextEditor(self.textDocument, self.editor)
   self.textEditor.renderHeader = false
   self.textEditor.fillAvailableSpace = false
   self.textDocument.textChanged = (doc: TextDocument) => self.handleTextDocumentChanged()
@@ -517,7 +514,7 @@ proc editNode*(self: AstDocumentEditor, node: AstNode) =
   self.currentlyEditedSymbol = null
   self.textDocument = newTextDocument()
   self.textDocument.content = node.text.splitLines
-  self.textEditor = newTextEditor(self.textDocument)
+  self.textEditor = newTextEditor(self.textDocument, self.editor)
   self.textEditor.renderHeader = false
   self.textEditor.fillAvailableSpace = false
   self.textDocument.textChanged = (doc: TextDocument) => self.handleTextDocumentChanged()
@@ -1693,6 +1690,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
 
   else:
     logger.log(lvlError, "[textedit] Unknown action '$1 $2'" % [action, arg])
+    return Failed
 
   return Handled
 
@@ -1752,142 +1750,19 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
 
   editor.node = editor.document.rootNode[0]
 
-  editor.eventHandler = eventHandler2:
-    command "<A-LEFT>", "cursor.left"
-    command "<A-RIGHT>", "cursor.right"
-    command "<A-UP>", "cursor.up"
-    command "<A-DOWN>", "cursor.down"
-    command "<HOME>", "cursor.home"
-    command "<END>", "cursor.end"
-    command "<UP>", "cursor.prev-line"
-    command "<DOWN>", "cursor.next-line"
-    command "<LEFT>", "cursor.prev"
-    command "<RIGHT>", "cursor.next"
-    command "n", "cursor.prev"
-    command "t", "cursor.next"
-    command "<S-LEFT>", "cursor.left last"
-    command "<S-RIGHT>", "cursor.right last"
-    command "<S-UP>", "cursor.up last"
-    command "<S-DOWN>", "cursor.down last"
-    command "<S-HOME>", "cursor.home last"
-    command "<S-END>", "cursor.end last"
-    command "<BACKSPACE>", "backspace"
-    command "<DELETE>", "delete"
-    command "<TAB>", "edit-next-empty"
-    command "<S-TAB>", "edit-prev-empty"
-    command "<A-f>", "select-containing function"
-    command "<A-c>", "select-containing const-decl"
-    command "<A-n>", "select-containing node-list"
-    command "<A-i>", "select-containing if"
-    command "<A-l>", "select-containing line"
-
-    command "e", "rename"
-
-    command "ae", "insert-after empty"
-    command "an", "insert-after number-literal"
-    command "ap", "insert-after deleted"
-
-    command "ie", "insert-before empty"
-    command "in", "insert-before number-literal"
-    command "ip", "insert-before deleted"
-
-    command "ke", "insert-child empty"
-    command "kp", "insert-child deleted"
-
-    command "s", "replace empty"
-    command "re", "replace empty"
-    command "rn", "replace number-literal"
-    command "rf", "replace call-func"
-    command "rp", "replace deleted"
-
-    command "rr", "replace-parent"
-
-    command "gd", "goto definition"
-    command "gp", "goto prev-usage"
-    command "gn", "goto next-usage"
-    command "GE", "goto prev-error"
-    command "ge", "goto next-error"
-    command "gs", "goto symbol"
-    command "<F12>", "goto next-error-diagnostic"
-    command "<S-F12>", "goto prev-error-diagnostic"
-
-    command "<F5>", "run-selected-function"
-
-
-    command "\"", "replace-empty \""
-    command "'", "replace-empty \""
-
-    command "+", "wrap +"
-    command "-", "wrap -"
-    command "*", "wrap *"
-    command "/", "wrap /"
-    command "%", "wrap %"
-    command "(", "wrap call-func"
-    command ")", "wrap call-arg"
-    command "{", "wrap {"
-    command "=<ENTER>", "wrap ="
-    command "==", "wrap =="
-    command "!=", "wrap !="
-    command "\\<\\>", "wrap <>"
-    command "\\<=", "wrap <="
-    command "\\>=", "wrap >="
-    command "\\<<ENTER>", "wrap <"
-    command "\\><ENTER>", "wrap >"
-    command "<SPACE>and", "wrap and"
-    command "<SPACE>or", "wrap or"
-
-    command "vc", "wrap const-decl"
-    command "vl", "wrap let-decl"
-    command "vv", "wrap var-decl"
-
-    command "d", "selected.delete"
-    command "y", "selected.copy"
-
-    command "u", "undo"
-    command "U", "redo"
-
-    command "<C-d>", "scroll -150"
-    command "<C-u>", "scroll 150"
-
-    command "<PAGE_DOWN>", "scroll -450"
-    command "<PAGE_UP>", "scroll 450"
-    command "<C-f>", "select-center-node"
-
-    command "<C-r>", "select-prev"
-    command "<C-t>", "select-next"
-    command "<C-LEFT>", "select-prev"
-    command "<C-RIGHT>", "select-next"
-    command "<SPACE>l", "toggle-option logging"
-    command "<SPACE>dc", "dump-context"
-    command "<SPACE>rv", "toggle-option render-selected-value"
-    command "<SPACE>rd", "toggle-option render-debug-info"
-    command "<SPACE>ro", "toggle-option render-execution-output"
-
-    command "<CA-DOWN>", "scroll-output -5"
-    command "<CA-UP>", "scroll-output 5"
-    command "<CA-HOME>", "scroll-output home"
-    command "<CA-END>", "scroll-output end"
-
-    command ".", "run-last-command edit"
-    command ",", "run-last-command move"
-    command ";", "run-last-command"
-
-    onAction:
-      editor.handleAction action, arg
-    onInput:
-      editor.handleInput input
-
-  editor.textEditEventHandler = eventHandler2:
-    command "<ENTER>", "apply-rename"
-    command "<ESCAPE>", "cancel-rename"
-    command "<UP>", "prev-completion"
-    command "<DOWN>", "next-completion"
-    command "<TAB>", "apply-completion"
-    command "<C-TAB>", "cancel-and-next-completion"
-    command "<CS-TAB>", "cancel-and-prev-completion"
-    onAction:
-      editor.handleAction action, arg
-    onInput:
-      discard input
-      Ignored
   return editor
+
+method injectDependencies*(self: AstDocumentEditor, ed: Editor) =
+  self.editor = ed
+
+  self.eventHandler = eventHandler(ed.getEventHandlerConfig("editor.ast")):
+    onAction:
+      self.handleAction action, arg
+    onInput:
+      self.handleInput input
+
+  self.textEditEventHandler = eventHandler(ed.getEventHandlerConfig("editor.ast.completion")):
+    onAction:
+      self.handleAction action, arg
+    onInput:
+      Ignored

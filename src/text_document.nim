@@ -1,5 +1,5 @@
 import std/[strutils, logging, sequtils, sugar]
-import input, document, document_editor, events
+import editor, input, document, document_editor, events
 
 var logger = newConsoleLogger()
 
@@ -14,6 +14,7 @@ type TextDocument* = ref object of Document
   singleLine*: bool
 
 type TextDocumentEditor* = ref object of DocumentEditor
+  editor*: Editor
   document*: TextDocument
   selection*: Selection
 
@@ -259,32 +260,21 @@ proc handleInput(self: TextDocumentEditor, input: string): EventResponse =
   self.selection = self.document.edit(self.selection, input).toSelection
   return Handled
 
-proc newTextEditor*(document: TextDocument): TextDocumentEditor =
+method injectDependencies*(self: TextDocumentEditor, ed: Editor) =
+  self.editor = ed
+
+  self.eventHandler = eventHandler(ed.getEventHandlerConfig("editor.text")):
+    onAction:
+      self.handleAction action, arg
+    onInput:
+      self.handleInput input
+
+proc newTextEditor*(document: TextDocument, ed: Editor): TextDocumentEditor =
   let editor = TextDocumentEditor(eventHandler: nil, document: document)
   editor.init()
   if editor.document.content.len == 0:
     editor.document.content = @[""]
-  editor.eventHandler = eventHandler2:
-    command "<LEFT>", "cursor.left"
-    command "<RIGHT>", "cursor.right"
-    command "<UP>", "cursor.up"
-    command "<DOWN>", "cursor.down"
-    command "<HOME>", "cursor.home"
-    command "<END>", "cursor.end"
-    command "<S-LEFT>", "cursor.left last"
-    command "<S-RIGHT>", "cursor.right last"
-    command "<S-UP>", "cursor.up last"
-    command "<S-DOWN>", "cursor.down last"
-    command "<S-HOME>", "cursor.home last"
-    command "<S-END>", "cursor.end last"
-    command "<ENTER>", "editor.insert \n"
-    command "<SPACE>", "editor.insert  "
-    command "<BACKSPACE>", "backspace"
-    command "<DELETE>", "delete"
-    onAction:
-      editor.handleAction action, arg
-    onInput:
-      editor.handleInput input
+  editor.injectDependencies(ed)
   return editor
 
 method createWithDocument*(self: TextDocumentEditor, document: Document): DocumentEditor =
@@ -292,25 +282,4 @@ method createWithDocument*(self: TextDocumentEditor, document: Document): Docume
   editor.init()
   if editor.document.content.len == 0:
     editor.document.content = @[""]
-  editor.eventHandler = eventHandler2:
-    command "<LEFT>", "cursor.left"
-    command "<RIGHT>", "cursor.right"
-    command "<UP>", "cursor.up"
-    command "<DOWN>", "cursor.down"
-    command "<HOME>", "cursor.home"
-    command "<END>", "cursor.end"
-    command "<S-LEFT>", "cursor.left last"
-    command "<S-RIGHT>", "cursor.right last"
-    command "<S-UP>", "cursor.up last"
-    command "<S-DOWN>", "cursor.down last"
-    command "<S-HOME>", "cursor.home last"
-    command "<S-END>", "cursor.end last"
-    command "<ENTER>", "editor.insert \n"
-    command "<SPACE>", "editor.insert  "
-    command "<BACKSPACE>", "backspace"
-    command "<DELETE>", "delete"
-    onAction:
-      editor.handleAction action, arg
-    onInput:
-      editor.handleInput input
   return editor

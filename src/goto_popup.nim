@@ -68,17 +68,12 @@ proc handleTextChanged*(self: AstGotoDefinitionPopup) =
 
 proc newGotoPopup*(editor: Editor, document: AstDocument): AstGotoDefinitionPopup =
   var popup = AstGotoDefinitionPopup(editor: editor, document: document)
-  popup.textEditor = newTextEditor(newTextDocument())
+  popup.textEditor = newTextEditor(newTextDocument(), editor)
   popup.textEditor.renderHeader = false
   popup.textEditor.document.singleLine = true
   popup.textEditor.document.textChanged = (doc: TextDocument) => popup.handleTextChanged()
 
-  popup.eventHandler = eventHandler2:
-    command "<ENTER>", "accept"
-    command "<TAB>", "accept"
-    command "<ESCAPE>", "cancel"
-    command "<UP>", "prev"
-    command "<DOWN>", "next"
+  popup.eventHandler = eventHandler(editor.getEventHandlerConfig("editor.ast.goto")):
     onAction:
       popup.handleAction action, arg
     onInput:
