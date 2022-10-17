@@ -10,7 +10,7 @@ bin           = @["absytree"]
 
 # Dependencies
 
-requires "nim >= 1.6.4"
+requires "nim >= 1.7.3"
 requires "boxy >= 0.4.1"
 requires "windy >= 0.0.0"
 requires "winim >= 3.8.1"

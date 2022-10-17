@@ -87,3 +87,5 @@ window.onButtonRelease = proc(button: Button) =
 
 while not window.closeRequested:
   pollEvents()
+
+ed.shutdown()
