@@ -1,10 +1,8 @@
 import std/[strutils, logging, sequtils, sugar]
 import editor, input, document, document_editor, events
+import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 
 var logger = newConsoleLogger()
-
-type Cursor = tuple[line, column: int]
-type Selection = tuple[first, last: Cursor]
 
 type TextDocument* = ref object of Document
   filename*: string
@@ -16,7 +14,9 @@ type TextDocument* = ref object of Document
 type TextDocumentEditor* = ref object of DocumentEditor
   editor*: Editor
   document*: TextDocument
-  selection*: Selection
+  selection: Selection
+
+func selection*(self: TextDocumentEditor): Selection = self.selection
 
 proc newTextDocument*(filename: string = ""): TextDocument =
   new(result)
@@ -25,38 +25,12 @@ proc newTextDocument*(filename: string = ""): TextDocument =
 method `$`*(document: TextDocument): string =
   return document.filename
 
-proc `$`*(cursor: Cursor): string =
-  return "$1:$2" % [$cursor.line, $cursor.column]
-
-proc `$`*(selection: Selection): string =
-  return "$1:$2-$3:$4" % [$selection.first.line, $selection.first.column, $selection.last.line, $selection.last.column]
-
 proc contentString*(doc: TextDocument): string = doc.content.join
-
-proc toSelection(cursor: Cursor): Selection =
-  (cursor, cursor)
-
-proc isEmpty(selection: Selection): bool =
-  return selection.first == selection.last
 
 proc lineLength(self: TextDocument, line: int): int =
   if line < self.content.len:
     return self.content[line].len
   return 0
-
-proc isBackwards(selection: Selection): bool =
-  if selection.last.line < selection.first.line:
-    return true
-  elif selection.last.line == selection.first.line and selection.last.column < selection.first.column:
-    return true
-  else:
-    return false
-
-proc normalized(selection: Selection): Selection =
-  if selection.isBackwards:
-    return (selection.last, selection.first)
-  else:
-    return selection
 
 method save*(self: TextDocument, filename: string = "") {.locks: "unknown".} =
   self.filename = if filename.len > 0: filename else: self.filename
@@ -147,13 +121,19 @@ proc lineLength(self: TextDocumentEditor, line: int): int =
     return self.document.content[line].len
   return 0
 
-proc clampCursor(self: TextDocumentEditor, cursor: Cursor): Cursor =
+proc clampCursor*(self: TextDocumentEditor, cursor: Cursor): Cursor =
   var cursor = cursor
   if self.document.content.len == 0:
     return (0, 0)
   cursor.line = clamp(cursor.line, 0, self.document.content.len - 1)
   cursor.column = clamp(cursor.column, 0, self.lineLength cursor.line)
   return cursor
+
+proc clampSelection*(self: TextDocumentEditor, selection: Selection): Selection =
+  return (self.clampCursor(selection.first), self.clampCursor(selection.last))
+
+proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
+  self.selection = self.clampSelection selection
 
 method canEdit*(self: TextDocumentEditor, document: Document): bool =
   if document of TextDocument: return true
@@ -252,7 +232,7 @@ proc handleAction(self: TextDocumentEditor, action: string, arg: string): EventR
   of "cursor.home": self.moveCursor(arg, moveCursorHome, 0)
   of "cursor.end": self.moveCursor(arg, moveCursorEnd, 0)
   else:
-    logger.log(lvlError, "[textedit] Unknown action '$1 $2'" % [action, arg])
+    return self.editor.handleUnknownDocumentEditorAction(self, action, arg)
   return Handled
 
 proc handleInput(self: TextDocumentEditor, input: string): EventResponse =

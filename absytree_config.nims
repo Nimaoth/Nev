@@ -1,15 +1,77 @@
 include abs
+import std/strutils
 
 proc handleAction*(action: string, arg: string): bool =
   log "[script] ", action, ", ", arg
 
   case action
+  of "test":
+    getActiveEditor().insertText(arg)
   else: return false
 
   return true
 
+proc handleDocumentEditorAction(editor: DocumentEditor, action: string, arg: string): bool =
+  return false
+
+func charCategory(c: char): int =
+  if c.isAlphaNumeric or c == '_': return 0
+  if c == ' ' or c == '\t': return 1
+  return 2
+
+proc handleTextEditorAction(editor: TextDocumentEditor, action: string, arg: string): bool =
+  case action
+  of "cursor.left-word":
+    let selection = editor.selection
+    let line = editor.getLine selection.first.line
+    var cursor = selection.first
+    if cursor.column == 0:
+      if cursor.line > 0:
+        let prevLine = editor.getLine cursor.line - 1
+        editor.selection = (cursor.line - 1, prevLine.len).toSelection
+    else:
+      while cursor.column > 0 and cursor.column <= line.len:
+        cursor.column -= 1
+        if cursor.column > 0:
+          let leftCategory = line[cursor.column - 1].charCategory
+          let rightCategory = line[cursor.column].charCategory
+          if leftCategory != rightCategory:
+            break
+
+      editor.selection = cursor.toSelection
+
+  of "cursor.right-word":
+    let selection = editor.selection
+    let line = editor.getLine selection.first.line
+    let lineCount = editor.getLineCount
+    var cursor = selection.first
+    if cursor.column == line.len:
+      if cursor.line + 1 < lineCount:
+        editor.selection = (cursor.line + 1, 0).toSelection
+    else:
+      while cursor.column >= 0 and cursor.column < line.len:
+        cursor.column += 1
+        if cursor.column < line.len:
+          let leftCategory = line[cursor.column - 1].charCategory
+          let rightCategory = line[cursor.column].charCategory
+          if leftCategory != rightCategory:
+            break
+
+      editor.selection = cursor.toSelection
+
+  else: return false
+  return true
+
+proc handleAstEditorAction(editor: AstDocumentEditor, action: string, arg: string): bool =
+  case action
+
+  else: return false
+  return true
+
 proc postInitialize*() =
   log "[script] postInitialize()"
+
+  runAction "open-file", "test.txt"
 
 addCommand "editor", "<ESCAPE>", "escape"
 addCommand "editor", "<C-l><C-h>", "change-font-size", "-1"
@@ -32,6 +94,8 @@ addCommand "editor", "<C-s>", "write-file"
 addCommand "editor", "<CS-r>", "load-file"
 addCommand "editor", "<C-p>", "command-line"
 addCommand "editor", "<C-l>tt", "choose-theme"
+addCommand "editor", "<C-m>t", "test uiaeuiae"
+addCommand "editor", "<C-m>r", "test xvlcxvl  xvlc\n lol"
 
 addCommand "commandLine", "<ESCAPE>", "exit-command-line"
 addCommand "commandLine", "<ENTER>", "execute-command-line"
@@ -47,6 +111,8 @@ addCommand "popup.selector", "<DOWN>", "next"
 
 addCommand "editor.text", "<LEFT>", "cursor.left"
 addCommand "editor.text", "<RIGHT>", "cursor.right"
+addCommand "editor.text", "<C-LEFT>", "cursor.left-word"
+addCommand "editor.text", "<C-RIGHT>", "cursor.right-word"
 addCommand "editor.text", "<UP>", "cursor.up"
 addCommand "editor.text", "<DOWN>", "cursor.down"
 addCommand "editor.text", "<HOME>", "cursor.home"

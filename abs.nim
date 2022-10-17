@@ -1,5 +1,7 @@
 # import std/logging
 
+type AnyDocumentEditor = DocumentEditor | TextDocumentEditor | AstDocumentEditor
+
 proc addCommand*(context: string, keys: string, action: string, arg: string = "") =
   scriptAddCommand(context, keys, action, arg)
 
@@ -8,6 +10,51 @@ proc removeCommand*(context: string, keys: string) =
 
 proc runAction*(action: string, arg: string = "") =
   scriptRunAction(action, arg)
+
+template isTextEditor*(editor: DocumentEditor, injected: untyped): bool =
+  ((let o = editor; scriptIsTextEditor(editor.id))) and ((let injected {.inject.} = editor.TextDocumentEditor; true))
+
+template isAstEditor*(editor: DocumentEditor, injected: untyped): bool =
+  ((let o = editor; scriptIsAstEditor(editor.id))) and ((let injected {.inject.} = editor.AstDocumentEditor; true))
+
+proc getActiveEditor*(): DocumentEditor =
+  return DocumentEditor(id: scriptGetActiveEditorHandle())
+
+proc getEditor*(index: int): DocumentEditor =
+  return DocumentEditor(id: scriptGetEditorHandle(index))
+
+proc handleDocumentEditorAction*(editor: DocumentEditor, action: string, arg: string): bool
+proc handleTextEditorAction*(editor: TextDocumentEditor, action: string, arg: string): bool
+proc handleAstEditorAction*(editor: AstDocumentEditor, action: string, arg: string): bool
+
+proc handleEditorAction*(id: int, action: string, arg: string): bool =
+  let editor = DocumentEditor(id: id)
+
+  if editor.isTextEditor(editor):
+    return handleTextEditorAction(editor, action, arg)
+
+  elif editor.isAstEditor(editor):
+    return handleAstEditorAction(editor, action, arg)
+
+  return handleDocumentEditorAction(editor, action, arg)
+
+proc runAction*(editor: DocumentEditor, action: string, arg: string = "") =
+  scriptRunActionFor(editor.id, action, arg)
+
+proc insertText*(editor: AnyDocumentEditor, text: string) =
+  scriptInsertTextInto(editor.id, text)
+
+proc selection*(editor: TextDocumentEditor): Selection =
+  return scriptTextEditorSelection(editor.id)
+
+proc `selection=`*(editor: TextDocumentEditor, selection: Selection) =
+  scriptSetTextEditorSelection(editor.id, selection)
+
+proc getLine*(editor: TextDocumentEditor, line: int): string =
+  return scriptGetTextEditorLine(editor.id, line)
+
+proc getLineCount*(editor: TextDocumentEditor): int =
+  return scriptGetTextEditorLineCount(editor.id)
 
 proc log*(args: varargs[string, `$`]) =
   var msgLen = 0

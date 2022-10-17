@@ -1,4 +1,4 @@
-import std/[strformat, sequtils, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils, tables]
+import std/[strformat, sequtils, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils, tables, macros]
 import boxy, windy, print, fuzzy
 import sugar
 import input, events, rect_utils, document, document_editor, keybind_autocomplete, popup
@@ -174,6 +174,11 @@ method layoutViews*(layout: FibonacciLayout, props: LayoutProperties, bounds: Re
     rect = remaining
     result.add view_rect
 
+proc handleUnknownDocumentEditorAction*(ed: Editor, editor: DocumentEditor, action: string, arg: string): EventResponse =
+  if ed.scriptContext.inter.invoke(handleEditorAction, editor.id.int, action, arg, returnType = bool):
+    return Handled
+  return Failed
+
 proc handleTextInput(ed: Editor, text: string)
 proc handleAction(ed: Editor, action: string, arg: string)
 
@@ -292,8 +297,11 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
   gEditor = ed
 
   let addins = createAddins()
-  ed.scriptContext = newScriptContext("./absytree_config.nims", addins)
-  ed.scriptContext.inter.invoke(postInitialize)
+  try:
+    ed.scriptContext = newScriptContext("./absytree_config.nims", addins)
+    ed.scriptContext.inter.invoke(postInitialize)
+  except:
+    ed.logger.log(lvlError, fmt"Failed to load config")
 
   return ed
 
@@ -449,7 +457,10 @@ proc handleAction(ed: Editor, action: string, arg: string) =
 
   of "reload-config":
     if ed.scriptContext.isNil.not:
-      ed.scriptContext.reloadScript()
+      try:
+        ed.scriptContext.reloadScript()
+      except:
+        ed.logger.log(lvlError, fmt"Failed to reload config")
 
   else:
     if not ed.scriptContext.inter.invoke(handleAction, action, arg, returnType = bool):
@@ -507,6 +518,15 @@ proc handleRune*(ed: Editor, rune: Rune, modifiers: Modifiers) =
   let input = rune.toInput()
   ed.currentEventHandlers.handleEvent(input, modifiers)
 
+proc getEditorForId*(ed: Editor, id: EditorId): Option[DocumentEditor] =
+  for view in ed.views:
+    if view.editor.id == id:
+      return view.editor.some
+
+  return DocumentEditor.none
+
+import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
+
 proc scriptRunAction*(action: string, arg: string) =
   if gEditor.isNil:
     return
@@ -520,19 +540,107 @@ proc scriptAddCommand*(context: string, keys: string, action: string, arg: strin
     return
 
   let command = if arg.len == 0: action else: action & " " & arg
-  logger.log(lvlInfo, fmt"Adding command to '{context}': ('{keys}', '{command}')")
+  # logger.log(lvlInfo, fmt"Adding command to '{context}': ('{keys}', '{command}')")
   gEditor.getEventHandlerConfig(context).addCommand(keys, command)
 
 proc scriptRemoveCommand*(context: string, keys: string) =
   if gEditor.isNil:
     return
 
-  logger.log(lvlInfo, fmt"Removing command from '{context}': '{keys}'")
+  # logger.log(lvlInfo, fmt"Removing command from '{context}': '{keys}'")
   gEditor.getEventHandlerConfig(context).removeCommand(keys)
 
+proc scriptGetActiveEditorHandle*(): int =
+  if gEditor.isNil:
+    return -1
+  if gEditor.currentView >= 0 and gEditor.currentView < gEditor.views.len:
+    return gEditor.views[gEditor.currentView].editor.id.int
+
+  return -1
+
+proc scriptGetEditorHandle*(index: int): int =
+  if gEditor.isNil:
+    return -1
+  if index >= 0 and index < gEditor.views.len:
+    return gEditor.views[index].editor.id.int
+
+  return -1
+
+proc scriptIsTextEditor*(editorId: int): bool =
+  if gEditor.isNil:
+    return false
+  if gEditor.getEditorForId(editorId.EditorId).getSome(editor):
+    return editor of TextDocumentEditor
+  return false
+
+proc scriptIsAstEditor*(editorId: int): bool =
+  if gEditor.isNil:
+    return false
+  if gEditor.getEditorForId(editorId.EditorId).getSome(editor):
+    return editor of AstDocumentEditor
+  return false
+
+proc scriptRunActionFor*(editorId: int, action: string, arg: string) =
+  if gEditor.isNil:
+    return
+  if gEditor.getEditorForId(editorId.EditorId).getSome(editor):
+    discard editor.eventHandler.handleAction(action, arg)
+
+proc scriptInsertTextInto*(editorId: int, text: string) =
+  if gEditor.isNil:
+    return
+  if gEditor.getEditorForId(editorId.EditorId).getSome(editor):
+    discard editor.eventHandler.handleInput(text)
+
+proc scriptTextEditorSelection*(editorId: int): Selection =
+  if gEditor.isNil:
+    return
+  if gEditor.getEditorForId(editorId.EditorId).getSome(editor):
+    if editor of TextDocumentEditor:
+      let editor = TextDocumentEditor(editor)
+      return editor.selection
+  return ((0, 0), (0, 0))
+
+proc scriptSetTextEditorSelection*(editorId: int, selection: Selection) =
+  if gEditor.isNil:
+    return
+  if gEditor.getEditorForId(editorId.EditorId).getSome(editor):
+    if editor of TextDocumentEditor:
+      editor.TextDocumentEditor.selection = selection
+
+proc scriptGetTextEditorLine*(editorId: int, line: int): string =
+  if gEditor.isNil:
+    return
+  if gEditor.getEditorForId(editorId.EditorId).getSome(editor):
+    if editor of TextDocumentEditor:
+      let editor = TextDocumentEditor(editor)
+      if line >= 0 and line < editor.document.content.len:
+        return editor.document.content[line]
+  return ""
+
+proc scriptGetTextEditorLineCount*(editorId: int): int =
+  if gEditor.isNil:
+    return
+  if gEditor.getEditorForId(editorId.EditorId).getSome(editor):
+    if editor of TextDocumentEditor:
+      let editor = TextDocumentEditor(editor)
+      return editor.document.content.len
+  return 0
+
+macro myImport(): untyped =
+  return nnkImportStmt.newTree(ident"scripting_api")
+
 proc createAddins(): VmAddins =
-  exportTo(myImpl, scriptRunAction, scriptLog, scriptAddCommand, scriptRemoveCommand)
+  exportTo(myImpl, scriptRunAction, scriptLog, scriptAddCommand, scriptRemoveCommand,
+    scriptGetActiveEditorHandle, scriptGetEditorHandle, scriptRunActionFor, scriptInsertTextInto,
+    scriptIsTextEditor, scriptIsAstEditor,
+    scriptTextEditorSelection,
+    scriptSetTextEditorSelection,
+    scriptGetTextEditorLine,
+    scriptGetTextEditorLineCount,
+    )
   addCallable(myImpl):
     proc handleAction(action: string, arg: string): bool
     proc postInitialize()
+    proc handleEditorAction(id: int, action: string, arg: string): bool
   return implNimScriptModule(myImpl)
