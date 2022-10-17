@@ -1,3 +1,4 @@
+import std/[tables, sequtils]
 import input
 
 type EventResponse* = enum
@@ -9,14 +10,31 @@ type EventResponse* = enum
 
 type EventHandler* = ref object
   state*: int
-  dfa*: CommandDFA
+  commands: Table[string, string]
+  dirty: bool
+  dfa: CommandDFA
   handleAction*: proc(action: string, arg: string): EventResponse
   handleInput*: proc(input: string): EventResponse
 
-template eventHandler*(commandDFA: CommandDFA, handlerBody: untyped): untyped =
+proc dfa*(handler: EventHandler): CommandDFA =
+  if handler.dirty:
+    handler.dfa = buildDFA(handler.commands.pairs.toSeq)
+    handler.dirty = false
+  return handler.dfa
+
+proc addCommand*(handler: EventHandler, keys: string, action: string) =
+  handler.commands[keys] = action
+  handler.dirty = true
+
+proc removeCommand*(handler: EventHandler, keys: string) =
+  handler.commands.del(keys)
+  handler.dirty = true
+
+template eventHandler*(inCommands: Table[string, string], handlerBody: untyped): untyped =
   block:
     var handler = EventHandler()
-    handler.dfa = commandDFA
+    handler.commands = inCommands
+    handler.dfa = buildDFA(inCommands.pairs.toSeq)
 
     template onAction(actionBody: untyped): untyped =
       handler.handleAction = proc(action: string, arg: string): EventResponse =
@@ -48,12 +66,13 @@ template eventHandler2*(handlerBody: untyped): untyped =
         let input {.inject, used.} = input
         return inputBody
 
-    var commands: seq[(string, string)] = @[]
+    var tempCommands = initTable[string, string]()
 
     template command(cmd: string, a: string): untyped =
-      commands.add (cmd, a)
+      tempCommands[cmd] = a
 
     handlerBody
-    handler.dfa = buildDFA(commands)
+    handler.commands = tempCommands
+    handler.dfa = buildDFA(handler.commands.pairs.toSeq)
     # handler.dfa.dump(0, 0, {})
     handler

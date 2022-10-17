@@ -1,4 +1,4 @@
-import std/[strformat, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils]
+import std/[strformat, sequtils, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils, tables]
 import boxy, windy, print, fuzzy
 import sugar
 import input, events, rect_utils, document, document_editor, text_document, keybind_autocomplete, popup
@@ -6,37 +6,13 @@ import theme, util
 import scripting
 import nimscripter, nimscripter/[variables, vmconversion, vmaddins]
 
-var commands: seq[(string, string)] = @[]
-commands.add ("<C-x><C-x>", "quit")
-commands.add ("<ESCAPE>", "escape")
-commands.add ("<C-l><C-h>", "change-font-size -1")
-commands.add ("<C-l><C-f>", "change-font-size 1")
-commands.add ("<C-g>", "toggle-status-bar-location")
-commands.add ("<C-l><C-n>", "set-layout horizontal")
-commands.add ("<C-l><C-r>", "set-layout vertical")
-commands.add ("<C-l><C-t>", "set-layout fibonacci")
-commands.add ("<CA-h>", "change-layout-prop main-split -0.05")
-commands.add ("<CA-f>", "change-layout-prop main-split +0.05")
-commands.add ("<CA-v>", "create-view")
-commands.add ("<CA-a>", "create-keybind-autocomplete-view")
-commands.add ("<CA-x>", "close-view")
-commands.add ("<CA-n>", "prev-view")
-commands.add ("<CA-t>", "next-view")
-commands.add ("<CS-n>", "move-view-prev")
-commands.add ("<CS-t>", "move-view-next")
-commands.add ("<CA-r>", "move-current-view-to-top")
-commands.add ("<C-s>", "write-file")
-commands.add ("<CS-r>", "load-file")
-commands.add ("<C-p>", "command-line")
-commands.add ("<C-l>tt", "choose-theme")
-commands.add ("<CAS-r>", "reload-config")
+var commands = initTable[string, string]()
+commands["<C-x><C-x>"] = "quit"
+commands["<CAS-r>"] = "reload-config"
 
-var commandLineCommands: seq[(string, string)] = @[]
-commandLineCommands.add ("<ESCAPE>", "exit-command-line")
-commandLineCommands.add ("<ENTER>", "execute-command-line")
-commandLineCommands.add ("<BACKSPACE>", "backspace")
-commandLineCommands.add ("<DELETE>", "delete")
-commandLineCommands.add ("<SPACE>", "insert  ")
+var commandLineCommands = initTable[string, string]()
+
+var logger = newConsoleLogger()
 
 proc toInput(rune: Rune): int64 =
   return rune.int64
@@ -280,14 +256,14 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
   # ed.createView(newKeybindAutocompletion())
   ed.currentView = 0
 
-  ed.eventHandler = eventHandler(buildDFA(commands)):
+  ed.eventHandler = eventHandler(commands):
     onAction:
       ed.handleAction(action, arg)
       Handled
     onInput:
       ed.handleTextInput(input)
       Handled
-  ed.commandLineEventHandler = eventHandler(buildDFA(commandLineCommands)):
+  ed.commandLineEventHandler = eventHandler(commandLineCommands):
     onAction:
       ed.handleAction(action, arg)
       Handled
@@ -313,6 +289,7 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
 
   let addins = createAddins()
   ed.scriptContext = newScriptContext("./absytree_config.nims", addins)
+  ed.scriptContext.inter.invoke(postInitialize)
 
   return ed
 
@@ -526,13 +503,44 @@ proc handleRune*(ed: Editor, rune: Rune, modifiers: Modifiers) =
   let input = rune.toInput()
   ed.currentEventHandlers.handleEvent(input, modifiers)
 
-proc runAction*(action: string, arg: string = "") =
+proc runAction*(action: string, arg: string) =
   if gEditor.isNil:
     return
   gEditor.handleAction(action, arg)
 
+proc scriptLog*(message: string) =
+  logger.log(lvlInfo, message)
+
+proc scriptAddCommand*(context: string, keys: string, action: string, arg: string) =
+  if gEditor.isNil:
+    return
+  let command = if arg.len == 0: action else: action & " " & arg
+  logger.log(lvlInfo, fmt"Adding command to '{context}': ('{keys}', '{command}')")
+  case context:
+  of "editor":
+    gEditor.eventHandler.addCommand(keys, command)
+  of "commandLine":
+    gEditor.commandLineEventHandler.addCommand(keys, command)
+  else:
+    logger.log(lvlError, fmt"Failed to add command ('{keys}', '{command}') to unknown context '{context}'")
+    discard
+
+proc scriptRemoveCommand*(context: string, keys: string) =
+  if gEditor.isNil:
+    return
+  logger.log(lvlInfo, fmt"Removing command from '{context}': '{keys}'")
+  case context:
+  of "editor":
+    gEditor.eventHandler.removeCommand(keys)
+  of "commandLine":
+    gEditor.commandLineEventHandler.removeCommand(keys)
+  else:
+    logger.log(lvlError, fmt"Failed to remove command '{keys}' from unknown context '{context}'")
+    discard
+
 proc createAddins(): VmAddins =
-  exportTo(myImpl, runAction)
+  exportTo(myImpl, runAction, scriptLog, scriptAddCommand, scriptRemoveCommand)
   addCallable(myImpl):
     proc handleAction(action: string, arg: string): bool
+    proc postInitialize()
   return implNimScriptModule(myImpl)
