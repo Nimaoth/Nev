@@ -6,6 +6,9 @@ proc addCommand*(context: string, keys: string, action: string, arg: string = ""
 proc removeCommand*(context: string, keys: string) =
   scriptRemoveCommand(context, keys)
 
+proc runAction*(action: string, arg: string = "") =
+  scriptRunAction(action, arg)
+
 proc log*(args: varargs[string, `$`]) =
   var msgLen = 0
   for arg in args:

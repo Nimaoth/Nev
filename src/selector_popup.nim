@@ -64,18 +64,13 @@ proc handleTextChanged*(self: SelectorPopup) =
 
 proc newSelectorPopup*(editor: Editor, getCompletions: proc(self: SelectorPopup, text: string): seq[SelectorItem]): SelectorPopup =
   var popup = SelectorPopup(editor: editor)
-  popup.textEditor = newTextEditor(newTextDocument())
+  popup.textEditor = newTextEditor(newTextDocument(), editor)
   popup.textEditor.renderHeader = false
   popup.textEditor.document.singleLine = true
   popup.textEditor.document.textChanged = (doc: TextDocument) => popup.handleTextChanged()
   popup.getCompletions = getCompletions
 
-  popup.eventHandler = eventHandler2:
-    command "<ENTER>", "accept"
-    command "<TAB>", "accept"
-    command "<ESCAPE>", "cancel"
-    command "<UP>", "prev"
-    command "<DOWN>", "next"
+  popup.eventHandler = eventHandler(editor.getEventHandlerConfig("popup.selector")):
     onAction:
       popup.handleAction action, arg
     onInput:

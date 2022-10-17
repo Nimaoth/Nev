@@ -1,16 +1,10 @@
 import std/[strformat, sequtils, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils, tables]
 import boxy, windy, print, fuzzy
 import sugar
-import input, events, rect_utils, document, document_editor, text_document, keybind_autocomplete, popup
+import input, events, rect_utils, document, document_editor, keybind_autocomplete, popup
 import theme, util
 import scripting
 import nimscripter, nimscripter/[variables, vmconversion, vmaddins]
-
-var commands = initTable[string, string]()
-commands["<C-x><C-x>"] = "quit"
-commands["<CAS-r>"] = "reload-config"
-
-var commandLineCommands = initTable[string, string]()
 
 var logger = newConsoleLogger()
 
@@ -82,6 +76,8 @@ type Editor* = ref object
   fontBold*: string
   fontItalic*: string
   fontBoldItalic*: string
+
+  eventHandlerConfigs: Table[string, EventHandlerConfig]
 
   logger: Logger
 
@@ -210,7 +206,12 @@ proc popPopup*(ed: Editor, popup: Popup) =
   if ed.popups.len > 0 and ed.popups[ed.popups.high] == popup:
     discard ed.popups.pop
 
-import ast_document
+proc getEventHandlerConfig*(ed: Editor, context: string): EventHandlerConfig =
+  if not ed.eventHandlerConfigs.contains(context):
+    ed.eventHandlerConfigs[context] = EventHandlerConfig()
+  return ed.eventHandlerConfigs[context]
+
+import text_document, ast_document
 import selector_popup
 
 type ThemeSelectorItem* = ref object of SelectorItem
@@ -256,14 +257,17 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
   # ed.createView(newKeybindAutocompletion())
   ed.currentView = 0
 
-  ed.eventHandler = eventHandler(commands):
+  ed.getEventHandlerConfig("editor").addCommand "<C-x><C-x>", "quit"
+  ed.getEventHandlerConfig("editor").addCommand "<CAS-r>", "reload-config"
+
+  ed.eventHandler = eventHandler(ed.getEventHandlerConfig("editor")):
     onAction:
       ed.handleAction(action, arg)
       Handled
     onInput:
       ed.handleTextInput(input)
       Handled
-  ed.commandLineEventHandler = eventHandler(commandLineCommands):
+  ed.commandLineEventHandler = eventHandler(ed.getEventHandlerConfig("commandLine")):
     onAction:
       ed.handleAction(action, arg)
       Handled
@@ -503,7 +507,7 @@ proc handleRune*(ed: Editor, rune: Rune, modifiers: Modifiers) =
   let input = rune.toInput()
   ed.currentEventHandlers.handleEvent(input, modifiers)
 
-proc runAction*(action: string, arg: string) =
+proc scriptRunAction*(action: string, arg: string) =
   if gEditor.isNil:
     return
   gEditor.handleAction(action, arg)
@@ -514,32 +518,20 @@ proc scriptLog*(message: string) =
 proc scriptAddCommand*(context: string, keys: string, action: string, arg: string) =
   if gEditor.isNil:
     return
+
   let command = if arg.len == 0: action else: action & " " & arg
   logger.log(lvlInfo, fmt"Adding command to '{context}': ('{keys}', '{command}')")
-  case context:
-  of "editor":
-    gEditor.eventHandler.addCommand(keys, command)
-  of "commandLine":
-    gEditor.commandLineEventHandler.addCommand(keys, command)
-  else:
-    logger.log(lvlError, fmt"Failed to add command ('{keys}', '{command}') to unknown context '{context}'")
-    discard
+  gEditor.getEventHandlerConfig(context).addCommand(keys, command)
 
 proc scriptRemoveCommand*(context: string, keys: string) =
   if gEditor.isNil:
     return
+
   logger.log(lvlInfo, fmt"Removing command from '{context}': '{keys}'")
-  case context:
-  of "editor":
-    gEditor.eventHandler.removeCommand(keys)
-  of "commandLine":
-    gEditor.commandLineEventHandler.removeCommand(keys)
-  else:
-    logger.log(lvlError, fmt"Failed to remove command '{keys}' from unknown context '{context}'")
-    discard
+  gEditor.getEventHandlerConfig(context).removeCommand(keys)
 
 proc createAddins(): VmAddins =
-  exportTo(myImpl, runAction, scriptLog, scriptAddCommand, scriptRemoveCommand)
+  exportTo(myImpl, scriptRunAction, scriptLog, scriptAddCommand, scriptRemoveCommand)
   addCallable(myImpl):
     proc handleAction(action: string, arg: string): bool
     proc postInitialize()

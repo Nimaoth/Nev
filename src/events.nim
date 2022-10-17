@@ -8,33 +8,40 @@ type EventResponse* = enum
   Handled,
   Progress,
 
+type EventHandlerConfig* = ref object
+  commands: Table[string, string]
+  revision: int
+
 type EventHandler* = ref object
   state*: int
-  commands: Table[string, string]
-  dirty: bool
+  config: EventHandlerConfig
+  revision: int
   dfa: CommandDFA
   handleAction*: proc(action: string, arg: string): EventResponse
   handleInput*: proc(input: string): EventResponse
 
+proc buildDFA*(config: EventHandlerConfig): CommandDFA =
+  return buildDFA(config.commands.pairs.toSeq)
+
 proc dfa*(handler: EventHandler): CommandDFA =
-  if handler.dirty:
-    handler.dfa = buildDFA(handler.commands.pairs.toSeq)
-    handler.dirty = false
+  if handler.revision < handler.config.revision:
+    handler.dfa = handler.config.buildDFA()
+    handler.revision = handler.config.revision
   return handler.dfa
 
-proc addCommand*(handler: EventHandler, keys: string, action: string) =
-  handler.commands[keys] = action
-  handler.dirty = true
+proc addCommand*(config: EventHandlerConfig, keys: string, action: string) =
+  config.commands[keys] = action
+  config.revision += 1
 
-proc removeCommand*(handler: EventHandler, keys: string) =
-  handler.commands.del(keys)
-  handler.dirty = true
+proc removeCommand*(config: EventHandlerConfig, keys: string) =
+  config.commands.del(keys)
+  config.revision += 1
 
-template eventHandler*(inCommands: Table[string, string], handlerBody: untyped): untyped =
+template eventHandler*(inConfig: EventHandlerConfig, handlerBody: untyped): untyped =
   block:
     var handler = EventHandler()
-    handler.commands = inCommands
-    handler.dfa = buildDFA(inCommands.pairs.toSeq)
+    handler.config = inConfig
+    handler.dfa = inConfig.buildDFA()
 
     template onAction(actionBody: untyped): untyped =
       handler.handleAction = proc(action: string, arg: string): EventResponse =
@@ -48,31 +55,4 @@ template eventHandler*(inCommands: Table[string, string], handlerBody: untyped):
         return inputBody
 
     handlerBody
-    # handler.dfa.dump(0, 0, {})
-    handler
-
-template eventHandler2*(handlerBody: untyped): untyped =
-  block:
-    var handler = EventHandler()
-
-    template onAction(actionBody: untyped): untyped =
-      handler.handleAction = proc(action: string, arg: string): EventResponse =
-        let action {.inject, used.} = action
-        let arg {.inject, used.} = arg
-        return actionBody
-
-    template onInput(inputBody: untyped): untyped =
-      handler.handleInput = proc(input: string): EventResponse =
-        let input {.inject, used.} = input
-        return inputBody
-
-    var tempCommands = initTable[string, string]()
-
-    template command(cmd: string, a: string): untyped =
-      tempCommands[cmd] = a
-
-    handlerBody
-    handler.commands = tempCommands
-    handler.dfa = buildDFA(handler.commands.pairs.toSeq)
-    # handler.dfa.dump(0, 0, {})
     handler
