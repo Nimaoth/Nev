@@ -41,10 +41,10 @@ proc newScriptContext*(path: string, addins: VMAddins): ScriptContext =
   new result
   result.script = NimScriptPath(path)
   result.addins = addins
-  result.inter = loadScript(result.script, addins, stdPath = stdPath, vmErrorHook = errorHook)
+  result.inter = loadScript(result.script, addins, "scripting_api", stdPath = stdPath, searchPaths = @["src"], vmErrorHook = errorHook)
 
 proc reloadScript*(ctx: ScriptContext) =
-  ctx.inter.safeLoadScriptWithState(ctx.script, ctx.addins, stdPath = stdPath, vmErrorHook = errorHook)
+  ctx.inter.safeLoadScriptWithState(ctx.script, ctx.addins, "scripting_api", stdPath = stdPath, searchPaths = @["src"], vmErrorHook = errorHook)
 
 when false:
   proc doThing(): int = 41

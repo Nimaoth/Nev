@@ -16,4 +16,5 @@ proc handleInput(self: KeybindAutocompletion, input: string): EventResponse =
   return Ignored
 
 proc newKeybindAutocompletion*(): DocumentEditor =
-  return KeybindAutocompletion()
+  result = KeybindAutocompletion()
+  result.init()

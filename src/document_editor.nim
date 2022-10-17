@@ -1,12 +1,22 @@
 import document, events
 
+type EditorId* = distinct int
 
 type DocumentEditor* = ref object of RootObj
+  id: EditorId
   eventHandler*: EventHandler
   renderHeader*: bool
   fillAvailableSpace*: bool
 
+func id*(self: DocumentEditor): EditorId = self.id
+func `==`*(a: EditorId, b: EditorId): bool = a.int == b.int
+
+var nextEditorId = 0
+
 proc init*(self: DocumentEditor) =
+  self.id = nextEditorId.EditorId
+  nextEditorId += 1
+
   self.renderHeader = true
   self.fillAvailableSpace = true
 
