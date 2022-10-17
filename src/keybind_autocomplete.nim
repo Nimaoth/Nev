@@ -1,4 +1,4 @@
-import std/[strutils, logging]
+import std/[strutils, logging, sequtils]
 import input, document_editor, events
 
 var logger = newConsoleLogger()

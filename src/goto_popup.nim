@@ -1,4 +1,4 @@
-import std/[strutils, tables, sugar, algorithm]
+import std/[strutils, tables, sugar, algorithm, sequtils]
 import fuzzy
 import editor, ast_document, text_document, popup, events, compiler, compiler_types, id
 
