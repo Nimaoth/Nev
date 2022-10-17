@@ -3,6 +3,8 @@ import boxy, windy, print, fuzzy
 import sugar
 import input, events, rect_utils, document, document_editor, text_document, keybind_autocomplete, popup
 import theme, util
+import scripting
+import nimscripter, nimscripter/[variables, vmconversion, vmaddins]
 
 var commands: seq[(string, string)] = @[]
 commands.add ("<C-x><C-x>", "quit")
@@ -27,6 +29,7 @@ commands.add ("<C-s>", "write-file")
 commands.add ("<CS-r>", "load-file")
 commands.add ("<C-p>", "command-line")
 commands.add ("<C-l>tt", "choose-theme")
+commands.add ("<CAS-r>", "reload-config")
 
 var commandLineCommands: seq[(string, string)] = @[]
 commandLineCommands.add ("<ESCAPE>", "exit-command-line")
@@ -106,6 +109,8 @@ type Editor* = ref object
 
   logger: Logger
 
+  scriptContext*: ScriptContext
+
   statusBarOnTop*: bool
   inputBuffer*: string
 
@@ -123,6 +128,8 @@ type Editor* = ref object
   commandLineMode*: bool
 
   editor_defaults: seq[DocumentEditor]
+
+var gEditor: Editor = nil
 
 method injectDependencies*(self: DocumentEditor, ed: Editor) {.base.} =
   discard
@@ -239,6 +246,8 @@ proc setTheme*(ed: Editor, path: string) =
   if loadFromFile(path).getSome(theme):
     ed.theme = theme
 
+proc createAddins(): VmAddins
+
 proc newEditor*(window: Window, boxy: Boxy): Editor =
   var ed = Editor()
   ed.window = window
@@ -299,6 +308,11 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
 
   except:
     echo "Failed to load previous state from config file"
+
+  gEditor = ed
+
+  let addins = createAddins()
+  ed.scriptContext = newScriptContext("./absytree_config.nims", addins)
 
   return ed
 
@@ -452,8 +466,13 @@ proc handleAction(ed: Editor, action: string, arg: string) =
 
     ed.pushPopup popup
 
+  of "reload-config":
+    if ed.scriptContext.isNil.not:
+      ed.scriptContext.reloadScript()
+
   else:
-    ed.logger.log(lvlError, fmt"[ed] Unknown Action '{action} {arg}'")
+    if not ed.scriptContext.inter.invoke(handleAction, action, arg, returnType = bool):
+      ed.logger.log(lvlError, fmt"[ed] Unknown Action '{action} {arg}'")
 
 proc anyInProgress*(handlers: openArray[EventHandler]): bool =
   for h in handlers:
@@ -506,3 +525,14 @@ proc handleRune*(ed: Editor, rune: Rune, modifiers: Modifiers) =
   let modifiers = if rune.int64.isAscii and rune.char.isAlphaNumeric: modifiers else: {}
   let input = rune.toInput()
   ed.currentEventHandlers.handleEvent(input, modifiers)
+
+proc runAction*(action: string, arg: string = "") =
+  if gEditor.isNil:
+    return
+  gEditor.handleAction(action, arg)
+
+proc createAddins(): VmAddins =
+  exportTo(myImpl, runAction)
+  addCallable(myImpl):
+    proc handleAction(action: string, arg: string): bool
+  return implNimScriptModule(myImpl)
