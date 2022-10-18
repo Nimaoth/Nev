@@ -552,6 +552,7 @@ proc finishEdit*(self: AstDocumentEditor, apply: bool) =
       self.currentlyEditedNode.text = self.textDocument.content.join "\n"
       ctx.updateNode(self.currentlyEditedNode)
 
+  self.textEditor.unregister()
   self.textEditor = nil
   self.textDocument = nil
   self.currentlyEditedSymbol = null
@@ -1689,8 +1690,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
     echo "================================================="
 
   else:
-    logger.log(lvlError, "[textedit] Unknown action '$1 $2'" % [action, arg])
-    return Failed
+    return self.editor.handleUnknownDocumentEditorAction(self, action, arg)
 
   return Handled
 
@@ -1754,6 +1754,7 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
 
 method injectDependencies*(self: AstDocumentEditor, ed: Editor) =
   self.editor = ed
+  self.editor.registerEditor(self)
 
   self.eventHandler = eventHandler(ed.getEventHandlerConfig("editor.ast")):
     onAction:
@@ -1766,3 +1767,7 @@ method injectDependencies*(self: AstDocumentEditor, ed: Editor) =
       self.handleAction action, arg
     onInput:
       Ignored
+
+method unregister*(self: AstDocumentEditor) =
+  self.finishEdit(false)
+  self.editor.unregisterEditor(self)

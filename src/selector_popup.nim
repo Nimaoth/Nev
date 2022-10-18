@@ -56,6 +56,9 @@ proc handleAction*(self: SelectorPopup, action: string, arg: string): EventRespo
     if self.completions.len > 0 and self.handleItemSelected != nil:
       self.handleItemSelected self.completions[self.selected]
 
+  else:
+    return self.editor.handleUnknownPopupAction(self, action, arg)
+
   return Handled
 
 proc handleTextChanged*(self: SelectorPopup) =

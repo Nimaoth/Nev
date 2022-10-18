@@ -36,7 +36,7 @@ proc updateCompletions(self: AstGotoDefinitionPopup) =
     self.selected = 0
 
 method getEventHandlers*(self: AstGotoDefinitionPopup): seq[EventHandler] =
-  return @[self.eventHandler] & self.textEditor.eventHandler
+  return self.textEditor.eventHandler & @[self.eventHandler]
 
 proc handleAction*(self: AstGotoDefinitionPopup, action: string, arg: string): EventResponse =
   case action
@@ -59,6 +59,9 @@ proc handleAction*(self: AstGotoDefinitionPopup, action: string, arg: string): E
       0
     else:
       (self.selected + 1) mod self.completions.len
+
+  else:
+    return self.editor.handleUnknownPopupAction(self, action, arg)
 
   return Handled
 

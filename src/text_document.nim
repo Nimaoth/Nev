@@ -197,7 +197,7 @@ proc moveCursor(self: TextDocumentEditor, cursor: string, movement: proc(doc: Te
     logger.log(lvlError, "Unknown cursor " & cursor)
 
 proc handleAction(self: TextDocumentEditor, action: string, arg: string): EventResponse =
-  # echo "handleAction ", action, " '", arg, "'"
+  # echo "[textedit] handleAction ", action, " '", arg, "'"
   case action
   of "backspace":
     if self.selection.isEmpty:
@@ -231,8 +231,10 @@ proc handleAction(self: TextDocumentEditor, action: string, arg: string): EventR
 
   of "cursor.home": self.moveCursor(arg, moveCursorHome, 0)
   of "cursor.end": self.moveCursor(arg, moveCursorEnd, 0)
+
   else:
     return self.editor.handleUnknownDocumentEditorAction(self, action, arg)
+
   return Handled
 
 proc handleInput(self: TextDocumentEditor, input: string): EventResponse =
@@ -242,6 +244,7 @@ proc handleInput(self: TextDocumentEditor, input: string): EventResponse =
 
 method injectDependencies*(self: TextDocumentEditor, ed: Editor) =
   self.editor = ed
+  self.editor.registerEditor(self)
 
   self.eventHandler = eventHandler(ed.getEventHandlerConfig("editor.text")):
     onAction:
@@ -263,3 +266,6 @@ method createWithDocument*(self: TextDocumentEditor, document: Document): Docume
   if editor.document.content.len == 0:
     editor.document.content = @[""]
   return editor
+
+method unregister*(self: TextDocumentEditor) =
+  self.editor.unregisterEditor(self)
