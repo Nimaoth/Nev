@@ -1,6 +1,5 @@
 import std/[json, jsonutils, strformat, bitops, strutils, tables, algorithm, math, options]
 import os, osproc
-import compiler/[nimeval, renderer, ast]
 import compiler/options as copts
 import scripting_api
 import print
@@ -16,15 +15,12 @@ let stdPath = "C:/Users/nimao/.choosenim/toolchains/nim-#devel/lib"
 
 proc errorHook(config: ConfigRef; info: TLineInfo; msg: string; severity: Severity) {.gcsafe.} =
   if (severity == Error or severity == Warning) and config.errorCounter >= config.errorMax:
-    echo fmt"[vm {severity}] {msg}"
-
-  if severity == Error and config.errorCounter >= config.errorMax:
     var fileName: string
     for k, v in config.m.filenameToIndexTbl.pairs:
       if v == info.fileIndex:
         fileName = k
-    echo "Script Error: $1:$2:$3 $4." % [fileName, $info.line, $(info.col + 1), msg]
-    # raise (ref VMQuit)(info: info, msg: msg)
+    echo fmt"[vm {severity}]: $1:$2:$3 $4." % [fileName, $info.line, $(info.col + 1), msg]
+    raise (ref VMQuit)(info: info, msg: msg)
 
 proc setGlobalVariable*[T](intr: Option[Interpreter] or Interpreter; name: string, value: T) =
   ## Easy access of a global nimscript variable

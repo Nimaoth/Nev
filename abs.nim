@@ -1,6 +1,7 @@
 # import std/logging
 
 type AnyDocumentEditor = DocumentEditor | TextDocumentEditor | AstDocumentEditor
+type AnyPopup = Popup
 
 proc addCommand*(context: string, keys: string, action: string, arg: string = "") =
   scriptAddCommand(context, keys, action, arg)
@@ -26,8 +27,9 @@ proc getEditor*(index: int): DocumentEditor =
 proc handleDocumentEditorAction*(editor: DocumentEditor, action: string, arg: string): bool
 proc handleTextEditorAction*(editor: TextDocumentEditor, action: string, arg: string): bool
 proc handleAstEditorAction*(editor: AstDocumentEditor, action: string, arg: string): bool
+proc handlePopupAction*(popup: Popup, action: string, arg: string): bool
 
-proc handleEditorAction*(id: int, action: string, arg: string): bool =
+proc handleEditorAction*(id: EditorId, action: string, arg: string): bool =
   let editor = DocumentEditor(id: id)
 
   if editor.isTextEditor(editor):
@@ -38,8 +40,16 @@ proc handleEditorAction*(id: int, action: string, arg: string): bool =
 
   return handleDocumentEditorAction(editor, action, arg)
 
+proc handleUnknownPopupAction*(id: EditorId, action: string, arg: string): bool =
+  let popup = Popup(id: id)
+
+  return handlePopupAction(popup, action, arg)
+
 proc runAction*(editor: DocumentEditor, action: string, arg: string = "") =
   scriptRunActionFor(editor.id, action, arg)
+
+proc runAction*(popup: Popup, action: string, arg: string = "") =
+  scriptRunActionForPopup(popup.id, action, arg)
 
 proc insertText*(editor: AnyDocumentEditor, text: string) =
   scriptInsertTextInto(editor.id, text)

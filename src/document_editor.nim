@@ -1,6 +1,6 @@
 import document, events
 
-type EditorId* = distinct int
+from scripting_api import EditorId, newEditorId
 
 type DocumentEditor* = ref object of RootObj
   id: EditorId
@@ -8,14 +8,12 @@ type DocumentEditor* = ref object of RootObj
   renderHeader*: bool
   fillAvailableSpace*: bool
 
-func id*(self: DocumentEditor): EditorId = self.id
-func `==`*(a: EditorId, b: EditorId): bool = a.int == b.int
-
 var nextEditorId = 0
 
+func id*(self: DocumentEditor): EditorId = self.id
+
 proc init*(self: DocumentEditor) =
-  self.id = nextEditorId.EditorId
-  nextEditorId += 1
+  self.id = newEditorId()
 
   self.renderHeader = true
   self.fillAvailableSpace = true
@@ -30,4 +28,7 @@ method getEventHandlers*(self: DocumentEditor): seq[EventHandler] {.base.} =
   return @[]
 
 method handleDocumentChanged*(self: DocumentEditor) {.base, locks: "unknown".} =
+  discard
+
+method unregister*(self: DocumentEditor) {.base.} =
   discard

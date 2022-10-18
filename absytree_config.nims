@@ -1,12 +1,28 @@
 include abs
 import std/strutils
 
+# {.line: ("config.nims", 4).}
+
 proc handleAction*(action: string, arg: string): bool =
   log "[script] ", action, ", ", arg
 
   case action
   of "test":
     getActiveEditor().insertText(arg)
+  else: return false
+
+  raise newException(Defect, "lol")
+
+  return true
+
+proc handlePopupAction*(popup: Popup, action: string, arg: string): bool =
+  case action:
+  of "home":
+    for i in 0..<3:
+      popup.runAction "prev"
+  of "end":
+    for i in 0..<3:
+      popup.runAction "next"
   else: return false
 
   return true
@@ -72,6 +88,7 @@ proc postInitialize*() =
   log "[script] postInitialize()"
 
   runAction "open-file", "test.txt"
+  runAction "prev-view"
 
 addCommand "editor", "<ESCAPE>", "escape"
 addCommand "editor", "<C-l><C-h>", "change-font-size", "-1"
@@ -241,3 +258,5 @@ addCommand "editor.ast.goto", "<TAB>", "accept"
 addCommand "editor.ast.goto", "<ESCAPE>", "cancel"
 addCommand "editor.ast.goto", "<UP>", "prev"
 addCommand "editor.ast.goto", "<DOWN>", "next"
+addCommand "editor.ast.goto", "<HOME>", "home"
+addCommand "editor.ast.goto", "<END>", "end"
