@@ -42,7 +42,7 @@ CreateContext Context:
   proc computeSymbolValueImpl(ctx: Context, symbol: Symbol): Value {.query("SymbolValue").}
   proc computeFunctionExecutionImpl(ctx: Context, fec: FunctionExecutionContext): Value {.query("FunctionExecution", useCache = false, useFingerprinting = false).}
 
-  proc computeNodeLayoutImpl(ctx: Context, nodeLayoutInput: NodeLayoutInput): NodeLayout {.query("NodeLayout", useCache = false, useFingerprinting = false).}
+  proc computeNodeLayoutImpl(ctx: Context, nodeLayoutInput: NodeLayoutInput): NodeLayout {.query("NodeLayout", useFingerprinting = false).}
 
 import node_layout
 import treewalk_interpreter
@@ -58,6 +58,7 @@ template logIf(condition: bool, message: string, logResult: bool) =
         echo repeat2("| ", currentIndent), "-> ", result
 
 proc computeNodeLayoutImpl(ctx: Context, nodeLayoutInput: NodeLayoutInput): NodeLayout =
+  ctx.dependOnCurrentRevision()
   # logIf(ctx.enableLogging or ctx.enableQueryLogging, "computeNodeLayoutImpl", false)
   return computeNodeLayoutImpl2(ctx, nodeLayoutInput)
 
