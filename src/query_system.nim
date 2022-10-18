@@ -18,6 +18,8 @@ proc newCache[K, V](capacity: int): Cache[K, V] = newLRUCache[K, V](capacity)
 proc init[K, V](result: var Cache[K, V], capacity: int) =
   result = newCache[K, V](capacity)
 
+let dependencyGlobalRevision = "62e533a1564d29f77293455b".parseId
+
 type
   Fingerprint* = seq[int64]
 
@@ -30,6 +32,11 @@ type
   NodeColor* = enum Grey, Red, Green
   MarkGreenResult* = enum Ok, Error, Recursion
 
+  QueryStats* = object
+    time*: Nanos
+    totalCalls*: int
+    forcedCalls*: int
+
   DependencyGraph* = ref object
     verified*: Cache[Dependency, int]
     changed*: Cache[Dependency, int]
@@ -37,6 +44,9 @@ type
     dependencies*: Cache[Dependency, seq[Dependency]]
     queryNames*: Table[UpdateFunction, string]
     revision*: int
+
+template query*(name: string, useCache: bool = true, useFingerprinting: bool = true) {.pragma.}
+template recover*(name: string) {.pragma.}
 
 proc `$`*(item: ItemId): string =
   return fmt"({item.id}, {item.typ})"
@@ -131,9 +141,6 @@ proc `$`*(graph: DependencyGraph): string =
 
   #   deps.add "]"
   #   result.add indent(graph.queryNames[key.update] & ":" & $key.item & " -> " & deps, 2, "| ") & "\n"
-
-template query*(name: string, useCache: bool = true, useFingerprinting: bool = true) {.pragma.}
-template recover*(name: string) {.pragma.}
 
 macro CreateContext*(contextName: untyped, body: untyped): untyped =
   result = nnkStmtList.newTree()
@@ -300,8 +307,8 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     )
 
     memberList.add nnkIdentDefs.newTree(
-      nnkPostfix.newTree(ident"*", ident("executionTime" & name)),
-      quote do: Nanos,
+      nnkPostfix.newTree(ident"*", ident("stats" & name)),
+      quote do: QueryStats,
       newEmptyNode()
     )
 
@@ -353,11 +360,13 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     let queryCache = ident "queryCache" & name
     let queryFunction = queryFunctionName query
     let items = ident "items" & key.strVal
+    let stats = ident "stats" & name
 
     queryInitializers.add quote do:
       `ctx`.`updateName` = proc (item: ItemId): Fingerprint =
         if not `ctx`.`items`.contains(item):
           raise newException(Defect, "update" & `name` & "(" & $item & "): not in cache anymore")
+        `ctx`.`stats`.forcedCalls += 1
         let arg = `ctx`.`items`[item]
         let value: `value` = `queryFunction`(`ctx`, arg)
         `ctx`.`queryCache`[arg] = value
@@ -453,10 +462,12 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       if not isQuery query: continue
 
       let name = queryName query
-      let executionTime = ident "executionTime" & name
+      let stats = ident "stats" & name
 
       executionTimeResets.add quote do:
-        `ctx`.`executionTime` = 0
+        `ctx`.`stats`.time = 0
+        `ctx`.`stats`.totalCalls = 0
+        `ctx`.`stats`.forcedCalls = 0
 
     resetExecutionTimesFn[6].del 0
     for node in executionTimeResets:
@@ -468,6 +479,12 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     proc recordDependency*(ctx: `contextName`, item: ItemId, update: UpdateFunction = nil) =
       if ctx.dependencyStack.len > 0:
         ctx.dependencyStack[ctx.dependencyStack.high].add (item, update)
+
+  # proc dependOnCurrentRevision(ctx: Context)
+  result.add quote do:
+    proc dependOnCurrentRevision*(ctx: `contextName`) =
+      if ctx.dependencyStack.len > 0:
+        ctx.dependencyStack[ctx.dependencyStack.high].add ((dependencyGlobalRevision, -1), nil)
 
   # Generate functions getData and getItem
   for data in body:
@@ -604,10 +621,18 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
         if dep.item.id == null:
           if ctx.enableLogging: echo repeat2("| ", currentIndent), "Dependency got deleted -> red, failed"
           return Error
+        elif dep.item.id == dependencyGlobalRevision:
+          if verified < ctx.depGraph.revision:
+            if ctx.enableLogging: echo repeat2("| ", currentIndent), "Dependency on global revision -> red, failed"
+            return Error
+          else:
+            if ctx.enableLogging: echo repeat2("| ", currentIndent), "Dependency on global revision -> green, skip"
+            continue
+
         case ctx.depGraph.nodeColor(dep, verified)
         of Green:
           if ctx.enableLogging: echo repeat2("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, " is green, skip"
-          discard
+          continue
         of Red:
           if ctx.enableLogging: echo repeat2("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, " is red, failed"
           return Error
@@ -621,7 +646,6 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
           of Error:
             if ctx.enableLogging: echo repeat2("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, ", mark green failed"
 
-
             ctx.force(dep)
 
             if key in ctx.recursiveQueries:
@@ -632,6 +656,8 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
             if ctx.depGraph.nodeColor(dep, verified) == Red:
               if ctx.enableLogging: echo repeat2("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, ", value changed"
               return Error
+
+            continue
 
           else: discard
 
@@ -653,7 +679,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     let computeName = ident "compute" & name
     let getFunctionName = ident "get" & name
     let queryCache = ident "queryCache" & name
-    let executionTime = ident "executionTime" & name
+    let stats = ident "stats" & name
 
     let nameString = name
 
@@ -669,11 +695,12 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
     if useCache:
       result.add quote do:
-        proc `computeName`*(ctx: `contextName`, input: `key`): `value` =
+        proc `computeName`*(ctx: `contextName`, input: `key`, recordDependency: bool = true): `value` =
           let timer = startTimer()
 
+          ctx.`stats`.totalCalls += 1
           defer:
-            ctx.`executionTime` += timer.elapsed
+            ctx.`stats`.time += timer.elapsed
 
           defer:
             if ctx.dependencyStack.len == 0:
@@ -682,7 +709,8 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
           let item = getItem input
           let key = (item, ctx.`updateName`)
 
-          ctx.recordDependency(item, ctx.`updateName`)
+          if recordDependency:
+            ctx.recordDependency(item, ctx.`updateName`)
 
           let color = ctx.depGraph.nodeColor(key)
 
@@ -737,8 +765,10 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       result.add quote do:
         proc `computeName`*(ctx: `contextName`, input: `key`): `value` =
           let timer = startTimer()
+
+          ctx.`stats`.totalCalls += 1
           defer:
-            ctx.`executionTime` += timer.elapsed
+            ctx.`stats`.time += timer.elapsed
 
           defer:
             if ctx.dependencyStack.len == 0:
