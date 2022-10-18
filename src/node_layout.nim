@@ -1,4 +1,4 @@
-import std/[tables]
+import std/[tables, strformat]
 import fusion/matching
 import pixie/fonts, bumpy, chroma, vmath, theme
 import compiler, ast, util, id
@@ -12,7 +12,7 @@ proc newFont*(typeface: Typeface, fontSize: float32): Font {.raises: [].} =
 proc getPrecedenceForNode(ctx: Context, node: AstNode): int =
   if node.kind != Call or node.len == 0:
     return 0
-  if ctx.computeSymbol(node[0]).getSome(symbol):
+  if ctx.computeSymbol(node[0], false).getSome(symbol):
     case symbol.kind
     of skBuiltin:
       return symbol.precedence
@@ -23,29 +23,51 @@ proc getPrecedenceForNode(ctx: Context, node: AstNode): int =
 
 type
   VisualLayoutColorConfig = object
-    constDecl: string
-    letDecl: string
-    varDecl: string
     separator: string
     separatorParen: seq[string]
     separatorBrace: seq[string]
     separatorBracket: seq[string]
-    numberLiteral: string
-    stringLiteral: string
     empty: string
-    identifier: string
     keyword: string
     typ: string
-    value: string
 
   VisualLayoutConfig* = object
     colors*: VisualLayoutColorConfig
     font*: Font
-    fontRegular*: string
+    fontRegular: string
     fontBold*: string
     fontItalic*: string
     fontBoldItalic*: string
     indent*: float32
+    revision*: int
+
+proc `==`(a: Font, b: Font): bool =
+  if a.isNil: return b.isNil
+  if b.isNil: return false
+  if a.size != b.size: return false
+  if a.lineHeight != b.lineHeight: return false
+  if a.textCase != b.textCase: return false
+  if a.underline != b.underline: return false
+  if a.strikethrough != b.strikethrough: return false
+  if a.noKerningAdjustments != b.noKerningAdjustments: return false
+  if a.typeface != b.typeface: return false
+  if a.paints != b.paints: return false
+  return true
+
+template createConfigAccessor(member: untyped, typ: type) =
+  proc member*(config: var VisualLayoutConfig): typ = config.member
+  proc `member=`*(config: var VisualLayoutConfig, newValue: typ) =
+    if config.member != newValue:
+      config.revision += 1
+    config.member = newValue
+
+createConfigAccessor(colors, VisualLayoutColorConfig)
+createConfigAccessor(fontFont, Font)
+createConfigAccessor(fontRegular, string)
+createConfigAccessor(fontBold, string)
+createConfigAccessor(fontItalic, string)
+createConfigAccessor(fontBoldItalic, string)
+createConfigAccessor(indent, float32)
 
 var config* =  VisualLayoutConfig(
   font: newFont(readTypeface("fonts/DejaVuSansMono.ttf"), 20),
@@ -55,20 +77,13 @@ var config* =  VisualLayoutConfig(
   fontBoldItalic: "fonts/DejaVuSansMono-BoldOblique.ttf",
   indent: 15,
   colors: VisualLayoutColorConfig(
-    constDecl: "entity.name.constant",
-    letDecl: "entity.name",
-    varDecl: "entity.name",
     separator: "punctuation",
     separatorParen: @["meta.brace.round", "punctuation", "&editor.foreground"],
     separatorBrace: @["meta.brace.curly", "punctuation", "&editor.foreground"],
     separatorBracket: @["meta.brace.square", "punctuation", "&editor.foreground"],
-    numberLiteral: "constant.numeric",
-    stringLiteral: "string",
     empty: "string",
-    identifier: "variable",
     keyword: "keyword",
     typ: "storage.type",
-    value: "string",
   ),
 )
 
@@ -102,7 +117,7 @@ proc createReplacement(input: NodeLayoutInput, node: AstNode, layout: var NodeLa
   return false
 
 proc getColorForSymbol*(ctx: Context, sym: Symbol): seq[string] =
-  let typ = ctx.computeSymbolType sym
+  let typ = ctx.computeSymbolType(sym, false)
   case typ.kind
   of tError: return @["invalid"]
   of tType: return @["storage.type"]
@@ -142,7 +157,7 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
       line = oldLine
 
   # force computation of type so that errors diagnostics can be generated
-  discard ctx.computeType(node)
+  discard ctx.computeType(node, false)
 
   case node
   of Empty():
@@ -151,32 +166,32 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
 
   of NumberLiteral():
     if not input.createReplacement(node, result, line):
-      result.nodeToVisualNode[node.id] = line.add newTextNode(node.text, config.colors.numberLiteral, config.font, node)
+      result.nodeToVisualNode[node.id] = line.add newTextNode(node.text, "constant.numeric", config.font, node)
 
   of StringLiteral():
     discard line.add newTextNode("\"", @["punctuation.definition.string", config.colors.separator, "&editor.foreground"], config.font)
     if not input.createReplacement(node, result, line):
-      discard line.add newTextNode(node.text, config.colors.stringLiteral, config.font, node)
+      discard line.add newTextNode(node.text, "string", config.font, node)
     discard line.add newTextNode("\"", @["punctuation.definition.string", config.colors.separator, "&editor.foreground"], config.font)
 
   of Identifier():
     if not input.createReplacement(node, result, line):
-      if ctx.computeSymbol(node).getSome(sym):
+      if ctx.computeSymbol(node, false).getSome(sym):
         result.nodeToVisualNode[node.id] = line.add newTextNode(sym.name, ctx.getColorForSymbol(sym), config.font, node)
       else:
-        result.nodeToVisualNode[node.id] = line.add newTextNode($node.reff, config.colors.identifier, config.font, node)
+        result.nodeToVisualNode[node.id] = line.add newTextNode($node.reff, "variable", config.font, node)
 
   of ConstDecl():
     if not input.createReplacement(node, result, line):
-      let color = if ctx.computeSymbol(node).getSome(sym): ctx.getColorForSymbol(sym)
-      else: @[config.colors.constDecl]
+      let color = if ctx.computeSymbol(node, false).getSome(sym): ctx.getColorForSymbol(sym)
+      else: @["entity.name.constant"]
 
-      if ctx.computeSymbol(node).getSome(sym):
+      if ctx.computeSymbol(node, false).getSome(sym):
         discard line.add newTextNode(sym.name, color, config.font, node)
       else:
         discard line.add newTextNode($node.id, color, config.font, node)
 
-    let typ = ctx.computeType(node)
+    let typ = ctx.computeType(node, false)
     if typ.kind == tFunction:
       discard line.add newTextNode(" :: ", @[config.colors.separator, "&editor.foreground"], config.font)
     else:
@@ -187,7 +202,7 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
     if node.len > 0:
       ctx.createLayoutLineForNode(input, node[0], result, line)
 
-      let value = ctx.computeValue(node)
+      let value = ctx.computeValue(node, false)
       case value.kind
       of vkAstFunction, vkBuiltinFunction, vkVoid: discard
       else:
@@ -195,11 +210,11 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
         of StringLiteral, NumberLiteral: discard
         else:
           discard line.add newTextNode(" = ", @[config.colors.separator, "&editor.foreground"], config.font)
-          discard line.add newTextNode($value, config.colors.value, config.font)
+          discard line.add newTextNode($value, "string", config.font)
 
   of LetDecl():
     if not input.createReplacement(node, result, line):
-      let color = if ctx.computeSymbol(node).getSome(sym): ctx.getColorForSymbol(sym)
+      let color = if ctx.computeSymbol(node, false).getSome(sym): ctx.getColorForSymbol(sym)
       else: @["variable"]
 
       discard line.add newTextNode(node.text, color, config.font, node)
@@ -208,7 +223,7 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
 
     if node.len > 0:
       if node[0].kind == Empty and node[0].text.len == 0 and not input.replacements.contains(node[0].id):
-        let typ = ctx.computeType(node)
+        let typ = ctx.computeType(node, false)
         result.nodeToVisualNode[node[0].id] = line.add newTextNode($typ, config.colors.typ, config.font, node[0])
       else:
         ctx.createLayoutLineForNode(input, node[0], result, line)
@@ -219,7 +234,7 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
 
   of VarDecl():
     if not input.createReplacement(node, result, line):
-      let color = if ctx.computeSymbol(node).getSome(sym): ctx.getColorForSymbol(sym)
+      let color = if ctx.computeSymbol(node, false).getSome(sym): ctx.getColorForSymbol(sym)
       else: @["variable"]
 
       discard line.add newTextNode(node.text, color, config.font, node)
@@ -228,7 +243,7 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
 
     if node.len > 0:
       if node[0].kind == Empty and node[0].text.len == 0 and not input.replacements.contains(node[0].id):
-        let typ = ctx.computeType(node)
+        let typ = ctx.computeType(node, false)
         result.nodeToVisualNode[node[0].id] = line.add newTextNode($typ, config.colors.typ, config.font, node[0])
       else:
         ctx.createLayoutLineForNode(input, node[0], result, line)
@@ -339,7 +354,7 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
       result.nodeToVisualNode[node.id] = line.add newTextNode("<empty function call>", config.colors.empty, config.font, node)
       return
 
-    let operatorNotation = if ctx.computeSymbol(node[0]).getSome(sym) and sym.kind == skBuiltin:
+    let operatorNotation = if ctx.computeSymbol(node[0], false).getSome(sym) and sym.kind == skBuiltin:
       let arity = case sym.operatorNotation
       of Infix: 2
       of Prefix, Postfix: 1
@@ -394,6 +409,7 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
     echo "createLayoutLineForNode not implemented for ", node.kind
 
 proc computeNodeLayoutImpl2*(ctx: Context, input: NodeLayoutInput): NodeLayout =
+  # echo fmt"computeNodeLayoutImpl2 {input.node}"
   let node = input.node
   result = NodeLayout(root: VisualNode(), nodeToVisualNode: initTable[Id, VisualNodeRange]())
   var line = VisualNode(node: node, parent: result.root)

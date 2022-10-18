@@ -357,7 +357,7 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
   let timer = startTimer()
   defer:
     if logRenderDuration:
-      let queryExecutionTimes = fmt"NodeLayout: {ctx.executionTimeNodeLayout.ms:.5}, Type: {ctx.executionTimeType.ms:.2}, Value: {ctx.executionTimeValue.ms:.2}, Symbol: {ctx.executionTimeSymbol.ms:.2}, Symbols: {ctx.executionTimeSymbols.ms:.2}, SymbolType: {ctx.executionTimeSymbolType.ms:.2}, SymbolValue: {ctx.executionTimeSymbolValue.ms:.2}"
+      let queryExecutionTimes = fmt"NodeLayout: {ctx.statsNodeLayout.time.ms:.5}, Type: {ctx.statsType.time.ms:.2}, Value: {ctx.statsValue.time.ms:.2}, Symbol: {ctx.statsSymbol.time.ms:.2}, Symbols: {ctx.statsSymbols.time.ms:.2}, SymbolType: {ctx.statsSymbolType.time.ms:.2}, SymbolValue: {ctx.statsSymbolValue.time.ms:.2}"
       echo fmt"Render duration: {timer.elapsed.ms:.2}ms, {queryExecutionTimes}"
 
     ctx.resetExecutionTimes()
@@ -391,13 +391,13 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
   editor.previousBaseIndex = editor.previousBaseIndex.clamp(0..editor.document.rootNode.len)
 
   while editor.scrollOffset < 0 and editor.previousBaseIndex + 1 < editor.document.rootNode.len:
-    let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: editor.document.rootNode[editor.previousBaseIndex], selectedNode: selectedNode.id, replacements: replacements)
+    let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: editor.document.rootNode[editor.previousBaseIndex], selectedNode: selectedNode.id, replacements: replacements, revision: config.revision)
     let layout = ctx.computeNodeLayout(input)
     editor.previousBaseIndex += 1
     editor.scrollOffset += layout.bounds.h + lineDistance
 
   while editor.scrollOffset > contentBounds.h and editor.previousBaseIndex > 0:
-    let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: editor.document.rootNode[editor.previousBaseIndex], selectedNode: selectedNode.id, replacements: replacements)
+    let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: editor.document.rootNode[editor.previousBaseIndex], selectedNode: selectedNode.id, replacements: replacements, revision: config.revision)
     let layout = ctx.computeNodeLayout(input)
     editor.previousBaseIndex -= 1
     editor.scrollOffset -= layout.bounds.h + lineDistance
@@ -407,7 +407,7 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
   var offset = contentBounds.xy + vec2(0, editor.scrollOffset)
   for i in editor.previousBaseIndex..<editor.document.rootNode.len:
     let node = editor.document.rootNode[i]
-    let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node, selectedNode: selectedNode.id, replacements: replacements)
+    let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node, selectedNode: selectedNode.id, replacements: replacements, revision: config.revision)
     let layout = ctx.computeNodeLayout(input)
     editor.renderVisualNodeLayout(ed, contentBounds, layout, offset)
     offset.y += layout.bounds.h + lineDistance
@@ -416,11 +416,10 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
   for k in 1..editor.previousBaseIndex:
     let i = editor.previousBaseIndex - k
     let node = editor.document.rootNode[i]
-    let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node, selectedNode: selectedNode.id, replacements: replacements)
+    let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node, selectedNode: selectedNode.id, replacements: replacements, revision: config.revision)
     let layout = ctx.computeNodeLayout(input)
     offset.y -= layout.bounds.h + lineDistance
     editor.renderVisualNodeLayout(ed, contentBounds, layout, offset)
-
 
   if editor.completions.len > 0:
     # Render outline around all nodes which reference the selected symbol in the completion list
@@ -454,7 +453,7 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
       last = ed.ctx.fillText(last.xyh, line, color)
 
   if editor.renderDebugInfo:
-    let bounds = contentBounds.splitV(relative(contentBounds.w - 400))[1]
+    let bounds = contentBounds.splitV(relative(contentBounds.w - 500))[1]
     ed.ctx.strokeStyle = rgb(225, 225, 225)
     ed.ctx.strokeRect(bounds)
 
@@ -491,14 +490,14 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
     last.y += ed.ctx.fontSize
     last = ed.ctx.fillText(last.xyh,       fmt"Timings:", rgb(255, 255, 255))
     last = ed.ctx.fillText(last.xyh,       fmt"  Rendering:       {timer.elapsed.ms:.2}ms", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  Type:            {ctx.executionTimeType.ms:.2}ms", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  Value:           {ctx.executionTimeValue.ms:.2}ms", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  Symbol:          {ctx.executionTimeSymbol.ms:.2}ms", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  Symbols:         {ctx.executionTimeSymbols.ms:.2}ms", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  SymbolType:      {ctx.executionTimeSymbolType.ms:.2}ms", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  SymbolValue:     {ctx.executionTimeSymbolValue.ms:.2}ms", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  NodeLayout:      {ctx.executionTimeNodeLayout.ms:.2}ms", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  FunctionExec:    {ctx.executionTimeFunctionExecution.ms:.2}ms", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  Type:            {ctx.statsType.time.ms:.2}ms  {ctx.statsType.forcedCalls: 4}  {ctx.statsType.totalCalls: 4}", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  Value:           {ctx.statsValue.time.ms:.2}ms  {ctx.statsValue.forcedCalls: 4}  {ctx.statsValue.totalCalls: 4}", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  Symbol:          {ctx.statsSymbol.time.ms:.2}ms  {ctx.statsSymbol.forcedCalls: 4}  {ctx.statsSymbol.totalCalls: 4}", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  Symbols:         {ctx.statsSymbols.time.ms:.2}ms  {ctx.statsSymbols.forcedCalls: 4}  {ctx.statsSymbols.totalCalls: 4}", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  SymbolType:      {ctx.statsSymbolType.time.ms:.2}ms  {ctx.statsSymbolType.forcedCalls: 4}  {ctx.statsSymbolType.totalCalls: 4}", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  SymbolValue:     {ctx.statsSymbolValue.time.ms:.2}ms  {ctx.statsSymbolValue.forcedCalls: 4}  {ctx.statsSymbolValue.totalCalls: 4}", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  NodeLayout:      {ctx.statsNodeLayout.time.ms:.2}ms  {ctx.statsNodeLayout.forcedCalls: 4}  {ctx.statsNodeLayout.totalCalls: 4}", rgb(255, 255, 255))
+    last = ed.ctx.fillText(last.xyh,       fmt"  FunctionExec:    {ctx.statsFunctionExecution.time.ms:.2}ms  {ctx.statsFunctionExecution.forcedCalls: 4}  {ctx.statsFunctionExecution.totalCalls: 4}", rgb(255, 255, 255))
 
   return bounds
 
@@ -567,8 +566,10 @@ proc render*(ed: Editor) =
   if config.font.typeface.filePath != ed.ctx.font:
     config.font = newFont(readTypeface(ed.ctx.font))
     config.font.size = ed.ctx.fontSize
+    config.revision += 1
   elif config.font.size != ed.ctx.fontSize:
     config.font.size = ed.ctx.fontSize
+    config.revision += 1
 
   let (mainRect, statusRect) = if not ed.statusBarOnTop: windowRect.splitH(relative(windowRect.h - lineHeight))
   else: windowRect.splitHInv(relative(lineHeight))

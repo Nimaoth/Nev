@@ -101,6 +101,7 @@ type
     node*: AstNode
     selectedNode*: Id
     replacements*: Table[Id, VisualNode]
+    revision*: int
 
 func index*(node: VisualNode): int =
   if node.parent == nil:
@@ -406,7 +407,7 @@ func bounds*(nodeLayout: NodeLayout): Rect =
   return nodeLayout.root.bounds
 
 func `$`*(input: NodeLayoutInput): string =
-  return fmt"NodeLayoutInput({input.id}, node: {input.node}, selected: {input.selectedNode})"
+  return fmt"NodeLayoutInput({input.id}, node: {input.node}, selected: {input.selectedNode}, revision: {input.revision})"
 
 func hash*(input: NodeLayoutInput): Hash =
   return input.node.hash !& input.selectedNode.hash
@@ -415,6 +416,7 @@ func `==`*(a: NodeLayoutInput, b: NodeLayoutInput): bool =
   if a.isNil: return b.isNil
   if b.isNil: return false
   # We don't care about the id of the NodeLayoutInput
+  if a.revision != b.revision: return false
   if a.node != b.node: return false
   if a.selectedNode != b.selectedNode: return false
   if a.replacements != b.replacements: return false
