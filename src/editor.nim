@@ -255,8 +255,10 @@ import text_document, ast_document
 import selector_popup
 
 type ThemeSelectorItem* = ref object of SelectorItem
-  score*: float32
   name*: string
+  path*: string
+
+type FileSelectorItem* = ref object of SelectorItem
   path*: string
 
 proc setTheme*(ed: Editor, path: string) =
@@ -490,6 +492,26 @@ proc handleAction(ed: Editor, action: string, arg: string) =
     popup.handleItemConfirmed = proc(item: SelectorItem) =
       if theme.loadFromFile(item.ThemeSelectorItem.path).getSome(theme):
         ed.theme = theme
+
+    ed.pushPopup popup
+
+  of "choose-file":
+    var popup = ed.newSelectorPopup proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
+      for file in walkDirRec(".", relative=true):
+        let name = file.splitFile[1]
+        let score = fuzzyMatchSmart(text, name)
+        result.add FileSelectorItem(path: fmt"./{file}", score: score)
+
+      result.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Descending)
+
+    popup.handleItemConfirmed = proc(item: SelectorItem) =
+      case arg
+      of "current":
+        ed.handleAction("load-file", item.FileSelectorItem.path)
+      of "new":
+        ed.handleAction("open-file", item.FileSelectorItem.path)
+      else:
+        ed.logger.log(lvlError, fmt"Unknown argument {arg}")
 
     ed.pushPopup popup
 

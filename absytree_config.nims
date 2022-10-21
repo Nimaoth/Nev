@@ -170,6 +170,7 @@ addCommand "editor", "<C-m>r", "test xvlcxvl  xvlc\n lol"
 addCommand "editor", "<SPACE>fr", "toggle-flag log-render-duration"
 addCommand "editor", "<SPACE>fd", "toggle-flag render-debug-info"
 addCommand "editor", "<SPACE>fo", "toggle-flag render-execution-output"
+addCommand "editor", "gf", "choose-file new"
 
 addCommand "commandLine", "<ESCAPE>", "exit-command-line"
 addCommand "commandLine", "<ENTER>", "execute-command-line"

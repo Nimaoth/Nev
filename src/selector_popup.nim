@@ -4,7 +4,7 @@ import editor, text_document, popup, events
 
 type
   SelectorItem* = ref object of RootObj
-    discard
+    score*: float32
 
   SelectorPopup* = ref object of Popup
     editor*: Editor
