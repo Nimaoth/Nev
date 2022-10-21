@@ -1,7 +1,7 @@
 import std/[strformat, sequtils, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils, tables, macros]
 import boxy, windy, print, fuzzy
 import sugar
-import input, events, rect_utils, document, document_editor, keybind_autocomplete, popup
+import input, events, rect_utils, document, document_editor, keybind_autocomplete, popup, render_context, timer
 import theme, util
 import scripting
 import nimscripter, nimscripter/[variables, vmconversion, vmaddins]
@@ -73,13 +73,20 @@ type EditorState = object
 type Editor* = ref object
   window*: Window
   boxy*: Boxy
+  boxy2*: Boxy
   ctx*: Context
+  renderCtx*: RenderContext
   fontRegular*: string
   fontBold*: string
   fontItalic*: string
   fontBoldItalic*: string
+  clearAtlasTimer*: Timer
+  timer*: Timer
+  frameTimer*: Timer
 
   eventHandlerConfigs: Table[string, EventHandlerConfig]
+
+  flags: Table[string, bool]
 
   logger: Logger
 
@@ -214,6 +221,9 @@ proc createEditorForDocument(ed: Editor, document: Document): DocumentEditor =
   echo "No editor found which can edit " & $document
   return nil
 
+proc getFlag*(editor: Editor, flag: string, default: bool = false): bool =
+  return editor.flags.getOrDefault(flag, default)
+
 proc createView(ed: Editor, editor: DocumentEditor) =
   var view = View(document: nil, editor: editor)
 
@@ -259,9 +269,13 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
   var ed = Editor()
   ed.window = window
   ed.boxy = boxy
+  ed.boxy2 = newBoxy()
   ed.inputBuffer = ""
   ed.statusBarOnTop = false
   ed.logger = newConsoleLogger()
+
+  ed.timer = startTimer()
+  ed.frameTimer = startTimer()
 
   ed.layout = HorizontalLayout()
   ed.layout_props = LayoutProperties(props: {"main-split": 0.5.float32}.toTable)
@@ -272,6 +286,8 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
   ed.ctx.font = "fonts/DejaVuSansMono.ttf"
   ed.ctx.fontSize = 20
   ed.ctx.textBaseline = TopBaseline
+
+  ed.renderCtx = RenderContext(boxy: boxy, ctx: ed.ctx)
 
   ed.fontRegular = "./fonts/DejaVuSansMono.ttf"
   ed.fontBold = "./fonts/DejaVuSansMono-Bold.ttf"
@@ -372,8 +388,9 @@ proc moveCurrentViewNext(ed: Editor) =
     ed.currentView = index
 
 proc handleTextInput(ed: Editor, text: string) =
-  echo "handleTextInput '" & text & "'"
-  ed.inputBuffer.add text
+  if ed.commandLineMode:
+    echo "handleTextInput '" & text & "'"
+    ed.inputBuffer.add text
 
 proc handleAction(ed: Editor, action: string, arg: string) =
   ed.logger.log(lvlInfo, "[ed] Action '$1 $2'" % [action, arg])
@@ -634,7 +651,7 @@ proc scriptInsertTextInto*(editorId: EditorId, text: string) =
 
 proc scriptTextEditorSelection*(editorId: EditorId): Selection =
   if gEditor.isNil:
-    return
+    return ((0, 0), (0, 0))
   if gEditor.getEditorForId(editorId).getSome(editor):
     if editor of TextDocumentEditor:
       let editor = TextDocumentEditor(editor)
@@ -650,7 +667,7 @@ proc scriptSetTextEditorSelection*(editorId: EditorId, selection: Selection) =
 
 proc scriptGetTextEditorLine*(editorId: EditorId, line: int): string =
   if gEditor.isNil:
-    return
+    return ""
   if gEditor.getEditorForId(editorId).getSome(editor):
     if editor of TextDocumentEditor:
       let editor = TextDocumentEditor(editor)
@@ -660,12 +677,22 @@ proc scriptGetTextEditorLine*(editorId: EditorId, line: int): string =
 
 proc scriptGetTextEditorLineCount*(editorId: EditorId): int =
   if gEditor.isNil:
-    return
+    return 0
   if gEditor.getEditorForId(editorId).getSome(editor):
     if editor of TextDocumentEditor:
       let editor = TextDocumentEditor(editor)
       return editor.document.content.len
   return 0
+
+proc scriptGetFlag*(flag: string, default: bool = false): bool =
+  if gEditor.isNil:
+    return false
+  return gEditor.flags.getOrDefault(flag, default)
+
+proc scriptSetFlag*(flag: string, value: bool) =
+  if gEditor.isNil:
+    return
+  gEditor.flags[flag] = value
 
 macro myImport(): untyped =
   return nnkImportStmt.newTree(ident"scripting_api")
@@ -687,6 +714,8 @@ proc createAddins(): VmAddins =
     scriptSetTextEditorSelection,
     scriptGetTextEditorLine,
     scriptGetTextEditorLineCount,
+    scriptGetFlag,
+    scriptSetFlag,
     )
   addCallable(myImpl):
     proc handleAction(action: string, arg: string): bool

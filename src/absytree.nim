@@ -21,6 +21,7 @@ proc centerWindowOnMonitor(window: Window, monitor: int) =
                      int32(top + (monitorHeight - windowHeight) / 2))
 
 window.centerWindowOnMonitor(1)
+window.maximized = true
 
 makeContextCurrent(window)
 
@@ -37,6 +38,7 @@ var ed = newEditor(window, bxy)
 window.onFrame = proc() =
   # Clear the screen and begin a new frame.
   bxy.beginFrame(window.size)
+  ed.boxy2.beginFrame(window.size)
 
   # Draw the bg.
   # bxy.drawImage("bg", rect = rect(vec2(0, 0), window.size.vec2))
@@ -45,6 +47,8 @@ window.onFrame = proc() =
 
   # End this frame, flushing the draw commands.
   bxy.endFrame()
+  ed.boxy2.endFrame()
+
   # Swap buffers displaying the new Boxy frame.
   window.swapBuffers()
 

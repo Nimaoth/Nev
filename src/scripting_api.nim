@@ -19,11 +19,11 @@ proc newEditorId*(): EditorId =
 
 func `==`*(a: EditorId, b: EditorId): bool = a.int == b.int
 
-proc `$`*(cursor: Cursor): string =
+func `$`*(cursor: Cursor): string =
   return $cursor.line & ":" & $cursor.column
 
-proc `$`*(selection: Selection): string =
-  return $selection.first.line & ":" & $selection.first.column & "-" & $selection.last.line & ":" & $selection.last.column
+func `$`*(selection: Selection): string =
+  return $selection.first & "-" & $selection.last
 
 func isBackwards*(selection: Selection): bool =
   if selection.last.line < selection.first.line:
@@ -33,7 +33,7 @@ func isBackwards*(selection: Selection): bool =
   else:
     return false
 
-proc normalized*(selection: Selection): Selection =
+func normalized*(selection: Selection): Selection =
   if selection.isBackwards:
     return (selection.last, selection.first)
   else:

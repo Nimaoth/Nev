@@ -1,31 +1,37 @@
-import std/[strformat, tables, algorithm, math, sugar, strutils]
+import std/[strformat, tables, algorithm, math, sugar, strutils, options]
 import timer
 import boxy, windy, pixie/fonts, fusion/matching
 import util, input, events, editor, popup, rect_utils, document_editor, text_document, ast_document, keybind_autocomplete, id, ast, theme
-import compiler, node_layout, goto_popup, selector_popup
+import compiler, query_system, node_layout, goto_popup, selector_popup
 import lru_cache
+import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, Popup
 
 let lineDistance = 15.0
 
 let logRenderDuration = false
 
-proc fillText(ctx: contexts.Context, location: Vec2, text: string, paint: Paint, font: Font = nil): Rect =
-  let textWidth = ctx.measureText(text).width
-  if font != nil:
-    ctx.font = font.typeface.filePath
-    ctx.fontSize = font.size
-  ctx.fillStyle = paint
-  ctx.fillText(text, location)
-  return rect(location, vec2(textWidth, ctx.fontSize))
+func withAlpha(color: Color, alpha: float32): Color = color(color.r, color.g, color.b, alpha)
 
-proc fillTextRight(ctx: contexts.Context, location: Vec2, text: string, paint: Paint, font: Font = nil): Rect =
-  let textWidth = ctx.measureText(text).width
-  if font != nil:
-    ctx.font = font.typeface.filePath
-    ctx.fontSize = font.size
-  ctx.fillStyle = paint
-  ctx.fillText(text, location - vec2(textWidth, 0))
-  return rect(location - vec2(textWidth, 0), vec2(textWidth, ctx.fontSize))
+proc drawText(renderContext: RenderContext, location: Vec2, text: string, color: Color, pivot: Vec2 = vec2(0, 0), font: Option[string] = string.none, fontSize: Option[float32] = float32.none, key: string = ""): Rect =
+  let image = ctx.computeRenderedText(ctx.getOrCreateRenderTextInput(newRenderTextInput(
+    renderContext,
+    text,
+    font.get(renderContext.ctx.font),
+    fontSize.get(renderContext.ctx.fontSize),
+    key)))
+  let size = renderContext.boxy.getImageSize(image).vec2
+  let actualLocation = location - size * pivot
+  renderContext.boxy.drawImage(image, actualLocation, color)
+  return rect(actualLocation, size)
+
+proc fillRect*(boxy: Boxy, rect: Rect, color: Color) = boxy.drawRect(rect, color)
+
+proc strokeRect*(boxy: Boxy, rect: Rect, color: Color, thickness: float = 1) =
+  let rect = rect.grow(vec2(thickness, thickness))
+  boxy.fillRect(rect.splitV(thickness.relative)[0].shrink(vec2(0, thickness)), color)
+  boxy.fillRect(rect.splitVInv(thickness.relative)[1].shrink(vec2(0, thickness)), color)
+  boxy.fillRect(rect.splitH(thickness.relative)[0], color)
+  boxy.fillRect(rect.splitHInv(thickness.relative)[1], color)
 
 proc renderCommandAutoCompletion*(ed: Editor, handler: EventHandler, bounds: Rect): Rect =
   let ctx = ed.ctx
@@ -45,33 +51,25 @@ proc renderCommandAutoCompletion*(ed: Editor, handler: EventHandler, bounds: Rec
   let inputsOrigin = vec2(0, 0)
   let commandsOrigin = vec2(gap + (longestInput.float32 * ctx.fontSize * horizontalSizeModifier), inputsOrigin.y.float32)
 
-  ctx.fillStyle = rgb(200, 200, 225)
-
   for i, kv in nextPossibleInputs:
     let (remainingInput, action) = kv
 
-    ctx.fillText(remainingInput, vec2(bounds.x + inputsOrigin.x, bounds.y + inputsOrigin.y + i.float * (ctx.fontSize + lineSpacing)))
-    ctx.fillText(action, vec2(bounds.x + commandsOrigin.x, bounds.y + commandsOrigin.y + i.float * (ctx.fontSize + lineSpacing)))
+    discard ed.renderCtx.drawText(vec2(bounds.x + inputsOrigin.x, bounds.y + inputsOrigin.y + i.float * (ctx.fontSize + lineSpacing)), remainingInput, rgb(200, 200, 225).color)
+    discard ed.renderCtx.drawText(vec2(bounds.x + commandsOrigin.x, bounds.y + commandsOrigin.y + i.float * (ctx.fontSize + lineSpacing)), action, rgb(200, 200, 225).color)
 
-  ctx.strokeRect(rect(inputsOrigin + vec2(bounds.x, bounds.y), vec2(bounds.w, height)))
-  ctx.beginPath()
-  ctx.moveTo(bounds.x + commandsOrigin.x - gap * 0.5, bounds.y)
-  ctx.lineTo(bounds.x + commandsOrigin.x - gap * 0.5, bounds.y + height)
-  ctx.stroke()
+  ed.boxy.strokeRect(rect(inputsOrigin + vec2(bounds.x, bounds.y), vec2(bounds.w, height)), rgb(200, 200, 225).color)
+  ed.boxy.strokeRect(rect(bounds.x + commandsOrigin.x - gap * 0.5, bounds.y, bounds.x + commandsOrigin.x - gap * 0.5 + 1, bounds.y + height), rgb(200, 200, 225).color)
 
   return bounds.splitH(height.relative)[1]
 
 proc renderStatusBar*(ed: Editor, bounds: Rect) =
-  ed.ctx.fillStyle = if ed.commandLineMode: ed.theme.color("statusBar.background", rgb(60, 45, 45)) else: ed.theme.color("statusBarItem.activeBackground", rgb(40, 25, 25))
-  ed.ctx.fillRect(bounds)
+  ed.boxy.fillRect(bounds, if ed.commandLineMode: ed.theme.color("statusBar.background", rgb(60, 45, 45)) else: ed.theme.color("statusBarItem.activeBackground", rgb(40, 25, 25)))
 
-  ed.ctx.fillStyle = ed.theme.color("statusBar.foreground", rgb(200, 200, 225))
-  ed.ctx.fillText(ed.inputBuffer, vec2(bounds.x, bounds.y))
+  discard ed.renderCtx.drawText(bounds.xy, ed.inputBuffer, ed.theme.color("statusBar.foreground", rgb(200, 200, 225)))
 
   if ed.commandLineMode:
-    ed.ctx.strokeStyle = ed.theme.color("statusBar.foreground", rgb(255, 255, 255))
     let horizontalSizeModifier: float32 = 0.615
-    ed.ctx.strokeRect(rect(bounds.x + ed.inputBuffer.len.float32 * ed.ctx.fontSize * horizontalSizeModifier, bounds.y, ed.ctx.fontSize * 0.05, ed.ctx.fontSize))
+    ed.boxy.fillRect(rect(bounds.x + ed.inputBuffer.len.float32 * ed.ctx.fontSize * horizontalSizeModifier, bounds.y, ed.ctx.fontSize * 0.05, ed.ctx.fontSize), ed.theme.color("statusBar.foreground", rgb(255, 255, 255)))
 
 method renderDocumentEditor(editor: DocumentEditor, ed: Editor, bounds: Rect, selected: bool): Rect {.base, locks: "unknown".} =
   return rect(0, 0, 0, 0)
@@ -102,32 +100,31 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
   let (headerBounds, contentBounds) = bounds.splitH headerHeight.relative
 
   if headerHeight > 0:
-    ed.ctx.fillStyle = if selected: ed.theme.color("tab.activeBackground", rgb(45, 45, 60)) else: ed.theme.color("tab.inactiveBackground", rgb(45, 45, 45))
-    ed.ctx.fillRect(headerBounds)
+    ed.boxy.fillRect(headerBounds, if selected: ed.theme.color("tab.activeBackground", rgb(45, 45, 60)) else: ed.theme.color("tab.inactiveBackground", rgb(45, 45, 45)))
 
-    ed.ctx.fillStyle = if selected: ed.theme.color("tab.activeForeground", rgb(255, 225, 255)) else: ed.theme.color("tab.inactiveForeground", rgb(255, 225, 255))
-    ed.ctx.fillText(document.filename, vec2(headerBounds.x, headerBounds.y))
-    ed.ctx.fillText($editor.selection, vec2(headerBounds.splitV(0.3.relative)[1].x, headerBounds.y))
+    let color = if selected: ed.theme.color("tab.activeForeground", rgb(255, 225, 255)) else: ed.theme.color("tab.inactiveForeground", rgb(255, 225, 255))
+    discard ed.renderCtx.drawText(headerBounds.xy, document.filename, color)
+    discard ed.renderCtx.drawText(headerBounds.xwy, $editor.selection, color, pivot = vec2(1, 0))
 
-  var usedBounds = rect(bounds.x, bounds.y, 0, 0)
+  let usedBounds = editor.measureEditorBounds(ed, contentBounds)
+  ed.boxy.fillRect(usedBounds, if selected: ed.theme.color("editor.background", rgb(25, 25, 40)) else: ed.theme.color("editor.background", rgb(25, 25, 25)))
 
-  ed.ctx.fillStyle = ed.theme.color("editor.foreground", rgb(225, 200, 200))
+  let textColor = ed.theme.color("editor.foreground", rgb(225, 200, 200))
   for i, line in document.content:
     let textWidth = ed.ctx.measureText(line).width
-    usedBounds.w = max(usedBounds.w, textWidth)
-    usedBounds.h += ed.ctx.fontSize
-    ed.ctx.fillText(line, vec2(contentBounds.x, contentBounds.y + i.float32 * ed.ctx.fontSize))
+    discard ed.renderCtx.drawText(vec2(contentBounds.x, contentBounds.y + i.float32 * ed.ctx.fontSize), line, textColor)
 
-  if editor.fillAvailableSpace:
-    usedBounds = bounds
-  else:
-    ed.ctx.strokeRect(usedBounds.grow(1.relative))
+  let horizontalSizeModifier: float32 = 0.6
+  let firstCursorColor = ed.theme.color("editorCursor.foreground", rgb(210, 210, 210))
+  let lastCursorColor = ed.theme.color("editorCursor.foreground", rgb(255, 255, 255))
+  ed.boxy.fillRect(rect(contentBounds.x + editor.selection.first.column.float32 * ed.ctx.fontSize * horizontalSizeModifier, contentBounds.y + editor.selection.first.line.float32 * ed.ctx.fontSize, ed.ctx.fontSize * 0.12, ed.ctx.fontSize), firstCursorColor)
+  ed.boxy.fillRect(rect(contentBounds.x + editor.selection.last.column.float32 * ed.ctx.fontSize * horizontalSizeModifier, contentBounds.y + editor.selection.last.line.float32 * ed.ctx.fontSize, ed.ctx.fontSize * 0.12, ed.ctx.fontSize), lastCursorColor)
 
-  let horizontalSizeModifier: float32 = 0.615
-  ed.ctx.strokeStyle = ed.theme.color("editorCursor.foreground", rgb(210, 210, 210))
-  ed.ctx.strokeRect(rect(contentBounds.x + editor.selection.first.column.float32 * ed.ctx.fontSize * horizontalSizeModifier, contentBounds.y + editor.selection.first.line.float32 * ed.ctx.fontSize, ed.ctx.fontSize * 0.05, ed.ctx.fontSize))
-  ed.ctx.strokeStyle = ed.theme.color("editorCursor.foreground", rgb(255, 255, 255))
-  ed.ctx.strokeRect(rect(contentBounds.x + editor.selection.last.column.float32 * ed.ctx.fontSize * horizontalSizeModifier, contentBounds.y + editor.selection.last.line.float32 * ed.ctx.fontSize, ed.ctx.fontSize * 0.05, ed.ctx.fontSize))
+  # let atlasImage = ed.boxy.readAtlas().resize(usedBounds.w.int, usedBounds.h.int)
+  # let atlasImage = ed.boxy.readAtlas().resize(usedBounds.w.int, usedBounds.w.int)
+  # ed.boxy2.addImage("atlas", atlasImage, false)
+  # ed.boxy2.drawImage("atlas", contentBounds.xy)
+
 
   return usedBounds
 
@@ -181,29 +178,25 @@ proc renderCompletions(ed: Editor, completions: seq[Completion], selected: int, 
   if fill and totalWidth < bounds.w:
     totalWidth = bounds.w
 
-  ed.ctx.fillStyle = ed.theme.color("panel.background", rgb(30, 30, 30))
-  ed.ctx.fillRect(rect(bounds.xy, vec2(totalWidth, renderedCompletions.float32 * config.font.size)))
-  ed.ctx.strokeStyle = ed.theme.color("panel.border", rgb(255, 255, 255))
-  ed.ctx.strokeRect(rect(bounds.xy, vec2(totalWidth, renderedCompletions.float32 * config.font.size)))
+  ed.boxy.fillRect(rect(bounds.xy, vec2(totalWidth, renderedCompletions.float32 * config.font.size)), ed.theme.color("panel.background", rgb(30, 30, 30)))
+  ed.boxy.strokeRect(rect(bounds.xy, vec2(totalWidth, renderedCompletions.float32 * config.font.size)), ed.theme.color("panel.border", rgb(255, 255, 255)))
+
+  let selectionColor = ed.theme.color("list.activeSelectionBackground", rgb(200, 200, 200))
+  ed.boxy.fillRect(rect(bounds.xy + vec2(0, (selected - firstCompletion).float32 * config.font.size), vec2(totalWidth, config.font.size)), selectionColor)
 
   for i, (name, typ, value, color1, color2, color3) in entries:
     # if i == (selected - firstCompletion):
-    #   ed.ctx.fillStyle = ed.theme.color("list.activeSelectionBackground", rgb(40, 40, 40))
-    #   ed.ctx.fillRect(rect(bounds.xy + vec2(0, i.float32 * config.font.size), vec2(totalWidth, config.font.size)))
+    #   ed.boxy.fillRect(rect(bounds.xy + vec2(0, i.float32 * config.font.size), vec2(totalWidth, config.font.size)), ed.theme.color("list.activeSelectionBackground", rgb(40, 40, 40)))
     # elif i mod 2 == 1:
-    #   ed.ctx.fillStyle = ed.theme.color("list.inactiveSelectionBackground", rgb(40, 40, 40))
-    #   ed.ctx.fillRect(rect(bounds.xy + vec2(0, i.float32 * config.font.size), vec2(totalWidth, config.font.size)))
+    #   ed.boxy.fillRect(rect(bounds.xy + vec2(0, i.float32 * config.font.size), vec2(totalWidth, config.font.size)), ed.theme.color("list.inactiveSelectionBackground", rgb(40, 40, 40)))
 
-    var lastRect = ed.ctx.fillText(vec2(bounds.x, bounds.y + i.float32 * config.font.size), name, ed.theme.tokenColor(color1, rgb(255, 255, 255)), config.font)
-    lastRect = ed.ctx.fillText(vec2(lastRect.x + nameWidth, bounds.y + i.float32 * config.font.size), " : ", ed.theme.color("list.inactiveSelectionForeground", rgb(175, 175, 175)), config.font)
-    lastRect = ed.ctx.fillText(vec2(lastRect.xw, bounds.y + i.float32 * config.font.size), typ, ed.theme.tokenColor(color2, rgb(255, 175, 175)), config.font)
+    var lastRect = ed.renderCtx.drawText(vec2(bounds.x, bounds.y + i.float32 * config.font.size), name, ed.theme.tokenColor(color1, rgb(255, 255, 255)))
+    lastRect = ed.renderCtx.drawText(vec2(lastRect.x + nameWidth, bounds.y + i.float32 * config.font.size), " : ", ed.theme.color("list.inactiveSelectionForeground", rgb(175, 175, 175)))
+    lastRect = ed.renderCtx.drawText(vec2(lastRect.xw, bounds.y + i.float32 * config.font.size), typ, ed.theme.tokenColor(color2, rgb(255, 175, 175)))
 
     if value.len > 0:
-      lastRect = ed.ctx.fillText(vec2(lastRect.x + typeWidth, bounds.y + i.float32 * config.font.size), " = ", ed.theme.color("list.inactiveSelectionForeground", rgb(175, 175, 175)), config.font)
-      lastRect = ed.ctx.fillText(vec2(lastRect.xw, bounds.y + i.float32 * config.font.size), value, ed.theme.tokenColor(color3, rgb(175, 255, 175)), config.font)
-
-  ed.ctx.strokeStyle = rgb(200, 200, 200)
-  ed.ctx.strokeRect(rect(bounds.xy + vec2(0, (selected - firstCompletion).float32 * config.font.size), vec2(totalWidth, config.font.size)))
+      lastRect = ed.renderCtx.drawText(vec2(lastRect.x + typeWidth, bounds.y + i.float32 * config.font.size), " = ", ed.theme.color("list.inactiveSelectionForeground", rgb(175, 175, 175)))
+      lastRect = ed.renderCtx.drawText(vec2(lastRect.xw, bounds.y + i.float32 * config.font.size), value, ed.theme.tokenColor(color3, rgb(175, 255, 175)))
 
 method computeBounds(item: SelectorItem, ed: Editor): Rect =
   discard
@@ -217,7 +210,7 @@ method renderItem(item: SelectorItem, ed: Editor, bounds: Rect) =
 
 method renderItem(item: ThemeSelectorItem, ed: Editor, bounds: Rect) =
   let color = ed.theme.color(@["list.activeSelectionForeground", "editor.foreground"], rgb(255, 255, 255))
-  discard ed.ctx.fillText(bounds.xy, item.name, color, config.font)
+  discard ed.renderCtx.drawText(bounds.xy, item.name, color)
 
 proc renderItems(ed: Editor, completions: seq[SelectorItem], selected: int, bounds: Rect, fill: bool) =
   if completions.len == 0:
@@ -251,19 +244,17 @@ proc renderItems(ed: Editor, completions: seq[SelectorItem], selected: int, boun
   if fill and totalWidth < bounds.w:
     totalWidth = bounds.w
 
-  ed.ctx.fillStyle = ed.theme.color("panel.background", rgb(30, 30, 30))
-  ed.ctx.fillRect(rect(bounds.xy, vec2(totalWidth, totalHeight)))
-  ed.ctx.strokeStyle = ed.theme.color("panel.border", rgb(255, 255, 255))
-  ed.ctx.strokeRect(rect(bounds.xy, vec2(totalWidth, totalHeight)))
+  ed.boxy.fillRect(rect(bounds.xy, vec2(totalWidth, totalHeight)), ed.theme.color("panel.background", rgb(30, 30, 30)))
+  ed.boxy.strokeRect(rect(bounds.xy, vec2(totalWidth, totalHeight)), ed.theme.color("panel.border", rgb(255, 255, 255)))
+
+  let selectionColor = ed.theme.color("list.activeSelectionBackground", rgb(200, 200, 200))
+  ed.boxy.fillRect(rect(entries[selected - firstCompletion].xy, vec2(totalWidth, entries[selected - firstCompletion].h)), selectionColor)
 
   for i, rect in entries:
     let com = completions[firstCompletion + i]
     com.renderItem(ed, rect)
 
-  ed.ctx.strokeStyle = rgb(200, 200, 200)
-  ed.ctx.strokeRect(rect(entries[selected - firstCompletion].xy, vec2(totalWidth, entries[selected - firstCompletion].h)))
-
-proc renderVisualNode(editor: AstDocumentEditor, ed: Editor, drawCtx: contexts.Context, node: VisualNode, offset: Vec2, selected: AstNode, globalBounds: Rect) =
+proc renderVisualNode(editor: AstDocumentEditor, ed: Editor, node: VisualNode, offset: Vec2, selected: AstNode, globalBounds: Rect) =
   let bounds = node.bounds + offset
 
   if node.len == 0:
@@ -276,62 +267,45 @@ proc renderVisualNode(editor: AstDocumentEditor, ed: Editor, drawCtx: contexts.C
   if node.text.len > 0:
     let color = ed.theme.anyColor(node.colors, rgb(255, 255, 255))
     let style = ed.theme.tokenFontStyle(node.colors)
-    ed.ctx.font = config.getFont(style)
-    discard drawCtx.fillText(bounds.xy, node.text, color)
-    ed.ctx.font = config.getFont({})
-  elif node.node != nil and node.node.kind == Empty:
-    drawCtx.strokeStyle = ed.theme.color("editorError.foreground", rgb(255, 100, 100))
-    drawCtx.strokeRect(bounds)
+    let font = config.getFont(style)
 
-  # if node.node == selected:
-    # drawCtx.fillStyle = ed.theme.color("editorError.background", rgb(0, 0, 0))
-    # drawCtx.fillRect(rect(bounds.xyh, vec2(200, 200)))
-    # discard drawCtx.fillText(bounds.xyh, $node.colors, ed.theme.color("editorError.foreground", rgb(255, 100, 100)), node.font)
+    if ed.getFlag("render-vnode-text"):
+      let image = ctx.computeRenderedText(ctx.getOrCreateRenderTextInput(newRenderTextInput(
+        ed.renderCtx,
+        node.text,
+        font, ed.ctx.fontSize)))
+      ed.boxy.drawImage(image, bounds.xy, color)
+
+  elif node.node != nil and node.node.kind == Empty:
+    ed.boxy.fillRect(bounds, ed.theme.color("editorError.foreground", rgb(255, 100, 100)).withAlpha(0.1))
+    ed.boxy.strokeRect(bounds, ed.theme.color("editorError.foreground", rgb(255, 100, 100)))
 
   # Render custom stuff
   if not isNil node.render:
     node.render(bounds)
 
   for child in node.children:
-    editor.renderVisualNode(ed, drawCtx, child, bounds.xy, selected, globalBounds)
+    editor.renderVisualNode(ed, child, bounds.xy, selected, globalBounds)
 
   # Draw outline around node if it refers to the selected node or the same thing the selected node refers to
   if node.node != nil and (editor.node.id == node.node.reff or (editor.node.reff == node.node.reff and node.node.reff != null)):
-    ed.ctx.strokeStyle = ed.theme.color("inputValidation.infoBorder", rgb(175, 175, 255))
-    ed.ctx.strokeRect(bounds)
+    ed.boxy.fillRect(bounds, ed.theme.color("inputValidation.infoBorder", rgb(175, 175, 255)).withAlpha(0.1))
+    ed.boxy.strokeRect(bounds, ed.theme.color("inputValidation.infoBorder", rgb(175, 175, 255)))
 
   # Draw outline around node it is being refered to by the selected node
   if node.node != nil and editor.node.reff == node.node.id:
-    ed.ctx.strokeStyle = ed.theme.color("inputValidation.warningBorder", rgb(175, 255, 200))
-    ed.ctx.strokeRect(bounds)
+    ed.boxy.fillRect(bounds, ed.theme.color("inputValidation.warningBorder", rgb(175, 255, 200)).withAlpha(0.1))
+    ed.boxy.strokeRect(bounds, ed.theme.color("inputValidation.warningBorder", rgb(175, 255, 200)))
 
-proc renderVisualNodeLayout(editor: AstDocumentEditor, ed: Editor, contentBounds: Rect, layout: NodeLayout, offset: var Vec2) =
+proc renderVisualNodeLayout(editor: AstDocumentEditor, ed: Editor, node: AstNode, contentBounds: Rect, layout: NodeLayout, offset: var Vec2) =
   editor.lastLayouts.add (layout, offset - contentBounds.xy)
 
   let nodeBounds = layout.bounds
   if not contentBounds.intersects(nodeBounds + offset):
     return
 
-  # drawCtx.image = newImage(nodeBounds.w.int, nodeBounds.h.int)
-  # drawCtx.font = ed.ctx.font
-  # drawCtx.fontSize = ed.ctx.fontSize
-  # drawCtx.textBaseline = ed.ctx.textBaseline
-
   for line in layout.root.children:
-    # ed.ctx.save()
-    # ed.ctx.translate(offset)
-    # defer: ed.ctx.restore()
-    editor.renderVisualNode(ed, ed.ctx, line, offset, editor.node, contentBounds)
-
-  # Render outline for selected node
-  if layout.nodeToVisualNode.contains(editor.node.id):
-    let visualRange = layout.nodeToVisualNode[editor.node.id]
-    let bounds = visualRange.absoluteBounds + offset
-
-    ed.ctx.strokeStyle = ed.theme.color("foreground", rgb(255, 255, 255))
-    ed.ctx.lineWidth = 2.5
-    ed.ctx.strokeRect(bounds)
-    ed.ctx.lineWidth = 1
+    editor.renderVisualNode(ed, line, offset, editor.node, contentBounds)
 
   # Draw diagnostics
   for (id, visualRange) in layout.nodeToVisualNode.pairs:
@@ -341,14 +315,19 @@ proc renderVisualNodeLayout(editor: AstDocumentEditor, ed: Editor, contentBounds
       var last = rect(bounds.xy, vec2())
       for diagnostics in ctx.diagnosticsPerNode[id].queries.values:
         for diagnostic in diagnostics:
-          last = ed.ctx.fillTextRight(vec2(contentBounds.xw, last.yh), diagnostic.message, ed.theme.color("editorError.foreground", rgb(255, 0, 0)), config.font)
+          last = ed.renderCtx.drawText(vec2(contentBounds.xw, last.yh), diagnostic.message, ed.theme.color("editorError.foreground", rgb(255, 0, 0)), pivot = vec2(1, 0))
           foundErrors = true
       if foundErrors:
-        ed.ctx.strokeStyle = ed.theme.color("editorError.foreground", rgb(255, 0, 0))
-        ed.ctx.strokeRect(bounds.grow(3.relative))
+        ed.boxy.fillRect(bounds.grow(3.relative), ed.theme.color("editorError.foreground", rgb(255, 0, 0)).withAlpha(0.1))
+        ed.boxy.strokeRect(bounds.grow(3.relative), ed.theme.color("editorError.foreground", rgb(255, 0, 0)))
 
-  # ed.boxy.addImage($node.id, drawCtx.image)
-  # ed.boxy.drawImage($node.id, offset)
+  # Render outline for selected node
+  if layout.nodeToVisualNode.contains(editor.node.id):
+    let visualRange = layout.nodeToVisualNode[editor.node.id]
+    let bounds = visualRange.absoluteBounds + offset
+
+    ed.boxy.fillRect(bounds, ed.theme.color("foreground", rgb(255, 255, 255)).withAlpha(0.1))
+    ed.boxy.strokeRect(bounds, ed.theme.color("foreground", rgb(255, 255, 255)), 2)
 
 method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect, selected: bool): Rect =
   let document = editor.document
@@ -356,23 +335,29 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
 
   let timer = startTimer()
   defer:
-    if logRenderDuration:
-      let queryExecutionTimes = fmt"NodeLayout: {ctx.statsNodeLayout.time.ms:.5}, Type: {ctx.statsType.time.ms:.2}, Value: {ctx.statsValue.time.ms:.2}, Symbol: {ctx.statsSymbol.time.ms:.2}, Symbols: {ctx.statsSymbols.time.ms:.2}, SymbolType: {ctx.statsSymbolType.time.ms:.2}, SymbolValue: {ctx.statsSymbolValue.time.ms:.2}"
-      echo fmt"Render duration: {timer.elapsed.ms:.2}ms, {queryExecutionTimes}"
+    if logRenderDuration or ed.getFlag("log-render-duration"):
+      let queryExecutionTimes = fmt"  Type: {ctx.statsType}" &
+        fmt"  Value: {ctx.statsValue}" &
+        fmt"  Symbol: {ctx.statsSymbol}" &
+        fmt"  Symbols: {ctx.statsSymbols}" &
+        fmt"  SymbolType: {ctx.statsSymbolType}" &
+        fmt"  SymbolValue: {ctx.statsSymbolValue}" &
+        fmt"  NodeLayout: {ctx.statsNodeLayout}" &
+        fmt"  RenderedText: {ctx.statsRenderedText}"
+      echo fmt"Frame: {ed.frameTimer.elapsed.ms:>5.2}ms  Render duration: {timer.elapsed.ms:.2}ms{queryExecutionTimes}"
 
     ctx.resetExecutionTimes()
 
   let (headerBounds, contentBounds) = bounds.splitH ed.ctx.fontSize.relative
   editor.lastBounds = rect(vec2(), contentBounds.wh)
 
-  ed.ctx.fillStyle = if selected: theme.color("tab.activeBackground", rgb(45, 45, 60)) else: theme.color("tab.inactiveBackground", rgb(45, 45, 45))
-  ed.ctx.fillRect(headerBounds)
-
-  ed.ctx.fillStyle = if selected: theme.color("editor.background", rgb(25, 25, 40)) else: theme.color("editor.background", rgb(25, 25, 25))
-  ed.ctx.fillRect(contentBounds)
-
-  ed.ctx.fillStyle = if selected: theme.color("tab.activeForeground", rgb(255, 225, 255)) else: theme.color("tab.inactiveForeground", rgb(255, 225, 255))
-  ed.ctx.fillText("AST - " & document.filename, vec2(headerBounds.x, headerBounds.y))
+  ed.boxy.fillRect(headerBounds, if selected: theme.color("tab.activeBackground", rgb(45, 45, 60)) else: theme.color("tab.inactiveBackground", rgb(45, 45, 45)))
+  ed.boxy.fillRect(contentBounds, if selected: theme.color("editor.background", rgb(25, 25, 40)) else: theme.color("editor.background", rgb(25, 25, 25)))
+  let titleImage = ctx.computeRenderedText(ctx.getOrCreateRenderTextInput(newRenderTextInput(
+    ed.renderCtx,
+    "AST - " & document.filename,
+    config.fontRegular, ed.ctx.fontSize)))
+  ed.boxy.drawImage(titleImage, vec2(headerBounds.x, headerBounds.y), if selected: theme.color("tab.activeForeground", rgb(255, 225, 255)) else: theme.color("tab.inactiveForeground", rgb(255, 225, 255)))
 
   var lastNodeRect = contentBounds
   lastNodeRect.h = lineDistance
@@ -409,7 +394,7 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
     let node = editor.document.rootNode[i]
     let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node, selectedNode: selectedNode.id, replacements: replacements, revision: config.revision)
     let layout = ctx.computeNodeLayout(input)
-    editor.renderVisualNodeLayout(ed, contentBounds, layout, offset)
+    editor.renderVisualNodeLayout(ed, node, contentBounds, layout, offset)
     offset.y += layout.bounds.h + lineDistance
 
   offset = contentBounds.xy + vec2(0, editor.scrollOffset)
@@ -419,7 +404,7 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
     let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node, selectedNode: selectedNode.id, replacements: replacements, revision: config.revision)
     let layout = ctx.computeNodeLayout(input)
     offset.y -= layout.bounds.h + lineDistance
-    editor.renderVisualNodeLayout(ed, contentBounds, layout, offset)
+    editor.renderVisualNodeLayout(ed, node, contentBounds, layout, offset)
 
   if editor.completions.len > 0:
     # Render outline around all nodes which reference the selected symbol in the completion list
@@ -427,8 +412,7 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
       let selectedCompletion = editor.completions[editor.selectedCompletion]
       if selectedCompletion.kind == SymbolCompletion and ctx.getSymbol(selectedCompletion.id).getSome(symbol) and symbol.kind == skAstNode and layout.nodeToVisualNode.contains(symbol.node.id):
         let selectedDeclRect = layout.nodeToVisualNode[symbol.node.id]
-        ed.ctx.strokeStyle = ed.theme.color("editor.findMatchBorder", rgb(150, 150, 220))
-        ed.ctx.strokeRect(selectedDeclRect.absoluteBounds + offset + contentBounds.xy)
+        ed.boxy.strokeRect(selectedDeclRect.absoluteBounds + offset + contentBounds.xy, ed.theme.color("editor.findMatchBorder", rgb(150, 150, 220)))
 
     # Render completion window under the currently edited node
     for (layout, offset) in editor.lastLayouts:
@@ -437,10 +421,9 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
         let bounds = visualRange.absoluteBounds + offset + contentBounds.xy
         ed.renderCompletions(editor.completions, editor.selectedCompletion, contentBounds.splitH(bounds.yh.absolute)[1].splitV(bounds.x.absolute)[1], false)
 
-  if editor.renderExecutionOutput:
+  if ed.getFlag("render-execution-output"):
     let bounds = contentBounds.splitV(relative(contentBounds.w - 500))[1]
-    ed.ctx.strokeStyle = rgb(225, 225, 225)
-    ed.ctx.strokeRect(bounds)
+    ed.boxy.strokeRect(bounds, rgb(225, 225, 225).color)
 
     let linesToRender = min(executionOutput.lines.len, int(bounds.h / ed.ctx.fontSize))
     let offset = min(executionOutput.lines.len - linesToRender, executionOutput.scroll)
@@ -450,54 +433,91 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
 
     var last = rect(bounds.xy, vec2())
     for (line, color) in executionOutput.lines[^firstIndex..^lastIndex]:
-      last = ed.ctx.fillText(last.xyh, line, color)
+      last = ed.renderCtx.drawText(last.xyh, line, color)
 
-  if editor.renderDebugInfo:
+  if ed.getFlag("render-debug-info"):
     let bounds = contentBounds.splitV(relative(contentBounds.w - 500))[1]
-    ed.ctx.strokeStyle = rgb(225, 225, 225)
-    ed.ctx.strokeRect(bounds)
+    ed.boxy.strokeRect(bounds, rgb(225, 225, 225).color)
 
     var last = rect(bounds.xy, vec2())
 
-    last.y += ed.ctx.fontSize
-    last = ed.ctx.fillText(last.xyh,       fmt"DepGraph:", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  revision:        {ctx.depGraph.revision}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  verified:        {ctx.depGraph.verified.len}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  changed:         {ctx.depGraph.changed.len}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  fingerprints:    {ctx.depGraph.fingerprints.len}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  dependencies:    {ctx.depGraph.dependencies.len}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  query names:     {ctx.depGraph.queryNames.len}", rgb(255, 255, 255))
+    var text = ""
+    var image = ""
 
-    last.y += ed.ctx.fontSize
-    last = ed.ctx.fillText(last.xyh,       fmt"Inputs:", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  AstNodes:        {ctx.itemsAstNode.len}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  NodeLayoutInput: {ctx.itemsNodeLayoutInput.len}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"Data:", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  Symbols:         {ctx.itemsSymbol.len}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  FuncExecContext: {ctx.itemsFunctionExecutionContext.len}", rgb(255, 255, 255))
+    text = ""
+    text.add fmt"DepGraph:"
+    text.add fmt"  revision:        {ctx.depGraph.revision}" & "\n"
+    text.add fmt"  verified:        {ctx.depGraph.verified.len}" & "\n"
+    text.add fmt"  changed:         {ctx.depGraph.changed.len}" & "\n"
+    text.add fmt"  fingerprints:    {ctx.depGraph.fingerprints.len}" & "\n"
+    text.add fmt"  dependencies:    {ctx.depGraph.dependencies.len}" & "\n"
+    text.add fmt"  query names:     {ctx.depGraph.queryNames.len}" & "\n"
 
-    last.y += ed.ctx.fontSize
-    last = ed.ctx.fillText(last.xyh,       fmt"QueryCaches:", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  Type:            {ctx.queryCacheType.len}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  Value:           {ctx.queryCacheValue.len}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  SymbolType:      {ctx.queryCacheSymbolType.len}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  SymbolValue:     {ctx.queryCacheSymbolValue.len}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  Symbol:          {ctx.queryCacheSymbol.len}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  Symbols:         {ctx.queryCacheSymbols.len}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  FunctionExec:    {ctx.queryCacheFunctionExecution.len}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  NodeLayout:      {ctx.queryCacheNodeLayout.len}", rgb(255, 255, 255))
+    image = ctx.computeRenderedText(ctx.getOrCreateRenderTextInput(newRenderTextInput(
+      ed.renderCtx,
+      text,
+      config.fontRegular, ed.ctx.fontSize,
+      "debug.depGraph")))
+    ed.boxy.drawImage(image, last.xyh, rgb(255, 255, 255).color)
+    last.h += ed.boxy.getImageSIze(image).y.float32
 
-    last.y += ed.ctx.fontSize
-    last = ed.ctx.fillText(last.xyh,       fmt"Timings:", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  Rendering:       {timer.elapsed.ms:.2}ms", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  Type:            {ctx.statsType.time.ms:.2}ms  {ctx.statsType.forcedCalls: 4}  {ctx.statsType.totalCalls: 4}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  Value:           {ctx.statsValue.time.ms:.2}ms  {ctx.statsValue.forcedCalls: 4}  {ctx.statsValue.totalCalls: 4}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  Symbol:          {ctx.statsSymbol.time.ms:.2}ms  {ctx.statsSymbol.forcedCalls: 4}  {ctx.statsSymbol.totalCalls: 4}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  Symbols:         {ctx.statsSymbols.time.ms:.2}ms  {ctx.statsSymbols.forcedCalls: 4}  {ctx.statsSymbols.totalCalls: 4}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  SymbolType:      {ctx.statsSymbolType.time.ms:.2}ms  {ctx.statsSymbolType.forcedCalls: 4}  {ctx.statsSymbolType.totalCalls: 4}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  SymbolValue:     {ctx.statsSymbolValue.time.ms:.2}ms  {ctx.statsSymbolValue.forcedCalls: 4}  {ctx.statsSymbolValue.totalCalls: 4}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  NodeLayout:      {ctx.statsNodeLayout.time.ms:.2}ms  {ctx.statsNodeLayout.forcedCalls: 4}  {ctx.statsNodeLayout.totalCalls: 4}", rgb(255, 255, 255))
-    last = ed.ctx.fillText(last.xyh,       fmt"  FunctionExec:    {ctx.statsFunctionExecution.time.ms:.2}ms  {ctx.statsFunctionExecution.forcedCalls: 4}  {ctx.statsFunctionExecution.totalCalls: 4}", rgb(255, 255, 255))
+    text = ""
+    text.add fmt"Inputs:" & "\n"
+    text.add fmt"  AstNodes:        {ctx.itemsAstNode.len}" & "\n"
+    text.add fmt"  NodeLayoutInput: {ctx.itemsNodeLayoutInput.len}" & "\n"
+    text.add fmt"Data:" & "\n"
+    text.add fmt"  Symbols:         {ctx.itemsSymbol.len}" & "\n"
+    text.add fmt"  FuncExecContext: {ctx.itemsFunctionExecutionContext.len}" & "\n"
+
+    image = ctx.computeRenderedText(ctx.getOrCreateRenderTextInput(newRenderTextInput(
+      ed.renderCtx,
+      text,
+      config.fontRegular, ed.ctx.fontSize,
+      "debug.inputs")))
+    ed.boxy.drawImage(image, last.xyh, rgb(255, 255, 255).color)
+    last.h += ed.boxy.getImageSIze(image).y.float32
+
+    text = ""
+    text.add fmt"QueryCaches:" & "\n"
+    text.add fmt"  Type:            {ctx.queryCacheType.len}" & "\n"
+    text.add fmt"  Value:           {ctx.queryCacheValue.len}" & "\n"
+    text.add fmt"  SymbolType:      {ctx.queryCacheSymbolType.len}" & "\n"
+    text.add fmt"  SymbolValue:     {ctx.queryCacheSymbolValue.len}" & "\n"
+    text.add fmt"  Symbol:          {ctx.queryCacheSymbol.len}" & "\n"
+    text.add fmt"  Symbols:         {ctx.queryCacheSymbols.len}" & "\n"
+    text.add fmt"  FunctionExec:    {ctx.queryCacheFunctionExecution.len}" & "\n"
+    text.add fmt"  NodeLayout:      {ctx.queryCacheNodeLayout.len}" & "\n"
+    text.add fmt"  RenderedText:    {ctx.queryCacheRenderedText.len}" & "\n"
+
+    image = ctx.computeRenderedText(ctx.getOrCreateRenderTextInput(newRenderTextInput(
+      ed.renderCtx,
+      text,
+      config.fontRegular, ed.ctx.fontSize,
+      "debug.queryCaches")))
+    ed.boxy.drawImage(image, last.xyh, rgb(255, 255, 255).color)
+    last.h += ed.boxy.getImageSIze(image).y.float32
+
+    text = ""
+    text.add fmt"Timings:" & "\n"
+    text.add fmt"  Frame:           {ed.frameTimer.elapsed.ms:.2}ms" & "\n"
+    text.add fmt"  Rendering:       {timer.elapsed.ms:.2}ms" & "\n"
+    text.add fmt"  Type:            {ctx.statsType.time.ms:.2}ms  {ctx.statsType.forcedCalls: 4}  {ctx.statsType.totalCalls: 4}" & "\n"
+    text.add fmt"  Value:           {ctx.statsValue.time.ms:.2}ms  {ctx.statsValue.forcedCalls: 4}  {ctx.statsValue.totalCalls: 4}" & "\n"
+    text.add fmt"  Symbol:          {ctx.statsSymbol.time.ms:.2}ms  {ctx.statsSymbol.forcedCalls: 4}  {ctx.statsSymbol.totalCalls: 4}" & "\n"
+    text.add fmt"  Symbols:         {ctx.statsSymbols.time.ms:.2}ms  {ctx.statsSymbols.forcedCalls: 4}  {ctx.statsSymbols.totalCalls: 4}" & "\n"
+    text.add fmt"  SymbolType:      {ctx.statsSymbolType.time.ms:.2}ms  {ctx.statsSymbolType.forcedCalls: 4}  {ctx.statsSymbolType.totalCalls: 4}" & "\n"
+    text.add fmt"  SymbolValue:     {ctx.statsSymbolValue.time.ms:.2}ms  {ctx.statsSymbolValue.forcedCalls: 4}  {ctx.statsSymbolValue.totalCalls: 4}" & "\n"
+    text.add fmt"  NodeLayout:      {ctx.statsNodeLayout.time.ms:.2}ms  {ctx.statsNodeLayout.forcedCalls: 4}  {ctx.statsNodeLayout.totalCalls: 4}" & "\n"
+    text.add fmt"  FunctionExec:    {ctx.statsFunctionExecution.time.ms:.2}ms  {ctx.statsFunctionExecution.forcedCalls: 4}  {ctx.statsFunctionExecution.totalCalls: 4}" & "\n"
+    text.add fmt"  RenderedText:    {ctx.statsRenderedText.time.ms:.2}ms  {ctx.statsRenderedText.forcedCalls: 4}  {ctx.statsRenderedText.totalCalls: 4}" & "\n"
+
+    image = ctx.computeRenderedText(ctx.getOrCreateRenderTextInput(newRenderTextInput(
+      ed.renderCtx,
+      text,
+      config.fontRegular, ed.ctx.fontSize,
+      "debug.timings")))
+    ed.boxy.drawImage(image, last.xyh, rgb(255, 255, 255).color)
+    last.h += ed.boxy.getImageSIze(image).y.float32
 
   return bounds
 
@@ -512,10 +532,8 @@ method renderDocumentEditor(editor: KeybindAutocompletion, ed: Editor, bounds: R
   return bounds
 
 proc renderView*(ed: Editor, bounds: Rect, view: View, selected: bool) =
-  # let bounds = bounds.shrink(0.2.relative)
   let bounds = bounds.shrink(10.relative)
-  ed.ctx.fillStyle = if selected: ed.theme.color("editorPane.background", rgb(25, 25, 40)) else: ed.theme.color("editorPane.background", rgb(25, 25, 25))
-  ed.ctx.fillRect(bounds)
+  ed.boxy.fillRect(bounds, if selected: ed.theme.color("editorPane.background", rgb(25, 25, 40)) else: ed.theme.color("editorPane.background", rgb(25, 25, 25)))
 
   discard view.editor.renderDocumentEditor(ed, bounds, selected)
 
@@ -525,23 +543,20 @@ method renderPopup*(popup: Popup, ed: Editor, bounds: Rect) {.base, locks: "unkn
 method renderPopup*(popup: AstGotoDefinitionPopup, ed: Editor, bounds: Rect) =
   let bounds = bounds.shrink(0.15.percent)
   let (textBounds, contentBounds) = bounds.splitH(ed.ctx.fontSize.relative)
-  ed.ctx.fillStyle = ed.theme.color("panel.background", rgb(25, 25, 25))
-  ed.ctx.fillRect(textBounds)
+  ed.boxy.fillRect(textBounds, ed.theme.color("panel.background", rgb(25, 25, 25)))
   discard popup.textEditor.renderDocumentEditor(ed, textBounds, true)
   ed.renderCompletions(popup.completions, popup.selected, contentBounds, true)
 
 method renderPopup*(popup: SelectorPopup, ed: Editor, bounds: Rect) =
   let bounds = bounds.shrink(0.15.percent)
   let (textBounds, contentBounds) = bounds.splitH(ed.ctx.fontSize.relative)
-  ed.ctx.fillStyle = ed.theme.color("panel.background", rgb(25, 25, 25))
-  ed.ctx.fillRect(textBounds)
+  ed.boxy.fillRect(textBounds, ed.theme.color("panel.background", rgb(25, 25, 25)))
   discard popup.textEditor.renderDocumentEditor(ed, textBounds, true)
   ed.renderItems(popup.completions, popup.selected, contentBounds, true)
 
 
 proc renderMainWindow*(ed: Editor, bounds: Rect) =
-  ed.ctx.fillStyle = ed.theme.color("editorPane.background", rgb(25, 25, 25))
-  ed.ctx.fillRect(bounds)
+  ed.boxy.fillRect(bounds, ed.theme.color("editorPane.background", rgb(25, 25, 25)))
 
   let rects = ed.layout.layoutViews(ed.layout_props, bounds, ed.views)
   for i, view in ed.views:
@@ -553,7 +568,14 @@ proc renderMainWindow*(ed: Editor, bounds: Rect) =
     popup.renderPopup(ed, bounds)
 
 proc render*(ed: Editor) =
-  ed.ctx.image = newImage(ed.window.size.x, ed.window.size.y)
+  defer:
+    ed.frameTimer = startTimer()
+
+  if ed.clearAtlasTimer.elapsed.ms >= 5000:
+    ed.boxy.clearAtlas()
+    ctx.queryCacheRenderedText.clear
+    ed.clearAtlasTimer = startTimer()
+
   let lineHeight = ed.ctx.fontSize
   let windowRect = rect(vec2(), ed.window.size.vec2)
 
@@ -572,10 +594,9 @@ proc render*(ed: Editor) =
     config.revision += 1
 
   let (mainRect, statusRect) = if not ed.statusBarOnTop: windowRect.splitH(relative(windowRect.h - lineHeight))
-  else: windowRect.splitHInv(relative(lineHeight))
+  else:
+    let rects = windowRect.splitH(relative(lineHeight))
+    (rects[1], rects[0])
 
   ed.renderMainWindow(mainRect)
   ed.renderStatusBar(statusRect)
-
-  ed.boxy.addImage("main", ed.ctx.image)
-  ed.boxy.drawImage("main", vec2(0, 0))
