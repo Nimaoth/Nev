@@ -1,11 +1,24 @@
 # import std/logging
-import std/[strformat]
+import std/[strformat, tables]
 
 type AnyDocumentEditor = DocumentEditor | TextDocumentEditor | AstDocumentEditor
 type AnyPopup = Popup
 
+var lambdaActions = initTable[string, proc(): void]()
+
 proc addCommand*(context: string, keys: string, action: string, arg: string = "") =
   scriptAddCommand(context, keys, action, arg)
+
+proc addCommand*(context: string, keys: string, action: proc(): void) =
+  let key = context & keys
+  lambdaActions[key] = action
+  scriptAddCommand(context, keys, "lambda-action", key)
+
+proc handleLambdaAction*(key: string): bool =
+  if lambdaActions.contains(key):
+    lambdaActions[key]()
+    return true
+  return false
 
 proc removeCommand*(context: string, keys: string) =
   scriptRemoveCommand(context, keys)
@@ -25,12 +38,21 @@ proc getActiveEditor*(): DocumentEditor =
 proc getEditor*(index: int): DocumentEditor =
   return DocumentEditor(id: scriptGetEditorHandle(index))
 
+proc handleAction*(action: string, arg: string): bool
 proc handleDocumentEditorAction*(editor: DocumentEditor, action: string, arg: string): bool
 proc handleTextEditorAction*(editor: TextDocumentEditor, action: string, arg: string): bool
 proc handleAstEditorAction*(editor: AstDocumentEditor, action: string, arg: string): bool
 proc handlePopupAction*(popup: Popup, action: string, arg: string): bool
 
+proc handleGlobalAction*(action: string, arg: string): bool =
+  if action == "lambda-action":
+    return handleLambdaAction(arg)
+  return handleAction(action, arg)
+
 proc handleEditorAction*(id: EditorId, action: string, arg: string): bool =
+  if action == "lambda-action":
+    return handleLambdaAction(arg)
+
   let editor = DocumentEditor(id: id)
 
   if editor.isTextEditor(editor):

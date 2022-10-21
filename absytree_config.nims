@@ -1,5 +1,5 @@
 include abs
-import std/strutils
+import std/[strutils, sugar]
 
 # {.line: ("config.nims", 4).}
 
@@ -33,6 +33,7 @@ proc handlePopupAction*(popup: Popup, action: string, arg: string): bool =
   of "end":
     for i in 0..<3:
       popup.runAction "next"
+
   else: return false
 
   return true
@@ -130,10 +131,18 @@ proc handleAstEditorAction(editor: AstDocumentEditor, action: string, arg: strin
 proc postInitialize*() =
   log "[script] postInitialize()"
 
-  # runAction "open-file", "test.txt"
-  # runAction "prev-view"
+  runAction "open-file", "test.txt"
+  runAction "prev-view"
 
 setFlag "render-vnode-text", true
+
+addCommand "editor", "<SPACE>tt", proc() =
+  setOption("ast.max-loop-iterations", clamp(getOption[int]("ast.max-loop-iterations") * 2, 1, 1000000))
+  echo "ast.max-loop-iterations: ", getOption[int]("ast.max-loop-iterations")
+
+addCommand "editor", "<SPACE>tr", proc() =
+  setOption("ast.max-loop-iterations", clamp(getOption[int]("ast.max-loop-iterations") div 2, 1, 1000000))
+  echo "ast.max-loop-iterations: ", getOption[int]("ast.max-loop-iterations")
 
 addCommand "editor", "<SPACE>ff", "log-options"
 addCommand "editor", "<ESCAPE>", "escape"
