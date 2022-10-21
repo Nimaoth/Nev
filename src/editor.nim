@@ -554,10 +554,10 @@ proc handleAction(ed: Editor, action: string, arg: string) =
 
   else:
     try:
-      if not ed.scriptContext.inter.invoke(handleAction, action, arg, returnType = bool):
+      if not ed.scriptContext.inter.invoke(handleGlobalAction, action, arg, returnType = bool):
         ed.logger.log(lvlError, fmt"[ed] Unknown Action '{action} {arg}'")
     except:
-      ed.logger.log(lvlError, fmt"[ed] Failed to run script handleAction '{action} {arg}': {getCurrentExceptionMsg()}")
+      ed.logger.log(lvlError, fmt"[ed] Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
       echo getCurrentException().getStackTrace()
 
 proc anyInProgress*(handlers: openArray[EventHandler]): bool =
@@ -811,7 +811,7 @@ proc createAddins(): VmAddins =
     scriptSetOptionString,
     )
   addCallable(myImpl):
-    proc handleAction(action: string, arg: string): bool
+    proc handleGlobalAction(action: string, arg: string): bool
     proc postInitialize()
     proc handleEditorAction(id: EditorId, action: string, arg: string): bool
     proc handleUnknownPopupAction(id: EditorId, action: string, arg: string): bool
