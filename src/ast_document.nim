@@ -536,6 +536,8 @@ proc tryEdit*(self: AstDocumentEditor, node: AstNode): bool =
       return false
 
 proc finishEdit*(self: AstDocumentEditor, apply: bool) =
+  if not self.isEditing: return
+
   if apply:
     if self.currentlyEditedSymbol != null:
       if ctx.getSymbol(self.currentlyEditedSymbol).getSome(sym):

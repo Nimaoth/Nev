@@ -9,9 +9,16 @@ proc handleAction*(action: string, arg: string): bool =
   case action
   of "test":
     getActiveEditor().insertText(arg)
-  else: return false
 
-  raise newException(Defect, "lol")
+  # of "set-flag":
+  #   setFlag(arg, not getFlag(arg))
+
+  of "toggle-flag":
+    let newValue = not getFlag(arg)
+    setFlag(arg, newValue)
+    echo "[script] ", arg, " = ", newValue
+
+  else: return false
 
   return true
 
@@ -35,16 +42,47 @@ func charCategory(c: char): int =
   if c == ' ' or c == '\t': return 1
   return 2
 
+type SelectionCursor* = enum Both = "both", First = "first", Last = "last", Invalid
+
+proc `cursor=`(selection: var Selection, cursor: Cursor, which: SelectionCursor = Both) =
+  case which
+  of Both:
+    selection.first = cursor
+    selection.last = cursor
+  of First:
+    selection.first = cursor
+  of Last:
+    selection.last = cursor
+  of Invalid:
+    assert false
+
+proc cursor(selection: Selection, which: SelectionCursor): Cursor =
+  case which
+  of Both:
+    return selection.last
+  of First:
+    return selection.first
+  of Last:
+    return selection.last
+  of Invalid:
+    assert false
+
 proc handleTextEditorAction(editor: TextDocumentEditor, action: string, arg: string): bool =
   case action
   of "cursor.left-word":
+    let which = if arg.len == 0: Both else: parseEnum[SelectionCursor](arg, Invalid)
+    if which == Invalid:
+      log(fmt"[error] Invalid argument for script text editor action '{action} {arg}'")
+      return true
+
     let selection = editor.selection
-    let line = editor.getLine selection.first.line
-    var cursor = selection.first
+    var cursor = selection.cursor(which)
+    let line = editor.getLine cursor.line
+
     if cursor.column == 0:
       if cursor.line > 0:
         let prevLine = editor.getLine cursor.line - 1
-        editor.selection = (cursor.line - 1, prevLine.len).toSelection
+        cursor = (cursor.line - 1, prevLine.len)
     else:
       while cursor.column > 0 and cursor.column <= line.len:
         cursor.column -= 1
@@ -54,16 +92,26 @@ proc handleTextEditorAction(editor: TextDocumentEditor, action: string, arg: str
           if leftCategory != rightCategory:
             break
 
-      editor.selection = cursor.toSelection
+    case which
+    of Both: editor.selection = cursor.toSelection
+    of First: editor.selection = (cursor, selection.last)
+    of Last: editor.selection = (selection.first, cursor)
+    of Invalid: assert false
 
   of "cursor.right-word":
+    let which = if arg.len == 0: Both else: parseEnum[SelectionCursor](arg, Invalid)
+    if which == Invalid:
+      log(fmt"[error] Invalid argument for script text editor action '{action} {arg}'")
+      return true
+
     let selection = editor.selection
-    let line = editor.getLine selection.first.line
+    var cursor = selection.cursor(which)
+    let line = editor.getLine cursor.line
     let lineCount = editor.getLineCount
-    var cursor = selection.first
+
     if cursor.column == line.len:
       if cursor.line + 1 < lineCount:
-        editor.selection = (cursor.line + 1, 0).toSelection
+        cursor = (cursor.line + 1, 0)
     else:
       while cursor.column >= 0 and cursor.column < line.len:
         cursor.column += 1
@@ -73,7 +121,11 @@ proc handleTextEditorAction(editor: TextDocumentEditor, action: string, arg: str
           if leftCategory != rightCategory:
             break
 
-      editor.selection = cursor.toSelection
+    case which
+    of Both: editor.selection = cursor.toSelection
+    of First: editor.selection = (cursor, selection.last)
+    of Last: editor.selection = (selection.first, cursor)
+    of Invalid: assert false
 
   else: return false
   return true
@@ -89,6 +141,9 @@ proc postInitialize*() =
 
   runAction "open-file", "test.txt"
   runAction "prev-view"
+
+setFlag "render-vnode-text", true
+setFlag "render-execution-output", true
 
 addCommand "editor", "<ESCAPE>", "escape"
 addCommand "editor", "<C-l><C-h>", "change-font-size", "-1"
@@ -113,6 +168,9 @@ addCommand "editor", "<C-p>", "command-line"
 addCommand "editor", "<C-l>tt", "choose-theme"
 addCommand "editor", "<C-m>t", "test uiaeuiae"
 addCommand "editor", "<C-m>r", "test xvlcxvl  xvlc\n lol"
+addCommand "editor", "<SPACE>fr", "toggle-flag log-render-duration"
+addCommand "editor", "<SPACE>fd", "toggle-flag render-debug-info"
+addCommand "editor", "<SPACE>fo", "toggle-flag render-execution-output"
 
 addCommand "commandLine", "<ESCAPE>", "exit-command-line"
 addCommand "commandLine", "<ENTER>", "execute-command-line"
@@ -130,6 +188,8 @@ addCommand "editor.text", "<LEFT>", "cursor.left"
 addCommand "editor.text", "<RIGHT>", "cursor.right"
 addCommand "editor.text", "<C-LEFT>", "cursor.left-word"
 addCommand "editor.text", "<C-RIGHT>", "cursor.right-word"
+addCommand "editor.text", "<CS-LEFT>", "cursor.left-word last"
+addCommand "editor.text", "<CS-RIGHT>", "cursor.right-word last"
 addCommand "editor.text", "<UP>", "cursor.up"
 addCommand "editor.text", "<DOWN>", "cursor.down"
 addCommand "editor.text", "<HOME>", "cursor.home"
@@ -234,9 +294,7 @@ addCommand "editor.ast", "<C-LEFT>", "select-prev"
 addCommand "editor.ast", "<C-RIGHT>", "select-next"
 addCommand "editor.ast", "<SPACE>l", "toggle-option logging"
 addCommand "editor.ast", "<SPACE>dc", "dump-context"
-addCommand "editor.ast", "<SPACE>rv", "toggle-option render-selected-value"
-addCommand "editor.ast", "<SPACE>rd", "toggle-option render-debug-info"
-addCommand "editor.ast", "<SPACE>ro", "toggle-option render-execution-output"
+addCommand "editor.ast", "<SPACE>fs", "toggle-option render-selected-value"
 addCommand "editor.ast", "<CA-DOWN>", "scroll-output -5"
 addCommand "editor.ast", "<CA-UP>", "scroll-output 5"
 addCommand "editor.ast", "<CA-HOME>", "scroll-output home"

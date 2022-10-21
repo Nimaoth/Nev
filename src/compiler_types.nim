@@ -3,6 +3,10 @@ import fusion/matching
 import bumpy, chroma, vmath, pixie/fonts
 import ast, id, util, rect_utils
 import query_system
+import boxy, pixie/contexts
+import render_context
+
+export render_context
 
 type
   TypeKind* = enum
@@ -102,6 +106,15 @@ type
     selectedNode*: Id
     replacements*: Table[Id, VisualNode]
     revision*: int
+
+  RenderTextInput* = object
+    id*: Id
+    imageId*: string
+    renderCtx*: RenderContext
+    text*: string
+    color*: Color
+    font*: string
+    fontSize*: float32
 
 func index*(node: VisualNode): int =
   if node.parent == nil:
@@ -410,7 +423,8 @@ func `$`*(input: NodeLayoutInput): string =
   return fmt"NodeLayoutInput({input.id}, node: {input.node}, selected: {input.selectedNode}, revision: {input.revision})"
 
 func hash*(input: NodeLayoutInput): Hash =
-  return input.node.hash !& input.selectedNode.hash
+  result = input.node.hash !& input.selectedNode.hash
+  result = !$result
 
 func `==`*(a: NodeLayoutInput, b: NodeLayoutInput): bool =
   if a.isNil: return b.isNil
@@ -420,4 +434,28 @@ func `==`*(a: NodeLayoutInput, b: NodeLayoutInput): bool =
   if a.node != b.node: return false
   if a.selectedNode != b.selectedNode: return false
   if a.replacements != b.replacements: return false
+  return true
+
+proc newRenderTextInput*(ctx: RenderContext, text: string, font: string, fontSize: float32, imageId: string = ""): RenderTextInput =
+  result.id = newId()
+  result.imageId = imageId
+  result.renderCtx = ctx
+  result.text = text
+  result.font = font
+  result.fontSize = fontSize
+
+func `$`*(input: RenderTextInput): string =
+  return fmt"RenderTextInput({input.text}, {input.font}, {input.fontSize})"
+
+func hash*(input: RenderTextInput): Hash =
+  result = input.text.hash !& input.font.hash !& input.fontSize.hash
+  result = !$result
+
+func `==`*(a: RenderTextInput, b: RenderTextInput): bool =
+  # if a.isNil: return b.isNil
+  # if b.isNil: return false
+  # We don't care about the id of the RenderTextInput
+  if a.text != b.text: return false
+  if a.font != b.font: return false
+  if a.fontSize != b.fontSize: return false
   return true

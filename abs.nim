@@ -1,4 +1,5 @@
 # import std/logging
+import std/[strformat]
 
 type AnyDocumentEditor = DocumentEditor | TextDocumentEditor | AstDocumentEditor
 type AnyPopup = Popup
@@ -65,6 +66,12 @@ proc getLine*(editor: TextDocumentEditor, line: int): string =
 
 proc getLineCount*(editor: TextDocumentEditor): int =
   return scriptGetTextEditorLineCount(editor.id)
+
+proc getFlag*(flag: string, default: bool = false): bool =
+  return scriptGetFlag(flag, default)
+
+proc setFlag*(flag: string, value: bool) =
+  scriptSetFlag(flag, value)
 
 proc log*(args: varargs[string, `$`]) =
   var msgLen = 0

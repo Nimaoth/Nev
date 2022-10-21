@@ -73,8 +73,11 @@ proc splitH*(r: Rect, y: Measurement): tuple[a, b: Rect] =
   result.b.h = result.b.h - result.a.h
 
 proc splitHInv*(r: Rect, y: Measurement): tuple[a, b: Rect] =
-  let temp = r.splitH(y)
-  result = (temp[1], temp[0])
+  result.a = r
+  result.b = r
+  result.a.h = r.h - (y.apply(r.y, r.y + r.h) - r.y)
+  result.b.y = result.a.y + result.a.h
+  result.b.h = result.b.h - result.a.h
 
 proc splitV*(r: Rect, x: Measurement): tuple[a, b: Rect] =
   result.a = r
@@ -85,17 +88,40 @@ proc splitV*(r: Rect, x: Measurement): tuple[a, b: Rect] =
   result.b.w = result.b.w - result.a.w
 
 proc splitVInv*(r: Rect, x: Measurement): tuple[a, b: Rect] =
-  let temp = r.splitV(x)
-  result = (temp[1], temp[0])
+  result.a = r
+  result.b = r
+  result.a.w = r.w - (x.apply(r.x, r.x + r.w) - r.x)
+  result.b.x = result.a.x + result.a.w
+  result.b.w = result.b.w - result.a.w
 
 proc shrink*(r: Rect, amount: Measurement): Rect =
   let x = amount.apply(0, r.w)
   let y = amount.apply(0, r.h)
   return rect(r.x + x, r.y + y, r.w - x - x, r.h - y - y)
 
+proc shrink*(r: Rect, amountX: Measurement, amountY: Measurement): Rect =
+  let x = amountX.apply(0, r.w)
+  let y = amountY.apply(0, r.h)
+  return rect(r.x + x, r.y + y, r.w - x - x, r.h - y - y)
+
+proc shrink*(r: Rect, amount: Vec2): Rect =
+  let x = amount.x
+  let y = amount.y
+  return rect(r.x + x, r.y + y, r.w - x - x, r.h - y - y)
+
 proc grow*(r: Rect, amount: Measurement): Rect =
   let x = amount.apply(0, r.w)
   let y = amount.apply(0, r.h)
+  return rect(r.x - x, r.y - y, r.w + x + x, r.h + y + y)
+
+proc grow*(r: Rect, amountX: Measurement, amountY: Measurement): Rect =
+  let x = amountX.apply(0, r.w)
+  let y = amountY.apply(0, r.h)
+  return rect(r.x - x, r.y - y, r.w + x + x, r.h + y + y)
+
+proc grow*(r: Rect, amount: Vec2): Rect =
+  let x = amount.x
+  let y = amount.y
   return rect(r.x - x, r.y - y, r.w + x + x, r.h + y + y)
 
 proc `+`*(a: Rect, b: Vec2): Rect =

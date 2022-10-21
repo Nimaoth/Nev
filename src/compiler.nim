@@ -20,6 +20,7 @@ type
 CreateContext Context:
   input AstNode
   input NodeLayoutInput
+  input RenderTextInput
   data Symbol
   data FunctionExecutionContext
 
@@ -44,8 +45,11 @@ CreateContext Context:
 
   proc computeNodeLayoutImpl(ctx: Context, nodeLayoutInput: NodeLayoutInput): NodeLayout {.query("NodeLayout", useFingerprinting = false).}
 
+  proc computeRenderedTextImpl(ctx: Context, input: RenderTextInput): string {.query("RenderedText", useFingerprinting = false).}
+
 import node_layout
 import treewalk_interpreter
+import text_renderer
 
 template logIf(condition: bool, message: string, logResult: bool) =
   let logQuery = condition
@@ -56,6 +60,10 @@ template logIf(condition: bool, message: string, logResult: bool) =
   defer:
     if logQuery and logResult:
         echo repeat2("| ", currentIndent), "-> ", result
+
+proc computeRenderedTextImpl(ctx: Context, input: RenderTextInput): string =
+  # logIf(ctx.enableLogging or ctx.enableQueryLogging, "computeRenderedTextImpl", false)
+  return computeRenderedTextImpl2(ctx, input)
 
 proc computeNodeLayoutImpl(ctx: Context, nodeLayoutInput: NodeLayoutInput): NodeLayout =
   ctx.dependOnCurrentRevision()
@@ -682,6 +690,7 @@ proc deleteAllNodesAndSymbols*(ctx: Context) =
   ctx.queryCacheSymbols.clear
   ctx.queryCacheFunctionExecution.clear
   ctx.queryCacheNodeLayout.clear
+  ctx.queryCacheRenderedText.clear
 
 proc replaceNodeChild*(ctx: Context, parent: AstNode, index: int, newNode: AstNode) =
   let node = parent[index]

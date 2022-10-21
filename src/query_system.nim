@@ -45,6 +45,11 @@ type
     queryNames*: Table[UpdateFunction, string]
     revision*: int
 
+func `$`*(stats: QueryStats): string =
+  return fmt"{stats.time.ms:>6.2f}ms  {stats.forcedCalls:4}/{stats.totalCalls:4}"
+
+func getKey*(item: ItemId, update: UpdateFunction = nil): Dependency = (item, update)
+
 template query*(name: string, useCache: bool = true, useFingerprinting: bool = true) {.pragma.}
 template recover*(name: string) {.pragma.}
 
@@ -361,6 +366,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     let queryFunction = queryFunctionName query
     let items = ident "items" & key.strVal
     let stats = ident "stats" & name
+    let useFingerprinting = newLit queryUseFingerprinting query
 
     queryInitializers.add quote do:
       `ctx`.`updateName` = proc (item: ItemId): Fingerprint =
@@ -370,7 +376,10 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
         let arg = `ctx`.`items`[item]
         let value: `value` = `queryFunction`(`ctx`, arg)
         `ctx`.`queryCache`[arg] = value
-        return value.fingerprint
+        when `useFingerprinting`:
+          return value.fingerprint
+        else:
+          return @[]
       `ctx`.depGraph.queryNames[`ctx`.`updateName`] = `name`
       `ctx`.`queryCache`.init(2000)
 
@@ -505,8 +514,10 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
     result.add quote do:
       proc getItem*(self: `name`): ItemId =
-        if self.id == null:
-          self.id = newId()
+        when typeof(self) is ref:
+          if self.id == null:
+            self.id = newId()
+        assert self.id != null
         return (self.id, `itemIndex`)
 
     result.add quote do:
@@ -586,7 +597,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
   # proc tryMarkGreen(ctx: Context, key: Dependency): bool
   result.add quote do:
-    proc tryMarkGreen(ctx: `contextName`, key: Dependency): MarkGreenResult =
+    proc tryMarkGreen(ctx: `contextName`, key: Dependency, tryForce: bool = true): MarkGreenResult =
       inc currentIndent, if ctx.enableLogging: 1 else: 0
       defer: dec currentIndent, if ctx.enableLogging: 1 else: 0
       if ctx.enableLogging: echo repeat2("| ", currentIndent - 1), "tryMarkGreen ", ctx.depGraph.queryNames[key.update] & ":" & $key.item, ", deps: ", ctx.depGraph.getDependencies(key)
@@ -646,7 +657,10 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
           of Error:
             if ctx.enableLogging: echo repeat2("| ", currentIndent), "Dependency ", ctx.depGraph.queryNames[dep.update] & ":" & $dep.item, ", mark green failed"
 
-            ctx.force(dep)
+            if tryForce:
+              ctx.force(dep)
+            else:
+              return Error
 
             if key in ctx.recursiveQueries:
               ctx.recursiveQueries.excl key
@@ -678,6 +692,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     let updateName = ident "update" & name
     let computeName = ident "compute" & name
     let getFunctionName = ident "get" & name
+    let isDirtyName = ident "is" & name & "Dirty"
     let queryCache = ident "queryCache" & name
     let stats = ident "stats" & name
 
@@ -758,6 +773,8 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
           assert color == Red
           if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "red, in cache, result: ", $ctx.`queryCache`[input]
           if not ctx.`queryCache`.contains(input):
+            ctx.force(key)
+          if not ctx.`queryCache`.contains(input):
             raise newException(Defect, "compute" & `name` & "(" & $input & "): not in cache anymore")
           return ctx.`queryCache`[input]
 
@@ -788,5 +805,25 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
             raise newException(Defect, "compute" & `name` & "(" & $input & "): not in cache anymore")
           return ctx.`queryCache`[input]
 
+    result.add quote do:
+      proc `isDirtyName`*(ctx: `contextName`, input: `key`): bool =
+        let item = getItem input
+        let key = (item, ctx.`updateName`)
+
+        let color = ctx.depGraph.nodeColor(key)
+
+        if color == Green:
+          return not ctx.`queryCache`.contains(input)
+
+        if color == Grey:
+          if not ctx.`queryCache`.contains(input):
+            return true
+
+          if ctx.tryMarkGreen(key, false) == Ok:
+            return not ctx.`queryCache`.contains(input)
+          else:
+            return true
+
+        return not ctx.`queryCache`.contains(input)
 
   # echo result.repr
