@@ -333,7 +333,7 @@ proc renderVisualNodeLayout(editor: AstDocumentEditor, ed: Editor, node: AstNode
     ed.boxy.fillRect(bounds, ed.theme.color("foreground", rgb(255, 255, 255)).withAlpha(0.1))
     ed.boxy.strokeRect(bounds, ed.theme.color("foreground", rgb(255, 255, 255)), 2)
 
-    let value = ctx.computeValue(editor.node)
+    let value = ctx.getValue(editor.node)
     let typ = ctx.computeType(editor.node)
 
     let parentBounds = visualRange.parent.absoluteBounds
@@ -341,7 +341,7 @@ proc renderVisualNodeLayout(editor: AstDocumentEditor, ed: Editor, node: AstNode
     var last = rect(vec2(contentBounds.xw - 25, parentBounds.y + offset.y), vec2())
     last = ed.renderCtx.drawText(last.xy, $typ, ed.theme.tokenColor("storage.type", rgb(255, 255, 255)), pivot = vec2(1, 0))
 
-    if value.kind != vkVoid and value.kind != vkBuiltinFunction and value.kind != vkAstFunction:
+    if value.getSome(value) and value.kind != vkVoid and value.kind != vkBuiltinFunction and value.kind != vkAstFunction and value.kind != vkError:
       last = ed.renderCtx.drawText(last.xy, " : ", ed.theme.tokenColor("punctuation", rgb(255, 255, 255)), pivot = vec2(1, 0))
       last = ed.renderCtx.drawText(last.xy, $value, ed.theme.tokenColor("string", rgb(255, 255, 255)), pivot = vec2(1, 0))
 
@@ -408,8 +408,6 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
     let textEditorBounds = editor.textEditor.measureEditorBounds(ed, rect(vec2(), contentBounds.wh))
     replacements[editor.currentlyEditedSymbol] = newFunctionNode(textEditorBounds, (bounds: Rect) => (discard renderDocumentEditor(editor.textEditor, ed, bounds, true)))
 
-  if editor.previousBaseIndex < 0 or editor.previousBaseIndex > editor.document.rootNode.len:
-    echo "out ", editor.previousBaseIndex
   editor.previousBaseIndex = editor.previousBaseIndex.clamp(0..editor.document.rootNode.len)
 
   # Adjust scroll offset and base index so that the first node on screen is the base
