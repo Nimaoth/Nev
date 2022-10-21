@@ -505,7 +505,7 @@ proc editSymbol*(self: AstDocumentEditor, symbol: Symbol) =
   self.textEditor = newTextEditor(self.textDocument, self.editor)
   self.textEditor.renderHeader = false
   self.textEditor.fillAvailableSpace = false
-  self.textDocument.textChanged = (doc: TextDocument) => self.handleTextDocumentChanged()
+  discard self.textDocument.textChanged.subscribe (doc: TextDocument) => self.handleTextDocumentChanged()
   self.updateCompletions()
 
 proc editNode*(self: AstDocumentEditor, node: AstNode) =
@@ -517,7 +517,7 @@ proc editNode*(self: AstDocumentEditor, node: AstNode) =
   self.textEditor = newTextEditor(self.textDocument, self.editor)
   self.textEditor.renderHeader = false
   self.textEditor.fillAvailableSpace = false
-  self.textDocument.textChanged = (doc: TextDocument) => self.handleTextDocumentChanged()
+  discard self.textDocument.textChanged.subscribe (doc: TextDocument) => self.handleTextDocumentChanged()
   self.updateCompletions()
 
 proc tryEdit*(self: AstDocumentEditor, node: AstNode): bool =

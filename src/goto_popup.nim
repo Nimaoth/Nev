@@ -74,7 +74,7 @@ proc newGotoPopup*(editor: Editor, document: AstDocument): AstGotoDefinitionPopu
   popup.textEditor = newTextEditor(newTextDocument(), editor)
   popup.textEditor.renderHeader = false
   popup.textEditor.document.singleLine = true
-  popup.textEditor.document.textChanged = (doc: TextDocument) => popup.handleTextChanged()
+  discard popup.textEditor.document.textChanged.subscribe (doc: TextDocument) => popup.handleTextChanged()
 
   popup.eventHandler = eventHandler(editor.getEventHandlerConfig("editor.ast.goto")):
     onAction:

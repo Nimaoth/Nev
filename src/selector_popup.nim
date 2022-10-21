@@ -70,7 +70,7 @@ proc newSelectorPopup*(editor: Editor, getCompletions: proc(self: SelectorPopup,
   popup.textEditor = newTextEditor(newTextDocument(), editor)
   popup.textEditor.renderHeader = false
   popup.textEditor.document.singleLine = true
-  popup.textEditor.document.textChanged = (doc: TextDocument) => popup.handleTextChanged()
+  discard popup.textEditor.document.textChanged.subscribe (doc: TextDocument) => popup.handleTextChanged()
   popup.getCompletions = getCompletions
 
   popup.eventHandler = eventHandler(editor.getEventHandlerConfig("popup.selector")):
