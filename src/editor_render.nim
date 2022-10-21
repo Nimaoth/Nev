@@ -373,11 +373,11 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
 
     ctx.resetExecutionTimes()
 
-  let (headerBounds, contentBounds) = bounds.splitH ed.ctx.fontSize.relative
-  editor.lastBounds = rect(vec2(), contentBounds.wh)
+  let (headerBounds, contentBoundsWithPadding) = bounds.splitH ed.ctx.fontSize.relative
+  editor.lastBounds = rect(vec2(), contentBoundsWithPadding.wh)
 
   ed.boxy.fillRect(headerBounds, if selected: theme.color("tab.activeBackground", rgb(45, 45, 60)) else: theme.color("tab.inactiveBackground", rgb(45, 45, 45)))
-  ed.boxy.fillRect(contentBounds, if selected: theme.color("editor.background", rgb(25, 25, 40)) else: theme.color("editor.background", rgb(25, 25, 25)) * 0.75)
+  ed.boxy.fillRect(contentBoundsWithPadding, if selected: theme.color("editor.background", rgb(25, 25, 40)) else: theme.color("editor.background", rgb(25, 25, 25)) * 0.75)
   let titleImage = ctx.computeRenderedText(ctx.getOrCreateRenderTextInput(newRenderTextInput(
     ed.renderCtx,
     "AST - " & document.filename,
@@ -388,9 +388,11 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
   ed.boxy.pushLayer()
   defer:
     ed.boxy.pushLayer()
-    ed.boxy.fillRect(contentBounds, color(1, 0, 0, 1))
+    ed.boxy.fillRect(contentBoundsWithPadding, color(1, 0, 0, 1))
     ed.boxy.popLayer(blendMode = MaskBlend)
     ed.boxy.popLayer()
+
+  let contentBounds = contentBoundsWithPadding.shrink(2.relative)
 
   var lastNodeRect = contentBounds
   lastNodeRect.h = lineDistance
