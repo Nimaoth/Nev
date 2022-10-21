@@ -62,15 +62,6 @@ proc renderCommandAutoCompletion*(ed: Editor, handler: EventHandler, bounds: Rec
 
   return bounds.splitH(height.relative)[1]
 
-proc renderStatusBar*(ed: Editor, bounds: Rect) =
-  ed.boxy.fillRect(bounds, if ed.commandLineMode: ed.theme.color("statusBar.background", rgb(60, 45, 45)) else: ed.theme.color("statusBarItem.activeBackground", rgb(40, 25, 25)))
-
-  discard ed.renderCtx.drawText(bounds.xy, ed.inputBuffer, ed.theme.color("statusBar.foreground", rgb(200, 200, 225)))
-
-  if ed.commandLineMode:
-    let horizontalSizeModifier: float32 = 0.615
-    ed.boxy.fillRect(rect(bounds.x + ed.inputBuffer.len.float32 * ed.ctx.fontSize * horizontalSizeModifier, bounds.y, ed.ctx.fontSize * 0.05, ed.ctx.fontSize), ed.theme.color("statusBar.foreground", rgb(255, 255, 255)))
-
 method renderDocumentEditor(editor: DocumentEditor, ed: Editor, bounds: Rect, selected: bool): Rect {.base, locks: "unknown".} =
   return rect(0, 0, 0, 0)
 
@@ -107,26 +98,26 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
     discard ed.renderCtx.drawText(headerBounds.xwy, $editor.selection, color, pivot = vec2(1, 0))
 
   let usedBounds = editor.measureEditorBounds(ed, contentBounds)
-  ed.boxy.fillRect(usedBounds, if selected: ed.theme.color("editor.background", rgb(25, 25, 40)) else: ed.theme.color("editor.background", rgb(25, 25, 25)))
+  ed.boxy.fillRect(usedBounds, if selected: ed.theme.color("editor.background", rgb(25, 25, 40)) else: ed.theme.color("editor.background", rgb(25, 25, 25)) * 0.75)
 
   let textColor = ed.theme.color("editor.foreground", rgb(225, 200, 200))
   for i, line in document.content:
     let textWidth = ed.ctx.measureText(line).width
     discard ed.renderCtx.drawText(vec2(contentBounds.x, contentBounds.y + i.float32 * ed.ctx.fontSize), line, textColor)
 
-  let horizontalSizeModifier: float32 = 0.6
-  let firstCursorColor = ed.theme.color("editorCursor.foreground", rgb(210, 210, 210))
-  let lastCursorColor = ed.theme.color("editorCursor.foreground", rgb(255, 255, 255))
-  ed.boxy.fillRect(rect(contentBounds.x + editor.selection.first.column.float32 * ed.ctx.fontSize * horizontalSizeModifier, contentBounds.y + editor.selection.first.line.float32 * ed.ctx.fontSize, ed.ctx.fontSize * 0.12, ed.ctx.fontSize), firstCursorColor)
-  ed.boxy.fillRect(rect(contentBounds.x + editor.selection.last.column.float32 * ed.ctx.fontSize * horizontalSizeModifier, contentBounds.y + editor.selection.last.line.float32 * ed.ctx.fontSize, ed.ctx.fontSize * 0.12, ed.ctx.fontSize), lastCursorColor)
+  if selected or not editor.hideCursorWhenInactive:
+    let horizontalSizeModifier: float32 = 0.6
+    let firstCursorColor = ed.theme.color("editorCursor.foreground", rgb(210, 210, 210))
+    let lastCursorColor = ed.theme.color("editorCursor.foreground", rgb(255, 255, 255))
+    ed.boxy.fillRect(rect(contentBounds.x + editor.selection.first.column.float32 * ed.ctx.fontSize * horizontalSizeModifier, contentBounds.y + editor.selection.first.line.float32 * ed.ctx.fontSize, ed.ctx.fontSize * 0.12, ed.ctx.fontSize), firstCursorColor)
+    ed.boxy.fillRect(rect(contentBounds.x + editor.selection.last.column.float32 * ed.ctx.fontSize * horizontalSizeModifier, contentBounds.y + editor.selection.last.line.float32 * ed.ctx.fontSize, ed.ctx.fontSize * 0.12, ed.ctx.fontSize), lastCursorColor)
+
+  return usedBounds
 
   # let atlasImage = ed.boxy.readAtlas().resize(usedBounds.w.int, usedBounds.h.int)
   # let atlasImage = ed.boxy.readAtlas().resize(usedBounds.w.int, usedBounds.w.int)
   # ed.boxy2.addImage("atlas", atlasImage, false)
   # ed.boxy2.drawImage("atlas", contentBounds.xy)
-
-
-  return usedBounds
 
 proc renderCompletions(ed: Editor, completions: seq[Completion], selected: int, bounds: Rect, fill: bool) =
   if completions.len == 0:
@@ -352,7 +343,7 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
   editor.lastBounds = rect(vec2(), contentBounds.wh)
 
   ed.boxy.fillRect(headerBounds, if selected: theme.color("tab.activeBackground", rgb(45, 45, 60)) else: theme.color("tab.inactiveBackground", rgb(45, 45, 45)))
-  ed.boxy.fillRect(contentBounds, if selected: theme.color("editor.background", rgb(25, 25, 40)) else: theme.color("editor.background", rgb(25, 25, 25)))
+  ed.boxy.fillRect(contentBounds, if selected: theme.color("editor.background", rgb(25, 25, 40)) else: theme.color("editor.background", rgb(25, 25, 25)) * 0.75)
   let titleImage = ctx.computeRenderedText(ctx.getOrCreateRenderTextInput(newRenderTextInput(
     ed.renderCtx,
     "AST - " & document.filename,
@@ -554,7 +545,6 @@ method renderPopup*(popup: SelectorPopup, ed: Editor, bounds: Rect) =
   discard popup.textEditor.renderDocumentEditor(ed, textBounds, true)
   ed.renderItems(popup.completions, popup.selected, contentBounds, true)
 
-
 proc renderMainWindow*(ed: Editor, bounds: Rect) =
   ed.boxy.fillRect(bounds, ed.theme.color("editorPane.background", rgb(25, 25, 25)))
 
@@ -562,10 +552,13 @@ proc renderMainWindow*(ed: Editor, bounds: Rect) =
   for i, view in ed.views:
     if i >= rects.len:
       break
-    ed.renderView(rects[i], view, i == ed.currentView)
+    ed.renderView(rects[i], view, i == ed.currentView and not ed.commandLineMode)
 
   for i, popup in ed.popups:
     popup.renderPopup(ed, bounds)
+
+proc renderStatusBar*(ed: Editor, bounds: Rect) =
+  discard ed.getCommandLineTextEditor.renderDocumentEditor(ed, bounds, ed.commandLineMode)
 
 proc render*(ed: Editor) =
   defer:

@@ -139,11 +139,10 @@ proc handleAstEditorAction(editor: AstDocumentEditor, action: string, arg: strin
 proc postInitialize*() =
   log "[script] postInitialize()"
 
-  runAction "open-file", "test.txt"
-  runAction "prev-view"
+  # runAction "open-file", "test.txt"
+  # runAction "prev-view"
 
 setFlag "render-vnode-text", true
-setFlag "render-execution-output", true
 
 addCommand "editor", "<ESCAPE>", "escape"
 addCommand "editor", "<C-l><C-h>", "change-font-size", "-1"
@@ -174,9 +173,6 @@ addCommand "editor", "<SPACE>fo", "toggle-flag render-execution-output"
 
 addCommand "commandLine", "<ESCAPE>", "exit-command-line"
 addCommand "commandLine", "<ENTER>", "execute-command-line"
-addCommand "commandLine", "<BACKSPACE>", "backspace"
-addCommand "commandLine", "<DELETE>", "delete"
-addCommand "commandLine", "<SPACE>", "insert", " "
 
 addCommand "popup.selector", "<ENTER>", "accept"
 addCommand "popup.selector", "<TAB>", "accept"

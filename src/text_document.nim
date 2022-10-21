@@ -1,35 +1,80 @@
 import std/[strutils, logging, sequtils, sugar]
-import editor, input, document, document_editor, events
+import editor, input, document, document_editor, events, id
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 
 var logger = newConsoleLogger()
 
+type Event*[T] = object
+  handlers: seq[tuple[id: Id, callback: (T) -> void]]
+
 type TextDocument* = ref object of Document
   filename*: string
-  content*: seq[string]
+  lines: seq[string]
 
-  textChanged*: (document: TextDocument) -> void
+  textChanged*: Event[TextDocument]
   singleLine*: bool
 
 type TextDocumentEditor* = ref object of DocumentEditor
   editor*: Editor
   document*: TextDocument
   selection: Selection
+  hideCursorWhenInactive*: bool
+
+proc subscribe*[T](event: var Event[T], callback: (T) -> void): Id =
+  result = newId()
+  event.handlers.add (result, callback)
+
+proc unsubscribe*[T](event: var Event[T], id: Id) =
+  for i, h in event.handlers:
+    if h.id == id:
+      event.handlers.del(i)
+      break
+
+proc invoke*[T](event: var Event[T], arg: T) =
+  for h in event.handlers:
+    h.callback(arg)
+
+proc `content=`*(document: TextDocument, value: string) =
+  if document.singleLine:
+    document.lines = @[value.replace("\n", "")]
+  else:
+    document.lines = value.splitLines
+
+  if document.lines.len == 0:
+    document.lines = @[""]
+
+  document.textChanged.invoke(document)
+
+proc `content=`*(document: TextDocument, value: seq[string]) =
+  if document.singleLine:
+    document.lines = @[value.join("")]
+  else:
+    document.lines = value.toSeq
+
+  if document.lines.len == 0:
+    document.lines = @[""]
+
+  document.textChanged.invoke(document)
+
+func content*(document: TextDocument): seq[string] =
+  return document.lines
+
+func contentString*(document: TextDocument): string =
+  return document.lines.join("\n")
 
 func selection*(self: TextDocumentEditor): Selection = self.selection
 
-proc newTextDocument*(filename: string = ""): TextDocument =
+proc newTextDocument*(filename: string = "", content: string | seq[string] = ""): TextDocument =
   new(result)
   result.filename = filename
+  result.content = content
 
 method `$`*(document: TextDocument): string =
   return document.filename
 
-proc contentString*(doc: TextDocument): string = doc.content.join
-
 proc lineLength(self: TextDocument, line: int): int =
-  if line < self.content.len:
-    return self.content[line].len
+  if line < self.lines.len:
+    return self.lines[line].len
   return 0
 
 method save*(self: TextDocument, filename: string = "") {.locks: "unknown".} =
@@ -37,7 +82,7 @@ method save*(self: TextDocument, filename: string = "") {.locks: "unknown".} =
   if self.filename.len == 0:
     raise newException(IOError, "Missing filename")
 
-  writeFile(self.filename, self.content.join "\n")
+  writeFile(self.filename, self.lines.join "\n")
 
 method load*(self: TextDocument, filename: string = "") {.locks: "unknown".} =
   let filename = if filename.len > 0: filename else: self.filename
@@ -47,29 +92,28 @@ method load*(self: TextDocument, filename: string = "") {.locks: "unknown".} =
   self.filename = filename
 
   let file = readFile(self.filename)
-  self.content = collect file.splitLines
+  self.lines = collect file.splitLines
 
 proc notifyTextChanged(self: TextDocument) =
-  if self.textChanged != nil:
-    self.textChanged self
+  self.textChanged.invoke self
 
 proc delete(self: TextDocument, selection: Selection, notify: bool = true): Cursor =
   if selection.isEmpty:
     return selection.first
 
   let (first, last) = selection.normalized
-  # echo "delete: ", selection, ", content = ", self.content
+  # echo "delete: ", selection, ", lines = ", self.lines
   if first.line == last.line:
     # Single line selection
-    self.content[last.line].delete first.column..<last.column
+    self.lines[last.line].delete first.column..<last.column
   else:
     # Multi line selection
     # Delete from first cursor to end of first line and add last line
     if first.column < self.lineLength first.line:
-      self.content[first.line].delete(first.column..<(self.lineLength first.line))
-    self.content[first.line].add self.content[last.line][last.column..^1]
+      self.lines[first.line].delete(first.column..<(self.lineLength first.line))
+    self.lines[first.line].add self.lines[last.line][last.column..^1]
     # Delete all lines in between
-    self.content.delete (first.line + 1)..last.line
+    self.lines.delete (first.line + 1)..last.line
 
   if notify:
     self.notifyTextChanged()
@@ -82,10 +126,10 @@ proc insert(self: TextDocument, cursor: Cursor, text: string, notify: bool = tru
   # echo "insert ", cursor, ": ", text
   if self.singleLine:
     let text = text.replace("\n", " ")
-    if self.content.len == 0:
-      self.content.add text
+    if self.lines.len == 0:
+      self.lines.add text
     else:
-      self.content[0].insert(text, cursor.column)
+      self.lines[0].insert(text, cursor.column)
     cursor.column += text.len
 
   else:
@@ -93,13 +137,13 @@ proc insert(self: TextDocument, cursor: Cursor, text: string, notify: bool = tru
       defer: inc i
       if i > 0:
         # Split line
-        self.content.insert(self.content[cursor.line][cursor.column..^1], cursor.line + 1)
+        self.lines.insert(self.lines[cursor.line][cursor.column..^1], cursor.line + 1)
         if cursor.column < self.lineLength cursor.line:
-          self.content[cursor.line].delete(cursor.column..<(self.lineLength cursor.line))
+          self.lines[cursor.line].delete(cursor.column..<(self.lineLength cursor.line))
         cursor = (cursor.line + 1, 0)
 
       if line.len > 0:
-        self.content[cursor.line].insert(line, cursor.column)
+        self.lines[cursor.line].insert(line, cursor.column)
         cursor.column += line.len
 
   if notify:
@@ -109,28 +153,31 @@ proc insert(self: TextDocument, cursor: Cursor, text: string, notify: bool = tru
 
 proc edit(self: TextDocument, selection: Selection, text: string, notify: bool = true): Cursor =
   let selection = selection.normalized
-  # echo "edit ", selection, ": ", self.content
+  # echo "edit ", selection, ": ", self.lines
   var cursor = self.delete(selection, false)
-  # echo "after delete ", cursor, ": ", self.content
+  # echo "after delete ", cursor, ": ", self.lines
   cursor = self.insert(cursor, text)
-  # echo "after insert ", cursor, ": ", self.content
+  # echo "after insert ", cursor, ": ", self.lines
   return cursor
 
 proc lineLength(self: TextDocumentEditor, line: int): int =
-  if line < self.document.content.len:
-    return self.document.content[line].len
+  if line < self.document.lines.len:
+    return self.document.lines[line].len
   return 0
 
 proc clampCursor*(self: TextDocumentEditor, cursor: Cursor): Cursor =
   var cursor = cursor
-  if self.document.content.len == 0:
+  if self.document.lines.len == 0:
     return (0, 0)
-  cursor.line = clamp(cursor.line, 0, self.document.content.len - 1)
+  cursor.line = clamp(cursor.line, 0, self.document.lines.len - 1)
   cursor.column = clamp(cursor.column, 0, self.lineLength cursor.line)
   return cursor
 
 proc clampSelection*(self: TextDocumentEditor, selection: Selection): Selection =
   return (self.clampCursor(selection.first), self.clampCursor(selection.last))
+
+proc clampSelection*(self: TextDocumentEditor) =
+  self.selection = (self.clampCursor(self.selection.first), self.clampCursor(self.selection.last))
 
 proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
   self.selection = self.clampSelection selection
@@ -156,7 +203,7 @@ proc moveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int): Cu
       cursor.column = 0
 
   elif column > self.lineLength cursor.line:
-    if cursor.line < self.document.content.len - 1:
+    if cursor.line < self.document.lines.len - 1:
       cursor.line = cursor.line + 1
       cursor.column = 0
     else:
@@ -172,8 +219,8 @@ proc moveCursorLine(self: TextDocumentEditor, cursor: Cursor, offset: int): Curs
   let line = cursor.line + offset
   if line < 0:
     cursor = (0, cursor.column)
-  elif line >= self.document.content.len:
-    cursor = (self.document.content.len - 1, cursor.column)
+  elif line >= self.document.lines.len:
+    cursor = (self.document.lines.len - 1, cursor.column)
   else:
     cursor.line = line
   return self.clampCursor cursor
@@ -255,16 +302,18 @@ method injectDependencies*(self: TextDocumentEditor, ed: Editor) =
 proc newTextEditor*(document: TextDocument, ed: Editor): TextDocumentEditor =
   let editor = TextDocumentEditor(eventHandler: nil, document: document)
   editor.init()
-  if editor.document.content.len == 0:
-    editor.document.content = @[""]
+  if editor.document.lines.len == 0:
+    editor.document.lines = @[""]
   editor.injectDependencies(ed)
+  discard document.textChanged.subscribe (_: TextDocument) => editor.clampSelection()
   return editor
 
 method createWithDocument*(self: TextDocumentEditor, document: Document): DocumentEditor =
   let editor = TextDocumentEditor(eventHandler: nil, document: TextDocument(document))
   editor.init()
-  if editor.document.content.len == 0:
-    editor.document.content = @[""]
+  if editor.document.lines.len == 0:
+    editor.document.lines = @[""]
+  discard editor.document.textChanged.subscribe (_: TextDocument) => editor.clampSelection()
   return editor
 
 method unregister*(self: TextDocumentEditor) =

@@ -93,7 +93,6 @@ type Editor* = ref object
   scriptContext*: ScriptContext
 
   statusBarOnTop*: bool
-  inputBuffer*: string
 
   currentView*: int
   views*: seq[View]
@@ -105,6 +104,7 @@ type Editor* = ref object
   editors*: Table[EditorId, DocumentEditor]
   popups*: seq[Popup]
 
+  commandLineTextEditor: DocumentEditor
   eventHandler*: EventHandler
   commandLineEventHandler*: EventHandler
   commandLineMode*: bool
@@ -265,12 +265,13 @@ proc setTheme*(ed: Editor, path: string) =
 
 proc createAddins(): VmAddins
 
+proc getCommandLineTextEditor*(ed: Editor): TextDocumentEditor = ed.commandLineTextEditor.TextDocumentEditor
+
 proc newEditor*(window: Window, boxy: Boxy): Editor =
   var ed = Editor()
   ed.window = window
   ed.boxy = boxy
   ed.boxy2 = newBoxy()
-  ed.inputBuffer = ""
   ed.statusBarOnTop = false
   ed.logger = newConsoleLogger()
 
@@ -311,15 +312,13 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
       ed.handleAction(action, arg)
       Handled
     onInput:
-      ed.handleTextInput(input)
-      Handled
+      Ignored
   ed.commandLineEventHandler = eventHandler(ed.getEventHandlerConfig("commandLine")):
     onAction:
       ed.handleAction(action, arg)
       Handled
     onInput:
-      ed.handleTextInput(input)
-      Handled
+      Ignored
   ed.commandLineMode = false
 
   try:
@@ -336,6 +335,10 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
     echo "Failed to load previous state from config file"
 
   gEditor = ed
+
+  ed.commandLineTextEditor = newTextEditor(newTextDocument(), ed)
+  ed.commandLineTextEditor.renderHeader = false
+  ed.getCommandLineTextEditor.hideCursorWhenInactive = true
 
   let addins = createAddins()
   try:
@@ -388,27 +391,19 @@ proc moveCurrentViewNext(ed: Editor) =
     ed.currentView = index
 
 proc handleTextInput(ed: Editor, text: string) =
-  if ed.commandLineMode:
-    echo "handleTextInput '" & text & "'"
-    ed.inputBuffer.add text
+  discard
 
 proc handleAction(ed: Editor, action: string, arg: string) =
   ed.logger.log(lvlInfo, "[ed] Action '$1 $2'" % [action, arg])
   case action
   of "quit":
     ed.window.closeRequested = true
-  of "backspace":
-    if ed.inputBuffer.len > 0:
-      let (_, l) = ed.inputBuffer.lastRune(ed.inputBuffer.len - 1)
-      ed.inputBuffer = ed.inputBuffer[0..<ed.inputBuffer.len-l]
-  of "insert":
-    ed.handleTextInput arg
   of "change-font-size":
     ed.ctx.fontSize = ed.ctx.fontSize + arg.parseFloat()
   of "toggle-status-bar-location":
     ed.statusBarOnTop = not ed.statusBarOnTop
   of "create-view":
-    ed.createView(TextDocument(filename: "", content: @[]))
+    ed.createView(newTextDocument())
   of "create-keybind-autocomplete-view":
     ed.createView(newKeybindAutocompletion())
   of "close-view":
@@ -437,15 +432,15 @@ proc handleAction(ed: Editor, action: string, arg: string) =
       except: 0.float32
       ed.layout_props.props.mgetOrPut(prop, 0) += change
   of "command-line":
-    ed.inputBuffer = arg
+    ed.getCommandLineTextEditor.document.content = @[arg]
     ed.commandLineMode = true
   of "exit-command-line":
-    ed.inputBuffer = ""
+    ed.getCommandLineTextEditor.document.content = @[""]
     ed.commandLineMode = false
   of "execute-command-line":
     ed.commandLineMode = false
-    let (action, arg) = ed.inputBuffer.parseAction
-    ed.inputBuffer = ""
+    let (action, arg) = ed.getCommandLineTextEditor.document.content.join("").parseAction
+    ed.getCommandLineTextEditor.document.content = @[""]
     ed.handleAction(action, arg)
   of "open-file":
     try:
@@ -453,7 +448,7 @@ proc handleAction(ed: Editor, action: string, arg: string) =
         ed.createView(newAstDocument(arg))
       else:
         let file = readFile(arg)
-        ed.createView(TextDocument(filename: arg, content: collect file.splitLines))
+        ed.createView(newTextDocument(arg, file.splitLines))
     except:
       ed.logger.log(lvlError, fmt"[ed] Failed to load file '{arg}': {getCurrentExceptionMsg()}")
       echo getCurrentException().getStackTrace()
@@ -547,6 +542,7 @@ proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifier
 proc currentEventHandlers*(ed: Editor): seq[EventHandler] =
   result = @[ed.eventHandler]
   if ed.commandLineMode:
+    result.add ed.getCommandLineTextEditor.getEventHandlers()
     result.add ed.commandLineEventHandler
   elif ed.popups.len > 0:
     result.add ed.popups[ed.popups.high].getEventHandlers()
