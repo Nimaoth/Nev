@@ -77,6 +77,7 @@ type FunctionExecutionContext* = ref object
   id*: Id
   node*: AstNode
   arguments*: seq[Value]
+  maxLoopIterations*: Option[int]
 
 type
   VisualNodeRenderFunc* = proc(bounds: Rect)
@@ -268,10 +269,11 @@ func fingerprint*(value: Value): Fingerprint =
   of vkType: return @[value.kind.int64] & value.typ.fingerprint
 
 func `$`*(fec: FunctionExecutionContext): string =
-  return fmt"Call {fec.node}({fec.arguments})"
+  return fmt"Call {fec.node}({fec.arguments}, maxLoopIterations={fec.maxLoopIterations})"
 
 func hash*(fec: FunctionExecutionContext): Hash =
-  return fec.node.hash xor fec.arguments.hash
+  result = fec.node.hash !& fec.arguments.hash !& fec.maxLoopIterations.hash
+  result = !$result
 
 func `==`*(a: FunctionExecutionContext, b: FunctionExecutionContext): bool =
   if a.isNil: return b.isNil
@@ -279,6 +281,8 @@ func `==`*(a: FunctionExecutionContext, b: FunctionExecutionContext): bool =
   if a.node != b.node:
     return false
   if a.arguments != b.arguments:
+    return false
+  if a.maxLoopIterations != b.maxLoopIterations:
     return false
   return true
 

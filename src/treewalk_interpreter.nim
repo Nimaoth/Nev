@@ -11,7 +11,7 @@ proc cacheValuesInFunction(ctx: Context, node: AstNode, values: var Table[Id, Va
     for child in node.children:
       ctx.cacheValuesInFunction(child, values)
 
-proc executeNodeRec(ctx: Context, node: AstNode, variables: var Table[Id, Value]): Value =
+proc executeNodeRec(ctx: Context, fec: FunctionExecutionContext, node: AstNode, variables: var Table[Id, Value]): Value =
   if ctx.enableExecutionLogging: inc currentIndent, 1
   defer:
     if ctx.enableExecutionLogging: dec currentIndent, 1
@@ -26,7 +26,7 @@ proc executeNodeRec(ctx: Context, node: AstNode, variables: var Table[Id, Value]
   of NodeList():
     var lastValue = errorValue()
     for child in node.children:
-      lastValue = ctx.executeNodeRec(child, variables)
+      lastValue = ctx.executeNodeRec(fec, child, variables)
     return lastValue
 
   of StringLiteral():
@@ -48,7 +48,7 @@ proc executeNodeRec(ctx: Context, node: AstNode, variables: var Table[Id, Value]
       let condition = node[index]
       let trueCase = node[index + 1]
 
-      let conditionValue = ctx.executeNodeRec(condition, variables)
+      let conditionValue = ctx.executeNodeRec(fec, condition, variables)
       if conditionValue.kind == vkError:
         return errorValue()
 
@@ -57,12 +57,12 @@ proc executeNodeRec(ctx: Context, node: AstNode, variables: var Table[Id, Value]
         return errorValue()
 
       if conditionValue.intValue != 0:
-        let trueCaseValue = ctx.executeNodeRec(trueCase, variables)
+        let trueCaseValue = ctx.executeNodeRec(fec, trueCase, variables)
         return trueCaseValue
 
     # else case
     if node.len mod 2 != 0:
-      let falseCaseValue = ctx.executeNodeRec(node.last, variables)
+      let falseCaseValue = ctx.executeNodeRec(fec, node.last, variables)
       return falseCaseValue
 
     return voidValue()
@@ -77,11 +77,12 @@ proc executeNodeRec(ctx: Context, node: AstNode, variables: var Table[Id, Value]
     var index: int = 0
     while true:
       defer: index += 1
-      if index > 1000:
-        logger.log(lvlError, fmt"[compiler] Max loop iterations reached for {node}")
+      let maxLoopIterations = fec.maxLoopIterations.get(1000)
+      if index > maxLoopIterations:
+        logger.log(lvlError, fmt"[compiler] Max loop iterations ({maxLoopIterations}) reached for {node}")
         return errorValue()
 
-      let conditionValue = ctx.executeNodeRec(condition, variables)
+      let conditionValue = ctx.executeNodeRec(fec, condition, variables)
       if conditionValue.kind == vkError:
         return errorValue()
 
@@ -92,7 +93,7 @@ proc executeNodeRec(ctx: Context, node: AstNode, variables: var Table[Id, Value]
       if conditionValue.intValue == 0:
         break
 
-      let bodyValue = ctx.executeNodeRec(body, variables)
+      let bodyValue = ctx.executeNodeRec(fec, body, variables)
       if bodyValue.kind == vkError:
         return errorValue()
 
@@ -112,7 +113,7 @@ proc executeNodeRec(ctx: Context, node: AstNode, variables: var Table[Id, Value]
     return errorValue()
 
   of Call():
-    let function = ctx.executeNodeRec(node[0], variables)
+    let function = ctx.executeNodeRec(fec, node[0], variables)
 
     case function.kind:
     of vkError:
@@ -121,7 +122,7 @@ proc executeNodeRec(ctx: Context, node: AstNode, variables: var Table[Id, Value]
     of vkBuiltinFunction:
       var args: seq[Value] = @[]
       for arg in node.children[1..^1]:
-        let value = ctx.executeNodeRec(arg, variables)
+        let value = ctx.executeNodeRec(fec, arg, variables)
         if value.kind == vkError:
           return errorValue()
         args.add value
@@ -130,7 +131,7 @@ proc executeNodeRec(ctx: Context, node: AstNode, variables: var Table[Id, Value]
     of vkAstFunction:
       var args: seq[Value] = @[]
       for arg in node.children[1..^1]:
-        let value = ctx.executeNodeRec(arg, variables)
+        let value = ctx.executeNodeRec(fec, arg, variables)
         if value.kind == vkError:
           return errorValue()
         args.add value
@@ -144,7 +145,7 @@ proc executeNodeRec(ctx: Context, node: AstNode, variables: var Table[Id, Value]
     if node.len < 2:
       return errorValue()
     let valueNode = node[1]
-    let value = ctx.executeNodeRec(valueNode, variables)
+    let value = ctx.executeNodeRec(fec, valueNode, variables)
     variables[node.id] = value
     return value
 
@@ -152,7 +153,7 @@ proc executeNodeRec(ctx: Context, node: AstNode, variables: var Table[Id, Value]
     if node.len < 2:
       return errorValue()
     let valueNode = node[1]
-    let value = ctx.executeNodeRec(valueNode, variables)
+    let value = ctx.executeNodeRec(fec, valueNode, variables)
     variables[node.id] = value
     return value
 
@@ -167,7 +168,7 @@ proc executeNodeRec(ctx: Context, node: AstNode, variables: var Table[Id, Value]
     let targetNode = node[0]
     let valueNode = node[1]
     if ctx.computeSymbol(targetNode).getSome(sym):
-      let value = ctx.executeNodeRec(valueNode, variables)
+      let value = ctx.executeNodeRec(fec, valueNode, variables)
       variables[sym.id] = value
       return voidValue()
     else:
@@ -192,7 +193,7 @@ proc computeFunctionExecutionImpl2*(ctx: Context, fec: FunctionExecutionContext)
     let param = params[i]
     variables[param.id] = arg
 
-  let bodyResult = ctx.executeNodeRec(body, variables)
+  let bodyResult = ctx.executeNodeRec(fec, body, variables)
   if bodyResult.kind == vkError:
     return errorValue()
 
