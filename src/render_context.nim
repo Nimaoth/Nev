@@ -5,6 +5,8 @@ type RenderContext* = ref object
   boxy*: Boxy
   ctx*: Context
   typefaces: Table[string, Typeface]
+  lineHeight*: float32
+  charWidth*: float32
 
 proc getFont*(ctx: RenderContext, font: string, fontSize: float32): Font =
   if font == "":

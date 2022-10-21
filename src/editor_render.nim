@@ -257,7 +257,7 @@ proc renderVisualNode(editor: AstDocumentEditor, ed: Editor, node: VisualNode, o
   let bounds = node.bounds + offset
 
   if node.len == 0:
-    if (bounds or globalBounds) != globalBounds:
+    if not bounds.intersects(globalBounds):
       return
   else:
     if not bounds.intersects(globalBounds):
@@ -265,15 +265,20 @@ proc renderVisualNode(editor: AstDocumentEditor, ed: Editor, node: VisualNode, o
 
   if node.text.len > 0:
     let color = ed.theme.anyColor(node.colors, rgb(255, 255, 255))
-    let style = ed.theme.tokenFontStyle(node.colors)
+    var style = ed.theme.tokenFontStyle(node.colors)
+    if node.styleOverride.getSome(override):
+      style.incl override
+
     let font = config.getFont(style)
 
-    if ed.getFlag("render-vnode-text"):
-      let image = ctx.computeRenderedText(ctx.getOrCreateRenderTextInput(newRenderTextInput(
-        ed.renderCtx,
-        node.text,
-        font, ed.ctx.fontSize)))
-      ed.boxy.drawImage(image, bounds.xy, color)
+    let image = ctx.computeRenderedText(ctx.getOrCreateRenderTextInput(newRenderTextInput(
+      ed.renderCtx,
+      node.text,
+      font, ed.ctx.fontSize)))
+    ed.boxy.drawImage(image, bounds.xy, color)
+
+    if Underline in style:
+      ed.boxy.fillRect(bounds.splitHInv(2.relative)[1], color)
 
   elif node.node != nil and node.node.kind == Empty:
     ed.boxy.fillRect(bounds, ed.theme.color("editorError.foreground", rgb(255, 100, 100)).withAlpha(0.1))
@@ -328,6 +333,27 @@ proc renderVisualNodeLayout(editor: AstDocumentEditor, ed: Editor, node: AstNode
     ed.boxy.fillRect(bounds, ed.theme.color("foreground", rgb(255, 255, 255)).withAlpha(0.1))
     ed.boxy.strokeRect(bounds, ed.theme.color("foreground", rgb(255, 255, 255)), 2)
 
+    let value = ctx.computeValue(editor.node)
+    let typ = ctx.computeType(editor.node)
+
+    let parentBounds = visualRange.parent.absoluteBounds
+
+    var last = rect(vec2(contentBounds.xw - 25, parentBounds.y + offset.y), vec2())
+    last = ed.renderCtx.drawText(last.xy, $typ, ed.theme.tokenColor("storage.type", rgb(255, 255, 255)), pivot = vec2(1, 0))
+
+    if value.kind != vkVoid and value.kind != vkBuiltinFunction and value.kind != vkAstFunction:
+      last = ed.renderCtx.drawText(last.xy, " : ", ed.theme.tokenColor("punctuation", rgb(255, 255, 255)), pivot = vec2(1, 0))
+      last = ed.renderCtx.drawText(last.xy, $value, ed.theme.tokenColor("string", rgb(255, 255, 255)), pivot = vec2(1, 0))
+
+proc renderBlockIndent(editor: AstDocumentEditor, ed: Editor, layout: NodeLayout, node: AstNode, offset: Vec2) =
+  for (_, child) in node.nextPreOrder:
+    if child.kind == NodeList and layout.nodeToVisualNode.contains(child.id):
+      let visualRange = layout.nodeToVisualNode[child.id]
+      let bounds = visualRange.absoluteBounds + offset
+      let indent = (visualRange.parent[visualRange.first].indent - 1) mod 6 + 1
+      let color = ed.theme.color(@[fmt"editorBracketHighlight.foreground{indent}", "editor.foreground"]).withAlpha(0.75)
+      ed.boxy.fillRect(bounds.splitV(2.relative)[0], color)
+
 method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect, selected: bool): Rect =
   let document = editor.document
   let theme = ed.theme
@@ -358,6 +384,14 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
     config.fontRegular, ed.ctx.fontSize)))
   ed.boxy.drawImage(titleImage, vec2(headerBounds.x, headerBounds.y), if selected: theme.color("tab.activeForeground", rgb(255, 225, 255)) else: theme.color("tab.inactiveForeground", rgb(255, 225, 255)))
 
+  # Mask the rest of the rendering is this function to the contentBounds
+  ed.boxy.pushLayer()
+  defer:
+    ed.boxy.pushLayer()
+    ed.boxy.fillRect(contentBounds, color(1, 0, 0, 1))
+    ed.boxy.popLayer(blendMode = MaskBlend)
+    ed.boxy.popLayer()
+
   var lastNodeRect = contentBounds
   lastNodeRect.h = lineDistance
 
@@ -372,29 +406,50 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
     let textEditorBounds = editor.textEditor.measureEditorBounds(ed, rect(vec2(), contentBounds.wh))
     replacements[editor.currentlyEditedSymbol] = newFunctionNode(textEditorBounds, (bounds: Rect) => (discard renderDocumentEditor(editor.textEditor, ed, bounds, true)))
 
+  if editor.previousBaseIndex < 0 or editor.previousBaseIndex > editor.document.rootNode.len:
+    echo "out ", editor.previousBaseIndex
   editor.previousBaseIndex = editor.previousBaseIndex.clamp(0..editor.document.rootNode.len)
 
+  # Adjust scroll offset and base index so that the first node on screen is the base
   while editor.scrollOffset < 0 and editor.previousBaseIndex + 1 < editor.document.rootNode.len:
     let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: editor.document.rootNode[editor.previousBaseIndex], selectedNode: selectedNode.id, replacements: replacements, revision: config.revision)
     let layout = ctx.computeNodeLayout(input)
+
+    if editor.scrollOffset + layout.bounds.h + lineDistance >= contentBounds.h:
+      break
+
     editor.previousBaseIndex += 1
     editor.scrollOffset += layout.bounds.h + lineDistance
 
+  # Adjust scroll offset and base index so that the first node on screen is the base
   while editor.scrollOffset > contentBounds.h and editor.previousBaseIndex > 0:
-    let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: editor.document.rootNode[editor.previousBaseIndex], selectedNode: selectedNode.id, replacements: replacements, revision: config.revision)
+    let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: editor.document.rootNode[editor.previousBaseIndex - 1], selectedNode: selectedNode.id, replacements: replacements, revision: config.revision)
     let layout = ctx.computeNodeLayout(input)
+
+    if editor.scrollOffset - layout.bounds.h <= 0:
+      break
+
     editor.previousBaseIndex -= 1
     editor.scrollOffset -= layout.bounds.h + lineDistance
 
+  # echo fmt"{editor.previousBaseIndex} : {editor.scrollOffset}"
   editor.lastLayouts.setLen 0
+
+  var rendered = 0
 
   var offset = contentBounds.xy + vec2(0, editor.scrollOffset)
   for i in editor.previousBaseIndex..<editor.document.rootNode.len:
     let node = editor.document.rootNode[i]
     let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node, selectedNode: selectedNode.id, replacements: replacements, revision: config.revision)
     let layout = ctx.computeNodeLayout(input)
+    if layout.bounds.y + offset.y > contentBounds.yh:
+      break
+
     editor.renderVisualNodeLayout(ed, node, contentBounds, layout, offset)
+    editor.renderBlockIndent(ed, layout, node, offset)
     offset.y += layout.bounds.h + lineDistance
+
+    inc rendered
 
   offset = contentBounds.xy + vec2(0, editor.scrollOffset)
   for k in 1..editor.previousBaseIndex:
@@ -402,8 +457,14 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
     let node = editor.document.rootNode[i]
     let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node, selectedNode: selectedNode.id, replacements: replacements, revision: config.revision)
     let layout = ctx.computeNodeLayout(input)
+    if layout.bounds.yh + offset.y < contentBounds.y:
+      break
+
     offset.y -= layout.bounds.h + lineDistance
     editor.renderVisualNodeLayout(ed, node, contentBounds, layout, offset)
+    editor.renderBlockIndent(ed, layout, node, offset)
+
+    inc rendered
 
   if editor.completions.len > 0:
     # Render outline around all nodes which reference the selected symbol in the completion list
@@ -421,18 +482,34 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
         ed.renderCompletions(editor.completions, editor.selectedCompletion, contentBounds.splitH(bounds.yh.absolute)[1].splitV(bounds.x.absolute)[1], false)
 
   if ed.getFlag("render-execution-output"):
-    let bounds = contentBounds.splitV(relative(contentBounds.w - 500))[1]
-    ed.boxy.strokeRect(bounds, rgb(225, 225, 225).color)
+    ed.boxy.pushLayer()
+    let lineHeight = ed.renderCtx.lineHeight
 
-    let linesToRender = min(executionOutput.lines.len, int(bounds.h / ed.ctx.fontSize))
+    let linesToRender = min(executionOutput.lines.len, int(bounds.h / lineHeight) + 1)
     let offset = min(executionOutput.lines.len - linesToRender, executionOutput.scroll)
     executionOutput.scroll = offset
     let firstIndex = linesToRender + offset
     let lastIndex = 1 + offset
 
-    var last = rect(bounds.xy, vec2())
+    var maxLineLength = 0
+    for (line, color) in executionOutput.lines[^firstIndex..^lastIndex]:
+      maxLineLength = max(maxLineLength, line.len)
+
+    let boundsWidth = (maxLineLength + 5).clamp(25, 100).float32 * ed.renderCtx.charWidth
+    let bounds = contentBounds.splitVInv(boundsWidth.relative)[1]
+
+    let verticalPixelOffset = max(0, linesToRender.float32 * lineHeight - bounds.h)
+
+    var last = rect(bounds.xy - vec2(0, verticalPixelOffset), vec2())
     for (line, color) in executionOutput.lines[^firstIndex..^lastIndex]:
       last = ed.renderCtx.drawText(last.xyh, line, color)
+
+    ed.boxy.pushLayer()
+    ed.boxy.fillRect(bounds, color(1, 0, 0, 1))
+    ed.boxy.popLayer(blendMode = MaskBlend)
+    ed.boxy.popLayer()
+
+    ed.boxy.strokeRect(bounds, rgb(225, 225, 225).color)
 
   if ed.getFlag("render-debug-info"):
     let bounds = contentBounds.splitV(relative(contentBounds.w - 500))[1]
@@ -534,7 +611,12 @@ proc renderView*(ed: Editor, bounds: Rect, view: View, selected: bool) =
   let bounds = bounds.shrink(10.relative)
   ed.boxy.fillRect(bounds, if selected: ed.theme.color("editorPane.background", rgb(25, 25, 40)) else: ed.theme.color("editorPane.background", rgb(25, 25, 25)))
 
+  ed.boxy.pushLayer()
   discard view.editor.renderDocumentEditor(ed, bounds, selected)
+  ed.boxy.pushLayer()
+  ed.boxy.fillRect(bounds, color(1, 0, 0, 1))
+  ed.boxy.popLayer(blendMode = MaskBlend)
+  ed.boxy.popLayer()
 
 method renderPopup*(popup: Popup, ed: Editor, bounds: Rect) {.base, locks: "unknown".} =
   discard
@@ -563,7 +645,12 @@ proc renderMainWindow*(ed: Editor, bounds: Rect) =
     ed.renderView(rects[i], view, i == ed.currentView and not ed.commandLineMode)
 
   for i, popup in ed.popups:
+    ed.boxy.pushLayer()
     popup.renderPopup(ed, bounds)
+    ed.boxy.pushLayer()
+    ed.boxy.fillRect(bounds, color(1, 0, 0, 1))
+    ed.boxy.popLayer(blendMode = MaskBlend)
+    ed.boxy.popLayer()
 
 proc renderStatusBar*(ed: Editor, bounds: Rect) =
   discard ed.getCommandLineTextEditor.renderDocumentEditor(ed, bounds, ed.commandLineMode)
@@ -593,6 +680,11 @@ proc render*(ed: Editor) =
   elif config.font.size != ed.ctx.fontSize:
     config.font.size = ed.ctx.fontSize
     config.revision += 1
+
+  let tempArrangement = config.font.typeset("#")
+  var tempBounds = tempArrangement.layoutBounds()
+  ed.renderCtx.lineHeight = tempBounds.y
+  ed.renderCtx.charWidth = tempBounds.x
 
   let (mainRect, statusRect) = if not ed.statusBarOnTop: windowRect.splitH(relative(windowRect.h - lineHeight))
   else:

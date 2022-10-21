@@ -225,14 +225,14 @@ proc handleSelectedNodeChanged(editor: AstDocumentEditor) =
       if not bounds.intersects(editor.lastBounds):
         break
 
-      if bounds.y < 50:
+      if bounds.yh < 100:
         let subbase = node.subbase
         editor.previousBaseIndex = subbase.index
-        editor.scrollOffset = 50 - (bounds.y - offset.y)
-      elif bounds.yh > editor.lastBounds.h - 50:
+        editor.scrollOffset = 100 - (bounds.yh - offset.y)
+      elif bounds.y > editor.lastBounds.h - 100:
         let subbase = node.subbase
         editor.previousBaseIndex = subbase.index
-        editor.scrollOffset = -(bounds.y - offset.y) + editor.lastBounds.h - 50
+        editor.scrollOffset = -(bounds.y - offset.y) + editor.lastBounds.h - 100
 
       return
 
@@ -279,16 +279,14 @@ proc handleSelectedNodeChanged(editor: AstDocumentEditor) =
       if not bounds.intersects(editor.lastBounds):
         break
 
-      foundNode = true
-
-      if bounds.y < 50:
+      if bounds.yh < 100:
         let subbase = node.subbase
         editor.previousBaseIndex = subbase.index
-        editor.scrollOffset = 50 - (bounds.y - offset.y)
-      elif bounds.yh > editor.lastBounds.h - 50:
+        editor.scrollOffset = 100 - (bounds.yh - offset.y)
+      elif bounds.y > editor.lastBounds.h - 100:
         let subbase = node.subbase
         editor.previousBaseIndex = subbase.index
-        editor.scrollOffset = -(bounds.y - offset.y) + editor.lastBounds.h - 50
+        editor.scrollOffset = -(bounds.y - offset.y) + editor.lastBounds.h - 100
 
       return
 

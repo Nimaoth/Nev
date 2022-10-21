@@ -5,6 +5,7 @@ import ast, id, util, rect_utils
 import query_system
 import boxy, pixie/contexts
 import render_context
+import theme
 
 export render_context
 
@@ -84,12 +85,12 @@ type
     node*: AstNode
     text*: string
     bounds*: Rect
-    indent*: float32
+    indent*: int
     font*: Font
     render*: VisualNodeRenderFunc
     children*: seq[VisualNode]
     colors*: seq[string]
-
+    styleOverride*: Option[set[FontStyle]]
 
   VisualNodeRange* = object
     parent*: VisualNode
