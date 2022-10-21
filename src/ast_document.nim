@@ -1275,7 +1275,8 @@ proc runSelectedFunction(self: AstDocumentEditor) =
 
       let timer = startTimer()
 
-      let fec = ctx.newFunctionExecutionContext(FunctionExecutionContext(node: node[0], arguments: @[]))
+      let maxLoopIterations = self.editor.getOption("ast.max-loop-iterations", 1000)
+      let fec = ctx.newFunctionExecutionContext(FunctionExecutionContext(node: node[0], arguments: @[], maxLoopIterations: some(maxLoopIterations)))
       let result = ctx.computeFunctionExecution(fec)
       if result.kind != vkVoid:
         executionOutput.addOutput($result, if result.kind == vkError: rgb(255, 50, 50) else: rgb(50, 255, 50))

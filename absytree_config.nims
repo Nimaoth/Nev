@@ -18,6 +18,9 @@ proc handleAction*(action: string, arg: string): bool =
     setFlag(arg, newValue)
     echo "[script] ", arg, " = ", newValue
 
+  of "set-max-loop-iterations":
+    setOption("ast.max-loop-iterations", arg.parseInt)
+
   else: return false
 
   return true
@@ -43,18 +46,6 @@ func charCategory(c: char): int =
   return 2
 
 type SelectionCursor* = enum Both = "both", First = "first", Last = "last", Invalid
-
-proc `cursor=`(selection: var Selection, cursor: Cursor, which: SelectionCursor = Both) =
-  case which
-  of Both:
-    selection.first = cursor
-    selection.last = cursor
-  of First:
-    selection.first = cursor
-  of Last:
-    selection.last = cursor
-  of Invalid:
-    assert false
 
 proc cursor(selection: Selection, which: SelectionCursor): Cursor =
   case which
@@ -144,6 +135,7 @@ proc postInitialize*() =
 
 setFlag "render-vnode-text", true
 
+addCommand "editor", "<SPACE>ff", "log-options"
 addCommand "editor", "<ESCAPE>", "escape"
 addCommand "editor", "<C-l><C-h>", "change-font-size", "-1"
 addCommand "editor", "<C-l><C-f>", "change-font-size", "1"
