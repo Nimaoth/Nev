@@ -86,7 +86,7 @@ type Editor* = ref object
 
   eventHandlerConfigs: Table[string, EventHandlerConfig]
 
-  flags: Table[string, bool]
+  options: JsonNode
 
   logger: Logger
 
@@ -221,8 +221,29 @@ proc createEditorForDocument(ed: Editor, document: Document): DocumentEditor =
   echo "No editor found which can edit " & $document
   return nil
 
+proc getOption*[T](editor: Editor, path: string, default: T = T.default): T =
+  template createScriptGetOption(editor, path, default, accessor: untyped): untyped =
+    block:
+      if editor.isNil:
+        return default
+      let node = editor.options{path.split(".")}
+      if node.isNil:
+        return default
+      accessor(node, default)
+
+  when T is bool:
+    return editor.createScriptGetOption(path, default, getBool)
+  elif T is Ordinal:
+    return editor.createScriptGetOption(path, default, getInt)
+  elif T is float32 | float64:
+    return editor.createScriptGetOption(path, default, getFloat)
+  elif T is string:
+    return editor.createScriptGetOption(path, default, getStr)
+  else:
+    {.fatal: ("Can't get option with type " & $T).}
+
 proc getFlag*(editor: Editor, flag: string, default: bool = false): bool =
-  return editor.flags.getOrDefault(flag, default)
+  return getOption[bool](editor, flag, default)
 
 proc createView(ed: Editor, editor: DocumentEditor) =
   var view = View(document: nil, editor: editor)
@@ -309,6 +330,8 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
   ed.getEventHandlerConfig("editor").addCommand "<C-x><C-x>", "quit"
   ed.getEventHandlerConfig("editor").addCommand "<CAS-r>", "reload-config"
 
+  ed.options = newJObject()
+
   ed.eventHandler = eventHandler(ed.getEventHandlerConfig("editor")):
     onAction:
       ed.handleAction(action, arg)
@@ -332,6 +355,9 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
     if state.fontBold.len > 0: ed.fontBold = state.fontBold
     if state.fontItalic.len > 0: ed.fontItalic = state.fontItalic
     if state.fontBoldItalic.len > 0: ed.fontBoldItalic = state.fontBoldItalic
+
+    ed.options = readFile("options.json").parseJson
+    echo "Restoring options: ", ed.options.pretty
 
   except:
     echo "Failed to load previous state from config file"
@@ -363,6 +389,7 @@ proc shutdown*(ed: Editor) =
 
   let serialized = state.toJson
   writeFile("config.json", serialized.pretty)
+  writeFile("options.json", ed.options.pretty)
 
 proc closeCurrentView(ed: Editor) =
   ed.views[ed.currentView].editor.unregister()
@@ -521,6 +548,9 @@ proc handleAction(ed: Editor, action: string, arg: string) =
         ed.scriptContext.reloadScript()
       except:
         ed.logger.log(lvlError, fmt"Failed to reload config")
+
+  of "log-options":
+    ed.logger.log(lvlInfo, ed.options.pretty)
 
   else:
     try:
@@ -702,15 +732,54 @@ proc scriptGetTextEditorLineCount*(editorId: EditorId): int =
       return editor.document.content.len
   return 0
 
-proc scriptGetFlag*(flag: string, default: bool = false): bool =
-  if gEditor.isNil:
-    return false
-  return gEditor.flags.getOrDefault(flag, default)
+template createScriptGetOption(path, default, accessor: untyped): untyped =
+  block:
+    if gEditor.isNil:
+      return default
+    let node = gEditor.options{path.split(".")}
+    if node.isNil:
+      return default
+    accessor(node, default)
 
-proc scriptSetFlag*(flag: string, value: bool) =
-  if gEditor.isNil:
-    return
-  gEditor.flags[flag] = value
+template createScriptSetOption(path, value: untyped): untyped =
+  block:
+    if gEditor.isNil:
+      return
+    let pathItems = path.split(".")
+    var node = gEditor.options
+    for key in pathItems[0..^2]:
+      if node.kind != JObject:
+        return
+      if not node.contains(key):
+        node[key] = newJObject()
+      node = node[key]
+    if node.isNil or node.kind != JObject:
+      return
+    node[pathItems[^1]] = value
+
+proc scriptGetOptionInt*(path: string, default: int): int =
+  result = createScriptGetOption(path, default, getInt)
+
+proc scriptGetOptionFloat*(path: string, default: float): float =
+  result = createScriptGetOption(path, default, getFloat)
+
+proc scriptGetOptionBool*(path: string, default: bool): bool =
+  result = createScriptGetOption(path, default, getBool)
+
+proc scriptGetOptionString*(path: string, default: string): string =
+  result = createScriptGetOption(path, default, getStr)
+
+proc scriptSetOptionInt*(path: string, value: int) =
+  createScriptSetOption(path, newJInt(value))
+
+proc scriptSetOptionFloat*(path: string, value: float) =
+  createScriptSetOption(path, newJFloat(value))
+
+proc scriptSetOptionBool*(path: string, value: bool) =
+  createScriptSetOption(path, newJBool(value))
+
+proc scriptSetOptionString*(path: string, value: string) =
+  createScriptSetOption(path, newJString(value))
 
 macro myImport(): untyped =
   return nnkImportStmt.newTree(ident"scripting_api")
@@ -732,8 +801,14 @@ proc createAddins(): VmAddins =
     scriptSetTextEditorSelection,
     scriptGetTextEditorLine,
     scriptGetTextEditorLineCount,
-    scriptGetFlag,
-    scriptSetFlag,
+    scriptGetOptionInt,
+    scriptGetOptionFloat,
+    scriptGetOptionBool,
+    scriptGetOptionString,
+    scriptSetOptionInt,
+    scriptSetOptionFloat,
+    scriptSetOptionBool,
+    scriptSetOptionString,
     )
   addCallable(myImpl):
     proc handleAction(action: string, arg: string): bool

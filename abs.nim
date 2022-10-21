@@ -67,11 +67,35 @@ proc getLine*(editor: TextDocumentEditor, line: int): string =
 proc getLineCount*(editor: TextDocumentEditor): int =
   return scriptGetTextEditorLineCount(editor.id)
 
+proc getOption*[T](path: string, default: T = T.default): T =
+  when T is bool:
+    return scriptGetOptionBool(path, default).T
+  elif T is Ordinal:
+    return scriptGetOptionInt(path, default).T
+  elif T is float32 | float64:
+    return scriptGetOptionFloat(path, default).T
+  elif T is string:
+    return scriptGetOptionString(path, default).T
+  else:
+    {.fatal: ("Can't get option with type " & $T).}
+
+proc setOption*[T](path: string, value: T) =
+  when T is bool:
+    scriptSetOptionBool(path, value)
+  elif T is Ordinal:
+    scriptSetOptionInt(path, value.int)
+  elif T is float32 | float64:
+    scriptSetOptionFloat(path, value.float64)
+  elif T is string:
+    scriptSetOptionString(path, value)
+  else:
+    {.fatal: ("Can't set option with type " & $T).}
+
 proc getFlag*(flag: string, default: bool = false): bool =
-  return scriptGetFlag(flag, default)
+  return getOption[bool](flag, default)
 
 proc setFlag*(flag: string, value: bool) =
-  scriptSetFlag(flag, value)
+  setOption[bool](flag, value)
 
 proc log*(args: varargs[string, `$`]) =
   var msgLen = 0
