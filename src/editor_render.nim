@@ -196,12 +196,20 @@ method computeBounds(item: ThemeSelectorItem, ed: Editor): Rect =
   let nameWidth = ed.ctx.measureText(item.name).width
   return rect(vec2(), vec2(nameWidth, ed.ctx.fontSize))
 
+method computeBounds(item: FileSelectorItem, ed: Editor): Rect =
+  let nameWidth = ed.ctx.measureText(item.path).width
+  return rect(vec2(), vec2(nameWidth, ed.ctx.fontSize))
+
 method renderItem(item: SelectorItem, ed: Editor, bounds: Rect) =
   discard
 
 method renderItem(item: ThemeSelectorItem, ed: Editor, bounds: Rect) =
   let color = ed.theme.color(@["list.activeSelectionForeground", "editor.foreground"], rgb(255, 255, 255))
   discard ed.renderCtx.drawText(bounds.xy, item.name, color)
+
+method renderItem(item: FileSelectorItem, ed: Editor, bounds: Rect) =
+  let color = ed.theme.color(@["list.activeSelectionForeground", "editor.foreground"], rgb(255, 255, 255))
+  discard ed.renderCtx.drawText(bounds.xy, item.path, color)
 
 proc renderItems(ed: Editor, completions: seq[SelectorItem], selected: int, bounds: Rect, fill: bool) =
   if completions.len == 0:
