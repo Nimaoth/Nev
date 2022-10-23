@@ -45,13 +45,13 @@ template eventHandler*(inConfig: EventHandlerConfig, handlerBody: untyped): unty
 
     template onAction(actionBody: untyped): untyped =
       handler.handleAction = proc(action: string, arg: string): EventResponse =
-        let action {.inject.} = action
-        let arg {.inject.} = arg
+        let action {.inject, used.} = action
+        let arg {.inject, used.} = arg
         return actionBody
 
     template onInput(inputBody: untyped): untyped =
       handler.handleInput = proc(input: string): EventResponse =
-        let input {.inject.} = input
+        let input {.inject, used.} = input
         return inputBody
 
     handlerBody

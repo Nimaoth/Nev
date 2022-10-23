@@ -1,5 +1,5 @@
-import std/[strutils, tables, sugar, algorithm, sequtils, options]
-import fuzzy, bumpy, vmath, windy
+import std/[strutils, sugar, options]
+import bumpy, vmath, windy
 import editor, text_document, popup, events, util, rect_utils
 
 type

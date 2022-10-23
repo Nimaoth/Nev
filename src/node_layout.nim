@@ -1,4 +1,4 @@
-import std/[tables, strformat]
+import std/[tables]
 import fusion/matching
 import pixie/fonts, bumpy, chroma, vmath, theme
 import compiler, ast, util, id, ast_ids

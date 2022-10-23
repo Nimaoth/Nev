@@ -62,7 +62,7 @@ proc renderCommandAutoCompletion*(ed: Editor, handler: EventHandler, bounds: Rec
 
   return bounds.splitH(height.relative)[1]
 
-method renderDocumentEditor(editor: DocumentEditor, ed: Editor, bounds: Rect, selected: bool): Rect {.base, locks: "unknown".} =
+method renderDocumentEditor(editor: DocumentEditor, ed: Editor, bounds: Rect, selected: bool): Rect {.base.} =
   return rect(0, 0, 0, 0)
 
 proc measureEditorBounds(editor: TextDocumentEditor, ed: Editor, bounds: Rect): Rect =
@@ -102,7 +102,6 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
 
   let textColor = ed.theme.color("editor.foreground", rgb(225, 200, 200))
   for i, line in document.content:
-    let textWidth = ed.ctx.measureText(line).width
     discard ed.renderCtx.drawText(vec2(contentBounds.x, contentBounds.y + i.float32 * ed.ctx.fontSize), line, textColor)
 
   if selected or not editor.hideCursorWhenInactive:
@@ -200,7 +199,7 @@ proc renderCompletions(ed: Editor, completions: seq[Completion], selected: int, 
 
     renderedItems.add (firstCompletion + i, totalBounds)
 
-method computeBounds(item: SelectorItem, ed: Editor): Rect =
+method computeBounds(item: SelectorItem, ed: Editor): Rect {.base.} =
   discard
 
 method computeBounds(item: ThemeSelectorItem, ed: Editor): Rect =
@@ -211,7 +210,7 @@ method computeBounds(item: FileSelectorItem, ed: Editor): Rect =
   let nameWidth = ed.ctx.measureText(item.path).width
   return rect(vec2(), vec2(nameWidth, ed.ctx.fontSize))
 
-method renderItem(item: SelectorItem, ed: Editor, bounds: Rect) =
+method renderItem(item: SelectorItem, ed: Editor, bounds: Rect) {.base.} =
   discard
 
 method renderItem(item: ThemeSelectorItem, ed: Editor, bounds: Rect) =
@@ -639,7 +638,7 @@ proc renderView*(ed: Editor, bounds: Rect, view: View, selected: bool) =
   ed.boxy.popLayer(blendMode = MaskBlend)
   ed.boxy.popLayer()
 
-method renderPopup*(popup: Popup, ed: Editor, bounds: Rect) {.base, locks: "unknown".} =
+method renderPopup*(popup: Popup, ed: Editor, bounds: Rect) {.base.} =
   discard
 
 method renderPopup*(popup: AstGotoDefinitionPopup, ed: Editor, bounds: Rect) =

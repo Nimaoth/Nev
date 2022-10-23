@@ -7,8 +7,6 @@ type Popup* = ref object of RootObj
   eventHandler*: EventHandler
   lastBounds*: Rect
 
-var nextEditorId = 0
-
 func id*(self: Popup): EditorId = self.id
 
 proc init*(self: Popup) =

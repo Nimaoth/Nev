@@ -1,5 +1,5 @@
 import std/[json, jsonutils, tables, strutils, options]
-import print, chroma
+import chroma
 
 type
   FontStyle* = enum Italic, Underline, Bold

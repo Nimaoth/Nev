@@ -3,7 +3,7 @@ import fusion/matching
 import bumpy, chroma, vmath, pixie/fonts
 import ast, id, util, rect_utils
 import query_system
-import boxy, pixie/contexts
+import boxy
 import render_context
 import theme
 
