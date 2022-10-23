@@ -8,8 +8,6 @@ type DocumentEditor* = ref object of RootObj
   renderHeader*: bool
   fillAvailableSpace*: bool
 
-var nextEditorId = 0
-
 func id*(self: DocumentEditor): EditorId = self.id
 
 proc init*(self: DocumentEditor) =
@@ -21,13 +19,13 @@ proc init*(self: DocumentEditor) =
 method canEdit*(self: DocumentEditor, document: Document): bool {.base.} =
   return false
 
-method createWithDocument*(self: DocumentEditor, document: Document): DocumentEditor {.base, locks: "unknown".} =
+method createWithDocument*(self: DocumentEditor, document: Document): DocumentEditor {.base.} =
   return nil
 
 method getEventHandlers*(self: DocumentEditor): seq[EventHandler] {.base.} =
   return @[]
 
-method handleDocumentChanged*(self: DocumentEditor) {.base, locks: "unknown".} =
+method handleDocumentChanged*(self: DocumentEditor) {.base.} =
   discard
 
 method unregister*(self: DocumentEditor) {.base.} =

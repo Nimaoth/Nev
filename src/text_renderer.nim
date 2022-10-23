@@ -1,6 +1,5 @@
-import std/[strformat, math, strutils, strformat, tables]
-import boxy, pixie/fonts, bumpy, chroma, vmath, theme
-import query_system, compiler, util, id
+import boxy, pixie/fonts, vmath
+import compiler, id
 import lru_cache
 
 proc computeRenderedTextImpl2*(ctx: compiler.Context, input: RenderTextInput): string =

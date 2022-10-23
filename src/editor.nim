@@ -1,10 +1,10 @@
-import std/[strformat, sequtils, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils, tables, macros]
-import boxy, windy, print, fuzzy
+import std/[strformat, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils, macros]
+import boxy, windy, fuzzy
 import sugar
 import input, events, rect_utils, document, document_editor, keybind_autocomplete, popup, render_context, timer
 import theme, util
 import scripting
-import nimscripter, nimscripter/[variables, vmconversion, vmaddins]
+import nimscripter, nimscripter/[vmconversion, vmaddins]
 
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, Popup
 
@@ -211,7 +211,6 @@ proc handleUnknownDocumentEditorAction*(ed: Editor, editor: DocumentEditor, acti
 
   return Failed
 
-proc handleTextInput(ed: Editor, text: string)
 proc handleAction(ed: Editor, action: string, arg: string)
 
 proc createEditorForDocument(ed: Editor, document: Document): DocumentEditor =
@@ -419,9 +418,6 @@ proc moveCurrentViewNext(ed: Editor) =
     ed.views.delete(ed.currentView)
     ed.views.insert(view, index)
     ed.currentView = index
-
-proc handleTextInput(ed: Editor, text: string) =
-  discard
 
 proc handleAction(ed: Editor, action: string, arg: string) =
   ed.logger.log(lvlInfo, "[ed] Action '$1 $2'" % [action, arg])
@@ -849,9 +845,6 @@ proc scriptSetOptionBool*(path: string, value: bool) =
 
 proc scriptSetOptionString*(path: string, value: string) =
   createScriptSetOption(path, newJString(value))
-
-macro myImport(): untyped =
-  return nnkImportStmt.newTree(ident"scripting_api")
 
 proc createAddins(): VmAddins =
   exportTo(myImpl,

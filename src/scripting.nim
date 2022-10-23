@@ -1,10 +1,8 @@
-import std/[json, jsonutils, strformat, bitops, strutils, tables, algorithm, math, options]
-import os, osproc
+import std/[json, strformat, strutils, tables, options]
+import os
 import compiler/options as copts
-import scripting_api
-import print
 
-import nimscripter, nimscripter/[variables, vmconversion, vmaddins]
+import nimscripter, nimscripter/[vmconversion, vmaddins]
 
 type ScriptContext* = ref object
   inter*: Option[Interpreter]

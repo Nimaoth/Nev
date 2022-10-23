@@ -1,7 +1,7 @@
 import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros, options, deques, sets, json, sequtils]
 import timer
 import fusion/matching, fuzzy, bumpy, rect_utils, vmath, chroma, windy
-import editor, util, input, document, document_editor, text_document, events, id, ast_ids, ast
+import editor, util, document, document_editor, text_document, events, id, ast_ids, ast
 import compiler
 
 var logger = newConsoleLogger()
@@ -1747,13 +1747,12 @@ method handleMousePress*(self: AstDocumentEditor, button: Button, mousePosWindow
       self.node = n
 
 method handleMouseRelease*(self: AstDocumentEditor, button: Button, mousePosWindow: Vec2) =
-  let mousePosContent = mousePosWindow - self.lastBounds.xy
   discard
 
 method handleMouseMove*(self: AstDocumentEditor, mousePosWindow: Vec2, mousePosDelta: Vec2) =
   let mousePosContent = mousePosWindow - self.lastBounds.xy
   if self.editor.window.buttonDown[MouseLeft]:
-    if self.getNodeAtPixelPosition(mousePosContent).getSome(n):
+    if not self.isEditing and self.getNodeAtPixelPosition(mousePosContent).getSome(n):
       self.node = n
 
 method createWithDocument*(self: AstDocumentEditor, document: Document): DocumentEditor =

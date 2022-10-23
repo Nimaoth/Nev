@@ -1,5 +1,5 @@
 import std/[strutils, logging, sequtils, sugar]
-import editor, input, document, document_editor, events, id
+import editor, document, document_editor, events, id
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 
 var logger = newConsoleLogger()
@@ -77,14 +77,14 @@ proc lineLength(self: TextDocument, line: int): int =
     return self.lines[line].len
   return 0
 
-method save*(self: TextDocument, filename: string = "") {.locks: "unknown".} =
+method save*(self: TextDocument, filename: string = "") =
   self.filename = if filename.len > 0: filename else: self.filename
   if self.filename.len == 0:
     raise newException(IOError, "Missing filename")
 
   writeFile(self.filename, self.lines.join "\n")
 
-method load*(self: TextDocument, filename: string = "") {.locks: "unknown".} =
+method load*(self: TextDocument, filename: string = "") =
   let filename = if filename.len > 0: filename else: self.filename
   if filename.len == 0:
     raise newException(IOError, "Missing filename")
@@ -189,7 +189,7 @@ method canEdit*(self: TextDocumentEditor, document: Document): bool =
 method getEventHandlers*(self: TextDocumentEditor): seq[EventHandler] =
   return @[self.eventHandler]
 
-method handleDocumentChanged*(self: TextDocumentEditor) {.locks: "unknown".} =
+method handleDocumentChanged*(self: TextDocumentEditor) =
   self.selection = (self.clampCursor self.selection.first, self.clampCursor self.selection.last)
 
 proc moveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor =
