@@ -1,10 +1,11 @@
-import events
+import events, windy, vmath, bumpy
 
 from scripting_api import EditorId, newEditorId
 
 type Popup* = ref object of RootObj
   id: EditorId
   eventHandler*: EventHandler
+  lastBounds*: Rect
 
 var nextEditorId = 0
 
@@ -15,3 +16,15 @@ proc init*(self: Popup) =
 
 method getEventHandlers*(self: Popup): seq[EventHandler] {.base.} =
   return @[self.eventHandler]
+
+method handleScroll*(self: Popup, scroll: Vec2, mousePosWindow: Vec2) {.base.} =
+  discard
+
+method handleMousePress*(self: Popup, button: Button, mousePosWindow: Vec2) {.base.} =
+  discard
+
+method handleMouseRelease*(self: Popup, button: Button, mousePosWindow: Vec2) {.base.} =
+  discard
+
+method handleMouseMove*(self: Popup, mousePosWindow: Vec2, mousePosDelta: Vec2) {.base.} =
+  discard

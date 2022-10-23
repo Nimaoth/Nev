@@ -1,6 +1,6 @@
-import std/[strutils, tables, sugar, algorithm, sequtils]
-import fuzzy
-import editor, text_document, popup, events
+import std/[strutils, tables, sugar, algorithm, sequtils, options]
+import fuzzy, bumpy, vmath, windy
+import editor, text_document, popup, events, util, rect_utils
 
 type
   SelectorItem* = ref object of RootObj
@@ -14,6 +14,8 @@ type
     handleItemConfirmed*: proc(item: SelectorItem)
     handleItemSelected*: proc(item: SelectorItem)
     getCompletions*: proc(self: SelectorPopup, text: string): seq[SelectorItem]
+    lastContentBounds*: Rect
+    lastItems*: seq[tuple[index: int, bounds: Rect]]
 
 proc updateCompletions(self: SelectorPopup) =
   let text = self.textEditor.document.content.join
@@ -24,6 +26,12 @@ proc updateCompletions(self: SelectorPopup) =
     self.selected = self.selected.clamp(0, self.completions.len - 1)
   else:
     self.selected = 0
+
+proc getItemAtPixelPosition(self: SelectorPopup, posWindow: Vec2): Option[SelectorItem] =
+  result = SelectorItem.none
+  for (index, rect) in self.lastItems:
+    if rect.contains(posWindow) and index >= 0 and index <= self.completions.high:
+      return self.completions[index].some
 
 method getEventHandlers*(self: SelectorPopup): seq[EventHandler] =
   return @[self.eventHandler] & self.textEditor.eventHandler
@@ -64,6 +72,21 @@ proc handleAction*(self: SelectorPopup, action: string, arg: string): EventRespo
 proc handleTextChanged*(self: SelectorPopup) =
   self.updateCompletions()
   self.selected = 0
+
+method handleScroll*(self: SelectorPopup, scroll: Vec2, mousePosWindow: Vec2) =
+  self.selected = clamp(self.selected - scroll.y.int, 0, self.completions.len - 1)
+
+method handleMousePress*(self: SelectorPopup, button: Button, mousePosWindow: Vec2) =
+  if button == MouseLeft:
+    if self.getItemAtPixelPosition(mousePosWindow).getSome(item):
+      self.handleItemConfirmed(item)
+      self.editor.popPopup(self)
+
+method handleMouseRelease*(self: SelectorPopup, button: Button, mousePosWindow: Vec2) =
+  discard
+
+method handleMouseMove*(self: SelectorPopup, mousePosWindow: Vec2, mousePosDelta: Vec2) =
+  discard
 
 proc newSelectorPopup*(editor: Editor, getCompletions: proc(self: SelectorPopup, text: string): seq[SelectorItem]): SelectorPopup =
   var popup = SelectorPopup(editor: editor)

@@ -183,6 +183,7 @@ type AstDocumentEditor* = ref object of DocumentEditor
   completionText: string
   completions*: seq[Completion]
   selectedCompletion*: int
+  lastItems*: seq[tuple[index: int, bounds: Rect]]
 
   renderSelectedNodeValue*: bool
   scrollOffset*: float
@@ -1721,15 +1722,28 @@ proc handleInput(self: AstDocumentEditor, input: string): EventResponse =
   # logger.log lvlInfo, fmt"[asteditor]: Handle input '{input}'"
   return Ignored
 
+proc getItemAtPixelPosition(self: AstDocumentEditor, posWindow: Vec2): Option[int] =
+  result = int.none
+  for (index, rect) in self.lastItems:
+    if rect.contains(posWindow) and index >= 0 and index <= self.completions.high:
+      return index.some
+
 method handleScroll*(self: AstDocumentEditor, scroll: Vec2, mousePosWindow: Vec2) =
-  self.scrollOffset += scroll.y * getOption[float](self.editor, "ast.scroll-speed", 20)
+  if self.getItemAtPixelPosition(mousePosWindow).isSome:
+    self.selectedCompletion = clamp(self.selectedCompletion - scroll.y.int, 0, self.completions.high)
+  else:
+    self.scrollOffset += scroll.y * getOption[float](self.editor, "ast.scroll-speed", 20)
 
 method handleMousePress*(self: AstDocumentEditor, button: Button, mousePosWindow: Vec2) =
   # Make mousePos relative to contentBounds
   let mousePosContent = mousePosWindow - self.lastBounds.xy
 
   if button == MouseLeft:
-    if self.getNodeAtPixelPosition(mousePosContent).getSome(n):
+    if self.getItemAtPixelPosition(mousePosWindow).getSome(index):
+      self.selectedCompletion = index
+      self.applySelectedCompletion()
+
+    elif not self.isEditing and self.getNodeAtPixelPosition(mousePosContent).getSome(n):
       self.node = n
 
 method handleMouseRelease*(self: AstDocumentEditor, button: Button, mousePosWindow: Vec2) =
