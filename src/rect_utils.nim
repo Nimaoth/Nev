@@ -141,6 +141,7 @@ template yh*(r: Rect): float32 = r.y + r.h
 template xwyh*(r: Rect): Vec2 = vec2(r.xw, r.yh)
 template xwy*(r: Rect): Vec2 = vec2(r.xw, r.y)
 template xyh*(r: Rect): Vec2 = vec2(r.x, r.yh)
+template xyRect*(r: Rect): Rect = rect(r.x, r.y, 0, 0)
 template whRect*(r: Rect): Rect = rect(0, 0, r.w, r.h)
 
 proc intersects*(a, b: Rect): bool =

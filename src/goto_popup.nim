@@ -1,6 +1,6 @@
-import std/[strutils, tables, sugar, algorithm, sequtils]
-import fuzzy
-import editor, ast_document, text_document, popup, events, compiler, compiler_types, id
+import std/[strutils, tables, sugar, algorithm, sequtils, options]
+import fuzzy, bumpy, vmath, windy
+import editor, ast_document, text_document, popup, events, compiler, compiler_types, id, util, rect_utils
 
 type AstGotoDefinitionPopup* = ref object of Popup
   editor*: Editor
@@ -9,6 +9,8 @@ type AstGotoDefinitionPopup* = ref object of Popup
   selected*: int
   completions*: seq[Completion]
   handleSymbolSelected*: proc(id: Id)
+  lastContentBounds*: Rect
+  lastItems*: seq[tuple[index: int, bounds: Rect]]
 
 proc getCompletions*(self: AstGotoDefinitionPopup, text: string): seq[Completion] =
   result = @[]
@@ -34,6 +36,12 @@ proc updateCompletions(self: AstGotoDefinitionPopup) =
     self.selected = self.selected.clamp(0, self.completions.len - 1)
   else:
     self.selected = 0
+
+proc getItemAtPixelPosition(self: AstGotoDefinitionPopup, posWindow: Vec2): Option[Completion] =
+  result = Completion.none
+  for (index, rect) in self.lastItems:
+    if rect.contains(posWindow) and index >= 0 and index <= self.completions.high:
+      return self.completions[index].some
 
 method getEventHandlers*(self: AstGotoDefinitionPopup): seq[EventHandler] =
   return self.textEditor.eventHandler & @[self.eventHandler]
@@ -68,6 +76,21 @@ proc handleAction*(self: AstGotoDefinitionPopup, action: string, arg: string): E
 proc handleTextChanged*(self: AstGotoDefinitionPopup) =
   self.updateCompletions()
   self.selected = 0
+
+method handleScroll*(self: AstGotoDefinitionPopup, scroll: Vec2, mousePosWindow: Vec2) =
+  self.selected = clamp(self.selected - scroll.y.int, 0, self.completions.len - 1)
+
+method handleMousePress*(self: AstGotoDefinitionPopup, button: Button, mousePosWindow: Vec2) =
+  if button == MouseLeft:
+    if self.getItemAtPixelPosition(mousePosWindow).getSome(item):
+      self.handleSymbolSelected(item.id)
+      self.editor.popPopup(self)
+
+method handleMouseRelease*(self: AstGotoDefinitionPopup, button: Button, mousePosWindow: Vec2) =
+  discard
+
+method handleMouseMove*(self: AstGotoDefinitionPopup, mousePosWindow: Vec2, mousePosDelta: Vec2) =
+  discard
 
 proc newGotoPopup*(editor: Editor, document: AstDocument): AstGotoDefinitionPopup =
   var popup = AstGotoDefinitionPopup(editor: editor, document: document)

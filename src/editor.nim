@@ -603,40 +603,72 @@ proc currentEventHandlers*(ed: Editor): seq[EventHandler] =
     result.add ed.views[ed.currentView].editor.getEventHandlers()
 
 proc handleMousePress*(ed: Editor, button: Button, modifiers: Modifiers, mousePosWindow: Vec2) =
+  # Check popups
+  for i in 0..ed.popups.high:
+    let popup = ed.popups[ed.popups.high - i]
+    if popup.lastBounds.contains(mousePosWindow):
+      popup.handleMousePress(button, mousePosWindow)
+      return
+
+  # Check views
   let rects = ed.layout.layoutViews(ed.layout_props, ed.lastBounds, ed.views)
   for i, view in ed.views:
     if i >= rects.len:
-      break
+      return
     if rects[i].contains(mousePosWindow):
       view.editor.handleMousePress(button, mousePosWindow)
-      break
+      return
 
 proc handleMouseRelease*(ed: Editor, button: Button, modifiers: Modifiers, mousePosWindow: Vec2) =
+  # Check popups
+  for i in 0..ed.popups.high:
+    let popup = ed.popups[ed.popups.high - i]
+    if popup.lastBounds.contains(mousePosWindow):
+      popup.handleMouseRelease(button, mousePosWindow)
+      return
+
+  # Check views
   let rects = ed.layout.layoutViews(ed.layout_props, ed.lastBounds, ed.views)
   for i, view in ed.views:
     if i >= rects.len:
-      break
+      return
     if rects[i].contains(mousePosWindow):
       view.editor.handleMouseRelease(button, mousePosWindow)
-      break
+      return
 
 proc handleMouseMove*(ed: Editor, mousePosWindow: Vec2, mousePosDelta: Vec2) =
+  # Check popups
+  for i in 0..ed.popups.high:
+    let popup = ed.popups[ed.popups.high - i]
+    if popup.lastBounds.contains(mousePosWindow):
+      popup.handleMouseMove(mousePosWindow, mousePosDelta)
+      return
+
+  # Check views
   let rects = ed.layout.layoutViews(ed.layout_props, ed.lastBounds, ed.views)
   for i, view in ed.views:
     if i >= rects.len:
-      break
+      return
     if rects[i].contains(mousePosWindow):
       view.editor.handleMouseMove(mousePosWindow, mousePosDelta)
-      break
+      return
 
 proc handleScroll*(ed: Editor, scroll: Vec2, mousePosWindow: Vec2) =
+  # Check popups
+  for i in 0..ed.popups.high:
+    let popup = ed.popups[ed.popups.high - i]
+    if popup.lastBounds.contains(mousePosWindow):
+      popup.handleScroll(scroll, mousePosWindow)
+      return
+
+  # Check views
   let rects = ed.layout.layoutViews(ed.layout_props, ed.lastBounds, ed.views)
   for i, view in ed.views:
     if i >= rects.len:
-      break
+      return
     if rects[i].contains(mousePosWindow):
       view.editor.handleScroll(scroll, mousePosWindow)
-      break
+      return
 
 proc handleKeyPress*(ed: Editor, button: Button, modifiers: Modifiers) =
   let input = button.toInput()

@@ -119,7 +119,10 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
   # ed.boxy2.addImage("atlas", atlasImage, false)
   # ed.boxy2.drawImage("atlas", contentBounds.xy)
 
-proc renderCompletions(ed: Editor, completions: seq[Completion], selected: int, bounds: Rect, fill: bool) =
+proc renderCompletions(ed: Editor, completions: seq[Completion], selected: int, bounds: Rect, fill: bool, renderedItems: var seq[tuple[index: int, bounds: Rect]]): Rect =
+  result = bounds.xyRect
+  renderedItems.setLen 0
+
   if completions.len == 0:
     return
 
@@ -169,8 +172,9 @@ proc renderCompletions(ed: Editor, completions: seq[Completion], selected: int, 
   if fill and totalWidth < bounds.w:
     totalWidth = bounds.w
 
-  ed.boxy.fillRect(rect(bounds.xy, vec2(totalWidth, renderedCompletions.float32 * config.font.size)), ed.theme.color("panel.background", rgb(30, 30, 30)))
-  ed.boxy.strokeRect(rect(bounds.xy, vec2(totalWidth, renderedCompletions.float32 * config.font.size)), ed.theme.color("panel.border", rgb(255, 255, 255)))
+  result = rect(bounds.xy, vec2(totalWidth, renderedCompletions.float32 * config.font.size))
+  ed.boxy.fillRect(result, ed.theme.color("panel.background", rgb(30, 30, 30)))
+  ed.boxy.strokeRect(result, ed.theme.color("panel.border", rgb(255, 255, 255)))
 
   let selectionColor = ed.theme.color("list.activeSelectionBackground", rgb(200, 200, 200))
   ed.boxy.fillRect(rect(bounds.xy + vec2(0, (selected - firstCompletion).float32 * config.font.size), vec2(totalWidth, config.font.size)), selectionColor)
@@ -181,13 +185,20 @@ proc renderCompletions(ed: Editor, completions: seq[Completion], selected: int, 
     # elif i mod 2 == 1:
     #   ed.boxy.fillRect(rect(bounds.xy + vec2(0, i.float32 * config.font.size), vec2(totalWidth, config.font.size)), ed.theme.color("list.inactiveSelectionBackground", rgb(40, 40, 40)))
 
-    var lastRect = ed.renderCtx.drawText(vec2(bounds.x, bounds.y + i.float32 * config.font.size), name, ed.theme.tokenColor(color1, rgb(255, 255, 255)))
+    var totalBounds = ed.renderCtx.drawText(vec2(bounds.x, bounds.y + i.float32 * config.font.size), name, ed.theme.tokenColor(color1, rgb(255, 255, 255)))
+    var lastRect = totalBounds
     lastRect = ed.renderCtx.drawText(vec2(lastRect.x + nameWidth, bounds.y + i.float32 * config.font.size), " : ", ed.theme.color("list.inactiveSelectionForeground", rgb(175, 175, 175)))
+    totalBounds = totalBounds or lastRect
     lastRect = ed.renderCtx.drawText(vec2(lastRect.xw, bounds.y + i.float32 * config.font.size), typ, ed.theme.tokenColor(color2, rgb(255, 175, 175)))
+    totalBounds = totalBounds or lastRect
 
     if value.len > 0:
       lastRect = ed.renderCtx.drawText(vec2(lastRect.x + typeWidth, bounds.y + i.float32 * config.font.size), " = ", ed.theme.color("list.inactiveSelectionForeground", rgb(175, 175, 175)))
+      totalBounds = totalBounds or lastRect
       lastRect = ed.renderCtx.drawText(vec2(lastRect.xw, bounds.y + i.float32 * config.font.size), value, ed.theme.tokenColor(color3, rgb(175, 255, 175)))
+      totalBounds = totalBounds or lastRect
+
+    renderedItems.add (firstCompletion + i, totalBounds)
 
 method computeBounds(item: SelectorItem, ed: Editor): Rect =
   discard
@@ -211,7 +222,10 @@ method renderItem(item: FileSelectorItem, ed: Editor, bounds: Rect) =
   let color = ed.theme.color(@["list.activeSelectionForeground", "editor.foreground"], rgb(255, 255, 255))
   discard ed.renderCtx.drawText(bounds.xy, item.path, color)
 
-proc renderItems(ed: Editor, completions: seq[SelectorItem], selected: int, bounds: Rect, fill: bool) =
+proc renderItems(ed: Editor, completions: seq[SelectorItem], selected: int, bounds: Rect, fill: bool, renderedItems: var seq[tuple[index: int, bounds: Rect]]): Rect =
+  result = bounds.xyRect
+  renderedItems.setLen 0
+
   if completions.len == 0:
     return
 
@@ -243,8 +257,9 @@ proc renderItems(ed: Editor, completions: seq[SelectorItem], selected: int, boun
   if fill and totalWidth < bounds.w:
     totalWidth = bounds.w
 
-  ed.boxy.fillRect(rect(bounds.xy, vec2(totalWidth, totalHeight)), ed.theme.color("panel.background", rgb(30, 30, 30)))
-  ed.boxy.strokeRect(rect(bounds.xy, vec2(totalWidth, totalHeight)), ed.theme.color("panel.border", rgb(255, 255, 255)))
+  result = rect(bounds.xy, vec2(totalWidth, totalHeight))
+  ed.boxy.fillRect(result, ed.theme.color("panel.background", rgb(30, 30, 30)))
+  ed.boxy.strokeRect(result, ed.theme.color("panel.border", rgb(255, 255, 255)))
 
   let selectionColor = ed.theme.color("list.activeSelectionBackground", rgb(200, 200, 200))
   ed.boxy.fillRect(rect(entries[selected - firstCompletion].xy, vec2(totalWidth, entries[selected - firstCompletion].h)), selectionColor)
@@ -252,6 +267,7 @@ proc renderItems(ed: Editor, completions: seq[SelectorItem], selected: int, boun
   for i, rect in entries:
     let com = completions[firstCompletion + i]
     com.renderItem(ed, rect)
+    renderedItems.add (firstCompletion + i, rect)
 
 proc renderVisualNode(editor: AstDocumentEditor, ed: Editor, node: VisualNode, offset: Vec2, selected: AstNode, globalBounds: Rect) =
   let bounds = node.bounds + offset
@@ -484,7 +500,7 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
       if layout.nodeToVisualNode.contains(editor.node.id):
         let visualRange = layout.nodeToVisualNode[editor.node.id]
         let bounds = visualRange.absoluteBounds + offset + contentBounds.xy
-        ed.renderCompletions(editor.completions, editor.selectedCompletion, contentBounds.splitH(bounds.yh.absolute)[1].splitV(bounds.x.absolute)[1], false)
+        discard ed.renderCompletions(editor.completions, editor.selectedCompletion, contentBounds.splitH(bounds.yh.absolute)[1].splitV(bounds.x.absolute)[1], false, editor.lastItems)
 
   if ed.getFlag("render-execution-output"):
     ed.boxy.pushLayer()
@@ -631,14 +647,16 @@ method renderPopup*(popup: AstGotoDefinitionPopup, ed: Editor, bounds: Rect) =
   let (textBounds, contentBounds) = bounds.splitH(ed.ctx.fontSize.relative)
   ed.boxy.fillRect(textBounds, ed.theme.color("panel.background", rgb(25, 25, 25)))
   discard popup.textEditor.renderDocumentEditor(ed, textBounds, true)
-  ed.renderCompletions(popup.completions, popup.selected, contentBounds, true)
+  popup.lastContentBounds = ed.renderCompletions(popup.completions, popup.selected, contentBounds, true, popup.lastItems)
+  popup.lastBounds = textBounds or popup.lastContentBounds
 
 method renderPopup*(popup: SelectorPopup, ed: Editor, bounds: Rect) =
   let bounds = bounds.shrink(0.15.percent)
   let (textBounds, contentBounds) = bounds.splitH(ed.ctx.fontSize.relative)
   ed.boxy.fillRect(textBounds, ed.theme.color("panel.background", rgb(25, 25, 25)))
   discard popup.textEditor.renderDocumentEditor(ed, textBounds, true)
-  ed.renderItems(popup.completions, popup.selected, contentBounds, true)
+  popup.lastContentBounds = ed.renderItems(popup.completions, popup.selected, contentBounds, true, popup.lastItems)
+  popup.lastBounds = textBounds or popup.lastContentBounds
 
 proc renderMainWindow*(ed: Editor, bounds: Rect) =
   ed.lastBounds = bounds
