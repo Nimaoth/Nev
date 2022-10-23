@@ -130,12 +130,22 @@ proc `+`*(a: Rect, b: Vec2): Rect =
   result.w = a.w
   result.h = a.h
 
+proc `-`*(a: Rect, b: Vec2): Rect =
+  result.x = a.x - b.x
+  result.y = a.y - b.y
+  result.w = a.w
+  result.h = a.h
+
 template xw*(r: Rect): float32 = r.x + r.w
 template yh*(r: Rect): float32 = r.y + r.h
 template xwyh*(r: Rect): Vec2 = vec2(r.xw, r.yh)
 template xwy*(r: Rect): Vec2 = vec2(r.xw, r.y)
 template xyh*(r: Rect): Vec2 = vec2(r.x, r.yh)
+template whRect*(r: Rect): Rect = rect(0, 0, r.w, r.h)
 
 proc intersects*(a, b: Rect): bool =
   let intersection = a and b
   return intersection.w > 0 and intersection.h > 0
+
+proc contains*(a: Rect, b: Vec2): bool =
+  return b.x >= a.x and b.x <= a.xw and b.y >= a.y and b.y <= a.yh

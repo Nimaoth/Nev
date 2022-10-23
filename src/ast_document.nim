@@ -1,6 +1,6 @@
 import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros, options, deques, sets, json, sequtils]
 import timer
-import fusion/matching, fuzzy, bumpy, rect_utils, vmath, chroma
+import fusion/matching, fuzzy, bumpy, rect_utils, vmath, chroma, windy
 import editor, util, input, document, document_editor, text_document, events, id, ast_ids, ast
 import compiler
 
@@ -276,7 +276,7 @@ proc handleSelectedNodeChanged(editor: AstDocumentEditor) =
       let visualNode = layout.nodeToVisualNode[node.id]
       let bounds = visualNode.absoluteBounds + vec2(0, offset.y)
 
-      if not bounds.intersects(editor.lastBounds):
+      if not bounds.intersects(editor.lastBounds.whRect):
         break
 
       if bounds.yh < 100:
@@ -1287,6 +1287,28 @@ proc runSelectedFunction(self: AstDocumentEditor) =
 
   logger.log(lvlError, fmt"[asteditor] No function or call found to execute for {self.node}")
 
+proc getNodeAtPixelPosition(self: AstDocumentEditor, posContent: Vec2): Option[AstNode] =
+  result = AstNode.none
+
+  for (layout, offset) in self.lastLayouts:
+    let bounds = layout.bounds + offset
+    var smallestRange: VisualNodeRange
+    if bounds.contains(posContent):
+      for (_, child) in layout.node.nextPreOrder:
+        if layout.nodeToVisualNode.contains(child.id):
+          let visualNode = layout.nodeToVisualNode[child.id]
+          let bounds = visualNode.absoluteBounds + vec2(0, offset.y)
+          if bounds.contains(posContent):
+            if smallestRange.parent.isNil or (visualNode.parent.depth > smallestRange.parent.depth) or
+              ((visualNode.parent.depth == smallestRange.parent.depth) and (visualNode.parent.indent > smallestRange.parent.indent)) or
+              ((visualNode.parent.depth == smallestRange.parent.depth) and (visualNode.last - visualNode.first) < (smallestRange.last - smallestRange.first)):
+              smallestRange = visualNode
+              result = child.some
+
+      if result.isNone:
+        result = layout.node.some
+      return
+
 proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventResponse =
   # logger.log lvlInfo, fmt"[asteditor]: Handle action {action}, '{arg}'"
   var newLastCommand = (action, arg)
@@ -1656,7 +1678,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
       for (i, node) in layout.root.nextPreOrder:
         if not isNil(node.node) and node.len > 0:
           let bounds = node.absoluteBounds
-          if self.lastBounds.intersects(bounds + vec2(0, offset.y)):
+          if self.lastBounds.whRect.intersects(bounds + vec2(0, offset.y)):
             nodes.add (bounds.y + offset.y, node)
 
     nodes.sort (a, b) => cmp(a.y, b.y)
@@ -1698,6 +1720,27 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
 proc handleInput(self: AstDocumentEditor, input: string): EventResponse =
   # logger.log lvlInfo, fmt"[asteditor]: Handle input '{input}'"
   return Ignored
+
+method handleScroll*(self: AstDocumentEditor, scroll: Vec2, mousePosWindow: Vec2) =
+  self.scrollOffset += scroll.y * getOption[float](self.editor, "ast.scroll-speed", 20)
+
+method handleMousePress*(self: AstDocumentEditor, button: Button, mousePosWindow: Vec2) =
+  # Make mousePos relative to contentBounds
+  let mousePosContent = mousePosWindow - self.lastBounds.xy
+
+  if button == MouseLeft:
+    if self.getNodeAtPixelPosition(mousePosContent).getSome(n):
+      self.node = n
+
+method handleMouseRelease*(self: AstDocumentEditor, button: Button, mousePosWindow: Vec2) =
+  let mousePosContent = mousePosWindow - self.lastBounds.xy
+  discard
+
+method handleMouseMove*(self: AstDocumentEditor, mousePosWindow: Vec2, mousePosDelta: Vec2) =
+  let mousePosContent = mousePosWindow - self.lastBounds.xy
+  if self.editor.window.buttonDown[MouseLeft]:
+    if self.getNodeAtPixelPosition(mousePosContent).getSome(n):
+      self.node = n
 
 method createWithDocument*(self: AstDocumentEditor, document: Document): DocumentEditor =
   let editor = AstDocumentEditor(eventHandler: nil, document: AstDocument(document), textDocument: nil, textEditor: nil)

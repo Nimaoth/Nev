@@ -80,9 +80,11 @@ type FunctionExecutionContext* = ref object
   maxLoopIterations*: Option[int]
 
 type
+  VisualNodeOrientation* = enum Horizontal, Vertical
   VisualNodeRenderFunc* = proc(bounds: Rect)
   VisualNode* = ref object
     parent*: VisualNode
+    orientation*: VisualNodeOrientation
     node*: AstNode
     text*: string
     bounds*: Rect
@@ -92,6 +94,8 @@ type
     children*: seq[VisualNode]
     colors*: seq[string]
     styleOverride*: Option[set[FontStyle]]
+    background*: Option[seq[string]]
+    depth*: int
 
   VisualNodeRange* = object
     parent*: VisualNode
@@ -101,6 +105,7 @@ type
   NodeLayout* = object
     root*: VisualNode
     nodeToVisualNode*: Table[Id, VisualNodeRange]
+    node*: AstNode
 
   NodeLayoutInput* = ref object
     id*: Id
@@ -397,6 +402,7 @@ func `==`*(a: VisualNode, b: VisualNode): bool =
 
 proc add*(node: var VisualNode, child: VisualNode): VisualNodeRange =
   node.children.add child
+  child.depth = node.depth + 1
   child.parent = node
   child.bounds.x = node.bounds.w
   node.bounds = node.bounds or (child.bounds + node.bounds.xy)
@@ -404,6 +410,7 @@ proc add*(node: var VisualNode, child: VisualNode): VisualNodeRange =
 
 proc addLine*(node: var VisualNode, child: var VisualNode) =
   node.children.add child
+  child.depth = node.depth + 1
   child.parent = node
   child.bounds.y = node.bounds.h
   node.bounds = node.bounds or (child.bounds + node.bounds.xy)

@@ -65,6 +65,12 @@ window.onRune = proc(rune: Rune) =
 
   ed.handleRune(rune, currentModifiers)
 
+window.onScroll = proc() =
+  ed.handleScroll(window.scrollDelta, window.mousePos.vec2)
+
+window.onMouseMove = proc() =
+  ed.handleMouseMove(window.mousePos.vec2, window.mouseDelta.vec2)
+
 window.onButtonPress = proc(button: Button) =
   # If the key event would also generate a char afterwards then ignore it, except for some special keys
   if isNextMsgChar():
@@ -73,6 +79,8 @@ window.onButtonPress = proc(button: Button) =
     else: return
 
   case button
+  of  MouseLeft, MouseRight, MouseMiddle, MouseButton4, MouseButton5, DoubleClick, TripleClick, QuadrupleClick:
+    ed.handleMousePress(button, currentModifiers, window.mousePos.vec2)
   of KeyLeftShift, KeyRightShift: currentModifiers = currentModifiers + {Shift}
   of KeyLeftControl, KeyRightControl: currentModifiers = currentModifiers + {Control}
   of KeyLeftAlt, KeyRightAlt: currentModifiers = currentModifiers + {Alt}
@@ -82,6 +90,8 @@ window.onButtonPress = proc(button: Button) =
 
 window.onButtonRelease = proc(button: Button) =
   case button
+  of  MouseLeft, MouseRight, MouseMiddle, MouseButton4, MouseButton5, DoubleClick, TripleClick, QuadrupleClick:
+    ed.handleMouseRelease(button, currentModifiers, window.mousePos.vec2)
   of KeyLeftShift, KeyRightShift: currentModifiers = currentModifiers - {Shift}
   of KeyLeftControl, KeyRightControl: currentModifiers = currentModifiers - {Control}
   of KeyLeftAlt, KeyRightAlt: currentModifiers = currentModifiers - {Alt}
