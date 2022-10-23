@@ -263,6 +263,10 @@ proc renderVisualNode(editor: AstDocumentEditor, ed: Editor, node: VisualNode, o
     if not bounds.intersects(globalBounds):
       return
 
+  if node.background.getSome(colors):
+    let color = ed.theme.anyColor(colors, rgb(255, 255, 255))
+    ed.boxy.fillRect(bounds, color)
+
   if node.text.len > 0:
     let color = ed.theme.anyColor(node.colors, rgb(255, 255, 255))
     var style = ed.theme.tokenFontStyle(node.colors)
@@ -271,9 +275,10 @@ proc renderVisualNode(editor: AstDocumentEditor, ed: Editor, node: VisualNode, o
 
     let font = config.getFont(style)
 
+    let text = if ed.getFlag("ast.render-vnode-depth", false): $node.depth else: node.text
     let image = ctx.computeRenderedText(ctx.getOrCreateRenderTextInput(newRenderTextInput(
       ed.renderCtx,
-      node.text,
+      text,
       font, ed.ctx.fontSize)))
     ed.boxy.drawImage(image, bounds.xy, color)
 
@@ -374,7 +379,6 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
     ctx.resetExecutionTimes()
 
   let (headerBounds, contentBoundsWithPadding) = bounds.splitH ed.ctx.fontSize.relative
-  editor.lastBounds = rect(vec2(), contentBoundsWithPadding.wh)
 
   ed.boxy.fillRect(headerBounds, if selected: theme.color("tab.activeBackground", rgb(45, 45, 60)) else: theme.color("tab.inactiveBackground", rgb(45, 45, 45)))
   ed.boxy.fillRect(contentBoundsWithPadding, if selected: theme.color("editor.background", rgb(25, 25, 40)) else: theme.color("editor.background", rgb(25, 25, 25)) * 0.75)
@@ -393,6 +397,7 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
     ed.boxy.popLayer()
 
   let contentBounds = contentBoundsWithPadding.shrink(2.relative)
+  editor.lastBounds = contentBounds
 
   var lastNodeRect = contentBounds
   lastNodeRect.h = lineDistance
@@ -636,6 +641,7 @@ method renderPopup*(popup: SelectorPopup, ed: Editor, bounds: Rect) =
   ed.renderItems(popup.completions, popup.selected, contentBounds, true)
 
 proc renderMainWindow*(ed: Editor, bounds: Rect) =
+  ed.lastBounds = bounds
   ed.boxy.fillRect(bounds, ed.theme.color("editorPane.background", rgb(25, 25, 25)))
 
   let rects = ed.layout.layoutViews(ed.layout_props, bounds, ed.views)

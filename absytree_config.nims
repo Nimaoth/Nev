@@ -134,7 +134,7 @@ proc postInitialize*() =
   runAction "open-file", "test.txt"
   runAction "prev-view"
 
-setFlag "render-vnode-text", true
+setOption "ast.scroll-speed", 60
 
 addCommand "editor", "<SPACE>tt", proc() =
   setOption("ast.max-loop-iterations", clamp(getOption[int]("ast.max-loop-iterations") * 2, 1, 1000000))
@@ -144,6 +144,7 @@ addCommand "editor", "<SPACE>tr", proc() =
   setOption("ast.max-loop-iterations", clamp(getOption[int]("ast.max-loop-iterations") div 2, 1, 1000000))
   echo "ast.max-loop-iterations: ", getOption[int]("ast.max-loop-iterations")
 
+addCommand "editor", "<SPACE>td", "toggle-flag", "ast.render-vnode-depth"
 addCommand "editor", "<SPACE>ff", "log-options"
 addCommand "editor", "<ESCAPE>", "escape"
 addCommand "editor", "<C-l><C-h>", "change-font-size", "-1"

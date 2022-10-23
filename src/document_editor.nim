@@ -1,4 +1,4 @@
-import document, events
+import document, events, vmath, windy
 
 from scripting_api import EditorId, newEditorId
 
@@ -31,4 +31,16 @@ method handleDocumentChanged*(self: DocumentEditor) {.base, locks: "unknown".} =
   discard
 
 method unregister*(self: DocumentEditor) {.base.} =
+  discard
+
+method handleScroll*(self: DocumentEditor, scroll: Vec2, mousePosWindow: Vec2) {.base.} =
+  discard
+
+method handleMousePress*(self: DocumentEditor, button: Button, mousePosWindow: Vec2) {.base.} =
+  discard
+
+method handleMouseRelease*(self: DocumentEditor, button: Button, mousePosWindow: Vec2) {.base.} =
+  discard
+
+method handleMouseMove*(self: DocumentEditor, mousePosWindow: Vec2, mousePosDelta: Vec2) {.base.} =
   discard

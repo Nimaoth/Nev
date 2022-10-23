@@ -83,6 +83,7 @@ type Editor* = ref object
   clearAtlasTimer*: Timer
   timer*: Timer
   frameTimer*: Timer
+  lastBounds*: Rect
 
   eventHandlerConfigs: Table[string, EventHandlerConfig]
 
@@ -600,6 +601,42 @@ proc currentEventHandlers*(ed: Editor): seq[EventHandler] =
     result.add ed.popups[ed.popups.high].getEventHandlers()
   elif ed.currentView >= 0 and ed.currentView < ed.views.len:
     result.add ed.views[ed.currentView].editor.getEventHandlers()
+
+proc handleMousePress*(ed: Editor, button: Button, modifiers: Modifiers, mousePosWindow: Vec2) =
+  let rects = ed.layout.layoutViews(ed.layout_props, ed.lastBounds, ed.views)
+  for i, view in ed.views:
+    if i >= rects.len:
+      break
+    if rects[i].contains(mousePosWindow):
+      view.editor.handleMousePress(button, mousePosWindow)
+      break
+
+proc handleMouseRelease*(ed: Editor, button: Button, modifiers: Modifiers, mousePosWindow: Vec2) =
+  let rects = ed.layout.layoutViews(ed.layout_props, ed.lastBounds, ed.views)
+  for i, view in ed.views:
+    if i >= rects.len:
+      break
+    if rects[i].contains(mousePosWindow):
+      view.editor.handleMouseRelease(button, mousePosWindow)
+      break
+
+proc handleMouseMove*(ed: Editor, mousePosWindow: Vec2, mousePosDelta: Vec2) =
+  let rects = ed.layout.layoutViews(ed.layout_props, ed.lastBounds, ed.views)
+  for i, view in ed.views:
+    if i >= rects.len:
+      break
+    if rects[i].contains(mousePosWindow):
+      view.editor.handleMouseMove(mousePosWindow, mousePosDelta)
+      break
+
+proc handleScroll*(ed: Editor, scroll: Vec2, mousePosWindow: Vec2) =
+  let rects = ed.layout.layoutViews(ed.layout_props, ed.lastBounds, ed.views)
+  for i, view in ed.views:
+    if i >= rects.len:
+      break
+    if rects[i].contains(mousePosWindow):
+      view.editor.handleScroll(scroll, mousePosWindow)
+      break
 
 proc handleKeyPress*(ed: Editor, button: Button, modifiers: Modifiers) =
   let input = button.toInput()
