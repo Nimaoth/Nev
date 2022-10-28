@@ -1,8 +1,10 @@
-import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros, options, deques, sets, json, sequtils]
+import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros, macrocache, options, deques, sets, json, jsonutils, sequtils]
 import timer
 import fusion/matching, fuzzy, bumpy, rect_utils, vmath, chroma, windy
-import editor, util, document, document_editor, text_document, events, id, ast_ids, ast
+import editor, util, document, document_editor, text_document, events, id, ast_ids, ast, id
 import compiler
+import nimscripter
+from scripting_api as api import nil
 
 var logger = newConsoleLogger()
 
@@ -1361,38 +1363,153 @@ proc canInsertInto*(self: AstDocumentEditor, parent: AstNode): bool =
       return parent.len < typ.paramTypes.len + 1
     return true
 
+const typeMap = CacheTable"TypeMap"
+const typeWrapper = CacheTable"TypeWrapper"
+const functions = CacheTable"Functions"
+
+macro addTypeMap(source: untyped, wrapper: typed, target: typed) =
+  typeMap[$source] = target
+  typeWrapper[$source] = wrapper
+
+macro addFunction(source: untyped, wrapper: typed) =
+  functions[$source] = wrapper
+
+proc getAstDocumentEditor(wrapper: api.AstDocumentEditor): Option[AstDocumentEditor] =
+  if gEditor.isNil: return AstDocumentEditor.none
+  if gEditor.getEditorForId(wrapper.id).getSome(editor):
+    if editor of AstDocumentEditor:
+      return editor.AstDocumentEditor.some
+  return AstDocumentEditor.none
+
+static:
+  addTypeMap(AstDocumentEditor, api.AstDocumentEditor, getAstDocumentEditor)
+
+macro expose*(scope: string, def: untyped): untyped =
+  # defer:
+  #   echo result.repr
+  # echo def.treeRepr
+
+  let functionName = if def[0].kind == nnkPostfix: def[0][1] else: def[0]
+  let argCount = def[3].len - 1
+  let returnType = if def[3][0].kind != nnkEmpty: def[3][0].some else: NimNode.none
+  proc argType(def: NimNode, arg: int): NimNode = def[3][arg + 1][1]
+
+  let functionNameStr = functionName.strVal
+  let wrapperName = ident(functionNameStr[0..^5] & "Api")
+  let returnsVoid = newLit(returnType.isNone)
+  var callFromScript = nnkCall.newTree(functionName)
+
+  let arg = nskParam.genSym
+
+  let scriptFunctionName = ident(functionNameStr[0..^5])
+  var scriptFunction = def.copy
+  scriptFunction[0] = nnkPostfix.newTree(ident"*", scriptFunctionName)
+
+  var call = nnkCall.newTree(scriptFunctionName)
+
+  for i in 0..<argCount:
+    let index = newLit(i)
+    var at = def.argType i
+    for source, target in typeWrapper.pairs:
+      if source == $at:
+        at = target
+        scriptFunction[3][i + 1][1] = target
+        break
+
+    let resWrapper = quote do:
+      block:
+        `arg`[`index`].jsonTo `at`
+
+    var resScript = scriptFunction[3][i + 1][0]
+    for source, target in typeMap.pairs:
+      if source == $def.argType(i):
+        resScript = quote do:
+          block:
+            let r = `target`(`resScript`)
+            if r.isNone:
+              return
+            r.get
+        break
+
+    call.add resWrapper
+    callFromScript.add resScript
+
+  scriptFunction[6] = quote do:
+    block:
+      `callFromScript`
+
+  return quote do:
+    `def`
+
+    `scriptFunction`
+
+    proc `wrapperName`*(`arg`: JsonNode): JsonNode {.nimcall, used.} =
+      result = newJNull()
+      try:
+        when `returnsVoid`:
+          `call`
+        else:
+          result = `call`.toJson
+      except:
+        let name = `functionNameStr`
+        logger.log(lvlError, "[editor] Failed to run function " & name & fmt": Invalid arguments: {getCurrentExceptionMsg()}")
+        echo getCurrentException().getStackTrace
+
+    static:
+      addToCache(`scriptFunctionName`, "myImpl")
+      addFunction(`scriptFunctionName`, `wrapperName`)
+
+macro genDispatcher(): untyped =
+  let arg = nskParam.genSym "arg"
+  let command = nskParam.genSym "command"
+  let switch = nnkCaseStmt.newTree(command)
+  for source, target in functions.pairs:
+    switch.add nnkOfBranch.newTree(newLit(source), nnkCall.newTree(target, arg))
+  switch.add nnkElse.newTree(quote do: newJNull())
+  return quote do:
+    proc dispatch(`command`: string, `arg`: JsonNode): JsonNode =
+      result = newJNull()
+      result = `switch`
+
+proc toJson*(self: api.AstDocumentEditor, opt = initToJsonOptions()): JsonNode =
+  result = newJObject()
+  result["type"] = newJString("ast")
+  result["id"] = newJInt(self.id.int)
+
+proc fromJsonHook*(t: var api.AstDocumentEditor, jsonNode: JsonNode) =
+  t.id = api.EditorId(jsonNode["id"].jsonTo(int))
+
+proc moveCursorImpl*(self: AstDocumentEditor, direction: int) {.expose("ast").} =
+  echo "moveCursorImpl ", direction
+  if direction < 0:
+    if self.isEditing: return
+    let index = self.node.index
+    if index > 0:
+      self.node = self.node.parent[index - 1]
+  else:
+    if self.isEditing: return
+    let index = self.node.index
+    if index >= 0 and index < self.node.parent.len - 1:
+      self.node = self.node.parent[index + 1]
+
+proc moveCursorUpImpl*(self: AstDocumentEditor) {.expose("ast").} =
+  if self.isEditing: return
+  if self.node != self.document.rootNode and self.node.parent != self.document.rootNode and self.node.parent != nil:
+    self.node = self.node.parent
+
+proc moveCursorDownImpl*(self: AstDocumentEditor) {.expose("ast").} =
+  if self.isEditing: return
+  if self.node.len > 0:
+    self.node = self.node[0]
+
+genDispatcher()
+
 proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventResponse =
   # logger.log lvlInfo, fmt"[asteditor]: Handle action {action}, '{arg}'"
   var newLastCommand = (action, arg)
   defer: self.lastCommand = newLastCommand
 
   case action
-  of "cursor.left":
-    if self.isEditing: return
-    let index = self.node.index
-    if index > 0:
-      self.node = self.node.parent[index - 1]
-    self.lastMoveCommand = (action, arg)
-
-  of "cursor.right":
-    if self.isEditing: return
-    let index = self.node.index
-    if index >= 0 and index < self.node.parent.len - 1:
-      self.node = self.node.parent[index + 1]
-    self.lastMoveCommand = (action, arg)
-
-  of "cursor.up":
-    if self.isEditing: return
-    if self.node != self.document.rootNode and self.node.parent != self.document.rootNode and self.node.parent != nil:
-      self.node = self.node.parent
-    self.lastMoveCommand = (action, arg)
-
-  of "cursor.down":
-    if self.isEditing: return
-    if self.node.len > 0:
-      self.node = self.node[0]
-    self.lastMoveCommand = (action, arg)
-
   of "cursor.next":
     if self.isEditing: return
     var node = self.node
@@ -1871,7 +1988,14 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
     echo "================================================="
 
   else:
-    return self.editor.handleUnknownDocumentEditorAction(self, action, arg)
+    if self.editor.handleUnknownDocumentEditorAction(self, action, arg) == Handled:
+      return Handled
+    var args = newJArray()
+    args.add api.AstDocumentEditor(id: self.id).toJson
+    if arg.len != 0:
+      args.add arg.parseJson()
+    discard dispatch(action, args)
+    return Handled
 
   return Handled
 

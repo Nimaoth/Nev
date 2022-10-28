@@ -1,6 +1,5 @@
-import std/[strformat, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils, macros]
+import std/[strformat, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils, macros, macrocache, sugar]
 import boxy, windy, fuzzy
-import sugar
 import input, events, rect_utils, document, document_editor, keybind_autocomplete, popup, render_context, timer
 import theme, util
 import scripting
@@ -112,7 +111,7 @@ type Editor* = ref object
 
   editor_defaults: seq[DocumentEditor]
 
-var gEditor: Editor = nil
+var gEditor*: Editor = nil
 
 proc registerEditor*(self: Editor, editor: DocumentEditor) =
   self.editors[editor.id] = editor
@@ -271,6 +270,19 @@ proc getEventHandlerConfig*(ed: Editor, context: string): EventHandlerConfig =
   if not ed.eventHandlerConfigs.contains(context):
     ed.eventHandlerConfigs[context] = EventHandlerConfig()
   return ed.eventHandlerConfigs[context]
+
+proc getEditorForId*(ed: Editor, id: EditorId): Option[DocumentEditor] =
+  if ed.editors.contains(id):
+    return ed.editors[id].some
+
+  return DocumentEditor.none
+
+proc getPopupForId*(ed: Editor, id: EditorId): Option[Popup] =
+  for popup in ed.popups:
+    if popup.id == id:
+      return popup.some
+
+  return Popup.none
 
 import text_document, ast_document
 import selector_popup
@@ -677,19 +689,6 @@ proc handleRune*(ed: Editor, rune: Rune, modifiers: Modifiers) =
   let modifiers = if rune.int64.isAscii and rune.char.isAlphaNumeric: modifiers else: {}
   let input = rune.toInput()
   ed.currentEventHandlers.handleEvent(input, modifiers)
-
-proc getEditorForId*(ed: Editor, id: EditorId): Option[DocumentEditor] =
-  if ed.editors.contains(id):
-    return ed.editors[id].some
-
-  return DocumentEditor.none
-
-proc getPopupForId*(ed: Editor, id: EditorId): Option[Popup] =
-  for popup in ed.popups:
-    if popup.id == id:
-      return popup.some
-
-  return Popup.none
 
 proc scriptRunAction*(action: string, arg: string) =
   if gEditor.isNil:
