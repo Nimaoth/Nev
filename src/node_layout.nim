@@ -168,6 +168,19 @@ template createInlineBlock(condition: untyped, node: AstNode, line: untyped, out
       output.nodeToVisualNode[node.id] = oldLine.add(containerLine)
       line = oldLine
 
+proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode, result: var NodeLayout, line: var VisualNode)
+
+proc createLayoutLineForRemainingChildren(ctx: Context, input: NodeLayoutInput, node: AstNode, firstChildIndex: int, result: var NodeLayout, line: var VisualNode) =
+  if firstChildIndex >= node.len:
+    return
+
+  discard line.add newTextNode("<", @[config.colors.separator, "&editor.foreground"], config.font)
+  for i in firstChildIndex..<node.len:
+    if i > firstChildIndex:
+      discard line.add newTextNode(", ", @[config.colors.separator, "&editor.foreground"], config.font)
+    ctx.createLayoutLineForNode(input, node[i], result, line)
+  discard line.add newTextNode(">", @[config.colors.separator, "&editor.foreground"], config.font)
+
 proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode, result: var NodeLayout, line: var VisualNode) =
   let renderInline = node.kind in {While, If, NodeList} and node.parent.kind in {Call}
 
@@ -181,6 +194,10 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
 
   # force computation of type so that errors diagnostics can be generated
   discard ctx.computeType(node, false)
+
+  var lastUsedChild = -1
+  defer:
+    ctx.createLayoutLineForRemainingChildren(input, node, lastUsedChild + 1, result, line)
 
   case node
   of Empty():
@@ -235,6 +252,8 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
           discard line.add newTextNode(" = ", @[config.colors.separator, "&editor.foreground"], config.font)
           discard line.add newTextNode($value, "string", config.font)
 
+    lastUsedChild = 0
+
   of LetDecl():
     if not input.createReplacement(node, result, line):
       let (color, style) = if ctx.computeSymbol(node, false).getSome(sym): (ctx.getColorForSymbol(sym), ctx.getStyleForSymbol(sym))
@@ -255,6 +274,8 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
       discard line.add newTextNode(" = ", @[config.colors.separator, "&editor.foreground"], config.font)
       ctx.createLayoutLineForNode(input, node[1], result, line)
 
+    lastUsedChild = 1
+
   of VarDecl():
     if not input.createReplacement(node, result, line):
       let (color, style) = if ctx.computeSymbol(node, false).getSome(sym): (ctx.getColorForSymbol(sym), ctx.getStyleForSymbol(sym))
@@ -274,6 +295,8 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
     if node.len > 1:
       discard line.add newTextNode(" = ", @[config.colors.separator, "&editor.foreground"], config.font)
       ctx.createLayoutLineForNode(input, node[1], result, line)
+
+    lastUsedChild = 1
 
   of FunctionDefinition():
     discard line.add newTextNode("fn", config.colors.keyword, config.font)
@@ -303,6 +326,8 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
 
     if node.len > 2:
       ctx.createLayoutLineForNode(input, node[2], result, line)
+
+    lastUsedChild = 2
 
   of If():
     var parent = line.parent
@@ -338,6 +363,8 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
     parent.addLine(line)
     line = VisualNode(parent: parent, bounds: rect(prevIndent.float32 * config.indent, 0, 0, 0), indent: prevIndent, depth: parent.depth + 1)
 
+    lastUsedChild = node.len - 1
+
   of While():
     discard line.add newTextNode("while ", config.colors.keyword, config.font)
 
@@ -348,6 +375,8 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
 
     if node.len >= 2:
       ctx.createLayoutLineForNode(input, node[1], result, line)
+
+    lastUsedChild = 1
 
   of NodeList():
     var parent = line.parent
@@ -365,12 +394,16 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
     parent.addLine(line)
     line = VisualNode(parent: parent, bounds: rect(prevIndent.float32 * config.indent, 0, 0, 0), indent: prevIndent, depth: parent.depth + 1)
 
+    lastUsedChild = node.len - 1
+
   of Assignment():
     if node.len > 0:
       ctx.createLayoutLineForNode(input, node[0], result, line)
     discard line.add newTextNode(" = ", @[config.colors.separator, "&editor.foreground"], config.font)
     if node.len > 0:
       ctx.createLayoutLineForNode(input, node[1], result, line)
+
+    lastUsedChild = 1
 
   of Call():
     if node.len == 0:
@@ -439,6 +472,8 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
         let lengthDiff = longerLine.bounds.w - shorterLine.bounds.w
         shorterLine.bounds.x += lengthDiff / 2
 
+        lastUsedChild = 2
+
       else:
         if renderParens:
           discard line.add newTextNode("(", config.colors.separatorParen, config.font)
@@ -452,12 +487,16 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
         if renderParens:
           discard line.add newTextNode(")", config.colors.separatorParen, config.font)
 
+        lastUsedChild = 2
+
     of Prefix:
       ctx.createLayoutLineForNode(input, node[0], result, line)
       ctx.createLayoutLineForNode(input, node[1], result, line)
+      lastUsedChild = 1
     of Postfix:
       ctx.createLayoutLineForNode(input, node[1], result, line)
       ctx.createLayoutLineForNode(input, node[0], result, line)
+      lastUsedChild = 1
 
     else:
       if node.len > 0:
@@ -471,6 +510,8 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
         ctx.createLayoutLineForNode(input, node[i], result, line)
 
       discard line.add newTextNode(")", config.colors.separatorParen, config.font)
+
+      lastUsedChild = node.len - 1
 
   else:
     echo "createLayoutLineForNode not implemented for ", node.kind

@@ -273,7 +273,7 @@ proc handleSelectedNodeChanged(editor: AstDocumentEditor) =
         editor.lastLayouts[k].offset.y += layout.bounds.h
       foundNode = true
 
-    if foundNode:
+    if foundNode and layout.nodeToVisualNode.contains(node.id):
       let visualNode = layout.nodeToVisualNode[node.id]
       let bounds = visualNode.absoluteBounds + vec2(0, offset.y)
 
@@ -396,6 +396,26 @@ iterator nextPreOrder*(self: AstDocument, node: AstNode, endNode: AstNode = nil)
     elif n.parent != nil and n != endNode and n.parent != endNode:
       idx = n.index
       n = n.parent
+    else:
+      break
+
+iterator nextPostOrder*(self: AstDocument, node: AstNode, idx: int = -1, endNode: AstNode = nil): tuple[key: int, value: AstNode] =
+  var n = node
+  var idx = idx
+  var i = 0
+
+  while true:
+    defer: inc i
+    if idx == n.len - 1:
+      yield (i, n)
+      if n.parent != nil and n != endNode and n.parent != endNode:
+        idx = n.index
+        n = n.parent
+      else:
+        break
+    elif idx + 1 < node.len:
+      n = n[idx + 1]
+      idx = -1
     else:
       break
 
@@ -1310,6 +1330,37 @@ proc getNodeAtPixelPosition(self: AstDocumentEditor, posContent: Vec2): Option[A
         result = layout.node.some
       return
 
+proc canInsertInto*(self: AstDocumentEditor, parent: AstNode): bool =
+  case parent.kind
+  of Empty, Identifier, NumberLiteral, StringLiteral:
+    return false
+  of ConstDecl:
+    return parent.len < 1:
+  of LetDecl, VarDecl, While, Assignment:
+    return parent.len < 2:
+  of FunctionDefinition:
+    return parent.len < 3
+  of NodeList, If, Params:
+    return true
+  of Call:
+    if parent.len == 0:
+      return true
+    if ctx.computeSymbol(parent[0]).getSome(sym):
+      if sym.kind == skBuiltin:
+        case sym.operatorNotation
+        of Prefix, Postfix:
+          return parent.len < 2
+        of Infix:
+          return parent.len < 3
+        else:
+          discard
+    let typ = ctx.computeType(parent[0])
+    if typ.kind == tFunction:
+      if typ.paramTypes.len > 0 and typ.paramTypes[typ.paramTypes.high] == anyType(true):
+        return true
+      return parent.len < typ.paramTypes.len + 1
+    return true
+
 proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventResponse =
   # logger.log lvlInfo, fmt"[asteditor]: Handle action {action}, '{arg}'"
   var newLastCommand = (action, arg)
@@ -1421,12 +1472,38 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
     if self.document.redo.getSome(node):
       self.node = node
 
+  of "insert-after-smart":
+    if self.isEditing: return
+
+    var node = self.node
+    for next in node.parents(includeSelf = true):
+      if self.canInsertInto(next.parent):
+        node = next
+        break
+    let index = node.index
+
+    if self.createNodeFromAction(arg, node, errorType()).getSome(newNodeIndex):
+      let (newNode, _) = newNodeIndex
+      if self.document.insertNode(node.parent, index + 1, newNode).getSome(node):
+        self.node = node
+
+        for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => self.document.shouldEditNode(n), endNode = newNode):
+          self.node = emptyNode
+          discard self.tryEdit self.node
+          break
+
+      else:
+        logger.log(lvlError, fmt"[astedit] Failed to insert node {newNode} into {self.node.parent} at {index + 1}")
+    self.lastEditCommand = (action, arg)
+
   of "insert-after":
     if self.isEditing: return
-    let index = self.node.index
-    if self.createNodeFromAction(arg, self.node, errorType()).getSome(newNodeIndex):
+    let node = self.node
+    let index = node.index
+
+    if self.createNodeFromAction(arg, node, errorType()).getSome(newNodeIndex):
       let (newNode, _) = newNodeIndex
-      if self.document.insertNode(self.node.parent, index + 1, newNode).getSome(node):
+      if self.document.insertNode(node.parent, index + 1, newNode).getSome(node):
         self.node = node
 
         for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => self.document.shouldEditNode(n), endNode = newNode):
@@ -1568,6 +1645,86 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
   of "cancel-and-prev-completion":
     self.finishEdit(false)
     discard self.handleAction("edit-prev-empty", "")
+
+  of "cancel-and-delete":
+    self.finishEdit(false)
+    self.deletedNode = some(self.node)
+    self.node = self.document.deleteNode self.node
+    self.lastEditCommand = (action, arg)
+
+  of "move-node-to-prev-space":
+    let wasEditing = self.isEditing
+    self.finishEdit(false)
+
+    # Find spot where to insert
+    var targetNode = AstNode.none
+    echo "start: ", self.node
+    for next in self.document.prevPostOrder(self.node):
+      echo next
+      if next == self.node:
+        continue
+      if self.canInsertInto(next) and (next != self.node.parent or self.node.index > 0):
+        targetNode = next.some
+        break
+
+    if targetNode.getSome(newParent):
+      let nodeToMove = self.node
+
+      let index = if nodeToMove.parent == newParent:
+        # Inserting into own parent
+        nodeToMove.index - 1
+      elif nodeToMove.index(newParent).getSome(index):
+        # Inserting into parent of parent
+        index
+      else:
+        # Inserting into unrelated node
+        newParent.len
+
+      self.node = self.document.deleteNode nodeToMove
+      if self.document.insertNode(newParent, index, nodeToMove).getSome(newNode):
+        self.node = newNode
+
+        if wasEditing:
+          discard self.tryEdit self.node
+
+    self.lastEditCommand = (action, arg)
+
+  of "move-node-to-next-space":
+    let wasEditing = self.isEditing
+    self.finishEdit(false)
+
+    # Find spot where to insert
+    var targetNode = AstNode.none
+    echo "start: ", self.node
+    for (_, next) in self.document.nextPostOrder(self.node.parent, self.node.index):
+      echo next
+      if next == self.node:
+        continue
+      if self.canInsertInto(next) and (next != self.node.parent or self.node.index + 1 < self.node.parent.len):
+        targetNode = next.some
+        break
+
+    if targetNode.getSome(newParent):
+      let nodeToMove = self.node
+
+      let index = if nodeToMove.parent == newParent:
+        # Inserting into own parent
+        nodeToMove.index + 1
+      elif nodeToMove.index(newParent).getSome(index):
+        # Inserting into parent of parent
+        index + 1
+      else:
+        # Inserting into unrelated node
+        0
+
+      self.node = self.document.deleteNode nodeToMove
+      if self.document.insertNode(newParent, index, nodeToMove).getSome(newNode):
+        self.node = newNode
+
+        if wasEditing:
+          discard self.tryEdit self.node
+
+    self.lastEditCommand = (action, arg)
 
   of "select-prev":
     if self.isEditing: return

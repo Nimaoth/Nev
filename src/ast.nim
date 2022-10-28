@@ -64,6 +64,13 @@ func index*(node: AstNode): int =
     return -1
   return node.parent.children.find node
 
+func index*(node: AstNode, parent: AstNode): Option[int] =
+  if node.parent.isNil:
+    return int.none
+  if node.parent == parent:
+    return node.index.some
+  return node.parent.index(parent)
+
 func next*(node: AstNode): Option[AstNode] =
   if node.parent == nil:
     return none[AstNode]()
@@ -318,3 +325,9 @@ iterator nextPreOrder*(node: AstNode): tuple[key: int, value: AstNode] =
       n = n.parent
     else:
       break
+
+iterator parents*(node: AstNode, includeSelf: bool = false): AstNode =
+  var node = if includeSelf: node else: node.parent
+  while not node.isNil:
+    yield node
+    node = node.parent
