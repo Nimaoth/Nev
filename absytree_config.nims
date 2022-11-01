@@ -204,7 +204,13 @@ addCommand "editor.text", "<SPACE>", "editor.insert  "
 addCommand "editor.text", "<BACKSPACE>", "backspace"
 addCommand "editor.text", "<DELETE>", "delete"
 
-addCommand "editor.ast", "<A-LEFT>", "moveCursor", "-1"
+template addAstCommand(command: string, body: untyped): untyped =
+  addCommand "editor.ast", command, proc() =
+    let editor {.inject.} = getActiveEditor().AstDocumentEditor
+    body
+
+# addCommand "editor.ast", "<A-LEFT>", "moveCursor", "-1"
+addAstCommand "<A-LEFT>": editor.moveCursor(-1)
 addCommand "editor.ast", "<A-RIGHT>", "moveCursor", "1"
 addCommand "editor.ast", "<A-UP>", "moveCursorUp"
 addCommand "editor.ast", "<A-DOWN>", "moveCursorDown"

@@ -4,3 +4,7 @@ src/input_tests
 ast
 absytree
 themes/**
+cpp_test
+.vs
+config.json
+options.json
