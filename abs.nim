@@ -1,13 +1,28 @@
 # import std/logging
-import std/[strformat, tables]
+import std/[strformat, tables, macros]
 
 type AnyDocumentEditor = DocumentEditor | TextDocumentEditor | AstDocumentEditor
 type AnyPopup = Popup
 
 var lambdaActions = initTable[string, proc(): void]()
 
-proc addCommand*(context: string, keys: string, action: string, arg: string = "") =
-  scriptAddCommand(context, keys, action, arg)
+func toJsonString[T: string](value: T): string = "\"" & value & "\""
+func toJsonString[T: char](value: T): string = "\"" & $value & "\""
+func toJsonString[T](value: T): string = $value
+
+macro addCommand*(context: string, keys: string, action: string, args: varargs[untyped]) =
+  var stmts = nnkStmtList.newTree()
+  let str = nskVar.genSym "str"
+  stmts.add quote do:
+    var `str` = ""
+  for arg in args:
+    stmts.add quote do:
+      `str`.add " "
+      `str`.add `arg`.toJsonString
+
+  return quote do:
+    `stmts`
+    scriptAddCommand(`context`, `keys`, `action`, `str`)
 
 proc addCommand*(context: string, keys: string, action: proc(): void) =
   let key = context & keys

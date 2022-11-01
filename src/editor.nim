@@ -1,11 +1,11 @@
-import std/[strformat, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils, macros, macrocache, sugar]
+import std/[strformat, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils, macros, macrocache, sugar, streams]
 import boxy, windy, fuzzy
 import input, events, rect_utils, document, document_editor, keybind_autocomplete, popup, render_context, timer
 import theme, util
 import scripting
 import nimscripter, nimscripter/[vmconversion, vmaddins]
 
-import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, Popup
+import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, Popup
 
 var logger = newConsoleLogger()
 
@@ -431,13 +431,27 @@ proc moveCurrentViewNext(ed: Editor) =
     ed.views.insert(view, index)
     ed.currentView = index
 
+proc getEditor(): Option[Editor] =
+  if gEditor.isNil: return Editor.none
+  return gEditor.some
+
+static:
+  addInjector(Editor, getEditor)
+
+proc quitImpl*(self: Editor) {.expose("editor").} =
+  self.window.closeRequested = true
+
+proc changeFontSizeImpl*(self: Editor, amount: float32) {.expose("editor").} =
+  self.ctx.fontSize += amount
+
+proc changeLayoutPropImpl*(self: Editor, prop: string, change: float32) {.expose("editor").} =
+  self.layout_props.props.mgetOrPut(prop, 0) += change
+
+genDispatcher("editor")
+
 proc handleAction(ed: Editor, action: string, arg: string) =
   ed.logger.log(lvlInfo, "[ed] Action '$1 $2'" % [action, arg])
   case action
-  of "quit":
-    ed.window.closeRequested = true
-  of "change-font-size":
-    ed.ctx.fontSize = ed.ctx.fontSize + arg.parseFloat()
   of "toggle-status-bar-location":
     ed.statusBarOnTop = not ed.statusBarOnTop
   of "create-view":
@@ -462,13 +476,6 @@ proc handleAction(ed: Editor, action: string, arg: string) =
       of "vertical": VerticalLayout()
       of "fibonacci": FibonacciLayout()
       else: HorizontalLayout()
-  of "change-layout-prop":
-    let args = arg.split(' ')
-    if args.len == 2:
-      let prop = args[0]
-      let change = try: args[1].parseFloat
-      except: 0.float32
-      ed.layout_props.props.mgetOrPut(prop, 0) += change
   of "command-line":
     ed.getCommandLineTextEditor.document.content = @[arg]
     ed.commandLineMode = true
@@ -564,7 +571,47 @@ proc handleAction(ed: Editor, action: string, arg: string) =
   else:
     try:
       if not ed.scriptContext.inter.invoke(handleGlobalAction, action, arg, returnType = bool):
-        ed.logger.log(lvlError, fmt"[ed] Unknown Action '{action} {arg}'")
+        var args = newJArray()
+        if arg.len != 0:
+          var ss = arg.newStringStream
+          for json in ss.parseJsonFragments("arguments"):
+            args.add json
+
+          # while true:
+          #   # Skip whitespace
+          #   while ss.peekChar.Rune.isWhitespace:
+          #     discard ss.readChar
+
+          #   echo "start: ", ss.getPosition
+          #   if ss.atEnd:
+          #     break
+
+          #   case ss.peekChar
+          #   of '-', '.', '0'..'9', '"', '[', '{', 'a'..'z', 'A'..'Z', '_':
+          #     # Json token
+          #     echo "before: ", ss.getPosition
+          #     for json in ss.parseJsonFragments("arguments"):
+          #       echo json
+          #       args.add json
+          #       break
+          #     echo "after: ", ss.getPosition
+
+          #   of '$':
+          #     # Editor variable
+          #     discard ss.readChar
+          #     var name = ""
+
+          #     while not ss.peekChar.Rune.isWhitespace:
+          #       name.add ss.readChar
+
+          #     let option = ed.options{name.split(".")}
+          #     if not option.isNil:
+          #       args.add option
+
+          #   else:
+          #     echo "error"
+
+        discard dispatch(action, args)
     except:
       ed.logger.log(lvlError, fmt"[ed] Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
       echo getCurrentException().getStackTrace()

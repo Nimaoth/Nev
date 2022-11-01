@@ -40,64 +40,29 @@ proc newScriptContext*(path: string, addins: VMAddins): ScriptContext =
 proc reloadScript*(ctx: ScriptContext) =
   ctx.inter.safeLoadScriptWithState(ctx.script, ctx.addins, "scripting_api", stdPath = stdPath, searchPaths = @["src"], vmErrorHook = errorHook)
 
-when false:
-  proc doThing(): int = 41
-  proc log(str: string) = echo "[nim] ", str
+const mapperFunctions = CacheTable"MapperFunctions" # Maps from type name (referring to nim type) to function which maps these types
+const typeWrapper = CacheTable"TypeWrapper"         # Maps from type name (referring to nim type) to type name of the api type (from scripting_api)
+const functions = CacheTable"DispatcherFunctions"   # Maps from scope name to list of tuples of name and wrapper
+const injectors = CacheTable"Injectors"             # Maps from type name (referring to nim type) to function
 
-  exportTo(myImpl, doThing, log)
-
-  addCallable(myImpl):
-    proc logScript(str: string)
-  const
-    scriptProcs = implNimScriptModule(myImpl)
-    ourScript = NimScriptPath("script.nims")
-
-  echo scriptProcs
-  let intr = loadScript(ourScript, scriptProcs, stdPath = stdPath, vmErrorHook = errorHook)
-
-  intr.invoke(logScript, "hi")
-
-  getGlobalNimsVars intr:
-    a: bool
-    b: string
-    c: int
-    d: TestType
-    e: TestType2
-
-  echo a
-  echo b
-  echo c
-  echo d
-  print e
-
-  var d2 = d
-  d2.a += 2
-  d2.b = "hi"
-  d2.c[6] = "six"
-  intr.setGlobalVariable("d", d2)
-
-  intr.invoke(run)
-
-const typeMap = CacheTable"TypeMap"
-const typeWrapper = CacheTable"TypeWrapper"
-const functions = CacheTable"DispatcherFunctions"
-
-macro addTypeMap*(source: untyped, wrapper: typed, target: typed) =
-  typeMap[$source] = target
+macro addTypeMap*(source: untyped, wrapper: typed, mapperFunction: typed) =
+  mapperFunctions[$source] = mapperFunction
   typeWrapper[$source] = wrapper
 
-macro addFunction(source: untyped, wrapper: typed, moduleName: static string) =
-  let n = nnkStmtList.newTree(source, wrapper)
+macro addInjector*(name: untyped, function: typed) =
+  injectors[$name] = function
+
+macro addFunction(name: untyped, wrapper: typed, moduleName: static string) =
+  let n = nnkStmtList.newTree(name, wrapper)
   for name, _ in functions:
     if name == moduleName:
       functions[name].add n
       return
   functions[moduleName] = nnkStmtList.newTree(n)
 
-
 macro expose*(moduleName: static string, def: untyped): untyped =
-  defer:
-    echo result.repr
+  # defer:
+  #   echo result.repr
 
   let functionName = if def[0].kind == nnkPostfix: def[0][1] else: def[0]
   let argCount = def[3].len - 1
@@ -105,6 +70,10 @@ macro expose*(moduleName: static string, def: untyped): untyped =
   proc argType(def: NimNode, arg: int): NimNode = def[3][arg + 1][1]
 
   let functionNameStr = functionName.strVal
+  if not functionNameStr.endsWith("Impl"):
+    return quote do:
+      {.fatal: "Function name has to end with 'Impl': " & `functionNameStr`.}
+
   let wrapperName = ident(functionNameStr[0..^5] & "Api")
   let returnsVoid = newLit(returnType.isNone)
   var callFromScript = nnkCall.newTree(functionName)
@@ -117,32 +86,69 @@ macro expose*(moduleName: static string, def: untyped): untyped =
 
   var call = nnkCall.newTree(scriptFunctionName)
 
+  var mappedArgIndices = initTable[int, int]()
   for i in 0..<argCount:
-    let index = newLit(i)
-    var at = def.argType i
+    var argumentType = def.argType i
+    var wasInjected = false
+    for typeName, function in injectors.pairs:
+      if $argumentType == typeName:
+        wasInjected = true
+        break
+
+    if not wasInjected:
+      mappedArgIndices[i] = mappedArgIndices.len
+
+  for k in 1..argCount:
+    let i = argCount - k
+
+    var argumentType = def.argType i
+    let index = newLit(mappedArgIndices.getOrDefault(i, i))
+
+    # Check if there is an entry in the type map and override argumentType if so
+    # Also replace the argument type in the scriptFunction
     for source, target in typeWrapper.pairs:
-      if source == $at:
-        at = target
+      if source == $argumentType:
+        argumentType = target
         scriptFunction[3][i + 1][1] = target
         break
 
+    # The argument for the call to scriptFunction in the wrapper
     let resWrapper = quote do:
       block:
-        `arg`[`index`].jsonTo `at`
+        `arg`[`index`].jsonTo `argumentType`
 
-    var resScript = scriptFunction[3][i + 1][0]
-    for source, target in typeMap.pairs:
+    #
+    var callFromScriptArg = scriptFunction[3][i + 1][0]
+
+    for source, mapperFunction in mapperFunctions.pairs:
       if source == $def.argType(i):
-        resScript = quote do:
+        callFromScriptArg = quote do:
           block:
-            let r = `target`(`resScript`)
+            let r = `mapperFunction`(`callFromScriptArg`)
             if r.isNone:
               return
             r.get
         break
 
-    call.add resWrapper
-    callFromScript.add resScript
+    var wasInjected = false
+
+    # Check if the type is injected, if so replace callFromScriptArg
+    # and remove the parameter from scriptFunction
+    for typeName, function in injectors.pairs:
+      if $argumentType == typeName:
+        wasInjected = true
+        scriptFunction[3].del(i + 1)
+        callFromScriptArg = quote do:
+          block:
+            let r = `function`()
+            if r.isNone:
+              return
+            r.get
+        break
+
+    if not wasInjected:
+      call.insert(1, resWrapper)
+    callFromScript.insert(1, callFromScriptArg)
 
   scriptFunction[6] = quote do:
     block:
@@ -162,7 +168,7 @@ macro expose*(moduleName: static string, def: untyped): untyped =
           result = `call`.toJson
       except:
         let name = `functionNameStr`
-        logger.log(lvlError, "[editor] Failed to run function " & name & fmt": Invalid arguments: {getCurrentExceptionMsg()}")
+        echo "[editor] Failed to run function " & name & fmt": Invalid arguments: {getCurrentExceptionMsg()}"
         echo getCurrentException().getStackTrace
 
     static:
@@ -170,8 +176,8 @@ macro expose*(moduleName: static string, def: untyped): untyped =
       addFunction(`scriptFunctionName`, `wrapperName`, `moduleName`)
 
 macro genDispatcher*(moduleName: static string): untyped =
-  defer:
-    echo result.repr
+  # defer:
+  #   echo result.repr
 
   let arg = nskParam.genSym "arg"
   let command = nskParam.genSym "command"
@@ -181,7 +187,22 @@ macro genDispatcher*(moduleName: static string): untyped =
       for entry in functions:
         let source = entry[0]
         let target = entry[1]
-        switch.add nnkOfBranch.newTree(newLit($source), nnkCall.newTree(target, arg))
+
+        let name = $source
+
+        var alternative = ""
+        for c in name:
+          if c.isUpperAscii:
+            alternative.add "-"
+            alternative.add c.toLowerAscii
+          else:
+            alternative.add c
+
+        if name == alternative:
+          switch.add nnkOfBranch.newTree(newLit(name), nnkCall.newTree(target, arg))
+        else:
+          switch.add nnkOfBranch.newTree(newLit(name), newLit(alternative), nnkCall.newTree(target, arg))
+
   switch.add nnkElse.newTree(quote do: newJNull())
   return quote do:
     proc dispatch(`command`: string, `arg`: JsonNode): JsonNode =
