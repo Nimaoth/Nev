@@ -1,7 +1,7 @@
 import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros, macrocache, options, deques, sets, json, jsonutils, sequtils]
 import timer
 import fusion/matching, fuzzy, bumpy, rect_utils, vmath, chroma, windy
-import editor, util, document, document_editor, text_document, events, id, ast_ids, ast, id, scripting
+import editor, util, document, document_editor, text_document, events, id, ast_ids, ast, scripting
 import compiler
 import nimscripter
 from scripting_api as api import nil
@@ -1375,13 +1375,13 @@ static:
 
 proc toJson*(self: api.AstDocumentEditor, opt = initToJsonOptions()): JsonNode =
   result = newJObject()
-  result["type"] = newJString("ast")
+  result["type"] = newJString("editor.ast")
   result["id"] = newJInt(self.id.int)
 
 proc fromJsonHook*(t: var api.AstDocumentEditor, jsonNode: JsonNode) =
   t.id = api.EditorId(jsonNode["id"].jsonTo(int))
 
-proc moveCursorImpl*(self: AstDocumentEditor, direction: int) {.expose("ast").} =
+proc moveCursorImpl*(self: AstDocumentEditor, direction: int) {.expose("editor.ast").} =
   if direction < 0:
     if self.isEditing: return
     let index = self.node.index
@@ -1393,17 +1393,17 @@ proc moveCursorImpl*(self: AstDocumentEditor, direction: int) {.expose("ast").} 
     if index >= 0 and index < self.node.parent.len - 1:
       self.node = self.node.parent[index + 1]
 
-proc moveCursorUpImpl*(self: AstDocumentEditor) {.expose("ast").} =
+proc moveCursorUpImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
   if self.isEditing: return
   if self.node != self.document.rootNode and self.node.parent != self.document.rootNode and self.node.parent != nil:
     self.node = self.node.parent
 
-proc moveCursorDownImpl*(self: AstDocumentEditor) {.expose("ast").} =
+proc moveCursorDownImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
   if self.isEditing: return
   if self.node.len > 0:
     self.node = self.node[0]
 
-genDispatcher("ast")
+genDispatcher("editor.ast")
 
 proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventResponse =
   # logger.log lvlInfo, fmt"[asteditor]: Handle action {action}, '{arg}'"
