@@ -5,7 +5,7 @@ import theme, util
 import scripting
 import nimscripter, nimscripter/[vmconversion, vmaddins]
 
-import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, Popup
+import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, Popup, SelectorPopup
 
 var logger = newConsoleLogger()
 
@@ -518,6 +518,7 @@ proc loadThemeImpl*(ed: Editor, name: string) {.expose("editor").} =
     ed.logger.log(lvlError, fmt"[ed] Failed to load theme {name}")
 
 proc chooseThemeImpl*(ed: Editor) {.expose("editor").} =
+  let originalTheme = ed.theme.path
   var popup = ed.newSelectorPopup proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
     for file in walkDirRec("./themes", relative=true):
       if file.endsWith ".json":
@@ -533,6 +534,10 @@ proc chooseThemeImpl*(ed: Editor) {.expose("editor").} =
 
   popup.handleItemConfirmed = proc(item: SelectorItem) =
     if theme.loadFromFile(item.ThemeSelectorItem.path).getSome(theme):
+      ed.theme = theme
+
+  popup.handleCanceled = proc() =
+    if theme.loadFromFile(originalTheme).getSome(theme):
       ed.theme = theme
 
   ed.pushPopup popup
