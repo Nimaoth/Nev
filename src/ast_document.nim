@@ -187,12 +187,8 @@ type AstDocumentEditor* = ref object of DocumentEditor
   selectedCompletion*: int
   lastItems*: seq[tuple[index: int, bounds: Rect]]
 
-  renderSelectedNodeValue*: bool
   scrollOffset*: float
   previousBaseIndex*: int
-
-  renderDebugInfo*: bool
-  renderExecutionOutput*: bool
 
   lastBounds*: Rect
   lastLayouts*: seq[tuple[layout: NodeLayout, offset: Vec2]]
@@ -556,32 +552,6 @@ proc tryEdit*(self: AstDocumentEditor, node: AstNode): bool =
     else:
       return false
 
-proc finishEdit*(self: AstDocumentEditor, apply: bool) =
-  if not self.isEditing: return
-
-  if apply:
-    if self.currentlyEditedSymbol != null:
-      if ctx.getSymbol(self.currentlyEditedSymbol).getSome(sym):
-        self.document.undoOps.add UndoOp(kind: SymbolNameChange, id: self.currentlyEditedSymbol, text: sym.name)
-        sym.name = self.textDocument.content.join
-
-        if sym.kind == skAstNode:
-          sym.node.text = sym.name
-          ctx.updateNode(sym.node)
-        ctx.notifySymbolChanged(sym)
-
-    elif self.currentlyEditedNode != nil:
-      self.document.undoOps.add UndoOp(kind: TextChange, node: self.currentlyEditedNode, text: self.currentlyEditedNode.text)
-      self.currentlyEditedNode.text = self.textDocument.content.join "\n"
-      ctx.updateNode(self.currentlyEditedNode)
-
-  self.textEditor.unregister()
-  self.textEditor = nil
-  self.textDocument = nil
-  self.currentlyEditedSymbol = null
-  self.currentlyEditedNode = nil
-  self.updateCompletions()
-
 proc getCompletions*(editor: AstDocumentEditor, text: string, contextNode: Option[AstNode] = none[AstNode]()): seq[Completion] =
   result = @[]
 
@@ -627,17 +597,7 @@ proc updateCompletions(editor: AstDocumentEditor) =
   else:
     editor.selectedCompletion = 0
 
-proc selectNextCompletion(editor: AstDocumentEditor) =
-  if editor.completions.len > 0:
-    editor.selectedCompletion = (editor.selectedCompletion + 1).clamp(0, editor.completions.len - 1)
-  else:
-    editor.selectedCompletion = 0
-
-proc selectPrevCompletion(editor: AstDocumentEditor) =
-  if editor.completions.len > 0:
-    editor.selectedCompletion = (editor.selectedCompletion - 1).clamp(0, editor.completions.len - 1)
-  else:
-    editor.selectedCompletion = 0
+proc finishEditImpl*(self: AstDocumentEditor, apply: bool)
 
 proc getNodeAt*(self: AstDocumentEditor, cursor: Cursor, index: int = -1): AstNode =
   return self.node
@@ -655,7 +615,7 @@ method handleDocumentChanged*(self: AstDocumentEditor) =
   logger.log(lvlInfo, fmt"[ast-editor] Document changed")
   self.selectionHistory.clear
   self.selectionFuture.clear
-  self.finishEdit false
+  self.finishEditImpl false
   for symbol in ctx.globalScope.values:
     discard ctx.newSymbol(symbol)
   self.node = self.document.rootNode[0]
@@ -1226,44 +1186,6 @@ proc shouldEditNode(doc: AstDocument, node: AstNode): bool =
     return ctx.computeSymbol(node).getSome(symbol) and symbol.name == ""
   return false
 
-proc applySelectedCompletion(editor: AstDocumentEditor) =
-  if editor.textDocument == nil:
-    return
-
-  if editor.completions.len == 0:
-    return
-
-  let com = editor.completions[editor.selectedCompletion]
-  let completionText = editor.completionText
-
-  logger.log(lvlInfo, fmt"[astedit] Applying completion {editor.selectedCompletion} ({completionText})")
-
-  editor.finishEdit false
-
-  case com.kind
-  of SymbolCompletion:
-    if ctx.getSymbol(com.id).getSome(symbol):
-      editor.node = editor.document.replaceNode(editor.node, AstNode(kind: Identifier, reff: symbol.id))
-  of AstCompletion:
-    if editor.createDefaultNode(com.nodeKind).getSome(nodeIndex):
-      let (newNode, _) = nodeIndex
-      discard editor.document.replaceNode(editor.node, newNode)
-
-      if newNode.kind == NumberLiteral:
-        newNode.text = completionText
-        ctx.updateNode(newNode)
-      elif newNode.kind == StringLiteral:
-        assert completionText[0] == '"'
-        newNode.text = completionText[1..^1]
-        ctx.updateNode(newNode)
-
-      editor.node = newNode
-
-      for _, emptyNode in editor.document.nextPreOrderWhere(newNode, (n) => editor.document.shouldEditNode(n), endNode = newNode):
-        editor.node = emptyNode
-        discard editor.tryEdit editor.node
-        break
-
 proc runSelectedFunction(self: AstDocumentEditor) =
   var node = self.node
 
@@ -1403,6 +1325,514 @@ proc moveCursorDownImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
   if self.node.len > 0:
     self.node = self.node[0]
 
+proc moveCursorNextImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
+  if self.isEditing: return
+  var node = self.node
+  for _, n in self.document.nextPreVisualOrder(self.node):
+    if not shouldSelectNode(n):
+      continue
+    if n != self.node:
+      self.node = n
+      break
+
+proc moveCursorPrevImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
+  if self.isEditing: return
+  var node = self.node
+  for n in self.document.prevPostVisualOrder(self.node, gotoChild = false):
+    if not shouldSelectNode(n):
+      continue
+    if n != self.node:
+      self.node = n
+      break
+
+proc moveCursorNextLineImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
+  if self.isEditing: return
+  if self.document.getNextLine(self.node).getSome(next):
+    self.node = next
+
+proc moveCursorPrevLineImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
+  if self.isEditing: return
+  if self.document.getPrevLine(self.node).getSome(prev):
+    self.node = prev
+
+proc selectContainingImpl*(self: AstDocumentEditor, container: string) {.expose("editor.ast").} =
+  if self.isEditing: return
+  case container
+  of "function":
+    if self.node.findWithParentRec(FunctionDefinition).getSome(child):
+      self.node = child.parent
+  of "const-decl":
+    if self.node.findWithParentRec(ConstDecl).getSome(child):
+      self.node = child.parent
+  of "line":
+    if self.node.findWithParentRec(NodeList).getSome(child):
+      self.node = child
+  of "node-list":
+    if self.node.findWithParentRec(NodeList).getSome(child):
+      self.node = child.parent
+  of "if":
+    if self.node.findWithParentRec(If).getSome(child):
+      self.node = child.parent
+  of "while":
+    if self.node.findWithParentRec(While).getSome(child):
+      self.node = child.parent
+
+proc deleteSelectedImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
+  if self.isEditing: return
+  self.deletedNode = some(self.node)
+  self.node = self.document.deleteNode self.node
+
+proc copySelectedImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
+  if self.isEditing: return
+  self.deletedNode = some(self.node.cloneAndMapIds())
+
+proc finishEditImpl*(self: AstDocumentEditor, apply: bool) {.expose("editor.ast").} =
+  if not self.isEditing: return
+
+  if apply:
+    if self.currentlyEditedSymbol != null:
+      if ctx.getSymbol(self.currentlyEditedSymbol).getSome(sym):
+        self.document.undoOps.add UndoOp(kind: SymbolNameChange, id: self.currentlyEditedSymbol, text: sym.name)
+        sym.name = self.textDocument.content.join
+
+        if sym.kind == skAstNode:
+          sym.node.text = sym.name
+          ctx.updateNode(sym.node)
+        ctx.notifySymbolChanged(sym)
+
+    elif self.currentlyEditedNode != nil:
+      self.document.undoOps.add UndoOp(kind: TextChange, node: self.currentlyEditedNode, text: self.currentlyEditedNode.text)
+      self.currentlyEditedNode.text = self.textDocument.content.join "\n"
+      ctx.updateNode(self.currentlyEditedNode)
+
+  self.textEditor.unregister()
+  self.textEditor = nil
+  self.textDocument = nil
+  self.currentlyEditedSymbol = null
+  self.currentlyEditedNode = nil
+  self.updateCompletions()
+
+proc undoImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
+  if self.isEditing: return
+  self.finishEditImpl false
+  if self.document.undo.getSome(node):
+    self.node = node
+
+proc redoImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
+  if self.isEditing: return
+  self.finishEditImpl false
+  if self.document.redo.getSome(node):
+    self.node = node
+
+proc insertAfterSmartImpl*(self: AstDocumentEditor, nodeTemplate: string) {.expose("editor.ast").} =
+  if self.isEditing: return
+
+  var node = self.node
+  for next in node.parents(includeSelf = true):
+    if self.canInsertInto(next.parent):
+      node = next
+      break
+  let index = node.index
+
+  if self.createNodeFromAction(nodeTemplate, node, errorType()).getSome(newNodeIndex):
+    let (newNode, _) = newNodeIndex
+    if self.document.insertNode(node.parent, index + 1, newNode).getSome(node):
+      self.node = node
+
+      for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => self.document.shouldEditNode(n), endNode = newNode):
+        self.node = emptyNode
+        discard self.tryEdit self.node
+        break
+
+    else:
+      logger.log(lvlError, fmt"[astedit] Failed to insert node {newNode} into {self.node.parent} at {index + 1}")
+
+proc insertAfterImpl*(self: AstDocumentEditor, nodeTemplate: string) {.expose("editor.ast").} =
+  if self.isEditing: return
+  let node = self.node
+  let index = node.index
+
+  if self.createNodeFromAction(nodeTemplate, node, errorType()).getSome(newNodeIndex):
+    let (newNode, _) = newNodeIndex
+    if self.document.insertNode(node.parent, index + 1, newNode).getSome(node):
+      self.node = node
+
+      for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => self.document.shouldEditNode(n), endNode = newNode):
+        self.node = emptyNode
+        discard self.tryEdit self.node
+        break
+
+    else:
+      logger.log(lvlError, fmt"[astedit] Failed to insert node {newNode} into {self.node.parent} at {index + 1}")
+
+proc insertBeforeImpl*(self: AstDocumentEditor, nodeTemplate: string) {.expose("editor.ast").} =
+  if self.isEditing: return
+  let index = self.node.index
+  if self.createNodeFromAction(nodeTemplate, self.node, errorType()).getSome(newNodeIndex):
+    let (newNode, _) = newNodeIndex
+    if self.document.insertNode(self.node.parent, index, newNode).getSome(node):
+      self.node = node
+
+      for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => self.document.shouldEditNode(n), endNode = newNode):
+        self.node = emptyNode
+        discard self.tryEdit self.node
+        break
+
+    else:
+      logger.log(lvlError, fmt"[astedit] Failed to insert node {newNode} into {self.node.parent} at {index}")
+
+proc insertChildImpl*(self: AstDocumentEditor, nodeTemplate: string) {.expose("editor.ast").} =
+  if self.isEditing: return
+  if self.createNodeFromAction(nodeTemplate, self.node, errorType()).getSome(newNodeIndex):
+    let (newNode, _) = newNodeIndex
+    if self.document.insertNode(self.node, self.node.len, newNode).getSome(node):
+      self.node = node
+
+      for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => self.document.shouldEditNode(n), endNode = newNode):
+        self.node = emptyNode
+        discard self.tryEdit self.node
+        break
+
+    else:
+      logger.log(lvlError, fmt"[astedit] Failed to insert node {newNode} into {self.node} at {self.node.len}")
+
+proc replaceImpl*(self: AstDocumentEditor, nodeTemplate: string) {.expose("editor.ast").} =
+  if self.isEditing: return
+  if self.createNodeFromAction(nodeTemplate, self.node, errorType()).getSome(newNodeIndex):
+    let (newNode, _) = newNodeIndex
+    self.node = self.document.replaceNode(self.node, newNode)
+
+    for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => self.document.shouldEditNode(n), endNode = newNode):
+      self.node = emptyNode
+      discard self.tryEdit self.node
+      break
+
+proc replaceEmptyImpl*(self: AstDocumentEditor, nodeTemplate: string) {.expose("editor.ast").} =
+  if self.isEditing: return
+  if self.node.kind == Empty and self.createNodeFromAction(nodeTemplate, self.node, errorType()).getSome(newNodeIndex):
+    let (newNode, _) = newNodeIndex
+    self.node = self.document.replaceNode(self.node, newNode)
+
+    for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => self.document.shouldEditNode(n), endNode = newNode):
+      self.node = emptyNode
+      discard self.tryEdit self.node
+      break
+
+proc replaceParentImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
+  if self.isEditing:
+    return
+  let node = self.node
+  if node.parent == nil or node.parent == self.document.rootNode:
+    return
+  let parent = node.parent
+  discard self.document.deleteNode(self.node)
+  self.node = self.document.replaceNode(parent, node)
+
+proc wrapImpl*(self: AstDocumentEditor, nodeTemplate: string) {.expose("editor.ast").} =
+  if self.isEditing: return
+  let typ = ctx.computeType(self.node)
+
+  if self.createNodeFromAction(nodeTemplate, self.node, typ).getSome(newNodeIndex):
+    var (newNode, index) = newNodeIndex
+    let oldNode = self.node
+    self.node = self.document.replaceNode(self.node, newNode)
+    for i, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => n.kind == Empty, endNode = newNode):
+      if i == index:
+        self.node = self.document.replaceNode(emptyNode, oldNode)
+        break
+    for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => self.document.shouldEditNode(n), endNode = newNode):
+      self.node = emptyNode
+      discard self.tryEdit self.node
+      break
+
+proc editPrevEmptyImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
+  if self.isEditing: return
+  let current = self.node
+  for emptyNode in self.document.prevPostOrder(self.node):
+    if emptyNode != current and self.document.shouldEditNode(emptyNode):
+      self.node = emptyNode
+      discard self.tryEdit self.node
+      break
+
+proc editNextEmptyImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
+  if self.isEditing: return
+  let current = self.node
+  for _, emptyNode in self.document.nextPreOrderWhere(self.node, (n) => n != current and self.document.shouldEditNode(n)):
+    self.node = emptyNode
+    discard self.tryEdit self.node
+    break
+
+proc renameImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
+  if self.isEditing: return
+  discard self.tryEdit self.node
+
+proc selectPrevCompletionImpl(self: AstDocumentEditor) {.expose("editor.ast").} =
+  if self.completions.len > 0:
+    self.selectedCompletion = (self.selectedCompletion - 1).clamp(0, self.completions.len - 1)
+  else:
+    self.selectedCompletion = 0
+
+proc selectNextCompletionImpl(editor: AstDocumentEditor) {.expose("editor.ast").} =
+  if editor.completions.len > 0:
+    editor.selectedCompletion = (editor.selectedCompletion + 1).clamp(0, editor.completions.len - 1)
+  else:
+    editor.selectedCompletion = 0
+
+proc applySelectedCompletionImpl(editor: AstDocumentEditor) {.expose("editor.ast").} =
+  if editor.textDocument == nil:
+    return
+
+  if editor.completions.len == 0:
+    return
+
+  let com = editor.completions[editor.selectedCompletion]
+  let completionText = editor.completionText
+
+  logger.log(lvlInfo, fmt"[astedit] Applying completion {editor.selectedCompletion} ({completionText})")
+
+  editor.finishEditImpl false
+
+  case com.kind
+  of SymbolCompletion:
+    if ctx.getSymbol(com.id).getSome(symbol):
+      editor.node = editor.document.replaceNode(editor.node, AstNode(kind: Identifier, reff: symbol.id))
+  of AstCompletion:
+    if editor.createDefaultNode(com.nodeKind).getSome(nodeIndex):
+      let (newNode, _) = nodeIndex
+      discard editor.document.replaceNode(editor.node, newNode)
+
+      if newNode.kind == NumberLiteral:
+        newNode.text = completionText
+        ctx.updateNode(newNode)
+      elif newNode.kind == StringLiteral:
+        assert completionText[0] == '"'
+        newNode.text = completionText[1..^1]
+        ctx.updateNode(newNode)
+
+      editor.node = newNode
+
+      for _, emptyNode in editor.document.nextPreOrderWhere(newNode, (n) => editor.document.shouldEditNode(n), endNode = newNode):
+        editor.node = emptyNode
+        discard editor.tryEdit editor.node
+        break
+
+proc cancelAndNextCompletionImpl(self: AstDocumentEditor) {.expose("editor.ast").} =
+  self.finishEditImpl(false)
+  self.editNextEmptyImpl()
+
+proc cancelAndPrevCompletionImpl(self: AstDocumentEditor) {.expose("editor.ast").} =
+  self.finishEditImpl(false)
+  self.editPrevEmptyImpl()
+
+proc cancelAndDeleteImpl(self: AstDocumentEditor) {.expose("editor.ast").} =
+  self.finishEditImpl(false)
+  self.deletedNode = some(self.node)
+  self.node = self.document.deleteNode self.node
+
+proc moveNodeToPrevSpaceImpl(self: AstDocumentEditor) {.expose("editor.ast").} =
+  let wasEditing = self.isEditing
+  self.finishEditImpl(false)
+
+  # Find spot where to insert
+  var targetNode = AstNode.none
+  echo "start: ", self.node
+  for next in self.document.prevPostOrder(self.node):
+    echo next
+    if next == self.node:
+      continue
+    if self.canInsertInto(next) and (next != self.node.parent or self.node.index > 0):
+      targetNode = next.some
+      break
+
+  if targetNode.getSome(newParent):
+    let nodeToMove = self.node
+
+    let index = if nodeToMove.parent == newParent:
+      # Inserting into own parent
+      nodeToMove.index - 1
+    elif nodeToMove.index(newParent).getSome(index):
+      # Inserting into parent of parent
+      index
+    else:
+      # Inserting into unrelated node
+      newParent.len
+
+    self.node = self.document.deleteNode nodeToMove
+    if self.document.insertNode(newParent, index, nodeToMove).getSome(newNode):
+      self.node = newNode
+
+      if wasEditing:
+        discard self.tryEdit self.node
+
+proc moveNodeToNextSpaceImpl(self: AstDocumentEditor) {.expose("editor.ast").} =
+  let wasEditing = self.isEditing
+  self.finishEditImpl(false)
+
+  # Find spot where to insert
+  var targetNode = AstNode.none
+  echo "start: ", self.node
+  for (_, next) in self.document.nextPostOrder(self.node.parent, self.node.index):
+    echo next
+    if next == self.node:
+      continue
+    if self.canInsertInto(next) and (next != self.node.parent or self.node.index + 1 < self.node.parent.len):
+      targetNode = next.some
+      break
+
+  if targetNode.getSome(newParent):
+    let nodeToMove = self.node
+
+    let index = if nodeToMove.parent == newParent:
+      # Inserting into own parent
+      nodeToMove.index + 1
+    elif nodeToMove.index(newParent).getSome(index):
+      # Inserting into parent of parent
+      index + 1
+    else:
+      # Inserting into unrelated node
+      0
+
+    self.node = self.document.deleteNode nodeToMove
+    if self.document.insertNode(newParent, index, nodeToMove).getSome(newNode):
+      self.node = newNode
+
+      if wasEditing:
+        discard self.tryEdit self.node
+
+proc selectPrevImpl(self: AstDocumentEditor) {.expose("editor.ast").} =
+  if self.isEditing: return
+  self.selectPrevNode()
+
+proc selectNextImpl(self: AstDocumentEditor) {.expose("editor.ast").} =
+  if self.isEditing: return
+  self.selectNextNode()
+
+proc gotoImpl(self: AstDocumentEditor, where: string) {.expose("editor.ast").} =
+  if self.isEditing: return
+  case where
+  of "definition":
+    if ctx.computeSymbol(self.node).getSome(sym):
+      if sym.kind == skAstNode and sym.node != self.document.rootNode:
+        self.node = sym.node
+  of "next-usage":
+    let id = case self.node
+    of Identifier(): self.node.reff
+    else: self.node.id
+    for _, n in self.document.nextPreOrderWhere(self.node, n => n != self.node and (n.id == id or n.reff == id)):
+      self.node = n
+      break
+  of "prev-usage":
+    let id = case self.node
+    of Identifier(): self.node.reff
+    else: self.node.id
+    for n in self.document.prevPostOrder(self.node):
+      if n != self.node and (n.id == id or n.reff == id):
+        self.node = n
+        break
+
+  of "next-error":
+    for _, n in self.document.nextPreOrderWhere(self.node, n => n != self.node and ctx.computeType(n).kind == tError):
+      self.node = n
+      break
+  of "prev-error":
+    for n in self.document.prevPostOrder(self.node):
+      if n != self.node and ctx.computeType(n).kind == tError:
+        self.node = n
+        break
+
+  of "next-error-diagnostic":
+    for _, n in self.document.nextPreOrderWhere(self.node, n => n != self.node):
+      if ctx.diagnosticsPerNode.contains(n.id):
+        var found = false
+        for diags in ctx.diagnosticsPerNode[n.id].queries.values:
+          if diags.len > 0:
+            found = true
+        if found:
+          self.node = n
+        break
+
+  of "prev-error-diagnostic":
+    for n in self.document.prevPostOrder(self.node):
+      if n == self.node:
+        continue
+      if ctx.diagnosticsPerNode.contains(n.id):
+        var found = false
+        for diags in ctx.diagnosticsPerNode[n.id].queries.values:
+          if diags.len > 0:
+            found = true
+        if found:
+          self.node = n
+          break
+
+  of "symbol":
+    var popup = newGotoPopup(self.editor, self.document)
+    popup.handleSymbolSelected = proc(id: Id) =
+      if ctx.getAstNode(id).getSome(node) and node.base == self.document.rootNode:
+        self.node = node
+    self.editor.pushPopup popup
+
+proc runSelectedFunctionImpl(self: AstDocumentEditor) {.expose("editor.ast").} =
+  if self.isEditing: return
+  self.runSelectedFunction()
+
+proc toggleOptionImpl(self: AstDocumentEditor, name: string) {.expose("editor.ast").} =
+  case name
+  of "logging":
+    ctx.enableLogging = not ctx.enableLogging
+
+proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventResponse
+
+proc runLastCommandImpl(self: AstDocumentEditor, which: string) {.expose("editor.ast").} =
+  case which
+  of "":
+    discard self.handleAction(self.lastCommand[0], self.lastCommand[1])
+  of "move":
+    discard self.handleAction(self.lastMoveCommand[0], self.lastMoveCommand[1])
+  of "edit":
+    discard self.handleAction(self.lastEditCommand[0], self.lastEditCommand[1])
+  of "other":
+    discard self.handleAction(self.lastOtherCommand[0], self.lastOtherCommand[1])
+
+proc selectCenterNodeImpl(self: AstDocumentEditor) {.expose("editor.ast").} =
+  var nodes: seq[tuple[y: float32, node: VisualNode]] = @[]
+  for (layout, offset) in self.lastLayouts:
+    for (i, node) in layout.root.nextPreOrder:
+      if not isNil(node.node) and node.len > 0:
+        let bounds = node.absoluteBounds
+        if self.lastBounds.whRect.intersects(bounds + vec2(0, offset.y)):
+          nodes.add (bounds.y + offset.y, node)
+
+  nodes.sort (a, b) => cmp(a.y, b.y)
+
+  if nodes.len > 0:
+    let firstY = nodes[0].y
+    let lastY = nodes[nodes.high].y
+    let middleY = (firstY + lastY) * 0.5
+
+    for i, (y, node) in nodes:
+      if i == nodes.high or nodes[i + 1].y > middleY:
+        self.node = node.node
+        break
+
+proc scrollImpl(self: AstDocumentEditor, amount: float32) {.expose("editor.ast").} =
+  self.scrollOffset += amount
+
+proc scrollOutputImpl(self: AstDocumentEditor, arg: string) {.expose("editor.ast").} =
+  case arg
+  of "home":
+    executionOutput.scroll = executionOutput.lines.len
+
+  of "end":
+    executionOutput.scroll = 0
+
+  else:
+    executionOutput.scroll = clamp(executionOutput.scroll + arg.parseInt, 0, executionOutput.lines.len)
+
+proc dumpContextImpl(self: AstDocumentEditor) {.expose("editor.ast").} =
+  echo "================================================="
+  echo ctx.toString
+  echo "================================================="
+
 genDispatcher("editor.ast")
 
 proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventResponse =
@@ -1410,494 +1840,15 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
   var newLastCommand = (action, arg)
   defer: self.lastCommand = newLastCommand
 
-  case action
-  of "cursor.next":
-    if self.isEditing: return
-    var node = self.node
-    for _, n in self.document.nextPreVisualOrder(self.node):
-      if not shouldSelectNode(n):
-        continue
-      if n != self.node:
-        self.node = n
-        break
-    self.lastMoveCommand = (action, arg)
-
-  of "cursor.prev":
-    if self.isEditing: return
-    var node = self.node
-    for n in self.document.prevPostVisualOrder(self.node, gotoChild = false):
-      if not shouldSelectNode(n):
-        continue
-      if n != self.node:
-        self.node = n
-        break
-    self.lastMoveCommand = (action, arg)
-
-  of "cursor.next-line":
-    if self.isEditing: return
-    if self.document.getNextLine(self.node).getSome(next):
-      self.node = next
-    self.lastMoveCommand = (action, arg)
-
-  of "cursor.prev-line":
-    if self.isEditing: return
-    if self.document.getPrevLine(self.node).getSome(prev):
-      self.node = prev
-    self.lastMoveCommand = (action, arg)
-
-  of "select-containing":
-    if self.isEditing: return
-    case arg
-    of "function":
-      if self.node.findWithParentRec(FunctionDefinition).getSome(child):
-        self.node = child.parent
-    of "const-decl":
-      if self.node.findWithParentRec(ConstDecl).getSome(child):
-        self.node = child.parent
-    of "line":
-      if self.node.findWithParentRec(NodeList).getSome(child):
-        self.node = child
-    of "node-list":
-      if self.node.findWithParentRec(NodeList).getSome(child):
-        self.node = child.parent
-    of "if":
-      if self.node.findWithParentRec(If).getSome(child):
-        self.node = child.parent
-    of "while":
-      if self.node.findWithParentRec(While).getSome(child):
-        self.node = child.parent
-    self.lastMoveCommand = (action, arg)
-
-  of "selected.delete":
-    if self.isEditing: return
-    self.deletedNode = some(self.node)
-    self.node = self.document.deleteNode self.node
-    self.lastEditCommand = (action, arg)
-
-  of "selected.copy":
-    if self.isEditing: return
-    self.deletedNode = some(self.node.cloneAndMapIds())
-
-  of "undo":
-    if self.isEditing: return
-    self.finishEdit false
-    if self.document.undo.getSome(node):
-      self.node = node
-
-  of "redo":
-    if self.isEditing: return
-    self.finishEdit false
-    if self.document.redo.getSome(node):
-      self.node = node
-
-  of "insert-after-smart":
-    if self.isEditing: return
-
-    var node = self.node
-    for next in node.parents(includeSelf = true):
-      if self.canInsertInto(next.parent):
-        node = next
-        break
-    let index = node.index
-
-    if self.createNodeFromAction(arg, node, errorType()).getSome(newNodeIndex):
-      let (newNode, _) = newNodeIndex
-      if self.document.insertNode(node.parent, index + 1, newNode).getSome(node):
-        self.node = node
-
-        for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => self.document.shouldEditNode(n), endNode = newNode):
-          self.node = emptyNode
-          discard self.tryEdit self.node
-          break
-
-      else:
-        logger.log(lvlError, fmt"[astedit] Failed to insert node {newNode} into {self.node.parent} at {index + 1}")
-    self.lastEditCommand = (action, arg)
-
-  of "insert-after":
-    if self.isEditing: return
-    let node = self.node
-    let index = node.index
-
-    if self.createNodeFromAction(arg, node, errorType()).getSome(newNodeIndex):
-      let (newNode, _) = newNodeIndex
-      if self.document.insertNode(node.parent, index + 1, newNode).getSome(node):
-        self.node = node
-
-        for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => self.document.shouldEditNode(n), endNode = newNode):
-          self.node = emptyNode
-          discard self.tryEdit self.node
-          break
-
-      else:
-        logger.log(lvlError, fmt"[astedit] Failed to insert node {newNode} into {self.node.parent} at {index + 1}")
-    self.lastEditCommand = (action, arg)
-
-  of "insert-before":
-    if self.isEditing: return
-    let index = self.node.index
-    if self.createNodeFromAction(arg, self.node, errorType()).getSome(newNodeIndex):
-      let (newNode, _) = newNodeIndex
-      if self.document.insertNode(self.node.parent, index, newNode).getSome(node):
-        self.node = node
-
-        for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => self.document.shouldEditNode(n), endNode = newNode):
-          self.node = emptyNode
-          discard self.tryEdit self.node
-          break
-
-      else:
-        logger.log(lvlError, fmt"[astedit] Failed to insert node {newNode} into {self.node.parent} at {index}")
-    self.lastEditCommand = (action, arg)
-
-  of "insert-child":
-    if self.isEditing: return
-    if self.createNodeFromAction(arg, self.node, errorType()).getSome(newNodeIndex):
-      let (newNode, _) = newNodeIndex
-      if self.document.insertNode(self.node, self.node.len, newNode).getSome(node):
-        self.node = node
-
-        for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => self.document.shouldEditNode(n), endNode = newNode):
-          self.node = emptyNode
-          discard self.tryEdit self.node
-          break
-
-      else:
-        logger.log(lvlError, fmt"[astedit] Failed to insert node {newNode} into {self.node} at {self.node.len}")
-    self.lastEditCommand = (action, arg)
-
-  of "replace":
-    if self.isEditing: return
-    if self.createNodeFromAction(arg, self.node, errorType()).getSome(newNodeIndex):
-      let (newNode, _) = newNodeIndex
-      self.node = self.document.replaceNode(self.node, newNode)
-
-      for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => self.document.shouldEditNode(n), endNode = newNode):
-        self.node = emptyNode
-        discard self.tryEdit self.node
-        break
-    self.lastEditCommand = (action, arg)
-
-  of "replace-empty":
-    if self.isEditing: return
-    if self.node.kind == Empty and self.createNodeFromAction(arg, self.node, errorType()).getSome(newNodeIndex):
-      let (newNode, _) = newNodeIndex
-      self.node = self.document.replaceNode(self.node, newNode)
-
-      for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => self.document.shouldEditNode(n), endNode = newNode):
-        self.node = emptyNode
-        discard self.tryEdit self.node
-        break
-    self.lastEditCommand = (action, arg)
-
-  of "replace-parent":
-    if self.isEditing: return
-    let node = self.node
-    if node.parent == nil or node.parent == self.document.rootNode: return
-    let parent = node.parent
-    discard self.document.deleteNode(self.node)
-    self.node = self.document.replaceNode(parent, node)
-    self.lastEditCommand = (action, arg)
-
-  of "wrap":
-    if self.isEditing: return
-    let typ = ctx.computeType(self.node)
-
-    if self.createNodeFromAction(arg, self.node, typ).getSome(newNodeIndex):
-      var (newNode, index) = newNodeIndex
-      let oldNode = self.node
-      self.node = self.document.replaceNode(self.node, newNode)
-      for i, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => n.kind == Empty, endNode = newNode):
-        if i == index:
-          self.node = self.document.replaceNode(emptyNode, oldNode)
-          break
-      for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => self.document.shouldEditNode(n), endNode = newNode):
-        self.node = emptyNode
-        discard self.tryEdit self.node
-        break
-
-    self.lastEditCommand = (action, arg)
-
-  of "edit-prev-empty":
-    if self.isEditing: return
-    let current = self.node
-    for emptyNode in self.document.prevPostOrder(self.node):
-      if emptyNode != current and self.document.shouldEditNode(emptyNode):
-        self.node = emptyNode
-        discard self.tryEdit self.node
-        break
-    self.lastEditCommand = (action, arg)
-
-  of "edit-next-empty":
-    if self.isEditing: return
-    let current = self.node
-    for _, emptyNode in self.document.nextPreOrderWhere(self.node, (n) => n != current and self.document.shouldEditNode(n)):
-      self.node = emptyNode
-      discard self.tryEdit self.node
-      break
-    self.lastEditCommand = (action, arg)
-
-  of "rename":
-    if self.isEditing: return
-    discard self.tryEdit self.node
-
-  of "apply-rename":
-    self.finishEdit(true)
-
-  of "cancel-rename":
-    self.finishEdit(false)
-
-  of "prev-completion":
-    self.selectPrevCompletion()
-
-  of "next-completion":
-    self.selectNextCompletion()
-
-  of "apply-completion":
-    self.applySelectedCompletion()
-
-  of "cancel-and-next-completion":
-    self.finishEdit(false)
-    discard self.handleAction("edit-next-empty", "")
-
-  of "cancel-and-prev-completion":
-    self.finishEdit(false)
-    discard self.handleAction("edit-prev-empty", "")
-
-  of "cancel-and-delete":
-    self.finishEdit(false)
-    self.deletedNode = some(self.node)
-    self.node = self.document.deleteNode self.node
-    self.lastEditCommand = (action, arg)
-
-  of "move-node-to-prev-space":
-    let wasEditing = self.isEditing
-    self.finishEdit(false)
-
-    # Find spot where to insert
-    var targetNode = AstNode.none
-    echo "start: ", self.node
-    for next in self.document.prevPostOrder(self.node):
-      echo next
-      if next == self.node:
-        continue
-      if self.canInsertInto(next) and (next != self.node.parent or self.node.index > 0):
-        targetNode = next.some
-        break
-
-    if targetNode.getSome(newParent):
-      let nodeToMove = self.node
-
-      let index = if nodeToMove.parent == newParent:
-        # Inserting into own parent
-        nodeToMove.index - 1
-      elif nodeToMove.index(newParent).getSome(index):
-        # Inserting into parent of parent
-        index
-      else:
-        # Inserting into unrelated node
-        newParent.len
-
-      self.node = self.document.deleteNode nodeToMove
-      if self.document.insertNode(newParent, index, nodeToMove).getSome(newNode):
-        self.node = newNode
-
-        if wasEditing:
-          discard self.tryEdit self.node
-
-    self.lastEditCommand = (action, arg)
-
-  of "move-node-to-next-space":
-    let wasEditing = self.isEditing
-    self.finishEdit(false)
-
-    # Find spot where to insert
-    var targetNode = AstNode.none
-    echo "start: ", self.node
-    for (_, next) in self.document.nextPostOrder(self.node.parent, self.node.index):
-      echo next
-      if next == self.node:
-        continue
-      if self.canInsertInto(next) and (next != self.node.parent or self.node.index + 1 < self.node.parent.len):
-        targetNode = next.some
-        break
-
-    if targetNode.getSome(newParent):
-      let nodeToMove = self.node
-
-      let index = if nodeToMove.parent == newParent:
-        # Inserting into own parent
-        nodeToMove.index + 1
-      elif nodeToMove.index(newParent).getSome(index):
-        # Inserting into parent of parent
-        index + 1
-      else:
-        # Inserting into unrelated node
-        0
-
-      self.node = self.document.deleteNode nodeToMove
-      if self.document.insertNode(newParent, index, nodeToMove).getSome(newNode):
-        self.node = newNode
-
-        if wasEditing:
-          discard self.tryEdit self.node
-
-    self.lastEditCommand = (action, arg)
-
-  of "select-prev":
-    if self.isEditing: return
-    self.selectPrevNode()
-    self.lastMoveCommand = (action, arg)
-
-  of "select-next":
-    if self.isEditing: return
-    self.selectNextNode()
-    self.lastMoveCommand = (action, arg)
-
-  of "goto":
-    if self.isEditing: return
-    case arg
-    of "definition":
-      if ctx.computeSymbol(self.node).getSome(sym):
-        if sym.kind == skAstNode and sym.node != self.document.rootNode:
-          self.node = sym.node
-    of "next-usage":
-      let id = case self.node
-      of Identifier(): self.node.reff
-      else: self.node.id
-      for _, n in self.document.nextPreOrderWhere(self.node, n => n != self.node and (n.id == id or n.reff == id)):
-        self.node = n
-        break
-    of "prev-usage":
-      let id = case self.node
-      of Identifier(): self.node.reff
-      else: self.node.id
-      for n in self.document.prevPostOrder(self.node):
-        if n != self.node and (n.id == id or n.reff == id):
-          self.node = n
-          break
-
-    of "next-error":
-      for _, n in self.document.nextPreOrderWhere(self.node, n => n != self.node and ctx.computeType(n).kind == tError):
-        self.node = n
-        break
-    of "prev-error":
-      for n in self.document.prevPostOrder(self.node):
-        if n != self.node and ctx.computeType(n).kind == tError:
-          self.node = n
-          break
-
-    of "next-error-diagnostic":
-      for _, n in self.document.nextPreOrderWhere(self.node, n => n != self.node):
-        if ctx.diagnosticsPerNode.contains(n.id):
-          var found = false
-          for diags in ctx.diagnosticsPerNode[n.id].queries.values:
-            if diags.len > 0:
-              found = true
-          if found:
-            self.node = n
-          break
-
-    of "prev-error-diagnostic":
-      for n in self.document.prevPostOrder(self.node):
-        if n == self.node:
-          continue
-        if ctx.diagnosticsPerNode.contains(n.id):
-          var found = false
-          for diags in ctx.diagnosticsPerNode[n.id].queries.values:
-            if diags.len > 0:
-              found = true
-          if found:
-            self.node = n
-            break
-
-    of "symbol":
-      var popup = newGotoPopup(self.editor, self.document)
-      popup.handleSymbolSelected = proc(id: Id) =
-        if ctx.getAstNode(id).getSome(node) and node.base == self.document.rootNode:
-          self.node = node
-      self.editor.pushPopup popup
-
-    self.lastMoveCommand = (action, arg)
-
-  of "run-selected-function":
-    if self.isEditing: return
-    self.runSelectedFunction()
-    self.lastOtherCommand = (action, arg)
-
-  of "toggle-option":
-    case arg
-    of "logging":
-      ctx.enableLogging = not ctx.enableLogging
-    of "render-selected-value":
-      self.renderSelectedNodeValue = not self.renderSelectedNodeValue
-    of "render-debug-info":
-      self.renderDebugInfo = not self.renderDebugInfo
-    of "render-execution-output":
-      self.renderExecutionOutput = not self.renderExecutionOutput
-
-  of "run-last-command":
-    case arg
-    of "":
-      discard self.handleAction(self.lastCommand[0], self.lastCommand[1])
-    of "move":
-      discard self.handleAction(self.lastMoveCommand[0], self.lastMoveCommand[1])
-    of "edit":
-      discard self.handleAction(self.lastEditCommand[0], self.lastEditCommand[1])
-    of "other":
-      discard self.handleAction(self.lastOtherCommand[0], self.lastOtherCommand[1])
-    newLastCommand = self.lastCommand
-
-  of "select-center-node":
-    var nodes: seq[tuple[y: float32, node: VisualNode]] = @[]
-    for (layout, offset) in self.lastLayouts:
-      for (i, node) in layout.root.nextPreOrder:
-        if not isNil(node.node) and node.len > 0:
-          let bounds = node.absoluteBounds
-          if self.lastBounds.whRect.intersects(bounds + vec2(0, offset.y)):
-            nodes.add (bounds.y + offset.y, node)
-
-    nodes.sort (a, b) => cmp(a.y, b.y)
-
-    if nodes.len > 0:
-      let firstY = nodes[0].y
-      let lastY = nodes[nodes.high].y
-      let middleY = (firstY + lastY) * 0.5
-
-      for i, (y, node) in nodes:
-        if i == nodes.high or nodes[i + 1].y > middleY:
-          self.node = node.node
-          break
-
-  of "scroll":
-    self.scrollOffset += arg.parseFloat
-
-  of "scroll-output":
-    case arg
-    of "home":
-      executionOutput.scroll = executionOutput.lines.len
-
-    of "end":
-      executionOutput.scroll = 0
-
-    else:
-      executionOutput.scroll = clamp(executionOutput.scroll + arg.parseInt, 0, executionOutput.lines.len)
-
-  of "dump-context":
-    echo "================================================="
-    echo ctx.toString
-    echo "================================================="
-
-  else:
-    if self.editor.handleUnknownDocumentEditorAction(self, action, arg) == Handled:
-      return Handled
-
-    var args = newJArray()
-    args.add api.AstDocumentEditor(id: self.id).toJson
-    for a in newStringStream(arg).parseJsonFragments():
-      args.add a
-    if dispatch(action, args).isSome:
-      return Handled
+  if self.editor.handleUnknownDocumentEditorAction(self, action, arg) == Handled:
+    return Handled
+
+  var args = newJArray()
+  args.add api.AstDocumentEditor(id: self.id).toJson
+  for a in newStringStream(arg).parseJsonFragments():
+    args.add a
+  if dispatch(action, args).isSome:
+    return Handled
 
   return Ignored
 
@@ -1924,7 +1875,7 @@ method handleMousePress*(self: AstDocumentEditor, button: Button, mousePosWindow
   if button == MouseLeft:
     if self.getItemAtPixelPosition(mousePosWindow).getSome(index):
       self.selectedCompletion = index
-      self.applySelectedCompletion()
+      self.applySelectedCompletionImpl()
 
     elif not self.isEditing and self.getNodeAtPixelPosition(mousePosContent).getSome(n):
       self.node = n
@@ -2009,5 +1960,5 @@ method injectDependencies*(self: AstDocumentEditor, ed: Editor) =
       Ignored
 
 method unregister*(self: AstDocumentEditor) =
-  self.finishEdit(false)
+  self.finishEditImpl(false)
   self.editor.unregisterEditor(self)

@@ -10,14 +10,6 @@ proc handleAction*(action: string, arg: string): bool =
   of "test":
     getActiveEditor().insertText(arg)
 
-  # of "set-flag":
-  #   setFlag(arg, not getFlag(arg))
-
-  of "toggle-flag":
-    let newValue = not getFlag(arg)
-    setFlag(arg, newValue)
-    echo "[script] ", arg, " = ", newValue
-
   of "set-max-loop-iterations":
     setOption("ast.max-loop-iterations", arg.parseInt)
 
@@ -145,6 +137,12 @@ addCommand "editor", "<SPACE>tr", proc() =
   echo "ast.max-loop-iterations: ", getOption[int]("ast.max-loop-iterations")
 
 addCommand "editor", "<SPACE>td", "toggle-flag", "ast.render-vnode-depth"
+addCommand "editor", "<SPACE>l", "toggle-flag", "logging"
+addCommand "editor", "<SPACE>fs", "toggle-flag", "render-selected-value"
+addCommand "editor", "<SPACE>fr", "toggle-flag", "log-render-duration"
+addCommand "editor", "<SPACE>fd", "toggle-flag", "render-debug-info"
+addCommand "editor", "<SPACE>fo", "toggle-flag", "render-execution-output"
+
 addCommand "editor", "<SPACE>ff", "log-options"
 addCommand "editor", "<ESCAPE>", "escape"
 addCommand "editor", "<C-l><C-h>", "change-font-size", -1
@@ -169,9 +167,6 @@ addCommand "editor", "<C-p>", "command-line"
 addCommand "editor", "<C-l>tt", "choose-theme"
 addCommand "editor", "<C-m>t", "test", "uiaeuiae"
 addCommand "editor", "<C-m>r", "test", "xvlcxvl  xvlc\n lol"
-addCommand "editor", "<SPACE>fr", "toggle-flag", "log-render-duration"
-addCommand "editor", "<SPACE>fd", "toggle-flag", "render-debug-info"
-addCommand "editor", "<SPACE>fo", "toggle-flag", "render-execution-output"
 addCommand "editor", "gf", "choose-file", "new"
 
 addCommand "commandLine", "<ESCAPE>", "exit-command-line"
@@ -211,17 +206,17 @@ template addAstCommand(command: string, body: untyped): untyped =
 
 # addCommand "editor.ast", "<A-LEFT>", "move-cursor", "-1"
 addAstCommand "<A-LEFT>": editor.moveCursor(-1)
-addCommand "editor.ast", "<A-RIGHT>", "move-cursor", "1"
-addCommand "editor.ast", "<A-UP>", "moveCursorUp"
-addCommand "editor.ast", "<A-DOWN>", "moveCursorDown"
+addCommand "editor.ast", "<A-RIGHT>", "move-cursor", 1
+addCommand "editor.ast", "<A-UP>", "move-cursor-up"
+addCommand "editor.ast", "<A-DOWN>", "move-cursor-down"
 addCommand "editor.ast", "<HOME>", "cursor.home"
 addCommand "editor.ast", "<END>", "cursor.end"
-addCommand "editor.ast", "<UP>", "cursor.prev-line"
-addCommand "editor.ast", "<DOWN>", "cursor.next-line"
-addCommand "editor.ast", "<LEFT>", "cursor.prev"
-addCommand "editor.ast", "<RIGHT>", "cursor.next"
-addCommand "editor.ast", "n", "cursor.prev"
-addCommand "editor.ast", "t", "cursor.next"
+addCommand "editor.ast", "<UP>", "move-cursor-prev-line"
+addCommand "editor.ast", "<DOWN>", "move-cursor-next-line"
+addCommand "editor.ast", "<LEFT>", "move-cursor-prev"
+addCommand "editor.ast", "<RIGHT>", "move-cursor-next"
+addCommand "editor.ast", "n", "move-cursor-prev"
+addCommand "editor.ast", "t", "move-cursor-next"
 addCommand "editor.ast", "<S-LEFT>", "cursor.left", "last"
 addCommand "editor.ast", "<S-RIGHT>", "cursor.right", "last"
 addCommand "editor.ast", "<S-UP>", "cursor.up", "last"
@@ -286,22 +281,20 @@ addCommand "editor.ast", "<SPACE>or", "wrap", "or"
 addCommand "editor.ast", "vc", "wrap", "const-decl"
 addCommand "editor.ast", "vl", "wrap", "let-decl"
 addCommand "editor.ast", "vv", "wrap", "var-decl"
-addCommand "editor.ast", "d", "selected.delete"
-addCommand "editor.ast", "y", "selected.copy"
+addCommand "editor.ast", "d", "delete-selected"
+addCommand "editor.ast", "y", "copy-selected"
 addCommand "editor.ast", "u", "undo"
 addCommand "editor.ast", "U", "redo"
-addCommand "editor.ast", "<C-d>", "scroll", "-150"
-addCommand "editor.ast", "<C-u>", "scroll", "150"
-addCommand "editor.ast", "<PAGE_DOWN>", "scroll", "-450"
-addCommand "editor.ast", "<PAGE_UP>", "scroll", "450"
+addCommand "editor.ast", "<C-d>", "scroll", -150
+addCommand "editor.ast", "<C-u>", "scroll", 150
+addCommand "editor.ast", "<PAGE_DOWN>", "scroll", -450
+addCommand "editor.ast", "<PAGE_UP>", "scroll", 450
 addCommand "editor.ast", "<C-f>", "select-center-node"
 addCommand "editor.ast", "<C-r>", "select-prev"
 addCommand "editor.ast", "<C-t>", "select-next"
 addCommand "editor.ast", "<C-LEFT>", "select-prev"
 addCommand "editor.ast", "<C-RIGHT>", "select-next"
-addCommand "editor.ast", "<SPACE>l", "toggle-option", "logging"
 addCommand "editor.ast", "<SPACE>dc", "dump-context"
-addCommand "editor.ast", "<SPACE>fs", "toggle-option", "render-selected-value"
 addCommand "editor.ast", "<CA-DOWN>", "scroll-output", "-5"
 addCommand "editor.ast", "<CA-UP>", "scroll-output", "5"
 addCommand "editor.ast", "<CA-HOME>", "scroll-output", "home"
@@ -312,11 +305,11 @@ addCommand "editor.ast", ";", "run-last-command"
 addCommand "editor.ast", "<A-t>", "move-node-to-next-space"
 addCommand "editor.ast", "<A-n>", "move-node-to-prev-space"
 
-addCommand "editor.ast.completion", "<ENTER>", "apply-rename"
-addCommand "editor.ast.completion", "<ESCAPE>", "cancel-rename"
-addCommand "editor.ast.completion", "<UP>", "prev-completion"
-addCommand "editor.ast.completion", "<DOWN>", "next-completion"
-addCommand "editor.ast.completion", "<TAB>", "apply-completion"
+addCommand "editor.ast.completion", "<ENTER>", "finish-edit", true
+addCommand "editor.ast.completion", "<ESCAPE>", "finish-edit", false
+addCommand "editor.ast.completion", "<UP>", "select-prev-completion"
+addCommand "editor.ast.completion", "<DOWN>", "select-next-completion"
+addCommand "editor.ast.completion", "<TAB>", "apply-selected-completion"
 addCommand "editor.ast.completion", "<C-TAB>", "cancel-and-next-completion"
 addCommand "editor.ast.completion", "<CS-TAB>", "cancel-and-prev-completion"
 addCommand "editor.ast.completion", "<A-d>", "cancel-and-delete"

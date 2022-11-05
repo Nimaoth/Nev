@@ -241,6 +241,34 @@ proc getOption*[T](editor: Editor, path: string, default: T = T.default): T =
   else:
     {.fatal: ("Can't get option with type " & $T).}
 
+proc setOption*[T](editor: Editor, path: string, value: T) =
+  template createScriptSetOption(editor, path, value, constructor: untyped): untyped =
+    block:
+      if editor.isNil:
+        return
+      let pathItems = path.split(".")
+      var node = editor.options
+      for key in pathItems[0..^2]:
+        if node.kind != JObject:
+          return
+        if not node.contains(key):
+          node[key] = newJObject()
+        node = node[key]
+      if node.isNil or node.kind != JObject:
+        return
+      node[pathItems[^1]] = constructor(value)
+
+  when T is bool:
+    editor.createScriptSetOption(path, value, newJBool)
+  elif T is Ordinal:
+    editor.createScriptSetOption(path, value, newJInt)
+  elif T is float32 | float64:
+    editor.createScriptSetOption(path, value, newJFloat)
+  elif T is string:
+    editor.createScriptSetOption(path, value, newJString)
+  else:
+    {.fatal: ("Can't set option with type " & $T).}
+
 proc getFlag*(editor: Editor, flag: string, default: bool = false): bool =
   return getOption[bool](editor, flag, default)
 
@@ -410,6 +438,15 @@ proc getEditor(): Option[Editor] =
 static:
   addInjector(Editor, getEditor)
 
+proc getFlagImpl*(editor: Editor, flag: string, default: bool = false): bool {.expose("editor").} =
+  return getOption[bool](editor, flag, default)
+
+proc setFlagImpl*(editor: Editor, flag: string, value: bool) {.expose("editor").} =
+  setOption[bool](editor, flag, value)
+
+proc toggleFlagImpl*(editor: Editor, flag: string) {.expose("editor").} =
+  editor.setFlagImpl(flag, not editor.getFlagImpl(flag))
+
 proc quitImpl*(self: Editor) {.expose("editor").} =
   self.window.closeRequested = true
 
@@ -577,14 +614,16 @@ genDispatcher("editor")
 proc handleAction(ed: Editor, action: string, arg: string) =
   ed.logger.log(lvlInfo, "[ed] Action '$1 $2'" % [action, arg])
   try:
-    if not ed.scriptContext.inter.invoke(handleGlobalAction, action, arg, returnType = bool):
-      var args = newJArray()
-      for a in newStringStream(arg).parseJsonFragments():
-        args.add a
-      discard dispatch(action, args)
+    if ed.scriptContext.inter.invoke(handleGlobalAction, action, arg, returnType = bool):
+      return
   except:
     ed.logger.log(lvlError, fmt"[ed] Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
     echo getCurrentException().getStackTrace()
+
+  var args = newJArray()
+  for a in newStringStream(arg).parseJsonFragments():
+    args.add a
+  discard dispatch(action, args)
 
 proc anyInProgress*(handlers: openArray[EventHandler]): bool =
   for h in handlers:

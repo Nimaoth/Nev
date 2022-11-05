@@ -139,12 +139,6 @@ proc setOption*[T](path: string, value: T) =
   else:
     {.fatal: ("Can't set option with type " & $T).}
 
-proc getFlag*(flag: string, default: bool = false): bool =
-  return getOption[bool](flag, default)
-
-proc setFlag*(flag: string, value: bool) =
-  setOption[bool](flag, value)
-
 proc log*(args: varargs[string, `$`]) =
   var msgLen = 0
   for arg in args:
