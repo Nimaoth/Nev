@@ -232,12 +232,12 @@ macro genDispatcher*(moduleName: static string): untyped =
             alternative.add c
 
         if name == alternative:
-          switch.add nnkOfBranch.newTree(newLit(name), nnkCall.newTree(target, arg))
+          switch.add nnkOfBranch.newTree(newLit(name), quote do: `target`(`arg`).some)
         else:
-          switch.add nnkOfBranch.newTree(newLit(name), newLit(alternative), nnkCall.newTree(target, arg))
+          switch.add nnkOfBranch.newTree(newLit(name), newLit(alternative), quote do: `target`(`arg`).some)
 
-  switch.add nnkElse.newTree(quote do: newJNull())
+  switch.add nnkElse.newTree(quote do: JsonNode.none)
+
   return quote do:
-    proc dispatch(`command`: string, `arg`: JsonNode): JsonNode =
-      result = newJNull()
+    proc dispatch(`command`: string, `arg`: JsonNode): Option[JsonNode] =
       result = `switch`
