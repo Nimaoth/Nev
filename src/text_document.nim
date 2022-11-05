@@ -1,6 +1,7 @@
-import std/[strutils, logging, sequtils, sugar]
-import editor, document, document_editor, events, id
+import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams]
+import editor, document, document_editor, events, id, util, scripting
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
+from scripting_api as api import nil
 
 var logger = newConsoleLogger()
 
@@ -192,7 +193,7 @@ method getEventHandlers*(self: TextDocumentEditor): seq[EventHandler] =
 method handleDocumentChanged*(self: TextDocumentEditor) =
   self.selection = (self.clampCursor self.selection.first, self.clampCursor self.selection.last)
 
-proc moveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor =
+proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor =
   var cursor = cursor
   let column = cursor.column + offset
   if column < 0:
@@ -214,7 +215,7 @@ proc moveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int): Cu
 
   return self.clampCursor cursor
 
-proc moveCursorLine(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor =
+proc doMoveCursorLine(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor =
   var cursor = cursor
   let line = cursor.line + offset
   if line < 0:
@@ -225,10 +226,10 @@ proc moveCursorLine(self: TextDocumentEditor, cursor: Cursor, offset: int): Curs
     cursor.line = line
   return self.clampCursor cursor
 
-proc moveCursorHome(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor =
+proc doMoveCursorHome(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor =
   return (cursor.line, 0)
 
-proc moveCursorEnd(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor =
+proc doMoveCursorEnd(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor =
   return (cursor.line, self.document.lineLength cursor.line)
 
 proc moveCursor(self: TextDocumentEditor, cursor: string, movement: proc(doc: TextDocumentEditor, c: Cursor, off: int): Cursor, offset: int) =
@@ -243,44 +244,67 @@ proc moveCursor(self: TextDocumentEditor, cursor: string, movement: proc(doc: Te
   else:
     logger.log(lvlError, "Unknown cursor " & cursor)
 
+proc getTextDocumentEditor(wrapper: api.TextDocumentEditor): Option[TextDocumentEditor] =
+  if gEditor.isNil: return TextDocumentEditor.none
+  if gEditor.getEditorForId(wrapper.id).getSome(editor):
+    if editor of TextDocumentEditor:
+      return editor.TextDocumentEditor.some
+  return TextDocumentEditor.none
+
+static:
+  addTypeMap(TextDocumentEditor, api.TextDocumentEditor, getTextDocumentEditor)
+
+proc toJson*(self: api.TextDocumentEditor, opt = initToJsonOptions()): JsonNode =
+  result = newJObject()
+  result["type"] = newJString("editor.text")
+  result["id"] = newJInt(self.id.int)
+
+proc fromJsonHook*(t: var api.TextDocumentEditor, jsonNode: JsonNode) =
+  t.id = api.EditorId(jsonNode["id"].jsonTo(int))
+
+proc insertTextImpl*(self: TextDocumentEditor, text: string) {.expose("editor.text").} =
+  if self.document.singleLine and text == "\n":
+    return
+
+  self.selection = self.document.edit(self.selection, text).toSelection
+
+proc moveCursorColumnImpl*(self: TextDocumentEditor, distance: int, cursor: string = "") {.expose("editor.text").} =
+  self.moveCursor(cursor, doMoveCursorColumn, distance)
+
+proc moveCursorLineImpl*(self: TextDocumentEditor, distance: int, cursor: string = "") {.expose("editor.text").} =
+  self.moveCursor(cursor, doMoveCursorLine, distance)
+
+proc moveCursorHomeImpl*(self: TextDocumentEditor, cursor: string = "") {.expose("editor.text").} =
+  self.moveCursor(cursor, doMoveCursorHome, 0)
+
+proc moveCursorEndImpl*(self: TextDocumentEditor, cursor: string = "") {.expose("editor.text").} =
+  self.moveCursor(cursor, doMoveCursorEnd, 0)
+
+proc backspaceImpl*(self: TextDocumentEditor) {.expose("editor.text").} =
+  if self.selection.isEmpty:
+    self.selection = self.document.delete((self.doMoveCursorColumn(self.selection.first, -1), self.selection.first)).toSelection
+  else:
+    self.selection = self.document.edit(self.selection, "").toSelection
+
+proc deleteImpl*(self: TextDocumentEditor) {.expose("editor.text").} =
+  if self.selection.isEmpty:
+    self.selection = self.document.delete((self.selection.first, self.doMoveCursorColumn(self.selection.first, 1))).toSelection
+  else:
+    self.selection = self.document.edit(self.selection, "").toSelection
+
+genDispatcher("editor.text")
+
 proc handleAction(self: TextDocumentEditor, action: string, arg: string): EventResponse =
   # echo "[textedit] handleAction ", action, " '", arg, "'"
-  case action
-  of "backspace":
-    if self.selection.isEmpty:
-      self.selection = self.document.delete((self.moveCursorColumn(self.selection.first, -1), self.selection.first)).toSelection
-    else:
-      self.selection = self.document.edit(self.selection, "").toSelection
-  of "delete":
-    if self.selection.isEmpty:
-      self.selection = self.document.delete((self.selection.first, self.moveCursorColumn(self.selection.first, 1))).toSelection
-    else:
-      self.selection = self.document.edit(self.selection, "").toSelection
+  if self.editor.handleUnknownDocumentEditorAction(self, action, arg) == Handled:
+    return Handled
 
-  of "editor.insert":
-    if self.document.singleLine and arg == "\n":
-      return Ignored
-
-    self.selection = self.document.edit(self.selection, arg).toSelection
-
-  of "cursor.left": self.moveCursor(arg, moveCursorColumn, -1)
-  of "cursor.right": self.moveCursor(arg, moveCursorColumn, 1)
-
-  of "cursor.up":
-    if self.document.singleLine:
-      return Ignored
-    self.moveCursor(arg, moveCursorLine, -1)
-
-  of "cursor.down":
-    if self.document.singleLine:
-      return Ignored
-    self.moveCursor(arg, moveCursorLine, 1)
-
-  of "cursor.home": self.moveCursor(arg, moveCursorHome, 0)
-  of "cursor.end": self.moveCursor(arg, moveCursorEnd, 0)
-
-  else:
-    return self.editor.handleUnknownDocumentEditorAction(self, action, arg)
+  var args = newJArray()
+  args.add api.TextDocumentEditor(id: self.id).toJson
+  if arg.len != 0:
+    for a in newStringStream(arg).parseJsonFragments():
+      args.add a
+  discard dispatch(action, args)
 
   return Handled
 

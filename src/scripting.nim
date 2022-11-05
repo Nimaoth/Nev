@@ -1,6 +1,7 @@
 import std/[json, strformat, strutils, tables, options, macros, macrocache, typetraits]
 import os
 import compiler/options as copts
+import util
 
 import nimscripter, nimscripter/[vmconversion, vmaddins]
 
@@ -67,24 +68,33 @@ macro expose*(moduleName: static string, def: untyped): untyped =
   let functionName = if def[0].kind == nnkPostfix: def[0][1] else: def[0]
   let argCount = def[3].len - 1
   let returnType = if def[3][0].kind != nnkEmpty: def[3][0].some else: NimNode.none
+  proc argName(def: NimNode, arg: int): NimNode = def[3][arg + 1][0]
   proc argType(def: NimNode, arg: int): NimNode = def[3][arg + 1][1]
+  proc argDefaultValue(def: NimNode, arg: int): Option[NimNode] =
+    if def[3][arg + 1][2].kind != nnkEMpty:
+      return def[3][arg + 1][2].some
+    return NimNode.none
 
   let functionNameStr = functionName.strVal
   if not functionNameStr.endsWith("Impl"):
     return quote do:
       {.fatal: "Function name has to end with 'Impl': " & `functionNameStr`.}
 
-  let wrapperName = ident(functionNameStr[0..^5] & "Api")
-  let returnsVoid = newLit(returnType.isNone)
-  var callFromScript = nnkCall.newTree(functionName)
+  let pureFunctionName = ident functionNameStr[0..^5]
 
-  let arg = nskParam.genSym
+  let wrapperName = ident(pureFunctionName.strVal & "Api")
+  var callToImplFromBuiltin = nnkCall.newTree(functionName)
 
-  let scriptFunctionName = ident(functionNameStr[0..^5])
+  let jsonArg = nskParam.genSym
+
+  let scriptFunctionName = ident(pureFunctionName.strVal & "Script")
   var scriptFunction = def.copy
   scriptFunction[0] = nnkPostfix.newTree(ident"*", scriptFunctionName)
+  var scriptFunctionWrapper = def.copy
+  scriptFunctionWrapper[0] = pureFunctionName
 
-  var call = nnkCall.newTree(scriptFunctionName)
+  var callToBuiltinFunctionFromJson = nnkCall.newTree(scriptFunctionName)
+  var callToBuiltinFunctionFromScript = nnkCall.newTree(scriptFunctionName)
 
   var mappedArgIndices = initTable[int, int]()
   for i in 0..<argCount:
@@ -110,12 +120,21 @@ macro expose*(moduleName: static string, def: untyped): untyped =
       if source == $argumentType:
         argumentType = target
         scriptFunction[3][i + 1][1] = target
+        scriptFunctionWrapper[3][i + 1][1] = target
         break
 
     # The argument for the call to scriptFunction in the wrapper
-    let resWrapper = quote do:
-      block:
-        `arg`[`index`].jsonTo `argumentType`
+    let resWrapper = if def.argDefaultValue(i).getSome(default):
+      quote do:
+        block:
+          if `jsonArg`.len > `index`:
+            `jsonArg`[`index`].jsonTo `argumentType`
+          else:
+            `default`
+    else:
+      quote do:
+        block:
+          `jsonArg`[`index`].jsonTo `argumentType`
 
     #
     var callFromScriptArg = scriptFunction[3][i + 1][0]
@@ -138,6 +157,7 @@ macro expose*(moduleName: static string, def: untyped): untyped =
       if $argumentType == typeName:
         wasInjected = true
         scriptFunction[3].del(i + 1)
+        scriptFunctionWrapper[3].del(i + 1)
         callFromScriptArg = quote do:
           block:
             let r = `function`()
@@ -147,25 +167,35 @@ macro expose*(moduleName: static string, def: untyped): untyped =
         break
 
     if not wasInjected:
-      call.insert(1, resWrapper)
-    callFromScript.insert(1, callFromScriptArg)
+      callToBuiltinFunctionFromJson.insert(1, resWrapper)
+      callToBuiltinFunctionFromScript.insert(1, scriptFunctionWrapper.argName(i))
+    callToImplFromBuiltin.insert(1, callFromScriptArg)
 
   scriptFunction[6] = quote do:
-    block:
-      `callFromScript`
+    `callToImplFromBuiltin`
+
+  scriptFunctionWrapper[6] = quote do:
+    `callToBuiltinFunctionFromScript`
+
+  let adjustedCall = if returnType.isNone:
+    callToBuiltinFunctionFromJson
+  else:
+    quote do:
+      return `callToBuiltinFunctionFromJson`.toJson
+
+  var scriptFunctionForward = scriptFunction.copy
+  scriptFunctionForward[0] = scriptFunctionName
+  scriptFunctionForward[6] = newEmptyNode()
 
   return quote do:
     `def`
 
     `scriptFunction`
 
-    proc `wrapperName`*(`arg`: JsonNode): JsonNode {.nimcall, used.} =
+    proc `wrapperName`*(`jsonArg`: JsonNode): JsonNode {.nimcall, used.} =
       result = newJNull()
       try:
-        when `returnsVoid`:
-          `call`
-        else:
-          result = `call`.toJson
+        `adjustedCall`
       except:
         let name = `functionNameStr`
         echo "[editor] Failed to run function " & name & fmt": Invalid arguments: {getCurrentExceptionMsg()}"
@@ -174,6 +204,9 @@ macro expose*(moduleName: static string, def: untyped): untyped =
     static:
       addToCache(`scriptFunctionName`, "myImpl")
       addFunction(`scriptFunctionName`, `wrapperName`, `moduleName`)
+      exportCode("myImpl"):
+        `scriptFunctionForward`
+        `scriptFunctionWrapper`
 
 macro genDispatcher*(moduleName: static string): untyped =
   # defer:
@@ -188,7 +221,7 @@ macro genDispatcher*(moduleName: static string): untyped =
         let source = entry[0]
         let target = entry[1]
 
-        let name = $source
+        let name = ($source).replace("Script", "")
 
         var alternative = ""
         for c in name:
