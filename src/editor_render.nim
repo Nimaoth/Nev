@@ -4,7 +4,7 @@ import boxy, windy, pixie/fonts, chroma, fusion/matching
 import util, input, events, editor, popup, rect_utils, document_editor, text_document, ast_document, keybind_autocomplete, id, ast, theme
 import compiler, query_system, node_layout, goto_popup, selector_popup
 import lru_cache
-import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, Popup
+import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, Popup, SelectorPopup
 
 let lineDistance = 15.0
 

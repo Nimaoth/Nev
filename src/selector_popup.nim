@@ -1,6 +1,7 @@
-import std/[strutils, sugar, options]
+import std/[strutils, sugar, options, json, jsonutils, streams]
 import bumpy, vmath, windy
-import editor, text_document, popup, events, util, rect_utils
+import editor, text_document, popup, events, util, rect_utils, scripting
+from scripting_api as api import nil
 
 type
   SelectorItem* = ref object of RootObj
@@ -13,6 +14,7 @@ type
     completions*: seq[SelectorItem]
     handleItemConfirmed*: proc(item: SelectorItem)
     handleItemSelected*: proc(item: SelectorItem)
+    handleCanceled*: proc()
     getCompletions*: proc(self: SelectorPopup, text: string): seq[SelectorItem]
     lastContentBounds*: Rect
     lastItems*: seq[tuple[index: int, bounds: Rect]]
@@ -36,40 +38,68 @@ proc getItemAtPixelPosition(self: SelectorPopup, posWindow: Vec2): Option[Select
 method getEventHandlers*(self: SelectorPopup): seq[EventHandler] =
   return self.textEditor.eventHandler & @[self.eventHandler]
 
+proc getSelectorPopup(wrapper: api.SelectorPopup): Option[SelectorPopup] =
+  if gEditor.isNil: return SelectorPopup.none
+  if gEditor.getPopupForId(wrapper.id).getSome(editor):
+    if editor of SelectorPopup:
+      return editor.SelectorPopup.some
+  return SelectorPopup.none
+
+static:
+  addTypeMap(SelectorPopup, api.SelectorPopup, getSelectorPopup)
+
+proc toJson*(self: api.SelectorPopup, opt = initToJsonOptions()): JsonNode =
+  result = newJObject()
+  result["type"] = newJString("popup.selector")
+  result["id"] = newJInt(self.id.int)
+
+proc fromJsonHook*(t: var api.SelectorPopup, jsonNode: JsonNode) =
+  t.id = api.EditorId(jsonNode["id"].jsonTo(int))
+
+proc acceptImpl*(self: SelectorPopup) {.expose("popup.selector").} =
+  if self.selected < self.completions.len:
+    self.handleItemConfirmed self.completions[self.selected]
+  self.editor.popPopup(self)
+
+proc cancelImpl*(self: SelectorPopup) {.expose("popup.selector").} =
+  if self.handleCanceled != nil:
+    self.handleCanceled()
+  self.editor.popPopup(self)
+
+proc prevImpl*(self: SelectorPopup) {.expose("popup.selector").} =
+  self.selected = if self.completions.len == 0:
+    0
+  else:
+    (self.selected + self.completions.len - 1) mod self.completions.len
+
+  if self.completions.len > 0 and self.handleItemSelected != nil:
+    self.handleItemSelected self.completions[self.selected]
+
+proc nextImpl*(self: SelectorPopup) {.expose("popup.selector").} =
+  self.selected = if self.completions.len == 0:
+    0
+  else:
+    (self.selected + 1) mod self.completions.len
+
+  if self.completions.len > 0 and self.handleItemSelected != nil:
+    self.handleItemSelected self.completions[self.selected]
+
+genDispatcher("popup.selector")
+
 proc handleAction*(self: SelectorPopup, action: string, arg: string): EventResponse =
   # echo "SelectorPopup.handleAction ", action, ", '", arg, "'"
 
-  case action
-  of "accept":
-    if self.selected < self.completions.len:
-      self.handleItemConfirmed self.completions[self.selected]
-    self.editor.popPopup(self)
+  if self.editor.handleUnknownPopupAction(self, action, arg) == Handled:
+    return Handled
 
-  of "cancel":
-    self.editor.popPopup(self)
+  var args = newJArray()
+  args.add api.TextDocumentEditor(id: self.id).toJson
+  for a in newStringStream(arg).parseJsonFragments():
+    args.add a
+  if dispatch(action, args).isSome:
+    return Handled
 
-  of "prev":
-    self.selected = if self.completions.len == 0:
-      0
-    else:
-      (self.selected + self.completions.len - 1) mod self.completions.len
-
-    if self.completions.len > 0 and self.handleItemSelected != nil:
-      self.handleItemSelected self.completions[self.selected]
-
-  of "next":
-    self.selected = if self.completions.len == 0:
-      0
-    else:
-      (self.selected + 1) mod self.completions.len
-
-    if self.completions.len > 0 and self.handleItemSelected != nil:
-      self.handleItemSelected self.completions[self.selected]
-
-  else:
-    return self.editor.handleUnknownPopupAction(self, action, arg)
-
-  return Handled
+  return Ignored
 
 proc handleTextChanged*(self: SelectorPopup) =
   self.updateCompletions()

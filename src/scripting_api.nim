@@ -8,6 +8,7 @@ type
 
   TextDocumentEditor* = object of DocumentEditor
   AstDocumentEditor* = object of DocumentEditor
+  SelectorPopup* = object of Popup
 
 type Cursor* = tuple[line, column: int]
 type Selection* = tuple[first, last: Cursor]
