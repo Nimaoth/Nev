@@ -131,7 +131,7 @@ proc handleAstEditorAction(editor: AstDocumentEditor, action: string, arg: strin
 proc postInitialize*() =
   log "[script] postInitialize()"
 
-  # runAction "open-file", "test.txt"
+  runAction "open-file", "test.txt"
   # runAction "prev-view"
 
 setOption "ast.scroll-speed", 60
@@ -157,11 +157,11 @@ addCommand "editor", "<CA-h>", "change-layout-prop", "main-split", -0.05
 addCommand "editor", "<CA-f>", "change-layout-prop", "main-split", 0.05
 addCommand "editor", "<CA-v>", "create-view"
 addCommand "editor", "<CA-a>", "create-keybind-autocomplete-view"
-addCommand "editor", "<CA-x>", "close-view"
+addCommand "editor", "<CA-x>", "close-current-view"
 addCommand "editor", "<CA-n>", "prev-view"
 addCommand "editor", "<CA-t>", "next-view"
-addCommand "editor", "<CS-n>", "move-view-prev"
-addCommand "editor", "<CS-t>", "move-view-next"
+addCommand "editor", "<CS-n>", "move-current-view-prev"
+addCommand "editor", "<CS-t>", "move-current-view-next"
 addCommand "editor", "<CA-r>", "move-current-view-to-top"
 addCommand "editor", "<C-s>", "write-file"
 addCommand "editor", "<CS-r>", "load-file"
@@ -183,14 +183,14 @@ addCommand "popup.selector", "<ESCAPE>", "cancel"
 addCommand "popup.selector", "<UP>", "prev"
 addCommand "popup.selector", "<DOWN>", "next"
 
-addCommand "editor.text", "<LEFT>", "move-cursor-column", -1, ""
-addCommand "editor.text", "<RIGHT>", "move-cursor-column", 1, ""
+addCommand "editor.text", "<LEFT>", "move-cursor-column", -1
+addCommand "editor.text", "<RIGHT>", "move-cursor-column", 1
 addCommand "editor.text", "<C-LEFT>", "cursor.left-word"
 addCommand "editor.text", "<C-RIGHT>", "cursor.right-word"
 addCommand "editor.text", "<CS-LEFT>", "cursor.left-word", "last"
 addCommand "editor.text", "<CS-RIGHT>", "cursor.right-word", "last"
-addCommand "editor.text", "<UP>", "move-cursor-line", -1, ""
-addCommand "editor.text", "<DOWN>", "move-cursor-line", 1, ""
+addCommand "editor.text", "<UP>", "move-cursor-line", -1
+addCommand "editor.text", "<DOWN>", "move-cursor-line", 1
 addCommand "editor.text", "<HOME>", "move-cursor-home"
 addCommand "editor.text", "<END>", "move-cursor-end"
 addCommand "editor.text", "<S-LEFT>", "move-cursor-column", -1, "last"

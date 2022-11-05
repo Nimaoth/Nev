@@ -301,12 +301,12 @@ proc handleAction(self: TextDocumentEditor, action: string, arg: string): EventR
 
   var args = newJArray()
   args.add api.TextDocumentEditor(id: self.id).toJson
-  if arg.len != 0:
-    for a in newStringStream(arg).parseJsonFragments():
-      args.add a
-  discard dispatch(action, args)
+  for a in newStringStream(arg).parseJsonFragments():
+    args.add a
+  if dispatch(action, args).isSome:
+    return Handled
 
-  return Handled
+  return Ignored
 
 proc handleInput(self: TextDocumentEditor, input: string): EventResponse =
   # echo "handleInput '", input, "'"

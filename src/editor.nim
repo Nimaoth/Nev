@@ -403,34 +403,6 @@ proc shutdown*(ed: Editor) =
   writeFile("config.json", serialized.pretty)
   writeFile("options.json", ed.options.pretty)
 
-proc closeCurrentView(ed: Editor) =
-  ed.views[ed.currentView].editor.unregister()
-  ed.views.delete ed.currentView
-  ed.currentView = ed.currentView.clamp(0, ed.views.len - 1)
-
-proc moveCurrentViewToTop(ed: Editor) =
-  if ed.views.len > 0:
-    let view = ed.views[ed.currentView]
-    ed.views.delete(ed.currentView)
-    ed.views.insert(view, 0)
-  ed.currentView = 0
-
-proc moveCurrentViewPrev(ed: Editor) =
-  if ed.views.len > 0:
-    let view = ed.views[ed.currentView]
-    let index = (ed.currentView + ed.views.len - 1) mod ed.views.len
-    ed.views.delete(ed.currentView)
-    ed.views.insert(view, index)
-    ed.currentView = index
-
-proc moveCurrentViewNext(ed: Editor) =
-  if ed.views.len > 0:
-    let view = ed.views[ed.currentView]
-    let index = (ed.currentView + 1) mod ed.views.len
-    ed.views.delete(ed.currentView)
-    ed.views.insert(view, index)
-    ed.currentView = index
-
 proc getEditor(): Option[Editor] =
   if gEditor.isNil: return Editor.none
   return gEditor.some
@@ -447,174 +419,167 @@ proc changeFontSizeImpl*(self: Editor, amount: float32) {.expose("editor").} =
 proc changeLayoutPropImpl*(self: Editor, prop: string, change: float32) {.expose("editor").} =
   self.layout_props.props.mgetOrPut(prop, 0) += change
 
+proc toggleStatusBarLocationImpl*(self: Editor) {.expose("editor").} =
+  self.statusBarOnTop = not self.statusBarOnTop
+
+proc createViewImpl*(self: Editor) {.expose("editor").} =
+  self.createView(newTextDocument())
+
+proc createKeybindAutocompleteViewImpl*(self: Editor) {.expose("editor").} =
+  self.createView(newKeybindAutocompletion())
+
+proc closeCurrentViewImpl*(ed: Editor) {.expose("editor").} =
+  ed.views[ed.currentView].editor.unregister()
+  ed.views.delete ed.currentView
+  ed.currentView = ed.currentView.clamp(0, ed.views.len - 1)
+
+proc moveCurrentViewToTopImpl*(self: Editor) {.expose("editor").} =
+  if self.views.len > 0:
+    let view = self.views[self.currentView]
+    self.views.delete(self.currentView)
+    self.views.insert(view, 0)
+  self.currentView = 0
+
+proc nextViewImpl*(ed: Editor) {.expose("editor").} =
+  ed.currentView = if ed.views.len == 0: 0 else: (ed.currentView + 1) mod ed.views.len
+
+proc prevViewImpl*(ed: Editor) {.expose("editor").} =
+  ed.currentView = if ed.views.len == 0: 0 else: (ed.currentView + ed.views.len - 1) mod ed.views.len
+
+proc moveCurrentViewPrevImpl*(ed: Editor) {.expose("editor").} =
+  if ed.views.len > 0:
+    let view = ed.views[ed.currentView]
+    let index = (ed.currentView + ed.views.len - 1) mod ed.views.len
+    ed.views.delete(ed.currentView)
+    ed.views.insert(view, index)
+    ed.currentView = index
+
+proc moveCurrentViewNextImpl*(ed: Editor) {.expose("editor").} =
+  if ed.views.len > 0:
+    let view = ed.views[ed.currentView]
+    let index = (ed.currentView + 1) mod ed.views.len
+    ed.views.delete(ed.currentView)
+    ed.views.insert(view, index)
+    ed.currentView = index
+
+proc setLayoutImpl*(ed: Editor, layout: string) {.expose("editor").} =
+  ed.layout = case layout
+    of "horizontal": HorizontalLayout()
+    of "vertical": VerticalLayout()
+    of "fibonacci": FibonacciLayout()
+    else: HorizontalLayout()
+
+proc commandLineImpl*(ed: Editor, initialValue: string) {.expose("editor").} =
+  ed.getCommandLineTextEditor.document.content = @[initialValue]
+  ed.commandLineMode = true
+
+proc exitCommandLineImpl*(ed: Editor) {.expose("editor").} =
+  ed.getCommandLineTextEditor.document.content = @[""]
+  ed.commandLineMode = false
+
+proc executeCommandLineImpl*(ed: Editor) {.expose("editor").} =
+  ed.commandLineMode = false
+  let (action, arg) = ed.getCommandLineTextEditor.document.content.join("").parseAction
+  ed.getCommandLineTextEditor.document.content = @[""]
+  ed.handleAction(action, arg)
+
+proc openFileImpl*(ed: Editor, path: string) {.expose("editor").} =
+  try:
+    if path.endsWith(".ast"):
+      ed.createView(newAstDocument(path))
+    else:
+      let file = readFile(path)
+      ed.createView(newTextDocument(path, file.splitLines))
+  except:
+    ed.logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
+    echo getCurrentException().getStackTrace()
+
+proc writeFileImpl*(ed: Editor, path: string) {.expose("editor").} =
+  if ed.currentView >= 0 and ed.currentView < ed.views.len and ed.views[ed.currentView].document != nil:
+    try:
+      ed.views[ed.currentView].document.save(path)
+    except:
+      ed.logger.log(lvlError, fmt"[ed] Failed to write file '{path}': {getCurrentExceptionMsg()}")
+      echo getCurrentException().getStackTrace()
+
+proc loadFileImpl*(ed: Editor, path: string) {.expose("editor").} =
+  if ed.currentView >= 0 and ed.currentView < ed.views.len and ed.views[ed.currentView].document != nil:
+    try:
+      ed.views[ed.currentView].document.load(path)
+      ed.views[ed.currentView].editor.handleDocumentChanged()
+    except:
+      ed.logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
+      echo getCurrentException().getStackTrace()
+
+proc loadThemeImpl*(ed: Editor, name: string) {.expose("editor").} =
+  if theme.loadFromFile(fmt"./themes/{name}.json").getSome(theme):
+    ed.theme = theme
+  else:
+    ed.logger.log(lvlError, fmt"[ed] Failed to load theme {name}")
+
+proc chooseThemeImpl*(ed: Editor) {.expose("editor").} =
+  var popup = ed.newSelectorPopup proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
+    for file in walkDirRec("./themes", relative=true):
+      if file.endsWith ".json":
+        let name = file.splitFile[1]
+        let score = fuzzyMatchSmart(text, name)
+        result.add ThemeSelectorItem(name: name, path: fmt"./themes/{file}", score: score)
+
+    result.sort((a, b) => cmp(a.ThemeSelectorItem.score, b.ThemeSelectorItem.score), Descending)
+
+  popup.handleItemSelected = proc(item: SelectorItem) =
+    if theme.loadFromFile(item.ThemeSelectorItem.path).getSome(theme):
+      ed.theme = theme
+
+  popup.handleItemConfirmed = proc(item: SelectorItem) =
+    if theme.loadFromFile(item.ThemeSelectorItem.path).getSome(theme):
+      ed.theme = theme
+
+  ed.pushPopup popup
+
+proc chooseFileImpl*(ed: Editor, view: string = "new") {.expose("editor").} =
+  var popup = ed.newSelectorPopup proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
+    for file in walkDirRec(".", relative=true):
+      let name = file.splitFile[1]
+      let score = fuzzyMatchSmart(text, name)
+      result.add FileSelectorItem(path: fmt"./{file}", score: score)
+
+    result.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Descending)
+
+  popup.handleItemConfirmed = proc(item: SelectorItem) =
+    case view
+    of "current":
+      ed.handleAction("load-file", item.FileSelectorItem.path)
+    of "new":
+      ed.handleAction("open-file", item.FileSelectorItem.path)
+    else:
+      ed.logger.log(lvlError, fmt"Unknown argument {view}")
+
+  ed.pushPopup popup
+
+proc reloadConfigImpl*(ed: Editor) {.expose("editor").} =
+  if ed.scriptContext.isNil.not:
+    try:
+      ed.scriptContext.reloadScript()
+    except:
+      ed.logger.log(lvlError, fmt"Failed to reload config")
+
+proc logOptionsImpl*(ed: Editor) {.expose("editor").} =
+  ed.logger.log(lvlInfo, ed.options.pretty)
+
 genDispatcher("editor")
 
 proc handleAction(ed: Editor, action: string, arg: string) =
   ed.logger.log(lvlInfo, "[ed] Action '$1 $2'" % [action, arg])
-  case action
-  of "toggle-status-bar-location":
-    ed.statusBarOnTop = not ed.statusBarOnTop
-  of "create-view":
-    ed.createView(newTextDocument())
-  of "create-keybind-autocomplete-view":
-    ed.createView(newKeybindAutocompletion())
-  of "close-view":
-    ed.closeCurrentView()
-  of "move-current-view-to-top":
-    ed.moveCurrentViewToTop()
-  of "next-view":
-    ed.currentView = if ed.views.len == 0: 0 else: (ed.currentView + 1) mod ed.views.len
-  of "prev-view":
-    ed.currentView = if ed.views.len == 0: 0 else: (ed.currentView + ed.views.len - 1) mod ed.views.len
-  of "move-view-prev":
-    ed.moveCurrentViewPrev()
-  of "move-view-next":
-    ed.moveCurrentViewNext()
-  of "set-layout":
-    ed.layout = case arg
-      of "horizontal": HorizontalLayout()
-      of "vertical": VerticalLayout()
-      of "fibonacci": FibonacciLayout()
-      else: HorizontalLayout()
-  of "command-line":
-    ed.getCommandLineTextEditor.document.content = @[arg]
-    ed.commandLineMode = true
-  of "exit-command-line":
-    ed.getCommandLineTextEditor.document.content = @[""]
-    ed.commandLineMode = false
-  of "execute-command-line":
-    ed.commandLineMode = false
-    let (action, arg) = ed.getCommandLineTextEditor.document.content.join("").parseAction
-    ed.getCommandLineTextEditor.document.content = @[""]
-    ed.handleAction(action, arg)
-  of "open-file":
-    try:
-      if arg.endsWith(".ast"):
-        ed.createView(newAstDocument(arg))
-      else:
-        let file = readFile(arg)
-        ed.createView(newTextDocument(arg, file.splitLines))
-    except:
-      ed.logger.log(lvlError, fmt"[ed] Failed to load file '{arg}': {getCurrentExceptionMsg()}")
-      echo getCurrentException().getStackTrace()
-  of "write-file":
-    if ed.currentView >= 0 and ed.currentView < ed.views.len and ed.views[ed.currentView].document != nil:
-      try:
-        ed.views[ed.currentView].document.save(arg)
-      except:
-        ed.logger.log(lvlError, fmt"[ed] Failed to write file '{arg}': {getCurrentExceptionMsg()}")
-        echo getCurrentException().getStackTrace()
-  of "load-file":
-    if ed.currentView >= 0 and ed.currentView < ed.views.len and ed.views[ed.currentView].document != nil:
-      try:
-        ed.views[ed.currentView].document.load(arg)
-        ed.views[ed.currentView].editor.handleDocumentChanged()
-      except:
-        ed.logger.log(lvlError, fmt"[ed] Failed to load file '{arg}': {getCurrentExceptionMsg()}")
-        echo getCurrentException().getStackTrace()
-  of "load-theme":
-    if theme.loadFromFile(fmt"./themes/{arg}.json").getSome(theme):
-      ed.theme = theme
-    else:
-      ed.logger.log(lvlError, fmt"[ed] Failed to load theme {arg}")
-
-  of "choose-theme":
-    var popup = ed.newSelectorPopup proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
-      for file in walkDirRec("./themes", relative=true):
-        if file.endsWith ".json":
-          let name = file.splitFile[1]
-          let score = fuzzyMatchSmart(text, name)
-          result.add ThemeSelectorItem(name: name, path: fmt"./themes/{file}", score: score)
-
-      result.sort((a, b) => cmp(a.ThemeSelectorItem.score, b.ThemeSelectorItem.score), Descending)
-
-    popup.handleItemSelected = proc(item: SelectorItem) =
-      if theme.loadFromFile(item.ThemeSelectorItem.path).getSome(theme):
-        ed.theme = theme
-
-    popup.handleItemConfirmed = proc(item: SelectorItem) =
-      if theme.loadFromFile(item.ThemeSelectorItem.path).getSome(theme):
-        ed.theme = theme
-
-    ed.pushPopup popup
-
-  of "choose-file":
-    var popup = ed.newSelectorPopup proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
-      for file in walkDirRec(".", relative=true):
-        let name = file.splitFile[1]
-        let score = fuzzyMatchSmart(text, name)
-        result.add FileSelectorItem(path: fmt"./{file}", score: score)
-
-      result.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Descending)
-
-    popup.handleItemConfirmed = proc(item: SelectorItem) =
-      case arg
-      of "current":
-        ed.handleAction("load-file", item.FileSelectorItem.path)
-      of "new":
-        ed.handleAction("open-file", item.FileSelectorItem.path)
-      else:
-        ed.logger.log(lvlError, fmt"Unknown argument {arg}")
-
-    ed.pushPopup popup
-
-  of "reload-config":
-    if ed.scriptContext.isNil.not:
-      try:
-        ed.scriptContext.reloadScript()
-      except:
-        ed.logger.log(lvlError, fmt"Failed to reload config")
-
-  of "log-options":
-    ed.logger.log(lvlInfo, ed.options.pretty)
-
-  else:
-    try:
-      if not ed.scriptContext.inter.invoke(handleGlobalAction, action, arg, returnType = bool):
-        var args = newJArray()
-        if arg.len != 0:
-          var ss = arg.newStringStream
-          for json in ss.parseJsonFragments("arguments"):
-            args.add json
-
-          # while true:
-          #   # Skip whitespace
-          #   while ss.peekChar.Rune.isWhitespace:
-          #     discard ss.readChar
-
-          #   echo "start: ", ss.getPosition
-          #   if ss.atEnd:
-          #     break
-
-          #   case ss.peekChar
-          #   of '-', '.', '0'..'9', '"', '[', '{', 'a'..'z', 'A'..'Z', '_':
-          #     # Json token
-          #     echo "before: ", ss.getPosition
-          #     for json in ss.parseJsonFragments("arguments"):
-          #       echo json
-          #       args.add json
-          #       break
-          #     echo "after: ", ss.getPosition
-
-          #   of '$':
-          #     # Editor variable
-          #     discard ss.readChar
-          #     var name = ""
-
-          #     while not ss.peekChar.Rune.isWhitespace:
-          #       name.add ss.readChar
-
-          #     let option = ed.options{name.split(".")}
-          #     if not option.isNil:
-          #       args.add option
-
-          #   else:
-          #     echo "error"
-
-        discard dispatch(action, args)
-    except:
-      ed.logger.log(lvlError, fmt"[ed] Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
-      echo getCurrentException().getStackTrace()
+  try:
+    if not ed.scriptContext.inter.invoke(handleGlobalAction, action, arg, returnType = bool):
+      var args = newJArray()
+      for a in newStringStream(arg).parseJsonFragments():
+        args.add a
+      discard dispatch(action, args)
+  except:
+    ed.logger.log(lvlError, fmt"[ed] Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
+    echo getCurrentException().getStackTrace()
 
 proc anyInProgress*(handlers: openArray[EventHandler]): bool =
   for h in handlers:

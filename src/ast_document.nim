@@ -1,4 +1,4 @@
-import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros, macrocache, options, deques, sets, json, jsonutils, sequtils]
+import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros, macrocache, options, deques, sets, json, jsonutils, sequtils, streams]
 import timer
 import fusion/matching, fuzzy, bumpy, rect_utils, vmath, chroma, windy
 import editor, util, document, document_editor, text_document, events, id, ast_ids, ast, scripting
@@ -1891,14 +1891,15 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
   else:
     if self.editor.handleUnknownDocumentEditorAction(self, action, arg) == Handled:
       return Handled
+
     var args = newJArray()
     args.add api.AstDocumentEditor(id: self.id).toJson
-    if arg.len != 0:
-      args.add arg.parseJson()
-    discard dispatch(action, args)
-    return Handled
+    for a in newStringStream(arg).parseJsonFragments():
+      args.add a
+    if dispatch(action, args).isSome:
+      return Handled
 
-  return Handled
+  return Ignored
 
 proc handleInput(self: AstDocumentEditor, input: string): EventResponse =
   # logger.log lvlInfo, fmt"[asteditor]: Handle input '{input}'"
