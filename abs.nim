@@ -10,7 +10,7 @@ func toJsonString[T: string](value: T): string = "\"" & value & "\""
 func toJsonString[T: char](value: T): string = "\"" & $value & "\""
 func toJsonString[T](value: T): string = $value
 
-macro addCommand*(context: string, keys: string, action: string, args: varargs[untyped]) =
+macro addCommand*(context: string, keys: string, action: string, args: varargs[untyped]): untyped =
   var stmts = nnkStmtList.newTree()
   let str = nskVar.genSym "str"
   stmts.add quote do:
@@ -38,8 +38,19 @@ proc handleLambdaAction*(key: string): bool =
 proc removeCommand*(context: string, keys: string) =
   scriptRemoveCommand(context, keys)
 
-proc runAction*(action: string, arg: string = "") =
-  scriptRunAction(action, arg)
+macro runAction*(action: string, args: varargs[untyped]): untyped =
+  var stmts = nnkStmtList.newTree()
+  let str = nskVar.genSym "str"
+  stmts.add quote do:
+    var `str` = ""
+  for arg in args:
+    stmts.add quote do:
+      `str`.add " "
+      `str`.add `arg`.toJsonString
+
+  return quote do:
+    `stmts`
+    scriptRunAction(`action`, `str`)
 
 template isTextEditor*(editor: DocumentEditor, injected: untyped): bool =
   ((let o = editor; scriptIsTextEditor(editor.id))) and ((let injected {.inject.} = editor.TextDocumentEditor; true))

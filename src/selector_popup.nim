@@ -34,9 +34,11 @@ proc getItemAtPixelPosition(self: SelectorPopup, posWindow: Vec2): Option[Select
       return self.completions[index].some
 
 method getEventHandlers*(self: SelectorPopup): seq[EventHandler] =
-  return @[self.eventHandler] & self.textEditor.eventHandler
+  return self.textEditor.eventHandler & @[self.eventHandler]
 
 proc handleAction*(self: SelectorPopup, action: string, arg: string): EventResponse =
+  # echo "SelectorPopup.handleAction ", action, ", '", arg, "'"
+
   case action
   of "accept":
     if self.selected < self.completions.len:
