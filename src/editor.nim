@@ -539,7 +539,7 @@ proc writeFileImpl*(ed: Editor, path: string) {.expose("editor").} =
       ed.logger.log(lvlError, fmt"[ed] Failed to write file '{path}': {getCurrentExceptionMsg()}")
       echo getCurrentException().getStackTrace()
 
-proc loadFileImpl*(ed: Editor, path: string) {.expose("editor").} =
+proc loadFileImpl*(ed: Editor, path: string = "") {.expose("editor").} =
   if ed.currentView >= 0 and ed.currentView < ed.views.len and ed.views[ed.currentView].document != nil:
     try:
       ed.views[ed.currentView].document.load(path)

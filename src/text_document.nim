@@ -3,7 +3,14 @@ import editor, document, document_editor, events, id, util, scripting
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 
+import treesitter/api as ts
+import treesitter_javascript/javascript as tsjs
+
 var logger = newConsoleLogger()
+
+when not declared(c_malloc):
+  proc c_malloc(size: csize_t): pointer {.importc: "malloc", header: "<stdlib.h>".}
+  proc c_free(p: pointer): void {.importc: "free", header: "<stdlib.h>".}
 
 type Event*[T] = object
   handlers: seq[tuple[id: Id, callback: (T) -> void]]
@@ -14,6 +21,9 @@ type TextDocument* = ref object of Document
 
   textChanged*: Event[TextDocument]
   singleLine*: bool
+
+  tsParser: ptr ts.TSParser
+  currentTree: ptr ts.TSTree
 
 type TextDocumentEditor* = ref object of DocumentEditor
   editor*: Editor
@@ -35,14 +45,32 @@ proc invoke*[T](event: var Event[T], arg: T) =
   for h in event.handlers:
     h.callback(arg)
 
+proc len*(node: ts.TSNode): int = node.tsNodeChildCount().int
+proc high*(node: ts.TSNode): int = node.len - 1
+proc low*(node: ts.TSNode): int = 0
+proc root*(tree: ptr ts.TSTree): ts.TSNode = tree.tsTreeRootNode
+
+proc `$`*(node: ts.TSNode): string =
+  let c_str = node.tsNodeString()
+  defer: c_str.c_free
+  result = $c_str
+  # for i in 0..node.high:
+  #   str +=
+
+
 proc `content=`*(document: TextDocument, value: string) =
   if document.singleLine:
     document.lines = @[value.replace("\n", "")]
+    if document.lines.len == 0:
+      document.lines = @[""]
+    document.currentTree = document.tsParser.tsParserParseString(nil, document.lines[0], document.lines[0].len.uint32)
   else:
     document.lines = value.splitLines
+    if document.lines.len == 0:
+      document.lines = @[""]
+    document.currentTree = document.tsParser.tsParserParseString(nil, value, value.len.uint32)
 
-  if document.lines.len == 0:
-    document.lines = @[""]
+  let node = document.currentTree.tsTreeRootNode()
 
   document.textChanged.invoke(document)
 
@@ -54,6 +82,13 @@ proc `content=`*(document: TextDocument, value: seq[string]) =
 
   if document.lines.len == 0:
     document.lines = @[""]
+
+  let strValue = value.join("\n")
+  document.currentTree = document.tsParser.tsParserParseString(nil, strValue, strValue.len.uint32)
+
+  let node = document.currentTree.tsTreeRootNode()
+  echo node.tsNodeStartPoint
+  echo node.tsNodeEndPoint
 
   document.textChanged.invoke(document)
 
@@ -68,7 +103,19 @@ func selection*(self: TextDocumentEditor): Selection = self.selection
 proc newTextDocument*(filename: string = "", content: string | seq[string] = ""): TextDocument =
   new(result)
   result.filename = filename
+  result.currentTree = nil
+
+  result.tsParser = ts.tsParserNew()
+  assert result.tsParser.tsParserSetLanguage(tsjs.treeSitterjavascript()) == true
+
   result.content = content
+
+
+proc destroy*(doc: TextDocument) =
+  doc.tsParser.tsParserDelete()
+
+# proc `=destroy`[T: object](doc: var TextDocument) =
+#   doc.tsParser.tsParserDelete()
 
 method `$`*(document: TextDocument): string =
   return document.filename
@@ -98,9 +145,17 @@ method load*(self: TextDocument, filename: string = "") =
 proc notifyTextChanged(self: TextDocument) =
   self.textChanged.invoke self
 
+proc byteOffset(self: TextDocument, cursor: Cursor): int =
+  result = cursor.column
+  for i in 0..<cursor.line:
+    result += self.lines[i].len + 1
+
 proc delete(self: TextDocument, selection: Selection, notify: bool = true): Cursor =
   if selection.isEmpty:
     return selection.first
+
+  let startByte = self.byteOffset(selection.first).uint32
+  let endByte = self.byteOffset(selection.last).uint32
 
   let (first, last) = selection.normalized
   # echo "delete: ", selection, ", lines = ", self.lines
@@ -116,13 +171,28 @@ proc delete(self: TextDocument, selection: Selection, notify: bool = true): Curs
     # Delete all lines in between
     self.lines.delete (first.line + 1)..last.line
 
+  let edit = ts.TSInputEdit(
+    start_byte: startByte,
+    old_end_byte: endByte,
+    new_end_byte: startByte,
+    start_point: TSPoint(row: selection.first.line.uint32, column: selection.first.column.uint32),
+    old_end_point: TSPoint(row: selection.last.line.uint32, column: selection.last.column.uint32),
+    new_end_point: TSPoint(row: selection.first.line.uint32, column: selection.first.column.uint32),
+  )
+  self.currentTree.tsTreeEdit(addr edit)
+  let strValue = self.lines.join("\n")
+  self.currentTree = self.tsParser.tsParserParseString(self.currentTree, strValue, strValue.len.uint32)
+  echo self.currentTree.root
+
   if notify:
     self.notifyTextChanged()
 
   return selection.first
 
-proc insert(self: TextDocument, cursor: Cursor, text: string, notify: bool = true): Cursor =
-  var cursor = cursor
+proc insert(self: TextDocument, oldCursor: Cursor, text: string, notify: bool = true): Cursor =
+  var cursor = oldCursor
+  let startByte = self.byteOffset(oldCursor).uint32
+
   var i: int = 0
   # echo "insert ", cursor, ": ", text
   if self.singleLine:
@@ -146,6 +216,19 @@ proc insert(self: TextDocument, cursor: Cursor, text: string, notify: bool = tru
       if line.len > 0:
         self.lines[cursor.line].insert(line, cursor.column)
         cursor.column += line.len
+
+  let edit = ts.TSInputEdit(
+    start_byte: startByte,
+    old_end_byte: startByte,
+    new_end_byte: startByte + text.len.uint32,
+    start_point: TSPoint(row: oldCursor.line.uint32, column: oldCursor.column.uint32),
+    old_end_point: TSPoint(row: oldCursor.line.uint32, column: oldCursor.column.uint32),
+    new_end_point: TSPoint(row: cursor.line.uint32, column: cursor.column.uint32),
+  )
+  self.currentTree.tsTreeEdit(addr edit)
+  let strValue = self.lines.join("\n")
+  self.currentTree = self.tsParser.tsParserParseString(self.currentTree, strValue, strValue.len.uint32)
+  echo self.currentTree.root
 
   if notify:
     self.notifyTextChanged()
