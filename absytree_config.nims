@@ -142,12 +142,13 @@ addCommand "editor", "<SPACE>fs", "toggle-flag", "render-selected-value"
 addCommand "editor", "<SPACE>fr", "toggle-flag", "log-render-duration"
 addCommand "editor", "<SPACE>fd", "toggle-flag", "render-debug-info"
 addCommand "editor", "<SPACE>fo", "toggle-flag", "render-execution-output"
+addCommand "editor", "<C-SPACE>fg", "toggle-flag", "text.print-scopes"
 
 addCommand "editor", "<SPACE>ff", "log-options"
 addCommand "editor", "<ESCAPE>", "escape"
 addCommand "editor", "<C-l><C-h>", "change-font-size", -1
 addCommand "editor", "<C-l><C-f>", "change-font-size", 1
-addCommand "editor", "<C-g>", "toggle-status-bar-location"
+# addCommand "editor", "<C-g>", "toggle-status-bar-location"
 addCommand "editor", "<C-l><C-n>", "set-layout", "horizontal"
 addCommand "editor", "<C-l><C-r>", "set-layout", "vertical"
 addCommand "editor", "<C-l><C-t>", "set-layout", "fibonacci"
@@ -167,7 +168,7 @@ addCommand "editor", "<C-p>", "command-line"
 addCommand "editor", "<C-l>tt", "choose-theme"
 addCommand "editor", "<C-m>t", "test", "uiaeuiae"
 addCommand "editor", "<C-m>r", "test", "xvlcxvl  xvlc\n lol"
-addCommand "editor", "gf", "choose-file", "new"
+addCommand "editor", "<C-g>f", "choose-file", "new"
 
 addCommand "commandLine", "<ESCAPE>", "exit-command-line"
 addCommand "commandLine", "<ENTER>", "execute-command-line"
@@ -198,6 +199,7 @@ addCommand "editor.text", "<ENTER>", "insert-text", "\n"
 addCommand "editor.text", "<SPACE>", "insert-text", " "
 addCommand "editor.text", "<BACKSPACE>", "backspace"
 addCommand "editor.text", "<DELETE>", "delete"
+addCommand "editor.text", "<C-r>", "reload-treesitter"
 
 template addAstCommand(command: string, body: untyped): untyped =
   addCommand "editor.ast", command, proc() =

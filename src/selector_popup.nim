@@ -93,7 +93,7 @@ proc handleAction*(self: SelectorPopup, action: string, arg: string): EventRespo
     return Handled
 
   var args = newJArray()
-  args.add api.TextDocumentEditor(id: self.id).toJson
+  args.add api.SelectorPopup(id: self.id).toJson
   for a in newStringStream(arg).parseJsonFragments():
     args.add a
   if dispatch(action, args).isSome:

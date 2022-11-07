@@ -1,10 +1,27 @@
-import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams]
-import editor, document, document_editor, events, id, util, scripting
+import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, os]
+import editor, document, document_editor, events, id, util, scripting, vmath
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 
 import treesitter/api as ts
-import treesitter_javascript/javascript as tsjs
+
+import treesitter_c/c
+# import treesitter_bash/bash
+# import treesitter_c_sharp/c_sharp
+# import treesitter_cpp/cpp
+# import treesitter_css/css
+# import treesitter_go/go
+# import treesitter_haskell/haskell
+# import treesitter_html/html
+# import treesitter_java/java
+import treesitter_javascript/javascript
+# import treesitter_ocaml/ocaml
+# import treesitter_php/php
+# import treesitter_python/python
+# import treesitter_ruby/ruby
+import treesitter_rust/rust
+# import treesitter_scala/scala
+# import treesitter_typescript/typescript
 
 var logger = newConsoleLogger()
 
@@ -17,19 +34,23 @@ type Event*[T] = object
 
 type TextDocument* = ref object of Document
   filename*: string
-  lines: seq[string]
+  lines*: seq[string]
 
   textChanged*: Event[TextDocument]
   singleLine*: bool
 
   tsParser: ptr ts.TSParser
   currentTree: ptr ts.TSTree
+  highlightQuery: ptr ts.TSQuery
 
 type TextDocumentEditor* = ref object of DocumentEditor
   editor*: Editor
   document*: TextDocument
   selection: Selection
   hideCursorWhenInactive*: bool
+
+  scrollOffset*: float
+  previousBaseIndex*: int
 
 proc subscribe*[T](event: var Event[T], callback: (T) -> void): Id =
   result = newId()
@@ -48,7 +69,38 @@ proc invoke*[T](event: var Event[T], arg: T) =
 proc len*(node: ts.TSNode): int = node.tsNodeChildCount().int
 proc high*(node: ts.TSNode): int = node.len - 1
 proc low*(node: ts.TSNode): int = 0
+proc startByte*(node: ts.TSNode): int = node.tsNodeStartByte.int
+proc endByte*(node: ts.TSNode): int = node.tsNodeEndByte.int
+proc startPoint*(node: ts.TSNode): Cursor =
+  let point = node.tsNodeStartPoint
+  return (point.row.int, point.column.int)
+proc endPoint*(node: ts.TSNode): Cursor =
+  let point = node.tsNodeEndPoint
+  return (point.row.int, point.column.int)
+proc selection*(node: ts.TSNode): Selection = (node.startPoint, node.endPoint)
 proc root*(tree: ptr ts.TSTree): ts.TSNode = tree.tsTreeRootNode
+proc execute*(cursor: ptr ts.TSQueryCursor, query: ptr ts.TSQuery, node: ts.TSNode) = cursor.tsQueryCursorExec(query, node)
+
+proc setPointRange*(cursor: ptr ts.TSQueryCursor, selection: Selection) =
+  cursor.tsQueryCursorSetPointRange(ts.TSPoint(row: selection.first.line.uint32, column: selection.first.column.uint32), ts.TSPoint(row: selection.last.line.uint32, column: selection.last.column.uint32))
+
+proc getCaptureName(query: ptr ts.TSQuery, index: uint32): string =
+  var length: uint32
+  var str = ts.tsQueryCaptureNameForId(query, index, addr length)
+  defer: assert result.len == length.int
+  return $str
+
+proc nextMatch*(cursor: ptr ts.TSQueryCursor): Option[ts.TSQueryMatch] =
+  result = ts.TSQueryMatch.none
+  var match: ts.TSQueryMatch
+  if cursor.tsQueryCursorNextMatch(addr match):
+    result = match.some
+
+proc nextCapture*(cursor: ptr ts.TSQueryCursor): Option[tuple[match: ts.TSQueryMatch, captureIndex: int]] =
+  var match: ts.TSQueryMatch
+  var index: uint32
+  if cursor.tsQueryCursorNextCapture(addr match, addr index):
+    result = (match, index.int).some
 
 proc `$`*(node: ts.TSNode): string =
   let c_str = node.tsNodeString()
@@ -57,40 +109,41 @@ proc `$`*(node: ts.TSNode): string =
   # for i in 0..node.high:
   #   str +=
 
-
-proc `content=`*(document: TextDocument, value: string) =
-  if document.singleLine:
-    document.lines = @[value.replace("\n", "")]
-    if document.lines.len == 0:
-      document.lines = @[""]
-    document.currentTree = document.tsParser.tsParserParseString(nil, document.lines[0], document.lines[0].len.uint32)
+proc `content=`*(self: TextDocument, value: string) =
+  if self.singleLine:
+    self.lines = @[value.replace("\n", "")]
+    if self.lines.len == 0:
+      self.lines = @[""]
+    if not self.tsParser.isNil:
+      self.currentTree = self.tsParser.tsParserParseString(nil, self.lines[0], self.lines[0].len.uint32)
   else:
-    document.lines = value.splitLines
-    if document.lines.len == 0:
-      document.lines = @[""]
-    document.currentTree = document.tsParser.tsParserParseString(nil, value, value.len.uint32)
+    self.lines = value.splitLines
+    if self.lines.len == 0:
+      self.lines = @[""]
+    if not self.tsParser.isNil:
+      self.currentTree = self.tsParser.tsParserParseString(nil, value, value.len.uint32)
 
-  let node = document.currentTree.tsTreeRootNode()
+  # echo self.currentTree.root
 
-  document.textChanged.invoke(document)
+  self.textChanged.invoke(self)
 
-proc `content=`*(document: TextDocument, value: seq[string]) =
-  if document.singleLine:
-    document.lines = @[value.join("")]
+proc `content=`*(self: TextDocument, value: seq[string]) =
+  if self.singleLine:
+    self.lines = @[value.join("")]
   else:
-    document.lines = value.toSeq
+    self.lines = value.toSeq
 
-  if document.lines.len == 0:
-    document.lines = @[""]
+  if self.lines.len == 0:
+    self.lines = @[""]
 
   let strValue = value.join("\n")
-  document.currentTree = document.tsParser.tsParserParseString(nil, strValue, strValue.len.uint32)
 
-  let node = document.currentTree.tsTreeRootNode()
-  echo node.tsNodeStartPoint
-  echo node.tsNodeEndPoint
+  if not self.tsParser.isNil:
+    self.currentTree = self.tsParser.tsParserParseString(nil, strValue, strValue.len.uint32)
 
-  document.textChanged.invoke(document)
+  # echo self.currentTree.root
+
+  self.textChanged.invoke(self)
 
 func content*(document: TextDocument): seq[string] =
   return document.lines
@@ -100,19 +153,151 @@ func contentString*(document: TextDocument): string =
 
 func selection*(self: TextDocumentEditor): Selection = self.selection
 
+type StyledText* = object
+  text*: string
+  scope*: string
+
+type StyledLine* = object
+  parts*: seq[StyledText]
+
+proc splitAt(line: var StyledLine, index: int) =
+  var index = index
+  var i = 0
+  while i < line.parts.len and index >= line.parts[i].text.len:
+    index -= line.parts[i].text.len
+    i += 1
+
+  if i < line.parts.len and index != 0 and index != line.parts[i].text.len:
+    var copy = line.parts[i]
+    line.parts[i].text = line.parts[i].text[0..<index]
+    copy.text = copy.text[index..^1]
+    line.parts.insert(copy, i + 1)
+
+proc overrideStyle*(line: var StyledLine, first: int, last: int, scope: string) =
+  var index = 0
+  for i in 0..line.parts.high:
+    if index == first and index + line.parts[i].text.len == last and line.parts[i].scope.len == 0:
+      if line.parts[i].scope.len > 0:
+        let text = line.parts[i].text
+        let oldScope = line.parts[i].scope
+        logger.log(lvlInfo, fmt"overriding scope of '{text}' ({oldScope}) with {scope}")
+      line.parts[i].scope = scope
+    index += line.parts[i].text.len
+
+proc getStyledText*(self: TextDocument, i: int): StyledLine =
+  var line = self.lines[i]
+  var styledLine = StyledLine(parts: @[StyledText(text: line, scope: "")])
+
+  if not self.tsParser.isNil and not self.highlightQuery.isNil:
+    let cursor = ts.tsQueryCursorNew()
+
+    cursor.setPointRange ((i, 0), (i, line.len))
+    cursor.execute(self.highlightQuery, self.currentTree.root)
+
+    var match = cursor.nextMatch()
+    while match.isSome:
+      defer: match = cursor.nextMatch()
+      let captures = cast[ptr array[100, ts.TSQueryCapture]](match.get.captures)
+      for k in 0..<match.get.capture_count.int:
+        let scope = self.highlightQuery.getCaptureName(captures[k].index)
+
+        let node = captures[k].node
+        let nodeRange = node.selection
+
+        if nodeRange.first.line == i:
+          styledLine.splitAt(nodeRange.first.column)
+        if nodeRange.last.line == i:
+          styledLine.splitAt(nodeRange.last.column)
+
+        let first = if nodeRange.first.line < i: 0 elif nodeRange.first.line == i: nodeRange.first.column else: line.len
+        let last = if nodeRange.last.line < i: 0 elif nodeRange.last.line == i: nodeRange.last.column else: line.len
+
+        styledLine.overrideStyle(first, last, scope)
+
+  return styledLine
+
+proc initTreesitter(self: TextDocument) =
+  if not self.tsParser.isNil:
+    self.tsParser.tsParserDelete()
+    self.tsParser = nil
+  if not self.highlightQuery.isNil:
+    self.highlightQuery.tsQueryDelete()
+    self.highlightQuery = nil
+
+  var extension = self.filename.splitFile.ext
+  if extension.len > 0:
+    extension = extension[1..^1]
+
+  let languageId = case extension
+  of "c", "cc", "inc": "c"
+  of "sh": "bash"
+  of "cs": "csharp"
+  of "cpp", "hpp", "h": "cpp"
+  of "css": "css"
+  of "go": "go"
+  of "hs": "haskell"
+  of "html": "html"
+  of "java": "java"
+  of "js", "jsx", "json": "javascript"
+  of "ocaml": "ocaml"
+  of "php": "php"
+  of "py": "python"
+  of "ruby": "ruby"
+  of "rs": "rust"
+  of "scala": "scala"
+  of "ts": "typescript"
+  else:
+    # Unsupported language
+    logger.log(lvlWarn, fmt"Failed to init treesitter for language '{extension}'")
+    return
+
+  let language = case languageId
+  of "c": treeSitterC()
+  # of "bash": treeSitterBash()
+  # of "csharp": treeSitterCSharp()
+  # of "cpp": treeSitterCpp()
+  # of "css": treeSitterCss()
+  # of "go": treeSitterGo()
+  # of "haskell": treeSitterHaskell()
+  # of "html": treeSitterHtml()
+  # of "java": treeSitterJava()
+  of "javascript": treeSitterJavascript()
+  # of "ocaml": treeSitterOcaml()
+  # of "php": treeSitterPhp()
+  # of "python": treeSitterPython()
+  # of "ruby": treeSitterRuby()
+  of "rust": treeSitterRust()
+  # of "scala": treeSitterScala()
+  # of "typescript": treeSitterTypescript()
+  else:
+    logger.log(lvlWarn, fmt"Failed to init treesitter for language '{extension}'")
+    return
+
+  self.tsParser = ts.tsParserNew()
+  assert self.tsParser.tsParserSetLanguage(language) == true
+
+  try:
+    let queryString = readFile(fmt"./languages/{languageId}/queries/highlights.scm")
+    var errorOffset: uint32 = 0
+    var queryError: ts.TSQueryError = ts.TSQueryErrorNone
+    self.highlightQuery = language.tsQueryNew(queryString, queryString.len.uint32, addr errorOffset, addr queryError)
+    if queryError != ts.TSQueryErrorNone:
+      logger.log(lvlError, fmt"[textedit] {queryError} at byte {errorOffset}: {queryString}")
+  except:
+    logger.log(lvlError, fmt"[textedit] No highlight queries found for '{languageId}'")
+
 proc newTextDocument*(filename: string = "", content: string | seq[string] = ""): TextDocument =
   new(result)
   result.filename = filename
   result.currentTree = nil
 
-  result.tsParser = ts.tsParserNew()
-  assert result.tsParser.tsParserSetLanguage(tsjs.treeSitterjavascript()) == true
+  result.initTreesitter()
 
   result.content = content
 
-
-proc destroy*(doc: TextDocument) =
-  doc.tsParser.tsParserDelete()
+proc destroy*(self: TextDocument) =
+  if not self.tsParser.isNil:
+    self.tsParser.tsParserDelete()
 
 # proc `=destroy`[T: object](doc: var TextDocument) =
 #   doc.tsParser.tsParserDelete()
@@ -140,7 +325,7 @@ method load*(self: TextDocument, filename: string = "") =
   self.filename = filename
 
   let file = readFile(self.filename)
-  self.lines = collect file.splitLines
+  self.content = file
 
 proc notifyTextChanged(self: TextDocument) =
   self.textChanged.invoke self
@@ -171,18 +356,19 @@ proc delete(self: TextDocument, selection: Selection, notify: bool = true): Curs
     # Delete all lines in between
     self.lines.delete (first.line + 1)..last.line
 
-  let edit = ts.TSInputEdit(
-    start_byte: startByte,
-    old_end_byte: endByte,
-    new_end_byte: startByte,
-    start_point: TSPoint(row: selection.first.line.uint32, column: selection.first.column.uint32),
-    old_end_point: TSPoint(row: selection.last.line.uint32, column: selection.last.column.uint32),
-    new_end_point: TSPoint(row: selection.first.line.uint32, column: selection.first.column.uint32),
-  )
-  self.currentTree.tsTreeEdit(addr edit)
-  let strValue = self.lines.join("\n")
-  self.currentTree = self.tsParser.tsParserParseString(self.currentTree, strValue, strValue.len.uint32)
-  echo self.currentTree.root
+  if not self.tsParser.isNil:
+    let edit = ts.TSInputEdit(
+      start_byte: startByte,
+      old_end_byte: endByte,
+      new_end_byte: startByte,
+      start_point: TSPoint(row: selection.first.line.uint32, column: selection.first.column.uint32),
+      old_end_point: TSPoint(row: selection.last.line.uint32, column: selection.last.column.uint32),
+      new_end_point: TSPoint(row: selection.first.line.uint32, column: selection.first.column.uint32),
+    )
+    self.currentTree.tsTreeEdit(addr edit)
+    let strValue = self.lines.join("\n")
+    self.currentTree = self.tsParser.tsParserParseString(self.currentTree, strValue, strValue.len.uint32)
+    # echo self.currentTree.root
 
   if notify:
     self.notifyTextChanged()
@@ -217,18 +403,19 @@ proc insert(self: TextDocument, oldCursor: Cursor, text: string, notify: bool = 
         self.lines[cursor.line].insert(line, cursor.column)
         cursor.column += line.len
 
-  let edit = ts.TSInputEdit(
-    start_byte: startByte,
-    old_end_byte: startByte,
-    new_end_byte: startByte + text.len.uint32,
-    start_point: TSPoint(row: oldCursor.line.uint32, column: oldCursor.column.uint32),
-    old_end_point: TSPoint(row: oldCursor.line.uint32, column: oldCursor.column.uint32),
-    new_end_point: TSPoint(row: cursor.line.uint32, column: cursor.column.uint32),
-  )
-  self.currentTree.tsTreeEdit(addr edit)
-  let strValue = self.lines.join("\n")
-  self.currentTree = self.tsParser.tsParserParseString(self.currentTree, strValue, strValue.len.uint32)
-  echo self.currentTree.root
+  if not self.tsParser.isNil:
+    let edit = ts.TSInputEdit(
+      start_byte: startByte,
+      old_end_byte: startByte,
+      new_end_byte: startByte + text.len.uint32,
+      start_point: TSPoint(row: oldCursor.line.uint32, column: oldCursor.column.uint32),
+      old_end_point: TSPoint(row: oldCursor.line.uint32, column: oldCursor.column.uint32),
+      new_end_point: TSPoint(row: cursor.line.uint32, column: cursor.column.uint32),
+    )
+    self.currentTree.tsTreeEdit(addr edit)
+    let strValue = self.lines.join("\n")
+    self.currentTree = self.tsParser.tsParserParseString(self.currentTree, strValue, strValue.len.uint32)
+    # echo self.currentTree.root
 
   if notify:
     self.notifyTextChanged()
@@ -327,6 +514,9 @@ proc moveCursor(self: TextDocumentEditor, cursor: string, movement: proc(doc: Te
   else:
     logger.log(lvlError, "Unknown cursor " & cursor)
 
+method handleScroll*(self: TextDocumentEditor, scroll: Vec2, mousePosWindow: Vec2) =
+  self.scrollOffset += scroll.y * getOption[float](self.editor, "text.scroll-speed", 40)
+
 proc getTextDocumentEditor(wrapper: api.TextDocumentEditor): Option[TextDocumentEditor] =
   if gEditor.isNil: return TextDocumentEditor.none
   if gEditor.getEditorForId(wrapper.id).getSome(editor):
@@ -351,6 +541,9 @@ proc insertTextImpl*(self: TextDocumentEditor, text: string) {.expose("editor.te
 
   self.selection = self.document.edit(self.selection, text).toSelection
 
+proc scrollTextImpl(self: TextDocumentEditor, amount: float32) {.expose("editor.text").} =
+  self.scrollOffset += amount
+
 proc moveCursorColumnImpl*(self: TextDocumentEditor, distance: int, cursor: string = "") {.expose("editor.text").} =
   self.moveCursor(cursor, doMoveCursorColumn, distance)
 
@@ -362,6 +555,9 @@ proc moveCursorHomeImpl*(self: TextDocumentEditor, cursor: string = "") {.expose
 
 proc moveCursorEndImpl*(self: TextDocumentEditor, cursor: string = "") {.expose("editor.text").} =
   self.moveCursor(cursor, doMoveCursorEnd, 0)
+
+proc reloadTreesitterImpl*(self: TextDocumentEditor) {.expose("editor.text").} =
+  self.document.initTreesitter()
 
 proc backspaceImpl*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.selection.isEmpty:
