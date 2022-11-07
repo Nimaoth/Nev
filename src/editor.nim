@@ -531,7 +531,7 @@ proc openFileImpl*(ed: Editor, path: string) {.expose("editor").} =
     ed.logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
     echo getCurrentException().getStackTrace()
 
-proc writeFileImpl*(ed: Editor, path: string) {.expose("editor").} =
+proc writeFileImpl*(ed: Editor, path: string = "") {.expose("editor").} =
   if ed.currentView >= 0 and ed.currentView < ed.views.len and ed.views[ed.currentView].document != nil:
     try:
       ed.views[ed.currentView].document.save(path)
@@ -591,9 +591,9 @@ proc chooseFileImpl*(ed: Editor, view: string = "new") {.expose("editor").} =
   popup.handleItemConfirmed = proc(item: SelectorItem) =
     case view
     of "current":
-      ed.handleAction("load-file", item.FileSelectorItem.path)
+      ed.loadFileImpl(item.FileSelectorItem.path)
     of "new":
-      ed.handleAction("open-file", item.FileSelectorItem.path)
+      ed.openFileImpl(item.FileSelectorItem.path)
     else:
       ed.logger.log(lvlError, fmt"Unknown argument {view}")
 
@@ -769,6 +769,14 @@ proc scriptRemoveCommand*(context: string, keys: string) =
   # logger.log(lvlInfo, fmt"Removing command from '{context}': '{keys}'")
   gEditor.getEventHandlerConfig(context).removeCommand(keys)
 
+proc scriptGetActivePopupHandle*(): EditorId =
+  if gEditor.isNil:
+    return EditorId(-1)
+  if gEditor.popups.len > 0:
+    return gEditor.popups[gEditor.popups.high].id
+
+  return EditorId(-1)
+
 proc scriptGetActiveEditorHandle*(): EditorId =
   if gEditor.isNil:
     return EditorId(-1)
@@ -908,6 +916,7 @@ proc createAddins(): VmAddins =
     scriptAddCommand,
     scriptRemoveCommand,
     scriptGetActiveEditorHandle,
+    scriptGetActivePopupHandle,
     scriptGetEditorHandle,
     scriptRunActionFor,
     scriptRunActionForPopup,

@@ -90,6 +90,14 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
 
   let (headerBounds, contentBounds) = bounds.splitH headerHeight.relative
 
+  # Mask the rest of the rendering is this function to the contentBounds
+  ed.boxy.pushLayer()
+  defer:
+    ed.boxy.pushLayer()
+    ed.boxy.fillRect(contentBounds, color(1, 0, 0, 1))
+    ed.boxy.popLayer(blendMode = MaskBlend)
+    ed.boxy.popLayer()
+
   if headerHeight > 0:
     ed.boxy.fillRect(headerBounds, if selected: ed.theme.color("tab.activeBackground", rgb(45, 45, 60)) else: ed.theme.color("tab.inactiveBackground", rgb(45, 45, 45)))
 
@@ -101,15 +109,52 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
   ed.boxy.fillRect(usedBounds, if selected: ed.theme.color("editor.background", rgb(25, 25, 40)) else: ed.theme.color("editor.background", rgb(25, 25, 25)) * 0.75)
 
   let textColor = ed.theme.color("editor.foreground", rgb(225, 200, 200))
-  for i, line in document.content:
-    discard ed.renderCtx.drawText(vec2(contentBounds.x, contentBounds.y + i.float32 * ed.ctx.fontSize), line, textColor)
+
+  let printScope = ed.getFlag("text.print-scopes")
+
+  block:
+    editor.previousBaseIndex = editor.previousBaseIndex.clamp(0..editor.document.lines.len)
+
+    # # Adjust scroll offset and base index so that the first node on screen is the base
+    # while editor.scrollOffset < 0 and editor.previousBaseIndex + 1 < editor.document.lines.len:
+    #   if editor.scrollOffset + layout.bounds.h + lineDistance >= contentBounds.h:
+    #     break
+    #   editor.previousBaseIndex += 1
+    #   editor.scrollOffset += layout.bounds.h + lineDistance
+
+    # # Adjust scroll offset and base index so that the first node on screen is the base
+    # while editor.scrollOffset > contentBounds.h and editor.previousBaseIndex > 0:
+    #   if editor.scrollOffset - layout.bounds.h <= 0:
+    #     break
+    #   editor.previousBaseIndex -= 1
+    #   editor.scrollOffset -= layout.bounds.h + lineDistance
+
+  var renderedLines = 0
+  for i in editor.previousBaseIndex..editor.document.lines.high:
+    let styledText = document.getStyledText(i)
+    var last = rect(vec2(contentBounds.x, contentBounds.y + i.float32 * ed.ctx.fontSize + editor.scrollOffset), vec2())
+    if last.y > bounds.yh:
+      break
+    if last.y + ed.ctx.fontSize * 2 < 0:
+      last.y += ed.ctx.fontSize
+      continue
+
+    renderedLines += 1
+
+    for part in styledText.parts:
+      let color = if part.scope.len == 0: textColor else: ed.theme.tokenColor(part.scope, rgb(225, 200, 200))
+      last = ed.renderCtx.drawText(last.xwy, part.text, color)
+      if printScope:
+        last = ed.renderCtx.drawText(last.xwy, " (" & part.scope & ") ", textColor)
+
+  # echo "rendered lines: ", renderedLines
 
   if selected or not editor.hideCursorWhenInactive:
     let horizontalSizeModifier: float32 = 0.6
     let firstCursorColor = ed.theme.color("editorCursor.foreground", rgb(210, 210, 210))
     let lastCursorColor = ed.theme.color("editorCursor.foreground", rgb(255, 255, 255))
-    ed.boxy.fillRect(rect(contentBounds.x + editor.selection.first.column.float32 * ed.ctx.fontSize * horizontalSizeModifier, contentBounds.y + editor.selection.first.line.float32 * ed.ctx.fontSize, ed.ctx.fontSize * 0.12, ed.ctx.fontSize), firstCursorColor)
-    ed.boxy.fillRect(rect(contentBounds.x + editor.selection.last.column.float32 * ed.ctx.fontSize * horizontalSizeModifier, contentBounds.y + editor.selection.last.line.float32 * ed.ctx.fontSize, ed.ctx.fontSize * 0.12, ed.ctx.fontSize), lastCursorColor)
+    ed.boxy.fillRect(rect(contentBounds.x + editor.selection.first.column.float32 * ed.ctx.fontSize * horizontalSizeModifier, contentBounds.y + editor.selection.first.line.float32 * ed.ctx.fontSize + editor.scrollOffset, ed.ctx.fontSize * 0.12, ed.ctx.fontSize), firstCursorColor)
+    ed.boxy.fillRect(rect(contentBounds.x + editor.selection.last.column.float32 * ed.ctx.fontSize * horizontalSizeModifier, contentBounds.y + editor.selection.last.line.float32 * ed.ctx.fontSize + editor.scrollOffset, ed.ctx.fontSize * 0.12, ed.ctx.fontSize), lastCursorColor)
 
   return usedBounds
 
