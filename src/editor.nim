@@ -506,7 +506,7 @@ proc setLayoutImpl*(ed: Editor, layout: string) {.expose("editor").} =
     of "fibonacci": FibonacciLayout()
     else: HorizontalLayout()
 
-proc commandLineImpl*(ed: Editor, initialValue: string) {.expose("editor").} =
+proc commandLineImpl*(ed: Editor, initialValue: string = "") {.expose("editor").} =
   ed.getCommandLineTextEditor.document.content = @[initialValue]
   ed.commandLineMode = true
 
