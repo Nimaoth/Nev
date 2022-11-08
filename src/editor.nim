@@ -241,6 +241,22 @@ proc getOption*[T](editor: Editor, path: string, default: T = T.default): T =
   else:
     {.fatal: ("Can't get option with type " & $T).}
 
+proc setOption*(editor: Editor, path: string, value: JsonNode) =
+  if editor.isNil:
+    return
+
+  let pathItems = path.split(".")
+  var node = editor.options
+  for key in pathItems[0..^2]:
+    if node.kind != JObject:
+      return
+    if not node.contains(key):
+      node[key] = newJObject()
+    node = node[key]
+  if node.isNil or node.kind != JObject:
+    return
+  node[pathItems[^1]] = value
+
 proc setOption*[T](editor: Editor, path: string, value: T) =
   template createScriptSetOption(editor, path, value, constructor: untyped): untyped =
     block:
@@ -446,6 +462,9 @@ proc setFlagImpl*(editor: Editor, flag: string, value: bool) {.expose("editor").
 
 proc toggleFlagImpl*(editor: Editor, flag: string) {.expose("editor").} =
   editor.setFlagImpl(flag, not editor.getFlagImpl(flag))
+
+proc setOptionImpl*(editor: Editor, option: string, value: JsonNode) {.expose("editor").} =
+  setOption(editor, option, value)
 
 proc quitImpl*(self: Editor) {.expose("editor").} =
   self.window.closeRequested = true

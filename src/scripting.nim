@@ -36,10 +36,10 @@ proc newScriptContext*(path: string, addins: VMAddins): ScriptContext =
   new result
   result.script = NimScriptPath(path)
   result.addins = addins
-  result.inter = loadScript(result.script, addins, "scripting_api", stdPath = stdPath, searchPaths = @["src"], vmErrorHook = errorHook)
+  result.inter = loadScript(result.script, addins, ["scripting_api", "std/json"], stdPath = stdPath, searchPaths = @["src"], vmErrorHook = errorHook)
 
 proc reloadScript*(ctx: ScriptContext) =
-  ctx.inter.safeLoadScriptWithState(ctx.script, ctx.addins, "scripting_api", stdPath = stdPath, searchPaths = @["src"], vmErrorHook = errorHook)
+  ctx.inter.safeLoadScriptWithState(ctx.script, ctx.addins, ["scripting_api", "std/json"], stdPath = stdPath, searchPaths = @["src"], vmErrorHook = errorHook)
 
 const mapperFunctions = CacheTable"MapperFunctions" # Maps from type name (referring to nim type) to function which maps these types
 const typeWrapper = CacheTable"TypeWrapper"         # Maps from type name (referring to nim type) to type name of the api type (from scripting_api)
@@ -63,7 +63,8 @@ macro addFunction(name: untyped, wrapper: typed, moduleName: static string) =
 
 macro expose*(moduleName: static string, def: untyped): untyped =
   # defer:
-  #   echo result.repr
+    # if pureFunctionName.strVal == "setOption":
+    # echo result.repr
 
   let functionName = if def[0].kind == nnkPostfix: def[0][1] else: def[0]
   let argCount = def[3].len - 1
@@ -111,14 +112,15 @@ macro expose*(moduleName: static string, def: untyped): untyped =
   for k in 1..argCount:
     let i = argCount - k
 
-    var argumentType = def.argType i
+    let originalArgumentType = def.argType i
+    var mappedArgumentType = originalArgumentType
     let index = newLit(mappedArgIndices.getOrDefault(i, i))
 
-    # Check if there is an entry in the type map and override argumentType if so
+    # Check if there is an entry in the type map and override mappedArgumentType if so
     # Also replace the argument type in the scriptFunction
     for source, target in typeWrapper.pairs:
-      if source == $argumentType:
-        argumentType = target
+      if source == $mappedArgumentType:
+        mappedArgumentType = target
         scriptFunction[3][i + 1][1] = target
         scriptFunctionWrapper[3][i + 1][1] = target
         break
@@ -127,14 +129,20 @@ macro expose*(moduleName: static string, def: untyped): untyped =
     let resWrapper = if def.argDefaultValue(i).getSome(default):
       quote do:
         block:
-          if `jsonArg`.len > `index`:
-            `jsonArg`[`index`].jsonTo `argumentType`
+          when `originalArgumentType` is JsonNode:
+            `jsonArg`[`index`]
           else:
-            `default`
+            if `jsonArg`.len > `index`:
+              `jsonArg`[`index`].jsonTo `mappedArgumentType`
+            else:
+              `default`
     else:
       quote do:
         block:
-          `jsonArg`[`index`].jsonTo `argumentType`
+          when `originalArgumentType` is JsonNode:
+            `jsonArg`[`index`]
+          else:
+            `jsonArg`[`index`].jsonTo `mappedArgumentType`
 
     #
     var callFromScriptArg = scriptFunction[3][i + 1][0]
@@ -154,7 +162,7 @@ macro expose*(moduleName: static string, def: untyped): untyped =
     # Check if the type is injected, if so replace callFromScriptArg
     # and remove the parameter from scriptFunction
     for typeName, function in injectors.pairs:
-      if $argumentType == typeName:
+      if $mappedArgumentType == typeName:
         wasInjected = true
         scriptFunction[3].del(i + 1)
         scriptFunctionWrapper[3].del(i + 1)
