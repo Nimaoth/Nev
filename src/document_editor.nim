@@ -1,4 +1,4 @@
-import document, events, vmath, windy
+import document, events, vmath, bumpy, windy
 
 from scripting_api import EditorId, newEditorId
 
@@ -7,6 +7,7 @@ type DocumentEditor* = ref object of RootObj
   eventHandler*: EventHandler
   renderHeader*: bool
   fillAvailableSpace*: bool
+  lastContentBounds*: Rect
 
 func id*(self: DocumentEditor): EditorId = self.id
 

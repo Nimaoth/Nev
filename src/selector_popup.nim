@@ -54,7 +54,7 @@ proc toJson*(self: api.SelectorPopup, opt = initToJsonOptions()): JsonNode =
   result["id"] = newJInt(self.id.int)
 
 proc fromJsonHook*(t: var api.SelectorPopup, jsonNode: JsonNode) =
-  t.id = api.EditorId(jsonNode["id"].jsonTo(int))
+  t.id = api.PopupId(jsonNode["id"].jsonTo(int))
 
 proc acceptImpl*(self: SelectorPopup) {.expose("popup.selector").} =
   if self.selected < self.completions.len:

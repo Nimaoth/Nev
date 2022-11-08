@@ -1,16 +1,16 @@
 import events, windy, vmath, bumpy
 
-from scripting_api import EditorId, newEditorId
+from scripting_api import PopupId, newPopupId
 
 type Popup* = ref object of RootObj
-  id: EditorId
+  id: PopupId
   eventHandler*: EventHandler
   lastBounds*: Rect
 
-func id*(self: Popup): EditorId = self.id
+func id*(self: Popup): PopupId = self.id
 
 proc init*(self: Popup) =
-  self.id = newEditorId()
+  self.id = newPopupId()
 
 method getEventHandlers*(self: Popup): seq[EventHandler] {.base.} =
   return @[self.eventHandler]

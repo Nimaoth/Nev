@@ -1,0 +1,26 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../nimscripter"
+		},
+		{
+			"path": "../../../../../home/nimaoth/.nimble/pkgs/nimscripter-1.0.17/nimscripter"
+		},
+		{
+			"path": "../../../../../home/nimaoth/.choosenim/toolchains/nim-#devel/lib"
+		},
+		{
+			"path": "../nimtreesitter"
+		},
+		{
+			"path": "../../../../../home/nimaoth/dev/nimtreesitter/treesitter_nim"
+		},
+		{
+			"path": "../../../../../usr/lib/gcc/x86_64-w64-mingw32"
+		}
+	],
+	"settings": {}
+}

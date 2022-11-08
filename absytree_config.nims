@@ -1,5 +1,5 @@
 include abs
-import std/[strutils, sugar]
+import std/[strutils, sugar, streams]
 
 # {.line: ("config.nims", 4).}
 
@@ -7,9 +7,6 @@ proc handleAction*(action: string, arg: string): bool =
   log "[script] ", action, ", ", arg
 
   case action
-  of "test":
-    getActiveEditor().insertText(arg)
-
   of "set-max-loop-iterations":
     setOption("ast.max-loop-iterations", arg.parseInt)
 
@@ -17,7 +14,7 @@ proc handleAction*(action: string, arg: string): bool =
 
   return true
 
-proc handlePopupAction*(popup: Popup, action: string, arg: string): bool =
+proc handlePopupAction*(popup: PopupId, action: string, arg: string): bool =
   case action:
   of "home":
     for i in 0..<3:
@@ -30,15 +27,13 @@ proc handlePopupAction*(popup: Popup, action: string, arg: string): bool =
 
   return true
 
-proc handleDocumentEditorAction(editor: DocumentEditor, action: string, arg: string): bool =
+proc handleDocumentEditorAction(id: EditorId, action: string, arg: string): bool =
   return false
 
 func charCategory(c: char): int =
   if c.isAlphaNumeric or c == '_': return 0
   if c == ' ' or c == '\t': return 1
   return 2
-
-type SelectionCursor* = enum Both = "both", First = "first", Last = "last", Invalid
 
 proc cursor(selection: Selection, which: SelectionCursor): Cursor =
   case which
@@ -48,16 +43,15 @@ proc cursor(selection: Selection, which: SelectionCursor): Cursor =
     return selection.first
   of Last:
     return selection.last
-  of Invalid:
-    assert false
 
 proc handleTextEditorAction(editor: TextDocumentEditor, action: string, arg: string): bool =
+  var args = newJArray()
+  for a in newStringStream(arg).parseJsonFragments():
+    args.add a
+
   case action
   of "cursor.left-word":
-    let which = if arg.len == 0: Both else: parseEnum[SelectionCursor](arg, Invalid)
-    if which == Invalid:
-      log(fmt"[error] Invalid argument for script text editor action '{action} {arg}'")
-      return true
+    let which = if args.len == 0: Both else: parseEnum[SelectionCursor](args[0].str, Both)
 
     let selection = editor.selection
     var cursor = selection.cursor(which)
@@ -80,13 +74,10 @@ proc handleTextEditorAction(editor: TextDocumentEditor, action: string, arg: str
     of Both: editor.selection = cursor.toSelection
     of First: editor.selection = (cursor, selection.last)
     of Last: editor.selection = (selection.first, cursor)
-    of Invalid: assert false
+    editor.scrollToCursor(which)
 
   of "cursor.right-word":
-    let which = if arg.len == 0: Both else: parseEnum[SelectionCursor](arg, Invalid)
-    if which == Invalid:
-      log(fmt"[error] Invalid argument for script text editor action '{action} {arg}'")
-      return true
+    let which = if args.len == 0: Both else: parseEnum[SelectionCursor](args[0].str, Both)
 
     let selection = editor.selection
     var cursor = selection.cursor(which)
@@ -109,7 +100,27 @@ proc handleTextEditorAction(editor: TextDocumentEditor, action: string, arg: str
     of Both: editor.selection = cursor.toSelection
     of First: editor.selection = (cursor, selection.last)
     of Last: editor.selection = (selection.first, cursor)
-    of Invalid: assert false
+    editor.scrollToCursor(which)
+
+  of "cursor.file-start":
+    let which = if args.len == 0: Both else: parseEnum[SelectionCursor](args[0].str, Both)
+    let selection = editor.selection
+    let cursor = (0, 0)
+    case which
+    of Both: editor.selection = cursor.toSelection
+    of First: editor.selection = (cursor, selection.last)
+    of Last: editor.selection = (selection.first, cursor)
+    editor.scrollToCursor(which)
+
+  of "cursor.file-end":
+    let which = if args.len == 0: Both else: parseEnum[SelectionCursor](args[0].str, Both)
+    let selection = editor.selection
+    let cursor = (editor.getLineCount - 1, 0)
+    case which
+    of Both: editor.selection = cursor.toSelection
+    of First: editor.selection = (cursor, selection.last)
+    of Last: editor.selection = (selection.first, cursor)
+    editor.scrollToCursor(which)
 
   else: return false
   return true
@@ -123,8 +134,11 @@ proc handleAstEditorAction(editor: AstDocumentEditor, action: string, arg: strin
 proc postInitialize*() =
   log "[script] postInitialize()"
 
-  runAction "open-file", "test.txt"
-  # runAction "prev-view"
+  openFile "temp/test.rs"
+  # openFile "temp/test.nim"
+  openFile "src/absytree.nim"
+  setLayout "fibonacci"
+  changeLayoutProp("main-split", -0.2)
 
 setOption "ast.scroll-speed", 60
 
@@ -167,8 +181,6 @@ addCommand "editor", "<C-s>", "write-file"
 addCommand "editor", "<CS-r>", "load-file"
 addCommand "editor", "<C-p>", "command-line"
 addCommand "editor", "<C-l>tt", "choose-theme"
-addCommand "editor", "<C-m>t", "test", "uiaeuiae"
-addCommand "editor", "<C-m>r", "test", "xvlcxvl  xvlc\n lol"
 addCommand "editor", "<C-g>f", "choose-file", "new"
 
 addCommand "commandLine", "<ESCAPE>", "exit-command-line"
@@ -179,6 +191,8 @@ addCommand "popup.selector", "<TAB>", "accept"
 addCommand "popup.selector", "<ESCAPE>", "cancel"
 addCommand "popup.selector", "<UP>", "prev"
 addCommand "popup.selector", "<DOWN>", "next"
+addCommand "popup.selector", "<HOME>", "home"
+addCommand "popup.selector", "<END>", "end"
 
 addCommand "editor.text", "<LEFT>", "move-cursor-column", -1
 addCommand "editor.text", "<RIGHT>", "move-cursor-column", 1
@@ -190,6 +204,10 @@ addCommand "editor.text", "<UP>", "move-cursor-line", -1
 addCommand "editor.text", "<DOWN>", "move-cursor-line", 1
 addCommand "editor.text", "<HOME>", "move-cursor-home"
 addCommand "editor.text", "<END>", "move-cursor-end"
+addCommand "editor.text", "<C-HOME>", "cursor.file-start"
+addCommand "editor.text", "<C-END>", "cursor.file-end"
+addCommand "editor.text", "<CS-HOME>", "cursor.file-start", "last"
+addCommand "editor.text", "<CS-END>", "cursor.file-end", "last"
 addCommand "editor.text", "<S-LEFT>", "move-cursor-column", -1, "last"
 addCommand "editor.text", "<S-RIGHT>", "move-cursor-column", 1, "last"
 addCommand "editor.text", "<S-UP>", "move-cursor-line", -1, "last"
@@ -206,7 +224,7 @@ addCommand "editor.text", "<C-9>", () => setOption("text.line-distance", getOpti
 
 template addAstCommand(command: string, body: untyped): untyped =
   addCommand "editor.ast", command, proc() =
-    let editor {.inject.} = getActiveEditor().AstDocumentEditor
+    let editor {.inject.} = AstDocumentEditor(id: getActiveEditor())
     body
 
 # addCommand "editor.ast", "<A-LEFT>", "move-cursor", "-1"
