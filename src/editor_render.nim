@@ -24,6 +24,17 @@ proc drawText(renderContext: RenderContext, location: Vec2, text: string, color:
   renderContext.boxy.drawImage(image, actualLocation, color)
   return rect(actualLocation, size)
 
+proc layoutText(renderContext: RenderContext, location: Vec2, text: string, pivot: Vec2 = vec2(0, 0), font: Option[string] = string.none, fontSize: Option[float32] = float32.none, key: string = ""): tuple[image: string, bounds: Rect] =
+  let image = ctx.computeRenderedText(ctx.getOrCreateRenderTextInput(newRenderTextInput(
+    renderContext,
+    text,
+    font.get(renderContext.ctx.font),
+    fontSize.get(renderContext.ctx.fontSize),
+    key)))
+  let size = renderContext.boxy.getImageSize(image).vec2
+  let actualLocation = location - size * pivot
+  return (image, rect(actualLocation, size))
+
 proc fillRect*(boxy: Boxy, rect: Rect, color: Color) = boxy.drawRect(rect, color)
 
 proc strokeRect*(boxy: Boxy, rect: Rect, color: Color, thickness: float = 1) =
@@ -111,50 +122,106 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
   let textColor = ed.theme.color("editor.foreground", rgb(225, 200, 200))
 
   let printScope = ed.getFlag("text.print-scopes")
+  let lineDistance = getOption[float32](ed, "text.line-distance", 2)
+  let horizontalSizeModifier: float32 = 0.6
 
   block:
     editor.previousBaseIndex = editor.previousBaseIndex.clamp(0..editor.document.lines.len)
 
-    # # Adjust scroll offset and base index so that the first node on screen is the base
-    # while editor.scrollOffset < 0 and editor.previousBaseIndex + 1 < editor.document.lines.len:
-    #   if editor.scrollOffset + layout.bounds.h + lineDistance >= contentBounds.h:
-    #     break
-    #   editor.previousBaseIndex += 1
-    #   editor.scrollOffset += layout.bounds.h + lineDistance
+    let lineHeight = ed.renderCtx.lineHeight
 
-    # # Adjust scroll offset and base index so that the first node on screen is the base
-    # while editor.scrollOffset > contentBounds.h and editor.previousBaseIndex > 0:
-    #   if editor.scrollOffset - layout.bounds.h <= 0:
-    #     break
-    #   editor.previousBaseIndex -= 1
-    #   editor.scrollOffset -= layout.bounds.h + lineDistance
+    # Adjust scroll offset and base index so that the first node on screen is the base
+    while editor.scrollOffset < 0 and editor.previousBaseIndex + 1 < editor.document.lines.len:
+      if editor.scrollOffset + lineHeight + lineDistance >= contentBounds.h:
+        break
+      editor.previousBaseIndex += 1
+      editor.scrollOffset += lineHeight + lineDistance
 
-  var renderedLines = 0
-  for i in editor.previousBaseIndex..editor.document.lines.high:
-    let styledText = document.getStyledText(i)
-    var last = rect(vec2(contentBounds.x, contentBounds.y + i.float32 * ed.ctx.fontSize + editor.scrollOffset), vec2())
-    if last.y > bounds.yh:
-      break
-    if last.y + ed.ctx.fontSize * 2 < 0:
-      last.y += ed.ctx.fontSize
-      continue
+    # Adjust scroll offset and base index so that the first node on screen is the base
+    while editor.scrollOffset > contentBounds.h and editor.previousBaseIndex > 0:
+      if editor.scrollOffset - lineHeight <= 0:
+        break
+      editor.previousBaseIndex -= 1
+      editor.scrollOffset -= lineHeight + lineDistance
 
-    renderedLines += 1
+    # echo editor.previousBaseIndex, ", ", editor.scrollOffset
 
+  let selection = editor.selection
+  let nodeRange = editor.selection.normalized
+  var firstCursorPos = vec2()
+  var lastCursorPos = vec2()
+
+  # Draws a line of texts, including selection background.
+  # Sets firstCursorPos and lastCursorPos if necessary
+  proc renderLine(i: int, down: bool): bool =
+    var styledText = document.getStyledText(i)
+    var lastBounds = rect(vec2(contentBounds.x, contentBounds.y + (i - editor.previousBaseIndex).float32 * (ed.renderCtx.lineHeight + lineDistance) + editor.scrollOffset), vec2())
+    if lastBounds.y > bounds.yh:
+      return not down
+    if lastBounds.y + ed.ctx.fontSize * 2 < 0:
+      return down
+
+    let first = if nodeRange.first.line < i: 0 elif nodeRange.first.line == i: nodeRange.first.column else: styledText.len
+    let last = if nodeRange.last.line < i: 0 elif nodeRange.last.line == i: nodeRange.last.column else: styledText.len
+    styledText.splitAt(first)
+    styledText.splitAt(last)
+
+    var startIndex = 0
     for part in styledText.parts:
       let color = if part.scope.len == 0: textColor else: ed.theme.tokenColor(part.scope, rgb(225, 200, 200))
-      last = ed.renderCtx.drawText(last.xwy, part.text, color)
+      let (image, bounds) = ed.renderCtx.layoutText(lastBounds.xwy, part.text)
+
+      # Draw background if selected
+      if startIndex >= first and startIndex + part.text.len <= last:
+        let selectionColor = ed.theme.color("selection.background", rgb(200, 200, 200))
+        let highlightRect = rect(bounds.xy - vec2(0, lineDistance * 0.5), vec2(bounds.w, bounds.h + lineDistance))
+        ed.boxy.fillRect(highlightRect, selectionColor)
+
+      # Draw the actual text
+      ed.renderCtx.boxy.drawImage(image, bounds.xy, color)
+      lastBounds = bounds
+
+      # Set first cursor pos if it's contained in this part
+      if selection.first.line == i and selection.first.column == startIndex:
+        firstCursorPos = bounds.xy
+      elif selection.first.line == i and selection.first.column == startIndex + part.text.len:
+        firstCursorPos = bounds.xwy
+
+      # Set last cursor pos if it's contained in this part
+      if selection.last.line == i and selection.last.column == startIndex:
+        lastCursorPos = bounds.xy
+      elif selection.last.line == i and selection.last.column == startIndex + part.text.len:
+        lastCursorPos = bounds.xwy
+
       if printScope:
-        last = ed.renderCtx.drawText(last.xwy, " (" & part.scope & ") ", textColor)
+        lastBounds = ed.renderCtx.drawText(lastBounds.xwy, " (" & part.scope & ") ", textColor)
+
+      startIndex += part.text.len
+
+    return true
+
+  var renderedLines = 0
+
+  # Render all lines after base index
+  for i in editor.previousBaseIndex..editor.document.lines.high:
+    if not renderLine(i, true):
+      break
+    renderedLines += 1
+
+  # Render all lines before base index
+  for k in 1..editor.previousBaseIndex:
+    let i = editor.previousBaseIndex - k
+    if not renderLine(i, false):
+      break
+    renderedLines += 1
 
   # echo "rendered lines: ", renderedLines
 
   if selected or not editor.hideCursorWhenInactive:
-    let horizontalSizeModifier: float32 = 0.6
     let firstCursorColor = ed.theme.color("editorCursor.foreground", rgb(210, 210, 210))
     let lastCursorColor = ed.theme.color("editorCursor.foreground", rgb(255, 255, 255))
-    ed.boxy.fillRect(rect(contentBounds.x + editor.selection.first.column.float32 * ed.ctx.fontSize * horizontalSizeModifier, contentBounds.y + editor.selection.first.line.float32 * ed.ctx.fontSize + editor.scrollOffset, ed.ctx.fontSize * 0.12, ed.ctx.fontSize), firstCursorColor)
-    ed.boxy.fillRect(rect(contentBounds.x + editor.selection.last.column.float32 * ed.ctx.fontSize * horizontalSizeModifier, contentBounds.y + editor.selection.last.line.float32 * ed.ctx.fontSize + editor.scrollOffset, ed.ctx.fontSize * 0.12, ed.ctx.fontSize), lastCursorColor)
+    ed.boxy.fillRect(rect(firstCursorPos, vec2(ed.ctx.fontSize * 0.12, ed.ctx.fontSize)), lastCursorColor)
+    ed.boxy.fillRect(rect(lastCursorPos, vec2(ed.ctx.fontSize * 0.12, ed.ctx.fontSize)), lastCursorColor)
 
   return usedBounds
 

@@ -201,6 +201,8 @@ addCommand "editor.text", "<SPACE>", "insert-text", " "
 addCommand "editor.text", "<BACKSPACE>", "backspace"
 addCommand "editor.text", "<DELETE>", "delete"
 addCommand "editor.text", "<C-r>", "reload-treesitter"
+addCommand "editor.text", "<C-8>", () => setOption("text.line-distance", getOption[float32]("text.line-distance") - 1)
+addCommand "editor.text", "<C-9>", () => setOption("text.line-distance", getOption[float32]("text.line-distance") + 1)
 
 template addAstCommand(command: string, body: untyped): untyped =
   addCommand "editor.ast", command, proc() =

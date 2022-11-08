@@ -172,7 +172,12 @@ type StyledText* = object
 type StyledLine* = object
   parts*: seq[StyledText]
 
-proc splitAt(line: var StyledLine, index: int) =
+func len*(line: StyledLine): int =
+  result = 0
+  for p in line.parts:
+    result += p.text.len
+
+proc splitAt*(line: var StyledLine, index: int) =
   var index = index
   var i = 0
   while i < line.parts.len and index >= line.parts[i].text.len:
