@@ -220,10 +220,9 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
 
       var argIndex = 0
       var predicateName: string = ""
-      var captureName: string = ""
-      var argValue: string = ""
+      var predicateArgs: seq[string] = @[]
 
-      var predicates: seq[tuple[name: string, capture: string, arg: string]] = @[]
+      var predicates: seq[tuple[name: string, args: seq[string]]] = @[]
 
       for k in 0..<predicatesLength:
         case predicatesRaw[k].`type`:
@@ -232,18 +231,17 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
           if argIndex == 0:
             predicateName = value
           else:
-            argValue = value
+            predicateArgs.add value
           argIndex += 1
 
         of ts.TSQueryPredicateStepTypeCapture:
-          captureName = self.highlightQuery.getCaptureName(predicatesRaw[k].valueId)
+          predicateArgs.add self.highlightQuery.getCaptureName(predicatesRaw[k].valueId)
           argIndex += 1
 
         of ts.TSQueryPredicateStepTypeDone:
-          predicates.add (predicateName, captureName, argValue)
+          predicates.add (predicateName, predicateArgs)
           predicateName = ""
-          captureName = ""
-          argValue = ""
+          predicateArgs.setLen 0
           argIndex = 0
 
       let captures = cast[ptr array[100, ts.TSQueryCapture]](match.get.captures)
@@ -254,19 +252,46 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
 
         var matches = true
         for predicate in predicates:
-          if predicate.capture != scope:
+          if predicate.args[0] != scope:
             continue
           case predicate.name
           of "match?":
-            let regex = if regexes.contains(predicate.arg):
-              regexes[predicate.arg]
+            let regex = if regexes.contains(predicate.args[1]):
+              regexes[predicate.args[1]]
             else:
-              let regex = re(predicate.arg, {})
-              regexes[predicate.arg] = regex
+              let regex = re(predicate.args[1], {})
+              regexes[predicate.args[1]] = regex
               regex
 
             let nodeText = self.contentString(node.selection)
             if nodeText.matchLen(regex) != nodeText.len:
+              matches = false
+              break
+
+          of "not-match?":
+            let regex = if regexes.contains(predicate.args[1]):
+              regexes[predicate.args[1]]
+            else:
+              let regex = re(predicate.args[1], {})
+              regexes[predicate.args[1]] = regex
+              regex
+
+            let nodeText = self.contentString(node.selection)
+            if nodeText.matchLen(regex) == nodeText.len:
+              matches = false
+              break
+
+          of "eq?":
+            # @todo: second arg can be capture aswell
+            let nodeText = self.contentString(node.selection)
+            if nodeText != predicate.args[1]:
+              matches = false
+              break
+
+          of "not-eq?":
+            # @todo: second arg can be capture aswell
+            let nodeText = self.contentString(node.selection)
+            if nodeText == predicate.args[1]:
               matches = false
               break
 
@@ -327,7 +352,7 @@ proc initTreesitter(self: TextDocument) =
   of "nim", "nims": "nim"
   else:
     # Unsupported language
-    logger.log(lvlWarn, fmt"Failed to init treesitter for language '{extension}'")
+    logger.log(lvlWarn, fmt"Unknown file extension '{extension}'")
     return
 
   template tryGetLanguage(constructor: untyped): untyped =
@@ -336,7 +361,7 @@ proc initTreesitter(self: TextDocument) =
       when compiles(constructor()):
         l = constructor()
       else:
-        logger.log(lvlWarn, fmt"Failed to init treesitter for language '{extension}'")
+        logger.log(lvlWarn, fmt"Language is not available: '{languageId}'")
         return
       l
 
@@ -347,16 +372,16 @@ proc initTreesitter(self: TextDocument) =
   of "cpp": tryGetLanguage(treeSitterCpp)
   of "css": tryGetLanguage(treeSitterCss)
   of "go": tryGetLanguage(treeSitterGo)
-  of "haskell": tryGetLanguage(treeSitterHaskll)
+  of "haskell": tryGetLanguage(treeSitterHaskell)
   of "html": tryGetLanguage(treeSitterHtml)
   of "java": tryGetLanguage(treeSitterJava)
-  of "javascript": tryGetLanguage(treeSitterJavacript)
-  of "ocaml": tryGetLanguage(treeSitterOcam)
+  of "javascript": tryGetLanguage(treeSitterJavascript)
+  of "ocaml": tryGetLanguage(treeSitterOcaml)
   of "php": tryGetLanguage(treeSitterPhp)
-  of "python": tryGetLanguage(treeSitterPythn)
+  of "python": tryGetLanguage(treeSitterPython)
   of "ruby": tryGetLanguage(treeSitterRuby)
   of "rust": tryGetLanguage(treeSitterRust)
-  of "scala": tryGetLanguage(treeSitterScal)
+  of "scala": tryGetLanguage(treeSitterScala)
   of "typescript": tryGetLanguage(treeSitterTypecript)
   of "nim": tryGetLanguage(treeSitterNim)
   else:
@@ -592,15 +617,40 @@ proc doMoveCursorHome(self: TextDocumentEditor, cursor: Cursor, offset: int): Cu
 proc doMoveCursorEnd(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor =
   return (cursor.line, self.document.lineLength cursor.line)
 
+proc scrollToCursor(self: TextDocumentEditor, cursor: Cursor) =
+  let targetLine = cursor.line
+  let totalLineHeight = self.editor.renderCtx.lineHeight + getOption[float32](self.editor, "text.line-distance")
+
+  let targetLineY = (targetLine - self.previousBaseIndex).float32 * totalLineHeight + self.scrollOffset
+
+  let margin = clamp(getOption[float32](self.editor, "text.cursor-margin", 25.0), 0.0, self.lastContentBounds.h * 0.5 - totalLineHeight * 0.5)
+  if targetLineY < margin:
+    self.scrollOffset = margin
+    self.previousBaseIndex = targetLine
+  elif targetLineY + totalLineHeight > self.lastContentBounds.h - margin:
+    let fract = targetLineY + totalLineHeight - self.lastContentBounds.h - margin
+    self.scrollOffset = self.lastContentBounds.h - margin - totalLineHeight
+    self.previousBaseIndex = targetLine
+
+proc getCursor(self: TextDocumentEditor, cursor: SelectionCursor): Cursor =
+  case cursor
+  of Both, Last:
+    return self.selection.last
+  of First:
+    return self.selection.first
+
 proc moveCursor(self: TextDocumentEditor, cursor: string, movement: proc(doc: TextDocumentEditor, c: Cursor, off: int): Cursor, offset: int) =
   case cursor
   of "":
     self.selection.last = movement(self, self.selection.last, offset)
     self.selection.first = self.selection.last
+    self.scrollToCursor(self.selection.last)
   of "first":
     self.selection.first = movement(self, self.selection.first, offset)
+    self.scrollToCursor(self.selection.first)
   of "last":
     self.selection.last = movement(self, self.selection.last, offset)
+    self.scrollToCursor(self.selection.last)
   else:
     logger.log(lvlError, "Unknown cursor " & cursor)
 
@@ -645,6 +695,9 @@ proc moveCursorHomeImpl*(self: TextDocumentEditor, cursor: string = "") {.expose
 
 proc moveCursorEndImpl*(self: TextDocumentEditor, cursor: string = "") {.expose("editor.text").} =
   self.moveCursor(cursor, doMoveCursorEnd, 0)
+
+proc scrollToCursorImpl*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Last) {.expose("editor.text").} =
+  self.scrollToCursor(self.getCursor(cursor))
 
 proc reloadTreesitterImpl*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.document.initTreesitter()

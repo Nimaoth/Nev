@@ -1,24 +1,33 @@
 type
   EditorId* = distinct int
+  PopupId* = distinct int
   EditorType* = enum Text, Ast, Other
-  DocumentEditor* = object of RootObj
-    id*: EditorId
-  Popup* = object of RootObj
-    id*: EditorId
 
-  TextDocumentEditor* = object of DocumentEditor
-  AstDocumentEditor* = object of DocumentEditor
-  SelectorPopup* = object of Popup
+  TextDocumentEditor* = object
+    id*: EditorId
+  AstDocumentEditor* = object
+    id*: EditorId
+  SelectorPopup* = object
+    id*: PopupId
 
 type Cursor* = tuple[line, column: int]
 type Selection* = tuple[first, last: Cursor]
+type SelectionCursor* = enum Both = "both", First = "first", Last = "last"
 
 var nextEditorId = 0
 proc newEditorId*(): EditorId =
   result = nextEditorId.EditorId
   nextEditorId += 1
 
+proc newPopupId*(): PopupId =
+  result = nextEditorId.PopupId
+  nextEditorId += 1
+
 func `==`*(a: EditorId, b: EditorId): bool = a.int == b.int
+func `$`*(id: EditorId): string = $id.int
+
+func `==`*(a: PopupId, b: PopupId): bool = a.int == b.int
+func `$`*(id: PopupId): string = $id.int
 
 func `$`*(cursor: Cursor): string =
   return $cursor.line & ":" & $cursor.column

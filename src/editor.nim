@@ -91,6 +91,7 @@ type Editor* = ref object
   logger: Logger
 
   scriptContext*: ScriptContext
+  initializeCalled: bool
 
   statusBarOnTop*: bool
 
@@ -321,7 +322,7 @@ proc getEditorForId*(ed: Editor, id: EditorId): Option[DocumentEditor] =
 
   return DocumentEditor.none
 
-proc getPopupForId*(ed: Editor, id: EditorId): Option[Popup] =
+proc getPopupForId*(ed: Editor, id: PopupId): Option[Popup] =
   for popup in ed.popups:
     if popup.id == id:
       return popup.some
@@ -428,6 +429,7 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
   try:
     ed.scriptContext = newScriptContext("./absytree_config.nims", addins)
     ed.scriptContext.inter.invoke(postInitialize)
+    ed.initializeCalled = true
   except:
     ed.logger.log(lvlError, fmt"Failed to load config")
 
@@ -622,6 +624,9 @@ proc reloadConfigImpl*(ed: Editor) {.expose("editor").} =
   if ed.scriptContext.isNil.not:
     try:
       ed.scriptContext.reloadScript()
+      if not ed.initializeCalled:
+        ed.scriptContext.inter.invoke(postInitialize)
+        ed.initializeCalled = true
     except:
       ed.logger.log(lvlError, fmt"Failed to reload config")
 
@@ -788,13 +793,13 @@ proc scriptRemoveCommand*(context: string, keys: string) =
   # logger.log(lvlInfo, fmt"Removing command from '{context}': '{keys}'")
   gEditor.getEventHandlerConfig(context).removeCommand(keys)
 
-proc scriptGetActivePopupHandle*(): EditorId =
+proc scriptGetActivePopupHandle*(): PopupId =
   if gEditor.isNil:
-    return EditorId(-1)
+    return PopupId(-1)
   if gEditor.popups.len > 0:
     return gEditor.popups[gEditor.popups.high].id
 
-  return EditorId(-1)
+  return PopupId(-1)
 
 proc scriptGetActiveEditorHandle*(): EditorId =
   if gEditor.isNil:
@@ -832,7 +837,7 @@ proc scriptRunActionFor*(editorId: EditorId, action: string, arg: string) =
   if gEditor.getEditorForId(editorId).getSome(editor):
     discard editor.eventHandler.handleAction(action, arg)
 
-proc scriptRunActionForPopup*(popupId: EditorId, action: string, arg: string) =
+proc scriptRunActionForPopup*(popupId: PopupId, action: string, arg: string) =
   if gEditor.isNil:
     return
   if gEditor.getPopupForId(popupId).getSome(popup):
@@ -959,5 +964,5 @@ proc createAddins(): VmAddins =
     proc handleGlobalAction(action: string, arg: string): bool
     proc postInitialize()
     proc handleEditorAction(id: EditorId, action: string, arg: string): bool
-    proc handleUnknownPopupAction(id: EditorId, action: string, arg: string): bool
+    proc handleUnknownPopupAction(id: PopupId, action: string, arg: string): bool
   return implNimScriptModule(myImpl)

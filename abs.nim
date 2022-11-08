@@ -1,8 +1,7 @@
 # import std/logging
 import std/[strformat, tables, macros]
 
-type AnyDocumentEditor = DocumentEditor | TextDocumentEditor | AstDocumentEditor
-type AnyPopup = Popup
+type AnyDocumentEditor = TextDocumentEditor | AstDocumentEditor
 
 var lambdaActions = initTable[string, proc(): void]()
 
@@ -52,26 +51,26 @@ macro runAction*(action: string, args: varargs[untyped]): untyped =
     `stmts`
     scriptRunAction(`action`, `str`)
 
-template isTextEditor*(editor: DocumentEditor, injected: untyped): bool =
-  ((let o = editor; scriptIsTextEditor(editor.id))) and ((let injected {.inject.} = editor.TextDocumentEditor; true))
+template isTextEditor*(id: EditorId, injected: untyped): bool =
+  scriptIsTextEditor(id) and ((let injected {.inject.} = TextDocumentEditor(id: id); true))
 
-template isAstEditor*(editor: DocumentEditor, injected: untyped): bool =
-  ((let o = editor; scriptIsAstEditor(editor.id))) and ((let injected {.inject.} = editor.AstDocumentEditor; true))
+template isAstEditor*(id: EditorId, injected: untyped): bool =
+  scriptIsAstEditor(id) and ((let injected {.inject.} = AstDocumentEditor(id: id); true))
 
-proc getActiveEditor*(): DocumentEditor =
-  return DocumentEditor(id: scriptGetActiveEditorHandle())
+proc getActiveEditor*(): EditorId =
+  return scriptGetActiveEditorHandle()
 
-proc getActivePopup*(): Popup =
-  return Popup(id: scriptGetActivePopupHandle())
+proc getActivePopup*(): PopupId =
+  return scriptGetActivePopupHandle()
 
-proc getEditor*(index: int): DocumentEditor =
-  return DocumentEditor(id: scriptGetEditorHandle(index))
+proc getTextEditor*(index: int): EditorId =
+  return scriptGetEditorHandle(index)
 
 proc handleAction*(action: string, arg: string): bool
-proc handleDocumentEditorAction*(editor: DocumentEditor, action: string, arg: string): bool
+proc handleDocumentEditorAction*(id: EditorId, action: string, arg: string): bool
 proc handleTextEditorAction*(editor: TextDocumentEditor, action: string, arg: string): bool
 proc handleAstEditorAction*(editor: AstDocumentEditor, action: string, arg: string): bool
-proc handlePopupAction*(popup: Popup, action: string, arg: string): bool
+proc handlePopupAction*(popup: PopupId, action: string, arg: string): bool
 
 proc handleGlobalAction*(action: string, arg: string): bool =
   if action == "lambda-action":
@@ -82,26 +81,22 @@ proc handleEditorAction*(id: EditorId, action: string, arg: string): bool =
   if action == "lambda-action":
     return handleLambdaAction(arg)
 
-  let editor = DocumentEditor(id: id)
-
-  if editor.isTextEditor(editor):
+  if id.isTextEditor(editor):
     return handleTextEditorAction(editor, action, arg)
 
-  elif editor.isAstEditor(editor):
+  elif id.isAstEditor(editor):
     return handleAstEditorAction(editor, action, arg)
 
-  return handleDocumentEditorAction(editor, action, arg)
+  return handleDocumentEditorAction(id, action, arg)
 
-proc handleUnknownPopupAction*(id: EditorId, action: string, arg: string): bool =
-  let popup = Popup(id: id)
+proc handleUnknownPopupAction*(id: PopupId, action: string, arg: string): bool =
+  return handlePopupAction(id, action, arg)
 
-  return handlePopupAction(popup, action, arg)
+proc runAction*(id: EditorId, action: string, arg: string = "") =
+  scriptRunActionFor(id, action, arg)
 
-proc runAction*(editor: DocumentEditor, action: string, arg: string = "") =
-  scriptRunActionFor(editor.id, action, arg)
-
-proc runAction*(popup: Popup, action: string, arg: string = "") =
-  scriptRunActionForPopup(popup.id, action, arg)
+proc runAction*(id: PopupId, action: string, arg: string = "") =
+  scriptRunActionForPopup(id, action, arg)
 
 proc insertText*(editor: AnyDocumentEditor, text: string) =
   scriptInsertTextInto(editor.id, text)

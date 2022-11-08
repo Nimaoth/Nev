@@ -97,9 +97,17 @@ proc measureEditorBounds(editor: TextDocumentEditor, ed: Editor, bounds: Rect): 
 method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect, selected: bool): Rect =
   let document = editor.document
 
-  let headerHeight = if editor.renderHeader: ed.ctx.fontSize else: 0
+  let headerHeight = if editor.renderHeader: ed.renderCtx.lineHeight else: 0
 
   let (headerBounds, contentBounds) = bounds.splitH headerHeight.relative
+  editor.lastContentBounds = contentBounds
+
+  if headerHeight > 0:
+    ed.boxy.fillRect(headerBounds, if selected: ed.theme.color("tab.activeBackground", rgb(45, 45, 60)) else: ed.theme.color("tab.inactiveBackground", rgb(45, 45, 45)))
+
+    let color = if selected: ed.theme.color("tab.activeForeground", rgb(255, 225, 255)) else: ed.theme.color("tab.inactiveForeground", rgb(255, 225, 255))
+    discard ed.renderCtx.drawText(headerBounds.xy, document.filename, color)
+    discard ed.renderCtx.drawText(headerBounds.xwy, fmt"{editor.selection} - {editor.id}", color, pivot = vec2(1, 0))
 
   # Mask the rest of the rendering is this function to the contentBounds
   ed.boxy.pushLayer()
@@ -108,13 +116,6 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
     ed.boxy.fillRect(contentBounds, color(1, 0, 0, 1))
     ed.boxy.popLayer(blendMode = MaskBlend)
     ed.boxy.popLayer()
-
-  if headerHeight > 0:
-    ed.boxy.fillRect(headerBounds, if selected: ed.theme.color("tab.activeBackground", rgb(45, 45, 60)) else: ed.theme.color("tab.inactiveBackground", rgb(45, 45, 45)))
-
-    let color = if selected: ed.theme.color("tab.activeForeground", rgb(255, 225, 255)) else: ed.theme.color("tab.inactiveForeground", rgb(255, 225, 255))
-    discard ed.renderCtx.drawText(headerBounds.xy, document.filename, color)
-    discard ed.renderCtx.drawText(headerBounds.xwy, $editor.selection, color, pivot = vec2(1, 0))
 
   let usedBounds = editor.measureEditorBounds(ed, contentBounds)
   ed.boxy.fillRect(usedBounds, if selected: ed.theme.color("editor.background", rgb(25, 25, 40)) else: ed.theme.color("editor.background", rgb(25, 25, 25)) * 0.75)
@@ -172,7 +173,7 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
       let (image, bounds) = ed.renderCtx.layoutText(lastBounds.xwy, part.text)
 
       # Draw background if selected
-      if startIndex >= first and startIndex + part.text.len <= last:
+      if startIndex >= first and startIndex + part.text.len <= last and part.text.len > 0:
         let selectionColor = ed.theme.color("selection.background", rgb(200, 200, 200))
         let highlightRect = rect(bounds.xy - vec2(0, lineDistance * 0.5), vec2(bounds.w, bounds.h + lineDistance))
         ed.boxy.fillRect(highlightRect, selectionColor)
@@ -505,7 +506,7 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
 
     ctx.resetExecutionTimes()
 
-  let (headerBounds, contentBoundsWithPadding) = bounds.splitH ed.ctx.fontSize.relative
+  let (headerBounds, contentBoundsWithPadding) = bounds.splitH ed.renderCtx.lineHeight.relative
 
   ed.boxy.fillRect(headerBounds, if selected: theme.color("tab.activeBackground", rgb(45, 45, 60)) else: theme.color("tab.inactiveBackground", rgb(45, 45, 45)))
   ed.boxy.fillRect(contentBoundsWithPadding, if selected: theme.color("editor.background", rgb(25, 25, 40)) else: theme.color("editor.background", rgb(25, 25, 25)) * 0.75)
