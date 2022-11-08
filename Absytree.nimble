@@ -38,3 +38,4 @@ requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_javascript 
 requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_rust >= 0.1.1"
 # requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_scala >= 0.1.1"
 # requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_typescript >= 0.1.1"
+requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_nim >= 0.1.1"

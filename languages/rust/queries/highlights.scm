@@ -21,15 +21,15 @@
  (#match? @storage.type "^[A-Z]"))
 
 ; Assume other uppercase names are enum constructors
-((identifier) @variable.function.constructor
- (#match? @variable.function.constructor "^[A-Z]"))
+((identifier) @variable.function
+ (#match? @variable.function "^[A-Z]"))
 
 ; Assume all qualified names in struct patterns are enum constructors. (They're
 ; either that, or struct names; highlighting both as constructors seems to be
 ; the less glaring choice of error, visually.)
 (struct_pattern
   type: (scoped_type_identifier
-    name: (type_identifier) @variable.function.constructor))
+    name: (type_identifier) @variable.function))
 
 ; Function calls
 
@@ -37,7 +37,7 @@
   function: (identifier) @variable.function)
 (call_expression
   function: (field_expression
-    field: (field_identifier) @variable.function.constructor))
+    field: (field_identifier) @variable.function))
 (call_expression
   function: (scoped_identifier
     "::"
@@ -50,7 +50,7 @@
     name: (identifier) @variable.function))
 (generic_function
   function: (field_expression
-    field: (field_identifier) @variable.function.constructor))
+    field: (field_identifier) @variable.function))
 
 (macro_invocation
   macro: (identifier) @variable.function

@@ -78,7 +78,7 @@
   (false)
   (null)
   (undefined)
-] @constant.builtin
+] @variable.other.constant
 
 (comment) @comment
 
@@ -88,7 +88,7 @@
 ] @string
 
 (regex) @string.special
-(number) @number
+(number) @constant.numeric
 
 ; Tokens
 ;-------
@@ -102,7 +102,7 @@
   (optional_chain)
   "."
   ","
-] @punctuation.delimiter
+] @punctuation
 
 [
   "-"
@@ -158,7 +158,7 @@
   "]"
   "{"
   "}"
-]  @punctuation.bracket
+]  @punctuation
 
 [
   "as"
