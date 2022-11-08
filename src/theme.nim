@@ -32,8 +32,16 @@ proc parseHexVar*(text: string): Color =
   assert false
   return Color()
 
+proc getCascading[T](table: var Table[string, T], key: string, default: T): T =
+  if table.contains(key):
+    return table[key]
+  let index = key.rfind(".")
+  if index != -1:
+    return table.getCascading(key[0..<index], default)
+  return default
+
 proc color*(theme: Theme, name: string, default: SomeColor = Color(r: 0, g: 0, b: 0, a: 1)): Color =
-  return theme.colors.getOrDefault(name, default.color)
+  return theme.colors.getCascading(name, default.color)
 
 proc color*(theme: Theme, names: seq[string], default: SomeColor = Color(r: 0, g: 0, b: 0, a: 1)): Color =
   for name in names:
@@ -42,7 +50,7 @@ proc color*(theme: Theme, names: seq[string], default: SomeColor = Color(r: 0, g
   return default.color
 
 proc tokenColor*(theme: Theme, name: string, default: SomeColor = Color(r: 0, g: 0, b: 0, a: 1)): Color =
-  return theme.tokenColors.getOrDefault(name, Style()).foreground.get default.color
+  return theme.tokenColors.getCascading(name, Style()).foreground.get default.color
 
 proc tokenColor*(theme: Theme, names: seq[string], default: SomeColor = Color(r: 0, g: 0, b: 0, a: 1)): Color =
   for name in names:
@@ -66,10 +74,10 @@ proc anyColor*(theme: Theme, names: seq[string], default: SomeColor = Color(r: 0
   return default.color
 
 proc tokenBackgroundColor*(theme: Theme, name: string, default: SomeColor = Color(r: 0, g: 0, b: 0, a: 1)): Color =
-  return (theme.tokenColors.getOrDefault(name, Style())).background.get default.color
+  return (theme.tokenColors.getCascading(name, Style())).background.get default.color
 
 proc tokenFontStyle*(theme: Theme, name: string): set[FontStyle] =
-  return (theme.tokenColors.getOrDefault(name, Style(fontStyle: {}))).fontStyle
+  return (theme.tokenColors.getCascading(name, Style(fontStyle: {}))).fontStyle
 
 proc tokenFontStyle*(theme: Theme, names: seq[string]): set[FontStyle] =
   for name in names:

@@ -143,6 +143,7 @@ addCommand "editor", "<SPACE>fr", "toggle-flag", "log-render-duration"
 addCommand "editor", "<SPACE>fd", "toggle-flag", "render-debug-info"
 addCommand "editor", "<SPACE>fo", "toggle-flag", "render-execution-output"
 addCommand "editor", "<C-SPACE>fg", "toggle-flag", "text.print-scopes"
+addCommand "editor", "<C-SPACE>fm", "toggle-flag", "text.print-matches"
 
 addCommand "editor", "<SPACE>ff", "log-options"
 addCommand "editor", "<ESCAPE>", "escape"

@@ -1,11 +1,11 @@
-import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, os]
+import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, os, re, tables]
 import editor, document, document_editor, events, id, util, scripting, vmath
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 
 import treesitter/api as ts
 
-import treesitter_c/c
+# import treesitter_c/c
 # import treesitter_bash/bash
 # import treesitter_c_sharp/c_sharp
 # import treesitter_cpp/cpp
@@ -22,6 +22,7 @@ import treesitter_javascript/javascript
 import treesitter_rust/rust
 # import treesitter_scala/scala
 # import treesitter_typescript/typescript
+import treesitter_nim/nim
 
 var logger = newConsoleLogger()
 
@@ -90,6 +91,12 @@ proc getCaptureName(query: ptr ts.TSQuery, index: uint32): string =
   defer: assert result.len == length.int
   return $str
 
+proc getStringValue(query: ptr ts.TSQuery, index: uint32): string =
+  var length: uint32
+  var str = ts.tsQueryStringValueForId(query, index, addr length)
+  defer: assert result.len == length.int
+  return $str
+
 proc nextMatch*(cursor: ptr ts.TSQueryCursor): Option[ts.TSQueryMatch] =
   result = ts.TSQueryMatch.none
   var match: ts.TSQueryMatch
@@ -106,8 +113,6 @@ proc `$`*(node: ts.TSNode): string =
   let c_str = node.tsNodeString()
   defer: c_str.c_free
   result = $c_str
-  # for i in 0..node.high:
-  #   str +=
 
 proc `content=`*(self: TextDocument, value: string) =
   if self.singleLine:
@@ -122,8 +127,6 @@ proc `content=`*(self: TextDocument, value: string) =
       self.lines = @[""]
     if not self.tsParser.isNil:
       self.currentTree = self.tsParser.tsParserParseString(nil, value, value.len.uint32)
-
-  # echo self.currentTree.root
 
   self.textChanged.invoke(self)
 
@@ -141,8 +144,6 @@ proc `content=`*(self: TextDocument, value: seq[string]) =
   if not self.tsParser.isNil:
     self.currentTree = self.tsParser.tsParserParseString(nil, strValue, strValue.len.uint32)
 
-  # echo self.currentTree.root
-
   self.textChanged.invoke(self)
 
 func content*(document: TextDocument): seq[string] =
@@ -151,11 +152,22 @@ func content*(document: TextDocument): seq[string] =
 func contentString*(document: TextDocument): string =
   return document.lines.join("\n")
 
+func contentString*(self: TextDocument, selection: Selection): string =
+  let (first, last) = selection.normalized
+  if first.line == last.line:
+    return self.lines[first.line][first.column..<last.column]
+
+  result = self.lines[first.line][first.column..^1]
+  for i in (first.line + 1)..<last.line:
+    result.add self.lines[i]
+  result.add self.lines[last.line][0..<last.column]
+
 func selection*(self: TextDocumentEditor): Selection = self.selection
 
 type StyledText* = object
   text*: string
   scope*: string
+  priority*: int
 
 type StyledLine* = object
   parts*: seq[StyledText]
@@ -173,20 +185,19 @@ proc splitAt(line: var StyledLine, index: int) =
     copy.text = copy.text[index..^1]
     line.parts.insert(copy, i + 1)
 
-proc overrideStyle*(line: var StyledLine, first: int, last: int, scope: string) =
+proc overrideStyle*(line: var StyledLine, first: int, last: int, scope: string, priority: int) =
   var index = 0
   for i in 0..line.parts.high:
-    if index == first and index + line.parts[i].text.len == last and line.parts[i].scope.len == 0:
-      if line.parts[i].scope.len > 0:
-        let text = line.parts[i].text
-        let oldScope = line.parts[i].scope
-        logger.log(lvlInfo, fmt"overriding scope of '{text}' ({oldScope}) with {scope}")
+    if index >= first and index + line.parts[i].text.len <= last and priority < line.parts[i].priority:
       line.parts[i].scope = scope
+      line.parts[i].priority = priority
     index += line.parts[i].text.len
 
 proc getStyledText*(self: TextDocument, i: int): StyledLine =
   var line = self.lines[i]
-  var styledLine = StyledLine(parts: @[StyledText(text: line, scope: "")])
+  var styledLine = StyledLine(parts: @[StyledText(text: line, scope: "", priority: 1000000000)])
+
+  var regexes = initTable[string, Regex]()
 
   if not self.tsParser.isNil and not self.highlightQuery.isNil:
     let cursor = ts.tsQueryCursorNew()
@@ -197,11 +208,73 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
     var match = cursor.nextMatch()
     while match.isSome:
       defer: match = cursor.nextMatch()
+
+      var predicatesLength: uint32 = 0
+      let predicatesPtr = self.highlightQuery.tsQueryPredicatesForPattern(match.get.patternIndex, addr predicatesLength)
+      let predicatesRaw = cast[ptr array[100, ts.TSQueryPredicateStep]](predicatesPtr)
+
+      var argIndex = 0
+      var predicateName: string = ""
+      var captureName: string = ""
+      var argValue: string = ""
+
+      var predicates: seq[tuple[name: string, capture: string, arg: string]] = @[]
+
+      for k in 0..<predicatesLength:
+        case predicatesRaw[k].`type`:
+        of ts.TSQueryPredicateStepTypeString:
+          let value = self.highlightQuery.getStringValue(predicatesRaw[k].valueId)
+          if argIndex == 0:
+            predicateName = value
+          else:
+            argValue = value
+          argIndex += 1
+
+        of ts.TSQueryPredicateStepTypeCapture:
+          captureName = self.highlightQuery.getCaptureName(predicatesRaw[k].valueId)
+          argIndex += 1
+
+        of ts.TSQueryPredicateStepTypeDone:
+          predicates.add (predicateName, captureName, argValue)
+          predicateName = ""
+          captureName = ""
+          argValue = ""
+          argIndex = 0
+
       let captures = cast[ptr array[100, ts.TSQueryCapture]](match.get.captures)
       for k in 0..<match.get.capture_count.int:
         let scope = self.highlightQuery.getCaptureName(captures[k].index)
 
         let node = captures[k].node
+
+        var matches = true
+        for predicate in predicates:
+          if predicate.capture != scope:
+            continue
+          case predicate.name
+          of "match?":
+            let regex = if regexes.contains(predicate.arg):
+              regexes[predicate.arg]
+            else:
+              let regex = re(predicate.arg, {})
+              regexes[predicate.arg] = regex
+              regex
+
+            let nodeText = self.contentString(node.selection)
+            if nodeText.matchLen(regex) != nodeText.len:
+              matches = false
+              break
+
+          else:
+            logger.log(lvlError, fmt"Unknown predicate '{predicate.name}'")
+
+        if gEditor.getFlag("text.print-matches"):
+          let nodeText = self.contentString(node.selection)
+          echo fmt"{match.get.patternIndex}: '{nodeText}' {node} (matches: {matches})"
+
+        if not matches:
+          continue
+
         let nodeRange = node.selection
 
         if nodeRange.first.line == i:
@@ -212,7 +285,7 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
         let first = if nodeRange.first.line < i: 0 elif nodeRange.first.line == i: nodeRange.first.column else: line.len
         let last = if nodeRange.last.line < i: 0 elif nodeRange.last.line == i: nodeRange.last.column else: line.len
 
-        styledLine.overrideStyle(first, last, scope)
+        styledLine.overrideStyle(first, last, scope, match.get.patternIndex.int)
 
   return styledLine
 
@@ -246,29 +319,41 @@ proc initTreesitter(self: TextDocument) =
   of "rs": "rust"
   of "scala": "scala"
   of "ts": "typescript"
+  of "nim", "nims": "nim"
   else:
     # Unsupported language
     logger.log(lvlWarn, fmt"Failed to init treesitter for language '{extension}'")
     return
 
+  template tryGetLanguage(constructor: untyped): untyped =
+    block:
+      var l: ptr TSLanguage = nil
+      when compiles(constructor()):
+        l = constructor()
+      else:
+        logger.log(lvlWarn, fmt"Failed to init treesitter for language '{extension}'")
+        return
+      l
+
   let language = case languageId
-  of "c": treeSitterC()
-  # of "bash": treeSitterBash()
-  # of "csharp": treeSitterCSharp()
-  # of "cpp": treeSitterCpp()
-  # of "css": treeSitterCss()
-  # of "go": treeSitterGo()
-  # of "haskell": treeSitterHaskell()
-  # of "html": treeSitterHtml()
-  # of "java": treeSitterJava()
-  of "javascript": treeSitterJavascript()
-  # of "ocaml": treeSitterOcaml()
-  # of "php": treeSitterPhp()
-  # of "python": treeSitterPython()
-  # of "ruby": treeSitterRuby()
-  of "rust": treeSitterRust()
-  # of "scala": treeSitterScala()
-  # of "typescript": treeSitterTypescript()
+  of "c": tryGetLanguage(treeSitterC)
+  of "bash": tryGetLanguage(treeSitterBash)
+  of "csharp": tryGetLanguage(treeSitterCShap)
+  of "cpp": tryGetLanguage(treeSitterCpp)
+  of "css": tryGetLanguage(treeSitterCss)
+  of "go": tryGetLanguage(treeSitterGo)
+  of "haskell": tryGetLanguage(treeSitterHaskll)
+  of "html": tryGetLanguage(treeSitterHtml)
+  of "java": tryGetLanguage(treeSitterJava)
+  of "javascript": tryGetLanguage(treeSitterJavacript)
+  of "ocaml": tryGetLanguage(treeSitterOcam)
+  of "php": tryGetLanguage(treeSitterPhp)
+  of "python": tryGetLanguage(treeSitterPythn)
+  of "ruby": tryGetLanguage(treeSitterRuby)
+  of "rust": tryGetLanguage(treeSitterRust)
+  of "scala": tryGetLanguage(treeSitterScal)
+  of "typescript": tryGetLanguage(treeSitterTypecript)
+  of "nim": tryGetLanguage(treeSitterNim)
   else:
     logger.log(lvlWarn, fmt"Failed to init treesitter for language '{extension}'")
     return

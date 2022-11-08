@@ -61,6 +61,9 @@ template isAstEditor*(editor: DocumentEditor, injected: untyped): bool =
 proc getActiveEditor*(): DocumentEditor =
   return DocumentEditor(id: scriptGetActiveEditorHandle())
 
+proc getActivePopup*(): Popup =
+  return Popup(id: scriptGetActivePopupHandle())
+
 proc getEditor*(index: int): DocumentEditor =
   return DocumentEditor(id: scriptGetEditorHandle(index))
 
