@@ -227,6 +227,7 @@ addCommand "popup.selector", "<END>", "end"
 
 setHandleInputs "editor.text", false
 setOption "editor.text.cursor.movement.", "both"
+setOption "editor.text.cursor.wide.", true
 addCommand "editor.text", "<LEFT>", "move-cursor-column", -1
 addCommand "editor.text", "<RIGHT>", "move-cursor-column", 1
 addCommand "editor.text", "<C-LEFT>", "cursor.left-word"
@@ -253,7 +254,11 @@ addCommand "editor.text", "<S-HOME>", "move-cursor-home", "last"
 addCommand "editor.text", "<S-END>", "move-cursor-end", "last"
 addCommand "editor.text", "<BACKSPACE>", "backspace"
 addCommand "editor.text", "<DELETE>", "delete"
-addCommand "editor.text", "<C-r>", "reload-treesitter"
+addCommand "editor.text", "<C-l>", "select-line-current"
+addCommand "editor.text", "miw", "select-inside-current"
+addCommand "editor.text", "<A-UP>", "select-parent-current-ts"
+addCommand "editor.text", "<C-r>", "select-prev"
+addCommand "editor.text", "<C-t>", "select-next"
 addCommand "editor.text", "<C-8>", () => setOption("text.line-distance", getOption[float32]("text.line-distance") - 1)
 addCommand "editor.text", "<C-9>", () => setOption("text.line-distance", getOption[float32]("text.line-distance") + 1)
 addCommand "editor.text", "i", "set-mode", "insert"
@@ -267,6 +272,7 @@ addTextCommand "", "<S-ESCAPE>":
   editor.selection = editor.selection.last.toSelection
 
 setHandleInputs "editor.text.insert", true
+setOption "editor.text.cursor.wide.insert", false
 addCommand "editor.text.insert", "<ENTER>", "insert-text", "\n"
 addCommand "editor.text.insert", "<SPACE>", "insert-text", " "
 
@@ -274,6 +280,7 @@ setHandleInputs "editor.text.visual", false
 setOption "editor.text.cursor.movement.visual", "last"
 
 setHandleInputs "editor.text.visual-temp", false
+setOption "editor.text.cursor.wide.visual-temp", false
 setOption "editor.text.cursor.movement.visual-temp", "last-to-first"
 
 # addCommand "editor.ast", "<A-LEFT>", "move-cursor", "-1"
