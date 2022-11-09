@@ -2,6 +2,8 @@ import boxy, pixie/fonts, vmath
 import compiler, id
 import lru_cache
 
+const textExtraHeight* = 10.0
+
 proc computeRenderedTextImpl2*(ctx: compiler.Context, input: RenderTextInput): string =
   if ctx.queryCacheRenderedText.contains(input):
     let oldImageId = ctx.queryCacheRenderedText[input]
@@ -13,7 +15,8 @@ proc computeRenderedTextImpl2*(ctx: compiler.Context, input: RenderTextInput): s
   if bounds.x == 0:
     bounds.x = 1
   if bounds.y == 0:
-    bounds.y = input.fontSize
+    bounds.y = input.lineHeight
+  bounds.y += textExtraHeight
 
   var image = newImage(bounds.x.int, bounds.y.int)
   image.fillText(arrangement)

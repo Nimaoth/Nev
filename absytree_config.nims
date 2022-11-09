@@ -133,7 +133,7 @@ proc handleTextEditorAction(editor: TextDocumentEditor, action: string, arg: str
   of "cursor.file-end":
     let which = if args.len == 0: Config else: parseEnum[SelectionCursor](args[0].str, Config)
     let selection = editor.selection
-    let cursor = (editor.getLineCount - 1, 0)
+    let cursor = (editor.getLineCount - 1, editor.getLine(editor.getLineCount - 1).len)
     case which
     of Config:
       editor.selection = cursor.toSelection(selection, getOption(editor.getContextWithMode("editor.text.cursor.movement"), Both))

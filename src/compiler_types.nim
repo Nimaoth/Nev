@@ -122,6 +122,8 @@ type
     color*: Color
     font*: string
     fontSize*: float32
+    lineHeight*: float32
+    charWidth*: float32
 
 func index*(node: VisualNode): int =
   if node.parent == nil:
@@ -448,19 +450,21 @@ func `==`*(a: NodeLayoutInput, b: NodeLayoutInput): bool =
   if a.replacements != b.replacements: return false
   return true
 
-proc newRenderTextInput*(ctx: RenderContext, text: string, font: string, fontSize: float32, imageId: string = ""): RenderTextInput =
+proc newRenderTextInput*(ctx: RenderContext, text: string, font: string, fontSize: float32, lineHeight: float32, charWidth: float32, imageId: string = ""): RenderTextInput =
   result.id = newId()
   result.imageId = imageId
   result.renderCtx = ctx
   result.text = text
   result.font = font
   result.fontSize = fontSize
+  result.lineHeight = lineHeight
+  result.charWidth = charWidth
 
 func `$`*(input: RenderTextInput): string =
-  return fmt"RenderTextInput({input.text}, {input.font}, {input.fontSize})"
+  return fmt"RenderTextInput({input.text}, {input.font}, {input.fontSize}, {input.lineHeight}, {input.charWidth})"
 
 func hash*(input: RenderTextInput): Hash =
-  result = input.text.hash !& input.font.hash !& input.fontSize.hash
+  result = input.text.hash !& input.font.hash !& input.fontSize.hash !& input.lineHeight.hash !& input.charWidth.hash
   result = !$result
 
 func `==`*(a: RenderTextInput, b: RenderTextInput): bool =
@@ -470,4 +474,6 @@ func `==`*(a: RenderTextInput, b: RenderTextInput): bool =
   if a.text != b.text: return false
   if a.font != b.font: return false
   if a.fontSize != b.fontSize: return false
+  if a.lineHeight != b.lineHeight: return false
+  if a.charWidth != b.charWidth: return false
   return true

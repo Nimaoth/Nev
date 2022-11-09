@@ -1,7 +1,7 @@
 import std/[strformat, tables, algorithm, math, sugar, strutils, options]
 import timer
 import boxy, windy, pixie/fonts, chroma, fusion/matching
-import util, input, events, editor, popup, rect_utils, document_editor, text_document, ast_document, keybind_autocomplete, id, ast, theme
+import util, input, events, editor, popup, rect_utils, document_editor, text_document, ast_document, keybind_autocomplete, id, ast, theme, text_renderer
 import compiler, query_system, node_layout, goto_popup, selector_popup
 import lru_cache
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, Popup, SelectorPopup
@@ -17,7 +17,7 @@ proc drawText(renderContext: RenderContext, location: Vec2, text: string, color:
     renderContext,
     text,
     font.get(renderContext.ctx.font),
-    fontSize.get(renderContext.ctx.fontSize),
+    fontSize.get(renderContext.ctx.fontSize), renderContext.lineHeight, renderContext.charWidth,
     key)))
   let size = renderContext.boxy.getImageSize(image).vec2
   let actualLocation = location - size * pivot
@@ -29,7 +29,7 @@ proc layoutText(renderContext: RenderContext, location: Vec2, text: string, pivo
     renderContext,
     text,
     font.get(renderContext.ctx.font),
-    fontSize.get(renderContext.ctx.fontSize),
+    fontSize.get(renderContext.ctx.fontSize), renderContext.lineHeight, renderContext.charWidth,
     key)))
   let size = renderContext.boxy.getImageSize(image).vec2
   let actualLocation = location - size * pivot
@@ -151,13 +151,10 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
 
   let selection = editor.selection
   let nodeRange = editor.selection.normalized
-  var firstCursorPos = vec2()
-  var lastCursorPos = vec2()
 
   editor.lastRenderedLines.setLen 0
 
   # Draws a line of texts, including selection background.
-  # Sets firstCursorPos and lastCursorPos if necessary
   proc renderLine(i: int, down: bool): bool =
     var styledText = document.getStyledText(i)
     var lastBounds = rect(vec2(contentBounds.x, contentBounds.y + (i - editor.previousBaseIndex).float32 * (ed.renderCtx.lineHeight + lineDistance) + editor.scrollOffset), vec2())
@@ -176,18 +173,16 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
       styledText.parts[partIndex].bounds = bounds
 
       # Draw background if selected
-      if (startIndex < last and startIndex + part.text.len > first) and part.text.len > 0:
-        let selectionColor = ed.theme.color("selection.background", rgb(200, 200, 200))
-        let startOffset = max(0, first - startIndex)
-        let endOffset = min(part.text.len, last - startIndex)
-        let highlightRect = rect(bounds.xy - vec2(0, lineDistance * 0.5) + vec2(startOffset.float32 * ed.renderCtx.charWidth, 0), vec2((endOffset - startOffset).float32 * ed.renderCtx.charWidth, bounds.h + lineDistance))
+      let selectionColor = ed.theme.color("selection.background", rgb(200, 200, 200))
+      if (startIndex < last and startIndex + part.text.len > first and part.text.len > 0):
+        let startOffset = max(0, first - startIndex).float32 / (part.text.len.float32 - 0) * bounds.w
+        let endOffset = min(part.text.len, last - startIndex).float32 / (part.text.len.float32 - 0) * bounds.w
+        let highlightRect = rect(bounds.xy - vec2(0, lineDistance * 0.5) + vec2(startOffset, 0), vec2(endOffset - startOffset, bounds.h - textExtraHeight + lineDistance))
+        ed.boxy.fillRect(highlightRect, selectionColor)
+      elif part.text.len == 0 and nodeRange.contains((i, startIndex)) and not nodeRange.isEmpty:
+        let highlightRect = rect(bounds.xy - vec2(0, lineDistance * 0.5), vec2(ed.renderCtx.charWidth * 0.5, bounds.h - textExtraHeight + lineDistance))
         ed.boxy.fillRect(highlightRect, selectionColor)
 
-      # Set first cursor pos if it's contained in this part
-      if selection.first.line == i and selection.first.column == startIndex:
-        firstCursorPos = bounds.xy
-      elif selection.first.line == i and selection.first.column == startIndex + part.text.len:
-        firstCursorPos = bounds.xwy
 
       let cursorWidth = case editor.currentMode
       of "insert", "visual-temp": 0.2
@@ -197,7 +192,8 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
       # Set last cursor pos if it's contained in this part
       let cursorColor = ed.theme.color(@["editorCursor.foreground", "foreground"], rgba(255, 255, 255, 127))
       if selection.last.line == i and selection.last.column >= startIndex and selection.last.column <= startIndex + part.text.len:
-        lastCursorPos = bounds.xy + vec2((selection.last.column - startIndex).float32 * ed.renderCtx.charWidth, 0)
+        let startOffset = if part.text.len == 0: 0.0 else: max(0, selection.last.column - startIndex).float32 / (part.text.len.float32 - 0) * bounds.w
+        let lastCursorPos = bounds.xy + vec2(startOffset, 0)
         ed.boxy.fillRect(rect(lastCursorPos, vec2(ed.renderCtx.charWidth * cursorWidth, ed.renderCtx.lineHeight)), cursorColor)
 
       # Draw the actual text
@@ -412,7 +408,7 @@ proc renderVisualNode(editor: AstDocumentEditor, ed: Editor, node: VisualNode, o
     let image = ctx.computeRenderedText(ctx.getOrCreateRenderTextInput(newRenderTextInput(
       ed.renderCtx,
       text,
-      font, ed.ctx.fontSize)))
+      font, ed.ctx.fontSize, ed.renderCtx.lineHeight, ed.renderCtx.charWidth)))
     ed.boxy.drawImage(image, bounds.xy, color)
 
     if Underline in style:
@@ -518,7 +514,7 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
   let titleImage = ctx.computeRenderedText(ctx.getOrCreateRenderTextInput(newRenderTextInput(
     ed.renderCtx,
     "AST - " & document.filename,
-    config.fontRegular, ed.ctx.fontSize)))
+    config.fontRegular, ed.ctx.fontSize, ed.renderCtx.lineHeight, ed.renderCtx.charWidth)))
   ed.boxy.drawImage(titleImage, vec2(headerBounds.x, headerBounds.y), if selected: theme.color("tab.activeForeground", rgb(255, 225, 255)) else: theme.color("tab.inactiveForeground", rgb(255, 225, 255)))
 
   # Mask the rest of the rendering is this function to the contentBounds
@@ -670,7 +666,7 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
     image = ctx.computeRenderedText(ctx.getOrCreateRenderTextInput(newRenderTextInput(
       ed.renderCtx,
       text,
-      config.fontRegular, ed.ctx.fontSize,
+      config.fontRegular, ed.ctx.fontSize, ed.renderCtx.lineHeight, ed.renderCtx.charWidth,
       "debug.depGraph")))
     ed.boxy.drawImage(image, last.xyh, rgb(255, 255, 255).color)
     last.h += ed.boxy.getImageSIze(image).y.float32
@@ -686,7 +682,7 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
     image = ctx.computeRenderedText(ctx.getOrCreateRenderTextInput(newRenderTextInput(
       ed.renderCtx,
       text,
-      config.fontRegular, ed.ctx.fontSize,
+      config.fontRegular, ed.ctx.fontSize, ed.renderCtx.lineHeight, ed.renderCtx.charWidth,
       "debug.inputs")))
     ed.boxy.drawImage(image, last.xyh, rgb(255, 255, 255).color)
     last.h += ed.boxy.getImageSIze(image).y.float32
@@ -706,7 +702,7 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
     image = ctx.computeRenderedText(ctx.getOrCreateRenderTextInput(newRenderTextInput(
       ed.renderCtx,
       text,
-      config.fontRegular, ed.ctx.fontSize,
+      config.fontRegular, ed.ctx.fontSize, ed.renderCtx.lineHeight, ed.renderCtx.charWidth,
       "debug.queryCaches")))
     ed.boxy.drawImage(image, last.xyh, rgb(255, 255, 255).color)
     last.h += ed.boxy.getImageSIze(image).y.float32
@@ -728,7 +724,7 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
     image = ctx.computeRenderedText(ctx.getOrCreateRenderTextInput(newRenderTextInput(
       ed.renderCtx,
       text,
-      config.fontRegular, ed.ctx.fontSize,
+      config.fontRegular, ed.ctx.fontSize, ed.renderCtx.lineHeight, ed.renderCtx.charWidth,
       "debug.timings")))
     ed.boxy.drawImage(image, last.xyh, rgb(255, 255, 255).color)
     last.h += ed.boxy.getImageSIze(image).y.float32
