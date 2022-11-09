@@ -53,8 +53,8 @@ macro addTypeMap*(source: untyped, wrapper: typed, mapperFunction: typed) =
 macro addInjector*(name: untyped, function: typed) =
   injectors[$name] = function
 
-macro addFunction(name: untyped, wrapper: typed, moduleName: static string) =
-  let n = nnkStmtList.newTree(name, wrapper)
+macro addFunction(name: untyped, script: untyped, wrapper: typed, moduleName: static string) =
+  let n = nnkStmtList.newTree(name, script, wrapper)
   for name, _ in functions:
     if name == moduleName:
       functions[name].add n
@@ -62,9 +62,9 @@ macro addFunction(name: untyped, wrapper: typed, moduleName: static string) =
   functions[moduleName] = nnkStmtList.newTree(n)
 
 macro expose*(moduleName: static string, def: untyped): untyped =
-  # defer:
-    # if pureFunctionName.strVal == "setOption":
-    # echo result.repr
+  defer:
+    discard
+  #   echo result.repr
 
   let functionName = if def[0].kind == nnkPostfix: def[0][1] else: def[0]
   let argCount = def[3].len - 1
@@ -83,19 +83,33 @@ macro expose*(moduleName: static string, def: untyped): untyped =
 
   let pureFunctionName = ident functionNameStr[0..^5]
 
-  let wrapperName = ident(pureFunctionName.strVal & "Api")
+  var postfix = ""
+  for module, functions in functions.pairs:
+    for entry in functions:
+      if pureFunctionName.strVal == $entry[0]:
+        postfix.add("2")
+
+  defer:
+    discard
+    # if pureFunctionName.strVal == "selectPrev":
+    #   echo result.repr
+
+  let wrapperName = ident(pureFunctionName.strVal & "Api" & postfix)
   var callToImplFromBuiltin = nnkCall.newTree(functionName)
 
   let jsonArg = nskParam.genSym
 
-  let scriptFunctionName = ident(pureFunctionName.strVal & "Script")
+  let scriptFunctionSym = ident(pureFunctionName.strVal & "Script" & postfix)
+  # let scriptFunctionSym = nskProc.genSym(pureFunctionName.strVal & "Scriptuiae")
+  # let scriptFunctionName = ident $scriptFunctionSym
+  # echo scriptFunctionName
   var scriptFunction = def.copy
-  scriptFunction[0] = nnkPostfix.newTree(ident"*", scriptFunctionName)
+  scriptFunction[0] = nnkPostfix.newTree(ident"*", scriptFunctionSym)
   var scriptFunctionWrapper = def.copy
   scriptFunctionWrapper[0] = pureFunctionName
 
-  var callToBuiltinFunctionFromJson = nnkCall.newTree(scriptFunctionName)
-  var callToBuiltinFunctionFromScript = nnkCall.newTree(scriptFunctionName)
+  var callToBuiltinFunctionFromJson = nnkCall.newTree(scriptFunctionSym)
+  var callToBuiltinFunctionFromScript = nnkCall.newTree(scriptFunctionSym)
 
   var mappedArgIndices = initTable[int, int]()
   for i in 0..<argCount:
@@ -192,7 +206,7 @@ macro expose*(moduleName: static string, def: untyped): untyped =
       return `callToBuiltinFunctionFromJson`.toJson
 
   var scriptFunctionForward = scriptFunction.copy
-  scriptFunctionForward[0] = scriptFunctionName
+  scriptFunctionForward[0] = scriptFunctionSym
   scriptFunctionForward[6] = newEmptyNode()
 
   return quote do:
@@ -210,8 +224,8 @@ macro expose*(moduleName: static string, def: untyped): untyped =
         echo getCurrentException().getStackTrace
 
     static:
-      addToCache(`scriptFunctionName`, "myImpl")
-      addFunction(`scriptFunctionName`, `wrapperName`, `moduleName`)
+      addToCache(`scriptFunctionSym`, "myImpl")
+      addFunction(`pureFunctionName`, `scriptFunctionSym`, `wrapperName`, `moduleName`)
       exportCode("myImpl"):
         `scriptFunctionForward`
         `scriptFunctionWrapper`
@@ -226,10 +240,8 @@ macro genDispatcher*(moduleName: static string): untyped =
   for module, functions in functions.pairs:
     if module == moduleName:
       for entry in functions:
-        let source = entry[0]
-        let target = entry[1]
-
-        let name = ($source).replace("Script", "")
+        let name = entry[0].strVal
+        let target = entry[2]
 
         var alternative = ""
         for c in name:

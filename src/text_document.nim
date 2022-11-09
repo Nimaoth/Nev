@@ -1,4 +1,4 @@
-import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, os, re, tables]
+import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, os, re, tables, deques]
 import editor, document, document_editor, events, id, util, scripting, vmath, bumpy, rect_utils
 import windy except Cursor
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
@@ -58,7 +58,10 @@ type StyledLine* = object
 type TextDocumentEditor* = ref object of DocumentEditor
   editor*: Editor
   document*: TextDocument
+
   selectionInternal: Selection
+  selectionHistory: Deque[Selection]
+
   targetColumn: int
   hideCursorWhenInactive*: bool
 
@@ -87,6 +90,7 @@ proc invoke*[T](event: var Event[T], arg: T) =
   for h in event.handlers:
     h.callback(arg)
 
+func toTsPoint(cursor: Cursor): ts.TSPoint = ts.TSPoint(row: cursor.line.uint32, column: cursor.column.uint32)
 proc len*(node: ts.TSNode): int = node.tsNodeChildCount().int
 proc high*(node: ts.TSNode): int = node.len - 1
 proc low*(node: ts.TSNode): int = 0
@@ -98,12 +102,22 @@ proc startPoint*(node: ts.TSNode): Cursor =
 proc endPoint*(node: ts.TSNode): Cursor =
   let point = node.tsNodeEndPoint
   return (point.row.int, point.column.int)
-proc selection*(node: ts.TSNode): Selection = (node.startPoint, node.endPoint)
+proc getRange*(node: ts.TSNode): Selection = (node.startPoint, node.endPoint)
 proc root*(tree: ptr ts.TSTree): ts.TSNode = tree.tsTreeRootNode
 proc execute*(cursor: ptr ts.TSQueryCursor, query: ptr ts.TSQuery, node: ts.TSNode) = cursor.tsQueryCursorExec(query, node)
+proc cursor*(node: ts.TSNode): ts.TSTreeCursor = node.tsTreeCursorNew()
+proc `[]`*(node: ts.TSNode, index: int): ts.TSNode = node.tsNodeChild(index.uint32)
+proc descendantForRange*(node: ts.TSNode, selection: Selection): ts.TSNode = node.ts_node_descendant_for_point_range(selection.first.toTsPoint, selection.last.toTsPoint)
+proc parent*(node: ts.TSNode): ts.TSNode = node.tsNodeParent()
+proc `==`*(a: ts.TSNode, b: ts.TSNode): bool = a.tsNodeEq(b)
+proc current*(cursor: var ts.TSTreeCursor): ts.TSNode = tsTreeCursorCurrentNode(addr cursor)
+proc gotoParent*(cursor: var ts.TSTreeCursor): bool = tsTreeCursorGotoParent(addr cursor)
+proc gotoNextSibling*(cursor: var ts.TSTreeCursor): bool = tsTreeCursorGotoNextSibling(addr cursor)
+proc gotoFirstChild*(cursor: var ts.TSTreeCursor): bool = tsTreeCursorGotoFirstChild(addr cursor)
+proc gotoFirstChildForCursor*(cursor: var ts.TSTreeCursor, cursor2: Cursor): int = tsTreeCursorGotoFirstChildForPoint(addr cursor, cursor2.toTsPoint).int
 
 proc setPointRange*(cursor: ptr ts.TSQueryCursor, selection: Selection) =
-  cursor.tsQueryCursorSetPointRange(ts.TSPoint(row: selection.first.line.uint32, column: selection.first.column.uint32), ts.TSPoint(row: selection.last.line.uint32, column: selection.last.column.uint32))
+  cursor.tsQueryCursorSetPointRange(selection.first.toTsPoint, selection.last.toTsPoint)
 
 proc getCaptureName(query: ptr ts.TSQuery, index: uint32): string =
   var length: uint32
@@ -158,6 +172,12 @@ proc clampSelection*(self: TextDocumentEditor, selection: Selection): Selection 
 proc selection*(self: TextDocumentEditor): Selection = self.selectionInternal
 
 proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
+  if self.selectionInternal == selection:
+    return
+
+  self.selectionHistory.addLast self.selectionInternal
+  if self.selectionHistory.len > 100:
+    discard self.selectionHistory.popFirst
   self.selectionInternal = self.clampSelection selection
 
 proc clampSelection*(self: TextDocumentEditor) =
@@ -302,7 +322,7 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
               regexes[predicate.args[1]] = regex
               regex
 
-            let nodeText = self.contentString(node.selection)
+            let nodeText = self.contentString(node.getRange)
             if nodeText.matchLen(regex) != nodeText.len:
               matches = false
               break
@@ -315,21 +335,21 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
               regexes[predicate.args[1]] = regex
               regex
 
-            let nodeText = self.contentString(node.selection)
+            let nodeText = self.contentString(node.getRange)
             if nodeText.matchLen(regex) == nodeText.len:
               matches = false
               break
 
           of "eq?":
             # @todo: second arg can be capture aswell
-            let nodeText = self.contentString(node.selection)
+            let nodeText = self.contentString(node.getRange)
             if nodeText != predicate.args[1]:
               matches = false
               break
 
           of "not-eq?":
             # @todo: second arg can be capture aswell
-            let nodeText = self.contentString(node.selection)
+            let nodeText = self.contentString(node.getRange)
             if nodeText == predicate.args[1]:
               matches = false
               break
@@ -338,13 +358,13 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
             logger.log(lvlError, fmt"Unknown predicate '{predicate.name}'")
 
         if gEditor.getFlag("text.print-matches"):
-          let nodeText = self.contentString(node.selection)
+          let nodeText = self.contentString(node.getRange)
           echo fmt"{match.get.patternIndex}: '{nodeText}' {node} (matches: {matches})"
 
         if not matches:
           continue
 
-        let nodeRange = node.selection
+        let nodeRange = node.getRange
 
         if nodeRange.first.line == i:
           styledLine.splitAt(nodeRange.first.column)
@@ -648,6 +668,9 @@ proc scrollToCursor(self: TextDocumentEditor, cursor: Cursor) =
 
 proc getContextWithModeImpl(self: TextDocumentEditor, context: string): string
 
+proc isThickCursor(self: TextDocumentEditor): bool =
+  return getOption[bool](self.editor, self.getContextWithModeImpl("editor.text.cursor.wide"), false)
+
 proc getCursor(self: TextDocumentEditor, cursor: SelectionCursor): Cursor =
   case cursor
   of Config:
@@ -678,29 +701,6 @@ proc moveCursor(self: TextDocumentEditor, cursor: SelectionCursor, movement: pro
 
 method handleScroll*(self: TextDocumentEditor, scroll: Vec2, mousePosWindow: Vec2) =
   self.scrollOffset += scroll.y * getOption[float](self.editor, "text.scroll-speed", 40)
-
-proc getCursorAtPixelPos(self: TextDocumentEditor, mousePosWindow: Vec2): Option[Cursor] =
-  for line in self.lastRenderedLines:
-    var startOffset = 0
-    for i, part in line.parts:
-      if part.bounds.contains(mousePosWindow) or (i == line.parts.high and mousePosWindow.y >= part.bounds.y and mousePosWindow.y <= part.bounds.yh and mousePosWindow.x >= part.bounds.x):
-        let offsetFromLeft = (mousePosWindow.x - part.bounds.x) / self.editor.renderCtx.charWidth + 0.5
-        let index = clamp(offsetFromLeft.int, 0, part.text.len)
-        return (line.index, startOffset + index).some
-      startOffset += part.text.len
-  return Cursor.none
-
-method handleMousePress*(self: TextDocumentEditor, button: windy.Button, mousePosWindow: Vec2) =
-  if self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
-    self.selection = cursor.toSelection
-
-method handleMouseRelease*(self: TextDocumentEditor, button: windy.Button, mousePosWindow: Vec2) =
-  if self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
-    self.selection = cursor.toSelection(self.selection, Last)
-
-method handleMouseMove*(self: TextDocumentEditor, mousePosWindow: Vec2, mousePosDelta: Vec2) =
-  if self.editor.window.buttonDown[windy.MouseLeft] and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
-    self.selection = cursor.toSelection(self.selection, Last)
 
 proc getTextDocumentEditor(wrapper: api.TextDocumentEditor): Option[TextDocumentEditor] =
   if gEditor.isNil: return TextDocumentEditor.none
@@ -741,6 +741,54 @@ proc getContextWithModeImpl(self: TextDocumentEditor, context: string): string {
 
 proc updateTargetColumnImpl(self: TextDocumentEditor, cursor: SelectionCursor) {.expose("editor.text").} =
   self.targetColumn = self.getCursor(cursor).column
+
+proc selectPrevImpl(self: TextDocumentEditor) {.expose("editor.text").} =
+  if self.selectionHistory.len > 0:
+    let selection = self.selectionHistory.popLast
+    self.selectionHistory.addFirst self.selection
+    self.selectionInternal = selection
+    return
+
+proc selectNextImpl(self: TextDocumentEditor) {.expose("editor.text").} =
+  if self.selectionHistory.len > 0:
+    let selection = self.selectionHistory.popFirst
+    self.selectionHistory.addLast self.selection
+    self.selectionInternal = selection
+    return
+
+proc selectInsideImpl(self: TextDocumentEditor, cursor: Cursor) {.expose("editor.text").} =
+  let regex = re("[a-zA-Z0-9_]")
+  var first = cursor.column
+  echo self.document.lines[cursor.line], ", ", first, ", ", self.document.lines[cursor.line].matchLen(regex, start = first - 1)
+  while first > 0 and self.document.lines[cursor.line].matchLen(regex, start = first - 1) == 1:
+    first -= 1
+  var last = cursor.column
+  while last < self.document.lines[cursor.line].len and self.document.lines[cursor.line].matchLen(regex, start = last) == 1:
+    last += 1
+  self.selection = ((cursor.line, first), (cursor.line, last))
+
+proc selectInsideCurrentImpl(self: TextDocumentEditor) {.expose("editor.text").} =
+  self.selectInsideImpl(self.selection.last)
+
+proc selectLineImpl(self: TextDocumentEditor, line: int) {.expose("editor.text").} =
+  self.selection = ((line, 0), (line, self.lineLength(line)))
+
+proc selectLineCurrentImpl(self: TextDocumentEditor) {.expose("editor.text").} =
+  self.selectLineImpl(self.selection.last.line)
+
+proc selectParentTsImpl(self: TextDocumentEditor, selection: Selection) {.expose("editor.text").} =
+  if self.document.currentTree.isNil:
+    return
+
+  var node = self.document.currentTree.root.descendantForRange(selection)
+  echo selection, ", ", node.getRange
+  while node.getRange == selection and node != self.document.currentTree.root:
+    node = node.parent
+
+  self.selection = node.getRange
+
+proc selectParentCurrentTsImpl(self: TextDocumentEditor) {.expose("editor.text").} =
+  self.selectParentTsImpl(self.selection)
 
 proc insertTextImpl*(self: TextDocumentEditor, text: string) {.expose("editor.text").} =
   if self.document.singleLine and text == "\n":
@@ -830,6 +878,41 @@ method createWithDocument*(self: TextDocumentEditor, document: Document): Docume
     editor.document.lines = @[""]
   discard editor.document.textChanged.subscribe (_: TextDocument) => editor.clampSelection()
   return editor
+
+proc getCursorAtPixelPos(self: TextDocumentEditor, mousePosWindow: Vec2): Option[Cursor] =
+  for line in self.lastRenderedLines:
+    var startOffset = 0
+    for i, part in line.parts:
+      if part.bounds.contains(mousePosWindow) or (i == line.parts.high and mousePosWindow.y >= part.bounds.y and mousePosWindow.y <= part.bounds.yh and mousePosWindow.x >= part.bounds.x):
+        var offsetFromLeft = (mousePosWindow.x - part.bounds.x) / self.editor.renderCtx.charWidth
+        if self.isThickCursor():
+          offsetFromLeft -= 0.0
+        else:
+          offsetFromLeft += 0.5
+
+        let index = clamp(offsetFromLeft.int, 0, part.text.len)
+        return (line.index, startOffset + index).some
+      startOffset += part.text.len
+  return Cursor.none
+
+method handleMousePress*(self: TextDocumentEditor, button: windy.Button, mousePosWindow: Vec2) =
+  if button == MouseLeft and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
+    self.selection = cursor.toSelection
+
+  if button == DoubleClick and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
+    self.selectInsideImpl(cursor)
+
+  if button == TripleClick and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
+    self.selectLineImpl(cursor.line)
+
+method handleMouseRelease*(self: TextDocumentEditor, button: windy.Button, mousePosWindow: Vec2) =
+  # if self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
+  #   self.selection = cursor.toSelection(self.selection, Last)
+  discard
+
+method handleMouseMove*(self: TextDocumentEditor, mousePosWindow: Vec2, mousePosDelta: Vec2) =
+  if self.editor.window.buttonDown[windy.MouseLeft] and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
+    self.selection = cursor.toSelection(self.selection, Last)
 
 method unregister*(self: TextDocumentEditor) =
   self.editor.unregisterEditor(self)
