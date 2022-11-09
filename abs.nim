@@ -51,11 +51,11 @@ macro runAction*(action: string, args: varargs[untyped]): untyped =
     `stmts`
     scriptRunAction(`action`, `str`)
 
-template isTextEditor*(id: EditorId, injected: untyped): bool =
-  scriptIsTextEditor(id) and ((let injected {.inject.} = TextDocumentEditor(id: id); true))
+template isTextEditor*(editorId: EditorId, injected: untyped): bool =
+  (scriptIsTextEditor(editorId) and ((let injected {.inject.} = TextDocumentEditor(id: editorId); true)))
 
-template isAstEditor*(id: EditorId, injected: untyped): bool =
-  scriptIsAstEditor(id) and ((let injected {.inject.} = AstDocumentEditor(id: id); true))
+template isAstEditor*(editorId: EditorId, injected: untyped): bool =
+  (scriptIsAstEditor(editorId) and ((let injected {.inject.} = AstDocumentEditor(id: editorId); true)))
 
 proc getActiveEditor*(): EditorId =
   return scriptGetActiveEditorHandle()
@@ -116,6 +116,8 @@ proc getLineCount*(editor: TextDocumentEditor): int =
 proc getOption*[T](path: string, default: T = T.default): T =
   when T is bool:
     return scriptGetOptionBool(path, default).T
+  elif T is enum:
+    return parseEnum[T](scriptGetOptionString(path, ""), default)
   elif T is Ordinal:
     return scriptGetOptionInt(path, default).T
   elif T is float32 | float64:
@@ -128,6 +130,8 @@ proc getOption*[T](path: string, default: T = T.default): T =
 proc setOption*[T](path: string, value: T) =
   when T is bool:
     scriptSetOptionBool(path, value)
+  elif T is enum:
+    scriptSetOptionString(path, $value)
   elif T is Ordinal:
     scriptSetOptionInt(path, value.int)
   elif T is float32 | float64:

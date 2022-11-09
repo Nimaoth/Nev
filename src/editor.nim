@@ -222,17 +222,19 @@ proc createEditorForDocument(ed: Editor, document: Document): DocumentEditor =
   return nil
 
 proc getOption*[T](editor: Editor, path: string, default: T = T.default): T =
-  template createScriptGetOption(editor, path, default, accessor: untyped): untyped =
+  template createScriptGetOption(editor, path, defaultValue, accessor: untyped): untyped =
     block:
       if editor.isNil:
         return default
       let node = editor.options{path.split(".")}
       if node.isNil:
         return default
-      accessor(node, default)
+      accessor(node, defaultValue)
 
   when T is bool:
     return editor.createScriptGetOption(path, default, getBool)
+  elif T is enum:
+    return parseEnum[T](editor.createScriptGetOption(path, "", getStr), default)
   elif T is Ordinal:
     return editor.createScriptGetOption(path, default, getInt)
   elif T is float32 | float64:
@@ -313,12 +315,15 @@ proc popPopup*(ed: Editor, popup: Popup) =
 
 proc getEventHandlerConfig*(ed: Editor, context: string): EventHandlerConfig =
   if not ed.eventHandlerConfigs.contains(context):
-    ed.eventHandlerConfigs[context] = EventHandlerConfig()
+    ed.eventHandlerConfigs[context] = newEventHandlerConfig()
   return ed.eventHandlerConfigs[context]
 
 proc getEditorForId*(ed: Editor, id: EditorId): Option[DocumentEditor] =
   if ed.editors.contains(id):
     return ed.editors[id].some
+
+  if ed.commandLineTextEditor.id == id:
+    return ed.commandLineTextEditor.some
 
   return DocumentEditor.none
 
@@ -456,17 +461,23 @@ proc getEditor(): Option[Editor] =
 static:
   addInjector(Editor, getEditor)
 
-proc getFlagImpl*(editor: Editor, flag: string, default: bool = false): bool {.expose("editor").} =
-  return getOption[bool](editor, flag, default)
+proc setHandleInputsImpl*(self: Editor, context: string, value: bool) {.expose("editor").} =
+  self.getEventHandlerConfig(context).setHandleInputs(value)
 
-proc setFlagImpl*(editor: Editor, flag: string, value: bool) {.expose("editor").} =
-  setOption[bool](editor, flag, value)
+proc setHandleActionsImpl*(self: Editor, context: string, value: bool) {.expose("editor").} =
+  self.getEventHandlerConfig(context).setHandleActions(value)
 
-proc toggleFlagImpl*(editor: Editor, flag: string) {.expose("editor").} =
-  editor.setFlagImpl(flag, not editor.getFlagImpl(flag))
+proc getFlagImpl*(self: Editor, flag: string, default: bool = false): bool {.expose("editor").} =
+  return getOption[bool](self, flag, default)
 
-proc setOptionImpl*(editor: Editor, option: string, value: JsonNode) {.expose("editor").} =
-  setOption(editor, option, value)
+proc setFlagImpl*(self: Editor, flag: string, value: bool) {.expose("editor").} =
+  setOption[bool](self, flag, value)
+
+proc toggleFlagImpl*(self: Editor, flag: string) {.expose("editor").} =
+  self.setFlagImpl(flag, not self.getFlagImpl(flag))
+
+proc setOptionImpl*(self: Editor, option: string, value: JsonNode) {.expose("editor").} =
+  setOption(self, option, value)
 
 proc quitImpl*(self: Editor) {.expose("editor").} =
   self.window.closeRequested = true
@@ -804,6 +815,8 @@ proc scriptGetActivePopupHandle*(): PopupId =
 proc scriptGetActiveEditorHandle*(): EditorId =
   if gEditor.isNil:
     return EditorId(-1)
+  if gEditor.commandLineMode:
+    return gEditor.commandLineTextEditor.id
   if gEditor.currentView >= 0 and gEditor.currentView < gEditor.views.len:
     return gEditor.views[gEditor.currentView].editor.id
 

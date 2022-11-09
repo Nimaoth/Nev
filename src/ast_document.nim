@@ -520,6 +520,7 @@ proc editSymbol*(self: AstDocumentEditor, symbol: Symbol) =
   self.textDocument = newTextDocument()
   self.textDocument.content = @[symbol.name]
   self.textEditor = newTextEditor(self.textDocument, self.editor)
+  self.textEditor.setModeImpl("insert")
   self.textEditor.renderHeader = false
   self.textEditor.fillAvailableSpace = false
   discard self.textDocument.textChanged.subscribe (doc: TextDocument) => self.handleTextDocumentChanged()
@@ -532,6 +533,7 @@ proc editNode*(self: AstDocumentEditor, node: AstNode) =
   self.textDocument = newTextDocument()
   self.textDocument.content = node.text.splitLines
   self.textEditor = newTextEditor(self.textDocument, self.editor)
+  self.textEditor.setModeImpl("insert")
   self.textEditor.renderHeader = false
   self.textEditor.fillAvailableSpace = false
   discard self.textDocument.textChanged.subscribe (doc: TextDocument) => self.handleTextDocumentChanged()

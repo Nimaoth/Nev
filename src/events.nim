@@ -10,6 +10,8 @@ type EventResponse* = enum
 
 type EventHandlerConfig* = ref object
   commands: Table[string, string]
+  handleActions*: bool
+  handleInputs*: bool
   revision: int
 
 type EventHandler* = ref object
@@ -20,6 +22,11 @@ type EventHandler* = ref object
   handleAction*: proc(action: string, arg: string): EventResponse
   handleInput*: proc(input: string): EventResponse
 
+func newEventHandlerConfig*(): EventHandlerConfig =
+  new result
+  result.handleActions = true
+  result.handleInputs = false
+
 proc buildDFA*(config: EventHandlerConfig): CommandDFA =
   return buildDFA(config.commands.pairs.toSeq)
 
@@ -28,6 +35,14 @@ proc dfa*(handler: EventHandler): CommandDFA =
     handler.dfa = handler.config.buildDFA()
     handler.revision = handler.config.revision
   return handler.dfa
+
+proc setHandleInputs*(config: EventHandlerConfig, value: bool) =
+  config.handleInputs = value
+  config.revision += 1
+
+proc setHandleActions*(config: EventHandlerConfig, value: bool) =
+  config.handleActions = value
+  config.revision += 1
 
 proc addCommand*(config: EventHandlerConfig, keys: string, action: string) =
   config.commands[keys] = action
@@ -45,14 +60,20 @@ template eventHandler*(inConfig: EventHandlerConfig, handlerBody: untyped): unty
 
     template onAction(actionBody: untyped): untyped =
       handler.handleAction = proc(action: string, arg: string): EventResponse =
-        let action {.inject, used.} = action
-        let arg {.inject, used.} = arg
-        return actionBody
+        if handler.config.handleActions:
+          let action {.inject, used.} = action
+          let arg {.inject, used.} = arg
+          return actionBody
+        else:
+          return Ignored
 
     template onInput(inputBody: untyped): untyped =
       handler.handleInput = proc(input: string): EventResponse =
-        let input {.inject, used.} = input
-        return inputBody
+        if handler.config.handleInputs:
+          let input {.inject, used.} = input
+          return inputBody
+        else:
+          return Ignored
 
     handlerBody
     handler

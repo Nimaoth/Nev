@@ -12,7 +12,7 @@ type
 
 type Cursor* = tuple[line, column: int]
 type Selection* = tuple[first, last: Cursor]
-type SelectionCursor* = enum Both = "both", First = "first", Last = "last"
+type SelectionCursor* = enum Config = "config", Both = "both", First = "first", Last = "last", LastToFirst = "last-to-first"
 
 var nextEditorId = 0
 proc newEditorId*(): EditorId =
@@ -51,6 +51,14 @@ func normalized*(selection: Selection): Selection =
 
 func toSelection*(cursor: Cursor): Selection =
   (cursor, cursor)
+
+func toSelection*(cursor: Cursor, default: Selection, which: SelectionCursor): Selection =
+  case which
+  of Config: return default
+  of Both: return (cursor, cursor)
+  of First: return (cursor, default.last)
+  of Last: return (default.first, cursor)
+  of LastToFirst: return (default.last, cursor)
 
 func isEmpty*(selection: Selection): bool =
   return selection.first == selection.last

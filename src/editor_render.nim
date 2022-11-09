@@ -106,7 +106,9 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
     ed.boxy.fillRect(headerBounds, if selected: ed.theme.color("tab.activeBackground", rgb(45, 45, 60)) else: ed.theme.color("tab.inactiveBackground", rgb(45, 45, 45)))
 
     let color = if selected: ed.theme.color("tab.activeForeground", rgb(255, 225, 255)) else: ed.theme.color("tab.inactiveForeground", rgb(255, 225, 255))
-    discard ed.renderCtx.drawText(headerBounds.xy, document.filename, color)
+
+    let mode = if editor.currentMode.len == 0: "normal" else: editor.currentMode
+    discard ed.renderCtx.drawText(headerBounds.xy, fmt"{mode} - {document.filename}", color)
     discard ed.renderCtx.drawText(headerBounds.xwy, fmt"{editor.selection} - {editor.id}", color, pivot = vec2(1, 0))
 
   # Mask the rest of the rendering is this function to the contentBounds
@@ -178,21 +180,29 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
         let highlightRect = rect(bounds.xy - vec2(0, lineDistance * 0.5), vec2(bounds.w, bounds.h + lineDistance))
         ed.boxy.fillRect(highlightRect, selectionColor)
 
-      # Draw the actual text
-      ed.renderCtx.boxy.drawImage(image, bounds.xy, color)
-      lastBounds = bounds
-
       # Set first cursor pos if it's contained in this part
       if selection.first.line == i and selection.first.column == startIndex:
         firstCursorPos = bounds.xy
       elif selection.first.line == i and selection.first.column == startIndex + part.text.len:
         firstCursorPos = bounds.xwy
 
+      let cursorWidth = case editor.currentMode
+      of "insert", "visual-temp": 0.2
+      of "", "visual": 1
+      else: 1
+
       # Set last cursor pos if it's contained in this part
+      let cursorColor = ed.theme.color(@["editorCursor.foreground", "foreground"], rgba(255, 255, 255, 127))
       if selection.last.line == i and selection.last.column == startIndex:
         lastCursorPos = bounds.xy
+        ed.boxy.fillRect(rect(lastCursorPos, vec2(ed.renderCtx.charWidth * cursorWidth, ed.renderCtx.lineHeight)), cursorColor)
       elif selection.last.line == i and selection.last.column == startIndex + part.text.len:
         lastCursorPos = bounds.xwy
+        ed.boxy.fillRect(rect(lastCursorPos, vec2(ed.renderCtx.charWidth * cursorWidth, ed.renderCtx.lineHeight)), cursorColor)
+
+      # Draw the actual text
+      ed.renderCtx.boxy.drawImage(image, bounds.xy, color)
+      lastBounds = bounds
 
       if printScope:
         lastBounds = ed.renderCtx.drawText(lastBounds.xwy, " (" & part.scope & ") ", textColor)
@@ -217,12 +227,6 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
     renderedLines += 1
 
   # echo "rendered lines: ", renderedLines
-
-  if selected or not editor.hideCursorWhenInactive:
-    let firstCursorColor = ed.theme.color("editorCursor.foreground", rgb(210, 210, 210))
-    let lastCursorColor = ed.theme.color("editorCursor.foreground", rgb(255, 255, 255))
-    ed.boxy.fillRect(rect(firstCursorPos, vec2(ed.ctx.fontSize * 0.12, ed.ctx.fontSize)), lastCursorColor)
-    ed.boxy.fillRect(rect(lastCursorPos, vec2(ed.ctx.fontSize * 0.12, ed.ctx.fontSize)), lastCursorColor)
 
   return usedBounds
 
