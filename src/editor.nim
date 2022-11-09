@@ -212,6 +212,7 @@ proc handleUnknownDocumentEditorAction*(ed: Editor, editor: DocumentEditor, acti
   return Failed
 
 proc handleAction(ed: Editor, action: string, arg: string)
+proc getFlag*(self: Editor, flag: string, default: bool = false): bool
 
 proc createEditorForDocument(ed: Editor, document: Document): DocumentEditor =
   for editor in ed.editor_defaults:
@@ -244,22 +245,6 @@ proc getOption*[T](editor: Editor, path: string, default: T = T.default): T =
   else:
     {.fatal: ("Can't get option with type " & $T).}
 
-proc setOption*(editor: Editor, path: string, value: JsonNode) =
-  if editor.isNil:
-    return
-
-  let pathItems = path.split(".")
-  var node = editor.options
-  for key in pathItems[0..^2]:
-    if node.kind != JObject:
-      return
-    if not node.contains(key):
-      node[key] = newJObject()
-    node = node[key]
-  if node.isNil or node.kind != JObject:
-    return
-  node[pathItems[^1]] = value
-
 proc setOption*[T](editor: Editor, path: string, value: T) =
   template createScriptSetOption(editor, path, value, constructor: untyped): untyped =
     block:
@@ -287,9 +272,6 @@ proc setOption*[T](editor: Editor, path: string, value: T) =
     editor.createScriptSetOption(path, value, newJString)
   else:
     {.fatal: ("Can't set option with type " & $T).}
-
-proc getFlag*(editor: Editor, flag: string, default: bool = false): bool =
-  return getOption[bool](editor, flag, default)
 
 proc createView(ed: Editor, editor: DocumentEditor) =
   var view = View(document: nil, editor: editor)
@@ -461,61 +443,74 @@ proc getEditor(): Option[Editor] =
 static:
   addInjector(Editor, getEditor)
 
-proc setHandleInputsImpl*(self: Editor, context: string, value: bool) {.expose("editor").} =
+proc setHandleInputs*(self: Editor, context: string, value: bool) {.expose("editor").} =
   self.getEventHandlerConfig(context).setHandleInputs(value)
 
-proc setHandleActionsImpl*(self: Editor, context: string, value: bool) {.expose("editor").} =
+proc setHandleActions*(self: Editor, context: string, value: bool) {.expose("editor").} =
   self.getEventHandlerConfig(context).setHandleActions(value)
 
-proc getFlagImpl*(self: Editor, flag: string, default: bool = false): bool {.expose("editor").} =
+proc getFlag*(self: Editor, flag: string, default: bool = false): bool {.expose("editor").} =
   return getOption[bool](self, flag, default)
 
-proc setFlagImpl*(self: Editor, flag: string, value: bool) {.expose("editor").} =
+proc setFlag*(self: Editor, flag: string, value: bool) {.expose("editor").} =
   setOption[bool](self, flag, value)
 
-proc toggleFlagImpl*(self: Editor, flag: string) {.expose("editor").} =
-  self.setFlagImpl(flag, not self.getFlagImpl(flag))
+proc toggleFlag*(self: Editor, flag: string) {.expose("editor").} =
+  self.setFlag(flag, not self.getFlag(flag))
 
-proc setOptionImpl*(self: Editor, option: string, value: JsonNode) {.expose("editor").} =
-  setOption(self, option, value)
+proc setOption*(self: Editor, option: string, value: JsonNode) {.expose("editor").} =
+  if self.isNil:
+    return
 
-proc quitImpl*(self: Editor) {.expose("editor").} =
+  let pathItems = option.split(".")
+  var node = self.options
+  for key in pathItems[0..^2]:
+    if node.kind != JObject:
+      return
+    if not node.contains(key):
+      node[key] = newJObject()
+    node = node[key]
+  if node.isNil or node.kind != JObject:
+    return
+  node[pathItems[^1]] = value
+
+proc quit*(self: Editor) {.expose("editor").} =
   self.window.closeRequested = true
 
-proc changeFontSizeImpl*(self: Editor, amount: float32) {.expose("editor").} =
+proc changeFontSize*(self: Editor, amount: float32) {.expose("editor").} =
   self.ctx.fontSize += amount
 
-proc changeLayoutPropImpl*(self: Editor, prop: string, change: float32) {.expose("editor").} =
+proc changeLayoutProp*(self: Editor, prop: string, change: float32) {.expose("editor").} =
   self.layout_props.props.mgetOrPut(prop, 0) += change
 
-proc toggleStatusBarLocationImpl*(self: Editor) {.expose("editor").} =
+proc toggleStatusBarLocation*(self: Editor) {.expose("editor").} =
   self.statusBarOnTop = not self.statusBarOnTop
 
-proc createViewImpl*(self: Editor) {.expose("editor").} =
+proc createView*(self: Editor) {.expose("editor").} =
   self.createView(newTextDocument())
 
-proc createKeybindAutocompleteViewImpl*(self: Editor) {.expose("editor").} =
+proc createKeybindAutocompleteView*(self: Editor) {.expose("editor").} =
   self.createView(newKeybindAutocompletion())
 
-proc closeCurrentViewImpl*(ed: Editor) {.expose("editor").} =
+proc closeCurrentView*(ed: Editor) {.expose("editor").} =
   ed.views[ed.currentView].editor.unregister()
   ed.views.delete ed.currentView
   ed.currentView = ed.currentView.clamp(0, ed.views.len - 1)
 
-proc moveCurrentViewToTopImpl*(self: Editor) {.expose("editor").} =
+proc moveCurrentViewToTop*(self: Editor) {.expose("editor").} =
   if self.views.len > 0:
     let view = self.views[self.currentView]
     self.views.delete(self.currentView)
     self.views.insert(view, 0)
   self.currentView = 0
 
-proc nextViewImpl*(ed: Editor) {.expose("editor").} =
+proc nextView*(ed: Editor) {.expose("editor").} =
   ed.currentView = if ed.views.len == 0: 0 else: (ed.currentView + 1) mod ed.views.len
 
-proc prevViewImpl*(ed: Editor) {.expose("editor").} =
+proc prevView*(ed: Editor) {.expose("editor").} =
   ed.currentView = if ed.views.len == 0: 0 else: (ed.currentView + ed.views.len - 1) mod ed.views.len
 
-proc moveCurrentViewPrevImpl*(ed: Editor) {.expose("editor").} =
+proc moveCurrentViewPrev*(ed: Editor) {.expose("editor").} =
   if ed.views.len > 0:
     let view = ed.views[ed.currentView]
     let index = (ed.currentView + ed.views.len - 1) mod ed.views.len
@@ -523,7 +518,7 @@ proc moveCurrentViewPrevImpl*(ed: Editor) {.expose("editor").} =
     ed.views.insert(view, index)
     ed.currentView = index
 
-proc moveCurrentViewNextImpl*(ed: Editor) {.expose("editor").} =
+proc moveCurrentViewNext*(ed: Editor) {.expose("editor").} =
   if ed.views.len > 0:
     let view = ed.views[ed.currentView]
     let index = (ed.currentView + 1) mod ed.views.len
@@ -531,28 +526,28 @@ proc moveCurrentViewNextImpl*(ed: Editor) {.expose("editor").} =
     ed.views.insert(view, index)
     ed.currentView = index
 
-proc setLayoutImpl*(ed: Editor, layout: string) {.expose("editor").} =
+proc setLayout*(ed: Editor, layout: string) {.expose("editor").} =
   ed.layout = case layout
     of "horizontal": HorizontalLayout()
     of "vertical": VerticalLayout()
     of "fibonacci": FibonacciLayout()
     else: HorizontalLayout()
 
-proc commandLineImpl*(ed: Editor, initialValue: string = "") {.expose("editor").} =
+proc commandLine*(ed: Editor, initialValue: string = "") {.expose("editor").} =
   ed.getCommandLineTextEditor.document.content = @[initialValue]
   ed.commandLineMode = true
 
-proc exitCommandLineImpl*(ed: Editor) {.expose("editor").} =
+proc exitCommandLine*(ed: Editor) {.expose("editor").} =
   ed.getCommandLineTextEditor.document.content = @[""]
   ed.commandLineMode = false
 
-proc executeCommandLineImpl*(ed: Editor) {.expose("editor").} =
+proc executeCommandLine*(ed: Editor) {.expose("editor").} =
   ed.commandLineMode = false
   let (action, arg) = ed.getCommandLineTextEditor.document.content.join("").parseAction
   ed.getCommandLineTextEditor.document.content = @[""]
   ed.handleAction(action, arg)
 
-proc openFileImpl*(ed: Editor, path: string) {.expose("editor").} =
+proc openFile*(ed: Editor, path: string) {.expose("editor").} =
   try:
     if path.endsWith(".ast"):
       ed.createView(newAstDocument(path))
@@ -563,7 +558,7 @@ proc openFileImpl*(ed: Editor, path: string) {.expose("editor").} =
     ed.logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
     echo getCurrentException().getStackTrace()
 
-proc writeFileImpl*(ed: Editor, path: string = "") {.expose("editor").} =
+proc writeFile*(ed: Editor, path: string = "") {.expose("editor").} =
   if ed.currentView >= 0 and ed.currentView < ed.views.len and ed.views[ed.currentView].document != nil:
     try:
       ed.views[ed.currentView].document.save(path)
@@ -571,7 +566,7 @@ proc writeFileImpl*(ed: Editor, path: string = "") {.expose("editor").} =
       ed.logger.log(lvlError, fmt"[ed] Failed to write file '{path}': {getCurrentExceptionMsg()}")
       echo getCurrentException().getStackTrace()
 
-proc loadFileImpl*(ed: Editor, path: string = "") {.expose("editor").} =
+proc loadFile*(ed: Editor, path: string = "") {.expose("editor").} =
   if ed.currentView >= 0 and ed.currentView < ed.views.len and ed.views[ed.currentView].document != nil:
     try:
       ed.views[ed.currentView].document.load(path)
@@ -580,13 +575,13 @@ proc loadFileImpl*(ed: Editor, path: string = "") {.expose("editor").} =
       ed.logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
       echo getCurrentException().getStackTrace()
 
-proc loadThemeImpl*(ed: Editor, name: string) {.expose("editor").} =
+proc loadTheme*(ed: Editor, name: string) {.expose("editor").} =
   if theme.loadFromFile(fmt"./themes/{name}.json").getSome(theme):
     ed.theme = theme
   else:
     ed.logger.log(lvlError, fmt"[ed] Failed to load theme {name}")
 
-proc chooseThemeImpl*(ed: Editor) {.expose("editor").} =
+proc chooseTheme*(ed: Editor) {.expose("editor").} =
   let originalTheme = ed.theme.path
   var popup = ed.newSelectorPopup proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
     for file in walkDirRec("./themes", relative=true):
@@ -611,7 +606,7 @@ proc chooseThemeImpl*(ed: Editor) {.expose("editor").} =
 
   ed.pushPopup popup
 
-proc chooseFileImpl*(ed: Editor, view: string = "new") {.expose("editor").} =
+proc chooseFile*(ed: Editor, view: string = "new") {.expose("editor").} =
   var popup = ed.newSelectorPopup proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
     for file in walkDirRec(".", relative=true):
       let name = file.splitFile[1]
@@ -623,15 +618,15 @@ proc chooseFileImpl*(ed: Editor, view: string = "new") {.expose("editor").} =
   popup.handleItemConfirmed = proc(item: SelectorItem) =
     case view
     of "current":
-      ed.loadFileImpl(item.FileSelectorItem.path)
+      ed.loadFile(item.FileSelectorItem.path)
     of "new":
-      ed.openFileImpl(item.FileSelectorItem.path)
+      ed.openFile(item.FileSelectorItem.path)
     else:
       ed.logger.log(lvlError, fmt"Unknown argument {view}")
 
   ed.pushPopup popup
 
-proc reloadConfigImpl*(ed: Editor) {.expose("editor").} =
+proc reloadConfig*(ed: Editor) {.expose("editor").} =
   if ed.scriptContext.isNil.not:
     try:
       ed.scriptContext.reloadScript()
@@ -641,7 +636,7 @@ proc reloadConfigImpl*(ed: Editor) {.expose("editor").} =
     except:
       ed.logger.log(lvlError, fmt"Failed to reload config")
 
-proc logOptionsImpl*(ed: Editor) {.expose("editor").} =
+proc logOptions*(ed: Editor) {.expose("editor").} =
   ed.logger.log(lvlInfo, ed.options.pretty)
 
 genDispatcher("editor")

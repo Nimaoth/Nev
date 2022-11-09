@@ -520,7 +520,7 @@ proc editSymbol*(self: AstDocumentEditor, symbol: Symbol) =
   self.textDocument = newTextDocument()
   self.textDocument.content = @[symbol.name]
   self.textEditor = newTextEditor(self.textDocument, self.editor)
-  self.textEditor.setModeImpl("insert")
+  self.textEditor.setMode("insert")
   self.textEditor.renderHeader = false
   self.textEditor.fillAvailableSpace = false
   discard self.textDocument.textChanged.subscribe (doc: TextDocument) => self.handleTextDocumentChanged()
@@ -533,7 +533,7 @@ proc editNode*(self: AstDocumentEditor, node: AstNode) =
   self.textDocument = newTextDocument()
   self.textDocument.content = node.text.splitLines
   self.textEditor = newTextEditor(self.textDocument, self.editor)
-  self.textEditor.setModeImpl("insert")
+  self.textEditor.setMode("insert")
   self.textEditor.renderHeader = false
   self.textEditor.fillAvailableSpace = false
   discard self.textDocument.textChanged.subscribe (doc: TextDocument) => self.handleTextDocumentChanged()
@@ -599,7 +599,7 @@ proc updateCompletions(editor: AstDocumentEditor) =
   else:
     editor.selectedCompletion = 0
 
-proc finishEditImpl*(self: AstDocumentEditor, apply: bool)
+proc finishEdit*(self: AstDocumentEditor, apply: bool)
 
 proc getNodeAt*(self: AstDocumentEditor, cursor: Cursor, index: int = -1): AstNode =
   return self.node
@@ -617,7 +617,7 @@ method handleDocumentChanged*(self: AstDocumentEditor) =
   logger.log(lvlInfo, fmt"[ast-editor] Document changed")
   self.selectionHistory.clear
   self.selectionFuture.clear
-  self.finishEditImpl false
+  self.finishEdit false
   for symbol in ctx.globalScope.values:
     discard ctx.newSymbol(symbol)
   self.node = self.document.rootNode[0]
@@ -1188,52 +1188,6 @@ proc shouldEditNode(doc: AstDocument, node: AstNode): bool =
     return ctx.computeSymbol(node).getSome(symbol) and symbol.name == ""
   return false
 
-proc runSelectedFunction(self: AstDocumentEditor) =
-  var node = self.node
-
-  while node.parent != nil:
-    if node.parent == self.document.rootNode and node.kind == Call:
-      let timer = startTimer()
-      logger.log(lvlInfo, fmt"[asteditor] Executing call {node}")
-
-      # Update node to force recomputation of value
-      ctx.updateNode(node)
-      let result = ctx.computeValue(node)
-      if result.kind != vkVoid:
-        executionOutput.addOutput($result, if result.kind == vkError: rgb(255, 50, 50) else: rgb(50, 255, 50))
-      logger.log(lvlInfo, fmt"[asteditor] {node} returned {result} (Took {timer.elapsed.ms}ms)")
-      return
-
-    if node.kind == ConstDecl and node.len > 0 and node[0].kind == FunctionDefinition:
-      let functionType = ctx.computeType(node)
-      if functionType.kind == tError:
-        logger.log(lvlError, fmt"[asteditor] Function failed to compile: {node}")
-        return
-
-      if functionType.kind != tFunction:
-        logger.log(lvlError, fmt"[asteditor] Function has wrong type: {node}, type is {functionType}")
-        return
-
-      if functionType.paramTypes.len > 0:
-        logger.log(lvlError, fmt"[asteditor] Can't call function with arguments directly {node}, type is {functionType}")
-        return
-
-      logger.log(lvlInfo, fmt"[asteditor] Calling function {node} ({functionType})")
-
-      let timer = startTimer()
-
-      let maxLoopIterations = self.editor.getOption("ast.max-loop-iterations", 1000)
-      let fec = ctx.newFunctionExecutionContext(FunctionExecutionContext(node: node[0], arguments: @[], maxLoopIterations: some(maxLoopIterations)))
-      let result = ctx.computeFunctionExecution(fec)
-      if result.kind != vkVoid:
-        executionOutput.addOutput($result, if result.kind == vkError: rgb(255, 50, 50) else: rgb(50, 255, 50))
-      logger.log(lvlInfo, fmt"[asteditor] Function {node} returned {result} (Took {timer.elapsed.ms}ms)")
-      return
-
-    node = node.parent
-
-  logger.log(lvlError, fmt"[asteditor] No function or call found to execute for {self.node}")
-
 proc getNodeAtPixelPosition(self: AstDocumentEditor, posContent: Vec2): Option[AstNode] =
   result = AstNode.none
 
@@ -1305,7 +1259,7 @@ proc toJson*(self: api.AstDocumentEditor, opt = initToJsonOptions()): JsonNode =
 proc fromJsonHook*(t: var api.AstDocumentEditor, jsonNode: JsonNode) =
   t.id = api.EditorId(jsonNode["id"].jsonTo(int))
 
-proc moveCursorImpl*(self: AstDocumentEditor, direction: int) {.expose("editor.ast").} =
+proc moveCursor*(self: AstDocumentEditor, direction: int) {.expose("editor.ast").} =
   if direction < 0:
     if self.isEditing: return
     let index = self.node.index
@@ -1317,17 +1271,17 @@ proc moveCursorImpl*(self: AstDocumentEditor, direction: int) {.expose("editor.a
     if index >= 0 and index < self.node.parent.len - 1:
       self.node = self.node.parent[index + 1]
 
-proc moveCursorUpImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
+proc moveCursorUp*(self: AstDocumentEditor) {.expose("editor.ast").} =
   if self.isEditing: return
   if self.node != self.document.rootNode and self.node.parent != self.document.rootNode and self.node.parent != nil:
     self.node = self.node.parent
 
-proc moveCursorDownImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
+proc moveCursorDown*(self: AstDocumentEditor) {.expose("editor.ast").} =
   if self.isEditing: return
   if self.node.len > 0:
     self.node = self.node[0]
 
-proc moveCursorNextImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
+proc moveCursorNext*(self: AstDocumentEditor) {.expose("editor.ast").} =
   if self.isEditing: return
   var node = self.node
   for _, n in self.document.nextPreVisualOrder(self.node):
@@ -1337,7 +1291,7 @@ proc moveCursorNextImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
       self.node = n
       break
 
-proc moveCursorPrevImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
+proc moveCursorPrev*(self: AstDocumentEditor) {.expose("editor.ast").} =
   if self.isEditing: return
   var node = self.node
   for n in self.document.prevPostVisualOrder(self.node, gotoChild = false):
@@ -1347,17 +1301,17 @@ proc moveCursorPrevImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
       self.node = n
       break
 
-proc moveCursorNextLineImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
+proc moveCursorNextLine*(self: AstDocumentEditor) {.expose("editor.ast").} =
   if self.isEditing: return
   if self.document.getNextLine(self.node).getSome(next):
     self.node = next
 
-proc moveCursorPrevLineImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
+proc moveCursorPrevLine*(self: AstDocumentEditor) {.expose("editor.ast").} =
   if self.isEditing: return
   if self.document.getPrevLine(self.node).getSome(prev):
     self.node = prev
 
-proc selectContainingImpl*(self: AstDocumentEditor, container: string) {.expose("editor.ast").} =
+proc selectContaining*(self: AstDocumentEditor, container: string) {.expose("editor.ast").} =
   if self.isEditing: return
   case container
   of "function":
@@ -1379,16 +1333,16 @@ proc selectContainingImpl*(self: AstDocumentEditor, container: string) {.expose(
     if self.node.findWithParentRec(While).getSome(child):
       self.node = child.parent
 
-proc deleteSelectedImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
+proc deleteSelected*(self: AstDocumentEditor) {.expose("editor.ast").} =
   if self.isEditing: return
   self.deletedNode = some(self.node)
   self.node = self.document.deleteNode self.node
 
-proc copySelectedImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
+proc copySelected*(self: AstDocumentEditor) {.expose("editor.ast").} =
   if self.isEditing: return
   self.deletedNode = some(self.node.cloneAndMapIds())
 
-proc finishEditImpl*(self: AstDocumentEditor, apply: bool) {.expose("editor.ast").} =
+proc finishEdit*(self: AstDocumentEditor, apply: bool) {.expose("editor.ast").} =
   if not self.isEditing: return
 
   if apply:
@@ -1414,19 +1368,19 @@ proc finishEditImpl*(self: AstDocumentEditor, apply: bool) {.expose("editor.ast"
   self.currentlyEditedNode = nil
   self.updateCompletions()
 
-proc undoImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
+proc undo*(self: AstDocumentEditor) {.expose("editor.ast").} =
   if self.isEditing: return
-  self.finishEditImpl false
+  self.finishEdit false
   if self.document.undo.getSome(node):
     self.node = node
 
-proc redoImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
+proc redo*(self: AstDocumentEditor) {.expose("editor.ast").} =
   if self.isEditing: return
-  self.finishEditImpl false
+  self.finishEdit false
   if self.document.redo.getSome(node):
     self.node = node
 
-proc insertAfterSmartImpl*(self: AstDocumentEditor, nodeTemplate: string) {.expose("editor.ast").} =
+proc insertAfterSmart*(self: AstDocumentEditor, nodeTemplate: string) {.expose("editor.ast").} =
   if self.isEditing: return
 
   var node = self.node
@@ -1449,7 +1403,7 @@ proc insertAfterSmartImpl*(self: AstDocumentEditor, nodeTemplate: string) {.expo
     else:
       logger.log(lvlError, fmt"[astedit] Failed to insert node {newNode} into {self.node.parent} at {index + 1}")
 
-proc insertAfterImpl*(self: AstDocumentEditor, nodeTemplate: string) {.expose("editor.ast").} =
+proc insertAfter*(self: AstDocumentEditor, nodeTemplate: string) {.expose("editor.ast").} =
   if self.isEditing: return
   let node = self.node
   let index = node.index
@@ -1467,7 +1421,7 @@ proc insertAfterImpl*(self: AstDocumentEditor, nodeTemplate: string) {.expose("e
     else:
       logger.log(lvlError, fmt"[astedit] Failed to insert node {newNode} into {self.node.parent} at {index + 1}")
 
-proc insertBeforeImpl*(self: AstDocumentEditor, nodeTemplate: string) {.expose("editor.ast").} =
+proc insertBefore*(self: AstDocumentEditor, nodeTemplate: string) {.expose("editor.ast").} =
   if self.isEditing: return
   let index = self.node.index
   if self.createNodeFromAction(nodeTemplate, self.node, errorType()).getSome(newNodeIndex):
@@ -1483,7 +1437,7 @@ proc insertBeforeImpl*(self: AstDocumentEditor, nodeTemplate: string) {.expose("
     else:
       logger.log(lvlError, fmt"[astedit] Failed to insert node {newNode} into {self.node.parent} at {index}")
 
-proc insertChildImpl*(self: AstDocumentEditor, nodeTemplate: string) {.expose("editor.ast").} =
+proc insertChild*(self: AstDocumentEditor, nodeTemplate: string) {.expose("editor.ast").} =
   if self.isEditing: return
   if self.createNodeFromAction(nodeTemplate, self.node, errorType()).getSome(newNodeIndex):
     let (newNode, _) = newNodeIndex
@@ -1498,7 +1452,7 @@ proc insertChildImpl*(self: AstDocumentEditor, nodeTemplate: string) {.expose("e
     else:
       logger.log(lvlError, fmt"[astedit] Failed to insert node {newNode} into {self.node} at {self.node.len}")
 
-proc replaceImpl*(self: AstDocumentEditor, nodeTemplate: string) {.expose("editor.ast").} =
+proc replace*(self: AstDocumentEditor, nodeTemplate: string) {.expose("editor.ast").} =
   if self.isEditing: return
   if self.createNodeFromAction(nodeTemplate, self.node, errorType()).getSome(newNodeIndex):
     let (newNode, _) = newNodeIndex
@@ -1509,7 +1463,7 @@ proc replaceImpl*(self: AstDocumentEditor, nodeTemplate: string) {.expose("edito
       discard self.tryEdit self.node
       break
 
-proc replaceEmptyImpl*(self: AstDocumentEditor, nodeTemplate: string) {.expose("editor.ast").} =
+proc replaceEmpty*(self: AstDocumentEditor, nodeTemplate: string) {.expose("editor.ast").} =
   if self.isEditing: return
   if self.node.kind == Empty and self.createNodeFromAction(nodeTemplate, self.node, errorType()).getSome(newNodeIndex):
     let (newNode, _) = newNodeIndex
@@ -1520,7 +1474,7 @@ proc replaceEmptyImpl*(self: AstDocumentEditor, nodeTemplate: string) {.expose("
       discard self.tryEdit self.node
       break
 
-proc replaceParentImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
+proc replaceParent*(self: AstDocumentEditor) {.expose("editor.ast").} =
   if self.isEditing:
     return
   let node = self.node
@@ -1530,7 +1484,7 @@ proc replaceParentImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
   discard self.document.deleteNode(self.node)
   self.node = self.document.replaceNode(parent, node)
 
-proc wrapImpl*(self: AstDocumentEditor, nodeTemplate: string) {.expose("editor.ast").} =
+proc wrap*(self: AstDocumentEditor, nodeTemplate: string) {.expose("editor.ast").} =
   if self.isEditing: return
   let typ = ctx.computeType(self.node)
 
@@ -1547,7 +1501,7 @@ proc wrapImpl*(self: AstDocumentEditor, nodeTemplate: string) {.expose("editor.a
       discard self.tryEdit self.node
       break
 
-proc editPrevEmptyImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
+proc editPrevEmpty*(self: AstDocumentEditor) {.expose("editor.ast").} =
   if self.isEditing: return
   let current = self.node
   for emptyNode in self.document.prevPostOrder(self.node):
@@ -1556,7 +1510,7 @@ proc editPrevEmptyImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
       discard self.tryEdit self.node
       break
 
-proc editNextEmptyImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
+proc editNextEmpty*(self: AstDocumentEditor) {.expose("editor.ast").} =
   if self.isEditing: return
   let current = self.node
   for _, emptyNode in self.document.nextPreOrderWhere(self.node, (n) => n != current and self.document.shouldEditNode(n)):
@@ -1564,23 +1518,23 @@ proc editNextEmptyImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
     discard self.tryEdit self.node
     break
 
-proc renameImpl*(self: AstDocumentEditor) {.expose("editor.ast").} =
+proc rename*(self: AstDocumentEditor) {.expose("editor.ast").} =
   if self.isEditing: return
   discard self.tryEdit self.node
 
-proc selectPrevCompletionImpl(self: AstDocumentEditor) {.expose("editor.ast").} =
+proc selectPrevCompletion(self: AstDocumentEditor) {.expose("editor.ast").} =
   if self.completions.len > 0:
     self.selectedCompletion = (self.selectedCompletion - 1).clamp(0, self.completions.len - 1)
   else:
     self.selectedCompletion = 0
 
-proc selectNextCompletionImpl(editor: AstDocumentEditor) {.expose("editor.ast").} =
+proc selectNextCompletion(editor: AstDocumentEditor) {.expose("editor.ast").} =
   if editor.completions.len > 0:
     editor.selectedCompletion = (editor.selectedCompletion + 1).clamp(0, editor.completions.len - 1)
   else:
     editor.selectedCompletion = 0
 
-proc applySelectedCompletionImpl(editor: AstDocumentEditor) {.expose("editor.ast").} =
+proc applySelectedCompletion(editor: AstDocumentEditor) {.expose("editor.ast").} =
   if editor.textDocument == nil:
     return
 
@@ -1592,7 +1546,7 @@ proc applySelectedCompletionImpl(editor: AstDocumentEditor) {.expose("editor.ast
 
   logger.log(lvlInfo, fmt"[astedit] Applying completion {editor.selectedCompletion} ({completionText})")
 
-  editor.finishEditImpl false
+  editor.finishEdit false
 
   case com.kind
   of SymbolCompletion:
@@ -1618,22 +1572,22 @@ proc applySelectedCompletionImpl(editor: AstDocumentEditor) {.expose("editor.ast
         discard editor.tryEdit editor.node
         break
 
-proc cancelAndNextCompletionImpl(self: AstDocumentEditor) {.expose("editor.ast").} =
-  self.finishEditImpl(false)
-  self.editNextEmptyImpl()
+proc cancelAndNextCompletion(self: AstDocumentEditor) {.expose("editor.ast").} =
+  self.finishEdit(false)
+  self.editNextEmpty()
 
-proc cancelAndPrevCompletionImpl(self: AstDocumentEditor) {.expose("editor.ast").} =
-  self.finishEditImpl(false)
-  self.editPrevEmptyImpl()
+proc cancelAndPrevCompletion(self: AstDocumentEditor) {.expose("editor.ast").} =
+  self.finishEdit(false)
+  self.editPrevEmpty()
 
-proc cancelAndDeleteImpl(self: AstDocumentEditor) {.expose("editor.ast").} =
-  self.finishEditImpl(false)
+proc cancelAndDelete(self: AstDocumentEditor) {.expose("editor.ast").} =
+  self.finishEdit(false)
   self.deletedNode = some(self.node)
   self.node = self.document.deleteNode self.node
 
-proc moveNodeToPrevSpaceImpl(self: AstDocumentEditor) {.expose("editor.ast").} =
+proc moveNodeToPrevSpace(self: AstDocumentEditor) {.expose("editor.ast").} =
   let wasEditing = self.isEditing
-  self.finishEditImpl(false)
+  self.finishEdit(false)
 
   # Find spot where to insert
   var targetNode = AstNode.none
@@ -1666,9 +1620,9 @@ proc moveNodeToPrevSpaceImpl(self: AstDocumentEditor) {.expose("editor.ast").} =
       if wasEditing:
         discard self.tryEdit self.node
 
-proc moveNodeToNextSpaceImpl(self: AstDocumentEditor) {.expose("editor.ast").} =
+proc moveNodeToNextSpace(self: AstDocumentEditor) {.expose("editor.ast").} =
   let wasEditing = self.isEditing
-  self.finishEditImpl(false)
+  self.finishEdit(false)
 
   # Find spot where to insert
   var targetNode = AstNode.none
@@ -1701,15 +1655,15 @@ proc moveNodeToNextSpaceImpl(self: AstDocumentEditor) {.expose("editor.ast").} =
       if wasEditing:
         discard self.tryEdit self.node
 
-proc selectPrevImpl(self: AstDocumentEditor) {.expose("editor.ast").} =
+proc selectPrev(self: AstDocumentEditor) {.expose("editor.ast").} =
   if self.isEditing: return
   self.selectPrevNode()
 
-proc selectNextImpl(self: AstDocumentEditor) {.expose("editor.ast").} =
+proc selectNext(self: AstDocumentEditor) {.expose("editor.ast").} =
   if self.isEditing: return
   self.selectNextNode()
 
-proc gotoImpl(self: AstDocumentEditor, where: string) {.expose("editor.ast").} =
+proc goto(self: AstDocumentEditor, where: string) {.expose("editor.ast").} =
   if self.isEditing: return
   case where
   of "definition":
@@ -1773,18 +1727,62 @@ proc gotoImpl(self: AstDocumentEditor, where: string) {.expose("editor.ast").} =
         self.node = node
     self.editor.pushPopup popup
 
-proc runSelectedFunctionImpl(self: AstDocumentEditor) {.expose("editor.ast").} =
+proc runSelectedFunction(self: AstDocumentEditor) {.expose("editor.ast").} =
   if self.isEditing: return
-  self.runSelectedFunction()
 
-proc toggleOptionImpl(self: AstDocumentEditor, name: string) {.expose("editor.ast").} =
+  var node = self.node
+
+  while node.parent != nil:
+    if node.parent == self.document.rootNode and node.kind == Call:
+      let timer = startTimer()
+      logger.log(lvlInfo, fmt"[asteditor] Executing call {node}")
+
+      # Update node to force recomputation of value
+      ctx.updateNode(node)
+      let result = ctx.computeValue(node)
+      if result.kind != vkVoid:
+        executionOutput.addOutput($result, if result.kind == vkError: rgb(255, 50, 50) else: rgb(50, 255, 50))
+      logger.log(lvlInfo, fmt"[asteditor] {node} returned {result} (Took {timer.elapsed.ms}ms)")
+      return
+
+    if node.kind == ConstDecl and node.len > 0 and node[0].kind == FunctionDefinition:
+      let functionType = ctx.computeType(node)
+      if functionType.kind == tError:
+        logger.log(lvlError, fmt"[asteditor] Function failed to compile: {node}")
+        return
+
+      if functionType.kind != tFunction:
+        logger.log(lvlError, fmt"[asteditor] Function has wrong type: {node}, type is {functionType}")
+        return
+
+      if functionType.paramTypes.len > 0:
+        logger.log(lvlError, fmt"[asteditor] Can't call function with arguments directly {node}, type is {functionType}")
+        return
+
+      logger.log(lvlInfo, fmt"[asteditor] Calling function {node} ({functionType})")
+
+      let timer = startTimer()
+
+      let maxLoopIterations = self.editor.getOption("ast.max-loop-iterations", 1000)
+      let fec = ctx.newFunctionExecutionContext(FunctionExecutionContext(node: node[0], arguments: @[], maxLoopIterations: some(maxLoopIterations)))
+      let result = ctx.computeFunctionExecution(fec)
+      if result.kind != vkVoid:
+        executionOutput.addOutput($result, if result.kind == vkError: rgb(255, 50, 50) else: rgb(50, 255, 50))
+      logger.log(lvlInfo, fmt"[asteditor] Function {node} returned {result} (Took {timer.elapsed.ms}ms)")
+      return
+
+    node = node.parent
+
+  logger.log(lvlError, fmt"[asteditor] No function or call found to execute for {self.node}")
+
+proc toggleOption(self: AstDocumentEditor, name: string) {.expose("editor.ast").} =
   case name
   of "logging":
     ctx.enableLogging = not ctx.enableLogging
 
 proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventResponse
 
-proc runLastCommandImpl(self: AstDocumentEditor, which: string) {.expose("editor.ast").} =
+proc runLastCommand(self: AstDocumentEditor, which: string) {.expose("editor.ast").} =
   case which
   of "":
     discard self.handleAction(self.lastCommand[0], self.lastCommand[1])
@@ -1795,7 +1793,7 @@ proc runLastCommandImpl(self: AstDocumentEditor, which: string) {.expose("editor
   of "other":
     discard self.handleAction(self.lastOtherCommand[0], self.lastOtherCommand[1])
 
-proc selectCenterNodeImpl(self: AstDocumentEditor) {.expose("editor.ast").} =
+proc selectCenterNode(self: AstDocumentEditor) {.expose("editor.ast").} =
   var nodes: seq[tuple[y: float32, node: VisualNode]] = @[]
   for (layout, offset) in self.lastLayouts:
     for (i, node) in layout.root.nextPreOrder:
@@ -1816,10 +1814,10 @@ proc selectCenterNodeImpl(self: AstDocumentEditor) {.expose("editor.ast").} =
         self.node = node.node
         break
 
-proc scrollImpl(self: AstDocumentEditor, amount: float32) {.expose("editor.ast").} =
+proc scroll(self: AstDocumentEditor, amount: float32) {.expose("editor.ast").} =
   self.scrollOffset += amount
 
-proc scrollOutputImpl(self: AstDocumentEditor, arg: string) {.expose("editor.ast").} =
+proc scrollOutput(self: AstDocumentEditor, arg: string) {.expose("editor.ast").} =
   case arg
   of "home":
     executionOutput.scroll = executionOutput.lines.len
@@ -1830,7 +1828,7 @@ proc scrollOutputImpl(self: AstDocumentEditor, arg: string) {.expose("editor.ast
   else:
     executionOutput.scroll = clamp(executionOutput.scroll + arg.parseInt, 0, executionOutput.lines.len)
 
-proc dumpContextImpl(self: AstDocumentEditor) {.expose("editor.ast").} =
+proc dumpContext(self: AstDocumentEditor) {.expose("editor.ast").} =
   echo "================================================="
   echo ctx.toString
   echo "================================================="
@@ -1877,7 +1875,7 @@ method handleMousePress*(self: AstDocumentEditor, button: Button, mousePosWindow
   if button == MouseLeft:
     if self.getItemAtPixelPosition(mousePosWindow).getSome(index):
       self.selectedCompletion = index
-      self.applySelectedCompletionImpl()
+      self.applySelectedCompletion()
 
     elif not self.isEditing and self.getNodeAtPixelPosition(mousePosContent).getSome(n):
       self.node = n
@@ -1962,5 +1960,5 @@ method injectDependencies*(self: AstDocumentEditor, ed: Editor) =
       Ignored
 
 method unregister*(self: AstDocumentEditor) =
-  self.finishEditImpl(false)
+  self.finishEdit(false)
   self.editor.unregisterEditor(self)

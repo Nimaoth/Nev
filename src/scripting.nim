@@ -77,11 +77,7 @@ macro expose*(moduleName: static string, def: untyped): untyped =
     return NimNode.none
 
   let functionNameStr = functionName.strVal
-  if not functionNameStr.endsWith("Impl"):
-    return quote do:
-      {.fatal: "Function name has to end with 'Impl': " & `functionNameStr`.}
-
-  let pureFunctionName = ident functionNameStr[0..^5]
+  let pureFunctionName = ident functionNameStr
 
   var postfix = ""
   for module, functions in functions.pairs:

@@ -56,17 +56,17 @@ proc toJson*(self: api.SelectorPopup, opt = initToJsonOptions()): JsonNode =
 proc fromJsonHook*(t: var api.SelectorPopup, jsonNode: JsonNode) =
   t.id = api.PopupId(jsonNode["id"].jsonTo(int))
 
-proc acceptImpl*(self: SelectorPopup) {.expose("popup.selector").} =
+proc accept*(self: SelectorPopup) {.expose("popup.selector").} =
   if self.selected < self.completions.len:
     self.handleItemConfirmed self.completions[self.selected]
   self.editor.popPopup(self)
 
-proc cancelImpl*(self: SelectorPopup) {.expose("popup.selector").} =
+proc cancel*(self: SelectorPopup) {.expose("popup.selector").} =
   if self.handleCanceled != nil:
     self.handleCanceled()
   self.editor.popPopup(self)
 
-proc prevImpl*(self: SelectorPopup) {.expose("popup.selector").} =
+proc prev*(self: SelectorPopup) {.expose("popup.selector").} =
   self.selected = if self.completions.len == 0:
     0
   else:
@@ -75,7 +75,7 @@ proc prevImpl*(self: SelectorPopup) {.expose("popup.selector").} =
   if self.completions.len > 0 and self.handleItemSelected != nil:
     self.handleItemSelected self.completions[self.selected]
 
-proc nextImpl*(self: SelectorPopup) {.expose("popup.selector").} =
+proc next*(self: SelectorPopup) {.expose("popup.selector").} =
   self.selected = if self.completions.len == 0:
     0
   else:
