@@ -854,7 +854,6 @@ proc selectParentTs(self: TextDocumentEditor, selection: Selection) {.expose("ed
     return
 
   var node = self.document.currentTree.root.descendantForRange(selection)
-  echo selection, ", ", node.getRange
   while node.getRange == selection and node != self.document.currentTree.root:
     node = node.parent
 

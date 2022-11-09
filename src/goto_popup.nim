@@ -44,7 +44,7 @@ proc getItemAtPixelPosition(self: AstGotoDefinitionPopup, posWindow: Vec2): Opti
       return self.completions[index].some
 
 method getEventHandlers*(self: AstGotoDefinitionPopup): seq[EventHandler] =
-  return self.textEditor.eventHandler & @[self.eventHandler]
+  return self.textEditor.getEventHandlers() & @[self.eventHandler]
 
 proc handleAction*(self: AstGotoDefinitionPopup, action: string, arg: string): EventResponse =
   case action
@@ -95,6 +95,7 @@ method handleMouseMove*(self: AstGotoDefinitionPopup, mousePosWindow: Vec2, mous
 proc newGotoPopup*(editor: Editor, document: AstDocument): AstGotoDefinitionPopup =
   var popup = AstGotoDefinitionPopup(editor: editor, document: document)
   popup.textEditor = newTextEditor(newTextDocument(), editor)
+  popup.textEditor.setMode("insert")
   popup.textEditor.renderHeader = false
   popup.textEditor.document.singleLine = true
   discard popup.textEditor.document.textChanged.subscribe (doc: TextDocument) => popup.handleTextChanged()

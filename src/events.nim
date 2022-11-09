@@ -9,6 +9,7 @@ type EventResponse* = enum
   Progress,
 
 type EventHandlerConfig* = ref object
+  context*: string
   commands: Table[string, string]
   handleActions*: bool
   handleInputs*: bool
@@ -22,10 +23,11 @@ type EventHandler* = ref object
   handleAction*: proc(action: string, arg: string): EventResponse
   handleInput*: proc(input: string): EventResponse
 
-func newEventHandlerConfig*(): EventHandlerConfig =
+func newEventHandlerConfig*(context: string): EventHandlerConfig =
   new result
   result.handleActions = true
   result.handleInputs = false
+  result.context = context
 
 proc buildDFA*(config: EventHandlerConfig): CommandDFA =
   return buildDFA(config.commands.pairs.toSeq)
