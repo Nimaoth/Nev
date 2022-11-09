@@ -259,6 +259,7 @@ addCommand "editor.text", "miw", "select-inside-current"
 addCommand "editor.text", "<A-UP>", "select-parent-current-ts"
 addCommand "editor.text", "<C-r>", "select-prev"
 addCommand "editor.text", "<C-t>", "select-next"
+addCommand "editor.text", "<C-n>", "invert-selection"
 addCommand "editor.text", "<C-8>", () => setOption("text.line-distance", getOption[float32]("text.line-distance") - 1)
 addCommand "editor.text", "<C-9>", () => setOption("text.line-distance", getOption[float32]("text.line-distance") + 1)
 addCommand "editor.text", "i", "set-mode", "insert"

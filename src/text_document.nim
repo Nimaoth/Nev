@@ -666,15 +666,15 @@ proc scrollToCursor(self: TextDocumentEditor, cursor: Cursor) =
     self.scrollOffset = self.lastContentBounds.h - margin - totalLineHeight
     self.previousBaseIndex = targetLine
 
-proc getContextWithModeImpl(self: TextDocumentEditor, context: string): string
+proc getContextWithMode(self: TextDocumentEditor, context: string): string
 
 proc isThickCursor(self: TextDocumentEditor): bool =
-  return getOption[bool](self.editor, self.getContextWithModeImpl("editor.text.cursor.wide"), false)
+  return getOption[bool](self.editor, self.getContextWithMode("editor.text.cursor.wide"), false)
 
 proc getCursor(self: TextDocumentEditor, cursor: SelectionCursor): Cursor =
   case cursor
   of Config:
-    let configCursor = getOption[SelectionCursor](self.editor, self.getContextWithModeImpl("editor.text.cursor.movement"), Both)
+    let configCursor = getOption[SelectionCursor](self.editor, self.getContextWithMode("editor.text.cursor.movement"), Both)
     return self.getCursor(configCursor)
   of Both, Last, LastToFirst:
     return self.selection.last
@@ -684,7 +684,7 @@ proc getCursor(self: TextDocumentEditor, cursor: SelectionCursor): Cursor =
 proc moveCursor(self: TextDocumentEditor, cursor: SelectionCursor, movement: proc(doc: TextDocumentEditor, c: Cursor, off: int): Cursor, offset: int) =
   case cursor
   of Config:
-    let configCursor = getOption[SelectionCursor](self.editor, self.getContextWithModeImpl("editor.text.cursor.movement"), Both)
+    let configCursor = getOption[SelectionCursor](self.editor, self.getContextWithMode("editor.text.cursor.movement"), Both)
     self.moveCursor(configCursor, movement, offset)
   of Both:
     self.selection = movement(self, self.selection.last, offset).toSelection
@@ -715,6 +715,8 @@ proc getModeConfig(self: TextDocumentEditor, mode: string): EventHandlerConfig =
 static:
   addTypeMap(TextDocumentEditor, api.TextDocumentEditor, getTextDocumentEditor)
 
+proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config)
+
 proc toJson*(self: api.TextDocumentEditor, opt = initToJsonOptions()): JsonNode =
   result = newJObject()
   result["type"] = newJString("editor.text")
@@ -723,7 +725,7 @@ proc toJson*(self: api.TextDocumentEditor, opt = initToJsonOptions()): JsonNode 
 proc fromJsonHook*(t: var api.TextDocumentEditor, jsonNode: JsonNode) =
   t.id = api.EditorId(jsonNode["id"].jsonTo(int))
 
-proc setModeImpl*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} =
+proc setMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} =
   if mode.len == 0:
     self.modeEventHandler = nil
   else:
@@ -736,27 +738,30 @@ proc setModeImpl*(self: TextDocumentEditor, mode: string) {.expose("editor.text"
 
   self.currentMode = mode
 
-proc getContextWithModeImpl(self: TextDocumentEditor, context: string): string {.expose("editor.text").} =
+proc getContextWithMode(self: TextDocumentEditor, context: string): string {.expose("editor.text").} =
   return context & "." & $self.currentMode
 
-proc updateTargetColumnImpl(self: TextDocumentEditor, cursor: SelectionCursor) {.expose("editor.text").} =
+proc updateTargetColumn(self: TextDocumentEditor, cursor: SelectionCursor) {.expose("editor.text").} =
   self.targetColumn = self.getCursor(cursor).column
 
-proc selectPrevImpl(self: TextDocumentEditor) {.expose("editor.text").} =
+proc invertSelection(self: TextDocumentEditor) {.expose("editor.text").} =
+  self.selection = (self.selection.last, self.selection.first)
+
+proc selectPrev(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.selectionHistory.len > 0:
     let selection = self.selectionHistory.popLast
     self.selectionHistory.addFirst self.selection
     self.selectionInternal = selection
-    return
+  self.scrollToCursor(self.selection.last)
 
-proc selectNextImpl(self: TextDocumentEditor) {.expose("editor.text").} =
+proc selectNext(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.selectionHistory.len > 0:
     let selection = self.selectionHistory.popFirst
     self.selectionHistory.addLast self.selection
     self.selectionInternal = selection
-    return
+  self.scrollToCursor(self.selection.last)
 
-proc selectInsideImpl(self: TextDocumentEditor, cursor: Cursor) {.expose("editor.text").} =
+proc selectInside(self: TextDocumentEditor, cursor: Cursor) {.expose("editor.text").} =
   let regex = re("[a-zA-Z0-9_]")
   var first = cursor.column
   echo self.document.lines[cursor.line], ", ", first, ", ", self.document.lines[cursor.line].matchLen(regex, start = first - 1)
@@ -767,16 +772,16 @@ proc selectInsideImpl(self: TextDocumentEditor, cursor: Cursor) {.expose("editor
     last += 1
   self.selection = ((cursor.line, first), (cursor.line, last))
 
-proc selectInsideCurrentImpl(self: TextDocumentEditor) {.expose("editor.text").} =
-  self.selectInsideImpl(self.selection.last)
+proc selectInsideCurrent(self: TextDocumentEditor) {.expose("editor.text").} =
+  self.selectInside(self.selection.last)
 
-proc selectLineImpl(self: TextDocumentEditor, line: int) {.expose("editor.text").} =
+proc selectLine(self: TextDocumentEditor, line: int) {.expose("editor.text").} =
   self.selection = ((line, 0), (line, self.lineLength(line)))
 
-proc selectLineCurrentImpl(self: TextDocumentEditor) {.expose("editor.text").} =
-  self.selectLineImpl(self.selection.last.line)
+proc selectLineCurrent(self: TextDocumentEditor) {.expose("editor.text").} =
+  self.selectLine(self.selection.last.line)
 
-proc selectParentTsImpl(self: TextDocumentEditor, selection: Selection) {.expose("editor.text").} =
+proc selectParentTs(self: TextDocumentEditor, selection: Selection) {.expose("editor.text").} =
   if self.document.currentTree.isNil:
     return
 
@@ -787,45 +792,45 @@ proc selectParentTsImpl(self: TextDocumentEditor, selection: Selection) {.expose
 
   self.selection = node.getRange
 
-proc selectParentCurrentTsImpl(self: TextDocumentEditor) {.expose("editor.text").} =
-  self.selectParentTsImpl(self.selection)
+proc selectParentCurrentTs(self: TextDocumentEditor) {.expose("editor.text").} =
+  self.selectParentTs(self.selection)
 
-proc insertTextImpl*(self: TextDocumentEditor, text: string) {.expose("editor.text").} =
+proc insertText*(self: TextDocumentEditor, text: string) {.expose("editor.text").} =
   if self.document.singleLine and text == "\n":
     return
 
   self.selection = self.document.edit(self.selection, text).toSelection
-  self.updateTargetColumnImpl(Last)
+  self.updateTargetColumn(Last)
 
-proc scrollTextImpl(self: TextDocumentEditor, amount: float32) {.expose("editor.text").} =
+proc scrollText(self: TextDocumentEditor, amount: float32) {.expose("editor.text").} =
   self.scrollOffset += amount
 
-proc moveCursorColumnImpl*(self: TextDocumentEditor, distance: int, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
+proc moveCursorColumn*(self: TextDocumentEditor, distance: int, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
   self.moveCursor(cursor, doMoveCursorColumn, distance)
-  self.updateTargetColumnImpl(cursor)
+  self.updateTargetColumn(cursor)
 
-proc moveCursorLineImpl*(self: TextDocumentEditor, distance: int, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
+proc moveCursorLine*(self: TextDocumentEditor, distance: int, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
   self.moveCursor(cursor, doMoveCursorLine, distance)
 
-proc moveCursorHomeImpl*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
+proc moveCursorHome*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
   self.moveCursor(cursor, doMoveCursorHome, 0)
 
-proc moveCursorEndImpl*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
+proc moveCursorEnd*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
   self.moveCursor(cursor, doMoveCursorEnd, 0)
 
-proc scrollToCursorImpl*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
+proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
   self.scrollToCursor(self.getCursor(cursor))
 
-proc reloadTreesitterImpl*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc reloadTreesitter*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.document.initTreesitter()
 
-proc backspaceImpl*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc backspace*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.selection.isEmpty:
     self.selection = self.document.delete((self.doMoveCursorColumn(self.selection.first, -1), self.selection.first)).toSelection
   else:
     self.selection = self.document.edit(self.selection, "").toSelection
 
-proc deleteImpl*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc delete*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.selection.isEmpty:
     self.selection = self.document.delete((self.selection.first, self.doMoveCursorColumn(self.selection.first, 1))).toSelection
   else:
@@ -900,10 +905,10 @@ method handleMousePress*(self: TextDocumentEditor, button: windy.Button, mousePo
     self.selection = cursor.toSelection
 
   if button == DoubleClick and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
-    self.selectInsideImpl(cursor)
+    self.selectInside(cursor)
 
   if button == TripleClick and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
-    self.selectLineImpl(cursor.line)
+    self.selectLine(cursor.line)
 
 method handleMouseRelease*(self: TextDocumentEditor, button: windy.Button, mousePosWindow: Vec2) =
   # if self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
