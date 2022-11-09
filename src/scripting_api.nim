@@ -35,19 +35,34 @@ func `$`*(cursor: Cursor): string =
 func `$`*(selection: Selection): string =
   return $selection.first & "-" & $selection.last
 
-func isBackwards*(selection: Selection): bool =
-  if selection.last.line < selection.first.line:
+func `<`*(a: Cursor, b: Cursor): bool =
+  if a.line < b.line:
     return true
-  elif selection.last.line == selection.first.line and selection.last.column < selection.first.column:
+  elif a.line == b.line and a.column < b.column:
     return true
   else:
     return false
+
+func `>`*(a: Cursor, b: Cursor): bool =
+  if a.line > b.line:
+    return true
+  elif a.line == b.line and a.column > b.column:
+    return true
+  else:
+    return false
+
+func isBackwards*(selection: Selection): bool = selection.first > selection.last
 
 func normalized*(selection: Selection): Selection =
   if selection.isBackwards:
     return (selection.last, selection.first)
   else:
     return selection
+
+func isEmpty*(selection: Selection): bool = selection.first == selection.last
+
+func contains*(selection: Selection, cursor: Cursor): bool = (cursor >= selection.first and cursor <= selection.last)
+func containsExclusive*(selection: Selection, cursor: Cursor): bool = (cursor >= selection.first and cursor < selection.last)
 
 func toSelection*(cursor: Cursor): Selection =
   (cursor, cursor)
@@ -59,6 +74,3 @@ func toSelection*(cursor: Cursor, default: Selection, which: SelectionCursor): S
   of First: return (cursor, default.last)
   of Last: return (default.first, cursor)
   of LastToFirst: return (default.last, cursor)
-
-func isEmpty*(selection: Selection): bool =
-  return selection.first == selection.last

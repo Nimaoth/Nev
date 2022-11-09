@@ -120,7 +120,19 @@ proc endPoint*(node: ts.TSNode): Cursor =
 proc getRange*(node: ts.TSNode): Selection = (node.startPoint, node.endPoint)
 proc root*(tree: ptr ts.TSTree): ts.TSNode = tree.tsTreeRootNode
 proc execute*(cursor: ptr ts.TSQueryCursor, query: ptr ts.TSQuery, node: ts.TSNode) = cursor.tsQueryCursorExec(query, node)
-proc cursor*(node: ts.TSNode): ts.TSTreeCursor = node.tsTreeCursorNew()
+
+template withQueryCursor*(cursor: untyped, body: untyped): untyped =
+  block:
+    let cursor = ts.tsQueryCursorNew()
+    defer: cursor.tsQueryCursorDelete()
+    body
+
+template withTreeCursor*(node: untyped, cursor: untyped, body: untyped): untyped =
+  block:
+    let cursor = node.tsTreeCursorNew()
+    defer: cursor.tsTreeCursorDelete()
+    body
+
 proc `[]`*(node: ts.TSNode, index: int): ts.TSNode = node.tsNodeChild(index.uint32)
 proc descendantForRange*(node: ts.TSNode, selection: Selection): ts.TSNode = node.ts_node_descendant_for_point_range(selection.first.toTsPoint, selection.last.toTsPoint)
 proc parent*(node: ts.TSNode): ts.TSNode = node.tsNodeParent()
@@ -281,9 +293,10 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
 
   var regexes = initTable[string, Regex]()
 
-  if not self.tsParser.isNil and not self.highlightQuery.isNil:
-    let cursor = ts.tsQueryCursorNew()
+  if self.tsParser.isNil or self.highlightQuery.isNil:
+    return styledLine
 
+  withQueryCursor(cursor):
     cursor.setPointRange ((i, 0), (i, line.len))
     cursor.execute(self.highlightQuery, self.currentTree.root)
 
@@ -904,12 +917,14 @@ proc backspace*(self: TextDocumentEditor) {.expose("editor.text").} =
     self.selection = self.document.delete((self.doMoveCursorColumn(self.selection.first, -1), self.selection.first)).toSelection
   else:
     self.selection = self.document.edit(self.selection, "").toSelection
+  self.updateTargetColumn(Last)
 
 proc delete*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.selection.isEmpty:
     self.selection = self.document.delete((self.selection.first, self.doMoveCursorColumn(self.selection.first, 1))).toSelection
   else:
     self.selection = self.document.edit(self.selection, "").toSelection
+  self.updateTargetColumn(Last)
 
 genDispatcher("editor.text")
 
@@ -930,6 +945,7 @@ proc handleAction(self: TextDocumentEditor, action: string, arg: string): EventR
 proc handleInput(self: TextDocumentEditor, input: string): EventResponse =
   # echo "handleInput '", input, "'"
   self.selection = self.document.edit(self.selection, input).toSelection
+  self.updateTargetColumn(Last)
   return Handled
 
 method injectDependencies*(self: TextDocumentEditor, ed: Editor) =
