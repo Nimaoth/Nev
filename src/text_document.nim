@@ -1,5 +1,6 @@
 import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, os, re, tables]
-import editor, document, document_editor, events, id, util, scripting, vmath
+import editor, document, document_editor, events, id, util, scripting, vmath, bumpy, rect_utils
+import windy except Cursor
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 
@@ -44,6 +45,16 @@ type TextDocument* = ref object of Document
   currentTree: ptr ts.TSTree
   highlightQuery: ptr ts.TSQuery
 
+type StyledText* = object
+  text*: string
+  scope*: string
+  priority*: int
+  bounds*: Rect
+
+type StyledLine* = object
+  index*: int
+  parts*: seq[StyledText]
+
 type TextDocumentEditor* = ref object of DocumentEditor
   editor*: Editor
   document*: TextDocument
@@ -57,6 +68,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   scrollOffset*: float
   previousBaseIndex*: int
 
+  lastRenderedLines*: seq[StyledLine]
 
 proc handleAction(self: TextDocumentEditor, action: string, arg: string): EventResponse
 proc handleInput(self: TextDocumentEditor, input: string): EventResponse
@@ -199,14 +211,6 @@ func contentString*(self: TextDocument, selection: Selection): string =
     result.add self.lines[i]
   result.add self.lines[last.line][0..<last.column]
 
-type StyledText* = object
-  text*: string
-  scope*: string
-  priority*: int
-
-type StyledLine* = object
-  parts*: seq[StyledText]
-
 func len*(line: StyledLine): int =
   result = 0
   for p in line.parts:
@@ -235,7 +239,7 @@ proc overrideStyle*(line: var StyledLine, first: int, last: int, scope: string, 
 
 proc getStyledText*(self: TextDocument, i: int): StyledLine =
   var line = self.lines[i]
-  var styledLine = StyledLine(parts: @[StyledText(text: line, scope: "", priority: 1000000000)])
+  var styledLine = StyledLine(index: i, parts: @[StyledText(text: line, scope: "", priority: 1000000000)])
 
   var regexes = initTable[string, Regex]()
 
@@ -639,7 +643,6 @@ proc scrollToCursor(self: TextDocumentEditor, cursor: Cursor) =
     self.scrollOffset = margin
     self.previousBaseIndex = targetLine
   elif targetLineY + totalLineHeight > self.lastContentBounds.h - margin:
-    let fract = targetLineY + totalLineHeight - self.lastContentBounds.h - margin
     self.scrollOffset = self.lastContentBounds.h - margin - totalLineHeight
     self.previousBaseIndex = targetLine
 
@@ -675,6 +678,29 @@ proc moveCursor(self: TextDocumentEditor, cursor: SelectionCursor, movement: pro
 
 method handleScroll*(self: TextDocumentEditor, scroll: Vec2, mousePosWindow: Vec2) =
   self.scrollOffset += scroll.y * getOption[float](self.editor, "text.scroll-speed", 40)
+
+proc getCursorAtPixelPos(self: TextDocumentEditor, mousePosWindow: Vec2): Option[Cursor] =
+  for line in self.lastRenderedLines:
+    var startOffset = 0
+    for i, part in line.parts:
+      if part.bounds.contains(mousePosWindow) or (i == line.parts.high and mousePosWindow.y >= part.bounds.y and mousePosWindow.y <= part.bounds.yh and mousePosWindow.x >= part.bounds.x):
+        let offsetFromLeft = (mousePosWindow.x - part.bounds.x) / self.editor.renderCtx.charWidth + 0.5
+        let index = clamp(offsetFromLeft.int, 0, part.text.len)
+        return (line.index, startOffset + index).some
+      startOffset += part.text.len
+  return Cursor.none
+
+method handleMousePress*(self: TextDocumentEditor, button: windy.Button, mousePosWindow: Vec2) =
+  if self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
+    self.selection = cursor.toSelection
+
+method handleMouseRelease*(self: TextDocumentEditor, button: windy.Button, mousePosWindow: Vec2) =
+  if self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
+    self.selection = cursor.toSelection(self.selection, Last)
+
+method handleMouseMove*(self: TextDocumentEditor, mousePosWindow: Vec2, mousePosDelta: Vec2) =
+  if self.editor.window.buttonDown[windy.MouseLeft] and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
+    self.selection = cursor.toSelection(self.selection, Last)
 
 proc getTextDocumentEditor(wrapper: api.TextDocumentEditor): Option[TextDocumentEditor] =
   if gEditor.isNil: return TextDocumentEditor.none

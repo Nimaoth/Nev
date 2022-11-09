@@ -715,6 +715,7 @@ proc handleMousePress*(ed: Editor, button: Button, modifiers: Modifiers, mousePo
     if i >= rects.len:
       return
     if rects[i].contains(mousePosWindow):
+      ed.currentView = i
       view.editor.handleMousePress(button, mousePosWindow)
       return
 
@@ -731,7 +732,7 @@ proc handleMouseRelease*(ed: Editor, button: Button, modifiers: Modifiers, mouse
   for i, view in ed.views:
     if i >= rects.len:
       return
-    if rects[i].contains(mousePosWindow):
+    if ed.currentView == i and rects[i].contains(mousePosWindow):
       view.editor.handleMouseRelease(button, mousePosWindow)
       return
 
@@ -748,7 +749,7 @@ proc handleMouseMove*(ed: Editor, mousePosWindow: Vec2, mousePosDelta: Vec2) =
   for i, view in ed.views:
     if i >= rects.len:
       return
-    if rects[i].contains(mousePosWindow):
+    if ed.currentView == i and rects[i].contains(mousePosWindow):
       view.editor.handleMouseMove(mousePosWindow, mousePosDelta)
       return
 

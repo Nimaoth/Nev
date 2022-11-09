@@ -154,6 +154,8 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
   var firstCursorPos = vec2()
   var lastCursorPos = vec2()
 
+  editor.lastRenderedLines.setLen 0
+
   # Draws a line of texts, including selection background.
   # Sets firstCursorPos and lastCursorPos if necessary
   proc renderLine(i: int, down: bool): bool =
@@ -166,18 +168,19 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
 
     let first = if nodeRange.first.line < i: 0 elif nodeRange.first.line == i: nodeRange.first.column else: styledText.len
     let last = if nodeRange.last.line < i: 0 elif nodeRange.last.line == i: nodeRange.last.column else: styledText.len
-    styledText.splitAt(first)
-    styledText.splitAt(last)
 
     var startIndex = 0
-    for part in styledText.parts:
+    for partIndex, part in styledText.parts:
       let color = if part.scope.len == 0: textColor else: ed.theme.tokenColor(part.scope, rgb(225, 200, 200))
       let (image, bounds) = ed.renderCtx.layoutText(lastBounds.xwy, part.text)
+      styledText.parts[partIndex].bounds = bounds
 
       # Draw background if selected
-      if startIndex >= first and startIndex + part.text.len <= last and part.text.len > 0:
+      if (startIndex < last and startIndex + part.text.len > first) and part.text.len > 0:
         let selectionColor = ed.theme.color("selection.background", rgb(200, 200, 200))
-        let highlightRect = rect(bounds.xy - vec2(0, lineDistance * 0.5), vec2(bounds.w, bounds.h + lineDistance))
+        let startOffset = max(0, first - startIndex)
+        let endOffset = min(part.text.len, last - startIndex)
+        let highlightRect = rect(bounds.xy - vec2(0, lineDistance * 0.5) + vec2(startOffset.float32 * ed.renderCtx.charWidth, 0), vec2((endOffset - startOffset).float32 * ed.renderCtx.charWidth, bounds.h + lineDistance))
         ed.boxy.fillRect(highlightRect, selectionColor)
 
       # Set first cursor pos if it's contained in this part
@@ -193,11 +196,8 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
 
       # Set last cursor pos if it's contained in this part
       let cursorColor = ed.theme.color(@["editorCursor.foreground", "foreground"], rgba(255, 255, 255, 127))
-      if selection.last.line == i and selection.last.column == startIndex:
-        lastCursorPos = bounds.xy
-        ed.boxy.fillRect(rect(lastCursorPos, vec2(ed.renderCtx.charWidth * cursorWidth, ed.renderCtx.lineHeight)), cursorColor)
-      elif selection.last.line == i and selection.last.column == startIndex + part.text.len:
-        lastCursorPos = bounds.xwy
+      if selection.last.line == i and selection.last.column >= startIndex and selection.last.column <= startIndex + part.text.len:
+        lastCursorPos = bounds.xy + vec2((selection.last.column - startIndex).float32 * ed.renderCtx.charWidth, 0)
         ed.boxy.fillRect(rect(lastCursorPos, vec2(ed.renderCtx.charWidth * cursorWidth, ed.renderCtx.lineHeight)), cursorColor)
 
       # Draw the actual text
@@ -209,6 +209,7 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
 
       startIndex += part.text.len
 
+    editor.lastRenderedLines.add styledText
     return true
 
   var renderedLines = 0
