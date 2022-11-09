@@ -100,9 +100,6 @@ macro expose*(moduleName: static string, def: untyped): untyped =
   let jsonArg = nskParam.genSym
 
   let scriptFunctionSym = ident(pureFunctionName.strVal & "Script" & postfix)
-  # let scriptFunctionSym = nskProc.genSym(pureFunctionName.strVal & "Scriptuiae")
-  # let scriptFunctionName = ident $scriptFunctionSym
-  # echo scriptFunctionName
   var scriptFunction = def.copy
   scriptFunction[0] = nnkPostfix.newTree(ident"*", scriptFunctionSym)
   var scriptFunctionWrapper = def.copy
