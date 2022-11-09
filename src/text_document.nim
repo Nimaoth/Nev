@@ -34,12 +34,27 @@ when not declared(c_malloc):
 type Event*[T] = object
   handlers: seq[tuple[id: Id, callback: (T) -> void]]
 
+type
+  UndoOpKind = enum
+    Delete
+    Insert
+  UndoOp = ref object
+    case kind: UndoOpKind
+    of Delete:
+      selection: Selection
+    of Insert:
+      cursor: Cursor
+      text: string
+
 type TextDocument* = ref object of Document
   filename*: string
   lines*: seq[string]
 
   textChanged*: Event[TextDocument]
   singleLine*: bool
+
+  undoOps*: seq[UndoOp]
+  redoOps*: seq[UndoOp]
 
   tsParser: ptr ts.TSParser
   currentTree: ptr ts.TSTree
@@ -228,7 +243,10 @@ func contentString*(self: TextDocument, selection: Selection): string =
 
   result = self.lines[first.line][first.column..^1]
   for i in (first.line + 1)..<last.line:
+    result.add "\n"
     result.add self.lines[i]
+
+  result.add "\n"
   result.add self.lines[last.line][0..<last.column]
 
 func len*(line: StyledLine): int =
@@ -504,12 +522,14 @@ proc byteOffset(self: TextDocument, cursor: Cursor): int =
   for i in 0..<cursor.line:
     result += self.lines[i].len + 1
 
-proc delete(self: TextDocument, selection: Selection, notify: bool = true): Cursor =
+proc delete(self: TextDocument, selection: Selection, notify: bool = true, record: bool = true): Cursor =
   if selection.isEmpty:
     return selection.first
 
   let startByte = self.byteOffset(selection.first).uint32
   let endByte = self.byteOffset(selection.last).uint32
+
+  let deletedText = self.contentString(selection)
 
   let (first, last) = selection.normalized
   # echo "delete: ", selection, ", lines = ", self.lines
@@ -539,12 +559,16 @@ proc delete(self: TextDocument, selection: Selection, notify: bool = true): Curs
     self.currentTree = self.tsParser.tsParserParseString(self.currentTree, strValue, strValue.len.uint32)
     # echo self.currentTree.root
 
+  if record:
+    self.undoOps.add UndoOp(kind: Insert, cursor: selection.first, text: deletedText)
+    self.redoOps = @[]
+
   if notify:
     self.notifyTextChanged()
 
   return selection.first
 
-proc insert(self: TextDocument, oldCursor: Cursor, text: string, notify: bool = true): Cursor =
+proc insert(self: TextDocument, oldCursor: Cursor, text: string, notify: bool = true, record: bool = true): Cursor =
   var cursor = oldCursor
   let startByte = self.byteOffset(oldCursor).uint32
 
@@ -586,6 +610,10 @@ proc insert(self: TextDocument, oldCursor: Cursor, text: string, notify: bool = 
     self.currentTree = self.tsParser.tsParserParseString(self.currentTree, strValue, strValue.len.uint32)
     # echo self.currentTree.root
 
+  if record:
+    self.undoOps.add UndoOp(kind: Delete, selection: (oldCursor, cursor))
+    self.redoOps = @[]
+
   if notify:
     self.notifyTextChanged()
 
@@ -599,6 +627,46 @@ proc edit(self: TextDocument, selection: Selection, text: string, notify: bool =
   cursor = self.insert(cursor, text)
   # echo "after insert ", cursor, ": ", self.lines
   return cursor
+
+proc undo*(document: TextDocument): Option[Selection] =
+  result = Selection.none
+
+  if document.undoOps.len == 0:
+    return
+
+  let op = document.undoOps.pop[]
+
+  case op.kind:
+  of Delete:
+    document.redoOps.add UndoOp(kind: Insert, cursor: op.selection.first, text: document.contentString(op.selection))
+    result = document.delete(op.selection, record = false).toSelection.some
+
+  of Insert:
+    let cursor = document.insert(op.cursor, op.text, record = false)
+    result = cursor.toSelection.some
+    document.redoOps.add UndoOp(kind: Delete, selection: (op.cursor, cursor))
+  else:
+    discard
+
+proc redo*(document: TextDocument): Option[Selection] =
+  result = Selection.none
+
+  if document.redoOps.len == 0:
+    return
+
+  let op = document.redoOps.pop[]
+
+  case op.kind:
+  of Delete:
+    document.undoOps.add UndoOp(kind: Insert, cursor: op.selection.first, text: document.contentString(op.selection))
+    result = document.delete(op.selection, record = false).toSelection.some
+
+  of Insert:
+    let cursor = document.insert(op.cursor, op.text, record = false)
+    result = cursor.toSelection.some
+    document.undoOps.add UndoOp(kind: Delete, selection: (op.cursor, cursor))
+  else:
+    discard
 
 method canEdit*(self: TextDocumentEditor, document: Document): bool =
   if document of TextDocument: return true
@@ -801,6 +869,14 @@ proc insertText*(self: TextDocumentEditor, text: string) {.expose("editor.text")
 
   self.selection = self.document.edit(self.selection, text).toSelection
   self.updateTargetColumn(Last)
+
+proc undo(self: TextDocumentEditor) {.expose("editor.text").} =
+  if self.document.undo.getSome(selection):
+    self.selection = selection
+
+proc redo(self: TextDocumentEditor) {.expose("editor.text").} =
+  if self.document.redo.getSome(selection):
+    self.selection = selection
 
 proc scrollText(self: TextDocumentEditor, amount: float32) {.expose("editor.text").} =
   self.scrollOffset += amount
