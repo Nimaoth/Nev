@@ -36,7 +36,7 @@ proc getItemAtPixelPosition(self: SelectorPopup, posWindow: Vec2): Option[Select
       return self.completions[index].some
 
 method getEventHandlers*(self: SelectorPopup): seq[EventHandler] =
-  return self.textEditor.eventHandler & @[self.eventHandler]
+  return self.textEditor.getEventHandlers() & @[self.eventHandler]
 
 proc getSelectorPopup(wrapper: api.SelectorPopup): Option[SelectorPopup] =
   if gEditor.isNil: return SelectorPopup.none
@@ -123,6 +123,7 @@ method handleMouseMove*(self: SelectorPopup, mousePosWindow: Vec2, mousePosDelta
 proc newSelectorPopup*(editor: Editor, getCompletions: proc(self: SelectorPopup, text: string): seq[SelectorItem]): SelectorPopup =
   var popup = SelectorPopup(editor: editor)
   popup.textEditor = newTextEditor(newTextDocument(), editor)
+  popup.textEditor.setMode("insert")
   popup.textEditor.renderHeader = false
   popup.textEditor.document.singleLine = true
   discard popup.textEditor.document.textChanged.subscribe (doc: TextDocument) => popup.handleTextChanged()

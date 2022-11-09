@@ -297,7 +297,7 @@ proc popPopup*(ed: Editor, popup: Popup) =
 
 proc getEventHandlerConfig*(ed: Editor, context: string): EventHandlerConfig =
   if not ed.eventHandlerConfigs.contains(context):
-    ed.eventHandlerConfigs[context] = newEventHandlerConfig()
+    ed.eventHandlerConfigs[context] = newEventHandlerConfig(context)
   return ed.eventHandlerConfigs[context]
 
 proc getEditorForId*(ed: Editor, id: EditorId): Option[DocumentEditor] =
