@@ -10,6 +10,11 @@ proc handleAction*(action: string, arg: string): bool =
   of "set-max-loop-iterations":
     setOption("ast.max-loop-iterations", arg.parseInt)
 
+  of "command-line":
+    commandLine(arg)
+    if getActiveEditor().isTextEditor(editor):
+      editor.setMode "insert"
+
   else: return false
 
   return true
@@ -37,11 +42,17 @@ func charCategory(c: char): int =
 
 proc cursor(selection: Selection, which: SelectionCursor): Cursor =
   case which
+  of Config:
+    if getActiveEditor().isTextEditor(editor):
+      return selection.cursor(getOption(editor.getContextWithMode("editor.text.cursor.movement"), Both))
+    else:
+      log "[script] [error] Failed to get cursor from selection using config."
+      return selection.last
   of Both:
     return selection.last
   of First:
     return selection.first
-  of Last:
+  of Last, LastToFirst:
     return selection.last
 
 proc handleTextEditorAction(editor: TextDocumentEditor, action: string, arg: string): bool =
@@ -51,7 +62,7 @@ proc handleTextEditorAction(editor: TextDocumentEditor, action: string, arg: str
 
   case action
   of "cursor.left-word":
-    let which = if args.len == 0: Both else: parseEnum[SelectionCursor](args[0].str, Both)
+    let which = if args.len == 0: Config else: parseEnum[SelectionCursor](args[0].str, Config)
 
     let selection = editor.selection
     var cursor = selection.cursor(which)
@@ -71,13 +82,16 @@ proc handleTextEditorAction(editor: TextDocumentEditor, action: string, arg: str
             break
 
     case which
-    of Both: editor.selection = cursor.toSelection
-    of First: editor.selection = (cursor, selection.last)
-    of Last: editor.selection = (selection.first, cursor)
+    of Config:
+      editor.selection = cursor.toSelection(selection, getOption(editor.getContextWithMode("editor.text.cursor.movement"), Both))
+      echo editor.getContextWithMode("editor.text.cursor.movement"), ", ", getOption(editor.getContextWithMode("editor.text.cursor.movement"), Both)
+    else:
+      editor.selection = cursor.toSelection(selection, which)
     editor.scrollToCursor(which)
+    editor.updateTargetColumn(which)
 
   of "cursor.right-word":
-    let which = if args.len == 0: Both else: parseEnum[SelectionCursor](args[0].str, Both)
+    let which = if args.len == 0: Config else: parseEnum[SelectionCursor](args[0].str, Config)
 
     let selection = editor.selection
     var cursor = selection.cursor(which)
@@ -97,30 +111,36 @@ proc handleTextEditorAction(editor: TextDocumentEditor, action: string, arg: str
             break
 
     case which
-    of Both: editor.selection = cursor.toSelection
-    of First: editor.selection = (cursor, selection.last)
-    of Last: editor.selection = (selection.first, cursor)
+    of Config:
+      editor.selection = cursor.toSelection(selection, getOption(editor.getContextWithMode("editor.text.cursor.movement"), Both))
+    else:
+      editor.selection = cursor.toSelection(selection, which)
     editor.scrollToCursor(which)
+    editor.updateTargetColumn(which)
 
   of "cursor.file-start":
-    let which = if args.len == 0: Both else: parseEnum[SelectionCursor](args[0].str, Both)
+    let which = if args.len == 0: Config else: parseEnum[SelectionCursor](args[0].str, Config)
     let selection = editor.selection
     let cursor = (0, 0)
     case which
-    of Both: editor.selection = cursor.toSelection
-    of First: editor.selection = (cursor, selection.last)
-    of Last: editor.selection = (selection.first, cursor)
+    of Config:
+      editor.selection = cursor.toSelection(selection, getOption(editor.getContextWithMode("editor.text.cursor.movement"), Both))
+    else:
+      editor.selection = cursor.toSelection(selection, which)
     editor.scrollToCursor(which)
+    editor.updateTargetColumn(which)
 
   of "cursor.file-end":
-    let which = if args.len == 0: Both else: parseEnum[SelectionCursor](args[0].str, Both)
+    let which = if args.len == 0: Config else: parseEnum[SelectionCursor](args[0].str, Config)
     let selection = editor.selection
     let cursor = (editor.getLineCount - 1, 0)
     case which
-    of Both: editor.selection = cursor.toSelection
-    of First: editor.selection = (cursor, selection.last)
-    of Last: editor.selection = (selection.first, cursor)
+    of Config:
+      editor.selection = cursor.toSelection(selection, getOption(editor.getContextWithMode("editor.text.cursor.movement"), Both))
+    else:
+      editor.selection = cursor.toSelection(selection, which)
     editor.scrollToCursor(which)
+    editor.updateTargetColumn(which)
 
   else: return false
   return true
@@ -139,6 +159,17 @@ proc postInitialize*() =
   openFile "src/absytree.nim"
   setLayout "fibonacci"
   changeLayoutProp("main-split", -0.2)
+
+template addTextCommand(mode: string, command: string, body: untyped): untyped =
+  let context = if mode.len == 0: "editor.text" else: "editor.text." & mode
+  addCommand context, command, proc() =
+    let editor {.inject.} = TextDocumentEditor(id: getActiveEditor())
+    body
+
+template addAstCommand(command: string, body: untyped): untyped =
+  addCommand "editor.ast", command, proc() =
+    let editor {.inject.} = AstDocumentEditor(id: getActiveEditor())
+    body
 
 setOption "ast.scroll-speed", 60
 
@@ -194,10 +225,16 @@ addCommand "popup.selector", "<DOWN>", "next"
 addCommand "popup.selector", "<HOME>", "home"
 addCommand "popup.selector", "<END>", "end"
 
+setHandleInputs "editor.text", false
+setOption "editor.text.cursor.movement.", "both"
 addCommand "editor.text", "<LEFT>", "move-cursor-column", -1
 addCommand "editor.text", "<RIGHT>", "move-cursor-column", 1
 addCommand "editor.text", "<C-LEFT>", "cursor.left-word"
 addCommand "editor.text", "<C-RIGHT>", "cursor.right-word"
+addCommand "editor.text", "b", "cursor.left-word"
+addCommand "editor.text", "w", "cursor.right-word"
+addCommand "editor.text", "<C-UP>", "scroll-text", 20
+addCommand "editor.text", "<C-DOWN>", "scroll-text", -20
 addCommand "editor.text", "<CS-LEFT>", "cursor.left-word", "last"
 addCommand "editor.text", "<CS-RIGHT>", "cursor.right-word", "last"
 addCommand "editor.text", "<UP>", "move-cursor-line", -1
@@ -214,18 +251,30 @@ addCommand "editor.text", "<S-UP>", "move-cursor-line", -1, "last"
 addCommand "editor.text", "<S-DOWN>", "move-cursor-line", 1, "last"
 addCommand "editor.text", "<S-HOME>", "move-cursor-home", "last"
 addCommand "editor.text", "<S-END>", "move-cursor-end", "last"
-addCommand "editor.text", "<ENTER>", "insert-text", "\n"
-addCommand "editor.text", "<SPACE>", "insert-text", " "
 addCommand "editor.text", "<BACKSPACE>", "backspace"
 addCommand "editor.text", "<DELETE>", "delete"
 addCommand "editor.text", "<C-r>", "reload-treesitter"
 addCommand "editor.text", "<C-8>", () => setOption("text.line-distance", getOption[float32]("text.line-distance") - 1)
 addCommand "editor.text", "<C-9>", () => setOption("text.line-distance", getOption[float32]("text.line-distance") + 1)
+addCommand "editor.text", "i", "set-mode", "insert"
+addCommand "editor.text", "v", "set-mode", "visual"
+addCommand "editor.text", "V", "set-mode", "visual-temp"
+addTextCommand "", "<ESCAPE>":
+  editor.setMode("")
+  editor.selection = editor.selection.last.toSelection
+addTextCommand "", "<S-ESCAPE>":
+  editor.setMode("")
+  editor.selection = editor.selection.last.toSelection
 
-template addAstCommand(command: string, body: untyped): untyped =
-  addCommand "editor.ast", command, proc() =
-    let editor {.inject.} = AstDocumentEditor(id: getActiveEditor())
-    body
+setHandleInputs "editor.text.insert", true
+addCommand "editor.text.insert", "<ENTER>", "insert-text", "\n"
+addCommand "editor.text.insert", "<SPACE>", "insert-text", " "
+
+setHandleInputs "editor.text.visual", false
+setOption "editor.text.cursor.movement.visual", "last"
+
+setHandleInputs "editor.text.visual-temp", false
+setOption "editor.text.cursor.movement.visual-temp", "last-to-first"
 
 # addCommand "editor.ast", "<A-LEFT>", "move-cursor", "-1"
 addAstCommand "<A-LEFT>": editor.moveCursor(-1)

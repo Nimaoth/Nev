@@ -47,11 +47,19 @@ type TextDocument* = ref object of Document
 type TextDocumentEditor* = ref object of DocumentEditor
   editor*: Editor
   document*: TextDocument
-  selection: Selection
+  selectionInternal: Selection
+  targetColumn: int
   hideCursorWhenInactive*: bool
+
+  modeEventHandler: EventHandler
+  currentMode*: string
 
   scrollOffset*: float
   previousBaseIndex*: int
+
+
+proc handleAction(self: TextDocumentEditor, action: string, arg: string): EventResponse
+proc handleInput(self: TextDocumentEditor, input: string): EventResponse
 
 proc subscribe*[T](event: var Event[T], callback: (T) -> void): Id =
   result = newId()
@@ -114,6 +122,35 @@ proc `$`*(node: ts.TSNode): string =
   defer: c_str.c_free
   result = $c_str
 
+proc lineLength(self: TextDocument, line: int): int =
+  if line < self.lines.len:
+    return self.lines[line].len
+  return 0
+
+proc lineLength(self: TextDocumentEditor, line: int): int =
+  if line < self.document.lines.len:
+    return self.document.lines[line].len
+  return 0
+
+proc clampCursor*(self: TextDocumentEditor, cursor: Cursor): Cursor =
+  var cursor = cursor
+  if self.document.lines.len == 0:
+    return (0, 0)
+  cursor.line = clamp(cursor.line, 0, self.document.lines.len - 1)
+  cursor.column = clamp(cursor.column, 0, self.lineLength cursor.line)
+  return cursor
+
+proc clampSelection*(self: TextDocumentEditor, selection: Selection): Selection =
+  return (self.clampCursor(selection.first), self.clampCursor(selection.last))
+
+proc selection*(self: TextDocumentEditor): Selection = self.selectionInternal
+
+proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
+  self.selectionInternal = self.clampSelection selection
+
+proc clampSelection*(self: TextDocumentEditor) =
+  self.selection = self.selectionInternal
+
 proc `content=`*(self: TextDocument, value: string) =
   if self.singleLine:
     self.lines = @[value.replace("\n", "")]
@@ -161,8 +198,6 @@ func contentString*(self: TextDocument, selection: Selection): string =
   for i in (first.line + 1)..<last.line:
     result.add self.lines[i]
   result.add self.lines[last.line][0..<last.column]
-
-func selection*(self: TextDocumentEditor): Selection = self.selection
 
 type StyledText* = object
   text*: string
@@ -420,11 +455,6 @@ proc destroy*(self: TextDocument) =
 method `$`*(document: TextDocument): string =
   return document.filename
 
-proc lineLength(self: TextDocument, line: int): int =
-  if line < self.lines.len:
-    return self.lines[line].len
-  return 0
-
 method save*(self: TextDocument, filename: string = "") =
   self.filename = if filename.len > 0: filename else: self.filename
   if self.filename.len == 0:
@@ -546,34 +576,14 @@ proc edit(self: TextDocument, selection: Selection, text: string, notify: bool =
   # echo "after insert ", cursor, ": ", self.lines
   return cursor
 
-proc lineLength(self: TextDocumentEditor, line: int): int =
-  if line < self.document.lines.len:
-    return self.document.lines[line].len
-  return 0
-
-proc clampCursor*(self: TextDocumentEditor, cursor: Cursor): Cursor =
-  var cursor = cursor
-  if self.document.lines.len == 0:
-    return (0, 0)
-  cursor.line = clamp(cursor.line, 0, self.document.lines.len - 1)
-  cursor.column = clamp(cursor.column, 0, self.lineLength cursor.line)
-  return cursor
-
-proc clampSelection*(self: TextDocumentEditor, selection: Selection): Selection =
-  return (self.clampCursor(selection.first), self.clampCursor(selection.last))
-
-proc clampSelection*(self: TextDocumentEditor) =
-  self.selection = (self.clampCursor(self.selection.first), self.clampCursor(self.selection.last))
-
-proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
-  self.selection = self.clampSelection selection
-
 method canEdit*(self: TextDocumentEditor, document: Document): bool =
   if document of TextDocument: return true
   else: return false
 
 method getEventHandlers*(self: TextDocumentEditor): seq[EventHandler] =
-  return @[self.eventHandler]
+  if self.modeEventHandler.isNil:
+    return @[self.eventHandler]
+  return @[self.eventHandler, self.modeEventHandler]
 
 method handleDocumentChanged*(self: TextDocumentEditor) =
   self.selection = (self.clampCursor self.selection.first, self.clampCursor self.selection.last)
@@ -609,6 +619,7 @@ proc doMoveCursorLine(self: TextDocumentEditor, cursor: Cursor, offset: int): Cu
     cursor = (self.document.lines.len - 1, cursor.column)
   else:
     cursor.line = line
+    cursor.column = self.targetColumn
   return self.clampCursor cursor
 
 proc doMoveCursorHome(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor =
@@ -632,27 +643,35 @@ proc scrollToCursor(self: TextDocumentEditor, cursor: Cursor) =
     self.scrollOffset = self.lastContentBounds.h - margin - totalLineHeight
     self.previousBaseIndex = targetLine
 
+proc getContextWithModeImpl(self: TextDocumentEditor, context: string): string
+
 proc getCursor(self: TextDocumentEditor, cursor: SelectionCursor): Cursor =
   case cursor
-  of Both, Last:
+  of Config:
+    let configCursor = getOption[SelectionCursor](self.editor, self.getContextWithModeImpl("editor.text.cursor.movement"), Both)
+    return self.getCursor(configCursor)
+  of Both, Last, LastToFirst:
     return self.selection.last
   of First:
     return self.selection.first
 
-proc moveCursor(self: TextDocumentEditor, cursor: string, movement: proc(doc: TextDocumentEditor, c: Cursor, off: int): Cursor, offset: int) =
+proc moveCursor(self: TextDocumentEditor, cursor: SelectionCursor, movement: proc(doc: TextDocumentEditor, c: Cursor, off: int): Cursor, offset: int) =
   case cursor
-  of "":
-    self.selection.last = movement(self, self.selection.last, offset)
-    self.selection.first = self.selection.last
+  of Config:
+    let configCursor = getOption[SelectionCursor](self.editor, self.getContextWithModeImpl("editor.text.cursor.movement"), Both)
+    self.moveCursor(configCursor, movement, offset)
+  of Both:
+    self.selection = movement(self, self.selection.last, offset).toSelection
     self.scrollToCursor(self.selection.last)
-  of "first":
-    self.selection.first = movement(self, self.selection.first, offset)
+  of First:
+    self.selection = (movement(self, self.selection.first, offset), self.selection.last)
     self.scrollToCursor(self.selection.first)
-  of "last":
-    self.selection.last = movement(self, self.selection.last, offset)
+  of Last:
+    self.selection = (self.selection.first, movement(self, self.selection.last, offset))
     self.scrollToCursor(self.selection.last)
-  else:
-    logger.log(lvlError, "Unknown cursor " & cursor)
+  of LastToFirst:
+    self.selection = (self.selection.last, movement(self, self.selection.last, offset))
+    self.scrollToCursor(self.selection.last)
 
 method handleScroll*(self: TextDocumentEditor, scroll: Vec2, mousePosWindow: Vec2) =
   self.scrollOffset += scroll.y * getOption[float](self.editor, "text.scroll-speed", 40)
@@ -663,6 +682,9 @@ proc getTextDocumentEditor(wrapper: api.TextDocumentEditor): Option[TextDocument
     if editor of TextDocumentEditor:
       return editor.TextDocumentEditor.some
   return TextDocumentEditor.none
+
+proc getModeConfig(self: TextDocumentEditor, mode: string): EventHandlerConfig =
+  return self.editor.getEventHandlerConfig("editor.text." & mode)
 
 static:
   addTypeMap(TextDocumentEditor, api.TextDocumentEditor, getTextDocumentEditor)
@@ -675,28 +697,49 @@ proc toJson*(self: api.TextDocumentEditor, opt = initToJsonOptions()): JsonNode 
 proc fromJsonHook*(t: var api.TextDocumentEditor, jsonNode: JsonNode) =
   t.id = api.EditorId(jsonNode["id"].jsonTo(int))
 
+proc setModeImpl*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} =
+  if mode.len == 0:
+    self.modeEventHandler = nil
+  else:
+    let config = self.getModeConfig(mode)
+    self.modeEventHandler = eventHandler(config):
+      onAction:
+        self.handleAction action, arg
+      onInput:
+        self.handleInput input
+
+  self.currentMode = mode
+
+proc getContextWithModeImpl(self: TextDocumentEditor, context: string): string {.expose("editor.text").} =
+  return context & "." & $self.currentMode
+
+proc updateTargetColumnImpl(self: TextDocumentEditor, cursor: SelectionCursor) {.expose("editor.text").} =
+  self.targetColumn = self.getCursor(cursor).column
+
 proc insertTextImpl*(self: TextDocumentEditor, text: string) {.expose("editor.text").} =
   if self.document.singleLine and text == "\n":
     return
 
   self.selection = self.document.edit(self.selection, text).toSelection
+  self.updateTargetColumnImpl(Last)
 
 proc scrollTextImpl(self: TextDocumentEditor, amount: float32) {.expose("editor.text").} =
   self.scrollOffset += amount
 
-proc moveCursorColumnImpl*(self: TextDocumentEditor, distance: int, cursor: string = "") {.expose("editor.text").} =
+proc moveCursorColumnImpl*(self: TextDocumentEditor, distance: int, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
   self.moveCursor(cursor, doMoveCursorColumn, distance)
+  self.updateTargetColumnImpl(cursor)
 
-proc moveCursorLineImpl*(self: TextDocumentEditor, distance: int, cursor: string = "") {.expose("editor.text").} =
+proc moveCursorLineImpl*(self: TextDocumentEditor, distance: int, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
   self.moveCursor(cursor, doMoveCursorLine, distance)
 
-proc moveCursorHomeImpl*(self: TextDocumentEditor, cursor: string = "") {.expose("editor.text").} =
+proc moveCursorHomeImpl*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
   self.moveCursor(cursor, doMoveCursorHome, 0)
 
-proc moveCursorEndImpl*(self: TextDocumentEditor, cursor: string = "") {.expose("editor.text").} =
+proc moveCursorEndImpl*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
   self.moveCursor(cursor, doMoveCursorEnd, 0)
 
-proc scrollToCursorImpl*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Last) {.expose("editor.text").} =
+proc scrollToCursorImpl*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
   self.scrollToCursor(self.getCursor(cursor))
 
 proc reloadTreesitterImpl*(self: TextDocumentEditor) {.expose("editor.text").} =
@@ -738,8 +781,8 @@ proc handleInput(self: TextDocumentEditor, input: string): EventResponse =
 method injectDependencies*(self: TextDocumentEditor, ed: Editor) =
   self.editor = ed
   self.editor.registerEditor(self)
-
-  self.eventHandler = eventHandler(ed.getEventHandlerConfig("editor.text")):
+  let config = ed.getEventHandlerConfig("editor.text")
+  self.eventHandler = eventHandler(config):
     onAction:
       self.handleAction action, arg
     onInput:
