@@ -1,6 +1,14 @@
 include abs
 import std/[strutils, sugar, streams]
 
+proc loadNormalBindings*()
+proc loadVimBindings*()
+proc loadHelixBindings*()
+
+include keybindings_vim
+include keybindings_helix
+include keybindings_normal
+
 # {.line: ("config.nims", 4).}
 
 proc handleAction*(action: string, arg: string): bool =
@@ -55,90 +63,115 @@ proc cursor(selection: Selection, which: SelectionCursor): Cursor =
   of Last, LastToFirst:
     return selection.last
 
+
+proc findWordBoundary(editor: TextDocumentEditor, cursor: Cursor): Selection =
+  let line = editor.getLine cursor.line
+  result = cursor.toSelection
+
+  # Search to the left
+  while result.first.column > 0 and result.first.column <= line.len:
+    result.first.column -= 1
+    if result.first.column > 0:
+      let leftCategory = line[result.first.column - 1].charCategory
+      let rightCategory = line[result.first.column].charCategory
+      if leftCategory != rightCategory:
+        break
+
+  # Search to the right
+  while result.last.column >= 0 and result.last.column < line.len:
+    result.last.column += 1
+    if result.last.column < line.len:
+      let leftCategory = line[result.last.column - 1].charCategory
+      let rightCategory = line[result.last.column].charCategory
+      if leftCategory != rightCategory:
+        break
+
+proc getSelectionForMove(editor: TextDocumentEditor, cursor: Cursor, move: string): Selection =
+  case move
+  of "word":
+    return editor.findWordBoundary(cursor)
+
+  of "word-line":
+    let line = editor.getLine cursor.line
+    result = editor.findWordBoundary(cursor)
+    if cursor.column == 0 and cursor.line > 0:
+      result.first = (cursor.line - 1, editor.getLine(cursor.line - 1).len)
+    if cursor.column == line.len and cursor.line < editor.getLineCount - 1:
+      result.last = (cursor.line + 1, 0)
+
+  of "line":
+    result = ((cursor.line, 0), (cursor.line, editor.getLine(cursor.line).len))
+
+  of "line-next":
+    result = ((cursor.line, 0), (cursor.line, editor.getLine(cursor.line).len))
+    if result.last.line + 1 < editor.getLineCount:
+      result.last = (result.last.line + 1, 0)
+
+  of "file":
+    result.first = (0, 0)
+    let line = editor.getLineCount - 1
+    result.last = (line, editor.getLine(line).len)
+
+  else:
+    result = cursor.toSelection
+
 proc handleTextEditorAction(editor: TextDocumentEditor, action: string, arg: string): bool =
   var args = newJArray()
   for a in newStringStream(arg).parseJsonFragments():
     args.add a
 
   case action
-  of "cursor.left-word":
-    let which = if args.len == 0: Config else: parseEnum[SelectionCursor](args[0].str, Config)
+  of "set-move":
+    let arg = args[0].str
+    setOption[string]("text.move", arg)
+    editor.setMode getOption[string]("text.move-next-mode")
+    editor.id.runAction getOption[string]("text.move-action"), $args[0]
 
+  of "delete-move":
+    let arg = args[0].str
+    let selection = editor.getSelectionForMove(editor.selection.last, arg)
+    editor.selection = editor.delete(selection).toSelection
+    editor.scrollToCursor(Last)
+    editor.updateTargetColumn(Last)
+
+  of "select-move":
+    let arg = args[0].str
+    editor.selection = editor.getSelectionForMove(editor.selection.last, arg)
+    editor.scrollToCursor(Last)
+    editor.updateTargetColumn(Last)
+
+  of "change-move":
+    let arg = args[0].str
+    let selection = editor.getSelectionForMove(editor.selection.last, arg)
+    editor.selection = editor.delete(selection).toSelection
+    editor.scrollToCursor(Last)
+    editor.updateTargetColumn(Last)
+
+  of "move-last":
+    let arg = args[0].str
+    let which = if args.len < 2: Config else: parseEnum[SelectionCursor](args[1].str, Config)
     let selection = editor.selection
-    var cursor = selection.cursor(which)
-    let line = editor.getLine cursor.line
-
-    if cursor.column == 0:
-      if cursor.line > 0:
-        let prevLine = editor.getLine cursor.line - 1
-        cursor = (cursor.line - 1, prevLine.len)
-    else:
-      while cursor.column > 0 and cursor.column <= line.len:
-        cursor.column -= 1
-        if cursor.column > 0:
-          let leftCategory = line[cursor.column - 1].charCategory
-          let rightCategory = line[cursor.column].charCategory
-          if leftCategory != rightCategory:
-            break
+    let targetRange = editor.getSelectionForMove(selection.cursor(which), arg)
 
     case which
     of Config:
-      editor.selection = cursor.toSelection(selection, getOption(editor.getContextWithMode("editor.text.cursor.movement"), Both))
-      echo editor.getContextWithMode("editor.text.cursor.movement"), ", ", getOption(editor.getContextWithMode("editor.text.cursor.movement"), Both)
+      editor.selection = targetRange.last.toSelection(selection, getOption(editor.getContextWithMode("editor.text.cursor.movement"), Both))
     else:
-      editor.selection = cursor.toSelection(selection, which)
+      editor.selection = targetRange.last.toSelection(selection, which)
     editor.scrollToCursor(which)
     editor.updateTargetColumn(which)
 
-  of "cursor.right-word":
-    let which = if args.len == 0: Config else: parseEnum[SelectionCursor](args[0].str, Config)
-
+  of "move-first":
+    let arg = args[0].str
+    let which = if args.len < 2: Config else: parseEnum[SelectionCursor](args[1].str, Config)
     let selection = editor.selection
-    var cursor = selection.cursor(which)
-    let line = editor.getLine cursor.line
-    let lineCount = editor.getLineCount
-
-    if cursor.column == line.len:
-      if cursor.line + 1 < lineCount:
-        cursor = (cursor.line + 1, 0)
-    else:
-      while cursor.column >= 0 and cursor.column < line.len:
-        cursor.column += 1
-        if cursor.column < line.len:
-          let leftCategory = line[cursor.column - 1].charCategory
-          let rightCategory = line[cursor.column].charCategory
-          if leftCategory != rightCategory:
-            break
+    let targetRange = editor.getSelectionForMove(selection.cursor(which), arg)
 
     case which
     of Config:
-      editor.selection = cursor.toSelection(selection, getOption(editor.getContextWithMode("editor.text.cursor.movement"), Both))
+      editor.selection = targetRange.first.toSelection(selection, getOption(editor.getContextWithMode("editor.text.cursor.movement"), Both))
     else:
-      editor.selection = cursor.toSelection(selection, which)
-    editor.scrollToCursor(which)
-    editor.updateTargetColumn(which)
-
-  of "cursor.file-start":
-    let which = if args.len == 0: Config else: parseEnum[SelectionCursor](args[0].str, Config)
-    let selection = editor.selection
-    let cursor = (0, 0)
-    case which
-    of Config:
-      editor.selection = cursor.toSelection(selection, getOption(editor.getContextWithMode("editor.text.cursor.movement"), Both))
-    else:
-      editor.selection = cursor.toSelection(selection, which)
-    editor.scrollToCursor(which)
-    editor.updateTargetColumn(which)
-
-  of "cursor.file-end":
-    let which = if args.len == 0: Config else: parseEnum[SelectionCursor](args[0].str, Config)
-    let selection = editor.selection
-    let cursor = (editor.getLineCount - 1, editor.getLine(editor.getLineCount - 1).len)
-    case which
-    of Config:
-      editor.selection = cursor.toSelection(selection, getOption(editor.getContextWithMode("editor.text.cursor.movement"), Both))
-    else:
-      editor.selection = cursor.toSelection(selection, which)
+      editor.selection = targetRange.first.toSelection(selection, which)
     editor.scrollToCursor(which)
     editor.updateTargetColumn(which)
 
@@ -160,17 +193,6 @@ proc postInitialize*() =
   setLayout "fibonacci"
   changeLayoutProp("main-split", -0.2)
 
-template addTextCommand(mode: string, command: string, body: untyped): untyped =
-  let context = if mode.len == 0: "editor.text" else: "editor.text." & mode
-  addCommand context, command, proc() =
-    let editor {.inject.} = TextDocumentEditor(id: getActiveEditor())
-    body
-
-template addAstCommand(command: string, body: untyped): untyped =
-  addCommand "editor.ast", command, proc() =
-    let editor {.inject.} = AstDocumentEditor(id: getActiveEditor())
-    body
-
 setOption "ast.scroll-speed", 60
 
 addCommand "editor", "<SPACE>tt", proc() =
@@ -189,6 +211,19 @@ addCommand "editor", "<SPACE>fd", "toggle-flag", "render-debug-info"
 addCommand "editor", "<SPACE>fo", "toggle-flag", "render-execution-output"
 addCommand "editor", "<C-SPACE>fg", "toggle-flag", "text.print-scopes"
 addCommand "editor", "<C-SPACE>fm", "toggle-flag", "text.print-matches"
+addCommand "editor", "<C-SPACE>fh", "toggle-flag", "text.show-node-highlight"
+addCommand "editor", "<C-5>", proc() =
+  setOption("text.node-highlight-parent-index", clamp(getOption[int]("text.node-highlight-parent-index") - 1, 0, 100000))
+  echo "text.node-highlight-parent-index: ", getOption[int]("text.node-highlight-parent-index")
+addCommand "editor", "<C-6>", proc() =
+  setOption("text.node-highlight-parent-index", clamp(getOption[int]("text.node-highlight-parent-index") + 1, 0, 100000))
+  echo "text.node-highlight-parent-index: ", getOption[int]("text.node-highlight-parent-index")
+addCommand "editor", "<C-2>", proc() =
+  setOption("text.node-highlight-sibling-index", clamp(getOption[int]("text.node-highlight-sibling-index") - 1, -100000, 100000))
+  echo "text.node-highlight-sibling-index: ", getOption[int]("text.node-highlight-sibling-index")
+addCommand "editor", "<C-3>", proc() =
+  setOption("text.node-highlight-sibling-index", clamp(getOption[int]("text.node-highlight-sibling-index") + 1, -100000, 100000))
+  echo "text.node-highlight-sibling-index: ", getOption[int]("text.node-highlight-sibling-index")
 
 addCommand "editor", "<SPACE>ff", "log-options"
 addCommand "editor", "<ESCAPE>", "escape"
@@ -214,6 +249,10 @@ addCommand "editor", "<C-p>", "command-line"
 addCommand "editor", "<C-l>tt", "choose-theme"
 addCommand "editor", "<C-g>f", "choose-file", "new"
 
+addCommand "editor", "<C-b>n", () => loadNormalBindings()
+addCommand "editor", "<C-b>v", () => loadVimBindings()
+addCommand "editor", "<C-b>h", () => loadHelixBindings()
+
 addCommand "commandLine", "<ESCAPE>", "exit-command-line"
 addCommand "commandLine", "<ENTER>", "execute-command-line"
 
@@ -225,68 +264,7 @@ addCommand "popup.selector", "<DOWN>", "next"
 addCommand "popup.selector", "<HOME>", "home"
 addCommand "popup.selector", "<END>", "end"
 
-setHandleInputs "editor.text", false
-setOption "editor.text.cursor.movement.", "both"
-setOption "editor.text.cursor.wide.", true
-addCommand "editor.text", "<LEFT>", "move-cursor-column", -1
-addCommand "editor.text", "<RIGHT>", "move-cursor-column", 1
-addCommand "editor.text", "<C-LEFT>", "cursor.left-word"
-addCommand "editor.text", "<C-RIGHT>", "cursor.right-word"
-addCommand "editor.text", "b", "cursor.left-word"
-addCommand "editor.text", "w", "cursor.right-word"
-addCommand "editor.text", "<C-UP>", "scroll-text", 20
-addCommand "editor.text", "<C-DOWN>", "scroll-text", -20
-addCommand "editor.text", "<CS-LEFT>", "cursor.left-word", "last"
-addCommand "editor.text", "<CS-RIGHT>", "cursor.right-word", "last"
-addCommand "editor.text", "<UP>", "move-cursor-line", -1
-addCommand "editor.text", "<DOWN>", "move-cursor-line", 1
-addCommand "editor.text", "<HOME>", "move-cursor-home"
-addCommand "editor.text", "<END>", "move-cursor-end"
-addCommand "editor.text", "<C-HOME>", "cursor.file-start"
-addCommand "editor.text", "<C-END>", "cursor.file-end"
-addCommand "editor.text", "<CS-HOME>", "cursor.file-start", "last"
-addCommand "editor.text", "<CS-END>", "cursor.file-end", "last"
-addCommand "editor.text", "<S-LEFT>", "move-cursor-column", -1, "last"
-addCommand "editor.text", "<S-RIGHT>", "move-cursor-column", 1, "last"
-addCommand "editor.text", "<S-UP>", "move-cursor-line", -1, "last"
-addCommand "editor.text", "<S-DOWN>", "move-cursor-line", 1, "last"
-addCommand "editor.text", "<S-HOME>", "move-cursor-home", "last"
-addCommand "editor.text", "<S-END>", "move-cursor-end", "last"
-addCommand "editor.text", "<BACKSPACE>", "backspace"
-addCommand "editor.text", "<DELETE>", "delete"
-addCommand "editor.text", "<C-l>", "select-line-current"
-addCommand "editor.text", "miw", "select-inside-current"
-addCommand "editor.text", "<A-UP>", "select-parent-current-ts"
-addCommand "editor.text", "<C-r>", "select-prev"
-addCommand "editor.text", "<C-t>", "select-next"
-addCommand "editor.text", "<C-n>", "invert-selection"
-addCommand "editor.text", "u", "undo"
-addCommand "editor.text", "U", "redo"
-addCommand "editor.text", "<C-y>", "undo"
-addCommand "editor.text", "<C-z>", "redo"
-addCommand "editor.text", "<C-8>", () => setOption("text.line-distance", getOption[float32]("text.line-distance") - 1)
-addCommand "editor.text", "<C-9>", () => setOption("text.line-distance", getOption[float32]("text.line-distance") + 1)
-addCommand "editor.text", "i", "set-mode", "insert"
-addCommand "editor.text", "v", "set-mode", "visual"
-addCommand "editor.text", "V", "set-mode", "visual-temp"
-addTextCommand "", "<ESCAPE>":
-  editor.setMode("")
-  editor.selection = editor.selection.last.toSelection
-addTextCommand "", "<S-ESCAPE>":
-  editor.setMode("")
-  editor.selection = editor.selection.last.toSelection
-
-setHandleInputs "editor.text.insert", true
-setOption "editor.text.cursor.wide.insert", false
-addCommand "editor.text.insert", "<ENTER>", "insert-text", "\n"
-addCommand "editor.text.insert", "<SPACE>", "insert-text", " "
-
-setHandleInputs "editor.text.visual", false
-setOption "editor.text.cursor.movement.visual", "last"
-
-setHandleInputs "editor.text.visual-temp", false
-setOption "editor.text.cursor.wide.visual-temp", false
-setOption "editor.text.cursor.movement.visual-temp", "last-to-first"
+loadVimBindings()
 
 # addCommand "editor.ast", "<A-LEFT>", "move-cursor", "-1"
 addAstCommand "<A-LEFT>": editor.moveCursor(-1)

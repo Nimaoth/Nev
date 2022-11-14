@@ -639,6 +639,13 @@ proc reloadConfig*(ed: Editor) {.expose("editor").} =
 proc logOptions*(ed: Editor) {.expose("editor").} =
   ed.logger.log(lvlInfo, ed.options.pretty)
 
+proc clearCommands*(ed: Editor, context: string) {.expose("editor").} =
+  ed.getEventHandlerConfig(context).clearCommands()
+
+proc getAllEditors*(ed: Editor): seq[EditorId] {.expose("editor").} =
+  for id in ed.editors.keys:
+    result.add id
+
 genDispatcher("editor")
 
 proc handleAction(ed: Editor, action: string, arg: string) =
