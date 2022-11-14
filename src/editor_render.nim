@@ -94,6 +94,20 @@ proc measureEditorBounds(editor: TextDocumentEditor, ed: Editor, bounds: Rect): 
 
   return usedBounds
 
+proc clampToLine(selection: Selection, line: int, lineLength: int): tuple[first: int, last: int] =
+  result.first = if selection.first.line < line: 0 elif selection.first.line == line: selection.first.column else: lineLength
+  result.last = if selection.last.line < line: 0 elif selection.last.line == line: selection.last.column else: lineLength
+
+proc renderTextHighlight(ed: Editor, bounds: Rect, line: int, startIndex: int, selection: Selection, selectionClamped: tuple[first: int, last: int], part: StyledText, color: Color, lineDistance: float32) =
+  if (startIndex < selectionClamped.last and startIndex + part.text.len > selectionClamped.first and part.text.len > 0):
+    let startOffset = max(0, selectionClamped.first - startIndex).float32 / (part.text.len.float32 - 0) * bounds.w
+    let endOffset = min(part.text.len, selectionClamped.last - startIndex).float32 / (part.text.len.float32 - 0) * bounds.w
+    let highlightRect = rect(bounds.xy - vec2(0, lineDistance * 0.5) + vec2(startOffset, 0), vec2(endOffset - startOffset, bounds.h - textExtraHeight + lineDistance))
+    ed.boxy.fillRect(highlightRect, color)
+  elif part.text.len == 0 and selection.contains((line, startIndex)) and not selection.isEmpty:
+    let highlightRect = rect(bounds.xy - vec2(0, lineDistance * 0.5), vec2(ed.renderCtx.charWidth * 0.5, bounds.h - textExtraHeight + lineDistance))
+    ed.boxy.fillRect(highlightRect, color)
+
 method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect, selected: bool): Rect =
   let document = editor.document
 
@@ -152,6 +166,14 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
   let selection = editor.selection
   let nodeRange = editor.selection.normalized
 
+  let showNodeHighlight = getOption[bool](ed, "text.show-node-highlight")
+  let nodeHighlightParentIndex = getOption[int](ed, "text.node-highlight-parent-index", 0)
+  let nodeHighlightSiblingIndex = getOption[int](ed, "text.node-highlight-sibling-index", 0)
+  let highlightRange = if showNodeHighlight:
+    editor.document.getNodeRange(nodeRange, nodeHighlightParentIndex, nodeHighlightSiblingIndex)
+  else:
+    Selection.none
+
   editor.lastRenderedLines.setLen 0
 
   # Draws a line of texts, including selection background.
@@ -163,8 +185,8 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
     if lastBounds.y + ed.ctx.fontSize * 2 < 0:
       return down
 
-    let first = if nodeRange.first.line < i: 0 elif nodeRange.first.line == i: nodeRange.first.column else: styledText.len
-    let last = if nodeRange.last.line < i: 0 elif nodeRange.last.line == i: nodeRange.last.column else: styledText.len
+    let selectionOnLine = nodeRange.clampToLine(i, styledText.len)
+    let highlightRangeClamped = highlightRange.map h => h.clampToLine(i, styledText.len)
 
     var startIndex = 0
     for partIndex, part in styledText.parts:
@@ -174,20 +196,13 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
 
       # Draw background if selected
       let selectionColor = ed.theme.color("selection.background", rgb(200, 200, 200))
-      if (startIndex < last and startIndex + part.text.len > first and part.text.len > 0):
-        let startOffset = max(0, first - startIndex).float32 / (part.text.len.float32 - 0) * bounds.w
-        let endOffset = min(part.text.len, last - startIndex).float32 / (part.text.len.float32 - 0) * bounds.w
-        let highlightRect = rect(bounds.xy - vec2(0, lineDistance * 0.5) + vec2(startOffset, 0), vec2(endOffset - startOffset, bounds.h - textExtraHeight + lineDistance))
-        ed.boxy.fillRect(highlightRect, selectionColor)
-      elif part.text.len == 0 and nodeRange.contains((i, startIndex)) and not nodeRange.isEmpty:
-        let highlightRect = rect(bounds.xy - vec2(0, lineDistance * 0.5), vec2(ed.renderCtx.charWidth * 0.5, bounds.h - textExtraHeight + lineDistance))
-        ed.boxy.fillRect(highlightRect, selectionColor)
+      ed.renderTextHighlight(bounds, i, startIndex, nodeRange, selectionOnLine, part, selectionColor, lineDistance)
 
+      if highlightRangeClamped.getSome(highlightRangeClamped):
+        ed.renderTextHighlight(bounds, i, startIndex, highlightRange.get, highlightRangeClamped, part, ed.theme.color("selection.background", rgb(200, 200, 200)), lineDistance)
 
-      let cursorWidth = case editor.currentMode
-      of "insert", "visual-temp": 0.2
-      of "", "visual": 1
-      else: 1
+      let isWide = getOption[bool](ed, editor.getContextWithMode("editor.text.cursor.wide"))
+      let cursorWidth = if isWide: 1.0 else: 0.2
 
       # Set last cursor pos if it's contained in this part
       let cursorColor = ed.theme.color(@["editorCursor.foreground", "foreground"], rgba(255, 255, 255, 127))

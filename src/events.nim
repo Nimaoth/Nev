@@ -54,6 +54,10 @@ proc removeCommand*(config: EventHandlerConfig, keys: string) =
   config.commands.del(keys)
   config.revision += 1
 
+proc clearCommands*(config: EventHandlerConfig) =
+  config.commands.clear
+  config.revision += 1
+
 template eventHandler*(inConfig: EventHandlerConfig, handlerBody: untyped): untyped =
   block:
     var handler = EventHandler()

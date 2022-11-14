@@ -62,7 +62,7 @@ func normalized*(selection: Selection): Selection =
 func isEmpty*(selection: Selection): bool = selection.first == selection.last
 
 func contains*(selection: Selection, cursor: Cursor): bool = (cursor >= selection.first and cursor <= selection.last)
-func containsExclusive*(selection: Selection, cursor: Cursor): bool = (cursor >= selection.first and cursor < selection.last)
+func contains*(selection: Selection, other: Selection): bool = (other.first >= selection.first and other.last <= selection.last)
 
 func toSelection*(cursor: Cursor): Selection =
   (cursor, cursor)

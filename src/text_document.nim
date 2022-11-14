@@ -120,6 +120,22 @@ proc endPoint*(node: ts.TSNode): Cursor =
 proc getRange*(node: ts.TSNode): Selection = (node.startPoint, node.endPoint)
 proc root*(tree: ptr ts.TSTree): ts.TSNode = tree.tsTreeRootNode
 proc execute*(cursor: ptr ts.TSQueryCursor, query: ptr ts.TSQuery, node: ts.TSNode) = cursor.tsQueryCursorExec(query, node)
+proc prev*(node: ts.TSNode): Option[ts.TSNode] =
+  let other = node.tsNodePrevSibling
+  if not other.tsNodeIsNull:
+    result = other.some
+proc next*(node: ts.TSNode): Option[ts.TSNode] =
+  let other = node.tsNodeNextSibling
+  if not other.tsNodeIsNull:
+    result = other.some
+proc prevNamed*(node: ts.TSNode): Option[ts.TSNode] =
+  let other = node.tsNodePrevNamedSibling
+  if not other.tsNodeIsNull:
+    result = other.some
+proc nextNamed*(node: ts.TSNode): Option[ts.TSNode] =
+  let other = node.tsNodeNextNamedSibling
+  if not other.tsNodeIsNull:
+    result = other.some
 
 template withQueryCursor*(cursor: untyped, body: untyped): untyped =
   block:
@@ -538,6 +554,7 @@ proc byteOffset(self: TextDocument, cursor: Cursor): int =
 proc delete(self: TextDocument, selection: Selection, notify: bool = true, record: bool = true): Cursor =
   if selection.isEmpty:
     return selection.first
+  let selection = selection.normalized
 
   let startByte = self.byteOffset(selection.first).uint32
   let endByte = self.byteOffset(selection.last).uint32
@@ -581,9 +598,70 @@ proc delete(self: TextDocument, selection: Selection, notify: bool = true, recor
 
   return selection.first
 
-proc insert(self: TextDocument, oldCursor: Cursor, text: string, notify: bool = true, record: bool = true): Cursor =
+proc getNodeRange*(self: TextDocument, selection: Selection, parentIndex: int = 0, siblingIndex: int = 0): Option[Selection] =
+  result = Selection.none
+  if self.currentTree.isNil:
+    return
+
+  var node = self.currentTree.root.descendantForRange selection
+
+  for i in 0..<parentIndex:
+    if node == self.currentTree.root:
+      break
+    node = node.parent
+
+  for i in 0..<siblingIndex:
+    if node.next.getSome(sibling):
+      node = sibling
+    else:
+      break
+
+  for i in siblingIndex..<0:
+    if node.prev.getSome(sibling):
+      node = sibling
+    else:
+      break
+
+  result = node.getRange.some
+
+proc getIndentForLine*(self: TextDocument, line: int): int =
+  result = 0
+  for c in self.lines[line]:
+    if c != ' ':
+      break
+    result += 1
+
+proc getTargetIndentForLine(self: TextDocument, line: int): int =
+  if line == 0:
+    return 0
+  # return self.getIndentForLine(line - 1)
+  if self.currentTree.isNil:
+    return
+
+  let curr = (line, 0)
+  let prev = (line - 1, self.lineLength(line - 1))
+
+  var nodePrev = self.currentTree.root.descendantForRange prev.toSelection
+  var nodeCurr = self.currentTree.root.descendantForRange curr.toSelection
+
+  let currChildOfPrev = nodePrev.getRange.contains(nodeCurr.getRange)
+  # echo "prev: ", nodePrev.getRange, ", ", $nodePrev, "\n", self.contentString(nodePrev.getRange)
+  # echo "curr: ", nodeCurr.getRange, ", ", $nodeCurr, "\n", self.contentString(nodeCurr.getRange)
+
+  if currChildOfPrev:
+    # echo "currChildOfPrev"
+    return nodeCurr.getRange.first.column + 2
+  else:
+    # echo "not currChildOfPrev"
+    return nodePrev.getRange.first.column + 2
+
+  # return node.getRange.first.column + 2
+
+proc insert(self: TextDocument, oldCursor: Cursor, text: string, notify: bool = true, record: bool = true, autoIndent: bool = true): Cursor =
   var cursor = oldCursor
   let startByte = self.byteOffset(oldCursor).uint32
+
+  var newEmptyLines: seq[int]
 
   var i: int = 0
   # echo "insert ", cursor, ": ", text
@@ -601,6 +679,8 @@ proc insert(self: TextDocument, oldCursor: Cursor, text: string, notify: bool = 
       if i > 0:
         # Split line
         self.lines.insert(self.lines[cursor.line][cursor.column..^1], cursor.line + 1)
+        newEmptyLines.add (cursor.line + 1)
+
         if cursor.column < self.lineLength cursor.line:
           self.lines[cursor.line].delete(cursor.column..<(self.lineLength cursor.line))
         cursor = (cursor.line + 1, 0)
@@ -621,7 +701,11 @@ proc insert(self: TextDocument, oldCursor: Cursor, text: string, notify: bool = 
     self.currentTree.tsTreeEdit(addr edit)
     let strValue = self.lines.join("\n")
     self.currentTree = self.tsParser.tsParserParseString(self.currentTree, strValue, strValue.len.uint32)
-    # echo self.currentTree.root
+
+  if autoIndent:
+    for line in newEmptyLines:
+      let indent = self.getTargetIndentForLine(line)
+      cursor = self.insert((line, 0), ' '.repeat(indent), notify = false, record = false, autoIndent = false)
 
   if record:
     self.undoOps.add UndoOp(kind: Delete, selection: (oldCursor, cursor))
@@ -655,7 +739,7 @@ proc undo*(document: TextDocument): Option[Selection] =
     result = document.delete(op.selection, record = false).toSelection.some
 
   of Insert:
-    let cursor = document.insert(op.cursor, op.text, record = false)
+    let cursor = document.insert(op.cursor, op.text, record = false, autoIndent = false)
     result = cursor.toSelection.some
     document.redoOps.add UndoOp(kind: Delete, selection: (op.cursor, cursor))
   else:
@@ -675,7 +759,7 @@ proc redo*(document: TextDocument): Option[Selection] =
     result = document.delete(op.selection, record = false).toSelection.some
 
   of Insert:
-    let cursor = document.insert(op.cursor, op.text, record = false)
+    let cursor = document.insert(op.cursor, op.text, record = false, autoIndent = false)
     result = cursor.toSelection.some
     document.undoOps.add UndoOp(kind: Delete, selection: (op.cursor, cursor))
   else:
@@ -747,7 +831,7 @@ proc scrollToCursor(self: TextDocumentEditor, cursor: Cursor) =
     self.scrollOffset = self.lastContentBounds.h - margin - totalLineHeight
     self.previousBaseIndex = targetLine
 
-proc getContextWithMode(self: TextDocumentEditor, context: string): string
+proc getContextWithMode*(self: TextDocumentEditor, context: string): string
 
 proc isThickCursor(self: TextDocumentEditor): bool =
   return getOption[bool](self.editor, self.getContextWithMode("editor.text.cursor.wide"), false)
@@ -819,6 +903,9 @@ proc setMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} 
 
   self.currentMode = mode
 
+proc mode*(self: TextDocumentEditor): string {.expose("editor.text").} =
+  return self.currentMode
+
 proc getContextWithMode(self: TextDocumentEditor, context: string): string {.expose("editor.text").} =
   return context & "." & $self.currentMode
 
@@ -827,6 +914,12 @@ proc updateTargetColumn(self: TextDocumentEditor, cursor: SelectionCursor) {.exp
 
 proc invertSelection(self: TextDocumentEditor) {.expose("editor.text").} =
   self.selection = (self.selection.last, self.selection.first)
+
+proc insert(self: TextDocumentEditor, oldCursor: Cursor, text: string, notify: bool = true, record: bool = true, autoIndent: bool = true): Cursor {.expose("editor.text").} =
+  self.document.insert(oldCursor, text, notify, record, autoIndent)
+
+proc delete(self: TextDocumentEditor, selection: Selection, notify: bool = true, record: bool = true): Cursor {.expose("editor.text").} =
+  self.document.delete(selection, notify, record)
 
 proc selectPrev(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.selectionHistory.len > 0:
@@ -902,9 +995,11 @@ proc moveCursorLine*(self: TextDocumentEditor, distance: int, cursor: SelectionC
 
 proc moveCursorHome*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
   self.moveCursor(cursor, doMoveCursorHome, 0)
+  self.updateTargetColumn(cursor)
 
 proc moveCursorEnd*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
   self.moveCursor(cursor, doMoveCursorEnd, 0)
+  self.updateTargetColumn(cursor)
 
 proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
   self.scrollToCursor(self.getCursor(cursor))
@@ -912,18 +1007,18 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = Selecti
 proc reloadTreesitter*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.document.initTreesitter()
 
-proc backspace*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc deleteLeft*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.selection.isEmpty:
     self.selection = self.document.delete((self.doMoveCursorColumn(self.selection.first, -1), self.selection.first)).toSelection
   else:
-    self.selection = self.document.edit(self.selection, "").toSelection
+    self.selection = self.document.delete(self.selection).toSelection
   self.updateTargetColumn(Last)
 
-proc delete*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc deleteRight*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.selection.isEmpty:
     self.selection = self.document.delete((self.selection.first, self.doMoveCursorColumn(self.selection.first, 1))).toSelection
   else:
-    self.selection = self.document.edit(self.selection, "").toSelection
+    self.selection = self.document.delete(self.selection).toSelection
   self.updateTargetColumn(Last)
 
 genDispatcher("editor.text")

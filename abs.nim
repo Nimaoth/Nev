@@ -149,3 +149,34 @@ proc log*(args: varargs[string, `$`]) =
   for arg in args:
     result.add(arg)
   scriptLog(result)
+
+template addTextCommandBlock*(mode: static[string], keys: string, body: untyped): untyped =
+  let context = if mode.len == 0: "editor.text" else: "editor.text." & mode
+  addCommand context, keys, proc() =
+    let editor {.inject.} = TextDocumentEditor(id: getActiveEditor())
+    body
+
+macro addTextCommand*(mode: static[string], keys: string, action: string, args: varargs[untyped]): untyped =
+  let context = if mode.len == 0: "editor.text" else: "editor.text." & mode
+  var stmts = nnkStmtList.newTree()
+  let str = nskVar.genSym "str"
+  stmts.add quote do:
+    var `str` = ""
+  for arg in args:
+    stmts.add quote do:
+      `str`.add " "
+      `str`.add `arg`.toJsonString
+
+  return quote do:
+    `stmts`
+    scriptAddCommand(`context`, `keys`, `action`, `str`)
+
+proc addTextCommand*(mode: string, keys: string, action: proc(editor: TextDocumentEditor): void) =
+  let context = if mode.len == 0: "editor.text" else: "editor.text." & mode
+  addCommand context, keys, proc() =
+    action(TextDocumentEditor(id: getActiveEditor()))
+
+template addAstCommand*(keys: string, body: untyped): untyped =
+  addCommand "editor.ast", keys, proc() =
+    let editor {.inject.} = AstDocumentEditor(id: getActiveEditor())
+    body
