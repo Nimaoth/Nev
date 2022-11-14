@@ -189,7 +189,7 @@ proc postInitialize*() =
 
   openFile "temp/test.rs"
   # openFile "temp/test.nim"
-  openFile "src/absytree.nim"
+  # openFile "src/absytree.nim"
   setLayout "fibonacci"
   changeLayoutProp("main-split", -0.2)
 
@@ -264,7 +264,7 @@ addCommand "popup.selector", "<DOWN>", "next"
 addCommand "popup.selector", "<HOME>", "home"
 addCommand "popup.selector", "<END>", "end"
 
-loadVimBindings()
+loadHelixBindings()
 
 # addCommand "editor.ast", "<A-LEFT>", "move-cursor", "-1"
 addAstCommand "<A-LEFT>": editor.moveCursor(-1)

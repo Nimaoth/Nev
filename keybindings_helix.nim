@@ -14,28 +14,29 @@ proc loadHelixBindings*() =
   setOption "editor.text.cursor.movement.", "last-to-first"
   setOption "editor.text.cursor.wide.", true
 
-  addCommand "editor.text", "x", "delete-right"
-  addCommand "editor.text", "<C-l>", "select-line-current"
-  addCommand "editor.text", "miw", "select-inside-current"
-  addCommand "editor.text", "u", "undo"
-  addCommand "editor.text", "U", "redo"
-  addCommand "editor.text", "i", "set-mode", "insert"
-  addCommand "editor.text", "v", "set-mode", "visual"
-  addCommand "editor.text", "V", "set-mode", "visual-temp"
+  addTextCommand "", "x", "delete-right"
+  addTextCommand "", "<C-l>", "select-line-current"
+  addTextCommand "", "miw", "select-inside-current"
+  addTextCommand "", "u", "undo"
+  addTextCommand "", "U", "redo"
+  addTextCommand "", "i", "set-mode", "insert"
+  addTextCommand "", "v", "set-mode", "visual"
+  addTextCommand "", "m", "set-mode", "match"
+  addTextCommand "", "dl", "delete-move", "line-next"
+  addTextCommand "", "b", "move-first", "word-line"
+  addTextCommand "", "w", "move-last", "word-line"
+  addTextCommand "", "e", "move-last", "word-line"
+  addTextCommand "", "<HOME>", "move-first", "line"
+  addTextCommand "", "<END>", "move-last", "line"
 
   addTextCommandBlock "", "di":
     editor.setMode("move")
     setOption("text.move-action", "delete-move")
     setOption("text.move-next-mode", "")
-  addTextCommandBlock "", "ci":
+  addTextCommandBlock "", "c":
     editor.setMode("move")
     setOption("text.move-action", "change-move")
     setOption("text.move-next-mode", "")
-  addCommand "editor.text", "dl", "delete-move", "line-next"
-  addCommand "editor.text", "b", "move-first", "word-line"
-  addCommand "editor.text", "w", "move-last", "word-line"
-  addCommand "editor.text", "<HOME>", "move-first", "line"
-  addCommand "editor.text", "<END>", "move-last", "line"
   addTextCommandBlock "", "o":
     editor.moveCursorEnd()
     editor.insertText("\n")
@@ -50,30 +51,39 @@ proc loadHelixBindings*() =
     editor.setMode("")
     editor.selection = editor.selection.last.toSelection
 
+  # Match mode
+  setHandleInputs "editor.text.move", false
+  setOption "editor.text.cursor.movement.match", "both"
+  setOption "editor.text.cursor.wide.match", true
+  addTextCommandBlock "match", "i":
+    editor.setMode("move")
+    setOption("text.move-action", "select-move")
+    setOption("text.move-next-mode", "")
+
   # Move mode
   setHandleInputs "editor.text.move", false
   setOption "editor.text.cursor.movement.move", "both"
   setOption "editor.text.cursor.wide.move", true
-  addCommand "editor.text.move", "w", "set-move", "word"
-  addCommand "editor.text.move", "W", "set-move", "word-line"
-  addCommand "editor.text.move", "p", "set-move", "paragraph"
-  addCommand "editor.text.move", "l", "set-move", "line"
-  addCommand "editor.text.move", "L", "set-move", "line-next"
-  addCommand "editor.text.move", "\"", "set-move", "\""
-  addCommand "editor.text.move", "'", "set-move", "'"
-  addCommand "editor.text.move", "(", "set-move", "("
-  addCommand "editor.text.move", ")", "set-move", "("
-  addCommand "editor.text.move", "[", "set-move", "["
-  addCommand "editor.text.move", "]", "set-move", "["
-  addCommand "editor.text.move", "}", "set-move", "}"
-  addCommand "editor.text.move", "}", "set-move", "}"
+  addTextCommand "move", "w", "set-move", "word"
+  addTextCommand "move", "W", "set-move", "word-line"
+  addTextCommand "move", "p", "set-move", "paragraph"
+  addTextCommand "move", "l", "set-move", "line"
+  addTextCommand "move", "L", "set-move", "line-next"
+  addTextCommand "move", "\"", "set-move", "\""
+  addTextCommand "move", "'", "set-move", "'"
+  addTextCommand "move", "(", "set-move", "("
+  addTextCommand "move", ")", "set-move", "("
+  addTextCommand "move", "[", "set-move", "["
+  addTextCommand "move", "]", "set-move", "["
+  addTextCommand "move", "}", "set-move", "}"
+  addTextCommand "move", "}", "set-move", "}"
 
   # Insert mode
   setHandleInputs "editor.text.insert", true
   setOption "editor.text.cursor.wide.insert", false
   setOption "editor.text.cursor.movement.visual", "both"
-  addCommand "editor.text.insert", "<ENTER>", "insert-text", "\n"
-  addCommand "editor.text.insert", "<SPACE>", "insert-text", " "
+  addTextCommand "insert", "<ENTER>", "insert-text", "\n"
+  addTextCommand "insert", "<SPACE>", "insert-text", " "
 
   # Visual mode
   setHandleInputs "editor.text.visual", false
