@@ -1,12 +1,12 @@
 # import std/logging
-import std/[strformat, tables, macros]
+import std/[strformat, tables, macros, json]
 
 type AnyDocumentEditor = TextDocumentEditor | AstDocumentEditor
 
 var lambdaActions = initTable[string, proc(): void]()
 
-func toJsonString[T: string](value: T): string = "\"" & value & "\""
-func toJsonString[T: char](value: T): string = "\"" & $value & "\""
+func toJsonString[T: string](value: T): string = escapeJson(value)
+func toJsonString[T: char](value: T): string = escapeJson($value)
 func toJsonString[T](value: T): string = $value
 
 macro addCommand*(context: string, keys: string, action: string, args: varargs[untyped]): untyped =
