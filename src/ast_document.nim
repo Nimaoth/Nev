@@ -523,6 +523,7 @@ proc editSymbol*(self: AstDocumentEditor, symbol: Symbol) =
   self.textEditor.setMode("insert")
   self.textEditor.renderHeader = false
   self.textEditor.fillAvailableSpace = false
+  self.textEditor.lineNumbers = api.LineNumbers.None.some
   discard self.textDocument.textChanged.subscribe (doc: TextDocument) => self.handleTextDocumentChanged()
   self.updateCompletions()
 
@@ -536,6 +537,7 @@ proc editNode*(self: AstDocumentEditor, node: AstNode) =
   self.textEditor.setMode("insert")
   self.textEditor.renderHeader = false
   self.textEditor.fillAvailableSpace = false
+  self.textEditor.lineNumbers = api.LineNumbers.None.some
   discard self.textDocument.textChanged.subscribe (doc: TextDocument) => self.handleTextDocumentChanged()
   self.updateCompletions()
 

@@ -125,6 +125,7 @@ proc newSelectorPopup*(editor: Editor, getCompletions: proc(self: SelectorPopup,
   popup.textEditor = newTextEditor(newTextDocument(), editor)
   popup.textEditor.setMode("insert")
   popup.textEditor.renderHeader = false
+  popup.textEditor.lineNumbers = api.LineNumbers.None.some
   popup.textEditor.document.singleLine = true
   discard popup.textEditor.document.textChanged.subscribe (doc: TextDocument) => popup.handleTextChanged()
   popup.getCompletions = getCompletions

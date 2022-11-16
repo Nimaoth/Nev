@@ -1,6 +1,7 @@
 import std/[strutils, tables, sugar, algorithm, options]
 import fuzzy, bumpy, vmath, windy
 import editor, ast_document, text_document, popup, events, compiler, compiler_types, id, util, rect_utils
+from scripting_api import LineNumbers
 
 type AstGotoDefinitionPopup* = ref object of Popup
   editor*: Editor
@@ -97,6 +98,7 @@ proc newGotoPopup*(editor: Editor, document: AstDocument): AstGotoDefinitionPopu
   popup.textEditor = newTextEditor(newTextDocument(), editor)
   popup.textEditor.setMode("insert")
   popup.textEditor.renderHeader = false
+  popup.textEditor.lineNumbers = LineNumbers.None.some
   popup.textEditor.document.singleLine = true
   discard popup.textEditor.document.textChanged.subscribe (doc: TextDocument) => popup.handleTextChanged()
 
