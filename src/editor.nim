@@ -410,6 +410,7 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
 
   ed.commandLineTextEditor = newTextEditor(newTextDocument(), ed)
   ed.commandLineTextEditor.renderHeader = false
+  ed.commandLineTextEditor.TextDocumentEditor.lineNumbers = api.LineNumbers.None.some
   ed.getCommandLineTextEditor.hideCursorWhenInactive = true
 
   let addins = createAddins()

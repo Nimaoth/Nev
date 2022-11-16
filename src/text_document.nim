@@ -85,6 +85,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   scrollOffset*: float
   previousBaseIndex*: int
+  lineNumbers*: Option[LineNumbers]
 
   lastRenderedLines*: seq[StyledLine]
 
@@ -191,12 +192,17 @@ proc `$`*(node: ts.TSNode): string =
   defer: c_str.c_free
   result = $c_str
 
-proc lineLength(self: TextDocument, line: int): int =
+proc getLine*(self: TextDocument, line: int): string =
+  if line < self.lines.len:
+    return self.lines[line]
+  return ""
+
+proc lineLength*(self: TextDocument, line: int): int =
   if line < self.lines.len:
     return self.lines[line].len
   return 0
 
-proc lineLength(self: TextDocumentEditor, line: int): int =
+proc lineLength*(self: TextDocumentEditor, line: int): int =
   if line < self.document.lines.len:
     return self.document.lines[line].len
   return 0

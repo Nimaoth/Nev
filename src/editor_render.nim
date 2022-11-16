@@ -161,8 +161,6 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
       editor.previousBaseIndex -= 1
       editor.scrollOffset -= lineHeight + lineDistance
 
-    # echo editor.previousBaseIndex, ", ", editor.scrollOffset
-
   let selection = editor.selection
   let nodeRange = editor.selection.normalized
 
@@ -176,10 +174,37 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
 
   editor.lastRenderedLines.setLen 0
 
+  let lineNumbers = editor.lineNumbers.get getOption[LineNumbers](ed, "editor.text.line-numbers", LineNumbers.Absolute)
+  let maxLineNumber = case lineNumbers
+    of LineNumbers.Absolute: editor.previousBaseIndex + ((contentBounds.h - editor.scrollOffset) / ed.renderCtx.lineHeight).int
+    of LineNumbers.Relative: 99
+    else: 0
+  let maxLineNumberLen = ($maxLineNumber).len + 1
+  let cursorLine = selection.last.line
+
   # Draws a line of texts, including selection background.
   proc renderLine(i: int, down: bool): bool =
     var styledText = document.getStyledText(i)
-    var lastBounds = rect(vec2(contentBounds.x, contentBounds.y + (i - editor.previousBaseIndex).float32 * (ed.renderCtx.lineHeight + lineDistance) + editor.scrollOffset), vec2())
+
+    let topLeftOffset = vec2(contentBounds.x, contentBounds.y + (i - editor.previousBaseIndex).float32 * (ed.renderCtx.lineHeight + lineDistance) + editor.scrollOffset)
+
+    const lineNumberPadding = 10
+    let lineNumberBounds = if lineNumbers != LineNumbers.None:
+      rect(topLeftOffset, vec2(maxLineNumberLen.float32 * ed.renderCtx.charWidth + lineNumberPadding, 0))
+    else:
+      rect(topLeftOffset, vec2())
+    if lineNumbers != LineNumbers.None and cursorLine == i:
+      discard ed.renderCtx.drawText(lineNumberBounds.xy, $i, textColor)
+    else:
+      case lineNumbers
+      of LineNumbers.Absolute:
+        discard ed.renderCtx.drawText(lineNumberBounds.xwy - vec2(lineNumberPadding, 0), $i, textColor, pivot = vec2(1, 0))
+      of LineNumbers.Relative:
+        discard ed.renderCtx.drawText(lineNumberBounds.xwy - vec2(lineNumberPadding, 0), $(i - cursorLine).abs, textColor, pivot = vec2(1, 0))
+      else:
+        discard
+
+    var lastBounds = rect(topLeftOffset + vec2(lineNumberBounds.w, 0), vec2())
     if lastBounds.y > bounds.yh:
       return not down
     if lastBounds.y + ed.ctx.fontSize * 2 < 0:

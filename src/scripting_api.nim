@@ -13,6 +13,7 @@ type
 type Cursor* = tuple[line, column: int]
 type Selection* = tuple[first, last: Cursor]
 type SelectionCursor* = enum Config = "config", Both = "both", First = "first", Last = "last", LastToFirst = "last-to-first"
+type LineNumbers* = enum None = "none", Absolute = "Absolute", Relative = "relative"
 
 var nextEditorId = 0
 proc newEditorId*(): EditorId =
