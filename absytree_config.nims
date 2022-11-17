@@ -193,6 +193,17 @@ proc postInitialize*() =
   setLayout "fibonacci"
   changeLayoutProp("main-split", -0.2)
 
+clearCommands "editor"
+clearCommands "editor.ast"
+clearCommands "editor.ast.completion"
+clearCommands "editor.ast.goto"
+clearCommands "editor.ast.goto"
+clearCommands "commandLine"
+clearCommands "popup.selector"
+
+addCommand "editor", "<C-x><C-x>", "quit"
+addCommand "editor", "<CAS-r>", "reload-config"
+
 setOption "ast.scroll-speed", 60
 
 addCommand "editor", "<SPACE>tt", proc() =
