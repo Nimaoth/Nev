@@ -1,4 +1,4 @@
-import std/[tables, sequtils]
+import std/[tables, sequtils, strformat]
 import input
 
 type EventResponse* = enum
@@ -13,13 +13,15 @@ type EventHandlerConfig* = ref object
   commands: Table[string, string]
   handleActions*: bool
   handleInputs*: bool
+  consumeAllActions*: bool
+  consumeAllInput*: bool
   revision: int
 
 type EventHandler* = ref object
   state*: int
   config: EventHandlerConfig
   revision: int
-  dfa: CommandDFA
+  dfaInternal: CommandDFA
   handleAction*: proc(action: string, arg: string): EventResponse
   handleInput*: proc(input: string): EventResponse
 
@@ -30,13 +32,15 @@ func newEventHandlerConfig*(context: string): EventHandlerConfig =
   result.context = context
 
 proc buildDFA*(config: EventHandlerConfig): CommandDFA =
+  # echo "buildDFA ", config.context
+  # echo config.commands
   return buildDFA(config.commands.pairs.toSeq)
 
 proc dfa*(handler: EventHandler): CommandDFA =
   if handler.revision < handler.config.revision:
-    handler.dfa = handler.config.buildDFA()
+    handler.dfaInternal = handler.config.buildDFA()
     handler.revision = handler.config.revision
-  return handler.dfa
+  return handler.dfaInternal
 
 proc setHandleInputs*(config: EventHandlerConfig, value: bool) =
   config.handleInputs = value
@@ -44,6 +48,14 @@ proc setHandleInputs*(config: EventHandlerConfig, value: bool) =
 
 proc setHandleActions*(config: EventHandlerConfig, value: bool) =
   config.handleActions = value
+  config.revision += 1
+
+proc setConsumeAllActions*(config: EventHandlerConfig, value: bool) =
+  config.consumeAllActions = value
+  config.revision += 1
+
+proc setConsumeAllInput*(config: EventHandlerConfig, value: bool) =
+  config.consumeAllInput = value
   config.revision += 1
 
 proc addCommand*(config: EventHandlerConfig, keys: string, action: string) =
@@ -62,14 +74,19 @@ template eventHandler*(inConfig: EventHandlerConfig, handlerBody: untyped): unty
   block:
     var handler = EventHandler()
     handler.config = inConfig
-    handler.dfa = inConfig.buildDFA()
+    handler.dfaInternal = inConfig.buildDFA()
 
     template onAction(actionBody: untyped): untyped =
       handler.handleAction = proc(action: string, arg: string): EventResponse =
         if handler.config.handleActions:
           let action {.inject, used.} = action
           let arg {.inject, used.} = arg
-          return actionBody
+          let response = actionBody
+          if handler.config.consumeAllActions:
+            return Handled
+          return response
+        elif handler.config.consumeAllActions:
+          return Handled
         else:
           return Ignored
 
@@ -83,3 +100,78 @@ template eventHandler*(inConfig: EventHandlerConfig, handlerBody: untyped): unty
 
     handlerBody
     handler
+
+proc reset*(handler: var EventHandler) =
+  handler.state = 0
+
+proc parseAction*(action: string): tuple[action: string, arg: string] =
+  let spaceIndex = action.find(' ')
+  if spaceIndex == -1:
+    return (action, "")
+  else:
+    return (action[0..<spaceIndex], action[spaceIndex + 1..^1])
+
+proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers, handleUnknownAsInput: bool): EventResponse =
+  if input != 0:
+    let prevState = handler.state
+    handler.state = handler.dfa.step(handler.state, input, modifiers)
+    # echo fmt"[{handler.config.context}] {prevState} -> {handler.state}"
+    if handler.state == 0:
+      if prevState == 0:
+        # undefined input in state 0
+        # only handle if no modifier or only shift is pressed, because if any other modifiers are pressed
+        # (ctrl, alt, win) then it doesn't produce input
+        if handleUnknownAsInput and input > 0 and modifiers + {Shift} == {Shift} and handler.handleInput != nil:
+          return handler.handleInput(inputToString(input, {}))
+        return Ignored
+      else:
+        # undefined input in state n
+        return Canceled
+
+    elif handler.dfa.isTerminal(handler.state):
+      let (action, arg) = handler.dfa.getAction(handler.state).parseAction
+      handler.state = 0
+      return handler.handleAction(action, arg)
+    else:
+      return Progress
+  else:
+    return Failed
+
+proc anyInProgress*(handlers: openArray[EventHandler]): bool =
+  for h in handlers:
+    if h.state != 0:
+      return true
+  return false
+
+proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifiers) =
+  let anyInProgress = handlers.anyInProgress
+
+  # echo fmt"handleEvent {modifiers} + {input.inputToString}"
+
+  var allowHandlingUnknownAsInput = true
+  # Go through handlers in reverse
+  for i in 0..<handlers.len:
+    var handler = handlers[handlers.len - i - 1]
+    let response = if (anyInProgress and handler.state != 0) or (not anyInProgress and handler.state == 0):
+      handler.handleEvent(input, modifiers, allowHandlingUnknownAsInput)
+    else:
+      Ignored
+
+    # echo fmt"[{handler.config.context}] {i}: {response}"
+
+    case response
+    of Handled:
+      allowHandlingUnknownAsInput = false
+      for h in handlers:
+        var h = h
+        h.reset()
+      break
+    of Progress:
+      allowHandlingUnknownAsInput = false
+    of Failed, Canceled, Ignored:
+      # Process remaining handlers
+      discard
+
+    if handler.config.consumeAllInput:
+      # Don't process remaining handlers
+      break
