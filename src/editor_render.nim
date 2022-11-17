@@ -551,9 +551,10 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
 
   ed.boxy.fillRect(headerBounds, if selected: theme.color("tab.activeBackground", rgb(45, 45, 60)) else: theme.color("tab.inactiveBackground", rgb(45, 45, 45)))
   ed.boxy.fillRect(contentBoundsWithPadding, if selected: theme.color("editor.background", rgb(25, 25, 40)) else: theme.color("editor.background", rgb(25, 25, 25)) * 0.75)
+  let mode = if editor.currentMode.len == 0: "normal" else: editor.currentMode
   let titleImage = ctx.computeRenderedText(ctx.getOrCreateRenderTextInput(newRenderTextInput(
     ed.renderCtx,
-    "AST - " & document.filename,
+    fmt"{mode} - {document.filename}",
     config.fontRegular, ed.ctx.fontSize, ed.renderCtx.lineHeight, ed.renderCtx.charWidth)))
   ed.boxy.drawImage(titleImage, vec2(headerBounds.x, headerBounds.y), if selected: theme.color("tab.activeForeground", rgb(255, 225, 255)) else: theme.color("tab.inactiveForeground", rgb(255, 225, 255)))
 
@@ -830,7 +831,11 @@ proc renderMainWindow*(ed: Editor, bounds: Rect) =
     ed.boxy.popLayer()
 
 proc renderStatusBar*(ed: Editor, bounds: Rect) =
-  discard ed.getCommandLineTextEditor.renderDocumentEditor(ed, bounds, ed.commandLineMode)
+  let (statusBounds, commandsBounds) = bounds.splitH(relative(ed.ctx.fontSize))
+
+  let mode = if ed.currentMode.len == 0: "normal" else: ed.currentMode
+  discard ed.renderCtx.drawText(statusBounds.xy, fmt"{mode}", ed.theme.color("editor.foreground", rgb(225, 200, 200)))
+  discard ed.getCommandLineTextEditor.renderDocumentEditor(ed, commandsBounds, ed.commandLineMode)
 
 proc render*(ed: Editor) =
   defer:
@@ -863,9 +868,9 @@ proc render*(ed: Editor) =
   ed.renderCtx.lineHeight = tempBounds.y
   ed.renderCtx.charWidth = tempBounds.x
 
-  let (mainRect, statusRect) = if not ed.statusBarOnTop: windowRect.splitH(relative(windowRect.h - lineHeight))
+  let (mainRect, statusRect) = if not ed.statusBarOnTop: windowRect.splitH(relative(windowRect.h - lineHeight * 2))
   else:
-    let rects = windowRect.splitH(relative(lineHeight))
+    let rects = windowRect.splitH(relative(lineHeight * 2))
     (rects[1], rects[0])
 
   ed.renderMainWindow(mainRect)

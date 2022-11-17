@@ -182,6 +182,9 @@ type AstDocumentEditor* = ref object of DocumentEditor
   textDocument*: TextDocument
   textEditEventHandler*: EventHandler
 
+  modeEventHandler: EventHandler
+  currentMode*: string
+
   completionText: string
   completions*: seq[Completion]
   selectedCompletion*: int
@@ -611,9 +614,14 @@ method canEdit*(self: AstDocumentEditor, document: Document): bool =
   else: return false
 
 method getEventHandlers*(self: AstDocumentEditor): seq[EventHandler] =
+  result.add self.eventHandler
+
+  if not self.modeEventHandler.isNil:
+    result.add self.modeEventHandler
+
   if self.textEditor != nil:
-    return @[self.eventHandler] & self.textEditor.getEventHandlers & @[self.textEditEventHandler]
-  return @[self.eventHandler]
+    result.add self.textEditor.getEventHandlers
+    result.add self.textEditEventHandler
 
 method handleDocumentChanged*(self: AstDocumentEditor) =
   logger.log(lvlInfo, fmt"[ast-editor] Document changed")
@@ -1834,6 +1842,28 @@ proc dumpContext(self: AstDocumentEditor) {.expose("editor.ast").} =
   echo "================================================="
   echo ctx.toString
   echo "================================================="
+
+proc getModeConfig(self: AstDocumentEditor, mode: string): EventHandlerConfig =
+  return self.editor.getEventHandlerConfig("editor.ast." & mode)
+
+proc setMode*(self: AstDocumentEditor, mode: string) {.expose("editor.ast").} =
+  if mode.len == 0:
+    self.modeEventHandler = nil
+  else:
+    let config = self.getModeConfig(mode)
+    self.modeEventHandler = eventHandler(config):
+      onAction:
+        self.handleAction action, arg
+      onInput:
+        Ignored
+
+  self.currentMode = mode
+
+proc mode*(self: AstDocumentEditor): string {.expose("editor.ast").} =
+  return self.currentMode
+
+proc getContextWithMode(self: AstDocumentEditor, context: string): string {.expose("editor.ast").} =
+  return context & "." & $self.currentMode
 
 genDispatcher("editor.ast")
 
