@@ -38,13 +38,6 @@ proc toInput(button: Button): int64 =
   of NumpadDivide: ord '/'
   else: 0
 
-proc parseAction(action: string): tuple[action: string, arg: string] =
-  let spaceIndex = action.find(' ')
-  if spaceIndex == -1:
-    return (action, "")
-  else:
-    return (action[0..<spaceIndex], action[spaceIndex + 1..^1])
-
 type View* = ref object
   document*: Document
   editor*: DocumentEditor
@@ -110,6 +103,9 @@ type Editor* = ref object
   commandLineEventHandler*: EventHandler
   commandLineMode*: bool
 
+  modeEventHandler: EventHandler
+  currentMode*: string
+
   editor_defaults: seq[DocumentEditor]
 
 var gEditor*: Editor = nil
@@ -122,33 +118,6 @@ proc unregisterEditor*(self: Editor, editor: DocumentEditor) =
 
 method injectDependencies*(self: DocumentEditor, ed: Editor) {.base.} =
   discard
-
-proc reset*(handler: var EventHandler) =
-  handler.state = 0
-
-proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers, handleUnknownAsInput: bool): EventResponse =
-  if input != 0:
-    let prevState = handler.state
-    handler.state = handler.dfa.step(handler.state, input, modifiers)
-    # echo prevState, " -> ", handler.state
-    if handler.state == 0:
-      if prevState == 0:
-        # undefined input in state 0
-        if handleUnknownAsInput and input > 0 and modifiers + {Shift} == {Shift} and handler.handleInput != nil:
-          return handler.handleInput(inputToString(input, {}))
-        return Ignored
-      else:
-        # undefined input in state n
-        return Canceled
-
-    elif handler.dfa.isTerminal(handler.state):
-      let (action, arg) = handler.dfa.getAction(handler.state).parseAction
-      handler.state = 0
-      return handler.handleAction(action, arg)
-    else:
-      return Progress
-  else:
-    return Failed
 
 proc handleAction(action: string, arg: string): EventResponse =
   echo "event: " & action & " - " & arg
@@ -191,31 +160,31 @@ method layoutViews*(layout: FibonacciLayout, props: LayoutProperties, bounds: Re
     rect = remaining
     result.add view_rect
 
-proc handleUnknownPopupAction*(ed: Editor, popup: Popup, action: string, arg: string): EventResponse =
+proc handleUnknownPopupAction*(self: Editor, popup: Popup, action: string, arg: string): EventResponse =
   try:
-    if ed.scriptContext.inter.invoke(handleUnknownPopupAction, popup.id, action, arg, returnType = bool):
+    if self.scriptContext.inter.invoke(handleUnknownPopupAction, popup.id, action, arg, returnType = bool):
       return Handled
   except:
-    ed.logger.log(lvlError, fmt"[ed] Failed to run script handleUnknownPopupAction '{action} {arg}': {getCurrentExceptionMsg()}")
+    self.logger.log(lvlError, fmt"[ed] Failed to run script handleUnknownPopupAction '{action} {arg}': {getCurrentExceptionMsg()}")
     echo getCurrentException().getStackTrace()
 
   return Failed
 
-proc handleUnknownDocumentEditorAction*(ed: Editor, editor: DocumentEditor, action: string, arg: string): EventResponse =
+proc handleUnknownDocumentEditorAction*(self: Editor, editor: DocumentEditor, action: string, arg: string): EventResponse =
   try:
-    if ed.scriptContext.inter.invoke(handleEditorAction, editor.id, action, arg, returnType = bool):
+    if self.scriptContext.inter.invoke(handleEditorAction, editor.id, action, arg, returnType = bool):
       return Handled
   except:
-    ed.logger.log(lvlError, fmt"[ed] Failed to run script handleUnknownDocumentEditorAction '{action} {arg}': {getCurrentExceptionMsg()}")
+    self.logger.log(lvlError, fmt"[ed] Failed to run script handleUnknownDocumentEditorAction '{action} {arg}': {getCurrentExceptionMsg()}")
     echo getCurrentException().getStackTrace()
 
   return Failed
 
-proc handleAction(ed: Editor, action: string, arg: string)
+proc handleAction(self: Editor, action: string, arg: string): bool
 proc getFlag*(self: Editor, flag: string, default: bool = false): bool
 
-proc createEditorForDocument(ed: Editor, document: Document): DocumentEditor =
-  for editor in ed.editor_defaults:
+proc createEditorForDocument(self: Editor, document: Document): DocumentEditor =
+  for editor in self.editor_defaults:
     if editor.canEdit document:
       return editor.createWithDocument document
 
@@ -273,44 +242,44 @@ proc setOption*[T](editor: Editor, path: string, value: T) =
   else:
     {.fatal: ("Can't set option with type " & $T).}
 
-proc createView(ed: Editor, editor: DocumentEditor) =
+proc createView(self: Editor, editor: DocumentEditor) =
   var view = View(document: nil, editor: editor)
 
-  ed.views.add view
-  ed.currentView = ed.views.len - 1
+  self.views.add view
+  self.currentView = self.views.len - 1
 
-proc createView(ed: Editor, document: Document) =
-  var editor = ed.createEditorForDocument document
-  editor.injectDependencies ed
+proc createView(self: Editor, document: Document) =
+  var editor = self.createEditorForDocument document
+  editor.injectDependencies self
   var view = View(document: document, editor: editor)
 
-  ed.views.add view
-  ed.currentView = ed.views.len - 1
+  self.views.add view
+  self.currentView = self.views.len - 1
 
-proc pushPopup*(ed: Editor, popup: Popup) =
+proc pushPopup*(self: Editor, popup: Popup) =
   popup.init()
-  ed.popups.add popup
+  self.popups.add popup
 
-proc popPopup*(ed: Editor, popup: Popup) =
-  if ed.popups.len > 0 and ed.popups[ed.popups.high] == popup:
-    discard ed.popups.pop
+proc popPopup*(self: Editor, popup: Popup) =
+  if self.popups.len > 0 and self.popups[self.popups.high] == popup:
+    discard self.popups.pop
 
-proc getEventHandlerConfig*(ed: Editor, context: string): EventHandlerConfig =
-  if not ed.eventHandlerConfigs.contains(context):
-    ed.eventHandlerConfigs[context] = newEventHandlerConfig(context)
-  return ed.eventHandlerConfigs[context]
+proc getEventHandlerConfig*(self: Editor, context: string): EventHandlerConfig =
+  if not self.eventHandlerConfigs.contains(context):
+    self.eventHandlerConfigs[context] = newEventHandlerConfig(context)
+  return self.eventHandlerConfigs[context]
 
-proc getEditorForId*(ed: Editor, id: EditorId): Option[DocumentEditor] =
-  if ed.editors.contains(id):
-    return ed.editors[id].some
+proc getEditorForId*(self: Editor, id: EditorId): Option[DocumentEditor] =
+  if self.editors.contains(id):
+    return self.editors[id].some
 
-  if ed.commandLineTextEditor.id == id:
-    return ed.commandLineTextEditor.some
+  if self.commandLineTextEditor.id == id:
+    return self.commandLineTextEditor.some
 
   return DocumentEditor.none
 
-proc getPopupForId*(ed: Editor, id: PopupId): Option[Popup] =
-  for popup in ed.popups:
+proc getPopupForId*(self: Editor, id: PopupId): Option[Popup] =
+  for popup in self.popups:
     if popup.id == id:
       return popup.some
 
@@ -326,116 +295,120 @@ type ThemeSelectorItem* = ref object of SelectorItem
 type FileSelectorItem* = ref object of SelectorItem
   path*: string
 
-proc setTheme*(ed: Editor, path: string) =
+proc setTheme*(self: Editor, path: string) =
   if loadFromFile(path).getSome(theme):
-    ed.theme = theme
+    self.theme = theme
 
 proc createAddins(): VmAddins
 
-proc getCommandLineTextEditor*(ed: Editor): TextDocumentEditor = ed.commandLineTextEditor.TextDocumentEditor
+proc getCommandLineTextEditor*(self: Editor): TextDocumentEditor = self.commandLineTextEditor.TextDocumentEditor
 
 proc newEditor*(window: Window, boxy: Boxy): Editor =
-  var ed = Editor()
-  ed.window = window
-  ed.boxy = boxy
-  ed.boxy2 = newBoxy()
-  ed.statusBarOnTop = false
-  ed.logger = newConsoleLogger()
+  var self = Editor()
+  self.window = window
+  self.boxy = boxy
+  self.boxy2 = newBoxy()
+  self.statusBarOnTop = false
+  self.logger = newConsoleLogger()
 
-  ed.timer = startTimer()
-  ed.frameTimer = startTimer()
+  self.timer = startTimer()
+  self.frameTimer = startTimer()
 
-  ed.layout = HorizontalLayout()
-  ed.layout_props = LayoutProperties(props: {"main-split": 0.5.float32}.toTable)
+  self.layout = HorizontalLayout()
+  self.layout_props = LayoutProperties(props: {"main-split": 0.5.float32}.toTable)
 
-  ed.ctx = newContext(1, 1)
-  ed.ctx.fillStyle = rgb(255, 255, 255)
-  ed.ctx.strokeStyle = rgb(255, 255, 255)
-  ed.ctx.font = "fonts/DejaVuSansMono.ttf"
-  ed.ctx.fontSize = 20
-  ed.ctx.textBaseline = TopBaseline
+  self.ctx = newContext(1, 1)
+  self.ctx.fillStyle = rgb(255, 255, 255)
+  self.ctx.strokeStyle = rgb(255, 255, 255)
+  self.ctx.font = "fonts/DejaVuSansMono.ttf"
+  self.ctx.fontSize = 20
+  self.ctx.textBaseline = TopBaseline
 
-  ed.renderCtx = RenderContext(boxy: boxy, ctx: ed.ctx)
+  self.renderCtx = RenderContext(boxy: boxy, ctx: self.ctx)
 
-  ed.fontRegular = "./fonts/DejaVuSansMono.ttf"
-  ed.fontBold = "./fonts/DejaVuSansMono-Bold.ttf"
-  ed.fontItalic = "./fonts/DejaVuSansMono-Oblique.ttf"
-  ed.fontBoldItalic = "./fonts/DejaVuSansMono-BoldOblique.ttf"
+  self.fontRegular = "./fonts/DejaVuSansMono.ttf"
+  self.fontBold = "./fonts/DejaVuSansMono-Bold.ttf"
+  self.fontItalic = "./fonts/DejaVuSansMono-Oblique.ttf"
+  self.fontBoldItalic = "./fonts/DejaVuSansMono-BoldOblique.ttf"
 
-  ed.editor_defaults = @[TextDocumentEditor(), AstDocumentEditor()]
+  self.editor_defaults = @[TextDocumentEditor(), AstDocumentEditor()]
 
-  ed.theme = defaultTheme()
-  ed.setTheme("./themes/tokyo-night-color-theme.json")
+  self.theme = defaultTheme()
+  self.setTheme("./themes/tokyo-night-color-theme.json")
 
-  ed.createView(newAstDocument("a.ast"))
-  # ed.createView(newKeybindAutocompletion())
-  ed.currentView = 0
+  self.createView(newAstDocument("a.ast"))
+  # self.createView(newKeybindAutocompletion())
+  self.currentView = 0
 
-  ed.getEventHandlerConfig("editor").addCommand "<C-x><C-x>", "quit"
-  ed.getEventHandlerConfig("editor").addCommand "<CAS-r>", "reload-config"
+  self.getEventHandlerConfig("editor").addCommand "<C-x><C-x>", "quit"
+  self.getEventHandlerConfig("editor").addCommand "<CAS-r>", "reload-config"
 
-  ed.options = newJObject()
+  self.options = newJObject()
 
-  ed.eventHandler = eventHandler(ed.getEventHandlerConfig("editor")):
+  self.eventHandler = eventHandler(self.getEventHandlerConfig("editor")):
     onAction:
-      ed.handleAction(action, arg)
-      Handled
+      if self.handleAction(action, arg):
+        Handled
+      else:
+        Ignored
     onInput:
       Ignored
-  ed.commandLineEventHandler = eventHandler(ed.getEventHandlerConfig("commandLine")):
+  self.commandLineEventHandler = eventHandler(self.getEventHandlerConfig("commandLine")):
     onAction:
-      ed.handleAction(action, arg)
-      Handled
+      if self.handleAction(action, arg):
+        Handled
+      else:
+        Ignored
     onInput:
       Ignored
-  ed.commandLineMode = false
+  self.commandLineMode = false
 
   try:
     let state = readFile("config.json").parseJson.jsonTo EditorState
-    ed.setTheme(state.theme)
-    ed.ctx.fontSize = state.fontSize
-    ed.ctx.font = state.fontRegular
-    if state.fontRegular.len > 0: ed.fontRegular = state.fontRegular
-    if state.fontBold.len > 0: ed.fontBold = state.fontBold
-    if state.fontItalic.len > 0: ed.fontItalic = state.fontItalic
-    if state.fontBoldItalic.len > 0: ed.fontBoldItalic = state.fontBoldItalic
+    self.setTheme(state.theme)
+    self.ctx.fontSize = state.fontSize
+    self.ctx.font = state.fontRegular
+    if state.fontRegular.len > 0: self.fontRegular = state.fontRegular
+    if state.fontBold.len > 0: self.fontBold = state.fontBold
+    if state.fontItalic.len > 0: self.fontItalic = state.fontItalic
+    if state.fontBoldItalic.len > 0: self.fontBoldItalic = state.fontBoldItalic
 
-    ed.options = readFile("options.json").parseJson
-    echo "Restoring options: ", ed.options.pretty
+    self.options = readFile("options.json").parseJson
+    echo "Restoring options: ", self.options.pretty
 
   except:
     echo "Failed to load previous state from config file"
 
-  gEditor = ed
+  gEditor = self
 
-  ed.commandLineTextEditor = newTextEditor(newTextDocument(), ed)
-  ed.commandLineTextEditor.renderHeader = false
-  ed.commandLineTextEditor.TextDocumentEditor.lineNumbers = api.LineNumbers.None.some
-  ed.getCommandLineTextEditor.hideCursorWhenInactive = true
+  self.commandLineTextEditor = newTextEditor(newTextDocument(), self)
+  self.commandLineTextEditor.renderHeader = false
+  self.commandLineTextEditor.TextDocumentEditor.lineNumbers = api.LineNumbers.None.some
+  self.getCommandLineTextEditor.hideCursorWhenInactive = true
 
   let addins = createAddins()
   try:
-    ed.scriptContext = newScriptContext("./absytree_config.nims", addins)
-    ed.scriptContext.inter.invoke(postInitialize)
-    ed.initializeCalled = true
+    self.scriptContext = newScriptContext("./absytree_config.nims", addins)
+    self.scriptContext.inter.invoke(postInitialize)
+    self.initializeCalled = true
   except:
-    ed.logger.log(lvlError, fmt"Failed to load config")
+    self.logger.log(lvlError, fmt"Failed to load config")
 
-  return ed
+  return self
 
-proc shutdown*(ed: Editor) =
+proc shutdown*(self: Editor) =
   # Save some state
   var state = EditorState()
-  state.theme = ed.theme.path
-  state.fontSize = ed.ctx.fontSize
-  state.fontRegular = ed.fontRegular
-  state.fontBold = ed.fontBold
-  state.fontItalic = ed.fontItalic
-  state.fontBoldItalic = ed.fontBoldItalic
+  state.theme = self.theme.path
+  state.fontSize = self.ctx.fontSize
+  state.fontRegular = self.fontRegular
+  state.fontBold = self.fontBold
+  state.fontItalic = self.fontItalic
+  state.fontBoldItalic = self.fontBoldItalic
 
   let serialized = state.toJson
   writeFile("config.json", serialized.pretty)
-  writeFile("options.json", ed.options.pretty)
+  writeFile("options.json", self.options.pretty)
 
 proc getEditor(): Option[Editor] =
   if gEditor.isNil: return Editor.none
@@ -449,6 +422,12 @@ proc setHandleInputs*(self: Editor, context: string, value: bool) {.expose("edit
 
 proc setHandleActions*(self: Editor, context: string, value: bool) {.expose("editor").} =
   self.getEventHandlerConfig(context).setHandleActions(value)
+
+proc setConsumeAllActions*(self: Editor, context: string, value: bool) {.expose("editor").} =
+  self.getEventHandlerConfig(context).setConsumeAllActions(value)
+
+proc setConsumeAllInput*(self: Editor, context: string, value: bool) {.expose("editor").} =
+  self.getEventHandlerConfig(context).setConsumeAllInput(value)
 
 proc getFlag*(self: Editor, flag: string, default: bool = false): bool {.expose("editor").} =
   return getOption[bool](self, flag, default)
@@ -493,10 +472,10 @@ proc createView*(self: Editor) {.expose("editor").} =
 proc createKeybindAutocompleteView*(self: Editor) {.expose("editor").} =
   self.createView(newKeybindAutocompletion())
 
-proc closeCurrentView*(ed: Editor) {.expose("editor").} =
-  ed.views[ed.currentView].editor.unregister()
-  ed.views.delete ed.currentView
-  ed.currentView = ed.currentView.clamp(0, ed.views.len - 1)
+proc closeCurrentView*(self: Editor) {.expose("editor").} =
+  self.views[self.currentView].editor.unregister()
+  self.views.delete self.currentView
+  self.currentView = self.currentView.clamp(0, self.views.len - 1)
 
 proc moveCurrentViewToTop*(self: Editor) {.expose("editor").} =
   if self.views.len > 0:
@@ -505,86 +484,86 @@ proc moveCurrentViewToTop*(self: Editor) {.expose("editor").} =
     self.views.insert(view, 0)
   self.currentView = 0
 
-proc nextView*(ed: Editor) {.expose("editor").} =
-  ed.currentView = if ed.views.len == 0: 0 else: (ed.currentView + 1) mod ed.views.len
+proc nextView*(self: Editor) {.expose("editor").} =
+  self.currentView = if self.views.len == 0: 0 else: (self.currentView + 1) mod self.views.len
 
-proc prevView*(ed: Editor) {.expose("editor").} =
-  ed.currentView = if ed.views.len == 0: 0 else: (ed.currentView + ed.views.len - 1) mod ed.views.len
+proc prevView*(self: Editor) {.expose("editor").} =
+  self.currentView = if self.views.len == 0: 0 else: (self.currentView + self.views.len - 1) mod self.views.len
 
-proc moveCurrentViewPrev*(ed: Editor) {.expose("editor").} =
-  if ed.views.len > 0:
-    let view = ed.views[ed.currentView]
-    let index = (ed.currentView + ed.views.len - 1) mod ed.views.len
-    ed.views.delete(ed.currentView)
-    ed.views.insert(view, index)
-    ed.currentView = index
+proc moveCurrentViewPrev*(self: Editor) {.expose("editor").} =
+  if self.views.len > 0:
+    let view = self.views[self.currentView]
+    let index = (self.currentView + self.views.len - 1) mod self.views.len
+    self.views.delete(self.currentView)
+    self.views.insert(view, index)
+    self.currentView = index
 
-proc moveCurrentViewNext*(ed: Editor) {.expose("editor").} =
-  if ed.views.len > 0:
-    let view = ed.views[ed.currentView]
-    let index = (ed.currentView + 1) mod ed.views.len
-    ed.views.delete(ed.currentView)
-    ed.views.insert(view, index)
-    ed.currentView = index
+proc moveCurrentViewNext*(self: Editor) {.expose("editor").} =
+  if self.views.len > 0:
+    let view = self.views[self.currentView]
+    let index = (self.currentView + 1) mod self.views.len
+    self.views.delete(self.currentView)
+    self.views.insert(view, index)
+    self.currentView = index
 
-proc setLayout*(ed: Editor, layout: string) {.expose("editor").} =
-  ed.layout = case layout
+proc setLayout*(self: Editor, layout: string) {.expose("editor").} =
+  self.layout = case layout
     of "horizontal": HorizontalLayout()
     of "vertical": VerticalLayout()
     of "fibonacci": FibonacciLayout()
     else: HorizontalLayout()
 
-proc commandLine*(ed: Editor, initialValue: string = "") {.expose("editor").} =
-  ed.getCommandLineTextEditor.document.content = @[initialValue]
-  ed.commandLineMode = true
+proc commandLine*(self: Editor, initialValue: string = "") {.expose("editor").} =
+  self.getCommandLineTextEditor.document.content = @[initialValue]
+  self.commandLineMode = true
 
-proc exitCommandLine*(ed: Editor) {.expose("editor").} =
-  ed.getCommandLineTextEditor.document.content = @[""]
-  ed.commandLineMode = false
+proc exitCommandLine*(self: Editor) {.expose("editor").} =
+  self.getCommandLineTextEditor.document.content = @[""]
+  self.commandLineMode = false
 
-proc executeCommandLine*(ed: Editor) {.expose("editor").} =
-  ed.commandLineMode = false
-  let (action, arg) = ed.getCommandLineTextEditor.document.content.join("").parseAction
-  ed.getCommandLineTextEditor.document.content = @[""]
-  ed.handleAction(action, arg)
+proc executeCommandLine*(self: Editor): bool {.expose("editor").} =
+  self.commandLineMode = false
+  let (action, arg) = self.getCommandLineTextEditor.document.content.join("").parseAction
+  self.getCommandLineTextEditor.document.content = @[""]
+  return self.handleAction(action, arg)
 
-proc openFile*(ed: Editor, path: string) {.expose("editor").} =
+proc openFile*(self: Editor, path: string) {.expose("editor").} =
   try:
     if path.endsWith(".ast"):
-      ed.createView(newAstDocument(path))
+      self.createView(newAstDocument(path))
     else:
       let file = readFile(path)
-      ed.createView(newTextDocument(path, file.splitLines))
+      self.createView(newTextDocument(path, file.splitLines))
   except:
-    ed.logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
+    self.logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
     echo getCurrentException().getStackTrace()
 
-proc writeFile*(ed: Editor, path: string = "") {.expose("editor").} =
-  if ed.currentView >= 0 and ed.currentView < ed.views.len and ed.views[ed.currentView].document != nil:
+proc writeFile*(self: Editor, path: string = "") {.expose("editor").} =
+  if self.currentView >= 0 and self.currentView < self.views.len and self.views[self.currentView].document != nil:
     try:
-      ed.views[ed.currentView].document.save(path)
+      self.views[self.currentView].document.save(path)
     except:
-      ed.logger.log(lvlError, fmt"[ed] Failed to write file '{path}': {getCurrentExceptionMsg()}")
+      self.logger.log(lvlError, fmt"[ed] Failed to write file '{path}': {getCurrentExceptionMsg()}")
       echo getCurrentException().getStackTrace()
 
-proc loadFile*(ed: Editor, path: string = "") {.expose("editor").} =
-  if ed.currentView >= 0 and ed.currentView < ed.views.len and ed.views[ed.currentView].document != nil:
+proc loadFile*(self: Editor, path: string = "") {.expose("editor").} =
+  if self.currentView >= 0 and self.currentView < self.views.len and self.views[self.currentView].document != nil:
     try:
-      ed.views[ed.currentView].document.load(path)
-      ed.views[ed.currentView].editor.handleDocumentChanged()
+      self.views[self.currentView].document.load(path)
+      self.views[self.currentView].editor.handleDocumentChanged()
     except:
-      ed.logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
+      self.logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
       echo getCurrentException().getStackTrace()
 
-proc loadTheme*(ed: Editor, name: string) {.expose("editor").} =
+proc loadTheme*(self: Editor, name: string) {.expose("editor").} =
   if theme.loadFromFile(fmt"./themes/{name}.json").getSome(theme):
-    ed.theme = theme
+    self.theme = theme
   else:
-    ed.logger.log(lvlError, fmt"[ed] Failed to load theme {name}")
+    self.logger.log(lvlError, fmt"[ed] Failed to load theme {name}")
 
-proc chooseTheme*(ed: Editor) {.expose("editor").} =
-  let originalTheme = ed.theme.path
-  var popup = ed.newSelectorPopup proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
+proc chooseTheme*(self: Editor) {.expose("editor").} =
+  let originalTheme = self.theme.path
+  var popup = self.newSelectorPopup proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
     for file in walkDirRec("./themes", relative=true):
       if file.endsWith ".json":
         let name = file.splitFile[1]
@@ -595,20 +574,20 @@ proc chooseTheme*(ed: Editor) {.expose("editor").} =
 
   popup.handleItemSelected = proc(item: SelectorItem) =
     if theme.loadFromFile(item.ThemeSelectorItem.path).getSome(theme):
-      ed.theme = theme
+      self.theme = theme
 
   popup.handleItemConfirmed = proc(item: SelectorItem) =
     if theme.loadFromFile(item.ThemeSelectorItem.path).getSome(theme):
-      ed.theme = theme
+      self.theme = theme
 
   popup.handleCanceled = proc() =
     if theme.loadFromFile(originalTheme).getSome(theme):
-      ed.theme = theme
+      self.theme = theme
 
-  ed.pushPopup popup
+  self.pushPopup popup
 
-proc chooseFile*(ed: Editor, view: string = "new") {.expose("editor").} =
-  var popup = ed.newSelectorPopup proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
+proc chooseFile*(self: Editor, view: string = "new") {.expose("editor").} =
+  var popup = self.newSelectorPopup proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
     for file in walkDirRec(".", relative=true):
       let name = file.splitFile[1]
       let score = fuzzyMatchSmart(text, name)
@@ -619,176 +598,179 @@ proc chooseFile*(ed: Editor, view: string = "new") {.expose("editor").} =
   popup.handleItemConfirmed = proc(item: SelectorItem) =
     case view
     of "current":
-      ed.loadFile(item.FileSelectorItem.path)
+      self.loadFile(item.FileSelectorItem.path)
     of "new":
-      ed.openFile(item.FileSelectorItem.path)
+      self.openFile(item.FileSelectorItem.path)
     else:
-      ed.logger.log(lvlError, fmt"Unknown argument {view}")
+      self.logger.log(lvlError, fmt"Unknown argument {view}")
 
-  ed.pushPopup popup
+  self.pushPopup popup
 
-proc reloadConfig*(ed: Editor) {.expose("editor").} =
-  if ed.scriptContext.isNil.not:
+proc reloadConfig*(self: Editor) {.expose("editor").} =
+  if self.scriptContext.isNil.not:
     try:
-      ed.scriptContext.reloadScript()
-      if not ed.initializeCalled:
-        ed.scriptContext.inter.invoke(postInitialize)
-        ed.initializeCalled = true
+      self.scriptContext.reloadScript()
+      if not self.initializeCalled:
+        self.scriptContext.inter.invoke(postInitialize)
+        self.initializeCalled = true
     except:
-      ed.logger.log(lvlError, fmt"Failed to reload config")
+      self.logger.log(lvlError, fmt"Failed to reload config")
 
-proc logOptions*(ed: Editor) {.expose("editor").} =
-  ed.logger.log(lvlInfo, ed.options.pretty)
+proc logOptions*(self: Editor) {.expose("editor").} =
+  self.logger.log(lvlInfo, self.options.pretty)
 
-proc clearCommands*(ed: Editor, context: string) {.expose("editor").} =
-  ed.getEventHandlerConfig(context).clearCommands()
+proc clearCommands*(self: Editor, context: string) {.expose("editor").} =
+  self.getEventHandlerConfig(context).clearCommands()
 
-proc getAllEditors*(ed: Editor): seq[EditorId] {.expose("editor").} =
-  for id in ed.editors.keys:
+proc getAllEditors*(self: Editor): seq[EditorId] {.expose("editor").} =
+  for id in self.editors.keys:
     result.add id
+
+proc getModeConfig(self: Editor, mode: string): EventHandlerConfig =
+  return self.getEventHandlerConfig("editor." & mode)
+
+proc setMode*(self: Editor, mode: string) {.expose("editor").} =
+  if mode.len == 0:
+    self.modeEventHandler = nil
+  else:
+    let config = self.getModeConfig(mode)
+    self.modeEventHandler = eventHandler(config):
+      onAction:
+        if self.handleAction(action, arg):
+          Handled
+        else:
+          Ignored
+      onInput:
+        Ignored
+
+  self.currentMode = mode
+
+proc mode*(self: Editor): string {.expose("editor").} =
+  return self.currentMode
+
+proc getContextWithMode(self: Editor, context: string): string {.expose("editor").} =
+  return context & "." & $self.currentMode
 
 genDispatcher("editor")
 
-proc handleAction(ed: Editor, action: string, arg: string) =
-  ed.logger.log(lvlInfo, "[ed] Action '$1 $2'" % [action, arg])
+proc handleAction(self: Editor, action: string, arg: string): bool =
+  self.logger.log(lvlInfo, "[ed] Action '$1 $2'" % [action, arg])
   try:
-    if ed.scriptContext.inter.invoke(handleGlobalAction, action, arg, returnType = bool):
-      return
+    if self.scriptContext.inter.invoke(handleGlobalAction, action, arg, returnType = bool):
+      return true
   except:
-    ed.logger.log(lvlError, fmt"[ed] Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
+    self.logger.log(lvlError, fmt"[ed] Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
     echo getCurrentException().getStackTrace()
+    return false
 
   var args = newJArray()
   for a in newStringStream(arg).parseJsonFragments():
     args.add a
-  discard dispatch(action, args)
+  return dispatch(action, args).isSome
 
-proc anyInProgress*(handlers: openArray[EventHandler]): bool =
-  for h in handlers:
-    if h.state != 0:
-      return true
-  return false
+proc currentEventHandlers*(self: Editor): seq[EventHandler] =
+  result = @[self.eventHandler]
 
-proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifiers) =
-  let anyInProgress = handlers.anyInProgress
+  let modeOnTop = getOption[bool](self, self.getContextWithMode("editor.custom-mode-on-top"), true)
+  if not self.modeEventHandler.isNil and not modeOnTop:
+    result.add self.modeEventHandler
 
-  var allowHandlingUnknownAsInput = true
-  for i in 0..<handlers.len:
-    var handler = handlers[handlers.len - i - 1]
-    let response = if (anyInProgress and handler.state != 0) or (not anyInProgress and handler.state == 0):
-      handler.handleEvent(input, modifiers, allowHandlingUnknownAsInput)
-    else:
-      Ignored
+  if self.commandLineMode:
+    result.add self.getCommandLineTextEditor.getEventHandlers()
+    result.add self.commandLineEventHandler
+  elif self.popups.len > 0:
+    result.add self.popups[self.popups.high].getEventHandlers()
+  elif self.currentView >= 0 and self.currentView < self.views.len:
+    result.add self.views[self.currentView].editor.getEventHandlers()
 
-    # echo i, ": ", response
+  if not self.modeEventHandler.isNil and modeOnTop:
+    result.add self.modeEventHandler
 
-    case response
-    of Handled:
-      allowHandlingUnknownAsInput = false
-      for h in handlers:
-        var h = h
-        h.reset()
-      break
-    of Progress:
-      allowHandlingUnknownAsInput = false
-    else:
-      discard
-
-proc currentEventHandlers*(ed: Editor): seq[EventHandler] =
-  result = @[ed.eventHandler]
-  if ed.commandLineMode:
-    result.add ed.getCommandLineTextEditor.getEventHandlers()
-    result.add ed.commandLineEventHandler
-  elif ed.popups.len > 0:
-    result.add ed.popups[ed.popups.high].getEventHandlers()
-  elif ed.currentView >= 0 and ed.currentView < ed.views.len:
-    result.add ed.views[ed.currentView].editor.getEventHandlers()
-
-proc handleMousePress*(ed: Editor, button: Button, modifiers: Modifiers, mousePosWindow: Vec2) =
+proc handleMousePress*(self: Editor, button: Button, modifiers: Modifiers, mousePosWindow: Vec2) =
   # Check popups
-  for i in 0..ed.popups.high:
-    let popup = ed.popups[ed.popups.high - i]
+  for i in 0..self.popups.high:
+    let popup = self.popups[self.popups.high - i]
     if popup.lastBounds.contains(mousePosWindow):
       popup.handleMousePress(button, mousePosWindow)
       return
 
   # Check views
-  let rects = ed.layout.layoutViews(ed.layout_props, ed.lastBounds, ed.views)
-  for i, view in ed.views:
+  let rects = self.layout.layoutViews(self.layout_props, self.lastBounds, self.views)
+  for i, view in self.views:
     if i >= rects.len:
       return
     if rects[i].contains(mousePosWindow):
-      ed.currentView = i
+      self.currentView = i
       view.editor.handleMousePress(button, mousePosWindow)
       return
 
-proc handleMouseRelease*(ed: Editor, button: Button, modifiers: Modifiers, mousePosWindow: Vec2) =
+proc handleMouseRelease*(self: Editor, button: Button, modifiers: Modifiers, mousePosWindow: Vec2) =
   # Check popups
-  for i in 0..ed.popups.high:
-    let popup = ed.popups[ed.popups.high - i]
+  for i in 0..self.popups.high:
+    let popup = self.popups[self.popups.high - i]
     if popup.lastBounds.contains(mousePosWindow):
       popup.handleMouseRelease(button, mousePosWindow)
       return
 
   # Check views
-  let rects = ed.layout.layoutViews(ed.layout_props, ed.lastBounds, ed.views)
-  for i, view in ed.views:
+  let rects = self.layout.layoutViews(self.layout_props, self.lastBounds, self.views)
+  for i, view in self.views:
     if i >= rects.len:
       return
-    if ed.currentView == i and rects[i].contains(mousePosWindow):
+    if self.currentView == i and rects[i].contains(mousePosWindow):
       view.editor.handleMouseRelease(button, mousePosWindow)
       return
 
-proc handleMouseMove*(ed: Editor, mousePosWindow: Vec2, mousePosDelta: Vec2) =
+proc handleMouseMove*(self: Editor, mousePosWindow: Vec2, mousePosDelta: Vec2) =
   # Check popups
-  for i in 0..ed.popups.high:
-    let popup = ed.popups[ed.popups.high - i]
+  for i in 0..self.popups.high:
+    let popup = self.popups[self.popups.high - i]
     if popup.lastBounds.contains(mousePosWindow):
       popup.handleMouseMove(mousePosWindow, mousePosDelta)
       return
 
   # Check views
-  let rects = ed.layout.layoutViews(ed.layout_props, ed.lastBounds, ed.views)
-  for i, view in ed.views:
+  let rects = self.layout.layoutViews(self.layout_props, self.lastBounds, self.views)
+  for i, view in self.views:
     if i >= rects.len:
       return
-    if ed.currentView == i and rects[i].contains(mousePosWindow):
+    if self.currentView == i and rects[i].contains(mousePosWindow):
       view.editor.handleMouseMove(mousePosWindow, mousePosDelta)
       return
 
-proc handleScroll*(ed: Editor, scroll: Vec2, mousePosWindow: Vec2) =
+proc handleScroll*(self: Editor, scroll: Vec2, mousePosWindow: Vec2) =
   # Check popups
-  for i in 0..ed.popups.high:
-    let popup = ed.popups[ed.popups.high - i]
+  for i in 0..self.popups.high:
+    let popup = self.popups[self.popups.high - i]
     if popup.lastBounds.contains(mousePosWindow):
       popup.handleScroll(scroll, mousePosWindow)
       return
 
   # Check views
-  let rects = ed.layout.layoutViews(ed.layout_props, ed.lastBounds, ed.views)
-  for i, view in ed.views:
+  let rects = self.layout.layoutViews(self.layout_props, self.lastBounds, self.views)
+  for i, view in self.views:
     if i >= rects.len:
       return
     if rects[i].contains(mousePosWindow):
       view.editor.handleScroll(scroll, mousePosWindow)
       return
 
-proc handleKeyPress*(ed: Editor, button: Button, modifiers: Modifiers) =
+proc handleKeyPress*(self: Editor, button: Button, modifiers: Modifiers) =
   let input = button.toInput()
-  ed.currentEventHandlers.handleEvent(input, modifiers)
+  self.currentEventHandlers.handleEvent(input, modifiers)
 
-proc handleKeyRelease*(ed: Editor, button: Button, modifiers: Modifiers) =
+proc handleKeyRelease*(self: Editor, button: Button, modifiers: Modifiers) =
   discard
 
-proc handleRune*(ed: Editor, rune: Rune, modifiers: Modifiers) =
+proc handleRune*(self: Editor, rune: Rune, modifiers: Modifiers) =
   let modifiers = if rune.int64.isAscii and rune.char.isAlphaNumeric: modifiers else: {}
   let input = rune.toInput()
-  ed.currentEventHandlers.handleEvent(input, modifiers)
+  self.currentEventHandlers.handleEvent(input, modifiers)
 
 proc scriptRunAction*(action: string, arg: string) =
   if gEditor.isNil:
     return
-  gEditor.handleAction(action, arg)
+  discard gEditor.handleAction(action, arg)
 
 proc scriptLog*(message: string) =
   logger.log(lvlInfo, message)

@@ -748,8 +748,6 @@ proc undo*(document: TextDocument): Option[Selection] =
     let cursor = document.insert(op.cursor, op.text, record = false, autoIndent = false)
     result = cursor.toSelection.some
     document.redoOps.add UndoOp(kind: Delete, selection: (op.cursor, cursor))
-  else:
-    discard
 
 proc redo*(document: TextDocument): Option[Selection] =
   result = Selection.none
@@ -768,8 +766,6 @@ proc redo*(document: TextDocument): Option[Selection] =
     let cursor = document.insert(op.cursor, op.text, record = false, autoIndent = false)
     result = cursor.toSelection.some
     document.undoOps.add UndoOp(kind: Delete, selection: (op.cursor, cursor))
-  else:
-    discard
 
 method canEdit*(self: TextDocumentEditor, document: Document): bool =
   if document of TextDocument: return true

@@ -100,7 +100,7 @@ proc inputAsString(input: int64): string =
     of INPUT_F12: "F12"
     else: "<" & $input & ">"
 
-proc inputToString*(input: int64, modifiers: Modifiers): string =
+proc inputToString*(input: int64, modifiers: Modifiers = {}): string =
   if modifiers != {} or input < 0: result.add "<"
   if Control in modifiers: result.add "C"
   if Shift in modifiers: result.add "S"
