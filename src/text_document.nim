@@ -39,12 +39,18 @@ type
     Delete
     Insert
   UndoOp = ref object
+    oldSelection: Selection
     case kind: UndoOpKind
     of Delete:
       selection: Selection
     of Insert:
       cursor: Cursor
       text: string
+
+proc `$`(op: UndoOp): string =
+  result = fmt"{op.kind} ({op.oldSelection})"
+  if op.kind == Delete: result.add fmt", selection = {op.selection}"
+  if op.kind == Insert: result.add fmt", cursor = {op.cursor}, text: '{op.text}'"
 
 type TextDocument* = ref object of Document
   filename*: string
@@ -82,6 +88,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   modeEventHandler: EventHandler
   currentMode*: string
+  commandCount*: int
+  commandCountRestore*: int
 
   scrollOffset*: float
   previousBaseIndex*: int
@@ -90,6 +98,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   lastRenderedLines*: seq[StyledLine]
 
 proc handleAction(self: TextDocumentEditor, action: string, arg: string): EventResponse
+proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): EventResponse
 proc handleInput(self: TextDocumentEditor, input: string): EventResponse
 
 proc subscribe*[T](event: var Event[T], callback: (T) -> void): Id =
@@ -557,7 +566,7 @@ proc byteOffset(self: TextDocument, cursor: Cursor): int =
   for i in 0..<cursor.line:
     result += self.lines[i].len + 1
 
-proc delete(self: TextDocument, selection: Selection, notify: bool = true, record: bool = true): Cursor =
+proc delete(self: TextDocument, selection: Selection, oldSelection: Selection, notify: bool = true, record: bool = true): Cursor =
   if selection.isEmpty:
     return selection.first
   let selection = selection.normalized
@@ -596,7 +605,7 @@ proc delete(self: TextDocument, selection: Selection, notify: bool = true, recor
     # echo self.currentTree.root
 
   if record:
-    self.undoOps.add UndoOp(kind: Insert, cursor: selection.first, text: deletedText)
+    self.undoOps.add UndoOp(kind: Insert, cursor: selection.first, text: deletedText, oldSelection: oldSelection)
     self.redoOps = @[]
 
   if notify:
@@ -663,7 +672,7 @@ proc getTargetIndentForLine(self: TextDocument, line: int): int =
 
   # return node.getRange.first.column + 2
 
-proc insert(self: TextDocument, oldCursor: Cursor, text: string, notify: bool = true, record: bool = true, autoIndent: bool = true): Cursor =
+proc insert(self: TextDocument, oldCursor: Cursor, oldSelection: Selection, text: string, notify: bool = true, record: bool = true, autoIndent: bool = true): Cursor =
   var cursor = oldCursor
   let startByte = self.byteOffset(oldCursor).uint32
 
@@ -711,10 +720,10 @@ proc insert(self: TextDocument, oldCursor: Cursor, text: string, notify: bool = 
   if autoIndent:
     for line in newEmptyLines:
       let indent = self.getTargetIndentForLine(line)
-      cursor = self.insert((line, 0), ' '.repeat(indent), notify = false, record = false, autoIndent = false)
+      cursor = self.insert((line, 0), oldSelection, ' '.repeat(indent), notify = false, record = false, autoIndent = false)
 
   if record:
-    self.undoOps.add UndoOp(kind: Delete, selection: (oldCursor, cursor))
+    self.undoOps.add UndoOp(kind: Delete, selection: (oldCursor, cursor), oldSelection: oldSelection)
     self.redoOps = @[]
 
   if notify:
@@ -722,50 +731,65 @@ proc insert(self: TextDocument, oldCursor: Cursor, text: string, notify: bool = 
 
   return cursor
 
-proc edit(self: TextDocument, selection: Selection, text: string, notify: bool = true): Cursor =
+proc edit(self: TextDocument, selection: Selection, oldSelection: Selection, text: string, notify: bool = true): Cursor =
   let selection = selection.normalized
   # echo "edit ", selection, ": ", self.lines
-  var cursor = self.delete(selection, false)
+  var cursor = self.delete(selection, oldSelection, false)
   # echo "after delete ", cursor, ": ", self.lines
-  cursor = self.insert(cursor, text)
+  cursor = self.insert(cursor, oldSelection, text)
   # echo "after insert ", cursor, ": ", self.lines
   return cursor
 
-proc undo*(document: TextDocument): Option[Selection] =
+proc undo*(document: TextDocument, oldSelection: Selection, useOldSelection: bool): Option[Selection] =
   result = Selection.none
 
   if document.undoOps.len == 0:
     return
 
+  # echo "undo"
+  # echo document.undoOps
   let op = document.undoOps.pop[]
 
   case op.kind:
   of Delete:
-    document.redoOps.add UndoOp(kind: Insert, cursor: op.selection.first, text: document.contentString(op.selection))
-    result = document.delete(op.selection, record = false).toSelection.some
+    let text = document.contentString(op.selection)
+    result = document.delete(op.selection, op.oldSelection, record = false).toSelection.some
+    document.redoOps.add UndoOp(kind: Insert, cursor: op.selection.first, text: text, oldSelection: oldSelection)
 
   of Insert:
-    let cursor = document.insert(op.cursor, op.text, record = false, autoIndent = false)
+    let cursor = document.insert(op.cursor, op.cursor.toSelection, op.text, record = false, autoIndent = false)
     result = cursor.toSelection.some
-    document.redoOps.add UndoOp(kind: Delete, selection: (op.cursor, cursor))
+    document.redoOps.add UndoOp(kind: Delete, selection: (op.cursor, cursor), oldSelection: oldSelection)
 
-proc redo*(document: TextDocument): Option[Selection] =
+  if useOldSelection:
+    result = op.oldSelection.some
+
+  # echo document.redoOps
+
+proc redo*(document: TextDocument, oldSelection: Selection, useOldSelection: bool): Option[Selection] =
   result = Selection.none
 
   if document.redoOps.len == 0:
     return
 
+  # echo "redo"
+  # echo document.redoOps
   let op = document.redoOps.pop[]
 
   case op.kind:
   of Delete:
-    document.undoOps.add UndoOp(kind: Insert, cursor: op.selection.first, text: document.contentString(op.selection))
-    result = document.delete(op.selection, record = false).toSelection.some
+    let text = document.contentString(op.selection)
+    result = document.delete(op.selection, op.oldSelection, record = false).toSelection.some
+    document.undoOps.add UndoOp(kind: Insert, cursor: op.selection.first, text: text, oldSelection: oldSelection)
 
   of Insert:
-    let cursor = document.insert(op.cursor, op.text, record = false, autoIndent = false)
+    let cursor = document.insert(op.cursor, op.cursor.toSelection, op.text, record = false, autoIndent = false)
     result = cursor.toSelection.some
-    document.undoOps.add UndoOp(kind: Delete, selection: (op.cursor, cursor))
+    document.undoOps.add UndoOp(kind: Delete, selection: (op.cursor, cursor), oldSelection: oldSelection)
+
+  if useOldSelection:
+    result = op.oldSelection.some
+  # echo document.undoOps
 
 method canEdit*(self: TextDocumentEditor, document: Document): bool =
   if document of TextDocument: return true
@@ -918,10 +942,10 @@ proc invertSelection(self: TextDocumentEditor) {.expose("editor.text").} =
   self.selection = (self.selection.last, self.selection.first)
 
 proc insert(self: TextDocumentEditor, oldCursor: Cursor, text: string, notify: bool = true, record: bool = true, autoIndent: bool = true): Cursor {.expose("editor.text").} =
-  self.document.insert(oldCursor, text, notify, record, autoIndent)
+  self.document.insert(oldCursor, self.selection, text, notify, record, autoIndent)
 
 proc delete(self: TextDocumentEditor, selection: Selection, notify: bool = true, record: bool = true): Cursor {.expose("editor.text").} =
-  self.document.delete(selection, notify, record)
+  self.document.delete(selection, self.selection, notify, record)
 
 proc selectPrev(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.selectionHistory.len > 0:
@@ -940,7 +964,7 @@ proc selectNext(self: TextDocumentEditor) {.expose("editor.text").} =
 proc selectInside(self: TextDocumentEditor, cursor: Cursor) {.expose("editor.text").} =
   let regex = re("[a-zA-Z0-9_]")
   var first = cursor.column
-  echo self.document.lines[cursor.line], ", ", first, ", ", self.document.lines[cursor.line].matchLen(regex, start = first - 1)
+  # echo self.document.lines[cursor.line], ", ", first, ", ", self.document.lines[cursor.line].matchLen(regex, start = first - 1)
   while first > 0 and self.document.lines[cursor.line].matchLen(regex, start = first - 1) == 1:
     first -= 1
   var last = cursor.column
@@ -974,15 +998,15 @@ proc insertText*(self: TextDocumentEditor, text: string) {.expose("editor.text")
   if self.document.singleLine and text == "\n":
     return
 
-  self.selection = self.document.edit(self.selection, text).toSelection
+  self.selection = self.document.edit(self.selection, self.selection, text).toSelection
   self.updateTargetColumn(Last)
 
 proc undo(self: TextDocumentEditor) {.expose("editor.text").} =
-  if self.document.undo.getSome(selection):
+  if self.document.undo(self.selection, true).getSome(selection):
     self.selection = selection
 
 proc redo(self: TextDocumentEditor) {.expose("editor.text").} =
-  if self.document.redo.getSome(selection):
+  if self.document.redo(self.selection, true).getSome(selection):
     self.selection = selection
 
 proc scrollText(self: TextDocumentEditor, amount: float32) {.expose("editor.text").} =
@@ -1011,37 +1035,77 @@ proc reloadTreesitter*(self: TextDocumentEditor) {.expose("editor.text").} =
 
 proc deleteLeft*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.selection.isEmpty:
-    self.selection = self.document.delete((self.doMoveCursorColumn(self.selection.first, -1), self.selection.first)).toSelection
+    self.selection = self.document.delete((self.doMoveCursorColumn(self.selection.first, -1), self.selection.first), self.selection).toSelection
   else:
-    self.selection = self.document.delete(self.selection).toSelection
+    self.selection = self.document.delete(self.selection, self.selection).toSelection
   self.updateTargetColumn(Last)
 
 proc deleteRight*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.selection.isEmpty:
-    self.selection = self.document.delete((self.selection.first, self.doMoveCursorColumn(self.selection.first, 1))).toSelection
+    self.selection = self.document.delete((self.selection.first, self.doMoveCursorColumn(self.selection.first, 1)), self.selection).toSelection
   else:
-    self.selection = self.document.delete(self.selection).toSelection
+    self.selection = self.document.delete(self.selection, self.selection).toSelection
   self.updateTargetColumn(Last)
+
+proc getCommandCount*(self: TextDocumentEditor): int {.expose("editor.text").} =
+  return self.commandCount
+
+proc setCommandCount*(self: TextDocumentEditor, count: int) {.expose("editor.text").} =
+  self.commandCount = count
+
+proc setCommandCountRestore*(self: TextDocumentEditor, count: int) {.expose("editor.text").} =
+  self.commandCountRestore = count
+
+proc updateCommandCount*(self: TextDocumentEditor, digit: int) {.expose("editor.text").} =
+  self.commandCount = self.commandCount * 10 + digit
+
+proc setFlag*(self: TextDocumentEditor, name: string, value: bool) {.expose("editor.text").} =
+  self.editor.setFlag("editor.text." & name, value)
+
+proc getFlag*(self: TextDocumentEditor, name: string): bool {.expose("editor.text").} =
+  return self.editor.getFlag("editor.text." & name)
+
+proc runAction*(self: TextDocumentEditor, action: string, args: JsonNode): bool {.expose("editor.text").} =
+  # echo "runAction ", action, ", ", $args
+  return self.handleActionInternal(action, args) == Handled
 
 genDispatcher("editor.text")
 
-proc handleAction(self: TextDocumentEditor, action: string, arg: string): EventResponse =
+proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): EventResponse =
   # echo "[textedit] handleAction ", action, " '", arg, "'"
-  if self.editor.handleUnknownDocumentEditorAction(self, action, arg) == Handled:
+  if self.editor.handleUnknownDocumentEditorAction(self, action, args) == Handled:
+    dec self.commandCount
+    while self.commandCount > 0:
+      if self.editor.handleUnknownDocumentEditorAction(self, action, args) != Handled:
+        break
+      dec self.commandCount
+    self.commandCount = self.commandCountRestore
+    self.commandCountRestore = 0
     return Handled
 
-  var args = newJArray()
-  args.add api.TextDocumentEditor(id: self.id).toJson
-  for a in newStringStream(arg).parseJsonFragments():
-    args.add a
+  args.elems.insert api.TextDocumentEditor(id: self.id).toJson, 0
   if dispatch(action, args).isSome:
+    dec self.commandCount
+    while self.commandCount > 0:
+      if dispatch(action, args).isNone:
+        break
+      dec self.commandCount
+    self.commandCount = self.commandCountRestore
+    self.commandCountRestore = 0
     return Handled
 
   return Ignored
 
+proc handleAction(self: TextDocumentEditor, action: string, arg: string): EventResponse =
+  # echo "handleAction ", action, ", ", arg
+  var args = newJArray()
+  for a in newStringStream(arg).parseJsonFragments():
+    args.add a
+  return self.handleActionInternal(action, args)
+
 proc handleInput(self: TextDocumentEditor, input: string): EventResponse =
   # echo "handleInput '", input, "'"
-  self.selection = self.document.edit(self.selection, input).toSelection
+  self.selection = self.document.edit(self.selection, self.selection, input).toSelection
   self.updateTargetColumn(Last)
   return Handled
 

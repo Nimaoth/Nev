@@ -1869,16 +1869,18 @@ genDispatcher("editor.ast")
 
 proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventResponse =
   # logger.log lvlInfo, fmt"[asteditor]: Handle action {action}, '{arg}'"
-  var newLastCommand = (action, arg)
-  defer: self.lastCommand = newLastCommand
-
-  if self.editor.handleUnknownDocumentEditorAction(self, action, arg) == Handled:
-    return Handled
 
   var args = newJArray()
   args.add api.AstDocumentEditor(id: self.id).toJson
   for a in newStringStream(arg).parseJsonFragments():
     args.add a
+
+  var newLastCommand = (action, arg)
+  defer: self.lastCommand = newLastCommand
+
+  if self.editor.handleUnknownDocumentEditorAction(self, action, args) == Handled:
+    return Handled
+
   if dispatch(action, args).isSome:
     return Handled
 
