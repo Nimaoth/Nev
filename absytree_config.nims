@@ -40,7 +40,7 @@ proc handlePopupAction*(popup: PopupId, action: string, arg: string): bool =
 
   return true
 
-proc handleDocumentEditorAction(id: EditorId, action: string, arg: string): bool =
+proc handleDocumentEditorAction(id: EditorId, action: string, args: JsonNode): bool =
   return false
 
 func charCategory(c: char): int =
@@ -86,10 +86,12 @@ proc findWordBoundary(editor: TextDocumentEditor, cursor: Cursor): Selection =
       if leftCategory != rightCategory:
         break
 
-proc getSelectionForMove(editor: TextDocumentEditor, cursor: Cursor, move: string): Selection =
+proc getSelectionForMove(editor: TextDocumentEditor, cursor: Cursor, move: string, count: int = 0): Selection =
   case move
   of "word":
-    return editor.findWordBoundary(cursor)
+    result = editor.findWordBoundary(cursor)
+    for _ in 1..<count:
+      result = result or editor.findWordBoundary(result.last) or editor.findWordBoundary(result.first)
 
   of "word-line":
     let line = editor.getLine cursor.line
@@ -99,6 +101,21 @@ proc getSelectionForMove(editor: TextDocumentEditor, cursor: Cursor, move: strin
     if cursor.column == line.len and cursor.line < editor.getLineCount - 1:
       result.last = (cursor.line + 1, 0)
 
+    for _ in 1..<count:
+      echo result
+      result = result or editor.findWordBoundary(result.last) or editor.findWordBoundary(result.first)
+      let line = editor.getLine result.last.line
+      if result.first.column == 0 and result.first.line > 0:
+        result.first = (result.first.line - 1, editor.getLine(result.first.line - 1).len)
+      if result.last.column == line.len and result.last.line < editor.getLineCount - 1:
+        result.last = (result.last.line + 1, 0)
+
+  of "word-back":
+    return editor.getSelectionForMove(cursor, "word", count).reverse
+
+  of "word-line-back":
+    return editor.getSelectionForMove(cursor, "word-line", count).reverse
+
   of "line":
     result = ((cursor.line, 0), (cursor.line, editor.getLine(cursor.line).len))
 
@@ -106,6 +123,10 @@ proc getSelectionForMove(editor: TextDocumentEditor, cursor: Cursor, move: strin
     result = ((cursor.line, 0), (cursor.line, editor.getLine(cursor.line).len))
     if result.last.line + 1 < editor.getLineCount:
       result.last = (result.last.line + 1, 0)
+    for _ in 1..<count:
+      result = result or ((result.last.line, 0), (result.last.line, editor.getLine(result.last.line).len))
+      if result.last.line + 1 < editor.getLineCount:
+        result.last = (result.last.line + 1, 0)
 
   of "file":
     result.first = (0, 0)
@@ -114,35 +135,48 @@ proc getSelectionForMove(editor: TextDocumentEditor, cursor: Cursor, move: strin
 
   else:
     result = cursor.toSelection
+    log fmt"[error] Unknown move '{move}'"
 
-proc handleTextEditorAction(editor: TextDocumentEditor, action: string, arg: string): bool =
-  var args = newJArray()
-  for a in newStringStream(arg).parseJsonFragments():
-    args.add a
+proc handleTextEditorAction(editor: TextDocumentEditor, action: string, args: JsonNode): bool =
+  # echo "handleTextEditorAction ", action, ", ", args
 
   case action
   of "set-move":
-    let arg = args[0].str
-    setOption[string]("text.move", arg)
+    setOption[int]("text.move-count", editor.getCommandCount)
     editor.setMode getOption[string]("text.move-next-mode")
-    editor.id.runAction getOption[string]("text.move-action"), $args[0]
+    editor.setCommandCount getOption[int]("text.move-command-count")
+    discard editor.runAction(getOption[string]("text.move-action"), args)
 
   of "delete-move":
     let arg = args[0].str
-    let selection = editor.getSelectionForMove(editor.selection.last, arg)
+    let which = if args.len < 2: Config else: parseEnum[SelectionCursor](args[1].str, Config)
+    let count = getOption[int]("text.move-count")
+    let inside = editor.getFlag("move-inside")
+
+    # echo fmt"delete-move {arg}, {which}, {count}, {inside}"
+
+    var selection = editor.getSelectionForMove(editor.selection.last, arg, count)
+    echo selection
+    if not inside:
+      selection.first = editor.selection.last
     editor.selection = editor.delete(selection).toSelection
     editor.scrollToCursor(Last)
     editor.updateTargetColumn(Last)
 
   of "select-move":
     let arg = args[0].str
-    editor.selection = editor.getSelectionForMove(editor.selection.last, arg)
+    let count = getOption[int]("text.move-count")
+    editor.selection = editor.getSelectionForMove(editor.selection.last, arg, count)
     editor.scrollToCursor(Last)
     editor.updateTargetColumn(Last)
 
   of "change-move":
     let arg = args[0].str
-    let selection = editor.getSelectionForMove(editor.selection.last, arg)
+    let count = getOption[int]("text.move-count")
+    let inside = editor.getFlag("move-inside")
+    var selection = editor.getSelectionForMove(editor.selection.last, arg, count)
+    if not inside:
+      selection.first = editor.selection.last
     editor.selection = editor.delete(selection).toSelection
     editor.scrollToCursor(Last)
     editor.updateTargetColumn(Last)
@@ -178,7 +212,7 @@ proc handleTextEditorAction(editor: TextDocumentEditor, action: string, arg: str
   else: return false
   return true
 
-proc handleAstEditorAction(editor: AstDocumentEditor, action: string, arg: string): bool =
+proc handleAstEditorAction(editor: AstDocumentEditor, action: string, args: JsonNode): bool =
   case action
 
   else: return false
@@ -236,6 +270,18 @@ addCommand "editor", "<C-3>", proc() =
   setOption("text.node-highlight-sibling-index", clamp(getOption[int]("text.node-highlight-sibling-index") + 1, -100000, 100000))
   echo "text.node-highlight-sibling-index: ", getOption[int]("text.node-highlight-sibling-index")
 
+addCommand "editor", "<C-u>", "set-mode", "test-mode"
+setConsumeAllInput "editor.test-mode", true
+addCommand "editor.test-mode", "<ESCAPE>", "set-mode", ""
+addCommand "editor.test-mode", "-","change-font-size", -1
+addCommand "editor.test-mode", "+","change-font-size", +1
+
+addCommand "editor", "<C-i>", "set-mode", "test-mode2"
+setOption "editor.custom-mode-on-top", false
+addCommand "editor.test-mode2", "<ESCAPE>", "set-mode", ""
+addCommand "editor.test-mode2", "s","change-font-size", -1
+addCommand "editor.test-mode2", "d","change-font-size", +1
+
 addCommand "editor", "<SPACE>ff", "log-options"
 addCommand "editor", "<ESCAPE>", "escape"
 addCommand "editor", "<C-l><C-h>", "change-font-size", -1
@@ -275,7 +321,8 @@ addCommand "popup.selector", "<DOWN>", "next"
 addCommand "popup.selector", "<HOME>", "home"
 addCommand "popup.selector", "<END>", "end"
 
-loadHelixBindings()
+# loadHelixBindings()
+loadVimBindings()
 
 # addCommand "editor.ast", "<A-LEFT>", "move-cursor", "-1"
 addAstCommand "<A-LEFT>": editor.moveCursor(-1)
@@ -377,6 +424,11 @@ addCommand "editor.ast", ",", "run-last-command", "move"
 addCommand "editor.ast", ";", "run-last-command"
 addCommand "editor.ast", "<A-t>", "move-node-to-next-space"
 addCommand "editor.ast", "<A-n>", "move-node-to-prev-space"
+addCommand "editor.ast", "<C-a>", "set-mode", "uiae"
+
+setConsumeAllInput "editor.ast.uiae", true
+addCommand "editor.ast.uiae", "<ESCAPE>", "set-mode", ""
+addCommand "editor.ast.uiae", "a", "scroll", 50
 
 addCommand "editor.ast.completion", "<ENTER>", "finish-edit", true
 addCommand "editor.ast.completion", "<ESCAPE>", "finish-edit", false

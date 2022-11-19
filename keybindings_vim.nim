@@ -1,4 +1,3 @@
-
 proc loadVimBindings*() =
   loadNormalBindings()
 
@@ -23,14 +22,34 @@ proc loadVimBindings*() =
   addCommand "editor.text", "v", "set-mode", "visual"
   addCommand "editor.text", "V", "set-mode", "visual-temp"
 
-  addTextCommandBlock "", "di":
-    editor.setMode("move")
-    setOption("text.move-action", "delete-move")
-    setOption("text.move-next-mode", "")
-  addTextCommandBlock "", "ci":
-    editor.setMode("move")
-    setOption("text.move-action", "change-move")
-    setOption("text.move-next-mode", "insert")
+  for i in 0..9:
+    capture i:
+      proc updateCommandCountHelper(editor: TextDocumentEditor) =
+        editor.updateCommandCount i
+        echo "updateCommandCount ", editor.getCommandCount
+        editor.setCommandCountRestore editor.getCommandCount
+        editor.setCommandCount 0
+
+      addTextCommand "", $i,updateCommandCountHelper
+      addTextCommand "delete", $i,updateCommandCountHelper
+      addTextCommand "move", $i,updateCommandCountHelper
+
+  addTextCommandBlock "", "d":
+    editor.setMode "move"
+    editor.setFlag "move-inside", false
+    setOption "text.move-action", "delete-move"
+    setOption "text.move-next-mode", ""
+    setOption "text.move-command-count", editor.getCommandCount()
+    editor.setCommandCount 0
+
+  addTextCommandBlock "", "c":
+    editor.setMode "move"
+    editor.setFlag "move-inside", false
+    setOption "text.move-action", "change-move"
+    setOption "text.move-next-mode", "insert"
+    setOption "text.move-command-count", editor.getCommandCount()
+    editor.setCommandCount 0
+
   addCommand "editor.text", "dl", "delete-move", "line-next"
   addCommand "editor.text", "b", "move-first", "word-line"
   addCommand "editor.text", "w", "move-last", "word-line"
@@ -54,11 +73,15 @@ proc loadVimBindings*() =
   setHandleInputs "editor.text.move", false
   setOption "editor.text.cursor.wide.move", true
   setOption "editor.text.cursor.movement.move", "both"
-  addCommand "editor.text.move", "w", "set-move", "word"
-  addCommand "editor.text.move", "W", "set-move", "word-line"
+  addCommand "editor.text.move", "i", "set-flag", "move-inside", true
+
+  addCommand "editor.text.move", "w", "set-move", "word-line"
+  addCommand "editor.text.move", "W", "set-move", "word"
+  addCommand "editor.text.move", "b", "set-move", "word-line-back"
+  addCommand "editor.text.move", "B", "set-move", "word-back"
   addCommand "editor.text.move", "p", "set-move", "paragraph"
-  addCommand "editor.text.move", "l", "set-move", "line"
-  addCommand "editor.text.move", "L", "set-move", "line-next"
+  addCommand "editor.text.move", "l", "set-move", "line-next"
+  addCommand "editor.text.move", "L", "set-move", "line"
   addCommand "editor.text.move", "f", "set-move", "file"
   addCommand "editor.text.move", "\"", "set-move", "\""
   addCommand "editor.text.move", "'", "set-move", "'"
@@ -84,11 +107,35 @@ proc loadVimBindings*() =
     setOption("text.move-action", "select-move")
     setOption("text.move-next-mode", "visual")
 
+  addTextCommandBlock "visual", "d":
+    editor.selection = editor.delete(editor.selection).toSelection
+    editor.setMode("")
+    editor.scrollToCursor(Last)
+    editor.updateTargetColumn(Last)
+
+  addTextCommandBlock "visual", "c":
+    editor.selection = editor.delete(editor.selection).toSelection
+    editor.setMode("insert")
+    editor.scrollToCursor(Last)
+    editor.updateTargetColumn(Last)
+
   # Visual temp mode
   setHandleInputs "editor.text.visual-temp", false
   setOption "editor.text.cursor.wide.visual-temp", false
   setOption "editor.text.cursor.movement.visual-temp", "last-to-first"
-  addTextCommandBlock "visual", "i":
+  addTextCommandBlock "visual-temp", "i":
     editor.setMode("move")
     setOption("text.move-action", "select-move")
     setOption("text.move-next-mode", "visual-temp")
+
+  addTextCommandBlock "visual", "d":
+    editor.selection = editor.delete(editor.selection).toSelection
+    editor.setMode("")
+    editor.scrollToCursor(Last)
+    editor.updateTargetColumn(Last)
+
+  addTextCommandBlock "visual", "c":
+    editor.selection = editor.delete(editor.selection).toSelection
+    editor.setMode("insert")
+    editor.scrollToCursor(Last)
+    editor.updateTargetColumn(Last)

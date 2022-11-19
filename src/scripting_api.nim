@@ -52,6 +52,16 @@ func `>`*(a: Cursor, b: Cursor): bool =
   else:
     return false
 
+func min*(a: Cursor, b: Cursor): Cursor =
+  if a < b:
+    return a
+  return b
+
+func max*(a: Cursor, b: Cursor): Cursor =
+  if a >= b:
+    return a
+  return b
+
 func isBackwards*(selection: Selection): bool = selection.first > selection.last
 
 func normalized*(selection: Selection): Selection =
@@ -60,10 +70,17 @@ func normalized*(selection: Selection): Selection =
   else:
     return selection
 
+func reverse*(selection: Selection): Selection = (selection.last, selection.first)
+
 func isEmpty*(selection: Selection): bool = selection.first == selection.last
 
 func contains*(selection: Selection, cursor: Cursor): bool = (cursor >= selection.first and cursor <= selection.last)
 func contains*(selection: Selection, other: Selection): bool = (other.first >= selection.first and other.last <= selection.last)
+
+func `or`*(a: Selection, b: Selection): Selection =
+  let an = a.normalized
+  let bn = b.normalized
+  return (min(an.first, bn.first), max(an.last, bn.last))
 
 func toSelection*(cursor: Cursor): Selection =
   (cursor, cursor)

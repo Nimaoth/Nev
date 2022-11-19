@@ -170,12 +170,12 @@ proc handleUnknownPopupAction*(self: Editor, popup: Popup, action: string, arg: 
 
   return Failed
 
-proc handleUnknownDocumentEditorAction*(self: Editor, editor: DocumentEditor, action: string, arg: string): EventResponse =
+proc handleUnknownDocumentEditorAction*(self: Editor, editor: DocumentEditor, action: string, args: JsonNode): EventResponse =
   try:
-    if self.scriptContext.inter.invoke(handleEditorAction, editor.id, action, arg, returnType = bool):
+    if self.scriptContext.inter.invoke(handleEditorAction, editor.id, action, args, returnType = bool):
       return Handled
   except:
-    self.logger.log(lvlError, fmt"[ed] Failed to run script handleUnknownDocumentEditorAction '{action} {arg}': {getCurrentExceptionMsg()}")
+    self.logger.log(lvlError, fmt"[ed] Failed to run script handleUnknownDocumentEditorAction '{action} {args}': {getCurrentExceptionMsg()}")
     echo getCurrentException().getStackTrace()
 
   return Failed
@@ -241,6 +241,9 @@ proc setOption*[T](editor: Editor, path: string, value: T) =
     editor.createScriptSetOption(path, value, newJString)
   else:
     {.fatal: ("Can't set option with type " & $T).}
+
+proc setFlag*(self: Editor, flag: string, value: bool)
+proc toggleFlag*(self: Editor, flag: string)
 
 proc createView(self: Editor, editor: DocumentEditor) =
   var view = View(document: nil, editor: editor)
@@ -962,6 +965,6 @@ proc createAddins(): VmAddins =
   addCallable(myImpl):
     proc handleGlobalAction(action: string, arg: string): bool
     proc postInitialize()
-    proc handleEditorAction(id: EditorId, action: string, arg: string): bool
+    proc handleEditorAction(id: EditorId, action: string, args: JsonNode): bool
     proc handleUnknownPopupAction(id: PopupId, action: string, arg: string): bool
   return implNimScriptModule(myImpl)

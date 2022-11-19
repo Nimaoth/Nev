@@ -26,7 +26,7 @@ macro addCommand*(context: string, keys: string, action: string, args: varargs[u
 proc addCommand*(context: string, keys: string, action: proc(): void) =
   let key = context & keys
   lambdaActions[key] = action
-  scriptAddCommand(context, keys, "lambda-action", key)
+  scriptAddCommand(context, keys, "lambda-action", key.toJsonString)
 
 proc handleLambdaAction*(key: string): bool =
   if lambdaActions.contains(key):
@@ -67,9 +67,9 @@ proc getTextEditor*(index: int): EditorId =
   return scriptGetEditorHandle(index)
 
 proc handleAction*(action: string, arg: string): bool
-proc handleDocumentEditorAction*(id: EditorId, action: string, arg: string): bool
-proc handleTextEditorAction*(editor: TextDocumentEditor, action: string, arg: string): bool
-proc handleAstEditorAction*(editor: AstDocumentEditor, action: string, arg: string): bool
+proc handleDocumentEditorAction*(id: EditorId, action: string, args: JsonNode): bool
+proc handleTextEditorAction*(editor: TextDocumentEditor, action: string, args: JsonNode): bool
+proc handleAstEditorAction*(editor: AstDocumentEditor, action: string, args: JsonNode): bool
 proc handlePopupAction*(popup: PopupId, action: string, arg: string): bool
 
 proc handleGlobalAction*(action: string, arg: string): bool =
@@ -77,17 +77,17 @@ proc handleGlobalAction*(action: string, arg: string): bool =
     return handleLambdaAction(arg)
   return handleAction(action, arg)
 
-proc handleEditorAction*(id: EditorId, action: string, arg: string): bool =
+proc handleEditorAction*(id: EditorId, action: string, args: JsonNode): bool =
   if action == "lambda-action":
-    return handleLambdaAction(arg)
+    return handleLambdaAction(args[0].str)
 
   if id.isTextEditor(editor):
-    return handleTextEditorAction(editor, action, arg)
+    return handleTextEditorAction(editor, action, args)
 
   elif id.isAstEditor(editor):
-    return handleAstEditorAction(editor, action, arg)
+    return handleAstEditorAction(editor, action, args)
 
-  return handleDocumentEditorAction(id, action, arg)
+  return handleDocumentEditorAction(id, action, args)
 
 proc handleUnknownPopupAction*(id: PopupId, action: string, arg: string): bool =
   return handlePopupAction(id, action, arg)
@@ -156,6 +156,11 @@ template addTextCommandBlock*(mode: static[string], keys: string, body: untyped)
     let editor {.inject.} = TextDocumentEditor(id: getActiveEditor())
     body
 
+proc addTextCommand*(mode: string, keys: string, action: proc(editor: TextDocumentEditor): void) =
+  let context = if mode.len == 0: "editor.text" else: "editor.text." & mode
+  addCommand context, keys, proc() =
+    action(TextDocumentEditor(id: getActiveEditor()))
+
 macro addTextCommand*(mode: static[string], keys: string, action: string, args: varargs[untyped]): untyped =
   let context = if mode.len == 0: "editor.text" else: "editor.text." & mode
   var stmts = nnkStmtList.newTree()
@@ -170,11 +175,6 @@ macro addTextCommand*(mode: static[string], keys: string, action: string, args: 
   return quote do:
     `stmts`
     scriptAddCommand(`context`, `keys`, `action`, `str`)
-
-proc addTextCommand*(mode: string, keys: string, action: proc(editor: TextDocumentEditor): void) =
-  let context = if mode.len == 0: "editor.text" else: "editor.text." & mode
-  addCommand context, keys, proc() =
-    action(TextDocumentEditor(id: getActiveEditor()))
 
 template addAstCommand*(keys: string, body: untyped): untyped =
   addCommand "editor.ast", keys, proc() =
