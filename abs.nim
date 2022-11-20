@@ -4,6 +4,19 @@ import std/[strformat, tables, macros, json]
 type AnyDocumentEditor = TextDocumentEditor | AstDocumentEditor
 
 var lambdaActions = initTable[string, proc(): void]()
+var voidCallbacks = initTable[int, proc(args: JsonNode): void]()
+var boolCallbacks = initTable[int, proc(args: JsonNode): bool]()
+var callbackId = 0
+
+proc addCallback*(action: proc(args: JsonNode): void): int =
+  result = callbackId
+  voidCallbacks[result] = action
+  callbackId += 1
+
+proc addCallback*(action: proc(args: JsonNode): bool): int =
+  result = callbackId
+  boolCallbacks[result] = action
+  callbackId += 1
 
 func toJsonString[T: string](value: T): string = escapeJson(value)
 func toJsonString[T: char](value: T): string = escapeJson($value)
@@ -27,6 +40,14 @@ proc addCommand*(context: string, keys: string, action: proc(): void) =
   let key = context & keys
   lambdaActions[key] = action
   scriptAddCommand(context, keys, "lambda-action", key.toJsonString)
+
+proc handleCallback*(id: int, args: JsonNode): bool =
+  if voidCallbacks.contains(id):
+    voidCallbacks[id](args)
+    return true
+  elif boolCallbacks.contains(id):
+    return boolCallbacks[id](args)
+  return false
 
 proc handleLambdaAction*(key: string): bool =
   if lambdaActions.contains(key):
@@ -128,6 +149,7 @@ proc getOption*[T](path: string, default: T = T.default): T =
     {.fatal: ("Can't get option with type " & $T).}
 
 proc setOption*[T](path: string, value: T) =
+  # echo "setOption ", path, ", ", value
   when T is bool:
     scriptSetOptionBool(path, value)
   elif T is enum:
@@ -175,6 +197,13 @@ macro addTextCommand*(mode: static[string], keys: string, action: string, args: 
   return quote do:
     `stmts`
     scriptAddCommand(`context`, `keys`, `action`, `str`)
+
+proc setTextInputHandler*(context: string, action: proc(editor: TextDocumentEditor, input: string): bool) =
+  let id = addCallback proc(args: JsonNode): bool =
+    let input = args.str
+    action(TextDocumentEditor(id: getActiveEditor()), input)
+  scriptSetCallback("editor.text.input-handler." & context, id)
+  setHandleInputs("editor.text." & context, true)
 
 template addAstCommand*(keys: string, body: untyped): untyped =
   addCommand "editor.ast", keys, proc() =

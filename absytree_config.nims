@@ -102,7 +102,6 @@ proc getSelectionForMove(editor: TextDocumentEditor, cursor: Cursor, move: strin
       result.last = (cursor.line + 1, 0)
 
     for _ in 1..<count:
-      echo result
       result = result or editor.findWordBoundary(result.last) or editor.findWordBoundary(result.first)
       let line = editor.getLine result.last.line
       if result.first.column == 0 and result.first.line > 0:
@@ -134,8 +133,32 @@ proc getSelectionForMove(editor: TextDocumentEditor, cursor: Cursor, move: strin
     result.last = (line, editor.getLine(line).len)
 
   else:
-    result = cursor.toSelection
-    log fmt"[error] Unknown move '{move}'"
+    if move.startsWith("move-to "):
+      let str = move[8..^1]
+      let line = editor.getLine cursor.line
+      result = cursor.toSelection
+      let index = line.find(str, cursor.column)
+      if index >= 0:
+        result.last = (cursor.line, index + 1)
+      for _ in 1..<count:
+        let index = line.find(str, result.last.column)
+        if index >= 0:
+          result.last = (result.last.line, index + 1)
+
+    elif move.startsWith("move-before "):
+      let str = move[12..^1]
+      let line = editor.getLine cursor.line
+      result = cursor.toSelection
+      let index = line.find(str, cursor.column + 1)
+      if index >= 0:
+        result.last = (cursor.line, index)
+      for _ in 1..<count:
+        let index = line.find(str, result.last.column + 1)
+        if index >= 0:
+          result.last = (result.last.line, index)
+    else:
+      result = cursor.toSelection
+      log fmt"[error] Unknown move '{move}'"
 
 proc handleTextEditorAction(editor: TextDocumentEditor, action: string, args: JsonNode): bool =
   # echo "handleTextEditorAction ", action, ", ", args
@@ -146,6 +169,7 @@ proc handleTextEditorAction(editor: TextDocumentEditor, action: string, args: Js
     editor.setMode getOption[string]("text.move-next-mode")
     editor.setCommandCount getOption[int]("text.move-command-count")
     discard editor.runAction(getOption[string]("text.move-action"), args)
+    setOption[string]("text.move-action", "")
 
   of "delete-move":
     let arg = args[0].str
@@ -156,7 +180,6 @@ proc handleTextEditorAction(editor: TextDocumentEditor, action: string, args: Js
     # echo fmt"delete-move {arg}, {which}, {count}, {inside}"
 
     var selection = editor.getSelectionForMove(editor.selection.last, arg, count)
-    echo selection
     if not inside:
       selection.first = editor.selection.last
     editor.selection = editor.delete(selection).toSelection

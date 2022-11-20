@@ -1027,6 +1027,27 @@ proc moveCursorEnd*(self: TextDocumentEditor, cursor: SelectionCursor = Selectio
   self.moveCursor(cursor, doMoveCursorEnd, 0)
   self.updateTargetColumn(cursor)
 
+proc moveCursorTo*(self: TextDocumentEditor, str: string, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
+  proc doMoveCursorTo(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor =
+    let line = self.document.getLine cursor.line
+    result = cursor
+    let index = line.find(str, cursor.column + 1)
+    if index >= 0:
+      result = (cursor.line, index)
+  self.moveCursor(cursor, doMoveCursorTo, 0)
+  self.updateTargetColumn(cursor)
+
+proc moveCursorBefore*(self: TextDocumentEditor, str: string, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
+  proc doMoveCursorBefore(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor =
+    let line = self.document.getLine cursor.line
+    result = cursor
+    let index = line.find(str, cursor.column)
+    if index > 0:
+      result = (cursor.line, index - 1)
+
+  self.moveCursor(cursor, doMoveCursorBefore, 0)
+  self.updateTargetColumn(cursor)
+
 proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
   self.scrollToCursor(self.getCursor(cursor))
 
@@ -1105,6 +1126,9 @@ proc handleAction(self: TextDocumentEditor, action: string, arg: string): EventR
 
 proc handleInput(self: TextDocumentEditor, input: string): EventResponse =
   # echo "handleInput '", input, "'"
+  if self.editor.invokeCallback(self.getContextWithMode("editor.text.input-handler"), input.newJString):
+    return Handled
+
   self.selection = self.document.edit(self.selection, self.selection, input).toSelection
   self.updateTargetColumn(Last)
   return Handled
