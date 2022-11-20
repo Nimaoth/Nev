@@ -18,7 +18,11 @@ proc errorHook(config: ConfigRef; info: TLineInfo; msg: string; severity: Severi
     for k, v in config.m.filenameToIndexTbl.pairs:
       if v == info.fileIndex:
         fileName = k
-    echo fmt"[vm {severity}]: $1:$2:$3 $4." % [fileName, $info.line, $(info.col + 1), msg]
+
+    var line = info.line
+    if fileName == "absytree_config":
+      line -= 935
+    echo fmt"[vm {severity}]: $1:$2:$3 $4." % [fileName, $line, $(info.col + 1), msg]
     raise (ref VMQuit)(info: info, msg: msg)
 
 proc setGlobalVariable*[T](intr: Option[Interpreter] or Interpreter; name: string, value: T) =
@@ -126,7 +130,7 @@ macro expose*(moduleName: static string, def: untyped): untyped =
     # Check if there is an entry in the type map and override mappedArgumentType if so
     # Also replace the argument type in the scriptFunction
     for source, target in typeWrapper.pairs:
-      if source == $mappedArgumentType:
+      if source == mappedArgumentType.repr:
         mappedArgumentType = target
         scriptFunction[3][i + 1][1] = target
         scriptFunctionWrapper[3][i + 1][1] = target
@@ -155,7 +159,7 @@ macro expose*(moduleName: static string, def: untyped): untyped =
     var callFromScriptArg = scriptFunction[3][i + 1][0]
 
     for source, mapperFunction in mapperFunctions.pairs:
-      if source == $def.argType(i):
+      if source == def.argType(i).repr:
         callFromScriptArg = quote do:
           block:
             let r = `mapperFunction`(`callFromScriptArg`)

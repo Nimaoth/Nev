@@ -80,6 +80,7 @@ type Editor* = ref object
   eventHandlerConfigs: Table[string, EventHandlerConfig]
 
   options: JsonNode
+  callbacks: Table[string, int]
 
   logger: Logger
 
@@ -118,6 +119,17 @@ proc unregisterEditor*(self: Editor, editor: DocumentEditor) =
 
 method injectDependencies*(self: DocumentEditor, ed: Editor) {.base.} =
   discard
+
+proc invokeCallback*(self: Editor, context: string, args: JsonNode): bool =
+  if not self.callbacks.contains(context):
+    return false
+  let id = self.callbacks[context]
+  try:
+    return self.scriptContext.inter.invoke(handleCallback, id, args, returnType = bool)
+  except:
+    self.logger.log(lvlError, fmt"[ed] Failed to run script handleCallback {id}: {getCurrentExceptionMsg()}")
+    echo getCurrentException().getStackTrace()
+    return false
 
 proc handleAction(action: string, arg: string): EventResponse =
   echo "event: " & action & " - " & arg
@@ -935,8 +947,14 @@ proc scriptSetOptionBool*(path: string, value: bool) =
 proc scriptSetOptionString*(path: string, value: string) =
   createScriptSetOption(path, newJString(value))
 
+proc scriptSetCallback*(path: string, id: int) =
+  if gEditor.isNil:
+    return
+  gEditor.callbacks[path] = id
+
 proc createAddins(): VmAddins =
   exportTo(myImpl,
+    scriptSetCallback,
     scriptRunAction,
     scriptLog,
     scriptAddCommand,
@@ -967,4 +985,5 @@ proc createAddins(): VmAddins =
     proc postInitialize()
     proc handleEditorAction(id: EditorId, action: string, args: JsonNode): bool
     proc handleUnknownPopupAction(id: PopupId, action: string, arg: string): bool
+    proc handleCallback(id: int, args: JsonNode): bool
   return implNimScriptModule(myImpl)
