@@ -13,6 +13,8 @@ proc loadVimBindings*() =
   setOption "editor.text.cursor.movement.", "both"
   setOption "editor.text.cursor.wide.", true
 
+  addCommand "editor.text", "gd", "goto-definition"
+  addCommand "editor.text", "<S-SPACE>", "get-completions"
   addCommand "editor.text", "x", "delete-right"
   addCommand "editor.text", "<C-l>", "select-line-current"
   addCommand "editor.text", "miw", "select-inside-current"

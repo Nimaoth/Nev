@@ -1,6 +1,7 @@
 import boxy, opengl, windy
 import monitors
 import input, editor, editor_render
+import std/[asyncdispatch, strformat]
 
 let window = newWindow("Absytree", ivec2(1280, 800))
 window.runeInputEnabled = true
@@ -36,6 +37,14 @@ var ed = newEditor(window, bxy)
 
 # Called when it is time to draw a new frame.
 window.onFrame = proc() =
+  try:
+    # if getOption[bool](ed, "editor.poll"):
+    poll(2)
+  except:
+    echo fmt"[async] Failed to poll async dispatcher: {getCurrentExceptionMsg()}"
+    echo getCurrentException().getStackTrace()
+    discard
+
   # Clear the screen and begin a new frame.
   bxy.beginFrame(window.size)
   ed.boxy2.beginFrame(window.size)
@@ -98,6 +107,9 @@ window.onButtonRelease = proc(button: Button) =
   # of KeyLeftSuper, KeyRightSuper: currentModifiers = currentModifiers - {Super}
   else:
     ed.handleKeyRelease(button, currentModifiers)
+
+addTimer 1000, false, proc(fd: AsyncFD): bool =
+  return false
 
 while not window.closeRequested:
   pollEvents()
