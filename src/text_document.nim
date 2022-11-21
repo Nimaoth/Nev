@@ -1,5 +1,5 @@
-import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, os, re, tables, deques]
-import editor, document, document_editor, events, id, util, scripting, vmath, bumpy, rect_utils
+import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, os, re, tables, deques, asyncdispatch, osproc, asyncnet, asyncfile]
+import editor, document, document_editor, events, id, util, scripting, vmath, bumpy, rect_utils, language_server
 import windy except Cursor
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
@@ -66,6 +66,8 @@ type TextDocument* = ref object of Document
   currentTree: ptr ts.TSTree
   highlightQuery: ptr ts.TSQuery
 
+  languageServer: Option[LanguageServer]
+
 type StyledText* = object
   text*: string
   scope*: string
@@ -86,6 +88,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   targetColumn: int
   hideCursorWhenInactive*: bool
 
+  completionEventHandler: EventHandler
   modeEventHandler: EventHandler
   currentMode*: string
   commandCount*: int
@@ -96,6 +99,11 @@ type TextDocumentEditor* = ref object of DocumentEditor
   lineNumbers*: Option[LineNumbers]
 
   lastRenderedLines*: seq[StyledLine]
+
+  completions*: seq[TextCompletion]
+  selectedCompletion*: int
+  lastItems*: seq[tuple[index: int, bounds: Rect]]
+  showCompletions*: bool
 
 proc handleAction(self: TextDocumentEditor, action: string, arg: string): EventResponse
 proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): EventResponse
@@ -440,18 +448,10 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
 
   return styledLine
 
-proc initTreesitter(self: TextDocument) =
-  if not self.tsParser.isNil:
-    self.tsParser.tsParserDelete()
-    self.tsParser = nil
-  if not self.highlightQuery.isNil:
-    self.highlightQuery.tsQueryDelete()
-    self.highlightQuery = nil
-
-  var extension = self.filename.splitFile.ext
+proc getLanguageForFile(filename: string): Option[string] =
+  var extension = filename.splitFile.ext
   if extension.len > 0:
     extension = extension[1..^1]
-
   let languageId = case extension
   of "c", "cc", "inc": "c"
   of "sh": "bash"
@@ -474,7 +474,16 @@ proc initTreesitter(self: TextDocument) =
   else:
     # Unsupported language
     logger.log(lvlWarn, fmt"Unknown file extension '{extension}'")
-    return
+    return string.none
+  return languageId.some
+
+proc initTreesitter(self: TextDocument) =
+  if not self.tsParser.isNil:
+    self.tsParser.tsParserDelete()
+    self.tsParser = nil
+  if not self.highlightQuery.isNil:
+    self.highlightQuery.tsQueryDelete()
+    self.highlightQuery = nil
 
   template tryGetLanguage(constructor: untyped): untyped =
     block:
@@ -485,6 +494,11 @@ proc initTreesitter(self: TextDocument) =
         logger.log(lvlWarn, fmt"Language is not available: '{languageId}'")
         return
       l
+
+  let languageId = if getLanguageForFile(self.filename).getSome(languageId):
+    languageId
+  else:
+    return
 
   let language = case languageId
   of "c": tryGetLanguage(treeSitterC)
@@ -506,7 +520,7 @@ proc initTreesitter(self: TextDocument) =
   of "typescript": tryGetLanguage(treeSitterTypecript)
   of "nim": tryGetLanguage(treeSitterNim)
   else:
-    logger.log(lvlWarn, fmt"Failed to init treesitter for language '{extension}'")
+    logger.log(lvlWarn, fmt"Failed to init treesitter for language '{languageId}'")
     return
 
   self.tsParser = ts.tsParserNew()
@@ -522,18 +536,42 @@ proc initTreesitter(self: TextDocument) =
   except:
     logger.log(lvlError, fmt"[textedit] No highlight queries found for '{languageId}'")
 
+proc saveTempFile*(self: TextDocument, filename: string): Future[void] {.async.} =
+  let text = self.contentString
+  var file = openAsync(filename, fmWrite)
+  await file.write text
+  file.close()
+
 proc newTextDocument*(filename: string = "", content: string | seq[string] = ""): TextDocument =
   new(result)
-  result.filename = filename
-  result.currentTree = nil
+  var self = result
+  self.filename = filename
+  self.currentTree = nil
 
-  result.initTreesitter()
+  self.initTreesitter()
 
-  result.content = content
+  let language = getLanguageForFile(filename)
+  if language.isSome:
+    if language.get == "nim":
+      proc saveTempFileClosure(filename: string): Future[void] {.async.} =
+        await self.saveTempFile(filename)
+      self.languageServer = LanguageServer(newLanguageServerNimSuggest(filename, saveTempFileClosure)).some
+      self.languageServer.get.start()
+
+
+  self.content = content
 
 proc destroy*(self: TextDocument) =
   if not self.tsParser.isNil:
     self.tsParser.tsParserDelete()
+    self.tsParser = nil
+
+  if self.languageServer.isSome:
+    self.languageServer.get.stop()
+    self.languageServer = LanguageServer.none
+
+method shutdown*(self: TextDocumentEditor) =
+  self.document.destroy()
 
 # proc `=destroy`[T: object](doc: var TextDocument) =
 #   doc.tsParser.tsParserDelete()
@@ -796,9 +834,11 @@ method canEdit*(self: TextDocumentEditor, document: Document): bool =
   else: return false
 
 method getEventHandlers*(self: TextDocumentEditor): seq[EventHandler] =
-  if self.modeEventHandler.isNil:
-    return @[self.eventHandler]
-  return @[self.eventHandler, self.modeEventHandler]
+  result = @[self.eventHandler]
+  if not self.modeEventHandler.isNil:
+    result.add self.modeEventHandler
+  if self.showCompletions:
+    result.add self.completionEventHandler
 
 method handleDocumentChanged*(self: TextDocumentEditor) =
   self.selection = (self.clampCursor self.selection.first, self.clampCursor self.selection.last)
@@ -942,10 +982,10 @@ proc invertSelection(self: TextDocumentEditor) {.expose("editor.text").} =
   self.selection = (self.selection.last, self.selection.first)
 
 proc insert(self: TextDocumentEditor, oldCursor: Cursor, text: string, notify: bool = true, record: bool = true, autoIndent: bool = true): Cursor {.expose("editor.text").} =
-  self.document.insert(oldCursor, self.selection, text, notify, record, autoIndent)
+  return self.document.insert(oldCursor, self.selection, text, notify, record, autoIndent)
 
 proc delete(self: TextDocumentEditor, selection: Selection, notify: bool = true, record: bool = true): Cursor {.expose("editor.text").} =
-  self.document.delete(selection, self.selection, notify, record)
+  return self.document.delete(selection, self.selection, notify, record)
 
 proc selectPrev(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.selectionHistory.len > 0:
@@ -994,12 +1034,20 @@ proc selectParentTs(self: TextDocumentEditor, selection: Selection) {.expose("ed
 proc selectParentCurrentTs(self: TextDocumentEditor) {.expose("editor.text").} =
   self.selectParentTs(self.selection)
 
+proc getCompletionsAsync(self: TextDocumentEditor): Future[void]
+
 proc insertText*(self: TextDocumentEditor, text: string) {.expose("editor.text").} =
   if self.document.singleLine and text == "\n":
     return
 
   self.selection = self.document.edit(self.selection, self.selection, text).toSelection
   self.updateTargetColumn(Last)
+
+  if text == "." or text == ",":
+    self.showCompletions = true
+    asyncCheck self.getCompletionsAsync()
+  elif self.showCompletions:
+    asyncCheck self.getCompletionsAsync()
 
 proc undo(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.document.undo(self.selection, true).getSome(selection):
@@ -1090,6 +1138,71 @@ proc runAction*(self: TextDocumentEditor, action: string, args: JsonNode): bool 
   # echo "runAction ", action, ", ", $args
   return self.handleActionInternal(action, args) == Handled
 
+proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
+  if self.document.languageServer.isSome:
+    let definition = await self.document.languageServer.get.getDefinition(self.selection.last)
+    if definition.isSome:
+      self.selection = definition.get.location.toSelection
+
+proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.} =
+  if self.document.languageServer.isSome:
+    let completions = await self.document.languageServer.get.getCompletions(self.selection.last)
+    self.completions = completions
+    self.selectedCompletion = self.selectedCompletion.clamp(0, self.completions.high)
+
+# proc testAsync*(self: TextDocumentEditor) {.expose("editor.text").} =
+#   echo "testAsync"
+#   let f = self.foo()
+#   f.addCallback proc(f: Future[int]) =
+#     echo "-> ", f.read
+
+proc gotoDefinition*(self: TextDocumentEditor) {.expose("editor.text").} =
+  asyncCheck self.gotoDefinitionAsync()
+
+proc getCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
+  self.showCompletions = true
+  asyncCheck self.getCompletionsAsync()
+
+proc hideCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
+  self.showCompletions = false
+
+proc selectPrevCompletion(self: TextDocumentEditor) {.expose("editor.text").} =
+  if self.completions.len > 0:
+    self.selectedCompletion = (self.selectedCompletion - 1).clamp(0, self.completions.len - 1)
+  else:
+    self.selectedCompletion = 0
+
+proc selectNextCompletion(editor: TextDocumentEditor) {.expose("editor.text").} =
+  if editor.completions.len > 0:
+    editor.selectedCompletion = (editor.selectedCompletion + 1).clamp(0, editor.completions.len - 1)
+  else:
+    editor.selectedCompletion = 0
+
+proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
+  if not self.showCompletions:
+    return
+
+  if self.selectedCompletion > self.completions.high:
+    return
+
+  let com = self.completions[self.selectedCompletion]
+  echo "Applying completion ", com
+
+  let cursor = self.selection.last
+  if cursor.column == 0:
+    self.selection = self.insert(cursor, com.name, true, true, false).toSelection
+  else:
+    let line = self.document.getLine cursor.line
+    var column = cursor.column
+    while column > 0:
+      case line[column - 1]
+      of ' ', '\t', '.', ',', '(', ')', '[', ']', '{', '}', ':', ';':
+        break
+      else:
+        column -= 1
+
+    self.selection = self.document.edit(((cursor.line, column), cursor), self.selection, com.name).toSelection
+
 genDispatcher("editor.text")
 
 proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): EventResponse =
@@ -1131,6 +1244,12 @@ proc handleInput(self: TextDocumentEditor, input: string): EventResponse =
 
   self.selection = self.document.edit(self.selection, self.selection, input).toSelection
   self.updateTargetColumn(Last)
+
+  if input == "." or input == ",":
+    self.showCompletions = true
+    asyncCheck self.getCompletionsAsync()
+  elif self.showCompletions:
+    asyncCheck self.getCompletionsAsync()
   return Handled
 
 method injectDependencies*(self: TextDocumentEditor, ed: Editor) =
@@ -1138,6 +1257,12 @@ method injectDependencies*(self: TextDocumentEditor, ed: Editor) =
   self.editor.registerEditor(self)
   let config = ed.getEventHandlerConfig("editor.text")
   self.eventHandler = eventHandler(config):
+    onAction:
+      self.handleAction action, arg
+    onInput:
+      self.handleInput input
+
+  self.completionEventHandler = eventHandler(ed.getEventHandlerConfig("editor.text.completion")):
     onAction:
       self.handleAction action, arg
     onInput:

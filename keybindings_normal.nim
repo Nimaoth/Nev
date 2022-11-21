@@ -55,3 +55,8 @@ proc loadNormalBindings*() =
   addTextCommandBlock "", "<S-ESCAPE>":
     editor.setMode("")
     editor.selection = editor.selection.last.toSelection
+
+  addCommand "editor.text.completion", "<ESCAPE>", "hide-completions"
+  addCommand "editor.text.completion", "<UP>", "select-prev-completion"
+  addCommand "editor.text.completion", "<DOWN>", "select-next-completion"
+  addCommand "editor.text.completion", "<TAB>", "apply-selected-completion"

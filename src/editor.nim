@@ -1,4 +1,4 @@
-import std/[strformat, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils, macros, macrocache, sugar, streams]
+import std/[strformat, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils, macros, macrocache, sugar, streams, asyncdispatch]
 import boxy, windy, fuzzy
 import input, events, rect_utils, document, document_editor, keybind_autocomplete, popup, render_context, timer
 import theme, util
@@ -424,6 +424,9 @@ proc shutdown*(self: Editor) =
   let serialized = state.toJson
   writeFile("config.json", serialized.pretty)
   writeFile("options.json", self.options.pretty)
+
+  for editor in self.editors.values:
+    editor.shutdown()
 
 proc getEditor(): Option[Editor] =
   if gEditor.isNil: return Editor.none

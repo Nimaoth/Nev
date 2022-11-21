@@ -10,7 +10,7 @@ proc computeRenderedTextImpl2*(ctx: compiler.Context, input: RenderTextInput): s
     input.renderCtx.boxy.removeImage(oldImageId)
 
   let font = input.renderCtx.getFont(input.font, input.fontSize)
-  let arrangement = font.typeset(input.text)
+  let arrangement = font.typeset(input.text, bounds=input.bounds)
   var bounds = arrangement.layoutBounds()
   if bounds.x == 0:
     bounds.x = 1

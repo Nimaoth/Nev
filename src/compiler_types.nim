@@ -124,6 +124,7 @@ type
     fontSize*: float32
     lineHeight*: float32
     charWidth*: float32
+    bounds*: Vec2
 
 func index*(node: VisualNode): int =
   if node.parent == nil:
@@ -450,7 +451,7 @@ func `==`*(a: NodeLayoutInput, b: NodeLayoutInput): bool =
   if a.replacements != b.replacements: return false
   return true
 
-proc newRenderTextInput*(ctx: RenderContext, text: string, font: string, fontSize: float32, lineHeight: float32, charWidth: float32, imageId: string = ""): RenderTextInput =
+proc newRenderTextInput*(ctx: RenderContext, text: string, font: string, fontSize: float32, lineHeight: float32, charWidth: float32, imageId: string = "", bounds: Vec2 = Vec2()): RenderTextInput =
   result.id = newId()
   result.imageId = imageId
   result.renderCtx = ctx
@@ -459,12 +460,13 @@ proc newRenderTextInput*(ctx: RenderContext, text: string, font: string, fontSiz
   result.fontSize = fontSize
   result.lineHeight = lineHeight
   result.charWidth = charWidth
+  result.bounds = bounds
 
 func `$`*(input: RenderTextInput): string =
-  return fmt"RenderTextInput({input.text}, {input.font}, {input.fontSize}, {input.lineHeight}, {input.charWidth})"
+  return fmt"RenderTextInput({input.text}, {input.font}, {input.fontSize}, {input.lineHeight}, {input.charWidth}, {input.bounds})"
 
 func hash*(input: RenderTextInput): Hash =
-  result = input.text.hash !& input.font.hash !& input.fontSize.hash !& input.lineHeight.hash !& input.charWidth.hash
+  result = input.text.hash !& input.font.hash !& input.fontSize.hash !& input.lineHeight.hash !& input.charWidth.hash !& input.bounds.hash
   result = !$result
 
 func `==`*(a: RenderTextInput, b: RenderTextInput): bool =
@@ -476,4 +478,5 @@ func `==`*(a: RenderTextInput, b: RenderTextInput): bool =
   if a.fontSize != b.fontSize: return false
   if a.lineHeight != b.lineHeight: return false
   if a.charWidth != b.charWidth: return false
+  if a.bounds != b.bounds: return false
   return true

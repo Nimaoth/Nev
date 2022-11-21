@@ -2,7 +2,7 @@ import std/[strformat, tables, algorithm, math, sugar, strutils, options]
 import timer
 import boxy, windy, pixie/fonts, chroma, fusion/matching
 import util, input, events, editor, popup, rect_utils, document_editor, text_document, ast_document, keybind_autocomplete, id, ast, theme, text_renderer
-import compiler, query_system, node_layout, goto_popup, selector_popup
+import compiler, query_system, node_layout, goto_popup, selector_popup, language_server
 import lru_cache
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, Popup, SelectorPopup
 
@@ -24,13 +24,14 @@ proc drawText(renderContext: RenderContext, location: Vec2, text: string, color:
   renderContext.boxy.drawImage(image, actualLocation, color)
   return rect(actualLocation, size)
 
-proc layoutText(renderContext: RenderContext, location: Vec2, text: string, pivot: Vec2 = vec2(0, 0), font: Option[string] = string.none, fontSize: Option[float32] = float32.none, key: string = ""): tuple[image: string, bounds: Rect] =
+proc layoutText(renderContext: RenderContext, location: Vec2, text: string, bounds: Vec2 = vec2(0, 0), pivot: Vec2 = vec2(0, 0), font: Option[string] = string.none, fontSize: Option[float32] = float32.none, key: string = ""): tuple[image: string, bounds: Rect] =
   let image = ctx.computeRenderedText(ctx.getOrCreateRenderTextInput(newRenderTextInput(
     renderContext,
     text,
     font.get(renderContext.ctx.font),
     fontSize.get(renderContext.ctx.fontSize), renderContext.lineHeight, renderContext.charWidth,
-    key)))
+    key,
+    bounds)))
   let size = renderContext.boxy.getImageSize(image).vec2
   let actualLocation = location - size * pivot
   return (image, rect(actualLocation, size))
@@ -108,6 +109,84 @@ proc renderTextHighlight(ed: Editor, bounds: Rect, line: int, startIndex: int, s
     let highlightRect = rect(bounds.xy - vec2(0, lineDistance * 0.5), vec2(ed.renderCtx.charWidth * 0.5, bounds.h - textExtraHeight + lineDistance))
     ed.boxy.fillRect(highlightRect, color)
 
+proc renderTextCompletions(ed: Editor, completions: seq[TextCompletion], selected: int, bounds: Rect, contentBounds: Rect, fill: bool, renderedItems: var seq[tuple[index: int, bounds: Rect]]): Rect =
+  result = bounds.xyRect
+  renderedItems.setLen 0
+
+  let padding = 3.0
+
+  if completions.len == 0:
+    return
+
+  let maxRenderedCompletions = if fill:
+    int(bounds.h / ed.ctx.fontSize)
+  else: 15
+
+  let renderedCompletions = min(completions.len, maxRenderedCompletions)
+
+  let firstCompletion = if selected >= renderedCompletions:
+    selected - renderedCompletions + 1
+  else:
+    0
+
+  var entries: seq[tuple[name: string, typ: string, value: string, color1: seq[string], color2: string, color3: string]] = @[]
+
+  for i, com in completions[firstCompletion..completions.high]:
+    entries.add (com.name, com.typ, com.scope, @["entity.name.label", "entity.name"], "storage", "string")
+
+    if entries.len >= renderedCompletions:
+      break
+
+  var maxNameLen = 10
+  var maxTypeLen = 10
+  var maxValueLen = 0
+  for (name, typ, value, color1, color2, color3) in entries:
+    maxNameLen = max(maxNameLen, name.len)
+    maxTypeLen = max(maxTypeLen, typ.len)
+    maxValueLen = max(maxValueLen, value.len)
+
+  let sepWidth = config.font.typeset("###").layoutBounds().x
+  let nameWidth = config.font.typeset('#'.repeat(maxNameLen)).layoutBounds().x
+  let typeWidth = config.font.typeset('#'.repeat(maxTypeLen)).layoutBounds().x
+  let valueWidth = config.font.typeset('#'.repeat(maxValueLen)).layoutBounds().x
+  var totalWidth = nameWidth + typeWidth + valueWidth + sepWidth * 2 + padding
+  if fill and totalWidth < bounds.w:
+    totalWidth = bounds.w
+
+  result = rect(bounds.xy, vec2(totalWidth, renderedCompletions.float32 * config.font.size))
+  ed.boxy.fillRect(result, ed.theme.color("panel.background", rgb(30, 30, 30)))
+  ed.boxy.strokeRect(result, ed.theme.color("panel.border", rgb(255, 255, 255)))
+
+  let selectionColor = ed.theme.color("list.activeSelectionBackground", rgb(200, 200, 200))
+  ed.boxy.fillRect(rect(bounds.xy + vec2(0, (selected - firstCompletion).float32 * config.font.size), vec2(totalWidth, config.font.size)), selectionColor)
+
+  for i, (name, typ, value, color1, color2, color3) in entries:
+    # if i == (selected - firstCompletion):
+    #   ed.boxy.fillRect(rect(bounds.xy + vec2(0, i.float32 * config.font.size), vec2(totalWidth, config.font.size)), ed.theme.color("list.activeSelectionBackground", rgb(40, 40, 40)))
+    # elif i mod 2 == 1:
+    #   ed.boxy.fillRect(rect(bounds.xy + vec2(0, i.float32 * config.font.size), vec2(totalWidth, config.font.size)), ed.theme.color("list.inactiveSelectionBackground", rgb(40, 40, 40)))
+
+    var totalBounds = ed.renderCtx.drawText(vec2(bounds.x, bounds.y + i.float32 * config.font.size), name, ed.theme.tokenColor(color1, rgb(255, 255, 255)))
+    var lastRect = totalBounds
+    lastRect = ed.renderCtx.drawText(vec2(lastRect.x + nameWidth, bounds.y + i.float32 * config.font.size), " : ", ed.theme.color("list.inactiveSelectionForeground", rgb(175, 175, 175)))
+    totalBounds = totalBounds or lastRect
+    lastRect = ed.renderCtx.drawText(vec2(lastRect.xw, bounds.y + i.float32 * config.font.size), typ, ed.theme.tokenColor(color2, rgb(255, 175, 175)))
+    totalBounds = totalBounds or lastRect
+
+    if value.len > 0:
+      lastRect = ed.renderCtx.drawText(vec2(lastRect.x + typeWidth, bounds.y + i.float32 * config.font.size), " = ", ed.theme.color("list.inactiveSelectionForeground", rgb(175, 175, 175)))
+      totalBounds = totalBounds or lastRect
+      lastRect = ed.renderCtx.drawText(vec2(lastRect.xw, bounds.y + i.float32 * config.font.size), value, ed.theme.tokenColor(color3, rgb(175, 255, 175)))
+      totalBounds = totalBounds or lastRect
+
+    renderedItems.add (firstCompletion + i, totalBounds)
+
+  if completions[selected].doc.len > 0:
+    let maxBounds = contentBounds.xwyh - (bounds.xy + vec2(totalWidth, 0))
+    let (image, docBounds) = ed.renderCtx.layoutText(bounds.xy + vec2(totalWidth + 3, 3), completions[selected].doc, bounds = maxBounds - vec2(padding) * 2)
+    ed.boxy.fillRect(docBounds.grow(padding.absolute), ed.theme.color("editor.foreground", rgb(255, 255, 255)))
+    ed.renderCtx.boxy.drawImage(image, docBounds.xy, ed.theme.color("panel.background", rgb(30, 30, 30)))
+
 method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect, selected: bool): Rect =
   let document = editor.document
 
@@ -181,6 +260,7 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
     else: 0
   let maxLineNumberLen = ($maxLineNumber).len + 1
   let cursorLine = selection.last.line
+  var cursorBounds = rect(vec2(), vec2())
 
   # Draws a line of texts, including selection background.
   proc renderLine(i: int, down: bool): bool =
@@ -234,7 +314,8 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
       if selection.last.line == i and selection.last.column >= startIndex and selection.last.column <= startIndex + part.text.len:
         let startOffset = if part.text.len == 0: 0.0 else: max(0, selection.last.column - startIndex).float32 / (part.text.len.float32 - 0) * bounds.w
         let lastCursorPos = bounds.xy + vec2(startOffset, 0)
-        ed.boxy.fillRect(rect(lastCursorPos, vec2(ed.renderCtx.charWidth * cursorWidth, ed.renderCtx.lineHeight)), cursorColor)
+        cursorBounds = rect(lastCursorPos, vec2(ed.renderCtx.charWidth * cursorWidth, ed.renderCtx.lineHeight))
+        ed.boxy.fillRect(cursorBounds, cursorColor)
 
       # Draw the actual text
       ed.renderCtx.boxy.drawImage(image, bounds.xy, color)
@@ -248,22 +329,20 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
     editor.lastRenderedLines.add styledText
     return true
 
-  var renderedLines = 0
-
   # Render all lines after base index
   for i in editor.previousBaseIndex..editor.document.lines.high:
     if not renderLine(i, true):
       break
-    renderedLines += 1
 
   # Render all lines before base index
   for k in 1..editor.previousBaseIndex:
     let i = editor.previousBaseIndex - k
     if not renderLine(i, false):
       break
-    renderedLines += 1
 
-  # echo "rendered lines: ", renderedLines
+  if editor.showCompletions:
+    let bounds = rect(cursorBounds.xyh, vec2(500, 500))
+    discard ed.renderTextCompletions(editor.completions, editor.selectedCompletion, bounds, contentBounds, false, editor.lastItems)
 
   return usedBounds
 
@@ -839,6 +918,8 @@ proc renderStatusBar*(ed: Editor, bounds: Rect) =
 
 proc render*(ed: Editor) =
   defer:
+    if getOption[bool](ed, "editor.log-frame-time"):
+      echo fmt"Frame: {ed.frameTimer.elapsed.ms:>5.2}ms"
     ed.frameTimer = startTimer()
 
   if ed.clearAtlasTimer.elapsed.ms >= 5000:

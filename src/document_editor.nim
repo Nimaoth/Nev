@@ -17,6 +17,9 @@ proc init*(self: DocumentEditor) =
   self.renderHeader = true
   self.fillAvailableSpace = true
 
+method shutdown*(self: DocumentEditor) {.base.} =
+  discard
+
 method canEdit*(self: DocumentEditor, document: Document): bool {.base.} =
   return false
 

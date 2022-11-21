@@ -1,4 +1,4 @@
-import std/[strutils, tables, sugar, algorithm, options]
+import std/[strutils, tables, sugar, algorithm, options, asyncdispatch]
 import fuzzy, bumpy, vmath, windy
 import editor, ast_document, text_document, popup, events, compiler, compiler_types, id, util, rect_utils
 from scripting_api import LineNumbers

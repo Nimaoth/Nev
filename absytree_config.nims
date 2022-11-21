@@ -244,8 +244,8 @@ proc handleAstEditorAction(editor: AstDocumentEditor, action: string, args: Json
 proc postInitialize*() =
   log "[script] postInitialize()"
 
-  openFile "temp/test.rs"
-  # openFile "temp/test.nim"
+  # openFile "temp/test.rs"
+  openFile "temp/test.nim"
   # openFile "src/absytree.nim"
   setLayout "fibonacci"
   changeLayoutProp("main-split", -0.2)
@@ -271,12 +271,16 @@ addCommand "editor", "<SPACE>tr", proc() =
   setOption("ast.max-loop-iterations", clamp(getOption[int]("ast.max-loop-iterations") div 2, 1, 1000000))
   echo "ast.max-loop-iterations: ", getOption[int]("ast.max-loop-iterations")
 
-addCommand "editor", "<SPACE>td", "toggle-flag", "ast.render-vnode-depth"
-addCommand "editor", "<SPACE>l", "toggle-flag", "logging"
-addCommand "editor", "<SPACE>fs", "toggle-flag", "render-selected-value"
-addCommand "editor", "<SPACE>fr", "toggle-flag", "log-render-duration"
-addCommand "editor", "<SPACE>fd", "toggle-flag", "render-debug-info"
-addCommand "editor", "<SPACE>fo", "toggle-flag", "render-execution-output"
+addCommand "editor", "<C-SPACE>ft", "toggle-flag", "editor.log-frame-time"
+# addCommand "editor", "<C-SPACE>pp", proc() =
+  # toggleFlag "editor.poll"
+  # echo "-> ", getFlag("editor.poll")
+addCommand "editor", "<C-SPACE>td", "toggle-flag", "ast.render-vnode-depth"
+addCommand "editor", "<C-SPACE>l", "toggle-flag", "logging"
+addCommand "editor", "<C-SPACE>fs", "toggle-flag", "render-selected-value"
+addCommand "editor", "<C-SPACE>fr", "toggle-flag", "log-render-duration"
+addCommand "editor", "<C-SPACE>fd", "toggle-flag", "render-debug-info"
+addCommand "editor", "<C-SPACE>fo", "toggle-flag", "render-execution-output"
 addCommand "editor", "<C-SPACE>fg", "toggle-flag", "text.print-scopes"
 addCommand "editor", "<C-SPACE>fm", "toggle-flag", "text.print-matches"
 addCommand "editor", "<C-SPACE>fh", "toggle-flag", "text.show-node-highlight"
