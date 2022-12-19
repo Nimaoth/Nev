@@ -95,7 +95,6 @@ macro getDiscriminants(a: typedesc): seq[string] =
   for ti in t2:
     if ti.kind == nnkRecCase:
       let key = ti[0][0]
-      let typ = ti[0][1]
       result.add newLit key.strVal
   if result.len > 0:
     result = quote do:

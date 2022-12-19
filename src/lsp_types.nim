@@ -125,6 +125,10 @@ type
     AsIs = 1
     AdjustIndentation = 2
 
+  ServerInfo* = object
+    name*: string
+    version*: string
+
   TextDocumentSyncOptions* = object
     openClose*: bool
     change*: TextDocumentSyncKind
