@@ -1,18 +1,63 @@
-import json, strutils, tables, options, macros
+import json, strutils, tables, options, macros, uri
 import myjsonutils
 
+macro variant(name: untyped, types: varargs[untyped]): untyped =
+  # defer:
+  #   # echo result.treeRepr
+  #   echo result.repr
+
+
+  var variantType = quote do:
+    type `name`* = object
+      node: JsonNode
+
+  var procs = nnkStmtList.newTree
+  for t in types:
+    # echo t.treeRepr
+    var isSeq = false
+    let typeName = if t.kind == nnkBracketExpr and t[0].strVal == "seq":
+      # We got a seq of some type
+      isSeq = true
+      t[1].strVal & "Seq"
+    else:
+      t.strVal
+
+    let isSeqLit = newLit(isSeq)
+
+    let procName = ident("as" & typeName.capitalizeAscii)
+    procs.add quote do:
+      proc `procName`*(arg: `name`): Option[`t`] =
+        try:
+          when `isSeqLit`:
+            if arg.node.kind != JArray:
+              return `t`.none
+          return arg.node.jsonTo(`t`, Joptions(allowMissingKeys: true, allowExtraKeys: true)).some
+        except:
+          return `t`.none
+      proc `procName`*(arg: Option[`name`]): Option[`t`] =
+        if arg.isSome:
+          return `procName`(arg.get)
+        else:
+          return `t`.none
+
+  return quote do:
+    `variantType`
+    `procs`
+    proc fromJsonHook*(a: var `name`, b: JsonNode, opt = Joptions()) =
+      a.node = b
+
 type
-  PositionEncodingKind* = enum
+  PositionEncodingKind* {.pure.} = enum
     UTF8 = "utf-8"
     UTF16 = "utf-16"
     UTF32 = "utf-32"
 
-  TextDocumentSyncKind* = enum
+  TextDocumentSyncKind* {.pure.} = enum
     None = 0
     Full = 1
     Incremental = 2
 
-  CodeActionKind* = enum
+  CodeActionKind* {.pure.} = enum
     Empty = ""
     QuickFix = "quickfix"
     Refactor = "refactor"
@@ -23,9 +68,62 @@ type
     SourceOrganizeImports = "source.organizeImports"
     SourceFixAll = "source.fixAll"
 
+  CompletionTriggerKind* {.pure.} = enum
+    Invoked = 1
+    TriggerCharacter = 2
+    TriggerForIncompleteCompletions = 3
+
   FileOperationPatternKind* {.pure.} = enum
     File = "file"
     Folder = "folder"
+
+  CompletionKind* {.pure.} = enum
+    Text = 1
+    Method = 2
+    Function = 3
+    Constructor = 4
+    Field = 5
+    Variable = 6
+    Class = 7
+    Interface = 8
+    Module = 9
+    Property = 10
+    Unit = 11
+    Value = 12
+    Enum = 13
+    Keyword = 14
+    Snippet = 15
+    Color = 16
+    File = 17
+    Reference = 18
+    Folder = 19
+    EnumMember = 20
+    Constant = 21
+    Struct = 22
+    Event = 23
+    Operator = 24
+    TypeParameter = 25
+
+  MessageType* {.pure.} = enum
+    Error = 1
+    Warning = 2
+    Info = 3
+    Log = 4
+
+  CompletionItemTag* {.pure.} = enum
+    Deprecated = 1
+
+  MarkupKind* {.pure.} = enum
+    PlainText = "plaintext"
+    Markdown = "markdown"
+
+  InsertTextFormat* {.pure.} = enum
+    PlainText = 1
+    Snippet = 2
+
+  InsertTextMode* {.pure.} = enum
+    AsIs = 1
+    AdjustIndentation = 2
 
   TextDocumentSyncOptions* = object
     openClose*: bool
@@ -264,35 +362,86 @@ type
     fileOperations*: Option[WorkspaceOptionsFileOperations]
     discard
 
-macro variant(name: untyped, types: varargs[untyped]): untyped =
-  # defer:
-  #   # echo result.treeRepr
-  #   echo result.repr
+  Position* = object
+    line*: int
+    character*: int
 
-  var variantType = quote do:
-    type `name`* = object
-      node: JsonNode
+  Range* = object
+    start*: Position
+    `end`*: Position
 
-  var procs = nnkStmtList.newTree
-  for t in types:
-    let procName = ident("as" & t.strVal.capitalizeAscii)
-    procs.add quote do:
-      proc `procName`*(arg: `name`): Option[`t`] =
-        try:
-          return arg.node.jsonTo(`t`, Joptions(allowMissingKeys: true, allowExtraKeys: true)).some
-        except:
-          return `t`.none
-      proc `procName`*(arg: Option[`name`]): Option[`t`] =
-        if arg.isSome:
-          return `procName`(arg.get)
-        else:
-          return `t`.none
+  TextDocumentIdentifier* = object
+    uri*: Uri
 
-  return quote do:
-    `variantType`
-    `procs`
-    proc fromJsonHook*(a: var `name`, b: JsonNode, opt = Joptions()) =
-      a.node = b
+  ProgressToken* = string
+
+  CompletionContext* = object
+    triggerKind*: CompletionTriggerKind
+    triggerCharacter*: Option[string]
+
+  CompletionItemLabelDetails* = object
+    detail*: Option[string]
+    description*: Option[string]
+
+  MarkupContent* = object
+    kind*: MarkupKind
+    value*: string
+
+  TextEdit* = object
+    `range`*: Range
+    newText*: string
+
+  InsertReplaceEdit* = object
+    newText*: string
+    insert*: Range
+    replace*: Range
+
+  Command* = object
+    title*: string
+    command*: string
+    argument*: seq[JsonNode]
+
+variant(CompletionItemDocumentationVariant, string, MarkupContent)
+variant(CompletionItemTextEditVariant, TextEdit, InsertReplaceEdit)
+
+type
+  CompletionItem* = object
+    label*: string
+    labelDetails*: Option[CompletionItemLabelDetails]
+    kind*: CompletionKind
+    tags*: seq[CompletionItemTag]
+    detail*: Option[string]
+    documentation*: Option[CompletionItemDocumentationVariant]
+    deprecated*: bool
+    preselect*: bool
+    sortText*: Option[string]
+    filterText*: Option[string]
+    insertText*: Option[string]
+    insertTextFormat*: Option[InsertTextFormat]
+    insertTextMode*: Option[InsertTextMode]
+    textEdit*: Option[CompletionItemTextEditVariant]
+    textEditText*: Option[string]
+    additionalTextEdits*: seq[TextEdit]
+    commitCharacters*: seq[string]
+    command*: seq[Command]
+    data*: Option[JsonNode]
+
+  CompletionList* = object
+    isIncomplete*: bool
+    itemDefaults*: bool # todo
+    items*: seq[CompletionItem]
+
+type
+  CompletionParams* = object
+    workDoneProgress*: bool
+    textDocument*: TextDocumentIdentifier
+    position*: Position
+    partialResultToken*: Option[ProgressToken]
+    context: Option[CompletionContext]
+
+variant(CompletionResponseVariant, seq[CompletionItem], CompletionList)
+
+type CompletionResponse* = CompletionResponseVariant
 
 variant(TextDocumentSyncVariant, TextDocumentSyncOptions, TextDocumentSyncKind)
 variant(HoverProviderVariant, bool, HoverOptions)
@@ -357,4 +506,60 @@ type
     diagnosticProvider*: Option[DiagnosticProviderVariant]
     workspaceSymbolProvider*: Option[WorkspaceSymbolProviderVariant]
     workspace*: Option[WorkspaceOptions]
-    experimental*: Option[JsonNode]
+    # experimental*: Option[JsonNode]
+
+type
+  ResponseKind* {.pure.} = enum
+    Error
+    Success
+
+  ResponseError* = object
+    code*: int
+    message*: string
+    data*: JsonNode
+
+  Response*[T] = object
+    id*: int
+    case kind*: ResponseKind
+    of Error:
+      error*: ResponseError
+    of Success:
+      result*: T
+
+proc to*(a: Response[JsonNode], T: typedesc): Response[T] =
+  when T is JsonNode:
+    return a
+  else:
+    case a.kind:
+    of ResponseKind.Error:
+      return Response[T](id: a.id, kind: ResponseKind.Error, error: a.error)
+    of ResponseKind.Success:
+      return Response[T](id: a.id, kind: ResponseKind.Success, result: a.result.jsonTo(T, Joptions(allowMissingKeys: true, allowExtraKeys: true)))
+
+proc to*[K](a: Response[K], T: typedesc): Response[T] =
+  when T is JsonNode:
+    return a
+  else:
+    case a.kind:
+    of ResponseKind.Error:
+      return Response[T](id: a.id, kind: ResponseKind.Error, error: a.error)
+    of ResponseKind.Success:
+      assert false
+
+proc fromJsonHook*[T](a: var Response[T], b: JsonNode, opt = Joptions()) =
+  if b.hasKey("error"):
+    a = Response[T](id: b["id"].getInt, kind: ResponseKind.Error, error: b["error"].jsonTo(ResponseError, Joptions(allowMissingKeys: true, allowExtraKeys: true)))
+  else:
+    a = Response[JsonNode](id: b["id"].getInt, kind: ResponseKind.Success, result: b["result"]).to T
+
+proc toResponse*(node: JsonNode, T: typedesc): Response[T] =
+  fromJsonHook[T](result, node)
+
+proc success*[T](value: T): Response[T] =
+  return Response[T](kind: ResponseKind.Success, result: value)
+
+proc error*[T](code: int, message: string, data: JsonNode = newJNull()): Response[T] =
+  return Response[T](kind: ResponseKind.Error, error: ResponseError(code: code, message: message, data: data))
+
+proc isSuccess*[T](response: Response[T]): bool = response.kind == ResponseKind.Success
+proc isError*[T](response: Response[T]): bool = response.kind == ResponseKind.Error
