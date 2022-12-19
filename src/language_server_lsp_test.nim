@@ -113,6 +113,14 @@ proc createHeader*(contentLength: int): string =
   let header = fmt"Content-Length: {contentLength}" & "\r\n\r\n"
   return header
 
+proc close*(client: LSPClient) =
+  client.process.destroy()
+  client.process = nil
+  client.nextId = 0
+  client.activeRequests.clear()
+  client.isInitialized = false
+  client.pendingRequests.setLen 0
+
 proc parseResponse*(client: LSPClient): Future[JsonNode] {.async.} =
   # echo "[parseResponse]"
   var headers = initTable[string, string]()
@@ -210,11 +218,8 @@ proc initialize*(client: LSPClient): Future[Response[JsonNode]] {.async.} =
     let header = createHeader(req.len)
     await client.process.send(header & req)
 
-proc connect*(client: LSPClient, port: int) {.async.} =
-  # Initialize the socket
-  # client.socket = newAsyncSocket()
-  # await client.socket.connect("", Port(port))
-  client.process = startAsyncProcess("zls")
+proc connect*(client: LSPClient, serverExecutablePath: string) {.async.} =
+  client.process = startAsyncProcess(serverExecutablePath)
   client.process.onRestarted = proc() {.async.} =
     echo "Initializing client..."
     let response = await client.initialize()
@@ -224,7 +229,6 @@ proc connect*(client: LSPClient, port: int) {.async.} =
     var serverCapabilities: ServerCapabilities = response.result["capabilities"].jsonTo(ServerCapabilities, Joptions(allowMissingKeys: true, allowExtraKeys: true))
     echo "Server capabilities:"
     echo serverCapabilities
-  # client.process = startAsyncProcess("C:/Users/nimao/.vscode/extensions/rust-lang.rust-analyzer-0.3.1317-win32-x64/server/rust-analyzer.exe")
 
 proc notifyOpenedTextDocument*(client: LSPClient, path: string, content: string) {.async.} =
   let params = %*{
@@ -301,45 +305,35 @@ proc runAsync*(client: LSPClient) {.async.} =
 proc run*(client: LSPClient) =
   asyncCheck client.runAsync()
 
-# let server = startProcess("zls")
 var client = LSPClient()
-waitFor client.connect(12345)
+waitFor client.connect("zls")
+# waitFor client.connect("C:/Users/nimao/.vscode/extensions/rust-lang.rust-analyzer-0.3.1317-win32-x64/server/rust-analyzer.exe")
 client.run()
 
-let testUri = "D:/dev/Nim/Absytree/temp/test.zig"
-waitFor client.notifyOpenedTextDocument(testUri, readFile(testUri))
+let testFile = "D:/dev/Nim/Absytree/temp/test.zig"
+waitFor client.notifyOpenedTextDocument(testFile, readFile(testFile))
 
-# serverCapabilities.definitionProvider = some(DefinitionProviderVariant(node: %*{
-#   "workDoneProgress": true
-# }))
-
-# if serverCapabilities.definitionProvider.asBool.getSome(enabled):
-#   echo fmt"definition: {enabled}"
-
-# if serverCapabilities.definitionProvider.asDefinitionOptions.getSome(options):
-#   echo fmt"definition: {options}"
-
-# echo "init sent"
-# let completions = waitFor(client.getCompletions(("temp/test.zig", 4, 18)))
-# echo completions
-
-
+# Read commands from stdin and send requests based on that
 var messageFlowVar = spawn stdin.readLine()
 while true:
   poll()
 
   if messageFlowVar.isReady:
+    defer:
+      messageFlowVar = spawn stdin.readLine()
+
     let line = ^messageFlowVar
     let parts = line.split " "
     if parts.len == 0:
       continue
+
     case parts[0]:
     of "c":
       if parts.len != 3:
         continue
       let line = parts[1].parseInt
       let column = parts[2].parseInt
-      client.getCompletions((testUri, line, column)).addCallback proc (f: Future[Response[CompletionList]]) =
+      client.getCompletions((testFile, line, column)).addCallback proc (f: Future[Response[CompletionList]]) =
         let response = f.read
         if response.isError:
           echo fmt"Failed to get completions: {response.error}"
@@ -347,4 +341,10 @@ while true:
 
         let completionList = response.result
         echo "isIncomplete: ", completionList.isIncomplete, ", len: ", completionList.items.len
-    messageFlowVar = spawn stdin.readLine()
+
+    of "q":
+      break
+
+echo "[main] Quitting..."
+client.close()
+quit(0)
