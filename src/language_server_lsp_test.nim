@@ -85,71 +85,14 @@ macro `?`(node: JsonNode, access: untyped): untyped =
         `resultSym` = newJNull()
       `resultSym`
 
-let params = %*{
-  "rootPath": "D:/dev/Nim/Absytree/temp",
-  "capabilities": %*{
-    "textDocument": %*{
-      "completion": %*{
-        "completionItem": %*{
-          "snippetSupport": true
-        },
-        "completionProvider": true
-      }
-    },
-    "array": %*[
-      true,
-      false,
-      %*{
-        "lol": 123,
-        "xvlc": "nrtd"
-      }
-    ]
-  }
-}
-
-# echo params ? capabilities.array[2].xvlc or newJString("uiae")
-# echo params ? capabilities.array[2].xvlc
-# echo params ? capabilities.array[2].xvl or newJString("uiae")
-# echo params ? capabilities.array[2].xvl or "uiae"
-# echo params ? capabilities.array[2].xvl
-
-
-
 type
   LSPClient = ref object
     # socket: AsyncSocket
     process: AsyncProcess
     nextId: int
-    activeRequests: Table[int, Future[JsonNode]]
+    activeRequests: Table[int, Future[Response[JsonNode]]]
     isInitialized: bool
     pendingRequests: seq[string]
-
-  CompletionKind = enum
-    Text = 1
-    Method = 2
-    Function = 3
-    Constructor = 4
-    Field = 5
-    Variable = 6
-    Class = 7
-    Interface = 8
-    Module = 9
-    Property = 10
-    Unit = 11
-    Value = 12
-    Enum = 13
-    Keyword = 14
-    Snippet = 15
-    Color = 16
-    File = 17
-    Reference = 18
-    Folder = 19
-    EnumMember = 20
-    Constant = 21
-    Struct = 22
-    Event = 23
-    Operator = 24
-    TypeParameter = 25
 
   MessageType* = enum
     Error = 1
@@ -158,24 +101,17 @@ type
     Log = 4
 
   FilePosition = tuple[filename: string, line: int, column: int]
-  Completion = object
-    label: string
-    kind: CompletionKind
-    detail: string
-    documentation: string
 
   ServerInfo* = object
     name: string
     version: string
 
-proc toUri*(path: string): string =
-  return "file:///" & path # todo: use file://{} for linux
+proc toUri*(path: string): Uri =
+  return parseUri("file:///" & path) # todo: use file://{} for linux
 
-proc sendHeader*(client: LSPClient, contentLength: int) {.async.} =
+proc createHeader*(contentLength: int): string =
   let header = fmt"Content-Length: {contentLength}" & "\r\n\r\n"
-  # echo header
-  # await client.socket.send(header)
-  await client.process.send(header)
+  return header
 
 proc parseResponse*(client: LSPClient): Future[JsonNode] {.async.} =
   # echo "[parseResponse]"
@@ -228,24 +164,22 @@ proc sendRPC*(client: LSPClient, meth: string, params: JsonNode, id: Option[int]
     return
 
   let data = $request
-  await client.sendHeader(data.len)
-  # await client.socket.send(data)
-  await client.process.send(data)
-  # echo data, "\n"
+  let header = createHeader(data.len)
+  await client.process.send(header & data)
 
 proc sendNotification(client: LSPClient, meth: string, params: JsonNode) {.async.} =
   await client.sendRPC(meth, params, int.none)
 
-proc sendRequest(client: LSPClient, meth: string, params: JsonNode): Future[JsonNode] {.async.} =
+proc sendRequest(client: LSPClient, meth: string, params: JsonNode): Future[Response[JsonNode]] {.async.} =
   let id = client.nextId
   inc client.nextId
   await client.sendRPC(meth, params, id.some)
 
-  var requestFuture = newFuture[JsonNode]("LSPCLient.initialize")
+  var requestFuture = newFuture[Response[JsonNode]]("LSPCLient.initialize")
   client.activeRequests[id] = requestFuture
   return await requestFuture
 
-proc initialize*(client: LSPClient): Future[JsonNode] {.async.} =
+proc initialize*(client: LSPClient): Future[Response[JsonNode]] {.async.} =
   echo "[initialize]"
   let params = %*{
     "processId": os.getCurrentProcessId(),
@@ -267,15 +201,14 @@ proc initialize*(client: LSPClient): Future[JsonNode] {.async.} =
   }
 
   result = await client.sendRequest("initialize", params)
-  # echo "[initialize] got response"
   client.isInitialized = true
 
   await client.sendNotification("initialized", newJObject())
 
   for req in client.pendingRequests:
     echo "[initialize] sending pending request"
-    await client.sendHeader(req.len)
-    await client.process.send(req)
+    let header = createHeader(req.len)
+    await client.process.send(header & req)
 
 proc connect*(client: LSPClient, port: int) {.async.} =
   # Initialize the socket
@@ -285,7 +218,10 @@ proc connect*(client: LSPClient, port: int) {.async.} =
   client.process.onRestarted = proc() {.async.} =
     echo "Initializing client..."
     let response = await client.initialize()
-    var serverCapabilities: ServerCapabilities = response["capabilities"].jsonTo(ServerCapabilities, Joptions(allowMissingKeys: true, allowExtraKeys: true))
+    if response.isError:
+      echo fmt"[onRestarted] Got error response: {response}"
+      return
+    var serverCapabilities: ServerCapabilities = response.result["capabilities"].jsonTo(ServerCapabilities, Joptions(allowMissingKeys: true, allowExtraKeys: true))
     echo "Server capabilities:"
     echo serverCapabilities
   # client.process = startAsyncProcess("C:/Users/nimao/.vscode/extensions/rust-lang.rust-analyzer-0.3.1317-win32-x64/server/rust-analyzer.exe")
@@ -293,7 +229,7 @@ proc connect*(client: LSPClient, port: int) {.async.} =
 proc notifyOpenedTextDocument*(client: LSPClient, path: string, content: string) {.async.} =
   let params = %*{
     "textDocument": %*{
-      "uri": path.toUri,
+      "uri": $path.toUri,
       "languageId": "zig",
       "version": 0,
       "text": content,
@@ -302,32 +238,30 @@ proc notifyOpenedTextDocument*(client: LSPClient, path: string, content: string)
 
   await client.sendNotification("textDocument/didOpen", params)
 
-proc parseCompletions(response: JsonNode): seq[Completion] =
-  # Parse the completions from the response
-  var completions = response["items"].elems
-  result = @[]
-  for completionJson in completions:
-    var kind = cast[CompletionKind](completionJson["kind"].num)
-    var completion = Completion(label: completionJson["label"].str, kind: kind)
-    completion.detail = completionJson ? detail or ""
-    completion.documentation = completionJson ? documentation or ""
-    result.add completion
+proc getCompletions*(client: LSPClient, fp: FilePosition): Future[Response[CompletionList]] {.async.} =
+  echo fmt"[getCompletions] {fp}"
 
-proc getCompletions*(client: LSPClient, fp: FilePosition): Future[seq[Completion]] {.async.} =
-  # Create the LSP request for completions
-  echo fmt"getCompletions({fp})"
+  let params = CompletionParams(
+    textDocument: TextDocumentIdentifier(uri: fp.filename.toUri),
+    position: Position(
+      line: fp.line + 1,
+      character: fp.column
+    )
+  ).toJson
 
-  let params = %*{
-    "textDocument": {
-      "uri": fp.filename.toUri
-    },
-    "position": {
-      "line": fp.line + 1,
-      "character": fp.column
-    }
-  }
+  let response = (await client.sendRequest("textDocument/completion", params)).to CompletionResponse
 
-  return parseCompletions await client.sendRequest("textDocument/completion", params)
+  if response.isError:
+    return response.to CompletionList
+
+  let parsedResponse = response.result
+  if parsedResponse.asCompletionItemSeq().getSome(items):
+    return CompletionList(isIncomplete: false, items: items).success
+  if parsedResponse.asCompletionList().getSome(list):
+    return list.success
+
+  echo fmt"[getCompletions] {fp}: no completions found"
+  return error[CompletionList](-1, fmt"[getCompletions] {fp}: no completions found")
 
 proc runAsync*(client: LSPClient) {.async.} =
   while true:
@@ -337,13 +271,7 @@ proc runAsync*(client: LSPClient) {.async.} =
       echo "[bad response] ", response
       continue
 
-    if response.hasKey("error"):
-      let message = response ? error.message or "unknown error"
-      let code = response ? error.code or 0
-      let data = response ? error.data
-      echo fmt"[error-{code}] {message} ({data})"
-
-    elif not response.hasKey("id"):
+    if not response.hasKey("id"):
       # Response has no id, it's a notification
 
       case response["method"].getStr
@@ -364,10 +292,11 @@ proc runAsync*(client: LSPClient) {.async.} =
       let id = response["id"].getInt
       if client.activeRequests.contains(id):
         # echo fmt"[run] Complete request {id}"
-        client.activeRequests[id].complete(response["result"])
+        let parsedResponse = response.toResponse JsonNode
+        client.activeRequests[id].complete parsedResponse
         client.activeRequests.del(id)
       else:
-        echo fmt"[run] error: received response with id {id} but got no active request for that id"
+        echo fmt"[run] error: received response with id {id} but got no active request for that id: {response}"
 
 proc run*(client: LSPClient) =
   asyncCheck client.runAsync()
@@ -410,6 +339,12 @@ while true:
         continue
       let line = parts[1].parseInt
       let column = parts[2].parseInt
-      client.getCompletions((testUri, line, column)).addCallback proc (f: Future[seq[Completion]]) =
-        echo f.read
+      client.getCompletions((testUri, line, column)).addCallback proc (f: Future[Response[CompletionList]]) =
+        let response = f.read
+        if response.isError:
+          echo fmt"Failed to get completions: {response.error}"
+          return
+
+        let completionList = response.result
+        echo "isIncomplete: ", completionList.isIncomplete, ", len: ", completionList.items.len
     messageFlowVar = spawn stdin.readLine()
