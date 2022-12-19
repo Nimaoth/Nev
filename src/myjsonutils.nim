@@ -16,7 +16,7 @@ runnableExamples:
   assert 0.0.toJson.kind == JFloat
   assert Inf.toJson.kind == JString
 
-import std/[json, strutils, tables, sets, strtabs, options, macros]
+import std/[json, strutils, tables, sets, strtabs, options, macros, uri]
 from std/enumutils import symbolName
 from std/typetraits import OrdinalEnum
 
@@ -492,3 +492,19 @@ proc toJsonHook*(a: StringTableRef): JsonNode =
   let t = newJObject()
   for k,v in a: t[k] = toJson(v)
   result["table"] = t
+
+proc fromJsonHook*(a: var Uri, b: JsonNode, opt = Joptions()) =
+  ## Enables `fromJson` for `Uri` type.
+  ##
+  ## See also:
+  ## * `toJsonHook proc<#toJsonHook,Uri>`_
+
+  a = jsonTo(b, string, opt = Joptions()).parseUri
+
+proc toJsonHook*(a: Uri): JsonNode =
+  ## Enables `toJson` for `Uri` type.
+  ##
+  ## See also:
+  ## * `fromJsonHook proc<#fromJsonHook,Uri,JsonNode>`_
+
+  return ($a).toJson
