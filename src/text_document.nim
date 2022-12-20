@@ -1,5 +1,5 @@
 import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, os, re, tables, deques, asyncdispatch, osproc, asyncnet, asyncfile]
-import editor, document, document_editor, events, id, util, scripting, vmath, bumpy, rect_utils, language_server
+import editor, document, document_editor, events, id, util, scripting, vmath, bumpy, rect_utils, language_server_base, event
 import windy except Cursor
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
@@ -24,15 +24,13 @@ import treesitter_rust/rust
 # import treesitter_scala/scala
 # import treesitter_typescript/typescript
 import treesitter_nim/nim
+import treesitter_zig/zig
 
 var logger = newConsoleLogger()
 
 when not declared(c_malloc):
   proc c_malloc(size: csize_t): pointer {.importc: "malloc", header: "<stdlib.h>".}
   proc c_free(p: pointer): void {.importc: "free", header: "<stdlib.h>".}
-
-type Event*[T] = object
-  handlers: seq[tuple[id: Id, callback: (T) -> void]]
 
 type
   UndoOpKind = enum
@@ -55,8 +53,12 @@ proc `$`(op: UndoOp): string =
 type TextDocument* = ref object of Document
   filename*: string
   lines*: seq[string]
+  languageId*: string
+  version*: int
 
   textChanged*: Event[TextDocument]
+  textInserted*: Event[tuple[document: TextDocument, location: Cursor, text: string]]
+  textDeleted*: Event[tuple[document: TextDocument, selection: Selection]]
   singleLine*: bool
 
   undoOps*: seq[UndoOp]
@@ -108,20 +110,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
 proc handleAction(self: TextDocumentEditor, action: string, arg: string): EventResponse
 proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): EventResponse
 proc handleInput(self: TextDocumentEditor, input: string): EventResponse
-
-proc subscribe*[T](event: var Event[T], callback: (T) -> void): Id =
-  result = newId()
-  event.handlers.add (result, callback)
-
-proc unsubscribe*[T](event: var Event[T], id: Id) =
-  for i, h in event.handlers:
-    if h.id == id:
-      event.handlers.del(i)
-      break
-
-proc invoke*[T](event: var Event[T], arg: T) =
-  for h in event.handlers:
-    h.callback(arg)
 
 func toTsPoint(cursor: Cursor): ts.TSPoint = ts.TSPoint(row: cursor.line.uint32, column: cursor.column.uint32)
 proc len*(node: ts.TSNode): int = node.tsNodeChildCount().int
@@ -263,6 +251,8 @@ proc `content=`*(self: TextDocument, value: string) =
     if not self.tsParser.isNil:
       self.currentTree = self.tsParser.tsParserParseString(nil, value, value.len.uint32)
 
+  inc self.version
+
   self.textChanged.invoke(self)
 
 proc `content=`*(self: TextDocument, value: seq[string]) =
@@ -278,6 +268,8 @@ proc `content=`*(self: TextDocument, value: seq[string]) =
 
   if not self.tsParser.isNil:
     self.currentTree = self.tsParser.tsParserParseString(nil, strValue, strValue.len.uint32)
+
+  inc self.version
 
   self.textChanged.invoke(self)
 
@@ -299,6 +291,8 @@ func contentString*(self: TextDocument, selection: Selection): string =
 
   result.add "\n"
   result.add self.lines[last.line][0..<last.column]
+
+import language_server
 
 func len*(line: StyledLine): int =
   result = 0
@@ -424,6 +418,9 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
               matches = false
               break
 
+          of "any-of?":
+            logger.log(lvlError, fmt"Unknown predicate '{predicate.name}'")
+
           else:
             logger.log(lvlError, fmt"Unknown predicate '{predicate.name}'")
 
@@ -471,6 +468,7 @@ proc getLanguageForFile(filename: string): Option[string] =
   of "scala": "scala"
   of "ts": "typescript"
   of "nim", "nims": "nim"
+  of "zig": "zig"
   else:
     # Unsupported language
     logger.log(lvlWarn, fmt"Unknown file extension '{extension}'")
@@ -519,6 +517,7 @@ proc initTreesitter(self: TextDocument) =
   of "scala": tryGetLanguage(treeSitterScala)
   of "typescript": tryGetLanguage(treeSitterTypecript)
   of "nim": tryGetLanguage(treeSitterNim)
+  of "zig": tryGetLanguage(treeSitterZig)
   else:
     logger.log(lvlWarn, fmt"Failed to init treesitter for language '{languageId}'")
     return
@@ -552,12 +551,13 @@ proc newTextDocument*(filename: string = "", content: string | seq[string] = "")
 
   let language = getLanguageForFile(filename)
   if language.isSome:
+    self.languageId = language.get
     if language.get == "nim":
       proc saveTempFileClosure(filename: string): Future[void] {.async.} =
         await self.saveTempFile(filename)
       self.languageServer = LanguageServer(newLanguageServerNimSuggest(filename, saveTempFileClosure)).some
       self.languageServer.get.start()
-
+    asyncCheck getOrCreateLanguageServerLSP(self.languageId)
 
   self.content = content
 
@@ -642,11 +642,14 @@ proc delete(self: TextDocument, selection: Selection, oldSelection: Selection, n
     self.currentTree = self.tsParser.tsParserParseString(self.currentTree, strValue, strValue.len.uint32)
     # echo self.currentTree.root
 
+  inc self.version
+
   if record:
     self.undoOps.add UndoOp(kind: Insert, cursor: selection.first, text: deletedText, oldSelection: oldSelection)
     self.redoOps = @[]
 
   if notify:
+    self.textDeleted.invoke((self, selection))
     self.notifyTextChanged()
 
   return selection.first
@@ -760,11 +763,14 @@ proc insert(self: TextDocument, oldCursor: Cursor, oldSelection: Selection, text
       let indent = self.getTargetIndentForLine(line)
       cursor = self.insert((line, 0), oldSelection, ' '.repeat(indent), notify = false, record = false, autoIndent = false)
 
+  inc self.version
+
   if record:
     self.undoOps.add UndoOp(kind: Delete, selection: (oldCursor, cursor), oldSelection: oldSelection)
     self.redoOps = @[]
 
   if notify:
+    self.textInserted.invoke((self, oldCursor, text))
     self.notifyTextChanged()
 
   return cursor
@@ -1100,6 +1106,7 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = Selecti
   self.scrollToCursor(self.getCursor(cursor))
 
 proc reloadTreesitter*(self: TextDocumentEditor) {.expose("editor.text").} =
+  echo "reloadTreesitter"
   self.document.initTreesitter()
 
 proc deleteLeft*(self: TextDocumentEditor) {.expose("editor.text").} =
@@ -1138,17 +1145,44 @@ proc runAction*(self: TextDocumentEditor, action: string, args: JsonNode): bool 
   # echo "runAction ", action, ", ", $args
   return self.handleActionInternal(action, args) == Handled
 
-proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
+proc getLanguageServer(self: TextDocumentEditor): Future[Option[LanguageServer]] {.async.} =
+  let languageId = if getLanguageForFile(self.document.filename).getSome(languageId):
+    languageId
+  else:
+    return
+
   if self.document.languageServer.isSome:
-    let definition = await self.document.languageServer.get.getDefinition(self.selection.last)
+    return self.document.languageServer
+  else:
+    let languageServer = await getOrCreateLanguageServerLSP(languageId)
+    if languageServer.isNone:
+      return LanguageServer.none
+
+    return some(LanguageServer(languageServer.get))
+
+proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
+  let languageServer = await self.getLanguageServer()
+  if languageServer.isNone:
+    return
+
+  if languageServer.isSome:
+    let definition = await languageServer.get.getDefinition(self.document.filename, self.selection.last)
     if definition.isSome:
       self.selection = definition.get.location.toSelection
 
 proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  if self.document.languageServer.isSome:
-    let completions = await self.document.languageServer.get.getCompletions(self.selection.last)
+  let languageServer = await self.getLanguageServer()
+  if languageServer.isNone:
+    return
+
+  if languageServer.isSome:
+    let completions = await languageServer.get.getCompletions(self.document.languageId, self.document.filename, self.selection.last)
     self.completions = completions
     self.selectedCompletion = self.selectedCompletion.clamp(0, self.completions.high)
+    if self.completions.len == 0:
+      self.showCompletions = false
+    else:
+      self.showCompletions = true
 
 # proc testAsync*(self: TextDocumentEditor) {.expose("editor.text").} =
 #   echo "testAsync"
@@ -1160,7 +1194,6 @@ proc gotoDefinition*(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncCheck self.gotoDefinitionAsync()
 
 proc getCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
-  self.showCompletions = true
   asyncCheck self.getCompletionsAsync()
 
 proc hideCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =

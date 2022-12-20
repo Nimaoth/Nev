@@ -31,7 +31,7 @@ macro variant(name: untyped, types: varargs[untyped]): untyped =
           when `isSeqLit`:
             if arg.node.kind != JArray:
               return `t`.none
-          return arg.node.jsonTo(`t`, Joptions(allowMissingKeys: true, allowExtraKeys: true)).some
+          return arg.node.jsonTo(`t`, Joptions(allowMissingKeys: true, allowExtraKeys: false)).some
         except:
           return `t`.none
       proc `procName`*(arg: Option[`name`]): Option[`t`] =
@@ -374,8 +374,18 @@ type
     start*: Position
     `end`*: Position
 
+  Location* = object
+    uri*: string
+    `range`*: Range
+
+  LocationLink* = object
+    originSelectionRange*: Option[Range]
+    targetUri*: string
+    targetRange*: Range
+    targetSelectionRange*: Range
+
   TextDocumentIdentifier* = object
-    uri*: Uri
+    uri*: string
 
   ProgressToken* = string
 
@@ -404,6 +414,15 @@ type
     title*: string
     command*: string
     argument*: seq[JsonNode]
+
+  WorkspaceFolder* = object
+    uri*: string
+    name*: string
+
+  TextDocumentContentChangeEvent* = object
+    range*: Range
+    rangeLength*: Option[int]
+    text*: string
 
 variant(CompletionItemDocumentationVariant, string, MarkupContent)
 variant(CompletionItemTextEditVariant, TextEdit, InsertReplaceEdit)
@@ -443,9 +462,25 @@ type
     partialResultToken*: Option[ProgressToken]
     context: Option[CompletionContext]
 
+  DefinitionParams* = object
+    workDoneProgress*: bool
+    textDocument*: TextDocumentIdentifier
+    position*: Position
+    partialResultToken*: Option[ProgressToken]
+
+  DeclarationParams* = object
+    workDoneProgress*: bool
+    textDocument*: TextDocumentIdentifier
+    position*: Position
+    partialResultToken*: Option[ProgressToken]
+
 variant(CompletionResponseVariant, seq[CompletionItem], CompletionList)
+variant(DefinitionResponseVariant, Location, seq[Location], seq[LocationLink])
+variant(DeclarationResponseVariant, Location, seq[Location], seq[LocationLink])
 
 type CompletionResponse* = CompletionResponseVariant
+type DefinitionResponse* = DefinitionResponseVariant
+type DeclarationResponse* = DeclarationResponseVariant
 
 variant(TextDocumentSyncVariant, TextDocumentSyncOptions, TextDocumentSyncKind)
 variant(HoverProviderVariant, bool, HoverOptions)

@@ -1,6 +1,6 @@
 import std/[strformat, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils, macros, macrocache, sugar, streams, asyncdispatch]
 import boxy, windy, fuzzy
-import input, events, rect_utils, document, document_editor, keybind_autocomplete, popup, render_context, timer
+import input, events, rect_utils, document, document_editor, keybind_autocomplete, popup, render_context, timer, event
 import theme, util
 import scripting
 import nimscripter, nimscripter/[vmconversion, vmaddins]
@@ -99,6 +99,9 @@ type Editor* = ref object
   editors*: Table[EditorId, DocumentEditor]
   popups*: seq[Popup]
 
+  onEditorRegistered*: Event[DocumentEditor]
+  onEditorDeregistered*: Event[DocumentEditor]
+
   commandLineTextEditor: DocumentEditor
   eventHandler*: EventHandler
   commandLineEventHandler*: EventHandler
@@ -113,9 +116,11 @@ var gEditor*: Editor = nil
 
 proc registerEditor*(self: Editor, editor: DocumentEditor) =
   self.editors[editor.id] = editor
+  self.onEditorRegistered.invoke editor
 
 proc unregisterEditor*(self: Editor, editor: DocumentEditor) =
   self.editors.del(editor.id)
+  self.onEditorDeregistered.invoke editor
 
 method injectDependencies*(self: DocumentEditor, ed: Editor) {.base.} =
   discard
@@ -223,6 +228,13 @@ proc getOption*[T](editor: Editor, path: string, default: T = T.default): T =
     return editor.createScriptGetOption(path, default, getFloat)
   elif T is string:
     return editor.createScriptGetOption(path, default, getStr)
+  elif T is JsonNode:
+    if editor.isNil:
+      return default
+    let node = editor.options{path.split(".")}
+    if node.isNil:
+      return default
+    return node
   else:
     {.fatal: ("Can't get option with type " & $T).}
 

@@ -2,7 +2,7 @@ import std/[strformat, tables, algorithm, math, sugar, strutils, options]
 import timer
 import boxy, windy, pixie/fonts, chroma, fusion/matching
 import util, input, events, editor, popup, rect_utils, document_editor, text_document, ast_document, keybind_autocomplete, id, ast, theme, text_renderer
-import compiler, query_system, node_layout, goto_popup, selector_popup, language_server
+import compiler, query_system, node_layout, goto_popup, selector_popup, language_server_base
 import lru_cache
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, Popup, SelectorPopup
 
