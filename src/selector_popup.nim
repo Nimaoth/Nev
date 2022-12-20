@@ -1,6 +1,6 @@
 import std/[strutils, sugar, options, json, jsonutils, streams]
 import bumpy, vmath, windy
-import editor, text_document, popup, events, util, rect_utils, scripting
+import editor, text_document, popup, events, util, rect_utils, scripting, event
 from scripting_api as api import nil
 
 type

@@ -1,6 +1,6 @@
 import std/[strutils, tables, sugar, algorithm, options, asyncdispatch]
 import fuzzy, bumpy, vmath, windy
-import editor, ast_document, text_document, popup, events, compiler, compiler_types, id, util, rect_utils
+import editor, ast_document, text_document, popup, events, compiler, compiler_types, id, util, rect_utils, event
 from scripting_api import LineNumbers
 
 type AstGotoDefinitionPopup* = ref object of Popup

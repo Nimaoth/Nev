@@ -262,6 +262,7 @@ addCommand "editor", "<C-x><C-x>", "quit"
 addCommand "editor", "<CAS-r>", "reload-config"
 
 setOption "ast.scroll-speed", 60
+setOption "editor.text.lsp.zig.path", "zls"
 
 addCommand "editor", "<SPACE>tt", proc() =
   setOption("ast.max-loop-iterations", clamp(getOption[int]("ast.max-loop-iterations") * 2, 1, 1000000))
@@ -452,6 +453,8 @@ addCommand "editor.ast", ";", "run-last-command"
 addCommand "editor.ast", "<A-t>", "move-node-to-next-space"
 addCommand "editor.ast", "<A-n>", "move-node-to-prev-space"
 addCommand "editor.ast", "<C-a>", "set-mode", "uiae"
+
+addCommand "editor.text", "<C-SPACE>ts", "reload-treesitter"
 
 setConsumeAllInput "editor.ast.uiae", true
 addCommand "editor.ast.uiae", "<ESCAPE>", "set-mode", ""

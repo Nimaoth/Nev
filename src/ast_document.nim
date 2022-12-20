@@ -1,7 +1,7 @@
 import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros, macrocache, options, deques, sets, json, jsonutils, sequtils, streams]
 import timer
 import fusion/matching, fuzzy, bumpy, rect_utils, vmath, chroma, windy
-import editor, util, document, document_editor, text_document, events, id, ast_ids, ast, scripting
+import editor, util, document, document_editor, text_document, events, id, ast_ids, ast, scripting, event
 import compiler
 import nimscripter
 from scripting_api as api import nil

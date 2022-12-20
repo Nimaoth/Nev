@@ -1,8 +1,7 @@
-import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, os, re, tables, deques, asyncdispatch, osproc, asyncnet, tempfiles, macros]
+import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, os, re, tables, deques, asyncdispatch, osproc, asyncnet, tempfiles, macros, uri]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-
-type LanguageServer* = ref object of RootObj
-  discard
+import lsp_client, language_server_base, event, util
+import editor, text_document
 
 type LanguageServerNimSuggest* = ref object of LanguageServer
   filename: string
@@ -10,25 +9,13 @@ type LanguageServerNimSuggest* = ref object of LanguageServer
   nimsuggest: Process
   saveTempFile: proc(filename: string): Future[void]
 
-type SymbolType* = enum Unknown, Procedure, Function
-
-type Definition* = object
-  location*: Cursor
-  filename*: string
-
-type TextCompletion* = object
-  name*: string
-  scope*: string
-  location*: Cursor
-  filename*: string
-  kind*: SymbolType
-  typ*: string
-  doc*: string
+type LanguageServerLSP* = ref object of LanguageServer
+  client: LSPClient
 
 method start*(self: LanguageServer) {.base.} = discard
 method stop*(self: LanguageServer) {.base.} = discard
-method getDefinition*(self: LanguageServer, location: Cursor): Future[Option[Definition]] {.base.} = discard
-method getCompletions*(self: LanguageServer, location: Cursor): Future[seq[TextCompletion]] {.base.} = discard
+method getDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[Option[Definition]] {.base.} = discard
+method getCompletions*(self: LanguageServer, languageId: string, filename: string, location: Cursor): Future[seq[TextCompletion]] {.base.} = discard
 
 let port = 6000
 proc newLanguageServerNimSuggest*(filename: string, saveTempFile: proc(filename: string): Future[void]): LanguageServerNimSuggest =
@@ -118,7 +105,7 @@ proc sendQuery(self: LanguageServerNimSuggest, query: string, location: Cursor):
 
   return results
 
-method getDefinition*(self: LanguageServerNimSuggest, location: Cursor): Future[Option[Definition]] {.async.} =
+method getDefinition*(self: LanguageServerNimSuggest, filename: string, location: Cursor): Future[Option[Definition]] {.async.} =
   let results = await self.sendQuery("def", location)
   for r in results:
     return Definition(location: r.location, filename: r.filename).some
@@ -152,7 +139,7 @@ proc nimSkTypeToDeclarationType(symbolKind: NimSymKind): SymbolType =
   of nskLabel: Unknown
   of nskStub: Unknown
 
-method getCompletions*(self: LanguageServerNimSuggest, location: Cursor): Future[seq[TextCompletion]] {.async.} =
+method getCompletions*(self: LanguageServerNimSuggest, languageId: string, filename: string, location: Cursor): Future[seq[TextCompletion]] {.async.} =
   let results = await self.sendQuery("sug", location)
   var completions: seq[TextCompletion]
   for r in results:
@@ -172,3 +159,141 @@ method getCompletions*(self: LanguageServerNimSuggest, location: Cursor): Future
     )
 
   return completions
+
+var languageServers = initTable[string, LanguageServerLSP]()
+
+proc toPosition*(cursor: Cursor): Position = Position(line: cursor.line, character: cursor.column)
+proc toRange*(selection: Selection): Range = Range(start: selection.first.toPosition, `end`: selection.last.toPosition)
+
+proc getOrCreateLanguageServerLSP*(languageId: string): Future[Option[LanguageServerLSP]] {.async.} =
+  if not languageServers.contains(languageId):
+    let config = getOption[JsonNode](gEditor, "editor.text.lsp." & languageId)
+    if config.isNil:
+      return LanguageServerLSP.none
+    echo config
+
+    if not config.hasKey("path"):
+      return LanguageServerLSP.none
+
+    var client = LSPClient()
+    languageServers[languageId] = LanguageServerLSP(client: client)
+    await client.connect(config["path"].jsonTo string)
+    client.run()
+
+    discard gEditor.onEditorRegistered.subscribe proc(editor: auto) =
+      if not (editor of TextDocumentEditor):
+        return
+
+      let textDocumentEditor = TextDocumentEditor(editor)
+      # echo fmt"EDITOR REGISTERED {textDocumentEditor.document.filename}"
+
+      if textDocumentEditor.document.languageId != languageId:
+        return
+
+      asyncCheck client.notifyOpenedTextDocument(languageId, textDocumentEditor.document.filename, textDocumentEditor.document.contentString)
+      discard textDocumentEditor.document.textInserted.subscribe proc(args: auto) =
+        # echo fmt"TEXT INSERTED {args.document.filename}:{args.location}: {args.text}"
+        let changes = @[TextDocumentContentChangeEvent(`range`: args.location.toSelection.toRange, text: args.text)]
+        asyncCheck client.notifyTextDocumentChanged(args.document.filename, args.document.version, changes)
+
+      discard textDocumentEditor.document.textDeleted.subscribe proc(args: auto) =
+        # echo fmt"TEXT DELETED {args.document.filename}: {args.selection}"
+        let changes = @[TextDocumentContentChangeEvent(`range`: args.selection.toRange)]
+        asyncCheck client.notifyTextDocumentChanged(args.document.filename, args.document.version, changes)
+
+
+    discard gEditor.onEditorDeregistered.subscribe proc(editor: auto) =
+      if not (editor of TextDocumentEditor):
+        return
+
+      let textDocumentEditor = TextDocumentEditor(editor)
+      # echo fmt"EDITOR DEREGISTERED {textDocumentEditor.document.filename}"
+      if textDocumentEditor.document.languageId != languageId:
+        return
+
+      asyncCheck client.notifyClosedTextDocument(textDocumentEditor.document.filename)
+
+    for editor in gEditor.editors.values:
+      if not (editor of TextDocumentEditor):
+        continue
+
+      let textDocumentEditor = TextDocumentEditor(editor)
+      if textDocumentEditor.document.languageId != languageId:
+        continue
+
+      # echo "Register events for ", textDocumentEditor.document.filename
+      asyncCheck client.notifyOpenedTextDocument(languageId, textDocumentEditor.document.filename, textDocumentEditor.document.contentString)
+
+      discard textDocumentEditor.document.textInserted.subscribe proc(args: auto) =
+        # echo fmt"TEXT INSERTED {args.document.filename}:{args.location}: {args.text}"
+        let changes = @[TextDocumentContentChangeEvent(`range`: args.location.toSelection.toRange, text: args.text)]
+        asyncCheck client.notifyTextDocumentChanged(args.document.filename, args.document.version, changes)
+
+      discard textDocumentEditor.document.textDeleted.subscribe proc(args: auto) =
+        # echo fmt"TEXT DELETED {args.document.filename}: {args.selection}"
+        let changes = @[TextDocumentContentChangeEvent(`range`: args.selection.toRange)]
+        asyncCheck client.notifyTextDocumentChanged(args.document.filename, args.document.version, changes)
+
+  return languageServers[languageId].some
+
+
+method start*(self: LanguageServerLSP) = discard
+method stop*(self: LanguageServerLSP) =
+  self.client.close()
+
+method getDefinition*(self: LanguageServerLSP, filename: string, location: Cursor): Future[Option[Definition]] {.async.} =
+  let response = await self.client.getDefinition(filename, location.line, location.column)
+  if response.isError:
+    echo "[LSP] Error: ", response.error
+    return Definition.none
+
+
+  let parsedResponse = response.result
+  echo parsedResponse
+  if parsedResponse.asLocation().getSome(location):
+    return Definition(filename: location.uri.parseUri.path, location: (line: location.`range`.start.line, column: location.`range`.start.character)).some
+
+  if parsedResponse.asLocationSeq().getSome(locations) and locations.len > 0:
+    echo "got location seq"
+    echo locations
+    let location = locations[0]
+    return Definition(filename: location.uri.parseUri.path, location: (line: location.`range`.start.line, column: location.`range`.start.character)).some
+
+  if parsedResponse.asLocationLinkSeq().getSome(locations) and locations.len > 0:
+    echo "got location link seq"
+    let location = locations[0]
+    echo locations
+    echo location
+    return Definition(
+      filename: location.targetUri.parseUri.path,
+      location: (line: location.targetSelectionRange.start.line, column: location.targetSelectionRange.start.character)).some
+
+  echo "No definition found"
+  return Definition.none
+
+
+method getCompletions*(self: LanguageServerLSP, languageId: string, filename: string, location: Cursor): Future[seq[TextCompletion]] {.async.} =
+  let response = await self.client.getCompletions(filename, location.line, location.column)
+  if response.isError:
+    echo "[LSP] Error: ", response.error
+    return @[]
+
+  let completions = response.result
+  echo "[LSP] getCompletions: ", completions.items.len
+  var completionsResult: seq[TextCompletion]
+  for c in completions.items:
+    # echo c
+    completionsResult.add(TextCompletion(
+      name: c.label,
+      scope: "",
+      location: location,
+      filename: "",
+      kind: SymbolType.Function,
+      typ: "",
+      doc: ""
+    ))
+
+    # if completionsResult.len == 10:
+    #   break
+
+  return completionsResult
