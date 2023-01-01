@@ -2,11 +2,6 @@ import json, strutils, tables, options, macros, uri
 import myjsonutils
 
 macro variant(name: untyped, types: varargs[untyped]): untyped =
-  # defer:
-  #   # echo result.treeRepr
-  #   echo result.repr
-
-
   var variantType = quote do:
     type `name`* = object
       node: JsonNode
