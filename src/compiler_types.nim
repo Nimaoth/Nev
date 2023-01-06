@@ -113,6 +113,7 @@ type
     selectedNode*: Id
     replacements*: Table[Id, VisualNode]
     revision*: int
+    renderDivisionVertically*: bool
 
   RenderTextInput* = object
     id*: Id
@@ -449,6 +450,7 @@ func `==`*(a: NodeLayoutInput, b: NodeLayoutInput): bool =
   if a.node != b.node: return false
   if a.selectedNode != b.selectedNode: return false
   if a.replacements != b.replacements: return false
+  if a.renderDivisionVertically != b.renderDivisionVertically: return false
   return true
 
 proc newRenderTextInput*(ctx: RenderContext, text: string, font: string, fontSize: float32, lineHeight: float32, charWidth: float32, imageId: string = "", bounds: Vec2 = Vec2()): RenderTextInput =

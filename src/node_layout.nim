@@ -433,7 +433,7 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
       let precedence = ctx.getPrecedenceForNode node
       let renderParens = precedence < parentPrecedence
 
-      if isDivision:
+      if isDivision and not input.renderDivisionVertically:
         createInlineBlock(true, node, line, result)
 
         var parent = line.parent
