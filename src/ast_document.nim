@@ -1,7 +1,7 @@
-import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros, macrocache, options, deques, sets, json, jsonutils, sequtils, streams]
+import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros, macrocache, options, deques, sets, json, jsonutils, sequtils, streams, os, asyncdispatch]
 import timer
 import fusion/matching, fuzzy, bumpy, rect_utils, vmath, chroma, windy
-import editor, util, document, document_editor, text_document, events, id, ast_ids, ast, scripting, event
+import editor, util, document, document_editor, text_document, events, id, ast_ids, ast, scripting, event, theme
 import compiler
 import nimscripter
 from scripting_api as api import nil
@@ -148,6 +148,8 @@ type
     filename*: string
     symbols*: Table[Id, Symbol]
     rootNode*: AstNode
+
+    nodes*: Table[Id, AstNode]
 
     onNodeInserted*: seq[OnNodeInserted]
 
@@ -352,6 +354,14 @@ proc newAstDocument*(filename: string = ""): AstDocument =
     except:
       logger.log lvlError, fmt"[astdoc] Failed to load ast source file '{result.filename}'"
 
+import html_renderer
+
+proc saveHtml*(self: AstDocument) =
+  let pathParts = self.filename.splitFile
+  let htmlPath = pathParts.dir / (pathParts.name & ".html")
+  let html = self.serializeHtml(gEditor.theme)
+  writeFile(htmlPath, html)
+
 method save*(self: AstDocument, filename: string = "") =
   self.filename = if filename.len > 0: filename else: self.filename
   if self.filename.len == 0:
@@ -360,6 +370,8 @@ method save*(self: AstDocument, filename: string = "") =
   logger.log lvlInfo, fmt"[astdoc] Saving ast source file '{self.filename}'"
   let serialized = self.rootNode.toJson
   writeFile(self.filename, serialized.pretty)
+
+  self.saveHtml()
 
 method load*(self: AstDocument, filename: string = "") =
   let filename = if filename.len > 0: filename else: self.filename
@@ -378,6 +390,8 @@ method load*(self: AstDocument, filename: string = "") =
   ctx.insertNode(self.rootNode)
   self.undoOps.setLen 0
   self.redoOps.setLen 0
+
+  self.saveHtml()
 
 iterator nextPreOrder*(self: AstDocument, node: AstNode, endNode: AstNode = nil): tuple[key: int, value: AstNode] =
   var n = node
@@ -485,6 +499,10 @@ proc handleNodeInserted*(doc: AstDocument, node: AstNode) =
   for handler in doc.onNodeInserted:
     handler(doc, node)
 
+  doc.nodes[node.id] = node
+  for (key, child) in node.nextPreOrder:
+    doc.nodes[child.id] = child
+
 proc insertNode*(document: AstDocument, node: AstNode, index: int, newNode: AstNode): Option[AstNode]
 
 proc handleNodeDelete*(doc: AstDocument, node: AstNode) =
@@ -502,6 +520,8 @@ proc handleNodeDelete*(doc: AstDocument, node: AstNode) =
       for id in ctx.diagnosticsPerQuery[key]:
         ctx.diagnosticsPerNode[id].queries.del key
       ctx.diagnosticsPerQuery.del(key)
+
+  doc.nodes.del node.id
 
 proc handleNodeInserted*(self: AstDocumentEditor, doc: AstDocument, node: AstNode) =
   logger.log lvlInfo, fmt"[asteditor] Node inserted: {node}, {self.deletedNode}"
@@ -1974,6 +1994,13 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
   ctx.insertNode(editor.document.rootNode)
 
   editor.node = editor.document.rootNode[0]
+
+  # editor.document.saveHtml()
+  proc saveAsync() {.async.} =
+    await sleepAsync(500)
+    editor.document.saveHtml()
+
+  asyncCheck saveAsync()
 
   return editor
 
