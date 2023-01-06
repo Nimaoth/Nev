@@ -1,4 +1,4 @@
-import json, strutils, tables, options, macros, uri
+import json, strutils, tables, options, macros
 import myjsonutils
 
 macro variant(name: untyped, types: varargs[untyped]): untyped =

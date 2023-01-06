@@ -219,7 +219,6 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
 
   let printScope = ed.getFlag("text.print-scopes")
   let lineDistance = getOption[float32](ed, "text.line-distance", 2)
-  let horizontalSizeModifier: float32 = 0.6
 
   block:
     editor.previousBaseIndex = editor.previousBaseIndex.clamp(0..editor.document.lines.len)

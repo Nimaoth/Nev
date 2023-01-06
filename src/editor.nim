@@ -219,15 +219,15 @@ proc getOption*[T](editor: Editor, path: string, default: T = T.default): T =
       accessor(node, defaultValue)
 
   when T is bool:
-    return editor.createScriptGetOption(path, default, getBool)
+    return createScriptGetOption(editor, path, default, getBool)
   elif T is enum:
-    return parseEnum[T](editor.createScriptGetOption(path, "", getStr), default)
+    return parseEnum[T](createScriptGetOption(editor, path, "", getStr), default)
   elif T is Ordinal:
-    return editor.createScriptGetOption(path, default, getInt)
+    return createScriptGetOption(editor, path, default, getInt)
   elif T is float32 | float64:
-    return editor.createScriptGetOption(path, default, getFloat)
+    return createScriptGetOption(editor, path, default, getFloat)
   elif T is string:
-    return editor.createScriptGetOption(path, default, getStr)
+    return createScriptGetOption(editor, path, default, getStr)
   elif T is JsonNode:
     if editor.isNil:
       return default
