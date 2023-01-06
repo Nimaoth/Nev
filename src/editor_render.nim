@@ -1,4 +1,4 @@
-import std/[strformat, tables, algorithm, math, sugar, strutils, options]
+import std/[strformat, tables, algorithm, math, sugar, strutils, options, sequtils]
 import timer
 import boxy, windy, pixie/fonts, chroma, fusion/matching
 import util, input, events, editor, popup, rect_utils, document_editor, text_document, ast_document, keybind_autocomplete, id, ast, theme, text_renderer
@@ -100,6 +100,8 @@ proc clampToLine(selection: Selection, line: int, lineLength: int): tuple[first:
   result.last = if selection.last.line < line: 0 elif selection.last.line == line: selection.last.column else: lineLength
 
 proc renderTextHighlight(ed: Editor, bounds: Rect, line: int, startIndex: int, selection: Selection, selectionClamped: tuple[first: int, last: int], part: StyledText, color: Color, lineDistance: float32) =
+  ## Fills a selection rect in the given color
+
   if (startIndex < selectionClamped.last and startIndex + part.text.len > selectionClamped.first and part.text.len > 0):
     let startOffset = max(0, selectionClamped.first - startIndex).float32 / (part.text.len.float32 - 0) * bounds.w
     let endOffset = min(part.text.len, selectionClamped.last - startIndex).float32 / (part.text.len.float32 - 0) * bounds.w
@@ -108,6 +110,11 @@ proc renderTextHighlight(ed: Editor, bounds: Rect, line: int, startIndex: int, s
   elif part.text.len == 0 and selection.contains((line, startIndex)) and not selection.isEmpty:
     let highlightRect = rect(bounds.xy - vec2(0, lineDistance * 0.5), vec2(ed.renderCtx.charWidth * 0.5, bounds.h - textExtraHeight + lineDistance))
     ed.boxy.fillRect(highlightRect, color)
+
+proc renderTextHighlight(ed: Editor, bounds: Rect, line: int, startIndex: int, selections: openArray[Selection], selectionClamped: openArray[tuple[first: int, last: int]], part: StyledText, color: Color, lineDistance: float32) =
+  ## Fills selections rect in the given color
+  for i in 0..<selections.len:
+    ed.renderTextHighlight(bounds, line, startIndex, selections[i], selectionClamped[i], part, color, lineDistance)
 
 proc renderTextCompletions(ed: Editor, completions: seq[TextCompletion], selected: int, bounds: Rect, contentBounds: Rect, fill: bool, renderedItems: var seq[tuple[index: int, bounds: Rect]]): Rect =
   result = bounds.xyRect
@@ -240,13 +247,20 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
       editor.scrollOffset -= lineHeight + lineDistance
 
   let selection = editor.selection
-  let nodeRange = editor.selection.normalized
+  let selectionNormalized = selection.normalized
+
+  let selections = editor.selections
+  var selectionsPerLine = initTable[int, seq[Selection]]()
+  for s in selections:
+    let sn = s.normalized
+    for line in sn.first.line..sn.last.line:
+      selectionsPerLine.mgetOrPut(line, @[]).add s
 
   let showNodeHighlight = getOption[bool](ed, "text.show-node-highlight")
   let nodeHighlightParentIndex = getOption[int](ed, "text.node-highlight-parent-index", 0)
   let nodeHighlightSiblingIndex = getOption[int](ed, "text.node-highlight-sibling-index", 0)
   let highlightRange = if showNodeHighlight:
-    editor.document.getNodeRange(nodeRange, nodeHighlightParentIndex, nodeHighlightSiblingIndex)
+    editor.document.getNodeRange(selectionNormalized, nodeHighlightParentIndex, nodeHighlightSiblingIndex)
   else:
     Selection.none
 
@@ -265,6 +279,7 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
   proc renderLine(i: int, down: bool): bool =
     var styledText = document.getStyledText(i)
 
+    # Pixel coordinate of the top left corner of the entire line. Includes line number
     let topLeftOffset = vec2(contentBounds.x, contentBounds.y + (i - editor.previousBaseIndex).float32 * (ed.renderCtx.lineHeight + lineDistance) + editor.scrollOffset)
 
     const lineNumberPadding = 10
@@ -283,13 +298,18 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
       else:
         discard
 
-    var lastBounds = rect(topLeftOffset + vec2(lineNumberBounds.w, 0), vec2())
+    # Pixel coordinate of the top left corner of the actual text of the line
+    let lineContentOffset = topLeftOffset + vec2(lineNumberBounds.w, 0)
+
+    # Bounds of the previous line part
+    var lastBounds = rect(lineContentOffset, vec2())
     if lastBounds.y > bounds.yh:
       return not down
     if lastBounds.y + ed.ctx.fontSize * 2 < 0:
       return down
 
-    let selectionOnLine = nodeRange.clampToLine(i, styledText.len)
+    let selectionsNormalizedOnLine = selectionsPerLine.getOrDefault(i, @[]).map (s) => s.normalized
+    let selectionsClampedOnLine = selectionsNormalizedOnLine.map (s) => s.clampToLine(i, styledText.len)
     let highlightRangeClamped = highlightRange.map h => h.clampToLine(i, styledText.len)
 
     var startIndex = 0
@@ -300,7 +320,7 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
 
       # Draw background if selected
       let selectionColor = ed.theme.color("selection.background", rgb(200, 200, 200))
-      ed.renderTextHighlight(bounds, i, startIndex, nodeRange, selectionOnLine, part, selectionColor, lineDistance)
+      ed.renderTextHighlight(bounds, i, startIndex, selectionsNormalizedOnLine, selectionsClampedOnLine, part, selectionColor, lineDistance)
 
       if highlightRangeClamped.getSome(highlightRangeClamped):
         ed.renderTextHighlight(bounds, i, startIndex, highlightRange.get, highlightRangeClamped, part, ed.theme.color("selection.background", rgb(200, 200, 200)), lineDistance)
@@ -310,11 +330,12 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
 
       # Set last cursor pos if it's contained in this part
       let cursorColor = ed.theme.color(@["editorCursor.foreground", "foreground"], rgba(255, 255, 255, 127))
-      if selection.last.line == i and selection.last.column >= startIndex and selection.last.column <= startIndex + part.text.len:
-        let startOffset = if part.text.len == 0: 0.0 else: max(0, selection.last.column - startIndex).float32 / (part.text.len.float32 - 0) * bounds.w
-        let lastCursorPos = bounds.xy + vec2(startOffset, 0)
-        cursorBounds = rect(lastCursorPos, vec2(ed.renderCtx.charWidth * cursorWidth, ed.renderCtx.lineHeight))
-        ed.boxy.fillRect(cursorBounds, cursorColor)
+      for selection in selectionsPerLine.getOrDefault(i, @[]):
+        if selection.last.line == i and selection.last.column >= startIndex and selection.last.column <= startIndex + part.text.len:
+          let startOffset = if part.text.len == 0: 0.0 else: max(0, selection.last.column - startIndex).float32 / (part.text.len.float32 - 0) * bounds.w
+          let lastCursorPos = bounds.xy + vec2(startOffset, 0)
+          cursorBounds = rect(lastCursorPos, vec2(ed.renderCtx.charWidth * cursorWidth, ed.renderCtx.lineHeight))
+          ed.boxy.fillRect(cursorBounds, cursorColor)
 
       # Draw the actual text
       ed.renderCtx.boxy.drawImage(image, bounds.xy, color)

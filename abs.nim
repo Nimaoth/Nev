@@ -128,6 +128,12 @@ proc selection*(editor: TextDocumentEditor): Selection =
 proc `selection=`*(editor: TextDocumentEditor, selection: Selection) =
   scriptSetTextEditorSelection(editor.id, selection)
 
+proc selections*(editor: TextDocumentEditor): seq[Selection] =
+  return scriptTextEditorSelections(editor.id)
+
+proc `selections=`*(editor: TextDocumentEditor, selection: seq[Selection]) =
+  scriptSetTextEditorSelections(editor.id, selection)
+
 proc getLine*(editor: TextDocumentEditor, line: int): string =
   return scriptGetTextEditorLine(editor.id, line)
 

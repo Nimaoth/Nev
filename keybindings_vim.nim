@@ -176,13 +176,13 @@ proc loadVimBindings*() =
     setOption("text.move-next-mode", "visual")
 
   addTextCommandBlock "visual", "d":
-    editor.selection = editor.delete(editor.selection).toSelection
+    editor.selections = editor.delete(editor.selections)
     editor.setMode("")
     editor.scrollToCursor(Last)
     editor.updateTargetColumn(Last)
 
   addTextCommandBlock "visual", "c":
-    editor.selection = editor.delete(editor.selection).toSelection
+    editor.selections = editor.delete(editor.selections)
     editor.setMode("insert")
     editor.scrollToCursor(Last)
     editor.updateTargetColumn(Last)
@@ -197,13 +197,13 @@ proc loadVimBindings*() =
     setOption("text.move-next-mode", "visual-temp")
 
   addTextCommandBlock "visual", "d":
-    editor.selection = editor.delete(editor.selection).toSelection
+    editor.selections = editor.delete(editor.selections)
     editor.setMode("")
     editor.scrollToCursor(Last)
     editor.updateTargetColumn(Last)
 
   addTextCommandBlock "visual", "c":
-    editor.selection = editor.delete(editor.selection).toSelection
+    editor.selections = editor.delete(editor.selections)
     editor.setMode("insert")
     editor.scrollToCursor(Last)
     editor.updateTargetColumn(Last)
