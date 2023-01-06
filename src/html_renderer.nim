@@ -1,10 +1,8 @@
-import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros, macrocache, options, deques, sets, json, jsonutils, sequtils, streams, os, asyncdispatch]
-import timer
-import fusion/matching, fuzzy, bumpy, rect_utils, vmath, chroma, windy
-import editor, util, document, document_editor, text_document, events, id, ast_ids, ast, scripting, event, theme, ast_document
+import std/[strformat, tables, options, sequtils, os]
+import fusion/matching, chroma
+import util, id, ast, theme, ast_document
 import compiler
 import nimscripter
-from scripting_api as api import nil
 
 proc serializeNodeHtml(self: AstDocument, node: AstNode): string =
   let dq = "\""
@@ -104,7 +102,6 @@ proc serializeLayoutHtml(self: AstDocument, layout: NodeLayout, theme: Theme): s
     result.add fmt("</div>")
 
 proc serializeHtml*(self: AstDocument, theme: Theme): string =
-  let rootHtml = self.serializeNodeHtml(self.rootNode)
   let title = self.filename.splitFile.name
 
   var body = ""

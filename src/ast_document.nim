@@ -1,4 +1,4 @@
-import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros, macrocache, options, deques, sets, json, jsonutils, sequtils, streams, os, asyncdispatch]
+import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros, macrocache, options, deques, sets, json, jsonutils, sequtils, streams, os]
 import timer
 import fusion/matching, fuzzy, bumpy, rect_utils, vmath, chroma, windy
 import editor, util, document, document_editor, text_document, events, id, ast_ids, ast, scripting, event, theme
@@ -1994,13 +1994,6 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
   ctx.insertNode(editor.document.rootNode)
 
   editor.node = editor.document.rootNode[0]
-
-  # editor.document.saveHtml()
-  proc saveAsync() {.async.} =
-    await sleepAsync(500)
-    editor.document.saveHtml()
-
-  asyncCheck saveAsync()
 
   return editor
 

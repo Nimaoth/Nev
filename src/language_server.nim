@@ -1,4 +1,4 @@
-import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, os, re, tables, deques, asyncdispatch, osproc, asyncnet, tempfiles, macros, uri]
+import std/[strutils, options, json, jsonutils, os, tables, asyncdispatch, osproc, asyncnet, tempfiles, macros, uri]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import lsp_client, language_server_base, event, util
 import editor, text_document

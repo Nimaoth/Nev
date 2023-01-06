@@ -1,4 +1,4 @@
-import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, os, re, tables, deques, asyncdispatch, osproc, asyncnet, asyncfile]
+import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, os, re, tables, deques, asyncdispatch, asyncfile]
 import editor, document, document_editor, events, id, util, scripting, vmath, bumpy, rect_utils, language_server_base, event
 import windy except Cursor
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
@@ -45,7 +45,7 @@ type
       cursor: Cursor
       text: string
 
-proc `$`(op: UndoOp): string =
+proc `$`*(op: UndoOp): string =
   result = fmt"{op.kind} ({op.oldSelection})"
   if op.kind == Delete: result.add fmt", selection = {op.selection}"
   if op.kind == Insert: result.add fmt", cursor = {op.cursor}, text: '{op.text}'"
@@ -243,7 +243,7 @@ proc `content=`*(self: TextDocument, value: string) =
     if self.lines.len == 0:
       self.lines = @[""]
     if not self.tsParser.isNil:
-      self.currentTree = self.tsParser.tsParserParseString(nil, self.lines[0], self.lines[0].len.uint32)
+      self.currentTree = self.tsParser.tsParserParseString(nil, cast[cstring](self.lines[0]), self.lines[0].len.uint32)
   else:
     self.lines = value.splitLines
     if self.lines.len == 0:
@@ -267,7 +267,7 @@ proc `content=`*(self: TextDocument, value: seq[string]) =
   let strValue = value.join("\n")
 
   if not self.tsParser.isNil:
-    self.currentTree = self.tsParser.tsParserParseString(nil, strValue, strValue.len.uint32)
+    self.currentTree = self.tsParser.tsParserParseString(nil, cast[cstring](strValue), strValue.len.uint32)
 
   inc self.version
 
@@ -529,7 +529,7 @@ proc initTreesitter(self: TextDocument) =
     let queryString = readFile(fmt"./languages/{languageId}/queries/highlights.scm")
     var errorOffset: uint32 = 0
     var queryError: ts.TSQueryError = ts.TSQueryErrorNone
-    self.highlightQuery = language.tsQueryNew(queryString, queryString.len.uint32, addr errorOffset, addr queryError)
+    self.highlightQuery = language.tsQueryNew(cast[cstring](queryString), queryString.len.uint32, addr errorOffset, addr queryError)
     if queryError != ts.TSQueryErrorNone:
       logger.log(lvlError, fmt"[textedit] {queryError} at byte {errorOffset}: {queryString}")
   except:
@@ -639,7 +639,7 @@ proc delete(self: TextDocument, selection: Selection, oldSelection: Selection, n
     )
     self.currentTree.tsTreeEdit(addr edit)
     let strValue = self.lines.join("\n")
-    self.currentTree = self.tsParser.tsParserParseString(self.currentTree, strValue, strValue.len.uint32)
+    self.currentTree = self.tsParser.tsParserParseString(self.currentTree, cast[cstring](strValue), strValue.len.uint32)
     # echo self.currentTree.root
 
   inc self.version
@@ -756,7 +756,7 @@ proc insert(self: TextDocument, oldCursor: Cursor, oldSelection: Selection, text
     )
     self.currentTree.tsTreeEdit(addr edit)
     let strValue = self.lines.join("\n")
-    self.currentTree = self.tsParser.tsParserParseString(self.currentTree, strValue, strValue.len.uint32)
+    self.currentTree = self.tsParser.tsParserParseString(self.currentTree, cast[cstring](strValue), strValue.len.uint32)
 
   if autoIndent:
     for line in newEmptyLines:
