@@ -1,3 +1,5 @@
+import std/[algorithm, sequtils, sugar]
+
 type
   EditorId* = distinct int
   PopupId* = distinct int
@@ -14,6 +16,14 @@ type Cursor* = tuple[line, column: int]
 type Selection* = tuple[first, last: Cursor]
 type SelectionCursor* = enum Config = "config", Both = "both", First = "first", Last = "last", LastToFirst = "last-to-first"
 type LineNumbers* = enum None = "none", Absolute = "Absolute", Relative = "relative"
+
+type Selections* = seq[Selection]
+
+proc normalize*(self: var Selections) =
+  self.sort
+
+proc normalized*(self: Selections): Selections =
+  return self.sorted
 
 var nextEditorId = 0
 proc newEditorId*(): EditorId =
@@ -77,6 +87,9 @@ func isEmpty*(selection: Selection): bool = selection.first == selection.last
 func contains*(selection: Selection, cursor: Cursor): bool = (cursor >= selection.first and cursor <= selection.last)
 func contains*(selection: Selection, other: Selection): bool = (other.first >= selection.first and other.last <= selection.last)
 
+func contains*(self: Selections, cursor: Cursor): bool = self.`any` (s) => s.contains(cursor)
+func contains*(self: Selections, other: Selection): bool = self.`any` (s) => s.contains(other)
+
 func `or`*(a: Selection, b: Selection): Selection =
   let an = a.normalized
   let bn = b.normalized
@@ -92,3 +105,41 @@ func toSelection*(cursor: Cursor, default: Selection, which: SelectionCursor): S
   of First: return (cursor, default.last)
   of Last: return (default.first, cursor)
   of LastToFirst: return (default.last, cursor)
+
+func subtract*(cursor: Cursor, selection: Selection): Cursor =
+  if cursor <= selection.first:
+    # cursor before selection
+    return cursor
+  if cursor <= selection.last:
+    # cursor inside selection
+    return selection.first
+  if cursor.line == selection.last.line:
+    # cursor after selection but on same line as end
+    if selection.first.line == selection.last.line:
+      return (cursor.line, cursor.column - (selection.last.column - selection.first.column))
+    else:
+      return (selection.first.line, selection.first.column + (cursor.column - selection.last.column))
+  return (cursor.line - (selection.last.line - selection.first.line), cursor.column)
+
+func subtract*(self: Selection, other: Selection): Selection =
+  return (self.first.subtract(other), self.last.subtract(other))
+
+func add*(cursor: Cursor, selection: Selection): Cursor =
+  if cursor <= selection.first:
+    # cursor before selection
+    return cursor
+  # cursor after start of selection
+  if selection.first.line == selection.last.line:
+    if cursor.line == selection.first.line:
+      return (cursor.line, cursor.column + (selection.last.column - selection.first.column))
+    else:
+      return cursor
+  elif cursor.line == selection.first.line:
+    # cursor is on same line as start of selection
+    return (selection.last.line, selection.last.column + (cursor.column - selection.first.column))
+  else:
+    # cursor is on line after start of selection
+    return (cursor.line + (selection.last.line - selection.first.line), cursor.column)
+
+func add*(self: Selection, other: Selection): Selection =
+  return (self.first.add(other), self.last.add(other))

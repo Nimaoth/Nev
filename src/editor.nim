@@ -363,7 +363,7 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
   self.theme = defaultTheme()
   self.setTheme("./themes/tokyo-night-color-theme.json")
 
-  self.createView(newAstDocument("a.ast"))
+  # self.createView(newAstDocument("a.ast"))
   # self.createView(newKeybindAutocompletion())
   self.currentView = 0
 
@@ -894,6 +894,22 @@ proc scriptSetTextEditorSelection*(editorId: EditorId, selection: Selection) =
     if editor of TextDocumentEditor:
       editor.TextDocumentEditor.selection = selection
 
+proc scriptTextEditorSelections*(editorId: EditorId): seq[Selection] =
+  if gEditor.isNil:
+    return @[((0, 0), (0, 0))]
+  if gEditor.getEditorForId(editorId).getSome(editor):
+    if editor of TextDocumentEditor:
+      let editor = TextDocumentEditor(editor)
+      return editor.selections
+  return @[((0, 0), (0, 0))]
+
+proc scriptSetTextEditorSelections*(editorId: EditorId, selections: seq[Selection]) =
+  if gEditor.isNil:
+    return
+  if gEditor.getEditorForId(editorId).getSome(editor):
+    if editor of TextDocumentEditor:
+      editor.TextDocumentEditor.selections = selections
+
 proc scriptGetTextEditorLine*(editorId: EditorId, line: int): string =
   if gEditor.isNil:
     return ""
@@ -984,6 +1000,8 @@ proc createAddins(): VmAddins =
     scriptIsAstEditor,
     scriptTextEditorSelection,
     scriptSetTextEditorSelection,
+    scriptTextEditorSelections,
+    scriptSetTextEditorSelections,
     scriptGetTextEditorLine,
     scriptGetTextEditorLineCount,
     scriptGetOptionInt,

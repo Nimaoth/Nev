@@ -1,5 +1,5 @@
 include abs
-import std/[strutils, sugar, streams]
+import std/[strutils, sugar, sequtils]
 
 proc loadNormalBindings*()
 proc loadVimBindings*()
@@ -179,17 +179,19 @@ proc handleTextEditorAction(editor: TextDocumentEditor, action: string, args: Js
 
     # echo fmt"delete-move {arg}, {which}, {count}, {inside}"
 
-    var selection = editor.getSelectionForMove(editor.selection.last, arg, count)
-    if not inside:
-      selection.first = editor.selection.last
-    editor.selection = editor.delete(selection).toSelection
+    let selections = editor.selections.map (s) => (if inside:
+      editor.getSelectionForMove(s.last, arg, count)
+    else:
+      (s.last, editor.getSelectionForMove(s.last, arg, count).last))
+
+    editor.selections = editor.delete(selections)
     editor.scrollToCursor(Last)
     editor.updateTargetColumn(Last)
 
   of "select-move":
     let arg = args[0].str
     let count = getOption[int]("text.move-count")
-    editor.selection = editor.getSelectionForMove(editor.selection.last, arg, count)
+    editor.selections = editor.selections.map (s) => editor.getSelectionForMove(s.last, arg, count)
     editor.scrollToCursor(Last)
     editor.updateTargetColumn(Last)
 
@@ -197,38 +199,37 @@ proc handleTextEditorAction(editor: TextDocumentEditor, action: string, args: Js
     let arg = args[0].str
     let count = getOption[int]("text.move-count")
     let inside = editor.getFlag("move-inside")
-    var selection = editor.getSelectionForMove(editor.selection.last, arg, count)
-    if not inside:
-      selection.first = editor.selection.last
-    editor.selection = editor.delete(selection).toSelection
+
+    let selections = editor.selections.map (s) => (if inside:
+      editor.getSelectionForMove(s.last, arg, count)
+    else:
+      (s.last, editor.getSelectionForMove(s.last, arg, count).last))
+
+    editor.selections = editor.delete(selections)
     editor.scrollToCursor(Last)
     editor.updateTargetColumn(Last)
 
   of "move-last":
     let arg = args[0].str
     let which = if args.len < 2: Config else: parseEnum[SelectionCursor](args[1].str, Config)
-    let selection = editor.selection
-    let targetRange = editor.getSelectionForMove(selection.cursor(which), arg)
 
     case which
     of Config:
-      editor.selection = targetRange.last.toSelection(selection, getOption(editor.getContextWithMode("editor.text.cursor.movement"), Both))
+      editor.selections = editor.selections.map (s) => editor.getSelectionForMove(s.cursor(which), arg).last.toSelection(s, getOption(editor.getContextWithMode("editor.text.cursor.movement"), Both))
     else:
-      editor.selection = targetRange.last.toSelection(selection, which)
+      editor.selections = editor.selections.map (s) => editor.getSelectionForMove(s.cursor(which), arg).last.toSelection(s, which)
     editor.scrollToCursor(which)
     editor.updateTargetColumn(which)
 
   of "move-first":
     let arg = args[0].str
     let which = if args.len < 2: Config else: parseEnum[SelectionCursor](args[1].str, Config)
-    let selection = editor.selection
-    let targetRange = editor.getSelectionForMove(selection.cursor(which), arg)
 
     case which
     of Config:
-      editor.selection = targetRange.first.toSelection(selection, getOption(editor.getContextWithMode("editor.text.cursor.movement"), Both))
+      editor.selections = editor.selections.map (s) => editor.getSelectionForMove(s.cursor(which), arg).first.toSelection(s, getOption(editor.getContextWithMode("editor.text.cursor.movement"), Both))
     else:
-      editor.selection = targetRange.first.toSelection(selection, which)
+      editor.selections = editor.selections.map (s) => editor.getSelectionForMove(s.cursor(which), arg).first.toSelection(s, which)
     editor.scrollToCursor(which)
     editor.updateTargetColumn(which)
 
