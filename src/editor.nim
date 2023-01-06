@@ -596,7 +596,7 @@ proc chooseTheme*(self: Editor) {.expose("editor").} =
   var popup = self.newSelectorPopup proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
     for file in walkDirRec("./themes", relative=true):
       if file.endsWith ".json":
-        let name = file.splitFile[1]
+        let name = file.splitFile.name
         let score = fuzzyMatchSmart(text, name)
         result.add ThemeSelectorItem(name: name, path: fmt"./themes/{file}", score: score)
 
@@ -619,7 +619,7 @@ proc chooseTheme*(self: Editor) {.expose("editor").} =
 proc chooseFile*(self: Editor, view: string = "new") {.expose("editor").} =
   var popup = self.newSelectorPopup proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
     for file in walkDirRec(".", relative=true):
-      let name = file.splitFile[1]
+      let name = file.splitFile.name
       let score = fuzzyMatchSmart(text, name)
       result.add FileSelectorItem(path: fmt"./{file}", score: score)
 
