@@ -119,6 +119,9 @@ proc runAction*(id: EditorId, action: string, arg: string = "") =
 proc runAction*(id: PopupId, action: string, arg: string = "") =
   scriptRunActionForPopup(id, action, arg)
 
+proc runAction*(editor: TextDocumentEditor, action: string, arg: string = "") =
+  scriptRunActionFor(editor.id, action, arg)
+
 proc insertText*(editor: AnyDocumentEditor, text: string) =
   scriptInsertTextInto(editor.id, text)
 

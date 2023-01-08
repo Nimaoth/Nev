@@ -91,6 +91,10 @@ type TextDocumentEditor* = ref object of DocumentEditor
   selectionsInternal: Selections
   selectionHistory: Deque[Selections]
 
+  searchQuery*: string
+  searchRegex*: Option[Regex]
+  searchResults*: Table[int, seq[Selection]]
+
   targetColumn: int
   hideCursorWhenInactive*: bool
 
@@ -680,7 +684,9 @@ proc delete(self: TextDocument, selections: openArray[Selection], oldSelection: 
 
     if notify:
       self.textDeleted.invoke((self, selection))
-      self.notifyTextChanged()
+
+  if notify:
+    self.notifyTextChanged()
 
   if record and undoOp.children.len > 0:
     self.undoOps.add undoOp
@@ -813,7 +819,9 @@ proc insert(self: TextDocument, selections: openArray[Selection], oldSelection: 
 
     if notify:
       self.textInserted.invoke((self, oldCursor, text))
-      self.notifyTextChanged()
+
+  if notify:
+    self.notifyTextChanged()
 
   if record and undoOp.children.len > 0:
     self.undoOps.add undoOp
@@ -901,8 +909,29 @@ method getEventHandlers*(self: TextDocumentEditor): seq[EventHandler] =
   if self.showCompletions:
     result.add self.completionEventHandler
 
+proc updateSearchResults(self: TextDocumentEditor) =
+  if self.searchRegex.isNone:
+    self.searchResults.clear()
+    return
+
+  for i, line in self.document.lines:
+    var selections: seq[Selection] = @[]
+    var start = 0
+    while start < line.len:
+      let bounds = line.findBounds(self.searchRegex.get, start)
+      if bounds.first == -1:
+        break
+      selections.add ((i, bounds.first), (i, bounds.last + 1))
+      start = bounds.last + 1
+
+    if selections.len > 0:
+      self.searchResults[i] = selections
+    else:
+      self.searchResults.del i
+
 method handleDocumentChanged*(self: TextDocumentEditor) =
   self.selection = (self.clampCursor self.selection.first, self.clampCursor self.selection.last)
+  self.updateSearchResults()
 
 proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor =
   var cursor = cursor
@@ -944,6 +973,15 @@ proc doMoveCursorHome(self: TextDocumentEditor, cursor: Cursor, offset: int): Cu
 proc doMoveCursorEnd(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor =
   return (cursor.line, self.document.lineLength cursor.line)
 
+proc getPrevFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0): Selection
+proc getNextFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0): Selection
+
+proc doMoveCursorPrevFindResult(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor =
+  return self.getPrevFindResult(cursor, offset).first
+
+proc doMoveCursorNextFindResult(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor =
+  return self.getNextFindResult(cursor, offset).first
+
 proc scrollToCursor(self: TextDocumentEditor, cursor: Cursor) =
   let targetLine = cursor.line
   let totalLineHeight = self.editor.renderCtx.lineHeight + getOption[float32](self.editor, "text.line-distance")
@@ -983,28 +1021,36 @@ proc moveCursor(self: TextDocumentEditor, cursor: SelectionCursor, movement: pro
     if all:
       self.selections = self.selections.map (s) => movement(self, s.last, offset).toSelection
     else:
-      self.selection = movement(self, self.selection.last, offset).toSelection
+      var selections = self.selections
+      selections[selections.high] = movement(self, selections[selections.high].last, offset).toSelection
+      self.selections = selections
     self.scrollToCursor(self.selection.last)
 
   of First:
     if all:
       self.selections = self.selections.map (s) => (movement(self, s.first, offset), s.last)
     else:
-      self.selection = (movement(self, self.selection.first, offset), self.selection.last)
+      var selections = self.selections
+      selections[selections.high] = (movement(self, selections[selections.high].first, offset), selections[selections.high].last)
+      self.selections = selections
     self.scrollToCursor(self.selection.first)
 
   of Last:
     if all:
       self.selections = self.selections.map (s) => (s.first, movement(self, s.last, offset))
     else:
-      self.selection = (self.selection.first, movement(self, self.selection.last, offset))
+      var selections = self.selections
+      selections[selections.high] = (selections[selections.high].first, movement(self, selections[selections.high].last, offset))
+      self.selections = selections
     self.scrollToCursor(self.selection.last)
 
   of LastToFirst:
     if all:
       self.selections = self.selections.map (s) => (s.last, movement(self, s.last, offset))
     else:
-      self.selection = (self.selection.last, movement(self, self.selection.last, offset))
+      var selections = self.selections
+      selections[selections.high] = (selections[selections.high].last, movement(self, selections[selections.high].last, offset))
+      self.selections = selections
     self.scrollToCursor(self.selection.last)
 
 method handleScroll*(self: TextDocumentEditor, scroll: Vec2, mousePosWindow: Vec2) =
@@ -1139,7 +1185,8 @@ proc scrollText(self: TextDocumentEditor, amount: float32) {.expose("editor.text
   self.scrollOffset += amount
 
 proc duplicateLastSelection*(self: TextDocumentEditor) {.expose("editor.text").} =
-  self.selections = self.selections & @[self.selections[self.selections.high]]
+  let newSelection = self.doMoveCursorColumn(self.selections[self.selections.high].last, 1).toSelection
+  self.selections = self.selections & @[newSelection]
 
 proc addCursorBelow*(self: TextDocumentEditor) {.expose("editor.text").} =
   let newCursor = self.doMoveCursorLine(self.selections[self.selections.high].last, 1).toSelection
@@ -1150,6 +1197,42 @@ proc addCursorAbove*(self: TextDocumentEditor) {.expose("editor.text").} =
   let newCursor = self.doMoveCursorLine(self.selections[self.selections.high].last, -1).toSelection
   if not self.selections.contains(newCursor):
     self.selections = self.selections & @[newCursor]
+
+proc getPrevFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0): Selection {.expose("editor.text").} =
+  var i = 0
+  for line in countdown(cursor.line, 0):
+    if self.searchResults.contains(line):
+      let selections = self.searchResults[line]
+      for k in countdown(selections.high, 0):
+        if selections[k].last < cursor:
+          if i == offset:
+            return selections[k]
+          inc i
+  return cursor.toSelection
+
+proc getNextFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0): Selection {.expose("editor.text").} =
+  var i = 0
+  for line in cursor.line..self.document.lines.high:
+    if self.searchResults.contains(line):
+      for selection in self.searchResults[line]:
+        if cursor < selection.first:
+          if i == offset:
+            return selection
+          inc i
+  return cursor.toSelection
+
+proc addNextFindResultToSelection*(self: TextDocumentEditor) {.expose("editor.text").} =
+  self.selections = self.selections & @[self.getNextFindResult(self.selection.last)]
+
+proc addPrevFindResultToSelection*(self: TextDocumentEditor) {.expose("editor.text").} =
+  self.selections = self.selections & @[self.getPrevFindResult(self.selection.first)]
+
+proc setAllFindResultToSelection*(self: TextDocumentEditor) {.expose("editor.text").} =
+  var selections: seq[Selection] = @[]
+  for searchResults in self.searchResults.values:
+    for s in searchResults:
+      selections.add s
+  self.selections = selections
 
 proc moveCursorColumn*(self: TextDocumentEditor, distance: int, cursor: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
   self.moveCursor(cursor, doMoveCursorColumn, distance, all)
@@ -1185,6 +1268,14 @@ proc moveCursorBefore*(self: TextDocumentEditor, str: string, cursor: SelectionC
       result = (cursor.line, index - 1)
 
   self.moveCursor(cursor, doMoveCursorBefore, 0, all)
+  self.updateTargetColumn(cursor)
+
+proc moveCursorNextFindResult*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
+  self.moveCursor(cursor, doMoveCursorNextFindResult, 0, all)
+  self.updateTargetColumn(cursor)
+
+proc moveCursorPrevFindResult*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
+  self.moveCursor(cursor, doMoveCursorPrevFindResult, 0, all)
   self.updateTargetColumn(cursor)
 
 proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
@@ -1231,6 +1322,11 @@ proc getFlag*(self: TextDocumentEditor, name: string): bool {.expose("editor.tex
 proc runAction*(self: TextDocumentEditor, action: string, args: JsonNode): bool {.expose("editor.text").} =
   # echo "runAction ", action, ", ", $args
   return self.handleActionInternal(action, args) == Handled
+
+proc setSearchQuery*(self: TextDocumentEditor, query: string) {.expose("editor.text").} =
+  self.searchQuery = query
+  self.searchRegex = re(query, {}).some
+  self.updateSearchResults()
 
 proc getLanguageServer(self: TextDocumentEditor): Future[Option[LanguageServer]] {.async.} =
   let languageId = if getLanguageForFile(self.document.filename).getSome(languageId):
@@ -1381,13 +1477,17 @@ method injectDependencies*(self: TextDocumentEditor, ed: Editor) =
     onInput:
       self.handleInput input
 
+proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
+  self.clampSelection()
+  self.updateSearchResults()
+
 proc newTextEditor*(document: TextDocument, ed: Editor): TextDocumentEditor =
   let editor = TextDocumentEditor(eventHandler: nil, document: document, selectionsInternal: @[(0, 0).toSelection])
   editor.init()
   if editor.document.lines.len == 0:
     editor.document.lines = @[""]
   editor.injectDependencies(ed)
-  discard document.textChanged.subscribe (_: TextDocument) => editor.clampSelection()
+  discard document.textChanged.subscribe (_: TextDocument) => editor.handleTextDocumentTextChanged()
   return editor
 
 method createWithDocument*(self: TextDocumentEditor, document: Document): DocumentEditor =
@@ -1395,7 +1495,7 @@ method createWithDocument*(self: TextDocumentEditor, document: Document): Docume
   editor.init()
   if editor.document.lines.len == 0:
     editor.document.lines = @[""]
-  discard editor.document.textChanged.subscribe (_: TextDocument) => editor.clampSelection()
+  discard editor.document.textChanged.subscribe (_: TextDocument) => editor.handleTextDocumentTextChanged()
   return editor
 
 proc getCursorAtPixelPos(self: TextDocumentEditor, mousePosWindow: Vec2): Option[Cursor] =

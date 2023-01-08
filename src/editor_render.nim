@@ -256,6 +256,8 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
     for line in sn.first.line..sn.last.line:
       selectionsPerLine.mgetOrPut(line, @[]).add s
 
+  let highlightsPerLine = editor.searchResults
+
   let showNodeHighlight = getOption[bool](ed, "text.show-node-highlight")
   let nodeHighlightParentIndex = getOption[int](ed, "text.node-highlight-parent-index", 0)
   let nodeHighlightSiblingIndex = getOption[int](ed, "text.node-highlight-sibling-index", 0)
@@ -310,7 +312,8 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
 
     let selectionsNormalizedOnLine = selectionsPerLine.getOrDefault(i, @[]).map (s) => s.normalized
     let selectionsClampedOnLine = selectionsNormalizedOnLine.map (s) => s.clampToLine(i, styledText.len)
-    let highlightRangeClamped = highlightRange.map h => h.clampToLine(i, styledText.len)
+    let highlightsNormalizedOnLine = highlightsPerLine.getOrDefault(i, @[]).map (s) => s.normalized
+    let highlightsClampedOnLine = highlightsNormalizedOnLine.map (s) => s.clampToLine(i, styledText.len)
 
     var startIndex = 0
     for partIndex, part in styledText.parts:
@@ -322,8 +325,8 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
       let selectionColor = ed.theme.color("selection.background", rgb(200, 200, 200))
       ed.renderTextHighlight(bounds, i, startIndex, selectionsNormalizedOnLine, selectionsClampedOnLine, part, selectionColor, lineDistance)
 
-      if highlightRangeClamped.getSome(highlightRangeClamped):
-        ed.renderTextHighlight(bounds, i, startIndex, highlightRange.get, highlightRangeClamped, part, ed.theme.color("selection.background", rgb(200, 200, 200)), lineDistance)
+      let highlightColor = ed.theme.color(@["editor.rangeHighlightBackground"], rgb(200, 200, 200))
+      ed.renderTextHighlight(bounds, i, startIndex, highlightsNormalizedOnLine, highlightsClampedOnLine, part, highlightColor, lineDistance)
 
       let isWide = getOption[bool](ed, editor.getContextWithMode("editor.text.cursor.wide"))
       let cursorWidth = if isWide: 1.0 else: 0.2
