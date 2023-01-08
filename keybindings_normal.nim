@@ -49,6 +49,14 @@ proc loadNormalBindings*() =
   addCommand "editor.text", "<C-y>", "undo"
   addCommand "editor.text", "<C-z>", "redo"
 
+  addTextCommandBlock "", "<C-f>":
+    commandLine("set-search-query ")
+    if getActiveEditor().isTextEditor(editor):
+      var arr = newJArray()
+      arr.add newJString("file")
+      discard editor.runAction("move-last", arr)
+      editor.setMode("insert")
+
   addCommand "editor.text", "<C-8>", () => setOption("text.line-distance", getOption[float32]("text.line-distance") - 1)
   addCommand "editor.text", "<C-9>", () => setOption("text.line-distance", getOption[float32]("text.line-distance") + 1)
 
