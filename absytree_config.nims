@@ -23,6 +23,10 @@ proc handleAction*(action: string, arg: string): bool =
     if getActiveEditor().isTextEditor(editor):
       editor.setMode "insert"
 
+  of "set-search-query":
+    if getActiveEditor().isTextEditor(editor):
+      editor.setSearchQuery arg
+
   else: return false
 
   return true
@@ -43,11 +47,6 @@ proc handlePopupAction*(popup: PopupId, action: string, arg: string): bool =
 proc handleDocumentEditorAction(id: EditorId, action: string, args: JsonNode): bool =
   return false
 
-func charCategory(c: char): int =
-  if c.isAlphaNumeric or c == '_': return 0
-  if c == ' ' or c == '\t': return 1
-  return 2
-
 proc cursor(selection: Selection, which: SelectionCursor): Cursor =
   case which
   of Config:
@@ -63,102 +62,13 @@ proc cursor(selection: Selection, which: SelectionCursor): Cursor =
   of Last, LastToFirst:
     return selection.last
 
-
-proc findWordBoundary(editor: TextDocumentEditor, cursor: Cursor): Selection =
-  let line = editor.getLine cursor.line
-  result = cursor.toSelection
-
-  # Search to the left
-  while result.first.column > 0 and result.first.column <= line.len:
-    result.first.column -= 1
-    if result.first.column > 0:
-      let leftCategory = line[result.first.column - 1].charCategory
-      let rightCategory = line[result.first.column].charCategory
-      if leftCategory != rightCategory:
-        break
-
-  # Search to the right
-  while result.last.column >= 0 and result.last.column < line.len:
-    result.last.column += 1
-    if result.last.column < line.len:
-      let leftCategory = line[result.last.column - 1].charCategory
-      let rightCategory = line[result.last.column].charCategory
-      if leftCategory != rightCategory:
-        break
-
-proc getSelectionForMove(editor: TextDocumentEditor, cursor: Cursor, move: string, count: int = 0): Selection =
-  case move
-  of "word":
-    result = editor.findWordBoundary(cursor)
-    for _ in 1..<count:
-      result = result or editor.findWordBoundary(result.last) or editor.findWordBoundary(result.first)
-
-  of "word-line":
-    let line = editor.getLine cursor.line
-    result = editor.findWordBoundary(cursor)
-    if cursor.column == 0 and cursor.line > 0:
-      result.first = (cursor.line - 1, editor.getLine(cursor.line - 1).len)
-    if cursor.column == line.len and cursor.line < editor.getLineCount - 1:
-      result.last = (cursor.line + 1, 0)
-
-    for _ in 1..<count:
-      result = result or editor.findWordBoundary(result.last) or editor.findWordBoundary(result.first)
-      let line = editor.getLine result.last.line
-      if result.first.column == 0 and result.first.line > 0:
-        result.first = (result.first.line - 1, editor.getLine(result.first.line - 1).len)
-      if result.last.column == line.len and result.last.line < editor.getLineCount - 1:
-        result.last = (result.last.line + 1, 0)
-
-  of "word-back":
-    return editor.getSelectionForMove(cursor, "word", count).reverse
-
-  of "word-line-back":
-    return editor.getSelectionForMove(cursor, "word-line", count).reverse
-
-  of "line":
-    result = ((cursor.line, 0), (cursor.line, editor.getLine(cursor.line).len))
-
-  of "line-next":
-    result = ((cursor.line, 0), (cursor.line, editor.getLine(cursor.line).len))
-    if result.last.line + 1 < editor.getLineCount:
-      result.last = (result.last.line + 1, 0)
-    for _ in 1..<count:
-      result = result or ((result.last.line, 0), (result.last.line, editor.getLine(result.last.line).len))
-      if result.last.line + 1 < editor.getLineCount:
-        result.last = (result.last.line + 1, 0)
-
-  of "file":
-    result.first = (0, 0)
-    let line = editor.getLineCount - 1
-    result.last = (line, editor.getLine(line).len)
-
-  else:
-    if move.startsWith("move-to "):
-      let str = move[8..^1]
-      let line = editor.getLine cursor.line
-      result = cursor.toSelection
-      let index = line.find(str, cursor.column)
-      if index >= 0:
-        result.last = (cursor.line, index + 1)
-      for _ in 1..<count:
-        let index = line.find(str, result.last.column)
-        if index >= 0:
-          result.last = (result.last.line, index + 1)
-
-    elif move.startsWith("move-before "):
-      let str = move[12..^1]
-      let line = editor.getLine cursor.line
-      result = cursor.toSelection
-      let index = line.find(str, cursor.column + 1)
-      if index >= 0:
-        result.last = (cursor.line, index)
-      for _ in 1..<count:
-        let index = line.find(str, result.last.column + 1)
-        if index >= 0:
-          result.last = (result.last.line, index)
+proc mapAllOrLast[T](self: seq[T], all: bool, p: proc(v: T): T): seq[T] =
+  if all:
+    result = self.map (s) => p(s)
     else:
-      result = cursor.toSelection
-      log fmt"[error] Unknown move '{move}'"
+    result = self
+    if result.len > 0:
+      result[result.high] = p(result[result.high])
 
 proc handleTextEditorAction(editor: TextDocumentEditor, action: string, args: JsonNode): bool =
   # echo "handleTextEditorAction ", action, ", ", args
@@ -190,8 +100,9 @@ proc handleTextEditorAction(editor: TextDocumentEditor, action: string, args: Js
 
   of "select-move":
     let arg = args[0].str
+    let all = if args.len < 2: true else: args[1].getBool
     let count = getOption[int]("text.move-count")
-    editor.selections = editor.selections.map (s) => editor.getSelectionForMove(s.last, arg, count)
+    editor.selections = editor.selections.mapAllOrLast(all, (s) => editor.getSelectionForMove(s.last, arg, count))
     editor.scrollToCursor(Last)
     editor.updateTargetColumn(Last)
 
@@ -212,24 +123,26 @@ proc handleTextEditorAction(editor: TextDocumentEditor, action: string, args: Js
   of "move-last":
     let arg = args[0].str
     let which = if args.len < 2: Config else: parseEnum[SelectionCursor](args[1].str, Config)
+    let all = if args.len < 3: true else: args[2].getBool
 
     case which
     of Config:
-      editor.selections = editor.selections.map (s) => editor.getSelectionForMove(s.cursor(which), arg).last.toSelection(s, getOption(editor.getContextWithMode("editor.text.cursor.movement"), Both))
+      editor.selections = editor.selections.mapAllOrLast(all, (s) => editor.getSelectionForMove(s.cursor(which), arg).last.toSelection(s, getOption(editor.getContextWithMode("editor.text.cursor.movement"), Both)))
     else:
-      editor.selections = editor.selections.map (s) => editor.getSelectionForMove(s.cursor(which), arg).last.toSelection(s, which)
+      editor.selections = editor.selections.mapAllOrLast(all, (s) => editor.getSelectionForMove(s.cursor(which), arg).last.toSelection(s, which))
     editor.scrollToCursor(which)
     editor.updateTargetColumn(which)
 
   of "move-first":
     let arg = args[0].str
     let which = if args.len < 2: Config else: parseEnum[SelectionCursor](args[1].str, Config)
+    let all = if args.len < 3: true else: args[2].getBool
 
     case which
     of Config:
-      editor.selections = editor.selections.map (s) => editor.getSelectionForMove(s.cursor(which), arg).first.toSelection(s, getOption(editor.getContextWithMode("editor.text.cursor.movement"), Both))
+      editor.selections = editor.selections.mapAllOrLast(all, (s) => editor.getSelectionForMove(s.cursor(which), arg).first.toSelection(s, getOption(editor.getContextWithMode("editor.text.cursor.movement"), Both)))
     else:
-      editor.selections = editor.selections.map (s) => editor.getSelectionForMove(s.cursor(which), arg).first.toSelection(s, which)
+      editor.selections = editor.selections.mapAllOrLast(all, (s) => editor.getSelectionForMove(s.cursor(which), arg).first.toSelection(s, which))
     editor.scrollToCursor(which)
     editor.updateTargetColumn(which)
 
@@ -246,7 +159,10 @@ proc postInitialize*() =
   log "[script] postInitialize()"
 
   # openFile "temp/test.rs"
-  openFile "temp/test.nim"
+  # openFile "temp/rust-test/src/main.rs"
+  # openFile "temp/test.nim"
+  # openFile "a.ast"
+  openFile "temp/test.zig"
   # openFile "src/absytree.nim"
   setLayout "fibonacci"
   changeLayoutProp("main-split", -0.2)
@@ -332,7 +248,7 @@ addCommand "editor", "<CA-r>", "move-current-view-to-top"
 addCommand "editor", "<C-s>", "write-file"
 addCommand "editor", "<CS-r>", "load-file"
 addCommand "editor", "<C-p>", "command-line"
-addCommand "editor", "<C-l>tt", "choose-theme"
+addCommand "editor", "<C-g>tt", "choose-theme"
 addCommand "editor", "<C-g>f", "choose-file", "new"
 
 addCommand "editor", "<C-b>n", () => loadNormalBindings()
