@@ -1323,10 +1323,125 @@ proc runAction*(self: TextDocumentEditor, action: string, args: JsonNode): bool 
   # echo "runAction ", action, ", ", $args
   return self.handleActionInternal(action, args) == Handled
 
+func charCategory(c: char): int =
+  if c.isAlphaNumeric or c == '_': return 0
+  if c == ' ' or c == '\t': return 1
+  return 2
+
+proc findWordBoundary*(self: TextDocumentEditor, cursor: Cursor): Selection {.expose("editor.text").} =
+  let line = self.document.getLine cursor.line
+  result = cursor.toSelection
+  if result.first.column == line.len:
+    dec result.first.column
+    dec result.last.column
+
+  # Search to the left
+  while result.first.column > 0 and result.first.column < line.len:
+    let leftCategory = line[result.first.column - 1].charCategory
+    let rightCategory = line[result.first.column].charCategory
+    if leftCategory != rightCategory:
+      break
+    result.first.column -= 1
+
+  # Search to the right
+  if result.last.column < line.len:
+    result.last.column += 1
+  while result.last.column >= 0 and result.last.column < line.len:
+    let leftCategory = line[result.last.column - 1].charCategory
+    let rightCategory = line[result.last.column].charCategory
+    if leftCategory != rightCategory:
+      break
+    result.last.column += 1
+
+proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string, count: int = 0): Selection {.expose("editor.text").} =
+  case move
+  of "word":
+    result = self.findWordBoundary(cursor)
+    for _ in 1..<count:
+      result = result or self.findWordBoundary(result.last) or self.findWordBoundary(result.first)
+
+  of "word-line":
+    let line = self.document.getLine cursor.line
+    result = self.findWordBoundary(cursor)
+    if cursor.column == 0 and cursor.line > 0:
+      result.first = (cursor.line - 1, self.document.getLine(cursor.line - 1).len)
+    if cursor.column == line.len and cursor.line < self.document.lines.len - 1:
+      result.last = (cursor.line + 1, 0)
+
+    for _ in 1..<count:
+      result = result or self.findWordBoundary(result.last) or self.findWordBoundary(result.first)
+      let line = self.document.getLine result.last.line
+      if result.first.column == 0 and result.first.line > 0:
+        result.first = (result.first.line - 1, self.document.getLine(result.first.line - 1).len)
+      if result.last.column == line.len and result.last.line < self.document.lines.len - 1:
+        result.last = (result.last.line + 1, 0)
+
+  of "word-back":
+    return self.getSelectionForMove(cursor, "word", count).reverse
+
+  of "word-line-back":
+    return self.getSelectionForMove(cursor, "word-line", count).reverse
+
+  of "line":
+    result = ((cursor.line, 0), (cursor.line, self.document.getLine(cursor.line).len))
+
+  of "line-next":
+    result = ((cursor.line, 0), (cursor.line, self.document.getLine(cursor.line).len))
+    if result.last.line + 1 < self.document.lines.len:
+      result.last = (result.last.line + 1, 0)
+    for _ in 1..<count:
+      result = result or ((result.last.line, 0), (result.last.line, self.document.getLine(result.last.line).len))
+      if result.last.line + 1 < self.document.lines.len:
+        result.last = (result.last.line + 1, 0)
+
+  of "file":
+    result.first = (0, 0)
+    let line = self.document.lines.len - 1
+    result.last = (line, self.document.getLine(line).len)
+
+  of "prev-find-result":
+    result = self.getPrevFindResult(cursor, count)
+
+  of "next-find-result":
+    result = self.getNextFindResult(cursor, count)
+
+  else:
+    if move.startsWith("move-to "):
+      let str = move[8..^1]
+      let line = self.document.getLine cursor.line
+      result = cursor.toSelection
+      let index = line.find(str, cursor.column)
+      if index >= 0:
+        result.last = (cursor.line, index + 1)
+      for _ in 1..<count:
+        let index = line.find(str, result.last.column)
+        if index >= 0:
+          result.last = (result.last.line, index + 1)
+
+    elif move.startsWith("move-before "):
+      let str = move[12..^1]
+      let line = self.document.getLine cursor.line
+      result = cursor.toSelection
+      let index = line.find(str, cursor.column + 1)
+      if index >= 0:
+        result.last = (cursor.line, index)
+      for _ in 1..<count:
+        let index = line.find(str, result.last.column + 1)
+        if index >= 0:
+          result.last = (result.last.line, index)
+    else:
+      result = cursor.toSelection
+      logger.log(lvlError, fmt"[error] Unknown move '{move}'")
+
 proc setSearchQuery*(self: TextDocumentEditor, query: string) {.expose("editor.text").} =
   self.searchQuery = query
   self.searchRegex = re(query, {}).some
   self.updateSearchResults()
+
+proc setSearchQueryFromMove*(self: TextDocumentEditor, move: string, count: int = 0) {.expose("editor.text").} =
+  let selection = self.getSelectionForMove(self.selection.last, move, count)
+  self.selection = selection
+  self.setSearchQuery(self.document.contentString(selection))
 
 proc getLanguageServer(self: TextDocumentEditor): Future[Option[LanguageServer]] {.async.} =
   let languageId = if getLanguageForFile(self.document.filename).getSome(languageId):

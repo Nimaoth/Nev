@@ -23,6 +23,14 @@ proc loadVimBindings*() =
   addCommand "editor.text", "i", "set-mode", "insert"
   addCommand "editor.text", "v", "set-mode", "visual"
   addCommand "editor.text", "V", "set-mode", "visual-temp"
+  addTextCommandBlock "", "s":
+    editor.setMode("insert")
+    editor.selections = editor.delete(editor.selections)
+  addCommand "editor.text", "n", "select-move", "next-find-result"
+  addCommand "editor.text", "N", "select-move", "prev-find-result"
+  addCommand "editor.text", "<C-e>", "addNextFindResultToSelection"
+  addCommand "editor.text", "<C-E>", "addPrevFindResultToSelection"
+  addCommand "editor.text", "<A-e>", "setAllFindResultToSelection"
   addTextCommandBlock "", "gg":
     let count = editor.getCommandCount
     if count == 0:
@@ -32,6 +40,7 @@ proc loadVimBindings*() =
       editor.setCommandCount 0
     editor.scrollToCursor(Last)
   addCommand "editor.text", "G", "move-last", "file"
+  addTextCommandBlock "", "*": editor.setSearchQueryFromMove("word")
 
   for i in 0..9:
     capture i:
@@ -41,9 +50,9 @@ proc loadVimBindings*() =
         editor.setCommandCountRestore editor.getCommandCount
         editor.setCommandCount 0
 
-      addTextCommand "", $i,updateCommandCountHelper
-      addTextCommand "delete", $i,updateCommandCountHelper
-      addTextCommand "move", $i,updateCommandCountHelper
+      addTextCommand "", $i, updateCommandCountHelper
+      addTextCommand "delete", $i, updateCommandCountHelper
+      addTextCommand "move", $i, updateCommandCountHelper
 
   addTextCommandBlock "", "d":
     editor.setMode "move"
@@ -207,3 +216,34 @@ proc loadVimBindings*() =
     editor.setMode("insert")
     editor.scrollToCursor(Last)
     editor.updateTargetColumn(Last)
+
+  addCommand "editor.text", "<C-c>", "set-mode", "cursor-build"
+  addCommand "editor.text.cursor-build", "c", "set-mode", "normal"
+  addCommand "editor.text.cursor-build", "<LEFT>", "move-cursor-column", -1, "config", false
+  addCommand "editor.text.cursor-build", "<RIGHT>", "move-cursor-column", 1, "config", false
+  addCommand "editor.text.cursor-build", "<C-LEFT>", "move-first", "word-line", "config", false
+  addCommand "editor.text.cursor-build", "<C-RIGHT>", "move-last", "word-line", "config", false
+  addCommand "editor.text.cursor-build", "<HOME>", "move-first", "line", "config", false
+  addCommand "editor.text.cursor-build", "<END>", "move-last", "line", "config", false
+  addCommand "editor.text.cursor-build", "<CS-LEFT>", "move-first", "word-line", "last", false
+  addCommand "editor.text.cursor-build", "<CS-RIGHT>", "move-last", "word-line", "last", false
+  addCommand "editor.text.cursor-build", "<UP>", "move-cursor-line", -1, "config", false
+  addCommand "editor.text.cursor-build", "<DOWN>", "move-cursor-line", 1, "config", false
+  addCommand "editor.text.cursor-build", "<C-HOME>", "move-first", "file", "config", false
+  addCommand "editor.text.cursor-build", "<C-END>", "move-last", "file", "config", false
+  addCommand "editor.text.cursor-build", "<CS-HOME>", "move-first", "file", "last", false
+  addCommand "editor.text.cursor-build", "<CS-END>", "move-last", "file", "last", false
+  addCommand "editor.text.cursor-build", "<S-LEFT>", "move-cursor-column", -1, "last", false
+  addCommand "editor.text.cursor-build", "<S-RIGHT>", "move-cursor-column", 1, "last", false
+  addCommand "editor.text.cursor-build", "<S-UP>", "move-cursor-line", -1, "last", false
+  addCommand "editor.text.cursor-build", "<S-DOWN>", "move-cursor-line", 1, "last", false
+  addCommand "editor.text.cursor-build", "<S-HOME>", "move-first", "line", "last", false
+  addCommand "editor.text.cursor-build", "<S-END>", "move-last", "line", "last", false
+  addCommand "editor.text.cursor-build", "n", "select-move", "next-find-result", false
+  addCommand "editor.text.cursor-build", "N", "select-move", "prev-find-result", false
+  addTextCommandBlock "cursor-build", "y":
+    editor.runAction("duplicate-last-selection")
+    editor.runAction("select-move", "\"next-find-result\" false")
+  addTextCommandBlock "cursor-build", "Y":
+    editor.runAction("duplicate-last-selection")
+    editor.runAction("select-move", "\"prev-find-result\" false")
