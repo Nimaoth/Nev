@@ -40,7 +40,7 @@ window.onFrame = proc() =
   try:
     # if getOption[bool](ed, "editor.poll"):
     poll(2)
-  except:
+  except CatchableError:
     echo fmt"[async] Failed to poll async dispatcher: {getCurrentExceptionMsg()}"
     echo getCurrentException().getStackTrace()
     discard

@@ -131,7 +131,7 @@ proc invokeCallback*(self: Editor, context: string, args: JsonNode): bool =
   let id = self.callbacks[context]
   try:
     return self.scriptContext.inter.invoke(handleCallback, id, args, returnType = bool)
-  except:
+  except CatchableError:
     self.logger.log(lvlError, fmt"[ed] Failed to run script handleCallback {id}: {getCurrentExceptionMsg()}")
     echo getCurrentException().getStackTrace()
     return false
@@ -181,7 +181,7 @@ proc handleUnknownPopupAction*(self: Editor, popup: Popup, action: string, arg: 
   try:
     if self.scriptContext.inter.invoke(handleUnknownPopupAction, popup.id, action, arg, returnType = bool):
       return Handled
-  except:
+  except CatchableError:
     self.logger.log(lvlError, fmt"[ed] Failed to run script handleUnknownPopupAction '{action} {arg}': {getCurrentExceptionMsg()}")
     echo getCurrentException().getStackTrace()
 
@@ -191,7 +191,7 @@ proc handleUnknownDocumentEditorAction*(self: Editor, editor: DocumentEditor, ac
   try:
     if self.scriptContext.inter.invoke(handleEditorAction, editor.id, action, args, returnType = bool):
       return Handled
-  except:
+  except CatchableError:
     self.logger.log(lvlError, fmt"[ed] Failed to run script handleUnknownDocumentEditorAction '{action} {args}': {getCurrentExceptionMsg()}")
     echo getCurrentException().getStackTrace()
 
@@ -403,7 +403,7 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
     self.options = readFile("options.json").parseJson
     echo "Restoring options: ", self.options.pretty
 
-  except:
+  except CatchableError:
     echo "Failed to load previous state from config file"
 
   gEditor = self
@@ -418,7 +418,7 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
     self.scriptContext = newScriptContext("./absytree_config.nims", addins)
     self.scriptContext.inter.invoke(postInitialize)
     self.initializeCalled = true
-  except:
+  except CatchableError:
     self.logger.log(lvlError, fmt"Failed to load config")
 
   return self
@@ -564,7 +564,7 @@ proc openFile*(self: Editor, path: string) {.expose("editor").} =
     else:
       let file = readFile(path)
       self.createView(newTextDocument(path, file.splitLines))
-  except:
+  except CatchableError:
     self.logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
     echo getCurrentException().getStackTrace()
 
@@ -572,7 +572,7 @@ proc writeFile*(self: Editor, path: string = "") {.expose("editor").} =
   if self.currentView >= 0 and self.currentView < self.views.len and self.views[self.currentView].document != nil:
     try:
       self.views[self.currentView].document.save(path)
-    except:
+    except CatchableError:
       self.logger.log(lvlError, fmt"[ed] Failed to write file '{path}': {getCurrentExceptionMsg()}")
       echo getCurrentException().getStackTrace()
 
@@ -581,7 +581,7 @@ proc loadFile*(self: Editor, path: string = "") {.expose("editor").} =
     try:
       self.views[self.currentView].document.load(path)
       self.views[self.currentView].editor.handleDocumentChanged()
-    except:
+    except CatchableError:
       self.logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
       echo getCurrentException().getStackTrace()
 
@@ -643,7 +643,7 @@ proc reloadConfig*(self: Editor) {.expose("editor").} =
       if not self.initializeCalled:
         self.scriptContext.inter.invoke(postInitialize)
         self.initializeCalled = true
-    except:
+    except CatchableError:
       self.logger.log(lvlError, fmt"Failed to reload config")
 
 proc logOptions*(self: Editor) {.expose("editor").} =
@@ -688,7 +688,7 @@ proc handleAction(self: Editor, action: string, arg: string): bool =
   try:
     if self.scriptContext.inter.invoke(handleGlobalAction, action, arg, returnType = bool):
       return true
-  except:
+  except CatchableError:
     self.logger.log(lvlError, fmt"[ed] Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
     echo getCurrentException().getStackTrace()
     return false

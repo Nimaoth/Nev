@@ -33,7 +33,7 @@ proc executeNodeRec(ctx: Context, fec: FunctionExecutionContext, node: AstNode, 
     return Value(kind: vkString, stringValue: node.text)
 
   of NumberLiteral():
-    let value = try: node.text.parseInt except: return errorValue()
+    let value = try: node.text.parseInt except CatchableError: return errorValue()
     return Value(kind: vkNumber, intValue: value)
 
   of If():

@@ -513,9 +513,6 @@ proc initTreesitter(self: TextDocument) =
       var l: ptr TSLanguage = nil
       when compiles(constructor()):
         l = constructor()
-      else:
-        logger.log(lvlWarn, fmt"Language is not available: '{languageId}'")
-        return
       l
 
   let languageId = if getLanguageForFile(self.filename).getSome(languageId):
@@ -547,6 +544,10 @@ proc initTreesitter(self: TextDocument) =
     logger.log(lvlWarn, fmt"Failed to init treesitter for language '{languageId}'")
     return
 
+  if language.isNil:
+    logger.log(lvlWarn, fmt"Language is not available: '{languageId}'")
+    return
+
   self.tsParser = ts.tsParserNew()
   assert self.tsParser.tsParserSetLanguage(language) == true
 
@@ -557,7 +558,7 @@ proc initTreesitter(self: TextDocument) =
     self.highlightQuery = language.tsQueryNew(queryString.cstring, queryString.len.uint32, addr errorOffset, addr queryError)
     if queryError != ts.TSQueryErrorNone:
       logger.log(lvlError, fmt"[textedit] {queryError} at byte {errorOffset}: {queryString}")
-  except:
+  except CatchableError:
     logger.log(lvlError, fmt"[textedit] No highlight queries found for '{languageId}'")
 
 proc saveTempFile*(self: TextDocument, filename: string): Future[void] {.async.} =
@@ -1377,10 +1378,10 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
         result.last = (result.last.line + 1, 0)
 
   of "word-back":
-    return self.getSelectionForMove(cursor, "word", count).reverse
+    return self.getSelectionForMove((cursor.line, max(0, cursor.column - 1)), "word", count).reverse
 
   of "word-line-back":
-    return self.getSelectionForMove(cursor, "word-line", count).reverse
+    return self.getSelectionForMove((cursor.line, max(0, cursor.column - 1)), "word-line", count).reverse
 
   of "line":
     result = ((cursor.line, 0), (cursor.line, self.document.getLine(cursor.line).len))
@@ -1432,6 +1433,84 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
     else:
       result = cursor.toSelection
       logger.log(lvlError, fmt"[error] Unknown move '{move}'")
+
+proc mapAllOrLast[T](self: seq[T], all: bool, p: proc(v: T): T): seq[T] =
+  if all:
+    result = self.map (s) => p(s)
+  else:
+    result = self
+    if result.len > 0:
+      result[result.high] = p(result[result.high])
+
+proc cursor(self: TextDocumentEditor, selection: Selection, which: SelectionCursor): Cursor =
+  case which
+  of Config:
+    return self.cursor(selection, getOption(self.editor, self.getContextWithMode("editor.text.cursor.movement"), Both))
+  of Both:
+    return selection.last
+  of First:
+    return selection.first
+  of Last, LastToFirst:
+    return selection.last
+
+proc setMove*(self: TextDocumentEditor, args {.varargs.}: JsonNode) {.expose("editor.text").} =
+  setOption[int](self.editor, "text.move-count", self.getCommandCount)
+  self.setMode getOption[string](self.editor, "text.move-next-mode")
+  self.setCommandCount getOption[int](self.editor, "text.move-command-count")
+  discard self.runAction(getOption[string](self.editor, "text.move-action"), args)
+  setOption[string](self.editor, "text.move-action", "")
+
+proc deleteMove*(self: TextDocumentEditor, move: string, which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
+  let count = getOption[int](self.editor, "text.move-count")
+  let inside = self.getFlag("move-inside")
+
+  # echo fmt"delete-move {move}, {which}, {count}, {inside}"
+
+  let selections = self.selections.map (s) => (if inside:
+    self.getSelectionForMove(s.last, move, count)
+  else:
+    (s.last, self.getSelectionForMove(s.last, move, count).last))
+
+  self.selections = self.document.delete(selections, self.selections)
+  self.scrollToCursor(Last)
+  self.updateTargetColumn(Last)
+
+proc selectMove*(self: TextDocumentEditor, move: string, which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
+  let count = getOption[int](self.editor, "text.move-count")
+  self.selections = self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(s.last, move, count))
+  self.scrollToCursor(Last)
+  self.updateTargetColumn(Last)
+
+proc changeMove*(self: TextDocumentEditor, move: string, which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
+  let count = getOption[int](self.editor, "text.move-count")
+  let inside = self.getFlag("move-inside")
+
+  let selections = self.selections.map (s) => (if inside:
+    self.getSelectionForMove(s.last, move, count)
+  else:
+    (s.last, self.getSelectionForMove(s.last, move, count).last))
+
+  self.selections = self.document.delete(selections, self.selections)
+  self.scrollToCursor(Last)
+  self.updateTargetColumn(Last)
+
+proc moveLast*(self: TextDocumentEditor, move: string, which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
+  case which
+  of Config:
+    self.selections = self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(self.cursor(s, which), move).last.toSelection(s, getOption(self.editor, self.getContextWithMode("editor.text.cursor.movement"), Both)))
+  else:
+    self.selections = self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(self.cursor(s, which), move).last.toSelection(s, which))
+  self.scrollToCursor(which)
+  self.updateTargetColumn(which)
+
+proc moveFirst*(self: TextDocumentEditor, move: string, which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
+  case which
+  of Config:
+    self.selections = self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(self.cursor(s, which), move).first.toSelection(s, getOption(self.editor, self.getContextWithMode("editor.text.cursor.movement"), Both)))
+  else:
+    self.selections = self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(self.cursor(s, which), move).first.toSelection(s, which))
+  self.scrollToCursor(which)
+  self.updateTargetColumn(which)
 
 proc setSearchQuery*(self: TextDocumentEditor, query: string) {.expose("editor.text").} =
   self.searchQuery = query

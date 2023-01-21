@@ -1,5 +1,6 @@
 import std/[json, strformat, strutils, tables, options, macros, macrocache, typetraits]
 import os
+import fusion/matching
 import compiler/options as copts
 import util
 
@@ -57,6 +58,8 @@ macro addTypeMap*(source: untyped, wrapper: typed, mapperFunction: typed) =
 macro addInjector*(name: untyped, function: typed) =
   injectors[$name] = function
 
+template varargs*() {.pragma.}
+
 macro addFunction(name: untyped, script: untyped, wrapper: typed, moduleName: static string) =
   let n = nnkStmtList.newTree(name, script, wrapper)
   for name, _ in functions:
@@ -73,7 +76,15 @@ macro expose*(moduleName: static string, def: untyped): untyped =
   let functionName = if def[0].kind == nnkPostfix: def[0][1] else: def[0]
   let argCount = def[3].len - 1
   let returnType = if def[3][0].kind != nnkEmpty: def[3][0].some else: NimNode.none
-  proc argName(def: NimNode, arg: int): NimNode = def[3][arg + 1][0]
+  proc argName(def: NimNode, arg: int): NimNode =
+    result = def[3][arg + 1][0]
+    if result.kind == nnkPragmaExpr:
+      result = result[0]
+  proc isVarargs(def: NimNode, arg: int): bool =
+    let node = def[3][arg + 1][0]
+    if node.kind == nnkPragmaExpr and node.len >= 2 and node[1].kind == nnkPragma and node[1][0].strVal == "varargs":
+      return true
+    return false
   proc argType(def: NimNode, arg: int): NimNode = def[3][arg + 1][1]
   proc argDefaultValue(def: NimNode, arg: int): Option[NimNode] =
     if def[3][arg + 1][2].kind != nnkEMpty:
@@ -89,10 +100,10 @@ macro expose*(moduleName: static string, def: untyped): untyped =
       if pureFunctionName.strVal == $entry[0]:
         postfix.add("2")
 
-  defer:
-    discard
-    # if pureFunctionName.strVal == "selectPrev":
-    #   echo result.repr
+  # defer:
+  #   if pureFunctionName.strVal == "setMove":
+  #     echo def.treeRepr
+  #     echo result.repr
 
   let wrapperName = ident(pureFunctionName.strVal & "Api" & postfix)
   var callToImplFromBuiltin = nnkCall.newTree(functionName)
@@ -104,6 +115,15 @@ macro expose*(moduleName: static string, def: untyped): untyped =
   scriptFunction[0] = nnkPostfix.newTree(ident"*", scriptFunctionSym)
   var scriptFunctionWrapper = def.copy
   scriptFunctionWrapper[0] = pureFunctionName
+
+  proc removeVarargs(node: var NimNode) =
+    for param in node[3]:
+      case param
+      of IdentDefs[PragmaExpr[@name, .._], .._]:
+        param[0] = name
+
+  removeVarargs(scriptFunction)
+  removeVarargs(scriptFunctionWrapper)
 
   var callToBuiltinFunctionFromJson = nnkCall.newTree(scriptFunctionSym)
   var callToBuiltinFunctionFromScript = nnkCall.newTree(scriptFunctionSym)
@@ -126,6 +146,8 @@ macro expose*(moduleName: static string, def: untyped): untyped =
     let originalArgumentType = def.argType i
     var mappedArgumentType = originalArgumentType
     let index = newLit(mappedArgIndices.getOrDefault(i, i))
+    let isVarargs = newLit(def.isVarargs(i))
+    # echo fmt"varargs {i}, {index}: ", isVarargs, ", ", def
 
     # Check if there is an entry in the type map and override mappedArgumentType if so
     # Also replace the argument type in the scriptFunction
@@ -141,7 +163,10 @@ macro expose*(moduleName: static string, def: untyped): untyped =
       quote do:
         block:
           when `originalArgumentType` is JsonNode:
-            `jsonArg`[`index`]
+            when `isVarargs`:
+              `jsonArg`[`index`..^1]
+            else:
+              `jsonArg`[`index`]
           else:
             if `jsonArg`.len > `index`:
               `jsonArg`[`index`].jsonTo `mappedArgumentType`
@@ -151,7 +176,10 @@ macro expose*(moduleName: static string, def: untyped): untyped =
       quote do:
         block:
           when `originalArgumentType` is JsonNode:
-            `jsonArg`[`index`]
+            when `isVarargs`:
+              `jsonArg`[`index`..^1]
+            else:
+              `jsonArg`[`index`]
           else:
             `jsonArg`[`index`].jsonTo `mappedArgumentType`
 
@@ -215,7 +243,7 @@ macro expose*(moduleName: static string, def: untyped): untyped =
       result = newJNull()
       try:
         `adjustedCall`
-      except:
+      except CatchableError:
         let name = `functionNameStr`
         echo "[editor] Failed to run function " & name & fmt": Invalid arguments: {getCurrentExceptionMsg()}"
         echo getCurrentException().getStackTrace

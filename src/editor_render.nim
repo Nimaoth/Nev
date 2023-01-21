@@ -256,15 +256,15 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
     for line in sn.first.line..sn.last.line:
       selectionsPerLine.mgetOrPut(line, @[]).add s
 
-  let highlightsPerLine = editor.searchResults
 
   let showNodeHighlight = getOption[bool](ed, "text.show-node-highlight")
   let nodeHighlightParentIndex = getOption[int](ed, "text.node-highlight-parent-index", 0)
   let nodeHighlightSiblingIndex = getOption[int](ed, "text.node-highlight-sibling-index", 0)
-  let highlightRange = if showNodeHighlight:
-    editor.document.getNodeRange(selectionNormalized, nodeHighlightParentIndex, nodeHighlightSiblingIndex)
-  else:
-    Selection.none
+
+  var highlightsPerLine = editor.searchResults
+  if showNodeHighlight and editor.document.getNodeRange(selectionNormalized, nodeHighlightParentIndex, nodeHighlightSiblingIndex).getSome(s):
+    for line in s.first.line..s.last.line:
+      highlightsPerLine.mgetOrPut(line, @[]).add s
 
   editor.lastRenderedLines.setLen 0
 
