@@ -167,7 +167,7 @@ proc loadFromFile*(path: string): Option[Theme] =
     var newTheme = json.jsonToTheme
     newTheme.path = path
     return some(newTheme)
-  except:
+  except CatchableError:
     echo getCurrentExceptionMsg()
     echo getCurrentException().getStackTrace()
     return Theme.none

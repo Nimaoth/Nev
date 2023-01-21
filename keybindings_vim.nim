@@ -83,8 +83,9 @@ proc loadVimBindings*() =
     editor.setCommandCount 0
 
   addCommand "editor.text", "dl", "delete-move", "line-next"
-  addCommand "editor.text", "b", "move-first", "word-line"
+  addCommand "editor.text", "b", "move-last", "word-line-back"
   addCommand "editor.text", "w", "move-last", "word-line"
+  addCommand "editor.text", "e", "move-last", "word-line"
   addCommand "editor.text", "<HOME>", "move-first", "line"
   addCommand "editor.text", "<END>", "move-last", "line"
   addTextCommandBlock "", "o":

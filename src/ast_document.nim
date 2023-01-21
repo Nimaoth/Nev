@@ -351,7 +351,7 @@ proc newAstDocument*(filename: string = ""): AstDocument =
       let file = readFile(result.filename)
       let jsn = file.parseJson
       result.rootNode = jsn.jsonToAstNode
-    except:
+    except CatchableError:
       logger.log lvlError, fmt"[astdoc] Failed to load ast source file '{result.filename}'"
 
 import html_renderer
@@ -602,7 +602,7 @@ proc getCompletions*(editor: AstDocumentEditor, text: string, contextNode: Optio
     try:
       discard text.parseFloat
       result.add Completion(kind: AstCompletion, nodeKind: NumberLiteral, name: "number literal", score: 1.1)
-    except: discard
+    except CatchableError: discard
 
   result.sort((a, b) => cmp(a.score, b.score), Descending)
 

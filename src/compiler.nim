@@ -152,7 +152,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
     try:
       discard node.text.parseInt
       return intType()
-    except:
+    except CatchableError:
       return errorType()
 
   of StringLiteral():
@@ -465,7 +465,7 @@ proc computeValueImpl(ctx: Context, node: AstNode): Value =
 
   case node
   of NumberLiteral():
-    let value = try: node.text.parseInt except: return errorValue()
+    let value = try: node.text.parseInt except CatchableError: return errorValue()
     return Value(kind: vkNumber, intValue: value)
 
   of StringLiteral():

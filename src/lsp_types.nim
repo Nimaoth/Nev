@@ -27,7 +27,7 @@ macro variant(name: untyped, types: varargs[untyped]): untyped =
             if arg.node.kind != JArray:
               return `t`.none
           return arg.node.jsonTo(`t`, Joptions(allowMissingKeys: true, allowExtraKeys: false)).some
-        except:
+        except CatchableError:
           return `t`.none
       proc `procName`*(arg: Option[`name`]): Option[`t`] =
         if arg.isSome:
