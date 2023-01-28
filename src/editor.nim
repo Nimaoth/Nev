@@ -54,6 +54,11 @@ type
   LayoutProperties = ref object
     props: Table[string, float32]
 
+type OpenEditor = object
+  filename: string
+  ast: bool
+  languageID: string
+
 type EditorState = object
   theme: string
   fontSize: float32
@@ -61,6 +66,7 @@ type EditorState = object
   fontBold: string
   fontItalic: string
   fontBoldItalic: string
+  openEditors: seq[OpenEditor]
 
 type Editor* = ref object
   window*: Window
@@ -332,6 +338,7 @@ proc getCommandLineTextEditor*(self: Editor): TextDocumentEditor = self.commandL
 
 proc newEditor*(window: Window, boxy: Boxy): Editor =
   var self = Editor()
+  gEditor = self
   self.window = window
   self.boxy = boxy
   self.boxy2 = newBoxy()
@@ -390,6 +397,11 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
       Ignored
   self.commandLineMode = false
 
+  self.commandLineTextEditor = newTextEditor(newTextDocument(), self)
+  self.commandLineTextEditor.renderHeader = false
+  self.commandLineTextEditor.TextDocumentEditor.lineNumbers = api.LineNumbers.None.some
+  self.getCommandLineTextEditor.hideCursorWhenInactive = true
+
   try:
     let state = readFile("config.json").parseJson.jsonTo EditorState
     self.setTheme(state.theme)
@@ -403,15 +415,22 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
     self.options = readFile("options.json").parseJson
     echo "Restoring options: ", self.options.pretty
 
+    if self.getFlag("editor.restore-open-editors"):
+      for editorState in state.openEditors:
+          let document = if editorState.ast:
+            newAstDocument(editorState.filename)
+          else:
+            try:
+              let fileContent = readFile(editorState.filename)
+              newTextDocument(editorState.filename, fileContent)
+            except CatchableError:
+              self.logger.log(lvlError, fmt"Failed to restore file {editorState.filename} from previous session: {getCurrentExceptionMsg()}")
+              continue
+
+          self.createView(document)
+
   except CatchableError:
-    echo "Failed to load previous state from config file"
-
-  gEditor = self
-
-  self.commandLineTextEditor = newTextEditor(newTextDocument(), self)
-  self.commandLineTextEditor.renderHeader = false
-  self.commandLineTextEditor.TextDocumentEditor.lineNumbers = api.LineNumbers.None.some
-  self.getCommandLineTextEditor.hideCursorWhenInactive = true
+    self.logger.log(lvlError, fmt"Failed to load previous state from config file: {getCurrentExceptionMsg()}")
 
   let addins = createAddins()
   try:
@@ -432,6 +451,15 @@ proc shutdown*(self: Editor) =
   state.fontBold = self.fontBold
   state.fontItalic = self.fontItalic
   state.fontBoldItalic = self.fontBoldItalic
+
+  # Save open editors
+  for view in self.views:
+    if view.document of TextDocument:
+      let textDocument = TextDocument(view.document)
+      state.openEditors.add OpenEditor(filename: textDocument.filename, ast: false, languageId: textDocument.languageId)
+    elif view.document of AstDocument:
+      let astDocument = AstDocument(view.document)
+      state.openEditors.add OpenEditor(filename: astDocument.filename, ast: true, languageId: "ast")
 
   let serialized = state.toJson
   writeFile("config.json", serialized.pretty)
