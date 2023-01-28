@@ -47,21 +47,6 @@ proc handlePopupAction*(popup: PopupId, action: string, arg: string): bool =
 proc handleDocumentEditorAction(id: EditorId, action: string, args: JsonNode): bool =
   return false
 
-proc cursor(selection: Selection, which: SelectionCursor): Cursor =
-  case which
-  of Config:
-    if getActiveEditor().isTextEditor(editor):
-      return selection.cursor(getOption(editor.getContextWithMode("editor.text.cursor.movement"), Both))
-    else:
-      log "[script] [error] Failed to get cursor from selection using config."
-      return selection.last
-  of Both:
-    return selection.last
-  of First:
-    return selection.first
-  of Last, LastToFirst:
-    return selection.last
-
 proc mapAllOrLast[T](self: seq[T], all: bool, p: proc(v: T): T): seq[T] =
   if all:
     result = self.map (s) => p(s)
@@ -74,78 +59,6 @@ proc handleTextEditorAction(editor: TextDocumentEditor, action: string, args: Js
   # echo "handleTextEditorAction ", action, ", ", args
 
   case action
-  # of "set-move":
-  #   setOption[int]("text.move-count", editor.getCommandCount)
-  #   editor.setMode getOption[string]("text.move-next-mode")
-  #   editor.setCommandCount getOption[int]("text.move-command-count")
-  #   discard editor.runAction(getOption[string]("text.move-action"), args)
-  #   setOption[string]("text.move-action", "")
-
-  # of "delete-move":
-  #   let arg = args[0].str
-  #   let which = if args.len < 2: Config else: parseEnum[SelectionCursor](args[1].str, Config)
-  #   let count = getOption[int]("text.move-count")
-  #   let inside = editor.getFlag("move-inside")
-
-  #   # echo fmt"delete-move {arg}, {which}, {count}, {inside}"
-
-  #   let selections = editor.selections.map (s) => (if inside:
-  #     editor.getSelectionForMove(s.last, arg, count)
-  #   else:
-  #     (s.last, editor.getSelectionForMove(s.last, arg, count).last))
-
-  #   editor.selections = editor.delete(selections)
-  #   editor.scrollToCursor(Last)
-  #   editor.updateTargetColumn(Last)
-
-  # of "select-move":
-  #   let arg = args[0].str
-  #   let all = if args.len < 2: true else: args[1].getBool
-  #   let count = getOption[int]("text.move-count")
-  #   editor.selections = editor.selections.mapAllOrLast(all, (s) => editor.getSelectionForMove(s.last, arg, count))
-  #   editor.scrollToCursor(Last)
-  #   editor.updateTargetColumn(Last)
-
-  # of "change-move":
-  #   let arg = args[0].str
-  #   let count = getOption[int]("text.move-count")
-  #   let inside = editor.getFlag("move-inside")
-
-  #   let selections = editor.selections.map (s) => (if inside:
-  #     editor.getSelectionForMove(s.last, arg, count)
-  #   else:
-  #     (s.last, editor.getSelectionForMove(s.last, arg, count).last))
-
-  #   editor.selections = editor.delete(selections)
-  #   editor.scrollToCursor(Last)
-  #   editor.updateTargetColumn(Last)
-
-  # of "move-last":
-  #   let arg = args[0].str
-  #   let which = if args.len < 2: Config else: parseEnum[SelectionCursor](args[1].str, Config)
-  #   let all = if args.len < 3: true else: args[2].getBool
-
-  #   case which
-  #   of Config:
-  #     editor.selections = editor.selections.mapAllOrLast(all, (s) => editor.getSelectionForMove(s.cursor(which), arg).last.toSelection(s, getOption(editor.getContextWithMode("editor.text.cursor.movement"), Both)))
-  #   else:
-  #     editor.selections = editor.selections.mapAllOrLast(all, (s) => editor.getSelectionForMove(s.cursor(which), arg).last.toSelection(s, which))
-  #   editor.scrollToCursor(which)
-  #   editor.updateTargetColumn(which)
-
-  # of "move-first":
-  #   let arg = args[0].str
-  #   let which = if args.len < 2: Config else: parseEnum[SelectionCursor](args[1].str, Config)
-  #   let all = if args.len < 3: true else: args[2].getBool
-
-  #   case which
-  #   of Config:
-  #     editor.selections = editor.selections.mapAllOrLast(all, (s) => editor.getSelectionForMove(s.cursor(which), arg).first.toSelection(s, getOption(editor.getContextWithMode("editor.text.cursor.movement"), Both)))
-  #   else:
-  #     editor.selections = editor.selections.mapAllOrLast(all, (s) => editor.getSelectionForMove(s.cursor(which), arg).first.toSelection(s, which))
-  #   editor.scrollToCursor(which)
-  #   editor.updateTargetColumn(which)
-
   else: return false
   return true
 
@@ -162,7 +75,7 @@ proc postInitialize*() =
   # openFile "temp/rust-test/src/main.rs"
   # openFile "temp/test.nim"
   # openFile "a.ast"
-  openFile "temp/test.zig"
+  # openFile "temp/test.zig"
   # openFile "src/absytree.nim"
   setLayout "fibonacci"
   changeLayoutProp("main-split", -0.2)
@@ -177,6 +90,9 @@ clearCommands "popup.selector"
 
 addCommand "editor", "<C-x><C-x>", "quit"
 addCommand "editor", "<CAS-r>", "reload-config"
+
+setOption "editor.restore-open-editors", true
+setOption "editor.frame-time-smoothing", 0.8
 
 setOption "ast.scroll-speed", 60
 setOption "editor.text.lsp.zig.path", "zls"

@@ -932,11 +932,21 @@ proc renderMainWindow*(ed: Editor, bounds: Rect) =
     ed.boxy.popLayer(blendMode = MaskBlend)
     ed.boxy.popLayer()
 
+
+var frameTimeSmooth: float = 0
 proc renderStatusBar*(ed: Editor, bounds: Rect) =
   let (statusBounds, commandsBounds) = bounds.splitH(relative(ed.ctx.fontSize))
 
   let mode = if ed.currentMode.len == 0: "normal" else: ed.currentMode
   discard ed.renderCtx.drawText(statusBounds.xy, fmt"{mode}", ed.theme.color("editor.foreground", rgb(225, 200, 200)))
+
+  let frameTimeSmoothing = getOption[float](ed, "editor.frame-time-smoothing", 0.1)
+  let frameTime = ed.frameTimer.elapsed.ms
+  frameTimeSmooth = frameTimeSmoothing * frameTimeSmooth + (1 - frameTimeSmoothing) * frameTime
+  let fps = int(1000 / frameTimeSmooth)
+  let frameTimeStr = fmt"{frameTimeSmooth:>5.2}ms, {fps} FPS"
+  discard ed.renderCtx.drawText(statusBounds.xwy, frameTimeStr, ed.theme.color("editor.foreground", rgb(225, 200, 200)), pivot=vec2(1, 0))
+
   discard ed.getCommandLineTextEditor.renderDocumentEditor(ed, commandsBounds, ed.commandLineMode)
 
 proc render*(ed: Editor) =
