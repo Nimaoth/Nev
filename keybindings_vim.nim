@@ -3,7 +3,7 @@ import absytree_runtime, keybindings_normal
 proc loadVimBindings*() =
   loadNormalBindings()
 
-  echo "Applying Vim keybindings"
+  log "Applying Vim keybindings"
 
   # clearCommands("editor.text")
   # for id in getAllEditors():

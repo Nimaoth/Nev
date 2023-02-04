@@ -11,7 +11,9 @@ import nimscripter, nimscripter/[vmconversion, vmaddins]
 type ScriptContext* = ref object
   inter*: Option[Interpreter]
   script: NimScriptPath
+  apiModule: string # The module in which functions exposed to the script will be implemented using `implementRoutine`
   addins: VMAddins
+  postCodeAdditions: string # Text which gets appended to the script before being executed
 
 let stdPath = "C:/Users/nimao/.choosenim/toolchains/nim-#devel/lib"
 
@@ -97,14 +99,39 @@ proc myLoadScript(
       result = option(intr)
     except VMQuit: discard
 
+proc mySafeLoadScriptWithState*(
+  intr: var Option[Interpreter];
+  script: NimScriptFile or NimScriptPath;
+  apiModule: string,
+  addins: VMAddins = VMaddins();
+  postCodeAdditions: string,
+  modules: varargs[string];
+  vmErrorHook = errorHook;
+  stdPath = findNimStdlibCompileTime();
+  searchPaths: sink seq[string] = @[];
+  defines = defaultDefines) =
+  ## Same as loadScriptWithState but saves state then loads the intepreter into `intr` if there were no script errors.
+  ## Tries to keep the interpreter running.
+  let state =
+    if intr.isSome:
+      intr.get.saveState()
+    else:
+      @[]
+  let tempIntr = myLoadScript(script, apiModule, addins, postCodeAdditions, modules, vmErrorHook, stdPath, searchPaths, defines)
+  if tempIntr.isSome:
+    intr = tempIntr
+    intr.get.loadState(state)
+
 proc newScriptContext*(path: string, apiModule: string, addins: VMAddins, postCodeAdditions: string): ScriptContext =
   new result
   result.script = NimScriptPath(path)
+  result.apiModule = apiModule
   result.addins = addins
+  result.postCodeAdditions = postCodeAdditions
   result.inter = myLoadScript(result.script, apiModule, addins, postCodeAdditions, ["scripting_api", "std/json"], stdPath = stdPath, searchPaths = @["src"], vmErrorHook = errorHook)
 
 proc reloadScript*(ctx: ScriptContext) =
-  ctx.inter.safeLoadScriptWithState(ctx.script, ctx.addins, ["scripting_api", "std/json"], stdPath = stdPath, searchPaths = @["src"], vmErrorHook = errorHook)
+  ctx.inter.mySafeLoadScriptWithState(ctx.script, ctx.apiModule, ctx.addins, ctx.postCodeAdditions, ["scripting_api", "std/json"], stdPath = stdPath, searchPaths = @["src"], vmErrorHook = errorHook)
 
 const mapperFunctions = CacheTable"MapperFunctions" # Maps from type name (referring to nim type) to function which maps these types
 const typeWrapper = CacheTable"TypeWrapper"         # Maps from type name (referring to nim type) to type name of the api type (from scripting_api)
