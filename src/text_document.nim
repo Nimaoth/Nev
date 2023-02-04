@@ -983,19 +983,24 @@ proc doMoveCursorPrevFindResult(self: TextDocumentEditor, cursor: Cursor, offset
 proc doMoveCursorNextFindResult(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor =
   return self.getNextFindResult(cursor, offset).first
 
-proc scrollToCursor(self: TextDocumentEditor, cursor: Cursor) =
+proc scrollToCursor(self: TextDocumentEditor, cursor: Cursor, keepVerticalOffset: bool = false) =
   let targetLine = cursor.line
   let totalLineHeight = self.editor.renderCtx.lineHeight + getOption[float32](self.editor, "text.line-distance")
 
-  let targetLineY = (targetLine - self.previousBaseIndex).float32 * totalLineHeight + self.scrollOffset
+  if keepVerticalOffset:
+    let currentLineY = (self.selection.last.line - self.previousBaseIndex).float32 * totalLineHeight + self.scrollOffset
+    self.previousBaseIndex = targetLine
+    self.scrollOffset = currentLineY
+  else:
+    let targetLineY = (targetLine - self.previousBaseIndex).float32 * totalLineHeight + self.scrollOffset
 
-  let margin = clamp(getOption[float32](self.editor, "text.cursor-margin", 25.0), 0.0, self.lastContentBounds.h * 0.5 - totalLineHeight * 0.5)
-  if targetLineY < margin:
-    self.scrollOffset = margin
-    self.previousBaseIndex = targetLine
-  elif targetLineY + totalLineHeight > self.lastContentBounds.h - margin:
-    self.scrollOffset = self.lastContentBounds.h - margin - totalLineHeight
-    self.previousBaseIndex = targetLine
+    let margin = clamp(getOption[float32](self.editor, "text.cursor-margin", 25.0), 0.0, self.lastContentBounds.h * 0.5 - totalLineHeight * 0.5)
+    if targetLineY < margin:
+      self.scrollOffset = margin
+      self.previousBaseIndex = targetLine
+    elif targetLineY + totalLineHeight > self.lastContentBounds.h - margin:
+      self.scrollOffset = self.lastContentBounds.h - margin - totalLineHeight
+      self.previousBaseIndex = targetLine
 
 proc getContextWithMode*(self: TextDocumentEditor, context: string): string
 
@@ -1643,9 +1648,13 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
 proc handleAction(self: TextDocumentEditor, action: string, arg: string): EventResponse =
   # echo "handleAction ", action, ", ", arg
   var args = newJArray()
-  for a in newStringStream(arg).parseJsonFragments():
-    args.add a
-  return self.handleActionInternal(action, args)
+  try:
+    for a in newStringStream(arg).parseJsonFragments():
+      args.add a
+    return self.handleActionInternal(action, args)
+  except CatchableError:
+    logger.log(lvlError, fmt"[editor.text] handleAction: {action}, Failed to parse args: '{arg}'")
+    return Failed
 
 proc handleInput(self: TextDocumentEditor, input: string): EventResponse =
   # echo "handleInput '", input, "'"
