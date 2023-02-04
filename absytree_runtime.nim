@@ -1,5 +1,8 @@
-# import std/logging
-import std/[strformat, tables, macros, json]
+import std/[strformat, tables, macros, json, strutils, sugar, sequtils]
+
+import src/scripting_api
+import absytree_api
+export absytree_api, strformat, tables, json, strutils, sugar, sequtils, scripting_api
 
 type AnyDocumentEditor = TextDocumentEditor | AstDocumentEditor
 
@@ -7,6 +10,15 @@ var lambdaActions = initTable[string, proc(): void]()
 var voidCallbacks = initTable[int, proc(args: JsonNode): void]()
 var boolCallbacks = initTable[int, proc(args: JsonNode): bool]()
 var callbackId = 0
+
+proc log*(args: varargs[string, `$`]) =
+  var msgLen = 0
+  for arg in args:
+    msgLen += arg.len
+  var result = newStringOfCap(msgLen + 5)
+  for arg in args:
+    result.add(arg)
+  scriptLog(result)
 
 proc addCallback*(action: proc(args: JsonNode): void): int =
   result = callbackId
@@ -41,14 +53,6 @@ proc addCommand*(context: string, keys: string, action: proc(): void) =
   lambdaActions[key] = action
   scriptAddCommand(context, keys, "lambda-action", key.toJsonString)
 
-proc handleCallback*(id: int, args: JsonNode): bool =
-  if voidCallbacks.contains(id):
-    voidCallbacks[id](args)
-    return true
-  elif boolCallbacks.contains(id):
-    return boolCallbacks[id](args)
-  return false
-
 proc handleLambdaAction*(key: string): bool =
   if lambdaActions.contains(key):
     lambdaActions[key]()
@@ -56,7 +60,7 @@ proc handleLambdaAction*(key: string): bool =
   return false
 
 proc removeCommand*(context: string, keys: string) =
-  scriptRemoveCommand(context, keys)
+  removeCommand(context, keys)
 
 macro runAction*(action: string, args: varargs[untyped]): untyped =
   var stmts = nnkStmtList.newTree()
@@ -78,40 +82,13 @@ template isTextEditor*(editorId: EditorId, injected: untyped): bool =
 template isAstEditor*(editorId: EditorId, injected: untyped): bool =
   (scriptIsAstEditor(editorId) and ((let injected {.inject.} = AstDocumentEditor(id: editorId); true)))
 
-proc getActiveEditor*(): EditorId =
-  return scriptGetActiveEditorHandle()
-
-proc getActivePopup*(): PopupId =
-  return scriptGetActivePopupHandle()
-
-proc getTextEditor*(index: int): EditorId =
-  return scriptGetEditorHandle(index)
-
-proc handleAction*(action: string, arg: string): bool
-proc handleDocumentEditorAction*(id: EditorId, action: string, args: JsonNode): bool
-proc handleTextEditorAction*(editor: TextDocumentEditor, action: string, args: JsonNode): bool
-proc handleAstEditorAction*(editor: AstDocumentEditor, action: string, args: JsonNode): bool
-proc handlePopupAction*(popup: PopupId, action: string, arg: string): bool
-
-proc handleGlobalAction*(action: string, arg: string): bool =
-  if action == "lambda-action":
-    return handleLambdaAction(arg)
-  return handleAction(action, arg)
-
-proc handleEditorAction*(id: EditorId, action: string, args: JsonNode): bool =
-  if action == "lambda-action":
-    return handleLambdaAction(args[0].str)
-
-  if id.isTextEditor(editor):
-    return handleTextEditorAction(editor, action, args)
-
-  elif id.isAstEditor(editor):
-    return handleAstEditorAction(editor, action, args)
-
-  return handleDocumentEditorAction(id, action, args)
-
-proc handleUnknownPopupAction*(id: PopupId, action: string, arg: string): bool =
-  return handlePopupAction(id, action, arg)
+proc handleCallbackImpl*(id: int, args: JsonNode): bool =
+  if voidCallbacks.contains(id):
+    voidCallbacks[id](args)
+    return true
+  elif boolCallbacks.contains(id):
+    return boolCallbacks[id](args)
+  return false
 
 proc runAction*(id: EditorId, action: string, arg: string = "") =
   scriptRunActionFor(id, action, arg)
@@ -171,15 +148,6 @@ proc setOption*[T](path: string, value: T) =
     scriptSetOptionString(path, value)
   else:
     {.fatal: ("Can't set option with type " & $T).}
-
-proc log*(args: varargs[string, `$`]) =
-  var msgLen = 0
-  for arg in args:
-    msgLen += arg.len
-  var result = newStringOfCap(msgLen + 5)
-  for arg in args:
-    result.add(arg)
-  scriptLog(result)
 
 template addTextCommandBlock*(mode: static[string], keys: string, body: untyped): untyped =
   let context = if mode.len == 0: "editor.text" else: "editor.text." & mode

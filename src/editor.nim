@@ -215,7 +215,7 @@ proc createEditorForDocument(self: Editor, document: Document): DocumentEditor =
   return nil
 
 proc getOption*[T](editor: Editor, path: string, default: T = T.default): T =
-  template createScriptGetOption(editor, path, defaultValue, accessor: untyped): untyped =
+  template createScriptGetOption(editor, path, defaultValue, accessor: untyped): untyped {.used.} =
     block:
       if editor.isNil:
         return default
@@ -332,7 +332,7 @@ proc setTheme*(self: Editor, path: string) =
   if loadFromFile(path).getSome(theme):
     self.theme = theme
 
-proc createAddins(): VmAddins
+proc createScriptContext(filepath: string): ScriptContext
 
 proc getCommandLineTextEditor*(self: Editor): TextDocumentEditor = self.commandLineTextEditor.TextDocumentEditor
 
@@ -432,9 +432,8 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
   except CatchableError:
     self.logger.log(lvlError, fmt"Failed to load previous state from config file: {getCurrentExceptionMsg()}")
 
-  let addins = createAddins()
   try:
-    self.scriptContext = newScriptContext("./absytree_config.nims", addins)
+    self.scriptContext = createScriptContext("./absytree_config.nims")
     self.scriptContext.inter.invoke(postInitialize)
     self.initializeCalled = true
   except CatchableError:
@@ -825,15 +824,15 @@ proc handleRune*(self: Editor, rune: Rune, modifiers: Modifiers) =
   let input = rune.toInput()
   self.currentEventHandlers.handleEvent(input, modifiers)
 
-proc scriptRunAction*(action: string, arg: string) =
+proc scriptRunAction*(action: string, arg: string) {.expose("editor").} =
   if gEditor.isNil:
     return
   discard gEditor.handleAction(action, arg)
 
-proc scriptLog*(message: string) =
-  logger.log(lvlInfo, message)
+proc scriptLog*(message: string) {.expose("editor").} =
+  logger.log(lvlInfo, fmt"[script] {message}")
 
-proc scriptAddCommand*(context: string, keys: string, action: string, arg: string) =
+proc scriptAddCommand*(context: string, keys: string, action: string, arg: string) {.expose("editor").} =
   if gEditor.isNil:
     return
 
@@ -841,14 +840,14 @@ proc scriptAddCommand*(context: string, keys: string, action: string, arg: strin
   # logger.log(lvlInfo, fmt"Adding command to '{context}': ('{keys}', '{command}')")
   gEditor.getEventHandlerConfig(context).addCommand(keys, command)
 
-proc scriptRemoveCommand*(context: string, keys: string) =
+proc removeCommand*(context: string, keys: string) {.expose("editor").} =
   if gEditor.isNil:
     return
 
   # logger.log(lvlInfo, fmt"Removing command from '{context}': '{keys}'")
   gEditor.getEventHandlerConfig(context).removeCommand(keys)
 
-proc scriptGetActivePopupHandle*(): PopupId =
+proc getActivePopup*(): PopupId {.expose("editor").} =
   if gEditor.isNil:
     return PopupId(-1)
   if gEditor.popups.len > 0:
@@ -856,7 +855,7 @@ proc scriptGetActivePopupHandle*(): PopupId =
 
   return PopupId(-1)
 
-proc scriptGetActiveEditorHandle*(): EditorId =
+proc getActiveEditor*(): EditorId {.expose("editor").} =
   if gEditor.isNil:
     return EditorId(-1)
   if gEditor.commandLineMode:
@@ -866,7 +865,7 @@ proc scriptGetActiveEditorHandle*(): EditorId =
 
   return EditorId(-1)
 
-proc scriptGetEditorHandle*(index: int): EditorId =
+proc getEditor*(index: int): EditorId {.expose("editor").} =
   if gEditor.isNil:
     return EditorId(-1)
   if index >= 0 and index < gEditor.views.len:
@@ -874,39 +873,39 @@ proc scriptGetEditorHandle*(index: int): EditorId =
 
   return EditorId(-1)
 
-proc scriptIsTextEditor*(editorId: EditorId): bool =
+proc scriptIsTextEditor*(editorId: EditorId): bool {.expose("editor").} =
   if gEditor.isNil:
     return false
   if gEditor.getEditorForId(editorId).getSome(editor):
     return editor of TextDocumentEditor
   return false
 
-proc scriptIsAstEditor*(editorId: EditorId): bool =
+proc scriptIsAstEditor*(editorId: EditorId): bool {.expose("editor").} =
   if gEditor.isNil:
     return false
   if gEditor.getEditorForId(editorId).getSome(editor):
     return editor of AstDocumentEditor
   return false
 
-proc scriptRunActionFor*(editorId: EditorId, action: string, arg: string) =
+proc scriptRunActionFor*(editorId: EditorId, action: string, arg: string) {.expose("editor").} =
   if gEditor.isNil:
     return
   if gEditor.getEditorForId(editorId).getSome(editor):
     discard editor.eventHandler.handleAction(action, arg)
 
-proc scriptRunActionForPopup*(popupId: PopupId, action: string, arg: string) =
+proc scriptRunActionForPopup*(popupId: PopupId, action: string, arg: string) {.expose("editor").} =
   if gEditor.isNil:
     return
   if gEditor.getPopupForId(popupId).getSome(popup):
     discard popup.eventHandler.handleAction(action, arg)
 
-proc scriptInsertTextInto*(editorId: EditorId, text: string) =
+proc scriptInsertTextInto*(editorId: EditorId, text: string) {.expose("editor").} =
   if gEditor.isNil:
     return
   if gEditor.getEditorForId(editorId).getSome(editor):
     discard editor.eventHandler.handleInput(text)
 
-proc scriptTextEditorSelection*(editorId: EditorId): Selection =
+proc scriptTextEditorSelection*(editorId: EditorId): Selection {.expose("editor").} =
   if gEditor.isNil:
     return ((0, 0), (0, 0))
   if gEditor.getEditorForId(editorId).getSome(editor):
@@ -915,14 +914,14 @@ proc scriptTextEditorSelection*(editorId: EditorId): Selection =
       return editor.selection
   return ((0, 0), (0, 0))
 
-proc scriptSetTextEditorSelection*(editorId: EditorId, selection: Selection) =
+proc scriptSetTextEditorSelection*(editorId: EditorId, selection: Selection) {.expose("editor").} =
   if gEditor.isNil:
     return
   if gEditor.getEditorForId(editorId).getSome(editor):
     if editor of TextDocumentEditor:
       editor.TextDocumentEditor.selection = selection
 
-proc scriptTextEditorSelections*(editorId: EditorId): seq[Selection] =
+proc scriptTextEditorSelections*(editorId: EditorId): seq[Selection] {.expose("editor").} =
   if gEditor.isNil:
     return @[((0, 0), (0, 0))]
   if gEditor.getEditorForId(editorId).getSome(editor):
@@ -931,14 +930,14 @@ proc scriptTextEditorSelections*(editorId: EditorId): seq[Selection] =
       return editor.selections
   return @[((0, 0), (0, 0))]
 
-proc scriptSetTextEditorSelections*(editorId: EditorId, selections: seq[Selection]) =
+proc scriptSetTextEditorSelections*(editorId: EditorId, selections: seq[Selection]) {.expose("editor").} =
   if gEditor.isNil:
     return
   if gEditor.getEditorForId(editorId).getSome(editor):
     if editor of TextDocumentEditor:
       editor.TextDocumentEditor.selections = selections
 
-proc scriptGetTextEditorLine*(editorId: EditorId, line: int): string =
+proc scriptGetTextEditorLine*(editorId: EditorId, line: int): string {.expose("editor").} =
   if gEditor.isNil:
     return ""
   if gEditor.getEditorForId(editorId).getSome(editor):
@@ -948,7 +947,7 @@ proc scriptGetTextEditorLine*(editorId: EditorId, line: int): string =
         return editor.document.content[line]
   return ""
 
-proc scriptGetTextEditorLineCount*(editorId: EditorId): int =
+proc scriptGetTextEditorLineCount*(editorId: EditorId): int {.expose("editor").} =
   if gEditor.isNil:
     return 0
   if gEditor.getEditorForId(editorId).getSome(editor):
@@ -982,69 +981,59 @@ template createScriptSetOption(path, value: untyped): untyped =
       return
     node[pathItems[^1]] = value
 
-proc scriptGetOptionInt*(path: string, default: int): int =
+proc scriptGetOptionInt*(path: string, default: int): int {.expose("editor").} =
   result = createScriptGetOption(path, default, getInt)
 
-proc scriptGetOptionFloat*(path: string, default: float): float =
+proc scriptGetOptionFloat*(path: string, default: float): float {.expose("editor").} =
   result = createScriptGetOption(path, default, getFloat)
 
-proc scriptGetOptionBool*(path: string, default: bool): bool =
+proc scriptGetOptionBool*(path: string, default: bool): bool {.expose("editor").} =
   result = createScriptGetOption(path, default, getBool)
 
-proc scriptGetOptionString*(path: string, default: string): string =
+proc scriptGetOptionString*(path: string, default: string): string {.expose("editor").} =
   result = createScriptGetOption(path, default, getStr)
 
-proc scriptSetOptionInt*(path: string, value: int) =
+proc scriptSetOptionInt*(path: string, value: int) {.expose("editor").} =
   createScriptSetOption(path, newJInt(value))
 
-proc scriptSetOptionFloat*(path: string, value: float) =
+proc scriptSetOptionFloat*(path: string, value: float) {.expose("editor").} =
   createScriptSetOption(path, newJFloat(value))
 
-proc scriptSetOptionBool*(path: string, value: bool) =
+proc scriptSetOptionBool*(path: string, value: bool) {.expose("editor").} =
   createScriptSetOption(path, newJBool(value))
 
-proc scriptSetOptionString*(path: string, value: string) =
+proc scriptSetOptionString*(path: string, value: string) {.expose("editor").} =
   createScriptSetOption(path, newJString(value))
 
-proc scriptSetCallback*(path: string, id: int) =
+proc scriptSetCallback*(path: string, id: int) {.expose("editor").} =
   if gEditor.isNil:
     return
   gEditor.callbacks[path] = id
 
 proc createAddins(): VmAddins =
-  exportTo(myImpl,
-    scriptSetCallback,
-    scriptRunAction,
-    scriptLog,
-    scriptAddCommand,
-    scriptRemoveCommand,
-    scriptGetActiveEditorHandle,
-    scriptGetActivePopupHandle,
-    scriptGetEditorHandle,
-    scriptRunActionFor,
-    scriptRunActionForPopup,
-    scriptInsertTextInto,
-    scriptIsTextEditor,
-    scriptIsAstEditor,
-    scriptTextEditorSelection,
-    scriptSetTextEditorSelection,
-    scriptTextEditorSelections,
-    scriptSetTextEditorSelections,
-    scriptGetTextEditorLine,
-    scriptGetTextEditorLineCount,
-    scriptGetOptionInt,
-    scriptGetOptionFloat,
-    scriptGetOptionBool,
-    scriptGetOptionString,
-    scriptSetOptionInt,
-    scriptSetOptionFloat,
-    scriptSetOptionBool,
-    scriptSetOptionString,
-    )
   addCallable(myImpl):
-    proc handleGlobalAction(action: string, arg: string): bool
     proc postInitialize()
+    proc handleGlobalAction(action: string, arg: string): bool
     proc handleEditorAction(id: EditorId, action: string, args: JsonNode): bool
     proc handleUnknownPopupAction(id: PopupId, action: string, arg: string): bool
     proc handleCallback(id: int, args: JsonNode): bool
+
   return implNimScriptModule(myImpl)
+
+const addins = createAddins()
+static:
+  var script_api_content = "import src/scripting_api\nimport std/[json]\n\n"
+
+  # Add stub proc impls generated by nimscripter
+  for uProc in addins.procs:
+    script_api_content.add uProc.vmRunImpl
+
+  # Add the wrapper for the script function (already stored as string repr)
+  for f in exposedFunctions:
+    script_api_content.add f.strVal
+
+  # echo script_api_content
+  writeFile("absytree_api.nim", script_api_content)
+
+proc createScriptContext(filepath: string): ScriptContext =
+  return newScriptContext(filepath, "absytree_api", addins, "include absytree_runtime_impl")

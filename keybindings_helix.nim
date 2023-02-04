@@ -1,3 +1,4 @@
+import absytree_runtime, keybindings_normal
 
 proc loadHelixBindings*() =
   loadNormalBindings()

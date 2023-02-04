@@ -1,3 +1,5 @@
+import absytree_runtime, keybindings_normal
+
 proc loadVimBindings*() =
   loadNormalBindings()
 

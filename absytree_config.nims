@@ -1,18 +1,15 @@
-include abs
+import absytree_runtime
 import std/[strutils, sugar, sequtils]
 
-proc loadNormalBindings*()
-proc loadVimBindings*()
-proc loadHelixBindings*()
 
-include keybindings_vim
-include keybindings_helix
-include keybindings_normal
+import keybindings_vim
+import keybindings_helix
+import keybindings_normal
 
 # {.line: ("config.nims", 4).}
 
 proc handleAction*(action: string, arg: string): bool =
-  log "[script] ", action, ", ", arg
+  log action, ", ", arg
 
   case action
   of "set-max-loop-iterations":
@@ -47,14 +44,6 @@ proc handlePopupAction*(popup: PopupId, action: string, arg: string): bool =
 proc handleDocumentEditorAction(id: EditorId, action: string, args: JsonNode): bool =
   return false
 
-proc mapAllOrLast[T](self: seq[T], all: bool, p: proc(v: T): T): seq[T] =
-  if all:
-    result = self.map (s) => p(s)
-  else:
-    result = self
-    if result.len > 0:
-      result[result.high] = p(result[result.high])
-
 proc handleTextEditorAction(editor: TextDocumentEditor, action: string, args: JsonNode): bool =
   # echo "handleTextEditorAction ", action, ", ", args
 
@@ -69,7 +58,7 @@ proc handleAstEditorAction(editor: AstDocumentEditor, action: string, args: Json
   return true
 
 proc postInitialize*() =
-  log "[script] postInitialize()"
+  log "postInitialize()"
 
   # openFile "temp/test.rs"
   # openFile "temp/rust-test/src/main.rs"
@@ -79,6 +68,8 @@ proc postInitialize*() =
   # openFile "src/absytree.nim"
   setLayout "fibonacci"
   changeLayoutProp("main-split", -0.2)
+
+echo "Loading"
 
 clearCommands "editor"
 clearCommands "editor.ast"

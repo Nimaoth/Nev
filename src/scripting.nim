@@ -1,7 +1,9 @@
 import std/[json, strformat, strutils, tables, options, macros, macrocache, typetraits]
 import os
 import fusion/matching
+import compiler/[renderer, ast, llstream, lineinfos, types]
 import compiler/options as copts
+from compiler/vmdef import TSandboxFlag
 import util
 
 import nimscripter, nimscripter/[vmconversion, vmaddins]
@@ -37,11 +39,69 @@ proc setGlobalVariable*[T](intr: Option[Interpreter] or Interpreter; name: strin
   else:
     raise newException(VmSymNotFound, name & " is not a global symbol in the script.")
 
-proc newScriptContext*(path: string, addins: VMAddins): ScriptContext =
+const defaultDefines = @{"nimscript": "true", "nimconfig": "true"}
+
+proc getSearchPath(path: string): seq[string] =
+  result.add path
+  for dir in walkDirRec(path, {pcDir}):
+    result.add dir
+
+proc myLoadScript(
+  script: NimScriptFile or NimScriptPath;
+  apiModule: string,
+  addins: VMAddins;
+  postCodeAdditions: string,
+  modules: varargs[string];
+  vmErrorHook = errorHook;
+  stdPath = findNimStdlibCompileTime();
+  searchPaths: sink seq[string] = @[];
+  defines = defaultDefines): Option[Interpreter] =
+  ## Loads an interpreter from a file or from string, with given addtions and userprocs.
+  ## To load from the filesystem use `NimScriptPath(yourPath)`.
+  ## To load from a string use `NimScriptFile(yourFile)`.
+  ## `addins` is the overrided procs/addons from `impleNimScriptModule
+  ## `modules` implict imports to add to the module.
+  ## `stdPath` to use shipped path instead of finding it at compile time.
+  ## `vmErrorHook` a callback which should raise `VmQuit`, refer to `errorHook` for reference.
+  ## `searchPaths` optional paths one can use to supply libraries or packages for the
+  const isFile = script is NimScriptPath
+  if not isFile or fileExists(script.string):
+    var additions = addins.additions
+    for `mod` in modules: # Add modules
+      additions.insert("import " & `mod` & "\n", 0)
+
+    var searchPaths = getSearchPath(stdPath) & searchPaths
+    let scriptName = when isFile: script.string.splitFile.name else: "script"
+
+    when isFile: # If is file we want to enable relative imports
+      searchPaths.add script.string.parentDir
+
+    let
+      intr = createInterpreter(scriptName, searchPaths, flags = {allowInfiniteLoops},
+        defines = defines
+      )
+      script = when isFile: readFile(script.string) else: script.string
+
+    for uProc in addins.procs:
+      intr.implementRoutine("*", apiModule, uProc.name, uProc.vmProc)
+
+    intr.registerErrorHook(vmErrorHook)
+    try:
+      additions.add script
+      additions.add addins.postCodeAdditions
+      additions.add "\n"
+      additions.add postCodeAdditions
+      when defined(debugScript):
+        writeFile("debugscript.nims", additions)
+      intr.evalScript(llStreamOpen(additions))
+      result = option(intr)
+    except VMQuit: discard
+
+proc newScriptContext*(path: string, apiModule: string, addins: VMAddins, postCodeAdditions: string): ScriptContext =
   new result
   result.script = NimScriptPath(path)
   result.addins = addins
-  result.inter = loadScript(result.script, addins, ["scripting_api", "std/json"], stdPath = stdPath, searchPaths = @["src"], vmErrorHook = errorHook)
+  result.inter = myLoadScript(result.script, apiModule, addins, postCodeAdditions, ["scripting_api", "std/json"], stdPath = stdPath, searchPaths = @["src"], vmErrorHook = errorHook)
 
 proc reloadScript*(ctx: ScriptContext) =
   ctx.inter.safeLoadScriptWithState(ctx.script, ctx.addins, ["scripting_api", "std/json"], stdPath = stdPath, searchPaths = @["src"], vmErrorHook = errorHook)
@@ -50,6 +110,7 @@ const mapperFunctions = CacheTable"MapperFunctions" # Maps from type name (refer
 const typeWrapper = CacheTable"TypeWrapper"         # Maps from type name (referring to nim type) to type name of the api type (from scripting_api)
 const functions = CacheTable"DispatcherFunctions"   # Maps from scope name to list of tuples of name and wrapper
 const injectors = CacheTable"Injectors"             # Maps from type name (referring to nim type) to function
+const exposedFunctions* = CacheSeq"ExposedFunctions" # Maps from type name (referring to nim type) to type name of the api type (from scripting_api)
 
 macro addTypeMap*(source: untyped, wrapper: typed, mapperFunction: typed) =
   mapperFunctions[$source] = mapperFunction
@@ -61,12 +122,18 @@ macro addInjector*(name: untyped, function: typed) =
 template varargs*() {.pragma.}
 
 macro addFunction(name: untyped, script: untyped, wrapper: typed, moduleName: static string) =
+  ## Registers the nim function `name` in the module `moduleName`. `script` is a symbol referring
+  ## to the version of this function with the 'Script' suffix, which is exported to the nim script.
+  ## `wrapper`
   let n = nnkStmtList.newTree(name, script, wrapper)
   for name, _ in functions:
     if name == moduleName:
       functions[name].add n
       return
   functions[moduleName] = nnkStmtList.newTree(n)
+
+macro addScriptWrapper(name: untyped, moduleName: static string) =
+  exposedFunctions.add name
 
 macro expose*(moduleName: static string, def: untyped): untyped =
   defer:
@@ -91,30 +158,36 @@ macro expose*(moduleName: static string, def: untyped): untyped =
       return def[3][arg + 1][2].some
     return NimNode.none
 
-  let functionNameStr = functionName.strVal
-  let pureFunctionName = ident functionNameStr
+  # Name of the Nim function
+  let pureFunctionNameStr = functionName.strVal
+  let pureFunctionName = ident pureFunctionNameStr
 
-  var postfix = ""
+  # Generate suffix to create a unique name, since function overloading is not supported for NimScript interop
+  var suffix = ""
   for module, functions in functions.pairs:
     for entry in functions:
-      if pureFunctionName.strVal == $entry[0]:
-        postfix.add("2")
+      if pureFunctionNameStr == entry[0].repr:
+        suffix.add("2")
 
   # defer:
-  #   if pureFunctionName.strVal == "setMove":
+  #   if pureFunctionNameStr == "setMove":
   #     echo def.treeRepr
   #     echo result.repr
 
-  let wrapperName = ident(pureFunctionName.strVal & "Api" & postfix)
-  var callToImplFromBuiltin = nnkCall.newTree(functionName)
+  # The wrapper function which takes JSON arguments and returns JSON and internally calls the Nim function
+  let jsonWrapperFunctionName = ident(pureFunctionNameStr & "Api" & suffix)
 
-  let jsonArg = nskParam.genSym
-
-  let scriptFunctionSym = ident(pureFunctionName.strVal & "Script" & postfix)
+  # The script function is a wrapper around impl which translates some argument types
+  # and inserts some arguments automatically using injectors. This function will be called from the NimScript
+  let scriptFunctionSym = ident(pureFunctionNameStr & "Script" & suffix)
   var scriptFunction = def.copy
   scriptFunction[0] = nnkPostfix.newTree(ident"*", scriptFunctionSym)
+  var callImplFromScriptFunction = nnkCall.newTree(functionName)
+
+  # Wrapper function for the script function which is inserted into NimScript. This
   var scriptFunctionWrapper = def.copy
-  scriptFunctionWrapper[0] = pureFunctionName
+  scriptFunctionWrapper[0] = nnkPostfix.newTree(ident"*", pureFunctionName)
+  var callScriptFuncFromScriptFuncWrapper = nnkCall.newTree(scriptFunctionSym)
 
   proc removeVarargs(node: var NimNode) =
     for param in node[3]:
@@ -125,21 +198,25 @@ macro expose*(moduleName: static string, def: untyped): untyped =
   removeVarargs(scriptFunction)
   removeVarargs(scriptFunctionWrapper)
 
-  var callToBuiltinFunctionFromJson = nnkCall.newTree(scriptFunctionSym)
-  var callToBuiltinFunctionFromScript = nnkCall.newTree(scriptFunctionSym)
+  var callScriptFuncFromJson = nnkCall.newTree(scriptFunctionSym)
 
   var mappedArgIndices = initTable[int, int]()
   for i in 0..<argCount:
     var argumentType = def.argType i
     var wasInjected = false
     for typeName, function in injectors.pairs:
-      if $argumentType == typeName:
+      if argumentType.repr == typeName:
         wasInjected = true
         break
 
     if not wasInjected:
       mappedArgIndices[i] = mappedArgIndices.len
 
+  # Argument of the JSON wrapper which calls the script function. Defined here so we can use it in the loop.
+  let jsonArg = nskParam.genSym
+
+  # Go through each parameter in reverse, fill out the args in `callImplFromScriptFunction`, `callScriptFuncFromScriptFuncWrapper`
+  # and `callScriptFuncFromJson`
   for k in 1..argCount:
     let i = argCount - k
 
@@ -201,7 +278,7 @@ macro expose*(moduleName: static string, def: untyped): untyped =
     # Check if the type is injected, if so replace callFromScriptArg
     # and remove the parameter from scriptFunction
     for typeName, function in injectors.pairs:
-      if $mappedArgumentType == typeName:
+      if mappedArgumentType.repr == typeName:
         wasInjected = true
         scriptFunction[3].del(i + 1)
         scriptFunctionWrapper[3].del(i + 1)
@@ -214,46 +291,43 @@ macro expose*(moduleName: static string, def: untyped): untyped =
         break
 
     if not wasInjected:
-      callToBuiltinFunctionFromJson.insert(1, resWrapper)
-      callToBuiltinFunctionFromScript.insert(1, scriptFunctionWrapper.argName(i))
-    callToImplFromBuiltin.insert(1, callFromScriptArg)
+      callScriptFuncFromJson.insert(1, resWrapper)
+      callScriptFuncFromScriptFuncWrapper.insert(1, scriptFunctionWrapper.argName(i))
+    callImplFromScriptFunction.insert(1, callFromScriptArg)
 
   scriptFunction[6] = quote do:
-    `callToImplFromBuiltin`
+    `callImplFromScriptFunction`
 
   scriptFunctionWrapper[6] = quote do:
-    `callToBuiltinFunctionFromScript`
+    `callScriptFuncFromScriptFuncWrapper`
 
-  let adjustedCall = if returnType.isNone:
-    callToBuiltinFunctionFromJson
+  let callScriptFuncFromJsonWithReturn = if returnType.isNone:
+    callScriptFuncFromJson
   else:
     quote do:
-      return `callToBuiltinFunctionFromJson`.toJson
+      return `callScriptFuncFromJson`.toJson
 
-  var scriptFunctionForward = scriptFunction.copy
-  scriptFunctionForward[0] = scriptFunctionSym
-  scriptFunctionForward[6] = newEmptyNode()
+  let scriptFunctionWrapperRepr = scriptFunctionWrapper.repr
 
   return quote do:
     `def`
 
     `scriptFunction`
 
-    proc `wrapperName`*(`jsonArg`: JsonNode): JsonNode {.nimcall, used.} =
+    proc `jsonWrapperFunctionName`*(`jsonArg`: JsonNode): JsonNode {.nimcall, used.} =
       result = newJNull()
       try:
-        `adjustedCall`
+        `callScriptFuncFromJsonWithReturn`
       except CatchableError:
-        let name = `functionNameStr`
+        let name = `pureFunctionNameStr`
         echo "[editor] Failed to run function " & name & fmt": Invalid arguments: {getCurrentExceptionMsg()}"
         echo getCurrentException().getStackTrace
 
     static:
       addToCache(`scriptFunctionSym`, "myImpl")
-      addFunction(`pureFunctionName`, `scriptFunctionSym`, `wrapperName`, `moduleName`)
-      exportCode("myImpl"):
-        `scriptFunctionForward`
-        `scriptFunctionWrapper`
+      addFunction(`pureFunctionName`, `scriptFunctionSym`, `jsonWrapperFunctionName`, `moduleName`)
+
+      addScriptWrapper(`scriptFunctionWrapperRepr`, "myImpl")
 
 macro genDispatcher*(moduleName: static string): untyped =
   # defer:

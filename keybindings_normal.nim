@@ -1,3 +1,4 @@
+import absytree_runtime
 
 proc loadNormalBindings*() =
   echo "Applying normal keybindings"
