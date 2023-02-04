@@ -1,1 +1,6 @@
 switch("path", "$nim")
+switch("d", "mingw")
+switch("mm", "refc")
+switch("tlsEmulation", "off")
+switch("d", "release")
+switch("o", "ast.exe")
