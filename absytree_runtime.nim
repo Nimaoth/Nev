@@ -34,25 +34,6 @@ func toJsonString[T: string](value: T): string = escapeJson(value)
 func toJsonString[T: char](value: T): string = escapeJson($value)
 func toJsonString[T](value: T): string = $value
 
-macro addCommand*(context: string, keys: string, action: string, args: varargs[untyped]): untyped =
-  var stmts = nnkStmtList.newTree()
-  let str = nskVar.genSym "str"
-  stmts.add quote do:
-    var `str` = ""
-  for arg in args:
-    stmts.add quote do:
-      `str`.add " "
-      `str`.add `arg`.toJsonString
-
-  return quote do:
-    `stmts`
-    scriptAddCommand(`context`, `keys`, `action`, `str`)
-
-proc addCommand*(context: string, keys: string, action: proc(): void) =
-  let key = context & keys
-  lambdaActions[key] = action
-  scriptAddCommand(context, keys, "lambda-action", key.toJsonString)
-
 proc handleLambdaAction*(key: string): bool =
   if lambdaActions.contains(key):
     lambdaActions[key]()
@@ -149,6 +130,56 @@ proc setOption*[T](path: string, value: T) =
   else:
     {.fatal: ("Can't set option with type " & $T).}
 
+macro addCommand*(context: string, keys: string, action: string, args: varargs[untyped]): untyped =
+  var stmts = nnkStmtList.newTree()
+  let str = nskVar.genSym "str"
+  stmts.add quote do:
+    var `str` = ""
+  for arg in args:
+    stmts.add quote do:
+      `str`.add " "
+      `str`.add `arg`.toJsonString
+
+  return quote do:
+    `stmts`
+    scriptAddCommand(`context`, `keys`, `action`, `str`)
+
+proc addCommand*(context: string, keys: string, action: proc(): void) =
+  let key = context & keys
+  lambdaActions[key] = action
+  scriptAddCommand(context, keys, "lambda-action", key.toJsonString)
+
+template addCommandBlock*(context: static[string], keys: string, body: untyped): untyped =
+  addCommand context, keys, proc() =
+    body
+
+# Editor commands
+template addEditorCommandBlock*(mode: static[string], keys: string, body: untyped): untyped =
+  let context = if mode.len == 0: "editor" else: "editor." & mode
+  addCommand context, keys, proc() =
+    body
+
+proc addEditorCommand*(mode: string, keys: string, action: proc(): void) =
+  let context = if mode.len == 0: "editor" else: "editor." & mode
+  addCommand context, keys, proc() =
+    action()
+
+macro addEditorCommand*(mode: static[string], keys: string, action: string, args: varargs[untyped]): untyped =
+  let context = if mode.len == 0: "editor" else: "editor." & mode
+  var stmts = nnkStmtList.newTree()
+  let str = nskVar.genSym "str"
+  stmts.add quote do:
+    var `str` = ""
+  for arg in args:
+    stmts.add quote do:
+      `str`.add " "
+      `str`.add `arg`.toJsonString
+
+  return quote do:
+    `stmts`
+    scriptAddCommand(`context`, `keys`, `action`, `str`)
+
+# Text commands
 template addTextCommandBlock*(mode: static[string], keys: string, body: untyped): untyped =
   let context = if mode.len == 0: "editor.text" else: "editor.text." & mode
   addCommand context, keys, proc() =
@@ -182,7 +213,29 @@ proc setTextInputHandler*(context: string, action: proc(editor: TextDocumentEdit
   scriptSetCallback("editor.text.input-handler." & context, id)
   setHandleInputs("editor.text." & context, true)
 
-template addAstCommand*(keys: string, body: untyped): untyped =
-  addCommand "editor.ast", keys, proc() =
+# Text commands
+template addAstCommandBlock*(mode: static[string], keys: string, body: untyped): untyped =
+  let context = if mode.len == 0: "editor.ast" else: "editor.ast." & mode
+  addCommand context, keys, proc() =
     let editor {.inject.} = AstDocumentEditor(id: getActiveEditor())
     body
+
+proc addAstCommand*(mode: string, keys: string, action: proc(editor: AstDocumentEditor): void) =
+  let context = if mode.len == 0: "editor.ast" else: "editor.ast." & mode
+  addCommand context, keys, proc() =
+    action(AstDocumentEditor(id: getActiveEditor()))
+
+macro addAstCommand*(mode: static[string], keys: string, action: string, args: varargs[untyped]): untyped =
+  let context = if mode.len == 0: "editor.ast" else: "editor.ast." & mode
+  var stmts = nnkStmtList.newTree()
+  let str = nskVar.genSym "str"
+  stmts.add quote do:
+    var `str` = ""
+  for arg in args:
+    stmts.add quote do:
+      `str`.add " "
+      `str`.add `arg`.toJsonString
+
+  return quote do:
+    `stmts`
+    scriptAddCommand(`context`, `keys`, `action`, `str`)

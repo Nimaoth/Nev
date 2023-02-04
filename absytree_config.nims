@@ -178,7 +178,7 @@ addCommand "popup.selector", "<END>", "end"
 loadVimBindings()
 
 # addCommand "editor.ast", "<A-LEFT>", "move-cursor", "-1"
-addAstCommand "<A-LEFT>": editor.moveCursor(-1)
+addAstCommandBlock "", "<A-LEFT>": editor.moveCursor(-1)
 addCommand "editor.ast", "<A-RIGHT>", "move-cursor", 1
 addCommand "editor.ast", "<A-UP>", "move-cursor-up"
 addCommand "editor.ast", "<A-DOWN>", "move-cursor-down"
