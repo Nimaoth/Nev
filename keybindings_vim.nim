@@ -13,24 +13,10 @@ proc loadVimBindings*() =
   setOption "editor.text.cursor.movement.", "both"
   setOption "editor.text.cursor.wide.", true
 
-  addCommand "editor.text", "gd", "goto-definition"
-  addCommand "editor.text", "<S-SPACE>", "get-completions"
-  addCommand "editor.text", "x", "delete-right"
-  addCommand "editor.text", "<C-l>", "select-line-current"
-  addCommand "editor.text", "miw", "select-inside-current"
-  addCommand "editor.text", "u", "undo"
-  addCommand "editor.text", "U", "redo"
-  addCommand "editor.text", "i", "set-mode", "insert"
-  addCommand "editor.text", "v", "set-mode", "visual"
-  addCommand "editor.text", "V", "set-mode", "visual-temp"
-  addTextCommandBlock "", "s":
-    editor.setMode("insert")
-    editor.selections = editor.delete(editor.selections)
-  addCommand "editor.text", "n", "select-move", "next-find-result"
-  addCommand "editor.text", "N", "select-move", "prev-find-result"
-  addCommand "editor.text", "<C-e>", "addNextFindResultToSelection"
-  addCommand "editor.text", "<C-E>", "addPrevFindResultToSelection"
-  addCommand "editor.text", "<A-e>", "setAllFindResultToSelection"
+  # navigation
+  addTextCommand "", "<C-d>", "move-cursor-line", 30
+  addTextCommand "", "<C-u>", "move-cursor-line", -30
+
   addTextCommandBlock "", "gg":
     let count = editor.getCommandCount
     if count == 0:
@@ -39,8 +25,36 @@ proc loadVimBindings*() =
       editor.selection = (count, 0).toSelection
       editor.setCommandCount 0
     editor.scrollToCursor(Last)
-  addCommand "editor.text", "G", "move-last", "file"
+
+  addTextCommand "", "G", "move-last", "file"
+
+  addTextCommand "", "n", "select-move", "next-find-result"
+  addTextCommand "", "N", "select-move", "prev-find-result"
+  addTextCommand "", "<C-e>", "addNextFindResultToSelection"
+  addTextCommand "", "<C-E>", "addPrevFindResultToSelection"
+  addTextCommand "", "<A-e>", "setAllFindResultToSelection"
   addTextCommandBlock "", "*": editor.setSearchQueryFromMove("word")
+
+  addTextCommand "", "<C-l>", "select-line-current"
+  addTextCommand "", "miw", "select-inside-current"
+
+  # lsp
+  addTextCommand "", "gd", "goto-definition"
+  addTextCommand "", "<S-SPACE>", "get-completions"
+
+  # editing
+  addTextCommand "", "x", "delete-right"
+  addTextCommand "", "u", "undo"
+  addTextCommand "", "U", "redo"
+
+  # mode switches
+  addTextCommand "", "i", "set-mode", "insert"
+  addTextCommand "", "v", "set-mode", "visual"
+  addTextCommand "", "V", "set-mode", "visual-temp"
+
+  addTextCommandBlock "", "s":
+    editor.setMode("insert")
+    editor.selections = editor.delete(editor.selections)
 
   for i in 0..9:
     capture i:
@@ -82,12 +96,12 @@ proc loadVimBindings*() =
     setOption "text.move-command-count", editor.getCommandCount()
     editor.setCommandCount 0
 
-  addCommand "editor.text", "dl", "delete-move", "line-next"
-  addCommand "editor.text", "b", "move-last", "word-line-back"
-  addCommand "editor.text", "w", "move-last", "word-line"
-  addCommand "editor.text", "e", "move-last", "word-line"
-  addCommand "editor.text", "<HOME>", "move-first", "line"
-  addCommand "editor.text", "<END>", "move-last", "line"
+  addTextCommand "", "dl", "delete-move", "line-next"
+  addTextCommand "", "b", "move-last", "word-line-back"
+  addTextCommand "", "w", "move-last", "word-line"
+  addTextCommand "", "e", "move-last", "word-line"
+  addTextCommand "", "<HOME>", "move-first", "line"
+  addTextCommand "", "<END>", "move-last", "line"
   addTextCommandBlock "", "o":
     editor.moveCursorEnd()
     editor.insertText("\n")
@@ -140,23 +154,23 @@ proc loadVimBindings*() =
   setHandleInputs "editor.text.move", false
   setOption "editor.text.cursor.wide.move", true
   setOption "editor.text.cursor.movement.move", "both"
-  addCommand "editor.text.move", "i", "set-flag", "move-inside", true
+  addTextCommand "move", "i", "set-flag", "move-inside", true
 
-  addCommand "editor.text.move", "w", "set-move", "word-line"
-  addCommand "editor.text.move", "W", "set-move", "word"
-  addCommand "editor.text.move", "b", "set-move", "word-line-back"
-  addCommand "editor.text.move", "B", "set-move", "word-back"
-  addCommand "editor.text.move", "p", "set-move", "paragraph"
-  addCommand "editor.text.move", "l", "set-move", "line-next"
-  addCommand "editor.text.move", "L", "set-move", "line"
-  addCommand "editor.text.move", "F", "set-move", "file"
-  addCommand "editor.text.move", "\"", "set-move", "\""
-  addCommand "editor.text.move", "'", "set-move", "'"
-  addCommand "editor.text.move", "(", "set-move", "("
-  addCommand "editor.text.move", ")", "set-move", "("
-  addCommand "editor.text.move", "[", "set-move", "["
-  addCommand "editor.text.move", "]", "set-move", "["
-  addCommand "editor.text.move", "}", "set-move", "}"
+  addTextCommand "move", "w", "set-move", "word-line"
+  addTextCommand "move", "W", "set-move", "word"
+  addTextCommand "move", "b", "set-move", "word-line-back"
+  addTextCommand "move", "B", "set-move", "word-back"
+  addTextCommand "move", "p", "set-move", "paragraph"
+  addTextCommand "move", "l", "set-move", "line-next"
+  addTextCommand "move", "L", "set-move", "line"
+  addTextCommand "move", "F", "set-move", "file"
+  addTextCommand "move", "\"", "set-move", "\""
+  addTextCommand "move", "'", "set-move", "'"
+  addTextCommand "move", "(", "set-move", "("
+  addTextCommand "move", ")", "set-move", "("
+  addTextCommand "move", "[", "set-move", "["
+  addTextCommand "move", "]", "set-move", "["
+  addTextCommand "move", "}", "set-move", "}"
 
   addTextCommandBlock "move", "f":
     editor.setMode "move-to"
@@ -173,8 +187,8 @@ proc loadVimBindings*() =
   # Insert mode
   setHandleInputs "editor.text.insert", true
   setOption "editor.text.cursor.wide.insert", false
-  addCommand "editor.text.insert", "<ENTER>", "insert-text", "\n"
-  addCommand "editor.text.insert", "<SPACE>", "insert-text", " "
+  addTextCommand "insert", "<ENTER>", "insert-text", "\n"
+  addTextCommand "insert", "<SPACE>", "insert-text", " "
 
   # Visual mode
   setHandleInputs "editor.text.visual", false
@@ -218,30 +232,30 @@ proc loadVimBindings*() =
     editor.scrollToCursor(Last)
     editor.updateTargetColumn(Last)
 
-  addCommand "editor.text", "<C-c>", "set-mode", "cursor-build"
-  addCommand "editor.text.cursor-build", "c", "set-mode", "normal"
-  addCommand "editor.text.cursor-build", "<LEFT>", "move-cursor-column", -1, "config", false
-  addCommand "editor.text.cursor-build", "<RIGHT>", "move-cursor-column", 1, "config", false
-  addCommand "editor.text.cursor-build", "<C-LEFT>", "move-first", "word-line", "config", false
-  addCommand "editor.text.cursor-build", "<C-RIGHT>", "move-last", "word-line", "config", false
-  addCommand "editor.text.cursor-build", "<HOME>", "move-first", "line", "config", false
-  addCommand "editor.text.cursor-build", "<END>", "move-last", "line", "config", false
-  addCommand "editor.text.cursor-build", "<CS-LEFT>", "move-first", "word-line", "last", false
-  addCommand "editor.text.cursor-build", "<CS-RIGHT>", "move-last", "word-line", "last", false
-  addCommand "editor.text.cursor-build", "<UP>", "move-cursor-line", -1, "config", false
-  addCommand "editor.text.cursor-build", "<DOWN>", "move-cursor-line", 1, "config", false
-  addCommand "editor.text.cursor-build", "<C-HOME>", "move-first", "file", "config", false
-  addCommand "editor.text.cursor-build", "<C-END>", "move-last", "file", "config", false
-  addCommand "editor.text.cursor-build", "<CS-HOME>", "move-first", "file", "last", false
-  addCommand "editor.text.cursor-build", "<CS-END>", "move-last", "file", "last", false
-  addCommand "editor.text.cursor-build", "<S-LEFT>", "move-cursor-column", -1, "last", false
-  addCommand "editor.text.cursor-build", "<S-RIGHT>", "move-cursor-column", 1, "last", false
-  addCommand "editor.text.cursor-build", "<S-UP>", "move-cursor-line", -1, "last", false
-  addCommand "editor.text.cursor-build", "<S-DOWN>", "move-cursor-line", 1, "last", false
-  addCommand "editor.text.cursor-build", "<S-HOME>", "move-first", "line", "last", false
-  addCommand "editor.text.cursor-build", "<S-END>", "move-last", "line", "last", false
-  addCommand "editor.text.cursor-build", "n", "select-move", "next-find-result", false
-  addCommand "editor.text.cursor-build", "N", "select-move", "prev-find-result", false
+  addTextCommand "", "<C-c>", "set-mode", "cursor-build"
+  addTextCommand "cursor-build", "c", "set-mode", "normal"
+  addTextCommand "cursor-build", "<LEFT>", "move-cursor-column", -1, "config", false
+  addTextCommand "cursor-build", "<RIGHT>", "move-cursor-column", 1, "config", false
+  addTextCommand "cursor-build", "<C-LEFT>", "move-first", "word-line", "config", false
+  addTextCommand "cursor-build", "<C-RIGHT>", "move-last", "word-line", "config", false
+  addTextCommand "cursor-build", "<HOME>", "move-first", "line", "config", false
+  addTextCommand "cursor-build", "<END>", "move-last", "line", "config", false
+  addTextCommand "cursor-build", "<CS-LEFT>", "move-first", "word-line", "last", false
+  addTextCommand "cursor-build", "<CS-RIGHT>", "move-last", "word-line", "last", false
+  addTextCommand "cursor-build", "<UP>", "move-cursor-line", -1, "config", false
+  addTextCommand "cursor-build", "<DOWN>", "move-cursor-line", 1, "config", false
+  addTextCommand "cursor-build", "<C-HOME>", "move-first", "file", "config", false
+  addTextCommand "cursor-build", "<C-END>", "move-last", "file", "config", false
+  addTextCommand "cursor-build", "<CS-HOME>", "move-first", "file", "last", false
+  addTextCommand "cursor-build", "<CS-END>", "move-last", "file", "last", false
+  addTextCommand "cursor-build", "<S-LEFT>", "move-cursor-column", -1, "last", false
+  addTextCommand "cursor-build", "<S-RIGHT>", "move-cursor-column", 1, "last", false
+  addTextCommand "cursor-build", "<S-UP>", "move-cursor-line", -1, "last", false
+  addTextCommand "cursor-build", "<S-DOWN>", "move-cursor-line", 1, "last", false
+  addTextCommand "cursor-build", "<S-HOME>", "move-first", "line", "last", false
+  addTextCommand "cursor-build", "<S-END>", "move-last", "line", "last", false
+  addTextCommand "cursor-build", "n", "select-move", "next-find-result", false
+  addTextCommand "cursor-build", "N", "select-move", "prev-find-result", false
   addTextCommandBlock "cursor-build", "y":
     editor.runAction("duplicate-last-selection")
     editor.runAction("select-move", "\"next-find-result\" false")
