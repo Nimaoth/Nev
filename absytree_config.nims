@@ -69,7 +69,7 @@ proc postInitialize*() =
   setLayout "fibonacci"
   changeLayoutProp("main-split", -0.2)
 
-echo "Loading"
+log "Loading absytree_config.nim"
 
 clearCommands "editor"
 clearCommands "editor.ast"
