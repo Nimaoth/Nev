@@ -22,7 +22,7 @@ The editor loads a file named `absytree_config.nims` (same directory as the edit
 - Define key bindings
 - Create custom commands
 
-`absytree_config.nims` must import `absytree_runtime`, which contains some utility functions. `absytree_config` also exports `absytree_api`,
+`absytree_config.nims` must import `absytree_runtime`, which contains some utility functions. `absytree_runtime` also exports `absytree_api`,
 which contains every function exposed by the editor. `absytree_api` is automatically generated when compiling the editor.
 
 There are a few utility scripts for defining key bindings.
@@ -35,7 +35,7 @@ Each of these files defines a `load*Bindings()` function which applies the corre
 ### Settings
 There are a lot of settings which can be changed using `proc setOption*[T](path: string, value: T)` or `proc setOption*(option: string; value: JsonNode)`. Settings are stored in a JSON object, which also gets saved to the file `settings.json`. This file gets loaded before the config script, so the script can override any setting.
 
-You can get the current value of a setting with `proc setOption*(option: string; value: JsonNode)`
+You can get the current value of a setting with `proc getOption*[T](path: string, default: T = T.default): T`
 
     setOption "editor.text.lsp.zig.path", "zls"
     echo getOption[string]("editor.text.lsp.zig.path") # zls
@@ -158,7 +158,7 @@ To define keybindings specific for text documents (TextEditor), use:
     addTextCommand "completion", "a", "command-name"        # Only active while completion window is open
 
     addTextCommandBlock "", "s":                            # First parameter is mode/"completion"
-      ## Creates an anonymous action which runs this block. `editor` is the text editor handling this command.
+      ## Creates an anonymous action which runs this block. `editor` (automatically defined) is the text editor handling this command
       editor.setMode("insert")
       editor.selections = editor.delete(editor.selections)
 
