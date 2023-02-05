@@ -10,4 +10,4 @@ config.json
 options.json
 temp
 int/*.map
-**/htmldocs/*.idx
+**/htmldocs/**/*.idx
