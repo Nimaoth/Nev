@@ -73,9 +73,6 @@ proc handleCallbackImpl*(id: int, args: JsonNode): bool =
 proc runAction*(id: EditorId, action: string, arg: string = "") =
   scriptRunActionFor(id, action, arg)
 
-proc runAction*(id: PopupId, action: string, arg: string = "") =
-  scriptRunActionForPopup(id, action, arg)
-
 proc runAction*(editor: TextDocumentEditor, action: string, arg: string = "") =
   scriptRunActionFor(editor.id, action, arg)
 

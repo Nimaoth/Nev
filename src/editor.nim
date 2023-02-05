@@ -311,7 +311,7 @@ proc getEditorForId*(self: Editor, id: EditorId): Option[DocumentEditor] =
 
   return DocumentEditor.none
 
-proc getPopupForId*(self: Editor, id: PopupId): Option[Popup] =
+proc getPopupForId*(self: Editor, id: EditorId): Option[Popup] =
   for popup in self.popups:
     if popup.id == id:
       return popup.some
@@ -854,13 +854,13 @@ proc removeCommand*(context: string, keys: string) {.expose("editor").} =
   # logger.log(lvlInfo, fmt"Removing command from '{context}': '{keys}'")
   gEditor.getEventHandlerConfig(context).removeCommand(keys)
 
-proc getActivePopup*(): PopupId {.expose("editor").} =
+proc getActivePopup*(): EditorId {.expose("editor").} =
   if gEditor.isNil:
-    return PopupId(-1)
+    return EditorId(-1)
   if gEditor.popups.len > 0:
     return gEditor.popups[gEditor.popups.high].id
 
-  return PopupId(-1)
+  return EditorId(-1)
 
 proc getActiveEditor*(): EditorId {.expose("editor").} =
   if gEditor.isNil:
@@ -899,11 +899,7 @@ proc scriptRunActionFor*(editorId: EditorId, action: string, arg: string) {.expo
     return
   if gEditor.getEditorForId(editorId).getSome(editor):
     discard editor.eventHandler.handleAction(action, arg)
-
-proc scriptRunActionForPopup*(popupId: PopupId, action: string, arg: string) {.expose("editor").} =
-  if gEditor.isNil:
-    return
-  if gEditor.getPopupForId(popupId).getSome(popup):
+  elif gEditor.getPopupForId(editorId).getSome(popup):
     discard popup.eventHandler.handleAction(action, arg)
 
 proc scriptInsertTextInto*(editorId: EditorId, text: string) {.expose("editor").} =
@@ -1022,7 +1018,7 @@ proc createAddins(): VmAddins =
     proc postInitialize()
     proc handleGlobalAction(action: string, arg: string): bool
     proc handleEditorAction(id: EditorId, action: string, args: JsonNode): bool
-    proc handleUnknownPopupAction(id: PopupId, action: string, arg: string): bool
+    proc handleUnknownPopupAction(id: EditorId, action: string, arg: string): bool
     proc handleCallback(id: int, args: JsonNode): bool
 
   return implNimScriptModule(myImpl)

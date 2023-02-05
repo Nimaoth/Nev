@@ -1,8 +1,7 @@
 import std/[algorithm, sequtils, sugar]
 
 type
-  EditorId* = distinct int
-  PopupId* = distinct int
+  EditorId* = int
   EditorType* = enum Text, Ast, Other
 
   TextDocumentEditor* = object
@@ -10,7 +9,7 @@ type
   AstDocumentEditor* = object
     id*: EditorId
   SelectorPopup* = object
-    id*: PopupId
+    id*: EditorId
 
 type Cursor* = tuple[line, column: int]
 type Selection* = tuple[first, last: Cursor]
@@ -30,17 +29,6 @@ proc newEditorId*(): EditorId =
   ## Returns a new unique id for an editor
   result = nextEditorId.EditorId
   nextEditorId += 1
-
-proc newPopupId*(): PopupId =
-  ## Returns a new unique id for a popup
-  result = nextEditorId.PopupId
-  nextEditorId += 1
-
-func `==`*(a: EditorId, b: EditorId): bool = a.int == b.int
-func `$`*(id: EditorId): string = $id.int
-
-func `==`*(a: PopupId, b: PopupId): bool = a.int == b.int
-func `$`*(id: PopupId): string = $id.int
 
 func `$`*(cursor: Cursor): string =
   return $cursor.line & ":" & $cursor.column
