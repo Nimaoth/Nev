@@ -7,7 +7,6 @@ license       = "MIT"
 srcDir        = "src"
 bin           = @["absytree"]
 
-
 # Dependencies
 
 requires "nim >= 1.7.3"
@@ -40,3 +39,8 @@ requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_rust >= 0.1
 # requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_typescript >= 0.1.1"
 requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_nim >= 0.1.1"
 requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_zig >= 0.1.1"
+
+task createScriptingDocs, "Build the documentation for the scripting API":
+  exec "nim doc --project --index:on --git.url:https://github.com/Nimaoth/Absytree/ --git.commit:main ./scripting/absytree_runtime.nim"
+  exec "nim buildIndex -o:./scripting/htmldocs/theindex.html ./scripting/htmldocs"
+  exec "nim ./postprocess_docs.nims"

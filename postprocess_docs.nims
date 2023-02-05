@@ -1,13 +1,13 @@
-import std/[htmlparser, htmlgen, xmltree, strtabs, os, strutils, strformat, json]
+import std/[os, strutils, strformat, json]
+
+## This file adds a second link for certain docs, linking the generated script wrapper functions to the exposed function in the editor.
 
 proc postProcess(filename: string, replacementFile: string) =
   let (path, name, ext) = filename.splitFile
   let mappingsJson = readFile(fmt"int/{name}.map")
   let mappings = parseJson(mappingsJson)
-  echo mappings
 
   let searchString = "<a href=\"https://github.com/Nimaoth/Absytree//"
-  let identifierSearchString = "<span class=\"Identifier\">"
 
   let content = readFile(filename)
   var result = ""
