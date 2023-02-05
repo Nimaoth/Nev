@@ -1,0 +1,73 @@
+import std/[htmlparser, htmlgen, xmltree, strtabs, os, strutils, strformat, json]
+
+proc postProcess(filename: string, replacementFile: string) =
+  let (path, name, ext) = filename.splitFile
+  let mappingsJson = readFile(fmt"int/{name}.map")
+  let mappings = parseJson(mappingsJson)
+  echo mappings
+
+  let searchString = "<a href=\"https://github.com/Nimaoth/Absytree//"
+  let identifierSearchString = "<span class=\"Identifier\">"
+
+  let content = readFile(filename)
+  var result = ""
+
+  for line in content.splitLines:
+    result.add line
+    result.add "\n"
+
+    let index = line.find(searchString)
+    if index == -1:
+      continue
+
+    let opStartIndex = index + searchString.len
+    let opEndIndex = line.find("/", opStartIndex)
+    let branchStartIndex = opEndIndex + 1
+    let branchEndIndex = line.find("/", branchStartIndex)
+
+    let fileStartIndex = branchEndIndex + 1
+    let fileEndIndex = line.find("#", fileStartIndex)
+    let lineNumberStartIndex = fileEndIndex + 2
+    let lineNumberEndIndex = line.find("\"", lineNumberStartIndex)
+    let nameStartIndex = line.find(">", lineNumberEndIndex) + 1
+    let nameEndIndex = line.find("<", nameStartIndex)
+
+    if fileEndIndex < 0 or lineNumberEndIndex < 0 or opEndIndex < 0 or opEndIndex < 0 or nameEndIndex < 0:
+      continue
+
+    let op = line[opStartIndex..<opEndIndex]
+    let branch = line[branchStartIndex..<branchEndIndex]
+    let fileName = line[fileStartIndex..<fileEndIndex]
+    let lineNumber = line[lineNumberStartIndex..<lineNumberEndIndex]
+
+    if op == "edit":
+      continue
+
+    echo fmt"{op}, {branch}, {fileName}, {lineNumber}"
+    echo line
+
+    let newLineNumber = if mappings.hasKey(lineNumber):
+      mappings[lineNumber].getStr
+    else:
+      lineNumber
+
+    var newLine = line
+    newLine.delete(nameStartIndex..<nameEndIndex)
+    newLine.insert("Editor Source", nameStartIndex)
+    newLine.delete(lineNumberStartIndex..<lineNumberEndIndex)
+    newLine.insert(newLineNumber, lineNumberStartIndex)
+    newLine.delete(fileStartIndex..<fileEndIndex)
+    newLine.insert(replacementFile, fileStartIndex)
+    newLine.delete((opStartIndex-1)..<opStartIndex)
+    result.add newLine
+    result.add "\n"
+
+    echo newLine
+
+  # writeFile(fmt"{path}/{name}.post{ext}", result)
+  writeFile(fmt"{path}/{name}{ext}", result)
+
+postProcess("scripting/htmldocs/editor_text_api.html", "src/text_document.nim")
+postProcess("scripting/htmldocs/editor_ast_api.html", "src/ast_document.nim")
+postProcess("scripting/htmldocs/editor_api.html", "src/editor.nim")
+postProcess("scripting/htmldocs/popup_selector_api.html", "src/selector_popup.nim")

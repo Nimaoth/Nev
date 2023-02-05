@@ -14,6 +14,7 @@ type ScriptContext* = ref object
   apiModule: string # The module in which functions exposed to the script will be implemented using `implementRoutine`
   addins: VMAddins
   postCodeAdditions: string # Text which gets appended to the script before being executed
+  searchPaths: seq[string]
 
 let stdPath = "C:/Users/nimao/.choosenim/toolchains/nim-#devel/lib"
 
@@ -122,22 +123,25 @@ proc mySafeLoadScriptWithState*(
     intr = tempIntr
     intr.get.loadState(state)
 
-proc newScriptContext*(path: string, apiModule: string, addins: VMAddins, postCodeAdditions: string): ScriptContext =
+proc newScriptContext*(path: string, apiModule: string, addins: VMAddins, postCodeAdditions: string, searchPaths: seq[string]): ScriptContext =
   new result
   result.script = NimScriptPath(path)
   result.apiModule = apiModule
   result.addins = addins
   result.postCodeAdditions = postCodeAdditions
-  result.inter = myLoadScript(result.script, apiModule, addins, postCodeAdditions, ["scripting_api", "std/json"], stdPath = stdPath, searchPaths = @["src"], vmErrorHook = errorHook)
+  result.searchPaths = searchPaths
+  echo fmt"Creating new script context (search paths: {searchPaths})"
+  result.inter = myLoadScript(result.script, apiModule, addins, postCodeAdditions, ["scripting_api", "std/json"], stdPath = stdPath, searchPaths = searchPaths, vmErrorHook = errorHook)
 
 proc reloadScript*(ctx: ScriptContext) =
-  ctx.inter.mySafeLoadScriptWithState(ctx.script, ctx.apiModule, ctx.addins, ctx.postCodeAdditions, ["scripting_api", "std/json"], stdPath = stdPath, searchPaths = @["src"], vmErrorHook = errorHook)
+  echo fmt"Reloading script context (search paths: {ctx.searchPaths})"
+  ctx.inter.mySafeLoadScriptWithState(ctx.script, ctx.apiModule, ctx.addins, ctx.postCodeAdditions, ["scripting_api", "std/json"], stdPath = stdPath, searchPaths = ctx.searchPaths, vmErrorHook = errorHook)
 
 const mapperFunctions = CacheTable"MapperFunctions" # Maps from type name (referring to nim type) to function which maps these types
 const typeWrapper = CacheTable"TypeWrapper"         # Maps from type name (referring to nim type) to type name of the api type (from scripting_api)
 const functions = CacheTable"DispatcherFunctions"   # Maps from scope name to list of tuples of name and wrapper
 const injectors = CacheTable"Injectors"             # Maps from type name (referring to nim type) to function
-const exposedFunctions* = CacheSeq"ExposedFunctions" # Maps from type name (referring to nim type) to type name of the api type (from scripting_api)
+const exposedFunctions* = CacheTable"ExposedFunctions" # Maps from type name (referring to nim type) to type name of the api type (from scripting_api)
 
 macro addTypeMap*(source: untyped, wrapper: typed, mapperFunction: typed) =
   mapperFunctions[$source] = mapperFunction
@@ -159,13 +163,21 @@ macro addFunction(name: untyped, script: untyped, wrapper: typed, moduleName: st
       return
   functions[moduleName] = nnkStmtList.newTree(n)
 
-macro addScriptWrapper(name: untyped, moduleName: static string) =
-  exposedFunctions.add name
+macro addScriptWrapper(name: untyped, moduleName: static string, lineNumber: static int) =
+  let val = nnkStmtList.newTree(name, newLit($lineNumber))
+  for list, _ in exposedFunctions:
+    if list == moduleName:
+      exposedFunctions[list].add val
+      return
+  exposedFunctions[moduleName] = nnkStmtList.newTree(val)
 
 macro expose*(moduleName: static string, def: untyped): untyped =
   defer:
     discard
   #   echo result.repr
+
+  # echo def.repr
+  # echo def.treeRepr
 
   let functionName = if def[0].kind == nnkPostfix: def[0][1] else: def[0]
   let argCount = def[3].len - 1
@@ -184,6 +196,15 @@ macro expose*(moduleName: static string, def: untyped): untyped =
     if def[3][arg + 1][2].kind != nnkEMpty:
       return def[3][arg + 1][2].some
     return NimNode.none
+  let documentation = if def[6].len > 0 and def[6][0].kind == nnkCommentStmt:
+      def[6][0].some
+    else:
+      NimNode.none
+
+  var runnableExampls: seq[NimNode] = @[]
+  for n in def[6]:
+    if (n.kind == nnkCommand or n.kind == nnkCall) and n.len > 0 and n[0].kind == nnkIdent and n[0].strVal == "runnableExamples":
+      runnableExampls.add n
 
   # Name of the Nim function
   let pureFunctionNameStr = functionName.strVal
@@ -325,8 +346,13 @@ macro expose*(moduleName: static string, def: untyped): untyped =
   scriptFunction[6] = quote do:
     `callImplFromScriptFunction`
 
-  scriptFunctionWrapper[6] = quote do:
-    `callScriptFuncFromScriptFuncWrapper`
+  var scriptFunctionWrapperBody = nnkStmtList.newTree()
+  if documentation.isSome:
+    scriptFunctionWrapperBody.add documentation.get
+  for n in runnableExampls:
+    scriptFunctionWrapperBody.add n
+  scriptFunctionWrapperBody.add callScriptFuncFromScriptFuncWrapper
+  scriptFunctionWrapper[6] = scriptFunctionWrapperBody
 
   let callScriptFuncFromJsonWithReturn = if returnType.isNone:
     callScriptFuncFromJson
@@ -335,6 +361,7 @@ macro expose*(moduleName: static string, def: untyped): untyped =
       return `callScriptFuncFromJson`.toJson
 
   let scriptFunctionWrapperRepr = scriptFunctionWrapper.repr
+  let lineNumber = def.lineInfoObj.line
 
   return quote do:
     `def`
@@ -354,7 +381,7 @@ macro expose*(moduleName: static string, def: untyped): untyped =
       addToCache(`scriptFunctionSym`, "myImpl")
       addFunction(`pureFunctionName`, `scriptFunctionSym`, `jsonWrapperFunctionName`, `moduleName`)
 
-      addScriptWrapper(`scriptFunctionWrapperRepr`, "myImpl")
+      addScriptWrapper(`scriptFunctionWrapperRepr`, `moduleName`, `lineNumber`)
 
 macro genDispatcher*(moduleName: static string): untyped =
   # defer:
