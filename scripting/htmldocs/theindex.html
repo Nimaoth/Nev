@@ -26,21 +26,11 @@
 <li><a class="reference external"
           data-doc-search-tag="scripting_api: proc `$`(cursor: Cursor): string" href="_._/src/scripting_api.html#%24%2CCursor">scripting_api: proc `$`(cursor: Cursor): string</a></li>
           <li><a class="reference external"
-          data-doc-search-tag="scripting_api: proc `$`(id: EditorId): string" href="_._/src/scripting_api.html#%24%2CEditorId">scripting_api: proc `$`(id: EditorId): string</a></li>
-          <li><a class="reference external"
-          data-doc-search-tag="scripting_api: proc `$`(id: PopupId): string" href="_._/src/scripting_api.html#%24%2CPopupId">scripting_api: proc `$`(id: PopupId): string</a></li>
-          <li><a class="reference external"
           data-doc-search-tag="scripting_api: proc `$`(selection: Selection): string" href="_._/src/scripting_api.html#%24%2CSelection">scripting_api: proc `$`(selection: Selection): string</a></li>
           </ul></dd>
 <dt><a name="%60%26lt%3B%60" href="#%60%26lt%3B%60"><span>`&lt;`:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
           data-doc-search-tag="scripting_api: proc `&lt;`(a: Cursor; b: Cursor): bool" href="_._/src/scripting_api.html#%3C%2CCursor%2CCursor">scripting_api: proc `&lt;`(a: Cursor; b: Cursor): bool</a></li>
-          </ul></dd>
-<dt><a name="%60%3D%3D%60" href="#%60%3D%3D%60"><span>`==`:</span></a></dt><dd><ul class="simple">
-<li><a class="reference external"
-          data-doc-search-tag="scripting_api: proc `==`(a: EditorId; b: EditorId): bool" href="_._/src/scripting_api.html#%3D%3D%2CEditorId%2CEditorId">scripting_api: proc `==`(a: EditorId; b: EditorId): bool</a></li>
-          <li><a class="reference external"
-          data-doc-search-tag="scripting_api: proc `==`(a: PopupId; b: PopupId): bool" href="_._/src/scripting_api.html#%3D%3D%2CPopupId%2CPopupId">scripting_api: proc `==`(a: PopupId; b: PopupId): bool</a></li>
           </ul></dd>
 <dt><a name="%60%26gt%3B%60" href="#%60%26gt%3B%60"><span>`&gt;`:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
@@ -462,11 +452,11 @@
           </ul></dd>
 <dt><a name="getActivePopup" href="#getActivePopup"><span>getActivePopup:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
-          data-doc-search-tag="editor_api: proc getActivePopup(): PopupId" href="editor_api.html#getActivePopup">editor_api: proc getActivePopup(): PopupId</a></li>
+          data-doc-search-tag="editor_api: proc getActivePopup(): EditorId" href="editor_api.html#getActivePopup">editor_api: proc getActivePopup(): EditorId</a></li>
           </ul></dd>
 <dt><a name="getActivePopupScript" href="#getActivePopupScript"><span>getActivePopupScript:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
-          data-doc-search-tag="absytree_internal: proc getActivePopupScript(): PopupId" href="absytree_internal.html#getActivePopupScript">absytree_internal: proc getActivePopupScript(): PopupId</a></li>
+          data-doc-search-tag="absytree_internal: proc getActivePopupScript(): EditorId" href="absytree_internal.html#getActivePopupScript">absytree_internal: proc getActivePopupScript(): EditorId</a></li>
           </ul></dd>
 <dt><a name="getAllEditors" href="#getAllEditors"><span>getAllEditors:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
@@ -1006,10 +996,6 @@
 <li><a class="reference external"
           data-doc-search-tag="scripting_api: proc newEditorId(): EditorId" href="_._/src/scripting_api.html#newEditorId">scripting_api: proc newEditorId(): EditorId</a></li>
           </ul></dd>
-<dt><a name="newPopupId" href="#newPopupId"><span>newPopupId:</span></a></dt><dd><ul class="simple">
-<li><a class="reference external"
-          data-doc-search-tag="scripting_api: proc newPopupId(): PopupId" href="_._/src/scripting_api.html#newPopupId">scripting_api: proc newPopupId(): PopupId</a></li>
-          </ul></dd>
 <dt><a name="next" href="#next"><span>next:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
           data-doc-search-tag="popup_selector_api: proc next(self: SelectorPopup)" href="popup_selector_api.html#next%2CSelectorPopup">popup_selector_api: proc next(self: SelectorPopup)</a></li>
@@ -1051,10 +1037,6 @@
 <dt><a name="Other" href="#Other"><span>Other:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
           data-doc-search-tag="scripting_api: EditorType.Other" href="_._/src/scripting_api.html#Other">scripting_api: EditorType.Other</a></li>
-          </ul></dd>
-<dt><a name="PopupId" href="#PopupId"><span>PopupId:</span></a></dt><dd><ul class="simple">
-<li><a class="reference external"
-          data-doc-search-tag="scripting_api: type PopupId" href="_._/src/scripting_api.html#PopupId">scripting_api: type PopupId</a></li>
           </ul></dd>
 <dt><a name="prev" href="#prev"><span>prev:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
@@ -1163,8 +1145,6 @@
 <dt><a name="runAction" href="#runAction"><span>runAction:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
           data-doc-search-tag="absytree_runtime: proc runAction(id: EditorId; action: string; arg: string = &quot;&quot;)" href="absytree_runtime.html#runAction%2CEditorId%2Cstring%2Cstring">absytree_runtime: proc runAction(id: EditorId; action: string; arg: string = &quot;&quot;)</a></li>
-          <li><a class="reference external"
-          data-doc-search-tag="absytree_runtime: proc runAction(id: PopupId; action: string; arg: string = &quot;&quot;)" href="absytree_runtime.html#runAction%2CPopupId%2Cstring%2Cstring">absytree_runtime: proc runAction(id: PopupId; action: string; arg: string = &quot;&quot;)</a></li>
           <li><a class="reference external"
           data-doc-search-tag="absytree_runtime: proc runAction(editor: TextDocumentEditor; action: string; arg: string = &quot;&quot;)" href="absytree_runtime.html#runAction%2CTextDocumentEditor%2Cstring%2Cstring">absytree_runtime: proc runAction(editor: TextDocumentEditor; action: string; arg: string = &quot;&quot;)</a></li>
           <li><a class="reference external"
@@ -1289,14 +1269,6 @@
 <dt><a name="scriptRunActionFor" href="#scriptRunActionFor"><span>scriptRunActionFor:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
           data-doc-search-tag="editor_api: proc scriptRunActionFor(editorId: EditorId; action: string; arg: string)" href="editor_api.html#scriptRunActionFor%2CEditorId%2Cstring%2Cstring">editor_api: proc scriptRunActionFor(editorId: EditorId; action: string; arg: string)</a></li>
-          </ul></dd>
-<dt><a name="scriptRunActionForPopup" href="#scriptRunActionForPopup"><span>scriptRunActionForPopup:</span></a></dt><dd><ul class="simple">
-<li><a class="reference external"
-          data-doc-search-tag="editor_api: proc scriptRunActionForPopup(popupId: PopupId; action: string; arg: string)" href="editor_api.html#scriptRunActionForPopup%2CPopupId%2Cstring%2Cstring">editor_api: proc scriptRunActionForPopup(popupId: PopupId; action: string; arg: string)</a></li>
-          </ul></dd>
-<dt><a name="scriptRunActionForPopupScript" href="#scriptRunActionForPopupScript"><span>scriptRunActionForPopupScript:</span></a></dt><dd><ul class="simple">
-<li><a class="reference external"
-          data-doc-search-tag="absytree_internal: proc scriptRunActionForPopupScript(popupId: PopupId; action: string; arg: string)" href="absytree_internal.html#scriptRunActionForPopupScript%2CPopupId%2Cstring%2Cstring">absytree_internal: proc scriptRunActionForPopupScript(popupId: PopupId; action: string; arg: string)</a></li>
           </ul></dd>
 <dt><a name="scriptRunActionForScript" href="#scriptRunActionForScript"><span>scriptRunActionForScript:</span></a></dt><dd><ul class="simple">
 <li><a class="reference external"
@@ -1816,7 +1788,7 @@
       <div class="twelve-columns footer">
         <span class="nim-sprite"></span>
         <br>
-        <small style="color: var(--hint);">Made with Nim. Generated: 2023-02-05 15:47:43 UTC</small>
+        <small style="color: var(--hint);">Made with Nim. Generated: 2023-02-05 17:55:10 UTC</small>
       </div>
     </div>
   </div>
