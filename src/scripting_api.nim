@@ -27,10 +27,12 @@ proc normalized*(self: Selections): Selections =
 
 var nextEditorId = 0
 proc newEditorId*(): EditorId =
+  ## Returns a new unique id for an editor
   result = nextEditorId.EditorId
   nextEditorId += 1
 
 proc newPopupId*(): PopupId =
+  ## Returns a new unique id for a popup
   result = nextEditorId.PopupId
   nextEditorId += 1
 
@@ -47,6 +49,7 @@ func `$`*(selection: Selection): string =
   return $selection.first & "-" & $selection.last
 
 func `<`*(a: Cursor, b: Cursor): bool =
+  ## Returns true if the cursor `a` comes before `b`
   if a.line < b.line:
     return true
   elif a.line == b.line and a.column < b.column:
@@ -72,9 +75,13 @@ func max*(a: Cursor, b: Cursor): Cursor =
     return a
   return b
 
-func isBackwards*(selection: Selection): bool = selection.first > selection.last
+func isBackwards*(selection: Selection): bool =
+  ## Returns true if the first cursor of the selection is after the second cursor
+  return selection.first > selection.last
 
 func normalized*(selection: Selection): Selection =
+  ## Returns the normalized selection, i.e. where first < last.
+  ## Switches first and last if backwards.
   if selection.isBackwards:
     return (selection.last, selection.first)
   else:

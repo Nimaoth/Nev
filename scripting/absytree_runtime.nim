@@ -1,6 +1,5 @@
 import std/[strformat, tables, macros, json, strutils, sugar, sequtils]
 
-import src/scripting_api
 import absytree_api
 export absytree_api, strformat, tables, json, strutils, sugar, sequtils, scripting_api
 
