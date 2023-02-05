@@ -1,30 +1,11 @@
-import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, os, re, tables, deques, asyncdispatch, asyncfile]
+import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, os, re, tables, deques, asyncdispatch, asyncfile, dynlib]
 import editor, document, document_editor, events, id, util, scripting, vmath, bumpy, rect_utils, language_server_base, event
 import windy except Cursor
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 
 import treesitter/api as ts
-
-# import treesitter_c/c
-# import treesitter_bash/bash
-# import treesitter_c_sharp/c_sharp
-# import treesitter_cpp/cpp
-# import treesitter_css/css
-# import treesitter_go/go
-# import treesitter_haskell/haskell
-# import treesitter_html/html
-# import treesitter_java/java
-import treesitter_javascript/javascript
-# import treesitter_ocaml/ocaml
-# import treesitter_php/php
-# import treesitter_python/python
-# import treesitter_ruby/ruby
-import treesitter_rust/rust
-# import treesitter_scala/scala
-# import treesitter_typescript/typescript
 import treesitter_nim/nim
-import treesitter_zig/zig
 
 var logger = newConsoleLogger()
 
@@ -53,6 +34,8 @@ proc `$`*(op: UndoOp): string =
   if op.kind == Delete: result.add fmt", selections = {op.selection}}}"
   if op.kind == Insert: result.add fmt", selections = {op.cursor}, text: '{op.text}'}}"
   if op.kind == Nested: result.add fmt", {op.children}}}"
+
+type TSLanguageCtor = proc(): ptr TSLanguage {.stdcall.}
 
 type TextDocument* = ref object of Document
   filename*: string
@@ -470,6 +453,38 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
 
   return styledLine
 
+proc loadLanguageDynamically(languageId: string): ptr TSLanguage =
+  try:
+    let config = getOption[JsonNode](gEditor, "editor.text.treesitter." & languageId, newJObject())
+
+    let ctorSymbolName = if config.hasKey("constructor"):
+      config["constructor"].getStr
+    else:
+      fmt"tree_sitter_{languageId}"
+
+    let dllPath = if config.hasKey("dll"):
+      config["dll"].getStr
+    else:
+      fmt"./languages/{languageId}.dll"
+
+    logger.log(lvlInfo, fmt"Trying to load treesitter from '{dllPath}' using function '{ctorSymbolName}'")
+
+    # @todo: unload lib
+    let lib = loadLib(dllPath)
+    if lib.isNil:
+      logger.log(lvlError, fmt"[textedit] Failed to load treesitter dll for '{languageId}': '{dllPath}'")
+      return nil
+
+    let ctor = cast[TSLanguageCtor](lib.symAddr(ctorSymbolName))
+    if ctor.isNil:
+      logger.log(lvlError, fmt"[textedit] Failed to load treesitter dll for '{languageId}': '{dllPath}'")
+      return nil
+
+    return ctor()
+  except CatchableError:
+    logger.log(lvlError, fmt"[textedit] Failed to load language from dll: '{languageId}': {getCurrentExceptionMsg()}")
+    return nil
+
 proc getLanguageForFile(filename: string): Option[string] =
   var extension = filename.splitFile.ext
   if extension.len > 0:
@@ -520,29 +535,33 @@ proc initTreesitter(self: TextDocument) =
   else:
     return
 
-  let language = case languageId
-  of "c": tryGetLanguage(treeSitterC)
-  of "bash": tryGetLanguage(treeSitterBash)
-  of "csharp": tryGetLanguage(treeSitterCShap)
-  of "cpp": tryGetLanguage(treeSitterCpp)
-  of "css": tryGetLanguage(treeSitterCss)
-  of "go": tryGetLanguage(treeSitterGo)
-  of "haskell": tryGetLanguage(treeSitterHaskell)
-  of "html": tryGetLanguage(treeSitterHtml)
-  of "java": tryGetLanguage(treeSitterJava)
-  of "javascript": tryGetLanguage(treeSitterJavascript)
-  of "ocaml": tryGetLanguage(treeSitterOcaml)
-  of "php": tryGetLanguage(treeSitterPhp)
-  of "python": tryGetLanguage(treeSitterPython)
-  of "ruby": tryGetLanguage(treeSitterRuby)
-  of "rust": tryGetLanguage(treeSitterRust)
-  of "scala": tryGetLanguage(treeSitterScala)
-  of "typescript": tryGetLanguage(treeSitterTypecript)
-  of "nim": tryGetLanguage(treeSitterNim)
-  of "zig": tryGetLanguage(treeSitterZig)
-  else:
-    logger.log(lvlWarn, fmt"Failed to init treesitter for language '{languageId}'")
-    return
+  var language = loadLanguageDynamically(languageId)
+
+  if language.isNil:
+    logger.log(lvlInfo, fmt"No dll language for {languageId}, try builtin")
+    language = case languageId
+    of "c": tryGetLanguage(treeSitterC)
+    of "bash": tryGetLanguage(treeSitterBash)
+    of "csharp": tryGetLanguage(treeSitterCShap)
+    of "cpp": tryGetLanguage(treeSitterCpp)
+    of "css": tryGetLanguage(treeSitterCss)
+    of "go": tryGetLanguage(treeSitterGo)
+    of "haskell": tryGetLanguage(treeSitterHaskell)
+    of "html": tryGetLanguage(treeSitterHtml)
+    of "java": tryGetLanguage(treeSitterJava)
+    of "javascript": tryGetLanguage(treeSitterJavascript)
+    of "ocaml": tryGetLanguage(treeSitterOcaml)
+    of "php": tryGetLanguage(treeSitterPhp)
+    of "python": tryGetLanguage(treeSitterPython)
+    of "ruby": tryGetLanguage(treeSitterRuby)
+    of "rust": tryGetLanguage(treeSitterRust)
+    of "scala": tryGetLanguage(treeSitterScala)
+    of "typescript": tryGetLanguage(treeSitterTypecript)
+    of "nim": tryGetLanguage(treeSitterNim)
+    of "zig": tryGetLanguage(treeSitterZig)
+    else:
+      logger.log(lvlWarn, fmt"Failed to init treesitter for language '{languageId}'")
+      return
 
   if language.isNil:
     logger.log(lvlWarn, fmt"Language is not available: '{languageId}'")
@@ -557,7 +576,7 @@ proc initTreesitter(self: TextDocument) =
     var queryError: ts.TSQueryError = ts.TSQueryErrorNone
     self.highlightQuery = language.tsQueryNew(queryString.cstring, queryString.len.uint32, addr errorOffset, addr queryError)
     if queryError != ts.TSQueryErrorNone:
-      logger.log(lvlError, fmt"[textedit] {queryError} at byte {errorOffset}: {queryString}")
+      logger.log(lvlError, fmt"[textedit] Failed to load highlights query for {languageId}:{errorOffset}: {queryError}: {queryString}")
   except CatchableError:
     logger.log(lvlError, fmt"[textedit] No highlight queries found for '{languageId}'")
 
