@@ -402,8 +402,9 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
   self.commandLineTextEditor.TextDocumentEditor.lineNumbers = api.LineNumbers.None.some
   self.getCommandLineTextEditor.hideCursorWhenInactive = true
 
+  var state = EditorState()
   try:
-    let state = readFile("config.json").parseJson.jsonTo EditorState
+    state = readFile("config.json").parseJson.jsonTo EditorState
     self.setTheme(state.theme)
     self.ctx.fontSize = state.fontSize
     self.ctx.font = state.fontRegular
@@ -414,20 +415,6 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
 
     self.options = readFile("options.json").parseJson
     echo "Restoring options: ", self.options.pretty
-
-    if self.getFlag("editor.restore-open-editors"):
-      for editorState in state.openEditors:
-          let document = if editorState.ast:
-            newAstDocument(editorState.filename)
-          else:
-            try:
-              let fileContent = readFile(editorState.filename)
-              newTextDocument(editorState.filename, fileContent)
-            except CatchableError:
-              self.logger.log(lvlError, fmt"Failed to restore file {editorState.filename} from previous session: {getCurrentExceptionMsg()}")
-              continue
-
-          self.createView(document)
 
   except CatchableError:
     self.logger.log(lvlError, fmt"Failed to load previous state from config file: {getCurrentExceptionMsg()}")
@@ -443,6 +430,21 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
     self.initializeCalled = true
   except CatchableError:
     self.logger.log(lvlError, fmt"Failed to load config")
+
+  # Restore open editors
+  if self.getFlag("editor.restore-open-editors"):
+    for editorState in state.openEditors:
+        let document = if editorState.ast:
+          newAstDocument(editorState.filename)
+        else:
+          try:
+            let fileContent = readFile(editorState.filename)
+            newTextDocument(editorState.filename, fileContent)
+          except CatchableError:
+            self.logger.log(lvlError, fmt"Failed to restore file {editorState.filename} from previous session: {getCurrentExceptionMsg()}")
+            continue
+
+        self.createView(document)
 
   return self
 
