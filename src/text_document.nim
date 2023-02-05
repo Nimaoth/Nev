@@ -1086,6 +1086,12 @@ proc fromJsonHook*(t: var api.TextDocumentEditor, jsonNode: JsonNode) =
   t.id = api.EditorId(jsonNode["id"].jsonTo(int))
 
 proc setMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} =
+  ## Sets the current mode of the editor. If `mode` is "", then no additional scope will be pushed on the scope stac.k
+  ## If mode is e.g. "insert", then the scope "editor.text.insert" will be pushed on the scope stack above "editor.text"
+  ## Don't use "completion", as that is used for when a completion window is open.
+  if mode == "completion":
+    logger.log(lvlError, fmt"Can't set mode to '{mode}'")
+    return
   if mode.len == 0:
     self.modeEventHandler = nil
   else:
@@ -1099,15 +1105,18 @@ proc setMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} 
   self.currentMode = mode
 
 proc mode*(self: TextDocumentEditor): string {.expose("editor.text").} =
+  ## Returns the current mode of the text editor, or "" if there is no mode
   return self.currentMode
 
 proc getContextWithMode(self: TextDocumentEditor, context: string): string {.expose("editor.text").} =
+  ## Appends the current mode to context
   return context & "." & $self.currentMode
 
 proc updateTargetColumn(self: TextDocumentEditor, cursor: SelectionCursor) {.expose("editor.text").} =
   self.targetColumn = self.getCursor(cursor).column
 
 proc invertSelection(self: TextDocumentEditor) {.expose("editor.text").} =
+  ## Inverts the current selection. Discards all but the last cursor.
   self.selection = (self.selection.last, self.selection.first)
 
 proc insert(self: TextDocumentEditor, selections: seq[Selection], text: string, notify: bool = true, record: bool = true, autoIndent: bool = true): seq[Selection] {.expose("editor.text").} =
