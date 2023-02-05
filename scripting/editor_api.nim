@@ -87,7 +87,7 @@ proc scriptAddCommand*(context: string; keys: string; action: string;
   scriptAddCommandScript(context, keys, action, arg)
 proc removeCommand*(context: string; keys: string) =
   removeCommandScript(context, keys)
-proc getActivePopup*(): PopupId =
+proc getActivePopup*(): EditorId =
   getActivePopupScript()
 proc getActiveEditor*(): EditorId =
   getActiveEditorScript()
@@ -99,8 +99,6 @@ proc scriptIsAstEditor*(editorId: EditorId): bool =
   scriptIsAstEditorScript(editorId)
 proc scriptRunActionFor*(editorId: EditorId; action: string; arg: string) =
   scriptRunActionForScript(editorId, action, arg)
-proc scriptRunActionForPopup*(popupId: PopupId; action: string; arg: string) =
-  scriptRunActionForPopupScript(popupId, action, arg)
 proc scriptInsertTextInto*(editorId: EditorId; text: string) =
   scriptInsertTextIntoScript(editorId, text)
 proc scriptTextEditorSelection*(editorId: EditorId): Selection =

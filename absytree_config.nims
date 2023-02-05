@@ -27,7 +27,7 @@ proc handleAction*(action: string, arg: string): bool =
 
   return true
 
-proc handlePopupAction*(popup: PopupId, action: string, arg: string): bool =
+proc handlePopupAction*(popup: EditorId, action: string, arg: string): bool =
   case action:
   of "home":
     for i in 0..<3:

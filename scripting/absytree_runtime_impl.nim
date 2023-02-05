@@ -17,7 +17,7 @@ proc handleEditorAction*(id: EditorId, action: string, args: JsonNode): bool =
 
   return handleDocumentEditorAction(id, action, args)
 
-proc handleUnknownPopupAction*(id: PopupId, action: string, arg: string): bool =
+proc handleUnknownPopupAction*(id: EditorId, action: string, arg: string): bool =
   return handlePopupAction(id, action, arg)
 
 proc handleCallback*(id: int, args: JsonNode): bool = handleCallbackImpl(id, args)

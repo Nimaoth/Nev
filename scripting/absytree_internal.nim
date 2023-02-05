@@ -340,7 +340,7 @@ proc scriptAddCommandScript*(context: string; keys: string; action: string;
   discard
 proc removeCommandScript*(context: string; keys: string) =
   discard
-proc getActivePopupScript*(): PopupId =
+proc getActivePopupScript*(): EditorId =
   discard
 proc getActiveEditorScript*(): EditorId =
   discard
@@ -351,8 +351,6 @@ proc scriptIsTextEditorScript*(editorId: EditorId): bool =
 proc scriptIsAstEditorScript*(editorId: EditorId): bool =
   discard
 proc scriptRunActionForScript*(editorId: EditorId; action: string; arg: string) =
-  discard
-proc scriptRunActionForPopupScript*(popupId: PopupId; action: string; arg: string) =
   discard
 proc scriptInsertTextIntoScript*(editorId: EditorId; text: string) =
   discard
