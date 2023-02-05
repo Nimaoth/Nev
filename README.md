@@ -171,6 +171,18 @@ To define keybindings specific for text documents (TextEditor), use:
 
     addTextCommand "", "a", foo                                 # Like above, but uses existing function
 
+### Scripting API Documentation
+The documentation for the scripting API is in scripting/htmldocs. You can see the current version [here](https://raw.githack.com/Nimaoth/Absytree/main/scripting/htmldocs/theindex.html) (using raw.githack.com) or [here](https://nimaoth.github.io/Absytree/scripting/htmldocs/theindex.html).
+
+Here is an overview of the modules:
+- `absytree_runtime`: Exports everything you need, so you can just include this in your script file.
+- `scripting_api`: Part of the editor source, defines types used by both the editor and the script, as well as some utility functions for those types.
+- `absytree_internal`: Ignore this. You shouldn't need to call these functions directly.
+- `editor_api`: Contains general functions like changing font size, manipulating views, opening and closing files, etc.
+- `editor_text_api`: Contains functions for interacting with a text editor (e.g. modifiying the content).
+- `editor_ast_api`: Contains functions for interacting with an ast editor (e.g. modifying the content).
+- `popupu_selector_api`: Contains functions for interacting with a selector popup.
+
 ## Screenshots
 
 ![alt](screenshots/screenshot1.png)
@@ -179,137 +191,4 @@ To define keybindings specific for text documents (TextEditor), use:
 ![alt](screenshots/screenshot4.png)
 ![alt](screenshots/screenshot5.png)
 
-### Available Editor commands (todo)
-| Command  |  Description  |
-|----------|:--------------|
-| setHandleInputs(context: string; value: bool)                          | Description |
-| setHandleActions(context: string; value: bool)                         | Description |
-| setConsumeAllActions(context: string; value: bool)                     | Description |
-| setConsumeAllInput(context: string; value: bool)                       | Description |
-| getFlag(flag: string; default: bool = false): bool                     | Description |
-| setFlag(flag: string; value: bool)                                     | Description |
-| toggleFlag(flag: string)                                               | Description |
-| setOption(option: string; value: JsonNode)                             | Description |
-| quit()                                                                 | Description |
-| changeFontSize(amount: float32)                                        | Description |
-| changeLayoutProp(prop: string; change: float32)                        | Description |
-| toggleStatusBarLocation()                                              | Description |
-| createView()                                                           | Description |
-| createKeybindAutocompleteView()                                        | Description |
-| closeCurrentView()                                                     | Description |
-| moveCurrentViewToTop()                                                 | Description |
-| nextView()                                                             | Description |
-| prevView()                                                             | Description |
-| moveCurrentViewPrev()                                                  | Description |
-| moveCurrentViewNext()                                                  | Description |
-| setLayout(layout: string)                                              | Description |
-| commandLine(initialValue: string = "")                                 | Description |
-| exitCommandLine()                                                      | Description |
-| executeCommandLine(): bool                                             | Description |
-| openFile(path: string)                                                 | Description |
-| writeFile(path: string = "")                                           | Description |
-| loadFile(path: string = "")                                            | Description |
-| loadTheme(name: string)                                                | Description |
-| chooseTheme()                                                          | Description |
-| chooseFile(view: string = "new")                                       | Description |
-| reloadConfig()                                                         | Description |
-| logOptions()                                                           | Description |
-| clearCommands(context: string)                                         | Description |
-| getAllEditors(): seq[EditorId]                                         | Description |
-| setMode(mode: string)                                                  | Description |
-| mode(): string                                                         | Description |
-| getContextWithMode(context: string): string                            | Description |
-| scriptRunAction(action: string; arg: string)                           | Description |
-| scriptLog(message: string)                                             | Description |
-| scriptAddCommand(context: string; keys: string; action: string         | Description |
-| removeCommand(context: string; keys: string)                           | Description |
-| getActivePopup(): PopupId                                              | Description |
-| getActiveEditor(): EditorId                                            | Description |
-| getEditor(index: int): EditorId                                        | Description |
-| scriptIsTextEditor(editorId: EditorId): bool                           | Description |
-| scriptIsAstEditor(editorId: EditorId): bool                            | Description |
-| scriptRunActionFor(editorId: EditorId; action: string; arg: string)    | Description |
-| scriptRunActionForPopup(popupId: PopupId; action: string; arg: string) | Description |
-| scriptInsertTextInto(editorId: EditorId; text: string)                 | Description |
-| scriptTextEditorSelection(editorId: EditorId): Selection               | Description |
-| scriptSetTextEditorSelection(editorId: EditorId; selection: Selection) | Description |
-| scriptTextEditorSelections(editorId: EditorId): seq[Selection]         | Description |
-| scriptSetTextEditorSelections(editorId: EditorId                       | Description |
-| scriptGetTextEditorLine(editorId: EditorId; line: int): string         | Description |
-| scriptGetTextEditorLineCount(editorId: EditorId): int                  | Description |
-| scriptGetOptionInt(path: string; default: int): int                    | Description |
-| scriptGetOptionFloat(path: string; default: float): float              | Description |
-| scriptGetOptionBool(path: string; default: bool): bool                 | Description |
-| scriptGetOptionString(path: string; default: string): string           | Description |
-| scriptSetOptionInt(path: string; value: int)                           | Description |
-| scriptSetOptionFloat(path: string; value: float)                       | Description |
-| scriptSetOptionBool(path: string; value: bool)                         | Description |
-| scriptSetOptionString(path: string; value: string)                     | Description |
-| scriptSetCallback(path: string; id: int)                               | Description |
 
-
-### Available TextEditor commands (todo)
-| Command                                                                                                                                                             | Description |
-|---------------------------------------------------------------------------------------------------------------------------------------------------------------------|:------------|
-| setMode*(self: TextDocumentEditor; mode: string)                                                                                                                    |             |
-| mode*(self: TextDocumentEditor): string                                                                                                                             |             |
-| getContextWithMode*(self: TextDocumentEditor; context: string): string                                                                                              |             |
-| updateTargetColumn*(self: TextDocumentEditor; cursor: SelectionCursor)                                                                                              |             |
-| invertSelection*(self: TextDocumentEditor)                                                                                                                          |             |
-| insert*(self: TextDocumentEditor; selections: seq[Selection]; text: string; notify: bool = true; record: bool = true; autoIndent: bool = true): seq[Selection]      |             |
-| delete*(self: TextDocumentEditor; selections: seq[Selection]; notify: bool = true; record: bool = true): seq[Selection]                                             |             |
-| selectPrev*(self: TextDocumentEditor)                                                                                                                               |             |
-| selectNext*(self: TextDocumentEditor)                                                                                                                               |             |
-| selectInside*(self: TextDocumentEditor; cursor: Cursor)                                                                                                             |             |
-| selectInsideCurrent*(self: TextDocumentEditor)                                                                                                                      |             |
-| selectLine*(self: TextDocumentEditor; line: int)                                                                                                                    |             |
-| selectLineCurrent*(self: TextDocumentEditor)                                                                                                                        |             |
-| selectParentTs*(self: TextDocumentEditor; selection: Selection)                                                                                                     |             |
-| selectParentCurrentTs*(self: TextDocumentEditor)                                                                                                                    |             |
-| insertText*(self: TextDocumentEditor; text: string)                                                                                                                 |             |
-| undo*(self: TextDocumentEditor)                                                                                                                                     |             |
-| redo*(self: TextDocumentEditor)                                                                                                                                     |             |
-| scrollText*(self: TextDocumentEditor; amount: float32)                                                                                                              |             |
-| duplicateLastSelection*(self: TextDocumentEditor)                                                                                                                   |             |
-| addCursorBelow*(self: TextDocumentEditor)                                                                                                                           |             |
-| addCursorAbove*(self: TextDocumentEditor)                                                                                                                           |             |
-| getPrevFindResult*(self: TextDocumentEditor; cursor: Cursor; offset: int = 0): Selection                                                                            |             |
-| getNextFindResult*(self: TextDocumentEditor; cursor: Cursor; offset: int = 0): Selection                                                                            |             |
-| addNextFindResultToSelection*(self: TextDocumentEditor)                                                                                                             |             |
-| addPrevFindResultToSelection*(self: TextDocumentEditor)                                                                                                             |             |
-| setAllFindResultToSelection*(self: TextDocumentEditor)                                                                                                              |             |
-| moveCursorColumn*(self: TextDocumentEditor; distance: int; cursor: SelectionCursor = SelectionCursor.Config; all: bool = true)                                      |             |
-| moveCursorLine*(self: TextDocumentEditor; distance: int; cursor: SelectionCursor = SelectionCursor.Config; all: bool = true)                                        |             |
-| moveCursorHome*(self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config; all: bool = true)                                                       |             |
-| moveCursorEnd*(self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config; all: bool = true)                                                        |             |
-| moveCursorTo*(self: TextDocumentEditor; str: string; cursor: SelectionCursor = SelectionCursor.Config; all: bool = true)                                            |             |
-| moveCursorBefore*(self: TextDocumentEditor; str: string; cursor: SelectionCursor = SelectionCursor.Config; all: bool = true)                                        |             |
-| moveCursorNextFindResult*(self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config; all: bool = true)                                             |             |
-| moveCursorPrevFindResult*(self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config; all: bool = true)                                             |             |
-| scrollToCursor*(self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config)                                                                         |             |
-| reloadTreesitter*(self: TextDocumentEditor)                                                                                                                         |             |
-| deleteLeft*(self: TextDocumentEditor)                                                                                                                               |             |
-| deleteRight*(self: TextDocumentEditor)                                                                                                                              |             |
-| getCommandCount*(self: TextDocumentEditor): int                                                                                                                     |             |
-| setCommandCount*(self: TextDocumentEditor; count: int)                                                                                                              |             |
-| setCommandCountRestore*(self: TextDocumentEditor; count: int)                                                                                                       |             |
-| updateCommandCount*(self: TextDocumentEditor; digit: int)                                                                                                           |             |
-| setFlag*(self: TextDocumentEditor; name: string; value: bool)                                                                                                       |             |
-| getFlag*(self: TextDocumentEditor; name: string): bool                                                                                                              |             |
-| runAction*(self: TextDocumentEditor; action: string; args: JsonNode): bool                                                                                          |             |
-| findWordBoundary*(self: TextDocumentEditor; cursor: Cursor): Selection                                                                                              |             |
-| getSelectionForMove*(self: TextDocumentEditor; cursor: Cursor; move: string; count: int = 0): Selection                                                             |             |
-| setMove*(self: TextDocumentEditor; args: JsonNode)                                                                                                                  |             |
-| deleteMove*(self: TextDocumentEditor; move: string; which: SelectionCursor = SelectionCursor.Config; all: bool = true)                                              |             |
-| selectMove*(self: TextDocumentEditor; move: string; which: SelectionCursor = SelectionCursor.Config; all: bool = true)                                              |             |
-| changeMove*(self: TextDocumentEditor; move: string; which: SelectionCursor = SelectionCursor.Config; all: bool = true)                                              |             |
-| moveLast*(self: TextDocumentEditor; move: string; which: SelectionCursor = SelectionCursor.Config; all: bool = true)                                                |             |
-| moveFirst*(self: TextDocumentEditor; move: string; which: SelectionCursor = SelectionCursor.Config; all: bool = true)                                               |             |
-| setSearchQuery*(self: TextDocumentEditor; query: string)                                                                                                            |             |
-| setSearchQueryFromMove*(self: TextDocumentEditor; move: string; count: int = 0)                                                                                     |             |
-| gotoDefinition*(self: TextDocumentEditor)                                                                                                                           |             |
-| getCompletions*(self: TextDocumentEditor)                                                                                                                           |             |
-| hideCompletions*(self: TextDocumentEditor)                                                                                                                          |             |
-| selectPrevCompletion*(self: TextDocumentEditor)                                                                                                                     |             |
-| selectNextCompletion*(editor: TextDocumentEditor)                                                                                                                   |             |
-| applySelectedCompletion*(self: TextDocumentEditor)                                                                                                                  |             |
