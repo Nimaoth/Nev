@@ -9,3 +9,5 @@ cpp_test
 config.json
 options.json
 temp
+int/*.map
+**/htmldocs/*.idx
