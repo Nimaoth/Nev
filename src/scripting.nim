@@ -5,6 +5,7 @@ import compiler/[renderer, ast, llstream, lineinfos, types]
 import compiler/options as copts
 from compiler/vmdef import TSandboxFlag
 import util
+import compilation_config
 
 import nimscripter, nimscripter/[vmconversion, vmaddins]
 
@@ -172,6 +173,9 @@ macro addScriptWrapper(name: untyped, moduleName: static string, lineNumber: sta
   exposedFunctions[moduleName] = nnkStmtList.newTree(val)
 
 macro expose*(moduleName: static string, def: untyped): untyped =
+  if not exposeScriptingApi:
+    return def
+
   defer:
     discard
   #   echo result.repr
