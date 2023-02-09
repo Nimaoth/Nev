@@ -21,6 +21,35 @@ proc centerWindowOnMonitor(window: Window, monitor: int) =
   window.pos = ivec2(int32(left + (monitorWidth - windowWidth) / 2),
                      int32(top + (monitorHeight - windowHeight) / 2))
 
+proc toInput(rune: Rune): int64 =
+  return rune.int64
+
+proc toInput(button: Button): int64 =
+  return case button
+  of KeyEnter: INPUT_ENTER
+  of KeyEscape: INPUT_ESCAPE
+  of KeyBackspace: INPUT_BACKSPACE
+  of KeySpace: INPUT_SPACE
+  of KeyDelete: INPUT_DELETE
+  of KeyTab: INPUT_TAB
+  of KeyLeft: INPUT_LEFT
+  of KeyRight: INPUT_RIGHT
+  of KeyUp: INPUT_UP
+  of KeyDown: INPUT_DOWN
+  of KeyHome: INPUT_HOME
+  of KeyEnd: INPUT_END
+  of KeyPageUp: INPUT_PAGE_UP
+  of KeyPageDown: INPUT_PAGE_DOWN
+  of KeyA..KeyZ: ord(button) - ord(KeyA) + ord('a')
+  of Key0..Key9: ord(button) - ord(Key0) + ord('0')
+  of Numpad0..Numpad9: ord(button) - ord(Numpad0) + ord('0')
+  of KeyF1..KeyF12: INPUT_F1 - (ord(button) - ord(KeyF1))
+  of NumpadAdd: ord '+'
+  of NumpadSubtract: ord '-'
+  of NumpadMultiply: ord '*'
+  of NumpadDivide: ord '/'
+  else: 0
+
 window.centerWindowOnMonitor(1)
 window.maximized = true
 
@@ -72,7 +101,7 @@ window.onRune = proc(rune: Rune) =
     of ' ': return
     else: discard
 
-  ed.handleRune(rune, currentModifiers)
+  ed.handleRune(rune.toInput, currentModifiers)
 
 window.onScroll = proc() =
   ed.handleScroll(window.scrollDelta, window.mousePos.vec2)
@@ -95,7 +124,7 @@ window.onButtonPress = proc(button: Button) =
   of KeyLeftAlt, KeyRightAlt: currentModifiers = currentModifiers + {Alt}
   # of KeyLeftSuper, KeyRightSuper: currentModifiers = currentModifiers + {Super}
   else:
-    ed.handleKeyPress(button, currentModifiers)
+    ed.handleKeyPress(button.toInput, currentModifiers)
 
 window.onButtonRelease = proc(button: Button) =
   case button
@@ -106,12 +135,12 @@ window.onButtonRelease = proc(button: Button) =
   of KeyLeftAlt, KeyRightAlt: currentModifiers = currentModifiers - {Alt}
   # of KeyLeftSuper, KeyRightSuper: currentModifiers = currentModifiers - {Super}
   else:
-    ed.handleKeyRelease(button, currentModifiers)
+    ed.handleKeyRelease(button.toInput, currentModifiers)
 
 addTimer 1000, false, proc(fd: AsyncFD): bool =
   return false
 
-while not window.closeRequested:
+while not ed.closeRequested and not window.closeRequested:
   pollEvents()
 
 ed.shutdown()

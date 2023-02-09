@@ -32,8 +32,6 @@ func newEventHandlerConfig*(context: string): EventHandlerConfig =
   result.context = context
 
 proc buildDFA*(config: EventHandlerConfig): CommandDFA =
-  # echo "buildDFA ", config.context
-  # echo config.commands
   return buildDFA(config.commands.pairs.toSeq)
 
 proc dfa*(handler: EventHandler): CommandDFA =
@@ -115,7 +113,6 @@ proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers,
   if input != 0:
     let prevState = handler.state
     handler.state = handler.dfa.step(handler.state, input, modifiers)
-    # echo fmt"[{handler.config.context}] {prevState} -> {handler.state}"
     if handler.state == 0:
       if prevState == 0:
         # undefined input in state 0
@@ -146,8 +143,6 @@ proc anyInProgress*(handlers: openArray[EventHandler]): bool =
 proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifiers) =
   let anyInProgress = handlers.anyInProgress
 
-  # echo fmt"handleEvent {modifiers} + {input.inputToString}"
-
   var allowHandlingUnknownAsInput = true
   # Go through handlers in reverse
   for i in 0..<handlers.len:
@@ -156,8 +151,6 @@ proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifier
       handler.handleEvent(input, modifiers, allowHandlingUnknownAsInput)
     else:
       Ignored
-
-    # echo fmt"[{handler.config.context}] {i}: {response}"
 
     case response
     of Handled:

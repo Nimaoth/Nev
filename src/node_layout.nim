@@ -1,7 +1,8 @@
-import std/[tables]
+import std/[tables, strformat]
 import fusion/matching
 import pixie/fonts, bumpy, chroma, vmath, theme
 import compiler, ast, util, id, ast_ids
+import custom_logger
 
 proc measureText*(font: Font, text: string): Vec2 = font.typeset(text).layoutBounds()
 
@@ -514,7 +515,7 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
       lastUsedChild = node.len - 1
 
   else:
-    echo "createLayoutLineForNode not implemented for ", node.kind
+    logger.log(lvlError, fmt"createLayoutLineForNode not implemented for {node.kind}")
 
 proc centerChildrenVertically(vnode: VisualNode) =
   let height = vnode.bounds.h
@@ -525,7 +526,7 @@ proc centerChildrenVertically(vnode: VisualNode) =
     child.centerChildrenVertically()
 
 proc computeNodeLayoutImpl2*(ctx: Context, input: NodeLayoutInput): NodeLayout =
-  # echo fmt"computeNodeLayoutImpl2 {input.node}"
+  # logger.log(lvlInfo, fmt"computeNodeLayoutImpl2 {input.node}")
   let node = input.node
   result = NodeLayout(node: node, root: VisualNode(orientation: Vertical), nodeToVisualNode: initTable[Id, VisualNodeRange]())
   var line = VisualNode(node: node, parent: result.root, orientation: Horizontal, depth: result.root.depth + 1)

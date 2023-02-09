@@ -3,11 +3,10 @@ import editor, document, document_editor, events, id, util, scripting, vmath, bu
 import windy except Cursor
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
+import custom_logger
 
 import treesitter/api as ts
 import treesitter_nim/nim
-
-var logger = newConsoleLogger()
 
 when not declared(c_malloc):
   proc c_malloc(size: csize_t): pointer {.importc: "malloc", header: "<stdlib.h>", used.}
@@ -434,7 +433,7 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
 
         if gEditor.getFlag("text.print-matches"):
           let nodeText = self.contentString(node.getRange)
-          echo fmt"{match.get.patternIndex}: '{nodeText}' {node} (matches: {matches})"
+          logger.log(lvlInfo, fmt"{match.get.patternIndex}: '{nodeText}' {node} (matches: {matches})")
 
         if not matches:
           continue
@@ -1316,7 +1315,7 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = Selecti
   self.scrollToCursor(self.getCursor(cursor))
 
 proc reloadTreesitter*(self: TextDocumentEditor) {.expose("editor.text").} =
-  echo "reloadTreesitter"
+  logger.log(lvlInfo, "reloadTreesitter")
   self.document.initTreesitter()
 
 proc deleteLeft*(self: TextDocumentEditor) {.expose("editor.text").} =
@@ -1629,7 +1628,7 @@ proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").
     return
 
   let com = self.completions[self.selectedCompletion]
-  echo "Applying completion ", com
+  logger.log(lvlInfo, fmt"Applying completion {com}")
 
   let cursor = self.selection.last
   if cursor.column == 0:

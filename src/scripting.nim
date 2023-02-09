@@ -4,7 +4,7 @@ import fusion/matching
 import compiler/[renderer, ast, llstream, lineinfos, types]
 import compiler/options as copts
 from compiler/vmdef import TSandboxFlag
-import util
+import util, custom_logger
 import compilation_config
 
 import nimscripter, nimscripter/[vmconversion, vmaddins]
@@ -19,6 +19,8 @@ type ScriptContext* = ref object
 
 let stdPath = "C:/Users/nimao/.choosenim/toolchains/nim-#devel/lib"
 
+let loggerPtr = addr logger
+
 proc errorHook(config: ConfigRef; info: TLineInfo; msg: string; severity: Severity) {.gcsafe.} =
   if (severity == Error or severity == Warning) and config.errorCounter >= config.errorMax:
     var fileName: string
@@ -29,7 +31,7 @@ proc errorHook(config: ConfigRef; info: TLineInfo; msg: string; severity: Severi
     var line = info.line
     if fileName == "absytree_config":
       line -= 935
-    echo fmt"[vm {severity}]: $1:$2:$3 $4." % [fileName, $line, $(info.col + 1), msg]
+    loggerPtr[].log(lvlError, fmt"[vm {severity}]: $1:$2:$3 $4." % [fileName, $line, $(info.col + 1), msg])
     raise (ref VMQuit)(info: info, msg: msg)
 
 proc setGlobalVariable*[T](intr: Option[Interpreter] or Interpreter; name: string, value: T) =
@@ -131,11 +133,11 @@ proc newScriptContext*(path: string, apiModule: string, addins: VMAddins, postCo
   result.addins = addins
   result.postCodeAdditions = postCodeAdditions
   result.searchPaths = searchPaths
-  echo fmt"Creating new script context (search paths: {searchPaths})"
+  logger.log(lvlInfo, fmt"Creating new script context (search paths: {searchPaths})")
   result.inter = myLoadScript(result.script, apiModule, addins, postCodeAdditions, ["scripting_api", "std/json"], stdPath = stdPath, searchPaths = searchPaths, vmErrorHook = errorHook)
 
 proc reloadScript*(ctx: ScriptContext) =
-  echo fmt"Reloading script context (search paths: {ctx.searchPaths})"
+  logger.log(lvlInfo, fmt"Reloading script context (search paths: {ctx.searchPaths})")
   ctx.inter.mySafeLoadScriptWithState(ctx.script, ctx.apiModule, ctx.addins, ctx.postCodeAdditions, ["scripting_api", "std/json"], stdPath = stdPath, searchPaths = ctx.searchPaths, vmErrorHook = errorHook)
 
 const mapperFunctions = CacheTable"MapperFunctions" # Maps from type name (referring to nim type) to function which maps these types

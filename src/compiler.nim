@@ -5,10 +5,9 @@ import vmath
 import ast, id, util
 import query_system, compiler_types
 import lru_cache
+import custom_logger
 
 export compiler_types
-
-var logger* = newConsoleLogger()
 
 type
   Diagnostic* = object
@@ -59,7 +58,7 @@ template logIf(condition: bool, message: string, logResult: bool) =
   if logQuery: echo repeat2("| ", currentIndent - 1), message
   defer:
     if logQuery and logResult:
-        echo repeat2("| ", currentIndent), "-> ", result
+      logger.log(lvlInfo, repeat2("| ", currentIndent) & "-> " & $result)
 
 proc computeRenderedTextImpl(ctx: Context, input: RenderTextInput): string =
   # logIf(ctx.enableLogging or ctx.enableQueryLogging, "computeRenderedTextImpl", false)
