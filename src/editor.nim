@@ -5,39 +5,9 @@ import theme, util
 import scripting
 import nimscripter, nimscripter/[vmconversion, vmaddins]
 import compilation_config
+import custom_logger
 
 import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, Popup, SelectorPopup
-
-var logger = newConsoleLogger()
-
-proc toInput(rune: Rune): int64 =
-  return rune.int64
-
-proc toInput(button: Button): int64 =
-  return case button
-  of KeyEnter: INPUT_ENTER
-  of KeyEscape: INPUT_ESCAPE
-  of KeyBackspace: INPUT_BACKSPACE
-  of KeySpace: INPUT_SPACE
-  of KeyDelete: INPUT_DELETE
-  of KeyTab: INPUT_TAB
-  of KeyLeft: INPUT_LEFT
-  of KeyRight: INPUT_RIGHT
-  of KeyUp: INPUT_UP
-  of KeyDown: INPUT_DOWN
-  of KeyHome: INPUT_HOME
-  of KeyEnd: INPUT_END
-  of KeyPageUp: INPUT_PAGE_UP
-  of KeyPageDown: INPUT_PAGE_DOWN
-  of KeyA..KeyZ: ord(button) - ord(KeyA) + ord('a')
-  of Key0..Key9: ord(button) - ord(Key0) + ord('0')
-  of Numpad0..Numpad9: ord(button) - ord(Numpad0) + ord('0')
-  of KeyF1..KeyF12: INPUT_F1 - (ord(button) - ord(KeyF1))
-  of NumpadAdd: ord '+'
-  of NumpadSubtract: ord '-'
-  of NumpadMultiply: ord '*'
-  of NumpadDivide: ord '/'
-  else: 0
 
 type View* = ref object
   document*: Document
@@ -83,6 +53,7 @@ type Editor* = ref object
   timer*: Timer
   frameTimer*: Timer
   lastBounds*: Rect
+  closeRequested*: bool
 
   eventHandlerConfigs: Table[string, EventHandlerConfig]
 
@@ -139,16 +110,16 @@ proc invokeCallback*(self: Editor, context: string, args: JsonNode): bool =
   try:
     return self.scriptContext.inter.invoke(handleCallback, id, args, returnType = bool)
   except CatchableError:
-    self.logger.log(lvlError, fmt"[ed] Failed to run script handleCallback {id}: {getCurrentExceptionMsg()}")
-    echo getCurrentException().getStackTrace()
+    logger.log(lvlError, fmt"[ed] Failed to run script handleCallback {id}: {getCurrentExceptionMsg()}")
+    logger.log(lvlError, getCurrentException().getStackTrace())
     return false
 
 proc handleAction(action: string, arg: string): EventResponse =
-  echo "event: " & action & " - " & arg
+  logger.log(lvlInfo, "event: " & action & " - " & arg)
   return Handled
 
 proc handleInput(input: string): EventResponse =
-  echo "input: " & input
+  logger.log(lvlInfo, "input: " & input)
   return Handled
 
 method layoutViews*(layout: Layout, props: LayoutProperties, bounds: Rect, views: openArray[View]): seq[Rect] {.base.} =
@@ -189,8 +160,8 @@ proc handleUnknownPopupAction*(self: Editor, popup: Popup, action: string, arg: 
     if self.scriptContext.inter.invoke(handleUnknownPopupAction, popup.id, action, arg, returnType = bool):
       return Handled
   except CatchableError:
-    self.logger.log(lvlError, fmt"[ed] Failed to run script handleUnknownPopupAction '{action} {arg}': {getCurrentExceptionMsg()}")
-    echo getCurrentException().getStackTrace()
+    logger.log(lvlError, fmt"[ed] Failed to run script handleUnknownPopupAction '{action} {arg}': {getCurrentExceptionMsg()}")
+    logger.log(lvlError, getCurrentException().getStackTrace())
 
   return Failed
 
@@ -199,8 +170,8 @@ proc handleUnknownDocumentEditorAction*(self: Editor, editor: DocumentEditor, ac
     if self.scriptContext.inter.invoke(handleEditorAction, editor.id, action, args, returnType = bool):
       return Handled
   except CatchableError:
-    self.logger.log(lvlError, fmt"[ed] Failed to run script handleUnknownDocumentEditorAction '{action} {args}': {getCurrentExceptionMsg()}")
-    echo getCurrentException().getStackTrace()
+    logger.log(lvlError, fmt"[ed] Failed to run script handleUnknownDocumentEditorAction '{action} {args}': {getCurrentExceptionMsg()}")
+    logger.log(lvlError, getCurrentException().getStackTrace())
 
   return Failed
 
@@ -212,7 +183,7 @@ proc createEditorForDocument(self: Editor, document: Document): DocumentEditor =
     if editor.canEdit document:
       return editor.createWithDocument document
 
-  echo "No editor found which can edit " & $document
+  logger.log(lvlError, "No editor found which can edit " & $document)
   return nil
 
 proc getOption*[T](editor: Editor, path: string, default: T = T.default): T =
@@ -342,9 +313,9 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
   gEditor = self
   self.window = window
   self.boxy = boxy
-  self.boxy2 = newBoxy()
+  if not boxy.isNil:
+    self.boxy2 = newBoxy()
   self.statusBarOnTop = false
-  self.logger = newConsoleLogger()
 
   self.timer = startTimer()
   self.frameTimer = startTimer()
@@ -415,10 +386,10 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
     if state.fontBoldItalic.len > 0: self.fontBoldItalic = state.fontBoldItalic
 
     self.options = readFile("options.json").parseJson
-    echo "Restoring options: ", self.options.pretty
+    logger.log(lvlInfo, fmt"Restoring options: {self.options.pretty}")
 
   except CatchableError:
-    self.logger.log(lvlError, fmt"Failed to load previous state from config file: {getCurrentExceptionMsg()}")
+    logger.log(lvlError, fmt"Failed to load previous state from config file: {getCurrentExceptionMsg()}")
 
   try:
     var searchPaths = @["src", "scripting"]
@@ -430,7 +401,7 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
     self.scriptContext.inter.invoke(postInitialize)
     self.initializeCalled = true
   except CatchableError:
-    self.logger.log(lvlError, fmt"Failed to load config")
+    logger.log(lvlError, fmt"Failed to load config")
 
   # Restore open editors
   if self.getFlag("editor.restore-open-editors"):
@@ -442,7 +413,7 @@ proc newEditor*(window: Window, boxy: Boxy): Editor =
             let fileContent = readFile(editorState.filename)
             newTextDocument(editorState.filename, fileContent)
           except CatchableError:
-            self.logger.log(lvlError, fmt"Failed to restore file {editorState.filename} from previous session: {getCurrentExceptionMsg()}")
+            logger.log(lvlError, fmt"Failed to restore file {editorState.filename} from previous session: {getCurrentExceptionMsg()}")
             continue
 
         self.createView(document)
@@ -520,7 +491,9 @@ proc setOption*(self: Editor, option: string, value: JsonNode) {.expose("editor"
   node[pathItems[^1]] = value
 
 proc quit*(self: Editor) {.expose("editor").} =
-  self.window.closeRequested = true
+  self.closeRequested = true
+  if not self.window.isNil:
+    self.window.closeRequested = true
 
 proc changeFontSize*(self: Editor, amount: float32) {.expose("editor").} =
   self.ctx.fontSize += amount
@@ -600,16 +573,16 @@ proc openFile*(self: Editor, path: string) {.expose("editor").} =
       let file = readFile(path)
       self.createView(newTextDocument(path, file.splitLines))
   except CatchableError:
-    self.logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
-    echo getCurrentException().getStackTrace()
+    logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
+    logger.log(lvlError, getCurrentException().getStackTrace())
 
 proc writeFile*(self: Editor, path: string = "") {.expose("editor").} =
   if self.currentView >= 0 and self.currentView < self.views.len and self.views[self.currentView].document != nil:
     try:
       self.views[self.currentView].document.save(path)
     except CatchableError:
-      self.logger.log(lvlError, fmt"[ed] Failed to write file '{path}': {getCurrentExceptionMsg()}")
-      echo getCurrentException().getStackTrace()
+      logger.log(lvlError, fmt"[ed] Failed to write file '{path}': {getCurrentExceptionMsg()}")
+      logger.log(lvlError, getCurrentException().getStackTrace())
 
 proc loadFile*(self: Editor, path: string = "") {.expose("editor").} =
   if self.currentView >= 0 and self.currentView < self.views.len and self.views[self.currentView].document != nil:
@@ -617,14 +590,14 @@ proc loadFile*(self: Editor, path: string = "") {.expose("editor").} =
       self.views[self.currentView].document.load(path)
       self.views[self.currentView].editor.handleDocumentChanged()
     except CatchableError:
-      self.logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
-      echo getCurrentException().getStackTrace()
+      logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
+      logger.log(lvlError, getCurrentException().getStackTrace())
 
 proc loadTheme*(self: Editor, name: string) {.expose("editor").} =
   if theme.loadFromFile(fmt"./themes/{name}.json").getSome(theme):
     self.theme = theme
   else:
-    self.logger.log(lvlError, fmt"[ed] Failed to load theme {name}")
+    logger.log(lvlError, fmt"[ed] Failed to load theme {name}")
 
 proc chooseTheme*(self: Editor) {.expose("editor").} =
   let originalTheme = self.theme.path
@@ -667,7 +640,7 @@ proc chooseFile*(self: Editor, view: string = "new") {.expose("editor").} =
     of "new":
       self.openFile(item.FileSelectorItem.path)
     else:
-      self.logger.log(lvlError, fmt"Unknown argument {view}")
+      logger.log(lvlError, fmt"Unknown argument {view}")
 
   self.pushPopup popup
 
@@ -679,10 +652,10 @@ proc reloadConfig*(self: Editor) {.expose("editor").} =
         self.scriptContext.inter.invoke(postInitialize)
         self.initializeCalled = true
     except CatchableError:
-      self.logger.log(lvlError, fmt"Failed to reload config")
+      logger.log(lvlError, fmt"Failed to reload config")
 
 proc logOptions*(self: Editor) {.expose("editor").} =
-  self.logger.log(lvlInfo, self.options.pretty)
+  logger.log(lvlInfo, self.options.pretty)
 
 proc clearCommands*(self: Editor, context: string) {.expose("editor").} =
   self.getEventHandlerConfig(context).clearCommands()
@@ -719,13 +692,13 @@ proc getContextWithMode(self: Editor, context: string): string {.expose("editor"
 genDispatcher("editor")
 
 proc handleAction(self: Editor, action: string, arg: string): bool =
-  self.logger.log(lvlInfo, "[ed] Action '$1 $2'" % [action, arg])
+  logger.log(lvlInfo, "[ed] Action '$1 $2'" % [action, arg])
   try:
     if self.scriptContext.inter.invoke(handleGlobalAction, action, arg, returnType = bool):
       return true
   except CatchableError:
-    self.logger.log(lvlError, fmt"[ed] Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
-    echo getCurrentException().getStackTrace()
+    logger.log(lvlError, fmt"[ed] Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
+    logger.log(lvlError, getCurrentException().getStackTrace())
     return false
 
   var args = newJArray()
@@ -820,16 +793,14 @@ proc handleScroll*(self: Editor, scroll: Vec2, mousePosWindow: Vec2) =
       view.editor.handleScroll(scroll, mousePosWindow)
       return
 
-proc handleKeyPress*(self: Editor, button: Button, modifiers: Modifiers) =
-  let input = button.toInput()
+proc handleKeyPress*(self: Editor, input: int64, modifiers: Modifiers) =
   self.currentEventHandlers.handleEvent(input, modifiers)
 
-proc handleKeyRelease*(self: Editor, button: Button, modifiers: Modifiers) =
+proc handleKeyRelease*(self: Editor, input: int64, modifiers: Modifiers) =
   discard
 
-proc handleRune*(self: Editor, rune: Rune, modifiers: Modifiers) =
-  let modifiers = if rune.int64.isAscii and rune.char.isAlphaNumeric: modifiers else: {}
-  let input = rune.toInput()
+proc handleRune*(self: Editor, input: int64, modifiers: Modifiers) =
+  let modifiers = if input.isAscii and input.char.isAlphaNumeric: modifiers else: {}
   self.currentEventHandlers.handleEvent(input, modifiers)
 
 proc scriptRunAction*(action: string, arg: string) {.expose("editor").} =
@@ -1057,7 +1028,6 @@ static:
         script_api_content.add code
         lineNumber += code.countLines - 1
 
-      # echo script_api_content
       let file_name = name.replace(".", "_")
       writeFile(fmt"scripting/{file_name}_api.nim", script_api_content)
       writeFile(fmt"int/{file_name}_api.map", $mappings)

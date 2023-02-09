@@ -1,4 +1,5 @@
 import asyncdispatch, asyncnet, json, strutils, tables, os, osproc, streams, threadpool, options, macros
+import custom_logger
 
 type AsyncChannel*[T] = ref object
   chan: ptr Channel[T]
@@ -181,10 +182,10 @@ proc startAsyncProcess*(name: string): AsyncProcess =
         discard process.serverDiedNotifications[].recv
 
       if process.dontRestart:
-        echo "[process] Don't restart"
+        logger.log(lvlInfo, "[process] Don't restart")
         return
 
-      echo "[process] start"
+      logger.log(lvlInfo, "[process] start")
       process.process = startProcess(process.name)
 
       process.readerFlowVar = spawn(readInput(process.inputStreamChannel, process.serverDiedNotifications, process.input.chan, process.output.chan))

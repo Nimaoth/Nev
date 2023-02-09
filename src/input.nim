@@ -1,4 +1,5 @@
 import std/[strformat, strutils, tables, algorithm, unicode, sequtils]
+import custom_logger
 
 const
   INPUT_ENTER* = -1
@@ -53,7 +54,7 @@ proc isAscii*(input: int64): bool =
 
 proc step*(dfa: CommandDFA, currentState: int, currentInput: int64, mods: Modifiers): int =
   if currentInput == 0:
-    echo "Input 0 is invalid"
+    logger.log(lvlError, "Input 0 is invalid")
     return
 
   if not (currentInput in dfa.states[currentState].inputs):
@@ -148,7 +149,7 @@ proc getInputCodeFromSpecialKey(specialKey: string): int64 =
       of "F11": INPUT_F11
       of "F12": INPUT_F12
       else:
-        echo "Invalid key '", specialKey, "'"
+        logger.log(lvlError, fmt"Invalid key '{specialKey}'")
         0
 
 proc linkState(dfa: var CommandDFA, currentState: int, nextState: int, inputCode: int64, mods: Modifiers) =
@@ -200,7 +201,7 @@ proc handleNextInput(dfa: var CommandDFA, input: seq[Rune], function: string, in
       0.int64
     elif not isEscaped and ascii == '>':
       if state != State.Special:
-        echo "Error: > without <"
+        logger.log(lvlError, "Error: > without <")
         return
       let inputCode = getInputCodeFromSpecialKey(specialKey)
       state = State.Normal
@@ -217,7 +218,7 @@ proc handleNextInput(dfa: var CommandDFA, input: seq[Rune], function: string, in
               of 'C': mods = mods + {Modifier.Control}
               of 'S': mods = mods + {Modifier.Shift}
               of 'A': mods = mods + {Modifier.Alt}
-              else: echo "Invalid modifier '", m, "'"
+              else: logger.log(lvlError, fmt"Invalid modifier '{m}'")
           specialKey = ""
         else:
           specialKey.add rune
@@ -226,23 +227,18 @@ proc handleNextInput(dfa: var CommandDFA, input: seq[Rune], function: string, in
         mods = {}
         rune.int64
 
-    # echo inputCode, ", ", mods
     if inputCode != 0:
       let nextState = createOrUpdateState(dfa, currentState, inputCode, mods)
       next.add((index: i + 1, state: nextState))
-
-      # echo "inputCode: ", inputCode, ", mods: ", mods
 
       if inputCode > 0 and (mods == {} or mods == {Shift}):
         let rune = Rune(inputCode)
         let bIsLower = rune.isLower
         if not bIsLower:
-          # echo rune, " ", rune.toLower, " ", rune.toLower.int64, " ", inputToString(rune.toLower.int64, mods)
           linkState(dfa, currentState, nextState, rune.toLower.int64, mods + {Shift})
           linkState(dfa, currentState, nextState, inputCode, mods + {Shift})
 
         if bIsLower and Shift in mods:
-          # echo rune, " ", rune.toUpper, " ", rune.toUpper.int64, " ", inputToString(rune.toUpper.int64, mods)
           linkState(dfa, currentState, nextState, rune.toUpper.int64, mods - {Shift})
           linkState(dfa, currentState, nextState, rune.toUpper.int64, mods)
       break
@@ -257,8 +253,6 @@ proc buildDFA*(commands: seq[(string, string)]): CommandDFA =
   var currentState = 0
 
   for command in commands:
-    # echo "Compiling '", command, "'"
-
     currentState = 0
 
     let input = command[0]

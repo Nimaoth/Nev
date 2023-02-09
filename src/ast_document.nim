@@ -5,8 +5,7 @@ import editor, util, document, document_editor, text_document, events, id, ast_i
 import compiler
 import nimscripter
 from scripting_api as api import nil
-
-var logger = newConsoleLogger()
+import custom_logger
 
 type ExecutionOutput* = ref object
   lines*: seq[(string, Color)]
@@ -81,7 +80,7 @@ let funcAddStringInt = newFunctionValue proc(values: seq[Value]): Value =
 let funcPrintAny = newFunctionValue proc(values: seq[Value]): Value =
   result = stringValue(values.join "")
   executionOutput.addOutput $result
-  echo result
+  logger.log(lvlInfo, result)
   return voidValue()
 
 let funcBuildStringAny = newFunctionValue (values) => stringValue(values.join "")
@@ -1621,9 +1620,9 @@ proc moveNodeToPrevSpace(self: AstDocumentEditor) {.expose("editor.ast").} =
 
   # Find spot where to insert
   var targetNode = AstNode.none
-  echo "start: ", self.node
+  # logger.log(lvlInfo, fmt"start: {self.node}")
   for next in self.document.prevPostOrder(self.node):
-    echo next
+    # echo next
     if next == self.node:
       continue
     if self.canInsertInto(next) and (next != self.node.parent or self.node.index > 0):
@@ -1656,9 +1655,9 @@ proc moveNodeToNextSpace(self: AstDocumentEditor) {.expose("editor.ast").} =
 
   # Find spot where to insert
   var targetNode = AstNode.none
-  echo "start: ", self.node
+  # echo "start: ", self.node
   for (_, next) in self.document.nextPostOrder(self.node.parent, self.node.index):
-    echo next
+    # echo next
     if next == self.node:
       continue
     if self.canInsertInto(next) and (next != self.node.parent or self.node.index + 1 < self.node.parent.len):
@@ -1859,9 +1858,9 @@ proc scrollOutput(self: AstDocumentEditor, arg: string) {.expose("editor.ast").}
     executionOutput.scroll = clamp(executionOutput.scroll + arg.parseInt, 0, executionOutput.lines.len)
 
 proc dumpContext(self: AstDocumentEditor) {.expose("editor.ast").} =
-  echo "================================================="
-  echo ctx.toString
-  echo "================================================="
+  logger.log(lvlInfo, "=================================================")
+  logger.log(lvlInfo, ctx.toString)
+  logger.log(lvlInfo, "=================================================")
 
 proc getModeConfig(self: AstDocumentEditor, mode: string): EventHandlerConfig =
   return self.editor.getEventHandlerConfig("editor.ast." & mode)

@@ -5,6 +5,7 @@ import util, input, events, editor, popup, rect_utils, document_editor, text_doc
 import compiler, query_system, node_layout, goto_popup, selector_popup, language_server_base
 import lru_cache
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, Popup, SelectorPopup
+import custom_logger
 
 let lineDistance = 15.0
 
@@ -645,7 +646,7 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
         fmt"  SymbolValue: {ctx.statsSymbolValue}" &
         fmt"  NodeLayout: {ctx.statsNodeLayout}" &
         fmt"  RenderedText: {ctx.statsRenderedText}"
-      echo fmt"Frame: {ed.frameTimer.elapsed.ms:>5.2}ms  Render duration: {timer.elapsed.ms:.2}ms{queryExecutionTimes}"
+      logger.log(lvlInfo, fmt"Frame: {ed.frameTimer.elapsed.ms:>5.2}ms  Render duration: {timer.elapsed.ms:.2}ms{queryExecutionTimes}")
 
     ctx.resetExecutionTimes()
 
@@ -709,7 +710,7 @@ method renderDocumentEditor(editor: AstDocumentEditor, ed: Editor, bounds: Rect,
     editor.previousBaseIndex -= 1
     editor.scrollOffset -= layout.bounds.h + lineDistance
 
-  # echo fmt"{editor.previousBaseIndex} : {editor.scrollOffset}"
+  # logger.log(lvlInfo, fmt"{editor.previousBaseIndex} : {editor.scrollOffset}")
   editor.lastLayouts.setLen 0
 
   var rendered = 0
@@ -952,7 +953,7 @@ proc renderStatusBar*(ed: Editor, bounds: Rect) =
 proc render*(ed: Editor) =
   defer:
     if getOption[bool](ed, "editor.log-frame-time"):
-      echo fmt"Frame: {ed.frameTimer.elapsed.ms:>5.2}ms"
+      logger.log(lvlInfo, fmt"Frame: {ed.frameTimer.elapsed.ms:>5.2}ms")
     ed.frameTimer = startTimer()
 
   if ed.clearAtlasTimer.elapsed.ms >= 5000:

@@ -1,5 +1,6 @@
 import asyncdispatch, json, strutils, strformat, tables, sets, os, options, macros, uri
 import myjsonutils, util, async_process, lsp_types
+import custom_logger
 
 export lsp_types
 
@@ -60,9 +61,9 @@ proc parseResponse(client: LSPClient): Future[JsonNode] {.async.} =
 
   # echo "[headers] ", headers
   if not success or not headers.contains("Content-Length"):
-    echo "[parseResponse] Failed to parse response:"
+    logger.log(lvlError, "[parseResponse] Failed to parse response:")
     for line in lines:
-      echo line
+      logger.log(lvlError, line)
     return newJNull()
 
   let contentLength = headers["Content-Length"].parseInt
@@ -80,7 +81,7 @@ proc sendRPC(client: LSPClient, meth: string, params: JsonNode, id: Option[int])
     request["id"] = newJInt(id)
 
   if not client.isInitialized and meth != "initialize":
-    echo fmt"[sendRPC] client not initialized, add to pending ({meth})"
+    logger.log(lvlInfo, fmt"[sendRPC] client not initialized, add to pending ({meth})")
     client.pendingRequests.add $request
     return
 
@@ -148,7 +149,7 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async.} =
     }
   }
 
-  echo fmt"[initialize] {params}"
+  logger.log(lvlInfo, fmt"[initialize] {params}")
 
   result = await client.sendRequest("initialize", params)
   client.isInitialized = true
@@ -156,20 +157,20 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async.} =
   await client.sendNotification("initialized", newJObject())
 
   for req in client.pendingRequests:
-    echo fmt"[initialize] sending pending request {req}"
+    logger.log(lvlInfo, fmt"[initialize] sending pending request {req}")
     let header = createHeader(req.len)
     await client.process.send(header & req)
 
 proc connect*(client: LSPClient, serverExecutablePath: string) {.async.} =
   client.process = startAsyncProcess(serverExecutablePath)
   client.process.onRestarted = proc() {.async.} =
-    echo "Initializing client..."
+    logger.log(lvlInfo, "Initializing client...")
     let response = await client.initialize()
     if response.isError:
-      echo fmt"[onRestarted] Got error response: {response}"
+      logger.log(lvlError, fmt"[onRestarted] Got error response: {response}")
       return
     var serverCapabilities: ServerCapabilities = response.result["capabilities"].jsonTo(ServerCapabilities, Joptions(allowMissingKeys: true, allowExtraKeys: true))
-    echo "Server capabilities: ", serverCapabilities
+    logger.log(lvlInfo, "Server capabilities: ", serverCapabilities)
 
 proc notifyOpenedTextDocument*(client: LSPClient, languageId: string, path: string, content: string) {.async.} =
   let params = %*{
@@ -204,7 +205,7 @@ proc notifyTextDocumentChanged*(client: LSPClient, path: string, version: int, c
   await client.sendNotification("textDocument/didChange", params)
 
 proc getDefinition*(client: LSPClient, filename: string, line: int, column: int): Future[Response[DefinitionResponse]] {.async.} =
-  echo fmt"[getDefinition] {filename.absolutePath}:{line}:{column}"
+  # echo fmt"[getDefinition] {filename.absolutePath}:{line}:{column}"
 
   client.cancelAllOf("textDocument/definition")
 
@@ -219,7 +220,7 @@ proc getDefinition*(client: LSPClient, filename: string, line: int, column: int)
   return (await client.sendRequest("textDocument/definition", params)).to DefinitionResponse
 
 proc getDeclaration*(client: LSPClient, filename: string, line: int, column: int): Future[Response[DeclarationResponse]] {.async.} =
-  echo fmt"[getDeclaration] {filename.absolutePath}:{line}:{column}"
+  # echo fmt"[getDeclaration] {filename.absolutePath}:{line}:{column}"
 
   client.cancelAllOf("textDocument/declaration")
 
@@ -234,7 +235,7 @@ proc getDeclaration*(client: LSPClient, filename: string, line: int, column: int
   return (await client.sendRequest("textDocument/declaration", params)).to DeclarationResponse
 
 proc getCompletions*(client: LSPClient, filename: string, line: int, column: int): Future[Response[CompletionList]] {.async.} =
-  echo fmt"[getCompletions] {filename.absolutePath}:{line}:{column}"
+  # echo fmt"[getCompletions] {filename.absolutePath}:{line}:{column}"
 
   client.cancelAllOf("textDocument/completion")
 
@@ -257,7 +258,7 @@ proc getCompletions*(client: LSPClient, filename: string, line: int, column: int
   if parsedResponse.asCompletionList().getSome(list):
     return list.success
 
-  echo fmt"[getCompletions] {filename}:{line}:{column}: no completions found"
+  # echo fmt"[getCompletions] {filename}:{line}:{column}: no completions found"
   return error[CompletionList](-1, fmt"[getCompletions] {filename}:{line}:{column}: no completions found")
 
 proc runAsync*(client: LSPClient) {.async.} =
@@ -265,7 +266,7 @@ proc runAsync*(client: LSPClient) {.async.} =
     # echo fmt"[run] Waiting for response {(client.activeRequests.len)}"
     let response = await client.parseResponse()
     if response.isNil or response.kind != JObject:
-      echo "[LSP.run] Bad response: ", response
+      logger.log(lvlError, fmt"[LSP.run] Bad response: {response}")
       continue
 
     if not response.hasKey("id"):
@@ -280,13 +281,13 @@ proc runAsync*(client: LSPClient) {.async.} =
         of Info: "[lsp-info]"
         of Log: "[lsp-log]"
         let message = response["params"]["message"].jsonTo string
-        echo fmt"{prefix} {message}"
+        logger.log(lvlInfo, fmt"{prefix} {message}")
       of "textDocument/publishDiagnostics":
         # todo
-        echo "textDocument/publishDiagnostics"
+        # echo "textDocument/publishDiagnostics"
         discard
       else:
-        echo fmt"[LSP.run] {response}"
+        logger.log(lvlInfo, fmt"[LSP.run] {response}")
 
     else:
       # echo fmt"[LSP.run] {response}"
@@ -305,7 +306,7 @@ proc runAsync*(client: LSPClient) {.async.} =
         # echo fmt"[LSP.run] Received response for canceled request {id}"
         client.canceledRequests.excl id
       else:
-        echo fmt"[LSP.run] error: received response with id {id} but got no active request for that id: {response}"
+        logger.log(lvlError, fmt"[LSP.run] error: received response with id {id} but got no active request for that id: {response}")
 
 proc run*(client: LSPClient) =
   asyncCheck client.runAsync()

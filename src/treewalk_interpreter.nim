@@ -1,6 +1,7 @@
 import std/[tables, strutils, hashes, options, logging, strformat]
 import fusion/matching
 import compiler, ast, util, id, query_system
+import custom_logger
 
 proc cacheValuesInFunction(ctx: Context, node: AstNode, values: var Table[Id, Value]) =
   case node.kind:

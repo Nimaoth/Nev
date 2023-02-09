@@ -1,7 +1,7 @@
-import std/[strutils, options, json, jsonutils, os, tables, asyncdispatch, osproc, asyncnet, tempfiles, macros, uri]
+import std/[strutils, options, json, jsonutils, os, tables, asyncdispatch, osproc, asyncnet, tempfiles, macros, uri, strformat]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import lsp_client, language_server_base, event, util
-import editor, text_document
+import editor, text_document, custom_logger
 
 type LanguageServerNimSuggest* = ref object of LanguageServer
   filename: string
@@ -23,15 +23,14 @@ proc newLanguageServerNimSuggest*(filename: string, saveTempFile: proc(filename:
   result.filename = filename
   let parts = filename.splitFile
   result.tempFilename = genTempPath("absytree_", "_" & parts.name & parts.ext).replace('\\', '/')
-  echo result.tempFilename
   result.saveTempFile = saveTempFile
 
 method start*(self: LanguageServerNimSuggest) =
-  echo "Starting language server for ", self.filename
+  logger.log(lvlInfo, fmt"Starting language server for {self.filename}")
   self.nimsuggest = startProcess("nimsuggest", args = ["--port:" & $port, self.filename])
 
 method stop*(self: LanguageServerNimSuggest) =
-  echo "Stopping language server for ", self.filename
+  logger.log(lvlInfo, fmt"Stopping language server for {self.filename}")
   self.nimsuggest.terminate()
   removeFile(self.tempFilename)
 
@@ -77,7 +76,6 @@ proc sendQuery(self: LanguageServerNimSuggest, query: string, location: Cursor):
   let line = location.line + 1
   let column = location.column
   let msg = query & " \"" & self.filename & "\";\"" & self.tempFilename & "\" " & $line & " " & $column
-  echo msg
   await socket.send(msg & "\r\L")
 
   var results: seq[QueryResult] = @[]
@@ -85,7 +83,6 @@ proc sendQuery(self: LanguageServerNimSuggest, query: string, location: Cursor):
     let response = await socket.recvLine()
     let parts = response.split("\t")
     if parts.len < 9:
-      # echo parts
       break
 
     var queryResult = QueryResult()
@@ -98,8 +95,6 @@ proc sendQuery(self: LanguageServerNimSuggest, query: string, location: Cursor):
     queryResult.doc = parts[7][1..^2].unescape
     queryResult.other = parts[8].parseInt
 
-    # echo parts
-    # echo queryResult
     results.add(queryResult)
 
 
@@ -170,7 +165,6 @@ proc getOrCreateLanguageServerLSP*(languageId: string): Future[Option[LanguageSe
     let config = getOption[JsonNode](gEditor, "editor.text.lsp." & languageId)
     if config.isNil:
       return LanguageServerLSP.none
-    echo config
 
     if not config.hasKey("path"):
       return LanguageServerLSP.none
@@ -244,42 +238,37 @@ method stop*(self: LanguageServerLSP) =
 method getDefinition*(self: LanguageServerLSP, filename: string, location: Cursor): Future[Option[Definition]] {.async.} =
   let response = await self.client.getDefinition(filename, location.line, location.column)
   if response.isError:
-    echo "[LSP] Error: ", response.error
+    logger.log(lvlError, fmt"[LSP] Error: {response.error}")
     return Definition.none
 
 
   let parsedResponse = response.result
-  echo parsedResponse
+  # echo parsedResponse
   if parsedResponse.asLocation().getSome(location):
     return Definition(filename: location.uri.parseUri.path, location: (line: location.`range`.start.line, column: location.`range`.start.character)).some
 
   if parsedResponse.asLocationSeq().getSome(locations) and locations.len > 0:
-    echo "got location seq"
-    echo locations
     let location = locations[0]
     return Definition(filename: location.uri.parseUri.path, location: (line: location.`range`.start.line, column: location.`range`.start.character)).some
 
   if parsedResponse.asLocationLinkSeq().getSome(locations) and locations.len > 0:
-    echo "got location link seq"
     let location = locations[0]
-    echo locations
-    echo location
     return Definition(
       filename: location.targetUri.parseUri.path,
       location: (line: location.targetSelectionRange.start.line, column: location.targetSelectionRange.start.character)).some
 
-  echo "No definition found"
+  logger.log(lvlError, "No definition found")
   return Definition.none
 
 
 method getCompletions*(self: LanguageServerLSP, languageId: string, filename: string, location: Cursor): Future[seq[TextCompletion]] {.async.} =
   let response = await self.client.getCompletions(filename, location.line, location.column)
   if response.isError:
-    echo "[LSP] Error: ", response.error
+    logger.log(lvlError, fmt"[LSP] Error: {response.error}")
     return @[]
 
   let completions = response.result
-  echo "[LSP] getCompletions: ", completions.items.len
+  logger.log(lvlError, fmt"[LSP] getCompletions: {completions.items.len}")
   var completionsResult: seq[TextCompletion]
   for c in completions.items:
     # echo c
