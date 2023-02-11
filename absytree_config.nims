@@ -85,7 +85,14 @@ setOption "editor.restore-open-editors", true
 setOption "editor.frame-time-smoothing", 0.8
 
 setOption "ast.scroll-speed", 60
-setOption "text.scroll-speed", 1
+
+let backend = getBackend()
+log fmt"Backend: {backend}"
+if backend == "terminal":
+  setOption "text.scroll-speed", 1
+elif backend == "gui":
+  setOption "text.scroll-speed", 40
+
 setOption "editor.text.lsp.zig.path", "zls"
 setOption "editor.text.lsp.rust.path", "C:/Users/nimao/.vscode/extensions/rust-lang.rust-analyzer-0.3.1325-win32-x64/server/rust-analyzer.exe"
 setOption "editor.text.treesitter.rust.dll", "D:/dev/Nim/nimtreesitter/treesitter_rust/treesitter_rust/rust.dll"
