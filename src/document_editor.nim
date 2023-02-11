@@ -3,11 +3,12 @@ import document, events, vmath, bumpy, windy
 from scripting_api import EditorId, newEditorId
 
 type DocumentEditor* = ref object of RootObj
-  id: EditorId
+  id*: EditorId
   eventHandler*: EventHandler
   renderHeader*: bool
   fillAvailableSpace*: bool
   lastContentBounds*: Rect
+  dirty*: bool ## Set to true to trigger rerender
 
 func id*(self: DocumentEditor): EditorId = self.id
 

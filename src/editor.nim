@@ -6,6 +6,7 @@ import scripting
 import nimscripter, nimscripter/[vmconversion, vmaddins]
 import compilation_config
 import custom_logger
+import rendering/widgets
 
 import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, Popup, SelectorPopup
 
@@ -54,6 +55,8 @@ type Editor* = ref object
   frameTimer*: Timer
   lastBounds*: Rect
   closeRequested*: bool
+
+  widget*: WWidget
 
   eventHandlerConfigs: Table[string, EventHandlerConfig]
 
@@ -122,35 +125,35 @@ proc handleInput(input: string): EventResponse =
   logger.log(lvlInfo, "input: " & input)
   return Handled
 
-method layoutViews*(layout: Layout, props: LayoutProperties, bounds: Rect, views: openArray[View]): seq[Rect] {.base.} =
+method layoutViews*(layout: Layout, props: LayoutProperties, bounds: Rect, views: int): seq[Rect] {.base.} =
   return @[bounds]
 
-method layoutViews*(layout: HorizontalLayout, props: LayoutProperties, bounds: Rect, views: openArray[View]): seq[Rect] =
+method layoutViews*(layout: HorizontalLayout, props: LayoutProperties, bounds: Rect, views: int): seq[Rect] =
   let mainSplit = props.props.getOrDefault("main-split", 0.5)
   result = @[]
   var rect = bounds
-  for i, view in views:
-    let ratio = if i == 0 and views.len > 1: mainSplit else: 1.0 / (views.len - i).float32
+  for i in 0..<views:
+    let ratio = if i == 0 and views > 1: mainSplit else: 1.0 / (views - i).float32
     let (view_rect, remaining) = rect.splitV(ratio.percent)
     rect = remaining
     result.add view_rect
 
-method layoutViews*(layout: VerticalLayout, props: LayoutProperties, bounds: Rect, views: openArray[View]): seq[Rect] =
+method layoutViews*(layout: VerticalLayout, props: LayoutProperties, bounds: Rect, views: int): seq[Rect] =
   let mainSplit = props.props.getOrDefault("main-split", 0.5)
   result = @[]
   var rect = bounds
-  for i, view in views:
-    let ratio = if i == 0 and views.len > 1: mainSplit else: 1.0 / (views.len - i).float32
+  for i in 0..<views:
+    let ratio = if i == 0 and views > 1: mainSplit else: 1.0 / (views - i).float32
     let (view_rect, remaining) = rect.splitH(ratio.percent)
     rect = remaining
     result.add view_rect
 
-method layoutViews*(layout: FibonacciLayout, props: LayoutProperties, bounds: Rect, views: openArray[View]): seq[Rect] =
+method layoutViews*(layout: FibonacciLayout, props: LayoutProperties, bounds: Rect, views: int): seq[Rect] =
   let mainSplit = props.props.getOrDefault("main-split", 0.5)
   result = @[]
   var rect = bounds
-  for i, view in views:
-    let ratio = if i == 0 and views.len > 1: mainSplit elif i == views.len - 1: 1.0 else: 0.5
+  for i in 0..<views:
+    let ratio = if i == 0 and views > 1: mainSplit elif i == views - 1: 1.0 else: 0.5
     let (view_rect, remaining) = if i mod 2 == 0: rect.splitV(ratio.percent) else: rect.splitH(ratio.percent)
     rect = remaining
     result.add view_rect
@@ -733,7 +736,7 @@ proc handleMousePress*(self: Editor, button: Button, modifiers: Modifiers, mouse
       return
 
   # Check views
-  let rects = self.layout.layoutViews(self.layout_props, self.lastBounds, self.views)
+  let rects = self.layout.layoutViews(self.layout_props, self.lastBounds, self.views.len)
   for i, view in self.views:
     if i >= rects.len:
       return
@@ -751,7 +754,7 @@ proc handleMouseRelease*(self: Editor, button: Button, modifiers: Modifiers, mou
       return
 
   # Check views
-  let rects = self.layout.layoutViews(self.layout_props, self.lastBounds, self.views)
+  let rects = self.layout.layoutViews(self.layout_props, self.lastBounds, self.views.len)
   for i, view in self.views:
     if i >= rects.len:
       return
@@ -768,7 +771,7 @@ proc handleMouseMove*(self: Editor, mousePosWindow: Vec2, mousePosDelta: Vec2) =
       return
 
   # Check views
-  let rects = self.layout.layoutViews(self.layout_props, self.lastBounds, self.views)
+  let rects = self.layout.layoutViews(self.layout_props, self.lastBounds, self.views.len)
   for i, view in self.views:
     if i >= rects.len:
       return
@@ -777,6 +780,7 @@ proc handleMouseMove*(self: Editor, mousePosWindow: Vec2, mousePosDelta: Vec2) =
       return
 
 proc handleScroll*(self: Editor, scroll: Vec2, mousePosWindow: Vec2) =
+  debugf"[editor] handleScroll {scroll} {mousePosWindow}"
   # Check popups
   for i in 0..self.popups.high:
     let popup = self.popups[self.popups.high - i]
@@ -785,11 +789,8 @@ proc handleScroll*(self: Editor, scroll: Vec2, mousePosWindow: Vec2) =
       return
 
   # Check views
-  let rects = self.layout.layoutViews(self.layout_props, self.lastBounds, self.views)
   for i, view in self.views:
-    if i >= rects.len:
-      return
-    if rects[i].contains(mousePosWindow):
+    if view.editor.lastContentBounds.contains(mousePosWindow):
       view.editor.handleScroll(scroll, mousePosWindow)
       return
 

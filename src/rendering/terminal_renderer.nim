@@ -1,7 +1,7 @@
-import std/[os, strutils, strformat]
+import std/[os, strutils, strformat, terminal]
 import renderer, widgets
-import ../custom_logger
-import illwill
+import ../tui, ../custom_logger, ../rect_utils
+import vmath
 
 export renderer, widgets
 
@@ -9,8 +9,11 @@ type
   TerminalRenderer* = ref object of Renderer
     buffer: TerminalBuffer
     redrawEverything*: bool
+    trueColorSupport*: bool
 
 proc exitProc() {.noconv.} =
+  disableTrueColors()
+
   illwillDeinit()
   showCursor()
   quit(0)
@@ -20,6 +23,11 @@ proc init*(self: TerminalRenderer) =
   setControlCHook(exitProc)
   hideCursor()
 
+  if isTrueColorSupported():
+    logger.log(lvlInfo, "Enable true color support")
+    self.trueColorSupport = true
+    enableTrueColors()
+
   self.buffer = newTerminalBuffer(terminalWidth(), terminalHeight())
   self.redrawEverything = true
 
@@ -27,39 +35,65 @@ proc deinit*(self: TerminalRenderer) =
   illwillDeinit()
   showCursor()
 
-method renderWidget(self: WWidget, renderer: TerminalRenderer) {.base.} = discard
+proc size*(self: TerminalRenderer): Vec2 = vec2(self.buffer.width.float, self.buffer.height.float)
+
+method sizeChanged*(self: TerminalRenderer): bool =
+  let (w, h) = (terminalWidth(), terminalHeight())
+  return self.buffer.width != w or self.buffer.height != h
+
+method renderWidget(self: WWidget, renderer: TerminalRenderer, forceRedraw: bool) {.base.} = discard
 
 method render*(self: TerminalRenderer, widget: WWidget) =
-  let (w, h) = (terminalWidth(), terminalHeight())
-  if self.buffer.width != w or self.buffer.height != h:
+  if self.sizeChanged:
+    let (w, h) = (terminalWidth(), terminalHeight())
     logger.log(lvlInfo, fmt"Terminal size changed from {self.buffer.width}x{self.buffer.height} to {w}x{h}, recreate buffer")
     self.buffer = newTerminalBuffer(w, h)
     self.redrawEverything = true
 
-  # 3. Display some simple static UI that doesn't change from frame to frame.
-  self.buffer.setForegroundColor(fgBlack, true)
-  self.buffer.drawRect(0, 0, 40, 5)
-  self.buffer.drawHorizLine(2, 38, 3, doubleStyle=true)
-
-  self.buffer.write(2, 1, fgWhite, "Press any key to display its name")
-  self.buffer.write(2, 2, "Press ", fgYellow, "ESC", fgWhite,
-                " or ", fgYellow, "Q", fgWhite, " to quit")
-
   if self.redrawEverything:
-    widget.renderWidget(self)
+    self.buffer.clear()
+    widget.renderWidget(self, true)
+  else:
+    debugf"lol"
+    widget.renderWidget(self, false)
 
-  self.buffer.display()
+  # This can fail if the terminal was resized during rendering, but in that case we'll just rerender next frame
+  try:
+    self.buffer.display()
+    self.redrawEverything = false
+  except CatchableError:
+    logger.log(lvlError, fmt"[term-render] Failed to display buffer: {getCurrentExceptionMsg()}")
+    self.redrawEverything = true
 
-  self.redrawEverything = false
-
-method renderWidget(self: WPanel, renderer: TerminalRenderer) =
+method renderWidget(self: WPanel, renderer: TerminalRenderer, forceRedraw: bool) =
+  renderer.buffer.setForegroundColor(self.foregroundColor)
+  renderer.buffer.setBackgroundColor(self.backgroundColor)
+  if self.drawBorder:
+    renderer.buffer.drawRect(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int, self.lastBounds.yh.int)
+  # renderer.buffer.write(self.lastBounds.x.int, self.lastBounds.y.int, fmt"{self.lastBounds}")
   for c in self.children:
-    c.renderWidget(renderer)
+    c.renderWidget(renderer, forceRedraw)
 
-method renderWidget(self: WHorizontalList, renderer: TerminalRenderer) =
+method renderWidget(self: WVerticalList, renderer: TerminalRenderer, forceRedraw: bool) =
+  renderer.buffer.setForegroundColor(self.foregroundColor)
+  renderer.buffer.setBackgroundColor(self.backgroundColor)
+  if self.drawBorder:
+    renderer.buffer.drawRect(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int, self.lastBounds.yh.int)
+  # renderer.buffer.write(self.lastBounds.x.int, self.lastBounds.y.int, fmt"{self.lastBounds}")
   for c in self.children:
-    c.renderWidget(renderer)
+    c.renderWidget(renderer, forceRedraw)
 
-method renderWidget(self: WText, renderer: TerminalRenderer) =
-  # debugf "renderWidget {self.text}"
-  renderer.buffer.write(0, 20, self.text)
+method renderWidget(self: WHorizontalList, renderer: TerminalRenderer, forceRedraw: bool) =
+  renderer.buffer.setForegroundColor(self.foregroundColor)
+  renderer.buffer.setBackgroundColor(self.backgroundColor)
+  if self.drawBorder:
+    # renderer.buffer.drawRect(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int, self.lastBounds.yh.int - 1)
+    renderer.buffer.drawHorizLine(self.lastBounds.x.int, self.lastBounds.xw.int, self.lastBounds.y.int)
+  # renderer.buffer.write(self.lastBounds.x.int, self.lastBounds.y.int, fmt"{self.lastBounds}")
+  for c in self.children:
+    c.renderWidget(renderer, forceRedraw)
+
+method renderWidget(self: WText, renderer: TerminalRenderer, forceRedraw: bool) =
+  renderer.buffer.setForegroundColor(self.foregroundColor)
+  renderer.buffer.setBackgroundColor(self.backgroundColor)
+  renderer.buffer.write(self.lastBounds.x.int, self.lastBounds.y.int, fmt"{self.text}")

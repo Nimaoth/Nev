@@ -5,4 +5,5 @@ type
     discard
 
 method render*(self: Renderer, widget: WWidget) {.base.} = discard
+method sizeChanged*(self: Renderer): bool {.base.} = discard
 

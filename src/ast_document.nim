@@ -1938,7 +1938,7 @@ method handleMouseRelease*(self: AstDocumentEditor, button: Button, mousePosWind
 
 method handleMouseMove*(self: AstDocumentEditor, mousePosWindow: Vec2, mousePosDelta: Vec2) =
   let mousePosContent = mousePosWindow - self.lastBounds.xy
-  if self.editor.window.buttonDown[MouseLeft]:
+  if not self.editor.window.isNil and self.editor.window.buttonDown[MouseLeft]:
     if not self.isEditing and self.getNodeAtPixelPosition(mousePosContent).getSome(n):
       self.node = n
 
