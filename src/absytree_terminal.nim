@@ -1,5 +1,5 @@
 import std/[asyncdispatch, strformat]
-import util, input, editor, text_document, rendering/terminal_renderer, illwill, custom_logger, timer
+import util, input, editor, text_document, rendering/terminal_renderer, tui, custom_logger, timer, widget_builders
 import windy, print
 
 var renderer = new TerminalRenderer
@@ -44,8 +44,13 @@ proc toInput(key: Key, modifiers: var Modifiers): int64 =
   # of NumpadDivide: ord '/'
   else: 0
 
+var frameIndex = 0
 var frameTime = 0.0
+var forceRenderCounter = 0
 while not ed.closeRequested:
+  defer:
+    inc frameIndex
+
   let pollTimer = startTimer()
   try:
     poll(2)
@@ -81,7 +86,7 @@ while not ed.closeRequested:
         modifiers.incl Modifier.Shift
 
       if mouseInfo.scroll:
-        let scroll = if mouseInfo.scrollDir == ScrollDirection.sdDown: 1.0 else: -1.0
+        let scroll = if mouseInfo.scrollDir == ScrollDirection.sdDown: -1.0 else: 1.0
         logger.log(lvlInfo, fmt"scroll: {scroll} at {pos}")
         ed.handleScroll(vec2(0, scroll), pos)
       elif mouseInfo.move:
@@ -122,8 +127,23 @@ while not ed.closeRequested:
 
   block:
     ed.frameTimer = startTimer()
-    renderer.redrawEverything = true
-    renderer.render(w)
+
+    let layoutChanged = if forceRenderCounter > 0 or renderer.sizeChanged:
+      ed.layoutWidgetTree(renderer.size, frameIndex)
+    else:
+      false
+    let widgetsChanged = ed.updateWidgetTree(frameIndex)
+    # let layoutChanged = if widgetsChanged or renderer.sizeChanged or forceRenderCounter > 0:
+    #   ed.layoutWidgetTree(renderer.size, frameIndex)
+    # else:
+    #   false
+
+    if widgetsChanged or layoutChanged or renderer.sizeChanged:
+      forceRenderCounter = 2
+
+    renderer.redrawEverything = forceRenderCounter > 0
+    renderer.render(ed.widget)
+    dec forceRenderCounter
     frameTime = ed.frameTimer.elapsed.ms
     # if getOption[bool](ed, "editor.log-frame-time"):
     #   logger.log(lvlInfo, fmt"Frame: {ed.frameTimer.elapsed.ms:>5.2}ms")

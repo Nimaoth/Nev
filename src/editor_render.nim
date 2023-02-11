@@ -919,7 +919,7 @@ proc renderMainWindow*(ed: Editor, bounds: Rect) =
   ed.lastBounds = bounds
   ed.boxy.fillRect(bounds, ed.theme.color("editorPane.background", rgb(25, 25, 25)))
 
-  let rects = ed.layout.layoutViews(ed.layout_props, bounds, ed.views)
+  let rects = ed.layout.layoutViews(ed.layout_props, bounds, ed.views.len)
   for i, view in ed.views:
     if i >= rects.len:
       break

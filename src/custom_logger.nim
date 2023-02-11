@@ -1,6 +1,7 @@
 
+import std/[strformat]
 import logging
-export logging
+export logging, strformat
 
 # var logger* = newConsoleLogger()
 

@@ -8,6 +8,8 @@ import custom_logger
 import treesitter/api as ts
 import treesitter_nim/nim
 
+export document, document_editor, id
+
 when not declared(c_malloc):
   proc c_malloc(size: csize_t): pointer {.importc: "malloc", header: "<stdlib.h>", used.}
   proc c_free(p: pointer): void {.importc: "free", header: "<stdlib.h>", used.}
@@ -931,6 +933,7 @@ method getEventHandlers*(self: TextDocumentEditor): seq[EventHandler] =
 proc updateSearchResults(self: TextDocumentEditor) =
   if self.searchRegex.isNone:
     self.searchResults.clear()
+    self.dirty = true
     return
 
   for i, line in self.document.lines:
@@ -947,6 +950,7 @@ proc updateSearchResults(self: TextDocumentEditor) =
       self.searchResults[i] = selections
     else:
       self.searchResults.del i
+  self.dirty = true
 
 method handleDocumentChanged*(self: TextDocumentEditor) =
   self.selection = (self.clampCursor self.selection.first, self.clampCursor self.selection.last)
@@ -1079,6 +1083,7 @@ proc moveCursor(self: TextDocumentEditor, cursor: SelectionCursor, movement: pro
 
 method handleScroll*(self: TextDocumentEditor, scroll: Vec2, mousePosWindow: Vec2) =
   self.scrollOffset += scroll.y * getOption[float](self.editor, "text.scroll-speed", 40)
+  self.dirty = true
 
 proc getTextDocumentEditor(wrapper: api.TextDocumentEditor): Option[TextDocumentEditor] =
   if gEditor.isNil: return TextDocumentEditor.none
@@ -1710,6 +1715,7 @@ method injectDependencies*(self: TextDocumentEditor, ed: Editor) =
 proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
   self.clampSelection()
   self.updateSearchResults()
+  self.dirty = true
 
 proc newTextEditor*(document: TextDocument, ed: Editor): TextDocumentEditor =
   let editor = TextDocumentEditor(eventHandler: nil, document: document, selectionsInternal: @[(0, 0).toSelection])
@@ -1760,7 +1766,7 @@ method handleMouseRelease*(self: TextDocumentEditor, button: windy.Button, mouse
   discard
 
 method handleMouseMove*(self: TextDocumentEditor, mousePosWindow: Vec2, mousePosDelta: Vec2) =
-  if self.editor.window.buttonDown[windy.MouseLeft] and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
+  if not self.editor.window.isNil and self.editor.window.buttonDown[windy.MouseLeft] and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
     self.selection = cursor.toSelection(self.selection, Last)
 
 method unregister*(self: TextDocumentEditor) =
