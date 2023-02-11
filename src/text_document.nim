@@ -1,6 +1,5 @@
 import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, os, re, tables, deques, asyncdispatch, asyncfile, dynlib]
-import editor, document, document_editor, events, id, util, scripting, vmath, bumpy, rect_utils, language_server_base, event
-import windy except Cursor
+import editor, document, document_editor, events, id, util, scripting, vmath, bumpy, rect_utils, language_server_base, event, input
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import custom_logger
@@ -1750,23 +1749,23 @@ proc getCursorAtPixelPos(self: TextDocumentEditor, mousePosWindow: Vec2): Option
       startOffset += part.text.len
   return Cursor.none
 
-method handleMousePress*(self: TextDocumentEditor, button: windy.Button, mousePosWindow: Vec2) =
-  if button == MouseLeft and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
+method handleMousePress*(self: TextDocumentEditor, button: MouseButton, mousePosWindow: Vec2) =
+  if button == MouseButton.Left and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
     self.selection = cursor.toSelection
 
-  if button == DoubleClick and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
+  if button == MouseButton.DoubleClick and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
     self.selectInside(cursor)
 
-  if button == TripleClick and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
+  if button == MouseButton.TripleClick and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
     self.selectLine(cursor.line)
 
-method handleMouseRelease*(self: TextDocumentEditor, button: windy.Button, mousePosWindow: Vec2) =
+method handleMouseRelease*(self: TextDocumentEditor, button: MouseButton, mousePosWindow: Vec2) =
   # if self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
   #   self.selection = cursor.toSelection(self.selection, Last)
   discard
 
-method handleMouseMove*(self: TextDocumentEditor, mousePosWindow: Vec2, mousePosDelta: Vec2) =
-  if not self.editor.window.isNil and self.editor.window.buttonDown[windy.MouseLeft] and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
+method handleMouseMove*(self: TextDocumentEditor, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) =
+  if MouseButton.Left in buttons and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
     self.selection = cursor.toSelection(self.selection, Last)
 
 method unregister*(self: TextDocumentEditor) =

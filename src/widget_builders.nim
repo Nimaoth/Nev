@@ -52,7 +52,6 @@ method updateWidget(self: TextDocumentEditor, widget: WPanel, frameIndex: int): 
     headerPanel.bottom = 0
     contentPanel.top = 0
 
-  # @todo: also check if the content of self changed here
   if not (widget.changed(frameIndex) or contentPanel.changed(frameIndex) or self.dirty):
     return false
 

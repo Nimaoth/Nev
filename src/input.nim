@@ -47,6 +47,9 @@ type
   CommandDFA* = ref object
     states: seq[DFAState]
 
+  MouseButton* {.pure.} = enum
+    Left, Middle, Right, DoubleClick, TripleClick, Unknown
+
 proc isAscii*(input: int64): bool =
   if input >= char.low.ord and input <= char.high.ord:
     return true

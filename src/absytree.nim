@@ -1,7 +1,13 @@
+import custom_logger
+
+logger.enableFileLogger()
+logger.enableConsoleLogger()
+
 import boxy, opengl, windy
 import monitors
-import input, editor, editor_render
+import input, editor, editor_render, rendering/renderer
 import std/[asyncdispatch, strformat]
+from scripting_api import Backend
 
 let window = newWindow("Absytree", ivec2(1280, 800))
 window.runeInputEnabled = true
@@ -59,7 +65,7 @@ loadExtensions()
 
 let bxy = newBoxy()
 
-var ed = newEditor(window, bxy, "gui")
+var ed = newEditor(window, bxy, Gui, nil)
 
 # Load the images.
 # bxy.addImage("bg", readImage("examples/data/bg.png"))
@@ -91,9 +97,11 @@ window.onFrame = proc() =
   window.swapBuffers()
 
 var currentModifiers: Modifiers = {}
+var currentMouseButtons: set[MouseButton] = {}
 
 window.onFocusChange = proc() =
   currentModifiers = {}
+  currentMouseButtons = {}
 
 window.onRune = proc(rune: Rune) =
   if rune.int32 in char.low.ord .. char.high.ord:
@@ -104,10 +112,19 @@ window.onRune = proc(rune: Rune) =
   ed.handleRune(rune.toInput, currentModifiers)
 
 window.onScroll = proc() =
-  ed.handleScroll(window.scrollDelta, window.mousePos.vec2)
+  ed.handleScroll(window.scrollDelta, window.mousePos.vec2, {})
 
 window.onMouseMove = proc() =
-  ed.handleMouseMove(window.mousePos.vec2, window.mouseDelta.vec2)
+  ed.handleMouseMove(window.mousePos.vec2, window.mouseDelta.vec2, {}, currentMouseButtons)
+
+proc toMouseButton(button: Button): MouseButton =
+  result = case button:
+    of MouseLeft: MouseButton.Left
+    of MouseMiddle: MouseButton.Middle
+    of MouseRight: MouseButton.Right
+    of DoubleClick: MouseButton.DoubleClick
+    of TripleClick: MouseButton.TripleClick
+    else: MouseButton.Unknown
 
 window.onButtonPress = proc(button: Button) =
   # If the key event would also generate a char afterwards then ignore it, except for some special keys
@@ -118,7 +135,8 @@ window.onButtonPress = proc(button: Button) =
 
   case button
   of  MouseLeft, MouseRight, MouseMiddle, MouseButton4, MouseButton5, DoubleClick, TripleClick, QuadrupleClick:
-    ed.handleMousePress(button, currentModifiers, window.mousePos.vec2)
+    currentMouseButtons.incl button.toMouseButton
+    ed.handleMousePress(button.toMouseButton, currentModifiers, window.mousePos.vec2)
   of KeyLeftShift, KeyRightShift: currentModifiers = currentModifiers + {Shift}
   of KeyLeftControl, KeyRightControl: currentModifiers = currentModifiers + {Control}
   of KeyLeftAlt, KeyRightAlt: currentModifiers = currentModifiers + {Alt}
@@ -129,7 +147,8 @@ window.onButtonPress = proc(button: Button) =
 window.onButtonRelease = proc(button: Button) =
   case button
   of  MouseLeft, MouseRight, MouseMiddle, MouseButton4, MouseButton5, DoubleClick, TripleClick, QuadrupleClick:
-    ed.handleMouseRelease(button, currentModifiers, window.mousePos.vec2)
+    currentMouseButtons.excl button.toMouseButton
+    ed.handleMouseRelease(button.toMouseButton, currentModifiers, window.mousePos.vec2)
   of KeyLeftShift, KeyRightShift: currentModifiers = currentModifiers - {Shift}
   of KeyLeftControl, KeyRightControl: currentModifiers = currentModifiers - {Control}
   of KeyLeftAlt, KeyRightAlt: currentModifiers = currentModifiers - {Alt}

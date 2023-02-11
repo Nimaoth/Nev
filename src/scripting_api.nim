@@ -15,6 +15,7 @@ type Cursor* = tuple[line, column: int]
 type Selection* = tuple[first, last: Cursor]
 type SelectionCursor* = enum Config = "config", Both = "both", First = "first", Last = "last", LastToFirst = "last-to-first"
 type LineNumbers* = enum None = "none", Absolute = "Absolute", Relative = "relative"
+type Backend* = enum Gui = "gui", Terminal = "terminal"
 
 type Selections* = seq[Selection]
 
