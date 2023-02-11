@@ -59,7 +59,7 @@ loadExtensions()
 
 let bxy = newBoxy()
 
-var ed = newEditor(window, bxy)
+var ed = newEditor(window, bxy, "gui")
 
 # Load the images.
 # bxy.addImage("bg", readImage("examples/data/bg.png"))

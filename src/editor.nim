@@ -41,6 +41,7 @@ type EditorState = object
   openEditors: seq[OpenEditor]
 
 type Editor* = ref object
+  backend: string
   window*: Window
   boxy*: Boxy
   boxy2*: Boxy
@@ -311,10 +312,11 @@ proc createScriptContext(filepath: string, searchPaths: seq[string]): ScriptCont
 
 proc getCommandLineTextEditor*(self: Editor): TextDocumentEditor = self.commandLineTextEditor.TextDocumentEditor
 
-proc newEditor*(window: Window, boxy: Boxy): Editor =
+proc newEditor*(window: Window, boxy: Boxy, backend: string): Editor =
   var self = Editor()
   gEditor = self
   self.window = window
+  self.backend = backend
   self.boxy = boxy
   if not boxy.isNil:
     self.boxy2 = newBoxy()
@@ -455,6 +457,9 @@ proc getEditor(): Option[Editor] =
 
 static:
   addInjector(Editor, getEditor)
+
+proc getBackend*(self: Editor): string {.expose("editor").} =
+  return self.backend
 
 proc setHandleInputs*(self: Editor, context: string, value: bool) {.expose("editor").} =
   self.getEventHandlerConfig(context).setHandleInputs(value)

@@ -4,6 +4,8 @@ import absytree_internal
 
 ## This file is auto generated, don't modify.
 
+proc getBackend*(): string =
+  getBackendScript()
 proc setHandleInputs*(context: string; value: bool) =
   setHandleInputsScript(context, value)
 proc setHandleActions*(context: string; value: bool) =

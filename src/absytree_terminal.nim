@@ -5,7 +5,7 @@ import windy, print
 var renderer = new TerminalRenderer
 renderer.init()
 
-var ed = newEditor(nil, nil)
+var ed = newEditor(nil, nil, "terminal")
 
 addTimer 1000, false, proc(fd: AsyncFD): bool =
   return false
