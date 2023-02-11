@@ -1,4 +1,4 @@
-import document, events, vmath, bumpy, windy
+import document, events, vmath, bumpy, input
 
 from scripting_api import EditorId, newEditorId
 
@@ -39,11 +39,11 @@ method unregister*(self: DocumentEditor) {.base.} =
 method handleScroll*(self: DocumentEditor, scroll: Vec2, mousePosWindow: Vec2) {.base.} =
   discard
 
-method handleMousePress*(self: DocumentEditor, button: Button, mousePosWindow: Vec2) {.base.} =
+method handleMousePress*(self: DocumentEditor, button: MouseButton, mousePosWindow: Vec2) {.base.} =
   discard
 
-method handleMouseRelease*(self: DocumentEditor, button: Button, mousePosWindow: Vec2) {.base.} =
+method handleMouseRelease*(self: DocumentEditor, button: MouseButton, mousePosWindow: Vec2) {.base.} =
   discard
 
-method handleMouseMove*(self: DocumentEditor, mousePosWindow: Vec2, mousePosDelta: Vec2) {.base.} =
+method handleMouseMove*(self: DocumentEditor, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) {.base.} =
   discard

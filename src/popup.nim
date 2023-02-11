@@ -1,4 +1,4 @@
-import events, windy, vmath, bumpy
+import events, input, vmath, bumpy
 
 from scripting_api import EditorId, newEditorId
 
@@ -18,11 +18,11 @@ method getEventHandlers*(self: Popup): seq[EventHandler] {.base.} =
 method handleScroll*(self: Popup, scroll: Vec2, mousePosWindow: Vec2) {.base.} =
   discard
 
-method handleMousePress*(self: Popup, button: Button, mousePosWindow: Vec2) {.base.} =
+method handleMousePress*(self: Popup, button: MouseButton, mousePosWindow: Vec2) {.base.} =
   discard
 
-method handleMouseRelease*(self: Popup, button: Button, mousePosWindow: Vec2) {.base.} =
+method handleMouseRelease*(self: Popup, button: MouseButton, mousePosWindow: Vec2) {.base.} =
   discard
 
-method handleMouseMove*(self: Popup, mousePosWindow: Vec2, mousePosDelta: Vec2) {.base.} =
+method handleMouseMove*(self: Popup, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) {.base.} =
   discard

@@ -257,7 +257,7 @@ proc prevScript*(self: SelectorPopup) =
   discard
 proc nextScript*(self: SelectorPopup) =
   discard
-proc getBackendScript*(): string =
+proc getBackendScript*(): Backend =
   discard
 proc setHandleInputsScript*(context: string; value: bool) =
   discard

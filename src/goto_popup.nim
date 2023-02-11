@@ -1,6 +1,6 @@
 import std/[strutils, tables, sugar, algorithm, options, asyncdispatch]
-import fuzzy, bumpy, vmath, windy
-import editor, ast_document, text_document, popup, events, compiler, compiler_types, id, util, rect_utils, event
+import fuzzy, bumpy, vmath
+import editor, ast_document, text_document, popup, events, compiler, compiler_types, id, util, rect_utils, event, input
 from scripting_api import LineNumbers
 
 type AstGotoDefinitionPopup* = ref object of Popup
@@ -81,16 +81,16 @@ proc handleTextChanged*(self: AstGotoDefinitionPopup) =
 method handleScroll*(self: AstGotoDefinitionPopup, scroll: Vec2, mousePosWindow: Vec2) =
   self.selected = clamp(self.selected - scroll.y.int, 0, self.completions.len - 1)
 
-method handleMousePress*(self: AstGotoDefinitionPopup, button: Button, mousePosWindow: Vec2) =
-  if button == MouseLeft:
+method handleMousePress*(self: AstGotoDefinitionPopup, button: MouseButton, mousePosWindow: Vec2) =
+  if button == MouseButton.Left:
     if self.getItemAtPixelPosition(mousePosWindow).getSome(item):
       self.handleSymbolSelected(item.id)
       self.editor.popPopup(self)
 
-method handleMouseRelease*(self: AstGotoDefinitionPopup, button: Button, mousePosWindow: Vec2) =
+method handleMouseRelease*(self: AstGotoDefinitionPopup, button: MouseButton, mousePosWindow: Vec2) =
   discard
 
-method handleMouseMove*(self: AstGotoDefinitionPopup, mousePosWindow: Vec2, mousePosDelta: Vec2) =
+method handleMouseMove*(self: AstGotoDefinitionPopup, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) =
   discard
 
 proc newGotoPopup*(editor: Editor, document: AstDocument): AstGotoDefinitionPopup =

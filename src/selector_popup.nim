@@ -1,6 +1,6 @@
 import std/[strutils, sugar, options, json, jsonutils, streams]
-import bumpy, vmath, windy
-import editor, text_document, popup, events, util, rect_utils, scripting, event
+import bumpy, vmath
+import editor, text_document, popup, events, util, rect_utils, scripting, event, input
 from scripting_api as api import nil
 
 type
@@ -108,16 +108,16 @@ proc handleTextChanged*(self: SelectorPopup) =
 method handleScroll*(self: SelectorPopup, scroll: Vec2, mousePosWindow: Vec2) =
   self.selected = clamp(self.selected - scroll.y.int, 0, self.completions.len - 1)
 
-method handleMousePress*(self: SelectorPopup, button: Button, mousePosWindow: Vec2) =
-  if button == MouseLeft:
+method handleMousePress*(self: SelectorPopup, button: MouseButton, mousePosWindow: Vec2) =
+  if button == MouseButton.Left:
     if self.getItemAtPixelPosition(mousePosWindow).getSome(item):
       self.handleItemConfirmed(item)
       self.editor.popPopup(self)
 
-method handleMouseRelease*(self: SelectorPopup, button: Button, mousePosWindow: Vec2) =
+method handleMouseRelease*(self: SelectorPopup, button: MouseButton, mousePosWindow: Vec2) =
   discard
 
-method handleMouseMove*(self: SelectorPopup, mousePosWindow: Vec2, mousePosDelta: Vec2) =
+method handleMouseMove*(self: SelectorPopup, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) =
   discard
 
 proc newSelectorPopup*(editor: Editor, getCompletions: proc(self: SelectorPopup, text: string): seq[SelectorItem]): SelectorPopup =

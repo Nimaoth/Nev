@@ -1,6 +1,6 @@
 import std/[strformat, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils, macros, macrocache, sugar, streams, asyncdispatch]
 import boxy, windy, fuzzy
-import input, events, rect_utils, document, document_editor, keybind_autocomplete, popup, render_context, timer, event
+import input, events, rect_utils, document, document_editor, keybind_autocomplete, popup, render_context, timer, event, rendering/renderer
 import theme, util
 import scripting
 import nimscripter, nimscripter/[vmconversion, vmaddins]
@@ -9,6 +9,7 @@ import custom_logger
 import rendering/widgets
 
 import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, Popup, SelectorPopup
+from scripting_api import Backend
 
 type View* = ref object
   document*: Document
@@ -41,7 +42,7 @@ type EditorState = object
   openEditors: seq[OpenEditor]
 
 type Editor* = ref object
-  backend: string
+  backend: api.Backend
   window*: Window
   boxy*: Boxy
   boxy2*: Boxy
@@ -312,7 +313,15 @@ proc createScriptContext(filepath: string, searchPaths: seq[string]): ScriptCont
 
 proc getCommandLineTextEditor*(self: Editor): TextDocumentEditor = self.commandLineTextEditor.TextDocumentEditor
 
-proc newEditor*(window: Window, boxy: Boxy, backend: string): Editor =
+proc handleKeyPress*(self: Editor, input: int64, modifiers: Modifiers)
+proc handleKeyRelease*(self: Editor, input: int64, modifiers: Modifiers)
+proc handleRune*(self: Editor, input: int64, modifiers: Modifiers)
+proc handleMousePress*(self: Editor, button: MouseButton, modifiers: Modifiers, mousePosWindow: Vec2)
+proc handleMouseRelease*(self: Editor, button: MouseButton, modifiers: Modifiers, mousePosWindow: Vec2)
+proc handleMouseMove*(self: Editor, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton])
+proc handleScroll*(self: Editor, scroll: Vec2, mousePosWindow: Vec2, modifiers: Modifiers)
+
+proc newEditor*(window: Window, boxy: Boxy, backend: api.Backend, rend: Renderer): Editor =
   var self = Editor()
   gEditor = self
   self.window = window
@@ -321,6 +330,15 @@ proc newEditor*(window: Window, boxy: Boxy, backend: string): Editor =
   if not boxy.isNil:
     self.boxy2 = newBoxy()
   self.statusBarOnTop = false
+
+  if not rend.isNil:
+    discard rend.onKeyPress.subscribe proc(event: auto): void = self.handleKeyPress(event.input, event.modifiers)
+    discard rend.onKeyRelease.subscribe proc(event: auto): void = self.handleKeyRelease(event.input, event.modifiers)
+    discard rend.onRune.subscribe proc(event: auto): void = self.handleRune(event.input, event.modifiers)
+    discard rend.onMousePress.subscribe proc(event: auto): void = self.handleMousePress(event.button, event.modifiers, event.pos)
+    discard rend.onMouseRelease.subscribe proc(event: auto): void = self.handleMouseRelease(event.button, event.modifiers, event.pos)
+    discard rend.onMouseMove.subscribe proc(event: auto): void = self.handleMouseMove(event.pos, event.delta, event.modifiers, event.buttons)
+    discard rend.onScroll.subscribe proc(event: auto): void = self.handleScroll(event.scroll, event.pos, event.modifiers)
 
   self.timer = startTimer()
   self.frameTimer = startTimer()
@@ -458,7 +476,7 @@ proc getEditor(): Option[Editor] =
 static:
   addInjector(Editor, getEditor)
 
-proc getBackend*(self: Editor): string {.expose("editor").} =
+proc getBackend*(self: Editor): Backend {.expose("editor").} =
   return self.backend
 
 proc setHandleInputs*(self: Editor, context: string, value: bool) {.expose("editor").} =
@@ -732,7 +750,7 @@ proc currentEventHandlers*(self: Editor): seq[EventHandler] =
   if not self.modeEventHandler.isNil and modeOnTop:
     result.add self.modeEventHandler
 
-proc handleMousePress*(self: Editor, button: Button, modifiers: Modifiers, mousePosWindow: Vec2) =
+proc handleMousePress*(self: Editor, button: MouseButton, modifiers: Modifiers, mousePosWindow: Vec2) =
   # Check popups
   for i in 0..self.popups.high:
     let popup = self.popups[self.popups.high - i]
@@ -750,7 +768,7 @@ proc handleMousePress*(self: Editor, button: Button, modifiers: Modifiers, mouse
       view.editor.handleMousePress(button, mousePosWindow)
       return
 
-proc handleMouseRelease*(self: Editor, button: Button, modifiers: Modifiers, mousePosWindow: Vec2) =
+proc handleMouseRelease*(self: Editor, button: MouseButton, modifiers: Modifiers, mousePosWindow: Vec2) =
   # Check popups
   for i in 0..self.popups.high:
     let popup = self.popups[self.popups.high - i]
@@ -767,12 +785,12 @@ proc handleMouseRelease*(self: Editor, button: Button, modifiers: Modifiers, mou
       view.editor.handleMouseRelease(button, mousePosWindow)
       return
 
-proc handleMouseMove*(self: Editor, mousePosWindow: Vec2, mousePosDelta: Vec2) =
+proc handleMouseMove*(self: Editor, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) =
   # Check popups
   for i in 0..self.popups.high:
     let popup = self.popups[self.popups.high - i]
     if popup.lastBounds.contains(mousePosWindow):
-      popup.handleMouseMove(mousePosWindow, mousePosDelta)
+      popup.handleMouseMove(mousePosWindow, mousePosDelta, modifiers, buttons)
       return
 
   # Check views
@@ -781,11 +799,10 @@ proc handleMouseMove*(self: Editor, mousePosWindow: Vec2, mousePosDelta: Vec2) =
     if i >= rects.len:
       return
     if self.currentView == i and rects[i].contains(mousePosWindow):
-      view.editor.handleMouseMove(mousePosWindow, mousePosDelta)
+      view.editor.handleMouseMove(mousePosWindow, mousePosDelta, modifiers, buttons)
       return
 
-proc handleScroll*(self: Editor, scroll: Vec2, mousePosWindow: Vec2) =
-  debugf"[editor] handleScroll {scroll} {mousePosWindow}"
+proc handleScroll*(self: Editor, scroll: Vec2, mousePosWindow: Vec2, modifiers: Modifiers) =
   # Check popups
   for i in 0..self.popups.high:
     let popup = self.popups[self.popups.high - i]

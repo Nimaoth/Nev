@@ -1,7 +1,7 @@
 import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros, macrocache, options, deques, sets, json, jsonutils, sequtils, streams, os]
 import timer
-import fusion/matching, fuzzy, bumpy, rect_utils, vmath, chroma, windy
-import editor, util, document, document_editor, text_document, events, id, ast_ids, ast, scripting, event, theme
+import fusion/matching, fuzzy, bumpy, rect_utils, vmath, chroma
+import editor, util, document, document_editor, text_document, events, id, ast_ids, ast, scripting, event, theme, input
 import compiler
 import nimscripter
 from scripting_api as api import nil
@@ -1921,11 +1921,11 @@ method handleScroll*(self: AstDocumentEditor, scroll: Vec2, mousePosWindow: Vec2
   else:
     self.scrollOffset += scroll.y * getOption[float](self.editor, "ast.scroll-speed", 20)
 
-method handleMousePress*(self: AstDocumentEditor, button: Button, mousePosWindow: Vec2) =
+method handleMousePress*(self: AstDocumentEditor, button: MouseButton, mousePosWindow: Vec2) =
   # Make mousePos relative to contentBounds
   let mousePosContent = mousePosWindow - self.lastBounds.xy
 
-  if button == MouseLeft:
+  if button == MouseButton.Left:
     if self.getItemAtPixelPosition(mousePosWindow).getSome(index):
       self.selectedCompletion = index
       self.applySelectedCompletion()
@@ -1933,12 +1933,12 @@ method handleMousePress*(self: AstDocumentEditor, button: Button, mousePosWindow
     elif not self.isEditing and self.getNodeAtPixelPosition(mousePosContent).getSome(n):
       self.node = n
 
-method handleMouseRelease*(self: AstDocumentEditor, button: Button, mousePosWindow: Vec2) =
+method handleMouseRelease*(self: AstDocumentEditor, button: MouseButton, mousePosWindow: Vec2) =
   discard
 
-method handleMouseMove*(self: AstDocumentEditor, mousePosWindow: Vec2, mousePosDelta: Vec2) =
-  let mousePosContent = mousePosWindow - self.lastBounds.xy
-  if not self.editor.window.isNil and self.editor.window.buttonDown[MouseLeft]:
+method handleMouseMove*(self: AstDocumentEditor, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) =
+  if MouseButton.Left in buttons:
+    let mousePosContent = mousePosWindow - self.lastBounds.xy
     if not self.isEditing and self.getNodeAtPixelPosition(mousePosContent).getSome(n):
       self.node = n
 

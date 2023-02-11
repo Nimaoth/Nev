@@ -86,11 +86,11 @@ setOption "editor.frame-time-smoothing", 0.8
 
 setOption "ast.scroll-speed", 60
 
-let backend = getBackend()
-log fmt"Backend: {backend}"
-if backend == "terminal":
-  setOption "text.scroll-speed", 1
-elif backend == "gui":
+log fmt"Backend: {getBackend()}"
+case getBackend()
+of Terminal:
+  setOption "text.scroll-speed", 2
+of Gui:
   setOption "text.scroll-speed", 40
 
 setOption "editor.text.lsp.zig.path", "zls"
