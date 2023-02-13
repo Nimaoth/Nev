@@ -1,5 +1,10 @@
 *.exe
+*.pdb
 *.ttf
+*.log
+*.exp
+*.ilk
+*.lib
 src/input_tests
 ast
 absytree
@@ -11,3 +16,4 @@ options.json
 temp
 int/*.map
 **/htmldocs/**/*.idx
+*.code-workspace
