@@ -4,11 +4,12 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [{
-        "name": "Debug Nim Project",
-        "type": "gdb",
+        "type": "lldb",
         "request": "launch",
-        "target": "./absytree",
+        "name": "Debug Nim Project",
+        "program": "${workspaceRoot}/ast.exe",
+        "args": [],
         "cwd": "${workspaceRoot}",
-        "valuesFormatting": "parseText"
+        "terminal": "console"
     }]
 }
