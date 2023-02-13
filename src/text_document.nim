@@ -1,5 +1,5 @@
 import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, os, re, tables, deques, asyncdispatch, asyncfile, dynlib]
-import editor, document, document_editor, events, id, util, scripting, vmath, bumpy, rect_utils, language_server_base, event, input
+import editor, document, document_editor, events, id, util, scripting, vmath, bumpy, rect_utils, language_server_base, event, input, rendering/renderer
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import custom_logger
@@ -230,6 +230,7 @@ proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
   if self.selectionHistory.len > 100:
     discard self.selectionHistory.popFirst
   self.selectionsInternal = @[self.clampSelection selection]
+  self.dirty = true
 
 proc `selections=`*(self: TextDocumentEditor, selections: Selections) =
   if self.selectionsInternal == selections:
@@ -241,9 +242,11 @@ proc `selections=`*(self: TextDocumentEditor, selections: Selections) =
   self.selectionsInternal = self.clampAndMergeSelections selections
   if self.selectionsInternal.len == 0:
     self.selectionsInternal = @[(0, 0).toSelection]
+  self.dirty = true
 
 proc clampSelection*(self: TextDocumentEditor) =
   self.selections = self.clampAndMergeSelections(self.selectionsInternal)
+  self.dirty = true
 
 proc `content=`*(self: TextDocument, value: string) =
   if self.singleLine:
@@ -1006,7 +1009,8 @@ proc doMoveCursorNextFindResult(self: TextDocumentEditor, cursor: Cursor, offset
 
 proc scrollToCursor(self: TextDocumentEditor, cursor: Cursor, keepVerticalOffset: bool = false) =
   let targetLine = cursor.line
-  let totalLineHeight = self.editor.renderCtx.lineHeight + getOption[float32](self.editor, "text.line-distance")
+  let totalLineHeight = if not self.editor.rend.isNil: self.editor.rend.totalLineHeight
+    else: self.editor.renderCtx.lineHeight + getOption[float32](self.editor, "text.line-distance")
 
   if keepVerticalOffset:
     let currentLineY = (self.selection.last.line - self.previousBaseIndex).float32 * totalLineHeight + self.scrollOffset
@@ -1022,6 +1026,7 @@ proc scrollToCursor(self: TextDocumentEditor, cursor: Cursor, keepVerticalOffset
     elif targetLineY + totalLineHeight > self.lastContentBounds.h - margin:
       self.scrollOffset = self.lastContentBounds.h - margin - totalLineHeight
       self.previousBaseIndex = targetLine
+  self.dirty = true
 
 proc getContextWithMode*(self: TextDocumentEditor, context: string): string
 
@@ -1125,6 +1130,7 @@ proc setMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} 
         self.handleInput input
 
   self.currentMode = mode
+  self.dirty = true
 
 proc mode*(self: TextDocumentEditor): string {.expose("editor.text").} =
   ## Returns the current mode of the text editor, or "" if there is no mode
@@ -1220,6 +1226,7 @@ proc redo(self: TextDocumentEditor) {.expose("editor.text").} =
 
 proc scrollText(self: TextDocumentEditor, amount: float32) {.expose("editor.text").} =
   self.scrollOffset += amount
+  self.dirty = true
 
 proc duplicateLastSelection*(self: TextDocumentEditor) {.expose("editor.text").} =
   let newSelection = self.doMoveCursorColumn(self.selections[self.selections.high].last, 1).toSelection
@@ -1352,6 +1359,7 @@ proc updateCommandCount*(self: TextDocumentEditor, digit: int) {.expose("editor.
 
 proc setFlag*(self: TextDocumentEditor, name: string, value: bool) {.expose("editor.text").} =
   self.editor.setFlag("editor.text." & name, value)
+  self.dirty = true
 
 proc getFlag*(self: TextDocumentEditor, name: string): bool {.expose("editor.text").} =
   return self.editor.getFlag("editor.text." & name)
@@ -1596,6 +1604,7 @@ proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.} =
       self.showCompletions = false
     else:
       self.showCompletions = true
+    self.dirty = true
 
 # proc testAsync*(self: TextDocumentEditor) {.expose("editor.text").} =
 #   echo "testAsync"
@@ -1611,18 +1620,21 @@ proc getCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
 
 proc hideCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.showCompletions = false
+  self.dirty = true
 
 proc selectPrevCompletion(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.completions.len > 0:
     self.selectedCompletion = (self.selectedCompletion - 1).clamp(0, self.completions.len - 1)
   else:
     self.selectedCompletion = 0
+  self.dirty = true
 
-proc selectNextCompletion(editor: TextDocumentEditor) {.expose("editor.text").} =
-  if editor.completions.len > 0:
-    editor.selectedCompletion = (editor.selectedCompletion + 1).clamp(0, editor.completions.len - 1)
+proc selectNextCompletion(self: TextDocumentEditor) {.expose("editor.text").} =
+  if self.completions.len > 0:
+    self.selectedCompletion = (self.selectedCompletion + 1).clamp(0, self.completions.len - 1)
   else:
-    editor.selectedCompletion = 0
+    self.selectedCompletion = 0
+  self.dirty = true
 
 proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
   if not self.showCompletions:

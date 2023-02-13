@@ -1,4 +1,4 @@
-import std/[parseopt, options]
+import std/[parseopt, options, os]
 
 import compilation_config, custom_logger, scripting_api
 
@@ -91,9 +91,11 @@ while not ed.closeRequested:
   defer:
     inc frameIndex
 
+  let totalTimer = startTimer()
   let pollTimer = startTimer()
   try:
     poll(2)
+    discard
   except CatchableError:
     # logger.log(lvlError, fmt"[async] Failed to poll async dispatcher: {getCurrentExceptionMsg()}: {getCurrentException().getStackTrace()}")
     discard
@@ -107,25 +109,47 @@ while not ed.closeRequested:
   if eventCounter > 0:
     logger.log(lvlInfo, fmt"Handled {eventCounter} events in {eventTime:>5.2}ms")
 
+  var layoutTime, updateTime, renderTime: float
   block:
     ed.frameTimer = startTimer()
 
+    let layoutTimer = startTimer()
     let layoutChanged = if forceRenderCounter > 0 or rend.sizeChanged:
       ed.layoutWidgetTree(rend.size, frameIndex)
     else:
       false
+    layoutTime = layoutTimer.elapsed.ms
+
+    let updateTimer = startTimer()
     let widgetsChanged = ed.updateWidgetTree(frameIndex)
+    updateTime = updateTimer.elapsed.ms
 
     if widgetsChanged or layoutChanged or rend.sizeChanged:
       forceRenderCounter = 2
 
     rend.redrawEverything = forceRenderCounter > 0
-    rend.render(ed.widget)
+    rend.redrawEverything = false
+    # debugf"{widgetsChanged}, {layoutChanged}, {rend.sizeChanged}, {forceRenderCounter}, {frameIndex}"
+
+    let renderTimer = startTimer()
+    rend.render(ed.widget, frameIndex)
+    renderTime = renderTimer.elapsed.ms
+
     dec forceRenderCounter
     frameTime = ed.frameTimer.elapsed.ms
 
+  logger.flush()
+
+  let timeToSleep = 8 - totalTimer.elapsed.ms
+  if timeToSleep > 1:
+    debugf"sleep for {timeToSleep.int}ms"
+    sleep(timeToSleep.int)
+
+  let totalTime = totalTimer.elapsed.ms
   if eventCounter > 0:
-    logger.log(lvlInfo, fmt"Frame: {frameTime:>5.2}ms, Poll: {pollTime:>5.2}ms, Event: {eventTime:>5.2}ms")
+    logger.log(lvlInfo, fmt"Total: {totalTime:>5.2}, Frame: {frameTime:>5.2}ms ({layoutTime:>5.2}ms, {updateTime:>5.2}ms, {renderTime:>5.2}ms), Poll: {pollTime:>5.2}ms, Event: {eventTime:>5.2}ms")
+
+  # logger.log(lvlInfo, fmt"Total: {totalTime:>5.2}, Frame: {frameTime:>5.2}ms ({layoutTime:>5.2}ms, {updateTime:>5.2}ms, {renderTime:>5.2}ms), Poll: {pollTime:>5.2}ms, Event: {eventTime:>5.2}ms")
 
   logger.flush()
 

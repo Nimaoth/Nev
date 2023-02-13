@@ -1,9 +1,9 @@
 import std/[strformat, tables, sequtils, algorithm]
-import util, input, editor, text_document, custom_logger, rendering/widgets, timer, rect_utils
+import util, input, editor, text_document, custom_logger, rendering/widgets, rendering/renderer, timer, rect_utils
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import vmath, bumpy, colors
 
-method updateWidget(self: DocumentEditor, widget: WPanel, frameIndex: int): bool {.base.} = discard
+method updateWidget(self: DocumentEditor, app: Editor, widget: WPanel, frameIndex: int): bool {.base.} = discard
 
 var frameTimeSmooth: float = 0
 proc updateStatusBar*(self: Editor, frameIndex: int, statusBarWidget: WWidget): bool =
@@ -24,14 +24,19 @@ proc updateStatusBar*(self: Editor, frameIndex: int, statusBarWidget: WWidget): 
 
   return true
 
-method updateWidget(self: TextDocumentEditor, widget: WPanel, frameIndex: int): bool =
+method updateWidget(self: TextDocumentEditor, app: Editor, widget: WPanel, frameIndex: int): bool =
+  let lineHeight = app.rend.lineHeight
+  let lineDistance = app.rend.lineDistance
+  let totalLineHeight = app.rend.totalLineHeight
+  let charWidth = app.rend.charWidth
+
   var headerPanel: WPanel
   var contentPanel: WPanel
   if widget.children.len == 0:
-    headerPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 0)), left: 1, bottom: 1, lastHierarchyChange: frameIndex)
-    headerPanel.children.add(WText(text: "", sizeToContent: true, lastHierarchyChange: frameIndex))
-    headerPanel.children.add(WText(text: "", sizeToContent: true, anchor: (vec2(1, 0), vec2(1, 1)), pivot: vec2(1, 0), lastHierarchyChange: frameIndex))
-    contentPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 1)), top: 1, lastHierarchyChange: frameIndex)
+    headerPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 0)), left: 1, bottom: totalLineHeight, lastHierarchyChange: frameIndex, fillBackground: false)
+    headerPanel.children.add(WText(text: "", sizeToContent: true, anchor: (vec2(0, 0), vec2(0, 1)), lastHierarchyChange: frameIndex, foregroundColor: rgb(0, 255, 0)))
+    headerPanel.children.add(WText(text: "", sizeToContent: true, anchor: (vec2(1, 0), vec2(1, 1)), pivot: vec2(1, 0), lastHierarchyChange: frameIndex, foregroundColor: rgb(0, 0, 255)))
+    contentPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 1)), top: totalLineHeight, lastHierarchyChange: frameIndex, fillBackground: true, drawBorder: true)
     widget.children.add(headerPanel)
     widget.children.add(contentPanel)
   else:
@@ -40,30 +45,33 @@ method updateWidget(self: TextDocumentEditor, widget: WPanel, frameIndex: int): 
 
   # Update header
   if self.renderHeader:
-    headerPanel.bottom = 1
-    contentPanel.top = 1
+    headerPanel.bottom = totalLineHeight
+    contentPanel.top = totalLineHeight
 
     let mode = if self.currentMode.len == 0: "normal" else: self.currentMode
     headerPanel.children[0].WText.text = fmt" {mode} - {self.document.filename} "
+    headerPanel.children[0].right = headerPanel.children[0].WText.text.len.float * charWidth
     headerPanel.children[0].lastHierarchyChange = frameIndex
     headerPanel.children[1].WText.text = fmt" {self.selection} - {self.id} "
+    headerPanel.children[1].right = headerPanel.children[1].WText.text.len.float * charWidth
     headerPanel.children[1].lastHierarchyChange = frameIndex
+
+    headerPanel.updateLastHierarchyChangeFromChildren()
   else:
     headerPanel.bottom = 0
     contentPanel.top = 0
 
-  if not (widget.changed(frameIndex) or contentPanel.changed(frameIndex) or self.dirty):
+  widget.lastHierarchyChange = max(widget.lastHierarchyChange, headerPanel.lastHierarchyChange)
+
+  if not (contentPanel.changed(frameIndex) or self.dirty):
     return false
 
   self.dirty = false
 
   # either layout or content changed, update the lines
   debugf"rerender lines for {self.document.filename}"
+  let timer = startTimer()
   contentPanel.children.setLen 0
-
-  let lineHeight = 1.0
-  let lineDistance = 0.0
-  let totalLineHeight = lineHeight + lineDistance
 
   block:
     self.previousBaseIndex = self.previousBaseIndex.clamp(0..self.document.lines.len)
@@ -95,11 +103,14 @@ method updateWidget(self: TextDocumentEditor, widget: WPanel, frameIndex: int): 
 
     var styledText = self.document.getStyledText(i)
 
-    var lineWidget = WHorizontalList(anchor: (vec2(0, 0), vec2(1, 0)), left: 1, right: -1, top: top, bottom: top + lineHeight, lastHierarchyChange: frameIndex)
+    var lineWidget = WHorizontalList(anchor: (vec2(0, 0), vec2(1, 0)), left: 1, right: -1, top: top, bottom: top + totalLineHeight, lastHierarchyChange: frameIndex)
 
-    var startIndex = 0
+    var startOffset = 0.0
     for partIndex, part in styledText.parts:
-      var partWidget = WText(text: part.text, sizeToContent: true)
+      let width = part.text.len.float * charWidth
+      var partWidget = WText(text: part.text, anchor: (vec2(0, 0), vec2(0, 1)), left: startOffset, right: startOffset + width, foregroundColor: rgb(255, 255, 255), lastHierarchyChange: frameIndex)
+      startOffset += width
+
       lineWidget.children.add(partWidget)
 
     contentPanel.children.add lineWidget
@@ -118,15 +129,18 @@ method updateWidget(self: TextDocumentEditor, widget: WPanel, frameIndex: int): 
       break
 
   contentPanel.lastHierarchyChange = frameIndex
+  widget.lastHierarchyChange = max(widget.lastHierarchyChange, contentPanel.lastHierarchyChange)
 
   # Re-layout content
   contentPanel.layoutWidget(widget.lastBounds, frameIndex)
 
   self.lastContentBounds = widget.lastBounds
 
+  debugf"rerender lines for {self.document.filename} took {timer.elapsed.ms:>5.2}ms"
+
   return true
 
-var commandLineWigdet: WText
+var commandLineWidget: WText
 var mainPanel: WPanel
 var widgetsPerEditor = initTable[EditorId, WPanel]()
 
@@ -134,10 +148,10 @@ proc updateWidgetTree*(self: Editor, frameIndex: int): bool =
   if self.widget.isNil:
     var panel = WPanel(anchor: (vec2(0, 0), vec2(1, 1)))
     self.widget = panel
-    mainPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 1)), bottom: -2, right: -1, foregroundColor: rgb(255, 0, 255))
+    mainPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 1)), bottom: -self.rend.totalLineHeight - 1, right: -1, foregroundColor: rgb(255, 0, 0))
     panel.children.add(mainPanel)
-    commandLineWigdet = WText(text: "command line", anchor: (vec2(0, 1), vec2(1, 1)), top: -1, foregroundColor: rgb(255, 0, 255))
-    panel.children.add(commandLineWigdet)
+    commandLineWidget = WText(text: "command line", anchor: (vec2(0, 1), vec2(1, 1)), top: -self.rend.totalLineHeight, foregroundColor: rgb(255, 0, 255))
+    panel.children.add(commandLineWidget)
     result = true
 
   let currentViewWidgets = mainPanel.children
@@ -145,17 +159,25 @@ proc updateWidgetTree*(self: Editor, frameIndex: int): bool =
 
   let rects = self.layout.layoutViews(self.layout_props, rect(0, 0, 1, 1), self.views.len)
   for i, view in self.views:
-    var widget = if widgetsPerEditor.contains(view.editor.id): widgetsPerEditor[view.editor.id] else: WPanel(drawBorder: true)
+    var widget = if widgetsPerEditor.contains(view.editor.id): widgetsPerEditor[view.editor.id] else: WPanel()
     widgetsPerEditor[view.editor.id] = widget
     if i < rects.len:
       widget.anchor = (rects[i].xy, rects[i].xwyh)
       widget.right = -1
       mainPanel.children.add widget
-      result = view.editor.updateWidget(widget, frameIndex) or result
+      result = view.editor.updateWidget(self, widget, frameIndex) or result
+      mainPanel.lastHierarchyChange = max(mainPanel.lastHierarchyChange, widget.lastHierarchyChange)
 
-  result = self.updateStatusBar(frameIndex, commandLineWigdet) or result
+  self.widget.lastHierarchyChange = max(self.widget.lastHierarchyChange, mainPanel.lastHierarchyChange)
+
+  # Status bar
+  result = self.updateStatusBar(frameIndex, commandLineWidget) or result
+  self.widget.lastHierarchyChange = max(self.widget.lastHierarchyChange, commandLineWidget.lastHierarchyChange)
 
 proc layoutWidgetTree*(self: Editor, size: Vec2, frameIndex: int): bool =
   self.lastBounds = rect(vec2(0, 0), size)
+  if self.widget.isNil:
+    return true
+
   self.widget.layoutWidget(self.lastBounds, frameIndex)
   return false

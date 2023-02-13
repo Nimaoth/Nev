@@ -155,7 +155,7 @@ proc hideCompletionsScript*(self: TextDocumentEditor) =
   discard
 proc selectPrevCompletionScript*(self: TextDocumentEditor) =
   discard
-proc selectNextCompletionScript*(editor: TextDocumentEditor) =
+proc selectNextCompletionScript*(self: TextDocumentEditor) =
   discard
 proc applySelectedCompletionScript*(self: TextDocumentEditor) =
   discard

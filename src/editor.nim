@@ -43,6 +43,7 @@ type EditorState = object
 
 type Editor* = ref object
   backend: api.Backend
+  rend*: Renderer
   window*: Window
   boxy*: Boxy
   boxy2*: Boxy
@@ -324,6 +325,7 @@ proc handleScroll*(self: Editor, scroll: Vec2, mousePosWindow: Vec2, modifiers: 
 proc newEditor*(window: Window, boxy: Boxy, backend: api.Backend, rend: Renderer): Editor =
   var self = Editor()
   gEditor = self
+  self.rend = rend
   self.window = window
   self.backend = backend
   self.boxy = boxy
@@ -352,6 +354,7 @@ proc newEditor*(window: Window, boxy: Boxy, backend: api.Backend, rend: Renderer
   self.ctx.font = "fonts/DejaVuSansMono.ttf"
   self.ctx.fontSize = 20
   self.ctx.textBaseline = TopBaseline
+  self.rend.fontSize = 20
 
   self.renderCtx = RenderContext(boxy: boxy, ctx: self.ctx)
 
@@ -403,6 +406,7 @@ proc newEditor*(window: Window, boxy: Boxy, backend: api.Backend, rend: Renderer
     self.setTheme(state.theme)
     self.ctx.fontSize = state.fontSize
     self.ctx.font = state.fontRegular
+    self.rend.fontSize = state.fontSize.float
     if state.fontRegular.len > 0: self.fontRegular = state.fontRegular
     if state.fontBold.len > 0: self.fontBold = state.fontBold
     if state.fontItalic.len > 0: self.fontItalic = state.fontItalic
@@ -518,11 +522,10 @@ proc setOption*(self: Editor, option: string, value: JsonNode) {.expose("editor"
 
 proc quit*(self: Editor) {.expose("editor").} =
   self.closeRequested = true
-  if not self.window.isNil:
-    self.window.closeRequested = true
 
 proc changeFontSize*(self: Editor, amount: float32) {.expose("editor").} =
   self.ctx.fontSize += amount
+  self.rend.fontSize = self.rend.fontSize + amount.float
 
 proc changeLayoutProp*(self: Editor, prop: string, change: float32) {.expose("editor").} =
   self.layout_props.props.mgetOrPut(prop, 0) += change
