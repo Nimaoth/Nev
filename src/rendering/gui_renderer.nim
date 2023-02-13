@@ -1,7 +1,7 @@
-import std/[os, strutils, strformat]
+import std/[os, strutils, strformat, tables]
 import renderer, widgets
 import ../custom_logger, ../rect_utils, ../input, ../event, ../monitors, ../lru_cache
-import vmath, windy, boxy, boxy/textures, opengl
+import vmath, windy, boxy, boxy/textures, opengl, pixie/[contexts, fonts]
 
 import chroma as chroma
 import colors as stdcolors
@@ -19,16 +19,21 @@ type
     eventCounter: int
 
     lastSize: Vec2
+    renderedSomethingLastFrame: bool
 
+    mLineHeight: float
     mLineDistance: float
     mCharWidth: float
 
     framebufferId: GLuint
     framebuffer: Texture
 
+    typefaces: Table[string, Typeface]
+
 proc toInput(rune: Rune): int64
 proc toInput(button: Button): int64
 proc centerWindowOnMonitor(window: Window, monitor: int)
+proc getFont*(self: GuiRenderer, font: string, fontSize: float32): Font
 
 method init*(self: GuiRenderer) =
   self.window = newWindow("Absytree", ivec2(1280, 800), vsync=true)
@@ -63,8 +68,15 @@ method init*(self: GuiRenderer) =
   self.ctx.fillStyle = rgb(255, 255, 255)
   self.ctx.strokeStyle = rgb(255, 255, 255)
   self.ctx.font = "fonts/DejaVuSansMono.ttf"
-  self.ctx.fontSize = 20
   self.ctx.textBaseline = TopBaseline
+
+  # This sets the font size of self.ctx and recalculates the char width
+  self.fontSize = 20
+
+  self.layoutOptions.getTextBounds = proc(text: string): Vec2 =
+    let font = self.getFont(self.ctx.font, self.ctx.fontSize)
+    let arrangement = font.typeset(text)
+    result = arrangement.layoutBounds()
 
   self.window.onFocusChange = proc() =
     inc self.eventCounter
@@ -133,6 +145,17 @@ method init*(self: GuiRenderer) =
 method deinit*(self: GuiRenderer) =
   self.window.close()
 
+proc getFont*(self: GuiRenderer, font: string, fontSize: float32): Font =
+  if font == "":
+    raise newException(PixieError, "No font has been set on this Context")
+
+  if font notin self.typefaces:
+    self.typefaces[font] = readTypeface(font)
+
+  result = newFont(self.typefaces.getOrDefault(font, nil))
+  result.paint.color = color(1, 1, 1)
+  result.size = fontSize
+
 method size*(self: GuiRenderer): Vec2 =
   let size = self.window.size
   return vec2(size.x.float, size.y.float)
@@ -142,12 +165,11 @@ method sizeChanged*(self: GuiRenderer): bool =
   return s.x != self.lastSize.x or s.y != self.lastSize.y
 
 proc updateCharWidth*(self: GuiRenderer) =
-  # let tempArrangement = config.font.typeset("#")
-  # var tempBounds = tempArrangement.layoutBounds()
-  # ed.renderCtx.lineHeight = tempBounds.y
-  # ed.renderCtx.charWidth = tempBounds.x
-  # @todo
-  self.mCharWidth = self.fontSize / 2
+  let font = self.getFont(self.ctx.font, self.ctx.fontSize)
+  let arrangement = font.typeset("#")
+  var bounds = arrangement.layoutBounds()
+  self.mCharWidth = bounds.x
+  self.mLineHeight = bounds.y
 
 method `fontSize=`*(self: GuiRenderer, fontSize: float) =
   self.ctx.fontSize = fontSize
@@ -156,7 +178,7 @@ method `fontSize=`*(self: GuiRenderer, fontSize: float) =
 method `lineDistance=`*(self: GuiRenderer, lineDistance: float) = self.mLineDistance = lineDistance
 method fontSize*(self: GuiRenderer): float = self.ctx.fontSize
 method lineDistance*(self: GuiRenderer): float = self.mLineDistance
-method lineHeight*(self: GuiRenderer): float = self.fontSize
+method lineHeight*(self: GuiRenderer): float = self.mLineHeight
 method charWidth*(self: GuiRenderer): float = self.mCharWidth
 
 method processEvents*(self: GuiRenderer): int =
@@ -208,13 +230,7 @@ proc centerWindowOnMonitor(window: Window, monitor: int) =
   window.pos = ivec2(int32(left + (monitorWidth - windowWidth) / 2),
                      int32(top + (monitorHeight - windowHeight) / 2))
 
-method renderWidget(self: WWidget, renderer: GuiRenderer, forceRedraw: bool, frameIndex: int) {.base.} = discard
-
-proc toChromaColor(color: stdcolors.Color): chroma.Color =
-  var r = color.int shr 16 and 0xff
-  var g = color.int shr 8 and 0xff
-  var b = color.int and 0xff
-  return chroma.color(r.float / 255, g.float / 255, b.float / 255, 1)
+method renderWidget(self: WWidget, renderer: GuiRenderer, forceRedraw: bool, frameIndex: int, context: string): bool {.base.} = discard
 
 method render*(self: GuiRenderer, widget: WWidget, frameIndex: int) =
   if self.framebuffer.width != self.size.x.int32 or self.framebuffer.height != self.size.y.int32:
@@ -224,109 +240,102 @@ method render*(self: GuiRenderer, widget: WWidget, frameIndex: int) =
 
   # Clear the screen and begin a new frame.
   self.boxy.beginFrame(self.window.size, clearFrame=false)
-  # self.boxy2.beginFrame(self.window.size, clearFrame=false)
 
-  # Draw the bg.
-  # bxy.drawImage("bg", rect = rect(vec2(0, 0), window.size.vec2))
+  # Bind framebuffer now so that any boxy.pushLayer() calls will flush to the framebuffer and not the screen
+  glBindFramebuffer(GL_FRAMEBUFFER, self.framebufferId)
 
-  if self.redrawEverything:
-    widget.renderWidget(self, true, frameIndex)
-  else:
-    widget.renderWidget(self, false, frameIndex)
+  let renderedSomething = widget.renderWidget(self, self.redrawEverything, frameIndex, "#")
 
-  # End this frame, flushing the draw commands.
+  # End this frame, flushing the draw commands. Draw to framebuffer.
   glBindFramebuffer(GL_FRAMEBUFFER, self.framebufferId)
   self.boxy.endFrame()
-  glBindFramebuffer(GL_READ_FRAMEBUFFER, self.framebufferId)
-  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
-  glBlitFramebuffer(
-    0, 0, self.framebuffer.width.GLint, self.framebuffer.height.GLint,
-    0, 0, self.window.size.x.GLint, self.window.size.y.GLint,
-    GL_COLOR_BUFFER_BIT, GL_NEAREST.GLenum)
 
-  # Swap buffers displaying the new Boxy frame.
-  self.window.swapBuffers()
+  if renderedSomething:
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, self.framebufferId)
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
+    glBlitFramebuffer(
+      0, 0, self.framebuffer.width.GLint, self.framebuffer.height.GLint,
+      0, 0, self.window.size.x.GLint, self.window.size.y.GLint,
+      GL_COLOR_BUFFER_BIT, GL_NEAREST.GLenum)
+
+    self.window.swapBuffers()
+
+  self.renderedSomethingLastFrame = renderedSomething;
   self.redrawEverything = false
-
   self.lastSize = self.size
 
-method renderWidget(self: WPanel, renderer: GuiRenderer, forceRedraw: bool, frameIndex: int) =
-  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and not forceRedraw:
-    return
-
-  if self.fillBackground:
-    debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
-    renderer.boxy.drawRect(self.lastBounds, self.backgroundColor.toChromaColor)
-
-  for c in self.children:
-    c.renderWidget(renderer, forceRedraw, frameIndex)
-
-method renderWidget(self: WVerticalList, renderer: GuiRenderer, forceRedraw: bool, frameIndex: int) =
+method renderWidget(self: WPanel, renderer: GuiRenderer, forceRedraw: bool, frameIndex: int, context: string): bool =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and not forceRedraw:
     return
 
   if self.fillBackground:
     # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
-    renderer.boxy.drawRect(self.lastBounds, self.backgroundColor.toChromaColor)
+    renderer.boxy.drawRect(self.lastBounds, self.backgroundColor)
+    result = true
 
-  # debugf"renderVerticalList {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
-  # debugf"renderVerticalList {self.lastBounds}, {self.backgroundColor}, {self.foregroundColor}"
-  # renderer.boxy.drawRect(self.lastBounds, self.foregroundColor.toChromaColor)
-  # if self.drawBorder:
-  #   renderer.buffer.drawRect(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int, self.lastBounds.yh.int)
-  # renderer.buffer.write(self.lastBounds.x.int, self.lastBounds.y.int, fmt"{self.lastBounds}")
-  for c in self.children:
-    c.renderWidget(renderer, forceRedraw, frameIndex)
+  # Mask the rest of the rendering is this function to the contentBounds
+  if self.maskContent:
+    renderer.boxy.pushLayer()
+  defer:
+    if self.maskContent:
+      renderer.boxy.pushLayer()
+      renderer.boxy.drawRect(self.lastBounds, color(1, 0, 0, 1))
+      renderer.boxy.popLayer(blendMode = MaskBlend)
+      renderer.boxy.popLayer(framebuffer = renderer.framebufferId)
 
-method renderWidget(self: WHorizontalList, renderer: GuiRenderer, forceRedraw: bool, frameIndex: int) =
+  for i, c in self.children:
+    result = c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex, context & "." & $i) or result
+
+method renderWidget(self: WVerticalList, renderer: GuiRenderer, forceRedraw: bool, frameIndex: int, context: string): bool =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and not forceRedraw:
     return
 
   if self.fillBackground:
     # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
-    renderer.boxy.drawRect(self.lastBounds, self.backgroundColor.toChromaColor)
+    renderer.boxy.drawRect(self.lastBounds, self.backgroundColor)
+    result = true
 
-  # debugf"renderHorizontalList {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
-  # debugf"renderHorizontalList {self.lastBounds}, {self.backgroundColor}, {self.foregroundColor}"
-  # renderer.boxy.drawRect(self.lastBounds, self.foregroundColor.toChromaColor)
-  # if self.drawBorder:
-  #   renderer.buffer.drawRect(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int, self.lastBounds.yh.int)
-  # renderer.buffer.write(self.lastBounds.x.int, self.lastBounds.y.int, fmt"{self.lastBounds}")
-  for c in self.children:
-    c.renderWidget(renderer, forceRedraw, frameIndex)
+  for i, c in self.children:
+    result = c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex, context & "." & $i) or result
 
-method renderWidget(self: WText, renderer: GuiRenderer, forceRedraw: bool, frameIndex: int) =
+method renderWidget(self: WHorizontalList, renderer: GuiRenderer, forceRedraw: bool, frameIndex: int, context: string): bool =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and not forceRedraw:
     return
 
   if self.fillBackground:
     # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
-    renderer.boxy.drawRect(self.lastBounds, self.backgroundColor.toChromaColor)
+    renderer.boxy.drawRect(self.lastBounds, self.backgroundColor)
+    result = true
 
-  # debugf"renderText {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
-  renderer.boxy.drawRect(self.lastBounds, self.foregroundColor.toChromaColor)
-  # if self.drawBorder:
-  #   renderer.buffer.drawRect(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int, self.lastBounds.yh.int)
-  # renderer.buffer.write(self.lastBounds.x.int, self.lastBounds.y.int, fmt"{self.lastBounds}")
+  for i, c in self.children:
+    result = c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex, context & "." & $i) or result
 
-  # if renderer.queryCacheRenderedText.contains(input):
-  #   let oldImageId = renderer.queryCacheRenderedText[input]
-  #   renderer.boxy.removeImage(oldImageId)
+method renderWidget(self: WText, renderer: GuiRenderer, forceRedraw: bool, frameIndex: int, context: string): bool =
+  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and not forceRedraw:
+    return
 
-  # let font = renderer.getFont(input.font, input.fontSize)
-  # let arrangement = font.typeset(input.text, bounds=input.bounds)
-  # var bounds = arrangement.layoutBounds()
-  # if bounds.x == 0:
-  #   bounds.x = 1
-  # if bounds.y == 0:
-  #   bounds.y = input.lineHeight
-  # bounds.y += textExtraHeight
+  result = true
 
-  # var image = newImage(bounds.x.int, bounds.y.int)
-  # image.fillText(arrangement)
+  if self.fillBackground:
+    # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
+    renderer.boxy.drawRect(self.lastBounds, self.backgroundColor)
 
-  # let imageId = if input.imageId.len > 0: input.imageId else: $newId()
-  # renderer.boxy.addImage(imageId, image, false)
-  # return imageId
+  let font = renderer.getFont(renderer.ctx.font, renderer.ctx.fontSize)
+  let arrangement = font.typeset(self.text)
+  var bounds = arrangement.layoutBounds()
+  if bounds.x == 0:
+    bounds.x = 1
+  if bounds.y == 0:
+    bounds.y = renderer.lineHeight
+  const textExtraHeight = 10.0
+  bounds.y += textExtraHeight
 
+  var image = newImage(bounds.x.int, bounds.y.int)
+  image.fillText(arrangement)
 
+  let imageId = context
+  # debugf"imageId: {imageId}, text: {self.text}, at: {self.lastBounds}"
+  renderer.boxy.addImage(imageId, image, false)
+  renderer.boxy.drawImage(imageId, self.lastBounds.xy, self.foregroundColor)
+
+  self.lastRenderedText = self.text

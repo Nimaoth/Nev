@@ -89,9 +89,9 @@ setOption "ast.scroll-speed", 60
 log fmt"Backend: {getBackend()}"
 case getBackend()
 of Terminal:
-  setOption "text.scroll-speed", 2
+  setOption "text.scroll-speed", 1
 of Gui:
-  setOption "text.scroll-speed", 40
+  setOption "text.scroll-speed", 23
 
 setOption "editor.text.lsp.zig.path", "zls"
 setOption "editor.text.lsp.rust.path", "C:/Users/nimao/.vscode/extensions/rust-lang.rust-analyzer-0.3.1325-win32-x64/server/rust-analyzer.exe"
