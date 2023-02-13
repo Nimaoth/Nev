@@ -41,6 +41,11 @@ method sizeChanged*(self: TerminalRenderer): bool =
   let (w, h) = (terminalWidth(), terminalHeight())
   return self.buffer.width != w or self.buffer.height != h
 
+method fontSize*(self: TerminalRenderer): float = 1
+method lineDistance*(self: TerminalRenderer): float = 0
+method lineHeight*(self: TerminalRenderer): float = 1
+method charWidth*(self: TerminalRenderer): float = 1
+
 proc toInput(key: Key, modifiers: var Modifiers): int64 =
   return case key
   of Key.Enter: INPUT_ENTER
@@ -124,9 +129,9 @@ method processEvents*(self: TerminalRenderer): int =
 
   return eventCounter
 
-method renderWidget(self: WWidget, renderer: TerminalRenderer, forceRedraw: bool) {.base.} = discard
+method renderWidget(self: WWidget, renderer: TerminalRenderer, forceRedraw: bool, frameIndex: int) {.base.} = discard
 
-method render*(self: TerminalRenderer, widget: WWidget) =
+method render*(self: TerminalRenderer, widget: WWidget, frameIndex: int) =
   if self.sizeChanged:
     let (w, h) = (terminalWidth(), terminalHeight())
     logger.log(lvlInfo, fmt"Terminal size changed from {self.buffer.width}x{self.buffer.height} to {w}x{h}, recreate buffer")
@@ -135,10 +140,9 @@ method render*(self: TerminalRenderer, widget: WWidget) =
 
   if self.redrawEverything:
     self.buffer.clear()
-    widget.renderWidget(self, true)
+    widget.renderWidget(self, true, frameIndex)
   else:
-    debugf"lol"
-    widget.renderWidget(self, false)
+    widget.renderWidget(self, false, frameIndex)
 
   # This can fail if the terminal was resized during rendering, but in that case we'll just rerender next frame
   try:
@@ -148,25 +152,40 @@ method render*(self: TerminalRenderer, widget: WWidget) =
     logger.log(lvlError, fmt"[term-render] Failed to display buffer: {getCurrentExceptionMsg()}")
     self.redrawEverything = true
 
-method renderWidget(self: WPanel, renderer: TerminalRenderer, forceRedraw: bool) =
+method renderWidget(self: WPanel, renderer: TerminalRenderer, forceRedraw: bool, frameIndex: int) =
+  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and not forceRedraw:
+    return
+
+  renderer.buffer.setForegroundColor(self.foregroundColor)
+  renderer.buffer.setBackgroundColor(self.backgroundColor)
+
+  if self.fillBackground:
+    debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
+    renderer.buffer.fill(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int, self.lastBounds.yh.int, " ")
+
+  if self.drawBorder:
+    renderer.buffer.drawRect(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int, self.lastBounds.yh.int)
+
+  # renderer.buffer.write(self.lastBounds.x.int, self.lastBounds.y.int, fmt"{self.lastBounds}")
+  for c in self.children:
+    c.renderWidget(renderer, forceRedraw, frameIndex)
+
+method renderWidget(self: WVerticalList, renderer: TerminalRenderer, forceRedraw: bool, frameIndex: int) =
+  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and not forceRedraw:
+    return
+
   renderer.buffer.setForegroundColor(self.foregroundColor)
   renderer.buffer.setBackgroundColor(self.backgroundColor)
   if self.drawBorder:
     renderer.buffer.drawRect(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int, self.lastBounds.yh.int)
   # renderer.buffer.write(self.lastBounds.x.int, self.lastBounds.y.int, fmt"{self.lastBounds}")
   for c in self.children:
-    c.renderWidget(renderer, forceRedraw)
+    c.renderWidget(renderer, forceRedraw, frameIndex)
 
-method renderWidget(self: WVerticalList, renderer: TerminalRenderer, forceRedraw: bool) =
-  renderer.buffer.setForegroundColor(self.foregroundColor)
-  renderer.buffer.setBackgroundColor(self.backgroundColor)
-  if self.drawBorder:
-    renderer.buffer.drawRect(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int, self.lastBounds.yh.int)
-  # renderer.buffer.write(self.lastBounds.x.int, self.lastBounds.y.int, fmt"{self.lastBounds}")
-  for c in self.children:
-    c.renderWidget(renderer, forceRedraw)
+method renderWidget(self: WHorizontalList, renderer: TerminalRenderer, forceRedraw: bool, frameIndex: int) =
+  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and not forceRedraw:
+    return
 
-method renderWidget(self: WHorizontalList, renderer: TerminalRenderer, forceRedraw: bool) =
   renderer.buffer.setForegroundColor(self.foregroundColor)
   renderer.buffer.setBackgroundColor(self.backgroundColor)
   if self.drawBorder:
@@ -174,9 +193,12 @@ method renderWidget(self: WHorizontalList, renderer: TerminalRenderer, forceRedr
     renderer.buffer.drawHorizLine(self.lastBounds.x.int, self.lastBounds.xw.int, self.lastBounds.y.int)
   # renderer.buffer.write(self.lastBounds.x.int, self.lastBounds.y.int, fmt"{self.lastBounds}")
   for c in self.children:
-    c.renderWidget(renderer, forceRedraw)
+    c.renderWidget(renderer, forceRedraw, frameIndex)
 
-method renderWidget(self: WText, renderer: TerminalRenderer, forceRedraw: bool) =
+method renderWidget(self: WText, renderer: TerminalRenderer, forceRedraw: bool, frameIndex: int) =
+  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and not forceRedraw:
+    return
+
   renderer.buffer.setForegroundColor(self.foregroundColor)
   renderer.buffer.setBackgroundColor(self.backgroundColor)
   renderer.buffer.write(self.lastBounds.x.int, self.lastBounds.y.int, fmt"{self.text}")

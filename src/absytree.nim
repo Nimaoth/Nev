@@ -60,8 +60,8 @@ window.centerWindowOnMonitor(1)
 window.maximized = true
 
 makeContextCurrent(window)
-
 loadExtensions()
+enableAutoGLerrorCheck(false)
 
 let bxy = newBoxy()
 

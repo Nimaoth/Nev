@@ -161,7 +161,7 @@ proc hideCompletions*(self: TextDocumentEditor) =
   hideCompletionsScript(self)
 proc selectPrevCompletion*(self: TextDocumentEditor) =
   selectPrevCompletionScript(self)
-proc selectNextCompletion*(editor: TextDocumentEditor) =
-  selectNextCompletionScript(editor)
+proc selectNextCompletion*(self: TextDocumentEditor) =
+  selectNextCompletionScript(self)
 proc applySelectedCompletion*(self: TextDocumentEditor) =
   applySelectedCompletionScript(self)

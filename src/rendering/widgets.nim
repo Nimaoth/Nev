@@ -1,6 +1,6 @@
 import std/[colors]
 import vmath, bumpy
-import ../theme, ../rect_utils
+import ../theme, ../rect_utils, ../custom_logger
 
 export rect_utils, vmath, bumpy
 
@@ -16,18 +16,37 @@ type
     lastHierarchyChange*: int
     sizeToContent*: bool
     drawBorder*: bool
+    fillBackground*: bool
 
   WPanel* = ref object of WWidget
     children*: seq[WWidget]
 
-  WHorizontalList* = ref object of WWidget
-    children*: seq[WWidget]
   WVerticalList* = ref object of WWidget
+    children*: seq[WWidget]
+
+  WHorizontalList* = ref object of WWidget
     children*: seq[WWidget]
 
   WText* = ref object of WWidget
     text*: string
     style*: Style
+
+proc width*(self: WWidget): float = self.right - self.left
+proc height*(self: WWidget): float = self.bottom - self.top
+
+proc updateLastHierarchyChangeFromChildren*(self: WWidget) =
+  if self of WPanel:
+    for c in self.WPanel.children:
+      c.updateLastHierarchyChangeFromChildren()
+      self.lastHierarchyChange = max(self.lastHierarchyChange, c.lastHierarchyChange)
+  elif self of WVerticalList:
+    for c in self.WPanel.children:
+      c.updateLastHierarchyChangeFromChildren()
+      self.lastHierarchyChange = max(self.lastHierarchyChange, c.lastHierarchyChange)
+  elif self of WHorizontalList:
+    for c in self.WPanel.children:
+      c.updateLastHierarchyChangeFromChildren()
+      self.lastHierarchyChange = max(self.lastHierarchyChange, c.lastHierarchyChange)
 
 method layoutWidget*(self: WWidget, bounds: Rect, frameIndex: int) {.base.} = discard
 
@@ -65,8 +84,9 @@ method layoutWidget*(self: WVerticalList, container: Rect, frameIndex: int) =
   if self.lastHierarchyChange >= frameIndex or self.lastBoundsChange >= frameIndex:
     var lastY = 0.0
     for c in self.children:
+      let height = c.height
       c.top = lastY
-      c.bottom = lastY + 1
+      c.bottom = lastY + height
       c.layoutWidget(newBounds, frameIndex)
       lastY = c.lastBounds.yh - newBounds.y
 
@@ -82,15 +102,14 @@ method layoutWidget*(self: WHorizontalList, container: Rect, frameIndex: int) =
   if self.lastHierarchyChange >= frameIndex or self.lastBoundsChange >= frameIndex:
     var lastX = 0.0
     for c in self.children:
+      let width = c.width
       c.left = lastX
-      c.right = lastX + 1
+      c.right = lastX + width
       c.layoutWidget(newBounds, frameIndex)
       lastX = c.lastBounds.xw - newBounds.x
 
 method layoutWidget*(self: WText, container: Rect, frameIndex: int) =
   # self.pivot.x = fractional(frameIndex.float / 100.0f)
-  if self.sizeToContent:
-    self.right = self.left + self.text.len.float
   let newBounds = self.calculateBounds(container)
   # debugf"layoutWidgetText({container}): anchor={self.anchor}, pivot={self.pivot}, {self.left},{self.top}, {self.right},{self.bottom} -> {newBounds}"
 
