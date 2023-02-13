@@ -106,23 +106,21 @@ while not ed.closeRequested:
   let eventCounter = rend.processEvents()
   let eventTime = eventTimer.elapsed.ms
 
-  if eventCounter > 0:
-    logger.log(lvlInfo, fmt"Handled {eventCounter} events in {eventTime:>5.2}ms")
-
-  var layoutTime, updateTime, renderTime: float
+  var layoutTime, layoutTime2, updateTime, renderTime: float
   block:
     ed.frameTimer = startTimer()
 
     let layoutTimer = startTimer()
-    let layoutChanged = if forceRenderCounter > 0 or rend.sizeChanged:
-      ed.layoutWidgetTree(rend.size, frameIndex)
-    else:
-      false
+    var layoutChanged = ed.layoutWidgetTree(rend.size, frameIndex)
     layoutTime = layoutTimer.elapsed.ms
 
     let updateTimer = startTimer()
     let widgetsChanged = ed.updateWidgetTree(frameIndex)
     updateTime = updateTimer.elapsed.ms
+
+    let layoutTimer2 = startTimer()
+    layoutChanged = ed.layoutWidgetTree(rend.size, frameIndex) or layoutChanged
+    layoutTime2 = layoutTimer2.elapsed.ms
 
     if widgetsChanged or layoutChanged or rend.sizeChanged:
       forceRenderCounter = 2
@@ -142,12 +140,13 @@ while not ed.closeRequested:
 
   let timeToSleep = 8 - totalTimer.elapsed.ms
   if timeToSleep > 1:
-    debugf"sleep for {timeToSleep.int}ms"
+    # debugf"sleep for {timeToSleep.int}ms"
     sleep(timeToSleep.int)
 
   let totalTime = totalTimer.elapsed.ms
   if eventCounter > 0:
-    logger.log(lvlInfo, fmt"Total: {totalTime:>5.2}, Frame: {frameTime:>5.2}ms ({layoutTime:>5.2}ms, {updateTime:>5.2}ms, {renderTime:>5.2}ms), Poll: {pollTime:>5.2}ms, Event: {eventTime:>5.2}ms")
+    logger.log(lvlInfo, fmt"Total: {totalTime:>5.2}, Poll: {pollTime:>5.2}ms, Event: {eventTime:>5.2}ms, Frame: {frameTime:>5.2}ms (l1: {layoutTime:>5.2}ms, u: {updateTime:>5.2}ms, l2: {layoutTime2:>5.2}ms, r: {renderTime:>5.2}ms)")
+    discard
 
   # logger.log(lvlInfo, fmt"Total: {totalTime:>5.2}, Frame: {frameTime:>5.2}ms ({layoutTime:>5.2}ms, {updateTime:>5.2}ms, {renderTime:>5.2}ms), Poll: {pollTime:>5.2}ms, Event: {eventTime:>5.2}ms")
 
