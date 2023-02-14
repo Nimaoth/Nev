@@ -58,6 +58,7 @@ proc pushMask(self: TerminalRenderer, mask: Rect) =
 
 proc popMask(self: TerminalRenderer) =
   assert self.masks.len > 0
+  discard self.masks.pop()
 
 proc toInput(key: Key, modifiers: var Modifiers): int64 =
   return case key
@@ -155,11 +156,7 @@ method render*(self: TerminalRenderer, widget: WWidget, frameIndex: int) =
     self.buffer = newTerminalBuffer(w, h)
     self.redrawEverything = true
 
-  if self.redrawEverything:
-    self.buffer.clear()
-    widget.renderWidget(self, true, frameIndex)
-  else:
-    widget.renderWidget(self, false, frameIndex)
+  widget.renderWidget(self, self.redrawEverything, frameIndex)
 
   # This can fail if the terminal was resized during rendering, but in that case we'll just rerender next frame
   try:
@@ -190,7 +187,7 @@ method renderWidget(self: WPanel, renderer: TerminalRenderer, forceRedraw: bool,
       renderer.popMask()
 
   for c in self.children:
-    c.renderWidget(renderer, forceRedraw, frameIndex)
+    c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex)
 
 method renderWidget(self: WVerticalList, renderer: TerminalRenderer, forceRedraw: bool, frameIndex: int) =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and not forceRedraw:
@@ -198,11 +195,13 @@ method renderWidget(self: WVerticalList, renderer: TerminalRenderer, forceRedraw
 
   renderer.buffer.setForegroundColor(self.foregroundColor.toStdColor)
   renderer.buffer.setBackgroundColor(self.backgroundColor.toStdColor)
-  if self.drawBorder:
-    renderer.buffer.drawRect(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int, self.lastBounds.yh.int)
-  # renderer.buffer.write(self.lastBounds.x.int, self.lastBounds.y.int, fmt"{self.lastBounds}")
+
+  if self.fillBackground:
+    # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
+    renderer.buffer.fill(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int, self.lastBounds.yh.int, " ")
+
   for c in self.children:
-    c.renderWidget(renderer, forceRedraw, frameIndex)
+    c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex)
 
 method renderWidget(self: WHorizontalList, renderer: TerminalRenderer, forceRedraw: bool, frameIndex: int) =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and not forceRedraw:
@@ -210,12 +209,13 @@ method renderWidget(self: WHorizontalList, renderer: TerminalRenderer, forceRedr
 
   renderer.buffer.setForegroundColor(self.foregroundColor.toStdColor)
   renderer.buffer.setBackgroundColor(self.backgroundColor.toStdColor)
-  if self.drawBorder:
-    # renderer.buffer.drawRect(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int, self.lastBounds.yh.int - 1)
-    renderer.buffer.drawHorizLine(self.lastBounds.x.int, self.lastBounds.xw.int, self.lastBounds.y.int)
-  # renderer.buffer.write(self.lastBounds.x.int, self.lastBounds.y.int, fmt"{self.lastBounds}")
+
+  if self.fillBackground:
+    # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
+    renderer.buffer.fill(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int, self.lastBounds.yh.int, " ")
+
   for c in self.children:
-    c.renderWidget(renderer, forceRedraw, frameIndex)
+    c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex)
 
 proc writeText(self: TerminalRenderer, pos: Vec2, text: string) =
   let mask = if self.masks.len > 0:
@@ -241,6 +241,11 @@ method renderWidget(self: WText, renderer: TerminalRenderer, forceRedraw: bool, 
 
   renderer.buffer.setForegroundColor(self.foregroundColor.toStdColor)
   renderer.buffer.setBackgroundColor(self.backgroundColor.toStdColor)
+
+  if self.fillBackground:
+    # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
+    renderer.buffer.fill(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int, self.lastBounds.yh.int, " ")
+
   renderer.writeText(self.lastBounds.xy, self.text)
 
   self.lastRenderedText = self.text

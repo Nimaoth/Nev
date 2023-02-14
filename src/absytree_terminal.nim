@@ -86,7 +86,6 @@ addTimer 1000, false, proc(fd: AsyncFD): bool =
 
 var frameIndex = 0
 var frameTime = 0.0
-var forceRenderCounter = 0
 while not ed.closeRequested:
   defer:
     inc frameIndex
@@ -106,34 +105,22 @@ while not ed.closeRequested:
   let eventCounter = rend.processEvents()
   let eventTime = eventTimer.elapsed.ms
 
-  var layoutTime, layoutTime2, updateTime, renderTime: float
+  var layoutTime, updateTime, renderTime: float
   block:
     ed.frameTimer = startTimer()
-
-    let layoutTimer = startTimer()
-    var layoutChanged = ed.layoutWidgetTree(rend.size, frameIndex)
-    layoutTime = layoutTimer.elapsed.ms
 
     let updateTimer = startTimer()
     let widgetsChanged = ed.updateWidgetTree(frameIndex)
     updateTime = updateTimer.elapsed.ms
 
-    let layoutTimer2 = startTimer()
-    layoutChanged = ed.layoutWidgetTree(rend.size, frameIndex) or layoutChanged
-    layoutTime2 = layoutTimer2.elapsed.ms
-
-    if widgetsChanged or layoutChanged or rend.sizeChanged:
-      forceRenderCounter = 2
-
-    rend.redrawEverything = forceRenderCounter > 0
-    rend.redrawEverything = false
-    # debugf"{widgetsChanged}, {layoutChanged}, {rend.sizeChanged}, {forceRenderCounter}, {frameIndex}"
+    let layoutTimer = startTimer()
+    var layoutChanged = ed.layoutWidgetTree(rend.size, frameIndex)
+    layoutTime = layoutTimer.elapsed.ms
 
     let renderTimer = startTimer()
     rend.render(ed.widget, frameIndex)
     renderTime = renderTimer.elapsed.ms
 
-    dec forceRenderCounter
     frameTime = ed.frameTimer.elapsed.ms
 
   logger.flush()
@@ -145,7 +132,7 @@ while not ed.closeRequested:
 
   let totalTime = totalTimer.elapsed.ms
   if eventCounter > 0:
-    logger.log(lvlInfo, fmt"Total: {totalTime:>5.2}, Poll: {pollTime:>5.2}ms, Event: {eventTime:>5.2}ms, Frame: {frameTime:>5.2}ms (l1: {layoutTime:>5.2}ms, u: {updateTime:>5.2}ms, l2: {layoutTime2:>5.2}ms, r: {renderTime:>5.2}ms)")
+    logger.log(lvlInfo, fmt"Total: {totalTime:>5.2}, Poll: {pollTime:>5.2}ms, Event: {eventTime:>5.2}ms, Frame: {frameTime:>5.2}ms (u: {updateTime:>5.2}ms, l: {layoutTime:>5.2}ms, r: {renderTime:>5.2}ms)")
     discard
 
   # logger.log(lvlInfo, fmt"Total: {totalTime:>5.2}, Frame: {frameTime:>5.2}ms ({layoutTime:>5.2}ms, {updateTime:>5.2}ms, {renderTime:>5.2}ms), Poll: {pollTime:>5.2}ms, Event: {eventTime:>5.2}ms")

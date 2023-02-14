@@ -237,6 +237,7 @@ method render*(self: GuiRenderer, widget: WWidget, frameIndex: int) =
     self.framebuffer.width = self.size.x.int32
     self.framebuffer.height = self.size.y.int32
     bindTextureData(self.framebuffer, nil)
+    self.redrawEverything = true
 
   # Clear the screen and begin a new frame.
   self.boxy.beginFrame(self.window.size, clearFrame=false)
