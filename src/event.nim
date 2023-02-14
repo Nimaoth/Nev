@@ -14,6 +14,10 @@ proc unsubscribe*[T](event: var Event[T], id: Id) =
       event.handlers.del(i)
       break
 
+proc invoke*[T: void](event: var Event[T]) =
+  for h in event.handlers:
+    h.callback()
+
 proc invoke*[T](event: var Event[T], arg: T) =
   for h in event.handlers:
     h.callback(arg)

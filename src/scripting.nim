@@ -17,7 +17,7 @@ type ScriptContext* = ref object
   postCodeAdditions: string # Text which gets appended to the script before being executed
   searchPaths: seq[string]
 
-let stdPath = "C:/Users/nimao/.choosenim/toolchains/nim-#devel/lib"
+let stdPath = "D:/.choosenim/toolchains/nim-#devel/lib"
 
 let loggerPtr = addr logger
 
@@ -58,8 +58,8 @@ proc myLoadScript(
   addins: VMAddins;
   postCodeAdditions: string,
   modules: varargs[string];
-  vmErrorHook = errorHook;
-  stdPath = findNimStdlibCompileTime();
+  vmErrorHook: proc(config: ConfigRef; info: TLineInfo; msg: string; severity: Severity) {.gcsafe.};
+  stdPath: string;
   searchPaths: sink seq[string] = @[];
   defines = defaultDefines): Option[Interpreter] =
   ## Loads an interpreter from a file or from string, with given addtions and userprocs.
@@ -89,7 +89,7 @@ proc myLoadScript(
       script = when isFile: readFile(script.string) else: script.string
 
     for uProc in addins.procs:
-      intr.implementRoutine("*", apiModule, uProc.name, uProc.vmProc)
+      intr.implementRoutine("Absytree", apiModule, uProc.name, uProc.vmProc)
 
     intr.registerErrorHook(vmErrorHook)
     try:
@@ -110,8 +110,8 @@ proc mySafeLoadScriptWithState*(
   addins: VMAddins = VMaddins();
   postCodeAdditions: string,
   modules: varargs[string];
-  vmErrorHook = errorHook;
-  stdPath = findNimStdlibCompileTime();
+  vmErrorHook: proc(config: ConfigRef; info: TLineInfo; msg: string; severity: Severity) {.gcsafe.};
+  stdPath: string;
   searchPaths: sink seq[string] = @[];
   defines = defaultDefines) =
   ## Same as loadScriptWithState but saves state then loads the intepreter into `intr` if there were no script errors.

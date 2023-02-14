@@ -5,8 +5,6 @@ import keybindings_vim
 import keybindings_helix
 import keybindings_normal
 
-# {.line: ("config.nims", 4).}
-
 proc handleAction*(action: string, arg: string): bool =
   log action, ", ", arg
 
