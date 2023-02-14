@@ -70,6 +70,8 @@ method init*(self: GuiRenderer) =
   self.ctx.font = "fonts/DejaVuSansMono.ttf"
   self.ctx.textBaseline = TopBaseline
 
+  self.boxy.setTargetFramebuffer self.framebufferId
+
   # This sets the font size of self.ctx and recalculates the char width
   self.fontSize = 20
 
@@ -184,6 +186,11 @@ method charWidth*(self: GuiRenderer): float = self.mCharWidth
 method processEvents*(self: GuiRenderer): int =
   self.eventCounter = 0
   pollEvents()
+
+  if self.window.closeRequested:
+    inc self.eventCounter
+    self.onCloseRequested.invoke()
+
   return self.eventCounter
 
 proc toInput(rune: Rune): int64 =
@@ -243,12 +250,10 @@ method render*(self: GuiRenderer, widget: WWidget, frameIndex: int) =
   self.boxy.beginFrame(self.window.size, clearFrame=false)
 
   # Bind framebuffer now so that any boxy.pushLayer() calls will flush to the framebuffer and not the screen
-  glBindFramebuffer(GL_FRAMEBUFFER, self.framebufferId)
 
   let renderedSomething = widget.renderWidget(self, self.redrawEverything, frameIndex, "#")
 
   # End this frame, flushing the draw commands. Draw to framebuffer.
-  glBindFramebuffer(GL_FRAMEBUFFER, self.framebufferId)
   self.boxy.endFrame()
 
   if renderedSomething:
@@ -282,7 +287,7 @@ method renderWidget(self: WPanel, renderer: GuiRenderer, forceRedraw: bool, fram
       renderer.boxy.pushLayer()
       renderer.boxy.drawRect(self.lastBounds, color(1, 0, 0, 1))
       renderer.boxy.popLayer(blendMode = MaskBlend)
-      renderer.boxy.popLayer(framebuffer = renderer.framebufferId)
+      renderer.boxy.popLayer()
 
   for i, c in self.children:
     result = c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex, context & "." & $i) or result

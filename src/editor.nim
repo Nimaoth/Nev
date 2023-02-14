@@ -341,6 +341,7 @@ proc newEditor*(window: Window, boxy: Boxy, backend: api.Backend, rend: Renderer
     discard rend.onMouseRelease.subscribe proc(event: auto): void = self.handleMouseRelease(event.button, event.modifiers, event.pos)
     discard rend.onMouseMove.subscribe proc(event: auto): void = self.handleMouseMove(event.pos, event.delta, event.modifiers, event.buttons)
     discard rend.onScroll.subscribe proc(event: auto): void = self.handleScroll(event.scroll, event.pos, event.modifiers)
+    discard rend.onCloseRequested.subscribe proc(_: auto) = self.closeRequested = true
 
   self.timer = startTimer()
   self.frameTimer = startTimer()

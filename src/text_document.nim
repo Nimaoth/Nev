@@ -1689,7 +1689,7 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
   return Ignored
 
 proc handleAction(self: TextDocumentEditor, action: string, arg: string): EventResponse =
-  # echo "handleAction ", action, ", ", arg
+  # debugf "handleAction {action}, {arg}"
   var args = newJArray()
   try:
     for a in newStringStream(arg).parseJsonFragments():

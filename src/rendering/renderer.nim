@@ -11,6 +11,7 @@ type
     onMouseRelease*: Event[tuple[button: MouseButton, modifiers: Modifiers, pos: Vec2]]
     onMouseMove*: Event[tuple[pos: Vec2, delta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]]]
     onScroll*: Event[tuple[pos: Vec2, scroll: Vec2, modifiers: Modifiers]]
+    onCloseRequested*: Event[void]
     layoutOptions*: WLayoutOptions
 
 method render*(self: Renderer, widget: WWidget, frameIndex: int) {.base.} = discard

@@ -65,12 +65,9 @@ method updateWidget(self: TextDocumentEditor, app: Editor, widget: WPanel, frame
 
     let mode = if self.currentMode.len == 0: "normal" else: self.currentMode
     headerPart1Text.text = fmt" {mode} - {self.document.filename} "
-    # headerPart1Text.lastHierarchyChange = frameIndex
 
     headerPart2Text.text = fmt" {self.selection} - {self.id} "
-    # headerPart2Text.lastHierarchyChange = frameIndex
 
-    # debugf"{frameIndex}, h1: {headerPart1Text.lastHierarchyChange}, {headerPart1Text.lastBoundsChange}, h2: {headerPart2Text.lastHierarchyChange}"
     headerPanel.updateLastHierarchyChangeFromChildren frameIndex
   else:
     headerPanel.bottom = 0
@@ -84,7 +81,6 @@ method updateWidget(self: TextDocumentEditor, app: Editor, widget: WPanel, frame
   self.dirty = false
 
   # either layout or content changed, update the lines
-  # debugf"rerender lines for {self.document.filename}"
   let timer = startTimer()
   contentPanel.children.setLen 0
 
@@ -112,7 +108,6 @@ method updateWidget(self: TextDocumentEditor, app: Editor, widget: WPanel, frame
 
     # Bounds of the previous line part
     if top >= contentPanel.lastBounds.h:
-      # debugf"abort renderLine top {top} >= h {contentPanel.lastBounds.h}"
       return not down
     if top + totalLineHeight <= 0:
       return down
@@ -147,9 +142,6 @@ method updateWidget(self: TextDocumentEditor, app: Editor, widget: WPanel, frame
 
   contentPanel.lastHierarchyChange = frameIndex
   widget.lastHierarchyChange = max(widget.lastHierarchyChange, contentPanel.lastHierarchyChange)
-
-  # Re-layout content
-  # contentPanel.layoutWidget(widget.lastBounds, frameIndex, app.rend.layoutOptions)
 
   self.lastContentBounds = widget.lastBounds
 
