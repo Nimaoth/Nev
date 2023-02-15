@@ -1,8 +1,7 @@
 import std/[tables]
 import platform, widgets
-import custom_logger, input, event, monitors
+import custom_logger, input, event, monitors, lrucache, id
 import chroma, vmath, windy, boxy, boxy/textures, opengl, pixie/[contexts, fonts]
-
 
 export platform, widgets
 
@@ -28,12 +27,15 @@ type
 
     typefaces: Table[string, Typeface]
 
+    cachedImages: LruCache[string, string]
+
 proc toInput(rune: Rune): int64
 proc toInput(button: Button): int64
 proc centerWindowOnMonitor(window: Window, monitor: int)
 proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font
 
 method init*(self: GuiPlatform) =
+  self.cachedImages = newLruCache[string, string](1000, true)
   self.window = newWindow("Absytree", ivec2(1280, 800), vsync=true)
   self.window.runeInputEnabled = true
 
@@ -247,7 +249,9 @@ method render*(self: GuiPlatform, widget: WWidget, frameIndex: int) =
   # Clear the screen and begin a new frame.
   self.boxy.beginFrame(self.window.size, clearFrame=false)
 
-  # Bind framebuffer now so that any boxy.pushLayer() calls will flush to the framebuffer and not the screen
+  for image in self.cachedImages.removedKeys:
+    self.boxy.removeImage(image)
+  self.cachedImages.clearRemovedKeys()
 
   let renderedSomething = widget.renderWidget(self, self.redrawEverything, frameIndex, "#")
 
@@ -336,22 +340,32 @@ method renderWidget(self: WText, renderer: GuiPlatform, forceRedraw: bool, frame
     # debugf"renderText {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}, {self.getBackgroundColor}"
     renderer.boxy.drawRect(self.lastBounds, self.getBackgroundColor)
 
-  let font = renderer.getFont(renderer.ctx.font, renderer.ctx.fontSize)
-  let arrangement = font.typeset(self.text)
-  var bounds = arrangement.layoutBounds()
-  if bounds.x == 0:
-    bounds.x = 1
-  if bounds.y == 0:
-    bounds.y = renderer.lineHeight
-  const textExtraHeight = 10.0
-  bounds.y += textExtraHeight
+  if self.text == "":
+    self.lastRenderedText = ""
+    return
 
-  var image = newImage(bounds.x.int, bounds.y.int)
-  image.fillText(arrangement)
+  var imageId: string
+  if renderer.cachedImages.contains(self.text):
+    imageId = renderer.cachedImages[self.text]
+  else:
+    imageId = $newId()
+    renderer.cachedImages[self.text] = imageId
 
-  let imageId = context
-  # debugf"imageId: {imageId}, text: {self.text}, at: {self.lastBounds}"
-  renderer.boxy.addImage(imageId, image, false)
+    let font = renderer.getFont(renderer.ctx.font, renderer.ctx.fontSize)
+    let arrangement = font.typeset(self.text)
+    var bounds = arrangement.layoutBounds()
+    if bounds.x == 0:
+      bounds.x = 1
+    if bounds.y == 0:
+      bounds.y = renderer.lineHeight
+    const textExtraHeight = 10.0
+    bounds.y += textExtraHeight
+
+    var image = newImage(bounds.x.int, bounds.y.int)
+    image.fillText(arrangement)
+    renderer.boxy.addImage(imageId, image, false)
+
   renderer.boxy.drawImage(imageId, self.lastBounds.xy, self.foregroundColor)
 
-  self.lastRenderedText = self.text
+  if self.lastRenderedText != self.text:
+    self.lastRenderedText = self.text
