@@ -1,6 +1,6 @@
 import boxy, pixie/fonts, vmath
 import compiler, id
-import lru_cache
+import lrucache
 
 const textExtraHeight* = 10.0
 

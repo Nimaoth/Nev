@@ -4,7 +4,7 @@ import fusion/matching
 import vmath
 import ast, id, util
 import query_system, compiler_types
-import lru_cache
+import lrucache
 import custom_logger
 
 export compiler_types
