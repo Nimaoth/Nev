@@ -1,5 +1,5 @@
 import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, os, re, tables, deques, asyncdispatch, asyncfile, dynlib]
-import editor, document, document_editor, events, id, util, scripting, vmath, bumpy, rect_utils, language_server_base, event, input, rendering/renderer
+import editor, document, document_editor, events, id, util, scripting, vmath, bumpy, rect_utils, language_server_base, event, input, platform/platform
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import custom_logger
@@ -1009,7 +1009,7 @@ proc doMoveCursorNextFindResult(self: TextDocumentEditor, cursor: Cursor, offset
 
 proc scrollToCursor(self: TextDocumentEditor, cursor: Cursor, keepVerticalOffset: bool = false) =
   let targetLine = cursor.line
-  let totalLineHeight = if not self.editor.rend.isNil: self.editor.rend.totalLineHeight
+  let totalLineHeight = if not self.editor.platform.isNil: self.editor.platform.totalLineHeight
     else: self.editor.renderCtx.lineHeight + getOption[float32](self.editor, "text.line-distance")
 
   if keepVerticalOffset:

@@ -1,15 +1,15 @@
 import std/[os, strutils, strformat, tables]
-import renderer, widgets
-import ../custom_logger, ../rect_utils, ../input, ../event, ../monitors, ../lru_cache
+import platform, widgets
+import custom_logger, rect_utils, input, event, monitors, lru_cache
 import vmath, windy, boxy, boxy/textures, opengl, pixie/[contexts, fonts]
 
 import chroma as chroma
 import colors as stdcolors
 
-export renderer, widgets
+export platform, widgets
 
 type
-  GuiRenderer* = ref object of Renderer
+  GuiPlatform* = ref object of Platform
     window: Window
     ctx*: Context
     boxy: Boxy
@@ -33,9 +33,9 @@ type
 proc toInput(rune: Rune): int64
 proc toInput(button: Button): int64
 proc centerWindowOnMonitor(window: Window, monitor: int)
-proc getFont*(self: GuiRenderer, font: string, fontSize: float32): Font
+proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font
 
-method init*(self: GuiRenderer) =
+method init*(self: GuiPlatform) =
   self.window = newWindow("Absytree", ivec2(1280, 800), vsync=true)
   self.window.runeInputEnabled = true
 
@@ -144,10 +144,10 @@ method init*(self: GuiRenderer) =
     else:
       self.onKeyRelease.invoke (button.toInput, self.currentModifiers)
 
-method deinit*(self: GuiRenderer) =
+method deinit*(self: GuiPlatform) =
   self.window.close()
 
-proc getFont*(self: GuiRenderer, font: string, fontSize: float32): Font =
+proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font =
   if font == "":
     raise newException(PixieError, "No font has been set on this Context")
 
@@ -158,32 +158,32 @@ proc getFont*(self: GuiRenderer, font: string, fontSize: float32): Font =
   result.paint.color = color(1, 1, 1)
   result.size = fontSize
 
-method size*(self: GuiRenderer): Vec2 =
+method size*(self: GuiPlatform): Vec2 =
   let size = self.window.size
   return vec2(size.x.float, size.y.float)
 
-method sizeChanged*(self: GuiRenderer): bool =
+method sizeChanged*(self: GuiPlatform): bool =
   let s = self.size
   return s.x != self.lastSize.x or s.y != self.lastSize.y
 
-proc updateCharWidth*(self: GuiRenderer) =
+proc updateCharWidth*(self: GuiPlatform) =
   let font = self.getFont(self.ctx.font, self.ctx.fontSize)
   let arrangement = font.typeset("#")
   var bounds = arrangement.layoutBounds()
   self.mCharWidth = bounds.x
   self.mLineHeight = bounds.y
 
-method `fontSize=`*(self: GuiRenderer, fontSize: float) =
+method `fontSize=`*(self: GuiPlatform, fontSize: float) =
   self.ctx.fontSize = fontSize
   self.updateCharWidth()
 
-method `lineDistance=`*(self: GuiRenderer, lineDistance: float) = self.mLineDistance = lineDistance
-method fontSize*(self: GuiRenderer): float = self.ctx.fontSize
-method lineDistance*(self: GuiRenderer): float = self.mLineDistance
-method lineHeight*(self: GuiRenderer): float = self.mLineHeight
-method charWidth*(self: GuiRenderer): float = self.mCharWidth
+method `lineDistance=`*(self: GuiPlatform, lineDistance: float) = self.mLineDistance = lineDistance
+method fontSize*(self: GuiPlatform): float = self.ctx.fontSize
+method lineDistance*(self: GuiPlatform): float = self.mLineDistance
+method lineHeight*(self: GuiPlatform): float = self.mLineHeight
+method charWidth*(self: GuiPlatform): float = self.mCharWidth
 
-method processEvents*(self: GuiRenderer): int =
+method processEvents*(self: GuiPlatform): int =
   self.eventCounter = 0
   pollEvents()
 
@@ -237,9 +237,9 @@ proc centerWindowOnMonitor(window: Window, monitor: int) =
   window.pos = ivec2(int32(left + (monitorWidth - windowWidth) / 2),
                      int32(top + (monitorHeight - windowHeight) / 2))
 
-method renderWidget(self: WWidget, renderer: GuiRenderer, forceRedraw: bool, frameIndex: int, context: string): bool {.base.} = discard
+method renderWidget(self: WWidget, renderer: GuiPlatform, forceRedraw: bool, frameIndex: int, context: string): bool {.base.} = discard
 
-method render*(self: GuiRenderer, widget: WWidget, frameIndex: int) =
+method render*(self: GuiPlatform, widget: WWidget, frameIndex: int) =
   if self.framebuffer.width != self.size.x.int32 or self.framebuffer.height != self.size.y.int32:
     self.framebuffer.width = self.size.x.int32
     self.framebuffer.height = self.size.y.int32
@@ -270,7 +270,7 @@ method render*(self: GuiRenderer, widget: WWidget, frameIndex: int) =
   self.redrawEverything = false
   self.lastSize = self.size
 
-method renderWidget(self: WPanel, renderer: GuiRenderer, forceRedraw: bool, frameIndex: int, context: string): bool =
+method renderWidget(self: WPanel, renderer: GuiPlatform, forceRedraw: bool, frameIndex: int, context: string): bool =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and not forceRedraw:
     return
 
@@ -292,7 +292,7 @@ method renderWidget(self: WPanel, renderer: GuiRenderer, forceRedraw: bool, fram
   for i, c in self.children:
     result = c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex, context & "." & $i) or result
 
-method renderWidget(self: WVerticalList, renderer: GuiRenderer, forceRedraw: bool, frameIndex: int, context: string): bool =
+method renderWidget(self: WVerticalList, renderer: GuiPlatform, forceRedraw: bool, frameIndex: int, context: string): bool =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and not forceRedraw:
     return
 
@@ -304,7 +304,7 @@ method renderWidget(self: WVerticalList, renderer: GuiRenderer, forceRedraw: boo
   for i, c in self.children:
     result = c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex, context & "." & $i) or result
 
-method renderWidget(self: WHorizontalList, renderer: GuiRenderer, forceRedraw: bool, frameIndex: int, context: string): bool =
+method renderWidget(self: WHorizontalList, renderer: GuiPlatform, forceRedraw: bool, frameIndex: int, context: string): bool =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and not forceRedraw:
     return
 
@@ -316,7 +316,7 @@ method renderWidget(self: WHorizontalList, renderer: GuiRenderer, forceRedraw: b
   for i, c in self.children:
     result = c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex, context & "." & $i) or result
 
-method renderWidget(self: WText, renderer: GuiRenderer, forceRedraw: bool, frameIndex: int, context: string): bool =
+method renderWidget(self: WText, renderer: GuiPlatform, forceRedraw: bool, frameIndex: int, context: string): bool =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and not forceRedraw:
     return
 

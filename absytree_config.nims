@@ -88,8 +88,10 @@ log fmt"Backend: {getBackend()}"
 case getBackend()
 of Terminal:
   setOption "text.scroll-speed", 1
+  setOption "text.cursor-margin", 3
 of Gui:
   setOption "text.scroll-speed", 23
+  setOption "text.cursor-margin", 50
 
 setOption "editor.text.lsp.zig.path", "zls"
 setOption "editor.text.lsp.rust.path", "C:/Users/nimao/.vscode/extensions/rust-lang.rust-analyzer-0.3.1325-win32-x64/server/rust-analyzer.exe"

@@ -5,7 +5,7 @@ logger.enableConsoleLogger()
 
 import boxy, opengl, windy
 import monitors
-import input, editor, editor_render, rendering/renderer
+import input, editor, editor_render, platform/platform
 import std/[asyncdispatch, strformat]
 from scripting_api import Backend
 

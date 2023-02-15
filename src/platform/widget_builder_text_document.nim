@@ -1,34 +1,13 @@
 import std/[strformat, tables, sequtils, algorithm]
-import util, input, editor, text_document, custom_logger, rendering/widgets, rendering/renderer, timer, rect_utils, theme
+import util, input, editor, text_document, custom_logger, widgets, platform, timer, rect_utils, theme, widget_builders_base
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import vmath, bumpy, chroma
 
-method updateWidget(self: DocumentEditor, app: Editor, widget: WPanel, frameIndex: int): bool {.base.} = discard
-
-var frameTimeSmooth: float = 0
-proc updateStatusBar*(self: Editor, frameIndex: int, statusBarWidget: WWidget): bool =
-  # let mode = if self.currentMode.len == 0: "normal" else: self.currentMode
-  # discard self.renderCtx.drawText(statusBounds.xy, fmt"{mode}", self.theme.color("editor.foreground", rgb(225, 200, 200)))
-
-  let frameTimeSmoothing = getOption[float](self, "editor.frame-time-smoothing", 0.1)
-  let frameTime = self.frameTimer.elapsed.ms
-  frameTimeSmooth = frameTimeSmoothing * frameTimeSmooth + (1 - frameTimeSmoothing) * frameTime
-  let fps = int(1000 / frameTimeSmooth)
-  let frameTimeStr = fmt"{frameTimeSmooth:>5.2}ms, {fps} FPS"
-  # discard self.renderCtx.drawText(statusBounds.xwy, frameTimeStr, self.theme.color("editor.foreground", rgb(225, 200, 200)), pivot=vec2(1, 0))
-
-  statusBarWidget.WText.text = frameTimeStr
-  statusBarWidget.lastHierarchyChange = frameIndex
-
-  # let text = self.getCommandLineTextEditor.document.contentString
-
-  return true
-
 method updateWidget(self: TextDocumentEditor, app: Editor, widget: WPanel, frameIndex: int): bool =
-  let lineHeight = app.rend.lineHeight
-  let lineDistance = app.rend.lineDistance
-  let totalLineHeight = app.rend.totalLineHeight
-  let charWidth = app.rend.charWidth
+  let lineHeight = app.platform.lineHeight
+  let lineDistance = app.platform.lineDistance
+  let totalLineHeight = app.platform.totalLineHeight
+  let charWidth = app.platform.charWidth
 
   self.lastContentBounds = widget.lastBounds
 
@@ -50,8 +29,8 @@ method updateWidget(self: TextDocumentEditor, app: Editor, widget: WPanel, frame
     contentPanel.maskContent = true
     widget.children.add(contentPanel)
 
-    headerPanel.layoutWidget(widget.lastBounds, frameIndex, app.rend.layoutOptions)
-    contentPanel.layoutWidget(widget.lastBounds, frameIndex, app.rend.layoutOptions)
+    headerPanel.layoutWidget(widget.lastBounds, frameIndex, app.platform.layoutOptions)
+    contentPanel.layoutWidget(widget.lastBounds, frameIndex, app.platform.layoutOptions)
   else:
     headerPanel = widget.children[0].WPanel
     headerPart1Text = headerPanel.children[0].WText
@@ -148,59 +127,3 @@ method updateWidget(self: TextDocumentEditor, app: Editor, widget: WPanel, frame
   debugf"rerender {contentPanel.children.len} lines for {self.document.filename} took {timer.elapsed.ms:>5.2}ms"
 
   return true
-
-var commandLineWidget: WText
-var mainPanel: WPanel
-var widgetsPerEditor = initTable[EditorId, WPanel]()
-
-proc updateWidgetTree*(self: Editor, frameIndex: int): bool =
-  if self.widget.isNil:
-    var panel = WPanel(anchor: (vec2(0, 0), vec2(1, 1)))
-    self.widget = panel
-    mainPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 1)), bottom: -self.rend.totalLineHeight - 1, right: -1, foregroundColor: color(1, 0, 0))
-    panel.children.add(mainPanel)
-    commandLineWidget = WText(text: "command line", anchor: (vec2(0, 1), vec2(1, 1)), top: -self.rend.totalLineHeight, fillBackground: true, backgroundColor: color(0, 0, 0), foregroundColor: color(1, 0, 1))
-    # panel.children.add(commandLineWidget)
-
-    self.widget.layoutWidget(rect(vec2(0, 0), self.rend.size), frameIndex, self.rend.layoutOptions)
-    result = true
-
-  let currentViewWidgets = mainPanel.children
-  mainPanel.children.setLen 0
-
-  let rects = self.layout.layoutViews(self.layout_props, rect(0, 0, 1, 1), self.views.len)
-  for i, view in self.views:
-    var widget: WPanel
-    var isNew = false
-    if widgetsPerEditor.contains(view.editor.id):
-      widget = widgetsPerEditor[view.editor.id]
-    else:
-      widget = WPanel()
-      widgetsPerEditor[view.editor.id] = widget
-      isNew = true
-
-    if i < rects.len:
-      widget.anchor = (rects[i].xy, rects[i].xwyh)
-      widget.right = -1
-
-      # If we newly created this widget then perform one layout first so that the bounds are know for updateWidget
-      if isNew:
-        widget.layoutWidget(self.widget.lastBounds, frameIndex, self.rend.layoutOptions)
-
-      mainPanel.children.add widget
-      result = view.editor.updateWidget(self, widget, frameIndex) or result
-      mainPanel.lastHierarchyChange = max(mainPanel.lastHierarchyChange, widget.lastHierarchyChange)
-
-  self.widget.lastHierarchyChange = max(self.widget.lastHierarchyChange, mainPanel.lastHierarchyChange)
-
-  # Status bar
-  result = self.updateStatusBar(frameIndex, commandLineWidget) or result
-  self.widget.lastHierarchyChange = max(self.widget.lastHierarchyChange, commandLineWidget.lastHierarchyChange)
-
-proc layoutWidgetTree*(self: Editor, size: Vec2, frameIndex: int): bool =
-  self.lastBounds = rect(vec2(0, 0), size)
-  if self.widget.isNil:
-    return true
-
-  self.widget.layoutWidget(self.lastBounds, frameIndex, self.rend.layoutOptions)
-  return false

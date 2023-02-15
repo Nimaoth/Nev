@@ -1,5 +1,6 @@
 switch("path", "$nim")
 switch("path", "scripting")
+switch("path", "src")
 switch("d", "mingw")
 switch("mm", "refc")
 switch("tlsEmulation", "off")

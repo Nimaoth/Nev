@@ -1,12 +1,12 @@
 import std/[strformat, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils, macros, macrocache, sugar, streams, asyncdispatch]
 import boxy, windy, fuzzy
-import input, events, rect_utils, document, document_editor, keybind_autocomplete, popup, render_context, timer, event, rendering/renderer
+import input, events, rect_utils, document, document_editor, keybind_autocomplete, popup, render_context, timer, event, platform/platform
 import theme, util
 import scripting
 import nimscripter, nimscripter/[vmconversion, vmaddins]
 import compilation_config
 import custom_logger
-import rendering/widgets
+import platform/widgets
 
 import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, Popup, SelectorPopup
 from scripting_api import Backend
@@ -43,7 +43,7 @@ type EditorState = object
 
 type Editor* = ref object
   backend: api.Backend
-  rend*: Renderer
+  platform*: Platform
   window*: Window
   boxy*: Boxy
   boxy2*: Boxy
@@ -322,10 +322,10 @@ proc handleMouseRelease*(self: Editor, button: MouseButton, modifiers: Modifiers
 proc handleMouseMove*(self: Editor, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton])
 proc handleScroll*(self: Editor, scroll: Vec2, mousePosWindow: Vec2, modifiers: Modifiers)
 
-proc newEditor*(window: Window, boxy: Boxy, backend: api.Backend, rend: Renderer): Editor =
+proc newEditor*(window: Window, boxy: Boxy, backend: api.Backend, platform: Platform): Editor =
   var self = Editor()
   gEditor = self
-  self.rend = rend
+  self.platform = platform
   self.window = window
   self.backend = backend
   self.boxy = boxy
@@ -333,15 +333,15 @@ proc newEditor*(window: Window, boxy: Boxy, backend: api.Backend, rend: Renderer
     self.boxy2 = newBoxy()
   self.statusBarOnTop = false
 
-  if not rend.isNil:
-    discard rend.onKeyPress.subscribe proc(event: auto): void = self.handleKeyPress(event.input, event.modifiers)
-    discard rend.onKeyRelease.subscribe proc(event: auto): void = self.handleKeyRelease(event.input, event.modifiers)
-    discard rend.onRune.subscribe proc(event: auto): void = self.handleRune(event.input, event.modifiers)
-    discard rend.onMousePress.subscribe proc(event: auto): void = self.handleMousePress(event.button, event.modifiers, event.pos)
-    discard rend.onMouseRelease.subscribe proc(event: auto): void = self.handleMouseRelease(event.button, event.modifiers, event.pos)
-    discard rend.onMouseMove.subscribe proc(event: auto): void = self.handleMouseMove(event.pos, event.delta, event.modifiers, event.buttons)
-    discard rend.onScroll.subscribe proc(event: auto): void = self.handleScroll(event.scroll, event.pos, event.modifiers)
-    discard rend.onCloseRequested.subscribe proc(_: auto) = self.closeRequested = true
+  if not platform.isNil:
+    discard platform.onKeyPress.subscribe proc(event: auto): void = self.handleKeyPress(event.input, event.modifiers)
+    discard platform.onKeyRelease.subscribe proc(event: auto): void = self.handleKeyRelease(event.input, event.modifiers)
+    discard platform.onRune.subscribe proc(event: auto): void = self.handleRune(event.input, event.modifiers)
+    discard platform.onMousePress.subscribe proc(event: auto): void = self.handleMousePress(event.button, event.modifiers, event.pos)
+    discard platform.onMouseRelease.subscribe proc(event: auto): void = self.handleMouseRelease(event.button, event.modifiers, event.pos)
+    discard platform.onMouseMove.subscribe proc(event: auto): void = self.handleMouseMove(event.pos, event.delta, event.modifiers, event.buttons)
+    discard platform.onScroll.subscribe proc(event: auto): void = self.handleScroll(event.scroll, event.pos, event.modifiers)
+    discard platform.onCloseRequested.subscribe proc(_: auto) = self.closeRequested = true
 
   self.timer = startTimer()
   self.frameTimer = startTimer()
@@ -355,7 +355,7 @@ proc newEditor*(window: Window, boxy: Boxy, backend: api.Backend, rend: Renderer
   self.ctx.font = "fonts/DejaVuSansMono.ttf"
   self.ctx.fontSize = 20
   self.ctx.textBaseline = TopBaseline
-  self.rend.fontSize = 20
+  self.platform.fontSize = 20
 
   self.renderCtx = RenderContext(boxy: boxy, ctx: self.ctx)
 
@@ -407,7 +407,7 @@ proc newEditor*(window: Window, boxy: Boxy, backend: api.Backend, rend: Renderer
     self.setTheme(state.theme)
     self.ctx.fontSize = state.fontSize
     self.ctx.font = state.fontRegular
-    self.rend.fontSize = state.fontSize.float
+    self.platform.fontSize = state.fontSize.float
     if state.fontRegular.len > 0: self.fontRegular = state.fontRegular
     if state.fontBold.len > 0: self.fontBold = state.fontBold
     if state.fontItalic.len > 0: self.fontItalic = state.fontItalic
@@ -526,7 +526,7 @@ proc quit*(self: Editor) {.expose("editor").} =
 
 proc changeFontSize*(self: Editor, amount: float32) {.expose("editor").} =
   self.ctx.fontSize += amount
-  self.rend.fontSize = self.rend.fontSize + amount.float
+  self.platform.fontSize = self.platform.fontSize + amount.float
 
 proc changeLayoutProp*(self: Editor, prop: string, change: float32) {.expose("editor").} =
   self.layout_props.props.mgetOrPut(prop, 0) += change

@@ -49,22 +49,22 @@ block: ## Enable loggers
     logger.enableConsoleLogger()
 
 import std/[asyncdispatch, strformat]
-import util, input, editor, text_document, tui, custom_logger, timer, widget_builders, rendering/renderer
+import util, input, editor, text_document, custom_logger, timer, platform/widget_builders, platform/platform
 import print
 
 when enableTerminal:
-  import rendering/terminal_renderer
+  import platform/terminal_platform
 
 when enableGui:
-  import rendering/gui_renderer
+  import platform/gui_platform
 
 # Initialize renderer
-var rend: Renderer = nil
+var rend: Platform = nil
 case backend.get
 of Terminal:
   when enableTerminal:
     logger.log(lvlInfo, "Creating terminal renderer")
-    rend = new TerminalRenderer
+    rend = new TerminalPlatform
   else:
     echo "[error] Terminal backend not available in this build"
     quit(1)
@@ -72,7 +72,7 @@ of Terminal:
 of Gui:
   when enableGui:
     logger.log(lvlInfo, "Creating GUI renderer")
-    rend = new GuiRenderer
+    rend = new GuiPlatform
   else:
     echo "[error] GUI backend not available in this build"
     quit(1)
