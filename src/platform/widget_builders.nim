@@ -1,5 +1,5 @@
 import std/[strformat, tables]
-import editor, custom_logger, widgets, platform, timer, rect_utils, theme, widget_builders_base, widget_builder_text_document
+import editor, custom_logger, document_editor, widgets, platform, timer, rect_utils, theme, widget_builders_base, widget_builder_text_document
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import vmath, bumpy, chroma
 
@@ -63,6 +63,7 @@ proc updateWidgetTree*(self: Editor, frameIndex: int) =
         widget.layoutWidget(self.widget.lastBounds, frameIndex, self.platform.layoutOptions)
 
       mainPanel.children.add widget
+      view.editor.active = self.currentView == i
       view.editor.updateWidget(self, widget, frameIndex)
       mainPanel.lastHierarchyChange = max(mainPanel.lastHierarchyChange, widget.lastHierarchyChange)
 

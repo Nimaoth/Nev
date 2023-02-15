@@ -9,6 +9,7 @@ type DocumentEditor* = ref object of RootObj
   fillAvailableSpace*: bool
   lastContentBounds*: Rect
   dirty*: bool ## Set to true to trigger rerender
+  active: bool
 
 func id*(self: DocumentEditor): EditorId = self.id
 
@@ -17,6 +18,12 @@ proc init*(self: DocumentEditor) =
 
   self.renderHeader = true
   self.fillAvailableSpace = true
+
+proc `active=`*(self: DocumentEditor, newActive: bool) =
+  self.dirty = self.dirty or (newActive != self.active)
+  self.active = newActive
+
+proc active*(self: DocumentEditor): bool = self.active
 
 method shutdown*(self: DocumentEditor) {.base.} =
   discard
