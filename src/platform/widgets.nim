@@ -81,7 +81,6 @@ proc updateLastHierarchyChangeFromChildren*(self: WWidget, currentIndex = -1) =
       self.lastHierarchyChange = max(max(self.lastHierarchyChange, c.lastHierarchyChange), c.lastBoundsChange)
   elif self of WText:
     if self.WText.text != self.WText.lastRenderedText:
-      debugf"updating '{self.WText.lastRenderedText}' to '{self.WText.text}'"
       self.lastHierarchyChange = max(self.lastHierarchyChange, currentIndex)
 
 proc invalidate*(self: WWidget, currentIndex: int, rect: Rect) =

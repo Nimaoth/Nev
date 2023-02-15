@@ -2,7 +2,7 @@ import std/[tables, sets, strutils, hashes, options, macros, strformat]
 import timer
 import fusion/matching
 import ast, id, util
-import lru_cache
+import lrucache
 
 {.experimental: "dynamicBindSym".}
 

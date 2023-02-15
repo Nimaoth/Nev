@@ -3,7 +3,7 @@ import timer
 import boxy, windy, pixie/fonts, chroma, fusion/matching
 import util, input, events, editor, popup, rect_utils, document_editor, text_document, ast_document, keybind_autocomplete, id, ast, theme, text_renderer
 import compiler, query_system, node_layout, goto_popup, selector_popup, language_server_base
-import lru_cache
+import lrucache
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, Popup, SelectorPopup
 import custom_logger
 
@@ -256,7 +256,6 @@ method renderDocumentEditor(editor: TextDocumentEditor, ed: Editor, bounds: Rect
     let sn = s.normalized
     for line in sn.first.line..sn.last.line:
       selectionsPerLine.mgetOrPut(line, @[]).add s
-
 
   let showNodeHighlight = getOption[bool](ed, "text.show-node-highlight")
   let nodeHighlightParentIndex = getOption[int](ed, "text.node-highlight-parent-index", 0)
