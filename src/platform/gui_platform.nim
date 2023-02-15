@@ -1,10 +1,8 @@
-import std/[os, strutils, strformat, tables]
+import std/[tables]
 import platform, widgets
-import custom_logger, rect_utils, input, event, monitors, lru_cache
-import vmath, windy, boxy, boxy/textures, opengl, pixie/[contexts, fonts]
+import custom_logger, input, event, monitors
+import chroma, vmath, windy, boxy, boxy/textures, opengl, pixie/[contexts, fonts]
 
-import chroma as chroma
-import colors as stdcolors
 
 export platform, widgets
 

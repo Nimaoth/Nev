@@ -49,8 +49,7 @@ block: ## Enable loggers
     logger.enableConsoleLogger()
 
 import std/[asyncdispatch, strformat]
-import util, input, editor, text_document, custom_logger, timer, platform/widget_builders, platform/platform
-import print
+import util, editor, timer, platform/widget_builders, platform/platform
 
 when enableTerminal:
   import platform/terminal_platform
@@ -110,11 +109,11 @@ while not ed.closeRequested:
     ed.frameTimer = startTimer()
 
     let updateTimer = startTimer()
-    let widgetsChanged = ed.updateWidgetTree(frameIndex)
+    ed.updateWidgetTree(frameIndex)
     updateTime = updateTimer.elapsed.ms
 
     let layoutTimer = startTimer()
-    var layoutChanged = ed.layoutWidgetTree(rend.size, frameIndex)
+    ed.layoutWidgetTree(rend.size, frameIndex)
     layoutTime = layoutTimer.elapsed.ms
 
     let renderTimer = startTimer()
