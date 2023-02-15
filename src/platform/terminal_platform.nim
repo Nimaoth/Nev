@@ -1,4 +1,4 @@
-import std/[os, strutils, strformat, terminal]
+import std/[strformat, terminal]
 import platform, widgets
 import tui, custom_logger, rect_utils, input, event
 import vmath, windy

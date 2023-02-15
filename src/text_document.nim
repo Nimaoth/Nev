@@ -478,7 +478,7 @@ proc loadLanguageDynamically(languageId: string): ptr TSLanguage =
       logger.log(lvlError, fmt"[textedit] Failed to load treesitter dll for '{languageId}': '{dllPath}'")
       return nil
 
-    let ctor = cast[TSLanguageCtor](lib.symAddr(ctorSymbolName))
+    let ctor = cast[TSLanguageCtor](lib.symAddr(ctorSymbolName.cstring))
     if ctor.isNil:
       logger.log(lvlError, fmt"[textedit] Failed to load treesitter dll for '{languageId}': '{dllPath}'")
       return nil

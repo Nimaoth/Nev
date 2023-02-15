@@ -3,7 +3,7 @@ import std/[strformat, options]
 import logging, util
 export logging, strformat
 
-# var logger* = newConsoleLogger()
+{.used.}
 
 type
   CustomLogger* = ref object of Logger

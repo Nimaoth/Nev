@@ -1,11 +1,13 @@
-import std/[strformat, tables, sequtils, algorithm]
-import util, input, editor, text_document, custom_logger, widgets, platform, timer, rect_utils, theme, widget_builders_base
+import std/[strformat]
+import util, editor, text_document, custom_logger, widgets, platform, timer, theme
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import vmath, bumpy, chroma
 
-method updateWidget(self: TextDocumentEditor, app: Editor, widget: WPanel, frameIndex: int): bool =
+# Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
+{.used.}
+
+method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, frameIndex: int) =
   let lineHeight = app.platform.lineHeight
-  let lineDistance = app.platform.lineDistance
   let totalLineHeight = app.platform.totalLineHeight
   let charWidth = app.platform.charWidth
 
@@ -55,7 +57,7 @@ method updateWidget(self: TextDocumentEditor, app: Editor, widget: WPanel, frame
   widget.lastHierarchyChange = max(widget.lastHierarchyChange, headerPanel.lastHierarchyChange)
 
   if not (contentPanel.changed(frameIndex) or self.dirty):
-    return contentPanel.changed(frameIndex)
+    return
 
   self.dirty = false
 
@@ -126,4 +128,3 @@ method updateWidget(self: TextDocumentEditor, app: Editor, widget: WPanel, frame
 
   debugf"rerender {contentPanel.children.len} lines for {self.document.filename} took {timer.elapsed.ms:>5.2}ms"
 
-  return true

@@ -1,10 +1,10 @@
-import std/[strformat, tables, sequtils, algorithm]
-import util, input, editor, text_document, custom_logger, widgets, platform, timer, rect_utils, theme, widget_builders_base, widget_builder_text_document
+import std/[strformat, tables]
+import editor, custom_logger, widgets, platform, timer, rect_utils, theme, widget_builders_base, widget_builder_text_document
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import vmath, bumpy, chroma
 
 var frameTimeSmooth: float = 0
-proc updateStatusBar*(self: Editor, frameIndex: int, statusBarWidget: WWidget): bool =
+proc updateStatusBar*(self: Editor, frameIndex: int, statusBarWidget: WWidget) =
   # let mode = if self.currentMode.len == 0: "normal" else: self.currentMode
   # discard self.renderCtx.drawText(statusBounds.xy, fmt"{mode}", self.theme.color("editor.foreground", rgb(225, 200, 200)))
 
@@ -20,13 +20,11 @@ proc updateStatusBar*(self: Editor, frameIndex: int, statusBarWidget: WWidget): 
 
   # let text = self.getCommandLineTextEditor.document.contentString
 
-  return true
-
 var commandLineWidget: WText
 var mainPanel: WPanel
 var widgetsPerEditor = initTable[EditorId, WPanel]()
 
-proc updateWidgetTree*(self: Editor, frameIndex: int): bool =
+proc updateWidgetTree*(self: Editor, frameIndex: int) =
   if self.widget.isNil:
     var panel = WPanel(anchor: (vec2(0, 0), vec2(1, 1)))
     self.widget = panel
@@ -36,9 +34,7 @@ proc updateWidgetTree*(self: Editor, frameIndex: int): bool =
     # panel.children.add(commandLineWidget)
 
     self.widget.layoutWidget(rect(vec2(0, 0), self.platform.size), frameIndex, self.platform.layoutOptions)
-    result = true
 
-  let currentViewWidgets = mainPanel.children
   mainPanel.children.setLen 0
 
   let rects = self.layout.layoutViews(self.layout_props, rect(0, 0, 1, 1), self.views.len)
@@ -61,19 +57,18 @@ proc updateWidgetTree*(self: Editor, frameIndex: int): bool =
         widget.layoutWidget(self.widget.lastBounds, frameIndex, self.platform.layoutOptions)
 
       mainPanel.children.add widget
-      result = view.editor.updateWidget(self, widget, frameIndex) or result
+      view.editor.updateWidget(self, widget, frameIndex)
       mainPanel.lastHierarchyChange = max(mainPanel.lastHierarchyChange, widget.lastHierarchyChange)
 
   self.widget.lastHierarchyChange = max(self.widget.lastHierarchyChange, mainPanel.lastHierarchyChange)
 
   # Status bar
-  result = self.updateStatusBar(frameIndex, commandLineWidget) or result
+  self.updateStatusBar(frameIndex, commandLineWidget)
   self.widget.lastHierarchyChange = max(self.widget.lastHierarchyChange, commandLineWidget.lastHierarchyChange)
 
-proc layoutWidgetTree*(self: Editor, size: Vec2, frameIndex: int): bool =
+proc layoutWidgetTree*(self: Editor, size: Vec2, frameIndex: int) =
   self.lastBounds = rect(vec2(0, 0), size)
   if self.widget.isNil:
-    return true
+    return
 
   self.widget.layoutWidget(self.lastBounds, frameIndex, self.platform.layoutOptions)
-  return false

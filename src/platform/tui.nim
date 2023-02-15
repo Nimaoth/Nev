@@ -49,8 +49,6 @@
 ##
 
 import macros, os, terminal, unicode, bitops, colors
-import std/[strformat]
-import custom_logger
 
 export terminal.terminalWidth
 export terminal.terminalHeight
