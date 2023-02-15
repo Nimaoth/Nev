@@ -1,14 +1,14 @@
 import std/[os, strutils, strformat, terminal]
-import renderer, widgets
-import ../tui, ../custom_logger, ../rect_utils, ../input, ../event
+import platform, widgets
+import tui, custom_logger, rect_utils, input, event
 import vmath, windy
 import chroma as chroma
 import std/colors as stdcolors
 
-export renderer, widgets
+export platform, widgets
 
 type
-  TerminalRenderer* = ref object of Renderer
+  TerminalPlatform* = ref object of Platform
     buffer: TerminalBuffer
     trueColorSupport*: bool
     mouseButtons: set[input.MouseButton]
@@ -21,7 +21,7 @@ proc exitProc() {.noconv.} =
   showCursor()
   quit(0)
 
-method init*(self: TerminalRenderer) =
+method init*(self: TerminalPlatform) =
   illwillInit(fullscreen=true, mouse=true)
   setControlCHook(exitProc)
   hideCursor()
@@ -38,25 +38,25 @@ method init*(self: TerminalRenderer) =
   self.buffer = newTerminalBuffer(terminalWidth(), terminalHeight())
   self.redrawEverything = true
 
-method deinit*(self: TerminalRenderer) =
+method deinit*(self: TerminalPlatform) =
   illwillDeinit()
   showCursor()
 
-method size*(self: TerminalRenderer): Vec2 = vec2(self.buffer.width.float, self.buffer.height.float)
+method size*(self: TerminalPlatform): Vec2 = vec2(self.buffer.width.float, self.buffer.height.float)
 
-method sizeChanged*(self: TerminalRenderer): bool =
+method sizeChanged*(self: TerminalPlatform): bool =
   let (w, h) = (terminalWidth(), terminalHeight())
   return self.buffer.width != w or self.buffer.height != h
 
-method fontSize*(self: TerminalRenderer): float = 1
-method lineDistance*(self: TerminalRenderer): float = 0
-method lineHeight*(self: TerminalRenderer): float = 1
-method charWidth*(self: TerminalRenderer): float = 1
+method fontSize*(self: TerminalPlatform): float = 1
+method lineDistance*(self: TerminalPlatform): float = 0
+method lineHeight*(self: TerminalPlatform): float = 1
+method charWidth*(self: TerminalPlatform): float = 1
 
-proc pushMask(self: TerminalRenderer, mask: Rect) =
+proc pushMask(self: TerminalPlatform, mask: Rect) =
   self.masks.add mask
 
-proc popMask(self: TerminalRenderer) =
+proc popMask(self: TerminalPlatform) =
   assert self.masks.len > 0
   discard self.masks.pop()
 
@@ -92,7 +92,7 @@ proc toInput(key: Key, modifiers: var Modifiers): int64 =
   # of NumpadDivide: ord '/'
   else: 0
 
-method processEvents*(self: TerminalRenderer): int =
+method processEvents*(self: TerminalPlatform): int =
   var eventCounter = 0
   while true:
     let key = getKey()
@@ -147,9 +147,9 @@ proc toStdColor(color: chroma.Color): stdcolors.Color =
   let rgb = color.asRgb
   return stdcolors.rgb(rgb.r, rgb.g, rgb.b)
 
-method renderWidget(self: WWidget, renderer: TerminalRenderer, forceRedraw: bool, frameIndex: int) {.base.} = discard
+method renderWidget(self: WWidget, renderer: TerminalPlatform, forceRedraw: bool, frameIndex: int) {.base.} = discard
 
-method render*(self: TerminalRenderer, widget: WWidget, frameIndex: int) =
+method render*(self: TerminalPlatform, widget: WWidget, frameIndex: int) =
   if self.sizeChanged:
     let (w, h) = (terminalWidth(), terminalHeight())
     logger.log(lvlInfo, fmt"Terminal size changed from {self.buffer.width}x{self.buffer.height} to {w}x{h}, recreate buffer")
@@ -166,7 +166,7 @@ method render*(self: TerminalRenderer, widget: WWidget, frameIndex: int) =
     logger.log(lvlError, fmt"[term-render] Failed to display buffer: {getCurrentExceptionMsg()}")
     self.redrawEverything = true
 
-method renderWidget(self: WPanel, renderer: TerminalRenderer, forceRedraw: bool, frameIndex: int) =
+method renderWidget(self: WPanel, renderer: TerminalPlatform, forceRedraw: bool, frameIndex: int) =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and not forceRedraw:
     return
 
@@ -189,7 +189,7 @@ method renderWidget(self: WPanel, renderer: TerminalRenderer, forceRedraw: bool,
   for c in self.children:
     c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex)
 
-method renderWidget(self: WVerticalList, renderer: TerminalRenderer, forceRedraw: bool, frameIndex: int) =
+method renderWidget(self: WVerticalList, renderer: TerminalPlatform, forceRedraw: bool, frameIndex: int) =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and not forceRedraw:
     return
 
@@ -203,7 +203,7 @@ method renderWidget(self: WVerticalList, renderer: TerminalRenderer, forceRedraw
   for c in self.children:
     c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex)
 
-method renderWidget(self: WHorizontalList, renderer: TerminalRenderer, forceRedraw: bool, frameIndex: int) =
+method renderWidget(self: WHorizontalList, renderer: TerminalPlatform, forceRedraw: bool, frameIndex: int) =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and not forceRedraw:
     return
 
@@ -217,7 +217,7 @@ method renderWidget(self: WHorizontalList, renderer: TerminalRenderer, forceRedr
   for c in self.children:
     c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex)
 
-proc writeText(self: TerminalRenderer, pos: Vec2, text: string) =
+proc writeText(self: TerminalPlatform, pos: Vec2, text: string) =
   let mask = if self.masks.len > 0:
     self.masks[self.masks.high]
   else:
@@ -235,7 +235,7 @@ proc writeText(self: TerminalRenderer, pos: Vec2, text: string) =
 
   self.buffer.write(pos.x.int + cutoffLeft.int, pos.y.int, text[cutoffLeft..^(cutoffRight + 1)])
 
-method renderWidget(self: WText, renderer: TerminalRenderer, forceRedraw: bool, frameIndex: int) =
+method renderWidget(self: WText, renderer: TerminalPlatform, forceRedraw: bool, frameIndex: int) =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and not forceRedraw:
     return
 

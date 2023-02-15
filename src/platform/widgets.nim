@@ -1,5 +1,5 @@
 import vmath, bumpy, chroma
-import ../theme, ../rect_utils, ../custom_logger
+import theme, rect_utils, custom_logger
 
 export rect_utils, vmath, bumpy
 
