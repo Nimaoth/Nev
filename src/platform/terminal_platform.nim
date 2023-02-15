@@ -167,7 +167,7 @@ method render*(self: TerminalPlatform, widget: WWidget, frameIndex: int) =
     self.redrawEverything = true
 
 method renderWidget(self: WPanel, renderer: TerminalPlatform, forceRedraw: bool, frameIndex: int) =
-  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and not forceRedraw:
+  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
     return
 
   renderer.buffer.setForegroundColor(self.foregroundColor.toStdColor)
@@ -189,8 +189,25 @@ method renderWidget(self: WPanel, renderer: TerminalPlatform, forceRedraw: bool,
   for c in self.children:
     c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex)
 
+method renderWidget(self: WStack, renderer: TerminalPlatform, forceRedraw: bool, frameIndex: int) =
+  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
+    return
+
+  renderer.buffer.setForegroundColor(self.foregroundColor.toStdColor)
+  renderer.buffer.setBackgroundColor(self.backgroundColor.toStdColor)
+
+  if self.fillBackground:
+    # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
+    renderer.buffer.fill(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int, self.lastBounds.yh.int, " ")
+
+  if self.drawBorder:
+    renderer.buffer.drawRect(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int, self.lastBounds.yh.int)
+
+  for c in self.children:
+    c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex)
+
 method renderWidget(self: WVerticalList, renderer: TerminalPlatform, forceRedraw: bool, frameIndex: int) =
-  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and not forceRedraw:
+  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
     return
 
   renderer.buffer.setForegroundColor(self.foregroundColor.toStdColor)
@@ -204,7 +221,7 @@ method renderWidget(self: WVerticalList, renderer: TerminalPlatform, forceRedraw
     c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex)
 
 method renderWidget(self: WHorizontalList, renderer: TerminalPlatform, forceRedraw: bool, frameIndex: int) =
-  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and not forceRedraw:
+  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
     return
 
   renderer.buffer.setForegroundColor(self.foregroundColor.toStdColor)
@@ -236,7 +253,7 @@ proc writeText(self: TerminalPlatform, pos: Vec2, text: string) =
   self.buffer.write(pos.x.int + cutoffLeft.int, pos.y.int, text[cutoffLeft..^(cutoffRight + 1)])
 
 method renderWidget(self: WText, renderer: TerminalPlatform, forceRedraw: bool, frameIndex: int) =
-  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and not forceRedraw:
+  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
     return
 
   renderer.buffer.setForegroundColor(self.foregroundColor.toStdColor)
