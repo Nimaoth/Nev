@@ -3,7 +3,7 @@ import events, input, vmath, bumpy
 from scripting_api import EditorId, newEditorId
 
 type Popup* = ref object of RootObj
-  id: EditorId
+  id*: EditorId
   eventHandler*: EventHandler
   lastBounds*: Rect
 

@@ -269,11 +269,11 @@ method render*(self: GuiPlatform, widget: WWidget, frameIndex: int) =
   self.lastSize = self.size
 
 method renderWidget(self: WPanel, renderer: GuiPlatform, forceRedraw: bool, frameIndex: int, context: string): bool =
-  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and not forceRedraw:
+  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
     return
 
   if self.fillBackground:
-    # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
+    # debugf"renderPanel {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}, {self.backgroundColor}"
     renderer.boxy.drawRect(self.lastBounds, self.backgroundColor)
     result = true
 
@@ -290,8 +290,20 @@ method renderWidget(self: WPanel, renderer: GuiPlatform, forceRedraw: bool, fram
   for i, c in self.children:
     result = c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex, context & "." & $i) or result
 
+method renderWidget(self: WStack, renderer: GuiPlatform, forceRedraw: bool, frameIndex: int, context: string): bool =
+  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
+    return
+
+  if self.fillBackground:
+    # debugf"renderStack {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}, {self.backgroundColor}"
+    renderer.boxy.drawRect(self.lastBounds, self.backgroundColor)
+    result = true
+
+  for i, c in self.children:
+    result = c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex, context & "." & $i) or result
+
 method renderWidget(self: WVerticalList, renderer: GuiPlatform, forceRedraw: bool, frameIndex: int, context: string): bool =
-  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and not forceRedraw:
+  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
     return
 
   if self.fillBackground:
@@ -303,7 +315,7 @@ method renderWidget(self: WVerticalList, renderer: GuiPlatform, forceRedraw: boo
     result = c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex, context & "." & $i) or result
 
 method renderWidget(self: WHorizontalList, renderer: GuiPlatform, forceRedraw: bool, frameIndex: int, context: string): bool =
-  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and not forceRedraw:
+  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
     return
 
   if self.fillBackground:
@@ -315,13 +327,13 @@ method renderWidget(self: WHorizontalList, renderer: GuiPlatform, forceRedraw: b
     result = c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex, context & "." & $i) or result
 
 method renderWidget(self: WText, renderer: GuiPlatform, forceRedraw: bool, frameIndex: int, context: string): bool =
-  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and not forceRedraw:
+  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
     return
 
   result = true
 
   if self.fillBackground:
-    # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
+    # debugf"renderText {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}, {self.backgroundColor}"
     renderer.boxy.drawRect(self.lastBounds, self.backgroundColor)
 
   let font = renderer.getFont(renderer.ctx.font, renderer.ctx.fontSize)

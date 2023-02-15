@@ -150,3 +150,6 @@ proc intersects*(a, b: Rect): bool =
 
 proc contains*(a: Rect, b: Vec2): bool =
   return b.x >= a.x and b.x <= a.xw and b.y >= a.y and b.y <= a.yh
+
+proc contains*(a: Rect, b: Rect): bool =
+  return b.x >= a.x and b.xw <= a.xw and b.y >= a.y and b.yh <= a.yh
