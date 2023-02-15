@@ -85,19 +85,15 @@ addTimer 1000, false, proc(fd: AsyncFD): bool =
 
 var frameIndex = 0
 var frameTime = 0.0
+
+let minPollPerFrameMs = 1.0
+let maxPollPerFrameMs = 4.0
+var pollBudgetMs = 0.0
 while not ed.closeRequested:
   defer:
     inc frameIndex
 
   let totalTimer = startTimer()
-  let pollTimer = startTimer()
-  try:
-    poll(2)
-    discard
-  except CatchableError:
-    # logger.log(lvlError, fmt"[async] Failed to poll async dispatcher: {getCurrentExceptionMsg()}: {getCurrentException().getStackTrace()}")
-    discard
-  let pollTime = pollTimer.elapsed.ms
 
   # handle events
   let eventTimer = startTimer()
@@ -123,6 +119,17 @@ while not ed.closeRequested:
     frameTime = ed.frameTimer.elapsed.ms
 
   logger.flush()
+
+  let pollTimer = startTimer()
+  try:
+    pollBudgetMs += max(minPollPerFrameMs, maxPollPerFrameMs - totalTimer.elapsed.ms)
+    if pollBudgetMs > maxPollPerFrameMs:
+      poll(maxPollPerFrameMs.int)
+      pollBudgetMs -= pollTimer.elapsed.ms
+  except CatchableError:
+    # logger.log(lvlError, fmt"[async] Failed to poll async dispatcher: {getCurrentExceptionMsg()}: {getCurrentException().getStackTrace()}")
+    discard
+  let pollTime = pollTimer.elapsed.ms
 
   let timeToSleep = 8 - totalTimer.elapsed.ms
   if timeToSleep > 1:
