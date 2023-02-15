@@ -20,6 +20,7 @@ type
     drawBorder*: bool
     fillBackground*: bool
     logLayout*: bool
+    allowAlpha*: bool
 
   WPanel* = ref object of WWidget
     maskContent*: bool
@@ -44,6 +45,22 @@ type
 
 proc width*(self: WWidget): float = self.right - self.left
 proc height*(self: WWidget): float = self.bottom - self.top
+proc getForegroundColor*(self: WWidget): Color =
+  result = self.backgroundColor
+  if not self.allowAlpha:
+    result.a = 1
+proc getBackgroundColor*(self: WWidget): Color =
+  result = self.backgroundColor
+  if not self.allowAlpha:
+    result.a = 1
+
+proc updateForegroundColor*(self: WWidget, color: Color, frameIndex: int) =
+  if self.foregroundColor != color: self.lastHierarchyChange = max(self.lastHierarchyChange, frameIndex)
+  self.foregroundColor = color
+
+proc updateBackgroundColor*(self: WWidget, color: Color, frameIndex: int) =
+  if self.backgroundColor != color: self.lastHierarchyChange = max(self.lastHierarchyChange, frameIndex)
+  self.backgroundColor = color
 
 proc updateLastHierarchyChangeFromChildren*(self: WWidget, currentIndex = -1) =
   if self of WPanel:

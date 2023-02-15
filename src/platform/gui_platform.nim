@@ -273,8 +273,8 @@ method renderWidget(self: WPanel, renderer: GuiPlatform, forceRedraw: bool, fram
     return
 
   if self.fillBackground:
-    # debugf"renderPanel {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}, {self.backgroundColor}"
-    renderer.boxy.drawRect(self.lastBounds, self.backgroundColor)
+    # debugf"renderPanel {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}, {self.getBackgroundColor}"
+    renderer.boxy.drawRect(self.lastBounds, self.getBackgroundColor)
     result = true
 
   # Mask the rest of the rendering is this function to the contentBounds
@@ -295,8 +295,8 @@ method renderWidget(self: WStack, renderer: GuiPlatform, forceRedraw: bool, fram
     return
 
   if self.fillBackground:
-    # debugf"renderStack {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}, {self.backgroundColor}"
-    renderer.boxy.drawRect(self.lastBounds, self.backgroundColor)
+    # debugf"renderStack {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}, {self.getBackgroundColor}"
+    renderer.boxy.drawRect(self.lastBounds, self.getBackgroundColor)
     result = true
 
   for i, c in self.children:
@@ -308,7 +308,7 @@ method renderWidget(self: WVerticalList, renderer: GuiPlatform, forceRedraw: boo
 
   if self.fillBackground:
     # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
-    renderer.boxy.drawRect(self.lastBounds, self.backgroundColor)
+    renderer.boxy.drawRect(self.lastBounds, self.getBackgroundColor)
     result = true
 
   for i, c in self.children:
@@ -320,7 +320,7 @@ method renderWidget(self: WHorizontalList, renderer: GuiPlatform, forceRedraw: b
 
   if self.fillBackground:
     # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
-    renderer.boxy.drawRect(self.lastBounds, self.backgroundColor)
+    renderer.boxy.drawRect(self.lastBounds, self.getBackgroundColor)
     result = true
 
   for i, c in self.children:
@@ -333,8 +333,8 @@ method renderWidget(self: WText, renderer: GuiPlatform, forceRedraw: bool, frame
   result = true
 
   if self.fillBackground:
-    # debugf"renderText {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}, {self.backgroundColor}"
-    renderer.boxy.drawRect(self.lastBounds, self.backgroundColor)
+    # debugf"renderText {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}, {self.getBackgroundColor}"
+    renderer.boxy.drawRect(self.lastBounds, self.getBackgroundColor)
 
   let font = renderer.getFont(renderer.ctx.font, renderer.ctx.fontSize)
   let arrangement = font.typeset(self.text)

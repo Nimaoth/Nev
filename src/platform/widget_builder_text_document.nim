@@ -1,5 +1,5 @@
 import std/[strformat]
-import util, editor, text_document, custom_logger, widgets, platform, timer, theme
+import util, editor, document_editor, text_document, custom_logger, widgets, platform, timer, theme
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import vmath, bumpy, chroma
 
@@ -44,9 +44,12 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
     headerPanel.bottom = totalLineHeight
     contentPanel.top = totalLineHeight
 
+    let color = if self.active: app.theme.color("tab.activeBackground", rgb(45, 45, 60))
+    else: app.theme.color("tab.inactiveBackground", rgb(45, 45, 45))
+    headerPanel.updateBackgroundColor(color, frameIndex)
+
     let mode = if self.currentMode.len == 0: "normal" else: self.currentMode
     headerPart1Text.text = fmt" {mode} - {self.document.filename} "
-
     headerPart2Text.text = fmt" {self.selection} - {self.id} "
 
     headerPanel.updateLastHierarchyChangeFromChildren frameIndex
@@ -55,6 +58,10 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
     contentPanel.top = 0
 
   widget.lastHierarchyChange = max(widget.lastHierarchyChange, headerPanel.lastHierarchyChange)
+
+  contentPanel.updateBackgroundColor(
+    if self.active: app.theme.color("editor.background", rgb(25, 25, 40)) else: app.theme.color("editor.background", rgb(25, 25, 25)) * 0.75,
+    frameIndex)
 
   if not (contentPanel.changed(frameIndex) or self.dirty):
     return
@@ -82,6 +89,8 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
       self.previousBaseIndex -= 1
       self.scrollOffset -= totalLineHeight
 
+  let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
+
   # Update content
   proc renderLine(i: int, down: bool): bool =
     # Pixel coordinate of the top left corner of the entire line. Includes line number
@@ -100,7 +109,7 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
     var startOffset = 0.0
     for partIndex, part in styledText.parts:
       let width = part.text.len.float * charWidth
-      let color = if part.scope.len == 0: color(225, 200, 200) else: app.theme.tokenColor(part.scope, color(0.9, 0.8, 0.8))
+      let color = if part.scope.len == 0: textColor else: app.theme.tokenColor(part.scope, rgb(255, 200, 200))
       var partWidget = WText(text: part.text, anchor: (vec2(0, 0), vec2(0, 1)), left: startOffset, right: startOffset + width, foregroundColor: color, lastHierarchyChange: frameIndex)
       startOffset += width
 

@@ -170,8 +170,8 @@ method renderWidget(self: WPanel, renderer: TerminalPlatform, forceRedraw: bool,
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
     return
 
-  renderer.buffer.setForegroundColor(self.foregroundColor.toStdColor)
-  renderer.buffer.setBackgroundColor(self.backgroundColor.toStdColor)
+  renderer.buffer.setForegroundColor(self.getForegroundColor.toStdColor)
+  renderer.buffer.setBackgroundColor(self.getBackgroundColor.toStdColor)
 
   if self.fillBackground:
     # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
@@ -193,8 +193,8 @@ method renderWidget(self: WStack, renderer: TerminalPlatform, forceRedraw: bool,
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
     return
 
-  renderer.buffer.setForegroundColor(self.foregroundColor.toStdColor)
-  renderer.buffer.setBackgroundColor(self.backgroundColor.toStdColor)
+  renderer.buffer.setForegroundColor(self.getForegroundColor.toStdColor)
+  renderer.buffer.setBackgroundColor(self.getBackgroundColor.toStdColor)
 
   if self.fillBackground:
     # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
@@ -210,8 +210,8 @@ method renderWidget(self: WVerticalList, renderer: TerminalPlatform, forceRedraw
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
     return
 
-  renderer.buffer.setForegroundColor(self.foregroundColor.toStdColor)
-  renderer.buffer.setBackgroundColor(self.backgroundColor.toStdColor)
+  renderer.buffer.setForegroundColor(self.getForegroundColor.toStdColor)
+  renderer.buffer.setBackgroundColor(self.getBackgroundColor.toStdColor)
 
   if self.fillBackground:
     # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
@@ -224,8 +224,8 @@ method renderWidget(self: WHorizontalList, renderer: TerminalPlatform, forceRedr
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
     return
 
-  renderer.buffer.setForegroundColor(self.foregroundColor.toStdColor)
-  renderer.buffer.setBackgroundColor(self.backgroundColor.toStdColor)
+  renderer.buffer.setForegroundColor(self.getForegroundColor.toStdColor)
+  renderer.buffer.setBackgroundColor(self.getBackgroundColor.toStdColor)
 
   if self.fillBackground:
     # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
@@ -256,8 +256,8 @@ method renderWidget(self: WText, renderer: TerminalPlatform, forceRedraw: bool, 
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
     return
 
-  renderer.buffer.setForegroundColor(self.foregroundColor.toStdColor)
-  renderer.buffer.setBackgroundColor(self.backgroundColor.toStdColor)
+  renderer.buffer.setForegroundColor(self.getForegroundColor.toStdColor)
+  renderer.buffer.setBackgroundColor(self.getBackgroundColor.toStdColor)
 
   if self.fillBackground:
     # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
