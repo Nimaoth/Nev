@@ -984,6 +984,25 @@ proc fill*(tb: var TerminalBuffer, x1, y1, x2, y2: int, ch: string = " ") =
       for x in xs..xe:
         tb[x, y] = c
 
+proc fillBackground*(tb: var TerminalBuffer, x1, y1, x2, y2: int) =
+  ## Fills a rectangular area with the `ch` character using the current text
+  ## attributes. The rectangle is clipped to the extends of the terminal
+  ## buffer and the call can never fail.
+  if x1 < tb.width and y1 < tb.height:
+    let
+      xs = clamp(x1, 0, tb.width-1)
+      ys = clamp(y1, 0, tb.width-1)
+      xe = clamp(x2, 0, tb.width-1)
+      ye = clamp(y2, 0, tb.height-1)
+
+    for y in ys..ye:
+      for x in xs..xe:
+        var c = tb[x, y]
+        c.ch = " ".runeAt 0
+        c.bg = tb.currBg
+        c.bgColor = tb.currBgColor
+        tb[x, y] = c
+
 proc clear*(tb: var TerminalBuffer, ch: string = " ") =
   ## Clears the contents of the terminal buffer with the `ch` character using
   ## the `fgNone` and `bgNone` attributes.
@@ -1090,6 +1109,35 @@ proc setBackgroundColor*(tb: var TerminalBuffer, bg: Color) =
   tb.currBg = bgRGB
   tb.currBgColor = bg
 
+proc setTrueForegroundColor*(color: Color) =
+  ## Sets the terminal's foreground true color.
+  stdout.write(ansiForegroundColorCode(color))
+
+proc setTrueBackgroundColor*(color: Color) =
+  ## Sets the terminal's background true color.
+  stdout.write(ansiBackgroundColorCode(color))
+
+const ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+
+proc myEnableTrueColors*(): bool =
+  ## Enables true color.
+  result = false
+  when defined(windows):
+    var mode: DWORD = 0
+    if getConsoleMode(getStdHandle(STD_OUTPUT_HANDLE), addr(mode)) != 0:
+      mode = mode or ENABLE_VIRTUAL_TERMINAL_PROCESSING
+      result = setConsoleMode(getStdHandle(STD_OUTPUT_HANDLE), mode) != 0
+  else:
+    result = getEnv("COLORTERM").toLowerAscii() in ["truecolor", "24bit"]
+
+proc myDisableTrueColors*() =
+  ## Disables true color.
+  when defined(windows):
+    var mode: DWORD = 0
+    if getConsoleMode(getStdHandle(STD_OUTPUT_HANDLE), addr(mode)) != 0:
+      mode = mode and not ENABLE_VIRTUAL_TERMINAL_PROCESSING
+      discard setConsoleMode(getStdHandle(STD_OUTPUT_HANDLE), mode)
+
 proc setStyle*(tb: var TerminalBuffer, style: set[Style]) =
   ## Sets the current style flags.
   tb.currStyle = style
@@ -1136,6 +1184,12 @@ proc write*(tb: var TerminalBuffer, x, y: int, s: string) =
   for ch in runes(s):
     var c = TerminalChar(ch: ch, fg: tb.currFg, bg: tb.currBg, fgColor: tb.currFgColor, bgColor: tb.currBgColor, style: tb.currStyle)
     if currX >= 0 and currX < tb.width:
+      if c.fg == fgNone:
+        c.fg = tb[currX, y].fg
+        c.fgColor = tb[currX, y].fgColor
+      if c.bg == bgNone:
+        c.bg = tb[currX, y].bg
+        c.bgColor = tb[currX, y].bgColor
       tb[currX, y] = c
     inc(currX)
   tb.currX = clamp(currX, 0, tb.width-1)
@@ -1166,12 +1220,12 @@ proc setAttribs(c: TerminalChar) =
     case gCurrBg
       of bgNone: discard
       of bgRGB:
-        setBackgroundColor(c.bgColor)
+        setTrueBackgroundColor(c.bgColor)
       else: setBackgroundColor(cast[terminal.BackgroundColor](gCurrBg))
 
     case gCurrFg
       of fgNone: discard
-      of fgRGB: setForegroundColor(c.fgColor)
+      of fgRGB: setTrueForegroundColor(c.fgColor)
       else: setForegroundColor(cast[terminal.ForegroundColor](gCurrFg))
 
     if gCurrStyle != {}:
@@ -1182,14 +1236,14 @@ proc setAttribs(c: TerminalChar) =
       gCurrBgColor = c.bgColor
       case gCurrBg
       of bgNone: discard
-      of bgRGB: setBackgroundColor(c.bgColor)
+      of bgRGB: setTrueBackgroundColor(c.bgColor)
       else: setBackgroundColor(cast[terminal.BackgroundColor](gCurrBg))
     if c.fg != gCurrFg or c.fgColor != gCurrFgColor:
       gCurrFg = c.fg
       gCurrFgColor = c.fgColor
       case gCurrFg
         of fgNone: discard
-        of fgRGB: setForegroundColor(c.fgColor)
+        of fgRGB: setTrueForegroundColor(c.fgColor)
         else: setForegroundColor(cast[terminal.ForegroundColor](gCurrFg))
 
     if c.style != gCurrStyle:
@@ -1214,7 +1268,7 @@ proc displayFull(tb: TerminalBuffer) =
     setPos(0, y)
     for x in 0..<tb.width:
       let c = tb[x,y]
-      if c.bg != gCurrBg or c.fg != gCurrFg or c.style != gCurrStyle:
+      if c.bg != gCurrBg or c.fg != gCurrFg or c.bgColor != gCurrBgColor or c.fgColor != gCurrFgColor or c.style != gCurrStyle:
         flushBuf()
         setAttribs(c)
       buf &= $c.ch
@@ -1225,38 +1279,52 @@ proc displayDiff(tb: TerminalBuffer) =
   var
     buf = ""
     bufXPos, bufYPos: Natural
-    currXPos = -1
-    currYPos = -1
 
   proc flushBuf() =
     if buf.len > 0:
-      if currYPos != bufYPos:
-        currXPos = bufXPos
-        currYPos = bufYPos
-        setPos(currXPos, currYPos)
-      elif currXPos != bufXPos:
-        currXPos = bufXPos
-        setXPos(currXPos)
       put buf
-      inc(currXPos, buf.runeLen)
       buf = ""
 
   for y in 0..<tb.height:
+    setPos(0, y)
     bufXPos = 0
     bufYPos = y
     for x in 0..<tb.width:
       let c = tb[x,y]
       if c != gPrevTerminalBuffer[x,y] or c.forceWrite:
-        if c.bg != gCurrBg or c.fg != gCurrFg or c.style != gCurrStyle:
+        if x != bufXPos:
           flushBuf()
-          bufXPos = x
-          setAttribs(c)
-        buf &= $c.ch
-      else:
-        flushBuf()
-        bufXPos = x+1
-    flushBuf()
+          setXPos(x)
+          bufXPos = x + 1
 
+        if c.bg != gCurrBg or c.bgColor != gCurrBgColor:
+          gCurrBg = c.bg
+          gCurrBgColor = c.bgColor
+          case gCurrBg
+          of bgNone: discard
+          of bgRGB: buf.add ansiBackgroundColorCode(c.bgColor)
+          else:
+            flushBuf()
+            setBackgroundColor(cast[terminal.BackgroundColor](gCurrBg))
+
+        if c.fg != gCurrFg or c.fgColor != gCurrFgColor:
+          gCurrFg = c.fg
+          gCurrFgColor = c.fgColor
+          case gCurrFg
+            of fgNone: discard
+            of fgRGB: buf.add ansiForegroundColorCode(c.fgColor)
+            else:
+              flushBuf()
+              setForegroundColor(cast[terminal.ForegroundColor](gCurrFg))
+
+        if c.style != gCurrStyle:
+          gCurrStyle = c.style
+          flushBuf()
+          setStyle(gCurrStyle)
+
+        buf.add c.ch
+
+    flushBuf()
 
 var gDoubleBufferingEnabled = true
 
