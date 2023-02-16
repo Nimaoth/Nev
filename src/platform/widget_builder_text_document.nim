@@ -49,7 +49,7 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
   var headerPart2Text: WText
   var contentPanel: WPanel
   if widget.children.len == 0:
-    headerPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 0)), left: 1, bottom: totalLineHeight, lastHierarchyChange: frameIndex, fillBackground: true, backgroundColor: color(0, 0, 0))
+    headerPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 0)), bottom: totalLineHeight, lastHierarchyChange: frameIndex, fillBackground: true, backgroundColor: color(0, 0, 0))
     widget.children.add(headerPanel)
 
     headerPart1Text = WText(text: "", sizeToContent: true, anchor: (vec2(0, 0), vec2(0, 1)), lastHierarchyChange: frameIndex, foregroundColor: textColor)
