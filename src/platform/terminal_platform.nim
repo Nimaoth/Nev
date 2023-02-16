@@ -1,4 +1,4 @@
-import std/[strformat, terminal]
+import std/[strformat, terminal, tables, enumutils]
 import platform, widgets
 import tui, custom_logger, rect_utils, input, event
 import vmath, windy
@@ -15,21 +15,53 @@ type
     masks: seq[Rect]
 
 proc exitProc() {.noconv.} =
-  disableTrueColors()
-
+  resetAttributes()
+  myDisableTrueColors()
   illwillDeinit()
   showCursor()
   quit(0)
+
+proc toStdColor(color: tui.ForegroundColor): stdcolors.Color =
+  return case color
+  of fgRed: stdcolors.rgb(255, 0, 0)
+  of fgGreen: stdcolors.rgb(0, 255, 0)
+  of fgYellow: stdcolors.rgb(255, 255, 0)
+  of fgBlue: stdcolors.rgb(0, 0, 255)
+  of fgMagenta: stdcolors.rgb(255, 0, 255)
+  of fgCyan: stdcolors.rgb(0, 255, 255)
+  of fgWhite: stdcolors.rgb(255, 255, 255)
+  else: stdcolors.rgb(0, 0, 0)
+
+proc toStdColor(color: tui.BackgroundColor): stdcolors.Color =
+  return case color
+  of bgRed: stdcolors.rgb(255, 0, 0)
+  of bgGreen: stdcolors.rgb(0, 255, 0)
+  of bgYellow: stdcolors.rgb(255, 255, 0)
+  of bgBlue: stdcolors.rgb(0, 0, 255)
+  of bgMagenta: stdcolors.rgb(255, 0, 255)
+  of bgCyan: stdcolors.rgb(0, 255, 255)
+  of bgWhite: stdcolors.rgb(255, 255, 255)
+  else: stdcolors.rgb(0, 0, 0)
+
+proc getClosestColor[T: enum](r, g, b: int, default: T): T =
+  var minDistance = 10000000.0
+  result = default
+  for fg in items(T):
+    let fgStd = fg.toStdColor
+    let uiae = fgStd.extractRGB
+    let distance = sqrt((r - uiae.r).float.pow(2) + (g - uiae.g).float.pow(2) + (b - uiae.b).float.pow(2))
+    if distance < minDistance:
+      minDistance = distance
+      result = fg
 
 method init*(self: TerminalPlatform) =
   illwillInit(fullscreen=true, mouse=true)
   setControlCHook(exitProc)
   hideCursor()
 
-  if isTrueColorSupported():
+  if myEnableTrueColors():
     logger.log(lvlInfo, "Enable true color support")
     self.trueColorSupport = true
-    enableTrueColors()
 
   self.layoutOptions.getTextBounds = proc(text: string): Vec2 =
     result.x = text.len.float
@@ -39,6 +71,8 @@ method init*(self: TerminalPlatform) =
   self.redrawEverything = true
 
 method deinit*(self: TerminalPlatform) =
+  resetAttributes()
+  myDisableTrueColors()
   illwillDeinit()
   showCursor()
 
@@ -137,7 +171,6 @@ method processEvents*(self: TerminalPlatform): int =
     else:
       var modifiers: Modifiers = {}
       let button = key.toInput(modifiers)
-      # logger.log(lvlInfo, fmt"{key} -> {inputToString(button, modifiers)}")
       self.onKeyPress.invoke (button, modifiers)
       discard
 
@@ -166,18 +199,34 @@ method render*(self: TerminalPlatform, widget: WWidget, frameIndex: int) =
     logger.log(lvlError, fmt"[term-render] Failed to display buffer: {getCurrentExceptionMsg()}")
     self.redrawEverything = true
 
+proc setForegroundColor(self: TerminalPlatform, color: chroma.Color) =
+  if self.trueColorSupport:
+    self.buffer.setForegroundColor(color.toStdColor)
+  else:
+    let stdColor = color.toStdColor.extractRGB
+    let fgColor = getClosestColor[tui.ForegroundColor](stdColor.r, stdColor.g, stdColor.b, fgWhite)
+    self.buffer.setForegroundColor(fgColor)
+
+proc setBackgroundColor(self: TerminalPlatform, color: chroma.Color) =
+  if self.trueColorSupport:
+    self.buffer.setBackgroundColor(color.toStdColor)
+  else:
+    let stdColor = color.toStdColor.extractRGB
+    let bgColor = getClosestColor[tui.BackgroundColor](stdColor.r, stdColor.g, stdColor.b, bgBlack)
+    self.buffer.setBackgroundColor(bgColor)
+
 method renderWidget(self: WPanel, renderer: TerminalPlatform, forceRedraw: bool, frameIndex: int) =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
     return
 
-  renderer.buffer.setForegroundColor(self.getForegroundColor.toStdColor)
-  renderer.buffer.setBackgroundColor(self.getBackgroundColor.toStdColor)
-
   if self.fillBackground:
     # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
-    renderer.buffer.fill(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int, self.lastBounds.yh.int, " ")
+    renderer.setBackgroundColor(self.getBackgroundColor)
+    renderer.buffer.fillBackground(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int - 1, self.lastBounds.yh.int - 1)
+    renderer.buffer.setBackgroundColor(bgNone)
 
   if self.drawBorder:
+    renderer.setForegroundColor(self.getForegroundColor)
     renderer.buffer.drawRect(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int, self.lastBounds.yh.int)
 
   if self.maskContent:
@@ -193,12 +242,11 @@ method renderWidget(self: WStack, renderer: TerminalPlatform, forceRedraw: bool,
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
     return
 
-  renderer.buffer.setForegroundColor(self.getForegroundColor.toStdColor)
-  renderer.buffer.setBackgroundColor(self.getBackgroundColor.toStdColor)
-
   if self.fillBackground:
     # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
-    renderer.buffer.fill(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int, self.lastBounds.yh.int, " ")
+    renderer.setBackgroundColor(self.getBackgroundColor)
+    renderer.buffer.fillBackground(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int - 1, self.lastBounds.yh.int - 1)
+    renderer.buffer.setBackgroundColor(bgNone)
 
   if self.drawBorder:
     renderer.buffer.drawRect(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int, self.lastBounds.yh.int)
@@ -210,12 +258,11 @@ method renderWidget(self: WVerticalList, renderer: TerminalPlatform, forceRedraw
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
     return
 
-  renderer.buffer.setForegroundColor(self.getForegroundColor.toStdColor)
-  renderer.buffer.setBackgroundColor(self.getBackgroundColor.toStdColor)
-
   if self.fillBackground:
     # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
-    renderer.buffer.fill(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int, self.lastBounds.yh.int, " ")
+    renderer.setBackgroundColor(self.getBackgroundColor)
+    renderer.buffer.fillBackground(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int - 1, self.lastBounds.yh.int - 1)
+    renderer.buffer.setBackgroundColor(bgNone)
 
   for c in self.children:
     c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex)
@@ -224,12 +271,11 @@ method renderWidget(self: WHorizontalList, renderer: TerminalPlatform, forceRedr
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
     return
 
-  renderer.buffer.setForegroundColor(self.getForegroundColor.toStdColor)
-  renderer.buffer.setBackgroundColor(self.getBackgroundColor.toStdColor)
-
   if self.fillBackground:
     # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
-    renderer.buffer.fill(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int, self.lastBounds.yh.int, " ")
+    renderer.setBackgroundColor(self.getBackgroundColor)
+    renderer.buffer.fillBackground(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int - 1, self.lastBounds.yh.int - 1)
+    renderer.buffer.setBackgroundColor(bgNone)
 
   for c in self.children:
     c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex)
@@ -256,13 +302,13 @@ method renderWidget(self: WText, renderer: TerminalPlatform, forceRedraw: bool, 
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
     return
 
-  renderer.buffer.setForegroundColor(self.getForegroundColor.toStdColor)
-  renderer.buffer.setBackgroundColor(self.getBackgroundColor.toStdColor)
-
   if self.fillBackground:
     # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
-    renderer.buffer.fill(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int, self.lastBounds.yh.int, " ")
+    renderer.setBackgroundColor(self.getBackgroundColor)
+    renderer.buffer.fillBackground(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int - 1, self.lastBounds.yh.int - 1)
 
+  renderer.buffer.setBackgroundColor(bgNone)
+  renderer.setForegroundColor(self.getForegroundColor)
   renderer.writeText(self.lastBounds.xy, self.text)
 
   self.lastRenderedText = self.text
