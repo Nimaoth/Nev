@@ -49,6 +49,7 @@
 ##
 
 import macros, os, terminal, unicode, bitops, colors
+import custom_logger, timer
 
 export terminal.terminalWidth
 export terminal.terminalHeight
@@ -1285,44 +1286,80 @@ proc displayDiff(tb: TerminalBuffer) =
       put buf
       buf = ""
 
+  let maxColorTime = 400.0
+  var colorTime = 0.0
+  var updateColors = true
+
   for y in 0..<tb.height:
     setPos(0, y)
     bufXPos = 0
     bufYPos = y
-    for x in 0..<tb.width:
+    var x = 0
+    while x < tb.width:
+      defer: inc x
       let c = tb[x,y]
-      if c != gPrevTerminalBuffer[x,y] or c.forceWrite:
+      let changed = if updateColors: c != gPrevTerminalBuffer[x, y] else: c.ch != gPrevTerminalBuffer[x, y].ch
+      if changed or c.forceWrite:
         if x != bufXPos:
           flushBuf()
           setXPos(x)
           bufXPos = x + 1
 
-        if c.bg != gCurrBg or c.bgColor != gCurrBgColor:
-          gCurrBg = c.bg
-          gCurrBgColor = c.bgColor
-          case gCurrBg
-          of bgNone: discard
-          of bgRGB: buf.add ansiBackgroundColorCode(c.bgColor)
-          else:
-            flushBuf()
-            setBackgroundColor(cast[terminal.BackgroundColor](gCurrBg))
+        if updateColors:
+          let timer = startTimer()
+          defer:
+            colorTime += timer.elapsed.ms
 
-        if c.fg != gCurrFg or c.fgColor != gCurrFgColor:
-          gCurrFg = c.fg
-          gCurrFgColor = c.fgColor
-          case gCurrFg
-            of fgNone: discard
-            of fgRGB: buf.add ansiForegroundColorCode(c.fgColor)
+          if c.bg != gCurrBg or c.bgColor != gCurrBgColor:
+            gCurrBg = c.bg
+            gCurrBgColor = c.bgColor
+            case gCurrBg
+            of bgNone: discard
+            of bgRGB: buf.add ansiBackgroundColorCode(c.bgColor)
             else:
               flushBuf()
-              setForegroundColor(cast[terminal.ForegroundColor](gCurrFg))
+              setBackgroundColor(cast[terminal.BackgroundColor](gCurrBg))
 
-        if c.style != gCurrStyle:
-          gCurrStyle = c.style
-          flushBuf()
-          setStyle(gCurrStyle)
+          if c.fg != gCurrFg or c.fgColor != gCurrFgColor:
+            gCurrFg = c.fg
+            gCurrFgColor = c.fgColor
+            case gCurrFg
+              of fgNone: discard
+              of fgRGB: buf.add ansiForegroundColorCode(c.fgColor)
+              else:
+                flushBuf()
+                setForegroundColor(cast[terminal.ForegroundColor](gCurrFg))
 
-        buf.add c.ch
+          if c.style != gCurrStyle:
+            gCurrStyle = c.style
+            flushBuf()
+            setStyle(gCurrStyle)
+
+        for x2 in x..<tb.width:
+          let c2 = tb[x2, y]
+          if not (c.fg == c2.fg and c.fgColor == c2.fgColor and c.bg == c2.bg and c.bgColor == c2.bgColor and c.style == c2.style):
+            break
+          x = x2
+          bufXPos = x + 1
+
+          buf.add c2.ch
+          if updateColors:
+            gPrevTerminalBuffer[x, y] = c2
+          else:
+            var old = gPrevTerminalBuffer[x, y]
+            old.ch = c2.ch
+            gPrevTerminalBuffer[x, y] = old
+
+      else:
+        if updateColors:
+          gPrevTerminalBuffer[x, y] = c
+        else:
+          var old = gPrevTerminalBuffer[x, y]
+          old.ch = c.ch
+          gPrevTerminalBuffer[x, y] = old
+
+    if updateColors and colorTime > maxColorTime:
+      updateColors = false
 
     flushBuf()
 
@@ -1353,7 +1390,6 @@ proc display*(tb: TerminalBuffer) =
       if tb.width == gPrevTerminalBuffer.width and
          tb.height == gPrevTerminalBuffer.height:
         displayDiff(tb)
-        gPrevTerminalBuffer.copyFrom(tb)
       else:
         displayFull(tb)
         gPrevTerminalBuffer = newTerminalBufferFrom(tb)

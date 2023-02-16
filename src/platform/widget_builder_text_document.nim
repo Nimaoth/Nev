@@ -213,5 +213,5 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
 
   self.lastContentBounds = widget.lastBounds
 
-  debugf"rerender {contentPanel.children.len} lines for {self.document.filename} took {timer.elapsed.ms:>5.2}ms"
+  # debugf"rerender {contentPanel.children.len} lines for {self.document.filename} took {timer.elapsed.ms:>5.2}ms"
 
