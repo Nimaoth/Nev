@@ -45,10 +45,12 @@ type
 
 proc width*(self: WWidget): float = self.right - self.left
 proc height*(self: WWidget): float = self.bottom - self.top
+
 proc getForegroundColor*(self: WWidget): Color =
-  result = self.backgroundColor
+  result = self.foregroundColor
   if not self.allowAlpha:
     result.a = 1
+
 proc getBackgroundColor*(self: WWidget): Color =
   result = self.backgroundColor
   if not self.allowAlpha:
