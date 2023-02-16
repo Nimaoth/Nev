@@ -130,7 +130,7 @@ proc updateInvalidationFromChildren*(self: WWidget, currentIndex: int, recurse: 
 method layoutWidget*(self: WWidget, bounds: Rect, frameIndex: int, options: WLayoutOptions) {.base.} = discard
 
 proc changed*(self: WWidget, frameIndex: int): bool =
-  result = self.lastBoundsChange >= frameIndex or self.lastHierarchyChange >= frameIndex
+  result = self.lastBoundsChange >= frameIndex or self.lastHierarchyChange >= frameIndex or self.lastInvalidation >= frameIndex
 
 proc calculateBounds(self: WWidget, container: Rect): Rect =
   let topLeft = container.xy + self.anchor.min * container.wh + vec2(self.left, self.top)
