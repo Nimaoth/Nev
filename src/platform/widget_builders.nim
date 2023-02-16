@@ -4,89 +4,101 @@ import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEdito
 import vmath, bumpy, chroma
 
 var frameTimeSmooth: float = 0
-proc updateStatusBar*(self: Editor, frameIndex: int, statusBarWidget: WWidget) =
+proc updateStatusBar*(self: Editor, frameIndex: int, statusBarWidget: WPanel) =
   # let mode = if self.currentMode.len == 0: "normal" else: self.currentMode
   # discard self.renderCtx.drawText(statusBounds.xy, fmt"{mode}", self.theme.color("editor.foreground", rgb(225, 200, 200)))
 
-  let frameTimeSmoothing = getOption[float](self, "editor.frame-time-smoothing", 0.1)
-  let frameTime = self.frameTimer.elapsed.ms
-  frameTimeSmooth = frameTimeSmoothing * frameTimeSmooth + (1 - frameTimeSmoothing) * frameTime
-  let fps = int(1000 / frameTimeSmooth)
-  let frameTimeStr = fmt"{frameTimeSmooth:>5.2}ms, {fps} FPS"
-  # discard self.renderCtx.drawText(statusBounds.xwy, frameTimeStr, self.theme.color("editor.foreground", rgb(225, 200, 200)), pivot=vec2(1, 0))
+  var statusWidget: WText
+  var commandLineWidget: WPanel
+  if statusBarWidget.children.len == 0:
+    statusWidget = WText(anchor: (vec2(0, 0), vec2(1, 0.5)), lastHierarchyChange: frameIndex)
+    statusBarWidget.children.add statusWidget
 
-  statusBarWidget.WText.text = frameTimeStr
-  statusBarWidget.lastHierarchyChange = frameIndex
+    commandLineWidget = WPanel(anchor: (vec2(0, 0.5), vec2(1, 1)), lastHierarchyChange: frameIndex)
+    statusBarWidget.children.add commandLineWidget
 
-  # let text = self.getCommandLineTextEditor.document.contentString
+    statusWidget.layoutWidget(statusBarWidget.lastBounds, frameIndex, self.platform.layoutOptions)
+    commandLineWidget.layoutWidget(statusBarWidget.lastBounds, frameIndex, self.platform.layoutOptions)
+  else:
+    statusWidget = statusBarWidget.children[0].WText
+    commandLineWidget = statusBarWidget.children[1].WPanel
 
-var commandLineWidget: WText
+  # let frameTimeSmoothing = getOption[float](self, "editor.frame-time-smoothing", 0.1)
+  # let frameTime = self.frameTimer.elapsed.ms
+  # frameTimeSmooth = frameTimeSmoothing * frameTimeSmooth + (1 - frameTimeSmoothing) * frameTime
+  # let fps = int(1000 / frameTimeSmooth)
+  # let frameTimeStr = fmt"{frameTimeSmooth:>5.2}ms, {fps} FPS"
+
+  let textColor = self.theme.color("editor.foreground", rgb(225, 200, 200))
+
+  statusWidget.text = if self.currentMode.len == 0: "normal" else: self.currentMode
+  statusWidget.updateForegroundColor(textColor, frameIndex)
+  statusWidget.updateLastHierarchyChangeFromChildren frameIndex
+  statusBarWidget.lastHierarchyChange = max(statusBarWidget.lastHierarchyChange, statusWidget.lastHierarchyChange)
+
+  self.getCommandLineTextEditor.active = self.commandLineMode
+  self.getCommandLineTextEditor.updateWidget(self, commandLineWidget, frameIndex)
+  statusBarWidget.lastHierarchyChange = max(statusBarWidget.lastHierarchyChange, commandLineWidget.lastHierarchyChange)
+
+var commandLineWidget: WPanel
 var mainStack: WStack
+var viewPanel: WPanel
 var mainPanel: WPanel
 var widgetsPerEditor = initTable[EditorId, WPanel]()
 
 proc updateWidgetTree*(self: Editor, frameIndex: int) =
   if self.widget.isNil:
-    var panel = WPanel(anchor: (vec2(0, 0), vec2(1, 1)))
-    self.widget = panel
+    mainStack = WStack(anchor: (vec2(0, 0), vec2(1, 1)), right: -1, logLayout: false)
+    self.widget = mainStack
 
-    mainStack = WStack(anchor: (vec2(0, 0), vec2(1, 1)), bottom: -self.platform.totalLineHeight - 1, right: -1, logLayout: false)
-    panel.children.add(mainStack)
-
-    mainPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 1)), foregroundColor: color(1, 0, 0))
+    mainPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 1)))
     mainStack.children.add(mainPanel)
 
-    commandLineWidget = WText(text: "command line", anchor: (vec2(0, 1), vec2(1, 1)), top: -self.platform.totalLineHeight, fillBackground: true, backgroundColor: color(0, 0, 0), foregroundColor: color(1, 0, 1))
-    # panel.children.add(commandLineWidget)
+    viewPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 1)), bottom: -2 * self.platform.totalLineHeight)
+    mainPanel.children.add(viewPanel)
+
+    commandLineWidget = WPanel(anchor: (vec2(0, 1), vec2(1, 1)), top: -2 * self.platform.totalLineHeight, fillBackground: true, backgroundColor: color(0, 0, 0))
+    mainPanel.children.add(commandLineWidget)
 
     self.widget.layoutWidget(rect(vec2(0, 0), self.platform.size), frameIndex, self.platform.layoutOptions)
 
   # views
-  mainPanel.children.setLen 0
+  viewPanel.children.setLen 0
   let rects = self.layout.layoutViews(self.layout_props, rect(0, 0, 1, 1), self.views.len)
   for i, view in self.views:
     var widget: WPanel
-    var isNew = false
     if widgetsPerEditor.contains(view.editor.id):
       widget = widgetsPerEditor[view.editor.id]
     else:
-      widget = WPanel(lastHierarchyChange: frameIndex)
+      widget = WPanel(lastHierarchyChange: frameIndex, logLayout: false)
       widgetsPerEditor[view.editor.id] = widget
-      isNew = true
 
     if i < rects.len:
       widget.anchor = (rects[i].xy, rects[i].xwyh)
-      widget.right = -1
 
-      # If we newly created this widget then perform one layout first so that the bounds are know for updateWidget
-      if isNew:
-        widget.layoutWidget(self.widget.lastBounds, frameIndex, self.platform.layoutOptions)
+      widget.layoutWidget(viewPanel.lastBounds, frameIndex, self.platform.layoutOptions)
 
-      mainPanel.children.add widget
+      viewPanel.children.add widget
       view.editor.active = self.currentView == i
       view.editor.updateWidget(self, widget, frameIndex)
-      mainPanel.lastHierarchyChange = max(mainPanel.lastHierarchyChange, widget.lastHierarchyChange)
+      viewPanel.lastHierarchyChange = max(viewPanel.lastHierarchyChange, widget.lastHierarchyChange)
 
-  mainStack.lastHierarchyChange = max(mainStack.lastHierarchyChange, mainPanel.lastHierarchyChange)
+  mainPanel.lastHierarchyChange = max(mainPanel.lastHierarchyChange, viewPanel.lastHierarchyChange)
 
   # popups
   let lastPopups: seq[WWidget] = mainStack.children[1..^1]
   mainStack.children.setLen 1
   for i, popup in self.popups:
     var widget: WPanel
-    var isNew = false
     if widgetsPerEditor.contains(popup.id):
       widget = widgetsPerEditor[popup.id]
     else:
-      widget = WPanel(backgroundColor: color(1, 0, 1), fillBackground: true, lastHierarchyChange: frameIndex, logLayout: true)
+      widget = WPanel(backgroundColor: color(1, 0, 1), fillBackground: true, lastHierarchyChange: frameIndex, logLayout: false)
       widgetsPerEditor[popup.id] = widget
-      isNew = true
 
     widget.anchor = (vec2(0.25, 0.25), vec2(0.75, 0.75))
 
-    # If we newly created this widget then perform one layout first so that the bounds are know for updateWidget
-    if isNew:
-      widget.layoutWidget(self.widget.lastBounds, frameIndex, self.platform.layoutOptions)
+    widget.layoutWidget(mainStack.lastBounds, frameIndex, self.platform.layoutOptions)
 
     mainStack.children.add widget
     # view.editor.updateWidget(self, widget, frameIndex)
@@ -98,12 +110,13 @@ proc updateWidgetTree*(self: Editor, frameIndex: int) =
     for c in mainStack.children:
       c.invalidate(frameIndex, p.lastBounds)
 
-  self.widget.lastHierarchyChange = max(self.widget.lastHierarchyChange, mainStack.lastHierarchyChange)
+  self.updateStatusBar(frameIndex, commandLineWidget)
+  mainPanel.lastHierarchyChange = max(mainPanel.lastHierarchyChange, commandLineWidget.lastHierarchyChange)
+
+  mainStack.lastHierarchyChange = max(mainStack.lastHierarchyChange, mainPanel.lastHierarchyChange)
   mainStack.updateInvalidationFromChildren(currentIndex = -1, recurse = false)
-  self.widget.updateInvalidationFromChildren(currentIndex = -1, recurse = false)
 
   # Status bar
-  self.updateStatusBar(frameIndex, commandLineWidget)
   self.widget.lastHierarchyChange = max(self.widget.lastHierarchyChange, commandLineWidget.lastHierarchyChange)
 
 proc layoutWidgetTree*(self: Editor, size: Vec2, frameIndex: int) =
