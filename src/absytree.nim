@@ -5,8 +5,8 @@ logger.enableConsoleLogger()
 
 import boxy, opengl, windy
 import monitors
-import input, editor, editor_render
-import std/[asyncdispatch, strformat]
+import input, editor, editor_render, custom_async
+import std/[strformat]
 from scripting_api import Backend
 
 let window = newWindow("Absytree", ivec2(1280, 800))

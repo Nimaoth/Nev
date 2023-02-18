@@ -1,7 +1,7 @@
 import std/[strformat, terminal, tables, enumutils]
 import platform, widgets
 import tui, custom_logger, rect_utils, input, event
-import vmath, windy
+import vmath
 import chroma as chroma
 import std/colors as stdcolors
 

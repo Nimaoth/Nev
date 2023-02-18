@@ -1,5 +1,6 @@
 import std/[json, jsonutils, tables, strutils, options]
 import chroma
+import custom_logger
 
 type
   FontStyle* = enum Italic, Underline, Bold
@@ -157,20 +158,26 @@ proc jsonToTheme*(json: JsonNode, opt = Joptions()): Theme =
           result.tokenColors[scope].fontStyle = settings["fontStyle"].jsonTo set[FontStyle]
 
 
-proc loadFromFile*(path: string): Option[Theme] =
-  if path.len == 0:
-    return Theme.none
-
+proc loadFromString*(input: string, path = "string"): Option[Theme] =
   try:
-    let jsonText = readFile(path)
-    let json = jsonText.parseJson
+    let json = input.parseJson
     var newTheme = json.jsonToTheme
     newTheme.path = path
     return some(newTheme)
   except CatchableError:
-    echo getCurrentExceptionMsg()
-    echo getCurrentException().getStackTrace()
+    debugf"Failed to load theme from {path}: {getCurrentExceptionMsg()}"
+    debugf"{getCurrentException().getStackTrace()}"
     return Theme.none
+
+proc loadFromFile*(path: string): Option[Theme] =
+  when not defined(js):
+    try:
+      let jsonText = readFile(path)
+      return loadFromString(jsonText, path)
+    except CatchableError:
+      debugf"Failed to load theme from {path}: {getCurrentExceptionMsg()}"
+      debugf"{getCurrentException().getStackTrace()}"
+      return Theme.none
 
 
 # let theme = loadFromFile("themes/Monokai Pro.json")
