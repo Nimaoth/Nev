@@ -1,6 +1,6 @@
-import asyncdispatch, json, strutils, strformat, tables, sets, os, options, macros, uri
+import std/[json, strutils, strformat, tables, sets, os, options, macros, uri]
 import myjsonutils, util, async_process, lsp_types
-import custom_logger
+import custom_logger, custom_async
 
 export lsp_types
 

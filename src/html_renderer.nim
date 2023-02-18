@@ -2,7 +2,6 @@ import std/[strformat, tables, options, sequtils, os]
 import fusion/matching, chroma
 import util, id, ast, theme, ast_document
 import compiler
-import nimscripter
 
 proc serializeNodeHtml(self: AstDocument, node: AstNode): string =
   let dq = "\""
