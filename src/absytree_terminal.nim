@@ -79,9 +79,14 @@ of Gui:
     echo "[error] GUI backend not available in this build"
     quit(1)
 
+else:
+    echo "[error] This should not happen"
+    quit(1)
+
+
 rend.init()
 
-var ed = newEditor(nil, nil, backend.get, rend)
+var ed = newEditor(backend.get, rend)
 
 addTimer 1000, false, proc(fd: AsyncFD): bool =
   return false

@@ -1,12 +1,15 @@
-import std/[strformat, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils, macros, macrocache, sugar, streams, asyncdispatch]
-import boxy, windy, fuzzy
-import input, events, rect_utils, document, document_editor, keybind_autocomplete, popup, render_context, timer, event, platform/platform
-import theme, util
-import scripting
-import nimscripter, nimscripter/[vmconversion, vmaddins]
-import compilation_config
-import custom_logger
-import platform/widgets
+import std/[strformat, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils, macros, macrocache, sugar, streams]
+import fuzzy
+import input, events, rect_utils, document, document_editor, keybind_autocomplete, popup, timer, event, platform/platform
+import theme, util, custom_async, custom_logger
+import scripting/[expose, scripting_base]
+import platform/[widgets, filesystem]
+
+when not defined(js):
+  import scripting/scripting_nim
+  import nimscripter, nimscripter/[vmconversion, vmaddins]
+else:
+  import scripting/scripting_js
 
 import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, Popup, SelectorPopup
 from scripting_api import Backend
@@ -44,11 +47,6 @@ type EditorState = object
 type Editor* = ref object
   backend: api.Backend
   platform*: Platform
-  window*: Window
-  boxy*: Boxy
-  boxy2*: Boxy
-  ctx*: Context
-  renderCtx*: RenderContext
   fontRegular*: string
   fontBold*: string
   fontItalic*: string
@@ -114,7 +112,7 @@ proc invokeCallback*(self: Editor, context: string, args: JsonNode): bool =
     return false
   let id = self.callbacks[context]
   try:
-    return self.scriptContext.inter.invoke(handleCallback, id, args, returnType = bool)
+    return self.scriptContext.invoke(handleCallback, id, args, returnType = bool)
   except CatchableError:
     logger.log(lvlError, fmt"[ed] Failed to run script handleCallback {id}: {getCurrentExceptionMsg()}")
     logger.log(lvlError, getCurrentException().getStackTrace())
@@ -163,7 +161,7 @@ method layoutViews*(layout: FibonacciLayout, props: LayoutProperties, bounds: Re
 
 proc handleUnknownPopupAction*(self: Editor, popup: Popup, action: string, arg: string): EventResponse =
   try:
-    if self.scriptContext.inter.invoke(handleUnknownPopupAction, popup.id, action, arg, returnType = bool):
+    if self.scriptContext.invoke(handleUnknownPopupAction, popup.id, action, arg, returnType = bool):
       return Handled
   except CatchableError:
     logger.log(lvlError, fmt"[ed] Failed to run script handleUnknownPopupAction '{action} {arg}': {getCurrentExceptionMsg()}")
@@ -173,7 +171,7 @@ proc handleUnknownPopupAction*(self: Editor, popup: Popup, action: string, arg: 
 
 proc handleUnknownDocumentEditorAction*(self: Editor, editor: DocumentEditor, action: string, args: JsonNode): EventResponse =
   try:
-    if self.scriptContext.inter.invoke(handleEditorAction, editor.id, action, args, returnType = bool):
+    if self.scriptContext.invoke(handleEditorAction, editor.id, action, args, returnType = bool):
       return Handled
   except CatchableError:
     logger.log(lvlError, fmt"[ed] Failed to run script handleUnknownDocumentEditorAction '{action} {args}': {getCurrentExceptionMsg()}")
@@ -310,7 +308,8 @@ proc setTheme*(self: Editor, path: string) =
   if loadFromFile(path).getSome(theme):
     self.theme = theme
 
-proc createScriptContext(filepath: string, searchPaths: seq[string]): ScriptContext
+when not defined(js):
+  proc createScriptContext(filepath: string, searchPaths: seq[string]): ScriptContext
 
 proc getCommandLineTextEditor*(self: Editor): TextDocumentEditor = self.commandLineTextEditor.TextDocumentEditor
 
@@ -322,15 +321,11 @@ proc handleMouseRelease*(self: Editor, button: MouseButton, modifiers: Modifiers
 proc handleMouseMove*(self: Editor, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton])
 proc handleScroll*(self: Editor, scroll: Vec2, mousePosWindow: Vec2, modifiers: Modifiers)
 
-proc newEditor*(window: Window, boxy: Boxy, backend: api.Backend, platform: Platform): Editor =
+proc newEditor*(backend: api.Backend, platform: Platform): Editor =
   var self = Editor()
   gEditor = self
   self.platform = platform
-  self.window = window
   self.backend = backend
-  self.boxy = boxy
-  if not boxy.isNil:
-    self.boxy2 = newBoxy()
   self.statusBarOnTop = false
 
   if not platform.isNil:
@@ -349,15 +344,7 @@ proc newEditor*(window: Window, boxy: Boxy, backend: api.Backend, platform: Plat
   self.layout = HorizontalLayout()
   self.layout_props = LayoutProperties(props: {"main-split": 0.5.float32}.toTable)
 
-  self.ctx = newContext(1, 1)
-  self.ctx.fillStyle = rgb(255, 255, 255)
-  self.ctx.strokeStyle = rgb(255, 255, 255)
-  self.ctx.font = "fonts/DejaVuSansMono.ttf"
-  self.ctx.fontSize = 20
-  self.ctx.textBaseline = TopBaseline
   self.platform.fontSize = 20
-
-  self.renderCtx = RenderContext(boxy: boxy, ctx: self.ctx)
 
   self.fontRegular = "./fonts/DejaVuSansMono.ttf"
   self.fontBold = "./fonts/DejaVuSansMono-Bold.ttf"
@@ -423,10 +410,15 @@ proc newEditor*(window: Window, boxy: Boxy, backend: api.Backend, platform: Plat
     if not searchPathsJson.isNil:
       for sp in searchPathsJson:
         searchPaths.add sp.getStr
-    self.scriptContext = createScriptContext("./absytree_config.nims", searchPaths)
-    self.scriptContext.inter.invoke(postInitialize)
+
+    when defined(js):
+      self.scriptContext = new ScriptContextJs
+    else:
+      self.scriptContext = createScriptContext("./absytree_config.nims", searchPaths)
+      self.scriptContext.invoke(postInitialize)
+
     self.initializeCalled = true
-  except CatchableError:
+  except:
     logger.log(lvlError, fmt"Failed to load config")
 
   # Restore open editors
@@ -523,7 +515,6 @@ proc quit*(self: Editor) {.expose("editor").} =
   self.closeRequested = true
 
 proc changeFontSize*(self: Editor, amount: float32) {.expose("editor").} =
-  self.ctx.fontSize += amount
   self.platform.fontSize = self.platform.fontSize + amount.float
 
 proc changeLayoutProp*(self: Editor, prop: string, change: float32) {.expose("editor").} =
@@ -675,9 +666,9 @@ proc chooseFile*(self: Editor, view: string = "new") {.expose("editor").} =
 proc reloadConfig*(self: Editor) {.expose("editor").} =
   if self.scriptContext.isNil.not:
     try:
-      self.scriptContext.reloadScript()
+      self.scriptContext.reload()
       if not self.initializeCalled:
-        self.scriptContext.inter.invoke(postInitialize)
+        self.scriptContext.invoke(postInitialize)
         self.initializeCalled = true
     except CatchableError:
       logger.log(lvlError, fmt"Failed to reload config")
@@ -722,7 +713,7 @@ genDispatcher("editor")
 proc handleAction(self: Editor, action: string, arg: string): bool =
   logger.log(lvlInfo, "[ed] Action '$1 $2'" % [action, arg])
   try:
-    if self.scriptContext.inter.invoke(handleGlobalAction, action, arg, returnType = bool):
+    if self.scriptContext.invoke(handleGlobalAction, action, arg, returnType = bool):
       return true
   except CatchableError:
     logger.log(lvlError, fmt"[ed] Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
@@ -1010,57 +1001,22 @@ proc scriptSetCallback*(path: string, id: int) {.expose("editor").} =
     return
   gEditor.callbacks[path] = id
 
-proc createAddins(): VmAddins =
-  addCallable(myImpl):
-    proc postInitialize()
-    proc handleGlobalAction(action: string, arg: string): bool
-    proc handleEditorAction(id: EditorId, action: string, args: JsonNode): bool
-    proc handleUnknownPopupAction(id: EditorId, action: string, arg: string): bool
-    proc handleCallback(id: int, args: JsonNode): bool
+when not defined(js):
+  proc createAddins(): VmAddins =
+    addCallable(myImpl):
+      proc postInitialize()
+      proc handleGlobalAction(action: string, arg: string): bool
+      proc handleEditorAction(id: EditorId, action: string, args: JsonNode): bool
+      proc handleUnknownPopupAction(id: EditorId, action: string, arg: string): bool
+      proc handleCallback(id: int, args: JsonNode): bool
 
-  return implNimScriptModule(myImpl)
+    return implNimScriptModule(myImpl)
 
-const addins = createAddins()
-static:
-  if exposeScriptingApi:
-    var script_internal_content = "import std/[json]\nimport \"../src/scripting_api\"\n\n## This file is auto generated, don't modify.\n\n"
-    createDir("scripting")
-    createDir("int")
+  const addins = createAddins()
 
-    # Add stub proc impls generated by nimscripter
-    for uProc in addins.procs:
-      var impl = uProc.vmRunImpl
+  static:
+    generateScriptingApi(addins)
 
-      # Hack to make these functions public
-      let parenIndex = impl.find("(")
-      if parenIndex > 0 and impl[parenIndex - 1] != '*':
-        impl.insert("*", parenIndex)
+  createScriptContextConstructor(addins)
 
-      script_internal_content.add impl
-    writeFile(fmt"scripting/absytree_internal.nim", script_internal_content)
-
-    var imports_content = "import \"../src/scripting_api\"\nexport scripting_api\n\n## This file is auto generated, don't modify.\n\n"
-
-    for name, list in exposedFunctions:
-      var script_api_content = "import std/[json]\nimport \"../src/scripting_api\"\nimport absytree_internal\n\n## This file is auto generated, don't modify.\n\n"
-      var mappings = newJObject()
-
-      # Add the wrapper for the script function (already stored as string repr)
-      var lineNumber = script_api_content.countLines()
-      for f in list:
-        let code = f[0].strVal
-        mappings[$lineNumber] = newJString(f[1].strVal)
-        script_api_content.add code
-        lineNumber += code.countLines - 1
-
-      let file_name = name.replace(".", "_")
-      writeFile(fmt"scripting/{file_name}_api.nim", script_api_content)
-      writeFile(fmt"int/{file_name}_api.map", $mappings)
-      imports_content.add fmt"import {file_name}_api" & "\n"
-      imports_content.add fmt"export {file_name}_api" & "\n"
-
-
-    writeFile(fmt"scripting/absytree_api.nim", imports_content)
-
-proc createScriptContext(filepath: string, searchPaths: seq[string]): ScriptContext =
-  return newScriptContext(filepath, "absytree_internal", addins, "include absytree_runtime_impl", searchPaths)
+  proc createScriptContext(filepath: string, searchPaths: seq[string]): ScriptContext = createScriptContextNim(filepath, searchPaths)
