@@ -77,6 +77,7 @@ type Editor* = ref object
   layout_props*: LayoutProperties
 
   theme*: Theme
+  loadedFontSize: float
 
   editors*: Table[EditorId, DocumentEditor]
   popups*: seq[Popup]
@@ -392,6 +393,7 @@ proc newEditor*(backend: api.Backend, platform: Platform): Editor =
   try:
     state = fs.loadApplicationFile("config.json").parseJson.jsonTo EditorState
     self.setTheme(state.theme)
+    self.loadedFontSize = state.fontSize.float
     self.platform.fontSize = state.fontSize.float
     if state.fontRegular.len > 0: self.fontRegular = state.fontRegular
     if state.fontBold.len > 0: self.fontBold = state.fontBold
@@ -442,7 +444,12 @@ proc shutdown*(self: Editor) =
   # Save some state
   var state = EditorState()
   state.theme = self.theme.path
-  state.fontSize = self.platform.fontSize
+
+  if self.backend == api.Backend.Terminal:
+    state.fontSize = self.loadedFontSize
+  else:
+    state.fontSize = self.platform.fontSize
+
   state.fontRegular = self.fontRegular
   state.fontBold = self.fontBold
   state.fontItalic = self.fontItalic
