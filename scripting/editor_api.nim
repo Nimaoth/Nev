@@ -85,7 +85,7 @@ proc scriptRunAction*(action: string; arg: string) =
 proc scriptLog*(message: string) =
   scriptLogScript(message)
 proc scriptAddCommand*(context: string; keys: string; action: string;
-                       arg: string) =
+                       arg: string = "") =
   scriptAddCommandScript(context, keys, action, arg)
 proc removeCommand*(context: string; keys: string) =
   removeCommandScript(context, keys)
