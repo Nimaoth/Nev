@@ -1,5 +1,5 @@
-import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, os, re, tables, deques, asyncdispatch, asyncfile, dynlib]
-import editor, document, document_editor, events, id, util, scripting, vmath, bumpy, rect_utils, language_server_base, event, input, platform/platform
+import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, os, tables, deques]
+import editor, document, document_editor, events, id, util, scripting/expose, vmath, bumpy, rect_utils, language_server_base, event, input, platform/platform, regex
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import custom_logger, custom_async, custom_treesitter
