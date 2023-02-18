@@ -118,7 +118,7 @@ proc toInput(key: Key, modifiers: var Modifiers): int64 =
     modifiers.incl Modifier.Control
     ord(key) - ord(Key.CtrlA) + ord('a')
   of Key.Zero..Key.Nine: ord(key) - ord(Key.Zero) + ord('0')
-  of Key.F1..Key.F12: INPUT_F1 - (ord(key) - ord(KeyF1))
+  of Key.F1..Key.F12: INPUT_F1 - (ord(key) - ord(Key.F1))
   # of Numpad0..Numpad9: ord(key) - ord(Numpad0) + ord('0')
   # of NumpadAdd: ord '+'
   # of NumpadSubtract: ord '-'

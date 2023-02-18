@@ -6,6 +6,7 @@ import compiler
 import nimscripter
 from scripting_api as api import nil
 import custom_logger
+import platform/[filesystem]
 
 type ExecutionOutput* = ref object
   lines*: seq[(string, Color)]
@@ -347,7 +348,7 @@ proc newAstDocument*(filename: string = ""): AstDocument =
   if filename.len > 0:
     logger.log lvlInfo, fmt"[astdoc] Loading ast source file '{result.filename}'"
     try:
-      let file = readFile(result.filename)
+      let file = fs.loadFile(result.filename)
       let jsn = file.parseJson
       result.rootNode = jsn.jsonToAstNode
     except CatchableError:
@@ -359,7 +360,7 @@ proc saveHtml*(self: AstDocument) =
   let pathParts = self.filename.splitFile
   let htmlPath = pathParts.dir / (pathParts.name & ".html")
   let html = self.serializeHtml(gEditor.theme)
-  writeFile(htmlPath, html)
+  fs.saveFile(htmlPath, html)
 
 method save*(self: AstDocument, filename: string = "") =
   self.filename = if filename.len > 0: filename else: self.filename
@@ -368,7 +369,7 @@ method save*(self: AstDocument, filename: string = "") =
 
   logger.log lvlInfo, fmt"[astdoc] Saving ast source file '{self.filename}'"
   let serialized = self.rootNode.toJson
-  writeFile(self.filename, serialized.pretty)
+  fs.saveFile(self.filename, serialized.pretty)
 
   self.saveHtml()
 
@@ -380,7 +381,7 @@ method load*(self: AstDocument, filename: string = "") =
   self.filename = filename
 
   logger.log lvlInfo, fmt"[astdoc] Loading ast source file '{self.filename}'"
-  let jsonText = readFile(self.filename)
+  let jsonText = fs.loadFile(self.filename)
   let json = jsonText.parseJson
   let newAst = json.jsonToAstNode
 
