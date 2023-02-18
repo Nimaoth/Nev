@@ -253,13 +253,13 @@ proc setOption*[T](editor: Editor, path: string, value: T) =
 proc setFlag*(self: Editor, flag: string, value: bool)
 proc toggleFlag*(self: Editor, flag: string)
 
-proc createView(self: Editor, editor: DocumentEditor) =
+proc createView*(self: Editor, editor: DocumentEditor) =
   var view = View(document: nil, editor: editor)
 
   self.views.add view
   self.currentView = self.views.len - 1
 
-proc createView(self: Editor, document: Document) =
+proc createView*(self: Editor, document: Document) =
   var editor = self.createEditorForDocument document
   editor.injectDependencies self
   var view = View(document: document, editor: editor)
@@ -403,20 +403,18 @@ proc newEditor*(window: Window, boxy: Boxy, backend: api.Backend, platform: Plat
 
   var state = EditorState()
   try:
-    state = readFile("config.json").parseJson.jsonTo EditorState
+    state = fs.loadApplicationFile("config.json").parseJson.jsonTo EditorState
     self.setTheme(state.theme)
-    self.ctx.fontSize = state.fontSize
-    self.ctx.font = state.fontRegular
     self.platform.fontSize = state.fontSize.float
     if state.fontRegular.len > 0: self.fontRegular = state.fontRegular
     if state.fontBold.len > 0: self.fontBold = state.fontBold
     if state.fontItalic.len > 0: self.fontItalic = state.fontItalic
     if state.fontBoldItalic.len > 0: self.fontBoldItalic = state.fontBoldItalic
 
-    self.options = readFile("options.json").parseJson
+    self.options = fs.loadApplicationFile("options.json").parseJson
     logger.log(lvlInfo, fmt"Restoring options: {self.options.pretty}")
 
-  except CatchableError:
+  except:
     logger.log(lvlError, fmt"Failed to load previous state from config file: {getCurrentExceptionMsg()}")
 
   try:
@@ -438,9 +436,9 @@ proc newEditor*(window: Window, boxy: Boxy, backend: api.Backend, platform: Plat
           newAstDocument(editorState.filename)
         else:
           try:
-            let fileContent = readFile(editorState.filename)
+            let fileContent = fs.loadFile(editorState.filename)
             newTextDocument(editorState.filename, fileContent)
-          except CatchableError:
+          except:
             logger.log(lvlError, fmt"Failed to restore file {editorState.filename} from previous session: {getCurrentExceptionMsg()}")
             continue
 
@@ -452,7 +450,7 @@ proc shutdown*(self: Editor) =
   # Save some state
   var state = EditorState()
   state.theme = self.theme.path
-  state.fontSize = self.ctx.fontSize
+  state.fontSize = self.platform.fontSize
   state.fontRegular = self.fontRegular
   state.fontBold = self.fontBold
   state.fontItalic = self.fontItalic
@@ -468,8 +466,8 @@ proc shutdown*(self: Editor) =
       state.openEditors.add OpenEditor(filename: astDocument.filename, ast: true, languageId: "ast")
 
   let serialized = state.toJson
-  writeFile("config.json", serialized.pretty)
-  writeFile("options.json", self.options.pretty)
+  fs.saveApplicationFile("config.json", serialized.pretty)
+  fs.saveApplicationFile("options.json", self.options.pretty)
 
   for editor in self.editors.values:
     editor.shutdown()
@@ -600,7 +598,7 @@ proc openFile*(self: Editor, path: string) {.expose("editor").} =
     if path.endsWith(".ast"):
       self.createView(newAstDocument(path))
     else:
-      let file = readFile(path)
+      let file = fs.loadFile(path)
       self.createView(newTextDocument(path, file.splitLines))
   except CatchableError:
     logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
@@ -838,7 +836,7 @@ proc scriptRunAction*(action: string, arg: string) {.expose("editor").} =
 proc scriptLog*(message: string) {.expose("editor").} =
   logger.log(lvlInfo, fmt"[script] {message}")
 
-proc scriptAddCommand*(context: string, keys: string, action: string, arg: string) {.expose("editor").} =
+proc scriptAddCommand*(context: string, keys: string, action: string, arg: string = "") {.expose("editor").} =
   if gEditor.isNil:
     return
 

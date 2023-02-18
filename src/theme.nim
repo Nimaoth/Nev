@@ -1,6 +1,6 @@
 import std/[json, jsonutils, tables, strutils, options]
 import chroma
-import custom_logger
+import custom_logger, platform/[filesystem]
 
 type
   FontStyle* = enum Italic, Underline, Bold
@@ -172,7 +172,7 @@ proc loadFromString*(input: string, path = "string"): Option[Theme] =
 proc loadFromFile*(path: string): Option[Theme] =
   when not defined(js):
     try:
-      let jsonText = readFile(path)
+      let jsonText = fs.loadFile(path)
       return loadFromString(jsonText, path)
     except CatchableError:
       debugf"Failed to load theme from {path}: {getCurrentExceptionMsg()}"

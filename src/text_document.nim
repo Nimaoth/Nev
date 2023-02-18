@@ -2,10 +2,8 @@ import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, stream
 import editor, document, document_editor, events, id, util, scripting, vmath, bumpy, rect_utils, language_server_base, event, input, platform/platform
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
-import custom_logger
-
-import treesitter/api as ts
-import treesitter_nim/nim
+import custom_logger, custom_async, custom_treesitter
+import platform/[filesystem]
 
 export document, document_editor, id
 
@@ -632,7 +630,7 @@ method save*(self: TextDocument, filename: string = "") =
   if self.filename.len == 0:
     raise newException(IOError, "Missing filename")
 
-  writeFile(self.filename, self.lines.join "\n")
+  fs.saveFile(self.filename, self.lines.join "\n")
 
 method load*(self: TextDocument, filename: string = "") =
   let filename = if filename.len > 0: filename else: self.filename
@@ -641,7 +639,7 @@ method load*(self: TextDocument, filename: string = "") =
 
   self.filename = filename
 
-  let file = readFile(self.filename)
+  let file = fs.loadFile(self.filename)
   self.content = file
 
 proc notifyTextChanged(self: TextDocument) =
@@ -1010,7 +1008,7 @@ proc doMoveCursorNextFindResult(self: TextDocumentEditor, cursor: Cursor, offset
 proc scrollToCursor(self: TextDocumentEditor, cursor: Cursor, keepVerticalOffset: bool = false) =
   let targetLine = cursor.line
   let totalLineHeight = if not self.editor.platform.isNil: self.editor.platform.totalLineHeight
-    else: self.editor.renderCtx.lineHeight + getOption[float32](self.editor, "text.line-distance")
+    else: self.editor.platform.lineHeight + getOption[float32](self.editor, "text.line-distance")
 
   if keepVerticalOffset:
     let currentLineY = (self.selection.last.line - self.previousBaseIndex).float32 * totalLineHeight + self.scrollOffset
@@ -1200,7 +1198,7 @@ proc selectParentTs(self: TextDocumentEditor, selection: Selection) {.expose("ed
 proc selectParentCurrentTs(self: TextDocumentEditor) {.expose("editor.text").} =
   self.selectParentTs(self.selection)
 
-proc getCompletionsAsync(self: TextDocumentEditor): Future[void]
+proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.}
 
 proc insertText*(self: TextDocumentEditor, text: string) {.expose("editor.text").} =
   if self.document.singleLine and text == "\n":
@@ -1750,7 +1748,7 @@ proc getCursorAtPixelPos(self: TextDocumentEditor, mousePosWindow: Vec2): Option
     var startOffset = 0
     for i, part in line.parts:
       if part.bounds.contains(mousePosWindow) or (i == line.parts.high and mousePosWindow.y >= part.bounds.y and mousePosWindow.y <= part.bounds.yh and mousePosWindow.x >= part.bounds.x):
-        var offsetFromLeft = (mousePosWindow.x - part.bounds.x) / self.editor.renderCtx.charWidth
+        var offsetFromLeft = (mousePosWindow.x - part.bounds.x) / self.editor.platform.charWidth
         if self.isThickCursor():
           offsetFromLeft -= 0.0
         else:
