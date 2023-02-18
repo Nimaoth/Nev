@@ -338,7 +338,7 @@ proc scriptRunActionScript*(action: string; arg: string) =
 proc scriptLogScript*(message: string) =
   discard
 proc scriptAddCommandScript*(context: string; keys: string; action: string;
-                            arg: string) =
+                            arg: string = "") =
   discard
 proc removeCommandScript*(context: string; keys: string) =
   discard
