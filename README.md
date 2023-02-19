@@ -14,6 +14,9 @@ the abstract syntac tree (AST) is edited directly by a custom editor.
 - It currently dynamically links against libstdc++ because some treesitter languages depend on that, so:
   - On windows: copy `libgcc_s_seh-1.dll` and `libstdc++-6.dll` (and optionally `libwinpthread-1.dll`) to the exe directory
 
+- Building the browser version:
+  `nim js -o:ast.js -d:exposeScriptingApi .\src\absytree_js.nim`
+
 ## Configuration
 
 Absytree can be configured using NimScript.

@@ -17,3 +17,4 @@ temp
 int/*.map
 **/htmldocs/**/*.idx
 *.code-workspace
+ast.js
