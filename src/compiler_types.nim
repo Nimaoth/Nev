@@ -1,13 +1,9 @@
 import std/[tables, strutils, sequtils, sugar, hashes, options, strformat]
 import fusion/matching
-import bumpy, chroma, vmath, pixie/fonts
-import ast, id, util, rect_utils
+import bumpy, chroma, vmath
+import ast, id, util, rect_utils, platform/[platform]
 import query_system
-import boxy
-import render_context
 import theme
-
-export render_context
 
 type
   TypeKind* = enum
@@ -83,13 +79,15 @@ type
   VisualNodeOrientation* = enum Horizontal, Vertical
   VisualNodeRenderFunc* = proc(bounds: Rect)
   VisualNode* = ref object
+    id*: Id
     parent*: VisualNode
     orientation*: VisualNodeOrientation
     node*: AstNode
     text*: string
     bounds*: Rect
     indent*: int
-    font*: Font
+    font*: string
+    fontSize*: float
     render*: VisualNodeRenderFunc
     children*: seq[VisualNode]
     colors*: seq[string]
@@ -112,20 +110,9 @@ type
     node*: AstNode
     selectedNode*: Id
     replacements*: Table[Id, VisualNode]
+    measureText*: proc(text: string): Vec2
     revision*: int
     renderDivisionVertically*: bool
-
-  RenderTextInput* = object
-    id*: Id
-    imageId*: string
-    renderCtx*: RenderContext
-    text*: string
-    color*: Color
-    font*: string
-    fontSize*: float32
-    lineHeight*: float32
-    charWidth*: float32
-    bounds*: Vec2
 
 func index*(node: VisualNode): int =
   if node.parent == nil:
@@ -133,7 +120,7 @@ func index*(node: VisualNode): int =
 
   result = 0
   for i in node.parent.children:
-    if cast[pointer](i) == cast[pointer](node): return
+    if i.id == node.id: return
     inc(result)
 
 func `[]`*(node: VisualNode, index: int): VisualNode =
@@ -178,7 +165,6 @@ iterator nextPreOrder*(node: VisualNode, endNode: VisualNode = nil): tuple[key: 
       n = n.parent
     else:
       break
-
 
 func errorType*(): Type = Type(kind: tError)
 func voidType*(): Type = Type(kind: tVoid)
@@ -334,14 +320,16 @@ func fingerprint*(symbol: Option[Symbol]): Fingerprint =
     return s.fingerprint
   return @[]
 
-func clone*(node: VisualNode): VisualNode =
+proc clone*(node: VisualNode): VisualNode =
   new result
+  result.id = newId()
   result.parent = node.parent
   result.node = node.node
   result.text = node.text
   result.bounds = node.bounds
   result.indent = node.indent
   result.font = node.font
+  result.fontSize = node.fontSize
   result.render = node.render
   result.children = node.children.map c => c.clone
   for c in result.children:
@@ -451,34 +439,4 @@ func `==`*(a: NodeLayoutInput, b: NodeLayoutInput): bool =
   if a.selectedNode != b.selectedNode: return false
   if a.replacements != b.replacements: return false
   if a.renderDivisionVertically != b.renderDivisionVertically: return false
-  return true
-
-proc newRenderTextInput*(ctx: RenderContext, text: string, font: string, fontSize: float32, lineHeight: float32, charWidth: float32, imageId: string = "", bounds: Vec2 = Vec2()): RenderTextInput =
-  result.id = newId()
-  result.imageId = imageId
-  result.renderCtx = ctx
-  result.text = text
-  result.font = font
-  result.fontSize = fontSize
-  result.lineHeight = lineHeight
-  result.charWidth = charWidth
-  result.bounds = bounds
-
-func `$`*(input: RenderTextInput): string =
-  return fmt"RenderTextInput({input.text}, {input.font}, {input.fontSize}, {input.lineHeight}, {input.charWidth}, {input.bounds})"
-
-func hash*(input: RenderTextInput): Hash =
-  result = input.text.hash !& input.font.hash !& input.fontSize.hash !& input.lineHeight.hash !& input.charWidth.hash !& input.bounds.hash
-  result = !$result
-
-func `==`*(a: RenderTextInput, b: RenderTextInput): bool =
-  # if a.isNil: return b.isNil
-  # if b.isNil: return false
-  # We don't care about the id of the RenderTextInput
-  if a.text != b.text: return false
-  if a.font != b.font: return false
-  if a.fontSize != b.fontSize: return false
-  if a.lineHeight != b.lineHeight: return false
-  if a.charWidth != b.charWidth: return false
-  if a.bounds != b.bounds: return false
   return true

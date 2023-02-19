@@ -54,7 +54,7 @@ proc handleAstEditorAction(editor: AstDocumentEditor, action: string, args: Json
   else: return false
   return true
 
-proc postInitialize*() =
+proc postInitialize*(): bool =
   log "postInitialize()"
 
   # openFile "temp/test.rs"
@@ -65,6 +65,7 @@ proc postInitialize*() =
   # openFile "src/absytree.nim"
   setLayout "fibonacci"
   changeLayoutProp("main-split", -0.2)
+  return true
 
 log "Loading absytree_config.nim"
 

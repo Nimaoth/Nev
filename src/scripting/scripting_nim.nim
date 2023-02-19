@@ -11,7 +11,7 @@ import nimscripter, nimscripter/[vmconversion, vmaddins]
 import util, custom_logger, scripting_base, compilation_config, expose
 import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, Popup, SelectorPopup
 
-export scripting_base
+export scripting_base, nimscripter
 
 type ScriptContextNim* = ref object of ScriptContext
   inter*: Option[Interpreter]
@@ -191,56 +191,6 @@ macro createScriptContextConstructor*(addins: untyped): untyped =
   return quote do:
     proc createScriptContextNim(filepath: string, searchPaths: seq[string]): ScriptContext =
       return newScriptContext(filepath, "absytree_internal", `addins`, "include absytree_runtime_impl", searchPaths)
-
-macro invokeDynamic(intr: Interpreter; pName: string; args: varargs[typed];
-  returnType: typedesc = void): untyped =
-  ## Calls a nimscript function named `pName`, passing the `args`
-  ## Converts the returned value to `returnType`
-  let
-    convs = newStmtList()
-    argSym = genSym(nskVar, "args")
-    retName = genSym(nskLet, "ret")
-    retNode = newStmtList()
-    resultIdnt = ident"res"
-    fromVm = bindSym"fromVm"
-    cachedIntrName = genSym(nskLet, "intr")
-  if not returnType.eqIdent("void"):
-    retNode.add nnkAsgn.newTree(resultIdnt, newCall(fromVm, returnType, retName))
-    retNode.add resultIdnt
-
-  let nsProc = genSym(nskLet, "nsProc")
-  var nsCall: NimNode
-  if args.len > 0:
-    let count = newLit(args.len)
-    convs.add quote do:
-      var `argSym`: array[`count`, PNode]
-    nsCall = quote do:
-      `cachedIntrName`.callRoutine(`nsProc`, `argSym`)
-  else:
-    nsCall = quote do:
-      `cachedIntrName`.callRoutine(`nsProc`, [])
-
-  for i, arg in args:
-    convs.add quote do:
-      `argSym`[`i`] = toVm(`arg`)
-
-  result = quote do:
-    block:
-      let `cachedIntrName` = `intr`
-      when `cachedIntrName` is Option[Interpreter]:
-        assert `cachedIntrName`.isSome
-      when `returnType` isnot void:
-        var `resultIdnt`: `returnType`
-      let `nsProc` = `cachedIntrName`.selectRoutine(`pName`)
-      if `nsProc` != nil:
-        `convs`
-        when `returnType` isnot void:
-          let `retName` = `nsCall`
-          `retNode`
-        else:
-          `nsCall`
-      else:
-        raise newException(VmProcNotFound, "'$#' was not found in the script." % `pName`)
 
 macro invoke*(self: ScriptContext; pName: untyped;
     args: varargs[typed]; returnType: typedesc = void): untyped =

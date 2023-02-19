@@ -10,8 +10,7 @@ export scripting_base
 type ScriptContextJs* = ref object of ScriptContext
   discard
 
-macro invoke*(self: ScriptContext; pName: untyped;
-    args: varargs[typed]; returnType: typedesc = void): untyped =
+macro invoke*(self: ScriptContext; pName: untyped; args: varargs[typed]; returnType: typedesc): untyped =
   result = quote do:
     default(`returnType`)
 
