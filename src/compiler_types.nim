@@ -1,9 +1,7 @@
 import std/[tables, strutils, sequtils, sugar, hashes, options, strformat]
 import fusion/matching
-import bumpy, chroma, vmath
-import ast, id, util, rect_utils, platform/[platform]
-import query_system
-import theme
+import bumpy, vmath
+import ast, id, util, rect_utils, query_system, theme
 
 type
   TypeKind* = enum

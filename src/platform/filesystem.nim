@@ -1,3 +1,5 @@
+{.used.}
+
 type FileSystem* = ref object of RootObj
   discard
 

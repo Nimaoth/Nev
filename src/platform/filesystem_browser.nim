@@ -1,5 +1,3 @@
-import std/[dom]
-
 import filesystem
 
 type FileSystemBrowser* = ref object of FileSystem

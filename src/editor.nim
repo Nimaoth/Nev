@@ -1,7 +1,7 @@
 import std/[strformat, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils, macros, macrocache, sugar, streams]
 import fuzzy
 import input, events, rect_utils, document, document_editor, keybind_autocomplete, popup, timer, event, platform/platform
-import theme, util, custom_async, custom_logger
+import theme, util, custom_logger
 import scripting/[expose, scripting_base]
 import platform/[widgets, filesystem]
 

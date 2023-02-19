@@ -1,13 +1,9 @@
-import std/[strformat, tables]
-import editor, custom_logger, document_editor, widgets, platform, timer, rect_utils, theme, widget_builders_base, widget_builder_text_document
+import std/[tables]
+import editor, custom_logger, document_editor, widgets, platform, rect_utils, theme, widget_builders_base, widget_builder_text_document
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import vmath, bumpy, chroma
 
-var frameTimeSmooth: float = 0
 proc updateStatusBar*(self: Editor, frameIndex: int, statusBarWidget: WPanel) =
-  # let mode = if self.currentMode.len == 0: "normal" else: self.currentMode
-  # discard self.renderCtx.drawText(statusBounds.xy, fmt"{mode}", self.theme.color("editor.foreground", rgb(225, 200, 200)))
-
   var statusWidget: WText
   var commandLineWidget: WPanel
   if statusBarWidget.children.len == 0:
@@ -22,12 +18,6 @@ proc updateStatusBar*(self: Editor, frameIndex: int, statusBarWidget: WPanel) =
   else:
     statusWidget = statusBarWidget.children[0].WText
     commandLineWidget = statusBarWidget.children[1].WPanel
-
-  # let frameTimeSmoothing = getOption[float](self, "editor.frame-time-smoothing", 0.1)
-  # let frameTime = self.frameTimer.elapsed.ms
-  # frameTimeSmooth = frameTimeSmoothing * frameTimeSmooth + (1 - frameTimeSmoothing) * frameTime
-  # let fps = int(1000 / frameTimeSmooth)
-  # let frameTimeStr = fmt"{frameTimeSmooth:>5.2}ms, {fps} FPS"
 
   let textColor = self.theme.color("editor.foreground", rgb(225, 200, 200))
 

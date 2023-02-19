@@ -1,4 +1,4 @@
-import std/[options, tables, sequtils, algorithm]
+import std/[options, tables]
 import custom_async, custom_logger
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 

@@ -1,10 +1,6 @@
-import std/[strutils, options, json, jsonutils, os, tables, macros, uri, strformat]
+import std/[strutils, options, json, jsonutils, os, tables, uri, strformat]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-import language_server_base, event, util
-import editor, text_document, custom_logger, custom_async
-
-import std/[asyncdispatch, osproc, asyncnet, tempfiles]
-import lsp_client
+import language_server_base, event, util, editor, text_document, custom_logger, custom_async, lsp_client
 
 type LanguageServerLSP* = ref object of LanguageServer
   client: LSPClient

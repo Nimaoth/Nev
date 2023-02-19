@@ -1,5 +1,5 @@
-import std/[strformat, tables, sugar, algorithm, sequtils]
-import util, editor, document_editor, text_document, custom_logger, widgets, platform, timer, theme
+import std/[strformat, tables, sugar, sequtils]
+import util, editor, document_editor, text_document, custom_logger, widgets, platform, theme
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import vmath, bumpy, chroma
 
@@ -100,7 +100,7 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
   self.dirty = false
 
   # either layout or content changed, update the lines
-  let timer = startTimer()
+  # let timer = startTimer()
   contentPanel.children.setLen 0
 
   block:

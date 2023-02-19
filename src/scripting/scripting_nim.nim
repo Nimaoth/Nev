@@ -3,7 +3,7 @@ when defined(js):
 
 import std/[os, tables, strformat, json, strutils, macrocache, macros]
 import fusion/matching
-import compiler/[renderer, ast, llstream, lineinfos, types]
+import compiler/[renderer, ast, llstream, lineinfos]
 import compiler/options as copts
 from compiler/vmdef import TSandboxFlag
 import nimscripter, nimscripter/[vmconversion, vmaddins]
