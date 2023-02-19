@@ -1,5 +1,145 @@
-import std/[oids, json, jsonutils]
-import hashes, times
+import std/[json, jsonutils, hashes, times, random]
+
+when not defined(js) and defined(nimPreviewSlimSystem):
+  import std/[sysatomics]
+
+# Originally from std/oids, but adjusted to work with javascript backend
+
+type
+  Oid* = object ## An OID.
+    padding: int32
+    time: int32
+    fuzz: int32
+    count: int32
+
+proc handleHexChar*(c: char): int {.inline.} =
+  case c
+  of '0'..'9': result = (ord(c) - ord('0'))
+  of 'a'..'f': result = (ord(c) - ord('a') + 10)
+  of 'A'..'F': result = (ord(c) - ord('A') + 10)
+  else: discard
+
+proc `==`*(oid1: Oid, oid2: Oid): bool {.inline.} =
+  ## Compares two OIDs for equality.
+  result = (oid1.time == oid2.time) and (oid1.fuzz == oid2.fuzz) and
+          (oid1.count == oid2.count)
+
+proc hash*(oid: Oid): Hash =
+  ## Generates the hash of an OID for use in hashtables.
+  var h: Hash = 0
+  h = h !& hash(oid.time)
+  h = h !& hash(oid.fuzz)
+  h = h !& hash(oid.count)
+  result = !$h
+
+proc hexbyte*(hex: char): int {.inline.} =
+  result = handleHexChar(hex)
+
+proc constructOid*(time: int32, fuzz: int32, count: int32): Oid =
+  result.padding = 0
+  result.time = time
+  result.fuzz = fuzz
+  result.count = count
+
+proc deconstruct*(oid: Oid): tuple[time: int32, fuzz: int32, count: int32] =
+  result = (oid.time, oid.fuzz, oid.count)
+
+proc parseOid*(str: string): Oid =
+  ## Parses an OID.
+  runnableExamples:
+    let oid = parseOid("62e5339a564d29f77293451e").deconstruct
+    doAssert oid.time == -1707874974 and oid.fuzz == -148288170 and oid.count == 507876210
+
+  if str.len != 24:
+    return
+
+  result.padding = 0
+  result.time = 0
+  for i in 0..<4:
+    let hexValue = (hexbyte(str[2 * i]) shl 4) or hexbyte(str[2 * i + 1])
+    result.time = result.time or cast[int32](hexValue shl (i * 8))
+
+  result.fuzz = 0
+  for i in 0..<4:
+    let hexValue = (hexbyte(str[2 * (i + 4)]) shl 4) or hexbyte(str[2 * (i + 4) + 1])
+    result.fuzz = result.fuzz or cast[int32](hexValue shl (i * 8))
+
+  result.count = 0
+  for i in 0..<4:
+    let hexValue = (hexbyte(str[2 * (i + 8)]) shl 4) or hexbyte(str[2 * (i + 8) + 1])
+    result.count = result.count or cast[int32](hexValue shl (i * 8))
+
+proc `$`*(oid: Oid): string =
+  ## Converts an OID to a string.
+  runnableExamples:
+    let oid = constructOid(time = -1707874974, fuzz = -148288170, count = 507876210)
+    doAssert ($oid) == "62e5339a564d29f77293451e"
+
+  const hex = "0123456789abcdef"
+
+  result.setLen 24
+
+  for i in 0..<12:
+    let value = if i < 4: oid.time
+      elif i < 8: oid.fuzz
+      else: oid.count
+
+    let byteOffset = i mod 4
+
+    let b = value shr (byteOffset * 8)
+
+    result[2 * i] = hex[(b and 0xF0) shr 4]
+    result[2 * i + 1] = hex[b and 0xF]
+
+let
+  t = getTime().toUnix
+
+var
+  seed = initRand(t)
+  incr: int = seed.rand(int.high)
+
+let fuzz = cast[int32](seed.rand(high(int)))
+
+when not defined(js):
+  import std/endians
+
+proc bigEndian32*(b: int32): int32 =
+  when defined(js):
+    when system.cpuEndian == bigEndian:
+      result = b
+    else:
+      result = ((b and 0xff) shl 24) or ((b and 0xff00) shl 8) or ((b and 0xff0000) shr 8) or (b shr 24)
+  else:
+    var temp = b
+    endians.bigEndian32(result.addr, temp.addr)
+
+template genOid(result: var Oid, incr: var int, fuzz: int32) =
+  var time = cast[int32](getTime().toUnix)
+  var i: int32
+  when defined(js):
+    inc incr
+    i = incr
+  else:
+    i = cast[int32](atomicInc(incr))
+
+  result.time = time.bigEndian32
+  result.fuzz = fuzz
+  result.count = i.bigEndian32
+
+proc genOid*(): Oid =
+  ## Generates a new OID.
+  runnableExamples:
+    doAssert ($genOid()).len == 24
+  runnableExamples("-r:off"):
+    echo $genOid() # for example, "5fc7f546ddbbc84800006aaf"
+  genOid(result, incr, fuzz)
+
+proc generatedTime*(oid: Oid): Time =
+  ## Returns the generated timestamp of the OID.
+  var tmp: int32
+  var dummy = oid.time
+  tmp = dummy.bigEndian32
+  result = fromUnix(tmp)
 
 type Id* = distinct Oid
 
@@ -24,7 +164,8 @@ proc timestamp*(id: Id): Time =
   return id.Oid.generatedTime
 
 proc idNone*(): Id =
-  zeroMem(addr result, sizeof(Id))
+  when not defined(js):
+    zeroMem(addr result, sizeof(Id))
 
 let null* = idNone()
 
