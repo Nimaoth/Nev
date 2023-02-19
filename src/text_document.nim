@@ -1,15 +1,12 @@
-import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, os, tables, deques]
-import editor, document, document_editor, events, id, util, scripting/expose, vmath, bumpy, rect_utils, language/language_server_base, event, input, platform/platform, regex
+import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, tables, deques]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
-import custom_logger, custom_async, custom_treesitter
-import platform/[filesystem]
+import editor, document, document_editor, events, id, util, vmath, bumpy, rect_utils, event, input, regex, custom_logger, custom_async, custom_treesitter
+import scripting/[expose]
+import platform/[platform, filesystem]
+import language/[languages, language_server_base]
 
 export document, document_editor, id
-
-when not declared(c_malloc):
-  proc c_malloc(size: csize_t): pointer {.importc: "malloc", header: "<stdlib.h>", used.}
-  proc c_free(p: pointer): void {.importc: "free", header: "<stdlib.h>", used.}
 
 type
   UndoOpKind = enum
@@ -33,8 +30,6 @@ proc `$`*(op: UndoOp): string =
   if op.kind == Insert: result.add fmt", selections = {op.cursor}, text: '{op.text}'}}"
   if op.kind == Nested: result.add fmt", {op.children}}}"
 
-type TSLanguageCtor = proc(): ptr TSLanguage {.stdcall.}
-
 type TextDocument* = ref object of Document
   filename*: string
   lines*: seq[string]
@@ -49,9 +44,9 @@ type TextDocument* = ref object of Document
   undoOps*: seq[UndoOp]
   redoOps*: seq[UndoOp]
 
-  tsParser: ptr ts.TSParser
-  currentTree: ptr ts.TSTree
-  highlightQuery: ptr ts.TSQuery
+  tsParser: TSParser
+  currentTree: TSTree
+  highlightQuery: TSQuery
 
   languageServer: Option[LanguageServer]
   onRequestSaveHandle: OnRequestSaveHandle
@@ -100,93 +95,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
 proc handleAction(self: TextDocumentEditor, action: string, arg: string): EventResponse
 proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): EventResponse
 proc handleInput(self: TextDocumentEditor, input: string): EventResponse
-
-func toTsPoint(cursor: Cursor): ts.TSPoint = ts.TSPoint(row: cursor.line.uint32, column: cursor.column.uint32)
-proc len*(node: ts.TSNode): int = node.tsNodeChildCount().int
-proc high*(node: ts.TSNode): int = node.len - 1
-proc low*(node: ts.TSNode): int = 0
-proc startByte*(node: ts.TSNode): int = node.tsNodeStartByte.int
-proc endByte*(node: ts.TSNode): int = node.tsNodeEndByte.int
-proc startPoint*(node: ts.TSNode): Cursor =
-  let point = node.tsNodeStartPoint
-  return (point.row.int, point.column.int)
-proc endPoint*(node: ts.TSNode): Cursor =
-  let point = node.tsNodeEndPoint
-  return (point.row.int, point.column.int)
-proc getRange*(node: ts.TSNode): Selection = (node.startPoint, node.endPoint)
-proc root*(tree: ptr ts.TSTree): ts.TSNode = tree.tsTreeRootNode
-proc execute*(cursor: ptr ts.TSQueryCursor, query: ptr ts.TSQuery, node: ts.TSNode) = cursor.tsQueryCursorExec(query, node)
-proc prev*(node: ts.TSNode): Option[ts.TSNode] =
-  let other = node.tsNodePrevSibling
-  if not other.tsNodeIsNull:
-    result = other.some
-proc next*(node: ts.TSNode): Option[ts.TSNode] =
-  let other = node.tsNodeNextSibling
-  if not other.tsNodeIsNull:
-    result = other.some
-proc prevNamed*(node: ts.TSNode): Option[ts.TSNode] =
-  let other = node.tsNodePrevNamedSibling
-  if not other.tsNodeIsNull:
-    result = other.some
-proc nextNamed*(node: ts.TSNode): Option[ts.TSNode] =
-  let other = node.tsNodeNextNamedSibling
-  if not other.tsNodeIsNull:
-    result = other.some
-
-template withQueryCursor*(cursor: untyped, body: untyped): untyped =
-  block:
-    let cursor = ts.tsQueryCursorNew()
-    defer: cursor.tsQueryCursorDelete()
-    body
-
-template withTreeCursor*(node: untyped, cursor: untyped, body: untyped): untyped =
-  block:
-    let cursor = node.tsTreeCursorNew()
-    defer: cursor.tsTreeCursorDelete()
-    body
-
-proc `[]`*(node: ts.TSNode, index: int): ts.TSNode = node.tsNodeChild(index.uint32)
-proc descendantForRange*(node: ts.TSNode, selection: Selection): ts.TSNode = node.ts_node_descendant_for_point_range(selection.first.toTsPoint, selection.last.toTsPoint)
-proc parent*(node: ts.TSNode): ts.TSNode = node.tsNodeParent()
-proc `==`*(a: ts.TSNode, b: ts.TSNode): bool = a.tsNodeEq(b)
-proc current*(cursor: var ts.TSTreeCursor): ts.TSNode = tsTreeCursorCurrentNode(addr cursor)
-proc gotoParent*(cursor: var ts.TSTreeCursor): bool = tsTreeCursorGotoParent(addr cursor)
-proc gotoNextSibling*(cursor: var ts.TSTreeCursor): bool = tsTreeCursorGotoNextSibling(addr cursor)
-proc gotoFirstChild*(cursor: var ts.TSTreeCursor): bool = tsTreeCursorGotoFirstChild(addr cursor)
-proc gotoFirstChildForCursor*(cursor: var ts.TSTreeCursor, cursor2: Cursor): int = tsTreeCursorGotoFirstChildForPoint(addr cursor, cursor2.toTsPoint).int
-
-proc setPointRange*(cursor: ptr ts.TSQueryCursor, selection: Selection) =
-  cursor.tsQueryCursorSetPointRange(selection.first.toTsPoint, selection.last.toTsPoint)
-
-proc getCaptureName(query: ptr ts.TSQuery, index: uint32): string =
-  var length: uint32
-  var str = ts.tsQueryCaptureNameForId(query, index, addr length)
-  defer: assert result.len == length.int
-  return $str
-
-proc getStringValue(query: ptr ts.TSQuery, index: uint32): string =
-  var length: uint32
-  var str = ts.tsQueryStringValueForId(query, index, addr length)
-  defer: assert result.len == length.int
-  return $str
-
-proc nextMatch*(cursor: ptr ts.TSQueryCursor): Option[ts.TSQueryMatch] =
-  result = ts.TSQueryMatch.none
-  var match: ts.TSQueryMatch
-  if cursor.tsQueryCursorNextMatch(addr match):
-    result = match.some
-
-proc nextCapture*(cursor: ptr ts.TSQueryCursor): Option[tuple[match: ts.TSQueryMatch, captureIndex: int]] =
-  var match: ts.TSQueryMatch
-  var index: uint32
-  if cursor.tsQueryCursorNextCapture(addr match, addr index):
-    result = (match, index.int).some
-
-proc `$`*(node: ts.TSNode): string =
-  let c_str = node.tsNodeString()
-  defer: c_str.c_free
-  result = $c_str
-
 proc getLine*(self: TextDocument, line: int): string =
   if line < self.lines.len:
     return self.lines[line]
@@ -253,13 +161,13 @@ proc `content=`*(self: TextDocument, value: string) =
     if self.lines.len == 0:
       self.lines = @[""]
     if not self.tsParser.isNil:
-      self.currentTree = self.tsParser.tsParserParseString(nil, self.lines[0].cstring, self.lines[0].len.uint32)
+      self.currentTree = self.tsParser.parseString(self.lines[0])
   else:
     self.lines = value.splitLines
     if self.lines.len == 0:
       self.lines = @[""]
     if not self.tsParser.isNil:
-      self.currentTree = self.tsParser.tsParserParseString(nil, value, value.len.uint32)
+      self.currentTree = self.tsParser.parseString(value)
 
   inc self.version
 
@@ -277,7 +185,7 @@ proc `content=`*(self: TextDocument, value: seq[string]) =
   let strValue = value.join("\n")
 
   if not self.tsParser.isNil:
-    self.currentTree = self.tsParser.tsParserParseString(nil, strValue.cstring, strValue.len.uint32)
+    self.currentTree = self.tsParser.parseString(strValue)
 
   inc self.version
 

@@ -1,7 +1,7 @@
-import std/[strutils, options, json, jsonutils, os, tables, macros, uri, strformat]
+import std/[strutils, options, json, os, tables, macros, strformat]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-import language_server_base, event, util
-import editor, text_document, custom_logger, custom_async
+import language_server_base, util
+import custom_logger, custom_async
 
 import std/[asyncdispatch, osproc, asyncnet, tempfiles]
 

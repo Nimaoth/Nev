@@ -1,11 +1,10 @@
 
-import compilation_config, custom_logger
+import custom_logger
 
 logger.enableConsoleLogger()
 
-import std/[strformat, dom, unicode]
-import std/htmlgen as hg
-import util, editor, timer, platform/widget_builders, platform/platform, platform/browser_platform, custom_async, text_document, input, event, theme
+import std/[strformat, dom]
+import util, editor, timer, platform/widget_builders, platform/platform, platform/browser_platform, text_document, event, theme
 from scripting_api import Backend
 
 # Initialize renderer

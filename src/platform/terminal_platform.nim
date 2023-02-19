@@ -1,4 +1,4 @@
-import std/[strformat, terminal, tables, enumutils]
+import std/[strformat, terminal, typetraits, enumutils]
 import platform, widgets
 import tui, custom_logger, rect_utils, input, event
 import vmath
@@ -43,16 +43,18 @@ proc toStdColor(color: tui.BackgroundColor): stdcolors.Color =
   of bgWhite: stdcolors.rgb(255, 255, 255)
   else: stdcolors.rgb(0, 0, 0)
 
-proc getClosestColor[T: enum](r, g, b: int, default: T): T =
+proc getClosestColor[T: HoleyEnum](r, g, b: int, default: T): T =
   var minDistance = 10000000.0
   result = default
-  for fg in items(T):
+  {.push warning[HoleEnumConv]:off.}
+  for fg in enumutils.items(T):
     let fgStd = fg.toStdColor
     let uiae = fgStd.extractRGB
     let distance = sqrt((r - uiae.r).float.pow(2) + (g - uiae.g).float.pow(2) + (b - uiae.b).float.pow(2))
     if distance < minDistance:
       minDistance = distance
       result = fg
+  {.pop.}
 
 method init*(self: TerminalPlatform) =
   illwillInit(fullscreen=true, mouse=true)

@@ -1,7 +1,6 @@
-import std/[strformat, tables, enumutils, dom, unicode, strutils]
+import std/[strformat, tables, dom, unicode, strutils]
 import std/htmlgen as hg
-import platform, widgets
-import custom_logger, rect_utils, input, event, lrucache
+import platform, widgets, custom_logger, rect_utils, input, event, lrucache
 import vmath
 import chroma as chroma
 

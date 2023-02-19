@@ -1,9 +1,8 @@
 when not defined(js):
   {.error: "scripting_js.nim does not work in non-js backend. Use scripting_nim.nim instead.".}
 
-import std/[os, macros]
-import fusion/matching
-import util, custom_logger, scripting_base
+import std/[ macros]
+import custom_logger, scripting_base
 
 export scripting_base
 
