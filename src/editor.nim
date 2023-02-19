@@ -7,7 +7,6 @@ import platform/[widgets, filesystem]
 
 when not defined(js):
   import scripting/scripting_nim
-  import nimscripter, nimscripter/[vmconversion, vmaddins]
 else:
   import scripting/scripting_js
 
@@ -329,15 +328,14 @@ proc newEditor*(backend: api.Backend, platform: Platform): Editor =
   self.backend = backend
   self.statusBarOnTop = false
 
-  if not platform.isNil:
-    discard platform.onKeyPress.subscribe proc(event: auto): void = self.handleKeyPress(event.input, event.modifiers)
-    discard platform.onKeyRelease.subscribe proc(event: auto): void = self.handleKeyRelease(event.input, event.modifiers)
-    discard platform.onRune.subscribe proc(event: auto): void = self.handleRune(event.input, event.modifiers)
-    discard platform.onMousePress.subscribe proc(event: auto): void = self.handleMousePress(event.button, event.modifiers, event.pos)
-    discard platform.onMouseRelease.subscribe proc(event: auto): void = self.handleMouseRelease(event.button, event.modifiers, event.pos)
-    discard platform.onMouseMove.subscribe proc(event: auto): void = self.handleMouseMove(event.pos, event.delta, event.modifiers, event.buttons)
-    discard platform.onScroll.subscribe proc(event: auto): void = self.handleScroll(event.scroll, event.pos, event.modifiers)
-    discard platform.onCloseRequested.subscribe proc(_: auto) = self.closeRequested = true
+  discard platform.onKeyPress.subscribe proc(event: auto): void = self.handleKeyPress(event.input, event.modifiers)
+  discard platform.onKeyRelease.subscribe proc(event: auto): void = self.handleKeyRelease(event.input, event.modifiers)
+  discard platform.onRune.subscribe proc(event: auto): void = self.handleRune(event.input, event.modifiers)
+  discard platform.onMousePress.subscribe proc(event: auto): void = self.handleMousePress(event.button, event.modifiers, event.pos)
+  discard platform.onMouseRelease.subscribe proc(event: auto): void = self.handleMouseRelease(event.button, event.modifiers, event.pos)
+  discard platform.onMouseMove.subscribe proc(event: auto): void = self.handleMouseMove(event.pos, event.delta, event.modifiers, event.buttons)
+  discard platform.onScroll.subscribe proc(event: auto): void = self.handleScroll(event.scroll, event.pos, event.modifiers)
+  discard platform.onCloseRequested.subscribe proc(_: auto) = self.closeRequested = true
 
   self.timer = startTimer()
   self.frameTimer = startTimer()
@@ -417,7 +415,8 @@ proc newEditor*(backend: api.Backend, platform: Platform): Editor =
       self.scriptContext = new ScriptContextJs
     else:
       self.scriptContext = createScriptContext("./absytree_config.nims", searchPaths)
-      self.scriptContext.invoke(postInitialize)
+
+    discard self.scriptContext.invoke(postInitialize, returnType = bool)
 
     self.initializeCalled = true
   except:
@@ -675,7 +674,7 @@ proc reloadConfig*(self: Editor) {.expose("editor").} =
     try:
       self.scriptContext.reload()
       if not self.initializeCalled:
-        self.scriptContext.invoke(postInitialize)
+        discard self.scriptContext.invoke(postInitialize, returnType = bool)
         self.initializeCalled = true
     except CatchableError:
       logger.log(lvlError, fmt"Failed to reload config")
@@ -1011,7 +1010,7 @@ proc scriptSetCallback*(path: string, id: int) {.expose("editor").} =
 when not defined(js):
   proc createAddins(): VmAddins =
     addCallable(myImpl):
-      proc postInitialize()
+      proc postInitialize(): bool
       proc handleGlobalAction(action: string, arg: string): bool
       proc handleEditorAction(id: EditorId, action: string, args: JsonNode): bool
       proc handleUnknownPopupAction(id: EditorId, action: string, arg: string): bool
