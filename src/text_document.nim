@@ -1,5 +1,5 @@
 import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, os, tables, deques]
-import editor, document, document_editor, events, id, util, scripting/expose, vmath, bumpy, rect_utils, language_server_base, event, input, platform/platform, regex
+import editor, document, document_editor, events, id, util, scripting/expose, vmath, bumpy, rect_utils, language/language_server_base, event, input, platform/platform, regex
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import custom_logger, custom_async, custom_treesitter
@@ -54,6 +54,7 @@ type TextDocument* = ref object of Document
   highlightQuery: ptr ts.TSQuery
 
   languageServer: Option[LanguageServer]
+  onRequestSaveHandle: OnRequestSaveHandle
 
 type StyledText* = object
   text*: string
@@ -301,7 +302,7 @@ func contentString*(self: TextDocument, selection: Selection): string =
   result.add "\n"
   result.add self.lines[last.line][0..<last.column]
 
-import language_server
+import language/language_server
 
 func len*(line: StyledLine): int =
   result = 0
@@ -598,12 +599,6 @@ proc newTextDocument*(filename: string = "", content: string | seq[string] = "")
   let language = getLanguageForFile(filename)
   if language.isSome:
     self.languageId = language.get
-    if language.get == "nim":
-      proc saveTempFileClosure(filename: string): Future[void] {.async.} =
-        await self.saveTempFile(filename)
-      self.languageServer = LanguageServer(newLanguageServerNimSuggest(filename, saveTempFileClosure)).some
-      self.languageServer.get.start()
-    asyncCheck getOrCreateLanguageServerLSP(self.languageId)
 
   self.content = content
 
@@ -613,6 +608,7 @@ proc destroy*(self: TextDocument) =
     self.tsParser = nil
 
   if self.languageServer.isSome:
+    self.languageServer.get.removeOnRequestSaveHandler(self.onRequestSaveHandle)
     self.languageServer.get.stop()
     self.languageServer = LanguageServer.none
 
@@ -1568,16 +1564,19 @@ proc getLanguageServer(self: TextDocumentEditor): Future[Option[LanguageServer]]
   let languageId = if getLanguageForFile(self.document.filename).getSome(languageId):
     languageId
   else:
-    return
+    return LanguageServer.none
 
   if self.document.languageServer.isSome:
     return self.document.languageServer
   else:
-    let languageServer = await getOrCreateLanguageServerLSP(languageId)
-    if languageServer.isNone:
-      return LanguageServer.none
+    self.document.languageServer = await getOrCreateLanguageServer(languageId, self.document.filename)
+    echo self.document.languageServer.isSome
+    if self.document.languageServer.isSome:
+      let callback = proc (targetFilename: string): Future[void] {.async.} =
+        await self.document.saveTempFile(targetFilename)
 
-    return some(LanguageServer(languageServer.get))
+      self.document.onRequestSaveHandle = self.document.languageServer.get.addOnRequestSaveHandler(self.document.filename, callback)
+    return self.document.languageServer
 
 proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = await self.getLanguageServer()
@@ -1588,6 +1587,7 @@ proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
     let definition = await languageServer.get.getDefinition(self.document.filename, self.selection.last)
     if definition.isSome:
       self.selection = definition.get.location.toSelection
+      self.scrollToCursor()
 
 proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = await self.getLanguageServer()
@@ -1620,14 +1620,14 @@ proc hideCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.showCompletions = false
   self.dirty = true
 
-proc selectPrevCompletion(self: TextDocumentEditor) {.expose("editor.text").} =
+proc selectPrevCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.completions.len > 0:
     self.selectedCompletion = (self.selectedCompletion - 1).clamp(0, self.completions.len - 1)
   else:
     self.selectedCompletion = 0
   self.dirty = true
 
-proc selectNextCompletion(self: TextDocumentEditor) {.expose("editor.text").} =
+proc selectNextCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.completions.len > 0:
     self.selectedCompletion = (self.selectedCompletion + 1).clamp(0, self.completions.len - 1)
   else:

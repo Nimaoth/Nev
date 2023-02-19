@@ -4,5 +4,5 @@ when defined(js):
 
   template asyncCheck*(body: untyped): untyped = discard body
 else:
-  import std/asyncdispatch, std/asyncfile
-  export asyncdispatch, asyncfile
+  import std/asyncdispatch, std/asyncfile, std/asyncfutures
+  export asyncdispatch, asyncfile, asyncfutures
