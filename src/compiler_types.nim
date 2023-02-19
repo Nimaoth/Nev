@@ -238,7 +238,12 @@ func hash*(value: Value): Hash =
   of vkVoid: return value.kind.hash
   of vkNumber: return value.intValue.hash
   of vkString: return value.stringValue.hash
-  of vkBuiltinFunction: return value.impl.hash
+  of vkBuiltinFunction:
+    when not defined(js):
+      return value.impl.hash
+    else:
+      # @todo
+      return 0
   of vkAstFunction: return value.node.hash
   of vkType: return value.typ.hash
 
@@ -259,7 +264,12 @@ func fingerprint*(value: Value): Fingerprint =
   of vkVoid: return @[value.kind.int64]
   of vkNumber: return @[value.kind.int64, value.intValue]
   of vkString: return @[value.kind.int64, value.stringValue.hash]
-  of vkBuiltinFunction: return @[value.kind.int64, value.impl.hash]
+  of vkBuiltinFunction:
+    when not defined(js):
+      return @[value.kind.int64, value.impl.hash]
+    else:
+      # @todo
+      return @[]
   of vkAstFunction: return @[value.kind.int64, value.node.hash, value.rev.int64]
   of vkType: return @[value.kind.int64] & value.typ.fingerprint
 
