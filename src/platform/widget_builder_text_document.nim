@@ -40,8 +40,6 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
   let totalLineHeight = app.platform.totalLineHeight
   let charWidth = app.platform.charWidth
 
-  self.lastContentBounds = widget.lastBounds
-
   let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
 
   var headerPanel: WPanel
@@ -88,6 +86,7 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
     headerPanel.bottom = 0
     contentPanel.top = 0
 
+  self.lastContentBounds = contentPanel.lastBounds
   widget.lastHierarchyChange = max(widget.lastHierarchyChange, headerPanel.lastHierarchyChange)
 
   contentPanel.updateBackgroundColor(
@@ -135,6 +134,8 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
     else: 0
   let maxLineNumberLen = ($maxLineNumber).len + 1
   let cursorLine = self.selection.last.line
+
+  self.lastRenderedLines.setLen 0
 
   # Update content
   proc renderLine(i: int, down: bool): bool =
@@ -188,10 +189,14 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
       let color = if part.scope.len == 0: textColor else: app.theme.tokenColor(part.scope, rgb(255, 200, 200))
       var partWidget = WText(text: part.text, anchor: (vec2(0, 0), vec2(0, 1)), left: startOffset, right: startOffset + width, foregroundColor: color, lastHierarchyChange: frameIndex)
 
+      styledText.parts[partIndex].bounds = rect(partWidget.left, lineWidget.top, partWidget.right - partWidget.left, lineWidget.bottom - lineWidget.top)
+
       startOffset += width
       startIndex += part.text.len
 
       lineWidget.children.add(partWidget)
+
+    self.lastRenderedLines.add styledText
 
     contentPanel.children.add lineWidget
 
@@ -211,7 +216,7 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
   contentPanel.lastHierarchyChange = frameIndex
   widget.lastHierarchyChange = max(widget.lastHierarchyChange, contentPanel.lastHierarchyChange)
 
-  self.lastContentBounds = widget.lastBounds
+  self.lastContentBounds = contentPanel.lastBounds
 
   # debugf"rerender {contentPanel.children.len} lines for {self.document.filename} took {timer.elapsed.ms:>5.2}ms"
 

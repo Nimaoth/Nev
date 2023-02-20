@@ -14,6 +14,7 @@ type
     onCloseRequested*: Event[void]
     layoutOptions*: WLayoutOptions
 
+method requestRender*(self: Platform) {.base.} = discard
 method render*(self: Platform, widget: WWidget, frameIndex: int) {.base.} = discard
 method sizeChanged*(self: Platform): bool {.base.} = discard
 method size*(self: Platform): Vec2 {.base.} = discard
