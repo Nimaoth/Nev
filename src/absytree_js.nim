@@ -16,10 +16,13 @@ const themeString = staticRead("../themes/Night Owl-Light-color-theme copy.json"
 if theme.loadFromString(themeString).getSome(theme):
   ed.theme = theme
 
-const file1 = staticRead("../absytree_browser.html")
-const file2 = staticRead("../src/absytree_js.nim")
-ed.createView(newTextDocument("absytree_browser.html", file1))
-ed.createView(newTextDocument("absytree_js.nim", file2))
+ed.setLayout("fibonacci")
+
+# ed.createView(newTextDocument("absytree_browser.html", file1))
+# ed.createView(newTextDocument("absytree_js.nim", file2))
+# ed.openFile("absytree_browser.html")
+# ed.openFile("src/absytree_js.nim")
+# ed.openFile("absytree_config.nims")
 
 var frameTime = 0.0
 var frameIndex = 0
@@ -109,6 +112,3 @@ block:
   scriptAddCommand "editor.text", "<C-z>", "redo"
 
 requestRender()
-
-ed.shutdown()
-rend.deinit()
