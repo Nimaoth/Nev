@@ -18,12 +18,6 @@
             border-width: 1px;
         }
 
-        .code a {
-            text-decoration: none;
-            vertical-align: top;
-            border-width: 1px;
-        }
-
         .code div {
             vertical-align: top;
             border-width: 1px;
@@ -33,6 +27,13 @@
             position: absolute;
             overflow: hidden;
             white-space: pre;
+
+            -webkit-touch-callout: none; /* Disable callout on iOS */
+            -webkit-user-select: none; /* Disable selection on iOS */
+            -khtml-user-select: none; /* Disable selection on Konqueror */
+            -moz-user-select: none; /* Disable selection on Firefox */
+            -ms-user-select: none; /* Disable selection on IE 10+ */
+            user-select: none; /* Disable selection on modern browsers */
         }
 
         #view {
@@ -46,7 +47,7 @@
 </head>
 
 <body>
-    <div id="view" style="width: 99%; height: 99%;" tabindex="0">
+    <div id="view" style="width: 100%; height: 100%;" tabindex="0">
 
     </div>
     <script src="tree-sitter.js"></script>

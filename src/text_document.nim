@@ -58,7 +58,7 @@ type StyledText* = object
   priority*: int
   bounds*: Rect
 
-type StyledLine* = object
+type StyledLine* = ref object
   index*: int
   parts*: seq[StyledText]
 
@@ -350,7 +350,6 @@ proc initTreesitter(self: TextDocument): Future[void] {.async.} =
   else:
     return
 
-
   let config = getOption[JsonNode](gEditor, "editor.text.treesitter." & languageId, newJObject())
   var language = await loadLanguage(languageId, config)
 
@@ -373,6 +372,10 @@ proc initTreesitter(self: TextDocument): Future[void] {.async.} =
     self.highlightQuery = language.get.query(queryString)
   except CatchableError:
     logger.log(lvlError, fmt"[textedit] No highlight queries found for '{languageId}'")
+
+  # We now have a treesitter grammar + highlight query, so retrigger rendering
+  self.textChanged.invoke self
+  gEditor.platform.requestRender()
 
 proc saveTempFile*(self: TextDocument, filename: string): Future[void] {.async.} =
   when not defined(js):
@@ -1535,11 +1538,12 @@ method createWithDocument*(self: TextDocumentEditor, document: Document): Docume
   return editor
 
 proc getCursorAtPixelPos(self: TextDocumentEditor, mousePosWindow: Vec2): Option[Cursor] =
-  for line in self.lastRenderedLines:
+  let mousePosContent = mousePosWindow - self.lastContentBounds.xy
+  for li, line in self.lastRenderedLines:
     var startOffset = 0
     for i, part in line.parts:
-      if part.bounds.contains(mousePosWindow) or (i == line.parts.high and mousePosWindow.y >= part.bounds.y and mousePosWindow.y <= part.bounds.yh and mousePosWindow.x >= part.bounds.x):
-        var offsetFromLeft = (mousePosWindow.x - part.bounds.x) / self.editor.platform.charWidth
+      if part.bounds.contains(mousePosContent) or (i == line.parts.high and mousePosContent.y >= part.bounds.y and mousePosContent.y <= part.bounds.yh and mousePosContent.x >= part.bounds.x):
+        var offsetFromLeft = (mousePosContent.x - part.bounds.x) / self.editor.platform.charWidth
         if self.isThickCursor():
           offsetFromLeft -= 0.0
         else:

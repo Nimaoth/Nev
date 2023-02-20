@@ -46,6 +46,19 @@ proc getModifiers*(self: MouseEvent): Modifiers =
   if self.ctrlKey:
     result.incl Modifier.Control
 
+proc getMouseButtons*(event: dom.MouseEvent): set[MouseButton] =
+  let buttons = event.buttons
+  if (buttons and 0b1) != 0: result.incl MouseButton.Left
+  if (buttons and 0b10) != 0: result.incl MouseButton.Right
+  if (buttons and 0b100) != 0: result.incl MouseButton.Middle
+
+proc getMouseButton*(event: dom.MouseEvent): MouseButton =
+  result = case event.button
+  of 0: MouseButton.Left
+  of 1: MouseButton.Middle
+  of 2: MouseButton.Right
+  else: MouseButton.Unknown
+
 method init*(self: BrowserPlatform) =
   self.mFontSize = 18
   self.mLineHeight = 20
@@ -84,21 +97,28 @@ method init*(self: BrowserPlatform) =
   self.content.addEventListener("mousedown", proc(e: dom.Event) =
     let me = e.MouseEvent
     let modifiers = me.getModifiers
+    let mouseButton = me.getMouseButton
 
-    let mouseButton = case me.button
-    of 0: MouseButton.Left
-    of 1: MouseButton.Middle
-    of 2: MouseButton.Right
-    else:
-      return
+    let currentTargetRect = me.currentTarget.getBoundingClientRect()
+    let x = me.pageX.float - currentTargetRect.x
+    let y = me.pageY.float - currentTargetRect.y
+    # debugf"click {me.button}, {modifiers}, {x}, {y}"
+    self.onMousePress.invoke (mouseButton, modifiers, vec2(x.float, y.float))
+  )
 
-    # debugf"click {we.button}, {modifiers}, {me.clientX}, {me.clientY}"
-    self.onMousePress.invoke (mouseButton, modifiers, vec2(me.clientX.float, me.clientY.float))
+  self.content.addEventListener("mousemove", proc(e: dom.Event) =
+    let me = e.MouseEvent
+    let modifiers = me.getModifiers
+
+    # debugf"move {me.button}, {modifiers}, {me.clientX}, {me.clientY}, {me.movementX}, {me.movementY}, {me.getMouseButtons}"
+    self.onMouseMove.invoke (vec2(me.clientX.float, me.clientY.float), vec2(me.movementX.float, me.movementY.float), modifiers, me.getMouseButtons) # @todo: buttons
   )
 
   self.updateFontSettings()
   self.content.focus()
 
+method requestRender*(self: BrowserPlatform) =
+  self.onResized.invoke()
 
 method deinit*(self: BrowserPlatform) =
   discard

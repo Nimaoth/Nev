@@ -56,7 +56,8 @@ proc requestRender() =
 
       frameTime = ed.frameTimer.elapsed.ms
 
-    logger.log(lvlInfo, fmt"Frame: {frameTime:>5.2}ms (u: {updateTime:>5.2}ms, l: {layoutTime:>5.2}ms, r: {renderTime:>5.2}ms)")
+    if frameTime > 10:
+      logger.log(lvlInfo, fmt"Frame: {frameTime:>5.2}ms (u: {updateTime:>5.2}ms, l: {layoutTime:>5.2}ms, r: {renderTime:>5.2}ms)")
 
 discard rend.onKeyPress.subscribe proc(event: auto): void = requestRender()
 discard rend.onKeyRelease.subscribe proc(event: auto): void = requestRender()
