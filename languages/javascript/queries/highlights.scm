@@ -99,7 +99,6 @@
 
 [
   ";"
-  (optional_chain)
   "."
   ","
 ] @punctuation
