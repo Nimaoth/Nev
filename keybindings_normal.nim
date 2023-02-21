@@ -15,7 +15,7 @@ proc loadNormalBindings*() =
   addCommand "editor.text", "<LEFT>", "move-cursor-column", -1
   addCommand "editor.text", "<RIGHT>", "move-cursor-column", 1
   addCommand "editor.text", "<C-d>", "delete-move", "line-next"
-  addCommand "editor.text", "<C-LEFT>", "move-first", "word-line"
+  addCommand "editor.text", "<C-LEFT>", "move-last", "word-line-back"
   addCommand "editor.text", "<C-RIGHT>", "move-last", "word-line"
   addCommand "editor.text", "<HOME>", "move-first", "line"
   addCommand "editor.text", "<END>", "move-last", "line"
