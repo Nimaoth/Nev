@@ -96,7 +96,7 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
   if not (contentPanel.changed(frameIndex) or self.dirty):
     return
 
-  self.dirty = false
+  self.resetDirty()
 
   # either layout or content changed, update the lines
   # let timer = startTimer()

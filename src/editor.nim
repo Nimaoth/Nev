@@ -94,7 +94,7 @@ type Editor* = ref object
 
   editor_defaults: seq[DocumentEditor]
 
-var gEditor*: Editor = nil
+var gEditor* {.exportc.}: Editor = nil
 
 proc registerEditor*(self: Editor, editor: DocumentEditor) =
   self.editors[editor.id] = editor
@@ -251,27 +251,25 @@ proc setOption*[T](editor: Editor, path: string, value: T) =
 proc setFlag*(self: Editor, flag: string, value: bool)
 proc toggleFlag*(self: Editor, flag: string)
 
-proc createView*(self: Editor, editor: DocumentEditor) =
-  var view = View(document: nil, editor: editor)
-
-  self.views.add view
-  self.currentView = self.views.len - 1
-
 proc createView*(self: Editor, document: Document) =
   var editor = self.createEditorForDocument document
   editor.injectDependencies self
+  discard editor.onMarkedDirty.subscribe () => self.platform.requestRender()
   var view = View(document: document, editor: editor)
 
   self.views.add view
   self.currentView = self.views.len - 1
+  self.platform.requestRender()
 
 proc pushPopup*(self: Editor, popup: Popup) =
   popup.init()
   self.popups.add popup
+  self.platform.requestRender()
 
 proc popPopup*(self: Editor, popup: Popup) =
   if self.popups.len > 0 and self.popups[self.popups.high] == popup:
     discard self.popups.pop
+  self.platform.requestRender()
 
 proc getEventHandlerConfig*(self: Editor, context: string): EventHandlerConfig =
   if not self.eventHandlerConfigs.contains(context):
@@ -307,6 +305,7 @@ type FileSelectorItem* = ref object of SelectorItem
 proc setTheme*(self: Editor, path: string) =
   if loadFromFile(path).getSome(theme):
     self.theme = theme
+  self.platform.requestRender()
 
 when not defined(js):
   proc createScriptContext(filepath: string, searchPaths: seq[string]): ScriptContext
@@ -323,6 +322,12 @@ proc handleScroll*(self: Editor, scroll: Vec2, mousePosWindow: Vec2, modifiers: 
 
 proc newEditor*(backend: api.Backend, platform: Platform): Editor =
   var self = Editor()
+
+  # Emit this to set the editor prototype to editor_prototype, which needs to be set up before calling this
+  when defined(js):
+    {.emit: [self, " = createWithPrototype(editor_prototype, ", self, ");"].}
+    # This " is here to fix syntax highlighting
+
   gEditor = self
   self.platform = platform
   self.backend = backend
@@ -480,6 +485,9 @@ static:
 proc getBackend*(self: Editor): Backend {.expose("editor").} =
   return self.backend
 
+proc requestRender*(self: Editor) {.expose("editor").} =
+  self.platform.requestRender()
+
 proc setHandleInputs*(self: Editor, context: string, value: bool) {.expose("editor").} =
   self.getEventHandlerConfig(context).setHandleInputs(value)
 
@@ -532,13 +540,14 @@ proc toggleStatusBarLocation*(self: Editor) {.expose("editor").} =
 proc createView*(self: Editor) {.expose("editor").} =
   self.createView(newTextDocument())
 
-proc createKeybindAutocompleteView*(self: Editor) {.expose("editor").} =
-  self.createView(newKeybindAutocompletion())
+# proc createKeybindAutocompleteView*(self: Editor) {.expose("editor").} =
+#   self.createView(newKeybindAutocompletion())
 
 proc closeCurrentView*(self: Editor) {.expose("editor").} =
   self.views[self.currentView].editor.unregister()
   self.views.delete self.currentView
   self.currentView = self.currentView.clamp(0, self.views.len - 1)
+  self.platform.requestRender()
 
 proc moveCurrentViewToTop*(self: Editor) {.expose("editor").} =
   if self.views.len > 0:
@@ -546,12 +555,15 @@ proc moveCurrentViewToTop*(self: Editor) {.expose("editor").} =
     self.views.delete(self.currentView)
     self.views.insert(view, 0)
   self.currentView = 0
+  self.platform.requestRender()
 
 proc nextView*(self: Editor) {.expose("editor").} =
   self.currentView = if self.views.len == 0: 0 else: (self.currentView + 1) mod self.views.len
+  self.platform.requestRender()
 
 proc prevView*(self: Editor) {.expose("editor").} =
   self.currentView = if self.views.len == 0: 0 else: (self.currentView + self.views.len - 1) mod self.views.len
+  self.platform.requestRender()
 
 proc moveCurrentViewPrev*(self: Editor) {.expose("editor").} =
   if self.views.len > 0:
@@ -560,6 +572,7 @@ proc moveCurrentViewPrev*(self: Editor) {.expose("editor").} =
     self.views.delete(self.currentView)
     self.views.insert(view, index)
     self.currentView = index
+  self.platform.requestRender()
 
 proc moveCurrentViewNext*(self: Editor) {.expose("editor").} =
   if self.views.len > 0:
@@ -568,6 +581,7 @@ proc moveCurrentViewNext*(self: Editor) {.expose("editor").} =
     self.views.delete(self.currentView)
     self.views.insert(view, index)
     self.currentView = index
+  self.platform.requestRender()
 
 proc setLayout*(self: Editor, layout: string) {.expose("editor").} =
   self.layout = case layout
@@ -575,22 +589,29 @@ proc setLayout*(self: Editor, layout: string) {.expose("editor").} =
     of "vertical": VerticalLayout()
     of "fibonacci": FibonacciLayout()
     else: HorizontalLayout()
+  self.platform.requestRender()
 
 proc commandLine*(self: Editor, initialValue: string = "") {.expose("editor").} =
   self.getCommandLineTextEditor.document.content = @[initialValue]
   self.commandLineMode = true
+  self.platform.requestRender()
 
 proc exitCommandLine*(self: Editor) {.expose("editor").} =
   self.getCommandLineTextEditor.document.content = @[""]
   self.commandLineMode = false
+  self.platform.requestRender()
 
 proc executeCommandLine*(self: Editor): bool {.expose("editor").} =
+  defer:
+    self.platform.requestRender()
   self.commandLineMode = false
   let (action, arg) = self.getCommandLineTextEditor.document.content.join("").parseAction
   self.getCommandLineTextEditor.document.content = @[""]
   return self.handleAction(action, arg)
 
 proc openFile*(self: Editor, path: string) {.expose("editor").} =
+  defer:
+    self.platform.requestRender()
   try:
     if path.endsWith(".ast"):
       self.createView(newAstDocument(path))
@@ -602,6 +623,8 @@ proc openFile*(self: Editor, path: string) {.expose("editor").} =
     logger.log(lvlError, getCurrentException().getStackTrace())
 
 proc writeFile*(self: Editor, path: string = "") {.expose("editor").} =
+  defer:
+    self.platform.requestRender()
   if self.currentView >= 0 and self.currentView < self.views.len and self.views[self.currentView].document != nil:
     try:
       self.views[self.currentView].document.save(path)
@@ -610,6 +633,8 @@ proc writeFile*(self: Editor, path: string = "") {.expose("editor").} =
       logger.log(lvlError, getCurrentException().getStackTrace())
 
 proc loadFile*(self: Editor, path: string = "") {.expose("editor").} =
+  defer:
+    self.platform.requestRender()
   if self.currentView >= 0 and self.currentView < self.views.len and self.views[self.currentView].document != nil:
     try:
       self.views[self.currentView].document.load(path)
@@ -619,12 +644,16 @@ proc loadFile*(self: Editor, path: string = "") {.expose("editor").} =
       logger.log(lvlError, getCurrentException().getStackTrace())
 
 proc loadTheme*(self: Editor, name: string) {.expose("editor").} =
+  defer:
+    self.platform.requestRender()
   if theme.loadFromFile(fmt"./themes/{name}.json").getSome(theme):
     self.theme = theme
   else:
     logger.log(lvlError, fmt"[ed] Failed to load theme {name}")
 
 proc chooseTheme*(self: Editor) {.expose("editor").} =
+  defer:
+    self.platform.requestRender()
   let originalTheme = self.theme.path
   var popup = self.newSelectorPopup proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
     for file in walkDirRec("./themes", relative=true):
@@ -650,6 +679,8 @@ proc chooseTheme*(self: Editor) {.expose("editor").} =
   self.pushPopup popup
 
 proc chooseFile*(self: Editor, view: string = "new") {.expose("editor").} =
+  defer:
+    self.platform.requestRender()
   var popup = self.newSelectorPopup proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
     for file in walkDirRec(".", relative=true):
       let name = file.splitFile.name
@@ -670,6 +701,8 @@ proc chooseFile*(self: Editor, view: string = "new") {.expose("editor").} =
   self.pushPopup popup
 
 proc reloadConfig*(self: Editor) {.expose("editor").} =
+  defer:
+    self.platform.requestRender()
   if self.scriptContext.isNil.not:
     try:
       self.scriptContext.reload()
@@ -693,6 +726,8 @@ proc getModeConfig(self: Editor, mode: string): EventHandlerConfig =
   return self.getEventHandlerConfig("editor." & mode)
 
 proc setMode*(self: Editor, mode: string) {.expose("editor").} =
+  defer:
+    self.platform.requestRender()
   if mode.len == 0:
     self.modeEventHandler = nil
   else:
@@ -856,6 +891,17 @@ proc getActivePopup*(): EditorId {.expose("editor").} =
 
   return EditorId(-1)
 
+when defined(js):
+  proc getActiveEditor2*(): DocumentEditor {.expose("editor"), nodispatch.} =
+    if gEditor.isNil:
+      return nil
+    if gEditor.commandLineMode:
+      return gEditor.commandLineTextEditor
+    if gEditor.currentView >= 0 and gEditor.currentView < gEditor.views.len:
+      return gEditor.views[gEditor.currentView].editor
+
+    return nil
+
 proc getActiveEditor*(): EditorId {.expose("editor").} =
   if gEditor.isNil:
     return EditorId(-1)
@@ -891,6 +937,8 @@ proc scriptIsAstEditor*(editorId: EditorId): bool {.expose("editor").} =
 proc scriptRunActionFor*(editorId: EditorId, action: string, arg: string) {.expose("editor").} =
   if gEditor.isNil:
     return
+  defer:
+    gEditor.platform.requestRender()
   if gEditor.getEditorForId(editorId).getSome(editor):
     discard editor.eventHandler.handleAction(action, arg)
   elif gEditor.getPopupForId(editorId).getSome(popup):
@@ -899,12 +947,16 @@ proc scriptRunActionFor*(editorId: EditorId, action: string, arg: string) {.expo
 proc scriptInsertTextInto*(editorId: EditorId, text: string) {.expose("editor").} =
   if gEditor.isNil:
     return
+  defer:
+    gEditor.platform.requestRender()
   if gEditor.getEditorForId(editorId).getSome(editor):
     discard editor.eventHandler.handleInput(text)
 
 proc scriptTextEditorSelection*(editorId: EditorId): Selection {.expose("editor").} =
   if gEditor.isNil:
     return ((0, 0), (0, 0))
+  defer:
+    gEditor.platform.requestRender()
   if gEditor.getEditorForId(editorId).getSome(editor):
     if editor of TextDocumentEditor:
       let editor = TextDocumentEditor(editor)
@@ -914,6 +966,8 @@ proc scriptTextEditorSelection*(editorId: EditorId): Selection {.expose("editor"
 proc scriptSetTextEditorSelection*(editorId: EditorId, selection: Selection) {.expose("editor").} =
   if gEditor.isNil:
     return
+  defer:
+    gEditor.platform.requestRender()
   if gEditor.getEditorForId(editorId).getSome(editor):
     if editor of TextDocumentEditor:
       editor.TextDocumentEditor.selection = selection
@@ -930,6 +984,8 @@ proc scriptTextEditorSelections*(editorId: EditorId): seq[Selection] {.expose("e
 proc scriptSetTextEditorSelections*(editorId: EditorId, selections: seq[Selection]) {.expose("editor").} =
   if gEditor.isNil:
     return
+  defer:
+    gEditor.platform.requestRender()
   if gEditor.getEditorForId(editorId).getSome(editor):
     if editor of TextDocumentEditor:
       editor.TextDocumentEditor.selections = selections
@@ -966,6 +1022,8 @@ template createScriptSetOption(path, value: untyped): untyped =
   block:
     if gEditor.isNil:
       return
+    defer:
+      gEditor.platform.requestRender()
     let pathItems = path.split(".")
     var node = gEditor.options
     for key in pathItems[0..^2]:

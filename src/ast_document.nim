@@ -1943,6 +1943,12 @@ method handleMouseMove*(self: AstDocumentEditor, mousePosWindow: Vec2, mousePosD
 
 method createWithDocument*(self: AstDocumentEditor, document: Document): DocumentEditor =
   let editor = AstDocumentEditor(eventHandler: nil, document: AstDocument(document), textDocument: nil, textEditor: nil)
+
+  # Emit this to set the editor prototype to editor_ast_prototype, which needs to be set up before calling this
+  when defined(js):
+    {.emit: [editor, " = createWithPrototype(editor_ast_prototype, ", editor, ");"].}
+    # This " is here to fix syntax highlighting
+
   editor.init()
   editor.document.onNodeInserted.add (doc: AstDocument, node: AstNode) => editor.handleNodeInserted(doc, node)
 
