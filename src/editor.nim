@@ -874,6 +874,16 @@ proc getActivePopup*(): EditorId {.expose("editor").} =
 
   return EditorId(-1)
 
+proc getActiveEditor*(): EditorId {.expose("editor").} =
+  if gEditor.isNil:
+    return EditorId(-1)
+  if gEditor.commandLineMode:
+    return gEditor.commandLineTextEditor.id
+  if gEditor.currentView >= 0 and gEditor.currentView < gEditor.views.len:
+    return gEditor.views[gEditor.currentView].editor.id
+
+  return EditorId(-1)
+
 when defined(js):
   proc getActiveEditor2*(self: Editor): DocumentEditor {.expose("editor"), nodispatch.} =
     if gEditor.isNil:
@@ -884,13 +894,22 @@ when defined(js):
       return gEditor.views[gEditor.currentView].editor
 
     return nil
+else:
+  proc getActiveEditor2*(self: Editor): EditorId {.expose("editor").} =
+    ## Returns the active editor instance
+    return getActiveEditor()
 
-  proc loadCurrentConfig*() {.expose("editor").} =
-    gEditor.createView(newTextDocument("config.js", "console.log('hi')"))
+proc loadCurrentConfig*(self: Editor) {.expose("editor").} =
+  ## Javascript backend only!
+  ## Opens the config file in a new view.
+  when defined(js):
+    self.createView(newTextDocument("config.js", "console.log('hi')"))
 
-  proc sourceCurrentDocument*(self: Editor) {.expose("editor").} =
-    ## Runs the content of the active editor as javascript using `eval()`.
-    ## "use strict" is prepended to the content to force strict mode.
+proc sourceCurrentDocument*(self: Editor) {.expose("editor").} =
+  ## Javascript backend only!
+  ## Runs the content of the active editor as javascript using `eval()`.
+  ## "use strict" is prepended to the content to force strict mode.
+  when defined(js):
     proc evalJs(str: cstring) {.importjs("eval(#)").}
     let editor = self.getActiveEditor2()
     if editor of TextDocumentEditor:
@@ -898,16 +917,6 @@ when defined(js):
       let contentStrict = "\"use strict\";\n" & document.contentString
       echo contentStrict
       evalJs(contentStrict)
-
-proc getActiveEditor*(): EditorId {.expose("editor").} =
-  if gEditor.isNil:
-    return EditorId(-1)
-  if gEditor.commandLineMode:
-    return gEditor.commandLineTextEditor.id
-  if gEditor.currentView >= 0 and gEditor.currentView < gEditor.views.len:
-    return gEditor.views[gEditor.currentView].editor.id
-
-  return EditorId(-1)
 
 proc getEditor*(index: int): EditorId {.expose("editor").} =
   if gEditor.isNil:
