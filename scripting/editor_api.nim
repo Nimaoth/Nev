@@ -81,56 +81,56 @@ proc mode*(): string =
 proc getContextWithMode*(context: string): string =
   getContextWithModeScript22_2197827166(context)
 proc scriptRunAction*(action: string; arg: string) =
-  scriptRunActionScript_2197827704(action, arg)
+  scriptRunActionScript_2197827440(action, arg)
 proc scriptLog*(message: string) =
-  scriptLogScript_2197827739(message)
+  scriptLogScript_2197827475(message)
 proc scriptAddCommand*(context: string; keys: string; action: string;
                        arg: string = "") =
-  scriptAddCommandScript_2197827769(context, keys, action, arg)
+  scriptAddCommandScript_2197827505(context, keys, action, arg)
 proc removeCommand*(context: string; keys: string) =
-  removeCommandScript_2197827819(context, keys)
+  removeCommandScript_2197827555(context, keys)
 proc getActivePopup*(): EditorId =
-  getActivePopupScript_2197827854()
+  getActivePopupScript_2197827590()
 proc getActiveEditor*(): EditorId =
-  getActiveEditorScript_2197827890()
+  getActiveEditorScript_2197827626()
 proc getEditor*(index: int): EditorId =
-  getEditorScript_2197827920(index)
+  getEditorScript_2197827656(index)
 proc scriptIsTextEditor*(editorId: EditorId): bool =
-  scriptIsTextEditorScript_2197827957(editorId)
+  scriptIsTextEditorScript_2197827693(editorId)
 proc scriptIsAstEditor*(editorId: EditorId): bool =
-  scriptIsAstEditorScript_2197828023(editorId)
+  scriptIsAstEditorScript_2197827759(editorId)
 proc scriptRunActionFor*(editorId: EditorId; action: string; arg: string) =
-  scriptRunActionForScript_2197828089(editorId, action, arg)
+  scriptRunActionForScript_2197827825(editorId, action, arg)
 proc scriptInsertTextInto*(editorId: EditorId; text: string) =
-  scriptInsertTextIntoScript_2197828187(editorId, text)
+  scriptInsertTextIntoScript_2197827923(editorId, text)
 proc scriptTextEditorSelection*(editorId: EditorId): Selection =
-  scriptTextEditorSelectionScript_2197828250(editorId)
+  scriptTextEditorSelectionScript_2197827986(editorId)
 proc scriptSetTextEditorSelection*(editorId: EditorId; selection: Selection) =
-  scriptSetTextEditorSelectionScript_2197828317(editorId, selection)
+  scriptSetTextEditorSelectionScript_2197828053(editorId, selection)
 proc scriptTextEditorSelections*(editorId: EditorId): seq[Selection] =
-  scriptTextEditorSelectionsScript_2197828384(editorId)
+  scriptTextEditorSelectionsScript_2197828120(editorId)
 proc scriptSetTextEditorSelections*(editorId: EditorId;
                                     selections: seq[Selection]) =
-  scriptSetTextEditorSelectionsScript_2197828459(editorId, selections)
+  scriptSetTextEditorSelectionsScript_2197828195(editorId, selections)
 proc scriptGetTextEditorLine*(editorId: EditorId; line: int): string =
-  scriptGetTextEditorLineScript_2197828526(editorId, line)
+  scriptGetTextEditorLineScript_2197828262(editorId, line)
 proc scriptGetTextEditorLineCount*(editorId: EditorId): int =
-  scriptGetTextEditorLineCountScript_2197828603(editorId)
+  scriptGetTextEditorLineCountScript_2197828339(editorId)
 proc scriptGetOptionInt*(path: string; default: int): int =
-  scriptGetOptionIntScript_2197828684(path, default)
+  scriptGetOptionIntScript_2197828420(path, default)
 proc scriptGetOptionFloat*(path: string; default: float): float =
-  scriptGetOptionFloatScript_2197828730(path, default)
+  scriptGetOptionFloatScript_2197828466(path, default)
 proc scriptGetOptionBool*(path: string; default: bool): bool =
-  scriptGetOptionBoolScript_2197828841(path, default)
+  scriptGetOptionBoolScript_2197828577(path, default)
 proc scriptGetOptionString*(path: string; default: string): string =
-  scriptGetOptionStringScript_2197828887(path, default)
+  scriptGetOptionStringScript_2197828623(path, default)
 proc scriptSetOptionInt*(path: string; value: int) =
-  scriptSetOptionIntScript_2197828933(path, value)
+  scriptSetOptionIntScript_2197828669(path, value)
 proc scriptSetOptionFloat*(path: string; value: float) =
-  scriptSetOptionFloatScript_2197829007(path, value)
+  scriptSetOptionFloatScript_2197828743(path, value)
 proc scriptSetOptionBool*(path: string; value: bool) =
-  scriptSetOptionBoolScript_2197829081(path, value)
+  scriptSetOptionBoolScript_2197828817(path, value)
 proc scriptSetOptionString*(path: string; value: string) =
-  scriptSetOptionStringScript_2197829155(path, value)
+  scriptSetOptionStringScript_2197828891(path, value)
 proc scriptSetCallback*(path: string; id: int) =
-  scriptSetCallbackScript_2197829229(path, id)
+  scriptSetCallbackScript_2197828965(path, id)

@@ -329,8 +329,6 @@ macro expose*(moduleName: static string, def: untyped): untyped =
       static:
         # This makes the function dispatchable
         addFunction(`pureFunctionName`, `jsonWrapperFunctionName`, `moduleName`)
-  else:
-    echo pureFunctionNameStr
 
 
 macro genDispatcher*(moduleName: static string): untyped =

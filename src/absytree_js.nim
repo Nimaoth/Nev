@@ -74,6 +74,9 @@ block:
   scriptSetOptionString "editor.text.cursor.movement.", "both"
   scriptSetOptionBool "editor.text.cursor.wide.", false
 
+  scriptAddCommand "editor", "<A-h>", "load-current-config"
+  scriptAddCommand "editor", "<A-g>", "sourceCurrentDocument"
+
   scriptAddCommand "editor.text", "<LEFT>", "move-cursor-column -1"
   scriptAddCommand "editor.text", "<RIGHT>", "move-cursor-column 1"
   scriptAddCommand "editor.text", "<C-d>", "delete-move \"line-next\""
