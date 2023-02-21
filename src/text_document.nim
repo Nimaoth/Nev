@@ -138,7 +138,7 @@ proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
   if self.selectionHistory.len > 100:
     discard self.selectionHistory.popFirst
   self.selectionsInternal = @[self.clampSelection selection]
-  self.dirty = true
+  self.markDirty()
 
 proc `selections=`*(self: TextDocumentEditor, selections: Selections) =
   if self.selectionsInternal == selections:
@@ -150,11 +150,11 @@ proc `selections=`*(self: TextDocumentEditor, selections: Selections) =
   self.selectionsInternal = self.clampAndMergeSelections selections
   if self.selectionsInternal.len == 0:
     self.selectionsInternal = @[(0, 0).toSelection]
-  self.dirty = true
+  self.markDirty()
 
 proc clampSelection*(self: TextDocumentEditor) =
   self.selections = self.clampAndMergeSelections(self.selectionsInternal)
-  self.dirty = true
+  self.markDirty()
 
 proc `content=`*(self: TextDocument, value: string) =
   if self.singleLine:
@@ -724,7 +724,7 @@ method getEventHandlers*(self: TextDocumentEditor): seq[EventHandler] =
 proc updateSearchResults(self: TextDocumentEditor) =
   if self.searchRegex.isNone:
     self.searchResults.clear()
-    self.dirty = true
+    self.markDirty()
     return
 
   for i, line in self.document.lines:
@@ -735,13 +735,13 @@ proc updateSearchResults(self: TextDocumentEditor) =
       if bounds.first == -1:
         break
       selections.add ((i, bounds.first), (i, bounds.last + 1))
-      start = bounds.last + 1
+      start = max(bounds.last + 1, start + 1)
 
     if selections.len > 0:
       self.searchResults[i] = selections
     else:
       self.searchResults.del i
-  self.dirty = true
+  self.markDirty()
 
 method handleDocumentChanged*(self: TextDocumentEditor) =
   self.selection = (self.clampCursor self.selection.first, self.clampCursor self.selection.last)
@@ -815,7 +815,7 @@ proc scrollToCursor(self: TextDocumentEditor, cursor: Cursor, keepVerticalOffset
     elif targetLineY + totalLineHeight > self.lastContentBounds.h - margin:
       self.scrollOffset = self.lastContentBounds.h - margin - totalLineHeight
       self.previousBaseIndex = targetLine
-  self.dirty = true
+  self.markDirty()
 
 proc getContextWithMode*(self: TextDocumentEditor, context: string): string
 
@@ -876,7 +876,7 @@ proc moveCursor(self: TextDocumentEditor, cursor: SelectionCursor, movement: pro
 
 method handleScroll*(self: TextDocumentEditor, scroll: Vec2, mousePosWindow: Vec2) =
   self.scrollOffset += scroll.y * getOption[float](self.editor, "text.scroll-speed", 40)
-  self.dirty = true
+  self.markDirty()
 
 proc getTextDocumentEditor(wrapper: api.TextDocumentEditor): Option[TextDocumentEditor] =
   if gEditor.isNil: return TextDocumentEditor.none
@@ -919,7 +919,7 @@ proc setMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} 
         self.handleInput input
 
   self.currentMode = mode
-  self.dirty = true
+  self.markDirty()
 
 proc mode*(self: TextDocumentEditor): string {.expose("editor.text").} =
   ## Returns the current mode of the text editor, or "" if there is no mode
@@ -1015,7 +1015,7 @@ proc redo(self: TextDocumentEditor) {.expose("editor.text").} =
 
 proc scrollText(self: TextDocumentEditor, amount: float32) {.expose("editor.text").} =
   self.scrollOffset += amount
-  self.dirty = true
+  self.markDirty()
 
 proc duplicateLastSelection*(self: TextDocumentEditor) {.expose("editor.text").} =
   let newSelection = self.doMoveCursorColumn(self.selections[self.selections.high].last, 1).toSelection
@@ -1148,7 +1148,7 @@ proc updateCommandCount*(self: TextDocumentEditor, digit: int) {.expose("editor.
 
 proc setFlag*(self: TextDocumentEditor, name: string, value: bool) {.expose("editor.text").} =
   self.editor.setFlag("editor.text." & name, value)
-  self.dirty = true
+  self.markDirty()
 
 proc getFlag*(self: TextDocumentEditor, name: string): bool {.expose("editor.text").} =
   return self.editor.getFlag("editor.text." & name)
@@ -1327,21 +1327,21 @@ proc changeMove*(self: TextDocumentEditor, move: string, which: SelectionCursor 
   self.scrollToCursor(Last)
   self.updateTargetColumn(Last)
 
-proc moveLast*(self: TextDocumentEditor, move: string, which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
+proc moveLast*(self: TextDocumentEditor, move: string, which: SelectionCursor = SelectionCursor.Config, all: bool = true, count: int = 0) {.expose("editor.text").} =
   case which
   of Config:
-    self.selections = self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(self.cursor(s, which), move).last.toSelection(s, getOption(self.editor, self.getContextWithMode("editor.text.cursor.movement"), Both)))
+    self.selections = self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(self.cursor(s, which), move, count).last.toSelection(s, getOption(self.editor, self.getContextWithMode("editor.text.cursor.movement"), Both)))
   else:
-    self.selections = self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(self.cursor(s, which), move).last.toSelection(s, which))
+    self.selections = self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(self.cursor(s, which), move, count).last.toSelection(s, which))
   self.scrollToCursor(which)
   self.updateTargetColumn(which)
 
-proc moveFirst*(self: TextDocumentEditor, move: string, which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
+proc moveFirst*(self: TextDocumentEditor, move: string, which: SelectionCursor = SelectionCursor.Config, all: bool = true, count: int = 0) {.expose("editor.text").} =
   case which
   of Config:
-    self.selections = self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(self.cursor(s, which), move).first.toSelection(s, getOption(self.editor, self.getContextWithMode("editor.text.cursor.movement"), Both)))
+    self.selections = self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(self.cursor(s, which), move, count).first.toSelection(s, getOption(self.editor, self.getContextWithMode("editor.text.cursor.movement"), Both)))
   else:
-    self.selections = self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(self.cursor(s, which), move).first.toSelection(s, which))
+    self.selections = self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(self.cursor(s, which), move, count).first.toSelection(s, which))
   self.scrollToCursor(which)
   self.updateTargetColumn(which)
 
@@ -1396,7 +1396,7 @@ proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.} =
       self.showCompletions = false
     else:
       self.showCompletions = true
-    self.dirty = true
+    self.markDirty()
 
 # proc testAsync*(self: TextDocumentEditor) {.expose("editor.text").} =
 #   echo "testAsync"
@@ -1412,21 +1412,21 @@ proc getCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
 
 proc hideCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.showCompletions = false
-  self.dirty = true
+  self.markDirty()
 
 proc selectPrevCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.completions.len > 0:
     self.selectedCompletion = (self.selectedCompletion - 1).clamp(0, self.completions.len - 1)
   else:
     self.selectedCompletion = 0
-  self.dirty = true
+  self.markDirty()
 
 proc selectNextCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.completions.len > 0:
     self.selectedCompletion = (self.selectedCompletion + 1).clamp(0, self.completions.len - 1)
   else:
     self.selectedCompletion = 0
-  self.dirty = true
+  self.markDirty()
 
 proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
   if not self.showCompletions:
@@ -1518,10 +1518,20 @@ method injectDependencies*(self: TextDocumentEditor, ed: Editor) =
 proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
   self.clampSelection()
   self.updateSearchResults()
-  self.dirty = true
+  self.markDirty()
+
+## Only use this to create TextDocumentEditorInstances
+proc createTextEditorInstance(): TextDocumentEditor =
+  let editor = TextDocumentEditor(eventHandler: nil, selectionsInternal: @[(0, 0).toSelection])
+  when defined(js):
+    {.emit: [editor, " = createWithPrototype(editor_text_prototype, ", editor, ");"].}
+    # This " is here to fix syntax highlighting
+  return editor
 
 proc newTextEditor*(document: TextDocument, ed: Editor): TextDocumentEditor =
-  let editor = TextDocumentEditor(eventHandler: nil, document: document, selectionsInternal: @[(0, 0).toSelection])
+  var editor = createTextEditorInstance()
+  editor.document = document
+
   editor.init()
   if editor.document.lines.len == 0:
     editor.document.lines = @[""]
@@ -1530,7 +1540,9 @@ proc newTextEditor*(document: TextDocument, ed: Editor): TextDocumentEditor =
   return editor
 
 method createWithDocument*(self: TextDocumentEditor, document: Document): DocumentEditor =
-  let editor = TextDocumentEditor(eventHandler: nil, document: TextDocument(document), selectionsInternal: @[(0, 0).toSelection])
+  var editor = createTextEditorInstance()
+  editor.document = document.TextDocument
+
   editor.init()
   if editor.document.lines.len == 0:
     editor.document.lines = @[""]

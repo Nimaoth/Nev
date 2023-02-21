@@ -20,6 +20,9 @@ const exposedFunctions* = CacheTable"ExposedFunctions" # Maps from type name (re
 
 template varargs*() {.pragma.}
 
+template nodispatch*() {.pragma.}
+  ## Don't add this function to the dispatcher, and don't create a json wrapper
+
 macro addTypeMap*(source: untyped, wrapper: typed, mapperFunction: typed) =
   mapperFunctions[$source] = mapperFunction
   typeWrapper[$source] = wrapper
@@ -27,11 +30,11 @@ macro addTypeMap*(source: untyped, wrapper: typed, mapperFunction: typed) =
 macro addInjector*(name: untyped, function: typed) =
   injectors[$name] = function
 
-macro addFunction(name: untyped, script: untyped, wrapper: typed, moduleName: static string) =
+macro addFunction(name: untyped, wrapper: typed, moduleName: static string) =
   ## Registers the nim function `name` in the module `moduleName`. `script` is a symbol referring
   ## to the version of this function with the 'Script' suffix, which is exported to the nim script.
   ## `wrapper`
-  let n = nnkStmtList.newTree(name, script, wrapper)
+  let n = nnkStmtList.newTree(name, wrapper)
   for name, _ in functions:
     if name == moduleName:
       functions[name].add n
@@ -46,6 +49,71 @@ macro addScriptWrapper(name: untyped, moduleName: static string, lineNumber: sta
       return
   exposedFunctions[moduleName] = nnkStmtList.newTree(val)
 
+proc argName(def: NimNode, arg: int): NimNode =
+  result = def[3][arg + 1][0]
+  if result.kind == nnkPragmaExpr:
+    result = result[0]
+
+proc hasCustomPragma(def: NimNode, pragma: string): bool =
+  case def.kind
+  of nnkProcDef:
+    if def[4].kind == nnkPragma:
+      for c in def[4]:
+        if c.kind == nnkIdent and c.strVal == pragma:
+          return true
+  else:
+    return false
+
+proc argHasPragma(def: NimNode, arg: int, pragma: string): bool =
+  let node = def[3][arg + 1][0]
+  if node.kind == nnkPragmaExpr and node.len >= 2 and node[1].kind == nnkPragma and node[1][0].strVal == pragma:
+    return true
+  return false
+proc isVarargs(def: NimNode, arg: int): bool = def.argHasPragma(arg, "varargs")
+proc argType(def: NimNode, arg: int): NimNode = def[3][arg + 1][1]
+proc argDefaultValue(def: NimNode, arg: int): Option[NimNode] =
+  if def[3][arg + 1][2].kind != nnkEMpty:
+    return def[3][arg + 1][2].some
+  return NimNode.none
+
+proc returnType(def: NimNode): Option[NimNode] =
+  return if def[3][0].kind != nnkEmpty: def[3][0].some else: NimNode.none
+
+proc createJavascriptWrapper(moduleName: string, def: NimNode, scriptFunctionSym: NimNode, jsFunctionName: string): NimNode =
+  let jsPrototypeName = moduleName.replace(".", "_") & "_prototype"
+
+  var paramsString = ""
+  var argsString = ""
+
+  if def[3].len > 1 and def.argName(0).repr == "self":
+    argsString = "this"
+
+  for i, arg in def[3][1..^1]:
+    let name = def.argName(i).repr & "_"
+    if name == "self_":
+      continue
+
+    if argsString.len > 0: argsString.add ", "
+    if paramsString.len > 0: paramsString.add ", "
+
+    paramsString.add name
+    paramsString.add " /* : "
+    paramsString.add arg[1].repr
+    paramsString.add " */"
+
+    if arg[1].repr == "string":
+      argsString.add fmt"{name} == undefined ? undefined : cstrToNimstr({name})"
+    else:
+      argsString.add name
+
+  var conversionFunction = ""
+  if def.returnType.getSome(t) and t.repr == "string":
+    conversionFunction = "toJSStr"
+
+  return quote do:
+    {.emit: [`jsPrototypeName`, """.""", `jsFunctionName`, """ = function(""", `paramsString`, """) { return """, `conversionFunction`, """(""", `scriptFunctionSym`, """(""", `argsString`, """));};"""].}
+    # """
+
 macro expose*(moduleName: static string, def: untyped): untyped =
   if not exposeScriptingApi:
     return def
@@ -59,21 +127,7 @@ macro expose*(moduleName: static string, def: untyped): untyped =
 
   let functionName = if def[0].kind == nnkPostfix: def[0][1] else: def[0]
   let argCount = def[3].len - 1
-  let returnType = if def[3][0].kind != nnkEmpty: def[3][0].some else: NimNode.none
-  proc argName(def: NimNode, arg: int): NimNode =
-    result = def[3][arg + 1][0]
-    if result.kind == nnkPragmaExpr:
-      result = result[0]
-  proc isVarargs(def: NimNode, arg: int): bool =
-    let node = def[3][arg + 1][0]
-    if node.kind == nnkPragmaExpr and node.len >= 2 and node[1].kind == nnkPragma and node[1][0].strVal == "varargs":
-      return true
-    return false
-  proc argType(def: NimNode, arg: int): NimNode = def[3][arg + 1][1]
-  proc argDefaultValue(def: NimNode, arg: int): Option[NimNode] =
-    if def[3][arg + 1][2].kind != nnkEMpty:
-      return def[3][arg + 1][2].some
-    return NimNode.none
+  let returnType = def.returnType
   let documentation = if def[6].len > 0 and def[6][0].kind == nnkCommentStmt:
       def[6][0].some
     else:
@@ -104,25 +158,27 @@ macro expose*(moduleName: static string, def: untyped): untyped =
   let jsonWrapperFunctionName = ident(pureFunctionNameStr & "Api" & suffix)
 
   # The script function is a wrapper around impl which translates some argument types
-  # and inserts some arguments automatically using injectors. This function will be called from the NimScript
-  let scriptFunctionSym = ident(pureFunctionNameStr & "Script" & suffix)
+  # and inserts some arguments automatically using injectors. This function will be called from the NimScript.
+  # This function has a unique name, otherwise we can't call it from nimscript
+  let scriptFunctionSym = ident nskProc.genSym(pureFunctionNameStr & "Script" & suffix).repr
   var scriptFunction = def.copy
   scriptFunction[0] = nnkPostfix.newTree(ident"*", scriptFunctionSym)
   var callImplFromScriptFunction = nnkCall.newTree(functionName)
 
-  # Wrapper function for the script function which is inserted into NimScript. This
+  # Wrapper function for the script function which is inserted into NimScript.
+  # This has the same name as the original function and is used to get function overloading back
   var scriptFunctionWrapper = def.copy
   scriptFunctionWrapper[0] = nnkPostfix.newTree(ident"*", pureFunctionName)
   var callScriptFuncFromScriptFuncWrapper = nnkCall.newTree(scriptFunctionSym)
 
-  proc removeVarargs(node: var NimNode) =
+  proc removePragmas(node: var NimNode) =
     for param in node[3]:
       case param
       of IdentDefs[PragmaExpr[@name, .._], .._]:
         param[0] = name
 
-  removeVarargs(scriptFunction)
-  removeVarargs(scriptFunctionWrapper)
+  removePragmas(scriptFunction)
+  removePragmas(scriptFunctionWrapper)
 
   var callScriptFuncFromJson = nnkCall.newTree(scriptFunctionSym)
 
@@ -241,25 +297,41 @@ macro expose*(moduleName: static string, def: untyped): untyped =
   let scriptFunctionWrapperRepr = scriptFunctionWrapper.repr
   let lineNumber = def.lineInfoObj.line
 
-  return quote do:
+  result = quote do:
     `def`
 
     `scriptFunction`
 
-    proc `jsonWrapperFunctionName`*(`jsonArg`: JsonNode): JsonNode {.nimcall, used.} =
-      result = newJNull()
-      try:
-        `callScriptFuncFromJsonWithReturn`
-      except CatchableError:
-        let name = `pureFunctionNameStr`
-        echo "[editor] Failed to run function " & name & fmt": Invalid arguments: {getCurrentExceptionMsg()}"
-        echo getCurrentException().getStackTrace
+  when defined(js):
+    result.add createJavascriptWrapper(moduleName, def, scriptFunctionSym, pureFunctionNameStr & suffix)
 
-    static:
-      addToCache(`scriptFunctionSym`, "myImpl")
-      addFunction(`pureFunctionName`, `scriptFunctionSym`, `jsonWrapperFunctionName`, `moduleName`)
+  when not defined(js):
+    result.add quote do:
+      static:
+        # This adds the script function to nimscripter so it can generate bindings for the nim interpreter
+        addToCache(`scriptFunctionSym`, "myImpl")
 
-      addScriptWrapper(`scriptFunctionWrapperRepr`, `moduleName`, `lineNumber`)
+        # This causes the function wrapper to be emitted in a file, so it can be imported in configs
+        addScriptWrapper(`scriptFunctionWrapperRepr`, `moduleName`, `lineNumber`)
+
+  # Only add the json wrapper and dispatch function if the {.nodispatch.} is not present
+  if not def.hasCustomPragma("nodispatch"):
+    result.add quote do:
+      proc `jsonWrapperFunctionName`*(`jsonArg`: JsonNode): JsonNode {.nimcall, used.} =
+        result = newJNull()
+        try:
+          `callScriptFuncFromJsonWithReturn`
+        except CatchableError:
+          let name = `pureFunctionNameStr`
+          echo "[editor] Failed to run function " & name & fmt": Invalid arguments: {getCurrentExceptionMsg()}"
+          echo getCurrentException().getStackTrace
+
+      static:
+        # This makes the function dispatchable
+        addFunction(`pureFunctionName`, `jsonWrapperFunctionName`, `moduleName`)
+  else:
+    echo pureFunctionNameStr
+
 
 macro genDispatcher*(moduleName: static string): untyped =
   # defer:
@@ -272,7 +344,7 @@ macro genDispatcher*(moduleName: static string): untyped =
     if module == moduleName:
       for entry in functions:
         let name = entry[0].strVal
-        let target = entry[2]
+        let target = entry[1]
 
         var alternative = ""
         for c in name:

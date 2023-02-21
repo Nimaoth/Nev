@@ -1,4 +1,4 @@
-import document, events, vmath, bumpy, input
+import document, events, event, vmath, bumpy, input
 
 from scripting_api import EditorId, newEditorId
 
@@ -8,7 +8,8 @@ type DocumentEditor* = ref object of RootObj
   renderHeader*: bool
   fillAvailableSpace*: bool
   lastContentBounds*: Rect
-  dirty*: bool ## Set to true to trigger rerender
+  onMarkedDirty*: Event[void]
+  mDirty: bool ## Set to true to trigger rerender
   active: bool
 
 func id*(self: DocumentEditor): EditorId = self.id
@@ -19,11 +20,23 @@ proc init*(self: DocumentEditor) =
   self.renderHeader = true
   self.fillAvailableSpace = true
 
+func dirty*(self: DocumentEditor): bool = self.mDirty
+
+proc markDirty*(self: DocumentEditor) =
+  if not self.mDirty:
+    self.onMarkedDirty.invoke()
+  self.mDirty = true
+
+proc resetDirty*(self: DocumentEditor) =
+  self.mDirty = false
+
 proc `active=`*(self: DocumentEditor, newActive: bool) =
-  self.dirty = self.dirty or (newActive != self.active)
+  if newActive != self.active:
+    self.markDirty()
+
   self.active = newActive
 
-proc active*(self: DocumentEditor): bool = self.active
+func active*(self: DocumentEditor): bool = self.active
 
 method shutdown*(self: DocumentEditor) {.base.} =
   discard
