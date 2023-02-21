@@ -333,60 +333,60 @@ proc modeScript22_2197827117*(): string =
   discard
 proc getContextWithModeScript22_2197827166*(context: string): string =
   discard
-proc scriptRunActionScript_2197827704*(action: string; arg: string) =
+proc scriptRunActionScript_2197827440*(action: string; arg: string) =
   discard
-proc scriptLogScript_2197827739*(message: string) =
+proc scriptLogScript_2197827475*(message: string) =
   discard
-proc scriptAddCommandScript_2197827769*(context: string; keys: string;
+proc scriptAddCommandScript_2197827505*(context: string; keys: string;
                                        action: string; arg: string = "") =
   discard
-proc removeCommandScript_2197827819*(context: string; keys: string) =
+proc removeCommandScript_2197827555*(context: string; keys: string) =
   discard
-proc getActivePopupScript_2197827854*(): EditorId =
+proc getActivePopupScript_2197827590*(): EditorId =
   discard
-proc getActiveEditorScript_2197827890*(): EditorId =
+proc getActiveEditorScript_2197827626*(): EditorId =
   discard
-proc getEditorScript_2197827920*(index: int): EditorId =
+proc getEditorScript_2197827656*(index: int): EditorId =
   discard
-proc scriptIsTextEditorScript_2197827957*(editorId: EditorId): bool =
+proc scriptIsTextEditorScript_2197827693*(editorId: EditorId): bool =
   discard
-proc scriptIsAstEditorScript_2197828023*(editorId: EditorId): bool =
+proc scriptIsAstEditorScript_2197827759*(editorId: EditorId): bool =
   discard
-proc scriptRunActionForScript_2197828089*(editorId: EditorId; action: string;
+proc scriptRunActionForScript_2197827825*(editorId: EditorId; action: string;
     arg: string) =
   discard
-proc scriptInsertTextIntoScript_2197828187*(editorId: EditorId; text: string) =
+proc scriptInsertTextIntoScript_2197827923*(editorId: EditorId; text: string) =
   discard
-proc scriptTextEditorSelectionScript_2197828250*(editorId: EditorId): Selection =
+proc scriptTextEditorSelectionScript_2197827986*(editorId: EditorId): Selection =
   discard
-proc scriptSetTextEditorSelectionScript_2197828317*(editorId: EditorId;
+proc scriptSetTextEditorSelectionScript_2197828053*(editorId: EditorId;
     selection: Selection) =
   discard
-proc scriptTextEditorSelectionsScript_2197828384*(editorId: EditorId): seq[
+proc scriptTextEditorSelectionsScript_2197828120*(editorId: EditorId): seq[
     Selection] =
   discard
-proc scriptSetTextEditorSelectionsScript_2197828459*(editorId: EditorId;
+proc scriptSetTextEditorSelectionsScript_2197828195*(editorId: EditorId;
     selections: seq[Selection]) =
   discard
-proc scriptGetTextEditorLineScript_2197828526*(editorId: EditorId; line: int): string =
+proc scriptGetTextEditorLineScript_2197828262*(editorId: EditorId; line: int): string =
   discard
-proc scriptGetTextEditorLineCountScript_2197828603*(editorId: EditorId): int =
+proc scriptGetTextEditorLineCountScript_2197828339*(editorId: EditorId): int =
   discard
-proc scriptGetOptionIntScript_2197828684*(path: string; default: int): int =
+proc scriptGetOptionIntScript_2197828420*(path: string; default: int): int =
   discard
-proc scriptGetOptionFloatScript_2197828730*(path: string; default: float): float =
+proc scriptGetOptionFloatScript_2197828466*(path: string; default: float): float =
   discard
-proc scriptGetOptionBoolScript_2197828841*(path: string; default: bool): bool =
+proc scriptGetOptionBoolScript_2197828577*(path: string; default: bool): bool =
   discard
-proc scriptGetOptionStringScript_2197828887*(path: string; default: string): string =
+proc scriptGetOptionStringScript_2197828623*(path: string; default: string): string =
   discard
-proc scriptSetOptionIntScript_2197828933*(path: string; value: int) =
+proc scriptSetOptionIntScript_2197828669*(path: string; value: int) =
   discard
-proc scriptSetOptionFloatScript_2197829007*(path: string; value: float) =
+proc scriptSetOptionFloatScript_2197828743*(path: string; value: float) =
   discard
-proc scriptSetOptionBoolScript_2197829081*(path: string; value: bool) =
+proc scriptSetOptionBoolScript_2197828817*(path: string; value: bool) =
   discard
-proc scriptSetOptionStringScript_2197829155*(path: string; value: string) =
+proc scriptSetOptionStringScript_2197828891*(path: string; value: string) =
   discard
-proc scriptSetCallbackScript_2197829229*(path: string; id: int) =
+proc scriptSetCallbackScript_2197828965*(path: string; id: int) =
   discard

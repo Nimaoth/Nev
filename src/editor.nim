@@ -749,23 +749,6 @@ proc mode*(self: Editor): string {.expose("editor").} =
 proc getContextWithMode(self: Editor, context: string): string {.expose("editor").} =
   return context & "." & $self.currentMode
 
-genDispatcher("editor")
-
-proc handleAction(self: Editor, action: string, arg: string): bool =
-  logger.log(lvlInfo, "[ed] Action '$1 $2'" % [action, arg])
-  try:
-    if self.scriptContext.invoke(handleGlobalAction, action, arg, returnType = bool):
-      return true
-  except CatchableError:
-    logger.log(lvlError, fmt"[ed] Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
-    logger.log(lvlError, getCurrentException().getStackTrace())
-    return false
-
-  var args = newJArray()
-  for a in newStringStream(arg).parseJsonFragments():
-    args.add a
-  return dispatch(action, args).isSome
-
 proc currentEventHandlers*(self: Editor): seq[EventHandler] =
   result = @[self.eventHandler]
 
@@ -892,7 +875,7 @@ proc getActivePopup*(): EditorId {.expose("editor").} =
   return EditorId(-1)
 
 when defined(js):
-  proc getActiveEditor2*(): DocumentEditor {.expose("editor"), nodispatch.} =
+  proc getActiveEditor2*(self: Editor): DocumentEditor {.expose("editor"), nodispatch.} =
     if gEditor.isNil:
       return nil
     if gEditor.commandLineMode:
@@ -901,6 +884,20 @@ when defined(js):
       return gEditor.views[gEditor.currentView].editor
 
     return nil
+
+  proc loadCurrentConfig*() {.expose("editor").} =
+    gEditor.createView(newTextDocument("config.js", "console.log('hi')"))
+
+  proc sourceCurrentDocument*(self: Editor) {.expose("editor").} =
+    ## Runs the content of the active editor as javascript using `eval()`.
+    ## "use strict" is prepended to the content to force strict mode.
+    proc evalJs(str: cstring) {.importjs("eval(#)").}
+    let editor = self.getActiveEditor2()
+    if editor of TextDocumentEditor:
+      let document = editor.TextDocumentEditor.document
+      let contentStrict = "\"use strict\";\n" & document.contentString
+      echo contentStrict
+      evalJs(contentStrict)
 
 proc getActiveEditor*(): EditorId {.expose("editor").} =
   if gEditor.isNil:
@@ -1064,6 +1061,23 @@ proc scriptSetCallback*(path: string, id: int) {.expose("editor").} =
   if gEditor.isNil:
     return
   gEditor.callbacks[path] = id
+
+genDispatcher("editor")
+
+proc handleAction(self: Editor, action: string, arg: string): bool =
+  logger.log(lvlInfo, "[ed] Action '$1 $2'" % [action, arg])
+  try:
+    if self.scriptContext.invoke(handleGlobalAction, action, arg, returnType = bool):
+      return true
+  except CatchableError:
+    logger.log(lvlError, fmt"[ed] Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
+    logger.log(lvlError, getCurrentException().getStackTrace())
+    return false
+
+  var args = newJArray()
+  for a in newStringStream(arg).parseJsonFragments():
+    args.add a
+  return dispatch(action, args).isSome
 
 when not defined(js):
   proc createAddins(): VmAddins =
