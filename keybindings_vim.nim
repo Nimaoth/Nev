@@ -3,7 +3,7 @@ import absytree_runtime, keybindings_normal
 proc loadVimBindings*() =
   loadNormalBindings()
 
-  log "Applying Vim keybindings"
+  info "Applying Vim keybindings"
 
   # clearCommands("editor.text")
   # for id in getAllEditors():
@@ -42,7 +42,7 @@ proc loadVimBindings*() =
 
   # lsp
   addTextCommand "", "gd", "goto-definition"
-  addTextCommand "", "<S-SPACE>", "get-completions"
+  addTextCommand "", "<C-SPACE>", "get-completions"
 
   # editing
   addTextCommand "", "x", "delete-right"

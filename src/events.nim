@@ -1,5 +1,5 @@
-import std/[tables, sequtils]
-import input
+import std/[tables, sequtils, strformat]
+import input, custom_logger
 
 type EventResponse* = enum
   Failed,
@@ -18,7 +18,7 @@ type EventHandlerConfig* = ref object
   revision: int
 
 type EventHandler* = ref object
-  state*: int
+  state*: CommandState
   config: EventHandlerConfig
   revision: int
   dfaInternal: CommandDFA
@@ -100,7 +100,7 @@ template eventHandler*(inConfig: EventHandlerConfig, handlerBody: untyped): unty
     handler
 
 proc reset*(handler: var EventHandler) =
-  handler.state = 0
+  handler.state = default(CommandState)
 
 proc parseAction*(action: string): tuple[action: string, arg: string] =
   let spaceIndex = action.find(' ')
@@ -113,8 +113,9 @@ proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers,
   if input != 0:
     let prevState = handler.state
     handler.state = handler.dfa.step(handler.state, input, modifiers)
-    if handler.state == 0:
-      if prevState == 0:
+    # debugf"handleEvent {(inputToString(input, modifiers))}, {prevState.current} -> {handler.state.current}, term = {(handler.dfa.isTerminal(handler.state.current))}, default = {(handler.dfa.getDefaultState(handler.state.current))}"
+    if handler.state.current == 0:
+      if prevState.current == 0:
         # undefined input in state 0
         # only handle if no modifier or only shift is pressed, because if any other modifiers are pressed
         # (ctrl, alt, win) then it doesn't produce input
@@ -125,9 +126,9 @@ proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers,
         # undefined input in state n
         return Canceled
 
-    elif handler.dfa.isTerminal(handler.state):
-      let (action, arg) = handler.dfa.getAction(handler.state).parseAction
-      handler.state = 0
+    elif handler.dfa.isTerminal(handler.state.current):
+      let (action, arg) = handler.dfa.getAction(handler.state.current).parseAction
+      handler.state.current = handler.dfa.getDefaultState(handler.state.current)
       return handler.handleAction(action, arg)
     else:
       return Progress
@@ -136,7 +137,7 @@ proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers,
 
 proc anyInProgress*(handlers: openArray[EventHandler]): bool =
   for h in handlers:
-    if h.state != 0:
+    if h.state.current != 0:
       return true
   return false
 
@@ -146,8 +147,9 @@ proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifier
   var allowHandlingUnknownAsInput = true
   # Go through handlers in reverse
   for i in 0..<handlers.len:
-    var handler = handlers[handlers.len - i - 1]
-    let response = if (anyInProgress and handler.state != 0) or (not anyInProgress and handler.state == 0):
+    let handlerIndex = handlers.len - i - 1
+    var handler = handlers[handlerIndex]
+    let response = if (anyInProgress and handler.state.current != 0) or (not anyInProgress and handler.state.current == 0):
       handler.handleEvent(input, modifiers, allowHandlingUnknownAsInput)
     else:
       Ignored
@@ -155,9 +157,12 @@ proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifier
     case response
     of Handled:
       allowHandlingUnknownAsInput = false
-      for h in handlers:
-        var h = h
-        h.reset()
+      for k, h in handlers:
+        # Don't reset the current handler
+        if k != handlerIndex:
+          var h = h
+          h.reset()
+
       break
     of Progress:
       allowHandlingUnknownAsInput = false

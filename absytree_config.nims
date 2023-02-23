@@ -6,7 +6,7 @@ import keybindings_helix
 import keybindings_normal
 
 proc handleAction*(action: string, arg: string): bool =
-  log action, ", ", arg
+  info action, ", ", arg
 
   case action
   of "set-max-loop-iterations":
@@ -55,7 +55,7 @@ proc handleAstEditorAction(editor: AstDocumentEditor, action: string, args: Json
   return true
 
 proc postInitialize*(): bool =
-  log "postInitialize()"
+  info "postInitialize()"
 
   # openFile "temp/test.rs"
   # openFile "temp/rust-test/src/main.rs"
@@ -67,7 +67,7 @@ proc postInitialize*(): bool =
   changeLayoutProp("main-split", -0.2)
   return true
 
-log "Loading absytree_config.nim"
+info "Loading absytree_config.nim"
 
 clearCommands "editor"
 clearCommands "editor.ast"
@@ -85,7 +85,7 @@ setOption "editor.frame-time-smoothing", 0.8
 
 setOption "ast.scroll-speed", 60
 
-log fmt"Backend: {getBackend()}"
+info fmt"Backend: {getBackend()}"
 case getBackend()
 of Terminal:
   setOption "text.scroll-speed", 1
@@ -150,14 +150,15 @@ addCommand "editor.test-mode2", "<ESCAPE>", "set-mode", ""
 addCommand "editor.test-mode2", "s","change-font-size", -1
 addCommand "editor.test-mode2", "d","change-font-size", +1
 
-addCommand "editor", "<SPACE>ff", "log-options"
+# addCommand "editor", "<S-SPACE><*-l>", ""
+addCommand "editor", "<S-SPACE>ff", "log-options"
 addCommand "editor", "<ESCAPE>", "escape"
-addCommand "editor", "<C-l><C-h>", "change-font-size", -1
-addCommand "editor", "<C-l><C-f>", "change-font-size", 1
+addCommand "editor", "<S-SPACE><*-l>-", "change-font-size", -1
+addCommand "editor", "<S-SPACE><*-l>+", "change-font-size", 1
 # addCommand "editor", "<C-g>", "toggle-status-bar-location"
-addCommand "editor", "<C-l><C-n>", "set-layout", "horizontal"
-addCommand "editor", "<C-l><C-r>", "set-layout", "vertical"
-addCommand "editor", "<C-l><C-t>", "set-layout", "fibonacci"
+addCommand "editor", "<S-SPACE>l1", "set-layout", "horizontal"
+addCommand "editor", "<S-SPACE>l2", "set-layout", "vertical"
+addCommand "editor", "<S-SPACE>l3", "set-layout", "fibonacci"
 addCommand "editor", "<CA-h>", "change-layout-prop", "main-split", -0.05
 addCommand "editor", "<CA-f>", "change-layout-prop", "main-split", 0.05
 addCommand "editor", "<CA-v>", "create-view"
@@ -170,13 +171,13 @@ addCommand "editor", "<CS-t>", "move-current-view-next"
 addCommand "editor", "<CA-r>", "move-current-view-to-top"
 addCommand "editor", "<C-s>", "write-file"
 addCommand "editor", "<CS-r>", "load-file"
-addCommand "editor", "<C-p>", "command-line"
-addCommand "editor", "<C-g>tt", "choose-theme"
-addCommand "editor", "<C-g>f", "choose-file", "new"
+addCommand "editor", "<S-SPACE><S-SPACE>", "command-line"
+addCommand "editor", "<S-SPACE>t", "choose-theme"
+addCommand "editor", "<S-SPACE>f", "choose-file", "new"
 
-addCommand "editor", "<C-b>n", () => loadNormalBindings()
-addCommand "editor", "<C-b>v", () => loadVimBindings()
-addCommand "editor", "<C-b>h", () => loadHelixBindings()
+addCommand "editor", "<S-SPACE>kn", () => loadNormalBindings()
+addCommand "editor", "<S-SPACE>kv", () => loadVimBindings()
+addCommand "editor", "<S-SPACE>kh", () => loadHelixBindings()
 
 addCommand "commandLine", "<ESCAPE>", "exit-command-line"
 addCommand "commandLine", "<ENTER>", "execute-command-line"

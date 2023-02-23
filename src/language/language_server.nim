@@ -14,8 +14,9 @@ proc getOrCreateLanguageServer*(languageId: string, filename: string): Future[Op
     if lsp.getSome(server):
       return server.LanguageServer.some
 
-    let nimsuggest = await getOrCreateLanguageServerNimSuggest(languageId, filename)
-    if nimsuggest.getSome(server):
-      return server.LanguageServer.some
+    if languageId == "nim":
+      let nimsuggest = await getOrCreateLanguageServerNimSuggest(languageId, filename)
+      if nimsuggest.getSome(server):
+        return server.LanguageServer.some
 
   return LanguageServer.none

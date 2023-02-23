@@ -10,7 +10,7 @@ var voidCallbacks = initTable[int, proc(args: JsonNode): void]()
 var boolCallbacks = initTable[int, proc(args: JsonNode): bool]()
 var callbackId = 0
 
-proc log*(args: varargs[string, `$`]) =
+proc info*(args: varargs[string, `$`]) =
   var msgLen = 0
   for arg in args:
     msgLen += arg.len
@@ -138,12 +138,12 @@ macro addCommand*(context: string, keys: string, action: string, args: varargs[u
 
   return quote do:
     `stmts`
-    scriptAddCommand(`context`, `keys`, `action`, `str`)
+    addCommandScript(`context`, `keys`, `action`, `str`)
 
 proc addCommand*(context: string, keys: string, action: proc(): void) =
   let key = context & keys
   lambdaActions[key] = action
-  scriptAddCommand(context, keys, "lambda-action", key.toJsonString)
+  addCommandScript(context, keys, "lambda-action", key.toJsonString)
 
 template addCommandBlock*(context: static[string], keys: string, body: untyped): untyped =
   addCommand context, keys, proc() =
@@ -173,7 +173,7 @@ macro addEditorCommand*(mode: static[string], keys: string, action: string, args
 
   return quote do:
     `stmts`
-    scriptAddCommand(`context`, `keys`, `action`, `str`)
+    addCommandScript(`context`, `keys`, `action`, `str`)
 
 # Text commands
 template addTextCommandBlock*(mode: static[string], keys: string, body: untyped): untyped =
@@ -200,7 +200,7 @@ macro addTextCommand*(mode: static[string], keys: string, action: string, args: 
 
   return quote do:
     `stmts`
-    scriptAddCommand(`context`, `keys`, `action`, `str`)
+    addCommandScript(`context`, `keys`, `action`, `str`)
 
 proc setTextInputHandler*(context: string, action: proc(editor: TextDocumentEditor, input: string): bool) =
   let id = addCallback proc(args: JsonNode): bool =
@@ -234,4 +234,4 @@ macro addAstCommand*(mode: static[string], keys: string, action: string, args: v
 
   return quote do:
     `stmts`
-    scriptAddCommand(`context`, `keys`, `action`, `str`)
+    addCommandScript(`context`, `keys`, `action`, `str`)
