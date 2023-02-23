@@ -1,3 +1,24 @@
+# Originally from std/jsonutils
+# see LICENSES/LICENSE-nim
+
+#
+#
+#            Nim's Runtime Library
+#        (c) Copyright 2013 Andreas Rumpf
+#
+#    See the file "copying.txt", included in this
+#    distribution, for details about the copyright.
+#
+
+## Nim OID support. An OID is a global ID that consists of a timestamp,
+## a unique counter and a random value. This combination should suffice to
+## produce a globally distributed unique ID.
+##
+## This implementation calls `initRand()` for the first call of
+## `genOid`.
+##
+
+
 ##[
 This module implements a hookable (de)serialization for arbitrary types.
 Design goal: avoid importing modules where a custom serialization is needed;
