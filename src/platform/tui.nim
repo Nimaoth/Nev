@@ -1286,7 +1286,7 @@ proc displayDiff(tb: TerminalBuffer) =
       put buf
       buf = ""
 
-  let maxColorTime = 400.0
+  let maxColorTime = 2.0
   var colorTime = 0.0
   var updateColors = true
 
@@ -1298,7 +1298,8 @@ proc displayDiff(tb: TerminalBuffer) =
     while x < tb.width:
       defer: inc x
       let c = tb[x,y]
-      let changed = if updateColors: c != gPrevTerminalBuffer[x, y] else: c.ch != gPrevTerminalBuffer[x, y].ch
+      let cPrev = gPrevTerminalBuffer[x, y]
+      let changed = if updateColors: c != cPrev else: c.ch != cPrev.ch
       if changed or c.forceWrite:
         if x != bufXPos:
           flushBuf()
@@ -1337,8 +1338,13 @@ proc displayDiff(tb: TerminalBuffer) =
 
         for x2 in x..<tb.width:
           let c2 = tb[x2, y]
-          if not (c.fg == c2.fg and c.fgColor == c2.fgColor and c.bg == c2.bg and c.bgColor == c2.bgColor and c.style == c2.style):
-            break
+          if updateColors:
+            if not (c.fg == c2.fg and c.fgColor == c2.fgColor and c.bg == c2.bg and c.bgColor == c2.bgColor and c.style == c2.style):
+              break
+          else:
+            if c2.ch == gPrevTerminalBuffer[x2, y].ch:
+              break
+
           x = x2
           bufXPos = x + 1
 
@@ -1346,7 +1352,7 @@ proc displayDiff(tb: TerminalBuffer) =
           if updateColors:
             gPrevTerminalBuffer[x, y] = c2
           else:
-            var old = gPrevTerminalBuffer[x, y]
+            var old = cPrev
             old.ch = c2.ch
             gPrevTerminalBuffer[x, y] = old
 
@@ -1354,7 +1360,7 @@ proc displayDiff(tb: TerminalBuffer) =
         if updateColors:
           gPrevTerminalBuffer[x, y] = c
         else:
-          var old = gPrevTerminalBuffer[x, y]
+          var old = cPrev
           old.ch = c.ch
           gPrevTerminalBuffer[x, y] = old
 
