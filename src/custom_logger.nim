@@ -5,6 +5,12 @@ export logging, strformat
 
 {.used.}
 
+when not defined(js):
+  type FileLogger = logging.FileLogger
+else:
+  type FileLogger = ref object of Logger
+    discard
+
 type
   CustomLogger* = ref object of Logger
     consoleLogger: Option[ConsoleLogger]
@@ -16,8 +22,9 @@ proc newCustomLogger*(levelThreshold = lvlAll, fmtStr = defaultFmtStr): CustomLo
   result.levelThreshold = levelThreshold
 
 proc enableFileLogger*(self: CustomLogger) =
-  var file = open("messages.log", fmWrite)
-  self.fileLogger = newFileLogger(file, self.levelThreshold, self.fmtStr, flushThreshold=lvlAll).some
+  when not defined(js):
+    var file = open("messages.log", fmWrite)
+    self.fileLogger = newFileLogger(file, self.levelThreshold, self.fmtStr, flushThreshold=lvlAll).some
 
 proc enableConsoleLogger*(self: CustomLogger) =
   self.consoleLogger = newConsoleLogger(self.levelThreshold, self.fmtStr, flushThreshold=lvlAll).some
@@ -32,7 +39,8 @@ var logger* = newCustomLogger()
 
 proc flush*(logger: Logger) =
   if logger of FileLogger:
-    logger.FileLogger.file.flushFile()
+    when not defined(js):
+      logger.FileLogger.file.flushFile()
   elif logger of CustomLogger and logger.CustomLogger.fileLogger.getSome(l):
     l.flush()
 

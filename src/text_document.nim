@@ -1,17 +1,12 @@
-import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, os, re, tables, deques, asyncdispatch, asyncfile, dynlib]
-import editor, document, document_editor, events, id, util, scripting, vmath, bumpy, rect_utils, language_server_base, event, input, platform/platform
+import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, tables, deques]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
-import custom_logger
-
-import treesitter/api as ts
-import treesitter_nim/nim
+import editor, document, document_editor, events, id, util, vmath, bumpy, rect_utils, event, input, regex, custom_logger, custom_async, custom_treesitter
+import scripting/[expose]
+import platform/[platform, filesystem]
+import language/[languages, language_server_base]
 
 export document, document_editor, id
-
-when not declared(c_malloc):
-  proc c_malloc(size: csize_t): pointer {.importc: "malloc", header: "<stdlib.h>", used.}
-  proc c_free(p: pointer): void {.importc: "free", header: "<stdlib.h>", used.}
 
 type
   UndoOpKind = enum
@@ -35,8 +30,6 @@ proc `$`*(op: UndoOp): string =
   if op.kind == Insert: result.add fmt", selections = {op.cursor}, text: '{op.text}'}}"
   if op.kind == Nested: result.add fmt", {op.children}}}"
 
-type TSLanguageCtor = proc(): ptr TSLanguage {.stdcall.}
-
 type TextDocument* = ref object of Document
   filename*: string
   lines*: seq[string]
@@ -51,11 +44,13 @@ type TextDocument* = ref object of Document
   undoOps*: seq[UndoOp]
   redoOps*: seq[UndoOp]
 
-  tsParser: ptr ts.TSParser
-  currentTree: ptr ts.TSTree
-  highlightQuery: ptr ts.TSQuery
+  tsParser: TSParser
+  tsLanguage: TSLanguage
+  currentTree: TSTree
+  highlightQuery: TSQuery
 
   languageServer: Option[LanguageServer]
+  onRequestSaveHandle: OnRequestSaveHandle
 
 type StyledText* = object
   text*: string
@@ -63,7 +58,7 @@ type StyledText* = object
   priority*: int
   bounds*: Rect
 
-type StyledLine* = object
+type StyledLine* = ref object
   index*: int
   parts*: seq[StyledText]
 
@@ -101,93 +96,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
 proc handleAction(self: TextDocumentEditor, action: string, arg: string): EventResponse
 proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): EventResponse
 proc handleInput(self: TextDocumentEditor, input: string): EventResponse
-
-func toTsPoint(cursor: Cursor): ts.TSPoint = ts.TSPoint(row: cursor.line.uint32, column: cursor.column.uint32)
-proc len*(node: ts.TSNode): int = node.tsNodeChildCount().int
-proc high*(node: ts.TSNode): int = node.len - 1
-proc low*(node: ts.TSNode): int = 0
-proc startByte*(node: ts.TSNode): int = node.tsNodeStartByte.int
-proc endByte*(node: ts.TSNode): int = node.tsNodeEndByte.int
-proc startPoint*(node: ts.TSNode): Cursor =
-  let point = node.tsNodeStartPoint
-  return (point.row.int, point.column.int)
-proc endPoint*(node: ts.TSNode): Cursor =
-  let point = node.tsNodeEndPoint
-  return (point.row.int, point.column.int)
-proc getRange*(node: ts.TSNode): Selection = (node.startPoint, node.endPoint)
-proc root*(tree: ptr ts.TSTree): ts.TSNode = tree.tsTreeRootNode
-proc execute*(cursor: ptr ts.TSQueryCursor, query: ptr ts.TSQuery, node: ts.TSNode) = cursor.tsQueryCursorExec(query, node)
-proc prev*(node: ts.TSNode): Option[ts.TSNode] =
-  let other = node.tsNodePrevSibling
-  if not other.tsNodeIsNull:
-    result = other.some
-proc next*(node: ts.TSNode): Option[ts.TSNode] =
-  let other = node.tsNodeNextSibling
-  if not other.tsNodeIsNull:
-    result = other.some
-proc prevNamed*(node: ts.TSNode): Option[ts.TSNode] =
-  let other = node.tsNodePrevNamedSibling
-  if not other.tsNodeIsNull:
-    result = other.some
-proc nextNamed*(node: ts.TSNode): Option[ts.TSNode] =
-  let other = node.tsNodeNextNamedSibling
-  if not other.tsNodeIsNull:
-    result = other.some
-
-template withQueryCursor*(cursor: untyped, body: untyped): untyped =
-  block:
-    let cursor = ts.tsQueryCursorNew()
-    defer: cursor.tsQueryCursorDelete()
-    body
-
-template withTreeCursor*(node: untyped, cursor: untyped, body: untyped): untyped =
-  block:
-    let cursor = node.tsTreeCursorNew()
-    defer: cursor.tsTreeCursorDelete()
-    body
-
-proc `[]`*(node: ts.TSNode, index: int): ts.TSNode = node.tsNodeChild(index.uint32)
-proc descendantForRange*(node: ts.TSNode, selection: Selection): ts.TSNode = node.ts_node_descendant_for_point_range(selection.first.toTsPoint, selection.last.toTsPoint)
-proc parent*(node: ts.TSNode): ts.TSNode = node.tsNodeParent()
-proc `==`*(a: ts.TSNode, b: ts.TSNode): bool = a.tsNodeEq(b)
-proc current*(cursor: var ts.TSTreeCursor): ts.TSNode = tsTreeCursorCurrentNode(addr cursor)
-proc gotoParent*(cursor: var ts.TSTreeCursor): bool = tsTreeCursorGotoParent(addr cursor)
-proc gotoNextSibling*(cursor: var ts.TSTreeCursor): bool = tsTreeCursorGotoNextSibling(addr cursor)
-proc gotoFirstChild*(cursor: var ts.TSTreeCursor): bool = tsTreeCursorGotoFirstChild(addr cursor)
-proc gotoFirstChildForCursor*(cursor: var ts.TSTreeCursor, cursor2: Cursor): int = tsTreeCursorGotoFirstChildForPoint(addr cursor, cursor2.toTsPoint).int
-
-proc setPointRange*(cursor: ptr ts.TSQueryCursor, selection: Selection) =
-  cursor.tsQueryCursorSetPointRange(selection.first.toTsPoint, selection.last.toTsPoint)
-
-proc getCaptureName(query: ptr ts.TSQuery, index: uint32): string =
-  var length: uint32
-  var str = ts.tsQueryCaptureNameForId(query, index, addr length)
-  defer: assert result.len == length.int
-  return $str
-
-proc getStringValue(query: ptr ts.TSQuery, index: uint32): string =
-  var length: uint32
-  var str = ts.tsQueryStringValueForId(query, index, addr length)
-  defer: assert result.len == length.int
-  return $str
-
-proc nextMatch*(cursor: ptr ts.TSQueryCursor): Option[ts.TSQueryMatch] =
-  result = ts.TSQueryMatch.none
-  var match: ts.TSQueryMatch
-  if cursor.tsQueryCursorNextMatch(addr match):
-    result = match.some
-
-proc nextCapture*(cursor: ptr ts.TSQueryCursor): Option[tuple[match: ts.TSQueryMatch, captureIndex: int]] =
-  var match: ts.TSQueryMatch
-  var index: uint32
-  if cursor.tsQueryCursorNextCapture(addr match, addr index):
-    result = (match, index.int).some
-
-proc `$`*(node: ts.TSNode): string =
-  let c_str = node.tsNodeString()
-  defer: c_str.c_free
-  result = $c_str
-
 proc getLine*(self: TextDocument, line: int): string =
   if line < self.lines.len:
     return self.lines[line]
@@ -230,7 +138,7 @@ proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
   if self.selectionHistory.len > 100:
     discard self.selectionHistory.popFirst
   self.selectionsInternal = @[self.clampSelection selection]
-  self.dirty = true
+  self.markDirty()
 
 proc `selections=`*(self: TextDocumentEditor, selections: Selections) =
   if self.selectionsInternal == selections:
@@ -242,11 +150,11 @@ proc `selections=`*(self: TextDocumentEditor, selections: Selections) =
   self.selectionsInternal = self.clampAndMergeSelections selections
   if self.selectionsInternal.len == 0:
     self.selectionsInternal = @[(0, 0).toSelection]
-  self.dirty = true
+  self.markDirty()
 
 proc clampSelection*(self: TextDocumentEditor) =
   self.selections = self.clampAndMergeSelections(self.selectionsInternal)
-  self.dirty = true
+  self.markDirty()
 
 proc `content=`*(self: TextDocument, value: string) =
   if self.singleLine:
@@ -254,13 +162,13 @@ proc `content=`*(self: TextDocument, value: string) =
     if self.lines.len == 0:
       self.lines = @[""]
     if not self.tsParser.isNil:
-      self.currentTree = self.tsParser.tsParserParseString(nil, self.lines[0].cstring, self.lines[0].len.uint32)
+      self.currentTree = self.tsParser.parseString(self.lines[0])
   else:
     self.lines = value.splitLines
     if self.lines.len == 0:
       self.lines = @[""]
     if not self.tsParser.isNil:
-      self.currentTree = self.tsParser.tsParserParseString(nil, value, value.len.uint32)
+      self.currentTree = self.tsParser.parseString(value)
 
   inc self.version
 
@@ -278,7 +186,7 @@ proc `content=`*(self: TextDocument, value: seq[string]) =
   let strValue = value.join("\n")
 
   if not self.tsParser.isNil:
-    self.currentTree = self.tsParser.tsParserParseString(nil, strValue.cstring, strValue.len.uint32)
+    self.currentTree = self.tsParser.parseString(strValue)
 
   inc self.version
 
@@ -303,7 +211,7 @@ func contentString*(self: TextDocument, selection: Selection): string =
   result.add "\n"
   result.add self.lines[last.line][0..<last.column]
 
-import language_server
+import language/language_server
 
 func len*(line: StyledLine): int =
   result = 0
@@ -337,257 +245,144 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
 
   var regexes = initTable[string, Regex]()
 
-  if self.tsParser.isNil or self.highlightQuery.isNil:
+  if self.tsParser.isNil or self.highlightQuery.isNil or self.currentTree.isNil:
     return styledLine
 
-  withQueryCursor(cursor):
-    cursor.setPointRange ((i, 0), (i, line.len))
-    cursor.execute(self.highlightQuery, self.currentTree.root)
+  for match in self.highlightQuery.matches(self.currentTree.root, ((i, 0), (i, line.len))):
+    let predicates = self.highlightQuery.predicatesForPattern(match.pattern)
 
-    var match = cursor.nextMatch()
-    while match.isSome:
-      defer: match = cursor.nextMatch()
+    for capture in match.captures:
+      let scope = capture.name
 
-      var predicatesLength: uint32 = 0
-      let predicatesPtr = self.highlightQuery.tsQueryPredicatesForPattern(match.get.patternIndex, addr predicatesLength)
-      let predicatesRaw = cast[ptr array[100, ts.TSQueryPredicateStep]](predicatesPtr)
+      let node = capture.node
 
-      var argIndex = 0
-      var predicateName: string = ""
-      var predicateArgs: seq[string] = @[]
+      var matches = true
+      for predicate in predicates:
 
-      var predicates: seq[tuple[name: string, args: seq[string]]] = @[]
+        if not matches:
+          break
 
-      for k in 0..<predicatesLength:
-        case predicatesRaw[k].`type`:
-        of ts.TSQueryPredicateStepTypeString:
-          let value = self.highlightQuery.getStringValue(predicatesRaw[k].valueId)
-          if argIndex == 0:
-            predicateName = value
-          else:
-            predicateArgs.add value
-          argIndex += 1
+        for operand in predicate.operands:
+          let value = $operand.`type`
 
-        of ts.TSQueryPredicateStepTypeCapture:
-          predicateArgs.add self.highlightQuery.getCaptureName(predicatesRaw[k].valueId)
-          argIndex += 1
+          if operand.name != scope:
+            matches = false
+            break
 
-        of ts.TSQueryPredicateStepTypeDone:
-          predicates.add (predicateName, predicateArgs)
-          predicateName = ""
-          predicateArgs.setLen 0
-          argIndex = 0
-
-      let captures = cast[ptr array[100, ts.TSQueryCapture]](match.get.captures)
-      for k in 0..<match.get.capture_count.int:
-        let scope = self.highlightQuery.getCaptureName(captures[k].index)
-
-        let node = captures[k].node
-
-        var matches = true
-        for predicate in predicates:
-          if predicate.args[0] != scope:
-            continue
-          case predicate.name
+          case $predicate.operator
           of "match?":
-            let regex = if regexes.contains(predicate.args[1]):
-              regexes[predicate.args[1]]
+            let regex = if regexes.contains(value):
+              regexes[value]
             else:
-              let regex = re(predicate.args[1], {})
-              regexes[predicate.args[1]] = regex
+              let regex = re(value)
+              regexes[value] = regex
               regex
 
             let nodeText = self.contentString(node.getRange)
-            if nodeText.matchLen(regex) != nodeText.len:
+            if nodeText.matchLen(regex, 0) != nodeText.len:
               matches = false
               break
 
           of "not-match?":
-            let regex = if regexes.contains(predicate.args[1]):
-              regexes[predicate.args[1]]
+            let regex = if regexes.contains(value):
+              regexes[value]
             else:
-              let regex = re(predicate.args[1], {})
-              regexes[predicate.args[1]] = regex
+              let regex = re(value)
+              regexes[value] = regex
               regex
 
             let nodeText = self.contentString(node.getRange)
-            if nodeText.matchLen(regex) == nodeText.len:
+            if nodeText.matchLen(regex, 0) == nodeText.len:
               matches = false
               break
 
           of "eq?":
             # @todo: second arg can be capture aswell
             let nodeText = self.contentString(node.getRange)
-            if nodeText != predicate.args[1]:
+            if nodeText != value:
               matches = false
               break
 
           of "not-eq?":
             # @todo: second arg can be capture aswell
             let nodeText = self.contentString(node.getRange)
-            if nodeText == predicate.args[1]:
+            if nodeText == value:
               matches = false
               break
 
-          of "any-of?":
-            logger.log(lvlError, fmt"Unknown predicate '{predicate.name}'")
+          # of "any-of?":
+          #   logger.log(lvlError, fmt"Unknown predicate '{predicate.name}'")
 
           else:
-            logger.log(lvlError, fmt"Unknown predicate '{predicate.name}'")
+            logger.log(lvlError, fmt"Unknown predicate '{predicate.operator}'")
 
         if gEditor.getFlag("text.print-matches"):
           let nodeText = self.contentString(node.getRange)
-          logger.log(lvlInfo, fmt"{match.get.patternIndex}: '{nodeText}' {node} (matches: {matches})")
+          logger.log(lvlInfo, fmt"{match.pattern}: '{nodeText}' {node} (matches: {matches})")
 
-        if not matches:
-          continue
+      if not matches:
+        continue
 
-        let nodeRange = node.getRange
+      let nodeRange = node.getRange
 
-        if nodeRange.first.line == i:
-          styledLine.splitAt(nodeRange.first.column)
-        if nodeRange.last.line == i:
-          styledLine.splitAt(nodeRange.last.column)
+      if nodeRange.first.line == i:
+        styledLine.splitAt(nodeRange.first.column)
+      if nodeRange.last.line == i:
+        styledLine.splitAt(nodeRange.last.column)
 
-        let first = if nodeRange.first.line < i: 0 elif nodeRange.first.line == i: nodeRange.first.column else: line.len
-        let last = if nodeRange.last.line < i: 0 elif nodeRange.last.line == i: nodeRange.last.column else: line.len
+      let first = if nodeRange.first.line < i: 0 elif nodeRange.first.line == i: nodeRange.first.column else: line.len
+      let last = if nodeRange.last.line < i: 0 elif nodeRange.last.line == i: nodeRange.last.column else: line.len
 
-        styledLine.overrideStyle(first, last, scope, match.get.patternIndex.int)
+      styledLine.overrideStyle(first, last, $scope, match.pattern)
 
   return styledLine
 
-proc loadLanguageDynamically(languageId: string): ptr TSLanguage =
-  try:
-    let config = getOption[JsonNode](gEditor, "editor.text.treesitter." & languageId, newJObject())
-
-    let ctorSymbolName = if config.hasKey("constructor"):
-      config["constructor"].getStr
-    else:
-      fmt"tree_sitter_{languageId}"
-
-    let dllPath = if config.hasKey("dll"):
-      config["dll"].getStr
-    else:
-      fmt"./languages/{languageId}.dll"
-
-    logger.log(lvlInfo, fmt"Trying to load treesitter from '{dllPath}' using function '{ctorSymbolName}'")
-
-    # @todo: unload lib
-    let lib = loadLib(dllPath)
-    if lib.isNil:
-      logger.log(lvlError, fmt"[textedit] Failed to load treesitter dll for '{languageId}': '{dllPath}'")
-      return nil
-
-    let ctor = cast[TSLanguageCtor](lib.symAddr(ctorSymbolName.cstring))
-    if ctor.isNil:
-      logger.log(lvlError, fmt"[textedit] Failed to load treesitter dll for '{languageId}': '{dllPath}'")
-      return nil
-
-    return ctor()
-  except CatchableError:
-    logger.log(lvlError, fmt"[textedit] Failed to load language from dll: '{languageId}': {getCurrentExceptionMsg()}")
-    return nil
-
-proc getLanguageForFile(filename: string): Option[string] =
-  var extension = filename.splitFile.ext
-  if extension.len > 0:
-    extension = extension[1..^1]
-  let languageId = case extension
-  of "c", "cc", "inc": "c"
-  of "sh": "bash"
-  of "cs": "csharp"
-  of "cpp", "hpp", "h": "cpp"
-  of "css": "css"
-  of "go": "go"
-  of "hs": "haskell"
-  of "html": "html"
-  of "java": "java"
-  of "js", "jsx", "json": "javascript"
-  of "ocaml": "ocaml"
-  of "php": "php"
-  of "py": "python"
-  of "ruby": "ruby"
-  of "rs": "rust"
-  of "scala": "scala"
-  of "ts": "typescript"
-  of "nim", "nims": "nim"
-  of "zig": "zig"
-  else:
-    # Unsupported language
-    logger.log(lvlWarn, fmt"Unknown file extension '{extension}'")
-    return string.none
-  return languageId.some
-
-proc initTreesitter(self: TextDocument) =
+proc initTreesitter(self: TextDocument): Future[void] {.async.} =
   if not self.tsParser.isNil:
-    self.tsParser.tsParserDelete()
+    self.tsParser.deinit()
     self.tsParser = nil
   if not self.highlightQuery.isNil:
-    self.highlightQuery.tsQueryDelete()
+    self.highlightQuery.deinit()
     self.highlightQuery = nil
-
-  template tryGetLanguage(constructor: untyped): untyped =
-    block:
-      var l: ptr TSLanguage = nil
-      when compiles(constructor()):
-        l = constructor()
-      l
 
   let languageId = if getLanguageForFile(self.filename).getSome(languageId):
     languageId
   else:
     return
 
-  var language = loadLanguageDynamically(languageId)
+  let config = getOption[JsonNode](gEditor, "editor.text.treesitter." & languageId, newJObject())
+  var language = await loadLanguage(languageId, config)
 
-  if language.isNil:
-    logger.log(lvlInfo, fmt"No dll language for {languageId}, try builtin")
-    language = case languageId
-    of "c": tryGetLanguage(treeSitterC)
-    of "bash": tryGetLanguage(treeSitterBash)
-    of "csharp": tryGetLanguage(treeSitterCShap)
-    of "cpp": tryGetLanguage(treeSitterCpp)
-    of "css": tryGetLanguage(treeSitterCss)
-    of "go": tryGetLanguage(treeSitterGo)
-    of "haskell": tryGetLanguage(treeSitterHaskell)
-    of "html": tryGetLanguage(treeSitterHtml)
-    of "java": tryGetLanguage(treeSitterJava)
-    of "javascript": tryGetLanguage(treeSitterJavascript)
-    of "ocaml": tryGetLanguage(treeSitterOcaml)
-    of "php": tryGetLanguage(treeSitterPhp)
-    of "python": tryGetLanguage(treeSitterPython)
-    of "ruby": tryGetLanguage(treeSitterRuby)
-    of "rust": tryGetLanguage(treeSitterRust)
-    of "scala": tryGetLanguage(treeSitterScala)
-    of "typescript": tryGetLanguage(treeSitterTypecript)
-    of "nim": tryGetLanguage(treeSitterNim)
-    of "zig": tryGetLanguage(treeSitterZig)
-    else:
-      logger.log(lvlWarn, fmt"Failed to init treesitter for language '{languageId}'")
-      return
-
-  if language.isNil:
+  if language.isNone:
     logger.log(lvlWarn, fmt"Language is not available: '{languageId}'")
     return
 
-  self.tsParser = ts.tsParserNew()
-  assert self.tsParser.tsParserSetLanguage(language) == true
+  self.tsParser = createTSParser()
+  if self.tsParser.isNil:
+    logger.log(lvlWarn, fmt"Failed to create ts parser for: '{languageId}'")
+    return
+
+  self.tsParser.setLanguage(language.get)
+  self.tsLanguage = language.get
+
+  self.currentTree = self.tsParser.parseString(self.contentString)
 
   try:
-    let queryString = readFile(fmt"./languages/{languageId}/queries/highlights.scm")
-    var errorOffset: uint32 = 0
-    var queryError: ts.TSQueryError = ts.TSQueryErrorNone
-    self.highlightQuery = language.tsQueryNew(queryString.cstring, queryString.len.uint32, addr errorOffset, addr queryError)
-    if queryError != ts.TSQueryErrorNone:
-      logger.log(lvlError, fmt"[textedit] Failed to load highlights query for {languageId}:{errorOffset}: {queryError}: {queryString}")
+    let queryString = fs.loadFile(fmt"./languages/{languageId}/queries/highlights.scm")
+    self.highlightQuery = language.get.query(queryString)
   except CatchableError:
     logger.log(lvlError, fmt"[textedit] No highlight queries found for '{languageId}'")
 
+  # We now have a treesitter grammar + highlight query, so retrigger rendering
+  self.textChanged.invoke self
+  gEditor.platform.requestRender()
+
 proc saveTempFile*(self: TextDocument, filename: string): Future[void] {.async.} =
-  let text = self.contentString
-  var file = openAsync(filename, fmWrite)
-  await file.write text
-  file.close()
+  when not defined(js):
+    let text = self.contentString
+    var file = openAsync(filename, fmWrite)
+    await file.write text
+    file.close()
 
 proc newTextDocument*(filename: string = "", content: string | seq[string] = ""): TextDocument =
   new(result)
@@ -595,26 +390,21 @@ proc newTextDocument*(filename: string = "", content: string | seq[string] = "")
   self.filename = filename
   self.currentTree = nil
 
-  self.initTreesitter()
+  asyncCheck self.initTreesitter()
 
   let language = getLanguageForFile(filename)
   if language.isSome:
     self.languageId = language.get
-    if language.get == "nim":
-      proc saveTempFileClosure(filename: string): Future[void] {.async.} =
-        await self.saveTempFile(filename)
-      self.languageServer = LanguageServer(newLanguageServerNimSuggest(filename, saveTempFileClosure)).some
-      self.languageServer.get.start()
-    asyncCheck getOrCreateLanguageServerLSP(self.languageId)
 
   self.content = content
 
 proc destroy*(self: TextDocument) =
   if not self.tsParser.isNil:
-    self.tsParser.tsParserDelete()
+    self.tsParser.deinit()
     self.tsParser = nil
 
   if self.languageServer.isSome:
+    self.languageServer.get.removeOnRequestSaveHandler(self.onRequestSaveHandle)
     self.languageServer.get.stop()
     self.languageServer = LanguageServer.none
 
@@ -632,7 +422,7 @@ method save*(self: TextDocument, filename: string = "") =
   if self.filename.len == 0:
     raise newException(IOError, "Missing filename")
 
-  writeFile(self.filename, self.lines.join "\n")
+  fs.saveFile(self.filename, self.lines.join "\n")
 
 method load*(self: TextDocument, filename: string = "") =
   let filename = if filename.len > 0: filename else: self.filename
@@ -641,7 +431,7 @@ method load*(self: TextDocument, filename: string = "") =
 
   self.filename = filename
 
-  let file = readFile(self.filename)
+  let file = fs.loadFile(self.filename)
   self.content = file
 
 proc notifyTextChanged(self: TextDocument) =
@@ -663,8 +453,8 @@ proc delete(self: TextDocument, selections: openArray[Selection], oldSelection: 
 
     let selection = selection.normalized
 
-    let startByte = self.byteOffset(selection.first).uint32
-    let endByte = self.byteOffset(selection.last).uint32
+    let startByte = self.byteOffset(selection.first)
+    let endByte = self.byteOffset(selection.last)
 
     let deletedText = self.contentString(selection)
 
@@ -687,17 +477,17 @@ proc delete(self: TextDocument, selections: openArray[Selection], oldSelection: 
       result[k] = result[k].subtract(selection)
 
     if not self.tsParser.isNil:
-      let edit = ts.TSInputEdit(
-        start_byte: startByte,
-        old_end_byte: endByte,
-        new_end_byte: startByte,
-        start_point: TSPoint(row: selection.first.line.uint32, column: selection.first.column.uint32),
-        old_end_point: TSPoint(row: selection.last.line.uint32, column: selection.last.column.uint32),
-        new_end_point: TSPoint(row: selection.first.line.uint32, column: selection.first.column.uint32),
+      let edit = TSInputEdit(
+        startIndex: startByte,
+        oldEndIndex: endByte,
+        newEndIndex: startByte,
+        startPosition: TSPoint(row: selection.first.line, column: selection.first.column),
+        oldEndPosition: TSPoint(row: selection.last.line, column: selection.last.column),
+        newEndPosition: TSPoint(row: selection.first.line, column: selection.first.column),
       )
-      self.currentTree.tsTreeEdit(addr edit)
+      discard self.currentTree.edit(edit)
       let strValue = self.lines.join("\n")
-      self.currentTree = self.tsParser.tsParserParseString(self.currentTree, strValue.cstring, strValue.len.uint32)
+      self.currentTree = self.tsParser.parseString(strValue, self.currentTree.some)
       # echo self.currentTree.root
 
     inc self.version
@@ -714,7 +504,6 @@ proc delete(self: TextDocument, selections: openArray[Selection], oldSelection: 
   if record and undoOp.children.len > 0:
     self.undoOps.add undoOp
     self.redoOps = @[]
-
 
 proc getNodeRange*(self: TextDocument, selection: Selection, parentIndex: int = 0, siblingIndex: int = 0): Option[Selection] =
   result = Selection.none
@@ -749,31 +538,31 @@ proc getIndentForLine*(self: TextDocument, line: int): int =
       break
     result += 1
 
-proc getTargetIndentForLine(self: TextDocument, line: int): int =
-  if line == 0:
-    return 0
-  # return self.getIndentForLine(line - 1)
-  if self.currentTree.isNil:
-    return
+# proc getTargetIndentForLine(self: TextDocument, line: int): int =
+#   if line == 0:
+#     return 0
+#   # return self.getIndentForLine(line - 1)
+#   if self.currentTree.isNil:
+#     return
 
-  let curr = (line, 0)
-  let prev = (line - 1, self.lineLength(line - 1))
+#   let curr = (line, 0)
+#   let prev = (line - 1, self.lineLength(line - 1))
 
-  var nodePrev = self.currentTree.root.descendantForRange prev.toSelection
-  var nodeCurr = self.currentTree.root.descendantForRange curr.toSelection
+#   var nodePrev = self.currentTree.root.descendantForRange prev.toSelection
+#   var nodeCurr = self.currentTree.root.descendantForRange curr.toSelection
 
-  let currChildOfPrev = nodePrev.getRange.contains(nodeCurr.getRange)
-  # echo "prev: ", nodePrev.getRange, ", ", $nodePrev, "\n", self.contentString(nodePrev.getRange)
-  # echo "curr: ", nodeCurr.getRange, ", ", $nodeCurr, "\n", self.contentString(nodeCurr.getRange)
+#   let currChildOfPrev = nodePrev.getRange.contains(nodeCurr.getRange)
+#   # echo "prev: ", nodePrev.getRange, ", ", $nodePrev, "\n", self.contentString(nodePrev.getRange)
+#   # echo "curr: ", nodeCurr.getRange, ", ", $nodeCurr, "\n", self.contentString(nodeCurr.getRange)
 
-  if currChildOfPrev:
-    # echo "currChildOfPrev"
-    return nodeCurr.getRange.first.column + 2
-  else:
-    # echo "not currChildOfPrev"
-    return nodePrev.getRange.first.column + 2
+#   if currChildOfPrev:
+#     # echo "currChildOfPrev"
+#     return nodeCurr.getRange.first.column + 2
+#   else:
+#     # echo "not currChildOfPrev"
+#     return nodePrev.getRange.first.column + 2
 
-  # return node.getRange.first.column + 2
+#   # return node.getRange.first.column + 2
 
 proc insert(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], text: string, notify: bool = true, record: bool = true, autoIndent: bool = true): seq[Selection] =
   var newEmptyLines: seq[int]
@@ -785,7 +574,7 @@ proc insert(self: TextDocument, selections: openArray[Selection], oldSelection: 
   for i, selection in result:
     let oldCursor = selection.last
     var cursor = selection.last
-    let startByte = self.byteOffset(cursor).uint32
+    let startByte = self.byteOffset(cursor)
 
     var lineCounter: int = 0
     # echo "insert ", cursor, ": ", text
@@ -818,17 +607,17 @@ proc insert(self: TextDocument, selections: openArray[Selection], oldSelection: 
       result[k] = result[k].add((oldCursor, cursor))
 
     if not self.tsParser.isNil:
-      let edit = ts.TSInputEdit(
-        start_byte: startByte,
-        old_end_byte: startByte,
-        new_end_byte: startByte + text.len.uint32,
-        start_point: TSPoint(row: oldCursor.line.uint32, column: oldCursor.column.uint32),
-        old_end_point: TSPoint(row: oldCursor.line.uint32, column: oldCursor.column.uint32),
-        new_end_point: TSPoint(row: cursor.line.uint32, column: cursor.column.uint32),
+      let edit = TSInputEdit(
+        startIndex: startByte,
+        oldEndIndex: startByte,
+        newEndIndex: startByte + text.len,
+        startPosition: TSPoint(row: oldCursor.line, column: oldCursor.column),
+        oldEndPosition: TSPoint(row: oldCursor.line, column: oldCursor.column),
+        newEndPosition: TSPoint(row: cursor.line, column: cursor.column),
       )
-      self.currentTree.tsTreeEdit(addr edit)
+      discard self.currentTree.edit(edit)
       let strValue = self.lines.join("\n")
-      self.currentTree = self.tsParser.tsParserParseString(self.currentTree, strValue.cstring, strValue.len.uint32)
+      self.currentTree = self.tsParser.parseString(strValue, self.currentTree.some)
 
     # if autoIndent:
     #   for line in newEmptyLines:
@@ -935,7 +724,7 @@ method getEventHandlers*(self: TextDocumentEditor): seq[EventHandler] =
 proc updateSearchResults(self: TextDocumentEditor) =
   if self.searchRegex.isNone:
     self.searchResults.clear()
-    self.dirty = true
+    self.markDirty()
     return
 
   for i, line in self.document.lines:
@@ -946,13 +735,13 @@ proc updateSearchResults(self: TextDocumentEditor) =
       if bounds.first == -1:
         break
       selections.add ((i, bounds.first), (i, bounds.last + 1))
-      start = bounds.last + 1
+      start = max(bounds.last + 1, start + 1)
 
     if selections.len > 0:
       self.searchResults[i] = selections
     else:
       self.searchResults.del i
-  self.dirty = true
+  self.markDirty()
 
 method handleDocumentChanged*(self: TextDocumentEditor) =
   self.selection = (self.clampCursor self.selection.first, self.clampCursor self.selection.last)
@@ -1010,7 +799,7 @@ proc doMoveCursorNextFindResult(self: TextDocumentEditor, cursor: Cursor, offset
 proc scrollToCursor(self: TextDocumentEditor, cursor: Cursor, keepVerticalOffset: bool = false) =
   let targetLine = cursor.line
   let totalLineHeight = if not self.editor.platform.isNil: self.editor.platform.totalLineHeight
-    else: self.editor.renderCtx.lineHeight + getOption[float32](self.editor, "text.line-distance")
+    else: self.editor.platform.lineHeight + getOption[float32](self.editor, "text.line-distance")
 
   if keepVerticalOffset:
     let currentLineY = (self.selection.last.line - self.previousBaseIndex).float32 * totalLineHeight + self.scrollOffset
@@ -1026,7 +815,7 @@ proc scrollToCursor(self: TextDocumentEditor, cursor: Cursor, keepVerticalOffset
     elif targetLineY + totalLineHeight > self.lastContentBounds.h - margin:
       self.scrollOffset = self.lastContentBounds.h - margin - totalLineHeight
       self.previousBaseIndex = targetLine
-  self.dirty = true
+  self.markDirty()
 
 proc getContextWithMode*(self: TextDocumentEditor, context: string): string
 
@@ -1087,7 +876,7 @@ proc moveCursor(self: TextDocumentEditor, cursor: SelectionCursor, movement: pro
 
 method handleScroll*(self: TextDocumentEditor, scroll: Vec2, mousePosWindow: Vec2) =
   self.scrollOffset += scroll.y * getOption[float](self.editor, "text.scroll-speed", 40)
-  self.dirty = true
+  self.markDirty()
 
 proc getTextDocumentEditor(wrapper: api.TextDocumentEditor): Option[TextDocumentEditor] =
   if gEditor.isNil: return TextDocumentEditor.none
@@ -1130,7 +919,7 @@ proc setMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} 
         self.handleInput input
 
   self.currentMode = mode
-  self.dirty = true
+  self.markDirty()
 
 proc mode*(self: TextDocumentEditor): string {.expose("editor.text").} =
   ## Returns the current mode of the text editor, or "" if there is no mode
@@ -1200,7 +989,7 @@ proc selectParentTs(self: TextDocumentEditor, selection: Selection) {.expose("ed
 proc selectParentCurrentTs(self: TextDocumentEditor) {.expose("editor.text").} =
   self.selectParentTs(self.selection)
 
-proc getCompletionsAsync(self: TextDocumentEditor): Future[void]
+proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.}
 
 proc insertText*(self: TextDocumentEditor, text: string) {.expose("editor.text").} =
   if self.document.singleLine and text == "\n":
@@ -1226,7 +1015,7 @@ proc redo(self: TextDocumentEditor) {.expose("editor.text").} =
 
 proc scrollText(self: TextDocumentEditor, amount: float32) {.expose("editor.text").} =
   self.scrollOffset += amount
-  self.dirty = true
+  self.markDirty()
 
 proc duplicateLastSelection*(self: TextDocumentEditor) {.expose("editor.text").} =
   let newSelection = self.doMoveCursorColumn(self.selections[self.selections.high].last, 1).toSelection
@@ -1327,7 +1116,7 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = Selecti
 
 proc reloadTreesitter*(self: TextDocumentEditor) {.expose("editor.text").} =
   logger.log(lvlInfo, "reloadTreesitter")
-  self.document.initTreesitter()
+  asyncCheck self.document.initTreesitter()
 
 proc deleteLeft*(self: TextDocumentEditor) {.expose("editor.text").} =
   var selections = self.selections
@@ -1359,7 +1148,7 @@ proc updateCommandCount*(self: TextDocumentEditor, digit: int) {.expose("editor.
 
 proc setFlag*(self: TextDocumentEditor, name: string, value: bool) {.expose("editor.text").} =
   self.editor.setFlag("editor.text." & name, value)
-  self.dirty = true
+  self.markDirty()
 
 proc getFlag*(self: TextDocumentEditor, name: string): bool {.expose("editor.text").} =
   return self.editor.getFlag("editor.text." & name)
@@ -1538,27 +1327,27 @@ proc changeMove*(self: TextDocumentEditor, move: string, which: SelectionCursor 
   self.scrollToCursor(Last)
   self.updateTargetColumn(Last)
 
-proc moveLast*(self: TextDocumentEditor, move: string, which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
+proc moveLast*(self: TextDocumentEditor, move: string, which: SelectionCursor = SelectionCursor.Config, all: bool = true, count: int = 0) {.expose("editor.text").} =
   case which
   of Config:
-    self.selections = self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(self.cursor(s, which), move).last.toSelection(s, getOption(self.editor, self.getContextWithMode("editor.text.cursor.movement"), Both)))
+    self.selections = self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(self.cursor(s, which), move, count).last.toSelection(s, getOption(self.editor, self.getContextWithMode("editor.text.cursor.movement"), Both)))
   else:
-    self.selections = self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(self.cursor(s, which), move).last.toSelection(s, which))
+    self.selections = self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(self.cursor(s, which), move, count).last.toSelection(s, which))
   self.scrollToCursor(which)
   self.updateTargetColumn(which)
 
-proc moveFirst*(self: TextDocumentEditor, move: string, which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
+proc moveFirst*(self: TextDocumentEditor, move: string, which: SelectionCursor = SelectionCursor.Config, all: bool = true, count: int = 0) {.expose("editor.text").} =
   case which
   of Config:
-    self.selections = self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(self.cursor(s, which), move).first.toSelection(s, getOption(self.editor, self.getContextWithMode("editor.text.cursor.movement"), Both)))
+    self.selections = self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(self.cursor(s, which), move, count).first.toSelection(s, getOption(self.editor, self.getContextWithMode("editor.text.cursor.movement"), Both)))
   else:
-    self.selections = self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(self.cursor(s, which), move).first.toSelection(s, which))
+    self.selections = self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(self.cursor(s, which), move, count).first.toSelection(s, which))
   self.scrollToCursor(which)
   self.updateTargetColumn(which)
 
 proc setSearchQuery*(self: TextDocumentEditor, query: string) {.expose("editor.text").} =
   self.searchQuery = query
-  self.searchRegex = re(query, {}).some
+  self.searchRegex = re(query).some
   self.updateSearchResults()
 
 proc setSearchQueryFromMove*(self: TextDocumentEditor, move: string, count: int = 0) {.expose("editor.text").} =
@@ -1570,16 +1359,18 @@ proc getLanguageServer(self: TextDocumentEditor): Future[Option[LanguageServer]]
   let languageId = if getLanguageForFile(self.document.filename).getSome(languageId):
     languageId
   else:
-    return
+    return LanguageServer.none
 
   if self.document.languageServer.isSome:
     return self.document.languageServer
   else:
-    let languageServer = await getOrCreateLanguageServerLSP(languageId)
-    if languageServer.isNone:
-      return LanguageServer.none
+    self.document.languageServer = await getOrCreateLanguageServer(languageId, self.document.filename)
+    if self.document.languageServer.isSome:
+      let callback = proc (targetFilename: string): Future[void] {.async.} =
+        await self.document.saveTempFile(targetFilename)
 
-    return some(LanguageServer(languageServer.get))
+      self.document.onRequestSaveHandle = self.document.languageServer.get.addOnRequestSaveHandler(self.document.filename, callback)
+    return self.document.languageServer
 
 proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = await self.getLanguageServer()
@@ -1590,6 +1381,7 @@ proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
     let definition = await languageServer.get.getDefinition(self.document.filename, self.selection.last)
     if definition.isSome:
       self.selection = definition.get.location.toSelection
+      self.scrollToCursor()
 
 proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = await self.getLanguageServer()
@@ -1604,7 +1396,7 @@ proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.} =
       self.showCompletions = false
     else:
       self.showCompletions = true
-    self.dirty = true
+    self.markDirty()
 
 # proc testAsync*(self: TextDocumentEditor) {.expose("editor.text").} =
 #   echo "testAsync"
@@ -1620,21 +1412,21 @@ proc getCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
 
 proc hideCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.showCompletions = false
-  self.dirty = true
+  self.markDirty()
 
-proc selectPrevCompletion(self: TextDocumentEditor) {.expose("editor.text").} =
+proc selectPrevCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.completions.len > 0:
     self.selectedCompletion = (self.selectedCompletion - 1).clamp(0, self.completions.len - 1)
   else:
     self.selectedCompletion = 0
-  self.dirty = true
+  self.markDirty()
 
-proc selectNextCompletion(self: TextDocumentEditor) {.expose("editor.text").} =
+proc selectNextCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.completions.len > 0:
     self.selectedCompletion = (self.selectedCompletion + 1).clamp(0, self.completions.len - 1)
   else:
     self.selectedCompletion = 0
-  self.dirty = true
+  self.markDirty()
 
 proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
   if not self.showCompletions:
@@ -1726,10 +1518,20 @@ method injectDependencies*(self: TextDocumentEditor, ed: Editor) =
 proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
   self.clampSelection()
   self.updateSearchResults()
-  self.dirty = true
+  self.markDirty()
+
+## Only use this to create TextDocumentEditorInstances
+proc createTextEditorInstance(): TextDocumentEditor =
+  let editor = TextDocumentEditor(eventHandler: nil, selectionsInternal: @[(0, 0).toSelection])
+  when defined(js):
+    {.emit: [editor, " = createWithPrototype(editor_text_prototype, ", editor, ");"].}
+    # This " is here to fix syntax highlighting
+  return editor
 
 proc newTextEditor*(document: TextDocument, ed: Editor): TextDocumentEditor =
-  let editor = TextDocumentEditor(eventHandler: nil, document: document, selectionsInternal: @[(0, 0).toSelection])
+  var editor = createTextEditorInstance()
+  editor.document = document
+
   editor.init()
   if editor.document.lines.len == 0:
     editor.document.lines = @[""]
@@ -1738,7 +1540,9 @@ proc newTextEditor*(document: TextDocument, ed: Editor): TextDocumentEditor =
   return editor
 
 method createWithDocument*(self: TextDocumentEditor, document: Document): DocumentEditor =
-  let editor = TextDocumentEditor(eventHandler: nil, document: TextDocument(document), selectionsInternal: @[(0, 0).toSelection])
+  var editor = createTextEditorInstance()
+  editor.document = document.TextDocument
+
   editor.init()
   if editor.document.lines.len == 0:
     editor.document.lines = @[""]
@@ -1746,11 +1550,12 @@ method createWithDocument*(self: TextDocumentEditor, document: Document): Docume
   return editor
 
 proc getCursorAtPixelPos(self: TextDocumentEditor, mousePosWindow: Vec2): Option[Cursor] =
-  for line in self.lastRenderedLines:
+  let mousePosContent = mousePosWindow - self.lastContentBounds.xy
+  for li, line in self.lastRenderedLines:
     var startOffset = 0
     for i, part in line.parts:
-      if part.bounds.contains(mousePosWindow) or (i == line.parts.high and mousePosWindow.y >= part.bounds.y and mousePosWindow.y <= part.bounds.yh and mousePosWindow.x >= part.bounds.x):
-        var offsetFromLeft = (mousePosWindow.x - part.bounds.x) / self.editor.renderCtx.charWidth
+      if part.bounds.contains(mousePosContent) or (i == line.parts.high and mousePosContent.y >= part.bounds.y and mousePosContent.y <= part.bounds.yh and mousePosContent.x >= part.bounds.x):
+        var offsetFromLeft = (mousePosContent.x - part.bounds.x) / self.editor.platform.charWidth
         if self.isThickCursor():
           offsetFromLeft -= 0.0
         else:

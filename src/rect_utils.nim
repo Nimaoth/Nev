@@ -1,5 +1,5 @@
 import std/[macros]
-import bumpy, boxy
+import bumpy, vmath
 
 type
   MeasurementKind* = enum

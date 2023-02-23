@@ -7,12 +7,20 @@ This is still very early in developement and very experimental!
 Absytree is a programming languange where instead of writing the source code as text in text files,
 the abstract syntac tree (AST) is edited directly by a custom editor.
 
+## Editor
+
+The editor is available for the terminal, as a desktop GUI app and in the browser.
+You can try the browser version [here](https://nimaoth.github.io/AbsytreeBrowser/).
+
 ## Building
 
 - Developed with Nim version 1.9.1
 - Use `nimble install` to build the editor
 - It currently dynamically links against libstdc++ because some treesitter languages depend on that, so:
   - On windows: copy `libgcc_s_seh-1.dll` and `libstdc++-6.dll` (and optionally `libwinpthread-1.dll`) to the exe directory
+
+- Building the browser version:
+  `nim js -o:ast.js -d:exposeScriptingApi .\src\absytree_js.nim`
 
 ## Configuration
 

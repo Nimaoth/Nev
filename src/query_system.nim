@@ -25,7 +25,8 @@ type
 
   ItemId* = tuple[id: Id, typ: int]
 
-  UpdateFunction* = proc(item: ItemId): Fingerprint
+  UpdateFunctionImpl* = proc(item: ItemId): Fingerprint
+  UpdateFunction* = int
   Dependency* = tuple[item: ItemId, update: UpdateFunction]
   RecursionRecoveryFunction = proc(key: Dependency)
 
@@ -48,7 +49,7 @@ type
 func `$`*(stats: QueryStats): string =
   return fmt"{stats.time.ms:>6.2f}ms  {stats.forcedCalls:4}/{stats.totalCalls:4}"
 
-func getKey*(item: ItemId, update: UpdateFunction = nil): Dependency = (item, update)
+func getKey*(item: ItemId, update: UpdateFunction = -1): Dependency = (item, update)
 
 template query*(name: string, useCache: bool = true, useFingerprinting: bool = true) {.pragma.}
 template recover*(name: string) {.pragma.}
@@ -67,14 +68,14 @@ func fingerprint*(id: Id): Fingerprint =
 proc newDependencyGraph*(): DependencyGraph =
   new result
   result.revision = 0
-  result.queryNames[nil] = ""
+  result.queryNames[-1] = ""
   result.verified = newCache[Dependency, int](2000)
   result.changed = newCache[Dependency, int](2000)
   result.fingerprints = newCache[Dependency, Fingerprint](2000)
   result.dependencies = newCache[Dependency, seq[Dependency]](2000)
 
 proc nodeColor*(graph: DependencyGraph, key: Dependency, parentVerified: int = 0): NodeColor =
-  if key.update == nil:
+  if key.update == -1:
     # Input
     let inputChangedRevision = graph.changed.getOrDefault(key, graph.revision)
     if inputChangedRevision > parentVerified:
@@ -95,8 +96,8 @@ proc nodeColor*(graph: DependencyGraph, key: Dependency, parentVerified: int = 0
 
 proc getDependencies*(graph: DependencyGraph, key: Dependency): seq[Dependency] =
   result = graph.dependencies.getOrDefault(key, @[])
-  if result.len == 0 and key.update != nil:
-    result.add (key.item, nil)
+  if result.len == 0 and key.update != -1:
+    result.add (key.item, -1)
 
 proc clearEdges*(graph: DependencyGraph, key: Dependency) =
   graph.dependencies[key] = @[]
@@ -255,6 +256,11 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       newEmptyNode()
     ),
     nnkIdentDefs.newTree(
+      nnkPostfix.newTree(ident"*", newIdentNode("updateFunctions")),
+      quote do: seq[UpdateFunctionImpl],
+      newEmptyNode()
+    ),
+    nnkIdentDefs.newTree(
       nnkPostfix.newTree(ident"*", newIdentNode("recoveryFunctions")),
       quote do: Table[UpdateFunction, RecursionRecoveryFunction],
       newEmptyNode()
@@ -351,6 +357,8 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       `ctx`.depGraph = newDependencyGraph()
       `ctx`.dependencyStack = @[]
 
+  var updateFunctionTable = initTable[string, int]()
+
   # Add initialization code to the newContext function for each query
   # ctx.update = proc(arg: QueryInput): Fingerprint = ...
   var queryInitializers: seq[NimNode] = @[]
@@ -368,6 +376,9 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     let stats = ident "stats" & name
     let useFingerprinting = newLit queryUseFingerprinting query
 
+    let idx = updateFunctionTable.len
+    updateFunctionTable[updateName.strVal] = idx
+
     queryInitializers.add quote do:
       `ctx`.`updateName` = proc (item: ItemId): Fingerprint =
         if not `ctx`.`items`.contains(item):
@@ -380,7 +391,8 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
           return value.fingerprint
         else:
           return @[]
-      `ctx`.depGraph.queryNames[`ctx`.`updateName`] = `name`
+      `ctx`.updateFunctions.add `ctx`.`updateName`
+      `ctx`.depGraph.queryNames[`idx`] = `name`
       `ctx`.`queryCache`.init(2000)
 
   # Add recovery functions to ctx.recoveryFunctions
@@ -390,8 +402,9 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     let name = queryName query
     let updateName = ident "update" & name
     let recoveryFunction = queryFunctionName query
+    let idx = updateFunctionTable[updateName.strVal]
     queryInitializers.add quote do:
-      `ctx`.recoveryFunctions[`ctx`.`updateName`] = proc(key: Dependency) =
+      `ctx`.recoveryFunctions[`idx`] = proc(key: Dependency) =
         `recoveryFunction`(`ctx`, key)
 
   # Add initializer for each input and data
@@ -485,7 +498,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
   # proc recordDependency(ctx: Context, item: ItemId, update: UpdateFunction)
   result.add quote do:
-    proc recordDependency*(ctx: `contextName`, item: ItemId, update: UpdateFunction = nil) =
+    proc recordDependency*(ctx: `contextName`, item: ItemId, update: UpdateFunction = -1) =
       if ctx.dependencyStack.len > 0:
         ctx.dependencyStack[ctx.dependencyStack.high].add (item, update)
 
@@ -493,7 +506,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
   result.add quote do:
     proc dependOnCurrentRevision*(ctx: `contextName`) =
       if ctx.dependencyStack.len > 0:
-        ctx.dependencyStack[ctx.dependencyStack.high].add ((dependencyGlobalRevision, -1), nil)
+        ctx.dependencyStack[ctx.dependencyStack.high].add ((dependencyGlobalRevision, -1), -1)
 
   # Generate functions getData and getItem
   for data in body:
@@ -527,7 +540,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
             return existing
 
         let item = data.getItem
-        let key: Dependency = (item, nil)
+        let key: Dependency = (item, -1)
         ctx.depGraph.changed[key] = ctx.depGraph.revision
         ctx.`items`[item] = data
         return data
@@ -543,7 +556,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     result.add quote do:
       proc `functionName`*(ctx: `contextName`, data: `name`): `name` =
         let item = data.getItem
-        let key: Dependency = (item, nil)
+        let key: Dependency = (item, -1)
         ctx.depGraph.changed[key] = ctx.depGraph.revision
         ctx.`items`[item] = data
         return data
@@ -580,7 +593,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       ctx.dependencyStack.add(@[])
       ctx.recordDependency(key.item)
 
-      let fingerprint = key.update(key.item)
+      let fingerprint = ctx.updateFunctions[key.update](key.item)
 
       ctx.depGraph.setDependencies(key, ctx.dependencyStack.pop)
       ctx.activeQuerySet.excl key
@@ -692,14 +705,21 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     let updateName = ident "update" & name
     let computeName = ident "compute" & name
     let getFunctionName = ident "get" & name
+    let getKeyName = ident "get" & name & "Key"
     let isDirtyName = ident "is" & name & "Dirty"
     let queryCache = ident "queryCache" & name
     let stats = ident "stats" & name
+
+    let updateIdx = updateFunctionTable[updateName.strVal]
 
     let nameString = name
 
     let useCache = queryUseCache query
     let useFingerprinting = newLit queryUseFingerprinting query
+
+    result.add quote do:
+      proc `getKeyName`*(ctx: `contextName`, itemId: ItemId): Dependency =
+        return (itemId, `updateIdx`)
 
     result.add quote do:
       proc `getFunctionName`*(ctx: `contextName`, input: `key`): Option[`value`] =
@@ -722,10 +742,10 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
               ctx.recursiveQueries.clear()
 
           let item = getItem input
-          let key = (item, ctx.`updateName`)
+          let key = (item, `updateIdx`)
 
           if recordDependency:
-            ctx.recordDependency(item, ctx.`updateName`)
+            ctx.recordDependency(item, `updateIdx`)
 
           let color = ctx.depGraph.nodeColor(key)
 
@@ -792,9 +812,9 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
               ctx.recursiveQueries.clear()
 
           let item = getItem input
-          let key = (item, ctx.`updateName`)
+          let key = (item, `updateIdx`)
 
-          ctx.recordDependency(item, ctx.`updateName`)
+          ctx.recordDependency(item, `updateIdx`)
 
           inc currentIndent, if ctx.enableLogging: 1 else: 0
           defer: dec currentIndent, if ctx.enableLogging: 1 else: 0
@@ -808,7 +828,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     result.add quote do:
       proc `isDirtyName`*(ctx: `contextName`, input: `key`): bool =
         let item = getItem input
-        let key = (item, ctx.`updateName`)
+        let key = (item, `updateIdx`)
 
         let color = ctx.depGraph.nodeColor(key)
 

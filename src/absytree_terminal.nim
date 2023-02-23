@@ -1,3 +1,6 @@
+when defined(js):
+  {.error: "absytree_terminal.nim does not work in js backend. Use absytree_js.nim instead.".}
+
 import std/[parseopt, options, os]
 
 import compilation_config, custom_logger, scripting_api
@@ -48,8 +51,8 @@ block: ## Enable loggers
   if backend.get != Terminal:
     logger.enableConsoleLogger()
 
-import std/[asyncdispatch, strformat]
-import util, editor, timer, platform/widget_builders, platform/platform
+import std/[strformat]
+import util, editor, timer, platform/widget_builders, platform/platform, custom_async
 
 when enableTerminal:
   import platform/terminal_platform
@@ -76,9 +79,14 @@ of Gui:
     echo "[error] GUI backend not available in this build"
     quit(1)
 
+else:
+    echo "[error] This should not happen"
+    quit(1)
+
+
 rend.init()
 
-var ed = newEditor(nil, nil, backend.get, rend)
+var ed = newEditor(backend.get, rend)
 
 addTimer 1000, false, proc(fd: AsyncFD): bool =
   return false

@@ -21,7 +21,3 @@ of 3:
   switch("nimcache", "D:\\nc")
 else:
   discard
-
-# Add custom nimble directory to nimble paths
-switch("nimblepath", "D:/.nimble/pkgs")
-switch("nimblepath", "D:/.nimble/pkgs2")
