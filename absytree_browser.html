@@ -54,14 +54,20 @@
     <script>
         const Parser = window.TreeSitter
 
+        function loadScript(url) {
+            let script = document.createElement("script")
+            script.setAttribute("src", url)
+            document.body.appendChild(script)
+        }
+
         let isEditorLoaded = false
         function loadEditor() {
             if (isEditorLoaded)
                 return
             isEditorLoaded = true
-            let script = document.createElement("script")
-            script.setAttribute("src", "ast.js")
-            document.body.appendChild(script)
+
+            loadScript("ast.js")
+            loadScript("scripting_runtime.js")
         }
 
         function loadFileSync(filePath) {
@@ -79,6 +85,22 @@
             return new Promise((resolve, reject) => {
                 Parser.Language.load(path).then(resolve, () => resolve(null))
             })
+        }
+
+        // These are prototype objects which are filled with wrapper functions for the respective
+        // nim types (Editor, TextDocumentEditor, ...) when loading ast.js
+        var editor_prototype = {}
+        var editor_ast_prototype = {}
+        var editor_text_prototype = {}
+        var popup_selector_prototype = {}
+
+        // This function is used when instantiating (Editor, TextDocumentEditor, ...)
+        function createWithPrototype(prototype, template) {
+            var result = Object.create(prototype)
+            for (const k of Object.keys(template)) {
+                result[k] = template[k]
+            }
+            return result
         }
 
         var treeSitterInitialized = false
