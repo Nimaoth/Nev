@@ -19,7 +19,6 @@ type
 CreateContext Context:
   input AstNode
   input NodeLayoutInput
-  input RenderTextInput
   data Symbol
   data FunctionExecutionContext
 
@@ -44,11 +43,8 @@ CreateContext Context:
 
   proc computeNodeLayoutImpl(ctx: Context, nodeLayoutInput: NodeLayoutInput): NodeLayout {.query("NodeLayout", useFingerprinting = false).}
 
-  proc computeRenderedTextImpl(ctx: Context, input: RenderTextInput): string {.query("RenderedText", useFingerprinting = false).}
-
 import node_layout
 import treewalk_interpreter
-import text_renderer
 
 template logIf(condition: bool, message: string, logResult: bool) =
   let logQuery = condition
@@ -59,10 +55,6 @@ template logIf(condition: bool, message: string, logResult: bool) =
   defer:
     if logQuery and logResult:
       logger.log(lvlInfo, repeat2("| ", currentIndent) & "-> " & $result)
-
-proc computeRenderedTextImpl(ctx: Context, input: RenderTextInput): string =
-  # logIf(ctx.enableLogging or ctx.enableQueryLogging, "computeRenderedTextImpl", false)
-  return computeRenderedTextImpl2(ctx, input)
 
 proc computeNodeLayoutImpl(ctx: Context, nodeLayoutInput: NodeLayoutInput): NodeLayout =
   ctx.dependOnCurrentRevision()
@@ -114,7 +106,7 @@ proc computeSymbolValueImpl(ctx: Context, symbol: Symbol): Value =
 proc computeTypeImpl(ctx: Context, node: AstNode): Type =
   logIf(ctx.enableLogging or ctx.enableQueryLogging, "computeTypeImpl " & $node, true)
 
-  let key: Dependency = (node.getItem, ctx.updateType)
+  let key: Dependency = ctx.getTypeKey(node.getItem)
 
   # Delete old diagnostics
   if ctx.diagnosticsPerQuery.contains(key):
@@ -625,50 +617,50 @@ proc computeSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, Symbol] =
 
 proc notifySymbolChanged*(ctx: Context, sym: Symbol) =
   ctx.depGraph.revision += 1
-  ctx.depGraph.changed[(sym.getItem, nil)] = ctx.depGraph.revision
+  ctx.depGraph.changed[(sym.getItem, -1)] = ctx.depGraph.revision
   logger.log(lvlInfo, fmt"[compiler] Invalidating symbol {sym.name} ({sym.id})")
 
 proc insertNode*(ctx: Context, node: AstNode) =
   ctx.depGraph.revision += 1
-  ctx.depGraph.changed[(node.getItem, nil)] = ctx.depGraph.revision
+  ctx.depGraph.changed[(node.getItem, -1)] = ctx.depGraph.revision
 
   if node.parent != nil:
-    ctx.depGraph.changed[(node.parent.getItem, nil)] = ctx.depGraph.revision
+    ctx.depGraph.changed[(node.parent.getItem, -1)] = ctx.depGraph.revision
 
   ctx.itemsAstNode[node.getItem] = node
   for (key, child) in node.nextPreOrder:
-    ctx.depGraph.changed[(child.getItem, nil)] = ctx.depGraph.revision
+    ctx.depGraph.changed[(child.getItem, -1)] = ctx.depGraph.revision
     ctx.itemsAstNode[child.getItem] = child
 
   var parent = node.parent
   while parent != nil and parent.findWithParentRec(FunctionDefinition).getSome(child):
     let functionDefinition = child.parent
-    ctx.depGraph.changed[(functionDefinition.getItem, nil)] = ctx.depGraph.revision
+    ctx.depGraph.changed[(functionDefinition.getItem, -1)] = ctx.depGraph.revision
     parent = functionDefinition.parent
 
 proc updateNode*(ctx: Context, node: AstNode) =
   ctx.depGraph.revision += 1
-  ctx.depGraph.changed[(node.getItem, nil)] = ctx.depGraph.revision
+  ctx.depGraph.changed[(node.getItem, -1)] = ctx.depGraph.revision
 
   var parent = node.parent
   while parent != nil and parent.findWithParentRec(FunctionDefinition).getSome(child):
     let functionDefinition = child.parent
-    ctx.depGraph.changed[(functionDefinition.getItem, nil)] = ctx.depGraph.revision
+    ctx.depGraph.changed[(functionDefinition.getItem, -1)] = ctx.depGraph.revision
     parent = functionDefinition.parent
 
   logger.log(lvlInfo, fmt"[compiler] Invalidating node {node}")
 
 proc deleteNode*(ctx: Context, node: AstNode) =
   ctx.depGraph.revision += 1
-  ctx.depGraph.changed.del((node.getItem, nil))
+  ctx.depGraph.changed.del((node.getItem, -1))
 
   if node.parent != nil:
-    ctx.depGraph.changed[(node.parent.getItem, nil)] = ctx.depGraph.revision
+    ctx.depGraph.changed[(node.parent.getItem, -1)] = ctx.depGraph.revision
 
   var parent = node.parent
   while parent != nil and parent.findWithParentRec(FunctionDefinition).getSome(child):
     let functionDefinition = child.parent
-    ctx.depGraph.changed[(functionDefinition.getItem, nil)] = ctx.depGraph.revision
+    ctx.depGraph.changed[(functionDefinition.getItem, -1)] = ctx.depGraph.revision
     parent = functionDefinition.parent
 
 proc deleteAllNodesAndSymbols*(ctx: Context) =
@@ -689,11 +681,10 @@ proc deleteAllNodesAndSymbols*(ctx: Context) =
   ctx.queryCacheSymbols.clear
   ctx.queryCacheFunctionExecution.clear
   ctx.queryCacheNodeLayout.clear
-  ctx.queryCacheRenderedText.clear
 
 proc replaceNodeChild*(ctx: Context, parent: AstNode, index: int, newNode: AstNode) =
   let node = parent[index]
   parent[index] = newNode
-  ctx.depGraph.changed.del((node.getItem, nil))
+  ctx.depGraph.changed.del((node.getItem, -1))
 
   ctx.insertNode(newNode)

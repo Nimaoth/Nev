@@ -1,11 +1,11 @@
 import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros, macrocache, options, deques, sets, json, jsonutils, sequtils, streams, os]
 import timer
 import fusion/matching, fuzzy, bumpy, rect_utils, vmath, chroma
-import editor, util, document, document_editor, text_document, events, id, ast_ids, ast, scripting, event, theme, input
+import editor, util, document, document_editor, text_document, events, id, ast_ids, ast, scripting/expose, event, theme, input
 import compiler
-import nimscripter
 from scripting_api as api import nil
 import custom_logger
+import platform/[filesystem, platform]
 
 type ExecutionOutput* = ref object
   lines*: seq[(string, Color)]
@@ -252,12 +252,12 @@ proc handleSelectedNodeChanged(editor: AstDocumentEditor) =
 
     if targetNode != nil:
       # New node is not in layout yet but there is a parent which has a layout already
-      let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: targetNode.subbase, selectedNode: node.id)
+      let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: targetNode.subbase, selectedNode: node.id, measureText: (t) => gEditor.platform.measureText(t))
       layout = ctx.computeNodeLayout(input)
       foundNode = true
 
     elif node.parent == editor.document.rootNode and node.prev.getSome(prev) and layout.nodeToVisualNode.contains(prev.id):
-      let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node.subbase, selectedNode: node.id)
+      let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node.subbase, selectedNode: node.id, measureText: (t) => gEditor.platform.measureText(t))
       layout = ctx.computeNodeLayout(input)
 
       offset += layout.bounds.h
@@ -267,7 +267,7 @@ proc handleSelectedNodeChanged(editor: AstDocumentEditor) =
       foundNode = true
 
     elif node.parent == editor.document.rootNode and node.next.getSome(next) and layout.nodeToVisualNode.contains(next.id):
-      let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node.subbase, selectedNode: node.id)
+      let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node.subbase, selectedNode: node.id, measureText: (t) => gEditor.platform.measureText(t))
       layout = ctx.computeNodeLayout(input)
 
       editor.lastLayouts.insert((layout, offset), i)
@@ -295,7 +295,7 @@ proc handleSelectedNodeChanged(editor: AstDocumentEditor) =
 
   # Still didn't find a node
   let subbase = node.subbase
-  let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: subbase, selectedNode: node.id)
+  let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: subbase, selectedNode: node.id, measureText: (t) => gEditor.platform.measureText(t))
   let layout = ctx.computeNodeLayout(input)
   if layout.nodeToVisualNode.contains(node.id):
     let visualNode = layout.nodeToVisualNode[node.id]
@@ -347,7 +347,7 @@ proc newAstDocument*(filename: string = ""): AstDocument =
   if filename.len > 0:
     logger.log lvlInfo, fmt"[astdoc] Loading ast source file '{result.filename}'"
     try:
-      let file = readFile(result.filename)
+      let file = fs.loadFile(result.filename)
       let jsn = file.parseJson
       result.rootNode = jsn.jsonToAstNode
     except CatchableError:
@@ -359,7 +359,7 @@ proc saveHtml*(self: AstDocument) =
   let pathParts = self.filename.splitFile
   let htmlPath = pathParts.dir / (pathParts.name & ".html")
   let html = self.serializeHtml(gEditor.theme)
-  writeFile(htmlPath, html)
+  fs.saveFile(htmlPath, html)
 
 method save*(self: AstDocument, filename: string = "") =
   self.filename = if filename.len > 0: filename else: self.filename
@@ -368,7 +368,7 @@ method save*(self: AstDocument, filename: string = "") =
 
   logger.log lvlInfo, fmt"[astdoc] Saving ast source file '{self.filename}'"
   let serialized = self.rootNode.toJson
-  writeFile(self.filename, serialized.pretty)
+  fs.saveFile(self.filename, serialized.pretty)
 
   self.saveHtml()
 
@@ -380,7 +380,7 @@ method load*(self: AstDocument, filename: string = "") =
   self.filename = filename
 
   logger.log lvlInfo, fmt"[astdoc] Loading ast source file '{self.filename}'"
-  let jsonText = readFile(self.filename)
+  let jsonText = fs.loadFile(self.filename)
   let json = jsonText.parseJson
   let newAst = json.jsonToAstNode
 
@@ -512,9 +512,8 @@ proc handleNodeDelete*(doc: AstDocument, node: AstNode) =
   ctx.deleteNode(node)
 
   # Remove diagnostics added by the removed node
-  let updates = @[ctx.updateType]
-  for update in updates:
-    let key = (node.getItem, update)
+  for i, update in ctx.updateFunctions:
+    let key = (node.getItem, i)
     if ctx.diagnosticsPerQuery.contains(key):
       for id in ctx.diagnosticsPerQuery[key]:
         ctx.diagnosticsPerNode[id].queries.del key
@@ -1944,6 +1943,12 @@ method handleMouseMove*(self: AstDocumentEditor, mousePosWindow: Vec2, mousePosD
 
 method createWithDocument*(self: AstDocumentEditor, document: Document): DocumentEditor =
   let editor = AstDocumentEditor(eventHandler: nil, document: AstDocument(document), textDocument: nil, textEditor: nil)
+
+  # Emit this to set the editor prototype to editor_ast_prototype, which needs to be set up before calling this
+  when defined(js):
+    {.emit: [editor, " = createWithPrototype(editor_ast_prototype, ", editor, ");"].}
+    # This " is here to fix syntax highlighting
+
   editor.init()
   editor.document.onNodeInserted.add (doc: AstDocument, node: AstNode) => editor.handleNodeInserted(doc, node)
 

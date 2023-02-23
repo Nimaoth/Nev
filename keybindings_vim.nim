@@ -87,12 +87,14 @@ proc loadVimBindings*() =
     editor.setCommandCount 0
 
   addTextCommandBlock "", "f":
+    setOption("text.move-next-mode", editor.mode)
     editor.setMode "move-to"
     editor.setFlag "move-inside", false
     setOption "text.move-command-count", editor.getCommandCount()
     editor.setCommandCount 0
 
   addTextCommandBlock "", "t":
+    setOption("text.move-next-mode", editor.mode)
     editor.setMode "move-before"
     editor.setFlag "move-inside", false
     setOption "text.move-command-count", editor.getCommandCount()
@@ -117,40 +119,6 @@ proc loadVimBindings*() =
   addTextCommandBlock "", "<S-ESCAPE>":
     editor.setMode("")
     editor.selection = editor.selection.last.toSelection
-
-  # move-to mode
-  setHandleActions "editor.text.move-to", false
-  setTextInputHandler "move-to", proc(editor: TextDocumentEditor, input: string): bool =
-    if getOption[string]("text.move-action") != "":
-      editor.setMode getOption[string]("text.move-next-mode")
-      editor.setCommandCount getOption[int]("text.move-command-count")
-      var args = newJArray()
-      args.add newJString("move-to " & input)
-      discard editor.runAction(getOption[string]("text.move-action"), args)
-      setOption[string]("text.move-action", "")
-    else:
-      editor.moveCursorTo(input)
-      editor.setMode ""
-    return true
-  setOption "editor.text.cursor.wide.move-to", true
-  setOption "editor.text.cursor.movement.move-to", "both"
-
-  # move-before mode
-  setHandleActions "editor.text.move-before", false
-  setTextInputHandler "move-before", proc(editor: TextDocumentEditor, input: string): bool =
-    if getOption[string]("text.move-action") != "":
-      editor.setMode getOption[string]("text.move-next-mode")
-      editor.setCommandCount getOption[int]("text.move-command-count")
-      var args = newJArray()
-      args.add newJString("move-before " & input)
-      discard editor.runAction(getOption[string]("text.move-action"), args)
-      setOption[string]("text.move-action", "")
-    else:
-      editor.moveCursorBefore(input)
-      editor.setMode ""
-    return true
-  setOption "editor.text.cursor.wide.move-before", true
-  setOption "editor.text.cursor.movement.move-before", "both"
 
   # move mode
   setHandleInputs "editor.text.move", false
@@ -185,6 +153,38 @@ proc loadVimBindings*() =
     editor.setFlag "move-inside", false
     setOption "text.move-command-count", editor.getCommandCount()
     editor.setCommandCount 0
+
+  # move-to mode
+  setHandleActions "editor.text.move-to", false
+  setTextInputHandler "move-to", proc(editor: TextDocumentEditor, input: string): bool =
+    editor.setMode getOption[string]("text.move-next-mode")
+    if getOption[string]("text.move-action") != "":
+      editor.setCommandCount getOption[int]("text.move-command-count")
+      var args = newJArray()
+      args.add newJString("move-to " & input)
+      discard editor.runAction(getOption[string]("text.move-action"), args)
+      setOption[string]("text.move-action", "")
+    else:
+      editor.moveCursorTo(input)
+    return true
+  setOption "editor.text.cursor.wide.move-to", true
+  setOption "editor.text.cursor.movement.move-to", "both"
+
+  # move-before mode
+  setHandleActions "editor.text.move-before", false
+  setTextInputHandler "move-before", proc(editor: TextDocumentEditor, input: string): bool =
+    editor.setMode getOption[string]("text.move-next-mode")
+    if getOption[string]("text.move-action") != "":
+      editor.setCommandCount getOption[int]("text.move-command-count")
+      var args = newJArray()
+      args.add newJString("move-before " & input)
+      discard editor.runAction(getOption[string]("text.move-action"), args)
+      setOption[string]("text.move-action", "")
+    else:
+      editor.moveCursorBefore(input)
+    return true
+  setOption "editor.text.cursor.wide.move-before", true
+  setOption "editor.text.cursor.movement.move-before", "both"
 
   # Insert mode
   setHandleInputs "editor.text.insert", true

@@ -5,8 +5,8 @@ logger.enableConsoleLogger()
 
 import boxy, opengl, windy
 import monitors
-import input, editor, editor_render
-import std/[asyncdispatch, strformat]
+import input, editor, editor_render, render_context, custom_async, platform/[platform]
+import std/[strformat]
 from scripting_api import Backend
 
 let window = newWindow("Absytree", ivec2(1280, 800))
@@ -61,11 +61,22 @@ window.maximized = true
 
 makeContextCurrent(window)
 loadExtensions()
-enableAutoGLerrorCheck(false)
+enableAutoGLerrorCheck(true)
 
-let bxy = newBoxy()
+renderCtx = newRenderContext(window)
 
-var ed = newEditor(window, bxy, Gui, nil)
+type LegacyPlatform = ref object of Platform
+  discard
+
+method fontSize*(self: LegacyPlatform): float = renderCtx.ctx.fontSize
+method lineHeight*(self: LegacyPlatform): float = renderCtx.lineHeight
+method lineDistance*(self: LegacyPlatform): float = 2
+method charWidth*(self: LegacyPlatform): float = renderCtx.charWidth
+method measureText*(self: LegacyPlatform, text: string): Vec2 = renderCtx.getFont(renderCtx.ctx.font, renderCtx.ctx.fontSize).typeset(text).layoutBounds()
+
+var plat = LegacyPlatform()
+
+var ed = newEditor(Gui, plat)
 
 # Load the images.
 # bxy.addImage("bg", readImage("examples/data/bg.png"))
@@ -81,8 +92,8 @@ window.onFrame = proc() =
     discard
 
   # Clear the screen and begin a new frame.
-  bxy.beginFrame(window.size)
-  ed.boxy2.beginFrame(window.size)
+  renderCtx.boxy.beginFrame(window.size)
+  renderCtx.boxy2.beginFrame(window.size)
 
   # Draw the bg.
   # bxy.drawImage("bg", rect = rect(vec2(0, 0), window.size.vec2))
@@ -90,8 +101,8 @@ window.onFrame = proc() =
   ed.render()
 
   # End this frame, flushing the draw commands.
-  bxy.endFrame()
-  ed.boxy2.endFrame()
+  renderCtx.boxy.endFrame()
+  renderCtx.boxy2.endFrame()
 
   # Swap buffers displaying the new Boxy frame.
   window.swapBuffers()

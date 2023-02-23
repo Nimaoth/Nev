@@ -1,7 +1,7 @@
-import std/[strformat, terminal, tables, enumutils]
+import std/[strformat, terminal, typetraits, enumutils]
 import platform, widgets
 import tui, custom_logger, rect_utils, input, event
-import vmath, windy
+import vmath
 import chroma as chroma
 import std/colors as stdcolors
 
@@ -43,16 +43,18 @@ proc toStdColor(color: tui.BackgroundColor): stdcolors.Color =
   of bgWhite: stdcolors.rgb(255, 255, 255)
   else: stdcolors.rgb(0, 0, 0)
 
-proc getClosestColor[T: enum](r, g, b: int, default: T): T =
+proc getClosestColor[T: HoleyEnum](r, g, b: int, default: T): T =
   var minDistance = 10000000.0
   result = default
-  for fg in items(T):
+  {.push warning[HoleEnumConv]:off.}
+  for fg in enumutils.items(T):
     let fgStd = fg.toStdColor
     let uiae = fgStd.extractRGB
     let distance = sqrt((r - uiae.r).float.pow(2) + (g - uiae.g).float.pow(2) + (b - uiae.b).float.pow(2))
     if distance < minDistance:
       minDistance = distance
       result = fg
+  {.pop.}
 
 method init*(self: TerminalPlatform) =
   illwillInit(fullscreen=true, mouse=true)
@@ -118,7 +120,7 @@ proc toInput(key: Key, modifiers: var Modifiers): int64 =
     modifiers.incl Modifier.Control
     ord(key) - ord(Key.CtrlA) + ord('a')
   of Key.Zero..Key.Nine: ord(key) - ord(Key.Zero) + ord('0')
-  of Key.F1..Key.F12: INPUT_F1 - (ord(key) - ord(KeyF1))
+  of Key.F1..Key.F12: INPUT_F1 - (ord(key) - ord(Key.F1))
   # of Numpad0..Numpad9: ord(key) - ord(Numpad0) + ord('0')
   # of NumpadAdd: ord '+'
   # of NumpadSubtract: ord '-'

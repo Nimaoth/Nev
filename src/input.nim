@@ -279,24 +279,25 @@ proc autoComplete*(dfa: CommandDFA, currentState: int): seq[(string, string)] =
   dfa.autoCompleteRec(result, "", currentState)
 
 proc dump*(dfa: CommandDFA, currentState: int, currentInput: int64, currentMods: Modifiers): void =
-  stdout.write '_'.repeat(dfa.states.len * 8 + 8)
+  var buff = ""
+  buff.add '_'.repeat(dfa.states.len * 8 + 8)
   echo ""
-  stdout.write "cmd\\sta|"
+  buff.add "cmd\\sta|"
   for state in 0..<dfa.states.len:
     var stateStr = $state
     if state == currentState:
       stateStr = fmt"({stateStr})"
-    stdout.write fmt"{stateStr:^7.7}|"
+    buff.add fmt"{stateStr:^7.7}|"
   echo ""
 
-  stdout.write "       |"
+  buff.add "       |"
   for state in dfa.states:
     if state.isTerminal:
-      stdout.write fmt"{state.function:^7.7}|"
+      buff.add fmt"{state.function:^7.7}|"
     else:
-      stdout.write fmt"       |"
+      buff.add fmt"       |"
 
-  echo ""
+  echo buff
 
   var allUsedInputs: seq[int64] = @[]
   for state in 0..<dfa.states.len:
@@ -340,5 +341,4 @@ proc dump*(dfa: CommandDFA, currentState: int, currentInput: int64, currentMods:
       if notEmpty:
         echo line
 
-  stdout.write '_'.repeat(dfa.states.len * 8 + 8)
-  echo ""
+  echo '_'.repeat(dfa.states.len * 8 + 8)

@@ -14,6 +14,7 @@ type
     onCloseRequested*: Event[void]
     layoutOptions*: WLayoutOptions
 
+method requestRender*(self: Platform) {.base.} = discard
 method render*(self: Platform, widget: WWidget, frameIndex: int) {.base.} = discard
 method sizeChanged*(self: Platform): bool {.base.} = discard
 method size*(self: Platform): Vec2 {.base.} = discard
@@ -26,5 +27,6 @@ method fontSize*(self: Platform): float {.base.} = discard
 method lineDistance*(self: Platform): float {.base.} = discard
 method lineHeight*(self: Platform): float {.base.} = discard
 method charWidth*(self: Platform): float {.base.} = discard
+method measureText*(self: Platform, text: string): Vec2 {.base.} = discard
 
 func totalLineHeight*(self: Platform): float = self.lineHeight + self.lineDistance

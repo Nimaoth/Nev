@@ -1,0 +1,107 @@
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="initial-scale=1.0">
+    <title>Absytree</title>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: "Courier New", monospace;
+            background: #222222;
+            color: #BBBBBB;
+        }
+
+        .code span {
+            vertical-align: top;
+            border-width: 1px;
+        }
+
+        .code div {
+            vertical-align: top;
+            border-width: 1px;
+        }
+
+        .widget {
+            position: absolute;
+            overflow: hidden;
+            white-space: pre;
+
+            -webkit-touch-callout: none; /* Disable callout on iOS */
+            -webkit-user-select: none; /* Disable selection on iOS */
+            -khtml-user-select: none; /* Disable selection on Konqueror */
+            -moz-user-select: none; /* Disable selection on Firefox */
+            -ms-user-select: none; /* Disable selection on IE 10+ */
+            user-select: none; /* Disable selection on modern browsers */
+        }
+
+        #view {
+            overflow: hidden;
+        }
+
+        div {
+            /* border: 1px solid red; */
+        }
+    </style>
+</head>
+
+<body>
+    <div id="view" style="width: 100%; height: 100%;" tabindex="0">
+
+    </div>
+    <script src="tree-sitter.js"></script>
+    <script>
+        const Parser = window.TreeSitter
+
+        let isEditorLoaded = false
+        function loadEditor() {
+            if (isEditorLoaded)
+                return
+            isEditorLoaded = true
+            let script = document.createElement("script")
+            script.setAttribute("src", "ast.js")
+            document.body.appendChild(script)
+        }
+
+        function loadFileSync(filePath) {
+            var result = null;
+            var xmlhttp = new XMLHttpRequest();
+            xmlhttp.open("GET", filePath, false);
+            xmlhttp.send();
+            if (xmlhttp.status==200) {
+                result = xmlhttp.responseText;
+            }
+            return result;
+        }
+
+        function loadTreesitterLanguage(path) {
+            return new Promise((resolve, reject) => {
+                Parser.Language.load(path).then(resolve, () => resolve(null))
+            })
+        }
+
+        var treeSitterInitialized = false
+        function doInitTreesitter() {
+            try {
+                return Parser.init().then(() => {
+                    treeSitterInitialized = true
+                    console.log("treesitter is ready")
+                    loadEditor()
+                }, () => {
+                    alert("Couldn't initialize treesitter")
+                    console.error("Couldn't initialize treesitter")
+                    loadEditor()
+                })
+            } catch {
+                alert("Couldn't initialize treesitter")
+                console.error("Couldn't initialize treesitter")
+                loadEditor()
+            }
+        }
+        doInitTreesitter()
+    </script>
+    <!-- <script src="ast.js"></script> -->
+</body>
+
+</html>

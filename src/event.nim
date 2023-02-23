@@ -4,6 +4,10 @@ import id
 type Event*[T] = object
   handlers: seq[tuple[id: Id, callback: (T) -> void]]
 
+proc subscribe*[T: void](event: var Event[T], callback: () -> void): Id =
+  result = newId()
+  event.handlers.add (result, callback)
+
 proc subscribe*[T](event: var Event[T], callback: (T) -> void): Id =
   result = newId()
   event.handlers.add (result, callback)
