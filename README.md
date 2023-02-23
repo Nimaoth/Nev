@@ -180,7 +180,7 @@ To define keybindings specific for text documents (TextEditor), use:
     addTextCommand "", "a", foo                                 # Like above, but uses existing function
 
 ### Scripting API Documentation
-The documentation for the scripting API is in scripting/htmldocs. You can see the current version [here](https://raw.githack.com/Nimaoth/Absytree/main/scripting/htmldocs/theindex.html) (using raw.githack.com) or [here](https://nimaoth.github.io/Absytree/scripting/htmldocs/theindex.html).
+The documentation for the scripting API is in scripting/htmldocs. You can see the current version [here](https://raw.githack.com/Nimaoth/AbsytreeDocs/main/scripting_nim/htmldocs/theindex.html) (using raw.githack.com) or [here](https://nimaoth.github.io/AbsytreeDocs/scripting_nim/htmldocs/theindex.html).
 
 Here is an overview of the modules:
 - `absytree_runtime`: Exports everything you need, so you can just include this in your script file.
