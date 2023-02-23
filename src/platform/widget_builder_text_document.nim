@@ -93,7 +93,7 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
     if self.active: app.theme.color("editor.background", rgb(25, 25, 40)) else: app.theme.color("editor.background", rgb(25, 25, 25)) * 0.75,
     frameIndex)
 
-  if not (contentPanel.changed(frameIndex) or self.dirty):
+  if not (contentPanel.changed(frameIndex) or self.dirty or app.platform.redrawEverything):
     return
 
   self.resetDirty()

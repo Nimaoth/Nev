@@ -11,6 +11,7 @@ from scripting_api import Backend
 var rend: BrowserPlatform = new BrowserPlatform
 rend.init()
 
+var initializedEditor = false
 var ed = newEditor(Backend.Browser, rend)
 const themeString = staticRead("../themes/Night Owl-Light-color-theme copy.json")
 if theme.loadFromString(themeString).getSome(theme):
@@ -28,7 +29,9 @@ var frameTime = 0.0
 var frameIndex = 0
 
 var hasRequestedRerender = false
-proc requestRender() =
+proc requestRender(redrawEverything = false) =
+  if not initializedEditor:
+    return
   if hasRequestedRerender:
     return
 
@@ -67,52 +70,15 @@ discard rend.onMouseRelease.subscribe proc(event: auto): void = requestRender()
 discard rend.onMouseMove.subscribe proc(event: auto): void = requestRender()
 discard rend.onScroll.subscribe proc(event: auto): void = requestRender()
 discard rend.onCloseRequested.subscribe proc(_: auto) = requestRender()
-discard rend.onResized.subscribe proc(_: auto) = requestRender()
+discard rend.onResized.subscribe proc(redrawEverything: bool) = requestRender(redrawEverything)
 
 block:
   ed.setHandleInputs "editor.text", true
   scriptSetOptionString "editor.text.cursor.movement.", "both"
   scriptSetOptionBool "editor.text.cursor.wide.", false
 
-  scriptAddCommand "editor", "<A-h>", "load-current-config"
-  scriptAddCommand "editor", "<A-g>", "sourceCurrentDocument"
+  ed.addCommandScript "editor", "<A-h>", "load-current-config"
+  ed.addCommandScript "editor", "<A-g>", "sourceCurrentDocument"
 
-  scriptAddCommand "editor.text", "<LEFT>", "move-cursor-column -1"
-  scriptAddCommand "editor.text", "<RIGHT>", "move-cursor-column 1"
-  scriptAddCommand "editor.text", "<C-d>", "delete-move \"line-next\""
-  scriptAddCommand "editor.text", "<C-LEFT>", "move-last \"word-line-back\""
-  scriptAddCommand "editor.text", "<C-RIGHT>", "move-last \"word-line\""
-  scriptAddCommand "editor.text", "<HOME>", "move-first \"line\""
-  scriptAddCommand "editor.text", "<END>", "move-last \"line\""
-  scriptAddCommand "editor.text", "<C-UP>", "scroll-text 20"
-  scriptAddCommand "editor.text", "<C-DOWN>", "scroll-text -20"
-  scriptAddCommand "editor.text", "<CS-LEFT>", "move-last \"word-line-back\" \"last\""
-  scriptAddCommand "editor.text", "<CS-RIGHT>", "move-last \"word-line\" \"last\""
-  scriptAddCommand "editor.text", "<UP>", "move-cursor-line -1"
-  scriptAddCommand "editor.text", "<DOWN>", "move-cursor-line 1"
-  scriptAddCommand "editor.text", "<C-HOME>", "move-first \"file\""
-  scriptAddCommand "editor.text", "<C-END>", "move-last \"file\""
-  scriptAddCommand "editor.text", "<CS-HOME>", "move-first \"file\" \"last\""
-  scriptAddCommand "editor.text", "<CS-END>", "move-last \"file\" \"last\""
-  scriptAddCommand "editor.text", "<S-LEFT>", "move-cursor-column -1 \"last\""
-  scriptAddCommand "editor.text", "<S-RIGHT>", "move-cursor-column 1 \"last\""
-  scriptAddCommand "editor.text", "<S-UP>", "move-cursor-line -1 \"last\""
-  scriptAddCommand "editor.text", "<S-DOWN>", "move-cursor-line 1 \"last\""
-  scriptAddCommand "editor.text", "<S-HOME>", "move-first \"line\" \"last\""
-  scriptAddCommand "editor.text", "<S-END>", "move-last \"line\" \"last\""
-  scriptAddCommand "editor.text", "<CA-d>", "duplicate-last-selection"
-  scriptAddCommand "editor.text", "<CA-UP>", "add-cursor-above"
-  scriptAddCommand "editor.text", "<CA-DOWN>", "add-cursor-below"
-  scriptAddCommand "editor.text", "<BACKSPACE>", "delete-left"
-  scriptAddCommand "editor.text", "<DELETE>", "delete-right"
-  scriptAddCommand "editor.text", "<ENTER>", "insert-text \"\n\""
-  scriptAddCommand "editor.text", "<SPACE>", "insert-text \" \""
-  scriptAddCommand "editor.text", "<C-l>", "select-line-current"
-  scriptAddCommand "editor.text", "<A-UP>", "select-parent-current-ts"
-  scriptAddCommand "editor.text", "<C-r>", "select-prev"
-  scriptAddCommand "editor.text", "<C-t>", "select-next"
-  scriptAddCommand "editor.text", "<C-n>", "invert-selection"
-  scriptAddCommand "editor.text", "<C-y>", "undo"
-  scriptAddCommand "editor.text", "<C-z>", "redo"
-
+initializedEditor = true
 requestRender()

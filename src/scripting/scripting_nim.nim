@@ -144,7 +144,7 @@ method reload*(ctx: ScriptContextNim) =
   logger.log(lvlInfo, fmt"Reloading script context (search paths: {ctx.searchPaths})")
   ctx.inter.mySafeLoadScriptWithState(ctx.script, ctx.apiModule, ctx.addins, ctx.postCodeAdditions, ["scripting_api", "std/json"], stdPath = stdPath, searchPaths = ctx.searchPaths, vmErrorHook = errorHook)
 
-proc generateScriptingApi*(addins: VMAddins) =
+proc generateScriptingApi*(addins: VMAddins) {.compileTime.} =
   if exposeScriptingApi:
     echo "Generate scripting api files"
 
@@ -164,28 +164,7 @@ proc generateScriptingApi*(addins: VMAddins) =
       script_internal_content.add impl
     writeFile(fmt"scripting/absytree_internal.nim", script_internal_content)
 
-    var imports_content = "import \"../src/scripting_api\"\nexport scripting_api\n\n## This file is auto generated, don't modify.\n\n"
-
-    for name, list in exposedFunctions:
-      var script_api_content = "import std/[json]\nimport \"../src/scripting_api\"\nimport absytree_internal\n\n## This file is auto generated, don't modify.\n\n"
-      var mappings = newJObject()
-
-      # Add the wrapper for the script function (already stored as string repr)
-      var lineNumber = script_api_content.countLines()
-      for f in list:
-        let code = f[0].strVal
-        mappings[$lineNumber] = newJString(f[1].strVal)
-        script_api_content.add code
-        lineNumber += code.countLines - 1
-
-      let file_name = name.replace(".", "_")
-      writeFile(fmt"scripting/{file_name}_api.nim", script_api_content)
-      writeFile(fmt"int/{file_name}_api.map", $mappings)
-      imports_content.add fmt"import {file_name}_api" & "\n"
-      imports_content.add fmt"export {file_name}_api" & "\n"
-
-
-    writeFile(fmt"scripting/absytree_api.nim", imports_content)
+    generateScriptingApiPerModule()
 
 macro createScriptContextConstructor*(addins: untyped): untyped =
   return quote do:

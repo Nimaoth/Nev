@@ -18,6 +18,7 @@ type
     lastSize: Vec2
     renderedSomethingLastFrame: bool
 
+    lastFontSize: float
     mLineHeight: float
     mLineDistance: float
     mCharWidth: float
@@ -147,6 +148,9 @@ method init*(self: GuiPlatform) =
 method deinit*(self: GuiPlatform) =
   self.window.close()
 
+method requestRender*(self: GuiPlatform, redrawEverything = false) =
+  self.redrawEverything = self.redrawEverything or redrawEverything
+
 proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font =
   if font == "":
     raise newException(PixieError, "No font has been set on this Context")
@@ -252,6 +256,12 @@ method render*(self: GuiPlatform, widget: WWidget, frameIndex: int) =
   for image in self.cachedImages.removedKeys:
     self.boxy.removeImage(image)
   self.cachedImages.clearRemovedKeys()
+
+  if self.ctx.fontSize != self.lastFontSize:
+    self.lastFontSize = self.ctx.fontSize
+    for kv in self.cachedImages.pairs:
+      self.boxy.removeImage(kv[0])
+    self.cachedImages.clear()
 
   let renderedSomething = widget.renderWidget(self, self.redrawEverything, frameIndex, "#")
 

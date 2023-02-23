@@ -421,6 +421,8 @@ proc newEditor*(backend: api.Backend, platform: Platform): Editor =
     else:
       self.scriptContext = createScriptContext("./absytree_config.nims", searchPaths)
 
+    self.scriptContext.init("")
+
     discard self.scriptContext.invoke(postInitialize, returnType = bool)
 
     self.initializeCalled = true
@@ -485,8 +487,8 @@ static:
 proc getBackend*(self: Editor): Backend {.expose("editor").} =
   return self.backend
 
-proc requestRender*(self: Editor) {.expose("editor").} =
-  self.platform.requestRender()
+proc requestRender*(self: Editor, redrawEverything: bool = false) {.expose("editor").} =
+  self.platform.requestRender(redrawEverything)
 
 proc setHandleInputs*(self: Editor, context: string, value: bool) {.expose("editor").} =
   self.getEventHandlerConfig(context).setHandleInputs(value)
@@ -530,12 +532,15 @@ proc quit*(self: Editor) {.expose("editor").} =
 
 proc changeFontSize*(self: Editor, amount: float32) {.expose("editor").} =
   self.platform.fontSize = self.platform.fontSize + amount.float
+  self.platform.requestRender(true)
 
 proc changeLayoutProp*(self: Editor, prop: string, change: float32) {.expose("editor").} =
   self.layout_props.props.mgetOrPut(prop, 0) += change
+  self.platform.requestRender(true)
 
 proc toggleStatusBarLocation*(self: Editor) {.expose("editor").} =
   self.statusBarOnTop = not self.statusBarOnTop
+  self.platform.requestRender(true)
 
 proc createView*(self: Editor) {.expose("editor").} =
   self.createView(newTextDocument())
@@ -834,6 +839,7 @@ proc handleScroll*(self: Editor, scroll: Vec2, mousePosWindow: Vec2, modifiers: 
       return
 
 proc handleKeyPress*(self: Editor, input: int64, modifiers: Modifiers) =
+  # debugf"key press: {(inputToString(input, modifiers))}"
   self.currentEventHandlers.handleEvent(input, modifiers)
 
 proc handleKeyRelease*(self: Editor, input: int64, modifiers: Modifiers) =
@@ -851,20 +857,14 @@ proc scriptRunAction*(action: string, arg: string) {.expose("editor").} =
 proc scriptLog*(message: string) {.expose("editor").} =
   logger.log(lvlInfo, fmt"[script] {message}")
 
-proc scriptAddCommand*(context: string, keys: string, action: string, arg: string = "") {.expose("editor").} =
-  if gEditor.isNil:
-    return
-
+proc addCommandScript*(self: Editor, context: string, keys: string, action: string, arg: string = "") {.expose("editor").} =
   let command = if arg.len == 0: action else: action & " " & arg
   # logger.log(lvlInfo, fmt"Adding command to '{context}': ('{keys}', '{command}')")
-  gEditor.getEventHandlerConfig(context).addCommand(keys, command)
+  self.getEventHandlerConfig(context).addCommand(keys, command)
 
-proc removeCommand*(context: string, keys: string) {.expose("editor").} =
-  if gEditor.isNil:
-    return
-
+proc removeCommand*(self: Editor, context: string, keys: string) {.expose("editor").} =
   # logger.log(lvlInfo, fmt"Removing command from '{context}': '{keys}'")
-  gEditor.getEventHandlerConfig(context).removeCommand(keys)
+  self.getEventHandlerConfig(context).removeCommand(keys)
 
 proc getActivePopup*(): EditorId {.expose("editor").} =
   if gEditor.isNil:
@@ -1107,3 +1107,7 @@ when not defined(js):
   createScriptContextConstructor(addins)
 
   proc createScriptContext(filepath: string, searchPaths: seq[string]): ScriptContext = createScriptContextNim(filepath, searchPaths)
+
+# else:
+#   static:
+#     generateScriptingApi()

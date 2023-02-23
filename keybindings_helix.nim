@@ -3,7 +3,7 @@ import absytree_runtime, keybindings_normal
 proc loadHelixBindings*() =
   loadNormalBindings()
 
-  log "Applying Helix keybindings"
+  info "Applying Helix keybindings"
 
   # clearCommands("editor.text")
   # for id in getAllEditors():

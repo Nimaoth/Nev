@@ -1,7 +1,7 @@
 import absytree_runtime
 
 proc loadNormalBindings*() =
-  log "Applying normal keybindings"
+  info "Applying normal keybindings"
 
   clearCommands("editor.text")
   for id in getAllEditors():

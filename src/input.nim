@@ -42,10 +42,17 @@ type
   InputKey = int64
   DFAState = object
     isTerminal: bool
+    nextState: int # The state to go to next if we are in a terminal state
+    persistent: bool # Whether we want to set the default state for when an action succeded to this state
     function: string
     inputs: Table[InputKey, DFAInput]
   CommandDFA* = ref object
+    persistentState: int
     states: seq[DFAState]
+
+  CommandState* = object
+    current*: int
+    persistent: int
 
   MouseButton* {.pure.} = enum
     Left, Middle, Right, DoubleClick, TripleClick, Unknown
@@ -55,21 +62,29 @@ proc isAscii*(input: int64): bool =
     return true
   return false
 
-proc step*(dfa: CommandDFA, currentState: int, currentInput: int64, mods: Modifiers): int =
+proc step*(dfa: CommandDFA, state: CommandState, currentInput: int64, mods: Modifiers): CommandState =
   if currentInput == 0:
     logger.log(lvlError, "Input 0 is invalid")
     return
 
-  if not (currentInput in dfa.states[currentState].inputs):
-    return 0
+  if currentInput notin dfa.states[state.current].inputs:
+    return CommandState(current: 0, persistent: 0)
 
-  if not (mods in dfa.states[currentState].inputs[currentInput].next):
-    return 0
+  if mods notin dfa.states[state.current].inputs[currentInput].next:
+    return CommandState(current: 0, persistent: 0)
 
-  return dfa.states[currentState].inputs[currentInput].next[mods]
+  result.current = dfa.states[state.current].inputs[currentInput].next[mods]
+
+  if dfa.states[result.current].persistent:
+    result.persistent = result.current
+  else:
+    result.persistent = state.persistent
 
 proc isTerminal*(dfa: CommandDFA, state: int): bool =
   return dfa.states[state].isTerminal
+
+proc getDefaultState*(dfa: CommandDFA, state: int): int =
+  return dfa.states[state].nextState
 
 proc getAction*(dfa: CommandDFA, state: int): string =
   return dfa.states[state].function
@@ -160,7 +175,7 @@ proc linkState(dfa: var CommandDFA, currentState: int, nextState: int, inputCode
     dfa.states[currentState].inputs[inputCode] = DFAInput()
   dfa.states[currentState].inputs[inputCode].next[mods] = nextState
 
-proc createOrUpdateState(dfa: var CommandDFA, currentState: int, inputCode: int64, mods: Modifiers): int =
+proc createOrUpdateState(dfa: var CommandDFA, currentState: int, inputCode: int64, mods: Modifiers, persistent: bool): int =
   let nextState = if inputCode in dfa.states[currentState].inputs:
     if mods in dfa.states[currentState].inputs[inputCode].next:
       dfa.states[currentState].inputs[inputCode].next[mods]
@@ -171,10 +186,15 @@ proc createOrUpdateState(dfa: var CommandDFA, currentState: int, inputCode: int6
   else:
     dfa.states.add DFAState()
     dfa.states.len - 1
+  dfa.states[nextState].persistent = persistent
   linkState(dfa, currentState, nextState, inputCode, mods)
   return nextState
 
-proc handleNextInput(dfa: var CommandDFA, input: seq[Rune], function: string, index: int, currentState: int) =
+proc handleNextInput(dfa: var CommandDFA, input: seq[Rune], function: string, index: int, currentState: int, defaultState: int) =
+  ##
+  ## function: the action to be executed when reaching the final state
+  ## index: index into input
+  ## currentState: the state we are currently in
   type State = enum
     Normal
     Special
@@ -183,13 +203,16 @@ proc handleNextInput(dfa: var CommandDFA, input: seq[Rune], function: string, in
   var mods: Modifiers = {}
   var specialKey = ""
 
-  var next: seq[tuple[index: int, state: int]] = @[]
-
   if index >= input.len:
     # Mark last state as terminal state.
     dfa.states[currentState].isTerminal = true
     dfa.states[currentState].function = function
+    dfa.states[currentState].nextState = defaultState
     return
+
+  var inputCode: int64 = 0
+  var persistent = false
+  var nextIndex = index
 
   for i in index..<input.len:
     var rune = input[i]
@@ -199,7 +222,7 @@ proc handleNextInput(dfa: var CommandDFA, input: seq[Rune], function: string, in
     if not isEscaped and ascii == '\\':
       continue
 
-    let inputCode: int64 = if not isEscaped and ascii == '<':
+    inputCode = if not isEscaped and ascii == '<':
       state = State.Special
       0.int64
     elif not isEscaped and ascii == '>':
@@ -221,6 +244,7 @@ proc handleNextInput(dfa: var CommandDFA, input: seq[Rune], function: string, in
               of 'C': mods = mods + {Modifier.Control}
               of 'S': mods = mods + {Modifier.Shift}
               of 'A': mods = mods + {Modifier.Alt}
+              of '*': persistent = true
               else: logger.log(lvlError, fmt"Invalid modifier '{m}'")
           specialKey = ""
         else:
@@ -231,23 +255,28 @@ proc handleNextInput(dfa: var CommandDFA, input: seq[Rune], function: string, in
         rune.int64
 
     if inputCode != 0:
-      let nextState = createOrUpdateState(dfa, currentState, inputCode, mods)
-      next.add((index: i + 1, state: nextState))
-
-      if inputCode > 0 and (mods == {} or mods == {Shift}):
-        let rune = Rune(inputCode)
-        let bIsLower = rune.isLower
-        if not bIsLower:
-          linkState(dfa, currentState, nextState, rune.toLower.int64, mods + {Shift})
-          linkState(dfa, currentState, nextState, inputCode, mods + {Shift})
-
-        if bIsLower and Shift in mods:
-          linkState(dfa, currentState, nextState, rune.toUpper.int64, mods - {Shift})
-          linkState(dfa, currentState, nextState, rune.toUpper.int64, mods)
+      nextIndex = i + 1
       break
 
-  for n in next:
-    handleNextInput(dfa, input, function, n.index, n.state)
+  if inputCode == 0:
+    logger.log(lvlError, fmt"Failed to parse input")
+    return
+
+  let nextState = createOrUpdateState(dfa, currentState, inputCode, mods, persistent)
+
+  if inputCode > 0 and (mods == {} or mods == {Shift}):
+    let rune = Rune(inputCode)
+    let bIsLower = rune.isLower
+    if not bIsLower:
+      linkState(dfa, currentState, nextState, rune.toLower.int64, mods + {Shift})
+      linkState(dfa, currentState, nextState, inputCode, mods + {Shift})
+
+    if bIsLower and Shift in mods:
+      linkState(dfa, currentState, nextState, rune.toUpper.int64, mods - {Shift})
+      linkState(dfa, currentState, nextState, rune.toUpper.int64, mods)
+
+  let nextDefaultState = if persistent: nextState else: defaultState
+  handleNextInput(dfa, input, function, nextIndex, nextState, nextDefaultState)
 
 proc buildDFA*(commands: seq[(string, string)]): CommandDFA =
   new(result)
@@ -262,7 +291,7 @@ proc buildDFA*(commands: seq[(string, string)]): CommandDFA =
     let function = command[1]
 
     if input.len > 0:
-      handleNextInput(result, input.toRunes, function, 0, 0)
+      handleNextInput(result, input.toRunes, function, index = 0, currentState = 0, defaultState = 0)
 
 proc autoCompleteRec(dfa: CommandDFA, result: var seq[(string, string)], currentInputs: string, currentState: int) =
   let state = dfa.states[currentState]

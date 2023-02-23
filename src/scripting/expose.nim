@@ -6,10 +6,7 @@ import fusion/matching
 import util, custom_logger
 import compilation_config
 
-when defined(js):
-  macro addToCache*(sym: typed, moduleName: static string) =
-    discard
-else:
+when not defined(js):
   import nimscripter
 
 const mapperFunctions = CacheTable"MapperFunctions" # Maps from type name (referring to nim type) to function which maps these types
@@ -17,6 +14,7 @@ const typeWrapper = CacheTable"TypeWrapper"         # Maps from type name (refer
 const functions = CacheTable"DispatcherFunctions"   # Maps from scope name to list of tuples of name and wrapper
 const injectors = CacheTable"Injectors"             # Maps from type name (referring to nim type) to function
 const exposedFunctions* = CacheTable"ExposedFunctions" # Maps from type name (referring to nim type) to type name of the api type (from scripting_api)
+const exposedFunctionsJs* = CacheSeq"ExposedFunctionsJs" # Maps from type name (referring to nim type) to type name of the api type (from scripting_api)
 
 template varargs*() {.pragma.}
 
@@ -40,6 +38,9 @@ macro addFunction(name: untyped, wrapper: typed, moduleName: static string) =
       functions[name].add n
       return
   functions[moduleName] = nnkStmtList.newTree(n)
+
+macro addToCacheJs(name: typed) =
+  exposedFunctionsJs.add name
 
 macro addScriptWrapper(name: untyped, moduleName: static string, lineNumber: static int) =
   let val = nnkStmtList.newTree(name, newLit($lineNumber))
@@ -165,6 +166,13 @@ macro expose*(moduleName: static string, def: untyped): untyped =
   scriptFunction[0] = nnkPostfix.newTree(ident"*", scriptFunctionSym)
   var callImplFromScriptFunction = nnkCall.newTree(functionName)
 
+  # This function is a wrapper around def which just forwards all arguments
+  let defJsWrapperSym = nskProc.genSym(pureFunctionNameStr & "JsWrapper" & suffix)
+  var defJsWrapperFunction = def.copy
+  defJsWrapperFunction[0] = nnkPostfix.newTree(ident"*", defJsWrapperSym)
+  var callDefFromDefJsWrapper = nnkCall.newTree(functionName)
+  defJsWrapperFunction[6] = callDefFromDefJsWrapper
+
   # Wrapper function for the script function which is inserted into NimScript.
   # This has the same name as the original function and is used to get function overloading back
   var scriptFunctionWrapper = def.copy
@@ -277,6 +285,8 @@ macro expose*(moduleName: static string, def: untyped): untyped =
       callScriptFuncFromScriptFuncWrapper.insert(1, scriptFunctionWrapper.argName(i))
     callImplFromScriptFunction.insert(1, callFromScriptArg)
 
+    callDefFromDefJsWrapper.insert(1, def.argName(i))
+
   scriptFunction[6] = quote do:
     `callImplFromScriptFunction`
 
@@ -302,17 +312,20 @@ macro expose*(moduleName: static string, def: untyped): untyped =
 
     `scriptFunction`
 
+    static:
+        # This causes the function wrapper to be emitted in a file, so it can be imported in configs
+        addScriptWrapper(`scriptFunctionWrapperRepr`, `moduleName`, `lineNumber`)
+
   when defined(js):
-    result.add createJavascriptWrapper(moduleName, def, scriptFunctionSym, pureFunctionNameStr & suffix)
+    result.add quote do:
+      `defJsWrapperFunction`
+    result.add createJavascriptWrapper(moduleName, def, defJsWrapperSym, pureFunctionNameStr & suffix)
 
   when not defined(js):
     result.add quote do:
       static:
         # This adds the script function to nimscripter so it can generate bindings for the nim interpreter
         addToCache(`scriptFunctionSym`, "myImpl")
-
-        # This causes the function wrapper to be emitted in a file, so it can be imported in configs
-        addScriptWrapper(`scriptFunctionWrapperRepr`, `moduleName`, `lineNumber`)
 
   # Only add the json wrapper and dispatch function if the {.nodispatch.} is not present
   if not def.hasCustomPragma("nodispatch"):
