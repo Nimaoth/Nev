@@ -4,6 +4,7 @@ import input, events, rect_utils, document, document_editor, keybind_autocomplet
 import theme, util, custom_logger
 import scripting/[expose, scripting_base]
 import platform/[widgets, filesystem]
+import workspaces/[workspace]
 
 when not defined(js):
   import scripting/scripting_nim
@@ -64,6 +65,8 @@ type Editor* = ref object
   callbacks: Table[string, int]
 
   logger: Logger
+
+  workspace*: Workspace
 
   scriptContext*: ScriptContext
   initializeCalled: bool
@@ -264,6 +267,7 @@ proc createView*(self: Editor, document: Document) =
 proc pushPopup*(self: Editor, popup: Popup) =
   popup.init()
   self.popups.add popup
+  discard popup.onMarkedDirty.subscribe () => self.platform.requestRender()
   self.platform.requestRender()
 
 proc popPopup*(self: Editor, popup: Popup) =
@@ -301,6 +305,14 @@ type ThemeSelectorItem* = ref object of SelectorItem
 
 type FileSelectorItem* = ref object of SelectorItem
   path*: string
+
+method changed*(self: FileSelectorItem, other: SelectorItem): bool =
+  let other = other.FileSelectorItem
+  return self.path != other.path
+
+method changed*(self: ThemeSelectorItem, other: SelectorItem): bool =
+  let other = other.ThemeSelectorItem
+  return self.name != other.name or self.path != other.path
 
 proc setTheme*(self: Editor, path: string) =
   if loadFromFile(path).getSome(theme):
