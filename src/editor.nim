@@ -1,7 +1,7 @@
 import std/[strformat, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils, macros, macrocache, sugar, streams]
 import fuzzy
 import input, events, rect_utils, document, document_editor, keybind_autocomplete, popup, timer, event, platform/platform
-import theme, util, custom_logger
+import theme, util, custom_logger, custom_async
 import scripting/[expose, scripting_base]
 import platform/[widgets, filesystem]
 import workspaces/[workspace]
@@ -305,6 +305,7 @@ type ThemeSelectorItem* = ref object of SelectorItem
 
 type FileSelectorItem* = ref object of SelectorItem
   path*: string
+  workspaceFolder*: Option[WorkspaceFolder]
 
 method changed*(self: FileSelectorItem, other: SelectorItem): bool =
   let other = other.FileSelectorItem
@@ -368,6 +369,8 @@ proc newEditor*(backend: api.Backend, platform: Platform): Editor =
   self.fontBoldItalic = "./fonts/DejaVuSansMono-BoldOblique.ttf"
 
   self.editor_defaults = @[TextDocumentEditor(), AstDocumentEditor()]
+
+  self.workspace.new()
 
   self.theme = defaultTheme()
   self.setTheme("./themes/tokyo-night-color-theme.json")
@@ -514,6 +517,14 @@ proc setConsumeAllActions*(self: Editor, context: string, value: bool) {.expose(
 proc setConsumeAllInput*(self: Editor, context: string, value: bool) {.expose("editor").} =
   self.getEventHandlerConfig(context).setConsumeAllInput(value)
 
+proc openGithubWorkspace*(self: Editor, user: string, repository: string, branchOrHash: string) {.expose("editor").} =
+  self.workspace.folders.add newWorkspaceFolderGithub(user, repository, branchOrHash)
+
+when not defined(js):
+  proc openLocalWorkspace*(self: Editor, path: string) {.expose("editor").} =
+    let path = if path.isAbsolute: path else: path.absolutePath
+    self.workspace.folders.add newWorkspaceFolderLocal(path)
+
 proc getFlag*(self: Editor, flag: string, default: bool = false): bool {.expose("editor").} =
   return getOption[bool](self, flag, default)
 
@@ -639,6 +650,28 @@ proc openFile*(self: Editor, path: string) {.expose("editor").} =
     logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
     logger.log(lvlError, getCurrentException().getStackTrace())
 
+proc updateDocumentContent(self: Editor, document: Document, path: string, folder: WorkspaceFolder): Future[void] {.async.} =
+  let content = await folder.loadFile(path)
+  if document of TextDocument:
+    document.TextDocument.content = content
+
+proc openWorkspaceFile*(self: Editor, path: string, folder: WorkspaceFolder) =
+  defer:
+    self.platform.requestRender()
+  try:
+
+    if path.endsWith(".ast"):
+      # @todo
+      self.createView(newAstDocument(path))
+    else:
+      var document = newTextDocument(path, @[])
+      asyncCheck self.updateDocumentContent(document, path, folder)
+      self.createView(document)
+
+  except CatchableError:
+    logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
+    logger.log(lvlError, getCurrentException().getStackTrace())
+
 proc writeFile*(self: Editor, path: string = "") {.expose("editor").} =
   defer:
     self.platform.requestRender()
@@ -672,7 +705,9 @@ proc chooseTheme*(self: Editor) {.expose("editor").} =
   defer:
     self.platform.requestRender()
   let originalTheme = self.theme.path
-  var popup = self.newSelectorPopup proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
+
+  var popup = self.newSelectorPopup()
+  popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
     for file in walkDirRec("./themes", relative=true):
       if file.endsWith ".json":
         let name = file.splitFile.name
@@ -693,27 +728,40 @@ proc chooseTheme*(self: Editor) {.expose("editor").} =
     if theme.loadFromFile(originalTheme).getSome(theme):
       self.theme = theme
 
+  popup.updateCompletions()
+
   self.pushPopup popup
 
 proc chooseFile*(self: Editor, view: string = "new") {.expose("editor").} =
   defer:
     self.platform.requestRender()
-  var popup = self.newSelectorPopup proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
-    for file in walkDirRec(".", relative=true):
-      let name = file.splitFile.name
-      let score = fuzzyMatchSmart(text, name)
-      result.add FileSelectorItem(path: fmt"./{file}", score: score)
 
-    result.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Descending)
+  var popup = self.newSelectorPopup()
+  popup.getCompletionsAsync = proc(popup: SelectorPopup, text: string): Future[seq[SelectorItem]] {.async.} =
+    var resultItems: seq[SelectorItem]
+    for folder in self.workspace.folders:
+      let items = await folder.getDirectoryListing(".")
+      for file in items.files:
+        let name = file.splitFile.name
+        let score = fuzzyMatchSmart(text, name)
+        resultItems.add FileSelectorItem(path: fmt"./{file}", score: score, workspaceFolder: folder.some)
+
+    resultItems.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Descending)
+    return resultItems
 
   popup.handleItemConfirmed = proc(item: SelectorItem) =
     case view
     of "current":
       self.loadFile(item.FileSelectorItem.path)
     of "new":
-      self.openFile(item.FileSelectorItem.path)
+      if item.FileSelectorItem.workspaceFolder.isSome:
+        self.openWorkspaceFile(item.FileSelectorItem.path, item.FileSelectorItem.workspaceFolder.get)
+      else:
+        self.openFile(item.FileSelectorItem.path)
     else:
       logger.log(lvlError, fmt"Unknown argument {view}")
+
+  popup.updateCompletions()
 
   self.pushPopup popup
 

@@ -69,6 +69,11 @@ proc postInitialize*(): bool =
 
 info "Loading absytree_config.nim"
 
+# openLocalWorkspace(".")
+openGithubWorkspace("Nimaoth", "Zentt", "main")
+# openGithubWorkspace("Nimaoth", "AbsytreeBrowser", "main")
+# openGithubWorkspace("Nimaoth", "Absytree", "main")
+
 clearCommands "editor"
 clearCommands "editor.ast"
 clearCommands "editor.ast.completion"
@@ -174,6 +179,7 @@ addCommand "editor", "<CS-r>", "load-file"
 addCommand "editor", "<S-SPACE><S-SPACE>", "command-line"
 addCommand "editor", "<S-SPACE>t", "choose-theme"
 addCommand "editor", "<S-SPACE>f", "choose-file", "new"
+addCommand "editor", "<C-o>", "choose-file", "new"
 
 addCommand "editor", "<S-SPACE>kn", () => loadNormalBindings()
 addCommand "editor", "<S-SPACE>kv", () => loadVimBindings()

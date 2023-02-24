@@ -71,22 +71,16 @@ method updateWidget*(self: SelectorPopup, app: Editor, widget: WPanel, frameInde
 
   self.resetDirty()
 
-  let maxLineCount = ceil(widget.lastBounds.h / totalLineHeight).int
-  let targetNumRenderedItems = min(maxLineCount, self.completions.high)
+  let maxLineCount = floor(widget.lastBounds.h / totalLineHeight).int
+  let targetNumRenderedItems = min(maxLineCount, self.completions.len)
   var lastRenderedIndex = min(self.scrollOffset + targetNumRenderedItems - 1, self.completions.high)
 
-  debugf"a"
   if self.selected < self.scrollOffset:
-    debugf"  {self.selected} < {self.scrollOffset}"
     self.scrollOffset = self.selected
-
     lastRenderedIndex = min(self.scrollOffset + targetNumRenderedItems - 1, self.completions.high)
 
-  debugf"b"
-  if self.selected >= lastRenderedIndex:
-    debugf"  {self.selected} > {lastRenderedIndex}"
-    self.scrollOffset = max(self.selected - targetNumRenderedItems + 2, 0)
-
+  if self.selected > lastRenderedIndex:
+    self.scrollOffset = max(self.selected - targetNumRenderedItems + 1, 0)
     lastRenderedIndex = min(self.scrollOffset + targetNumRenderedItems - 1, self.completions.high)
 
   let numRenderedItems = max(lastRenderedIndex - self.scrollOffset + 1, 0)

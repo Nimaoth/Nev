@@ -1,5 +1,5 @@
 import std/[os]
-import workspace, custom_async
+import workspace, custom_async, custom_logger
 
 type
   WorkspaceFolderLocal* = ref object of WorkspaceFolder
@@ -22,3 +22,8 @@ method getDirectoryListing*(self: WorkspaceFolderLocal, relativePath: string): F
         result.files.add file
       else:
         result.folders.add file
+
+proc newWorkspaceFolderLocal*(path: string): WorkspaceFolderLocal =
+  new result
+  debugf"Opening new local workspace folder at '{path}'"
+  result.path = path

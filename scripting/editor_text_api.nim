@@ -11,161 +11,161 @@ proc setMode*(self: TextDocumentEditor; mode: string) =
   ## Sets the current mode of the editor. If `mode` is "", then no additional scope will be pushed on the scope stac.k
   ## If mode is e.g. "insert", then the scope "editor.text.insert" will be pushed on the scope stack above "editor.text"
   ## Don't use "completion", as that is used for when a completion window is open.
-  setModeScript_7415538537(self, mode)
+  setModeScript_7667196777(self, mode)
 proc mode*(self: TextDocumentEditor): string =
   ## Returns the current mode of the text editor, or "" if there is no mode
-  modeScript_7415538736(self)
+  modeScript_7667196976(self)
 proc getContextWithMode*(self: TextDocumentEditor; context: string): string =
   ## Appends the current mode to context
-  getContextWithModeScript_7415538792(self, context)
+  getContextWithModeScript_7667197032(self, context)
 proc updateTargetColumn*(self: TextDocumentEditor; cursor: SelectionCursor) =
-  updateTargetColumnScript_7415538855(self, cursor)
+  updateTargetColumnScript_7667197095(self, cursor)
 proc invertSelection*(self: TextDocumentEditor) =
   ## Inverts the current selection. Discards all but the last cursor.
-  invertSelectionScript_7415538957(self)
+  invertSelectionScript_7667197197(self)
 proc insert*(self: TextDocumentEditor; selections: seq[Selection]; text: string;
              notify: bool = true; record: bool = true; autoIndent: bool = true): seq[
     Selection] =
-  insertScript_7415539007(self, selections, text, notify, record, autoIndent)
+  insertScript_7667197247(self, selections, text, notify, record, autoIndent)
 proc delete*(self: TextDocumentEditor; selections: seq[Selection];
              notify: bool = true; record: bool = true): seq[Selection] =
-  deleteScript_7415539372(self, selections, notify, record)
+  deleteScript_7667197612(self, selections, notify, record)
 proc selectPrev*(self: TextDocumentEditor) =
-  selectPrevScript_7415539449(self)
+  selectPrevScript_7667197689(self)
 proc selectNext*(self: TextDocumentEditor) =
-  selectNextScript_7415539662(self)
+  selectNextScript_7667197902(self)
 proc selectInside*(self: TextDocumentEditor; cursor: Cursor) =
-  selectInsideScript_7415539852(self, cursor)
+  selectInsideScript_7667198092(self, cursor)
 proc selectInsideCurrent*(self: TextDocumentEditor) =
-  selectInsideCurrentScript_7415539926(self)
+  selectInsideCurrentScript_7667198166(self)
 proc selectLine*(self: TextDocumentEditor; line: int) =
-  selectLineScript_7415539976(self, line)
+  selectLineScript_7667198216(self, line)
 proc selectLineCurrent*(self: TextDocumentEditor) =
-  selectLineCurrentScript_7415540033(self)
+  selectLineCurrentScript_7667198273(self)
 proc selectParentTs*(self: TextDocumentEditor; selection: Selection) =
-  selectParentTsScript_7415540083(self, selection)
+  selectParentTsScript_7667198323(self, selection)
 proc selectParentCurrentTs*(self: TextDocumentEditor) =
-  selectParentCurrentTsScript_7415540154(self)
+  selectParentCurrentTsScript_7667198394(self)
 proc insertText*(self: TextDocumentEditor; text: string) =
-  insertTextScript_7415540209(self, text)
+  insertTextScript_7667198449(self, text)
 proc undo*(self: TextDocumentEditor) =
-  undoScript_7415540275(self)
+  undoScript_7667198515(self)
 proc redo*(self: TextDocumentEditor) =
-  redoScript_7415540373(self)
+  redoScript_7667198613(self)
 proc scrollText*(self: TextDocumentEditor; amount: float32) =
-  scrollTextScript_7415540449(self, amount)
+  scrollTextScript_7667198689(self, amount)
 proc duplicateLastSelection*(self: TextDocumentEditor) =
-  duplicateLastSelectionScript_7415540568(self)
+  duplicateLastSelectionScript_7667198808(self)
 proc addCursorBelow*(self: TextDocumentEditor) =
-  addCursorBelowScript_7415540660(self)
+  addCursorBelowScript_7667198900(self)
 proc addCursorAbove*(self: TextDocumentEditor) =
-  addCursorAboveScript_7415540722(self)
+  addCursorAboveScript_7667198962(self)
 proc getPrevFindResult*(self: TextDocumentEditor; cursor: Cursor;
                         offset: int = 0): Selection =
-  getPrevFindResultScript_7415540784(self, cursor, offset)
+  getPrevFindResultScript_7667199024(self, cursor, offset)
 proc getNextFindResult*(self: TextDocumentEditor; cursor: Cursor;
                         offset: int = 0): Selection =
-  getNextFindResultScript_7415541105(self, cursor, offset)
+  getNextFindResultScript_7667199345(self, cursor, offset)
 proc addNextFindResultToSelection*(self: TextDocumentEditor) =
-  addNextFindResultToSelectionScript_7415541323(self)
+  addNextFindResultToSelectionScript_7667199563(self)
 proc addPrevFindResultToSelection*(self: TextDocumentEditor) =
-  addPrevFindResultToSelectionScript_7415541381(self)
+  addPrevFindResultToSelectionScript_7667199621(self)
 proc setAllFindResultToSelection*(self: TextDocumentEditor) =
-  setAllFindResultToSelectionScript_7415541439(self)
+  setAllFindResultToSelectionScript_7667199679(self)
 proc moveCursorColumn*(self: TextDocumentEditor; distance: int;
                        cursor: SelectionCursor = SelectionCursor.Config;
                        all: bool = true) =
-  moveCursorColumnScript_7415541801(self, distance, cursor, all)
+  moveCursorColumnScript_7667200041(self, distance, cursor, all)
 proc moveCursorLine*(self: TextDocumentEditor; distance: int;
                      cursor: SelectionCursor = SelectionCursor.Config;
                      all: bool = true) =
-  moveCursorLineScript_7415541890(self, distance, cursor, all)
+  moveCursorLineScript_7667200130(self, distance, cursor, all)
 proc moveCursorHome*(self: TextDocumentEditor;
                      cursor: SelectionCursor = SelectionCursor.Config;
                      all: bool = true) =
-  moveCursorHomeScript_7415541961(self, cursor, all)
+  moveCursorHomeScript_7667200201(self, cursor, all)
 proc moveCursorEnd*(self: TextDocumentEditor;
                     cursor: SelectionCursor = SelectionCursor.Config;
                     all: bool = true) =
-  moveCursorEndScript_7415542025(self, cursor, all)
+  moveCursorEndScript_7667200265(self, cursor, all)
 proc moveCursorTo*(self: TextDocumentEditor; str: string;
                    cursor: SelectionCursor = SelectionCursor.Config;
                    all: bool = true) =
-  moveCursorToScript_7415542089(self, str, cursor, all)
+  moveCursorToScript_7667200329(self, str, cursor, all)
 proc moveCursorBefore*(self: TextDocumentEditor; str: string;
                        cursor: SelectionCursor = SelectionCursor.Config;
                        all: bool = true) =
-  moveCursorBeforeScript_7415542167(self, str, cursor, all)
+  moveCursorBeforeScript_7667200407(self, str, cursor, all)
 proc moveCursorNextFindResult*(self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config;
                                all: bool = true) =
-  moveCursorNextFindResultScript_7415542245(self, cursor, all)
+  moveCursorNextFindResultScript_7667200485(self, cursor, all)
 proc moveCursorPrevFindResult*(self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config;
                                all: bool = true) =
-  moveCursorPrevFindResultScript_7415542309(self, cursor, all)
+  moveCursorPrevFindResultScript_7667200549(self, cursor, all)
 proc scrollToCursor*(self: TextDocumentEditor;
                      cursor: SelectionCursor = SelectionCursor.Config) =
-  scrollToCursorScript_7415542373(self, cursor)
+  scrollToCursorScript_7667200613(self, cursor)
 proc reloadTreesitter*(self: TextDocumentEditor) =
-  reloadTreesitterScript_7415542430(self)
+  reloadTreesitterScript_7667200670(self)
 proc deleteLeft*(self: TextDocumentEditor) =
-  deleteLeftScript_7415542484(self)
+  deleteLeftScript_7667200724(self)
 proc deleteRight*(self: TextDocumentEditor) =
-  deleteRightScript_7415542542(self)
+  deleteRightScript_7667200782(self)
 proc getCommandCount*(self: TextDocumentEditor): int =
-  getCommandCountScript_7415542600(self)
+  getCommandCountScript_7667200840(self)
 proc setCommandCount*(self: TextDocumentEditor; count: int) =
-  setCommandCountScript_7415542656(self, count)
+  setCommandCountScript_7667200896(self, count)
 proc setCommandCountRestore*(self: TextDocumentEditor; count: int) =
-  setCommandCountRestoreScript_7415542713(self, count)
+  setCommandCountRestoreScript_7667200953(self, count)
 proc updateCommandCount*(self: TextDocumentEditor; digit: int) =
-  updateCommandCountScript_7415542770(self, digit)
+  updateCommandCountScript_7667201010(self, digit)
 proc setFlag*(self: TextDocumentEditor; name: string; value: bool) =
-  setFlagScript_7415542827(self, name, value)
+  setFlagScript_7667201067(self, name, value)
 proc getFlag*(self: TextDocumentEditor; name: string): bool =
-  getFlagScript_7415542891(self, name)
+  getFlagScript_7667201131(self, name)
 proc runAction*(self: TextDocumentEditor; action: string; args: JsonNode): bool =
-  runActionScript_7415542954(self, action, args)
+  runActionScript_7667201194(self, action, args)
 proc findWordBoundary*(self: TextDocumentEditor; cursor: Cursor): Selection =
-  findWordBoundaryScript_7415543027(self, cursor)
+  findWordBoundaryScript_7667201267(self, cursor)
 proc getSelectionForMove*(self: TextDocumentEditor; cursor: Cursor;
                           move: string; count: int = 0): Selection =
-  getSelectionForMoveScript_7415543117(self, cursor, move, count)
+  getSelectionForMoveScript_7667201357(self, cursor, move, count)
 proc setMove*(self: TextDocumentEditor; args: JsonNode) =
-  setMoveScript_7415543311(self, args)
+  setMoveScript_7667201551(self, args)
 proc deleteMove*(self: TextDocumentEditor; move: string;
                  which: SelectionCursor = SelectionCursor.Config;
                  all: bool = true) =
-  deleteMoveScript_7415543565(self, move, which, all)
+  deleteMoveScript_7667201805(self, move, which, all)
 proc selectMove*(self: TextDocumentEditor; move: string;
                  which: SelectionCursor = SelectionCursor.Config;
                  all: bool = true) =
-  selectMoveScript_7415543666(self, move, which, all)
+  selectMoveScript_7667201906(self, move, which, all)
 proc changeMove*(self: TextDocumentEditor; move: string;
                  which: SelectionCursor = SelectionCursor.Config;
                  all: bool = true) =
-  changeMoveScript_7415543792(self, move, which, all)
+  changeMoveScript_7667202032(self, move, which, all)
 proc moveLast*(self: TextDocumentEditor; move: string;
                which: SelectionCursor = SelectionCursor.Config;
                all: bool = true; count: int = 0) =
-  moveLastScript_7415543893(self, move, which, all, count)
+  moveLastScript_7667202133(self, move, which, all, count)
 proc moveFirst*(self: TextDocumentEditor; move: string;
                 which: SelectionCursor = SelectionCursor.Config;
                 all: bool = true; count: int = 0) =
-  moveFirstScript_7415544008(self, move, which, all, count)
+  moveFirstScript_7667202248(self, move, which, all, count)
 proc setSearchQuery*(self: TextDocumentEditor; query: string) =
-  setSearchQueryScript_7415544123(self, query)
+  setSearchQueryScript_7667202363(self, query)
 proc setSearchQueryFromMove*(self: TextDocumentEditor; move: string;
                              count: int = 0) =
-  setSearchQueryFromMoveScript_7415544202(self, move, count)
+  setSearchQueryFromMoveScript_7667202442(self, move, count)
 proc gotoDefinition*(self: TextDocumentEditor) =
-  gotoDefinitionScript_7415545007(self)
+  gotoDefinitionScript_7667203247(self)
 proc getCompletions*(self: TextDocumentEditor) =
-  getCompletionsScript_7415545061(self)
+  getCompletionsScript_7667203301(self)
 proc hideCompletions*(self: TextDocumentEditor) =
-  hideCompletionsScript_7415545115(self)
+  hideCompletionsScript_7667203355(self)
 proc selectPrevCompletion*(self: TextDocumentEditor) =
-  selectPrevCompletionScript_7415545165(self)
+  selectPrevCompletionScript_7667203405(self)
 proc selectNextCompletion*(self: TextDocumentEditor) =
-  selectNextCompletionScript_7415545229(self)
+  selectNextCompletionScript_7667203469(self)
 proc applySelectedCompletion*(self: TextDocumentEditor) =
-  applySelectedCompletionScript_7415545293(self)
+  applySelectedCompletionScript_7667203533(self)

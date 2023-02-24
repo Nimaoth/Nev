@@ -1,6 +1,6 @@
 import std/[strutils, sugar, options, json, jsonutils, streams]
 import bumpy, vmath
-import editor, text_document, popup, events, util, rect_utils, scripting/expose, event, input
+import editor, text_document, popup, events, util, rect_utils, scripting/expose, event, input, custom_async, custom_logger
 from scripting_api as api import nil
 
 export popup
@@ -8,6 +8,9 @@ export popup
 type
   SelectorItem* = ref object of RootObj
     score*: float32
+
+  CompletionProviderSync* = proc(popup: SelectorPopup, text: string): seq[SelectorItem]
+  CompletionProviderAsync* = proc(popup: SelectorPopup, text: string): Future[seq[SelectorItem]]
 
   SelectorPopup* = ref object of Popup
     editor*: Editor
@@ -18,17 +21,14 @@ type
     handleItemConfirmed*: proc(item: SelectorItem)
     handleItemSelected*: proc(item: SelectorItem)
     handleCanceled*: proc()
-    getCompletions*: proc(self: SelectorPopup, text: string): seq[SelectorItem]
+    getCompletions*: CompletionProviderSync
+    getCompletionsAsync*: CompletionProviderAsync
     lastContentBounds*: Rect
     lastItems*: seq[tuple[index: int, bounds: Rect]]
 
 method changed*(self: SelectorItem, other: SelectorItem): bool {.base.} = discard
 
-proc updateCompletions(self: SelectorPopup) =
-  let text = self.textEditor.document.content.join
-
-  let newCompletions = self.getCompletions(self, text)
-
+proc setCompletions(self: SelectorPopup, newCompletions: seq[SelectorItem]) =
   if newCompletions.len != self.completions.len:
     self.markDirty()
   else:
@@ -43,6 +43,21 @@ proc updateCompletions(self: SelectorPopup) =
     self.selected = self.selected.clamp(0, self.completions.len - 1)
   else:
     self.selected = 0
+
+proc updateCompletionsAsync(self: SelectorPopup): Future[void] {.async.} =
+  let text = self.textEditor.document.content.join
+  let newCompletions = await self.getCompletionsAsync(self, text)
+  self.setCompletions(newCompletions)
+
+proc updateCompletions*(self: SelectorPopup) =
+  let text = self.textEditor.document.content.join
+  if not self.getCompletions.isNil:
+    let newCompletions = self.getCompletions(self, text)
+    self.setCompletions(newCompletions)
+  elif not self.getCompletionsAsync.isNil:
+    asyncCheck self.updateCompletionsAsync()
+  else:
+    logger.log(lvlError, fmt"No completion provider set on popup {self.id}")
 
 proc getItemAtPixelPosition(self: SelectorPopup, posWindow: Vec2): Option[SelectorItem] =
   result = SelectorItem.none
@@ -143,7 +158,7 @@ method handleMouseRelease*(self: SelectorPopup, button: MouseButton, mousePosWin
 method handleMouseMove*(self: SelectorPopup, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) =
   discard
 
-proc newSelectorPopup*(editor: Editor, getCompletions: proc(self: SelectorPopup, text: string): seq[SelectorItem]): SelectorPopup =
+proc newSelectorPopup*(editor: Editor): SelectorPopup =
   var popup = SelectorPopup(editor: editor)
   popup.textEditor = newTextEditor(newTextDocument(), editor)
   popup.textEditor.setMode("insert")
@@ -151,7 +166,6 @@ proc newSelectorPopup*(editor: Editor, getCompletions: proc(self: SelectorPopup,
   popup.textEditor.lineNumbers = api.LineNumbers.None.some
   popup.textEditor.document.singleLine = true
   discard popup.textEditor.document.textChanged.subscribe (doc: TextDocument) => popup.handleTextChanged()
-  popup.getCompletions = getCompletions
 
   popup.eventHandler = eventHandler(editor.getEventHandlerConfig("popup.selector")):
     onAction:
