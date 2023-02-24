@@ -2,7 +2,7 @@ import custom_async
 
 type
   Workspace* = ref object
-    folders: seq[WorkspaceFolder]
+    folders*: seq[WorkspaceFolder]
 
   WorkspaceFolder* = ref object of RootObj
     name*: string
@@ -20,3 +20,6 @@ method getDirectoryListing*(self: WorkspaceFolder, relativePath: string): Future
 
 import workspace_local
 export workspace_local
+
+import workspace_github
+export workspace_github

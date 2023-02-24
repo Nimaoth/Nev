@@ -196,6 +196,8 @@ method render*(self: BrowserPlatform, widget: WWidget, frameIndex: int) =
   widget.renderWidget(self, self.redrawEverything, frameIndex, buffer)
   self.content.innerHTML = buffer.cstring
 
+  self.redrawEverything = false
+
 method renderWidget(self: WPanel, renderer: BrowserPlatform, forceRedraw: bool, frameIndex: int, buffer: var string) =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
     return

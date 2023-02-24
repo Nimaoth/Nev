@@ -6,6 +6,7 @@ switch("mm", "refc")
 switch("tlsEmulation", "off")
 switch("d", "enableGui=true")
 switch("d", "enableTerminal=true")
+switch("d", "ssl")
 
 let mode = 1
 case mode
