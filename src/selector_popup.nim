@@ -3,6 +3,8 @@ import bumpy, vmath
 import editor, text_document, popup, events, util, rect_utils, scripting/expose, event, input
 from scripting_api as api import nil
 
+export popup
+
 type
   SelectorItem* = ref object of RootObj
     score*: float32
@@ -11,6 +13,7 @@ type
     editor*: Editor
     textEditor*: TextDocumentEditor
     selected*: int
+    scrollOffset*: int
     completions*: seq[SelectorItem]
     handleItemConfirmed*: proc(item: SelectorItem)
     handleItemSelected*: proc(item: SelectorItem)
@@ -19,10 +22,22 @@ type
     lastContentBounds*: Rect
     lastItems*: seq[tuple[index: int, bounds: Rect]]
 
+method changed*(self: SelectorItem, other: SelectorItem): bool {.base.} = discard
+
 proc updateCompletions(self: SelectorPopup) =
   let text = self.textEditor.document.content.join
 
-  self.completions = self.getCompletions(self, text)
+  let newCompletions = self.getCompletions(self, text)
+
+  if newCompletions.len != self.completions.len:
+    self.markDirty()
+  else:
+    for i in 0..newCompletions.high:
+      if self.completions[i].changed(newCompletions[i]):
+        self.markDirty()
+        break
+
+  self.completions = newCompletions
 
   if self.completions.len > 0:
     self.selected = self.selected.clamp(0, self.completions.len - 1)
@@ -61,10 +76,14 @@ proc accept*(self: SelectorPopup) {.expose("popup.selector").} =
     self.handleItemConfirmed self.completions[self.selected]
   self.editor.popPopup(self)
 
+  self.markDirty()
+
 proc cancel*(self: SelectorPopup) {.expose("popup.selector").} =
   if self.handleCanceled != nil:
     self.handleCanceled()
   self.editor.popPopup(self)
+
+  self.markDirty()
 
 proc prev*(self: SelectorPopup) {.expose("popup.selector").} =
   self.selected = if self.completions.len == 0:
@@ -75,6 +94,8 @@ proc prev*(self: SelectorPopup) {.expose("popup.selector").} =
   if self.completions.len > 0 and self.handleItemSelected != nil:
     self.handleItemSelected self.completions[self.selected]
 
+  self.markDirty()
+
 proc next*(self: SelectorPopup) {.expose("popup.selector").} =
   self.selected = if self.completions.len == 0:
     0
@@ -83,6 +104,8 @@ proc next*(self: SelectorPopup) {.expose("popup.selector").} =
 
   if self.completions.len > 0 and self.handleItemSelected != nil:
     self.handleItemSelected self.completions[self.selected]
+
+  self.markDirty()
 
 genDispatcher("popup.selector")
 
