@@ -8,10 +8,10 @@ else:
 ## This file is auto generated, don't modify.
 
 proc accept*(self: SelectorPopup) =
-  acceptScript_8371831227(self)
+  acceptScript_8388608558(self)
 proc cancel*(self: SelectorPopup) =
-  cancelScript_8371831326(self)
+  cancelScript_8388608657(self)
 proc prev*(self: SelectorPopup) =
-  prevScript_8371831382(self)
+  prevScript_8388608713(self)
 proc next*(self: SelectorPopup) =
-  nextScript_8371831450(self)
+  nextScript_8388608781(self)

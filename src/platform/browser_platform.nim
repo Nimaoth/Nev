@@ -1,4 +1,4 @@
-import std/[strformat, tables, dom, unicode, strutils]
+import std/[strformat, tables, dom, unicode, strutils, sugar]
 import std/htmlgen as hg
 import platform, widgets, custom_logger, rect_utils, input, event, lrucache
 import vmath
@@ -12,6 +12,11 @@ type
     deltaY: float
     deltaZ: float
     deltaMode: uint
+
+  ProgressEvent* {.importc.} = ref object of dom.Event ## see `docs<https://developer.mozilla.org/en-US/docs/Web/API/ProgressEvent>`_
+    result*: cstring
+
+  DragEvent = ref dom.DragEvent
 
 type
   BrowserPlatform* = ref object of Platform
@@ -114,6 +119,31 @@ method init*(self: BrowserPlatform) =
 
     # debugf"move {me.button}, {modifiers}, {me.clientX}, {me.clientY}, {me.movementX}, {me.movementY}, {me.getMouseButtons}"
     self.onMouseMove.invoke (vec2(me.clientX.float, me.clientY.float), vec2(me.movementX.float, me.movementY.float), modifiers, me.getMouseButtons) # @todo: buttons
+  )
+
+  proc console[T](t: T) {.importjs: "console.log(#);".}
+
+  self.content.addEventListener("dragover", proc(e: dom.Event) =
+    let de = e.DragEvent
+    de.preventDefault()
+  )
+
+  self.content.addEventListener("drop", proc(e: dom.Event) =
+    let de = e.DragEvent
+    de.preventDefault()
+    console de.dataTransfer
+    for f in de.dataTransfer.files:
+      capture f:
+        let fileReader = newFileReader()
+
+        type RootObjRef = ref RootObj
+        type File = dom.File
+        proc result(fileReader: FileReader): cstring {.importjs: "(#.result || '')".}
+
+        # @hack: we know that f is actually a file, but it's got the wrong type in std/dom
+        fileReader.readAsText(f.RootObjRef.File)
+        fileReader.onload = proc (e: dom.Event) =
+          self.onDropFile.invoke ($f.name, $fileReader.result)
   )
 
   self.updateFontSettings()

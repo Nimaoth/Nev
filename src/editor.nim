@@ -332,6 +332,7 @@ proc handleMousePress*(self: Editor, button: MouseButton, modifiers: Modifiers, 
 proc handleMouseRelease*(self: Editor, button: MouseButton, modifiers: Modifiers, mousePosWindow: Vec2)
 proc handleMouseMove*(self: Editor, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton])
 proc handleScroll*(self: Editor, scroll: Vec2, mousePosWindow: Vec2, modifiers: Modifiers)
+proc handleDropFile*(self: Editor, path, content: string)
 
 proc newEditor*(backend: api.Backend, platform: Platform): Editor =
   var self = Editor()
@@ -353,6 +354,7 @@ proc newEditor*(backend: api.Backend, platform: Platform): Editor =
   discard platform.onMouseRelease.subscribe proc(event: auto): void = self.handleMouseRelease(event.button, event.modifiers, event.pos)
   discard platform.onMouseMove.subscribe proc(event: auto): void = self.handleMouseMove(event.pos, event.delta, event.modifiers, event.buttons)
   discard platform.onScroll.subscribe proc(event: auto): void = self.handleScroll(event.scroll, event.pos, event.modifiers)
+  discard platform.onDropFile.subscribe proc(event: auto): void = self.handleDropFile(event.path, event.content)
   discard platform.onCloseRequested.subscribe proc(_: auto) = self.closeRequested = true
 
   self.timer = startTimer()
@@ -519,6 +521,9 @@ proc setConsumeAllInput*(self: Editor, context: string, value: bool) {.expose("e
 
 proc openGithubWorkspace*(self: Editor, user: string, repository: string, branchOrHash: string) {.expose("editor").} =
   self.workspace.folders.add newWorkspaceFolderGithub(user, repository, branchOrHash)
+
+proc openAbsytreeServerWorkspace*(self: Editor, url: string) {.expose("editor").} =
+  self.workspace.folders.add newWorkspaceFolderAbsytreeServer(url)
 
 when not defined(js):
   proc openLocalWorkspace*(self: Editor, path: string) {.expose("editor").} =
@@ -739,30 +744,59 @@ proc getDirectoryListingRec(self: Editor, folder: WorkspaceFolder, path: string)
   for file in items.files:
     resultItems.add(path / file)
 
+  var futs: seq[Future[seq[string]]]
+
   for dir in items.folders:
-    let children = await self.getDirectoryListingRec(folder, path / dir)
+    futs.add self.getDirectoryListingRec(folder, path / dir)
+
+  for fut in futs:
+    let children = await fut
     resultItems.add children
 
   return resultItems
+
+proc iterateDirectoryRec(self: Editor, folder: WorkspaceFolder, path: string, callback: proc(files: seq[string]): void): Future[void] {.async.} =
+  let path = path
+  var resultItems: seq[string]
+  var folders: seq[string]
+
+  let items = await folder.getDirectoryListing(path)
+  for file in items.files:
+    resultItems.add(path / file)
+
+  for dir in items.folders:
+    folders.add(path / dir)
+
+  callback(resultItems)
+
+  var futs: seq[Future[void]]
+
+  for dir in folders:
+    futs.add self.iterateDirectoryRec(folder, dir, callback)
+
+  for fut in futs:
+    await fut
 
 proc chooseFile*(self: Editor, view: string = "new") {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
   var popup = self.newSelectorPopup()
-  popup.getCompletionsAsync = proc(popup: SelectorPopup, text: string): Future[seq[SelectorItem]] {.async.} =
+  popup.getCompletionsAsyncIter = proc(popup: SelectorPopup, text: string): Future[void] {.async.} =
     var resultItems: seq[SelectorItem]
 
     for folder in self.workspace.folders:
-      let files = await self.getDirectoryListingRec(folder, "")
+      var folder = folder
+      await self.iterateDirectoryRec(folder, "", proc(files: seq[string]) =
+        let folder = folder
+        for file in files:
+          let name = file.splitFile.name
+          let score = fuzzyMatchSmart(text, name)
+          popup.completions.add FileSelectorItem(path: fmt"{file}", score: score, workspaceFolder: folder.some)
 
-      for file in files:
-        let name = file.splitFile.name
-        let score = fuzzyMatchSmart(text, name)
-        resultItems.add FileSelectorItem(path: fmt"{file}", score: score, workspaceFolder: folder.some)
-
-    resultItems.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Descending)
-    return resultItems
+        popup.completions.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Descending)
+        popup.markDirty()
+      )
 
   popup.handleItemConfirmed = proc(item: SelectorItem) =
     case view
@@ -927,6 +961,9 @@ proc handleKeyRelease*(self: Editor, input: int64, modifiers: Modifiers) =
 proc handleRune*(self: Editor, input: int64, modifiers: Modifiers) =
   let modifiers = if input.isAscii and input.char.isAlphaNumeric: modifiers else: {}
   self.currentEventHandlers.handleEvent(input, modifiers)
+
+proc handleDropFile*(self: Editor, path, content: string) =
+  self.createView(newTextDocument(path, content))
 
 proc scriptRunAction*(action: string, arg: string) {.expose("editor").} =
   if gEditor.isNil:

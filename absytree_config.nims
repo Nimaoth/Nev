@@ -70,6 +70,7 @@ proc postInitialize*(): bool =
 info "Loading absytree_config.nim"
 
 openLocalWorkspace(".")
+# openAbsytreeServerWorkspace("http://localhost:3000")
 # openGithubWorkspace("Nimaoth", "AbsytreeBrowser", "main")
 # openGithubWorkspace("Nimaoth", "Absytree", "main")
 

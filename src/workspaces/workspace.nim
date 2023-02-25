@@ -23,3 +23,6 @@ export workspace_local
 
 import workspace_github
 export workspace_github
+
+import workspace_absytree_server
+export workspace_absytree_server

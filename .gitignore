@@ -19,3 +19,4 @@ int/*.map
 *.code-workspace
 ast.js
 languages/*.wasm
+node_modules/**
