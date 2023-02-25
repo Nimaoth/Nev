@@ -12,6 +12,7 @@ type
     onMouseMove*: Event[tuple[pos: Vec2, delta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]]]
     onScroll*: Event[tuple[pos: Vec2, scroll: Vec2, modifiers: Modifiers]]
     onCloseRequested*: Event[void]
+    onDropFile*: Event[tuple[path: string, content: string]]
     layoutOptions*: WLayoutOptions
 
 method requestRender*(self: Platform, redrawEverything = false) {.base.} = discard

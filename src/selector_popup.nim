@@ -11,6 +11,7 @@ type
 
   CompletionProviderSync* = proc(popup: SelectorPopup, text: string): seq[SelectorItem]
   CompletionProviderAsync* = proc(popup: SelectorPopup, text: string): Future[seq[SelectorItem]]
+  CompletionProviderAsyncIter* = proc(popup: SelectorPopup, text: string): Future[void]
 
   SelectorPopup* = ref object of Popup
     editor*: Editor
@@ -23,6 +24,7 @@ type
     handleCanceled*: proc()
     getCompletions*: CompletionProviderSync
     getCompletionsAsync*: CompletionProviderAsync
+    getCompletionsAsyncIter*: CompletionProviderAsyncIter
     lastContentBounds*: Rect
     lastItems*: seq[tuple[index: int, bounds: Rect]]
 
@@ -49,6 +51,11 @@ proc updateCompletionsAsync(self: SelectorPopup): Future[void] {.async.} =
   let newCompletions = await self.getCompletionsAsync(self, text)
   self.setCompletions(newCompletions)
 
+proc updateCompletionsAsyncIter(self: SelectorPopup): Future[void] {.async.} =
+  let text = self.textEditor.document.content.join
+  self.setCompletions @[]
+  await self.getCompletionsAsyncIter(self, text)
+
 proc updateCompletions*(self: SelectorPopup) =
   let text = self.textEditor.document.content.join
   if not self.getCompletions.isNil:
@@ -56,6 +63,8 @@ proc updateCompletions*(self: SelectorPopup) =
     self.setCompletions(newCompletions)
   elif not self.getCompletionsAsync.isNil:
     asyncCheck self.updateCompletionsAsync()
+  elif not self.getCompletionsAsyncIter.isNil:
+    asyncCheck self.updateCompletionsAsyncIter()
   else:
     logger.log(lvlError, fmt"No completion provider set on popup {self.id}")
 

@@ -17,7 +17,7 @@ proc getAccessToken(): Option[string] =
     return token.some
   return string.none
 
-method isReadOnly*(self: WorkspaceFolderGithub): bool = false
+method isReadOnly*(self: WorkspaceFolderGithub): bool = true
 
 method loadFile*(self: WorkspaceFolderGithub, relativePath: string): Future[string] {.async.} =
   let relativePath = if relativePath.startsWith("./"): relativePath[2..^1] else: relativePath
