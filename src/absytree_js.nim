@@ -82,8 +82,8 @@ block:
   scriptSetOptionString "editor.text.cursor.movement.", "both"
   scriptSetOptionBool "editor.text.cursor.wide.", false
 
-  ed.addCommandScript "editor", "<A-h>", "load-current-config"
-  ed.addCommandScript "editor", "<A-g>", "sourceCurrentDocument"
+  ed.addCommandScript "editor", "<S-SPACE>cl", "load-current-config"
+  ed.addCommandScript "editor", "<S-SPACE>cs", "sourceCurrentDocument"
 
 initializedEditor = true
 requestRender()
