@@ -1,5 +1,5 @@
-import std/[os, tables, json, uri, base64, strutils]
-import workspace, custom_async, custom_logger, async_http_client
+import std/[os, tables, json, uri, base64, strutils, options]
+import workspace, custom_async, custom_logger, async_http_client, platform/filesystem
 
 type
   WorkspaceFolderGithub* = ref object of WorkspaceFolder
@@ -9,6 +9,13 @@ type
     branchOrHash*: string
 
     cachedDirectoryListings: Table[string, DirectoryListing]
+    pathToSha: Table[string, string]
+
+proc getAccessToken(): Option[string] =
+  let token = fs.loadApplicationFile("GithubAccessToken")
+  if token.len > 0:
+    return token.some
+  return string.none
 
 method isReadOnly*(self: WorkspaceFolderGithub): bool = false
 
@@ -16,7 +23,9 @@ method loadFile*(self: WorkspaceFolderGithub, relativePath: string): Future[stri
   let relativePath = if relativePath.startsWith("./"): relativePath[2..^1] else: relativePath
   let url = self.baseUrl & "/contents/" & relativePath & "?ref=" & self.branchOrHash
   logger.log(lvlInfo, fmt"[github] loadFile '{url}'")
-  let response = await httpGet(url)
+
+  let token = getAccessToken()
+  let response = await httpGet(url, token)
 
   try:
     let jsn = parseJson(response)
@@ -34,7 +43,7 @@ method loadFile*(self: WorkspaceFolderGithub, relativePath: string): Future[stri
 method saveFile*(self: WorkspaceFolderGithub, relativePath: string, content: string): Future[void] {.async.} =
   discard
 
-proc parseDirectoryListing*(jsn: JsonNode): DirectoryListing =
+proc parseDirectoryListing(self: WorkspaceFolderGithub, basePath: string, jsn: JsonNode): DirectoryListing =
   if jsn.hasKey("tree") and jsn["tree"].kind == JArray:
     let tree = jsn["tree"]
     for item in tree.items:
@@ -46,6 +55,8 @@ proc parseDirectoryListing*(jsn: JsonNode): DirectoryListing =
       let url = item["url"].getStr ""
       let sha = item["sha"].getStr ""
 
+      self.pathToSha[basePath / path] = sha
+
       case typ
       of "blob":
         result.files.add path
@@ -54,27 +65,33 @@ proc parseDirectoryListing*(jsn: JsonNode): DirectoryListing =
       else:
         discard
 
-
 method getDirectoryListing*(self: WorkspaceFolderGithub, relativePath: string): Future[DirectoryListing] {.async.} =
   if self.cachedDirectoryListings.contains(relativePath):
     return self.cachedDirectoryListings[relativePath]
 
   logger.log(lvlInfo, fmt"[github] getDirectoryListing for {self.baseUrl}")
 
-  if relativePath.len == 0 or relativePath == ".":
-    let response = await httpGet(self.baseUrl & "/git/trees/" & self.branchOrHash)
+  let token = getAccessToken()
 
-    try:
-      let jsn = parseJson(response)
-      debugf"response: {jsn.pretty}"
-      let listing = jsn.parseDirectoryListing
-      self.cachedDirectoryListings[relativePath] = listing
-      return listing
-
-    except:
-      logger.log(lvlError, fmt"Failed to parse github response: {response}")
+  let url = if relativePath.len == 0 or relativePath == ".":
+    self.baseUrl & "/git/trees/" & self.branchOrHash
+  elif self.pathToSha.contains(relativePath):
+    self.baseUrl & "/git/trees/" & self.pathToSha[relativePath]
   else:
-    discard
+    logger.log(lvlError, fmt"[github] Failed to get directory listing for '{relativePath}'")
+    return DirectoryListing()
+
+  let response = await httpGet(url, token)
+
+  try:
+    let jsn = parseJson(response)
+    # debugf"response: {jsn.pretty}"
+    let listing = self.parseDirectoryListing(relativePath, jsn)
+    self.cachedDirectoryListings[relativePath] = listing
+    return listing
+
+  except:
+    logger.log(lvlError, fmt"Failed to parse github response: {response}")
 
   return DirectoryListing()
 
@@ -88,3 +105,4 @@ proc newWorkspaceFolderGithub*(user, repository, branchOrHash: string): Workspac
   result.repository = repository
   result.branchOrHash = branchOrHash
   result.cachedDirectoryListings = initTable[string, DirectoryListing]()
+  result.pathToSha = initTable[string, string]()
