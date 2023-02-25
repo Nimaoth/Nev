@@ -27,6 +27,8 @@ type
 
     escapedText: LruCache[string, string]
 
+    domUpdates: seq[proc(): void]
+
 proc toInput(key: cstring, code: cstring, keyCode: int): int64
 proc updateFontSettings*(self: BrowserPlatform)
 
@@ -187,6 +189,13 @@ method processEvents*(self: BrowserPlatform): int =
 
 method renderWidget(self: WWidget, renderer: BrowserPlatform, element: var Element, forceRedraw: bool, frameIndex: int, buffer: var string) {.base.} = discard
 
+
+proc applyDomUpdates*(self: BrowserPlatform) =
+  for update in self.domUpdates:
+    update()
+
+  self.domUpdates.setLen 0
+
 method render*(self: BrowserPlatform, widget: WWidget, frameIndex: int) =
   self.boundsStack.add rect(vec2(), self.size)
   defer: discard self.boundsStack.pop()
@@ -196,16 +205,13 @@ method render*(self: BrowserPlatform, widget: WWidget, frameIndex: int) =
   var buffer = ""
 
   var element: Element = if self.content.children.len > 0: self.content.children[0].Element else: nil
-  if not element.isNil:
-    element.remove()
-
+  let wasNil = element.isNil
   widget.renderWidget(self, element, self.redrawEverything, frameIndex, buffer)
 
-  if not element.isNil:
+  self.applyDomUpdates()
+
+  if not element.isNil and wasNil:
     self.content.appendChild element
-
-  # self.content.innerHTML = buffer.cstring
-
 
   self.redrawEverything = false
 
@@ -213,17 +219,44 @@ proc createOrReplaceElement(element: var Element, name: cstring, nameUpper: cstr
   if element.isNil:
     # echo "create element ", name
     element = document.createElement(name)
+    element.class = "widget"
   elif element.nodeName != nameUpper:
     # echo "replace element ", element.nodeName, " with ", name
     let dif = document.createElement(name)
     element.replaceWith(dif)
     element = dif
+    element.class = "widget"
 
 proc updateRelativePosition(element: var Element, bounds: Rect) =
   element.style.left = $bounds.x.int
   element.style.top = $bounds.y.int
   element.style.width = $bounds.w.int
   element.style.height = $bounds.h.int
+
+when defined(js):
+  # Optimized version for javascript backend
+  proc myToHtmlHex(c: Color): cstring =
+    {.emit: "const hexChars = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'];let result = '#';".}
+    let r = (c.r * 255).int32
+    let g = (c.g * 255).int32
+    let b = (c.b * 255).int32
+    let cr1 = r and 0xf
+    let cr2 = (r shr 4) and 0xf
+    let cg1 = g and 0xf
+    let cg2 = (g shr 4) and 0xf
+    let cb1 = b and 0xf
+    let cb2 = (b shr 4) and 0xf
+
+    {.emit: ["result += hexChars[", cr2, "];"].} #"""
+    {.emit: ["result += hexChars[", cr1, "];"].} #"""
+    {.emit: ["result += hexChars[", cg2, "];"].} #"""
+    {.emit: ["result += hexChars[", cg1, "];"].} #"""
+    {.emit: ["result += hexChars[", cb2, "];"].} #"""
+    {.emit: ["result += hexChars[", cb1, "];"].} #"""
+    {.emit: [result, " = result;"].} #"""
+
+else:
+  proc myToHtmlHex(c: Color): string = color.toHtmlHex
 
 method renderWidget(self: WPanel, renderer: BrowserPlatform, element: var Element, forceRedraw: bool, frameIndex: int, buffer: var string) =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
@@ -234,38 +267,20 @@ method renderWidget(self: WPanel, renderer: BrowserPlatform, element: var Elemen
   element.createOrReplaceElement("div", "DIV")
 
   while element.children.len > self.children.len:
-    # debugf"remove child from div"
     element.removeChild(element.lastChild)
 
   let relBounds = self.lastBounds - renderer.boundsStack[renderer.boundsStack.high].xy
   renderer.boundsStack.add self.lastBounds
   defer: discard renderer.boundsStack.pop()
 
-  element.updateRelativePosition(relBounds)
-  element.class = "widget"
-
-  if self.fillBackground:
-    # fmt"background: {self.backgroundColor.toHtmlHex};"
-    element.style.background = self.backgroundColor.toHtmlHex.cstring
+  let backgroundColor = if self.fillBackground:
+    fmt"background: {self.backgroundColor.myToHtmlHex};"
   else:
-    element.style.background = ""
+    ""
 
-  # while element.children.len > self.children.len:
-  #   element.removeChild(element.lastChild)
-
-
-  # let relBounds = self.lastBounds - renderer.boundsStack[renderer.boundsStack.high].xy
-  # renderer.boundsStack.add self.lastBounds
-  # defer: discard renderer.boundsStack.pop()
-
-  # let backgroundColor = if self.fillBackground:
-  #   fmt"background: {self.backgroundColor.toHtmlHex};"
-  # else:
-  #   ""
-
-  # buffer.add "<div style=\""
-  # buffer.add  fmt"left: {relBounds.x.int}px; top: {relBounds.y.int}px; width: {relBounds.w.int}px; height: {relBounds.h.int}px; {backgroundColor}"
-  # buffer.add "\" class=\"widget\">"
+  renderer.domUpdates.add proc() =
+    element.class = "widget"
+    element.setAttribute("style", fmt("left: {relBounds.x.int}px; top: {relBounds.y.int}px; width: {relBounds.w.int}px; height: {relBounds.h.int}px; {backgroundColor}").cstring)
 
   let existingCount = element.children.len
   for i, c in self.children:
@@ -273,8 +288,6 @@ method renderWidget(self: WPanel, renderer: BrowserPlatform, element: var Elemen
     c.renderWidget(renderer, childElement, forceRedraw or self.fillBackground, frameIndex, buffer)
     if i >= existingCount and not childElement.isNil:
       element.appendChild childElement
-
-  # buffer.add("</div>")
 
 method renderWidget(self: WStack, renderer: BrowserPlatform, element: var Element, forceRedraw: bool, frameIndex: int, buffer: var string) =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
@@ -285,7 +298,6 @@ method renderWidget(self: WStack, renderer: BrowserPlatform, element: var Elemen
   element.createOrReplaceElement("div", "DIV")
 
   while element.children.len > self.children.len:
-    # debugf"remove child from stack"
     element.removeChild(element.lastChild)
 
   let relBounds = self.lastBounds - renderer.boundsStack[renderer.boundsStack.high].xy
@@ -293,22 +305,6 @@ method renderWidget(self: WStack, renderer: BrowserPlatform, element: var Elemen
   defer: discard renderer.boundsStack.pop()
 
   element.updateRelativePosition(relBounds)
-  element.class = "widget"
-
-  # if self.fillBackground:
-  # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
-
-  # if self.drawBorder:
-  #   renderer.buffer.drawRect(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int, self.lastBounds.yh.int)
-
-  # let backgroundColor = if self.fillBackground:
-  #   fmt"background: {self.backgroundColor.toHtmlHex};"
-  # else:
-  #   ""
-
-  # buffer.add "<div style=\""
-  # buffer.add  fmt"left: {relBounds.x.int}px; top: {relBounds.y.int}px; width: {relBounds.w.int}px; height: {relBounds.h.int}px; {backgroundColor}"
-  # buffer.add "\" class=\"widget\">"
 
   let existingCount = element.children.len
   for i, c in self.children:
@@ -317,7 +313,9 @@ method renderWidget(self: WStack, renderer: BrowserPlatform, element: var Elemen
     if i >= existingCount and not childElement.isNil:
       element.appendChild childElement
 
-  # buffer.add("</div>")
+
+proc getTextStyle(x, y, width, height: int, color, backgroundColor: cstring): cstring = #{.importjs: "`left: ${#}px; top: ${#}px; width: ${#}px; height: ${#}px; overflow: visible; color: ${#}; ${#}`)".}
+  {.emit: [result, " = `left: ${", x, "}px; top: ${", y, "}px; width: ${", width, "}px; height: ${", height, "}px; overflow: visible; color: ${", color, "}; ${", backgroundColor, "}`"].} #"""
 
 method renderWidget(self: WText, renderer: BrowserPlatform, element: var Element, forceRedraw: bool, frameIndex: int, buffer: var string) =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
@@ -331,42 +329,20 @@ method renderWidget(self: WText, renderer: BrowserPlatform, element: var Element
   renderer.boundsStack.add self.lastBounds
   defer: discard renderer.boundsStack.pop()
 
-  element.updateRelativePosition(relBounds)
-  if element.class != "widget":
-    element.class = "widget"
-  element.style.color = self.foregroundColor.toHtmlHex.cstring
-  if element.style.overflow != "visible":
-    element.style.overflow = "visible"
+  let color = self.foregroundColor.myToHtmlHex.cstring
 
-  let text = if renderer.escapedText.contains(self.text):
-    renderer.escapedText[self.text]
+  let text = self.text.cstring
+  let updateText = element.getAttribute("data-text") != text
+
+  let backgroundColor = if self.fillBackground:
+    fmt"background: {self.backgroundColor.myToHtmlHex};".cstring
   else:
-    # var p = document.createElement("pre".cstring)
-    # p.setAttribute("style", "white-space: pre-wrap;")
-    # p.appendChild document.createTextNode(self.text.replace(" ", "&nbsp;").cstring)
-    # p.innerText = self.text.cstring
-    # let escapedText = $p.innerHTML
-    let escapedText = self.text.multiReplace(("&", "&amp;"), ("<", "&lt;"), (">", "&gt;"), ("\"", "&quot;"), ("'", "&#039;"))
-    renderer.escapedText[self.text] = escapedText
-    escapedText
+    ""
 
-  # element.innerHTML = text.cstring
-  if element.innerText != self.text.cstring:
-    element.innerText = self.text.cstring
-
-  # let relBounds = self.lastBounds - renderer.boundsStack[renderer.boundsStack.high].xy
-
-  # let backgroundColor = if self.fillBackground:
-  #   fmt"background: {self.backgroundColor.toHtmlHex};"
-  # else:
-  #   ""
-
-  # let color = self.foregroundColor.toHtmlHex
-
-  # buffer.add "<span style=\""
-  # buffer.add  fmt"left: {relBounds.x.int}px; top: {relBounds.y.int}px; width: {relBounds.w.int}px; height: {relBounds.h.int}px; overflow: visible; color: {color}; {backgroundColor}"
-  # buffer.add "\" class=\"widget\">"
-  # buffer.add text
-  # buffer.add "</span>"
+  renderer.domUpdates.add proc() =
+    element.setAttribute("style", getTextStyle(relBounds.x.int, relBounds.y.int, relBounds.w.int, relBounds.h.int, color, backgroundColor))
+    if updateText:
+      element.innerText = text
+      element.setAttribute("data-text", text)
 
   self.lastRenderedText = self.text
