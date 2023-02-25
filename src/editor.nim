@@ -34,6 +34,7 @@ type OpenEditor = object
   filename: string
   ast: bool
   languageID: string
+  appFile: bool
 
 type EditorState = object
   theme: string
@@ -411,7 +412,7 @@ proc newEditor*(backend: api.Backend, platform: Platform): Editor =
 
   var state = EditorState()
   try:
-    state = fs.loadApplicationFile("config.json").parseJson.jsonTo EditorState
+    state = fs.loadApplicationFile("config.json").parseJson.jsonTo(EditorState, JOptions(allowMissingKeys: true, allowExtraKeys: true))
     self.setTheme(state.theme)
     self.loadedFontSize = state.fontSize.float
     self.platform.fontSize = state.fontSize.float
@@ -450,11 +451,11 @@ proc newEditor*(backend: api.Backend, platform: Platform): Editor =
   if self.getFlag("editor.restore-open-editors"):
     for editorState in state.openEditors:
         let document = if editorState.ast:
-          newAstDocument(editorState.filename)
+          newAstDocument(editorState.filename, editorState.appFile)
         else:
           try:
-            let fileContent = fs.loadFile(editorState.filename)
-            newTextDocument(editorState.filename, fileContent)
+            let fileContent = if editorState.appFile: fs.loadApplicationFile(editorState.filename) else: fs.loadFile(editorState.filename)
+            newTextDocument(editorState.filename, fileContent, editorState.appFile)
           except:
             logger.log(lvlError, fmt"Failed to restore file {editorState.filename} from previous session: {getCurrentExceptionMsg()}")
             continue
@@ -463,7 +464,25 @@ proc newEditor*(backend: api.Backend, platform: Platform): Editor =
 
   return self
 
+proc saveAppState*(self: Editor)
+
 proc shutdown*(self: Editor) =
+  self.saveAppState()
+
+  for editor in self.editors.values:
+    editor.shutdown()
+
+proc getEditor(): Option[Editor] =
+  if gEditor.isNil: return Editor.none
+  return gEditor.some
+
+static:
+  addInjector(Editor, getEditor)
+
+proc getBackend*(self: Editor): Backend {.expose("editor").} =
+  return self.backend
+
+proc saveAppState*(self: Editor) {.expose("editor").} =
   # Save some state
   var state = EditorState()
   state.theme = self.theme.path
@@ -482,27 +501,14 @@ proc shutdown*(self: Editor) =
   for view in self.views:
     if view.document of TextDocument:
       let textDocument = TextDocument(view.document)
-      state.openEditors.add OpenEditor(filename: textDocument.filename, ast: false, languageId: textDocument.languageId)
+      state.openEditors.add OpenEditor(filename: textDocument.filename, ast: false, languageId: textDocument.languageId, appFile: textDocument.appFile)
     elif view.document of AstDocument:
       let astDocument = AstDocument(view.document)
-      state.openEditors.add OpenEditor(filename: astDocument.filename, ast: true, languageId: "ast")
+      state.openEditors.add OpenEditor(filename: astDocument.filename, ast: true, languageId: "ast", appFile: astDocument.appFile)
 
   let serialized = state.toJson
   fs.saveApplicationFile("config.json", serialized.pretty)
   fs.saveApplicationFile("options.json", self.options.pretty)
-
-  for editor in self.editors.values:
-    editor.shutdown()
-
-proc getEditor(): Option[Editor] =
-  if gEditor.isNil: return Editor.none
-  return gEditor.some
-
-static:
-  addInjector(Editor, getEditor)
-
-proc getBackend*(self: Editor): Backend {.expose("editor").} =
-  return self.backend
 
 proc requestRender*(self: Editor, redrawEverything: bool = false) {.expose("editor").} =
   self.platform.requestRender(redrawEverything)
@@ -642,15 +648,15 @@ proc executeCommandLine*(self: Editor): bool {.expose("editor").} =
   self.getCommandLineTextEditor.document.content = @[""]
   return self.handleAction(action, arg)
 
-proc openFile*(self: Editor, path: string) {.expose("editor").} =
+proc openFile*(self: Editor, path: string, app: bool = false) {.expose("editor").} =
   defer:
     self.platform.requestRender()
   try:
     if path.endsWith(".ast"):
-      self.createView(newAstDocument(path))
+      self.createView(newAstDocument(path, app))
     else:
-      let file = fs.loadFile(path)
-      self.createView(newTextDocument(path, file.splitLines))
+      let file = if app: fs.loadApplicationFile(path) else: fs.loadFile(path)
+      self.createView(newTextDocument(path, file.splitLines, app))
   except CatchableError:
     logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
     logger.log(lvlError, getCurrentException().getStackTrace())
@@ -677,12 +683,12 @@ proc openWorkspaceFile*(self: Editor, path: string, folder: WorkspaceFolder) =
     logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
     logger.log(lvlError, getCurrentException().getStackTrace())
 
-proc writeFile*(self: Editor, path: string = "") {.expose("editor").} =
+proc writeFile*(self: Editor, path: string = "", app: bool = false) {.expose("editor").} =
   defer:
     self.platform.requestRender()
   if self.currentView >= 0 and self.currentView < self.views.len and self.views[self.currentView].document != nil:
     try:
-      self.views[self.currentView].document.save(path)
+      self.views[self.currentView].document.save(path, app)
     except CatchableError:
       logger.log(lvlError, fmt"[ed] Failed to write file '{path}': {getCurrentExceptionMsg()}")
       logger.log(lvlError, getCurrentException().getStackTrace())
@@ -697,6 +703,19 @@ proc loadFile*(self: Editor, path: string = "") {.expose("editor").} =
     except CatchableError:
       logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
       logger.log(lvlError, getCurrentException().getStackTrace())
+
+proc removeFromLocalStorage*(self: Editor) {.expose("editor").} =
+  ## Browser only
+  ## Clears the content of the current document in local storage
+  when defined(js):
+    proc clearStorage(path: cstring) {.importjs: "window.localStorage.removeItem(#);".}
+    if self.currentView >= 0 and self.currentView < self.views.len and self.views[self.currentView].document != nil:
+      let filename = if self.views[self.currentView].document of TextDocument:
+        self.views[self.currentView].document.TextDocument.filename
+      else:
+        self.views[self.currentView].document.AstDocument.filename
+      clearStorage(filename.cstring)
+
 
 proc loadTheme*(self: Editor, name: string) {.expose("editor").} =
   defer:
@@ -1019,7 +1038,7 @@ proc loadCurrentConfig*(self: Editor) {.expose("editor").} =
   ## Javascript backend only!
   ## Opens the config file in a new view.
   when defined(js):
-    self.createView(newTextDocument("config.js", "console.log('hi')"))
+    self.createView(newTextDocument("config.js", fs.loadApplicationFile("config.js")))
 
 proc sourceCurrentDocument*(self: Editor) {.expose("editor").} =
   ## Javascript backend only!
@@ -1027,12 +1046,17 @@ proc sourceCurrentDocument*(self: Editor) {.expose("editor").} =
   ## "use strict" is prepended to the content to force strict mode.
   when defined(js):
     proc evalJs(str: cstring) {.importjs("eval(#)").}
+    proc confirmJs(msg: cstring): bool {.importjs("confirm(#)").}
     let editor = self.getActiveEditor2()
     if editor of TextDocumentEditor:
       let document = editor.TextDocumentEditor.document
       let contentStrict = "\"use strict\";\n" & document.contentString
       echo contentStrict
-      evalJs(contentStrict)
+
+      if confirmJs((fmt"You are about to eval() some javascript ({document.filename}). Look in the console to see what's in there.").cstring):
+        evalJs(contentStrict.cstring)
+      else:
+        logger.log(lvlWarn, fmt"Did not load config file because user declined.")
 
 proc getEditor*(index: int): EditorId {.expose("editor").} =
   if gEditor.isNil:

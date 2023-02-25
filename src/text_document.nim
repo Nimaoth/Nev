@@ -393,11 +393,12 @@ proc saveTempFile*(self: TextDocument, filename: string): Future[void] {.async.}
     await file.write text
     file.close()
 
-proc newTextDocument*(filename: string = "", content: string | seq[string] = ""): TextDocument =
+proc newTextDocument*(filename: string = "", content: string | seq[string] = "", app: bool = false): TextDocument =
   new(result)
   var self = result
   self.filename = filename
   self.currentTree = nil
+  self.appFile = app
 
   asyncCheck self.initTreesitter()
 
@@ -426,12 +427,17 @@ method shutdown*(self: TextDocumentEditor) =
 method `$`*(document: TextDocument): string =
   return document.filename
 
-method save*(self: TextDocument, filename: string = "") =
+method save*(self: TextDocument, filename: string = "", app: bool = false) =
   self.filename = if filename.len > 0: filename else: self.filename
   if self.filename.len == 0:
     raise newException(IOError, "Missing filename")
 
-  fs.saveFile(self.filename, self.lines.join "\n")
+  self.appFile = app
+
+  if app:
+    fs.saveApplicationFile(self.filename, self.lines.join "\n")
+  else:
+    fs.saveFile(self.filename, self.lines.join "\n")
 
 method load*(self: TextDocument, filename: string = "") =
   let filename = if filename.len > 0: filename else: self.filename
@@ -440,7 +446,7 @@ method load*(self: TextDocument, filename: string = "") =
 
   self.filename = filename
 
-  let file = fs.loadFile(self.filename)
+  let file = if self.appFile: fs.loadApplicationFile(self.filename) else: fs.loadFile(self.filename)
   self.content = file
 
 proc byteOffset(self: TextDocument, cursor: Cursor): int =

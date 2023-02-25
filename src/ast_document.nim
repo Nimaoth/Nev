@@ -338,11 +338,12 @@ proc selectNextNode*(editor: AstDocumentEditor) =
 method `$`*(document: AstDocument): string =
   return document.filename
 
-proc newAstDocument*(filename: string = ""): AstDocument =
+proc newAstDocument*(filename: string = "", app: bool = false): AstDocument =
   new(result)
   result.filename = filename
   result.rootNode = AstNode(kind: NodeList, parent: nil, id: newId())
   result.symbols = initTable[Id, Symbol]()
+  result.appFile = app
 
   if filename.len > 0:
     logger.log lvlInfo, fmt"[astdoc] Loading ast source file '{result.filename}'"
@@ -361,14 +362,18 @@ proc saveHtml*(self: AstDocument) =
   let html = self.serializeHtml(gEditor.theme)
   fs.saveFile(htmlPath, html)
 
-method save*(self: AstDocument, filename: string = "") =
+method save*(self: AstDocument, filename: string = "", app: bool = false) =
   self.filename = if filename.len > 0: filename else: self.filename
   if self.filename.len == 0:
     raise newException(IOError, "Missing filename")
 
   logger.log lvlInfo, fmt"[astdoc] Saving ast source file '{self.filename}'"
   let serialized = self.rootNode.toJson
-  fs.saveFile(self.filename, serialized.pretty)
+
+  if app:
+    fs.saveApplicationFile(self.filename, serialized.pretty)
+  else:
+    fs.saveFile(self.filename, serialized.pretty)
 
   self.saveHtml()
 
