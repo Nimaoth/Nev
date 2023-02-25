@@ -135,10 +135,26 @@ proc changed*(self: WWidget, frameIndex: int): bool =
   result = self.lastBoundsChange >= frameIndex or self.lastHierarchyChange >= frameIndex or self.lastInvalidation >= frameIndex
 
 proc calculateBounds(self: WWidget, container: Rect): Rect =
-  let topLeft = container.xy + self.anchor.min * container.wh + vec2(self.left, self.top)
-  let bottomRight = container.xy + self.anchor.max * container.wh + vec2(self.right, self.bottom)
-  let pivotOffset = self.pivot * (bottomRight - topLeft)
-  result = rect(topLeft - pivotOffset, bottomRight - topLeft)
+  when not defined(js):
+    let topLeft = container.xy + self.anchor.min * container.wh + vec2(self.left, self.top)
+    let bottomRight = container.xy + self.anchor.max * container.wh + vec2(self.right, self.bottom)
+    let pivotOffset = self.pivot * (bottomRight - topLeft)
+    result = rect(topLeft - pivotOffset, bottomRight - topLeft)
+
+  else:
+    # Optimized version for javascript, prevents a ton of copies
+    let left = container.x + self.anchor.min.x * container.w + self.left
+    let top = container.y + self.anchor.min.y * container.h + self.top
+    let right = container.x + self.anchor.max.x * container.w + self.right
+    let bottom = container.y + self.anchor.max.y * container.h + self.bottom
+
+    let px = self.pivot.x * (right - left)
+    let py = self.pivot.y * (bottom - top)
+
+    result.x = left - px
+    result.y = top - py
+    result.w = right - left
+    result.h = bottom - top
 
 method layoutWidget*(self: WPanel, container: Rect, frameIndex: int, options: WLayoutOptions) =
   let newBounds = self.calculateBounds(container)

@@ -185,56 +185,115 @@ proc toInput(key: cstring, code: cstring, keyCode: int): int64 =
 method processEvents*(self: BrowserPlatform): int =
   result = 0
 
-method renderWidget(self: WWidget, renderer: BrowserPlatform, forceRedraw: bool, frameIndex: int, buffer: var string) {.base.} = discard
+method renderWidget(self: WWidget, renderer: BrowserPlatform, element: var Element, forceRedraw: bool, frameIndex: int, buffer: var string) {.base.} = discard
 
 method render*(self: BrowserPlatform, widget: WWidget, frameIndex: int) =
   self.boundsStack.add rect(vec2(), self.size)
   defer: discard self.boundsStack.pop()
 
-  self.redrawEverything = true
+  # self.redrawEverything = true
+  # debugf"redrawEverything: {self.redrawEverything}"
   var buffer = ""
-  widget.renderWidget(self, self.redrawEverything, frameIndex, buffer)
-  self.content.innerHTML = buffer.cstring
+
+  var element: Element = if self.content.children.len > 0: self.content.children[0].Element else: nil
+  if not element.isNil:
+    element.remove()
+
+  widget.renderWidget(self, element, self.redrawEverything, frameIndex, buffer)
+
+  if not element.isNil:
+    self.content.appendChild element
+
+  # self.content.innerHTML = buffer.cstring
+
 
   self.redrawEverything = false
 
-method renderWidget(self: WPanel, renderer: BrowserPlatform, forceRedraw: bool, frameIndex: int, buffer: var string) =
+proc createOrReplaceElement(element: var Element, name: cstring, nameUpper: cstring) =
+  if element.isNil:
+    # echo "create element ", name
+    element = document.createElement(name)
+  elif element.nodeName != nameUpper:
+    # echo "replace element ", element.nodeName, " with ", name
+    let dif = document.createElement(name)
+    element.replaceWith(dif)
+    element = dif
+
+proc updateRelativePosition(element: var Element, bounds: Rect) =
+  element.style.left = $bounds.x.int
+  element.style.top = $bounds.y.int
+  element.style.width = $bounds.w.int
+  element.style.height = $bounds.h.int
+
+method renderWidget(self: WPanel, renderer: BrowserPlatform, element: var Element, forceRedraw: bool, frameIndex: int, buffer: var string) =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
     return
 
-  # debugf"renderPanel {stackDepth} {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
+  # debugf"renderPanel (frame {frameIndex}) {self.lastHierarchyChange}, {self.lastBoundsChange}, {self.lastBounds}"
 
-  # if self.drawBorder:
-  #   renderer.setForegroundColor(self.getForegroundColor)
-  #   renderer.buffer.drawRect(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int, self.lastBounds.yh.int)
+  element.createOrReplaceElement("div", "DIV")
 
-  # if self.maskContent:
-  #   renderer.pushMask(self.lastBounds)
-  # defer:
-  #   if self.maskContent:
-  #     renderer.popMask()
+  while element.children.len > self.children.len:
+    # debugf"remove child from div"
+    element.removeChild(element.lastChild)
 
   let relBounds = self.lastBounds - renderer.boundsStack[renderer.boundsStack.high].xy
   renderer.boundsStack.add self.lastBounds
   defer: discard renderer.boundsStack.pop()
 
-  let backgroundColor = if self.fillBackground:
-    fmt"background: {self.backgroundColor.toHtmlHex};"
+  element.updateRelativePosition(relBounds)
+  element.class = "widget"
+
+  if self.fillBackground:
+    # fmt"background: {self.backgroundColor.toHtmlHex};"
+    element.style.background = self.backgroundColor.toHtmlHex.cstring
   else:
-    ""
+    element.style.background = ""
 
-  buffer.add "<div style=\""
-  buffer.add  fmt"left: {relBounds.x.int}px; top: {relBounds.y.int}px; width: {relBounds.w.int}px; height: {relBounds.h.int}px; {backgroundColor}"
-  buffer.add "\" class=\"widget\">"
+  # while element.children.len > self.children.len:
+  #   element.removeChild(element.lastChild)
 
-  for c in self.children:
-    c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex, buffer)
 
-  buffer.add("</div>")
+  # let relBounds = self.lastBounds - renderer.boundsStack[renderer.boundsStack.high].xy
+  # renderer.boundsStack.add self.lastBounds
+  # defer: discard renderer.boundsStack.pop()
 
-method renderWidget(self: WStack, renderer: BrowserPlatform, forceRedraw: bool, frameIndex: int, buffer: var string) =
+  # let backgroundColor = if self.fillBackground:
+  #   fmt"background: {self.backgroundColor.toHtmlHex};"
+  # else:
+  #   ""
+
+  # buffer.add "<div style=\""
+  # buffer.add  fmt"left: {relBounds.x.int}px; top: {relBounds.y.int}px; width: {relBounds.w.int}px; height: {relBounds.h.int}px; {backgroundColor}"
+  # buffer.add "\" class=\"widget\">"
+
+  let existingCount = element.children.len
+  for i, c in self.children:
+    var childElement: Element = if i < existingCount: element.children[i].Element else: nil
+    c.renderWidget(renderer, childElement, forceRedraw or self.fillBackground, frameIndex, buffer)
+    if i >= existingCount and not childElement.isNil:
+      element.appendChild childElement
+
+  # buffer.add("</div>")
+
+method renderWidget(self: WStack, renderer: BrowserPlatform, element: var Element, forceRedraw: bool, frameIndex: int, buffer: var string) =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
     return
+
+  # debugf"renderWidget (frame {frameIndex}) {self.lastHierarchyChange}, {self.lastBoundsChange}, {self.lastBounds}"
+
+  element.createOrReplaceElement("div", "DIV")
+
+  while element.children.len > self.children.len:
+    # debugf"remove child from stack"
+    element.removeChild(element.lastChild)
+
+  let relBounds = self.lastBounds - renderer.boundsStack[renderer.boundsStack.high].xy
+  renderer.boundsStack.add self.lastBounds
+  defer: discard renderer.boundsStack.pop()
+
+  element.updateRelativePosition(relBounds)
+  element.class = "widget"
 
   # if self.fillBackground:
   # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
@@ -242,88 +301,42 @@ method renderWidget(self: WStack, renderer: BrowserPlatform, forceRedraw: bool, 
   # if self.drawBorder:
   #   renderer.buffer.drawRect(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int, self.lastBounds.yh.int)
 
-  let relBounds = self.lastBounds - renderer.boundsStack[renderer.boundsStack.high].xy
-  renderer.boundsStack.add self.lastBounds
-  defer: discard renderer.boundsStack.pop()
+  # let backgroundColor = if self.fillBackground:
+  #   fmt"background: {self.backgroundColor.toHtmlHex};"
+  # else:
+  #   ""
 
-  let backgroundColor = if self.fillBackground:
-    fmt"background: {self.backgroundColor.toHtmlHex};"
-  else:
-    ""
+  # buffer.add "<div style=\""
+  # buffer.add  fmt"left: {relBounds.x.int}px; top: {relBounds.y.int}px; width: {relBounds.w.int}px; height: {relBounds.h.int}px; {backgroundColor}"
+  # buffer.add "\" class=\"widget\">"
 
-  buffer.add "<div style=\""
-  buffer.add  fmt"left: {relBounds.x.int}px; top: {relBounds.y.int}px; width: {relBounds.w.int}px; height: {relBounds.h.int}px; {backgroundColor}"
-  buffer.add "\" class=\"widget\">"
+  let existingCount = element.children.len
+  for i, c in self.children:
+    var childElement: Element = if i < existingCount: element.children[i].Element else: nil
+    c.renderWidget(renderer, childElement, forceRedraw or self.fillBackground, frameIndex, buffer)
+    if i >= existingCount and not childElement.isNil:
+      element.appendChild childElement
 
-  for c in self.children:
-    c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex, buffer)
+  # buffer.add("</div>")
 
-  buffer.add("</div>")
-
-method renderWidget(self: WVerticalList, renderer: BrowserPlatform, forceRedraw: bool, frameIndex: int, buffer: var string) =
-  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
-    return
-
-  # if self.fillBackground:
-  # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
-
-  let relBounds = self.lastBounds - renderer.boundsStack[renderer.boundsStack.high].xy
-  renderer.boundsStack.add self.lastBounds
-  defer: discard renderer.boundsStack.pop()
-
-  let backgroundColor = if self.fillBackground:
-    fmt"background: {self.backgroundColor.toHtmlHex};"
-  else:
-    ""
-
-  buffer.add "<div style=\""
-  buffer.add  fmt"left: {relBounds.x.int}px; top: {relBounds.y.int}px; width: {relBounds.w.int}px; height: {relBounds.h.int}px; {backgroundColor}"
-  buffer.add "\" class=\"widget\">"
-
-  for c in self.children:
-    c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex, buffer)
-
-  buffer.add("</div>")
-
-method renderWidget(self: WHorizontalList, renderer: BrowserPlatform, forceRedraw: bool, frameIndex: int, buffer: var string) =
-  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
-    return
-
-  # if self.fillBackground:
-  # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
-
-  let relBounds = self.lastBounds - renderer.boundsStack[renderer.boundsStack.high].xy
-  renderer.boundsStack.add self.lastBounds
-  defer: discard renderer.boundsStack.pop()
-
-  let backgroundColor = if self.fillBackground:
-    fmt"background: {self.backgroundColor.toHtmlHex};"
-  else:
-    ""
-
-  buffer.add "<div style=\""
-  buffer.add  fmt"left: {relBounds.x.int}px; top: {relBounds.y.int}px; width: {relBounds.w.int}px; height: {relBounds.h.int}px; {backgroundColor}"
-  buffer.add "\" class=\"widget\">"
-
-  for c in self.children:
-    c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex, buffer)
-
-  buffer.add("</div>")
-
-method renderWidget(self: WText, renderer: BrowserPlatform, forceRedraw: bool, frameIndex: int, buffer: var string) =
+method renderWidget(self: WText, renderer: BrowserPlatform, element: var Element, forceRedraw: bool, frameIndex: int, buffer: var string) =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
     return
 
   # debugf"renderText {stackDepth} {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}, {self.text}"
 
+  element.createOrReplaceElement("span", "SPAN")
+
   let relBounds = self.lastBounds - renderer.boundsStack[renderer.boundsStack.high].xy
+  renderer.boundsStack.add self.lastBounds
+  defer: discard renderer.boundsStack.pop()
 
-  let backgroundColor = if self.fillBackground:
-    fmt"background: {self.backgroundColor.toHtmlHex};"
-  else:
-    ""
-
-  let color = self.foregroundColor.toHtmlHex
+  element.updateRelativePosition(relBounds)
+  if element.class != "widget":
+    element.class = "widget"
+  element.style.color = self.foregroundColor.toHtmlHex.cstring
+  if element.style.overflow != "visible":
+    element.style.overflow = "visible"
 
   let text = if renderer.escapedText.contains(self.text):
     renderer.escapedText[self.text]
@@ -337,10 +350,23 @@ method renderWidget(self: WText, renderer: BrowserPlatform, forceRedraw: bool, f
     renderer.escapedText[self.text] = escapedText
     escapedText
 
-  buffer.add "<span style=\""
-  buffer.add  fmt"left: {relBounds.x.int}px; top: {relBounds.y.int}px; width: {relBounds.w.int}px; height: {relBounds.h.int}px; overflow: visible; color: {color}; {backgroundColor}"
-  buffer.add "\" class=\"widget\">"
-  buffer.add text
-  buffer.add "</span>"
+  # element.innerHTML = text.cstring
+  if element.innerText != self.text.cstring:
+    element.innerText = self.text.cstring
+
+  # let relBounds = self.lastBounds - renderer.boundsStack[renderer.boundsStack.high].xy
+
+  # let backgroundColor = if self.fillBackground:
+  #   fmt"background: {self.backgroundColor.toHtmlHex};"
+  # else:
+  #   ""
+
+  # let color = self.foregroundColor.toHtmlHex
+
+  # buffer.add "<span style=\""
+  # buffer.add  fmt"left: {relBounds.x.int}px; top: {relBounds.y.int}px; width: {relBounds.w.int}px; height: {relBounds.h.int}px; overflow: visible; color: {color}; {backgroundColor}"
+  # buffer.add "\" class=\"widget\">"
+  # buffer.add text
+  # buffer.add "</span>"
 
   self.lastRenderedText = self.text
