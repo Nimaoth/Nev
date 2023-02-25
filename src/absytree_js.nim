@@ -29,16 +29,21 @@ var frameTime = 0.0
 var frameIndex = 0
 
 var hasRequestedRerender = false
+var isRenderInProgress = false
 proc requestRender(redrawEverything = false) =
   if not initializedEditor:
     return
   if hasRequestedRerender:
+    return
+  if isRenderInProgress:
     return
 
   discard window.requestAnimationFrame proc(time: float) =
     # echo "requestAnimationFrame ", time
 
     hasRequestedRerender = false
+    isRenderInProgress = true
+    defer: isRenderInProgress = false
     defer: inc frameIndex
 
     var layoutTime, updateTime, renderTime: float

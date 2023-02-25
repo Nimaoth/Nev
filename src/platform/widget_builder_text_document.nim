@@ -35,6 +35,22 @@ proc renderTextHighlight(panel: WPanel, app: Editor, startOffset: float, endOffs
   for i in 0..<selections.len:
     renderTextHighlight(panel, app, startOffset, endOffset, line, startIndex, selections[i], selectionClamped[i], part, color)
 
+when defined(js):
+  # Optimized version for javascript backend
+  proc createPartWidget(text: string, startOffset: float, width: float, color: Color, frameIndex: int): WText =
+    new result
+    {.emit: [result, ".text = ", text, ".slice(0);"] .} #"""
+    {.emit: [result, ".anchor = {Field0: {x: 0, y: 0}, Field1: {x: 0, y: 1}};"] .} #"""
+    {.emit: [result, ".left = ", startOffset, ";"] .} #"""
+    {.emit: [result, ".right = ", startOffset, " + ", width, ";"] .} #"""
+    {.emit: [result, ".frameIndex = ", frameIndex, ";"] .} #"""
+    {.emit: [result, ".foregroundColor = ", color, ";"] .} #"""
+    # """
+
+else:
+  proc createPartWidget(text: string, startOffset: float, width: float, color: Color, frameIndex: int): WText =
+    result = WText(text: text, anchor: (vec2(0, 0), vec2(0, 1)), left: startOffset, right: startOffset + width, foregroundColor: color, lastHierarchyChange: frameIndex)
+
 method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, frameIndex: int) =
   let lineHeight = app.platform.lineHeight
   let totalLineHeight = app.platform.totalLineHeight
@@ -127,7 +143,8 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
 
   var highlightsPerLine = self.searchResults
 
-  let lineNumbers = self.lineNumbers.get getOption[LineNumbers](app, "editor.text.line-numbers", LineNumbers.Absolute)
+  let lineNumbers = self.lineNumbers.get getOption[LineNumbers](app, "editor.text.line-numbers", LineNumbers.Absolute) # """
+
   let maxLineNumber = case lineNumbers
     of LineNumbers.Absolute: self.previousBaseIndex + ((contentPanel.lastBounds.h - self.scrollOffset) / totalLineHeight).int
     of LineNumbers.Relative: 99
@@ -136,6 +153,13 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
   let cursorLine = self.selection.last.line
 
   self.lastRenderedLines.setLen 0
+
+  let isWide = getOption[bool](app, self.getContextWithMode("editor.text.cursor.wide"))
+  let cursorWidth = if isWide: 1.0 else: 0.2
+
+  let selectionColor = app.theme.color("selection.background", rgb(200, 200, 200))
+  let highlightColor = app.theme.color(@["editor.rangeHighlightBackground"], rgb(200, 200, 200))
+  let cursorColor = app.theme.color(@["editorCursor.foreground", "foreground"], rgba(255, 255, 255, 127)) # """
 
   # Update content
   proc renderLine(i: int, down: bool): bool =
@@ -163,17 +187,10 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
       let width = part.text.len.float * charWidth
 
       # Draw background if selected
-      let selectionColor = app.theme.color("selection.background", rgb(200, 200, 200))
       renderTextHighlight(lineWidget, app, startOffset, startOffset + width, i, startIndex, selectionsNormalizedOnLine, selectionsClampedOnLine, part, selectionColor)
-
-      let highlightColor = app.theme.color(@["editor.rangeHighlightBackground"], rgb(200, 200, 200))
       renderTextHighlight(lineWidget, app, startOffset, startOffset + width, i, startIndex, highlightsNormalizedOnLine, highlightsClampedOnLine, part, highlightColor)
 
-      let isWide = getOption[bool](app, self.getContextWithMode("editor.text.cursor.wide"))
-      let cursorWidth = if isWide: 1.0 else: 0.2
-
-      # Set last cursor pos if it's contained in this part
-      let cursorColor = app.theme.color(@["editorCursor.foreground", "foreground"], rgba(255, 255, 255, 127))
+      # Set last cursor pos if its contained in this part
       for selection in selectionsPerLine.getOrDefault(i, @[]):
         if selection.last.line == i and selection.last.column >= startIndex and selection.last.column <= startIndex + part.text.len:
           let offsetFromPartStart = if part.text.len == 0: 0.0 else: (selection.last.column - startIndex).float32 / (part.text.len.float32) * width
@@ -187,9 +204,12 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
           ))
 
       let color = if part.scope.len == 0: textColor else: app.theme.tokenColor(part.scope, rgb(255, 200, 200))
-      var partWidget = WText(text: part.text, anchor: (vec2(0, 0), vec2(0, 1)), left: startOffset, right: startOffset + width, foregroundColor: color, lastHierarchyChange: frameIndex)
+      var partWidget = createPartWidget(part.text, startOffset, width, color, frameIndex)
 
-      styledText.parts[partIndex].bounds = rect(partWidget.left, lineWidget.top, partWidget.right - partWidget.left, lineWidget.bottom - lineWidget.top)
+      styledText.parts[partIndex].bounds.x = partWidget.left
+      styledText.parts[partIndex].bounds.y = lineWidget.top
+      styledText.parts[partIndex].bounds.w = partWidget.right - partWidget.left
+      styledText.parts[partIndex].bounds.h = lineWidget.bottom - lineWidget.top
 
       startOffset += width
       startIndex += part.text.len

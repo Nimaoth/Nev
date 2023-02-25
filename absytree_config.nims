@@ -69,8 +69,7 @@ proc postInitialize*(): bool =
 
 info "Loading absytree_config.nim"
 
-# openLocalWorkspace(".")
-openGithubWorkspace("Nimaoth", "Zentt", "main")
+openLocalWorkspace(".")
 # openGithubWorkspace("Nimaoth", "AbsytreeBrowser", "main")
 # openGithubWorkspace("Nimaoth", "Absytree", "main")
 

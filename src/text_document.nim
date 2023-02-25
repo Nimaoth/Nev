@@ -30,6 +30,16 @@ proc `$`*(op: UndoOp): string =
   if op.kind == Insert: result.add fmt", selections = {op.cursor}, text: '{op.text}'}}"
   if op.kind == Nested: result.add fmt", {op.children}}}"
 
+type StyledText* = object
+  text*: string
+  scope*: string
+  priority*: int
+  bounds*: Rect
+
+type StyledLine* = ref object
+  index*: int
+  parts*: seq[StyledText]
+
 type TextDocument* = ref object of Document
   filename*: string
   lines*: seq[string]
@@ -52,15 +62,7 @@ type TextDocument* = ref object of Document
   languageServer: Option[LanguageServer]
   onRequestSaveHandle: OnRequestSaveHandle
 
-type StyledText* = object
-  text*: string
-  scope*: string
-  priority*: int
-  bounds*: Rect
-
-type StyledLine* = ref object
-  index*: int
-  parts*: seq[StyledText]
+  styledTextCache: Table[int, StyledLine]
 
 type TextDocumentEditor* = ref object of DocumentEditor
   editor*: Editor
@@ -156,6 +158,10 @@ proc clampSelection*(self: TextDocumentEditor) =
   self.selections = self.clampAndMergeSelections(self.selectionsInternal)
   self.markDirty()
 
+proc notifyTextChanged(self: TextDocument) =
+  self.textChanged.invoke self
+  self.styledTextCache.clear()
+
 proc `content=`*(self: TextDocument, value: string) =
   if self.singleLine:
     self.lines = @[value.replace("\n", "")]
@@ -172,7 +178,7 @@ proc `content=`*(self: TextDocument, value: string) =
 
   inc self.version
 
-  self.textChanged.invoke(self)
+  self.notifyTextChanged()
 
 proc `content=`*(self: TextDocument, value: seq[string]) =
   if self.singleLine:
@@ -190,7 +196,7 @@ proc `content=`*(self: TextDocument, value: seq[string]) =
 
   inc self.version
 
-  self.textChanged.invoke(self)
+  self.notifyTextChanged()
 
 func content*(document: TextDocument): seq[string] =
   return document.lines
@@ -240,102 +246,105 @@ proc overrideStyle*(line: var StyledLine, first: int, last: int, scope: string, 
     index += line.parts[i].text.len
 
 proc getStyledText*(self: TextDocument, i: int): StyledLine =
-  var line = self.lines[i]
-  var styledLine = StyledLine(index: i, parts: @[StyledText(text: line, scope: "", priority: 1000000000)])
+  if self.styledTextCache.contains(i):
+    result = self.styledTextCache[i]
+  else:
+    var line = self.lines[i]
+    result = StyledLine(index: i, parts: @[StyledText(text: line, scope: "", priority: 1000000000)])
 
-  var regexes = initTable[string, Regex]()
+    var regexes = initTable[string, Regex]()
 
-  if self.tsParser.isNil or self.highlightQuery.isNil or self.currentTree.isNil:
-    return styledLine
+    if self.tsParser.isNil or self.highlightQuery.isNil or self.currentTree.isNil:
+      return
 
-  for match in self.highlightQuery.matches(self.currentTree.root, ((i, 0), (i, line.len))):
-    let predicates = self.highlightQuery.predicatesForPattern(match.pattern)
+    for match in self.highlightQuery.matches(self.currentTree.root, ((i, 0), (i, line.len))):
+      let predicates = self.highlightQuery.predicatesForPattern(match.pattern)
 
-    for capture in match.captures:
-      let scope = capture.name
+      for capture in match.captures:
+        let scope = capture.name
 
-      let node = capture.node
+        let node = capture.node
 
-      var matches = true
-      for predicate in predicates:
+        var matches = true
+        for predicate in predicates:
 
-        if not matches:
-          break
-
-        for operand in predicate.operands:
-          let value = $operand.`type`
-
-          if operand.name != scope:
-            matches = false
+          if not matches:
             break
 
-          case $predicate.operator
-          of "match?":
-            let regex = if regexes.contains(value):
-              regexes[value]
+          for operand in predicate.operands:
+            let value = $operand.`type`
+
+            if operand.name != scope:
+              matches = false
+              break
+
+            case $predicate.operator
+            of "match?":
+              let regex = if regexes.contains(value):
+                regexes[value]
+              else:
+                let regex = re(value)
+                regexes[value] = regex
+                regex
+
+              let nodeText = self.contentString(node.getRange)
+              if nodeText.matchLen(regex, 0) != nodeText.len:
+                matches = false
+                break
+
+            of "not-match?":
+              let regex = if regexes.contains(value):
+                regexes[value]
+              else:
+                let regex = re(value)
+                regexes[value] = regex
+                regex
+
+              let nodeText = self.contentString(node.getRange)
+              if nodeText.matchLen(regex, 0) == nodeText.len:
+                matches = false
+                break
+
+            of "eq?":
+              # @todo: second arg can be capture aswell
+              let nodeText = self.contentString(node.getRange)
+              if nodeText != value:
+                matches = false
+                break
+
+            of "not-eq?":
+              # @todo: second arg can be capture aswell
+              let nodeText = self.contentString(node.getRange)
+              if nodeText == value:
+                matches = false
+                break
+
+            # of "any-of?":
+            #   logger.log(lvlError, fmt"Unknown predicate '{predicate.name}'")
+
             else:
-              let regex = re(value)
-              regexes[value] = regex
-              regex
+              logger.log(lvlError, fmt"Unknown predicate '{predicate.operator}'")
 
+          if gEditor.getFlag("text.print-matches"):
             let nodeText = self.contentString(node.getRange)
-            if nodeText.matchLen(regex, 0) != nodeText.len:
-              matches = false
-              break
+            logger.log(lvlInfo, fmt"{match.pattern}: '{nodeText}' {node} (matches: {matches})")
 
-          of "not-match?":
-            let regex = if regexes.contains(value):
-              regexes[value]
-            else:
-              let regex = re(value)
-              regexes[value] = regex
-              regex
+        if not matches:
+          continue
 
-            let nodeText = self.contentString(node.getRange)
-            if nodeText.matchLen(regex, 0) == nodeText.len:
-              matches = false
-              break
+        let nodeRange = node.getRange
 
-          of "eq?":
-            # @todo: second arg can be capture aswell
-            let nodeText = self.contentString(node.getRange)
-            if nodeText != value:
-              matches = false
-              break
+        if nodeRange.first.line == i:
+          result.splitAt(nodeRange.first.column)
+        if nodeRange.last.line == i:
+          result.splitAt(nodeRange.last.column)
 
-          of "not-eq?":
-            # @todo: second arg can be capture aswell
-            let nodeText = self.contentString(node.getRange)
-            if nodeText == value:
-              matches = false
-              break
+        let first = if nodeRange.first.line < i: 0 elif nodeRange.first.line == i: nodeRange.first.column else: line.len
+        let last = if nodeRange.last.line < i: 0 elif nodeRange.last.line == i: nodeRange.last.column else: line.len
 
-          # of "any-of?":
-          #   logger.log(lvlError, fmt"Unknown predicate '{predicate.name}'")
+        result.overrideStyle(first, last, $scope, match.pattern)
 
-          else:
-            logger.log(lvlError, fmt"Unknown predicate '{predicate.operator}'")
-
-        if gEditor.getFlag("text.print-matches"):
-          let nodeText = self.contentString(node.getRange)
-          logger.log(lvlInfo, fmt"{match.pattern}: '{nodeText}' {node} (matches: {matches})")
-
-      if not matches:
-        continue
-
-      let nodeRange = node.getRange
-
-      if nodeRange.first.line == i:
-        styledLine.splitAt(nodeRange.first.column)
-      if nodeRange.last.line == i:
-        styledLine.splitAt(nodeRange.last.column)
-
-      let first = if nodeRange.first.line < i: 0 elif nodeRange.first.line == i: nodeRange.first.column else: line.len
-      let last = if nodeRange.last.line < i: 0 elif nodeRange.last.line == i: nodeRange.last.column else: line.len
-
-      styledLine.overrideStyle(first, last, $scope, match.pattern)
-
-  return styledLine
+    self.styledTextCache[i] = result
 
 proc initTreesitter(self: TextDocument): Future[void] {.async.} =
   if not self.tsParser.isNil:
@@ -374,7 +383,7 @@ proc initTreesitter(self: TextDocument): Future[void] {.async.} =
     logger.log(lvlError, fmt"[textedit] No highlight queries found for '{languageId}'")
 
   # We now have a treesitter grammar + highlight query, so retrigger rendering
-  self.textChanged.invoke self
+  self.notifyTextChanged()
   gEditor.platform.requestRender()
 
 proc saveTempFile*(self: TextDocument, filename: string): Future[void] {.async.} =
@@ -433,9 +442,6 @@ method load*(self: TextDocument, filename: string = "") =
 
   let file = fs.loadFile(self.filename)
   self.content = file
-
-proc notifyTextChanged(self: TextDocument) =
-  self.textChanged.invoke self
 
 proc byteOffset(self: TextDocument, cursor: Cursor): int =
   result = cursor.column
