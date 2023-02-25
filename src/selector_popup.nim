@@ -173,8 +173,8 @@ proc newSelectorPopup*(editor: Editor): SelectorPopup =
     onInput:
       Ignored
 
-  popup.updateCompletions()
-  if popup.completions.len > 0 and popup.handleItemSelected != nil:
-    popup.handleItemSelected popup.completions[0]
+  # popup.updateCompletions()
+  # if popup.completions.len > 0 and popup.handleItemSelected != nil:
+  #   popup.handleItemSelected popup.completions[0]
 
   return popup

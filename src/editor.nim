@@ -732,6 +732,19 @@ proc chooseTheme*(self: Editor) {.expose("editor").} =
 
   self.pushPopup popup
 
+proc getDirectoryListingRec(self: Editor, folder: WorkspaceFolder, path: string): Future[seq[string]] {.async.} =
+  var resultItems: seq[string]
+
+  let items = await folder.getDirectoryListing(path)
+  for file in items.files:
+    resultItems.add(path / file)
+
+  for dir in items.folders:
+    let children = await self.getDirectoryListingRec(folder, path / dir)
+    resultItems.add children
+
+  return resultItems
+
 proc chooseFile*(self: Editor, view: string = "new") {.expose("editor").} =
   defer:
     self.platform.requestRender()
@@ -739,12 +752,14 @@ proc chooseFile*(self: Editor, view: string = "new") {.expose("editor").} =
   var popup = self.newSelectorPopup()
   popup.getCompletionsAsync = proc(popup: SelectorPopup, text: string): Future[seq[SelectorItem]] {.async.} =
     var resultItems: seq[SelectorItem]
+
     for folder in self.workspace.folders:
-      let items = await folder.getDirectoryListing(".")
-      for file in items.files:
+      let files = await self.getDirectoryListingRec(folder, "")
+
+      for file in files:
         let name = file.splitFile.name
         let score = fuzzyMatchSmart(text, name)
-        resultItems.add FileSelectorItem(path: fmt"./{file}", score: score, workspaceFolder: folder.some)
+        resultItems.add FileSelectorItem(path: fmt"{file}", score: score, workspaceFolder: folder.some)
 
     resultItems.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Descending)
     return resultItems
@@ -764,6 +779,10 @@ proc chooseFile*(self: Editor, view: string = "new") {.expose("editor").} =
   popup.updateCompletions()
 
   self.pushPopup popup
+
+proc setGithubAccessToken*(self: Editor, token: string) {.expose("editor").} =
+  ## Stores the give token in local storage as 'GithubAccessToken', which will be used in requests to the github api
+  fs.saveApplicationFile("GithubAccessToken", token)
 
 proc reloadConfig*(self: Editor) {.expose("editor").} =
   defer:
