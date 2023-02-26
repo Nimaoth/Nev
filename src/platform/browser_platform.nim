@@ -34,6 +34,8 @@ type
 
     domUpdates: seq[proc(): void]
 
+    currentEvent: dom.Event
+
 proc toInput(key: cstring, code: cstring, keyCode: int): int64
 proc updateFontSettings*(self: BrowserPlatform)
 
@@ -79,11 +81,19 @@ method init*(self: BrowserPlatform) =
     result.y = self.totalLineHeight
 
   window.addEventListener "resize", proc(e: dom.Event) =
+    let oldEvent = self.currentEvent
+    self.currentEvent = e
+    defer: self.currentEvent = oldEvent
+
     self.onResized.invoke(true)
 
   self.content = document.getElementById("view")
 
   self.content.addEventListener("keydown", proc(e: dom.Event) =
+    let oldEvent = self.currentEvent
+    self.currentEvent = e
+    defer: self.currentEvent = oldEvent
+
     let ke = e.KeyboardEvent
     let modifiers = ke.getModifiers
     # debugf"keyevent {ke.key}, {ke.code}, {ke.keyCode}"
@@ -91,10 +101,13 @@ method init*(self: BrowserPlatform) =
     var input = toInput(ke.key, ke.code, ke.keyCode)
     # debugf"{inputToString(input)}, {modifiers}"
     self.onKeyPress.invoke (input, modifiers)
-    e.preventDefault()
   )
 
   self.content.addEventListener("wheel", proc(e: dom.Event) =
+    let oldEvent = self.currentEvent
+    self.currentEvent = e
+    defer: self.currentEvent = oldEvent
+
     let we = e.WheelEvent
     let modifiers = we.getModifiers
 
@@ -103,6 +116,10 @@ method init*(self: BrowserPlatform) =
   , AddEventListenerOptions(passive: true))
 
   self.content.addEventListener("mousedown", proc(e: dom.Event) =
+    let oldEvent = self.currentEvent
+    self.currentEvent = e
+    defer: self.currentEvent = oldEvent
+
     let me = e.MouseEvent
     let modifiers = me.getModifiers
     let mouseButton = me.getMouseButton
@@ -115,6 +132,10 @@ method init*(self: BrowserPlatform) =
   )
 
   self.content.addEventListener("mousemove", proc(e: dom.Event) =
+    let oldEvent = self.currentEvent
+    self.currentEvent = e
+    defer: self.currentEvent = oldEvent
+
     let me = e.MouseEvent
     let modifiers = me.getModifiers
 
@@ -125,11 +146,19 @@ method init*(self: BrowserPlatform) =
   proc console[T](t: T) {.importjs: "console.log(#);".}
 
   self.content.addEventListener("dragover", proc(e: dom.Event) =
+    let oldEvent = self.currentEvent
+    self.currentEvent = e
+    defer: self.currentEvent = oldEvent
+
     let de = e.DragEvent
     de.preventDefault()
   )
 
   self.content.addEventListener("drop", proc(e: dom.Event) =
+    let oldEvent = self.currentEvent
+    self.currentEvent = e
+    defer: self.currentEvent = oldEvent
+
     let de = e.DragEvent
     de.preventDefault()
     console de.dataTransfer
@@ -161,6 +190,11 @@ method size*(self: BrowserPlatform): Vec2 = vec2(self.content.clientWidth.float,
 # method sizeChanged*(self: BrowserPlatform): bool =
 #   let (w, h) = (terminalWidth(), terminalHeight())
 #   return self.buffer.width != w or self.buffer.height != h
+
+method preventDefault*(self: BrowserPlatform) =
+  if self.currentEvent.isNil:
+    return
+  self.currentEvent.preventDefault()
 
 proc updateFontSettings*(self: BrowserPlatform) =
   let newFontSize: float = ($window.getComputedStyle(self.content).fontSize)[0..^3].parseFloat

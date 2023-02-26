@@ -1083,14 +1083,16 @@ proc handleScroll*(self: Editor, scroll: Vec2, mousePosWindow: Vec2, modifiers: 
 
 proc handleKeyPress*(self: Editor, input: int64, modifiers: Modifiers) =
   # debugf"key press: {(inputToString(input, modifiers))}"
-  self.currentEventHandlers.handleEvent(input, modifiers)
+  if self.currentEventHandlers.handleEvent(input, modifiers):
+    self.platform.preventDefault()
 
 proc handleKeyRelease*(self: Editor, input: int64, modifiers: Modifiers) =
   discard
 
 proc handleRune*(self: Editor, input: int64, modifiers: Modifiers) =
   let modifiers = if input.isAscii and input.char.isAlphaNumeric: modifiers else: {}
-  self.currentEventHandlers.handleEvent(input, modifiers)
+  if self.currentEventHandlers.handleEvent(input, modifiers):
+    self.platform.preventDefault()
 
 proc handleDropFile*(self: Editor, path, content: string) =
   self.createView(newTextDocument(path, content))

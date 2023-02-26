@@ -141,7 +141,7 @@ proc anyInProgress*(handlers: openArray[EventHandler]): bool =
       return true
   return false
 
-proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifiers) =
+proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifiers): bool =
   let anyInProgress = handlers.anyInProgress
 
   var allowHandlingUnknownAsInput = true
@@ -153,6 +153,9 @@ proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifier
       handler.handleEvent(input, modifiers, allowHandlingUnknownAsInput)
     else:
       Ignored
+
+    if response != Ignored:
+      result = true
 
     case response
     of Handled:
