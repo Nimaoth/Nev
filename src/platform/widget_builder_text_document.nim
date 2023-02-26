@@ -11,6 +11,8 @@ proc clampToLine(selection: Selection, line: int, lineLength: int): tuple[first:
   result.last = if selection.last.line < line: 0 elif selection.last.line == line: selection.last.column else: lineLength
 
 proc renderTextHighlight(panel: WPanel, app: Editor, startOffset: float, endOffset: float, line: int, startIndex: int, selection: Selection, selectionClamped: tuple[first: int, last: int], part: StyledText, color: Color) =
+  let startOffset = startOffset.floor
+  let endOffset = endOffset.ceil
   ## Fills a selection rect in the given color
   var left, right: float
   if startIndex < selectionClamped.last and startIndex + part.text.len > selectionClamped.first and part.text.len > 0:

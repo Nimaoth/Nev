@@ -163,17 +163,22 @@ method size*(self: BrowserPlatform): Vec2 = vec2(self.content.clientWidth.float,
 
 proc updateFontSettings*(self: BrowserPlatform) =
   let newFontSize: float = ($window.getComputedStyle(self.content).fontSize)[0..^3].parseFloat
-  # debugf"updateFontSettings: {newFontSize}"
   if newFontSize != self.mFontSize:
+    # debugf"updateFontSettings: {newFontSize}"
     self.mFontSize = newFontSize
     var d = document.createElement("div")
     d.setAttr("style", "position: absolute; visibility: hidden; height: auto; width: auto;")
-    d.innerHTML = "#"
+    d.innerHTML = "###"
     self.content.appendChild(d)
-    debugf"charWidth: {d.clientWidth}, lineHeight: {d.clientHeight}"
     self.mLineHeight = d.clientHeight.float
-    self.mCharWidth = d.clientWidth.float
+    self.mCharWidth = d.clientWidth.float / 3
     self.content.removeChild(d)
+
+    self.redrawEverything = true
+
+method `fontSize=`*(self: BrowserPlatform, fontSize: float) =
+  self.content.style.fontSize = ($fontSize).cstring
+  self.updateFontSettings()
 
 method fontSize*(self: BrowserPlatform): float =
   self.updateFontSettings()
