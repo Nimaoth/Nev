@@ -48,14 +48,14 @@ method reload*(self: ScriptContextJs) = discard
 method handleUnknownPopupAction*(self: ScriptContextJs, popup: Popup, action: string, arg: string): bool =
   let action = action.cstring
   let arg = arg.cstring
-  {.emit: ["window.handleUnknownPopupAction(", popup, ", ", action, ", JSON.parse(", arg, "))"].}
+  {.emit: ["return window.handleUnknownPopupAction(", popup, ", ", action, ", ", arg, " ? JSON.parse(", arg, ") : []);"].}
 
 method handleUnknownDocumentEditorAction*(self: ScriptContextJs, editor: DocumentEditor, action: string, arg: string): bool =
   let action = action.cstring
   let arg = arg.cstring
-  {.emit: ["window.handleUnknownDocumentEditorAction(", editor, ", ", action, ", JSON.parse(", arg, "))"].}
+  {.emit: ["return window.handleUnknownDocumentEditorAction(", editor, ", ", action, ", ", arg, " ? JSON.parse(", arg, ") : []);"].}
 
 method handleGlobalAction*(self: ScriptContextJs, action: string, arg: string): bool =
   let action = action.cstring
   let arg = arg.cstring
-  {.emit: ["window.handleGlobalAction(", action, ", ", arg, ")"].}
+  {.emit: ["return window.handleGlobalAction(", action, ", ", arg, ");"].}

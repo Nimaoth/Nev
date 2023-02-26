@@ -128,46 +128,46 @@ proc getFlag*(self: TextDocumentEditor; name: string): bool =
 proc runAction*(self: TextDocumentEditor; action: string; args: JsonNode): bool =
   runActionScript_7683981223(self, action, args)
 proc findWordBoundary*(self: TextDocumentEditor; cursor: Cursor): Selection =
-  findWordBoundaryScript_7683981296(self, cursor)
+  findWordBoundaryScript_7683981295(self, cursor)
 proc getSelectionForMove*(self: TextDocumentEditor; cursor: Cursor;
                           move: string; count: int = 0): Selection =
-  getSelectionForMoveScript_7683981386(self, cursor, move, count)
+  getSelectionForMoveScript_7683981385(self, cursor, move, count)
 proc setMove*(self: TextDocumentEditor; args: JsonNode) =
-  setMoveScript_7683981580(self, args)
+  setMoveScript_7683981579(self, args)
 proc deleteMove*(self: TextDocumentEditor; move: string;
                  which: SelectionCursor = SelectionCursor.Config;
                  all: bool = true) =
-  deleteMoveScript_7683981834(self, move, which, all)
+  deleteMoveScript_7683981833(self, move, which, all)
 proc selectMove*(self: TextDocumentEditor; move: string;
                  which: SelectionCursor = SelectionCursor.Config;
                  all: bool = true) =
-  selectMoveScript_7683981935(self, move, which, all)
+  selectMoveScript_7683981934(self, move, which, all)
 proc changeMove*(self: TextDocumentEditor; move: string;
                  which: SelectionCursor = SelectionCursor.Config;
                  all: bool = true) =
-  changeMoveScript_7683982061(self, move, which, all)
+  changeMoveScript_7683982060(self, move, which, all)
 proc moveLast*(self: TextDocumentEditor; move: string;
                which: SelectionCursor = SelectionCursor.Config;
                all: bool = true; count: int = 0) =
-  moveLastScript_7683982162(self, move, which, all, count)
+  moveLastScript_7683982161(self, move, which, all, count)
 proc moveFirst*(self: TextDocumentEditor; move: string;
                 which: SelectionCursor = SelectionCursor.Config;
                 all: bool = true; count: int = 0) =
-  moveFirstScript_7683982277(self, move, which, all, count)
+  moveFirstScript_7683982276(self, move, which, all, count)
 proc setSearchQuery*(self: TextDocumentEditor; query: string) =
-  setSearchQueryScript_7683982392(self, query)
+  setSearchQueryScript_7683982391(self, query)
 proc setSearchQueryFromMove*(self: TextDocumentEditor; move: string;
                              count: int = 0) =
-  setSearchQueryFromMoveScript_7683982471(self, move, count)
+  setSearchQueryFromMoveScript_7683982470(self, move, count)
 proc gotoDefinition*(self: TextDocumentEditor) =
-  gotoDefinitionScript_7683983276(self)
+  gotoDefinitionScript_7683983275(self)
 proc getCompletions*(self: TextDocumentEditor) =
-  getCompletionsScript_7683983330(self)
+  getCompletionsScript_7683983329(self)
 proc hideCompletions*(self: TextDocumentEditor) =
-  hideCompletionsScript_7683983384(self)
+  hideCompletionsScript_7683983383(self)
 proc selectPrevCompletion*(self: TextDocumentEditor) =
-  selectPrevCompletionScript_7683983434(self)
+  selectPrevCompletionScript_7683983433(self)
 proc selectNextCompletion*(self: TextDocumentEditor) =
-  selectNextCompletionScript_7683983498(self)
+  selectNextCompletionScript_7683983497(self)
 proc applySelectedCompletion*(self: TextDocumentEditor) =
-  applySelectedCompletionScript_7683983562(self)
+  applySelectedCompletionScript_7683983561(self)
