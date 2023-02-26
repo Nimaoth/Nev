@@ -1,8 +1,8 @@
 when not defined(js):
   {.error: "scripting_js.nim does not work in non-js backend. Use scripting_nim.nim instead.".}
 
-import std/[macros, os, macrocache, strutils]
-import custom_logger, scripting_base, expose, compilation_config, platform/filesystem
+import std/[macros, os, macrocache, strutils, dom]
+import custom_logger, custom_async, scripting_base, expose, compilation_config, platform/filesystem
 
 export scripting_base
 
@@ -13,28 +13,33 @@ macro invoke*(self: ScriptContext; pName: untyped; args: varargs[typed]; returnT
   result = quote do:
     default(`returnType`)
 
-proc loadScriptJs(url: cstring) {.importjs: "loadScript(#)".}
+proc loadScriptJs(url: cstring): Future[Element] {.importjs: "loadScript(#)".}
+proc loadScriptContentJs(content: cstring): Future[Element] {.importjs: "loadScriptContent(#)".}
+proc evalJs(str: cstring) {.importjs("eval(#)").}
+proc confirmJs(msg: cstring): bool {.importjs("confirm(#)").}
+proc hasLocalStorage(key: cstring): bool {.importjs("(window.localStorage.getItem(#) !== null)").}
 
-method init*(self: ScriptContextJs, path: string) =
-  # loadScriptJs("config.js")
-  # debugf"load script from {path}"
-  # loadScriptJs(path.cstring)
+proc initAsync(self: ScriptContextJs): Future[void] {.async.} =
+  discard await loadScriptJs("scripting_runtime.js")
 
   const configFilePath = "config.js"
+  if hasLocalStorage(configFilePath):
+    let config = fs.loadApplicationFile(configFilePath)
 
-  let config = fs.loadApplicationFile(configFilePath)
+    let contentStrict = "\"use strict\";\n" & config
+    echo contentStrict
 
-  proc evalJs(str: cstring) {.importjs("eval(#)").}
-  proc confirmJs(msg: cstring): bool {.importjs("confirm(#)").}
-  proc hasLocalStorage(key: cstring): bool {.importjs("(window.localStorage.getItem(#) !== null)").}
-  let contentStrict = "\"use strict\";\n" & config
-  echo contentStrict
+    let allowEval = confirmJs("You are about to eval() some javascript (config.js). Look in the console to see what's in there.")
 
-  let allowEval = not hasLocalStorage(configFilePath) or confirmJs("You are about to eval() some javascript (config.js). Look in the console to see what's in there.")
-
-  if allowEval:
-    evalJs(contentStrict.cstring)
+    if allowEval:
+      # evalJs(contentStrict.cstring)
+      discard await loadScriptContentJs(config.cstring)
+    else:
+      logger.log(lvlWarn, fmt"Did not load config file because user declined.")
   else:
-    logger.log(lvlWarn, fmt"Did not load config file because user declined.")
+    discard await loadScriptJs("config.js")
+
+method init*(self: ScriptContextJs, path: string) =
+  asyncCheck self.initAsync()
 
 method reload*(self: ScriptContextJs) = discard

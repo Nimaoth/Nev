@@ -445,7 +445,7 @@ proc newEditor*(backend: api.Backend, platform: Platform): Editor =
 
     self.initializeCalled = true
   except:
-    logger.log(lvlError, fmt"Failed to load config")
+    logger.log(lvlError, fmt"Failed to load config: {(getCurrentExceptionMsg())}{'\n'}{(getCurrentException().getStackTrace())}")
 
   # Restore open editors
   if self.getFlag("editor.restore-open-editors"):
@@ -715,7 +715,6 @@ proc removeFromLocalStorage*(self: Editor) {.expose("editor").} =
       else:
         self.views[self.currentView].document.AstDocument.filename
       clearStorage(filename.cstring)
-
 
 proc loadTheme*(self: Editor, name: string) {.expose("editor").} =
   defer:
