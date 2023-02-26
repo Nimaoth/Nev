@@ -91,6 +91,7 @@ method init*(self: BrowserPlatform) =
     var input = toInput(ke.key, ke.code, ke.keyCode)
     # debugf"{inputToString(input)}, {modifiers}"
     self.onKeyPress.invoke (input, modifiers)
+    e.preventDefault()
   )
 
   self.content.addEventListener("wheel", proc(e: dom.Event) =
