@@ -2,9 +2,12 @@ import std/[os, tables, json, uri, base64, strutils, options]
 import workspace, custom_async, custom_logger, async_http_client, platform/filesystem
 
 type
+  DirectoryListingWrapper = object
+    done: bool
+    listing: DirectoryListing
   WorkspaceFolderAbsytreeServer* = ref object of WorkspaceFolder
     baseUrl*: string
-    cachedDirectoryListings: Table[string, DirectoryListing]
+    cachedDirectoryListings: Table[string, DirectoryListingWrapper]
 
 method isReadOnly*(self: WorkspaceFolderAbsytreeServer): bool = false
 method settings*(self: WorkspaceFolderAbsytreeServer): JsonNode =
@@ -46,8 +49,13 @@ proc parseDirectoryListing(self: WorkspaceFolderAbsytreeServer, basePath: string
       result.folders.add item.getStr
 
 method getDirectoryListing*(self: WorkspaceFolderAbsytreeServer, relativePath: string): Future[DirectoryListing] {.async.} =
+  while self.cachedDirectoryListings.contains(relativePath) and not self.cachedDirectoryListings[relativePath].done:
+    await sleepAsync(2)
+
   if self.cachedDirectoryListings.contains(relativePath):
-    return self.cachedDirectoryListings[relativePath]
+    return self.cachedDirectoryListings[relativePath].listing
+
+  self.cachedDirectoryListings[relativePath] = DirectoryListingWrapper()
 
   let url = if relativePath.len == 0 or relativePath == ".":
     self.baseUrl & "/list"
@@ -59,11 +67,14 @@ method getDirectoryListing*(self: WorkspaceFolderAbsytreeServer, relativePath: s
   try:
     let jsn = parseJson(response)
     let listing = self.parseDirectoryListing(relativePath, jsn)
-    self.cachedDirectoryListings[relativePath] = listing
+    self.cachedDirectoryListings[relativePath] = DirectoryListingWrapper(done: true, listing: listing)
     return listing
-
   except:
     logger.log(lvlError, fmt"Failed to parse absytree-server response: {response}")
+
+  if self.cachedDirectoryListings.contains(relativePath):
+    self.cachedDirectoryListings[relativePath].done = true
+    return self.cachedDirectoryListings[relativePath].listing
 
   return DirectoryListing()
 
