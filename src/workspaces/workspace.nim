@@ -1,4 +1,5 @@
-import custom_async
+import std/[json]
+import custom_async, id
 
 type
   Workspace* = ref object
@@ -6,12 +7,16 @@ type
 
   WorkspaceFolder* = ref object of RootObj
     name*: string
+    id*: Id
 
   DirectoryListing* = object
     files*: seq[string]
     folders*: seq[string]
 
 method isReadOnly*(self: WorkspaceFolder): bool {.base.} = true
+method settings*(self: WorkspaceFolder): JsonNode {.base.} = discard
+
+method clearDirectoryCache*(self: WorkspaceFolder) {.base.} = discard
 
 method loadFile*(self: WorkspaceFolder, relativePath: string): Future[string] {.base.} = discard
 method saveFile*(self: WorkspaceFolder, relativePath: string, content: string): Future[void] {.base.} = discard

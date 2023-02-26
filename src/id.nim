@@ -173,17 +173,17 @@ proc `==`*(idA: Id, idB: Id): bool =
 proc hash*(id: Id): Hash =
   return id.Oid.hash
 
+proc idNone*(): Id =
+  return default(Id)
+
 proc parseId*(s: string): Id =
-  if s.len < 23:
-    assert false
+  if s.len != 24:
+    echo "invalid id '", s, "'"
+    return idNone()
   return s.parseOid.Id
 
 proc timestamp*(id: Id): Time =
   return id.Oid.generatedTime
-
-proc idNone*(): Id =
-  when not defined(js):
-    zeroMem(addr result, sizeof(Id))
 
 let null* = idNone()
 

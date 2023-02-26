@@ -1,6 +1,6 @@
 import std/[strformat, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils, macros, macrocache, sugar, streams]
 import fuzzy
-import input, events, rect_utils, document, document_editor, keybind_autocomplete, popup, timer, event, platform/platform
+import input, id, events, rect_utils, document, document_editor, keybind_autocomplete, popup, timer, event, platform/platform
 import theme, util, custom_logger, custom_async
 import scripting/[expose, scripting_base]
 import platform/[widgets, filesystem]
@@ -35,6 +35,15 @@ type OpenEditor = object
   ast: bool
   languageID: string
   appFile: bool
+  workspaceId: string
+
+type
+  OpenWorkspaceKind {.pure.} = enum Local, AbsytreeServer, Github
+  OpenWorkspace = object
+    kind*: OpenWorkspaceKind
+    id*: string
+    name*: string
+    settings*: JsonNode
 
 type EditorState = object
   theme: string
@@ -43,6 +52,7 @@ type EditorState = object
   fontBold: string
   fontItalic: string
   fontBoldItalic: string
+  workspaceFolders: seq[OpenWorkspace]
   openEditors: seq[OpenEditor]
 
 type Editor* = ref object
@@ -335,6 +345,10 @@ proc handleMouseMove*(self: Editor, mousePosWindow: Vec2, mousePosDelta: Vec2, m
 proc handleScroll*(self: Editor, scroll: Vec2, mousePosWindow: Vec2, modifiers: Modifiers)
 proc handleDropFile*(self: Editor, path, content: string)
 
+proc openWorkspaceKind(workspaceFolder: WorkspaceFolder): OpenWorkspaceKind
+proc addWorkspaceFolder(self: Editor, workspaceFolder: WorkspaceFolder): bool
+proc getWorkspaceFolder(self: Editor, id: Id): Option[WorkspaceFolder]
+
 proc newEditor*(backend: api.Backend, platform: Platform): Editor =
   var self = Editor()
 
@@ -427,6 +441,21 @@ proc newEditor*(backend: api.Backend, platform: Platform): Editor =
   except:
     logger.log(lvlError, fmt"Failed to load previous state from config file: {getCurrentExceptionMsg()}")
 
+  if self.getFlag("editor.restore-open-workspaces"):
+    for wf in state.workspaceFolders:
+      var folder: WorkspaceFolder = case wf.kind
+      of OpenWorkspaceKind.Local: newWorkspaceFolderLocal(wf.settings)
+      of OpenWorkspaceKind.AbsytreeServer: newWorkspaceFolderAbsytreeServer(wf.settings)
+      of OpenWorkspaceKind.Github: newWorkspaceFolderGithub(wf.settings)
+      else:
+        logger.log(lvlError, fmt"[editor][restore-open-workspaces] Unhandled or unknown workspace folder kind {wf.kind}")
+        continue
+
+      folder.id = wf.id.parseId
+      folder.name = wf.name
+      if self.addWorkspaceFolder(folder):
+        logger.log(lvlInfo, fmt"Restoring workspace {folder.name} ({folder.id})")
+
   try:
     var searchPaths = @["src", "scripting"]
     let searchPathsJson = self.options{@["scripting", "search-paths"]}
@@ -450,12 +479,12 @@ proc newEditor*(backend: api.Backend, platform: Platform): Editor =
   # Restore open editors
   if self.getFlag("editor.restore-open-editors"):
     for editorState in state.openEditors:
+        let workspaceFolder = self.getWorkspaceFolder(editorState.workspaceId.parseId)
         let document = if editorState.ast:
-          newAstDocument(editorState.filename, editorState.appFile)
+          newAstDocument(editorState.filename, editorState.appFile, workspaceFolder)
         else:
           try:
-            let fileContent = if editorState.appFile: fs.loadApplicationFile(editorState.filename) else: fs.loadFile(editorState.filename)
-            newTextDocument(editorState.filename, fileContent, editorState.appFile)
+            newTextDocument(editorState.filename, editorState.appFile, workspaceFolder)
           except:
             logger.log(lvlError, fmt"Failed to restore file {editorState.filename} from previous session: {getCurrentExceptionMsg()}")
             continue
@@ -497,14 +526,38 @@ proc saveAppState*(self: Editor) {.expose("editor").} =
   state.fontItalic = self.fontItalic
   state.fontBoldItalic = self.fontBoldItalic
 
+  # Save open workspace folders
+  for workspaceFolder in self.workspace.folders:
+    let kind = if workspaceFolder of WorkspaceFolderLocal:
+      OpenWorkspaceKind.Local
+    elif workspaceFolder of WorkspaceFolderAbsytreeServer:
+      OpenWorkspaceKind.AbsytreeServer
+    elif workspaceFolder of WorkspaceFolderGithub:
+      OpenWorkspaceKind.Github
+    else:
+      continue
+
+    state.workspaceFolders.add OpenWorkspace(
+      kind: kind,
+      id: $workspaceFolder.id,
+      name: workspaceFolder.name,
+      settings: workspaceFolder.settings
+    )
+
   # Save open editors
   for view in self.views:
     if view.document of TextDocument:
       let textDocument = TextDocument(view.document)
-      state.openEditors.add OpenEditor(filename: textDocument.filename, ast: false, languageId: textDocument.languageId, appFile: textDocument.appFile)
+      state.openEditors.add OpenEditor(
+        filename: textDocument.filename, ast: false, languageId: textDocument.languageId, appFile: textDocument.appFile,
+        workspaceId: textDocument.workspace.map(wf => $wf.id).get("")
+        )
     elif view.document of AstDocument:
       let astDocument = AstDocument(view.document)
-      state.openEditors.add OpenEditor(filename: astDocument.filename, ast: true, languageId: "ast", appFile: astDocument.appFile)
+      state.openEditors.add OpenEditor(
+        filename: astDocument.filename, ast: true, languageId: "ast", appFile: astDocument.appFile,
+        workspaceId: astDocument.workspace.map(wf => $wf.id).get("")
+        )
 
   let serialized = state.toJson
   fs.saveApplicationFile("config.json", serialized.pretty)
@@ -525,16 +578,45 @@ proc setConsumeAllActions*(self: Editor, context: string, value: bool) {.expose(
 proc setConsumeAllInput*(self: Editor, context: string, value: bool) {.expose("editor").} =
   self.getEventHandlerConfig(context).setConsumeAllInput(value)
 
+proc openWorkspaceKind(workspaceFolder: WorkspaceFolder): OpenWorkspaceKind =
+  if workspaceFolder of WorkspaceFolderLocal:
+    return OpenWorkspaceKind.Local
+  if workspaceFolder of WorkspaceFolderAbsytreeServer:
+    return OpenWorkspaceKind.AbsytreeServer
+  if workspaceFolder of WorkspaceFolderGithub:
+    return OpenWorkspaceKind.Github
+  assert false
+
+proc addWorkspaceFolder(self: Editor, workspaceFolder: WorkspaceFolder): bool =
+  for wf in self.workspace.folders:
+    if wf.openWorkspaceKind == workspaceFolder.openWorkspaceKind and wf.settings == workspaceFolder.settings:
+      return false
+  if workspaceFolder.id == idNone():
+    workspaceFolder.id = newId()
+  logger.log(lvlInfo, fmt"Opening workspace {workspaceFolder.name}")
+  self.workspace.folders.add workspaceFolder
+  return true
+
+proc getWorkspaceFolder(self: Editor, id: Id): Option[WorkspaceFolder] =
+  for wf in self.workspace.folders:
+    if wf.id == id:
+      return wf.some
+  return WorkspaceFolder.none
+
+proc clearWorkspaceCaches*(self: Editor) {.expose("editor").} =
+  for wf in self.workspace.folders:
+    wf.clearDirectoryCache()
+
 proc openGithubWorkspace*(self: Editor, user: string, repository: string, branchOrHash: string) {.expose("editor").} =
-  self.workspace.folders.add newWorkspaceFolderGithub(user, repository, branchOrHash)
+  discard self.addWorkspaceFolder newWorkspaceFolderGithub(user, repository, branchOrHash)
 
 proc openAbsytreeServerWorkspace*(self: Editor, url: string) {.expose("editor").} =
-  self.workspace.folders.add newWorkspaceFolderAbsytreeServer(url)
+  discard self.addWorkspaceFolder newWorkspaceFolderAbsytreeServer(url)
 
 when not defined(js):
   proc openLocalWorkspace*(self: Editor, path: string) {.expose("editor").} =
     let path = if path.isAbsolute: path else: path.absolutePath
-    self.workspace.folders.add newWorkspaceFolderLocal(path)
+    discard self.addWorkspaceFolder newWorkspaceFolderLocal(path)
 
 proc getFlag*(self: Editor, flag: string, default: bool = false): bool {.expose("editor").} =
   return getOption[bool](self, flag, default)
@@ -648,40 +730,10 @@ proc executeCommandLine*(self: Editor): bool {.expose("editor").} =
   self.getCommandLineTextEditor.document.content = @[""]
   return self.handleAction(action, arg)
 
-proc openFile*(self: Editor, path: string, app: bool = false) {.expose("editor").} =
-  defer:
-    self.platform.requestRender()
-  try:
-    if path.endsWith(".ast"):
-      self.createView(newAstDocument(path, app))
-    else:
-      let file = if app: fs.loadApplicationFile(path) else: fs.loadFile(path)
-      self.createView(newTextDocument(path, file.splitLines, app))
-  except CatchableError:
-    logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
-    logger.log(lvlError, getCurrentException().getStackTrace())
-
 proc updateDocumentContent(self: Editor, document: Document, path: string, folder: WorkspaceFolder): Future[void] {.async.} =
   let content = await folder.loadFile(path)
   if document of TextDocument:
     document.TextDocument.content = content
-
-proc openWorkspaceFile*(self: Editor, path: string, folder: WorkspaceFolder) =
-  defer:
-    self.platform.requestRender()
-  try:
-
-    if path.endsWith(".ast"):
-      # @todo
-      self.createView(newAstDocument(path))
-    else:
-      var document = newTextDocument(path, @[])
-      asyncCheck self.updateDocumentContent(document, path, folder)
-      self.createView(document)
-
-  except CatchableError:
-    logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
-    logger.log(lvlError, getCurrentException().getStackTrace())
 
 proc writeFile*(self: Editor, path: string = "", app: bool = false) {.expose("editor").} =
   defer:
@@ -703,6 +755,49 @@ proc loadFile*(self: Editor, path: string = "") {.expose("editor").} =
     except CatchableError:
       logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
       logger.log(lvlError, getCurrentException().getStackTrace())
+
+proc loadWorkspaceFile*(self: Editor, path: string, folder: WorkspaceFolder) =
+  defer:
+    self.platform.requestRender()
+  if self.currentView >= 0 and self.currentView < self.views.len and self.views[self.currentView].document != nil:
+    try:
+      self.views[self.currentView].document.workspace = folder.some
+      self.views[self.currentView].document.load(path)
+      self.views[self.currentView].editor.handleDocumentChanged()
+    except CatchableError:
+      logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
+      logger.log(lvlError, getCurrentException().getStackTrace())
+
+proc openFile*(self: Editor, path: string, app: bool = false) {.expose("editor").} =
+  defer:
+    self.platform.requestRender()
+  try:
+    if path.endsWith(".ast"):
+      self.createView(newAstDocument(path, app, WorkspaceFolder.none))
+    else:
+      let file = if app: fs.loadApplicationFile(path) else: fs.loadFile(path)
+      self.createView(newTextDocument(path, file.splitLines, app))
+  except CatchableError:
+    logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
+    logger.log(lvlError, getCurrentException().getStackTrace())
+
+proc openWorkspaceFile*(self: Editor, path: string, folder: WorkspaceFolder) =
+  defer:
+    self.platform.requestRender()
+  try:
+
+    if path.endsWith(".ast"):
+      # @todo
+      self.createView(newAstDocument(path, false, folder.some))
+    else:
+      var document = newTextDocument(path, @[])
+      document.workspace = folder.some
+      asyncCheck self.updateDocumentContent(document, path, folder)
+      self.createView(document)
+
+  except CatchableError:
+    logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
+    logger.log(lvlError, getCurrentException().getStackTrace())
 
 proc removeFromLocalStorage*(self: Editor) {.expose("editor").} =
   ## Browser only
@@ -819,7 +914,10 @@ proc chooseFile*(self: Editor, view: string = "new") {.expose("editor").} =
   popup.handleItemConfirmed = proc(item: SelectorItem) =
     case view
     of "current":
-      self.loadFile(item.FileSelectorItem.path)
+      if item.FileSelectorItem.workspaceFolder.isSome:
+        self.loadWorkspaceFile(item.FileSelectorItem.path, item.FileSelectorItem.workspaceFolder.get)
+      else:
+        self.loadFile(item.FileSelectorItem.path)
     of "new":
       if item.FileSelectorItem.workspaceFolder.isSome:
         self.openWorkspaceFile(item.FileSelectorItem.path, item.FileSelectorItem.workspaceFolder.get)
@@ -1037,7 +1135,7 @@ proc loadCurrentConfig*(self: Editor) {.expose("editor").} =
   ## Javascript backend only!
   ## Opens the config file in a new view.
   when defined(js):
-    self.createView(newTextDocument("config.js", fs.loadApplicationFile("config.js")))
+    self.createView(newTextDocument("config.js", fs.loadApplicationFile("config.js"), true))
 
 proc sourceCurrentDocument*(self: Editor) {.expose("editor").} =
   ## Javascript backend only!

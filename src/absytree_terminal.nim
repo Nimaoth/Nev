@@ -129,14 +129,17 @@ while not ed.closeRequested:
   logger.flush()
 
   let pollTimer = startTimer()
-  try:
-    pollBudgetMs += max(minPollPerFrameMs, maxPollPerFrameMs - totalTimer.elapsed.ms)
-    if pollBudgetMs > maxPollPerFrameMs:
-      poll(maxPollPerFrameMs.int)
-      pollBudgetMs -= pollTimer.elapsed.ms
-  except CatchableError:
-    # logger.log(lvlError, fmt"[async] Failed to poll async dispatcher: {getCurrentExceptionMsg()}: {getCurrentException().getStackTrace()}")
-    discard
+  if true:
+    poll(maxPollPerFrameMs.int)
+  else:
+    try:
+      pollBudgetMs += max(minPollPerFrameMs, maxPollPerFrameMs - totalTimer.elapsed.ms)
+      if pollBudgetMs > maxPollPerFrameMs:
+        poll(maxPollPerFrameMs.int)
+        pollBudgetMs -= pollTimer.elapsed.ms
+    except CatchableError:
+      # logger.log(lvlError, fmt"[async] Failed to poll async dispatcher: {getCurrentExceptionMsg()}: {getCurrentException().getStackTrace()}")
+      discard
   let pollTime = pollTimer.elapsed.ms
 
   let timeToSleep = 8 - totalTimer.elapsed.ms

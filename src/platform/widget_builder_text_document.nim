@@ -93,8 +93,10 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
     else: app.theme.color("tab.inactiveBackground", rgb(45, 45, 45))
     headerPanel.updateBackgroundColor(color, frameIndex)
 
+    let workspaceName = self.document.workspace.map(wf => " - " & wf.name).get("")
+
     let mode = if self.currentMode.len == 0: "normal" else: self.currentMode
-    headerPart1Text.text = fmt" {mode} - {self.document.filename} "
+    headerPart1Text.text = fmt" {mode} - {self.document.filename} {workspaceName} "
     headerPart2Text.text = fmt" {self.selection} - {self.id} "
 
     headerPanel.updateLastHierarchyChangeFromChildren frameIndex

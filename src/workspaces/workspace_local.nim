@@ -1,9 +1,13 @@
-import std/[os]
+import std/[os, json]
 import workspace, custom_async, custom_logger
 
 type
   WorkspaceFolderLocal* = ref object of WorkspaceFolder
     path*: string
+
+method settings*(self: WorkspaceFolderLocal): JsonNode =
+  result = newJObject()
+  result["path"] = newJString(self.path)
 
 func getAbsolutePath(self: WorkspaceFolderLocal, relativePath: string): string = self.path / relativePath
 
@@ -25,5 +29,9 @@ method getDirectoryListing*(self: WorkspaceFolderLocal, relativePath: string): F
 
 proc newWorkspaceFolderLocal*(path: string): WorkspaceFolderLocal =
   new result
-  debugf"Opening new local workspace folder at '{path}'"
   result.path = path
+  result.name = fmt"Local:{path.absolutePath}"
+
+proc newWorkspaceFolderLocal*(settings: JsonNode): WorkspaceFolderLocal =
+  let path = settings["path"].getStr
+  return newWorkspaceFolderLocal(path)

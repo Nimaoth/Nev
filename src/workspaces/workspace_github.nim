@@ -19,6 +19,16 @@ proc getAccessToken(): Option[string] =
 
 method isReadOnly*(self: WorkspaceFolderGithub): bool = true
 
+method settings*(self: WorkspaceFolderGithub): JsonNode =
+  result = newJObject()
+  result["baseUrl"] = newJString(self.baseUrl)
+  result["user"] = newJString(self.user)
+  result["repository"] = newJString(self.repository)
+  result["branchOrHash"] = newJString(self.branchOrHash)
+
+method clearDirectoryCache*(self: WorkspaceFolderGithub) =
+  self.cachedDirectoryListings.clear()
+
 method loadFile*(self: WorkspaceFolderGithub, relativePath: string): Future[string] {.async.} =
   let relativePath = if relativePath.startsWith("./"): relativePath[2..^1] else: relativePath
   let url = self.baseUrl & "/contents/" & relativePath & "?ref=" & self.branchOrHash
@@ -99,10 +109,16 @@ proc newWorkspaceFolderGithub*(user, repository, branchOrHash: string): Workspac
   new result
 
   result.baseUrl = fmt"https://api.github.com/repos/{user}/{repository}"
-  debugf"Opening new github workspace folder at {result.baseUrl}"
 
   result.user = user
   result.repository = repository
   result.branchOrHash = branchOrHash
   result.cachedDirectoryListings = initTable[string, DirectoryListing]()
   result.pathToSha = initTable[string, string]()
+  result.name = fmt"GitHub:{user}/{repository}/{branchOrHash}"
+
+proc newWorkspaceFolderGithub*(settings: JsonNode): WorkspaceFolderGithub =
+  let user = settings["user"].getStr
+  let repository = settings["repository"].getStr
+  let branchOrHash = settings["branchOrHash"].getStr
+  return newWorkspaceFolderGithub(user, repository, branchOrHash)

@@ -31,5 +31,7 @@ else:
     if authToken.isSome:
       headers.add("Authorization", authToken.get)
 
+    headers.add("content-type", "text/plain")
+
     var client = newAsyncHttpClient(userAgent = "Thunder Client (https://www.thunderclient.com)", headers = headers)
     discard await client.post(url, content)

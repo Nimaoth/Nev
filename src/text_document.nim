@@ -5,6 +5,7 @@ import editor, document, document_editor, events, id, util, vmath, bumpy, rect_u
 import scripting/[expose]
 import platform/[platform, filesystem]
 import language/[languages, language_server_base]
+import workspaces/[workspace]
 
 export document, document_editor, id
 
@@ -408,6 +409,11 @@ proc newTextDocument*(filename: string = "", content: string | seq[string] = "",
 
   self.content = content
 
+proc newTextDocument*(filename: string, app: bool, workspaceFolder: Option[WorkspaceFolder]): TextDocument =
+  result = newTextDocument(filename, "", app)
+  result.workspace = workspaceFolder
+  result.load()
+
 proc destroy*(self: TextDocument) =
   if not self.tsParser.isNil:
     self.tsParser.deinit()
@@ -434,10 +440,15 @@ method save*(self: TextDocument, filename: string = "", app: bool = false) =
 
   self.appFile = app
 
-  if app:
-    fs.saveApplicationFile(self.filename, self.lines.join "\n")
+  if self.workspace.getSome(ws):
+    asyncCheck ws.saveFile(self.filename, self.contentString)
+  elif self.appFile:
+    fs.saveApplicationFile(self.filename, self.contentString)
   else:
-    fs.saveFile(self.filename, self.lines.join "\n")
+    fs.saveFile(self.filename, self.contentString)
+
+proc loadAsync(self: TextDocument, ws: WorkspaceFolder): Future[void] {.async.} =
+  self.content = await ws.loadFile(self.filename)
 
 method load*(self: TextDocument, filename: string = "") =
   let filename = if filename.len > 0: filename else: self.filename
@@ -446,8 +457,12 @@ method load*(self: TextDocument, filename: string = "") =
 
   self.filename = filename
 
-  let file = if self.appFile: fs.loadApplicationFile(self.filename) else: fs.loadFile(self.filename)
-  self.content = file
+  if self.workspace.getSome(ws):
+    asyncCheck self.loadAsync(ws)
+  elif self.appFile:
+    self.content = fs.loadApplicationFile(self.filename)
+  else:
+    self.content = fs.loadFile(self.filename)
 
 proc byteOffset(self: TextDocument, cursor: Cursor): int =
   result = cursor.column
