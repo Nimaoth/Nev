@@ -12,6 +12,9 @@ app.use(cors({
     origin: '*'
 }));
 
+let localFolderPath = process.cwd()
+let localFolderName = pth.basename(localFolderPath)
+
 let ig = ignore()
 try {
     let files = fs.readFileSync(".gitignore").toString().split("\n").filter(s => s.length > 0)
@@ -103,15 +106,16 @@ app.post('/contents/*', async (req, res) => {
 
     console.log(`set content of '${path}'`)
     try {
-        console.log(req.body)
-        // await fs.promises.writeFile(path, req.body)
+        await fs.promises.writeFile(path, req.body)
+        res.sendStatus(200)
     } catch (e) {
         console.error(e)
-        res.statusCode(403)
+        res.sendStatus(403)
     }
-    res.send("")
 })
 
-console.log(`Serving ${process.cwd()}`)
+app.get('/info/name', async (req, res) => {
+    res.send(localFolderName)
+})
 
-app.listen(3000, () => console.log('Absytree server is listening on port 3000.'));
+app.listen(3000, () => console.log(`Serving ${localFolderPath} on port 3000`));

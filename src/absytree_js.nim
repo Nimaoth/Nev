@@ -19,12 +19,6 @@ if theme.loadFromString(themeString).getSome(theme):
 
 ed.setLayout("fibonacci")
 
-# ed.createView(newTextDocument("absytree_browser.html", file1))
-# ed.createView(newTextDocument("absytree_js.nim", file2))
-# ed.openFile("absytree_browser.html")
-# ed.openFile("src/absytree_js.nim")
-# ed.openFile("absytree_config.nims")
-
 var frameTime = 0.0
 var frameIndex = 0
 

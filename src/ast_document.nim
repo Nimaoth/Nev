@@ -1,11 +1,12 @@
 import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros, macrocache, options, deques, sets, json, jsonutils, sequtils, streams, os]
 import timer
 import fusion/matching, fuzzy, bumpy, rect_utils, vmath, chroma
-import editor, util, document, document_editor, text_document, events, id, ast_ids, ast, scripting/expose, event, theme, input
+import editor, util, document, document_editor, text_document, events, id, ast_ids, ast, scripting/expose, event, theme, input, custom_async
 import compiler
 from scripting_api as api import nil
 import custom_logger
 import platform/[filesystem, platform]
+import workspaces/[workspace]
 
 type ExecutionOutput* = ref object
   lines*: seq[(string, Color)]
@@ -338,21 +339,16 @@ proc selectNextNode*(editor: AstDocumentEditor) =
 method `$`*(document: AstDocument): string =
   return document.filename
 
-proc newAstDocument*(filename: string = "", app: bool = false): AstDocument =
+proc newAstDocument*(filename: string = "", app: bool = false, workspaceFolder: Option[WorkspaceFolder]): AstDocument =
   new(result)
   result.filename = filename
   result.rootNode = AstNode(kind: NodeList, parent: nil, id: newId())
   result.symbols = initTable[Id, Symbol]()
   result.appFile = app
+  result.workspace = workspaceFolder
 
   if filename.len > 0:
-    logger.log lvlInfo, fmt"[astdoc] Loading ast source file '{result.filename}'"
-    try:
-      let file = fs.loadFile(result.filename)
-      let jsn = file.parseJson
-      result.rootNode = jsn.jsonToAstNode
-    except CatchableError:
-      logger.log lvlError, fmt"[astdoc] Failed to load ast source file '{result.filename}'"
+    result.load()
 
 import html_renderer
 
@@ -370,10 +366,37 @@ method save*(self: AstDocument, filename: string = "", app: bool = false) =
   logger.log lvlInfo, fmt"[astdoc] Saving ast source file '{self.filename}'"
   let serialized = self.rootNode.toJson
 
-  if app:
+  if self.workspace.getSome(ws):
+    asyncCheck ws.saveFile(self.filename, serialized.pretty)
+  elif self.appFile:
     fs.saveApplicationFile(self.filename, serialized.pretty)
   else:
     fs.saveFile(self.filename, serialized.pretty)
+
+  self.saveHtml()
+
+proc loadAsync*(self: AstDocument): Future[void] {.async.} =
+  logger.log lvlInfo, fmt"[astdoc] Loading ast source file '{self.filename}'"
+  try:
+    var jsonText = ""
+    if self.workspace.getSome(ws):
+      jsonText = await ws.loadFile(self.filename)
+    elif self.appFile:
+      jsonText = fs.loadApplicationFile(self.filename)
+    else:
+      jsonText = fs.loadFile(self.filename)
+
+    let json = jsonText.parseJson
+    let newAst = json.jsonToAstNode
+
+    ctx.deleteAllNodesAndSymbols()
+    self.rootNode = newAst
+    ctx.insertNode(self.rootNode)
+    self.undoOps.setLen 0
+    self.redoOps.setLen 0
+
+  except CatchableError:
+    logger.log lvlError, fmt"[astdoc] Failed to load ast source file '{self.filename}'"
 
   self.saveHtml()
 
@@ -383,19 +406,7 @@ method load*(self: AstDocument, filename: string = "") =
     raise newException(IOError, "Missing filename")
 
   self.filename = filename
-
-  logger.log lvlInfo, fmt"[astdoc] Loading ast source file '{self.filename}'"
-  let jsonText = fs.loadFile(self.filename)
-  let json = jsonText.parseJson
-  let newAst = json.jsonToAstNode
-
-  ctx.deleteAllNodesAndSymbols()
-  self.rootNode = newAst
-  ctx.insertNode(self.rootNode)
-  self.undoOps.setLen 0
-  self.redoOps.setLen 0
-
-  self.saveHtml()
+  asyncCheck self.loadAsync()
 
 iterator nextPreOrder*(self: AstDocument, node: AstNode, endNode: AstNode = nil): tuple[key: int, value: AstNode] =
   var n = node

@@ -185,6 +185,8 @@ addCommand "editor", "<S-SPACE>kn", () => loadNormalBindings()
 addCommand "editor", "<S-SPACE>kv", () => loadVimBindings()
 addCommand "editor", "<S-SPACE>kh", () => loadHelixBindings()
 
+addCommand "editor", "<S-SPACE>CC", "clear-workspace-caches"
+
 addCommand "commandLine", "<ESCAPE>", "exit-command-line"
 addCommand "commandLine", "<ENTER>", "execute-command-line"
 
