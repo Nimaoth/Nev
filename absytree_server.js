@@ -7,6 +7,7 @@ const cors = require('cors')
 
 const app = express()
 app.use(bodyParser.json())
+app.use(bodyParser.text())
 app.use(cors({
     origin: '*'
 }));
@@ -17,7 +18,7 @@ try {
     console.log("Ignore: ", files)
     ig.add(files)
 } catch(e) {
-    throw e
+    console.info("no .gitignore")
 }
 
 ig = ig.add(".git")
@@ -92,6 +93,25 @@ app.get('/contents/*', async (req, res) => {
     }
 })
 
+app.post('/contents/*', async (req, res) => {
+    const path = req.path.substring("/contents/".length)
+
+    if (pth.isAbsolute(path) || path.includes("..")) {
+        res.sendStatus(403)
+        return;
+    }
+
+    console.log(`set content of '${path}'`)
+    try {
+        console.log(req.body)
+        // await fs.promises.writeFile(path, req.body)
+    } catch (e) {
+        console.error(e)
+        res.statusCode(403)
+    }
+    res.send("")
+})
+
 console.log(`Serving ${process.cwd()}`)
 
-app.listen(3000, () => console.log('Example app is listening on port 3000.'));
+app.listen(3000, () => console.log('Absytree server is listening on port 3000.'));

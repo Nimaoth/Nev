@@ -16,7 +16,12 @@ method loadFile*(self: WorkspaceFolderAbsytreeServer, relativePath: string): Fut
   return await httpGet(url)
 
 method saveFile*(self: WorkspaceFolderAbsytreeServer, relativePath: string, content: string): Future[void] {.async.} =
-  discard
+  let relativePath = if relativePath.startsWith("./"): relativePath[2..^1] else: relativePath
+
+  let url = self.baseUrl & "/contents/" & relativePath
+  logger.log(lvlInfo, fmt"[absytree-server] saveFile '{url}'")
+
+  await httpPost(url, content)
 
 proc parseDirectoryListing(self: WorkspaceFolderAbsytreeServer, basePath: string, jsn: JsonNode): DirectoryListing =
   if jsn.hasKey("files") and jsn["files"].kind == JArray:
