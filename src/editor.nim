@@ -1,9 +1,9 @@
 import std/[strformat, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils, macros, macrocache, sugar, streams]
 import fuzzy
-import input, id, events, rect_utils, document, document_editor, keybind_autocomplete, popup, timer, event, platform/platform
+import input, id, events, rect_utils, document, document_editor, keybind_autocomplete, popup, timer, event, cancellation_token
 import theme, util, custom_logger, custom_async
 import scripting/[expose, scripting_base]
-import platform/[widgets, filesystem]
+import platform/[platform, widgets, filesystem]
 import workspaces/[workspace]
 
 when not defined(js):
@@ -868,12 +868,19 @@ proc getDirectoryListingRec(self: Editor, folder: WorkspaceFolder, path: string)
 
   return resultItems
 
-proc iterateDirectoryRec(self: Editor, folder: WorkspaceFolder, path: string, callback: proc(files: seq[string]): void): Future[void] {.async.} =
+proc iterateDirectoryRec(self: Editor, folder: WorkspaceFolder, path: string, cancellationToken: CancellationToken, callback: proc(files: seq[string]): void): Future[void] {.async.} =
   let path = path
   var resultItems: seq[string]
   var folders: seq[string]
 
+  if cancellationToken.canceled:
+    return
+
   let items = await folder.getDirectoryListing(path)
+
+  if cancellationToken.canceled:
+    return
+
   for file in items.files:
     resultItems.add(path / file)
 
@@ -882,10 +889,13 @@ proc iterateDirectoryRec(self: Editor, folder: WorkspaceFolder, path: string, ca
 
   callback(resultItems)
 
+  if cancellationToken.canceled:
+    return
+
   var futs: seq[Future[void]]
 
   for dir in folders:
-    futs.add self.iterateDirectoryRec(folder, dir, callback)
+    futs.add self.iterateDirectoryRec(folder, dir, cancellationToken, callback)
 
   for fut in futs:
     await fut
@@ -896,11 +906,15 @@ proc chooseFile*(self: Editor, view: string = "new") {.expose("editor").} =
 
   var popup = self.newSelectorPopup()
   popup.getCompletionsAsyncIter = proc(popup: SelectorPopup, text: string): Future[void] {.async.} =
-    var resultItems: seq[SelectorItem]
+    if not popup.cancellationToken.isNil:
+      popup.cancellationToken.cancel()
+
+    var cancellationToken = newCancellationToken()
+    popup.cancellationToken = cancellationToken
 
     for folder in self.workspace.folders:
       var folder = folder
-      await self.iterateDirectoryRec(folder, "", proc(files: seq[string]) =
+      await self.iterateDirectoryRec(folder, "", cancellationToken, proc(files: seq[string]) =
         let folder = folder
         for file in files:
           let name = file.splitFile.name

@@ -130,7 +130,8 @@ while not ed.closeRequested:
 
   let pollTimer = startTimer()
   if true:
-    poll(maxPollPerFrameMs.int)
+    while pollTimer.elapsed.ms < 8:
+      poll(2)
   else:
     try:
       pollBudgetMs += max(minPollPerFrameMs, maxPollPerFrameMs - totalTimer.elapsed.ms)

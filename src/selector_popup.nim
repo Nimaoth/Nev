@@ -1,6 +1,6 @@
 import std/[strutils, sugar, options, json, jsonutils, streams]
 import bumpy, vmath
-import editor, text_document, popup, events, util, rect_utils, scripting/expose, event, input, custom_async, custom_logger
+import editor, text_document, popup, events, util, rect_utils, scripting/expose, event, input, custom_async, custom_logger, cancellation_token
 from scripting_api as api import nil
 
 export popup
@@ -27,6 +27,8 @@ type
     getCompletionsAsyncIter*: CompletionProviderAsyncIter
     lastContentBounds*: Rect
     lastItems*: seq[tuple[index: int, bounds: Rect]]
+
+    cancellationToken*: CancellationToken
 
 method changed*(self: SelectorItem, other: SelectorItem): bool {.base.} = discard
 
