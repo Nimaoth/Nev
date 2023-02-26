@@ -2,7 +2,8 @@ when not defined(js):
   {.error: "scripting_js.nim does not work in non-js backend. Use scripting_nim.nim instead.".}
 
 import std/[macros, os, macrocache, strutils, dom]
-import custom_logger, custom_async, scripting_base, expose, compilation_config, platform/filesystem
+import custom_logger, custom_async, scripting_base, expose, compilation_config, popup, document_editor
+import platform/filesystem
 
 export scripting_base
 
@@ -43,3 +44,18 @@ method init*(self: ScriptContextJs, path: string) =
   asyncCheck self.initAsync()
 
 method reload*(self: ScriptContextJs) = discard
+
+method handleUnknownPopupAction*(self: ScriptContextJs, popup: Popup, action: string, arg: string): bool =
+  let action = action.cstring
+  let arg = arg.cstring
+  {.emit: ["window.handleUnknownPopupAction(", popup, ", ", action, ", JSON.parse(", arg, "))"].}
+
+method handleUnknownDocumentEditorAction*(self: ScriptContextJs, editor: DocumentEditor, action: string, arg: string): bool =
+  let action = action.cstring
+  let arg = arg.cstring
+  {.emit: ["window.handleUnknownDocumentEditorAction(", editor, ", ", action, ", JSON.parse(", arg, "))"].}
+
+method handleGlobalAction*(self: ScriptContextJs, action: string, arg: string): bool =
+  let action = action.cstring
+  let arg = arg.cstring
+  {.emit: ["window.handleGlobalAction(", action, ", ", arg, ")"].}

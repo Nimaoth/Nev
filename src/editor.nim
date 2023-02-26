@@ -175,7 +175,7 @@ method layoutViews*(layout: FibonacciLayout, props: LayoutProperties, bounds: Re
 
 proc handleUnknownPopupAction*(self: Editor, popup: Popup, action: string, arg: string): EventResponse =
   try:
-    if self.scriptContext.invoke(handleUnknownPopupAction, popup.id, action, arg, returnType = bool):
+    if self.scriptContext.handleUnknownPopupAction(popup, action, arg):
       return Handled
   except CatchableError:
     logger.log(lvlError, fmt"[ed] Failed to run script handleUnknownPopupAction '{action} {arg}': {getCurrentExceptionMsg()}")
@@ -185,7 +185,7 @@ proc handleUnknownPopupAction*(self: Editor, popup: Popup, action: string, arg: 
 
 proc handleUnknownDocumentEditorAction*(self: Editor, editor: DocumentEditor, action: string, args: JsonNode): EventResponse =
   try:
-    if self.scriptContext.invoke(handleEditorAction, editor.id, action, args, returnType = bool):
+    if self.scriptContext.handleUnknownDocumentEditorAction(editor, action, $args):
       return Handled
   except CatchableError:
     logger.log(lvlError, fmt"[ed] Failed to run script handleUnknownDocumentEditorAction '{action} {args}': {getCurrentExceptionMsg()}")
@@ -1327,7 +1327,7 @@ genDispatcher("editor")
 proc handleAction(self: Editor, action: string, arg: string): bool =
   logger.log(lvlInfo, "[ed] Action '$1 $2'" % [action, arg])
   try:
-    if self.scriptContext.invoke(handleGlobalAction, action, arg, returnType = bool):
+    if self.scriptContext.handleGlobalAction(action, arg):
       return true
   except CatchableError:
     logger.log(lvlError, fmt"[ed] Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")

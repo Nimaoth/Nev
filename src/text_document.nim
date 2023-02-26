@@ -1094,6 +1094,12 @@ proc setAllFindResultToSelection*(self: TextDocumentEditor) {.expose("editor.tex
       selections.add s
   self.selections = selections
 
+proc clearSelections*(self: TextDocumentEditor) {.expose("editor.text").} =
+  if self.selections.len > 1:
+    self.selection = self.selection
+  else:
+    self.selection = self.selection.last.toSelection
+
 proc moveCursorColumn*(self: TextDocumentEditor, distance: int, cursor: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
   self.moveCursor(cursor, doMoveCursorColumn, distance, all)
   self.updateTargetColumn(cursor)
