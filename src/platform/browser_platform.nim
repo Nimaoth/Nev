@@ -203,10 +203,10 @@ proc updateFontSettings*(self: BrowserPlatform) =
     self.mFontSize = newFontSize
     var d = document.createElement("div")
     d.setAttr("style", "position: absolute; visibility: hidden; height: auto; width: auto;")
-    d.innerHTML = "###"
+    d.innerHTML = repeat("#", 100).cstring
     self.content.appendChild(d)
     self.mLineHeight = d.clientHeight.float
-    self.mCharWidth = d.clientWidth.float / 3
+    self.mCharWidth = d.clientWidth.float / 100
     self.content.removeChild(d)
 
     self.redrawEverything = true

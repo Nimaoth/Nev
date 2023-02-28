@@ -101,68 +101,68 @@ proc mode*(): string =
 proc getContextWithMode*(context: string): string =
   getContextWithModeScript22_2197828983(context)
 proc scriptRunAction*(action: string; arg: string) =
-  scriptRunActionScript_2197829273(action, arg)
+  scriptRunActionScript_2197829267(action, arg)
 proc scriptLog*(message: string) =
-  scriptLogScript_2197829309(message)
+  scriptLogScript_2197829303(message)
 proc addCommandScript*(context: string; keys: string; action: string;
                        arg: string = "") =
-  addCommandScriptScript_2197829340(context, keys, action, arg)
+  addCommandScriptScript_2197829334(context, keys, action, arg)
 proc removeCommand*(context: string; keys: string) =
-  removeCommandScript_2197829413(context, keys)
+  removeCommandScript_2197829407(context, keys)
 proc getActivePopup*(): EditorId =
-  getActivePopupScript_2197829471()
+  getActivePopupScript_2197829465()
 proc getActiveEditor*(): EditorId =
-  getActiveEditorScript_2197829508()
+  getActiveEditorScript_2197829502()
 proc getActiveEditor2*(): EditorId =
   ## Returns the active editor instance
-  getActiveEditor2Script_2197829539()
+  getActiveEditor2Script_2197829533()
 proc loadCurrentConfig*() =
   ## Javascript backend only!
   ## Opens the config file in a new view.
-  loadCurrentConfigScript_2197829589()
+  loadCurrentConfigScript_2197829583()
 proc sourceCurrentDocument*() =
   ## Javascript backend only!
   ## Runs the content of the active editor as javascript using `eval()`.
   ## "use strict" is prepended to the content to force strict mode.
-  sourceCurrentDocumentScript_2197829633()
+  sourceCurrentDocumentScript_2197829627()
 proc getEditor*(index: int): EditorId =
-  getEditorScript_2197829677(index)
+  getEditorScript_2197829671(index)
 proc scriptIsTextEditor*(editorId: EditorId): bool =
-  scriptIsTextEditorScript_2197829715(editorId)
+  scriptIsTextEditorScript_2197829709(editorId)
 proc scriptIsAstEditor*(editorId: EditorId): bool =
-  scriptIsAstEditorScript_2197829782(editorId)
+  scriptIsAstEditorScript_2197829776(editorId)
 proc scriptRunActionFor*(editorId: EditorId; action: string; arg: string) =
-  scriptRunActionForScript_2197829849(editorId, action, arg)
+  scriptRunActionForScript_2197829843(editorId, action, arg)
 proc scriptInsertTextInto*(editorId: EditorId; text: string) =
-  scriptInsertTextIntoScript_2197829948(editorId, text)
+  scriptInsertTextIntoScript_2197829942(editorId, text)
 proc scriptTextEditorSelection*(editorId: EditorId): Selection =
-  scriptTextEditorSelectionScript_2197830012(editorId)
+  scriptTextEditorSelectionScript_2197830006(editorId)
 proc scriptSetTextEditorSelection*(editorId: EditorId; selection: Selection) =
-  scriptSetTextEditorSelectionScript_2197830080(editorId, selection)
+  scriptSetTextEditorSelectionScript_2197830074(editorId, selection)
 proc scriptTextEditorSelections*(editorId: EditorId): seq[Selection] =
-  scriptTextEditorSelectionsScript_2197830148(editorId)
+  scriptTextEditorSelectionsScript_2197830142(editorId)
 proc scriptSetTextEditorSelections*(editorId: EditorId;
                                     selections: seq[Selection]) =
-  scriptSetTextEditorSelectionsScript_2197830224(editorId, selections)
+  scriptSetTextEditorSelectionsScript_2197830218(editorId, selections)
 proc scriptGetTextEditorLine*(editorId: EditorId; line: int): string =
-  scriptGetTextEditorLineScript_2197830292(editorId, line)
+  scriptGetTextEditorLineScript_2197830286(editorId, line)
 proc scriptGetTextEditorLineCount*(editorId: EditorId): int =
-  scriptGetTextEditorLineCountScript_2197830370(editorId)
+  scriptGetTextEditorLineCountScript_2197830364(editorId)
 proc scriptGetOptionInt*(path: string; default: int): int =
-  scriptGetOptionIntScript_2197830452(path, default)
+  scriptGetOptionIntScript_2197830446(path, default)
 proc scriptGetOptionFloat*(path: string; default: float): float =
-  scriptGetOptionFloatScript_2197830499(path, default)
+  scriptGetOptionFloatScript_2197830493(path, default)
 proc scriptGetOptionBool*(path: string; default: bool): bool =
-  scriptGetOptionBoolScript_2197830604(path, default)
+  scriptGetOptionBoolScript_2197830598(path, default)
 proc scriptGetOptionString*(path: string; default: string): string =
-  scriptGetOptionStringScript_2197830651(path, default)
+  scriptGetOptionStringScript_2197830645(path, default)
 proc scriptSetOptionInt*(path: string; value: int) =
-  scriptSetOptionIntScript_2197830698(path, value)
+  scriptSetOptionIntScript_2197830692(path, value)
 proc scriptSetOptionFloat*(path: string; value: float) =
-  scriptSetOptionFloatScript_2197830773(path, value)
+  scriptSetOptionFloatScript_2197830767(path, value)
 proc scriptSetOptionBool*(path: string; value: bool) =
-  scriptSetOptionBoolScript_2197830848(path, value)
+  scriptSetOptionBoolScript_2197830842(path, value)
 proc scriptSetOptionString*(path: string; value: string) =
-  scriptSetOptionStringScript_2197830923(path, value)
+  scriptSetOptionStringScript_2197830917(path, value)
 proc scriptSetCallback*(path: string; id: int) =
-  scriptSetCallbackScript_2197830998(path, id)
+  scriptSetCallbackScript_2197830992(path, id)
