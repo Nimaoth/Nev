@@ -172,9 +172,8 @@ method sizeChanged*(self: GuiPlatform): bool =
 
 proc updateCharWidth*(self: GuiPlatform) =
   let font = self.getFont(self.ctx.font, self.ctx.fontSize)
-  let arrangement = font.typeset("#")
-  var bounds = arrangement.layoutBounds()
-  self.mCharWidth = bounds.x
+  let bounds = font.typeset(repeat("#", 100)).layoutBounds()
+  self.mCharWidth = bounds.x / 100
   self.mLineHeight = bounds.y
 
 method `fontSize=`*(self: GuiPlatform, fontSize: float) =
