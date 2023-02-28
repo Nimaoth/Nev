@@ -1,4 +1,4 @@
-import std/[tables]
+import std/[tables, strutils]
 import platform, widgets
 import custom_logger, input, event, monitors, lrucache, id
 import chroma, vmath, windy, boxy, boxy/textures, opengl, pixie/[contexts, fonts]
