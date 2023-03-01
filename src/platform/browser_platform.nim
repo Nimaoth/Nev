@@ -180,6 +180,7 @@ method init*(self: BrowserPlatform) =
   self.content.focus()
 
 method requestRender*(self: BrowserPlatform, redrawEverything = false) =
+  self.redrawEverything = self.redrawEverything or redrawEverything
   self.onResized.invoke(redrawEverything)
 
 method deinit*(self: BrowserPlatform) =

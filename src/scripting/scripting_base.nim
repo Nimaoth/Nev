@@ -7,9 +7,9 @@ type ScriptContext* = ref object of RootObj
 method init*(self: ScriptContext, path: string) {.base.} = discard
 method reload*(self: ScriptContext) {.base.} = discard
 
-method handleUnknownPopupAction*(self: ScriptContext, popup: Popup, action: string, arg: string): bool {.base.} = discard
-method handleUnknownDocumentEditorAction*(self: ScriptContext, editor: DocumentEditor, action: string, arg: string): bool {.base.} = discard
-method handleGlobalAction*(self: ScriptContext, action: string, arg: string): bool {.base.} = discard
+method handleUnknownPopupAction*(self: ScriptContext, popup: Popup, action: string, arg: JsonNode): bool {.base.} = discard
+method handleUnknownDocumentEditorAction*(self: ScriptContext, editor: DocumentEditor, action: string, arg: JsonNode): bool {.base.} = discard
+method handleGlobalAction*(self: ScriptContext, action: string, arg: JsonNode): bool {.base.} = discard
 
 proc generateScriptingApiPerModule*() {.compileTime.} =
   var imports_content = "import \"../src/scripting_api\"\nexport scripting_api\n\n## This file is auto generated, don't modify.\n\n"

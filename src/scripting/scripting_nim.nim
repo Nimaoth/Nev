@@ -181,11 +181,11 @@ macro invoke*(self: ScriptContext; pName: untyped;
     result.add x
   result.add nnkExprEqExpr.newTree(ident"returnType", returnType)
 
-method handleUnknownPopupAction*(self: ScriptContextNim, popup: Popup, action: string, arg: string): bool =
+method handleUnknownPopupAction*(self: ScriptContextNim, popup: Popup, action: string, arg: JsonNode): bool =
   return self.invoke(handleUnknownPopupAction, popup.id, action, arg, returnType = bool)
 
-method handleUnknownDocumentEditorAction*(self: ScriptContextNim, editor: DocumentEditor, action: string, arg: string): bool =
-  return self.invoke(handleEditorAction, editor.id, action, arg.parseJson, returnType = bool)
+method handleUnknownDocumentEditorAction*(self: ScriptContextNim, editor: DocumentEditor, action: string, arg: JsonNode): bool =
+  return self.invoke(handleEditorAction, editor.id, action, arg, returnType = bool)
 
-method handleGlobalAction*(self: ScriptContextNim, action: string, arg: string): bool =
+method handleGlobalAction*(self: ScriptContextNim, action: string, arg: JsonNode): bool =
   return self.invoke(handleGlobalAction, action, arg, returnType = bool)

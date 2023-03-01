@@ -1,7 +1,7 @@
 when not defined(js):
   {.error: "scripting_js.nim does not work in non-js backend. Use scripting_nim.nim instead.".}
 
-import std/[macros, os, macrocache, strutils, dom]
+import std/[macros, os, macrocache, strutils, dom, json]
 import custom_logger, custom_async, scripting_base, expose, compilation_config, popup, document_editor
 import platform/filesystem
 
@@ -45,17 +45,17 @@ method init*(self: ScriptContextJs, path: string) =
 
 method reload*(self: ScriptContextJs) = discard
 
-method handleUnknownPopupAction*(self: ScriptContextJs, popup: Popup, action: string, arg: string): bool =
+method handleUnknownPopupAction*(self: ScriptContextJs, popup: Popup, action: string, arg: JsonNode): bool =
   let action = action.cstring
-  let arg = arg.cstring
-  {.emit: ["return window.handleUnknownPopupAction(", popup, ", ", action, ", ", arg, " ? JSON.parse(", arg, ") : []);"].}
+  let arg = ($arg).cstring
+  {.emit: ["return window.handleUnknownPopupAction(", popup, ", ", action, ",  JSON.parse(", arg, "));"].}
 
-method handleUnknownDocumentEditorAction*(self: ScriptContextJs, editor: DocumentEditor, action: string, arg: string): bool =
+method handleUnknownDocumentEditorAction*(self: ScriptContextJs, editor: DocumentEditor, action: string, arg: JsonNode): bool =
   let action = action.cstring
-  let arg = arg.cstring
-  {.emit: ["return window.handleUnknownDocumentEditorAction(", editor, ", ", action, ", ", arg, " ? JSON.parse(", arg, ") : []);"].}
+  let arg = ($arg).cstring
+  {.emit: ["return window.handleUnknownDocumentEditorAction(", editor, ", ", action, ", JSON.parse(", arg, "));"].}
 
-method handleGlobalAction*(self: ScriptContextJs, action: string, arg: string): bool =
+method handleGlobalAction*(self: ScriptContextJs, action: string, arg: JsonNode): bool =
   let action = action.cstring
-  let arg = arg.cstring
-  {.emit: ["return window.handleGlobalAction(", action, ", ", arg, ");"].}
+  let arg = ($arg).cstring
+  {.emit: ["return window.handleGlobalAction(", action, ", JSON.parse(", arg, "));"].}

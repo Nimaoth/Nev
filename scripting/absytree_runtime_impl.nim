@@ -1,13 +1,13 @@
 import absytree_runtime
 
-proc handleGlobalAction*(action: string, arg: string): bool =
+proc handleGlobalAction*(action: string, args: JsonNode): bool =
   if action == "lambda-action":
-    return handleLambdaAction(arg)
-  return handleAction(action, arg)
+    return handleLambdaAction(args)
+  return handleAction(action, args)
 
 proc handleEditorAction*(id: EditorId, action: string, args: JsonNode): bool =
   if action == "lambda-action":
-    return handleLambdaAction(args[0].str)
+    return handleLambdaAction(args)
 
   if id.isTextEditor(editor):
     return handleTextEditorAction(editor, action, args)
@@ -17,7 +17,7 @@ proc handleEditorAction*(id: EditorId, action: string, args: JsonNode): bool =
 
   return handleDocumentEditorAction(id, action, args)
 
-proc handleUnknownPopupAction*(id: EditorId, action: string, arg: string): bool =
-  return handlePopupAction(id, action, arg)
+proc handleUnknownPopupAction*(id: EditorId, action: string, args: JsonNode): bool =
+  return handlePopupAction(id, action, args)
 
 proc handleCallback*(id: int, args: JsonNode): bool = handleCallbackImpl(id, args)

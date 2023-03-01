@@ -5,27 +5,27 @@ import keybindings_vim
 import keybindings_helix
 import keybindings_normal
 
-proc handleAction*(action: string, arg: string): bool =
-  info action, ", ", arg
+proc handleAction*(action: string, args: JsonNode): bool =
+  info action, ", ", args
 
   case action
   of "set-max-loop-iterations":
-    setOption("ast.max-loop-iterations", arg.parseInt)
+    setOption("ast.max-loop-iterations", args[0].getInt)
 
   of "command-line":
-    commandLine(arg)
+    commandLine(args[0].getStr)
     if getActiveEditor().isTextEditor(editor):
       editor.setMode "insert"
 
   of "set-search-query":
     if getActiveEditor().isTextEditor(editor):
-      editor.setSearchQuery arg
+      editor.setSearchQuery args[0].getStr
 
   else: return false
 
   return true
 
-proc handlePopupAction*(popup: EditorId, action: string, arg: string): bool =
+proc handlePopupAction*(popup: EditorId, action: string, args: JsonNode): bool =
   case action:
   of "home":
     for i in 0..<3:
@@ -69,9 +69,9 @@ proc postInitialize*(): bool =
 
 info "Loading absytree_config.nim"
 
-openLocalWorkspace(".")
-# openAbsytreeServerWorkspace("http://localhost:3000")
-# openGithubWorkspace("Nimaoth", "AbsytreeBrowser", "main")
+# openLocalWorkspace(".")
+openAbsytreeServerWorkspace("http://localhost:3000")
+openGithubWorkspace("Nimaoth", "AbsytreeBrowser", "main")
 # openGithubWorkspace("Nimaoth", "Absytree", "main")
 
 clearCommands "editor"
@@ -141,7 +141,6 @@ addCommand "editor", "<C-2>", proc() =
   echo "text.node-highlight-sibling-index: ", getOption[int]("text.node-highlight-sibling-index")
 addCommand "editor", "<C-3>", proc() =
   setOption("text.node-highlight-sibling-index", clamp(getOption[int]("text.node-highlight-sibling-index") + 1, -100000, 100000))
-  echo "text.node-highlight-sibling-index: ", getOption[int]("text.node-highlight-sibling-index")
 
 addCommand "editor", "<C-u>", "set-mode", "test-mode"
 setConsumeAllInput "editor.test-mode", true
@@ -180,6 +179,18 @@ addCommand "editor", "<S-SPACE><S-SPACE>", "command-line"
 addCommand "editor", "<S-SPACE>t", "choose-theme"
 addCommand "editor", "<S-SPACE>f", "choose-file", "new"
 addCommand "editor", "<C-o>", "choose-file", "new"
+
+addCommandBlock "editor", "<S-SPACE>l<*-n>1":
+  setOption("editor.text.line-numbers", LineNumbers.None)
+  requestRender(true)
+
+addCommandBlock "editor", "<S-SPACE>l<*-n>2":
+  setOption("editor.text.line-numbers", LineNumbers.Absolute)
+  requestRender(true)
+
+addCommandBlock "editor", "<S-SPACE>l<*-n>3":
+  setOption("editor.text.line-numbers", LineNumbers.Relative)
+  requestRender(true)
 
 addCommand "editor", "<S-SPACE>kn", () => loadNormalBindings()
 addCommand "editor", "<S-SPACE>kv", () => loadVimBindings()

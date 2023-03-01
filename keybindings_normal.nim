@@ -51,7 +51,7 @@ proc loadNormalBindings*() =
   addCommand "editor.text", "<C-z>", "redo"
 
   addTextCommandBlock "", "<C-f>":
-    commandLine("set-search-query ")
+    commandLine("set-search-query \\")
     if getActiveEditor().isTextEditor(editor):
       var arr = newJArray()
       arr.add newJString("file")
