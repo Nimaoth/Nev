@@ -19,8 +19,8 @@ proc renderTextHighlight(panel: WPanel, app: Editor, startOffset: float, endOffs
     left = startOffset + max(0, selectionClamped.first - startIndex).float32 / (part.text.len.float32 - 0) * (endOffset - startOffset)
     right = startOffset + min(part.text.len, selectionClamped.last - startIndex).float32 / (part.text.len.float32 - 0) * (endOffset - startOffset)
   elif part.text.len == 0 and selection.contains((line, startIndex)) and not selection.isEmpty:
-    left = 0
-    right = ceil(app.platform.charWidth * 0.5)
+    left = startOffset
+    right = ceil(startOffset + app.platform.charWidth * 0.5)
   else:
     return
   panel.children.add(WPanel(
@@ -156,6 +156,12 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
   let maxLineNumberLen = ($maxLineNumber).len + 1
   let cursorLine = self.selection.last.line
 
+  let lineNumberPadding = charWidth
+  let lineNumberBounds = if lineNumbers != LineNumbers.None:
+    vec2(maxLineNumberLen.float32 * charWidth, 0)
+  else:
+    vec2()
+
   self.lastRenderedLines.setLen 0
 
   let isWide = getOption[bool](app, self.getContextWithMode("editor.text.cursor.wide"))
@@ -185,7 +191,25 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
 
     var lineWidget = WPanel(anchor: (vec2(0, 0), vec2(1, 0)), left: 1, right: -1, top: top, bottom: top + totalLineHeight, lastHierarchyChange: frameIndex)
 
-    var startOffset = 0.0
+    if lineNumbers != LineNumbers.None and cursorLine == i:
+      var partWidget = createPartWidget($i, 0, lineNumberBounds.x, textColor, frameIndex)
+      lineWidget.children.add partWidget
+    else:
+      case lineNumbers
+      of LineNumbers.Absolute:
+        let text = $i
+        let x = max(0.0, lineNumberBounds.x - text.len.float * charWidth)
+        var partWidget = createPartWidget(text, x, lineNumberBounds.x, textColor, frameIndex)
+        lineWidget.children.add partWidget
+      of LineNumbers.Relative:
+        let text = $(i - cursorLine).abs
+        let x = max(0.0, lineNumberBounds.x - text.len.float * charWidth)
+        var partWidget = createPartWidget(text, x, lineNumberBounds.x, textColor, frameIndex)
+        lineWidget.children.add partWidget
+      else:
+        discard
+
+    var startOffset = lineNumberBounds.x + lineNumberPadding
     var startIndex = 0
     for partIndex, part in styledText.parts:
       let width = part.text.len.float * charWidth
