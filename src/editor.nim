@@ -175,7 +175,11 @@ method layoutViews*(layout: FibonacciLayout, props: LayoutProperties, bounds: Re
 
 proc handleUnknownPopupAction*(self: Editor, popup: Popup, action: string, arg: string): EventResponse =
   try:
-    if self.scriptContext.handleUnknownPopupAction(popup, action, arg):
+    var args = newJArray()
+    for a in newStringStream(arg).parseJsonFragments():
+      args.add a
+
+    if self.scriptContext.handleUnknownPopupAction(popup, action, args):
       return Handled
   except CatchableError:
     logger.log(lvlError, fmt"[ed] Failed to run script handleUnknownPopupAction '{action} {arg}': {getCurrentExceptionMsg()}")
@@ -185,7 +189,7 @@ proc handleUnknownPopupAction*(self: Editor, popup: Popup, action: string, arg: 
 
 proc handleUnknownDocumentEditorAction*(self: Editor, editor: DocumentEditor, action: string, args: JsonNode): EventResponse =
   try:
-    if self.scriptContext.handleUnknownDocumentEditorAction(editor, action, $args):
+    if self.scriptContext.handleUnknownDocumentEditorAction(editor, action, args):
       return Handled
   except CatchableError:
     logger.log(lvlError, fmt"[ed] Failed to run script handleUnknownDocumentEditorAction '{action} {args}': {getCurrentExceptionMsg()}")
@@ -726,8 +730,12 @@ proc executeCommandLine*(self: Editor): bool {.expose("editor").} =
   defer:
     self.platform.requestRender()
   self.commandLineMode = false
-  let (action, arg) = self.getCommandLineTextEditor.document.content.join("").parseAction
+  var (action, arg) = self.getCommandLineTextEditor.document.content.join("").parseAction
   self.getCommandLineTextEditor.document.content = @[""]
+
+  if arg.startsWith("\\"):
+    arg = $newJString(arg[1..^1])
+
   return self.handleAction(action, arg)
 
 proc updateDocumentContent(self: Editor, document: Document, path: string, folder: WorkspaceFolder): Future[void] {.async.} =
@@ -1328,26 +1336,28 @@ genDispatcher("editor")
 
 proc handleAction(self: Editor, action: string, arg: string): bool =
   logger.log(lvlInfo, "[ed] Action '$1 $2'" % [action, arg])
+
+  var args = newJArray()
+  for a in newStringStream(arg).parseJsonFragments():
+    args.add a
+
   try:
-    if self.scriptContext.handleGlobalAction(action, arg):
+    if self.scriptContext.handleGlobalAction(action, args):
       return true
   except CatchableError:
     logger.log(lvlError, fmt"[ed] Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
     logger.log(lvlError, getCurrentException().getStackTrace())
     return false
 
-  var args = newJArray()
-  for a in newStringStream(arg).parseJsonFragments():
-    args.add a
   return dispatch(action, args).isSome
 
 when not defined(js):
   proc createAddins(): VmAddins =
     addCallable(myImpl):
       proc postInitialize(): bool
-      proc handleGlobalAction(action: string, arg: string): bool
+      proc handleGlobalAction(action: string, args: JsonNode): bool
       proc handleEditorAction(id: EditorId, action: string, args: JsonNode): bool
-      proc handleUnknownPopupAction(id: EditorId, action: string, arg: string): bool
+      proc handleUnknownPopupAction(id: EditorId, action: string, args: JsonNode): bool
       proc handleCallback(id: int, args: JsonNode): bool
 
     return implNimScriptModule(myImpl)

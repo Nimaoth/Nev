@@ -33,7 +33,8 @@ func toJsonString[T: string](value: T): string = escapeJson(value)
 func toJsonString[T: char](value: T): string = escapeJson($value)
 func toJsonString[T](value: T): string = $value
 
-proc handleLambdaAction*(key: string): bool =
+proc handleLambdaAction*(args: JsonNode): bool =
+  let key = args[0].str
   if lambdaActions.contains(key):
     lambdaActions[key]()
     return true
