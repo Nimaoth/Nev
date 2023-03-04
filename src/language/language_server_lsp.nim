@@ -124,7 +124,7 @@ method getCompletions*(self: LanguageServerLSP, languageId: string, filename: st
     # echo c
     completionsResult.add(TextCompletion(
       name: c.label,
-      scope: "",
+      scope: "lsp",
       location: location,
       filename: "",
       kind: SymbolType.Function,
