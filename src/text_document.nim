@@ -1,9 +1,9 @@
-import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, tables, deques]
+import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, tables, deques, sets]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import editor, document, document_editor, events, id, util, vmath, bumpy, rect_utils, event, input, regex, custom_logger, custom_async, custom_treesitter
 import scripting/[expose]
-import platform/[platform, filesystem]
+import platform/[platform, filesystem, widgets]
 import language/[languages, language_server_base]
 import workspaces/[workspace]
 
@@ -93,8 +93,13 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   completions*: seq[TextCompletion]
   selectedCompletion*: int
+  completionsBaseIndex*: int
+  completionsScrollOffset*: float
   lastItems*: seq[tuple[index: int, bounds: Rect]]
+  lastCompletionsWidget*: WWidget
+  lastCompletionWidgets*: seq[tuple[index: int, widget: WWidget]]
   showCompletions*: bool
+  scrollToCompletion*: Option[int]
 
 proc handleAction(self: TextDocumentEditor, action: string, arg: string): EventResponse
 proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): EventResponse
@@ -825,8 +830,7 @@ proc doMoveCursorNextFindResult(self: TextDocumentEditor, cursor: Cursor, offset
 
 proc scrollToCursor(self: TextDocumentEditor, cursor: Cursor, keepVerticalOffset: bool = false) =
   let targetLine = cursor.line
-  let totalLineHeight = if not self.editor.platform.isNil: self.editor.platform.totalLineHeight
-    else: self.editor.platform.lineHeight + getOption[float32](self.editor, "text.line-distance")
+  let totalLineHeight = self.editor.platform.totalLineHeight
 
   if keepVerticalOffset:
     let currentLineY = (self.selection.last.line - self.previousBaseIndex).float32 * totalLineHeight + self.scrollOffset
@@ -901,8 +905,19 @@ proc moveCursor(self: TextDocumentEditor, cursor: SelectionCursor, movement: pro
       self.selections = selections
     self.scrollToCursor(self.selection.last)
 
+proc getHoveredCompletion*(self: TextDocumentEditor, mousePosWindow: Vec2): int =
+  for item in self.lastCompletionWidgets:
+    if item.widget.lastBounds.contains(mousePosWindow):
+      return item.index
+
+  return 0
+
 method handleScroll*(self: TextDocumentEditor, scroll: Vec2, mousePosWindow: Vec2) =
-  self.scrollOffset += scroll.y * getOption[float](self.editor, "text.scroll-speed", 40)
+  let scrollAmount = scroll.y * getOption[float](self.editor, "text.scroll-speed", 40)
+  if not self.lastCompletionsWidget.isNil and self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
+    self.completionsScrollOffset += scrollAmount
+  else:
+    self.scrollOffset += scrollAmount
   self.markDirty()
 
 proc getTextDocumentEditor(wrapper: api.TextDocumentEditor): Option[TextDocumentEditor] =
@@ -1416,26 +1431,38 @@ proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
       self.selection = definition.get.location.toSelection
       self.scrollToCursor()
 
+proc getCompletionsFromContent(self: TextDocumentEditor): seq[TextCompletion] =
+  var s = initHashSet[string]()
+  for li, line in self.lastRenderedLines:
+    for i, part in line.parts:
+      if part.text.len > 50 or part.text.isEmptyOrWhitespace:
+        continue
+      var use = false
+      for c in part.text:
+        if c.isAlphaAscii or c == '_' or c == '@' or c == '$' or c == '#':
+          use = true
+          break
+      if not use:
+        continue
+      s.incl part.text
+
+  for text in s.items:
+    result.add(TextCompletion(name: text, scope: "document"))
+
 proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = await self.getLanguageServer()
-  if languageServer.isNone:
-    return
 
   if languageServer.isSome:
-    let completions = await languageServer.get.getCompletions(self.document.languageId, self.document.filename, self.selection.last)
-    self.completions = completions
-    self.selectedCompletion = self.selectedCompletion.clamp(0, self.completions.high)
-    if self.completions.len == 0:
-      self.showCompletions = false
-    else:
-      self.showCompletions = true
-    self.markDirty()
+    self.completions = await languageServer.get.getCompletions(self.document.languageId, self.document.filename, self.selection.last)
+  else:
+    self.completions = self.getCompletionsFromContent()
 
-# proc testAsync*(self: TextDocumentEditor) {.expose("editor.text").} =
-#   echo "testAsync"
-#   let f = self.foo()
-#   f.addCallback proc(f: Future[int]) =
-#     echo "-> ", f.read
+  self.selectedCompletion = self.selectedCompletion.clamp(0, self.completions.high)
+  if self.completions.len == 0:
+    self.showCompletions = false
+  else:
+    self.showCompletions = true
+  self.markDirty()
 
 proc gotoDefinition*(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncCheck self.gotoDefinitionAsync()
@@ -1452,6 +1479,7 @@ proc selectPrevCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
     self.selectedCompletion = (self.selectedCompletion - 1).clamp(0, self.completions.len - 1)
   else:
     self.selectedCompletion = 0
+  self.scrollToCompletion = self.selectedCompletion.some
   self.markDirty()
 
 proc selectNextCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
@@ -1459,6 +1487,7 @@ proc selectNextCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
     self.selectedCompletion = (self.selectedCompletion + 1).clamp(0, self.completions.len - 1)
   else:
     self.selectedCompletion = 0
+  self.scrollToCompletion = self.selectedCompletion.some
   self.markDirty()
 
 proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
@@ -1600,6 +1629,12 @@ proc getCursorAtPixelPos(self: TextDocumentEditor, mousePosWindow: Vec2): Option
   return Cursor.none
 
 method handleMousePress*(self: TextDocumentEditor, button: MouseButton, mousePosWindow: Vec2) =
+  if not self.lastCompletionsWidget.isNil and self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
+    if button == MouseButton.Left:
+      self.selectedCompletion = self.getHoveredCompletion(mousePosWindow)
+      self.markDirty()
+    return
+
   if button == MouseButton.Left and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
     self.selection = cursor.toSelection
 
@@ -1610,13 +1645,27 @@ method handleMousePress*(self: TextDocumentEditor, button: MouseButton, mousePos
     self.selectLine(cursor.line)
 
 method handleMouseRelease*(self: TextDocumentEditor, button: MouseButton, mousePosWindow: Vec2) =
+  if button == MouseButton.Left and not self.lastCompletionsWidget.isNil and self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
+    let oldSelectedCompletion = self.selectedCompletion
+    self.selectedCompletion = self.getHoveredCompletion(mousePosWindow)
+    if self.selectedCompletion == oldSelectedCompletion:
+      self.applySelectedCompletion()
+      self.markDirty()
+
   # if self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
   #   self.selection = cursor.toSelection(self.selection, Last)
   discard
 
 method handleMouseMove*(self: TextDocumentEditor, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) =
+  if not self.lastCompletionsWidget.isNil and self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
+    if MouseButton.Middle in buttons:
+      self.selectedCompletion = self.getHoveredCompletion(mousePosWindow)
+      self.markDirty()
+    return
+
   if MouseButton.Left in buttons and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
     self.selection = cursor.toSelection(self.selection, Last)
+
 
 method unregister*(self: TextDocumentEditor) =
   self.editor.unregisterEditor(self)

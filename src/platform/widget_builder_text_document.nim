@@ -37,21 +37,127 @@ proc renderTextHighlight(panel: WPanel, app: Editor, startOffset: float, endOffs
   for i in 0..<selections.len:
     renderTextHighlight(panel, app, startOffset, endOffset, line, startIndex, selections[i], selectionClamped[i], part, color)
 
-when defined(js):
-  # Optimized version for javascript backend
-  proc createPartWidget(text: string, startOffset: float, width: float, color: Color, frameIndex: int): WText =
-    new result
-    {.emit: [result, ".text = ", text, ".slice(0);"] .} #"""
-    {.emit: [result, ".anchor = {Field0: {x: 0, y: 0}, Field1: {x: 0, y: 1}};"] .} #"""
-    {.emit: [result, ".left = ", startOffset, ";"] .} #"""
-    {.emit: [result, ".right = ", startOffset, " + ", width, ";"] .} #"""
-    {.emit: [result, ".frameIndex = ", frameIndex, ";"] .} #"""
-    {.emit: [result, ".foregroundColor = ", color, ";"] .} #"""
-    # """
+proc createPartWidget(text: string, startOffset: float, width: float, color: Color, frameIndex: int): WText
 
-else:
-  proc createPartWidget(text: string, startOffset: float, width: float, color: Color, frameIndex: int): WText =
-    result = WText(text: text, anchor: (vec2(0, 0), vec2(0, 1)), left: startOffset, right: startOffset + width, foregroundColor: color, lastHierarchyChange: frameIndex)
+proc updateBaseIndexAndScrollOffset(contentPanel: WPanel, previousBaseIndex: var int, scrollOffset: var float, lines: int, totalLineHeight: float, targetLine: Option[int]) =
+
+  if targetLine.getSome(targetLine):
+    let targetLineY = (targetLine - previousBaseIndex).float32 * totalLineHeight + scrollOffset
+
+    # let margin = clamp(getOption[float32](self.editor, "text.cursor-margin", 25.0), 0.0, self.lastContentBounds.h * 0.5 - totalLineHeight * 0.5)
+    let margin = 0.0
+    if targetLineY < margin:
+      scrollOffset = margin
+      previousBaseIndex = targetLine
+    elif targetLineY + totalLineHeight > contentPanel.lastBounds.h - margin:
+      scrollOffset = contentPanel.lastBounds.h - margin - totalLineHeight
+      previousBaseIndex = targetLine
+
+  previousBaseIndex = previousBaseIndex.clamp(0..lines)
+
+  # Adjust scroll offset and base index so that the first node on screen is the base
+  while scrollOffset < 0 and previousBaseIndex + 1 < lines:
+    if scrollOffset + totalLineHeight >= contentPanel.lastBounds.h:
+      break
+    previousBaseIndex += 1
+    scrollOffset += totalLineHeight
+
+  # Adjust scroll offset and base index so that the first node on screen is the base
+  while scrollOffset > contentPanel.lastBounds.h and previousBaseIndex > 0:
+    if scrollOffset - totalLineHeight <= 0:
+      break
+    previousBaseIndex -= 1
+    scrollOffset -= totalLineHeight
+
+proc createLinesInPanel(app: Editor, contentPanel: WPanel, previousBaseIndex: int, scrollOffset: float, lines: int, frameIndex: int,
+  renderLine: proc(lineWidget: WPanel, i: int, down: bool, frameIndex: int): bool) =
+
+  let totalLineHeight = app.platform.totalLineHeight
+
+  # Render all lines after base index
+  for i in previousBaseIndex..<lines:
+    let top = (i - previousBaseIndex).float32 * totalLineHeight + scrollOffset
+
+    # Bounds of the previous line part
+    if top >= contentPanel.lastBounds.h:
+      break
+
+    if top + totalLineHeight <= 0:
+      continue
+
+    var lineWidget = WPanel(anchor: (vec2(0, 0), vec2(1, 0)), left: 1, right: -1, top: top, bottom: top + totalLineHeight, lastHierarchyChange: frameIndex)
+
+    if not renderLine(lineWidget, i, true, frameIndex):
+      break
+
+    contentPanel.children.add lineWidget
+
+  # Render all lines before base index
+  for k in 1..previousBaseIndex:
+    let i = previousBaseIndex - k
+
+    let top = (i - previousBaseIndex).float32 * totalLineHeight + scrollOffset
+
+    # Bounds of the previous line part
+    if top >= contentPanel.lastBounds.h:
+      continue
+
+    if top + totalLineHeight <= 0:
+      break
+
+    var lineWidget = WPanel(anchor: (vec2(0, 0), vec2(1, 0)), left: 1, right: -1, top: top, bottom: top + totalLineHeight, lastHierarchyChange: frameIndex)
+
+    if not renderLine(lineWidget, i, false, frameIndex):
+      break
+
+    contentPanel.children.add lineWidget
+
+proc renderCompletions(self: TextDocumentEditor, app: Editor, contentPanel: WPanel, cursorBounds: Rect, frameIndex: int) =
+  let totalLineHeight = app.platform.totalLineHeight
+  let charWidth = app.platform.charWidth
+
+  let backgroundColor = app.theme.color("panel.background", rgb(30, 30, 30))
+  let selectedBackgroundColor = app.theme.color("list.activeSelectionBackground", rgb(200, 200, 200))
+  let nameColor = app.theme.tokenColor(@["entity.name.label", "entity.name"], rgb(255, 255, 255))
+  let textColor = app.theme.color("list.inactiveSelectionForeground", rgb(175, 175, 175))
+  let scopeColor = app.theme.color("string", rgb(175, 255, 175))
+
+  var panel = WPanel(
+    left: cursorBounds.x, top: cursorBounds.yh, right: cursorBounds.x + charWidth * 60.0, bottom: cursorBounds.yh + totalLineHeight * 20.0,
+    fillBackground: true, backgroundColor: backgroundColor, lastHierarchyChange: frameIndex, maskContent: true)
+  panel.layoutWidget(contentPanel.lastBounds, frameIndex, app.platform.layoutOptions)
+  contentPanel.children.add(panel)
+
+  self.lastCompletionsWidget = panel
+
+  updateBaseIndexAndScrollOffset(panel, self.completionsBaseIndex, self.completionsScrollOffset, self.completions.len, totalLineHeight, self.scrollToCompletion)
+  self.scrollToCompletion = int.none
+
+  self.lastCompletionWidgets.setLen 0
+
+  proc renderLine(lineWidget: WPanel, i: int, down: bool, frameIndex: int): bool =
+    # Pixel coordinate of the top left corner of the entire line. Includes line number
+    let top = (i - self.previousBaseIndex).float32 * totalLineHeight + self.scrollOffset
+
+    if i == self.selectedCompletion:
+      lineWidget.fillBackground = true
+      lineWidget.backgroundColor = selectedBackgroundColor
+
+    let completion = self.completions[i]
+
+    let nameWidget = createPartWidget(completion.name, 0, completion.name.len.float * charWidth, nameColor, frameIndex)
+    lineWidget.children.add(nameWidget)
+
+    var scopeWidget = createPartWidget(completion.scope, -completion.scope.len.float * charWidth, completion.scope.len.float * charWidth, scopeColor, frameIndex)
+    scopeWidget.anchor.min.x = 1
+    scopeWidget.anchor.max.x = 1
+    lineWidget.children.add(scopeWidget)
+
+    self.lastCompletionWidgets.add (i, lineWidget)
+
+    return true
+
+  app.createLinesInPanel(panel, self.completionsBaseIndex, self.completionsScrollOffset, self.completions.len, frameIndex, renderLine)
 
 method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, frameIndex: int) =
   let lineHeight = app.platform.lineHeight
@@ -122,22 +228,7 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
   # let timer = startTimer()
   contentPanel.children.setLen 0
 
-  block:
-    self.previousBaseIndex = self.previousBaseIndex.clamp(0..self.document.lines.len)
-
-    # Adjust scroll offset and base index so that the first node on screen is the base
-    while self.scrollOffset < 0 and self.previousBaseIndex + 1 < self.document.lines.len:
-      if self.scrollOffset + totalLineHeight >= contentPanel.lastBounds.h:
-        break
-      self.previousBaseIndex += 1
-      self.scrollOffset += totalLineHeight
-
-    # Adjust scroll offset and base index so that the first node on screen is the base
-    while self.scrollOffset > contentPanel.lastBounds.h and self.previousBaseIndex > 0:
-      if self.scrollOffset - lineHeight <= 0:
-        break
-      self.previousBaseIndex -= 1
-      self.scrollOffset -= totalLineHeight
+  updateBaseIndexAndScrollOffset(contentPanel, self.previousBaseIndex, self.scrollOffset, self.document.lines.len, totalLineHeight, int.none)
 
   var selectionsPerLine = initTable[int, seq[Selection]]()
   for s in self.selections:
@@ -171,16 +262,12 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
   let highlightColor = app.theme.color(@["editor.rangeHighlightBackground"], rgb(200, 200, 200))
   let cursorColor = app.theme.color(@["editorCursor.foreground", "foreground"], rgba(255, 255, 255, 127)) # """
 
+  var cursorBounds = rect(vec2(), vec2())
+
   # Update content
-  proc renderLine(i: int, down: bool): bool =
+  proc renderLine(lineWidget: WPanel, i: int, down: bool, frameIndex: int): bool =
     # Pixel coordinate of the top left corner of the entire line. Includes line number
     let top = (i - self.previousBaseIndex).float32 * totalLineHeight + self.scrollOffset
-
-    # Bounds of the previous line part
-    if top >= contentPanel.lastBounds.h:
-      return not down
-    if top + totalLineHeight <= 0:
-      return down
 
     var styledText = self.document.getStyledText(i)
 
@@ -188,8 +275,6 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
     let selectionsClampedOnLine = selectionsNormalizedOnLine.map (s) => s.clampToLine(i, styledText.len)
     let highlightsNormalizedOnLine = highlightsPerLine.getOrDefault(i, @[]).map (s) => s.normalized
     let highlightsClampedOnLine = highlightsNormalizedOnLine.map (s) => s.clampToLine(i, styledText.len)
-
-    var lineWidget = WPanel(anchor: (vec2(0, 0), vec2(1, 0)), left: 1, right: -1, top: top, bottom: top + totalLineHeight, lastHierarchyChange: frameIndex)
 
     if lineNumbers != LineNumbers.None and cursorLine == i:
       var partWidget = createPartWidget($i, 0, lineNumberBounds.x, textColor, frameIndex)
@@ -230,6 +315,7 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
             backgroundColor: cursorColor,
             lastHierarchyChange: frameIndex
           ))
+          cursorBounds = rect(startOffset + offsetFromPartStart, top, charWidth * cursorWidth, lineHeight)
 
       let color = if part.scope.len == 0: textColor else: app.theme.tokenColor(part.scope, rgb(255, 200, 200))
       var partWidget = createPartWidget(part.text, startOffset, width, color, frameIndex)
@@ -246,20 +332,12 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
 
     self.lastRenderedLines.add styledText
 
-    contentPanel.children.add lineWidget
-
     return true
 
-  # Render all lines after base index
-  for i in self.previousBaseIndex..self.document.lines.high:
-    if not renderLine(i, true):
-      break
+  app.createLinesInPanel(contentPanel, self.previousBaseIndex, self.scrollOffset, self.document.lines.len, frameIndex, renderLine)
 
-  # Render all lines before base index
-  for k in 1..self.previousBaseIndex:
-    let i = self.previousBaseIndex - k
-    if not renderLine(i, false):
-      break
+  if self.showCompletions:
+    self.renderCompletions(app, contentPanel, cursorBounds, frameIndex)
 
   contentPanel.lastHierarchyChange = frameIndex
   widget.lastHierarchyChange = max(widget.lastHierarchyChange, contentPanel.lastHierarchyChange)
@@ -268,3 +346,18 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
 
   # debugf"rerender {contentPanel.children.len} lines for {self.document.filename} took {timer.elapsed.ms:>5.2}ms"
 
+when defined(js):
+  # Optimized version for javascript backend
+  proc createPartWidget(text: string, startOffset: float, width: float, color: Color, frameIndex: int): WText =
+    new result
+    {.emit: [result, ".text = ", text, ".slice(0);"] .} #"""
+    {.emit: [result, ".anchor = {Field0: {x: 0, y: 0}, Field1: {x: 0, y: 1}};"] .} #"""
+    {.emit: [result, ".left = ", startOffset, ";"] .} #"""
+    {.emit: [result, ".right = ", startOffset, " + ", width, ";"] .} #"""
+    {.emit: [result, ".frameIndex = ", frameIndex, ";"] .} #"""
+    {.emit: [result, ".foregroundColor = ", color, ";"] .} #"""
+    # """
+
+else:
+  proc createPartWidget(text: string, startOffset: float, width: float, color: Color, frameIndex: int): WText =
+    result = WText(text: text, anchor: (vec2(0, 0), vec2(0, 1)), left: startOffset, right: startOffset + width, foregroundColor: color, lastHierarchyChange: frameIndex)
