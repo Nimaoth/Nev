@@ -271,8 +271,6 @@ method render*(self: BrowserPlatform, widget: WWidget, frameIndex: int) =
   self.boundsStack.add rect(vec2(), self.size)
   defer: discard self.boundsStack.pop()
 
-  # self.redrawEverything = true
-  # debugf"redrawEverything: {self.redrawEverything}"
   var buffer = ""
 
   var element: Element = if self.content.children.len > 0: self.content.children[0].Element else: nil

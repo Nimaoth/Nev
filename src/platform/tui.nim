@@ -947,6 +947,7 @@ type
     buf: seq[TerminalChar]
     currBg: BackgroundColor
     currBgColor: Color
+    currBgAlpha: float
     currFg: ForegroundColor
     currFgColor: Color
     currStyle: set[Style]
@@ -985,6 +986,14 @@ proc fill*(tb: var TerminalBuffer, x1, y1, x2, y2: int, ch: string = " ") =
       for x in xs..xe:
         tb[x, y] = c
 
+func blend(a, b: Color, alpha: float): Color =
+  let (r1, g1, b1) = a.extractRGB()
+  let (r2, g2, b2) = b.extractRGB()
+  let r = (r1.float * alpha + r2.float * (1 - alpha)).clamp(0, 255).int
+  let g = (g1.float * alpha + g2.float * (1 - alpha)).clamp(0, 255).int
+  let b = (b1.float * alpha + b2.float * (1 - alpha)).clamp(0, 255).int
+  result = rgb(r, g, b)
+
 proc fillBackground*(tb: var TerminalBuffer, x1, y1, x2, y2: int) =
   ## Fills a rectangular area with the `ch` character using the current text
   ## attributes. The rectangle is clipped to the extends of the terminal
@@ -1001,7 +1010,7 @@ proc fillBackground*(tb: var TerminalBuffer, x1, y1, x2, y2: int) =
         var c = tb[x, y]
         c.ch = " ".runeAt 0
         c.bg = tb.currBg
-        c.bgColor = tb.currBgColor
+        c.bgColor = blend(tb.currBgColor, c.bgColor, tb.currBgAlpha)
         tb[x, y] = c
 
 proc clear*(tb: var TerminalBuffer, ch: string = " ") =
@@ -1090,6 +1099,7 @@ proc setCursorYPos*(tb: var TerminalBuffer, y: Natural) =
 proc setBackgroundColor*(tb: var TerminalBuffer, bg: BackgroundColor) =
   ## Sets the current background color.
   tb.currBg = bg
+  tb.currBgAlpha = 1
 
 proc setForegroundColor*(tb: var TerminalBuffer, fg: ForegroundColor,
                          bright: bool = false) =
@@ -1105,10 +1115,11 @@ proc setForegroundColor*(tb: var TerminalBuffer, fg: Color) =
   tb.currFg = fgRGB
   tb.currFgColor = fg
 
-proc setBackgroundColor*(tb: var TerminalBuffer, bg: Color) =
+proc setBackgroundColor*(tb: var TerminalBuffer, bg: Color, alpha: float = 1) =
   ## Sets the current foreground color and the bright style flag.
   tb.currBg = bgRGB
   tb.currBgColor = bg
+  tb.currBgAlpha = alpha
 
 proc setTrueForegroundColor*(color: Color) =
   ## Sets the terminal's foreground true color.

@@ -266,6 +266,8 @@ proc setOption*[T](editor: Editor, path: string, value: T) =
   else:
     {.fatal: ("Can't set option with type " & $T).}
 
+  editor.platform.requestRender(true)
+
 proc setFlag*(self: Editor, flag: string, value: bool)
 proc toggleFlag*(self: Editor, flag: string)
 
@@ -630,10 +632,13 @@ proc setFlag*(self: Editor, flag: string, value: bool) {.expose("editor").} =
 
 proc toggleFlag*(self: Editor, flag: string) {.expose("editor").} =
   self.setFlag(flag, not self.getFlag(flag))
+  self.platform.requestRender(true)
 
 proc setOption*(self: Editor, option: string, value: JsonNode) {.expose("editor").} =
   if self.isNil:
     return
+
+  self.platform.requestRender(true)
 
   let pathItems = option.split(".")
   var node = self.options

@@ -164,7 +164,7 @@ proc createLayoutLineForRemainingChildren(ctx: Context, input: NodeLayoutInput, 
   discard line.add newTextNode(">", @[config.colors.separator, "&editor.foreground"], config.fontRegular, input.measureText)
 
 proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode, result: var NodeLayout, line: var VisualNode) =
-  let renderInline = node.kind in {While, If, NodeList} and node.parent.kind in {Call}
+  let renderInline = node.kind in {While, If, NodeList} and node.parent.kind in {Call} and input.inlineBlocks
 
   var prevLine = line
   let first = prevLine.children.len
@@ -328,7 +328,7 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
         discard line.add newTextNode("if ", config.colors.keyword, config.fontRegular, input.measureText)
       else:
         parent.addLine(line)
-        line = VisualNode(id: newId(), parent: parent, bounds: rect(prevIndent.float32 * config.indent, 0, 0, 0), indent: prevIndent, depth: parent.depth + 1)
+        line = VisualNode(id: newId(), parent: parent, bounds: rect(prevIndent.float32 * input.indent, 0, 0, 0), indent: prevIndent, depth: parent.depth + 1)
         discard line.add newTextNode("elif ", config.colors.keyword, config.fontRegular, input.measureText)
 
       ctx.createLayoutLineForNode(input, node[i], result, line)
@@ -338,12 +338,12 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
 
     if node.len mod 2 == 1:
       parent.addLine(line)
-      line = VisualNode(id: newId(), parent: parent, bounds: rect(prevIndent.float32 * config.indent, 0, 0, 0), indent: prevIndent, depth: parent.depth + 1)
+      line = VisualNode(id: newId(), parent: parent, bounds: rect(prevIndent.float32 * input.indent, 0, 0, 0), indent: prevIndent, depth: parent.depth + 1)
       discard line.add newTextNode("else: ", config.colors.keyword, config.fontRegular, input.measureText)
       ctx.createLayoutLineForNode(input, node.last, result, line)
 
     parent.addLine(line)
-    line = VisualNode(id: newId(), parent: parent, bounds: rect(prevIndent.float32 * config.indent, 0, 0, 0), indent: prevIndent, depth: parent.depth + 1)
+    line = VisualNode(id: newId(), parent: parent, bounds: rect(prevIndent.float32 * input.indent, 0, 0, 0), indent: prevIndent, depth: parent.depth + 1)
 
     lastUsedChild = node.len - 1
 
@@ -370,11 +370,11 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
     let prevIndent = line.indent
     for child in node.children:
       parent.addLine(line)
-      line = VisualNode(id: newId(), parent: parent, bounds: rect(prevIndent.float32 * config.indent, 0, config.indent, 0), indent: prevIndent + 1, node: child, depth: parent.depth + 1)
+      line = VisualNode(id: newId(), parent: parent, bounds: rect(prevIndent.float32 * input.indent, 0, input.indent, 0), indent: prevIndent + 1, node: child, depth: parent.depth + 1)
       ctx.createLayoutLineForNode(input, child, result, line)
 
     parent.addLine(line)
-    line = VisualNode(id: newId(), parent: parent, bounds: rect(prevIndent.float32 * config.indent, 0, 0, 0), indent: prevIndent, depth: parent.depth + 1)
+    line = VisualNode(id: newId(), parent: parent, bounds: rect(prevIndent.float32 * input.indent, 0, 0, 0), indent: prevIndent, depth: parent.depth + 1)
 
     lastUsedChild = node.len - 1
 
@@ -415,7 +415,7 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
       let precedence = ctx.getPrecedenceForNode node
       let renderParens = precedence < parentPrecedence
 
-      if isDivision and not input.renderDivisionVertically:
+      if isDivision and input.renderDivisionVertically and input.inlineBlocks:
         createInlineBlock(true, node, line, result)
 
         var parent = line.parent
@@ -429,18 +429,18 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
         ctx.createLayoutLineForNode(input, node[1], result, line)
         parent.addLine(line)
         let line1 = line
-        line = VisualNode(id: newId(), parent: parent, bounds: rect(prevIndent.float32 * config.indent, 0, 0, 0), indent: prevIndent, depth: parent.depth + 1)
+        line = VisualNode(id: newId(), parent: parent, bounds: rect(prevIndent.float32 * input.indent, 0, 0, 0), indent: prevIndent, depth: parent.depth + 1)
 
         let divLine = newBlockNode(@["keyword.operator"], vec2(0, config.fontSize * 0.1), node[0])
         discard line.add divLine
         result.nodeToVisualNode[node[0].id] = VisualNodeRange(parent: line, first: 0, last: 1)
         parent.addLine(line)
-        line = VisualNode(id: newId(), parent: parent, bounds: rect(prevIndent.float32 * config.indent, 0, 0, 0), indent: prevIndent, depth: parent.depth + 1)
+        line = VisualNode(id: newId(), parent: parent, bounds: rect(prevIndent.float32 * input.indent, 0, 0, 0), indent: prevIndent, depth: parent.depth + 1)
 
         ctx.createLayoutLineForNode(input, node[2], result, line)
         parent.addLine(line)
         let line2 = line
-        line = VisualNode(id: newId(), parent: parent, bounds: rect(prevIndent.float32 * config.indent, 0, 0, 0), indent: prevIndent, depth: parent.depth + 1)
+        line = VisualNode(id: newId(), parent: parent, bounds: rect(prevIndent.float32 * input.indent, 0, 0, 0), indent: prevIndent, depth: parent.depth + 1)
 
         divLine.bounds.w = max(line1.bounds.w, line2.bounds.w)
         divLine.parent.bounds.w = divLine.bounds.w

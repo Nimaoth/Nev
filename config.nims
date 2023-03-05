@@ -8,10 +8,14 @@ switch("d", "enableGui=true")
 switch("d", "enableTerminal=true")
 switch("d", "ssl")
 
-let mode = 1
+let mode = 0
 case mode
+of 0:
+  switch("d", "release")
 of 1:
   switch("d", "release")
+  switch("stackTrace", "on")
+  switch("lineTrace", "on")
 of 2:
   switch("d", "debug")
   switch("debuginfo", "on")

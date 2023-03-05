@@ -67,32 +67,32 @@ proc strokeRect*(boxy: Boxy, rect: Rect, color: Color, thickness: float = 1) =
 
 proc renderCommandAutoCompletion*(handler: EventHandler, bounds: Rect): Rect =
   let ctx = renderCtx.ctx
-  let nextPossibleInputs = handler.dfa.autoComplete(handler.state).sortedByIt(it[0])
+  # let nextPossibleInputs = handler.dfa.autoComplete(handler.state).sortedByIt(it[0])
 
-  var longestInput = 0
-  var longestCommand = 0
+  # var longestInput = 0
+  # var longestCommand = 0
 
-  for kv in nextPossibleInputs:
-    if kv[0].len > longestInput: longestInput = kv[0].len
-    if kv[1].len > longestCommand: longestCommand = kv[1].len
+  # for kv in nextPossibleInputs:
+  #   if kv[0].len > longestInput: longestInput = kv[0].len
+  #   if kv[1].len > longestCommand: longestCommand = kv[1].len
 
-  let lineSpacing: float32 = 2
-  let horizontalSizeModifier: float32 = 0.615
-  let gap: float32 = 10
-  let height = nextPossibleInputs.len.float32 * (ctx.fontSize + lineSpacing)
-  let inputsOrigin = vec2(0, 0)
-  let commandsOrigin = vec2(gap + (longestInput.float32 * ctx.fontSize * horizontalSizeModifier), inputsOrigin.y.float32)
+  # let lineSpacing: float32 = 2
+  # let horizontalSizeModifier: float32 = 0.615
+  # let gap: float32 = 10
+  # let height = nextPossibleInputs.len.float32 * (ctx.fontSize + lineSpacing)
+  # let inputsOrigin = vec2(0, 0)
+  # let commandsOrigin = vec2(gap + (longestInput.float32 * ctx.fontSize * horizontalSizeModifier), inputsOrigin.y.float32)
 
-  for i, kv in nextPossibleInputs:
-    let (remainingInput, action) = kv
+  # for i, kv in nextPossibleInputs:
+  #   let (remainingInput, action) = kv
 
-    discard renderCtx.drawText(vec2(bounds.x + inputsOrigin.x, bounds.y + inputsOrigin.y + i.float * (ctx.fontSize + lineSpacing)), remainingInput, rgb(200, 200, 225).color)
-    discard renderCtx.drawText(vec2(bounds.x + commandsOrigin.x, bounds.y + commandsOrigin.y + i.float * (ctx.fontSize + lineSpacing)), action, rgb(200, 200, 225).color)
+  #   discard renderCtx.drawText(vec2(bounds.x + inputsOrigin.x, bounds.y + inputsOrigin.y + i.float * (ctx.fontSize + lineSpacing)), remainingInput, rgb(200, 200, 225).color)
+  #   discard renderCtx.drawText(vec2(bounds.x + commandsOrigin.x, bounds.y + commandsOrigin.y + i.float * (ctx.fontSize + lineSpacing)), action, rgb(200, 200, 225).color)
 
-  renderCtx.boxy.strokeRect(rect(inputsOrigin + vec2(bounds.x, bounds.y), vec2(bounds.w, height)), rgb(200, 200, 225).color)
-  renderCtx.boxy.strokeRect(rect(bounds.x + commandsOrigin.x - gap * 0.5, bounds.y, bounds.x + commandsOrigin.x - gap * 0.5 + 1, bounds.y + height), rgb(200, 200, 225).color)
+  # renderCtx.boxy.strokeRect(rect(inputsOrigin + vec2(bounds.x, bounds.y), vec2(bounds.w, height)), rgb(200, 200, 225).color)
+  # renderCtx.boxy.strokeRect(rect(bounds.x + commandsOrigin.x - gap * 0.5, bounds.y, bounds.x + commandsOrigin.x - gap * 0.5 + 1, bounds.y + height), rgb(200, 200, 225).color)
 
-  return bounds.splitH(height.relative)[1]
+  # return bounds.splitH(height.relative)[1]
 
 method renderDocumentEditor(editor: DocumentEditor, ed: Editor, bounds: Rect, selected: bool): Rect {.base.} =
   return rect(0, 0, 0, 0)
@@ -874,9 +874,9 @@ method renderDocumentEditor(editor: KeybindAutocompletion, ed: Editor, bounds: R
   let eventHandlers = ed.currentEventHandlers
   let anyInProgress = eventHandlers.anyInProgress
   var r = bounds
-  for h in eventHandlers:
-    if anyInProgress == (h.state != 0):
-      r = renderCommandAutoCompletion(h, r)
+  # for h in eventHandlers:
+  #   if anyInProgress == (h.state != 0):
+  #     r = renderCommandAutoCompletion(h, r)
 
   return bounds
 

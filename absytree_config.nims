@@ -88,18 +88,31 @@ addCommand "editor", "<CAS-r>", "reload-config"
 setOption "editor.restore-open-editors", true
 setOption "editor.frame-time-smoothing", 0.8
 
-setOption "ast.scroll-speed", 60
-
 info fmt"Backend: {getBackend()}"
 case getBackend()
 of Terminal:
   setOption "text.scroll-speed", 1
   setOption "text.cursor-margin", 3
+  setOption "ast.scroll-speed", 1
+  setOption "ast.indent", 2
+  setOption "ast.indent-line-width", 2
+  setOption "ast.indent-line-alpha", 0.2
+  setOption "ast.inline-blocks", false
+  setOption "ast.vertical-division", false
 of Gui:
   setOption "text.scroll-speed", 23
   setOption "text.cursor-margin", 50
+  setOption "ast.scroll-speed", 60
+  setOption "ast.indent", 20
+  setOption "ast.indent-line-width", 2
+  setOption "ast.indent-line-alpha", 1
+  setOption "ast.inline-blocks", true
+  setOption "ast.vertical-division", true
 else:
   discard
+
+addCommand "editor", "<S-SPACE><*-a>i", "toggle-flag", "ast.inline-blocks"
+addCommand "editor", "<S-SPACE><*-a>d", "toggle-flag", "ast.vertical-division"
 
 setOption "editor.text.lsp.zig.path", "zls"
 setOption "editor.text.lsp.rust.path", "C:/Users/nimao/.vscode/extensions/rust-lang.rust-analyzer-0.3.1325-win32-x64/server/rust-analyzer.exe"

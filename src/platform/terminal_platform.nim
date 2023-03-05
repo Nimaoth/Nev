@@ -91,6 +91,7 @@ method fontSize*(self: TerminalPlatform): float = 1
 method lineDistance*(self: TerminalPlatform): float = 0
 method lineHeight*(self: TerminalPlatform): float = 1
 method charWidth*(self: TerminalPlatform): float = 1
+method measureText*(self: TerminalPlatform, text: string): Vec2 = vec2(text.len.float, 1)
 
 proc pushMask(self: TerminalPlatform, mask: Rect) =
   self.masks.add mask
@@ -214,7 +215,7 @@ proc setForegroundColor(self: TerminalPlatform, color: chroma.Color) =
 
 proc setBackgroundColor(self: TerminalPlatform, color: chroma.Color) =
   if self.trueColorSupport:
-    self.buffer.setBackgroundColor(color.toStdColor)
+    self.buffer.setBackgroundColor(color.toStdColor, color.a)
   else:
     let stdColor = color.toStdColor.extractRGB
     let bgColor = getClosestColor[tui.BackgroundColor](stdColor.r, stdColor.g, stdColor.b, bgBlack)
@@ -229,10 +230,6 @@ method renderWidget(self: WPanel, renderer: TerminalPlatform, forceRedraw: bool,
     renderer.setBackgroundColor(self.getBackgroundColor)
     renderer.buffer.fillBackground(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int - 1, self.lastBounds.yh.int - 1)
     renderer.buffer.setBackgroundColor(bgNone)
-
-  if self.drawBorder:
-    renderer.setForegroundColor(self.getForegroundColor)
-    renderer.buffer.drawRect(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int, self.lastBounds.yh.int)
 
   if self.maskContent:
     renderer.pushMask(self.lastBounds)
@@ -252,9 +249,6 @@ method renderWidget(self: WStack, renderer: TerminalPlatform, forceRedraw: bool,
     renderer.setBackgroundColor(self.getBackgroundColor)
     renderer.buffer.fillBackground(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int - 1, self.lastBounds.yh.int - 1)
     renderer.buffer.setBackgroundColor(bgNone)
-
-  if self.drawBorder:
-    renderer.buffer.drawRect(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int, self.lastBounds.yh.int)
 
   for c in self.children:
     c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex)
