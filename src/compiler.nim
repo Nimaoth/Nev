@@ -54,7 +54,7 @@ template logIf(condition: bool, message: string, logResult: bool) =
   if logQuery: echo repeat2("| ", currentIndent - 1), message
   defer:
     if logQuery and logResult:
-      logger.log(lvlInfo, repeat2("| ", currentIndent) & "-> " & $result)
+      echo repeat2("| ", currentIndent) & "-> " & $result
 
 proc computeNodeLayoutImpl(ctx: Context, nodeLayoutInput: NodeLayoutInput): NodeLayout =
   ctx.dependOnCurrentRevision()

@@ -111,6 +111,8 @@ type
     measureText*: proc(text: string): Vec2
     revision*: int
     renderDivisionVertically*: bool
+    inlineBlocks*: bool
+    indent*: float32
 
 func index*(node: VisualNode): int =
   if node.parent == nil:
@@ -447,4 +449,6 @@ func `==`*(a: NodeLayoutInput, b: NodeLayoutInput): bool =
   if a.selectedNode != b.selectedNode: return false
   if a.replacements != b.replacements: return false
   if a.renderDivisionVertically != b.renderDivisionVertically: return false
+  if a.inlineBlocks != b.inlineBlocks: return false
+  if a.indent != b.indent: return false
   return true

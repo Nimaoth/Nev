@@ -1,4 +1,4 @@
-import document, events, event, vmath, bumpy, input
+import document, events, event, vmath, bumpy, input, custom_logger
 
 from scripting_api import EditorId, newEditorId
 

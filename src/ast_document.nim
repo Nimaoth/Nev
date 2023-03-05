@@ -178,6 +178,8 @@ type AstDocumentEditor* = ref object of DocumentEditor
 
   deletedNode: Option[AstNode]
 
+  lastRootNode: AstNode
+
   currentlyEditedSymbol*: Id
   currentlyEditedNode*: AstNode
   textEditor*: TextDocumentEditor
@@ -212,6 +214,13 @@ proc node*(editor: AstDocumentEditor): AstNode =
   return editor.selectedNode
 
 proc handleSelectedNodeChanged(editor: AstDocumentEditor) =
+
+  editor.markDirty()
+
+  let indent = getOption[float32](editor.editor, "ast.indent", 20)
+  let inlineBlocks = getOption[bool](editor.editor, "ast.inline-blocks", false)
+  let verticalDivision = getOption[bool](editor.editor, "ast.vertical-division", false)
+
   let node = editor.node
 
   var foundNode = false
@@ -253,12 +262,12 @@ proc handleSelectedNodeChanged(editor: AstDocumentEditor) =
 
     if targetNode != nil:
       # New node is not in layout yet but there is a parent which has a layout already
-      let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: targetNode.subbase, selectedNode: node.id, measureText: (t) => gEditor.platform.measureText(t))
+      let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: targetNode.subbase, selectedNode: node.id, measureText: (t) => gEditor.platform.measureText(t), indent: indent, renderDivisionVertically: verticalDivision, inlineBlocks: inlineBlocks)
       layout = ctx.computeNodeLayout(input)
       foundNode = true
 
     elif node.parent == editor.document.rootNode and node.prev.getSome(prev) and layout.nodeToVisualNode.contains(prev.id):
-      let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node.subbase, selectedNode: node.id, measureText: (t) => gEditor.platform.measureText(t))
+      let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node.subbase, selectedNode: node.id, measureText: (t) => gEditor.platform.measureText(t), indent: indent, renderDivisionVertically: verticalDivision, inlineBlocks: inlineBlocks)
       layout = ctx.computeNodeLayout(input)
 
       offset += layout.bounds.h
@@ -268,7 +277,7 @@ proc handleSelectedNodeChanged(editor: AstDocumentEditor) =
       foundNode = true
 
     elif node.parent == editor.document.rootNode and node.next.getSome(next) and layout.nodeToVisualNode.contains(next.id):
-      let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node.subbase, selectedNode: node.id, measureText: (t) => gEditor.platform.measureText(t))
+      let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node.subbase, selectedNode: node.id, measureText: (t) => gEditor.platform.measureText(t), indent: indent, renderDivisionVertically: verticalDivision, inlineBlocks: inlineBlocks)
       layout = ctx.computeNodeLayout(input)
 
       editor.lastLayouts.insert((layout, offset), i)
@@ -296,7 +305,7 @@ proc handleSelectedNodeChanged(editor: AstDocumentEditor) =
 
   # Still didn't find a node
   let subbase = node.subbase
-  let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: subbase, selectedNode: node.id, measureText: (t) => gEditor.platform.measureText(t))
+  let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: subbase, selectedNode: node.id, measureText: (t) => gEditor.platform.measureText(t), indent: indent, renderDivisionVertically: verticalDivision, inlineBlocks: inlineBlocks)
   let layout = ctx.computeNodeLayout(input)
   if layout.nodeToVisualNode.contains(node.id):
     let visualNode = layout.nodeToVisualNode[node.id]
@@ -335,78 +344,6 @@ proc selectNextNode*(editor: AstDocumentEditor) =
       editor.selectedNode = node
       editor.handleSelectedNodeChanged()
       return
-
-method `$`*(document: AstDocument): string =
-  return document.filename
-
-proc newAstDocument*(filename: string = "", app: bool = false, workspaceFolder: Option[WorkspaceFolder]): AstDocument =
-  new(result)
-  result.filename = filename
-  result.rootNode = AstNode(kind: NodeList, parent: nil, id: newId())
-  result.symbols = initTable[Id, Symbol]()
-  result.appFile = app
-  result.workspace = workspaceFolder
-
-  if filename.len > 0:
-    result.load()
-
-import html_renderer
-
-proc saveHtml*(self: AstDocument) =
-  let pathParts = self.filename.splitFile
-  let htmlPath = pathParts.dir / (pathParts.name & ".html")
-  let html = self.serializeHtml(gEditor.theme)
-  fs.saveFile(htmlPath, html)
-
-method save*(self: AstDocument, filename: string = "", app: bool = false) =
-  self.filename = if filename.len > 0: filename else: self.filename
-  if self.filename.len == 0:
-    raise newException(IOError, "Missing filename")
-
-  logger.log lvlInfo, fmt"[astdoc] Saving ast source file '{self.filename}'"
-  let serialized = self.rootNode.toJson
-
-  if self.workspace.getSome(ws):
-    asyncCheck ws.saveFile(self.filename, serialized.pretty)
-  elif self.appFile:
-    fs.saveApplicationFile(self.filename, serialized.pretty)
-  else:
-    fs.saveFile(self.filename, serialized.pretty)
-
-  self.saveHtml()
-
-proc loadAsync*(self: AstDocument): Future[void] {.async.} =
-  logger.log lvlInfo, fmt"[astdoc] Loading ast source file '{self.filename}'"
-  try:
-    var jsonText = ""
-    if self.workspace.getSome(ws):
-      jsonText = await ws.loadFile(self.filename)
-    elif self.appFile:
-      jsonText = fs.loadApplicationFile(self.filename)
-    else:
-      jsonText = fs.loadFile(self.filename)
-
-    let json = jsonText.parseJson
-    let newAst = json.jsonToAstNode
-
-    ctx.deleteAllNodesAndSymbols()
-    self.rootNode = newAst
-    ctx.insertNode(self.rootNode)
-    self.undoOps.setLen 0
-    self.redoOps.setLen 0
-
-  except CatchableError:
-    logger.log lvlError, fmt"[astdoc] Failed to load ast source file '{self.filename}'"
-
-  self.saveHtml()
-
-method load*(self: AstDocument, filename: string = "") =
-  let filename = if filename.len > 0: filename else: self.filename
-  if filename.len == 0:
-    raise newException(IOError, "Missing filename")
-
-  self.filename = filename
-  asyncCheck self.loadAsync()
 
 iterator nextPreOrder*(self: AstDocument, node: AstNode, endNode: AstNode = nil): tuple[key: int, value: AstNode] =
   var n = node
@@ -508,6 +445,86 @@ iterator prevPostOrder*(self: AstDocument, node: AstNode): AstNode =
       idx = n.index
       n = n.parent
 
+method `$`*(document: AstDocument): string =
+  return document.filename
+
+proc newAstDocument*(filename: string = "", app: bool = false, workspaceFolder: Option[WorkspaceFolder]): AstDocument =
+  new(result)
+  result.filename = filename
+  result.rootNode = AstNode(kind: NodeList, parent: nil, id: newId())
+  result.symbols = initTable[Id, Symbol]()
+  result.appFile = app
+  result.workspace = workspaceFolder
+
+  if filename.len > 0:
+    result.load()
+
+import html_renderer
+
+proc saveHtml*(self: AstDocument) =
+  let pathParts = self.filename.splitFile
+  let htmlPath = pathParts.dir / (pathParts.name & ".html")
+  let html = self.serializeHtml(gEditor.theme)
+  fs.saveFile(htmlPath, html)
+
+method save*(self: AstDocument, filename: string = "", app: bool = false) =
+  self.filename = if filename.len > 0: filename else: self.filename
+  if self.filename.len == 0:
+    raise newException(IOError, "Missing filename")
+
+  logger.log lvlInfo, fmt"[astdoc] Saving ast source file '{self.filename}'"
+  let serialized = self.rootNode.toJson
+
+  if self.workspace.getSome(ws):
+    asyncCheck ws.saveFile(self.filename, serialized.pretty)
+  elif self.appFile:
+    fs.saveApplicationFile(self.filename, serialized.pretty)
+  else:
+    fs.saveFile(self.filename, serialized.pretty)
+
+  self.saveHtml()
+
+proc handleNodeInserted*(doc: AstDocument, node: AstNode)
+
+proc loadAsync*(self: AstDocument): Future[void] {.async.} =
+  logger.log lvlInfo, fmt"[astdoc] Loading ast source file '{self.filename}'"
+  try:
+    var jsonText = ""
+    if self.workspace.getSome(ws):
+      jsonText = await ws.loadFile(self.filename)
+    elif self.appFile:
+      jsonText = fs.loadApplicationFile(self.filename)
+    else:
+      jsonText = fs.loadFile(self.filename)
+
+    let json = jsonText.parseJson
+    let newAst = json.jsonToAstNode
+
+    logger.log(lvlInfo, fmt"[astdoc] Load new ast {newAst}")
+
+    ctx.deleteAllNodesAndSymbols()
+    for symbol in ctx.globalScope.values:
+      discard ctx.newSymbol(symbol)
+
+    self.nodes.clear()
+    self.rootNode = newAst
+    self.handleNodeInserted self.rootNode
+    self.undoOps.setLen 0
+    self.redoOps.setLen 0
+
+  except CatchableError:
+    logger.log lvlError, fmt"[astdoc] Failed to load ast source file '{self.filename}'"
+
+  self.saveHtml()
+
+method load*(self: AstDocument, filename: string = "") =
+  let filename = if filename.len > 0: filename else: self.filename
+  if filename.len == 0:
+    raise newException(IOError, "Missing filename")
+
+  self.filename = filename
+  asyncCheck self.loadAsync()
+
 proc handleNodeInserted*(doc: AstDocument, node: AstNode) =
   logger.log lvlInfo, fmt"[astdoc] Node inserted: {node}"
   ctx.insertNode(node)
@@ -538,13 +555,19 @@ proc handleNodeDelete*(doc: AstDocument, node: AstNode) =
   doc.nodes.del node.id
 
 proc handleNodeInserted*(self: AstDocumentEditor, doc: AstDocument, node: AstNode) =
+  if doc.rootNode != self.lastRootNode:
+    self.node = doc.rootNode[0]
+    self.lastRootNode = doc.rootNode
+
   logger.log lvlInfo, fmt"[asteditor] Node inserted: {node}, {self.deletedNode}"
   if self.deletedNode.getSome(deletedNode) and deletedNode == node:
     self.deletedNode = some(node.cloneAndMapIds())
     logger.log lvlInfo, fmt"[asteditor] Clearing editor.deletedNode because it was just inserted"
+  self.markDirty()
 
 proc handleTextDocumentChanged*(self: AstDocumentEditor) =
   self.updateCompletions()
+  self.markDirty()
 
 proc isEditing*(self: AstDocumentEditor): bool = self.textEditor != nil
 
@@ -563,6 +586,7 @@ proc editSymbol*(self: AstDocumentEditor, symbol: Symbol) =
   self.textEditor.lineNumbers = api.LineNumbers.None.some
   discard self.textDocument.textChanged.subscribe (doc: TextDocument) => self.handleTextDocumentChanged()
   self.updateCompletions()
+  self.markDirty()
 
 proc editNode*(self: AstDocumentEditor, node: AstNode) =
   logger.log(lvlInfo, fmt"Editing node {node}")
@@ -577,6 +601,7 @@ proc editNode*(self: AstDocumentEditor, node: AstNode) =
   self.textEditor.lineNumbers = api.LineNumbers.None.some
   discard self.textDocument.textChanged.subscribe (doc: TextDocument) => self.handleTextDocumentChanged()
   self.updateCompletions()
+  self.markDirty()
 
 proc tryEdit*(self: AstDocumentEditor, node: AstNode): bool =
   if ctx.getSymbol(node.id).getSome(sym):
@@ -637,6 +662,7 @@ proc updateCompletions(editor: AstDocumentEditor) =
     editor.selectedCompletion = editor.selectedCompletion.clamp(0, editor.completions.len - 1)
   else:
     editor.selectedCompletion = 0
+  editor.markDirty()
 
 proc finishEdit*(self: AstDocumentEditor, apply: bool)
 
@@ -665,6 +691,7 @@ method handleDocumentChanged*(self: AstDocumentEditor) =
   for symbol in ctx.globalScope.values:
     discard ctx.newSymbol(symbol)
   self.node = self.document.rootNode[0]
+  self.markDirty()
 
 proc getNextChild*(document: AstDocument, node: AstNode, min: int = -1): Option[AstNode] =
   if node.len == 0:
@@ -1412,17 +1439,23 @@ proc finishEdit*(self: AstDocumentEditor, apply: bool) {.expose("editor.ast").} 
   self.currentlyEditedNode = nil
   self.updateCompletions()
 
+  self.markDirty()
+
 proc undo*(self: AstDocumentEditor) {.expose("editor.ast").} =
   if self.isEditing: return
   self.finishEdit false
   if self.document.undo.getSome(node):
     self.node = node
 
+  self.markDirty()
+
 proc redo*(self: AstDocumentEditor) {.expose("editor.ast").} =
   if self.isEditing: return
   self.finishEdit false
   if self.document.redo.getSome(node):
     self.node = node
+
+  self.markDirty()
 
 proc insertAfterSmart*(self: AstDocumentEditor, nodeTemplate: string) {.expose("editor.ast").} =
   if self.isEditing: return
@@ -1858,8 +1891,9 @@ proc selectCenterNode(self: AstDocumentEditor) {.expose("editor.ast").} =
         self.node = node.node
         break
 
-proc scroll(self: AstDocumentEditor, amount: float32) {.expose("editor.ast").} =
+proc scroll*(self: AstDocumentEditor, amount: float32) {.expose("editor.ast").} =
   self.scrollOffset += amount
+  self.markDirty()
 
 proc scrollOutput(self: AstDocumentEditor, arg: string) {.expose("editor.ast").} =
   case arg
@@ -1935,6 +1969,7 @@ method handleScroll*(self: AstDocumentEditor, scroll: Vec2, mousePosWindow: Vec2
     self.selectedCompletion = clamp(self.selectedCompletion - scroll.y.int, 0, self.completions.high)
   else:
     self.scrollOffset += scroll.y * getOption[float](self.editor, "ast.scroll-speed", 20)
+    self.markDirty()
 
 method handleMousePress*(self: AstDocumentEditor, button: MouseButton, mousePosWindow: Vec2) =
   # Make mousePos relative to contentBounds
@@ -1971,42 +2006,44 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
   editor.selectedCompletion = 0
   editor.completions = @[]
 
-  if editor.document.rootNode.len == 0:
-    let paramA = newId()
-    let paramB = newId()
-    let resultId = newId()
-    editor.document.rootNode.add makeTree(AstNode) do:
-      ConstDecl(text: "add"):
-        FunctionDefinition():
-          Params():
-            LetDecl(id: == paramA, text: "a"):
-              Identifier(reff: == IdInt)
-              Empty()
-            LetDecl(id: == paramB, text: "b"):
-              Identifier(reff: == IdInt)
-              Empty()
-          Identifier(reff: == IdInt)
-          NodeList():
-            LetDecl(id: == resultId, text: "result"):
-              Empty()
-              Call():
-                Identifier(reff: == IdAdd)
-                Identifier(reff: == paramA)
-                Identifier(reff: == paramB)
-            Identifier(reff: == resultId)
+  # if editor.document.rootNode.len == 0:
+  #   let paramA = newId()
+  #   let paramB = newId()
+  #   let resultId = newId()
+  #   editor.document.rootNode.add makeTree(AstNode) do:
+  #     ConstDecl(text: "add"):
+  #       FunctionDefinition():
+  #         Params():
+  #           LetDecl(id: == paramA, text: "a"):
+  #             Identifier(reff: == IdInt)
+  #             Empty()
+  #           LetDecl(id: == paramB, text: "b"):
+  #             Identifier(reff: == IdInt)
+  #             Empty()
+  #         Identifier(reff: == IdInt)
+  #         NodeList():
+  #           LetDecl(id: == resultId, text: "result"):
+  #             Empty()
+  #             Call():
+  #               Identifier(reff: == IdAdd)
+  #               Identifier(reff: == paramA)
+  #               Identifier(reff: == paramB)
+  #           Identifier(reff: == resultId)
 
-    let addId = editor.document.rootNode.last.id
+  #   let addId = editor.document.rootNode.last.id
 
-    editor.document.rootNode.add makeTree(AstNode) do:
-      ConstDecl(text: "main"):
-        FunctionDefinition():
-          Params()
-          Identifier(reff: == IdVoid)
-          NodeList():
-            Call():
-              Identifier(reff: == addId)
-              NumberLiteral(text: "69")
-              NumberLiteral(text: "420")
+  #   editor.document.rootNode.add makeTree(AstNode) do:
+  #     ConstDecl(text: "main"):
+  #       FunctionDefinition():
+  #         Params()
+  #         Identifier(reff: == IdVoid)
+  #         NodeList():
+  #           Call():
+  #             Identifier(reff: == addId)
+  #             NumberLiteral(text: "69")
+  #             NumberLiteral(text: "420")
+  editor.document.rootNode.add makeTree(AstNode) do:
+    Empty()
 
   for c in editor.document.rootNode.children:
     editor.document.handleNodeInserted c

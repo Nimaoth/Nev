@@ -1,6 +1,6 @@
 import std/[tables, strutils]
 import platform, widgets
-import custom_logger, input, event, monitors, lrucache, id
+import custom_logger, input, event, monitors, lrucache, id, rect_utils
 import chroma, vmath, windy, boxy, boxy/textures, opengl, pixie/[contexts, fonts]
 
 export platform, widgets
@@ -186,6 +186,8 @@ method lineDistance*(self: GuiPlatform): float = self.mLineDistance
 method lineHeight*(self: GuiPlatform): float = self.mLineHeight
 method charWidth*(self: GuiPlatform): float = self.mCharWidth
 
+method measureText*(self: GuiPlatform, text: string): Vec2 = self.getFont(self.ctx.font, self.ctx.fontSize).typeset(text).layoutBounds()
+
 method processEvents*(self: GuiPlatform): int =
   self.eventCounter = 0
   pollEvents()
@@ -242,6 +244,13 @@ proc centerWindowOnMonitor(window: Window, monitor: int) =
 
 method renderWidget(self: WWidget, renderer: GuiPlatform, forceRedraw: bool, frameIndex: int, context: string): bool {.base.} = discard
 
+proc strokeRect*(boxy: Boxy, rect: Rect, color: Color, thickness: float = 1) =
+  let rect = rect.grow(vec2(thickness, thickness))
+  boxy.drawRect(rect.splitV(thickness.relative)[0].shrink(vec2(0, thickness)), color)
+  boxy.drawRect(rect.splitVInv(thickness.relative)[1].shrink(vec2(0, thickness)), color)
+  boxy.drawRect(rect.splitH(thickness.relative)[0], color)
+  boxy.drawRect(rect.splitHInv(thickness.relative)[1], color)
+
 method render*(self: GuiPlatform, widget: WWidget, frameIndex: int) =
   if self.framebuffer.width != self.size.x.int32 or self.framebuffer.height != self.size.y.int32:
     self.framebuffer.width = self.size.x.int32
@@ -288,6 +297,10 @@ method renderWidget(self: WPanel, renderer: GuiPlatform, forceRedraw: bool, fram
   if self.fillBackground:
     # debugf"renderPanel {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}, {self.getBackgroundColor}"
     renderer.boxy.drawRect(self.lastBounds, self.getBackgroundColor)
+    result = true
+
+  if self.drawBorder:
+    renderer.boxy.strokeRect(self.lastBounds, self.getForegroundColor)
     result = true
 
   # Mask the rest of the rendering is this function to the contentBounds
@@ -374,7 +387,8 @@ method renderWidget(self: WText, renderer: GuiPlatform, forceRedraw: bool, frame
     image.fillText(arrangement)
     renderer.boxy.addImage(imageId, image, false)
 
-  renderer.boxy.drawImage(imageId, self.lastBounds.xy, self.foregroundColor)
+  let pos = vec2(self.lastBounds.x.floor, self.lastBounds.y.floor)
+  renderer.boxy.drawImage(imageId, pos, self.foregroundColor)
 
   if self.lastRenderedText != self.text:
     self.lastRenderedText = self.text

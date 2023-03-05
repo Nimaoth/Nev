@@ -95,7 +95,7 @@ var frameIndex = 0
 var frameTime = 0.0
 
 let minPollPerFrameMs = 1.0
-let maxPollPerFrameMs = 4.0
+let maxPollPerFrameMs = 10.0
 var pollBudgetMs = 0.0
 while not ed.closeRequested:
   defer:
@@ -129,15 +129,16 @@ while not ed.closeRequested:
   logger.flush()
 
   let pollTimer = startTimer()
-  if true:
+  if false:
     while pollTimer.elapsed.ms < 8:
       poll(2)
   else:
     try:
       pollBudgetMs += max(minPollPerFrameMs, maxPollPerFrameMs - totalTimer.elapsed.ms)
-      if pollBudgetMs > maxPollPerFrameMs:
+      while pollBudgetMs > maxPollPerFrameMs:
+        let start = startTimer()
         poll(maxPollPerFrameMs.int)
-        pollBudgetMs -= pollTimer.elapsed.ms
+        pollBudgetMs -= start.elapsed.ms
     except CatchableError:
       # logger.log(lvlError, fmt"[async] Failed to poll async dispatcher: {getCurrentExceptionMsg()}: {getCurrentException().getStackTrace()}")
       discard
