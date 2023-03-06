@@ -25,7 +25,6 @@
 
         .widget {
             position: absolute;
-            overflow: hidden;
             white-space: pre;
 
             -webkit-touch-callout: none; /* Disable callout on iOS */
@@ -144,6 +143,10 @@
                 result[k] = template[k]
             }
             return result
+        }
+
+        function orDefaultJs(value, d) {
+            return value === undefined ? d : value;
         }
 
         var treeSitterInitialized = false
