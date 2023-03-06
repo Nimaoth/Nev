@@ -44,8 +44,6 @@ proc requestRender(redrawEverything = false) =
     block:
       ed.frameTimer = startTimer()
 
-      rend.updateFontSettings()
-
       let updateTimer = startTimer()
       ed.updateWidgetTree(frameIndex)
       updateTime = updateTimer.elapsed.ms

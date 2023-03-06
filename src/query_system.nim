@@ -780,11 +780,11 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       result.add quote do:
         proc `computeName`*(ctx: `contextName`, input: `key`, recordDependency: bool = true): `value` =
           try:
-            let timer = startTimer()
-
-            ctx.`stats`.totalCalls += 1
-            defer:
-              ctx.`stats`.time += timer.elapsed
+            when not defined(js):
+              let timer = startTimer()
+              ctx.`stats`.totalCalls += 1
+              defer:
+                ctx.`stats`.time += timer.elapsed
 
             defer:
               if ctx.dependencyStack.len == 0:
@@ -858,11 +858,11 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       result.add quote do:
         proc `computeName`*(ctx: `contextName`, input: `key`): `value` =
           try:
-            let timer = startTimer()
-
-            ctx.`stats`.totalCalls += 1
-            defer:
-              ctx.`stats`.time += timer.elapsed
+            when not defined(js):
+              let timer = startTimer()
+              ctx.`stats`.totalCalls += 1
+              defer:
+                ctx.`stats`.time += timer.elapsed
 
             defer:
               if ctx.dependencyStack.len == 0:

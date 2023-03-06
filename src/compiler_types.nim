@@ -102,7 +102,7 @@ type
     first*: int
     last*: int
 
-  NodeLayout* = object
+  NodeLayout* = ref object
     root*: VisualNode
     nodeToVisualNode*: Table[Id, VisualNodeRange]
     node*: AstNode
