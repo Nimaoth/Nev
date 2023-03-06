@@ -200,22 +200,20 @@ method preventDefault*(self: BrowserPlatform) =
   self.currentEvent.preventDefault()
 
 proc updateFontSettings*(self: BrowserPlatform) =
-  let newFontSize: float = ($window.getComputedStyle(self.content).fontSize)[0..^3].parseFloat
-  if newFontSize != self.mFontSize:
-    # debugf"updateFontSettings: {newFontSize}"
-    self.mFontSize = newFontSize
-    var d = document.createElement("div")
-    d.setAttr("style", "position: absolute; visibility: hidden; height: auto; width: auto;")
-    d.innerHTML = repeat("#", 100).cstring
-    self.content.appendChild(d)
-    self.mLineHeight = d.clientHeight.float
-    self.mCharWidth = d.clientWidth.float / 100
-    self.content.removeChild(d)
-
-    self.redrawEverything = true
+  var d = document.createElement("div")
+  d.setAttr("style", "position: absolute; visibility: hidden; height: auto; width: auto;")
+  d.innerHTML = repeat("#", 100).cstring
+  self.content.appendChild(d)
+  self.mLineHeight = d.clientHeight.float
+  self.mCharWidth = d.clientWidth.float / 100
+  self.content.removeChild(d)
 
 method `fontSize=`*(self: BrowserPlatform, fontSize: float) =
-  self.content.style.fontSize = ($fontSize).cstring
+  if self.mFontSize != fontSize:
+    self.mFontSize = fontSize
+    self.content.style.fontSize = ($fontSize).cstring
+    self.redrawEverything = true
+    self.updateFontSettings()
 
 method fontSize*(self: BrowserPlatform): float =
   result = self.mFontSize
