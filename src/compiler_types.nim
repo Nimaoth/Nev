@@ -14,6 +14,7 @@ type
     tType
 
   Type* = ref object
+    mHash: Hash
     case kind*: TypeKind
     of tError: discard
     of tVoid: discard
@@ -56,6 +57,7 @@ type
 
   SymbolKind* = enum skAstNode, skBuiltin
   Symbol* = ref object
+    mHash: Hash
     id*: Id
     name*: string
     case kind*: SymbolKind
@@ -68,6 +70,7 @@ type
       precedence*: int
 
 type FunctionExecutionContext* = ref object
+  mHash: Hash
   id*: Id
   node*: AstNode
   arguments*: seq[Value]
@@ -77,6 +80,7 @@ type
   VisualNodeOrientation* = enum Horizontal, Vertical
   VisualNodeRenderFunc* = proc(bounds: Rect)
   VisualNode* = ref object
+    mhash: Hash
     id*: Id
     parent*: VisualNode
     orientation*: VisualNodeOrientation
@@ -104,6 +108,7 @@ type
     node*: AstNode
 
   NodeLayoutInput* = ref object
+    mHash: Hash
     id*: Id
     node*: AstNode
     selectedNode*: Id
@@ -185,11 +190,12 @@ func `$`*(typ: Type): string =
   of tAny: return fmt"any({typ.open})"
 
 func hash*(typ: Type): Hash =
-  case typ.kind
-  of tFunction: typ.kind.hash xor typ.returnType.hash xor typ.paramTypes.hash
-  of tAny: typ.kind.hash xor typ.open.hash
-  else:
-    return typ.kind.hash
+  if typ.mHash == 0:
+    typ.mHash = case typ.kind
+    of tFunction: typ.kind.hash xor typ.returnType.hash xor typ.paramTypes.hash
+    of tAny: typ.kind.hash xor typ.open.hash
+    else: typ.kind.hash
+  return typ.mHash
 
 func `==`*(a: Type, b: Type): bool =
   if a.isNil: return b.isNil
@@ -277,8 +283,10 @@ func `$`*(fec: FunctionExecutionContext): string =
   return fmt"Call {fec.node}({fec.arguments}, maxLoopIterations={fec.maxLoopIterations})"
 
 func hash*(fec: FunctionExecutionContext): Hash =
-  result = fec.node.hash !& fec.arguments.hash !& fec.maxLoopIterations.hash
-  result = !$result
+  if fec.mHash == 0:
+    fec.mHash = fec.node.hash !& fec.arguments.hash !& fec.maxLoopIterations.hash
+    fec.mHash = !$result
+  return fec.mHash
 
 func `==`*(a: FunctionExecutionContext, b: FunctionExecutionContext): bool =
   if a.isNil: return b.isNil
@@ -299,7 +307,9 @@ func `$`*(symbol: Symbol): string =
     return "Sym(Builtin, " & $symbol.id & ", " & $symbol.typ & ", " & $symbol.value & ")"
 
 func hash*(symbol: Symbol): Hash =
-  return symbol.id.hash
+  if symbol.mHash == 0:
+    symbol.mHash = symbol.id.hash
+  return symbol.mHash
 
 func `==`*(a: Symbol, b: Symbol): bool =
   if a.isNil: return b.isNil
@@ -380,8 +390,11 @@ func `$`*(vnode: VisualNode): string =
   #     result.add "\n" & indent($child, 1, "| ")
 
 func hash*(vnode: VisualNode): Hash =
-  result = vnode.text.hash !& vnode.colors.hash !& vnode.bounds.hash !& vnode.children.hash
-  result = !$result
+  if vnode.mHash == 0:
+    result = vnode.text.hash !& vnode.colors.hash !& vnode.bounds.hash !& vnode.children.hash
+    result = !$result
+    vnode.mHash = result
+  return vnode.mHash
 
 func fingerprint*(vnode: VisualNode): Fingerprint =
   let h = vnode.text.hash !& vnode.colors.hash !& vnode.bounds.hash !& vnode.children.hash
@@ -437,8 +450,10 @@ func `$`*(input: NodeLayoutInput): string =
   return fmt"NodeLayoutInput({input.id}, node: {input.node}, selected: {input.selectedNode}, revision: {input.revision})"
 
 func hash*(input: NodeLayoutInput): Hash =
-  result = input.node.hash !& input.selectedNode.hash
-  result = !$result
+  if input.mHash == 0:
+    input.mHash = input.node.hash !& input.selectedNode.hash
+    input.mHash = !$input.mHash
+  return input.mHash
 
 func `==`*(a: NodeLayoutInput, b: NodeLayoutInput): bool =
   if a.isNil: return b.isNil
@@ -452,3 +467,13 @@ func `==`*(a: NodeLayoutInput, b: NodeLayoutInput): bool =
   if a.inlineBlocks != b.inlineBlocks: return false
   if a.indent != b.indent: return false
   return true
+
+when defined(js):
+  proc getIdFunctionExecutionContextJs*(fec: FunctionExecutionContext): cstring {.exportc, used.} =
+    {.emit: ["return toCString(", fec, ".id);"].} #"""
+
+  proc getIdSymbolJs*(sym: Symbol): cstring {.exportc, used.} =
+    {.emit: ["return toCString(", sym, ".id);"].} #"""
+
+  proc getIdNodeLayoutInputJs*(input: NodeLayoutInput): cstring {.exportc, used.} =
+    {.emit: ["return toCString(", input, ".id);"].} #"""

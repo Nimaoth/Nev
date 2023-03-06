@@ -3,7 +3,7 @@ import custom_logger
 
 logger.enableConsoleLogger()
 
-import std/[strformat, dom]
+import std/[strformat, dom, macros]
 import util, editor, timer, platform/widget_builders, platform/platform, platform/browser_platform, text_document, event, theme
 from scripting_api import Backend
 
@@ -44,6 +44,8 @@ proc requestRender(redrawEverything = false) =
     block:
       ed.frameTimer = startTimer()
 
+      rend.updateFontSettings()
+
       let updateTimer = startTimer()
       ed.updateWidgetTree(frameIndex)
       updateTime = updateTimer.elapsed.ms
@@ -81,3 +83,40 @@ block:
 
 initializedEditor = true
 requestRender()
+
+# Override some functions with more optimized versions
+{.emit: """
+const hiXorLoJs_override_mask = BigInt("0xffffffffffffffff");
+const hiXorLoJs_override_shift = BigInt("64");
+function hiXorLoJs_override(a, b) {
+    var prod = (a * b);
+    return ((prod >> hiXorLoJs_override_shift) ^ (prod & hiXorLoJs_override_mask));
+}
+
+var hashWangYi1_override_c1 = BigInt("0xa0761d6478bd642f");
+var hashWangYi1_override_c2 = BigInt("0xe7037ed1a0b428db");
+var hashWangYi1_override_c3 = BigInt("0xeb44accab455d16d");
+
+function hashWangYi1_override(x) {
+    if (typeof BigInt != 'undefined') {
+        var res = hiXorLoJs_override(hiXorLoJs_override(hashWangYi1_override_c1, (BigInt(x) ^ hashWangYi1_override_c2)), hashWangYi1_override_c3);
+        return Number(BigInt.asIntN(32, res));
+    }
+    else {
+        return (x & 4294967295);
+    }
+}
+""".}
+
+import hashes
+
+macro overrideFunction(body: typed, override: untyped): untyped =
+  # echo body.treeRepr
+  let original = if body.kind == nnkCall: body[0] else: body
+
+  return quote do:
+    {.emit: ["window.", `original`, " = ", `override`, ";"].}
+
+overrideFunction(hashWangYi1(1.int64), "hashWangYi1_override")
+overrideFunction(hashWangYi1(2.uint64), "hashWangYi1_override")
+overrideFunction(hashWangYi1(3.Hash), "hashWangYi1_override")

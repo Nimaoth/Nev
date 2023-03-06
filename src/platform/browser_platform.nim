@@ -186,7 +186,9 @@ method requestRender*(self: BrowserPlatform, redrawEverything = false) =
 method deinit*(self: BrowserPlatform) =
   discard
 
-method size*(self: BrowserPlatform): Vec2 = vec2(self.content.clientWidth.float, self.content.clientHeight.float)# * 0.7
+proc vec2Js*(x: float, y: float) {.importjs: "return {x: #, y: #};".}
+method size*(self: BrowserPlatform): Vec2 =
+  vec2Js(self.content.clientWidth.float, self.content.clientHeight.float)
 
 # method sizeChanged*(self: BrowserPlatform): bool =
 #   let (w, h) = (terminalWidth(), terminalHeight())
@@ -214,23 +216,21 @@ proc updateFontSettings*(self: BrowserPlatform) =
 
 method `fontSize=`*(self: BrowserPlatform, fontSize: float) =
   self.content.style.fontSize = ($fontSize).cstring
-  self.updateFontSettings()
 
 method fontSize*(self: BrowserPlatform): float =
-  self.updateFontSettings()
   result = self.mFontSize
 
 method lineDistance*(self: BrowserPlatform): float =
-  self.updateFontSettings()
   self.mLineDistance
 
 method lineHeight*(self: BrowserPlatform): float =
-  self.updateFontSettings()
   self.mLineHeight
 
 method charWidth*(self: BrowserPlatform): float =
-  self.updateFontSettings()
   self.mCharWidth
+
+method measureText*(self: BrowserPlatform, text: string): Vec2 =
+  return vec2(text.len.float * self.mCharWidth, self.totalLineHeight)
 
 proc toInput(key: cstring, code: cstring, keyCode: int): int64 =
   case key
@@ -302,30 +302,7 @@ proc updateRelativePosition(element: var Element, bounds: Rect) =
   element.style.width = $bounds.w.int
   element.style.height = $bounds.h.int
 
-when defined(js):
-  # Optimized version for javascript backend
-  proc myToHtmlHex(c: Color): cstring =
-    {.emit: "const hexChars = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'];let result = '#';".}
-    let r = (c.r * 255).int32
-    let g = (c.g * 255).int32
-    let b = (c.b * 255).int32
-    let cr1 = r and 0xf
-    let cr2 = (r shr 4) and 0xf
-    let cg1 = g and 0xf
-    let cg2 = (g shr 4) and 0xf
-    let cb1 = b and 0xf
-    let cb2 = (b shr 4) and 0xf
-
-    {.emit: ["result += hexChars[", cr2, "];"].} #"""
-    {.emit: ["result += hexChars[", cr1, "];"].} #"""
-    {.emit: ["result += hexChars[", cg2, "];"].} #"""
-    {.emit: ["result += hexChars[", cg1, "];"].} #"""
-    {.emit: ["result += hexChars[", cb2, "];"].} #"""
-    {.emit: ["result += hexChars[", cb1, "];"].} #"""
-    {.emit: [result, " = result;"].} #"""
-
-else:
-  proc myToHtmlHex(c: Color): string = color.toHtmlHex
+proc myToHtmlHex(c: Color): string = chroma.toHtmlRgba(c)
 
 method renderWidget(self: WPanel, renderer: BrowserPlatform, element: var Element, forceRedraw: bool, frameIndex: int, buffer: var string) =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
@@ -342,14 +319,21 @@ method renderWidget(self: WPanel, renderer: BrowserPlatform, element: var Elemen
   renderer.boundsStack.add self.lastBounds
   defer: discard renderer.boundsStack.pop()
 
-  let backgroundColor = if self.fillBackground:
-    fmt"background: {self.backgroundColor.myToHtmlHex};"
-  else:
-    ""
+  var css = fmt("left: {relBounds.x.int}px; top: {relBounds.y.int}px; width: {relBounds.w.int}px; height: {relBounds.h.int}px;")
+
+  let backgroundColor = self.getBackgroundColor
+  if self.fillBackground:
+    css.add fmt"background: {backgroundColor.myToHtmlHex};"
+
+  if self.maskContent:
+    css.add fmt"overflow: hidden;"
+
+  if self.drawBorder:
+    css.add fmt"border: 1px solid {self.getForegroundColor.myToHtmlHex};"
 
   renderer.domUpdates.add proc() =
     element.class = "widget"
-    element.setAttribute("style", fmt("left: {relBounds.x.int}px; top: {relBounds.y.int}px; width: {relBounds.w.int}px; height: {relBounds.h.int}px; {backgroundColor}").cstring)
+    element.setAttribute("style", css.cstring)
 
   let existingCount = element.children.len
   for i, c in self.children:

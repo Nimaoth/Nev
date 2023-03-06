@@ -63,11 +63,11 @@ proc renderVisualNode*(self: AstDocumentEditor, app: Editor, node: VisualNode, s
     if node.styleOverride.getSome(override):
       style.incl override
 
-    let text = if app.getFlag("ast.render-vnode-depth", false): $node.depth else: node.text
+    # let text = if app.getFlag("ast.render-vnode-depth", false): $node.depth else: node.text
     # let image = renderCtx.computeRenderedText(text, font, node.fontSize)
     # renderCtx.boxy.drawImage(image, bounds.xy, color)
 
-    var textWidget = createPartWidget(text, node.bounds.x, text.len.float * charWidth, color, frameIndex)
+    var textWidget = createPartWidget(node.text, node.bounds.x, node.text.len.float * charWidth, color, frameIndex)
     textWidget.style.fontStyle = style
     textWidget.top = node.bounds.y
     textWidget.bottom = node.bounds.yh
@@ -85,7 +85,7 @@ proc renderVisualNode*(self: AstDocumentEditor, app: Editor, node: VisualNode, s
     panel.fillBackground = true
     panel.allowAlpha = true
     panel.drawBorder = true
-    panel.backgroundColor = app.theme.color("inputValidation.infoBorder", rgb(175, 175, 255)).withAlpha(0.1)
+    panel.backgroundColor = app.theme.color("inputValidation.infoBorder", rgb(175, 175, 255)).withAlpha(0.2)
     panel.foregroundColor = app.theme.color("inputValidation.infoBorder", rgb(175, 175, 255))
 
   # Draw outline around node it is being refered to by the selected node
@@ -93,7 +93,7 @@ proc renderVisualNode*(self: AstDocumentEditor, app: Editor, node: VisualNode, s
     panel.fillBackground = true
     panel.allowAlpha = true
     panel.drawBorder = true
-    panel.backgroundColor = app.theme.color("inputValidation.warningBorder", rgb(175, 255, 200)).withAlpha(0.1)
+    panel.backgroundColor = app.theme.color("inputValidation.warningBorder", rgb(175, 255, 200)).withAlpha(0.2)
     panel.foregroundColor = app.theme.color("inputValidation.warningBorder", rgb(175, 255, 200))
 
 proc renderBlockIndent(editor: AstDocumentEditor, app: Editor, layout: NodeLayout, node: AstNode, offset: Vec2, widget: WPanel) =

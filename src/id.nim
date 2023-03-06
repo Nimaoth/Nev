@@ -23,8 +23,16 @@ import std/[json, jsonutils, hashes, times, random]
 when not defined(js) and defined(nimPreviewSlimSystem):
   import std/[sysatomics]
 
-type
-  Oid* = object ## An OID.
+import timer
+
+when defined(js):
+  type Oid* = object ## An OID.
+    padding: int
+    time: int32
+    fuzz: int32
+    count: int32
+else:
+  type Oid* = object ## An OID.
     padding: int32
     time: int32
     fuzz: int32
@@ -54,10 +62,11 @@ proc hexbyte*(hex: char): int {.inline.} =
   result = handleHexChar(hex)
 
 proc constructOid*(time: int32, fuzz: int32, count: int32): Oid =
-  result.padding = 0
   result.time = time
   result.fuzz = fuzz
   result.count = count
+  when defined(js):
+    result.padding = result.hash
 
 proc deconstruct*(oid: Oid): tuple[time: int32, fuzz: int32, count: int32] =
   result = (oid.time, oid.fuzz, oid.count)
@@ -71,7 +80,6 @@ proc parseOid*(str: string): Oid =
   if str.len != 24:
     return
 
-  result.padding = 0
   result.time = 0
   for i in 0..<4:
     let hexValue = (hexbyte(str[2 * i]) shl 4) or hexbyte(str[2 * i + 1])
@@ -86,6 +94,9 @@ proc parseOid*(str: string): Oid =
   for i in 0..<4:
     let hexValue = (hexbyte(str[2 * (i + 8)]) shl 4) or hexbyte(str[2 * (i + 8) + 1])
     result.count = result.count or cast[int32](hexValue shl (i * 8))
+
+  when defined(js):
+    result.padding = result.hash
 
 proc `$`*(oid: Oid): string =
   ## Converts an OID to a string.
@@ -109,8 +120,34 @@ proc `$`*(oid: Oid): string =
     result[2 * i] = hex[(b and 0xF0) shr 4]
     result[2 * i + 1] = hex[b and 0xF]
 
+when defined(js):
+  const hexChars: cstring = "0123456789abcdef"
+
+proc toCString*(oid: Oid): cstring {.exportc.} =
+  ## Converts an OID to a string.
+  runnableExamples:
+    let oid = constructOid(time = -1707874974, fuzz = -148288170, count = 507876210)
+    doAssert oid.toCString == "62e5339a564d29f77293451e"
+
+  when defined(js):
+    proc append(str: cstring, other: cstring, i: int) {.importjs: "# += #[#];".}
+
+    for i in 0..<12:
+      let value = if i < 4: oid.time
+        elif i < 8: oid.fuzz
+        else: oid.count
+
+      let byteOffset = i mod 4
+
+      let b = value shr (byteOffset * 8)
+
+      result.append(hexChars, (b and 0xF0) shr 4)
+      result.append(hexChars, b and 0xF)
+  else:
+    return ($oid).cstring
+
 let
-  t = getTime().toUnix
+  t = myGetTime()
 
 var
   seed = initRand(t)
@@ -132,7 +169,7 @@ proc bigEndian32*(b: int32): int32 =
     endians.bigEndian32(result.addr, temp.addr)
 
 template genOid(result: var Oid, incr: var int, fuzz: int32) =
-  var time = cast[int32](getTime().toUnix)
+  var time = cast[int32](myGetTime())
   var i: int32
   when defined(js):
     inc incr
@@ -143,6 +180,9 @@ template genOid(result: var Oid, incr: var int, fuzz: int32) =
   result.time = time.bigEndian32
   result.fuzz = fuzz
   result.count = i.bigEndian32
+
+  when defined(js):
+    result.padding = result.hash
 
 proc genOid*(): Oid =
   ## Generates a new OID.
@@ -167,11 +207,17 @@ proc newId*(): Id =
 func `$`*(id: Id): string =
   return $id.Oid
 
+func idToString*(id: Id): cstring {.exportc.} =
+  return ($id.Oid).cstring
+
 proc `==`*(idA: Id, idB: Id): bool =
   return idA.Oid == idB.Oid
 
 proc hash*(id: Id): Hash =
-  return id.Oid.hash
+  when defined(js):
+    return id.Oid.padding
+  else:
+    return id.Oid.hash
 
 proc idNone*(): Id =
   return default(Id)

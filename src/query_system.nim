@@ -1,7 +1,7 @@
 import std/[tables, sets, strutils, hashes, options, macros, strformat]
 import timer
 import fusion/matching
-import ast, id, util
+import ast, id, util, custom_logger
 import lrucache
 
 {.experimental: "dynamicBindSym".}
@@ -10,10 +10,51 @@ var currentIndent* = 0
 
 func repeat2*(s: string, n: Natural): string = repeat s, n
 
-type Cache[K, V] = LruCache[K, V]
-proc newCache[K, V](capacity: int): Cache[K, V] = newLRUCache[K, V](capacity)
-# type Cache[K, V] = Table[K, V]
-# proc newCache[K, V](capacity: int): Cache[K, V] = initTable[K, V]()
+
+when defined(js):
+  type Cache[K, V] {.importjs: "Map".} = ref object
+    discard
+  proc newCache[K, V](capacity: int): Cache[K, V] {.importjs: "(new Map())".}
+
+  proc mapKeyJs*[A](key: A): cstring =
+    static:
+      echo "#### '", A, "'"
+    const typeName = $A
+    {.emit: ["let temp = ", key, ";"].}
+    {.emit: ["if (temp._id === undefined) temp._id = getId", typeName, "Js(", key, ");"].}
+    {.emit: ["return temp._id;"].}
+
+  proc getOrDefaultJs[A, B](t: Cache[A, B], key: cstring, default: B): B {.importjs: "orDefaultJs((#).get(#), (#))"}
+  proc getOrDefault*[A, B](t: Cache[A, B], key: A, default: B): B = getOrDefaultJs[A, B](t, key.mapKeyJs, default)
+
+  proc getJs*[A, B](t: Cache[A, B], key: cstring): B {.importjs: "#.get(#)".}
+  proc `[]`*[A, B](t: Cache[A, B], key: A): B = getJs[A, B](t, key.mapKeyJs)
+
+  proc setJs*[A, B](t: Cache[A, B], key: cstring, val: sink B) {.importjs: "#.set(#, #)".}
+  proc `[]=`*[A, B](t: Cache[A, B], key: A, val: sink B) = setJs[A, B](t, key.mapKeyJs, val)
+
+  proc containsJs*[A, B](t: Cache[A, B], key: cstring): bool {.importjs: "#.has(#)".}
+  proc contains*[A, B](t: Cache[A, B], key: A): bool = containsJs[A, B](t, key.mapKeyJs)
+
+  proc delJs*[A, B](t: Cache[A, B], key: cstring) {.importjs: "#.delete(#)".}
+  proc del*[A, B](t: Cache[A, B], key: A) = delJs[A, B](t, key.mapKeyJs)
+
+  proc clearJs*[A, B](t: Cache[A, B]) {.importjs: "#.clear()".}
+  proc clear*[A, B](t: Cache[A, B]) = clearJs[A, B](t)
+
+  proc pairs*[A, B](t: Cache[A, B]): seq[(A, B)] =
+    {.emit: ["for (var [k, v] in ", t, ".entries()) {", result, ".push({Field0: k, Field1: v});}"].} #"""
+
+  proc values*[A, B](t: Cache[A, B]): seq[B] =
+    proc valuesJs(t: Cache[A, B]): ref RootObj {.importjs: "#.values()".}
+    let iter = t.valuesJs()
+    {.emit: ["for (var i in ", iter, ") {", result, ".push(i);}"].} #"""
+
+else:
+  type Cache[K, V] = LruCache[K, V]
+  proc newCache[K, V](capacity: int): Cache[K, V] = newLRUCache[K, V](capacity)
+  # type Cache[K, V] = Table[K, V]
+  # proc newCache[K, V](capacity: int): Cache[K, V] = initTable[K, V]()
 
 proc init[K, V](result: var Cache[K, V], capacity: int) =
   result = newCache[K, V](capacity)
@@ -34,7 +75,7 @@ type
   MarkGreenResult* = enum Ok, Error, Recursion
 
   QueryStats* = object
-    time*: Nanos
+    time*: Seconds
     totalCalls*: int
     forcedCalls*: int
 
@@ -45,6 +86,13 @@ type
     dependencies*: Cache[Dependency, seq[Dependency]]
     queryNames*: Table[UpdateFunction, string]
     revision*: int
+
+when defined(js):
+  proc getIdItemIdJs*(item: ItemId): cstring {.exportc, used.} =
+    {.emit: ["return '' + toCString(", item, ".Field0) + ", item, ".Field1;"].} #"""
+
+  proc getIdDependencyJs*(dep: Dependency): cstring {.exportc, used.} =
+    {.emit: ["return getIdItemIdJs(", dep, ".Field0) + ", dep, ".Field1;"].} #"""
 
 func `$`*(stats: QueryStats): string =
   return fmt"{stats.time.ms:>6.2f}ms  {stats.forcedCalls:4}/{stats.totalCalls:4}"
@@ -487,7 +535,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       let stats = ident "stats" & name
 
       executionTimeResets.add quote do:
-        `ctx`.`stats`.time = 0
+        `ctx`.`stats`.time = 0.Seconds
         `ctx`.`stats`.totalCalls = 0
         `ctx`.`stats`.forcedCalls = 0
 
@@ -731,99 +779,114 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     if useCache:
       result.add quote do:
         proc `computeName`*(ctx: `contextName`, input: `key`, recordDependency: bool = true): `value` =
-          let timer = startTimer()
+          try:
+            let timer = startTimer()
 
-          ctx.`stats`.totalCalls += 1
-          defer:
-            ctx.`stats`.time += timer.elapsed
+            ctx.`stats`.totalCalls += 1
+            defer:
+              ctx.`stats`.time += timer.elapsed
 
-          defer:
-            if ctx.dependencyStack.len == 0:
-              ctx.recursiveQueries.clear()
+            defer:
+              if ctx.dependencyStack.len == 0:
+                ctx.recursiveQueries.clear()
 
-          let item = getItem input
-          let key = (item, `updateIdx`)
+            let item = getItem input
+            let key = (item, `updateIdx`)
 
-          if recordDependency:
-            ctx.recordDependency(item, `updateIdx`)
+            if recordDependency:
+              ctx.recordDependency(item, `updateIdx`)
 
-          let color = ctx.depGraph.nodeColor(key)
+            let color = ctx.depGraph.nodeColor(key)
 
-          inc currentIndent, if ctx.enableLogging: 1 else: 0
-          defer: dec currentIndent, if ctx.enableLogging: 1 else: 0
-          if ctx.enableLogging: echo repeat2("| ", currentIndent - 1), "compute", `nameString`, " ", color, ", ", item
+            inc currentIndent, if ctx.enableLogging: 1 else: 0
+            defer: dec currentIndent, if ctx.enableLogging: 1 else: 0
+            if ctx.enableLogging: echo repeat2("| ", currentIndent - 1), "compute", `nameString`, " ", color, ", ", item
 
-          if color == Green:
+            if color == Green:
+              if not ctx.`queryCache`.contains(input):
+                if ctx.enableLogging: echo repeat2("| ", currentIndent), "green, not in cache"
+                ctx.force(key)
+                if not `useFingerprinting`: ctx.depGraph.markRed(key, @[])
+                if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "result: ", $ctx.`queryCache`[input]
+              else:
+                if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "green, in cache, result: ", $ctx.`queryCache`[input]
+              if not ctx.`queryCache`.contains(input):
+                raise newException(Defect, "compute" & `name` & "(" & $input & "): not in cache anymore")
+              return ctx.`queryCache`[input]
+
+            if color == Grey:
+              if not ctx.`queryCache`.contains(input):
+                if ctx.enableLogging: echo repeat2("| ", currentIndent), "grey, not in cache"
+                ctx.force(key)
+                if not `useFingerprinting`: ctx.depGraph.markRed(key, @[])
+                if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "result: ", $ctx.`queryCache`[input]
+                if not ctx.`queryCache`.contains(input):
+                  raise newException(Defect, "compute" & `name` & "(" & $input & "): not in cache anymore")
+                return ctx.`queryCache`[input]
+
+              if ctx.enableLogging: echo repeat2("| ", currentIndent), "grey, in cache"
+              if ctx.tryMarkGreen(key) == Ok:
+                if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "green, result: ", $ctx.`queryCache`[input]
+                if not ctx.`queryCache`.contains(input):
+                  raise newException(Defect, "compute" & `name` & "(" & $input & "): not in cache anymore")
+                return ctx.`queryCache`[input]
+              else:
+                if ctx.enableLogging: echo repeat2("| ", currentIndent), "failed to mark green"
+                ctx.force(key)
+                if not `useFingerprinting`: ctx.depGraph.markRed(key, @[])
+                if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "result: ", $ctx.`queryCache`[input]
+                if not ctx.`queryCache`.contains(input):
+                  raise newException(Defect, "compute" & `name` & "(" & $input & "): not in cache anymore")
+                return ctx.`queryCache`[input]
+
+            assert color == Red
+            if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "red, in cache, result: ", $ctx.`queryCache`[input]
             if not ctx.`queryCache`.contains(input):
-              if ctx.enableLogging: echo repeat2("| ", currentIndent), "green, not in cache"
               ctx.force(key)
-              if not `useFingerprinting`: ctx.depGraph.markRed(key, @[])
-              if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "result: ", $ctx.`queryCache`[input]
-            else:
-              if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "green, in cache, result: ", $ctx.`queryCache`[input]
             if not ctx.`queryCache`.contains(input):
               raise newException(Defect, "compute" & `name` & "(" & $input & "): not in cache anymore")
             return ctx.`queryCache`[input]
 
-          if color == Grey:
-            if not ctx.`queryCache`.contains(input):
-              if ctx.enableLogging: echo repeat2("| ", currentIndent), "grey, not in cache"
-              ctx.force(key)
-              if not `useFingerprinting`: ctx.depGraph.markRed(key, @[])
-              if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "result: ", $ctx.`queryCache`[input]
-              if not ctx.`queryCache`.contains(input):
-                raise newException(Defect, "compute" & `name` & "(" & $input & "): not in cache anymore")
-              return ctx.`queryCache`[input]
+          except:
+            logger.log(lvlError, getCurrentExceptionMsg())
+            logger.log(lvlError, getCurrentException().getStackTrace())
+            if ctx.dependencyStack.len > 0:
+              raise
 
-            if ctx.enableLogging: echo repeat2("| ", currentIndent), "grey, in cache"
-            if ctx.tryMarkGreen(key) == Ok:
-              if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "green, result: ", $ctx.`queryCache`[input]
-              if not ctx.`queryCache`.contains(input):
-                raise newException(Defect, "compute" & `name` & "(" & $input & "): not in cache anymore")
-              return ctx.`queryCache`[input]
-            else:
-              if ctx.enableLogging: echo repeat2("| ", currentIndent), "failed to mark green"
-              ctx.force(key)
-              if not `useFingerprinting`: ctx.depGraph.markRed(key, @[])
-              if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "result: ", $ctx.`queryCache`[input]
-              if not ctx.`queryCache`.contains(input):
-                raise newException(Defect, "compute" & `name` & "(" & $input & "): not in cache anymore")
-              return ctx.`queryCache`[input]
-
-          assert color == Red
-          if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "red, in cache, result: ", $ctx.`queryCache`[input]
-          if not ctx.`queryCache`.contains(input):
-            ctx.force(key)
-          if not ctx.`queryCache`.contains(input):
-            raise newException(Defect, "compute" & `name` & "(" & $input & "): not in cache anymore")
-          return ctx.`queryCache`[input]
 
     else:
       result.add quote do:
         proc `computeName`*(ctx: `contextName`, input: `key`): `value` =
-          let timer = startTimer()
+          try:
+            let timer = startTimer()
 
-          ctx.`stats`.totalCalls += 1
-          defer:
-            ctx.`stats`.time += timer.elapsed
+            ctx.`stats`.totalCalls += 1
+            defer:
+              ctx.`stats`.time += timer.elapsed
 
-          defer:
-            if ctx.dependencyStack.len == 0:
-              ctx.recursiveQueries.clear()
+            defer:
+              if ctx.dependencyStack.len == 0:
+                ctx.recursiveQueries.clear()
 
-          let item = getItem input
-          let key = (item, `updateIdx`)
+            let item = getItem input
+            let key = (item, `updateIdx`)
 
-          ctx.recordDependency(item, `updateIdx`)
+            ctx.recordDependency(item, `updateIdx`)
 
-          inc currentIndent, if ctx.enableLogging: 1 else: 0
-          defer: dec currentIndent, if ctx.enableLogging: 1 else: 0
-          if ctx.enableLogging: echo repeat2("| ", currentIndent - 1), "compute", `nameString`, ", ", item
+            inc currentIndent, if ctx.enableLogging: 1 else: 0
+            defer: dec currentIndent, if ctx.enableLogging: 1 else: 0
+            if ctx.enableLogging: echo repeat2("| ", currentIndent - 1), "compute", `nameString`, ", ", item
 
-          ctx.force(key)
-          if not ctx.`queryCache`.contains(input):
-            raise newException(Defect, "compute" & `name` & "(" & $input & "): not in cache anymore")
-          return ctx.`queryCache`[input]
+            ctx.force(key)
+            if not ctx.`queryCache`.contains(input):
+              raise newException(Defect, "compute" & `name` & "(" & $input & "): not in cache anymore")
+            return ctx.`queryCache`[input]
+
+          except:
+            logger.log(lvlError, getCurrentExceptionMsg())
+            logger.log(lvlError, getCurrentException().getStackTrace())
+            if ctx.dependencyStack.len > 0:
+              raise
 
     result.add quote do:
       proc `isDirtyName`*(ctx: `contextName`, input: `key`): bool =

@@ -189,6 +189,10 @@ func `$`*(node: AstNode): string =
   result.add $node.path
   result.add ")"
 
+when defined(js):
+  proc getIdAstNodeJs*(node: AstNode): cstring {.exportc, used.} =
+    {.emit: ["return toCString(", node, ".id);"].} #"""
+
 proc treeRepr*(node: AstNode): string =
   case node
   of ConstDecl():
