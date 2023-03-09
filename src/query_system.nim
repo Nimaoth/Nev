@@ -3,6 +3,7 @@ import timer
 import fusion/matching
 import ast, id, util, custom_logger
 import lrucache
+import compilation_config
 
 {.experimental: "dynamicBindSym".}
 
@@ -21,8 +22,18 @@ when defined(js):
       echo "#### '", A, "'"
     const typeName = $A
     {.emit: ["let temp = ", key, ";"].}
-    {.emit: ["if (temp._id === undefined) temp._id = getId", typeName, "Js(", key, ");"].}
+    # @note: This assumes that the object doesn't actuall change so the generated id can be cached
+    #        The js backend will however sometimes reuse the same object, in which case you need to invalidate
+    #        the cached id.
+    when enableTableIdCacheChecking:
+      {.emit: ["let newId = getId", typeName, "Js(temp);"].}
+      {.emit: ["if (temp._id !== undefined && temp._id !== newId) {console.error('new id for ', temp, ', ', temp._id, ' -> ', newId); debugger;} "].}
+      {.emit: ["temp._id = newId;"].}
+    else:
+      {.emit: ["if (temp._id === undefined) temp._id = getId", typeName, "Js(", key, ");"].}
     {.emit: ["return temp._id;"].}
+
+  proc invalidateCachedId*[T](v: T) {.importjs: "#._id = undefined".}
 
   proc getOrDefaultJs[A, B](t: Cache[A, B], key: cstring, default: B): B {.importjs: "orDefaultJs((#).get(#), (#))"}
   proc getOrDefault*[A, B](t: Cache[A, B], key: A, default: B): B = getOrDefaultJs[A, B](t, key.mapKeyJs, default)
@@ -690,6 +701,10 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       let verified = ctx.depGraph.verified.getOrDefault(key, 0)
 
       for i, dep in ctx.depGraph.getDependencies(key):
+        when defined(js):
+          # In the javascript backend the dep variable is reused, so we need to clear the cached id
+          dep.invalidateCachedId()
+          dep.item.invalidateCachedId()
         if dep.item.id == null:
           if ctx.enableLogging: echo repeat2("| ", currentIndent), "Dependency got deleted -> red, failed"
           return Error
