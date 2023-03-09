@@ -190,6 +190,9 @@ proc vec2Js*(x: float, y: float) {.importjs: "return {x: #, y: #};".}
 method size*(self: BrowserPlatform): Vec2 =
   vec2Js(self.content.clientWidth.float, self.content.clientHeight.float)
 
+proc `+=`[T](a: cstring, b: T) {.importjs: "(#) += (#);".}
+proc `+`[T](a: cstring, b: T) {.importjs: "((#) + (#))".}
+
 # method sizeChanged*(self: BrowserPlatform): bool =
 #   let (w, h) = (terminalWidth(), terminalHeight())
 #   return self.buffer.width != w or self.buffer.height != h
@@ -300,7 +303,16 @@ proc updateRelativePosition(element: var Element, bounds: Rect) =
   element.style.width = $bounds.w.int
   element.style.height = $bounds.h.int
 
-proc myToHtmlHex(c: Color): string = chroma.toHtmlRgba(c)
+proc myToHtmlHex(c: Color): cstring =
+  result = "rgba(".cstring
+  result += round(c.r * 255).int
+  result += ", ".cstring
+  result += round(c.g * 255).int
+  result += ", ".cstring
+  result += round(c.b * 255).int
+  result += ", ".cstring
+  result += c.a
+  result += ")".cstring
 
 method renderWidget(self: WPanel, renderer: BrowserPlatform, element: var Element, forceRedraw: bool, frameIndex: int, buffer: var string) =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
@@ -317,21 +329,33 @@ method renderWidget(self: WPanel, renderer: BrowserPlatform, element: var Elemen
   renderer.boundsStack.add self.lastBounds
   defer: discard renderer.boundsStack.pop()
 
-  var css = fmt("left: {relBounds.x.int}px; top: {relBounds.y.int}px; width: {relBounds.w.int}px; height: {relBounds.h.int}px;")
+  var css: cstring = "left: "
+  css += relBounds.x.int
+  css += "px; top: ".cstring
+  css += relBounds.y.int
+  css += "px; width: ".cstring
+  css += relBounds.w.int
+  css += "px; height: ".cstring
+  css += relBounds.h.int
+  css += "px;".cstring
 
   let backgroundColor = self.getBackgroundColor
   if self.fillBackground:
-    css.add fmt"background: {backgroundColor.myToHtmlHex};"
+    css += "background: ".cstring
+    css += backgroundColor.myToHtmlHex
+    css += ";".cstring
 
   if self.maskContent:
-    css.add fmt"overflow: hidden;"
+    css += "overflow: hidden;".cstring
 
   if self.drawBorder:
-    css.add fmt"border: 1px solid {self.getForegroundColor.myToHtmlHex};"
+    css += "border: 1px solid ".cstring
+    css += self.getForegroundColor.myToHtmlHex
+    css += ";".cstring
 
   renderer.domUpdates.add proc() =
     element.class = "widget"
-    element.setAttribute("style", css.cstring)
+    element.setAttribute("style", css)
 
   let existingCount = element.children.len
   for i, c in self.children:
@@ -363,7 +387,6 @@ method renderWidget(self: WStack, renderer: BrowserPlatform, element: var Elemen
     c.renderWidget(renderer, childElement, forceRedraw or self.fillBackground, frameIndex, buffer)
     if i >= existingCount and not childElement.isNil:
       element.appendChild childElement
-
 
 proc getTextStyle(x, y, width, height: int, color, backgroundColor: cstring): cstring = #{.importjs: "`left: ${#}px; top: ${#}px; width: ${#}px; height: ${#}px; overflow: visible; color: ${#}; ${#}`)".}
   {.emit: [result, " = `left: ${", x, "}px; top: ${", y, "}px; width: ${", width, "}px; height: ${", height, "}px; overflow: visible; color: ${", color, "}; ${", backgroundColor, "}`"].} #"""
