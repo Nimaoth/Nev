@@ -221,15 +221,27 @@ proc setBackgroundColor(self: TerminalPlatform, color: chroma.Color) =
     let bgColor = getClosestColor[tui.BackgroundColor](stdColor.r, stdColor.g, stdColor.b, bgBlack)
     self.buffer.setBackgroundColor(bgColor)
 
+proc fillRect(self: TerminalPlatform, bounds: Rect, color: chroma.Color) =
+  self.setBackgroundColor(color)
+
+  let mask = if self.masks.len > 0:
+    self.masks[self.masks.high]
+  else:
+    rect(vec2(0, 0), self.size)
+
+  let bounds = bounds and mask
+
+  self.buffer.fillBackground(bounds.x.int, bounds.y.int, bounds.xw.int - 1, bounds.yh.int - 1)
+  self.buffer.setBackgroundColor(bgNone)
+
+
 method renderWidget(self: WPanel, renderer: TerminalPlatform, forceRedraw: bool, frameIndex: int) =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
     return
 
   if self.fillBackground:
-    # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
-    renderer.setBackgroundColor(self.getBackgroundColor)
-    renderer.buffer.fillBackground(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int - 1, self.lastBounds.yh.int - 1)
-    renderer.buffer.setBackgroundColor(bgNone)
+    # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange} fill background {self.children.len}"
+    renderer.fillRect(self.lastBounds, self.getBackgroundColor)
 
   if self.maskContent:
     renderer.pushMask(self.lastBounds)
@@ -246,9 +258,7 @@ method renderWidget(self: WStack, renderer: TerminalPlatform, forceRedraw: bool,
 
   if self.fillBackground:
     # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
-    renderer.setBackgroundColor(self.getBackgroundColor)
-    renderer.buffer.fillBackground(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int - 1, self.lastBounds.yh.int - 1)
-    renderer.buffer.setBackgroundColor(bgNone)
+    renderer.fillRect(self.lastBounds, self.getBackgroundColor)
 
   for c in self.children:
     c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex)
@@ -259,9 +269,7 @@ method renderWidget(self: WVerticalList, renderer: TerminalPlatform, forceRedraw
 
   if self.fillBackground:
     # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
-    renderer.setBackgroundColor(self.getBackgroundColor)
-    renderer.buffer.fillBackground(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int - 1, self.lastBounds.yh.int - 1)
-    renderer.buffer.setBackgroundColor(bgNone)
+    renderer.fillRect(self.lastBounds, self.getBackgroundColor)
 
   for c in self.children:
     c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex)
@@ -272,9 +280,7 @@ method renderWidget(self: WHorizontalList, renderer: TerminalPlatform, forceRedr
 
   if self.fillBackground:
     # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
-    renderer.setBackgroundColor(self.getBackgroundColor)
-    renderer.buffer.fillBackground(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int - 1, self.lastBounds.yh.int - 1)
-    renderer.buffer.setBackgroundColor(bgNone)
+    renderer.fillRect(self.lastBounds, self.getBackgroundColor)
 
   for c in self.children:
     c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex)
@@ -303,8 +309,7 @@ method renderWidget(self: WText, renderer: TerminalPlatform, forceRedraw: bool, 
 
   if self.fillBackground:
     # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
-    renderer.setBackgroundColor(self.getBackgroundColor)
-    renderer.buffer.fillBackground(self.lastBounds.x.int, self.lastBounds.y.int, self.lastBounds.xw.int - 1, self.lastBounds.yh.int - 1)
+    renderer.fillRect(self.lastBounds, self.getBackgroundColor)
 
   renderer.buffer.setBackgroundColor(bgNone)
   renderer.setForegroundColor(self.getForegroundColor)
