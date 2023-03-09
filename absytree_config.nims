@@ -71,7 +71,7 @@ info "Loading absytree_config.nim"
 
 # openLocalWorkspace(".")
 openAbsytreeServerWorkspace("http://localhost:3000")
-openGithubWorkspace("Nimaoth", "AbsytreeBrowser", "main")
+# openGithubWorkspace("Nimaoth", "AbsytreeBrowser", "main")
 # openGithubWorkspace("Nimaoth", "Absytree", "main")
 
 clearCommands "editor"
@@ -278,7 +278,7 @@ addCommand "editor.ast", "ge", "goto", "next-error"
 addCommand "editor.ast", "gs", "goto", "symbol"
 addCommand "editor.ast", "<F12>", "goto", "next-error-diagnostic"
 addCommand "editor.ast", "<S-F12>", "goto", "prev-error-diagnostic"
-addCommand "editor.ast", "<F5>", "run-selected-function"
+addCommand "editor.ast", "R", "run-selected-function"
 addCommand "editor.ast", "\"", "replace-empty", "\""
 addCommand "editor.ast", "'", "replace-empty", "\""
 addCommand "editor.ast", "+", "wrap", "+"
@@ -312,7 +312,7 @@ addCommand "editor.ast", "<PAGE_DOWN>", "scroll", -450
 addCommand "editor.ast", "<PAGE_UP>", "scroll", 450
 addCommand "editor.ast", "<C-f>", "select-center-node"
 addCommand "editor.ast", "<C-r>", "select-prev"
-addCommand "editor.ast", "<C-t>", "select-next"
+addCommand "editor.ast", "<C-m>", "select-next"
 addCommand "editor.ast", "<C-LEFT>", "select-prev"
 addCommand "editor.ast", "<C-RIGHT>", "select-next"
 addCommand "editor.ast", "<SPACE>dc", "dump-context"
