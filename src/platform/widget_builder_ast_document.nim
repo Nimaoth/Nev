@@ -85,16 +85,16 @@ proc renderVisualNode*(self: AstDocumentEditor, app: Editor, node: VisualNode, s
     panel.fillBackground = true
     panel.allowAlpha = true
     panel.drawBorder = true
-    panel.backgroundColor = app.theme.color("inputValidation.infoBorder", rgb(175, 175, 255)).withAlpha(0.2)
-    panel.foregroundColor = app.theme.color("inputValidation.infoBorder", rgb(175, 175, 255))
+    panel.backgroundColor = app.theme.color("foreground", rgb(175, 175, 255)).withAlpha(0.25)
+    panel.foregroundColor = app.theme.color("foreground", rgb(175, 175, 255))
 
   # Draw outline around node it is being refered to by the selected node
   elif node.node != nil and self.node.reff == node.node.id:
     panel.fillBackground = true
     panel.allowAlpha = true
     panel.drawBorder = true
-    panel.backgroundColor = app.theme.color("inputValidation.warningBorder", rgb(175, 255, 200)).withAlpha(0.2)
-    panel.foregroundColor = app.theme.color("inputValidation.warningBorder", rgb(175, 255, 200))
+    panel.backgroundColor = app.theme.color("inputValidation.infoBorder", rgb(175, 255, 200)).withAlpha(0.25)
+    panel.foregroundColor = app.theme.color("inputValidation.infoBorder", rgb(175, 255, 200))
 
 proc renderBlockIndent(editor: AstDocumentEditor, app: Editor, layout: NodeLayout, node: AstNode, offset: Vec2, widget: WPanel) =
   let indentLineWidth = getOption[float32](app, "ast.indent-line-width", 1)
@@ -131,8 +131,8 @@ proc renderVisualNodeLayout*(self: AstDocumentEditor, app: Editor, node: AstNode
 
     var panel = WPanel(left: bounds.x, right: bounds.xw, top: bounds.y, bottom: bounds.yh,
       fillBackground: true, drawBorder: true, allowAlpha: true,
-      backgroundColor: app.theme.color("foreground", color(1, 1, 1)).withAlpha(0.1),
-      foregroundColor: app.theme.color("foreground", rgb(255, 255, 255)))
+      backgroundColor: app.theme.color("inputValidation.warningBorder", color(1, 1, 1)).withAlpha(0.3),
+      foregroundColor: app.theme.color("inputValidation.warningBorder", rgb(255, 255, 255)))
     widget.children.insert(panel, 0)
     # renderCtx.boxy.strokeRect(bounds, app.theme.color("foreground", rgb(255, 255, 255)), 2)
 
