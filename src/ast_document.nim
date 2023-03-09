@@ -214,6 +214,8 @@ proc node*(editor: AstDocumentEditor): AstNode =
   return editor.selectedNode
 
 proc handleSelectedNodeChanged(editor: AstDocumentEditor) =
+  if editor.editor.isNil:
+    return
 
   editor.markDirty()
 
@@ -222,6 +224,8 @@ proc handleSelectedNodeChanged(editor: AstDocumentEditor) =
   let verticalDivision = getOption[bool](editor.editor, "ast.vertical-division", false)
 
   let node = editor.node
+
+  let margin = 5.0 * editor.editor.platform.totalLineHeight
 
   var foundNode = false
   var i = 0
@@ -238,14 +242,14 @@ proc handleSelectedNodeChanged(editor: AstDocumentEditor) =
       if not bounds.intersects(editor.lastBounds):
         break
 
-      if bounds.yh < 100:
+      if bounds.yh < margin:
         let subbase = node.subbase
         editor.previousBaseIndex = subbase.index
-        editor.scrollOffset = 100 - (bounds.yh - offset.y)
-      elif bounds.y > editor.lastBounds.h - 100:
+        editor.scrollOffset = margin - (bounds.yh - offset.y)
+      elif bounds.y > editor.lastBounds.h - margin:
         let subbase = node.subbase
         editor.previousBaseIndex = subbase.index
-        editor.scrollOffset = -(bounds.y - offset.y) + editor.lastBounds.h - 100
+        editor.scrollOffset = -(bounds.y - offset.y) + editor.lastBounds.h - margin
 
       return
 
@@ -292,14 +296,14 @@ proc handleSelectedNodeChanged(editor: AstDocumentEditor) =
       if not bounds.intersects(editor.lastBounds.whRect):
         break
 
-      if bounds.yh < 100:
+      if bounds.yh < margin:
         let subbase = node.subbase
         editor.previousBaseIndex = subbase.index
-        editor.scrollOffset = 100 - (bounds.yh - offset.y)
-      elif bounds.y > editor.lastBounds.h - 100:
+        editor.scrollOffset = margin - (bounds.yh - offset.y)
+      elif bounds.y > editor.lastBounds.h - margin:
         let subbase = node.subbase
         editor.previousBaseIndex = subbase.index
-        editor.scrollOffset = -(bounds.y - offset.y) + editor.lastBounds.h - 100
+        editor.scrollOffset = -(bounds.y - offset.y) + editor.lastBounds.h - margin
 
       return
 
@@ -462,10 +466,11 @@ proc newAstDocument*(filename: string = "", app: bool = false, workspaceFolder: 
 import html_renderer
 
 proc saveHtml*(self: AstDocument) =
-  let pathParts = self.filename.splitFile
-  let htmlPath = pathParts.dir / (pathParts.name & ".html")
-  let html = self.serializeHtml(gEditor.theme)
-  fs.saveFile(htmlPath, html)
+  when not defined(js):
+    let pathParts = self.filename.splitFile
+    let htmlPath = pathParts.dir / (pathParts.name & ".html")
+    let html = self.serializeHtml(gEditor.theme)
+    fs.saveFile(htmlPath, html)
 
 method save*(self: AstDocument, filename: string = "", app: bool = false) =
   self.filename = if filename.len > 0: filename else: self.filename
