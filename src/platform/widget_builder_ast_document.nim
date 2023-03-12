@@ -1,5 +1,6 @@
 import std/[strformat, tables, sugar, sequtils]
 import util, editor, document_editor, ast_document, ast, node_layout, compiler, text_document, custom_logger, widgets, platform, theme, timer
+import widget_builders_base
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import vmath, bumpy, chroma
 
@@ -48,6 +49,18 @@ proc renderVisualNode*(self: AstDocumentEditor, app: Editor, node: VisualNode, s
   let charWidth = app.platform.charWidth
 
   # echo "renderVisualNode ", node
+
+  if not node.widgetTemplate.isNil:
+    var nodeWidget = node.widgetTemplate
+    if node.cloneWidget:
+      nodeWidget = nodeWidget.clone()
+
+    nodeWidget.left = node.bounds.x
+    nodeWidget.top = node.bounds.y
+    nodeWidget.right = node.bounds.xw
+    nodeWidget.bottom = node.bounds.yh
+    widget.children.add nodeWidget
+    return
 
   var panel = WPanel(left: node.bounds.x, right: node.bounds.xw, top: node.bounds.y, bottom: node.bounds.yh)
   widget.children.add panel
@@ -133,7 +146,7 @@ proc renderVisualNodeLayout*(self: AstDocumentEditor, app: Editor, node: AstNode
       fillBackground: true, drawBorder: true, allowAlpha: true,
       backgroundColor: app.theme.color("inputValidation.warningBorder", color(1, 1, 1)).withAlpha(0.3),
       foregroundColor: app.theme.color("inputValidation.warningBorder", rgb(255, 255, 255)))
-    widget.children.insert(panel, 0)
+    widget.children.add panel
     # renderCtx.boxy.strokeRect(bounds, app.theme.color("foreground", rgb(255, 255, 255)), 2)
 
     # let value = ctx.getValue(self.node)
@@ -212,7 +225,8 @@ method updateWidget*(self: AstDocumentEditor, app: Editor, widget: WPanel, frame
     if self.active: app.theme.color("editor.background", rgb(25, 25, 40)) else: app.theme.color("editor.background", rgb(25, 25, 25)) * 0.75,
     frameIndex)
 
-  if not (contentPanel.changed(frameIndex) or self.dirty or app.platform.redrawEverything):
+  let textEditorDirty = if self.textEditor.isNil: false else: self.textEditor.dirty
+  if not (contentPanel.changed(frameIndex) or self.dirty or app.platform.redrawEverything or textEditorDirty):
     return
 
   self.resetDirty()
@@ -227,6 +241,22 @@ method updateWidget*(self: AstDocumentEditor, app: Editor, widget: WPanel, frame
   var rendered = 0
 
   var replacements = initTable[Id, VisualNode]()
+
+  if not self.currentlyEditedNode.isNil or self.currentlyEditedSymbol != null:
+    if self.textEditorWidget.isNil:
+      self.textEditorWidget = WPanel(sizeToContent: true)
+    self.textEditor.active = true
+    self.textEditor.markDirty()
+    self.textEditor.updateWidget(app, self.textEditorWidget, frameIndex)
+    self.textEditorWidget.layoutWidget(rect(0, 0, 0, 0), frameIndex, app.platform.layoutOptions)
+  else:
+    self.textEditorWidget = nil
+
+  if not isNil self.currentlyEditedNode:
+    replacements[self.currentlyEditedNode.id] = VisualNode(id: newId(), bounds: self.textEditorWidget.lastBounds, widgetTemplate: self.textEditorWidget)
+  elif self.currentlyEditedSymbol != null:
+    replacements[self.currentlyEditedSymbol] = VisualNode(id: newId(), bounds: self.textEditorWidget.lastBounds, widgetTemplate: self.textEditorWidget)
+
   var selectedNode = self.node
 
   let indent = getOption[float32](app, "ast.indent", 20)

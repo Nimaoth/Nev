@@ -95,10 +95,14 @@ proc newFunctionNode*(bounds: Rect, render: VisualNodeRenderFunc): VisualNode =
 
 proc createReplacement(input: NodeLayoutInput, node: AstNode, layout: var NodeLayout, line: var VisualNode): bool =
   if input.replacements.contains(node.id):
-    layout.nodeToVisualNode[node.id] = line.add input.replacements[node.id].clone
+    var n = input.replacements[node.id].clone
+    n.cloneWidget = false
+    layout.nodeToVisualNode[node.id] = line.add n
     return true
   if input.replacements.contains(node.reff):
-    layout.nodeToVisualNode[node.id] = line.add input.replacements[node.reff].clone
+    var n = input.replacements[node.reff].clone
+    n.cloneWidget = true
+    layout.nodeToVisualNode[node.id] = line.add n
     return true
   return false
 

@@ -85,12 +85,14 @@ type TextDocumentEditor* = ref object of DocumentEditor
   commandCount*: int
   commandCountRestore*: int
 
+  disableScrolling*: bool
   scrollOffset*: float
   previousBaseIndex*: int
   lineNumbers*: Option[LineNumbers]
 
   lastRenderedLines*: seq[StyledLine]
 
+  disableCompletions*: bool
   completions*: seq[TextCompletion]
   selectedCompletion*: int
   completionsBaseIndex*: int
@@ -257,6 +259,7 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
   else:
     var line = self.lines[i]
     result = StyledLine(index: i, parts: @[StyledText(text: line, scope: "", priority: 1000000000)])
+    self.styledTextCache[i] = result
 
     var regexes = initTable[string, Regex]()
 
@@ -349,8 +352,6 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
         let last = if nodeRange.last.line < i: 0 elif nodeRange.last.line == i: nodeRange.last.column else: line.len
 
         result.overrideStyle(first, last, $scope, match.pattern)
-
-    self.styledTextCache[i] = result
 
 proc initTreesitter(self: TextDocument): Future[void] {.async.} =
   if not self.tsParser.isNil:
@@ -829,6 +830,9 @@ proc doMoveCursorNextFindResult(self: TextDocumentEditor, cursor: Cursor, offset
   return self.getNextFindResult(cursor, offset).first
 
 proc scrollToCursor(self: TextDocumentEditor, cursor: Cursor, keepVerticalOffset: bool = false) =
+  if self.disableScrolling:
+    return
+
   let targetLine = cursor.line
   let totalLineHeight = self.editor.platform.totalLineHeight
 
@@ -913,6 +917,9 @@ proc getHoveredCompletion*(self: TextDocumentEditor, mousePosWindow: Vec2): int 
   return 0
 
 method handleScroll*(self: TextDocumentEditor, scroll: Vec2, mousePosWindow: Vec2) =
+  if self.disableScrolling:
+    return
+
   let scrollAmount = scroll.y * getOption[float](self.editor, "text.scroll-speed", 40)
   if not self.lastCompletionsWidget.isNil and self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
     self.completionsScrollOffset += scrollAmount
@@ -1041,7 +1048,7 @@ proc insertText*(self: TextDocumentEditor, text: string) {.expose("editor.text")
   self.selections = self.document.edit(self.selections, self.selections, text)
   self.updateTargetColumn(Last)
 
-  if text == "." or text == ",":
+  if not self.disableCompletions and (text == "." or text == ","):
     self.showCompletions = true
     asyncCheck self.getCompletionsAsync()
   elif self.showCompletions:
@@ -1056,6 +1063,8 @@ proc redo(self: TextDocumentEditor) {.expose("editor.text").} =
     self.selections = selections
 
 proc scrollText(self: TextDocumentEditor, amount: float32) {.expose("editor.text").} =
+  if self.disableScrolling:
+    return
   self.scrollOffset += amount
   self.markDirty()
 
@@ -1450,6 +1459,9 @@ proc getCompletionsFromContent(self: TextDocumentEditor): seq[TextCompletion] =
     result.add(TextCompletion(name: text, scope: "document"))
 
 proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.} =
+  if self.disableCompletions:
+    return
+
   let languageServer = await self.getLanguageServer()
 
   if languageServer.isSome:

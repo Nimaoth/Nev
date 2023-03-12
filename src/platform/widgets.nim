@@ -46,6 +46,33 @@ type
 proc width*(self: WWidget): float = self.right - self.left
 proc height*(self: WWidget): float = self.bottom - self.top
 
+proc toString*(self: WWidget, indent: string): string =
+  var name = ""
+  var rest = ""
+  if self of WPanel:
+    name = "WPanel"
+    rest = ":\n"
+    for c in self.WPanel.children:
+      rest.add c.toString(indent & "  ")
+      rest.add "\n"
+  if self of WStack:
+    name = "WStack"
+    rest = ":\n"
+    for c in self.WStack.children:
+      rest.add c.toString(indent & "  ")
+      rest.add "\n"
+  if self of WText:
+    name = "WText"
+    rest = ": "
+    rest.add self.WText.text
+
+  result = indent
+  result.add name
+  result.add fmt"(ltwh: ({self.left}, {self.top}, {self.width}, {self.height}), anchor: {self.anchor}, bounds: {self.lastBounds}, {self.sizeToContent})"
+  result.add rest
+
+proc `$`*(self: WWidget): string = self.toString("")
+
 proc getForegroundColor*(self: WWidget): Color =
   result = self.foregroundColor
   if not self.allowAlpha:
@@ -157,20 +184,29 @@ proc calculateBounds(self: WWidget, container: Rect): Rect =
     result.h = bottom - top
 
 method layoutWidget*(self: WPanel, container: Rect, frameIndex: int, options: WLayoutOptions) =
-  let newBounds = self.calculateBounds(container)
+  var newBounds = self.calculateBounds(container)
 
   if self.logLayout:
     debugf"layoutPanel({container}, {frameIndex}): anchor={self.anchor}, pivot={self.pivot}, {self.left},{self.top}, {self.right},{self.bottom} -> {newBounds}"
     if newBounds != self.lastBounds:
       debugf"bounds changed {self.lastBounds} -> {newBounds}"
 
+  if self.sizeToContent:
+    newBounds.wh = vec2()
+
   if newBounds != self.lastBounds:
     self.lastBounds = newBounds
     self.lastBoundsChange = frameIndex
 
   if self.lastHierarchyChange >= frameIndex or self.lastBoundsChange >= frameIndex:
-    for c in self.children:
+    for i, c in self.children:
       c.layoutWidget(newBounds, frameIndex, options)
+      if self.sizeToContent:
+        newBounds = newBounds or c.lastBounds
+
+  if newBounds != self.lastBounds:
+    self.lastBounds = newBounds
+    self.lastBoundsChange = frameIndex
 
 method layoutWidget*(self: WStack, container: Rect, frameIndex: int, options: WLayoutOptions) =
   let newBounds = self.calculateBounds(container)
@@ -274,3 +310,58 @@ method layoutWidget*(self: WText, container: Rect, frameIndex: int, options: WLa
   if newBounds != self.lastBounds:
     self.lastBounds = newBounds
     self.lastBoundsChange = frameIndex
+
+# @todo: use a macro so we don't forget adding properties to copy here
+proc copyTo(self: WWidget, to: var WWidget) =
+  to.anchor = self.anchor
+  to.pivot = self.pivot
+  to.left = self.left
+  to.top = self.top
+  to.right = self.right
+  to.bottom = self.bottom
+  to.backgroundColor = self.backgroundColor
+  to.foregroundColor = self.foregroundColor
+  to.lastBounds = self.lastBounds
+  to.lastBoundsChange = self.lastBoundsChange
+  to.lastHierarchyChange = self.lastHierarchyChange
+  to.lastInvalidationRect = self.lastInvalidationRect
+  to.lastInvalidation = self.lastInvalidation
+  to.sizeToContent = self.sizeToContent
+  to.drawBorder = self.drawBorder
+  to.fillBackground = self.fillBackground
+  to.logLayout = self.logLayout
+  to.allowAlpha = self.allowAlpha
+
+method clone*(self: WWidget): WWidget {.base.} = discard
+
+method clone*(self: WPanel): WWidget =
+  result = WPanel(children: @[], maskContent: self.maskContent)
+  self.copyTo(result)
+  let r = result.WPanel
+  for c in self.children:
+    r.children.add c.clone()
+
+method clone*(self: WHorizontalList): WWidget =
+  result = WHorizontalList(children: @[])
+  self.copyTo(result)
+  let r = result.WHorizontalList
+  for c in self.children:
+    r.children.add c.clone()
+
+method clone*(self: WVerticalList): WWidget =
+  result = WVerticalList(children: @[])
+  self.copyTo(result)
+  let r = result.WVerticalList
+  for c in self.children:
+    r.children.add c.clone()
+
+method clone*(self: WStack): WWidget =
+  result = WStack(children: @[])
+  self.copyTo(result)
+  let r = result.WStack
+  for c in self.children:
+    r.children.add c.clone()
+
+method clone*(self: WText): WWidget =
+  result = WText(text: self.text, style: self.style)
+  self.copyTo(result)
