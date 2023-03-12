@@ -5,7 +5,7 @@ import editor, util, document, document_editor, text_document, events, id, ast_i
 import compiler
 from scripting_api as api import nil
 import custom_logger
-import platform/[filesystem, platform]
+import platform/[filesystem, platform, widgets]
 import workspaces/[workspace]
 
 type ExecutionOutput* = ref object
@@ -185,6 +185,7 @@ type AstDocumentEditor* = ref object of DocumentEditor
   textEditor*: TextDocumentEditor
   textDocument*: TextDocument
   textEditEventHandler*: EventHandler
+  textEditorWidget*: WPanel
 
   modeEventHandler: EventHandler
   currentMode*: string
@@ -588,6 +589,8 @@ proc editSymbol*(self: AstDocumentEditor, symbol: Symbol) =
   self.textEditor.setMode("insert")
   self.textEditor.renderHeader = false
   self.textEditor.fillAvailableSpace = false
+  self.textEditor.disableScrolling = true
+  self.textEditor.disableCompletions = true
   self.textEditor.lineNumbers = api.LineNumbers.None.some
   discard self.textDocument.textChanged.subscribe (doc: TextDocument) => self.handleTextDocumentChanged()
   self.updateCompletions()
@@ -603,6 +606,8 @@ proc editNode*(self: AstDocumentEditor, node: AstNode) =
   self.textEditor.setMode("insert")
   self.textEditor.renderHeader = false
   self.textEditor.fillAvailableSpace = false
+  self.textEditor.disableScrolling = true
+  self.textEditor.disableCompletions = true
   self.textEditor.lineNumbers = api.LineNumbers.None.some
   discard self.textDocument.textChanged.subscribe (doc: TextDocument) => self.handleTextDocumentChanged()
   self.updateCompletions()

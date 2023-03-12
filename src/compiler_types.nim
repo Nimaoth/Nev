@@ -2,6 +2,7 @@ import std/[tables, strutils, sequtils, sugar, hashes, options, strformat]
 import fusion/matching
 import bumpy, vmath
 import ast, id, util, rect_utils, query_system, theme
+import platform/[widgets]
 
 type
   TypeKind* = enum
@@ -96,6 +97,8 @@ type
     styleOverride*: Option[set[FontStyle]]
     background*: Option[seq[string]]
     depth*: int
+    widgetTemplate*: WWidget
+    cloneWidget*: bool
 
   VisualNodeRange* = object
     parent*: VisualNode
@@ -340,6 +343,7 @@ func fingerprint*(symbol: Option[Symbol]): Fingerprint =
     return s.fingerprint
   return @[]
 
+# @todo: use a macro so we don't forget adding properties to copy here
 proc clone*(node: VisualNode): VisualNode =
   new result
   result.id = newId()
@@ -351,6 +355,8 @@ proc clone*(node: VisualNode): VisualNode =
   result.font = node.font
   result.fontSize = node.fontSize
   result.render = node.render
+  result.widgetTemplate = node.widgetTemplate
+  result.cloneWidget = node.cloneWidget
   result.children = node.children.map c => c.clone
   for c in result.children:
     c.parent = result
@@ -396,7 +402,9 @@ func hash*(vnode: VisualNode): Hash =
     vnode.mHash = result
   return vnode.mHash
 
+# @node: atm VisualNode fingerprinting is not used
 func fingerprint*(vnode: VisualNode): Fingerprint =
+  assert false
   let h = vnode.text.hash !& vnode.colors.hash !& vnode.bounds.hash !& vnode.children.hash
   result = @[h.int64] & vnode.children.map(c => c.fingerprint).foldl(a & b, @[0.int64])
 
@@ -412,6 +420,10 @@ func `==`*(a: VisualNode, b: VisualNode): bool =
   if a.bounds != b.bounds:
     return false
   if a.render != b.render:
+    return false
+  if a.widgetTemplate != b.widgetTemplate:
+    return false
+  if a.cloneWidget != b.cloneWidget:
     return false
   return a.children == b.children
 
