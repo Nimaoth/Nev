@@ -37,6 +37,7 @@ CreateContext Context:
   proc computeValueImpl(ctx: Context, node: AstNode): Value {.query("Value").}
   proc computeSymbolImpl(ctx: Context, node: AstNode): Option[Symbol] {.query("Symbol").}
   proc computeSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, Symbol] {.query("Symbols").}
+  proc computeValidationImpl(ctx: Context, node: AstNode): bool {.query("Validation").}
   proc computeSymbolTypeImpl(ctx: Context, symbol: Symbol): Type {.query("SymbolType").}
   proc computeSymbolValueImpl(ctx: Context, symbol: Symbol): Value {.query("SymbolValue").}
   proc computeFunctionExecutionImpl(ctx: Context, fec: FunctionExecutionContext): Value {.query("FunctionExecution", useCache = false, useFingerprinting = false).}
@@ -58,6 +59,9 @@ template logIf(condition: bool, message: string, logResult: bool) =
 
 proc computeNodeLayoutImpl(ctx: Context, nodeLayoutInput: NodeLayoutInput): NodeLayout =
   ctx.dependOnCurrentRevision()
+
+  discard ctx.computeValidation(nodeLayoutInput.node)
+
   # logIf(ctx.enableLogging or ctx.enableQueryLogging, "computeNodeLayoutImpl", false)
   return computeNodeLayoutImpl2(ctx, nodeLayoutInput)
 
@@ -103,11 +107,7 @@ proc computeSymbolValueImpl(ctx: Context, symbol: Symbol): Value =
   of skBuiltin:
     return symbol.value
 
-proc computeTypeImpl(ctx: Context, node: AstNode): Type =
-  logIf(ctx.enableLogging or ctx.enableQueryLogging, "computeTypeImpl " & $node, true)
-
-  let key: Dependency = ctx.getTypeKey(node.getItem)
-
+template enableDiagnostics(key: untyped): untyped =
   # Delete old diagnostics
   if ctx.diagnosticsPerQuery.contains(key):
     for id in ctx.diagnosticsPerQuery[key]:
@@ -131,9 +131,57 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
     else:
       ctx.diagnosticsPerQuery.del key
 
-  template addDiagnostic(node: AstNode, msg: untyped) =
-    ids.add(node.id)
+  template addDiagnostic(id: Id, msg: untyped) =
+    ids.add(id)
     diagnostics.add Diagnostic(message: msg)
+
+proc computeValidationImpl(ctx: Context, node: AstNode): bool =
+  logIf(ctx.enableLogging or ctx.enableQueryLogging, "computeValidationImpl " & $node, true)
+
+  let key: Dependency = ctx.getValidationKey(node.getItem)
+  enableDiagnostics(key)
+
+  result = true
+
+  let typ = ctx.computeType(node)
+  if typ.kind == tError:
+    result = false
+
+  block switch:
+    case node
+    of FunctionDefinition():
+      if typ.kind != tFunction:
+        addDiagnostic(node.id, fmt"Type of function is not a function type, but {typ}")
+        return false
+
+      if node.len != 3:
+        addDiagnostic(node.id, fmt"Function node must have 3 children, but has {node.len}")
+        return false
+
+      let returnType = typ.returnType
+
+      let body = node[2]
+      let bodyType = ctx.computeType(body)
+
+      if bodyType.kind == tError:
+        return false
+
+      if returnType != bodyType:
+        addDiagnostic(body.id, fmt"Function return type is {returnType}, but body returns {bodyType}")
+        return false
+
+    else:
+      discard
+
+  if result:
+    for c in node.children:
+      result = result and ctx.computeValidation(c)
+
+proc computeTypeImpl(ctx: Context, node: AstNode): Type =
+  logIf(ctx.enableLogging or ctx.enableQueryLogging, "computeTypeImpl " & $node, true)
+
+  let key: Dependency = ctx.getTypeKey(node.getItem)
+  enableDiagnostics(key)
 
   case node
   of Empty():
@@ -144,6 +192,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
       discard node.text.parseInt
       return intType()
     except CatchableError:
+      addDiagnostic(node.id, fmt"Number literal is not valid or outside of range")
       return errorType()
 
   of StringLiteral():
@@ -177,7 +226,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
       return errorType()
 
     if returnTypeType.kind != tType:
-      addDiagnostic(returnTypeNode, fmt"Expected type, got {returnTypeType}")
+      addDiagnostic(returnTypeNode.id, fmt"Expected type, got {returnTypeType}")
       return errorType()
 
     let returnTypeValue = ctx.computeValue(returnTypeNode)
@@ -185,7 +234,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
       return errorType()
 
     if returnTypeValue.kind != vkType:
-      addDiagnostic(returnTypeNode, fmt"Expected type value, got {returnTypeValue}")
+      addDiagnostic(returnTypeNode.id, fmt"Expected type value, got {returnTypeValue}")
       return errorType()
 
     let returnType = returnTypeValue.typ
@@ -194,7 +243,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
 
   of Call():
     if node.len == 0:
-      addDiagnostic(node, fmt"Empty call node")
+      addDiagnostic(node.id, fmt"Empty call node")
       return errorType()
 
     let function = node[0]
@@ -205,7 +254,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
       return Type(kind: tError)
 
     if functionType.kind != tFunction:
-      addDiagnostic(function, fmt"Trying to call non-function type {functionType}")
+      addDiagnostic(function.id, fmt"Trying to call non-function type {functionType}")
       return Type(kind: tError)
 
     let numArgs = node.len - 1
@@ -217,7 +266,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
 
     # Check arg num
     if numArgs != functionType.paramTypes.len and not isValidOpenAnyCall:
-      addDiagnostic(node, fmt"Wrong number of arguments. Expected {functionType.paramTypes.len} got {numArgs}")
+      addDiagnostic(node.id, fmt"Wrong number of arguments. Expected {functionType.paramTypes.len} got {numArgs}")
       return Type(kind: tError)
 
     var allArgsOk = true
@@ -231,7 +280,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
         continue
 
       if argType != functionType.paramTypes[i - 1]:
-        addDiagnostic(node[i], fmt"Argument {i} has the wrong type. Expected {functionType.paramTypes[i - 1]} got {argType}")
+        addDiagnostic(node[i].id, fmt"Argument {i} has the wrong type. Expected {functionType.paramTypes[i - 1]} got {argType}")
         allArgsOk = false
 
     if not allArgsOk:
@@ -256,14 +305,14 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
       if typeNodeType.kind == tError:
         return errorType()
       if typeNodeType.kind != tType:
-        addDiagnostic(typeNode, fmt"Expected type, got {typeNodeType}")
+        addDiagnostic(typeNode.id, fmt"Expected type, got {typeNodeType}")
         return errorType()
 
       let typeNodeValue = ctx.computeValue(typeNode)
       if typeNodeValue.kind == vkError:
         return errorType()
       if typeNodeValue.kind != vkType:
-        addDiagnostic(typeNode, fmt"Expected type value, got {typeNodeValue}")
+        addDiagnostic(typeNode.id, fmt"Expected type value, got {typeNodeValue}")
         return errorType()
 
       typ = typeNodeValue.typ
@@ -279,7 +328,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
           typ = valueNodeType
 
         if valueNodeType != typ:
-          addDiagnostic(valueNode, fmt"Expected {typ}, got {valueNodeType}")
+          addDiagnostic(valueNode.id, fmt"Expected {typ}, got {valueNodeType}")
           return errorType()
 
     return typ
@@ -296,14 +345,14 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
       if typeNodeType.kind == tError:
         return errorType()
       if typeNodeType.kind != tType:
-        addDiagnostic(typeNode, fmt"Expected type, got {typeNodeType}")
+        addDiagnostic(typeNode.id, fmt"Expected type, got {typeNodeType}")
         return errorType()
 
       let typeNodeValue = ctx.computeValue(typeNode)
       if typeNodeValue.kind == vkError:
         return errorType()
       if typeNodeValue.kind != vkType:
-        addDiagnostic(typeNode, fmt"Expected type value, got {typeNodeValue}")
+        addDiagnostic(typeNode.id, fmt"Expected type value, got {typeNodeValue}")
         return errorType()
 
       typ = typeNodeValue.typ
@@ -319,7 +368,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
           typ = valueNodeType
 
         if valueNodeType != typ:
-          addDiagnostic(valueNode, fmt"Expected {typ}, got {valueNodeType}")
+          addDiagnostic(valueNode.id, fmt"Expected {typ}, got {valueNodeType}")
           return errorType()
 
     return typ
@@ -331,7 +380,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
       let symbol = symbols[id]
       return ctx.computeSymbolType(symbol)
 
-    addDiagnostic(node, fmt"Unknown symbol '{id}'")
+    addDiagnostic(node.id, fmt"Unknown symbol '{id}'")
     return errorType()
 
   of NodeList():
@@ -366,7 +415,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
       if conditionType.kind == tError:
         ok = false
       elif conditionType.kind != tInt:
-        addDiagnostic(condition, fmt"Condition of if statement must be an int but is {conditionType}")
+        addDiagnostic(condition.id, fmt"Condition of if statement must be an int but is {conditionType}")
         ok = false
 
       let trueCaseType = ctx.computeType(trueCase)
@@ -405,7 +454,7 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
     if conditionType.kind == tError:
       ok = false
     elif conditionType.kind != tInt:
-      addDiagnostic(node[0], fmt"Condition of while statement must be an int but is {conditionType}")
+      addDiagnostic(node[0].id, fmt"Condition of while statement must be an int but is {conditionType}")
       ok = false
 
     let bodyType = ctx.computeType(node[1])
@@ -433,17 +482,17 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
       return errorType()
 
     if targetType != valueType:
-      addDiagnostic(value, fmt"Can't assign {valueType} to {targetType}")
+      addDiagnostic(value.id, fmt"Can't assign {valueType} to {targetType}")
       return errorType()
 
     if ctx.computeSymbol(target).getSome(sym):
       if sym.kind == skBuiltin:
-        addDiagnostic(target, fmt"Can't assign to builtin symbol {sym}")
+        addDiagnostic(target.id, fmt"Can't assign to builtin symbol {sym}")
         return errorType()
 
       assert sym.kind == skAstNode
       if sym.node.kind != VarDecl:
-        addDiagnostic(target, fmt"Can't assign to non-mutable symbol {sym}")
+        addDiagnostic(target.id, fmt"Can't assign to non-mutable symbol {sym}")
         return errorType()
 
     return voidType()
@@ -453,6 +502,9 @@ proc computeTypeImpl(ctx: Context, node: AstNode): Type =
 
 proc computeValueImpl(ctx: Context, node: AstNode): Value =
   logIf(ctx.enableLogging or ctx.enableQueryLogging, "computeValueImpl " & $node, true)
+
+  let key: Dependency = ctx.getValueKey(node.getItem)
+  enableDiagnostics(key)
 
   case node
   of NumberLiteral():

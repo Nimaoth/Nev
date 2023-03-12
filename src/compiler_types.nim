@@ -480,6 +480,8 @@ func `==`*(a: NodeLayoutInput, b: NodeLayoutInput): bool =
   if a.indent != b.indent: return false
   return true
 
+func fingerprint*(val: bool): Fingerprint = @[val.int64]
+
 when defined(js):
   proc getIdFunctionExecutionContextJs*(fec: FunctionExecutionContext): cstring {.exportc, used.} =
     {.emit: ["return toCString(", fec, ".id);"].} #"""
