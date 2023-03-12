@@ -129,6 +129,9 @@ proc renderBlockIndent(editor: AstDocumentEditor, app: Editor, layout: NodeLayou
       widget.children.insert(panel, 0)
 
 proc renderVisualNodeLayout*(self: AstDocumentEditor, app: Editor, node: AstNode, bounds: Rect, layout: NodeLayout, offset: Vec2, contentWidget: WPanel, frameIndex: int) =
+  let totalLineHeight = app.platform.totalLineHeight
+  let charWidth = app.platform.charWidth
+
   self.lastLayouts.add (layout, offset)
 
   var widget = WPanel(left: layout.bounds.x, right: layout.bounds.xw, top: layout.bounds.y + offset.y, bottom: layout.bounds.yh + offset.y)
@@ -137,6 +140,25 @@ proc renderVisualNodeLayout*(self: AstDocumentEditor, app: Editor, node: AstNode
     self.renderVisualNode(app, line, self.node, bounds, offset, widget, frameIndex)
   contentWidget.children.add widget
 
+  # Draw diagnostics
+  let errorColor = app.theme.color("editorError.foreground", rgb(255, 0, 0))
+  for (id, visualRange) in layout.nodeToVisualNode.pairs:
+    if ctx.diagnosticsPerNode.contains(id):
+      var foundErrors = false
+      let bounds = visualRange.absoluteBounds + offset
+      var last = rect(bounds.xy, vec2())
+      for diagnostics in ctx.diagnosticsPerNode[id].queries.values:
+        for diagnostic in diagnostics:
+          var panel = WText(text: diagnostic.message,
+            left: -diagnostic.message.len.float * charWidth, right: 0, top: last.yh, bottom: last.yh + totalLineHeight,
+            anchor: (vec2(1, 0), vec2(1, 0)), sizeToContent: true, foregroundColor: errorColor)
+          contentWidget.children.add panel
+          foundErrors = true
+      if foundErrors:
+        var panel = WPanel(left: bounds.x, right: bounds.xw, top: bounds.y, bottom: bounds.yh,
+          allowAlpha: true, fillBackground: true, drawBorder: true, backgroundColor: errorColor.withAlpha(0.25), foregroundColor: errorColor)
+        contentWidget.children.add panel
+
   # Render outline for selected node
   if layout.nodeToVisualNode.contains(self.node.id):
     let visualRange = layout.nodeToVisualNode[self.node.id]
@@ -144,7 +166,7 @@ proc renderVisualNodeLayout*(self: AstDocumentEditor, app: Editor, node: AstNode
 
     var panel = WPanel(left: bounds.x, right: bounds.xw, top: bounds.y, bottom: bounds.yh,
       fillBackground: true, drawBorder: true, allowAlpha: true,
-      backgroundColor: app.theme.color("inputValidation.warningBorder", color(1, 1, 1)).withAlpha(0.3),
+      backgroundColor: app.theme.color("inputValidation.warningBorder", color(1, 1, 1)).withAlpha(0.25),
       foregroundColor: app.theme.color("inputValidation.warningBorder", rgb(255, 255, 255)))
     widget.children.add panel
     # renderCtx.boxy.strokeRect(bounds, app.theme.color("foreground", rgb(255, 255, 255)), 2)

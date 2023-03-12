@@ -1008,7 +1008,8 @@ proc fillBackground*(tb: var TerminalBuffer, x1, y1, x2, y2: int) =
     for y in ys..ye:
       for x in xs..xe:
         var c = tb[x, y]
-        c.ch = " ".runeAt 0
+        if tb.currBgAlpha == 1:
+          c.ch = " ".runeAt 0
         c.bg = tb.currBg
         c.bgColor = blend(tb.currBgColor, c.bgColor, tb.currBgAlpha)
         tb[x, y] = c
