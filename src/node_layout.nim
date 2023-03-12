@@ -188,7 +188,8 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
   case node
   of Empty():
     if not input.createReplacement(node, result, line):
-      result.nodeToVisualNode[node.id] = line.add VisualNode(id: newId(), colors: @[config.colors.empty], node: node, bounds: rect(vec2(), vec2(config.fontSize * 0.5, config.fontSize)))
+      let bounds = input.measureText(" ")
+      result.nodeToVisualNode[node.id] = line.add VisualNode(id: newId(), colors: @[config.colors.empty], node: node, bounds: rect(vec2(), bounds))
 
   of NumberLiteral():
     if not input.createReplacement(node, result, line):
@@ -435,7 +436,8 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
         let line1 = line
         line = VisualNode(id: newId(), parent: parent, bounds: rect(prevIndent.float32 * input.indent, 0, 0, 0), indent: prevIndent, depth: parent.depth + 1)
 
-        let divLine = newBlockNode(@["keyword.operator"], vec2(0, config.fontSize * 0.1), node[0])
+        let fontSize = input.measureText(" ").y
+        let divLine = newBlockNode(@["keyword.operator"], vec2(0, fontSize * 0.1), node[0])
         discard line.add divLine
         result.nodeToVisualNode[node[0].id] = VisualNodeRange(parent: line, first: 0, last: 1)
         parent.addLine(line)
