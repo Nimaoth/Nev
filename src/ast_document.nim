@@ -193,7 +193,11 @@ type AstDocumentEditor* = ref object of DocumentEditor
   completionText: string
   completions*: seq[Completion]
   selectedCompletion*: int
-  lastItems*: seq[tuple[index: int, bounds: Rect]]
+  lastItems*: seq[tuple[index: int, widget: WWidget]]
+  completionsBaseIndex*: int
+  completionsScrollOffset*: float
+  scrollToCompletion*: Option[int]
+  lastCompletionsWidget*: WWidget
 
   scrollOffset*: float
   previousBaseIndex*: int
@@ -207,7 +211,7 @@ type AstDocumentEditor* = ref object of DocumentEditor
 
 import goto_popup
 
-proc updateCompletions(editor: AstDocumentEditor)
+proc updateCompletions(self: AstDocumentEditor)
 proc getPrevChild*(document: AstDocument, node: AstNode, max: int = -1): Option[AstNode]
 proc getNextChild*(document: AstDocument, node: AstNode, min: int = -1): Option[AstNode]
 
@@ -657,22 +661,22 @@ proc getCompletions*(editor: AstDocumentEditor, text: string, contextNode: Optio
 
   return result
 
-proc updateCompletions(editor: AstDocumentEditor) =
-  if editor.textDocument == nil:
-    editor.completions = @[]
-    editor.selectedCompletion = 0
+proc updateCompletions(self: AstDocumentEditor) =
+  if self.textDocument == nil:
+    self.completions = @[]
+    self.selectedCompletion = 0
     return
 
-  let text = editor.textDocument.content.join
+  let text = self.textDocument.content.join
 
-  editor.completions = editor.getCompletions(text, some(editor.node))
-  editor.completionText = text
+  self.completions = self.getCompletions(text, some(self.node))
+  self.completionText = text
 
-  if editor.completions.len > 0:
-    editor.selectedCompletion = editor.selectedCompletion.clamp(0, editor.completions.len - 1)
+  if self.completions.len > 0:
+    self.selectedCompletion = self.selectedCompletion.clamp(0, self.completions.len - 1)
   else:
-    editor.selectedCompletion = 0
-  editor.markDirty()
+    self.selectedCompletion = 0
+  self.markDirty()
 
 proc finishEdit*(self: AstDocumentEditor, apply: bool)
 
@@ -1609,40 +1613,45 @@ proc rename*(self: AstDocumentEditor) {.expose("editor.ast").} =
   if self.isEditing: return
   discard self.tryEdit self.node
 
-proc selectPrevCompletion(self: AstDocumentEditor) {.expose("editor.ast").} =
+proc selectPrevCompletion*(self: AstDocumentEditor) {.expose("editor.ast").} =
   if self.completions.len > 0:
     self.selectedCompletion = (self.selectedCompletion - 1).clamp(0, self.completions.len - 1)
   else:
     self.selectedCompletion = 0
+  self.scrollToCompletion = self.selectedCompletion.some
+  self.markDirty()
 
-proc selectNextCompletion(editor: AstDocumentEditor) {.expose("editor.ast").} =
-  if editor.completions.len > 0:
-    editor.selectedCompletion = (editor.selectedCompletion + 1).clamp(0, editor.completions.len - 1)
+proc selectNextCompletion*(self: AstDocumentEditor) {.expose("editor.ast").} =
+  if self.completions.len > 0:
+    self.selectedCompletion = (self.selectedCompletion + 1).clamp(0, self.completions.len - 1)
   else:
-    editor.selectedCompletion = 0
+    self.selectedCompletion = 0
+  self.scrollToCompletion = self.selectedCompletion.some
+  self.markDirty()
 
-proc applySelectedCompletion(editor: AstDocumentEditor) {.expose("editor.ast").} =
-  if editor.textDocument == nil:
+proc applySelectedCompletion*(self: AstDocumentEditor) {.expose("editor.ast").} =
+  if self.textDocument == nil:
     return
 
-  if editor.completions.len == 0:
+  if self.completions.len == 0:
     return
 
-  let com = editor.completions[editor.selectedCompletion]
-  let completionText = editor.completionText
+  let com = self.completions[self.selectedCompletion]
+  let completionText = self.completionText
 
-  logger.log(lvlInfo, fmt"[astedit] Applying completion {editor.selectedCompletion} ({completionText})")
+  logger.log(lvlInfo, fmt"[astedit] Applying completion {self.selectedCompletion} ({completionText})")
 
-  editor.finishEdit false
+  self.finishEdit false
+  self.markDirty()
 
   case com.kind
   of SymbolCompletion:
     if ctx.getSymbol(com.id).getSome(symbol):
-      editor.node = editor.document.replaceNode(editor.node, AstNode(kind: Identifier, reff: symbol.id))
+      self.node = self.document.replaceNode(self.node, AstNode(kind: Identifier, reff: symbol.id))
   of AstCompletion:
-    if editor.createDefaultNode(com.nodeKind).getSome(nodeIndex):
+    if self.createDefaultNode(com.nodeKind).getSome(nodeIndex):
       let (newNode, _) = nodeIndex
-      discard editor.document.replaceNode(editor.node, newNode)
+      discard self.document.replaceNode(self.node, newNode)
 
       if newNode.kind == NumberLiteral:
         newNode.text = completionText
@@ -1652,11 +1661,11 @@ proc applySelectedCompletion(editor: AstDocumentEditor) {.expose("editor.ast").}
         newNode.text = completionText[1..^1]
         ctx.updateNode(newNode)
 
-      editor.node = newNode
+      self.node = newNode
 
-      for _, emptyNode in editor.document.nextPreOrderWhere(newNode, (n) => editor.document.shouldEditNode(n), endNode = newNode):
-        editor.node = emptyNode
-        discard editor.tryEdit editor.node
+      for _, emptyNode in self.document.nextPreOrderWhere(newNode, (n) => self.document.shouldEditNode(n), endNode = newNode):
+        self.node = emptyNode
+        discard self.tryEdit self.node
         break
 
 proc cancelAndNextCompletion(self: AstDocumentEditor) {.expose("editor.ast").} =
@@ -1970,20 +1979,29 @@ proc handleInput(self: AstDocumentEditor, input: string): EventResponse =
 
 proc getItemAtPixelPosition(self: AstDocumentEditor, posWindow: Vec2): Option[int] =
   result = int.none
-  for (index, rect) in self.lastItems:
-    if rect.contains(posWindow) and index >= 0 and index <= self.completions.high:
+  for (index, widget) in self.lastItems:
+    if widget.lastBounds.contains(posWindow) and index >= 0 and index <= self.completions.high:
       return index.some
 
 method handleScroll*(self: AstDocumentEditor, scroll: Vec2, mousePosWindow: Vec2) =
-  if self.getItemAtPixelPosition(mousePosWindow).isSome:
-    self.selectedCompletion = clamp(self.selectedCompletion - scroll.y.int, 0, self.completions.high)
+  let scrollAmount = scroll.y * getOption[float](self.editor, "ast.scroll-speed", 20)
+
+  if not self.lastCompletionsWidget.isNil and self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
+    self.completionsScrollOffset += scrollAmount
+    self.markDirty()
   else:
-    self.scrollOffset += scroll.y * getOption[float](self.editor, "ast.scroll-speed", 20)
+    self.scrollOffset += scrollAmount
     self.markDirty()
 
 method handleMousePress*(self: AstDocumentEditor, button: MouseButton, mousePosWindow: Vec2) =
   # Make mousePos relative to contentBounds
   let mousePosContent = mousePosWindow - self.lastBounds.xy
+
+  if self.getItemAtPixelPosition(mousePosWindow).getSome(item):
+    if button == MouseButton.Left or button == MouseButton.Middle:
+      self.selectedCompletion = item
+      self.markDirty()
+    return
 
   if button == MouseButton.Left:
     if self.getItemAtPixelPosition(mousePosWindow).getSome(index):
@@ -1994,9 +2012,20 @@ method handleMousePress*(self: AstDocumentEditor, button: MouseButton, mousePosW
       self.node = n
 
 method handleMouseRelease*(self: AstDocumentEditor, button: MouseButton, mousePosWindow: Vec2) =
+  if button == MouseButton.Left and self.getItemAtPixelPosition(mousePosWindow).getSome(item):
+    if self.selectedCompletion == item:
+      self.applySelectedCompletion()
+      self.markDirty()
+
   discard
 
 method handleMouseMove*(self: AstDocumentEditor, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) =
+  if self.getItemAtPixelPosition(mousePosWindow).getSome(item):
+    if MouseButton.Middle in buttons:
+      self.selectedCompletion = item
+      self.markDirty()
+    return
+
   if MouseButton.Left in buttons:
     let mousePosContent = mousePosWindow - self.lastBounds.xy
     if not self.isEditing and self.getNodeAtPixelPosition(mousePosContent).getSome(n):
