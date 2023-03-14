@@ -1642,7 +1642,7 @@ proc getCursorAtPixelPos(self: TextDocumentEditor, mousePosWindow: Vec2): Option
 
 method handleMousePress*(self: TextDocumentEditor, button: MouseButton, mousePosWindow: Vec2) =
   if not self.lastCompletionsWidget.isNil and self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
-    if button == MouseButton.Left:
+    if button == MouseButton.Left or button == MouseButton.Middle:
       self.selectedCompletion = self.getHoveredCompletion(mousePosWindow)
       self.markDirty()
     return

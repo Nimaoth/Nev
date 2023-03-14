@@ -42,9 +42,9 @@ proc renderTextHighlight(panel: WPanel, app: Editor, startOffset: float, endOffs
   for i in 0..<selections.len:
     renderTextHighlight(panel, app, startOffset, endOffset, line, startIndex, selections[i], selectionClamped[i], part, color, totalLineHeight)
 
-proc createPartWidget(text: string, startOffset: float, width: float, height: float, color: Color, frameIndex: int): WText
+proc createPartWidget*(text: string, startOffset: float, width: float, height: float, color: Color, frameIndex: int): WText
 
-proc updateBaseIndexAndScrollOffset(contentPanel: WPanel, previousBaseIndex: var int, scrollOffset: var float, lines: int, totalLineHeight: float, targetLine: Option[int]) =
+proc updateBaseIndexAndScrollOffset*(contentPanel: WPanel, previousBaseIndex: var int, scrollOffset: var float, lines: int, totalLineHeight: float, targetLine: Option[int]) =
 
   if targetLine.getSome(targetLine):
     let targetLineY = (targetLine - previousBaseIndex).float32 * totalLineHeight + scrollOffset
@@ -74,7 +74,7 @@ proc updateBaseIndexAndScrollOffset(contentPanel: WPanel, previousBaseIndex: var
     previousBaseIndex -= 1
     scrollOffset -= totalLineHeight
 
-proc createLinesInPanel(app: Editor, contentPanel: WPanel, previousBaseIndex: int, scrollOffset: float, lines: int, frameIndex: int, onlyRenderInBounds: bool,
+proc createLinesInPanel*(app: Editor, contentPanel: WPanel, previousBaseIndex: int, scrollOffset: float, lines: int, frameIndex: int, onlyRenderInBounds: bool,
   renderLine: proc(lineWidget: WPanel, i: int, down: bool, frameIndex: int): bool) =
 
   let totalLineHeight = app.platform.totalLineHeight
@@ -90,7 +90,7 @@ proc createLinesInPanel(app: Editor, contentPanel: WPanel, previousBaseIndex: in
     if onlyRenderInBounds and top + totalLineHeight <= 0:
       continue
 
-    var lineWidget = WPanel(anchor: (vec2(0, 0), vec2(1, 0)), left: 1, right: -1, top: top, bottom: top + totalLineHeight, lastHierarchyChange: frameIndex)
+    var lineWidget = WPanel(anchor: (vec2(0, 0), vec2(1, 0)), left: 0, right: 0, top: top, bottom: top + totalLineHeight, lastHierarchyChange: frameIndex)
 
     if not renderLine(lineWidget, i, true, frameIndex):
       break
@@ -362,7 +362,7 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
 
 when defined(js):
   # Optimized version for javascript backend
-  proc createPartWidget(text: string, startOffset: float, width: float, height: float, color: Color, frameIndex: int): WText =
+  proc createPartWidget*(text: string, startOffset: float, width: float, height: float, color: Color, frameIndex: int): WText =
     new result
     {.emit: [result, ".text = ", text, ".slice(0);"] .} #"""
     {.emit: [result, ".anchor = {Field0: {x: 0, y: 0}, Field1: {x: 0, y: 0}};"] .} #"""
@@ -374,5 +374,5 @@ when defined(js):
     # """
 
 else:
-  proc createPartWidget(text: string, startOffset: float, width: float, height: float, color: Color, frameIndex: int): WText =
+  proc createPartWidget*(text: string, startOffset: float, width: float, height: float, color: Color, frameIndex: int): WText =
     result = WText(text: text, anchor: (vec2(0, 0), vec2(0, 0)), left: startOffset, right: startOffset + width, bottom: height, foregroundColor: color, lastHierarchyChange: frameIndex)

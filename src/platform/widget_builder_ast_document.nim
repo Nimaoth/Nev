@@ -1,5 +1,5 @@
 import std/[strformat, tables, sugar, sequtils]
-import util, editor, document_editor, ast_document, ast, node_layout, compiler, text_document, custom_logger, widgets, platform, theme, timer
+import util, editor, document_editor, ast_document, ast, node_layout, compiler, text_document, custom_logger, widgets, platform, theme, timer, widget_builder_text_document
 import widget_builders_base
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import vmath, bumpy, chroma
@@ -8,8 +8,6 @@ import vmath, bumpy, chroma
 {.used.}
 
 func withAlpha(color: Color, alpha: float32): Color = color(color.r, color.g, color.b, alpha)
-
-proc createPartWidget(text: string, startOffset: float, width: float, color: Color, frameIndex: int): WText
 
 proc updateBaseIndexAndScrollOffset(self: AstDocumentEditor, app: Editor, contentPanel: WPanel) =
   let totalLineHeight = app.platform.totalLineHeight
@@ -80,7 +78,7 @@ proc renderVisualNode*(self: AstDocumentEditor, app: Editor, node: VisualNode, s
     # let image = renderCtx.computeRenderedText(text, font, node.fontSize)
     # renderCtx.boxy.drawImage(image, bounds.xy, color)
 
-    var textWidget = createPartWidget(node.text, node.bounds.x, node.text.len.float * charWidth, color, frameIndex)
+    var textWidget = createPartWidget(node.text, node.bounds.x, node.text.len.float * charWidth, app.platform.totalLineHeight, color, frameIndex)
     textWidget.style.fontStyle = style
     textWidget.top = node.bounds.y
     textWidget.bottom = node.bounds.yh
@@ -184,6 +182,152 @@ proc renderVisualNodeLayout*(self: AstDocumentEditor, app: Editor, node: AstNode
     #   last = renderCtx.drawText(last.xy, $value, app.theme.tokenColor("string", rgb(255, 255, 255)), pivot = vec2(1, 0))
 
   self.renderBlockIndent(app, layout, node, offset, widget)
+
+proc renderCompletionList*(self: AstDocumentEditor, app: Editor, widget: WPanel, parentBounds: Rect, frameIndex: int, completions: openArray[Completion], selected: int, fill: bool, targetLine: Option[int],
+    renderedItems: var seq[tuple[index: int, widget: WWidget]], previousBaseIndex: var int, scrollOffset: var float) =
+  let totalLineHeight = app.platform.totalLineHeight
+  let charWidth = app.platform.charWidth
+
+  renderedItems.setLen 0
+
+  if completions.len == 0:
+    return
+
+  let maxRenderedCompletions = if fill:
+    int(widget.lastBounds.h / totalLineHeight)
+  else: 15
+
+  let renderedCompletions = min(completions.len, maxRenderedCompletions)
+
+  widget.bottom = widget.top + renderedCompletions.float * totalLineHeight
+  widget.layoutWidget(parentBounds, frameIndex, app.platform.layoutOptions)
+  updateBaseIndexAndScrollOffset(widget, previousBaseIndex, scrollOffset, completions.len, totalLineHeight, targetLine)
+
+  var firstCompletion = previousBaseIndex
+  block:
+    var temp = scrollOffset
+    while temp > 0 and firstCompletion > 0:
+      temp -= totalLineHeight
+      firstCompletion -= 1
+
+  var entries: seq[tuple[name: string, typ: string, value: string, color1: seq[string], color2: string, color3: string]] = @[]
+
+  for i, com in completions[firstCompletion..completions.high]:
+    case com.kind
+    of SymbolCompletion:
+      if ctx.getSymbol(com.id).getSome(sym):
+        let typ = ctx.computeSymbolType(sym)
+        var valueString = ""
+        let value = ctx.computeSymbolValue(sym)
+        if value.kind != vkError and value.kind != vkBuiltinFunction and value.kind != vkAstFunction and value.kind != vkVoid:
+          valueString = $value
+        entries.add (sym.name, $typ, valueString, ctx.getColorForSymbol(sym), "storage.type", "string")
+
+    of AstCompletion:
+      entries.add (com.name, "snippet", $com.nodeKind, @["entity.name.label", "entity.name"], "storage", "string")
+
+    if entries.len > renderedCompletions:
+      break
+
+  var maxNameLen = 10
+  var maxTypeLen = 10
+  var maxValueLen = 0
+  for (name, typ, value, color1, color2, color3) in entries:
+    maxNameLen = max(maxNameLen, name.len)
+    maxTypeLen = max(maxTypeLen, typ.len)
+    maxValueLen = max(maxValueLen, value.len)
+
+  let sepWidth = charWidth * 3
+  let nameWidth = charWidth * maxNameLen.float
+  let typeWidth = charWidth * maxTypeLen.float
+  let valueWidth = charWidth * maxValueLen.float
+  var totalWidth = nameWidth + typeWidth + valueWidth + sepWidth * 2
+  if fill and totalWidth < widget.lastBounds.w:
+    totalWidth = widget.lastBounds.w
+
+  widget.right = widget.left + totalWidth
+  widget.bottom = widget.top + renderedCompletions.float * totalLineHeight
+
+  let selectionColor = app.theme.color("list.activeSelectionBackground", rgb(200, 200, 200))
+  let sepColor = app.theme.color("list.inactiveSelectionForeground", rgb(175, 175, 175))
+
+  var newRenderedItems: seq[tuple[index: int, widget: WWidget]]
+
+  proc renderLine(lineWidget: WPanel, i: int, down: bool, frameIndex: int): bool =
+
+    if i == self.selectedCompletion:
+      lineWidget.fillBackground = true
+      lineWidget.backgroundColor = selectionColor
+
+    let k = i - firstCompletion
+    if k < 0 or k > entries.high:
+      return false
+
+    let entry = entries[k]
+
+    let nameColor = app.theme.tokenColor(entry.color1, rgb(255, 255, 255))
+    let nameWidget = createPartWidget(entry.name, 0.0, entry.name.len.float * charWidth, totalLineHeight, nameColor, frameIndex)
+    lineWidget.children.add(nameWidget)
+
+    var tempWidget = createPartWidget(" : ", nameWidth, 3 * charWidth, totalLineHeight, sepColor, frameIndex)
+    lineWidget.children.add(tempWidget)
+
+    let typeColor = app.theme.tokenColor(entry.color2, rgb(255, 255, 255))
+    let typeWidget = createPartWidget(entry.typ, tempWidget.right, entry.typ.len.float * charWidth, totalLineHeight, typeColor, frameIndex)
+    lineWidget.children.add(typeWidget)
+
+    tempWidget = createPartWidget(" = ", typeWidget.left + typeWidth, 3 * charWidth, totalLineHeight, sepColor, frameIndex)
+    lineWidget.children.add(tempWidget)
+
+    if entry.value.len > 0:
+      let valueColor = app.theme.tokenColor(entry.color3, rgb(255, 255, 255))
+      var valueWidget = createPartWidget(entry.value, -entry.value.len.float * charWidth, 0, totalLineHeight, valueColor, frameIndex)
+      valueWidget.anchor.min.x = 1
+      valueWidget.anchor.max.x = 1
+      lineWidget.children.add(valueWidget)
+
+    newRenderedItems.add (i, lineWidget)
+
+    return true
+
+  app.createLinesInPanel(widget, previousBaseIndex, scrollOffset, completions.len, frameIndex, onlyRenderInBounds=true, renderLine)
+
+  renderedItems.add newRenderedItems
+
+proc renderCompletions*(self: AstDocumentEditor, app: Editor, widget: WPanel, frameIndex: int) =
+  self.lastCompletionsWidget = nil
+
+  if self.completions.len == 0:
+    return
+
+  let matchColor = app.theme.color("editor.findMatchBorder", rgb(150, 150, 220))
+  let backgroundColor = app.theme.color("panel.background", rgb(30, 30, 30))
+  let borderColor = app.theme.color("panel.border", rgb(255, 255, 255))
+
+  # Render outline around all nodes which reference the selected symbol in the completion list
+  for (layout, offset) in self.lastLayouts:
+    let selectedCompletion = self.completions[self.selectedCompletion]
+    if selectedCompletion.kind == SymbolCompletion and ctx.getSymbol(selectedCompletion.id).getSome(symbol) and symbol.kind == skAstNode and layout.nodeToVisualNode.contains(symbol.node.id):
+      let selectedDeclRect = layout.nodeToVisualNode[symbol.node.id]
+      let bounds = selectedDeclRect.absoluteBounds + offset
+      var panel = WPanel(left: bounds.x, right: bounds.xw, top: bounds.y, bottom: bounds.yh,
+        fillBackground: true, drawBorder: true, allowAlpha: true,
+        backgroundColor: matchColor.withAlpha(0.25),
+        foregroundColor: matchColor)
+      widget.children.add panel
+
+  # Render completion window under the currently edited node
+  for (layout, offset) in self.lastLayouts:
+    if layout.nodeToVisualNode.contains(self.node.id):
+      let visualRange = layout.nodeToVisualNode[self.node.id]
+      let bounds = visualRange.absoluteBounds + offset
+      let panel = WPanel(left: bounds.x, top: bounds.yh, right: bounds.x + 100, bottom: bounds.yh + 100, fillBackground: true, backgroundColor: backgroundColor, drawBorder: true, foregroundColor: borderColor, maskContent: true)
+      self.renderCompletionList(app, panel, widget.lastBounds, frameIndex, self.completions, self.selectedCompletion, false, self.scrollToCompletion, self.lastItems, self.completionsBaseIndex, self.completionsScrollOffset)
+      self.lastCompletionsWidget = panel
+      widget.children.add panel
+      break
+
+  self.scrollToCompletion = int.none
 
 method updateWidget*(self: AstDocumentEditor, app: Editor, widget: WPanel, frameIndex: int) =
   let lineHeight = app.platform.lineHeight
@@ -314,25 +458,11 @@ method updateWidget*(self: AstDocumentEditor, app: Editor, widget: WPanel, frame
 
     inc rendered
 
+  self.renderCompletions(app, contentPanel, frameIndex)
+
   contentPanel.lastHierarchyChange = frameIndex
   widget.lastHierarchyChange = max(widget.lastHierarchyChange, contentPanel.lastHierarchyChange)
 
   self.lastContentBounds = contentPanel.lastBounds
 
   # debugf"rerender {rendered} lines for {self.document.filename} took {timer.elapsed.ms:>5.2}ms"
-
-when defined(js):
-  # Optimized version for javascript backend
-  proc createPartWidget(text: string, startOffset: float, width: float, color: Color, frameIndex: int): WText =
-    new result
-    {.emit: [result, ".text = ", text, ".slice(0);"] .} #"""
-    {.emit: [result, ".anchor = {Field0: {x: 0, y: 0}, Field1: {x: 0, y: 1}};"] .} #"""
-    {.emit: [result, ".left = ", startOffset, ";"] .} #"""
-    {.emit: [result, ".right = ", startOffset, " + ", width, ";"] .} #"""
-    {.emit: [result, ".frameIndex = ", frameIndex, ";"] .} #"""
-    {.emit: [result, ".foregroundColor = ", color, ";"] .} #"""
-    # """
-
-else:
-  proc createPartWidget(text: string, startOffset: float, width: float, color: Color, frameIndex: int): WText =
-    result = WText(text: text, anchor: (vec2(0, 0), vec2(0, 1)), left: startOffset, right: startOffset + width, foregroundColor: color, lastHierarchyChange: frameIndex)

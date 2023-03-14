@@ -131,6 +131,22 @@ method init*(self: BrowserPlatform) =
     self.onMousePress.invoke (mouseButton, modifiers, vec2(x.float, y.float))
   )
 
+  self.content.addEventListener("mouseup", proc(e: dom.Event) =
+    let oldEvent = self.currentEvent
+    self.currentEvent = e
+    defer: self.currentEvent = oldEvent
+
+    let me = e.MouseEvent
+    let modifiers = me.getModifiers
+    let mouseButton = me.getMouseButton
+
+    let currentTargetRect = me.currentTarget.getBoundingClientRect()
+    let x = me.pageX.float - currentTargetRect.x
+    let y = me.pageY.float - currentTargetRect.y
+    # debugf"click {me.button}, {modifiers}, {x}, {y}"
+    self.onMouseRelease.invoke (mouseButton, modifiers, vec2(x.float, y.float))
+  )
+
   self.content.addEventListener("mousemove", proc(e: dom.Event) =
     let oldEvent = self.currentEvent
     self.currentEvent = e
