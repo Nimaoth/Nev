@@ -45,6 +45,9 @@ proc setCompletions(self: SelectorPopup, newCompletions: seq[SelectorItem]) =
 
   if self.completions.len > 0:
     self.selected = self.selected.clamp(0, self.completions.len - 1)
+
+    if not self.handleItemSelected.isNil:
+      self.handleItemSelected self.completions[self.selected]
   else:
     self.selected = 0
 
@@ -98,7 +101,7 @@ proc fromJsonHook*(t: var api.SelectorPopup, jsonNode: JsonNode) =
   t.id = api.EditorId(jsonNode["id"].jsonTo(int))
 
 proc accept*(self: SelectorPopup) {.expose("popup.selector").} =
-  if self.selected < self.completions.len:
+  if not self.handleItemConfirmed.isNil and self.selected < self.completions.len:
     self.handleItemConfirmed self.completions[self.selected]
   self.editor.popPopup(self)
 
@@ -154,13 +157,18 @@ proc handleTextChanged*(self: SelectorPopup) =
   self.updateCompletions()
   self.selected = 0
 
+  if not self.handleItemSelected.isNil and self.selected < self.completions.len:
+    self.handleItemSelected self.completions[self.selected]
+
 method handleScroll*(self: SelectorPopup, scroll: Vec2, mousePosWindow: Vec2) =
   self.selected = clamp(self.selected - scroll.y.int, 0, self.completions.len - 1)
 
 method handleMousePress*(self: SelectorPopup, button: MouseButton, mousePosWindow: Vec2) =
   if button == MouseButton.Left:
     if self.getItemAtPixelPosition(mousePosWindow).getSome(item):
-      self.handleItemConfirmed(item)
+      if not self.handleItemConfirmed.isNil:
+        self.handleItemConfirmed(item)
+
       self.editor.popPopup(self)
 
 method handleMouseRelease*(self: SelectorPopup, button: MouseButton, mousePosWindow: Vec2) =
@@ -183,9 +191,5 @@ proc newSelectorPopup*(editor: Editor): SelectorPopup =
       popup.handleAction action, arg
     onInput:
       Ignored
-
-  # popup.updateCompletions()
-  # if popup.completions.len > 0 and popup.handleItemSelected != nil:
-  #   popup.handleItemSelected popup.completions[0]
 
   return popup

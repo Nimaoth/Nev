@@ -2,7 +2,7 @@ import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros
 import timer
 import fusion/matching, fuzzy, bumpy, rect_utils, vmath, chroma
 import editor, util, document, document_editor, text_document, events, id, ast_ids, ast, scripting/expose, event, theme, input, custom_async
-import compiler
+import compiler, selector_popup
 from scripting_api as api import nil
 import custom_logger
 import platform/[filesystem, platform, widgets]
@@ -1759,6 +1759,42 @@ proc selectNext(self: AstDocumentEditor) {.expose("editor.ast").} =
   if self.isEditing: return
   self.selectNextNode()
 
+type AstSymbolSelectorItem* = ref object of SelectorItem
+  completion*: Completion
+
+method changed*(self: AstSymbolSelectorItem, other: SelectorItem): bool =
+  let other = other.AstSymbolSelectorItem
+  return self.completion.id != other.completion.id
+
+proc openGotoSymbolPopup(self: AstDocumentEditor) {.expose("editor.ast").} =
+  var popup = self.editor.newSelectorPopup()
+  popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
+    # Find everything matching text
+    let symbols = ctx.computeSymbols(self.document.rootNode)
+    for (key, symbol) in symbols.pairs:
+      if symbol.kind != skAstNode:
+        continue
+      let score = fuzzyMatchSmart(text, symbol.name)
+      result.add AstSymbolSelectorItem(completion: Completion(kind: SymbolCompletion, score: score, id: symbol.id))
+
+    result.sort((a, b) => cmp(a.AstSymbolSelectorItem.completion.score, b.AstSymbolSelectorItem.completion.score), Descending)
+
+  let prevSelection = self.node
+
+  popup.handleItemSelected = proc(item: SelectorItem) =
+    let completion = item.AstSymbolSelectorItem.completion
+    let id = completion.id
+    if ctx.getAstNode(id).getSome(node) and node.base == self.document.rootNode:
+      self.node = node
+
+  popup.handleCanceled = proc() =
+    if prevSelection.base == self.document.rootNode:
+      self.node = prevSelection
+
+  popup.updateCompletions()
+
+  self.editor.pushPopup popup
+
 proc goto(self: AstDocumentEditor, where: string) {.expose("editor.ast").} =
   if self.isEditing: return
   case where
@@ -1817,11 +1853,7 @@ proc goto(self: AstDocumentEditor, where: string) {.expose("editor.ast").} =
           break
 
   of "symbol":
-    var popup = newGotoPopup(self.editor, self.document)
-    popup.handleSymbolSelected = proc(id: Id) =
-      if ctx.getAstNode(id).getSome(node) and node.base == self.document.rootNode:
-        self.node = node
-    self.editor.pushPopup popup
+    self.openGotoSymbolPopup()
 
 proc runSelectedFunction(self: AstDocumentEditor) {.expose("editor.ast").} =
   if self.isEditing: return

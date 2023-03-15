@@ -222,8 +222,6 @@ proc setBackgroundColor(self: TerminalPlatform, color: chroma.Color) =
     self.buffer.setBackgroundColor(bgColor)
 
 proc fillRect(self: TerminalPlatform, bounds: Rect, color: chroma.Color) =
-  self.setBackgroundColor(color)
-
   let mask = if self.masks.len > 0:
     self.masks[self.masks.high]
   else:
@@ -231,6 +229,7 @@ proc fillRect(self: TerminalPlatform, bounds: Rect, color: chroma.Color) =
 
   let bounds = bounds and mask
 
+  self.setBackgroundColor(color)
   self.buffer.fillBackground(bounds.x.int, bounds.y.int, bounds.xw.int - 1, bounds.yh.int - 1)
   self.buffer.setBackgroundColor(bgNone)
 

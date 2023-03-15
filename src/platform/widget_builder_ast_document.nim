@@ -9,6 +9,37 @@ import vmath, bumpy, chroma
 
 func withAlpha(color: Color, alpha: float32): Color = color(color.r, color.g, color.b, alpha)
 
+method updateWidget*(self: AstSymbolSelectorItem, app: Editor, widget: WPanel, frameIndex: int) =
+  let charWidth = app.platform.charWidth
+  let totalLineHeight = app.platform.totalLineHeight
+  let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
+
+  widget.children.setLen 0
+
+  var name = ""
+  var typ = ""
+  var nameColors = @[""]
+  var typeColors = "storage.type"
+  case self.completion.kind
+  of SymbolCompletion:
+    if ctx.getSymbol(self.completion.id).getSome(sym):
+      name = sym.name
+      typ = $ctx.computeSymbolType(sym)
+      nameColors = ctx.getColorForSymbol(sym)
+
+  else:
+    return
+
+  let nameColor = app.theme.tokenColor(nameColors, rgb(255, 255, 255))
+  let nameWidget = createPartWidget(name, 0.0, name.len.float * charWidth, totalLineHeight, nameColor, frameIndex)
+  widget.children.add(nameWidget)
+
+  let typeColor = app.theme.tokenColor(typeColors, rgb(255, 255, 255))
+  var typeWidget = createPartWidget(typ, -typ.len.float * charWidth, 0, totalLineHeight, typeColor, frameIndex)
+  typeWidget.anchor.min.x = 1
+  typeWidget.anchor.max.x = 1
+  widget.children.add(typeWidget)
+
 proc updateBaseIndexAndScrollOffset(self: AstDocumentEditor, app: Editor, contentPanel: WPanel) =
   let totalLineHeight = app.platform.totalLineHeight
   self.previousBaseIndex = self.previousBaseIndex.clamp(0..self.document.rootNode.len)

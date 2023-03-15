@@ -110,7 +110,7 @@ proc createLinesInPanel*(app: Editor, contentPanel: WPanel, previousBaseIndex: i
     if onlyRenderInBounds and top + totalLineHeight <= 0:
       break
 
-    var lineWidget = WPanel(anchor: (vec2(0, 0), vec2(1, 0)), left: 1, right: -1, top: top, bottom: top + totalLineHeight, lastHierarchyChange: frameIndex)
+    var lineWidget = WPanel(anchor: (vec2(0, 0), vec2(1, 0)), left: 0, right: 0, top: top, bottom: top + totalLineHeight, lastHierarchyChange: frameIndex)
 
     if not renderLine(lineWidget, i, false, frameIndex):
       break

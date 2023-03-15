@@ -6,8 +6,6 @@ import vmath, bumpy, chroma
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
 {.used.}
 
-method updateWidget*(self: SelectorItem, app: Editor, widget: WPanel, frameIndex: int) {.base.} = discard
-
 method updateWidget*(self: FileSelectorItem, app: Editor, widget: WPanel, frameIndex: int) =
   let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
 
@@ -65,6 +63,7 @@ method updateWidget*(self: SelectorPopup, app: Editor, widget: WPanel, frameInde
   widget.lastHierarchyChange = max(widget.lastHierarchyChange, headerPanel.lastHierarchyChange)
 
   contentPanel.updateBackgroundColor(app.theme.color("panel.background", rgb(25, 25, 25)), frameIndex)
+  self.lastContentBounds = contentPanel.lastBounds
 
   if not (contentPanel.changed(frameIndex) or self.dirty or app.platform.redrawEverything):
     return
