@@ -20,3 +20,4 @@ int/*.map
 ast.js
 languages/*.wasm
 node_modules/**
+GithubAccessToken
