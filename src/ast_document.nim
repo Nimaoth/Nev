@@ -577,6 +577,8 @@ proc handleNodeInserted*(self: AstDocumentEditor, doc: AstDocument, node: AstNod
 
 proc handleTextDocumentChanged*(self: AstDocumentEditor) =
   self.updateCompletions()
+  self.selectedCompletion = 0
+  self.scrollToCompletion = self.selectedCompletion.some
   self.markDirty()
 
 proc isEditing*(self: AstDocumentEditor): bool = self.textEditor != nil
@@ -676,6 +678,7 @@ proc updateCompletions(self: AstDocumentEditor) =
     self.selectedCompletion = self.selectedCompletion.clamp(0, self.completions.len - 1)
   else:
     self.selectedCompletion = 0
+  self.scrollToCompletion = self.selectedCompletion.some
   self.markDirty()
 
 proc finishEdit*(self: AstDocumentEditor, apply: bool)
@@ -1615,7 +1618,10 @@ proc rename*(self: AstDocumentEditor) {.expose("editor.ast").} =
 
 proc selectPrevCompletion*(self: AstDocumentEditor) {.expose("editor.ast").} =
   if self.completions.len > 0:
-    self.selectedCompletion = (self.selectedCompletion - 1).clamp(0, self.completions.len - 1)
+    if self.selectedCompletion == 0:
+      self.selectedCompletion = self.completions.high
+    else:
+      self.selectedCompletion = (self.selectedCompletion - 1).clamp(0, self.completions.high)
   else:
     self.selectedCompletion = 0
   self.scrollToCompletion = self.selectedCompletion.some
@@ -1623,7 +1629,10 @@ proc selectPrevCompletion*(self: AstDocumentEditor) {.expose("editor.ast").} =
 
 proc selectNextCompletion*(self: AstDocumentEditor) {.expose("editor.ast").} =
   if self.completions.len > 0:
-    self.selectedCompletion = (self.selectedCompletion + 1).clamp(0, self.completions.len - 1)
+    if self.selectedCompletion == self.completions.high:
+      self.selectedCompletion = 0
+    else:
+      self.selectedCompletion = (self.selectedCompletion + 1).clamp(0, self.completions.high)
   else:
     self.selectedCompletion = 0
   self.scrollToCompletion = self.selectedCompletion.some
