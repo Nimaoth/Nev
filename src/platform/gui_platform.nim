@@ -1,6 +1,6 @@
 import std/[tables, strutils]
 import platform, widgets
-import custom_logger, input, event, monitors, lrucache, id, rect_utils
+import custom_logger, input, event, monitors, lrucache, id, rect_utils, theme
 import chroma, vmath, windy, boxy, boxy/textures, opengl, pixie/[contexts, fonts]
 
 export platform, widgets
@@ -14,6 +14,11 @@ type
     currentModifiers: Modifiers
     currentMouseButtons: set[MouseButton]
     eventCounter: int
+
+    fontRegular: string
+    fontBold*: string
+    fontItalic*: string
+    fontBoldItalic*: string
 
     lastSize: Vec2
     renderedSomethingLastFrame: bool
@@ -34,6 +39,7 @@ proc toInput(rune: Rune): int64
 proc toInput(button: Button): int64
 proc centerWindowOnMonitor(window: Window, monitor: int)
 proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font
+proc getFont*(self: GuiPlatform, fontSize: float32, style: set[FontStyle]): Font
 
 method init*(self: GuiPlatform) =
   self.cachedImages = newLruCache[string, string](1000, true)
@@ -70,6 +76,11 @@ method init*(self: GuiPlatform) =
   self.ctx.strokeStyle = rgb(255, 255, 255)
   self.ctx.font = "fonts/DejaVuSansMono.ttf"
   self.ctx.textBaseline = TopBaseline
+
+  self.fontRegular = "fonts/DejaVuSansMono.ttf"
+  self.fontBold = "fonts/DejaVuSansMono-Bold.ttf"
+  self.fontItalic = "fonts/DejaVuSansMono-Oblique.ttf"
+  self.fontBoldItalic = "fonts/DejaVuSansMono-BoldOblique.ttf"
 
   self.boxy.setTargetFramebuffer self.framebufferId
 
@@ -161,6 +172,15 @@ proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font =
   result = newFont(self.typefaces.getOrDefault(font, nil))
   result.paint.color = color(1, 1, 1)
   result.size = fontSize
+
+proc getFont*(self: GuiPlatform, fontSize: float32, style: set[FontStyle]): Font =
+  if Italic in style and Bold in style:
+    return self.getFont(self.fontBoldItalic, fontSize)
+  if Italic in style:
+    return self.getFont(self.fontItalic, fontSize)
+  if Bold in style:
+    return self.getFont(self.fontBold, fontSize)
+  return self.getFont(self.fontRegular, fontSize)
 
 method size*(self: GuiPlatform): Vec2 =
   let size = self.window.size
@@ -366,14 +386,15 @@ method renderWidget(self: WText, renderer: GuiPlatform, forceRedraw: bool, frame
     self.lastRenderedText = ""
     return
 
+  let key = $self.style.fontStyle & self.text
   var imageId: string
-  if renderer.cachedImages.contains(self.text):
-    imageId = renderer.cachedImages[self.text]
+  if renderer.cachedImages.contains(key):
+    imageId = renderer.cachedImages[key]
   else:
     imageId = $newId()
-    renderer.cachedImages[self.text] = imageId
+    renderer.cachedImages[key] = imageId
 
-    let font = renderer.getFont(renderer.ctx.font, renderer.ctx.fontSize)
+    let font = renderer.getFont(renderer.ctx.fontSize, self.style.fontStyle)
     let arrangement = font.typeset(self.text)
     var bounds = arrangement.layoutBounds()
     if bounds.x == 0:

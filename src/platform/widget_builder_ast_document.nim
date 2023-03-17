@@ -115,6 +115,7 @@ proc renderVisualNode*(self: AstDocumentEditor, app: Editor, node: VisualNode, s
     textWidget.bottom = node.bounds.yh
     widget.children.add textWidget
 
+    # @todo(ni)
     # if Underline in style:
     #   renderCtx.boxy.fillRect(bounds.splitHInv(2.relative)[1], color)
 
@@ -241,7 +242,7 @@ proc renderCompletionList*(self: AstDocumentEditor, app: Editor, widget: WPanel,
       temp -= totalLineHeight
       firstCompletion -= 1
 
-  var entries: seq[tuple[name: string, typ: string, value: string, color1: seq[string], color2: string, color3: string]] = @[]
+  var entries: seq[tuple[name: string, typ: string, value: string, color1: seq[string], color2: string, color3: string, nameStyle: set[FontStyle]]] = @[]
 
   for i, com in completions[firstCompletion..completions.high]:
     case com.kind
@@ -252,10 +253,11 @@ proc renderCompletionList*(self: AstDocumentEditor, app: Editor, widget: WPanel,
         let value = ctx.computeSymbolValue(sym)
         if value.kind != vkError and value.kind != vkBuiltinFunction and value.kind != vkAstFunction and value.kind != vkVoid:
           valueString = $value
-        entries.add (sym.name, $typ, valueString, ctx.getColorForSymbol(sym), "storage.type", "string")
+        let style = ctx.getStyleForSymbol(sym).get {}
+        entries.add (sym.name, $typ, valueString, ctx.getColorForSymbol(sym), "storage.type", "string", style)
 
     of AstCompletion:
-      entries.add (com.name, "snippet", $com.nodeKind, @["entity.name.label", "entity.name"], "storage", "string")
+      entries.add (com.name, "snippet", $com.nodeKind, @["entity.name.label", "entity.name"], "storage", "string", {})
 
     if entries.len > renderedCompletions:
       break
@@ -263,7 +265,7 @@ proc renderCompletionList*(self: AstDocumentEditor, app: Editor, widget: WPanel,
   var maxNameLen = 10
   var maxTypeLen = 10
   var maxValueLen = 0
-  for (name, typ, value, color1, color2, color3) in entries:
+  for (name, typ, value, color1, color2, color3, _) in entries:
     maxNameLen = max(maxNameLen, name.len)
     maxTypeLen = max(maxTypeLen, typ.len)
     maxValueLen = max(maxValueLen, value.len)
@@ -298,6 +300,7 @@ proc renderCompletionList*(self: AstDocumentEditor, app: Editor, widget: WPanel,
 
     let nameColor = app.theme.tokenColor(entry.color1, rgb(255, 255, 255))
     let nameWidget = createPartWidget(entry.name, 0.0, entry.name.len.float * charWidth, totalLineHeight, nameColor, frameIndex)
+    nameWidget.style.fontStyle = entry.nameStyle
     lineWidget.children.add(nameWidget)
 
     var tempWidget = createPartWidget(" : ", nameWidth, 3 * charWidth, totalLineHeight, sepColor, frameIndex)

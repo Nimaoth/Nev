@@ -1,6 +1,6 @@
 import std/[strformat, tables, dom, unicode, strutils, sugar]
 import std/htmlgen as hg
-import platform, widgets, custom_logger, rect_utils, input, event, lrucache
+import platform, widgets, custom_logger, rect_utils, input, event, lrucache, theme
 import vmath
 import chroma as chroma
 
@@ -404,8 +404,7 @@ method renderWidget(self: WStack, renderer: BrowserPlatform, element: var Elemen
     if i >= existingCount and not childElement.isNil:
       element.appendChild childElement
 
-proc getTextStyle(x, y, width, height: int, color, backgroundColor: cstring): cstring = #{.importjs: "`left: ${#}px; top: ${#}px; width: ${#}px; height: ${#}px; overflow: visible; color: ${#}; ${#}`)".}
-  {.emit: [result, " = `left: ${", x, "}px; top: ${", y, "}px; width: ${", width, "}px; height: ${", height, "}px; overflow: visible; color: ${", color, "}; ${", backgroundColor, "}`"].} #"""
+proc getTextStyle(x, y, width, height: int, color, backgroundColor: cstring, italic, bold: bool): cstring
 
 method renderWidget(self: WText, renderer: BrowserPlatform, element: var Element, forceRedraw: bool, frameIndex: int, buffer: var string) =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
@@ -429,10 +428,20 @@ method renderWidget(self: WText, renderer: BrowserPlatform, element: var Element
   else:
     ""
 
+  let italic = FontStyle.Italic in self.style.fontStyle
+  let bold = FontStyle.Bold in self.style.fontStyle
+
   renderer.domUpdates.add proc() =
-    element.setAttribute("style", getTextStyle(relBounds.x.int, relBounds.y.int, relBounds.w.int, relBounds.h.int, color, backgroundColor))
+    element.setAttribute("style", getTextStyle(relBounds.x.int, relBounds.y.int, relBounds.w.int, relBounds.h.int, color, backgroundColor, italic, bold))
     if updateText:
       element.innerText = text
       element.setAttribute("data-text", text)
 
   self.lastRenderedText = self.text
+
+proc getTextStyle(x, y, width, height: int, color, backgroundColor: cstring, italic, bold: bool): cstring =
+  {.emit: [result, " = `left: ${", x, "}px; top: ${", y, "}px; width: ${", width, "}px; height: ${", height, "}px; overflow: visible; color: ${", color, "}; ${", backgroundColor, "}`"].} #"""
+  if italic:
+    {.emit: [result, " += `font-style: italic;`"].} #"""
+  if bold:
+    {.emit: [result, " += `font-weight: bold;`"].} #"""
