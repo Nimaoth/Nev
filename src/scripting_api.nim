@@ -2,11 +2,13 @@ import std/[algorithm, sequtils, sugar]
 
 type
   EditorId* = int
-  EditorType* = enum Text, Ast, Other
+  EditorType* = enum Text, Ast, Model, Other
 
   TextDocumentEditor* = object
     id*: EditorId
   AstDocumentEditor* = object
+    id*: EditorId
+  ModelDocumentEditor* = object
     id*: EditorId
   SelectorPopup* = object
     id*: EditorId

@@ -6,7 +6,7 @@
 *.ilk
 *.lib
 src/input_tests
-ast
+/ast
 absytree
 themes/**
 cpp_test
