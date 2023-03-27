@@ -11,7 +11,7 @@ when not defined(js):
 else:
   import scripting/scripting_js
 
-import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, Popup, SelectorPopup
+import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, ModelDocumentEditor, Popup, SelectorPopup
 from scripting_api import Backend
 
 type View* = ref object
@@ -313,7 +313,7 @@ proc getPopupForId*(self: Editor, id: EditorId): Option[Popup] =
 
   return Popup.none
 
-import text_document, ast_document
+import text_document, ast_document, ast_document2
 import selector_popup
 
 type ThemeSelectorItem* = ref object of SelectorItem
@@ -391,7 +391,7 @@ proc newEditor*(backend: api.Backend, platform: Platform): Editor =
   self.fontItalic = "./fonts/DejaVuSansMono-Oblique.ttf"
   self.fontBoldItalic = "./fonts/DejaVuSansMono-BoldOblique.ttf"
 
-  self.editor_defaults = @[TextDocumentEditor(), AstDocumentEditor()]
+  self.editor_defaults = @[TextDocumentEditor(), AstDocumentEditor(), ModelDocumentEditor()]
 
   self.workspace.new()
 
@@ -488,6 +488,12 @@ proc newEditor*(backend: api.Backend, platform: Platform): Editor =
         let workspaceFolder = self.getWorkspaceFolder(editorState.workspaceId.parseId)
         let document = if editorState.ast:
           newAstDocument(editorState.filename, editorState.appFile, workspaceFolder)
+        elif editorState.filename.endsWith ".am":
+          try:
+            newModelDocument(editorState.filename, editorState.appFile, workspaceFolder)
+          except:
+            logger.log(lvlError, fmt"Failed to restore file {editorState.filename} from previous session: {getCurrentExceptionMsg()}")
+            continue
         else:
           try:
             newTextDocument(editorState.filename, editorState.appFile, workspaceFolder)
@@ -787,6 +793,8 @@ proc openFile*(self: Editor, path: string, app: bool = false) {.expose("editor")
   try:
     if path.endsWith(".ast"):
       self.createView(newAstDocument(path, app, WorkspaceFolder.none))
+    elif path.endsWith(".am"):
+      self.createView(newModelDocument(path, app, WorkspaceFolder.none))
     else:
       let file = if app: fs.loadApplicationFile(path) else: fs.loadFile(path)
       self.createView(newTextDocument(path, file.splitLines, app))
@@ -802,6 +810,8 @@ proc openWorkspaceFile*(self: Editor, path: string, folder: WorkspaceFolder) =
     if path.endsWith(".ast"):
       # @todo
       self.createView(newAstDocument(path, false, folder.some))
+    elif path.endsWith(".am"):
+      self.createView(newModelDocument(path, false, folder.some))
     else:
       var document = newTextDocument(path, @[])
       document.workspace = folder.some
@@ -1204,6 +1214,13 @@ proc scriptIsAstEditor*(editorId: EditorId): bool {.expose("editor").} =
     return false
   if gEditor.getEditorForId(editorId).getSome(editor):
     return editor of AstDocumentEditor
+  return false
+
+proc scriptIsModelEditor*(editorId: EditorId): bool {.expose("editor").} =
+  if gEditor.isNil:
+    return false
+  if gEditor.getEditorForId(editorId).getSome(editor):
+    return editor of ModelDocumentEditor
   return false
 
 proc scriptRunActionFor*(editorId: EditorId, action: string, arg: string) {.expose("editor").} =
