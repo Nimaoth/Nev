@@ -9,6 +9,8 @@ import workspaces/[workspace]
 import ast/[types, base_language]
 import print
 
+from ast import AstNodeKind
+
 var project = newProject()
 
 type
@@ -36,6 +38,8 @@ type
 
     onNodeInserted*: Event[(ModelDocument, AstNode)]
 
+    builder*: CellBuilder
+
   ModelDocumentEditor* = ref object of DocumentEditor
     editor*: Editor
     document*: ModelDocument
@@ -44,7 +48,7 @@ type
     currentMode*: string
 
     scrollOffset*: float
-    previousBaseIndex*: int
+    previousBaseIndex*: seq[int]
 
     lastBounds*: Rect
 
@@ -72,7 +76,7 @@ proc newModelDocument*(filename: string = "", app: bool = false, workspaceFolder
   var testModel = newModel(newId())
   testModel.addLanguage(base_language.baseLanguage)
 
-  let a = newAstNode(numberLiteralClass)
+  let a = newAstNode(stringLiteralClass)
   let b = newAstNode(nodeReferenceClass)
   let c = newAstNode(binaryExpressionClass)
 
@@ -81,20 +85,20 @@ proc newModelDocument*(filename: string = "", app: bool = false, workspaceFolder
 
   testModel.addRootNode(c)
 
+  debugf"temp root: {c}"
+
   result.model = testModel
 
-  var builder = newCellBuilder()
-  for language in testModel.languages:
-    builder.addBuilder(language.builder)
+  result.builder = newCellBuilder()
+  for language in result.model.languages:
+    result.builder.addBuilder(language.builder)
 
   project.addModel(result.model)
-  project.builder = builder
+  project.builder = result.builder
 
-  let cell = builder.buildCell(c)
-  print cell
+  if filename.len > 0:
+    result.load()
 
-  # if filename.len > 0:
-  #   result.load()
 
 method save*(self: ModelDocument, filename: string = "", app: bool = false) =
   self.filename = if filename.len > 0: filename else: self.filename
@@ -111,34 +115,137 @@ method save*(self: ModelDocument, filename: string = "", app: bool = false) =
   # else:
   #   fs.saveFile(self.filename, serialized.pretty)
 
+var classes = initTable[AstNodeKind, tuple[class: NodeClass, link: Id]]()
+classes[Empty] = (emptyClass, idNone())
+classes[Identifier] = (nodeReferenceClass, IdNodeReferenceTarget)
+classes[NumberLiteral] = (numberLiteralClass, IdIntegerLiteralValue)
+classes[StringLiteral] = (stringLiteralClass, IdStringLiteralValue)
+classes[ConstDecl] = (constDeclClass, IdConstDeclName)
+classes[LetDecl] = (letDeclClass, IdLetDeclName)
+classes[VarDecl] = (varDeclClass, IdVarDeclName)
+classes[NodeList] = (nodeListClass, idNone())
+classes[Call] = (callClass, idNone())
+classes[If] = (ifClass, idNone())
+classes[While] = (whileClass, idNone())
+classes[FunctionDefinition] = (functionDefinitionClass, idNone())
+classes[Params] = (parameterDeclClass, idNone())
+classes[Assignment] = (assignmentClass, idNone())
+
+proc toModel(json: JsonNode): AstNode =
+  let kind = json["kind"].jsonTo AstNodeKind
+  let data = classes[kind]
+  var node = newAstNode(data.class, json["id"].jsonTo(Id).some)
+
+  debugf"kind: {kind}, {data}, {node.id}"
+
+  if json.hasKey("reff"):
+    node.setReference(data.link, json["reff"].jsonTo Id)
+
+  if json.hasKey("text"):
+    if kind == NumberLiteral:
+      node.setProperty(data.link, PropertyValue(kind: PropertyType.Int, intValue: json["text"].jsonTo(string).parseInt))
+    else:
+      node.setProperty(data.link, PropertyValue(kind: PropertyType.String, stringValue: json["text"].jsonTo string))
+
+  if json.hasKey("children"):
+    let children = json["children"].elems
+
+    case kind
+    of NodeList:
+      for c in children:
+        node.add(IdNodeListChildren, c.toModel)
+
+    of ConstDecl:
+      node.add(IdConstDeclValue, children[0].toModel)
+    of LetDecl:
+      node.add(IdLetDeclType, children[0].toModel)
+      node.add(IdLetDeclValue, children[1].toModel)
+    of VarDecl:
+      node.add(IdVarDeclType, children[0].toModel)
+      node.add(IdVarDeclValue, children[1].toModel)
+
+    of Call:
+      node.add(IdCallFunction, children[0].toModel)
+      for c in children[1..^1]:
+        node.add(IdCallArguments, c.toModel)
+
+    of If:
+      node.add(IdIfExpressionCondition, children[0].toModel)
+      node.add(IdIfExpressionThenCase, children[1].toModel)
+
+      var nodeTemp = node
+
+      var i = 2
+      while i + 1 < children.len:
+        defer: i += 2
+
+        var el = newAstNode(ifClass)
+        el.add(IdIfExpressionCondition, children[i].toModel)
+        el.add(IdIfExpressionThenCase, children[i + 1].toModel)
+        nodeTemp.add(IdIfExpressionElseCase, el)
+        nodeTemp = el
+
+      if i < children.len:
+        nodeTemp.add(IdIfExpressionElseCase, children[i].toModel)
+
+    of While:
+      node.add(IdWhileExpressionCondition, children[0].toModel)
+      node.add(IdWhileExpressionBody, children[1].toModel)
+
+    of Assignment:
+      node.add(IdAssignmentTarget, children[0].toModel)
+      node.add(IdAssignmentValue, children[1].toModel)
+
+    of FunctionDefinition:
+      if children[0].hasKey("children"):
+        for c in children[0]["children"].elems:
+          var param = newAstNode(parameterDeclClass, c["id"].jsonTo(Id).some)
+          param.setProperty(IdParameterDeclName, PropertyValue(kind: PropertyType.String, stringValue: c["text"].jsonTo string))
+          param.add(IdParameterDeclType, c["children"][0].toModel)
+          node.add(IdFunctionDefinitionParameters, param)
+      node.add(IdFunctionDefinitionReturnType, children[1].toModel)
+      node.add(IdFunctionDefinitionBody, children[2].toModel)
+
+    else:
+      discard
+
+  return node
+
 proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
   logger.log lvlInfo, fmt"[modeldoc] Loading model source file '{self.filename}'"
-  # try:
-  #   var jsonText = ""
-  #   if self.workspace.getSome(ws):
-  #     jsonText = await ws.loadFile(self.filename)
-  #   elif self.appFile:
-  #     jsonText = fs.loadApplicationFile(self.filename)
-  #   else:
-  #     jsonText = fs.loadFile(self.filename)
+  try:
+    var jsonText = ""
+    if self.workspace.getSome(ws):
+      jsonText = await ws.loadFile(self.filename)
+    elif self.appFile:
+      jsonText = fs.loadApplicationFile(self.filename)
+    else:
+      jsonText = fs.loadFile(self.filename)
 
-  #   let json = jsonText.parseJson
-  #   let newAst = json.jsonToAstNode
+    let json = jsonText.parseJson
+    var testModel = newModel(newId())
+    testModel.addLanguage(base_language.baseLanguage)
 
-  #   logger.log(lvlInfo, fmt"[modeldoc] Load new model {newAst}")
+    let root = json.toModel
 
-  #   ctx.deleteAllNodesAndSymbols()
-  #   for symbol in ctx.globalScope.values:
-  #     discard ctx.newSymbol(symbol)
+    testModel.addRootNode(root)
 
-  #   self.nodes.clear()
-  #   self.rootNode = newAst
-  #   self.handleNodeInserted self.rootNode
-  #   self.undoOps.setLen 0
-  #   self.redoOps.setLen 0
+    self.model = testModel
 
-  # except CatchableError:
-  #   logger.log lvlError, fmt"[modeldoc] Failed to load model source file '{self.filename}'"
+    self.builder = newCellBuilder()
+    for language in self.model.languages:
+      self.builder.addBuilder(language.builder)
+
+    project.addModel(self.model)
+    project.builder = self.builder
+
+    logger.log(lvlDebug, fmt"[modeldoc] Load new model {root}")
+
+    self.undoOps.setLen 0
+    self.redoOps.setLen 0
+
+  except CatchableError:
+    logger.log lvlError, fmt"[modeldoc] Failed to load model source file '{self.filename}': {getCurrentExceptionMsg()}"
 
 method load*(self: ModelDocument, filename: string = "") =
   let filename = if filename.len > 0: filename else: self.filename

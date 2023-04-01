@@ -1,7 +1,7 @@
 
 import std/[options, algorithm, strutils, hashes, enumutils, json, jsonutils, tables, macros, sequtils, strformat]
 import fusion/matching
-import util, id, macro_utils
+import util, id, macro_utils, custom_logger
 import print
 
 type
@@ -58,11 +58,17 @@ type
 
     properties*: seq[tuple[role: Id, value: PropertyValue]]
     references*: seq[tuple[role: Id, node: Id]]
-    children2*: seq[tuple[role: Id, nodes: seq[AstNode]]]
+    childLists*: seq[tuple[role: Id, nodes: seq[AstNode]]]
 
   Cell* = ref object of RootObj
     id*: Id
     parent*: Cell
+    node*: AstNode
+    fillChildren*: proc(): void
+    filled*: bool
+
+  EmptyCell* = ref object of Cell
+    discard
 
   CellBuilderFunction* = proc(builder: CellBuilder, node: AstNode): Cell
 
@@ -93,7 +99,7 @@ generateGetters(Language)
 
 proc forEach*(node: AstNode, f: proc(node: AstNode)) =
   f(node)
-  for item in node.children2.mitems:
+  for item in node.childLists.mitems:
     for c in item.nodes:
       c.forEach(f)
 
@@ -175,7 +181,7 @@ proc propertyDescription*(self: NodeClass, id: Id): Option[PropertyDescription] 
 
 proc children*(node: AstNode, role: Id): seq[AstNode] =
   result = @[]
-  for c in node.children2.mitems:
+  for c in node.childLists.mitems:
     if c.role == role:
       result = c.nodes
       break
@@ -185,6 +191,12 @@ proc reference*(node: AstNode, role: Id): Id =
   for c in node.references:
     if c.role == role:
       result = c.node
+      break
+
+proc setReference*(node: AstNode, role: Id, target: Id) =
+  for c in node.references.mitems:
+    if c.role == role:
+      c.node = target
       break
 
 proc property*(node: AstNode, role: Id): PropertyValue =
@@ -216,7 +228,7 @@ proc newAstNode*(class: NodeClass, id: Option[Id] = Id.none): AstNode =
     result.properties.add (desc.id, PropertyValue.getDefaultValue(desc.typ))
 
   for desc in class.children:
-    result.children2.add (desc.id, @[])
+    result.childLists.add (desc.id, @[])
 
   for desc in class.references:
     result.references.add (desc.id, idNone())
@@ -234,7 +246,7 @@ proc add*(node: AstNode, role: Id, child: AstNode) =
   child.parent = node
   child.role = role
 
-  for c in node.children2.mitems:
+  for c in node.childLists.mitems:
     if c.role == role:
       c.nodes.add child
       return
@@ -257,14 +269,36 @@ proc addBuilder*(self: CellBuilder, other: CellBuilder) =
   for pair in other.preferredBuilders.pairs:
     self.preferredBuilders[pair[0]] = pair[1]
 
+method dump*(self: Cell): string {.base.} = discard
+method getChildAt*(self: Cell, index: int, clamp: bool): Option[Cell] {.base.} = Cell.none
+
+method dump(self: EmptyCell): string =
+  result.add fmt"EmptyCell(node: {self.node.id})"
+
+proc fill*(self: Cell) =
+  if self.fillChildren.isNil or self.filled:
+    return
+  self.fillChildren()
+  self.filled = true
+
+proc expand*(self: Cell, path: openArray[int]) =
+  self.fill()
+  if path.len > 0 and self.getChildAt(path[0], true).getSome(child):
+    child.expand path[1..^1]
+
 proc buildCell*(self: CellBuilder, node: AstNode): Cell =
   let class = node.class
   if not self.builders.contains(class):
-    return nil
+    debugf"Unknown builder for {class}"
+    return EmptyCell(node: node)
 
   let builders = self.builders[class]
   if builders.len == 0:
-    return nil
+    debugf"Unknown builder for {class}"
+    return EmptyCell(node: node)
+
+  defer:
+    result.fill()
 
   if builders.len == 1:
     return builders[0].impl(self, node)
@@ -286,8 +320,10 @@ proc `$`*(node: AstNode): string =
 
   result.add "(id: " & $node.id & "):"
 
+  # ├ └ ─ │ ├─
+
   for role in node.properties.mitems:
-    result.add "\n  "
+    result.add "\n│ "
     if class.isNotNil and class.propertyDescription(role.role).getSome(desc):
       result.add desc.role
     else:
@@ -296,7 +332,7 @@ proc `$`*(node: AstNode): string =
     result.add $role.value
 
   for role in node.references.mitems:
-    result.add "\n  "
+    result.add "\n│ "
     if class.isNotNil and class.nodeReferenceDescription(role.role).getSome(desc):
       result.add desc.role
     else:
@@ -304,12 +340,22 @@ proc `$`*(node: AstNode): string =
     result.add ": "
     result.add $role.node
 
-  for role in node.children2.mitems:
-    result.add "\n  "
+  var roleIndex = 0
+  for role in node.childLists.mitems:
+    defer: inc roleIndex
+
+    result.add "\n│ "
     if class.isNotNil and class.nodeChildDescription(role.role).getSome(desc):
       result.add desc.role
     else:
       result.add $role.role
-    result.add ":\n"
-    for c in role.nodes:
-      result.add indent($c, 4)
+    result.add ":"
+
+    for i, c in role.nodes:
+      if i == role.nodes.high and roleIndex == node.childLists.high:
+        result.add "\n└───"
+      else:
+        result.add "\n├───"
+
+      let indent = if i < role.nodes.high or roleIndex < node.childLists.high: "│   " else: "    "
+      result.add indent($c, 1, indent)[indent.len..^1]
