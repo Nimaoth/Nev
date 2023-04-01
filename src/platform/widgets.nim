@@ -54,6 +54,27 @@ type
 proc width*(self: WWidget): float = self.right - self.left
 proc height*(self: WWidget): float = self.bottom - self.top
 
+proc `[]=`*(self: WPanel, index: int, child: WWidget) =
+  if index >= self.children.len:
+    self.children.setLen(index + 1)
+  self.children[index] = child
+
+proc getOrCreate*(self: WPanel, index: int, T: typedesc): T =
+  if index >= self.children.len:
+    self.children.setLen(index + 1)
+    self.children[index] = T()
+  elif self.children[index] of T:
+    return self.children[index].T
+
+  self.children[index] = T()
+  return self.children[index].T
+
+proc getOrCreate*(self: WWidget, T: typedesc): T =
+  return if self.isNotNil and self of T: self.T else: T()
+
+proc truncate*(self: WPanel, len: int) =
+  self.children.setLen min(self.children.len, len)
+
 proc toString*(self: WWidget, indent: string): string =
   var name = ""
   var rest = ""
@@ -206,8 +227,8 @@ method layoutWidget*(self: WPanel, container: Rect, frameIndex: int, options: WL
     self.lastBounds = newBounds
     self.lastBoundsChange = frameIndex
 
-  if self.lastHierarchyChange >= frameIndex or self.lastBoundsChange >= frameIndex:
-    var last = vec2(0, 0)
+  if (self.lastHierarchyChange >= frameIndex or self.lastBoundsChange >= frameIndex) and self.children.len > 0:
+    var last = vec2(self.children[0].left, self.children[0].top)
     for i, c in self.children:
       case self.layout.kind
       of Absolute: discard

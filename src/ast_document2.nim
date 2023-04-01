@@ -37,6 +37,7 @@ type
     redoOps*: seq[UndoOp]
 
     onNodeInserted*: Event[(ModelDocument, AstNode)]
+    onChanged*: Event[ModelDocument]
 
     builder*: CellBuilder
 
@@ -315,6 +316,8 @@ proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
   except CatchableError:
     logger.log lvlError, fmt"[modeldoc] Failed to load model source file '{self.filename}': {getCurrentExceptionMsg()}"
 
+  self.onChanged.invoke (self)
+
 method load*(self: ModelDocument, filename: string = "") =
   let filename = if filename.len > 0: filename else: self.filename
   if filename.len == 0:
@@ -387,6 +390,7 @@ method createWithDocument*(self: ModelDocumentEditor, document: Document): Docum
 
   editor.init()
   discard editor.document.onNodeInserted.subscribe proc(d: auto) = editor.handleNodeInserted(d[0], d[1])
+  discard editor.document.onChanged.subscribe proc(d: auto) = editor.markDirty()
 
   return editor
 

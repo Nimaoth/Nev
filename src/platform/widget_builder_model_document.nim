@@ -214,29 +214,53 @@ method updateWidget*(cell: CollectionCell, app: Editor, widget: WWidget, frameIn
   if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
     return nil
 
-  var widget = if widget.isNotNil and widget of WPanel: widget.WPanel else: WPanel()
+  var widget = widget.getOrCreate(WPanel)
   result = widget
+
+  var currentLine = 0
+  var indexInLine = 0
+  var lineWidget: WPanel = nil
+  proc newLine() =
+    if lineWidget.isNotNil:
+      widget[currentLine] = lineWidget
+      inc currentLine
+    lineWidget = widget.getOrCreate(currentLine, WPanel)
+    lineWidget.sizeToContent = true
+    lineWidget.layout = cell.layout
+    indexInLine = 0
+    # lineWidget = if widget.children.len > currentLine and widget.children[currentLine] of WPanel: widget.children[currentLine].WPanel else: WPanel()
+
+  newLine()
 
   cell.fill()
 
   widget.sizeToContent = true
-  widget.layout = cell.layout
+  widget.layout = WPanelLayout(kind: Vertical)
 
-  var i = 0
   for c in cell.children:
-    let oldWidget: WWidget = if i < widget.children.len: widget.children[i] else: nil
+    let oldWidget: WWidget = if indexInLine < lineWidget.children.len: lineWidget.children[indexInLine] else: nil
     let newWidget = c.updateWidget(app, oldWidget, frameIndex)
     if newWidget.isNil:
       if oldWidget.isNotNil:
-        widget.children.del(i)
+        lineWidget.children.del(indexInLine)
       continue
 
-    if i < widget.children.len:
-      widget.children[i] = newWidget
-    else:
-      widget.children.add newWidget
+    lineWidget[indexInLine] = newWidget
+    inc indexInLine
 
-    inc i
+    if c.style.isNotNil:
+      if c.style.addNewlineAfter:
+        newLine()
+      if c.style.indentAfter:
+        let indent = lineWidget.getOrCreate(indexInLine, WPanel)
+        inc indexInLine
+        indent.right = 20
+
+  if lineWidget.children.len > 0:
+    widget[currentLine] = lineWidget
+    inc currentLine
+
+  widget.truncate(currentLine)
 
 method updateWidget*(self: ModelDocumentEditor, app: Editor, widget: WPanel, frameIndex: int) =
   let lineHeight = app.platform.lineHeight
@@ -317,7 +341,7 @@ method updateWidget*(self: ModelDocumentEditor, app: Editor, widget: WPanel, fra
   #   createRawAstWidget(node, app, contentPanel, frameIndex)
 
   var builder = self.document.builder
-  var lastY = 0.0
+  var lastY = self.scrollOffset
 
   var i = 0
   for node in self.document.model.rootNodes:
@@ -331,6 +355,8 @@ method updateWidget*(self: ModelDocumentEditor, app: Editor, widget: WPanel, fra
       if oldWidget.isNotNil:
         widget.children.del(i)
       continue
+
+    newWidget.top = lastY
 
     if i < contentPanel.children.len:
       contentPanel.children[i] = newWidget

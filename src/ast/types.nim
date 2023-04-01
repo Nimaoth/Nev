@@ -62,6 +62,10 @@ type
 
   CellIsVisiblePredicate* = proc(node: AstNode): bool
 
+  CellStyle* = ref object
+    addNewlineAfter*: bool
+    indentAfter*: bool
+
   Cell* = ref object of RootObj
     id*: Id
     parent*: Cell
@@ -69,6 +73,7 @@ type
     fillChildren*: proc(): void
     filled*: bool
     isVisible*: CellIsVisiblePredicate
+    style*: CellStyle
 
   EmptyCell* = ref object of Cell
     discard
