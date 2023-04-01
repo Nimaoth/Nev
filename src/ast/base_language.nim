@@ -176,7 +176,7 @@ builder.addBuilderFor varDeclClass.id, idNone(), proc(builder: CellBuilder, node
     cell.children.add ConstantCell(node: node, text: " : ", isVisible: (node) => node.hasChild(IdVarDeclType))
     for c in node.children(IdVarDeclType):
       cell.children.add builder.buildCell(c)
-    cell.children.add ConstantCell(node: node, text: " = ")
+    cell.children.add ConstantCell(node: node, text: " = ", isVisible: (node) => node.hasChild(IdVarDeclValue))
     for c in node.children(IdVarDeclValue):
       cell.children.add builder.buildCell(c)
   return cell
@@ -196,12 +196,11 @@ builder.addBuilderFor parameterDeclClass.id, idNone(), proc(builder: CellBuilder
   var cell = CollectionCell(node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =
     # echo "fill collection parameter decl"
-    cell.children.add ConstantCell(node: node, text: "parameter ")
     cell.children.add PropertyCell(node: node, property: IdINamedName)
     cell.children.add ConstantCell(node: node, text: " : ")
     for c in node.children(IdParameterDeclType):
       cell.children.add builder.buildCell(c)
-    cell.children.add ConstantCell(node: node, text: " = ")
+    cell.children.add ConstantCell(node: node, text: " = ", isVisible: (node) => node.hasChild(IdParameterDeclValue))
     for c in node.children(IdParameterDeclValue):
       cell.children.add builder.buildCell(c)
   return cell
@@ -224,7 +223,8 @@ builder.addBuilderFor functionDefinitionClass.id, idNone(), proc(builder: CellBu
     for c in node.children(IdFunctionDefinitionReturnType):
       cell.children.add builder.buildCell(c)
 
-    cell.children.add ConstantCell(node: node, text: " = ")
+    cell.children.add ConstantCell(node: node, text: "=", style: CellStyle(addNewlineAfter: true, indentAfter: true))
+
     for c in node.children(IdFunctionDefinitionBody):
       cell.children.add builder.buildCell(c)
 
@@ -259,14 +259,16 @@ builder.addBuilderFor ifClass.id, idNone(), proc(builder: CellBuilder, node: Ast
     for c in node.children(IdIfExpressionCondition):
       cell.children.add builder.buildCell(c)
 
-    cell.children.add ConstantCell(node: node, text: ": ")
+    cell.children.add ConstantCell(node: node, text: ":", style: CellStyle(addNewlineAfter: true, indentAfter: true))
 
     for c in node.children(IdIfExpressionThenCase):
-      cell.children.add builder.buildCell(c)
+      var cc = builder.buildCell(c)
+      cc.style = CellStyle(addNewlineAfter: true)
+      cell.children.add cc
 
     for i, c in node.children(IdIfExpressionElseCase):
       if i == 0:
-        cell.children.add ConstantCell(node: node, text: " else: ")
+        cell.children.add ConstantCell(node: node, text: "else:", style: CellStyle(addNewlineAfter: true, indentAfter: true))
       cell.children.add builder.buildCell(c)
 
   return cell
@@ -281,7 +283,7 @@ builder.addBuilderFor whileClass.id, idNone(), proc(builder: CellBuilder, node: 
     for c in node.children(IdWhileExpressionCondition):
       cell.children.add builder.buildCell(c)
 
-    cell.children.add ConstantCell(node: node, text: ": ")
+    cell.children.add ConstantCell(node: node, text: ":", style: CellStyle(addNewlineAfter: true, indentAfter: true))
 
     for c in node.children(IdWhileExpressionBody):
       cell.children.add builder.buildCell(c)
