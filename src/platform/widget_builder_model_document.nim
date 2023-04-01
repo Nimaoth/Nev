@@ -63,7 +63,7 @@ proc createRawAstWidget*(node: AstNode, app: Editor, widget: WPanel, frameIndex:
 
     y = textWidget.bottom
 
-  for role in node.children2.mitems:
+  for role in node.childLists.mitems:
     var text = ""
     if class.isNotNil and class.nodeChildDescription(role.role).getSome(desc):
       text.add desc.role
@@ -195,6 +195,15 @@ method updateWidget*(self: ModelDocumentEditor, app: Editor, widget: WPanel, fra
 
   for node in self.document.model.rootNodes:
     createRawAstWidget(node, app, contentPanel, frameIndex)
+
+  var builder = self.document.builder
+  for node in self.document.model.rootNodes:
+    let cell = builder.buildCell(node)
+    if cell.isNil:
+      continue
+    # echo cell.dump
+    # cell.expand([0])
+    # echo cell.dump
 
   let indent = getOption[float32](app, "ast.indent", 20)
   let inlineBlocks = getOption[bool](app, "ast.inline-blocks", false)

@@ -570,6 +570,12 @@ proc saveAppState*(self: Editor) {.expose("editor").} =
         filename: astDocument.filename, ast: true, languageId: "ast", appFile: astDocument.appFile,
         workspaceId: astDocument.workspace.map(wf => $wf.id).get("")
         )
+    elif view.document of ModelDocument:
+      let astDocument = ModelDocument(view.document)
+      state.openEditors.add OpenEditor(
+        filename: astDocument.filename, ast: false, languageId: "am", appFile: astDocument.appFile,
+        workspaceId: astDocument.workspace.map(wf => $wf.id).get("")
+        )
 
   let serialized = state.toJson
   fs.saveApplicationFile("config.json", serialized.pretty)

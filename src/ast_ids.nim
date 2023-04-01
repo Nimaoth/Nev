@@ -53,51 +53,68 @@ let Id62e5339b564d29f772934527* = "62e5339b564d29f772934527".parseId
 let Id62e5339b564d29f772934528* = "62e5339b564d29f772934528".parseId
 let Id62e5339c564d29f772934529* = "62e5339c564d29f772934529".parseId
 let Id62e5339c564d29f77293452a* = "62e5339c564d29f77293452a".parseId
-let Id62e5339c564d29f77293452b* = "62e5339c564d29f77293452b".parseId
-let Id62e5339c564d29f77293452c* = "62e5339c564d29f77293452c".parseId
-let Id62e5339c564d29f77293452d* = "62e5339c564d29f77293452d".parseId
-let Id62e5339c564d29f77293452e* = "62e5339c564d29f77293452e".parseId
-let Id62e5339c564d29f77293452f* = "62e5339c564d29f77293452f".parseId
-let Id62e5339c564d29f772934530* = "62e5339c564d29f772934530".parseId
-let Id62e5339c564d29f772934531* = "62e5339c564d29f772934531".parseId
-let Id62e5339d564d29f772934532* = "62e5339d564d29f772934532".parseId
-let Id62e5339d564d29f772934533* = "62e5339d564d29f772934533".parseId
-let Id62e5339d564d29f772934534* = "62e5339d564d29f772934534".parseId
-let Id62e5339d564d29f772934535* = "62e5339d564d29f772934535".parseId
-let Id62e5339d564d29f772934536* = "62e5339d564d29f772934536".parseId
-let Id62e5339d564d29f772934537* = "62e5339d564d29f772934537".parseId
-let Id62e5339d564d29f772934538* = "62e5339d564d29f772934538".parseId
-let Id62e5339d564d29f772934539* = "62e5339d564d29f772934539".parseId
-let Id62e5339d564d29f77293453a* = "62e5339d564d29f77293453a".parseId
-let Id62e5339e564d29f77293453b* = "62e5339e564d29f77293453b".parseId
-let Id62e5339e564d29f77293453c* = "62e5339e564d29f77293453c".parseId
-let Id62e5339e564d29f77293453d* = "62e5339e564d29f77293453d".parseId
-let Id62e5339e564d29f77293453e* = "62e5339e564d29f77293453e".parseId
-let Id62e5339e564d29f77293453f* = "62e5339e564d29f77293453f".parseId
-let Id62e5339e564d29f772934540* = "62e5339e564d29f772934540".parseId
-let Id62e5339e564d29f772934541* = "62e5339e564d29f772934541".parseId
-let Id62e5339e564d29f772934542* = "62e5339e564d29f772934542".parseId
-let Id62e5339e564d29f772934543* = "62e5339e564d29f772934543".parseId
-let Id62e5339e564d29f772934544* = "62e5339e564d29f772934544".parseId
-let Id62e5339f564d29f772934545* = "62e5339f564d29f772934545".parseId
-let Id62e5339f564d29f772934546* = "62e5339f564d29f772934546".parseId
-let Id62e5339f564d29f772934547* = "62e5339f564d29f772934547".parseId
-let Id62e5339f564d29f772934548* = "62e5339f564d29f772934548".parseId
-let Id62e5339f564d29f772934549* = "62e5339f564d29f772934549".parseId
-let Id62e5339f564d29f77293454a* = "62e5339f564d29f77293454a".parseId
-let Id62e5339f564d29f77293454b* = "62e5339f564d29f77293454b".parseId
-let Id62e5339f564d29f77293454c* = "62e5339f564d29f77293454c".parseId
-let Id62e5339f564d29f77293454d* = "62e5339f564d29f77293454d".parseId
-let Id62e533a0564d29f77293454e* = "62e533a0564d29f77293454e".parseId
+
+let IdAssignmentValue* = "62e5339c564d29f77293452b".parseId
+let IdAssignmentTarget* = "62e5339c564d29f77293452c".parseId
+let IdAssignment* = "62e5339c564d29f77293452d".parseId
+
+let IdFunctionDefinitionBody* = "62e5339c564d29f77293452e".parseId
+let IdFunctionDefinitionReturnType* = "62e5339c564d29f77293452f".parseId
+let IdFunctionDefinitionParameters* = "62e5339c564d29f772934530".parseId
+let IdFunctionDefinition* = "62e5339c564d29f772934531".parseId
+
+let IdParameterDeclValue* = "62e5339d564d29f772934532".parseId
+let IdParameterDeclType* = "62e5339d564d29f772934533".parseId
+let IdParameterDeclName* = "62e5339d564d29f772934534".parseId
+let IdParameterDecl* = "62e5339d564d29f772934535".parseId
+
+let IdWhileExpressionBody* = "62e5339d564d29f772934536".parseId
+let IdWhileExpressionCondition* = "62e5339d564d29f772934537".parseId
+let IdWhileExpression* = "62e5339d564d29f772934538".parseId
+
+let IdIfExpressionElseCase* = "62e5339d564d29f772934539".parseId
+let IdIfExpressionThenCase* = "62e5339d564d29f77293453a".parseId
+let IdIfExpressionCondition* = "62e5339e564d29f77293453b".parseId
+let IdIfExpression* = "62e5339e564d29f77293453c".parseId
+
+let IdCallArguments* = "62e5339e564d29f77293453d".parseId
+let IdCallFunction* = "62e5339e564d29f77293453e".parseId
+let IdCall* = "62e5339e564d29f77293453f".parseId
+
+let IdNodeListChildren* = "62e5339e564d29f772934540".parseId
+let IdNodeList* = "62e5339e564d29f772934541".parseId
+
+let IdVarDeclValue* = "62e5339e564d29f772934542".parseId
+let IdVarDeclType* = "62e5339e564d29f772934543".parseId
+let IdVarDeclName* = "62e5339e564d29f772934544".parseId
+let IdVarDecl* = "62e5339f564d29f772934545".parseId
+
+let IdLetDeclValue* = "62e5339f564d29f772934546".parseId
+let IdLetDeclType* = "62e5339f564d29f772934547".parseId
+let IdLetDeclName* = "62e5339f564d29f772934548".parseId
+let IdLetDecl* = "62e5339f564d29f772934549".parseId
+
+let IdConstDeclValue* = "62e5339f564d29f77293454a".parseId
+let IdConstDeclType* = "62e5339f564d29f77293454b".parseId
+let IdConstDeclName* = "62e5339f564d29f77293454c".parseId
+let IdConstDecl* = "62e5339f564d29f77293454d".parseId
+
+let IdEmpty* = "62e533a0564d29f77293454e".parseId
+
 let IdNodeReferenceTarget* = "62e533a0564d29f77293454f".parseId
 let IdNodeReference* = "62e533a0564d29f772934550".parseId
+
 let IdBinaryExpressionLeft* = "62e533a0564d29f772934551".parseId
 let IdBinaryExpressionRight* = "62e533a0564d29f772934552".parseId
 let IdBinaryExpression* = "62e533a0564d29f772934553".parseId
+
 let IdExpression* = "62e533a0564d29f772934554".parseId
+
 let IdBoolLiteralValue* = "62e533a0564d29f772934555".parseId
 let IdBoolLiteral* = "62e533a0564d29f772934556".parseId
+
 let IdStringLiteralValue* = "62e533a1564d29f772934557".parseId
 let IdStringLiteral* = "62e533a1564d29f772934558".parseId
+
 let IdIntegerLiteralValue* = "62e533a1564d29f772934559".parseId
 let IdIntegerLiteral* = "62e533a1564d29f77293455a".parseId
