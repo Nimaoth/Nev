@@ -22,8 +22,16 @@ type
     logLayout*: bool
     allowAlpha*: bool
 
+  WPanelLayoutKind* = enum
+    Absolute, Horizontal, Vertical
+
+  WPanelLayout* = object
+    case kind*: WPanelLayoutKind
+    else: discard
+
   WPanel* = ref object of WWidget
     maskContent*: bool
+    layout*: WPanelLayout
     children*: seq[WWidget]
 
   WStack* = ref object of WWidget
@@ -199,10 +207,27 @@ method layoutWidget*(self: WPanel, container: Rect, frameIndex: int, options: WL
     self.lastBoundsChange = frameIndex
 
   if self.lastHierarchyChange >= frameIndex or self.lastBoundsChange >= frameIndex:
+    var last = vec2(0, 0)
     for i, c in self.children:
+      case self.layout.kind
+      of Absolute: discard
+      of Horizontal:
+        let width = c.width
+        c.left = last.x
+        c.right = last.x + width
+
+      of Vertical:
+        let height = c.height
+        c.top = last.y
+        c.bottom = last.y + height
+
       c.layoutWidget(newBounds, frameIndex, options)
+
       if self.sizeToContent:
         newBounds = newBounds or c.lastBounds
+
+      last.x = c.lastBounds.xw - newBounds.x
+      last.y = c.lastBounds.yh - newBounds.y
 
   if newBounds != self.lastBounds:
     self.lastBounds = newBounds
