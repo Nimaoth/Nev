@@ -3471,67 +3471,53 @@
     },
     {
       "kind": "ConstDecl",
-      "id": "634ad71ea4957b6b4e062991",
-      "text": "log",
-      "path": "17",
-      "children": [
-        {
-          "kind": "Identifier",
-          "id": "634ad721a4957b6b4e062db8",
-          "reff": "62e53397564d29f772934501",
-          "path": "17, 0"
-        }
-      ]
-    },
-    {
-      "kind": "ConstDecl",
       "id": "633849f1bef71e3dc1a345be",
       "text": "main",
-      "path": "18",
+      "path": "17",
       "children": [
         {
           "kind": "FunctionDefinition",
           "id": "633849f3bef71e3dc1a3465c",
-          "path": "18, 0",
+          "path": "17, 0",
           "children": [
             {
               "kind": "Params",
               "id": "633849f3bef71e3dc1a3465d",
-              "path": "18, 0, 0"
+              "path": "17, 0, 0"
             },
             {
               "kind": "Identifier",
               "id": "633849f5bef71e3dc1a346a9",
               "reff": "62e53397564d29f772934503",
-              "path": "18, 0, 1"
+              "path": "17, 0, 1"
             },
             {
               "kind": "NodeList",
               "id": "633849f3bef71e3dc1a3465f",
-              "path": "18, 0, 2",
+              "path": "17, 0, 2",
               "children": [
                 {
                   "kind": "Call",
                   "id": "6338ace8dd52558b12a1e9e0",
-                  "path": "18, 0, 2, 0",
+                  "path": "17, 0, 2, 0",
                   "children": [
                     {
                       "kind": "Identifier",
                       "id": "6338ace7dd52558b12a1e9db",
                       "reff": "62e53396564d29f7729344f7",
-                      "path": "18, 0, 2, 0, 0"
+                      "path": "17, 0, 2, 0, 0"
                     },
                     {
                       "kind": "StringLiteral",
                       "id": "6338aceddd52558b12a1ed70",
                       "text": "main",
-                      "path": "18, 0, 2, 0, 1"
+                      "path": "17, 0, 2, 0, 1"
                     },
                     {
                       "kind": "Identifier",
                       "id": "634ad07c3fdeb5273cb292ea",
                       "reff": "633b0afe43accac15a3172bb",
-                      "path": "18, 0, 2, 0, 2"
+                      "path": "17, 0, 2, 0, 2"
                     }
                   ]
                 },
@@ -3539,95 +3525,95 @@
                   "kind": "VarDecl",
                   "id": "633af639a7cbacde00084285",
                   "text": "i",
-                  "path": "18, 0, 2, 1",
+                  "path": "17, 0, 2, 1",
                   "children": [
                     {
                       "kind": "Empty",
                       "id": "633af639a7cbacde00084286",
-                      "path": "18, 0, 2, 1, 0"
+                      "path": "17, 0, 2, 1, 0"
                     },
                     {
                       "kind": "NumberLiteral",
                       "id": "633af63ea7cbacde0008549c",
                       "text": "0",
-                      "path": "18, 0, 2, 1, 1"
+                      "path": "17, 0, 2, 1, 1"
                     }
                   ]
                 },
                 {
                   "kind": "While",
                   "id": "633af6068d32ed0a6f1f031d",
-                  "path": "18, 0, 2, 2",
+                  "path": "17, 0, 2, 2",
                   "children": [
                     {
                       "kind": "Call",
                       "id": "633af643a7cbacde000857d3",
-                      "path": "18, 0, 2, 2, 0",
+                      "path": "17, 0, 2, 2, 0",
                       "children": [
                         {
                           "kind": "Identifier",
                           "id": "633afac6db58fa66b145216c",
                           "reff": "62e53398564d29f772934505",
-                          "path": "18, 0, 2, 2, 0, 0"
+                          "path": "17, 0, 2, 2, 0, 0"
                         },
                         {
                           "kind": "Identifier",
                           "id": "633af642a7cbacde000857c0",
                           "reff": "633af639a7cbacde00084285",
-                          "path": "18, 0, 2, 2, 0, 1"
+                          "path": "17, 0, 2, 2, 0, 1"
                         },
                         {
                           "kind": "NumberLiteral",
                           "id": "633af644a7cbacde00085ad7",
                           "text": "10",
-                          "path": "18, 0, 2, 2, 0, 2"
+                          "path": "17, 0, 2, 2, 0, 2"
                         }
                       ]
                     },
                     {
                       "kind": "NodeList",
                       "id": "633af6158d32ed0a6f1f25bb",
-                      "path": "18, 0, 2, 2, 1",
+                      "path": "17, 0, 2, 2, 1",
                       "children": [
                         {
                           "kind": "Call",
                           "id": "633af6118d32ed0a6f1f1bcd",
-                          "path": "18, 0, 2, 2, 1, 0",
+                          "path": "17, 0, 2, 2, 1, 0",
                           "children": [
                             {
                               "kind": "Identifier",
                               "id": "633af6118d32ed0a6f1f1bba",
                               "reff": "62e53396564d29f7729344f7",
-                              "path": "18, 0, 2, 2, 1, 0, 0"
+                              "path": "17, 0, 2, 2, 1, 0, 0"
                             },
                             {
                               "kind": "Identifier",
                               "id": "633af648a7cbacde00085d1e",
                               "reff": "633af639a7cbacde00084285",
-                              "path": "18, 0, 2, 2, 1, 0, 1"
+                              "path": "17, 0, 2, 2, 1, 0, 1"
                             },
                             {
                               "kind": "StringLiteral",
                               "id": "633af6138d32ed0a6f1f2586",
                               "text": ": ",
-                              "path": "18, 0, 2, 2, 1, 0, 2"
+                              "path": "17, 0, 2, 2, 1, 0, 2"
                             },
                             {
                               "kind": "Call",
                               "id": "633afa0f21f03e21dd666d27",
-                              "path": "18, 0, 2, 2, 1, 0, 3",
+                              "path": "17, 0, 2, 2, 1, 0, 3",
                               "children": [
                                 {
                                   "kind": "Identifier",
                                   "id": "633afa0f21f03e21dd666d28",
                                   "reff": "633af9065d4242322a160dcb",
-                                  "path": "18, 0, 2, 2, 1, 0, 3, 0"
+                                  "path": "17, 0, 2, 2, 1, 0, 3, 0"
                                 },
                                 {
                                   "kind": "Identifier",
                                   "id": "633afa0f21f03e21dd666d29",
                                   "reff": "633af639a7cbacde00084285",
-                                  "path": "18, 0, 2, 2, 1, 0, 3, 1"
+                                  "path": "17, 0, 2, 2, 1, 0, 3, 1"
                                 }
                               ]
                             }
@@ -3636,36 +3622,36 @@
                         {
                           "kind": "Assignment",
                           "id": "633af9d221f03e21dd6646c8",
-                          "path": "18, 0, 2, 2, 1, 1",
+                          "path": "17, 0, 2, 2, 1, 1",
                           "children": [
                             {
                               "kind": "Identifier",
                               "id": "633af9d221f03e21dd6646b4",
                               "reff": "633af639a7cbacde00084285",
-                              "path": "18, 0, 2, 2, 1, 1, 0"
+                              "path": "17, 0, 2, 2, 1, 1, 0"
                             },
                             {
                               "kind": "Call",
                               "id": "633af9d421f03e21dd664ae4",
-                              "path": "18, 0, 2, 2, 1, 1, 1",
+                              "path": "17, 0, 2, 2, 1, 1, 1",
                               "children": [
                                 {
                                   "kind": "Identifier",
                                   "id": "633af9d421f03e21dd664ae5",
                                   "reff": "62e53396564d29f7729344f8",
-                                  "path": "18, 0, 2, 2, 1, 1, 1, 0"
+                                  "path": "17, 0, 2, 2, 1, 1, 1, 0"
                                 },
                                 {
                                   "kind": "Identifier",
                                   "id": "633af9d321f03e21dd664ad0",
                                   "reff": "633af639a7cbacde00084285",
-                                  "path": "18, 0, 2, 2, 1, 1, 1, 1"
+                                  "path": "17, 0, 2, 2, 1, 1, 1, 1"
                                 },
                                 {
                                   "kind": "NumberLiteral",
                                   "id": "633af9d421f03e21dd664da9",
                                   "text": "1",
-                                  "path": "18, 0, 2, 2, 1, 1, 1, 2"
+                                  "path": "17, 0, 2, 2, 1, 1, 1, 2"
                                 }
                               ]
                             }
@@ -3685,13 +3671,13 @@
       "kind": "ConstDecl",
       "id": "6338bf2dbe508ded7da3c855",
       "text": "true",
-      "path": "19",
+      "path": "18",
       "children": [
         {
           "kind": "NumberLiteral",
           "id": "6338c020f6990c3a1d9cd1b0",
           "text": "1",
-          "path": "19, 0"
+          "path": "18, 0"
         }
       ]
     },
@@ -3699,13 +3685,13 @@
       "kind": "ConstDecl",
       "id": "6338bf36be508ded7da3c963",
       "text": "false",
-      "path": "20",
+      "path": "19",
       "children": [
         {
           "kind": "NumberLiteral",
           "id": "6339eb6c0e3d3fabf3cebc80",
           "text": "0",
-          "path": "20, 0"
+          "path": "19, 0"
         }
       ]
     },
@@ -3713,13 +3699,13 @@
       "kind": "ConstDecl",
       "id": "633ad4ca42cf5a572476b60c",
       "text": "xvlc",
-      "path": "21",
+      "path": "20",
       "children": [
         {
           "kind": "Identifier",
           "id": "633ad4cf42cf5a572476c8be",
           "reff": "6338bf2dbe508ded7da3c855",
-          "path": "21, 0"
+          "path": "20, 0"
         }
       ]
     },
@@ -3727,29 +3713,29 @@
       "kind": "ConstDecl",
       "id": "6339951f0fe65e6f425e1b5c",
       "text": "|",
-      "path": "22",
+      "path": "21",
       "children": [
         {
           "kind": "FunctionDefinition",
           "id": "633995230fe65e6f425e278e",
-          "path": "22, 0",
+          "path": "21, 0",
           "children": [
             {
               "kind": "Params",
               "id": "633995290fe65e6f425e2d76",
-              "path": "22, 0, 0",
+              "path": "21, 0, 0",
               "children": [
                 {
                   "kind": "LetDecl",
                   "id": "633995290fe65e6f425e2d77",
                   "text": "a",
-                  "path": "22, 0, 0, 0",
+                  "path": "21, 0, 0, 0",
                   "children": [
                     {
                       "kind": "Identifier",
                       "id": "633995290fe65e6f425e2d78",
                       "reff": "62e53397564d29f772934501",
-                      "path": "22, 0, 0, 0, 0"
+                      "path": "21, 0, 0, 0, 0"
                     }
                   ]
                 },
@@ -3757,13 +3743,13 @@
                   "kind": "LetDecl",
                   "id": "633995290fe65e6f425e2d79",
                   "text": "b",
-                  "path": "22, 0, 0, 1",
+                  "path": "21, 0, 0, 1",
                   "children": [
                     {
                       "kind": "Identifier",
                       "id": "633995290fe65e6f425e2d7a",
                       "reff": "62e53397564d29f772934501",
-                      "path": "22, 0, 0, 1, 0"
+                      "path": "21, 0, 0, 1, 0"
                     }
                   ]
                 }
@@ -3773,30 +3759,30 @@
               "kind": "Identifier",
               "id": "633995250fe65e6f425e2d52",
               "reff": "62e53397564d29f772934501",
-              "path": "22, 0, 1"
+              "path": "21, 0, 1"
             },
             {
               "kind": "Call",
               "id": "6339957e0fe65e6f425e42bd",
-              "path": "22, 0, 2",
+              "path": "21, 0, 2",
               "children": [
                 {
                   "kind": "Identifier",
                   "id": "6339957e0fe65e6f425e42af",
                   "reff": "6339925292b4dd42ff28bc56",
-                  "path": "22, 0, 2, 0"
+                  "path": "21, 0, 2, 0"
                 },
                 {
                   "kind": "Identifier",
                   "id": "6339957f0fe65e6f425e44e5",
                   "reff": "633995290fe65e6f425e2d77",
-                  "path": "22, 0, 2, 1"
+                  "path": "21, 0, 2, 1"
                 },
                 {
                   "kind": "Identifier",
                   "id": "633995800fe65e6f425e46ad",
                   "reff": "633995290fe65e6f425e2d79",
-                  "path": "22, 0, 2, 2"
+                  "path": "21, 0, 2, 2"
                 }
               ]
             }
@@ -3808,29 +3794,29 @@
       "kind": "ConstDecl",
       "id": "6339966959d2f3e772fe74e1",
       "text": "&",
-      "path": "23",
+      "path": "22",
       "children": [
         {
           "kind": "FunctionDefinition",
           "id": "6339966959d2f3e772fe74e2",
-          "path": "23, 0",
+          "path": "22, 0",
           "children": [
             {
               "kind": "Params",
               "id": "6339966959d2f3e772fe74e3",
-              "path": "23, 0, 0",
+              "path": "22, 0, 0",
               "children": [
                 {
                   "kind": "LetDecl",
                   "id": "6339966959d2f3e772fe74e4",
                   "text": "a",
-                  "path": "23, 0, 0, 0",
+                  "path": "22, 0, 0, 0",
                   "children": [
                     {
                       "kind": "Identifier",
                       "id": "6339966959d2f3e772fe74e5",
                       "reff": "62e53397564d29f772934501",
-                      "path": "23, 0, 0, 0, 0"
+                      "path": "22, 0, 0, 0, 0"
                     }
                   ]
                 },
@@ -3838,13 +3824,13 @@
                   "kind": "LetDecl",
                   "id": "6339966959d2f3e772fe74e6",
                   "text": "b",
-                  "path": "23, 0, 0, 1",
+                  "path": "22, 0, 0, 1",
                   "children": [
                     {
                       "kind": "Identifier",
                       "id": "6339966959d2f3e772fe74e7",
                       "reff": "62e53397564d29f772934501",
-                      "path": "23, 0, 0, 1, 0"
+                      "path": "22, 0, 0, 1, 0"
                     }
                   ]
                 }
@@ -3854,65 +3840,65 @@
               "kind": "Identifier",
               "id": "6339966959d2f3e772fe74e8",
               "reff": "62e53397564d29f772934501",
-              "path": "23, 0, 1"
+              "path": "22, 0, 1"
             },
             {
               "kind": "Call",
               "id": "633ad51342cf5a572476f19a",
-              "path": "23, 0, 2",
+              "path": "22, 0, 2",
               "children": [
                 {
                   "kind": "Identifier",
                   "id": "633ad51342cf5a572476f187",
                   "reff": "633ad4e142cf5a572476c9f4",
-                  "path": "23, 0, 2, 0"
+                  "path": "22, 0, 2, 0"
                 },
                 {
                   "kind": "Call",
                   "id": "633ad51a42cf5a57247704c2",
-                  "path": "23, 0, 2, 1",
+                  "path": "22, 0, 2, 1",
                   "children": [
                     {
                       "kind": "Identifier",
                       "id": "633ad51942cf5a57247704af",
                       "reff": "6339951f0fe65e6f425e1b5c",
-                      "path": "23, 0, 2, 1, 0"
+                      "path": "22, 0, 2, 1, 0"
                     },
                     {
                       "kind": "Call",
                       "id": "633ad51c42cf5a5724770a0a",
-                      "path": "23, 0, 2, 1, 1",
+                      "path": "22, 0, 2, 1, 1",
                       "children": [
                         {
                           "kind": "Identifier",
                           "id": "633ad51c42cf5a57247709f7",
                           "reff": "633ad4e142cf5a572476c9f4",
-                          "path": "23, 0, 2, 1, 1, 0"
+                          "path": "22, 0, 2, 1, 1, 0"
                         },
                         {
                           "kind": "Identifier",
                           "id": "633ad51d42cf5a5724770da6",
                           "reff": "6339966959d2f3e772fe74e4",
-                          "path": "23, 0, 2, 1, 1, 1"
+                          "path": "22, 0, 2, 1, 1, 1"
                         }
                       ]
                     },
                     {
                       "kind": "Call",
                       "id": "633ad52142cf5a5724770fbc",
-                      "path": "23, 0, 2, 1, 2",
+                      "path": "22, 0, 2, 1, 2",
                       "children": [
                         {
                           "kind": "Identifier",
                           "id": "633ad52042cf5a5724770fa9",
                           "reff": "633ad4e142cf5a572476c9f4",
-                          "path": "23, 0, 2, 1, 2, 0"
+                          "path": "22, 0, 2, 1, 2, 0"
                         },
                         {
                           "kind": "Identifier",
                           "id": "633ad52242cf5a57247713be",
                           "reff": "6339966959d2f3e772fe74e6",
-                          "path": "23, 0, 2, 1, 2, 1"
+                          "path": "22, 0, 2, 1, 2, 1"
                         }
                       ]
                     }
@@ -3928,30 +3914,30 @@
       "kind": "ConstDecl",
       "id": "63399df02c7a777ec0e38327",
       "text": "uiea",
-      "path": "24",
+      "path": "23",
       "children": [
         {
           "kind": "Call",
           "id": "63399df82c7a777ec0e38ef1",
-          "path": "24, 0",
+          "path": "23, 0",
           "children": [
             {
               "kind": "Identifier",
               "id": "6339eb910e3d3fabf3cecd83",
               "reff": "6339951f0fe65e6f425e1b5c",
-              "path": "24, 0, 0"
+              "path": "23, 0, 0"
             },
             {
               "kind": "Identifier",
               "id": "633ad4bf42cf5a572476af77",
               "reff": "6338bf2dbe508ded7da3c855",
-              "path": "24, 0, 1"
+              "path": "23, 0, 1"
             },
             {
               "kind": "Identifier",
               "id": "6339eb940e3d3fabf3ced18c",
               "reff": "6338bf36be508ded7da3c963",
-              "path": "24, 0, 2"
+              "path": "23, 0, 2"
             }
           ]
         }
@@ -3960,13 +3946,13 @@
     {
       "kind": "Call",
       "id": "633afcc659843c30e76d0673",
-      "path": "25",
+      "path": "24",
       "children": [
         {
           "kind": "Identifier",
           "id": "633afcc559843c30e76d065c",
           "reff": "633849f1bef71e3dc1a345be",
-          "path": "25, 0"
+          "path": "24, 0"
         }
       ]
     },
@@ -3974,29 +3960,29 @@
       "kind": "ConstDecl",
       "id": "6339920b92b4dd42ff285341",
       "text": "min",
-      "path": "26",
+      "path": "25",
       "children": [
         {
           "kind": "FunctionDefinition",
           "id": "6339922992b4dd42ff2893cd",
-          "path": "26, 0",
+          "path": "25, 0",
           "children": [
             {
               "kind": "Params",
               "id": "6339922992b4dd42ff2893ce",
-              "path": "26, 0, 0",
+              "path": "25, 0, 0",
               "children": [
                 {
                   "kind": "LetDecl",
                   "id": "6339922d92b4dd42ff2899f1",
                   "text": "a",
-                  "path": "26, 0, 0, 0",
+                  "path": "25, 0, 0, 0",
                   "children": [
                     {
                       "kind": "Identifier",
                       "id": "6339923092b4dd42ff28a09d",
                       "reff": "62e53397564d29f772934501",
-                      "path": "26, 0, 0, 0, 0"
+                      "path": "25, 0, 0, 0, 0"
                     }
                   ]
                 },
@@ -4004,13 +3990,13 @@
                   "kind": "LetDecl",
                   "id": "6339923992b4dd42ff28ab8b",
                   "text": "b",
-                  "path": "26, 0, 0, 1",
+                  "path": "25, 0, 0, 1",
                   "children": [
                     {
                       "kind": "Identifier",
                       "id": "6339923b92b4dd42ff28b032",
                       "reff": "62e53397564d29f772934501",
-                      "path": "26, 0, 0, 1, 0"
+                      "path": "25, 0, 0, 1, 0"
                     }
                   ]
                 }
@@ -4020,40 +4006,40 @@
               "kind": "Identifier",
               "id": "6339922b92b4dd42ff289786",
               "reff": "62e53397564d29f772934501",
-              "path": "26, 0, 1"
+              "path": "25, 0, 1"
             },
             {
               "kind": "NodeList",
               "id": "6339922992b4dd42ff2893d0",
-              "path": "26, 0, 2",
+              "path": "25, 0, 2",
               "children": [
                 {
                   "kind": "If",
                   "id": "6339924692b4dd42ff28b188",
-                  "path": "26, 0, 2, 0",
+                  "path": "25, 0, 2, 0",
                   "children": [
                     {
                       "kind": "Call",
                       "id": "6339924a92b4dd42ff28b5e5",
-                      "path": "26, 0, 2, 0, 0",
+                      "path": "25, 0, 2, 0, 0",
                       "children": [
                         {
                           "kind": "Identifier",
                           "id": "6339924a92b4dd42ff28b5e6",
                           "reff": "62e53398564d29f772934504",
-                          "path": "26, 0, 2, 0, 0, 0"
+                          "path": "25, 0, 2, 0, 0, 0"
                         },
                         {
                           "kind": "Identifier",
                           "id": "6339924892b4dd42ff28b5d9",
                           "reff": "6339922d92b4dd42ff2899f1",
-                          "path": "26, 0, 2, 0, 0, 1"
+                          "path": "25, 0, 2, 0, 0, 1"
                         },
                         {
                           "kind": "Identifier",
                           "id": "6339924a92b4dd42ff28b735",
                           "reff": "6339923992b4dd42ff28ab8b",
-                          "path": "26, 0, 2, 0, 0, 2"
+                          "path": "25, 0, 2, 0, 0, 2"
                         }
                       ]
                     },
@@ -4061,13 +4047,13 @@
                       "kind": "Identifier",
                       "id": "6339924d92b4dd42ff28b88b",
                       "reff": "6339922d92b4dd42ff2899f1",
-                      "path": "26, 0, 2, 0, 1"
+                      "path": "25, 0, 2, 0, 1"
                     },
                     {
                       "kind": "Identifier",
                       "id": "6339925092b4dd42ff28bc40",
                       "reff": "6339923992b4dd42ff28ab8b",
-                      "path": "26, 0, 2, 0, 2"
+                      "path": "25, 0, 2, 0, 2"
                     }
                   ]
                 }
@@ -4081,29 +4067,29 @@
       "kind": "ConstDecl",
       "id": "6339925292b4dd42ff28bc56",
       "text": "max",
-      "path": "27",
+      "path": "26",
       "children": [
         {
           "kind": "FunctionDefinition",
           "id": "6339925292b4dd42ff28bc57",
-          "path": "27, 0",
+          "path": "26, 0",
           "children": [
             {
               "kind": "Params",
               "id": "6339925292b4dd42ff28bc58",
-              "path": "27, 0, 0",
+              "path": "26, 0, 0",
               "children": [
                 {
                   "kind": "LetDecl",
                   "id": "6339925292b4dd42ff28bc59",
                   "text": "a",
-                  "path": "27, 0, 0, 0",
+                  "path": "26, 0, 0, 0",
                   "children": [
                     {
                       "kind": "Identifier",
                       "id": "6339925292b4dd42ff28bc5a",
                       "reff": "62e53397564d29f772934501",
-                      "path": "27, 0, 0, 0, 0"
+                      "path": "26, 0, 0, 0, 0"
                     }
                   ]
                 },
@@ -4111,13 +4097,13 @@
                   "kind": "LetDecl",
                   "id": "6339925292b4dd42ff28bc5b",
                   "text": "b",
-                  "path": "27, 0, 0, 1",
+                  "path": "26, 0, 0, 1",
                   "children": [
                     {
                       "kind": "Identifier",
                       "id": "6339925292b4dd42ff28bc5c",
                       "reff": "62e53397564d29f772934501",
-                      "path": "27, 0, 0, 1, 0"
+                      "path": "26, 0, 0, 1, 0"
                     }
                   ]
                 }
@@ -4127,40 +4113,40 @@
               "kind": "Identifier",
               "id": "6339925292b4dd42ff28bc5d",
               "reff": "62e53397564d29f772934501",
-              "path": "27, 0, 1"
+              "path": "26, 0, 1"
             },
             {
               "kind": "NodeList",
               "id": "6339925292b4dd42ff28bc5e",
-              "path": "27, 0, 2",
+              "path": "26, 0, 2",
               "children": [
                 {
                   "kind": "If",
                   "id": "6339925292b4dd42ff28bc5f",
-                  "path": "27, 0, 2, 0",
+                  "path": "26, 0, 2, 0",
                   "children": [
                     {
                       "kind": "Call",
                       "id": "6339925292b4dd42ff28bc60",
-                      "path": "27, 0, 2, 0, 0",
+                      "path": "26, 0, 2, 0, 0",
                       "children": [
                         {
                           "kind": "Identifier",
                           "id": "6339925992b4dd42ff28c4ac",
                           "reff": "62e53398564d29f772934506",
-                          "path": "27, 0, 2, 0, 0, 0"
+                          "path": "26, 0, 2, 0, 0, 0"
                         },
                         {
                           "kind": "Identifier",
                           "id": "6339925292b4dd42ff28bc62",
                           "reff": "6339925292b4dd42ff28bc59",
-                          "path": "27, 0, 2, 0, 0, 1"
+                          "path": "26, 0, 2, 0, 0, 1"
                         },
                         {
                           "kind": "Identifier",
                           "id": "6339925292b4dd42ff28bc63",
                           "reff": "6339925292b4dd42ff28bc5b",
-                          "path": "27, 0, 2, 0, 0, 2"
+                          "path": "26, 0, 2, 0, 0, 2"
                         }
                       ]
                     },
@@ -4168,13 +4154,13 @@
                       "kind": "Identifier",
                       "id": "6339925292b4dd42ff28bc64",
                       "reff": "6339925292b4dd42ff28bc59",
-                      "path": "27, 0, 2, 0, 1"
+                      "path": "26, 0, 2, 0, 1"
                     },
                     {
                       "kind": "Identifier",
                       "id": "6339925292b4dd42ff28bc65",
                       "reff": "6339925292b4dd42ff28bc5b",
-                      "path": "27, 0, 2, 0, 2"
+                      "path": "26, 0, 2, 0, 2"
                     }
                   ]
                 }
@@ -4188,29 +4174,29 @@
       "kind": "ConstDecl",
       "id": "633ad4e142cf5a572476c9f4",
       "text": "not",
-      "path": "28",
+      "path": "27",
       "children": [
         {
           "kind": "FunctionDefinition",
           "id": "633ad4e142cf5a572476c9f5",
-          "path": "28, 0",
+          "path": "27, 0",
           "children": [
             {
               "kind": "Params",
               "id": "633ad4e142cf5a572476c9f6",
-              "path": "28, 0, 0",
+              "path": "27, 0, 0",
               "children": [
                 {
                   "kind": "LetDecl",
                   "id": "633ad4e142cf5a572476c9f7",
                   "text": "a",
-                  "path": "28, 0, 0, 0",
+                  "path": "27, 0, 0, 0",
                   "children": [
                     {
                       "kind": "Identifier",
                       "id": "633ad4e142cf5a572476c9f8",
                       "reff": "62e53397564d29f772934501",
-                      "path": "28, 0, 0, 0, 0"
+                      "path": "27, 0, 0, 0, 0"
                     }
                   ]
                 }
@@ -4220,40 +4206,40 @@
               "kind": "Identifier",
               "id": "633ad4e142cf5a572476c9fb",
               "reff": "62e53397564d29f772934501",
-              "path": "28, 0, 1"
+              "path": "27, 0, 1"
             },
             {
               "kind": "NodeList",
               "id": "633ad4e142cf5a572476c9fc",
-              "path": "28, 0, 2",
+              "path": "27, 0, 2",
               "children": [
                 {
                   "kind": "If",
                   "id": "633ad4e142cf5a572476c9fd",
-                  "path": "28, 0, 2, 0",
+                  "path": "27, 0, 2, 0",
                   "children": [
                     {
                       "kind": "Call",
                       "id": "633ad4e142cf5a572476c9fe",
-                      "path": "28, 0, 2, 0, 0",
+                      "path": "27, 0, 2, 0, 0",
                       "children": [
                         {
                           "kind": "Identifier",
                           "id": "633ad50042cf5a572476dc00",
                           "reff": "62e53398564d29f772934508",
-                          "path": "28, 0, 2, 0, 0, 0"
+                          "path": "27, 0, 2, 0, 0, 0"
                         },
                         {
                           "kind": "Identifier",
                           "id": "633ad4e142cf5a572476ca00",
                           "reff": "633ad4e142cf5a572476c9f7",
-                          "path": "28, 0, 2, 0, 0, 1"
+                          "path": "27, 0, 2, 0, 0, 1"
                         },
                         {
                           "kind": "NumberLiteral",
                           "id": "633ad4eb42cf5a572476d373",
                           "text": "0",
-                          "path": "28, 0, 2, 0, 0, 2"
+                          "path": "27, 0, 2, 0, 0, 2"
                         }
                       ]
                     },
@@ -4261,13 +4247,13 @@
                       "kind": "NumberLiteral",
                       "id": "633ad50142cf5a572476de01",
                       "text": "1",
-                      "path": "28, 0, 2, 0, 1"
+                      "path": "27, 0, 2, 0, 1"
                     },
                     {
                       "kind": "NumberLiteral",
                       "id": "633ad50242cf5a572476e035",
                       "text": "0",
-                      "path": "28, 0, 2, 0, 2"
+                      "path": "27, 0, 2, 0, 2"
                     }
                   ]
                 }
@@ -4281,29 +4267,29 @@
       "kind": "ConstDecl",
       "id": "6338c0de00afffa66ab8ba00",
       "text": "fib rec",
-      "path": "29",
+      "path": "28",
       "children": [
         {
           "kind": "FunctionDefinition",
           "id": "6338c0e000afffa66ab8bbde",
-          "path": "29, 0",
+          "path": "28, 0",
           "children": [
             {
               "kind": "Params",
               "id": "6338c0e000afffa66ab8bbdf",
-              "path": "29, 0, 0",
+              "path": "28, 0, 0",
               "children": [
                 {
                   "kind": "LetDecl",
                   "id": "6338c0e500afffa66ab8be44",
                   "text": "n",
-                  "path": "29, 0, 0, 0",
+                  "path": "28, 0, 0, 0",
                   "children": [
                     {
                       "kind": "Identifier",
                       "id": "6338c0e900afffa66ab8c1d7",
                       "reff": "62e53397564d29f772934501",
-                      "path": "29, 0, 0, 0, 0"
+                      "path": "28, 0, 0, 0, 0"
                     }
                   ]
                 }
@@ -4313,40 +4299,40 @@
               "kind": "Identifier",
               "id": "6338c0e200afffa66ab8bdc1",
               "reff": "62e53397564d29f772934501",
-              "path": "29, 0, 1"
+              "path": "28, 0, 1"
             },
             {
               "kind": "NodeList",
               "id": "6338c0e000afffa66ab8bbe1",
-              "path": "29, 0, 2",
+              "path": "28, 0, 2",
               "children": [
                 {
                   "kind": "If",
                   "id": "6338c0f000afffa66ab8c4a4",
-                  "path": "29, 0, 2, 0",
+                  "path": "28, 0, 2, 0",
                   "children": [
                     {
                       "kind": "Call",
                       "id": "6338c0f200afffa66ab8c5c6",
-                      "path": "29, 0, 2, 0, 0",
+                      "path": "28, 0, 2, 0, 0",
                       "children": [
                         {
                           "kind": "Identifier",
                           "id": "6338c0f700afffa66ab8c847",
                           "reff": "62e53398564d29f772934505",
-                          "path": "29, 0, 2, 0, 0, 0"
+                          "path": "28, 0, 2, 0, 0, 0"
                         },
                         {
                           "kind": "Identifier",
                           "id": "6338c0f100afffa66ab8c5c1",
                           "reff": "6338c0e500afffa66ab8be44",
-                          "path": "29, 0, 2, 0, 0, 1"
+                          "path": "28, 0, 2, 0, 0, 1"
                         },
                         {
                           "kind": "NumberLiteral",
                           "id": "6338c0f900afffa66ab8c896",
                           "text": "1",
-                          "path": "29, 0, 2, 0, 0, 2"
+                          "path": "28, 0, 2, 0, 0, 2"
                         }
                       ]
                     },
@@ -4354,52 +4340,52 @@
                       "kind": "NumberLiteral",
                       "id": "6338c0fb00afffa66ab8ca33",
                       "text": "1",
-                      "path": "29, 0, 2, 0, 1"
+                      "path": "28, 0, 2, 0, 1"
                     },
                     {
                       "kind": "Call",
                       "id": "6338c10300afffa66ab8ce4e",
-                      "path": "29, 0, 2, 0, 2",
+                      "path": "28, 0, 2, 0, 2",
                       "children": [
                         {
                           "kind": "Identifier",
                           "id": "6338c10300afffa66ab8ce4f",
                           "reff": "62e53396564d29f7729344f8",
-                          "path": "29, 0, 2, 0, 2, 0"
+                          "path": "28, 0, 2, 0, 2, 0"
                         },
                         {
                           "kind": "Call",
                           "id": "6338c0fe00afffa66ab8cc3b",
-                          "path": "29, 0, 2, 0, 2, 1",
+                          "path": "28, 0, 2, 0, 2, 1",
                           "children": [
                             {
                               "kind": "Identifier",
                               "id": "6338c0fe00afffa66ab8cc36",
                               "reff": "6338c0de00afffa66ab8ba00",
-                              "path": "29, 0, 2, 0, 2, 1, 0"
+                              "path": "28, 0, 2, 0, 2, 1, 0"
                             },
                             {
                               "kind": "Call",
                               "id": "6338c10000afffa66ab8cd21",
-                              "path": "29, 0, 2, 0, 2, 1, 1",
+                              "path": "28, 0, 2, 0, 2, 1, 1",
                               "children": [
                                 {
                                   "kind": "Identifier",
                                   "id": "6338c10000afffa66ab8cd22",
                                   "reff": "62e53396564d29f7729344f9",
-                                  "path": "29, 0, 2, 0, 2, 1, 1, 0"
+                                  "path": "28, 0, 2, 0, 2, 1, 1, 0"
                                 },
                                 {
                                   "kind": "Identifier",
                                   "id": "6338c10f00afffa66ab8d323",
                                   "reff": "6338c0e500afffa66ab8be44",
-                                  "path": "29, 0, 2, 0, 2, 1, 1, 1"
+                                  "path": "28, 0, 2, 0, 2, 1, 1, 1"
                                 },
                                 {
                                   "kind": "NumberLiteral",
                                   "id": "6338c10100afffa66ab8ce43",
                                   "text": "1",
-                                  "path": "29, 0, 2, 0, 2, 1, 1, 2"
+                                  "path": "28, 0, 2, 0, 2, 1, 1, 2"
                                 }
                               ]
                             }
@@ -4408,36 +4394,36 @@
                         {
                           "kind": "Call",
                           "id": "6338c10500afffa66ab8cfa9",
-                          "path": "29, 0, 2, 0, 2, 2",
+                          "path": "28, 0, 2, 0, 2, 2",
                           "children": [
                             {
                               "kind": "Identifier",
                               "id": "6338c10500afffa66ab8cfa4",
                               "reff": "6338c0de00afffa66ab8ba00",
-                              "path": "29, 0, 2, 0, 2, 2, 0"
+                              "path": "28, 0, 2, 0, 2, 2, 0"
                             },
                             {
                               "kind": "Call",
                               "id": "6338c10b00afffa66ab8d18e",
-                              "path": "29, 0, 2, 0, 2, 2, 1",
+                              "path": "28, 0, 2, 0, 2, 2, 1",
                               "children": [
                                 {
                                   "kind": "Identifier",
                                   "id": "6338c10b00afffa66ab8d18f",
                                   "reff": "62e53396564d29f7729344f9",
-                                  "path": "29, 0, 2, 0, 2, 2, 1, 0"
+                                  "path": "28, 0, 2, 0, 2, 2, 1, 0"
                                 },
                                 {
                                   "kind": "Identifier",
                                   "id": "6338c10900afffa66ab8d189",
                                   "reff": "6338c0e500afffa66ab8be44",
-                                  "path": "29, 0, 2, 0, 2, 2, 1, 1"
+                                  "path": "28, 0, 2, 0, 2, 2, 1, 1"
                                 },
                                 {
                                   "kind": "NumberLiteral",
                                   "id": "6338c10c00afffa66ab8d274",
                                   "text": "2",
-                                  "path": "29, 0, 2, 0, 2, 2, 1, 2"
+                                  "path": "28, 0, 2, 0, 2, 2, 1, 2"
                                 }
                               ]
                             }
@@ -4456,19 +4442,19 @@
     {
       "kind": "Call",
       "id": "633afb50db58fa66b14540d4",
-      "path": "30",
+      "path": "29",
       "children": [
         {
           "kind": "Identifier",
           "id": "633afb4fdb58fa66b14540bf",
           "reff": "633af9065d4242322a160dcb",
-          "path": "30, 0"
+          "path": "29, 0"
         },
         {
           "kind": "NumberLiteral",
           "id": "633afb55db58fa66b1455629",
           "text": "69",
-          "path": "30, 1"
+          "path": "29, 1"
         }
       ]
     },
@@ -4476,29 +4462,29 @@
       "kind": "ConstDecl",
       "id": "633af9065d4242322a160dcb",
       "text": "fib iter",
-      "path": "31",
+      "path": "30",
       "children": [
         {
           "kind": "FunctionDefinition",
           "id": "633af9065d4242322a160dcc",
-          "path": "31, 0",
+          "path": "30, 0",
           "children": [
             {
               "kind": "Params",
               "id": "633af9065d4242322a160dcd",
-              "path": "31, 0, 0",
+              "path": "30, 0, 0",
               "children": [
                 {
                   "kind": "LetDecl",
                   "id": "633af9065d4242322a160dce",
                   "text": "n",
-                  "path": "31, 0, 0, 0",
+                  "path": "30, 0, 0, 0",
                   "children": [
                     {
                       "kind": "Identifier",
                       "id": "633af9065d4242322a160dcf",
                       "reff": "62e53397564d29f772934501",
-                      "path": "31, 0, 0, 0, 0"
+                      "path": "30, 0, 0, 0, 0"
                     }
                   ]
                 }
@@ -4508,29 +4494,29 @@
               "kind": "Identifier",
               "id": "633af9065d4242322a160dd0",
               "reff": "62e53397564d29f772934501",
-              "path": "31, 0, 1"
+              "path": "30, 0, 1"
             },
             {
               "kind": "NodeList",
               "id": "633af9065d4242322a160dd1",
-              "path": "31, 0, 2",
+              "path": "30, 0, 2",
               "children": [
                 {
                   "kind": "VarDecl",
                   "id": "633af9405d4242322a169448",
                   "text": "n",
-                  "path": "31, 0, 2, 0",
+                  "path": "30, 0, 2, 0",
                   "children": [
                     {
                       "kind": "Empty",
                       "id": "633af9405d4242322a169449",
-                      "path": "31, 0, 2, 0, 0"
+                      "path": "30, 0, 2, 0, 0"
                     },
                     {
                       "kind": "Identifier",
                       "id": "633af94a5d4242322a16a862",
                       "reff": "633af9065d4242322a160dce",
-                      "path": "31, 0, 2, 0, 1"
+                      "path": "30, 0, 2, 0, 1"
                     }
                   ]
                 },
@@ -4538,18 +4524,18 @@
                   "kind": "VarDecl",
                   "id": "633af9145d4242322a16289d",
                   "text": "a",
-                  "path": "31, 0, 2, 1",
+                  "path": "30, 0, 2, 1",
                   "children": [
                     {
                       "kind": "Empty",
                       "id": "633af9145d4242322a16289e",
-                      "path": "31, 0, 2, 1, 0"
+                      "path": "30, 0, 2, 1, 0"
                     },
                     {
                       "kind": "NumberLiteral",
                       "id": "633af9285d4242322a166f7d",
                       "text": "0",
-                      "path": "31, 0, 2, 1, 1"
+                      "path": "30, 0, 2, 1, 1"
                     }
                   ]
                 },
@@ -4557,107 +4543,107 @@
                   "kind": "VarDecl",
                   "id": "633af92f5d4242322a1679c5",
                   "text": "b",
-                  "path": "31, 0, 2, 2",
+                  "path": "30, 0, 2, 2",
                   "children": [
                     {
                       "kind": "Empty",
                       "id": "633af92f5d4242322a1679c6",
-                      "path": "31, 0, 2, 2, 0"
+                      "path": "30, 0, 2, 2, 0"
                     },
                     {
                       "kind": "NumberLiteral",
                       "id": "633afa0121f03e21dd666c5b",
                       "text": "1",
-                      "path": "31, 0, 2, 2, 1"
+                      "path": "30, 0, 2, 2, 1"
                     }
                   ]
                 },
                 {
                   "kind": "While",
                   "id": "633af9545d4242322a16b6f7",
-                  "path": "31, 0, 2, 3",
+                  "path": "30, 0, 2, 3",
                   "children": [
                     {
                       "kind": "Call",
                       "id": "633af9585d4242322a16c34f",
-                      "path": "31, 0, 2, 3, 0",
+                      "path": "30, 0, 2, 3, 0",
                       "children": [
                         {
                           "kind": "Identifier",
                           "id": "633af9585d4242322a16c350",
                           "reff": "62e53398564d29f772934506",
-                          "path": "31, 0, 2, 3, 0, 0"
+                          "path": "30, 0, 2, 3, 0, 0"
                         },
                         {
                           "kind": "Identifier",
                           "id": "633af9575d4242322a16c33b",
                           "reff": "633af9405d4242322a169448",
-                          "path": "31, 0, 2, 3, 0, 1"
+                          "path": "30, 0, 2, 3, 0, 1"
                         },
                         {
                           "kind": "NumberLiteral",
                           "id": "633af9595d4242322a16c7c4",
                           "text": "0",
-                          "path": "31, 0, 2, 3, 0, 2"
+                          "path": "30, 0, 2, 3, 0, 2"
                         }
                       ]
                     },
                     {
                       "kind": "NodeList",
                       "id": "633af95a5d4242322a16c7ea",
-                      "path": "31, 0, 2, 3, 1",
+                      "path": "30, 0, 2, 3, 1",
                       "children": [
                         {
                           "kind": "If",
                           "id": "633b0ae843accac15a315fe8",
-                          "path": "31, 0, 2, 3, 1, 0",
+                          "path": "30, 0, 2, 3, 1, 0",
                           "children": [
                             {
                               "kind": "Identifier",
                               "id": "633b0b0743accac15a318c67",
                               "reff": "633b0afe43accac15a3172bb",
-                              "path": "31, 0, 2, 3, 1, 0, 0"
+                              "path": "30, 0, 2, 3, 1, 0, 0"
                             },
                             {
                               "kind": "Call",
                               "id": "633b0a2843accac15a30766d",
-                              "path": "31, 0, 2, 3, 1, 0, 1",
+                              "path": "30, 0, 2, 3, 1, 0, 1",
                               "children": [
                                 {
                                   "kind": "Identifier",
                                   "id": "633b0a2743accac15a307658",
                                   "reff": "62e53396564d29f7729344f7",
-                                  "path": "31, 0, 2, 3, 1, 0, 1, 0"
+                                  "path": "30, 0, 2, 3, 1, 0, 1, 0"
                                 },
                                 {
                                   "kind": "Identifier",
                                   "id": "633b0a3343accac15a309b2a",
                                   "reff": "633af9405d4242322a169448",
-                                  "path": "31, 0, 2, 3, 1, 0, 1, 1"
+                                  "path": "30, 0, 2, 3, 1, 0, 1, 1"
                                 },
                                 {
                                   "kind": "StringLiteral",
                                   "id": "633b0a4443accac15a30c5be",
                                   "text": ", a = ",
-                                  "path": "31, 0, 2, 3, 1, 0, 1, 2"
+                                  "path": "30, 0, 2, 3, 1, 0, 1, 2"
                                 },
                                 {
                                   "kind": "Identifier",
                                   "id": "633b0a4743accac15a30cee5",
                                   "reff": "633af9145d4242322a16289d",
-                                  "path": "31, 0, 2, 3, 1, 0, 1, 3"
+                                  "path": "30, 0, 2, 3, 1, 0, 1, 3"
                                 },
                                 {
                                   "kind": "StringLiteral",
                                   "id": "633b0a4a43accac15a30d93c",
                                   "text": ", b = ",
-                                  "path": "31, 0, 2, 3, 1, 0, 1, 4"
+                                  "path": "30, 0, 2, 3, 1, 0, 1, 4"
                                 },
                                 {
                                   "kind": "Identifier",
                                   "id": "633b0a4b43accac15a30dc39",
                                   "reff": "633af92f5d4242322a1679c5",
-                                  "path": "31, 0, 2, 3, 1, 0, 1, 5"
+                                  "path": "30, 0, 2, 3, 1, 0, 1, 5"
                                 }
                               ]
                             }
@@ -4667,54 +4653,54 @@
                           "kind": "LetDecl",
                           "id": "633af9805d4242322a174b9f",
                           "text": "old b",
-                          "path": "31, 0, 2, 3, 1, 1",
+                          "path": "30, 0, 2, 3, 1, 1",
                           "children": [
                             {
                               "kind": "Empty",
                               "id": "633af9805d4242322a174ba0",
-                              "path": "31, 0, 2, 3, 1, 1, 0"
+                              "path": "30, 0, 2, 3, 1, 1, 0"
                             },
                             {
                               "kind": "Identifier",
                               "id": "633af9845d4242322a175ab2",
                               "reff": "633af92f5d4242322a1679c5",
-                              "path": "31, 0, 2, 3, 1, 1, 1"
+                              "path": "30, 0, 2, 3, 1, 1, 1"
                             }
                           ]
                         },
                         {
                           "kind": "Assignment",
                           "id": "633af9645d4242322a16ee00",
-                          "path": "31, 0, 2, 3, 1, 2",
+                          "path": "30, 0, 2, 3, 1, 2",
                           "children": [
                             {
                               "kind": "Identifier",
                               "id": "633af9635d4242322a16edec",
                               "reff": "633af92f5d4242322a1679c5",
-                              "path": "31, 0, 2, 3, 1, 2, 0"
+                              "path": "30, 0, 2, 3, 1, 2, 0"
                             },
                             {
                               "kind": "Call",
                               "id": "633af9665d4242322a16f667",
-                              "path": "31, 0, 2, 3, 1, 2, 1",
+                              "path": "30, 0, 2, 3, 1, 2, 1",
                               "children": [
                                 {
                                   "kind": "Identifier",
                                   "id": "633af9665d4242322a16f668",
                                   "reff": "62e53396564d29f7729344f8",
-                                  "path": "31, 0, 2, 3, 1, 2, 1, 0"
+                                  "path": "30, 0, 2, 3, 1, 2, 1, 0"
                                 },
                                 {
                                   "kind": "Identifier",
                                   "id": "633af9665d4242322a16f653",
                                   "reff": "633af9145d4242322a16289d",
-                                  "path": "31, 0, 2, 3, 1, 2, 1, 1"
+                                  "path": "30, 0, 2, 3, 1, 2, 1, 1"
                                 },
                                 {
                                   "kind": "Identifier",
                                   "id": "633af9665d4242322a16f88a",
                                   "reff": "633af92f5d4242322a1679c5",
-                                  "path": "31, 0, 2, 3, 1, 2, 1, 2"
+                                  "path": "30, 0, 2, 3, 1, 2, 1, 2"
                                 }
                               ]
                             }
@@ -4723,55 +4709,55 @@
                         {
                           "kind": "Assignment",
                           "id": "633af9775d4242322a172b39",
-                          "path": "31, 0, 2, 3, 1, 3",
+                          "path": "30, 0, 2, 3, 1, 3",
                           "children": [
                             {
                               "kind": "Identifier",
                               "id": "633af9755d4242322a172b25",
                               "reff": "633af9145d4242322a16289d",
-                              "path": "31, 0, 2, 3, 1, 3, 0"
+                              "path": "30, 0, 2, 3, 1, 3, 0"
                             },
                             {
                               "kind": "Identifier",
                               "id": "633af98b5d4242322a175f13",
                               "reff": "633af9805d4242322a174b9f",
-                              "path": "31, 0, 2, 3, 1, 3, 1"
+                              "path": "30, 0, 2, 3, 1, 3, 1"
                             }
                           ]
                         },
                         {
                           "kind": "Assignment",
                           "id": "633af9945d4242322a176232",
-                          "path": "31, 0, 2, 3, 1, 4",
+                          "path": "30, 0, 2, 3, 1, 4",
                           "children": [
                             {
                               "kind": "Identifier",
                               "id": "633af9a05d4242322a1777de",
                               "reff": "633af9405d4242322a169448",
-                              "path": "31, 0, 2, 3, 1, 4, 0"
+                              "path": "30, 0, 2, 3, 1, 4, 0"
                             },
                             {
                               "kind": "Call",
                               "id": "633af99c5d4242322a176f08",
-                              "path": "31, 0, 2, 3, 1, 4, 1",
+                              "path": "30, 0, 2, 3, 1, 4, 1",
                               "children": [
                                 {
                                   "kind": "Identifier",
                                   "id": "633af99c5d4242322a176f09",
                                   "reff": "62e53396564d29f7729344f9",
-                                  "path": "31, 0, 2, 3, 1, 4, 1, 0"
+                                  "path": "30, 0, 2, 3, 1, 4, 1, 0"
                                 },
                                 {
                                   "kind": "Identifier",
                                   "id": "633af99b5d4242322a176ef4",
                                   "reff": "633af9405d4242322a169448",
-                                  "path": "31, 0, 2, 3, 1, 4, 1, 1"
+                                  "path": "30, 0, 2, 3, 1, 4, 1, 1"
                                 },
                                 {
                                   "kind": "NumberLiteral",
                                   "id": "633af99d5d4242322a177227",
                                   "text": "1",
-                                  "path": "31, 0, 2, 3, 1, 4, 1, 2"
+                                  "path": "30, 0, 2, 3, 1, 4, 1, 2"
                                 }
                               ]
                             }
@@ -4785,7 +4771,7 @@
                   "kind": "Identifier",
                   "id": "633af9ed21f03e21dd6664f0",
                   "reff": "633af92f5d4242322a1679c5",
-                  "path": "31, 0, 2, 4"
+                  "path": "30, 0, 2, 4"
                 }
               ]
             }
@@ -4797,45 +4783,45 @@
       "kind": "ConstDecl",
       "id": "63398132ee234703ce706f2d",
       "text": "foo",
-      "path": "32",
+      "path": "31",
       "children": [
         {
           "kind": "FunctionDefinition",
           "id": "63398132ee234703ce706f2e",
-          "path": "32, 0",
+          "path": "31, 0",
           "children": [
             {
               "kind": "Params",
               "id": "63398132ee234703ce706f2f",
-              "path": "32, 0, 0"
+              "path": "31, 0, 0"
             },
             {
               "kind": "Identifier",
               "id": "63398132ee234703ce706f30",
               "reff": "62e53397564d29f772934503",
-              "path": "32, 0, 1"
+              "path": "31, 0, 1"
             },
             {
               "kind": "NodeList",
               "id": "63398132ee234703ce706f31",
-              "path": "32, 0, 2",
+              "path": "31, 0, 2",
               "children": [
                 {
                   "kind": "Call",
                   "id": "633b09df43accac15a3062a4",
-                  "path": "32, 0, 2, 0",
+                  "path": "31, 0, 2, 0",
                   "children": [
                     {
                       "kind": "Identifier",
                       "id": "633b09de43accac15a30628f",
                       "reff": "62e53396564d29f7729344f7",
-                      "path": "32, 0, 2, 0, 0"
+                      "path": "31, 0, 2, 0, 0"
                     },
                     {
                       "kind": "StringLiteral",
                       "id": "633b09e143accac15a306e65",
                       "text": "foo",
-                      "path": "32, 0, 2, 0, 1"
+                      "path": "31, 0, 2, 0, 1"
                     }
                   ]
                 },
@@ -4843,30 +4829,30 @@
                   "kind": "VarDecl",
                   "id": "63398132ee234703ce706f32",
                   "text": "a",
-                  "path": "32, 0, 2, 1",
+                  "path": "31, 0, 2, 1",
                   "children": [
                     {
                       "kind": "Identifier",
                       "id": "63398132ee234703ce706f33",
                       "reff": "62e53397564d29f772934501",
-                      "path": "32, 0, 2, 1, 0"
+                      "path": "31, 0, 2, 1, 0"
                     },
                     {
                       "kind": "Call",
                       "id": "63398132ee234703ce706f34",
-                      "path": "32, 0, 2, 1, 1",
+                      "path": "31, 0, 2, 1, 1",
                       "children": [
                         {
                           "kind": "Identifier",
                           "id": "63398132ee234703ce706f35",
                           "reff": "6338c0de00afffa66ab8ba00",
-                          "path": "32, 0, 2, 1, 1, 0"
+                          "path": "31, 0, 2, 1, 1, 0"
                         },
                         {
                           "kind": "NumberLiteral",
                           "id": "63398132ee234703ce706f36",
                           "text": "5",
-                          "path": "32, 0, 2, 1, 1, 1"
+                          "path": "31, 0, 2, 1, 1, 1"
                         }
                       ]
                     }
@@ -4875,44 +4861,44 @@
                 {
                   "kind": "Call",
                   "id": "63398132ee234703ce706f37",
-                  "path": "32, 0, 2, 2",
+                  "path": "31, 0, 2, 2",
                   "children": [
                     {
                       "kind": "Identifier",
                       "id": "63398132ee234703ce706f38",
                       "reff": "62e53396564d29f7729344f7",
-                      "path": "32, 0, 2, 2, 0"
+                      "path": "31, 0, 2, 2, 0"
                     },
                     {
                       "kind": "StringLiteral",
                       "id": "63398132ee234703ce706f39",
                       "text": "FizzBuzz of ",
-                      "path": "32, 0, 2, 2, 1"
+                      "path": "31, 0, 2, 2, 1"
                     },
                     {
                       "kind": "Identifier",
                       "id": "63398132ee234703ce706f3a",
                       "reff": "63398132ee234703ce706f32",
-                      "path": "32, 0, 2, 2, 2"
+                      "path": "31, 0, 2, 2, 2"
                     }
                   ]
                 },
                 {
                   "kind": "Call",
                   "id": "63398132ee234703ce706f3b",
-                  "path": "32, 0, 2, 3",
+                  "path": "31, 0, 2, 3",
                   "children": [
                     {
                       "kind": "Identifier",
                       "id": "63398132ee234703ce706f3c",
                       "reff": "6338c209ec87e2f9633dec83",
-                      "path": "32, 0, 2, 3, 0"
+                      "path": "31, 0, 2, 3, 0"
                     },
                     {
                       "kind": "Identifier",
                       "id": "63398132ee234703ce706f3d",
                       "reff": "63398132ee234703ce706f32",
-                      "path": "32, 0, 2, 3, 1"
+                      "path": "31, 0, 2, 3, 1"
                     }
                   ]
                 }
@@ -4925,36 +4911,41 @@
     {
       "kind": "Empty",
       "id": "640bb1cf88891c138a91065d",
-      "path": "33"
+      "path": "32"
     },
     {
       "kind": "Empty",
       "id": "640bb21bf2fb135832b8b090",
-      "path": "34"
+      "path": "33"
     },
     {
       "kind": "Empty",
       "id": "641495db9979338a35ee4fe4",
-      "path": "35"
+      "path": "34"
     },
     {
       "kind": "Empty",
       "id": "641496d27f2551e09b8c0b37",
-      "path": "36"
+      "path": "35"
     },
     {
       "kind": "Empty",
       "id": "6427153982dbbf7bc8beca18",
-      "path": "37"
+      "path": "36"
     },
     {
       "kind": "Empty",
       "id": "64271628d7f16bb68b116642",
-      "path": "38"
+      "path": "37"
     },
     {
       "kind": "Empty",
       "id": "642716a00c298f4e522edaf4",
+      "path": "38"
+    },
+    {
+      "kind": "Empty",
+      "id": "64285c34cc3ef30eb53392b6",
       "path": "39"
     }
   ]

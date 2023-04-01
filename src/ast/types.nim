@@ -60,12 +60,15 @@ type
     references*: seq[tuple[role: Id, node: Id]]
     childLists*: seq[tuple[role: Id, nodes: seq[AstNode]]]
 
+  CellIsVisiblePredicate* = proc(node: AstNode): bool
+
   Cell* = ref object of RootObj
     id*: Id
     parent*: Cell
     node*: AstNode
     fillChildren*: proc(): void
     filled*: bool
+    isVisible*: CellIsVisiblePredicate
 
   EmptyCell* = ref object of Cell
     discard
@@ -88,6 +91,7 @@ type
     languages {.getter.}: seq[Language]
     importedModels {.getter.}: seq[Model]
     classesToLanguages {.getter.}: Table[Id, Language]
+    nodes {.getter.}: Table[Id, AstNode]
 
   Project* = ref object
     models*: Table[Id, Model]
@@ -135,13 +139,20 @@ proc addRootNode*(self: Model, node: AstNode) =
   # node.forEach proc(n: AstNode) =
   node.forEach2 n:
     n.model = self
+    self.nodes[n.id] = n
+
+proc resolveReference*(self: Model, id: Id): Option[AstNode] =
+  if self.nodes.contains(id):
+    return self.nodes[id].some
+  else:
+    return AstNode.none
 
 proc newNodeClass*(
       id: Id,
       name: string,
       alias: string = "",
       base: NodeClass = nil,
-      interfaces: seq[NodeClass] = @[],
+      interfaces: openArray[NodeClass] = [],
       isAbstract: bool = false,
       isInterface: bool = false,
       properties: openArray[PropertyDescription] = [],
@@ -154,7 +165,7 @@ proc newNodeClass*(
   result.name = name
   result.alias = alias
   result.base = base
-  result.interfaces = interfaces
+  result.interfaces = @interfaces
   result.isAbstract = isAbstract
   result.isInterface = isInterface
   result.properties = @properties
@@ -167,17 +178,50 @@ proc nodeReferenceDescription*(self: NodeClass, id: Id): Option[NodeReferenceDes
     if c.id == id:
       return c.some
 
+  if self.base.isNotNil and self.base.nodeReferenceDescription(id).getSome(pd):
+    return pd.some
+
+  for inter in self.interfaces:
+    if inter.isNotNil and inter.nodeReferenceDescription(id).getSome(pd):
+      return pd.some
+
 proc nodeChildDescription*(self: NodeClass, id: Id): Option[NodeChildDescription] =
   result = NodeChildDescription.none
   for c in self.children:
     if c.id == id:
       return c.some
 
+  if self.base.isNotNil and self.base.nodeChildDescription(id).getSome(pd):
+    return pd.some
+
+  for inter in self.interfaces:
+    if inter.isNotNil and inter.nodeChildDescription(id).getSome(pd):
+      return pd.some
+
 proc propertyDescription*(self: NodeClass, id: Id): Option[PropertyDescription] =
   result = PropertyDescription.none
   for c in self.properties:
     if c.id == id:
       return c.some
+
+  if self.base.isNotNil and self.base.propertyDescription(id).getSome(pd):
+    return pd.some
+
+  for inter in self.interfaces:
+    if inter.isNotNil and inter.propertyDescription(id).getSome(pd):
+      return pd.some
+
+proc hasChildList(node: AstNode, role: Id): bool =
+  result = false
+  for c in node.childLists:
+    if c.role == role:
+      return true
+
+proc hasChild*(node: AstNode, role: Id): bool =
+  result = false
+  for c in node.childLists:
+    if c.role == role:
+      return c.nodes.len > 0
 
 proc children*(node: AstNode, role: Id): seq[AstNode] =
   result = @[]
@@ -186,11 +230,26 @@ proc children*(node: AstNode, role: Id): seq[AstNode] =
       result = c.nodes
       break
 
+proc hasReference*(node: AstNode, role: Id): bool =
+  result = false
+  for c in node.references:
+    if c.role == role:
+      return true
+
 proc reference*(node: AstNode, role: Id): Id =
   result = idNone()
   for c in node.references:
     if c.role == role:
       result = c.node
+      break
+
+proc resolveReference*(node: AstNode, role: Id): Option[AstNode] =
+  result = AstNode.none
+  if node.model.isNil:
+    return
+  for c in node.references:
+    if c.role == role:
+      result = node.model.resolveReference(c.node)
       break
 
 proc setReference*(node: AstNode, role: Id, target: Id) =
@@ -199,10 +258,17 @@ proc setReference*(node: AstNode, role: Id, target: Id) =
       c.node = target
       break
 
-proc property*(node: AstNode, role: Id): PropertyValue =
+proc hasProperty*(node: AstNode, role: Id): bool =
+  result = false
   for c in node.properties:
     if c.role == role:
-      result = c.value
+      return true
+
+proc property*(node: AstNode, role: Id): Option[PropertyValue] =
+  result = PropertyValue.none
+  for c in node.properties:
+    if c.role == role:
+      result = c.value.some
       break
 
 proc setProperty*(node: AstNode, role: Id, value: PropertyValue) =
@@ -218,20 +284,31 @@ proc getDefaultValue*(_: typedesc[PropertyValue], typ: PropertyType): PropertyVa
   of PropertyType.Int: result.intValue = 0
   of PropertyType.String: result.stringValue = ""
 
+proc addMissingFieldsForClass*(self: AstNode, class: NodeClass) =
+  for inter in class.interfaces:
+    self.addMissingFieldsForClass(inter)
+
+  if class.base.isNotNil:
+    self.addMissingFieldsForClass(class.base)
+
+  for desc in class.properties:
+    if not self.hasProperty(desc.id):
+      self.properties.add (desc.id, PropertyValue.getDefaultValue(desc.typ))
+
+  for desc in class.children:
+    if not self.hasChildList(desc.id):
+      self.childLists.add (desc.id, @[])
+
+  for desc in class.references:
+    if not self.hasReference(desc.id):
+      self.references.add (desc.id, idNone())
+
 proc newAstNode*(class: NodeClass, id: Option[Id] = Id.none): AstNode =
   let id = if id.isSome: id.get else: newId()
   new result
   result.id = id
   result.class = class.id
-
-  for desc in class.properties:
-    result.properties.add (desc.id, PropertyValue.getDefaultValue(desc.typ))
-
-  for desc in class.children:
-    result.childLists.add (desc.id, @[])
-
-  for desc in class.references:
-    result.references.add (desc.id, idNone())
+  result.addMissingFieldsForClass(class)
 
 proc language*(node: AstNode): Language =
   result = if node.model.isNil: nil else: node.model.classesToLanguages.getOrDefault(node.class, nil)
@@ -241,10 +318,18 @@ proc nodeClass*(node: AstNode): NodeClass =
   result = if language.isNil: nil else: language.classes.getOrDefault(node.class, nil)
 
 proc add*(node: AstNode, role: Id, child: AstNode) =
+  if child.isNil:
+    return
+
   if child.id == idNone():
     child.id = newId()
   child.parent = node
   child.role = role
+
+  if node.model.isNotNil:
+    child.forEach2 n:
+      n.model = node.model
+      node.model.nodes[n.id] = n
 
   for c in node.childLists.mitems:
     if c.role == role:
@@ -286,31 +371,42 @@ proc expand*(self: Cell, path: openArray[int]) =
   if path.len > 0 and self.getChildAt(path[0], true).getSome(child):
     child.expand path[1..^1]
 
-proc buildCell*(self: CellBuilder, node: AstNode): Cell =
-  let class = node.class
-  if not self.builders.contains(class):
-    debugf"Unknown builder for {class}"
-    return EmptyCell(node: node)
+proc findBuilder(self: CellBuilder, class: NodeClass, preferred: Id): Option[CellBuilderFunction] =
+  if not self.builders.contains(class.id):
+    if class.base.isNotNil:
+      return self.findBuilder(class.base, preferred)
+    return CellBuilderFunction.none
 
-  let builders = self.builders[class]
+  let builders = self.builders[class.id]
   if builders.len == 0:
-    debugf"Unknown builder for {class}"
-    return EmptyCell(node: node)
-
-  defer:
-    result.fill()
+    if class.base.isNotNil:
+      return self.findBuilder(class.base, preferred)
+    return CellBuilderFunction.none
 
   if builders.len == 1:
-    return builders[0].impl(self, node)
+    return builders[0].impl.some
 
-  let preferredBuilder = self.preferredBuilders.getOrDefault(class, idNone())
+  let preferredBuilder = self.preferredBuilders.getOrDefault(class.id, idNone())
   for builder in builders:
     if builder.builderId == preferredBuilder:
-      return builder.impl(self, node)
+      return builder.impl.some
 
-  return builders[0].impl(self, node)
+  return builders[0].impl.some
 
-proc `$`*(node: AstNode): string =
+proc buildCell*(self: CellBuilder, node: AstNode): Cell =
+  let class = node.nodeClass
+  if class.isNil:
+    debugf"Unknown class {node.class}"
+    return EmptyCell(node: node)
+
+  if self.findBuilder(class, idNone()).getSome(builder):
+    result = builder(self, node)
+    result.fill()
+  else:
+    debugf"Unknown builder for {class.name}"
+    return EmptyCell(node: node)
+
+proc `$`*(node: AstNode, recursive: bool = false): string =
   let class = node.nodeClass
 
   if class.isNil:
@@ -340,6 +436,9 @@ proc `$`*(node: AstNode): string =
     result.add ": "
     result.add $role.node
 
+  if not recursive:
+    return
+
   var roleIndex = 0
   for role in node.childLists.mitems:
     defer: inc roleIndex
@@ -358,4 +457,4 @@ proc `$`*(node: AstNode): string =
         result.add "\n├───"
 
       let indent = if i < role.nodes.high or roleIndex < node.childLists.high: "│   " else: "    "
-      result.add indent($c, 1, indent)[indent.len..^1]
+      result.add indent(`$`(c, recursive), 1, indent)[indent.len..^1]

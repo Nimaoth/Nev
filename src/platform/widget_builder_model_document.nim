@@ -3,7 +3,7 @@ import util, editor, document_editor, ast_document2, text_document, custom_logge
 import widget_builders_base
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, ModelDocumentEditor
 import vmath, bumpy, chroma
-import ast/[types]
+import ast/[types, cells]
 
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
 {.used.}
@@ -118,6 +118,126 @@ proc updateBaseIndexAndScrollOffset(self: ModelDocumentEditor, app: Editor, cont
   #   self.previousBaseIndex -= 1
   #   self.scrollOffset -= layout.bounds.h + totalLineHeight
 
+method updateWidget*(cell: Cell, app: Editor, widget: WWidget, frameIndex: int): WWidget {.base.} = widget
+
+method updateWidget*(cell: ConstantCell, app: Editor, widget: WWidget, frameIndex: int): WWidget =
+  if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
+    return nil
+
+  var widget = if widget.isNotNil and widget of WText: widget.WText else: WText()
+  result = widget
+
+  widget.sizeToContent = true
+  widget.text = cell.text
+
+  let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
+  widget.foregroundColor = textColor
+
+method updateWidget*(cell: AliasCell, app: Editor, widget: WWidget, frameIndex: int): WWidget =
+  if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
+    return nil
+
+  var widget = if widget.isNotNil and widget of WText: widget.WText else: WText()
+  result = widget
+
+  widget.sizeToContent = true
+
+  let class = cell.node.nodeClass
+  if class.isNotNil:
+    widget.text = class.alias
+  else:
+    widget.text = $cell.node.class
+
+  let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
+  widget.foregroundColor = textColor
+
+method updateWidget*(cell: NodeReferenceCell, app: Editor, widget: WWidget, frameIndex: int): WWidget =
+  if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
+    return nil
+
+  var widget = if widget.isNotNil and widget of WPanel: widget.WPanel else: WPanel()
+  result = widget
+
+  widget.sizeToContent = true
+
+  if cell.child.isNil:
+    var text = if widget.children.len > 0 and widget.children[0] of WText: widget.children[0].WText else: WText()
+    text.sizeToContent = true
+
+    let reference = cell.node.reference(cell.reference)
+    text.text = $reference
+
+    let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
+    text.foregroundColor = textColor
+
+    if 0 < widget.children.len:
+      widget.children[0] = text
+    else:
+      widget.children.add text
+
+  else:
+    let oldWidget: WWidget = if 0 < widget.children.len: widget.children[0] else: nil
+    let newWidget = cell.child.updateWidget(app, oldWidget, frameIndex)
+    if newWidget.isNil:
+      widget.children.setLen 0
+      return
+
+    if 0 < widget.children.len:
+      widget.children[0] = newWidget
+    else:
+      widget.children.add newWidget
+
+method updateWidget*(cell: PropertyCell, app: Editor, widget: WWidget, frameIndex: int): WWidget =
+  if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
+    return nil
+
+  var widget = if widget.isNotNil and widget of WText: widget.WText else: WText()
+  result = widget
+
+  widget.sizeToContent = true
+  let value = cell.node.property(cell.property)
+  if value.getSome(value):
+    case value.kind
+    of String:
+      widget.text = value.stringValue
+    of Int:
+      widget.text = $value.intValue
+    of Bool:
+      widget.text = $value.boolValue
+  else:
+    widget.text = "<empty>"
+
+  let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
+  widget.foregroundColor = textColor
+
+method updateWidget*(cell: CollectionCell, app: Editor, widget: WWidget, frameIndex: int): WWidget =
+  if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
+    return nil
+
+  var widget = if widget.isNotNil and widget of WPanel: widget.WPanel else: WPanel()
+  result = widget
+
+  cell.fill()
+
+  widget.sizeToContent = true
+  widget.layout = cell.layout
+
+  var i = 0
+  for c in cell.children:
+    let oldWidget: WWidget = if i < widget.children.len: widget.children[i] else: nil
+    let newWidget = c.updateWidget(app, oldWidget, frameIndex)
+    if newWidget.isNil:
+      if oldWidget.isNotNil:
+        widget.children.del(i)
+      continue
+
+    if i < widget.children.len:
+      widget.children[i] = newWidget
+    else:
+      widget.children.add newWidget
+
+    inc i
+
 method updateWidget*(self: ModelDocumentEditor, app: Editor, widget: WPanel, frameIndex: int) =
   let lineHeight = app.platform.lineHeight
   let totalLineHeight = app.platform.totalLineHeight
@@ -187,23 +307,37 @@ method updateWidget*(self: ModelDocumentEditor, app: Editor, widget: WPanel, fra
 
   # either layout or content changed, update the lines
   let timer = startTimer()
-  contentPanel.children.setLen 0
+  # contentPanel.children.setLen 0
 
   self.updateBaseIndexAndScrollOffset(app, contentPanel)
 
   var rendered = 0
 
-  for node in self.document.model.rootNodes:
-    createRawAstWidget(node, app, contentPanel, frameIndex)
+  # for node in self.document.model.rootNodes:
+  #   createRawAstWidget(node, app, contentPanel, frameIndex)
 
   var builder = self.document.builder
+  var lastY = 0.0
+
+  var i = 0
   for node in self.document.model.rootNodes:
     let cell = builder.buildCell(node)
     if cell.isNil:
       continue
-    # echo cell.dump
-    # cell.expand([0])
-    # echo cell.dump
+
+    let oldWidget: WWidget = if i < contentPanel.children.len: contentPanel.children[i] else: nil
+    let newWidget = cell.updateWidget(app, oldWidget, frameIndex)
+    if newWidget.isNil:
+      if oldWidget.isNotNil:
+        widget.children.del(i)
+      continue
+
+    if i < contentPanel.children.len:
+      contentPanel.children[i] = newWidget
+    else:
+      contentPanel.children.add newWidget
+
+    inc i
 
   let indent = getOption[float32](app, "ast.indent", 20)
   let inlineBlocks = getOption[bool](app, "ast.inline-blocks", false)

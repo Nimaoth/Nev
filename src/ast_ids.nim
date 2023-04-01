@@ -24,20 +24,18 @@ let IdOr* = "62e53398564d29f77293450b".parseId
 let IdOrder* = "62e53398564d29f77293450c".parseId
 let IdBuildString* = "62e53399564d29f77293450d".parseId
 
+let IdType* = "62e53399564d29f77293450f".parseId
+
 let IdBaseLanguage* = "62e53399564d29f77293450e".parseId
-let Id62e53399564d29f77293450f* = "62e53399564d29f77293450f".parseId
-let Id62e53399564d29f772934510* = "62e53399564d29f772934510".parseId
-let Id62e53399564d29f772934511* = "62e53399564d29f772934511".parseId
-let Id62e53399564d29f772934512* = "62e53399564d29f772934512".parseId
-let Id62e53399564d29f772934513* = "62e53399564d29f772934513".parseId
-let Id62e53399564d29f772934514* = "62e53399564d29f772934514".parseId
-let Id62e53399564d29f772934515* = "62e53399564d29f772934515".parseId
-let Id62e5339a564d29f772934516* = "62e5339a564d29f772934516".parseId
-let Id62e5339a564d29f772934517* = "62e5339a564d29f772934517".parseId
-let Id62e5339a564d29f772934518* = "62e5339a564d29f772934518".parseId
-let Id62e5339a564d29f772934519* = "62e5339a564d29f772934519".parseId
-let Id62e5339a564d29f77293451a* = "62e5339a564d29f77293451a".parseId
-let Id62e5339a564d29f77293451b* = "62e5339a564d29f77293451b".parseId
+let IdFunctionType* = "62e53399564d29f77293450f".parseId
+let IdFunctionTypeReturnType* = "62e53399564d29f772934510".parseId
+let IdFunctionTypeParameterTypes* = "62e53399564d29f772934511".parseId
+
+let IdPrintArguments* = "62e5339a564d29f772934518".parseId
+let IdBuildArguments* = "62e5339a564d29f772934519".parseId
+
+let IdUnaryExpression* = "62e5339a564d29f77293451a".parseId
+let IdUnaryExpressionChild* = "62e5339a564d29f77293451b".parseId
 let Id62e5339a564d29f77293451c* = "62e5339a564d29f77293451c".parseId
 let Id62e5339a564d29f77293451d* = "62e5339a564d29f77293451d".parseId
 let Id62e5339a564d29f77293451e* = "62e5339a564d29f77293451e".parseId
@@ -51,8 +49,9 @@ let Id62e5339b564d29f772934525* = "62e5339b564d29f772934525".parseId
 let Id62e5339b564d29f772934526* = "62e5339b564d29f772934526".parseId
 let Id62e5339b564d29f772934527* = "62e5339b564d29f772934527".parseId
 let Id62e5339b564d29f772934528* = "62e5339b564d29f772934528".parseId
-let Id62e5339c564d29f772934529* = "62e5339c564d29f772934529".parseId
-let Id62e5339c564d29f77293452a* = "62e5339c564d29f77293452a".parseId
+
+let IdINamedName* = "62e5339c564d29f772934529".parseId
+let IdINamed* = "62e5339c564d29f77293452a".parseId
 
 let IdAssignmentValue* = "62e5339c564d29f77293452b".parseId
 let IdAssignmentTarget* = "62e5339c564d29f77293452c".parseId
@@ -65,7 +64,6 @@ let IdFunctionDefinition* = "62e5339c564d29f772934531".parseId
 
 let IdParameterDeclValue* = "62e5339d564d29f772934532".parseId
 let IdParameterDeclType* = "62e5339d564d29f772934533".parseId
-let IdParameterDeclName* = "62e5339d564d29f772934534".parseId
 let IdParameterDecl* = "62e5339d564d29f772934535".parseId
 
 let IdWhileExpressionBody* = "62e5339d564d29f772934536".parseId
@@ -86,17 +84,14 @@ let IdNodeList* = "62e5339e564d29f772934541".parseId
 
 let IdVarDeclValue* = "62e5339e564d29f772934542".parseId
 let IdVarDeclType* = "62e5339e564d29f772934543".parseId
-let IdVarDeclName* = "62e5339e564d29f772934544".parseId
 let IdVarDecl* = "62e5339f564d29f772934545".parseId
 
 let IdLetDeclValue* = "62e5339f564d29f772934546".parseId
 let IdLetDeclType* = "62e5339f564d29f772934547".parseId
-let IdLetDeclName* = "62e5339f564d29f772934548".parseId
 let IdLetDecl* = "62e5339f564d29f772934549".parseId
 
 let IdConstDeclValue* = "62e5339f564d29f77293454a".parseId
 let IdConstDeclType* = "62e5339f564d29f77293454b".parseId
-let IdConstDeclName* = "62e5339f564d29f77293454c".parseId
 let IdConstDecl* = "62e5339f564d29f77293454d".parseId
 
 let IdEmpty* = "62e533a0564d29f77293454e".parseId

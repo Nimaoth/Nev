@@ -4,6 +4,7 @@ import types, id
 
 type
   CollectionCell* = ref object of Cell
+    layout*: WPanelLayout
     children*: seq[Cell]
 
   ConstantCell* = ref object of Cell
@@ -14,15 +15,11 @@ type
 
   NodeReferenceCell* = ref object of Cell
     reference*: Id
+    property*: Id
+    child*: Cell
 
-method updateWidget(self: Cell, widget: var WWidget, frameIndex: int) {.base.} = discard
-
-method updateWidget(self: ConstantCell, widget: var WWidget, frameIndex: int) =
-  if widget.isNil or not (widget of WText):
-    widget = WText()
-
-  widget.WText.text = self.text
-  widget.updateLastHierarchyChangeFromChildren(frameIndex)
+  AliasCell* = ref object of Cell
+    discard
 
 method getChildAt*(self: CollectionCell, index: int, clamp: bool): Option[Cell] =
   let index = if clamp: index.clamp(0..self.children.high) else: index
@@ -43,7 +40,10 @@ method dump(self: ConstantCell): string =
   result.add fmt"ConstantCell(node: {self.node.id}, text: {self.text})"
 
 method dump(self: PropertyCell): string =
-  result.add fmt"PropertyCell(node: {self.node.id}, text: {self.property})"
+  result.add fmt"PropertyCell(node: {self.node.id}, property: {self.property})"
 
 method dump(self: NodeReferenceCell): string =
-  result.add fmt"NodeReferenceCell(node: {self.node.id}, text: {self.reference})"
+  result.add fmt"NodeReferenceCell(node: {self.node.id}, target: {self.reference}, target property: {self.property})"
+
+method dump(self: AliasCell): string =
+  result.add fmt"AliasCell(node: {self.node.id})"
