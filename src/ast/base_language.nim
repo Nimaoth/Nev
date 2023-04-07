@@ -25,13 +25,15 @@ let unaryExpressionClass* = newNodeClass(IdUnaryExpression, "BinaryExpression", 
     NodeChildDescription(id: IdUnaryExpressionChild, role: "child", class: expressionClass.id, count: ChildCount.One),
   ])
 
-let addExpressionClass* = newNodeClass(IdAdd, "BinaryAddExpression", alias="+", base=binaryExpressionClass)
-let subExpressionClass* = newNodeClass(IdSub, "BinarySubExpression", alias="+", base=binaryExpressionClass)
-let mulExpressionClass* = newNodeClass(IdMul, "BinaryMulExpression", alias="+", base=binaryExpressionClass)
-let divExpressionClass* = newNodeClass(IdDiv, "BinaryDivExpression", alias="+", base=binaryExpressionClass)
-let modExpressionClass* = newNodeClass(IdMod, "BinaryModExpression", alias="+", base=binaryExpressionClass)
+let emptyLineClass* = newNodeClass(IdEmptyLine, "EmptyLine", base=expressionClass)
 
-let appendStringExpressionClass* = newNodeClass(IdAppendString, "BinaryAppendStringExpression", alias="+", base=binaryExpressionClass)
+let addExpressionClass* = newNodeClass(IdAdd, "BinaryAddExpression", alias="+", base=binaryExpressionClass)
+let subExpressionClass* = newNodeClass(IdSub, "BinarySubExpression", alias="-", base=binaryExpressionClass)
+let mulExpressionClass* = newNodeClass(IdMul, "BinaryMulExpression", alias="*", base=binaryExpressionClass)
+let divExpressionClass* = newNodeClass(IdDiv, "BinaryDivExpression", alias="/", base=binaryExpressionClass)
+let modExpressionClass* = newNodeClass(IdMod, "BinaryModExpression", alias="%", base=binaryExpressionClass)
+
+let appendStringExpressionClass* = newNodeClass(IdAppendString, "BinaryAppendStringExpression", alias="&", base=binaryExpressionClass)
 let lessExpressionClass* = newNodeClass(IdLess, "BinaryLessExpression", alias="<", base=binaryExpressionClass)
 let lessEqualExpressionClass* = newNodeClass(IdLessEqual, "BinaryLessEqualExpression", alias="<=", base=binaryExpressionClass)
 let greaterExpressionClass* = newNodeClass(IdGreater, "BinaryGreaterExpression", alias=">", base=binaryExpressionClass)
@@ -74,9 +76,13 @@ let varDeclClass* = newNodeClass(IdVarDecl, "VarDecl", alias="var", base=express
     NodeChildDescription(id: IdVarDeclType, role: "type", class: expressionClass.id, count: ChildCount.ZeroOrOne),
     NodeChildDescription(id: IdVarDeclValue, role: "value", class: expressionClass.id, count: ChildCount.ZeroOrOne)])
 
-let nodeListClass* = newNodeClass(IdNodeList, "NodeList", base=expressionClass,
+let nodeListClass* = newNodeClass(IdNodeList, "NodeList",
   children=[
     NodeChildDescription(id: IdNodeListChildren, role: "children", class: expressionClass.id, count: ChildCount.ZeroOrMore)])
+
+let blockClass* = newNodeClass(IdBlock, "Block", base=expressionClass,
+  children=[
+    NodeChildDescription(id: IdBlockChildren, role: "children", class: expressionClass.id, count: ChildCount.ZeroOrMore)])
 
 let callClass* = newNodeClass(IdCall, "Call", base=expressionClass,
   children=[
@@ -112,6 +118,10 @@ let assignmentClass* = newNodeClass(IdAssignment, "Assignment", alias="=", base=
 
 var builder = newCellBuilder()
 
+builder.addBuilderFor emptyLineClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  var cell = ConstantCell(node: node)
+  return cell
+
 builder.addBuilderFor emptyClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = ConstantCell(node: node)
   return cell
@@ -126,9 +136,9 @@ builder.addBuilderFor boolLiteralClass.id, idNone(), proc(builder: CellBuilder, 
 
 builder.addBuilderFor stringLiteralClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(node: node, layout: WPanelLayout(kind: Horizontal))
-  cell.children.add ConstantCell(node: node, text: "'")
+  cell.children.add ConstantCell(node: node, text: "'", style: CellStyle(noSpaceRight: true))
   cell.children.add PropertyCell(node: node, property: IdStringLiteralValue)
-  cell.children.add ConstantCell(node: node, text: "'")
+  cell.children.add ConstantCell(node: node, text: "'", style: CellStyle(noSpaceLeft: true))
   return cell
 
 builder.addBuilderFor nodeListClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
@@ -139,16 +149,24 @@ builder.addBuilderFor nodeListClass.id, idNone(), proc(builder: CellBuilder, nod
       cell.children.add builder.buildCell(c)
   return cell
 
+builder.addBuilderFor blockClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  var cell = CollectionCell(node: node, layout: WPanelLayout(kind: Vertical), style: CellStyle(indentChildren: true))
+  cell.fillChildren = proc() =
+    # echo "fill collection block"
+    for c in node.children(IdBlockChildren):
+      cell.children.add builder.buildCell(c)
+  return cell
+
 builder.addBuilderFor constDeclClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =
     # echo "fill collection const decl"
-    cell.children.add ConstantCell(node: node, text: "const ")
+    cell.children.add ConstantCell(node: node, text: "const")
     cell.children.add PropertyCell(node: node, property: IdINamedName)
-    cell.children.add ConstantCell(node: node, text: " : ", isVisible: (node) => node.hasChild(IdConstDeclType))
+    cell.children.add ConstantCell(node: node, text: ":", isVisible: (node) => node.hasChild(IdConstDeclType))
     for c in node.children(IdConstDeclType):
       cell.children.add builder.buildCell(c)
-    cell.children.add ConstantCell(node: node, text: " = ")
+    cell.children.add ConstantCell(node: node, text: "=")
     for c in node.children(IdConstDeclValue):
       cell.children.add builder.buildCell(c)
   return cell
@@ -157,12 +175,12 @@ builder.addBuilderFor letDeclClass.id, idNone(), proc(builder: CellBuilder, node
   var cell = CollectionCell(node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =
     # echo "fill collection let decl"
-    cell.children.add ConstantCell(node: node, text: "let ")
+    cell.children.add ConstantCell(node: node, text: "let")
     cell.children.add PropertyCell(node: node, property: IdINamedName)
-    cell.children.add ConstantCell(node: node, text: " : ", isVisible: (node) => node.hasChild(IdLetDeclType))
+    cell.children.add ConstantCell(node: node, text: ":", isVisible: (node) => node.hasChild(IdLetDeclType))
     for c in node.children(IdLetDeclType):
       cell.children.add builder.buildCell(c)
-    cell.children.add ConstantCell(node: node, text: " = ")
+    cell.children.add ConstantCell(node: node, text: "=")
     for c in node.children(IdLetDeclValue):
       cell.children.add builder.buildCell(c)
   return cell
@@ -171,12 +189,12 @@ builder.addBuilderFor varDeclClass.id, idNone(), proc(builder: CellBuilder, node
   var cell = CollectionCell(node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =
     # echo "fill collection var decl"
-    cell.children.add ConstantCell(node: node, text: "var ")
+    cell.children.add ConstantCell(node: node, text: "var")
     cell.children.add PropertyCell(node: node, property: IdINamedName)
-    cell.children.add ConstantCell(node: node, text: " : ", isVisible: (node) => node.hasChild(IdVarDeclType))
+    cell.children.add ConstantCell(node: node, text: ":", isVisible: (node) => node.hasChild(IdVarDeclType))
     for c in node.children(IdVarDeclType):
       cell.children.add builder.buildCell(c)
-    cell.children.add ConstantCell(node: node, text: " = ", isVisible: (node) => node.hasChild(IdVarDeclValue))
+    cell.children.add ConstantCell(node: node, text: "=", isVisible: (node) => node.hasChild(IdVarDeclValue))
     for c in node.children(IdVarDeclValue):
       cell.children.add builder.buildCell(c)
   return cell
@@ -187,7 +205,7 @@ builder.addBuilderFor assignmentClass.id, idNone(), proc(builder: CellBuilder, n
     # echo "fill collection assignment"
     for c in node.children(IdAssignmentTarget):
       cell.children.add builder.buildCell(c)
-    cell.children.add ConstantCell(node: node, text: " = ")
+    cell.children.add ConstantCell(node: node, text: "=")
     for c in node.children(IdAssignmentValue):
       cell.children.add builder.buildCell(c)
   return cell
@@ -197,10 +215,10 @@ builder.addBuilderFor parameterDeclClass.id, idNone(), proc(builder: CellBuilder
   cell.fillChildren = proc() =
     # echo "fill collection parameter decl"
     cell.children.add PropertyCell(node: node, property: IdINamedName)
-    cell.children.add ConstantCell(node: node, text: " : ")
+    cell.children.add ConstantCell(node: node, text: ":")
     for c in node.children(IdParameterDeclType):
       cell.children.add builder.buildCell(c)
-    cell.children.add ConstantCell(node: node, text: " = ", isVisible: (node) => node.hasChild(IdParameterDeclValue))
+    cell.children.add ConstantCell(node: node, text: "=", isVisible: (node) => node.hasChild(IdParameterDeclValue))
     for c in node.children(IdParameterDeclValue):
       cell.children.add builder.buildCell(c)
   return cell
@@ -210,20 +228,19 @@ builder.addBuilderFor functionDefinitionClass.id, idNone(), proc(builder: CellBu
   cell.fillChildren = proc() =
     # echo "fill collection func def"
     cell.children.add ConstantCell(node: node, text: "fn")
-    cell.children.add ConstantCell(node: node, text: "(")
+    cell.children.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true))
 
     for i, c in node.children(IdFunctionDefinitionParameters):
       if i > 0:
-        cell.children.add ConstantCell(node: node, text: ", ")
+        cell.children.add ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true))
       cell.children.add builder.buildCell(c)
 
-    cell.children.add ConstantCell(node: node, text: ")")
-    cell.children.add ConstantCell(node: node, text: ": ")
+    cell.children.add ConstantCell(node: node, text: "):", style: CellStyle(noSpaceLeft: true))
 
     for c in node.children(IdFunctionDefinitionReturnType):
       cell.children.add builder.buildCell(c)
 
-    cell.children.add ConstantCell(node: node, text: "=", style: CellStyle(addNewlineAfter: true, indentAfter: true))
+    cell.children.add ConstantCell(node: node, text: "=")
 
     for c in node.children(IdFunctionDefinitionBody):
       cell.children.add builder.buildCell(c)
@@ -238,14 +255,14 @@ builder.addBuilderFor callClass.id, idNone(), proc(builder: CellBuilder, node: A
     for c in node.children(IdCallFunction):
       cell.children.add builder.buildCell(c)
 
-    cell.children.add ConstantCell(node: node, text: "(")
+    cell.children.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true))
 
     for i, c in node.children(IdCallArguments):
       if i > 0:
-        cell.children.add ConstantCell(node: node, text: ", ")
+        cell.children.add ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true))
       cell.children.add builder.buildCell(c)
 
-    cell.children.add ConstantCell(node: node, text: ")")
+    cell.children.add ConstantCell(node: node, text: ")", style: CellStyle(noSpaceLeft: true))
 
   return cell
 
@@ -254,21 +271,20 @@ builder.addBuilderFor ifClass.id, idNone(), proc(builder: CellBuilder, node: Ast
   cell.fillChildren = proc() =
     # echo "fill collection if"
 
-    cell.children.add ConstantCell(node: node, text: "if ")
+    cell.children.add ConstantCell(node: node, text: "if")
 
     for c in node.children(IdIfExpressionCondition):
       cell.children.add builder.buildCell(c)
 
-    cell.children.add ConstantCell(node: node, text: ":", style: CellStyle(addNewlineAfter: true, indentAfter: true))
+    cell.children.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true))
 
     for c in node.children(IdIfExpressionThenCase):
       var cc = builder.buildCell(c)
-      cc.style = CellStyle(addNewlineAfter: true)
       cell.children.add cc
 
     for i, c in node.children(IdIfExpressionElseCase):
       if i == 0:
-        cell.children.add ConstantCell(node: node, text: "else:", style: CellStyle(addNewlineAfter: true, indentAfter: true))
+        cell.children.add ConstantCell(node: node, text: "else:", style: CellStyle(onNewLine: true))
       cell.children.add builder.buildCell(c)
 
   return cell
@@ -278,12 +294,12 @@ builder.addBuilderFor whileClass.id, idNone(), proc(builder: CellBuilder, node: 
   cell.fillChildren = proc() =
     # echo "fill collection while"
 
-    cell.children.add ConstantCell(node: node, text: "while ")
+    cell.children.add ConstantCell(node: node, text: "while")
 
     for c in node.children(IdWhileExpressionCondition):
       cell.children.add builder.buildCell(c)
 
-    cell.children.add ConstantCell(node: node, text: ":", style: CellStyle(addNewlineAfter: true, indentAfter: true))
+    cell.children.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true))
 
     for c in node.children(IdWhileExpressionBody):
       cell.children.add builder.buildCell(c)
@@ -311,9 +327,9 @@ builder.addBuilderFor unaryExpressionClass.id, idNone(), proc(builder: CellBuild
   var cell = CollectionCell(node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =
     # echo "fill collection binary"
-    for c in node.children(IdBinaryExpressionLeft):
+    cell.children.add AliasCell(node: node, style: CellStyle(noSpaceRight: true))
+    for c in node.children(IdUnaryExpressionChild):
       cell.children.add builder.buildCell(c)
-    cell.children.add AliasCell(node: node)
   return cell
 
 builder.addBuilderFor stringTypeClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
@@ -334,14 +350,14 @@ builder.addBuilderFor printExpressionClass.id, idNone(), proc(builder: CellBuild
     # echo "fill collection call"
 
     cell.children.add AliasCell(node: node)
-    cell.children.add ConstantCell(node: node, text: "(")
+    cell.children.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true))
 
     for i, c in node.children(IdPrintArguments):
       if i > 0:
-        cell.children.add ConstantCell(node: node, text: ", ")
+        cell.children.add ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true))
       cell.children.add builder.buildCell(c)
 
-    cell.children.add ConstantCell(node: node, text: ")")
+    cell.children.add ConstantCell(node: node, text: ")", style: CellStyle(noSpaceLeft: true))
 
   return cell
 
@@ -351,14 +367,14 @@ builder.addBuilderFor buildExpressionClass.id, idNone(), proc(builder: CellBuild
     # echo "fill collection call"
 
     cell.children.add AliasCell(node: node)
-    cell.children.add ConstantCell(node: node, text: "(")
+    cell.children.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true))
 
     for i, c in node.children(IdBuildArguments):
       if i > 0:
-        cell.children.add ConstantCell(node: node, text: ", ")
+        cell.children.add ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true))
       cell.children.add builder.buildCell(c)
 
-    cell.children.add ConstantCell(node: node, text: ")")
+    cell.children.add ConstantCell(node: node, text: ")", style: CellStyle(noSpaceLeft: true))
 
   return cell
 
@@ -367,8 +383,8 @@ let baseLanguage* = newLanguage(IdBaseLanguage, @[
 
   typeClass, stringTypeClass, intTypeClass, voidTypeClass, functionTypeClass,
 
-  expressionClass, binaryExpressionClass, unaryExpressionClass,
-  numberLiteralClass, stringLiteralClass, boolLiteralClass, nodeReferenceClass, emptyClass, constDeclClass, letDeclClass, varDeclClass, nodeListClass, callClass, ifClass, whileClass,
+  expressionClass, binaryExpressionClass, unaryExpressionClass, emptyLineClass,
+  numberLiteralClass, stringLiteralClass, boolLiteralClass, nodeReferenceClass, emptyClass, constDeclClass, letDeclClass, varDeclClass, nodeListClass, blockClass, callClass, ifClass, whileClass,
   parameterDeclClass, functionDefinitionClass, assignmentClass,
   addExpressionClass, subExpressionClass, mulExpressionClass, divExpressionClass, modExpressionClass,
   lessExpressionClass, lessEqualExpressionClass, greaterExpressionClass, greaterEqualExpressionClass, equalExpressionClass, notEqualExpressionClass, andExpressionClass, orExpressionClass, orderExpressionClass,

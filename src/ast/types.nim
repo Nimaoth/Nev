@@ -63,8 +63,11 @@ type
   CellIsVisiblePredicate* = proc(node: AstNode): bool
 
   CellStyle* = ref object
+    onNewLine*: bool
     addNewlineAfter*: bool
-    indentAfter*: bool
+    indentChildren*: bool
+    noSpaceLeft*: bool
+    noSpaceRight*: bool
 
   Cell* = ref object of RootObj
     id*: Id
