@@ -5,6 +5,7 @@ import types, id
 type
   CollectionCell* = ref object of Cell
     layout*: WPanelLayout
+    inline*: bool
     children*: seq[Cell]
 
   ConstantCell* = ref object of Cell
@@ -28,7 +29,7 @@ method getChildAt*(self: CollectionCell, index: int, clamp: bool): Option[Cell] 
   return self.children[index].some
 
 method dump(self: CollectionCell): string =
-  result.add &"CollectionCell(node: {self.node.id}):\n"
+  result.add &"CollectionCell(inline: {self.inline}, layout: {self.layout}): {self.node}\n"
   if self.filled or self.fillChildren.isNil:
     for c in self.children:
       result.add c.dump.indent(4)

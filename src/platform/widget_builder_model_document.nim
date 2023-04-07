@@ -1,4 +1,4 @@
-import std/[strformat, tables, sugar, sequtils]
+import std/[strformat, tables, sugar, sequtils, strutils]
 import util, editor, document_editor, ast_document2, text_document, custom_logger, widgets, platform, theme, timer, widget_builder_text_document
 import widget_builders_base
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, ModelDocumentEditor
@@ -118,9 +118,82 @@ proc updateBaseIndexAndScrollOffset(self: ModelDocumentEditor, app: Editor, cont
   #   self.previousBaseIndex -= 1
   #   self.scrollOffset -= layout.bounds.h + totalLineHeight
 
-method updateWidget*(cell: Cell, app: Editor, widget: WWidget, frameIndex: int): WWidget {.base.} = widget
+type CellLayoutContext = ref object
+  currentLine: int
+  indexInLine: int
+  currentIndent: int
+  parentWidget: WPanel
+  lineWidget: WPanel
+  currentLineEmpty: bool
+  prevNoSpaceRight: bool
 
-method updateWidget*(cell: ConstantCell, app: Editor, widget: WWidget, frameIndex: int): WWidget =
+proc newCellLayoutContext(widget: WWidget): CellLayoutContext =
+  new result
+  result.parentWidget = widget.getOrCreate(WPanel)
+  result.parentWidget.sizeToContent = true
+  result.parentWidget.layout = WPanelLayout(kind: Vertical)
+  result.lineWidget = result.parentWidget.getOrCreate(result.currentLine, WPanel)
+  result.lineWidget.sizeToContent = true
+  result.lineWidget.layout = WPanelLayout(kind: Horizontal)
+  result.currentLineEmpty = true
+
+proc isCurrentLineEmpty(self: CellLayoutContext): bool = self.currentLineEmpty
+
+proc getReusableWidget(self: CellLayoutContext): WWidget =
+  if self.indexInLine < self.lineWidget.children.len:
+    return self.lineWidget.children[self.indexInLine]
+  else:
+    return nil
+
+proc indent(self: CellLayoutContext) =
+  if self.currentIndent == 0 or self.indexInLine > 0:
+    return
+  let indentWidget = self.lineWidget.getOrCreate(self.indexInLine, WText)
+  indentWidget.sizeToContent = true
+  indentWidget.text = "    ".repeat(self.currentIndent)
+  inc self.indexInLine
+
+proc addSpace(self: CellLayoutContext) =
+  if self.currentLineEmpty:
+    return
+  let indentWidget = self.lineWidget.getOrCreate(self.indexInLine, WText)
+  indentWidget.sizeToContent = true
+  indentWidget.text = " "
+  inc self.indexInLine
+
+proc newLine(self: CellLayoutContext) =
+  if self.lineWidget.isNotNil:
+    self.lineWidget.truncate(self.indexInLine)
+    self.parentWidget[self.currentLine] = self.lineWidget
+    inc self.currentLine
+  self.lineWidget = self.parentWidget.getOrCreate(self.currentLine, WPanel)
+  self.lineWidget.sizeToContent = true
+  self.lineWidget.layout = WPanelLayout(kind: Horizontal)
+  self.indexInLine = 0
+  self.currentLineEmpty = true
+
+  self.indent()
+
+proc addWidget(self: CellLayoutContext, widget: WWidget, spaceLeft: bool) =
+  self.lineWidget[self.indexInLine] = nil
+  if spaceLeft:
+    self.addSpace()
+  self.lineWidget[self.indexInLine] = widget
+  inc self.indexInLine
+  self.currentLineEmpty = false
+
+proc finish(self: CellLayoutContext): WWidget =
+  if self.lineWidget.children.len > 0:
+    self.parentWidget[self.currentLine] = self.lineWidget
+    inc self.currentLine
+
+  self.parentWidget.truncate(self.currentLine)
+
+  return self.parentWidget
+
+method updateWidget*(cell: Cell, app: Editor, widget: WWidget, frameIndex: int, ctx: CellLayoutContext): WWidget {.base.} = widget
+
+method updateWidget*(cell: ConstantCell, app: Editor, widget: WWidget, frameIndex: int, ctx: CellLayoutContext): WWidget =
   if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
     return nil
 
@@ -133,7 +206,7 @@ method updateWidget*(cell: ConstantCell, app: Editor, widget: WWidget, frameInde
   let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
   widget.foregroundColor = textColor
 
-method updateWidget*(cell: AliasCell, app: Editor, widget: WWidget, frameIndex: int): WWidget =
+method updateWidget*(cell: AliasCell, app: Editor, widget: WWidget, frameIndex: int, ctx: CellLayoutContext): WWidget =
   if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
     return nil
 
@@ -151,7 +224,7 @@ method updateWidget*(cell: AliasCell, app: Editor, widget: WWidget, frameIndex: 
   let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
   widget.foregroundColor = textColor
 
-method updateWidget*(cell: NodeReferenceCell, app: Editor, widget: WWidget, frameIndex: int): WWidget =
+method updateWidget*(cell: NodeReferenceCell, app: Editor, widget: WWidget, frameIndex: int, ctx: CellLayoutContext): WWidget =
   if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
     return nil
 
@@ -177,7 +250,7 @@ method updateWidget*(cell: NodeReferenceCell, app: Editor, widget: WWidget, fram
 
   else:
     let oldWidget: WWidget = if 0 < widget.children.len: widget.children[0] else: nil
-    let newWidget = cell.child.updateWidget(app, oldWidget, frameIndex)
+    let newWidget = cell.child.updateWidget(app, oldWidget, frameIndex, ctx)
     if newWidget.isNil:
       widget.children.setLen 0
       return
@@ -187,7 +260,7 @@ method updateWidget*(cell: NodeReferenceCell, app: Editor, widget: WWidget, fram
     else:
       widget.children.add newWidget
 
-method updateWidget*(cell: PropertyCell, app: Editor, widget: WWidget, frameIndex: int): WWidget =
+method updateWidget*(cell: PropertyCell, app: Editor, widget: WWidget, frameIndex: int, ctx: CellLayoutContext): WWidget =
   if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
     return nil
 
@@ -210,57 +283,56 @@ method updateWidget*(cell: PropertyCell, app: Editor, widget: WWidget, frameInde
   let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
   widget.foregroundColor = textColor
 
-method updateWidget*(cell: CollectionCell, app: Editor, widget: WWidget, frameIndex: int): WWidget =
+method updateWidget*(cell: CollectionCell, app: Editor, widget: WWidget, frameIndex: int, ctx: CellLayoutContext): WWidget =
   if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
     return nil
 
-  var widget = widget.getOrCreate(WPanel)
-  result = widget
+  # debugf"updateWidget {cell.node}"
 
-  var currentLine = 0
-  var indexInLine = 0
-  var lineWidget: WPanel = nil
-  proc newLine() =
-    if lineWidget.isNotNil:
-      widget[currentLine] = lineWidget
-      inc currentLine
-    lineWidget = widget.getOrCreate(currentLine, WPanel)
-    lineWidget.sizeToContent = true
-    lineWidget.layout = cell.layout
-    indexInLine = 0
-    # lineWidget = if widget.children.len > currentLine and widget.children[currentLine] of WPanel: widget.children[currentLine].WPanel else: WPanel()
+  let myCtx = if ctx.isNil or cell.inline:
+    newCellLayoutContext(widget)
+  else:
+    ctx
 
-  newLine()
+  result = myCtx.parentWidget
 
   cell.fill()
 
-  widget.sizeToContent = true
-  widget.layout = WPanelLayout(kind: Vertical)
+  let vertical = cell.layout.kind == Vertical
 
-  for c in cell.children:
-    let oldWidget: WWidget = if indexInLine < lineWidget.children.len: lineWidget.children[indexInLine] else: nil
-    let newWidget = c.updateWidget(app, oldWidget, frameIndex)
-    if newWidget.isNil:
-      if oldWidget.isNotNil:
-        lineWidget.children.del(indexInLine)
-      continue
+  if cell.style.isNotNil and cell.style.indentChildren:
+    inc myCtx.currentIndent
 
-    lineWidget[indexInLine] = newWidget
-    inc indexInLine
+  defer:
+    if cell.style.isNotNil and cell.style.indentChildren:
+      dec myCtx.currentIndent
 
+  for i, c in cell.children:
+    if vertical and (i > 0 or not myCtx.isCurrentLineEmpty()):
+      myCtx.newLine()
+
+    var spaceLeft = not myCtx.prevNoSpaceRight
+    if c.style.isNotNil:
+      if c.style.onNewLine:
+        myCtx.newLine()
+      if c.style.noSpaceLeft:
+        spaceLeft = false
+
+    let oldWidget = myCtx.getReusableWidget()
+    let newWidget = c.updateWidget(app, oldWidget, frameIndex, myCtx)
+    if newWidget.isNotNil:
+      myCtx.addWidget(newWidget, spaceLeft)
+
+    myCtx.prevNoSpaceRight = false
     if c.style.isNotNil:
       if c.style.addNewlineAfter:
-        newLine()
-      if c.style.indentAfter:
-        let indent = lineWidget.getOrCreate(indexInLine, WPanel)
-        inc indexInLine
-        indent.right = 20
+        myCtx.newLine()
+      myCtx.prevNoSpaceRight = c.style.noSpaceRight
 
-  if lineWidget.children.len > 0:
-    widget[currentLine] = lineWidget
-    inc currentLine
-
-  widget.truncate(currentLine)
+  if myCtx != ctx:
+    return myCtx.finish()
+  else:
+    return nil
 
 method updateWidget*(self: ModelDocumentEditor, app: Editor, widget: WPanel, frameIndex: int) =
   let lineHeight = app.platform.lineHeight
@@ -349,8 +421,10 @@ method updateWidget*(self: ModelDocumentEditor, app: Editor, widget: WPanel, fra
     if cell.isNil:
       continue
 
+    # echo cell.dump()
+
     let oldWidget: WWidget = if i < contentPanel.children.len: contentPanel.children[i] else: nil
-    let newWidget = cell.updateWidget(app, oldWidget, frameIndex)
+    let newWidget = cell.updateWidget(app, oldWidget, frameIndex, nil)
     if newWidget.isNil:
       if oldWidget.isNotNil:
         widget.children.del(i)

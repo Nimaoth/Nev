@@ -63,7 +63,7 @@ proc getOrCreate*(self: WPanel, index: int, T: typedesc): T =
   if index >= self.children.len:
     self.children.setLen(index + 1)
     self.children[index] = T()
-  elif self.children[index] of T:
+  elif self.children[index].isNotNil and self.children[index] of T:
     return self.children[index].T
 
   self.children[index] = T()

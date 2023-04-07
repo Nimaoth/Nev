@@ -124,7 +124,7 @@ classes[StringLiteral] = (stringLiteralClass, IdStringLiteralValue)
 classes[ConstDecl] = (constDeclClass, IdINamedName)
 classes[LetDecl] = (letDeclClass, IdINamedName)
 classes[VarDecl] = (varDeclClass, IdINamedName)
-classes[NodeList] = (nodeListClass, idNone())
+classes[NodeList] = (blockClass, idNone())
 classes[Call] = (callClass, idNone())
 classes[If] = (ifClass, idNone())
 classes[While] = (whileClass, idNone())
@@ -153,7 +153,7 @@ var unaryOperators = initTable[Id, NodeClass]()
 unaryOperators[IdNot] = notExpressionClass
 unaryOperators[IdNegate] = negateExpressionClass
 
-proc toModel(json: JsonNode): AstNode =
+proc toModel(json: JsonNode, root: bool = false): AstNode =
   let kind = json["kind"].jsonTo AstNodeKind
   let data = classes[kind]
   var node = newAstNode(data.class, json["id"].jsonTo(Id).some)
@@ -184,8 +184,15 @@ proc toModel(json: JsonNode): AstNode =
 
     case kind
     of NodeList:
-      for c in children:
-        node.add(IdNodeListChildren, c.toModel)
+      if root:
+        node = newAstNode(nodeListClass, json["id"].jsonTo(Id).some)
+        for c in children:
+          node.add(IdNodeListChildren, c.toModel)
+          node.add(IdNodeListChildren, newAstNode(emptyLineClass))
+
+      else:
+        for c in children:
+          node.add(IdBlockChildren, c.toModel)
 
     of ConstDecl:
       node.add(IdConstDeclValue, children[0].toModel)
@@ -293,7 +300,7 @@ proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
     var testModel = newModel(newId())
     testModel.addLanguage(base_language.baseLanguage)
 
-    let root = json.toModel
+    let root = json.toModel true
 
     testModel.addRootNode(root)
 
