@@ -119,262 +119,262 @@ let assignmentClass* = newNodeClass(IdAssignment, "Assignment", alias="=", base=
 var builder = newCellBuilder()
 
 builder.addBuilderFor emptyLineClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = ConstantCell(node: node)
+  var cell = ConstantCell(id: newId(), node: node)
   return cell
 
 builder.addBuilderFor emptyClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = ConstantCell(node: node)
+  var cell = ConstantCell(id: newId(), node: node)
   return cell
 
 builder.addBuilderFor numberLiteralClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = PropertyCell(node: node, property: IdIntegerLiteralValue)
+  var cell = PropertyCell(id: newId(), node: node, property: IdIntegerLiteralValue)
   return cell
 
 builder.addBuilderFor boolLiteralClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = PropertyCell(node: node, property: IdBoolLiteralValue)
+  var cell = PropertyCell(id: newId(), node: node, property: IdBoolLiteralValue)
   return cell
 
 builder.addBuilderFor stringLiteralClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = CollectionCell(node: node, layout: WPanelLayout(kind: Horizontal))
-  cell.children.add ConstantCell(node: node, text: "'", style: CellStyle(noSpaceRight: true))
-  cell.children.add PropertyCell(node: node, property: IdStringLiteralValue)
-  cell.children.add ConstantCell(node: node, text: "'", style: CellStyle(noSpaceLeft: true))
+  var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
+  cell.add ConstantCell(node: node, text: "'", style: CellStyle(noSpaceRight: true))
+  cell.add PropertyCell(node: node, property: IdStringLiteralValue)
+  cell.add ConstantCell(node: node, text: "'", style: CellStyle(noSpaceLeft: true))
   return cell
 
 builder.addBuilderFor nodeListClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = CollectionCell(node: node, layout: WPanelLayout(kind: Vertical))
+  var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Vertical))
   cell.fillChildren = proc() =
     # echo "fill collection node list"
     for c in node.children(IdNodeListChildren):
-      cell.children.add builder.buildCell(c)
+      cell.add builder.buildCell(c)
   return cell
 
 builder.addBuilderFor blockClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = CollectionCell(node: node, layout: WPanelLayout(kind: Vertical), style: CellStyle(indentChildren: true))
+  var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Vertical), style: CellStyle(indentChildren: true))
   cell.fillChildren = proc() =
     # echo "fill collection block"
     for c in node.children(IdBlockChildren):
-      cell.children.add builder.buildCell(c)
+      cell.add builder.buildCell(c)
   return cell
 
 builder.addBuilderFor constDeclClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = CollectionCell(node: node, layout: WPanelLayout(kind: Horizontal))
+  var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =
     # echo "fill collection const decl"
-    cell.children.add ConstantCell(node: node, text: "const")
-    cell.children.add PropertyCell(node: node, property: IdINamedName)
-    cell.children.add ConstantCell(node: node, text: ":", isVisible: (node) => node.hasChild(IdConstDeclType))
+    cell.add ConstantCell(node: node, text: "const")
+    cell.add PropertyCell(node: node, property: IdINamedName)
+    cell.add ConstantCell(node: node, text: ":", isVisible: (node) => node.hasChild(IdConstDeclType), style: CellStyle(noSpaceLeft: true))
     for c in node.children(IdConstDeclType):
-      cell.children.add builder.buildCell(c)
-    cell.children.add ConstantCell(node: node, text: "=")
+      cell.add builder.buildCell(c)
+    cell.add ConstantCell(node: node, text: "=")
     for c in node.children(IdConstDeclValue):
-      cell.children.add builder.buildCell(c)
+      cell.add builder.buildCell(c)
   return cell
 
 builder.addBuilderFor letDeclClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = CollectionCell(node: node, layout: WPanelLayout(kind: Horizontal))
+  var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =
     # echo "fill collection let decl"
-    cell.children.add ConstantCell(node: node, text: "let")
-    cell.children.add PropertyCell(node: node, property: IdINamedName)
-    cell.children.add ConstantCell(node: node, text: ":", isVisible: (node) => node.hasChild(IdLetDeclType))
+    cell.add ConstantCell(node: node, text: "let")
+    cell.add PropertyCell(node: node, property: IdINamedName)
+    cell.add ConstantCell(node: node, text: ":", isVisible: (node) => node.hasChild(IdLetDeclType), style: CellStyle(noSpaceLeft: true))
     for c in node.children(IdLetDeclType):
-      cell.children.add builder.buildCell(c)
-    cell.children.add ConstantCell(node: node, text: "=")
+      cell.add builder.buildCell(c)
+    cell.add ConstantCell(node: node, text: "=")
     for c in node.children(IdLetDeclValue):
-      cell.children.add builder.buildCell(c)
+      cell.add builder.buildCell(c)
   return cell
 
 builder.addBuilderFor varDeclClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = CollectionCell(node: node, layout: WPanelLayout(kind: Horizontal))
+  var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =
     # echo "fill collection var decl"
-    cell.children.add ConstantCell(node: node, text: "var")
-    cell.children.add PropertyCell(node: node, property: IdINamedName)
-    cell.children.add ConstantCell(node: node, text: ":", isVisible: (node) => node.hasChild(IdVarDeclType))
+    cell.add ConstantCell(node: node, text: "var")
+    cell.add PropertyCell(node: node, property: IdINamedName)
+    cell.add ConstantCell(node: node, text: ":", isVisible: (node) => node.hasChild(IdVarDeclType), style: CellStyle(noSpaceLeft: true))
     for c in node.children(IdVarDeclType):
-      cell.children.add builder.buildCell(c)
-    cell.children.add ConstantCell(node: node, text: "=", isVisible: (node) => node.hasChild(IdVarDeclValue))
+      cell.add builder.buildCell(c)
+    cell.add ConstantCell(node: node, text: "=", isVisible: (node) => node.hasChild(IdVarDeclValue))
     for c in node.children(IdVarDeclValue):
-      cell.children.add builder.buildCell(c)
+      cell.add builder.buildCell(c)
   return cell
 
 builder.addBuilderFor assignmentClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = CollectionCell(node: node, layout: WPanelLayout(kind: Horizontal))
+  var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =
     # echo "fill collection assignment"
     for c in node.children(IdAssignmentTarget):
-      cell.children.add builder.buildCell(c)
-    cell.children.add ConstantCell(node: node, text: "=")
+      cell.add builder.buildCell(c)
+    cell.add ConstantCell(node: node, text: "=")
     for c in node.children(IdAssignmentValue):
-      cell.children.add builder.buildCell(c)
+      cell.add builder.buildCell(c)
   return cell
 
 builder.addBuilderFor parameterDeclClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = CollectionCell(node: node, layout: WPanelLayout(kind: Horizontal))
+  var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =
     # echo "fill collection parameter decl"
-    cell.children.add PropertyCell(node: node, property: IdINamedName)
-    cell.children.add ConstantCell(node: node, text: ":")
+    cell.add PropertyCell(node: node, property: IdINamedName)
+    cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true))
     for c in node.children(IdParameterDeclType):
-      cell.children.add builder.buildCell(c)
-    cell.children.add ConstantCell(node: node, text: "=", isVisible: (node) => node.hasChild(IdParameterDeclValue))
+      cell.add builder.buildCell(c)
+    cell.add ConstantCell(node: node, text: "=", isVisible: (node) => node.hasChild(IdParameterDeclValue))
     for c in node.children(IdParameterDeclValue):
-      cell.children.add builder.buildCell(c)
+      cell.add builder.buildCell(c)
   return cell
 
 builder.addBuilderFor functionDefinitionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = CollectionCell(node: node, layout: WPanelLayout(kind: Horizontal))
+  var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =
     # echo "fill collection func def"
-    cell.children.add ConstantCell(node: node, text: "fn")
-    cell.children.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true))
+    cell.add ConstantCell(node: node, text: "fn")
+    cell.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true))
 
     for i, c in node.children(IdFunctionDefinitionParameters):
       if i > 0:
-        cell.children.add ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true))
-      cell.children.add builder.buildCell(c)
+        cell.add ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true))
+      cell.add builder.buildCell(c)
 
-    cell.children.add ConstantCell(node: node, text: "):", style: CellStyle(noSpaceLeft: true))
+    cell.add ConstantCell(node: node, text: "):", style: CellStyle(noSpaceLeft: true))
 
     for c in node.children(IdFunctionDefinitionReturnType):
-      cell.children.add builder.buildCell(c)
+      cell.add builder.buildCell(c)
 
-    cell.children.add ConstantCell(node: node, text: "=")
+    cell.add ConstantCell(node: node, text: "=")
 
     for c in node.children(IdFunctionDefinitionBody):
-      cell.children.add builder.buildCell(c)
+      cell.add builder.buildCell(c)
 
   return cell
 
 builder.addBuilderFor callClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = CollectionCell(node: node, layout: WPanelLayout(kind: Horizontal))
+  var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =
     # echo "fill collection call"
 
     for c in node.children(IdCallFunction):
-      cell.children.add builder.buildCell(c)
+      cell.add builder.buildCell(c)
 
-    cell.children.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true))
+    cell.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true))
 
     for i, c in node.children(IdCallArguments):
       if i > 0:
-        cell.children.add ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true))
-      cell.children.add builder.buildCell(c)
+        cell.add ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true))
+      cell.add builder.buildCell(c)
 
-    cell.children.add ConstantCell(node: node, text: ")", style: CellStyle(noSpaceLeft: true))
+    cell.add ConstantCell(node: node, text: ")", style: CellStyle(noSpaceLeft: true))
 
   return cell
 
 builder.addBuilderFor ifClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = CollectionCell(node: node, layout: WPanelLayout(kind: Horizontal))
+  var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =
     # echo "fill collection if"
 
-    cell.children.add ConstantCell(node: node, text: "if")
+    cell.add ConstantCell(node: node, text: "if")
 
     for c in node.children(IdIfExpressionCondition):
-      cell.children.add builder.buildCell(c)
+      cell.add builder.buildCell(c)
 
-    cell.children.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true))
+    cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true))
 
     for c in node.children(IdIfExpressionThenCase):
       var cc = builder.buildCell(c)
-      cell.children.add cc
+      cell.add cc
 
     for i, c in node.children(IdIfExpressionElseCase):
       if i == 0:
-        cell.children.add ConstantCell(node: node, text: "else:", style: CellStyle(onNewLine: true))
-      cell.children.add builder.buildCell(c)
+        cell.add ConstantCell(node: node, text: "else:", style: CellStyle(onNewLine: true))
+      cell.add builder.buildCell(c)
 
   return cell
 
 builder.addBuilderFor whileClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = CollectionCell(node: node, layout: WPanelLayout(kind: Horizontal))
+  var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =
     # echo "fill collection while"
 
-    cell.children.add ConstantCell(node: node, text: "while")
+    cell.add ConstantCell(node: node, text: "while")
 
     for c in node.children(IdWhileExpressionCondition):
-      cell.children.add builder.buildCell(c)
+      cell.add builder.buildCell(c)
 
-    cell.children.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true))
+    cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true))
 
     for c in node.children(IdWhileExpressionBody):
-      cell.children.add builder.buildCell(c)
+      cell.add builder.buildCell(c)
 
   return cell
 
 builder.addBuilderFor nodeReferenceClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = NodeReferenceCell(node: node, reference: IdNodeReferenceTarget, property: IdINamedName)
+  var cell = NodeReferenceCell(id: newId(), node: node, reference: IdNodeReferenceTarget, property: IdINamedName)
   if node.resolveReference(IdNodeReferenceTarget).getSome(targetNode):
-    cell.child = PropertyCell(node: targetNode, property: IdINamedName)
+    cell.child = PropertyCell(id: newId(), node: targetNode, property: IdINamedName)
   return cell
 
 builder.addBuilderFor binaryExpressionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = CollectionCell(node: node, layout: WPanelLayout(kind: Horizontal))
+  var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =
     # echo "fill collection binary"
     for c in node.children(IdBinaryExpressionLeft):
-      cell.children.add builder.buildCell(c)
-    cell.children.add AliasCell(node: node)
+      cell.add builder.buildCell(c)
+    cell.add AliasCell(node: node)
     for c in node.children(IdBinaryExpressionRight):
-      cell.children.add builder.buildCell(c)
+      cell.add builder.buildCell(c)
   return cell
 
 builder.addBuilderFor unaryExpressionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = CollectionCell(node: node, layout: WPanelLayout(kind: Horizontal))
+  var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =
     # echo "fill collection binary"
-    cell.children.add AliasCell(node: node, style: CellStyle(noSpaceRight: true))
+    cell.add AliasCell(node: node, style: CellStyle(noSpaceRight: true))
     for c in node.children(IdUnaryExpressionChild):
-      cell.children.add builder.buildCell(c)
+      cell.add builder.buildCell(c)
   return cell
 
 builder.addBuilderFor stringTypeClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = AliasCell(node: node)
+  var cell = AliasCell(id: newId(), node: node)
   return cell
 
 builder.addBuilderFor voidTypeClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = AliasCell(node: node)
+  var cell = AliasCell(id: newId(), node: node)
   return cell
 
 builder.addBuilderFor intTypeClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = AliasCell(node: node)
+  var cell = AliasCell(id: newId(), node: node)
   return cell
 
 builder.addBuilderFor printExpressionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = CollectionCell(node: node, layout: WPanelLayout(kind: Horizontal))
+  var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =
     # echo "fill collection call"
 
-    cell.children.add AliasCell(node: node)
-    cell.children.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true))
+    cell.add AliasCell(node: node)
+    cell.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true))
 
     for i, c in node.children(IdPrintArguments):
       if i > 0:
-        cell.children.add ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true))
-      cell.children.add builder.buildCell(c)
+        cell.add ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true))
+      cell.add builder.buildCell(c)
 
-    cell.children.add ConstantCell(node: node, text: ")", style: CellStyle(noSpaceLeft: true))
+    cell.add ConstantCell(node: node, text: ")", style: CellStyle(noSpaceLeft: true))
 
   return cell
 
 builder.addBuilderFor buildExpressionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = CollectionCell(node: node, layout: WPanelLayout(kind: Horizontal))
+  var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =
     # echo "fill collection call"
 
-    cell.children.add AliasCell(node: node)
-    cell.children.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true))
+    cell.add AliasCell(node: node)
+    cell.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true))
 
     for i, c in node.children(IdBuildArguments):
       if i > 0:
-        cell.children.add ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true))
-      cell.children.add builder.buildCell(c)
+        cell.add ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true))
+      cell.add builder.buildCell(c)
 
-    cell.children.add ConstantCell(node: node, text: ")", style: CellStyle(noSpaceLeft: true))
+    cell.add ConstantCell(node: node, text: ")", style: CellStyle(noSpaceLeft: true))
 
   return cell
 

@@ -77,6 +77,7 @@ type
     filled*: bool
     isVisible*: CellIsVisiblePredicate
     style*: CellStyle
+    disableSelection*: bool
 
   EmptyCell* = ref object of Cell
     discard

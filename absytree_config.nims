@@ -99,6 +99,7 @@ of Terminal:
   setOption "ast.indent-line-alpha", 0.2
   setOption "ast.inline-blocks", false
   setOption "ast.vertical-division", false
+  setOption "model.scroll-speed", 1
 of Gui:
   setOption "text.scroll-speed", 23
   setOption "text.cursor-margin", 50
@@ -108,6 +109,7 @@ of Gui:
   setOption "ast.indent-line-alpha", 1
   setOption "ast.inline-blocks", true
   setOption "ast.vertical-division", true
+  setOption "model.scroll-speed", 60
 else:
   discard
 
@@ -351,3 +353,6 @@ addCommand "editor.ast.goto", "<UP>", "prev"
 addCommand "editor.ast.goto", "<DOWN>", "next"
 addCommand "editor.ast.goto", "<HOME>", "home"
 addCommand "editor.ast.goto", "<END>", "end"
+
+addCommand "editor.model", "<LEFT>", "move-cursor-left"
+addCommand "editor.model", "<RIGHT>", "move-cursor-right"
