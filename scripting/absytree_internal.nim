@@ -261,14 +261,18 @@ proc modeScript2_8120189966*(self: AstDocumentEditor): string =
 proc getContextWithModeScript2_8120190022*(self: AstDocumentEditor;
     context: string): string =
   discard
-proc scrollScript2_8422168093*(self: ModelDocumentEditor; amount: float32) =
+proc scrollScript2_8422172606*(self: ModelDocumentEditor; amount: float32) =
   discard
-proc setModeScript22_8422168202*(self: ModelDocumentEditor; mode: string) =
+proc setModeScript22_8422172715*(self: ModelDocumentEditor; mode: string) =
   discard
-proc modeScript22_8422168291*(self: ModelDocumentEditor): string =
+proc modeScript22_8422173064*(self: ModelDocumentEditor): string =
   discard
-proc getContextWithModeScript22_8422168347*(self: ModelDocumentEditor;
+proc getContextWithModeScript22_8422173120*(self: ModelDocumentEditor;
     context: string): string =
+  discard
+proc moveCursorLeftScript_8422173183*(self: ModelDocumentEditor) =
+  discard
+proc moveCursorRightScript_8422173269*(self: ModelDocumentEditor) =
   discard
 proc getBackendScript_2197823672*(): Backend =
   discard

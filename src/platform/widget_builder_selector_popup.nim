@@ -9,12 +9,12 @@ import vmath, bumpy, chroma
 method updateWidget*(self: FileSelectorItem, app: Editor, widget: WPanel, frameIndex: int) =
   let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
 
-  var text = if widget.children.len == 0:
+  var text = if widget.len == 0:
     var text = WText(anchor: (vec2(0, 0), vec2(1, 1)), lastHierarchyChange: frameIndex)
-    widget.children.add text
+    widget.add text
     text
   else:
-    widget.children[0].WText
+    widget[0].WText
 
   text.text = self.path
   text.updateForegroundColor(textColor, frameIndex)
@@ -23,12 +23,12 @@ method updateWidget*(self: FileSelectorItem, app: Editor, widget: WPanel, frameI
 method updateWidget*(self: ThemeSelectorItem, app: Editor, widget: WPanel, frameIndex: int) =
   let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
 
-  var text = if widget.children.len == 0:
+  var text = if widget.len == 0:
     var text = WText(anchor: (vec2(0, 0), vec2(1, 1)), lastHierarchyChange: frameIndex)
-    widget.children.add text
+    widget.add text
     text
   else:
-    widget.children[0].WText
+    widget[0].WText
 
   text.text = self.path
   text.updateForegroundColor(textColor, frameIndex)
@@ -43,19 +43,19 @@ method updateWidget*(self: SelectorPopup, app: Editor, widget: WPanel, frameInde
 
   var headerPanel: WPanel
   var contentPanel: WPanel
-  if widget.children.len == 0:
+  if widget.len == 0:
     headerPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 0)), bottom: totalLineHeight, lastHierarchyChange: frameIndex, fillBackground: true, backgroundColor: color(0, 0, 0))
-    widget.children.add(headerPanel)
+    widget.add(headerPanel)
 
     contentPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 1)), top: totalLineHeight, lastHierarchyChange: frameIndex, fillBackground: true, backgroundColor: color(0, 0, 0))
     contentPanel.maskContent = true
-    widget.children.add(contentPanel)
+    widget.add(contentPanel)
 
     headerPanel.layoutWidget(widget.lastBounds, frameIndex, app.platform.layoutOptions)
     contentPanel.layoutWidget(widget.lastBounds, frameIndex, app.platform.layoutOptions)
   else:
-    headerPanel = widget.children[0].WPanel
-    contentPanel = widget.children[1].WPanel
+    headerPanel = widget[0].WPanel
+    contentPanel = widget[1].WPanel
 
   self.textEditor.updateWidget(app, headerPanel, frameIndex)
   headerPanel.updateLastHierarchyChangeFromChildren frameIndex
@@ -84,11 +84,11 @@ method updateWidget*(self: SelectorPopup, app: Editor, widget: WPanel, frameInde
 
   let numRenderedItems = max(lastRenderedIndex - self.scrollOffset + 1, 0)
 
-  while contentPanel.children.len > numRenderedItems:
-    discard contentPanel.children.pop
+  while contentPanel.len > numRenderedItems:
+    discard contentPanel.pop
 
-  while contentPanel.children.len < numRenderedItems:
-    contentPanel.children.add WPanel(anchor: (vec2(0, 0), vec2(1, 0)))
+  while contentPanel.len < numRenderedItems:
+    contentPanel.add WPanel(anchor: (vec2(0, 0), vec2(1, 0)))
 
   let selectionColor = app.theme.color("list.activeSelectionBackground", rgb(200, 200, 200))
 
@@ -96,7 +96,7 @@ method updateWidget*(self: SelectorPopup, app: Editor, widget: WPanel, frameInde
   var widgetIndex = 0
   for completionIndex in self.scrollOffset..lastRenderedIndex:
     defer: inc widgetIndex
-    var lineWidget = contentPanel.children[widgetIndex].WPanel
+    var lineWidget = contentPanel[widgetIndex].WPanel
     lineWidget.top = top
     lineWidget.bottom = top + totalLineHeight
     lineWidget.lastHierarchyChange = frameIndex

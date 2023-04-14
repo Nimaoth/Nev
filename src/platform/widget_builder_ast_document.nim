@@ -14,7 +14,7 @@ method updateWidget*(self: AstSymbolSelectorItem, app: Editor, widget: WPanel, f
   let totalLineHeight = app.platform.totalLineHeight
   let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
 
-  widget.children.setLen 0
+  widget.setLen 0
 
   var name = ""
   var typ = ""
@@ -32,13 +32,13 @@ method updateWidget*(self: AstSymbolSelectorItem, app: Editor, widget: WPanel, f
 
   let nameColor = app.theme.tokenColor(nameColors, rgb(255, 255, 255))
   let nameWidget = createPartWidget(name, 0.0, name.len.float * charWidth, totalLineHeight, nameColor, frameIndex)
-  widget.children.add(nameWidget)
+  widget.add(nameWidget)
 
   let typeColor = app.theme.tokenColor(typeColors, rgb(255, 255, 255))
   var typeWidget = createPartWidget(typ, -typ.len.float * charWidth, 0, totalLineHeight, typeColor, frameIndex)
   typeWidget.anchor.min.x = 1
   typeWidget.anchor.max.x = 1
-  widget.children.add(typeWidget)
+  widget.add(typeWidget)
 
 proc updateBaseIndexAndScrollOffset(self: AstDocumentEditor, app: Editor, contentPanel: WPanel) =
   let totalLineHeight = app.platform.totalLineHeight
@@ -88,11 +88,11 @@ proc renderVisualNode*(self: AstDocumentEditor, app: Editor, node: VisualNode, s
     nodeWidget.top = node.bounds.y
     nodeWidget.right = node.bounds.xw
     nodeWidget.bottom = node.bounds.yh
-    widget.children.add nodeWidget
+    widget.add nodeWidget
     return
 
   var panel = WPanel(left: node.bounds.x, right: node.bounds.xw, top: node.bounds.y, bottom: node.bounds.yh)
-  widget.children.add panel
+  widget.add panel
 
   if node.background.getSome(colors):
     let color = app.theme.anyColor(colors, rgb(255, 255, 255))
@@ -113,13 +113,13 @@ proc renderVisualNode*(self: AstDocumentEditor, app: Editor, node: VisualNode, s
     textWidget.style.fontStyle = style
     textWidget.top = node.bounds.y
     textWidget.bottom = node.bounds.yh
-    widget.children.add textWidget
+    widget.add textWidget
 
     # @todo(ni)
     # if Underline in style:
     #   renderCtx.boxy.fillRect(bounds.splitHInv(2.relative)[1], color)
 
-  if node.children.len > 0:
+  if node.len > 0:
     for child in node.children:
       self.renderVisualNode(app, child, selected, bounds, offset, panel, frameIndex)
 
@@ -156,7 +156,7 @@ proc renderBlockIndent(editor: AstDocumentEditor, app: Editor, layout: NodeLayou
       var panel = WPanel(left: bounds.x, right: bounds.x + indentLineWidth, top: bounds.y, bottom: bounds.yh,
         fillBackground: true, allowAlpha: true,
         backgroundColor: color)
-      widget.children.insert(panel, 0)
+      widget.insert(0, panel)
 
 proc renderVisualNodeLayout*(self: AstDocumentEditor, app: Editor, node: AstNode, bounds: Rect, layout: NodeLayout, offset: Vec2, contentWidget: WPanel, frameIndex: int) =
   let totalLineHeight = app.platform.totalLineHeight
@@ -168,7 +168,7 @@ proc renderVisualNodeLayout*(self: AstDocumentEditor, app: Editor, node: AstNode
   # echo "renderVisualNodeLayout ", widget.top
   for line in layout.root.children:
     self.renderVisualNode(app, line, self.node, bounds, offset, widget, frameIndex)
-  contentWidget.children.add widget
+  contentWidget.add widget
 
   # Draw diagnostics
   let errorColor = app.theme.color("editorError.foreground", rgb(255, 0, 0))
@@ -182,12 +182,12 @@ proc renderVisualNodeLayout*(self: AstDocumentEditor, app: Editor, node: AstNode
           var panel = WText(text: diagnostic.message,
             left: -diagnostic.message.len.float * charWidth, right: 0, top: last.yh, bottom: last.yh + totalLineHeight,
             anchor: (vec2(1, 0), vec2(1, 0)), sizeToContent: true, foregroundColor: errorColor)
-          contentWidget.children.add panel
+          contentWidget.add panel
           foundErrors = true
       if foundErrors:
         var panel = WPanel(left: bounds.x, right: bounds.xw, top: bounds.y, bottom: bounds.yh,
           allowAlpha: true, fillBackground: true, drawBorder: true, backgroundColor: errorColor.withAlpha(0.25), foregroundColor: errorColor)
-        contentWidget.children.add panel
+        contentWidget.add panel
 
   # Render outline for selected node
   if layout.nodeToVisualNode.contains(self.node.id):
@@ -198,7 +198,7 @@ proc renderVisualNodeLayout*(self: AstDocumentEditor, app: Editor, node: AstNode
       fillBackground: true, drawBorder: true, allowAlpha: true,
       backgroundColor: app.theme.color("inputValidation.warningBorder", color(1, 1, 1)).withAlpha(0.25),
       foregroundColor: app.theme.color("inputValidation.warningBorder", rgb(255, 255, 255)))
-    widget.children.add panel
+    widget.add panel
     # renderCtx.boxy.strokeRect(bounds, app.theme.color("foreground", rgb(255, 255, 255)), 2)
 
     # let value = ctx.getValue(self.node)
@@ -301,24 +301,24 @@ proc renderCompletionList*(self: AstDocumentEditor, app: Editor, widget: WPanel,
     let nameColor = app.theme.tokenColor(entry.color1, rgb(255, 255, 255))
     let nameWidget = createPartWidget(entry.name, 0.0, entry.name.len.float * charWidth, totalLineHeight, nameColor, frameIndex)
     nameWidget.style.fontStyle = entry.nameStyle
-    lineWidget.children.add(nameWidget)
+    lineWidget.add(nameWidget)
 
     var tempWidget = createPartWidget(" : ", nameWidth, 3 * charWidth, totalLineHeight, sepColor, frameIndex)
-    lineWidget.children.add(tempWidget)
+    lineWidget.add(tempWidget)
 
     let typeColor = app.theme.tokenColor(entry.color2, rgb(255, 255, 255))
     let typeWidget = createPartWidget(entry.typ, tempWidget.right, entry.typ.len.float * charWidth, totalLineHeight, typeColor, frameIndex)
-    lineWidget.children.add(typeWidget)
+    lineWidget.add(typeWidget)
 
     tempWidget = createPartWidget(" = ", typeWidget.left + typeWidth, 3 * charWidth, totalLineHeight, sepColor, frameIndex)
-    lineWidget.children.add(tempWidget)
+    lineWidget.add(tempWidget)
 
     if entry.value.len > 0:
       let valueColor = app.theme.tokenColor(entry.color3, rgb(255, 255, 255))
       var valueWidget = createPartWidget(entry.value, -entry.value.len.float * charWidth, 0, totalLineHeight, valueColor, frameIndex)
       valueWidget.anchor.min.x = 1
       valueWidget.anchor.max.x = 1
-      lineWidget.children.add(valueWidget)
+      lineWidget.add(valueWidget)
 
     newRenderedItems.add (i, lineWidget)
 
@@ -348,7 +348,7 @@ proc renderCompletions*(self: AstDocumentEditor, app: Editor, widget: WPanel, fr
         fillBackground: true, drawBorder: true, allowAlpha: true,
         backgroundColor: matchColor.withAlpha(0.25),
         foregroundColor: matchColor)
-      widget.children.add panel
+      widget.add panel
 
   # Render completion window under the currently edited node
   for (layout, offset) in self.lastLayouts:
@@ -358,7 +358,7 @@ proc renderCompletions*(self: AstDocumentEditor, app: Editor, widget: WPanel, fr
       let panel = WPanel(left: bounds.x, top: bounds.yh, right: bounds.x + 100, bottom: bounds.yh + 100, fillBackground: true, backgroundColor: backgroundColor, drawBorder: true, foregroundColor: borderColor, maskContent: true)
       self.renderCompletionList(app, panel, widget.lastBounds, frameIndex, self.completions, self.selectedCompletion, false, self.scrollToCompletion, self.lastItems, self.completionsBaseIndex, self.completionsScrollOffset)
       self.lastCompletionsWidget = panel
-      widget.children.add panel
+      widget.add panel
       break
 
   self.scrollToCompletion = int.none
@@ -375,27 +375,27 @@ method updateWidget*(self: AstDocumentEditor, app: Editor, widget: WPanel, frame
   var headerPart1Text: WText
   var headerPart2Text: WText
   var contentPanel: WPanel
-  if widget.children.len == 0:
+  if widget.len == 0:
     headerPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 0)), bottom: totalLineHeight, lastHierarchyChange: frameIndex, fillBackground: true, backgroundColor: color(0, 0, 0))
-    widget.children.add(headerPanel)
+    widget.add(headerPanel)
 
     headerPart1Text = WText(text: "", sizeToContent: true, anchor: (vec2(0, 0), vec2(0, 1)), lastHierarchyChange: frameIndex, foregroundColor: textColor)
-    headerPanel.children.add(headerPart1Text)
+    headerPanel.add(headerPart1Text)
 
     headerPart2Text = WText(text: "", sizeToContent: true, anchor: (vec2(1, 0), vec2(1, 1)), pivot: vec2(1, 0), lastHierarchyChange: frameIndex, foregroundColor: textColor)
-    headerPanel.children.add(headerPart2Text)
+    headerPanel.add(headerPart2Text)
 
     contentPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 1)), top: totalLineHeight, lastHierarchyChange: frameIndex, fillBackground: true, backgroundColor: color(0, 0, 0))
     contentPanel.maskContent = true
-    widget.children.add(contentPanel)
+    widget.add(contentPanel)
 
     headerPanel.layoutWidget(widget.lastBounds, frameIndex, app.platform.layoutOptions)
     contentPanel.layoutWidget(widget.lastBounds, frameIndex, app.platform.layoutOptions)
   else:
-    headerPanel = widget.children[0].WPanel
-    headerPart1Text = headerPanel.children[0].WText
-    headerPart2Text = headerPanel.children[1].WText
-    contentPanel = widget.children[1].WPanel
+    headerPanel = widget[0].WPanel
+    headerPart1Text = headerPanel[0].WText
+    headerPart2Text = headerPanel[1].WText
+    contentPanel = widget[1].WPanel
 
   # Update header
   if self.renderHeader:
@@ -433,7 +433,7 @@ method updateWidget*(self: AstDocumentEditor, app: Editor, widget: WPanel, frame
 
   # either layout or content changed, update the lines
   let timer = startTimer()
-  contentPanel.children.setLen 0
+  contentPanel.setLen 0
 
   self.updateBaseIndexAndScrollOffset(app, contentPanel)
 

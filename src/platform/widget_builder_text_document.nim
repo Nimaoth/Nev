@@ -27,7 +27,7 @@ proc renderTextHighlight(panel: WPanel, app: Editor, startOffset: float, endOffs
   if left == right:
     return
 
-  panel.children.add(WPanel(
+  panel.add(WPanel(
     anchor: (vec2(0, 0), vec2(0, 0)),
     left: left,
     right: right,
@@ -95,7 +95,7 @@ proc createLinesInPanel*(app: Editor, contentPanel: WPanel, previousBaseIndex: i
     if not renderLine(lineWidget, i, true, frameIndex):
       break
 
-    contentPanel.children.add lineWidget
+    contentPanel.add lineWidget
 
   # Render all lines before base index
   for k in 1..previousBaseIndex:
@@ -115,7 +115,7 @@ proc createLinesInPanel*(app: Editor, contentPanel: WPanel, previousBaseIndex: i
     if not renderLine(lineWidget, i, false, frameIndex):
       break
 
-    contentPanel.children.add lineWidget
+    contentPanel.add lineWidget
 
 proc renderCompletions(self: TextDocumentEditor, app: Editor, contentPanel: WPanel, cursorBounds: Rect, frameIndex: int) =
   let totalLineHeight = app.platform.totalLineHeight
@@ -131,7 +131,7 @@ proc renderCompletions(self: TextDocumentEditor, app: Editor, contentPanel: WPan
     left: cursorBounds.x, top: cursorBounds.yh, right: cursorBounds.x + charWidth * 60.0, bottom: cursorBounds.yh + totalLineHeight * 20.0,
     fillBackground: true, backgroundColor: backgroundColor, lastHierarchyChange: frameIndex, maskContent: true)
   panel.layoutWidget(contentPanel.lastBounds, frameIndex, app.platform.layoutOptions)
-  contentPanel.children.add(panel)
+  contentPanel.add(panel)
 
   self.lastCompletionsWidget = panel
 
@@ -151,12 +151,12 @@ proc renderCompletions(self: TextDocumentEditor, app: Editor, contentPanel: WPan
     let completion = self.completions[i]
 
     let nameWidget = createPartWidget(completion.name, 0, completion.name.len.float * charWidth, totalLineHeight, nameColor, frameIndex)
-    lineWidget.children.add(nameWidget)
+    lineWidget.add(nameWidget)
 
     var scopeWidget = createPartWidget(completion.scope, -completion.scope.len.float * charWidth, totalLineHeight, completion.scope.len.float * charWidth, scopeColor, frameIndex)
     scopeWidget.anchor.min.x = 1
     scopeWidget.anchor.max.x = 1
-    lineWidget.children.add(scopeWidget)
+    lineWidget.add(scopeWidget)
 
     self.lastCompletionWidgets.add (i, lineWidget)
 
@@ -177,27 +177,27 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
   var headerPart1Text: WText
   var headerPart2Text: WText
   var contentPanel: WPanel
-  if widget.children.len == 0:
+  if widget.len == 0:
     headerPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 0)), bottom: totalLineHeight, lastHierarchyChange: frameIndex, fillBackground: true, backgroundColor: color(0, 0, 0))
-    widget.children.add(headerPanel)
+    widget.add(headerPanel)
 
     headerPart1Text = WText(text: "", sizeToContent: true, anchor: (vec2(0, 0), vec2(0, 1)), lastHierarchyChange: frameIndex, foregroundColor: textColor)
-    headerPanel.children.add(headerPart1Text)
+    headerPanel.add(headerPart1Text)
 
     headerPart2Text = WText(text: "", sizeToContent: true, anchor: (vec2(1, 0), vec2(1, 1)), pivot: vec2(1, 0), lastHierarchyChange: frameIndex, foregroundColor: textColor)
-    headerPanel.children.add(headerPart2Text)
+    headerPanel.add(headerPart2Text)
 
     contentPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 1)), top: totalLineHeight, lastHierarchyChange: frameIndex, fillBackground: true, backgroundColor: color(0, 0, 0))
     contentPanel.maskContent = true
-    widget.children.add(contentPanel)
+    widget.add(contentPanel)
 
     headerPanel.layoutWidget(widget.lastBounds, frameIndex, app.platform.layoutOptions)
     contentPanel.layoutWidget(widget.lastBounds, frameIndex, app.platform.layoutOptions)
   else:
-    headerPanel = widget.children[0].WPanel
-    headerPart1Text = headerPanel.children[0].WText
-    headerPart2Text = headerPanel.children[1].WText
-    contentPanel = widget.children[1].WPanel
+    headerPanel = widget[0].WPanel
+    headerPart1Text = headerPanel[0].WText
+    headerPart2Text = headerPanel[1].WText
+    contentPanel = widget[1].WPanel
 
   # Update header
   if self.renderHeader:
@@ -234,7 +234,7 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
 
   # either layout or content changed, update the lines
   # let timer = startTimer()
-  contentPanel.children.setLen 0
+  contentPanel.setLen 0
 
   if not self.disableScrolling:
     updateBaseIndexAndScrollOffset(contentPanel, self.previousBaseIndex, self.scrollOffset, self.document.lines.len, totalLineHeight, int.none)
@@ -290,19 +290,19 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
 
     if lineNumbers != LineNumbers.None and cursorLine == i:
       var partWidget = createPartWidget($i, 0, lineNumberBounds.x, totalLineHeight, textColor, frameIndex)
-      lineWidget.children.add partWidget
+      lineWidget.add partWidget
     else:
       case lineNumbers
       of LineNumbers.Absolute:
         let text = $i
         let x = max(0.0, lineNumberBounds.x - text.len.float * charWidth)
         var partWidget = createPartWidget(text, x, lineNumberBounds.x, totalLineHeight, textColor, frameIndex)
-        lineWidget.children.add partWidget
+        lineWidget.add partWidget
       of LineNumbers.Relative:
         let text = $(i - cursorLine).abs
         let x = max(0.0, lineNumberBounds.x - text.len.float * charWidth)
         var partWidget = createPartWidget(text, x, lineNumberBounds.x, totalLineHeight, textColor, frameIndex)
-        lineWidget.children.add partWidget
+        lineWidget.add partWidget
       else:
         discard
 
@@ -319,7 +319,7 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
       for selection in selectionsPerLine.getOrDefault(i, @[]):
         if selection.last.line == i and selection.last.column >= startIndex and selection.last.column <= startIndex + part.text.len:
           let offsetFromPartStart = if part.text.len == 0: 0.0 else: (selection.last.column - startIndex).float32 / (part.text.len.float32) * width
-          lineWidget.children.add(WPanel(
+          lineWidget.add(WPanel(
             anchor: (vec2(0, 0), vec2(0, 0)),
             left: startOffset + offsetFromPartStart,
             right: startOffset + offsetFromPartStart + cursorWidth * charWidth,
@@ -341,7 +341,7 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
       startOffset += width
       startIndex += part.text.len
 
-      lineWidget.children.add(partWidget)
+      lineWidget.add(partWidget)
 
     self.lastRenderedLines.add styledText
 
@@ -358,7 +358,7 @@ method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, fram
 
   self.lastContentBounds = contentPanel.lastBounds
 
-  # debugf"rerender {contentPanel.children.len} lines for {self.document.filename} took {timer.elapsed.ms:>5.2}ms"
+  # debugf"rerender {contentPanel.len} lines for {self.document.filename} took {timer.elapsed.ms:>5.2}ms"
 
 when defined(js):
   # Optimized version for javascript backend

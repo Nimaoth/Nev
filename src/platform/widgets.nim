@@ -1,11 +1,12 @@
 import std/options
 import vmath, bumpy, chroma
-import theme, rect_utils, custom_logger
+import theme, rect_utils, custom_logger, util
 
 export rect_utils, vmath, bumpy
 
 type
   WWidget* = ref object of RootObj
+    parent*: WWidget
     anchor*: tuple[min: Vec2, max: Vec2]
     pivot*: Vec2
     left*, right*, top*, bottom*: float
@@ -57,9 +58,39 @@ proc height*(self: WWidget): float = self.bottom - self.top
 proc `[]=`*(self: WPanel, index: int, child: WWidget) =
   if index >= self.children.len:
     self.children.setLen(index + 1)
+  if self.children[index].isNotNil:
+    self.children[index].parent = nil
+  if child.isNotNil:
+    child.parent = self
   self.children[index] = child
 
+proc insert*(self: WPanel, index: int, child: WWidget) =
+  child.parent = self
+  self.children.insert(child, index)
+
+proc del*(self: WPanel, index: int) =
+  self.children[index].parent = nil
+  self.children.del index
+
+proc pop*(self: WPanel): WWidget = self.children.pop()
+
+proc `[]`*(self: WPanel, index: int): WWidget = self.children[index]
+
+proc len*(self: WPanel): int = self.children.len
+proc high*(self: WPanel): int = self.children.high
+proc low*(self: WPanel): int = self.children.low
+
+proc setLen*(self: WPanel, len: int) = self.children.setLen len
+
+proc add*(self: WPanel, child: WWidget) =
+  child.parent = self
+  self.children.add child
+
 proc getOrCreate*(self: WPanel, index: int, T: typedesc): T =
+  defer:
+    if result.isNotNil:
+      result.parent = self
+
   if index >= self.children.len:
     self.children.setLen(index + 1)
     self.children[index] = T()
@@ -70,6 +101,10 @@ proc getOrCreate*(self: WPanel, index: int, T: typedesc): T =
   return self.children[index].T
 
 proc getOrCreate*(self: WWidget, T: typedesc): T =
+  defer:
+    if result.isNotNil:
+      result.parent = self
+
   return if self.isNotNil and self of T: self.T else: T()
 
 proc truncate*(self: WPanel, len: int) =
