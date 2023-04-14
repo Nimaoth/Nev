@@ -128,9 +128,6 @@ type CellLayoutContext = ref object
   prevNoSpaceRight: bool
   layoutOptions: WLayoutOptions
 
-type UpdateContext = ref object
-  cellToWidget: Table[Id, WWidget]
-
 proc newCellLayoutContext(widget: WWidget): CellLayoutContext =
   new result
   result.parentWidget = widget.getOrCreate(WPanel)
@@ -512,7 +509,9 @@ method updateWidget*(self: ModelDocumentEditor, app: Editor, widget: WPanel, fra
   var builder = self.document.builder
   var lastY = self.scrollOffset
 
-  var updateContext = UpdateContext()
+  if self.cellWidgetContext.isNil:
+    self.cellWidgetContext = UpdateContext()
+  self.cellWidgetContext.cellToWidget.clear()
 
   var i = 0
   for node in self.document.model.rootNodes:
@@ -530,7 +529,7 @@ method updateWidget*(self: ModelDocumentEditor, app: Editor, widget: WPanel, fra
     # echo cell.dump()
 
     let oldWidget: WWidget = if i < contentPanel.len: contentPanel[i] else: nil
-    let newWidget = cell.updateCellWidget(app, oldWidget, frameIndex, nil, updateContext)
+    let newWidget = cell.updateCellWidget(app, oldWidget, frameIndex, nil, self.cellWidgetContext)
     if newWidget.isNil:
       if oldWidget.isNotNil:
         widget.del(i)
@@ -550,7 +549,7 @@ method updateWidget*(self: ModelDocumentEditor, app: Editor, widget: WPanel, fra
 
   let selectionColor = app.theme.color("inputValidation.warningBorder", color(1, 1, 1)).withAlpha(0.25)
   if self.getCellForCursor(self.cursor).getSome(cell):
-    let widget = updateContext.cellToWidget.getOrDefault(cell.id)
+    let widget = self.cellWidgetContext.cellToWidget.getOrDefault(cell.id)
     if widget.isNotNil:
       widget.fillBackground = true
       widget.allowAlpha = true
