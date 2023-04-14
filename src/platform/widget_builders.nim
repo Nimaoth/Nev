@@ -7,18 +7,18 @@ import vmath, bumpy, chroma
 proc updateStatusBar*(self: Editor, frameIndex: int, statusBarWidget: WPanel) =
   var statusWidget: WText
   var commandLineWidget: WPanel
-  if statusBarWidget.children.len == 0:
+  if statusBarWidget.len == 0:
     statusWidget = WText(anchor: (vec2(0, 0), vec2(1, 0.5)), lastHierarchyChange: frameIndex)
-    statusBarWidget.children.add statusWidget
+    statusBarWidget.add statusWidget
 
     commandLineWidget = WPanel(anchor: (vec2(0, 0.5), vec2(1, 1)), lastHierarchyChange: frameIndex)
-    statusBarWidget.children.add commandLineWidget
+    statusBarWidget.add commandLineWidget
 
     statusWidget.layoutWidget(statusBarWidget.lastBounds, frameIndex, self.platform.layoutOptions)
     commandLineWidget.layoutWidget(statusBarWidget.lastBounds, frameIndex, self.platform.layoutOptions)
   else:
-    statusWidget = statusBarWidget.children[0].WText
-    commandLineWidget = statusBarWidget.children[1].WPanel
+    statusWidget = statusBarWidget[0].WText
+    commandLineWidget = statusBarWidget[1].WPanel
 
   let textColor = self.theme.color("editor.foreground", rgb(225, 200, 200))
 
@@ -46,15 +46,15 @@ proc updateWidgetTree*(self: Editor, frameIndex: int) =
     mainStack.children.add(mainPanel)
 
     viewPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 1)), bottom: -2 * self.platform.totalLineHeight)
-    mainPanel.children.add(viewPanel)
+    mainPanel.add(viewPanel)
 
     commandLineWidget = WPanel(anchor: (vec2(0, 1), vec2(1, 1)), top: -2 * self.platform.totalLineHeight, fillBackground: true, backgroundColor: color(0, 0, 0))
-    mainPanel.children.add(commandLineWidget)
+    mainPanel.add(commandLineWidget)
 
     self.widget.layoutWidget(rect(vec2(0, 0), self.platform.size), frameIndex, self.platform.layoutOptions)
 
   # views
-  viewPanel.children.setLen 0
+  viewPanel.setLen 0
   let rects = self.layout.layoutViews(self.layout_props, rect(0, 0, 1, 1), self.views.len)
   for i, view in self.views:
     var widget: WPanel
@@ -69,7 +69,7 @@ proc updateWidgetTree*(self: Editor, frameIndex: int) =
 
       widget.layoutWidget(viewPanel.lastBounds, frameIndex, self.platform.layoutOptions)
 
-      viewPanel.children.add widget
+      viewPanel.add widget
       view.editor.active = self.currentView == i
       view.editor.updateWidget(self, widget, frameIndex)
       viewPanel.lastHierarchyChange = max(viewPanel.lastHierarchyChange, widget.lastHierarchyChange)

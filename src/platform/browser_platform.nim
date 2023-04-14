@@ -338,7 +338,7 @@ method renderWidget(self: WPanel, renderer: BrowserPlatform, element: var Elemen
 
   element.createOrReplaceElement("div", "DIV")
 
-  while element.children.len > self.children.len:
+  while element.children.len > self.len:
     element.removeChild(element.lastChild)
 
   let relBounds = self.lastBounds - renderer.boundsStack[renderer.boundsStack.high].xy

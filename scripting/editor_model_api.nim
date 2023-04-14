@@ -8,10 +8,14 @@ else:
 ## This file is auto generated, don't modify.
 
 proc scroll*(self: ModelDocumentEditor; amount: float32) =
-  scrollScript2_8422168093(self, amount)
+  scrollScript2_8422172606(self, amount)
 proc setMode*(self: ModelDocumentEditor; mode: string) =
-  setModeScript22_8422168202(self, mode)
+  setModeScript22_8422172715(self, mode)
 proc mode*(self: ModelDocumentEditor): string =
-  modeScript22_8422168291(self)
+  modeScript22_8422173064(self)
 proc getContextWithMode*(self: ModelDocumentEditor; context: string): string =
-  getContextWithModeScript22_8422168347(self, context)
+  getContextWithModeScript22_8422173120(self, context)
+proc moveCursorLeft*(self: ModelDocumentEditor) =
+  moveCursorLeftScript_8422173183(self)
+proc moveCursorRight*(self: ModelDocumentEditor) =
+  moveCursorRightScript_8422173269(self)
