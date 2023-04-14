@@ -89,8 +89,12 @@ method init*(self: GuiPlatform) =
 
   self.layoutOptions.getTextBounds = proc(text: string): Vec2 =
     let font = self.getFont(self.ctx.font, self.ctx.fontSize)
-    let arrangement = font.typeset(text)
-    result = arrangement.layoutBounds()
+    if text.len == 0:
+      let arrangement = font.typeset(" ")
+      result = vec2(0, arrangement.layoutBounds().y)
+    else:
+      let arrangement = font.typeset(text)
+      result = arrangement.layoutBounds()
 
   self.window.onFocusChange = proc() =
     inc self.eventCounter

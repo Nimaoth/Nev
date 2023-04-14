@@ -110,6 +110,8 @@ generateGetters(NodeClass)
 generateGetters(Model)
 generateGetters(Language)
 
+proc nodeClass*(node: AstNode): NodeClass
+
 proc forEach*(node: AstNode, f: proc(node: AstNode)) =
   f(node)
   for item in node.childLists.mitems:
@@ -285,6 +287,12 @@ proc setProperty*(node: AstNode, role: Id, value: PropertyValue) =
     if c.role == role:
       c.value = value
       break
+
+proc propertyDescription*(node: AstNode, role: Id): Option[PropertyDescription] =
+  let class = node.nodeClass
+  if class.isNotNil:
+    return class.propertyDescription(role)
+  return PropertyDescription.none
 
 proc getDefaultValue*(_: typedesc[PropertyValue], typ: PropertyType): PropertyValue =
   result = PropertyValue(kind: typ)

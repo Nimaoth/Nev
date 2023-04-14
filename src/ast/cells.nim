@@ -22,6 +22,9 @@ type
   AliasCell* = ref object of Cell
     discard
 
+method getText*(cell: Cell): string {.base.} = discard
+method setText*(cell: Cell, text: string) {.base.} = discard
+
 proc add*(self: CollectionCell, cell: Cell) =
   if cell.id == idNone():
     cell.id = newId()
@@ -49,6 +52,28 @@ proc parentLen*(self: Cell): int =
     return -1
   return self.parent.CollectionCell.children.len
 
+proc low*(self: Cell): int =
+  if self of CollectionCell:
+    return self.CollectionCell.children.low
+  else:
+    return self.getText().low
+
+proc editableLow*(self: Cell): int =
+  if self.style.isNotNil and self.style.noSpaceLeft:
+    return self.low + 1
+  return self.low
+
+proc high*(self: Cell): int =
+  if self of CollectionCell:
+    return self.CollectionCell.children.high
+  else:
+    return self.getText().high
+
+proc editableHigh*(self: Cell): int =
+  if self.style.isNotNil and self.style.noSpaceRight:
+    return self.high - 1
+  return self.high
+
 proc previousDirect*(self: Cell): Cell =
   ### Returns the previous cell before self in the parents children, or nil.
   let i = self.index
@@ -69,7 +94,42 @@ method getChildAt*(self: CollectionCell, index: int, clamp: bool): Option[Cell] 
     return Cell.none
   return self.children[index].some
 
-method getText*(cell: Cell): string {.base.} = discard
+proc insertText*(cell: Cell, index: int, text: string): int =
+  var currentText = cell.getText()
+  currentText.insert(text, index)
+  cell.setText(currentText)
+  if cell.getText() == currentText:
+    return index + text.len
+  return index
+
+method setText*(cell: CollectionCell, text: string) = discard
+
+method setText*(cell: ConstantCell, text: string) =
+  cell.text = text
+
+method setText*(cell: NodeReferenceCell, text: string) =
+  # @todo
+  discard
+
+method setText*(cell: PropertyCell, text: string) =
+  if cell.node.propertyDescription(cell.property).getSome(prop):
+    case prop.typ
+    of String:
+      cell.node.setProperty(cell.property, PropertyValue(kind: PropertyType.String, stringValue: text))
+    of Int:
+      try:
+        let intValue = text.parseInt
+        cell.node.setProperty(cell.property, PropertyValue(kind: PropertyType.Int, intValue: intValue))
+      except CatchableError:
+        discard
+    of Bool:
+      try:
+        let boolValue = text.parseBool
+        cell.node.setProperty(cell.property, PropertyValue(kind: PropertyType.Bool, boolValue: boolValue))
+      except CatchableError:
+        discard
+
+method setText*(cell: AliasCell, text: string) = discard
 
 method getText*(cell: CollectionCell): string = "<>"
 
