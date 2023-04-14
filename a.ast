@@ -79,6 +79,146 @@
                           "id": "640bb20388891c138a917b31",
                           "reff": "640bb1f088891c138a91460d",
                           "path": "0, 0, 2, 0, 1, 2"
+                        },
+                        {
+                          "kind": "Call",
+                          "id": "64397d2e15ddce0750f6dc1d",
+                          "path": "0, 0, 2, 0, 1, 3",
+                          "children": [
+                            {
+                              "kind": "Identifier",
+                              "id": "64397d2e15ddce0750f6dc1e",
+                              "reff": "62e53397564d29f7729344fb",
+                              "path": "0, 0, 2, 0, 1, 3, 0"
+                            },
+                            {
+                              "kind": "NodeList",
+                              "id": "64397d2915ddce0750f6d1b5",
+                              "path": "0, 0, 2, 0, 1, 3, 1",
+                              "children": [
+                                {
+                                  "kind": "ConstDecl",
+                                  "id": "64397d4315ddce0750f70db8",
+                                  "text": "a",
+                                  "path": "0, 0, 2, 0, 1, 3, 1, 0",
+                                  "children": [
+                                    {
+                                      "kind": "NumberLiteral",
+                                      "id": "64397d4615ddce0750f71fab",
+                                      "text": "5",
+                                      "path": "0, 0, 2, 0, 1, 3, 1, 0, 0"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "kind": "Identifier",
+                                  "id": "64397d4915ddce0750f72e0b",
+                                  "reff": "64397d4315ddce0750f70db8",
+                                  "path": "0, 0, 2, 0, 1, 3, 1, 1"
+                                }
+                              ]
+                            },
+                            {
+                              "kind": "NodeList",
+                              "id": "64397d4c15ddce0750f73c21",
+                              "path": "0, 0, 2, 0, 1, 3, 2",
+                              "children": [
+                                {
+                                  "kind": "ConstDecl",
+                                  "id": "64397d4e15ddce0750f74af1",
+                                  "text": "b",
+                                  "path": "0, 0, 2, 0, 1, 3, 2, 0",
+                                  "children": [
+                                    {
+                                      "kind": "NumberLiteral",
+                                      "id": "64397d5315ddce0750f760be",
+                                      "text": "10",
+                                      "path": "0, 0, 2, 0, 1, 3, 2, 0, 0"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "kind": "Identifier",
+                                  "id": "64397d5615ddce0750f76f59",
+                                  "reff": "64397d4e15ddce0750f74af1",
+                                  "path": "0, 0, 2, 0, 1, 3, 2, 1"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "kind": "StringLiteral",
+                          "id": "64397d6c15ddce0750f7b87b",
+                          "text": "lol",
+                          "path": "0, 0, 2, 0, 1, 4"
+                        },
+                        {
+                          "kind": "Call",
+                          "id": "64397d6215ddce0750f7967a",
+                          "path": "0, 0, 2, 0, 1, 5",
+                          "children": [
+                            {
+                              "kind": "Identifier",
+                              "id": "64397d6215ddce0750f7967b",
+                              "reff": "62e53397564d29f7729344fb",
+                              "path": "0, 0, 2, 0, 1, 5, 0"
+                            },
+                            {
+                              "kind": "NodeList",
+                              "id": "64397d6215ddce0750f7967c",
+                              "path": "0, 0, 2, 0, 1, 5, 1",
+                              "children": [
+                                {
+                                  "kind": "ConstDecl",
+                                  "id": "64397d6215ddce0750f7967d",
+                                  "text": "a",
+                                  "path": "0, 0, 2, 0, 1, 5, 1, 0",
+                                  "children": [
+                                    {
+                                      "kind": "NumberLiteral",
+                                      "id": "64397d6215ddce0750f7967e",
+                                      "text": "5",
+                                      "path": "0, 0, 2, 0, 1, 5, 1, 0, 0"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "kind": "Identifier",
+                                  "id": "64397d6215ddce0750f7967f",
+                                  "reff": "64397d6215ddce0750f7967d",
+                                  "path": "0, 0, 2, 0, 1, 5, 1, 1"
+                                }
+                              ]
+                            },
+                            {
+                              "kind": "NodeList",
+                              "id": "64397d6215ddce0750f79680",
+                              "path": "0, 0, 2, 0, 1, 5, 2",
+                              "children": [
+                                {
+                                  "kind": "ConstDecl",
+                                  "id": "64397d6215ddce0750f79681",
+                                  "text": "b",
+                                  "path": "0, 0, 2, 0, 1, 5, 2, 0",
+                                  "children": [
+                                    {
+                                      "kind": "NumberLiteral",
+                                      "id": "64397d6215ddce0750f79682",
+                                      "text": "10",
+                                      "path": "0, 0, 2, 0, 1, 5, 2, 0, 0"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "kind": "Identifier",
+                                  "id": "64397d6215ddce0750f79683",
+                                  "reff": "64397d6215ddce0750f79681",
+                                  "path": "0, 0, 2, 0, 1, 5, 2, 1"
+                                }
+                              ]
+                            }
+                          ]
                         }
                       ]
                     }
@@ -4947,6 +5087,11 @@
       "kind": "Empty",
       "id": "64285c34cc3ef30eb53392b6",
       "path": "39"
+    },
+    {
+      "kind": "Empty",
+      "id": "64397cfa15ddce0750f6b298",
+      "path": "40"
     }
   ]
 }

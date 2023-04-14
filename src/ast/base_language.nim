@@ -323,6 +323,17 @@ builder.addBuilderFor binaryExpressionClass.id, idNone(), proc(builder: CellBuil
       cell.add builder.buildCell(c)
   return cell
 
+builder.addBuilderFor divExpressionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Vertical), inline: true)
+  cell.fillChildren = proc() =
+    # echo "fill collection binary"
+    for c in node.children(IdBinaryExpressionLeft):
+      cell.add builder.buildCell(c)
+    cell.add ConstantCell(node: node, text: "------")
+    for c in node.children(IdBinaryExpressionRight):
+      cell.add builder.buildCell(c)
+  return cell
+
 builder.addBuilderFor unaryExpressionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =

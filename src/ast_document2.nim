@@ -55,6 +55,7 @@ type
     currentMode*: string
 
     nodeToCell*: Table[Id, Cell] # Map from AstNode.id to Cell
+    logicalLines*: seq[seq[Cell]]
     cellWidgetContext*: UpdateContext
     cursor*: CellCursor
 
@@ -377,14 +378,70 @@ proc buildNodeCellMap(self: Cell, map: var Table[Id, Cell]) =
     for c in self.CollectionCell.children:
       c.buildNodeCellMap(map)
 
+proc assignToLogicalLines(self: ModelDocumentEditor, cell: Cell, startLine: int, currentLineEmpty: var bool): int =
+  if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
+    return startLine
+
+  cell.line = startLine
+
+  if cell of CollectionCell:
+    let coll = cell.CollectionCell
+    let vertical = coll.layout.kind == Vertical
+
+    var currentLine = startLine
+    var maxLine = startLine
+
+    # debugf"assignToLogicalLines {cell.id}, {startLine}, {currentLineEmpty}"
+
+    var currentLineEmptyTemp = currentLineEmpty
+    if coll.inline:
+      currentLineEmptyTemp = true
+
+    for i, c in coll.children:
+      if vertical and (i > 0 or not currentLineEmptyTemp):
+        currentLineEmptyTemp = true
+        inc currentLine
+
+      if c.style.isNotNil:
+        if c.style.onNewLine:
+          currentLineEmptyTemp = true
+          inc currentLine
+
+      let newLine = self.assignToLogicalLines(c, currentLine, currentLineEmptyTemp)
+      if vertical:
+        currentLine = newLine
+      maxLine = max(maxLine, newLine)
+
+      if c.style.isNotNil:
+        if c.style.addNewlineAfter:
+          currentLineEmptyTemp = true
+          inc currentLine
+
+    if not coll.inline:
+      currentLineEmpty = currentLineEmptyTemp
+
+    return maxLine
+
+  else:
+    while self.logicalLines.len <= startLine:
+      self.logicalLines.add @[]
+    self.logicalLines[startLine].add cell
+    currentLineEmpty = false
+    return startLine
+
 proc rebuildCells(self: ModelDocumentEditor) =
   var builder = self.document.builder
 
   self.nodeToCell.clear()
 
+  self.logicalLines.setLen 0
+
   for node in self.document.model.rootNodes:
     let cell = builder.buildCell(node)
     cell.buildNodeCellMap(self.nodeToCell)
+
+    var temp = true
+    discard self.assignToLogicalLines(cell, 0, temp)
 
 proc handleNodeInserted*(self: ModelDocumentEditor, doc: ModelDocument, node: AstNode) =
   discard
@@ -455,6 +512,7 @@ method handleMouseMove*(self: ModelDocumentEditor, mousePosWindow: Vec2, mousePo
     for rootNode in self.document.model.rootNodes:
       let cell = self.nodeToCell.getOrDefault(rootNode.id, nil)
       if cell.isNotNil and self.getLeafCellContainingPoint(cell, mousePosWindow).getSome(leafCell):
+        # debugf"line {leafCell.parent.id}|{leafCell.id}: {leafCell.line}"
         self.cursor = leafCell.toCursor()
         self.markDirty()
         break

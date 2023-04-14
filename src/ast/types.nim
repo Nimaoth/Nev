@@ -73,6 +73,7 @@ type
     id*: Id
     parent*: Cell
     node*: AstNode
+    line*: int
     fillChildren*: proc(): void
     filled*: bool
     isVisible*: CellIsVisiblePredicate

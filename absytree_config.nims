@@ -354,5 +354,13 @@ addCommand "editor.ast.goto", "<DOWN>", "next"
 addCommand "editor.ast.goto", "<HOME>", "home"
 addCommand "editor.ast.goto", "<END>", "end"
 
+setHandleInputs "editor.model", true
 addCommand "editor.model", "<LEFT>", "move-cursor-left"
 addCommand "editor.model", "<RIGHT>", "move-cursor-right"
+addCommand "editor.model", "<UP>", "move-cursor-up"
+addCommand "editor.model", "<DOWN>", "move-cursor-down"
+addCommand "editor.model", "<C-LEFT>", "move-cursor-left-cell"
+addCommand "editor.model", "<C-RIGHT>", "move-cursor-right-cell"
+addCommand "editor.model", "<BACKSPACE>", "delete-left"
+addCommand "editor.model", "<DELETE>", "delete-right"
+addCommand "editor.model", "<SPACE>", "insert-text-at-cursor", " "
