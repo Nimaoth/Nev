@@ -261,32 +261,32 @@ proc modeScript2_8120189966*(self: AstDocumentEditor): string =
 proc getContextWithModeScript2_8120190022*(self: AstDocumentEditor;
     context: string): string =
   discard
-proc scrollScript2_8422173425*(self: ModelDocumentEditor; amount: float32) =
+proc scrollScript2_8422173551*(self: ModelDocumentEditor; amount: float32) =
   discard
-proc setModeScript22_8422173534*(self: ModelDocumentEditor; mode: string) =
+proc setModeScript22_8422173660*(self: ModelDocumentEditor; mode: string) =
   discard
-proc modeScript22_8422174006*(self: ModelDocumentEditor): string =
+proc modeScript22_8422174132*(self: ModelDocumentEditor): string =
   discard
-proc getContextWithModeScript22_8422174062*(self: ModelDocumentEditor;
+proc getContextWithModeScript22_8422174188*(self: ModelDocumentEditor;
     context: string): string =
   discard
-proc moveCursorLeftScript_8422174125*(self: ModelDocumentEditor) =
+proc moveCursorLeftScript_8422174251*(self: ModelDocumentEditor) =
   discard
-proc moveCursorRightScript_8422174205*(self: ModelDocumentEditor) =
+proc moveCursorRightScript_8422174331*(self: ModelDocumentEditor) =
   discard
-proc moveCursorUpScript2_8422174285*(self: ModelDocumentEditor) =
+proc moveCursorUpScript2_8422174411*(self: ModelDocumentEditor) =
   discard
-proc moveCursorDownScript2_8422174365*(self: ModelDocumentEditor) =
+proc moveCursorDownScript2_8422174491*(self: ModelDocumentEditor) =
   discard
-proc moveCursorLeftCellScript_8422174445*(self: ModelDocumentEditor) =
+proc moveCursorLeftCellScript_8422174571*(self: ModelDocumentEditor) =
   discard
-proc moveCursorRightCellScript_8422174525*(self: ModelDocumentEditor) =
+proc moveCursorRightCellScript_8422174651*(self: ModelDocumentEditor) =
   discard
-proc deleteLeftScript2_8422174605*(self: ModelDocumentEditor) =
+proc deleteLeftScript2_8422174731*(self: ModelDocumentEditor) =
   discard
-proc deleteRightScript2_8422174694*(self: ModelDocumentEditor) =
+proc deleteRightScript2_8422174820*(self: ModelDocumentEditor) =
   discard
-proc insertTextAtCursorScript_8422174783*(self: ModelDocumentEditor;
+proc insertTextAtCursorScript_8422174909*(self: ModelDocumentEditor;
     input: string): bool =
   discard
 proc getBackendScript_2197823672*(): Backend =

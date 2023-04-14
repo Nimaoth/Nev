@@ -201,7 +201,10 @@ proc newLine(self: CellLayoutContext) =
   if self.lineWidget.isNotNil:
     self.lineWidget.truncate(self.indexInLine)
     self.parentWidget[self.currentLine] = self.lineWidget
+    self.parentWidget.right = max(self.parentWidget.right, self.lineWidget.right)
+    self.parentWidget.bottom = max(self.parentWidget.bottom, self.lineWidget.bottom)
     inc self.currentLine
+
 
   self.lineWidget = self.parentWidget.getOrCreate(self.currentLine, WPanel)
   # self.lineWidget.sizeToContent = true
@@ -239,6 +242,8 @@ proc addWidget(self: CellLayoutContext, widget: WWidget, spaceLeft: bool) =
 proc finish(self: CellLayoutContext): WWidget =
   if self.lineWidget.len > 0:
     self.parentWidget[self.currentLine] = self.lineWidget
+    self.parentWidget.right = max(self.parentWidget.right, self.lineWidget.right)
+    self.parentWidget.bottom = max(self.parentWidget.bottom, self.lineWidget.bottom)
     inc self.currentLine
 
   self.parentWidget.truncate(self.currentLine)
