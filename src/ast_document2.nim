@@ -6,12 +6,18 @@ from scripting_api as api import nil
 import custom_logger
 import platform/[filesystem, platform, widgets]
 import workspaces/[workspace]
-import ast/[types, base_language]
+import ast/[types, base_language, cells]
 import print
 
 from ast import AstNodeKind
 
 var project = newProject()
+
+type
+  CellCursor* = object
+    node*: AstNode
+    path*: seq[int]
+    column*: int
 
 type
   UndoOpKind = enum
@@ -48,6 +54,9 @@ type
     modeEventHandler: EventHandler
     currentMode*: string
 
+    nodeToCell*: Table[Id, Cell] # Map from AstNode.id to Cell
+    cursor*: CellCursor
+
     scrollOffset*: float
     previousBaseIndex*: seq[int]
 
@@ -62,6 +71,7 @@ proc `$`(op: UndoOp): string =
 proc handleNodeInserted*(doc: ModelDocument, node: AstNode)
 proc handleNodeInserted*(self: ModelDocumentEditor, doc: ModelDocument, node: AstNode)
 proc handleAction(self: ModelDocumentEditor, action: string, arg: string): EventResponse
+proc rebuildCells*(self: ModelDocumentEditor)
 
 method `$`*(document: ModelDocument): string =
   return document.filename
@@ -72,7 +82,6 @@ proc newModelDocument*(filename: string = "", app: bool = false, workspaceFolder
   result.appFile = app
   result.workspace = workspaceFolder
   result.project = project
-
 
   var testModel = newModel(newId())
   testModel.addLanguage(base_language.baseLanguage)
@@ -85,8 +94,6 @@ proc newModelDocument*(filename: string = "", app: bool = false, workspaceFolder
   c.add(IdBinaryExpressionRight, b)
 
   testModel.addRootNode(c)
-
-  debugf"temp root: {c}"
 
   result.model = testModel
 
@@ -273,7 +280,6 @@ proc toModel(json: JsonNode, root: bool = false): AstNode =
   return node
 
 proc createTypes*(self: ModelDocument) =
-
   let stringType = () => newAstNode(stringTypeClass)
   let intType = () => newAstNode(intTypeClass)
   let voidType = () => newAstNode(voidTypeClass)
@@ -285,6 +291,7 @@ proc createTypes*(self: ModelDocument) =
 
   # testModel.addRootNode(c)
   # self.model.addRootNode functionType()
+
 proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
   logger.log lvlInfo, fmt"[modeldoc] Loading model source file '{self.filename}'"
   try:
@@ -350,10 +357,36 @@ method handleDocumentChanged*(self: ModelDocumentEditor) =
   # for symbol in ctx.globalScope.values:
   #   discard ctx.newSymbol(symbol)
   # self.node = self.document.rootNode[0]
+  self.rebuildCells()
+  self.cursor = CellCursor(node: self.document.model.rootNodes[0], path: @[0])
+  print self.cursor
   self.markDirty()
+
+proc buildNodeCellMap(self: Cell, map: var Table[Id, Cell]) =
+  if self.node.isNotNil and not map.contains(self.node.id):
+    map[self.node.id] = self
+  if self of CollectionCell:
+    for c in self.CollectionCell.children:
+      c.buildNodeCellMap(map)
+
+proc rebuildCells(self: ModelDocumentEditor) =
+  var builder = self.document.builder
+
+  self.nodeToCell.clear()
+
+  for node in self.document.model.rootNodes:
+    let cell = builder.buildCell(node)
+    cell.buildNodeCellMap(self.nodeToCell)
 
 proc handleNodeInserted*(self: ModelDocumentEditor, doc: ModelDocument, node: AstNode) =
   discard
+
+proc handleDocumentChanged*(self: ModelDocumentEditor, document: Document) =
+  self.rebuildCells()
+  self.cursor = CellCursor(node: self.document.model.rootNodes[0], path: @[0])
+  echo self.cursor
+
+  self.markDirty()
 
 proc toJson*(self: api.ModelDocumentEditor, opt = initToJsonOptions()): JsonNode =
   result = newJObject()
@@ -387,19 +420,29 @@ method canEdit*(self: ModelDocumentEditor, document: Document): bool =
   if document of ModelDocument: return true
   else: return false
 
-method createWithDocument*(self: ModelDocumentEditor, document: Document): DocumentEditor =
-  let editor = ModelDocumentEditor(eventHandler: nil, document: ModelDocument(document))
+method getEventHandlers*(self: ModelDocumentEditor): seq[EventHandler] =
+  result.add self.eventHandler
+
+  if not self.modeEventHandler.isNil:
+    result.add self.modeEventHandler
+
+method createWithDocument*(_: ModelDocumentEditor, document: Document): DocumentEditor =
+  let self = ModelDocumentEditor(eventHandler: nil, document: ModelDocument(document))
 
   # Emit this to set the editor prototype to editor_model_prototype, which needs to be set up before calling this
   when defined(js):
-    {.emit: [editor, " = createWithPrototype(editor_model_prototype, ", editor, ");"].}
+    {.emit: [self, " = createWithPrototype(editor_model_prototype, ", self, ");"].}
     # This " is here to fix syntax highlighting
 
-  editor.init()
-  discard editor.document.onNodeInserted.subscribe proc(d: auto) = editor.handleNodeInserted(d[0], d[1])
-  discard editor.document.onChanged.subscribe proc(d: auto) = editor.markDirty()
+  self.init()
+  discard self.document.onNodeInserted.subscribe proc(d: auto) = self.handleNodeInserted(d[0], d[1])
+  discard self.document.onChanged.subscribe proc(d: auto) = self.handleDocumentChanged(d)
 
-  return editor
+  self.rebuildCells()
+  self.cursor = CellCursor(node: self.document.model.rootNodes[0], path: @[0])
+  echo self.cursor
+
+  return self
 
 method injectDependencies*(self: ModelDocumentEditor, ed: Editor) =
   self.editor = ed
@@ -420,6 +463,21 @@ proc getModelDocumentEditor(wrapper: api.ModelDocumentEditor): Option[ModelDocum
     if editor of ModelDocumentEditor:
       return editor.ModelDocumentEditor.some
   return ModelDocumentEditor.none
+
+proc getCellForCursor*(self: ModelDocumentEditor, cursor: CellCursor): Option[Cell] =
+  let cell = self.nodeToCell.getOrDefault(cursor.node.id, nil)
+  if cell.isNil:
+    return Cell.none
+
+  var subCell = cell
+  for i in cursor.path:
+    if subCell of CollectionCell:
+      var collectionCell = subCell.CollectionCell
+      subCell = collectionCell.children[i.clamp(0, collectionCell.children.high)]
+    else:
+      break
+
+  return subCell.some
 
 static:
   addTypeMap(ModelDocumentEditor, api.ModelDocumentEditor, getModelDocumentEditor)
@@ -444,11 +502,234 @@ proc setMode*(self: ModelDocumentEditor, mode: string) {.expose("editor.model").
 
   self.currentMode = mode
 
+method getCursorLeft*(cell: Cell, cursor: CellCursor): CellCursor {.base.} = discard
+method getCursorRight*(cell: Cell, cursor: CellCursor): CellCursor {.base.} = discard
+
+proc canSelect*(cell: Cell): bool =
+  if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
+    return false
+  if cell.disableSelection:
+    return false
+  return true
+
+proc getFirstLeaf*(cell: Cell): Cell =
+  if cell of CollectionCell and cell.CollectionCell.children.len > 0:
+    return cell.CollectionCell.children[0].getFirstLeaf()
+  return cell
+
+proc getLastLeaf*(cell: Cell): Cell =
+  if cell of CollectionCell and cell.CollectionCell.children.len > 0:
+    return cell.CollectionCell.children[cell.CollectionCell.children.high].getLastLeaf()
+  return cell
+
+proc getPreviousLeaf*(cell: Cell, childIndex: Option[int] = int.none): Cell =
+  if cell of CollectionCell:
+    return cell.getLastLeaf()
+  # if cell of CollectionCell and cell.CollectionCell.children.len > 0:
+    # let index = if childIndex.getSome(index): index else: cell.CollectionCell.children.len
+    # if index > 0:
+    #   result = cell.CollectionCell.children[index - 1]
+    #   if result of CollectionCell:
+    #     result = result.getPreviousLeaf()
+    #   return
+
+  if cell.parent.isNil:
+    return cell
+
+  let parent = cell.parent.CollectionCell
+
+  var index = parent.indexOf(cell)
+
+  if index > 0:
+    return parent.children[index - 1].getLastLeaf()
+  else:
+    var newParent: Cell = parent
+    var parentIndex = newParent.index
+    while parentIndex != -1 and parentIndex == 0:
+      newParent = newParent.parent
+      parentIndex = newParent.index
+
+    if parentIndex > 0:
+      let prevParent = newParent.previousDirect()
+      return prevParent.getLastLeaf()
+
+    return cell
+
+proc getNextLeaf*(cell: Cell, childIndex: Option[int] = int.none): Cell =
+  if cell of CollectionCell:
+    return cell.getFirstLeaf()
+  # if cell of CollectionCell and cell.CollectionCell.children.len > 0:
+  #   let index = if childIndex.getSome(index): index else: 0
+  #   if index < cell.CollectionCell.children.high:
+  #     result = cell.CollectionCell.children[index + 1]
+  #     if result of CollectionCell:
+  #       result = result.getNextLeaf()
+  #     return
+
+  if cell.parent.isNil:
+    return cell
+
+  let parent = cell.parent.CollectionCell
+
+  var index = parent.indexOf(cell)
+
+  if index < parent.children.high:
+    return parent.children[index + 1].getFirstLeaf()
+  else:
+    var newParent: Cell = parent
+    var parentIndex = newParent.index
+    while parentIndex != -1 and parentIndex >= newParent.parentHigh:
+      newParent = newParent.parent
+      parentIndex = newParent.index
+
+    if parentIndex < newParent.parentHigh:
+      let prevParent = newParent.nextDirect()
+      return prevParent.getFirstLeaf()
+
+    return cell
+
+proc getNextSelectableLeaf*(cell: Cell): Cell =
+  result = cell.getNextLeaf()
+  while not result.canSelect():
+    let oldResult = result
+    result = result.getNextLeaf()
+    if result == oldResult:
+      break
+
+proc getPreviousSelectableLeaf*(cell: Cell): Cell =
+  result = cell.getPreviousLeaf()
+  while not result.canSelect():
+    let oldResult = result
+    result = result.getPreviousLeaf()
+    if result == oldResult:
+      break
+
+proc nodeRootCell*(cell: Cell): Cell =
+  ### Returns the highest parent cell which has the same node (or itself if the parent has a different node)
+  result = cell
+  while result.parent.isNotNil and result.parent.node == cell.node:
+    result = result.parent
+
+proc nodeRootCellPath*(cell: Cell): tuple[cell: Cell, path: seq[int]] =
+  ### Returns the highest parent cell which has the same node (or itself if the parent has a different node)
+  ### aswell as the path from the parent cell to this cell
+  result.cell = cell
+  result.path = @[]
+
+  while result.cell.parent.isNotNil and result.cell.parent.node == cell.node:
+    let index = result.cell.parent.CollectionCell.indexOf(cell)
+    result.path.add index
+    result.cell = result.cell.parent
+
+proc toCursor*(cell: Cell, start: bool = true): CellCursor =
+  let (_, path) = cell.nodeRootCellPath()
+  result.node = cell.node
+  result.path = path
+  if start:
+    result.column = 0
+  else:
+    result.column = cell.getText().len
+
+method getCursorLeft*(cell: CollectionCell, cursor: CellCursor): CellCursor =
+  if cell.children.len == 0:
+    return cursor
+
+  let childCell = cell.children[0]
+  result.node = childCell.node
+  result.path = if cell.node == childCell.node: cursor.path & 0 else: @[]
+  result.column = 0
+
+method getCursorLeft*(cell: ConstantCell, cursor: CellCursor): CellCursor =
+  if cursor.column > 0:
+    result = cursor
+    dec result.column
+  else:
+    result = cell.getPreviousSelectableLeaf().toCursor(false)
+
+method getCursorLeft*(cell: NodeReferenceCell, cursor: CellCursor): CellCursor =
+  if cursor.column > 0:
+    result = cursor
+    dec result.column
+  else:
+    result = cell.getPreviousSelectableLeaf().toCursor(false)
+
+method getCursorLeft*(cell: AliasCell, cursor: CellCursor): CellCursor =
+  if cursor.column > 0:
+    result = cursor
+    dec result.column
+  else:
+    result = cell.getPreviousSelectableLeaf().toCursor(false)
+
+method getCursorLeft*(cell: PropertyCell, cursor: CellCursor): CellCursor =
+  if cursor.column > 0:
+    result = cursor
+    dec result.column
+  else:
+    result = cell.getPreviousSelectableLeaf().toCursor(false)
+
+method getCursorRight*(cell: ConstantCell, cursor: CellCursor): CellCursor =
+  if cursor.column < cell.text.len:
+    result = cursor
+    inc result.column
+  else:
+    result = cell.getNextSelectableLeaf().toCursor()
+
+method getCursorRight*(cell: NodeReferenceCell, cursor: CellCursor): CellCursor =
+  let text = cell.getText()
+  if cursor.column < text.len:
+    result = cursor
+    inc result.column
+  else:
+    result = cell.getNextSelectableLeaf().toCursor()
+
+method getCursorRight*(cell: AliasCell, cursor: CellCursor): CellCursor =
+  let text = cell.getText()
+  if cursor.column < text.len:
+    result = cursor
+    inc result.column
+  else:
+    result = cell.getNextSelectableLeaf().toCursor()
+
+method getCursorRight*(cell: PropertyCell, cursor: CellCursor): CellCursor =
+  let text = cell.getText()
+  if cursor.column < text.len:
+    result = cursor
+    inc result.column
+  else:
+    result = cell.getNextSelectableLeaf().toCursor()
+
+method getCursorRight*(cell: CollectionCell, cursor: CellCursor): CellCursor =
+  if cell.children.len == 0:
+    return cursor
+
+  let childCell = cell.children[cell.children.high]
+  result.node = childCell.node
+  result.path = if cell.node == childCell.node: cursor.path & cell.children.high else: @[]
+  result.column = 0
+
 proc mode*(self: ModelDocumentEditor): string {.expose("editor.model").} =
   return self.currentMode
 
-proc getContextWithMode(self: ModelDocumentEditor, context: string): string {.expose("editor.model").} =
+proc getContextWithMode*(self: ModelDocumentEditor, context: string): string {.expose("editor.model").} =
   return context & "." & $self.currentMode
+
+proc moveCursorLeft*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  if self.getCellForCursor(self.cursor).getSome(cell):
+    let newCursor = cell.getCursorLeft(self.cursor)
+    if newCursor.node.isNotNil:
+      self.cursor = newCursor
+    echo self.cursor
+
+  self.markDirty()
+
+proc moveCursorRight*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  if self.getCellForCursor(self.cursor).getSome(cell):
+    let newCursor = cell.getCursorRight(self.cursor)
+    if newCursor.node.isNotNil:
+      self.cursor = newCursor
+    echo self.cursor
+
+  self.markDirty()
 
 genDispatcher("editor.model")
 
