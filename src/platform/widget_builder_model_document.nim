@@ -433,6 +433,72 @@ method updateCellWidget*(cell: CollectionCell, app: Editor, widget: WWidget, fra
   else:
     return nil
 
+proc updateSelections(self: ModelDocumentEditor, app: Editor, cell: Cell, cursor: Option[CellCursor], primary: bool, reverse: bool) =
+  let charWidth = app.platform.charWidth
+  let secondaryColor = app.theme.color("inputValidation.warningBorder", color(1, 1, 1)).withAlpha(0.25)
+  let primaryColor = app.theme.color("selection.background", color(1, 1, 1)).withAlpha(0.25)
+
+  # debugf"updateSelections "
+
+  if cell of CollectionCell:
+    let coll = cell.CollectionCell
+
+    var startIndex = if reverse: 1 else: 0
+    var endIndex = if reverse: coll.children.high else: coll.children.high - 1
+    var primaryIndex = if reverse: 0 else: coll.children.high
+    if cursor.getSome(cursor):
+      primaryIndex = cursor.lastIndex
+      if cursor.firstIndex < cursor.lastIndex:
+        startIndex = cursor.firstIndex
+        endIndex = cursor.lastIndex - 1
+      else:
+        startIndex = cursor.lastIndex + 1
+        endIndex = cursor.firstIndex
+
+    # debugf"secondary {startIndex}..{endIndex}"
+    for i in startIndex..endIndex:
+      self.updateSelections(app, coll.children[i], CellCursor.none, false, reverse)
+
+    # debugf"primary {primaryIndex}"
+    self.updateSelections(app, coll.children[primaryIndex], CellCursor.none, primary, reverse)
+
+  elif cursor.getSome(cursor):
+    let widget = self.cellWidgetContext.cellToWidget.getOrDefault(cell.id)
+    if widget.isNotNil:
+      widget.fillBackground = true
+      widget.allowAlpha = true
+      widget.backgroundColor = secondaryColor
+
+      var parent = widget.parent.WPanel
+      if parent.isNotNil:
+        var cursorWidget = WPanel(top: widget.top, bottom: widget.bottom, fillBackground: true, allowAlpha: true, backgroundColor: primaryColor.withAlpha(1))
+
+        let text = cell.getText()
+        if text.len == 0:
+          cursorWidget.left = widget.left
+          cursorWidget.right = cursorWidget.left + 0.2 * charWidth
+        else:
+          let alpha1 = cursor.firstIndex.float / text.len.float
+          let alpha2 = cursor.lastIndex.float / text.len.float
+
+          if cursor.firstIndex != cursor.lastIndex:
+            var selectionWidget = WPanel(top: widget.top, bottom: widget.bottom, fillBackground: true, allowAlpha: true, backgroundColor: primaryColor)
+            selectionWidget.left = widget.left * (1 - min(alpha1, alpha2)) + widget.right * min(alpha1, alpha2)
+            selectionWidget.right = widget.left * (1 - max(alpha1, alpha2)) + widget.right * max(alpha1, alpha2)
+            parent.add selectionWidget
+
+          cursorWidget.left = widget.left * (1 - alpha2) + widget.right * alpha2
+          cursorWidget.right = cursorWidget.left + 0.2 * charWidth
+
+        parent.add cursorWidget
+
+  else:
+    let widget = self.cellWidgetContext.cellToWidget.getOrDefault(cell.id)
+    if widget.isNotNil:
+      widget.fillBackground = true
+      widget.allowAlpha = true
+      widget.backgroundColor = if primary: primaryColor else: secondaryColor
+
 method updateWidget*(self: ModelDocumentEditor, app: Editor, widget: WPanel, frameIndex: int) =
   let lineHeight = app.platform.lineHeight
   let totalLineHeight = app.platform.totalLineHeight
@@ -552,28 +618,8 @@ method updateWidget*(self: ModelDocumentEditor, app: Editor, widget: WPanel, fra
 
     inc i
 
-  let selectionColor = app.theme.color("inputValidation.warningBorder", color(1, 1, 1)).withAlpha(0.25)
-  if self.getCellForCursor(self.cursor).getSome(cell):
-    let widget = self.cellWidgetContext.cellToWidget.getOrDefault(cell.id)
-    if widget.isNotNil:
-      widget.fillBackground = true
-      widget.allowAlpha = true
-      widget.backgroundColor = selectionColor
-
-      var parent = widget.parent.WPanel
-      if parent.isNotNil:
-        var cursorWidget = WPanel(top: widget.top, bottom: widget.bottom, fillBackground: true, allowAlpha: true, backgroundColor: color(1, 1, 1))
-
-        let text = cell.getText()
-        if text.len == 0:
-          cursorWidget.left = widget.left
-          cursorWidget.right = cursorWidget.left + 0.2 * charWidth
-        else:
-          let alpha = self.cursor.column.float / text.len.float
-          cursorWidget.left = widget.left * (1 - alpha) + widget.right * alpha
-          cursorWidget.right = cursorWidget.left + 0.2 * charWidth
-
-        parent.add cursorWidget
+  if self.getCellForCursor(self.cursor, false).getSome(cell):
+    self.updateSelections(app, cell, self.cursor.some, true, self.cursor.firstIndex > self.cursor.lastIndex)
 
   let indent = getOption[float32](app, "model.indent", 20)
   let inlineBlocks = getOption[bool](app, "model.inline-blocks", false)

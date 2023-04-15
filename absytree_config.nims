@@ -355,12 +355,36 @@ addCommand "editor.ast.goto", "<HOME>", "home"
 addCommand "editor.ast.goto", "<END>", "end"
 
 setHandleInputs "editor.model", true
-addCommand "editor.model", "<LEFT>", "move-cursor-left"
-addCommand "editor.model", "<RIGHT>", "move-cursor-right"
-addCommand "editor.model", "<UP>", "move-cursor-up"
-addCommand "editor.model", "<DOWN>", "move-cursor-down"
-addCommand "editor.model", "<C-LEFT>", "move-cursor-left-cell"
-addCommand "editor.model", "<C-RIGHT>", "move-cursor-right-cell"
-addCommand "editor.model", "<BACKSPACE>", "delete-left"
-addCommand "editor.model", "<DELETE>", "delete-right"
-addCommand "editor.model", "<SPACE>", "insert-text-at-cursor", " "
+addCommand("editor.model", "<LEFT>", "move-cursor-left-line")
+addCommand("editor.model", "<RIGHT>", "move-cursor-right-line")
+addCommand("editor.model", "<A-LEFT>", "move-cursor-left")
+addCommand("editor.model", "<A-RIGHT>", "move-cursor-right")
+addCommand("editor.model", "<UP>", "move-cursor-up")
+addCommand("editor.model", "<DOWN>", "move-cursor-down")
+addCommand("editor.model", "<A-UP>", "move-cursor-up")
+addCommand("editor.model", "<A-DOWN>", "move-cursor-down")
+addCommand("editor.model", "<C-LEFT>", "move-cursor-left-cell")
+addCommand("editor.model", "<C-RIGHT>", "move-cursor-right-cell")
+addCommand("editor.model", "<HOME>", "move-cursor-line-start")
+addCommand("editor.model", "<END>", "move-cursor-line-end")
+addCommand("editor.model", "<A-HOME>", "move-cursor-line-start-inline")
+addCommand("editor.model", "<A-END>", "move-cursor-line-end-inline")
+
+addCommand("editor.model", "<S-LEFT>", "move-cursor-left-line", true)
+addCommand("editor.model", "<S-RIGHT>", "move-cursor-right-line", true)
+addCommand("editor.model", "<SA-LEFT>", "move-cursor-left", true)
+addCommand("editor.model", "<SA-RIGHT>", "move-cursor-right", true)
+addCommand("editor.model", "<S-UP>", "move-cursor-up", true)
+addCommand("editor.model", "<S-DOWN>", "move-cursor-down", true)
+addCommand("editor.model", "<SA-UP>", "move-cursor-up", true)
+addCommand("editor.model", "<SA-DOWN>", "move-cursor-down", true)
+addCommand("editor.model", "<SC-LEFT>", "move-cursor-left-cell", true)
+addCommand("editor.model", "<SC-RIGHT>", "move-cursor-right-cell", true)
+addCommand("editor.model", "<S-HOME>", "move-cursor-line-start", true)
+addCommand("editor.model", "<S-END>", "move-cursor-line-end", true)
+addCommand("editor.model", "<SA-HOME>", "move-cursor-line-start-inline", true)
+addCommand("editor.model", "<SA-END>", "move-cursor-line-end-inline", true)
+
+addCommand("editor.model", "<BACKSPACE>", "delete-left")
+addCommand("editor.model", "<DELETE>", "delete-right")
+addCommand("editor.model", "<SPACE>", "insert-text-at-cursor", " ")
