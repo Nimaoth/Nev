@@ -328,6 +328,18 @@ proc newAstNode*(class: NodeClass, id: Option[Id] = Id.none): AstNode =
   result.class = class.id
   result.addMissingFieldsForClass(class)
 
+proc ancestor*(node: AstNode, distance: int): AstNode =
+  result = node
+  for i in 1..distance:
+    result = result.parent
+
+proc depth*(node: AstNode): int =
+  result = 0
+  var temp = node.parent
+  while temp.isNotNil:
+    inc result
+    temp = temp.parent
+
 proc language*(node: AstNode): Language =
   result = if node.model.isNil: nil else: node.model.classesToLanguages.getOrDefault(node.class, nil)
 
@@ -372,7 +384,7 @@ proc addBuilder*(self: CellBuilder, other: CellBuilder) =
   for pair in other.preferredBuilders.pairs:
     self.preferredBuilders[pair[0]] = pair[1]
 
-method dump*(self: Cell): string {.base.} = discard
+method dump*(self: Cell, recurse: bool = false): string {.base.} = discard
 method getChildAt*(self: Cell, index: int, clamp: bool): Option[Cell] {.base.} = Cell.none
 
 method dump(self: EmptyCell): string =

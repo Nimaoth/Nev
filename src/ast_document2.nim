@@ -15,9 +15,18 @@ var project = newProject()
 
 type
   CellCursor* = object
-    node*: AstNode
+    firstIndex*: int
+    lastIndex*: int
     path*: seq[int]
-    column*: int
+    node*: AstNode
+    cell*: Cell
+
+proc `$`*(cursor: CellCursor): string =
+  return fmt"CellCursor({cursor.firstIndex}:{cursor.lastIndex}, {cursor.path}, {cursor.node})"
+
+proc `column=`(cursor: var CellCursor, column: int) =
+  cursor.firstIndex = column
+  cursor.lastIndex = column
 
 type
   UndoOpKind = enum
@@ -77,10 +86,15 @@ proc handleNodeInserted*(doc: ModelDocument, node: AstNode)
 proc handleNodeInserted*(self: ModelDocumentEditor, doc: ModelDocument, node: AstNode)
 proc handleAction(self: ModelDocumentEditor, action: string, arg: string): EventResponse
 proc rebuildCells*(self: ModelDocumentEditor)
-proc getCellForCursor*(self: ModelDocumentEditor, cursor: CellCursor): Option[Cell]
+proc getCellForCursor*(self: ModelDocumentEditor, cursor: CellCursor, resolveCollection: bool = true): Option[Cell]
 proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool
+proc getCursorInLine*(self: ModelDocumentEditor, line: int, xPos: float): Option[CellCursor]
+
 proc toCursor*(cell: Cell, column: int): CellCursor
-proc toCursor*(cell: Cell, start: bool = true): CellCursor
+proc toCursor*(cell: Cell, start: bool): CellCursor
+proc canSelect*(cell: Cell): bool
+proc isVisible*(cell: Cell): bool
+proc selectCursor(a, b: CellCursor, combine: bool): CellCursor
 
 method `$`*(document: ModelDocument): string =
   return document.filename
@@ -368,6 +382,7 @@ method handleDocumentChanged*(self: ModelDocumentEditor) =
   # self.node = self.document.rootNode[0]
   self.rebuildCells()
   self.cursor = CellCursor(node: self.document.model.rootNodes[0], path: @[0])
+  self.cursor.cell = self.nodeToCell.getOrDefault(self.cursor.node.id)
   print self.cursor
   self.markDirty()
 
@@ -449,7 +464,8 @@ proc handleNodeInserted*(self: ModelDocumentEditor, doc: ModelDocument, node: As
 proc handleDocumentChanged*(self: ModelDocumentEditor, document: Document) =
   self.rebuildCells()
   self.cursor = CellCursor(node: self.document.model.rootNodes[0], path: @[0])
-  echo self.cursor
+  self.cursor.cell = self.nodeToCell.getOrDefault(self.cursor.node.id)
+  # echo self.cursor
 
   self.markDirty()
 
@@ -495,12 +511,22 @@ proc getLeafCellContainingPoint*(self: ModelDocumentEditor, cell: Cell, point: V
 
 method handleMousePress*(self: ModelDocumentEditor, button: MouseButton, mousePosWindow: Vec2) =
   # Make mousePos relative to contentBounds
-  let mousePosContent = mousePosWindow - self.lastBounds.xy
+  if button != MouseButton.Left:
+    return
 
   for rootNode in self.document.model.rootNodes:
     let cell = self.nodeToCell.getOrDefault(rootNode.id, nil)
-    if cell.isNotNil and self.getLeafCellContainingPoint(cell, mousePosWindow).getSome(leafCell):
-      self.cursor = leafCell.toCursor()
+    if cell.isNil:
+      continue
+
+    if self.getLeafCellContainingPoint(cell, mousePosWindow).getSome(leafCell):
+      if leafCell.line < self.logicalLines.high:
+        if self.getCursorInLine(leafCell.line, mousePosWindow.x).getSome(newCursor):
+          self.cursor = selectCursor(self.cursor, newCursor, false)
+          self.markDirty()
+          break
+
+      self.cursor = leafCell.toCursor(true)
       self.markDirty()
       break
 
@@ -511,9 +537,18 @@ method handleMouseMove*(self: ModelDocumentEditor, mousePosWindow: Vec2, mousePo
   if MouseButton.Left in buttons:
     for rootNode in self.document.model.rootNodes:
       let cell = self.nodeToCell.getOrDefault(rootNode.id, nil)
-      if cell.isNotNil and self.getLeafCellContainingPoint(cell, mousePosWindow).getSome(leafCell):
+      if cell.isNil:
+        continue
+
+      if self.getLeafCellContainingPoint(cell, mousePosWindow).getSome(leafCell):
+        if leafCell.line < self.logicalLines.high:
+          if self.getCursorInLine(leafCell.line, mousePosWindow.x).getSome(newCursor):
+            self.cursor = selectCursor(self.cursor, newCursor, true)
+            self.markDirty()
+            break
+
         # debugf"line {leafCell.parent.id}|{leafCell.id}: {leafCell.line}"
-        self.cursor = leafCell.toCursor()
+        self.cursor = selectCursor(self.cursor, leafCell.toCursor(true), true)
         self.markDirty()
         break
 
@@ -541,7 +576,8 @@ method createWithDocument*(_: ModelDocumentEditor, document: Document): Document
 
   self.rebuildCells()
   self.cursor = CellCursor(node: self.document.model.rootNodes[0], path: @[0])
-  echo self.cursor
+  self.cursor.cell = self.nodeToCell.getOrDefault(self.cursor.node.id)
+  # echo self.cursor
 
   return self
 
@@ -565,10 +601,17 @@ proc getModelDocumentEditor(wrapper: api.ModelDocumentEditor): Option[ModelDocum
       return editor.ModelDocumentEditor.some
   return ModelDocumentEditor.none
 
-proc getCellForCursor*(self: ModelDocumentEditor, cursor: CellCursor): Option[Cell] =
-  let cell = self.nodeToCell.getOrDefault(cursor.node.id, nil)
-  if cell.isNil:
-    return Cell.none
+proc getCellForCursor*(self: ModelDocumentEditor, cursor: CellCursor, resolveCollection: bool = true): Option[Cell] =
+  # let cell = self.nodeToCell.getOrDefault(cursor.node.id, nil)
+  # if cell.isNil:
+  #   return Cell.none
+  let cell = cursor.cell
+  assert cell.isNotNil
+
+  # debugf"getCellForCursor {cursor}"
+  # defer:
+  #   if result.isSome:
+  #     debugf"{result.get.dump}"
 
   var subCell = cell
   for i in cursor.path:
@@ -577,6 +620,9 @@ proc getCellForCursor*(self: ModelDocumentEditor, cursor: CellCursor): Option[Ce
       subCell = collectionCell.children[i.clamp(0, collectionCell.children.high)]
     else:
       break
+
+  if resolveCollection and subCell of CollectionCell:
+    return subCell.CollectionCell.children[cursor.lastIndex].some
 
   return subCell.some
 
@@ -602,6 +648,151 @@ proc setMode*(self: ModelDocumentEditor, mode: string) {.expose("editor.model").
         Ignored
 
   self.currentMode = mode
+
+proc getCursorInLine*(self: ModelDocumentEditor, line: int, xPos: float): Option[CellCursor] =
+  if line notin 0..self.logicalLines.high:
+    return CellCursor.none
+
+  let line = self.logicalLines[line]
+  if line.len == 0:
+    return CellCursor.none
+
+  let charWidth = self.editor.platform.charWidth
+
+  var closest = 10000000000.0
+  for c in line:
+    if not c.canSelect:
+      continue
+    let widget = self.cellWidgetContext.cellToWidget.getOrDefault(c.id, nil)
+    if widget.isNil:
+      continue
+
+    let xMin = if c.style.isNotNil and c.style.noSpaceLeft:
+      widget.lastBounds.x + charWidth
+    else:
+      widget.lastBounds.x
+
+    let xMax = if c.style.isNotNil and c.style.noSpaceRight:
+      widget.lastBounds.xw - charWidth
+    else:
+      widget.lastBounds.xw
+
+    if xPos < xMin:
+      if result.isNone or xMin - xPos < closest:
+        result = c.toCursor(true).some
+        closest = xMin - xPos
+    elif xPos > xMax:
+      if result.isNone or xPos - xMax < closest:
+        result = c.toCursor(false).some
+        closest = xPos - xMax
+    else:
+      result = c.toCursor(true).some
+
+      let text = c.getText()
+      if text.len > 0:
+        let alpha = (xPos - widget.lastBounds.x) / widget.lastBounds.w
+        result.get.firstIndex = (alpha * text.len.float).round.int
+        result.get.lastIndex = (alpha * text.len.float).round.int
+
+      return
+
+proc getCursorXPos*(self: ModelDocumentEditor, cursor: CellCursor): float =
+  result = 0
+  if self.getCellForCursor(cursor).getSome(cell):
+    let widget = self.cellWidgetContext.cellToWidget.getOrDefault(cell.id, nil)
+    if widget.isNotNil:
+      let text = cell.getText()
+      if text.len == 0:
+        result = widget.lastBounds.x
+      else:
+        let alpha = cursor.lastIndex.float / text.len.float
+        result = widget.lastBounds.x * (1 - alpha) + widget.lastBounds.xw * alpha
+
+proc getPreviousCellInLine*(self: ModelDocumentEditor, cell: Cell): Cell =
+  # defer:
+  #   debugf"getPreviousCellInLine {cell.dump} -> {result.dump}"
+
+  if cell.line < 0 and cell.line > self.logicalLines.high:
+    return cell
+
+  let line = self.logicalLines[cell.line]
+
+  var index = -1
+  for i, c in line:
+    if c.isDecendant(cell) and index == -1:
+      index = i
+    elif c == cell:
+      index = i
+      break
+
+  if index == -1:
+    index = 0
+
+  # echo index
+
+  if index == 0:
+    # Last cell in line, find next cell on next line
+    for k in 0..(cell.line - 1):
+      let i = cell.line - 1 - k
+      if self.logicalLines[i].len > 0:
+        return self.logicalLines[i][self.logicalLines[i].high]
+    return cell
+  else:
+    return line[index - 1]
+
+proc getNextCellInLine*(self: ModelDocumentEditor, cell: Cell): Cell =
+  # defer:
+  #   debugf"getNextCellInLine {cell.dump} -> {result.dump}"
+
+  if cell.line < 0 and cell.line > self.logicalLines.high:
+    return cell
+
+  let line = self.logicalLines[cell.line]
+
+  var index = line.high
+  for i, c in line:
+    if c.isDecendant(cell):
+      index = i
+    elif c == cell:
+      index = i
+      break
+
+  if index >= line.high:
+    # Last cell in line, find next cell on next line
+    for i in (cell.line + 1)..self.logicalLines.high:
+      if self.logicalLines[i].len > 0:
+        return self.logicalLines[i][0]
+    return cell
+  else:
+    return line[index + 1]
+
+proc getPreviousInLineWhere*(self: ModelDocumentEditor, cell: Cell, predicate: proc(cell: Cell): bool): Cell =
+  result = self.getPreviousCellInLine(cell)
+  while not predicate(result):
+    let oldResult = result
+    result = self.getPreviousCellInLine(result)
+    if result == oldResult:
+      break
+
+proc getNextInLineWhere*(self: ModelDocumentEditor, cell: Cell, predicate: proc(cell: Cell): bool): Cell =
+  result = self.getNextCellInLine(cell)
+  while not predicate(result):
+    let oldResult = result
+    result = self.getNextCellInLine(result)
+    if result == oldResult:
+      break
+
+proc getPreviousSelectableInLine*(self: ModelDocumentEditor, cell: Cell): Cell =
+  return self.getPreviousInLineWhere(cell, canSelect)
+
+proc getNextSelectableInLine*(self: ModelDocumentEditor, cell: Cell): Cell =
+  return self.getNextInLineWhere(cell, canSelect)
+
+proc getPreviousVisibleInLine*(self: ModelDocumentEditor, cell: Cell): Cell =
+  return self.getPreviousInLineWhere(cell, isVisible)
+
+proc getNextVisibleInLine*(self: ModelDocumentEditor, cell: Cell): Cell =
+  return self.getNextInLineWhere(cell, isVisible)
 
 method getCursorLeft*(cell: Cell, cursor: CellCursor): CellCursor {.base.} = discard
 method getCursorRight*(cell: Cell, cursor: CellCursor): CellCursor {.base.} = discard
@@ -726,11 +917,16 @@ proc getPreviousVisibleLeaf*(cell: Cell): Cell =
 proc getNextVisibleLeaf*(cell: Cell): Cell =
   return cell.getNextLeafWhere(isVisible)
 
-proc nodeRootCell*(cell: Cell): Cell =
+proc nodeRootCell*(cell: Cell, targetNode: Option[AstNode] = AstNode.none): Cell =
   ### Returns the highest parent cell which has the same node (or itself if the parent has a different node)
   result = cell
-  while result.parent.isNotNil and result.parent.node == cell.node:
-    result = result.parent
+
+  if targetNode.getSome(targetNode):
+    while result.parent.isNotNil and (result.node != targetNode or result.parent.node == cell.node):
+      result = result.parent
+  else:
+    while result.parent.isNotNil and result.parent.node == cell.node:
+      result = result.parent
 
 proc nodeRootCellPath*(cell: Cell): tuple[cell: Cell, path: seq[int]] =
   ### Returns the highest parent cell which has the same node (or itself if the parent has a different node)
@@ -744,14 +940,16 @@ proc nodeRootCellPath*(cell: Cell): tuple[cell: Cell, path: seq[int]] =
     result.cell = result.cell.parent
 
 proc toCursor*(cell: Cell, column: int): CellCursor =
-  let (_, path) = cell.nodeRootCellPath()
+  let (rootCell, path) = cell.nodeRootCellPath()
   result.node = cell.node
+  result.cell = rootCell
   result.path = path
   result.column = clamp(column, cell.editableLow, cell.editableHigh + 1)
 
-proc toCursor*(cell: Cell, start: bool = true): CellCursor =
-  let (_, path) = cell.nodeRootCellPath()
+proc toCursor*(cell: Cell, start: bool): CellCursor =
+  let (rootCell, path) = cell.nodeRootCellPath()
   result.node = cell.node
+  result.cell = rootCell
   result.path = path
   if start:
     result.column = cell.editableLow
@@ -765,63 +963,72 @@ method getCursorLeft*(cell: CollectionCell, cursor: CellCursor): CellCursor =
   let childCell = cell.children[0]
   result.node = childCell.node
   result.path = if cell.node == childCell.node: cursor.path & 0 else: @[]
+  result.cell = cell
   result.column = 0
 
 method getCursorLeft*(cell: ConstantCell, cursor: CellCursor): CellCursor =
-  if cursor.column > cell.editableLow:
+  if cursor.lastIndex > cell.editableLow:
     result = cursor
-    dec result.column
+    dec result.lastIndex
+    result.firstIndex = result.lastIndex
   else:
     result = cell.getPreviousSelectableLeaf().toCursor(false)
 
 method getCursorLeft*(cell: NodeReferenceCell, cursor: CellCursor): CellCursor =
-  if cursor.column > cell.editableLow:
+  if cursor.lastIndex > cell.editableLow:
     result = cursor
-    dec result.column
+    dec result.lastIndex
+    result.firstIndex = result.lastIndex
   else:
     result = cell.getPreviousSelectableLeaf().toCursor(false)
 
 method getCursorLeft*(cell: AliasCell, cursor: CellCursor): CellCursor =
-  if cursor.column > cell.editableLow:
+  if cursor.lastIndex > cell.editableLow:
     result = cursor
-    dec result.column
+    dec result.lastIndex
+    result.firstIndex = result.lastIndex
   else:
     result = cell.getPreviousSelectableLeaf().toCursor(false)
 
 method getCursorLeft*(cell: PropertyCell, cursor: CellCursor): CellCursor =
-  if cursor.column > cell.editableLow:
+  if cursor.lastIndex > cell.editableLow:
     result = cursor
-    dec result.column
+    dec result.lastIndex
+    result.firstIndex = result.lastIndex
   else:
     result = cell.getPreviousSelectableLeaf().toCursor(false)
 
 method getCursorRight*(cell: ConstantCell, cursor: CellCursor): CellCursor =
-  if cursor.column <= cell.editableHigh:
+  if cursor.lastIndex <= cell.editableHigh:
     result = cursor
-    inc result.column
+    inc result.lastIndex
+    result.firstIndex = result.lastIndex
   else:
-    result = cell.getNextSelectableLeaf().toCursor()
+    result = cell.getNextSelectableLeaf().toCursor(true)
 
 method getCursorRight*(cell: NodeReferenceCell, cursor: CellCursor): CellCursor =
-  if cursor.column <= cell.editableHigh:
+  if cursor.lastIndex <= cell.editableHigh:
     result = cursor
-    inc result.column
+    inc result.lastIndex
+    result.firstIndex = result.lastIndex
   else:
-    result = cell.getNextSelectableLeaf().toCursor()
+    result = cell.getNextSelectableLeaf().toCursor(true)
 
 method getCursorRight*(cell: AliasCell, cursor: CellCursor): CellCursor =
-  if cursor.column <= cell.editableHigh:
+  if cursor.lastIndex <= cell.editableHigh:
     result = cursor
-    inc result.column
+    inc result.lastIndex
+    result.firstIndex = result.lastIndex
   else:
-    result = cell.getNextSelectableLeaf().toCursor()
+    result = cell.getNextSelectableLeaf().toCursor(true)
 
 method getCursorRight*(cell: PropertyCell, cursor: CellCursor): CellCursor =
-  if cursor.column <= cell.editableHigh:
+  if cursor.lastIndex <= cell.editableHigh:
     result = cursor
-    inc result.column
+    inc result.lastIndex
+    result.firstIndex = result.lastIndex
   else:
-    result = cell.getNextSelectableLeaf().toCursor()
+    result = cell.getNextSelectableLeaf().toCursor(true)
 
 method getCursorRight*(cell: CollectionCell, cursor: CellCursor): CellCursor =
   if cell.children.len == 0:
@@ -830,7 +1037,124 @@ method getCursorRight*(cell: CollectionCell, cursor: CellCursor): CellCursor =
   let childCell = cell.children[cell.children.high]
   result.node = childCell.node
   result.path = if cell.node == childCell.node: cursor.path & cell.children.high else: @[]
+  result.cell = cell
   result.column = 0
+
+proc combineCursors(a, b: CellCursor): CellCursor =
+  # defer:
+    # echo result
+
+  if a.node == b.node:
+    result.node = a.node
+    result.cell = a.cell
+    if a.path == b.path:
+      # debugf"same node and path {a.firstIndex}:{a.lastIndex}, {b.firstIndex}:{b.lastIndex}, {a.path}, {a.node}"
+      result.path = a.path
+      result.firstIndex = a.firstIndex
+      result.lastIndex = b.lastIndex
+    elif a.path.len == 0 or b.path.len == 0:
+      # debugf"same node one path empty {a.firstIndex}:{a.lastIndex}, {b.firstIndex}:{b.lastIndex}, {a.path}, {b.path}, {a.node}"
+      result.path = @[]
+      result.firstIndex = 0
+      result.lastIndex = 0
+
+      if a.path.len == 0 and b.path.len > 0:
+        result.firstIndex = a.firstIndex
+        # result.firstIndex = child.cell.ancestor(result.cell).index
+        result.lastIndex = b.path[0]
+      elif a.path.len > 0 and b.path.len == 0:
+        result.firstIndex = a.path[0]
+        result.lastIndex = b.lastIndex
+        # result.lastIndex = child.cell.ancestor(result.cell).index
+
+    else:
+      # debugf"same node diff path {a.firstIndex}:{a.lastIndex}, {b.firstIndex}:{b.lastIndex}, {a.path}, {b.path}, {a.node}"
+      var firstDifference = 0
+      for i in 0..min(a.path.high, b.path.high):
+        if a.path[i] != b.path[i]:
+          firstDifference = i
+          break
+
+      result.path = a.path[0..<firstDifference]
+      result.firstIndex = a.path[firstDifference]
+      result.lastIndex = b.path[firstDifference]
+
+  else:
+    # debugf"different node {a.firstIndex}:{a.lastIndex}, {b.firstIndex}:{b.lastIndex}, {a.path}, {b.path}, {a.node}, {b.node}"
+    let depthA = a.node.depth
+    let depthB = b.node.depth
+
+    # Selector ancestors of a.node and b.node so they are at the same depth
+    var node1 = a.node
+    var node2 = b.node
+    var child = a   # Either a or b, the one lower in the tree
+    if depthA < depthB:
+      child = b
+      node2 = node2.ancestor(depthB - depthA)
+    elif depthA > depthB:
+      child = a
+      node1 = node1.ancestor(depthA - depthB)
+
+    # debugf"same depth: {node1}, {node2}, {child.node}"
+
+    if node1 == node2:
+      # After moving one node up they node are the same, so one was the child of the other
+      result.node = node1
+      result.cell = if depthA < depthB: a.cell else: b.cell
+      # result.cell = a.cell.nodeRootCell(result.node.some)
+
+      result.path = @[]
+
+      let childIndex = child.cell.ancestor(result.cell).index
+
+      if depthA < depthB:
+        # b is child
+        # echo "b is child"
+        result.firstIndex = if a.path.len > 0: a.path[0] else: a.firstIndex
+        result.lastIndex = childIndex
+      elif depthA > depthB:
+        # b is child
+        # echo "a is child"
+        result.firstIndex = childIndex
+        result.lastIndex = if b.path.len > 0: b.path[0] else: b.lastIndex
+
+      # if a.path.len == 0 and b.path.len > 0:
+      #   # result.firstIndex = a.firstIndex
+      #   result.firstIndex =
+      #   result.lastIndex = b.path[0]
+      # elif a.path.len > 0 and b.path.len == 0:
+      #   result.firstIndex = a.path[0]
+      #   # result.lastIndex = b.lastIndex
+      #   result.lastIndex = child.cell.ancestor(result.cell).index
+      else:
+        result.firstIndex = 0
+        result.lastIndex = result.cell.high
+      return
+
+    # Find common parent of node1 and node2, assuming they are at the same depth
+    while node1.parent != node2.parent and node1.parent.isNotNil and node2.parent.isNotNil:
+      node1 = node1.parent
+      node2 = node2.parent
+
+    # debugf"common parent: {node1}, {node2}, {node1.parent}, {node2.parent}"
+
+    if node1.parent == node2.parent:
+      result.node = node1.parent
+      result.cell = a.cell.nodeRootCell(result.node.some)
+      result.path = @[]
+      # echo a.cell.dump
+      # echo b.cell.dump
+      # echo result.cell.dump true
+      result.firstIndex = a.cell.ancestor(result.cell).index
+      result.lastIndex = b.cell.ancestor(result.cell).index
+      # result.lastIndex = result.cell.high
+    else:
+      return b
+
+proc selectCursor(a, b: CellCursor, combine: bool): CellCursor =
+  if combine:
+    return combineCursors(a, b)
+  return b
 
 method handleDeleteLeft*(cell: Cell, column: int): CellCursor {.base.} = discard
 method handleDeleteRight*(cell: Cell, column: int): CellCursor {.base.} = discard
@@ -855,70 +1179,162 @@ proc mode*(self: ModelDocumentEditor): string {.expose("editor.model").} =
 proc getContextWithMode*(self: ModelDocumentEditor, context: string): string {.expose("editor.model").} =
   return context & "." & $self.currentMode
 
-proc moveCursorLeft*(self: ModelDocumentEditor) {.expose("editor.model").} =
+proc moveCursorLeft*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
   if self.getCellForCursor(self.cursor).getSome(cell):
     let newCursor = cell.getCursorLeft(self.cursor)
     if newCursor.node.isNotNil:
-      self.cursor = newCursor
+      self.cursor = selectCursor(self.cursor, newCursor, select)
     # echo self.cursor
 
   self.markDirty()
 
-proc moveCursorRight*(self: ModelDocumentEditor) {.expose("editor.model").} =
+proc moveCursorRight*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
   if self.getCellForCursor(self.cursor).getSome(cell):
     let newCursor = cell.getCursorRight(self.cursor)
     if newCursor.node.isNotNil:
-      self.cursor = newCursor
+      self.cursor = selectCursor(self.cursor, newCursor, select)
     # echo self.cursor
 
   self.markDirty()
 
-proc moveCursorUp*(self: ModelDocumentEditor) {.expose("editor.model").} =
+proc moveCursorLeftLine*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
   if self.getCellForCursor(self.cursor).getSome(cell):
-    let newCursor = cell.getCursorLeft(self.cursor)
-    if newCursor.node.isNotNil:
-      self.cursor = newCursor
-    # echo self.cursor
+    var newCursor = cell.getCursorLeft(self.cursor)
+    # echo newCursor
+    if newCursor.node == self.cursor.node:
+      # echo "a"
+      self.cursor = selectCursor(self.cursor, newCursor, select)
+    else:
+      # self.cursor = selectCursor(self.cursor, self.getPreviousSelectableInLine(cell).toCursor(false), select)
+      # echo "b"
+      let nextCell = self.getPreviousSelectableInLine(cell)
+      # echo nextCell.dump
+      newCursor = nextCell.toCursor(false)
+      # echo newCursor
+      self.cursor = selectCursor(self.cursor, newCursor, select)
 
   self.markDirty()
 
-proc moveCursorDown*(self: ModelDocumentEditor) {.expose("editor.model").} =
+proc moveCursorRightLine*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
   if self.getCellForCursor(self.cursor).getSome(cell):
-    let newCursor = cell.getCursorRight(self.cursor)
-    if newCursor.node.isNotNil:
-      self.cursor = newCursor
-    # echo self.cursor
+    var newCursor = cell.getCursorRight(self.cursor)
+    # echo newCursor
+    if newCursor.node == self.cursor.node:
+      # echo "a"
+      self.cursor = selectCursor(self.cursor, newCursor, select)
+    else:
+      # echo "b"
+      let nextCell = self.getNextSelectableInLine(cell)
+      # echo nextCell.dump
+      newCursor = nextCell.toCursor(true)
+      # echo newCursor
+      self.cursor = selectCursor(self.cursor, newCursor, select)
+  self.markDirty()
+
+proc moveCursorLineStart*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
+  if self.getCellForCursor(self.cursor).getSome(cell):
+    if cell.line >= 0 and cell.line <= self.logicalLines.high and self.logicalLines[cell.line].len > 0:
+      let newCursor = self.logicalLines[cell.line][0].toCursor(true)
+      self.cursor = selectCursor(self.cursor, newCursor, select)
+  self.markDirty()
+
+proc moveCursorLineEnd*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
+  if self.getCellForCursor(self.cursor).getSome(cell):
+    if cell.line >= 0 and cell.line <= self.logicalLines.high and self.logicalLines[cell.line].len > 0:
+      let newCursor = self.logicalLines[cell.line][self.logicalLines[cell.line].high].toCursor(false)
+      self.cursor = selectCursor(self.cursor, newCursor, select)
+  self.markDirty()
+
+proc moveCursorLineStartInline*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
+  if self.getCellForCursor(self.cursor).getSome(cell):
+    var parent = cell.closestInlineAncestor()
+
+    if parent.isNil:
+      self.moveCursorLineStart()
+      return
+
+    var prevCell = cell
+    while true:
+      let currentCell = self.getPreviousSelectableInLine(prevCell)
+      if currentCell.line != prevCell.line:
+        break
+      if not currentCell.hasAncestor(parent):
+        break
+
+      prevCell = currentCell
+
+    let newCursor = prevCell.toCursor(true)
+    self.cursor = selectCursor(self.cursor, newCursor, select)
 
   self.markDirty()
 
-proc moveCursorLeftCell*(self: ModelDocumentEditor) {.expose("editor.model").} =
+proc moveCursorLineEndInline*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
+  if self.getCellForCursor(self.cursor).getSome(cell):
+    var parent = cell.closestInlineAncestor()
+
+    if parent.isNil:
+      self.moveCursorLineEnd()
+      return
+
+    var prevCell = cell
+    while true:
+      let currentCell = self.getNextSelectableInLine(prevCell)
+      if currentCell.line != prevCell.line:
+        break
+      if not currentCell.hasAncestor(parent):
+        break
+
+      prevCell = currentCell
+
+    let newCursor = prevCell.toCursor(false)
+    self.cursor = selectCursor(self.cursor, newCursor, select)
+
+  self.markDirty()
+
+proc moveCursorUp*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
+  if self.getCellForCursor(self.cursor).getSome(cell):
+    if cell.line > 0 and cell.line <= self.logicalLines.high:
+      if self.getCursorInLine(cell.line - 1, self.getCursorXPos(self.cursor)).getSome(newCursor):
+        self.cursor = selectCursor(self.cursor, newCursor, select)
+
+  self.markDirty()
+
+proc moveCursorDown*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
+  if self.getCellForCursor(self.cursor).getSome(cell):
+    if cell.line < self.logicalLines.high:
+      if self.getCursorInLine(cell.line + 1, self.getCursorXPos(self.cursor)).getSome(newCursor):
+        self.cursor = selectCursor(self.cursor, newCursor, select)
+
+  self.markDirty()
+
+proc moveCursorLeftCell*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
   if self.getCellForCursor(self.cursor).getSome(cell):
     let newCursor = cell.getPreviousSelectableLeaf().toCursor(false)
     if newCursor.node.isNotNil:
-      self.cursor = newCursor
+      self.cursor = selectCursor(self.cursor, newCursor, select)
     # echo self.cursor
 
   self.markDirty()
 
-proc moveCursorRightCell*(self: ModelDocumentEditor) {.expose("editor.model").} =
+proc moveCursorRightCell*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
   if self.getCellForCursor(self.cursor).getSome(cell):
-    let newCursor = cell.getNextSelectableLeaf().toCursor()
+    let newCursor = cell.getNextSelectableLeaf().toCursor(true)
     if newCursor.node.isNotNil:
-      self.cursor = newCursor
+      self.cursor = selectCursor(self.cursor, newCursor, select)
     # echo self.cursor
 
   self.markDirty()
 
 proc deleteLeft*(self: ModelDocumentEditor) {.expose("editor.model").} =
   if self.getCellForCursor(self.cursor).getSome(cell):
-    if self.cursor.column <= cell.editableLow:
+    if self.cursor.lastIndex <= cell.editableLow:
       let prev = cell.getPreviousVisibleLeaf()
       if prev != cell:
         let newCursor = prev.handleDeleteLeft(prev.high)
         if newCursor.node.isNotNil:
           self.cursor = newCursor
     else:
-      let newCursor = cell.handleDeleteLeft(self.cursor.column)
+      let newCursor = cell.handleDeleteLeft(self.cursor.lastIndex)
       if newCursor.node.isNotNil:
         self.cursor = newCursor
 
@@ -926,14 +1342,14 @@ proc deleteLeft*(self: ModelDocumentEditor) {.expose("editor.model").} =
 
 proc deleteRight*(self: ModelDocumentEditor) {.expose("editor.model").} =
   if self.getCellForCursor(self.cursor).getSome(cell):
-    if self.cursor.column >= cell.editableHigh + 1:
+    if self.cursor.lastIndex >= cell.editableHigh + 1:
       let prev = cell.getNextVisibleLeaf()
       if prev != cell:
         let newCursor = prev.handleDeleteRight(0)
         if newCursor.node.isNotNil:
           self.cursor = newCursor
     else:
-      let newCursor = cell.handleDeleteRight(self.cursor.column)
+      let newCursor = cell.handleDeleteRight(self.cursor.lastIndex)
       if newCursor.node.isNotNil:
         self.cursor = newCursor
 
@@ -941,9 +1357,9 @@ proc deleteRight*(self: ModelDocumentEditor) {.expose("editor.model").} =
 
 proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool {.expose("editor.model").} =
   if self.getCellForCursor(self.cursor).getSome(cell):
-    let newColumn = cell.insertText(self.cursor.column, input)
-    if newColumn != self.cursor.column:
-      self.cursor.column = newColumn
+    let newColumn = cell.insertText(self.cursor.lastIndex, input)
+    if newColumn != self.cursor.lastIndex:
+      self.cursor.lastIndex = newColumn
       self.markDirty()
       return true
   return false

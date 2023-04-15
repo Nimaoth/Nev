@@ -25,6 +25,33 @@ type
 method getText*(cell: Cell): string {.base.} = discard
 method setText*(cell: Cell, text: string) {.base.} = discard
 
+proc hasAncestor*(cell: Cell, ancestor: Cell): bool =
+  if cell.parent == ancestor:
+    return true
+  if cell.parent.isNotNil:
+    return cell.parent.hasAncestor(ancestor)
+  return false
+
+proc closestInlineAncestor*(cell: Cell): Cell =
+  result = cell.parent
+  while result.isNotNil and not result.CollectionCell.inline:
+    result = result.parent
+
+proc ancestor*(cell: Cell, targetParent: Cell): Cell =
+  ### Returns the ancestor of cell which has targetParent as it's parent
+  result = cell
+  while result.parent.isNotNil and result.parent != targetParent:
+    result = result.parent
+
+proc isDecendant*(cell: Cell, ancestor: Cell): bool =
+  ### Returns true if cell has ancestor in it's parent chain
+  result = false
+  var temp = cell
+  while temp.isNotNil:
+    if temp == ancestor:
+      return true
+    temp = temp.parent
+
 proc add*(self: CollectionCell, cell: Cell) =
   if cell.id == idNone():
     cell.id = newId()
@@ -104,8 +131,7 @@ proc insertText*(cell: Cell, index: int, text: string): int =
 
 method setText*(cell: CollectionCell, text: string) = discard
 
-method setText*(cell: ConstantCell, text: string) =
-  cell.text = text
+method setText*(cell: ConstantCell, text: string) = discard
 
 method setText*(cell: NodeReferenceCell, text: string) =
   # @todo
@@ -163,23 +189,25 @@ method getText*(cell: AliasCell): string =
   else:
     return $cell.node.class
 
-method dump(self: CollectionCell): string =
-  result.add &"CollectionCell(inline: {self.inline}, layout: {self.layout}): {self.node}\n"
-  if self.filled or self.fillChildren.isNil:
-    for c in self.children:
-      result.add c.dump.indent(4)
-      result.add "\n"
-  else:
-    result.add "...".indent(4)
+method dump(self: CollectionCell, recurse: bool = false): string =
+  result = fmt"CollectionCell(inline: {self.inline}, layout: {self.layout}): {self.node}"
+  if recurse:
+    result.add "\n"
+    if self.filled or self.fillChildren.isNil:
+      for c in self.children:
+        result.add c.dump.indent(4)
+        result.add "\n"
+    else:
+      result.add "...".indent(4)
 
-method dump(self: ConstantCell): string =
+method dump(self: ConstantCell, recurse: bool = false): string =
   result.add fmt"ConstantCell(node: {self.node.id}, text: {self.text})"
 
-method dump(self: PropertyCell): string =
+method dump(self: PropertyCell, recurse: bool = false): string =
   result.add fmt"PropertyCell(node: {self.node.id}, property: {self.property})"
 
-method dump(self: NodeReferenceCell): string =
+method dump(self: NodeReferenceCell, recurse: bool = false): string =
   result.add fmt"NodeReferenceCell(node: {self.node.id}, target: {self.reference}, target property: {self.property})"
 
-method dump(self: AliasCell): string =
+method dump(self: AliasCell, recurse: bool = false): string =
   result.add fmt"AliasCell(node: {self.node.id})"
