@@ -26,6 +26,14 @@ type
 method getText*(cell: Cell): string {.base.} = discard
 method setText*(cell: Cell, text: string) {.base.} = discard
 
+proc currentText*(cell: Cell): string =
+  if cell.displayText.isNone:
+    cell.displayText = cell.getText.some
+  return cell.displayText.get
+
+proc `currentText=`*(cell: Cell, text: string) =
+  cell.displayText = text.some
+
 proc hasAncestor*(cell: Cell, ancestor: Cell): bool =
   if cell.parent == ancestor:
     return true
@@ -84,7 +92,7 @@ proc low*(self: Cell): int =
   if self of CollectionCell:
     return self.CollectionCell.children.low
   else:
-    return self.getText().low
+    return self.currentText.low
 
 proc editableLow*(self: Cell): int =
   if self.style.isNotNil and self.style.noSpaceLeft:
@@ -95,7 +103,7 @@ proc high*(self: Cell): int =
   if self of CollectionCell:
     return self.CollectionCell.children.high
   else:
-    return self.getText().high
+    return self.currentText.high
 
 proc editableHigh*(self: Cell): int =
   if self.style.isNotNil and self.style.noSpaceRight:
@@ -123,50 +131,46 @@ method getChildAt*(self: CollectionCell, index: int, clamp: bool): Option[Cell] 
   return self.children[index].some
 
 proc replaceText*(cell: Cell, slice: Slice[int], text: string): int =
-  var currentText = cell.getText()
+  var newText = cell.currentText
   if slice.b > slice.a:
-    currentText.delete(slice.a..<slice.b)
-  currentText.insert(text, slice.a)
-  cell.setText(currentText)
-  if cell.getText() == currentText:
-    return slice.a + text.len
-  return slice.b
+    newText.delete(slice.a..<slice.b)
+  newText.insert(text, slice.a)
+  cell.setText(newText)
+  return slice.a + text.len
 
 proc insertText*(cell: Cell, index: int, text: string): int =
-  var currentText = cell.getText()
-  currentText.insert(text, index)
-  cell.setText(currentText)
-  if cell.getText() == currentText:
-    return index + text.len
-  return index
+  var newText = cell.currentText
+  newText.insert(text, index)
+  cell.setText(newText)
+  return index + text.len
 
-method setText*(cell: CollectionCell, text: string) = discard
+method setText*(cell: CollectionCell, text: string) = cell.currentText = text
 
-method setText*(cell: ConstantCell, text: string) = discard
+method setText*(cell: ConstantCell, text: string) = cell.currentText = text
 
 method setText*(cell: NodeReferenceCell, text: string) =
-  # @todo
-  discard
+  cell.currentText = text
 
 method setText*(cell: PropertyCell, text: string) =
-  if cell.node.propertyDescription(cell.property).getSome(prop):
-    case prop.typ
-    of String:
-      cell.node.setProperty(cell.property, PropertyValue(kind: PropertyType.String, stringValue: text))
-    of Int:
-      try:
-        let intValue = text.parseInt
-        cell.node.setProperty(cell.property, PropertyValue(kind: PropertyType.Int, intValue: intValue))
-      except CatchableError:
-        discard
-    of Bool:
-      try:
-        let boolValue = text.parseBool
-        cell.node.setProperty(cell.property, PropertyValue(kind: PropertyType.Bool, boolValue: boolValue))
-      except CatchableError:
-        discard
+  cell.currentText = text
+  try:
+    if cell.node.propertyDescription(cell.property).getSome(prop):
 
-method setText*(cell: AliasCell, text: string) = discard
+      case prop.typ
+      of String:
+        cell.node.setProperty(cell.property, PropertyValue(kind: PropertyType.String, stringValue: cell.currentText))
+      of Int:
+        let intValue = cell.currentText.parseInt
+        cell.node.setProperty(cell.property, PropertyValue(kind: PropertyType.Int, intValue: intValue))
+      of Bool:
+        let boolValue = cell.currentText.parseBool
+        cell.node.setProperty(cell.property, PropertyValue(kind: PropertyType.Bool, boolValue: boolValue))
+
+  except CatchableError:
+    discard
+
+method setText*(cell: AliasCell, text: string) =
+  cell.currentText = text
 
 method getText*(cell: CollectionCell): string = "<>"
 
@@ -222,6 +226,17 @@ method dump(self: NodeReferenceCell, recurse: bool = false): string =
 
 method dump(self: AliasCell, recurse: bool = false): string =
   result.add fmt"AliasCell(node: {self.node.id})"
+
+proc fill*(self: Cell) =
+  if self.fillChildren.isNil or self.filled:
+    return
+  self.fillChildren()
+  self.filled = true
+
+proc expand*(self: Cell, path: openArray[int]) =
+  self.fill()
+  if path.len > 0 and self.getChildAt(path[0], true).getSome(child):
+    child.expand path[1..^1]
 
 proc findBuilder(self: CellBuilder, class: NodeClass, preferred: Id): Option[CellBuilderFunction] =
   if not self.builders.contains(class.id):

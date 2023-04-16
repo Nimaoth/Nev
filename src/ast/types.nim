@@ -1,6 +1,7 @@
 
 import std/[options, algorithm, strutils, hashes, enumutils, json, jsonutils, tables, macros, sequtils, strformat]
 import fusion/matching
+import chroma
 import util, id, macro_utils, custom_logger
 import print
 
@@ -74,6 +75,7 @@ type
     parent*: Cell
     node*: AstNode
     line*: int
+    displayText*: Option[string]
     fillChildren*: proc(): void
     filled*: bool
     isVisible*: CellIsVisiblePredicate
@@ -83,6 +85,11 @@ type
     decreaseIndentBefore*: bool
     increaseIndentAfter*: bool
     decreaseIndentAfter*: bool
+    fontSizeIncreasePercent*: float
+    themeForegroundColors*: seq[string]
+    themeBackgroundColors*: seq[string]
+    foregroundColor*: Color
+    backgroundColor*: Color
 
   EmptyCell* = ref object of Cell
     discard
@@ -393,17 +400,6 @@ method getChildAt*(self: Cell, index: int, clamp: bool): Option[Cell] {.base.} =
 
 method dump(self: EmptyCell): string =
   result.add fmt"EmptyCell(node: {self.node.id})"
-
-proc fill*(self: Cell) =
-  if self.fillChildren.isNil or self.filled:
-    return
-  self.fillChildren()
-  self.filled = true
-
-proc expand*(self: Cell, path: openArray[int]) =
-  self.fill()
-  if path.len > 0 and self.getChildAt(path[0], true).getSome(child):
-    child.expand path[1..^1]
 
 proc `$`*(node: AstNode, recursive: bool = false): string =
   let class = node.nodeClass

@@ -261,59 +261,59 @@ proc modeScript2_8120189966*(self: AstDocumentEditor): string =
 proc getContextWithModeScript2_8120190022*(self: AstDocumentEditor;
     context: string): string =
   discard
-proc scrollScript2_8422174324*(self: ModelDocumentEditor; amount: float32) =
+proc scrollScript2_8422174585*(self: ModelDocumentEditor; amount: float32) =
   discard
-proc setModeScript22_8422174433*(self: ModelDocumentEditor; mode: string) =
+proc setModeScript22_8422174694*(self: ModelDocumentEditor; mode: string) =
   discard
-proc modeScript22_8422175588*(self: ModelDocumentEditor): string =
+proc modeScript22_8422175865*(self: ModelDocumentEditor): string =
   discard
-proc getContextWithModeScript22_8422175644*(self: ModelDocumentEditor;
+proc getContextWithModeScript22_8422175921*(self: ModelDocumentEditor;
     context: string): string =
   discard
-proc moveCursorLeftScript_8422175707*(self: ModelDocumentEditor;
+proc moveCursorLeftScript_8422175984*(self: ModelDocumentEditor;
                                      select: bool = false) =
   discard
-proc moveCursorRightScript_8422175794*(self: ModelDocumentEditor;
+proc moveCursorRightScript_8422176071*(self: ModelDocumentEditor;
                                       select: bool = false) =
   discard
-proc moveCursorLeftLineScript_8422175881*(self: ModelDocumentEditor;
+proc moveCursorLeftLineScript_8422176158*(self: ModelDocumentEditor;
     select: bool = false) =
   discard
-proc moveCursorRightLineScript_8422175970*(self: ModelDocumentEditor;
+proc moveCursorRightLineScript_8422176247*(self: ModelDocumentEditor;
     select: bool = false) =
   discard
-proc moveCursorLineStartScript_8422176059*(self: ModelDocumentEditor;
+proc moveCursorLineStartScript_8422176336*(self: ModelDocumentEditor;
     select: bool = false) =
   discard
-proc moveCursorLineEndScript_8422176149*(self: ModelDocumentEditor;
+proc moveCursorLineEndScript_8422176426*(self: ModelDocumentEditor;
                                         select: bool = false) =
   discard
-proc moveCursorLineStartInlineScript_8422176242*(self: ModelDocumentEditor;
+proc moveCursorLineStartInlineScript_8422176519*(self: ModelDocumentEditor;
     select: bool = false) =
   discard
-proc moveCursorLineEndInlineScript_8422176332*(self: ModelDocumentEditor;
+proc moveCursorLineEndInlineScript_8422176609*(self: ModelDocumentEditor;
     select: bool = false) =
   discard
-proc moveCursorUpScript2_8422176422*(self: ModelDocumentEditor;
+proc moveCursorUpScript2_8422176699*(self: ModelDocumentEditor;
                                     select: bool = false) =
   discard
-proc moveCursorDownScript2_8422176534*(self: ModelDocumentEditor;
+proc moveCursorDownScript2_8422176811*(self: ModelDocumentEditor;
                                       select: bool = false) =
   discard
-proc moveCursorLeftCellScript_8422176646*(self: ModelDocumentEditor;
+proc moveCursorLeftCellScript_8422176923*(self: ModelDocumentEditor;
     select: bool = false) =
   discard
-proc moveCursorRightCellScript_8422176733*(self: ModelDocumentEditor;
+proc moveCursorRightCellScript_8422177010*(self: ModelDocumentEditor;
     select: bool = false) =
   discard
-proc deleteLeftScript2_8422176820*(self: ModelDocumentEditor) =
+proc deleteLeftScript2_8422177097*(self: ModelDocumentEditor) =
   discard
-proc deleteRightScript2_8422176909*(self: ModelDocumentEditor) =
+proc deleteRightScript2_8422177172*(self: ModelDocumentEditor) =
   discard
-proc insertTextAtCursorScript_8422176998*(self: ModelDocumentEditor;
+proc insertTextAtCursorScript_8422177247*(self: ModelDocumentEditor;
     input: string): bool =
   discard
-proc toggleUseDefaultCellBuilderScript_8422177088*(self: ModelDocumentEditor) =
+proc toggleUseDefaultCellBuilderScript_8422177337*(self: ModelDocumentEditor) =
   discard
 proc getBackendScript_2197823672*(): Backend =
   discard

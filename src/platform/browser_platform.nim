@@ -76,9 +76,9 @@ method init*(self: BrowserPlatform) =
 
   self.escapedText = newLruCache[string, string](1000)
 
-  self.layoutOptions.getTextBounds = proc(text: string): Vec2 =
-    result.x = text.len.float * self.mCharWidth
-    result.y = self.totalLineHeight
+  self.layoutOptions.getTextBounds = proc(text: string, fontSizeIncreasePercent: float = 0): Vec2 =
+    result.x = text.len.float * self.mCharWidth * (1 + fontSizeIncreasePercent)
+    result.y = self.totalLineHeight * (1 + fontSizeIncreasePercent)
 
   window.addEventListener "resize", proc(e: dom.Event) =
     let oldEvent = self.currentEvent
@@ -405,6 +405,7 @@ method renderWidget(self: WStack, renderer: BrowserPlatform, element: var Elemen
       element.appendChild childElement
 
 proc getTextStyle(x, y, width, height: int, color, backgroundColor: cstring, italic, bold: bool): cstring
+proc getTextStyle(x, y, width, height: int, color, backgroundColor: cstring, italic, bold: bool, fontSize: float): cstring
 
 method renderWidget(self: WText, renderer: BrowserPlatform, element: var Element, forceRedraw: bool, frameIndex: int, buffer: var string) =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
@@ -432,7 +433,10 @@ method renderWidget(self: WText, renderer: BrowserPlatform, element: var Element
   let bold = FontStyle.Bold in self.style.fontStyle
 
   renderer.domUpdates.add proc() =
-    element.setAttribute("style", getTextStyle(relBounds.x.int, relBounds.y.int, relBounds.w.int, relBounds.h.int, color, backgroundColor, italic, bold))
+    if self.fontSizeIncreasePercent != 0:
+      element.setAttribute("style", getTextStyle(relBounds.x.int, relBounds.y.int, relBounds.w.int, relBounds.h.int, color, backgroundColor, italic, bold, renderer.mFontSize * (1 + self.fontSizeIncreasePercent)))
+    else:
+      element.setAttribute("style", getTextStyle(relBounds.x.int, relBounds.y.int, relBounds.w.int, relBounds.h.int, color, backgroundColor, italic, bold))
     if updateText:
       element.innerText = text
       element.setAttribute("data-text", text)
@@ -441,6 +445,13 @@ method renderWidget(self: WText, renderer: BrowserPlatform, element: var Element
 
 proc getTextStyle(x, y, width, height: int, color, backgroundColor: cstring, italic, bold: bool): cstring =
   {.emit: [result, " = `left: ${", x, "}px; top: ${", y, "}px; width: ${", width, "}px; height: ${", height, "}px; overflow: visible; color: ${", color, "}; ${", backgroundColor, "}`"].} #"""
+  if italic:
+    {.emit: [result, " += `font-style: italic;`"].} #"""
+  if bold:
+    {.emit: [result, " += `font-weight: bold;`"].} #"""
+
+proc getTextStyle(x, y, width, height: int, color, backgroundColor: cstring, italic, bold: bool, fontSize: float): cstring =
+  {.emit: [result, " = `left: ${", x, "}px; top: ${", y, "}px; width: ${", width, "}px; height: ${", height, "}px; overflow: visible; color: ${", color, "}; ${", backgroundColor, "}; font-size: ${", fontSize, "}`"].} #"""
   if italic:
     {.emit: [result, " += `font-style: italic;`"].} #"""
   if bold:
