@@ -68,6 +68,8 @@ type
     cellWidgetContext*: UpdateContext
     cursor*: CellCursor
 
+    useDefaultCellBuilder*: bool
+
     scrollOffset*: float
     previousBaseIndex*: seq[int]
 
@@ -415,22 +417,30 @@ proc assignToLogicalLines(self: ModelDocumentEditor, cell: Cell, startLine: int,
     for i, c in coll.children:
       if vertical and (i > 0 or not currentLineEmptyTemp):
         currentLineEmptyTemp = true
+        currentLine = maxLine
         inc currentLine
+        maxLine = max(maxLine, currentLine)
 
       if c.style.isNotNil:
-        if c.style.onNewLine:
+        if c.style.onNewLine and not currentLineEmptyTemp:
           currentLineEmptyTemp = true
+          currentLine = maxLine
           inc currentLine
+          maxLine = max(maxLine, currentLine)
 
       let newLine = self.assignToLogicalLines(c, currentLine, currentLineEmptyTemp)
-      if vertical:
+
+      if not (c of CollectionCell and c.CollectionCell.inline):
         currentLine = newLine
+
       maxLine = max(maxLine, newLine)
 
       if c.style.isNotNil:
         if c.style.addNewlineAfter:
+          currentLine = maxLine
           currentLineEmptyTemp = true
           inc currentLine
+          maxLine = max(maxLine, currentLine)
 
     if not coll.inline:
       currentLineEmpty = currentLineEmptyTemp
@@ -444,6 +454,8 @@ proc assignToLogicalLines(self: ModelDocumentEditor, cell: Cell, startLine: int,
     currentLineEmpty = false
     return startLine
 
+proc nimStrToCStr(str: string): cstring {.exportc, used.} = str
+
 proc rebuildCells(self: ModelDocumentEditor) =
   var builder = self.document.builder
 
@@ -452,7 +464,7 @@ proc rebuildCells(self: ModelDocumentEditor) =
   self.logicalLines.setLen 0
 
   for node in self.document.model.rootNodes:
-    let cell = builder.buildCell(node)
+    let cell = builder.buildCell(node, self.useDefaultCellBuilder)
     cell.buildNodeCellMap(self.nodeToCell)
 
     var temp = true
@@ -1363,6 +1375,11 @@ proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool {.expos
       self.markDirty()
       return true
   return false
+
+proc toggleUseDefaultCellBuilder*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  self.useDefaultCellBuilder = not self.useDefaultCellBuilder
+  self.rebuildCells()
+  self.markDirty()
 
 genDispatcher("editor.model")
 

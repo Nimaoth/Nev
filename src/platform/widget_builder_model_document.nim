@@ -125,8 +125,10 @@ type CellLayoutContext = ref object
   parentWidget: WPanel
   lineWidget: WPanel
   currentLineEmpty: bool
+  hasIndent: bool
   prevNoSpaceRight: bool
   layoutOptions: WLayoutOptions
+  indentText: string
 
 proc newCellLayoutContext(widget: WWidget): CellLayoutContext =
   new result
@@ -146,7 +148,8 @@ proc newCellLayoutContext(widget: WWidget): CellLayoutContext =
   result.lineWidget.right = 0
   result.lineWidget.top = 0
   result.lineWidget.bottom = 0
-  # result.lineWidget.layout = WPanelLayout(kind: Horizontal)
+
+  result.indentText = "  "
 
   result.currentLineEmpty = true
 
@@ -161,21 +164,35 @@ proc getReusableWidget(self: CellLayoutContext): WWidget =
   else:
     return nil
 
+proc updateCurrentIndent(self: CellLayoutContext) =
+  if self.hasIndent:
+    let indentWidget = self.lineWidget.children[0].WText
+    indentWidget.text = self.indentText.repeat(self.currentIndent)
+    let size = self.layoutOptions.getTextBounds indentWidget.text
+    indentWidget.right = indentWidget.left + size.x
+    indentWidget.bottom = size.y
+
+proc increaseIndent(self: CellLayoutContext) =
+  inc self.currentIndent
+  self.updateCurrentIndent()
+
+proc decreaseIndent(self: CellLayoutContext) =
+  dec self.currentIndent
+  self.updateCurrentIndent()
+
 proc indent(self: CellLayoutContext) =
   if self.currentIndent == 0 or self.indexInLine > 0:
     return
-  let indentWidget = self.lineWidget.getOrCreate(self.indexInLine, WText)
-  # indentWidget.sizeToContent = true
-  indentWidget.text = "    ".repeat(self.currentIndent)
 
-  let size = self.layoutOptions.getTextBounds indentWidget.text
+  self.hasIndent = true
+  let indentWidget = self.lineWidget.getOrCreate(self.indexInLine, WText)
   indentWidget.left = self.lineWidget.right
-  indentWidget.right = indentWidget.left + size.x
   indentWidget.top = 0
-  indentWidget.bottom = size.y
+
+  self.updateCurrentIndent()
 
   self.lineWidget.right = indentWidget.right
-  self.lineWidget.bottom = max(self.lineWidget.bottom, self.lineWidget.top + size.y)
+  self.lineWidget.bottom = max(self.lineWidget.bottom, self.lineWidget.top + indentWidget.height)
 
   inc self.indexInLine
 
@@ -216,6 +233,8 @@ proc newLine(self: CellLayoutContext) =
   self.lineWidget.right = 0
   self.lineWidget.top = self.getCurrentYOffset
   self.lineWidget.bottom = self.lineWidget.top
+
+  self.hasIndent = false
 
   self.indent()
 
@@ -400,19 +419,28 @@ method updateCellWidget*(cell: CollectionCell, app: Editor, widget: WWidget, fra
   let vertical = cell.layout.kind == Vertical
 
   if cell.style.isNotNil and cell.style.indentChildren:
-    inc myCtx.currentIndent
+    myCtx.increaseIndent()
 
   defer:
     if cell.style.isNotNil and cell.style.indentChildren:
-      dec myCtx.currentIndent
+      myCtx.decreaseIndent()
 
   for i, c in cell.children:
+    # if myCtx.currentLine > 200:
+    #   break
+
+    if c.increaseIndentBefore:
+      myCtx.increaseIndent()
+
+    if c.decreaseIndentBefore:
+      myCtx.decreaseIndent()
+
     if vertical and (i > 0 or not myCtx.isCurrentLineEmpty()):
       myCtx.newLine()
 
     var spaceLeft = not myCtx.prevNoSpaceRight
     if c.style.isNotNil:
-      if c.style.onNewLine:
+      if c.style.onNewLine and not myCtx.isCurrentLineEmpty():
         myCtx.newLine()
       if c.style.noSpaceLeft:
         spaceLeft = false
@@ -421,6 +449,12 @@ method updateCellWidget*(cell: CollectionCell, app: Editor, widget: WWidget, fra
     let newWidget = c.updateCellWidget(app, oldWidget, frameIndex, myCtx, updateContext)
     if newWidget.isNotNil:
       myCtx.addWidget(newWidget, spaceLeft)
+
+    if c.increaseIndentAfter:
+      myCtx.increaseIndent()
+
+    if c.decreaseIndentAfter:
+      myCtx.decreaseIndent()
 
     myCtx.prevNoSpaceRight = false
     if c.style.isNotNil:
@@ -583,6 +617,8 @@ method updateWidget*(self: ModelDocumentEditor, app: Editor, widget: WPanel, fra
   if self.cellWidgetContext.isNil:
     self.cellWidgetContext = UpdateContext()
   self.cellWidgetContext.cellToWidget.clear()
+
+  # echo self.cursor.cell.line
 
   var i = 0
   for node in self.document.model.rootNodes:
