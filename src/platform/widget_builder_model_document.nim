@@ -165,12 +165,15 @@ proc getReusableWidget(self: CellLayoutContext): WWidget =
     return nil
 
 proc updateCurrentIndent(self: CellLayoutContext) =
-  if self.hasIndent:
+  if self.hasIndent and self.lineWidget.children.len == 1:
     let indentWidget = self.lineWidget.children[0].WText
     indentWidget.text = self.indentText.repeat(self.currentIndent)
     let size = self.layoutOptions.getTextBounds indentWidget.text
     indentWidget.right = indentWidget.left + size.x
     indentWidget.bottom = size.y
+
+    self.lineWidget.right = indentWidget.right
+    self.lineWidget.bottom = max(self.lineWidget.bottom, self.lineWidget.top + size.y)
 
 proc increaseIndent(self: CellLayoutContext) =
   inc self.currentIndent
@@ -190,9 +193,6 @@ proc indent(self: CellLayoutContext) =
   indentWidget.top = 0
 
   self.updateCurrentIndent()
-
-  self.lineWidget.right = indentWidget.right
-  self.lineWidget.bottom = max(self.lineWidget.bottom, self.lineWidget.top + indentWidget.height)
 
   inc self.indexInLine
 
@@ -426,8 +426,8 @@ method updateCellWidget*(cell: CollectionCell, app: Editor, widget: WWidget, fra
       myCtx.decreaseIndent()
 
   for i, c in cell.children:
-    # if myCtx.currentLine > 200:
-    #   break
+    if myCtx.currentLine > 200:
+      break
 
     if c.increaseIndentBefore:
       myCtx.increaseIndent()

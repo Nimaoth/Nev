@@ -122,6 +122,16 @@ method getChildAt*(self: CollectionCell, index: int, clamp: bool): Option[Cell] 
     return Cell.none
   return self.children[index].some
 
+proc replaceText*(cell: Cell, slice: Slice[int], text: string): int =
+  var currentText = cell.getText()
+  if slice.b > slice.a:
+    currentText.delete(slice.a..<slice.b)
+  currentText.insert(text, slice.a)
+  cell.setText(currentText)
+  if cell.getText() == currentText:
+    return slice.a + text.len
+  return slice.b
+
 proc insertText*(cell: Cell, index: int, text: string): int =
   var currentText = cell.getText()
   currentText.insert(text, index)
