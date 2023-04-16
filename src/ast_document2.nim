@@ -28,6 +28,9 @@ proc `column=`(cursor: var CellCursor, column: int) =
   cursor.firstIndex = column
   cursor.lastIndex = column
 
+proc orderedRange*(cursor: CellCursor): Slice[int] =
+  return min(cursor.firstIndex, cursor.lastIndex)..max(cursor.firstIndex, cursor.lastIndex)
+
 type
   UndoOpKind = enum
     Delete
@@ -464,7 +467,7 @@ proc rebuildCells(self: ModelDocumentEditor) =
   self.logicalLines.setLen 0
 
   for node in self.document.model.rootNodes:
-    let cell = builder.buildCell(node, self.useDefaultCellBuilder)
+    let cell = builder.buildCell(node, not self.useDefaultCellBuilder)
     cell.buildNodeCellMap(self.nodeToCell)
 
     var temp = true
@@ -1369,9 +1372,9 @@ proc deleteRight*(self: ModelDocumentEditor) {.expose("editor.model").} =
 
 proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool {.expose("editor.model").} =
   if self.getCellForCursor(self.cursor).getSome(cell):
-    let newColumn = cell.insertText(self.cursor.lastIndex, input)
+    let newColumn = cell.replaceText(self.cursor.orderedRange, input)
     if newColumn != self.cursor.lastIndex:
-      self.cursor.lastIndex = newColumn
+      self.cursor.column = newColumn
       self.markDirty()
       return true
   return false
