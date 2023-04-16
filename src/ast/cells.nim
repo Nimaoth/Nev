@@ -1,6 +1,7 @@
-import std/[tables, strutils, strformat, options, sequtils]
+import std/[tables, strutils, strformat, options, sequtils, sugar]
 import platform/[widgets]
-import types, id, util
+import types, id, util, custom_logger
+import ast_ids
 
 type
   CollectionCell* = ref object of Cell
@@ -211,3 +212,89 @@ method dump(self: NodeReferenceCell, recurse: bool = false): string =
 
 method dump(self: AliasCell, recurse: bool = false): string =
   result.add fmt"AliasCell(node: {self.node.id})"
+
+proc findBuilder(self: CellBuilder, class: NodeClass, preferred: Id): Option[CellBuilderFunction] =
+  if not self.builders.contains(class.id):
+    if class.base.isNotNil:
+      return self.findBuilder(class.base, preferred)
+    return CellBuilderFunction.none
+
+  let builders = self.builders[class.id]
+  if builders.len == 0:
+    if class.base.isNotNil:
+      return self.findBuilder(class.base, preferred)
+    return CellBuilderFunction.none
+
+  if builders.len == 1:
+    return builders[0].impl.some
+
+  let preferredBuilder = self.preferredBuilders.getOrDefault(class.id, idNone())
+  for builder in builders:
+    if builder.builderId == preferredBuilder:
+      return builder.impl.some
+
+  return builders[0].impl.some
+
+proc buildCell*(self: CellBuilder, node: AstNode, useDefault: bool = false): Cell
+
+proc buildCellDefault*(self: CellBuilder, node: AstNode, useDefaultRecursive: bool): Cell =
+  let class = node.nodeClass
+
+  var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
+  cell.fillChildren = proc() =
+    cell.add ConstantCell(node: node, text: class.name)
+    cell.add ConstantCell(node: node, text: "{", increaseIndentAfter: true)
+
+    var hasAnyChildren = false
+
+    for prop in node.properties:
+      hasAnyChildren = true
+      let name: string = class.propertyDescription(prop.role).map((decs) => decs.role).get($prop.role)
+      cell.add ConstantCell(node: node, text: name, style: CellStyle(onNewLine: true))
+      cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true))
+      cell.add PropertyCell(id: newId(), node: node, property: prop.role)
+
+    for prop in node.references:
+      hasAnyChildren = true
+      let name: string = class.nodeReferenceDescription(prop.role).map((decs) => decs.role).get($prop.role)
+      cell.add ConstantCell(node: node, text: name, style: CellStyle(onNewLine: true))
+      cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true))
+
+      var nodeRefCell = NodeReferenceCell(id: newId(), node: node, reference: prop.role, property: IdINamedName)
+      if node.resolveReference(prop.role).getSome(targetNode):
+        nodeRefCell.child = PropertyCell(id: newId(), node: targetNode, property: IdINamedName)
+
+      cell.add nodeRefCell
+
+    for prop in node.childLists:
+      hasAnyChildren = true
+      let name: string = class.nodeChildDescription(prop.role).map((decs) => decs.role).get($prop.role)
+      cell.add ConstantCell(node: node, text: name, style: CellStyle(onNewLine: true))
+      cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true))
+
+      var hasChildren = false
+      for c in node.children(prop.role):
+        hasChildren = true
+        cell.add self.buildCell(c, useDefaultRecursive)
+
+      if not hasChildren:
+        cell.add ConstantCell(node: node, text: "<...>")
+
+    cell.add ConstantCell(node: node, text: "}", decreaseIndentBefore: true, style: CellStyle(onNewLine: hasAnyChildren, addNewlineAfter: true))
+
+  return cell
+
+proc buildCell*(self: CellBuilder, node: AstNode, useDefault: bool = false): Cell =
+  let class = node.nodeClass
+  if class.isNil:
+    debugf"Unknown class {node.class}"
+    return EmptyCell(node: node)
+
+  if not useDefault and self.findBuilder(class, idNone()).getSome(builder):
+    result = builder(self, node)
+    result.fill()
+  else:
+    if not useDefault:
+      debugf"Unknown builder for {class.name}, using default"
+    result = self.buildCellDefault(node, useDefault)
+    result.fill()

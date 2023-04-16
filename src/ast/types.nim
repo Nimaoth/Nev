@@ -79,6 +79,10 @@ type
     isVisible*: CellIsVisiblePredicate
     style*: CellStyle
     disableSelection*: bool
+    increaseIndentBefore*: bool
+    decreaseIndentBefore*: bool
+    increaseIndentAfter*: bool
+    decreaseIndentAfter*: bool
 
   EmptyCell* = ref object of Cell
     discard
@@ -86,8 +90,8 @@ type
   CellBuilderFunction* = proc(builder: CellBuilder, node: AstNode): Cell
 
   CellBuilder* = ref object
-    builders: Table[Id, seq[tuple[builderId: Id, impl: CellBuilderFunction]]]
-    preferredBuilders: Table[Id, Id]
+    builders*: Table[Id, seq[tuple[builderId: Id, impl: CellBuilderFunction]]]
+    preferredBuilders*: Table[Id, Id]
 
   Language* = ref object
     id {.getter.}: Id
@@ -400,41 +404,6 @@ proc expand*(self: Cell, path: openArray[int]) =
   self.fill()
   if path.len > 0 and self.getChildAt(path[0], true).getSome(child):
     child.expand path[1..^1]
-
-proc findBuilder(self: CellBuilder, class: NodeClass, preferred: Id): Option[CellBuilderFunction] =
-  if not self.builders.contains(class.id):
-    if class.base.isNotNil:
-      return self.findBuilder(class.base, preferred)
-    return CellBuilderFunction.none
-
-  let builders = self.builders[class.id]
-  if builders.len == 0:
-    if class.base.isNotNil:
-      return self.findBuilder(class.base, preferred)
-    return CellBuilderFunction.none
-
-  if builders.len == 1:
-    return builders[0].impl.some
-
-  let preferredBuilder = self.preferredBuilders.getOrDefault(class.id, idNone())
-  for builder in builders:
-    if builder.builderId == preferredBuilder:
-      return builder.impl.some
-
-  return builders[0].impl.some
-
-proc buildCell*(self: CellBuilder, node: AstNode): Cell =
-  let class = node.nodeClass
-  if class.isNil:
-    debugf"Unknown class {node.class}"
-    return EmptyCell(node: node)
-
-  if self.findBuilder(class, idNone()).getSome(builder):
-    result = builder(self, node)
-    result.fill()
-  else:
-    debugf"Unknown builder for {class.name}"
-    return EmptyCell(node: node)
 
 proc `$`*(node: AstNode, recursive: bool = false): string =
   let class = node.nodeClass
