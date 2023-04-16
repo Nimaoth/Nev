@@ -31,6 +31,12 @@ proc `column=`(cursor: var CellCursor, column: int) =
 proc orderedRange*(cursor: CellCursor): Slice[int] =
   return min(cursor.firstIndex, cursor.lastIndex)..max(cursor.firstIndex, cursor.lastIndex)
 
+proc targetCell*(cursor: CellCursor): Cell =
+  result = cursor.cell
+  for i in cursor.path:
+    if result of CollectionCell:
+      result = result.CollectionCell.children[i]
+
 type
   UndoOpKind = enum
     Delete
@@ -457,8 +463,6 @@ proc assignToLogicalLines(self: ModelDocumentEditor, cell: Cell, startLine: int,
     currentLineEmpty = false
     return startLine
 
-proc nimStrToCStr(str: string): cstring {.exportc, used.} = str
-
 proc rebuildCells(self: ModelDocumentEditor) =
   var builder = self.document.builder
 
@@ -467,7 +471,7 @@ proc rebuildCells(self: ModelDocumentEditor) =
   self.logicalLines.setLen 0
 
   for node in self.document.model.rootNodes:
-    let cell = builder.buildCell(node, not self.useDefaultCellBuilder)
+    let cell = builder.buildCell(node, self.useDefaultCellBuilder)
     cell.buildNodeCellMap(self.nodeToCell)
 
     var temp = true
@@ -703,7 +707,7 @@ proc getCursorInLine*(self: ModelDocumentEditor, line: int, xPos: float): Option
     else:
       result = c.toCursor(true).some
 
-      let text = c.getText()
+      let text = c.currentText
       if text.len > 0:
         let alpha = (xPos - widget.lastBounds.x) / widget.lastBounds.w
         result.get.firstIndex = (alpha * text.len.float).round.int
@@ -716,7 +720,7 @@ proc getCursorXPos*(self: ModelDocumentEditor, cursor: CellCursor): float =
   if self.getCellForCursor(cursor).getSome(cell):
     let widget = self.cellWidgetContext.cellToWidget.getOrDefault(cell.id, nil)
     if widget.isNotNil:
-      let text = cell.getText()
+      let text = cell.currentText
       if text.len == 0:
         result = widget.lastBounds.x
       else:
@@ -1171,22 +1175,18 @@ proc selectCursor(a, b: CellCursor, combine: bool): CellCursor =
     return combineCursors(a, b)
   return b
 
-method handleDeleteLeft*(cell: Cell, column: int): CellCursor {.base.} = discard
-method handleDeleteRight*(cell: Cell, column: int): CellCursor {.base.} = discard
+method handleDeleteLeft*(cell: Cell, slice: Slice[int]): CellCursor {.base.} = discard
+method handleDeleteRight*(cell: Cell, slice: Slice[int]): CellCursor {.base.} = discard
 
-method handleDeleteLeft*(cell: PropertyCell, column: int): CellCursor =
-  var text = cell.getText()
-  if column >= 1 and column <= text.len:
-    text.delete(column - 1, column - 1)
-    cell.setText(text)
-    return cell.toCursor(column - 1)
+method handleDeleteLeft*(cell: PropertyCell, slice: Slice[int]): CellCursor =
+  let slice = if slice.a != slice.b: slice else: max(0, slice.a - 1)..slice.b
+  let newIndex = cell.replaceText(slice, "")
+  return cell.toCursor(newIndex)
 
-method handleDeleteRight*(cell: PropertyCell, column: int): CellCursor =
-  var text = cell.getText()
-  if column >= 0 and column < text.len:
-    text.delete(column, column)
-    cell.setText(text)
-    return cell.toCursor(column)
+method handleDeleteRight*(cell: PropertyCell, slice: Slice[int]): CellCursor =
+  let slice = if slice.a != slice.b: slice else: slice.a..min(slice.b + 1, cell.currentText.len)
+  let newIndex = cell.replaceText(slice, "")
+  return cell.toCursor(newIndex)
 
 proc mode*(self: ModelDocumentEditor): string {.expose("editor.model").} =
   return self.currentMode
@@ -1341,30 +1341,36 @@ proc moveCursorRightCell*(self: ModelDocumentEditor, select: bool = false) {.exp
   self.markDirty()
 
 proc deleteLeft*(self: ModelDocumentEditor) {.expose("editor.model").} =
-  if self.getCellForCursor(self.cursor).getSome(cell):
-    if self.cursor.lastIndex <= cell.editableLow:
+  let cell = self.cursor.targetCell
+  if cell of CollectionCell:
+    discard
+  else:
+    if self.cursor.firstIndex == self.cursor.lastIndex and self.cursor.lastIndex <= cell.editableLow:
       let prev = cell.getPreviousVisibleLeaf()
       if prev != cell:
-        let newCursor = prev.handleDeleteLeft(prev.high)
+        let newCursor = prev.handleDeleteLeft(prev.high..prev.high)
         if newCursor.node.isNotNil:
           self.cursor = newCursor
     else:
-      let newCursor = cell.handleDeleteLeft(self.cursor.lastIndex)
+      let newCursor = cell.handleDeleteLeft(self.cursor.orderedRange)
       if newCursor.node.isNotNil:
         self.cursor = newCursor
 
   self.markDirty()
 
 proc deleteRight*(self: ModelDocumentEditor) {.expose("editor.model").} =
-  if self.getCellForCursor(self.cursor).getSome(cell):
-    if self.cursor.lastIndex >= cell.editableHigh + 1:
+  let cell = self.cursor.targetCell
+  if cell of CollectionCell:
+    discard
+  else:
+    if self.cursor.firstIndex == self.cursor.lastIndex and self.cursor.lastIndex >= cell.editableHigh + 1:
       let prev = cell.getNextVisibleLeaf()
       if prev != cell:
-        let newCursor = prev.handleDeleteRight(0)
+        let newCursor = prev.handleDeleteRight(0..0)
         if newCursor.node.isNotNil:
           self.cursor = newCursor
     else:
-      let newCursor = cell.handleDeleteRight(self.cursor.lastIndex)
+      let newCursor = cell.handleDeleteRight(self.cursor.orderedRange)
       if newCursor.node.isNotNil:
         self.cursor = newCursor
 

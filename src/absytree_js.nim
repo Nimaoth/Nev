@@ -82,6 +82,10 @@ block:
 initializedEditor = true
 requestRender()
 
+# Useful for debugging nim strings in the browser
+# Just turns a nim string to a javascript string
+proc nimStrToCStr(str: string): cstring {.exportc, used.} = str
+
 # Override some functions with more optimized versions
 {.emit: """
 const hiXorLoJs_override_mask = BigInt("0xffffffffffffffff");

@@ -388,3 +388,5 @@ addCommand("editor.model", "<SA-END>", "move-cursor-line-end-inline", true)
 addCommand("editor.model", "<BACKSPACE>", "delete-left")
 addCommand("editor.model", "<DELETE>", "delete-right")
 addCommand("editor.model", "<SPACE>", "insert-text-at-cursor", " ")
+
+addCommand("editor.model", "<C-n>", "toggle-use-default-cell-builder")

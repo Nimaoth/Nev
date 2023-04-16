@@ -22,6 +22,7 @@ type
     fillBackground*: bool
     logLayout*: bool
     allowAlpha*: bool
+    fontSizeIncreasePercent*: float
 
   WPanelLayoutKind* = enum
     Absolute, Horizontal, Vertical
@@ -50,7 +51,7 @@ type
     style*: Style
 
   WLayoutOptions* = object
-    getTextBounds*: proc(text: string): Vec2
+    getTextBounds*: proc(text: string, fontSizeIncreasePercent: float = 0): Vec2
 
 proc width*(self: WWidget): float = self.right - self.left
 proc height*(self: WWidget): float = self.bottom - self.top

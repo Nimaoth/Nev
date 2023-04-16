@@ -127,18 +127,18 @@ builder.addBuilderFor emptyClass.id, idNone(), proc(builder: CellBuilder, node: 
   return cell
 
 builder.addBuilderFor numberLiteralClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = PropertyCell(id: newId(), node: node, property: IdIntegerLiteralValue)
+  var cell = PropertyCell(id: newId(), node: node, property: IdIntegerLiteralValue, themeForegroundColors: @["constant.numeric"])
   return cell
 
 builder.addBuilderFor boolLiteralClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = PropertyCell(id: newId(), node: node, property: IdBoolLiteralValue)
+  var cell = PropertyCell(id: newId(), node: node, property: IdBoolLiteralValue, themeForegroundColors: @["constant.numeric"])
   return cell
 
 builder.addBuilderFor stringLiteralClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
-  cell.add ConstantCell(node: node, text: "'", style: CellStyle(noSpaceRight: true))
-  cell.add PropertyCell(node: node, property: IdStringLiteralValue)
-  cell.add ConstantCell(node: node, text: "'", style: CellStyle(noSpaceLeft: true))
+  cell.add ConstantCell(node: node, text: "'", style: CellStyle(noSpaceRight: true), themeForegroundColors: @["punctuation.definition.string", "punctuation", "&editor.foreground"])
+  cell.add PropertyCell(node: node, property: IdStringLiteralValue, themeForegroundColors: @["string"])
+  cell.add ConstantCell(node: node, text: "'", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation.definition.string", "punctuation", "&editor.foreground"])
   return cell
 
 builder.addBuilderFor nodeListClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
@@ -161,12 +161,12 @@ builder.addBuilderFor constDeclClass.id, idNone(), proc(builder: CellBuilder, no
   var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =
     # echo "fill collection const decl"
-    cell.add ConstantCell(node: node, text: "const")
-    cell.add PropertyCell(node: node, property: IdINamedName)
-    cell.add ConstantCell(node: node, text: ":", isVisible: (node) => node.hasChild(IdConstDeclType), style: CellStyle(noSpaceLeft: true))
+    cell.add ConstantCell(node: node, text: "const", themeForegroundColors: @["keyword"])
+    cell.add PropertyCell(node: node, property: IdINamedName, fontSizeIncreasePercent: 0.1)
+    cell.add ConstantCell(node: node, text: ":", isVisible: (node) => node.hasChild(IdConstDeclType), style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"])
     for c in node.children(IdConstDeclType):
       cell.add builder.buildCell(c)
-    cell.add ConstantCell(node: node, text: "=")
+    cell.add ConstantCell(node: node, text: "=", themeForegroundColors: @["punctuation", "&editor.foreground"])
     for c in node.children(IdConstDeclValue):
       cell.add builder.buildCell(c)
   return cell
@@ -175,12 +175,12 @@ builder.addBuilderFor letDeclClass.id, idNone(), proc(builder: CellBuilder, node
   var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =
     # echo "fill collection let decl"
-    cell.add ConstantCell(node: node, text: "let")
+    cell.add ConstantCell(node: node, text: "let", themeForegroundColors: @["keyword"])
     cell.add PropertyCell(node: node, property: IdINamedName)
-    cell.add ConstantCell(node: node, text: ":", isVisible: (node) => node.hasChild(IdLetDeclType), style: CellStyle(noSpaceLeft: true))
+    cell.add ConstantCell(node: node, text: ":", isVisible: (node) => node.hasChild(IdLetDeclType), style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"])
     for c in node.children(IdLetDeclType):
       cell.add builder.buildCell(c)
-    cell.add ConstantCell(node: node, text: "=")
+    cell.add ConstantCell(node: node, text: "=", themeForegroundColors: @["punctuation", "&editor.foreground"])
     for c in node.children(IdLetDeclValue):
       cell.add builder.buildCell(c)
   return cell
@@ -189,12 +189,12 @@ builder.addBuilderFor varDeclClass.id, idNone(), proc(builder: CellBuilder, node
   var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =
     # echo "fill collection var decl"
-    cell.add ConstantCell(node: node, text: "var")
+    cell.add ConstantCell(node: node, text: "var", themeForegroundColors: @["keyword"])
     cell.add PropertyCell(node: node, property: IdINamedName)
-    cell.add ConstantCell(node: node, text: ":", isVisible: (node) => node.hasChild(IdVarDeclType), style: CellStyle(noSpaceLeft: true))
+    cell.add ConstantCell(node: node, text: ":", isVisible: (node) => node.hasChild(IdVarDeclType), style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"])
     for c in node.children(IdVarDeclType):
       cell.add builder.buildCell(c)
-    cell.add ConstantCell(node: node, text: "=", isVisible: (node) => node.hasChild(IdVarDeclValue))
+    cell.add ConstantCell(node: node, text: "=", isVisible: (node) => node.hasChild(IdVarDeclValue), themeForegroundColors: @["punctuation", "&editor.foreground"])
     for c in node.children(IdVarDeclValue):
       cell.add builder.buildCell(c)
   return cell
@@ -205,7 +205,7 @@ builder.addBuilderFor assignmentClass.id, idNone(), proc(builder: CellBuilder, n
     # echo "fill collection assignment"
     for c in node.children(IdAssignmentTarget):
       cell.add builder.buildCell(c)
-    cell.add ConstantCell(node: node, text: "=")
+    cell.add ConstantCell(node: node, text: "=", themeForegroundColors: @["punctuation", "&editor.foreground"])
     for c in node.children(IdAssignmentValue):
       cell.add builder.buildCell(c)
   return cell
@@ -215,10 +215,10 @@ builder.addBuilderFor parameterDeclClass.id, idNone(), proc(builder: CellBuilder
   cell.fillChildren = proc() =
     # echo "fill collection parameter decl"
     cell.add PropertyCell(node: node, property: IdINamedName)
-    cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true))
+    cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"])
     for c in node.children(IdParameterDeclType):
       cell.add builder.buildCell(c)
-    cell.add ConstantCell(node: node, text: "=", isVisible: (node) => node.hasChild(IdParameterDeclValue))
+    cell.add ConstantCell(node: node, text: "=", isVisible: (node) => node.hasChild(IdParameterDeclValue), themeForegroundColors: @["punctuation", "&editor.foreground"])
     for c in node.children(IdParameterDeclValue):
       cell.add builder.buildCell(c)
   return cell
@@ -227,20 +227,20 @@ builder.addBuilderFor functionDefinitionClass.id, idNone(), proc(builder: CellBu
   var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =
     # echo "fill collection func def"
-    cell.add ConstantCell(node: node, text: "fn")
-    cell.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true))
+    cell.add ConstantCell(node: node, text: "fn", themeForegroundColors: @["keyword"])
+    cell.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true), themeForegroundColors: @["punctuation", "&editor.foreground"])
 
     for i, c in node.children(IdFunctionDefinitionParameters):
       if i > 0:
-        cell.add ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true))
+        cell.add ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"])
       cell.add builder.buildCell(c)
 
-    cell.add ConstantCell(node: node, text: "):", style: CellStyle(noSpaceLeft: true))
+    cell.add ConstantCell(node: node, text: "):", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"])
 
     for c in node.children(IdFunctionDefinitionReturnType):
       cell.add builder.buildCell(c)
 
-    cell.add ConstantCell(node: node, text: "=")
+    cell.add ConstantCell(node: node, text: "=", themeForegroundColors: @["punctuation", "&editor.foreground"])
 
     for c in node.children(IdFunctionDefinitionBody):
       cell.add builder.buildCell(c)
@@ -255,14 +255,14 @@ builder.addBuilderFor callClass.id, idNone(), proc(builder: CellBuilder, node: A
     for c in node.children(IdCallFunction):
       cell.add builder.buildCell(c)
 
-    cell.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true))
+    cell.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true), themeForegroundColors: @["punctuation", "&editor.foreground"])
 
     for i, c in node.children(IdCallArguments):
       if i > 0:
-        cell.add ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true))
+        cell.add ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"])
       cell.add builder.buildCell(c)
 
-    cell.add ConstantCell(node: node, text: ")", style: CellStyle(noSpaceLeft: true))
+    cell.add ConstantCell(node: node, text: ")", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"])
 
   return cell
 
@@ -271,12 +271,12 @@ builder.addBuilderFor ifClass.id, idNone(), proc(builder: CellBuilder, node: Ast
   cell.fillChildren = proc() =
     # echo "fill collection if"
 
-    cell.add ConstantCell(node: node, text: "if")
+    cell.add ConstantCell(node: node, text: "if", themeForegroundColors: @["keyword"])
 
     for c in node.children(IdIfExpressionCondition):
       cell.add builder.buildCell(c)
 
-    cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true))
+    cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"])
 
     for c in node.children(IdIfExpressionThenCase):
       var cc = builder.buildCell(c)
@@ -284,7 +284,8 @@ builder.addBuilderFor ifClass.id, idNone(), proc(builder: CellBuilder, node: Ast
 
     for i, c in node.children(IdIfExpressionElseCase):
       if i == 0:
-        cell.add ConstantCell(node: node, text: "else:", style: CellStyle(onNewLine: true))
+        cell.add ConstantCell(node: node, text: "else", style: CellStyle(onNewLine: true), themeForegroundColors: @["keyword"])
+        cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"])
       cell.add builder.buildCell(c)
 
   return cell
@@ -294,12 +295,12 @@ builder.addBuilderFor whileClass.id, idNone(), proc(builder: CellBuilder, node: 
   cell.fillChildren = proc() =
     # echo "fill collection while"
 
-    cell.add ConstantCell(node: node, text: "while")
+    cell.add ConstantCell(node: node, text: "while", themeForegroundColors: @["keyword"])
 
     for c in node.children(IdWhileExpressionCondition):
       cell.add builder.buildCell(c)
 
-    cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true))
+    cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"])
 
     for c in node.children(IdWhileExpressionBody):
       cell.add builder.buildCell(c)
@@ -309,7 +310,7 @@ builder.addBuilderFor whileClass.id, idNone(), proc(builder: CellBuilder, node: 
 builder.addBuilderFor nodeReferenceClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = NodeReferenceCell(id: newId(), node: node, reference: IdNodeReferenceTarget, property: IdINamedName)
   if node.resolveReference(IdNodeReferenceTarget).getSome(targetNode):
-    cell.child = PropertyCell(id: newId(), node: targetNode, property: IdINamedName)
+    cell.child = PropertyCell(id: newId(), node: targetNode, property: IdINamedName, themeForegroundColors: @["variable", "&editor.foreground"])
   return cell
 
 builder.addBuilderFor binaryExpressionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
@@ -329,7 +330,7 @@ builder.addBuilderFor divExpressionClass.id, idNone(), proc(builder: CellBuilder
     # echo "fill collection binary"
     for c in node.children(IdBinaryExpressionLeft):
       cell.add builder.buildCell(c)
-    cell.add ConstantCell(node: node, text: "------")
+    cell.add ConstantCell(node: node, text: "------", themeForegroundColors: @["punctuation", "&editor.foreground"])
     for c in node.children(IdBinaryExpressionRight):
       cell.add builder.buildCell(c)
   return cell
@@ -344,15 +345,15 @@ builder.addBuilderFor unaryExpressionClass.id, idNone(), proc(builder: CellBuild
   return cell
 
 builder.addBuilderFor stringTypeClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = AliasCell(id: newId(), node: node)
+  var cell = AliasCell(id: newId(), node: node, themeForegroundColors: @["storage.type", "&editor.foreground"])
   return cell
 
 builder.addBuilderFor voidTypeClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = AliasCell(id: newId(), node: node)
+  var cell = AliasCell(id: newId(), node: node, themeForegroundColors: @["storage.type", "&editor.foreground"])
   return cell
 
 builder.addBuilderFor intTypeClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = AliasCell(id: newId(), node: node)
+  var cell = AliasCell(id: newId(), node: node, themeForegroundColors: @["storage.type", "&editor.foreground"])
   return cell
 
 builder.addBuilderFor printExpressionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
@@ -361,14 +362,14 @@ builder.addBuilderFor printExpressionClass.id, idNone(), proc(builder: CellBuild
     # echo "fill collection call"
 
     cell.add AliasCell(node: node)
-    cell.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true))
+    cell.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true), themeForegroundColors: @["punctuation", "&editor.foreground"])
 
     for i, c in node.children(IdPrintArguments):
       if i > 0:
-        cell.add ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true))
+        cell.add ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"])
       cell.add builder.buildCell(c)
 
-    cell.add ConstantCell(node: node, text: ")", style: CellStyle(noSpaceLeft: true))
+    cell.add ConstantCell(node: node, text: ")", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"])
 
   return cell
 
@@ -378,14 +379,14 @@ builder.addBuilderFor buildExpressionClass.id, idNone(), proc(builder: CellBuild
     # echo "fill collection call"
 
     cell.add AliasCell(node: node)
-    cell.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true))
+    cell.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true), themeForegroundColors: @["punctuation", "&editor.foreground"])
 
     for i, c in node.children(IdBuildArguments):
       if i > 0:
-        cell.add ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true))
+        cell.add ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"])
       cell.add builder.buildCell(c)
 
-    cell.add ConstantCell(node: node, text: ")", style: CellStyle(noSpaceLeft: true))
+    cell.add ConstantCell(node: node, text: ")", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"])
 
   return cell
 

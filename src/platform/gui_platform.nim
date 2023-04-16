@@ -87,8 +87,8 @@ method init*(self: GuiPlatform) =
   # This sets the font size of self.ctx and recalculates the char width
   self.fontSize = 20
 
-  self.layoutOptions.getTextBounds = proc(text: string): Vec2 =
-    let font = self.getFont(self.ctx.font, self.ctx.fontSize)
+  self.layoutOptions.getTextBounds = proc(text: string, fontSizeIncreasePercent: float = 0): Vec2 =
+    let font = self.getFont(self.ctx.font, self.ctx.fontSize * (1 + fontSizeIncreasePercent))
     if text.len == 0:
       let arrangement = font.typeset(" ")
       result = vec2(0, arrangement.layoutBounds().y)
@@ -398,7 +398,7 @@ method renderWidget(self: WText, renderer: GuiPlatform, forceRedraw: bool, frame
     imageId = $newId()
     renderer.cachedImages[key] = imageId
 
-    let font = renderer.getFont(renderer.ctx.fontSize, self.style.fontStyle)
+    let font = renderer.getFont(renderer.ctx.fontSize * (1 + self.fontSizeIncreasePercent), self.style.fontStyle)
     let arrangement = font.typeset(self.text)
     var bounds = arrangement.layoutBounds()
     if bounds.x == 0:
