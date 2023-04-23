@@ -37,6 +37,12 @@ proc targetCell*(cursor: CellCursor): Cell =
     if result of CollectionCell:
       result = result.CollectionCell.children[i]
 
+proc selectEntireNode*(cursor: CellCursor): CellCursor =
+  result = cursor
+  if result.path.len > 0:
+    result.column = result.path[result.path.high]
+    discard result.path.pop()
+
 type
   UndoOpKind = enum
     Delete
@@ -103,6 +109,7 @@ proc getCursorInLine*(self: ModelDocumentEditor, line: int, xPos: float): Option
 
 proc toCursor*(cell: Cell, column: int): CellCursor
 proc toCursor*(cell: Cell, start: bool): CellCursor
+proc getFirstEditableCellOfNode*(self: ModelDocumentEditor, node: AstNode): CellCursor
 proc canSelect*(cell: Cell): bool
 proc isVisible*(cell: Cell): bool
 proc selectCursor(a, b: CellCursor, combine: bool): CellCursor
@@ -845,13 +852,6 @@ proc getLastLeaf*(cell: Cell): Cell =
 proc getPreviousLeaf*(cell: Cell, childIndex: Option[int] = int.none): Cell =
   if cell of CollectionCell:
     return cell.getLastLeaf()
-  # if cell of CollectionCell and cell.CollectionCell.children.len > 0:
-    # let index = if childIndex.getSome(index): index else: cell.CollectionCell.children.len
-    # if index > 0:
-    #   result = cell.CollectionCell.children[index - 1]
-    #   if result of CollectionCell:
-    #     result = result.getPreviousLeaf()
-    #   return
 
   if cell.parent.isNil:
     return cell
@@ -878,13 +878,6 @@ proc getPreviousLeaf*(cell: Cell, childIndex: Option[int] = int.none): Cell =
 proc getNextLeaf*(cell: Cell, childIndex: Option[int] = int.none): Cell =
   if cell of CollectionCell:
     return cell.getFirstLeaf()
-  # if cell of CollectionCell and cell.CollectionCell.children.len > 0:
-  #   let index = if childIndex.getSome(index): index else: 0
-  #   if index < cell.CollectionCell.children.high:
-  #     result = cell.CollectionCell.children[index + 1]
-  #     if result of CollectionCell:
-  #       result = result.getNextLeaf()
-  #     return
 
   if cell.parent.isNil:
     return cell
@@ -916,8 +909,28 @@ proc getPreviousLeafWhere*(cell: Cell, predicate: proc(cell: Cell): bool): Cell 
     if result == oldResult:
       break
 
+proc getSelfOrPreviousLeafWhere*(cell: Cell, predicate: proc(cell: Cell): bool): Cell =
+  result = cell
+  if result of CollectionCell:
+    result = result.getPreviousLeaf()
+  while not predicate(result):
+    let oldResult = result
+    result = result.getPreviousLeaf()
+    if result == oldResult:
+      break
+
 proc getNextLeafWhere*(cell: Cell, predicate: proc(cell: Cell): bool): Cell =
   result = cell.getNextLeaf()
+  while not predicate(result):
+    let oldResult = result
+    result = result.getNextLeaf()
+    if result == oldResult:
+      break
+
+proc getSelfOrNextLeafWhere*(cell: Cell, predicate: proc(cell: Cell): bool): Cell =
+  result = cell
+  if result of CollectionCell:
+    result = result.getNextLeaf()
   while not predicate(result):
     let oldResult = result
     result = result.getNextLeaf()
@@ -974,6 +987,15 @@ proc toCursor*(cell: Cell, start: bool): CellCursor =
     result.column = cell.editableLow
   else:
     result.column = cell.editableHigh + 1
+
+proc getFirstEditableCellOfNode*(self: ModelDocumentEditor, node: AstNode): CellCursor =
+  let nodeCell = self.nodeToCell.getOrDefault(node.id)
+  if nodeCell.isNil:
+    return
+
+  let targetCell = nodeCell.getSelfOrNextLeafWhere (n) => isVisible(n) and not n.disableEditing
+  echo targetCell.dump()
+  return targetCell.toCursor(true)
 
 method getCursorLeft*(cell: CollectionCell, cursor: CellCursor): CellCursor =
   if cell.children.len == 0:
@@ -1175,18 +1197,22 @@ proc selectCursor(a, b: CellCursor, combine: bool): CellCursor =
     return combineCursors(a, b)
   return b
 
-method handleDeleteLeft*(cell: Cell, slice: Slice[int]): CellCursor {.base.} = discard
-method handleDeleteRight*(cell: Cell, slice: Slice[int]): CellCursor {.base.} = discard
+method handleDeleteLeft*(cell: Cell, slice: Slice[int]): Option[CellCursor] {.base.} = discard
+method handleDeleteRight*(cell: Cell, slice: Slice[int]): Option[CellCursor] {.base.} = discard
 
-method handleDeleteLeft*(cell: PropertyCell, slice: Slice[int]): CellCursor =
+method handleDeleteLeft*(cell: PropertyCell, slice: Slice[int]): Option[CellCursor] =
+  if cell.disableEditing:
+    return CellCursor.none
   let slice = if slice.a != slice.b: slice else: max(0, slice.a - 1)..slice.b
   let newIndex = cell.replaceText(slice, "")
-  return cell.toCursor(newIndex)
+  return cell.toCursor(newIndex).some
 
-method handleDeleteRight*(cell: PropertyCell, slice: Slice[int]): CellCursor =
+method handleDeleteRight*(cell: PropertyCell, slice: Slice[int]): Option[CellCursor] =
+  if cell.disableEditing:
+    return CellCursor.none
   let slice = if slice.a != slice.b: slice else: slice.a..min(slice.b + 1, cell.currentText.len)
   let newIndex = cell.replaceText(slice, "")
-  return cell.toCursor(newIndex)
+  return cell.toCursor(newIndex).some
 
 proc mode*(self: ModelDocumentEditor): string {.expose("editor.model").} =
   return self.currentMode
@@ -1340,20 +1366,42 @@ proc moveCursorRightCell*(self: ModelDocumentEditor, select: bool = false) {.exp
 
   self.markDirty()
 
+proc selectNode*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
+  if self.cursor.path.len == 0:
+    if self.cursor.firstIndex == 0 and self.cursor.lastIndex == self.cursor.cell.high:
+      if self.cursor.node.parent.isNotNil:
+        self.cursor.node = self.cursor.node.parent
+        self.cursor.cell = self.nodeToCell.getOrDefault(self.cursor.node.id, nil)
+        self.cursor.firstIndex = 0
+        self.cursor.lastIndex = self.cursor.cell.high
+    else:
+      self.cursor.firstIndex = 0
+      self.cursor.lastIndex = self.cursor.cell.high
+  else:
+    self.cursor.path.setLen(0)
+    self.cursor.firstIndex = 0
+    self.cursor.lastIndex = self.cursor.cell.high
+
+  self.markDirty()
+
 proc deleteLeft*(self: ModelDocumentEditor) {.expose("editor.model").} =
   let cell = self.cursor.targetCell
   if cell of CollectionCell:
-    discard
+    let parent = cell.node.parent
+    cell.node.removeFromParent()
+    self.rebuildCells()
+    self.cursor = self.getFirstEditableCellOfNode(parent)
   else:
     if self.cursor.firstIndex == self.cursor.lastIndex and self.cursor.lastIndex <= cell.editableLow:
+      echo "uaie"
       let prev = cell.getPreviousVisibleLeaf()
       if prev != cell:
-        let newCursor = prev.handleDeleteLeft(prev.high..prev.high)
-        if newCursor.node.isNotNil:
+        if prev.handleDeleteLeft(prev.high..prev.high).getSome(newCursor):
           self.cursor = newCursor
+    elif self.cursor.firstIndex == self.cursor.lastIndex and cell.disableEditing:
+      self.cursor = self.cursor.selectEntireNode()
     else:
-      let newCursor = cell.handleDeleteLeft(self.cursor.orderedRange)
-      if newCursor.node.isNotNil:
+      if cell.handleDeleteLeft(self.cursor.orderedRange).getSome(newCursor):
         self.cursor = newCursor
 
   self.markDirty()
@@ -1366,18 +1414,156 @@ proc deleteRight*(self: ModelDocumentEditor) {.expose("editor.model").} =
     if self.cursor.firstIndex == self.cursor.lastIndex and self.cursor.lastIndex >= cell.editableHigh + 1:
       let prev = cell.getNextVisibleLeaf()
       if prev != cell:
-        let newCursor = prev.handleDeleteRight(0..0)
-        if newCursor.node.isNotNil:
+        if prev.handleDeleteRight(0..0).getSome(newCursor):
           self.cursor = newCursor
     else:
-      let newCursor = cell.handleDeleteRight(self.cursor.orderedRange)
-      if newCursor.node.isNotNil:
+      if cell.handleDeleteRight(self.cursor.orderedRange).getSome(newCursor):
         self.cursor = newCursor
+
+  self.markDirty()
+
+proc isAtBeginningOfFirstCellOfNode*(cursor: CellCursor): bool =
+  result = cursor.lastIndex == 0
+  if result:
+    for i in cursor.path:
+      if i != 0:
+        return false
+
+proc isAtEndOfLastCellOfNode*(cursor: CellCursor): bool =
+  var cell = cursor.cell
+  for i in cursor.path:
+    if i != cell.high:
+      return false
+    cell = cell.CollectionCell.children[i]
+  if cell of CollectionCell:
+    return cursor.lastIndex == cell.high
+  else:
+    return cursor.lastIndex == cell.high + 1
+
+proc insertIntoNode*(self: ModelDocumentEditor, parent: AstNode, role: Id, index: int): Option[AstNode] =
+  let parentCell = self.nodeToCell.getOrDefault(parent.id)
+  debugf"insertIntoNode {index} {parent}, {parentCell.nodeFactory.isNotNil}"
+
+  if parentCell.nodeFactory.isNotNil:
+    let newNode = parentCell.nodeFactory()
+    parent.insert(role, index, newNode)
+    return newNode.some
+  else:
+    return parent.insertDefaultNode(role, index)
+
+proc insertBeforeNode*(self: ModelDocumentEditor, node: AstNode): Option[AstNode] =
+  let parentCell = self.nodeToCell.getOrDefault(node.parent.id)
+  debugf"01 insert before {node.index} {node.parent}, {parentCell.nodeFactory.isNotNil}"
+
+  return self.insertIntoNode(node.parent, node.role, node.index)
+
+proc insertAfterNode*(self: ModelDocumentEditor, node: AstNode): Option[AstNode] =
+  let parentCell = self.nodeToCell.getOrDefault(node.parent.id)
+  debugf"01 insert before {node.index} {node.parent}, {parentCell.nodeFactory.isNotNil}"
+
+  return self.insertIntoNode(node.parent, node.role, node.index + 1)
+
+proc createNewNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  if self.cursor.firstIndex != self.cursor.lastIndex:
+    return
+
+  echo "createNewNode"
+
+  let isAtBeginningOfFirstCellOfNode = block:
+    var result = self.cursor.lastIndex == 0
+    if result:
+      for i in self.cursor.path:
+        if i != 0:
+          result = false
+          break
+    result
+
+  let isAtEndOfLastCellOfNode = block:
+    var result = self.cursor.lastIndex == self.cursor.cell.high
+    if result:
+      for i in self.cursor.path:
+        if i != 0:
+          result = false
+          break
+    result
+
+  let canHaveSiblings = self.cursor.node.canHaveSiblings()
+
+  let newNode = if canHaveSiblings and self.cursor.isAtEndOfLastCellOfNode():
+    self.insertAfterNode(self.cursor.node)
+
+  elif canHaveSiblings and self.cursor.isAtBeginningOfFirstCellOfNode():
+    self.insertBeforeNode(self.cursor.node)
+
+  else:
+    let cell = self.cursor.targetCell
+    var i = 0
+    let originalNode = cell.node
+
+    var ok = false
+    var addBefore = true
+    var candidate = cell.getSelfOrNextLeafWhere proc(c: Cell): bool =
+      if c.node.selfDescription().getSome(desc):
+        debugf"{desc.role}, {desc.count}, {c.node.index}, {c.dump}, {c.node}"
+
+      if c.node != originalNode and not c.node.isDescendant(originalNode):
+        return true
+      if c.node == originalNode:
+        return false
+
+      inc i
+
+      if c.node.canHaveSiblings():
+        ok = true
+        return true
+
+      return false
+
+    if not ok and not originalNode.canHaveSiblings():
+      echo "search outside"
+      candidate = cell.getSelfOrNextLeafWhere proc(c: Cell): bool =
+        # inc i
+        if c.node.selfDescription().getSome(desc):
+          debugf"{desc.role}, {desc.count}, {c.node.index}, {c.dump}, {c.node}"
+        # return isVisible(c)
+        # return i > 10
+
+        if c.node.canHaveSiblings():
+          addBefore = false
+          ok = true
+          return true
+
+        return false
+
+    debugf"ok: {ok}, addBefore: {addBefore}"
+    if ok:
+      if addBefore:
+        self.insertBeforeNode(candidate.node)
+      else:
+        self.insertAfterNode(candidate.node)
+    elif originalNode.canHaveSiblings():
+      if addBefore:
+        self.insertBeforeNode(originalNode)
+      else:
+        self.insertAfterNode(originalNode)
+    else:
+      AstNode.none
+
+  # echo cell.dump()
+  # echo candidate.dump()
+
+  if newNode.getSome(node):
+    self.rebuildCells()
+    self.cursor = self.getFirstEditableCellOfNode(node)
+    echo self.cursor
 
   self.markDirty()
 
 proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool {.expose("editor.model").} =
   if self.getCellForCursor(self.cursor).getSome(cell):
+    if cell.disableEditing:
+      return false
+
     let newColumn = cell.replaceText(self.cursor.orderedRange, input)
     if newColumn != self.cursor.lastIndex:
       self.cursor.column = newColumn
@@ -1394,6 +1580,8 @@ genDispatcher("editor.model")
 
 proc handleAction(self: ModelDocumentEditor, action: string, arg: string): EventResponse =
   # logger.log lvlInfo, fmt"[modeleditor]: Handle action {action}, '{arg}'"
+  defer:
+    echo self.cursor
 
   var args = newJArray()
   args.add api.ModelDocumentEditor(id: self.id).toJson
