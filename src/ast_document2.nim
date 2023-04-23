@@ -44,27 +44,33 @@ proc selectEntireNode*(cursor: CellCursor): CellCursor =
     discard result.path.pop()
 
 type
-  UndoOpKind = enum
+  ModelOperationKind = enum
     Delete
     Replace
     Insert
-    TextChange
+    PropertyChange
     SymbolNameChange
-  UndoOp = ref object
-    kind: UndoOpKind
-    id: Id
-    parent: AstNode
-    idx: int
-    node: AstNode
-    text: string
+
+  ModelOperation = ref object
+    kind: ModelOperationKind
+    parent: AstNode       # The parent where a node was in inserted or deleted
+    node: AstNode         # The node which was inserted/deleted
+    idx: int              # The index where a node was inserted/deleted
+    role: Id              # The role where a node was inserted/deleted
+    value: PropertyValue  # The new/old text of a property
+    id: Id                # The new/old id of a reference
+
+  ModelTransaction* = object
+    operations*: seq[ModelOperation]
 
   ModelDocument* = ref object of Document
     filename*: string
     model*: Model
     project*: Project
 
-    undoOps*: seq[UndoOp]
-    redoOps*: seq[UndoOp]
+    currentTransaction: ModelTransaction
+    undoList: seq[ModelTransaction]
+    redoList: seq[ModelTransaction]
 
     onNodeInserted*: Event[(ModelDocument, AstNode)]
     onChanged*: Event[ModelDocument]
@@ -93,8 +99,8 @@ type
   UpdateContext* = ref object
     cellToWidget*: Table[Id, WWidget]
 
-proc `$`(op: UndoOp): string =
-  result = fmt"{op.kind}, '{op.text}'"
+proc `$`(op: ModelOperation): string =
+  result = fmt"{op.kind}, '{op.value}'"
   if op.id != null: result.add fmt", id = {op.id}"
   if op.node != nil: result.add fmt", node = {op.node}"
   if op.parent != nil: result.add fmt", parent = {op.parent}, index = {op.idx}"
@@ -333,6 +339,22 @@ proc createTypes*(self: ModelDocument) =
   # testModel.addRootNode(c)
   # self.model.addRootNode functionType()
 
+proc handleNodeDeleted(self: ModelDocument, model: Model, parent: AstNode, child: AstNode, role: Id, index: int) =
+  debugf "handleNodeDeleted {parent}, {child}, {role}, {index}"
+  self.currentTransaction.operations.add ModelOperation(kind: Delete, parent: parent, node: child, idx: index, role: role)
+
+proc handleNodeInserted(self: ModelDocument, model: Model, parent: AstNode, child: AstNode, role: Id, index: int) =
+  debugf "handleNodeInserted {parent}, {child}, {role}, {index}"
+  self.currentTransaction.operations.add ModelOperation(kind: Insert, parent: parent, node: child, idx: index, role: role)
+
+proc handleNodePropertyChanged(self: ModelDocument, model: Model, node: AstNode, role: Id, oldValue: PropertyValue, newValue: PropertyValue) =
+  debugf "handleNodePropertyChanged {node}, {role}, {oldValue}, {newValue}"
+  self.currentTransaction.operations.add ModelOperation(kind: PropertyChange, node: node, role: role, value: oldValue)
+
+proc handleNodeReferenceChanged(self: ModelDocument, model: Model, node: AstNode, role: Id, oldRef: Id, newRef: Id) =
+  debugf "handleNodeReferenceChanged {node}, {role}, {oldRef}, {newRef}"
+  discard
+
 proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
   logger.log lvlInfo, fmt"[modeldoc] Loading model source file '{self.filename}'"
   try:
@@ -353,6 +375,10 @@ proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
     testModel.addRootNode(root)
 
     self.model = testModel
+    discard self.model.onNodeDeleted.subscribe proc(d: auto) = self.handleNodeDeleted(d[0], d[1], d[2], d[3], d[4])
+    discard self.model.onNodeInserted.subscribe proc(d: auto) = self.handleNodeInserted(d[0], d[1], d[2], d[3], d[4])
+    discard self.model.onNodePropertyChanged.subscribe proc(d: auto) = self.handleNodePropertyChanged(d[0], d[1], d[2], d[3], d[4])
+    discard self.model.onNodeReferenceChanged.subscribe proc(d: auto) = self.handleNodeReferenceChanged(d[0], d[1], d[2], d[3], d[4])
 
     self.builder = newCellBuilder()
     for language in self.model.languages:
@@ -365,8 +391,8 @@ proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
       let uiae = `$`(root, true)
       logger.log(lvlDebug, fmt"[modeldoc] Load new model {uiae}")
 
-    self.undoOps.setLen 0
-    self.redoOps.setLen 0
+    self.undoList.setLen 0
+    self.redoList.setLen 0
 
   except CatchableError:
     logger.log lvlError, fmt"[modeldoc] Failed to load model source file '{self.filename}': {getCurrentExceptionMsg()}"
@@ -380,6 +406,57 @@ method load*(self: ModelDocument, filename: string = "") =
 
   self.filename = filename
   asyncCheck self.loadAsync()
+
+proc finishTransaction*(self: ModelDocument) =
+  if self.currentTransaction.operations.len > 0:
+    self.undoList.add self.currentTransaction
+  self.currentTransaction = ModelTransaction()
+
+proc finishRedoTransaction*(self: ModelDocument) =
+  if self.currentTransaction.operations.len > 0:
+    self.redoList.add self.currentTransaction
+  self.currentTransaction = ModelTransaction()
+
+proc applyModelOperation*(self: ModelDocument, op: ModelOperation) =
+  case op.kind
+  of Delete:
+    op.parent.insert(op.role, op.idx, op.node)
+  of Insert:
+    op.parent.remove(op.node)
+  of PropertyChange:
+    op.node.setProperty(op.role, op.value)
+  else:
+    discard
+
+proc undo*(self: ModelDocument) =
+  if self.undoList.len == 0:
+    return
+
+  self.finishTransaction()
+
+  let t = self.undoList.pop
+  logger.log(lvlInfo, fmt"Undoing {t}")
+
+  for i in countdown(t.operations.high, 0):
+    let op = t.operations[i]
+    self.applyModelOperation(op)
+
+  self.finishRedoTransaction()
+
+proc redo*(self: ModelDocument) =
+  if self.redoList.len == 0:
+    return
+
+  self.finishTransaction()
+
+  let t = self.redoList.pop
+  logger.log(lvlInfo, fmt"Redoing {t}")
+
+  for i in countdown(t.operations.high, 0):
+    let op = t.operations[i]
+    self.applyModelOperation(op)
+
+  self.finishTransaction()
 
 proc handleNodeInserted*(doc: ModelDocument, node: AstNode) =
   logger.log lvlInfo, fmt"[modeldoc] Node inserted: {node}"
@@ -507,6 +584,7 @@ proc handleInput(self: ModelDocumentEditor, input: string): EventResponse =
   logger.log lvlInfo, fmt"[modeleditor]: Handle input '{input}'"
 
   if self.insertTextAtCursor(input):
+    self.document.finishTransaction()
     return Handled
 
   return Ignored
@@ -1385,6 +1463,9 @@ proc selectNode*(self: ModelDocumentEditor, select: bool = false) {.expose("edit
   self.markDirty()
 
 proc deleteLeft*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  defer:
+    self.document.finishTransaction()
+
   let cell = self.cursor.targetCell
   if cell of CollectionCell:
     let parent = cell.node.parent
@@ -1393,7 +1474,6 @@ proc deleteLeft*(self: ModelDocumentEditor) {.expose("editor.model").} =
     self.cursor = self.getFirstEditableCellOfNode(parent)
   else:
     if self.cursor.firstIndex == self.cursor.lastIndex and self.cursor.lastIndex <= cell.editableLow:
-      echo "uaie"
       let prev = cell.getPreviousVisibleLeaf()
       if prev != cell:
         if prev.handleDeleteLeft(prev.high..prev.high).getSome(newCursor):
@@ -1407,6 +1487,9 @@ proc deleteLeft*(self: ModelDocumentEditor) {.expose("editor.model").} =
   self.markDirty()
 
 proc deleteRight*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  defer:
+    self.document.finishTransaction()
+
   let cell = self.cursor.targetCell
   if cell of CollectionCell:
     discard
@@ -1464,6 +1547,9 @@ proc insertAfterNode*(self: ModelDocumentEditor, node: AstNode): Option[AstNode]
   return self.insertIntoNode(node.parent, node.role, node.index + 1)
 
 proc createNewNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  defer:
+    self.document.finishTransaction()
+
   if self.cursor.firstIndex != self.cursor.lastIndex:
     return
 
@@ -1560,6 +1646,9 @@ proc createNewNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
   self.markDirty()
 
 proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool {.expose("editor.model").} =
+  defer:
+    self.document.finishTransaction()
+
   if self.getCellForCursor(self.cursor).getSome(cell):
     if cell.disableEditing:
       return false
@@ -1570,6 +1659,16 @@ proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool {.expos
       self.markDirty()
       return true
   return false
+
+proc undo*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  self.document.undo()
+  self.rebuildCells()
+  self.markDirty()
+
+proc redo*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  self.document.redo()
+  self.rebuildCells()
+  self.markDirty()
 
 proc toggleUseDefaultCellBuilder*(self: ModelDocumentEditor) {.expose("editor.model").} =
   self.useDefaultCellBuilder = not self.useDefaultCellBuilder
