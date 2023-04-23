@@ -77,6 +77,7 @@ type
     node*: AstNode
     line*: int
     displayText*: Option[string]
+    shadowText*: string
     fillChildren*: proc(): void
     filled*: bool
     isVisible*: CellIsVisiblePredicate

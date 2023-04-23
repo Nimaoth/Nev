@@ -172,6 +172,35 @@ proc finish(self: CellLayoutContext): WWidget =
 
 method updateCellWidget*(cell: Cell, app: Editor, widget: WWidget, frameIndex: int, ctx: CellLayoutContext, updateContext: UpdateContext): WWidget {.base.} = widget
 
+method updateCellWidget*(cell: PlaceholderCell, app: Editor, widget: WWidget, frameIndex: int, ctx: CellLayoutContext, updateContext: UpdateContext): WWidget =
+  if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
+    return nil
+
+  var widget = if widget.isNotNil and widget of WText: widget.WText else: WText()
+  result = widget
+
+  updateContext.cellToWidget[cell.id] = widget
+
+  if cell.currentText.len == 0:
+    if cell.shadowText.len == 0:
+      widget.text = "..."
+    else:
+      widget.text = cell.shadowText
+    let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200)).withAlpha(0.7)
+    widget.foregroundColor = textColor
+  else:
+    widget.text = cell.currentText
+    let defaultColor = if cell.foregroundColor.a != 0: cell.foregroundColor else: color(1, 1, 1)
+    let textColor = if cell.themeForegroundColors.len == 0: defaultColor else: app.theme.anyColor(cell.themeForegroundColors, defaultColor)
+    widget.foregroundColor = textColor
+
+  widget.fontSizeIncreasePercent = cell.fontSizeIncreasePercent
+  let size = app.platform.layoutOptions.getTextBounds(widget.text, widget.fontSizeIncreasePercent)
+  widget.left = 0
+  widget.right = size.x
+  widget.top = 0
+  widget.bottom = size.y
+
 method updateCellWidget*(cell: ConstantCell, app: Editor, widget: WWidget, frameIndex: int, ctx: CellLayoutContext, updateContext: UpdateContext): WWidget =
   if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
     return nil
