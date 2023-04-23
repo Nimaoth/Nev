@@ -265,6 +265,18 @@ proc toInput(key: cstring, code: cstring, keyCode: int): int64 =
   of "End": result = INPUT_END
   of "PageUp": result = INPUT_PAGE_UP
   of "PageDown": result = INPUT_PAGE_DOWN
+  of "F1": result = INPUT_F1
+  of "F2": result = INPUT_F2
+  of "F3": result = INPUT_F3
+  of "F4": result = INPUT_F4
+  of "F5": result = INPUT_F5
+  of "F6": result = INPUT_F6
+  of "F7": result = INPUT_F7
+  of "F8": result = INPUT_F8
+  of "F9": result = INPUT_F9
+  of "F10": result = INPUT_F10
+  of "F11": result = INPUT_F11
+  of "F12": result = INPUT_F12
   else:
     case keyCode
     of 112..123: result = int64(INPUT_F1 + (keyCode - 112))
@@ -276,7 +288,6 @@ method processEvents*(self: BrowserPlatform): int =
   result = 0
 
 method renderWidget(self: WWidget, renderer: BrowserPlatform, element: var Element, forceRedraw: bool, frameIndex: int, buffer: var string) {.base.} = discard
-
 
 proc applyDomUpdates*(self: BrowserPlatform) =
   for update in self.domUpdates:
