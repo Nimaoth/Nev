@@ -10,79 +10,6 @@ import ast/[types, cells]
 
 func withAlpha(color: Color, alpha: float32): Color = color(color.r, color.g, color.b, alpha)
 
-proc createRawAstWidget*(node: AstNode, app: Editor, widget: WPanel, frameIndex: int) =
-  let totalLineHeight = app.platform.totalLineHeight
-  let charWidth = app.platform.charWidth
-
-  let class = node.nodeClass
-
-  var text = ""
-
-  if class.isNil:
-    text.add $node.class
-  else:
-    text.add class.name
-
-  text.add "(id: " & $node.id & ")"
-
-  let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
-  var textWidget = createPartWidget(text, 0, text.len.float * charWidth, totalLineHeight, textColor, frameIndex)
-  widget.add textWidget
-
-  var y = totalLineHeight
-
-  for role in node.properties.mitems:
-    var text = ""
-    if class.isNotNil and class.propertyDescription(role.role).getSome(desc):
-      text.add desc.role
-    else:
-      text.add $role.role
-    text.add ": "
-    text.add $role.value
-
-    var textWidget = createPartWidget(text, 20, text.len.float * charWidth, totalLineHeight, textColor, frameIndex)
-    textWidget.top = y
-    textWidget.bottom = textWidget.top + totalLineHeight
-    widget.add textWidget
-
-    y = textWidget.bottom
-
-  for role in node.references.mitems:
-    var text = ""
-    if class.isNotNil and class.nodeReferenceDescription(role.role).getSome(desc):
-      text.add desc.role
-    else:
-      text.add $role.role
-    text.add ": "
-    text.add $role.node
-
-    var textWidget = createPartWidget(text, 20, text.len.float * charWidth, totalLineHeight, textColor, frameIndex)
-    textWidget.top = y
-    textWidget.bottom = textWidget.top + totalLineHeight
-    widget.add textWidget
-
-    y = textWidget.bottom
-
-  for role in node.childLists.mitems:
-    var text = ""
-    if class.isNotNil and class.nodeChildDescription(role.role).getSome(desc):
-      text.add desc.role
-    else:
-      text.add $role.role
-    text.add ": "
-
-    var textWidget = createPartWidget(text, 20, text.len.float * charWidth, totalLineHeight, textColor, frameIndex)
-    textWidget.top = y
-    textWidget.bottom = textWidget.top + totalLineHeight
-    widget.add textWidget
-
-    for c in role.nodes:
-      var childPanel = WPanel(left: 20 + text.len.float * charWidth, top: y, bottom: y, anchor: (vec2(0, 0), vec2(1, 0)), sizeToContent: true, drawBorder: true, foregroundColor: textColor)
-      createRawAstWidget(c, app, childPanel, frameIndex)
-      childPanel.layoutWidget(rect(20 + text.len.float * charWidth, y, 0, 0), frameIndex, app.platform.layoutOptions)
-      widget.add childPanel
-
-      y += childPanel.lastBounds.h + 2
 
 proc updateBaseIndexAndScrollOffset(self: ModelDocumentEditor, app: Editor, contentPanel: WPanel) =
   let totalLineHeight = app.platform.totalLineHeight
@@ -138,12 +65,9 @@ proc newCellLayoutContext(widget: WWidget): CellLayoutContext =
   result.parentWidget.right = 0
   result.parentWidget.top = 0
   result.parentWidget.bottom = 0
-  # result.parentWidget.sizeToContent = true
-  # result.parentWidget.layout = WPanelLayout(kind: Vertical)
 
   result.lineWidget = result.parentWidget.getOrCreate(result.currentLine, WPanel)
   result.lineWidget.anchor = (vec2(), vec2())
-  # result.lineWidget.sizeToContent = true
   result.lineWidget.left = 0
   result.lineWidget.right = 0
   result.lineWidget.top = 0
@@ -165,21 +89,17 @@ proc getReusableWidget(self: CellLayoutContext): WWidget =
     return nil
 
 proc updateCurrentIndent(self: CellLayoutContext) =
-  if self.hasIndent and self.lineWidget.children.len == 1:
-    let indentWidget = self.lineWidget.children[0].WText
-    indentWidget.text = self.indentText.repeat(self.currentIndent)
-    let size = self.layoutOptions.getTextBounds indentWidget.text
-    indentWidget.right = indentWidget.left + size.x
-    indentWidget.bottom = size.y
-
-    self.lineWidget.right = indentWidget.right
-    self.lineWidget.bottom = max(self.lineWidget.bottom, self.lineWidget.top + size.y)
+  if self.hasIndent and self.lineWidget.children.len == 0:
+    let size = self.layoutOptions.getTextBounds self.indentText.repeat(self.currentIndent)
+    self.lineWidget.right = size.x
 
 proc increaseIndent(self: CellLayoutContext) =
   inc self.currentIndent
   self.updateCurrentIndent()
 
 proc decreaseIndent(self: CellLayoutContext) =
+  if self.currentIndent == 0:
+    return
   dec self.currentIndent
   self.updateCurrentIndent()
 
@@ -188,31 +108,14 @@ proc indent(self: CellLayoutContext) =
     return
 
   self.hasIndent = true
-  let indentWidget = self.lineWidget.getOrCreate(self.indexInLine, WText)
-  indentWidget.left = self.lineWidget.right
-  indentWidget.top = 0
-
   self.updateCurrentIndent()
-
-  inc self.indexInLine
 
 proc addSpace(self: CellLayoutContext) =
   if self.currentLineEmpty:
     return
-  let indentWidget = self.lineWidget.getOrCreate(self.indexInLine, WText)
-  # indentWidget.sizeToContent = true
-  indentWidget.text = " "
 
-  let size = self.layoutOptions.getTextBounds indentWidget.text
-  indentWidget.left = self.lineWidget.right
-  indentWidget.right = indentWidget.left + size.x
-  indentWidget.top = 0
-  indentWidget.bottom = size.y
-
-  self.lineWidget.right = indentWidget.right
-  self.lineWidget.bottom = max(self.lineWidget.bottom, self.lineWidget.top + size.y)
-
-  inc self.indexInLine
+  let size = self.layoutOptions.getTextBounds " "
+  self.lineWidget.right += size.x
 
 proc newLine(self: CellLayoutContext) =
   if self.lineWidget.isNotNil:
@@ -224,8 +127,6 @@ proc newLine(self: CellLayoutContext) =
 
 
   self.lineWidget = self.parentWidget.getOrCreate(self.currentLine, WPanel)
-  # self.lineWidget.sizeToContent = true
-  # self.lineWidget.layout = WPanelLayout(kind: Horizontal)
   self.indexInLine = 0
   self.currentLineEmpty = true
 
@@ -322,11 +223,8 @@ method updateCellWidget*(cell: NodeReferenceCell, app: Editor, widget: WWidget, 
 
   updateContext.cellToWidget[cell.id] = widget
 
-  # widget.sizeToContent = true
-
   if cell.child.isNil:
     var text = if widget.len > 0 and widget[0] of WText: widget[0].WText else: WText()
-    # text.sizeToContent = true
 
     let reference = cell.node.reference(cell.reference)
     text.text = $reference
@@ -378,7 +276,6 @@ method updateCellWidget*(cell: PropertyCell, app: Editor, widget: WWidget, frame
 
   updateContext.cellToWidget[cell.id] = widget
 
-  # widget.sizeToContent = true
   widget.text = cell.currentText
 
   widget.fontSizeIncreasePercent = cell.fontSizeIncreasePercent
@@ -465,8 +362,6 @@ proc updateSelections(self: ModelDocumentEditor, app: Editor, cell: Cell, cursor
   let secondaryColor = app.theme.color("inputValidation.warningBorder", color(1, 1, 1)).withAlpha(0.25)
   let primaryColor = app.theme.color("selection.background", color(1, 1, 1)).withAlpha(0.25)
 
-  # debugf"updateSelections "
-
   if cell of CollectionCell:
     let coll = cell.CollectionCell
 
@@ -482,11 +377,9 @@ proc updateSelections(self: ModelDocumentEditor, app: Editor, cell: Cell, cursor
         startIndex = cursor.lastIndex + 1
         endIndex = cursor.firstIndex
 
-    # debugf"secondary {startIndex}..{endIndex}"
     for i in startIndex..endIndex:
       self.updateSelections(app, coll.children[i], CellCursor.none, false, reverse)
 
-    # debugf"primary {primaryIndex}"
     self.updateSelections(app, coll.children[primaryIndex], CellCursor.none, primary, reverse)
 
   elif cursor.getSome(cursor):
@@ -601,17 +494,12 @@ method updateWidget*(self: ModelDocumentEditor, app: Editor, widget: WPanel, fra
 
   var rendered = 0
 
-  # for node in self.document.model.rootNodes:
-  #   createRawAstWidget(node, app, contentPanel, frameIndex)
-
   var builder = self.document.builder
   var lastY = self.scrollOffset
 
   if self.cellWidgetContext.isNil:
     self.cellWidgetContext = UpdateContext()
-  self.cellWidgetContext.cellToWidget.clear()
-
-  # echo self.cursor.cell.line
+  self.cellWidgetContext.cellToWidget = initTable[Id, WWidget](self.cellWidgetContext.cellToWidget.len)
 
   var i = 0
   for node in self.document.model.rootNodes:
