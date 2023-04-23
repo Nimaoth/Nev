@@ -125,6 +125,7 @@ generateGetters(NodeClass)
 generateGetters(Model)
 generateGetters(Language)
 
+proc `$`*(node: AstNode, recursive: bool = false): string
 proc nodeClass*(node: AstNode): NodeClass
 proc add*(node: AstNode, role: Id, child: AstNode)
 
