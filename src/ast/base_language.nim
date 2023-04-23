@@ -141,17 +141,18 @@ builder.addBuilderFor stringLiteralClass.id, idNone(), proc(builder: CellBuilder
   cell.add ConstantCell(node: node, text: "'", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation.definition.string", "punctuation", "&editor.foreground"])
   return cell
 
-proc buildChildren(builder: CellBuilder, node: AstNode, role: Id, layout: WPanelLayoutKind): Cell =
+proc buildChildren(builder: CellBuilder, node: AstNode, role: Id, layout: WPanelLayoutKind, isVisible: proc(node: AstNode): bool = nil): Cell =
   let children = node.children(role)
   if children.len > 1:
     var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: layout))
     for c in node.children(role):
       cell.add builder.buildCell(c)
-    return cell
+    result = cell
   elif children.len == 1:
-    return builder.buildCell(children[0])
+    result = builder.buildCell(children[0])
   else:
-    return ConstantCell(node: node, text: "<...>", themeForegroundColors: @["&editor.foreground"], disableEditing: true)
+    result = PlaceholderCell(node: node, role: role, disableEditing: true)
+  result.isVisible = isVisible
 
 builder.addBuilderFor nodeListClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Vertical))
@@ -180,13 +181,15 @@ builder.addBuilderFor blockClass.id, idNone(), proc(builder: CellBuilder, node: 
 builder.addBuilderFor constDeclClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =
+    proc isVisible(node: AstNode): bool = node.hasChild(IdConstDeclType)
+
     # echo "fill collection const decl"
     cell.add ConstantCell(node: node, text: "const", themeForegroundColors: @["keyword"], disableEditing: true)
     cell.add PropertyCell(node: node, property: IdINamedName)
-    cell.add ConstantCell(node: node, text: ":", isVisible: (node) => node.hasChild(IdConstDeclType), style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+    cell.add ConstantCell(node: node, text: ":", isVisible: isVisible, style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
     # for c in node.children(IdConstDeclType):
     #   cell.add builder.buildCell(c)
-    cell.add builder.buildChildren(node, IdConstDeclType, Horizontal)
+    cell.add builder.buildChildren(node, IdConstDeclType, Horizontal, isVisible = isVisible)
     cell.add ConstantCell(node: node, text: "=", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
     cell.add builder.buildChildren(node, IdConstDeclValue, Horizontal)
     # for c in node.children(IdConstDeclValue):
@@ -196,11 +199,13 @@ builder.addBuilderFor constDeclClass.id, idNone(), proc(builder: CellBuilder, no
 builder.addBuilderFor letDeclClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =
+    proc isVisible(node: AstNode): bool = node.hasChild(IdLetDeclType)
+
     # echo "fill collection let decl"
     cell.add ConstantCell(node: node, text: "let", themeForegroundColors: @["keyword"], disableEditing: true)
     cell.add PropertyCell(node: node, property: IdINamedName)
-    cell.add ConstantCell(node: node, text: ":", isVisible: (node) => node.hasChild(IdLetDeclType), style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
-    cell.add builder.buildChildren(node, IdLetDeclType, Horizontal)
+    cell.add ConstantCell(node: node, text: ":", isVisible: isVisible, style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+    cell.add builder.buildChildren(node, IdLetDeclType, Horizontal, isVisible = isVisible)
     # for c in node.children(IdLetDeclType):
     #   cell.add builder.buildCell(c)
     cell.add ConstantCell(node: node, text: "=", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
@@ -212,15 +217,18 @@ builder.addBuilderFor letDeclClass.id, idNone(), proc(builder: CellBuilder, node
 builder.addBuilderFor varDeclClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =
+    proc isTypeVisible(node: AstNode): bool = node.hasChild(IdVarDeclType)
+    proc isValueVisible(node: AstNode): bool = node.hasChild(IdVarDeclValue)
+
     # echo "fill collection var decl"
     cell.add ConstantCell(node: node, text: "var", themeForegroundColors: @["keyword"], disableEditing: true)
     cell.add PropertyCell(node: node, property: IdINamedName)
-    cell.add ConstantCell(node: node, text: ":", isVisible: (node) => node.hasChild(IdVarDeclType), style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
-    cell.add builder.buildChildren(node, IdVarDeclType, Horizontal)
+    cell.add ConstantCell(node: node, text: ":", isVisible: isTypeVisible, style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+    cell.add builder.buildChildren(node, IdVarDeclType, Horizontal, isVisible = isTypeVisible)
     # for c in node.children(IdVarDeclType):
       # cell.add builder.buildCell(c)
-    cell.add ConstantCell(node: node, text: "=", isVisible: (node) => node.hasChild(IdVarDeclValue), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
-    cell.add builder.buildChildren(node, IdVarDeclValue, Horizontal)
+    cell.add ConstantCell(node: node, text: "=", isVisible: isValueVisible, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+    cell.add builder.buildChildren(node, IdVarDeclValue, Horizontal, isVisible = isValueVisible)
     # for c in node.children(IdVarDeclValue):
     #   cell.add builder.buildCell(c)
   return cell
@@ -241,14 +249,16 @@ builder.addBuilderFor assignmentClass.id, idNone(), proc(builder: CellBuilder, n
 builder.addBuilderFor parameterDeclClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =
+    proc isVisible(node: AstNode): bool = node.hasChild(IdParameterDeclValue)
+
     # echo "fill collection parameter decl"
     cell.add PropertyCell(node: node, property: IdINamedName)
     cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
     cell.add builder.buildChildren(node, IdParameterDeclType, Horizontal)
     # for c in node.children(IdParameterDeclType):
     #   cell.add builder.buildCell(c)
-    cell.add ConstantCell(node: node, text: "=", isVisible: (node) => node.hasChild(IdParameterDeclValue), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
-    cell.add builder.buildChildren(node, IdParameterDeclValue, Horizontal)
+    cell.add ConstantCell(node: node, text: "=", isVisible: isVisible, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+    cell.add builder.buildChildren(node, IdParameterDeclValue, Horizontal, isVisible = isVisible)
     # for c in node.children(IdParameterDeclValue):
     #   cell.add builder.buildCell(c)
   return cell
@@ -260,10 +270,13 @@ builder.addBuilderFor functionDefinitionClass.id, idNone(), proc(builder: CellBu
     cell.add ConstantCell(node: node, text: "fn", themeForegroundColors: @["keyword"], disableEditing: true)
     cell.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
 
-    for i, c in node.children(IdFunctionDefinitionParameters):
-      if i > 0:
-        cell.add ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
-      cell.add builder.buildCell(c)
+    if node.hasChild IdFunctionDefinitionParameters:
+      for i, c in node.children(IdFunctionDefinitionParameters):
+        if i > 0:
+          cell.add ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+        cell.add builder.buildCell(c)
+    else:
+      cell.add PlaceholderCell(node: node, role: IdFunctionDefinitionParameters)
 
     cell.add ConstantCell(node: node, text: "):", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
 

@@ -23,6 +23,9 @@ type
   AliasCell* = ref object of Cell
     discard
 
+  PlaceholderCell* = ref object of Cell
+    role*: Id
+
 method getText*(cell: Cell): string {.base.} = discard
 method setText*(cell: Cell, text: string) {.base.} = discard
 
@@ -172,6 +175,9 @@ method setText*(cell: PropertyCell, text: string) =
 method setText*(cell: AliasCell, text: string) =
   cell.currentText = text
 
+method setText*(cell: PlaceholderCell, text: string) =
+  cell.currentText = text
+
 method getText*(cell: CollectionCell): string = "<>"
 
 method getText*(cell: ConstantCell): string = cell.text
@@ -204,6 +210,8 @@ method getText*(cell: AliasCell): string =
   else:
     return $cell.node.class
 
+method getText*(cell: PlaceholderCell): string = cell.displayText.get("")
+
 method dump(self: CollectionCell, recurse: bool = false): string =
   result = fmt"CollectionCell(inline: {self.inline}, layout: {self.layout}): {self.node}"
   if recurse:
@@ -226,6 +234,9 @@ method dump(self: NodeReferenceCell, recurse: bool = false): string =
 
 method dump(self: AliasCell, recurse: bool = false): string =
   result.add fmt"AliasCell(node: {self.node.id})"
+
+method dump(self: PlaceholderCell, recurse: bool = false): string =
+  result.add fmt"PlaceholderCell(node: {self.node.id}, role: {self.role})"
 
 proc fill*(self: Cell) =
   if self.fillChildren.isNil or self.filled:

@@ -49,7 +49,7 @@ type
     Replace
     Insert
     PropertyChange
-    SymbolNameChange
+    ReferenceChange
 
   ModelOperation = ref object
     kind: ModelOperationKind
@@ -326,34 +326,21 @@ proc toModel(json: JsonNode, root: bool = false): AstNode =
 
   return node
 
-proc createTypes*(self: ModelDocument) =
-  let stringType = () => newAstNode(stringTypeClass)
-  let intType = () => newAstNode(intTypeClass)
-  let voidType = () => newAstNode(voidTypeClass)
-  let functionType = proc (returnType: AstNode, parameterTypes: seq[AstNode]): AstNode =
-    result = newAstNode(functionTypeClass)
-    result.add(IdFunctionTypeReturnType, returnType)
-    for pt in parameterTypes:
-      result.add(IdFunctionTypeParameterTypes, pt)
-
-  # testModel.addRootNode(c)
-  # self.model.addRootNode functionType()
-
 proc handleNodeDeleted(self: ModelDocument, model: Model, parent: AstNode, child: AstNode, role: Id, index: int) =
-  debugf "handleNodeDeleted {parent}, {child}, {role}, {index}"
+  # debugf "handleNodeDeleted {parent}, {child}, {role}, {index}"
   self.currentTransaction.operations.add ModelOperation(kind: Delete, parent: parent, node: child, idx: index, role: role)
 
 proc handleNodeInserted(self: ModelDocument, model: Model, parent: AstNode, child: AstNode, role: Id, index: int) =
-  debugf "handleNodeInserted {parent}, {child}, {role}, {index}"
+  # debugf "handleNodeInserted {parent}, {child}, {role}, {index}"
   self.currentTransaction.operations.add ModelOperation(kind: Insert, parent: parent, node: child, idx: index, role: role)
 
 proc handleNodePropertyChanged(self: ModelDocument, model: Model, node: AstNode, role: Id, oldValue: PropertyValue, newValue: PropertyValue) =
-  debugf "handleNodePropertyChanged {node}, {role}, {oldValue}, {newValue}"
+  # debugf "handleNodePropertyChanged {node}, {role}, {oldValue}, {newValue}"
   self.currentTransaction.operations.add ModelOperation(kind: PropertyChange, node: node, role: role, value: oldValue)
 
 proc handleNodeReferenceChanged(self: ModelDocument, model: Model, node: AstNode, role: Id, oldRef: Id, newRef: Id) =
-  debugf "handleNodeReferenceChanged {node}, {role}, {oldRef}, {newRef}"
-  discard
+  # debugf "handleNodeReferenceChanged {node}, {role}, {oldRef}, {newRef}"
+  self.currentTransaction.operations.add ModelOperation(kind: ReferenceChange, node: node, role: role, id: oldRef)
 
 proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
   logger.log lvlInfo, fmt"[modeldoc] Loading model source file '{self.filename}'"
@@ -425,6 +412,8 @@ proc applyModelOperation*(self: ModelDocument, op: ModelOperation) =
     op.parent.remove(op.node)
   of PropertyChange:
     op.node.setProperty(op.role, op.value)
+  of ReferenceChange:
+    op.node.setReference(op.role, op.id)
   else:
     discard
 
@@ -1109,6 +1098,14 @@ method getCursorLeft*(cell: AliasCell, cursor: CellCursor): CellCursor =
   else:
     result = cell.getPreviousSelectableLeaf().toCursor(false)
 
+method getCursorLeft*(cell: PlaceholderCell, cursor: CellCursor): CellCursor =
+  if cursor.lastIndex > cell.editableLow:
+    result = cursor
+    dec result.lastIndex
+    result.firstIndex = result.lastIndex
+  else:
+    result = cell.getPreviousSelectableLeaf().toCursor(false)
+
 method getCursorLeft*(cell: PropertyCell, cursor: CellCursor): CellCursor =
   if cursor.lastIndex > cell.editableLow:
     result = cursor
@@ -1134,6 +1131,14 @@ method getCursorRight*(cell: NodeReferenceCell, cursor: CellCursor): CellCursor 
     result = cell.getNextSelectableLeaf().toCursor(true)
 
 method getCursorRight*(cell: AliasCell, cursor: CellCursor): CellCursor =
+  if cursor.lastIndex <= cell.editableHigh:
+    result = cursor
+    inc result.lastIndex
+    result.firstIndex = result.lastIndex
+  else:
+    result = cell.getNextSelectableLeaf().toCursor(true)
+
+method getCursorRight*(cell: PlaceholderCell, cursor: CellCursor): CellCursor =
   if cursor.lastIndex <= cell.editableHigh:
     result = cursor
     inc result.lastIndex
@@ -1286,6 +1291,20 @@ method handleDeleteLeft*(cell: PropertyCell, slice: Slice[int]): Option[CellCurs
   return cell.toCursor(newIndex).some
 
 method handleDeleteRight*(cell: PropertyCell, slice: Slice[int]): Option[CellCursor] =
+  if cell.disableEditing:
+    return CellCursor.none
+  let slice = if slice.a != slice.b: slice else: slice.a..min(slice.b + 1, cell.currentText.len)
+  let newIndex = cell.replaceText(slice, "")
+  return cell.toCursor(newIndex).some
+
+method handleDeleteLeft*(cell: PlaceholderCell, slice: Slice[int]): Option[CellCursor] =
+  if cell.disableEditing:
+    return CellCursor.none
+  let slice = if slice.a != slice.b: slice else: max(0, slice.a - 1)..slice.b
+  let newIndex = cell.replaceText(slice, "")
+  return cell.toCursor(newIndex).some
+
+method handleDeleteRight*(cell: PlaceholderCell, slice: Slice[int]): Option[CellCursor] =
   if cell.disableEditing:
     return CellCursor.none
   let slice = if slice.a != slice.b: slice else: slice.a..min(slice.b + 1, cell.currentText.len)
@@ -1459,6 +1478,18 @@ proc selectNode*(self: ModelDocumentEditor, select: bool = false) {.expose("edit
     self.cursor.path.setLen(0)
     self.cursor.firstIndex = 0
     self.cursor.lastIndex = self.cursor.cell.high
+
+  self.markDirty()
+
+proc selectPrevPlaceholder*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
+  var candidate = self.cursor.targetCell.getPreviousLeafWhere proc(c: Cell): bool = (c of PlaceholderCell) and isVisible(c)
+  self.cursor = candidate.toCursor(true)
+
+  self.markDirty()
+
+proc selectNextPlaceholder*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
+  var candidate = self.cursor.targetCell.getNextLeafWhere proc(c: Cell): bool = (c of PlaceholderCell) and isVisible(c)
+  self.cursor = candidate.toCursor(true)
 
   self.markDirty()
 
