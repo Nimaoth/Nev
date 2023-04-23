@@ -2,7 +2,7 @@
 import std/[options, algorithm, strutils, hashes, enumutils, json, jsonutils, tables, macros, sequtils, strformat]
 import fusion/matching
 import chroma
-import util, id, macro_utils, custom_logger
+import util, id, macro_utils, custom_logger, event
 import print
 
 type
@@ -117,6 +117,11 @@ type
     classesToLanguages {.getter.}: Table[Id, Language]
     nodes {.getter.}: Table[Id, AstNode]
 
+    onNodeDeleted*: Event[tuple[self: Model, parent: AstNode, child: AstNode, role: Id, index: int]]
+    onNodeInserted*: Event[tuple[self: Model, parent: AstNode, child: AstNode, role: Id, index: int]]
+    onNodePropertyChanged*: Event[tuple[self: Model, node: AstNode, role: Id, oldValue: PropertyValue, newValue: PropertyValue]]
+    onNodeReferenceChanged*: Event[tuple[self: Model, node: AstNode, role: Id, oldRef: Id, newRef: Id]]
+
   Project* = ref object
     models*: Table[Id, Model]
     builder*: CellBuilder
@@ -124,6 +129,18 @@ type
 generateGetters(NodeClass)
 generateGetters(Model)
 generateGetters(Language)
+
+proc notifyNodeDeleted(self: Model, parent: AstNode, child: AstNode, role: Id, index: int) =
+  self.onNodeDeleted.invoke (self, parent, child, role, index)
+
+proc notifyNodeInserted(self: Model, parent: AstNode, child: AstNode, role: Id, index: int) =
+  self.onNodeInserted.invoke (self, parent, child, role, index)
+
+proc notifyNodePropertyChanged(self: Model, node: AstNode, role: Id, oldValue: PropertyValue, newValue: PropertyValue) =
+  self.onNodePropertyChanged.invoke (self, node, role, oldValue, newValue)
+
+proc notifyNodeReferenceChanged(self: Model, node: AstNode, role: Id, oldRef: Id, newRef: Id) =
+  self.onNodeReferenceChanged.invoke (self, node, role, oldRef, newRef)
 
 proc `$`*(node: AstNode, recursive: bool = false): string
 proc nodeClass*(node: AstNode): NodeClass
@@ -283,6 +300,8 @@ proc resolveReference*(node: AstNode, role: Id): Option[AstNode] =
 proc setReference*(node: AstNode, role: Id, target: Id) =
   for c in node.references.mitems:
     if c.role == role:
+      if node.model.isNotNil:
+        node.model.notifyNodeReferenceChanged(node, role, c.node, target)
       c.node = target
       break
 
@@ -302,6 +321,8 @@ proc property*(node: AstNode, role: Id): Option[PropertyValue] =
 proc setProperty*(node: AstNode, role: Id, value: PropertyValue) =
   for c in node.properties.mitems:
     if c.role == role:
+      if node.model.isNotNil:
+        node.model.notifyNodePropertyChanged(node, role, c.value, value)
       c.value = value
       break
 
@@ -435,6 +456,8 @@ proc insert*(node: AstNode, role: Id, index: int, child: AstNode) =
   for c in node.childLists.mitems:
     if c.role == role:
       c.nodes.insert child, index
+      if node.model.isNotNil:
+        node.model.notifyNodeInserted(node, child, role, index)
       return
 
   raise newException(Defect, fmt"Unknown role {role} for node {node.id} of class {node.class}")
@@ -444,6 +467,8 @@ proc remove*(node: AstNode, child: AstNode) =
     if children.role == child.role:
       let i = children.nodes.find(child)
       if i != -1:
+        if node.model.isNotNil:
+          node.model.notifyNodeDeleted(node, child, child.role, i)
         children.nodes.del i
 
         child.forEach2 n:
