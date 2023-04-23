@@ -267,23 +267,23 @@ proc buildCellDefault*(self: CellBuilder, node: AstNode, useDefaultRecursive: bo
 
   var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =
-    cell.add ConstantCell(node: node, text: class.name)
-    cell.add ConstantCell(node: node, text: "{", increaseIndentAfter: true)
+    cell.add ConstantCell(node: node, text: class.name, disableEditing: true)
+    cell.add ConstantCell(node: node, text: "{", increaseIndentAfter: true, disableEditing: true)
 
     var hasAnyChildren = false
 
     for prop in node.properties:
       hasAnyChildren = true
       let name: string = class.propertyDescription(prop.role).map((decs) => decs.role).get($prop.role)
-      cell.add ConstantCell(node: node, text: name, style: CellStyle(onNewLine: true))
-      cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true))
+      cell.add ConstantCell(node: node, text: name, style: CellStyle(onNewLine: true), disableEditing: true)
+      cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), disableEditing: true)
       cell.add PropertyCell(id: newId(), node: node, property: prop.role)
 
     for prop in node.references:
       hasAnyChildren = true
       let name: string = class.nodeReferenceDescription(prop.role).map((decs) => decs.role).get($prop.role)
-      cell.add ConstantCell(node: node, text: name, style: CellStyle(onNewLine: true))
-      cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true))
+      cell.add ConstantCell(node: node, text: name, style: CellStyle(onNewLine: true), disableEditing: true)
+      cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), disableEditing: true)
 
       var nodeRefCell = NodeReferenceCell(id: newId(), node: node, reference: prop.role, property: IdINamedName)
       if node.resolveReference(prop.role).getSome(targetNode):
@@ -293,19 +293,27 @@ proc buildCellDefault*(self: CellBuilder, node: AstNode, useDefaultRecursive: bo
 
     for prop in node.childLists:
       hasAnyChildren = true
+      let children = node.children(prop.role)
+
       let name: string = class.nodeChildDescription(prop.role).map((decs) => decs.role).get($prop.role)
-      cell.add ConstantCell(node: node, text: name, style: CellStyle(onNewLine: true))
-      cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true))
+      cell.add ConstantCell(node: node, text: name, style: CellStyle(onNewLine: true), disableEditing: true)
+      cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), disableEditing: true, increaseIndentAfter: children.len > 1)
 
       var hasChildren = false
-      for c in node.children(prop.role):
+      for i, c in children:
+        var childCell = self.buildCell(c, useDefaultRecursive)
+        if childCell.style.isNil:
+          childCell.style = CellStyle()
+        childCell.style.onNewLine = children.len > 1
+        if children.len > 1 and i == children.high:
+          childCell.decreaseIndentAfter = true
+        cell.add childCell
         hasChildren = true
-        cell.add self.buildCell(c, useDefaultRecursive)
 
       if not hasChildren:
-        cell.add ConstantCell(node: node, text: "<...>")
+        cell.add ConstantCell(node: node, text: "<...>", disableEditing: true)
 
-    cell.add ConstantCell(node: node, text: "}", decreaseIndentBefore: true, style: CellStyle(onNewLine: hasAnyChildren, addNewlineAfter: true))
+    cell.add ConstantCell(node: node, text: "}", decreaseIndentBefore: true, style: CellStyle(onNewLine: hasAnyChildren), disableEditing: true)
 
   return cell
 

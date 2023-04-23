@@ -62,6 +62,7 @@ type
     childLists*: seq[tuple[role: Id, nodes: seq[AstNode]]]
 
   CellIsVisiblePredicate* = proc(node: AstNode): bool
+  CellNodeFactory* = proc(): AstNode
 
   CellStyle* = ref object
     onNewLine*: bool
@@ -79,8 +80,10 @@ type
     fillChildren*: proc(): void
     filled*: bool
     isVisible*: CellIsVisiblePredicate
+    nodeFactory*: CellNodeFactory
     style*: CellStyle
     disableSelection*: bool
+    disableEditing*: bool
     increaseIndentBefore*: bool
     decreaseIndentBefore*: bool
     increaseIndentAfter*: bool
@@ -123,6 +126,7 @@ generateGetters(Model)
 generateGetters(Language)
 
 proc nodeClass*(node: AstNode): NodeClass
+proc add*(node: AstNode, role: Id, child: AstNode)
 
 proc forEach*(node: AstNode, f: proc(node: AstNode)) =
   f(node)
@@ -339,10 +343,27 @@ proc newAstNode*(class: NodeClass, id: Option[Id] = Id.none): AstNode =
   result.class = class.id
   result.addMissingFieldsForClass(class)
 
+proc fillDefaultChildren*(node: AstNode, language: Language) =
+  let class = language.classes.getOrDefault(node.class, nil)
+  for desc in class.children:
+    if desc.count in {ChildCount.One, ChildCount.OneOrMore}:
+      let childClass = language.classes.getOrDefault(desc.class)
+      let child = newAstNode(childClass)
+      child.fillDefaultChildren(language)
+      node.add(desc.id, child)
+
 proc ancestor*(node: AstNode, distance: int): AstNode =
   result = node
   for i in 1..distance:
     result = result.parent
+
+proc isDescendant*(node: AstNode, ancestor: AstNode): bool =
+  result = false
+  var temp = node
+  while temp.isNotNil:
+    if temp.parent == ancestor:
+      return true
+    temp = temp.parent
 
 proc depth*(node: AstNode): int =
   result = 0
@@ -358,7 +379,45 @@ proc nodeClass*(node: AstNode): NodeClass =
   let language = node.language
   result = if language.isNil: nil else: language.classes.getOrDefault(node.class, nil)
 
-proc add*(node: AstNode, role: Id, child: AstNode) =
+proc selfDescription*(node: AstNode): Option[NodeChildDescription] =
+  ### Returns the NodeChildDescription of the parent node which describes the role this node is used as.
+  if node.parent.isNil:
+    return NodeChildDescription.none
+  let class = node.parent.nodeClass
+  if class.isNil:
+    return NodeChildDescription.none
+  return class.nodeChildDescription(node.role)
+
+proc canHaveSiblings*(node: AstNode): bool =
+  ### Returns true if the node is in a role which allows more siblings in that role
+  if node.selfDescription().getSome(desc):
+    case desc.count
+    of ChildCount.One, ChildCount.ZeroOrOne: # Parent already has this as child, so no more children allowed
+      return false
+    of ChildCount.OneOrMore, ChildCount.ZeroOrMore:
+      return true
+  else:
+    return false
+
+proc canInsertInto*(node: AstNode, role: Id): bool =
+  ### Returns true if the node can have more children of the specified role
+  if node.nodeClass.nodeChildDescription(role).getSome(desc):
+    let childCount = node.children(role).len
+    case desc.count
+    of ChildCount.One, ChildCount.ZeroOrOne:
+      return childCount == 0
+    of ChildCount.OneOrMore, ChildCount.ZeroOrMore:
+      return true
+  else:
+    return false
+
+proc index*(node: AstNode): int =
+  ### Returns the index of node in it's role
+  if node.parent.isNil:
+    return -1
+  return node.parent.children(node.role).find node
+
+proc insert*(node: AstNode, role: Id, index: int, child: AstNode) =
   if child.isNil:
     return
 
@@ -374,10 +433,52 @@ proc add*(node: AstNode, role: Id, child: AstNode) =
 
   for c in node.childLists.mitems:
     if c.role == role:
-      c.nodes.add child
+      c.nodes.insert child, index
       return
 
   raise newException(Defect, fmt"Unknown role {role} for node {node.id} of class {node.class}")
+
+proc remove*(node: AstNode, child: AstNode) =
+  for children in node.childLists.mitems:
+    if children.role == child.role:
+      let i = children.nodes.find(child)
+      if i != -1:
+        children.nodes.del i
+
+        child.forEach2 n:
+          n.model = nil
+          node.model.nodes.del n.id
+
+      return
+
+proc removeFromParent*(node: AstNode) =
+  if node.parent.isNil:
+    return
+  node.parent.remove(node)
+
+proc add*(node: AstNode, role: Id, child: AstNode) =
+  node.insert(role, node.children(role).len, child)
+
+proc insertDefaultNode*(node: AstNode, role: Id, index: int): Option[AstNode] =
+  result = AstNode.none
+
+  let class = node.nodeClass
+  let desc = class.nodeChildDescription(role).get
+
+  let language = node.language
+  if language.isNil:
+    return
+
+  let childClass = language.classes.getOrDefault(desc.class, nil)
+  if childClass.isNil:
+    return
+
+  var child = newAstNode(childClass)
+  child.fillDefaultChildren(language)
+
+  node.insert(role, index, child)
+
+  return child.some
 
 proc newCellBuilder*(): CellBuilder =
   new result
