@@ -151,7 +151,7 @@ proc buildChildren(builder: CellBuilder, node: AstNode, role: Id, layout: WPanel
   elif children.len == 1:
     result = builder.buildCell(children[0])
   else:
-    result = PlaceholderCell(node: node, role: role, disableEditing: true)
+    result = PlaceholderCell(id: newId(), node: node, role: role)
   result.isVisible = isVisible
 
 builder.addBuilderFor nodeListClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
@@ -361,6 +361,10 @@ builder.addBuilderFor nodeReferenceClass.id, idNone(), proc(builder: CellBuilder
   var cell = NodeReferenceCell(id: newId(), node: node, reference: IdNodeReferenceTarget, property: IdINamedName)
   if node.resolveReference(IdNodeReferenceTarget).getSome(targetNode):
     cell.child = PropertyCell(id: newId(), node: targetNode, property: IdINamedName, themeForegroundColors: @["variable", "&editor.foreground"])
+  return cell
+
+builder.addBuilderFor expressionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  var cell = ConstantCell(id: newId(), node: node, shadowText: "<expr>")
   return cell
 
 builder.addBuilderFor binaryExpressionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =

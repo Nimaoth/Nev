@@ -1290,10 +1290,10 @@ method handleDeleteLeft*(cell: PropertyCell, slice: Slice[int]): Option[CellCurs
   let newIndex = cell.replaceText(slice, "")
   return cell.toCursor(newIndex).some
 
-method handleDeleteRight*(cell: PropertyCell, slice: Slice[int]): Option[CellCursor] =
+method handleDeleteLeft*(cell: ConstantCell, slice: Slice[int]): Option[CellCursor] =
   if cell.disableEditing:
     return CellCursor.none
-  let slice = if slice.a != slice.b: slice else: slice.a..min(slice.b + 1, cell.currentText.len)
+  let slice = if slice.a != slice.b: slice else: max(0, slice.a - 1)..slice.b
   let newIndex = cell.replaceText(slice, "")
   return cell.toCursor(newIndex).some
 
@@ -1301,6 +1301,20 @@ method handleDeleteLeft*(cell: PlaceholderCell, slice: Slice[int]): Option[CellC
   if cell.disableEditing:
     return CellCursor.none
   let slice = if slice.a != slice.b: slice else: max(0, slice.a - 1)..slice.b
+  let newIndex = cell.replaceText(slice, "")
+  return cell.toCursor(newIndex).some
+
+method handleDeleteRight*(cell: PropertyCell, slice: Slice[int]): Option[CellCursor] =
+  if cell.disableEditing:
+    return CellCursor.none
+  let slice = if slice.a != slice.b: slice else: slice.a..min(slice.b + 1, cell.currentText.len)
+  let newIndex = cell.replaceText(slice, "")
+  return cell.toCursor(newIndex).some
+
+method handleDeleteRight*(cell: ConstantCell, slice: Slice[int]): Option[CellCursor] =
+  if cell.disableEditing:
+    return CellCursor.none
+  let slice = if slice.a != slice.b: slice else: slice.a..min(slice.b + 1, cell.currentText.len)
   let newIndex = cell.replaceText(slice, "")
   return cell.toCursor(newIndex).some
 
@@ -1481,16 +1495,28 @@ proc selectNode*(self: ModelDocumentEditor, select: bool = false) {.expose("edit
 
   self.markDirty()
 
-proc selectPrevPlaceholder*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
-  var candidate = self.cursor.targetCell.getPreviousLeafWhere proc(c: Cell): bool = (c of PlaceholderCell) and isVisible(c)
-  self.cursor = candidate.toCursor(true)
+proc shouldEdit*(cell: Cell): bool =
+  if (cell of PlaceholderCell):
+    return true
+  let class = cell.node.nodeClass
+  if class.isNotNil and (class.isAbstract or class.isInterface):
+    return true
+  return false
 
+proc selectPrevPlaceholder*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
+  var candidate = self.cursor.targetCell.getPreviousLeafWhere proc(c: Cell): bool = isVisible(c) and shouldEdit(c)
+  if not shouldEdit(candidate):
+    return
+
+  self.cursor = candidate.toCursor(true)
   self.markDirty()
 
 proc selectNextPlaceholder*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
-  var candidate = self.cursor.targetCell.getNextLeafWhere proc(c: Cell): bool = (c of PlaceholderCell) and isVisible(c)
-  self.cursor = candidate.toCursor(true)
+  var candidate = self.cursor.targetCell.getNextLeafWhere proc(c: Cell): bool = isVisible(c) and shouldEdit(c)
+  if not shouldEdit(candidate):
+    return
 
+  self.cursor = candidate.toCursor(true)
   self.markDirty()
 
 proc deleteLeft*(self: ModelDocumentEditor) {.expose("editor.model").} =

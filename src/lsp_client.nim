@@ -300,7 +300,7 @@ proc runAsync*(client: LSPClient) {.async.} =
         client.activeRequests.del(id)
         let index = client.requestsPerMethod[meth].find(id)
         assert index != -1
-        client.requestsPerMethod[meth].del index
+        client.requestsPerMethod[meth].delete index
       elif client.canceledRequests.contains(id):
         # Request was canceled
         # echo fmt"[LSP.run] Received response for canceled request {id}"
