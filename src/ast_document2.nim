@@ -491,7 +491,8 @@ proc updateCompletions(self: ModelDocumentEditor) =
   self.unfilteredCompletions.setLen 0
 
   let targetCell = self.cursor.targetCell
-  if targetCell of CollectionCell:
+  if targetCell of CollectionCell or targetCell of PropertyCell:
+    self.refilterCompletions()
     return
 
   let (parent, role, index) = targetCell.getSubstitutionTarget()
