@@ -54,4 +54,4 @@ proc removeOnRequestSaveHandler*(self: LanguageServer, handle: OnRequestSaveHand
     for (_, list) in self.onRequestSaveIndex.mpairs:
       let index = list.find(handle)
       if index >= 0:
-        list.del index
+        list.delete index

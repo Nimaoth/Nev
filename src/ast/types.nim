@@ -470,7 +470,8 @@ proc remove*(node: AstNode, child: AstNode) =
       if i != -1:
         if node.model.isNotNil:
           node.model.notifyNodeDeleted(node, child, child.role, i)
-        children.nodes.del i
+
+        children.nodes.delete i
 
         child.forEach2 n:
           n.model = nil

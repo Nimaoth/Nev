@@ -170,6 +170,19 @@ proc finish(self: CellLayoutContext): WWidget =
 
   return self.parentWidget
 
+proc getTextAndColor(app: Editor, cell: Cell, defaultShadowText: string = ""): (string, Color) =
+  if cell.currentText.len == 0:
+    let text = if cell.shadowText.len == 0:
+      defaultShadowText
+    else:
+      cell.shadowText
+    let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200)).withAlpha(0.7)
+    return (text, textColor)
+  else:
+    let defaultColor = if cell.foregroundColor.a != 0: cell.foregroundColor else: color(1, 1, 1)
+    let textColor = if cell.themeForegroundColors.len == 0: defaultColor else: app.theme.anyColor(cell.themeForegroundColors, defaultColor)
+    return (cell.currentText, textColor)
+
 method updateCellWidget*(cell: Cell, app: Editor, widget: WWidget, frameIndex: int, ctx: CellLayoutContext, updateContext: UpdateContext): WWidget {.base.} = widget
 
 method updateCellWidget*(cell: PlaceholderCell, app: Editor, widget: WWidget, frameIndex: int, ctx: CellLayoutContext, updateContext: UpdateContext): WWidget =
@@ -181,18 +194,9 @@ method updateCellWidget*(cell: PlaceholderCell, app: Editor, widget: WWidget, fr
 
   updateContext.cellToWidget[cell.id] = widget
 
-  if cell.currentText.len == 0:
-    if cell.shadowText.len == 0:
-      widget.text = "..."
-    else:
-      widget.text = cell.shadowText
-    let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200)).withAlpha(0.7)
-    widget.foregroundColor = textColor
-  else:
-    widget.text = cell.currentText
-    let defaultColor = if cell.foregroundColor.a != 0: cell.foregroundColor else: color(1, 1, 1)
-    let textColor = if cell.themeForegroundColors.len == 0: defaultColor else: app.theme.anyColor(cell.themeForegroundColors, defaultColor)
-    widget.foregroundColor = textColor
+  let (text, color) = app.getTextAndColor(cell, "...")
+  widget.text = text
+  widget.foregroundColor = color
 
   widget.fontSizeIncreasePercent = cell.fontSizeIncreasePercent
   let size = app.platform.layoutOptions.getTextBounds(widget.text, widget.fontSizeIncreasePercent)
@@ -210,17 +214,16 @@ method updateCellWidget*(cell: ConstantCell, app: Editor, widget: WWidget, frame
 
   updateContext.cellToWidget[cell.id] = widget
 
-  widget.text = cell.currentText
+  let (text, color) = app.getTextAndColor(cell)
+  widget.text = text
+  widget.foregroundColor = color
+
   widget.fontSizeIncreasePercent = cell.fontSizeIncreasePercent
   let size = app.platform.layoutOptions.getTextBounds(widget.text, widget.fontSizeIncreasePercent)
   widget.left = 0
   widget.right = size.x
   widget.top = 0
   widget.bottom = size.y
-
-  let defaultColor = if cell.foregroundColor.a != 0: cell.foregroundColor else: color(1, 1, 1)
-  let textColor = if cell.themeForegroundColors.len == 0: defaultColor else: app.theme.anyColor(cell.themeForegroundColors, defaultColor)
-  widget.foregroundColor = textColor
 
 method updateCellWidget*(cell: AliasCell, app: Editor, widget: WWidget, frameIndex: int, ctx: CellLayoutContext, updateContext: UpdateContext): WWidget =
   if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
@@ -231,17 +234,16 @@ method updateCellWidget*(cell: AliasCell, app: Editor, widget: WWidget, frameInd
 
   updateContext.cellToWidget[cell.id] = widget
 
-  widget.text = cell.currentText
+  let (text, color) = app.getTextAndColor(cell)
+  widget.text = text
+  widget.foregroundColor = color
+
   widget.fontSizeIncreasePercent = cell.fontSizeIncreasePercent
   let size = app.platform.layoutOptions.getTextBounds(widget.text, widget.fontSizeIncreasePercent)
   widget.left = 0
   widget.right = size.x
   widget.top = 0
   widget.bottom = size.y
-
-  let defaultColor = if cell.foregroundColor.a != 0: cell.foregroundColor else: color(1, 1, 1)
-  let textColor = if cell.themeForegroundColors.len == 0: defaultColor else: app.theme.anyColor(cell.themeForegroundColors, defaultColor)
-  widget.foregroundColor = textColor
 
 method updateCellWidget*(cell: NodeReferenceCell, app: Editor, widget: WWidget, frameIndex: int, ctx: CellLayoutContext, updateContext: UpdateContext): WWidget =
   if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
@@ -305,7 +307,9 @@ method updateCellWidget*(cell: PropertyCell, app: Editor, widget: WWidget, frame
 
   updateContext.cellToWidget[cell.id] = widget
 
-  widget.text = cell.currentText
+  let (text, color) = app.getTextAndColor(cell)
+  widget.text = text
+  widget.foregroundColor = color
 
   widget.fontSizeIncreasePercent = cell.fontSizeIncreasePercent
   let size = app.platform.layoutOptions.getTextBounds(widget.text, widget.fontSizeIncreasePercent)
@@ -313,10 +317,6 @@ method updateCellWidget*(cell: PropertyCell, app: Editor, widget: WWidget, frame
   widget.right = size.x
   widget.top = 0
   widget.bottom = size.y
-
-  let defaultColor = if cell.foregroundColor.a != 0: cell.foregroundColor else: color(1, 1, 1)
-  let textColor = if cell.themeForegroundColors.len == 0: defaultColor else: app.theme.anyColor(cell.themeForegroundColors, defaultColor)
-  widget.foregroundColor = textColor
 
 method updateCellWidget*(cell: CollectionCell, app: Editor, widget: WWidget, frameIndex: int, ctx: CellLayoutContext, updateContext: UpdateContext): WWidget =
   if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
@@ -549,7 +549,7 @@ method updateWidget*(self: ModelDocumentEditor, app: Editor, widget: WPanel, fra
     let newWidget = cell.updateCellWidget(app, oldWidget, frameIndex, nil, self.cellWidgetContext)
     if newWidget.isNil:
       if oldWidget.isNotNil:
-        widget.del(i)
+        widget.delete i
       continue
 
     newWidget.sizeToContent = true

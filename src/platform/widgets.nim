@@ -69,9 +69,9 @@ proc insert*(self: WPanel, index: int, child: WWidget) =
   child.parent = self
   self.children.insert(child, index)
 
-proc del*(self: WPanel, index: int) =
+proc delete*(self: WPanel, index: int) =
   self.children[index].parent = nil
-  self.children.del index
+  self.children.delete index
 
 proc pop*(self: WPanel): WWidget = self.children.pop()
 
