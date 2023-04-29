@@ -173,13 +173,18 @@ proc newLanguage*(id: Id, classes: seq[NodeClass], builder: CellBuilder): Langua
         result.childClasses[c.base.id] = @[]
       result.childClasses[c.base.id].add c
 
+    for i in c.interfaces:
+      if not result.childClasses.contains(i.id):
+        result.childClasses[i.id] = @[]
+      result.childClasses[i.id].add c
+
   result.builder = builder
 
-proc forEachChildClass*(self: Language, base: Id, handler: proc(c: NodeClass)) =
-  if self.childClasses.contains(base):
-    for c in self.childClasses[base]:
-      handler(c)
-      self.forEachChildClass(c.id, handler)
+proc forEachChildClass*(self: Language, base: NodeClass, handler: proc(c: NodeClass)) =
+  handler(base)
+  if self.childClasses.contains(base.id):
+    for c in self.childClasses[base.id]:
+      self.forEachChildClass(c, handler)
 
 proc resolveClass*(model: Model, classId: Id): NodeClass =
   let language = model.classesToLanguages.getOrDefault(classId, nil)
@@ -539,7 +544,7 @@ proc removeFromParent*(node: AstNode) =
 proc add*(node: AstNode, role: Id, child: AstNode) =
   node.insert(role, node.children(role).len, child)
 
-proc insertDefaultNode*(node: AstNode, role: Id, index: int): Option[AstNode] =
+proc insertDefaultNode*(node: AstNode, role: Id, index: int, fillDefaultChildren: bool = false): Option[AstNode] =
   result = AstNode.none
 
   let class = node.nodeClass
@@ -554,7 +559,8 @@ proc insertDefaultNode*(node: AstNode, role: Id, index: int): Option[AstNode] =
     return
 
   var child = newAstNode(childClass)
-  child.fillDefaultChildren(language)
+  if fillDefaultChildren:
+    child.fillDefaultChildren(language)
 
   node.insert(role, index, child)
 
