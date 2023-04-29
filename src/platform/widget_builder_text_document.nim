@@ -142,7 +142,7 @@ proc renderCompletions(self: TextDocumentEditor, app: Editor, contentPanel: WPan
 
   proc renderLine(lineWidget: WPanel, i: int, down: bool, frameIndex: int): bool =
     # Pixel coordinate of the top left corner of the entire line. Includes line number
-    let top = (i - self.previousBaseIndex).float32 * totalLineHeight + self.scrollOffset
+    let top = (i - self.completionsBaseIndex).float32 * totalLineHeight + self.scrollOffset
 
     if i == self.selectedCompletion:
       lineWidget.fillBackground = true

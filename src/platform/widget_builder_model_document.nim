@@ -13,37 +13,6 @@ func withAlpha(color: Color, alpha: float32): Color = color(color.r, color.g, co
 
 proc updateBaseIndexAndScrollOffset(self: ModelDocumentEditor, app: Editor, contentPanel: WPanel) =
   let totalLineHeight = app.platform.totalLineHeight
-  # self.previousBaseIndex = self.previousBaseIndex.clamp(0..self.document.rootNode.len)
-
-  # let selectedNodeId = self.node.id
-
-  # var replacements = initTable[Id, VisualNode]()
-
-  # let indent = getOption[float32](app, "ast.indent", 20)
-  # let inlineBlocks = getOption[bool](app, "ast.inline-blocks", false)
-  # let verticalDivision = getOption[bool](app, "ast.vertical-division", false)
-
-  # # Adjust scroll offset and base index so that the first node on screen is the base
-  # while self.scrollOffset < 0 and self.previousBaseIndex + 1 < self.document.rootNode.len:
-  #   let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: self.document.rootNode[self.previousBaseIndex], selectedNode: selectedNodeId, replacements: replacements, revision: config.revision, measureText: (t) => self.editor.platform.measureText(t), indent: indent, renderDivisionVertically: verticalDivision, inlineBlocks: inlineBlocks)
-  #   let layout = ctx.computeNodeLayout(input)
-
-  #   if self.scrollOffset + layout.bounds.h + totalLineHeight >= contentPanel.lastBounds.h:
-  #     break
-
-  #   self.previousBaseIndex += 1
-  #   self.scrollOffset += layout.bounds.h + totalLineHeight
-
-  # # Adjust scroll offset and base index so that the first node on screen is the base
-  # while self.scrollOffset > contentPanel.lastBounds.h and self.previousBaseIndex > 0:
-  #   let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: self.document.rootNode[self.previousBaseIndex - 1], selectedNode: selectedNodeId, replacements: replacements, revision: config.revision, measureText: (t) => self.editor.platform.measureText(t), indent: indent, renderDivisionVertically: verticalDivision, inlineBlocks: inlineBlocks)
-  #   let layout = ctx.computeNodeLayout(input)
-
-  #   if self.scrollOffset - layout.bounds.h <= 0:
-  #     break
-
-  #   self.previousBaseIndex -= 1
-  #   self.scrollOffset -= layout.bounds.h + totalLineHeight
 
 type CellLayoutContext = ref object
   currentLine: int
@@ -183,6 +152,13 @@ proc getTextAndColor(app: Editor, cell: Cell, defaultShadowText: string = ""): (
     let textColor = if cell.themeForegroundColors.len == 0: defaultColor else: app.theme.anyColor(cell.themeForegroundColors, defaultColor)
     return (cell.currentText, textColor)
 
+proc setBackgroundColor(app: Editor, cell: Cell, widget: WWidget) =
+  let defaultColor = if cell.backgroundColor.a != 0: cell.backgroundColor else: color(0, 0, 0, 0)
+  let backgroundColor = if cell.themeBackgroundColors.len == 0: defaultColor else: app.theme.anyColor(cell.themeBackgroundColors, defaultColor)
+  widget.backgroundColor = backgroundColor
+  widget.fillBackground = backgroundColor.a != 0
+  widget.allowAlpha = true
+
 method updateCellWidget*(cell: Cell, app: Editor, widget: WWidget, frameIndex: int, ctx: CellLayoutContext, updateContext: UpdateContext): WWidget {.base.} = widget
 
 method updateCellWidget*(cell: PlaceholderCell, app: Editor, widget: WWidget, frameIndex: int, ctx: CellLayoutContext, updateContext: UpdateContext): WWidget =
@@ -205,6 +181,8 @@ method updateCellWidget*(cell: PlaceholderCell, app: Editor, widget: WWidget, fr
   widget.top = 0
   widget.bottom = size.y
 
+  setBackgroundColor(app, cell, widget)
+
 method updateCellWidget*(cell: ConstantCell, app: Editor, widget: WWidget, frameIndex: int, ctx: CellLayoutContext, updateContext: UpdateContext): WWidget =
   if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
     return nil
@@ -225,6 +203,8 @@ method updateCellWidget*(cell: ConstantCell, app: Editor, widget: WWidget, frame
   widget.top = 0
   widget.bottom = size.y
 
+  setBackgroundColor(app, cell, widget)
+
 method updateCellWidget*(cell: AliasCell, app: Editor, widget: WWidget, frameIndex: int, ctx: CellLayoutContext, updateContext: UpdateContext): WWidget =
   if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
     return nil
@@ -244,6 +224,8 @@ method updateCellWidget*(cell: AliasCell, app: Editor, widget: WWidget, frameInd
   widget.right = size.x
   widget.top = 0
   widget.bottom = size.y
+
+  setBackgroundColor(app, cell, widget)
 
 method updateCellWidget*(cell: NodeReferenceCell, app: Editor, widget: WWidget, frameIndex: int, ctx: CellLayoutContext, updateContext: UpdateContext): WWidget =
   if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
@@ -298,6 +280,8 @@ method updateCellWidget*(cell: NodeReferenceCell, app: Editor, widget: WWidget, 
     widget.top = 0
     widget.bottom = newWidget.bottom
 
+  setBackgroundColor(app, cell, widget)
+
 method updateCellWidget*(cell: PropertyCell, app: Editor, widget: WWidget, frameIndex: int, ctx: CellLayoutContext, updateContext: UpdateContext): WWidget =
   if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
     return nil
@@ -317,6 +301,8 @@ method updateCellWidget*(cell: PropertyCell, app: Editor, widget: WWidget, frame
   widget.right = size.x
   widget.top = 0
   widget.bottom = size.y
+
+  setBackgroundColor(app, cell, widget)
 
 method updateCellWidget*(cell: CollectionCell, app: Editor, widget: WWidget, frameIndex: int, ctx: CellLayoutContext, updateContext: UpdateContext): WWidget =
   if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
@@ -448,6 +434,56 @@ proc updateSelections(self: ModelDocumentEditor, app: Editor, cell: Cell, cursor
       widget.allowAlpha = true
       widget.backgroundColor = if primary: primaryColor else: secondaryColor
 
+proc renderCompletions(self: ModelDocumentEditor, app: Editor, contentPanel: WPanel, cursorBounds: Rect, frameIndex: int) =
+  let totalLineHeight = app.platform.totalLineHeight
+  let charWidth = app.platform.charWidth
+
+  let backgroundColor = app.theme.color("panel.background", rgb(30, 30, 30))
+  let selectedBackgroundColor = app.theme.color("list.activeSelectionBackground", rgb(200, 200, 200))
+  let nameColor = app.theme.tokenColor(@["entity.name.label", "entity.name"], rgb(255, 255, 255))
+  let textColor = app.theme.color("list.inactiveSelectionForeground", rgb(175, 175, 175))
+  let scopeColor = app.theme.color("string", rgb(175, 255, 175))
+
+  var panel = WPanel(
+    left: cursorBounds.x, top: cursorBounds.yh, right: cursorBounds.x + charWidth * 60.0, bottom: cursorBounds.yh + totalLineHeight * 20.0,
+    fillBackground: true, backgroundColor: backgroundColor, lastHierarchyChange: frameIndex, maskContent: true)
+  panel.layoutWidget(contentPanel.lastBounds, frameIndex, app.platform.layoutOptions)
+  contentPanel.add(panel)
+
+  self.lastCompletionsWidget = panel
+
+  updateBaseIndexAndScrollOffset(panel, self.completionsBaseIndex, self.completionsScrollOffset, self.completions.len, totalLineHeight, self.scrollToCompletion)
+  self.scrollToCompletion = int.none
+
+  self.lastItems.setLen 0
+
+  proc renderLine(lineWidget: WPanel, i: int, down: bool, frameIndex: int): bool =
+    # Pixel coordinate of the top left corner of the entire line. Includes line number
+    let top = (i - self.completionsBaseIndex).float32 * totalLineHeight + self.scrollOffset
+
+    if i == self.selectedCompletion:
+      lineWidget.fillBackground = true
+      lineWidget.backgroundColor = selectedBackgroundColor
+
+    let completion = self.completions[i]
+
+    case completion.kind
+    of ModelCompletionKind.SubstituteClass:
+      let name = if completion.class.alias.len > 0: completion.class.alias else: completion.class.name
+      let nameWidget = createPartWidget(name, 0, name.len.float * charWidth, totalLineHeight, nameColor, frameIndex)
+      lineWidget.add(nameWidget)
+
+    # var scopeWidget = createPartWidget(completion.scope, -completion.scope.len.float * charWidth, totalLineHeight, completion.scope.len.float * charWidth, scopeColor, frameIndex)
+    # scopeWidget.anchor.min.x = 1
+    # scopeWidget.anchor.max.x = 1
+    # lineWidget.add(scopeWidget)
+
+    self.lastItems.add (i, lineWidget)
+
+    return true
+
+  app.createLinesInPanel(panel, self.completionsBaseIndex, self.completionsScrollOffset, self.completions.len, frameIndex, onlyRenderInBounds=true, renderLine)
+
 method updateWidget*(self: ModelDocumentEditor, app: Editor, widget: WPanel, frameIndex: int) =
   let lineHeight = app.platform.lineHeight
   let totalLineHeight = app.platform.totalLineHeight
@@ -562,10 +598,17 @@ method updateWidget*(self: ModelDocumentEditor, app: Editor, widget: WPanel, fra
     else:
       contentPanel.add newWidget
 
+
+    newWidget.layoutWidget(contentPanel.lastBounds, frameIndex, app.platform.layoutOptions)
+
     inc i
 
   if self.getCellForCursor(self.cursor, false).getSome(cell):
     self.updateSelections(app, cell, self.cursor.some, true, self.cursor.firstIndex > self.cursor.lastIndex)
+
+  if self.showCompletions:
+    let widget = self.cellWidgetContext.cellToWidget.getOrDefault(self.cursor.targetCell.id)
+    self.renderCompletions(app, contentPanel, widget.lastBounds - contentPanel.lastBounds.xy, frameIndex)
 
   let indent = getOption[float32](app, "model.indent", 20)
   let inlineBlocks = getOption[bool](app, "model.inline-blocks", false)

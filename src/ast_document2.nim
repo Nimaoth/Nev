@@ -59,6 +59,7 @@ type
     role: Id              # The role where a node was inserted/deleted
     value: PropertyValue  # The new/old text of a property
     id: Id                # The new/old id of a reference
+    slice: Slice[int]     # The range of text that changed
 
   ModelTransaction* = object
     operations*: seq[ModelOperation]
@@ -77,11 +78,23 @@ type
 
     builder*: CellBuilder
 
+  ModelCompletionKind* {.pure.} = enum
+    SubstituteClass
+
+  ModelCompletion* = object
+    case kind*: ModelCompletionKind
+    of SubstituteClass:
+      parent*: AstNode
+      role*: Id
+      index*: int
+      class*: NodeClass
+
   ModelDocumentEditor* = ref object of DocumentEditor
     editor*: Editor
     document*: ModelDocument
 
     modeEventHandler: EventHandler
+    completionEventHandler: EventHandler
     currentMode*: string
 
     nodeToCell*: Table[Id, Cell] # Map from AstNode.id to Cell
@@ -95,6 +108,16 @@ type
     previousBaseIndex*: seq[int]
 
     lastBounds*: Rect
+
+    showCompletions*: bool
+    completionText: string
+    completions*: seq[ModelCompletion]
+    selectedCompletion*: int
+    lastItems*: seq[tuple[index: int, widget: WWidget]]
+    completionsBaseIndex*: int
+    completionsScrollOffset*: float
+    scrollToCompletion*: Option[int]
+    lastCompletionsWidget*: WWidget
 
   UpdateContext* = ref object
     cellToWidget*: Table[Id, WWidget]
@@ -112,6 +135,7 @@ proc rebuildCells*(self: ModelDocumentEditor)
 proc getCellForCursor*(self: ModelDocumentEditor, cursor: CellCursor, resolveCollection: bool = true): Option[Cell]
 proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool
 proc getCursorInLine*(self: ModelDocumentEditor, line: int, xPos: float): Option[CellCursor]
+proc applySelectedCompletion*(self: ModelDocumentEditor)
 
 proc toCursor*(cell: Cell, column: int): CellCursor
 proc toCursor*(cell: Cell, start: bool): CellCursor
@@ -334,9 +358,9 @@ proc handleNodeInserted(self: ModelDocument, model: Model, parent: AstNode, chil
   # debugf "handleNodeInserted {parent}, {child}, {role}, {index}"
   self.currentTransaction.operations.add ModelOperation(kind: Insert, parent: parent, node: child, idx: index, role: role)
 
-proc handleNodePropertyChanged(self: ModelDocument, model: Model, node: AstNode, role: Id, oldValue: PropertyValue, newValue: PropertyValue) =
+proc handleNodePropertyChanged(self: ModelDocument, model: Model, node: AstNode, role: Id, oldValue: PropertyValue, newValue: PropertyValue, slice: Slice[int]) =
   # debugf "handleNodePropertyChanged {node}, {role}, {oldValue}, {newValue}"
-  self.currentTransaction.operations.add ModelOperation(kind: PropertyChange, node: node, role: role, value: oldValue)
+  self.currentTransaction.operations.add ModelOperation(kind: PropertyChange, node: node, role: role, value: oldValue, slice: slice)
 
 proc handleNodeReferenceChanged(self: ModelDocument, model: Model, node: AstNode, role: Id, oldRef: Id, newRef: Id) =
   # debugf "handleNodeReferenceChanged {node}, {role}, {oldRef}, {newRef}"
@@ -364,7 +388,7 @@ proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
     self.model = testModel
     discard self.model.onNodeDeleted.subscribe proc(d: auto) = self.handleNodeDeleted(d[0], d[1], d[2], d[3], d[4])
     discard self.model.onNodeInserted.subscribe proc(d: auto) = self.handleNodeInserted(d[0], d[1], d[2], d[3], d[4])
-    discard self.model.onNodePropertyChanged.subscribe proc(d: auto) = self.handleNodePropertyChanged(d[0], d[1], d[2], d[3], d[4])
+    discard self.model.onNodePropertyChanged.subscribe proc(d: auto) = self.handleNodePropertyChanged(d[0], d[1], d[2], d[3], d[4], d[5])
     discard self.model.onNodeReferenceChanged.subscribe proc(d: auto) = self.handleNodeReferenceChanged(d[0], d[1], d[2], d[3], d[4])
 
     self.builder = newCellBuilder()
@@ -394,17 +418,56 @@ method load*(self: ModelDocument, filename: string = "") =
   self.filename = filename
   asyncCheck self.loadAsync()
 
-proc finishTransaction*(self: ModelDocument) =
+proc getSubstitutionTarget(cell: Cell): (AstNode, Id, int) =
+  if cell of PlaceholderCell:
+    return (cell.node, cell.PlaceholderCell.role, 0)
+  return (cell.node.parent, cell.node.role, cell.node.index)
+
+proc updateCompletions(self: ModelDocumentEditor) =
+  self.completions.setLen 0
+  let targetCell = self.cursor.targetCell
+  if targetCell of CollectionCell:
+    return
+
+  let node = self.cursor.node
+
+  # Substitutions for owner of target cell
+  let model = node.model
+
+  let desc = node.selfDescription().get
+  let slotClass = model.resolveClass(desc.class)
+
+  for language in model.languages:
+    # echo "language ", language.id
+    language.forEachChildClass slotClass.id, proc(childClass: NodeClass) =
+      # echo "class ", childClass.name
+      let (parent, role, index) = targetCell.getSubstitutionTarget()
+      self.completions.add ModelCompletion(kind: ModelCompletionKind.SubstituteClass, class: childClass, parent: parent, role: role, index: index)
+
+  # self.completionText = text
+
+  if self.completions.len > 0:
+    self.selectedCompletion = self.selectedCompletion.clamp(0, self.completions.len - 1)
+  else:
+    self.selectedCompletion = 0
+  self.scrollToCompletion = self.selectedCompletion.some
+  self.markDirty()
+
+proc finishTransaction*(self: ModelDocument, clearRedoList: bool = true) =
   if self.currentTransaction.operations.len > 0:
     self.undoList.add self.currentTransaction
+    if clearRedoList:
+      self.redoList.setLen 0
   self.currentTransaction = ModelTransaction()
 
-proc finishRedoTransaction*(self: ModelDocument) =
+proc finishRedoTransaction*(self: ModelDocument, clearUndoList: bool = false) =
   if self.currentTransaction.operations.len > 0:
     self.redoList.add self.currentTransaction
+    if clearUndoList:
+      self.undoList.setLen 0
   self.currentTransaction = ModelTransaction()
 
-proc applyModelOperation*(self: ModelDocument, op: ModelOperation) =
+proc reverseModelOperation*(self: ModelDocument, op: ModelOperation) =
   case op.kind
   of Delete:
     op.parent.insert(op.role, op.idx, op.node)
@@ -417,35 +480,37 @@ proc applyModelOperation*(self: ModelDocument, op: ModelOperation) =
   else:
     discard
 
-proc undo*(self: ModelDocument) =
-  if self.undoList.len == 0:
-    return
-
+proc undo*(self: ModelDocument): Option[ModelOperation] =
   self.finishTransaction()
+
+  if self.undoList.len == 0:
+    return ModelOperation.none
 
   let t = self.undoList.pop
   logger.log(lvlInfo, fmt"Undoing {t}")
 
   for i in countdown(t.operations.high, 0):
     let op = t.operations[i]
-    self.applyModelOperation(op)
+    result = op.some
+    self.reverseModelOperation(op)
 
   self.finishRedoTransaction()
 
-proc redo*(self: ModelDocument) =
-  if self.redoList.len == 0:
-    return
-
+proc redo*(self: ModelDocument): Option[ModelOperation] =
   self.finishTransaction()
+
+  if self.redoList.len == 0:
+    return ModelOperation.none
 
   let t = self.redoList.pop
   logger.log(lvlInfo, fmt"Redoing {t}")
 
   for i in countdown(t.operations.high, 0):
     let op = t.operations[i]
-    self.applyModelOperation(op)
+    result = op.some
+    self.reverseModelOperation(op)
 
-  self.finishTransaction()
+  self.finishTransaction(false)
 
 proc handleNodeInserted*(doc: ModelDocument, node: AstNode) =
   logger.log lvlInfo, fmt"[modeldoc] Node inserted: {node}"
@@ -578,11 +643,21 @@ proc handleInput(self: ModelDocumentEditor, input: string): EventResponse =
 
   return Ignored
 
+proc getItemAtPixelPosition(self: ModelDocumentEditor, posWindow: Vec2): Option[int] =
+  result = int.none
+  for (index, widget) in self.lastItems:
+    if widget.lastBounds.contains(posWindow) and index >= 0 and index <= self.completions.high:
+      return index.some
+
 method handleScroll*(self: ModelDocumentEditor, scroll: Vec2, mousePosWindow: Vec2) =
   let scrollAmount = scroll.y * getOption[float](self.editor, "model.scroll-speed", 20)
 
-  self.scrollOffset += scrollAmount
-  self.markDirty()
+  if not self.lastCompletionsWidget.isNil and self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
+    self.completionsScrollOffset += scrollAmount
+    self.markDirty()
+  else:
+    self.scrollOffset += scrollAmount
+    self.markDirty()
 
 proc getLeafCellContainingPoint*(self: ModelDocumentEditor, cell: Cell, point: Vec2): Option[Cell] =
   let widget = self.cellWidgetContext.cellToWidget.getOrDefault(cell.id, nil)
@@ -603,7 +678,12 @@ proc getLeafCellContainingPoint*(self: ModelDocumentEditor, cell: Cell, point: V
   return cell.some
 
 method handleMousePress*(self: ModelDocumentEditor, button: MouseButton, mousePosWindow: Vec2) =
-  # Make mousePos relative to contentBounds
+  if self.getItemAtPixelPosition(mousePosWindow).getSome(item):
+    if button == MouseButton.Left or button == MouseButton.Middle:
+      self.selectedCompletion = item
+      self.markDirty()
+    return
+
   if button != MouseButton.Left:
     return
 
@@ -624,9 +704,18 @@ method handleMousePress*(self: ModelDocumentEditor, button: MouseButton, mousePo
       break
 
 method handleMouseRelease*(self: ModelDocumentEditor, button: MouseButton, mousePosWindow: Vec2) =
-  discard
+  if button == MouseButton.Left and self.getItemAtPixelPosition(mousePosWindow).getSome(item):
+    if self.selectedCompletion == item:
+      self.applySelectedCompletion()
+      self.markDirty()
 
 method handleMouseMove*(self: ModelDocumentEditor, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) =
+  if self.getItemAtPixelPosition(mousePosWindow).getSome(item):
+    if MouseButton.Middle in buttons:
+      self.selectedCompletion = item
+      self.markDirty()
+    return
+
   if MouseButton.Left in buttons:
     for rootNode in self.document.model.rootNodes:
       let cell = self.nodeToCell.getOrDefault(rootNode.id, nil)
@@ -655,6 +744,9 @@ method getEventHandlers*(self: ModelDocumentEditor): seq[EventHandler] =
   if not self.modeEventHandler.isNil:
     result.add self.modeEventHandler
 
+  if self.showCompletions:
+    result.add self.completionEventHandler
+
 method createWithDocument*(_: ModelDocumentEditor, document: Document): DocumentEditor =
   let self = ModelDocumentEditor(eventHandler: nil, document: ModelDocument(document))
 
@@ -679,6 +771,12 @@ method injectDependencies*(self: ModelDocumentEditor, ed: Editor) =
   self.editor.registerEditor(self)
 
   self.eventHandler = eventHandler(ed.getEventHandlerConfig("editor.model")):
+    onAction:
+      self.handleAction action, arg
+    onInput:
+      self.handleInput input
+
+  self.completionEventHandler = eventHandler(ed.getEventHandlerConfig("editor.model.completion")):
     onAction:
       self.handleAction action, arg
     onInput:
@@ -1061,6 +1159,15 @@ proc getFirstEditableCellOfNode*(self: ModelDocumentEditor, node: AstNode): Cell
     return
 
   let targetCell = nodeCell.getSelfOrNextLeafWhere (n) => isVisible(n) and not n.disableEditing
+  echo targetCell.dump()
+  return targetCell.toCursor(true)
+
+proc getFirstPropertyCellOfNode*(self: ModelDocumentEditor, node: AstNode, role: Id): CellCursor =
+  let nodeCell = self.nodeToCell.getOrDefault(node.id)
+  if nodeCell.isNil:
+    return
+
+  let targetCell = nodeCell.getSelfOrNextLeafWhere (n) => isVisible(n) and not n.disableEditing and n of PropertyCell and n.PropertyCell.property == role
   echo targetCell.dump()
   return targetCell.toCursor(true)
 
@@ -1717,19 +1824,92 @@ proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool {.expos
       return true
   return false
 
+proc getCursorForOp(self: ModelDocumentEditor, op: ModelOperation): CellCursor =
+  result = self.cursor
+  case op.kind
+  of Delete:
+    return self.getFirstEditableCellOfNode(op.node)
+  of Insert:
+    return self.getFirstEditableCellOfNode(op.parent)
+  of PropertyChange:
+    result = self.getFirstPropertyCellOfNode(op.node, op.role)
+    result.firstIndex = op.slice.a
+    result.lastIndex = op.slice.b
+  of ReferenceChange:
+    return self.getFirstEditableCellOfNode(op.node)
+  of Replace:
+    discard
+
 proc undo*(self: ModelDocumentEditor) {.expose("editor.model").} =
-  self.document.undo()
-  self.rebuildCells()
-  self.markDirty()
+  if self.document.undo().getSome(op):
+    self.rebuildCells()
+    self.cursor = self.getCursorForOp(op)
+    self.markDirty()
 
 proc redo*(self: ModelDocumentEditor) {.expose("editor.model").} =
-  self.document.redo()
-  self.rebuildCells()
-  self.markDirty()
+  if self.document.redo().getSome(op):
+    self.rebuildCells()
+    self.cursor = self.getCursorForOp(op)
+    self.markDirty()
 
 proc toggleUseDefaultCellBuilder*(self: ModelDocumentEditor) {.expose("editor.model").} =
   self.useDefaultCellBuilder = not self.useDefaultCellBuilder
   self.rebuildCells()
+  self.markDirty()
+
+proc showCompletions*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  if self.showCompletions:
+    self.cursor.column = 0
+  self.updateCompletions()
+  self.showCompletions = true
+  self.markDirty()
+
+proc hideCompletions*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  self.showCompletions = false
+  self.markDirty()
+
+proc selectPrevCompletion*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  if self.completions.len > 0:
+    if self.selectedCompletion == 0:
+      self.selectedCompletion = self.completions.high
+    else:
+      self.selectedCompletion = (self.selectedCompletion - 1).clamp(0, self.completions.high)
+  else:
+    self.selectedCompletion = 0
+  self.scrollToCompletion = self.selectedCompletion.some
+  self.markDirty()
+
+proc selectNextCompletion*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  if self.completions.len > 0:
+    if self.selectedCompletion == self.completions.high:
+      self.selectedCompletion = 0
+    else:
+      self.selectedCompletion = (self.selectedCompletion + 1).clamp(0, self.completions.high)
+  else:
+    self.selectedCompletion = 0
+  self.scrollToCompletion = self.selectedCompletion.some
+  self.markDirty()
+
+proc applySelectedCompletion*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  defer:
+    self.document.finishTransaction()
+
+  if self.selectedCompletion < self.completions.len:
+    let completion = self.completions[self.selectedCompletion]
+    case completion.kind:
+    of ModelCompletionKind.SubstituteClass:
+      let parent = completion.parent
+      let role = completion.role
+      let index = completion.index
+      parent.remove(role, index)
+
+      let newNode = newAstNode(completion.class)
+      parent.insert(role, index, newNode)
+      self.rebuildCells()
+      self.cursor = self.getFirstEditableCellOfNode(newNode)
+
+    self.showCompletions = false
+
   self.markDirty()
 
 genDispatcher("editor.model")

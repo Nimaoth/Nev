@@ -27,7 +27,7 @@ type
     role*: Id
 
 method getText*(cell: Cell): string {.base.} = discard
-method setText*(cell: Cell, text: string) {.base.} = discard
+method setText*(cell: Cell, text: string, slice: Slice[int] = 0..0) {.base.} = discard
 
 proc currentText*(cell: Cell): string =
   if cell.displayText.isNone:
@@ -138,44 +138,44 @@ proc replaceText*(cell: Cell, slice: Slice[int], text: string): int =
   if slice.b > slice.a:
     newText.delete(slice.a..<slice.b)
   newText.insert(text, slice.a)
-  cell.setText(newText)
+  cell.setText(newText, slice)
   return slice.a + text.len
 
 proc insertText*(cell: Cell, index: int, text: string): int =
   var newText = cell.currentText
   newText.insert(text, index)
-  cell.setText(newText)
+  cell.setText(newText, index..index)
   return index + text.len
 
-method setText*(cell: CollectionCell, text: string) = cell.currentText = text
+method setText*(cell: CollectionCell, text: string, slice: Slice[int] = 0..0) = cell.currentText = text
 
-method setText*(cell: ConstantCell, text: string) = cell.currentText = text
+method setText*(cell: ConstantCell, text: string, slice: Slice[int] = 0..0) = cell.currentText = text
 
-method setText*(cell: NodeReferenceCell, text: string) =
+method setText*(cell: NodeReferenceCell, text: string, slice: Slice[int] = 0..0) =
   cell.currentText = text
 
-method setText*(cell: PropertyCell, text: string) =
+method setText*(cell: PropertyCell, text: string, slice: Slice[int] = 0..0) =
   cell.currentText = text
   try:
     if cell.node.propertyDescription(cell.property).getSome(prop):
 
       case prop.typ
       of String:
-        cell.node.setProperty(cell.property, PropertyValue(kind: PropertyType.String, stringValue: cell.currentText))
+        cell.node.setProperty(cell.property, PropertyValue(kind: PropertyType.String, stringValue: cell.currentText), slice)
       of Int:
         let intValue = cell.currentText.parseInt
-        cell.node.setProperty(cell.property, PropertyValue(kind: PropertyType.Int, intValue: intValue))
+        cell.node.setProperty(cell.property, PropertyValue(kind: PropertyType.Int, intValue: intValue), slice)
       of Bool:
         let boolValue = cell.currentText.parseBool
-        cell.node.setProperty(cell.property, PropertyValue(kind: PropertyType.Bool, boolValue: boolValue))
+        cell.node.setProperty(cell.property, PropertyValue(kind: PropertyType.Bool, boolValue: boolValue), slice)
 
   except CatchableError:
     discard
 
-method setText*(cell: AliasCell, text: string) =
+method setText*(cell: AliasCell, text: string, slice: Slice[int] = 0..0) =
   cell.currentText = text
 
-method setText*(cell: PlaceholderCell, text: string) =
+method setText*(cell: PlaceholderCell, text: string, slice: Slice[int] = 0..0) =
   cell.currentText = text
 
 method getText*(cell: CollectionCell): string = "<>"
@@ -322,7 +322,7 @@ proc buildCellDefault*(self: CellBuilder, node: AstNode, useDefaultRecursive: bo
         hasChildren = true
 
       if not hasChildren:
-        cell.add ConstantCell(node: node, text: "<...>", disableEditing: true)
+        cell.add PlaceholderCell(node: node, role: prop.role, shadowText: "...")
 
     cell.add ConstantCell(node: node, text: "}", decreaseIndentBefore: true, style: CellStyle(onNewLine: hasAnyChildren), disableEditing: true)
 
