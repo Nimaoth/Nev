@@ -82,7 +82,7 @@ let nodeListClass* = newNodeClass(IdNodeList, "NodeList",
   children=[
     NodeChildDescription(id: IdNodeListChildren, role: "children", class: expressionClass.id, count: ChildCount.ZeroOrMore)])
 
-let blockClass* = newNodeClass(IdBlock, "Block", base=expressionClass,
+let blockClass* = newNodeClass(IdBlock, "Block", alias="{", base=expressionClass,
   children=[
     NodeChildDescription(id: IdBlockChildren, role: "children", class: expressionClass.id, count: ChildCount.ZeroOrMore)])
 
@@ -102,12 +102,12 @@ let whileClass* = newNodeClass(IdWhileExpression, "WhileExpression", alias="whil
     NodeChildDescription(id: IdWhileExpressionBody, role: "body", class: expressionClass.id, count: ChildCount.One),
   ])
 
-let parameterDeclClass* = newNodeClass(IdParameterDecl, "ParameterDecl", alias="parameter", base=expressionClass, interfaces=[declarationInterface],
+let parameterDeclClass* = newNodeClass(IdParameterDecl, "ParameterDecl", alias="param", base=expressionClass, interfaces=[declarationInterface],
   children=[
     NodeChildDescription(id: IdParameterDeclType, role: "type", class: typeClass.id, count: ChildCount.One),
     NodeChildDescription(id: IdParameterDeclValue, role: "value", class: expressionClass.id, count: ChildCount.ZeroOrOne)])
 
-let functionDefinitionClass* = newNodeClass(IdFunctionDefinition, "FunctionDefinition", base=expressionClass,
+let functionDefinitionClass* = newNodeClass(IdFunctionDefinition, "FunctionDefinition", alias="fn", base=expressionClass,
   children=[
     NodeChildDescription(id: IdFunctionDefinitionParameters, role: "parameters", class: parameterDeclClass.id, count: ChildCount.ZeroOrMore),
     NodeChildDescription(id: IdFunctionDefinitionReturnType, role: "returnType", class: typeClass.id, count: ChildCount.ZeroOrOne),

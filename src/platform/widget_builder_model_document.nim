@@ -466,18 +466,14 @@ proc renderCompletions(self: ModelDocumentEditor, app: Editor, contentPanel: WPa
       lineWidget.backgroundColor = selectedBackgroundColor
 
     let completion = self.completions[i]
+    let name = completion.name
 
     case completion.kind
     of ModelCompletionKind.SubstituteClass:
-      let name = if completion.class.alias.len > 0: completion.class.alias else: completion.class.name
       let nameWidget = createPartWidget(name, 0, name.len.float * charWidth, totalLineHeight, textColor, frameIndex)
       lineWidget.add(nameWidget)
 
     of ModelCompletionKind.SubstituteReference:
-      let name = if completion.referenceTarget.property(IdINamedName).getSome(name):
-        name.stringValue
-      else:
-        $completion.referenceTarget.id
       let nameWidget = createPartWidget(name, 0, name.len.float * charWidth, totalLineHeight, nameColor, frameIndex)
       lineWidget.add(nameWidget)
 
