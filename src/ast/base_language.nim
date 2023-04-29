@@ -21,7 +21,7 @@ let binaryExpressionClass* = newNodeClass(IdBinaryExpression, "BinaryExpression"
     NodeChildDescription(id: IdBinaryExpressionLeft, role: "left", class: expressionClass.id, count: ChildCount.One),
     NodeChildDescription(id: IdBinaryExpressionRight, role: "right", class: expressionClass.id, count: ChildCount.One),
   ])
-let unaryExpressionClass* = newNodeClass(IdUnaryExpression, "BinaryExpression", isAbstract=true, base=expressionClass, children=[
+let unaryExpressionClass* = newNodeClass(IdUnaryExpression, "UnaryExpression", isAbstract=true, base=expressionClass, children=[
     NodeChildDescription(id: IdUnaryExpressionChild, role: "child", class: expressionClass.id, count: ChildCount.One),
   ])
 
@@ -57,23 +57,23 @@ let buildExpressionClass* = newNodeClass(IdBuildString, "BuildExpression", alias
 
 let emptyClass* = newNodeClass(IdEmpty, "Empty", base=expressionClass)
 let nodeReferenceClass* = newNodeClass(IdNodeReference, "NodeReference", alias="ref", base=expressionClass, references=[NodeReferenceDescription(id: IdNodeReferenceTarget, role: "target", class: expressionClass.id)])
-let numberLiteralClass* = newNodeClass(IdIntegerLiteral, "IntegerLiteral", alias="int", base=expressionClass, properties=[PropertyDescription(id: IdIntegerLiteralValue, role: "value", typ: PropertyType.Int)])
-let stringLiteralClass* = newNodeClass(IdStringLiteral, "StringLiteral", alias="string", base=expressionClass, properties=[PropertyDescription(id: IdStringLiteralValue, role: "value", typ: PropertyType.String)])
+let numberLiteralClass* = newNodeClass(IdIntegerLiteral, "IntegerLiteral", alias="number literal", base=expressionClass, properties=[PropertyDescription(id: IdIntegerLiteralValue, role: "value", typ: PropertyType.Int)])
+let stringLiteralClass* = newNodeClass(IdStringLiteral, "StringLiteral", alias="''", base=expressionClass, properties=[PropertyDescription(id: IdStringLiteralValue, role: "value", typ: PropertyType.String)])
 let boolLiteralClass* = newNodeClass(IdBoolLiteral, "BoolLiteral", alias="bool", base=expressionClass, properties=[PropertyDescription(id: IdBoolLiteralValue, role: "value", typ: PropertyType.Bool)])
 
 let constDeclClass* = newNodeClass(IdConstDecl, "ConstDecl", alias="const", base=expressionClass, interfaces=[namedInterface],
   children=[
-    NodeChildDescription(id: IdConstDeclType, role: "type", class: expressionClass.id, count: ChildCount.ZeroOrOne),
+    NodeChildDescription(id: IdConstDeclType, role: "type", class: typeClass.id, count: ChildCount.ZeroOrOne),
     NodeChildDescription(id: IdConstDeclValue, role: "value", class: expressionClass.id, count: ChildCount.One)])
 
 let letDeclClass* = newNodeClass(IdLetDecl, "LetDecl", alias="let", base=expressionClass, interfaces=[namedInterface],
   children=[
-    NodeChildDescription(id: IdLetDeclType, role: "type", class: expressionClass.id, count: ChildCount.ZeroOrOne),
+    NodeChildDescription(id: IdLetDeclType, role: "type", class: typeClass.id, count: ChildCount.ZeroOrOne),
     NodeChildDescription(id: IdLetDeclValue, role: "value", class: expressionClass.id, count: ChildCount.ZeroOrOne)])
 
 let varDeclClass* = newNodeClass(IdVarDecl, "VarDecl", alias="var", base=expressionClass, interfaces=[namedInterface],
   children=[
-    NodeChildDescription(id: IdVarDeclType, role: "type", class: expressionClass.id, count: ChildCount.ZeroOrOne),
+    NodeChildDescription(id: IdVarDeclType, role: "type", class: typeClass.id, count: ChildCount.ZeroOrOne),
     NodeChildDescription(id: IdVarDeclValue, role: "value", class: expressionClass.id, count: ChildCount.ZeroOrOne)])
 
 let nodeListClass* = newNodeClass(IdNodeList, "NodeList",
@@ -102,13 +102,13 @@ let whileClass* = newNodeClass(IdWhileExpression, "WhileExpression", alias="whil
 
 let parameterDeclClass* = newNodeClass(IdParameterDecl, "ParameterDecl", alias="parameter", base=expressionClass, interfaces=[namedInterface],
   children=[
-    NodeChildDescription(id: IdParameterDeclType, role: "type", class: expressionClass.id, count: ChildCount.One),
+    NodeChildDescription(id: IdParameterDeclType, role: "type", class: typeClass.id, count: ChildCount.One),
     NodeChildDescription(id: IdParameterDeclValue, role: "value", class: expressionClass.id, count: ChildCount.ZeroOrOne)])
 
 let functionDefinitionClass* = newNodeClass(IdFunctionDefinition, "FunctionDefinition", base=expressionClass,
   children=[
     NodeChildDescription(id: IdFunctionDefinitionParameters, role: "parameters", class: parameterDeclClass.id, count: ChildCount.ZeroOrMore),
-    NodeChildDescription(id: IdFunctionDefinitionReturnType, role: "returnType", class: expressionClass.id, count: ChildCount.ZeroOrOne),
+    NodeChildDescription(id: IdFunctionDefinitionReturnType, role: "returnType", class: typeClass.id, count: ChildCount.ZeroOrOne),
     NodeChildDescription(id: IdFunctionDefinitionBody, role: "body", class: expressionClass.id, count: ChildCount.One)])
 
 let assignmentClass* = newNodeClass(IdAssignment, "Assignment", alias="=", base=expressionClass, children=[
@@ -364,7 +364,7 @@ builder.addBuilderFor nodeReferenceClass.id, idNone(), proc(builder: CellBuilder
   return cell
 
 builder.addBuilderFor expressionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = ConstantCell(id: newId(), node: node, shadowText: "<expr>")
+  var cell = ConstantCell(id: newId(), node: node, shadowText: "<expr>", themeBackgroundColors: @["&inputValidation.errorBackground", "&debugConsole.errorForeground"])
   return cell
 
 builder.addBuilderFor binaryExpressionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =

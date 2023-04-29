@@ -27,7 +27,7 @@ let IdBuildString* = "62e53399564d29f77293450d".parseId
 let IdType* = "62e53399564d29f77293450f".parseId
 
 let IdBaseLanguage* = "62e53399564d29f77293450e".parseId
-let IdFunctionType* = "62e53399564d29f77293450f".parseId
+let IdFunctionType* = "62e5339a564d29f77293451c".parseId
 let IdFunctionTypeReturnType* = "62e53399564d29f772934510".parseId
 let IdFunctionTypeParameterTypes* = "62e53399564d29f772934511".parseId
 
@@ -36,7 +36,7 @@ let IdBuildArguments* = "62e5339a564d29f772934519".parseId
 
 let IdUnaryExpression* = "62e5339a564d29f77293451a".parseId
 let IdUnaryExpressionChild* = "62e5339a564d29f77293451b".parseId
-let Id62e5339a564d29f77293451c* = "62e5339a564d29f77293451c".parseId
+
 let Id62e5339a564d29f77293451d* = "62e5339a564d29f77293451d".parseId
 let Id62e5339a564d29f77293451e* = "62e5339a564d29f77293451e".parseId
 let Id62e5339a564d29f77293451f* = "62e5339a564d29f77293451f".parseId

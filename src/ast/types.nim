@@ -108,6 +108,7 @@ type
     id {.getter.}: Id
     version {.getter.}: int
     classes {.getter.}: Table[Id, NodeClass]
+    childClasses {.getter.}: Table[Id, seq[NodeClass]]
     builder {.getter.}: CellBuilder
 
   Model* = ref object
@@ -120,7 +121,7 @@ type
 
     onNodeDeleted*: Event[tuple[self: Model, parent: AstNode, child: AstNode, role: Id, index: int]]
     onNodeInserted*: Event[tuple[self: Model, parent: AstNode, child: AstNode, role: Id, index: int]]
-    onNodePropertyChanged*: Event[tuple[self: Model, node: AstNode, role: Id, oldValue: PropertyValue, newValue: PropertyValue]]
+    onNodePropertyChanged*: Event[tuple[self: Model, node: AstNode, role: Id, oldValue: PropertyValue, newValue: PropertyValue, slice: Slice[int]]]
     onNodeReferenceChanged*: Event[tuple[self: Model, node: AstNode, role: Id, oldRef: Id, newRef: Id]]
 
   Project* = ref object
@@ -137,8 +138,8 @@ proc notifyNodeDeleted(self: Model, parent: AstNode, child: AstNode, role: Id, i
 proc notifyNodeInserted(self: Model, parent: AstNode, child: AstNode, role: Id, index: int) =
   self.onNodeInserted.invoke (self, parent, child, role, index)
 
-proc notifyNodePropertyChanged(self: Model, node: AstNode, role: Id, oldValue: PropertyValue, newValue: PropertyValue) =
-  self.onNodePropertyChanged.invoke (self, node, role, oldValue, newValue)
+proc notifyNodePropertyChanged(self: Model, node: AstNode, role: Id, oldValue: PropertyValue, newValue: PropertyValue, slice: Slice[int]) =
+  self.onNodePropertyChanged.invoke (self, node, role, oldValue, newValue, slice)
 
 proc notifyNodeReferenceChanged(self: Model, node: AstNode, role: Id, oldRef: Id, newRef: Id) =
   self.onNodeReferenceChanged.invoke (self, node, role, oldRef, newRef)
@@ -166,7 +167,23 @@ proc newLanguage*(id: Id, classes: seq[NodeClass], builder: CellBuilder): Langua
   result.id = id
   for c in classes:
     result.classes[c.id] = c
+
+    if c.base.isNotNil:
+      if not result.childClasses.contains(c.base.id):
+        result.childClasses[c.base.id] = @[]
+      result.childClasses[c.base.id].add c
+
   result.builder = builder
+
+proc forEachChildClass*(self: Language, base: Id, handler: proc(c: NodeClass)) =
+  if self.childClasses.contains(base):
+    for c in self.childClasses[base]:
+      handler(c)
+      self.forEachChildClass(c.id, handler)
+
+proc resolveClass*(model: Model, classId: Id): NodeClass =
+  let language = model.classesToLanguages.getOrDefault(classId, nil)
+  result = if language.isNil: nil else: language.classes.getOrDefault(classId, nil)
 
 proc newModel*(id: Id): Model =
   new result
@@ -319,11 +336,11 @@ proc property*(node: AstNode, role: Id): Option[PropertyValue] =
       result = c.value.some
       break
 
-proc setProperty*(node: AstNode, role: Id, value: PropertyValue) =
+proc setProperty*(node: AstNode, role: Id, value: PropertyValue, slice: Slice[int] = 0..0) =
   for c in node.properties.mitems:
     if c.role == role:
       if node.model.isNotNil:
-        node.model.notifyNodePropertyChanged(node, role, c.value, value)
+        node.model.notifyNodePropertyChanged(node, role, c.value, value, slice)
       c.value = value
       break
 
@@ -476,6 +493,25 @@ proc remove*(node: AstNode, child: AstNode) =
         child.forEach2 n:
           n.model = nil
           node.model.nodes.del n.id
+
+      return
+
+proc remove*(node: AstNode, role: Id, index: int) =
+  for children in node.childLists.mitems:
+    if children.role == role:
+      if index < 0 or index >= children.nodes.len:
+        continue
+
+      let child = children.nodes[index]
+
+      if node.model.isNotNil:
+        node.model.notifyNodeDeleted(node, child, role, index)
+
+      children.nodes.delete index
+
+      child.forEach2 n:
+        n.model = nil
+        node.model.nodes.del n.id
 
       return
 
