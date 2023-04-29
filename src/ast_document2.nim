@@ -80,14 +80,20 @@ type
 
   ModelCompletionKind* {.pure.} = enum
     SubstituteClass
+    SubstituteReference
 
   ModelCompletion* = object
+    parent*: AstNode
+    role*: Id
+    index*: int
+    class*: NodeClass
+
     case kind*: ModelCompletionKind
     of SubstituteClass:
-      parent*: AstNode
-      role*: Id
-      index*: int
-      class*: NodeClass
+      discard
+    of SubstituteReference:
+      referenceRole*: Id
+      referenceTarget*: AstNode
 
   ModelDocumentEditor* = ref object of DocumentEditor
     editor*: Editor
@@ -423,6 +429,22 @@ proc getSubstitutionTarget(cell: Cell): (AstNode, Id, int) =
     return (cell.node, cell.PlaceholderCell.role, 0)
   return (cell.node.parent, cell.node.role, cell.node.index)
 
+proc getSubstitutionsForClass(self: ModelDocumentEditor, targetCell: Cell, class: NodeClass, outCompletions: var seq[ModelCompletion]): bool =
+  if class.references.len == 1:
+    let desc = class.references[0]
+    let language = self.document.model.getLanguageForClass(desc.class)
+    let refClass = language.resolveClass(desc.class)
+
+    let (parent, role, index) = targetCell.getSubstitutionTarget()
+
+    for node in self.document.model.rootNodes:
+      node.forEach2 n:
+        let nClass = language.resolveClass(n.class)
+        if nClass.isSubclassOf(refClass.id):
+          outCompletions.add ModelCompletion(kind: ModelCompletionKind.SubstituteReference, class: class, referenceRole: desc.id, referenceTarget: n, parent: parent, role: role, index: index)
+
+  return false
+
 proc updateCompletions(self: ModelDocumentEditor) =
   self.completions.setLen 0
   let targetCell = self.cursor.targetCell
@@ -440,6 +462,9 @@ proc updateCompletions(self: ModelDocumentEditor) =
   for language in model.languages:
     # echo "language ", language.id
     language.forEachChildClass slotClass.id, proc(childClass: NodeClass) =
+      if self.getSubstitutionsForClass(targetCell, childClass, self.completions):
+        return
+
       # echo "class ", childClass.name
       let (parent, role, index) = targetCell.getSubstitutionTarget()
       self.completions.add ModelCompletion(kind: ModelCompletionKind.SubstituteClass, class: childClass, parent: parent, role: role, index: index)
@@ -652,7 +677,7 @@ proc getItemAtPixelPosition(self: ModelDocumentEditor, posWindow: Vec2): Option[
 method handleScroll*(self: ModelDocumentEditor, scroll: Vec2, mousePosWindow: Vec2) =
   let scrollAmount = scroll.y * getOption[float](self.editor, "model.scroll-speed", 20)
 
-  if not self.lastCompletionsWidget.isNil and self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
+  if self.showCompletions and not self.lastCompletionsWidget.isNil and self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
     self.completionsScrollOffset += scrollAmount
     self.markDirty()
   else:
@@ -678,7 +703,7 @@ proc getLeafCellContainingPoint*(self: ModelDocumentEditor, cell: Cell, point: V
   return cell.some
 
 method handleMousePress*(self: ModelDocumentEditor, button: MouseButton, mousePosWindow: Vec2) =
-  if self.getItemAtPixelPosition(mousePosWindow).getSome(item):
+  if self.showCompletions and self.getItemAtPixelPosition(mousePosWindow).getSome(item):
     if button == MouseButton.Left or button == MouseButton.Middle:
       self.selectedCompletion = item
       self.markDirty()
@@ -704,13 +729,13 @@ method handleMousePress*(self: ModelDocumentEditor, button: MouseButton, mousePo
       break
 
 method handleMouseRelease*(self: ModelDocumentEditor, button: MouseButton, mousePosWindow: Vec2) =
-  if button == MouseButton.Left and self.getItemAtPixelPosition(mousePosWindow).getSome(item):
+  if self.showCompletions and button == MouseButton.Left and self.getItemAtPixelPosition(mousePosWindow).getSome(item):
     if self.selectedCompletion == item:
       self.applySelectedCompletion()
       self.markDirty()
 
 method handleMouseMove*(self: ModelDocumentEditor, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) =
-  if self.getItemAtPixelPosition(mousePosWindow).getSome(item):
+  if self.showCompletions and self.getItemAtPixelPosition(mousePosWindow).getSome(item):
     if MouseButton.Middle in buttons:
       self.selectedCompletion = item
       self.markDirty()
@@ -1896,14 +1921,24 @@ proc applySelectedCompletion*(self: ModelDocumentEditor) {.expose("editor.model"
 
   if self.selectedCompletion < self.completions.len:
     let completion = self.completions[self.selectedCompletion]
+    let parent = completion.parent
+    let role = completion.role
+    let index = completion.index
+
     case completion.kind:
     of ModelCompletionKind.SubstituteClass:
-      let parent = completion.parent
-      let role = completion.role
-      let index = completion.index
       parent.remove(role, index)
 
       let newNode = newAstNode(completion.class)
+      parent.insert(role, index, newNode)
+      self.rebuildCells()
+      self.cursor = self.getFirstEditableCellOfNode(newNode)
+
+    of ModelCompletionKind.SubstituteReference:
+      parent.remove(role, index)
+
+      let newNode = newAstNode(completion.class)
+      newNode.setReference(completion.referenceRole, completion.referenceTarget.id)
       parent.insert(role, index, newNode)
       self.rebuildCells()
       self.cursor = self.getFirstEditableCellOfNode(newNode)

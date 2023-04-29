@@ -37,7 +37,8 @@ let IdBuildArguments* = "62e5339a564d29f772934519".parseId
 let IdUnaryExpression* = "62e5339a564d29f77293451a".parseId
 let IdUnaryExpressionChild* = "62e5339a564d29f77293451b".parseId
 
-let Id62e5339a564d29f77293451d* = "62e5339a564d29f77293451d".parseId
+let IdIDeclaration* = "62e5339a564d29f77293451d".parseId
+
 let Id62e5339a564d29f77293451e* = "62e5339a564d29f77293451e".parseId
 let Id62e5339a564d29f77293451f* = "62e5339a564d29f77293451f".parseId
 let Id62e5339b564d29f772934520* = "62e5339b564d29f772934520".parseId

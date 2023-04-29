@@ -1,5 +1,5 @@
 import std/[strformat, tables, sugar, sequtils, strutils]
-import util, editor, document_editor, ast_document2, text_document, custom_logger, widgets, platform, theme, timer, widget_builder_text_document
+import util, editor, document_editor, ast_document2, text_document, custom_logger, widgets, platform, theme, timer, widget_builder_text_document, ast_ids
 import widget_builders_base
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, ModelDocumentEditor
 import vmath, bumpy, chroma
@@ -470,13 +470,23 @@ proc renderCompletions(self: ModelDocumentEditor, app: Editor, contentPanel: WPa
     case completion.kind
     of ModelCompletionKind.SubstituteClass:
       let name = if completion.class.alias.len > 0: completion.class.alias else: completion.class.name
+      let nameWidget = createPartWidget(name, 0, name.len.float * charWidth, totalLineHeight, textColor, frameIndex)
+      lineWidget.add(nameWidget)
+
+    of ModelCompletionKind.SubstituteReference:
+      let name = if completion.referenceTarget.property(IdINamedName).getSome(name):
+        name.stringValue
+      else:
+        $completion.referenceTarget.id
       let nameWidget = createPartWidget(name, 0, name.len.float * charWidth, totalLineHeight, nameColor, frameIndex)
       lineWidget.add(nameWidget)
 
-    # var scopeWidget = createPartWidget(completion.scope, -completion.scope.len.float * charWidth, totalLineHeight, completion.scope.len.float * charWidth, scopeColor, frameIndex)
-    # scopeWidget.anchor.min.x = 1
-    # scopeWidget.anchor.max.x = 1
-    # lineWidget.add(scopeWidget)
+      let className = if completion.class.alias.len > 0: completion.class.alias else: completion.class.name
+
+      var scopeWidget = createPartWidget(className, -className.len.float * charWidth, totalLineHeight, className.len.float * charWidth, scopeColor, frameIndex)
+      scopeWidget.anchor.min.x = 1
+      scopeWidget.anchor.max.x = 1
+      lineWidget.add(scopeWidget)
 
     self.lastItems.add (i, lineWidget)
 
