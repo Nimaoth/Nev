@@ -16,6 +16,8 @@ let functionTypeClass* = newNodeClass(IdFunctionType, "FunctionType", base=typeC
 let namedInterface* = newNodeClass(IdINamed, "INamed", isAbstract=true, isInterface=true,
   properties=[PropertyDescription(id: IdINamedName, role: "name", typ: PropertyType.String)])
 
+let declarationInterface* = newNodeClass(IdIDeclaration, "IDeclaration", isAbstract=true, isInterface=true, base=namedInterface)
+
 let expressionClass* = newNodeClass(IdExpression, "Expression", isAbstract=true)
 let binaryExpressionClass* = newNodeClass(IdBinaryExpression, "BinaryExpression", isAbstract=true, base=expressionClass, children=[
     NodeChildDescription(id: IdBinaryExpressionLeft, role: "left", class: expressionClass.id, count: ChildCount.One),
@@ -56,22 +58,22 @@ let buildExpressionClass* = newNodeClass(IdBuildString, "BuildExpression", alias
     NodeChildDescription(id: IdBuildArguments, role: "arguments", class: expressionClass.id, count: ChildCount.ZeroOrMore)])
 
 let emptyClass* = newNodeClass(IdEmpty, "Empty", base=expressionClass)
-let nodeReferenceClass* = newNodeClass(IdNodeReference, "NodeReference", alias="ref", base=expressionClass, references=[NodeReferenceDescription(id: IdNodeReferenceTarget, role: "target", class: expressionClass.id)])
+let nodeReferenceClass* = newNodeClass(IdNodeReference, "NodeReference", alias="ref", base=expressionClass, references=[NodeReferenceDescription(id: IdNodeReferenceTarget, role: "target", class: declarationInterface.id)])
 let numberLiteralClass* = newNodeClass(IdIntegerLiteral, "IntegerLiteral", alias="number literal", base=expressionClass, properties=[PropertyDescription(id: IdIntegerLiteralValue, role: "value", typ: PropertyType.Int)])
 let stringLiteralClass* = newNodeClass(IdStringLiteral, "StringLiteral", alias="''", base=expressionClass, properties=[PropertyDescription(id: IdStringLiteralValue, role: "value", typ: PropertyType.String)])
 let boolLiteralClass* = newNodeClass(IdBoolLiteral, "BoolLiteral", alias="bool", base=expressionClass, properties=[PropertyDescription(id: IdBoolLiteralValue, role: "value", typ: PropertyType.Bool)])
 
-let constDeclClass* = newNodeClass(IdConstDecl, "ConstDecl", alias="const", base=expressionClass, interfaces=[namedInterface],
+let constDeclClass* = newNodeClass(IdConstDecl, "ConstDecl", alias="const", base=expressionClass, interfaces=[declarationInterface],
   children=[
     NodeChildDescription(id: IdConstDeclType, role: "type", class: typeClass.id, count: ChildCount.ZeroOrOne),
     NodeChildDescription(id: IdConstDeclValue, role: "value", class: expressionClass.id, count: ChildCount.One)])
 
-let letDeclClass* = newNodeClass(IdLetDecl, "LetDecl", alias="let", base=expressionClass, interfaces=[namedInterface],
+let letDeclClass* = newNodeClass(IdLetDecl, "LetDecl", alias="let", base=expressionClass, interfaces=[declarationInterface],
   children=[
     NodeChildDescription(id: IdLetDeclType, role: "type", class: typeClass.id, count: ChildCount.ZeroOrOne),
     NodeChildDescription(id: IdLetDeclValue, role: "value", class: expressionClass.id, count: ChildCount.ZeroOrOne)])
 
-let varDeclClass* = newNodeClass(IdVarDecl, "VarDecl", alias="var", base=expressionClass, interfaces=[namedInterface],
+let varDeclClass* = newNodeClass(IdVarDecl, "VarDecl", alias="var", base=expressionClass, interfaces=[declarationInterface],
   children=[
     NodeChildDescription(id: IdVarDeclType, role: "type", class: typeClass.id, count: ChildCount.ZeroOrOne),
     NodeChildDescription(id: IdVarDeclValue, role: "value", class: expressionClass.id, count: ChildCount.ZeroOrOne)])
@@ -100,7 +102,7 @@ let whileClass* = newNodeClass(IdWhileExpression, "WhileExpression", alias="whil
     NodeChildDescription(id: IdWhileExpressionBody, role: "body", class: expressionClass.id, count: ChildCount.One),
   ])
 
-let parameterDeclClass* = newNodeClass(IdParameterDecl, "ParameterDecl", alias="parameter", base=expressionClass, interfaces=[namedInterface],
+let parameterDeclClass* = newNodeClass(IdParameterDecl, "ParameterDecl", alias="parameter", base=expressionClass, interfaces=[declarationInterface],
   children=[
     NodeChildDescription(id: IdParameterDeclType, role: "type", class: typeClass.id, count: ChildCount.One),
     NodeChildDescription(id: IdParameterDeclValue, role: "value", class: expressionClass.id, count: ChildCount.ZeroOrOne)])
@@ -450,7 +452,7 @@ builder.addBuilderFor buildExpressionClass.id, idNone(), proc(builder: CellBuild
   return cell
 
 let baseLanguage* = newLanguage(IdBaseLanguage, @[
-  namedInterface,
+  namedInterface, declarationInterface,
 
   typeClass, stringTypeClass, intTypeClass, voidTypeClass, functionTypeClass,
 

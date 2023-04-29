@@ -185,6 +185,12 @@ proc resolveClass*(model: Model, classId: Id): NodeClass =
   let language = model.classesToLanguages.getOrDefault(classId, nil)
   result = if language.isNil: nil else: language.classes.getOrDefault(classId, nil)
 
+proc resolveClass*(language: Language, classId: Id): NodeClass =
+  return language.classes.getOrDefault(classId, nil)
+
+proc getLanguageForClass*(model: Model, classId: Id): Language =
+  return model.classesToLanguages.getOrDefault(classId, nil)
+
 proc newModel*(id: Id): Model =
   new result
   result.id = id
@@ -234,6 +240,16 @@ proc newNodeClass*(
   result.properties = @properties
   result.children = @children
   result.references = @references
+
+proc isSubclassOf*(self: NodeClass, baseClassId: Id): bool =
+  if self.id == baseClassId:
+    return true
+  if self.base.isNotNil and self.base.isSubclassOf(baseClassId):
+    return true
+  for i in self.interfaces:
+    if i.isSubclassOf(baseClassId):
+      return true
+  return false
 
 proc nodeReferenceDescription*(self: NodeClass, id: Id): Option[NodeReferenceDescription] =
   result = NodeReferenceDescription.none
