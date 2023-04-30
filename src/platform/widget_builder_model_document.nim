@@ -170,7 +170,7 @@ method updateCellWidget*(cell: PlaceholderCell, app: Editor, widget: WWidget, fr
 
   updateContext.cellToWidget[cell.id] = widget
 
-  let (text, color) = app.getTextAndColor(cell, "...")
+  let (text, color) = app.getTextAndColor(cell)
   widget.text = text
   widget.foregroundColor = color
 
@@ -395,7 +395,8 @@ proc updateSelections(self: ModelDocumentEditor, app: Editor, cell: Cell, cursor
     for i in startIndex..endIndex:
       self.updateSelections(app, coll.children[i], CellCursor.none, false, reverse)
 
-    self.updateSelections(app, coll.children[primaryIndex], CellCursor.none, primary, reverse)
+    if coll.children.len > 0:
+      self.updateSelections(app, coll.children[primaryIndex], CellCursor.none, primary, reverse)
 
   elif cursor.getSome(cursor):
     let widget = self.cellWidgetContext.cellToWidget.getOrDefault(cell.id)
@@ -609,7 +610,7 @@ method updateWidget*(self: ModelDocumentEditor, app: Editor, widget: WPanel, fra
 
     inc i
 
-  if self.getCellForCursor(self.cursor, false).getSome(cell):
+  if self.cursor.getTargetCell(false).getSome(cell):
     self.updateSelections(app, cell, self.cursor.some, true, self.cursor.firstIndex > self.cursor.lastIndex)
 
   if self.showCompletions:
