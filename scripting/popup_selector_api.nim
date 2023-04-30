@@ -10,8 +10,8 @@ else:
 proc accept*(self: SelectorPopup) =
   acceptScript_8355054209(self)
 proc cancel*(self: SelectorPopup) =
-  cancelScript_8355054311(self)
+  cancelScript_8355054304(self)
 proc prev*(self: SelectorPopup) =
-  prevScript_8355054367(self)
+  prevScript_8355054353(self)
 proc next*(self: SelectorPopup) =
-  nextScript_8355054435(self)
+  nextScript_8355054414(self)

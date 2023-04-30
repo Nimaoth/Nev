@@ -354,14 +354,15 @@ addCommand "editor.ast.goto", "<DOWN>", "next"
 addCommand "editor.ast.goto", "<HOME>", "home"
 addCommand "editor.ast.goto", "<END>", "end"
 
-setHandleInputs "editor.model", true
+setHandleInputs("editor.model", true)
 addCommand("editor.model", "<LEFT>", "move-cursor-left-line")
 addCommand("editor.model", "<RIGHT>", "move-cursor-right-line")
 addCommand("editor.model", "<A-LEFT>", "move-cursor-left")
 addCommand("editor.model", "<A-RIGHT>", "move-cursor-right")
 addCommand("editor.model", "<UP>", "move-cursor-up")
 addCommand("editor.model", "<DOWN>", "move-cursor-down")
-addCommand("editor.model", "<A-UP>", "move-cursor-up")
+addCommand("editor.model", "<A-UP>", "select-node")
+addCommand("editor.model", "<C-UP>", "select-parent-cell")
 addCommand("editor.model", "<A-DOWN>", "move-cursor-down")
 addCommand("editor.model", "<C-LEFT>", "move-cursor-left-cell")
 addCommand("editor.model", "<C-RIGHT>", "move-cursor-right-cell")
@@ -385,8 +386,23 @@ addCommand("editor.model", "<S-END>", "move-cursor-line-end", true)
 addCommand("editor.model", "<SA-HOME>", "move-cursor-line-start-inline", true)
 addCommand("editor.model", "<SA-END>", "move-cursor-line-end-inline", true)
 
+addCommand("editor.model", "<C-y>", "undo")
+addCommand("editor.model", "<C-z>", "redo")
 addCommand("editor.model", "<BACKSPACE>", "delete-left")
 addCommand("editor.model", "<DELETE>", "delete-right")
 addCommand("editor.model", "<SPACE>", "insert-text-at-cursor", " ")
+addCommand("editor.model", "<ENTER>", "create-new-node")
+addCommand("editor.model", "<TAB>", "select-next-placeholder")
+addCommand("editor.model", "<S-TAB>", "select-prev-placeholder")
 
-addCommand("editor.model", "<C-n>", "toggle-use-default-cell-builder")
+addCommand("editor.model", "<C-SPACE>", "show-completions")
+
+addCommand("editor.model", "<CA-g>", "toggle-use-default-cell-builder")
+
+addCommand("editor.model.completion", "<ENTER>", "finish-edit", true)
+addCommand("editor.model.completion", "<ESCAPE>", "hide-completions")
+addCommand("editor.model.completion", "<UP>", "select-prev-completion")
+addCommand("editor.model.completion", "<DOWN>", "select-next-completion")
+addCommand("editor.model.completion", "<C-SPACE>", "move-cursor-start")
+addCommand("editor.model.completion", "<TAB>", "apply-selected-completion")
+addCommand "editor.ast.goto", "<END>", "end"

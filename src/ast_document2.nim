@@ -436,7 +436,7 @@ proc getSubstitutionTarget(cell: Cell): (AstNode, Id, int) =
     return (cell.node, cell.PlaceholderCell.role, 0)
   return (cell.node.parent, cell.node.role, cell.node.index)
 
-proc getSubstitutionsForClass(self: ModelDocumentEditor, targetCell: Cell, class: NodeClass, outCompletions: var seq[ModelCompletion]): bool =
+proc getSubstitutionsForClass(self: ModelDocumentEditor, targetCell: Cell, class: NodeClass, addCompletion: proc(c: ModelCompletion): void): bool =
   if class.references.len == 1:
     let desc = class.references[0]
     let language = self.document.model.getLanguageForClass(desc.class)
@@ -449,7 +449,7 @@ proc getSubstitutionsForClass(self: ModelDocumentEditor, targetCell: Cell, class
         let nClass = language.resolveClass(n.class)
         if nClass.isSubclassOf(refClass.id):
           let name = if n.property(IdINamedName).getSome(name): name.stringValue else: $n.id
-          outCompletions.add ModelCompletion(kind: ModelCompletionKind.SubstituteReference, name: name, class: class, referenceRole: desc.id, referenceTarget: n, parent: parent, role: role, index: index)
+          addCompletion ModelCompletion(kind: ModelCompletionKind.SubstituteReference, name: name, class: class, referenceRole: desc.id, referenceTarget: n, parent: parent, role: role, index: index)
 
   return false
 
@@ -508,7 +508,7 @@ proc updateCompletions(self: ModelDocumentEditor) =
 
   for language in model.languages:
     language.forEachChildClass slotClass, proc(childClass: NodeClass) =
-      if self.getSubstitutionsForClass(targetCell, childClass, self.unfilteredCompletions):
+      if self.getSubstitutionsForClass(targetCell, childClass, (c) -> void => self.unfilteredCompletions.add(c)):
         return
 
       if childClass.isAbstract or childClass.isInterface:
