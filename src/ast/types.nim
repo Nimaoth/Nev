@@ -536,6 +536,36 @@ proc remove*(node: AstNode, role: Id, index: int) =
 
       return
 
+proc replace*(node: AstNode, role: Id, index: int, child: AstNode) =
+  if child.id == idNone():
+    child.id = newId()
+  child.parent = node
+  child.role = role
+
+  for children in node.childLists.mitems:
+    if children.role == role:
+      if index < 0 or index >= children.nodes.len:
+        continue
+
+      let oldChild = children.nodes[index]
+
+      if node.model.isNotNil:
+        node.model.notifyNodeDeleted(node, oldChild, role, index)
+
+      oldChild.forEach2 n:
+        n.model = nil
+        node.model.nodes.del n.id
+
+      if node.model.isNotNil:
+        child.forEach2 n:
+          n.model = node.model
+          node.model.nodes[n.id] = n
+
+      children.nodes[index] = child
+
+      if node.model.isNotNil:
+        node.model.notifyNodeInserted(node, child, role, index)
+
 proc removeFromParent*(node: AstNode) =
   if node.parent.isNil:
     return
@@ -543,6 +573,20 @@ proc removeFromParent*(node: AstNode) =
 
 proc add*(node: AstNode, role: Id, child: AstNode) =
   node.insert(role, node.children(role).len, child)
+
+proc replaceWithDefault*(node: AstNode, fillDefaultChildren: bool = false): Option[AstNode] =
+  if node.parent.isNil:
+    return AstNode.none
+
+  let desc = node.selfDescription.get
+
+  var child = newAstNode(node.model.resolveClass(desc.class))
+  if fillDefaultChildren:
+    child.fillDefaultChildren(node.language)
+
+  node.parent.replace(node.role, node.index, child)
+
+  return child.some
 
 proc insertDefaultNode*(node: AstNode, role: Id, index: int, fillDefaultChildren: bool = false): Option[AstNode] =
   result = AstNode.none

@@ -1729,15 +1729,23 @@ proc deleteLeft*(self: ModelDocumentEditor) {.expose("editor.model").} =
     self.rebuildCells()
     self.cursor = self.getFirstEditableCellOfNode(parent)
   else:
-    if self.cursor.firstIndex == self.cursor.lastIndex and self.cursor.lastIndex <= cell.editableLow:
+    # let slice = if self.cursor.orderedRange.a != self.cursor.orderedRange.b: self.cursor.orderedRange else: max(0, self.cursor.orderedRange.a - 1)..self.cursor.orderedRange.b
+
+    if self.cursor.firstIndex == self.cursor.lastIndex and self.cursor.lastIndex <= 0:
       let prev = cell.getPreviousVisibleLeaf()
       if prev != cell:
-        if prev.handleDeleteLeft(prev.high..prev.high).getSome(newCursor):
+        let index = prev.editableHigh(true)
+        if prev.handleDeleteLeft(index..index).getSome(newCursor):
           self.cursor = newCursor
     elif self.cursor.firstIndex == self.cursor.lastIndex and cell.disableEditing:
       self.cursor = self.cursor.selectEntireNode()
     else:
-      if cell.handleDeleteLeft(self.cursor.orderedRange).getSome(newCursor):
+      if self.cursor.orderedRange.a == 0 and self.cursor.orderedRange.b == cell.currentText.len and cell.parent.node != cell.node:
+        if cell.node.replaceWithDefault().getSome(newNode):
+          self.rebuildCells()
+          self.cursor = self.getFirstEditableCellOfNode(newNode)
+      elif cell.handleDeleteLeft(self.cursor.orderedRange).getSome(newCursor):
+        echo newCursor
         self.cursor = newCursor
 
   self.markDirty()
@@ -1753,7 +1761,9 @@ proc deleteRight*(self: ModelDocumentEditor) {.expose("editor.model").} =
     self.rebuildCells()
     self.cursor = self.getFirstEditableCellOfNode(parent)
   else:
-    if self.cursor.firstIndex == self.cursor.lastIndex and self.cursor.lastIndex >= cell.editableHigh:
+    # let slice = if self.cursor.orderedRange.a != self.cursor.orderedRange.b: self.cursor.orderedRange else: self.cursor.orderedRange.a..min(self.cursor.orderedRange.b + 1, cell.currentText.len)
+
+    if self.cursor.firstIndex == self.cursor.lastIndex and self.cursor.lastIndex >= cell.editableHigh(true):
       let prev = cell.getNextVisibleLeaf()
       if prev != cell:
         if prev.handleDeleteRight(0..0).getSome(newCursor):
@@ -1761,7 +1771,12 @@ proc deleteRight*(self: ModelDocumentEditor) {.expose("editor.model").} =
     elif self.cursor.firstIndex == self.cursor.lastIndex and cell.disableEditing:
       self.cursor = self.cursor.selectEntireNode()
     else:
-      if cell.handleDeleteRight(self.cursor.orderedRange).getSome(newCursor):
+      if self.cursor.orderedRange.a == 0 and self.cursor.orderedRange.b == cell.currentText.len and cell.parent.node != cell.node:
+        if cell.node.replaceWithDefault().getSome(newNode):
+          self.rebuildCells()
+          self.cursor = self.getFirstEditableCellOfNode(newNode)
+
+      elif cell.handleDeleteRight(self.cursor.orderedRange).getSome(newCursor):
         self.cursor = newCursor
 
   self.markDirty()

@@ -138,9 +138,9 @@ builder.addBuilderFor boolLiteralClass.id, idNone(), proc(builder: CellBuilder, 
 
 builder.addBuilderFor stringLiteralClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
-  cell.add ConstantCell(node: node, text: "'", style: CellStyle(noSpaceRight: true), themeForegroundColors: @["punctuation.definition.string", "punctuation", "&editor.foreground"])
+  cell.add ConstantCell(node: node, text: "'", style: CellStyle(noSpaceRight: true), disableEditing: true, themeForegroundColors: @["punctuation.definition.string", "punctuation", "&editor.foreground"])
   cell.add PropertyCell(node: node, property: IdStringLiteralValue, themeForegroundColors: @["string"])
-  cell.add ConstantCell(node: node, text: "'", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation.definition.string", "punctuation", "&editor.foreground"])
+  cell.add ConstantCell(node: node, text: "'", style: CellStyle(noSpaceLeft: true), disableEditing: true, themeForegroundColors: @["punctuation.definition.string", "punctuation", "&editor.foreground"])
   return cell
 
 proc buildDefaultPlaceholder(builder: CellBuilder, node: AstNode, role: Id): Cell =
