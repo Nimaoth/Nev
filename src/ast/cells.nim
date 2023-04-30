@@ -30,9 +30,9 @@ method getText*(cell: Cell): string {.base.} = discard
 method setText*(cell: Cell, text: string, slice: Slice[int] = 0..0) {.base.} = discard
 
 proc currentText*(cell: Cell): string =
-  if cell.displayText.isNone:
-    cell.displayText = cell.getText.some
-  return cell.displayText.get
+  if not cell.displayText.isNone:
+    return cell.displayText.get
+  return cell.getText
 
 proc `currentText=`*(cell: Cell, text: string) =
   cell.displayText = text.some
@@ -71,7 +71,7 @@ proc add*(self: CollectionCell, cell: Cell) =
   self.children.add cell
 
 proc indexOf*(self: CollectionCell, cell: Cell): int =
-  result = 0
+  result = -1
   for i, c in self.children:
     if c == cell:
       return i
@@ -109,9 +109,11 @@ proc high*(self: Cell): int =
     return self.currentText.high
 
 proc editableHigh*(self: Cell): int =
+  if self of CollectionCell:
+    return self.CollectionCell.children.high
   if self.style.isNotNil and self.style.noSpaceRight:
-    return self.high - 1
-  return self.high
+    return self.high
+  return self.high + 1
 
 proc previousDirect*(self: Cell): Cell =
   ### Returns the previous cell before self in the parents children, or nil.
