@@ -37,12 +37,6 @@ proc targetCell*(cursor: CellCursor): Cell =
     if result of CollectionCell:
       result = result.CollectionCell.children[i]
 
-proc selectEntireNode*(cursor: CellCursor): CellCursor =
-  result = cursor
-  if result.path.len > 0:
-    result.column = result.path[result.path.high]
-    discard result.path.pop()
-
 type
   ModelOperationKind = enum
     Delete
@@ -1250,6 +1244,14 @@ proc toCursor*(cell: Cell, start: bool): CellCursor =
   else:
     result.column = cell.editableHigh
 
+proc selectParentCell*(cursor: CellCursor): CellCursor =
+  result = cursor
+  if result.path.len > 0:
+    result.column = result.path[result.path.high]
+    discard result.path.pop()
+  elif result.cell.parent.isNotNil:
+    return result.cell.parent.toCursor(result.cell.index)
+
 proc getFirstEditableCellOfNode*(self: ModelDocumentEditor, node: AstNode): CellCursor =
   let nodeCell = self.nodeToCell.getOrDefault(node.id)
   if nodeCell.isNil:
@@ -1694,6 +1696,10 @@ proc selectNode*(self: ModelDocumentEditor, select: bool = false) {.expose("edit
 
   self.markDirty()
 
+proc selectParentCell*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  self.cursor = self.cursor.selectParentCell()
+  self.markDirty()
+
 proc shouldEdit*(cell: Cell): bool =
   if (cell of PlaceholderCell):
     return true
@@ -1738,7 +1744,7 @@ proc deleteLeft*(self: ModelDocumentEditor) {.expose("editor.model").} =
         if prev.handleDeleteLeft(index..index).getSome(newCursor):
           self.cursor = newCursor
     elif self.cursor.firstIndex == self.cursor.lastIndex and cell.disableEditing:
-      self.cursor = self.cursor.selectEntireNode()
+      self.cursor = self.cursor.selectParentCell()
     else:
       if self.cursor.orderedRange.a == 0 and self.cursor.orderedRange.b == cell.currentText.len and cell.parent.node != cell.node:
         if cell.node.replaceWithDefault().getSome(newNode):
@@ -1769,7 +1775,7 @@ proc deleteRight*(self: ModelDocumentEditor) {.expose("editor.model").} =
         if prev.handleDeleteRight(0..0).getSome(newCursor):
           self.cursor = newCursor
     elif self.cursor.firstIndex == self.cursor.lastIndex and cell.disableEditing:
-      self.cursor = self.cursor.selectEntireNode()
+      self.cursor = self.cursor.selectParentCell()
     else:
       if self.cursor.orderedRange.a == 0 and self.cursor.orderedRange.b == cell.currentText.len and cell.parent.node != cell.node:
         if cell.node.replaceWithDefault().getSome(newNode):

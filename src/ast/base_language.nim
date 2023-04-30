@@ -389,7 +389,7 @@ builder.addBuilderFor whileClass.id, idNone(), proc(builder: CellBuilder, node: 
   return cell
 
 builder.addBuilderFor nodeReferenceClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = NodeReferenceCell(id: newId(), node: node, reference: IdNodeReferenceTarget, property: IdINamedName)
+  var cell = NodeReferenceCell(id: newId(), node: node, reference: IdNodeReferenceTarget, property: IdINamedName, disableEditing: true)
   if node.resolveReference(IdNodeReferenceTarget).getSome(targetNode):
     cell.child = PropertyCell(id: newId(), node: targetNode, property: IdINamedName, themeForegroundColors: @["variable", "&editor.foreground"])
   return cell
