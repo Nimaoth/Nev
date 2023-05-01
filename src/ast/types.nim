@@ -85,6 +85,8 @@ type
     style*: CellStyle
     disableSelection*: bool
     disableEditing*: bool
+    deleteImmediately*: bool              # If true then when this cell handles a delete event it will delete it immediately and not first select the entire cell
+    dontReplaceWithDefault*: bool         # If true thennn
     increaseIndentBefore*: bool
     decreaseIndentBefore*: bool
     increaseIndentAfter*: bool
@@ -306,6 +308,12 @@ proc hasChild*(node: AstNode, role: Id): bool =
   for c in node.childLists:
     if c.role == role:
       return c.nodes.len > 0
+
+proc childCount*(node: AstNode, role: Id): int =
+  result = 0
+  for c in node.childLists:
+    if c.role == role:
+      return c.nodes.len
 
 proc children*(node: AstNode, role: Id): seq[AstNode] =
   result = @[]
@@ -587,6 +595,24 @@ proc replaceWithDefault*(node: AstNode, fillDefaultChildren: bool = false): Opti
   node.parent.replace(node.role, node.index, child)
 
   return child.some
+
+proc deleteOrReplaceWithDefault*(node: AstNode, fillDefaultChildren: bool = false): Option[AstNode] =
+  if node.parent.isNil:
+    return AstNode.none
+
+  let desc = node.selfDescription.get
+  if desc.count in {One, OneOrMore} and node.parent.childCount(node.role) == 1:
+    var child = newAstNode(node.model.resolveClass(desc.class))
+    if fillDefaultChildren:
+      child.fillDefaultChildren(node.language)
+
+    node.parent.replace(node.role, node.index, child)
+
+    return child.some
+
+  else:
+    node.removeFromParent()
+    return AstNode.none
 
 proc insertDefaultNode*(node: AstNode, role: Id, index: int, fillDefaultChildren: bool = false): Option[AstNode] =
   result = AstNode.none

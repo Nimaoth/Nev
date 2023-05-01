@@ -115,19 +115,24 @@ proc editableHigh*(self: Cell, ignoreStyle: bool = false): int =
     return self.high
   return self.high + 1
 
-proc previousDirect*(self: Cell): Cell =
+proc previousDirect*(self: Cell): Option[Cell] =
   ### Returns the previous cell before self in the parents children, or nil.
   let i = self.index
   if i == -1 or i < 1:
-    return nil
-  return self.parent.CollectionCell.children[i - 1]
+    return Cell.none
+  return self.parent.CollectionCell.children[i - 1].some
 
-proc nextDirect*(self: Cell): Cell =
+proc nextDirect*(self: Cell): Option[Cell] =
   ### Returns the next cell after self in the parents children, or nil.
   let i = self.index
   if i == -1 or i >= self.parent.CollectionCell.children.high:
-    return nil
-  return self.parent.CollectionCell.children[i + 1]
+    return Cell.none
+  return self.parent.CollectionCell.children[i + 1].some
+
+proc isLeaf*(self: Cell): bool =
+  if self of CollectionCell and self.CollectionCell.children.len > 0:
+    return false
+  return true
 
 method getChildAt*(self: CollectionCell, index: int, clamp: bool): Option[Cell] =
   let index = if clamp: index.clamp(0..self.children.high) else: index
