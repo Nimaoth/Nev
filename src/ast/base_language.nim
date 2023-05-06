@@ -91,9 +91,13 @@ let callClass* = newNodeClass(IdCall, "Call", base=expressionClass,
     NodeChildDescription(id: IdCallFunction, role: "function", class: expressionClass.id, count: ChildCount.One),
     NodeChildDescription(id: IdCallArguments, role: "arguments", class: expressionClass.id, count: ChildCount.ZeroOrMore)])
 
+let thenCaseClass* = newNodeClass(IdThenCase, "ThenCase", children=[
+    NodeChildDescription(id: IdThenCaseCondition, role: "condition", class: expressionClass.id, count: ChildCount.One),
+    NodeChildDescription(id: IdThenCaseBody, role: "body", class: expressionClass.id, count: ChildCount.One),
+  ])
+
 let ifClass* = newNodeClass(IdIfExpression, "IfExpression", alias="if", base=expressionClass, children=[
-    NodeChildDescription(id: IdIfExpressionCondition, role: "condition", class: expressionClass.id, count: ChildCount.One),
-    NodeChildDescription(id: IdIfExpressionThenCase, role: "thenCase", class: expressionClass.id, count: ChildCount.One),
+    NodeChildDescription(id: IdIfExpressionThenCase, role: "thenCase", class: thenCaseClass.id, count: ChildCount.OneOrMore),
     NodeChildDescription(id: IdIfExpressionElseCase, role: "elseCase", class: expressionClass.id, count: ChildCount.ZeroOrOne),
   ])
 
@@ -283,15 +287,26 @@ builder.addBuilderFor callClass.id, idNone(), proc(builder: CellBuilder, node: A
 
   return cell
 
+builder.addBuilderFor thenCaseClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
+  cell.fillChildren = proc() =
+    # echo "fill collection ThenCase"
+
+    cell.add ConstantCell(node: node, text: "if", themeForegroundColors: @["keyword"], disableEditing: true)
+    cell.add builder.buildChildren(node, IdThenCaseCondition, Horizontal)
+    cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+    cell.add builder.buildChildren(node, IdThenCaseBody, Horizontal)
+
+  return cell
+
 builder.addBuilderFor ifClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =
     # echo "fill collection if"
 
-    cell.add ConstantCell(node: node, text: "if", themeForegroundColors: @["keyword"], disableEditing: true)
-    cell.add builder.buildChildren(node, IdIfExpressionCondition, Horizontal)
-    cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
-    cell.add builder.buildChildren(node, IdIfExpressionThenCase, Horizontal)
+    cell.add block:
+      builder.buildChildrenT(node, IdIfExpressionThenCase, Horizontal):
+        separator: ConstantCell(node: node, text: "el", style: CellStyle(noSpaceRight: true, onNewLine: true), themeForegroundColors: @["keyword"], disableEditing: true, deleteNeighbor: true)
 
     for i, c in node.children(IdIfExpressionElseCase):
       if i == 0:
@@ -400,7 +415,7 @@ let baseLanguage* = newLanguage(IdBaseLanguage, @[
   typeClass, stringTypeClass, intTypeClass, voidTypeClass, functionTypeClass,
 
   expressionClass, binaryExpressionClass, unaryExpressionClass, emptyLineClass,
-  numberLiteralClass, stringLiteralClass, boolLiteralClass, nodeReferenceClass, emptyClass, constDeclClass, letDeclClass, varDeclClass, nodeListClass, blockClass, callClass, ifClass, whileClass,
+  numberLiteralClass, stringLiteralClass, boolLiteralClass, nodeReferenceClass, emptyClass, constDeclClass, letDeclClass, varDeclClass, nodeListClass, blockClass, callClass, thenCaseClass, ifClass, whileClass,
   parameterDeclClass, functionDefinitionClass, assignmentClass,
   addExpressionClass, subExpressionClass, mulExpressionClass, divExpressionClass, modExpressionClass,
   lessExpressionClass, lessEqualExpressionClass, greaterExpressionClass, greaterEqualExpressionClass, equalExpressionClass, notEqualExpressionClass, andExpressionClass, orExpressionClass, orderExpressionClass,
