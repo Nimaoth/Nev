@@ -39,8 +39,6 @@ let IdUnaryExpressionChild* = "62e5339a564d29f77293451b".parseId
 
 let IdIDeclaration* = "62e5339a564d29f77293451d".parseId
 
-let Id62e5339a564d29f77293451e* = "62e5339a564d29f77293451e".parseId
-let Id62e5339a564d29f77293451f* = "62e5339a564d29f77293451f".parseId
 let Id62e5339b564d29f772934520* = "62e5339b564d29f772934520".parseId
 let Id62e5339b564d29f772934521* = "62e5339b564d29f772934521".parseId
 let Id62e5339b564d29f772934522* = "62e5339b564d29f772934522".parseId
@@ -75,7 +73,9 @@ let IdWhileExpression* = "62e5339d564d29f772934538".parseId
 
 let IdIfExpressionElseCase* = "62e5339d564d29f772934539".parseId
 let IdIfExpressionThenCase* = "62e5339d564d29f77293453a".parseId
-let IdIfExpressionCondition* = "62e5339e564d29f77293453b".parseId
+let IdThenCase* = "62e5339a564d29f77293451f".parseId
+let IdThenCaseCondition* = "62e5339e564d29f77293453b".parseId
+let IdThenCaseBody* = "62e5339a564d29f77293451e".parseId
 let IdIfExpression* = "62e5339e564d29f77293453c".parseId
 
 let IdCallArguments* = "62e5339e564d29f77293453d".parseId

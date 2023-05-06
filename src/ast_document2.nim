@@ -327,23 +327,20 @@ proc toModel(json: JsonNode, root: bool = false): AstNode =
           node.add(IdCallArguments, c.toModel)
 
     of If:
-      node.add(IdIfExpressionCondition, children[0].toModel)
-      node.add(IdIfExpressionThenCase, children[1].toModel)
-
-      var nodeTemp = node
-
-      var i = 2
+      var i = 0
       while i + 1 < children.len:
         defer: i += 2
 
-        var el = newAstNode(ifClass)
-        el.add(IdIfExpressionCondition, children[i].toModel)
-        el.add(IdIfExpressionThenCase, children[i + 1].toModel)
-        nodeTemp.add(IdIfExpressionElseCase, el)
-        nodeTemp = el
+        debugf "then {i}"
+        var thenCase = newAstNode(thenCaseClass)
+        thenCase.add(IdThenCaseCondition, children[i].toModel)
+        thenCase.add(IdThenCaseBody, children[i + 1].toModel)
+
+        node.add(IdIfExpressionThenCase, thenCase)
+        echo node.childCount(IdIfExpressionThenCase)
 
       if i < children.len:
-        nodeTemp.add(IdIfExpressionElseCase, children[i].toModel)
+        node.add(IdIfExpressionElseCase, children[i].toModel)
 
     of While:
       node.add(IdWhileExpressionCondition, children[0].toModel)
