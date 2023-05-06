@@ -427,6 +427,7 @@ proc ancestor*(node: AstNode, distance: int): AstNode =
     result = result.parent
 
 proc isDescendant*(node: AstNode, ancestor: AstNode): bool =
+  ### Returns true if ancestor is part of the parent chain of node
   result = false
   var temp = node
   while temp.isNotNil:
@@ -485,6 +486,17 @@ proc index*(node: AstNode): int =
   if node.parent.isNil:
     return -1
   return node.parent.children(node.role).find node
+
+proc isRequiredAndDefault*(node: AstNode): bool =
+  ### Returns true if this node is the default node (class is the class of it's slot) and it is the only child in a 1+ slot
+  if node.parent.isNil:
+    return false
+
+  let desc = node.selfDescription.get
+  if desc.count in {One, OneOrMore} and node.parent.childCount(node.role) == 1 and node.class == desc.class:
+    return true
+
+  return false
 
 proc insert*(node: AstNode, role: Id, index: int, child: AstNode) =
   if child.isNil:

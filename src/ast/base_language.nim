@@ -143,59 +143,6 @@ builder.addBuilderFor stringLiteralClass.id, idNone(), proc(builder: CellBuilder
   cell.add ConstantCell(node: node, text: "'", style: CellStyle(noSpaceLeft: true), disableEditing: true, deleteImmediately: true, themeForegroundColors: @["punctuation.definition.string", "punctuation", "&editor.foreground"])
   return cell
 
-proc buildDefaultPlaceholder(builder: CellBuilder, node: AstNode, role: Id): Cell =
-  return PlaceholderCell(id: newId(), node: node, role: role, shadowText: "...")
-
-proc buildChildren(builder: CellBuilder, node: AstNode, role: Id, layout: WPanelLayoutKind,
-    isVisible: proc(node: AstNode): bool = nil,
-    separatorFunc: proc(builder: CellBuilder): Cell = nil,
-    placeholderFunc: proc(builder: CellBuilder, node: AstNode, role: Id): Cell = buildDefaultPlaceholder): Cell =
-
-  let children = node.children(role)
-  if children.len > 1 or (children.len == 0 and placeholderFunc.isNil):
-    var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: layout))
-    for i, c in node.children(role):
-      if i > 0 and separatorFunc.isNotNil:
-        cell.add separatorFunc(builder)
-      cell.add builder.buildCell(c)
-    result = cell
-  elif children.len == 1:
-    result = builder.buildCell(children[0])
-  else:
-    result = placeholderFunc(builder, node, role)
-  result.isVisible = isVisible
-
-template buildChildrenT(b: CellBuilder, n: AstNode, r: Id, layout: WPanelLayoutKind, body: untyped): Cell =
-  var isVisibleFunc: proc(node: AstNode): bool = nil
-  var separatorFunc: proc(builder: CellBuilder): Cell = nil
-  var placeholderFunc: proc(builder: CellBuilder, node: AstNode, role: Id): Cell = nil
-
-  var builder {.inject.} = b
-  var node {.inject.} = n
-  var role {.inject.} = r
-
-  template separator(bod: untyped): untyped =
-    separatorFunc = proc(builder {.inject.}: CellBuilder): Cell =
-      return bod
-
-  template placeholder(bod: untyped): untyped =
-    placeholderFunc = proc(builder {.inject.}: CellBuilder, node {.inject.}: AstNode, role {.inject.}: Id): Cell =
-      return bod
-
-  template placeholder(text: string): untyped =
-    placeholderFunc = proc(builder {.inject.}: CellBuilder, node {.inject.}: AstNode, role {.inject.}: Id): Cell =
-      return PlaceholderCell(id: newId(), node: node, role: role, shadowText: text)
-
-  template visible(bod: untyped): untyped =
-    isVisibleFunc = proc(node {.inject.}: AstNode): bool =
-      return bod
-
-  placeholder("...")
-
-  body
-
-  builder.buildChildren(node, role, layout, isVisibleFunc, separatorFunc, placeholderFunc)
-
 builder.addBuilderFor nodeListClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Vertical))
   cell.nodeFactory = proc(): AstNode =
@@ -203,8 +150,6 @@ builder.addBuilderFor nodeListClass.id, idNone(), proc(builder: CellBuilder, nod
   cell.fillChildren = proc() =
     # echo "fill collection node list"
     cell.add builder.buildChildren(node, IdNodeListChildren, Vertical)
-    # for c in node.children(IdNodeListChildren):
-    #   cell.add builder.buildCell(c)
   return cell
 
 builder.addBuilderFor blockClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
@@ -214,10 +159,6 @@ builder.addBuilderFor blockClass.id, idNone(), proc(builder: CellBuilder, node: 
   cell.fillChildren = proc() =
     # echo "fill collection block"
     cell.add builder.buildChildren(node, IdBlockChildren, Vertical)
-    # for c in node.children(IdBlockChildren):
-    #   cell.add builder.buildCell(c)
-    # if cell.children.len == 0:
-    #   cell.add ConstantCell(node: node, text: "<...>", themeForegroundColors: @["&editor.foreground"], disableEditing: true)
   return cell
 
 builder.addBuilderFor constDeclClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
@@ -331,7 +272,6 @@ builder.addBuilderFor callClass.id, idNone(), proc(builder: CellBuilder, node: A
     # echo "fill collection call"
 
     cell.add builder.buildChildren(node, IdCallFunction, Horizontal)
-
     cell.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
 
     cell.add block:
@@ -349,17 +289,9 @@ builder.addBuilderFor ifClass.id, idNone(), proc(builder: CellBuilder, node: Ast
     # echo "fill collection if"
 
     cell.add ConstantCell(node: node, text: "if", themeForegroundColors: @["keyword"], disableEditing: true)
-
     cell.add builder.buildChildren(node, IdIfExpressionCondition, Horizontal)
-    # for c in node.children(IdIfExpressionCondition):
-    #   cell.add builder.buildCell(c)
-
     cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
-
     cell.add builder.buildChildren(node, IdIfExpressionThenCase, Horizontal)
-    # for c in node.children(IdIfExpressionThenCase):
-    #   var cc = builder.buildCell(c)
-    #   cell.add cc
 
     for i, c in node.children(IdIfExpressionElseCase):
       if i == 0:
@@ -373,18 +305,10 @@ builder.addBuilderFor whileClass.id, idNone(), proc(builder: CellBuilder, node: 
   var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =
     # echo "fill collection while"
-
     cell.add ConstantCell(node: node, text: "while", themeForegroundColors: @["keyword"], disableEditing: true)
-
     cell.add builder.buildChildren(node, IdWhileExpressionCondition, Horizontal)
-    # for c in node.children(IdWhileExpressionCondition):
-    #   cell.add builder.buildCell(c)
-
     cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
-
     cell.add builder.buildChildren(node, IdWhileExpressionBody, Horizontal)
-    # for c in node.children(IdWhileExpressionBody):
-    #   cell.add builder.buildCell(c)
 
   return cell
 
@@ -403,12 +327,8 @@ builder.addBuilderFor binaryExpressionClass.id, idNone(), proc(builder: CellBuil
   cell.fillChildren = proc() =
     # echo "fill collection binary"
     cell.add builder.buildChildren(node, IdBinaryExpressionLeft, Horizontal)
-    # for c in node.children(IdBinaryExpressionLeft):
-    #   cell.add builder.buildCell(c)
     cell.add AliasCell(node: node)
     cell.add builder.buildChildren(node, IdBinaryExpressionRight, Horizontal)
-    # for c in node.children(IdBinaryExpressionRight):
-    #   cell.add builder.buildCell(c)
   return cell
 
 builder.addBuilderFor divExpressionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
@@ -416,22 +336,16 @@ builder.addBuilderFor divExpressionClass.id, idNone(), proc(builder: CellBuilder
   cell.fillChildren = proc() =
     # echo "fill collection binary"
     cell.add builder.buildChildren(node, IdBinaryExpressionLeft, Horizontal)
-    # for c in node.children(IdBinaryExpressionLeft):
-    #   cell.add builder.buildCell(c)
     cell.add ConstantCell(node: node, text: "------", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
     cell.add builder.buildChildren(node, IdBinaryExpressionRight, Horizontal)
-    # for c in node.children(IdBinaryExpressionRight):
-    #   cell.add builder.buildCell(c)
   return cell
 
 builder.addBuilderFor unaryExpressionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
   cell.fillChildren = proc() =
     # echo "fill collection binary"
-    cell.add AliasCell(node: node, style: CellStyle(noSpaceRight: true))
+    cell.add AliasCell(node: node, style: CellStyle(noSpaceRight: true), disableEditing: true)
     cell.add builder.buildChildren(node, IdUnaryExpressionChild, Horizontal)
-    # for c in node.children(IdUnaryExpressionChild):
-    #   cell.add builder.buildCell(c)
   return cell
 
 builder.addBuilderFor stringTypeClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
