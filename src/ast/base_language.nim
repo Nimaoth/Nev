@@ -249,7 +249,7 @@ builder.addBuilderFor functionDefinitionClass.id, idNone(), proc(builder: CellBu
 
     cell.add block:
       buildChildrenT(builder, node, IdFunctionDefinitionParameters, WPanelLayoutKind.Horizontal):
-        separator: ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+        separator: ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true, disableSelection: true, deleteNeighbor: true)
         placeholder: "..."
 
     cell.add ConstantCell(node: node, text: "):", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
@@ -276,7 +276,7 @@ builder.addBuilderFor callClass.id, idNone(), proc(builder: CellBuilder, node: A
 
     cell.add block:
       buildChildrenT(builder, node, IdCallArguments, WPanelLayoutKind.Horizontal):
-        separator: ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+        separator: ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true, disableSelection: true, deleteNeighbor: true)
         placeholder: PlaceholderCell(id: newId(), node: node, role: role, shadowText: "")
 
     cell.add ConstantCell(node: node, text: ")", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
@@ -370,7 +370,7 @@ builder.addBuilderFor printExpressionClass.id, idNone(), proc(builder: CellBuild
 
     cell.add block:
       buildChildrenT(builder, node, IdPrintArguments, WPanelLayoutKind.Horizontal):
-        separator: ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+        separator: ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true, disableSelection: true, deleteNeighbor: true)
         placeholder: PlaceholderCell(id: newId(), node: node, role: role, shadowText: "")
 
     cell.add ConstantCell(node: node, text: ")", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
@@ -387,7 +387,7 @@ builder.addBuilderFor buildExpressionClass.id, idNone(), proc(builder: CellBuild
 
     cell.add block:
       buildChildrenT(builder, node, IdBuildArguments, WPanelLayoutKind.Horizontal):
-        separator: ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+        separator: ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true, disableSelection: true, deleteNeighbor: true)
         placeholder: PlaceholderCell(id: newId(), node: node, role: role, shadowText: "")
 
     cell.add ConstantCell(node: node, text: ")", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)

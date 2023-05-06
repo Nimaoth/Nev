@@ -86,6 +86,7 @@ type
     disableSelection*: bool
     disableEditing*: bool
     deleteImmediately*: bool              # If true then when this cell handles a delete event it will delete it immediately and not first select the entire cell
+    deleteNeighbor*: bool                 # If true then when this cell handles a delete event it will delete the left or right neighbor cell instead
     dontReplaceWithDefault*: bool         # If true thennn
     increaseIndentBefore*: bool
     decreaseIndentBefore*: bool
