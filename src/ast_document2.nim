@@ -64,6 +64,7 @@ type
     slice: Slice[int]     # The range of text that changed
 
   ModelTransaction* = object
+    id: Id
     operations*: seq[ModelOperation]
 
   ModelDocument* = ref object of Document
@@ -76,6 +77,9 @@ type
     redoList: seq[ModelTransaction]
 
     onModelChanged*: Event[ModelDocument]
+    onFinishedUndoTransaction*: Event[(ModelDocument, ModelTransaction)]
+    onFinishedRedoTransaction*: Event[(ModelDocument, ModelTransaction)]
+
 
     builder*: CellBuilder
 
@@ -101,6 +105,8 @@ type
     editor*: Editor
     document*: ModelDocument
 
+    transactionCursors: Table[Id, CellCursor]
+
     modeEventHandler: EventHandler
     completionEventHandler: EventHandler
     currentMode*: string
@@ -109,6 +115,7 @@ type
     logicalLines*: seq[seq[Cell]]
     cellWidgetContext*: UpdateContext
     mCursor: CellCursor
+    mCursorBeforeTransaction: CellCursor
 
     useDefaultCellBuilder*: bool
 
@@ -545,18 +552,26 @@ proc completionsLen*(self: ModelDocumentEditor): int =
   return self.filteredCompletions.len
 
 proc finishTransaction*(self: ModelDocument, clearRedoList: bool = true) =
+  if self.currentTransaction.id == idNone():
+    self.currentTransaction.id = newId()
+
   if self.currentTransaction.operations.len > 0:
     self.undoList.add self.currentTransaction
     if clearRedoList:
       self.redoList.setLen 0
-  self.currentTransaction = ModelTransaction()
+    self.onFinishedUndoTransaction.invoke (self, self.undoList[self.undoList.high])
+  self.currentTransaction = ModelTransaction(id: newId())
 
 proc finishRedoTransaction*(self: ModelDocument, clearUndoList: bool = false) =
+  if self.currentTransaction.id == idNone():
+    self.currentTransaction.id = newId()
+
   if self.currentTransaction.operations.len > 0:
     self.redoList.add self.currentTransaction
     if clearUndoList:
       self.undoList.setLen 0
-  self.currentTransaction = ModelTransaction()
+    self.onFinishedRedoTransaction.invoke (self, self.redoList[self.redoList.high])
+  self.currentTransaction = ModelTransaction(id: newId())
 
 proc reverseModelOperation*(self: ModelDocument, op: ModelOperation) =
   case op.kind
@@ -571,34 +586,34 @@ proc reverseModelOperation*(self: ModelDocument, op: ModelOperation) =
   else:
     discard
 
-proc undo*(self: ModelDocument): Option[ModelOperation] =
+proc undo*(self: ModelDocument): Option[(Id, ModelOperation)] =
   self.finishTransaction()
 
   if self.undoList.len == 0:
-    return ModelOperation.none
+    return
 
   let t = self.undoList.pop
   logger.log(lvlInfo, fmt"Undoing {t}")
 
   for i in countdown(t.operations.high, 0):
     let op = t.operations[i]
-    result = op.some
+    result = (t.id, op).some
     self.reverseModelOperation(op)
 
   self.finishRedoTransaction()
 
-proc redo*(self: ModelDocument): Option[ModelOperation] =
+proc redo*(self: ModelDocument): Option[(Id, ModelOperation)] =
   self.finishTransaction()
 
   if self.redoList.len == 0:
-    return ModelOperation.none
+    return
 
   let t = self.redoList.pop
   logger.log(lvlInfo, fmt"Redoing {t}")
 
   for i in countdown(t.operations.high, 0):
     let op = t.operations[i]
-    result = op.some
+    result = (t.id, op).some
     self.reverseModelOperation(op)
 
   self.finishTransaction(false)
@@ -629,8 +644,17 @@ proc handleModelChanged(self: ModelDocumentEditor, document: ModelDocument) =
 
   self.rebuildCells()
   self.cursor = self.getFirstEditableCellOfNode(self.document.model.rootNodes[0]).get
+  self.mCursorBeforeTransaction = self.mCursor
 
   self.markDirty()
+
+proc handleFinishedUndoTransaction*(self: ModelDocumentEditor, document: ModelDocument, transaction: ModelTransaction) =
+  self.transactionCursors[transaction.id] = self.mCursorBeforeTransaction
+  self.mCursorBeforeTransaction = self.mCursor
+
+proc handleFinishedRedoTransaction*(self: ModelDocumentEditor, document: ModelDocument, transaction: ModelTransaction) =
+  self.transactionCursors[transaction.id] = self.mCursorBeforeTransaction
+  self.mCursorBeforeTransaction = self.mCursor
 
 method handleDocumentChanged*(self: ModelDocumentEditor) =
   logger.log(lvlInfo, fmt"[model-editor] Document changed")
@@ -737,6 +761,8 @@ proc fromJsonHook*(t: var api.ModelDocumentEditor, jsonNode: JsonNode) =
 
 proc handleInput(self: ModelDocumentEditor, input: string): EventResponse =
   logger.log lvlInfo, fmt"[modeleditor]: Handle input '{input}'"
+
+  self.mCursorBeforeTransaction = self.mCursor
 
   if self.insertTextAtCursor(input):
     self.document.finishTransaction()
@@ -858,6 +884,8 @@ method createWithDocument*(_: ModelDocumentEditor, document: Document): Document
 
   self.init()
   discard self.document.onModelChanged.subscribe proc(d: auto) = self.handleModelChanged(d)
+  discard self.document.onFinishedUndoTransaction.subscribe proc(d: auto) = self.handleFinishedUndoTransaction(d[0], d[1])
+  discard self.document.onFinishedRedoTransaction.subscribe proc(d: auto) = self.handleFinishedRedoTransaction(d[0], d[1])
 
   self.rebuildCells()
   self.cursor = self.getFirstEditableCellOfNode(self.document.model.rootNodes[0]).get
@@ -2160,15 +2188,21 @@ proc getCursorForOp(self: ModelDocumentEditor, op: ModelOperation): CellCursor =
     discard
 
 proc undo*(self: ModelDocumentEditor) {.expose("editor.model").} =
-  if self.document.undo().getSome(op):
+  if self.document.undo().getSome(t):
     self.rebuildCells()
-    self.cursor = self.getCursorForOp(op)
+    if self.transactionCursors.contains(t[0]) and self.updateCursor(self.transactionCursors[t[0]]).getSome(newCursor):
+      self.cursor = newCursor
+    else:
+      self.cursor = self.getCursorForOp(t[1])
     self.markDirty()
 
 proc redo*(self: ModelDocumentEditor) {.expose("editor.model").} =
-  if self.document.redo().getSome(op):
+  if self.document.redo().getSome(t):
     self.rebuildCells()
-    self.cursor = self.getCursorForOp(op)
+    if self.transactionCursors.contains(t[0]) and self.updateCursor(self.transactionCursors[t[0]]).getSome(newCursor):
+      self.cursor = newCursor
+    else:
+      self.cursor = self.getCursorForOp(t[1])
     self.markDirty()
 
 proc toggleUseDefaultCellBuilder*(self: ModelDocumentEditor) {.expose("editor.model").} =
@@ -2248,6 +2282,8 @@ proc handleAction(self: ModelDocumentEditor, action: string, arg: string): Event
   # logger.log lvlInfo, fmt"[modeleditor]: Handle action {action}, '{arg}'"
   defer:
     logger.log lvlDebug, &"line: {self.cursor.targetCell.line}, cursor: {self.cursor},\ncell: {self.cursor.cell.dump()}\ntargetCell: {self.cursor.targetCell.dump()}"
+
+  self.mCursorBeforeTransaction = self.mCursor
 
   var args = newJArray()
   args.add api.ModelDocumentEditor(id: self.id).toJson
