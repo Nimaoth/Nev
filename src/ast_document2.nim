@@ -24,7 +24,7 @@ type
 type Direction* = enum
   Left, Right
 
-func `!`*(d: Direction): Direction =
+func `-`*(d: Direction): Direction =
   case d
   of Left: return Right
   of Right: return Left
@@ -1329,7 +1329,6 @@ proc updateCursor*(self: ModelDocumentEditor, cursor: CellCursor): Option[CellCu
 
   return res.some
 
-
 proc getFirstEditableCellOfNode*(self: ModelDocumentEditor, node: AstNode): Option[CellCursor] =
   result = CellCursor.none
 
@@ -1342,7 +1341,6 @@ proc getFirstEditableCellOfNode*(self: ModelDocumentEditor, node: AstNode): Opti
 
   if nodeCell.getSelfOrNextLeafWhere((n) => isVisible(n) and not n.disableSelection).getSome(targetCell):
     return targetCell.toCursor(true).some
-
 
 proc getFirstPropertyCellOfNode*(self: ModelDocumentEditor, node: AstNode, role: Id): Option[CellCursor] =
   result = CellCursor.none
@@ -1853,6 +1851,7 @@ proc selectNextPlaceholder*(self: ModelDocumentEditor, select: bool = false) {.e
 proc delete*(self: ModelDocumentEditor, direction: Direction) =
   let cell = self.cursor.targetCell
   if cell of CollectionCell:
+
     let parent = cell.node.parent
 
     if cell.node.deleteOrReplaceWithDefault().getSome(newNode):
@@ -1864,18 +1863,16 @@ proc delete*(self: ModelDocumentEditor, direction: Direction) =
         self.cursor = c
 
   else:
-    # let slice = if self.cursor.orderedRange.a != self.cursor.orderedRange.b: self.cursor.orderedRange else: max(0, self.cursor.orderedRange.a - 1)..self.cursor.orderedRange.b
-
     let endIndex = if direction == Left: 0 else: cell.currentText.len
 
     var potentialCells: seq[(Cell, Slice[int], Direction)] = @[(cell, self.cursor.orderedRange, direction)]
-    if self.cursor.lastIndex == endIndex and self.cursor.firstIndex == self.cursor.lastIndex and cell.getNeighborVisibleLeaf(direction).getSome(prev):
+    if self.cursor.lastIndex == endIndex and self.cursor.firstIndex == self.cursor.lastIndex and cell.getNeighborSelectableLeaf(direction).getSome(prev):
       let index = if direction == Left:
         prev.editableHigh(true)
       else:
         prev.editableLow(true)
 
-      potentialCells.add (prev, index..index, !direction)
+      potentialCells.add (prev, index..index, -direction)
 
     for i, (c, slice, cursorMoveDirection) in potentialCells:
       let node = c.node
@@ -1940,10 +1937,27 @@ proc delete*(self: ModelDocumentEditor, direction: Direction) =
 
       if c.disableEditing:
         if c.deleteImmediately or (slice.a == 0 and slice.b == c.currentText.len):
-          let parent = c.node.parent
-          if c.node.replaceWithDefault().getSome(newNode):
-            self.rebuildCells()
-            self.cursor = self.getFirstEditableCellOfNode(newNode).get
+
+          if c.deleteNeighbor:
+            let neighbor = if direction == Left: c.previousDirect() else: c.nextDirect()
+            if neighbor.getSome(neighbor):
+              let parent = neighbor.node.parent
+
+              let selectionTarget = c.getNeighborSelectableLeaf(-direction)
+
+              if neighbor.node.deleteOrReplaceWithDefault().getSome(newNode):
+                self.rebuildCells()
+                self.cursor = self.getFirstEditableCellOfNode(newNode).get
+              else:
+                self.rebuildCells()
+                if selectionTarget.getSome(selectionTarget) and self.updateCursor(selectionTarget.toCursor(direction == Left)).getSome(newCursor):
+                  self.cursor = newCursor
+                else:
+                  self.cursor = self.getFirstEditableCellOfNode(parent).get
+
+          elif c.node.replaceWithDefault().getSome(newNode):
+              self.rebuildCells()
+              self.cursor = self.getFirstEditableCellOfNode(newNode).get
         else:
           case direction
           of Left:
