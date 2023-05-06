@@ -349,3 +349,56 @@ proc buildCell*(self: CellBuilder, node: AstNode, useDefault: bool = false): Cel
       debugf"Unknown builder for {class.name}, using default"
     result = self.buildCellDefault(node, useDefault)
     result.fill()
+
+proc buildDefaultPlaceholder*(builder: CellBuilder, node: AstNode, role: Id): Cell =
+  return PlaceholderCell(id: newId(), node: node, role: role, shadowText: "...")
+
+proc buildChildren*(builder: CellBuilder, node: AstNode, role: Id, layout: WPanelLayoutKind,
+    isVisible: proc(node: AstNode): bool = nil,
+    separatorFunc: proc(builder: CellBuilder): Cell = nil,
+    placeholderFunc: proc(builder: CellBuilder, node: AstNode, role: Id): Cell = buildDefaultPlaceholder): Cell =
+
+  let children = node.children(role)
+  if children.len > 1 or (children.len == 0 and placeholderFunc.isNil):
+    var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: layout))
+    for i, c in node.children(role):
+      if i > 0 and separatorFunc.isNotNil:
+        cell.add separatorFunc(builder)
+      cell.add builder.buildCell(c)
+    result = cell
+  elif children.len == 1:
+    result = builder.buildCell(children[0])
+  else:
+    result = placeholderFunc(builder, node, role)
+  result.isVisible = isVisible
+
+template buildChildrenT*(b: CellBuilder, n: AstNode, r: Id, layout: WPanelLayoutKind, body: untyped): Cell =
+  var isVisibleFunc: proc(node: AstNode): bool = nil
+  var separatorFunc: proc(builder: CellBuilder): Cell = nil
+  var placeholderFunc: proc(builder: CellBuilder, node: AstNode, role: Id): Cell = nil
+
+  var builder {.inject.} = b
+  var node {.inject.} = n
+  var role {.inject.} = r
+
+  template separator(bod: untyped): untyped =
+    separatorFunc = proc(builder {.inject.}: CellBuilder): Cell =
+      return bod
+
+  template placeholder(bod: untyped): untyped =
+    placeholderFunc = proc(builder {.inject.}: CellBuilder, node {.inject.}: AstNode, role {.inject.}: Id): Cell =
+      return bod
+
+  template placeholder(text: string): untyped =
+    placeholderFunc = proc(builder {.inject.}: CellBuilder, node {.inject.}: AstNode, role {.inject.}: Id): Cell =
+      return PlaceholderCell(id: newId(), node: node, role: role, shadowText: text)
+
+  template visible(bod: untyped): untyped =
+    isVisibleFunc = proc(node {.inject.}: AstNode): bool =
+      return bod
+
+  placeholder("...")
+
+  body
+
+  builder.buildChildren(node, role, layout, isVisibleFunc, separatorFunc, placeholderFunc)
