@@ -1245,6 +1245,13 @@ proc getSelfOrNextLeafWhere*(cell: Cell, predicate: proc(cell: Cell): bool): Opt
     return cell.some
   return cell.getNextLeafWhere(predicate)
 
+proc getSelfOrNeighborLeafWhere*(cell: Cell, direction: Direction, predicate: proc(cell: Cell): (bool, Option[Cell])): Option[Cell] =
+  if cell.isLeaf:
+    let (stop, res) = predicate(cell)
+    if stop:
+      return res
+  return cell.getNeighborLeafWhere(direction, predicate)
+
 proc getSelfOrNeighborLeafWhere*(cell: Cell, direction: Direction, predicate: proc(cell: Cell): bool): Option[Cell] =
   if cell.isLeaf and predicate(cell):
     return cell.some
@@ -1331,6 +1338,11 @@ proc selectParentCell*(cursor: CellCursor): CellCursor =
   elif result.cell.parent.isNotNil:
     return result.cell.parent.toCursor(result.cell.index)
 
+proc selectParentNodeCell*(cursor: CellCursor): CellCursor =
+  result = cursor
+  while result.node == cursor.node and result.cell.parent.isNotNil:
+    result = result.selectParentCell()
+
 proc updateCursor*(self: ModelDocumentEditor, cursor: CellCursor): Option[CellCursor] =
   let nodeCell = self.nodeToCell.getOrDefault(cursor.node.id)
   if nodeCell.isNil:
@@ -1360,11 +1372,19 @@ proc updateCursor*(self: ModelDocumentEditor, cursor: CellCursor): Option[CellCu
 proc getFirstEditableCellOfNode*(self: ModelDocumentEditor, node: AstNode): Option[CellCursor] =
   result = CellCursor.none
 
-  let nodeCell = self.nodeToCell.getOrDefault(node.id)
+  var nodeCell = self.nodeToCell.getOrDefault(node.id)
   if nodeCell.isNil:
     return
 
-  if nodeCell.getSelfOrNextLeafWhere((n) => isVisible(n) and not n.disableEditing).getSome(targetCell):
+  nodeCell = nodeCell.getFirstLeaf()
+
+  proc editableDescendant(n: Cell): (bool, Option[Cell]) =
+    if n.node == nodeCell.node or n.node.isDescendant(nodeCell.node):
+      return (isVisible(n) and not n.disableEditing, n.some)
+    else:
+      return (true, Cell.none)
+
+  if nodeCell.getSelfOrNeighborLeafWhere(Right, editableDescendant).getSome(targetCell):
     return targetCell.toCursor(true).some
 
   if nodeCell.getSelfOrNextLeafWhere((n) => isVisible(n) and not n.disableSelection).getSome(targetCell):
@@ -1952,7 +1972,7 @@ proc delete*(self: ModelDocumentEditor, direction: Direction) =
           if self.updateCursor(parentCellCursor).flatMap((c: CellCursor) -> Option[Cell] => c.getTargetCell(true)).getSome(newCell):
             if i == 0 and direction == Left and newCell.getNeighborSelectableLeaf(direction).getSome(c):
               self.cursor = c.toCursor()
-            elif newCell.getSelfOrNeighborLeafWhere(direction, (c) => isVisible(c)).getSome(c):
+            elif newCell.getSelfOrNeighborLeafWhere(direction, (c) -> bool => isVisible(c)).getSome(c):
               self.cursor = c.toCursor(true)
             else:
               self.cursor = newCell.toCursor(true)
@@ -2047,6 +2067,90 @@ proc insertAfterNode*(self: ModelDocumentEditor, node: AstNode): Option[AstNode]
 
   return self.insertIntoNode(node.parent, node.role, node.index + 1)
 
+proc createNewNodeAt*(self: ModelDocumentEditor, cursor: CellCursor): Option[AstNode] =
+  let canHaveSiblings = cursor.node.canHaveSiblings()
+
+  if cursor.isAtEndOfLastCellOfNode() and canHaveSiblings:
+    return self.insertAfterNode(cursor.node)
+
+  if canHaveSiblings and cursor.isAtBeginningOfFirstCellOfNode():
+    return self.insertBeforeNode(cursor.node)
+
+  var temp = cursor
+  while true:
+    let newParent = temp.selectParentNodeCell
+    debugf"temp: {temp}, parent: {newParent}"
+    if newParent.node == temp.node:
+      break
+    if newParent.isAtEndOfLastCellOfNode():
+      if newParent.node.canHaveSiblings():
+        return self.insertAfterNode(newParent.node)
+      temp = newParent
+      continue
+
+    if newParent.isAtBeginningOfFirstCellOfNode():
+      if newParent.node.canHaveSiblings():
+        return self.insertBeforeNode(newParent.node)
+      temp = newParent
+      continue
+
+    break
+
+
+  let cell = cursor.targetCell
+  var i = 0
+  let originalNode = cell.node
+
+  var ok = false
+  var addBefore = true
+  var candidate = cell.getSelfOrNextLeafWhere proc(c: Cell): bool =
+    if c.node.selfDescription().getSome(desc):
+      debugf"{desc.role}, {desc.count}, {c.node.index}, {c.dump}, {c.node}"
+
+    if c.node != originalNode and not c.node.isDescendant(originalNode):
+      return true
+    if c.node == originalNode:
+      return false
+
+    inc i
+
+    if c.node.canHaveSiblings():
+      ok = true
+      return true
+
+    return false
+
+  if (not ok or candidate.isNone) and not originalNode.canHaveSiblings():
+    echo "search outside"
+    candidate = cell.getSelfOrNextLeafWhere proc(c: Cell): bool =
+      # inc i
+      if c.node.selfDescription().getSome(desc):
+        debugf"{desc.role}, {desc.count}, {c.node.index}, {c.dump}, {c.node}"
+      # return isVisible(c)
+      # return i > 10
+
+      if c.node.canHaveSiblings():
+        addBefore = false
+        ok = true
+        return true
+
+      return false
+
+  debugf"ok: {ok}, addBefore: {addBefore}"
+  if ok and candidate.isSome:
+    if addBefore:
+      return self.insertBeforeNode(candidate.get.node)
+    else:
+      return self.insertAfterNode(candidate.get.node)
+
+  if originalNode.canHaveSiblings():
+    if addBefore:
+      return self.insertBeforeNode(originalNode)
+    else:
+      return self.insertAfterNode(originalNode)
+
+  return AstNode.none
+
 proc createNewNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
   defer:
     self.document.finishTransaction()
@@ -2056,92 +2160,9 @@ proc createNewNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
 
   echo "createNewNode"
 
-  let isAtBeginningOfFirstCellOfNode = block:
-    var result = self.cursor.lastIndex == 0
-    if result:
-      for i in self.cursor.path:
-        if i != 0:
-          result = false
-          break
-    result
-
-  let isAtEndOfLastCellOfNode = block:
-    var result = self.cursor.lastIndex == self.cursor.cell.high
-    if result:
-      for i in self.cursor.path:
-        if i != 0:
-          result = false
-          break
-    result
-
-  let canHaveSiblings = self.cursor.node.canHaveSiblings()
-
-  let newNode = if canHaveSiblings and self.cursor.isAtEndOfLastCellOfNode():
-    self.insertAfterNode(self.cursor.node)
-
-  elif canHaveSiblings and self.cursor.isAtBeginningOfFirstCellOfNode():
-    self.insertBeforeNode(self.cursor.node)
-
-  else:
-    let cell = self.cursor.targetCell
-    var i = 0
-    let originalNode = cell.node
-
-    var ok = false
-    var addBefore = true
-    var candidate = cell.getSelfOrNextLeafWhere proc(c: Cell): bool =
-      if c.node.selfDescription().getSome(desc):
-        debugf"{desc.role}, {desc.count}, {c.node.index}, {c.dump}, {c.node}"
-
-      if c.node != originalNode and not c.node.isDescendant(originalNode):
-        return true
-      if c.node == originalNode:
-        return false
-
-      inc i
-
-      if c.node.canHaveSiblings():
-        ok = true
-        return true
-
-      return false
-
-    if (not ok or candidate.isNone) and not originalNode.canHaveSiblings():
-      echo "search outside"
-      candidate = cell.getSelfOrNextLeafWhere proc(c: Cell): bool =
-        # inc i
-        if c.node.selfDescription().getSome(desc):
-          debugf"{desc.role}, {desc.count}, {c.node.index}, {c.dump}, {c.node}"
-        # return isVisible(c)
-        # return i > 10
-
-        if c.node.canHaveSiblings():
-          addBefore = false
-          ok = true
-          return true
-
-        return false
-
-    debugf"ok: {ok}, addBefore: {addBefore}"
-    if ok and candidate.isSome:
-      if addBefore:
-        self.insertBeforeNode(candidate.get.node)
-      else:
-        self.insertAfterNode(candidate.get.node)
-    elif originalNode.canHaveSiblings():
-      if addBefore:
-        self.insertBeforeNode(originalNode)
-      else:
-        self.insertAfterNode(originalNode)
-    else:
-      AstNode.none
-
-  # echo cell.dump()
-  # echo candidate.dump()
-
-  if newNode.getSome(node):
+  if self.createNewNodeAt(self.cursor).getSome(newNode):
     self.rebuildCells()
-    self.cursor = self.getFirstEditableCellOfNode(node).get
+    self.cursor = self.getFirstEditableCellOfNode(newNode).get
     echo self.cursor
 
   self.markDirty()
