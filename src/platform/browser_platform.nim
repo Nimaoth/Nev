@@ -349,9 +349,6 @@ method renderWidget(self: WPanel, renderer: BrowserPlatform, element: var Elemen
 
   element.createOrReplaceElement("div", "DIV")
 
-  while element.children.len > self.len:
-    element.removeChild(element.lastChild)
-
   let relBounds = self.lastBounds - renderer.boundsStack[renderer.boundsStack.high].xy
   renderer.boundsStack.add self.lastBounds
   defer: discard renderer.boundsStack.pop()
@@ -380,7 +377,16 @@ method renderWidget(self: WPanel, renderer: BrowserPlatform, element: var Elemen
     css += self.getForegroundColor.myToHtmlHex
     css += ";".cstring
 
+  var newChildren: seq[Element] = @[]
+
   renderer.domUpdates.add proc() =
+    let elementLen = element.children.len
+    for i in self.len..<elementLen:
+      element.removeChild(element.lastChild)
+
+    for c in newChildren:
+      element.appendChild c
+
     element.class = "widget"
     element.setAttribute("style", css)
 
@@ -389,7 +395,7 @@ method renderWidget(self: WPanel, renderer: BrowserPlatform, element: var Elemen
     var childElement: Element = if i < existingCount: element.children[i].Element else: nil
     c.renderWidget(renderer, childElement, forceRedraw or self.fillBackground, frameIndex, buffer)
     if i >= existingCount and not childElement.isNil:
-      element.appendChild childElement
+      newChildren.add childElement
 
 method renderWidget(self: WStack, renderer: BrowserPlatform, element: var Element, forceRedraw: bool, frameIndex: int, buffer: var string) =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:

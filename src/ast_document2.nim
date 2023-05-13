@@ -196,174 +196,20 @@ proc newModelDocument*(filename: string = "", app: bool = false, workspaceFolder
   if filename.len > 0:
     result.load()
 
-
 method save*(self: ModelDocument, filename: string = "", app: bool = false) =
   self.filename = if filename.len > 0: filename else: self.filename
   if self.filename.len == 0:
     raise newException(IOError, "Missing filename")
 
   logger.log lvlInfo, fmt"[modeldoc] Saving model source file '{self.filename}'"
-  # let serialized = self.model.toJson
+  let serialized = self.model.toJson.pretty
 
-  # if self.workspace.getSome(ws):
-  #   asyncCheck ws.saveFile(self.filename, serialized.pretty)
-  # elif self.appFile:
-  #   fs.saveApplicationFile(self.filename, serialized.pretty)
-  # else:
-  #   fs.saveFile(self.filename, serialized.pretty)
-
-var classes = initTable[AstNodeKind, tuple[class: NodeClass, link: Id]]()
-classes[Empty] = (emptyClass, idNone())
-classes[Identifier] = (nodeReferenceClass, IdNodeReferenceTarget)
-classes[NumberLiteral] = (numberLiteralClass, IdIntegerLiteralValue)
-classes[StringLiteral] = (stringLiteralClass, IdStringLiteralValue)
-classes[ConstDecl] = (constDeclClass, IdINamedName)
-classes[LetDecl] = (letDeclClass, IdINamedName)
-classes[VarDecl] = (varDeclClass, IdINamedName)
-classes[NodeList] = (blockClass, idNone())
-classes[Call] = (callClass, idNone())
-classes[If] = (ifClass, idNone())
-classes[While] = (whileClass, idNone())
-classes[FunctionDefinition] = (functionDefinitionClass, idNone())
-classes[Params] = (parameterDeclClass, idNone())
-classes[Assignment] = (assignmentClass, idNone())
-
-var binaryOperators = initTable[Id, NodeClass]()
-binaryOperators[IdAdd] = addExpressionClass
-binaryOperators[IdSub] = subExpressionClass
-binaryOperators[IdMul] = mulExpressionClass
-binaryOperators[IdDiv] = divExpressionClass
-binaryOperators[IdMod] = modExpressionClass
-binaryOperators[IdAppendString] = appendStringExpressionClass
-binaryOperators[IdLess] = lessExpressionClass
-binaryOperators[IdLessEqual] = lessEqualExpressionClass
-binaryOperators[IdGreater] = greaterExpressionClass
-binaryOperators[IdGreaterEqual] = greaterEqualExpressionClass
-binaryOperators[IdEqual] = equalExpressionClass
-binaryOperators[IdNotEqual] = notEqualExpressionClass
-binaryOperators[IdAnd] = andExpressionClass
-binaryOperators[IdOr] = orExpressionClass
-binaryOperators[IdOrder] = orderExpressionClass
-
-var unaryOperators = initTable[Id, NodeClass]()
-unaryOperators[IdNot] = notExpressionClass
-unaryOperators[IdNegate] = negateExpressionClass
-
-proc toModel(json: JsonNode, root: bool = false): AstNode =
-  let kind = json["kind"].jsonTo AstNodeKind
-  let data = classes[kind]
-  var node = newAstNode(data.class, json["id"].jsonTo(Id).some)
-
-  # debugf"kind: {kind}, {data}, {node.id}"
-  if kind == Empty:
-    return nil
-
-  if json.hasKey("reff"):
-    let target = json["reff"].jsonTo Id
-    if target == IdString:
-      node = newAstNode(stringTypeClass, json["id"].jsonTo(Id).some)
-    elif target == IdInt:
-      node = newAstNode(intTypeClass, json["id"].jsonTo(Id).some)
-    elif target == IdVoid:
-      node = newAstNode(voidTypeClass, json["id"].jsonTo(Id).some)
-    else:
-      node.setReference(data.link, target)
-
-  if json.hasKey("text"):
-    if kind == NumberLiteral:
-      node.setProperty(data.link, PropertyValue(kind: PropertyType.Int, intValue: json["text"].jsonTo(string).parseInt))
-    else:
-      node.setProperty(data.link, PropertyValue(kind: PropertyType.String, stringValue: json["text"].jsonTo string))
-
-  if json.hasKey("children"):
-    let children = json["children"].elems
-
-    case kind
-    of NodeList:
-      if root:
-        node = newAstNode(nodeListClass, json["id"].jsonTo(Id).some)
-        for c in children:
-          node.add(IdNodeListChildren, c.toModel)
-          node.add(IdNodeListChildren, newAstNode(emptyLineClass))
-
-      else:
-        for c in children:
-          node.add(IdBlockChildren, c.toModel)
-
-    of ConstDecl:
-      node.add(IdConstDeclValue, children[0].toModel)
-    of LetDecl:
-      node.add(IdLetDeclType, children[0].toModel)
-      node.add(IdLetDeclValue, children[1].toModel)
-    of VarDecl:
-      node.add(IdVarDeclType, children[0].toModel)
-      node.add(IdVarDeclValue, children[1].toModel)
-
-    of Call:
-      let fun = children[0]["reff"].jsonTo(Id)
-
-      if binaryOperators.contains(fun):
-        node = newAstNode(binaryOperators[fun], json["id"].jsonTo(Id).some)
-        node.add(IdBinaryExpressionLeft, children[1].toModel)
-        node.add(IdBinaryExpressionRight, children[2].toModel)
-
-      elif unaryOperators.contains(fun):
-        node = newAstNode(unaryOperators[fun], json["id"].jsonTo(Id).some)
-        node.add(IdUnaryExpressionChild, children[1].toModel)
-
-      elif fun == IdPrint:
-        node = newAstNode(printExpressionClass, json["id"].jsonTo(Id).some)
-        for c in children[1..^1]:
-          node.add(IdPrintArguments, c.toModel)
-
-      elif fun == IdBuildString:
-        node = newAstNode(buildExpressionClass, json["id"].jsonTo(Id).some)
-        for c in children[1..^1]:
-          node.add(IdBuildArguments, c.toModel)
-
-      else:
-        node.add(IdCallFunction, children[0].toModel)
-        for c in children[1..^1]:
-          node.add(IdCallArguments, c.toModel)
-
-    of If:
-      var i = 0
-      while i + 1 < children.len:
-        defer: i += 2
-
-        debugf "then {i}"
-        var thenCase = newAstNode(thenCaseClass)
-        thenCase.add(IdThenCaseCondition, children[i].toModel)
-        thenCase.add(IdThenCaseBody, children[i + 1].toModel)
-
-        node.add(IdIfExpressionThenCase, thenCase)
-        echo node.childCount(IdIfExpressionThenCase)
-
-      if i < children.len:
-        node.add(IdIfExpressionElseCase, children[i].toModel)
-
-    of While:
-      node.add(IdWhileExpressionCondition, children[0].toModel)
-      node.add(IdWhileExpressionBody, children[1].toModel)
-
-    of Assignment:
-      node.add(IdAssignmentTarget, children[0].toModel)
-      node.add(IdAssignmentValue, children[1].toModel)
-
-    of FunctionDefinition:
-      if children[0].hasKey("children"):
-        for c in children[0]["children"].elems:
-          var param = newAstNode(parameterDeclClass, c["id"].jsonTo(Id).some)
-          param.setProperty(IdINamedName, PropertyValue(kind: PropertyType.String, stringValue: c["text"].jsonTo string))
-          param.add(IdParameterDeclType, c["children"][0].toModel)
-          node.add(IdFunctionDefinitionParameters, param)
-      node.add(IdFunctionDefinitionReturnType, children[1].toModel)
-      node.add(IdFunctionDefinitionBody, children[2].toModel)
-
-    else:
-      discard
-
-  return node
+  if self.workspace.getSome(ws):
+    asyncCheck ws.saveFile(self.filename, serialized)
+  elif self.appFile:
+    fs.saveApplicationFile(self.filename, serialized)
+  else:
+    fs.saveFile(self.filename, serialized)
 
 proc cursor*(self: ModelDocumentEditor): CellCursor = self.mCursor
 
@@ -403,14 +249,12 @@ proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
       jsonText = fs.loadFile(self.filename)
 
     let json = jsonText.parseJson
-    var testModel = newModel(newId())
-    testModel.addLanguage(base_language.baseLanguage)
 
-    let root = json.toModel true
+    var model = newModel(newId())
+    model.addLanguage(base_language.baseLanguage)
+    model.loadFromJson(json)
+    self.model = model
 
-    testModel.addRootNode(root)
-
-    self.model = testModel
     discard self.model.onNodeDeleted.subscribe proc(d: auto) = self.handleNodeDeleted(d[0], d[1], d[2], d[3], d[4])
     discard self.model.onNodeInserted.subscribe proc(d: auto) = self.handleNodeInserted(d[0], d[1], d[2], d[3], d[4])
     discard self.model.onNodePropertyChanged.subscribe proc(d: auto) = self.handleNodePropertyChanged(d[0], d[1], d[2], d[3], d[4], d[5])
@@ -422,10 +266,6 @@ proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
 
     project.addModel(self.model)
     project.builder = self.builder
-
-    when defined(js):
-      let uiae = `$`(root, true)
-      logger.log(lvlDebug, fmt"[modeldoc] Load new model {uiae}")
 
     self.undoList.setLen 0
     self.redoList.setLen 0
