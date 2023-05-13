@@ -6,8 +6,8 @@ const pth = require('path')
 const cors = require('cors')
 
 const app = express()
-app.use(bodyParser.json())
-app.use(bodyParser.text())
+app.use(bodyParser.json({limit: "500mb"}))
+app.use(bodyParser.text({limit: "500mb"}))
 app.use(cors({
     origin: '*'
 }));

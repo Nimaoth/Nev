@@ -108,17 +108,87 @@ function hashWangYi1_override(x) {
         return (x & 4294967295);
     }
 }
+
+let nimCopyCounters = new Map();
+let nimCopyTimers = new Map();
+let breakOnCopyType = null;
+let stats = []
+
+function clearNimCopyStats() {
+    nimCopyCounters.clear();
+    nimCopyTimers.clear();
+}
+
+function dumpNimCopyStatsImpl(desc, map, sortBy, setBreakOnCopyTypeIndex) {
+    let values = []
+    for (let entry of map.entries()) {
+        values.push(entry)
+    }
+
+    values.sort((a, b) => b[1][sortBy] - a[1][sortBy])
+
+    stats = values
+
+    console.log(desc)
+
+    let i = 0;
+    for (let [type, stat] of values) {
+        if (i == setBreakOnCopyTypeIndex) {
+            breakOnCopyType = type
+        }
+        console.log(stat, ": ", type)
+        i++
+        if (i > 20) {
+          break
+        }
+    }
+}
+
+function selectType(setBreakOnCopyTypeIndex) {
+    if (setBreakOnCopyTypeIndex < stats.length) {
+        breakOnCopyType = stats[setBreakOnCopyTypeIndex][0]
+    }
+}
+
+function dumpNimCopyStats(sortBy, setBreakOnCopyTypeIndex) {
+    //dumpNimCopyStatsImpl("Counts: ", nimCopyCounters)
+    dumpNimCopyStatsImpl("Times: ", nimCopyTimers, sortBy || 0, setBreakOnCopyTypeIndex)
+}
+
+function nimCopyOverride(dest, src, ti) {
+    if (ti === breakOnCopyType) {
+      debugger;
+    }
+
+    let existing = nimCopyCounters.get(ti) || 0;
+    nimCopyCounters.set(ti, existing + 1)
+
+    let start = Date.now()
+    let result = window._old_nimCopy(dest, src, ti);
+    let elapsed = Date.now() - start
+
+    let existingTime = nimCopyTimers.get(ti) || [0, 0];
+    nimCopyTimers.set(ti, [existingTime[0] + elapsed, existingTime[1] + 1])
+
+    return result;
+}
 """.}
 
 import hashes
 
 macro overrideFunction(body: typed, override: untyped): untyped =
   # echo body.treeRepr
-  let original = if body.kind == nnkCall: body[0] else: body
+  let original = case body.kind
+  of nnkCall: body[0]
+  of nnkStrLit: body
+  else: body
 
   return quote do:
+    {.emit: ["window._old_", `original`, " = ", `original`, ";"].}
     {.emit: ["window.", `original`, " = ", `override`, ";"].}
 
 overrideFunction(hashWangYi1(1.int64), "hashWangYi1_override")
 overrideFunction(hashWangYi1(2.uint64), "hashWangYi1_override")
 overrideFunction(hashWangYi1(3.Hash), "hashWangYi1_override")
+
+# overrideFunction("nimCopy", "nimCopyOverride")

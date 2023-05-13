@@ -528,3 +528,8 @@ proc toJsonHook*(a: Uri): JsonNode =
   ## * `fromJsonHook proc<#fromJsonHook,Uri,JsonNode>`_
 
   return ($a).toJson
+
+proc toJArray*(arr: openArray[JsonNode]): JsonNode =
+  result = newJArray()
+  for v in arr:
+    result.add v

@@ -18,13 +18,6 @@
 ## `genOid`.
 ##
 
-import std/[json, jsonutils, hashes, times, random]
-
-when not defined(js) and defined(nimPreviewSlimSystem):
-  import std/[sysatomics]
-
-import timer
-
 when defined(js):
   type Oid* = object ## An OID.
     padding: int
@@ -37,6 +30,19 @@ else:
     time: int32
     fuzz: int32
     count: int32
+
+type Id* = distinct Oid
+
+import std/[json, hashes, times, random]
+import myjsonutils
+
+proc fromJsonHook*(id: var Id, json: JsonNode)
+proc toJson*(id: Id, opt = initToJsonOptions()): JsonNode
+
+when not defined(js) and defined(nimPreviewSlimSystem):
+  import std/[sysatomics]
+
+import timer
 
 proc handleHexChar*(c: char): int {.inline.} =
   case c
@@ -198,8 +204,6 @@ proc generatedTime*(oid: Oid): Time =
   var dummy = oid.time
   tmp = dummy.bigEndian32
   result = fromUnix(tmp)
-
-type Id* = distinct Oid
 
 proc newId*(): Id =
   return genOid().Id

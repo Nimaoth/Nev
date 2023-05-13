@@ -1,8 +1,8 @@
 
-import std/[options, algorithm, strutils, hashes, enumutils, json, jsonutils, tables, macros, sequtils, strformat]
+import std/[options, algorithm, strutils, hashes, enumutils, json, tables, macros, sequtils, strformat]
 import fusion/matching
 import chroma
-import util, id, macro_utils, custom_logger, event
+import util, myjsonutils, id, macro_utils, custom_logger, event
 import print
 
 type
@@ -723,3 +723,89 @@ proc `$`*(node: AstNode, recursive: bool = false): string =
 
       let indent = if i < role.nodes.high or roleIndex < node.childLists.high: "│   " else: "    "
       result.add indent(`$`(c, recursive), 1, indent)[indent.len..^1]
+
+proc toJson*(value: PropertyValue, opt = initToJsonOptions()): JsonNode =
+  case value.kind
+  of Bool: return newJBool(value.boolValue)
+  of String: return newJString(value.stringValue)
+  of Int: return newJInt(value.intValue)
+
+proc toJson*(node: AstNode, opt = initToJsonOptions()): JsonNode =
+  result = newJObject()
+  result["id"] = node.id.toJson(opt)
+  result["class"] = node.class.toJson(opt)
+
+  if node.properties.len > 0:
+    var arr = newJArray()
+    for (key, item) in node.properties.mitems:
+      arr.add [key.toJson(opt), item.toJson(opt)].toJArray
+    result["properties"] = arr
+
+  if node.references.len > 0:
+    var arr = newJArray()
+    for (key, item) in node.references.mitems:
+      arr.add [key.toJson(opt), item.toJson(opt)].toJArray
+    result["references"] = arr
+
+  if node.childLists.len > 0:
+    var arr = newJArray()
+    for (key, children) in node.childLists.mitems:
+      var arr2 = newJArray()
+      for c in children:
+        arr2.add c.toJson(opt)
+      arr.add [key.toJson(opt), arr2].toJArray
+    result["children"] = arr
+
+proc toJson*(model: Model, opt = initToJsonOptions()): JsonNode =
+  result = newJArray()
+  for node in model.rootNodes:
+    result.add node.toJson(opt)
+
+proc fromJsonHook*(value: var PropertyValue, json: JsonNode) =
+  if json.kind == JString:
+    value = PropertyValue(kind: String, stringValue: json.str)
+  elif json.kind == JBool:
+    value = PropertyValue(kind: Bool, boolValue: json.getBool())
+  elif json.kind == JInt:
+    value = PropertyValue(kind: Int, intValue: json.num.int)
+  else:
+    logger.log(lvlError, fmt"Unknown PropertyValue {json}")
+
+proc jsonToAstNode(json: JsonNode, model: Model, opt = Joptions()): Option[AstNode] =
+  let id = json["id"].jsonTo Id
+  let classId = json["class"].jsonTo Id
+
+  let class = model.resolveClass(classId)
+  if class.isNil:
+    return AstNode.none
+
+  var node = newAstNode(class, id.some)
+  result = node.some
+
+  if json.hasKey("properties"):
+    for entry in json["properties"]:
+      let role = entry[0].jsonTo Id
+      let value = entry[1].jsonTo PropertyValue
+      node.setProperty(role, value)
+
+  if json.hasKey("references"):
+    for entry in json["references"]:
+      let role = entry[0].jsonTo Id
+      let id = entry[1].jsonTo Id
+      node.setReference(role, id)
+
+  if json.hasKey("children"):
+    for entry in json["children"]:
+      let role = entry[0].jsonTo Id
+      for childJson in entry[1]:
+        if childJson.jsonToAstNode(model, opt).getSome(childNode):
+          node.add(role, childNode)
+        else:
+          logger.log(lvlError, fmt"Failed to parse node from json")
+
+proc loadFromJson*(model: Model, json: JsonNode, opt = Joptions()) =
+  for node in json:
+    if node.jsonToAstNode(model, opt).getSome(node):
+      model.addRootNode(node)
+    else:
+      logger.log(lvlError, fmt"Failed to parse node from json")
