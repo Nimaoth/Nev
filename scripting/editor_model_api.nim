@@ -8,66 +8,66 @@ else:
 ## This file is auto generated, don't modify.
 
 proc scroll*(self: ModelDocumentEditor; amount: float32) =
-  scrollScript2_8422176225(self, amount)
+  scrollScript2_9009376562(self, amount)
 proc setMode*(self: ModelDocumentEditor; mode: string) =
-  setModeScript22_8422176327(self, mode)
+  setModeScript22_9009376664(self, mode)
 proc mode*(self: ModelDocumentEditor): string =
-  modeScript22_8422179287(self)
+  modeScript22_9009379897(self)
 proc getContextWithMode*(self: ModelDocumentEditor; context: string): string =
-  getContextWithModeScript22_8422179336(self, context)
+  getContextWithModeScript22_9009379946(self, context)
 proc moveCursorLeft*(self: ModelDocumentEditor; select: bool = false) =
-  moveCursorLeftScript_8422179392(self, select)
+  moveCursorLeftScript_9009380002(self, select)
 proc moveCursorRight*(self: ModelDocumentEditor; select: bool = false) =
-  moveCursorRightScript_8422179472(self, select)
+  moveCursorRightScript_9009380082(self, select)
 proc moveCursorLeftLine*(self: ModelDocumentEditor; select: bool = false) =
-  moveCursorLeftLineScript_8422179552(self, select)
+  moveCursorLeftLineScript_9009380162(self, select)
 proc moveCursorRightLine*(self: ModelDocumentEditor; select: bool = false) =
-  moveCursorRightLineScript_8422179634(self, select)
+  moveCursorRightLineScript_9009380244(self, select)
 proc moveCursorLineStart*(self: ModelDocumentEditor; select: bool = false) =
-  moveCursorLineStartScript_8422179716(self, select)
+  moveCursorLineStartScript_9009380326(self, select)
 proc moveCursorLineEnd*(self: ModelDocumentEditor; select: bool = false) =
-  moveCursorLineEndScript_8422179799(self, select)
+  moveCursorLineEndScript_9009380409(self, select)
 proc moveCursorLineStartInline*(self: ModelDocumentEditor; select: bool = false) =
-  moveCursorLineStartInlineScript_8422179885(self, select)
+  moveCursorLineStartInlineScript_9009380495(self, select)
 proc moveCursorLineEndInline*(self: ModelDocumentEditor; select: bool = false) =
-  moveCursorLineEndInlineScript_8422179968(self, select)
+  moveCursorLineEndInlineScript_9009380578(self, select)
 proc moveCursorUp*(self: ModelDocumentEditor; select: bool = false) =
-  moveCursorUpScript2_8422180051(self, select)
+  moveCursorUpScript2_9009380661(self, select)
 proc moveCursorDown*(self: ModelDocumentEditor; select: bool = false) =
-  moveCursorDownScript2_8422180156(self, select)
+  moveCursorDownScript2_9009380766(self, select)
 proc moveCursorLeftCell*(self: ModelDocumentEditor; select: bool = false) =
-  moveCursorLeftCellScript_8422180261(self, select)
+  moveCursorLeftCellScript_9009380871(self, select)
 proc moveCursorRightCell*(self: ModelDocumentEditor; select: bool = false) =
-  moveCursorRightCellScript_8422180363(self, select)
+  moveCursorRightCellScript_9009380973(self, select)
 proc selectNode*(self: ModelDocumentEditor; select: bool = false) =
-  selectNodeScript_8422180465(self, select)
+  selectNodeScript_9009381075(self, select)
 proc selectParentCell*(self: ModelDocumentEditor) =
-  selectParentCellScript_8422180597(self)
+  selectParentCellScript_9009381207(self)
 proc selectPrevPlaceholder*(self: ModelDocumentEditor; select: bool = false) =
-  selectPrevPlaceholderScript_8422180653(self, select)
+  selectPrevPlaceholderScript_9009381263(self, select)
 proc selectNextPlaceholder*(self: ModelDocumentEditor; select: bool = false) =
-  selectNextPlaceholderScript_8422180732(self, select)
+  selectNextPlaceholderScript_9009381342(self, select)
 proc deleteLeft*(self: ModelDocumentEditor) =
-  deleteLeftScript2_8422181669(self)
+  deleteLeftScript2_9009382275(self)
 proc deleteRight*(self: ModelDocumentEditor) =
-  deleteRightScript2_8422181712(self)
+  deleteRightScript2_9009382318(self)
 proc createNewNode*(self: ModelDocumentEditor) =
-  createNewNodeScript_8422182090(self)
+  createNewNodeScript_9009382912(self)
 proc insertTextAtCursor*(self: ModelDocumentEditor; input: string): bool =
-  insertTextAtCursorScript_8422182376(self, input)
+  insertTextAtCursorScript_9009382996(self, input)
 proc undo*(self: ModelDocumentEditor) =
-  undoScript22_8422182548(self)
+  undoScript22_9009383168(self)
 proc redo*(self: ModelDocumentEditor) =
-  redoScript22_8422182636(self)
+  redoScript22_9009383533(self)
 proc toggleUseDefaultCellBuilder*(self: ModelDocumentEditor) =
-  toggleUseDefaultCellBuilderScript_8422182705(self)
+  toggleUseDefaultCellBuilderScript_9009383773(self)
 proc showCompletions*(self: ModelDocumentEditor) =
-  showCompletionsScript_8422182748(self)
+  showCompletionsScript_9009383816(self)
 proc hideCompletions*(self: ModelDocumentEditor) =
-  hideCompletionsScript2_8422182791(self)
+  hideCompletionsScript2_9009383859(self)
 proc selectPrevCompletion*(self: ModelDocumentEditor) =
-  selectPrevCompletionScript22_8422182838(self)
+  selectPrevCompletionScript22_9009383906(self)
 proc selectNextCompletion*(self: ModelDocumentEditor) =
-  selectNextCompletionScript22_8422182889(self)
+  selectNextCompletionScript22_9009383957(self)
 proc applySelectedCompletion*(self: ModelDocumentEditor) =
-  applySelectedCompletionScript22_8422182940(self)
+  applySelectedCompletionScript22_9009384008(self)

@@ -8,94 +8,94 @@ else:
 ## This file is auto generated, don't modify.
 
 proc moveCursor*(self: AstDocumentEditor; direction: int) =
-  moveCursorScript_8120185021(self, direction)
+  moveCursorScript_8707387579(self, direction)
 proc moveCursorUp*(self: AstDocumentEditor) =
-  moveCursorUpScript_8120185117(self)
+  moveCursorUpScript_8707387675(self)
 proc moveCursorDown*(self: AstDocumentEditor) =
-  moveCursorDownScript_8120185172(self)
+  moveCursorDownScript_8707387730(self)
 proc moveCursorNext*(self: AstDocumentEditor) =
-  moveCursorNextScript_8120185215(self)
+  moveCursorNextScript_8707387773(self)
 proc moveCursorPrev*(self: AstDocumentEditor) =
-  moveCursorPrevScript_8120185265(self)
+  moveCursorPrevScript_8707387823(self)
 proc moveCursorNextLine*(self: AstDocumentEditor) =
-  moveCursorNextLineScript_8120185314(self)
+  moveCursorNextLineScript_8707387872(self)
 proc moveCursorPrevLine*(self: AstDocumentEditor) =
-  moveCursorPrevLineScript_8120185383(self)
+  moveCursorPrevLineScript_8707387941(self)
 proc selectContaining*(self: AstDocumentEditor; container: string) =
-  selectContainingScript_8120185452(self, container)
+  selectContainingScript_8707388010(self, container)
 proc deleteSelected*(self: AstDocumentEditor) =
-  deleteSelectedScript_8120185658(self)
+  deleteSelectedScript_8707388216(self)
 proc copySelected*(self: AstDocumentEditor) =
-  copySelectedScript_8120185704(self)
+  copySelectedScript_8707388262(self)
 proc finishEdit*(self: AstDocumentEditor; apply: bool) =
-  finishEditScript_8120185750(self, apply)
+  finishEditScript_8707388308(self, apply)
 proc undo*(self: AstDocumentEditor) =
-  undoScript2_8120185842(self)
+  undoScript2_8707388400(self)
 proc redo*(self: AstDocumentEditor) =
-  redoScript2_8120185911(self)
+  redoScript2_8707388469(self)
 proc insertAfterSmart*(self: AstDocumentEditor; nodeTemplate: string) =
-  insertAfterSmartScript_8120185980(self, nodeTemplate)
+  insertAfterSmartScript_8707388538(self, nodeTemplate)
 proc insertAfter*(self: AstDocumentEditor; nodeTemplate: string) =
-  insertAfterScript_8120186147(self, nodeTemplate)
+  insertAfterScript_8707388705(self, nodeTemplate)
 proc insertBefore*(self: AstDocumentEditor; nodeTemplate: string) =
-  insertBeforeScript_8120186282(self, nodeTemplate)
+  insertBeforeScript_8707388840(self, nodeTemplate)
 proc insertChild*(self: AstDocumentEditor; nodeTemplate: string) =
-  insertChildScript_8120186416(self, nodeTemplate)
+  insertChildScript_8707388974(self, nodeTemplate)
 proc replace*(self: AstDocumentEditor; nodeTemplate: string) =
-  replaceScript_8120186549(self, nodeTemplate)
+  replaceScript_8707389107(self, nodeTemplate)
 proc replaceEmpty*(self: AstDocumentEditor; nodeTemplate: string) =
-  replaceEmptyScript_8120186636(self, nodeTemplate)
+  replaceEmptyScript_8707389194(self, nodeTemplate)
 proc replaceParent*(self: AstDocumentEditor) =
-  replaceParentScript_8120186727(self)
+  replaceParentScript_8707389285(self)
 proc wrap*(self: AstDocumentEditor; nodeTemplate: string) =
-  wrapScript_8120186780(self, nodeTemplate)
+  wrapScript_8707389338(self, nodeTemplate)
 proc editPrevEmpty*(self: AstDocumentEditor) =
-  editPrevEmptyScript_8120186891(self)
+  editPrevEmptyScript_8707389449(self)
 proc editNextEmpty*(self: AstDocumentEditor) =
-  editNextEmptyScript_8120186940(self)
+  editNextEmptyScript_8707389498(self)
 proc rename*(self: AstDocumentEditor) =
-  renameScript_8120186997(self)
+  renameScript_8707389555(self)
 proc selectPrevCompletion*(self: AstDocumentEditor) =
-  selectPrevCompletionScript2_8120187040(self)
+  selectPrevCompletionScript2_8707389598(self)
 proc selectNextCompletion*(self: AstDocumentEditor) =
-  selectNextCompletionScript2_8120187100(self)
+  selectNextCompletionScript2_8707389658(self)
 proc applySelectedCompletion*(self: AstDocumentEditor) =
-  applySelectedCompletionScript2_8120187160(self)
+  applySelectedCompletionScript2_8707389718(self)
 proc cancelAndNextCompletion*(self: AstDocumentEditor) =
-  cancelAndNextCompletionScript_8120187316(self)
+  cancelAndNextCompletionScript_8707389874(self)
 proc cancelAndPrevCompletion*(self: AstDocumentEditor) =
-  cancelAndPrevCompletionScript_8120187359(self)
+  cancelAndPrevCompletionScript_8707389917(self)
 proc cancelAndDelete*(self: AstDocumentEditor) =
-  cancelAndDeleteScript_8120187402(self)
+  cancelAndDeleteScript_8707389960(self)
 proc moveNodeToPrevSpace*(self: AstDocumentEditor) =
-  moveNodeToPrevSpaceScript_8120187448(self)
+  moveNodeToPrevSpaceScript_8707390006(self)
 proc moveNodeToNextSpace*(self: AstDocumentEditor) =
-  moveNodeToNextSpaceScript_8120187595(self)
+  moveNodeToNextSpaceScript_8707390153(self)
 proc selectPrev*(self: AstDocumentEditor) =
-  selectPrevScript2_8120187743(self)
+  selectPrevScript2_8707390301(self)
 proc selectNext*(self: AstDocumentEditor) =
-  selectNextScript2_8120187786(self)
+  selectNextScript2_8707390344(self)
 proc openGotoSymbolPopup*(self: AstDocumentEditor) =
-  openGotoSymbolPopupScript_8120187846(self)
+  openGotoSymbolPopupScript_8707390404(self)
 proc goto*(self: AstDocumentEditor; where: string) =
-  gotoScript_8120188128(self, where)
+  gotoScript_8707390686(self, where)
 proc runSelectedFunction*(self: AstDocumentEditor) =
-  runSelectedFunctionScript_8120188600(self)
+  runSelectedFunctionScript_8707391158(self)
 proc toggleOption*(self: AstDocumentEditor; name: string) =
-  toggleOptionScript_8120188862(self, name)
+  toggleOptionScript_8707391420(self, name)
 proc runLastCommand*(self: AstDocumentEditor; which: string) =
-  runLastCommandScript_8120188916(self, which)
+  runLastCommandScript_8707391474(self, which)
 proc selectCenterNode*(self: AstDocumentEditor) =
-  selectCenterNodeScript_8120188966(self)
+  selectCenterNodeScript_8707391524(self)
 proc scroll*(self: AstDocumentEditor; amount: float32) =
-  scrollScript_8120189416(self, amount)
+  scrollScript_8707391974(self, amount)
 proc scrollOutput*(self: AstDocumentEditor; arg: string) =
-  scrollOutputScript_8120189470(self, arg)
+  scrollOutputScript_8707392028(self, arg)
 proc dumpContext*(self: AstDocumentEditor) =
-  dumpContextScript_8120189531(self)
+  dumpContextScript_8707392089(self)
 proc setMode*(self: AstDocumentEditor; mode: string) =
-  setModeScript2_8120189578(self, mode)
+  setModeScript2_8707392136(self, mode)
 proc mode*(self: AstDocumentEditor): string =
-  modeScript2_8120189660(self)
+  modeScript2_8707392218(self)
 proc getContextWithMode*(self: AstDocumentEditor; context: string): string =
-  getContextWithModeScript2_8120189709(self, context)
+  getContextWithModeScript2_8707392267(self, context)
