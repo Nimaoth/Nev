@@ -1,12 +1,17 @@
-import std/[macros, os, macrocache, strutils, json, options, tables]
+import std/[macros, os, macrocache, strutils, json, options, tables, genasts]
 import custom_logger, custom_async, compilation_config, util
 import platform/filesystem
 
 when defined(js):
   import std/jsffi
 
+  type WasmPtr = distinct uint32
+
   type WasmModule* = ref object
     env: JsObject
+    memory: JsObject
+    myAlloc: proc(size: uint32): WasmPtr
+    myDealloc: proc(size: uint32): WasmPtr
 
   type WasmImports* = object
     namespace: string
@@ -22,14 +27,20 @@ else:
     namespace: string
     functions: seq[WasmHostProc]
 
+func `-`(a, b: WasmPtr): int32 = a.int32 - b.int32
+
 when defined(js):
   proc castFunction[T: proc](f: T): (proc()) {.importjs: "#".}
+  proc toFunction(f: JsObject, R: typedesc): R {.importjs: "#".}
   template addFunction*(self: var WasmImports, name: string, function: static proc) =
     self.functions[name.cstring] = castFunction(function)
 
+  proc encodeStringJs(str: cstring): JsObject {.importc.}
+  proc decodeStringJs(str: JsObject): cstring {.importc.}
+
 else:
   proc getWasmType(typ: NimNode): string =
-    echo typ.treeRepr
+    # echo typ.treeRepr
     if typ.repr == "void":
       return "v"
     elif typ.repr == "int32":
@@ -142,14 +153,17 @@ proc newWasmModule*(path: string, importsOld: seq[WasmImports]): Future[WasmModu
       context["HEAPF32"] = newFloat32Array(memory)
       context["HEAPF64"] = newFloat64Array(memory)
 
-    return WasmModule(env: module)
+    let myAlloc = module["instance"]["exports"]["my_alloc"].toFunction proc(size: uint32): WasmPtr
+    let myDealloc = module["instance"]["exports"]["my_dealloc"].toFunction proc(size: uint32): WasmPtr
+
+    return WasmModule(env: module, memory: context, myAlloc: myAlloc, myDealloc: myDealloc)
 
   else:
     var allFunctions: seq[WasmHostProc] = @[]
     for imp in importsOld:
       allFunctions.add imp.functions
 
-    let env = loadWasmEnv(readFile(path), hostProcs=allFunctions)
+    let env = loadWasmEnv(readFile(path), hostProcs=allFunctions, loadAlloc=true, allocName="my_alloc", deallocName="my_dealloc")
     return WasmModule(env: env)
 
 proc replace(node: NimNode, target: string, newNodes: openArray[NimNode]): bool =
@@ -163,29 +177,115 @@ proc replace(node: NimNode, target: string, newNodes: openArray[NimNode]): bool 
       return true
   return false
 
-macro newProcWithType(returnType: typedesc, typ: typedesc, body: untyped): untyped =
+
+proc alloc*(module: WasmModule, size: uint32): WasmPtr =
+  when defined(js):
+    return module.myAlloc(size)
+  else:
+    return module.env.alloc(size)
+
+when defined(js):
+  proc copyMem*(module: WasmModule, pos: WasmPtr, p: JsObject, len: int, offset = 0u32) =
+    let heap = module.memory["HEAPU8"]
+    proc setJs(arr: JsObject, source: JsObject, pos: WasmPtr) {.importjs: "#.set(#, #)".}
+    proc slice(arr: JsObject, first: int, last: int): JsObject {.importjs: "#.slice(#, #)".}
+
+    let s = p.slice(0, len)
+    heap.setJs(s, pos)
+
+else:
+  proc copyMem*(module: WasmModule, pos: WasmPtr, p: pointer, len: int, offset = 0u32) =
+    module.env.copyMem(pos, p, len, offset)
+
+proc getString*(module: WasmModule, pos: WasmPtr): cstring =
+  when defined(js):
+    let heap = module.memory["HEAPU8"]
+
+    proc indexOf(arr: JsObject, elem: uint8, start: WasmPtr): WasmPtr {.importjs: "#.indexOf(#, #)".}
+    proc slice(arr: JsObject, first: WasmPtr, last: WasmPtr): JsObject {.importjs: "#.slice(#, #)".}
+
+    let terminator = heap.indexOf(0, pos)
+    let len = terminator - pos
+
+    let s = heap.slice(pos, terminator)
+
+    return decodeStringJs(s)
+
+  else:
+    return module.env.getString(pos)
+
+macro newProcWithType(module: WasmModule, returnType: typedesc, typ: typedesc, body: untyped): untyped =
   var params: seq[NimNode] = @[]
   var args: seq[NimNode] = @[]
 
+  let returnCString = returnType.getType[1].repr == "cstring"
+
+  echo "newProcWithType"
+  echo returnType.getTypeImpl.treeRepr
+  var actualReturnType = if returnCString:
+    var actualReturnType = genAst():
+      typedesc[WasmPtr]
+    actualReturnType
+  else:
+    returnType
+
   params.add returnType.getType[1]
+
+  echo actualReturnType.treeRepr
+
   for i, p in typ.getType[1][2..^1]:
-    let arg = genSym(nskParam, "p" & $i)
+    var arg = genSym(nskParam, "p" & $i)
+
+    let isCString = p.repr == "cstring"
+
     params.add nnkIdentDefs.newTree(arg, p, newEmptyNode())
+
+    when defined(js):
+      if isCString:
+        arg = genAst(arg):
+          let a = encodeStringJs(arg)
+          proc len(arr: JsObject): int {.importjs: "#.length".}
+          let p: WasmPtr = module.alloc(a.len.uint32 + 1)
+          module.copyMem(p, a, arg.len + 1)
+          p
+
+    else:
+      if isCString:
+        arg = genAst(arg):
+          block:
+            # echo "convert arg"
+            let p: WasmPtr = module.alloc(arg.len.uint32 + 1)
+            # echo p.uint32
+
+            # echo a
+            module.copyMem(p, cast[pointer](arg), arg.len + 1)
+            # echo wasm3.getString(module.env, p)
+            p
+
+    # echo arg.repr
+
     args.add(arg)
 
-  discard body.replace("returnType", [returnType])
+  discard body.replace("returnType", [actualReturnType])
   discard body.replace("parameters", args)
 
   if returnType.getType[1].repr != "void":
-    body[0] = nnkReturnStmt.newTree(body[0])
+    if returnCString:
+      body[0] = genAst(value = body[0]):
+        let p = value
+        # echo "convert return value"
+        # echo p.uint32
+
+        let res = module.getString(p)
+        # echo cast[uint64](res.addr)
+        return res
+    else:
+      body[0] = nnkReturnStmt.newTree(body[0])
 
   defer:
     echo result.repr
 
   return newProc(params=params, body=body)
-
-dumpTree:
-  proc a(a: int32): float32 = discard
 
 proc findFunction*(module: WasmModule, name: string, R: typedesc, T: typedesc): Option[T] =
   when defined(js):
@@ -195,7 +295,7 @@ proc findFunction*(module: WasmModule, name: string, R: typedesc, T: typedesc): 
     if function.isUndefined:
       return
 
-    let f = newProcWithType(R, T):
+    let f = newProcWithType(module, R, T):
       (`.()`(function, call, nil, `parameters`)).to(`returnType`)
       # (`.()`(exports, exported_func, `parameters`)).to(`returnType`)
 
@@ -205,7 +305,7 @@ proc findFunction*(module: WasmModule, name: string, R: typedesc, T: typedesc): 
     if f.isNil:
       return
 
-    let wrapper = newProcWithType(R, T):
+    let wrapper = newProcWithType(module, R, T):
       f.call(`returnType`, `parameters`)
 
     return wrapper.some
@@ -215,7 +315,7 @@ proc findFunction*(module: WasmModule, name: string, R: typedesc, T: typedesc): 
 proc imported_func(a: int32) =
   echo "2 nim imported func: ", a
 
-proc uiae(a: int64, b: cstring) =
+proc uiae(a: int32, b: cstring) =
   echo "uiae: ", a, ", ", b
 
 proc xvlc(): Future[void] {.async.} =
@@ -224,20 +324,25 @@ proc xvlc(): Future[void] {.async.} =
   var imports = WasmImports(namespace: "imports")
   imports.addFunction("imported_func", imported_func)
 
-  let module = await newWasmModule("simple.wasm", @[imports])
-  if findFunction(module, "exported_func", void, proc(): void).getSome(f):
-    echo "Call exportedFunc"
-    f()
+  # let module = await newWasmModule("simple.wasm", @[imports])
+  # if findFunction(module, "exported_func", void, proc(): void).getSome(f):
+  #   echo "Call exportedFunc"
+  #   f()
 
 
   var imports2 = WasmImports(namespace: "env")
   imports2.addFunction("uiae", uiae)
 
-  let module2 = await newWasmModule("maths.wasm", @[imports2])
+  when defined(js):
+    let module2 = await newWasmModule("maths.wasm", @[imports2])
+  else:
+    let module2 = await newWasmModule("temp/wasm/maths.wasm", @[imports2])
+  if findFunction(module2, "foo", int32, proc(a: int32, b: int32): int32).getSome(f):
+    echo f(2, 3)
   if findFunction(module2, "barc", cstring, proc(a: cstring): cstring).getSome(f):
-    echo f("barc")
+    echo f("xvlc")
   if findFunction(module2, "barc2", cstring, proc(a: cstring): cstring).getSome(f):
-    echo f("barc2")
+    echo f("uiae")
 
 
 asyncCheck xvlc()
