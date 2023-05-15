@@ -11,6 +11,8 @@ when not defined(js):
 else:
   import scripting/scripting_js
 
+import scripting/scripting_wasm
+
 import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, ModelDocumentEditor, Popup, SelectorPopup
 from scripting_api import Backend
 
@@ -80,6 +82,7 @@ type Editor* = ref object
   workspace*: Workspace
 
   scriptContext*: ScriptContext
+  wasmScriptContext*: ScriptContextWasm
   initializeCalled: bool
 
   statusBarOnTop*: bool
@@ -126,7 +129,9 @@ proc invokeCallback*(self: Editor, context: string, args: JsonNode): bool =
     return false
   let id = self.callbacks[context]
   try:
-    return self.scriptContext.invoke(handleCallback, id, args, returnType = bool)
+    if self.scriptContext.invoke(handleCallback, id, args, returnType = bool):
+      return true
+    return self.wasmScriptContext.invoke(handleCallback, id, args, returnType = bool)
   except CatchableError:
     logger.log(lvlError, fmt"[ed] Failed to run script handleCallback {id}: {getCurrentExceptionMsg()}")
     logger.log(lvlError, getCurrentException().getStackTrace())
@@ -181,6 +186,8 @@ proc handleUnknownPopupAction*(self: Editor, popup: Popup, action: string, arg: 
 
     if self.scriptContext.handleUnknownPopupAction(popup, action, args):
       return Handled
+    if self.wasmScriptContext.handleUnknownPopupAction(popup, action, args):
+      return Handled
   except CatchableError:
     logger.log(lvlError, fmt"[ed] Failed to run script handleUnknownPopupAction '{action} {arg}': {getCurrentExceptionMsg()}")
     logger.log(lvlError, getCurrentException().getStackTrace())
@@ -190,6 +197,8 @@ proc handleUnknownPopupAction*(self: Editor, popup: Popup, action: string, arg: 
 proc handleUnknownDocumentEditorAction*(self: Editor, editor: DocumentEditor, action: string, args: JsonNode): EventResponse =
   try:
     if self.scriptContext.handleUnknownDocumentEditorAction(editor, action, args):
+      return Handled
+    if self.wasmScriptContext.handleUnknownDocumentEditorAction(editor, action, args):
       return Handled
   except CatchableError:
     logger.log(lvlError, fmt"[ed] Failed to run script handleUnknownDocumentEditorAction '{action} {args}': {getCurrentExceptionMsg()}")
@@ -474,9 +483,13 @@ proc newEditor*(backend: api.Backend, platform: Platform): Editor =
     else:
       self.scriptContext = createScriptContext("./absytree_config.nims", searchPaths)
 
+    self.wasmScriptContext = new ScriptContextWasm
+
     self.scriptContext.init("")
+    self.wasmScriptContext.init("")
 
     discard self.scriptContext.invoke(postInitialize, returnType = bool)
+    discard self.wasmScriptContext.invoke(postInitialize, returnType = bool)
 
     self.initializeCalled = true
   except:
@@ -1371,6 +1384,8 @@ proc handleAction(self: Editor, action: string, arg: string): bool =
 
   try:
     if self.scriptContext.handleGlobalAction(action, args):
+      return true
+    if self.wasmScriptContext.handleGlobalAction(action, args):
       return true
   except CatchableError:
     logger.log(lvlError, fmt"[ed] Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")

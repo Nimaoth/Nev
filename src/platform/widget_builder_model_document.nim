@@ -325,6 +325,7 @@ method updateCellWidget*(cell: CollectionCell, app: Editor, widget: WWidget, fra
 
   if cell.style.isNotNil and cell.style.indentChildren:
     myCtx.increaseIndent()
+    myCtx.indent()
 
   defer:
     if cell.style.isNotNil and cell.style.indentChildren:

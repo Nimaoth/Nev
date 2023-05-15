@@ -7,6 +7,7 @@ switch("tlsEmulation", "off")
 switch("d", "enableGui=true")
 switch("d", "enableTerminal=true")
 switch("d", "ssl")
+switch("d", "wasm3HasWasi")
 
 let mode = 0
 case mode
