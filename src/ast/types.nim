@@ -1,9 +1,8 @@
 
-import std/[options, algorithm, strutils, hashes, enumutils, json, tables, macros, sequtils, strformat]
+import std/[options, strutils, hashes, json, tables, strformat]
 import fusion/matching
 import chroma
 import util, myjsonutils, id, macro_utils, custom_logger, event
-import print
 
 type
   PropertyType* {.pure.} = enum
@@ -668,7 +667,7 @@ proc addBuilder*(self: CellBuilder, other: CellBuilder) =
 method dump*(self: Cell, recurse: bool = false): string {.base.} = discard
 method getChildAt*(self: Cell, index: int, clamp: bool): Option[Cell] {.base.} = Cell.none
 
-method dump(self: EmptyCell): string =
+method dump*(self: EmptyCell, recurse: bool = false): string =
   result.add fmt"EmptyCell(node: {self.node.id})"
 
 proc `$`*(node: AstNode, recursive: bool = false): string =

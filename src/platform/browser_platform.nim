@@ -1,5 +1,4 @@
 import std/[strformat, tables, dom, unicode, strutils, sugar]
-import std/htmlgen as hg
 import platform, widgets, custom_logger, rect_utils, input, event, lrucache, theme
 import vmath
 import chroma as chroma
@@ -206,8 +205,8 @@ proc vec2Js*(x: float, y: float) {.importjs: "return {x: #, y: #};".}
 method size*(self: BrowserPlatform): Vec2 =
   vec2Js(self.content.clientWidth.float, self.content.clientHeight.float)
 
-proc `+=`[T](a: cstring, b: T) {.importjs: "(#) += (#);".}
-proc `+`[T](a: cstring, b: T) {.importjs: "((#) + (#))".}
+proc `+=`*[T](a: cstring, b: T) {.importjs: "(#) += (#);".}
+proc `+`*[T](a: cstring, b: T) {.importjs: "((#) + (#))".}
 
 # method sizeChanged*(self: BrowserPlatform): bool =
 #   let (w, h) = (terminalWidth(), terminalHeight())
@@ -325,10 +324,10 @@ proc createOrReplaceElement(element: var Element, name: cstring, nameUpper: cstr
     element.class = "widget"
 
 proc updateRelativePosition(element: var Element, bounds: Rect) =
-  element.style.left = $bounds.x.int
-  element.style.top = $bounds.y.int
-  element.style.width = $bounds.w.int
-  element.style.height = $bounds.h.int
+  element.style.left = ($bounds.x.int).cstring
+  element.style.top = ($bounds.y.int).cstring
+  element.style.width = ($bounds.w.int).cstring
+  element.style.height = ($bounds.h.int).cstring
 
 proc myToHtmlHex(c: Color): cstring =
   result = "rgba(".cstring
@@ -436,7 +435,7 @@ method renderWidget(self: WText, renderer: BrowserPlatform, element: var Element
   renderer.boundsStack.add self.lastBounds
   defer: discard renderer.boundsStack.pop()
 
-  let color = self.foregroundColor.myToHtmlHex.cstring
+  let color = self.foregroundColor.myToHtmlHex
 
   let text = self.text.cstring
   let updateText = element.getAttribute("data-text") != text

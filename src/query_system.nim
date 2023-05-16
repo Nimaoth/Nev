@@ -3,7 +3,6 @@ import timer
 import fusion/matching
 import ast, id, util, custom_logger
 import lrucache
-import compilation_config
 
 {.experimental: "dynamicBindSym".}
 
@@ -13,6 +12,8 @@ func repeat2*(s: string, n: Natural): string = repeat s, n
 
 
 when defined(js):
+  import compilation_config
+
   type Cache[K, V] {.importjs: "Map".} = ref object
     discard
   proc newCache[K, V](capacity: int): Cache[K, V] {.importjs: "(new Map())".}
@@ -64,8 +65,6 @@ when defined(js):
 else:
   type Cache[K, V] = LruCache[K, V]
   proc newCache[K, V](capacity: int): Cache[K, V] = newLRUCache[K, V](capacity)
-  # type Cache[K, V] = Table[K, V]
-  # proc newCache[K, V](capacity: int): Cache[K, V] = initTable[K, V]()
 
 proc init[K, V](result: var Cache[K, V], capacity: int) =
   result = newCache[K, V](capacity)
@@ -862,7 +861,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
               raise newException(Defect, "compute" & `name` & "(" & $input & "): not in cache anymore")
             return ctx.`queryCache`[input]
 
-          except:
+          except CatchableError:
             logger.log(lvlError, getCurrentExceptionMsg())
             logger.log(lvlError, getCurrentException().getStackTrace())
             if ctx.dependencyStack.len > 0:
@@ -897,7 +896,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
               raise newException(Defect, "compute" & `name` & "(" & $input & "): not in cache anymore")
             return ctx.`queryCache`[input]
 
-          except:
+          except CatchableError:
             logger.log(lvlError, getCurrentExceptionMsg())
             logger.log(lvlError, getCurrentException().getStackTrace())
             if ctx.dependencyStack.len > 0:

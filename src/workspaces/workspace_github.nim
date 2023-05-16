@@ -1,4 +1,4 @@
-import std/[os, tables, json, uri, base64, strutils, options]
+import std/[os, tables, json, base64, strutils, options]
 import workspace, custom_async, custom_logger, async_http_client, platform/filesystem
 
 type
@@ -45,7 +45,7 @@ method loadFile*(self: WorkspaceFolderGithub, relativePath: string): Future[stri
       let content = base64.decode(contentBase64)
       return content
 
-  except:
+  except CatchableError:
     logger.log(lvlError, fmt"Failed to parse github response: {response}")
 
   return ""
@@ -62,7 +62,6 @@ proc parseDirectoryListing(self: WorkspaceFolderGithub, basePath: string, jsn: J
 
       let path = item["path"].getStr ""
       let typ = item["type"].getStr ""
-      let url = item["url"].getStr ""
       let sha = item["sha"].getStr ""
 
       self.pathToSha[basePath / path] = sha
@@ -100,7 +99,7 @@ method getDirectoryListing*(self: WorkspaceFolderGithub, relativePath: string): 
     self.cachedDirectoryListings[relativePath] = listing
     return listing
 
-  except:
+  except CatchableError:
     logger.log(lvlError, fmt"Failed to parse github response: {response}")
 
   return DirectoryListing()

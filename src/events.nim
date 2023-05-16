@@ -1,4 +1,4 @@
-import std/[tables, sequtils, strformat]
+import std/[tables, sequtils]
 import input, custom_logger
 
 type EventResponse* = enum

@@ -4,7 +4,7 @@ import custom_logger, custom_async, util
 from scripting_api import Cursor, Selection
 
 when defined(js):
-  import std/[dom, asyncjs]
+  import std/[asyncjs]
 
   type TSLanguage* {.importc("Language").} = ref object
     discard
@@ -54,7 +54,9 @@ when defined(js):
 
   proc newTSParser*(): TSParser {.importcpp: "new Parser()".}
   proc setLanguage*(self: TSParser, language: TSLanguage) {.importcpp("#.setLanguage(#)").}
-  proc query*(self: TSLanguage, source: cstring): TSQuery {.importcpp("#.query(#)").}
+  proc query*(self: TSLanguage, source: string): TSQuery =
+    proc queryJs(self: TSLanguage, source: cstring): TSQuery {.importcpp("#.query(#)").}
+    return queryJs(self, source.cstring)
   proc parse*(self: TSParser, text: cstring, oldTree: TSTree = nil): TSTree {.importcpp("#.parse(#, #)").}
   proc parseString*(self: TSParser, text: string, oldTree: Option[TSTree] = TSTree.none): TSTree =
     return self.parse(text.cstring, oldTree.get(nil))
@@ -363,7 +365,7 @@ proc loadLanguageDynamically*(languageId: string, config: JsonNode): Future[Opti
         fmt"languages/tree-sitter-{languageId}.wasm"
 
       logger.log(lvlInfo, fmt"Trying to load treesitter from '{wasmPath}'")
-      let language = await loadTreesitterLanguage(wasmPath)
+      let language = await loadTreesitterLanguage(wasmPath.cstring)
       if language.isNil:
         return TSLanguage.none
       return language.some

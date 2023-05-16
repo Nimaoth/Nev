@@ -1,6 +1,6 @@
 import std/[strformat, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils, macros, macrocache, sugar, streams]
 import fuzzy
-import input, id, events, rect_utils, document, document_editor, keybind_autocomplete, popup, timer, event, cancellation_token
+import input, id, events, rect_utils, document, document_editor, popup, timer, event, cancellation_token
 import theme, util, custom_logger, custom_async
 import scripting/[expose, scripting_base]
 import platform/[platform, widgets, filesystem]
@@ -453,7 +453,7 @@ proc newEditor*(backend: api.Backend, platform: Platform): Editor =
     self.options = fs.loadApplicationFile("options.json").parseJson
     logger.log(lvlInfo, fmt"Restoring options: {self.options.pretty}")
 
-  except:
+  except CatchableError:
     logger.log(lvlError, fmt"Failed to load previous state from config file: {getCurrentExceptionMsg()}")
 
   if self.getFlag("editor.restore-open-workspaces"):
@@ -462,9 +462,6 @@ proc newEditor*(backend: api.Backend, platform: Platform): Editor =
       of OpenWorkspaceKind.Local: newWorkspaceFolderLocal(wf.settings)
       of OpenWorkspaceKind.AbsytreeServer: newWorkspaceFolderAbsytreeServer(wf.settings)
       of OpenWorkspaceKind.Github: newWorkspaceFolderGithub(wf.settings)
-      else:
-        logger.log(lvlError, fmt"[editor][restore-open-workspaces] Unhandled or unknown workspace folder kind {wf.kind}")
-        continue
 
       folder.id = wf.id.parseId
       folder.name = wf.name
@@ -492,7 +489,7 @@ proc newEditor*(backend: api.Backend, platform: Platform): Editor =
     discard self.wasmScriptContext.invoke(postInitialize, returnType = bool)
 
     self.initializeCalled = true
-  except:
+  except CatchableError:
     logger.log(lvlError, fmt"Failed to load config: {(getCurrentExceptionMsg())}{'\n'}{(getCurrentException().getStackTrace())}")
 
   # Restore open editors
@@ -504,13 +501,13 @@ proc newEditor*(backend: api.Backend, platform: Platform): Editor =
         elif editorState.filename.endsWith ".am":
           try:
             newModelDocument(editorState.filename, editorState.appFile, workspaceFolder)
-          except:
+          except CatchableError:
             logger.log(lvlError, fmt"Failed to restore file {editorState.filename} from previous session: {getCurrentExceptionMsg()}")
             continue
         else:
           try:
             newTextDocument(editorState.filename, editorState.appFile, workspaceFolder)
-          except:
+          except CatchableError:
             logger.log(lvlError, fmt"Failed to restore file {editorState.filename} from previous session: {getCurrentExceptionMsg()}")
             continue
 

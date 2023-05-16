@@ -124,7 +124,6 @@ proc renderCompletions(self: TextDocumentEditor, app: Editor, contentPanel: WPan
   let backgroundColor = app.theme.color("panel.background", rgb(30, 30, 30))
   let selectedBackgroundColor = app.theme.color("list.activeSelectionBackground", rgb(200, 200, 200))
   let nameColor = app.theme.tokenColor(@["entity.name.label", "entity.name"], rgb(255, 255, 255))
-  let textColor = app.theme.color("list.inactiveSelectionForeground", rgb(175, 175, 175))
   let scopeColor = app.theme.color("string", rgb(175, 255, 175))
 
   var panel = WPanel(
@@ -141,8 +140,6 @@ proc renderCompletions(self: TextDocumentEditor, app: Editor, contentPanel: WPan
   self.lastCompletionWidgets.setLen 0
 
   proc renderLine(lineWidget: WPanel, i: int, down: bool, frameIndex: int): bool =
-    # Pixel coordinate of the top left corner of the entire line. Includes line number
-    let top = (i - self.completionsBaseIndex).float32 * totalLineHeight + self.scrollOffset
 
     if i == self.selectedCompletion:
       lineWidget.fillBackground = true

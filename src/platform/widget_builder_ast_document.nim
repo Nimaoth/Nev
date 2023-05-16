@@ -1,7 +1,6 @@
-import std/[strformat, tables, sugar, sequtils]
-import util, editor, document_editor, ast_document, ast, node_layout, compiler, text_document, custom_logger, widgets, platform, theme, timer, widget_builder_text_document
+import std/[strformat, tables, sugar]
+import util, editor, document_editor, ast_document, ast, node_layout, compiler, text_document, custom_logger, widgets, platform, theme, widget_builder_text_document
 import widget_builders_base
-import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import vmath, bumpy, chroma
 
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
@@ -12,7 +11,6 @@ func withAlpha(color: Color, alpha: float32): Color = color(color.r, color.g, co
 method updateWidget*(self: AstSymbolSelectorItem, app: Editor, widget: WPanel, frameIndex: int) =
   let charWidth = app.platform.charWidth
   let totalLineHeight = app.platform.totalLineHeight
-  let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
 
   widget.setLen 0
 
@@ -364,10 +362,7 @@ proc renderCompletions*(self: AstDocumentEditor, app: Editor, widget: WPanel, fr
   self.scrollToCompletion = int.none
 
 method updateWidget*(self: AstDocumentEditor, app: Editor, widget: WPanel, frameIndex: int) =
-  let lineHeight = app.platform.lineHeight
   let totalLineHeight = app.platform.totalLineHeight
-  let lineDistance = app.platform.lineDistance
-  let charWidth = app.platform.charWidth
 
   let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
 
@@ -432,7 +427,6 @@ method updateWidget*(self: AstDocumentEditor, app: Editor, widget: WPanel, frame
   self.resetDirty()
 
   # either layout or content changed, update the lines
-  let timer = startTimer()
   contentPanel.setLen 0
 
   self.updateBaseIndexAndScrollOffset(app, contentPanel)

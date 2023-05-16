@@ -1,7 +1,6 @@
-import std/[strformat, tables, sugar, sequtils, strutils]
-import util, editor, document_editor, ast_document2, text_document, custom_logger, widgets, platform, theme, timer, widget_builder_text_document, ast_ids
+import std/[strformat, tables, sugar, strutils]
+import util, editor, document_editor, ast_document2, text_document, custom_logger, widgets, platform, theme, widget_builder_text_document
 import widget_builders_base
-import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, ModelDocumentEditor
 import vmath, bumpy, chroma
 import ast/[types, cells]
 
@@ -12,7 +11,8 @@ func withAlpha(color: Color, alpha: float32): Color = color(color.r, color.g, co
 
 
 proc updateBaseIndexAndScrollOffset(self: ModelDocumentEditor, app: Editor, contentPanel: WPanel) =
-  let totalLineHeight = app.platform.totalLineHeight
+  # let totalLineHeight = app.platform.totalLineHeight
+  discard
 
 type CellLayoutContext = ref object
   currentLine: int
@@ -461,8 +461,6 @@ proc renderCompletions(self: ModelDocumentEditor, app: Editor, contentPanel: WPa
 
   proc renderLine(lineWidget: WPanel, i: int, down: bool, frameIndex: int): bool =
     # Pixel coordinate of the top left corner of the entire line. Includes line number
-    let top = (i - self.completionsBaseIndex).float32 * totalLineHeight + self.scrollOffset
-
     if i == self.selectedCompletion:
       lineWidget.fillBackground = true
       lineWidget.backgroundColor = selectedBackgroundColor
@@ -493,10 +491,7 @@ proc renderCompletions(self: ModelDocumentEditor, app: Editor, contentPanel: WPa
   app.createLinesInPanel(panel, self.completionsBaseIndex, self.completionsScrollOffset, self.completions.len, frameIndex, onlyRenderInBounds=true, renderLine)
 
 method updateWidget*(self: ModelDocumentEditor, app: Editor, widget: WPanel, frameIndex: int) =
-  let lineHeight = app.platform.lineHeight
   let totalLineHeight = app.platform.totalLineHeight
-  let lineDistance = app.platform.lineDistance
-  let charWidth = app.platform.charWidth
 
   let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
 
@@ -560,14 +555,10 @@ method updateWidget*(self: ModelDocumentEditor, app: Editor, widget: WPanel, fra
   self.resetDirty()
 
   # either layout or content changed, update the lines
-  let timer = startTimer()
   contentPanel.setLen 0
 
   self.updateBaseIndexAndScrollOffset(app, contentPanel)
 
-  var rendered = 0
-
-  var builder = self.document.builder
   var lastY = self.scrollOffset
 
   if self.cellWidgetContext.isNil:
@@ -617,10 +608,6 @@ method updateWidget*(self: ModelDocumentEditor, app: Editor, widget: WPanel, fra
   if self.showCompletions:
     let widget = self.cellWidgetContext.cellToWidget.getOrDefault(self.cursor.targetCell.id)
     self.renderCompletions(app, contentPanel, widget.lastBounds - contentPanel.lastBounds.xy, frameIndex)
-
-  let indent = getOption[float32](app, "model.indent", 20)
-  let inlineBlocks = getOption[bool](app, "model.inline-blocks", false)
-  let verticalDivision = getOption[bool](app, "model.vertical-division", false)
 
   contentPanel.lastHierarchyChange = frameIndex
   widget.lastHierarchyChange = max(widget.lastHierarchyChange, contentPanel.lastHierarchyChange)

@@ -1,4 +1,4 @@
-import std/[tables, strutils, strformat, options, sequtils, sugar]
+import std/[tables, strutils, strformat, options, sugar]
 import platform/[widgets]
 import types, id, util, custom_logger
 import ast_ids
@@ -381,19 +381,19 @@ template buildChildrenT*(b: CellBuilder, n: AstNode, r: Id, layout: WPanelLayout
   var node {.inject.} = n
   var role {.inject.} = r
 
-  template separator(bod: untyped): untyped =
+  template separator(bod: untyped): untyped {.used.} =
     separatorFunc = proc(builder {.inject.}: CellBuilder): Cell =
       return bod
 
-  template placeholder(bod: untyped): untyped =
+  template placeholder(bod: untyped): untyped {.used.} =
     placeholderFunc = proc(builder {.inject.}: CellBuilder, node {.inject.}: AstNode, role {.inject.}: Id): Cell =
       return bod
 
-  template placeholder(text: string): untyped =
+  template placeholder(text: string): untyped {.used.} =
     placeholderFunc = proc(builder {.inject.}: CellBuilder, node {.inject.}: AstNode, role {.inject.}: Id): Cell =
       return PlaceholderCell(id: newId(), node: node, role: role, shadowText: text)
 
-  template visible(bod: untyped): untyped =
+  template visible(bod: untyped): untyped {.used.} =
     isVisibleFunc = proc(node {.inject.}: AstNode): bool =
       return bod
 

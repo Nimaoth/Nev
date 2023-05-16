@@ -1,7 +1,8 @@
-import std/[strformat, tables, options, sequtils, os]
+import std/[strformat, tables, options, sequtils, os, sugar]
 import fusion/matching, chroma
-import util, id, ast, theme, ast_document
+import util, id, ast, theme, ast_document, editor
 import compiler
+import platform/[platform]
 
 proc serializeNodeHtml(self: AstDocument, node: AstNode): string =
   let dq = "\""
@@ -105,25 +106,24 @@ proc serializeHtml*(self: AstDocument, theme: Theme): string =
 
   var body = ""
   var diagnosticsCss = ""
-#   for c in self.rootNode.children:
-#     let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: c, renderDivisionVertically: true)
-#     let layout = ctx.computeNodeLayout(input)
-#     let html = self.serializeLayoutHtml(layout, theme)
-#     body.add fmt("<div class=\"code\">{html}</div><br>\n")
+  for c in self.rootNode.children:
+    let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: c, renderDivisionVertically: true, indent: 20, inlineBlocks: false, measureText: (t) => gEditor.platform.measureText(t))
+    let layout = ctx.computeNodeLayout(input)
+    let html = self.serializeLayoutHtml(layout, theme)
+    body.add fmt("<div class=\"code\">{html}</div><br>\n")
 
-#     # Add diagnostics
-#     for (id, visualRange) in layout.nodeToVisualNode.pairs:
-#       if ctx.diagnosticsPerNode.contains(id):
-#         var foundErrors = false
-#         for diagnostics in ctx.diagnosticsPerNode[id].queries.values:
-#           for diagnostic in diagnostics:
-#             # last = ed.renderCtx.drawText(vec2(contentBounds.xw, last.yh), diagnostic.message, ed.theme.color("editorError.foreground", rgb(255, 0, 0)), pivot = vec2(1, 0))
-#             foundErrors = true
-#         if foundErrors:
-#           diagnosticsCss.add fmt"""#id-{id} {{
-#   border: 1px solid red;
-# }}
-# """
+    # Add diagnostics
+    for (id, visualRange) in layout.nodeToVisualNode.pairs:
+      if ctx.diagnosticsPerNode.contains(id):
+        var foundErrors = false
+        for diagnostics in ctx.diagnosticsPerNode[id].queries.values:
+          for diagnostic in diagnostics:
+            foundErrors = true
+        if foundErrors:
+          diagnosticsCss.add fmt"""#id-{id} {{
+  border: 1px solid red;
+}}
+"""
 
   return fmt"""<!DOCTYPE html>
 <html>

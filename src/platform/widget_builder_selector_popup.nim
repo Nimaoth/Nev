@@ -1,6 +1,4 @@
-import std/[strformat, tables, sugar, sequtils]
 import util, editor, selector_popup, custom_logger, widgets, platform, theme, widget_builders_base
-import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, SelectorPopup
 import vmath, bumpy, chroma
 
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
@@ -35,11 +33,7 @@ method updateWidget*(self: ThemeSelectorItem, app: Editor, widget: WPanel, frame
   text.updateLastHierarchyChangeFromChildren()
 
 method updateWidget*(self: SelectorPopup, app: Editor, widget: WPanel, frameIndex: int) =
-  let lineHeight = app.platform.lineHeight
   let totalLineHeight = app.platform.totalLineHeight
-  let charWidth = app.platform.charWidth
-
-  let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
 
   var headerPanel: WPanel
   var contentPanel: WPanel

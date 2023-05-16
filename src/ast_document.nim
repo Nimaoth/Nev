@@ -1,4 +1,4 @@
-import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros, macrocache, options, deques, sets, json, jsonutils, sequtils, streams, os]
+import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros, macrocache, options, deques, sets, json, jsonutils, sequtils, streams]
 import timer
 import fusion/matching, fuzzy, bumpy, rect_utils, vmath, chroma
 import editor, util, document, document_editor, text_document, events, id, ast_ids, ast, scripting/expose, event, theme, input, custom_async
@@ -7,6 +7,9 @@ from scripting_api as api import nil
 import custom_logger
 import platform/[filesystem, platform, widgets]
 import workspaces/[workspace]
+
+when not defined(js):
+  import os
 
 type ExecutionOutput* = ref object
   lines*: seq[(string, Color)]
@@ -468,7 +471,8 @@ proc newAstDocument*(filename: string = "", app: bool = false, workspaceFolder: 
   if filename.len > 0:
     result.load()
 
-import html_renderer
+when not defined(js):
+  import html_renderer
 
 proc saveHtml*(self: AstDocument) =
   when not defined(js):
