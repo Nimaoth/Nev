@@ -131,7 +131,7 @@ template enableDiagnostics(key: untyped): untyped =
     else:
       ctx.diagnosticsPerQuery.del key
 
-  template addDiagnostic(id: Id, msg: untyped) =
+  template addDiagnostic(id: Id, msg: untyped) {.used.} =
     ids.add(id)
     diagnostics.add Diagnostic(message: msg)
 

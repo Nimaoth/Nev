@@ -14,7 +14,6 @@ const typeWrapper = CacheTable"TypeWrapper"         # Maps from type name (refer
 const functions = CacheTable"DispatcherFunctions"   # Maps from scope name to list of tuples of name and wrapper
 const injectors = CacheTable"Injectors"             # Maps from type name (referring to nim type) to function
 const exposedFunctions* = CacheTable"ExposedFunctions" # Maps from type name (referring to nim type) to type name of the api type (from scripting_api)
-const exposedFunctionsJs* = CacheSeq"ExposedFunctionsJs" # Maps from type name (referring to nim type) to type name of the api type (from scripting_api)
 
 template varargs*() {.pragma.}
 
@@ -38,9 +37,6 @@ macro addFunction(name: untyped, wrapper: typed, moduleName: static string) =
       functions[name].add n
       return
   functions[moduleName] = nnkStmtList.newTree(n)
-
-macro addToCacheJs(name: typed) =
-  exposedFunctionsJs.add name
 
 macro addScriptWrapper(name: untyped, moduleName: static string, lineNumber: static int) =
   let val = nnkStmtList.newTree(name, newLit($lineNumber))
@@ -80,6 +76,7 @@ proc argDefaultValue(def: NimNode, arg: int): Option[NimNode] =
 proc returnType(def: NimNode): Option[NimNode] =
   return if def[3][0].kind != nnkEmpty: def[3][0].some else: NimNode.none
 
+when defined(js):
 proc createJavascriptWrapper(moduleName: string, def: NimNode, scriptFunctionSym: NimNode, jsFunctionName: string): NimNode =
   let jsPrototypeName = moduleName.replace(".", "_") & "_prototype"
 

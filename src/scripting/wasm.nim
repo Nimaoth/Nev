@@ -1,5 +1,5 @@
-import std/[macros, os, macrocache, strutils, json, options, tables, genasts]
-import custom_logger, custom_async, compilation_config, util
+import std/[macros, macrocache, strutils, json, options, tables, genasts]
+import custom_logger, custom_async, util
 import platform/filesystem
 
 when defined(js):
@@ -11,7 +11,7 @@ when defined(js):
     env: JsObject
     memory: JsObject
     myAlloc: proc(size: uint32): WasmPtr
-    myDealloc: proc(size: uint32): WasmPtr
+    myDealloc: proc(p: WasmPtr)
 
   type WasmImports* = object
     namespace: string
@@ -29,35 +29,81 @@ else:
 
 func `-`(a, b: WasmPtr): int32 = a.int32 - b.int32
 
+proc replace(node: NimNode, target: string, newNodes: openArray[NimNode]): bool =
+  for i, c in node:
+    if c.kind == nnkAccQuoted and c[0].strVal == target:
+      node.del(i)
+      for k, newNode in newNodes:
+        node.insert(i + k, newNode)
+      return true
+    if c.replace(target, newNodes):
+      return true
+  return false
+
+proc alloc*(module: WasmModule, size: uint32): WasmPtr =
+  when defined(js):
+    return module.myAlloc(size)
+  else:
+    return module.env.alloc(size)
+
+proc dealloc*(module: WasmModule, p: WasmPtr) =
+  when defined(js):
+    module.myDealloc(p)
+  else:
+    module.env.dealloc(p)
+
+when defined(js):
+  proc copyMem*(module: WasmModule, dest: WasmPtr, source: JsObject, len: int, offset = 0u32) =
+    let heap = module.memory["HEAPU8"]
+    proc setJs(arr: JsObject, source: JsObject, pos: WasmPtr) {.importjs: "#.set(#, #)".}
+    proc slice(arr: JsObject, first: int, last: int): JsObject {.importjs: "#.slice(#, #)".}
+
+    let s = source.slice(0, len)
+    heap.setJs(s, dest)
+
+else:
+  proc copyMem*(module: WasmModule, dest: WasmPtr, source: pointer, len: int, offset = 0u32) =
+    module.env.copyMem(dest, source, len, offset)
+
+proc getString*(module: WasmModule, pos: WasmPtr): cstring =
+  when defined(js):
+    proc indexOf(arr: JsObject, elem: uint8, start: WasmPtr): WasmPtr {.importjs: "#.indexOf(#, #)".}
+    proc slice(arr: JsObject, first: WasmPtr, last: WasmPtr): JsObject {.importjs: "#.slice(#, #)".}
+    proc decodeStringJs(str: JsObject): cstring {.importc.}
+
+    let heap = module.memory["HEAPU8"]
+    let terminator = heap.indexOf(0, pos)
+    let s = heap.slice(pos, terminator)
+
+    return decodeStringJs(s)
+
+  else:
+    return module.env.getString(pos)
+
 when defined(js):
   proc castFunction[T: proc](f: T): (proc()) {.importjs: "#".}
   proc toFunction(f: JsObject, R: typedesc): R {.importjs: "#".}
   template addFunction*(self: var WasmImports, name: string, function: static proc) =
+    # echo "addFunction ", name.repr
+    # echo function.repr
     self.functions[name.cstring] = castFunction(function)
+    # return genAst():
+    #   discard
 
   proc encodeStringJs(str: cstring): JsObject {.importc.}
-  proc decodeStringJs(str: JsObject): cstring {.importc.}
 
 else:
   proc getWasmType(typ: NimNode): string =
     # echo typ.treeRepr
-    if typ.repr == "void":
-      return "v"
-    elif typ.repr == "int32":
-      return "i"
-    elif typ.repr == "int64":
-      return "I"
-    elif typ.repr == "float32":
-      return "f"
-    elif typ.repr == "float64":
-      return "F"
-    elif typ.repr == "cstring":
-      return "*"
-    elif typ.repr == "string":
-      return "*"
-    elif typ.repr == "pointer":
-      return "*"
-    return ""
+    case typ.repr
+    of "void": return "v"
+    of "int32", "uint32": return "i"
+    of "int64", "uint64": return "I"
+    of "float32": return "f"
+    of "float64": return "F"
+    of "cstring", "pointer": return "*"
+    else:
+      return ""
 
   macro getWasmSignature(function: typed): string =
     let types = function.getType
@@ -125,7 +171,7 @@ proc newWasmModule*(path: string, importsOld: seq[WasmImports]): Future[WasmModu
       var obj = newJsObject()
 
       for key, value in imp.functions.pairs:
-        obj[key.cstring] = value
+        obj[key] = value
 
       importObject[imp.namespace.cstring] = obj
 
@@ -154,7 +200,7 @@ proc newWasmModule*(path: string, importsOld: seq[WasmImports]): Future[WasmModu
       context["HEAPF64"] = newFloat64Array(memory)
 
     let myAlloc = module["instance"]["exports"]["my_alloc"].toFunction proc(size: uint32): WasmPtr
-    let myDealloc = module["instance"]["exports"]["my_dealloc"].toFunction proc(size: uint32): WasmPtr
+    let myDealloc = module["instance"]["exports"]["my_dealloc"].toFunction proc(p: WasmPtr)
 
     return WasmModule(env: module, memory: context, myAlloc: myAlloc, myDealloc: myDealloc)
 
@@ -166,62 +212,14 @@ proc newWasmModule*(path: string, importsOld: seq[WasmImports]): Future[WasmModu
     let env = loadWasmEnv(readFile(path), hostProcs=allFunctions, loadAlloc=true, allocName="my_alloc", deallocName="my_dealloc")
     return WasmModule(env: env)
 
-proc replace(node: NimNode, target: string, newNodes: openArray[NimNode]): bool =
-  for i, c in node:
-    if c.kind == nnkAccQuoted and c[0].strVal == target:
-      node.del(i)
-      for k, newNode in newNodes:
-        node.insert(i + k, newNode)
-      return true
-    if c.replace(target, newNodes):
-      return true
-  return false
-
-
-proc alloc*(module: WasmModule, size: uint32): WasmPtr =
-  when defined(js):
-    return module.myAlloc(size)
-  else:
-    return module.env.alloc(size)
-
-when defined(js):
-  proc copyMem*(module: WasmModule, pos: WasmPtr, p: JsObject, len: int, offset = 0u32) =
-    let heap = module.memory["HEAPU8"]
-    proc setJs(arr: JsObject, source: JsObject, pos: WasmPtr) {.importjs: "#.set(#, #)".}
-    proc slice(arr: JsObject, first: int, last: int): JsObject {.importjs: "#.slice(#, #)".}
-
-    let s = p.slice(0, len)
-    heap.setJs(s, pos)
-
-else:
-  proc copyMem*(module: WasmModule, pos: WasmPtr, p: pointer, len: int, offset = 0u32) =
-    module.env.copyMem(pos, p, len, offset)
-
-proc getString*(module: WasmModule, pos: WasmPtr): cstring =
-  when defined(js):
-    let heap = module.memory["HEAPU8"]
-
-    proc indexOf(arr: JsObject, elem: uint8, start: WasmPtr): WasmPtr {.importjs: "#.indexOf(#, #)".}
-    proc slice(arr: JsObject, first: WasmPtr, last: WasmPtr): JsObject {.importjs: "#.slice(#, #)".}
-
-    let terminator = heap.indexOf(0, pos)
-    let len = terminator - pos
-
-    let s = heap.slice(pos, terminator)
-
-    return decodeStringJs(s)
-
-  else:
-    return module.env.getString(pos)
-
 macro newProcWithType(module: WasmModule, returnType: typedesc, typ: typedesc, body: untyped): untyped =
   var params: seq[NimNode] = @[]
   var args: seq[NimNode] = @[]
 
   let returnCString = returnType.getType[1].repr == "cstring"
 
-  echo "newProcWithType"
-  echo returnType.getTypeImpl.treeRepr
+  # echo "newProcWithType"
+  # echo returnType.getTypeImpl.treeRepr
   var actualReturnType = if returnCString:
     var actualReturnType = genAst():
       typedesc[WasmPtr]
@@ -231,7 +229,7 @@ macro newProcWithType(module: WasmModule, returnType: typedesc, typ: typedesc, b
 
   params.add returnType.getType[1]
 
-  echo actualReturnType.treeRepr
+  # echo actualReturnType.treeRepr
 
   for i, p in typ.getType[1][2..^1]:
     var arg = genSym(nskParam, "p" & $i)
@@ -253,16 +251,9 @@ macro newProcWithType(module: WasmModule, returnType: typedesc, typ: typedesc, b
       if isCString:
         arg = genAst(arg):
           block:
-            # echo "convert arg"
             let p: WasmPtr = module.alloc(arg.len.uint32 + 1)
-            # echo p.uint32
-
-            # echo a
             module.copyMem(p, cast[pointer](arg), arg.len + 1)
-            # echo wasm3.getString(module.env, p)
             p
-
-    # echo arg.repr
 
     args.add(arg)
 
@@ -273,24 +264,18 @@ macro newProcWithType(module: WasmModule, returnType: typedesc, typ: typedesc, b
     if returnCString:
       body[0] = genAst(value = body[0]):
         let p = value
-        # echo "convert return value"
-        # echo p.uint32
-
         let res = module.getString(p)
-        # echo cast[uint64](res.addr)
         return res
     else:
       body[0] = nnkReturnStmt.newTree(body[0])
 
-  defer:
-    echo result.repr
+  # defer:
+  #   echo result.repr
 
   return newProc(params=params, body=body)
 
 proc findFunction*(module: WasmModule, name: string, R: typedesc, T: typedesc): Option[T] =
   when defined(js):
-    let exports = module.env["instance"]["exports"]
-
     let function = module.env["instance"]["exports"][name.cstring]
     if function.isUndefined:
       return
@@ -347,5 +332,7 @@ proc xvlc(): Future[void] {.async.} =
 
 asyncCheck xvlc()
 
-when not defined(js):
+when isMainModule and not defined(js):
   quit()
+
+# {.error: "uiae".}

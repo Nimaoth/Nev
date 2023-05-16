@@ -1,8 +1,8 @@
 when not defined(js):
   {.error: "scripting_js.nim does not work in non-js backend. Use scripting_nim.nim instead.".}
 
-import std/[macros, os, macrocache, strutils, dom, json]
-import custom_logger, custom_async, scripting_base, expose, compilation_config, popup, document_editor
+import std/[macros, dom, json]
+import custom_logger, custom_async, scripting_base, popup, document_editor
 import platform/filesystem
 
 export scripting_base
@@ -16,7 +16,7 @@ macro invoke*(self: ScriptContext; pName: untyped; args: varargs[typed]; returnT
 
 proc loadScriptJs(url: cstring): Future[Element] {.importjs: "loadScript(#)".}
 proc loadScriptContentJs(content: cstring): Future[Element] {.importjs: "loadScriptContent(#)".}
-proc evalJs(str: cstring) {.importjs("eval(#)").}
+# proc evalJs(str: cstring) {.importjs("eval(#)").}
 proc confirmJs(msg: cstring): bool {.importjs("confirm(#)").}
 proc hasLocalStorage(key: cstring): bool {.importjs("(window.localStorage.getItem(#) !== null)").}
 

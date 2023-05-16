@@ -1,7 +1,5 @@
 include system/timers
 
-import std/times
-
 type Seconds* = distinct float64
 
 proc `+`*(a, b: Seconds): Seconds {.borrow.}
@@ -23,6 +21,8 @@ when defined(js):
   proc startTimer*(): Timer = myGetTicks()
 
 else:
+  import std/times
+
   type Timer* = object
     start: Ticks
 

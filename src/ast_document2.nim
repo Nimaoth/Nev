@@ -1,15 +1,12 @@
-import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros, macrocache, options, deques, sets, json, jsonutils, sequtils, streams, os]
-import timer
-import fusion/matching, fuzzy, bumpy, rect_utils, vmath, chroma
-import editor, util, document, document_editor, text_document, events, id, ast_ids, scripting/expose, event, theme, input, custom_async
+import std/[strformat, strutils, math, logging, sugar, tables, options, json, jsonutils, streams]
+import fusion/matching, bumpy, rect_utils, vmath
+import editor, util, document, document_editor, text_document, events, id, ast_ids, scripting/expose, event, input, custom_async
 from scripting_api as api import nil
 import custom_logger
 import platform/[filesystem, platform, widgets]
 import workspaces/[workspace]
 import ast/[types, base_language, cells]
 import print
-
-from ast import AstNodeKind
 
 var project = newProject()
 

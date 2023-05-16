@@ -1,12 +1,12 @@
-import std/[macros, os, macrocache, strutils, json]
-import custom_logger, custom_async, scripting_base, expose, compilation_config, popup, document_editor
+import std/[macros, json]
+import custom_logger, scripting_base, popup, document_editor
 import platform/filesystem
 
 import wasm
 
 export scripting_base
 
-type ScriptContextWasm* = ref object of RootObj
+type ScriptContextWasm* = ref object of ScriptContext
   discard
 
 macro invoke*(self: ScriptContextWasm; pName: untyped; args: varargs[typed]; returnType: typedesc): untyped =

@@ -1,4 +1,4 @@
-import std/[os, tables, json, uri, base64, strutils, options]
+import std/[tables, json, strutils]
 import workspace, custom_async, custom_logger, async_http_client, platform/filesystem
 
 type
@@ -17,7 +17,7 @@ method settings*(self: WorkspaceFolderAbsytreeServer): JsonNode =
 method clearDirectoryCache*(self: WorkspaceFolderAbsytreeServer) =
   self.cachedDirectoryListings.clear()
 
-method updateWorkspaceName*(self: WorkspaceFolderAbsytreeServer): Future[void] {.async.} =
+proc updateWorkspaceName(self: WorkspaceFolderAbsytreeServer): Future[void] {.async.} =
   let url = self.baseUrl & "/info/name"
   let localFolder = await httpGet(url)
   self.name = fmt"AbsytreeServer:{self.baseUrl}/{localFolder}"
@@ -69,7 +69,7 @@ method getDirectoryListing*(self: WorkspaceFolderAbsytreeServer, relativePath: s
     let listing = self.parseDirectoryListing(relativePath, jsn)
     self.cachedDirectoryListings[relativePath] = DirectoryListingWrapper(done: true, listing: listing)
     return listing
-  except:
+  except CatchableError:
     logger.log(lvlError, fmt"Failed to parse absytree-server response: {response}")
 
   if self.cachedDirectoryListings.contains(relativePath):

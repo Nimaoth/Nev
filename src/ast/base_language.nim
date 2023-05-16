@@ -1,4 +1,3 @@
-import std/[strformat, sugar]
 import platform/[widgets]
 import id, ast_ids, util, custom_logger
 import types, cells
