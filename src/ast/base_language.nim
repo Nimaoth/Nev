@@ -422,4 +422,4 @@ let baseLanguage* = newLanguage(IdBaseLanguage, @[
   appendStringExpressionClass, printExpressionClass, buildExpressionClass,
 ], builder)
 
-print baseLanguage
+# print baseLanguage
