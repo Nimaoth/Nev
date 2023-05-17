@@ -1,4 +1,4 @@
-import std/[macros, macrocache, strutils, json, options, tables, genasts]
+import std/[macros, macrocache, strutils, json, options, tables, genasts, sequtils]
 import custom_logger, custom_async, util
 import platform/filesystem
 
@@ -13,12 +13,13 @@ when defined(js):
     myAlloc: proc(size: uint32): WasmPtr
     myDealloc: proc(p: WasmPtr)
 
-  type WasmImports* = object
+  type WasmImports* = ref object
     namespace: string
     functions: Table[cstring, proc()]
+    module: WasmModule
 
 else:
-  import wasm3
+  import wasm3, wasm3/wasm3c
 
   type WasmModule* = ref object
     env: WasmEnv
@@ -26,19 +27,7 @@ else:
   type WasmImports* = object
     namespace: string
     functions: seq[WasmHostProc]
-
-func `-`(a, b: WasmPtr): int32 = a.int32 - b.int32
-
-proc replace(node: NimNode, target: string, newNodes: openArray[NimNode]): bool =
-  for i, c in node:
-    if c.kind == nnkAccQuoted and c[0].strVal == target:
-      node.del(i)
-      for k, newNode in newNodes:
-        node.insert(i + k, newNode)
-      return true
-    if c.replace(target, newNodes):
-      return true
-  return false
+    module: WasmModule
 
 proc alloc*(module: WasmModule, size: uint32): WasmPtr =
   when defined(js):
@@ -80,15 +69,107 @@ proc getString*(module: WasmModule, pos: WasmPtr): cstring =
   else:
     return module.env.getString(pos)
 
+proc replace(node: NimNode, target: string, newNodes: openArray[NimNode]): bool =
+  for i, c in node:
+    if c.kind == nnkAccQuoted and c[0].strVal == target:
+      node.del(i)
+      for k, newNode in newNodes:
+        node.insert(i + k, newNode)
+      return true
+    if c.replace(target, newNodes):
+      return true
+  return false
+
+# Stuff for wrapping functions
+
+macro createHostWrapper(module: WasmModule, function: typed, outFunction: untyped): untyped =
+  # echo "createHostWrapper ", function.repr
+
+  let functionBody = if function.kind == nnkSym:
+    function.getImpl
+  else:
+    function
+
+  var params: seq[NimNode] = @[]
+  var args: seq[NimNode] = @[]
+
+  let returnType = if functionBody[3][0].kind == nnkEmpty: bindSym"void" else: functionBody[3][0]
+  let argTypes = functionBody[3]
+
+  let returnCString = returnType.repr == "cstring"
+
+  if returnCString:
+    params.add bindSym"WasmPtr"
+  else:
+    params.add returnType
+
+  for i, p in argTypes[1..^1]:
+    let paramType = p[1]
+    # echo paramType.treeRepr
+
+    var arg = genSym(nskParam, "p" & $i)
+
+    let isCString = paramType.repr == "cstring"
+
+    if isCString:
+      params.add nnkIdentDefs.newTree(arg, bindSym"WasmPtr", newEmptyNode())
+
+      let arg = genAst(arg, module):
+        block:
+          let res = module.getString(arg)
+          res
+
+      args.add(arg)
+    else:
+      params.add nnkIdentDefs.newTree(arg, paramType, newEmptyNode())
+      args.add(arg)
+
+  var body = if returnType.repr == "void":
+    genAst(function):
+      let f = function
+      f(`parameters`)
+
+  elif returnCString:
+    when defined(js):
+      genAst(function, module):
+        let f = function
+        let str = f(`parameters`)
+        let a = encodeStringJs(str)
+        proc len(arr: JsObject): int {.importjs: "#.length".}
+        let p: WasmPtr = module.alloc(a.len.uint32 + 1)
+        module.copyMem(p, a, a.len + 1)
+        return p
+
+    else:
+      genAst(function, module):
+        let f = function
+        let str = f(`parameters`)
+        let len = str.len
+        let p: WasmPtr = module.alloc(len.uint32 + 1)
+        module.copyMem(p, cast[pointer](str), len + 1)
+        return p
+
+  else:
+    genAst(function):
+      let f = function
+      let res = f(`parameters`)
+      return res
+
+  discard body.replace("parameters", args)
+
+  # defer:
+  #   echo result.repr
+  result = newProc(outFunction, params=params, body=body)
+
 when defined(js):
   proc castFunction[T: proc](f: T): (proc()) {.importjs: "#".}
   proc toFunction(f: JsObject, R: typedesc): R {.importjs: "#".}
+
   template addFunction*(self: var WasmImports, name: string, function: static proc) =
-    # echo "addFunction ", name.repr
-    # echo function.repr
-    self.functions[name.cstring] = castFunction(function)
-    # return genAst():
-    #   discard
+    block:
+      # let module = self.module
+      createHostWrapper(self.module, function, f)
+      self.functions[name.cstring] = castFunction(f)
 
   proc encodeStringJs(str: cstring): JsObject {.importc.}
 
@@ -101,17 +182,26 @@ else:
     of "int64", "uint64": return "I"
     of "float32": return "f"
     of "float64": return "F"
-    of "cstring", "pointer": return "*"
+    of "cstring", "pointer", "WasmPtr": return "*"
     else:
       return ""
 
   macro getWasmSignature(function: typed): string =
-    let types = function.getType
-    let returnType = types[1].getWasmType
-    if returnType == "":
-      error("Invalid return type " & types[1].repr, function)
+    # echo "getWasmSignature"
+    # echo function.treeRepr
 
-    var signature = returnType & "("
+    let types = function.getType
+    # echo types.treeRepr
+    let returnType = if types[1].kind == nnkBracketExpr:
+      types[1][1]
+    else:
+      types[1]
+
+    let returnTypeWasm = returnType.getWasmType
+    if returnTypeWasm == "":
+      error("Invalid return type " & returnType.repr, function)
+
+    var signature = returnTypeWasm & "("
 
     for i in 2..<types.len:
       let argType = types[i].getWasmType
@@ -121,19 +211,22 @@ else:
 
     signature.add ")"
 
-    # echo function.getType.treeRepr, " -> ", signature
+    # echo function.getType.repr, " -> ", signature
     return newLit(signature)
 
   template addFunction*(self: var WasmImports, name: string, function: static proc) =
-    self.functions.add toWasmHostProc(function, self.namespace, name, getWasmSignature(function))
-    discard
+    block:
+      template buildFunction(runtime, outFunction: untyped) =
+        let module = cast[WasmModule](m3_GetUserData(runtime))
+        createHostWrapper(module, function, outFunction)
+      self.functions.add toWasmHostProcTemplate(buildFunction, self.namespace, name, getWasmSignature(function))
 
 type
   WasiFD* = distinct uint32
 
-
 when defined(js):
   proc createWasiJsImports(context: JsObject): WasmImports =
+    new result
     result.namespace = "wasi_snapshot_preview1"
     result.addFunction "proc_exit", proc(code: int32) =
       echo "[WASI] proc_exit"
@@ -202,23 +295,31 @@ proc newWasmModule*(path: string, importsOld: seq[WasmImports]): Future[WasmModu
     let myAlloc = module["instance"]["exports"]["my_alloc"].toFunction proc(size: uint32): WasmPtr
     let myDealloc = module["instance"]["exports"]["my_dealloc"].toFunction proc(p: WasmPtr)
 
-    return WasmModule(env: module, memory: context, myAlloc: myAlloc, myDealloc: myDealloc)
+    var res = WasmModule(env: module, memory: context, myAlloc: myAlloc, myDealloc: myDealloc)
+    for imp in imports.mitems:
+      imp.module = res
+    return res
 
   else:
     var allFunctions: seq[WasmHostProc] = @[]
     for imp in importsOld:
       allFunctions.add imp.functions
 
-    let env = loadWasmEnv(readFile(path), hostProcs=allFunctions, loadAlloc=true, allocName="my_alloc", deallocName="my_dealloc")
-    return WasmModule(env: env)
+    let res = WasmModule()
+    res.env = loadWasmEnv(readFile(path), hostProcs=allFunctions, loadAlloc=true, allocName="my_alloc", deallocName="my_dealloc", userdata=cast[pointer](res))
 
-macro newProcWithType(module: WasmModule, returnType: typedesc, typ: typedesc, body: untyped): untyped =
+    var imports = @importsOld
+    for imp in imports.mitems:
+      imp.module = res
+    return res
+
+macro createWasmWrapper(module: WasmModule, returnType: typedesc, typ: typedesc, body: untyped): untyped =
   var params: seq[NimNode] = @[]
   var args: seq[NimNode] = @[]
 
   let returnCString = returnType.getType[1].repr == "cstring"
 
-  # echo "newProcWithType"
+  # echo "createWasmWrapper"
   # echo returnType.getTypeImpl.treeRepr
   var actualReturnType = if returnCString:
     var actualReturnType = genAst():
@@ -241,11 +342,12 @@ macro newProcWithType(module: WasmModule, returnType: typedesc, typ: typedesc, b
     when defined(js):
       if isCString:
         arg = genAst(arg):
-          let a = encodeStringJs(arg)
-          proc len(arr: JsObject): int {.importjs: "#.length".}
-          let p: WasmPtr = module.alloc(a.len.uint32 + 1)
-          module.copyMem(p, a, arg.len + 1)
-          p
+          block:
+            let a = encodeStringJs(arg)
+            proc len(arr: JsObject): int {.importjs: "#.length".}
+            let p: WasmPtr = module.alloc(a.len.uint32 + 1)
+            module.copyMem(p, a, arg.len + 1)
+            p
 
     else:
       if isCString:
@@ -280,17 +382,16 @@ proc findFunction*(module: WasmModule, name: string, R: typedesc, T: typedesc): 
     if function.isUndefined:
       return
 
-    let f = newProcWithType(module, R, T):
+    let wrapper = createWasmWrapper(module, R, T):
       (`.()`(function, call, nil, `parameters`)).to(`returnType`)
-      # (`.()`(exports, exported_func, `parameters`)).to(`returnType`)
 
-    return f.some
+    return wrapper.some
   else:
     let f = module.env.findFunction(name)
     if f.isNil:
       return
 
-    let wrapper = newProcWithType(module, R, T):
+    let wrapper = createWasmWrapper(module, R, T):
       f.call(`returnType`, `parameters`)
 
     return wrapper.some
@@ -303,11 +404,15 @@ proc imported_func(a: int32) =
 proc uiae(a: int32, b: cstring) =
   echo "uiae: ", a, ", ", b
 
-proc xvlc(): Future[void] {.async.} =
+proc xvlc(a: int32, b: cstring): cstring =
+  echo "xvlc: ", a, ", ", b
+  return b
+
+proc test(): Future[void] {.async.} =
   echo "xvlc"
 
-  var imports = WasmImports(namespace: "imports")
-  imports.addFunction("imported_func", imported_func)
+  # var imports = WasmImports(namespace: "imports")
+  # imports.addFunction("imported_func", imported_func)
 
   # let module = await newWasmModule("simple.wasm", @[imports])
   # if findFunction(module, "exported_func", void, proc(): void).getSome(f):
@@ -317,20 +422,24 @@ proc xvlc(): Future[void] {.async.} =
 
   var imports2 = WasmImports(namespace: "env")
   imports2.addFunction("uiae", uiae)
+  imports2.addFunction("xvlc", xvlc)
+
 
   when defined(js):
     let module2 = await newWasmModule("maths.wasm", @[imports2])
   else:
     let module2 = await newWasmModule("temp/wasm/maths.wasm", @[imports2])
   if findFunction(module2, "foo", int32, proc(a: int32, b: int32): int32).getSome(f):
-    echo f(2, 3)
+    echo "foo in nim: ", f(2, 3)
+  if findFunction(module2, "foo2", int32, proc(a: int32, b: int32): int32).getSome(f):
+    echo "foo2 in nim: ", f(7, 8)
   if findFunction(module2, "barc", cstring, proc(a: cstring): cstring).getSome(f):
     echo f("xvlc")
   if findFunction(module2, "barc2", cstring, proc(a: cstring): cstring).getSome(f):
     echo f("uiae")
 
 
-asyncCheck xvlc()
+asyncCheck test()
 
 when isMainModule and not defined(js):
   quit()
