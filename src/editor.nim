@@ -322,7 +322,7 @@ proc getPopupForId*(self: Editor, id: EditorId): Option[Popup] =
 
   return Popup.none
 
-import text_document, ast_document, ast_document2
+import text_document, ast_document, model_document
 import selector_popup
 
 type ThemeSelectorItem* = ref object of SelectorItem
@@ -451,7 +451,7 @@ proc newEditor*(backend: api.Backend, platform: Platform): Editor =
     if state.fontBoldItalic.len > 0: self.fontBoldItalic = state.fontBoldItalic
 
     self.options = fs.loadApplicationFile("options.json").parseJson
-    logger.log(lvlInfo, fmt"Restoring options: {self.options.pretty}")
+    # logger.log(lvlInfo, fmt"Restoring options: {self.options.pretty}")
 
   except CatchableError:
     logger.log(lvlError, fmt"Failed to load previous state from config file: {getCurrentExceptionMsg()}")
