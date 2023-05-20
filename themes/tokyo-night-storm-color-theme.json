@@ -83,9 +83,9 @@
 
         "activityBar.background": "#1f2335",
         "activityBar.foreground": "#7982a9",
-        //"activityBar.activeBorder": "#41496b",
-        //"activityBar.activeBackground": "#1c2030",
-        "activityBar.inactiveForeground": "#41496b", //#3b4261
+        "activityBar.activeBorder": "#41496b",
+        "activityBar.activeBackground": "#1c2030",
+        "activityBar.inactiveForeground": "#41496b",
         "activityBar.border": "#1f2335",
         "activityBarBadge.background": "#3d59a1",
         "activityBarBadge.foreground": "#fff",
@@ -128,12 +128,12 @@
         "scrollbarSlider.hoverBackground": "#9cacff10",
         "scrollbarSlider.activeBackground": "#9cacff22",
 
-        "editorBracketHighlight.foreground1": "#698cd6", //"#7AA2F7",
-        "editorBracketHighlight.foreground2": "#68b3de", //"#7DCFFF",
-        "editorBracketHighlight.foreground3": "#9a7ecc", //"#BB9AF7",
-        "editorBracketHighlight.foreground4": "#25aac2", //"#2AC3DE",
-        "editorBracketHighlight.foreground5": "#80a856", //"#9ECE6A",
-        "editorBracketHighlight.foreground6": "#cfa25f", //"#e0af68",
+        "editorBracketHighlight.foreground1": "#698cd6",
+        "editorBracketHighlight.foreground2": "#68b3de",
+        "editorBracketHighlight.foreground3": "#9a7ecc",
+        "editorBracketHighlight.foreground4": "#25aac2",
+        "editorBracketHighlight.foreground5": "#80a856",
+        "editorBracketHighlight.foreground6": "#cfa25f",
         "editorBracketHighlight.unexpectedBracket.foreground": "#db4b4b",
 
         "editorBracketPairGuide.activeBackground1": "#698cd6",
@@ -175,7 +175,7 @@
         "editorHoverWidget.border": "#1b1e2e",
 
         "editorBracketMatch.background": "#1f2335",
-        "editorBracketMatch.border": "#545c7e", //"#3b4261",
+        "editorBracketMatch.border": "#545c7e",
 
         "editorOverviewRuler.border": "#1b1e2e",
         "editorOverviewRuler.errorForeground": "#db4b4b",
@@ -333,8 +333,6 @@
         "terminal.background": "#1f2335",
         "terminal.foreground": "#7982a9",
         "terminal.selectionBackground": "#6f7bb620",
-        // "terminalCursor.background": "",
-        // "terminalCursor.foreground": "",
 
         "terminal.ansiBlack": "#414868",
         "terminal.ansiRed": "#f7768e",
@@ -412,7 +410,8 @@
         "menu.separatorBackground": "#1b1e2e",
         "menu.border": "#1b1e2e"
     },
-    "tokenColors": [{
+    "tokenColors": [
+        {
             "name": "Italics - Comments, Storage, Keyword Flow, Vue attributes, Decorators",
             "scope": [
                 "comment",
@@ -466,7 +465,7 @@
                 "log.date"
             ],
             "settings": {
-                "foreground": "#6a75a8" //"#7982a9"
+                "foreground": "#6a75a8"
             }
         },
         {
@@ -479,7 +478,6 @@
             ],
             "settings": {
                 "foreground": "#7582ba"
-                //"fontStyle": "bold"
             }
         },
         {
@@ -489,14 +487,7 @@
                 "punctuation.definition.constant",
                 "constant.language",
                 "constant.numeric",
-                "support.constant",
-                // "constant.language.null",
-                // "constant.language.undefined",
-                // "constant.language.go",
-                // "constant.language.boolean",
-                // "constant.language.json",
-                // "constant.language.infinity",
-                // "constant.language.nan"
+                "support.constant"
             ],
             "settings": {
                 "foreground": "#ff9e64"
@@ -719,7 +710,7 @@
                 "support.variable",
                 "string constant.other.placeholder",
                 "variable.parameter.handlebars",
-                "variable.other.object",
+                "variable.other.object"
             ],
             "settings": {
                 "foreground": "#c0caf5"
@@ -825,7 +816,7 @@
                 "meta.function.parameter variable"
             ],
             "settings": {
-                "foreground": "#e0ce68" //#73daca
+                "foreground": "#e0ce68"
             }
         },
         {
@@ -965,7 +956,7 @@
             "name": "CSS Punctuation",
             "scope": "meta.property-list",
             "settings": {
-                "foreground": "#9abdf5" //"#e0af68"
+                "foreground": "#9abdf5"
             }
         },
         {
