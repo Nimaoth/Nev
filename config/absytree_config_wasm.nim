@@ -5,11 +5,13 @@ import keybindings_vim
 import keybindings_helix
 import keybindings_normal
 
+when defined(wasm):
+  const env = "wasm"
+else:
+  const env = "nims"
+
 proc handleAction*(action: string, args: JsonNode): bool {.wasmexport.} =
-  when defined(wasm):
-    info "wasm: ", action, ", ", args
-  else:
-    info "nims: ", action, ", ", args
+  infof "{env}:handleAction: {action}, {args}"
 
   case action
   of "set-max-loop-iterations":
@@ -27,9 +29,9 @@ proc handleAction*(action: string, args: JsonNode): bool {.wasmexport.} =
 
   else: return false
 
-  return true
-
 proc handlePopupAction*(popup: EditorId, action: string, args: JsonNode): bool {.wasmexport.} =
+  infof "{env}:handlePopupAction: {action}, {args}"
+
   case action:
   of "home":
     for i in 0..<3:
@@ -40,27 +42,21 @@ proc handlePopupAction*(popup: EditorId, action: string, args: JsonNode): bool {
 
   else: return false
 
-  return true
-
 proc handleDocumentEditorAction*(id: EditorId, action: string, args: JsonNode): bool {.wasmexport.} =
+  infof "{env}:handleDocumentEditorAction: {action}, {args}"
   return false
 
 proc handleTextEditorAction*(editor: TextDocumentEditor, action: string, args: JsonNode): bool {.wasmexport.} =
-  when defined(wasm):
-    info "wasm: ", action, ", ", args
-  else:
-    info "nims: ", action, ", ", args
-  # echo "handleTextEditorAction ", action, ", ", args
+  infof "{env}:handleTextEditorAction: {action}, {args}"
 
   case action
   else: return false
-  return true
 
 proc handleAstEditorAction*(editor: AstDocumentEditor, action: string, args: JsonNode): bool {.wasmexport.} =
-  case action
+  infof "{env}:handleAstEditorAction: {action}, {args}"
 
+  case action
   else: return false
-  return true
 
 proc postInitialize*(): bool {.wasmexport.} =
   info "postInitialize()"

@@ -19,6 +19,9 @@ proc info*(args: varargs[string, `$`]) =
     result.add(arg)
   scriptLog(result)
 
+template infof*(x: static string) =
+  scriptLog(fmt x)
+
 proc addCallback*(action: proc(args: JsonNode): void): int =
   result = callbackId
   voidCallbacks[result] = action
