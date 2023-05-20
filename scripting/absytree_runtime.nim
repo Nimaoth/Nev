@@ -236,3 +236,43 @@ macro addAstCommand*(mode: static[string], keys: string, action: string, args: v
   return quote do:
     `stmts`
     addCommandScript(`context`, `keys`, `action`, `str`)
+
+when defined(wasm):
+  static:
+    echo "wasmuiaeuiaeuiaeuiae"
+  macro wasmexport*(t: typed): untyped =
+    if t.kind notin {nnkProcDef, nnkFuncDef}:
+      error("Can only export procedures", t)
+    let
+      newProc = copyNimTree(t)
+      codeGen = nnkExprColonExpr.newTree(ident"codegendecl", newLit"EMSCRIPTEN_KEEPALIVE $# $#$#")
+    if newProc[4].kind == nnkEmpty:
+      newProc[4] = nnkPragma.newTree(codeGen)
+    else:
+      newProc[4].add codeGen
+    newProc[4].add ident"exportC"
+    result = newStmtList()
+    result.add:
+      quote do:
+        {.emit: "/*INCLUDESECTION*/\n#include <emscripten.h>".}
+    result.add:
+      newProc
+
+  proc NimMain() {.importc.}
+  proc emscripten_stack_init() {.importc.}
+  # proc init_pthread_self() {.importc.} # todo
+
+  proc absytree_main*() {.wasmexport.} =
+    emscripten_stack_init()
+    # init_pthread_self()
+    NimMain()
+
+  proc my_alloc*(len: uint32): pointer {.wasmexport.} =
+    return alloc0(len)
+
+  proc my_dealloc*(p: pointer) {.wasmexport.} =
+    dealloc(p)
+
+
+else:
+  template wasmexport*(t: typed): untyped = t

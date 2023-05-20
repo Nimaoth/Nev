@@ -478,15 +478,15 @@ proc newEditor*(backend: api.Backend, platform: Platform): Editor =
     when defined(js):
       self.scriptContext = new ScriptContextJs
     else:
-      self.scriptContext = createScriptContext("./absytree_config.nims", searchPaths)
+      self.scriptContext = createScriptContext("./absytree_config_wasm.nim", searchPaths)
 
     self.wasmScriptContext = new ScriptContextWasm
 
-    self.scriptContext.init("")
-    self.wasmScriptContext.init("")
-
-    discard self.scriptContext.invoke(postInitialize, returnType = bool)
+    self.wasmScriptContext.init("./config")
     discard self.wasmScriptContext.invoke(postInitialize, returnType = bool)
+
+    self.scriptContext.init("./config")
+    discard self.scriptContext.invoke(postInitialize, returnType = bool)
 
     self.initializeCalled = true
   except CatchableError:
@@ -1172,7 +1172,7 @@ proc getActiveEditor*(): EditorId {.expose("editor").} =
   return EditorId(-1)
 
 when defined(js):
-  proc getActiveEditor2*(self: Editor): DocumentEditor {.expose("editor"), nodispatch.} =
+  proc getActiveEditor2*(self: Editor): DocumentEditor {.expose("editor"), nodispatch, nojsonwrapper.} =
     if gEditor.isNil:
       return nil
     if gEditor.commandLineMode:
@@ -1382,12 +1382,16 @@ proc handleAction(self: Editor, action: string, arg: string): bool =
   try:
     if self.scriptContext.handleGlobalAction(action, args):
       return true
+  except CatchableError:
+    logger.log(lvlError, fmt"[ed] Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
+    logger.log(lvlError, getCurrentException().getStackTrace())
+
+  try:
     if self.wasmScriptContext.handleGlobalAction(action, args):
       return true
   except CatchableError:
     logger.log(lvlError, fmt"[ed] Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
     logger.log(lvlError, getCurrentException().getStackTrace())
-    return false
 
   return dispatch(action, args).isSome
 
@@ -1411,6 +1415,4 @@ when not defined(js):
 
   proc createScriptContext(filepath: string, searchPaths: seq[string]): ScriptContext = createScriptContextNim(filepath, searchPaths)
 
-# else:
-#   static:
-#     generateScriptingApi()
+createEditorWasmImportConstructor()

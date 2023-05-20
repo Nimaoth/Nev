@@ -21,3 +21,19 @@ proc handleUnknownPopupAction*(id: EditorId, action: string, args: JsonNode): bo
   return handlePopupAction(id, action, args)
 
 proc handleCallback*(id: int, args: JsonNode): bool = handleCallbackImpl(id, args)
+
+when defined(wasm):
+  proc postInitializeWasm(): bool {.wasmexport.} =
+    return postInitialize()
+
+  proc handleGlobalActionWasm(action: cstring, args: cstring): bool {.wasmexport.} =
+    return handleGlobalAction($action, ($args).parseJson)
+
+  proc handleUnknownDocumentEditorActionWasm(id: int32, action: cstring, args: cstring): bool {.wasmexport.} =
+    return handleEditorAction(id.EditorId, $action, ($args).parseJson)
+
+  proc handleUnknownPopupActionWasm(id: int32, action: cstring, args: cstring): bool {.wasmexport.} =
+    return handleUnknownPopupAction(id.EditorId, $action, ($args).parseJson)
+
+  proc handleCallbackWasm(id: int32, args: cstring): bool {.wasmexport.} =
+    return handleCallback(id.int, ($args).parseJson)
