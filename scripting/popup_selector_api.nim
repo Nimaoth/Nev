@@ -11,10 +11,10 @@ else:
 ## This file is auto generated, don't modify.
 
 proc accept*(self: SelectorPopup) =
-  acceptScript_8925479553(self)
+  popup_selector_accept_void_SelectorPopup_impl(self)
 proc cancel*(self: SelectorPopup) =
-  cancelScript_8925479665(self)
+  popup_selector_cancel_void_SelectorPopup_impl(self)
 proc prev*(self: SelectorPopup) =
-  prevScript_8925479727(self)
+  popup_selector_prev_void_SelectorPopup_impl(self)
 proc next*(self: SelectorPopup) =
-  nextScript_8925479801(self)
+  popup_selector_next_void_SelectorPopup_impl(self)
