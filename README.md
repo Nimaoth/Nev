@@ -14,23 +14,55 @@ You can try the browser version [here](https://nimaoth.github.io/AbsytreeBrowser
 
 ## Building
 
-- Developed with Nim version 1.9.1
-- Use `nimble install` to build the editor
+### Setup
+- Install Nim version 1.9.1
+- Clone the repository
+- Run `nimble setup`
+
+### Desktop version
+- Use `nimble buildDesktop` to compile the desktop version of the editor.
 - It currently dynamically links against libstdc++ because some treesitter languages depend on that, so:
   - On windows: copy `libgcc_s_seh-1.dll` and `libstdc++-6.dll` (and optionally `libwinpthread-1.dll`) to the exe directory
 
-- Building the browser version:
-  `nim js -o:ast.js -d:exposeScriptingApi .\src\absytree_js.nim`
+### Desktop version
+- Run `nimble buildBrowser`
+- Embed the generated file `ast.js`
+- See `absytree_browser.html` for an example
 
 ## Configuration
 
-Absytree can be configured using NimScript.
-The editor loads a file named `absytree_config.nims` (same directory as the editor executable) at start up, where the script can do things like:
+### options.json
+`options.json` contains simple values which are used by the editor. This file is automatically created when exiting the editor with the current options.
+When the editor launches it loads the current options from this file again (before running any scripts/plugins)
 
-- Define key bindings
-- Create custom commands
+### Scripts/Plugins
 
-`absytree_config.nims` must import `absytree_runtime`, which contains some utility functions. `absytree_runtime` also exports `absytree_api`,
+Absytree supports different scripting languages/mechanisms. The editor API is exposed to each one and can be used to create new commands, change options, etc.
+- NimScript: Only supported in the desktop version. The editor bundles part of the Nim compiler so it can run NimScript code.
+  Allows easy hot reloading of the config file, but right now only one nimscript file is supported.
+  Slightly increases startup time of the editor.
+- Javascript: Only supported in the browser version. Allows easy hot reloading.
+- Wasm: Works on the desktop and in the browser. In theory any language can be used to write plugins if it can compile to wasm.
+  Probably better performance than NimScript.
+
+At startup Absytree loads the following scripts in order:
+- `config/absytree_config_wasm.wasm`
+- `config/absytree_config_wasm.nim` (NimScript, only in desktop version)
+- `config/absytree_config.js` (Only in browser version)
+
+
+At the moment `config/absytree_config_wasm.wasm` is generated from `config/absytree_config_wasm.nim` by compiling it to wasm using `config/config.nims` (uses Emscripten). So `absytree_config_wasm.nim` can be used as NimScript or as wasm plugin.
+The editor API is exactly the same in both cases.
+Inside `absytree_config_wasm.nim` one can check if it's being used in wasm or NimScript using the following check:
+
+    when defined(wasm):
+      # Script was compiled to wasm
+    else:
+      # Script is being interpreted as NimScript
+
+In the browser the API looks slightly different, but is mostly the same.
+
+`absytree_config_wasm.nim` must import `absytree_runtime`, which contains some utility functions. `absytree_runtime` also exports `absytree_api`,
 which contains every function exposed by the editor. `absytree_api` is automatically generated when compiling the editor.
 
 There are a few utility scripts for defining key bindings.
@@ -40,6 +72,9 @@ There are a few utility scripts for defining key bindings.
 
 Each of these files defines a `load*Bindings()` function which applies the corresponding key bindings. After calling this function one can still override specific keys.
 
+### Compiling Nim config files to wasm
+- You need to have Emscripten installed.
+- Run `nimble buildNimConfigWasm` from the root folder of the repository
 ### Settings
 There are a lot of settings which can be changed using `proc setOption*[T](path: string, value: T)` or `proc setOption*(option: string; value: JsonNode)`. Settings are stored in a JSON object, which also gets saved to the file `settings.json`. This file gets loaded before the config script, so the script can override any setting.
 
