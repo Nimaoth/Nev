@@ -34,3 +34,7 @@ task buildDesktop, "Build the desktop version":
 
 task buildBrowser, "Build the browser version":
   selfExec "js -o:ast.js -d:vmathObjBased -d:enableTableIdCacheChecking ./src/absytree_js.nim"
+
+task buildNimConfigWasm, "Compile the nim script config file to wasm":
+  withDir "config":
+    selfExec "c -d:release -o:./absytree_config_wasm.wasm ./absytree_config_wasm.nim"
