@@ -14,163 +14,189 @@ proc setMode*(self: TextDocumentEditor; mode: string) =
   ## Sets the current mode of the editor. If `mode` is "", then no additional scope will be pushed on the scope stac.k
   ## If mode is e.g. "insert", then the scope "editor.text.insert" will be pushed on the scope stack above "editor.text"
   ## Don't use "completion", as that is used for when a completion window is open.
-  setModeScript_8287957247(self, mode)
+  editor_text_setMode_void_TextDocumentEditor_string_impl(self, mode)
 proc mode*(self: TextDocumentEditor): string =
   ## Returns the current mode of the text editor, or "" if there is no mode
-  modeScript_8287957486(self)
+  editor_text_mode_string_TextDocumentEditor_impl(self)
 proc getContextWithMode*(self: TextDocumentEditor; context: string): string =
   ## Appends the current mode to context
-  getContextWithModeScript_8287957548(self, context)
+  editor_text_getContextWithMode_string_TextDocumentEditor_string_impl(self,
+      context)
 proc updateTargetColumn*(self: TextDocumentEditor; cursor: SelectionCursor) =
-  updateTargetColumnScript_8287957618(self, cursor)
+  editor_text_updateTargetColumn_void_TextDocumentEditor_SelectionCursor_impl(
+      self, cursor)
 proc invertSelection*(self: TextDocumentEditor) =
   ## Inverts the current selection. Discards all but the last cursor.
-  invertSelectionScript_8287957727(self)
+  editor_text_invertSelection_void_TextDocumentEditor_impl(self)
 proc insert*(self: TextDocumentEditor; selections: seq[Selection]; text: string;
              notify: bool = true; record: bool = true; autoIndent: bool = true): seq[
     Selection] =
-  insertScript_8287957783(self, selections, text, notify, record, autoIndent)
+  editor_text_insert_seq_Selection_TextDocumentEditor_seq_Selection_string_bool_bool_bool_impl(
+      self, selections, text, notify, record, autoIndent)
 proc delete*(self: TextDocumentEditor; selections: seq[Selection];
              notify: bool = true; record: bool = true): seq[Selection] =
-  deleteScript_8287958207(self, selections, notify, record)
+  editor_text_delete_seq_Selection_TextDocumentEditor_seq_Selection_bool_bool_impl(
+      self, selections, notify, record)
 proc selectPrev*(self: TextDocumentEditor) =
-  selectPrevScript_8287958307(self)
+  editor_text_selectPrev_void_TextDocumentEditor_impl(self)
 proc selectNext*(self: TextDocumentEditor) =
-  selectNextScript_8287958548(self)
+  editor_text_selectNext_void_TextDocumentEditor_impl(self)
 proc selectInside*(self: TextDocumentEditor; cursor: Cursor) =
-  selectInsideScript_8287958766(self, cursor)
+  editor_text_selectInside_void_TextDocumentEditor_Cursor_impl(self, cursor)
 proc selectInsideCurrent*(self: TextDocumentEditor) =
-  selectInsideCurrentScript_8287958849(self)
+  editor_text_selectInsideCurrent_void_TextDocumentEditor_impl(self)
 proc selectLine*(self: TextDocumentEditor; line: int) =
-  selectLineScript_8287958905(self, line)
+  editor_text_selectLine_void_TextDocumentEditor_int_impl(self, line)
 proc selectLineCurrent*(self: TextDocumentEditor) =
-  selectLineCurrentScript_8287958969(self)
+  editor_text_selectLineCurrent_void_TextDocumentEditor_impl(self)
 proc selectParentTs*(self: TextDocumentEditor; selection: Selection) =
-  selectParentTsScript_8287959025(self, selection)
+  editor_text_selectParentTs_void_TextDocumentEditor_Selection_impl(self,
+      selection)
 proc selectParentCurrentTs*(self: TextDocumentEditor) =
-  selectParentCurrentTsScript_8287959104(self)
+  editor_text_selectParentCurrentTs_void_TextDocumentEditor_impl(self)
 proc insertText*(self: TextDocumentEditor; text: string) =
-  insertTextScript_8287959165(self, text)
+  editor_text_insertText_void_TextDocumentEditor_string_impl(self, text)
 proc undo*(self: TextDocumentEditor) =
-  undoScript_8287959238(self)
+  editor_text_undo_void_TextDocumentEditor_impl(self)
 proc redo*(self: TextDocumentEditor) =
-  redoScript_8287959346(self)
+  editor_text_redo_void_TextDocumentEditor_impl(self)
 proc scrollText*(self: TextDocumentEditor; amount: float32) =
-  scrollTextScript_8287959432(self, amount)
+  editor_text_scrollText_void_TextDocumentEditor_float32_impl(self, amount)
 proc duplicateLastSelection*(self: TextDocumentEditor) =
-  duplicateLastSelectionScript_8287959558(self)
+  editor_text_duplicateLastSelection_void_TextDocumentEditor_impl(self)
 proc addCursorBelow*(self: TextDocumentEditor) =
-  addCursorBelowScript_8287959656(self)
+  editor_text_addCursorBelow_void_TextDocumentEditor_impl(self)
 proc addCursorAbove*(self: TextDocumentEditor) =
-  addCursorAboveScript_8287959728(self)
+  editor_text_addCursorAbove_void_TextDocumentEditor_impl(self)
 proc getPrevFindResult*(self: TextDocumentEditor; cursor: Cursor;
                         offset: int = 0): Selection =
-  getPrevFindResultScript_8287959796(self, cursor, offset)
+  editor_text_getPrevFindResult_Selection_TextDocumentEditor_Cursor_int_impl(
+      self, cursor, offset)
 proc getNextFindResult*(self: TextDocumentEditor; cursor: Cursor;
                         offset: int = 0): Selection =
-  getNextFindResultScript_8287960151(self, cursor, offset)
+  editor_text_getNextFindResult_Selection_TextDocumentEditor_Cursor_int_impl(
+      self, cursor, offset)
 proc addNextFindResultToSelection*(self: TextDocumentEditor) =
-  addNextFindResultToSelectionScript_8287960401(self)
+  editor_text_addNextFindResultToSelection_void_TextDocumentEditor_impl(self)
 proc addPrevFindResultToSelection*(self: TextDocumentEditor) =
-  addPrevFindResultToSelectionScript_8287960465(self)
+  editor_text_addPrevFindResultToSelection_void_TextDocumentEditor_impl(self)
 proc setAllFindResultToSelection*(self: TextDocumentEditor) =
-  setAllFindResultToSelectionScript_8287960529(self)
+  editor_text_setAllFindResultToSelection_void_TextDocumentEditor_impl(self)
 proc clearSelections*(self: TextDocumentEditor) =
-  clearSelectionsScript_8287960942(self)
+  editor_text_clearSelections_void_TextDocumentEditor_impl(self)
 proc moveCursorColumn*(self: TextDocumentEditor; distance: int;
                        cursor: SelectionCursor = SelectionCursor.Config;
                        all: bool = true) =
-  moveCursorColumnScript_8287961004(self, distance, cursor, all)
+  editor_text_moveCursorColumn_void_TextDocumentEditor_int_SelectionCursor_bool_impl(
+      self, distance, cursor, all)
 proc moveCursorLine*(self: TextDocumentEditor; distance: int;
                      cursor: SelectionCursor = SelectionCursor.Config;
                      all: bool = true) =
-  moveCursorLineScript_8287961147(self, distance, cursor, all)
+  editor_text_moveCursorLine_void_TextDocumentEditor_int_SelectionCursor_bool_impl(
+      self, distance, cursor, all)
 proc moveCursorHome*(self: TextDocumentEditor;
                      cursor: SelectionCursor = SelectionCursor.Config;
                      all: bool = true) =
-  moveCursorHomeScript_8287961227(self, cursor, all)
+  editor_text_moveCursorHome_void_TextDocumentEditor_SelectionCursor_bool_impl(
+      self, cursor, all)
 proc moveCursorEnd*(self: TextDocumentEditor;
                     cursor: SelectionCursor = SelectionCursor.Config;
                     all: bool = true) =
-  moveCursorEndScript_8287961301(self, cursor, all)
+  editor_text_moveCursorEnd_void_TextDocumentEditor_SelectionCursor_bool_impl(
+      self, cursor, all)
 proc moveCursorTo*(self: TextDocumentEditor; str: string;
                    cursor: SelectionCursor = SelectionCursor.Config;
                    all: bool = true) =
-  moveCursorToScript_8287961375(self, str, cursor, all)
+  editor_text_moveCursorTo_void_TextDocumentEditor_string_SelectionCursor_bool_impl(
+      self, str, cursor, all)
 proc moveCursorBefore*(self: TextDocumentEditor; str: string;
                        cursor: SelectionCursor = SelectionCursor.Config;
                        all: bool = true) =
-  moveCursorBeforeScript_8287961487(self, str, cursor, all)
+  editor_text_moveCursorBefore_void_TextDocumentEditor_string_SelectionCursor_bool_impl(
+      self, str, cursor, all)
 proc moveCursorNextFindResult*(self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config;
                                all: bool = true) =
-  moveCursorNextFindResultScript_8287961599(self, cursor, all)
+  editor_text_moveCursorNextFindResult_void_TextDocumentEditor_SelectionCursor_bool_impl(
+      self, cursor, all)
 proc moveCursorPrevFindResult*(self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config;
                                all: bool = true) =
-  moveCursorPrevFindResultScript_8287961671(self, cursor, all)
+  editor_text_moveCursorPrevFindResult_void_TextDocumentEditor_SelectionCursor_bool_impl(
+      self, cursor, all)
 proc scrollToCursor*(self: TextDocumentEditor;
                      cursor: SelectionCursor = SelectionCursor.Config) =
-  scrollToCursorScript_8287961743(self, cursor)
+  editor_text_scrollToCursor_void_TextDocumentEditor_SelectionCursor_impl(self,
+      cursor)
 proc reloadTreesitter*(self: TextDocumentEditor) =
-  reloadTreesitterScript_8287961807(self)
+  editor_text_reloadTreesitter_void_TextDocumentEditor_impl(self)
 proc deleteLeft*(self: TextDocumentEditor) =
-  deleteLeftScript_8287961931(self)
+  editor_text_deleteLeft_void_TextDocumentEditor_impl(self)
 proc deleteRight*(self: TextDocumentEditor) =
-  deleteRightScript_8287962001(self)
+  editor_text_deleteRight_void_TextDocumentEditor_impl(self)
 proc getCommandCount*(self: TextDocumentEditor): int =
-  getCommandCountScript_8287962071(self)
+  editor_text_getCommandCount_int_TextDocumentEditor_impl(self)
 proc setCommandCount*(self: TextDocumentEditor; count: int) =
-  setCommandCountScript_8287962133(self, count)
+  editor_text_setCommandCount_void_TextDocumentEditor_int_impl(self, count)
 proc setCommandCountRestore*(self: TextDocumentEditor; count: int) =
-  setCommandCountRestoreScript_8287962197(self, count)
+  editor_text_setCommandCountRestore_void_TextDocumentEditor_int_impl(self,
+      count)
 proc updateCommandCount*(self: TextDocumentEditor; digit: int) =
-  updateCommandCountScript_8287962261(self, digit)
+  editor_text_updateCommandCount_void_TextDocumentEditor_int_impl(self, digit)
 proc setFlag*(self: TextDocumentEditor; name: string; value: bool) =
-  setFlagScript_8287962325(self, name, value)
+  editor_text_setFlag_void_TextDocumentEditor_string_bool_impl(self, name, value)
 proc getFlag*(self: TextDocumentEditor; name: string): bool =
-  getFlagScript_8287962397(self, name)
+  editor_text_getFlag_bool_TextDocumentEditor_string_impl(self, name)
 proc runAction*(self: TextDocumentEditor; action: string; args: JsonNode): bool =
-  runActionScript_8287962467(self, action, args)
+  editor_text_runAction_bool_TextDocumentEditor_string_JsonNode_impl(self,
+      action, args)
 proc findWordBoundary*(self: TextDocumentEditor; cursor: Cursor): Selection =
-  findWordBoundaryScript_8287962547(self, cursor)
+  editor_text_findWordBoundary_Selection_TextDocumentEditor_Cursor_impl(self,
+      cursor)
 proc getSelectionForMove*(self: TextDocumentEditor; cursor: Cursor;
                           move: string; count: int = 0): Selection =
-  getSelectionForMoveScript_8287962646(self, cursor, move, count)
+  editor_text_getSelectionForMove_Selection_TextDocumentEditor_Cursor_string_int_impl(
+      self, cursor, move, count)
 proc setMove*(self: TextDocumentEditor; args: JsonNode) =
-  setMoveScript_8287962892(self, args)
+  editor_text_setMove_void_TextDocumentEditor_JsonNode_impl(self, args)
 proc deleteMove*(self: TextDocumentEditor; move: string;
                  which: SelectionCursor = SelectionCursor.Config;
                  all: bool = true) =
-  deleteMoveScript_8287963153(self, move, which, all)
+  editor_text_deleteMove_void_TextDocumentEditor_string_SelectionCursor_bool_impl(
+      self, move, which, all)
 proc selectMove*(self: TextDocumentEditor; move: string;
                  which: SelectionCursor = SelectionCursor.Config;
                  all: bool = true) =
-  selectMoveScript_8287963289(self, move, which, all)
+  editor_text_selectMove_void_TextDocumentEditor_string_SelectionCursor_bool_impl(
+      self, move, which, all)
 proc changeMove*(self: TextDocumentEditor; move: string;
                  which: SelectionCursor = SelectionCursor.Config;
                  all: bool = true) =
-  changeMoveScript_8287963473(self, move, which, all)
+  editor_text_changeMove_void_TextDocumentEditor_string_SelectionCursor_bool_impl(
+      self, move, which, all)
 proc moveLast*(self: TextDocumentEditor; move: string;
                which: SelectionCursor = SelectionCursor.Config;
                all: bool = true; count: int = 0) =
-  moveLastScript_8287963609(self, move, which, all, count)
+  editor_text_moveLast_void_TextDocumentEditor_string_SelectionCursor_bool_int_impl(
+      self, move, which, all, count)
 proc moveFirst*(self: TextDocumentEditor; move: string;
                 which: SelectionCursor = SelectionCursor.Config;
                 all: bool = true; count: int = 0) =
-  moveFirstScript_8287963761(self, move, which, all, count)
+  editor_text_moveFirst_void_TextDocumentEditor_string_SelectionCursor_bool_int_impl(
+      self, move, which, all, count)
 proc setSearchQuery*(self: TextDocumentEditor; query: string) =
-  setSearchQueryScript_8287963913(self, query)
+  editor_text_setSearchQuery_void_TextDocumentEditor_string_impl(self, query)
 proc setSearchQueryFromMove*(self: TextDocumentEditor; move: string;
                              count: int = 0) =
-  setSearchQueryFromMoveScript_8287963999(self, move, count)
+  editor_text_setSearchQueryFromMove_void_TextDocumentEditor_string_int_impl(
+      self, move, count)
 proc gotoDefinition*(self: TextDocumentEditor) =
-  gotoDefinitionScript_8287965235(self)
+  editor_text_gotoDefinition_void_TextDocumentEditor_impl(self)
 proc getCompletions*(self: TextDocumentEditor) =
-  getCompletionsScript_8287965524(self)
+  editor_text_getCompletions_void_TextDocumentEditor_impl(self)
 proc hideCompletions*(self: TextDocumentEditor) =
-  hideCompletionsScript_8287965666(self)
+  editor_text_hideCompletions_void_TextDocumentEditor_impl(self)
 proc selectPrevCompletion*(self: TextDocumentEditor) =
-  selectPrevCompletionScript_8287965722(self)
+  editor_text_selectPrevCompletion_void_TextDocumentEditor_impl(self)
 proc selectNextCompletion*(self: TextDocumentEditor) =
-  selectNextCompletionScript_8287965795(self)
+  editor_text_selectNextCompletion_void_TextDocumentEditor_impl(self)
 proc applySelectedCompletion*(self: TextDocumentEditor) =
-  applySelectedCompletionScript_8287965868(self)
+  editor_text_applySelectedCompletion_void_TextDocumentEditor_impl(self)

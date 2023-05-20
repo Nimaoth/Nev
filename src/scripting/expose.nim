@@ -190,18 +190,18 @@ macro expose*(moduleName: static string, def: untyped): untyped =
   #     echo result.repr
 
   # The wrapper function which takes JSON arguments and returns JSON and internally calls the Nim function
-  let jsonWrapperFunctionName = ident(pureFunctionNameStr & "Api" & suffix)
+  let jsonWrapperFunctionName = ident(uniqueName & "_json")
 
   # The script function is a wrapper around impl which translates some argument types
   # and inserts some arguments automatically using injectors. This function will be called from the NimScript.
   # This function has a unique name, otherwise we can't call it from nimscript
-  let scriptFunctionSym = ident nskProc.genSym(pureFunctionNameStr & "Script" & suffix).repr
+  let scriptFunctionSym = ident(uniqueName & "_impl")
   var scriptFunction = def.copy
   scriptFunction[0] = nnkPostfix.newTree(ident"*", scriptFunctionSym)
   var callImplFromScriptFunction = nnkCall.newTree(functionName)
 
   # This function is a wrapper around def which just forwards all arguments
-  let defJsWrapperSym = nskProc.genSym(pureFunctionNameStr & "JsWrapper" & suffix)
+  let defJsWrapperSym = nskProc.genSym(uniqueName & "_js")
   var defJsWrapperFunction = def.copy
   defJsWrapperFunction[0] = nnkPostfix.newTree(ident"*", defJsWrapperSym)
   var callDefFromDefJsWrapper = nnkCall.newTree(functionName)

@@ -11,163 +11,168 @@ else:
 ## This file is auto generated, don't modify.
 
 proc getBackend*(): Backend =
-  getBackendScript_2197823683()
+  editor_getBackend_Backend_Editor_impl()
 proc saveAppState*() =
-  saveAppStateScript_2197823854()
+  editor_saveAppState_void_Editor_impl()
 proc requestRender*(redrawEverything: bool = false) =
-  requestRenderScript_2197824706(redrawEverything)
+  editor_requestRender_void_Editor_bool_impl(redrawEverything)
 proc setHandleInputs*(context: string; value: bool) =
-  setHandleInputsScript_2197824763(context, value)
+  editor_setHandleInputs_void_Editor_string_bool_impl(context, value)
 proc setHandleActions*(context: string; value: bool) =
-  setHandleActionsScript_2197824828(context, value)
+  editor_setHandleActions_void_Editor_string_bool_impl(context, value)
 proc setConsumeAllActions*(context: string; value: bool) =
-  setConsumeAllActionsScript_2197824893(context, value)
+  editor_setConsumeAllActions_void_Editor_string_bool_impl(context, value)
 proc setConsumeAllInput*(context: string; value: bool) =
-  setConsumeAllInputScript_2197824958(context, value)
+  editor_setConsumeAllInput_void_Editor_string_bool_impl(context, value)
 proc clearWorkspaceCaches*() =
-  clearWorkspaceCachesScript_2197825100()
+  editor_clearWorkspaceCaches_void_Editor_impl()
 proc openGithubWorkspace*(user: string; repository: string; branchOrHash: string) =
-  openGithubWorkspaceScript_2197825157(user, repository, branchOrHash)
+  editor_openGithubWorkspace_void_Editor_string_string_string_impl(user,
+      repository, branchOrHash)
 proc openAbsytreeServerWorkspace*(url: string) =
-  openAbsytreeServerWorkspaceScript_2197825234(url)
+  editor_openAbsytreeServerWorkspace_void_Editor_string_impl(url)
 proc openLocalWorkspace*(path: string) =
-  openLocalWorkspaceScript_2197825291(path)
+  editor_openLocalWorkspace_void_Editor_string_impl(path)
 proc getFlag*(flag: string; default: bool = false): bool =
-  getFlagScript2_2197825349(flag, default)
+  editor_getFlag_bool_Editor_string_bool_impl(flag, default)
 proc setFlag*(flag: string; value: bool) =
-  setFlagScript2_2197825429(flag, value)
+  editor_setFlag_void_Editor_string_bool_impl(flag, value)
 proc toggleFlag*(flag: string) =
-  toggleFlagScript_2197825555(flag)
+  editor_toggleFlag_void_Editor_string_impl(flag)
 proc setOption*(option: string; value: JsonNode) =
-  setOptionScript_2197825612(option, value)
+  editor_setOption_void_Editor_string_JsonNode_impl(option, value)
 proc quit*() =
-  quitScript_2197825716()
+  editor_quit_void_Editor_impl()
 proc changeFontSize*(amount: float32) =
-  changeFontSizeScript_2197825765(amount)
+  editor_changeFontSize_void_Editor_float32_impl(amount)
 proc changeLayoutProp*(prop: string; change: float32) =
-  changeLayoutPropScript_2197825822(prop, change)
+  editor_changeLayoutProp_void_Editor_string_float32_impl(prop, change)
 proc toggleStatusBarLocation*() =
-  toggleStatusBarLocationScript_2197826154()
+  editor_toggleStatusBarLocation_void_Editor_impl()
 proc createView*() =
-  createViewScript_2197826203()
+  editor_createView_void_Editor_impl()
 proc closeCurrentView*() =
-  closeCurrentViewScript_2197826285()
+  editor_closeCurrentView_void_Editor_impl()
 proc moveCurrentViewToTop*() =
-  moveCurrentViewToTopScript_2197826379()
+  editor_moveCurrentViewToTop_void_Editor_impl()
 proc nextView*() =
-  nextViewScript_2197826479()
+  editor_nextView_void_Editor_impl()
 proc prevView*() =
-  prevViewScript_2197826534()
+  editor_prevView_void_Editor_impl()
 proc moveCurrentViewPrev*() =
-  moveCurrentViewPrevScript_2197826592()
+  editor_moveCurrentViewPrev_void_Editor_impl()
 proc moveCurrentViewNext*() =
-  moveCurrentViewNextScript_2197826664()
+  editor_moveCurrentViewNext_void_Editor_impl()
 proc setLayout*(layout: string) =
-  setLayoutScript_2197826733(layout)
+  editor_setLayout_void_Editor_string_impl(layout)
 proc commandLine*(initialValue: string = "") =
-  commandLineScript_2197826826(initialValue)
+  editor_commandLine_void_Editor_string_impl(initialValue)
 proc exitCommandLine*() =
-  exitCommandLineScript_2197826887()
+  editor_exitCommandLine_void_Editor_impl()
 proc executeCommandLine*(): bool =
-  executeCommandLineScript_2197826940()
+  editor_executeCommandLine_bool_Editor_impl()
 proc writeFile*(path: string = ""; app: bool = false) =
-  writeFileScript_2197827122(path, app)
+  editor_writeFile_void_Editor_string_bool_impl(path, app)
 proc loadFile*(path: string = "") =
-  loadFileScript_2197827199(path)
+  editor_loadFile_void_Editor_string_impl(path)
 proc openFile*(path: string; app: bool = false) =
-  openFileScript_2197827287(path, app)
+  editor_openFile_void_Editor_string_bool_impl(path, app)
 proc removeFromLocalStorage*() =
   ## Browser only
   ## Clears the content of the current document in local storage
-  removeFromLocalStorageScript_2197827471()
+  editor_removeFromLocalStorage_void_Editor_impl()
 proc loadTheme*(name: string) =
-  loadThemeScript_2197827520(name)
+  editor_loadTheme_void_Editor_string_impl(name)
 proc chooseTheme*() =
-  chooseThemeScript_2197827613()
+  editor_chooseTheme_void_Editor_impl()
 proc chooseFile*(view: string = "new") =
-  chooseFileScript_2197828311(view)
+  editor_chooseFile_void_Editor_string_impl(view)
 proc setGithubAccessToken*(token: string) =
   ## Stores the give token in local storage as 'GithubAccessToken', which will be used in requests to the github api
-  setGithubAccessTokenScript_2197828874(token)
+  editor_setGithubAccessToken_void_Editor_string_impl(token)
 proc reloadConfig*() =
-  reloadConfigScript_2197828931()
+  editor_reloadConfig_void_Editor_impl()
 proc logOptions*() =
-  logOptionsScript_2197829022()
+  editor_logOptions_void_Editor_impl()
 proc clearCommands*(context: string) =
-  clearCommandsScript_2197829071(context)
+  editor_clearCommands_void_Editor_string_impl(context)
 proc getAllEditors*(): seq[EditorId] =
-  getAllEditorsScript_2197829128()
+  editor_getAllEditors_seq_EditorId_Editor_impl()
 proc setMode*(mode: string) =
-  setModeScript222_2197829453(mode)
+  editor_setMode_void_Editor_string_impl(mode)
 proc mode*(): string =
-  modeScript222_2197829568()
+  editor_mode_string_Editor_impl()
 proc getContextWithMode*(context: string): string =
-  getContextWithModeScript222_2197829623(context)
+  editor_getContextWithMode_string_Editor_string_impl(context)
 proc scriptRunAction*(action: string; arg: string) =
-  scriptRunActionScript_2197829913(action, arg)
+  editor_scriptRunAction_void_string_string_impl(action, arg)
 proc scriptLog*(message: string) =
-  scriptLogScript_2197829955(message)
+  editor_scriptLog_void_string_impl(message)
 proc addCommandScript*(context: string; keys: string; action: string;
                        arg: string = "") =
-  addCommandScriptScript_2197829991(context, keys, action, arg)
+  editor_addCommandScript_void_Editor_string_string_string_string_impl(context,
+      keys, action, arg)
 proc removeCommand*(context: string; keys: string) =
-  removeCommandScript_2197830073(context, keys)
+  editor_removeCommand_void_Editor_string_string_impl(context, keys)
 proc getActivePopup*(): EditorId =
-  getActivePopupScript_2197830138()
+  editor_getActivePopup_EditorId_impl()
 proc getActiveEditor*(): EditorId =
-  getActiveEditorScript_2197830179()
+  editor_getActiveEditor_EditorId_impl()
 proc getActiveEditor2*(): EditorId =
   ## Returns the active editor instance
-  getActiveEditor2Script_2197830214()
+  editor_getActiveEditor2_EditorId_Editor_impl()
 proc loadCurrentConfig*() =
   ## Javascript backend only!
   ## Opens the config file in a new view.
-  loadCurrentConfigScript_2197830269()
+  editor_loadCurrentConfig_void_Editor_impl()
 proc sourceCurrentDocument*() =
   ## Javascript backend only!
   ## Runs the content of the active editor as javascript using `eval()`.
   ## "use strict" is prepended to the content to force strict mode.
-  sourceCurrentDocumentScript_2197830318()
+  editor_sourceCurrentDocument_void_Editor_impl()
 proc getEditor*(index: int): EditorId =
-  getEditorScript_2197830367(index)
+  editor_getEditor_EditorId_int_impl(index)
 proc scriptIsTextEditor*(editorId: EditorId): bool =
-  scriptIsTextEditorScript_2197830410(editorId)
+  editor_scriptIsTextEditor_bool_EditorId_impl(editorId)
 proc scriptIsAstEditor*(editorId: EditorId): bool =
-  scriptIsAstEditorScript_2197830482(editorId)
+  editor_scriptIsAstEditor_bool_EditorId_impl(editorId)
 proc scriptIsModelEditor*(editorId: EditorId): bool =
-  scriptIsModelEditorScript_2197830554(editorId)
+  editor_scriptIsModelEditor_bool_EditorId_impl(editorId)
 proc scriptRunActionFor*(editorId: EditorId; action: string; arg: string) =
-  scriptRunActionForScript_2197830626(editorId, action, arg)
+  editor_scriptRunActionFor_void_EditorId_string_string_impl(editorId, action,
+      arg)
 proc scriptInsertTextInto*(editorId: EditorId; text: string) =
-  scriptInsertTextIntoScript_2197830732(editorId, text)
+  editor_scriptInsertTextInto_void_EditorId_string_impl(editorId, text)
 proc scriptTextEditorSelection*(editorId: EditorId): Selection =
-  scriptTextEditorSelectionScript_2197830802(editorId)
+  editor_scriptTextEditorSelection_Selection_EditorId_impl(editorId)
 proc scriptSetTextEditorSelection*(editorId: EditorId; selection: Selection) =
-  scriptSetTextEditorSelectionScript_2197830879(editorId, selection)
+  editor_scriptSetTextEditorSelection_void_EditorId_Selection_impl(editorId,
+      selection)
 proc scriptTextEditorSelections*(editorId: EditorId): seq[Selection] =
-  scriptTextEditorSelectionsScript_2197830953(editorId)
+  editor_scriptTextEditorSelections_seq_Selection_EditorId_impl(editorId)
 proc scriptSetTextEditorSelections*(editorId: EditorId;
                                     selections: seq[Selection]) =
-  scriptSetTextEditorSelectionsScript_2197831034(editorId, selections)
+  editor_scriptSetTextEditorSelections_void_EditorId_seq_Selection_impl(
+      editorId, selections)
 proc scriptGetTextEditorLine*(editorId: EditorId; line: int): string =
-  scriptGetTextEditorLineScript_2197831108(editorId, line)
+  editor_scriptGetTextEditorLine_string_EditorId_int_impl(editorId, line)
 proc scriptGetTextEditorLineCount*(editorId: EditorId): int =
-  scriptGetTextEditorLineCountScript_2197831192(editorId)
+  editor_scriptGetTextEditorLineCount_int_EditorId_impl(editorId)
 proc scriptGetOptionInt*(path: string; default: int): int =
-  scriptGetOptionIntScript_2197831279(path, default)
+  editor_scriptGetOptionInt_int_string_int_impl(path, default)
 proc scriptGetOptionFloat*(path: string; default: float): float =
-  scriptGetOptionFloatScript_2197831333(path, default)
+  editor_scriptGetOptionFloat_float_string_float_impl(path, default)
 proc scriptGetOptionBool*(path: string; default: bool): bool =
-  scriptGetOptionBoolScript_2197831445(path, default)
+  editor_scriptGetOptionBool_bool_string_bool_impl(path, default)
 proc scriptGetOptionString*(path: string; default: string): string =
-  scriptGetOptionStringScript_2197831499(path, default)
+  editor_scriptGetOptionString_string_string_string_impl(path, default)
 proc scriptSetOptionInt*(path: string; value: int) =
-  scriptSetOptionIntScript_2197831553(path, value)
+  editor_scriptSetOptionInt_void_string_int_impl(path, value)
 proc scriptSetOptionFloat*(path: string; value: float) =
-  scriptSetOptionFloatScript_2197831640(path, value)
+  editor_scriptSetOptionFloat_void_string_float_impl(path, value)
 proc scriptSetOptionBool*(path: string; value: bool) =
-  scriptSetOptionBoolScript_2197831727(path, value)
+  editor_scriptSetOptionBool_void_string_bool_impl(path, value)
 proc scriptSetOptionString*(path: string; value: string) =
-  scriptSetOptionStringScript_2197831814(path, value)
+  editor_scriptSetOptionString_void_string_string_impl(path, value)
 proc scriptSetCallback*(path: string; id: int) =
-  scriptSetCallbackScript_2197831901(path, id)
+  editor_scriptSetCallback_void_string_int_impl(path, id)

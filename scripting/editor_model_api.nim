@@ -11,66 +11,77 @@ else:
 ## This file is auto generated, don't modify.
 
 proc scroll*(self: ModelDocumentEditor; amount: float32) =
-  scrollScript2_8992600587(self, amount)
+  editor_model_scroll_void_ModelDocumentEditor_float32_impl(self, amount)
 proc setMode*(self: ModelDocumentEditor; mode: string) =
-  setModeScript22_8992600703(self, mode)
+  editor_model_setMode_void_ModelDocumentEditor_string_impl(self, mode)
 proc mode*(self: ModelDocumentEditor): string =
-  modeScript22_8992603840(self)
+  editor_model_mode_string_ModelDocumentEditor_impl(self)
 proc getContextWithMode*(self: ModelDocumentEditor; context: string): string =
-  getContextWithModeScript22_8992603902(self, context)
+  editor_model_getContextWithMode_string_ModelDocumentEditor_string_impl(self,
+      context)
 proc moveCursorLeft*(self: ModelDocumentEditor; select: bool = false) =
-  moveCursorLeftScript_8992603972(self, select)
+  editor_model_moveCursorLeft_void_ModelDocumentEditor_bool_impl(self, select)
 proc moveCursorRight*(self: ModelDocumentEditor; select: bool = false) =
-  moveCursorRightScript_8992604077(self, select)
+  editor_model_moveCursorRight_void_ModelDocumentEditor_bool_impl(self, select)
 proc moveCursorLeftLine*(self: ModelDocumentEditor; select: bool = false) =
-  moveCursorLeftLineScript_8992604171(self, select)
+  editor_model_moveCursorLeftLine_void_ModelDocumentEditor_bool_impl(self,
+      select)
 proc moveCursorRightLine*(self: ModelDocumentEditor; select: bool = false) =
-  moveCursorRightLineScript_8992604276(self, select)
+  editor_model_moveCursorRightLine_void_ModelDocumentEditor_bool_impl(self,
+      select)
 proc moveCursorLineStart*(self: ModelDocumentEditor; select: bool = false) =
-  moveCursorLineStartScript_8992604382(self, select)
+  editor_model_moveCursorLineStart_void_ModelDocumentEditor_bool_impl(self,
+      select)
 proc moveCursorLineEnd*(self: ModelDocumentEditor; select: bool = false) =
-  moveCursorLineEndScript_8992604479(self, select)
+  editor_model_moveCursorLineEnd_void_ModelDocumentEditor_bool_impl(self, select)
 proc moveCursorLineStartInline*(self: ModelDocumentEditor; select: bool = false) =
-  moveCursorLineStartInlineScript_8992604579(self, select)
+  editor_model_moveCursorLineStartInline_void_ModelDocumentEditor_bool_impl(
+      self, select)
 proc moveCursorLineEndInline*(self: ModelDocumentEditor; select: bool = false) =
-  moveCursorLineEndInlineScript_8992604677(self, select)
+  editor_model_moveCursorLineEndInline_void_ModelDocumentEditor_bool_impl(self,
+      select)
 proc moveCursorUp*(self: ModelDocumentEditor; select: bool = false) =
-  moveCursorUpScript2_8992604775(self, select)
+  editor_model_moveCursorUp_void_ModelDocumentEditor_bool_impl(self, select)
 proc moveCursorDown*(self: ModelDocumentEditor; select: bool = false) =
-  moveCursorDownScript2_8992604899(self, select)
+  editor_model_moveCursorDown_void_ModelDocumentEditor_bool_impl(self, select)
 proc moveCursorLeftCell*(self: ModelDocumentEditor; select: bool = false) =
-  moveCursorLeftCellScript_8992605018(self, select)
+  editor_model_moveCursorLeftCell_void_ModelDocumentEditor_bool_impl(self,
+      select)
 proc moveCursorRightCell*(self: ModelDocumentEditor; select: bool = false) =
-  moveCursorRightCellScript_8992605134(self, select)
+  editor_model_moveCursorRightCell_void_ModelDocumentEditor_bool_impl(self,
+      select)
 proc selectNode*(self: ModelDocumentEditor; select: bool = false) =
-  selectNodeScript_8992605250(self, select)
+  editor_model_selectNode_void_ModelDocumentEditor_bool_impl(self, select)
 proc selectParentCell*(self: ModelDocumentEditor) =
-  selectParentCellScript_8992605396(self)
+  editor_model_selectParentCell_void_ModelDocumentEditor_impl(self)
 proc selectPrevPlaceholder*(self: ModelDocumentEditor; select: bool = false) =
-  selectPrevPlaceholderScript_8992605465(self, select)
+  editor_model_selectPrevPlaceholder_void_ModelDocumentEditor_bool_impl(self,
+      select)
 proc selectNextPlaceholder*(self: ModelDocumentEditor; select: bool = false) =
-  selectNextPlaceholderScript_8992605558(self, select)
+  editor_model_selectNextPlaceholder_void_ModelDocumentEditor_bool_impl(self,
+      select)
 proc deleteLeft*(self: ModelDocumentEditor) =
-  deleteLeftScript2_8992606501(self)
+  editor_model_deleteLeft_void_ModelDocumentEditor_impl(self)
 proc deleteRight*(self: ModelDocumentEditor) =
-  deleteRightScript2_8992606637(self)
+  editor_model_deleteRight_void_ModelDocumentEditor_impl(self)
 proc createNewNode*(self: ModelDocumentEditor) =
-  createNewNodeScript_8992607244(self)
+  editor_model_createNewNode_void_ModelDocumentEditor_impl(self)
 proc insertTextAtCursor*(self: ModelDocumentEditor; input: string): bool =
-  insertTextAtCursorScript_8992607379(self, input)
+  editor_model_insertTextAtCursor_bool_ModelDocumentEditor_string_impl(self,
+      input)
 proc undo*(self: ModelDocumentEditor) =
-  undoScript22_8992607565(self)
+  editor_model_undo_void_ModelDocumentEditor_impl(self)
 proc redo*(self: ModelDocumentEditor) =
-  redoScript22_8992607906(self)
+  editor_model_redo_void_ModelDocumentEditor_impl(self)
 proc toggleUseDefaultCellBuilder*(self: ModelDocumentEditor) =
-  toggleUseDefaultCellBuilderScript_8992608123(self)
+  editor_model_toggleUseDefaultCellBuilder_void_ModelDocumentEditor_impl(self)
 proc showCompletions*(self: ModelDocumentEditor) =
-  showCompletionsScript_8992608179(self)
+  editor_model_showCompletions_void_ModelDocumentEditor_impl(self)
 proc hideCompletions*(self: ModelDocumentEditor) =
-  hideCompletionsScript2_8992608235(self)
+  editor_model_hideCompletions_void_ModelDocumentEditor_impl(self)
 proc selectPrevCompletion*(self: ModelDocumentEditor) =
-  selectPrevCompletionScript22_8992608295(self)
+  editor_model_selectPrevCompletion_void_ModelDocumentEditor_impl(self)
 proc selectNextCompletion*(self: ModelDocumentEditor) =
-  selectNextCompletionScript22_8992608359(self)
+  editor_model_selectNextCompletion_void_ModelDocumentEditor_impl(self)
 proc applySelectedCompletion*(self: ModelDocumentEditor) =
-  applySelectedCompletionScript22_8992608423(self)
+  editor_model_applySelectedCompletion_void_ModelDocumentEditor_impl(self)
