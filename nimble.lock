@@ -1,0 +1,333 @@
+{
+  "version": 2,
+  "packages": {
+    "unicodedb": {
+      "version": "0.12.0",
+      "vcsRevision": "b055310c08db8f879057b4fec15c8301ee93bb2a",
+      "url": "https://github.com/nitely/nim-unicodedb",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "4452416471e2fe8726eb6070ed6ea7368171cc09"
+      }
+    },
+    "regex": {
+      "version": "0.20.2",
+      "vcsRevision": "1f21ff2069c5d58aa3f326aa7b2ea458cf0a50cf",
+      "url": "https://github.com/nitely/nim-regex",
+      "downloadMethod": "git",
+      "dependencies": [
+        "unicodedb"
+      ],
+      "checksums": {
+        "sha1": "f376a11f34d2dfbfd18abdd31e6379e3cf2e7c6d"
+      }
+    },
+    "nimscripter": {
+      "version": "1.0.17",
+      "vcsRevision": "4681ef174aaca3568ce824b9c0bcc612376d3b64",
+      "url": "https://github.com/Nimaoth/nimscripter",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "7f7b61079189617c567c4f9e40c2ed16cecd59d0"
+      }
+    },
+    "ws": {
+      "version": "0.5.0",
+      "vcsRevision": "9536bf99ddf5948db221ccb7bb3663aa238a8e21",
+      "url": "https://github.com/treeform/ws",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "ae4daf4ae302d0431f3c2d385ae9d2fe767a3246"
+      }
+    },
+    "winim": {
+      "version": "3.9.0",
+      "vcsRevision": "3abd0ae122cd41efd0ce6d45fea720ef7091e4ac",
+      "url": "https://github.com/khchen/winim",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "02cf5882b51550d7faddbce7eedac35c94dea729"
+      }
+    },
+    "nimsimd": {
+      "version": "1.2.5",
+      "vcsRevision": "1d75f15c8bb8df9c1d4779072bbfc8a7e3e84c98",
+      "url": "https://github.com/guzba/nimsimd",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "9f919415ad69edb599c3362b0cc0fe0b044097c9"
+      }
+    },
+    "crunchy": {
+      "version": "0.1.8",
+      "vcsRevision": "6dda0e3347e310ed883f9c0abee900cfc6c4a65a",
+      "url": "https://github.com/guzba/crunchy",
+      "downloadMethod": "git",
+      "dependencies": [
+        "nimsimd"
+      ],
+      "checksums": {
+        "sha1": "7271c3b0728c995e5b8d4d2267edcb2de98278a9"
+      }
+    },
+    "fuzzy": {
+      "version": "0.1.0",
+      "vcsRevision": "6e62092598689dfdc982e15a337f0a069c69be3b",
+      "url": "https://github.com/pigmej/fuzzy",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "99b26039cfa38ee375f5eb469eec15d842c4fac6"
+      }
+    },
+    "micros": {
+      "version": "0.1.12",
+      "vcsRevision": "049a2ff0984e58ed0d266f58b076469faf0e4add",
+      "url": "https://github.com/beef331/micros/",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "e20fdc9585c8fbb34b6aa97688ef9f71997feafc"
+      }
+    },
+    "wasm3": {
+      "version": "0.1.10",
+      "vcsRevision": "272233c514dd691ead9513411c7642eab03e29ff",
+      "url": "https://github.com/Nimaoth/wasm3",
+      "downloadMethod": "git",
+      "dependencies": [
+        "micros"
+      ],
+      "checksums": {
+        "sha1": "4afbf694ed74b935e0b4b21e6c1ef5c1749e5864"
+      }
+    },
+    "c2nim": {
+      "version": "0.9.19",
+      "vcsRevision": "5753fa7658ed50432ea6c2df84f0a45e36bcb2ea",
+      "url": "https://github.com/nim-lang/c2nim",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "1954eb89cc353cf2a4e54804d38d5a1e72f3c98e"
+      }
+    },
+    "nimgen": {
+      "version": "0.5.3",
+      "vcsRevision": "6c24d4a727045313b46165f62a815558ba4e0873",
+      "url": "https://github.com/genotrance/nimgen",
+      "downloadMethod": "git",
+      "dependencies": [
+        "c2nim",
+        "regex"
+      ],
+      "checksums": {
+        "sha1": "2784d36f26becd5a9714d07428b88c7f820ede7f"
+      }
+    },
+    "treesitter": {
+      "version": "0.1.1",
+      "vcsRevision": "a9753e59c1b99da68dc0719065dfe4dd42397154",
+      "url": "https://github.com/Nimaoth/nimtreesitter",
+      "downloadMethod": "git",
+      "dependencies": [
+        "nimgen"
+      ],
+      "checksums": {
+        "sha1": "f11abf804628ba6f629ae1af131a63d4d638e5a7"
+      }
+    },
+    "chroma": {
+      "version": "0.2.7",
+      "vcsRevision": "b2e71179174e040884ebf6a16cbac711c84620b9",
+      "url": "https://github.com/treeform/chroma",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "f873f4b97e87a82e27e0b85bf9130fe3e320a2b8"
+      }
+    },
+    "vmath": {
+      "version": "2.0.0",
+      "vcsRevision": "7282ae1247f2f384ebeaec3826d7fa38fd0e1df1",
+      "url": "https://github.com/treeform/vmath",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "c90a664f3425d26219e1262ed9a888b859b3127c"
+      }
+    },
+    "bumpy": {
+      "version": "1.1.1",
+      "vcsRevision": "2801fcff08996f3eb79ddfe8ebcb6e0ff8c19d19",
+      "url": "https://github.com/treeform/bumpy",
+      "downloadMethod": "git",
+      "dependencies": [
+        "vmath"
+      ],
+      "checksums": {
+        "sha1": "1239ab6d12e2ab99e5012ea3981ae52abd49e9a6"
+      }
+    },
+    "print": {
+      "version": "1.0.2",
+      "vcsRevision": "fb09637d6ebd6416b322a2b9bb95dd513040dea7",
+      "url": "https://github.com/treeform/print",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "b2d54fa3fa47a11a42c94f9d05f1057fc5ff16a3"
+      }
+    },
+    "opengl": {
+      "version": "1.2.7",
+      "vcsRevision": "57e01c58741066e8dae7eb19929f85b1d7c83bf8",
+      "url": "https://github.com/nim-lang/opengl",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "c19fc867d0a999ebb078fc14ea142aa7cf057ba8"
+      }
+    },
+    "zippy": {
+      "version": "0.10.9",
+      "vcsRevision": "8d75e3d7c010dcd5d050ea04cbdb5d64e0b6cf6a",
+      "url": "https://github.com/guzba/zippy",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "2904d0fc88b38e02493f680ba326facf5978ab27"
+      }
+    },
+    "flatty": {
+      "version": "0.3.4",
+      "vcsRevision": "07f6ba8ab96238e5bd1264cf0cea1d1746abb00c",
+      "url": "https://github.com/treeform/flatty",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "5775e6ea6ca339efc5bd37b082b8294342d49dc5"
+      }
+    },
+    "pixie": {
+      "version": "5.0.6",
+      "vcsRevision": "f3e73f722fbb0e5d496fbc59ee860a9fd49983de",
+      "url": "https://github.com/treeform/pixie",
+      "downloadMethod": "git",
+      "dependencies": [
+        "vmath",
+        "chroma",
+        "zippy",
+        "flatty",
+        "nimsimd",
+        "bumpy",
+        "crunchy"
+      ],
+      "checksums": {
+        "sha1": "fd4c5d12bba41aac760fc86c2de820e1a367dbfd"
+      }
+    },
+    "urlly": {
+      "version": "1.1.1",
+      "vcsRevision": "94e9f864115c64debcfcce5db04c636838a4b408",
+      "url": "https://github.com/treeform/urlly",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "fa636c9852fbf196df05baa1c9a0c976f533150d"
+      }
+    },
+    "windy": {
+      "version": "0.0.1",
+      "vcsRevision": "c044fd9846c264831ac2659a92d929b3fdbaab7e",
+      "url": "https://github.com/Nimaoth/windy",
+      "downloadMethod": "git",
+      "dependencies": [
+        "opengl",
+        "pixie",
+        "urlly",
+        "ws"
+      ],
+      "checksums": {
+        "sha1": "ce37320ad38c9d49fed435803e0c9a3d7308f419"
+      }
+    },
+    "treesitter_nim": {
+      "version": "0.1.1",
+      "vcsRevision": "a9753e59c1b99da68dc0719065dfe4dd42397154",
+      "url": "https://github.com/Nimaoth/nimtreesitter",
+      "downloadMethod": "git",
+      "dependencies": [
+        "nimgen",
+        "treesitter"
+      ],
+      "checksums": {
+        "sha1": "b37f6fac99226d86a3ccbab1c2cffe1eaf3adec2"
+      }
+    },
+    "lrucache": {
+      "version": "1.1.4",
+      "vcsRevision": "479d4cf03a961d00fb2204e4773c394fe62ac44b",
+      "url": "https://github.com/Nimaoth/lrucache.nim",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "8bccb6b02295a85eab30aeb8c411927680ca9192"
+      }
+    },
+    "bitty": {
+      "version": "0.1.4",
+      "vcsRevision": "cde1af08ab96536239cc737cbd9217ee284e4e03",
+      "url": "https://github.com/treeform/bitty/",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "581b0266b15b92877b044aa7e7554cd96c49e122"
+      }
+    },
+    "shady": {
+      "version": "0.1.3",
+      "vcsRevision": "51c59c5764b30a2c404c162caa5a7c72d50f97d6",
+      "url": "https://github.com/treeform/shady",
+      "downloadMethod": "git",
+      "dependencies": [
+        "vmath",
+        "pixie"
+      ],
+      "checksums": {
+        "sha1": "e1c298f27781d496b2f8225192277dda6029ade1"
+      }
+    },
+    "boxy": {
+      "version": "0.4.2",
+      "vcsRevision": "8043ba7ac3458bdf7995f11cd06fe00548279ed6",
+      "url": "https://github.com/Nimaoth/boxy",
+      "downloadMethod": "git",
+      "dependencies": [
+        "shady",
+        "pixie",
+        "opengl",
+        "bitty"
+      ],
+      "checksums": {
+        "sha1": "9c638d41cfb2dbacd13a90006bf883935c9eab8d"
+      }
+    },
+    "fusion": {
+      "version": "1.2",
+      "vcsRevision": "0b0a0273b8df860cd54e3fcca7bb4c617244ac77",
+      "url": "https://github.com/nim-lang/fusion",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "408bde8679bce63dfb6f424e107eb37c5eb31510"
+      }
+    }
+  },
+  "tasks": {}
+}

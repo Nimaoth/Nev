@@ -1,11 +1,13 @@
 switch("path", "$nim")
 switch("path", "scripting")
 switch("path", "src")
+switch("o", "ast")
 switch("d", "mingw")
 switch("mm", "refc")
 switch("tlsEmulation", "off")
 switch("d", "enableGui=true")
 switch("d", "enableTerminal=true")
+switch("d", "exposeScriptingApi")
 switch("d", "ssl")
 switch("d", "wasm3HasWasi")
 switch("d", "wasm3VerboseErrorMessages")
@@ -33,3 +35,9 @@ of 3:
   switch("nimcache", "D:\\nc")
 else:
   discard
+
+# begin Nimble config (version 2)
+--noNimblePath
+when withDir(thisDir(), system.fileExists("nimble.paths")):
+  include "nimble.paths"
+# end Nimble config

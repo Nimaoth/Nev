@@ -3,6 +3,7 @@ import std/[os, strutils, strformat, json]
 ## This file adds a second link for certain docs, linking the generated script wrapper functions to the exposed function in the editor.
 
 proc postProcess(filename: string, replacementFile: string) =
+  echo "post processing doc ", filename, ", ", replacementFile
   let (path, name, ext) = filename.splitFile
   let mappingsJson = readFile(fmt"int/{name}.map")
   let mappings = parseJson(mappingsJson)
@@ -68,6 +69,7 @@ proc postProcess(filename: string, replacementFile: string) =
   writeFile(fmt"{path}/{name}{ext}", result)
 
 postProcess("scripting/htmldocs/editor_text_api.html", "src/text_document.nim")
+postProcess("scripting/htmldocs/editor_model_api.html", "src/model_document.nim")
 postProcess("scripting/htmldocs/editor_ast_api.html", "src/ast_document.nim")
 postProcess("scripting/htmldocs/editor_api.html", "src/editor.nim")
 postProcess("scripting/htmldocs/popup_selector_api.html", "src/selector_popup.nim")

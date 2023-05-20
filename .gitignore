@@ -22,3 +22,5 @@ ast.js
 languages/*.wasm
 node_modules/**
 GithubAccessToken
+nimble.develop
+nimble.paths
