@@ -33,4 +33,4 @@ task buildDesktop, "Build the desktop version":
   selfExec "c ./src/absytree.nim"
 
 task buildBrowser, "Build the browser version":
-  selfExec "js -d:vmathObjBased -d:enableTableIdCacheChecking ./src/absytree_js.nim"
+  selfExec "js -o:ast.js -d:vmathObjBased -d:enableTableIdCacheChecking ./src/absytree_js.nim"
