@@ -13,7 +13,7 @@ rend.init()
 
 var initializedEditor = false
 var ed = newEditor(Backend.Browser, rend)
-const themeString = staticRead("../themes/Night Owl-Light-color-theme copy.json")
+const themeString = staticRead("../themes/tokyo-night-storm-color-theme.json")
 if theme.loadFromString(themeString).getSome(theme):
   ed.theme = theme
 
