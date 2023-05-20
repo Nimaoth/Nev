@@ -8,6 +8,12 @@ switch("d", "enableGui=true")
 switch("d", "enableTerminal=true")
 switch("d", "ssl")
 switch("d", "wasm3HasWasi")
+switch("d", "wasm3VerboseErrorMessages")
+
+# switch("d", "wasm3LogModule")
+# switch("d", "wasm3LogRuntime")
+# switch("d", "wasm3RecordBacktraces")
+# switch("d", "wasm3EnableStrace2")
 
 let mode = 0
 case mode

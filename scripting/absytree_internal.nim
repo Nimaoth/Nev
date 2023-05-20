@@ -3,497 +3,497 @@ import "../src/scripting_api"
 
 ## This file is auto generated, don't modify.
 
-proc setModeScript_8287957236*(self: TextDocumentEditor; mode: string) =
+proc setModeScript_8287957247*(self: TextDocumentEditor; mode: string) =
   discard
-proc modeScript_8287957428*(self: TextDocumentEditor): string =
+proc modeScript_8287957486*(self: TextDocumentEditor): string =
   discard
-proc getContextWithModeScript_8287957477*(self: TextDocumentEditor;
+proc getContextWithModeScript_8287957548*(self: TextDocumentEditor;
     context: string): string =
   discard
-proc updateTargetColumnScript_8287957533*(self: TextDocumentEditor;
+proc updateTargetColumnScript_8287957618*(self: TextDocumentEditor;
     cursor: SelectionCursor) =
   discard
-proc invertSelectionScript_8287957628*(self: TextDocumentEditor) =
+proc invertSelectionScript_8287957727*(self: TextDocumentEditor) =
   discard
-proc insertScript_8287957671*(self: TextDocumentEditor;
+proc insertScript_8287957783*(self: TextDocumentEditor;
                              selections: seq[Selection]; text: string;
                              notify: bool = true; record: bool = true;
                              autoIndent: bool = true): seq[Selection] =
   discard
-proc deleteScript_8287958029*(self: TextDocumentEditor;
+proc deleteScript_8287958207*(self: TextDocumentEditor;
                              selections: seq[Selection]; notify: bool = true;
                              record: bool = true): seq[Selection] =
   discard
-proc selectPrevScript_8287958099*(self: TextDocumentEditor) =
+proc selectPrevScript_8287958307*(self: TextDocumentEditor) =
   discard
-proc selectNextScript_8287958327*(self: TextDocumentEditor) =
+proc selectNextScript_8287958548*(self: TextDocumentEditor) =
   discard
-proc selectInsideScript_8287958532*(self: TextDocumentEditor; cursor: Cursor) =
+proc selectInsideScript_8287958766*(self: TextDocumentEditor; cursor: Cursor) =
   discard
-proc selectInsideCurrentScript_8287958599*(self: TextDocumentEditor) =
+proc selectInsideCurrentScript_8287958849*(self: TextDocumentEditor) =
   discard
-proc selectLineScript_8287958642*(self: TextDocumentEditor; line: int) =
+proc selectLineScript_8287958905*(self: TextDocumentEditor; line: int) =
   discard
-proc selectLineCurrentScript_8287958692*(self: TextDocumentEditor) =
+proc selectLineCurrentScript_8287958969*(self: TextDocumentEditor) =
   discard
-proc selectParentTsScript_8287958735*(self: TextDocumentEditor;
+proc selectParentTsScript_8287959025*(self: TextDocumentEditor;
                                      selection: Selection) =
   discard
-proc selectParentCurrentTsScript_8287958799*(self: TextDocumentEditor) =
+proc selectParentCurrentTsScript_8287959104*(self: TextDocumentEditor) =
   discard
-proc insertTextScript_8287958847*(self: TextDocumentEditor; text: string) =
+proc insertTextScript_8287959165*(self: TextDocumentEditor; text: string) =
   discard
-proc undoScript_8287958906*(self: TextDocumentEditor) =
+proc undoScript_8287959238*(self: TextDocumentEditor) =
   discard
-proc redoScript_8287958997*(self: TextDocumentEditor) =
+proc redoScript_8287959346*(self: TextDocumentEditor) =
   discard
-proc scrollTextScript_8287959066*(self: TextDocumentEditor; amount: float32) =
+proc scrollTextScript_8287959432*(self: TextDocumentEditor; amount: float32) =
   discard
-proc duplicateLastSelectionScript_8287959178*(self: TextDocumentEditor) =
+proc duplicateLastSelectionScript_8287959558*(self: TextDocumentEditor) =
   discard
-proc addCursorBelowScript_8287959263*(self: TextDocumentEditor) =
+proc addCursorBelowScript_8287959656*(self: TextDocumentEditor) =
   discard
-proc addCursorAboveScript_8287959318*(self: TextDocumentEditor) =
+proc addCursorAboveScript_8287959728*(self: TextDocumentEditor) =
   discard
-proc getPrevFindResultScript_8287959373*(self: TextDocumentEditor;
+proc getPrevFindResultScript_8287959796*(self: TextDocumentEditor;
                                         cursor: Cursor; offset: int = 0): Selection =
   discard
-proc getNextFindResultScript_8287959706*(self: TextDocumentEditor;
+proc getNextFindResultScript_8287960151*(self: TextDocumentEditor;
                                         cursor: Cursor; offset: int = 0): Selection =
   discard
-proc addNextFindResultToSelectionScript_8287959932*(self: TextDocumentEditor) =
+proc addNextFindResultToSelectionScript_8287960401*(self: TextDocumentEditor) =
   discard
-proc addPrevFindResultToSelectionScript_8287959983*(self: TextDocumentEditor) =
+proc addPrevFindResultToSelectionScript_8287960465*(self: TextDocumentEditor) =
   discard
-proc setAllFindResultToSelectionScript_8287960034*(self: TextDocumentEditor) =
+proc setAllFindResultToSelectionScript_8287960529*(self: TextDocumentEditor) =
   discard
-proc clearSelectionsScript_8287960419*(self: TextDocumentEditor) =
+proc clearSelectionsScript_8287960942*(self: TextDocumentEditor) =
   discard
-proc moveCursorColumnScript_8287960468*(self: TextDocumentEditor; distance: int;
+proc moveCursorColumnScript_8287961004*(self: TextDocumentEditor; distance: int;
     cursor: SelectionCursor = SelectionCursor.Config; all: bool = true) =
   discard
-proc moveCursorLineScript_8287960550*(self: TextDocumentEditor; distance: int;
+proc moveCursorLineScript_8287961147*(self: TextDocumentEditor; distance: int;
     cursor: SelectionCursor = SelectionCursor.Config; all: bool = true) =
   discard
-proc moveCursorHomeScript_8287960614*(self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config;
+proc moveCursorHomeScript_8287961227*(self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config;
                                      all: bool = true) =
   discard
-proc moveCursorEndScript_8287960671*(self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config;
+proc moveCursorEndScript_8287961301*(self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config;
                                     all: bool = true) =
   discard
-proc moveCursorToScript_8287960728*(self: TextDocumentEditor; str: string; cursor: SelectionCursor = SelectionCursor.Config;
+proc moveCursorToScript_8287961375*(self: TextDocumentEditor; str: string; cursor: SelectionCursor = SelectionCursor.Config;
                                    all: bool = true) =
   discard
-proc moveCursorBeforeScript_8287960799*(self: TextDocumentEditor; str: string;
+proc moveCursorBeforeScript_8287961487*(self: TextDocumentEditor; str: string;
     cursor: SelectionCursor = SelectionCursor.Config; all: bool = true) =
   discard
-proc moveCursorNextFindResultScript_8287960870*(self: TextDocumentEditor;
+proc moveCursorNextFindResultScript_8287961599*(self: TextDocumentEditor;
     cursor: SelectionCursor = SelectionCursor.Config; all: bool = true) =
   discard
-proc moveCursorPrevFindResultScript_8287960927*(self: TextDocumentEditor;
+proc moveCursorPrevFindResultScript_8287961671*(self: TextDocumentEditor;
     cursor: SelectionCursor = SelectionCursor.Config; all: bool = true) =
   discard
-proc scrollToCursorScript_8287960984*(self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config) =
+proc scrollToCursorScript_8287961743*(self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config) =
   discard
-proc reloadTreesitterScript_8287961034*(self: TextDocumentEditor) =
+proc reloadTreesitterScript_8287961807*(self: TextDocumentEditor) =
   discard
-proc deleteLeftScript_8287961081*(self: TextDocumentEditor) =
+proc deleteLeftScript_8287961931*(self: TextDocumentEditor) =
   discard
-proc deleteRightScript_8287961132*(self: TextDocumentEditor) =
+proc deleteRightScript_8287962001*(self: TextDocumentEditor) =
   discard
-proc getCommandCountScript_8287961183*(self: TextDocumentEditor): int =
+proc getCommandCountScript_8287962071*(self: TextDocumentEditor): int =
   discard
-proc setCommandCountScript_8287961232*(self: TextDocumentEditor; count: int) =
+proc setCommandCountScript_8287962133*(self: TextDocumentEditor; count: int) =
   discard
-proc setCommandCountRestoreScript_8287961282*(self: TextDocumentEditor;
+proc setCommandCountRestoreScript_8287962197*(self: TextDocumentEditor;
     count: int) =
   discard
-proc updateCommandCountScript_8287961332*(self: TextDocumentEditor; digit: int) =
+proc updateCommandCountScript_8287962261*(self: TextDocumentEditor; digit: int) =
   discard
-proc setFlagScript_8287961382*(self: TextDocumentEditor; name: string;
+proc setFlagScript_8287962325*(self: TextDocumentEditor; name: string;
                               value: bool) =
   discard
-proc getFlagScript_8287961439*(self: TextDocumentEditor; name: string): bool =
+proc getFlagScript_8287962397*(self: TextDocumentEditor; name: string): bool =
   discard
-proc runActionScript_8287961495*(self: TextDocumentEditor; action: string;
+proc runActionScript_8287962467*(self: TextDocumentEditor; action: string;
                                 args: JsonNode): bool =
   discard
-proc findWordBoundaryScript_8287961560*(self: TextDocumentEditor; cursor: Cursor): Selection =
+proc findWordBoundaryScript_8287962547*(self: TextDocumentEditor; cursor: Cursor): Selection =
   discard
-proc getSelectionForMoveScript_8287961643*(self: TextDocumentEditor;
+proc getSelectionForMoveScript_8287962646*(self: TextDocumentEditor;
     cursor: Cursor; move: string; count: int = 0): Selection =
   discard
-proc setMoveScript_8287961830*(self: TextDocumentEditor; args: JsonNode) =
+proc setMoveScript_8287962892*(self: TextDocumentEditor; args: JsonNode) =
   discard
-proc deleteMoveScript_8287962077*(self: TextDocumentEditor; move: string; which: SelectionCursor = SelectionCursor.Config;
+proc deleteMoveScript_8287963153*(self: TextDocumentEditor; move: string; which: SelectionCursor = SelectionCursor.Config;
                                  all: bool = true) =
   discard
-proc selectMoveScript_8287962171*(self: TextDocumentEditor; move: string; which: SelectionCursor = SelectionCursor.Config;
+proc selectMoveScript_8287963289*(self: TextDocumentEditor; move: string; which: SelectionCursor = SelectionCursor.Config;
                                  all: bool = true) =
   discard
-proc changeMoveScript_8287962290*(self: TextDocumentEditor; move: string; which: SelectionCursor = SelectionCursor.Config;
+proc changeMoveScript_8287963473*(self: TextDocumentEditor; move: string; which: SelectionCursor = SelectionCursor.Config;
                                  all: bool = true) =
   discard
-proc moveLastScript_8287962384*(self: TextDocumentEditor; move: string;
+proc moveLastScript_8287963609*(self: TextDocumentEditor; move: string;
                                which: SelectionCursor = SelectionCursor.Config;
                                all: bool = true; count: int = 0) =
   discard
-proc moveFirstScript_8287962492*(self: TextDocumentEditor; move: string; which: SelectionCursor = SelectionCursor.Config;
+proc moveFirstScript_8287963761*(self: TextDocumentEditor; move: string; which: SelectionCursor = SelectionCursor.Config;
                                 all: bool = true; count: int = 0) =
   discard
-proc setSearchQueryScript_8287962600*(self: TextDocumentEditor; query: string) =
+proc setSearchQueryScript_8287963913*(self: TextDocumentEditor; query: string) =
   discard
-proc setSearchQueryFromMoveScript_8287962672*(self: TextDocumentEditor;
+proc setSearchQueryFromMoveScript_8287963999*(self: TextDocumentEditor;
     move: string; count: int = 0) =
   discard
-proc gotoDefinitionScript_8287963893*(self: TextDocumentEditor) =
+proc gotoDefinitionScript_8287965235*(self: TextDocumentEditor) =
   discard
-proc getCompletionsScript_8287963940*(self: TextDocumentEditor) =
+proc getCompletionsScript_8287965524*(self: TextDocumentEditor) =
   discard
-proc hideCompletionsScript_8287963987*(self: TextDocumentEditor) =
+proc hideCompletionsScript_8287965666*(self: TextDocumentEditor) =
   discard
-proc selectPrevCompletionScript_8287964030*(self: TextDocumentEditor) =
+proc selectPrevCompletionScript_8287965722*(self: TextDocumentEditor) =
   discard
-proc selectNextCompletionScript_8287964090*(self: TextDocumentEditor) =
+proc selectNextCompletionScript_8287965795*(self: TextDocumentEditor) =
   discard
-proc applySelectedCompletionScript_8287964150*(self: TextDocumentEditor) =
+proc applySelectedCompletionScript_8287965868*(self: TextDocumentEditor) =
   discard
 proc acceptScript_8925479553*(self: SelectorPopup) =
   discard
-proc cancelScript_8925479648*(self: SelectorPopup) =
+proc cancelScript_8925479665*(self: SelectorPopup) =
   discard
-proc prevScript_8925479697*(self: SelectorPopup) =
+proc prevScript_8925479727*(self: SelectorPopup) =
   discard
-proc nextScript_8925479758*(self: SelectorPopup) =
+proc nextScript_8925479801*(self: SelectorPopup) =
   discard
 proc moveCursorScript_8690610363*(self: AstDocumentEditor; direction: int) =
   discard
-proc moveCursorUpScript_8690610459*(self: AstDocumentEditor) =
+proc moveCursorUpScript_8690610473*(self: AstDocumentEditor) =
   discard
-proc moveCursorDownScript_8690610514*(self: AstDocumentEditor) =
+proc moveCursorDownScript_8690610541*(self: AstDocumentEditor) =
   discard
-proc moveCursorNextScript_8690610557*(self: AstDocumentEditor) =
+proc moveCursorNextScript_8690610597*(self: AstDocumentEditor) =
   discard
-proc moveCursorPrevScript_8690610607*(self: AstDocumentEditor) =
+proc moveCursorPrevScript_8690610671*(self: AstDocumentEditor) =
   discard
-proc moveCursorNextLineScript_8690610656*(self: AstDocumentEditor) =
+proc moveCursorNextLineScript_8690610743*(self: AstDocumentEditor) =
   discard
-proc moveCursorPrevLineScript_8690610725*(self: AstDocumentEditor) =
+proc moveCursorPrevLineScript_8690610834*(self: AstDocumentEditor) =
   discard
-proc selectContainingScript_8690610794*(self: AstDocumentEditor;
+proc selectContainingScript_8690610926*(self: AstDocumentEditor;
                                        container: string) =
   discard
-proc deleteSelectedScript_8690611000*(self: AstDocumentEditor) =
+proc deleteSelectedScript_8690611146*(self: AstDocumentEditor) =
   discard
-proc copySelectedScript_8690611046*(self: AstDocumentEditor) =
+proc copySelectedScript_8690611234*(self: AstDocumentEditor) =
   discard
-proc finishEditScript_8690611092*(self: AstDocumentEditor; apply: bool) =
+proc finishEditScript_8690611293*(self: AstDocumentEditor; apply: bool) =
   discard
-proc undoScript2_8690611184*(self: AstDocumentEditor) =
+proc undoScript2_8690611408*(self: AstDocumentEditor) =
   discard
-proc redoScript2_8690611253*(self: AstDocumentEditor) =
+proc redoScript2_8690611490*(self: AstDocumentEditor) =
   discard
-proc insertAfterSmartScript_8690611322*(self: AstDocumentEditor;
+proc insertAfterSmartScript_8690611572*(self: AstDocumentEditor;
                                        nodeTemplate: string) =
   discard
-proc insertAfterScript_8690611489*(self: AstDocumentEditor; nodeTemplate: string) =
+proc insertAfterScript_8690611991*(self: AstDocumentEditor; nodeTemplate: string) =
   discard
-proc insertBeforeScript_8690611624*(self: AstDocumentEditor; nodeTemplate: string) =
+proc insertBeforeScript_8690612175*(self: AstDocumentEditor; nodeTemplate: string) =
   discard
-proc insertChildScript_8690611758*(self: AstDocumentEditor; nodeTemplate: string) =
+proc insertChildScript_8690612358*(self: AstDocumentEditor; nodeTemplate: string) =
   discard
-proc replaceScript_8690611891*(self: AstDocumentEditor; nodeTemplate: string) =
+proc replaceScript_8690612540*(self: AstDocumentEditor; nodeTemplate: string) =
   discard
-proc replaceEmptyScript_8690611978*(self: AstDocumentEditor; nodeTemplate: string) =
+proc replaceEmptyScript_8690612676*(self: AstDocumentEditor; nodeTemplate: string) =
   discard
-proc replaceParentScript_8690612069*(self: AstDocumentEditor) =
+proc replaceParentScript_8690612816*(self: AstDocumentEditor) =
   discard
-proc wrapScript_8690612122*(self: AstDocumentEditor; nodeTemplate: string) =
+proc wrapScript_8690612882*(self: AstDocumentEditor; nodeTemplate: string) =
   discard
-proc editPrevEmptyScript_8690612233*(self: AstDocumentEditor) =
+proc editPrevEmptyScript_8690613054*(self: AstDocumentEditor) =
   discard
-proc editNextEmptyScript_8690612282*(self: AstDocumentEditor) =
+proc editNextEmptyScript_8690613123*(self: AstDocumentEditor) =
   discard
-proc renameScript_8690612339*(self: AstDocumentEditor) =
+proc renameScript_8690613230*(self: AstDocumentEditor) =
   discard
-proc selectPrevCompletionScript2_8690612382*(self: AstDocumentEditor) =
+proc selectPrevCompletionScript2_8690613286*(self: AstDocumentEditor) =
   discard
-proc selectNextCompletionScript2_8690612442*(self: AstDocumentEditor) =
+proc selectNextCompletionScript2_8690613359*(self: AstDocumentEditor) =
   discard
-proc applySelectedCompletionScript2_8690612502*(self: AstDocumentEditor) =
+proc applySelectedCompletionScript2_8690613432*(self: AstDocumentEditor) =
   discard
-proc cancelAndNextCompletionScript_8690612658*(self: AstDocumentEditor) =
+proc cancelAndNextCompletionScript_8690613672*(self: AstDocumentEditor) =
   discard
-proc cancelAndPrevCompletionScript_8690612701*(self: AstDocumentEditor) =
+proc cancelAndPrevCompletionScript_8690613728*(self: AstDocumentEditor) =
   discard
-proc cancelAndDeleteScript_8690612744*(self: AstDocumentEditor) =
+proc cancelAndDeleteScript_8690613784*(self: AstDocumentEditor) =
   discard
-proc moveNodeToPrevSpaceScript_8690612790*(self: AstDocumentEditor) =
+proc moveNodeToPrevSpaceScript_8690613843*(self: AstDocumentEditor) =
   discard
-proc moveNodeToNextSpaceScript_8690612937*(self: AstDocumentEditor) =
+proc moveNodeToNextSpaceScript_8690614011*(self: AstDocumentEditor) =
   discard
-proc selectPrevScript2_8690613085*(self: AstDocumentEditor) =
+proc selectPrevScript2_8690614183*(self: AstDocumentEditor) =
   discard
-proc selectNextScript2_8690613128*(self: AstDocumentEditor) =
+proc selectNextScript2_8690614240*(self: AstDocumentEditor) =
   discard
-proc openGotoSymbolPopupScript_8690613188*(self: AstDocumentEditor) =
+proc openGotoSymbolPopupScript_8690614314*(self: AstDocumentEditor) =
   discard
-proc gotoScript_8690613470*(self: AstDocumentEditor; where: string) =
+proc gotoScript_8690614645*(self: AstDocumentEditor; where: string) =
   discard
-proc runSelectedFunctionScript_8690613942*(self: AstDocumentEditor) =
+proc runSelectedFunctionScript_8690615243*(self: AstDocumentEditor) =
   discard
-proc toggleOptionScript_8690614204*(self: AstDocumentEditor; name: string) =
+proc toggleOptionScript_8690615519*(self: AstDocumentEditor; name: string) =
   discard
-proc runLastCommandScript_8690614258*(self: AstDocumentEditor; which: string) =
+proc runLastCommandScript_8690615587*(self: AstDocumentEditor; which: string) =
   discard
-proc selectCenterNodeScript_8690614308*(self: AstDocumentEditor) =
+proc selectCenterNodeScript_8690615651*(self: AstDocumentEditor) =
   discard
-proc scrollScript_8690614758*(self: AstDocumentEditor; amount: float32) =
+proc scrollScript_8690616134*(self: AstDocumentEditor; amount: float32) =
   discard
-proc scrollOutputScript_8690614812*(self: AstDocumentEditor; arg: string) =
+proc scrollOutputScript_8690616202*(self: AstDocumentEditor; arg: string) =
   discard
-proc dumpContextScript_8690614873*(self: AstDocumentEditor) =
+proc dumpContextScript_8690616277*(self: AstDocumentEditor) =
   discard
-proc setModeScript2_8690614920*(self: AstDocumentEditor; mode: string) =
+proc setModeScript2_8690616337*(self: AstDocumentEditor; mode: string) =
   discard
-proc modeScript2_8690615002*(self: AstDocumentEditor): string =
+proc modeScript2_8690616459*(self: AstDocumentEditor): string =
   discard
-proc getContextWithModeScript2_8690615051*(self: AstDocumentEditor;
+proc getContextWithModeScript2_8690616521*(self: AstDocumentEditor;
     context: string): string =
   discard
 proc scrollScript2_8992600587*(self: ModelDocumentEditor; amount: float32) =
   discard
-proc setModeScript22_8992600689*(self: ModelDocumentEditor; mode: string) =
+proc setModeScript22_8992600703*(self: ModelDocumentEditor; mode: string) =
   discard
-proc modeScript22_8992603786*(self: ModelDocumentEditor): string =
+proc modeScript22_8992603840*(self: ModelDocumentEditor): string =
   discard
-proc getContextWithModeScript22_8992603835*(self: ModelDocumentEditor;
+proc getContextWithModeScript22_8992603902*(self: ModelDocumentEditor;
     context: string): string =
   discard
-proc moveCursorLeftScript_8992603891*(self: ModelDocumentEditor;
+proc moveCursorLeftScript_8992603972*(self: ModelDocumentEditor;
                                      select: bool = false) =
   discard
-proc moveCursorRightScript_8992603971*(self: ModelDocumentEditor;
+proc moveCursorRightScript_8992604077*(self: ModelDocumentEditor;
                                       select: bool = false) =
   discard
-proc moveCursorLeftLineScript_8992604051*(self: ModelDocumentEditor;
+proc moveCursorLeftLineScript_8992604171*(self: ModelDocumentEditor;
     select: bool = false) =
   discard
-proc moveCursorRightLineScript_8992604133*(self: ModelDocumentEditor;
+proc moveCursorRightLineScript_8992604276*(self: ModelDocumentEditor;
     select: bool = false) =
   discard
-proc moveCursorLineStartScript_8992604215*(self: ModelDocumentEditor;
+proc moveCursorLineStartScript_8992604382*(self: ModelDocumentEditor;
     select: bool = false) =
   discard
-proc moveCursorLineEndScript_8992604298*(self: ModelDocumentEditor;
+proc moveCursorLineEndScript_8992604479*(self: ModelDocumentEditor;
                                         select: bool = false) =
   discard
-proc moveCursorLineStartInlineScript_8992604384*(self: ModelDocumentEditor;
+proc moveCursorLineStartInlineScript_8992604579*(self: ModelDocumentEditor;
     select: bool = false) =
   discard
-proc moveCursorLineEndInlineScript_8992604467*(self: ModelDocumentEditor;
+proc moveCursorLineEndInlineScript_8992604677*(self: ModelDocumentEditor;
     select: bool = false) =
   discard
-proc moveCursorUpScript2_8992604550*(self: ModelDocumentEditor;
+proc moveCursorUpScript2_8992604775*(self: ModelDocumentEditor;
                                     select: bool = false) =
   discard
-proc moveCursorDownScript2_8992604655*(self: ModelDocumentEditor;
+proc moveCursorDownScript2_8992604899*(self: ModelDocumentEditor;
                                       select: bool = false) =
   discard
-proc moveCursorLeftCellScript_8992604760*(self: ModelDocumentEditor;
+proc moveCursorLeftCellScript_8992605018*(self: ModelDocumentEditor;
     select: bool = false) =
   discard
-proc moveCursorRightCellScript_8992604862*(self: ModelDocumentEditor;
+proc moveCursorRightCellScript_8992605134*(self: ModelDocumentEditor;
     select: bool = false) =
   discard
-proc selectNodeScript_8992604964*(self: ModelDocumentEditor; select: bool = false) =
+proc selectNodeScript_8992605250*(self: ModelDocumentEditor; select: bool = false) =
   discard
-proc selectParentCellScript_8992605096*(self: ModelDocumentEditor) =
+proc selectParentCellScript_8992605396*(self: ModelDocumentEditor) =
   discard
-proc selectPrevPlaceholderScript_8992605152*(self: ModelDocumentEditor;
+proc selectPrevPlaceholderScript_8992605465*(self: ModelDocumentEditor;
     select: bool = false) =
   discard
-proc selectNextPlaceholderScript_8992605231*(self: ModelDocumentEditor;
+proc selectNextPlaceholderScript_8992605558*(self: ModelDocumentEditor;
     select: bool = false) =
   discard
-proc deleteLeftScript2_8992606160*(self: ModelDocumentEditor) =
+proc deleteLeftScript2_8992606501*(self: ModelDocumentEditor) =
   discard
-proc deleteRightScript2_8992606203*(self: ModelDocumentEditor) =
+proc deleteRightScript2_8992606637*(self: ModelDocumentEditor) =
   discard
-proc createNewNodeScript_8992606797*(self: ModelDocumentEditor) =
+proc createNewNodeScript_8992607244*(self: ModelDocumentEditor) =
   discard
-proc insertTextAtCursorScript_8992606881*(self: ModelDocumentEditor;
+proc insertTextAtCursorScript_8992607379*(self: ModelDocumentEditor;
     input: string): bool =
   discard
-proc undoScript22_8992607053*(self: ModelDocumentEditor) =
+proc undoScript22_8992607565*(self: ModelDocumentEditor) =
   discard
-proc redoScript22_8992607354*(self: ModelDocumentEditor) =
+proc redoScript22_8992607906*(self: ModelDocumentEditor) =
   discard
-proc toggleUseDefaultCellBuilderScript_8992607554*(self: ModelDocumentEditor) =
+proc toggleUseDefaultCellBuilderScript_8992608123*(self: ModelDocumentEditor) =
   discard
-proc showCompletionsScript_8992607597*(self: ModelDocumentEditor) =
+proc showCompletionsScript_8992608179*(self: ModelDocumentEditor) =
   discard
-proc hideCompletionsScript2_8992607640*(self: ModelDocumentEditor) =
+proc hideCompletionsScript2_8992608235*(self: ModelDocumentEditor) =
   discard
-proc selectPrevCompletionScript22_8992607687*(self: ModelDocumentEditor) =
+proc selectPrevCompletionScript22_8992608295*(self: ModelDocumentEditor) =
   discard
-proc selectNextCompletionScript22_8992607738*(self: ModelDocumentEditor) =
+proc selectNextCompletionScript22_8992608359*(self: ModelDocumentEditor) =
   discard
-proc applySelectedCompletionScript22_8992607789*(self: ModelDocumentEditor) =
+proc applySelectedCompletionScript22_8992608423*(self: ModelDocumentEditor) =
   discard
-proc getBackendScript_2197823692*(): Backend =
+proc getBackendScript_2197823683*(): Backend =
   discard
-proc saveAppStateScript_2197823851*() =
+proc saveAppStateScript_2197823854*() =
   discard
-proc requestRenderScript_2197824680*(redrawEverything: bool = false) =
+proc requestRenderScript_2197824706*(redrawEverything: bool = false) =
   discard
-proc setHandleInputsScript_2197824724*(context: string; value: bool) =
+proc setHandleInputsScript_2197824763*(context: string; value: bool) =
   discard
-proc setHandleActionsScript_2197824775*(context: string; value: bool) =
+proc setHandleActionsScript_2197824828*(context: string; value: bool) =
   discard
-proc setConsumeAllActionsScript_2197824826*(context: string; value: bool) =
+proc setConsumeAllActionsScript_2197824893*(context: string; value: bool) =
   discard
-proc setConsumeAllInputScript_2197824877*(context: string; value: bool) =
+proc setConsumeAllInputScript_2197824958*(context: string; value: bool) =
   discard
-proc clearWorkspaceCachesScript_2197825005*() =
+proc clearWorkspaceCachesScript_2197825100*() =
   discard
-proc openGithubWorkspaceScript_2197825046*(user: string; repository: string;
+proc openGithubWorkspaceScript_2197825157*(user: string; repository: string;
     branchOrHash: string) =
   discard
-proc openAbsytreeServerWorkspaceScript_2197825104*(url: string) =
+proc openAbsytreeServerWorkspaceScript_2197825234*(url: string) =
   discard
-proc openLocalWorkspaceScript_2197825148*(path: string) =
+proc openLocalWorkspaceScript_2197825291*(path: string) =
   discard
-proc getFlagScript2_2197825193*(flag: string; default: bool = false): bool =
+proc getFlagScript2_2197825349*(flag: string; default: bool = false): bool =
   discard
-proc setFlagScript2_2197825259*(flag: string; value: bool) =
+proc setFlagScript2_2197825429*(flag: string; value: bool) =
   discard
-proc toggleFlagScript_2197825365*(flag: string) =
+proc toggleFlagScript_2197825555*(flag: string) =
   discard
-proc setOptionScript_2197825409*(option: string; value: JsonNode) =
+proc setOptionScript_2197825612*(option: string; value: JsonNode) =
   discard
-proc quitScript_2197825494*() =
+proc quitScript_2197825716*() =
   discard
-proc changeFontSizeScript_2197825531*(amount: float32) =
+proc changeFontSizeScript_2197825765*(amount: float32) =
   discard
-proc changeLayoutPropScript_2197825575*(prop: string; change: float32) =
+proc changeLayoutPropScript_2197825822*(prop: string; change: float32) =
   discard
-proc toggleStatusBarLocationScript_2197825893*() =
+proc toggleStatusBarLocationScript_2197826154*() =
   discard
-proc createViewScript_2197825930*() =
+proc createViewScript_2197826203*() =
   discard
-proc closeCurrentViewScript_2197825972*() =
+proc closeCurrentViewScript_2197826285*() =
   discard
-proc moveCurrentViewToTopScript_2197826054*() =
+proc moveCurrentViewToTopScript_2197826379*() =
   discard
-proc nextViewScript_2197826142*() =
+proc nextViewScript_2197826479*() =
   discard
-proc prevViewScript_2197826185*() =
+proc prevViewScript_2197826534*() =
   discard
-proc moveCurrentViewPrevScript_2197826231*() =
+proc moveCurrentViewPrevScript_2197826592*() =
   discard
-proc moveCurrentViewNextScript_2197826291*() =
+proc moveCurrentViewNextScript_2197826664*() =
   discard
-proc setLayoutScript_2197826348*(layout: string) =
+proc setLayoutScript_2197826733*(layout: string) =
   discard
-proc commandLineScript_2197826428*(initialValue: string = "") =
+proc commandLineScript_2197826826*(initialValue: string = "") =
   discard
-proc exitCommandLineScript_2197826476*() =
+proc exitCommandLineScript_2197826887*() =
   discard
-proc executeCommandLineScript_2197826517*(): bool =
+proc executeCommandLineScript_2197826940*(): bool =
   discard
-proc writeFileScript_2197826687*(path: string = ""; app: bool = false) =
+proc writeFileScript_2197827122*(path: string = ""; app: bool = false) =
   discard
-proc loadFileScript_2197826750*(path: string = "") =
+proc loadFileScript_2197827199*(path: string = "") =
   discard
-proc openFileScript_2197826825*(path: string; app: bool = false) =
+proc openFileScript_2197827287*(path: string; app: bool = false) =
   discard
-proc removeFromLocalStorageScript_2197826995*() =
+proc removeFromLocalStorageScript_2197827471*() =
   discard
-proc loadThemeScript_2197827032*(name: string) =
+proc loadThemeScript_2197827520*(name: string) =
   discard
-proc chooseThemeScript_2197827112*() =
+proc chooseThemeScript_2197827613*() =
   discard
-proc chooseFileScript_2197827745*(view: string = "new") =
+proc chooseFileScript_2197828311*(view: string = "new") =
   discard
-proc setGithubAccessTokenScript_2197828039*(token: string) =
+proc setGithubAccessTokenScript_2197828874*(token: string) =
   discard
-proc reloadConfigScript_2197828083*() =
+proc reloadConfigScript_2197828931*() =
   discard
-proc logOptionsScript_2197828161*() =
+proc logOptionsScript_2197829022*() =
   discard
-proc clearCommandsScript_2197828198*(context: string) =
+proc clearCommandsScript_2197829071*(context: string) =
   discard
-proc getAllEditorsScript_2197828242*(): seq[EditorId] =
+proc getAllEditorsScript_2197829128*(): seq[EditorId] =
   discard
-proc setModeScript222_2197828544*(mode: string) =
+proc setModeScript222_2197829453*(mode: string) =
   discard
-proc modeScript222_2197828620*(): string =
+proc modeScript222_2197829568*(): string =
   discard
-proc getContextWithModeScript222_2197828663*(context: string): string =
+proc getContextWithModeScript222_2197829623*(context: string): string =
   discard
-proc scriptRunActionScript_2197828940*(action: string; arg: string) =
+proc scriptRunActionScript_2197829913*(action: string; arg: string) =
   discard
-proc scriptLogScript_2197828969*(message: string) =
+proc scriptLogScript_2197829955*(message: string) =
   discard
-proc addCommandScriptScript_2197828993*(context: string; keys: string;
+proc addCommandScriptScript_2197829991*(context: string; keys: string;
                                        action: string; arg: string = "") =
   discard
-proc removeCommandScript_2197829059*(context: string; keys: string) =
+proc removeCommandScript_2197830073*(context: string; keys: string) =
   discard
-proc getActivePopupScript_2197829110*(): EditorId =
+proc getActivePopupScript_2197830138*(): EditorId =
   discard
-proc getActiveEditorScript_2197829140*(): EditorId =
+proc getActiveEditorScript_2197830179*(): EditorId =
   discard
-proc getActiveEditor2Script_2197829164*(): EditorId =
+proc getActiveEditor2Script_2197830214*(): EditorId =
   discard
-proc loadCurrentConfigScript_2197829207*() =
+proc loadCurrentConfigScript_2197830269*() =
   discard
-proc sourceCurrentDocumentScript_2197829244*() =
+proc sourceCurrentDocumentScript_2197830318*() =
   discard
-proc getEditorScript_2197829281*(index: int): EditorId =
+proc getEditorScript_2197830367*(index: int): EditorId =
   discard
-proc scriptIsTextEditorScript_2197829312*(editorId: EditorId): bool =
+proc scriptIsTextEditorScript_2197830410*(editorId: EditorId): bool =
   discard
-proc scriptIsAstEditorScript_2197829372*(editorId: EditorId): bool =
+proc scriptIsAstEditorScript_2197830482*(editorId: EditorId): bool =
   discard
-proc scriptIsModelEditorScript_2197829432*(editorId: EditorId): bool =
+proc scriptIsModelEditorScript_2197830554*(editorId: EditorId): bool =
   discard
-proc scriptRunActionForScript_2197829492*(editorId: EditorId; action: string;
+proc scriptRunActionForScript_2197830626*(editorId: EditorId; action: string;
     arg: string) =
   discard
-proc scriptInsertTextIntoScript_2197829584*(editorId: EditorId; text: string) =
+proc scriptInsertTextIntoScript_2197830732*(editorId: EditorId; text: string) =
   discard
-proc scriptTextEditorSelectionScript_2197829641*(editorId: EditorId): Selection =
+proc scriptTextEditorSelectionScript_2197830802*(editorId: EditorId): Selection =
   discard
-proc scriptSetTextEditorSelectionScript_2197829702*(editorId: EditorId;
+proc scriptSetTextEditorSelectionScript_2197830879*(editorId: EditorId;
     selection: Selection) =
   discard
-proc scriptTextEditorSelectionsScript_2197829763*(editorId: EditorId): seq[
+proc scriptTextEditorSelectionsScript_2197830953*(editorId: EditorId): seq[
     Selection] =
   discard
-proc scriptSetTextEditorSelectionsScript_2197829832*(editorId: EditorId;
+proc scriptSetTextEditorSelectionsScript_2197831034*(editorId: EditorId;
     selections: seq[Selection]) =
   discard
-proc scriptGetTextEditorLineScript_2197829893*(editorId: EditorId; line: int): string =
+proc scriptGetTextEditorLineScript_2197831108*(editorId: EditorId; line: int): string =
   discard
-proc scriptGetTextEditorLineCountScript_2197829964*(editorId: EditorId): int =
+proc scriptGetTextEditorLineCountScript_2197831192*(editorId: EditorId): int =
   discard
-proc scriptGetOptionIntScript_2197830039*(path: string; default: int): int =
+proc scriptGetOptionIntScript_2197831279*(path: string; default: int): int =
   discard
-proc scriptGetOptionFloatScript_2197830079*(path: string; default: float): float =
+proc scriptGetOptionFloatScript_2197831333*(path: string; default: float): float =
   discard
-proc scriptGetOptionBoolScript_2197830177*(path: string; default: bool): bool =
+proc scriptGetOptionBoolScript_2197831445*(path: string; default: bool): bool =
   discard
-proc scriptGetOptionStringScript_2197830217*(path: string; default: string): string =
+proc scriptGetOptionStringScript_2197831499*(path: string; default: string): string =
   discard
-proc scriptSetOptionIntScript_2197830257*(path: string; value: int) =
+proc scriptSetOptionIntScript_2197831553*(path: string; value: int) =
   discard
-proc scriptSetOptionFloatScript_2197830325*(path: string; value: float) =
+proc scriptSetOptionFloatScript_2197831640*(path: string; value: float) =
   discard
-proc scriptSetOptionBoolScript_2197830393*(path: string; value: bool) =
+proc scriptSetOptionBoolScript_2197831727*(path: string; value: bool) =
   discard
-proc scriptSetOptionStringScript_2197830461*(path: string; value: string) =
+proc scriptSetOptionStringScript_2197831814*(path: string; value: string) =
   discard
-proc scriptSetCallbackScript_2197830529*(path: string; id: int) =
+proc scriptSetCallbackScript_2197831901*(path: string; id: int) =
   discard

@@ -250,9 +250,7 @@ when defined(js):
       if not memory.isUndefined:
         return js_fd_write(context, fd, iovs, len, ret)
 
-      return 0
-
-proc newWasmModule*(path: string, importsOld: seq[WasmImports]): Future[WasmModule] {.async.} =
+proc newWasmModule*(path: string, importsOld: seq[WasmImports]): Future[Option[WasmModule]] {.async.} =
   when defined(js):
     proc loadWasmModule(path: cstring, importObject: JsObject): Future[JsObject] {.importc.}
 
@@ -301,7 +299,7 @@ proc newWasmModule*(path: string, importsOld: seq[WasmImports]): Future[WasmModu
     var res = WasmModule(env: module, memory: context, myAlloc: myAlloc, myDealloc: myDealloc)
     for imp in imports.mitems:
       imp.module = res
-    return res
+    return res.some
 
   else:
     var allFunctions: seq[WasmHostProc] = @[]
@@ -309,12 +307,16 @@ proc newWasmModule*(path: string, importsOld: seq[WasmImports]): Future[WasmModu
       allFunctions.add imp.functions
 
     let res = WasmModule()
-    res.env = loadWasmEnv(readFile(path), hostProcs=allFunctions, loadAlloc=true, allocName="my_alloc", deallocName="my_dealloc", userdata=cast[pointer](res))
+
+    try:
+      res.env = loadWasmEnv(readFile(path), hostProcs=allFunctions, loadAlloc=true, allocName="my_alloc", deallocName="my_dealloc", userdata=cast[pointer](res))
+    except CatchableError:
+      return WasmModule.none
 
     var imports = @importsOld
     for imp in imports.mitems:
       imp.module = res
-    return res
+    return res.some
 
 macro createWasmWrapper(module: WasmModule, returnType: typedesc, typ: typedesc, body: untyped): untyped =
   var params: seq[NimNode] = @[]
@@ -383,18 +385,21 @@ proc findFunction*(module: WasmModule, name: string, R: typedesc, T: typedesc): 
   when defined(js):
     let function = module.env["instance"]["exports"][name.cstring]
     if function.isUndefined:
-      return
+      return T.none
 
     let wrapper = createWasmWrapper(module, R, T):
       function.call(nil, `parameters`).to(`returnType`)
 
     return wrapper.some
   else:
-    let f = module.env.findFunction(name)
-    if f.isNil:
-      return
+    try:
+      let f = module.env.findFunction(name)
+      if f.isNil:
+        return T.none
 
-    let wrapper = createWasmWrapper(module, R, T):
-      f.call(`returnType`, `parameters`)
+      let wrapper = createWasmWrapper(module, R, T):
+        f.call(`returnType`, `parameters`)
 
-    return wrapper.some
+      return wrapper.some
+    except CatchableError:
+      return T.none

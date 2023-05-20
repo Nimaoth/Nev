@@ -1,6 +1,6 @@
 
 
-import std/[json, strformat, strutils, tables, options, macros, macrocache, typetraits]
+import std/[json, strformat, strutils, tables, options, macros, genasts, macrocache, typetraits]
 
 import fusion/matching
 import util, custom_logger
@@ -14,10 +14,14 @@ const typeWrapper = CacheTable"TypeWrapper"         # Maps from type name (refer
 const functions = CacheTable"DispatcherFunctions"   # Maps from scope name to list of tuples of name and wrapper
 const injectors = CacheTable"Injectors"             # Maps from type name (referring to nim type) to function
 const exposedFunctions* = CacheTable"ExposedFunctions" # Maps from type name (referring to nim type) to type name of the api type (from scripting_api)
+const wasmImportedFunctions* = CacheTable"WasmImportedFunctions"
 
 template varargs*() {.pragma.}
 
 template nodispatch*() {.pragma.}
+  ## Don't add this function to the dispatcher, and don't create a json wrapper
+
+template nojsonwrapper*() {.pragma.}
   ## Don't add this function to the dispatcher, and don't create a json wrapper
 
 macro addTypeMap*(source: untyped, wrapper: typed, mapperFunction: typed) =
@@ -26,6 +30,14 @@ macro addTypeMap*(source: untyped, wrapper: typed, mapperFunction: typed) =
 
 macro addInjector*(name: untyped, function: typed) =
   injectors[$name] = function
+
+macro addWasmImportedFunction*(moduleName: static string, name: untyped, thisSide: untyped, wasmSide: untyped) =
+  let n = nnkStmtList.newTree(name, thisSide, wasmSide)
+  for name, _ in wasmImportedFunctions:
+    if name == moduleName:
+      wasmImportedFunctions[name].add n
+      return
+  wasmImportedFunctions[moduleName] = nnkStmtList.newTree(n)
 
 macro addFunction(name: untyped, wrapper: typed, moduleName: static string) =
   ## Registers the nim function `name` in the module `moduleName`. `script` is a symbol referring
@@ -77,40 +89,63 @@ proc returnType(def: NimNode): Option[NimNode] =
   return if def[3][0].kind != nnkEmpty: def[3][0].some else: NimNode.none
 
 when defined(js):
-proc createJavascriptWrapper(moduleName: string, def: NimNode, scriptFunctionSym: NimNode, jsFunctionName: string): NimNode =
-  let jsPrototypeName = moduleName.replace(".", "_") & "_prototype"
+  proc createJavascriptWrapper(moduleName: string, def: NimNode, scriptFunctionSym: NimNode, jsFunctionName: string): NimNode =
+    let jsPrototypeName = moduleName.replace(".", "_") & "_prototype"
 
-  var paramsString = ""
-  var argsString = ""
+    var paramsString = ""
+    var argsString = ""
 
-  if def[3].len > 1 and def.argName(0).repr == "self":
-    argsString = "this"
+    if def[3].len > 1 and def.argName(0).repr == "self":
+      argsString = "this"
 
-  for i, arg in def[3][1..^1]:
-    let name = def.argName(i).repr & "_"
-    if name == "self_":
-      continue
+    for i, arg in def[3][1..^1]:
+      let name = def.argName(i).repr & "_"
+      if name == "self_":
+        continue
 
-    if argsString.len > 0: argsString.add ", "
-    if paramsString.len > 0: paramsString.add ", "
+      if argsString.len > 0: argsString.add ", "
+      if paramsString.len > 0: paramsString.add ", "
 
-    paramsString.add name
-    paramsString.add " /* : "
-    paramsString.add arg[1].repr
-    paramsString.add " */"
+      paramsString.add name
+      paramsString.add " /* : "
+      paramsString.add arg[1].repr
+      paramsString.add " */"
 
-    if arg[1].repr == "string":
-      argsString.add fmt"{name} == undefined ? undefined : cstrToNimstr({name})"
-    else:
-      argsString.add name
+      if arg[1].repr == "string":
+        argsString.add fmt"{name} == undefined ? undefined : cstrToNimstr({name})"
+      else:
+        argsString.add name
 
-  var conversionFunction = ""
-  if def.returnType.getSome(t) and t.repr == "string":
-    conversionFunction = "toJSStr"
+    var conversionFunction = ""
+    if def.returnType.getSome(t) and t.repr == "string":
+      conversionFunction = "toJSStr"
 
-  return quote do:
-    {.emit: [`jsPrototypeName`, """.""", `jsFunctionName`, """ = function(""", `paramsString`, """) { return """, `conversionFunction`, """(""", `scriptFunctionSym`, """(""", `argsString`, """));};"""].}
-    # """
+    return quote do:
+      {.emit: [`jsPrototypeName`, """.""", `jsFunctionName`, """ = function(""", `paramsString`, """) { return """, `conversionFunction`, """(""", `scriptFunctionSym`, """(""", `argsString`, """));};"""].}
+      # """
+
+proc generateUniqueName*(moduleName: string, def: NimNode): string =
+  result = moduleName
+  result.add "_"
+
+  if def[0].kind == nnkPostfix:
+    result.add def[0][1].strVal
+  else:
+    result.add def[0].strVal
+
+  let argCount = def[3].len - 1
+  if def.returnType.getSome(returnType):
+    result.add "_"
+    result.add returnType.repr
+  else:
+    result.add "_void"
+
+  for i in 0..<argCount:
+    let originalArgumentType = def.argType i
+    result.add "_"
+    result.add originalArgumentType.repr
+
+  return result.multiReplace(("[", "_"), ("]", "_"), (".", "_")).multiReplace(("__", "_")).multiReplace(("__", "_")).multiReplace(("__", "_")).strip(chars={'_'})
 
 macro expose*(moduleName: static string, def: untyped): untyped =
   if not exposeScriptingApi:
@@ -122,6 +157,8 @@ macro expose*(moduleName: static string, def: untyped): untyped =
 
   # echo def.repr
   # echo def.treeRepr
+
+  let uniqueName = generateUniqueName(moduleName, def)
 
   let functionName = if def[0].kind == nnkPostfix: def[0][1] else: def[0]
   let argCount = def[3].len - 1
@@ -176,6 +213,17 @@ macro expose*(moduleName: static string, def: untyped): untyped =
   scriptFunctionWrapper[0] = nnkPostfix.newTree(ident"*", pureFunctionName)
   var callScriptFuncFromScriptFuncWrapper = nnkCall.newTree(scriptFunctionSym)
 
+  # Wrapper function for wasm code in the nim wasm wrapper library
+  let jsonStringWrapperFunctionName = ident(uniqueName & "_wasm")
+  var jsonStringWrapperFunctionWasm = def.copy
+  jsonStringWrapperFunctionWasm[0] = nnkPostfix.newTree(ident"*", pureFunctionName)
+  var callJsonStringWrapperFunctionWasmArr = genSym(nskVar, "argsJson")
+  var callJsonStringWrapperFunctionWasmRes = genSym(nskVar, "res")
+  var callJsonStringWrapperFunctionWasm = genAst(f=jsonStringWrapperFunctionName, res=callJsonStringWrapperFunctionWasmRes, argsJson=callJsonStringWrapperFunctionWasmArr, argsJsonString="argsJsonString".ident):
+    var argsJson = newJArray()
+    let argsJsonString = $argsJson
+    let res {.used.} = f(argsJsonString.cstring)
+
   proc removePragmas(node: var NimNode) =
     for param in node[3]:
       case param
@@ -184,6 +232,7 @@ macro expose*(moduleName: static string, def: untyped): untyped =
 
   removePragmas(scriptFunction)
   removePragmas(scriptFunctionWrapper)
+  removePragmas(jsonStringWrapperFunctionWasm)
 
   var callScriptFuncFromJson = nnkCall.newTree(scriptFunctionSym)
 
@@ -213,6 +262,8 @@ macro expose*(moduleName: static string, def: untyped): untyped =
     let isVarargs = newLit(def.isVarargs(i))
     # echo fmt"varargs {i}, {index}: ", isVarargs, ", ", def
 
+    let jsonStringWrapperArgName = jsonStringWrapperFunctionWasm.argName(i)
+
     # Check if there is an entry in the type map and override mappedArgumentType if so
     # Also replace the argument type in the scriptFunction
     for source, target in typeWrapper.pairs:
@@ -220,6 +271,7 @@ macro expose*(moduleName: static string, def: untyped): untyped =
         mappedArgumentType = target
         scriptFunction[3][i + 1][1] = target
         scriptFunctionWrapper[3][i + 1][1] = target
+        jsonStringWrapperFunctionWasm[3][i + 1][1] = target
         break
 
     # The argument for the call to scriptFunction in the wrapper
@@ -269,6 +321,7 @@ macro expose*(moduleName: static string, def: untyped): untyped =
         wasInjected = true
         scriptFunction[3].del(i + 1)
         scriptFunctionWrapper[3].del(i + 1)
+        jsonStringWrapperFunctionWasm[3].del(i + 1)
         callFromScriptArg = quote do:
           block:
             let r = `function`()
@@ -280,6 +333,15 @@ macro expose*(moduleName: static string, def: untyped): untyped =
     if not wasInjected:
       callScriptFuncFromJson.insert(1, resWrapper)
       callScriptFuncFromScriptFuncWrapper.insert(1, scriptFunctionWrapper.argName(i))
+
+      let callJsonStringWrapperFunctionWasmArg = genAst(argsJson=callJsonStringWrapperFunctionWasmArr, originalArgumentType, isVarargs, arg = jsonStringWrapperFunctionWasm.argName(i)):
+        argsJson.add block:
+          when originalArgumentType is JsonNode:
+            arg
+          else:
+            arg.toJson()
+      callJsonStringWrapperFunctionWasm.insert(1, callJsonStringWrapperFunctionWasmArg)
+
     callImplFromScriptFunction.insert(1, callFromScriptArg)
 
     callDefFromDefJsWrapper.insert(1, def.argName(i))
@@ -304,6 +366,13 @@ macro expose*(moduleName: static string, def: untyped): untyped =
   let scriptFunctionWrapperRepr = scriptFunctionWrapper.repr
   let lineNumber = def.lineInfoObj.line
 
+  if returnType.isSome:
+    let uiae = genAst(res=callJsonStringWrapperFunctionWasmRes, resStr="resStr".ident):
+      result = parseJson($res).jsonTo(typeof(result))
+    callJsonStringWrapperFunctionWasm.add uiae
+
+  jsonStringWrapperFunctionWasm[6] = callJsonStringWrapperFunctionWasm
+
   result = quote do:
     `def`
 
@@ -324,21 +393,44 @@ macro expose*(moduleName: static string, def: untyped): untyped =
         # This adds the script function to nimscripter so it can generate bindings for the nim interpreter
         addToCache(`scriptFunctionSym`, "myImpl")
 
-  # Only add the json wrapper and dispatch function if the {.nodispatch.} is not present
-  if not def.hasCustomPragma("nodispatch"):
+  if not def.hasCustomPragma("nojsonwrapper"):
+    let jsonStringWrapperFunctionReturnValue = genSym(nskVar, functionName.strVal & "WasmReturnValue")
+    let arg = genSym(nskParam, "arg")
+
     result.add quote do:
       proc `jsonWrapperFunctionName`*(`jsonArg`: JsonNode): JsonNode {.nimcall, used.} =
         result = newJNull()
-        try:
-          `callScriptFuncFromJsonWithReturn`
-        except CatchableError:
-          let name = `pureFunctionNameStr`
-          echo "[editor] Failed to run function " & name & fmt": Invalid arguments: {getCurrentExceptionMsg()}"
-          echo getCurrentException().getStackTrace
+        # try:
+        `callScriptFuncFromJsonWithReturn`
+        # except CatchableError:
+        #   let name = `pureFunctionNameStr`
+        #   echo "[editor] Failed to run function " & name & fmt": Invalid arguments: {getCurrentExceptionMsg()}"
+        #   echo getCurrentException().getStackTrace
 
+      var `jsonStringWrapperFunctionReturnValue`: string = ""
+      proc `jsonStringWrapperFunctionName`*(arg: cstring): cstring {.exportc, used.} =
+        # try:
+        let argJson = parseJson($arg)
+        `jsonStringWrapperFunctionReturnValue` = $`jsonWrapperFunctionName`(argJson)
+        return `jsonStringWrapperFunctionReturnValue`.cstring
+        # except CatchableError:
+        #   let name = `pureFunctionNameStr`
+        #   echo "[editor] Failed to run function " & name & fmt": Invalid arguments: {getCurrentExceptionMsg()}"
+        #   echo getCurrentException().getStackTrace
+
+      static:
+        addWasmImportedFunction(`moduleName`, `jsonStringWrapperFunctionName`, `jsonStringWrapperFunctionWasm`):
+          proc `jsonStringWrapperFunctionName`(`arg`: cstring): cstring {.importc.}
+
+
+  # Only add the json wrapper and dispatch function if the {.nodispatch.} is not present
+  if not def.hasCustomPragma("nodispatch") or not def.hasCustomPragma("nojsonwrapper"):
+    result.add quote do:
       static:
         # This makes the function dispatchable
         addFunction(`pureFunctionName`, `jsonWrapperFunctionName`, `moduleName`)
+
+    # echo result[result.len - 1].repr
 
 
 macro genDispatcher*(moduleName: static string): untyped =
