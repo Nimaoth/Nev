@@ -217,9 +217,10 @@ macro expose*(moduleName: static string, def: untyped): untyped =
   let jsonStringWrapperFunctionName = ident(uniqueName & "_wasm")
   var jsonStringWrapperFunctionWasm = def.copy
   jsonStringWrapperFunctionWasm[0] = nnkPostfix.newTree(ident"*", pureFunctionName)
-  var callJsonStringWrapperFunctionWasmArr = genSym(nskVar, "argsJson")
-  var callJsonStringWrapperFunctionWasmRes = genSym(nskVar, "res")
-  var callJsonStringWrapperFunctionWasm = genAst(f=jsonStringWrapperFunctionName, res=callJsonStringWrapperFunctionWasmRes, argsJson=callJsonStringWrapperFunctionWasmArr, argsJsonString="argsJsonString".ident):
+  var callJsonStringWrapperFunctionWasmArr = ident"argsJson"
+  var callJsonStringWrapperFunctionWasmRes = ident"res"
+  var callJsonStringWrapperFunctionWasm = genAst(f=jsonStringWrapperFunctionName, res=callJsonStringWrapperFunctionWasmRes, argsJson=callJsonStringWrapperFunctionWasmArr,
+      argsJsonString="argsJsonString".ident):
     var argsJson = newJArray()
     let argsJsonString = $argsJson
     let res {.used.} = f(argsJsonString.cstring)
@@ -395,7 +396,7 @@ macro expose*(moduleName: static string, def: untyped): untyped =
 
   if not def.hasCustomPragma("nojsonwrapper"):
     let jsonStringWrapperFunctionReturnValue = genSym(nskVar, functionName.strVal & "WasmReturnValue")
-    let arg = genSym(nskParam, "arg")
+    let arg = ident"arg"
 
     result.add quote do:
       proc `jsonWrapperFunctionName`*(`jsonArg`: JsonNode): JsonNode {.nimcall, used.} =
