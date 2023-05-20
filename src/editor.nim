@@ -441,7 +441,7 @@ proc newEditor*(backend: api.Backend, platform: Platform): Editor =
 
   var state = EditorState()
   try:
-    state = fs.loadApplicationFile("config.json").parseJson.jsonTo(EditorState, JOptions(allowMissingKeys: true, allowExtraKeys: true))
+    state = fs.loadApplicationFile("./config/config.json").parseJson.jsonTo(EditorState, JOptions(allowMissingKeys: true, allowExtraKeys: true))
     self.setTheme(state.theme)
     self.loadedFontSize = state.fontSize.float
     self.platform.fontSize = state.fontSize.float
@@ -450,7 +450,7 @@ proc newEditor*(backend: api.Backend, platform: Platform): Editor =
     if state.fontItalic.len > 0: self.fontItalic = state.fontItalic
     if state.fontBoldItalic.len > 0: self.fontBoldItalic = state.fontBoldItalic
 
-    self.options = fs.loadApplicationFile("options.json").parseJson
+    self.options = fs.loadApplicationFile("./config/options.json").parseJson
     # logger.log(lvlInfo, fmt"Restoring options: {self.options.pretty}")
 
   except CatchableError:
@@ -478,7 +478,7 @@ proc newEditor*(backend: api.Backend, platform: Platform): Editor =
     when defined(js):
       self.scriptContext = new ScriptContextJs
     else:
-      self.scriptContext = createScriptContext("./absytree_config_wasm.nim", searchPaths)
+      self.scriptContext = createScriptContext("./config/absytree_config_wasm.nim", searchPaths)
 
     self.wasmScriptContext = new ScriptContextWasm
 
@@ -588,8 +588,8 @@ proc saveAppState*(self: Editor) {.expose("editor").} =
         )
 
   let serialized = state.toJson
-  fs.saveApplicationFile("config.json", serialized.pretty)
-  fs.saveApplicationFile("options.json", self.options.pretty)
+  fs.saveApplicationFile("./config/config.json", serialized.pretty)
+  fs.saveApplicationFile("./config/options.json", self.options.pretty)
 
 proc requestRender*(self: Editor, redrawEverything: bool = false) {.expose("editor").} =
   self.platform.requestRender(redrawEverything)
@@ -1190,7 +1190,7 @@ proc loadCurrentConfig*(self: Editor) {.expose("editor").} =
   ## Javascript backend only!
   ## Opens the config file in a new view.
   when defined(js):
-    self.createView(newTextDocument("config.js", fs.loadApplicationFile("config.js"), true))
+    self.createView(newTextDocument("./config/absytree_config.js", fs.loadApplicationFile("./config/absytree_config.js"), true))
 
 proc sourceCurrentDocument*(self: Editor) {.expose("editor").} =
   ## Javascript backend only!

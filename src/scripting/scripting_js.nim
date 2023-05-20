@@ -21,16 +21,16 @@ proc confirmJs(msg: cstring): bool {.importjs("confirm(#)").}
 proc hasLocalStorage(key: cstring): bool {.importjs("(window.localStorage.getItem(#) !== null)").}
 
 proc initAsync(self: ScriptContextJs): Future[void] {.async.} =
-  discard await loadScriptJs("scripting_runtime.js")
+  discard await loadScriptJs("./scripting_runtime.js")
 
-  const configFilePath = "config.js"
+  const configFilePath = "./config/absytree_config.js"
   if hasLocalStorage(configFilePath):
     let config = fs.loadApplicationFile(configFilePath)
 
     let contentStrict = "\"use strict\";\n" & config
     echo contentStrict
 
-    let allowEval = confirmJs("You are about to eval() some javascript (config.js). Look in the console to see what's in there.")
+    let allowEval = confirmJs("You are about to eval() some javascript (./config/absytree_config.js). Look in the console to see what's in there.")
 
     if allowEval:
       # evalJs(contentStrict.cstring)
@@ -38,7 +38,7 @@ proc initAsync(self: ScriptContextJs): Future[void] {.async.} =
     else:
       logger.log(lvlWarn, fmt"Did not load config file because user declined.")
   else:
-    discard await loadScriptJs("config.js")
+    discard await loadScriptJs("./config/absytree_config.js")
 
 method init*(self: ScriptContextJs, path: string) =
   asyncCheck self.initAsync()

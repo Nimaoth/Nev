@@ -56,7 +56,7 @@ method init*(self: ScriptContextWasm, path: string) =
       else:
         logger.log(lvlError, fmt"Failed to create wasm module for file {file}")
 
-  asyncCheck loadModules("absytree_config_wasm.wasm")
+  asyncCheck loadModules("./config/absytree_config_wasm.wasm")
 
 method reload*(self: ScriptContextWasm) = discard
 
