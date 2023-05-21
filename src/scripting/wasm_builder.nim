@@ -812,9 +812,14 @@ when isMainModule:
 
   builder.funcs.add(WasmFunc(
     typeIdx: 2.WasmTypeIdx,
-    locals: @[],
+    locals: @[I32, I64, F32, F64, FuncRef, ExternRef],
     body: WasmExpr(instr: @[
       WasmInstr(kind: I32Const, i32Const: 456),
+      WasmInstr(kind: LocalGet, localIdx: 1.WasmLocalIdx),
+      WasmInstr(kind: I32WrapI64),
+      WasmInstr(kind: I32Sub),
+      WasmInstr(kind: LocalTee, localIdx: 0.WasmLocalIdx),
+
       WasmInstr(kind: Drop),
     ]),
   ))
