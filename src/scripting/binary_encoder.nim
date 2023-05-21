@@ -1,4 +1,4 @@
-import std/[typetraits, bitops, macros, genasts, sequtils]
+import std/[macros, genasts]
 type
   BinaryEncoder* = object
     buffer*: seq[byte]
