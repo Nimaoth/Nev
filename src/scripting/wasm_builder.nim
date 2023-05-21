@@ -1,5 +1,5 @@
 
-import std/[macros, macrocache, strutils, json, options, tables, genasts, sequtils]
+import std/[macrocache, strutils, json, options, tables, genasts, sequtils]
 import binary_encoder
 
 type
@@ -584,20 +584,6 @@ proc generateStartSection(self: WasmBuilder, encoder: var BinaryEncoder) =
     generateSection(self, encoder, 8):
       e.writeLength(self.start.get.start.int)
 
-  # WasmElementModeKind* {.pure.} = enum Passive, Active, Declarative
-  # WasmElementMode* = object
-  #   case kind*: WasmElementModeKind
-  #   of Active:
-  #     tableIdx*: WasmTableIdx
-  #     offset*: WasmExpr
-  #   else:
-  #     discard
-
-  # WasmElem* = object
-  #   typ*: WasmRefType
-  #   init*: seq[WasmExpr]
-  #   mode*: WasmElementMode
-
 proc generateElementSection(self: WasmBuilder, encoder: var BinaryEncoder) =
   ## https://webassembly.github.io/spec/core/binary/modules.html#element-section
   if self.elems.len > 0:
@@ -729,8 +715,6 @@ proc generateDataSection(self: WasmBuilder, encoder: var BinaryEncoder) =
             e.write(byte, 2)
             e.writeLength(v.mode.memIdx.int)
           self.writeExpr(e, v.mode.offset)
-          # for instr in v.mode.offset.instr.mitems:
-          #   self.writeInstr(e, instr)
           e.writeLength(v.init.len)
           e.buffer.add v.init
 
@@ -741,7 +725,7 @@ proc generateDataCountSection(self: WasmBuilder, encoder: var BinaryEncoder) =
 
 proc generateBinary*(self: WasmBuilder): seq[byte] =
   var encoder = BinaryEncoder()
-  encoder.write(uint32, 0x6D736100) # version
+  encoder.write(uint32, 0x6D736100) # magic number
   encoder.write(uint32, 1) # version
 
   self.generateTypeSection(encoder)
