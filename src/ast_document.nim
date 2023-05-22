@@ -2081,7 +2081,7 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
 
   # Emit this to set the editor prototype to editor_ast_prototype, which needs to be set up before calling this
   when defined(js):
-    {.emit: [editor, " = createWithPrototype(editor_ast_prototype, ", editor, ");"].}
+    {.emit: [editor, " = jsCreateWithPrototype(editor_ast_prototype, ", editor, ");"].}
     # This " is here to fix syntax highlighting
 
   editor.init()
