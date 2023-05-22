@@ -2140,7 +2140,9 @@ proc findContainingFunction(node: AstNode): Option[AstNode] =
     return node.parent.findContainingFunction()
   return AstNode.none
 
-proc runSelectedFunction*(self: ModelDocumentEditor) {.expose("editor.model").} =
+import scripting/wasm
+
+proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.} =
   let function = self.cursor.node.findContainingFunction()
   if function.isNone:
     logger.log(lvlInfo, fmt"Not inside function")
@@ -2162,11 +2164,33 @@ proc runSelectedFunction*(self: ModelDocumentEditor) {.expose("editor.model").} 
   defer:
     logger.log(lvlInfo, fmt"Running function took {timer.elapsed.ms} ms")
 
-
   var compiler = newBaseLanguageWasmCompiler()
   let binary = compiler.compileToBinary(function.get)
   if self.document.workspace.getSome(workspace):
-    asyncCheck workspace.saveFile("jstest.wasm", binary.toArrayBuffer)
+    discard workspace.saveFile("jstest.wasm", binary.toArrayBuffer)
+
+  proc test(a: int32) =
+    echo "test ", a
+
+  var imp = WasmImports(namespace: "env")
+  imp.addFunction("test", test)
+
+  let module = await newWasmModule(binary.toArrayBuffer, @[imp])
+  if module.isNone:
+    echo "Failed to load module"
+    return
+
+  if module.get.findFunction("test", int32, proc(): int32).getSome(f):
+    echo "call test"
+    let result = f()
+    echo "Result: ", result
+
+  if module.get.findFunction("test", void, proc(): void).getSome(f):
+    echo "call test"
+    f()
+
+proc runSelectedFunction*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  asyncCheck runSelectedFunctionAsync(self)
 
 genDispatcher("editor.model")
 
