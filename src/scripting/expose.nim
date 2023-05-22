@@ -1,6 +1,6 @@
 
 
-import std/[json, strformat, strutils, tables, options, macros, genasts, macrocache, typetraits]
+import std/[json, strutils, tables, options, macros, genasts, macrocache, typetraits]
 
 import fusion/matching
 import util, custom_logger
@@ -262,8 +262,6 @@ macro expose*(moduleName: static string, def: untyped): untyped =
     let index = newLit(mappedArgIndices.getOrDefault(i, i))
     let isVarargs = newLit(def.isVarargs(i))
     # echo fmt"varargs {i}, {index}: ", isVarargs, ", ", def
-
-    let jsonStringWrapperArgName = jsonStringWrapperFunctionWasm.argName(i)
 
     # Check if there is an entry in the type map and override mappedArgumentType if so
     # Also replace the argument type in the scriptFunction

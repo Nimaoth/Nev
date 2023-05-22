@@ -11,7 +11,7 @@ else:
   const env = "nims"
 
 proc handleAction*(action: string, args: JsonNode): bool {.wasmexport.} =
-  infof "{env}:handleAction: {action}, {args}"
+  # infof "{env}:handleAction: {action}, {args}"
 
   case action
   of "set-max-loop-iterations":
@@ -43,23 +43,23 @@ proc handlePopupAction*(popup: EditorId, action: string, args: JsonNode): bool {
   else: return false
 
 proc handleDocumentEditorAction*(id: EditorId, action: string, args: JsonNode): bool {.wasmexport.} =
-  infof "{env}:handleDocumentEditorAction: {action}, {args}"
+  # infof "{env}:handleDocumentEditorAction: {action}, {args}"
   return false
 
 proc handleTextEditorAction*(editor: TextDocumentEditor, action: string, args: JsonNode): bool {.wasmexport.} =
-  infof "{env}:handleTextEditorAction: {action}, {args}"
+  # infof "{env}:handleTextEditorAction: {action}, {args}"
 
   case action
   else: return false
 
 proc handleAstEditorAction*(editor: AstDocumentEditor, action: string, args: JsonNode): bool {.wasmexport.} =
-  infof "{env}:handleAstEditorAction: {action}, {args}"
+  # infof "{env}:handleAstEditorAction: {action}, {args}"
 
   case action
   else: return false
 
 proc postInitialize*(): bool {.wasmexport.} =
-  info "postInitialize()"
+  infof "{env}: post initialize"
 
   # openFile "temp/test.rs"
   # openFile "temp/rust-test/src/main.rs"
@@ -71,7 +71,7 @@ proc postInitialize*(): bool {.wasmexport.} =
   changeLayoutProp("main-split", -0.2)
   return true
 
-info "Loading absytree_config.nim"
+infof "{env}: Loading absytree_config_wasm.nim"
 
 # openLocalWorkspace(".")
 openAbsytreeServerWorkspace("http://localhost:3000")
@@ -403,13 +403,16 @@ addCommand("editor.model", "<C-SPACE>", "show-completions")
 
 addCommand("editor.model", "<CA-g>", "toggle-use-default-cell-builder")
 
+addCommand("editor.model", "<S-SPACE>R", "run-selected-function")
+
 addCommand("editor.model.completion", "<ENTER>", "finish-edit", true)
 addCommand("editor.model.completion", "<ESCAPE>", "hide-completions")
 addCommand("editor.model.completion", "<UP>", "select-prev-completion")
 addCommand("editor.model.completion", "<DOWN>", "select-next-completion")
 addCommand("editor.model.completion", "<C-SPACE>", "move-cursor-start")
 addCommand("editor.model.completion", "<TAB>", "apply-selected-completion")
-addCommand "editor.ast.goto", "<END>", "end"
+
+addCommand "editor.model.goto", "<END>", "end"
 
 when defined(wasm):
   include absytree_runtime_impl

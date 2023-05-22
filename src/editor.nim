@@ -1415,4 +1415,7 @@ when not defined(js):
 
   proc createScriptContext(filepath: string, searchPaths: seq[string]): ScriptContext = createScriptContextNim(filepath, searchPaths)
 
+when not defined(js):
+  import wasm3, wasm3/[wasm3c, wasmconversions]
+
 createEditorWasmImportConstructor()

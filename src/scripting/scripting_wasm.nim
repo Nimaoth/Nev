@@ -1,8 +1,11 @@
-import std/[macros, macrocache, genasts, json, sugar, os]
+import std/[macros, macrocache, genasts, json, os]
 import custom_logger, custom_async, scripting_base, popup, document_editor, util, expose
 import platform/filesystem
 
 import wasm
+
+when not defined(js):
+  import wasm3, wasm3/wasmconversions
 
 export scripting_base, wasm
 
@@ -21,7 +24,7 @@ macro invoke*(self: ScriptContextWasm; pName: untyped; args: varargs[typed]; ret
 
 method init*(self: ScriptContextWasm, path: string) =
   proc loadModules(path: string): Future[void] {.async.} =
-    let (_, _, ext) = path.splitFile
+    # let (_, _, ext) = path.splitFile
 
     var files: seq[string] = @[]
 
