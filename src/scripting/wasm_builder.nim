@@ -1,6 +1,7 @@
 
-import std/[macrocache, strutils, json, options, tables, genasts, sequtils]
+import std/[macrocache, strutils, json, options, tables, genasts, sequtils, asyncdispatch]
 import binary_encoder
+import util
 
 type
   WasmTypeIdx* = distinct uint32
@@ -225,7 +226,7 @@ type
   WasmImportDesc* = object
     case kind*: WasmImportDescKind
     of Func:
-      funcIdx*: WasmTypeIdx
+      funcTypeIdx*: WasmTypeIdx
     of Table:
       table*: WasmTableType
     of Mem:
@@ -518,7 +519,7 @@ proc generateImportSection(self: WasmBuilder, encoder: var BinaryEncoder) =
         case v.desc.kind
         of Func:
           e.write(byte, 0x00)
-          e.writeLEB128(uint32, v.desc.funcIdx.uint32)
+          e.writeLEB128(uint32, v.desc.funcTypeIdx.uint32)
         of Table:
           e.write(byte, 0x01)
           e.writeType(v.desc.table)
@@ -705,14 +706,14 @@ proc generateDataSection(self: WasmBuilder, encoder: var BinaryEncoder) =
       for v in self.datas.mitems:
         case v.mode.kind
         of Passive:
-          e.write(byte, 1)
+          e.writeLength(1)
           e.writeLength(v.init.len)
           e.buffer.add v.init
         of Active:
           if v.mode.memIdx.int == 0:
-            e.write(byte, 0)
+            e.writeLength(0)
           else:
-            e.write(byte, 2)
+            e.writeLength(2)
             e.writeLength(v.mode.memIdx.int)
           self.writeExpr(e, v.mode.offset)
           e.writeLength(v.init.len)
@@ -746,55 +747,91 @@ proc generateBinary*(self: WasmBuilder): seq[byte] =
 when isMainModule:
   var builder = newWasmBuilder()
 
+  # alloc
+  builder.types.add(WasmFunctionType(
+    input: WasmResultType(types: @[I32]),
+    output: WasmResultType(types: @[I32]),
+  ))
+
+  # dealloc
+  builder.types.add(WasmFunctionType(
+    input: WasmResultType(types: @[I32]),
+    output: WasmResultType(types: @[]),
+  ))
+
   builder.types.add(WasmFunctionType(
     input: WasmResultType(types: @[]),
     output: WasmResultType(types: @[]),
   ))
 
   builder.types.add(WasmFunctionType(
-    input: WasmResultType(types: @[]),
-    output: WasmResultType(types: @[I32, I64, F32, F64, V128, FuncRef, ExternRef]),
-  ))
-
-  builder.types.add(WasmFunctionType(
-    input: WasmResultType(types: @[I32, I64, F32, F64, V128, FuncRef, ExternRef]),
+    input: WasmResultType(types: @[I32, I64, F32, F64]),
     output: WasmResultType(types: @[]),
   ))
 
   builder.mems.add(WasmMem(typ: WasmMemoryType(limits: WasmLimits(min: 255))))
 
   builder.datas.add(WasmData(
-    init: @[1, 2, 3, 4],
-    mode: WasmDataMode(kind: Passive)
+    init: @[1, 2, 5],
+    mode: WasmDataMode(kind: Active, memIdx: 0.WasmMemIdx, offset: WasmExpr(instr: @[
+      WasmInstr(kind: I32Const, i32Const: 456),
+    ]))
   ))
 
   builder.datas.add(WasmData(
     init: @[],
     mode: WasmDataMode(kind: Active, memIdx: 0.WasmMemIdx, offset: WasmExpr(instr: @[
       WasmInstr(kind: I32Const, i32Const: 456),
-  ]))))
-
-  builder.start = WasmStart(start: 0.WasmFuncIdx).some
+    ]))
+  ))
 
   builder.imports.add(WasmImport(
     module: "test module",
     name: "test name",
-    desc: WasmImportDesc(kind: Func, funcIdx: 0.WasmTypeIdx)
+    desc: WasmImportDesc(kind: Func, funcTypeIdx: 2.WasmTypeIdx)
   ))
 
   builder.imports.add(WasmImport(
     module: "test module",
     name: "test name 2",
-    desc: WasmImportDesc(kind: Func, funcIdx: 1.WasmTypeIdx)
+    desc: WasmImportDesc(kind: Func, funcTypeIdx: 3.WasmTypeIdx)
+  ))
+
+  builder.exports.add(WasmExport(
+    name: "my_alloc",
+    desc: WasmExportDesc(kind: Func, funcIdx: 2.WasmFuncIdx)
+  ))
+
+  builder.exports.add(WasmExport(
+    name: "my_dealloc",
+    desc: WasmExportDesc(kind: Func, funcIdx: 3.WasmFuncIdx)
   ))
 
   builder.exports.add(WasmExport(
     name: "test export name",
-    desc: WasmExportDesc(kind: Func, funcIdx: 1.WasmFuncIdx)
+    desc: WasmExportDesc(kind: Func, funcIdx: 5.WasmFuncIdx)
+  ))
+
+  # my_alloc
+  builder.funcs.add(WasmFunc(
+    typeIdx: 0.WasmTypeIdx,
+    locals: @[],
+    body: WasmExpr(instr: @[
+      WasmInstr(kind: I32Const, i32Const: 0),
+    ]),
+  ))
+
+  # my_dealloc
+  builder.funcs.add(WasmFunc(
+    typeIdx: 1.WasmTypeIdx,
+    locals: @[],
+    body: WasmExpr(instr: @[
+      WasmInstr(kind: Nop),
+    ]),
   ))
 
   builder.funcs.add(WasmFunc(
-    typeIdx: 0.WasmTypeIdx,
+    typeIdx: 2.WasmTypeIdx,
     locals: @[],
     body: WasmExpr(instr: @[
       WasmInstr(kind: Loop, loopType: WasmBlockType(kind: ValType, typ: I32.some), loopInstr: @[
@@ -811,16 +848,15 @@ when isMainModule:
   ))
 
   builder.funcs.add(WasmFunc(
-    typeIdx: 2.WasmTypeIdx,
-    locals: @[I32, I64, F32, F64, FuncRef, ExternRef],
+    typeIdx: 3.WasmTypeIdx,
+    locals: @[I32, I64, F32, F64],
     body: WasmExpr(instr: @[
-      WasmInstr(kind: I32Const, i32Const: 456),
+      WasmInstr(kind: Call, callFuncIdx: 0.WasmFuncIdx),
+      WasmInstr(kind: LocalGet, localIdx: 0.WasmLocalIdx),
       WasmInstr(kind: LocalGet, localIdx: 1.WasmLocalIdx),
-      WasmInstr(kind: I32WrapI64),
-      WasmInstr(kind: I32Sub),
-      WasmInstr(kind: LocalTee, localIdx: 0.WasmLocalIdx),
-
-      WasmInstr(kind: Drop),
+      WasmInstr(kind: LocalGet, localIdx: 2.WasmLocalIdx),
+      WasmInstr(kind: LocalGet, localIdx: 3.WasmLocalIdx),
+      WasmInstr(kind: Call, callFuncIdx: 1.WasmFuncIdx),
     ]),
   ))
 
@@ -831,10 +867,37 @@ when isMainModule:
     ]),
   ))
 
-  builder.tables.add(WasmTable(
-    typ: WasmTableType(limits: WasmLimits(min: 0, max: 10.uint32.some), refType: FuncRef)
-  ))
+  # builder.tables.add(WasmTable(
+  #   typ: WasmTableType(limits: WasmLimits(min: 0, max: 10.uint32.some), refType: FuncRef)
+  # ))
 
 
   let binary = builder.generateBinary()
   writeFile("./config/test.wasm", binary)
+
+  import wasm
+
+  proc foo() =
+    echo "foo"
+
+  proc bar(a: int32, b: int64, c: float32, d: float64) =
+    echo "bar"
+    echo a
+    echo b
+    echo c
+    echo d
+
+  var imp = WasmImports(namespace: "test module")
+  imp.addFunction("test name", foo)
+  imp.addFunction("test name 2", bar)
+
+  let module = waitFor newWasmModule(binary, @[imp])
+  if module.isNone:
+    echo "Failed to load module"
+    quit(0)
+
+  if module.get.findFunction("test export name", void, proc(a: int32, b: int64, c: float32, d: float64): void).getSome(f):
+    echo "call exported func"
+    f(1, 2, 3.4, 5.6)
+
+
