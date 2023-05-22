@@ -61,13 +61,13 @@ proc getString*(module: WasmModule, pos: WasmPtr): cstring =
   when defined(js):
     proc indexOf(arr: JsObject, elem: uint8, start: WasmPtr): WasmPtr {.importjs: "#.indexOf(#, #)".}
     proc slice(arr: JsObject, first: WasmPtr, last: WasmPtr): JsObject {.importjs: "#.slice(#, #)".}
-    proc decodeStringJs(str: JsObject): cstring {.importc.}
+    proc jsDecodeString(str: JsObject): cstring {.importc.}
 
     let heap = module.memory["HEAPU8"]
     let terminator = heap.indexOf(0, pos)
     let s = heap.slice(pos, terminator)
 
-    return decodeStringJs(s)
+    return jsDecodeString(s)
 
   else:
     return module.env.getString(pos)
@@ -85,7 +85,7 @@ proc replace(node: NimNode, target: string, newNodes: openArray[NimNode]): bool 
 
 # Stuff for wrapping functions
 when defined(js):
-  proc encodeStringJs(str: cstring): JsObject {.importc.}
+  proc jsEncodeString(str: cstring): JsObject {.importc.}
 
 macro createHostWrapper(module: WasmModule, function: typed, outFunction: untyped): untyped =
   # echo "createHostWrapper ", function.repr
@@ -139,7 +139,7 @@ macro createHostWrapper(module: WasmModule, function: typed, outFunction: untype
       genAst(function, module):
         let f = function
         let str = f(`parameters`)
-        let a = encodeStringJs(str)
+        let a = jsEncodeString(str)
         proc len(arr: JsObject): int {.importjs: "#.length".}
         let p: WasmPtr = module.alloc(a.len.uint32 + 1)
         module.copyMem(p, a, a.len + 1)
@@ -252,7 +252,7 @@ when defined(js):
 
 proc newWasmModule*(wasmData: ArrayBuffer, importsOld: seq[WasmImports]): Future[Option[WasmModule]] {.async.} =
   when defined(js):
-    proc loadWasmModuleSync(wasmData: ArrayBuffer, importObject: JsObject): Future[JsObject] {.importc.}
+    proc jsLoadWasmModuleSync(wasmData: ArrayBuffer, importObject: JsObject): Future[JsObject] {.importc.}
 
     let importObject = newJsObject()
 
@@ -269,7 +269,7 @@ proc newWasmModule*(wasmData: ArrayBuffer, importsOld: seq[WasmImports]): Future
 
       importObject[imp.namespace.cstring] = obj
 
-    var instance = await loadWasmModuleSync(wasmData, importObject)
+    var instance = await jsLoadWasmModuleSync(wasmData, importObject)
 
     let memory = instance["exports"]["memory"]
     if not memory.isUndefined:
@@ -321,7 +321,7 @@ proc newWasmModule*(wasmData: ArrayBuffer, importsOld: seq[WasmImports]): Future
 
 proc newWasmModule*(path: string, importsOld: seq[WasmImports]): Future[Option[WasmModule]] {.async.} =
   when defined(js):
-    proc loadWasmModule(path: cstring, importObject: JsObject): Future[JsObject] {.importc.}
+    proc jsLoadWasmModuleAsync(path: cstring, importObject: JsObject): Future[JsObject] {.importc.}
 
     let importObject = newJsObject()
 
@@ -338,7 +338,7 @@ proc newWasmModule*(path: string, importsOld: seq[WasmImports]): Future[Option[W
 
       importObject[imp.namespace.cstring] = obj
 
-    var instance = await loadWasmModule(path.cstring, importObject)
+    var instance = await jsLoadWasmModuleAsync(path.cstring, importObject)
 
     let memory = instance["exports"]["memory"]
     if not memory.isUndefined:
@@ -418,7 +418,7 @@ macro createWasmWrapper(module: WasmModule, returnType: typedesc, typ: typedesc,
       if isCString:
         arg = genAst(arg):
           block:
-            let a = encodeStringJs(arg)
+            let a = jsEncodeString(arg)
             proc len(arr: JsObject): int {.importjs: "#.length".}
             let p: WasmPtr = module.alloc(a.len.uint32 + 1)
             module.copyMem(p, a, arg.len + 1)

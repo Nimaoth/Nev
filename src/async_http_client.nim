@@ -3,15 +3,15 @@ import custom_async
 
 when defined(js):
 
-  proc getAsyncJs(url: cstring, authToken: cstring): Future[cstring] {.importc.}
-  proc postAsyncJs(url: cstring, content: cstring, authToken: cstring): Future[void] {.importc.}
+  proc jsGetAsync(url: cstring, authToken: cstring): Future[cstring] {.importc.}
+  proc jsPostAsync(url: cstring, content: cstring, authToken: cstring): Future[void] {.importc.}
 
   proc httpGet*(url: string, authToken: Option[string] = string.none): Future[string] {.async.} =
-    let cstr = await getAsyncJs(url.cstring, authToken.get("").cstring)
+    let cstr = await jsGetAsync(url.cstring, authToken.get("").cstring)
     return $cstr
 
   proc httpPost*(url: string, content: string, authToken: Option[string] = string.none): Future[void] {.async.} =
-    await postAsyncJs(url.cstring, content.cstring, authToken.get("").cstring)
+    await jsPostAsync(url.cstring, content.cstring, authToken.get("").cstring)
 
 else:
   import std/[httpclient]

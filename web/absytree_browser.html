@@ -1,0 +1,60 @@
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="initial-scale=1.0">
+    <title>Absytree</title>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: monospace;
+            background: #222222;
+            color: #BBBBBB;
+        }
+
+        .code span {
+            vertical-align: top;
+            border-width: 1px;
+        }
+
+        .code div {
+            vertical-align: top;
+            border-width: 1px;
+        }
+
+        .widget {
+            position: absolute;
+            white-space: pre;
+
+            -webkit-touch-callout: none; /* Disable callout on iOS */
+            -webkit-user-select: none; /* Disable selection on iOS */
+            -khtml-user-select: none; /* Disable selection on Konqueror */
+            -moz-user-select: none; /* Disable selection on Firefox */
+            -ms-user-select: none; /* Disable selection on IE 10+ */
+            user-select: none; /* Disable selection on modern browsers */
+        }
+
+        #view {
+            overflow: hidden;
+        }
+
+        div {
+            /* border: 1px solid red; */
+        }
+    </style>
+</head>
+
+<body>
+    <div id="view" style="width: 100%; height: 100%;" tabindex="0">
+
+    </div>
+    <script src="tree-sitter.js"></script>
+    <script src="ast_glue.js"></script>
+    <script>
+        loadAbsytree()
+    </script>
+    <!-- <script src="ast.js"></script> -->
+</body>
+
+</html>

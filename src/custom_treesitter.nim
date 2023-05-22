@@ -46,7 +46,7 @@ when defined(js):
     oldEndPosition*: TSPoint
     newEndPosition*: TSPoint
 
-  proc loadTreesitterLanguage(wasmPath: cstring): Future[TSLanguage] {.importc.}
+  proc jsLoadTreesitterLanguage(wasmPath: cstring): Future[TSLanguage] {.importc.}
 
   var treeSitterInitialized {.importc.}: bool
 
@@ -365,7 +365,7 @@ proc loadLanguageDynamically*(languageId: string, config: JsonNode): Future[Opti
         fmt"languages/tree-sitter-{languageId}.wasm"
 
       logger.log(lvlInfo, fmt"Trying to load treesitter from '{wasmPath}'")
-      let language = await loadTreesitterLanguage(wasmPath.cstring)
+      let language = await jsLoadTreesitterLanguage(wasmPath.cstring)
       if language.isNil:
         return TSLanguage.none
       return language.some

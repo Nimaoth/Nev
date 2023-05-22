@@ -14,8 +14,8 @@ macro invoke*(self: ScriptContext; pName: untyped; args: varargs[typed]; returnT
   result = quote do:
     default(`returnType`)
 
-proc loadScriptJs(url: cstring): Future[Element] {.importjs: "loadScript(#)".}
-proc loadScriptContentJs(content: cstring): Future[Element] {.importjs: "loadScriptContent(#)".}
+proc loadScriptJs(url: cstring): Future[Element] {.importjs: "jsLoadScript(#)".}
+proc loadScriptContentJs(content: cstring): Future[Element] {.importjs: "jsLoadScriptContent(#)".}
 # proc evalJs(str: cstring) {.importjs("eval(#)").}
 proc confirmJs(msg: cstring): bool {.importjs("confirm(#)").}
 proc hasLocalStorage(key: cstring): bool {.importjs("(window.localStorage.getItem(#) !== null)").}

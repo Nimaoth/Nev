@@ -713,7 +713,7 @@ method createWithDocument*(_: ModelDocumentEditor, document: Document): Document
 
   # Emit this to set the editor prototype to editor_model_prototype, which needs to be set up before calling this
   when defined(js):
-    {.emit: [self, " = createWithPrototype(editor_model_prototype, ", self, ");"].}
+    {.emit: [self, " = jsCreateWithPrototype(editor_model_prototype, ", self, ");"].}
     # This " is here to fix syntax highlighting
 
   self.init()

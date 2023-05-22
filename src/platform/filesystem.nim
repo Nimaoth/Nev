@@ -13,10 +13,12 @@ type FileSystem* = ref object of RootObj
   discard
 
 method loadFile*(self: FileSystem, path: string): string {.base.} = discard
+method loadFileAsync*(self: FileSystem, name: string): Future[string] {.base.} = discard
+method loadFileBinaryAsync*(self: FileSystem, name: string): Future[ArrayBuffer] {.base.} = discard
+
 method saveFile*(self: FileSystem, path: string, content: string) {.base.} = discard
 
 method loadApplicationFile*(self: FileSystem, name: string): string {.base.} = discard
-method loadApplicationFileBinary*(self: FileSystem, name: string): Future[ArrayBuffer] {.base.} = discard
 method saveApplicationFile*(self: FileSystem, name: string, content: string) {.base.} = discard
 
 when defined(js):
