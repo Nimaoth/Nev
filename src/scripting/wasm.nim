@@ -184,7 +184,7 @@ else:
     of "int32", "uint32": return "i"
     of "int64", "uint64": return "I"
     of "float32": return "f"
-    of "float64": return "F"
+    of "float64", "float": return "F"
     of "cstring", "pointer", "WasmPtr": return "*"
     else:
       return ""
@@ -250,9 +250,9 @@ when defined(js):
       if not memory.isUndefined:
         return js_fd_write(context, fd, iovs, len, ret)
 
-proc newWasmModule*(path: string, importsOld: seq[WasmImports]): Future[Option[WasmModule]] {.async.} =
+proc newWasmModule*(wasmData: ArrayBuffer, importsOld: seq[WasmImports]): Future[Option[WasmModule]] {.async.} =
   when defined(js):
-    proc loadWasmModule(path: cstring, importObject: JsObject): Future[JsObject] {.importc.}
+    proc loadWasmModuleSync(wasmData: ArrayBuffer, importObject: JsObject): Future[JsObject] {.importc.}
 
     let importObject = newJsObject()
 
@@ -269,9 +269,9 @@ proc newWasmModule*(path: string, importsOld: seq[WasmImports]): Future[Option[W
 
       importObject[imp.namespace.cstring] = obj
 
-    var module = await loadWasmModule(path.cstring, importObject)
+    var instance = await loadWasmModuleSync(wasmData, importObject)
 
-    let memory = module["instance"]["exports"]["memory"]
+    let memory = instance["exports"]["memory"]
     if not memory.isUndefined:
       context["memory"] = memory
 
@@ -293,10 +293,79 @@ proc newWasmModule*(path: string, importsOld: seq[WasmImports]): Future[Option[W
       context["HEAPF32"] = newFloat32Array(memory)
       context["HEAPF64"] = newFloat64Array(memory)
 
-    let myAlloc = module["instance"]["exports"]["my_alloc"].toFunction proc(size: uint32): WasmPtr
-    let myDealloc = module["instance"]["exports"]["my_dealloc"].toFunction proc(p: WasmPtr)
+    let myAlloc = instance["exports"]["my_alloc"].toFunction proc(size: uint32): WasmPtr
+    let myDealloc = instance["exports"]["my_dealloc"].toFunction proc(p: WasmPtr)
 
-    var res = WasmModule(env: module, memory: context, myAlloc: myAlloc, myDealloc: myDealloc)
+    var res = WasmModule(env: instance, memory: context, myAlloc: myAlloc, myDealloc: myDealloc)
+    for imp in imports.mitems:
+      imp.module = res
+    return res.some
+
+  else:
+    var allFunctions: seq[WasmHostProc] = @[]
+    for imp in importsOld:
+      allFunctions.add imp.functions
+
+    let res = WasmModule()
+
+    try:
+      res.env = loadWasmEnv(wasmData.buffer, hostProcs=allFunctions, loadAlloc=true, allocName="my_alloc", deallocName="my_dealloc", userdata=cast[pointer](res))
+    except CatchableError:
+      raise
+      return WasmModule.none
+
+    var imports = @importsOld
+    for imp in imports.mitems:
+      imp.module = res
+    return res.some
+
+proc newWasmModule*(path: string, importsOld: seq[WasmImports]): Future[Option[WasmModule]] {.async.} =
+  when defined(js):
+    proc loadWasmModule(path: cstring, importObject: JsObject): Future[JsObject] {.importc.}
+
+    let importObject = newJsObject()
+
+    var context = newJsObject()
+
+    var imports = @importsOld
+    imports.add createWasiJsImports(context)
+
+    for imp in imports:
+      var obj = newJsObject()
+
+      for key, value in imp.functions.pairs:
+        obj[key] = value
+
+      importObject[imp.namespace.cstring] = obj
+
+    var instance = await loadWasmModule(path.cstring, importObject)
+
+    let memory = instance["exports"]["memory"]
+    if not memory.isUndefined:
+      context["memory"] = memory
+
+      proc newUint8Array(memory: JsObject) {.importjs: "new Uint8Array(#.buffer)".}
+      proc newUint16Array(memory: JsObject) {.importjs: "new Uint16Array(#.buffer)".}
+      proc newUint32Array(memory: JsObject) {.importjs: "new Uint32Array(#.buffer)".}
+      proc newInt8Array(memory: JsObject) {.importjs: "new Int8Array(#.buffer)".}
+      proc newInt16Array(memory: JsObject) {.importjs: "new Int16Array(#.buffer)".}
+      proc newInt32Array(memory: JsObject) {.importjs: "new Int32Array(#.buffer)".}
+      proc newFloat32Array(memory: JsObject) {.importjs: "new Float32Array(#.buffer)".}
+      proc newFloat64Array(memory: JsObject) {.importjs: "new Float64Array(#.buffer)".}
+
+      context["HEAPU32"] = newUint32Array(memory)
+      context["HEAPU16"] = newUint16Array(memory)
+      context["HEAPU8"] = newUint8Array(memory)
+      context["HEAP32"] = newInt32Array(memory)
+      context["HEAP16"] = newInt16Array(memory)
+      context["HEAP8"] = newInt8Array(memory)
+      context["HEAPF32"] = newFloat32Array(memory)
+      context["HEAPF64"] = newFloat64Array(memory)
+
+    let myAlloc = instance["exports"]["my_alloc"].toFunction proc(size: uint32): WasmPtr
+    let myDealloc = instance["exports"]["my_dealloc"].toFunction proc(p: WasmPtr)
+
+    var res = WasmModule(env: instance, memory: context, myAlloc: myAlloc, myDealloc: myDealloc)
     for imp in imports.mitems:
       imp.module = res
     return res.some
@@ -311,6 +380,7 @@ proc newWasmModule*(path: string, importsOld: seq[WasmImports]): Future[Option[W
     try:
       res.env = loadWasmEnv(readFile(path), hostProcs=allFunctions, loadAlloc=true, allocName="my_alloc", deallocName="my_dealloc", userdata=cast[pointer](res))
     except CatchableError:
+      raise
       return WasmModule.none
 
     var imports = @importsOld
@@ -383,7 +453,7 @@ macro createWasmWrapper(module: WasmModule, returnType: typedesc, typ: typedesc,
 
 proc findFunction*(module: WasmModule, name: string, R: typedesc, T: typedesc): Option[T] =
   when defined(js):
-    let function = module.env["instance"]["exports"][name.cstring]
+    let function = module.env["exports"][name.cstring]
     if function.isUndefined:
       return T.none
 
