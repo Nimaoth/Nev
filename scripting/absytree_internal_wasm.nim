@@ -292,6 +292,8 @@ proc editor_model_selectNextCompletion_void_ModelDocumentEditor_impl(
     self: ModelDocumentEditor)  {.importc.}
 proc editor_model_applySelectedCompletion_void_ModelDocumentEditor_impl(
     self: ModelDocumentEditor)  {.importc.}
+proc editor_model_runSelectedFunction_void_ModelDocumentEditor_impl(
+    self: ModelDocumentEditor)  {.importc.}
 proc editor_getBackend_Backend_Editor_impl(): Backend  {.importc.}
 proc editor_saveAppState_void_Editor_impl()  {.importc.}
 proc editor_requestRender_void_Editor_bool_impl(redrawEverything: bool = false)  {.importc.}

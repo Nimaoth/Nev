@@ -1,6 +1,6 @@
 
-import std/[macrocache, strutils, json, options, tables, genasts, sequtils, asyncdispatch]
-import binary_encoder
+import std/[macrocache, strutils, json, options, tables, genasts, sequtils]
+import binary_encoder, custom_async
 import util
 
 type
@@ -250,26 +250,78 @@ type
       memIdx*: WasmMemIdx
     of Global:
       globalIdx*: WasmGlobalIdx
-    start*: WasmFuncIdx
 
   WasmExport* = object
     name*: string
     desc*: WasmExportDesc
 
   WasmBuilder* = ref object
-    types: seq[WasmFunctionType]
-    funcs: seq[WasmFunc]
-    tables: seq[WasmTable]
-    mems: seq[WasmMem]
-    globals: seq[WasmGlobal]
-    elems: seq[WasmElem]
-    datas: seq[WasmData]
-    start: Option[WasmStart]
-    imports: seq[WasmImport]
-    exports: seq[WasmExport]
+    types*: seq[WasmFunctionType]
+    funcs*: seq[WasmFunc]
+    tables*: seq[WasmTable]
+    mems*: seq[WasmMem]
+    globals*: seq[WasmGlobal]
+    elems*: seq[WasmElem]
+    datas*: seq[WasmData]
+    start*: Option[WasmStart]
+    imports*: seq[WasmImport]
+    exports*: seq[WasmExport]
 
 proc newWasmBuilder*(): WasmBuilder =
   new result
+
+proc getNumFunctionImports(self: WasmBuilder): int =
+  for i in self.imports:
+    if i.desc.kind == WasmImportDescKind.Func:
+      inc result
+
+proc getEffectiveFunctionIdx(self: WasmBuilder, funcIdx: WasmFuncIdx): int =
+  return funcIdx.int + self.getNumFunctionImports()
+
+proc addFunction*(self: WasmBuilder,
+  inputs: openArray[WasmValueType], outputs: openArray[WasmValueType], exportName: Option[string] = string.none): WasmFuncIdx =
+  let typeIdx = self.types.len.WasmTypeIdx
+  self.types.add WasmFunctionType(input: WasmResultType(types: @inputs), output: WasmResultType(types: @outputs))
+
+  let funcIdx = self.funcs.len.WasmFuncIdx
+
+  self.funcs.add WasmFunc(
+    typeIdx: typeIdx,
+  )
+
+  if exportName.getSome(exportName):
+    self.exports.add WasmExport(
+      name: exportName,
+      desc: WasmExportDesc(kind: Func, funcIdx: funcIdx)
+    )
+
+  return funcIdx
+
+proc addFunction*(self: WasmBuilder,
+  inputs: openArray[WasmValueType], outputs: openArray[WasmValueType], locals: openArray[WasmValueType], body: WasmExpr, exportName: Option[string] = string.none): WasmFuncIdx =
+  let typeIdx = self.types.len.WasmTypeIdx
+  self.types.add WasmFunctionType(input: WasmResultType(types: @inputs), output: WasmResultType(types: @outputs))
+
+  let funcIdx = self.funcs.len.WasmFuncIdx
+
+  self.funcs.add WasmFunc(
+    typeIdx: typeIdx,
+    locals: @locals,
+    body: body
+  )
+
+  if exportName.getSome(exportName):
+    self.exports.add WasmExport(
+      name: exportName,
+      desc: WasmExportDesc(kind: Func, funcIdx: funcIdx)
+    )
+
+  return funcIdx
+
+proc setBody*(self: WasmBuilder, funcIdx: WasmFuncIdx, locals: openArray[WasmValueType], body: WasmExpr) =
+  assert funcIdx.int < self.funcs.len
+  self.funcs[funcIdx.int].locals = @locals
+  self.funcs[funcIdx.int].body = body
 
 proc writeLength(encoder: var BinaryEncoder, length: int) =
   encoder.writeLEB128(uint32, length.uint32)
@@ -364,7 +416,7 @@ proc writeInstr(self: WasmBuilder, encoder: var BinaryEncoder, instr: WasmInstr)
 
   of Call:
     encoder.write(byte, instr.kind.byte)
-    encoder.writeLength(instr.callFuncIdx.int)
+    encoder.writeLength(self.getEffectiveFunctionIdx(instr.callFuncIdx))
 
   of CallIndirect:
     encoder.write(byte, instr.kind.byte)
@@ -377,7 +429,7 @@ proc writeInstr(self: WasmBuilder, encoder: var BinaryEncoder, instr: WasmInstr)
 
   of RefFunc:
     encoder.write(byte, instr.kind.byte)
-    encoder.writeLength(instr.refFuncIdx.int)
+    encoder.writeLength(self.getEffectiveFunctionIdx(instr.refFuncIdx))
 
   of Select:
     if instr.selectValType.isSome:
@@ -569,7 +621,7 @@ proc generateExportSection(self: WasmBuilder, encoder: var BinaryEncoder) =
         case v.desc.kind
         of Func:
           e.write(byte, 0x00)
-          e.writeLength(v.desc.funcIdx.int)
+          e.writeLength(self.getEffectiveFunctionIdx(v.desc.funcIdx))
         of Table:
           e.write(byte, 0x01)
           e.writeLength(v.desc.tableIdx.int)
@@ -583,7 +635,7 @@ proc generateExportSection(self: WasmBuilder, encoder: var BinaryEncoder) =
 proc generateStartSection(self: WasmBuilder, encoder: var BinaryEncoder) =
   if self.start.isSome:
     generateSection(self, encoder, 8):
-      e.writeLength(self.start.get.start.int)
+      e.writeLength(self.getEffectiveFunctionIdx(self.start.get.start))
 
 proc generateElementSection(self: WasmBuilder, encoder: var BinaryEncoder) =
   ## https://webassembly.github.io/spec/core/binary/modules.html#element-section
@@ -622,14 +674,14 @@ proc generateElementSection(self: WasmBuilder, encoder: var BinaryEncoder) =
           self.writeExpr(e, v.mode.offset)
           e.writeLength(v.init.len)
           for expr in v.init:
-            e.writeLength(expr.instr[0].refFuncIdx.int)
+            e.writeLength(self.getEffectiveFunctionIdx(expr.instr[0].refFuncIdx))
 
         of 1:
           assert allInitsFunctionRefs
           e.writeType(v.typ)
           e.writeLength(v.init.len)
           for expr in v.init:
-            e.writeLength(expr.instr[0].refFuncIdx.int)
+            e.writeLength(self.getEffectiveFunctionIdx(expr.instr[0].refFuncIdx))
 
         of 2:
           assert allInitsFunctionRefs
@@ -638,14 +690,14 @@ proc generateElementSection(self: WasmBuilder, encoder: var BinaryEncoder) =
           e.writeType(v.typ)
           e.writeLength(v.init.len)
           for expr in v.init:
-            e.writeLength(expr.instr[0].refFuncIdx.int)
+            e.writeLength(self.getEffectiveFunctionIdx(expr.instr[0].refFuncIdx))
 
         of 3:
           assert allInitsFunctionRefs
           e.writeType(v.typ)
           e.writeLength(v.init.len)
           for expr in v.init:
-            e.writeLength(expr.instr[0].refFuncIdx.int)
+            e.writeLength(self.getEffectiveFunctionIdx(expr.instr[0].refFuncIdx))
 
         of 4:
           assert not allInitsFunctionRefs

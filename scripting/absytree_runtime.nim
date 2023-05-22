@@ -241,8 +241,6 @@ macro addAstCommand*(mode: static[string], keys: string, action: string, args: v
     addCommandScript(`context`, `keys`, `action`, `str`)
 
 when defined(wasm):
-  static:
-    echo "wasmuiaeuiaeuiaeuiae"
   macro wasmexport*(t: typed): untyped =
     if t.kind notin {nnkProcDef, nnkFuncDef}:
       error("Can only export procedures", t)

@@ -1,5 +1,5 @@
 import std/[tables, json, strutils]
-import workspace, custom_async, custom_logger, async_http_client, platform/filesystem
+import workspace, custom_async, custom_logger, async_http_client, platform/filesystem, array_buffer
 
 type
   DirectoryListingWrapper = object
@@ -35,6 +35,14 @@ method saveFile*(self: WorkspaceFolderAbsytreeServer, relativePath: string, cont
 
   let url = self.baseUrl & "/contents/" & relativePath
   logger.log(lvlInfo, fmt"[absytree-server] saveFile '{url}'")
+
+  await httpPost(url, content)
+
+method saveFile*(self: WorkspaceFolderAbsytreeServer, relativePath: string, content: ArrayBuffer): Future[void] {.async.} =
+  let relativePath = if relativePath.startsWith("./"): relativePath[2..^1] else: relativePath
+
+  let url = self.baseUrl & "/contents/" & relativePath
+  logger.log(lvlInfo, fmt"[absytree-server] saveFileBinary '{url}'")
 
   await httpPost(url, content)
 

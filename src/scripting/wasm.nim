@@ -1,6 +1,5 @@
 import std/[macros, macrocache, strutils, json, options, tables, genasts, sequtils]
-import custom_logger, custom_async, util
-import platform/filesystem
+import custom_logger, custom_async, util, array_buffer
 
 when defined(js):
   import std/jsffi
@@ -20,9 +19,7 @@ when defined(js):
     module: WasmModule
 
 else:
-  import wasm3, wasm3/wasm3c
-
-  export wasm3
+  import wasm3, wasm3/[wasm3c, wasmconversions]
 
   type WasmModule* = ref object
     env: WasmEnv
@@ -311,7 +308,6 @@ proc newWasmModule*(wasmData: ArrayBuffer, importsOld: seq[WasmImports]): Future
     try:
       res.env = loadWasmEnv(wasmData.buffer, hostProcs=allFunctions, loadAlloc=true, allocName="my_alloc", deallocName="my_dealloc", userdata=cast[pointer](res))
     except CatchableError:
-      raise
       return WasmModule.none
 
     var imports = @importsOld
@@ -380,7 +376,6 @@ proc newWasmModule*(path: string, importsOld: seq[WasmImports]): Future[Option[W
     try:
       res.env = loadWasmEnv(readFile(path), hostProcs=allFunctions, loadAlloc=true, allocName="my_alloc", deallocName="my_dealloc", userdata=cast[pointer](res))
     except CatchableError:
-      raise
       return WasmModule.none
 
     var imports = @importsOld

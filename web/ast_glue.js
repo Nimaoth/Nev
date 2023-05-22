@@ -97,11 +97,30 @@ function jsPostAsync(url, content, authToken) {
         var xmlhttp = new XMLHttpRequest();
         xmlhttp.open("POST", url, true);
         xmlhttp.setRequestHeader("Authorization", authToken)
+        xmlhttp.setRequestHeader("Content-Type", "text/plain")
         xmlhttp.onload = () => {
             resolve(xmlhttp.responseText || "")
         }
         xmlhttp.onerror = () => {
             reject("jsPostAsync: failed to load url " + url)
+        }
+        xmlhttp.send(content)
+    })
+}
+
+function jsPostBinaryAsync(url, content, authToken) {
+    return new Promise((resolve, reject) => {
+        var result = null;
+        var xmlhttp = new XMLHttpRequest();
+        xmlhttp.open("POST", url, true);
+        xmlhttp.setRequestHeader("Authorization", authToken)
+        xmlhttp.setRequestHeader("Content-Type", "application/octet-stream")
+        // console.log("postBinaryAsync:", new Uint8Array(content))
+        xmlhttp.onload = () => {
+            resolve(xmlhttp.responseText || "")
+        }
+        xmlhttp.onerror = () => {
+            reject("jsPostBinaryAsync: failed to load url " + url)
         }
         xmlhttp.send(content)
     })

@@ -8,6 +8,7 @@ const cors = require('cors')
 const app = express()
 app.use(bodyParser.json({limit: "500mb"}))
 app.use(bodyParser.text({limit: "500mb"}))
+app.use(bodyParser.raw({type: "application/octet-stream", limit: "500mb"}))
 app.use(cors({
     origin: '*'
 }));
@@ -105,6 +106,7 @@ app.post('/contents/*', async (req, res) => {
     }
 
     console.log(`set content of '${path}'`)
+    // console.log(new Uint8Array(req.body))
     try {
         await fs.promises.writeFile(path, req.body)
         res.sendStatus(200)

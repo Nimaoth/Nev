@@ -1,13 +1,6 @@
 {.used.}
 
-import custom_async
-
-when defined(js):
-  import std/[jsffi]
-  type ArrayBuffer* = ref object of JsObject
-else:
-  type ArrayBuffer* = ref object
-    buffer*: seq[uint8]
+import custom_async, array_buffer
 
 type FileSystem* = ref object of RootObj
   discard

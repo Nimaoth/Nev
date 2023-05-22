@@ -2,11 +2,13 @@ import std/[strformat, strutils, math, logging, sugar, tables, options, json, js
 import fusion/matching, bumpy, rect_utils, vmath
 import editor, util, document, document_editor, text_document, events, id, ast_ids, scripting/expose, event, input, custom_async
 from scripting_api as api import nil
-import custom_logger
+import custom_logger, timer, array_buffer
 import platform/[filesystem, platform, widgets]
 import workspaces/[workspace]
 import ast/[types, base_language, cells]
 import print
+
+import ast/base_language_wasm
 
 var project = newProject()
 
@@ -2131,12 +2133,47 @@ proc applySelectedCompletion*(self: ModelDocumentEditor) {.expose("editor.model"
 
   self.markDirty()
 
+proc findContainingFunction(node: AstNode): Option[AstNode] =
+  if node.class == IdFunctionDefinition:
+    return node.some
+  if node.parent.isNotNil:
+    return node.parent.findContainingFunction()
+  return AstNode.none
+
+proc runSelectedFunction*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  let function = self.cursor.node.findContainingFunction()
+  if function.isNone:
+    logger.log(lvlInfo, fmt"Not inside function")
+    return
+
+  if function.get.childCount(IdFunctionDefinitionParameters) > 0:
+    logger.log(lvlInfo, fmt"Can't call function with parameters")
+    return
+
+  let parent = function.get.parent
+  let name = if parent.isNotNil and parent.class == IdConstDecl:
+    parent.property(IdINamedName).get.stringValue
+  else:
+    "<anonymous>"
+
+  logger.log(lvlInfo, fmt"Running function {name}")
+
+  let timer = startTimer()
+  defer:
+    logger.log(lvlInfo, fmt"Running function took {timer.elapsed.ms} ms")
+
+
+  var compiler = newBaseLanguageWasmCompiler()
+  let binary = compiler.compileToBinary(function.get)
+  if self.document.workspace.getSome(workspace):
+    asyncCheck workspace.saveFile("jstest.wasm", binary.toArrayBuffer)
+
 genDispatcher("editor.model")
 
 proc handleAction(self: ModelDocumentEditor, action: string, arg: string): EventResponse =
   # logger.log lvlInfo, fmt"[modeleditor]: Handle action {action}, '{arg}'"
-  defer:
-    logger.log lvlDebug, &"line: {self.cursor.targetCell.line}, cursor: {self.cursor},\ncell: {self.cursor.cell.dump()}\ntargetCell: {self.cursor.targetCell.dump()}"
+  # defer:
+  #   logger.log lvlDebug, &"line: {self.cursor.targetCell.line}, cursor: {self.cursor},\ncell: {self.cursor.cell.dump()}\ntargetCell: {self.cursor.targetCell.dump()}"
 
   self.mCursorBeforeTransaction = self.mCursor
 

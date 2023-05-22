@@ -85,3 +85,5 @@ proc selectNextCompletion*(self: ModelDocumentEditor) =
   editor_model_selectNextCompletion_void_ModelDocumentEditor_impl(self)
 proc applySelectedCompletion*(self: ModelDocumentEditor) =
   editor_model_applySelectedCompletion_void_ModelDocumentEditor_impl(self)
+proc runSelectedFunction*(self: ModelDocumentEditor) =
+  editor_model_runSelectedFunction_void_ModelDocumentEditor_impl(self)
