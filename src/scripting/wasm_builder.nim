@@ -103,7 +103,7 @@ type
     # 32, 64, I, F
 
   WasmBlockTypeKind* {.pure.} = enum TypeIdx, ValType
-  WasmBlockType = object
+  WasmBlockType* = object
     case kind*: WasmBlockTypeKind
     of TypeIdx: idx*: WasmTypeIdx
     of ValType: typ*: Option[WasmValueType]
@@ -376,6 +376,7 @@ proc writeBlockType(encoder: var BinaryEncoder, blockType: WasmBlockType) =
       encoder.write(byte, 0x40)
 
 proc writeInstr(self: WasmBuilder, encoder: var BinaryEncoder, instr: WasmInstr) =
+  echo "writeInstr ", instr
   case instr.kind
 
   of Block:
