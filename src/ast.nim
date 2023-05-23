@@ -307,7 +307,7 @@ proc jsonToAstNode*(json: JsonNode, opt = Joptions()): AstNode =
 proc `$$`*(node: AstNode): string =
   return node.treeRepr
 
-proc hash*(node: AstNode): Hash = cast[int](addr node[])
+proc hash*(node: AstNode): Hash = node.id.hash
 
 iterator nextPreOrder*(node: AstNode): tuple[key: int, value: AstNode] =
   var n = node
