@@ -1,6 +1,6 @@
 import std/[strformat, strutils, math, logging, sugar, tables, options, json, jsonutils, streams]
 import fusion/matching, bumpy, rect_utils, vmath
-import editor, util, document, document_editor, text_document, events, id, ast_ids, scripting/expose, event, input, custom_async
+import editor, util, array_table, document, document_editor, text_document, events, id, ast_ids, scripting/expose, event, input, custom_async
 from scripting_api as api import nil
 import custom_logger, timer, array_buffer
 import platform/[filesystem, platform, widgets]
@@ -92,10 +92,11 @@ type
     index*: int
     class*: NodeClass
     name*: string
+    alwaysApply*: bool # If true then this completion will always be applied when it's the only one, even if the current completion text doesn't match exactly
 
     case kind*: ModelCompletionKind
     of SubstituteClass:
-      discard
+      property: Option[RoleId] # Property to set on new node from completion text
     of SubstituteReference:
       referenceRole*: Id
       referenceTarget*: AstNode
@@ -283,6 +284,7 @@ method load*(self: ModelDocument, filename: string = "") =
   asyncCheck self.loadAsync()
 
 proc getSubstitutionTarget(cell: Cell): (AstNode, Id, int) =
+  ## Returns the parent cell, role, and index where to insert/replace a substitution
   if cell of PlaceholderCell:
     return (cell.node, cell.PlaceholderCell.role, 0)
   return (cell.node.parent, cell.node.role, cell.node.index)
@@ -296,13 +298,20 @@ proc getSubstitutionsForClass(self: ModelDocumentEditor, targetCell: Cell, class
     let (parent, role, index) = targetCell.getSubstitutionTarget()
 
     for node in self.document.model.rootNodes:
+      var res = false
       node.forEach2 n:
         let nClass = language.resolveClass(n.class)
         if nClass.isSubclassOf(refClass.id):
           let name = if n.property(IdINamedName).getSome(name): name.stringValue else: $n.id
-          addCompletion ModelCompletion(kind: ModelCompletionKind.SubstituteReference, name: name, class: class, referenceRole: desc.id, referenceTarget: n, parent: parent, role: role, index: index)
+          addCompletion ModelCompletion(kind: ModelCompletionKind.SubstituteReference, name: name, class: class, parent: parent, role: role, index: index, referenceRole: desc.id, referenceTarget: n)
+          res = true
+      if res:
+        result = true
 
-  return false
+  if class.substitutionProperty.getSome(propertyRole):
+    let (parent, role, index) = targetCell.getSubstitutionTarget()
+    addCompletion ModelCompletion(kind: ModelCompletionKind.SubstituteClass, name: class.alias, class: class, parent: parent, role: role, index: index, alwaysApply: true, property: propertyRole.some)
+    result = true
 
 proc refilterCompletions(self: ModelDocumentEditor) =
   self.filteredCompletions.setLen 0
@@ -313,14 +322,20 @@ proc refilterCompletions(self: ModelDocumentEditor) =
 
   let text = targetCell.currentText
   let index = self.cursor.lastIndex
-
   let prefix = text[0..<index]
 
   # debugf "refilter '{text}' {index} -> '{prefix}'"
 
   for completion in self.unfilteredCompletions:
+    if completion.kind == ModelCompletionKind.SubstituteClass and completion.property.getSome(role):
+      let language = self.document.model.getLanguageForClass(completion.class.id)
+      if language.isValidPropertyValue(completion.class, role, prefix):
+        self.filteredCompletions.add completion
+        continue
+
     if completion.name.startsWith(prefix):
       self.filteredCompletions.add completion
+      continue
 
   self.hasCompletions = true
 
@@ -349,13 +364,12 @@ proc updateCompletions(self: ModelDocumentEditor) =
   let parentClass = parent.nodeClass
   let childDesc = parentClass.nodeChildDescription(role).get
 
-  # Substitutions for owner of target cell
   let model = node.model
 
   let desc = childDesc
   let slotClass = model.resolveClass(desc.class)
 
-  # debugf"updateCompletions {node}, {node.model.isNotNil}, {slotClass.name}"
+  debugf"updateCompletions {node}, {node.model.isNotNil}, {slotClass.name}"
 
   for language in model.languages:
     language.forEachChildClass slotClass, proc(childClass: NodeClass) =
@@ -365,7 +379,6 @@ proc updateCompletions(self: ModelDocumentEditor) =
       if childClass.isAbstract or childClass.isInterface:
         return
 
-      # debugf"{parent}, {role}, {index}"
       let name = if childClass.alias.len > 0: childClass.alias else: childClass.name
       self.unfilteredCompletions.add ModelCompletion(kind: ModelCompletionKind.SubstituteClass, name: name, class: childClass, parent: parent, role: role, index: index)
 
@@ -503,7 +516,6 @@ method handleDocumentChanged*(self: ModelDocumentEditor) =
   self.rebuildCells()
   self.cursor = self.getFirstEditableCellOfNode(self.document.model.rootNodes[0]).get
 
-  print self.cursor
   self.markDirty()
 
 proc buildNodeCellMap(self: Cell, map: var Table[Id, Cell]) =
@@ -2020,7 +2032,7 @@ proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool {.expos
       else:
         self.refilterCompletions()
 
-      if not self.showCompletions and self.completionsLen == 1 and self.getCompletion(0).name == cell.currentText:
+      if not self.showCompletions and self.completionsLen == 1 and (self.getCompletion(0).alwaysApply or self.getCompletion(0).name == cell.currentText):
         self.applySelectedCompletion()
 
       self.markDirty()
@@ -2105,6 +2117,8 @@ proc applySelectedCompletion*(self: ModelDocumentEditor) {.expose("editor.model"
   defer:
     self.document.finishTransaction()
 
+  let completionText = self.cursor.targetCell.currentText
+
   if self.selectedCompletion < self.completionsLen:
     let completion = self.getCompletion(self.selectedCompletion)
     let parent = completion.parent
@@ -2115,10 +2129,14 @@ proc applySelectedCompletion*(self: ModelDocumentEditor) {.expose("editor.model"
     of ModelCompletionKind.SubstituteClass:
       parent.remove(role, index)
 
-      let newNode = newAstNode(completion.class)
+      var newNode = newAstNode(completion.class)
       parent.insert(role, index, newNode)
       self.rebuildCells()
       self.cursor = self.getFirstEditableCellOfNode(newNode).get
+
+      if completion.property.getSome(role):
+        var cell = PropertyCell(node: newNode, property: role)
+        cell.setText(completionText)
 
     of ModelCompletionKind.SubstituteReference:
       parent.remove(role, index)
@@ -2130,6 +2148,10 @@ proc applySelectedCompletion*(self: ModelDocumentEditor) {.expose("editor.model"
       self.cursor = self.getFirstEditableCellOfNode(newNode).get
 
     self.showCompletions = false
+
+  var c = self.cursor
+  c.column = c.targetCell.editableHigh
+  self.cursor = c
 
   self.markDirty()
 
