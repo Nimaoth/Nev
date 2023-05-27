@@ -48,6 +48,8 @@ proc loadVimBindings*() =
   addTextCommand "", "x", "delete-right"
   addTextCommand "", "u", "undo"
   addTextCommand "", "U", "redo"
+  addTextCommand "", "y", "copy"
+  addTextCommand "", "p", "paste"
 
   # mode switches
   addTextCommand "", "i", "set-mode", "insert"
@@ -234,7 +236,7 @@ proc loadVimBindings*() =
     editor.scrollToCursor(Last)
     editor.updateTargetColumn(Last)
 
-  addTextCommand "", "<C-c>", "set-mode", "cursor-build"
+  addTextCommand "", "<C-b>", "set-mode", "cursor-build"
   addTextCommand "cursor-build", "c", "set-mode", "normal"
   addTextCommand "cursor-build", "<LEFT>", "move-cursor-column", -1, "config", false
   addTextCommand "cursor-build", "<RIGHT>", "move-cursor-column", 1, "config", false

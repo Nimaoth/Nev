@@ -310,6 +310,34 @@ proc insertText*(self: TextDocumentEditor; text: string) =
       argsJsonString.cstring)
 
 
+proc editor_text_indent_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc indent*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_indent_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_unindent_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc unindent*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_unindent_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_undo_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
 proc undo*(self: TextDocumentEditor) =
@@ -335,6 +363,34 @@ proc redo*(self: TextDocumentEditor) =
       self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_redo_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_copy_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc copy*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_copy_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_paste_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc paste*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_paste_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
 
 

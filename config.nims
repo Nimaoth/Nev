@@ -32,6 +32,7 @@ of 1:
 of 2:
   switch("d", "debug")
   switch("debuginfo", "on")
+  switch("nimcache", "nimcache")
 of 3:
   switch("d", "release")
   switch("debuginfo", "on")

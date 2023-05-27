@@ -1191,9 +1191,10 @@ proc copy*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.editor.setRegisterText(text, "")
 
 proc paste*(self: TextDocumentEditor) {.expose("editor.text").} =
-  let text = self.editor.getRegisterText("")
+  var text = ""
+  self.editor.getRegisterText(text, "")
 
-  let numLines = text.count("\n") + 1
+  let numLines = text.count('\n') + 1
 
   let newSelections = if numLines == self.selections.len:
     let lines = text.splitLines()

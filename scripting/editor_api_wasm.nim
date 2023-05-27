@@ -1072,3 +1072,22 @@ proc scriptSetCallback*(path: string; id: int) =
   let res {.used.} = editor_scriptSetCallback_void_string_int_wasm(
       argsJsonString.cstring)
 
+
+proc editor_setRegisterText_void_Editor_string_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc setRegisterText*(text: string; register: string = "") =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      text
+    else:
+      text.toJson()
+  argsJson.add block:
+    when string is JsonNode:
+      register
+    else:
+      register.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_setRegisterText_void_Editor_string_string_wasm(
+      argsJsonString.cstring)
+

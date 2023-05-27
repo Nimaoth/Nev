@@ -126,7 +126,7 @@ type Editor* = ref object
 var gEditor* {.exportc.}: Editor = nil
 
 proc setRegisterText*(self: Editor, text: string, register: string = "")
-proc getRegisterText*(self: Editor, register: string = ""): string
+proc getRegisterText*(self: Editor, text: var string, register: string = "")
 
 proc registerEditor*(self: Editor, editor: DocumentEditor) =
   self.editors[editor.id] = editor
@@ -160,7 +160,7 @@ proc handleInput(input: string): EventResponse =
   logger.log(lvlInfo, "input: " & input)
   return Handled
 
-proc getText(register: Register): string =
+proc getText(register: var Register): string =
   case register.kind
   of Text:
     return register.text
@@ -415,6 +415,8 @@ proc newEditor*(backend: api.Backend, platform: Platform): Editor =
 
   self.layout = HorizontalLayout()
   self.layout_props = LayoutProperties(props: {"main-split": 0.5.float32}.toTable)
+
+  self.registers = initTable[string, Register]()
 
   self.platform.fontSize = 20
 
@@ -1396,10 +1398,12 @@ proc scriptSetCallback*(path: string, id: int) {.expose("editor").} =
 proc setRegisterText*(self: Editor, text: string, register: string = "") {.expose("editor").} =
   self.registers[register] = Register(kind: Text, text: text)
 
-proc getRegisterText*(self: Editor, register: string = ""): string {.expose("editor").} =
+proc getRegisterText*(self: Editor, text: var string, register: string = "") =
+  # For some reason returning string causes a crash, the returned pointer is just different at the call site for some reason.
+  # var string parameter seems to fix it
+  text = ""
   if self.registers.contains(register):
-    return self.registers[register].getText()
-  return ""
+    text = self.registers[register].getText()
 
 genDispatcher("editor")
 
