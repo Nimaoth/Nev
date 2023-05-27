@@ -597,7 +597,7 @@ proc getIndentForLine*(self: TextDocument, line: int): int =
 
 #   # return node.getRange.first.column + 2
 
-proc insert(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], text: string, notify: bool = true, record: bool = true, autoIndent: bool = true): seq[Selection] =
+proc insert(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true, autoIndent: bool = true): seq[Selection] =
   var newEmptyLines: seq[int]
 
   result = self.clampAndMergeSelections selections
@@ -605,6 +605,13 @@ proc insert(self: TextDocument, selections: openArray[Selection], oldSelection: 
   var undoOp = UndoOp(kind: Nested, children: @[], oldSelection: @oldSelection)
 
   for i, selection in result:
+    let text = if texts.len == 1:
+      texts[0]
+    elif texts.len == result.len:
+      texts[i]
+    else:
+      texts[min(i, texts.high)]
+
     let oldCursor = selection.last
     var cursor = selection.last
     let startByte = self.byteOffset(cursor)
@@ -672,10 +679,10 @@ proc insert(self: TextDocument, selections: openArray[Selection], oldSelection: 
     self.undoOps.add undoOp
     self.redoOps = @[]
 
-proc edit(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], text: string, notify: bool = true): seq[Selection] =
+proc edit(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true): seq[Selection] =
   let selections = selections.map (s) => s.normalized
-  result = self.delete(selections, oldSelection, false)
-  result = self.insert(result, oldSelection, text)
+  result = self.delete(selections, oldSelection, false, record=record)
+  result = self.insert(result, oldSelection, texts, record=record)
 
 proc doUndo(document: TextDocument, op: UndoOp, oldSelection: openArray[Selection], useOldSelection: bool, redoOps: var seq[UndoOp]): seq[Selection] =
   case op.kind:
@@ -685,7 +692,7 @@ proc doUndo(document: TextDocument, op: UndoOp, oldSelection: openArray[Selectio
     redoOps.add UndoOp(kind: Insert, cursor: op.selection.first, text: text, oldSelection: @oldSelection)
 
   of Insert:
-    let selections = document.insert([op.cursor.toSelection], op.oldSelection, op.text, record = false, autoIndent = false)
+    let selections = document.insert([op.cursor.toSelection], op.oldSelection, [op.text], record = false, autoIndent = false)
     result = selections
     redoOps.add UndoOp(kind: Delete, selection: (op.cursor, selections[0].last), oldSelection: @oldSelection)
 
@@ -718,7 +725,7 @@ proc doRedo(document: TextDocument, op: UndoOp, oldSelection: openArray[Selectio
     undoOps.add UndoOp(kind: Insert, cursor: op.selection.first, text: text, oldSelection: @oldSelection)
 
   of Insert:
-    result = document.insert([op.cursor.toSelection], [op.cursor.toSelection], op.text, record = false, autoIndent = false)
+    result = document.insert([op.cursor.toSelection], [op.cursor.toSelection], [op.text], record = false, autoIndent = false)
     undoOps.add UndoOp(kind: Delete, selection: (op.cursor, result[0].last), oldSelection: @oldSelection)
 
   of Nested:
@@ -986,7 +993,7 @@ proc invertSelection(self: TextDocumentEditor) {.expose("editor.text").} =
   self.selection = (self.selection.last, self.selection.first)
 
 proc insert(self: TextDocumentEditor, selections: seq[Selection], text: string, notify: bool = true, record: bool = true, autoIndent: bool = true): seq[Selection] {.expose("editor.text").} =
-  return self.document.insert(selections, self.selections, text, notify, record, autoIndent)
+  return self.document.insert(selections, self.selections, [text], notify, record, autoIndent)
 
 proc delete(self: TextDocumentEditor, selections: seq[Selection], notify: bool = true, record: bool = true): seq[Selection] {.expose("editor.text").} =
   return self.document.delete(selections, self.selections, notify, record)
@@ -1045,7 +1052,7 @@ proc insertText*(self: TextDocumentEditor, text: string) {.expose("editor.text")
     return
 
   let selections = self.selections.normalized
-  self.selections = self.document.edit(self.selections, self.selections, text)
+  self.selections = self.document.edit(self.selections, self.selections, [text])
   self.updateTargetColumn(Last)
 
   if not self.disableCompletions and (text == "." or text == ","):
@@ -1061,6 +1068,36 @@ proc undo(self: TextDocumentEditor) {.expose("editor.text").} =
 proc redo(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.document.redo(self.selections, true).getSome(selections):
     self.selections = selections
+
+proc copy*(self: TextDocumentEditor) {.expose("editor.text").} =
+  var text = ""
+  for i, selection in self.selections:
+    if i > 0:
+      text.add "\n"
+    text.add self.document.contentString(selection)
+
+  self.editor.setRegisterText(text, "")
+
+proc paste*(self: TextDocumentEditor) {.expose("editor.text").} =
+  let text = self.editor.getRegisterText("")
+
+  let numLines = text.count("\n") + 1
+
+  let newSelections = if numLines == self.selections.len:
+    let lines = text.splitLines()
+    self.document.edit(self.selections, self.selections, lines, notify=true, record=true)
+  else:
+    self.document.edit(self.selections, self.selections, [text], notify=true, record=true)
+
+  # add list of selections for what was just pasted to history
+  if newSelections.len == self.selections.len:
+    var tempSelections = newSelections
+    for i in 0..tempSelections.high:
+      tempSelections[i].first = self.selections[i].first
+    self.selections = tempSelections
+
+  self.selections = newSelections
+  self.scrollToCursor(Last)
 
 proc scrollText(self: TextDocumentEditor, amount: float32) {.expose("editor.text").} =
   if self.disableScrolling:
@@ -1514,7 +1551,7 @@ proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").
 
   let cursor = self.selection.last
   if cursor.column == 0:
-    self.selections = self.document.insert([cursor.toSelection], self.selections, com.name, true, true, false)
+    self.selections = self.document.insert([cursor.toSelection], self.selections, [com.name], true, true, false)
   else:
     let line = self.document.getLine cursor.line
     var column = cursor.column
@@ -1525,7 +1562,7 @@ proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").
       else:
         column -= 1
 
-    self.selections = self.document.edit([((cursor.line, column), cursor)], self.selections, com.name)
+    self.selections = self.document.edit([((cursor.line, column), cursor)], self.selections, [com.name])
 
 genDispatcher("editor.text")
 
