@@ -1112,6 +1112,67 @@ proc insertText*(self: TextDocumentEditor, text: string) {.expose("editor.text")
   elif self.showCompletions:
     asyncCheck self.getCompletionsAsync()
 
+proc indent*(self: TextDocumentEditor) {.expose("editor.text").} =
+  var linesToIndent = initHashSet[int]()
+  for selection in self.selections:
+    let selection = selection.normalized
+    for l in selection.first.line..selection.last.line:
+      if selection.first.line != selection.last.line:
+        if l == selection.first.line and selection.first.column == self.document.lines[l].len:
+          continue
+        if l == selection.last.line and selection.last.column == 0:
+          continue
+      linesToIndent.incl l
+
+  let indent = self.document.indentStyle.getString()
+  var indentSelections: Selections = @[]
+  for l in linesToIndent:
+    indentSelections.add (l, 0).toSelection
+
+  discard self.document.insert(indentSelections.normalized, self.selections, [indent])
+
+  var selections = self.selections
+  for s in selections.mitems:
+    if s.first.line in linesToIndent:
+      s.first.column += self.document.indentStyle.indentColumns
+    if s.last.line in linesToIndent:
+      s.last.column += self.document.indentStyle.indentColumns
+  self.selections = selections
+
+func firstNonWhitespace(str: string): int =
+  result = str.high
+  for i, c in str:
+    if c == ' ' or c == '\t':
+      continue
+    return i
+
+proc unindent*(self: TextDocumentEditor) {.expose("editor.text").} =
+  var linesToIndent = initHashSet[int]()
+  for selection in self.selections:
+    let selection = selection.normalized
+    for l in selection.first.line..selection.last.line:
+      if selection.first.line != selection.last.line:
+        if l == selection.first.line and selection.first.column == self.document.lines[l].len:
+          continue
+        if l == selection.last.line and selection.last.column == 0:
+          continue
+      linesToIndent.incl l
+
+  var indentSelections: Selections = @[]
+  for l in linesToIndent:
+    let firstNonWhitespace = self.document.lines[l].firstNonWhitespace
+    indentSelections.add ((l, 0), (l, min(self.document.indentStyle.indentColumns, firstNonWhitespace)))
+
+  var selections = self.selections
+  discard self.document.delete(indentSelections.normalized, self.selections)
+
+  for s in selections.mitems:
+    if s.first.line in linesToIndent:
+      s.first.column = max(0, s.first.column - self.document.indentStyle.indentColumns)
+    if s.last.line in linesToIndent:
+      s.last.column = max(0, s.last.column - self.document.indentStyle.indentColumns)
+  self.selections = selections
+
 proc undo(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.document.undo(self.selections, true).getSome(selections):
     self.selections = selections
