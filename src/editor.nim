@@ -1,7 +1,7 @@
 import std/[strformat, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils, macros, macrocache, sugar, streams]
 import fuzzy
 import input, id, events, rect_utils, document, document_editor, popup, timer, event, cancellation_token
-import theme, util, custom_logger, custom_async
+import theme, util, custom_logger, custom_async, fuzzy_matching
 import scripting/[expose, scripting_base]
 import platform/[platform, widgets, filesystem]
 import workspaces/[workspace]
@@ -891,7 +891,7 @@ proc chooseTheme*(self: Editor) {.expose("editor").} =
     for file in walkDirRec("./themes", relative=true):
       if file.endsWith ".json":
         let name = file.splitFile.name
-        let score = fuzzyMatchSmart(text, name)
+        let score = matchPath(file, text)
         result.add ThemeSelectorItem(name: name, path: fmt"./themes/{file}", score: score)
 
     result.sort((a, b) => cmp(a.ThemeSelectorItem.score, b.ThemeSelectorItem.score), Descending)
@@ -980,7 +980,7 @@ proc chooseFile*(self: Editor, view: string = "new") {.expose("editor").} =
         let folder = folder
         for file in files:
           let name = file.splitFile.name
-          let score = fuzzyMatchSmart(text, name)
+          let score = matchPath(file, text)
           popup.completions.add FileSelectorItem(path: fmt"{file}", score: score, workspaceFolder: folder.some)
 
         popup.completions.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Descending)
