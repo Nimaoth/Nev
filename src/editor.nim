@@ -5,6 +5,7 @@ import theme, util, custom_logger, custom_async
 import scripting/[expose, scripting_base]
 import platform/[platform, widgets, filesystem]
 import workspaces/[workspace]
+import ast/types
 
 when not defined(js):
   import scripting/scripting_nim
@@ -57,6 +58,15 @@ type EditorState = object
   workspaceFolders: seq[OpenWorkspace]
   openEditors: seq[OpenEditor]
 
+type
+  RegisterKind* {.pure.} = enum Text, AstNode
+  Register* = object
+    case kind*: RegisterKind
+    of Text:
+      text*: string
+    of AstNode:
+      node*: AstNode
+
 type Editor* = ref object
   backend: api.Backend
   platform*: Platform
@@ -71,6 +81,8 @@ type Editor* = ref object
   closeRequested*: bool
 
   widget*: WWidget
+
+  registers*: Table[string, Register]
 
   eventHandlerConfigs: Table[string, EventHandlerConfig]
 
@@ -113,6 +125,9 @@ type Editor* = ref object
 
 var gEditor* {.exportc.}: Editor = nil
 
+proc setRegisterText*(self: Editor, text: string, register: string = "")
+proc getRegisterText*(self: Editor, register: string = ""): string
+
 proc registerEditor*(self: Editor, editor: DocumentEditor) =
   self.editors[editor.id] = editor
   self.onEditorRegistered.invoke editor
@@ -144,6 +159,14 @@ proc handleAction(action: string, arg: string): EventResponse =
 proc handleInput(input: string): EventResponse =
   logger.log(lvlInfo, "input: " & input)
   return Handled
+
+proc getText(register: Register): string =
+  case register.kind
+  of Text:
+    return register.text
+  of AstNode:
+    assert false
+    return ""
 
 method layoutViews*(layout: Layout, props: LayoutProperties, bounds: Rect, views: int): seq[Rect] {.base.} =
   return @[bounds]
@@ -1369,6 +1392,14 @@ proc scriptSetCallback*(path: string, id: int) {.expose("editor").} =
   if gEditor.isNil:
     return
   gEditor.callbacks[path] = id
+
+proc setRegisterText*(self: Editor, text: string, register: string = "") {.expose("editor").} =
+  self.registers[register] = Register(kind: Text, text: text)
+
+proc getRegisterText*(self: Editor, register: string = ""): string {.expose("editor").} =
+  if self.registers.contains(register):
+    return self.registers[register].getText()
+  return ""
 
 genDispatcher("editor")
 

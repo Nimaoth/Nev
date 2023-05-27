@@ -45,6 +45,7 @@ proc loadNormalBindings*() =
   addCommand "editor.text", "<C-l>", "select-line-current"
   addCommand "editor.text", "<A-UP>", "select-parent-current-ts"
   addCommand "editor.text", "<C-r>", "select-prev"
+  addCommand "editor.text", "<C-m>", "select-next"
   addCommand "editor.text", "<C-t>", "select-next"
   addCommand "editor.text", "<C-n>", "invert-selection"
   addCommand "editor.text", "<C-y>", "undo"
