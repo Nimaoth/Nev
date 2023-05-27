@@ -3,13 +3,24 @@
     // Hover to view descriptions of existing attributes.
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
-    "configurations": [{
-        "type": "lldb",
-        "request": "launch",
-        "name": "Debug Nim Project",
-        "program": "${workspaceRoot}/ast.exe",
-        "args": [],
-        "cwd": "${workspaceRoot}",
-        "terminal": "console"
-    }]
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug Nim Project",
+            "program": "${workspaceRoot}/ast.exe",
+            "args": [],
+            "cwd": "${workspaceRoot}",
+            "terminal": "console"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug Test Project",
+            "program": "${workspaceRoot}/test.exe",
+            "args": [],
+            "cwd": "${workspaceRoot}",
+            "terminal": "console"
+        }
+    ]
 }
