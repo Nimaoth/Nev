@@ -56,10 +56,18 @@ proc selectParentCurrentTs*(self: TextDocumentEditor) =
   editor_text_selectParentCurrentTs_void_TextDocumentEditor_impl(self)
 proc insertText*(self: TextDocumentEditor; text: string) =
   editor_text_insertText_void_TextDocumentEditor_string_impl(self, text)
+proc indent*(self: TextDocumentEditor) =
+  editor_text_indent_void_TextDocumentEditor_impl(self)
+proc unindent*(self: TextDocumentEditor) =
+  editor_text_unindent_void_TextDocumentEditor_impl(self)
 proc undo*(self: TextDocumentEditor) =
   editor_text_undo_void_TextDocumentEditor_impl(self)
 proc redo*(self: TextDocumentEditor) =
   editor_text_redo_void_TextDocumentEditor_impl(self)
+proc copy*(self: TextDocumentEditor) =
+  editor_text_copy_void_TextDocumentEditor_impl(self)
+proc paste*(self: TextDocumentEditor) =
+  editor_text_paste_void_TextDocumentEditor_impl(self)
 proc scrollText*(self: TextDocumentEditor; amount: float32) =
   editor_text_scrollText_void_TextDocumentEditor_float32_impl(self, amount)
 proc duplicateLastSelection*(self: TextDocumentEditor) =

@@ -176,3 +176,5 @@ proc scriptSetOptionString*(path: string; value: string) =
   editor_scriptSetOptionString_void_string_string_impl(path, value)
 proc scriptSetCallback*(path: string; id: int) =
   editor_scriptSetCallback_void_string_int_impl(path, id)
+proc setRegisterText*(text: string; register: string = "") =
+  editor_setRegisterText_void_Editor_string_string_impl(text, register)

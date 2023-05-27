@@ -53,9 +53,17 @@ proc editor_text_selectParentCurrentTs_void_TextDocumentEditor_impl*(
 proc editor_text_insertText_void_TextDocumentEditor_string_impl*(
     self: TextDocumentEditor; text: string) =
   discard
+proc editor_text_indent_void_TextDocumentEditor_impl*(self: TextDocumentEditor) =
+  discard
+proc editor_text_unindent_void_TextDocumentEditor_impl*(self: TextDocumentEditor) =
+  discard
 proc editor_text_undo_void_TextDocumentEditor_impl*(self: TextDocumentEditor) =
   discard
 proc editor_text_redo_void_TextDocumentEditor_impl*(self: TextDocumentEditor) =
+  discard
+proc editor_text_copy_void_TextDocumentEditor_impl*(self: TextDocumentEditor) =
+  discard
+proc editor_text_paste_void_TextDocumentEditor_impl*(self: TextDocumentEditor) =
   discard
 proc editor_text_scrollText_void_TextDocumentEditor_float32_impl*(
     self: TextDocumentEditor; amount: float32) =
@@ -612,4 +620,7 @@ proc editor_scriptSetOptionString_void_string_string_impl*(path: string;
     value: string) =
   discard
 proc editor_scriptSetCallback_void_string_int_impl*(path: string; id: int) =
+  discard
+proc editor_setRegisterText_void_Editor_string_string_impl*(text: string;
+    register: string = "") =
   discard
