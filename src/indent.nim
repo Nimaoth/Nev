@@ -14,6 +14,11 @@ proc indentWidth*(style: IndentStyle, tabWidth: int): int =
   of Tabs: return tabWidth
   of Spaces: return style.spaces
 
+proc indentColumns*(style: IndentStyle): int =
+  case style.kind
+  of Tabs: return 1
+  of Spaces: return style.spaces
+
 proc getString*(style: IndentStyle): string =
   case style.kind
   of Tabs: return "\t"

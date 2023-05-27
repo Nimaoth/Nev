@@ -27,6 +27,15 @@ proc handleAction*(action: string, args: JsonNode): bool {.wasmexport.} =
     if getActiveEditor().isTextEditor(editor):
       editor.setSearchQuery args[0].getStr
 
+  of "kb-normal":
+    loadNormalBindings()
+
+  of "kb-vim":
+    loadVimBindings()
+
+  of "kb-helix":
+    loadHelixBindings()
+
   else: return false
 
 proc handlePopupAction*(popup: EditorId, action: string, args: JsonNode): bool {.wasmexport.} =
