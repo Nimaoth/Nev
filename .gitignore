@@ -5,6 +5,8 @@
 *.exp
 *.ilk
 *.lib
+*.wasm
+*.wat
 src/input_tests
 nimcache
 /ast
@@ -24,3 +26,8 @@ node_modules/**
 GithubAccessToken
 nimble.develop
 nimble.paths
+
+loc.csv
+count_loc.ps1
+todo.md
+a.html
