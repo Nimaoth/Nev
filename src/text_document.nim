@@ -1,7 +1,8 @@
 import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, tables, deques, sets]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
-import editor, document, document_editor, events, id, util, vmath, bumpy, rect_utils, event, input, regex, custom_logger, custom_async, custom_treesitter
+import editor, document, document_editor, events, id, util, vmath, bumpy, rect_utils, event, input, regex, custom_logger, custom_async, custom_treesitter, indent
+import text_language_config
 import scripting/[expose]
 import platform/[platform, filesystem, widgets]
 import language/[languages, language_server_base]
@@ -51,6 +52,9 @@ type TextDocument* = ref object of Document
   textInserted*: Event[tuple[document: TextDocument, location: Cursor, text: string]]
   textDeleted*: Event[tuple[document: TextDocument, selection: Selection]]
   singleLine*: bool
+
+  languageConfig*: Option[TextLanguageConfig]
+  indentStyle*: IndentStyle
 
   undoOps*: seq[UndoOp]
   redoOps*: seq[UndoOp]
@@ -407,6 +411,12 @@ proc newTextDocument*(filename: string = "", content: string | seq[string] = "",
   self.currentTree = nil
   self.appFile = app
 
+  self.indentStyle = IndentStyle(kind: Spaces, spaces: 2)
+  self.languageConfig = some TextLanguageConfig(
+    tabWidth: 2,
+    indentAfter: @[":", "=", "(", "{", "[", "enum", "object"]
+  )
+
   asyncCheck self.initTreesitter()
 
   let language = getLanguageForFile(filename)
@@ -474,6 +484,9 @@ proc byteOffset(self: TextDocument, cursor: Cursor): int =
   result = cursor.column
   for i in 0..<cursor.line:
     result += self.lines[i].len + 1
+
+proc tabWidth(self: TextDocument): int =
+  return self.languageConfig.map(c => c.tabWidth).get(4)
 
 proc delete(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], notify: bool = true, record: bool = true): seq[Selection] =
   result = self.clampAndMergeSelections selections
@@ -1051,8 +1064,46 @@ proc insertText*(self: TextDocumentEditor, text: string) {.expose("editor.text")
   if self.document.singleLine and text == "\n":
     return
 
-  let selections = self.selections.normalized
-  self.selections = self.document.edit(self.selections, self.selections, [text])
+  let originalSelections = self.selections.normalized
+  var selections = originalSelections
+
+  var texts = @[text]
+
+  var allWhitespace = false
+  if text == "\n":
+    allWhitespace = true
+    for selection in selections:
+      if selection.first != selection.last:
+        allWhitespace = false
+        break
+      for c in self.document.lines[selection.first.line]:
+        if c != ' ' and c != '\t':
+          allWhitespace = false
+          break
+      if not allWhitespace:
+        break
+
+    if allWhitespace:
+      for s in selections.mitems:
+        s.first.column = 0
+        s.last = s.first
+
+    else:
+      texts.setLen(selections.len)
+      for i, selection in selections:
+        let line = self.document.lines[selection.last.line]
+        let indent = indentForNewLine(self.document.languageConfig, line, self.document.indentStyle, self.document.tabWidth, selection.last.column)
+        texts[i] = "\n" & indent
+
+  selections = self.document.edit(selections, selections, texts)
+
+  if allWhitespace:
+    for i in 0..min(self.selections.high, originalSelections.high):
+      selections[i].first.column = originalSelections[i].first.column
+      selections[i].last.column = originalSelections[i].last.column
+
+  self.selections = selections
+
   self.updateTargetColumn(Last)
 
   if not self.disableCompletions and (text == "." or text == ","):
