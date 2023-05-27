@@ -17,8 +17,20 @@ let localFolderPath = process.cwd()
 let localFolderName = pth.basename(localFolderPath)
 
 let ig = ignore()
+
+const useGitIgnore = false;
+if (useGitIgnore) {
+    try {
+        let files = fs.readFileSync(".gitignore").toString().split("\n").filter(s => s.length > 0)
+        console.log("Ignore: ", files)
+        ig.add(files)
+    } catch(e) {
+        console.info("no .gitignore")
+    }
+}
+
 try {
-    let files = fs.readFileSync(".gitignore").toString().split("\n").filter(s => s.length > 0)
+    let files = fs.readFileSync(".absytreeignore").toString().split("\n").filter(s => s.length > 0)
     console.log("Ignore: ", files)
     ig.add(files)
 } catch(e) {
