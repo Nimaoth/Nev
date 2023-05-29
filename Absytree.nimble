@@ -31,10 +31,10 @@ task createScriptingDocs, "Build the documentation for the scripting API":
   exec "nim ./postprocess_docs.nims"
 
 task buildDesktop, "Build the desktop version":
-  selfExec "c ./src/absytree.nim"
+  selfExec "c -d:exposeScriptingApi ./src/absytree.nim"
 
 task buildBrowser, "Build the browser version":
-  selfExec "js -o:ast.js -d:vmathObjBased -d:enableTableIdCacheChecking ./src/absytree_js.nim"
+  selfExec "js -o:ast.js -d:exposeScriptingApi -d:vmathObjBased -d:enableTableIdCacheChecking ./src/absytree_js.nim"
 
 task buildNimConfigWasm, "Compile the nim script config file to wasm":
   withDir "config":
