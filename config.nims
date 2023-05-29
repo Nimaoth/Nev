@@ -8,7 +8,6 @@ switch("mm", "refc")
 switch("tlsEmulation", "off")
 switch("d", "enableGui=true")
 switch("d", "enableTerminal=true")
-switch("d", "exposeScriptingApi")
 switch("d", "ssl")
 
 switch("d", "wasm3HasWasi")
