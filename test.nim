@@ -2,7 +2,7 @@ import std/[macros, genasts]
 import traits
 
 type
-  TextWidget = object
+  TextWidget = ref object
     text: string
 
   ButtonWidget = ref object
@@ -15,7 +15,7 @@ proc handleClick*(self: int, button: int): bool =
 proc handleClick*(self: TextWidget, button: int): bool =
   echo "TextWidget.handleClick ", button
 
-trait Widget:
+traitRef Widget:
   method draw*(self: Widget)
   method handleClick*(self: Widget, button: int): bool
 
@@ -44,6 +44,12 @@ implTrait(Widget, ButtonWidget):
 
   draw(void, ButtonWidget)
 
+implTrait(Layout, TextWidget):
+  proc layout*(self: TextWidget, widgets: openArray[Widget]) =
+    echo "layout"
+    for w in widgets:
+      w.draw()
+
 proc foo(widget: Widget) =
   echo "foo"
   widget.draw()
@@ -64,3 +70,10 @@ echo "o"
 
 button.asWidget.foo()
 button.bar()
+
+echo "===="
+
+let widgets: seq[Widget] = @[text.asWidget, button.asWidget]
+
+text.asLayout.layout(widgets)
+text.asLayout.layout([text.asWidget, button.asWidget])

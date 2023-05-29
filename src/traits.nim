@@ -3,6 +3,12 @@ import util
 
 const traitFunctionCache = CacheTable"TraitCache"
 
+macro bindFunction*(call: typed): untyped =
+  return call[0]
+
+func toRef*[T](v: T): ref T =
+  result[] = v
+
 proc getTraitFunctions*(trait: NimNode): seq[NimNode] =
   let key = trait.repr
   if traitFunctionCache.contains(key):
@@ -55,15 +61,22 @@ macro addTraitFunction(trait: typed, function: typed) =
   list.add nnkCall.newTree(ident"dumpTree", nnkStmtList.newTree(trait, function))
   traitFunctionCache[key] = list
 
-proc genTypeSection(name: NimNode, body: NimNode): NimNode =
+proc genTypeSection(name: NimNode, body: NimNode, isRef: bool): NimNode =
   # defer:
   #   echo result.repr
 
-  result = genAst(name, conceptName = ident("I" & name.repr), asTrait = ident("as" & name.repr)):
-    type
-      name* = object of RootObj
-      conceptName* {.explain.} = concept x, T
-        asTrait(x) is name
+  if isRef:
+    result = genAst(name, conceptName = ident("I" & name.repr), asTrait = ident("as" & name.repr)):
+      type
+        name* = ref object of RootObj
+        conceptName* {.explain.} = concept x, T
+          asTrait(x) is name
+  else:
+    result = genAst(name, conceptName = ident("I" & name.repr), asTrait = ident("as" & name.repr)):
+      type
+        name* = object of RootObj
+        conceptName* {.explain.} = concept x, T
+          asTrait(x) is name
 
   # todo: make this work
   # for item in body:
@@ -88,12 +101,12 @@ proc genTypeSection(name: NimNode, body: NimNode): NimNode =
 
   #   result[1][2][3].add methodRequirement
 
-macro trait*(name: untyped, body: untyped): untyped =
+proc traitImpl*(name: NimNode, body: NimNode, isRef: bool): NimNode =
   # defer:
   #   echo result.repr
     # echo result.treeRepr
 
-  let typeSection = genTypeSection(name, body)
+  let typeSection = genTypeSection(name, body, isRef)
 
   var methods: seq[NimNode] = @[]
   for item in body:
@@ -116,6 +129,12 @@ macro trait*(name: untyped, body: untyped): untyped =
   result = nnkStmtList.newTree(typeSection)
   for m in methods:
     result.add m
+
+macro trait*(name: untyped, body: untyped): untyped =
+  return traitImpl(name, body, false)
+
+macro traitRef*(name: untyped, body: untyped): untyped =
+  return traitImpl(name, body, true)
 
 proc wrapFunction(procName: NimNode, newName: NimNode, signature: NimNode, mapParam: proc(index: int, node: NimNode): Option[NimNode], mapArg: proc(index: int, node: NimNode): Option[NimNode]): NimNode =
   # defer:
@@ -154,10 +173,18 @@ macro implTrait*(trait: typed, target: typed, body: untyped): untyped =
   let implName = ident(target.repr & "Impl" & trait.repr)
   let asName = ident("as" & trait.repr)
 
-  let traitImplType = genAst(trait, target, implName):
-    type
-      implName* = object of trait
-        data: target
+  let isRef = trait.getImpl[2].kind == nnkRefTy
+
+  let traitImplType = if isRef:
+    genAst(trait, target, implName):
+      type
+        implName* = ref object of trait
+          data: target
+  else:
+    genAst(trait, target, implName):
+      type
+        implName* = object of trait
+          data: target
 
   result = nnkStmtList.newTree(traitImplType)
 
