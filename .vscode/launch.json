@@ -21,6 +21,15 @@
             "args": [],
             "cwd": "${workspaceRoot}",
             "terminal": "console"
+        },
+        {
+            "name": "Debug absytree_server",
+            "program": "${workspaceFolder}/absytree_server.js",
+            "request": "launch",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "type": "node"
         }
     ]
 }

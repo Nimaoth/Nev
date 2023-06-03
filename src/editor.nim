@@ -507,12 +507,17 @@ proc newEditor*(backend: api.Backend, platform: Platform): Editor =
 
     self.wasmScriptContext = new ScriptContextWasm
 
+    logger.log(lvlInfo, fmt"[editor] init wasm configs")
     self.wasmScriptContext.init("./config")
+    logger.log(lvlInfo, fmt"[editor] post init wasm configs")
     discard self.wasmScriptContext.invoke(postInitialize, returnType = bool)
 
+    logger.log(lvlInfo, fmt"[editor] init nim script config")
     self.scriptContext.init("./config")
+    logger.log(lvlInfo, fmt"[editor] post init nim script config")
     discard self.scriptContext.invoke(postInitialize, returnType = bool)
 
+    logger.log(lvlInfo, fmt"[editor] finished configs")
     self.initializeCalled = true
   except CatchableError:
     logger.log(lvlError, fmt"Failed to load config: {(getCurrentExceptionMsg())}{'\n'}{(getCurrentException().getStackTrace())}")

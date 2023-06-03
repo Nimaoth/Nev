@@ -1,7 +1,7 @@
 when defined(js):
   {.error: "scripting_nim.nim does not work in js backend. Use scripting_js.nim instead.".}
 
-import std/[os, tables, strformat, json, strutils, macrocache, macros]
+import std/[os, tables, strformat, json, strutils, macrocache, macros, genasts]
 import fusion/matching
 import compiler/[renderer, ast, llstream, lineinfos]
 import compiler/options as copts
@@ -139,6 +139,8 @@ proc newScriptContext*(path: string, apiModule: string, addins: VMAddins, postCo
   result.searchPaths = searchPaths
   logger.log(lvlInfo, fmt"Creating new script context (search paths: {searchPaths})")
   result.inter = myLoadScript(result.script, apiModule, addins, postCodeAdditions, ["scripting_api", "std/json"], stdPath = stdPath, searchPaths = searchPaths, vmErrorHook = errorHook)
+  if result.inter.isNone:
+    logger.log(lvlError, fmt"Failed to create script context")
 
 method reload*(ctx: ScriptContextNim) =
   logger.log(lvlInfo, fmt"Reloading script context (search paths: {ctx.searchPaths})")
@@ -185,10 +187,16 @@ macro invoke*(self: ScriptContext; pName: untyped;
   ## Invoke but takes an option and unpacks it, if `intr.`isNone, assertion is raised
   let inter = quote do:
     `self`.ScriptContextNim.inter.get
-  result = newCall("invokeDynamic", inter, pName.toStrLit)
+  var call = newCall("invokeDynamic", inter, pName.toStrLit)
   for x in args:
-    result.add x
-  result.add nnkExprEqExpr.newTree(ident"returnType", returnType)
+    call.add x
+  call.add nnkExprEqExpr.newTree(ident"returnType", returnType)
+
+  return genAst(self, call):
+    if self.ScriptContextNim.inter.isNone:
+      logger.log(lvlError, fmt"Script context is none")
+      return
+    call
 
 method handleUnknownPopupAction*(self: ScriptContextNim, popup: Popup, action: string, arg: JsonNode): bool =
   return self.invoke(handleUnknownPopupAction, popup.id, action, arg, returnType = bool)

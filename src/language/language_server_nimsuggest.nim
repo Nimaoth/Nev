@@ -1,35 +1,110 @@
-import std/[strutils, options, json, os, tables, macros, strformat]
+import std/[strutils, options, json, os, tables, macros, strformat, sugar]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import language_server_base, util
-import custom_logger, custom_async
+import custom_logger, custom_async, async_http_client, websocket
 
-import std/[asyncdispatch, osproc, asyncnet, tempfiles]
+when not defined(js):
+  import std/[asyncdispatch, osproc, asyncnet, tempfiles]
+else:
+  type Port* = distinct uint16
+
+type
+  LanguageServerImplKind = enum Process, LanguagesServer
+  LanguageServerImpl = object
+    case kind: LanguageServerImplKind
+    of Process:
+      when not defined(js):
+        process: Process
+    of LanguagesServer:
+      url: string
+      port: Port
+      socket: WebSocket
 
 type LanguageServerNimSuggest* = ref object of LanguageServer
   filename: string
   tempFilename: string
-  nimsuggest: Process
+  port: Port
+  impl: LanguageServerImpl
+  retryCount: int
+  maxRetries: int
 
-let port = 6000
-proc newLanguageServerNimSuggest*(filename: string): LanguageServerNimSuggest =
-  new result
-  result.filename = filename
+proc tryGetPortFromLanguagesServer(self: LanguageServerNimSuggest, url: string, port: Port): Future[void] {.async.} =
+  try:
+    let response = await httpGet(fmt"http://{url}:{port.int}/nimsuggest/open/{self.filename}")
+    echo response
+    let json = response.parseJson
+    if not json.hasKey("port") or json["port"].kind != JInt:
+      return
+    if not json.hasKey("tempFilename") or json["tempFilename"].kind != JString:
+      return
+    self.tempFilename = json["tempFilename"].str
+    self.port = json["port"].num.int.Port
+    var socket = await newWebSocket(fmt"ws://localhost:{self.port.int}")
+    self.impl = LanguageServerImpl(kind: LanguagesServer, url: url, port: port, socket: socket)
+  except CatchableError:
+    logger.log(lvlError, fmt"Failed to connect to languages server {url}:{port.int}: {getCurrentExceptionMsg()}")
+
+when not defined(js):
+  import std/asynchttpserver
+  proc getFreePort*(): Port =
+    var server = newAsyncHttpServer()
+    server.listen(Port(0))
+    let port = server.getPort()
+    server.close()
+    return port
+
+proc newLanguageServerNimSuggest*(filename: string, languagesServer: Option[(string, Port)] = (string, Port).none): Future[Option[LanguageServerNimSuggest]] {.async.} =
+  var server = new LanguageServerNimSuggest
+  server.filename = filename
+  server.maxRetries = 10
+
   let parts = filename.splitFile
-  result.tempFilename = genTempPath("absytree_", "_" & parts.name & parts.ext).replace('\\', '/')
 
-method start*(self: LanguageServerNimSuggest) =
+  when not defined(js):
+    try:
+      server.port = getFreePort()
+      server.tempFilename = genTempPath("absytree_", "_" & parts.name & parts.ext).replace('\\', '/')
+      let process = startProcess("nimsuggest", args = ["--port:" & $server.port.int, filename])
+      if process.isNil:
+        raise newException(IOError, "Failed to start process nimguggest")
+      server.impl = LanguageServerImpl(kind: Process, process: process)
+      return server.some
+    except CatchableError:
+      logger.log(lvlWarn, fmt"Couldn't open nimsuggest locally")
+
+  if languagesServer.getSome(config):
+    await server.tryGetPortFromLanguagesServer(config[0], config[1])
+    return server.some
+
+  return LanguageServerNimSuggest.none
+
+proc restart*(self: LanguageServerNimSuggest): Future[void] {.async.} =
+  case self.impl.kind:
+  of LanguagesServer:
+    await self.tryGetPortFromLanguagesServer(self.impl.url, self.impl.port)
+  of Process:
+    discard
+
+method start*(self: LanguageServerNimSuggest): Future[void] {.async.} =
   logger.log(lvlInfo, fmt"Starting language server for {self.filename}")
-  self.nimsuggest = startProcess("nimsuggest", args = ["--port:" & $port, self.filename])
 
 method stop*(self: LanguageServerNimSuggest) =
   logger.log(lvlInfo, fmt"Stopping language server for {self.filename}")
-  self.nimsuggest.terminate()
-  removeFile(self.tempFilename)
+  # self.nimsuggest.terminate()
+  # removeFile(self.tempFilename)
 
-proc connectToNimsuggest(self: LanguageServerNimSuggest): Future[AsyncSocket] {.async.} =
-  var socket = newAsyncSocket()
-  await socket.connect("", Port(port))
-  return socket
+when not defined(js):
+  import std/[osproc]
+
+method saveTempFile*(self: LanguageServerNimSuggest, filename: string, content: string): Future[void] {.async.} =
+  case self.impl.kind
+  of LanguagesServer:
+    await httpPost(fmt"http://{self.impl.url}:{self.impl.port.int}/nimsuggest/temp-file/{self.filename}", content)
+  of Process:
+    when not defined(js):
+      var file = openAsync(filename, fmWrite)
+      await file.write content
+      file.close()
 
 type QueryResult = object
   query: string
@@ -57,40 +132,73 @@ proc unescape(str: string): string =
       result.add str[i]
       inc i
 
+proc parseResponse(line: string): Option[QueryResult] =
+  let parts = line.split("\t")
+  if parts.len < 9:
+    return QueryResult.none
+
+  var queryResult = QueryResult()
+  queryResult.query = parts[0]
+  queryResult.symbolKind = parseEnum[NimSymKind]("n" & parts[1], nskUnknown)
+  queryResult.symbol = parts[2]
+  queryResult.typ = parts[3].unescape
+  queryResult.filename = parts[4].unescape
+  queryResult.location = (parts[5].parseInt - 1, parts[6].parseInt)
+  queryResult.doc = parts[7][1..^2].unescape
+  queryResult.other = parts[8].parseInt
+  return queryResult.some
+
 proc sendQuery(self: LanguageServerNimSuggest, query: string, location: Cursor): Future[seq[QueryResult]] {.async.} =
   let saveTempFileFuture = self.requestSave(self.filename, self.tempFilename)
-
-  let socket = await self.connectToNimsuggest()
-  defer: socket.close()
-
-  await saveTempFileFuture
 
   let line = location.line + 1
   let column = location.column
   let msg = query & " \"" & self.filename & "\";\"" & self.tempFilename & "\" " & $line & " " & $column
-  await socket.send(msg & "\r\L")
 
   var results: seq[QueryResult] = @[]
-  while true:
-    let response = await socket.recvLine()
-    let parts = response.split("\t")
-    if parts.len < 9:
-      break
 
-    var queryResult = QueryResult()
-    queryResult.query = parts[0]
-    queryResult.symbolKind = parseEnum[NimSymKind]("n" & parts[1], nskUnknown)
-    queryResult.symbol = parts[2]
-    queryResult.typ = parts[3].unescape
-    queryResult.filename = parts[4].unescape
-    queryResult.location = (parts[5].parseInt - 1, parts[6].parseInt)
-    queryResult.doc = parts[7][1..^2].unescape
-    queryResult.other = parts[8].parseInt
+  case self.impl.kind
+  of LanguagesServer:
+    await saveTempFileFuture
 
-    results.add(queryResult)
+    try:
+      await self.impl.socket.send(msg)
 
+      while true:
+        let response = await self.impl.socket.receiveStrPacket()
+        if response.parseResponse().getSome(res):
+          results.add(res)
+        else:
+          break
 
-  return results
+      self.retryCount = 0
+    except CatchableError:
+      echo "Failed to send request to nimsuggest-ws: ", getCurrentExceptionMsg()
+      if self.retryCount < self.maxRetries:
+        echo "Restarting language server"
+        inc self.retryCount
+        await self.restart()
+        return await self.sendQuery(query, location)
+
+    return results
+
+  of Process:
+    when not defined(js):
+      var socket = newAsyncSocket()
+      await socket.connect("", Port(self.port))
+      defer: socket.close()
+
+      await saveTempFileFuture
+      await socket.send(msg & "\r\L")
+
+      while true:
+        let response = await socket.recvLine()
+        if response.parseResponse().getSome(res):
+          results.add(res)
+        else:
+          break
+
+    return results
 
 method getDefinition*(self: LanguageServerNimSuggest, filename: string, location: Cursor): Future[Option[Definition]] {.async.} =
   # debugf"getDefinition {filename}, {location}"
@@ -152,12 +260,15 @@ method getCompletions*(self: LanguageServerNimSuggest, languageId: string, filen
 # Map from filename to server
 var languageServers = initTable[string, LanguageServerNimSuggest]()
 
-proc getOrCreateLanguageServerNimSuggest*(languageId: string, filename: string): Future[Option[LanguageServerNimSuggest]] {.async.} =
+proc getOrCreateLanguageServerNimSuggest*(languageId: string, filename: string, languagesServer: Option[(string, int)] = (string, int).none): Future[Option[LanguageServerNimSuggest]] {.async.} =
   assert languageId == "nim"
 
   if not languageServers.contains(filename):
-    let server = newLanguageServerNimSuggest(filename)
-    server.start()
-    languageServers[filename] = server
+    let server = await newLanguageServerNimSuggest(filename, languagesServer.map (m) => (m[0], Port(m[1])))
+    if server.getSome(server):
+      await server.start()
+      languageServers[filename] = server
+    else:
+      return LanguageServerNimSuggest.none
 
   return languageServers[filename].some

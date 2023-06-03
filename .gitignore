@@ -9,6 +9,7 @@
 *.wat
 src/input_tests
 nimcache
+_temp
 /ast
 absytree
 themes/**
