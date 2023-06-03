@@ -34,6 +34,15 @@ task createScriptingDocs, "Build the documentation for the scripting API":
 task buildDesktop, "Build the desktop version":
   selfExec "c -d:exposeScriptingApi ./src/absytree.nim"
 
+task buildWorkspaceServer, "Build the server for hosting workspaces":
+  selfExec "c -o:workspace-server.exe ./src/servers/workspace_server.nim"
+
+task buildLanguagesServer, "Build the server for hosting languages servers":
+  selfExec "c -o:languages-server.exe ./src/servers/languages_server.nim"
+
+task buildAbsytreeServer, "Build the server for hosting workspaces and language servers":
+  selfExec "c -o:absytree-server.exe ./src/servers/absytree_server.nim"
+
 task buildBrowser, "Build the browser version":
   selfExec "js -o:ast.js -d:exposeScriptingApi -d:vmathObjBased -d:enableTableIdCacheChecking ./src/absytree_js.nim"
 
