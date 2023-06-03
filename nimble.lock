@@ -327,6 +327,18 @@
       "checksums": {
         "sha1": "ce37320ad38c9d49fed435803e0c9a3d7308f419"
       }
+    },
+    "glob": {
+      "version": "0.11.2",
+      "vcsRevision": "286726e26ed9c4203bf41e6f1c41d2f0bc947122",
+      "url": "https://github.com/haltcase/glob",
+      "downloadMethod": "git",
+      "dependencies": [
+        "regex"
+      ],
+      "checksums": {
+        "sha1": "0e383626b94a7f8b9fcd9d0575bb3c2bfca63488"
+      }
     }
   },
   "tasks": {}
