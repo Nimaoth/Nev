@@ -1,16 +1,28 @@
 import std/[os, asynchttpserver, strutils, strformat, uri, asyncfile, json, jsonutils]
 import custom_async, util, router
+import glob
 
 type DirInfo = object
   files: seq[string]
   folders: seq[string]
 
+var ignoredPatterns: seq[Glob]
+
+proc shouldIgnore(path: string): bool =
+  {.gcsafe.}:
+    for pattern in ignoredPatterns:
+      if path.matches(pattern):
+        echo pattern.pattern, " matches ", path
+        return true
+
+  return false
+
 proc readDir(path: string): Future[DirInfo] {.async.} =
   var info = DirInfo()
   for (kind, item) in walkDir(path, relative=true, skipSpecial=true):
-    if kind == pcFile:
+    if kind == pcFile and not shouldIgnore(item):
       info.files.add item
-    elif kind == pcDir:
+    elif kind == pcDir and not shouldIgnore(item):
       info.folders.add item
 
   return info
@@ -18,15 +30,14 @@ proc readDir(path: string): Future[DirInfo] {.async.} =
 proc callback(req: Request): Future[void] {.async.} =
   echo "[WS] ", req.reqMethod, " ", req.url
 
-  let headers = newHttpHeaders([("Access-Control-Allow-Origin", "*")])
+  let headers = newHttpHeaders([
+    ("Access-Control-Allow-Origin", "*"),
+    ("Access-Control-Allow-Headers", "authorization"),
+    ("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE"),
+  ])
 
   withRequest req:
     options "/":
-      let headers = newHttpHeaders([
-        ("Access-Control-Allow-Origin", "*"),
-        ("Access-Control-Allow-Headers", "authorization"),
-        ("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE"),
-      ])
       await req.respond(Http204, "", headers)
 
     get "/info/name":
@@ -93,6 +104,16 @@ proc callback(req: Request): Future[void] {.async.} =
       await req.respond(Http404, "", headers)
 
 proc runWorkspaceServer*(port: Port) {.async.} =
+  try:
+    for line in readFile(".absytreeignore").splitLines():
+      if line.isEmptyOrWhitespace:
+        continue
+      echo "Ignoring ", line
+
+      ignoredPatterns.add glob(line)
+  except CatchableError:
+    echo "[WS] no ignore file"
+
   var server = newAsyncHttpServer()
   await server.serve(port, callback)
 
