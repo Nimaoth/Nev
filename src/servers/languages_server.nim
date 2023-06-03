@@ -3,7 +3,7 @@ import custom_async, util
 
 proc `$`(p: Port): string {.borrow.}
 
-proc getFreePort*(): Port =
+proc getFreePort(): Port =
   var server = newAsyncHttpServer()
   server.listen(Port(0))
   let port = server.getPort()
@@ -97,9 +97,9 @@ proc callback(req: Request): Future[void] {.async.} =
     fallback:
       await req.respond(Http404, "", headers)
 
-proc runLanguagesServer(port: Port) {.async.} =
+proc runLanguagesServer*(port: Port) {.async.} =
   var server = newAsyncHttpServer()
-  await server.serve(Port(port), callback)
+  await server.serve(port, callback)
 
 when isMainModule:
   const portArg = "--port:"
