@@ -129,6 +129,8 @@ else:
 addCommand "editor", "<S-SPACE><*-a>i", "toggle-flag", "ast.inline-blocks"
 addCommand "editor", "<S-SPACE><*-a>d", "toggle-flag", "ast.vertical-division"
 
+setOption "editor.text.languages-server.url", "localhost"
+setOption "editor.text.languages-server.port", 3001
 setOption "editor.text.lsp.zig.path", "zls"
 setOption "editor.text.lsp.rust.path", "C:/Users/nimao/.vscode/extensions/rust-lang.rust-analyzer-0.3.1325-win32-x64/server/rust-analyzer.exe"
 setOption "editor.text.treesitter.rust.dll", "D:/dev/Nim/nimtreesitter/treesitter_rust/treesitter_rust/rust.dll"

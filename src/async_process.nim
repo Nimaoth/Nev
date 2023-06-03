@@ -6,6 +6,7 @@ type AsyncChannel*[T] = ref object
 
 type AsyncProcess* = ref object
   name: string
+  args: seq[string]
   onRestarted*: proc(): Future[void]
   dontRestart: bool
   process: Process
@@ -109,9 +110,11 @@ proc send*(process: AsyncProcess, data: string): Future[void] =
     return
   return process.output.send(data)
 
-proc startAsyncProcess*(name: string): AsyncProcess =
+proc startAsyncProcess*(name: string, args: openArray[string] = [], autoRestart = true): AsyncProcess =
   new result
   result.name = name
+  result.args = @args
+  result.dontRestart = not autoRestart
   result.input = newAsyncChannel[char]()
   result.output = newAsyncChannel[Option[string]]()
 
@@ -172,6 +175,8 @@ proc startAsyncProcess*(name: string): AsyncProcess =
     return true
 
   proc restartServer(process: AsyncProcess) {.async.} =
+    var startCounter = 0
+
     while true:
       while process.serverDiedNotifications[].peek == 0:
         # echo "process active"
@@ -181,12 +186,14 @@ proc startAsyncProcess*(name: string): AsyncProcess =
       while process.serverDiedNotifications[].peek > 0:
         discard process.serverDiedNotifications[].recv
 
-      if process.dontRestart:
+      if startCounter > 0 and process.dontRestart:
         logger.log(lvlInfo, "[process] Don't restart")
         return
 
+      inc startCounter
+
       logger.log(lvlInfo, "[process] start")
-      process.process = startProcess(process.name)
+      process.process = startProcess(process.name, args=process.args)
 
       process.readerFlowVar = spawn(readInput(process.inputStreamChannel, process.serverDiedNotifications, process.input.chan, process.output.chan))
       process.inputStreamChannel[].send process.process.outputStream()

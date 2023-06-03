@@ -81,7 +81,7 @@ proc getOrCreateLanguageServerLSP*(languageId: string): Future[Option[LanguageSe
   return languageServers[languageId].some
 
 
-method start*(self: LanguageServerLSP) = discard
+method start*(self: LanguageServerLSP): Future[void] = discard
 method stop*(self: LanguageServerLSP) =
   self.client.close()
 

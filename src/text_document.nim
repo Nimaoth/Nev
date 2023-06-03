@@ -397,13 +397,6 @@ proc initTreesitter(self: TextDocument): Future[void] {.async.} =
   self.notifyTextChanged()
   gEditor.platform.requestRender()
 
-proc saveTempFile*(self: TextDocument, filename: string): Future[void] {.async.} =
-  when not defined(js):
-    let text = self.contentString
-    var file = openAsync(filename, fmWrite)
-    await file.write text
-    file.close()
-
 proc newTextDocument*(filename: string = "", content: string | seq[string] = "", app: bool = false): TextDocument =
   new(result)
   var self = result
@@ -435,9 +428,9 @@ proc destroy*(self: TextDocument) =
     self.tsParser.deinit()
     self.tsParser = nil
 
-  if self.languageServer.isSome:
-    self.languageServer.get.removeOnRequestSaveHandler(self.onRequestSaveHandle)
-    self.languageServer.get.stop()
+  if self.languageServer.getSome(ls):
+    ls.removeOnRequestSaveHandler(self.onRequestSaveHandle)
+    ls.stop()
     self.languageServer = LanguageServer.none
 
 method shutdown*(self: TextDocumentEditor) =
@@ -1571,12 +1564,20 @@ proc getLanguageServer(self: TextDocumentEditor): Future[Option[LanguageServer]]
   if self.document.languageServer.isSome:
     return self.document.languageServer
   else:
-    self.document.languageServer = await getOrCreateLanguageServer(languageId, self.document.filename)
-    if self.document.languageServer.isSome:
-      let callback = proc (targetFilename: string): Future[void] {.async.} =
-        await self.document.saveTempFile(targetFilename)
+    let url = getOption[string](self.editor, "editor.text.languages-server.url", "")
+    let port = getOption[int](self.editor, "editor.text.languages-server.port", 0)
+    let config = if url != "" and port != 0:
+      (url, port).some
+    else:
+      (string, int).none
 
-      self.document.onRequestSaveHandle = self.document.languageServer.get.addOnRequestSaveHandler(self.document.filename, callback)
+    self.document.languageServer = await getOrCreateLanguageServer(languageId, self.document.filename, config)
+    if self.document.languageServer.getSome(ls):
+      let callback = proc (targetFilename: string): Future[void] {.async.} =
+        if self.document.languageServer.getSome(ls):
+          await ls.saveTempFile(targetFilename, self.document.contentString)
+
+      self.document.onRequestSaveHandle = ls.addOnRequestSaveHandler(self.document.filename, callback)
     return self.document.languageServer
 
 proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
@@ -1584,10 +1585,10 @@ proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
   if languageServer.isNone:
     return
 
-  if languageServer.isSome:
-    let definition = await languageServer.get.getDefinition(self.document.filename, self.selection.last)
-    if definition.isSome:
-      self.selection = definition.get.location.toSelection
+  if languageServer.getSome(ls):
+    let definition = await ls.getDefinition(self.document.filename, self.selection.last)
+    if definition.getSome(d):
+      self.selection = d.location.toSelection
       self.scrollToCursor()
 
 proc getCompletionsFromContent(self: TextDocumentEditor): seq[TextCompletion] =
@@ -1614,8 +1615,8 @@ proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.} =
 
   let languageServer = await self.getLanguageServer()
 
-  if languageServer.isSome:
-    self.completions = await languageServer.get.getCompletions(self.document.languageId, self.document.filename, self.selection.last)
+  if languageServer.getSome(ls):
+    self.completions = await ls.getCompletions(self.document.languageId, self.document.filename, self.selection.last)
   else:
     self.completions = self.getCompletionsFromContent()
 

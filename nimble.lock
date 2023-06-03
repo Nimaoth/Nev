@@ -33,16 +33,6 @@
         "sha1": "7f7b61079189617c567c4f9e40c2ed16cecd59d0"
       }
     },
-    "ws": {
-      "version": "0.5.0",
-      "vcsRevision": "9536bf99ddf5948db221ccb7bb3663aa238a8e21",
-      "url": "https://github.com/treeform/ws",
-      "downloadMethod": "git",
-      "dependencies": [],
-      "checksums": {
-        "sha1": "ae4daf4ae302d0431f3c2d385ae9d2fe767a3246"
-      }
-    },
     "winim": {
       "version": "3.9.0",
       "vcsRevision": "3abd0ae122cd41efd0ce6d45fea720ef7091e4ac",
@@ -152,6 +142,16 @@
         "sha1": "f873f4b97e87a82e27e0b85bf9130fe3e320a2b8"
       }
     },
+    "ws": {
+      "version": "0.5.0",
+      "vcsRevision": "7f39f987232cd839eb126488855da107c331f140",
+      "url": "https://github.com/Nimaoth/ws",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "a02bc5c54792d5f9cc17be86be2833d79d5d1798"
+      }
+    },
     "vmath": {
       "version": "2.0.0",
       "vcsRevision": "7282ae1247f2f384ebeaec3826d7fa38fd0e1df1",
@@ -182,16 +182,6 @@
       "dependencies": [],
       "checksums": {
         "sha1": "b2d54fa3fa47a11a42c94f9d05f1057fc5ff16a3"
-      }
-    },
-    "opengl": {
-      "version": "1.2.7",
-      "vcsRevision": "57e01c58741066e8dae7eb19929f85b1d7c83bf8",
-      "url": "https://github.com/nim-lang/opengl",
-      "downloadMethod": "git",
-      "dependencies": [],
-      "checksums": {
-        "sha1": "c19fc867d0a999ebb078fc14ea142aa7cf057ba8"
       }
     },
     "zippy": {
@@ -232,29 +222,14 @@
         "sha1": "fd4c5d12bba41aac760fc86c2de820e1a367dbfd"
       }
     },
-    "urlly": {
-      "version": "1.1.1",
-      "vcsRevision": "94e9f864115c64debcfcce5db04c636838a4b408",
-      "url": "https://github.com/treeform/urlly",
+    "opengl": {
+      "version": "1.2.7",
+      "vcsRevision": "57e01c58741066e8dae7eb19929f85b1d7c83bf8",
+      "url": "https://github.com/nim-lang/opengl",
       "downloadMethod": "git",
       "dependencies": [],
       "checksums": {
-        "sha1": "fa636c9852fbf196df05baa1c9a0c976f533150d"
-      }
-    },
-    "windy": {
-      "version": "0.0.1",
-      "vcsRevision": "c044fd9846c264831ac2659a92d929b3fdbaab7e",
-      "url": "https://github.com/Nimaoth/windy",
-      "downloadMethod": "git",
-      "dependencies": [
-        "opengl",
-        "pixie",
-        "urlly",
-        "ws"
-      ],
-      "checksums": {
-        "sha1": "ce37320ad38c9d49fed435803e0c9a3d7308f419"
+        "sha1": "c19fc867d0a999ebb078fc14ea142aa7cf057ba8"
       }
     },
     "treesitter_nim": {
@@ -326,6 +301,31 @@
       "dependencies": [],
       "checksums": {
         "sha1": "408bde8679bce63dfb6f424e107eb37c5eb31510"
+      }
+    },
+    "urlly": {
+      "version": "1.1.1",
+      "vcsRevision": "94e9f864115c64debcfcce5db04c636838a4b408",
+      "url": "https://github.com/treeform/urlly",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "fa636c9852fbf196df05baa1c9a0c976f533150d"
+      }
+    },
+    "windy": {
+      "version": "0.0.1",
+      "vcsRevision": "c044fd9846c264831ac2659a92d929b3fdbaab7e",
+      "url": "https://github.com/Nimaoth/windy",
+      "downloadMethod": "git",
+      "dependencies": [
+        "opengl",
+        "pixie",
+        "urlly",
+        "ws"
+      ],
+      "checksums": {
+        "sha1": "ce37320ad38c9d49fed435803e0c9a3d7308f419"
       }
     }
   },
