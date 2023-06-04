@@ -61,7 +61,7 @@ method unregister*(self: DocumentEditor) {.base.} =
 method handleScroll*(self: DocumentEditor, scroll: Vec2, mousePosWindow: Vec2) {.base.} =
   discard
 
-method handleMousePress*(self: DocumentEditor, button: MouseButton, mousePosWindow: Vec2) {.base.} =
+method handleMousePress*(self: DocumentEditor, button: MouseButton, mousePosWindow: Vec2, modifiers: Modifiers) {.base.} =
   discard
 
 method handleMouseRelease*(self: DocumentEditor, button: MouseButton, mousePosWindow: Vec2) {.base.} =

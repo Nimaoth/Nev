@@ -1,5 +1,5 @@
-import std/[os, asynchttpserver, strutils, strformat, uri, asyncfile, json, jsonutils]
-import custom_async, util, router
+import std/[os, asynchttpserver, strutils, strformat, uri, asyncfile, json, jsonutils, sugar, sequtils]
+import custom_async, util, router, server_utils
 import glob
 
 type DirInfo = object
@@ -7,7 +7,6 @@ type DirInfo = object
   folders: seq[string]
 
 var workspaceName: string
-var hostedFolders: seq[string]
 var ignoredPatterns: seq[Glob]
 
 proc shouldIgnore(path: string): bool =
@@ -51,10 +50,15 @@ proc callback(req: Request): Future[void] {.async.} =
 
     get "/relative-path/":
       var relativePath = ""
-      let absolutePath = path.normalizedPath
-      for folder in hostedFolders:
-        if absolutePath.startsWith(folder):
-          relativePath = absolutePath[folder.len..^1].strip(chars={'/', '\\'}).replace('\\', '/')
+
+      let (name, actualPath) = path.splitWorkspacePath
+      let absolutePath = actualPath.normalizedPath
+      for i, folder in hostedFolders:
+        if absolutePath.startsWith(folder.path):
+          let name = folder.name.get($i)
+          relativePath = name & "::" & absolutePath[folder.path.len..^1].strip(chars={'/', '\\'}).replace('\\', '/')
+
+      echo "get relative path ", absolutePath, " -> ", relativePath
 
       await req.respond(Http200, relativePath, headers)
 
@@ -63,16 +67,24 @@ proc callback(req: Request): Future[void] {.async.} =
         await req.respond(Http403, "illegal path", headers)
         break
 
-      echo "list files in ", path
+      let fullPath = path.getActualPathAbs
+      echo "list files in ", fullPath
 
-      let result = await readDir(path)
+      let result = await readDir(fullPath)
       let response = result.toJson
 
       await req.respond(Http200, $response, headers)
 
     get "/list":
       echo "list files in ."
-      let result = await readDir(".")
+      let result = if hostedFolders.len == 0:
+        await readDir(".")
+      else:
+        var folders: seq[string]
+        for i, f in hostedFolders:
+          folders.add f.name.get($i) & "::"
+        DirInfo(folders: folders)
+
       let response = result.toJson
       await req.respond(Http200, $response, headers)
 
@@ -81,7 +93,7 @@ proc callback(req: Request): Future[void] {.async.} =
         await req.respond(Http403, "illegal path", headers)
         break
 
-      let fullPath = getCurrentDir() / path
+      let fullPath = path.getActualPathAbs
       echo fmt"get content of '{fullPath}'"
 
       try:
@@ -99,7 +111,7 @@ proc callback(req: Request): Future[void] {.async.} =
         await req.respond(Http403, "illegal path", headers)
         break
 
-      let fullPath = getCurrentDir() / path
+      let fullPath = path.getActualPathAbs
       echo fmt"set content of '{fullPath}'"
 
       try:
@@ -139,7 +151,8 @@ proc runWorkspaceServer*(port: Port) {.async.} =
         if line.startsWith("name: "):
           workspaceName = line["name: ".len..^1]
         else:
-          hostedFolders.add line.absolutePath.normalizedPath
+
+          hostedFolders.add (line.absolutePath.normalizedPath, string.none)
 
   except CatchableError:
     echo "[WS] no ignore file"

@@ -651,7 +651,7 @@ proc getLeafCellContainingPoint*(self: ModelDocumentEditor, cell: Cell, point: V
   # debugf"-> {cell.node}, {point}, {widget.lastBounds}"
   return cell.some
 
-method handleMousePress*(self: ModelDocumentEditor, button: MouseButton, mousePosWindow: Vec2) =
+method handleMousePress*(self: ModelDocumentEditor, button: MouseButton, mousePosWindow: Vec2, modifiers: Modifiers) =
   if self.showCompletions and self.getItemAtPixelPosition(mousePosWindow).getSome(item):
     if button == MouseButton.Left or button == MouseButton.Middle:
       self.selectedCompletion = item

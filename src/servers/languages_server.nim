@@ -23,6 +23,9 @@ proc callback(req: Request): Future[void] {.async.} =
         await req.respond(Http403, "illegal path", headers)
         break
 
+      let (_, relativePath) = path.splitWorkspacePath
+      let fullPath = path.getActualPathAbs
+
       let port = getFreePort()
 
       try:
@@ -30,17 +33,17 @@ proc callback(req: Request): Future[void] {.async.} =
           {.gcsafe.}:
             nimsuggestPath
 
-        echo fmt"start {nimsuggestPath} on localhost:{port} for '{path}'"
+        echo fmt"start {nimsuggestPath} on localhost:{port} for '{fullPath}'"
 
         let nimsuggest = getCurrentDir() / "nimsuggest-ws.exe"
-        let process = startProcess(nimsuggest, args=[fmt"--port:{port}", fmt"--nimsuggest:{nimsuggestPath}", "--", path])
+        let process = startProcess(nimsuggest, args=[fmt"--port:{port}", fmt"--nimsuggest:{nimsuggestPath}", "--", fullPath])
 
         {.gcsafe.}:
           processes.add process
 
         let response = %*{
           "port": port.int,
-          "tempFilename": "_temp" / path,
+          "tempFilename": "_temp" / relativePath,
         }
 
         await req.respond(Http200, response.pretty, headers)
@@ -53,7 +56,10 @@ proc callback(req: Request): Future[void] {.async.} =
         await req.respond(Http403, "illegal path", headers)
         break
 
-      let fullPath = getCurrentDir() / "_temp" / path
+      let (_, actualPath) = path.splitWorkspacePath
+
+
+      let fullPath = getCurrentDir() / "_temp" / actualPath
       echo fmt"set content temp file of '{fullPath}'"
 
       try:

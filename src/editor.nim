@@ -1217,7 +1217,7 @@ proc handleMousePress*(self: Editor, button: MouseButton, modifiers: Modifiers, 
       return
     if rects[i].contains(mousePosWindow):
       self.currentView = i
-      view.editor.handleMousePress(button, mousePosWindow)
+      view.editor.handleMousePress(button, mousePosWindow, modifiers)
       return
 
 proc handleMouseRelease*(self: Editor, button: MouseButton, modifiers: Modifiers, mousePosWindow: Vec2) =

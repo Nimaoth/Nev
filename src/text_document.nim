@@ -1812,7 +1812,7 @@ proc getCursorAtPixelPos(self: TextDocumentEditor, mousePosWindow: Vec2): Option
       startOffset += part.text.len
   return Cursor.none
 
-method handleMousePress*(self: TextDocumentEditor, button: MouseButton, mousePosWindow: Vec2) =
+method handleMousePress*(self: TextDocumentEditor, button: MouseButton, mousePosWindow: Vec2, modifiers: Modifiers) =
   if self.showCompletions and self.lastCompletionsWidget.isNotNil and self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
     if button == MouseButton.Left or button == MouseButton.Middle:
       self.selectedCompletion = self.getHoveredCompletion(mousePosWindow)
@@ -1821,7 +1821,9 @@ method handleMousePress*(self: TextDocumentEditor, button: MouseButton, mousePos
 
   if button == MouseButton.Left and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
     self.selection = cursor.toSelection
-    self.gotoDefinition()
+
+    if Control in modifiers:
+      self.gotoDefinition()
 
   if button == MouseButton.DoubleClick and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
     self.selectInside(cursor)
