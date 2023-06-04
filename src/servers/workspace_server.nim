@@ -6,6 +6,8 @@ type DirInfo = object
   files: seq[string]
   folders: seq[string]
 
+var workspaceName: string
+var hostedFolders: seq[string]
 var ignoredPatterns: seq[Glob]
 
 proc shouldIgnore(path: string): bool =
@@ -30,6 +32,10 @@ proc readDir(path: string): Future[DirInfo] {.async.} =
 proc callback(req: Request): Future[void] {.async.} =
   echo "[WS] ", req.reqMethod, " ", req.url
 
+  let (workspaceName, hostedFolders) = block:
+    {.gcsafe.}:
+      (workspaceName, hostedFolders)
+
   let headers = newHttpHeaders([
     ("Access-Control-Allow-Origin", "*"),
     ("Access-Control-Allow-Headers", "authorization"),
@@ -41,8 +47,16 @@ proc callback(req: Request): Future[void] {.async.} =
       await req.respond(Http204, "", headers)
 
     get "/info/name":
-      let name = getCurrentDir().splitFile.name
-      await req.respond(Http200, name, headers)
+      await req.respond(Http200, workspaceName, headers)
+
+    get "/relative-path/":
+      var relativePath = ""
+      let absolutePath = path.normalizedPath
+      for folder in hostedFolders:
+        if absolutePath.startsWith(folder):
+          relativePath = absolutePath[folder.len..^1].strip(chars={'/', '\\'}).replace('\\', '/')
+
+      await req.respond(Http200, relativePath, headers)
 
     get "/list/":
       if path.isAbsolute or path.contains(".."):
@@ -114,6 +128,24 @@ proc runWorkspaceServer*(port: Port) {.async.} =
   except CatchableError:
     echo "[WS] no ignore file"
 
+  try:
+    if fileExists(".absytree-workspace"):
+      hostedFolders.setLen 0
+
+      for line in readFile(".absytree-workspace").splitLines():
+        if line.isEmptyOrWhitespace or line.strip().startsWith("#"):
+          continue
+
+        if line.startsWith("name: "):
+          workspaceName = line["name: ".len..^1]
+        else:
+          hostedFolders.add line.absolutePath.normalizedPath
+
+  except CatchableError:
+    echo "[WS] no ignore file"
+
+  echo "[WS] hosting as ", workspaceName, ": ", hostedFolders
+
   var server = newAsyncHttpServer()
   await server.serve(port, callback)
 
@@ -126,5 +158,8 @@ when isMainModule:
     else:
       echo "Unexpected argument '", arg, "'"
       quit(1)
+
+  workspaceName = getCurrentDir().splitFile.name
+  hostedFolders = @[getCurrentDir()]
 
   waitFor runWorkspaceServer(Port(port))

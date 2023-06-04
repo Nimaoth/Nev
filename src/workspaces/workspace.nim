@@ -1,4 +1,4 @@
-import std/[json]
+import std/[json, options]
 import custom_async, id, array_buffer
 
 type
@@ -23,6 +23,12 @@ method saveFile*(self: WorkspaceFolder, relativePath: string, content: string): 
 method saveFile*(self: WorkspaceFolder, relativePath: string, content: ArrayBuffer): Future[void] {.base.} = discard
 
 method getDirectoryListing*(self: WorkspaceFolder, relativePath: string): Future[DirectoryListing] {.base.} = discard
+
+proc getRelativePathEmpty(): Future[Option[string]] {.async.} =
+  return string.none
+
+method getRelativePath*(self: WorkspaceFolder, absolutePath: string): Future[Option[string]] {.base.} =
+  return getRelativePathEmpty()
 
 import workspace_local
 export workspace_local

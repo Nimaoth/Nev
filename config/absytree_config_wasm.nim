@@ -16,38 +16,50 @@ proc handleAction*(action: string, args: JsonNode): bool {.wasmexport.} =
   case action
   of "set-max-loop-iterations":
     setOption("ast.max-loop-iterations", args[0].getInt)
+    return true
 
   of "command-line":
     let str = if args.len > 0: args[0].getStr else: ""
     commandLine(str)
     if getActiveEditor().isTextEditor(editor):
       editor.setMode "insert"
+    return true
 
   of "set-search-query":
     if getActiveEditor().isTextEditor(editor):
       editor.setSearchQuery args[0].getStr
+    return true
 
   of "kb-normal":
     loadNormalBindings()
+    return true
 
   of "kb-vim":
     loadVimBindings()
+    return true
 
   of "kb-helix":
     loadHelixBindings()
+    return true
+
+  of "do-nothing":
+    echo "do nothing"
+    return true
 
   else: return false
 
 proc handlePopupAction*(popup: EditorId, action: string, args: JsonNode): bool {.wasmexport.} =
-  infof "{env}:handlePopupAction: {action}, {args}"
+  # infof "{env}:handlePopupAction: {action}, {args}"
 
   case action:
   of "home":
     for i in 0..<3:
       popup.runAction "prev"
+    return true
   of "end":
     for i in 0..<3:
       popup.runAction "next"
+    return true
 
   else: return false
 
@@ -113,6 +125,7 @@ of Terminal:
   setOption "ast.inline-blocks", false
   setOption "ast.vertical-division", false
   setOption "model.scroll-speed", 1
+
 of Gui:
   setOption "text.scroll-speed", 23
   setOption "text.cursor-margin", 50
@@ -123,8 +136,18 @@ of Gui:
   setOption "ast.inline-blocks", true
   setOption "ast.vertical-division", true
   setOption "model.scroll-speed", 60
-else:
-  discard
+
+of Browser:
+  setOption "text.scroll-speed", 23
+  setOption "text.cursor-margin", 50
+  setOption "ast.scroll-speed", 60
+  setOption "ast.indent", 20
+  setOption "ast.indent-line-width", 2
+  setOption "ast.indent-line-alpha", 1
+  setOption "ast.inline-blocks", true
+  setOption "ast.vertical-division", true
+  setOption "model.scroll-speed", 60
+  addCommand "editor", "<C-r>", "do-nothing"
 
 addCommand "editor", "<S-SPACE><*-a>i", "toggle-flag", "ast.inline-blocks"
 addCommand "editor", "<S-SPACE><*-a>d", "toggle-flag", "ast.vertical-division"
@@ -193,8 +216,8 @@ addCommand "editor", "<S-SPACE><*-l>+", "change-font-size", 1
 addCommand "editor", "<S-SPACE>l1", "set-layout", "horizontal"
 addCommand "editor", "<S-SPACE>l2", "set-layout", "vertical"
 addCommand "editor", "<S-SPACE>l3", "set-layout", "fibonacci"
-addCommand "editor", "<CA-h>", "change-layout-prop", "main-split", -0.05
-addCommand "editor", "<CA-f>", "change-layout-prop", "main-split", 0.05
+addCommand "editor", "<CA*-g>h", "change-layout-prop", "main-split", -0.05
+addCommand "editor", "<CA*-g>f", "change-layout-prop", "main-split", 0.05
 addCommand "editor", "<CA-v>", "create-view"
 addCommand "editor", "<CA-a>", "create-keybind-autocomplete-view"
 addCommand "editor", "<CA-x>", "close-current-view"
@@ -203,11 +226,14 @@ addCommand "editor", "<CA-t>", "next-view"
 addCommand "editor", "<CS-n>", "move-current-view-prev"
 addCommand "editor", "<CS-t>", "move-current-view-next"
 addCommand "editor", "<CA-r>", "move-current-view-to-top"
+addCommand "editor", "<CA-h>", "open-previous-editor"
+addCommand "editor", "<CA-f>", "open-next-editor"
 addCommand "editor", "<C-s>", "write-file"
 addCommand "editor", "<CS-r>", "load-file"
 addCommand "editor", "<S-SPACE><S-SPACE>", "command-line"
 addCommand "editor", "<S-SPACE>t", "choose-theme"
 addCommand "editor", "<S-SPACE>f", "choose-file", "new"
+addCommand "editor", "<S-SPACE>e", "choose-open", "new"
 addCommand "editor", "<C-o>", "choose-file", "new"
 
 addCommandBlock "editor", "<S-SPACE>l<*-n>1":
