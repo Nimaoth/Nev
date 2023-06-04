@@ -148,7 +148,6 @@ proc `$`(op: UndoOp): string =
 type
   OnNodeInserted = proc(doc: AstDocument, node: AstNode)
   AstDocument* = ref object of Document
-    filename*: string
     symbols*: Table[Id, Symbol]
     rootNode*: AstNode
 
@@ -2075,6 +2074,8 @@ method handleMouseMove*(self: AstDocumentEditor, mousePosWindow: Vec2, mousePosD
     let mousePosContent = mousePosWindow - self.lastBounds.xy
     if not self.isEditing and self.getNodeAtPixelPosition(mousePosContent).getSome(n):
       self.node = n
+
+method getDocument*(self: AstDocumentEditor): Document = self.document
 
 method createWithDocument*(self: AstDocumentEditor, document: Document): DocumentEditor =
   let editor = AstDocumentEditor(eventHandler: nil, document: AstDocument(document), textDocument: nil, textEditor: nil)

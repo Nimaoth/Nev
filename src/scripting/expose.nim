@@ -89,6 +89,9 @@ proc returnType(def: NimNode): Option[NimNode] =
   return if def[3][0].kind != nnkEmpty: def[3][0].some else: NimNode.none
 
 when defined(js):
+
+  proc jsonStringify[T](value: T): cstring {.importjs: "JSON.stringify(#)".}
+
   proc createJavascriptWrapper(moduleName: string, def: NimNode, scriptFunctionSym: NimNode, jsFunctionName: string): NimNode =
     let jsPrototypeName = moduleName.replace(".", "_") & "_prototype"
 
@@ -343,7 +346,13 @@ macro expose*(moduleName: static string, def: untyped): untyped =
 
     callImplFromScriptFunction.insert(1, callFromScriptArg)
 
-    callDefFromDefJsWrapper.insert(1, def.argName(i))
+    let jsMappedArg = genAst(originalArgumentType, isVarargs, name=def.argName(i)):
+      when originalArgumentType is JsonNode:
+        ($jsonStringify(name)).parseJson()
+      else:
+        name
+
+    callDefFromDefJsWrapper.insert(1, jsMappedArg)
 
   scriptFunction[6] = quote do:
     `callImplFromScriptFunction`

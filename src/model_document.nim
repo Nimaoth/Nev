@@ -67,7 +67,6 @@ type
     operations*: seq[ModelOperation]
 
   ModelDocument* = ref object of Document
-    filename*: string
     model*: Model
     project*: Project
 
@@ -721,6 +720,8 @@ method getEventHandlers*(self: ModelDocumentEditor): seq[EventHandler] =
 
   if self.showCompletions:
     result.add self.completionEventHandler
+
+method getDocument*(self: ModelDocumentEditor): Document = self.document
 
 method createWithDocument*(_: ModelDocumentEditor, document: Document): DocumentEditor =
   let self = ModelDocumentEditor(eventHandler: nil, document: ModelDocument(document))

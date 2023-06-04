@@ -1,4 +1,4 @@
-import std/[strformat, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils, macros, macrocache, sugar, streams]
+import std/[strformat, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils, macros, macrocache, sugar, streams, deques]
 import fuzzy
 import input, id, events, rect_utils, document, document_editor, popup, timer, event, cancellation_token
 import theme, util, custom_logger, custom_async, fuzzy_matching
@@ -99,10 +99,14 @@ type Editor* = ref object
 
   statusBarOnTop*: bool
 
-  currentView*: int
+  currentViewInternal: int
   views*: seq[View]
+  hiddenViews*: seq[View]
   layout*: Layout
   layout_props*: LayoutProperties
+
+  activeEditorInternal: Option[EditorId]
+  editorHistory: Deque[EditorId]
 
   theme*: Theme
   loadedFontSize: float
@@ -127,6 +131,8 @@ var gEditor* {.exportc.}: Editor = nil
 
 proc setRegisterText*(self: Editor, text: string, register: string = "")
 proc getRegisterText*(self: Editor, text: var string, register: string = "")
+proc openWorkspaceFile*(self: Editor, path: string, folder: WorkspaceFolder): Option[DocumentEditor]
+proc openFile*(self: Editor, path: string, app: bool = false): Option[DocumentEditor]
 
 proc registerEditor*(self: Editor, editor: DocumentEditor) =
   self.editors[editor.id] = editor
@@ -303,15 +309,35 @@ proc setOption*[T](editor: Editor, path: string, value: T) =
 proc setFlag*(self: Editor, flag: string, value: bool)
 proc toggleFlag*(self: Editor, flag: string)
 
-proc createView*(self: Editor, document: Document) =
+proc updateActiveEditor*(self: Editor, addToHistory = true) =
+  if self.currentViewInternal >= 0 and self.currentViewInternal < self.views.len:
+    if addToHistory and self.activeEditorInternal.getSome(id) and id != self.views[self.currentViewInternal].editor.id:
+      self.editorHistory.addLast id
+    self.activeEditorInternal = self.views[self.currentViewInternal].editor.id.some
+
+proc currentView*(self: Editor): int = self.currentViewInternal
+proc `currentView=`(self: Editor, newIndex: int, addToHistory = true) =
+  self.currentViewInternal = newIndex
+  self.updateActiveEditor(addToHistory)
+
+proc addView*(self: Editor, view: View, addToHistory = true) =
+  self.views.insert(view, 0)
+
+  let maxViews = getOption[int](self, "editor.maxViews", int.high)
+  while maxViews > 0 and self.views.len > maxViews:
+    self.hiddenViews.add self.views.pop()
+
+  `currentView=`(self, 0, addToHistory)
+  self.updateActiveEditor(addToHistory)
+  self.platform.requestRender()
+
+proc createView*(self: Editor, document: Document): DocumentEditor =
   var editor = self.createEditorForDocument document
   editor.injectDependencies self
   discard editor.onMarkedDirty.subscribe () => self.platform.requestRender()
   var view = View(document: document, editor: editor)
-
-  self.views.add view
-  self.currentView = self.views.len - 1
-  self.platform.requestRender()
+  self.addView(view)
+  return editor
 
 proc pushPopup*(self: Editor, popup: Popup) =
   popup.init()
@@ -541,7 +567,7 @@ proc newEditor*(backend: api.Backend, platform: Platform): Editor =
             logger.log(lvlError, fmt"Failed to restore file {editorState.filename} from previous session: {getCurrentExceptionMsg()}")
             continue
 
-        self.createView(document)
+        discard self.createView(document)
 
   return self
 
@@ -720,7 +746,7 @@ proc toggleStatusBarLocation*(self: Editor) {.expose("editor").} =
   self.platform.requestRender(true)
 
 proc createView*(self: Editor) {.expose("editor").} =
-  self.createView(newTextDocument())
+  discard self.createView(newTextDocument())
 
 # proc createKeybindAutocompleteView*(self: Editor) {.expose("editor").} =
 #   self.createView(newKeybindAutocompletion())
@@ -795,11 +821,6 @@ proc executeCommandLine*(self: Editor): bool {.expose("editor").} =
 
   return self.handleAction(action, arg)
 
-proc updateDocumentContent(self: Editor, document: Document, path: string, folder: WorkspaceFolder): Future[void] {.async.} =
-  let content = await folder.loadFile(path)
-  if document of TextDocument:
-    document.TextDocument.content = content
-
 proc writeFile*(self: Editor, path: string = "", app: bool = false) {.expose("editor").} =
   defer:
     self.platform.requestRender()
@@ -833,40 +854,79 @@ proc loadWorkspaceFile*(self: Editor, path: string, folder: WorkspaceFolder) =
       logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
       logger.log(lvlError, getCurrentException().getStackTrace())
 
-proc openFile*(self: Editor, path: string, app: bool = false) {.expose("editor").} =
+proc tryOpenExisting*(self: Editor, path: string, folder: Option[WorkspaceFolder]): Option[DocumentEditor] =
+  for i, view in self.views:
+    if view.document.filename == path and view.document.workspace == folder:
+      logger.log(lvlInfo, fmt"Reusing open editor in view {i}")
+      self.currentView = i
+      self.moveCurrentViewToTop()
+      return view.editor.some
+
+  for i, view in self.hiddenViews:
+    if view.document.filename == path and view.document.workspace == folder:
+      logger.log(lvlInfo, fmt"Reusing hidden view")
+      self.hiddenViews.delete i
+      self.addView(view)
+      return view.editor.some
+
+  return DocumentEditor.none
+
+proc tryOpenExisting*(self: Editor, editor: EditorId, addToHistory = true): Option[DocumentEditor] =
+  for i, view in self.views:
+    if view.editor.id == editor:
+      logger.log(lvlInfo, fmt"Reusing open editor in view {i}")
+      `currentView=`(self, i, addToHistory)
+      self.moveCurrentViewToTop()
+      return view.editor.some
+
+  for i, view in self.hiddenViews:
+    if view.editor.id == editor:
+      logger.log(lvlInfo, fmt"Reusing hidden view")
+      self.hiddenViews.delete i
+      self.addView(view, addToHistory)
+      return view.editor.some
+
+  return DocumentEditor.none
+
+proc openFile*(self: Editor, path: string, app: bool = false): Option[DocumentEditor] =
   defer:
     self.platform.requestRender()
+
+  if self.tryOpenExisting(path, WorkspaceFolder.none).isSome:
+    return
+
   try:
     if path.endsWith(".ast"):
-      self.createView(newAstDocument(path, app, WorkspaceFolder.none))
+      return self.createView(newAstDocument(path, app, WorkspaceFolder.none)).some
     elif path.endsWith(".am"):
-      self.createView(newModelDocument(path, app, WorkspaceFolder.none))
+      return self.createView(newModelDocument(path, app, WorkspaceFolder.none)).some
     else:
       let file = if app: fs.loadApplicationFile(path) else: fs.loadFile(path)
-      self.createView(newTextDocument(path, file.splitLines, app))
+      return self.createView(newTextDocument(path, file.splitLines, app)).some
   except CatchableError:
     logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
     logger.log(lvlError, getCurrentException().getStackTrace())
+    return DocumentEditor.none
 
-proc openWorkspaceFile*(self: Editor, path: string, folder: WorkspaceFolder) =
+proc openWorkspaceFile*(self: Editor, path: string, folder: WorkspaceFolder): Option[DocumentEditor] =
   defer:
     self.platform.requestRender()
-  try:
 
+  if self.tryOpenExisting(path, folder.some).getSome(editor):
+    return editor.some
+
+  try:
     if path.endsWith(".ast"):
-      # @todo
-      self.createView(newAstDocument(path, false, folder.some))
+      return self.createView(newAstDocument(path, false, folder.some)).some
     elif path.endsWith(".am"):
-      self.createView(newModelDocument(path, false, folder.some))
+      return self.createView(newModelDocument(path, false, folder.some)).some
     else:
-      var document = newTextDocument(path, @[])
-      document.workspace = folder.some
-      asyncCheck self.updateDocumentContent(document, path, folder)
-      self.createView(document)
+      return self.createView(newTextDocument(path, false, folder.some)).some
 
   except CatchableError:
     logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
     logger.log(lvlError, getCurrentException().getStackTrace())
+    return DocumentEditor.none
 
 proc removeFromLocalStorage*(self: Editor) {.expose("editor").} =
   ## Browser only
@@ -1003,15 +1063,73 @@ proc chooseFile*(self: Editor, view: string = "new") {.expose("editor").} =
         self.loadFile(item.FileSelectorItem.path)
     of "new":
       if item.FileSelectorItem.workspaceFolder.isSome:
-        self.openWorkspaceFile(item.FileSelectorItem.path, item.FileSelectorItem.workspaceFolder.get)
+        discard self.openWorkspaceFile(item.FileSelectorItem.path, item.FileSelectorItem.workspaceFolder.get)
       else:
-        self.openFile(item.FileSelectorItem.path)
+        discard self.openFile(item.FileSelectorItem.path)
     else:
       logger.log(lvlError, fmt"Unknown argument {view}")
 
   popup.updateCompletions()
 
   self.pushPopup popup
+
+proc chooseOpen*(self: Editor, view: string = "new") {.expose("editor").} =
+  defer:
+    self.platform.requestRender()
+
+  var popup = self.newSelectorPopup()
+  popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
+    let allViews = self.views & self.hiddenViews
+    for view in allViews:
+      let document = view.editor.getDocument
+      let name = view.document.filename
+      let score = matchPath(name, text)
+      result.add FileSelectorItem(path: name, score: score, workspaceFolder: document.workspace)
+
+    result.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Descending)
+
+  popup.handleItemConfirmed = proc(item: SelectorItem) =
+    case view
+    of "current":
+      if item.FileSelectorItem.workspaceFolder.isSome:
+        self.loadWorkspaceFile(item.FileSelectorItem.path, item.FileSelectorItem.workspaceFolder.get)
+      else:
+        self.loadFile(item.FileSelectorItem.path)
+    of "new":
+      if item.FileSelectorItem.workspaceFolder.isSome:
+        discard self.openWorkspaceFile(item.FileSelectorItem.path, item.FileSelectorItem.workspaceFolder.get)
+      else:
+        discard self.openFile(item.FileSelectorItem.path)
+    else:
+      logger.log(lvlError, fmt"Unknown argument {view}")
+
+  popup.updateCompletions()
+
+  self.pushPopup popup
+
+proc openPreviousEditor*(self: Editor) {.expose("editor").} =
+  if self.editorHistory.len == 0:
+    return
+
+  let editor = self.editorHistory.popLast
+
+  if self.currentView >= 0 and self.currentView < self.views.len:
+    self.editorHistory.addFirst self.views[self.currentView].editor.id
+
+  discard self.tryOpenExisting(editor, addToHistory=false)
+  self.platform.requestRender()
+
+proc openNextEditor*(self: Editor) {.expose("editor").} =
+  if self.editorHistory.len == 0:
+    return
+
+  let editor = self.editorHistory.popFirst
+
+  if self.currentView >= 0 and self.currentView < self.views.len:
+    self.editorHistory.addLast self.views[self.currentView].editor.id
+
+  discard self.tryOpenExisting(editor, addToHistory=false)
+  self.platform.requestRender()
 
 proc setGithubAccessToken*(self: Editor, token: string) {.expose("editor").} =
   ## Stores the give token in local storage as 'GithubAccessToken', which will be used in requests to the github api
@@ -1164,7 +1282,7 @@ proc handleRune*(self: Editor, input: int64, modifiers: Modifiers) =
     self.platform.preventDefault()
 
 proc handleDropFile*(self: Editor, path, content: string) =
-  self.createView(newTextDocument(path, content))
+  discard self.createView(newTextDocument(path, content))
 
 proc scriptRunAction*(action: string, arg: string) {.expose("editor").} =
   if gEditor.isNil:
@@ -1220,7 +1338,7 @@ proc loadCurrentConfig*(self: Editor) {.expose("editor").} =
   ## Javascript backend only!
   ## Opens the config file in a new view.
   when defined(js):
-    self.createView(newTextDocument("./config/absytree_config.js", fs.loadApplicationFile("./config/absytree_config.js"), true))
+    discard self.createView(newTextDocument("./config/absytree_config.js", fs.loadApplicationFile("./config/absytree_config.js"), true))
 
 proc sourceCurrentDocument*(self: Editor) {.expose("editor").} =
   ## Javascript backend only!

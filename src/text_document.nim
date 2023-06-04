@@ -43,11 +43,11 @@ type StyledLine* = ref object
   parts*: seq[StyledText]
 
 type TextDocument* = ref object of Document
-  filename*: string
   lines*: seq[string]
   languageId*: string
   version*: int
 
+  onLoaded*: Event[TextDocument]
   textChanged*: Event[TextDocument]
   textInserted*: Event[tuple[document: TextDocument, location: Cursor, text: string]]
   textDeleted*: Event[tuple[document: TextDocument, selection: Selection]]
@@ -74,6 +74,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   document*: TextDocument
 
   selectionsInternal: Selections
+  targetSelectionsInternal: Option[Selections] # The selections we want to have once the document is loaded
   selectionHistory: Deque[Selections]
 
   searchQuery*: string
@@ -144,6 +145,17 @@ proc clampAndMergeSelections*(self: TextDocumentEditor, selections: openArray[Se
 proc selections*(self: TextDocumentEditor): Selections = self.selectionsInternal
 proc selection*(self: TextDocumentEditor): Selection = self.selectionsInternal[self.selectionsInternal.high]
 
+proc `selections=`*(self: TextDocumentEditor, selections: Selections) =
+  let selections = self.clampAndMergeSelections(selections)
+  if self.selectionsInternal == selections:
+    return
+
+  self.selectionHistory.addLast self.selectionsInternal
+  if self.selectionHistory.len > 100:
+    discard self.selectionHistory.popFirst
+  self.selectionsInternal = selections
+  self.markDirty()
+
 proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
   if self.selectionsInternal.len == 1 and self.selectionsInternal[0] == selection:
     return
@@ -154,17 +166,9 @@ proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
   self.selectionsInternal = @[self.clampSelection selection]
   self.markDirty()
 
-proc `selections=`*(self: TextDocumentEditor, selections: Selections) =
-  if self.selectionsInternal == selections:
-    return
-
-  self.selectionHistory.addLast self.selectionsInternal
-  if self.selectionHistory.len > 100:
-    discard self.selectionHistory.popFirst
-  self.selectionsInternal = self.clampAndMergeSelections selections
-  if self.selectionsInternal.len == 0:
-    self.selectionsInternal = @[(0, 0).toSelection]
-  self.markDirty()
+proc `targetSelection=`*(self: TextDocumentEditor, selection: Selection) =
+  self.targetSelectionsInternal = @[selection].some
+  self.selection = selection
 
 proc clampSelection*(self: TextDocumentEditor) =
   self.selections = self.clampAndMergeSelections(self.selectionsInternal)
@@ -458,6 +462,7 @@ method save*(self: TextDocument, filename: string = "", app: bool = false) =
 
 proc loadAsync(self: TextDocument, ws: WorkspaceFolder): Future[void] {.async.} =
   self.content = await ws.loadFile(self.filename)
+  self.onLoaded.invoke self
 
 method load*(self: TextDocument, filename: string = "") =
   let filename = if filename.len > 0: filename else: self.filename
@@ -470,8 +475,10 @@ method load*(self: TextDocument, filename: string = "") =
     asyncCheck self.loadAsync(ws)
   elif self.appFile:
     self.content = fs.loadApplicationFile(self.filename)
+    self.onLoaded.invoke self
   else:
     self.content = fs.loadFile(self.filename)
+    self.onLoaded.invoke self
 
 proc byteOffset(self: TextDocument, cursor: Cursor): int =
   result = cursor.column
@@ -577,33 +584,7 @@ proc getIndentForLine*(self: TextDocument, line: int): int =
       break
     result += 1
 
-# proc getTargetIndentForLine(self: TextDocument, line: int): int =
-#   if line == 0:
-#     return 0
-#   # return self.getIndentForLine(line - 1)
-#   if self.currentTree.isNil:
-#     return
-
-#   let curr = (line, 0)
-#   let prev = (line - 1, self.lineLength(line - 1))
-
-#   var nodePrev = self.currentTree.root.descendantForRange prev.toSelection
-#   var nodeCurr = self.currentTree.root.descendantForRange curr.toSelection
-
-#   let currChildOfPrev = nodePrev.getRange.contains(nodeCurr.getRange)
-#   # echo "prev: ", nodePrev.getRange, ", ", $nodePrev, "\n", self.contentString(nodePrev.getRange)
-#   # echo "curr: ", nodeCurr.getRange, ", ", $nodeCurr, "\n", self.contentString(nodeCurr.getRange)
-
-#   if currChildOfPrev:
-#     # echo "currChildOfPrev"
-#     return nodeCurr.getRange.first.column + 2
-#   else:
-#     # echo "not currChildOfPrev"
-#     return nodePrev.getRange.first.column + 2
-
-#   # return node.getRange.first.column + 2
-
-proc insert(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true, autoIndent: bool = true): seq[Selection] =
+proc insert(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true): seq[Selection] =
   var newEmptyLines: seq[int]
 
   result = self.clampAndMergeSelections selections
@@ -665,11 +646,6 @@ proc insert(self: TextDocument, selections: openArray[Selection], oldSelection: 
       let strValue = self.lines.join("\n")
       self.currentTree = self.tsParser.parseString(strValue, self.currentTree.some)
 
-    # if autoIndent:
-    #   for line in newEmptyLines:
-    #     let indent = self.getTargetIndentForLine(line)
-    #     cursor = self.insert((line, 0), oldSelection, ' '.repeat(indent), notify = false, record = false, autoIndent = false)
-
     inc self.version
 
     if record:
@@ -698,7 +674,7 @@ proc doUndo(document: TextDocument, op: UndoOp, oldSelection: openArray[Selectio
     redoOps.add UndoOp(kind: Insert, cursor: op.selection.first, text: text, oldSelection: @oldSelection)
 
   of Insert:
-    let selections = document.insert([op.cursor.toSelection], op.oldSelection, [op.text], record = false, autoIndent = false)
+    let selections = document.insert([op.cursor.toSelection], op.oldSelection, [op.text], record = false)
     result = selections
     redoOps.add UndoOp(kind: Delete, selection: (op.cursor, selections[0].last), oldSelection: @oldSelection)
 
@@ -731,7 +707,7 @@ proc doRedo(document: TextDocument, op: UndoOp, oldSelection: openArray[Selectio
     undoOps.add UndoOp(kind: Insert, cursor: op.selection.first, text: text, oldSelection: @oldSelection)
 
   of Insert:
-    result = document.insert([op.cursor.toSelection], [op.cursor.toSelection], [op.text], record = false, autoIndent = false)
+    result = document.insert([op.cursor.toSelection], [op.cursor.toSelection], [op.text], record = false)
     undoOps.add UndoOp(kind: Delete, selection: (op.cursor, result[0].last), oldSelection: @oldSelection)
 
   of Nested:
@@ -842,7 +818,7 @@ proc doMoveCursorPrevFindResult(self: TextDocumentEditor, cursor: Cursor, offset
 proc doMoveCursorNextFindResult(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor =
   return self.getNextFindResult(cursor, offset).first
 
-proc scrollToCursor(self: TextDocumentEditor, cursor: Cursor, keepVerticalOffset: bool = false) =
+proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, keepVerticalOffset: bool = false) =
   if self.disableScrolling:
     return
 
@@ -863,6 +839,17 @@ proc scrollToCursor(self: TextDocumentEditor, cursor: Cursor, keepVerticalOffset
     elif targetLineY + totalLineHeight > self.lastContentBounds.h - margin:
       self.scrollOffset = self.lastContentBounds.h - margin - totalLineHeight
       self.previousBaseIndex = targetLine
+  self.markDirty()
+
+proc centerCursor*(self: TextDocumentEditor, cursor: Cursor) =
+  if self.disableScrolling:
+    return
+
+  let maxLinesOnScreen = self.lastContentBounds.h / self.editor.platform.totalLineHeight
+
+  self.previousBaseIndex = cursor.line
+  self.scrollOffset = min(cursor.line.float / maxLinesOnScreen * self.editor.platform.totalLineHeight, self.lastContentBounds.h * 0.5 - self.editor.platform.totalLineHeight * 0.5)
+
   self.markDirty()
 
 proc getContextWithMode*(self: TextDocumentEditor, context: string): string
@@ -998,8 +985,8 @@ proc invertSelection(self: TextDocumentEditor) {.expose("editor.text").} =
   ## Inverts the current selection. Discards all but the last cursor.
   self.selection = (self.selection.last, self.selection.first)
 
-proc insert(self: TextDocumentEditor, selections: seq[Selection], text: string, notify: bool = true, record: bool = true, autoIndent: bool = true): seq[Selection] {.expose("editor.text").} =
-  return self.document.insert(selections, self.selections, [text], notify, record, autoIndent)
+proc insert(self: TextDocumentEditor, selections: seq[Selection], text: string, notify: bool = true, record: bool = true): seq[Selection] {.expose("editor.text").} =
+  return self.document.insert(selections, self.selections, [text], notify, record)
 
 proc delete(self: TextDocumentEditor, selections: seq[Selection], notify: bool = true, record: bool = true): seq[Selection] {.expose("editor.text").} =
   return self.document.delete(selections, self.selections, notify, record)
@@ -1169,10 +1156,12 @@ proc unindent*(self: TextDocumentEditor) {.expose("editor.text").} =
 proc undo(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.document.undo(self.selections, true).getSome(selections):
     self.selections = selections
+    self.scrollToCursor(Last)
 
 proc redo(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.document.redo(self.selections, true).getSome(selections):
     self.selections = selections
+    self.scrollToCursor(Last)
 
 proc copy*(self: TextDocumentEditor) {.expose("editor.text").} =
   var text = ""
@@ -1313,6 +1302,9 @@ proc moveCursorPrevFindResult*(self: TextDocumentEditor, cursor: SelectionCursor
 
 proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
   self.scrollToCursor(self.getCursor(cursor))
+
+proc centerCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
+  self.centerCursor(self.getCursor(cursor))
 
 proc reloadTreesitter*(self: TextDocumentEditor) {.expose("editor.text").} =
   logger.log(lvlInfo, "reloadTreesitter")
@@ -1588,8 +1580,27 @@ proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
   if languageServer.getSome(ls):
     let definition = await ls.getDefinition(self.document.filename, self.selection.last)
     if definition.getSome(d):
-      self.selection = d.location.toSelection
-      self.scrollToCursor()
+      let relativePath = if self.document.workspace.getSome(workspace):
+        await workspace.getRelativePath(d.filename)
+      else:
+        string.none
+
+      let path = relativePath.get(self.document.filename)
+
+      if path != self.document.filename:
+        let editor: Option[DocumentEditor] = if self.document.workspace.getSome(workspace):
+          self.editor.openWorkspaceFile(path, workspace)
+        else:
+          self.editor.openFile(path)
+
+        if editor.getSome(editor) and editor of TextDocumentEditor:
+          let textEditor = editor.TextDocumentEditor
+          textEditor.targetSelection = d.location.toSelection
+          textEditor.scrollToCursor()
+
+      else:
+        self.selection = d.location.toSelection
+        self.scrollToCursor()
 
 proc getCompletionsFromContent(self: TextDocumentEditor): seq[TextCompletion] =
   var s = initHashSet[string]()
@@ -1665,7 +1676,7 @@ proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").
 
   let cursor = self.selection.last
   if cursor.column == 0:
-    self.selections = self.document.insert([cursor.toSelection], self.selections, [com.name], true, true, false)
+    self.selections = self.document.insert([cursor.toSelection], self.selections, [com.name], true, true)
   else:
     let line = self.document.getLine cursor.line
     var column = cursor.column
@@ -1745,6 +1756,12 @@ proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
   self.updateSearchResults()
   self.markDirty()
 
+proc handleTextDocumentLoaded(self: TextDocumentEditor) =
+  if self.targetSelectionsInternal.getSome(s):
+    self.selections = s
+    self.scrollToCursor()
+  self.targetSelectionsInternal = Selections.none
+
 ## Only use this to create TextDocumentEditorInstances
 proc createTextEditorInstance(): TextDocumentEditor =
   let editor = TextDocumentEditor(eventHandler: nil, selectionsInternal: @[(0, 0).toSelection])
@@ -1762,7 +1779,10 @@ proc newTextEditor*(document: TextDocument, ed: Editor): TextDocumentEditor =
     editor.document.lines = @[""]
   editor.injectDependencies(ed)
   discard document.textChanged.subscribe (_: TextDocument) => editor.handleTextDocumentTextChanged()
+  discard document.onLoaded.subscribe (_: TextDocument) => editor.handleTextDocumentLoaded()
   return editor
+
+method getDocument*(self: TextDocumentEditor): Document = self.document
 
 method createWithDocument*(self: TextDocumentEditor, document: Document): DocumentEditor =
   var editor = createTextEditorInstance()
@@ -1772,6 +1792,7 @@ method createWithDocument*(self: TextDocumentEditor, document: Document): Docume
   if editor.document.lines.len == 0:
     editor.document.lines = @[""]
   discard editor.document.textChanged.subscribe (_: TextDocument) => editor.handleTextDocumentTextChanged()
+  discard editor.document.onLoaded.subscribe (_: TextDocument) => editor.handleTextDocumentLoaded()
   return editor
 
 proc getCursorAtPixelPos(self: TextDocumentEditor, mousePosWindow: Vec2): Option[Cursor] =
@@ -1792,7 +1813,7 @@ proc getCursorAtPixelPos(self: TextDocumentEditor, mousePosWindow: Vec2): Option
   return Cursor.none
 
 method handleMousePress*(self: TextDocumentEditor, button: MouseButton, mousePosWindow: Vec2) =
-  if not self.lastCompletionsWidget.isNil and self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
+  if self.showCompletions and self.lastCompletionsWidget.isNotNil and self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
     if button == MouseButton.Left or button == MouseButton.Middle:
       self.selectedCompletion = self.getHoveredCompletion(mousePosWindow)
       self.markDirty()
@@ -1800,6 +1821,7 @@ method handleMousePress*(self: TextDocumentEditor, button: MouseButton, mousePos
 
   if button == MouseButton.Left and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
     self.selection = cursor.toSelection
+    self.gotoDefinition()
 
   if button == MouseButton.DoubleClick and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
     self.selectInside(cursor)
@@ -1808,7 +1830,7 @@ method handleMousePress*(self: TextDocumentEditor, button: MouseButton, mousePos
     self.selectLine(cursor.line)
 
 method handleMouseRelease*(self: TextDocumentEditor, button: MouseButton, mousePosWindow: Vec2) =
-  if button == MouseButton.Left and not self.lastCompletionsWidget.isNil and self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
+  if button == MouseButton.Left and self.showCompletions and self.lastCompletionsWidget.isNotNil and self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
     let oldSelectedCompletion = self.selectedCompletion
     self.selectedCompletion = self.getHoveredCompletion(mousePosWindow)
     if self.selectedCompletion == oldSelectedCompletion:
@@ -1820,7 +1842,7 @@ method handleMouseRelease*(self: TextDocumentEditor, button: MouseButton, mouseP
   discard
 
 method handleMouseMove*(self: TextDocumentEditor, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) =
-  if not self.lastCompletionsWidget.isNil and self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
+  if self.showCompletions and self.lastCompletionsWidget.isNotNil and self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
     if MouseButton.Middle in buttons:
       self.selectedCompletion = self.getHoveredCompletion(mousePosWindow)
       self.markDirty()

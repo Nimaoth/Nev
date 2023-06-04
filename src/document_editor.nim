@@ -47,6 +47,8 @@ method canEdit*(self: DocumentEditor, document: Document): bool {.base.} =
 method createWithDocument*(self: DocumentEditor, document: Document): DocumentEditor {.base.} =
   return nil
 
+method getDocument*(self: DocumentEditor): Document {.base.} = discard
+
 method getEventHandlers*(self: DocumentEditor): seq[EventHandler] {.base.} =
   return @[]
 

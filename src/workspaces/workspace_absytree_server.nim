@@ -1,13 +1,15 @@
-import std/[tables, json, strutils]
+import std/[tables, json, strutils, options]
 import workspace, custom_async, custom_logger, async_http_client, platform/filesystem, array_buffer
 
 type
   DirectoryListingWrapper = object
     done: bool
     listing: DirectoryListing
+
   WorkspaceFolderAbsytreeServer* = ref object of WorkspaceFolder
     baseUrl*: string
     cachedDirectoryListings: Table[string, DirectoryListingWrapper]
+    cachedRelativePaths: Table[string, Option[string]]
 
 method isReadOnly*(self: WorkspaceFolderAbsytreeServer): bool = false
 method settings*(self: WorkspaceFolderAbsytreeServer): JsonNode =
@@ -85,6 +87,16 @@ method getDirectoryListing*(self: WorkspaceFolderAbsytreeServer, relativePath: s
     return self.cachedDirectoryListings[relativePath].listing
 
   return DirectoryListing()
+
+method getRelativePath*(self: WorkspaceFolderAbsytreeServer, absolutePath: string): Future[Option[string]] {.async.} =
+  if not self.cachedRelativePaths.contains(absolutePath):
+    let response = await httpGet(self.baseUrl & "/relative-path/" & absolutePath)
+    if response == "":
+      self.cachedRelativePaths[absolutePath] = string.none
+    else:
+      self.cachedRelativePaths[absolutePath] = response.some
+
+  return self.cachedRelativePaths[absolutePath]
 
 proc newWorkspaceFolderAbsytreeServer*(url: string): WorkspaceFolderAbsytreeServer =
   new result
