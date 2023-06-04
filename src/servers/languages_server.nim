@@ -2,6 +2,7 @@ import std/[os, osproc, asynchttpserver, strutils, strformat, uri, asyncfile, js
 import custom_async, util, router, server_utils
 
 var processes: seq[Process] = @[]
+var nimsuggestPath* = "nimsuggest"
 
 proc callback(req: Request): Future[void] {.async.} =
   echo "[LS] ", req.reqMethod, " ", req.url
@@ -23,11 +24,16 @@ proc callback(req: Request): Future[void] {.async.} =
         break
 
       let port = getFreePort()
-      echo fmt"start nimsuggest on localhost:{port} for '{path}'"
 
       try:
+        let nimsuggestPath = block:
+          {.gcsafe.}:
+            nimsuggestPath
+
+        echo fmt"start {nimsuggestPath} on localhost:{port} for '{path}'"
+
         let nimsuggest = getCurrentDir() / "nimsuggest-ws.exe"
-        let process = startProcess(nimsuggest, args=[fmt"--port:{port}", "--", path])
+        let process = startProcess(nimsuggest, args=[fmt"--port:{port}", fmt"--nimsuggest:{nimsuggestPath}", "--", path])
 
         {.gcsafe.}:
           processes.add process
@@ -71,10 +77,13 @@ proc runLanguagesServer*(port: Port) {.async.} =
 
 when isMainModule:
   const portArg = "--port:"
+  const nimsuggestPathArg = "--nimsuggest:"
   var port = 3001
   for arg in commandLineParams():
     if arg.startsWith(portArg):
       port = arg[portArg.len..^1].parseInt
+    elif arg.startsWith(nimsuggestPathArg):
+      nimsuggestPath = arg[nimsuggestPathArg.len..^1]
     else:
       echo "Unexpected argument '", arg, "'"
       quit(1)
