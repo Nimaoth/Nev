@@ -2037,7 +2037,7 @@ method handleScroll*(self: AstDocumentEditor, scroll: Vec2, mousePosWindow: Vec2
     self.scrollOffset += scrollAmount
     self.markDirty()
 
-method handleMousePress*(self: AstDocumentEditor, button: MouseButton, mousePosWindow: Vec2) =
+method handleMousePress*(self: AstDocumentEditor, button: MouseButton, mousePosWindow: Vec2, modifiers: Modifiers) =
   # Make mousePos relative to contentBounds
   let mousePosContent = mousePosWindow - self.lastBounds.xy
 

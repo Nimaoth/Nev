@@ -18,9 +18,10 @@ when defined(js):
   proc newWebSocketJs(url: cstring): WebSocketJs {.importjs: "new WebSocket(#)".}
   proc sendJs(ws: WebSocketJs, text: cstring) {.importjs: "#.send(#)".}
   proc `onMessage=`(ws: WebSocketJs, callback: proc(msg: WebSocketMsgJs) {.closure.}) {.importjs: "#.onmessage = #".}
-  proc `onError=`(ws: WebSocketJs, callback: proc(msg: cstring) {.closure.}) {.importjs: "#.addEventListener('error', #)".}
+  proc `onError=`(ws: WebSocketJs, callback: proc(msg: JsObject) {.closure.}) {.importjs: "#.addEventListener('error', #)".}
   proc readyState(ws: WebSocketJs): int {.importjs: "#.readyState".}
   proc data(msg: WebSocketMsgJs): cstring {.importjs: "#.data".}
+  proc console[T](t: T) {.importjs: "console.log(#);".}
 
   proc newWebSocket*(url: string, protocols: openArray[string] = []): Future[WebSocket] {.async.} =
     var socket = new WebSocket
@@ -29,8 +30,9 @@ when defined(js):
     socket.socket = newWebSocketJs(url.cstring)
     socket.socket.onMessage = proc(msg: WebSocketMsgJs) =
       socket.recvBuffer.add $msg.data
-    socket.socket.onError = proc(msg: cstring) =
-      echo "Error: ", msg
+    socket.socket.onError = proc(msg: JsObject) =
+      echo "Error: "
+      console(msg)
 
     return socket
 
