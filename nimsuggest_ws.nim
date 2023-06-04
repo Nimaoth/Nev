@@ -17,6 +17,7 @@ var nimsuggestPort = getFreePort()
 var port = 4000
 var forwardedArgs: seq[string] = @["--port:" & $nimsuggestPort.int]
 var isForwarding = false
+var nimsuggestPath = "nimsuggest"
 
 echo "Using free port ", nimsuggestPort.int
 
@@ -25,6 +26,8 @@ for arg in commandLineParams():
     forwardedArgs.add arg
   elif arg.startsWith("--port:"):
     port = arg[7..^1].parseInt
+  elif arg.startsWith("--nimsuggest:"):
+    nimsuggestPath = arg["--nimsuggest:".len..^1]
   elif arg == "--":
     isForwarding = true
   else:
@@ -33,7 +36,7 @@ for arg in commandLineParams():
 
 echo fmt"Exposing 'nimsuggest {forwardedArgs}' under ws://localhost:{port}"
 
-let process = startProcess("nimsuggest", args = forwardedArgs)
+let process = startProcess(nimsuggestPath, args = forwardedArgs)
 
 var server = newAsyncHttpServer()
 

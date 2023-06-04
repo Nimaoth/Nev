@@ -5,6 +5,7 @@ import languages_server, workspace_server
 when isMainModule:
   const workspaceServerPortArg = "--workspace-port:"
   const languagesServerPortArg = "--languages-port:"
+  const nimsuggestPathArg = "--nimsuggest:"
   var workspaceServerPort = 3000
   var languagesServerPort = 3001
 
@@ -13,6 +14,8 @@ when isMainModule:
       workspaceServerPort = arg[workspaceServerPortArg.len..^1].parseInt
     elif arg.startsWith(languagesServerPortArg):
       languagesServerPort = arg[languagesServerPortArg.len..^1].parseInt
+    elif arg.startsWith(nimsuggestPathArg):
+      nimsuggestPath = arg[nimsuggestPathArg.len..^1]
     else:
       echo "Unexpected argument '", arg, "'"
       quit(1)

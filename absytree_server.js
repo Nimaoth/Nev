@@ -214,4 +214,4 @@ languageServer.post('/nimsuggest/temp-file/*', async (req, res) => {
 })
 
 app.listen(3000, () => console.log(`Serving ${localFolderPath} on port 3000`));
-// languageServer.listen(3001, () => console.log(`Serving language servers on port 3001`));
+languageServer.listen(3001, () => console.log(`Serving language servers on port 3001`));

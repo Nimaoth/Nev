@@ -44,6 +44,9 @@ task buildLanguagesServer, "Build the server for hosting languages servers":
 task buildAbsytreeServer, "Build the server for hosting workspaces and language servers":
   selfExec "c -o:absytree-server.exe ./src/servers/absytree_server.nim"
 
+task buildNimsuggestWS, "Build the server for hosting workspaces and language servers":
+  selfExec "c -o:nimsuggest-ws.exe ./nimsuggest_ws.nim"
+
 task buildBrowser, "Build the browser version":
   selfExec "js -o:ast.js -d:exposeScriptingApi -d:vmathObjBased -d:enableTableIdCacheChecking ./src/absytree_js.nim"
 
