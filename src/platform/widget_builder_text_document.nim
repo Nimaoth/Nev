@@ -1,5 +1,5 @@
 import std/[strformat, tables, sugar, sequtils]
-import util, editor, document_editor, text_document, custom_logger, widgets, platform, theme
+import util, editor, document_editor, text/text_editor, custom_logger, widgets, platform, theme
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import vmath, bumpy, chroma
 

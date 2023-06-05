@@ -29,7 +29,7 @@ method start*(self: LanguageServer): Future[void] {.base.} = discard
 method stop*(self: LanguageServer) {.base.} = discard
 method getDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[Option[Definition]] {.base.} = discard
 method getCompletions*(self: LanguageServer, languageId: string, filename: string, location: Cursor): Future[seq[TextCompletion]] {.base.} = discard
-method saveTempFile*(self: LanguageServer, filename: string, content: string): Future[void] = discard
+method saveTempFile*(self: LanguageServer, filename: string, content: string): Future[void] {.base.} = discard
 
 var handleIdCounter = 1
 

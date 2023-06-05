@@ -370,7 +370,7 @@ proc getPopupForId*(self: App, id: EditorId): Option[Popup] =
 
   return Popup.none
 
-import text_document, ast_document, model_document
+import text/text_editor, ast_document, model_document
 import selector_popup
 
 type ThemeSelectorItem* = ref object of SelectorItem

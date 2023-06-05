@@ -1,7 +1,7 @@
 import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros, macrocache, options, deques, sets, json, jsonutils, sequtils, streams]
 import timer
 import fusion/matching, fuzzy, bumpy, rect_utils, vmath, chroma
-import editor, util, document, document_editor, text_document, events, id, ast_ids, ast, scripting/expose, event, theme, input, custom_async
+import editor, util, document, document_editor, text/text_editor, events, id, ast_ids, ast, scripting/expose, event, theme, input, custom_async
 import compiler, selector_popup
 from scripting_api as api import nil
 import custom_logger
