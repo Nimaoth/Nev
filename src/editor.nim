@@ -67,7 +67,7 @@ type
     of AstNode:
       node*: AstNode
 
-type Editor* = ref object
+type App* = ref object
   backend: api.Backend
   platform*: Platform
   fontRegular*: string
@@ -127,25 +127,25 @@ type Editor* = ref object
 
   editor_defaults: seq[DocumentEditor]
 
-var gEditor* {.exportc.}: Editor = nil
+var gEditor* {.exportc.}: App = nil
 
-proc setRegisterText*(self: Editor, text: string, register: string = "")
-proc getRegisterText*(self: Editor, text: var string, register: string = "")
-proc openWorkspaceFile*(self: Editor, path: string, folder: WorkspaceFolder): Option[DocumentEditor]
-proc openFile*(self: Editor, path: string, app: bool = false): Option[DocumentEditor]
+proc setRegisterText*(self: App, text: string, register: string = "")
+proc getRegisterText*(self: App, text: var string, register: string = "")
+proc openWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder): Option[DocumentEditor]
+proc openFile*(self: App, path: string, app: bool = false): Option[DocumentEditor]
 
-proc registerEditor*(self: Editor, editor: DocumentEditor) =
+proc registerEditor*(self: App, editor: DocumentEditor) =
   self.editors[editor.id] = editor
   self.onEditorRegistered.invoke editor
 
-proc unregisterEditor*(self: Editor, editor: DocumentEditor) =
+proc unregisterEditor*(self: App, editor: DocumentEditor) =
   self.editors.del(editor.id)
   self.onEditorDeregistered.invoke editor
 
-method injectDependencies*(self: DocumentEditor, ed: Editor) {.base.} =
+method injectDependencies*(self: DocumentEditor, ed: App) {.base.} =
   discard
 
-proc invokeCallback*(self: Editor, context: string, args: JsonNode): bool =
+proc invokeCallback*(self: App, context: string, args: JsonNode): bool =
   if not self.callbacks.contains(context):
     return false
   let id = self.callbacks[context]
@@ -207,7 +207,7 @@ method layoutViews*(layout: FibonacciLayout, props: LayoutProperties, bounds: Re
     rect = remaining
     result.add view_rect
 
-proc handleUnknownPopupAction*(self: Editor, popup: Popup, action: string, arg: string): EventResponse =
+proc handleUnknownPopupAction*(self: App, popup: Popup, action: string, arg: string): EventResponse =
   try:
     var args = newJArray()
     for a in newStringStream(arg).parseJsonFragments():
@@ -223,7 +223,7 @@ proc handleUnknownPopupAction*(self: Editor, popup: Popup, action: string, arg: 
 
   return Failed
 
-proc handleUnknownDocumentEditorAction*(self: Editor, editor: DocumentEditor, action: string, args: JsonNode): EventResponse =
+proc handleUnknownDocumentEditorAction*(self: App, editor: DocumentEditor, action: string, args: JsonNode): EventResponse =
   try:
     if self.scriptContext.handleUnknownDocumentEditorAction(editor, action, args):
       return Handled
@@ -235,10 +235,10 @@ proc handleUnknownDocumentEditorAction*(self: Editor, editor: DocumentEditor, ac
 
   return Failed
 
-proc handleAction(self: Editor, action: string, arg: string): bool
-proc getFlag*(self: Editor, flag: string, default: bool = false): bool
+proc handleAction(self: App, action: string, arg: string): bool
+proc getFlag*(self: App, flag: string, default: bool = false): bool
 
-proc createEditorForDocument(self: Editor, document: Document): DocumentEditor =
+proc createEditorForDocument(self: App, document: Document): DocumentEditor =
   for editor in self.editor_defaults:
     if editor.canEdit document:
       return editor.createWithDocument document
@@ -246,7 +246,7 @@ proc createEditorForDocument(self: Editor, document: Document): DocumentEditor =
   logger.log(lvlError, "No editor found which can edit " & $document)
   return nil
 
-proc getOption*[T](editor: Editor, path: string, default: T = T.default): T =
+proc getOption*[T](editor: App, path: string, default: T = T.default): T =
   template createScriptGetOption(editor, path, defaultValue, accessor: untyped): untyped {.used.} =
     block:
       if editor.isNil:
@@ -276,7 +276,7 @@ proc getOption*[T](editor: Editor, path: string, default: T = T.default): T =
   else:
     {.fatal: ("Can't get option with type " & $T).}
 
-proc setOption*[T](editor: Editor, path: string, value: T) =
+proc setOption*[T](editor: App, path: string, value: T) =
   template createScriptSetOption(editor, path, value, constructor: untyped): untyped =
     block:
       if editor.isNil:
@@ -306,21 +306,21 @@ proc setOption*[T](editor: Editor, path: string, value: T) =
 
   editor.platform.requestRender(true)
 
-proc setFlag*(self: Editor, flag: string, value: bool)
-proc toggleFlag*(self: Editor, flag: string)
+proc setFlag*(self: App, flag: string, value: bool)
+proc toggleFlag*(self: App, flag: string)
 
-proc updateActiveEditor*(self: Editor, addToHistory = true) =
+proc updateActiveEditor*(self: App, addToHistory = true) =
   if self.currentViewInternal >= 0 and self.currentViewInternal < self.views.len:
     if addToHistory and self.activeEditorInternal.getSome(id) and id != self.views[self.currentViewInternal].editor.id:
       self.editorHistory.addLast id
     self.activeEditorInternal = self.views[self.currentViewInternal].editor.id.some
 
-proc currentView*(self: Editor): int = self.currentViewInternal
-proc `currentView=`(self: Editor, newIndex: int, addToHistory = true) =
+proc currentView*(self: App): int = self.currentViewInternal
+proc `currentView=`(self: App, newIndex: int, addToHistory = true) =
   self.currentViewInternal = newIndex
   self.updateActiveEditor(addToHistory)
 
-proc addView*(self: Editor, view: View, addToHistory = true) =
+proc addView*(self: App, view: View, addToHistory = true) =
   self.views.insert(view, self.currentView)
 
   let maxViews = getOption[int](self, "editor.maxViews", int.high)
@@ -330,7 +330,7 @@ proc addView*(self: Editor, view: View, addToHistory = true) =
   self.updateActiveEditor(addToHistory)
   self.platform.requestRender()
 
-proc createView*(self: Editor, document: Document): DocumentEditor =
+proc createView*(self: App, document: Document): DocumentEditor =
   var editor = self.createEditorForDocument document
   editor.injectDependencies self
   discard editor.onMarkedDirty.subscribe () => self.platform.requestRender()
@@ -338,23 +338,23 @@ proc createView*(self: Editor, document: Document): DocumentEditor =
   self.addView(view)
   return editor
 
-proc pushPopup*(self: Editor, popup: Popup) =
+proc pushPopup*(self: App, popup: Popup) =
   popup.init()
   self.popups.add popup
   discard popup.onMarkedDirty.subscribe () => self.platform.requestRender()
   self.platform.requestRender()
 
-proc popPopup*(self: Editor, popup: Popup) =
+proc popPopup*(self: App, popup: Popup) =
   if self.popups.len > 0 and self.popups[self.popups.high] == popup:
     discard self.popups.pop
   self.platform.requestRender()
 
-proc getEventHandlerConfig*(self: Editor, context: string): EventHandlerConfig =
+proc getEventHandlerConfig*(self: App, context: string): EventHandlerConfig =
   if not self.eventHandlerConfigs.contains(context):
     self.eventHandlerConfigs[context] = newEventHandlerConfig(context)
   return self.eventHandlerConfigs[context]
 
-proc getEditorForId*(self: Editor, id: EditorId): Option[DocumentEditor] =
+proc getEditorForId*(self: App, id: EditorId): Option[DocumentEditor] =
   if self.editors.contains(id):
     return self.editors[id].some
 
@@ -363,7 +363,7 @@ proc getEditorForId*(self: Editor, id: EditorId): Option[DocumentEditor] =
 
   return DocumentEditor.none
 
-proc getPopupForId*(self: Editor, id: EditorId): Option[Popup] =
+proc getPopupForId*(self: App, id: EditorId): Option[Popup] =
   for popup in self.popups:
     if popup.id == id:
       return popup.some
@@ -389,7 +389,7 @@ method changed*(self: ThemeSelectorItem, other: SelectorItem): bool =
   let other = other.ThemeSelectorItem
   return self.name != other.name or self.path != other.path
 
-proc setTheme*(self: Editor, path: string) =
+proc setTheme*(self: App, path: string) =
   if loadFromFile(path).getSome(theme):
     self.theme = theme
   self.platform.requestRender()
@@ -397,23 +397,23 @@ proc setTheme*(self: Editor, path: string) =
 when not defined(js):
   proc createScriptContext(filepath: string, searchPaths: seq[string]): ScriptContext
 
-proc getCommandLineTextEditor*(self: Editor): TextDocumentEditor = self.commandLineTextEditor.TextDocumentEditor
+proc getCommandLineTextEditor*(self: App): TextDocumentEditor = self.commandLineTextEditor.TextDocumentEditor
 
-proc handleKeyPress*(self: Editor, input: int64, modifiers: Modifiers)
-proc handleKeyRelease*(self: Editor, input: int64, modifiers: Modifiers)
-proc handleRune*(self: Editor, input: int64, modifiers: Modifiers)
-proc handleMousePress*(self: Editor, button: MouseButton, modifiers: Modifiers, mousePosWindow: Vec2)
-proc handleMouseRelease*(self: Editor, button: MouseButton, modifiers: Modifiers, mousePosWindow: Vec2)
-proc handleMouseMove*(self: Editor, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton])
-proc handleScroll*(self: Editor, scroll: Vec2, mousePosWindow: Vec2, modifiers: Modifiers)
-proc handleDropFile*(self: Editor, path, content: string)
+proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers)
+proc handleKeyRelease*(self: App, input: int64, modifiers: Modifiers)
+proc handleRune*(self: App, input: int64, modifiers: Modifiers)
+proc handleMousePress*(self: App, button: MouseButton, modifiers: Modifiers, mousePosWindow: Vec2)
+proc handleMouseRelease*(self: App, button: MouseButton, modifiers: Modifiers, mousePosWindow: Vec2)
+proc handleMouseMove*(self: App, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton])
+proc handleScroll*(self: App, scroll: Vec2, mousePosWindow: Vec2, modifiers: Modifiers)
+proc handleDropFile*(self: App, path, content: string)
 
 proc openWorkspaceKind(workspaceFolder: WorkspaceFolder): OpenWorkspaceKind
-proc addWorkspaceFolder(self: Editor, workspaceFolder: WorkspaceFolder): bool
-proc getWorkspaceFolder(self: Editor, id: Id): Option[WorkspaceFolder]
+proc addWorkspaceFolder(self: App, workspaceFolder: WorkspaceFolder): bool
+proc getWorkspaceFolder(self: App, id: Id): Option[WorkspaceFolder]
 
-proc newEditor*(backend: api.Backend, platform: Platform): Editor =
-  var self = Editor()
+proc newEditor*(backend: api.Backend, platform: Platform): App =
+  var self = App()
 
   # Emit this to set the editor prototype to editor_prototype, which needs to be set up before calling this
   when defined(js):
@@ -570,25 +570,25 @@ proc newEditor*(backend: api.Backend, platform: Platform): Editor =
 
   return self
 
-proc saveAppState*(self: Editor)
+proc saveAppState*(self: App)
 
-proc shutdown*(self: Editor) =
+proc shutdown*(self: App) =
   self.saveAppState()
 
   for editor in self.editors.values:
     editor.shutdown()
 
-proc getEditor(): Option[Editor] =
-  if gEditor.isNil: return Editor.none
+proc getEditor(): Option[App] =
+  if gEditor.isNil: return App.none
   return gEditor.some
 
 static:
-  addInjector(Editor, getEditor)
+  addInjector(App, getEditor)
 
-proc getBackend*(self: Editor): Backend {.expose("editor").} =
+proc getBackend*(self: App): Backend {.expose("editor").} =
   return self.backend
 
-proc saveAppState*(self: Editor) {.expose("editor").} =
+proc saveAppState*(self: App) {.expose("editor").} =
   # Save some state
   var state = EditorState()
   state.theme = self.theme.path
@@ -646,19 +646,19 @@ proc saveAppState*(self: Editor) {.expose("editor").} =
   fs.saveApplicationFile("./config/config.json", serialized.pretty)
   fs.saveApplicationFile("./config/options.json", self.options.pretty)
 
-proc requestRender*(self: Editor, redrawEverything: bool = false) {.expose("editor").} =
+proc requestRender*(self: App, redrawEverything: bool = false) {.expose("editor").} =
   self.platform.requestRender(redrawEverything)
 
-proc setHandleInputs*(self: Editor, context: string, value: bool) {.expose("editor").} =
+proc setHandleInputs*(self: App, context: string, value: bool) {.expose("editor").} =
   self.getEventHandlerConfig(context).setHandleInputs(value)
 
-proc setHandleActions*(self: Editor, context: string, value: bool) {.expose("editor").} =
+proc setHandleActions*(self: App, context: string, value: bool) {.expose("editor").} =
   self.getEventHandlerConfig(context).setHandleActions(value)
 
-proc setConsumeAllActions*(self: Editor, context: string, value: bool) {.expose("editor").} =
+proc setConsumeAllActions*(self: App, context: string, value: bool) {.expose("editor").} =
   self.getEventHandlerConfig(context).setConsumeAllActions(value)
 
-proc setConsumeAllInput*(self: Editor, context: string, value: bool) {.expose("editor").} =
+proc setConsumeAllInput*(self: App, context: string, value: bool) {.expose("editor").} =
   self.getEventHandlerConfig(context).setConsumeAllInput(value)
 
 proc openWorkspaceKind(workspaceFolder: WorkspaceFolder): OpenWorkspaceKind =
@@ -670,7 +670,7 @@ proc openWorkspaceKind(workspaceFolder: WorkspaceFolder): OpenWorkspaceKind =
     return OpenWorkspaceKind.Github
   assert false
 
-proc addWorkspaceFolder(self: Editor, workspaceFolder: WorkspaceFolder): bool =
+proc addWorkspaceFolder(self: App, workspaceFolder: WorkspaceFolder): bool =
   for wf in self.workspace.folders:
     if wf.openWorkspaceKind == workspaceFolder.openWorkspaceKind and wf.settings == workspaceFolder.settings:
       return false
@@ -680,38 +680,38 @@ proc addWorkspaceFolder(self: Editor, workspaceFolder: WorkspaceFolder): bool =
   self.workspace.folders.add workspaceFolder
   return true
 
-proc getWorkspaceFolder(self: Editor, id: Id): Option[WorkspaceFolder] =
+proc getWorkspaceFolder(self: App, id: Id): Option[WorkspaceFolder] =
   for wf in self.workspace.folders:
     if wf.id == id:
       return wf.some
   return WorkspaceFolder.none
 
-proc clearWorkspaceCaches*(self: Editor) {.expose("editor").} =
+proc clearWorkspaceCaches*(self: App) {.expose("editor").} =
   for wf in self.workspace.folders:
     wf.clearDirectoryCache()
 
-proc openGithubWorkspace*(self: Editor, user: string, repository: string, branchOrHash: string) {.expose("editor").} =
+proc openGithubWorkspace*(self: App, user: string, repository: string, branchOrHash: string) {.expose("editor").} =
   discard self.addWorkspaceFolder newWorkspaceFolderGithub(user, repository, branchOrHash)
 
-proc openAbsytreeServerWorkspace*(self: Editor, url: string) {.expose("editor").} =
+proc openAbsytreeServerWorkspace*(self: App, url: string) {.expose("editor").} =
   discard self.addWorkspaceFolder newWorkspaceFolderAbsytreeServer(url)
 
 when not defined(js):
-  proc openLocalWorkspace*(self: Editor, path: string) {.expose("editor").} =
+  proc openLocalWorkspace*(self: App, path: string) {.expose("editor").} =
     let path = if path.isAbsolute: path else: path.absolutePath
     discard self.addWorkspaceFolder newWorkspaceFolderLocal(path)
 
-proc getFlag*(self: Editor, flag: string, default: bool = false): bool {.expose("editor").} =
+proc getFlag*(self: App, flag: string, default: bool = false): bool {.expose("editor").} =
   return getOption[bool](self, flag, default)
 
-proc setFlag*(self: Editor, flag: string, value: bool) {.expose("editor").} =
+proc setFlag*(self: App, flag: string, value: bool) {.expose("editor").} =
   setOption[bool](self, flag, value)
 
-proc toggleFlag*(self: Editor, flag: string) {.expose("editor").} =
+proc toggleFlag*(self: App, flag: string) {.expose("editor").} =
   self.setFlag(flag, not self.getFlag(flag))
   self.platform.requestRender(true)
 
-proc setOption*(self: Editor, option: string, value: JsonNode) {.expose("editor").} =
+proc setOption*(self: App, option: string, value: JsonNode) {.expose("editor").} =
   if self.isNil:
     return
 
@@ -729,34 +729,34 @@ proc setOption*(self: Editor, option: string, value: JsonNode) {.expose("editor"
     return
   node[pathItems[^1]] = value
 
-proc quit*(self: Editor) {.expose("editor").} =
+proc quit*(self: App) {.expose("editor").} =
   self.closeRequested = true
 
-proc changeFontSize*(self: Editor, amount: float32) {.expose("editor").} =
+proc changeFontSize*(self: App, amount: float32) {.expose("editor").} =
   self.platform.fontSize = self.platform.fontSize + amount.float
   self.platform.requestRender(true)
 
-proc changeLayoutProp*(self: Editor, prop: string, change: float32) {.expose("editor").} =
+proc changeLayoutProp*(self: App, prop: string, change: float32) {.expose("editor").} =
   self.layout_props.props.mgetOrPut(prop, 0) += change
   self.platform.requestRender(true)
 
-proc toggleStatusBarLocation*(self: Editor) {.expose("editor").} =
+proc toggleStatusBarLocation*(self: App) {.expose("editor").} =
   self.statusBarOnTop = not self.statusBarOnTop
   self.platform.requestRender(true)
 
-proc createView*(self: Editor) {.expose("editor").} =
+proc createView*(self: App) {.expose("editor").} =
   discard self.createView(newTextDocument())
 
-# proc createKeybindAutocompleteView*(self: Editor) {.expose("editor").} =
+# proc createKeybindAutocompleteView*(self: App) {.expose("editor").} =
 #   self.createView(newKeybindAutocompletion())
 
-proc closeCurrentView*(self: Editor) {.expose("editor").} =
+proc closeCurrentView*(self: App) {.expose("editor").} =
   self.views[self.currentView].editor.unregister()
   self.views.delete self.currentView
   self.currentView = self.currentView.clamp(0, self.views.len - 1)
   self.platform.requestRender()
 
-proc moveCurrentViewToTop*(self: Editor) {.expose("editor").} =
+proc moveCurrentViewToTop*(self: App) {.expose("editor").} =
   if self.views.len > 0:
     let view = self.views[self.currentView]
     self.views.delete(self.currentView)
@@ -764,15 +764,15 @@ proc moveCurrentViewToTop*(self: Editor) {.expose("editor").} =
   self.currentView = 0
   self.platform.requestRender()
 
-proc nextView*(self: Editor) {.expose("editor").} =
+proc nextView*(self: App) {.expose("editor").} =
   self.currentView = if self.views.len == 0: 0 else: (self.currentView + 1) mod self.views.len
   self.platform.requestRender()
 
-proc prevView*(self: Editor) {.expose("editor").} =
+proc prevView*(self: App) {.expose("editor").} =
   self.currentView = if self.views.len == 0: 0 else: (self.currentView + self.views.len - 1) mod self.views.len
   self.platform.requestRender()
 
-proc moveCurrentViewPrev*(self: Editor) {.expose("editor").} =
+proc moveCurrentViewPrev*(self: App) {.expose("editor").} =
   if self.views.len > 0:
     let view = self.views[self.currentView]
     let index = (self.currentView + self.views.len - 1) mod self.views.len
@@ -781,7 +781,7 @@ proc moveCurrentViewPrev*(self: Editor) {.expose("editor").} =
     self.currentView = index
   self.platform.requestRender()
 
-proc moveCurrentViewNext*(self: Editor) {.expose("editor").} =
+proc moveCurrentViewNext*(self: App) {.expose("editor").} =
   if self.views.len > 0:
     let view = self.views[self.currentView]
     let index = (self.currentView + 1) mod self.views.len
@@ -790,7 +790,7 @@ proc moveCurrentViewNext*(self: Editor) {.expose("editor").} =
     self.currentView = index
   self.platform.requestRender()
 
-proc setLayout*(self: Editor, layout: string) {.expose("editor").} =
+proc setLayout*(self: App, layout: string) {.expose("editor").} =
   self.layout = case layout
     of "horizontal": HorizontalLayout()
     of "vertical": VerticalLayout()
@@ -798,17 +798,17 @@ proc setLayout*(self: Editor, layout: string) {.expose("editor").} =
     else: HorizontalLayout()
   self.platform.requestRender()
 
-proc commandLine*(self: Editor, initialValue: string = "") {.expose("editor").} =
+proc commandLine*(self: App, initialValue: string = "") {.expose("editor").} =
   self.getCommandLineTextEditor.document.content = @[initialValue]
   self.commandLineMode = true
   self.platform.requestRender()
 
-proc exitCommandLine*(self: Editor) {.expose("editor").} =
+proc exitCommandLine*(self: App) {.expose("editor").} =
   self.getCommandLineTextEditor.document.content = @[""]
   self.commandLineMode = false
   self.platform.requestRender()
 
-proc executeCommandLine*(self: Editor): bool {.expose("editor").} =
+proc executeCommandLine*(self: App): bool {.expose("editor").} =
   defer:
     self.platform.requestRender()
   self.commandLineMode = false
@@ -820,7 +820,7 @@ proc executeCommandLine*(self: Editor): bool {.expose("editor").} =
 
   return self.handleAction(action, arg)
 
-proc writeFile*(self: Editor, path: string = "", app: bool = false) {.expose("editor").} =
+proc writeFile*(self: App, path: string = "", app: bool = false) {.expose("editor").} =
   defer:
     self.platform.requestRender()
   if self.currentView >= 0 and self.currentView < self.views.len and self.views[self.currentView].document != nil:
@@ -830,7 +830,7 @@ proc writeFile*(self: Editor, path: string = "", app: bool = false) {.expose("ed
       logger.log(lvlError, fmt"[ed] Failed to write file '{path}': {getCurrentExceptionMsg()}")
       logger.log(lvlError, getCurrentException().getStackTrace())
 
-proc loadFile*(self: Editor, path: string = "") {.expose("editor").} =
+proc loadFile*(self: App, path: string = "") {.expose("editor").} =
   defer:
     self.platform.requestRender()
   if self.currentView >= 0 and self.currentView < self.views.len and self.views[self.currentView].document != nil:
@@ -841,7 +841,7 @@ proc loadFile*(self: Editor, path: string = "") {.expose("editor").} =
       logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
       logger.log(lvlError, getCurrentException().getStackTrace())
 
-proc loadWorkspaceFile*(self: Editor, path: string, folder: WorkspaceFolder) =
+proc loadWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder) =
   defer:
     self.platform.requestRender()
   if self.currentView >= 0 and self.currentView < self.views.len and self.views[self.currentView].document != nil:
@@ -853,7 +853,7 @@ proc loadWorkspaceFile*(self: Editor, path: string, folder: WorkspaceFolder) =
       logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
       logger.log(lvlError, getCurrentException().getStackTrace())
 
-proc tryOpenExisting*(self: Editor, path: string, folder: Option[WorkspaceFolder]): Option[DocumentEditor] =
+proc tryOpenExisting*(self: App, path: string, folder: Option[WorkspaceFolder]): Option[DocumentEditor] =
   for i, view in self.views:
     if view.document.filename == path and view.document.workspace == folder:
       logger.log(lvlInfo, fmt"Reusing open editor in view {i}")
@@ -869,7 +869,7 @@ proc tryOpenExisting*(self: Editor, path: string, folder: Option[WorkspaceFolder
 
   return DocumentEditor.none
 
-proc tryOpenExisting*(self: Editor, editor: EditorId, addToHistory = true): Option[DocumentEditor] =
+proc tryOpenExisting*(self: App, editor: EditorId, addToHistory = true): Option[DocumentEditor] =
   for i, view in self.views:
     if view.editor.id == editor:
       logger.log(lvlInfo, fmt"Reusing open editor in view {i}")
@@ -885,7 +885,7 @@ proc tryOpenExisting*(self: Editor, editor: EditorId, addToHistory = true): Opti
 
   return DocumentEditor.none
 
-proc openFile*(self: Editor, path: string, app: bool = false): Option[DocumentEditor] =
+proc openFile*(self: App, path: string, app: bool = false): Option[DocumentEditor] =
   defer:
     self.platform.requestRender()
 
@@ -905,7 +905,7 @@ proc openFile*(self: Editor, path: string, app: bool = false): Option[DocumentEd
     logger.log(lvlError, getCurrentException().getStackTrace())
     return DocumentEditor.none
 
-proc openWorkspaceFile*(self: Editor, path: string, folder: WorkspaceFolder): Option[DocumentEditor] =
+proc openWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder): Option[DocumentEditor] =
   defer:
     self.platform.requestRender()
 
@@ -925,7 +925,7 @@ proc openWorkspaceFile*(self: Editor, path: string, folder: WorkspaceFolder): Op
     logger.log(lvlError, getCurrentException().getStackTrace())
     return DocumentEditor.none
 
-proc removeFromLocalStorage*(self: Editor) {.expose("editor").} =
+proc removeFromLocalStorage*(self: App) {.expose("editor").} =
   ## Browser only
   ## Clears the content of the current document in local storage
   when defined(js):
@@ -937,7 +937,7 @@ proc removeFromLocalStorage*(self: Editor) {.expose("editor").} =
         self.views[self.currentView].document.AstDocument.filename
       clearStorage(filename.cstring)
 
-proc loadTheme*(self: Editor, name: string) {.expose("editor").} =
+proc loadTheme*(self: App, name: string) {.expose("editor").} =
   defer:
     self.platform.requestRender()
   if theme.loadFromFile(fmt"./themes/{name}.json").getSome(theme):
@@ -945,7 +945,7 @@ proc loadTheme*(self: Editor, name: string) {.expose("editor").} =
   else:
     logger.log(lvlError, fmt"[ed] Failed to load theme {name}")
 
-proc chooseTheme*(self: Editor) {.expose("editor").} =
+proc chooseTheme*(self: App) {.expose("editor").} =
   defer:
     self.platform.requestRender()
   let originalTheme = self.theme.path
@@ -976,7 +976,7 @@ proc chooseTheme*(self: Editor) {.expose("editor").} =
 
   self.pushPopup popup
 
-proc getDirectoryListingRec(self: Editor, folder: WorkspaceFolder, path: string): Future[seq[string]] {.async.} =
+proc getDirectoryListingRec(self: App, folder: WorkspaceFolder, path: string): Future[seq[string]] {.async.} =
   var resultItems: seq[string]
 
   let items = await folder.getDirectoryListing(path)
@@ -994,7 +994,7 @@ proc getDirectoryListingRec(self: Editor, folder: WorkspaceFolder, path: string)
 
   return resultItems
 
-proc iterateDirectoryRec(self: Editor, folder: WorkspaceFolder, path: string, cancellationToken: CancellationToken, callback: proc(files: seq[string]): void): Future[void] {.async.} =
+proc iterateDirectoryRec(self: App, folder: WorkspaceFolder, path: string, cancellationToken: CancellationToken, callback: proc(files: seq[string]): void): Future[void] {.async.} =
   let path = path
   var resultItems: seq[string]
   var folders: seq[string]
@@ -1026,7 +1026,7 @@ proc iterateDirectoryRec(self: Editor, folder: WorkspaceFolder, path: string, ca
   for fut in futs:
     await fut
 
-proc chooseFile*(self: Editor, view: string = "new") {.expose("editor").} =
+proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
@@ -1070,7 +1070,7 @@ proc chooseFile*(self: Editor, view: string = "new") {.expose("editor").} =
 
   self.pushPopup popup
 
-proc chooseOpen*(self: Editor, view: string = "new") {.expose("editor").} =
+proc chooseOpen*(self: App, view: string = "new") {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
@@ -1104,7 +1104,7 @@ proc chooseOpen*(self: Editor, view: string = "new") {.expose("editor").} =
 
   self.pushPopup popup
 
-proc openPreviousEditor*(self: Editor) {.expose("editor").} =
+proc openPreviousEditor*(self: App) {.expose("editor").} =
   if self.editorHistory.len == 0:
     return
 
@@ -1116,7 +1116,7 @@ proc openPreviousEditor*(self: Editor) {.expose("editor").} =
   discard self.tryOpenExisting(editor, addToHistory=false)
   self.platform.requestRender()
 
-proc openNextEditor*(self: Editor) {.expose("editor").} =
+proc openNextEditor*(self: App) {.expose("editor").} =
   if self.editorHistory.len == 0:
     return
 
@@ -1128,11 +1128,11 @@ proc openNextEditor*(self: Editor) {.expose("editor").} =
   discard self.tryOpenExisting(editor, addToHistory=false)
   self.platform.requestRender()
 
-proc setGithubAccessToken*(self: Editor, token: string) {.expose("editor").} =
+proc setGithubAccessToken*(self: App, token: string) {.expose("editor").} =
   ## Stores the give token in local storage as 'GithubAccessToken', which will be used in requests to the github api
   fs.saveApplicationFile("GithubAccessToken", token)
 
-proc reloadConfig*(self: Editor) {.expose("editor").} =
+proc reloadConfig*(self: App) {.expose("editor").} =
   defer:
     self.platform.requestRender()
   if self.scriptContext.isNil.not:
@@ -1144,20 +1144,20 @@ proc reloadConfig*(self: Editor) {.expose("editor").} =
     except CatchableError:
       logger.log(lvlError, fmt"Failed to reload config")
 
-proc logOptions*(self: Editor) {.expose("editor").} =
+proc logOptions*(self: App) {.expose("editor").} =
   logger.log(lvlInfo, self.options.pretty)
 
-proc clearCommands*(self: Editor, context: string) {.expose("editor").} =
+proc clearCommands*(self: App, context: string) {.expose("editor").} =
   self.getEventHandlerConfig(context).clearCommands()
 
-proc getAllEditors*(self: Editor): seq[EditorId] {.expose("editor").} =
+proc getAllEditors*(self: App): seq[EditorId] {.expose("editor").} =
   for id in self.editors.keys:
     result.add id
 
-proc getModeConfig(self: Editor, mode: string): EventHandlerConfig =
+proc getModeConfig(self: App, mode: string): EventHandlerConfig =
   return self.getEventHandlerConfig("editor." & mode)
 
-proc setMode*(self: Editor, mode: string) {.expose("editor").} =
+proc setMode*(self: App, mode: string) {.expose("editor").} =
   defer:
     self.platform.requestRender()
   if mode.len == 0:
@@ -1175,13 +1175,13 @@ proc setMode*(self: Editor, mode: string) {.expose("editor").} =
 
   self.currentMode = mode
 
-proc mode*(self: Editor): string {.expose("editor").} =
+proc mode*(self: App): string {.expose("editor").} =
   return self.currentMode
 
-proc getContextWithMode(self: Editor, context: string): string {.expose("editor").} =
+proc getContextWithMode(self: App, context: string): string {.expose("editor").} =
   return context & "." & $self.currentMode
 
-proc currentEventHandlers*(self: Editor): seq[EventHandler] =
+proc currentEventHandlers*(self: App): seq[EventHandler] =
   result = @[self.eventHandler]
 
   let modeOnTop = getOption[bool](self, self.getContextWithMode("editor.custom-mode-on-top"), true)
@@ -1199,7 +1199,7 @@ proc currentEventHandlers*(self: Editor): seq[EventHandler] =
   if not self.modeEventHandler.isNil and modeOnTop:
     result.add self.modeEventHandler
 
-proc handleMousePress*(self: Editor, button: MouseButton, modifiers: Modifiers, mousePosWindow: Vec2) =
+proc handleMousePress*(self: App, button: MouseButton, modifiers: Modifiers, mousePosWindow: Vec2) =
   # Check popups
   for i in 0..self.popups.high:
     let popup = self.popups[self.popups.high - i]
@@ -1217,7 +1217,7 @@ proc handleMousePress*(self: Editor, button: MouseButton, modifiers: Modifiers, 
       view.editor.handleMousePress(button, mousePosWindow, modifiers)
       return
 
-proc handleMouseRelease*(self: Editor, button: MouseButton, modifiers: Modifiers, mousePosWindow: Vec2) =
+proc handleMouseRelease*(self: App, button: MouseButton, modifiers: Modifiers, mousePosWindow: Vec2) =
   # Check popups
   for i in 0..self.popups.high:
     let popup = self.popups[self.popups.high - i]
@@ -1234,7 +1234,7 @@ proc handleMouseRelease*(self: Editor, button: MouseButton, modifiers: Modifiers
       view.editor.handleMouseRelease(button, mousePosWindow)
       return
 
-proc handleMouseMove*(self: Editor, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) =
+proc handleMouseMove*(self: App, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) =
   # Check popups
   for i in 0..self.popups.high:
     let popup = self.popups[self.popups.high - i]
@@ -1251,7 +1251,7 @@ proc handleMouseMove*(self: Editor, mousePosWindow: Vec2, mousePosDelta: Vec2, m
       view.editor.handleMouseMove(mousePosWindow, mousePosDelta, modifiers, buttons)
       return
 
-proc handleScroll*(self: Editor, scroll: Vec2, mousePosWindow: Vec2, modifiers: Modifiers) =
+proc handleScroll*(self: App, scroll: Vec2, mousePosWindow: Vec2, modifiers: Modifiers) =
   # Check popups
   for i in 0..self.popups.high:
     let popup = self.popups[self.popups.high - i]
@@ -1265,20 +1265,20 @@ proc handleScroll*(self: Editor, scroll: Vec2, mousePosWindow: Vec2, modifiers: 
       view.editor.handleScroll(scroll, mousePosWindow)
       return
 
-proc handleKeyPress*(self: Editor, input: int64, modifiers: Modifiers) =
+proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers) =
   # debugf"key press: {(inputToString(input, modifiers))}"
   if self.currentEventHandlers.handleEvent(input, modifiers):
     self.platform.preventDefault()
 
-proc handleKeyRelease*(self: Editor, input: int64, modifiers: Modifiers) =
+proc handleKeyRelease*(self: App, input: int64, modifiers: Modifiers) =
   discard
 
-proc handleRune*(self: Editor, input: int64, modifiers: Modifiers) =
+proc handleRune*(self: App, input: int64, modifiers: Modifiers) =
   let modifiers = if input.isAscii and input.char.isAlphaNumeric: modifiers else: {}
   if self.currentEventHandlers.handleEvent(input, modifiers):
     self.platform.preventDefault()
 
-proc handleDropFile*(self: Editor, path, content: string) =
+proc handleDropFile*(self: App, path, content: string) =
   discard self.createView(newTextDocument(path, content))
 
 proc scriptRunAction*(action: string, arg: string) {.expose("editor").} =
@@ -1289,12 +1289,12 @@ proc scriptRunAction*(action: string, arg: string) {.expose("editor").} =
 proc scriptLog*(message: string) {.expose("editor").} =
   logger.log(lvlInfo, fmt"[script] {message}")
 
-proc addCommandScript*(self: Editor, context: string, keys: string, action: string, arg: string = "") {.expose("editor").} =
+proc addCommandScript*(self: App, context: string, keys: string, action: string, arg: string = "") {.expose("editor").} =
   let command = if arg.len == 0: action else: action & " " & arg
   # logger.log(lvlInfo, fmt"Adding command to '{context}': ('{keys}', '{command}')")
   self.getEventHandlerConfig(context).addCommand(keys, command)
 
-proc removeCommand*(self: Editor, context: string, keys: string) {.expose("editor").} =
+proc removeCommand*(self: App, context: string, keys: string) {.expose("editor").} =
   # logger.log(lvlInfo, fmt"Removing command from '{context}': '{keys}'")
   self.getEventHandlerConfig(context).removeCommand(keys)
 
@@ -1317,7 +1317,7 @@ proc getActiveEditor*(): EditorId {.expose("editor").} =
   return EditorId(-1)
 
 when defined(js):
-  proc getActiveEditor2*(self: Editor): DocumentEditor {.expose("editor"), nodispatch, nojsonwrapper.} =
+  proc getActiveEditor2*(self: App): DocumentEditor {.expose("editor"), nodispatch, nojsonwrapper.} =
     if gEditor.isNil:
       return nil
     if gEditor.commandLineMode:
@@ -1327,17 +1327,17 @@ when defined(js):
 
     return nil
 else:
-  proc getActiveEditor2*(self: Editor): EditorId {.expose("editor").} =
+  proc getActiveEditor2*(self: App): EditorId {.expose("editor").} =
     ## Returns the active editor instance
     return getActiveEditor()
 
-proc loadCurrentConfig*(self: Editor) {.expose("editor").} =
+proc loadCurrentConfig*(self: App) {.expose("editor").} =
   ## Javascript backend only!
   ## Opens the config file in a new view.
   when defined(js):
     discard self.createView(newTextDocument("./config/absytree_config.js", fs.loadApplicationFile("./config/absytree_config.js"), true))
 
-proc sourceCurrentDocument*(self: Editor) {.expose("editor").} =
+proc sourceCurrentDocument*(self: App) {.expose("editor").} =
   ## Javascript backend only!
   ## Runs the content of the active editor as javascript using `eval()`.
   ## "use strict" is prepended to the content to force strict mode.
@@ -1515,10 +1515,10 @@ proc scriptSetCallback*(path: string, id: int) {.expose("editor").} =
     return
   gEditor.callbacks[path] = id
 
-proc setRegisterText*(self: Editor, text: string, register: string = "") {.expose("editor").} =
+proc setRegisterText*(self: App, text: string, register: string = "") {.expose("editor").} =
   self.registers[register] = Register(kind: Text, text: text)
 
-proc getRegisterText*(self: Editor, text: var string, register: string = "") =
+proc getRegisterText*(self: App, text: var string, register: string = "") =
   # For some reason returning string causes a crash, the returned pointer is just different at the call site for some reason.
   # var string parameter seems to fix it
   text = ""
@@ -1527,7 +1527,7 @@ proc getRegisterText*(self: Editor, text: var string, register: string = "") =
 
 genDispatcher("editor")
 
-proc handleAction(self: Editor, action: string, arg: string): bool =
+proc handleAction(self: App, action: string, arg: string): bool =
   logger.log(lvlInfo, "[ed] Action '$1 $2'" % [action, arg])
 
   var args = newJArray()

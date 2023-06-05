@@ -14,7 +14,7 @@ type
   CompletionProviderAsyncIter* = proc(popup: SelectorPopup, text: string): Future[void]
 
   SelectorPopup* = ref object of Popup
-    editor*: Editor
+    editor*: App
     textEditor*: TextDocumentEditor
     selected*: int
     scrollOffset*: int
@@ -177,7 +177,7 @@ method handleMouseRelease*(self: SelectorPopup, button: MouseButton, mousePosWin
 method handleMouseMove*(self: SelectorPopup, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) =
   discard
 
-proc newSelectorPopup*(editor: Editor): SelectorPopup =
+proc newSelectorPopup*(editor: App): SelectorPopup =
   var popup = SelectorPopup(editor: editor)
   popup.textEditor = newTextEditor(newTextDocument(), editor)
   popup.textEditor.setMode("insert")

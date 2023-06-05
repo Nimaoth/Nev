@@ -153,7 +153,7 @@ template addCommandBlock*(context: static[string], keys: string, body: untyped):
   addCommand context, keys, proc() =
     body
 
-# Editor commands
+# App commands
 template addEditorCommandBlock*(mode: static[string], keys: string, body: untyped): untyped =
   let context = if mode.len == 0: "editor" else: "editor." & mode
   addCommand context, keys, proc() =

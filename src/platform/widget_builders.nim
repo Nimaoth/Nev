@@ -4,7 +4,7 @@ import widget_builders_base, widget_builder_ast_document, widget_builder_text_do
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import vmath, bumpy, chroma
 
-proc updateStatusBar*(self: Editor, frameIndex: int, statusBarWidget: WPanel) =
+proc updateStatusBar*(self: App, frameIndex: int, statusBarWidget: WPanel) =
   var statusWidget: WText
   var commandLineWidget: WPanel
   if statusBarWidget.len == 0:
@@ -37,7 +37,7 @@ var viewPanel: WPanel
 var mainPanel: WPanel
 var widgetsPerEditor = initTable[EditorId, WPanel]()
 
-proc updateWidgetTree*(self: Editor, frameIndex: int) =
+proc updateWidgetTree*(self: App, frameIndex: int) =
   if self.widget.isNil:
     mainStack = WStack(anchor: (vec2(0, 0), vec2(1, 1)), right: -1, logLayout: false)
     self.widget = mainStack
@@ -110,7 +110,7 @@ proc updateWidgetTree*(self: Editor, frameIndex: int) =
   # Status bar
   self.widget.lastHierarchyChange = max(self.widget.lastHierarchyChange, commandLineWidget.lastHierarchyChange)
 
-proc layoutWidgetTree*(self: Editor, size: Vec2, frameIndex: int) =
+proc layoutWidgetTree*(self: App, size: Vec2, frameIndex: int) =
   self.lastBounds = rect(vec2(0, 0), size)
   if self.widget.isNil:
     return

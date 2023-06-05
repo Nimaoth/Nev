@@ -4,7 +4,7 @@ import vmath, bumpy, chroma
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
 {.used.}
 
-method updateWidget*(self: FileSelectorItem, app: Editor, widget: WPanel, frameIndex: int) =
+method updateWidget*(self: FileSelectorItem, app: App, widget: WPanel, frameIndex: int) =
   let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
 
   var text = if widget.len == 0:
@@ -18,7 +18,7 @@ method updateWidget*(self: FileSelectorItem, app: Editor, widget: WPanel, frameI
   text.updateForegroundColor(textColor, frameIndex)
   text.updateLastHierarchyChangeFromChildren()
 
-method updateWidget*(self: ThemeSelectorItem, app: Editor, widget: WPanel, frameIndex: int) =
+method updateWidget*(self: ThemeSelectorItem, app: App, widget: WPanel, frameIndex: int) =
   let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
 
   var text = if widget.len == 0:
@@ -32,7 +32,7 @@ method updateWidget*(self: ThemeSelectorItem, app: Editor, widget: WPanel, frame
   text.updateForegroundColor(textColor, frameIndex)
   text.updateLastHierarchyChangeFromChildren()
 
-method updateWidget*(self: SelectorPopup, app: Editor, widget: WPanel, frameIndex: int) =
+method updateWidget*(self: SelectorPopup, app: App, widget: WPanel, frameIndex: int) =
   let totalLineHeight = app.platform.totalLineHeight
 
   var headerPanel: WPanel

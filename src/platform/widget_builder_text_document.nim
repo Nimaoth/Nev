@@ -10,7 +10,7 @@ proc clampToLine(selection: Selection, line: int, lineLength: int): tuple[first:
   result.first = if selection.first.line < line: 0 elif selection.first.line == line: selection.first.column else: lineLength
   result.last = if selection.last.line < line: 0 elif selection.last.line == line: selection.last.column else: lineLength
 
-proc renderTextHighlight(panel: WPanel, app: Editor, startOffset: float, endOffset: float, line: int, startIndex: int, selection: Selection, selectionClamped: tuple[first: int, last: int], part: StyledText, color: Color, totalLineHeight: float) =
+proc renderTextHighlight(panel: WPanel, app: App, startOffset: float, endOffset: float, line: int, startIndex: int, selection: Selection, selectionClamped: tuple[first: int, last: int], part: StyledText, color: Color, totalLineHeight: float) =
   let startOffset = startOffset.floor
   let endOffset = endOffset.ceil
   ## Fills a selection rect in the given color
@@ -37,7 +37,7 @@ proc renderTextHighlight(panel: WPanel, app: Editor, startOffset: float, endOffs
     lastHierarchyChange: panel.lastHierarchyChange
   ))
 
-proc renderTextHighlight(panel: WPanel, app: Editor, startOffset: float, endOffset: float, line: int, startIndex: int, selections: openArray[Selection], selectionClamped: openArray[tuple[first: int, last: int]], part: StyledText, color: Color, totalLineHeight: float) =
+proc renderTextHighlight(panel: WPanel, app: App, startOffset: float, endOffset: float, line: int, startIndex: int, selections: openArray[Selection], selectionClamped: openArray[tuple[first: int, last: int]], part: StyledText, color: Color, totalLineHeight: float) =
   ## Fills selections rect in the given color
   for i in 0..<selections.len:
     renderTextHighlight(panel, app, startOffset, endOffset, line, startIndex, selections[i], selectionClamped[i], part, color, totalLineHeight)
@@ -74,7 +74,7 @@ proc updateBaseIndexAndScrollOffset*(contentPanel: WPanel, previousBaseIndex: va
     previousBaseIndex -= 1
     scrollOffset -= totalLineHeight
 
-proc createLinesInPanel*(app: Editor, contentPanel: WPanel, previousBaseIndex: int, scrollOffset: float, lines: int, frameIndex: int, onlyRenderInBounds: bool,
+proc createLinesInPanel*(app: App, contentPanel: WPanel, previousBaseIndex: int, scrollOffset: float, lines: int, frameIndex: int, onlyRenderInBounds: bool,
   renderLine: proc(lineWidget: WPanel, i: int, down: bool, frameIndex: int): bool) =
 
   let totalLineHeight = app.platform.totalLineHeight
@@ -117,7 +117,7 @@ proc createLinesInPanel*(app: Editor, contentPanel: WPanel, previousBaseIndex: i
 
     contentPanel.add lineWidget
 
-proc renderCompletions(self: TextDocumentEditor, app: Editor, contentPanel: WPanel, cursorBounds: Rect, frameIndex: int) =
+proc renderCompletions(self: TextDocumentEditor, app: App, contentPanel: WPanel, cursorBounds: Rect, frameIndex: int) =
   let totalLineHeight = app.platform.totalLineHeight
   let charWidth = app.platform.charWidth
 
@@ -161,7 +161,7 @@ proc renderCompletions(self: TextDocumentEditor, app: Editor, contentPanel: WPan
 
   app.createLinesInPanel(panel, self.completionsBaseIndex, self.completionsScrollOffset, self.completions.len, frameIndex, onlyRenderInBounds=true, renderLine)
 
-method updateWidget*(self: TextDocumentEditor, app: Editor, widget: WPanel, frameIndex: int) =
+method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIndex: int) =
   let lineHeight = app.platform.lineHeight
   let totalLineHeight = app.platform.totalLineHeight
   let charWidth = app.platform.charWidth

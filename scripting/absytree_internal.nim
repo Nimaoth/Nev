@@ -17,10 +17,9 @@ proc editor_text_updateTargetColumn_void_TextDocumentEditor_SelectionCursor_impl
 proc editor_text_invertSelection_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
-proc editor_text_insert_seq_Selection_TextDocumentEditor_seq_Selection_string_bool_bool_bool_impl*(
+proc editor_text_insert_seq_Selection_TextDocumentEditor_seq_Selection_string_bool_bool_impl*(
     self: TextDocumentEditor; selections: seq[Selection]; text: string;
-    notify: bool = true; record: bool = true; autoIndent: bool = true): seq[
-    Selection] =
+    notify: bool = true; record: bool = true): seq[Selection] =
   discard
 proc editor_text_delete_seq_Selection_TextDocumentEditor_seq_Selection_bool_bool_impl*(
     self: TextDocumentEditor; selections: seq[Selection]; notify: bool = true;
@@ -128,6 +127,9 @@ proc editor_text_moveCursorPrevFindResult_void_TextDocumentEditor_SelectionCurso
     all: bool = true) =
   discard
 proc editor_text_scrollToCursor_void_TextDocumentEditor_SelectionCursor_impl*(
+    self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config) =
+  discard
+proc editor_text_centerCursor_void_TextDocumentEditor_SelectionCursor_impl*(
     self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config) =
   discard
 proc editor_text_reloadTreesitter_void_TextDocumentEditor_impl*(
@@ -448,125 +450,128 @@ proc editor_model_applySelectedCompletion_void_ModelDocumentEditor_impl*(
 proc editor_model_runSelectedFunction_void_ModelDocumentEditor_impl*(
     self: ModelDocumentEditor) =
   discard
-proc editor_getBackend_Backend_Editor_impl*(): Backend =
+proc editor_getBackend_Backend_App_impl*(): Backend =
   discard
-proc editor_saveAppState_void_Editor_impl*() =
+proc editor_saveAppState_void_App_impl*() =
   discard
-proc editor_requestRender_void_Editor_bool_impl*(redrawEverything: bool = false) =
+proc editor_requestRender_void_App_bool_impl*(redrawEverything: bool = false) =
   discard
-proc editor_setHandleInputs_void_Editor_string_bool_impl*(context: string;
+proc editor_setHandleInputs_void_App_string_bool_impl*(context: string;
     value: bool) =
   discard
-proc editor_setHandleActions_void_Editor_string_bool_impl*(context: string;
+proc editor_setHandleActions_void_App_string_bool_impl*(context: string;
     value: bool) =
   discard
-proc editor_setConsumeAllActions_void_Editor_string_bool_impl*(context: string;
+proc editor_setConsumeAllActions_void_App_string_bool_impl*(context: string;
     value: bool) =
   discard
-proc editor_setConsumeAllInput_void_Editor_string_bool_impl*(context: string;
+proc editor_setConsumeAllInput_void_App_string_bool_impl*(context: string;
     value: bool) =
   discard
-proc editor_clearWorkspaceCaches_void_Editor_impl*() =
+proc editor_clearWorkspaceCaches_void_App_impl*() =
   discard
-proc editor_openGithubWorkspace_void_Editor_string_string_string_impl*(
-    user: string; repository: string; branchOrHash: string) =
+proc editor_openGithubWorkspace_void_App_string_string_string_impl*(user: string;
+    repository: string; branchOrHash: string) =
   discard
-proc editor_openAbsytreeServerWorkspace_void_Editor_string_impl*(url: string) =
+proc editor_openAbsytreeServerWorkspace_void_App_string_impl*(url: string) =
   discard
-proc editor_openLocalWorkspace_void_Editor_string_impl*(path: string) =
+proc editor_openLocalWorkspace_void_App_string_impl*(path: string) =
   discard
-proc editor_getFlag_bool_Editor_string_bool_impl*(flag: string;
+proc editor_getFlag_bool_App_string_bool_impl*(flag: string;
     default: bool = false): bool =
   discard
-proc editor_setFlag_void_Editor_string_bool_impl*(flag: string; value: bool) =
+proc editor_setFlag_void_App_string_bool_impl*(flag: string; value: bool) =
   discard
-proc editor_toggleFlag_void_Editor_string_impl*(flag: string) =
+proc editor_toggleFlag_void_App_string_impl*(flag: string) =
   discard
-proc editor_setOption_void_Editor_string_JsonNode_impl*(option: string;
+proc editor_setOption_void_App_string_JsonNode_impl*(option: string;
     value: JsonNode) =
   discard
-proc editor_quit_void_Editor_impl*() =
+proc editor_quit_void_App_impl*() =
   discard
-proc editor_changeFontSize_void_Editor_float32_impl*(amount: float32) =
+proc editor_changeFontSize_void_App_float32_impl*(amount: float32) =
   discard
-proc editor_changeLayoutProp_void_Editor_string_float32_impl*(prop: string;
+proc editor_changeLayoutProp_void_App_string_float32_impl*(prop: string;
     change: float32) =
   discard
-proc editor_toggleStatusBarLocation_void_Editor_impl*() =
+proc editor_toggleStatusBarLocation_void_App_impl*() =
   discard
-proc editor_createView_void_Editor_impl*() =
+proc editor_createView_void_App_impl*() =
   discard
-proc editor_closeCurrentView_void_Editor_impl*() =
+proc editor_closeCurrentView_void_App_impl*() =
   discard
-proc editor_moveCurrentViewToTop_void_Editor_impl*() =
+proc editor_moveCurrentViewToTop_void_App_impl*() =
   discard
-proc editor_nextView_void_Editor_impl*() =
+proc editor_nextView_void_App_impl*() =
   discard
-proc editor_prevView_void_Editor_impl*() =
+proc editor_prevView_void_App_impl*() =
   discard
-proc editor_moveCurrentViewPrev_void_Editor_impl*() =
+proc editor_moveCurrentViewPrev_void_App_impl*() =
   discard
-proc editor_moveCurrentViewNext_void_Editor_impl*() =
+proc editor_moveCurrentViewNext_void_App_impl*() =
   discard
-proc editor_setLayout_void_Editor_string_impl*(layout: string) =
+proc editor_setLayout_void_App_string_impl*(layout: string) =
   discard
-proc editor_commandLine_void_Editor_string_impl*(initialValue: string = "") =
+proc editor_commandLine_void_App_string_impl*(initialValue: string = "") =
   discard
-proc editor_exitCommandLine_void_Editor_impl*() =
+proc editor_exitCommandLine_void_App_impl*() =
   discard
-proc editor_executeCommandLine_bool_Editor_impl*(): bool =
+proc editor_executeCommandLine_bool_App_impl*(): bool =
   discard
-proc editor_writeFile_void_Editor_string_bool_impl*(path: string = "";
+proc editor_writeFile_void_App_string_bool_impl*(path: string = "";
     app: bool = false) =
   discard
-proc editor_loadFile_void_Editor_string_impl*(path: string = "") =
+proc editor_loadFile_void_App_string_impl*(path: string = "") =
   discard
-proc editor_openFile_void_Editor_string_bool_impl*(path: string;
-    app: bool = false) =
+proc editor_removeFromLocalStorage_void_App_impl*() =
   discard
-proc editor_removeFromLocalStorage_void_Editor_impl*() =
+proc editor_loadTheme_void_App_string_impl*(name: string) =
   discard
-proc editor_loadTheme_void_Editor_string_impl*(name: string) =
+proc editor_chooseTheme_void_App_impl*() =
   discard
-proc editor_chooseTheme_void_Editor_impl*() =
+proc editor_chooseFile_void_App_string_impl*(view: string = "new") =
   discard
-proc editor_chooseFile_void_Editor_string_impl*(view: string = "new") =
+proc editor_chooseOpen_void_App_string_impl*(view: string = "new") =
   discard
-proc editor_setGithubAccessToken_void_Editor_string_impl*(token: string) =
+proc editor_openPreviousEditor_void_App_impl*() =
   discard
-proc editor_reloadConfig_void_Editor_impl*() =
+proc editor_openNextEditor_void_App_impl*() =
   discard
-proc editor_logOptions_void_Editor_impl*() =
+proc editor_setGithubAccessToken_void_App_string_impl*(token: string) =
   discard
-proc editor_clearCommands_void_Editor_string_impl*(context: string) =
+proc editor_reloadConfig_void_App_impl*() =
   discard
-proc editor_getAllEditors_seq_EditorId_Editor_impl*(): seq[EditorId] =
+proc editor_logOptions_void_App_impl*() =
   discard
-proc editor_setMode_void_Editor_string_impl*(mode: string) =
+proc editor_clearCommands_void_App_string_impl*(context: string) =
   discard
-proc editor_mode_string_Editor_impl*(): string =
+proc editor_getAllEditors_seq_EditorId_App_impl*(): seq[EditorId] =
   discard
-proc editor_getContextWithMode_string_Editor_string_impl*(context: string): string =
+proc editor_setMode_void_App_string_impl*(mode: string) =
+  discard
+proc editor_mode_string_App_impl*(): string =
+  discard
+proc editor_getContextWithMode_string_App_string_impl*(context: string): string =
   discard
 proc editor_scriptRunAction_void_string_string_impl*(action: string; arg: string) =
   discard
 proc editor_scriptLog_void_string_impl*(message: string) =
   discard
-proc editor_addCommandScript_void_Editor_string_string_string_string_impl*(
+proc editor_addCommandScript_void_App_string_string_string_string_impl*(
     context: string; keys: string; action: string; arg: string = "") =
   discard
-proc editor_removeCommand_void_Editor_string_string_impl*(context: string;
+proc editor_removeCommand_void_App_string_string_impl*(context: string;
     keys: string) =
   discard
 proc editor_getActivePopup_EditorId_impl*(): EditorId =
   discard
 proc editor_getActiveEditor_EditorId_impl*(): EditorId =
   discard
-proc editor_getActiveEditor2_EditorId_Editor_impl*(): EditorId =
+proc editor_getActiveEditor2_EditorId_App_impl*(): EditorId =
   discard
-proc editor_loadCurrentConfig_void_Editor_impl*() =
+proc editor_loadCurrentConfig_void_App_impl*() =
   discard
-proc editor_sourceCurrentDocument_void_Editor_impl*() =
+proc editor_sourceCurrentDocument_void_App_impl*() =
   discard
 proc editor_getEditor_EditorId_int_impl*(index: int): EditorId =
   discard
@@ -621,6 +626,6 @@ proc editor_scriptSetOptionString_void_string_string_impl*(path: string;
   discard
 proc editor_scriptSetCallback_void_string_int_impl*(path: string; id: int) =
   discard
-proc editor_setRegisterText_void_Editor_string_string_impl*(text: string;
+proc editor_setRegisterText_void_App_string_string_impl*(text: string;
     register: string = "") =
   discard

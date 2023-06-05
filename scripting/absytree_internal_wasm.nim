@@ -12,10 +12,9 @@ proc editor_text_updateTargetColumn_void_TextDocumentEditor_SelectionCursor_impl
     self: TextDocumentEditor; cursor: SelectionCursor)  {.importc.}
 proc editor_text_invertSelection_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}
-proc editor_text_insert_seq_Selection_TextDocumentEditor_seq_Selection_string_bool_bool_bool_impl(
+proc editor_text_insert_seq_Selection_TextDocumentEditor_seq_Selection_string_bool_bool_impl(
     self: TextDocumentEditor; selections: seq[Selection]; text: string;
-    notify: bool = true; record: bool = true; autoIndent: bool = true): seq[
-    Selection]  {.importc.}
+    notify: bool = true; record: bool = true): seq[Selection]  {.importc.}
 proc editor_text_delete_seq_Selection_TextDocumentEditor_seq_Selection_bool_bool_impl(
     self: TextDocumentEditor; selections: seq[Selection]; notify: bool = true;
     record: bool = true): seq[Selection]  {.importc.}
@@ -88,6 +87,8 @@ proc editor_text_moveCursorPrevFindResult_void_TextDocumentEditor_SelectionCurso
     self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config;
     all: bool = true)  {.importc.}
 proc editor_text_scrollToCursor_void_TextDocumentEditor_SelectionCursor_impl(
+    self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config)  {.importc.}
+proc editor_text_centerCursor_void_TextDocumentEditor_SelectionCursor_impl(
     self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config)  {.importc.}
 proc editor_text_reloadTreesitter_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}
@@ -298,72 +299,73 @@ proc editor_model_applySelectedCompletion_void_ModelDocumentEditor_impl(
     self: ModelDocumentEditor)  {.importc.}
 proc editor_model_runSelectedFunction_void_ModelDocumentEditor_impl(
     self: ModelDocumentEditor)  {.importc.}
-proc editor_getBackend_Backend_Editor_impl(): Backend  {.importc.}
-proc editor_saveAppState_void_Editor_impl()  {.importc.}
-proc editor_requestRender_void_Editor_bool_impl(redrawEverything: bool = false)  {.importc.}
-proc editor_setHandleInputs_void_Editor_string_bool_impl(context: string;
+proc editor_getBackend_Backend_App_impl(): Backend  {.importc.}
+proc editor_saveAppState_void_App_impl()  {.importc.}
+proc editor_requestRender_void_App_bool_impl(redrawEverything: bool = false)  {.importc.}
+proc editor_setHandleInputs_void_App_string_bool_impl(context: string;
     value: bool)  {.importc.}
-proc editor_setHandleActions_void_Editor_string_bool_impl(context: string;
+proc editor_setHandleActions_void_App_string_bool_impl(context: string;
     value: bool)  {.importc.}
-proc editor_setConsumeAllActions_void_Editor_string_bool_impl(context: string;
+proc editor_setConsumeAllActions_void_App_string_bool_impl(context: string;
     value: bool)  {.importc.}
-proc editor_setConsumeAllInput_void_Editor_string_bool_impl(context: string;
+proc editor_setConsumeAllInput_void_App_string_bool_impl(context: string;
     value: bool)  {.importc.}
-proc editor_clearWorkspaceCaches_void_Editor_impl()  {.importc.}
-proc editor_openGithubWorkspace_void_Editor_string_string_string_impl(
-    user: string; repository: string; branchOrHash: string)  {.importc.}
-proc editor_openAbsytreeServerWorkspace_void_Editor_string_impl(url: string)  {.importc.}
-proc editor_openLocalWorkspace_void_Editor_string_impl(path: string)  {.importc.}
-proc editor_getFlag_bool_Editor_string_bool_impl(flag: string;
+proc editor_clearWorkspaceCaches_void_App_impl()  {.importc.}
+proc editor_openGithubWorkspace_void_App_string_string_string_impl(user: string;
+    repository: string; branchOrHash: string)  {.importc.}
+proc editor_openAbsytreeServerWorkspace_void_App_string_impl(url: string)  {.importc.}
+proc editor_openLocalWorkspace_void_App_string_impl(path: string)  {.importc.}
+proc editor_getFlag_bool_App_string_bool_impl(flag: string;
     default: bool = false): bool  {.importc.}
-proc editor_setFlag_void_Editor_string_bool_impl(flag: string; value: bool)  {.importc.}
-proc editor_toggleFlag_void_Editor_string_impl(flag: string)  {.importc.}
-proc editor_setOption_void_Editor_string_JsonNode_impl(option: string;
+proc editor_setFlag_void_App_string_bool_impl(flag: string; value: bool)  {.importc.}
+proc editor_toggleFlag_void_App_string_impl(flag: string)  {.importc.}
+proc editor_setOption_void_App_string_JsonNode_impl(option: string;
     value: JsonNode)  {.importc.}
-proc editor_quit_void_Editor_impl()  {.importc.}
-proc editor_changeFontSize_void_Editor_float32_impl(amount: float32)  {.importc.}
-proc editor_changeLayoutProp_void_Editor_string_float32_impl(prop: string;
+proc editor_quit_void_App_impl()  {.importc.}
+proc editor_changeFontSize_void_App_float32_impl(amount: float32)  {.importc.}
+proc editor_changeLayoutProp_void_App_string_float32_impl(prop: string;
     change: float32)  {.importc.}
-proc editor_toggleStatusBarLocation_void_Editor_impl()  {.importc.}
-proc editor_createView_void_Editor_impl()  {.importc.}
-proc editor_closeCurrentView_void_Editor_impl()  {.importc.}
-proc editor_moveCurrentViewToTop_void_Editor_impl()  {.importc.}
-proc editor_nextView_void_Editor_impl()  {.importc.}
-proc editor_prevView_void_Editor_impl()  {.importc.}
-proc editor_moveCurrentViewPrev_void_Editor_impl()  {.importc.}
-proc editor_moveCurrentViewNext_void_Editor_impl()  {.importc.}
-proc editor_setLayout_void_Editor_string_impl(layout: string)  {.importc.}
-proc editor_commandLine_void_Editor_string_impl(initialValue: string = "")  {.importc.}
-proc editor_exitCommandLine_void_Editor_impl()  {.importc.}
-proc editor_executeCommandLine_bool_Editor_impl(): bool  {.importc.}
-proc editor_writeFile_void_Editor_string_bool_impl(path: string = "";
+proc editor_toggleStatusBarLocation_void_App_impl()  {.importc.}
+proc editor_createView_void_App_impl()  {.importc.}
+proc editor_closeCurrentView_void_App_impl()  {.importc.}
+proc editor_moveCurrentViewToTop_void_App_impl()  {.importc.}
+proc editor_nextView_void_App_impl()  {.importc.}
+proc editor_prevView_void_App_impl()  {.importc.}
+proc editor_moveCurrentViewPrev_void_App_impl()  {.importc.}
+proc editor_moveCurrentViewNext_void_App_impl()  {.importc.}
+proc editor_setLayout_void_App_string_impl(layout: string)  {.importc.}
+proc editor_commandLine_void_App_string_impl(initialValue: string = "")  {.importc.}
+proc editor_exitCommandLine_void_App_impl()  {.importc.}
+proc editor_executeCommandLine_bool_App_impl(): bool  {.importc.}
+proc editor_writeFile_void_App_string_bool_impl(path: string = "";
     app: bool = false)  {.importc.}
-proc editor_loadFile_void_Editor_string_impl(path: string = "")  {.importc.}
-proc editor_openFile_void_Editor_string_bool_impl(path: string;
-    app: bool = false)  {.importc.}
-proc editor_removeFromLocalStorage_void_Editor_impl()  {.importc.}
-proc editor_loadTheme_void_Editor_string_impl(name: string)  {.importc.}
-proc editor_chooseTheme_void_Editor_impl()  {.importc.}
-proc editor_chooseFile_void_Editor_string_impl(view: string = "new")  {.importc.}
-proc editor_setGithubAccessToken_void_Editor_string_impl(token: string)  {.importc.}
-proc editor_reloadConfig_void_Editor_impl()  {.importc.}
-proc editor_logOptions_void_Editor_impl()  {.importc.}
-proc editor_clearCommands_void_Editor_string_impl(context: string)  {.importc.}
-proc editor_getAllEditors_seq_EditorId_Editor_impl(): seq[EditorId]  {.importc.}
-proc editor_setMode_void_Editor_string_impl(mode: string)  {.importc.}
-proc editor_mode_string_Editor_impl(): string  {.importc.}
-proc editor_getContextWithMode_string_Editor_string_impl(context: string): string  {.importc.}
+proc editor_loadFile_void_App_string_impl(path: string = "")  {.importc.}
+proc editor_removeFromLocalStorage_void_App_impl()  {.importc.}
+proc editor_loadTheme_void_App_string_impl(name: string)  {.importc.}
+proc editor_chooseTheme_void_App_impl()  {.importc.}
+proc editor_chooseFile_void_App_string_impl(view: string = "new")  {.importc.}
+proc editor_chooseOpen_void_App_string_impl(view: string = "new")  {.importc.}
+proc editor_openPreviousEditor_void_App_impl()  {.importc.}
+proc editor_openNextEditor_void_App_impl()  {.importc.}
+proc editor_setGithubAccessToken_void_App_string_impl(token: string)  {.importc.}
+proc editor_reloadConfig_void_App_impl()  {.importc.}
+proc editor_logOptions_void_App_impl()  {.importc.}
+proc editor_clearCommands_void_App_string_impl(context: string)  {.importc.}
+proc editor_getAllEditors_seq_EditorId_App_impl(): seq[EditorId]  {.importc.}
+proc editor_setMode_void_App_string_impl(mode: string)  {.importc.}
+proc editor_mode_string_App_impl(): string  {.importc.}
+proc editor_getContextWithMode_string_App_string_impl(context: string): string  {.importc.}
 proc editor_scriptRunAction_void_string_string_impl(action: string; arg: string)  {.importc.}
 proc editor_scriptLog_void_string_impl(message: string)  {.importc.}
-proc editor_addCommandScript_void_Editor_string_string_string_string_impl(
+proc editor_addCommandScript_void_App_string_string_string_string_impl(
     context: string; keys: string; action: string; arg: string = "")  {.importc.}
-proc editor_removeCommand_void_Editor_string_string_impl(context: string;
+proc editor_removeCommand_void_App_string_string_impl(context: string;
     keys: string)  {.importc.}
 proc editor_getActivePopup_EditorId_impl(): EditorId  {.importc.}
 proc editor_getActiveEditor_EditorId_impl(): EditorId  {.importc.}
-proc editor_getActiveEditor2_EditorId_Editor_impl(): EditorId  {.importc.}
-proc editor_loadCurrentConfig_void_Editor_impl()  {.importc.}
-proc editor_sourceCurrentDocument_void_Editor_impl()  {.importc.}
+proc editor_getActiveEditor2_EditorId_App_impl(): EditorId  {.importc.}
+proc editor_loadCurrentConfig_void_App_impl()  {.importc.}
+proc editor_sourceCurrentDocument_void_App_impl()  {.importc.}
 proc editor_getEditor_EditorId_int_impl(index: int): EditorId  {.importc.}
 proc editor_scriptIsTextEditor_bool_EditorId_impl(editorId: EditorId): bool  {.importc.}
 proc editor_scriptIsAstEditor_bool_EditorId_impl(editorId: EditorId): bool  {.importc.}
@@ -396,5 +398,5 @@ proc editor_scriptSetOptionBool_void_string_bool_impl(path: string; value: bool)
 proc editor_scriptSetOptionString_void_string_string_impl(path: string;
     value: string)  {.importc.}
 proc editor_scriptSetCallback_void_string_int_impl(path: string; id: int)  {.importc.}
-proc editor_setRegisterText_void_Editor_string_string_impl(text: string;
+proc editor_setRegisterText_void_App_string_string_impl(text: string;
     register: string = "")  {.importc.}

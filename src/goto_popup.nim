@@ -4,7 +4,7 @@ import editor, ast_document, text_document, popup, events, compiler, compiler_ty
 from scripting_api import LineNumbers
 
 type AstGotoDefinitionPopup* = ref object of Popup
-  editor*: Editor
+  editor*: App
   textEditor*: TextDocumentEditor
   document*: AstDocument
   selected*: int
@@ -93,7 +93,7 @@ method handleMouseRelease*(self: AstGotoDefinitionPopup, button: MouseButton, mo
 method handleMouseMove*(self: AstGotoDefinitionPopup, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) =
   discard
 
-proc newGotoPopup*(editor: Editor, document: AstDocument): AstGotoDefinitionPopup =
+proc newGotoPopup*(editor: App, document: AstDocument): AstGotoDefinitionPopup =
   var popup = AstGotoDefinitionPopup(editor: editor, document: document)
   popup.textEditor = newTextEditor(newTextDocument(), editor)
   popup.textEditor.setMode("insert")
