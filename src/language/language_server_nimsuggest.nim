@@ -56,7 +56,7 @@ when not defined(js):
 proc newLanguageServerNimSuggest*(filename: string, languagesServer: Option[(string, Port)] = (string, Port).none): Future[Option[LanguageServerNimSuggest]] {.async.} =
   var server = new LanguageServerNimSuggest
   server.filename = filename
-  server.maxRetries = 10
+  server.maxRetries = 1
 
   let parts = filename.splitFile
 

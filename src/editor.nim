@@ -321,13 +321,12 @@ proc `currentView=`(self: Editor, newIndex: int, addToHistory = true) =
   self.updateActiveEditor(addToHistory)
 
 proc addView*(self: Editor, view: View, addToHistory = true) =
-  self.views.insert(view, 0)
+  self.views.insert(view, self.currentView)
 
   let maxViews = getOption[int](self, "editor.maxViews", int.high)
   while maxViews > 0 and self.views.len > maxViews:
     self.hiddenViews.add self.views.pop()
 
-  `currentView=`(self, 0, addToHistory)
   self.updateActiveEditor(addToHistory)
   self.platform.requestRender()
 
@@ -859,7 +858,6 @@ proc tryOpenExisting*(self: Editor, path: string, folder: Option[WorkspaceFolder
     if view.document.filename == path and view.document.workspace == folder:
       logger.log(lvlInfo, fmt"Reusing open editor in view {i}")
       self.currentView = i
-      self.moveCurrentViewToTop()
       return view.editor.some
 
   for i, view in self.hiddenViews:
@@ -876,7 +874,6 @@ proc tryOpenExisting*(self: Editor, editor: EditorId, addToHistory = true): Opti
     if view.editor.id == editor:
       logger.log(lvlInfo, fmt"Reusing open editor in view {i}")
       `currentView=`(self, i, addToHistory)
-      self.moveCurrentViewToTop()
       return view.editor.some
 
   for i, view in self.hiddenViews:
