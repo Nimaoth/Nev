@@ -4,7 +4,7 @@ from scripting_api as api import nil
 import editor, document, document_editor, events, id, util, vmath, bumpy, rect_utils, event, input, ../regex, custom_logger, custom_async, custom_treesitter, indent
 import scripting/[expose]
 import platform/[platform, filesystem, widgets]
-import language/[languages, language_server_base, language_server]
+import language/[languages, language_server_base]
 import workspaces/[workspace]
 import text_document
 
@@ -918,6 +918,8 @@ proc setSearchQueryFromMove*(self: TextDocumentEditor, move: string, count: int 
   let selection = self.getSelectionForMove(self.selection.last, move, count)
   self.selection = selection
   self.setSearchQuery(self.document.contentString(selection))
+
+import language/language_server
 
 proc getLanguageServer(self: TextDocumentEditor): Future[Option[LanguageServer]] {.async.} =
   let languageId = if getLanguageForFile(self.document.filename).getSome(languageId):
