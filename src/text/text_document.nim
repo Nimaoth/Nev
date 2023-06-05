@@ -6,8 +6,7 @@ import text_language_config
 import platform/[platform, filesystem, widgets]
 import language/[languages, language_server_base]
 import workspaces/[workspace]
-
-import editor
+import config_provider
 
 export document, document_editor, id
 
@@ -54,6 +53,7 @@ type TextDocument* = ref object of Document
   textDeleted*: Event[tuple[document: TextDocument, selection: Selection]]
   singleLine*: bool
 
+  configProvider: ConfigProvider
   languageConfig*: Option[TextLanguageConfig]
   indentStyle*: IndentStyle
 
@@ -257,7 +257,7 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
             else:
               logger.log(lvlError, fmt"Unknown predicate '{predicate.operator}'")
 
-          if gEditor.getFlag("text.print-matches"):
+          if self.configProvider.getFlag("text.print-matches", false):
             let nodeText = self.contentString(node.getRange)
             logger.log(lvlInfo, fmt"{match.pattern}: '{nodeText}' {node} (matches: {matches})")
 
@@ -289,7 +289,7 @@ proc initTreesitter*(self: TextDocument): Future[void] {.async.} =
   else:
     return
 
-  let config = getOption[JsonNode](gEditor, "editor.text.treesitter." & languageId, newJObject())
+  let config = self.configProvider.getValue("editor.text.treesitter." & languageId, newJObject())
   var language = await loadLanguage(languageId, config)
 
   if language.isNone:
@@ -315,12 +315,13 @@ proc initTreesitter*(self: TextDocument): Future[void] {.async.} =
   # We now have a treesitter grammar + highlight query, so retrigger rendering
   self.notifyTextChanged()
 
-proc newTextDocument*(filename: string = "", content: string | seq[string] = "", app: bool = false): TextDocument =
+proc newTextDocument*(configProvider: ConfigProvider, filename: string = "", content: string | seq[string] = "", app: bool = false): TextDocument =
   new(result)
   var self = result
   self.filename = filename
   self.currentTree = nil
   self.appFile = app
+  self.configProvider = configProvider
 
   self.indentStyle = IndentStyle(kind: Spaces, spaces: 2)
   self.languageConfig = some TextLanguageConfig(
@@ -336,8 +337,8 @@ proc newTextDocument*(filename: string = "", content: string | seq[string] = "",
 
   self.content = content
 
-proc newTextDocument*(filename: string, app: bool, workspaceFolder: Option[WorkspaceFolder]): TextDocument =
-  result = newTextDocument(filename, "", app)
+proc newTextDocument*(configProvider: ConfigProvider, filename: string, app: bool, workspaceFolder: Option[WorkspaceFolder]): TextDocument =
+  result = newTextDocument(configProvider, filename, "", app)
   result.workspace = workspaceFolder
   result.load()
 

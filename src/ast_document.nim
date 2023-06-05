@@ -592,7 +592,7 @@ proc editSymbol*(self: AstDocumentEditor, symbol: Symbol) =
     logger.log(lvlInfo, fmt"Editing symbol node {symbol.node}")
   self.currentlyEditedNode = nil
   self.currentlyEditedSymbol = symbol.id
-  self.textDocument = newTextDocument()
+  self.textDocument = newTextDocument(self.editor.asConfigProvider)
   self.textDocument.content = @[symbol.name]
   self.textEditor = newTextEditor(self.textDocument, self.editor)
   self.textEditor.setMode("insert")
@@ -609,7 +609,7 @@ proc editNode*(self: AstDocumentEditor, node: AstNode) =
   logger.log(lvlInfo, fmt"Editing node {node}")
   self.currentlyEditedNode = node
   self.currentlyEditedSymbol = null
-  self.textDocument = newTextDocument()
+  self.textDocument = newTextDocument(self.editor.asConfigProvider)
   self.textDocument.content = node.text.splitLines
   self.textEditor = newTextEditor(self.textDocument, self.editor)
   self.textEditor.setMode("insert")
