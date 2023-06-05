@@ -11,125 +11,129 @@ else:
 ## This file is auto generated, don't modify.
 
 proc getBackend*(): Backend =
-  editor_getBackend_Backend_Editor_impl()
+  editor_getBackend_Backend_App_impl()
 proc saveAppState*() =
-  editor_saveAppState_void_Editor_impl()
+  editor_saveAppState_void_App_impl()
 proc requestRender*(redrawEverything: bool = false) =
-  editor_requestRender_void_Editor_bool_impl(redrawEverything)
+  editor_requestRender_void_App_bool_impl(redrawEverything)
 proc setHandleInputs*(context: string; value: bool) =
-  editor_setHandleInputs_void_Editor_string_bool_impl(context, value)
+  editor_setHandleInputs_void_App_string_bool_impl(context, value)
 proc setHandleActions*(context: string; value: bool) =
-  editor_setHandleActions_void_Editor_string_bool_impl(context, value)
+  editor_setHandleActions_void_App_string_bool_impl(context, value)
 proc setConsumeAllActions*(context: string; value: bool) =
-  editor_setConsumeAllActions_void_Editor_string_bool_impl(context, value)
+  editor_setConsumeAllActions_void_App_string_bool_impl(context, value)
 proc setConsumeAllInput*(context: string; value: bool) =
-  editor_setConsumeAllInput_void_Editor_string_bool_impl(context, value)
+  editor_setConsumeAllInput_void_App_string_bool_impl(context, value)
 proc clearWorkspaceCaches*() =
-  editor_clearWorkspaceCaches_void_Editor_impl()
+  editor_clearWorkspaceCaches_void_App_impl()
 proc openGithubWorkspace*(user: string; repository: string; branchOrHash: string) =
-  editor_openGithubWorkspace_void_Editor_string_string_string_impl(user,
+  editor_openGithubWorkspace_void_App_string_string_string_impl(user,
       repository, branchOrHash)
 proc openAbsytreeServerWorkspace*(url: string) =
-  editor_openAbsytreeServerWorkspace_void_Editor_string_impl(url)
+  editor_openAbsytreeServerWorkspace_void_App_string_impl(url)
 proc openLocalWorkspace*(path: string) =
-  editor_openLocalWorkspace_void_Editor_string_impl(path)
+  editor_openLocalWorkspace_void_App_string_impl(path)
 proc getFlag*(flag: string; default: bool = false): bool =
-  editor_getFlag_bool_Editor_string_bool_impl(flag, default)
+  editor_getFlag_bool_App_string_bool_impl(flag, default)
 proc setFlag*(flag: string; value: bool) =
-  editor_setFlag_void_Editor_string_bool_impl(flag, value)
+  editor_setFlag_void_App_string_bool_impl(flag, value)
 proc toggleFlag*(flag: string) =
-  editor_toggleFlag_void_Editor_string_impl(flag)
+  editor_toggleFlag_void_App_string_impl(flag)
 proc setOption*(option: string; value: JsonNode) =
-  editor_setOption_void_Editor_string_JsonNode_impl(option, value)
+  editor_setOption_void_App_string_JsonNode_impl(option, value)
 proc quit*() =
-  editor_quit_void_Editor_impl()
+  editor_quit_void_App_impl()
 proc changeFontSize*(amount: float32) =
-  editor_changeFontSize_void_Editor_float32_impl(amount)
+  editor_changeFontSize_void_App_float32_impl(amount)
 proc changeLayoutProp*(prop: string; change: float32) =
-  editor_changeLayoutProp_void_Editor_string_float32_impl(prop, change)
+  editor_changeLayoutProp_void_App_string_float32_impl(prop, change)
 proc toggleStatusBarLocation*() =
-  editor_toggleStatusBarLocation_void_Editor_impl()
+  editor_toggleStatusBarLocation_void_App_impl()
 proc createView*() =
-  editor_createView_void_Editor_impl()
+  editor_createView_void_App_impl()
 proc closeCurrentView*() =
-  editor_closeCurrentView_void_Editor_impl()
+  editor_closeCurrentView_void_App_impl()
 proc moveCurrentViewToTop*() =
-  editor_moveCurrentViewToTop_void_Editor_impl()
+  editor_moveCurrentViewToTop_void_App_impl()
 proc nextView*() =
-  editor_nextView_void_Editor_impl()
+  editor_nextView_void_App_impl()
 proc prevView*() =
-  editor_prevView_void_Editor_impl()
+  editor_prevView_void_App_impl()
 proc moveCurrentViewPrev*() =
-  editor_moveCurrentViewPrev_void_Editor_impl()
+  editor_moveCurrentViewPrev_void_App_impl()
 proc moveCurrentViewNext*() =
-  editor_moveCurrentViewNext_void_Editor_impl()
+  editor_moveCurrentViewNext_void_App_impl()
 proc setLayout*(layout: string) =
-  editor_setLayout_void_Editor_string_impl(layout)
+  editor_setLayout_void_App_string_impl(layout)
 proc commandLine*(initialValue: string = "") =
-  editor_commandLine_void_Editor_string_impl(initialValue)
+  editor_commandLine_void_App_string_impl(initialValue)
 proc exitCommandLine*() =
-  editor_exitCommandLine_void_Editor_impl()
+  editor_exitCommandLine_void_App_impl()
 proc executeCommandLine*(): bool =
-  editor_executeCommandLine_bool_Editor_impl()
+  editor_executeCommandLine_bool_App_impl()
 proc writeFile*(path: string = ""; app: bool = false) =
-  editor_writeFile_void_Editor_string_bool_impl(path, app)
+  editor_writeFile_void_App_string_bool_impl(path, app)
 proc loadFile*(path: string = "") =
-  editor_loadFile_void_Editor_string_impl(path)
-proc openFile*(path: string; app: bool = false) =
-  editor_openFile_void_Editor_string_bool_impl(path, app)
+  editor_loadFile_void_App_string_impl(path)
 proc removeFromLocalStorage*() =
   ## Browser only
   ## Clears the content of the current document in local storage
-  editor_removeFromLocalStorage_void_Editor_impl()
+  editor_removeFromLocalStorage_void_App_impl()
 proc loadTheme*(name: string) =
-  editor_loadTheme_void_Editor_string_impl(name)
+  editor_loadTheme_void_App_string_impl(name)
 proc chooseTheme*() =
-  editor_chooseTheme_void_Editor_impl()
+  editor_chooseTheme_void_App_impl()
 proc chooseFile*(view: string = "new") =
-  editor_chooseFile_void_Editor_string_impl(view)
+  editor_chooseFile_void_App_string_impl(view)
+proc chooseOpen*(view: string = "new") =
+  editor_chooseOpen_void_App_string_impl(view)
+proc openPreviousEditor*() =
+  editor_openPreviousEditor_void_App_impl()
+proc openNextEditor*() =
+  editor_openNextEditor_void_App_impl()
 proc setGithubAccessToken*(token: string) =
   ## Stores the give token in local storage as 'GithubAccessToken', which will be used in requests to the github api
-  editor_setGithubAccessToken_void_Editor_string_impl(token)
+  editor_setGithubAccessToken_void_App_string_impl(token)
 proc reloadConfig*() =
-  editor_reloadConfig_void_Editor_impl()
+  editor_reloadConfig_void_App_impl()
 proc logOptions*() =
-  editor_logOptions_void_Editor_impl()
+  editor_logOptions_void_App_impl()
 proc clearCommands*(context: string) =
-  editor_clearCommands_void_Editor_string_impl(context)
+  editor_clearCommands_void_App_string_impl(context)
 proc getAllEditors*(): seq[EditorId] =
-  editor_getAllEditors_seq_EditorId_Editor_impl()
+  editor_getAllEditors_seq_EditorId_App_impl()
 proc setMode*(mode: string) =
-  editor_setMode_void_Editor_string_impl(mode)
+  editor_setMode_void_App_string_impl(mode)
 proc mode*(): string =
-  editor_mode_string_Editor_impl()
+  editor_mode_string_App_impl()
 proc getContextWithMode*(context: string): string =
-  editor_getContextWithMode_string_Editor_string_impl(context)
+  editor_getContextWithMode_string_App_string_impl(context)
 proc scriptRunAction*(action: string; arg: string) =
   editor_scriptRunAction_void_string_string_impl(action, arg)
 proc scriptLog*(message: string) =
   editor_scriptLog_void_string_impl(message)
 proc addCommandScript*(context: string; keys: string; action: string;
                        arg: string = "") =
-  editor_addCommandScript_void_Editor_string_string_string_string_impl(context,
+  editor_addCommandScript_void_App_string_string_string_string_impl(context,
       keys, action, arg)
 proc removeCommand*(context: string; keys: string) =
-  editor_removeCommand_void_Editor_string_string_impl(context, keys)
+  editor_removeCommand_void_App_string_string_impl(context, keys)
 proc getActivePopup*(): EditorId =
   editor_getActivePopup_EditorId_impl()
 proc getActiveEditor*(): EditorId =
   editor_getActiveEditor_EditorId_impl()
 proc getActiveEditor2*(): EditorId =
   ## Returns the active editor instance
-  editor_getActiveEditor2_EditorId_Editor_impl()
+  editor_getActiveEditor2_EditorId_App_impl()
 proc loadCurrentConfig*() =
   ## Javascript backend only!
   ## Opens the config file in a new view.
-  editor_loadCurrentConfig_void_Editor_impl()
+  editor_loadCurrentConfig_void_App_impl()
 proc sourceCurrentDocument*() =
   ## Javascript backend only!
   ## Runs the content of the active editor as javascript using `eval()`.
   ## "use strict" is prepended to the content to force strict mode.
-  editor_sourceCurrentDocument_void_Editor_impl()
+  editor_sourceCurrentDocument_void_App_impl()
 proc getEditor*(index: int): EditorId =
   editor_getEditor_EditorId_int_impl(index)
 proc scriptIsTextEditor*(editorId: EditorId): bool =
@@ -177,4 +181,4 @@ proc scriptSetOptionString*(path: string; value: string) =
 proc scriptSetCallback*(path: string; id: int) =
   editor_scriptSetCallback_void_string_int_impl(path, id)
 proc setRegisterText*(text: string; register: string = "") =
-  editor_setRegisterText_void_Editor_string_string_impl(text, register)
+  editor_setRegisterText_void_App_string_string_impl(text, register)

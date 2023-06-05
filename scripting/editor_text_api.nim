@@ -29,10 +29,9 @@ proc invertSelection*(self: TextDocumentEditor) =
   ## Inverts the current selection. Discards all but the last cursor.
   editor_text_invertSelection_void_TextDocumentEditor_impl(self)
 proc insert*(self: TextDocumentEditor; selections: seq[Selection]; text: string;
-             notify: bool = true; record: bool = true; autoIndent: bool = true): seq[
-    Selection] =
-  editor_text_insert_seq_Selection_TextDocumentEditor_seq_Selection_string_bool_bool_bool_impl(
-      self, selections, text, notify, record, autoIndent)
+             notify: bool = true; record: bool = true): seq[Selection] =
+  editor_text_insert_seq_Selection_TextDocumentEditor_seq_Selection_string_bool_bool_impl(
+      self, selections, text, notify, record)
 proc delete*(self: TextDocumentEditor; selections: seq[Selection];
              notify: bool = true; record: bool = true): seq[Selection] =
   editor_text_delete_seq_Selection_TextDocumentEditor_seq_Selection_bool_bool_impl(
@@ -133,6 +132,10 @@ proc moveCursorPrevFindResult*(self: TextDocumentEditor; cursor: SelectionCursor
 proc scrollToCursor*(self: TextDocumentEditor;
                      cursor: SelectionCursor = SelectionCursor.Config) =
   editor_text_scrollToCursor_void_TextDocumentEditor_SelectionCursor_impl(self,
+      cursor)
+proc centerCursor*(self: TextDocumentEditor;
+                   cursor: SelectionCursor = SelectionCursor.Config) =
+  editor_text_centerCursor_void_TextDocumentEditor_SelectionCursor_impl(self,
       cursor)
 proc reloadTreesitter*(self: TextDocumentEditor) =
   editor_text_reloadTreesitter_void_TextDocumentEditor_impl(self)

@@ -172,7 +172,7 @@ type
       name*: string
 
 type AstDocumentEditor* = ref object of DocumentEditor
-  editor*: Editor
+  editor*: App
   document*: AstDocument
   selectedNode: AstNode
   selectionHistory: Deque[AstNode]
@@ -2139,7 +2139,7 @@ method createWithDocument*(self: AstDocumentEditor, document: Document): Documen
 
   return editor
 
-method injectDependencies*(self: AstDocumentEditor, ed: Editor) =
+method injectDependencies*(self: AstDocumentEditor, ed: App) =
   self.editor = ed
   self.editor.registerEditor(self)
 

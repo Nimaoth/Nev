@@ -10,7 +10,7 @@ import ast/[types, cells]
 func withAlpha(color: Color, alpha: float32): Color = color(color.r, color.g, color.b, alpha)
 
 
-proc updateBaseIndexAndScrollOffset(self: ModelDocumentEditor, app: Editor, contentPanel: WPanel) =
+proc updateBaseIndexAndScrollOffset(self: ModelDocumentEditor, app: App, contentPanel: WPanel) =
   # let totalLineHeight = app.platform.totalLineHeight
   discard
 
@@ -139,7 +139,7 @@ proc finish(self: CellLayoutContext): WWidget =
 
   return self.parentWidget
 
-proc getTextAndColor(app: Editor, cell: Cell, defaultShadowText: string = ""): (string, Color) =
+proc getTextAndColor(app: App, cell: Cell, defaultShadowText: string = ""): (string, Color) =
   if cell.currentText.len == 0:
     let text = if cell.shadowText.len == 0:
       defaultShadowText
@@ -152,16 +152,16 @@ proc getTextAndColor(app: Editor, cell: Cell, defaultShadowText: string = ""): (
     let textColor = if cell.themeForegroundColors.len == 0: defaultColor else: app.theme.anyColor(cell.themeForegroundColors, defaultColor)
     return (cell.currentText, textColor)
 
-proc setBackgroundColor(app: Editor, cell: Cell, widget: WWidget) =
+proc setBackgroundColor(app: App, cell: Cell, widget: WWidget) =
   let defaultColor = if cell.backgroundColor.a != 0: cell.backgroundColor else: color(0, 0, 0, 0)
   let backgroundColor = if cell.themeBackgroundColors.len == 0: defaultColor else: app.theme.anyColor(cell.themeBackgroundColors, defaultColor)
   widget.backgroundColor = backgroundColor
   widget.fillBackground = backgroundColor.a != 0
   widget.allowAlpha = true
 
-method updateCellWidget*(cell: Cell, app: Editor, widget: WWidget, frameIndex: int, ctx: CellLayoutContext, updateContext: UpdateContext): WWidget {.base.} = widget
+method updateCellWidget*(cell: Cell, app: App, widget: WWidget, frameIndex: int, ctx: CellLayoutContext, updateContext: UpdateContext): WWidget {.base.} = widget
 
-method updateCellWidget*(cell: PlaceholderCell, app: Editor, widget: WWidget, frameIndex: int, ctx: CellLayoutContext, updateContext: UpdateContext): WWidget =
+method updateCellWidget*(cell: PlaceholderCell, app: App, widget: WWidget, frameIndex: int, ctx: CellLayoutContext, updateContext: UpdateContext): WWidget =
   if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
     return nil
 
@@ -183,7 +183,7 @@ method updateCellWidget*(cell: PlaceholderCell, app: Editor, widget: WWidget, fr
 
   setBackgroundColor(app, cell, widget)
 
-method updateCellWidget*(cell: ConstantCell, app: Editor, widget: WWidget, frameIndex: int, ctx: CellLayoutContext, updateContext: UpdateContext): WWidget =
+method updateCellWidget*(cell: ConstantCell, app: App, widget: WWidget, frameIndex: int, ctx: CellLayoutContext, updateContext: UpdateContext): WWidget =
   if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
     return nil
 
@@ -205,7 +205,7 @@ method updateCellWidget*(cell: ConstantCell, app: Editor, widget: WWidget, frame
 
   setBackgroundColor(app, cell, widget)
 
-method updateCellWidget*(cell: AliasCell, app: Editor, widget: WWidget, frameIndex: int, ctx: CellLayoutContext, updateContext: UpdateContext): WWidget =
+method updateCellWidget*(cell: AliasCell, app: App, widget: WWidget, frameIndex: int, ctx: CellLayoutContext, updateContext: UpdateContext): WWidget =
   if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
     return nil
 
@@ -227,7 +227,7 @@ method updateCellWidget*(cell: AliasCell, app: Editor, widget: WWidget, frameInd
 
   setBackgroundColor(app, cell, widget)
 
-method updateCellWidget*(cell: NodeReferenceCell, app: Editor, widget: WWidget, frameIndex: int, ctx: CellLayoutContext, updateContext: UpdateContext): WWidget =
+method updateCellWidget*(cell: NodeReferenceCell, app: App, widget: WWidget, frameIndex: int, ctx: CellLayoutContext, updateContext: UpdateContext): WWidget =
   if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
     return nil
 
@@ -282,7 +282,7 @@ method updateCellWidget*(cell: NodeReferenceCell, app: Editor, widget: WWidget, 
 
   setBackgroundColor(app, cell, widget)
 
-method updateCellWidget*(cell: PropertyCell, app: Editor, widget: WWidget, frameIndex: int, ctx: CellLayoutContext, updateContext: UpdateContext): WWidget =
+method updateCellWidget*(cell: PropertyCell, app: App, widget: WWidget, frameIndex: int, ctx: CellLayoutContext, updateContext: UpdateContext): WWidget =
   if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
     return nil
 
@@ -304,7 +304,7 @@ method updateCellWidget*(cell: PropertyCell, app: Editor, widget: WWidget, frame
 
   setBackgroundColor(app, cell, widget)
 
-method updateCellWidget*(cell: CollectionCell, app: Editor, widget: WWidget, frameIndex: int, ctx: CellLayoutContext, updateContext: UpdateContext): WWidget =
+method updateCellWidget*(cell: CollectionCell, app: App, widget: WWidget, frameIndex: int, ctx: CellLayoutContext, updateContext: UpdateContext): WWidget =
   if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
     return nil
 
@@ -373,7 +373,7 @@ method updateCellWidget*(cell: CollectionCell, app: Editor, widget: WWidget, fra
   else:
     return nil
 
-proc updateSelections(self: ModelDocumentEditor, app: Editor, cell: Cell, cursor: Option[CellCursor], primary: bool, reverse: bool) =
+proc updateSelections(self: ModelDocumentEditor, app: App, cell: Cell, cursor: Option[CellCursor], primary: bool, reverse: bool) =
   let charWidth = app.platform.charWidth
   let secondaryColor = app.theme.color("inputValidation.warningBorder", color(1, 1, 1)).withAlpha(0.25)
   let primaryColor = app.theme.color("selection.background", color(1, 1, 1)).withAlpha(0.25)
@@ -436,7 +436,7 @@ proc updateSelections(self: ModelDocumentEditor, app: Editor, cell: Cell, cursor
       widget.allowAlpha = true
       widget.backgroundColor = if primary: primaryColor else: secondaryColor
 
-proc renderCompletions(self: ModelDocumentEditor, app: Editor, contentPanel: WPanel, cursorBounds: Rect, frameIndex: int) =
+proc renderCompletions(self: ModelDocumentEditor, app: App, contentPanel: WPanel, cursorBounds: Rect, frameIndex: int) =
   let totalLineHeight = app.platform.totalLineHeight
   let charWidth = app.platform.charWidth
 
@@ -490,7 +490,7 @@ proc renderCompletions(self: ModelDocumentEditor, app: Editor, contentPanel: WPa
 
   app.createLinesInPanel(panel, self.completionsBaseIndex, self.completionsScrollOffset, self.completions.len, frameIndex, onlyRenderInBounds=true, renderLine)
 
-method updateWidget*(self: ModelDocumentEditor, app: Editor, widget: WPanel, frameIndex: int) =
+method updateWidget*(self: ModelDocumentEditor, app: App, widget: WPanel, frameIndex: int) =
   let totalLineHeight = app.platform.totalLineHeight
 
   let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))

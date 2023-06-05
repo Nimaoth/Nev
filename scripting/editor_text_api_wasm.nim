@@ -91,11 +91,10 @@ proc invertSelection*(self: TextDocumentEditor) =
       argsJsonString.cstring)
 
 
-proc editor_text_insert_seq_Selection_TextDocumentEditor_seq_Selection_string_bool_bool_bool_wasm(
+proc editor_text_insert_seq_Selection_TextDocumentEditor_seq_Selection_string_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc insert*(self: TextDocumentEditor; selections: seq[Selection]; text: string;
-             notify: bool = true; record: bool = true; autoIndent: bool = true): seq[
-    Selection] =
+             notify: bool = true; record: bool = true): seq[Selection] =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:
@@ -122,13 +121,8 @@ proc insert*(self: TextDocumentEditor; selections: seq[Selection]; text: string;
       record
     else:
       record.toJson()
-  argsJson.add block:
-    when bool is JsonNode:
-      autoIndent
-    else:
-      autoIndent.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_insert_seq_Selection_TextDocumentEditor_seq_Selection_string_bool_bool_bool_wasm(
+  let res {.used.} = editor_text_insert_seq_Selection_TextDocumentEditor_seq_Selection_string_bool_bool_wasm(
       argsJsonString.cstring)
   result = parseJson($res).jsonTo(typeof(result))
 
@@ -806,6 +800,26 @@ proc scrollToCursor*(self: TextDocumentEditor;
       cursor.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_scrollToCursor_void_TextDocumentEditor_SelectionCursor_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_centerCursor_void_TextDocumentEditor_SelectionCursor_wasm(
+    arg: cstring): cstring {.importc.}
+proc centerCursor*(self: TextDocumentEditor;
+                   cursor: SelectionCursor = SelectionCursor.Config) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when SelectionCursor is JsonNode:
+      cursor
+    else:
+      cursor.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_centerCursor_void_TextDocumentEditor_SelectionCursor_wasm(
       argsJsonString.cstring)
 
 

@@ -101,7 +101,7 @@ type
       referenceTarget*: AstNode
 
   ModelDocumentEditor* = ref object of DocumentEditor
-    editor*: Editor
+    editor*: App
     document*: ModelDocument
 
     transactionCursors: Table[Id, CellCursor]
@@ -742,7 +742,7 @@ method createWithDocument*(_: ModelDocumentEditor, document: Document): Document
 
   return self
 
-method injectDependencies*(self: ModelDocumentEditor, ed: Editor) =
+method injectDependencies*(self: ModelDocumentEditor, ed: App) =
   self.editor = ed
   self.editor.registerEditor(self)
 

@@ -70,7 +70,7 @@ type TextDocument* = ref object of Document
   styledTextCache: Table[int, StyledLine]
 
 type TextDocumentEditor* = ref object of DocumentEditor
-  editor*: Editor
+  editor*: App
   document*: TextDocument
 
   selectionsInternal: Selections
@@ -1735,7 +1735,7 @@ proc handleInput(self: TextDocumentEditor, input: string): EventResponse =
   self.insertText(input)
   return Handled
 
-method injectDependencies*(self: TextDocumentEditor, ed: Editor) =
+method injectDependencies*(self: TextDocumentEditor, ed: App) =
   self.editor = ed
   self.editor.registerEditor(self)
   let config = ed.getEventHandlerConfig("editor.text")
@@ -1770,7 +1770,7 @@ proc createTextEditorInstance(): TextDocumentEditor =
     # This " is here to fix syntax highlighting
   return editor
 
-proc newTextEditor*(document: TextDocument, ed: Editor): TextDocumentEditor =
+proc newTextEditor*(document: TextDocument, ed: App): TextDocumentEditor =
   var editor = createTextEditorInstance()
   editor.document = document
 

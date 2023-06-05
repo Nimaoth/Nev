@@ -8,7 +8,7 @@ import vmath, bumpy, chroma
 
 func withAlpha(color: Color, alpha: float32): Color = color(color.r, color.g, color.b, alpha)
 
-method updateWidget*(self: AstSymbolSelectorItem, app: Editor, widget: WPanel, frameIndex: int) =
+method updateWidget*(self: AstSymbolSelectorItem, app: App, widget: WPanel, frameIndex: int) =
   let charWidth = app.platform.charWidth
   let totalLineHeight = app.platform.totalLineHeight
 
@@ -38,7 +38,7 @@ method updateWidget*(self: AstSymbolSelectorItem, app: Editor, widget: WPanel, f
   typeWidget.anchor.max.x = 1
   widget.add(typeWidget)
 
-proc updateBaseIndexAndScrollOffset(self: AstDocumentEditor, app: Editor, contentPanel: WPanel) =
+proc updateBaseIndexAndScrollOffset(self: AstDocumentEditor, app: App, contentPanel: WPanel) =
   let totalLineHeight = app.platform.totalLineHeight
   self.previousBaseIndex = self.previousBaseIndex.clamp(0..self.document.rootNode.len)
 
@@ -72,7 +72,7 @@ proc updateBaseIndexAndScrollOffset(self: AstDocumentEditor, app: Editor, conten
     self.previousBaseIndex -= 1
     self.scrollOffset -= layout.bounds.h + totalLineHeight
 
-proc renderVisualNode*(self: AstDocumentEditor, app: Editor, node: VisualNode, selected: AstNode, bounds: Rect, offset: Vec2, widget: WPanel, frameIndex: int) =
+proc renderVisualNode*(self: AstDocumentEditor, app: App, node: VisualNode, selected: AstNode, bounds: Rect, offset: Vec2, widget: WPanel, frameIndex: int) =
   let charWidth = app.platform.charWidth
 
   # echo "renderVisualNode ", node
@@ -137,7 +137,7 @@ proc renderVisualNode*(self: AstDocumentEditor, app: Editor, node: VisualNode, s
     panel.backgroundColor = app.theme.color("inputValidation.infoBorder", rgb(175, 255, 200)).withAlpha(0.25)
     panel.foregroundColor = app.theme.color("inputValidation.infoBorder", rgb(175, 255, 200))
 
-proc renderBlockIndent(editor: AstDocumentEditor, app: Editor, layout: NodeLayout, node: AstNode, offset: Vec2, widget: WPanel) =
+proc renderBlockIndent(editor: AstDocumentEditor, app: App, layout: NodeLayout, node: AstNode, offset: Vec2, widget: WPanel) =
   let indentLineWidth = getOption[float32](app, "ast.indent-line-width", 1)
   let indentLineAlpha = getOption[float32](app, "ast.indent-line-alpha", 1)
 
@@ -156,7 +156,7 @@ proc renderBlockIndent(editor: AstDocumentEditor, app: Editor, layout: NodeLayou
         backgroundColor: color)
       widget.insert(0, panel)
 
-proc renderVisualNodeLayout*(self: AstDocumentEditor, app: Editor, node: AstNode, bounds: Rect, layout: NodeLayout, offset: Vec2, contentWidget: WPanel, frameIndex: int) =
+proc renderVisualNodeLayout*(self: AstDocumentEditor, app: App, node: AstNode, bounds: Rect, layout: NodeLayout, offset: Vec2, contentWidget: WPanel, frameIndex: int) =
   let totalLineHeight = app.platform.totalLineHeight
   let charWidth = app.platform.charWidth
 
@@ -213,7 +213,7 @@ proc renderVisualNodeLayout*(self: AstDocumentEditor, app: Editor, node: AstNode
 
   self.renderBlockIndent(app, layout, node, offset, widget)
 
-proc renderCompletionList*(self: AstDocumentEditor, app: Editor, widget: WPanel, parentBounds: Rect, frameIndex: int, completions: openArray[Completion], selected: int, fill: bool, targetLine: Option[int],
+proc renderCompletionList*(self: AstDocumentEditor, app: App, widget: WPanel, parentBounds: Rect, frameIndex: int, completions: openArray[Completion], selected: int, fill: bool, targetLine: Option[int],
     renderedItems: var seq[tuple[index: int, widget: WWidget]], previousBaseIndex: var int, scrollOffset: var float) =
   let totalLineHeight = app.platform.totalLineHeight
   let charWidth = app.platform.charWidth
@@ -326,7 +326,7 @@ proc renderCompletionList*(self: AstDocumentEditor, app: Editor, widget: WPanel,
 
   renderedItems.add newRenderedItems
 
-proc renderCompletions*(self: AstDocumentEditor, app: Editor, widget: WPanel, frameIndex: int) =
+proc renderCompletions*(self: AstDocumentEditor, app: App, widget: WPanel, frameIndex: int) =
   self.lastCompletionsWidget = nil
 
   if self.completions.len == 0:
@@ -361,7 +361,7 @@ proc renderCompletions*(self: AstDocumentEditor, app: Editor, widget: WPanel, fr
 
   self.scrollToCompletion = int.none
 
-method updateWidget*(self: AstDocumentEditor, app: Editor, widget: WPanel, frameIndex: int) =
+method updateWidget*(self: AstDocumentEditor, app: App, widget: WPanel, frameIndex: int) =
   let totalLineHeight = app.platform.totalLineHeight
 
   let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
