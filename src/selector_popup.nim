@@ -179,7 +179,7 @@ method handleMouseMove*(self: SelectorPopup, mousePosWindow: Vec2, mousePosDelta
 
 proc newSelectorPopup*(editor: App): SelectorPopup =
   var popup = SelectorPopup(editor: editor)
-  popup.textEditor = newTextEditor(newTextDocument(), editor)
+  popup.textEditor = newTextEditor(newTextDocument(editor.asConfigProvider), editor)
   popup.textEditor.setMode("insert")
   popup.textEditor.renderHeader = false
   popup.textEditor.lineNumbers = api.LineNumbers.None.some

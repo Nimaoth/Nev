@@ -1,11 +1,12 @@
 import std/[strformat, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils, macros, macrocache, sugar, streams, deques]
-import fuzzy
 import input, id, events, rect_utils, document, document_editor, popup, timer, event, cancellation_token
 import theme, util, custom_logger, custom_async, fuzzy_matching
 import scripting/[expose, scripting_base]
 import platform/[platform, widgets, filesystem]
 import workspaces/[workspace]
 import ast/types
+import traits
+import config_provider
 
 when not defined(js):
   import scripting/scripting_nim
@@ -246,6 +247,26 @@ proc createEditorForDocument(self: App, document: Document): DocumentEditor =
   logger.log(lvlError, "No editor found which can edit " & $document)
   return nil
 
+implTrait(ConfigProvider, App):
+  proc getConfigValue(self: App, path: string): Option[JsonNode] =
+    let node = self.options{path.split(".")}
+    if node.isNil:
+      return JsonNode.none
+    return node.some
+
+  proc setConfigValue(self: App, path: string, value: JsonNode) =
+    let pathItems = path.split(".")
+    var node = self.options
+    for key in pathItems[0..^2]:
+      if node.kind != JObject:
+        return
+      if not node.contains(key):
+        node[key] = newJObject()
+      node = node[key]
+    if node.isNil or node.kind != JObject:
+      return
+    node[pathItems[^1]] = value
+
 proc getOption*[T](editor: App, path: string, default: T = T.default): T =
   template createScriptGetOption(editor, path, defaultValue, accessor: untyped): untyped {.used.} =
     block:
@@ -484,7 +505,7 @@ proc newEditor*(backend: api.Backend, platform: Platform): App =
       Ignored
   self.commandLineMode = false
 
-  self.commandLineTextEditor = newTextEditor(newTextDocument(), self)
+  self.commandLineTextEditor = newTextEditor(newTextDocument(self.asConfigProvider), self)
   self.commandLineTextEditor.renderHeader = false
   self.commandLineTextEditor.TextDocumentEditor.lineNumbers = api.LineNumbers.None.some
   self.getCommandLineTextEditor.hideCursorWhenInactive = true
@@ -561,7 +582,7 @@ proc newEditor*(backend: api.Backend, platform: Platform): App =
             continue
         else:
           try:
-            newTextDocument(editorState.filename, editorState.appFile, workspaceFolder)
+            newTextDocument(self.asConfigProvider, editorState.filename, editorState.appFile, workspaceFolder)
           except CatchableError:
             logger.log(lvlError, fmt"Failed to restore file {editorState.filename} from previous session: {getCurrentExceptionMsg()}")
             continue
@@ -745,7 +766,7 @@ proc toggleStatusBarLocation*(self: App) {.expose("editor").} =
   self.platform.requestRender(true)
 
 proc createView*(self: App) {.expose("editor").} =
-  discard self.createView(newTextDocument())
+  discard self.createView(newTextDocument(self.asConfigProvider))
 
 # proc createKeybindAutocompleteView*(self: App) {.expose("editor").} =
 #   self.createView(newKeybindAutocompletion())
@@ -899,7 +920,7 @@ proc openFile*(self: App, path: string, app: bool = false): Option[DocumentEdito
       return self.createView(newModelDocument(path, app, WorkspaceFolder.none)).some
     else:
       let file = if app: fs.loadApplicationFile(path) else: fs.loadFile(path)
-      return self.createView(newTextDocument(path, file.splitLines, app)).some
+      return self.createView(newTextDocument(self.asConfigProvider, path, file.splitLines, app)).some
   except CatchableError:
     logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
     logger.log(lvlError, getCurrentException().getStackTrace())
@@ -918,7 +939,7 @@ proc openWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder): Optio
     elif path.endsWith(".am"):
       return self.createView(newModelDocument(path, false, folder.some)).some
     else:
-      return self.createView(newTextDocument(path, false, folder.some)).some
+      return self.createView(newTextDocument(self.asConfigProvider, path, false, folder.some)).some
 
   except CatchableError:
     logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
@@ -1043,7 +1064,6 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
       await self.iterateDirectoryRec(folder, "", cancellationToken, proc(files: seq[string]) =
         let folder = folder
         for file in files:
-          let name = file.splitFile.name
           let score = matchPath(file, text)
           popup.completions.add FileSelectorItem(path: fmt"{file}", score: score, workspaceFolder: folder.some)
 
@@ -1279,7 +1299,7 @@ proc handleRune*(self: App, input: int64, modifiers: Modifiers) =
     self.platform.preventDefault()
 
 proc handleDropFile*(self: App, path, content: string) =
-  discard self.createView(newTextDocument(path, content))
+  discard self.createView(newTextDocument(self.asConfigProvider, path, content))
 
 proc scriptRunAction*(action: string, arg: string) {.expose("editor").} =
   if gEditor.isNil:
@@ -1335,7 +1355,7 @@ proc loadCurrentConfig*(self: App) {.expose("editor").} =
   ## Javascript backend only!
   ## Opens the config file in a new view.
   when defined(js):
-    discard self.createView(newTextDocument("./config/absytree_config.js", fs.loadApplicationFile("./config/absytree_config.js"), true))
+    discard self.createView(newTextDocument(self.asConfigProvider, "./config/absytree_config.js", fs.loadApplicationFile("./config/absytree_config.js"), true))
 
 proc sourceCurrentDocument*(self: App) {.expose("editor").} =
   ## Javascript backend only!

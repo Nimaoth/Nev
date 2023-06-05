@@ -1,7 +1,6 @@
 import platform/[widgets]
 import id, ast_ids, util, custom_logger
 import types, cells
-import print
 
 let typeClass* = newNodeClass(IdType, "Type", isAbstract=true)
 let stringTypeClass* = newNodeClass(IdString, "StringType", alias="string", base=typeClass)
