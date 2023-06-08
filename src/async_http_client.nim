@@ -20,15 +20,34 @@ when defined(js):
 else:
   import std/[httpclient]
 
+  var clients: seq[AsyncHttpClient] = @[]
+  var totalClients = 0
+  const maxClients = 25
+
+  proc getClient(): Future[AsyncHttpClient] {.async.} =
+    while clients.len == 0:
+      if totalClients < maxClients:
+        inc totalClients
+        return newAsyncHttpClient(userAgent = "Thunder Client (https://www.thunderclient.com)")
+      await sleepAsync(1)
+    return clients.pop
+
+  template withClient(client, body: untyped): untyped =
+    block:
+      let client = await getClient()
+      defer:
+        clients.add client
+      body
+
   proc httpGet*(url: string, authToken: Option[string] = string.none): Future[string] {.async.} =
     var headers = newHttpHeaders()
     if authToken.isSome:
       headers.add("Authorization", authToken.get)
 
-    var client = newAsyncHttpClient(userAgent = "Thunder Client (https://www.thunderclient.com)", headers = headers)
-    var response = await client.get(url)
-    let body = await response.body
-    return body
+    withClient client:
+      var response = await client.request(url, HttpGet, headers=headers)
+      let body = await response.body
+      return body
 
   proc httpPost*(url: string, content: string, authToken: Option[string] = string.none): Future[void] {.async.} =
     var headers = newHttpHeaders()
@@ -37,8 +56,8 @@ else:
 
     headers.add("content-type", "text/plain")
 
-    var client = newAsyncHttpClient(userAgent = "Thunder Client (https://www.thunderclient.com)", headers = headers)
-    discard await client.post(url, content)
+    withClient client:
+      discard await client.request(url, HttpPost, body=content, headers=headers)
 
   proc httpPost*(url: string, content: ArrayBuffer, authToken: Option[string] = string.none): Future[void] {.async.} =
     var str = newStringOfCap(content.buffer.len)
@@ -52,5 +71,5 @@ else:
 
     headers.add("content-type", "application/octet-stream")
 
-    var client = newAsyncHttpClient(userAgent = "Thunder Client (https://www.thunderclient.com)", headers = headers)
-    discard await client.post(url, str)
+    withClient client:
+      discard await client.request(url, HttpPost, body=str, headers=headers)
