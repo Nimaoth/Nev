@@ -1,18 +1,18 @@
 import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, tables, deques, sets]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
-import editor, document, document_editor, events, id, util, vmath, bumpy, rect_utils, event, input, ../regex, custom_logger, custom_async, custom_treesitter, indent
+import document, document_editor, events, id, util, vmath, bumpy, rect_utils, event, input, ../regex, custom_logger, custom_async, custom_treesitter, indent
 import scripting/[expose]
 import platform/[platform, filesystem, widgets]
 import language/[languages, language_server_base]
 import workspaces/[workspace]
 import text_document
-import config_provider
+import config_provider, app_interface
 
 export text_document, document_editor, id
 
 type TextDocumentEditor* = ref object of DocumentEditor
-  app*: App
+  app*: AppInterface
   platform*: Platform
   document*: TextDocument
 
@@ -303,8 +303,8 @@ method handleScroll*(self: TextDocumentEditor, scroll: Vec2, mousePosWindow: Vec
   self.markDirty()
 
 proc getTextDocumentEditor(wrapper: api.TextDocumentEditor): Option[TextDocumentEditor] =
-  if gEditor.isNil: return TextDocumentEditor.none
-  if gEditor.getEditorForId(wrapper.id).getSome(editor):
+  if gAppInterface.isNil: return TextDocumentEditor.none
+  if gAppInterface.getEditorForId(wrapper.id).getSome(editor):
     if editor of TextDocumentEditor:
       return editor.TextDocumentEditor.some
   return TextDocumentEditor.none
@@ -548,8 +548,7 @@ proc copy*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.app.setRegisterText(text, "")
 
 proc paste*(self: TextDocumentEditor) {.expose("editor.text").} =
-  var text = ""
-  self.app.getRegisterText(text, "")
+  let text = self.app.getRegisterText("")
 
   let numLines = text.count('\n') + 1
 
@@ -1118,7 +1117,7 @@ proc handleInput(self: TextDocumentEditor, input: string): EventResponse =
   self.insertText(input)
   return Handled
 
-method injectDependencies*(self: TextDocumentEditor, app: App) =
+method injectDependencies*(self: TextDocumentEditor, app: AppInterface) =
   self.app = app
   self.platform = app.platform
   self.app.registerEditor(self)
@@ -1154,7 +1153,7 @@ proc createTextEditorInstance(): TextDocumentEditor =
     # This " is here to fix syntax highlighting
   return editor
 
-proc newTextEditor*(document: TextDocument, app: App, configProvider: ConfigProvider): TextDocumentEditor =
+proc newTextEditor*(document: TextDocument, app: AppInterface, configProvider: ConfigProvider): TextDocumentEditor =
   var self = createTextEditorInstance()
   self.configProvider = configProvider
   self.document = document
@@ -1238,6 +1237,7 @@ method handleMouseMove*(self: TextDocumentEditor, mousePosWindow: Vec2, mousePos
 
   if MouseButton.Left in buttons and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
     self.selection = cursor.toSelection(self.selection, Last)
+    self.scrollToCursor()
 
 
 method unregister*(self: TextDocumentEditor) =

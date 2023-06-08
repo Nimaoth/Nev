@@ -6,7 +6,7 @@ import platform/[platform, widgets, filesystem]
 import workspaces/[workspace]
 import ast/types
 import traits
-import config_provider
+import config_provider, app_interface
 
 when not defined(js):
   import scripting/scripting_nim
@@ -130,7 +130,7 @@ type App* = ref object
 
 var gEditor* {.exportc.}: App = nil
 
-implTrait(ConfigProvider, App):
+implTrait ConfigProvider, App:
   proc getConfigValue(self: App, path: string): Option[JsonNode] =
     let node = self.options{path.split(".")}
     if node.isNil:
@@ -150,20 +150,49 @@ implTrait(ConfigProvider, App):
       return
     node[pathItems[^1]] = value
 
+proc getEventHandlerConfig*(self: App, context: string): EventHandlerConfig
 proc setRegisterText*(self: App, text: string, register: string = "")
 proc getRegisterText*(self: App, text: var string, register: string = "")
 proc openWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder): Option[DocumentEditor]
 proc openFile*(self: App, path: string, app: bool = false): Option[DocumentEditor]
+proc handleUnknownDocumentEditorAction*(self: App, editor: DocumentEditor, action: string, args: JsonNode): EventResponse
+proc invokeCallback*(self: App, context: string, args: JsonNode): bool
+proc registerEditor*(self: App, editor: DocumentEditor): void
+proc unregisterEditor*(self: App, editor: DocumentEditor): void
+proc getEditorForId*(self: App, id: EditorId): Option[DocumentEditor]
+proc createSelectorPopup*(self: App): Popup
+proc pushPopup*(self: App, popup: Popup)
 
-proc registerEditor*(self: App, editor: DocumentEditor) =
+implTrait AppInterface, App:
+  proc platform*(self: App): Platform = self.platform
+
+  getEventHandlerConfig(EventHandlerConfig, App, string)
+
+  setRegisterText(void, App, string, string)
+  proc getRegisterText*(self: App, register: string): string =
+    self.getRegisterText(result, register)
+
+  proc configProvider*(self: App): ConfigProvider = self.asConfigProvider
+
+  openWorkspaceFile(Option[DocumentEditor], App, string, WorkspaceFolder)
+  openFile(Option[DocumentEditor], App, string)
+  handleUnknownDocumentEditorAction(EventResponse, App, DocumentEditor, string, JsonNode)
+  invokeCallback(bool, App, string, JsonNode)
+  registerEditor(void, App, DocumentEditor)
+  unregisterEditor(void, App, DocumentEditor)
+  getEditorForId(Option[DocumentEditor], App, EditorId)
+  createSelectorPopup(Popup, App)
+  pushPopup(void, App, Popup)
+
+proc registerEditor*(self: App, editor: DocumentEditor): void =
   self.editors[editor.id] = editor
   self.onEditorRegistered.invoke editor
 
-proc unregisterEditor*(self: App, editor: DocumentEditor) =
+proc unregisterEditor*(self: App, editor: DocumentEditor): void =
   self.editors.del(editor.id)
   self.onEditorDeregistered.invoke editor
 
-method injectDependencies*(self: DocumentEditor, ed: App) {.base.} =
+method injectDependencies*(self: DocumentEditor, ed: AppInterface) {.base.} =
   discard
 
 proc invokeCallback*(self: App, context: string, args: JsonNode): bool =
@@ -353,7 +382,7 @@ proc addView*(self: App, view: View, addToHistory = true) =
 
 proc createView*(self: App, document: Document): DocumentEditor =
   var editor = self.createEditorForDocument document
-  editor.injectDependencies self
+  editor.injectDependencies self.asAppInterface
   discard editor.onMarkedDirty.subscribe () => self.platform.requestRender()
   var view = View(document: document, editor: editor)
   self.addView(view)
@@ -442,6 +471,7 @@ proc newEditor*(backend: api.Backend, platform: Platform): App =
     # This " is here to fix syntax highlighting
 
   gEditor = self
+  gAppInterface = self.asAppInterface
   self.platform = platform
   self.backend = backend
   self.statusBarOnTop = false
@@ -505,7 +535,7 @@ proc newEditor*(backend: api.Backend, platform: Platform): App =
       Ignored
   self.commandLineMode = false
 
-  self.commandLineTextEditor = newTextEditor(newTextDocument(self.asConfigProvider), self, self.asConfigProvider)
+  self.commandLineTextEditor = newTextEditor(newTextDocument(self.asConfigProvider), self.asAppInterface, self.asConfigProvider)
   self.commandLineTextEditor.renderHeader = false
   self.commandLineTextEditor.TextDocumentEditor.lineNumbers = api.LineNumbers.None.some
   self.getCommandLineTextEditor.hideCursorWhenInactive = true
@@ -957,6 +987,9 @@ proc removeFromLocalStorage*(self: App) {.expose("editor").} =
       else:
         self.views[self.currentView].document.AstDocument.filename
       clearStorage(filename.cstring)
+
+proc createSelectorPopup*(self: App): Popup =
+  return newSelectorPopup(self)
 
 proc loadTheme*(self: App, name: string) {.expose("editor").} =
   defer:

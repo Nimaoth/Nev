@@ -1,8 +1,8 @@
 import std/[strformat, strutils, math, logging, sugar, tables, options, json, jsonutils, streams]
 import fusion/matching, bumpy, rect_utils, vmath
-import editor, util, array_table, document, document_editor, text/text_document, events, id, ast_ids, scripting/expose, event, input, custom_async
+import util, array_table, document, document_editor, text/text_document, events, id, ast_ids, scripting/expose, event, input, custom_async
 from scripting_api as api import nil
-import custom_logger, timer, array_buffer, config_provider
+import custom_logger, timer, array_buffer, config_provider, app_interface
 import platform/[filesystem, platform, widgets]
 import workspaces/[workspace]
 import ast/[types, base_language, cells]
@@ -101,7 +101,8 @@ type
       referenceTarget*: AstNode
 
   ModelDocumentEditor* = ref object of DocumentEditor
-    editor*: App
+    app*: AppInterface
+    configProvider*: ConfigProvider
     document*: ModelDocument
 
     transactionCursors: Table[Id, CellCursor]
@@ -624,7 +625,7 @@ proc getItemAtPixelPosition(self: ModelDocumentEditor, posWindow: Vec2): Option[
       return index.some
 
 method handleScroll*(self: ModelDocumentEditor, scroll: Vec2, mousePosWindow: Vec2) =
-  let scrollAmount = scroll.y * getOption[float](self.editor, "model.scroll-speed", 20)
+  let scrollAmount = scroll.y * self.configProvider.getValue("model.scroll-speed", 20.0)
 
   if self.showCompletions and not self.lastCompletionsWidget.isNil and self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
     self.completionsScrollOffset += scrollAmount
@@ -725,6 +726,7 @@ method getDocument*(self: ModelDocumentEditor): Document = self.document
 
 method createWithDocument*(_: ModelDocumentEditor, document: Document, configProvider: ConfigProvider): DocumentEditor =
   let self = ModelDocumentEditor(eventHandler: nil, document: ModelDocument(document))
+  self.configProvider = configProvider
 
   # Emit this to set the editor prototype to editor_model_prototype, which needs to be set up before calling this
   when defined(js):
@@ -742,28 +744,28 @@ method createWithDocument*(_: ModelDocumentEditor, document: Document, configPro
 
   return self
 
-method injectDependencies*(self: ModelDocumentEditor, ed: App) =
-  self.editor = ed
-  self.editor.registerEditor(self)
+method injectDependencies*(self: ModelDocumentEditor, app: AppInterface) =
+  self.app = app
+  self.app.registerEditor(self)
 
-  self.eventHandler = eventHandler(ed.getEventHandlerConfig("editor.model")):
+  self.eventHandler = eventHandler(app.getEventHandlerConfig("editor.model")):
     onAction:
       self.handleAction action, arg
     onInput:
       self.handleInput input
 
-  self.completionEventHandler = eventHandler(ed.getEventHandlerConfig("editor.model.completion")):
+  self.completionEventHandler = eventHandler(app.getEventHandlerConfig("editor.model.completion")):
     onAction:
       self.handleAction action, arg
     onInput:
       self.handleInput input
 
 method unregister*(self: ModelDocumentEditor) =
-  self.editor.unregisterEditor(self)
+  self.app.unregisterEditor(self)
 
 proc getModelDocumentEditor(wrapper: api.ModelDocumentEditor): Option[ModelDocumentEditor] =
-  if gEditor.isNil: return ModelDocumentEditor.none
-  if gEditor.getEditorForId(wrapper.id).getSome(editor):
+  if gAppInterface.isNil: return ModelDocumentEditor.none
+  if gAppInterface.getEditorForId(wrapper.id).getSome(editor):
     if editor of ModelDocumentEditor:
       return editor.ModelDocumentEditor.some
   return ModelDocumentEditor.none
@@ -798,7 +800,7 @@ proc scroll*(self: ModelDocumentEditor, amount: float32) {.expose("editor.model"
   self.markDirty()
 
 proc getModeConfig(self: ModelDocumentEditor, mode: string): EventHandlerConfig =
-  return self.editor.getEventHandlerConfig("editor.model." & mode)
+  return self.app.getEventHandlerConfig("editor.model." & mode)
 
 proc setMode*(self: ModelDocumentEditor, mode: string) {.expose("editor.model").} =
   if mode.len == 0:
@@ -821,7 +823,7 @@ proc getCursorInLine*(self: ModelDocumentEditor, line: int, xPos: float): Option
   if line.len == 0:
     return CellCursor.none
 
-  let charWidth = self.editor.platform.charWidth
+  let charWidth = self.app.platform.charWidth
 
   var closest = 10000000000.0
   for c in line:
@@ -2232,7 +2234,7 @@ proc handleAction(self: ModelDocumentEditor, action: string, arg: string): Event
   # var newLastCommand = (action, arg)
   # defer: self.lastCommand = newLastCommand
 
-  if self.editor.handleUnknownDocumentEditorAction(self, action, args) == Handled:
+  if self.app.handleUnknownDocumentEditorAction(self, action, args) == Handled:
     return Handled
 
   if dispatch(action, args).isSome:

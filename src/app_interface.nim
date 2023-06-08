@@ -1,0 +1,23 @@
+import std/[json, options]
+import platform/platform
+import workspaces/workspace
+import traits, events, document_editor, popup, config_provider
+from scripting_api import EditorId
+
+traitRef AppInterface:
+  method platform*(self: AppInterface): Platform
+  method configProvider*(self: AppInterface): ConfigProvider
+  method getEventHandlerConfig*(self: AppInterface, context: string): EventHandlerConfig
+  method setRegisterText*(self: AppInterface, text: string, register: string)
+  method getRegisterText*(self: AppInterface, register: string): string
+  method openWorkspaceFile*(self: AppInterface, path: string, workspace: WorkspaceFolder): Option[DocumentEditor]
+  method openFile*(self: AppInterface, path: string): Option[DocumentEditor]
+  method handleUnknownDocumentEditorAction*(self: AppInterface, editor: DocumentEditor, action: string, args: JsonNode): EventResponse
+  method invokeCallback*(self: AppInterface, context: string, args: JsonNode): bool
+  method registerEditor*(self: AppInterface, editor: DocumentEditor): void
+  method unregisterEditor*(self: AppInterface, editor: DocumentEditor): void
+  method getEditorForId*(self: AppInterface, id: EditorId): Option[DocumentEditor]
+  method createSelectorPopup*(self: AppInterface): Popup
+  method pushPopup*(self: AppInterface, popup: Popup)
+
+var gAppInterface*: AppInterface = nil

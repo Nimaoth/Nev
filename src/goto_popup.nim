@@ -95,7 +95,7 @@ method handleMouseMove*(self: AstGotoDefinitionPopup, mousePosWindow: Vec2, mous
 
 proc newGotoPopup*(editor: App, document: AstDocument): AstGotoDefinitionPopup =
   var popup = AstGotoDefinitionPopup(editor: editor, document: document)
-  popup.textEditor = newTextEditor(newTextDocument(editor.asConfigProvider), editor, editor.asConfigProvider)
+  popup.textEditor = newTextEditor(newTextDocument(editor.asConfigProvider), editor.asAppInterface, editor.asConfigProvider)
   popup.textEditor.setMode("insert")
   popup.textEditor.renderHeader = false
   popup.textEditor.lineNumbers = LineNumbers.None.some
