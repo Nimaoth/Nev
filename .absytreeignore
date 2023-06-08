@@ -14,3 +14,4 @@ cpp_test
 int
 **/htmldocs
 languages/*.wasm
+_temp

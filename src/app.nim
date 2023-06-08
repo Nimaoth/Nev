@@ -378,11 +378,18 @@ proc `currentView=`(self: App, newIndex: int, addToHistory = true) =
   self.updateActiveEditor(addToHistory)
 
 proc addView*(self: App, view: View, addToHistory = true) =
-  self.views.insert(view, self.currentView)
-
   let maxViews = getOption[int](self, "editor.maxViews", int.high)
+
   while maxViews > 0 and self.views.len > maxViews:
     self.hiddenViews.add self.views.pop()
+
+  if self.views.len == maxViews:
+    self.hiddenViews.add self.views[self.currentView]
+    self.views[self.currentView] = view
+  else:
+    self.views.insert(view, self.currentView)
+
+  view.editor.markDirty()
 
   self.updateActiveEditor(addToHistory)
   self.platform.requestRender()
