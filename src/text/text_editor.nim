@@ -1120,6 +1120,7 @@ proc handleInput(self: TextDocumentEditor, input: string): EventResponse =
 
 method injectDependencies*(self: TextDocumentEditor, app: App) =
   self.app = app
+  self.platform = app.platform
   self.app.registerEditor(self)
   let config = app.getEventHandlerConfig("editor.text")
   self.eventHandler = eventHandler(config):
