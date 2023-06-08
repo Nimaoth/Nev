@@ -1,4 +1,4 @@
-import std/[strutils, logging, sequtils, sugar, options, json, strformat, tables]
+import std/[strutils, logging, sequtils, sugar, options, json, strformat, tables, sets]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import document, document_editor, id, util, event, ../regex, custom_logger, custom_async, custom_treesitter, indent
@@ -95,6 +95,11 @@ proc notifyTextChanged(self: TextDocument) =
   self.textChanged.invoke self
   self.styledTextCache.clear()
 
+proc reparseTreesitter*(self: TextDocument) =
+  if self.tsParser.isNotNil:
+    let strValue = self.lines.join("\n")
+    self.currentTree = self.tsParser.parseString(strValue, self.currentTree.some)
+
 proc `content=`*(self: TextDocument, value: string) =
   if self.singleLine:
     self.lines = @[value.replace("\n", "")]
@@ -131,11 +136,11 @@ proc `content=`*(self: TextDocument, value: seq[string]) =
 
   self.notifyTextChanged()
 
-func content*(document: TextDocument): seq[string] =
-  return document.lines
+func content*(self: TextDocument): seq[string] =
+  return self.lines
 
-func contentString*(document: TextDocument): string =
-  return document.lines.join("\n")
+func contentString*(self: TextDocument): string =
+  return self.lines.join("\n")
 
 func contentString*(self: TextDocument, selection: Selection): string =
   let (first, last) = selection.normalized
@@ -326,7 +331,8 @@ proc newTextDocument*(configProvider: ConfigProvider, filename: string = "", con
   self.indentStyle = IndentStyle(kind: Spaces, spaces: 2)
   self.languageConfig = some TextLanguageConfig(
     tabWidth: 2,
-    indentAfter: @[":", "=", "(", "{", "[", "enum", "object"]
+    indentAfter: @[":", "=", "(", "{", "[", "enum", "object"],
+    lineComment: "#".some
   )
 
   asyncCheck self.initTreesitter()
@@ -352,8 +358,8 @@ proc destroy*(self: TextDocument) =
     ls.stop()
     self.languageServer = LanguageServer.none
 
-method `$`*(document: TextDocument): string =
-  return document.filename
+method `$`*(self: TextDocument): string =
+  return self.filename
 
 method save*(self: TextDocument, filename: string = "", app: bool = false) =
   self.filename = if filename.len > 0: filename else: self.filename
@@ -397,7 +403,7 @@ proc byteOffset*(self: TextDocument, cursor: Cursor): int =
 proc tabWidth*(self: TextDocument): int =
   return self.languageConfig.map(c => c.tabWidth).get(4)
 
-proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], notify: bool = true, record: bool = true): seq[Selection] =
+proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], notify: bool = true, record: bool = true, reparse: bool = true): seq[Selection] =
   result = self.clampAndMergeSelections selections
 
   var undoOp = UndoOp(kind: Nested, children: @[], oldSelection: @oldSelection)
@@ -414,7 +420,6 @@ proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection:
     let deletedText = self.contentString(selection)
 
     let (first, last) = selection.normalized
-    # echo "delete: ", selection, ", lines = ", self.lines
     if first.line == last.line:
       # Single line selection
       self.lines[last.line].delete first.column..<last.column
@@ -441,9 +446,6 @@ proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection:
         newEndPosition: TSPoint(row: selection.first.line, column: selection.first.column),
       )
       discard self.currentTree.edit(edit)
-      let strValue = self.lines.join("\n")
-      self.currentTree = self.tsParser.parseString(strValue, self.currentTree.some)
-      # echo self.currentTree.root
 
     inc self.version
 
@@ -452,6 +454,9 @@ proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection:
 
     if notify:
       self.textDeleted.invoke((self, selection))
+
+  if reparse:
+    self.reparseTreesitter()
 
   if notify:
     self.notifyTextChanged()
@@ -493,7 +498,7 @@ proc getIndentForLine*(self: TextDocument, line: int): int =
       break
     result += 1
 
-proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true): seq[Selection] =
+proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true, reparse: bool = true): seq[Selection] =
   var newEmptyLines: seq[int]
 
   result = self.clampAndMergeSelections selections
@@ -552,8 +557,6 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
         newEndPosition: TSPoint(row: cursor.line, column: cursor.column),
       )
       discard self.currentTree.edit(edit)
-      let strValue = self.lines.join("\n")
-      self.currentTree = self.tsParser.parseString(strValue, self.currentTree.some)
 
     inc self.version
 
@@ -563,6 +566,9 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
     if notify:
       self.textInserted.invoke((self, oldCursor, text))
 
+  if reparse:
+    self.reparseTreesitter()
+
   if notify:
     self.notifyTextChanged()
 
@@ -570,20 +576,23 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
     self.undoOps.add undoOp
     self.redoOps = @[]
 
-proc edit*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true): seq[Selection] =
+proc edit*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true, reparse: bool = true): seq[Selection] =
   let selections = selections.map (s) => s.normalized
-  result = self.delete(selections, oldSelection, false, record=record)
-  result = self.insert(result, oldSelection, texts, record=record)
+  result = self.delete(selections, oldSelection, false, record=record, reparse=false)
+  result = self.insert(result, oldSelection, texts, record=record, reparse=false)
 
-proc doUndo(document: TextDocument, op: UndoOp, oldSelection: openArray[Selection], useOldSelection: bool, redoOps: var seq[UndoOp]): seq[Selection] =
+  if reparse:
+    self.reparseTreesitter()
+
+proc doUndo(self: TextDocument, op: UndoOp, oldSelection: openArray[Selection], useOldSelection: bool, redoOps: var seq[UndoOp], reparse: bool = true): seq[Selection] =
   case op.kind:
   of Delete:
-    let text = document.contentString(op.selection)
-    result = document.delete([op.selection], op.oldSelection, record = false)
+    let text = self.contentString(op.selection)
+    result = self.delete([op.selection], op.oldSelection, record=false, reparse=false)
     redoOps.add UndoOp(kind: Insert, cursor: op.selection.first, text: text, oldSelection: @oldSelection)
 
   of Insert:
-    let selections = document.insert([op.cursor.toSelection], op.oldSelection, [op.text], record = false)
+    let selections = self.insert([op.cursor.toSelection], op.oldSelection, [op.text], record=false, reparse=false)
     result = selections
     redoOps.add UndoOp(kind: Delete, selection: (op.cursor, selections[0].last), oldSelection: @oldSelection)
 
@@ -592,31 +601,34 @@ proc doUndo(document: TextDocument, op: UndoOp, oldSelection: openArray[Selectio
 
     var redoOp = UndoOp(kind: Nested, oldSelection: @oldSelection)
     for i in countdown(op.children.high, 0):
-      discard document.doUndo(op.children[i], oldSelection, useOldSelection, redoOp.children)
+      discard self.doUndo(op.children[i], oldSelection, useOldSelection, redoOp.children, reparse=false)
 
     redoOps.add redoOp
+
+  if reparse:
+    self.reparseTreesitter()
 
   if useOldSelection:
     result = op.oldSelection
 
-proc undo*(document: TextDocument, oldSelection: openArray[Selection], useOldSelection: bool): Option[seq[Selection]] =
+proc undo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelection: bool): Option[seq[Selection]] =
   result = seq[Selection].none
 
-  if document.undoOps.len == 0:
+  if self.undoOps.len == 0:
     return
 
-  let op = document.undoOps.pop
-  return document.doUndo(op, oldSelection, useOldSelection, document.redoOps).some
+  let op = self.undoOps.pop
+  return self.doUndo(op, oldSelection, useOldSelection, self.redoOps).some
 
-proc doRedo(document: TextDocument, op: UndoOp, oldSelection: openArray[Selection], useOldSelection: bool, undoOps: var seq[UndoOp]): seq[Selection] =
+proc doRedo(self: TextDocument, op: UndoOp, oldSelection: openArray[Selection], useOldSelection: bool, undoOps: var seq[UndoOp], reparse: bool = true): seq[Selection] =
   case op.kind:
   of Delete:
-    let text = document.contentString(op.selection)
-    result = document.delete([op.selection], op.oldSelection, record = false)
+    let text = self.contentString(op.selection)
+    result = self.delete([op.selection], op.oldSelection, record=false, reparse=false)
     undoOps.add UndoOp(kind: Insert, cursor: op.selection.first, text: text, oldSelection: @oldSelection)
 
   of Insert:
-    result = document.insert([op.cursor.toSelection], [op.cursor.toSelection], [op.text], record = false)
+    result = self.insert([op.cursor.toSelection], [op.cursor.toSelection], [op.text], record=false, reparse=false)
     undoOps.add UndoOp(kind: Delete, selection: (op.cursor, result[0].last), oldSelection: @oldSelection)
 
   of Nested:
@@ -624,18 +636,81 @@ proc doRedo(document: TextDocument, op: UndoOp, oldSelection: openArray[Selectio
 
     var undoOp = UndoOp(kind: Nested, oldSelection: @oldSelection)
     for i in countdown(op.children.high, 0):
-      discard document.doRedo(op.children[i], oldSelection, useOldSelection, undoOp.children)
+      discard self.doRedo(op.children[i], oldSelection, useOldSelection, undoOp.children, reparse=false)
 
     undoOps.add undoOp
+
+  if reparse:
+    self.reparseTreesitter()
 
   if useOldSelection:
     result = op.oldSelection
 
-proc redo*(document: TextDocument, oldSelection: openArray[Selection], useOldSelection: bool): Option[seq[Selection]] =
+proc redo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelection: bool): Option[seq[Selection]] =
   result = seq[Selection].none
 
-  if document.redoOps.len == 0:
+  if self.redoOps.len == 0:
     return
 
-  let op = document.redoOps.pop
-  return document.doRedo(op, oldSelection, useOldSelection, document.undoOps).some
+  let op = self.redoOps.pop
+  return self.doRedo(op, oldSelection, useOldSelection, self.undoOps).some
+
+proc isLineEmptyOrWhitespace*(self: TextDocument, line: int): bool =
+  if line > self.lines.high:
+    return false
+  return self.lines[line].isEmptyOrWhitespace
+
+proc isLineCommented*(self: TextDocument, line: int): bool =
+  if line > self.lines.high or self.languageConfig.isNone or self.languageConfig.get.lineComment.isNone:
+    return false
+  return self.lines[line].strip(trailing=false).startsWith(self.languageConfig.get.lineComment.get)
+
+proc getLineCommentRange*(self: TextDocument, line: int): Selection =
+  if line > self.lines.high or self.languageConfig.isNone or self.languageConfig.get.lineComment.isNone:
+    return (line, 0).toSelection
+
+  let prefix = self.languageConfig.get.lineComment.get
+  let index = self.lines[line].find(prefix)
+  if index == -1:
+    return (line, 0).toSelection
+
+  return ((line, index), (line, index + prefix.len))
+
+proc toggleLineComment*(self: TextDocument, selections: Selections): seq[Selection] =
+  result = selections
+
+  if self.languageConfig.isNone:
+    return
+
+  if self.languageConfig.get.lineComment.isNone:
+    return
+
+  let mergedSelections = self.clampAndMergeSelections(selections).mergeLines
+
+  var allCommented = true
+  for s in mergedSelections:
+    for l in s.first.line..s.last.line:
+      if not self.isLineEmptyOrWhitespace(l):
+        allCommented = allCommented and self.isLineCommented(l)
+
+  let comment = not allCommented
+
+  var insertSelections: Selections
+  for s in mergedSelections:
+    var minIndent = int.high
+    for l in s.first.line..s.last.line:
+      if not self.isLineEmptyOrWhitespace(l):
+        minIndent = min(minIndent, self.getIndentForLine(l))
+
+    for l in s.first.line..s.last.line:
+      if not self.isLineEmptyOrWhitespace(l):
+        if comment:
+          insertSelections.add (l, minIndent).toSelection
+        else:
+          insertSelections.add self.getLineCommentRange(l)
+
+  if comment:
+    let prefix = self.languageConfig.get.lineComment.get
+    discard self.insert(insertSelections, selections, [prefix])
+  else:
+    discard self.delete(insertSelections, selections)
