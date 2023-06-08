@@ -31,7 +31,6 @@ type LanguageServerNimSuggest* = ref object of LanguageServer
 proc tryGetPortFromLanguagesServer(self: LanguageServerNimSuggest, url: string, port: Port): Future[void] {.async.} =
   try:
     let response = await httpGet(fmt"http://{url}:{port.int}/nimsuggest/open/{self.filename}")
-    echo response
     let json = response.parseJson
     if not json.hasKey("port") or json["port"].kind != JInt:
       return
