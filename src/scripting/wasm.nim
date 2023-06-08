@@ -1,4 +1,4 @@
-import std/[macros, macrocache, strutils, json, options, tables, genasts, sequtils]
+import std/[macros, macrocache, strutils, json, options, tables, genasts]
 import custom_logger, custom_async, util, array_buffer
 
 when defined(js):

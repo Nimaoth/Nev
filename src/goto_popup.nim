@@ -1,10 +1,10 @@
 import std/[strutils, tables, sugar, algorithm, options]
 import fuzzy, bumpy, vmath
-import editor, ast_document, text/text_editor, popup, events, compiler, compiler_types, id, util, rect_utils, event, input
+import app_interface, ast_document, text/text_editor, popup, events, compiler, compiler_types, id, util, rect_utils, event, input
 from scripting_api import LineNumbers
 
 type AstGotoDefinitionPopup* = ref object of Popup
-  editor*: App
+  app*: AppInterface
   textEditor*: TextDocumentEditor
   document*: AstDocument
   selected*: int
@@ -52,10 +52,10 @@ proc handleAction*(self: AstGotoDefinitionPopup, action: string, arg: string): E
   of "accept":
     if self.selected < self.completions.len:
       self.handleSymbolSelected self.completions[self.selected].id
-    self.editor.popPopup(self)
+    self.app.popPopup(self)
 
   of "cancel":
-    self.editor.popPopup(self)
+    self.app.popPopup(self)
 
   of "prev":
     self.selected = if self.completions.len == 0:
@@ -70,7 +70,7 @@ proc handleAction*(self: AstGotoDefinitionPopup, action: string, arg: string): E
       (self.selected + 1) mod self.completions.len
 
   else:
-    return self.editor.handleUnknownPopupAction(self, action, arg)
+    return self.app.handleUnknownPopupAction(self, action, arg)
 
   return Handled
 
@@ -85,7 +85,7 @@ method handleMousePress*(self: AstGotoDefinitionPopup, button: MouseButton, mous
   if button == MouseButton.Left:
     if self.getItemAtPixelPosition(mousePosWindow).getSome(item):
       self.handleSymbolSelected(item.id)
-      self.editor.popPopup(self)
+      self.app.popPopup(self)
 
 method handleMouseRelease*(self: AstGotoDefinitionPopup, button: MouseButton, mousePosWindow: Vec2) =
   discard
@@ -93,16 +93,16 @@ method handleMouseRelease*(self: AstGotoDefinitionPopup, button: MouseButton, mo
 method handleMouseMove*(self: AstGotoDefinitionPopup, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) =
   discard
 
-proc newGotoPopup*(editor: App, document: AstDocument): AstGotoDefinitionPopup =
-  var popup = AstGotoDefinitionPopup(editor: editor, document: document)
-  popup.textEditor = newTextEditor(newTextDocument(editor.asConfigProvider), editor.asAppInterface, editor.asConfigProvider)
+proc newGotoPopup*(app: AppInterface, document: AstDocument): AstGotoDefinitionPopup =
+  var popup = AstGotoDefinitionPopup(app: app, document: document)
+  popup.textEditor = newTextEditor(newTextDocument(app.configProvider), app, app.configProvider)
   popup.textEditor.setMode("insert")
   popup.textEditor.renderHeader = false
   popup.textEditor.lineNumbers = LineNumbers.None.some
   popup.textEditor.document.singleLine = true
   discard popup.textEditor.document.textChanged.subscribe (doc: TextDocument) => popup.handleTextChanged()
 
-  popup.eventHandler = eventHandler(editor.getEventHandlerConfig("editor.ast.goto")):
+  popup.eventHandler = eventHandler(app.getEventHandlerConfig("editor.ast.goto")):
     onAction:
       popup.handleAction action, arg
     onInput:

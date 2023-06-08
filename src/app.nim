@@ -156,12 +156,15 @@ proc getRegisterText*(self: App, text: var string, register: string = "")
 proc openWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder): Option[DocumentEditor]
 proc openFile*(self: App, path: string, app: bool = false): Option[DocumentEditor]
 proc handleUnknownDocumentEditorAction*(self: App, editor: DocumentEditor, action: string, args: JsonNode): EventResponse
+proc handleUnknownPopupAction*(self: App, popup: Popup, action: string, arg: string): EventResponse
 proc invokeCallback*(self: App, context: string, args: JsonNode): bool
 proc registerEditor*(self: App, editor: DocumentEditor): void
 proc unregisterEditor*(self: App, editor: DocumentEditor): void
 proc getEditorForId*(self: App, id: EditorId): Option[DocumentEditor]
+proc getPopupForId*(self: App, id: EditorId): Option[Popup]
 proc createSelectorPopup*(self: App): Popup
 proc pushPopup*(self: App, popup: Popup)
+proc popPopup*(self: App, popup: Popup)
 
 implTrait AppInterface, App:
   proc platform*(self: App): Platform = self.platform
@@ -177,12 +180,15 @@ implTrait AppInterface, App:
   openWorkspaceFile(Option[DocumentEditor], App, string, WorkspaceFolder)
   openFile(Option[DocumentEditor], App, string)
   handleUnknownDocumentEditorAction(EventResponse, App, DocumentEditor, string, JsonNode)
+  handleUnknownPopupAction(EventResponse, App, Popup, string, string)
   invokeCallback(bool, App, string, JsonNode)
   registerEditor(void, App, DocumentEditor)
   unregisterEditor(void, App, DocumentEditor)
   getEditorForId(Option[DocumentEditor], App, EditorId)
+  getPopupForId(Option[Popup], App, EditorId)
   createSelectorPopup(Popup, App)
   pushPopup(void, App, Popup)
+  popPopup(void, App, Popup)
 
 proc registerEditor*(self: App, editor: DocumentEditor): void =
   self.editors[editor.id] = editor
@@ -989,7 +995,7 @@ proc removeFromLocalStorage*(self: App) {.expose("editor").} =
       clearStorage(filename.cstring)
 
 proc createSelectorPopup*(self: App): Popup =
-  return newSelectorPopup(self)
+  return newSelectorPopup(self.asAppInterface)
 
 proc loadTheme*(self: App, name: string) {.expose("editor").} =
   defer:
@@ -1004,7 +1010,7 @@ proc chooseTheme*(self: App) {.expose("editor").} =
     self.platform.requestRender()
   let originalTheme = self.theme.path
 
-  var popup = self.newSelectorPopup()
+  var popup = newSelectorPopup(self.asAppInterface)
   popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
     for file in walkDirRec("./themes", relative=true):
       if file.endsWith ".json":
@@ -1084,7 +1090,7 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
-  var popup = self.newSelectorPopup()
+  var popup = newSelectorPopup(self.asAppInterface)
   popup.getCompletionsAsyncIter = proc(popup: SelectorPopup, text: string): Future[void] {.async.} =
     if not popup.cancellationToken.isNil:
       popup.cancellationToken.cancel()
@@ -1127,7 +1133,7 @@ proc chooseOpen*(self: App, view: string = "new") {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
-  var popup = self.newSelectorPopup()
+  var popup = newSelectorPopup(self.asAppInterface)
   popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
     let allViews = self.views & self.hiddenViews
     for view in allViews:

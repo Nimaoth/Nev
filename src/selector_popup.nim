@@ -1,6 +1,6 @@
 import std/[strutils, sugar, options, json, jsonutils, streams]
 import bumpy, vmath
-import editor, text/text_editor, popup, events, util, rect_utils, scripting/expose, event, input, custom_async, custom_logger, cancellation_token
+import app_interface, text/text_editor, popup, events, util, rect_utils, scripting/expose, event, input, custom_async, custom_logger, cancellation_token
 from scripting_api as api import nil
 
 export popup
@@ -14,7 +14,7 @@ type
   CompletionProviderAsyncIter* = proc(popup: SelectorPopup, text: string): Future[void]
 
   SelectorPopup* = ref object of Popup
-    editor*: App
+    app*: AppInterface
     textEditor*: TextDocumentEditor
     selected*: int
     scrollOffset*: int
@@ -83,8 +83,8 @@ method getEventHandlers*(self: SelectorPopup): seq[EventHandler] =
   return self.textEditor.getEventHandlers() & @[self.eventHandler]
 
 proc getSelectorPopup(wrapper: api.SelectorPopup): Option[SelectorPopup] =
-  if gEditor.isNil: return SelectorPopup.none
-  if gEditor.getPopupForId(wrapper.id).getSome(editor):
+  if gAppInterface.isNil: return SelectorPopup.none
+  if gAppInterface.getPopupForId(wrapper.id).getSome(editor):
     if editor of SelectorPopup:
       return editor.SelectorPopup.some
   return SelectorPopup.none
@@ -103,14 +103,14 @@ proc fromJsonHook*(t: var api.SelectorPopup, jsonNode: JsonNode) =
 proc accept*(self: SelectorPopup) {.expose("popup.selector").} =
   if not self.handleItemConfirmed.isNil and self.selected < self.completions.len:
     self.handleItemConfirmed self.completions[self.selected]
-  self.editor.popPopup(self)
+  self.app.popPopup(self)
 
   self.markDirty()
 
 proc cancel*(self: SelectorPopup) {.expose("popup.selector").} =
   if self.handleCanceled != nil:
     self.handleCanceled()
-  self.editor.popPopup(self)
+  self.app.popPopup(self)
 
   self.markDirty()
 
@@ -141,7 +141,7 @@ genDispatcher("popup.selector")
 proc handleAction*(self: SelectorPopup, action: string, arg: string): EventResponse =
   # echo "SelectorPopup.handleAction ", action, ", '", arg, "'"
 
-  if self.editor.handleUnknownPopupAction(self, action, arg) == Handled:
+  if self.app.handleUnknownPopupAction(self, action, arg) == Handled:
     return Handled
 
   var args = newJArray()
@@ -169,7 +169,7 @@ method handleMousePress*(self: SelectorPopup, button: MouseButton, mousePosWindo
       if not self.handleItemConfirmed.isNil:
         self.handleItemConfirmed(item)
 
-      self.editor.popPopup(self)
+      self.app.popPopup(self)
 
 method handleMouseRelease*(self: SelectorPopup, button: MouseButton, mousePosWindow: Vec2) =
   discard
@@ -177,16 +177,16 @@ method handleMouseRelease*(self: SelectorPopup, button: MouseButton, mousePosWin
 method handleMouseMove*(self: SelectorPopup, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) =
   discard
 
-proc newSelectorPopup*(editor: App): SelectorPopup =
-  var popup = SelectorPopup(editor: editor)
-  popup.textEditor = newTextEditor(newTextDocument(editor.asConfigProvider), editor.asAppInterface, editor.asConfigProvider)
+proc newSelectorPopup*(app: AppInterface): SelectorPopup =
+  var popup = SelectorPopup(app: app)
+  popup.textEditor = newTextEditor(newTextDocument(app.configProvider), app, app.configProvider)
   popup.textEditor.setMode("insert")
   popup.textEditor.renderHeader = false
   popup.textEditor.lineNumbers = api.LineNumbers.None.some
   popup.textEditor.document.singleLine = true
   discard popup.textEditor.document.textChanged.subscribe (doc: TextDocument) => popup.handleTextChanged()
 
-  popup.eventHandler = eventHandler(editor.getEventHandlerConfig("popup.selector")):
+  popup.eventHandler = eventHandler(app.getEventHandlerConfig("popup.selector")):
     onAction:
       popup.handleAction action, arg
     onInput:

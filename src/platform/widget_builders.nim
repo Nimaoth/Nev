@@ -1,5 +1,5 @@
 import std/[tables]
-import editor, custom_logger, document_editor, widgets, platform, rect_utils, theme
+import app, custom_logger, document_editor, widgets, platform, rect_utils, theme
 import widget_builders_base, widget_builder_ast_document, widget_builder_text_document, widget_builder_selector_popup, widget_builder_model_document
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import vmath, bumpy, chroma

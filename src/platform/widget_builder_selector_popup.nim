@@ -1,4 +1,4 @@
-import util, editor, selector_popup, custom_logger, widgets, platform, theme, widget_builders_base
+import util, app, selector_popup, custom_logger, widgets, platform, theme, widget_builders_base
 import vmath, bumpy, chroma
 
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method

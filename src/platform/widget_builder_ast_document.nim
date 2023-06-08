@@ -1,5 +1,5 @@
 import std/[strformat, tables, sugar]
-import util, editor, app_interface, config_provider, document_editor, ast_document, ast, node_layout, compiler, text/text_document, custom_logger, widgets, platform, theme, widget_builder_text_document
+import util, app, app_interface, config_provider, document_editor, ast_document, ast, node_layout, compiler, text/text_document, custom_logger, widgets, platform, theme, widget_builder_text_document
 import widget_builders_base
 import vmath, bumpy, chroma
 

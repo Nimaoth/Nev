@@ -4,7 +4,8 @@ import custom_logger
 logger.enableConsoleLogger()
 
 import std/[strformat, dom, macros]
-import util, editor, timer, platform/widget_builders, platform/platform, platform/browser_platform, text/text_document, event, theme
+import util, app, timer, platform/widget_builders, platform/platform, platform/browser_platform, text/text_document, event, theme
+import language/language_server
 from scripting_api import Backend
 
 # Initialize renderer
