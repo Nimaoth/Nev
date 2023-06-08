@@ -1,8 +1,8 @@
 import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros, macrocache, options, deques, sets, json, jsonutils, sequtils, streams]
 import timer
 import fusion/matching, fuzzy, bumpy, rect_utils, vmath, chroma
-import editor, util, document, document_editor, text/text_editor, events, id, ast_ids, ast, scripting/expose, event, theme, input, custom_async
-import compiler, selector_popup, config_provider
+import util, document, document_editor, text/text_editor, events, id, ast_ids, ast, scripting/expose, event, theme, input, custom_async
+import compiler, selector_popup, config_provider, app_interface
 from scripting_api as api import nil
 import custom_logger
 import platform/[filesystem, platform, widgets]
@@ -172,7 +172,8 @@ type
       name*: string
 
 type AstDocumentEditor* = ref object of DocumentEditor
-  editor*: App
+  app*: AppInterface
+  configProvider*: ConfigProvider
   document*: AstDocument
   selectedNode: AstNode
   selectionHistory: Deque[AstNode]
@@ -221,18 +222,18 @@ proc node*(editor: AstDocumentEditor): AstNode =
   return editor.selectedNode
 
 proc handleSelectedNodeChanged(editor: AstDocumentEditor) =
-  if editor.editor.isNil:
+  if editor.app.isNil:
     return
 
   editor.markDirty()
 
-  let indent = getOption[float32](editor.editor, "ast.indent", 20)
-  let inlineBlocks = getOption[bool](editor.editor, "ast.inline-blocks", false)
-  let verticalDivision = getOption[bool](editor.editor, "ast.vertical-division", false)
+  let indent = editor.configProvider.getValue("ast.indent", 20.0)
+  let inlineBlocks = editor.configProvider.getValue("ast.inline-blocks", false)
+  let verticalDivision = editor.configProvider.getValue("ast.vertical-division", false)
 
   let node = editor.node
 
-  let margin = 5.0 * editor.editor.platform.totalLineHeight
+  let margin = 5.0 * editor.app.platform.totalLineHeight
 
   var foundNode = false
   var i = 0
@@ -273,12 +274,12 @@ proc handleSelectedNodeChanged(editor: AstDocumentEditor) =
 
     if targetNode != nil:
       # New node is not in layout yet but there is a parent which has a layout already
-      let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: targetNode.subbase, selectedNode: node.id, measureText: (t) => gEditor.platform.measureText(t), indent: indent, renderDivisionVertically: verticalDivision, inlineBlocks: inlineBlocks)
+      let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: targetNode.subbase, selectedNode: node.id, measureText: (t) => editor.app.platform.measureText(t), indent: indent, renderDivisionVertically: verticalDivision, inlineBlocks: inlineBlocks)
       layout = ctx.computeNodeLayout(input)
       foundNode = true
 
     elif node.parent == editor.document.rootNode and node.prev.getSome(prev) and layout.nodeToVisualNode.contains(prev.id):
-      let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node.subbase, selectedNode: node.id, measureText: (t) => gEditor.platform.measureText(t), indent: indent, renderDivisionVertically: verticalDivision, inlineBlocks: inlineBlocks)
+      let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node.subbase, selectedNode: node.id, measureText: (t) => editor.app.platform.measureText(t), indent: indent, renderDivisionVertically: verticalDivision, inlineBlocks: inlineBlocks)
       layout = ctx.computeNodeLayout(input)
 
       offset += layout.bounds.h
@@ -288,7 +289,7 @@ proc handleSelectedNodeChanged(editor: AstDocumentEditor) =
       foundNode = true
 
     elif node.parent == editor.document.rootNode and node.next.getSome(next) and layout.nodeToVisualNode.contains(next.id):
-      let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node.subbase, selectedNode: node.id, measureText: (t) => gEditor.platform.measureText(t), indent: indent, renderDivisionVertically: verticalDivision, inlineBlocks: inlineBlocks)
+      let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: node.subbase, selectedNode: node.id, measureText: (t) => editor.app.platform.measureText(t), indent: indent, renderDivisionVertically: verticalDivision, inlineBlocks: inlineBlocks)
       layout = ctx.computeNodeLayout(input)
 
       editor.lastLayouts.insert((layout, offset), i)
@@ -316,7 +317,7 @@ proc handleSelectedNodeChanged(editor: AstDocumentEditor) =
 
   # Still didn't find a node
   let subbase = node.subbase
-  let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: subbase, selectedNode: node.id, measureText: (t) => gEditor.platform.measureText(t), indent: indent, renderDivisionVertically: verticalDivision, inlineBlocks: inlineBlocks)
+  let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: subbase, selectedNode: node.id, measureText: (t) => editor.app.platform.measureText(t), indent: indent, renderDivisionVertically: verticalDivision, inlineBlocks: inlineBlocks)
   let layout = ctx.computeNodeLayout(input)
   if layout.nodeToVisualNode.contains(node.id):
     let visualNode = layout.nodeToVisualNode[node.id]
@@ -474,11 +475,12 @@ when not defined(js):
   import html_renderer
 
 proc saveHtml*(self: AstDocument) =
-  when not defined(js):
-    let pathParts = self.filename.splitFile
-    let htmlPath = pathParts.dir / (pathParts.name & ".html")
-    let html = self.serializeHtml(gEditor.theme)
-    fs.saveFile(htmlPath, html)
+  discard
+  # when not defined(js):
+  #   let pathParts = self.filename.splitFile
+  #   let htmlPath = pathParts.dir / (pathParts.name & ".html")
+  #   let html = self.serializeHtml(editor.app.theme)
+  #   fs.saveFile(htmlPath, html)
 
 method save*(self: AstDocument, filename: string = "", app: bool = false) =
   self.filename = if filename.len > 0: filename else: self.filename
@@ -592,9 +594,9 @@ proc editSymbol*(self: AstDocumentEditor, symbol: Symbol) =
     logger.log(lvlInfo, fmt"Editing symbol node {symbol.node}")
   self.currentlyEditedNode = nil
   self.currentlyEditedSymbol = symbol.id
-  self.textDocument = newTextDocument(self.editor.asConfigProvider)
+  self.textDocument = newTextDocument(self.configProvider)
   self.textDocument.content = @[symbol.name]
-  self.textEditor = newTextEditor(self.textDocument, self.editor, self.editor.asConfigProvider)
+  self.textEditor = newTextEditor(self.textDocument, self.app, self.configProvider)
   self.textEditor.setMode("insert")
   self.textEditor.renderHeader = false
   self.textEditor.fillAvailableSpace = false
@@ -609,9 +611,9 @@ proc editNode*(self: AstDocumentEditor, node: AstNode) =
   logger.log(lvlInfo, fmt"Editing node {node}")
   self.currentlyEditedNode = node
   self.currentlyEditedSymbol = null
-  self.textDocument = newTextDocument(self.editor.asConfigProvider)
+  self.textDocument = newTextDocument(self.configProvider)
   self.textDocument.content = node.text.splitLines
-  self.textEditor = newTextEditor(self.textDocument, self.editor, self.editor.asConfigProvider)
+  self.textEditor = newTextEditor(self.textDocument, self.app, self.configProvider)
   self.textEditor.setMode("insert")
   self.textEditor.renderHeader = false
   self.textEditor.fillAvailableSpace = false
@@ -1333,8 +1335,8 @@ proc canInsertInto*(self: AstDocumentEditor, parent: AstNode): bool =
     return true
 
 proc getAstDocumentEditor(wrapper: api.AstDocumentEditor): Option[AstDocumentEditor] =
-  if gEditor.isNil: return AstDocumentEditor.none
-  if gEditor.getEditorForId(wrapper.id).getSome(editor):
+  if gAppInterface.isNil: return AstDocumentEditor.none
+  if gAppInterface.getEditorForId(wrapper.id).getSome(editor):
     if editor of AstDocumentEditor:
       return editor.AstDocumentEditor.some
   return AstDocumentEditor.none
@@ -1779,7 +1781,7 @@ method changed*(self: AstSymbolSelectorItem, other: SelectorItem): bool =
   return self.completion.id != other.completion.id
 
 proc openGotoSymbolPopup(self: AstDocumentEditor) {.expose("editor.ast").} =
-  var popup = self.editor.newSelectorPopup()
+  var popup = self.app.createSelectorPopup().SelectorPopup
   popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
     # Find everything matching text
     let symbols = ctx.computeSymbols(self.document.rootNode)
@@ -1805,7 +1807,7 @@ proc openGotoSymbolPopup(self: AstDocumentEditor) {.expose("editor.ast").} =
 
   popup.updateCompletions()
 
-  self.editor.pushPopup popup
+  self.app.pushPopup popup
 
 proc goto(self: AstDocumentEditor, where: string) {.expose("editor.ast").} =
   if self.isEditing: return
@@ -1903,7 +1905,7 @@ proc runSelectedFunction(self: AstDocumentEditor) {.expose("editor.ast").} =
 
       let timer = startTimer()
 
-      let maxLoopIterations = self.editor.getOption("ast.max-loop-iterations", 1000)
+      let maxLoopIterations = self.configProvider.getValue("ast.max-loop-iterations", 1000)
       let fec = ctx.newFunctionExecutionContext(FunctionExecutionContext(node: node[0], arguments: @[], maxLoopIterations: some(maxLoopIterations)))
       let result = ctx.computeFunctionExecution(fec)
       if result.kind != vkVoid:
@@ -1975,7 +1977,7 @@ proc dumpContext(self: AstDocumentEditor) {.expose("editor.ast").} =
   logger.log(lvlInfo, "=================================================")
 
 proc getModeConfig(self: AstDocumentEditor, mode: string): EventHandlerConfig =
-  return self.editor.getEventHandlerConfig("editor.ast." & mode)
+  return self.app.getEventHandlerConfig("editor.ast." & mode)
 
 proc setMode*(self: AstDocumentEditor, mode: string) {.expose("editor.ast").} =
   if mode.len == 0:
@@ -2009,7 +2011,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
   var newLastCommand = (action, arg)
   defer: self.lastCommand = newLastCommand
 
-  if self.editor.handleUnknownDocumentEditorAction(self, action, args) == Handled:
+  if self.app.handleUnknownDocumentEditorAction(self, action, args) == Handled:
     return Handled
 
   if dispatch(action, args).isSome:
@@ -2028,7 +2030,7 @@ proc getItemAtPixelPosition(self: AstDocumentEditor, posWindow: Vec2): Option[in
       return index.some
 
 method handleScroll*(self: AstDocumentEditor, scroll: Vec2, mousePosWindow: Vec2) =
-  let scrollAmount = scroll.y * getOption[float](self.editor, "ast.scroll-speed", 20)
+  let scrollAmount = scroll.y * self.configProvider.getValue("ast.scroll-speed", 20.0)
 
   if not self.lastCompletionsWidget.isNil and self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
     self.completionsScrollOffset += scrollAmount
@@ -2079,6 +2081,7 @@ method getDocument*(self: AstDocumentEditor): Document = self.document
 
 method createWithDocument*(self: AstDocumentEditor, document: Document, configProvider: ConfigProvider): DocumentEditor =
   let editor = AstDocumentEditor(eventHandler: nil, document: AstDocument(document), textDocument: nil, textEditor: nil)
+  editor.configProvider = configProvider
 
   # Emit this to set the editor prototype to editor_ast_prototype, which needs to be set up before calling this
   when defined(js):
@@ -2139,17 +2142,17 @@ method createWithDocument*(self: AstDocumentEditor, document: Document, configPr
 
   return editor
 
-method injectDependencies*(self: AstDocumentEditor, ed: App) =
-  self.editor = ed
-  self.editor.registerEditor(self)
+method injectDependencies*(self: AstDocumentEditor, app: AppInterface) =
+  self.app = app
+  self.app.registerEditor(self)
 
-  self.eventHandler = eventHandler(ed.getEventHandlerConfig("editor.ast")):
+  self.eventHandler = eventHandler(app.getEventHandlerConfig("editor.ast")):
     onAction:
       self.handleAction action, arg
     onInput:
       self.handleInput input
 
-  self.textEditEventHandler = eventHandler(ed.getEventHandlerConfig("editor.ast.completion")):
+  self.textEditEventHandler = eventHandler(app.getEventHandlerConfig("editor.ast.completion")):
     onAction:
       self.handleAction action, arg
     onInput:
@@ -2157,4 +2160,4 @@ method injectDependencies*(self: AstDocumentEditor, ed: App) =
 
 method unregister*(self: AstDocumentEditor) =
   self.finishEdit(false)
-  self.editor.unregisterEditor(self)
+  self.app.unregisterEditor(self)

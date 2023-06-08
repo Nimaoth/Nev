@@ -1,5 +1,5 @@
 import std/[strformat, tables, sugar]
-import util, editor, document_editor, ast_document, ast, node_layout, compiler, text/text_document, custom_logger, widgets, platform, theme, widget_builder_text_document
+import util, editor, app_interface, config_provider, document_editor, ast_document, ast, node_layout, compiler, text/text_document, custom_logger, widgets, platform, theme, widget_builder_text_document
 import widget_builders_base
 import vmath, bumpy, chroma
 
@@ -52,7 +52,7 @@ proc updateBaseIndexAndScrollOffset(self: AstDocumentEditor, app: App, contentPa
 
   # Adjust scroll offset and base index so that the first node on screen is the base
   while self.scrollOffset < 0 and self.previousBaseIndex + 1 < self.document.rootNode.len:
-    let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: self.document.rootNode[self.previousBaseIndex], selectedNode: selectedNodeId, replacements: replacements, revision: config.revision, measureText: (t) => self.editor.platform.measureText(t), indent: indent, renderDivisionVertically: verticalDivision, inlineBlocks: inlineBlocks)
+    let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: self.document.rootNode[self.previousBaseIndex], selectedNode: selectedNodeId, replacements: replacements, revision: config.revision, measureText: (t) => self.app.platform.measureText(t), indent: indent, renderDivisionVertically: verticalDivision, inlineBlocks: inlineBlocks)
     let layout = ctx.computeNodeLayout(input)
 
     if self.scrollOffset + layout.bounds.h + totalLineHeight >= contentPanel.lastBounds.h:
@@ -63,7 +63,7 @@ proc updateBaseIndexAndScrollOffset(self: AstDocumentEditor, app: App, contentPa
 
   # Adjust scroll offset and base index so that the first node on screen is the base
   while self.scrollOffset > contentPanel.lastBounds.h and self.previousBaseIndex > 0:
-    let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: self.document.rootNode[self.previousBaseIndex - 1], selectedNode: selectedNodeId, replacements: replacements, revision: config.revision, measureText: (t) => self.editor.platform.measureText(t), indent: indent, renderDivisionVertically: verticalDivision, inlineBlocks: inlineBlocks)
+    let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: self.document.rootNode[self.previousBaseIndex - 1], selectedNode: selectedNodeId, replacements: replacements, revision: config.revision, measureText: (t) => self.app.platform.measureText(t), indent: indent, renderDivisionVertically: verticalDivision, inlineBlocks: inlineBlocks)
     let layout = ctx.computeNodeLayout(input)
 
     if self.scrollOffset - layout.bounds.h <= 0:
@@ -138,8 +138,8 @@ proc renderVisualNode*(self: AstDocumentEditor, app: App, node: VisualNode, sele
     panel.foregroundColor = app.theme.color("inputValidation.infoBorder", rgb(175, 255, 200))
 
 proc renderBlockIndent(editor: AstDocumentEditor, app: App, layout: NodeLayout, node: AstNode, offset: Vec2, widget: WPanel) =
-  let indentLineWidth = getOption[float32](app, "ast.indent-line-width", 1)
-  let indentLineAlpha = getOption[float32](app, "ast.indent-line-alpha", 1)
+  let indentLineWidth = editor.configProvider.getValue("ast.indent-line-width", 1.0)
+  let indentLineAlpha = editor.configProvider.getValue("ast.indent-line-alpha", 1.0)
 
   if indentLineWidth <= 0:
     return
