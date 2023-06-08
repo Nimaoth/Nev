@@ -199,6 +199,8 @@ proc setSearchQueryFromMove*(self: TextDocumentEditor; move: string;
                              count: int = 0) =
   editor_text_setSearchQueryFromMove_void_TextDocumentEditor_string_int_impl(
       self, move, count)
+proc toggleLineComment*(self: TextDocumentEditor) =
+  editor_text_toggleLineComment_void_TextDocumentEditor_impl(self)
 proc gotoDefinition*(self: TextDocumentEditor) =
   editor_text_gotoDefinition_void_TextDocumentEditor_impl(self)
 proc getCompletions*(self: TextDocumentEditor) =

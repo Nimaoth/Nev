@@ -199,6 +199,9 @@ proc editor_text_setSearchQuery_void_TextDocumentEditor_string_impl*(
 proc editor_text_setSearchQueryFromMove_void_TextDocumentEditor_string_int_impl*(
     self: TextDocumentEditor; move: string; count: int = 0) =
   discard
+proc editor_text_toggleLineComment_void_TextDocumentEditor_impl*(
+    self: TextDocumentEditor) =
+  discard
 proc editor_text_gotoDefinition_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
