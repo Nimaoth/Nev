@@ -1,4 +1,4 @@
-import std/[strutils, logging, sequtils, sugar, options, json, strformat, tables, sets]
+import std/[strutils, logging, sequtils, sugar, options, json, strformat, tables, sets, jsonutils]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import document, document_editor, id, util, event, ../regex, custom_logger, custom_async, custom_treesitter, indent
@@ -329,17 +329,15 @@ proc newTextDocument*(configProvider: ConfigProvider, filename: string = "", con
   self.configProvider = configProvider
 
   self.indentStyle = IndentStyle(kind: Spaces, spaces: 2)
-  self.languageConfig = some TextLanguageConfig(
-    tabWidth: 2,
-    indentAfter: @[":", "=", "(", "{", "[", "enum", "object"],
-    lineComment: "#".some
-  )
 
   asyncCheck self.initTreesitter()
 
   let language = getLanguageForFile(filename)
   if language.isSome:
     self.languageId = language.get
+
+    if (let value = self.configProvider.getValue("editor.text.language." & self.languageId, newJNull()); value.kind == JObject):
+      self.languageConfig = value.jsonTo(TextLanguageConfig).some
 
   self.content = content
 

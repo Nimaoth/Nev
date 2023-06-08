@@ -1,10 +1,10 @@
 import std/[macros, macrocache, json, strutils]
-import custom_logger, expose, popup, document_editor
+import custom_logger, custom_async, expose, popup, document_editor
 
 type ScriptContext* = ref object of RootObj
   discard
 
-method init*(self: ScriptContext, path: string) {.base.} = discard
+method init*(self: ScriptContext, path: string): Future[void] {.base.} = discard
 method reload*(self: ScriptContext) {.base.} = discard
 
 method handleUnknownPopupAction*(self: ScriptContext, popup: Popup, action: string, arg: JsonNode): bool {.base.} = discard

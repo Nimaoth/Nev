@@ -4,7 +4,7 @@ import custom_logger
 logger.enableConsoleLogger()
 
 import std/[strformat, dom, macros]
-import util, app, timer, platform/widget_builders, platform/platform, platform/browser_platform, text/text_document, event, theme
+import util, app, timer, platform/widget_builders, platform/platform, platform/browser_platform, text/text_document, event, theme, custom_async
 import language/language_server
 from scripting_api import Backend
 
@@ -13,16 +13,12 @@ var rend: BrowserPlatform = new BrowserPlatform
 rend.init()
 
 var initializedEditor = false
-var ed = newEditor(Backend.Browser, rend)
-const themeString = staticRead("../themes/tokyo-night-storm-color-theme.json")
-if theme.loadFromString(themeString).getSome(theme):
-  ed.theme = theme
+var hasRequestedRerender = false
+var isRenderInProgress = false
 
 var frameTime = 0.0
 var frameIndex = 0
 
-var hasRequestedRerender = false
-var isRenderInProgress = false
 proc requestRender(redrawEverything = false) =
   if not initializedEditor:
     return
@@ -41,45 +37,45 @@ proc requestRender(redrawEverything = false) =
 
     var layoutTime, updateTime, renderTime: float
     block:
-      ed.frameTimer = startTimer()
+      gEditor.frameTimer = startTimer()
 
       let updateTimer = startTimer()
-      ed.updateWidgetTree(frameIndex)
+      gEditor.updateWidgetTree(frameIndex)
       updateTime = updateTimer.elapsed.ms
 
       let layoutTimer = startTimer()
-      ed.layoutWidgetTree(rend.size, frameIndex)
+      gEditor.layoutWidgetTree(rend.size, frameIndex)
       layoutTime = layoutTimer.elapsed.ms
 
       let renderTimer = startTimer()
-      rend.render(ed.widget, frameIndex)
+      rend.render(gEditor.widget, frameIndex)
       renderTime = renderTimer.elapsed.ms
 
-      frameTime = ed.frameTimer.elapsed.ms
+      frameTime = gEditor.frameTimer.elapsed.ms
 
     if frameTime > 20:
       logger.log(lvlInfo, fmt"Frame: {frameTime:>5.2}ms (u: {updateTime:>5.2}ms, l: {layoutTime:>5.2}ms, r: {renderTime:>5.2}ms)")
 
-discard rend.onKeyPress.subscribe proc(event: auto): void = requestRender()
-discard rend.onKeyRelease.subscribe proc(event: auto): void = requestRender()
-discard rend.onRune.subscribe proc(event: auto): void = requestRender()
-discard rend.onMousePress.subscribe proc(event: auto): void = requestRender()
-discard rend.onMouseRelease.subscribe proc(event: auto): void = requestRender()
-discard rend.onMouseMove.subscribe proc(event: auto): void = requestRender()
-discard rend.onScroll.subscribe proc(event: auto): void = requestRender()
-discard rend.onCloseRequested.subscribe proc(_: auto) = requestRender()
-discard rend.onResized.subscribe proc(redrawEverything: bool) = requestRender(redrawEverything)
+proc runApp(): Future[void] {.async.} =
+  var ed = await newEditor(Backend.Browser, rend)
+  const themeString = staticRead("../themes/tokyo-night-storm-color-theme.json")
+  if theme.loadFromString(themeString).getSome(theme):
+    ed.theme = theme
 
-block:
-  ed.setHandleInputs "editor.text", true
-  scriptSetOptionString "editor.text.cursor.movement.", "both"
-  scriptSetOptionBool "editor.text.cursor.wide.", false
+  discard rend.onKeyPress.subscribe proc(event: auto): void = requestRender()
+  discard rend.onKeyRelease.subscribe proc(event: auto): void = requestRender()
+  discard rend.onRune.subscribe proc(event: auto): void = requestRender()
+  discard rend.onMousePress.subscribe proc(event: auto): void = requestRender()
+  discard rend.onMouseRelease.subscribe proc(event: auto): void = requestRender()
+  discard rend.onMouseMove.subscribe proc(event: auto): void = requestRender()
+  discard rend.onScroll.subscribe proc(event: auto): void = requestRender()
+  discard rend.onCloseRequested.subscribe proc(_: auto) = requestRender()
+  discard rend.onResized.subscribe proc(redrawEverything: bool) = requestRender(redrawEverything)
 
-  ed.addCommandScript "editor", "<S-SPACE>cl", "load-current-config"
-  ed.addCommandScript "editor", "<S-SPACE>cs", "sourceCurrentDocument"
+  initializedEditor = true
+  requestRender()
 
-initializedEditor = true
-requestRender()
+asyncCheck runApp()
 
 # Useful for debugging nim strings in the browser
 # Just turns a nim string to a javascript string

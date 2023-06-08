@@ -8,7 +8,7 @@ import compiler/options as copts
 from compiler/vmdef import TSandboxFlag
 import nimscripter, nimscripter/[vmconversion, vmaddins]
 
-import util, custom_logger, scripting_base, compilation_config, expose, popup, document_editor
+import util, custom_logger, custom_async, scripting_base, compilation_config, expose, popup, document_editor
 import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, Popup, SelectorPopup
 
 export scripting_base, nimscripter
@@ -141,6 +141,9 @@ proc newScriptContext*(path: string, apiModule: string, addins: VMAddins, postCo
   result.inter = myLoadScript(result.script, apiModule, addins, postCodeAdditions, ["scripting_api", "std/json"], stdPath = stdPath, searchPaths = searchPaths, vmErrorHook = errorHook)
   if result.inter.isNone:
     logger.log(lvlError, fmt"Failed to create script context")
+
+method init*(self: ScriptContextNim, path: string): Future[void] {.async.} =
+  discard
 
 method reload*(ctx: ScriptContextNim) =
   logger.log(lvlInfo, fmt"Reloading script context (search paths: {ctx.searchPaths})")
