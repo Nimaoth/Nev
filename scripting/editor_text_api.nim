@@ -205,6 +205,8 @@ proc gotoDefinition*(self: TextDocumentEditor) =
   editor_text_gotoDefinition_void_TextDocumentEditor_impl(self)
 proc getCompletions*(self: TextDocumentEditor) =
   editor_text_getCompletions_void_TextDocumentEditor_impl(self)
+proc gotoSymbol*(self: TextDocumentEditor) =
+  editor_text_gotoSymbol_void_TextDocumentEditor_impl(self)
 proc hideCompletions*(self: TextDocumentEditor) =
   editor_text_hideCompletions_void_TextDocumentEditor_impl(self)
 proc selectPrevCompletion*(self: TextDocumentEditor) =

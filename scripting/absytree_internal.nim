@@ -208,6 +208,9 @@ proc editor_text_gotoDefinition_void_TextDocumentEditor_impl*(
 proc editor_text_getCompletions_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
+proc editor_text_gotoSymbol_void_TextDocumentEditor_impl*(
+    self: TextDocumentEditor) =
+  discard
 proc editor_text_hideCompletions_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
