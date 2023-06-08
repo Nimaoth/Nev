@@ -25,7 +25,7 @@ proc updateWorkspaceName(self: WorkspaceFolderAbsytreeServer): Future[void] {.as
   self.name = fmt"AbsytreeServer:{self.baseUrl}/{localFolder}"
 
 method loadFile*(self: WorkspaceFolderAbsytreeServer, relativePath: string): Future[string] {.async.} =
-  let relativePath = if relativePath.startsWith("./"): relativePath[2..^1] else: relativePath
+  let relativePath = relativePath.normalizePathUnix
 
   let url = self.baseUrl & "/contents/" & relativePath
   logger.log(lvlInfo, fmt"[absytree-server] loadFile '{url}'")
@@ -33,7 +33,7 @@ method loadFile*(self: WorkspaceFolderAbsytreeServer, relativePath: string): Fut
   return await httpGet(url)
 
 method saveFile*(self: WorkspaceFolderAbsytreeServer, relativePath: string, content: string): Future[void] {.async.} =
-  let relativePath = if relativePath.startsWith("./"): relativePath[2..^1] else: relativePath
+  let relativePath = relativePath.normalizePathUnix
 
   let url = self.baseUrl & "/contents/" & relativePath
   logger.log(lvlInfo, fmt"[absytree-server] saveFile '{url}'")
@@ -41,7 +41,7 @@ method saveFile*(self: WorkspaceFolderAbsytreeServer, relativePath: string, cont
   await httpPost(url, content)
 
 method saveFile*(self: WorkspaceFolderAbsytreeServer, relativePath: string, content: ArrayBuffer): Future[void] {.async.} =
-  let relativePath = if relativePath.startsWith("./"): relativePath[2..^1] else: relativePath
+  let relativePath = relativePath.normalizePathUnix
 
   let url = self.baseUrl & "/contents/" & relativePath
   logger.log(lvlInfo, fmt"[absytree-server] saveFileBinary '{url}'")
@@ -59,6 +59,7 @@ proc parseDirectoryListing(self: WorkspaceFolderAbsytreeServer, basePath: string
       result.folders.add item.getStr
 
 method getDirectoryListing*(self: WorkspaceFolderAbsytreeServer, relativePath: string): Future[DirectoryListing] {.async.} =
+  let relativePath = relativePath.normalizePathUnix
   while self.cachedDirectoryListings.contains(relativePath) and not self.cachedDirectoryListings[relativePath].done:
     await sleepAsync(2)
 
