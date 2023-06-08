@@ -59,3 +59,10 @@ method handleGlobalAction*(self: ScriptContextJs, action: string, arg: JsonNode)
   let action = action.cstring
   let arg = ($arg).cstring
   {.emit: ["return window.handleGlobalAction ? window.handleGlobalAction(", action, ", JSON.parse(", arg, ")) : false;"].}
+
+method postInitialize*(self: ScriptContextJs): bool =
+  {.emit: ["return window.postInitialize ? window.postInitialize() : false;"].}
+
+method handleCallback*(self: ScriptContextJs, id: int, arg: JsonNode): bool =
+  let arg = ($arg).cstring
+  {.emit: ["return window.handleCallback ? window.handleCallback(", id, ", JSON.parse(", arg, ")) : false;"].}

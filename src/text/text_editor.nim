@@ -7,12 +7,15 @@ import platform/[platform, filesystem, widgets]
 import language/[languages, language_server_base]
 import workspaces/[workspace]
 import text_document
+import config_provider
 
 export text_document, document_editor, id
 
 type TextDocumentEditor* = ref object of DocumentEditor
   editor*: App
   document*: TextDocument
+
+  configProvider: ConfigProvider
 
   selectionsInternal: Selections
   targetSelectionsInternal: Option[Selections] # The selections we want to have once the document is loaded
@@ -202,7 +205,8 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, keepVerticalOffse
   else:
     let targetLineY = (targetLine - self.previousBaseIndex).float32 * totalLineHeight + self.scrollOffset
 
-    let margin = clamp(getOption[float32](self.editor, "text.cursor-margin", 25.0), 0.0, self.lastContentBounds.h * 0.5 - totalLineHeight * 0.5)
+    let configMargin = self.configProvider.getValue("text.cursor-margin", 25.0)
+    let margin = clamp(configMargin, 0.0, self.lastContentBounds.h * 0.5 - totalLineHeight * 0.5)
     if targetLineY < margin:
       self.scrollOffset = margin
       self.previousBaseIndex = targetLine
@@ -225,12 +229,12 @@ proc centerCursor*(self: TextDocumentEditor, cursor: Cursor) =
 proc getContextWithMode*(self: TextDocumentEditor, context: string): string
 
 proc isThickCursor(self: TextDocumentEditor): bool =
-  return getOption[bool](self.editor, self.getContextWithMode("editor.text.cursor.wide"), false)
+  return self.configProvider.getValue(self.getContextWithMode("editor.text.cursor.wide"), false)
 
 proc getCursor(self: TextDocumentEditor, cursor: SelectionCursor): Cursor =
   case cursor
   of Config:
-    let configCursor = getOption[SelectionCursor](self.editor, self.getContextWithMode("editor.text.cursor.movement"), Both)
+    let configCursor = self.configProvider.getValue(self.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
     return self.getCursor(configCursor)
   of Both, Last, LastToFirst:
     return self.selection.last
@@ -240,7 +244,7 @@ proc getCursor(self: TextDocumentEditor, cursor: SelectionCursor): Cursor =
 proc moveCursor(self: TextDocumentEditor, cursor: SelectionCursor, movement: proc(doc: TextDocumentEditor, c: Cursor, off: int): Cursor, offset: int, all: bool) =
   case cursor
   of Config:
-    let configCursor = getOption[SelectionCursor](self.editor, self.getContextWithMode("editor.text.cursor.movement"), Both)
+    let configCursor = self.configProvider.getValue(self.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
     self.moveCursor(configCursor, movement, offset, all)
 
   of Both:
@@ -290,7 +294,7 @@ method handleScroll*(self: TextDocumentEditor, scroll: Vec2, mousePosWindow: Vec
   if self.disableScrolling:
     return
 
-  let scrollAmount = scroll.y * getOption[float](self.editor, "text.scroll-speed", 40)
+  let scrollAmount = scroll.y * self.configProvider.getValue("text.scroll-speed", 40.0)
   if not self.lastCompletionsWidget.isNil and self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
     self.completionsScrollOffset += scrollAmount
   else:
@@ -842,7 +846,7 @@ proc mapAllOrLast[T](self: seq[T], all: bool, p: proc(v: T): T): seq[T] =
 proc cursor(self: TextDocumentEditor, selection: Selection, which: SelectionCursor): Cursor =
   case which
   of Config:
-    return self.cursor(selection, getOption(self.editor, self.getContextWithMode("editor.text.cursor.movement"), Both))
+    return self.cursor(selection, self.configProvider.getValue(self.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both))
   of Both:
     return selection.last
   of First:
@@ -851,14 +855,14 @@ proc cursor(self: TextDocumentEditor, selection: Selection, which: SelectionCurs
     return selection.last
 
 proc setMove*(self: TextDocumentEditor, args {.varargs.}: JsonNode) {.expose("editor.text").} =
-  setOption[int](self.editor, "text.move-count", self.getCommandCount)
-  self.setMode getOption[string](self.editor, "text.move-next-mode")
-  self.setCommandCount getOption[int](self.editor, "text.move-command-count")
-  discard self.runAction(getOption[string](self.editor, "text.move-action"), args)
-  setOption[string](self.editor, "text.move-action", "")
+  self.configProvider.setValue("text.move-count", self.getCommandCount)
+  self.setMode self.configProvider.getValue("text.move-next-mode", "")
+  self.setCommandCount self.configProvider.getValue("text.move-command-count", 0)
+  discard self.runAction(self.configProvider.getValue("text.move-action", ""), args)
+  self.configProvider.setValue("text.move-action", "")
 
 proc deleteMove*(self: TextDocumentEditor, move: string, which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
-  let count = getOption[int](self.editor, "text.move-count")
+  let count = self.configProvider.getValue("text.move-count", 0)
   let inside = self.getFlag("move-inside")
 
   # echo fmt"delete-move {move}, {which}, {count}, {inside}"
@@ -873,13 +877,13 @@ proc deleteMove*(self: TextDocumentEditor, move: string, which: SelectionCursor 
   self.updateTargetColumn(Last)
 
 proc selectMove*(self: TextDocumentEditor, move: string, which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
-  let count = getOption[int](self.editor, "text.move-count")
+  let count = self.configProvider.getValue("text.move-count", 0)
   self.selections = self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(s.last, move, count))
   self.scrollToCursor(Last)
   self.updateTargetColumn(Last)
 
 proc changeMove*(self: TextDocumentEditor, move: string, which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
-  let count = getOption[int](self.editor, "text.move-count")
+  let count = self.configProvider.getValue("text.move-count", 0)
   let inside = self.getFlag("move-inside")
 
   let selections = self.selections.map (s) => (if inside:
@@ -894,7 +898,9 @@ proc changeMove*(self: TextDocumentEditor, move: string, which: SelectionCursor 
 proc moveLast*(self: TextDocumentEditor, move: string, which: SelectionCursor = SelectionCursor.Config, all: bool = true, count: int = 0) {.expose("editor.text").} =
   case which
   of Config:
-    self.selections = self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(self.cursor(s, which), move, count).last.toSelection(s, getOption(self.editor, self.getContextWithMode("editor.text.cursor.movement"), Both)))
+    self.selections = self.selections.mapAllOrLast(all,
+      (s) => self.getSelectionForMove(self.cursor(s, which), move, count).last.toSelection(s, self.configProvider.getValue(self.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both))
+    )
   else:
     self.selections = self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(self.cursor(s, which), move, count).last.toSelection(s, which))
   self.scrollToCursor(which)
@@ -903,7 +909,9 @@ proc moveLast*(self: TextDocumentEditor, move: string, which: SelectionCursor = 
 proc moveFirst*(self: TextDocumentEditor, move: string, which: SelectionCursor = SelectionCursor.Config, all: bool = true, count: int = 0) {.expose("editor.text").} =
   case which
   of Config:
-    self.selections = self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(self.cursor(s, which), move, count).first.toSelection(s, getOption(self.editor, self.getContextWithMode("editor.text.cursor.movement"), Both)))
+    self.selections = self.selections.mapAllOrLast(all,
+      (s) => self.getSelectionForMove(self.cursor(s, which), move, count).first.toSelection(s, self.configProvider.getValue(self.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both))
+    )
   else:
     self.selections = self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(self.cursor(s, which), move, count).first.toSelection(s, which))
   self.scrollToCursor(which)
@@ -930,8 +938,8 @@ proc getLanguageServer(self: TextDocumentEditor): Future[Option[LanguageServer]]
   if self.document.languageServer.isSome:
     return self.document.languageServer
   else:
-    let url = getOption[string](self.editor, "editor.text.languages-server.url", "")
-    let port = getOption[int](self.editor, "editor.text.languages-server.port", 0)
+    let url = self.configProvider.getValue("editor.text.languages-server.url", "")
+    let port = self.configProvider.getValue("editor.text.languages-server.port", 0)
     let config = if url != "" and port != 0:
       (url, port).some
     else:
@@ -1144,23 +1152,25 @@ proc createTextEditorInstance(): TextDocumentEditor =
     # This " is here to fix syntax highlighting
   return editor
 
-proc newTextEditor*(document: TextDocument, ed: App): TextDocumentEditor =
-  var editor = createTextEditorInstance()
-  editor.document = document
+proc newTextEditor*(document: TextDocument, ed: App, configProvider: ConfigProvider): TextDocumentEditor =
+  var self = createTextEditorInstance()
+  self.configProvider = configProvider
+  self.document = document
 
-  editor.init()
-  if editor.document.lines.len == 0:
-    editor.document.lines = @[""]
-  editor.injectDependencies(ed)
-  discard document.textChanged.subscribe (_: TextDocument) => editor.handleTextDocumentTextChanged()
-  discard document.onLoaded.subscribe (_: TextDocument) => editor.handleTextDocumentLoaded()
-  return editor
+  self.init()
+  if self.document.lines.len == 0:
+    self.document.lines = @[""]
+  self.injectDependencies(ed)
+  discard document.textChanged.subscribe (_: TextDocument) => self.handleTextDocumentTextChanged()
+  discard document.onLoaded.subscribe (_: TextDocument) => self.handleTextDocumentLoaded()
+  return self
 
 method getDocument*(self: TextDocumentEditor): Document = self.document
 
-method createWithDocument*(self: TextDocumentEditor, document: Document): DocumentEditor =
+method createWithDocument*(self: TextDocumentEditor, document: Document, configProvider: ConfigProvider): DocumentEditor =
   var editor = createTextEditorInstance()
   editor.document = document.TextDocument
+  editor.configProvider = configProvider
 
   editor.init()
   if editor.document.lines.len == 0:

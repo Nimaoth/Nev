@@ -2,7 +2,7 @@ import std/[strformat, strutils, math, logging, sugar, tables, options, json, js
 import fusion/matching, bumpy, rect_utils, vmath
 import editor, util, array_table, document, document_editor, text/text_document, events, id, ast_ids, scripting/expose, event, input, custom_async
 from scripting_api as api import nil
-import custom_logger, timer, array_buffer
+import custom_logger, timer, array_buffer, config_provider
 import platform/[filesystem, platform, widgets]
 import workspaces/[workspace]
 import ast/[types, base_language, cells]
@@ -723,7 +723,7 @@ method getEventHandlers*(self: ModelDocumentEditor): seq[EventHandler] =
 
 method getDocument*(self: ModelDocumentEditor): Document = self.document
 
-method createWithDocument*(_: ModelDocumentEditor, document: Document): DocumentEditor =
+method createWithDocument*(_: ModelDocumentEditor, document: Document, configProvider: ConfigProvider): DocumentEditor =
   let self = ModelDocumentEditor(eventHandler: nil, document: ModelDocument(document))
 
   # Emit this to set the editor prototype to editor_model_prototype, which needs to be set up before calling this

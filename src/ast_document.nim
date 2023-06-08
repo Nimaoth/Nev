@@ -2,7 +2,7 @@ import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros
 import timer
 import fusion/matching, fuzzy, bumpy, rect_utils, vmath, chroma
 import editor, util, document, document_editor, text/text_editor, events, id, ast_ids, ast, scripting/expose, event, theme, input, custom_async
-import compiler, selector_popup
+import compiler, selector_popup, config_provider
 from scripting_api as api import nil
 import custom_logger
 import platform/[filesystem, platform, widgets]
@@ -594,7 +594,7 @@ proc editSymbol*(self: AstDocumentEditor, symbol: Symbol) =
   self.currentlyEditedSymbol = symbol.id
   self.textDocument = newTextDocument(self.editor.asConfigProvider)
   self.textDocument.content = @[symbol.name]
-  self.textEditor = newTextEditor(self.textDocument, self.editor)
+  self.textEditor = newTextEditor(self.textDocument, self.editor, self.editor.asConfigProvider)
   self.textEditor.setMode("insert")
   self.textEditor.renderHeader = false
   self.textEditor.fillAvailableSpace = false
@@ -611,7 +611,7 @@ proc editNode*(self: AstDocumentEditor, node: AstNode) =
   self.currentlyEditedSymbol = null
   self.textDocument = newTextDocument(self.editor.asConfigProvider)
   self.textDocument.content = node.text.splitLines
-  self.textEditor = newTextEditor(self.textDocument, self.editor)
+  self.textEditor = newTextEditor(self.textDocument, self.editor, self.editor.asConfigProvider)
   self.textEditor.setMode("insert")
   self.textEditor.renderHeader = false
   self.textEditor.fillAvailableSpace = false
@@ -2077,7 +2077,7 @@ method handleMouseMove*(self: AstDocumentEditor, mousePosWindow: Vec2, mousePosD
 
 method getDocument*(self: AstDocumentEditor): Document = self.document
 
-method createWithDocument*(self: AstDocumentEditor, document: Document): DocumentEditor =
+method createWithDocument*(self: AstDocumentEditor, document: Document, configProvider: ConfigProvider): DocumentEditor =
   let editor = AstDocumentEditor(eventHandler: nil, document: AstDocument(document), textDocument: nil, textEditor: nil)
 
   # Emit this to set the editor prototype to editor_ast_prototype, which needs to be set up before calling this
