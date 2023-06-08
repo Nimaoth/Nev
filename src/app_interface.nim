@@ -1,6 +1,7 @@
 import std/[json, options]
 import platform/platform
 import workspaces/workspace
+import language/language_server_base
 import traits, events, document_editor, popup, config_provider
 from scripting_api import EditorId
 
@@ -22,5 +23,6 @@ traitRef AppInterface:
   method createSelectorPopup*(self: AppInterface): Popup
   method pushPopup*(self: AppInterface, popup: Popup)
   method popPopup*(self: AppInterface, popup: Popup)
+  method openSymbolsPopup*(self: AppInterface, symbols: seq[Symbol], handleItemSelected: proc(symbol: Symbol), handleItemConfirmed: proc(symbol: Symbol), handleCanceled: proc())
 
 var gAppInterface*: AppInterface = nil

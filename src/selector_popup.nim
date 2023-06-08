@@ -33,13 +33,7 @@ type
 method changed*(self: SelectorItem, other: SelectorItem): bool {.base.} = discard
 
 proc setCompletions(self: SelectorPopup, newCompletions: seq[SelectorItem]) =
-  if newCompletions.len != self.completions.len:
-    self.markDirty()
-  else:
-    for i in 0..newCompletions.high:
-      if self.completions[i].changed(newCompletions[i]):
-        self.markDirty()
-        break
+  self.markDirty()
 
   self.completions = newCompletions
 
@@ -159,6 +153,8 @@ proc handleTextChanged*(self: SelectorPopup) =
 
   if not self.handleItemSelected.isNil and self.selected < self.completions.len:
     self.handleItemSelected self.completions[self.selected]
+
+  self.markDirty()
 
 method handleScroll*(self: SelectorPopup, scroll: Vec2, mousePosWindow: Vec2) =
   self.selected = clamp(self.selected - scroll.y.int, 0, self.completions.len - 1)

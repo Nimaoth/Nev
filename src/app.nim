@@ -7,6 +7,7 @@ import workspaces/[workspace]
 import ast/types
 import traits
 import config_provider, app_interface
+import language/language_server_base
 
 when not defined(js):
   import scripting/scripting_nim
@@ -166,6 +167,7 @@ proc getPopupForId*(self: App, id: EditorId): Option[Popup]
 proc createSelectorPopup*(self: App): Popup
 proc pushPopup*(self: App, popup: Popup)
 proc popPopup*(self: App, popup: Popup)
+proc openSymbolsPopup*(self: App, symbols: seq[Symbol], handleItemSelected: proc(symbol: Symbol), handleItemConfirmed: proc(symbol: Symbol), handleCanceled: proc())
 
 implTrait AppInterface, App:
   proc platform*(self: App): Platform = self.platform
@@ -190,6 +192,7 @@ implTrait AppInterface, App:
   createSelectorPopup(Popup, App)
   pushPopup(void, App, Popup)
   popPopup(void, App, Popup)
+  openSymbolsPopup(void, App, seq[Symbol], proc(symbol: Symbol), proc(symbol: Symbol), proc())
 
 proc registerEditor*(self: App, editor: DocumentEditor): void =
   self.editors[editor.id] = editor
@@ -1176,6 +1179,39 @@ proc chooseOpen*(self: App, view: string = "new") {.expose("editor").} =
         discard self.openFile(item.FileSelectorItem.path)
     else:
       logger.log(lvlError, fmt"Unknown argument {view}")
+
+  popup.updateCompletions()
+
+  self.pushPopup popup
+
+type TextSymbolSelectorItem* = ref object of SelectorItem
+  symbol*: Symbol
+
+method changed*(self: TextSymbolSelectorItem, other: SelectorItem): bool =
+  let other = other.TextSymbolSelectorItem
+  return self.symbol != other.symbol
+
+proc openSymbolsPopup*(self: App, symbols: seq[Symbol], handleItemSelected: proc(symbol: Symbol), handleItemConfirmed: proc(symbol: Symbol), handleCanceled: proc()) =
+  defer:
+    self.platform.requestRender()
+
+  var popup = newSelectorPopup(self.asAppInterface)
+  popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
+    for s in symbols:
+      let score = matchFuzzy(text, s.name)
+      result.add TextSymbolSelectorItem(symbol: s, score: score)
+
+    result.sort((a, b) => cmp(a.TextSymbolSelectorItem.score, b.TextSymbolSelectorItem.score), Descending)
+
+  popup.handleItemSelected = proc(item: SelectorItem) =
+    let symbol = item.TextSymbolSelectorItem.symbol
+    handleItemSelected(symbol)
+
+  popup.handleItemConfirmed = proc(item: SelectorItem) =
+    let symbol = item.TextSymbolSelectorItem.symbol
+    handleItemConfirmed(symbol)
+
+  popup.handleCanceled = handleCanceled
 
   popup.updateCompletions()
 

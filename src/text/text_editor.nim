@@ -21,6 +21,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   selectionsInternal: Selections
   targetSelectionsInternal: Option[Selections] # The selections we want to have once the document is loaded
   selectionHistory: Deque[Selections]
+  dontRecordSelectionHistory: bool
 
   searchQuery*: string
   searchRegex*: Option[Regex]
@@ -53,6 +54,15 @@ type TextDocumentEditor* = ref object of DocumentEditor
   showCompletions*: bool
   scrollToCompletion*: Option[int]
 
+template noSelectionHistory(self, body: untyped): untyped =
+  block:
+    let temp = self.dontRecordSelectionHistory
+    self.dontRecordSelectionHistory = true
+    defer:
+      self.dontRecordSelectionHistory = temp
+    body
+
+proc newTextEditor*(document: TextDocument, app: AppInterface, configProvider: ConfigProvider): TextDocumentEditor
 proc handleAction(self: TextDocumentEditor, action: string, arg: string): EventResponse
 proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): EventResponse
 proc handleInput(self: TextDocumentEditor, input: string): EventResponse
@@ -76,9 +86,10 @@ proc `selections=`*(self: TextDocumentEditor, selections: Selections) =
   if self.selectionsInternal == selections:
     return
 
-  self.selectionHistory.addLast self.selectionsInternal
-  if self.selectionHistory.len > 100:
-    discard self.selectionHistory.popFirst
+  if not self.dontRecordSelectionHistory:
+    self.selectionHistory.addLast self.selectionsInternal
+    if self.selectionHistory.len > 100:
+      discard self.selectionHistory.popFirst
   self.selectionsInternal = selections
   self.markDirty()
 
@@ -86,9 +97,10 @@ proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
   if self.selectionsInternal.len == 1 and self.selectionsInternal[0] == selection:
     return
 
-  self.selectionHistory.addLast self.selectionsInternal
-  if self.selectionHistory.len > 100:
-    discard self.selectionHistory.popFirst
+  if not self.dontRecordSelectionHistory:
+    self.selectionHistory.addLast self.selectionsInternal
+    if self.selectionHistory.len > 100:
+      discard self.selectionHistory.popFirst
   self.selectionsInternal = @[self.clampSelection selection]
   self.markDirty()
 
@@ -1021,11 +1033,44 @@ proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.} =
     self.showCompletions = true
   self.markDirty()
 
+proc openSymbolsPopup(self: TextDocumentEditor, symbols: seq[Symbol]) =
+  let selections = self.selections
+  self.app.openSymbolsPopup(symbols,
+    handleItemSelected=(proc(symbol: Symbol) =
+      self.noSelectionHistory:
+        self.targetSelection = symbol.location.toSelection
+        self.scrollToCursor()
+    ),
+    handleItemConfirmed=(proc(symbol: Symbol) =
+      self.targetSelection = symbol.location.toSelection
+      self.scrollToCursor()
+    ),
+    handleCanceled=(proc() =
+      self.selections = selections
+      self.scrollToCursor()
+    ),
+  )
+
+proc gotoSymbolAsync(self: TextDocumentEditor): Future[void] {.async.} =
+  let languageServer = await self.getLanguageServer()
+
+  if languageServer.getSome(ls):
+    let symbols = await ls.getSymbols(self.document.filename)
+    if symbols.len == 0:
+      return
+
+    self.openSymbolsPopup(symbols)
+
+  self.markDirty()
+
 proc gotoDefinition*(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncCheck self.gotoDefinitionAsync()
 
 proc getCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncCheck self.getCompletionsAsync()
+
+proc gotoSymbol*(self: TextDocumentEditor) {.expose("editor.text").} =
+  asyncCheck self.gotoSymbolAsync()
 
 proc hideCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.showCompletions = false

@@ -18,6 +18,30 @@ method updateWidget*(self: FileSelectorItem, app: App, widget: WPanel, frameInde
   text.updateForegroundColor(textColor, frameIndex)
   text.updateLastHierarchyChangeFromChildren()
 
+method updateWidget*(self: TextSymbolSelectorItem, app: App, widget: WPanel, frameIndex: int) =
+  let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
+  let scopeColor = app.theme.tokenColor("string", rgb(175, 255, 175))
+  let charWidth = app.platform.charWidth
+
+  var (nameText, typeText) = if widget.len == 0:
+    var nameText = WText(anchor: (vec2(0, 0), vec2(0, 0)), right: self.symbol.name.len.float * charWidth, lastHierarchyChange: frameIndex)
+    var typeText = WText(anchor: (vec2(1, 0), vec2(1, 1)), left: -($self.symbol.symbolType).len.float * charWidth, pivot: vec2(0, 0), lastHierarchyChange: frameIndex)
+    widget.add nameText
+    widget.add typeText
+    (nameText, typeText)
+  else:
+    (widget[0].WText, widget[1].WText)
+
+  nameText.text = self.symbol.name
+  nameText.right = self.symbol.name.len.float * charWidth
+  nameText.updateForegroundColor(textColor, frameIndex)
+  nameText.updateLastHierarchyChangeFromChildren()
+
+  typeText.text = $self.symbol.symbolType
+  typeText.right = -($self.symbol.symbolType).len.float * charWidth
+  typeText.updateForegroundColor(scopeColor, frameIndex)
+  typeText.updateLastHierarchyChangeFromChildren()
+
 method updateWidget*(self: ThemeSelectorItem, app: App, widget: WPanel, frameIndex: int) =
   let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
 
