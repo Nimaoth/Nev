@@ -56,7 +56,7 @@ proc callback(req: Request): Future[void] {.async.} =
       for i, folder in hostedFolders:
         if absolutePath.startsWith(folder.path):
           let name = folder.name.get($i)
-          relativePath = name & "::" & absolutePath[folder.path.len..^1].strip(chars={'/', '\\'}).replace('\\', '/')
+          relativePath = "@" & name & "/" & absolutePath[folder.path.len..^1].strip(chars={'/', '\\'}).replace('\\', '/')
 
       echo "get relative path ", absolutePath, " -> ", relativePath
 
@@ -82,7 +82,7 @@ proc callback(req: Request): Future[void] {.async.} =
       else:
         var folders: seq[string]
         for i, f in hostedFolders:
-          folders.add f.name.get($i) & "::"
+          folders.add "@" & f.name.get($i)
         DirInfo(folders: folders)
 
       let response = result.toJson

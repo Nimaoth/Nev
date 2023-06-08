@@ -1,4 +1,4 @@
-import std/[os, asynchttpserver, options]
+import std/[os, asynchttpserver, options, strutils]
 import custom_async
 
 proc `$`*(p: Port): string {.borrow.}
@@ -13,10 +13,13 @@ proc getFreePort*(): Port =
   return port
 
 proc splitWorkspacePath*(path: string): tuple[name: string, path: string] =
-  let i = path.find(':')
-  if i == -1 or i >= path.high or path[i + 1] != ':':
+  if not path.startsWith('@'):
     return ("", path)
-  return (path[0..<i], path[(i+2)..^1])
+
+  let i = path.find('/')
+  if i == -1:
+    return (path[1..^1], "")
+  return (path[1..<i], path[(i+1)..^1])
 
 proc getActualPathAbs*(path: string): string =
   let (name, actualPath) = path.splitWorkspacePath

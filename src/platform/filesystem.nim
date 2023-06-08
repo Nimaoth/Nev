@@ -1,5 +1,7 @@
 {.used.}
 
+import std/[strutils, os]
+
 import custom_async, array_buffer
 
 type FileSystem* = ref object of RootObj
@@ -21,3 +23,6 @@ when defined(js):
 else:
   import filesystem_desktop
   let fs*: FileSystem = new FileSystemDesktop
+
+proc normalizePathUnix*(path: string): string =
+  return path.normalizedPath.replace('\\', '/').strip(chars={'/'})
