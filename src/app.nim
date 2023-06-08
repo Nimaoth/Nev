@@ -56,6 +56,7 @@ type EditorState = object
   fontBold: string
   fontItalic: string
   fontBoldItalic: string
+  layout: string
   workspaceFolders: seq[OpenWorkspace]
   openEditors: seq[OpenEditor]
 
@@ -467,6 +468,7 @@ proc handleDropFile*(self: App, path, content: string)
 proc openWorkspaceKind(workspaceFolder: WorkspaceFolder): OpenWorkspaceKind
 proc addWorkspaceFolder(self: App, workspaceFolder: WorkspaceFolder): bool
 proc getWorkspaceFolder(self: App, id: Id): Option[WorkspaceFolder]
+proc setLayout*(self: App, layout: string)
 
 proc newEditor*(backend: api.Backend, platform: Platform): App =
   var self = App()
@@ -549,7 +551,9 @@ proc newEditor*(backend: api.Backend, platform: Platform): App =
   var state = EditorState()
   try:
     state = fs.loadApplicationFile("./config/config.json").parseJson.jsonTo(EditorState, JOptions(allowMissingKeys: true, allowExtraKeys: true))
+    logger.log(lvlInfo, fmt"Restoring state {state}")
     self.setTheme(state.theme)
+    self.setLayout(state.layout)
     self.loadedFontSize = state.fontSize.float
     self.platform.fontSize = state.fontSize.float
     if state.fontRegular.len > 0: self.fontRegular = state.fontRegular
@@ -558,7 +562,7 @@ proc newEditor*(backend: api.Backend, platform: Platform): App =
     if state.fontBoldItalic.len > 0: self.fontBoldItalic = state.fontBoldItalic
 
     self.options = fs.loadApplicationFile("./config/options.json").parseJson
-    # logger.log(lvlInfo, fmt"Restoring options: {self.options.pretty}")
+    logger.log(lvlInfo, fmt"Restoring options: {self.options.pretty}")
 
   except CatchableError:
     logger.log(lvlError, fmt"Failed to load previous state from config file: {getCurrentExceptionMsg()}")
@@ -659,6 +663,13 @@ proc saveAppState*(self: App) {.expose("editor").} =
   state.fontBold = self.fontBold
   state.fontItalic = self.fontItalic
   state.fontBoldItalic = self.fontBoldItalic
+
+  if self.layout of HorizontalLayout:
+    state.layout = "horizontal"
+  elif self.layout of VerticalLayout:
+    state.layout = "vertical"
+  else:
+    state.layout = "fibonacci"
 
   # Save open workspace folders
   for workspaceFolder in self.workspace.folders:
