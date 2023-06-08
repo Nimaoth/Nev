@@ -12,7 +12,8 @@ import config_provider
 export text_document, document_editor, id
 
 type TextDocumentEditor* = ref object of DocumentEditor
-  editor*: App
+  app*: App
+  platform*: Platform
   document*: TextDocument
 
   configProvider: ConfigProvider
@@ -196,7 +197,7 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, keepVerticalOffse
     return
 
   let targetLine = cursor.line
-  let totalLineHeight = self.editor.platform.totalLineHeight
+  let totalLineHeight = self.platform.totalLineHeight
 
   if keepVerticalOffset:
     let currentLineY = (self.selection.last.line - self.previousBaseIndex).float32 * totalLineHeight + self.scrollOffset
@@ -219,10 +220,10 @@ proc centerCursor*(self: TextDocumentEditor, cursor: Cursor) =
   if self.disableScrolling:
     return
 
-  let maxLinesOnScreen = self.lastContentBounds.h / self.editor.platform.totalLineHeight
+  let maxLinesOnScreen = self.lastContentBounds.h / self.platform.totalLineHeight
 
   self.previousBaseIndex = cursor.line
-  self.scrollOffset = min(cursor.line.float / maxLinesOnScreen * self.editor.platform.totalLineHeight, self.lastContentBounds.h * 0.5 - self.editor.platform.totalLineHeight * 0.5)
+  self.scrollOffset = min(cursor.line.float / maxLinesOnScreen * self.platform.totalLineHeight, self.lastContentBounds.h * 0.5 - self.platform.totalLineHeight * 0.5)
 
   self.markDirty()
 
@@ -309,7 +310,7 @@ proc getTextDocumentEditor(wrapper: api.TextDocumentEditor): Option[TextDocument
   return TextDocumentEditor.none
 
 proc getModeConfig(self: TextDocumentEditor, mode: string): EventHandlerConfig =
-  return self.editor.getEventHandlerConfig("editor.text." & mode)
+  return self.app.getEventHandlerConfig("editor.text." & mode)
 
 static:
   addTypeMap(TextDocumentEditor, api.TextDocumentEditor, getTextDocumentEditor)
@@ -544,11 +545,11 @@ proc copy*(self: TextDocumentEditor) {.expose("editor.text").} =
       text.add "\n"
     text.add self.document.contentString(selection)
 
-  self.editor.setRegisterText(text, "")
+  self.app.setRegisterText(text, "")
 
 proc paste*(self: TextDocumentEditor) {.expose("editor.text").} =
   var text = ""
-  self.editor.getRegisterText(text, "")
+  self.app.getRegisterText(text, "")
 
   let numLines = text.count('\n') + 1
 
@@ -684,7 +685,7 @@ proc reloadTreesitter*(self: TextDocumentEditor) {.expose("editor.text").} =
   logger.log(lvlInfo, "reloadTreesitter")
 
   asyncCheck self.document.initTreesitter()
-  self.editor.platform.requestRender()
+  self.platform.requestRender()
 
 proc deleteLeft*(self: TextDocumentEditor) {.expose("editor.text").} =
   var selections = self.selections
@@ -715,11 +716,11 @@ proc updateCommandCount*(self: TextDocumentEditor, digit: int) {.expose("editor.
   self.commandCount = self.commandCount * 10 + digit
 
 proc setFlag*(self: TextDocumentEditor, name: string, value: bool) {.expose("editor.text").} =
-  self.editor.setFlag("editor.text." & name, value)
+  self.configProvider.setFlag("editor.text." & name, value)
   self.markDirty()
 
 proc getFlag*(self: TextDocumentEditor, name: string): bool {.expose("editor.text").} =
-  return self.editor.getFlag("editor.text." & name)
+  return self.configProvider.getFlag("editor.text." & name, false)
 
 proc runAction*(self: TextDocumentEditor, action: string, args: JsonNode): bool {.expose("editor.text").} =
   # echo "runAction ", action, ", ", $args
@@ -971,9 +972,9 @@ proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
 
       if path != self.document.filename:
         let editor: Option[DocumentEditor] = if self.document.workspace.getSome(workspace):
-          self.editor.openWorkspaceFile(path, workspace)
+          self.app.openWorkspaceFile(path, workspace)
         else:
-          self.editor.openFile(path)
+          self.app.openFile(path)
 
         if editor.getSome(editor) and editor of TextDocumentEditor:
           let textEditor = editor.TextDocumentEditor
@@ -1075,10 +1076,10 @@ genDispatcher("editor.text")
 
 proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): EventResponse =
   # echo "[textedit] handleAction ", action, " '", arg, "'"
-  if self.editor.handleUnknownDocumentEditorAction(self, action, args) == Handled:
+  if self.app.handleUnknownDocumentEditorAction(self, action, args) == Handled:
     dec self.commandCount
     while self.commandCount > 0:
-      if self.editor.handleUnknownDocumentEditorAction(self, action, args) != Handled:
+      if self.app.handleUnknownDocumentEditorAction(self, action, args) != Handled:
         break
       dec self.commandCount
     self.commandCount = self.commandCountRestore
@@ -1111,23 +1112,23 @@ proc handleAction(self: TextDocumentEditor, action: string, arg: string): EventR
 
 proc handleInput(self: TextDocumentEditor, input: string): EventResponse =
   # echo "handleInput '", input, "'"
-  if self.editor.invokeCallback(self.getContextWithMode("editor.text.input-handler"), input.newJString):
+  if self.app.invokeCallback(self.getContextWithMode("editor.text.input-handler"), input.newJString):
     return Handled
 
   self.insertText(input)
   return Handled
 
-method injectDependencies*(self: TextDocumentEditor, ed: App) =
-  self.editor = ed
-  self.editor.registerEditor(self)
-  let config = ed.getEventHandlerConfig("editor.text")
+method injectDependencies*(self: TextDocumentEditor, app: App) =
+  self.app = app
+  self.app.registerEditor(self)
+  let config = app.getEventHandlerConfig("editor.text")
   self.eventHandler = eventHandler(config):
     onAction:
       self.handleAction action, arg
     onInput:
       self.handleInput input
 
-  self.completionEventHandler = eventHandler(ed.getEventHandlerConfig("editor.text.completion")):
+  self.completionEventHandler = eventHandler(app.getEventHandlerConfig("editor.text.completion")):
     onAction:
       self.handleAction action, arg
     onInput:
@@ -1152,7 +1153,7 @@ proc createTextEditorInstance(): TextDocumentEditor =
     # This " is here to fix syntax highlighting
   return editor
 
-proc newTextEditor*(document: TextDocument, ed: App, configProvider: ConfigProvider): TextDocumentEditor =
+proc newTextEditor*(document: TextDocument, app: App, configProvider: ConfigProvider): TextDocumentEditor =
   var self = createTextEditorInstance()
   self.configProvider = configProvider
   self.document = document
@@ -1160,7 +1161,7 @@ proc newTextEditor*(document: TextDocument, ed: App, configProvider: ConfigProvi
   self.init()
   if self.document.lines.len == 0:
     self.document.lines = @[""]
-  self.injectDependencies(ed)
+  self.injectDependencies(app)
   discard document.textChanged.subscribe (_: TextDocument) => self.handleTextDocumentTextChanged()
   discard document.onLoaded.subscribe (_: TextDocument) => self.handleTextDocumentLoaded()
   return self
@@ -1185,7 +1186,7 @@ proc getCursorAtPixelPos(self: TextDocumentEditor, mousePosWindow: Vec2): Option
     var startOffset = 0
     for i, part in line.parts:
       if part.bounds.contains(mousePosContent) or (i == line.parts.high and mousePosContent.y >= part.bounds.y and mousePosContent.y <= part.bounds.yh and mousePosContent.x >= part.bounds.x):
-        var offsetFromLeft = (mousePosContent.x - part.bounds.x) / self.editor.platform.charWidth
+        var offsetFromLeft = (mousePosContent.x - part.bounds.x) / self.platform.charWidth
         if self.isThickCursor():
           offsetFromLeft -= 0.0
         else:
@@ -1239,4 +1240,4 @@ method handleMouseMove*(self: TextDocumentEditor, mousePosWindow: Vec2, mousePos
 
 
 method unregister*(self: TextDocumentEditor) =
-  self.editor.unregisterEditor(self)
+  self.app.unregisterEditor(self)
