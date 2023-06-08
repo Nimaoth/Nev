@@ -18,8 +18,6 @@ const themeString = staticRead("../themes/tokyo-night-storm-color-theme.json")
 if theme.loadFromString(themeString).getSome(theme):
   ed.theme = theme
 
-ed.setLayout("fibonacci")
-
 var frameTime = 0.0
 var frameIndex = 0
 
