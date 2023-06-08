@@ -927,6 +927,9 @@ proc setSearchQueryFromMove*(self: TextDocumentEditor, move: string, count: int 
   self.selection = selection
   self.setSearchQuery(self.document.contentString(selection))
 
+proc toggleLineComment*(self: TextDocumentEditor) {.expose("editor.text").} =
+  self.selections = self.document.toggleLineComment(self.selections)
+
 proc getLanguageServer(self: TextDocumentEditor): Future[Option[LanguageServer]] {.async.} =
   let languageId = if getLanguageForFile(self.document.filename).getSome(languageId):
     languageId
@@ -1203,7 +1206,10 @@ method handleMousePress*(self: TextDocumentEditor, button: MouseButton, mousePos
     return
 
   if button == MouseButton.Left and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
-    self.selection = cursor.toSelection
+    if Alt in modifiers:
+      self.selections = self.selections & cursor.toSelection
+    else:
+      self.selection = cursor.toSelection
 
     if Control in modifiers:
       self.gotoDefinition()

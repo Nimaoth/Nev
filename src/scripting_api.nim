@@ -141,3 +141,11 @@ func add*(cursor: Cursor, selection: Selection): Cursor =
 
 func add*(self: Selection, other: Selection): Selection =
   return (self.first.add(other), self.last.add(other))
+
+func mergeLines*(selections: Selections): Selections =
+  for s in selections.sorted:
+    let sn = s.normalized
+    if result.len == 0 or result[result.high].last.line < sn.first.line:
+      result.add sn
+    else:
+      result[result.high].last.line = sn.last.line
