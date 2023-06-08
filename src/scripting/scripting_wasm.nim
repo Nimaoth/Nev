@@ -15,6 +15,8 @@ type ScriptContextWasm* = ref object of ScriptContext
   unknownPopupActions: seq[tuple[module: WasmModule, callback: proc(popup: int32, action: cstring, arg: cstring): bool]]
   unknownEditorActions: seq[tuple[module: WasmModule, callback: proc(editor: int32, action: cstring, arg: cstring): bool]]
   unknownGlobalActions: seq[tuple[module: WasmModule, callback: proc(action: cstring, arg: cstring): bool]]
+  postInitializeCallbacks: seq[tuple[module: WasmModule, callback: proc(): bool]]
+  handleCallbackCallbacks: seq[tuple[module: WasmModule, callback: proc(id: int32, args: cstring): bool]]
 
 var createEditorWasmImports: proc(): WasmImports
 
@@ -52,6 +54,12 @@ method init*(self: ScriptContextWasm, path: string) =
         if findFunction(module, "handleGlobalActionWasm", bool, proc(action: cstring, arg: cstring): bool).getSome(f):
           self.unknownGlobalActions.add (module, f)
 
+        if findFunction(module, "postInitializeWasm", bool, proc(): bool).getSome(f):
+          self.postInitializeCallbacks.add (module, f)
+
+        if findFunction(module, "handleCallbackWasm", bool, proc(id: int32, arg: cstring): bool).getSome(f):
+          self.handleCallbackCallbacks.add (module, f)
+
         if findFunction(module, "absytree_main", void, proc(): void).getSome(f):
           echo "run absytree_main"
           f()
@@ -85,6 +93,18 @@ method handleGlobalAction*(self: ScriptContextWasm, action: string, arg: JsonNod
   let argStr = $arg
   for (m, f) in self.unknownGlobalActions:
     if f(action.cstring, argStr.cstring):
+      return true
+
+method postInitialize*(self: ScriptContextWasm): bool =
+  result = false
+  for (m, f) in self.postInitializeCallbacks:
+    result = f() or result
+
+method handleCallback*(self: ScriptContextWasm, id: int, arg: JsonNode): bool =
+  result = false
+  let argStr = $arg
+  for (m, f) in self.handleCallbackCallbacks:
+    if f(id.int32, argStr.cstring):
       return true
 
 # Sets the implementation of createEditorWasmImports. This needs to happen late during compilation after any expose pragmas have been executed,

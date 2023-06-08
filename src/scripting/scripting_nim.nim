@@ -206,3 +206,9 @@ method handleUnknownDocumentEditorAction*(self: ScriptContextNim, editor: Docume
 
 method handleGlobalAction*(self: ScriptContextNim, action: string, arg: JsonNode): bool =
   return self.invoke(handleGlobalAction, action, arg, returnType = bool)
+
+method postInitialize*(self: ScriptContextNim): bool =
+  return self.invoke(postInitialize, returnType = bool)
+
+method handleCallback*(self: ScriptContextNim, id: int, arg: JsonNode): bool =
+  return self.invoke(handleCallback, id, arg, returnType = bool)

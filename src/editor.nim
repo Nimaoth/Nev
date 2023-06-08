@@ -130,6 +130,26 @@ type App* = ref object
 
 var gEditor* {.exportc.}: App = nil
 
+implTrait(ConfigProvider, App):
+  proc getConfigValue(self: App, path: string): Option[JsonNode] =
+    let node = self.options{path.split(".")}
+    if node.isNil:
+      return JsonNode.none
+    return node.some
+
+  proc setConfigValue(self: App, path: string, value: JsonNode) =
+    let pathItems = path.split(".")
+    var node = self.options
+    for key in pathItems[0..^2]:
+      if node.kind != JObject:
+        return
+      if not node.contains(key):
+        node[key] = newJObject()
+      node = node[key]
+    if node.isNil or node.kind != JObject:
+      return
+    node[pathItems[^1]] = value
+
 proc setRegisterText*(self: App, text: string, register: string = "")
 proc getRegisterText*(self: App, text: var string, register: string = "")
 proc openWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder): Option[DocumentEditor]
@@ -151,9 +171,9 @@ proc invokeCallback*(self: App, context: string, args: JsonNode): bool =
     return false
   let id = self.callbacks[context]
   try:
-    if self.scriptContext.invoke(handleCallback, id, args, returnType = bool):
+    if self.scriptContext.handleCallback(id, args):
       return true
-    return self.wasmScriptContext.invoke(handleCallback, id, args, returnType = bool)
+    return self.wasmScriptContext.handleCallback(id, args):
   except CatchableError:
     logger.log(lvlError, fmt"[ed] Failed to run script handleCallback {id}: {getCurrentExceptionMsg()}")
     logger.log(lvlError, getCurrentException().getStackTrace())
@@ -242,30 +262,10 @@ proc getFlag*(self: App, flag: string, default: bool = false): bool
 proc createEditorForDocument(self: App, document: Document): DocumentEditor =
   for editor in self.editor_defaults:
     if editor.canEdit document:
-      return editor.createWithDocument document
+      return editor.createWithDocument(document, self.asConfigProvider)
 
   logger.log(lvlError, "No editor found which can edit " & $document)
   return nil
-
-implTrait(ConfigProvider, App):
-  proc getConfigValue(self: App, path: string): Option[JsonNode] =
-    let node = self.options{path.split(".")}
-    if node.isNil:
-      return JsonNode.none
-    return node.some
-
-  proc setConfigValue(self: App, path: string, value: JsonNode) =
-    let pathItems = path.split(".")
-    var node = self.options
-    for key in pathItems[0..^2]:
-      if node.kind != JObject:
-        return
-      if not node.contains(key):
-        node[key] = newJObject()
-      node = node[key]
-    if node.isNil or node.kind != JObject:
-      return
-    node[pathItems[^1]] = value
 
 proc getOption*[T](editor: App, path: string, default: T = T.default): T =
   template createScriptGetOption(editor, path, defaultValue, accessor: untyped): untyped {.used.} =
@@ -505,7 +505,7 @@ proc newEditor*(backend: api.Backend, platform: Platform): App =
       Ignored
   self.commandLineMode = false
 
-  self.commandLineTextEditor = newTextEditor(newTextDocument(self.asConfigProvider), self)
+  self.commandLineTextEditor = newTextEditor(newTextDocument(self.asConfigProvider), self, self.asConfigProvider)
   self.commandLineTextEditor.renderHeader = false
   self.commandLineTextEditor.TextDocumentEditor.lineNumbers = api.LineNumbers.None.some
   self.getCommandLineTextEditor.hideCursorWhenInactive = true
@@ -556,12 +556,12 @@ proc newEditor*(backend: api.Backend, platform: Platform): App =
     logger.log(lvlInfo, fmt"[editor] init wasm configs")
     self.wasmScriptContext.init("./config")
     logger.log(lvlInfo, fmt"[editor] post init wasm configs")
-    discard self.wasmScriptContext.invoke(postInitialize, returnType = bool)
+    discard self.wasmScriptContext.postInitialize()
 
     logger.log(lvlInfo, fmt"[editor] init nim script config")
     self.scriptContext.init("./config")
     logger.log(lvlInfo, fmt"[editor] post init nim script config")
-    discard self.scriptContext.invoke(postInitialize, returnType = bool)
+    discard self.scriptContext.postInitialize()
 
     logger.log(lvlInfo, fmt"[editor] finished configs")
     self.initializeCalled = true
@@ -1159,7 +1159,7 @@ proc reloadConfig*(self: App) {.expose("editor").} =
     try:
       self.scriptContext.reload()
       if not self.initializeCalled:
-        discard self.scriptContext.invoke(postInitialize, returnType = bool)
+        discard self.scriptContext.postInitialize()
         self.initializeCalled = true
     except CatchableError:
       logger.log(lvlError, fmt"Failed to reload config")

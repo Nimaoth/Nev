@@ -1,4 +1,5 @@
-import document, events, event, vmath, bumpy, input, custom_logger
+import document, events, event, input, custom_logger, config_provider
+import vmath, bumpy
 
 from scripting_api import EditorId, newEditorId
 
@@ -44,7 +45,7 @@ method shutdown*(self: DocumentEditor) {.base.} =
 method canEdit*(self: DocumentEditor, document: Document): bool {.base.} =
   return false
 
-method createWithDocument*(self: DocumentEditor, document: Document): DocumentEditor {.base.} =
+method createWithDocument*(self: DocumentEditor, document: Document, configProvider: ConfigProvider): DocumentEditor {.base.} =
   return nil
 
 method getDocument*(self: DocumentEditor): Document {.base.} = discard
