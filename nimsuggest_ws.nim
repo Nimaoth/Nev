@@ -42,9 +42,15 @@ var server = newAsyncHttpServer()
 
 proc connectToNimsuggest(): Future[AsyncSocket] {.async.} =
   {.gcsafe.}:
-    var socket = newAsyncSocket()
-    await socket.connect("", Port(nimsuggestPort))
-    return socket
+    for i in 0..30:
+      try:
+        var socket = newAsyncSocket()
+        await socket.connect("", Port(nimsuggestPort))
+        return socket
+      except CatchableError:
+        echo "Failed to connect to " & getCurrentExceptionMsg() & ", retry"
+        await sleepAsync(1000)
+    raise newException(IOError, "Timed out ")
 
 proc callback(req: Request): Future[void] {.async.} =
   try:
