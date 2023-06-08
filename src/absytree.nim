@@ -87,77 +87,80 @@ else:
 
 rend.init()
 
-var ed = newEditor(backend.get, rend)
+proc runApp(): Future[void] {.async.} =
+  var ed = await newEditor(backend.get, rend)
 
-addTimer 1000, false, proc(fd: AsyncFD): bool =
-  return false
+  addTimer 1000, false, proc(fd: AsyncFD): bool =
+    return false
 
-var frameIndex = 0
-var frameTime = 0.0
+  var frameIndex = 0
+  var frameTime = 0.0
 
-let minPollPerFrameMs = 1.0
-let maxPollPerFrameMs = 10.0
-var pollBudgetMs = 0.0
-while not ed.closeRequested:
-  defer:
-    inc frameIndex
+  let minPollPerFrameMs = 1.0
+  let maxPollPerFrameMs = 10.0
+  var pollBudgetMs = 0.0
+  while not ed.closeRequested:
+    defer:
+      inc frameIndex
 
-  let totalTimer = startTimer()
+    let totalTimer = startTimer()
 
-  # handle events
-  let eventTimer = startTimer()
-  let eventCounter = rend.processEvents()
-  let eventTime = eventTimer.elapsed.ms
+    # handle events
+    let eventTimer = startTimer()
+    let eventCounter = rend.processEvents()
+    let eventTime = eventTimer.elapsed.ms
 
-  var layoutTime, updateTime, renderTime: float
-  block:
-    ed.frameTimer = startTimer()
+    var layoutTime, updateTime, renderTime: float
+    block:
+      ed.frameTimer = startTimer()
 
-    let updateTimer = startTimer()
-    ed.updateWidgetTree(frameIndex)
-    updateTime = updateTimer.elapsed.ms
+      let updateTimer = startTimer()
+      ed.updateWidgetTree(frameIndex)
+      updateTime = updateTimer.elapsed.ms
 
-    let layoutTimer = startTimer()
-    ed.layoutWidgetTree(rend.size, frameIndex)
-    layoutTime = layoutTimer.elapsed.ms
+      let layoutTimer = startTimer()
+      ed.layoutWidgetTree(rend.size, frameIndex)
+      layoutTime = layoutTimer.elapsed.ms
 
-    let renderTimer = startTimer()
-    rend.render(ed.widget, frameIndex)
-    renderTime = renderTimer.elapsed.ms
+      let renderTimer = startTimer()
+      rend.render(ed.widget, frameIndex)
+      renderTime = renderTimer.elapsed.ms
 
-    frameTime = ed.frameTimer.elapsed.ms
+      frameTime = ed.frameTimer.elapsed.ms
 
-  logger.flush()
+    logger.flush()
 
-  let pollTimer = startTimer()
-  if false:
-    while pollTimer.elapsed.ms < 8:
-      poll(2)
-  else:
-    try:
-      pollBudgetMs += max(minPollPerFrameMs, maxPollPerFrameMs - totalTimer.elapsed.ms)
-      while pollBudgetMs > maxPollPerFrameMs:
-        let start = startTimer()
-        poll(maxPollPerFrameMs.int)
-        pollBudgetMs -= start.elapsed.ms
-    except CatchableError:
-      # logger.log(lvlError, fmt"[async] Failed to poll async dispatcher: {getCurrentExceptionMsg()}: {getCurrentException().getStackTrace()}")
+    let pollTimer = startTimer()
+    if false:
+      while pollTimer.elapsed.ms < 8:
+        poll(2)
+    else:
+      try:
+        pollBudgetMs += max(minPollPerFrameMs, maxPollPerFrameMs - totalTimer.elapsed.ms)
+        while pollBudgetMs > maxPollPerFrameMs:
+          let start = startTimer()
+          poll(maxPollPerFrameMs.int)
+          pollBudgetMs -= start.elapsed.ms
+      except CatchableError:
+        # logger.log(lvlError, fmt"[async] Failed to poll async dispatcher: {getCurrentExceptionMsg()}: {getCurrentException().getStackTrace()}")
+        discard
+    let pollTime = pollTimer.elapsed.ms
+
+    let timeToSleep = 8 - totalTimer.elapsed.ms
+    if timeToSleep > 1:
+      # debugf"sleep for {timeToSleep.int}ms"
+      sleep(timeToSleep.int)
+
+    let totalTime = totalTimer.elapsed.ms
+    if eventCounter > 0:
+      logger.log(lvlInfo, fmt"Total: {totalTime:>5.2}, Poll: {pollTime:>5.2}ms, Event: {eventTime:>5.2}ms, Frame: {frameTime:>5.2}ms (u: {updateTime:>5.2}ms, l: {layoutTime:>5.2}ms, r: {renderTime:>5.2}ms)")
       discard
-  let pollTime = pollTimer.elapsed.ms
 
-  let timeToSleep = 8 - totalTimer.elapsed.ms
-  if timeToSleep > 1:
-    # debugf"sleep for {timeToSleep.int}ms"
-    sleep(timeToSleep.int)
+    # logger.log(lvlInfo, fmt"Total: {totalTime:>5.2}, Frame: {frameTime:>5.2}ms ({layoutTime:>5.2}ms, {updateTime:>5.2}ms, {renderTime:>5.2}ms), Poll: {pollTime:>5.2}ms, Event: {eventTime:>5.2}ms")
 
-  let totalTime = totalTimer.elapsed.ms
-  if eventCounter > 0:
-    logger.log(lvlInfo, fmt"Total: {totalTime:>5.2}, Poll: {pollTime:>5.2}ms, Event: {eventTime:>5.2}ms, Frame: {frameTime:>5.2}ms (u: {updateTime:>5.2}ms, l: {layoutTime:>5.2}ms, r: {renderTime:>5.2}ms)")
-    discard
+    logger.flush()
 
-  # logger.log(lvlInfo, fmt"Total: {totalTime:>5.2}, Frame: {frameTime:>5.2}ms ({layoutTime:>5.2}ms, {updateTime:>5.2}ms, {renderTime:>5.2}ms), Poll: {pollTime:>5.2}ms, Event: {eventTime:>5.2}ms")
+  ed.shutdown()
+  rend.deinit()
 
-  logger.flush()
-
-ed.shutdown()
-rend.deinit()
+waitFor runApp()

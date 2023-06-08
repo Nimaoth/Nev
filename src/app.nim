@@ -477,7 +477,7 @@ proc addWorkspaceFolder(self: App, workspaceFolder: WorkspaceFolder): bool
 proc getWorkspaceFolder(self: App, id: Id): Option[WorkspaceFolder]
 proc setLayout*(self: App, layout: string)
 
-proc newEditor*(backend: api.Backend, platform: Platform): App =
+proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.} =
   var self = App()
 
   # Emit this to set the editor prototype to editor_prototype, which needs to be set up before calling this
@@ -601,12 +601,12 @@ proc newEditor*(backend: api.Backend, platform: Platform): App =
     self.wasmScriptContext = new ScriptContextWasm
 
     logger.log(lvlInfo, fmt"[editor] init wasm configs")
-    self.wasmScriptContext.init("./config")
+    await self.wasmScriptContext.init("./config")
     logger.log(lvlInfo, fmt"[editor] post init wasm configs")
     discard self.wasmScriptContext.postInitialize()
 
     logger.log(lvlInfo, fmt"[editor] init nim script config")
-    self.scriptContext.init("./config")
+    await self.scriptContext.init("./config")
     logger.log(lvlInfo, fmt"[editor] post init nim script config")
     discard self.scriptContext.postInitialize()
 

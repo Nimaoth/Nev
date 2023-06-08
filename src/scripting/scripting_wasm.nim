@@ -24,7 +24,7 @@ macro invoke*(self: ScriptContextWasm; pName: untyped; args: varargs[typed]; ret
   result = quote do:
     default(`returnType`)
 
-method init*(self: ScriptContextWasm, path: string) =
+method init*(self: ScriptContextWasm, path: string): Future[void] {.async.} =
   proc loadModules(path: string): Future[void] {.async.} =
     # let (_, _, ext) = path.splitFile
 
@@ -67,7 +67,7 @@ method init*(self: ScriptContextWasm, path: string) =
       else:
         logger.log(lvlError, fmt"Failed to create wasm module for file {file}")
 
-  asyncCheck loadModules("./config/absytree_config_wasm.wasm")
+  await loadModules("./config/absytree_config_wasm.wasm")
 
 method reload*(self: ScriptContextWasm) = discard
 

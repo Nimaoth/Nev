@@ -40,8 +40,8 @@ proc initAsync(self: ScriptContextJs): Future[void] {.async.} =
   else:
     discard await loadScriptJs("./config/absytree_config.js")
 
-method init*(self: ScriptContextJs, path: string) =
-  asyncCheck self.initAsync()
+method init*(self: ScriptContextJs, path: string): Future[void] =
+  return self.initAsync()
 
 method reload*(self: ScriptContextJs) = discard
 
