@@ -2,6 +2,7 @@ import std/[strutils, options, json, os, tables, macros, strformat, sugar]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import language_server_base, util
 import custom_logger, custom_async, async_http_client, websocket
+import platform/filesystem
 
 when not defined(js):
   import std/[asyncdispatch, osproc, asyncnet, tempfiles]
@@ -21,6 +22,7 @@ type
       socket: WebSocket
 
 type LanguageServerNimSuggest* = ref object of LanguageServer
+  workspaceFilename: string
   filename: string
   tempFilename: string
   port: Port
@@ -30,13 +32,13 @@ type LanguageServerNimSuggest* = ref object of LanguageServer
 
 proc tryGetPortFromLanguagesServer(self: LanguageServerNimSuggest, url: string, port: Port): Future[void] {.async.} =
   try:
-    let response = await httpGet(fmt"http://{url}:{port.int}/nimsuggest/open/{self.filename}")
+    let response = await httpGet(fmt"http://{url}:{port.int}/nimsuggest/open/{self.workspaceFilename}")
     let json = response.parseJson
     if not json.hasKey("port") or json["port"].kind != JInt:
       return
     if not json.hasKey("tempFilename") or json["tempFilename"].kind != JString:
       return
-    self.tempFilename = json["tempFilename"].str
+    self.tempFilename = json["tempFilename"].str.normalizePathUnix
     self.port = json["port"].num.int.Port
     var socket = await newWebSocket(fmt"ws://localhost:{self.port.int}")
     self.impl = LanguageServerImpl(kind: LanguagesServer, url: url, port: port, socket: socket)
@@ -52,8 +54,19 @@ when not defined(js):
     server.close()
     return port
 
+proc splitWorkspacePath*(path: string): tuple[name: string, path: string] =
+  if not path.startsWith('@'):
+    return ("", path)
+
+  let i = path.find('/')
+  if i == -1:
+    return (path[1..^1], "")
+  return (path[1..<i], path[(i+1)..^1])
+
 proc newLanguageServerNimSuggest*(filename: string, languagesServer: Option[(string, Port)] = (string, Port).none): Future[Option[LanguageServerNimSuggest]] {.async.} =
   var server = new LanguageServerNimSuggest
+  server.workspaceFilename = filename
+  let (_, filename) = filename.splitWorkspacePath
   server.filename = filename
   server.maxRetries = 1
 
@@ -209,18 +222,18 @@ proc nimSkTypeToDeclarationType(symbolKind: NimSymKind): SymbolType =
   of nskUnknown: Unknown
   of nskConditional: Unknown
   of nskDynLib: Unknown
-  of nskParam: Unknown
+  of nskParam: Parameter
   of nskGenericParam: Unknown
   of nskTemp: Unknown
   of nskModule: Unknown
-  of nskType: Unknown
-  of nskVar: Unknown
-  of nskLet: Unknown
-  of nskConst: Unknown
+  of nskType: Type
+  of nskVar: MutableVariable
+  of nskLet: ImmutableVariable
+  of nskConst: Constant
   of nskResult: Unknown
-  of nskProc: Unknown
-  of nskFunc: Unknown
-  of nskMethod: Unknown
+  of nskProc: Procedure
+  of nskFunc: Function
+  of nskMethod: Procedure
   of nskIterator: Unknown
   of nskConverter: Unknown
   of nskMacro: Unknown
@@ -248,6 +261,25 @@ method getCompletions*(self: LanguageServerNimSuggest, languageId: string, filen
       kind: nimSkTypeToDeclarationType(r.symbolKind),
       typ: r.typ,
       doc: r.doc
+    )
+
+  return completions
+
+method getSymbols*(self: LanguageServerNimSuggest, filename: string): Future[seq[Symbol]] {.async.} =
+  let results = await self.sendQuery("outline", (0, 0))
+  var completions: seq[Symbol]
+  for r in results:
+    let i = r.symbol.rfind('.')
+    let (name, _) = if i != -1:
+      (r.symbol[i+1..^1].replace("`", ""), r.symbol[0..<i])
+    else:
+      (r.symbol, "")
+
+    completions.add Symbol(
+      location: r.location,
+      name: name,
+      symbolType: nimSkTypeToDeclarationType(r.symbolKind),
+      filename: r.filename
     )
 
   return completions

@@ -243,6 +243,12 @@ addCommand "editor", "<S-SPACE>kn", () => loadNormalBindings()
 addCommand "editor", "<S-SPACE>kv", () => loadVimBindings()
 addCommand "editor", "<S-SPACE>kh", () => loadHelixBindings()
 
+addCommand "editor", "<S-SPACE>lf", "load-file"
+addCommand "editor", "<S-SPACE>wf", "write-file"
+addCommand "editor", "<S-SPACE>SS", "write-file", "", true
+addCommand "editor", "<S-SPACE>SA", "save-app-state"
+addCommand "editor", "<S-SPACE>SC", "remove-from-local-storage"
+addCommand "editor", "<S-SPACE>CC", "clear-workspace-caches"
 addCommand "editor", "<S-SPACE>CC", "clear-workspace-caches"
 
 addCommand "commandLine", "<ESCAPE>", "exit-command-line"

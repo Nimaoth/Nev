@@ -15,7 +15,7 @@ proc getFreePort*(): Port =
 var nimsuggestPort = getFreePort()
 
 var port = 4000
-var forwardedArgs: seq[string] = @["--port:" & $nimsuggestPort.int]
+var forwardedArgs: seq[string] = @["--port:" & $nimsuggestPort.int, "--v3"]
 var isForwarding = false
 var nimsuggestPath = "nimsuggest"
 

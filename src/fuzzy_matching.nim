@@ -39,3 +39,5 @@ proc matchPath*(path: string, pattern: string): float =
     result += fuzzyMatch(patternExt, ext)
     # echo "  match ", patternExt, " with ", ext, " -> ", result
 
+proc matchFuzzy*(a: string, b: string): float =
+  return fuzzyMatchSmart(a, b)

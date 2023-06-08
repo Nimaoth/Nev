@@ -42,6 +42,7 @@ proc loadVimBindings*() =
 
   # lsp
   addTextCommand "", "gd", "goto-definition"
+  addTextCommand "", "gs", "goto-symbol"
   addTextCommand "", "<C-SPACE>", "get-completions"
 
   # editing
