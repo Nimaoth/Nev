@@ -89,7 +89,6 @@ proc postInitialize*(): bool {.wasmexport.} =
   # openFile "temp/test.zig"
   # openFile "src/absytree.nim"
   setLayout "fibonacci"
-  changeLayoutProp("main-split", -0.2)
   return true
 
 infof "{env}: Loading absytree_config_wasm.nim"
