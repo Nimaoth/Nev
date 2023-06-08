@@ -52,7 +52,8 @@ block: ## Enable loggers
     logger.enableConsoleLogger()
 
 import std/[strformat]
-import util, editor, timer, platform/widget_builders, platform/platform, custom_async
+import util, app, timer, platform/widget_builders, platform/platform, custom_async
+import language/language_server
 
 when enableTerminal:
   import platform/terminal_platform

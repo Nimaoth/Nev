@@ -1,4 +1,4 @@
-import std/[macros, macrocache, genasts, json, os]
+import std/[macros, macrocache, genasts, json]
 import custom_logger, custom_async, scripting_base, popup, document_editor, util, expose
 import platform/filesystem
 

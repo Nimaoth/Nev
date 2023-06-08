@@ -13,11 +13,14 @@ traitRef AppInterface:
   method openWorkspaceFile*(self: AppInterface, path: string, workspace: WorkspaceFolder): Option[DocumentEditor]
   method openFile*(self: AppInterface, path: string): Option[DocumentEditor]
   method handleUnknownDocumentEditorAction*(self: AppInterface, editor: DocumentEditor, action: string, args: JsonNode): EventResponse
+  method handleUnknownPopupAction*(self: AppInterface, popup: Popup, action: string, args: string): EventResponse
   method invokeCallback*(self: AppInterface, context: string, args: JsonNode): bool
   method registerEditor*(self: AppInterface, editor: DocumentEditor): void
   method unregisterEditor*(self: AppInterface, editor: DocumentEditor): void
   method getEditorForId*(self: AppInterface, id: EditorId): Option[DocumentEditor]
+  method getPopupForId*(self: AppInterface, id: EditorId): Option[Popup]
   method createSelectorPopup*(self: AppInterface): Popup
   method pushPopup*(self: AppInterface, popup: Popup)
+  method popPopup*(self: AppInterface, popup: Popup)
 
 var gAppInterface*: AppInterface = nil

@@ -186,14 +186,14 @@ macro invoke*(self: ScriptContext; pName: untyped;
     args: varargs[typed]; returnType: typedesc = void): untyped =
   ## Invoke but takes an option and unpacks it, if `intr.`isNone, assertion is raised
   let inter = quote do:
-    `self`.ScriptContextNim.inter.get
+    `self`.inter.get
   var call = newCall("invokeDynamic", inter, pName.toStrLit)
   for x in args:
     call.add x
   call.add nnkExprEqExpr.newTree(ident"returnType", returnType)
 
   return genAst(self, call):
-    if self.ScriptContextNim.inter.isNone:
+    if self.inter.isNone:
       logger.log(lvlError, fmt"Script context is none")
       return
     call

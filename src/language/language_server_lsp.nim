@@ -1,6 +1,6 @@
 import std/[strutils, options, json, jsonutils, tables, uri, strformat]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-import language_server_base, event, util, editor, text/text_editor, custom_logger, custom_async, lsp_client
+import language_server_base, event, util, app, app_interface, config_provider, text/text_editor, custom_logger, custom_async, lsp_client
 
 type LanguageServerLSP* = ref object of LanguageServer
   client: LSPClient
@@ -12,7 +12,7 @@ proc toRange*(selection: Selection): Range = Range(start: selection.first.toPosi
 
 proc getOrCreateLanguageServerLSP*(languageId: string): Future[Option[LanguageServerLSP]] {.async.} =
   if not languageServers.contains(languageId):
-    let config = getOption[JsonNode](gEditor, "editor.text.lsp." & languageId)
+    let config = gAppInterface.configProvider.getValue("editor.text.lsp." & languageId, newJObject())
     if config.isNil:
       return LanguageServerLSP.none
 

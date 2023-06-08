@@ -3,7 +3,7 @@ import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEdito
 from scripting_api as api import nil
 import document, document_editor, id, util, event, ../regex, custom_logger, custom_async, custom_treesitter, indent
 import text_language_config
-import platform/[platform, filesystem, widgets]
+import platform/[filesystem, widgets]
 import language/[languages, language_server_base]
 import workspaces/[workspace]
 import config_provider

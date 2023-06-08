@@ -1,6 +1,6 @@
 
-import std/[macrocache, strutils, json, options, tables, genasts, sequtils]
-import binary_encoder, custom_async
+import std/[macrocache, json, options, tables]
+import binary_encoder
 import util
 
 type

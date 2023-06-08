@@ -58,10 +58,9 @@ proc newLanguageServerNimSuggest*(filename: string, languagesServer: Option[(str
   server.filename = filename
   server.maxRetries = 1
 
-  let parts = filename.splitFile
-
   when not defined(js):
     try:
+      let parts = filename.splitFile
       server.port = getFreePort()
       server.tempFilename = genTempPath("absytree_", "_" & parts.name & parts.ext).replace('\\', '/')
       let process = startProcess("nimsuggest", args = ["--port:" & $server.port.int, filename])
@@ -92,9 +91,6 @@ method stop*(self: LanguageServerNimSuggest) =
   logger.log(lvlInfo, fmt"Stopping language server for {self.filename}")
   # self.nimsuggest.terminate()
   # removeFile(self.tempFilename)
-
-when not defined(js):
-  import std/[osproc]
 
 method saveTempFile*(self: LanguageServerNimSuggest, filename: string, content: string): Future[void] {.async.} =
   case self.impl.kind
@@ -185,7 +181,7 @@ proc sendQuery(self: LanguageServerNimSuggest, query: string, location: Cursor):
   of Process:
     when not defined(js):
       var socket = newAsyncSocket()
-      await socket.connect("", Port(self.port))
+      await socket.connect("", self.port)
       defer: socket.close()
 
       await saveTempFileFuture

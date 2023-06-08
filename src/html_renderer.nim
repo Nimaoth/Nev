@@ -1,6 +1,6 @@
 import std/[strformat, tables, options, sequtils, os, sugar]
 import fusion/matching, chroma
-import util, id, ast, theme, ast_document, editor
+import util, id, ast, theme, ast_document, app
 import compiler
 import platform/[platform]
 

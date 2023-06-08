@@ -8,7 +8,9 @@ import language_server_nimsuggest
 when not defined(js):
   import language_server_lsp
 
-proc getOrCreateLanguageServer*(languageId: string, filename: string, languagesServer: Option[(string, int)] = (string, int).none): Future[Option[LanguageServer]] {.async.} =
+{.used.}
+
+proc getOrCreateLanguageServerImpl*(languageId: string, filename: string, languagesServer: Option[(string, int)] = (string, int).none): Future[Option[LanguageServer]] {.async.} =
 
   when not defined(js):
     let lsp = await getOrCreateLanguageServerLSP(languageId)
@@ -21,3 +23,5 @@ proc getOrCreateLanguageServer*(languageId: string, filename: string, languagesS
       return server.LanguageServer.some
 
   return LanguageServer.none
+
+getOrCreateLanguageServer = getOrCreateLanguageServerImpl

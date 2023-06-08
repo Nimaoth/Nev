@@ -1,8 +1,7 @@
-import std/[sequtils]
-import custom_async
-
 when defined(js):
+  import std/[sequtils]
   import std/[jsffi]
+  import custom_async
 
   type
     WebSocketJs = distinct JsObject

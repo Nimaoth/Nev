@@ -927,8 +927,6 @@ proc setSearchQueryFromMove*(self: TextDocumentEditor, move: string, count: int 
   self.selection = selection
   self.setSearchQuery(self.document.contentString(selection))
 
-import language/language_server
-
 proc getLanguageServer(self: TextDocumentEditor): Future[Option[LanguageServer]] {.async.} =
   let languageId = if getLanguageForFile(self.document.filename).getSome(languageId):
     languageId

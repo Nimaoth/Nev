@@ -1,12 +1,11 @@
 import std/[strformat, strutils, math, logging, sugar, tables, options, json, jsonutils, streams]
 import fusion/matching, bumpy, rect_utils, vmath
-import util, array_table, document, document_editor, text/text_document, events, id, ast_ids, scripting/expose, event, input, custom_async
+import util, document, document_editor, text/text_document, events, id, ast_ids, scripting/expose, event, input, custom_async
 from scripting_api as api import nil
 import custom_logger, timer, array_buffer, config_provider, app_interface
 import platform/[filesystem, platform, widgets]
 import workspaces/[workspace]
 import ast/[types, base_language, cells]
-import print
 
 import ast/base_language_wasm
 
@@ -2207,8 +2206,8 @@ proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.
 
   if module.get.findFunction("test", int32, proc(): int32).getSome(f):
     echo "call test"
-    let result = f()
-    echo "Result: ", result
+    let r = f()
+    echo "Result: ", r
 
   if module.get.findFunction("test", void, proc(): void).getSome(f):
     echo "call test"

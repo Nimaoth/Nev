@@ -8,9 +8,6 @@ import custom_logger
 import platform/[filesystem, platform, widgets]
 import workspaces/[workspace]
 
-when not defined(js):
-  import os
-
 type ExecutionOutput* = ref object
   lines*: seq[(string, Color)]
   scroll*: int
@@ -471,8 +468,8 @@ proc newAstDocument*(filename: string = "", app: bool = false, workspaceFolder: 
   if filename.len > 0:
     result.load()
 
-when not defined(js):
-  import html_renderer
+# when not defined(js):
+#   import html_renderer
 
 proc saveHtml*(self: AstDocument) =
   discard
