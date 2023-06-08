@@ -127,26 +127,26 @@ of Terminal:
   setOption "model.scroll-speed", 1
 
 of Gui:
-  setOption "text.scroll-speed", 23
+  setOption "text.scroll-speed", 50
   setOption "text.cursor-margin", 50
-  setOption "ast.scroll-speed", 60
+  setOption "ast.scroll-speed", 50
   setOption "ast.indent", 20
   setOption "ast.indent-line-width", 2
   setOption "ast.indent-line-alpha", 1
   setOption "ast.inline-blocks", true
   setOption "ast.vertical-division", true
-  setOption "model.scroll-speed", 60
+  setOption "model.scroll-speed", 50
 
 of Browser:
-  setOption "text.scroll-speed", 23
+  setOption "text.scroll-speed", 50
   setOption "text.cursor-margin", 50
-  setOption "ast.scroll-speed", 60
+  setOption "ast.scroll-speed", 50
   setOption "ast.indent", 20
   setOption "ast.indent-line-width", 2
   setOption "ast.indent-line-alpha", 1
   setOption "ast.inline-blocks", true
   setOption "ast.vertical-division", true
-  setOption "model.scroll-speed", 60
+  setOption "model.scroll-speed", 50
   addCommand "editor", "<C-r>", "do-nothing"
 
 addCommand "editor", "<S-SPACE><*-a>i", "toggle-flag", "ast.inline-blocks"
