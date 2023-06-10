@@ -171,8 +171,8 @@ proc updateSearchResults(self: TextDocumentEditor) =
       let bounds = line.findBounds(self.searchRegex.get, start)
       if bounds.first == -1:
         break
-      selections.add ((i, bounds.first), (i, bounds.last + 1))
-      start = max(bounds.last + 1, start + 1)
+      selections.add ((i, start + bounds.first), (i, start + bounds.last + 1))
+      start = start + bounds.last + 1
 
     if selections.len > 0:
       self.searchResults[i] = selections
