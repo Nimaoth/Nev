@@ -8,6 +8,7 @@ import language/[languages, language_server_base]
 import workspaces/[workspace]
 import text_document
 import config_provider, app_interface
+import delayed_task
 
 export text_document, document_editor, id
 
@@ -54,6 +55,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
   showCompletions*: bool
   scrollToCompletion*: Option[int]
 
+  updateCompletionsTask: DelayedTask
+
 template noSelectionHistory(self, body: untyped): untyped =
   block:
     let temp = self.dontRecordSelectionHistory
@@ -66,6 +69,7 @@ proc newTextEditor*(document: TextDocument, app: AppInterface, configProvider: C
 proc handleAction(self: TextDocumentEditor, action: string, arg: string): EventResponse
 proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): EventResponse
 proc handleInput(self: TextDocumentEditor, input: string): EventResponse
+proc showCompletionWindow(self: TextDocumentEditor)
 
 proc lineLength*(self: TextDocumentEditor, line: int): int =
   if line < self.document.lines.len:
@@ -474,10 +478,10 @@ proc insertText*(self: TextDocumentEditor, text: string) {.expose("editor.text")
   self.updateTargetColumn(Last)
 
   if not self.disableCompletions and (text == "." or text == ","):
-    self.showCompletions = true
+    self.showCompletionWindow()
     asyncCheck self.getCompletionsAsync()
-  elif self.showCompletions:
-    asyncCheck self.getCompletionsAsync()
+  elif self.showCompletions and self.updateCompletionsTask.isNotNil:
+    self.updateCompletionsTask.reschedule()
 
 proc indent*(self: TextDocumentEditor) {.expose("editor.text").} =
   var linesToIndent = initHashSet[int]()
@@ -994,6 +998,11 @@ proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.} =
   if self.disableCompletions:
     return
 
+  self.showCompletionWindow()
+
+  if self.updateCompletionsTask.isNotNil:
+    self.updateCompletionsTask.pause()
+
   let languageServer = await self.document.getLanguageServer()
 
   if languageServer.getSome(ls):
@@ -1002,10 +1011,17 @@ proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.} =
     self.completions = self.getCompletionsFromContent()
 
   self.selectedCompletion = self.selectedCompletion.clamp(0, self.completions.high)
-  if self.completions.len == 0:
-    self.showCompletions = false
-  else:
-    self.showCompletions = true
+  self.markDirty()
+
+proc showCompletionWindow(self: TextDocumentEditor) =
+  if self.updateCompletionsTask.isNil:
+    self.updateCompletionsTask = startDelayed(500, repeat=false):
+      asyncCheck self.getCompletionsAsync()
+
+  if not self.updateCompletionsTask.isActive:
+    self.updateCompletionsTask.reschedule()
+
+  self.showCompletions = true
   self.markDirty()
 
 proc openSymbolsPopup(self: TextDocumentEditor, symbols: seq[Symbol]) =
@@ -1049,6 +1065,9 @@ proc gotoSymbol*(self: TextDocumentEditor) {.expose("editor.text").} =
 
 proc hideCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.showCompletions = false
+  if self.updateCompletionsTask.isNotNil:
+    self.updateCompletionsTask.pause()
+
   self.markDirty()
 
 proc selectPrevCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
@@ -1185,6 +1204,7 @@ proc newTextEditor*(document: TextDocument, app: AppInterface, configProvider: C
   self.injectDependencies(app)
   discard document.textChanged.subscribe (_: TextDocument) => self.handleTextDocumentTextChanged()
   discard document.onLoaded.subscribe (_: TextDocument) => self.handleTextDocumentLoaded()
+
   return self
 
 method getDocument*(self: TextDocumentEditor): Document = self.document
@@ -1199,6 +1219,7 @@ method createWithDocument*(self: TextDocumentEditor, document: Document, configP
     editor.document.lines = @[""]
   discard editor.document.textChanged.subscribe (_: TextDocument) => editor.handleTextDocumentTextChanged()
   discard editor.document.onLoaded.subscribe (_: TextDocument) => editor.handleTextDocumentLoaded()
+
   return editor
 
 proc getCursorAtPixelPos(self: TextDocumentEditor, mousePosWindow: Vec2): Option[Cursor] =
