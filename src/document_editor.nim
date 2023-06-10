@@ -31,11 +31,22 @@ proc markDirty*(self: DocumentEditor) =
 proc resetDirty*(self: DocumentEditor) =
   self.mDirty = false
 
+method handleActivate*(self: DocumentEditor) {.base.} = discard
+method handleDeactivate*(self: DocumentEditor) {.base.} = discard
+
 proc `active=`*(self: DocumentEditor, newActive: bool) =
-  if newActive != self.active:
+  let changed = if newActive != self.active:
     self.markDirty()
+    true
+  else:
+    false
 
   self.active = newActive
+  if changed:
+    if self.active:
+      self.handleActivate()
+    else:
+      self.handleDeactivate()
 
 func active*(self: DocumentEditor): bool = self.active
 
