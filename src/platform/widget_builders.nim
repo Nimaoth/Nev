@@ -54,6 +54,8 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
     self.widget.layoutWidget(rect(vec2(0, 0), self.platform.size), frameIndex, self.platform.layoutOptions)
 
   # views
+  let previousChildren = viewPanel.children
+
   viewPanel.setLen 0
   let rects = self.layout.layoutViews(self.layout_props, rect(0, 0, 1, 1), self.views.len)
   for i, view in self.views:
@@ -67,9 +69,13 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
     if i < rects.len:
       widget.anchor = (rects[i].xy, rects[i].xwyh)
 
+      if viewPanel.children.len > previousChildren.high or widget.WWidget != previousChildren[viewPanel.children.len]:
+        view.editor.markDirty(notify=false)
+
       widget.layoutWidget(viewPanel.lastBounds, frameIndex, self.platform.layoutOptions)
 
       viewPanel.add widget
+
       view.editor.active = self.currentView == i
       view.editor.updateWidget(self, widget, frameIndex)
       viewPanel.lastHierarchyChange = max(viewPanel.lastHierarchyChange, widget.lastHierarchyChange)

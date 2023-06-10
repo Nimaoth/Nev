@@ -23,8 +23,8 @@ proc init*(self: DocumentEditor) =
 
 func dirty*(self: DocumentEditor): bool = self.mDirty
 
-proc markDirty*(self: DocumentEditor) =
-  if not self.mDirty:
+proc markDirty*(self: DocumentEditor, notify: bool = true) =
+  if not self.mDirty and notify:
     self.onMarkedDirty.invoke()
   self.mDirty = true
 

@@ -384,9 +384,11 @@ proc addView*(self: App, view: View, addToHistory = true) =
   let maxViews = getOption[int](self, "editor.maxViews", int.high)
 
   while maxViews > 0 and self.views.len > maxViews:
+    self.views[self.views.high].editor.active = false
     self.hiddenViews.add self.views.pop()
 
   if self.views.len == maxViews:
+    self.views[self.currentView].editor.active = false
     self.hiddenViews.add self.views[self.currentView]
     self.views[self.currentView] = view
   else:
