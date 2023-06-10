@@ -30,6 +30,9 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   targetColumn: int
   hideCursorWhenInactive*: bool
+  cursorVisible*: bool
+  blinkCursor: bool
+  blinkCursorTask: DelayedTask
 
   completionEventHandler: EventHandler
   modeEventHandler: EventHandler
@@ -95,6 +98,9 @@ proc `selections=`*(self: TextDocumentEditor, selections: Selections) =
     if self.selectionHistory.len > 100:
       discard self.selectionHistory.popFirst
   self.selectionsInternal = selections
+  self.cursorVisible = true
+  if self.blinkCursorTask.isNotNil and self.active:
+    self.blinkCursorTask.reschedule()
   self.markDirty()
 
 proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
@@ -106,6 +112,9 @@ proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
     if self.selectionHistory.len > 100:
       discard self.selectionHistory.popFirst
   self.selectionsInternal = @[self.clampSelection selection]
+  self.cursorVisible = true
+  if self.blinkCursorTask.isNotNil and self.active:
+    self.blinkCursorTask.reschedule()
   self.markDirty()
 
 proc `targetSelection=`*(self: TextDocumentEditor, selection: Selection) =
@@ -115,6 +124,22 @@ proc `targetSelection=`*(self: TextDocumentEditor, selection: Selection) =
 proc clampSelection*(self: TextDocumentEditor) =
   self.selections = self.clampAndMergeSelections(self.selectionsInternal)
   self.markDirty()
+
+proc startBlinkCursorTask(self: TextDocumentEditor) =
+  if not self.blinkCursor:
+    return
+
+  if self.blinkCursorTask.isNil:
+    self.blinkCursorTask = startDelayed(500, repeat=true):
+      if not self.active:
+        self.cursorVisible = true
+        self.markDirty()
+        self.blinkCursorTask.pause()
+        return
+      self.cursorVisible = not self.cursorVisible
+      self.markDirty()
+  else:
+    self.blinkCursorTask.reschedule()
 
 method shutdown*(self: TextDocumentEditor) =
   self.document.destroy()
@@ -158,6 +183,15 @@ proc updateSearchResults(self: TextDocumentEditor) =
 method handleDocumentChanged*(self: TextDocumentEditor) =
   self.selection = (self.clampCursor self.selection.first, self.clampCursor self.selection.last)
   self.updateSearchResults()
+
+method handleActivate*(self: TextDocumentEditor) =
+  self.startBlinkCursorTask()
+
+method handleDeactivate*(self: TextDocumentEditor) =
+  if self.blinkCursorTask.isNotNil:
+    self.blinkCursorTask.pause()
+    self.cursorVisible = true
+    self.markDirty()
 
 proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor =
   var cursor = cursor
@@ -357,6 +391,10 @@ proc setMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} 
         self.handleAction action, arg
       onInput:
         self.handleInput input
+
+  self.cursorVisible = true
+  if self.blinkCursorTask.isNotNil and self.active:
+    self.blinkCursorTask.reschedule()
 
   self.currentMode = mode
   self.markDirty()
@@ -1191,6 +1229,8 @@ proc createTextEditorInstance(): TextDocumentEditor =
   when defined(js):
     {.emit: [editor, " = jsCreateWithPrototype(editor_text_prototype, ", editor, ");"].}
     # This " is here to fix syntax highlighting
+  editor.cursorVisible = true
+  editor.blinkCursor = true
   return editor
 
 proc newTextEditor*(document: TextDocument, app: AppInterface, configProvider: ConfigProvider): TextDocumentEditor =
@@ -1205,22 +1245,26 @@ proc newTextEditor*(document: TextDocument, app: AppInterface, configProvider: C
   discard document.textChanged.subscribe (_: TextDocument) => self.handleTextDocumentTextChanged()
   discard document.onLoaded.subscribe (_: TextDocument) => self.handleTextDocumentLoaded()
 
+  self.startBlinkCursorTask()
+
   return self
 
 method getDocument*(self: TextDocumentEditor): Document = self.document
 
-method createWithDocument*(self: TextDocumentEditor, document: Document, configProvider: ConfigProvider): DocumentEditor =
-  var editor = createTextEditorInstance()
-  editor.document = document.TextDocument
-  editor.configProvider = configProvider
+method createWithDocument*(_: TextDocumentEditor, document: Document, configProvider: ConfigProvider): DocumentEditor =
+  var self = createTextEditorInstance()
+  self.document = document.TextDocument
+  self.configProvider = configProvider
 
-  editor.init()
-  if editor.document.lines.len == 0:
-    editor.document.lines = @[""]
-  discard editor.document.textChanged.subscribe (_: TextDocument) => editor.handleTextDocumentTextChanged()
-  discard editor.document.onLoaded.subscribe (_: TextDocument) => editor.handleTextDocumentLoaded()
+  self.init()
+  if self.document.lines.len == 0:
+    self.document.lines = @[""]
+  discard self.document.textChanged.subscribe (_: TextDocument) => self.handleTextDocumentTextChanged()
+  discard self.document.onLoaded.subscribe (_: TextDocument) => self.handleTextDocumentLoaded()
 
-  return editor
+  self.startBlinkCursorTask()
+
+  return self
 
 proc getCursorAtPixelPos(self: TextDocumentEditor, mousePosWindow: Vec2): Option[Cursor] =
   let mousePosContent = mousePosWindow - self.lastContentBounds.xy

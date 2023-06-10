@@ -315,13 +315,13 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
       # Set last cursor pos if its contained in this part
       for selection in selectionsPerLine.getOrDefault(i, @[]):
         if selection.last.line == i and selection.last.column >= startIndex and selection.last.column <= startIndex + part.text.len:
-          let offsetFromPartStart = if part.text.len == 0: 0.0 else: (selection.last.column - startIndex).float32 / (part.text.len.float32) * width
+          let offsetFromPartStart = if part.text.len == 0: 0.0 else: (selection.last.column - startIndex).float32 / (part.text.len.float32) * width 
           lineWidget.add(WPanel(
             anchor: (vec2(0, 0), vec2(0, 0)),
             left: startOffset + offsetFromPartStart,
             right: startOffset + offsetFromPartStart + cursorWidth * charWidth,
             bottom: totalLineHeight,
-            fillBackground: true,
+            fillBackground: self.cursorVisible,
             backgroundColor: cursorColor,
             lastHierarchyChange: frameIndex
           ))
