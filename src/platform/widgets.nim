@@ -199,6 +199,22 @@ proc invalidate*(self: WWidget, currentIndex: int, rect: Rect) =
     for c in self.WHorizontalList.children:
       c.invalidate(currentIndex, self.lastInvalidationRect)
 
+proc invalidateHierarchy*(self: WWidget, currentIndex: int) =
+  self.lastHierarchyChange = currentIndex
+
+  if self of WPanel:
+    for c in self.WPanel.children:
+      c.invalidateHierarchy(currentIndex)
+  elif self of WStack:
+    for c in self.WStack.children:
+      c.invalidateHierarchy(currentIndex)
+  elif self of WVerticalList:
+    for c in self.WVerticalList.children:
+      c.invalidateHierarchy(currentIndex)
+  elif self of WHorizontalList:
+    for c in self.WHorizontalList.children:
+      c.invalidateHierarchy(currentIndex)
+
 proc updateInvalidationFromChildren*(self: WWidget, currentIndex: int, recurse: bool) =
   if self of WPanel:
     for c in self.WPanel.children:
