@@ -57,6 +57,7 @@ proc loadNormalBindings*() =
   addCommand "editor.text", "\\>", "indent"
   addCommand "editor.text", "\\<", "unindent"
   addCommand "editor.text", "<C-k><C-c>", "toggle-line-comment"
+  addCommand "editor.text", "<C-i>", "center-cursor"
 
   addTextCommandBlock "", "<C-f>":
     commandLine("set-search-query \\")

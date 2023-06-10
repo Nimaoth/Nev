@@ -242,38 +242,41 @@ proc doMoveCursorPrevFindResult(self: TextDocumentEditor, cursor: Cursor, offset
 proc doMoveCursorNextFindResult(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor =
   return self.getNextFindResult(cursor, offset).first
 
-proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, keepVerticalOffset: bool = false) =
+proc centerCursor*(self: TextDocumentEditor, cursor: Cursor) =
+  if self.disableScrolling:
+    return
+
+  self.previousBaseIndex = cursor.line
+  self.scrollOffset = self.lastContentBounds.h * 0.5 - self.platform.totalLineHeight * 0.5
+
+  self.markDirty()
+
+proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor) =
   if self.disableScrolling:
     return
 
   let targetLine = cursor.line
   let totalLineHeight = self.platform.totalLineHeight
+ 
+  let targetLineY = (targetLine - self.previousBaseIndex).float32 * totalLineHeight + self.scrollOffset
 
-  if keepVerticalOffset:
-    let currentLineY = (self.selection.last.line - self.previousBaseIndex).float32 * totalLineHeight + self.scrollOffset
-    self.previousBaseIndex = targetLine
-    self.scrollOffset = currentLineY
+  let configMarginRelative = self.configProvider.getValue("text.cursor-margin-relative", true)
+  let configMargin = self.configProvider.getValue("text.cursor-margin", 0.2)
+  let margin = if configMarginRelative:
+    clamp(configMargin, 0.0, 1.0) * 0.5 * self.lastContentBounds.h
   else:
-    let targetLineY = (targetLine - self.previousBaseIndex).float32 * totalLineHeight + self.scrollOffset
+    clamp(configMargin, 0.0, self.lastContentBounds.h * 0.5 - totalLineHeight * 0.5)
 
-    let configMargin = self.configProvider.getValue("text.cursor-margin", 25.0)
-    let margin = clamp(configMargin, 0.0, self.lastContentBounds.h * 0.5 - totalLineHeight * 0.5)
-    if targetLineY < margin:
-      self.scrollOffset = margin
-      self.previousBaseIndex = targetLine
-    elif targetLineY + totalLineHeight > self.lastContentBounds.h - margin:
-      self.scrollOffset = self.lastContentBounds.h - margin - totalLineHeight
-      self.previousBaseIndex = targetLine
-  self.markDirty()
-
-proc centerCursor*(self: TextDocumentEditor, cursor: Cursor) =
-  if self.disableScrolling:
-    return
-
-  let maxLinesOnScreen = self.lastContentBounds.h / self.platform.totalLineHeight
-
-  self.previousBaseIndex = cursor.line
-  self.scrollOffset = min(cursor.line.float / maxLinesOnScreen * self.platform.totalLineHeight, self.lastContentBounds.h * 0.5 - self.platform.totalLineHeight * 0.5)
+  if targetLineY < 0:
+    self.centerCursor(cursor)
+  elif targetLineY < margin:
+    self.scrollOffset = margin
+    self.previousBaseIndex = targetLine
+  elif targetLineY + totalLineHeight > self.lastContentBounds.h:
+    self.centerCursor(cursor)
+  elif targetLineY + totalLineHeight > self.lastContentBounds.h - margin:
+    self.scrollOffset = self.lastContentBounds.h - margin - totalLineHeight
+    self.previousBaseIndex = targetLine
 
   self.markDirty()
 

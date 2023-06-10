@@ -120,7 +120,8 @@ info fmt"Backend: {getBackend()}"
 case getBackend()
 of Terminal:
   setOption "text.scroll-speed", 1
-  setOption "text.cursor-margin", 3
+  setOption "text.cursor-margin", 0.5
+  setOption "text.cursor-margin-relative", true
   setOption "ast.scroll-speed", 1
   setOption "ast.indent", 2
   setOption "ast.indent-line-width", 2
@@ -131,7 +132,8 @@ of Terminal:
 
 of Gui:
   setOption "text.scroll-speed", 50
-  setOption "text.cursor-margin", 50
+  setOption "text.cursor-margin", 0.5
+  setOption "text.cursor-margin-relative", true
   setOption "ast.scroll-speed", 50
   setOption "ast.indent", 20
   setOption "ast.indent-line-width", 2
@@ -142,7 +144,8 @@ of Gui:
 
 of Browser:
   setOption "text.scroll-speed", 50
-  setOption "text.cursor-margin", 50
+  setOption "text.cursor-margin", 0.5
+  setOption "text.cursor-margin-relative", true
   setOption "ast.scroll-speed", 50
   setOption "ast.indent", 20
   setOption "ast.indent-line-width", 2
@@ -187,18 +190,6 @@ addCommand "editor", "<C-2>", proc() =
   echo "text.node-highlight-sibling-index: ", getOption[int]("text.node-highlight-sibling-index")
 addCommand "editor", "<C-3>", proc() =
   setOption("text.node-highlight-sibling-index", clamp(getOption[int]("text.node-highlight-sibling-index") + 1, -100000, 100000))
-
-addCommand "editor", "<C-u>", "set-mode", "test-mode"
-setConsumeAllInput "editor.test-mode", true
-addCommand "editor.test-mode", "<ESCAPE>", "set-mode", ""
-addCommand "editor.test-mode", "-","change-font-size", -1
-addCommand "editor.test-mode", "+","change-font-size", +1
-
-addCommand "editor", "<C-i>", "set-mode", "test-mode2"
-setOption "editor.custom-mode-on-top", false
-addCommand "editor.test-mode2", "<ESCAPE>", "set-mode", ""
-addCommand "editor.test-mode2", "s","change-font-size", -1
-addCommand "editor.test-mode2", "d","change-font-size", +1
 
 # addCommand "editor", "<S-SPACE><*-l>", ""
 addCommand "editor", "<S-SPACE>ff", "log-options"
