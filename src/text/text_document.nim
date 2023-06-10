@@ -90,6 +90,7 @@ proc clampCursor*(self: TextDocument, cursor: Cursor): Cursor =
 
 proc clampSelection*(self: TextDocument, selection: Selection): Selection = (self.clampCursor(selection.first), self.clampCursor(selection.last))
 proc clampAndMergeSelections*(self: TextDocument, selections: openArray[Selection]): Selections = selections.map((s) => self.clampSelection(s)).deduplicate
+proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.async.}
 
 proc notifyTextChanged(self: TextDocument) =
   self.textChanged.invoke self
@@ -339,6 +340,9 @@ proc newTextDocument*(configProvider: ConfigProvider, filename: string = "", con
     if (let value = self.configProvider.getValue("editor.text.language." & self.languageId, newJNull()); value.kind == JObject):
       self.languageConfig = value.jsonTo(TextLanguageConfig).some
 
+    if self.configProvider.getValue("editor.text.auto-start-language-server", false):
+      asyncCheck self.getLanguageServer()
+
   self.content = content
 
 proc newTextDocument*(configProvider: ConfigProvider, filename: string, app: bool, workspaceFolder: Option[WorkspaceFolder]): TextDocument =
@@ -392,6 +396,31 @@ method load*(self: TextDocument, filename: string = "") =
   else:
     self.content = fs.loadFile(self.filename)
     self.onLoaded.invoke self
+
+proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.async.} =
+  let languageId = if getLanguageForFile(self.filename).getSome(languageId):
+    languageId
+  else:
+    return LanguageServer.none
+
+  if self.languageServer.isSome:
+    return self.languageServer
+
+  let url = self.configProvider.getValue("editor.text.languages-server.url", "")
+  let port = self.configProvider.getValue("editor.text.languages-server.port", 0)
+  let config = if url != "" and port != 0:
+    (url, port).some
+  else:
+    (string, int).none
+
+  self.languageServer = await getOrCreateLanguageServer(languageId, self.filename, config)
+  if self.languageServer.getSome(ls):
+    let callback = proc (targetFilename: string): Future[void] {.async.} =
+      if self.languageServer.getSome(ls):
+        await ls.saveTempFile(targetFilename, self.contentString)
+
+    self.onRequestSaveHandle = ls.addOnRequestSaveHandler(self.filename, callback)
+  return self.languageServer
 
 proc byteOffset*(self: TextDocument, cursor: Cursor): int =
   result = cursor.column

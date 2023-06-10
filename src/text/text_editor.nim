@@ -942,33 +942,8 @@ proc setSearchQueryFromMove*(self: TextDocumentEditor, move: string, count: int 
 proc toggleLineComment*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.selections = self.document.toggleLineComment(self.selections)
 
-proc getLanguageServer(self: TextDocumentEditor): Future[Option[LanguageServer]] {.async.} =
-  let languageId = if getLanguageForFile(self.document.filename).getSome(languageId):
-    languageId
-  else:
-    return LanguageServer.none
-
-  if self.document.languageServer.isSome:
-    return self.document.languageServer
-  else:
-    let url = self.configProvider.getValue("editor.text.languages-server.url", "")
-    let port = self.configProvider.getValue("editor.text.languages-server.port", 0)
-    let config = if url != "" and port != 0:
-      (url, port).some
-    else:
-      (string, int).none
-
-    self.document.languageServer = await getOrCreateLanguageServer(languageId, self.document.filename, config)
-    if self.document.languageServer.getSome(ls):
-      let callback = proc (targetFilename: string): Future[void] {.async.} =
-        if self.document.languageServer.getSome(ls):
-          await ls.saveTempFile(targetFilename, self.document.contentString)
-
-      self.document.onRequestSaveHandle = ls.addOnRequestSaveHandler(self.document.filename, callback)
-    return self.document.languageServer
-
 proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  let languageServer = await self.getLanguageServer()
+  let languageServer = await self.document.getLanguageServer()
   if languageServer.isNone:
     return
 
@@ -1019,7 +994,7 @@ proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.} =
   if self.disableCompletions:
     return
 
-  let languageServer = await self.getLanguageServer()
+  let languageServer = await self.document.getLanguageServer()
 
   if languageServer.getSome(ls):
     self.completions = await ls.getCompletions(self.document.languageId, self.document.filename, self.selection.last)
@@ -1052,7 +1027,7 @@ proc openSymbolsPopup(self: TextDocumentEditor, symbols: seq[Symbol]) =
   )
 
 proc gotoSymbolAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  let languageServer = await self.getLanguageServer()
+  let languageServer = await self.document.getLanguageServer()
 
   if languageServer.getSome(ls):
     let symbols = await ls.getSymbols(self.document.filename)

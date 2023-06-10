@@ -114,6 +114,8 @@ addCommand "editor", "<CAS-r>", "reload-config"
 setOption "editor.restore-open-editors", true
 setOption "editor.frame-time-smoothing", 0.8
 
+setOption "editor.text.auto-start-language-server", true
+
 info fmt"Backend: {getBackend()}"
 case getBackend()
 of Terminal:
