@@ -112,18 +112,25 @@ proc editor_text_runAction_bool_TextDocumentEditor_string_JsonNode_impl(
     self: TextDocumentEditor; action: string; args: JsonNode): bool  {.importc.}
 proc editor_text_findWordBoundary_Selection_TextDocumentEditor_Cursor_impl(
     self: TextDocumentEditor; cursor: Cursor): Selection  {.importc.}
+proc editor_text_getSelectionInPair_Selection_TextDocumentEditor_Cursor_char_impl(
+    self: TextDocumentEditor; cursor: Cursor; delimiter: char): Selection  {.importc.}
+proc editor_text_getSelectionInPairNested_Selection_TextDocumentEditor_Cursor_char_char_impl(
+    self: TextDocumentEditor; cursor: Cursor; open: char; close: char): Selection  {.importc.}
 proc editor_text_getSelectionForMove_Selection_TextDocumentEditor_Cursor_string_int_impl(
     self: TextDocumentEditor; cursor: Cursor; move: string; count: int = 0): Selection  {.importc.}
-proc editor_text_setMove_void_TextDocumentEditor_JsonNode_impl(
+proc editor_text_applyMove_void_TextDocumentEditor_JsonNode_impl(
     self: TextDocumentEditor; args: JsonNode)  {.importc.}
-proc editor_text_deleteMove_void_TextDocumentEditor_string_SelectionCursor_bool_impl(
-    self: TextDocumentEditor; move: string;
+proc editor_text_deleteMove_void_TextDocumentEditor_string_bool_SelectionCursor_bool_impl(
+    self: TextDocumentEditor; move: string; inside: bool = false;
     which: SelectionCursor = SelectionCursor.Config; all: bool = true)  {.importc.}
-proc editor_text_selectMove_void_TextDocumentEditor_string_SelectionCursor_bool_impl(
-    self: TextDocumentEditor; move: string;
+proc editor_text_selectMove_void_TextDocumentEditor_string_bool_SelectionCursor_bool_impl(
+    self: TextDocumentEditor; move: string; inside: bool = false;
     which: SelectionCursor = SelectionCursor.Config; all: bool = true)  {.importc.}
-proc editor_text_changeMove_void_TextDocumentEditor_string_SelectionCursor_bool_impl(
-    self: TextDocumentEditor; move: string;
+proc editor_text_copyMove_void_TextDocumentEditor_string_bool_SelectionCursor_bool_impl(
+    self: TextDocumentEditor; move: string; inside: bool = false;
+    which: SelectionCursor = SelectionCursor.Config; all: bool = true)  {.importc.}
+proc editor_text_changeMove_void_TextDocumentEditor_string_bool_SelectionCursor_bool_impl(
+    self: TextDocumentEditor; move: string; inside: bool = false;
     which: SelectionCursor = SelectionCursor.Config; all: bool = true)  {.importc.}
 proc editor_text_moveLast_void_TextDocumentEditor_string_SelectionCursor_bool_int_impl(
     self: TextDocumentEditor; move: string;

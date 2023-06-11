@@ -12,52 +12,59 @@ proc loadNormalBindings*() =
   setOption "editor.text.cursor.movement.", "both"
   setOption "editor.text.cursor.wide.", false
 
-  addCommand "editor.text", "<LEFT>", "move-cursor-column", -1
-  addCommand "editor.text", "<RIGHT>", "move-cursor-column", 1
-  addCommand "editor.text", "<C-d>", "delete-move", "line-next"
-  addCommand "editor.text", "<C-LEFT>", "move-last", "word-line-back"
-  addCommand "editor.text", "<C-RIGHT>", "move-last", "word-line"
-  addCommand "editor.text", "<HOME>", "move-first", "line"
-  addCommand "editor.text", "<END>", "move-last", "line"
-  addCommand "editor.text", "<C-UP>", "scroll-text", 20
-  addCommand "editor.text", "<C-DOWN>", "scroll-text", -20
-  addCommand "editor.text", "<CS-LEFT>", "move-last", "word-line-back", "last"
-  addCommand "editor.text", "<CS-RIGHT>", "move-last", "word-line", "last"
-  addCommand "editor.text", "<UP>", "move-cursor-line", -1
-  addCommand "editor.text", "<DOWN>", "move-cursor-line", 1
-  addCommand "editor.text", "<C-HOME>", "move-first", "file"
-  addCommand "editor.text", "<C-END>", "move-last", "file"
-  addCommand "editor.text", "<CS-HOME>", "move-first", "file", "last"
-  addCommand "editor.text", "<CS-END>", "move-last", "file", "last"
-  addCommand "editor.text", "<S-LEFT>", "move-cursor-column", -1, "last"
-  addCommand "editor.text", "<S-RIGHT>", "move-cursor-column", 1, "last"
-  addCommand "editor.text", "<S-UP>", "move-cursor-line", -1, "last"
-  addCommand "editor.text", "<S-DOWN>", "move-cursor-line", 1, "last"
-  addCommand "editor.text", "<S-HOME>", "move-first", "line", "last"
-  addCommand "editor.text", "<S-END>", "move-last", "line", "last"
-  addCommand "editor.text", "<CA-d>", "duplicate-last-selection"
-  addCommand "editor.text", "<CA-UP>", "add-cursor-above"
-  addCommand "editor.text", "<CA-DOWN>", "add-cursor-below"
-  addCommand "editor.text", "<BACKSPACE>", "delete-left"
-  addCommand "editor.text", "<C-BACKSPACE>", "delete-move", "word-line-back"
-  addCommand "editor.text", "<DELETE>", "delete-right"
-  addCommand "editor.text", "<C-DELETE>", "delete-move", "word-line"
-  addCommand "editor.text", "<ENTER>", "insert-text", "\n"
-  addCommand "editor.text", "<SPACE>", "insert-text", " "
-  addCommand "editor.text", "<C-l>", "select-line-current"
-  addCommand "editor.text", "<A-UP>", "select-parent-current-ts"
-  addCommand "editor.text", "<C-r>", "select-prev"
-  addCommand "editor.text", "<C-m>", "select-next"
-  addCommand "editor.text", "<C-t>", "select-next"
-  addCommand "editor.text", "<C-n>", "invert-selection"
-  addCommand "editor.text", "<C-y>", "undo"
-  addCommand "editor.text", "<C-z>", "redo"
-  addCommand "editor.text", "<C-c>", "copy"
-  addCommand "editor.text", "<C-v>", "paste"
-  addCommand "editor.text", "\\>", "indent"
-  addCommand "editor.text", "\\<", "unindent"
-  addCommand "editor.text", "<C-k><C-c>", "toggle-line-comment"
-  addCommand "editor.text", "<C-i>", "center-cursor"
+  addTextCommand "", "<LEFT>", "move-cursor-column", -1
+  addTextCommand "", "<RIGHT>", "move-cursor-column", 1
+  addTextCommand "", "<C-d>", "delete-move", "line-next"
+  addTextCommand "", "<C-LEFT>", "move-last", "word-line-back"
+  addTextCommand "", "<C-RIGHT>", "move-last", "word-line"
+  addTextCommand "", "<HOME>", "move-first", "line"
+  addTextCommand "", "<END>", "move-last", "line"
+  addTextCommand "", "<C-UP>", "scroll-text", 20
+  addTextCommand "", "<C-DOWN>", "scroll-text", -20
+  addTextCommand "", "<CS-LEFT>", "move-last", "word-line-back", "last"
+  addTextCommand "", "<CS-RIGHT>", "move-last", "word-line", "last"
+  addTextCommand "", "<UP>", "move-cursor-line", -1
+  addTextCommand "", "<DOWN>", "move-cursor-line", 1
+  addTextCommand "", "<C-HOME>", "move-first", "file"
+  addTextCommand "", "<C-END>", "move-last", "file"
+  addTextCommand "", "<CS-HOME>", "move-first", "file", "last"
+  addTextCommand "", "<CS-END>", "move-last", "file", "last"
+  addTextCommand "", "<S-LEFT>", "move-cursor-column", -1, "last"
+  addTextCommand "", "<S-RIGHT>", "move-cursor-column", 1, "last"
+  addTextCommand "", "<S-UP>", "move-cursor-line", -1, "last"
+  addTextCommand "", "<S-DOWN>", "move-cursor-line", 1, "last"
+  addTextCommand "", "<S-HOME>", "move-first", "line", "last"
+  addTextCommand "", "<S-END>", "move-last", "line", "last"
+  addTextCommand "", "<CA-d>", "duplicate-last-selection"
+  addTextCommand "", "<CA-UP>", "add-cursor-above"
+  addTextCommand "", "<CA-DOWN>", "add-cursor-below"
+  addTextCommand "", "<BACKSPACE>", "delete-left"
+  addTextCommand "", "<C-BACKSPACE>", "delete-move", "word-line-back"
+  addTextCommand "", "<DELETE>", "delete-right"
+  addTextCommand "", "<C-DELETE>", "delete-move", "word-line"
+  addTextCommand "", "<ENTER>", "insert-text", "\n"
+  addTextCommand "", "<SPACE>", "insert-text", " "
+  addTextCommand "", "<C-l>", "select-line-current"
+  addTextCommand "", "<A-UP>", "select-parent-current-ts"
+  addTextCommand "", "<C-r>", "select-prev"
+  addTextCommand "", "<C-m>", "select-next"
+  addTextCommand "", "<C-t>", "select-next"
+  addTextCommand "", "<C-n>", "invert-selection"
+  addTextCommand "", "<C-y>", "undo"
+  addTextCommand "", "<C-z>", "redo"
+  addTextCommand "", "<C-c>", "copy"
+  addTextCommand "", "<C-v>", "paste"
+  addTextCommand "", "\\>", "indent"
+  addTextCommand "", "\\<", "unindent"
+  addTextCommand "", "<C-k><C-c>", "toggle-line-comment"
+  addTextCommand "", "<C-i>", "center-cursor"
+
+  addTextCommand "", "<C-e>", "addNextFindResultToSelection"
+  addTextCommand "", "<C-E>", "addPrevFindResultToSelection"
+  addTextCommand "", "<A-e>", "setAllFindResultToSelection"
+
+  addTextCommand "", "<C-l>", "select-line-current"
+  addTextCommand "", "miw", "select-inside-current"
 
   addTextCommandBlock "", "<C-f>":
     commandLine("set-search-query \\")
@@ -81,3 +88,9 @@ proc loadNormalBindings*() =
   addCommand "editor.text.completion", "<UP>", "select-prev-completion"
   addCommand "editor.text.completion", "<DOWN>", "select-next-completion"
   addCommand "editor.text.completion", "<TAB>", "apply-selected-completion"
+
+
+  # lsp
+  addTextCommand "", "gd", "goto-definition"
+  addTextCommand "", "gs", "goto-symbol"
+  addTextCommand "", "<C-SPACE>", "get-completions"
