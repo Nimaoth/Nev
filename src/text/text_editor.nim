@@ -522,11 +522,6 @@ proc insertText*(self: TextDocumentEditor, text: string) {.expose("editor.text")
   if not self.disableCompletions and (text == "." or text == "," or text == " "):
     self.showCompletionWindow()
     asyncCheck self.getCompletionsAsync()
-  elif self.showCompletions and self.updateCompletionsTask.isNotNil:
-    self.updateCompletionsTask.reschedule()
-
-  if self.showCompletions:
-    self.refilterCompletions()
 
 proc indent*(self: TextDocumentEditor) {.expose("editor.text").} =
   var linesToIndent = initHashSet[int]()
@@ -1163,7 +1158,7 @@ proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.} =
 
 proc showCompletionWindow(self: TextDocumentEditor) =
   if self.updateCompletionsTask.isNil:
-    self.updateCompletionsTask = startDelayed(500, repeat=false):
+    self.updateCompletionsTask = startDelayed(200, repeat=false):
       asyncCheck self.getCompletionsAsync()
 
   if not self.updateCompletionsTask.isActive:
@@ -1319,6 +1314,13 @@ method injectDependencies*(self: TextDocumentEditor, app: AppInterface) =
 proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
   self.clampSelection()
   self.updateSearchResults()
+
+  if self.showCompletions and self.updateCompletionsTask.isNotNil:
+    self.updateCompletionsTask.reschedule()
+
+  if self.showCompletions:
+    self.refilterCompletions()
+
   self.markDirty()
 
 proc handleTextDocumentLoaded(self: TextDocumentEditor) =
