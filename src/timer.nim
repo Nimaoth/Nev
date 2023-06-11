@@ -27,9 +27,9 @@ when defined(js):
 else:
   when defined(nimscript):
     proc myGetTime*(): int32 = discard
-    proc myGetTicks(): Ticks = discard
-    proc mySubtractTicks(a, b: Ticks): Nanos = discard
-    proc `-`*(a, b: Ticks): Nanos = mySubtractTicks(a, b)
+    proc myGetTicks(): int64 = discard
+    proc mySubtractTicks(a: int64, b: int64): int64 = discard
+    proc `-`*(a, b: Ticks): Nanos = mySubtractTicks(a.int64, b.int64).Nanos
 
     type NanosecondRange* = range[0..999_999_999]
     type Time* = object ## Represents a point in time.
@@ -42,11 +42,13 @@ else:
 
   else:
     import std/times
+    export Ticks, Nanos
     proc myGetTime*(): int32 = getTime().toUnix.int32
-    proc myGetTicks(): Ticks = getTicks()
+    proc myGetTicks*(): int64 = getTicks().int64
+    proc mySubtractTicks*(a: int64, b: int64): int64 = a.Ticks - b.Ticks
 
   type Timer* = object
     start: Ticks
 
-  proc elapsed*(timer: Timer): Seconds = ((myGetTicks() - timer.start).float64 / 1_000_000_000).Seconds
-  proc startTimer*(): Timer = Timer(start: myGetTicks())
+  proc elapsed*(timer: Timer): Seconds = ((myGetTicks().Ticks - timer.start).float64 / 1_000_000_000).Seconds
+  proc startTimer*(): Timer = Timer(start: myGetTicks().Ticks)

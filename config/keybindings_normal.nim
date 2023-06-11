@@ -1,4 +1,13 @@
-import absytree_runtime
+import absytree_runtime, event, id
+
+proc setModeChangedHandler*(handler: proc(editor: TextDocumentEditor, oldMode: string, newMode: string)) =
+  let modeChangedHandler = getOption("editor.text.mode-changed-handler", "")
+  if modeChangedHandler != "":
+    onEditorModeChanged.unsubscribe(parseId(modeChangedHandler))
+  let id = onEditorModeChanged.subscribe proc(arg: auto) =
+    if arg.editor.isTextEditor(editor) and not editor.isRunningSavedCommands:
+      handler(editor, arg.oldMode, arg.newMode)
+  setOption("editor.text.mode-changed-handler", $id)
 
 proc loadNormalBindings*() =
   info "Applying normal keybindings"

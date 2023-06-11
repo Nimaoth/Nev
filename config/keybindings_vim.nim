@@ -1,7 +1,12 @@
-import absytree_runtime, keybindings_normal, event
+import absytree_runtime, keybindings_normal
+import timer
 
 proc loadVimBindings*() =
   loadNormalBindings()
+
+  let t = startTimer()
+  defer:
+    infof"loadVimBindings: {t.elapsed.ms} ms"
 
   info "Applying Vim keybindings"
 
@@ -10,12 +15,11 @@ proc loadVimBindings*() =
   #   if id.isTextEditor(editor):
   #     editor.setMode("")
 
-  discard onEditorModeChanged.subscribe proc(arg: auto) =
-    if arg.editor.isTextEditor(editor) and not editor.isRunningSavedCommands:
-      if arg.oldMode == "" and arg.newMode != "":
-        editor.clearCurrentCommandHistory(retainLast=true)
-      elif arg.oldMode != "" and arg.newMode == "":
-        editor.saveCurrentCommandHistory()
+  setModeChangedHandler proc(editor, oldMode, newMode: auto) =
+    if oldMode == "" and newMode != "":
+      editor.clearCurrentCommandHistory(retainLast=true)
+    elif oldMode != "" and newMode == "":
+      editor.saveCurrentCommandHistory()
 
   # Normal mode
   setHandleInputs "editor.text", false

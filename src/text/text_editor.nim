@@ -4,7 +4,7 @@ from scripting_api as api import nil
 import document, document_editor, events, id, util, vmath, bumpy, rect_utils, event, input, ../regex, custom_logger, custom_async, custom_treesitter, indent, fuzzy_matching
 import scripting/[expose]
 import platform/[platform, filesystem, widgets]
-import language/[languages, language_server_base]
+import language/[language_server_base]
 import workspaces/[workspace]
 import text_document
 import config_provider, app_interface

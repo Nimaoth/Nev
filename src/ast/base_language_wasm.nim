@@ -1,7 +1,7 @@
 
 import std/[options, tables]
-import id, types, base_language, ast_ids
-import scripting/[wasm, wasm_builder]
+import id, types, ast_ids
+import scripting/[wasm_builder]
 import custom_logger
 
 type
