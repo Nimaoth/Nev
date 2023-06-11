@@ -861,6 +861,10 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
       if result.last.line + 1 < self.document.lines.len:
         result.last = (result.last.line + 1, 0)
 
+  of "line-no-indent":
+    let indent = self.document.getIndentForLine(cursor.line)
+    result = ((cursor.line, indent), (cursor.line, self.document.getLine(cursor.line).len))
+
   of "file":
     result.first = (0, 0)
     let line = self.document.lines.len - 1
