@@ -234,15 +234,20 @@ when defined(js):
     result.addFunction "fd_close", proc(fd: int32) =
       echo "[WASI] fd_close"
 
-    result.addFunction "fd_seek", proc(fd: int32, offset: int32, whence: int64, ret: pointer): int32 =
+    result.addFunction "fd_seek", proc(fd: int32, offset: int32, whence: int64, ret: WasmPtr): int32 =
       debugf"[WASI] fd_seek {fd}, {offset}, {whence}"
       return 70
 
-    result.addFunction "fd_write", proc(fd: int32, iovs: pointer, len: int64, ret: pointer): int32 =
+    result.addFunction "clock_time_get", proc(clk_id: int32, ignored_precision: int64, ptime: WasmPtr): int32 =
+      let memory = context["memory"]
+      proc js_clock_time_get(memory: JsObject, clk_id: int32, ignored_precision: int64, ptime: WasmPtr): int32 {.importc.}
+      return js_clock_time_get(context, clk_id, ignored_precision, ptime)
+
+    result.addFunction "fd_write", proc(fd: int32, iovs: WasmPtr, len: int64, ret: WasmPtr): int32 =
       let memory = context["memory"]
       # debugf"[WASI] fd_write {fd}, {len}"
 
-      proc js_fd_write(memory: JsObject, fd: int32, iovs: pointer, len: int64, ret: pointer): int32 {.importc.}
+      proc js_fd_write(memory: JsObject, fd: int32, iovs: WasmPtr, len: int64, ret: WasmPtr): int32 {.importc.}
 
       if not memory.isUndefined:
         return js_fd_write(context, fd, iovs, len, ret)

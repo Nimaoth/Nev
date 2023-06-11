@@ -1,6 +1,6 @@
 import std/[strformat, tables, macros, json, strutils, sugar, sequtils]
 
-import absytree_api
+import absytree_api, event
 export absytree_api, strformat, tables, json, strutils, sugar, sequtils, scripting_api
 
 type AnyDocumentEditor = TextDocumentEditor | AstDocumentEditor
@@ -8,6 +8,7 @@ type AnyDocumentEditor = TextDocumentEditor | AstDocumentEditor
 var lambdaActions = initTable[string, proc(): void]()
 var voidCallbacks = initTable[int, proc(args: JsonNode): void]()
 var boolCallbacks = initTable[int, proc(args: JsonNode): bool]()
+var onEditorModeChanged*: Event[tuple[editor: EditorId, oldMode: string, newMode: string]]
 var callbackId = 0
 
 proc info*(args: varargs[string, `$`]) =
@@ -73,6 +74,9 @@ proc handleCallbackImpl*(id: int, args: JsonNode): bool =
   elif boolCallbacks.contains(id):
     return boolCallbacks[id](args)
   return false
+
+proc handleEditorModeChanged*(editor: EditorId, oldMode: string, newMode: string) =
+  onEditorModeChanged.invoke (editor, oldMode, newMode)
 
 proc runAction*(id: EditorId, action: string, arg: string = "") =
   scriptRunActionFor(id, action, arg)

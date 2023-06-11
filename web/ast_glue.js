@@ -261,3 +261,34 @@ function js_fd_write(context, fd, iov, iovcnt, pnum) {
     context.HEAPU32[((pnum)>>2)] = num;
     return 0;
 }
+
+var _emscripten_get_now = () => performance.now();
+
+var nowIsMonotonic = true;;
+
+function checkWasiClock(clock_id) {
+    return clock_id == 0 ||
+            clock_id == 1 ||
+            clock_id == 2 ||
+            clock_id == 3;
+}
+
+function js_clock_time_get(context, clk_id, ignored_precision, ptime) {
+    if (!checkWasiClock(clk_id)) {
+        return 28;
+    }
+    var now;
+    // all wasi clocks but realtime are monotonic
+    if (clk_id === 0) {
+        now = Date.now();
+    } else if (nowIsMonotonic) {
+        now = _emscripten_get_now();
+    } else {
+        return 52;
+    }
+    // "now" is in ms, and wasi times are in ns.
+    var nsec = Math.round(now * 1000 * 1000);
+    context.HEAP32[((ptime)>>2)] = nsec >>> 0;
+    context.HEAP32[(((ptime)+(4))>>2)] = (nsec / Math.pow(2, 32)) >>> 0;
+    return 0;
+}

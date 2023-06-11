@@ -32,6 +32,9 @@ when defined(wasm):
   proc handleUnknownDocumentEditorActionWasm(id: int32, action: cstring, args: cstring): bool {.wasmexport.} =
     return handleEditorAction(id.EditorId, $action, ($args).parseJson)
 
+  proc handleEditorModeChangedWasm(id: int32, oldMode: cstring, newMode: cstring) {.wasmexport.} =
+    handleEditorModeChanged(id.EditorId, $oldMode, $newMode)
+
   proc handleUnknownPopupActionWasm(id: int32, action: cstring, args: cstring): bool {.wasmexport.} =
     return handleUnknownPopupAction(id.EditorId, $action, ($args).parseJson)
 
