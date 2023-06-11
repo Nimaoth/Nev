@@ -156,6 +156,13 @@ func contentString*(self: TextDocument, selection: Selection): string =
   result.add "\n"
   result.add self.lines[last.line][0..<last.column]
 
+func charAt*(self: TextDocument, cursor: Cursor): char =
+  if cursor.line < 0 or cursor.line > self.lines.high:
+    return 0.char
+  if cursor.column < 0 or cursor.column > self.lines[cursor.line].high:
+    return 0.char
+  return self.lines[cursor.line][cursor.column]
+
 func len*(line: StyledLine): int =
   result = 0
   for p in line.parts:

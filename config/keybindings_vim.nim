@@ -40,8 +40,14 @@ proc loadVimBindings*() =
 
   # mode switches
   addTextCommand "", "i", "set-mode", "insert"
+  addTextCommandBlock "", "I":
+    editor.moveFirst("line-no-indent")
+    editor.setMode("insert")
   addTextCommandBlock "", "a":
     editor.selections = editor.selections.mapIt(it.last.move(columns=1).toSelection)
+    editor.setMode("insert")
+  addTextCommandBlock "", "A":
+    editor.moveLast("line")
     editor.setMode("insert")
 
   addTextCommand "", "v", "set-mode", "visual"
@@ -119,6 +125,9 @@ proc loadVimBindings*() =
   addTextCommandBlock "", "O":
     editor.moveCursorEnd()
     editor.insertText("\n")
+  addTextCommandBlock "", "<C-e>":
+    editor.setMode("")
+    editor.selection = editor.selection.last.toSelection
   addTextCommandBlock "", "<ESCAPE>":
     editor.setMode("")
     editor.selection = editor.selection.last.toSelection
