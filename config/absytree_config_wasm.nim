@@ -155,6 +155,12 @@ of Browser:
   setOption "model.scroll-speed", 50
   addCommand "editor", "<C-r>", "do-nothing"
 
+loadTheme "synthwave-color-theme"
+# loadTheme "tokyo-night-storm-color-theme"
+
+addCommand "editor", "<S-SPACE><*-T>1", "load-theme", "synthwave-color-theme"
+addCommand "editor", "<S-SPACE><*-T>2", "load-theme", "tokyo-night-storm-color-theme"
+
 addCommand "editor", "<S-SPACE><*-a>i", "toggle-flag", "ast.inline-blocks"
 addCommand "editor", "<S-SPACE><*-a>d", "toggle-flag", "ast.vertical-division"
 
