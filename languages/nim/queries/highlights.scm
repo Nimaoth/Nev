@@ -1,5 +1,5 @@
 ((ident) @support.type.nim
- (#match? @support.type.nim "[A-Z].*"))
+ (#match? @support.type.nim "^[A-Z].*$"))
 (typeDesc (primary (symbol (ident) @storage.type)))
 ((ident) @storage.type
  (#match? @storage.type "^(int|int8|int16|int32|int64|uint|uint8|uint16|uint32|uint64|float|float32|float64|bool|string|char)$"))

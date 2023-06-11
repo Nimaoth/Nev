@@ -58,9 +58,6 @@ proc requestRender(redrawEverything = false) =
 
 proc runApp(): Future[void] {.async.} =
   var ed = await newEditor(Backend.Browser, rend)
-  const themeString = staticRead("../themes/tokyo-night-storm-color-theme.json")
-  if theme.loadFromString(themeString).getSome(theme):
-    ed.theme = theme
 
   discard rend.onKeyPress.subscribe proc(event: auto): void = requestRender()
   discard rend.onKeyRelease.subscribe proc(event: auto): void = requestRender()

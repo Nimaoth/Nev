@@ -459,8 +459,11 @@ method changed*(self: ThemeSelectorItem, other: SelectorItem): bool =
   return self.name != other.name or self.path != other.path
 
 proc setTheme*(self: App, path: string) =
-  if loadFromFile(path).getSome(theme):
+  logger.log(lvlInfo, fmt"Loading theme {path}")
+  if theme.loadFromFile(path).getSome(theme):
     self.theme = theme
+  else:
+    logger.log(lvlError, fmt"[ed] Failed to load theme {path}")
   self.platform.requestRender()
 
 when not defined(js):
@@ -526,10 +529,6 @@ proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.}
   self.workspace.new()
 
   self.theme = defaultTheme()
-  self.setTheme("./themes/tokyo-night-color-theme.json")
-
-  # self.createView(newAstDocument("a.ast"))
-  # self.createView(newKeybindAutocompletion())
   self.currentView = 0
 
   self.getEventHandlerConfig("editor").addCommand "<C-x><C-x>", "quit"
@@ -564,8 +563,16 @@ proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.}
   try:
     state = fs.loadApplicationFile("./config/config.json").parseJson.jsonTo(EditorState, JOptions(allowMissingKeys: true, allowExtraKeys: true))
     logger.log(lvlInfo, fmt"Restoring state {state}")
-    self.setTheme(state.theme)
-    self.setLayout(state.layout)
+
+    if not state.theme.isEmptyOrWhitespace:
+      try:
+        self.setTheme(state.theme)
+      except CatchableError:
+        logger.log(lvlError, fmt"Failed to load theme: {getCurrentExceptionMsg()}")
+
+    if not state.layout.isEmptyOrWhitespace:
+      self.setLayout(state.layout)
+
     self.loadedFontSize = state.fontSize.float
     self.platform.fontSize = state.fontSize.float
     if state.fontRegular.len > 0: self.fontRegular = state.fontRegular
@@ -1021,12 +1028,7 @@ proc createSelectorPopup*(self: App): Popup =
   return newSelectorPopup(self.asAppInterface)
 
 proc loadTheme*(self: App, name: string) {.expose("editor").} =
-  defer:
-    self.platform.requestRender()
-  if theme.loadFromFile(fmt"./themes/{name}.json").getSome(theme):
-    self.theme = theme
-  else:
-    logger.log(lvlError, fmt"[ed] Failed to load theme {name}")
+  self.setTheme(fmt"themes/{name}.json")
 
 proc chooseTheme*(self: App) {.expose("editor").} =
   defer:

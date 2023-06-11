@@ -158,7 +158,7 @@ proc jsonToTheme*(json: JsonNode, opt = Joptions()): Theme =
           result.tokenColors[scope].fontStyle = settings["fontStyle"].jsonTo set[FontStyle]
 
 
-proc loadFromString*(input: string, path = "string"): Option[Theme] =
+proc loadFromString*(input: string, path: string = "string"): Option[Theme] =
   try:
     let json = input.parseJson
     var newTheme = json.jsonToTheme
@@ -170,14 +170,13 @@ proc loadFromString*(input: string, path = "string"): Option[Theme] =
     return Theme.none
 
 proc loadFromFile*(path: string): Option[Theme] =
-  when not defined(js):
-    try:
-      let jsonText = fs.loadFile(path)
-      return loadFromString(jsonText, path)
-    except CatchableError:
-      debugf"Failed to load theme from {path}: {getCurrentExceptionMsg()}"
-      debugf"{getCurrentException().getStackTrace()}"
-      return Theme.none
+  try:
+    let jsonText = fs.loadApplicationFile(path)
+    return loadFromString(jsonText, path)
+  except CatchableError:
+    debugf"Failed to load theme from {path}: {getCurrentExceptionMsg()}"
+    debugf"{getCurrentException().getStackTrace()}"
+    return Theme.none
 
 
 # let theme = loadFromFile("themes/Monokai Pro.json")
