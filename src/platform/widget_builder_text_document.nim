@@ -274,7 +274,7 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
   let cursorWidth = if isWide: 1.0 else: 0.2
 
   let selectionColor = app.theme.color("selection.background", rgb(200, 200, 200))
-  let highlightColor = app.theme.color(@["editor.rangeHighlightBackground"], rgb(200, 200, 200))
+  let highlightColor = app.theme.color(@["editor.findMatchBackground", "editor.rangeHighlightBackground"], rgb(200, 200, 200))
   let cursorForegroundColor = app.theme.color(@["editorCursor.foreground", "foreground"], rgb(200, 200, 200))
   let cursorBackgroundColor = app.theme.color(@["editorCursor.background", "background"], rgb(50, 50, 50))
 
