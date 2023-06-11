@@ -1,7 +1,7 @@
-import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, tables, deques, sets]
+import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, tables, deques, sets, algorithm]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
-import document, document_editor, events, id, util, vmath, bumpy, rect_utils, event, input, ../regex, custom_logger, custom_async, custom_treesitter, indent
+import document, document_editor, events, id, util, vmath, bumpy, rect_utils, event, input, ../regex, custom_logger, custom_async, custom_treesitter, indent, fuzzy_matching
 import scripting/[expose]
 import platform/[platform, filesystem, widgets]
 import language/[languages, language_server_base]
@@ -73,6 +73,7 @@ proc handleAction(self: TextDocumentEditor, action: string, arg: string): EventR
 proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): EventResponse
 proc handleInput(self: TextDocumentEditor, input: string): EventResponse
 proc showCompletionWindow(self: TextDocumentEditor)
+proc refilterCompletions(self: TextDocumentEditor)
 
 proc lineLength*(self: TextDocumentEditor, line: int): int =
   if line < self.document.lines.len:
@@ -518,11 +519,14 @@ proc insertText*(self: TextDocumentEditor, text: string) {.expose("editor.text")
 
   self.updateTargetColumn(Last)
 
-  if not self.disableCompletions and (text == "." or text == ","):
+  if not self.disableCompletions and (text == "." or text == "," or text == " "):
     self.showCompletionWindow()
     asyncCheck self.getCompletionsAsync()
   elif self.showCompletions and self.updateCompletionsTask.isNotNil:
     self.updateCompletionsTask.reschedule()
+
+  if self.showCompletions:
+    self.refilterCompletions()
 
 proc indent*(self: TextDocumentEditor) {.expose("editor.text").} =
   var linesToIndent = initHashSet[int]()
@@ -1052,6 +1056,19 @@ proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
         self.selection = d.location.toSelection
         self.scrollToCursor()
 
+proc getCompletionSelectionAt(self: TextDocumentEditor, cursor: Cursor): Selection =
+  let line = self.document.getLine cursor.line
+
+  var column = cursor.column
+  while column > 0:
+    case line[column - 1]
+    of ' ', '\t', '.', ',', '(', ')', '[', ']', '{', '}', ':', ';':
+      break
+    else:
+      column -= 1
+
+  return ((cursor.line, column), cursor)
+
 proc getCompletionsFromContent(self: TextDocumentEditor): seq[TextCompletion] =
   var s = initHashSet[string]()
   for li, line in self.lastRenderedLines:
@@ -1070,6 +1087,58 @@ proc getCompletionsFromContent(self: TextDocumentEditor): seq[TextCompletion] =
   for text in s.items:
     result.add(TextCompletion(name: text, scope: "document"))
 
+proc splitIdentifier(str: string): seq[string] =
+  var buffer = ""
+  for i, c in str:
+    if c == '_':
+      if buffer.len > 0:
+        result.add buffer.toLowerAscii
+        buffer.setLen 0
+      continue
+
+    if c.isUpperAscii:
+      if buffer.len > 0:
+        result.add buffer.toLowerAscii
+        buffer.setLen 0
+
+    buffer.add c
+
+  if buffer.len > 0:
+    result.add buffer
+
+proc refilterCompletions(self: TextDocumentEditor) =
+  var matches: seq[(TextCompletion, float)]
+  var noMatches: seq[(TextCompletion, float)]
+
+  let selection = self.getCompletionSelectionAt(self.selection.last)
+  let currentText = self.document.contentString(selection)
+
+  if currentText.len == 0:
+    self.completions.sort((a, b) => cmp(a.name, b.name), Ascending)
+    return
+
+  let parts = currentText.splitIdentifier
+  assert parts.len > 0
+
+  for c in self.completions:
+    var score = 0.0
+    for i in 0..parts.high:
+      score += matchFuzzySimple(c.name, parts[i])
+
+    if c.name.toLower.startsWith(parts[0]):
+      matches.add (c, score)
+    else:
+      noMatches.add (c, score)
+
+  matches.sort((a, b) => cmp(a[1], b[1]), Descending)
+  noMatches.sort((a, b) => cmp(a[1], b[1]), Descending)
+
+  for i in 0..matches.high:
+    self.completions[i] = matches[i][0]
+  for i in 0..noMatches.high:
+    self.completions[i + matches.len] = noMatches[i][0]
+
+
 proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.} =
   if self.disableCompletions:
     return
@@ -1083,8 +1152,11 @@ proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.} =
 
   if languageServer.getSome(ls):
     self.completions = await ls.getCompletions(self.document.languageId, self.document.filename, self.selection.last)
-  else:
+
+  if self.completions.len == 0:
     self.completions = self.getCompletionsFromContent()
+
+  self.refilterCompletions()
 
   self.selectedCompletion = self.selectedCompletion.clamp(0, self.completions.high)
   self.markDirty()
@@ -1176,16 +1248,10 @@ proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").
   if cursor.column == 0:
     self.selections = self.document.insert([cursor.toSelection], self.selections, [com.name], true, true)
   else:
-    let line = self.document.getLine cursor.line
-    var column = cursor.column
-    while column > 0:
-      case line[column - 1]
-      of ' ', '\t', '.', ',', '(', ')', '[', ']', '{', '}', ':', ';':
-        break
-      else:
-        column -= 1
+    let selection = self.getCompletionSelectionAt(cursor)
+    self.selections = self.document.edit([selection], self.selections, [com.name])
 
-    self.selections = self.document.edit([((cursor.line, column), cursor)], self.selections, [com.name])
+  self.hideCompletions()
 
 genDispatcher("editor.text")
 

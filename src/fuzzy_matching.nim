@@ -41,3 +41,6 @@ proc matchPath*(path: string, pattern: string): float =
 
 proc matchFuzzy*(a: string, b: string): float =
   return fuzzyMatchSmart(a, b)
+
+proc matchFuzzySimple*(a: string, b: string): float =
+  return fuzzyMatch(a, b)

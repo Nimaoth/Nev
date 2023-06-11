@@ -157,7 +157,7 @@ proc parseResponse(line: string): Option[QueryResult] =
   return queryResult.some
 
 proc sendQuery(self: LanguageServerNimSuggest, query: string, location: Cursor): Future[seq[QueryResult]] {.async.} =
-  let saveTempFileFuture = self.requestSave(self.filename, self.tempFilename)
+  let saveTempFileFuture = self.requestSave(self.workspaceFilename, self.tempFilename)
 
   let line = location.line + 1
   let column = location.column
