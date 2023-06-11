@@ -13,6 +13,7 @@ proc clampToLine(selection: Selection, line: int, lineLength: int): tuple[first:
 proc renderTextHighlight(panel: WPanel, app: App, startOffset: float, endOffset: float, line: int, startIndex: int, selection: Selection, selectionClamped: tuple[first: int, last: int], part: StyledText, color: Color, totalLineHeight: float) =
   let startOffset = startOffset.floor
   let endOffset = endOffset.ceil
+
   ## Fills a selection rect in the given color
   var left, right: float
   if startIndex < selectionClamped.last and startIndex + part.text.len > selectionClamped.first and part.text.len > 0:
@@ -24,6 +25,9 @@ proc renderTextHighlight(panel: WPanel, app: App, startOffset: float, endOffset:
   else:
     return
 
+  left = left.floor
+  right = right.ceil
+
   if left == right:
     return
 
@@ -34,6 +38,7 @@ proc renderTextHighlight(panel: WPanel, app: App, startOffset: float, endOffset:
     bottom: totalLineHeight,
     fillBackground: true,
     backgroundColor: color,
+    allowAlpha: true,
     lastHierarchyChange: panel.lastHierarchyChange
   ))
 
@@ -270,7 +275,8 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
 
   let selectionColor = app.theme.color("selection.background", rgb(200, 200, 200))
   let highlightColor = app.theme.color(@["editor.rangeHighlightBackground"], rgb(200, 200, 200))
-  let cursorColor = app.theme.color(@["editorCursor.foreground", "foreground"], rgba(255, 255, 255, 127)) # """
+  let cursorForegroundColor = app.theme.color(@["editorCursor.foreground", "foreground"], rgb(200, 200, 200))
+  let cursorBackgroundColor = app.theme.color(@["editorCursor.background", "background"], rgb(50, 50, 50))
 
   var cursorBounds = rect(vec2(), vec2())
 
@@ -307,29 +313,14 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
       else:
         discard
 
-    var startOffset = if lineNumbers == LineNumbers.None: 0.0 else: lineNumberBounds.x + lineNumberPadding
+    var startOffset = if lineNumbers == LineNumbers.None: 0.0 else: (lineNumberBounds.x + lineNumberPadding).ceil
     var startIndex = 0
     for partIndex, part in styledText.parts:
-      let width = part.text.len.float * charWidth
+      let width = (part.text.len.float * charWidth).ceil
 
       # Draw background if selected
       renderTextHighlight(lineWidget, app, startOffset, startOffset + width, i, startIndex, selectionsNormalizedOnLine, selectionsClampedOnLine, part, selectionColor, totalLineHeight)
       renderTextHighlight(lineWidget, app, startOffset, startOffset + width, i, startIndex, highlightsNormalizedOnLine, highlightsClampedOnLine, part, highlightColor, totalLineHeight)
-
-      # Set last cursor pos if its contained in this part
-      for selection in selectionsPerLine.getOrDefault(i, @[]):
-        if selection.last.line == i and selection.last.column >= startIndex and selection.last.column <= startIndex + part.text.len:
-          let offsetFromPartStart = if part.text.len == 0: 0.0 else: (selection.last.column - startIndex).float32 / (part.text.len.float32) * width
-          lineWidget.add(WPanel(
-            anchor: (vec2(0, 0), vec2(0, 0)),
-            left: startOffset + offsetFromPartStart,
-            right: startOffset + offsetFromPartStart + cursorWidth * charWidth,
-            bottom: totalLineHeight,
-            fillBackground: self.cursorVisible,
-            backgroundColor: cursorColor,
-            lastHierarchyChange: frameIndex
-          ))
-          cursorBounds = rect(startOffset + offsetFromPartStart, top, charWidth * cursorWidth, lineHeight)
 
       let color = if part.scope.len == 0: textColor else: app.theme.tokenColor(part.scope, rgb(255, 200, 200))
       var partWidget = createPartWidget(part.text, startOffset, width, totalLineHeight, color, frameIndex)
@@ -339,10 +330,29 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
       styledText.parts[partIndex].bounds.w = partWidget.right - partWidget.left
       styledText.parts[partIndex].bounds.h = lineWidget.bottom - lineWidget.top
 
+      lineWidget.add(partWidget)
+
+      # Set last cursor pos if its contained in this part
+      for selection in selectionsPerLine.getOrDefault(i, @[]):
+        let indexInPart = selection.last.column - startIndex
+        if selection.last.line == i and indexInPart >= 0 and indexInPart <= part.text.len:
+          let characterUnderCursor = if indexInPart < part.text.len: part.text[indexInPart] else: ' '
+          let offsetFromPartStart = if part.text.len == 0: 0.0 else: indexInPart.float32 / part.text.len.float32 * width
+          lineWidget.add(WText(
+            anchor: (vec2(0, 0), vec2(0, 0)),
+            left: startOffset + offsetFromPartStart,
+            right: startOffset + offsetFromPartStart + cursorWidth * charWidth,
+            bottom: totalLineHeight,
+            fillBackground: self.cursorVisible,
+            backgroundColor: cursorForegroundColor,
+            foregroundColor: cursorBackgroundColor,
+            lastHierarchyChange: frameIndex,
+            text: if self.cursorVisible and isWide: $characterUnderCursor else: ""
+          ))
+          cursorBounds = rect(startOffset + offsetFromPartStart, top, charWidth * cursorWidth, lineHeight)
+
       startOffset += width
       startIndex += part.text.len
-
-      lineWidget.add(partWidget)
 
     self.lastRenderedLines.add styledText
 
