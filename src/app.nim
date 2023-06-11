@@ -159,6 +159,7 @@ proc openWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder): Optio
 proc openFile*(self: App, path: string, app: bool = false): Option[DocumentEditor]
 proc handleUnknownDocumentEditorAction*(self: App, editor: DocumentEditor, action: string, args: JsonNode): EventResponse
 proc handleUnknownPopupAction*(self: App, popup: Popup, action: string, arg: string): EventResponse
+proc handleModeChanged*(self: App, editor: DocumentEditor, oldMode: string, newMode: string)
 proc invokeCallback*(self: App, context: string, args: JsonNode): bool
 proc registerEditor*(self: App, editor: DocumentEditor): void
 proc unregisterEditor*(self: App, editor: DocumentEditor): void
@@ -184,6 +185,7 @@ implTrait AppInterface, App:
   openFile(Option[DocumentEditor], App, string)
   handleUnknownDocumentEditorAction(EventResponse, App, DocumentEditor, string, JsonNode)
   handleUnknownPopupAction(EventResponse, App, Popup, string, string)
+  handleModeChanged(void, App, DocumentEditor, string, string)
   invokeCallback(bool, App, string, JsonNode)
   registerEditor(void, App, DocumentEditor)
   unregisterEditor(void, App, DocumentEditor)
@@ -294,6 +296,14 @@ proc handleUnknownDocumentEditorAction*(self: App, editor: DocumentEditor, actio
     logger.log(lvlError, getCurrentException().getStackTrace())
 
   return Failed
+
+proc handleModeChanged*(self: App, editor: DocumentEditor, oldMode: string, newMode: string) =
+  try:
+    self.scriptContext.handleDocumentEditorModeChanged(editor, oldMode, newMode)
+    self.wasmScriptContext.handleDocumentEditorModeChanged(editor, oldMode, newMode)
+  except CatchableError:
+    logger.log(lvlError, fmt"[ed] Failed to run script handleDocumentEditorModeChanged '{oldMode} -> {newMode}': {getCurrentExceptionMsg()}")
+    logger.log(lvlError, getCurrentException().getStackTrace())
 
 proc handleAction(self: App, action: string, arg: string): bool
 proc getFlag*(self: App, flag: string, default: bool = false): bool
@@ -556,6 +566,7 @@ proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.}
 
   self.commandLineTextEditor = newTextEditor(newTextDocument(self.asConfigProvider), self.asAppInterface, self.asConfigProvider)
   self.commandLineTextEditor.renderHeader = false
+  self.commandLineTextEditor.TextDocumentEditor.disableScrolling = true
   self.commandLineTextEditor.TextDocumentEditor.lineNumbers = api.LineNumbers.None.some
   self.getCommandLineTextEditor.hideCursorWhenInactive = true
 

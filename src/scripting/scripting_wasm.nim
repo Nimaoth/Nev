@@ -15,6 +15,7 @@ type ScriptContextWasm* = ref object of ScriptContext
   unknownPopupActions: seq[tuple[module: WasmModule, callback: proc(popup: int32, action: cstring, arg: cstring): bool]]
   unknownEditorActions: seq[tuple[module: WasmModule, callback: proc(editor: int32, action: cstring, arg: cstring): bool]]
   unknownGlobalActions: seq[tuple[module: WasmModule, callback: proc(action: cstring, arg: cstring): bool]]
+  editorModeChangedCallbacks: seq[tuple[module: WasmModule, callback: proc(editor: int32, oldMode: cstring, newMode: cstring): void]]
   postInitializeCallbacks: seq[tuple[module: WasmModule, callback: proc(): bool]]
   handleCallbackCallbacks: seq[tuple[module: WasmModule, callback: proc(id: int32, args: cstring): bool]]
 
@@ -53,6 +54,9 @@ method init*(self: ScriptContextWasm, path: string): Future[void] {.async.} =
 
         if findFunction(module, "handleGlobalActionWasm", bool, proc(action: cstring, arg: cstring): bool).getSome(f):
           self.unknownGlobalActions.add (module, f)
+
+        if findFunction(module, "handleEditorModeChangedWasm", void, proc(editor: int32, oldMode: cstring, newMode: cstring): void).getSome(f):
+          self.editorModeChangedCallbacks.add (module, f)
 
         if findFunction(module, "postInitializeWasm", bool, proc(): bool).getSome(f):
           self.postInitializeCallbacks.add (module, f)
@@ -94,6 +98,10 @@ method handleGlobalAction*(self: ScriptContextWasm, action: string, arg: JsonNod
   for (m, f) in self.unknownGlobalActions:
     if f(action.cstring, argStr.cstring):
       return true
+
+method handleDocumentEditorModeChanged*(self: ScriptContextWasm, editor: DocumentEditor, oldMode: string, newMode: string) =
+  for (m, f) in self.editorModeChangedCallbacks:
+    f(editor.id.int32, oldMode.cstring, newMode.cstring)
 
 method postInitialize*(self: ScriptContextWasm): bool =
   result = false

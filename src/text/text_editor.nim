@@ -386,6 +386,10 @@ proc setMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} 
   if mode == "completion":
     logger.log(lvlError, fmt"Can't set mode to '{mode}'")
     return
+
+  if self.currentMode == mode:
+    return
+
   if mode.len == 0:
     self.modeEventHandler = nil
   else:
@@ -400,7 +404,11 @@ proc setMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} 
   if self.blinkCursorTask.isNotNil and self.active:
     self.blinkCursorTask.reschedule()
 
+  let oldMode = self.currentMode
   self.currentMode = mode
+
+  self.app.handleModeChanged(self, oldMode, self.currentMode)
+
   self.markDirty()
 
 proc mode*(self: TextDocumentEditor): string {.expose("editor.text").} =
