@@ -38,6 +38,9 @@ proc loadVimBindings*() =
   addTextCommand "", "U", "redo"
   addTextCommand "", "p", "paste"
 
+  addTextCommand "", "\\>", "indent"
+  addTextCommand "", "\\<", "unindent"
+
   # mode switches
   addTextCommand "", "i", "set-mode", "insert"
   addTextCommandBlock "", "I":

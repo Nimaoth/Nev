@@ -54,8 +54,8 @@ proc loadNormalBindings*() =
   addTextCommand "", "<C-z>", "redo"
   addTextCommand "", "<C-c>", "copy"
   addTextCommand "", "<C-v>", "paste"
-  addTextCommand "", "\\>", "indent"
-  addTextCommand "", "\\<", "unindent"
+  addTextCommand "", "<TAB>", "indent"
+  addTextCommand "", "<S-TAB>", "unindent"
   addTextCommand "", "<C-k><C-c>", "toggle-line-comment"
   addTextCommand "", "<C-i>", "center-cursor"
 
