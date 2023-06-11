@@ -160,6 +160,14 @@ proc editor_text_selectNextCompletion_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}
 proc editor_text_applySelectedCompletion_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}
+proc editor_text_isRunningSavedCommands_bool_TextDocumentEditor_impl(
+    self: TextDocumentEditor): bool  {.importc.}
+proc editor_text_runSavedCommands_void_TextDocumentEditor_impl(
+    self: TextDocumentEditor)  {.importc.}
+proc editor_text_clearCurrentCommandHistory_void_TextDocumentEditor_bool_impl(
+    self: TextDocumentEditor; retainLast: bool = false)  {.importc.}
+proc editor_text_saveCurrentCommandHistory_void_TextDocumentEditor_impl(
+    self: TextDocumentEditor)  {.importc.}
 proc popup_selector_accept_void_SelectorPopup_impl(self: SelectorPopup)  {.importc.}
 proc popup_selector_cancel_void_SelectorPopup_impl(self: SelectorPopup)  {.importc.}
 proc popup_selector_prev_void_SelectorPopup_impl(self: SelectorPopup)  {.importc.}

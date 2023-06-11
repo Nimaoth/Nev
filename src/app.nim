@@ -299,10 +299,10 @@ proc handleUnknownDocumentEditorAction*(self: App, editor: DocumentEditor, actio
 
 proc handleModeChanged*(self: App, editor: DocumentEditor, oldMode: string, newMode: string) =
   try:
-    self.scriptContext.handleDocumentEditorModeChanged(editor, oldMode, newMode)
-    self.wasmScriptContext.handleDocumentEditorModeChanged(editor, oldMode, newMode)
+    self.scriptContext.handleEditorModeChanged(editor, oldMode, newMode)
+    self.wasmScriptContext.handleEditorModeChanged(editor, oldMode, newMode)
   except CatchableError:
-    logger.log(lvlError, fmt"[ed] Failed to run script handleDocumentEditorModeChanged '{oldMode} -> {newMode}': {getCurrentExceptionMsg()}")
+    logger.log(lvlError, fmt"[ed] Failed to run script handleDocumentModeChanged '{oldMode} -> {newMode}': {getCurrentExceptionMsg()}")
     logger.log(lvlError, getCurrentException().getStackTrace())
 
 proc handleAction(self: App, action: string, arg: string): bool
@@ -1684,6 +1684,7 @@ when not defined(js):
       proc postInitialize(): bool
       proc handleGlobalAction(action: string, args: JsonNode): bool
       proc handleEditorAction(id: EditorId, action: string, args: JsonNode): bool
+      proc handleEditorModeChanged(id: EditorId, oldMode: string, newMode: string)
       proc handleUnknownPopupAction(id: EditorId, action: string, args: JsonNode): bool
       proc handleCallback(id: int, args: JsonNode): bool
 

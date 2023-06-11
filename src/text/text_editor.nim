@@ -12,6 +12,14 @@ import delayed_task
 
 export text_document, document_editor, id
 
+type
+  Command = object
+    isInput: bool
+    command: string
+    args: JsonNode
+  CommandHistory = object
+    commands: seq[Command]
+
 type TextDocumentEditor* = ref object of DocumentEditor
   app*: AppInterface
   platform*: Platform
@@ -39,6 +47,9 @@ type TextDocumentEditor* = ref object of DocumentEditor
   currentMode*: string
   commandCount*: int
   commandCountRestore*: int
+  currentCommandHistory: CommandHistory
+  savedCommandHistory: CommandHistory
+  bIsRunningSavedCommands: bool
 
   disableScrolling*: bool
   scrollOffset*: float
@@ -1154,6 +1165,8 @@ proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = await self.document.getLanguageServer()
 
   if languageServer.getSome(ls):
+    if self.completions.len == 0:
+      self.completions = self.getCompletionsFromContent()
     self.completions = await ls.getCompletions(self.document.languageId, self.document.filename, self.selection.last)
 
   if self.completions.len == 0:
@@ -1256,6 +1269,40 @@ proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").
 
   self.hideCompletions()
 
+proc isRunningSavedCommands*(self: TextDocumentEditor): bool {.expose("editor.text").} = self.bIsRunningSavedCommands
+
+proc runSavedCommands*(self: TextDocumentEditor) {.expose("editor.text").} =
+  if self.bIsRunningSavedCommands:
+    return
+  self.bIsRunningSavedCommands = true
+  defer:
+    self.bIsRunningSavedCommands = false
+
+  var commandHistory = self.savedCommandHistory
+  for command in commandHistory.commands.mitems:
+
+    if not command.isInput and command.command == "run-saved-commands" or command.command == "runSavedCommands":
+      continue
+
+    if command.isInput:
+      discard self.handleInput(command.command)
+    else:
+      discard self.handleActionInternal(command.command, command.args)
+
+  self.savedCommandHistory = commandHistory
+
+proc clearCurrentCommandHistory*(self: TextDocumentEditor, retainLast: bool = false) {.expose("editor.text").} =
+  if retainLast and self.currentCommandHistory.commands.len > 0:
+    let last = self.currentCommandHistory.commands[self.currentCommandHistory.commands.high]
+    self.currentCommandHistory.commands.setLen 0
+    self.currentCommandHistory.commands.add last
+  else:
+    self.currentCommandHistory.commands.setLen 0
+
+proc saveCurrentCommandHistory*(self: TextDocumentEditor) {.expose("editor.text").} =
+  self.savedCommandHistory = self.currentCommandHistory
+  self.currentCommandHistory.commands.setLen 0
+
 genDispatcher("editor.text")
 
 proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): EventResponse =
@@ -1270,6 +1317,7 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
     self.commandCountRestore = 0
     return Handled
 
+  var args = args.copy
   args.elems.insert api.TextDocumentEditor(id: self.id).toJson, 0
   if dispatch(action, args).isSome:
     dec self.commandCount
@@ -1289,12 +1337,19 @@ proc handleAction(self: TextDocumentEditor, action: string, arg: string): EventR
   try:
     for a in newStringStream(arg).parseJsonFragments():
       args.add a
+
+    if not self.isRunningSavedCommands:
+      self.currentCommandHistory.commands.add Command(command: action, args: args)
+
     return self.handleActionInternal(action, args)
   except CatchableError:
     logger.log(lvlError, fmt"[editor.text] handleAction: {action}, Failed to parse args: '{arg}'")
     return Failed
 
 proc handleInput(self: TextDocumentEditor, input: string): EventResponse =
+  if not self.isRunningSavedCommands:
+    self.currentCommandHistory.commands.add Command(isInput: true, command: input)
+
   # echo "handleInput '", input, "'"
   if self.app.invokeCallback(self.getContextWithMode("editor.text.input-handler"), input.newJString):
     return Handled

@@ -227,3 +227,13 @@ proc selectNextCompletion*(self: TextDocumentEditor) =
   editor_text_selectNextCompletion_void_TextDocumentEditor_impl(self)
 proc applySelectedCompletion*(self: TextDocumentEditor) =
   editor_text_applySelectedCompletion_void_TextDocumentEditor_impl(self)
+proc isRunningSavedCommands*(self: TextDocumentEditor): bool =
+  editor_text_isRunningSavedCommands_bool_TextDocumentEditor_impl(self)
+proc runSavedCommands*(self: TextDocumentEditor) =
+  editor_text_runSavedCommands_void_TextDocumentEditor_impl(self)
+proc clearCurrentCommandHistory*(self: TextDocumentEditor;
+                                 retainLast: bool = false) =
+  editor_text_clearCurrentCommandHistory_void_TextDocumentEditor_bool_impl(self,
+      retainLast)
+proc saveCurrentCommandHistory*(self: TextDocumentEditor) =
+  editor_text_saveCurrentCommandHistory_void_TextDocumentEditor_impl(self)

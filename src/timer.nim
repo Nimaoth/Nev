@@ -1,4 +1,9 @@
-include system/timers
+when not defined(nimscript):
+  include system/timers
+else:
+  type
+    Ticks* = distinct int64
+    Nanos* = int64
 
 type Seconds* = distinct float64
 
@@ -11,23 +16,37 @@ func ms*(seconds: Seconds): float64 = seconds.float64 * 1_000
 when defined(js):
   type Timer* = Seconds
 
+  type NanosecondRange* = range[0..999_999_999]
+
   proc myGetTime*(): int32 {.importjs: "Date.now()" .}
   proc myGetTicks(): Seconds {.importjs: "(Date.now() / 1000)".}
-    # let time = getTime()
-    # return time.toUnixFloat.Seconds
 
   proc elapsed*(timer: Timer): Seconds = myGetTicks() - timer
-
   proc startTimer*(): Timer = myGetTicks()
 
 else:
-  import std/times
+  when defined(nimscript):
+    proc myGetTime*(): int32 = discard
+    proc myGetTicks(): Ticks = discard
+    proc mySubtractTicks(a, b: Ticks): Nanos = discard
+    proc `-`*(a, b: Ticks): Nanos = mySubtractTicks(a, b)
+
+    type NanosecondRange* = range[0..999_999_999]
+    type Time* = object ## Represents a point in time.
+      seconds: int64
+      nanosecond: NanosecondRange
+
+    proc fromUnix*(unix: int64): Time =
+      result.seconds = unix
+      result.nanosecond = 0
+
+  else:
+    import std/times
+    proc myGetTime*(): int32 = getTime().toUnix.int32
+    proc myGetTicks(): Ticks = getTicks()
 
   type Timer* = object
     start: Ticks
 
-  proc myGetTime*(): int32 = getTime().toUnix.int32
-  proc myGetTicks(): Ticks = getTicks()
   proc elapsed*(timer: Timer): Seconds = ((myGetTicks() - timer.start).float64 / 1_000_000_000).Seconds
-
   proc startTimer*(): Timer = Timer(start: myGetTicks())

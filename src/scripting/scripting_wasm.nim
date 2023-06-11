@@ -99,7 +99,7 @@ method handleGlobalAction*(self: ScriptContextWasm, action: string, arg: JsonNod
     if f(action.cstring, argStr.cstring):
       return true
 
-method handleDocumentEditorModeChanged*(self: ScriptContextWasm, editor: DocumentEditor, oldMode: string, newMode: string) =
+method handleEditorModeChanged*(self: ScriptContextWasm, editor: DocumentEditor, oldMode: string, newMode: string) =
   for (m, f) in self.editorModeChangedCallbacks:
     f(editor.id.int32, oldMode.cstring, newMode.cstring)
 
