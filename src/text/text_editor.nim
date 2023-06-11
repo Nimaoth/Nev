@@ -257,7 +257,7 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor) =
 
   let targetLine = cursor.line
   let totalLineHeight = self.platform.totalLineHeight
- 
+
   let targetLineY = (targetLine - self.previousBaseIndex).float32 * totalLineHeight + self.scrollOffset
 
   let configMarginRelative = self.configProvider.getValue("text.cursor-margin-relative", true)
@@ -585,12 +585,12 @@ proc unindent*(self: TextDocumentEditor) {.expose("editor.text").} =
       s.last.column = max(0, s.last.column - self.document.indentStyle.indentColumns)
   self.selections = selections
 
-proc undo(self: TextDocumentEditor) {.expose("editor.text").} =
+proc undo*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.document.undo(self.selections, true).getSome(selections):
     self.selections = selections
     self.scrollToCursor(Last)
 
-proc redo(self: TextDocumentEditor) {.expose("editor.text").} =
+proc redo*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.document.redo(self.selections, true).getSome(selections):
     self.selections = selections
     self.scrollToCursor(Last)
@@ -812,6 +812,14 @@ proc findWordBoundary*(self: TextDocumentEditor, cursor: Cursor): Selection {.ex
       break
     result.last.column += 1
 
+proc getSelectionInPair*(self: TextDocumentEditor, cursor: Cursor, delimiter: char): Selection {.expose("editor.text").} =
+  result = cursor.toSelection
+  # todo
+
+proc getSelectionInPairNested*(self: TextDocumentEditor, cursor: Cursor, open: char, close: char): Selection {.expose("editor.text").} =
+  result = cursor.toSelection
+  # todo
+
 proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string, count: int = 0): Selection {.expose("editor.text").} =
   case move
   of "word":
@@ -864,6 +872,21 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
   of "next-find-result":
     result = self.getNextFindResult(cursor, count)
 
+  of "\"":
+    result = self.getSelectionInPair(cursor, '"')
+
+  of "'":
+    result = self.getSelectionInPair(cursor, '\'')
+
+  of "(", ")":
+    result = self.getSelectionInPairNested(cursor, '(', ')')
+
+  of "{", "}":
+    result = self.getSelectionInPairNested(cursor, '{', '}')
+
+  of "[", "]":
+    result = self.getSelectionInPairNested(cursor, '[', ']')
+
   else:
     if move.startsWith("move-to "):
       let str = move[8..^1]
@@ -911,42 +934,50 @@ proc cursor(self: TextDocumentEditor, selection: Selection, which: SelectionCurs
   of Last, LastToFirst:
     return selection.last
 
-proc setMove*(self: TextDocumentEditor, args {.varargs.}: JsonNode) {.expose("editor.text").} =
+proc applyMove*(self: TextDocumentEditor, args {.varargs.}: JsonNode) {.expose("editor.text").} =
   self.configProvider.setValue("text.move-count", self.getCommandCount)
   self.setMode self.configProvider.getValue("text.move-next-mode", "")
   self.setCommandCount self.configProvider.getValue("text.move-command-count", 0)
   discard self.runAction(self.configProvider.getValue("text.move-action", ""), args)
   self.configProvider.setValue("text.move-action", "")
 
-proc deleteMove*(self: TextDocumentEditor, move: string, which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
+proc deleteMove*(self: TextDocumentEditor, move: string, inside: bool = false, which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
   let count = self.configProvider.getValue("text.move-count", 0)
-  let inside = self.getFlag("move-inside")
 
   # echo fmt"delete-move {move}, {which}, {count}, {inside}"
 
-  let selections = self.selections.map (s) => (if inside:
-    self.getSelectionForMove(s.last, move, count)
+  let selections = if inside:
+    self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(s.last, move, count))
   else:
-    (s.last, self.getSelectionForMove(s.last, move, count).last))
+    self.selections.mapAllOrLast(all, (s) => (s.last, self.getSelectionForMove(s.last, move, count).last))
 
   self.selections = self.document.delete(selections, self.selections)
   self.scrollToCursor(Last)
   self.updateTargetColumn(Last)
 
-proc selectMove*(self: TextDocumentEditor, move: string, which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
+proc selectMove*(self: TextDocumentEditor, move: string, inside: bool = false, which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
   let count = self.configProvider.getValue("text.move-count", 0)
-  self.selections = self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(s.last, move, count))
+
+  self.selections = if inside:
+    self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(s.last, move, count))
+  else:
+    self.selections.mapAllOrLast(all, (s) => (s.last, self.getSelectionForMove(s.last, move, count).last))
+
   self.scrollToCursor(Last)
   self.updateTargetColumn(Last)
 
-proc changeMove*(self: TextDocumentEditor, move: string, which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
-  let count = self.configProvider.getValue("text.move-count", 0)
-  let inside = self.getFlag("move-inside")
+proc copyMove*(self: TextDocumentEditor, move: string, inside: bool = false, which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
+  self.selectMove(move, inside, which, all)
+  self.copy()
+  self.selections = self.selections.mapIt(it.first.toSelection)
 
-  let selections = self.selections.map (s) => (if inside:
-    self.getSelectionForMove(s.last, move, count)
+proc changeMove*(self: TextDocumentEditor, move: string, inside: bool = false, which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
+  let count = self.configProvider.getValue("text.move-count", 0)
+
+  let selections = if inside:
+    self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(s.last, move, count))
   else:
-    (s.last, self.getSelectionForMove(s.last, move, count).last))
+    self.selections.mapAllOrLast(all, (s) => (s.last, self.getSelectionForMove(s.last, move, count).last))
 
   self.selections = self.document.delete(selections, self.selections)
   self.scrollToCursor(Last)

@@ -103,6 +103,9 @@ func toSelection*(cursor: Cursor, default: Selection, which: SelectionCursor): S
   of First: return (cursor, default.last)
   of Last: return (default.first, cursor)
   of LastToFirst: return (default.last, cursor)
+  
+func move*(cursor: Cursor, lines: int = 0, columns: int = 0): Cursor =
+  return (cursor.line + lines, cursor.column + columns)
 
 func subtract*(cursor: Cursor, selection: Selection): Cursor =
   if cursor <= selection.first:

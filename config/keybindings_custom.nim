@@ -21,34 +21,49 @@ proc loadVimBindings*() =
 
   addTextCommandBlock "", "gg":
     let count = editor.getCommandCount
-    editor.selection = (count, 0).toSelection
-    editor.setCommandCount 0
-    editor.scrollToCursor Last
+    if count == 0:
+      editor.selection = (0, 0).toSelection
+    else:
+      editor.selection = (count, 0).toSelection
+      editor.setCommandCount 0
+    editor.scrollToCursor(Last)
 
   addTextCommand "", "G", "move-last", "file"
 
   addTextCommand "", "n", "select-move", "next-find-result", true
   addTextCommand "", "N", "select-move", "prev-find-result", true
-
+  addTextCommand "", "<C-e>", "addNextFindResultToSelection"
+  addTextCommand "", "<C-E>", "addPrevFindResultToSelection"
+  addTextCommand "", "<A-e>", "setAllFindResultToSelection"
   addTextCommandBlock "", "*": editor.setSearchQueryFromMove("word")
+
+  addTextCommand "", "<C-l>", "select-line-current"
+  addTextCommand "", "miw", "select-inside-current"
+
+  # lsp
+  addTextCommand "", "gd", "goto-definition"
+  addTextCommand "", "gs", "goto-symbol"
+  addTextCommand "", "<C-SPACE>", "get-completions"
 
   # editing
   addTextCommand "", "x", "delete-right"
   addTextCommand "", "u", "undo"
   addTextCommand "", "U", "redo"
+  addTextCommand "", "y", "copy"
   addTextCommand "", "p", "paste"
 
   # mode switches
   addTextCommand "", "i", "set-mode", "insert"
   addTextCommandBlock "", "a":
-    editor.selections = editor.selections.mapIt(it.last.move(columns=1).toSelection)
     editor.setMode("insert")
+    editor.selections = editor.selections.mapIt((it.first, it.last.move(columns=1)))
 
   addTextCommand "", "v", "set-mode", "visual"
+  addTextCommand "", "V", "set-mode", "visual-temp"
 
   addTextCommandBlock "", "s":
-    editor.selections = editor.delete(editor.selections)
     editor.setMode("insert")
+    editor.selections = editor.delete(editor.selections)
 
   for i in 0..9:
     capture i:
@@ -59,6 +74,8 @@ proc loadVimBindings*() =
         editor.setCommandCount 0
 
       addTextCommand "", $i, updateCommandCountHelper
+      addTextCommand "delete", $i, updateCommandCountHelper
+      addTextCommand "move", $i, updateCommandCountHelper
 
   addTextCommandBlock "", "d":
     editor.setMode "move"
@@ -141,6 +158,9 @@ proc loadVimBindings*() =
   addTextMoveCommand "b", "word-line-back"
   addTextMoveCommand "B", "word-back"
   addTextMoveCommand "p", "paragraph"
+  addTextMoveCommand "l", "line-next"
+  addTextMoveCommand "L", "line"
+  addTextMoveCommand "d", "line-next"
   addTextMoveCommand "F", "file"
   addTextMoveCommand "\"", "\""
   addTextMoveCommand "'", "'"
@@ -149,11 +169,6 @@ proc loadVimBindings*() =
   addTextMoveCommand "[", "["
   addTextMoveCommand "]", "["
   addTextMoveCommand "}", "}"
-
-  addTextCommand "move", "d", "apply-move", "line-next", true
-  addTextCommand "move-inside", "d", "apply-move", "line-next", true
-  addTextCommand "move", "y", "apply-move", "line-next", true
-  addTextCommand "move-inside", "y", "apply-move", "line-next", true
 
   addTextCommandBlock "move", "f":
     editor.setMode "move-to"
@@ -207,8 +222,6 @@ proc loadVimBindings*() =
   setHandleInputs "editor.text.visual", false
   setOption "editor.text.cursor.wide.visual", true
   setOption "editor.text.cursor.movement.visual", "last"
-  addTextCommand "visual", "y", "copy"
-
   addTextCommandBlock "visual", "i":
     editor.setMode("move")
     setOption("text.move-action", "select-move")
@@ -226,6 +239,15 @@ proc loadVimBindings*() =
     editor.scrollToCursor(Last)
     editor.updateTargetColumn(Last)
 
+  # Visual temp mode
+  setHandleInputs "editor.text.visual-temp", false
+  setOption "editor.text.cursor.wide.visual-temp", false
+  setOption "editor.text.cursor.movement.visual-temp", "last-to-first"
+  addTextCommandBlock "visual-temp", "i":
+    editor.setMode("move")
+    setOption("text.move-action", "select-move")
+    setOption("text.move-next-mode", "visual-temp")
+
   addTextCommandBlock "visual", "d":
     editor.selections = editor.delete(editor.selections)
     editor.setMode("")
@@ -237,3 +259,34 @@ proc loadVimBindings*() =
     editor.setMode("insert")
     editor.scrollToCursor(Last)
     editor.updateTargetColumn(Last)
+
+  addTextCommand "", "<C-b>", "set-mode", "cursor-build"
+  addTextCommand "cursor-build", "c", "set-mode", "normal"
+  addTextCommand "cursor-build", "<LEFT>", "move-cursor-column", -1, "config", false
+  addTextCommand "cursor-build", "<RIGHT>", "move-cursor-column", 1, "config", false
+  addTextCommand "cursor-build", "<C-LEFT>", "move-first", "word-line", "config", false
+  addTextCommand "cursor-build", "<C-RIGHT>", "move-last", "word-line", "config", false
+  addTextCommand "cursor-build", "<HOME>", "move-first", "line", "config", false
+  addTextCommand "cursor-build", "<END>", "move-last", "line", "config", false
+  addTextCommand "cursor-build", "<CS-LEFT>", "move-first", "word-line", "last", false
+  addTextCommand "cursor-build", "<CS-RIGHT>", "move-last", "word-line", "last", false
+  addTextCommand "cursor-build", "<UP>", "move-cursor-line", -1, "config", false
+  addTextCommand "cursor-build", "<DOWN>", "move-cursor-line", 1, "config", false
+  addTextCommand "cursor-build", "<C-HOME>", "move-first", "file", "config", false
+  addTextCommand "cursor-build", "<C-END>", "move-last", "file", "config", false
+  addTextCommand "cursor-build", "<CS-HOME>", "move-first", "file", "last", false
+  addTextCommand "cursor-build", "<CS-END>", "move-last", "file", "last", false
+  addTextCommand "cursor-build", "<S-LEFT>", "move-cursor-column", -1, "last", false
+  addTextCommand "cursor-build", "<S-RIGHT>", "move-cursor-column", 1, "last", false
+  addTextCommand "cursor-build", "<S-UP>", "move-cursor-line", -1, "last", false
+  addTextCommand "cursor-build", "<S-DOWN>", "move-cursor-line", 1, "last", false
+  addTextCommand "cursor-build", "<S-HOME>", "move-first", "line", "last", false
+  addTextCommand "cursor-build", "<S-END>", "move-last", "line", "last", false
+  addTextCommand "cursor-build", "n", "select-move", "next-find-result", false, false
+  addTextCommand "cursor-build", "N", "select-move", "prev-find-result", false, false
+  addTextCommandBlock "cursor-build", "y":
+    editor.runAction("duplicate-last-selection")
+    editor.runAction("select-move", "\"next-find-result\" false false")
+  addTextCommandBlock "cursor-build", "Y":
+    editor.runAction("duplicate-last-selection")
+    editor.runAction("select-move", "\"prev-find-result\" false false")
