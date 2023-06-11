@@ -33,14 +33,14 @@ else:
 
 type Id* = distinct Oid
 
-import std/[json, hashes, times, random]
+import std/[json, hashes, random]
 import myjsonutils
 
-proc fromJsonHook*(id: var Id, json: JsonNode)
-proc toJson*(id: Id, opt = initToJsonOptions()): JsonNode
-
-when not defined(js) and defined(nimPreviewSlimSystem):
+when not defined(js) and not defined(nimscript) and defined(nimPreviewSlimSystem):
   import std/[sysatomics]
+
+when not defined(nimscript):
+  import std/[times]
 
 import timer
 
@@ -161,11 +161,11 @@ var
 
 let fuzz = cast[int32](seed.rand(high(int)))
 
-when not defined(js):
+when not defined(js) and not defined(nimscript):
   import std/endians
 
 proc bigEndian32*(b: int32): int32 =
-  when defined(js):
+  when defined(js) or defined(nimscript):
     when system.cpuEndian == bigEndian:
       result = b
     else:
@@ -177,9 +177,9 @@ proc bigEndian32*(b: int32): int32 =
 template genOid(result: var Oid, incr: var int, fuzz: int32) =
   var time = cast[int32](myGetTime())
   var i: int32
-  when defined(js):
+  when defined(js) or defined(nimscript):
     inc incr
-    i = incr
+    i = cast[int32](incr and 0x7FFFFFFF)
   else:
     i = cast[int32](atomicInc(incr))
 

@@ -233,6 +233,18 @@ proc editor_text_selectNextCompletion_void_TextDocumentEditor_impl*(
 proc editor_text_applySelectedCompletion_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
+proc editor_text_isRunningSavedCommands_bool_TextDocumentEditor_impl*(
+    self: TextDocumentEditor): bool =
+  discard
+proc editor_text_runSavedCommands_void_TextDocumentEditor_impl*(
+    self: TextDocumentEditor) =
+  discard
+proc editor_text_clearCurrentCommandHistory_void_TextDocumentEditor_bool_impl*(
+    self: TextDocumentEditor; retainLast: bool = false) =
+  discard
+proc editor_text_saveCurrentCommandHistory_void_TextDocumentEditor_impl*(
+    self: TextDocumentEditor) =
+  discard
 proc popup_selector_accept_void_SelectorPopup_impl*(self: SelectorPopup) =
   discard
 proc popup_selector_cancel_void_SelectorPopup_impl*(self: SelectorPopup) =

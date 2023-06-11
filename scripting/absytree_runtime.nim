@@ -75,9 +75,6 @@ proc handleCallbackImpl*(id: int, args: JsonNode): bool =
     return boolCallbacks[id](args)
   return false
 
-proc handleEditorModeChanged*(editor: EditorId, oldMode: string, newMode: string) =
-  onEditorModeChanged.invoke (editor, oldMode, newMode)
-
 proc runAction*(id: EditorId, action: string, arg: string = "") =
   scriptRunActionFor(id, action, arg)
 

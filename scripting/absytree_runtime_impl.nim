@@ -1,4 +1,4 @@
-import absytree_runtime
+import absytree_runtime, event
 
 proc handleGlobalAction*(action: string, args: JsonNode): bool =
   if action == "lambda-action":
@@ -21,6 +21,9 @@ proc handleUnknownPopupAction*(id: EditorId, action: string, args: JsonNode): bo
   return handlePopupAction(id, action, args)
 
 proc handleCallback*(id: int, args: JsonNode): bool = handleCallbackImpl(id, args)
+
+proc handleEditorModeChanged*(editor: EditorId, oldMode: string, newMode: string) =
+  onEditorModeChanged.invoke (editor, oldMode, newMode)
 
 when defined(wasm):
   proc postInitializeWasm(): bool {.wasmexport.} =

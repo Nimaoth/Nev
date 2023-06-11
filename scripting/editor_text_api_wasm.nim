@@ -1503,3 +1503,66 @@ proc applySelectedCompletion*(self: TextDocumentEditor) =
   let res {.used.} = editor_text_applySelectedCompletion_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
 
+
+proc editor_text_isRunningSavedCommands_bool_TextDocumentEditor_wasm(
+    arg: cstring): cstring {.importc.}
+proc isRunningSavedCommands*(self: TextDocumentEditor): bool =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_isRunningSavedCommands_bool_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_text_runSavedCommands_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc runSavedCommands*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_runSavedCommands_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_clearCurrentCommandHistory_void_TextDocumentEditor_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc clearCurrentCommandHistory*(self: TextDocumentEditor;
+                                 retainLast: bool = false) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      retainLast
+    else:
+      retainLast.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_clearCurrentCommandHistory_void_TextDocumentEditor_bool_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_saveCurrentCommandHistory_void_TextDocumentEditor_wasm(
+    arg: cstring): cstring {.importc.}
+proc saveCurrentCommandHistory*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_saveCurrentCommandHistory_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+

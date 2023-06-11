@@ -207,6 +207,9 @@ method handleUnknownPopupAction*(self: ScriptContextNim, popup: Popup, action: s
 method handleUnknownDocumentEditorAction*(self: ScriptContextNim, editor: DocumentEditor, action: string, arg: JsonNode): bool =
   return self.invoke(handleEditorAction, editor.id, action, arg, returnType = bool)
 
+method handleEditorModeChanged*(self: ScriptContextNim, editor: DocumentEditor, oldMode: string, newMode: string) =
+  self.invoke(handleEditorModeChanged, editor.id, oldMode, newMode, returnType = void)
+
 method handleGlobalAction*(self: ScriptContextNim, action: string, arg: JsonNode): bool =
   return self.invoke(handleGlobalAction, action, arg, returnType = bool)
 

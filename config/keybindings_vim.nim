@@ -1,4 +1,4 @@
-import absytree_runtime, keybindings_normal
+import absytree_runtime, keybindings_normal, event
 
 proc loadVimBindings*() =
   loadNormalBindings()
@@ -9,6 +9,13 @@ proc loadVimBindings*() =
   # for id in getAllEditors():
   #   if id.isTextEditor(editor):
   #     editor.setMode("")
+
+  discard onEditorModeChanged.subscribe proc(arg: auto) =
+    if arg.editor.isTextEditor(editor) and not editor.isRunningSavedCommands:
+      if arg.oldMode == "" and arg.newMode != "":
+        editor.clearCurrentCommandHistory(retainLast=true)
+      elif arg.oldMode != "" and arg.newMode == "":
+        editor.saveCurrentCommandHistory()
 
   # Normal mode
   setHandleInputs "editor.text", false
@@ -40,6 +47,8 @@ proc loadVimBindings*() =
 
   addTextCommand "", "\\>", "indent"
   addTextCommand "", "\\<", "unindent"
+
+  addTextCommand "", ".", "run-saved-commands"
 
   # mode switches
   addTextCommand "", "i", "set-mode", "insert"
@@ -222,7 +231,7 @@ proc loadVimBindings*() =
   addTextCommand "visual", "y", "copy"
 
   addTextCommandBlock "visual", "i":
-    editor.setMode("move")
+    editor.setMode("move-inside")
     setOption("text.move-action", "select-move")
     setOption("text.move-next-mode", "visual")
 
