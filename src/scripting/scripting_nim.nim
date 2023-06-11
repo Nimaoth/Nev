@@ -1,14 +1,14 @@
 when defined(js):
   {.error: "scripting_nim.nim does not work in js backend. Use scripting_js.nim instead.".}
 
-import std/[os, tables, strformat, json, strutils, macrocache, macros, genasts]
+import std/[os, tables, strformat, json, strutils, macrocache, macros, genasts, times]
 import fusion/matching
 import compiler/[renderer, ast, llstream, lineinfos]
 import compiler/options as copts
 from compiler/vmdef import TSandboxFlag
 import nimscripter, nimscripter/[vmconversion, vmaddins]
 
-import util, custom_logger, custom_async, scripting_base, compilation_config, expose, popup, document_editor
+import util, custom_logger, custom_async, scripting_base, compilation_config, expose, popup, document_editor, timer
 import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, Popup, SelectorPopup
 
 export scripting_base, nimscripter
@@ -24,6 +24,15 @@ type ScriptContextNim* = ref object of ScriptContext
 let stdPath = "D:/.choosenim/toolchains/nim-#devel/lib"
 
 let loggerPtr = addr logger
+
+proc myGetTime*(): int32 = timer.myGetTime()
+proc myGetTicks(): int64 = timer.myGetTicks()
+proc mySubtractTicks(a: int64, b: int64): int64 = timer.mySubtractTicks(a, b)
+
+exportTo(timerAddinsImpl, myGetTime, myGetTicks, mySubtractTicks)
+
+var timerAddins: seq[(string, VmAddins)]
+timerAddins.add ("timer", implNimScriptModule(timerAddinsImpl))
 
 proc errorHook(config: ConfigRef; info: TLineInfo; msg: string; severity: Severity) {.gcsafe.} =
   if (severity == Error or severity == Warning) and config.errorCounter >= config.errorMax:
@@ -65,6 +74,7 @@ proc myLoadScript(
   vmErrorHook: proc(config: ConfigRef; info: TLineInfo; msg: string; severity: Severity) {.gcsafe.};
   stdPath: string;
   searchPaths: sink seq[string] = @[];
+  moreAddins: seq[(string, VMAddins)];
   defines = defaultDefines): Option[Interpreter] =
   ## Loads an interpreter from a file or from string, with given addtions and userprocs.
   ## To load from the filesystem use `NimScriptPath(yourPath)`.
@@ -94,6 +104,10 @@ proc myLoadScript(
 
     for uProc in addins.procs:
       intr.implementRoutine("Absytree", apiModule, uProc.name, uProc.vmProc)
+
+    for (module, addins) in moreAddins:
+      for uProc in addins.procs:
+        intr.implementRoutine("Absytree", module, uProc.name, uProc.vmProc)
 
     intr.registerErrorHook(vmErrorHook)
     try:
@@ -125,7 +139,7 @@ proc mySafeLoadScriptWithState*(
       intr.get.saveState()
     else:
       @[]
-  let tempIntr = myLoadScript(script, apiModule, addins, postCodeAdditions, modules, vmErrorHook, stdPath, searchPaths, defines)
+  let tempIntr = myLoadScript(script, apiModule, addins, postCodeAdditions, modules, vmErrorHook, stdPath, searchPaths, timerAddins, defines)
   if tempIntr.isSome:
     intr = tempIntr
     intr.get.loadState(state)
@@ -138,7 +152,7 @@ proc newScriptContext*(path: string, apiModule: string, addins: VMAddins, postCo
   result.postCodeAdditions = postCodeAdditions
   result.searchPaths = searchPaths
   logger.log(lvlInfo, fmt"Creating new script context (search paths: {searchPaths})")
-  result.inter = myLoadScript(result.script, apiModule, addins, postCodeAdditions, ["scripting_api", "std/json"], stdPath = stdPath, searchPaths = searchPaths, vmErrorHook = errorHook)
+  result.inter = myLoadScript(result.script, apiModule, addins, postCodeAdditions, ["scripting_api", "std/json"], stdPath = stdPath, searchPaths = searchPaths, vmErrorHook = errorHook, moreAddins = timerAddins)
   if result.inter.isNone:
     logger.log(lvlError, fmt"Failed to create script context")
 
