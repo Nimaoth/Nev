@@ -237,3 +237,9 @@ proc clearCurrentCommandHistory*(self: TextDocumentEditor;
       retainLast)
 proc saveCurrentCommandHistory*(self: TextDocumentEditor) =
   editor_text_saveCurrentCommandHistory_void_TextDocumentEditor_impl(self)
+proc setSelection*(self: TextDocumentEditor; cursor: Cursor; nextMode: string) =
+  editor_text_setSelection_void_TextDocumentEditor_Cursor_string_impl(self,
+      cursor, nextMode)
+proc enterChooseCursorMode*(self: TextDocumentEditor; action: string) =
+  editor_text_enterChooseCursorMode_void_TextDocumentEditor_string_impl(self,
+      action)

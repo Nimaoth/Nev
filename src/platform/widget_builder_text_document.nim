@@ -288,7 +288,7 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
     if sizeToContent:
       lineWidget.sizeToContent = true
 
-    var styledText = self.document.getStyledText(i)
+    var styledText = self.getStyledText(i)
 
     let selectionsNormalizedOnLine = selectionsPerLine.getOrDefault(i, @[]).map (s) => s.normalized
     let selectionsClampedOnLine = selectionsNormalizedOnLine.map (s) => s.clampToLine(i, styledText.len)

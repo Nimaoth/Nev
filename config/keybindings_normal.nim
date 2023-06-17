@@ -67,6 +67,7 @@ proc loadNormalBindings*() =
   addTextCommand "", "<S-TAB>", "unindent"
   addTextCommand "", "<C-k><C-c>", "toggle-line-comment"
   addTextCommand "", "<C-i>", "center-cursor"
+  addTextCommand "", "<C-g>", "enter-choose-cursor-mode", "set-selection"
 
   addTextCommand "", "<C-e>", "addNextFindResultToSelection"
   addTextCommand "", "<C-E>", "addPrevFindResultToSelection"

@@ -245,6 +245,12 @@ proc editor_text_clearCurrentCommandHistory_void_TextDocumentEditor_bool_impl*(
 proc editor_text_saveCurrentCommandHistory_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
+proc editor_text_setSelection_void_TextDocumentEditor_Cursor_string_impl*(
+    self: TextDocumentEditor; cursor: Cursor; nextMode: string) =
+  discard
+proc editor_text_enterChooseCursorMode_void_TextDocumentEditor_string_impl*(
+    self: TextDocumentEditor; action: string) =
+  discard
 proc popup_selector_accept_void_SelectorPopup_impl*(self: SelectorPopup) =
   discard
 proc popup_selector_cancel_void_SelectorPopup_impl*(self: SelectorPopup) =

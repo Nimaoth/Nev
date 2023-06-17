@@ -36,6 +36,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
   searchRegex*: Option[Regex]
   searchResults*: Table[int, seq[Selection]]
 
+  styledTextOverrides: Table[int, seq[tuple[cursor: Cursor, text: string, scope: string]]]
+
   targetColumn: int
   hideCursorWhenInactive*: bool
   cursorVisible*: bool
@@ -170,6 +172,15 @@ method getEventHandlers*(self: TextDocumentEditor): seq[EventHandler] =
   if self.showCompletions:
     result.add self.completionEventHandler
 
+proc findAllBounds(str: string, line: int, regex: Regex): seq[Selection] =
+  var start = 0
+  while start < str.len:
+    let bounds = str.findBounds(regex, start)
+    if bounds.first == -1:
+      break
+    result.add ((line, bounds.first), (line, bounds.last + 1))
+    start = bounds.last + 1
+
 proc updateSearchResults(self: TextDocumentEditor) =
   if self.searchRegex.isNone:
     self.searchResults.clear()
@@ -177,14 +188,7 @@ proc updateSearchResults(self: TextDocumentEditor) =
     return
 
   for i, line in self.document.lines:
-    var selections: seq[Selection] = @[]
-    var start = 0
-    while start < line.len:
-      let bounds = line.findBounds(self.searchRegex.get, start)
-      if bounds.first == -1:
-        break
-      selections.add ((i, start + bounds.first), (i, start + bounds.last + 1))
-      start = start + bounds.last + 1
+    let selections = self.document.lines[i].findAllBounds(i, self.searchRegex.get)
 
     if selections.len > 0:
       self.searchResults[i] = selections
@@ -1303,7 +1307,147 @@ proc saveCurrentCommandHistory*(self: TextDocumentEditor) {.expose("editor.text"
   self.savedCommandHistory = self.currentCommandHistory
   self.currentCommandHistory.commands.setLen 0
 
+proc getAvailableCursors*(self: TextDocumentEditor): seq[Cursor] =
+  let pattern = re"[_a-zA-Z0-9]+"
+
+  for li, line in self.lastRenderedLines:
+    for s in self.document.getLine(line.index).findAllBounds(line.index, pattern):
+      result.add s.first
+
+    # continue
+
+    # let lineNumber = line.index
+    # var column = 0
+    # for i, part in line.parts:
+    #   defer:
+    #     column += part.text.len
+
+    #   if part.text.isEmptyOrWhitespace:
+    #     continue
+
+    #   if not part.text.strip().match(pattern, 0):
+    #     continue
+
+    #   echo part.text
+
+    #   let offset = part.text.firstNonWhitespace
+    #   result.add (lineNumber, column + offset)
+
+  let line = self.selection.last.line
+  result.sort proc(a, b: auto): int =
+    let lineDistA = abs(a.line - line)
+    let lineDistB = abs(b.line - line)
+    if lineDistA != lineDistB:
+      return cmp(lineDistA, lineDistB)
+    return cmp(a.column, b.column)
+
+proc getCombinationsOfLength*(self: TextDocumentEditor, keys: openArray[string], disallowedPairs: HashSet[string], length: int, disallowDoubles: bool): seq[string] =
+  if length <= 1:
+    return @keys
+  for key in keys:
+    for next in self.getCombinationsOfLength(keys, disallowedPairs, length - 1, disallowDoubles):
+      if (key & next[0]) in disallowedPairs or (next[0] & key) in disallowedPairs:
+        continue
+      if disallowDoubles and key == next[0..0]:
+        continue
+
+      result.add key & next
+
+proc assignKeys*(self: TextDocumentEditor, cursors: openArray[Cursor]): seq[string] =
+  let possibleKeys = ["r", "a", "n", "e", "t", "i", "g", "l", "f", "v", "d", "u", "o", "s"]
+  let disallowedPairs = ["ao", "io", "rs", "ts", "iv", "al", "ec", "eo", "ns", "nh", "rg", "tf", "ui", "dt", "sd", "ou", "uv", "df"].toHashSet
+  for length in 1..3:
+    if result.len == cursors.len:
+      return
+    for c in self.getCombinationsOfLength(possibleKeys, disallowedPairs, length, disallowDoubles=true):
+      result.add c
+      if result.len == cursors.len:
+        return
+
+proc setSelection*(self: TextDocumentEditor, cursor: Cursor, nextMode: string) {.expose("editor.text").} =
+  self.selection = cursor.toSelection
+  self.scrollToCursor()
+  self.setMode(nextMode)
+
+proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("editor.text").} =
+  const mode = "choose-cursor"
+  let oldMode = self.currentMode
+
+  let cursors = self.getAvailableCursors()
+  let keys = self.assignKeys(cursors)
+  var config = EventHandlerConfig(context: "editor.text.choose-cursor", handleActions: true, handleInputs: true, consumeAllActions: true, consumeAllInput: true)
+
+  for i in 0..min(cursors.high, keys.high):
+    config.addCommand(keys[i] & "<SPACE>", action & " " & $cursors[i].toJson & " " & $oldMode.toJson)
+
+  var progress = ""
+
+  proc updateStyledTextOverrides() =
+    self.styledTextOverrides.clear()
+
+    var options: seq[Cursor] = @[]
+    for i in 0..min(cursors.high, keys.high):
+      if not keys[i].startsWith(progress):
+        continue
+
+      if not self.styledTextOverrides.contains(cursors[i].line):
+        self.styledTextOverrides[cursors[i].line] = @[]
+
+      if progress.len > 0:
+        self.styledTextOverrides[cursors[i].line].add (cursors[i], progress, "entity.name.function")
+
+      let cursor = (cursors[i].line, cursors[i].column + progress.len)
+      let text = keys[i][progress.len..^1]
+      self.styledTextOverrides[cursors[i].line].add (cursor, text, "keyword")
+
+      options.add cursors[i]
+
+    if options.len == 1:
+      self.styledTextOverrides.clear()
+      self.document.notifyTextChanged()
+      self.markDirty()
+      discard self.handleAction(action, ($options[0].toJson & " " & $oldMode.toJson))
+
+    self.document.notifyTextChanged()
+    self.markDirty()
+
+  updateStyledTextOverrides()
+
+  config.addCommand("<ESCAPE>", "setMode \"\"")
+
+  self.modeEventHandler = eventHandler(config):
+    onAction:
+      self.styledTextOverrides.clear()
+      self.document.notifyTextChanged()
+      self.markDirty()
+      self.handleAction action, arg
+    onInput:
+      self.handleInput input
+    onProgress:
+      progress.add inputToString(input)
+      updateStyledTextOverrides()
+
+  self.cursorVisible = true
+  if self.blinkCursorTask.isNotNil and self.active:
+    self.blinkCursorTask.reschedule()
+
+  self.currentMode = mode
+
+  self.app.handleModeChanged(self, oldMode, self.currentMode)
+
+  self.markDirty()
+
 genDispatcher("editor.text")
+
+proc getStyledText*(self: TextDocumentEditor, i: int): StyledLine =
+  result = self.document.getStyledText(i)
+  if self.styledTextOverrides.contains(i):
+    result.overrideStyle(0, result.len, "", -1)
+
+    for override in self.styledTextOverrides[i]:
+      result.splitAt(override.cursor.column)
+      result.splitAt(override.cursor.column + override.text.len)
+      result.overrideStyleAndText(override.cursor.column, override.text, override.scope, -2)
 
 proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): EventResponse =
   # echo "[textedit] handleAction ", action, " '", arg, "'"
