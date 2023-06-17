@@ -92,7 +92,7 @@ proc clampSelection*(self: TextDocument, selection: Selection): Selection = (sel
 proc clampAndMergeSelections*(self: TextDocument, selections: openArray[Selection]): Selections = selections.map((s) => self.clampSelection(s)).deduplicate
 proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.async.}
 
-proc notifyTextChanged(self: TextDocument) =
+proc notifyTextChanged*(self: TextDocument) =
   self.textChanged.invoke self
   self.styledTextCache.clear()
 
@@ -187,6 +187,18 @@ proc overrideStyle*(line: var StyledLine, first: int, last: int, scope: string, 
     if index >= first and index + line.parts[i].text.len <= last and priority < line.parts[i].priority:
       line.parts[i].scope = scope
       line.parts[i].priority = priority
+    index += line.parts[i].text.len
+
+proc overrideStyleAndText*(line: var StyledLine, first: int, text: string, scope: string, priority: int) =
+  var index = 0
+  for i in 0..line.parts.high:
+    if index >= first and index + line.parts[i].text.len <= first + text.len and priority < line.parts[i].priority:
+      line.parts[i].scope = scope
+      line.parts[i].priority = priority
+
+      let textOverrideFirst = index - first
+      let textOverrideLast = index + line.parts[i].text.len - first
+      line.parts[i].text = text[textOverrideFirst..<textOverrideLast]
     index += line.parts[i].text.len
 
 proc getStyledText*(self: TextDocument, i: int): StyledLine =
@@ -525,12 +537,15 @@ proc getNodeRange*(self: TextDocument, selection: Selection, parentIndex: int = 
 
   result = node.getRange.some
 
-proc getIndentForLine*(self: TextDocument, line: int): int =
+proc firstNonWhitespace*(str: string): int =
   result = 0
-  for c in self.lines[line]:
+  for c in str:
     if c != ' ':
       break
     result += 1
+
+proc getIndentForLine*(self: TextDocument, line: int): int =
+  return self.lines[line].firstNonWhitespace
 
 proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true, reparse: bool = true): seq[Selection] =
   var newEmptyLines: seq[int]

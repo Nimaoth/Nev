@@ -24,6 +24,7 @@ type EventHandler* = ref object
   dfaInternal: CommandDFA
   handleAction*: proc(action: string, arg: string): EventResponse
   handleInput*: proc(input: string): EventResponse
+  handleProgress*: proc(input: int64)
 
 func newEventHandlerConfig*(context: string): EventHandlerConfig =
   new result
@@ -96,6 +97,11 @@ template eventHandler*(inConfig: EventHandlerConfig, handlerBody: untyped): unty
         else:
           return Ignored
 
+    template onProgress(progressBody: untyped): untyped =
+      handler.handleProgress = proc(i: int64) =
+        let input {.inject, used.} = i
+        progressBody
+
     handlerBody
     handler
 
@@ -131,6 +137,8 @@ proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers,
       handler.state.current = handler.dfa.getDefaultState(handler.state.current)
       return handler.handleAction(action, arg)
     else:
+      if not handler.handleProgress.isNil:
+        handler.handleProgress(input)
       return Progress
   else:
     return Failed

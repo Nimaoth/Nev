@@ -1566,3 +1566,46 @@ proc saveCurrentCommandHistory*(self: TextDocumentEditor) =
   let res {.used.} = editor_text_saveCurrentCommandHistory_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
 
+
+proc editor_text_setSelection_void_TextDocumentEditor_Cursor_string_wasm(
+    arg: cstring): cstring {.importc.}
+proc setSelection*(self: TextDocumentEditor; cursor: Cursor; nextMode: string) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when Cursor is JsonNode:
+      cursor
+    else:
+      cursor.toJson()
+  argsJson.add block:
+    when string is JsonNode:
+      nextMode
+    else:
+      nextMode.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_setSelection_void_TextDocumentEditor_Cursor_string_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_enterChooseCursorMode_void_TextDocumentEditor_string_wasm(
+    arg: cstring): cstring {.importc.}
+proc enterChooseCursorMode*(self: TextDocumentEditor; action: string) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when string is JsonNode:
+      action
+    else:
+      action.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_enterChooseCursorMode_void_TextDocumentEditor_string_wasm(
+      argsJsonString.cstring)
+
