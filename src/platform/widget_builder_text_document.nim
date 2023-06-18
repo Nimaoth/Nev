@@ -14,12 +14,14 @@ proc renderTextHighlight(panel: WPanel, app: App, startOffset: float, endOffset:
   let startOffset = startOffset.floor
   let endOffset = endOffset.ceil
 
+  let runeCount = part.text.runeLen.int
+
   ## Fills a selection rect in the given color
   var left, right: float
-  if startIndex < selectionClamped.last and startIndex + part.text.len > selectionClamped.first and part.text.len > 0:
-    left = startOffset + max(0, selectionClamped.first - startIndex).float32 / (part.text.len.float32 - 0) * (endOffset - startOffset)
-    right = startOffset + min(part.text.len, selectionClamped.last - startIndex).float32 / (part.text.len.float32 - 0) * (endOffset - startOffset)
-  elif part.text.len == 0 and selection.contains((line, startIndex)) and not selection.isEmpty:
+  if startIndex < selectionClamped.last and startIndex + runeCount > selectionClamped.first and runeCount > 0:
+    left = startOffset + max(0, selectionClamped.first - startIndex).float32 / (runeCount.float32 - 0) * (endOffset - startOffset)
+    right = startOffset + min(runeCount, selectionClamped.last - startIndex).float32 / (runeCount.float32 - 0) * (endOffset - startOffset)
+  elif runeCount == 0 and selection.contains((line, startIndex)) and not selection.isEmpty:
     left = startOffset
     right = ceil(startOffset + app.platform.charWidth * 0.5)
   else:
