@@ -267,7 +267,7 @@ proc centerCursor*(self: TextDocumentEditor, cursor: Cursor) =
 
   self.markDirty()
 
-proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor) =
+proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[float] = float.none, allowCenter = true) =
   if self.disableScrolling:
     return
 
@@ -278,17 +278,19 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor) =
 
   let configMarginRelative = self.configProvider.getValue("text.cursor-margin-relative", true)
   let configMargin = self.configProvider.getValue("text.cursor-margin", 0.2)
-  let margin = if configMarginRelative:
+  let margin = if margin.getSome(margin):
+    clamp(margin, 0.0, self.lastContentBounds.h * 0.5 - totalLineHeight * 0.5)
+  elif configMarginRelative:
     clamp(configMargin, 0.0, 1.0) * 0.5 * self.lastContentBounds.h
   else:
     clamp(configMargin, 0.0, self.lastContentBounds.h * 0.5 - totalLineHeight * 0.5)
 
-  if targetLineY < 0:
+  if allowCenter and targetLineY < 0:
     self.centerCursor(cursor)
   elif targetLineY < margin:
     self.scrollOffset = margin
     self.previousBaseIndex = targetLine
-  elif targetLineY + totalLineHeight > self.lastContentBounds.h:
+  elif allowCenter and targetLineY + totalLineHeight > self.lastContentBounds.h:
     self.centerCursor(cursor)
   elif targetLineY + totalLineHeight > self.lastContentBounds.h - margin:
     self.scrollOffset = self.lastContentBounds.h - margin - totalLineHeight
@@ -1632,7 +1634,7 @@ method handleMouseMove*(self: TextDocumentEditor, mousePosWindow: Vec2, mousePos
 
   if MouseButton.Left in buttons and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
     self.selection = cursor.toSelection(self.selection, Last)
-    self.scrollToCursor()
+    self.scrollToCursor(self.selection.last, margin=(2*self.platform.lineHeight).some, allowCenter=false)
 
 
 method unregister*(self: TextDocumentEditor) =

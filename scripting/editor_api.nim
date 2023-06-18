@@ -49,8 +49,8 @@ proc changeLayoutProp*(prop: string; change: float32) =
   editor_changeLayoutProp_void_App_string_float32_impl(prop, change)
 proc toggleStatusBarLocation*() =
   editor_toggleStatusBarLocation_void_App_impl()
-proc createView*() =
-  editor_createView_void_App_impl()
+proc createAndAddView*() =
+  editor_createAndAddView_void_App_impl()
 proc closeCurrentView*() =
   editor_closeCurrentView_void_App_impl()
 proc moveCurrentViewToTop*() =

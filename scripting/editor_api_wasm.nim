@@ -286,11 +286,12 @@ proc toggleStatusBarLocation*() =
       argsJsonString.cstring)
 
 
-proc editor_createView_void_App_wasm(arg: cstring): cstring {.importc.}
-proc createView*() =
+proc editor_createAndAddView_void_App_wasm(arg: cstring): cstring {.importc.}
+proc createAndAddView*() =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_createView_void_App_wasm(argsJsonString.cstring)
+  let res {.used.} = editor_createAndAddView_void_App_wasm(
+      argsJsonString.cstring)
 
 
 proc editor_closeCurrentView_void_App_wasm(arg: cstring): cstring {.importc.}
