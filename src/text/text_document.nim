@@ -91,6 +91,7 @@ proc clampCursor*(self: TextDocument, cursor: Cursor): Cursor =
 proc clampSelection*(self: TextDocument, selection: Selection): Selection = (self.clampCursor(selection.first), self.clampCursor(selection.last))
 proc clampAndMergeSelections*(self: TextDocument, selections: openArray[Selection]): Selections = selections.map((s) => self.clampSelection(s)).deduplicate
 proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.async.}
+proc trimTrailingWhitespace*(self: TextDocument)
 
 proc notifyTextChanged*(self: TextDocument) =
   self.textChanged.invoke self
@@ -389,6 +390,8 @@ method save*(self: TextDocument, filename: string = "", app: bool = false) =
 
   self.appFile = app
 
+  self.trimTrailingWhitespace()
+
   if self.workspace.getSome(ws):
     asyncCheck ws.saveFile(self.filename, self.contentString)
   elif self.appFile:
@@ -543,6 +546,13 @@ proc firstNonWhitespace*(str: string): int =
     if c != ' ':
       break
     result += 1
+
+proc lastNonWhitespace*(str: string): int =
+  result = str.high
+  while result >= 0:
+    if str[result] != ' ' and str[result] != '\t':
+      break
+    result -= 1
 
 proc getIndentForLine*(self: TextDocument, line: int): int =
   return self.lines[line].firstNonWhitespace
@@ -763,3 +773,12 @@ proc toggleLineComment*(self: TextDocument, selections: Selections): seq[Selecti
     discard self.insert(insertSelections, selections, [prefix])
   else:
     discard self.delete(insertSelections, selections)
+
+proc trimTrailingWhitespace*(self: TextDocument) =
+  var selections: seq[Selection]
+  for i in 0..self.lines.high:
+    let index = self.lines[i].lastNonWhitespace
+    if index == self.lines[i].high:
+      continue
+    selections.add ((i, index + 1), (i, self.lines[i].len))
+  discard self.delete(selections, selections)
