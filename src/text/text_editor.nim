@@ -573,13 +573,6 @@ proc indent*(self: TextDocumentEditor) {.expose("editor.text").} =
       s.last.column += self.document.indentStyle.indentColumns
   self.selections = selections
 
-func firstNonWhitespace(str: string): int =
-  result = str.high
-  for i, c in str:
-    if c == ' ' or c == '\t':
-      continue
-    return i
-
 proc unindent*(self: TextDocumentEditor) {.expose("editor.text").} =
   var linesToIndent = initHashSet[int]()
   for selection in self.selections:
