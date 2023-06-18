@@ -1,3 +1,4 @@
+import std/[json]
 import document, events, event, input, custom_logger, config_provider
 import vmath, bumpy
 
@@ -80,4 +81,10 @@ method handleMouseRelease*(self: DocumentEditor, button: MouseButton, mousePosWi
   discard
 
 method handleMouseMove*(self: DocumentEditor, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) {.base.} =
+  discard
+
+method getStateJson*(self: DocumentEditor): JsonNode {.base.} =
+  discard
+
+method restoreStateJson*(self: DocumentEditor, state: JsonNode) {.base.} =
   discard
