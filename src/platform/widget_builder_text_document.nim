@@ -1,5 +1,5 @@
 import std/[strformat, tables, sugar, sequtils]
-import util, app, document_editor, text/text_editor, custom_logger, widgets, platform, theme
+import util, app, document_editor, text/text_editor, custom_logger, widgets, platform, theme, custom_unicode
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import vmath, bumpy, chroma
 
@@ -314,16 +314,20 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
         discard
 
     var startOffset = if lineNumbers == LineNumbers.None: 0.0 else: (lineNumberBounds.x + lineNumberPadding).ceil
-    var startIndex = 0
+    var startIndex = 0.RuneIndex
     for partIndex, part in styledText.parts:
-      let width = (part.text.len.float * charWidth).ceil
+      let width = (part.text.runeLen.float * charWidth).ceil
 
       # Draw background if selected
-      renderTextHighlight(lineWidget, app, startOffset, startOffset + width, i, startIndex, selectionsNormalizedOnLine, selectionsClampedOnLine, part, selectionColor, totalLineHeight)
-      renderTextHighlight(lineWidget, app, startOffset, startOffset + width, i, startIndex, highlightsNormalizedOnLine, highlightsClampedOnLine, part, highlightColor, totalLineHeight)
+      renderTextHighlight(lineWidget, app, startOffset, startOffset + width, i, startIndex.int, selectionsNormalizedOnLine, selectionsClampedOnLine, part, selectionColor, totalLineHeight)
+      renderTextHighlight(lineWidget, app, startOffset, startOffset + width, i, startIndex.int, highlightsNormalizedOnLine, highlightsClampedOnLine, part, highlightColor, totalLineHeight)
+      # echo "part text: '", part.text, "'"
 
       let color = if part.scope.len == 0: textColor else: app.theme.tokenColor(part.scope, rgb(255, 200, 200))
       var partWidget = createPartWidget(part.text, startOffset, width, totalLineHeight, color, frameIndex)
+      if part.opacity.getSome(opacity):
+        partWidget.allowAlpha = true
+        partWidget.foregroundColor.a = opacity
 
       styledText.parts[partIndex].bounds.x = partWidget.left
       styledText.parts[partIndex].bounds.y = lineWidget.top
@@ -334,10 +338,10 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
 
       # Set last cursor pos if its contained in this part
       for selection in selectionsPerLine.getOrDefault(i, @[]):
-        let indexInPart = selection.last.column - startIndex
-        if selection.last.line == i and indexInPart >= 0 and indexInPart <= part.text.len:
-          let characterUnderCursor = if indexInPart < part.text.len: part.text[indexInPart] else: ' '
-          let offsetFromPartStart = if part.text.len == 0: 0.0 else: indexInPart.float32 / part.text.len.float32 * width
+        let indexInPart: RuneIndex = selection.last.column.RuneIndex - startIndex.RuneCount
+        if selection.last.line == i and indexInPart >= 0.RuneIndex and indexInPart <= part.text.runeLen:
+          let characterUnderCursor: Rune = if indexInPart < part.text.runeLen: part.text[indexInPart] else: ' '.Rune
+          let offsetFromPartStart = if part.text.len == 0: 0.0 else: indexInPart.float32 / part.text.runeLen.float32 * width
           lineWidget.add(WText(
             anchor: (vec2(0, 0), vec2(0, 0)),
             left: startOffset + offsetFromPartStart,
@@ -352,7 +356,7 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
           cursorBounds = rect(startOffset + offsetFromPartStart, top, charWidth * cursorWidth, lineHeight)
 
       startOffset += width
-      startIndex += part.text.len
+      startIndex += part.text.runeLen
 
     self.lastRenderedLines.add styledText
 

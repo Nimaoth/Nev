@@ -1,7 +1,7 @@
 import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, tables, deques, sets, algorithm]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
-import document, document_editor, events, id, util, vmath, bumpy, rect_utils, event, input, ../regex, custom_logger, custom_async, custom_treesitter, indent, fuzzy_matching
+import document, document_editor, events, id, util, vmath, bumpy, rect_utils, event, input, ../regex, custom_logger, custom_async, custom_treesitter, indent, fuzzy_matching, custom_unicode
 import scripting/[expose]
 import platform/[platform, filesystem, widgets]
 import language/[language_server_base]
@@ -88,11 +88,6 @@ proc handleInput(self: TextDocumentEditor, input: string): EventResponse
 proc showCompletionWindow(self: TextDocumentEditor)
 proc refilterCompletions(self: TextDocumentEditor)
 
-proc lineLength*(self: TextDocumentEditor, line: int): int =
-  if line < self.document.lines.len:
-    return self.document.lines[line].len
-  return 0
-
 proc clampCursor*(self: TextDocumentEditor, cursor: Cursor): Cursor = self.document.clampCursor(cursor)
 
 proc clampSelection*(self: TextDocumentEditor, selection: Selection): Selection = self.document.clampSelection(selection)
@@ -172,15 +167,6 @@ method getEventHandlers*(self: TextDocumentEditor): seq[EventHandler] =
   if self.showCompletions:
     result.add self.completionEventHandler
 
-proc findAllBounds(str: string, line: int, regex: Regex): seq[Selection] =
-  var start = 0
-  while start < str.len:
-    let bounds = str.findBounds(regex, start)
-    if bounds.first == -1:
-      break
-    result.add ((line, bounds.first), (line, bounds.last + 1))
-    start = bounds.last + 1
-
 proc updateSearchResults(self: TextDocumentEditor) =
   if self.searchRegex.isNone:
     self.searchResults.clear()
@@ -215,16 +201,16 @@ proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int): 
   if column < 0:
     if cursor.line > 0:
       cursor.line = cursor.line - 1
-      cursor.column = self.lineLength cursor.line
+      cursor.column = self.document.lastValidIndex cursor.line
     else:
       cursor.column = 0
 
-  elif column > self.lineLength cursor.line:
+  elif column > self.document.lastValidIndex cursor.line:
     if cursor.line < self.document.lines.len - 1:
       cursor.line = cursor.line + 1
       cursor.column = 0
     else:
-      cursor.column = self.lineLength cursor.line
+      cursor.column = self.document.lastValidIndex cursor.line
 
   else:
     cursor.column = column
@@ -247,7 +233,7 @@ proc doMoveCursorHome(self: TextDocumentEditor, cursor: Cursor, offset: int): Cu
   return (cursor.line, 0)
 
 proc doMoveCursorEnd(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor =
-  return (cursor.line, self.document.lineLength cursor.line)
+  return (cursor.line, self.document.lastValidIndex cursor.line)
 
 proc getPrevFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0): Selection
 proc getNextFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0): Selection
@@ -478,7 +464,7 @@ proc selectInsideCurrent(self: TextDocumentEditor) {.expose("editor.text").} =
   self.selectInside(self.selection.last)
 
 proc selectLine(self: TextDocumentEditor, line: int) {.expose("editor.text").} =
-  self.selection = ((line, 0), (line, self.lineLength(line)))
+  self.selection = ((line, 0), (line, self.document.lastValidIndex(line)))
 
 proc selectLineCurrent(self: TextDocumentEditor) {.expose("editor.text").} =
   self.selectLine(self.selection.last.line)
@@ -1586,9 +1572,9 @@ proc getCursorAtPixelPos(self: TextDocumentEditor, mousePosWindow: Vec2): Option
         else:
           offsetFromLeft += 0.5
 
-        let index = clamp(offsetFromLeft.int, 0, part.text.len)
+        let index = clamp(offsetFromLeft.int, 0, part.text.runeLen.int)
         return (line.index, startOffset + index).some
-      startOffset += part.text.len
+      startOffset += part.text.runeLen.int
   return Cursor.none
 
 method handleMousePress*(self: TextDocumentEditor, button: MouseButton, mousePosWindow: Vec2, modifiers: Modifiers) =

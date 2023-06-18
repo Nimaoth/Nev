@@ -1,7 +1,7 @@
 import std/[strutils, logging, sequtils, sugar, options, json, strformat, tables, sets, jsonutils]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
-import document, document_editor, id, util, event, ../regex, custom_logger, custom_async, custom_treesitter, indent
+import document, document_editor, id, util, event, ../regex, custom_logger, custom_async, custom_treesitter, indent, custom_unicode
 import text_language_config
 import platform/[filesystem, widgets]
 import language/[languages, language_server_base]
@@ -37,6 +37,7 @@ type StyledText* = object
   scope*: string
   priority*: int
   bounds*: Rect
+  opacity*: Option[float]
 
 type StyledLine* = ref object
   index*: int
@@ -80,12 +81,17 @@ proc lineLength*(self: TextDocument, line: int): int =
     return self.lines[line].len
   return 0
 
+proc lastValidIndex*(self: TextDocument, line: int): int =
+  if line < self.lines.len:
+    return self.lines[line].runeLen.int
+  return 0
+
 proc clampCursor*(self: TextDocument, cursor: Cursor): Cursor =
   var cursor = cursor
   if self.lines.len == 0:
     return (0, 0)
   cursor.line = clamp(cursor.line, 0, self.lines.len - 1)
-  cursor.column = clamp(cursor.column, 0, self.lineLength cursor.line)
+  cursor.column = clamp(cursor.column, 0, self.lastValidIndex cursor.line)
   return cursor
 
 proc clampSelection*(self: TextDocument, selection: Selection): Selection = (self.clampCursor(selection.first), self.clampCursor(selection.last))
@@ -147,15 +153,15 @@ func contentString*(self: TextDocument): string =
 func contentString*(self: TextDocument, selection: Selection): string =
   let (first, last) = selection.normalized
   if first.line == last.line:
-    return self.lines[first.line][first.column..<last.column]
+    return self.lines[first.line][first.column.RuneIndex..<last.column.RuneIndex]
 
-  result = self.lines[first.line][first.column..^1]
+  result = self.lines[first.line][first.column.RuneIndex..^1]
   for i in (first.line + 1)..<last.line:
     result.add "\n"
     result.add self.lines[i]
 
   result.add "\n"
-  result.add self.lines[last.line][0..<last.column]
+  result.add self.lines[last.line][0.RuneIndex..<last.column.RuneIndex]
 
 func charAt*(self: TextDocument, cursor: Cursor): char =
   if cursor.line < 0 or cursor.line > self.lines.high:
@@ -182,6 +188,15 @@ proc splitAt*(line: var StyledLine, index: int) =
     copy.text = copy.text[index..^1]
     line.parts.insert(copy, i + 1)
 
+proc findAllBounds*(str: string, line: int, regex: Regex): seq[Selection] =
+  var start = 0
+  while start < str.len:
+    let bounds = str.findBounds(regex, start)
+    if bounds.first == -1:
+      break
+    result.add ((line, bounds.first), (line, bounds.last + 1))
+    start = bounds.last + 1
+
 proc overrideStyle*(line: var StyledLine, first: int, last: int, scope: string, priority: int) =
   var index = 0
   for i in 0..line.parts.high:
@@ -190,17 +205,19 @@ proc overrideStyle*(line: var StyledLine, first: int, last: int, scope: string, 
       line.parts[i].priority = priority
     index += line.parts[i].text.len
 
-proc overrideStyleAndText*(line: var StyledLine, first: int, text: string, scope: string, priority: int) =
-  var index = 0
+proc overrideStyleAndText*(line: var StyledLine, first: int, text: string, scope: string, priority: int, opacity: Option[float] = float.none) =
+  let first = text.runeIndex(first)
+  var index = 0.RuneIndex
   for i in 0..line.parts.high:
-    if index >= first and index + line.parts[i].text.len <= first + text.len and priority < line.parts[i].priority:
+    if index >= first and index + line.parts[i].text.runeLen <= first + text.runeLen and priority < line.parts[i].priority:
       line.parts[i].scope = scope
       line.parts[i].priority = priority
+      line.parts[i].opacity = opacity
 
-      let textOverrideFirst = index - first
-      let textOverrideLast = index + line.parts[i].text.len - first
+      let textOverrideFirst: RuneIndex = index - first.RuneCount
+      let textOverrideLast: RuneIndex = index + (line.parts[i].text.runeLen - first.RuneCount)
       line.parts[i].text = text[textOverrideFirst..<textOverrideLast]
-    index += line.parts[i].text.len
+    index += line.parts[i].text.runeLen
 
 proc getStyledText*(self: TextDocument, i: int): StyledLine =
   if self.styledTextCache.contains(i):
@@ -301,6 +318,18 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
         let last = if nodeRange.last.line < i: 0 elif nodeRange.last.line == i: nodeRange.last.column else: line.len
 
         result.overrideStyle(first, last, $scope, match.pattern)
+
+    # override whitespace
+    let opacity = self.configProvider.getValue("editor.text.whitespace.opacity", 0.4)
+    if opacity > 0:
+      let pattern = re"[ ]+"
+      let ch = "·"
+      let bounds = self.lines[i].findAllBounds(i, pattern)
+      for s in bounds:
+        result.splitAt(s.first.column)
+        result.splitAt(s.last.column)
+      for s in bounds:
+        result.overrideStyleAndText(s.first.column, ch.repeat(s.last.column - s.first.column), "comment", 0, opacity=opacity.some)
 
 proc initTreesitter*(self: TextDocument): Future[void] {.async.} =
   if not self.tsParser.isNil:
@@ -445,7 +474,7 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
   return self.languageServer
 
 proc byteOffset*(self: TextDocument, cursor: Cursor): int =
-  result = cursor.column
+  result = self.lines[cursor.line].runeOffset(cursor.column.RuneIndex)
   for i in 0..<cursor.line:
     result += self.lines[i].len + 1
 
@@ -462,22 +491,25 @@ proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection:
       continue
 
     let selection = selection.normalized
+    let (first, last) = selection
 
-    let startByte = self.byteOffset(selection.first)
-    let endByte = self.byteOffset(selection.last)
+    let startByte = self.byteOffset(first)
+    let endByte = self.byteOffset(last)
 
     let deletedText = self.contentString(selection)
 
-    let (first, last) = selection.normalized
+    let firstColumnByte = self.lines[first.line].runeOffset(first.column.RuneIndex)
+    let lastColumnByte = self.lines[last.line].runeOffset(last.column.RuneIndex)
+
     if first.line == last.line:
       # Single line selection
-      self.lines[last.line].delete first.column..<last.column
+      self.lines[last.line].delete firstColumnByte..<lastColumnByte
     else:
       # Multi line selection
       # Delete from first cursor to end of first line and add last line
-      if first.column < self.lineLength first.line:
-        self.lines[first.line].delete(first.column..<(self.lineLength first.line))
-      self.lines[first.line].add self.lines[last.line][last.column..^1]
+      if first.column < self.lastValidIndex first.line:
+        self.lines[first.line].delete(firstColumnByte..<(self.lineLength first.line))
+      self.lines[first.line].add self.lines[last.line][lastColumnByte..^1]
       # Delete all lines in between
       self.lines.delete (first.line + 1)..last.line
 
@@ -490,9 +522,9 @@ proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection:
         startIndex: startByte,
         oldEndIndex: endByte,
         newEndIndex: startByte,
-        startPosition: TSPoint(row: selection.first.line, column: selection.first.column),
-        oldEndPosition: TSPoint(row: selection.last.line, column: selection.last.column),
-        newEndPosition: TSPoint(row: selection.first.line, column: selection.first.column),
+        startPosition: TSPoint(row: selection.first.line, column: firstColumnByte),
+        oldEndPosition: TSPoint(row: selection.last.line, column: lastColumnByte),
+        newEndPosition: TSPoint(row: selection.first.line, column: firstColumnByte),
       )
       discard self.currentTree.edit(edit)
 
@@ -558,8 +590,6 @@ proc getIndentForLine*(self: TextDocument, line: int): int =
   return self.lines[line].firstNonWhitespace
 
 proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true, reparse: bool = true): seq[Selection] =
-  var newEmptyLines: seq[int]
-
   result = self.clampAndMergeSelections selections
 
   var undoOp = UndoOp(kind: Nested, children: @[], oldSelection: @oldSelection)
@@ -576,6 +606,9 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
     var cursor = selection.last
     let startByte = self.byteOffset(cursor)
 
+    let lastColumnByte = self.lines[oldCursor.line].runeOffset(oldCursor.column.RuneIndex)
+    var cursorColumnByte = self.lines[cursor.line].runeOffset(cursor.column.RuneIndex)
+
     var lineCounter: int = 0
     # echo "insert ", cursor, ": ", text
     if self.singleLine:
@@ -583,24 +616,26 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
       if self.lines.len == 0:
         self.lines.add text
       else:
-        self.lines[0].insert(text, cursor.column)
-      cursor.column += text.len
+        self.lines[0].insert(text, cursorColumnByte)
+      cursor.column += text.runeLen.int
+      cursorColumnByte += text.len
 
     else:
       for line in text.splitLines(false):
         defer: inc lineCounter
         if lineCounter > 0:
           # Split line
-          self.lines.insert(self.lines[cursor.line][cursor.column..^1], cursor.line + 1)
-          newEmptyLines.add (cursor.line + 1)
+          self.lines.insert(self.lines[cursor.line][cursorColumnByte..^1], cursor.line + 1)
 
-          if cursor.column < self.lineLength cursor.line:
-            self.lines[cursor.line].delete(cursor.column..<(self.lineLength cursor.line))
+          if cursorColumnByte < self.lastValidIndex cursor.line:
+            self.lines[cursor.line].delete(cursorColumnByte..<(self.lineLength cursor.line))
           cursor = (cursor.line + 1, 0)
+          cursorColumnByte = 0
 
         if line.len > 0:
-          self.lines[cursor.line].insert(line, cursor.column)
-          cursor.column += line.len
+          self.lines[cursor.line].insert(line, cursorColumnByte)
+          cursor.column += line.runeLen.int
+          cursorColumnByte += line.len
 
     result[i] = cursor.toSelection
     for k in (i+1)..result.high:
@@ -611,9 +646,9 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
         startIndex: startByte,
         oldEndIndex: startByte,
         newEndIndex: startByte + text.len,
-        startPosition: TSPoint(row: oldCursor.line, column: oldCursor.column),
-        oldEndPosition: TSPoint(row: oldCursor.line, column: oldCursor.column),
-        newEndPosition: TSPoint(row: cursor.line, column: cursor.column),
+        startPosition: TSPoint(row: oldCursor.line, column: lastColumnByte),
+        oldEndPosition: TSPoint(row: oldCursor.line, column: lastColumnByte),
+        newEndPosition: TSPoint(row: cursor.line, column: cursorColumnByte),
       )
       discard self.currentTree.edit(edit)
 
@@ -722,7 +757,7 @@ proc isLineEmptyOrWhitespace*(self: TextDocument, line: int): bool =
 proc isLineCommented*(self: TextDocument, line: int): bool =
   if line > self.lines.high or self.languageConfig.isNone or self.languageConfig.get.lineComment.isNone:
     return false
-  return self.lines[line].strip(trailing=false).startsWith(self.languageConfig.get.lineComment.get)
+  return custom_unicode.strip(self.lines[line], trailing=false).startsWith(self.languageConfig.get.lineComment.get)
 
 proc getLineCommentRange*(self: TextDocument, line: int): Selection =
   if line > self.lines.high or self.languageConfig.isNone or self.languageConfig.get.lineComment.isNone:
