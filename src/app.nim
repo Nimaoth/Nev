@@ -41,6 +41,7 @@ type OpenEditor = object
   languageID: string
   appFile: bool
   workspaceId: string
+  customOptions: JsonNode
 
 type
   OpenWorkspaceKind {.pure.} = enum Local, AbsytreeServer, Github
@@ -60,6 +61,7 @@ type EditorState = object
   layout: string
   workspaceFolders: seq[OpenWorkspace]
   openEditors: seq[OpenEditor]
+  hiddenEditors: seq[OpenEditor]
 
 type
   RegisterKind* {.pure.} = enum Text, AstNode
@@ -195,6 +197,20 @@ implTrait AppInterface, App:
   pushPopup(void, App, Popup)
   popPopup(void, App, Popup)
   openSymbolsPopup(void, App, seq[Symbol], proc(symbol: Symbol), proc(symbol: Symbol), proc())
+
+proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers)
+proc handleKeyRelease*(self: App, input: int64, modifiers: Modifiers)
+proc handleRune*(self: App, input: int64, modifiers: Modifiers)
+proc handleMousePress*(self: App, button: MouseButton, modifiers: Modifiers, mousePosWindow: Vec2)
+proc handleMouseRelease*(self: App, button: MouseButton, modifiers: Modifiers, mousePosWindow: Vec2)
+proc handleMouseMove*(self: App, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton])
+proc handleScroll*(self: App, scroll: Vec2, mousePosWindow: Vec2, modifiers: Modifiers)
+proc handleDropFile*(self: App, path, content: string)
+
+proc openWorkspaceKind(workspaceFolder: WorkspaceFolder): OpenWorkspaceKind
+proc addWorkspaceFolder(self: App, workspaceFolder: WorkspaceFolder): bool
+proc getWorkspaceFolder(self: App, id: Id): Option[WorkspaceFolder]
+proc setLayout*(self: App, layout: string)
 
 proc registerEditor*(self: App, editor: DocumentEditor): void =
   self.editors[editor.id] = editor
@@ -390,17 +406,22 @@ proc `currentView=`(self: App, newIndex: int, addToHistory = true) =
   self.currentViewInternal = newIndex
   self.updateActiveEditor(addToHistory)
 
-proc addView*(self: App, view: View, addToHistory = true) =
+proc addView*(self: App, view: View, addToHistory = true, append = false) =
   let maxViews = getOption[int](self, "editor.maxViews", int.high)
 
   while maxViews > 0 and self.views.len > maxViews:
     self.views[self.views.high].editor.active = false
     self.hiddenViews.add self.views.pop()
 
+  if append:
+    self.currentView = self.views.high
+
   if self.views.len == maxViews:
     self.views[self.currentView].editor.active = false
     self.hiddenViews.add self.views[self.currentView]
     self.views[self.currentView] = view
+  elif append:
+    self.views.add view
   else:
     self.views.insert(view, self.currentView)
 
@@ -409,12 +430,20 @@ proc addView*(self: App, view: View, addToHistory = true) =
   self.updateActiveEditor(addToHistory)
   self.platform.requestRender()
 
-proc createView*(self: App, document: Document): DocumentEditor =
+proc createView*(self: App, document: Document): View =
+  var editor = self.createEditorForDocument document
+  editor.injectDependencies self.asAppInterface
+  discard editor.onMarkedDirty.subscribe () => self.platform.requestRender()
+  return View(document: document, editor: editor)
+
+proc createView(self: App, editorState: OpenEditor): View
+
+proc createAndAddView*(self: App, document: Document, append = false): DocumentEditor =
   var editor = self.createEditorForDocument document
   editor.injectDependencies self.asAppInterface
   discard editor.onMarkedDirty.subscribe () => self.platform.requestRender()
   var view = View(document: document, editor: editor)
-  self.addView(view)
+  self.addView(view, append=append)
   return editor
 
 proc pushPopup*(self: App, popup: Popup) =
@@ -480,20 +509,6 @@ when not defined(js):
   proc createScriptContext(filepath: string, searchPaths: seq[string]): ScriptContext
 
 proc getCommandLineTextEditor*(self: App): TextDocumentEditor = self.commandLineTextEditor.TextDocumentEditor
-
-proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers)
-proc handleKeyRelease*(self: App, input: int64, modifiers: Modifiers)
-proc handleRune*(self: App, input: int64, modifiers: Modifiers)
-proc handleMousePress*(self: App, button: MouseButton, modifiers: Modifiers, mousePosWindow: Vec2)
-proc handleMouseRelease*(self: App, button: MouseButton, modifiers: Modifiers, mousePosWindow: Vec2)
-proc handleMouseMove*(self: App, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton])
-proc handleScroll*(self: App, scroll: Vec2, mousePosWindow: Vec2, modifiers: Modifiers)
-proc handleDropFile*(self: App, path, content: string)
-
-proc openWorkspaceKind(workspaceFolder: WorkspaceFolder): OpenWorkspaceKind
-proc addWorkspaceFolder(self: App, workspaceFolder: WorkspaceFolder): bool
-proc getWorkspaceFolder(self: App, id: Id): Option[WorkspaceFolder]
-proc setLayout*(self: App, layout: string)
 
 proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.} =
   var self = App()
@@ -641,23 +656,15 @@ proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.}
   # Restore open editors
   if self.getFlag("editor.restore-open-editors"):
     for editorState in state.openEditors:
-        let workspaceFolder = self.getWorkspaceFolder(editorState.workspaceId.parseId)
-        let document = if editorState.ast:
-          newAstDocument(editorState.filename, editorState.appFile, workspaceFolder)
-        elif editorState.filename.endsWith ".am":
-          try:
-            newModelDocument(editorState.filename, editorState.appFile, workspaceFolder)
-          except CatchableError:
-            logger.log(lvlError, fmt"Failed to restore file {editorState.filename} from previous session: {getCurrentExceptionMsg()}")
-            continue
-        else:
-          try:
-            newTextDocument(self.asConfigProvider, editorState.filename, editorState.appFile, workspaceFolder)
-          except CatchableError:
-            logger.log(lvlError, fmt"Failed to restore file {editorState.filename} from previous session: {getCurrentExceptionMsg()}")
-            continue
-
-        discard self.createView(document)
+      let view = self.createView(editorState)
+      self.addView(view, append=true)
+      if editorState.customOptions.isNotNil:
+        view.editor.restoreStateJson(editorState.customOptions)
+    for editorState in state.hiddenEditors:
+      let view = self.createView(editorState)
+      self.hiddenViews.add view
+      if editorState.customOptions.isNotNil:
+        view.editor.restoreStateJson(editorState.customOptions)
 
   return self
 
@@ -678,6 +685,24 @@ static:
 
 proc getBackend*(self: App): Backend {.expose("editor").} =
   return self.backend
+
+proc createView(self: App, editorState: OpenEditor): View =
+  let workspaceFolder = self.getWorkspaceFolder(editorState.workspaceId.parseId)
+  let document = if editorState.ast:
+    newAstDocument(editorState.filename, editorState.appFile, workspaceFolder)
+  elif editorState.filename.endsWith ".am":
+    try:
+      newModelDocument(editorState.filename, editorState.appFile, workspaceFolder)
+    except CatchableError:
+      logger.log(lvlError, fmt"Failed to restore file {editorState.filename} from previous session: {getCurrentExceptionMsg()}")
+      return
+  else:
+    try:
+      newTextDocument(self.asConfigProvider, editorState.filename, editorState.appFile, workspaceFolder)
+    except CatchableError:
+      logger.log(lvlError, fmt"Failed to restore file {editorState.filename} from previous session: {getCurrentExceptionMsg()}")
+      return
+  return self.createView(document)
 
 proc saveAppState*(self: App) {.expose("editor").} =
   # Save some state
@@ -720,25 +745,37 @@ proc saveAppState*(self: App) {.expose("editor").} =
     )
 
   # Save open editors
-  for view in self.views:
+  proc getEditorState(view: View): Option[OpenEditor] =
+    let customOptions = view.editor.getStateJson()
     if view.document of TextDocument:
       let textDocument = TextDocument(view.document)
-      state.openEditors.add OpenEditor(
+      return OpenEditor(
         filename: textDocument.filename, ast: false, languageId: textDocument.languageId, appFile: textDocument.appFile,
-        workspaceId: textDocument.workspace.map(wf => $wf.id).get("")
-        )
+        workspaceId: textDocument.workspace.map(wf => $wf.id).get(""),
+        customOptions: customOptions
+        ).some
     elif view.document of AstDocument:
       let astDocument = AstDocument(view.document)
-      state.openEditors.add OpenEditor(
+      return OpenEditor(
         filename: astDocument.filename, ast: true, languageId: "ast", appFile: astDocument.appFile,
-        workspaceId: astDocument.workspace.map(wf => $wf.id).get("")
-        )
+        workspaceId: astDocument.workspace.map(wf => $wf.id).get(""),
+        customOptions: customOptions
+        ).some
     elif view.document of ModelDocument:
       let astDocument = ModelDocument(view.document)
-      state.openEditors.add OpenEditor(
+      return OpenEditor(
         filename: astDocument.filename, ast: false, languageId: "am", appFile: astDocument.appFile,
-        workspaceId: astDocument.workspace.map(wf => $wf.id).get("")
-        )
+        workspaceId: astDocument.workspace.map(wf => $wf.id).get(""),
+        customOptions: customOptions
+        ).some
+
+  for view in self.views:
+    if view.getEditorState().getSome(editorState):
+      state.openEditors.add editorState
+
+  for view in self.hiddenViews:
+    if view.getEditorState().getSome(editorState):
+      state.hiddenEditors.add editorState
 
   let serialized = state.toJson
   fs.saveApplicationFile("./config/config.json", serialized.pretty)
@@ -842,11 +879,11 @@ proc toggleStatusBarLocation*(self: App) {.expose("editor").} =
   self.statusBarOnTop = not self.statusBarOnTop
   self.platform.requestRender(true)
 
-proc createView*(self: App) {.expose("editor").} =
-  discard self.createView(newTextDocument(self.asConfigProvider))
+proc createAndAddView*(self: App) {.expose("editor").} =
+  discard self.createAndAddView(newTextDocument(self.asConfigProvider))
 
 # proc createKeybindAutocompleteView*(self: App) {.expose("editor").} =
-#   self.createView(newKeybindAutocompletion())
+#   self.createAndAddView(newKeybindAutocompletion())
 
 proc closeCurrentView*(self: App) {.expose("editor").} =
   self.views[self.currentView].editor.unregister()
@@ -992,12 +1029,12 @@ proc openFile*(self: App, path: string, app: bool = false): Option[DocumentEdito
 
   try:
     if path.endsWith(".ast"):
-      return self.createView(newAstDocument(path, app, WorkspaceFolder.none)).some
+      return self.createAndAddView(newAstDocument(path, app, WorkspaceFolder.none)).some
     elif path.endsWith(".am"):
-      return self.createView(newModelDocument(path, app, WorkspaceFolder.none)).some
+      return self.createAndAddView(newModelDocument(path, app, WorkspaceFolder.none)).some
     else:
       let file = if app: fs.loadApplicationFile(path) else: fs.loadFile(path)
-      return self.createView(newTextDocument(self.asConfigProvider, path, file.splitLines, app)).some
+      return self.createAndAddView(newTextDocument(self.asConfigProvider, path, file.splitLines, app)).some
   except CatchableError:
     logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
     logger.log(lvlError, getCurrentException().getStackTrace())
@@ -1012,11 +1049,11 @@ proc openWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder): Optio
 
   try:
     if path.endsWith(".ast"):
-      return self.createView(newAstDocument(path, false, folder.some)).some
+      return self.createAndAddView(newAstDocument(path, false, folder.some)).some
     elif path.endsWith(".am"):
-      return self.createView(newModelDocument(path, false, folder.some)).some
+      return self.createAndAddView(newModelDocument(path, false, folder.some)).some
     else:
-      return self.createView(newTextDocument(self.asConfigProvider, path, false, folder.some)).some
+      return self.createAndAddView(newTextDocument(self.asConfigProvider, path, false, folder.some)).some
 
   except CatchableError:
     logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
@@ -1407,7 +1444,7 @@ proc handleRune*(self: App, input: int64, modifiers: Modifiers) =
     self.platform.preventDefault()
 
 proc handleDropFile*(self: App, path, content: string) =
-  discard self.createView(newTextDocument(self.asConfigProvider, path, content))
+  discard self.createAndAddView(newTextDocument(self.asConfigProvider, path, content))
 
 proc scriptRunAction*(action: string, arg: string) {.expose("editor").} =
   if gEditor.isNil:
@@ -1463,7 +1500,7 @@ proc loadCurrentConfig*(self: App) {.expose("editor").} =
   ## Javascript backend only!
   ## Opens the config file in a new view.
   when defined(js):
-    discard self.createView(newTextDocument(self.asConfigProvider, "./config/absytree_config.js", fs.loadApplicationFile("./config/absytree_config.js"), true))
+    discard self.createAndAddView(newTextDocument(self.asConfigProvider, "./config/absytree_config.js", fs.loadApplicationFile("./config/absytree_config.js"), true))
 
 proc sourceCurrentDocument*(self: App) {.expose("editor").} =
   ## Javascript backend only!

@@ -54,12 +54,12 @@ proc handlePopupAction*(popup: EditorId, action: string, args: JsonNode): bool {
   # infof "{env}:handlePopupAction: {action}, {args}"
 
   case action:
-  of "home":
-    for i in 0..<3:
+  of "prev-x":
+    for i in 0..<10:
       popup.runAction "prev"
     return true
-  of "end":
-    for i in 0..<3:
+  of "next-x":
+    for i in 0..<10:
       popup.runAction "next"
     return true
 
@@ -258,8 +258,8 @@ addCommand "popup.selector", "<TAB>", "accept"
 addCommand "popup.selector", "<ESCAPE>", "cancel"
 addCommand "popup.selector", "<UP>", "prev"
 addCommand "popup.selector", "<DOWN>", "next"
-addCommand "popup.selector", "<HOME>", "home"
-addCommand "popup.selector", "<END>", "end"
+addCommand "popup.selector", "<C-u>", "prev-x"
+addCommand "popup.selector", "<C-d>", "next-x"
 
 # loadHelixBindings()
 loadVimBindings()

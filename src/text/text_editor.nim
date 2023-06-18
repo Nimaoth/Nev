@@ -1644,3 +1644,17 @@ method handleMouseMove*(self: TextDocumentEditor, mousePosWindow: Vec2, mousePos
 
 method unregister*(self: TextDocumentEditor) =
   self.app.unregisterEditor(self)
+
+method getStateJson*(self: TextDocumentEditor): JsonNode =
+  return %*{
+    "selection": self.selection.toJson
+  }
+
+method restoreStateJson*(self: TextDocumentEditor, state: JsonNode) =
+  if state.kind != JObject:
+    return
+  if state.hasKey("selection"):
+    let selection = state["selection"].jsonTo Selection
+    self.targetSelection = selection
+    self.scrollToCursor()
+    self.markDirty()
