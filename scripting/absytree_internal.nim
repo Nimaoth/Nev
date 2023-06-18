@@ -530,7 +530,7 @@ proc editor_changeLayoutProp_void_App_string_float32_impl*(prop: string;
   discard
 proc editor_toggleStatusBarLocation_void_App_impl*() =
   discard
-proc editor_createView_void_App_impl*() =
+proc editor_createAndAddView_void_App_impl*() =
   discard
 proc editor_closeCurrentView_void_App_impl*() =
   discard
