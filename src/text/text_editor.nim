@@ -485,12 +485,12 @@ proc selectParentTs(self: TextDocumentEditor, selection: Selection) {.expose("ed
   if self.document.currentTree.isNil:
     return
 
-  let selectionRange = selection.tsRange(self.document.lines)
+  let selectionRange = selection.tsRange
   var node = self.document.currentTree.root.descendantForRange(selectionRange)
   while node.getRange == selectionRange and node != self.document.currentTree.root:
     node = node.parent
 
-  self.selection = node.getRange.toSelection(self.document.lines)
+  self.selection = node.getRange.toSelection
 
 proc selectParentCurrentTs(self: TextDocumentEditor) {.expose("editor.text").} =
   self.selectParentTs(self.selection)

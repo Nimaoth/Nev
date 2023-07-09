@@ -167,7 +167,7 @@ func contentString*(self: TextDocument, selection: Selection): string =
   result.add self.lines[last.line][0..<last.column]
 
 func contentString*(self: TextDocument, selection: TSRange): string =
-  return self.contentString selection.toSelection(self.lines)
+  return self.contentString selection.toSelection
 
 func charAt*(self: TextDocument, cursor: Cursor): char =
   if cursor.line < 0 or cursor.line > self.lines.high:
@@ -597,7 +597,7 @@ proc getNodeRange*(self: TextDocument, selection: Selection, parentIndex: int = 
   if self.currentTree.isNil:
     return
 
-  let rang = tsRange(tsPoint(selection.first, self.lines[selection.first.line].toOpenArray), tsPoint(selection.last, self.lines[selection.last.line].toOpenArray))
+  let rang = selection.tsRange
   var node = self.currentTree.root.descendantForRange rang
 
   for i in 0..<parentIndex:
@@ -617,7 +617,7 @@ proc getNodeRange*(self: TextDocument, selection: Selection, parentIndex: int = 
     else:
       break
 
-  result = node.getRange.toSelection(self.lines).some
+  result = node.getRange.toSelection.some
 
 proc firstNonWhitespace*(str: string): int =
   result = 0
