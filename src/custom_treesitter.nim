@@ -61,9 +61,13 @@ when defined(js):
   proc query*(self: TSLanguage, source: string): TSQuery =
     proc queryJs(self: TSLanguage, source: cstring): TSQuery {.importcpp("#.query(#)").}
     return queryJs(self, source.cstring)
-  proc parse*(self: TSParser, text: cstring, oldTree: TSTree = nil): TSTree {.importcpp("#.parse(#, #)").}
+  proc parse*(self: TSParser, text: string, oldTree: TSTree = nil): TSTree {.importcpp("#.parse(#, #)").}
+  proc parse*(self: TSParser, text: proc(index: int, position: TSPoint): string, oldTree: TSTree = nil): TSTree {.importcpp("#.parse(#, #)").}
   proc parseString*(self: TSParser, text: string, oldTree: Option[TSTree] = TSTree.none): TSTree =
-    return self.parse(text.cstring, oldTree.get(nil))
+    return self.parse(text, oldTree.get(nil))
+
+  proc parseCallback*(self: TSParser, text: proc(index: int, position: TSPoint): string, oldTree: Option[TSTree] = TSTree.none): TSTree =
+    return self.parse(text, oldTree.get(nil))
 
   proc root*(self: TSTree): TSNode {.importcpp("#.rootNode").}
 
@@ -477,14 +481,10 @@ proc deinit*(self: TSQuery) =
     self.impl.tsQueryDelete()
 
 proc tsPoint*(line: int, column: RuneIndex, text: openArray[char]): TSPoint = TSPoint(row: line, column: text.runeOffset(column))
-proc tsPoint*(line: int, column: int): TSPoint = TSPoint(row: line, column: column) #text.runeIndex(column))
-proc tsPoint*(cursor: Cursor, text: openArray[char]): TSPoint = TSPoint(row: cursor.line, column: cursor.column) #text.runeIndex(cursor.column))
+proc tsPoint*(line: int, column: int): TSPoint = TSPoint(row: line, column: column)
+proc tsPoint*(cursor: Cursor): TSPoint = TSPoint(row: cursor.line, column: cursor.column)
 proc tsRange*(first: TSPoint, last: TSPoint): TSRange = TSRange(first: first, last: last)
-proc tsRange*(selection: scripting_api.Selection, lines: openArray[string]): TSRange =
-  result.first = tsPoint(selection.first, lines[selection.first.line].toOpenArray)
-  result.last = tsPoint(selection.last, lines[selection.last.line].toOpenArray)
-proc toCursor*(point: TSPoint, line: openArray[char]): Cursor = (point.row, point.column) #line.runeOffset(point.column))
-proc toSelection*(rang: TSRange, lines: openArray[string]): scripting_api.Selection =
-  result.first = rang.first.toCursor(lines[rang.first.row].toOpenArray)
-  result.last = rang.last.toCursor(lines[rang.last.row].toOpenArray)
+proc tsRange*(selection: scripting_api.Selection): TSRange = TSRange(first: tsPoint(selection.first), last: tsPoint(selection.last))
+proc toCursor*(point: TSPoint): Cursor = (point.row, point.column)
+proc toSelection*(rang: TSRange): scripting_api.Selection = (rang.first.toCursor, rang.last.toCursor)
 
