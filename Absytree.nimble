@@ -48,7 +48,7 @@ task buildNimsuggestWS, "Build the server for hosting workspaces and language se
   selfExec "c -o:nimsuggest-ws.exe ./nimsuggest_ws.nim"
 
 task buildBrowser, "Build the browser version":
-  selfExec "js -o:ast.js -d:exposeScriptingApi -d:vmathObjBased -d:enableTableIdCacheChecking ./src/absytree_js.nim"
+  selfExec "js -o:ast.js -d:exposeScriptingApi -d:vmathObjBased -d:enableTableIdCacheChecking --boundChecks:on --rangeChecks:on ./src/absytree_js.nim"
 
 task buildNimConfigWasm, "Compile the nim script config file to wasm":
   withDir "config":

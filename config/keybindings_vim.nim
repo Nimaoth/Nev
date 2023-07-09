@@ -60,7 +60,7 @@ proc loadVimBindings*() =
     editor.moveFirst("line-no-indent")
     editor.setMode("insert")
   addTextCommandBlock "", "a":
-    editor.selections = editor.selections.mapIt(it.last.move(columns=1).toSelection)
+    editor.selections = editor.selections.mapIt(editor.doMoveCursorColumn(it.last, 1).toSelection)
     editor.setMode("insert")
   addTextCommandBlock "", "A":
     editor.moveLast("line")

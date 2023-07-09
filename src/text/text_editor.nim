@@ -195,28 +195,6 @@ method handleDeactivate*(self: TextDocumentEditor) =
     self.cursorVisible = true
     self.markDirty()
 
-proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor =
-  var cursor = cursor
-  let column = cursor.column + offset
-  if column < 0:
-    if cursor.line > 0:
-      cursor.line = cursor.line - 1
-      cursor.column = self.document.lastValidIndex cursor.line
-    else:
-      cursor.column = 0
-
-  elif column > self.document.lastValidIndex cursor.line:
-    if cursor.line < self.document.lines.len - 1:
-      cursor.line = cursor.line + 1
-      cursor.column = 0
-    else:
-      cursor.column = self.document.lastValidIndex cursor.line
-
-  else:
-    cursor.column = column
-
-  return self.clampCursor cursor
-
 proc doMoveCursorLine(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor =
   var cursor = cursor
   let line = cursor.line + offset
@@ -382,6 +360,40 @@ proc toJson*(self: api.TextDocumentEditor, opt = initToJsonOptions()): JsonNode 
 proc fromJsonHook*(t: var api.TextDocumentEditor, jsonNode: JsonNode) =
   t.id = api.EditorId(jsonNode["id"].jsonTo(int))
 
+proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor {.expose: "editor.text".} =
+  var cursor = cursor
+  var column = cursor.column
+
+  template currentLine: openArray[char] = self.document.lines[cursor.line].toOpenArray
+
+  if offset > 0:
+    for i in 0..<offset:
+      if column == currentLine.len:
+        if cursor.line < self.document.lines.high:
+          cursor.line = cursor.line + 1
+          cursor.column = 0
+          continue
+        else:
+          cursor.column = currentLine.len
+          break
+
+      cursor.column = currentLine.nextRuneStart(cursor.column)
+
+  elif offset < 0:
+    for i in 0..<(-offset):
+      if column == 0:
+        if cursor.line > 0:
+          cursor.line = cursor.line - 1
+          cursor.column = currentLine.len
+          continue
+        else:
+          cursor.column = 0
+          break
+
+      cursor.column = currentLine.runeStart(cursor.column - 1)
+
+  return self.clampCursor cursor
+
 proc setMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} =
   ## Sets the current mode of the editor. If `mode` is "", then no additional scope will be pushed on the scope stac.k
   ## If mode is e.g. "insert", then the scope "editor.text.insert" will be pushed on the scope stack above "editor.text"
@@ -473,11 +485,12 @@ proc selectParentTs(self: TextDocumentEditor, selection: Selection) {.expose("ed
   if self.document.currentTree.isNil:
     return
 
-  var node = self.document.currentTree.root.descendantForRange(selection)
-  while node.getRange == selection and node != self.document.currentTree.root:
+  let selectionRange = selection.tsRange(self.document.lines)
+  var node = self.document.currentTree.root.descendantForRange(selectionRange)
+  while node.getRange == selectionRange and node != self.document.currentTree.root:
     node = node.parent
 
-  self.selection = node.getRange
+  self.selection = node.getRange.toSelection(self.document.lines)
 
 proc selectParentCurrentTs(self: TextDocumentEditor) {.expose("editor.text").} =
   self.selectParentTs(self.selection)
@@ -1423,12 +1436,12 @@ genDispatcher("editor.text")
 proc getStyledText*(self: TextDocumentEditor, i: int): StyledLine =
   result = self.document.getStyledText(i)
   if self.styledTextOverrides.contains(i):
-    result.overrideStyle(0, result.len, "", -1)
+    result.overrideStyle(0.RuneIndex, result.runeLen.RuneIndex, "", -1)
 
     for override in self.styledTextOverrides[i]:
-      result.splitAt(override.cursor.column)
-      result.splitAt(override.cursor.column + override.text.len)
-      result.overrideStyleAndText(override.cursor.column, override.text, override.scope, -2)
+      self.document.splitAt(result, override.cursor.column)
+      self.document.splitAt(result, override.cursor.column + override.text.len)
+      self.document.overrideStyleAndText(result, override.cursor.column, override.text, override.scope, -2)
 
 proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): EventResponse =
   # echo "[textedit] handleAction ", action, " '", arg, "'"
@@ -1516,6 +1529,7 @@ proc handleTextDocumentLoaded(self: TextDocumentEditor) =
     self.selections = s
     self.scrollToCursor()
   self.targetSelectionsInternal = Selections.none
+  self.updateTargetColumn(Last)
 
 ## Only use this to create TextDocumentEditorInstances
 proc createTextEditorInstance(): TextDocumentEditor =
@@ -1563,7 +1577,7 @@ method createWithDocument*(_: TextDocumentEditor, document: Document, configProv
 proc getCursorAtPixelPos(self: TextDocumentEditor, mousePosWindow: Vec2): Option[Cursor] =
   let mousePosContent = mousePosWindow - self.lastContentBounds.xy
   for li, line in self.lastRenderedLines:
-    var startOffset = 0
+    var startOffset = 0.RuneIndex
     for i, part in line.parts:
       if part.bounds.contains(mousePosContent) or (i == line.parts.high and mousePosContent.y >= part.bounds.y and mousePosContent.y <= part.bounds.yh and mousePosContent.x >= part.bounds.x):
         var offsetFromLeft = (mousePosContent.x - part.bounds.x) / self.platform.charWidth
@@ -1573,8 +1587,9 @@ proc getCursorAtPixelPos(self: TextDocumentEditor, mousePosWindow: Vec2): Option
           offsetFromLeft += 0.5
 
         let index = clamp(offsetFromLeft.int, 0, part.text.runeLen.int)
-        return (line.index, startOffset + index).some
-      startOffset += part.text.runeLen.int
+        let byteIndex = self.document.lines[line.index].toOpenArray.runeOffset(startOffset + index.RuneCount)
+        return (line.index, byteIndex).some
+      startOffset += part.text.runeLen
   return Cursor.none
 
 method handleMousePress*(self: TextDocumentEditor, button: MouseButton, mousePosWindow: Vec2, modifiers: Modifiers) =

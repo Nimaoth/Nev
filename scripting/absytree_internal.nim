@@ -3,6 +3,9 @@ import "../src/scripting_api"
 
 ## This file is auto generated, don't modify.
 
+proc editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_impl*(
+    self: TextDocumentEditor; cursor: Cursor; offset: int): Cursor =
+  discard
 proc editor_text_setMode_void_TextDocumentEditor_string_impl*(
     self: TextDocumentEditor; mode: string) =
   discard

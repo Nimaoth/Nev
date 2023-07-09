@@ -1,5 +1,5 @@
 import std/[options, json]
-import custom_logger, custom_async, util
+import custom_logger, custom_async, util, custom_unicode
 
 from scripting_api import Cursor, Selection
 
@@ -24,6 +24,10 @@ when defined(js):
   type TSPoint* {.importc("Point").} = ref object of RootObj
     row*: int
     column*: int
+
+  type TSRange* = object of RootObj
+    first*: TSPoint
+    last*: TSPoint
 
   type TSQueryCapture* {.importc("QueryCapture").} = ref object of RootObj
     discard
@@ -63,9 +67,14 @@ when defined(js):
 
   proc root*(self: TSTree): TSNode {.importcpp("#.rootNode").}
 
+  proc deleteJs(self: TSTree) {.importcpp("#.delete()").}
+  proc delete*(self: var TSTree) =
+    deleteJs(self)
+    self = nil
+
   proc matchesJs(self: TSQuery, node: TSNode, first, last: TSPoint): seq[TSQueryMatch] {.importcpp("#.matches(#, #, #)").}
-  proc matches*(self: TSQuery, node: TSNode, selection: scripting_api.Selection): seq[TSQueryMatch] =
-    return self.matchesJs(node, TSPoint(row: selection.first.line, column: selection.first.column), TSPoint(row: selection.last.line, column: selection.last.column))
+  proc matches*(self: TSQuery, node: TSNode, rang: TSRange): seq[TSQueryMatch] =
+    return self.matchesJs(node, rang.first, rang.last)
 
   proc predicatesForPattern*(self: TSQuery, patternIndex: int): seq[TSPredicateResult] {.importcpp("#.predicatesForPattern(#)").}
 
@@ -85,15 +94,11 @@ when defined(js):
   proc startPosition(node: TSNode): TSPoint {.importcpp("#.startPosition").}
   proc endPosition(node: TSNode): TSPoint {.importcpp("#.endPosition").}
 
-  proc startPoint*(node: TSNode): Cursor =
-    let point = node.startPosition
-    return (point.row.int, point.column.int)
-  proc endPoint*(node: TSNode): Cursor =
-    let point = node.endPosition
-    return (point.row.int, point.column.int)
-  proc getRange*(node: TSNode): scripting_api.Selection = (node.startPoint, node.endPoint)
+  proc startPoint*(node: TSNode): TSPoint = node.startPosition
+  proc endPoint*(node: TSNode): TSPoint = node.endPosition
+  proc getRange*(node: TSNode): TSRange = TSRange(first: node.startPoint, last: node.endPoint)
 
-  func toTsPoint*(cursor: Cursor): TSPoint = TSPoint(row: cursor.line, column: cursor.column)
+  func toTsPoint*(cursor: Cursor, line: openArray[char]): TSPoint = TSPoint(row: cursor.line, column: cursor.column) #line.runeIndex(cursor.column))
 
   proc parent*(node: TSNode): TSNode {.importcpp("#.parent").}
   proc nextSibling(node: TSNode): TSNode {.importcpp("#.nextSibling").}
@@ -108,7 +113,7 @@ when defined(js):
       return s.some
 
   proc descendantForRangeJs(node: TSNode, startPoint: TSPoint, endPoint: TSPoint): TSNode {.importcpp("#.descendantForPosition(#, #)").}
-  proc descendantForRange*(node: TSNode, selection: scripting_api.Selection): TSNode = node.descendantForRangeJs(selection.first.toTsPoint, selection.last.toTsPoint)
+  proc descendantForRange*(node: TSNode, rang: TSRange): TSNode = node.descendantForRangeJs(rang.first, rang.last)
 
   proc edit*(self: TSTree, edit: TSInputEdit): TSTree {.importcpp("#.edit(#)").}
 
@@ -151,6 +156,10 @@ else:
     row*: int
     column*: int
 
+  type TSRange* = object of RootObj
+    first*: TSPoint
+    last*: TSPoint
+
   type TSInputEdit* = object
     startIndex*: int
     oldEndIndex*: int
@@ -163,6 +172,10 @@ else:
 
   func setLanguage*(self: TSParser, language: TSLanguage) =
     assert ts.tsParserSetLanguage(self.impl, language.impl)
+
+  proc delete*(self: var TSTree) =
+    ts.tsTreeDelete(self.impl)
+    self = nil
 
   func query*(self: TSLanguage, source: string): TSQuery =
     var errorOffset: uint32 = 0
@@ -186,20 +199,20 @@ else:
     proc c_malloc(size: csize_t): pointer {.importc: "malloc", header: "<stdlib.h>", used.}
     proc c_free(p: pointer): void {.importc: "free", header: "<stdlib.h>", used.}
 
-  func toTsPoint*(cursor: Cursor): ts.TSPoint = ts.TSPoint(row: cursor.line.uint32, column: cursor.column.uint32)
+  func toTsPoint*(cursor: Cursor, line: openArray[char]): ts.TSPoint = ts.TSPoint(row: cursor.line.uint32, column: line.runeIndex(cursor.column).uint32)
   func toTsPoint*(point: TSPoint): ts.TSPoint = ts.TSPoint(row: point.row.uint32, column: point.column.uint32)
   proc len*(node: TSNode): int = node.impl.tsNodeChildCount().int
   proc high*(node: TSNode): int = node.len - 1
   proc low*(node: TSNode): int = 0
   proc startByte*(node: TSNode): int = node.impl.tsNodeStartByte.int
   proc endByte*(node: TSNode): int = node.impl.tsNodeEndByte.int
-  proc startPoint*(node: TSNode): Cursor =
+  proc startPoint*(node: TSNode): TSPoint =
     let point = node.impl.tsNodeStartPoint
-    return (point.row.int, point.column.int)
-  proc endPoint*(node: TSNode): Cursor =
+    return TSPoint(row: point.row.int, column: point.column.int)
+  proc endPoint*(node: TSNode): TSPoint =
     let point = node.impl.tsNodeEndPoint
-    return (point.row.int, point.column.int)
-  proc getRange*(node: TSNode): Selection = (node.startPoint, node.endPoint)
+    return TSPoint(row: point.row.int, column: point.column.int)
+  proc getRange*(node: TSNode): TSRange = TSRange(first: node.startPoint, last: node.endPoint)
 
   proc root*(tree: TSTree): TSNode = TSNode(impl: tree.impl.tsTreeRootNode)
   proc edit*(self: TSTree, edit: TSInputEdit): TSTree =
@@ -233,17 +246,17 @@ else:
       result = TSNode(impl: other).some
 
   proc `[]`*(node: TSNode, index: int): TSNode = TSNode(impl: node.impl.tsNodeChild(index.uint32))
-  proc descendantForRange*(node: TSNode, selection: Selection): TSNode = TSNode(impl: ts.tsNodeDescendantForPointRange(node.impl, selection.first.toTsPoint, selection.last.toTsPoint))
+  proc descendantForRange*(node: TSNode, rang: TSRange): TSNode = TSNode(impl: ts.tsNodeDescendantForPointRange(node.impl, rang.first.toTsPoint, rang.last.toTsPoint))
   proc parent*(node: TSNode): TSNode = TSNode(impl: node.impl.tsNodeParent())
   proc `==`*(a: TSNode, b: TSNode): bool = a.impl.tsNodeEq(b.impl)
   proc current*(cursor: var ts.TSTreeCursor): ts.TSNode = tsTreeCursorCurrentNode(addr cursor)
   proc gotoParent*(cursor: var ts.TSTreeCursor): bool = tsTreeCursorGotoParent(addr cursor)
   proc gotoNextSibling*(cursor: var ts.TSTreeCursor): bool = tsTreeCursorGotoNextSibling(addr cursor)
   proc gotoFirstChild*(cursor: var ts.TSTreeCursor): bool = tsTreeCursorGotoFirstChild(addr cursor)
-  proc gotoFirstChildForCursor*(cursor: var ts.TSTreeCursor, cursor2: Cursor): int = tsTreeCursorGotoFirstChildForPoint(addr cursor, cursor2.toTsPoint).int
+  # proc gotoFirstChildForCursor*(cursor: var ts.TSTreeCursor, cursor2: Cursor): int = tsTreeCursorGotoFirstChildForPoint(addr cursor, cursor2.toTsPoint).int
 
-  proc setPointRange*(cursor: ptr ts.TSQueryCursor, selection: Selection) =
-    cursor.tsQueryCursorSetPointRange(selection.first.toTsPoint, selection.last.toTsPoint)
+  proc setPointRange*(cursor: ptr ts.TSQueryCursor, rang: TSRange) =
+    cursor.tsQueryCursorSetPointRange(rang.first.toTsPoint, rang.last.toTsPoint)
 
   proc getCaptureName*(query: TSQuery, index: uint32): string =
     var length: uint32
@@ -293,14 +306,14 @@ else:
 
   var scratchQueryCursor: ptr ts.TSQueryCursor = nil
 
-  proc matches*(self: TSQuery, node: TSNode, selection: Selection): seq[TSQueryMatch] =
+  proc matches*(self: TSQuery, node: TSNode, rang: TSRange): seq[TSQueryMatch] =
     result = @[]
 
     if scratchQueryCursor.isNil:
       scratchQueryCursor = ts.tsQueryCursorNew()
     let cursor = scratchQueryCursor
 
-    cursor.setPointRange selection
+    cursor.setPointRange rang
     cursor.execute(self, node)
 
     var match = cursor.nextMatch(self)
@@ -462,3 +475,16 @@ proc deinit*(self: TSParser) =
 proc deinit*(self: TSQuery) =
   when not defined(js):
     self.impl.tsQueryDelete()
+
+proc tsPoint*(line: int, column: RuneIndex, text: openArray[char]): TSPoint = TSPoint(row: line, column: text.runeOffset(column))
+proc tsPoint*(line: int, column: int): TSPoint = TSPoint(row: line, column: column) #text.runeIndex(column))
+proc tsPoint*(cursor: Cursor, text: openArray[char]): TSPoint = TSPoint(row: cursor.line, column: cursor.column) #text.runeIndex(cursor.column))
+proc tsRange*(first: TSPoint, last: TSPoint): TSRange = TSRange(first: first, last: last)
+proc tsRange*(selection: scripting_api.Selection, lines: openArray[string]): TSRange =
+  result.first = tsPoint(selection.first, lines[selection.first.line].toOpenArray)
+  result.last = tsPoint(selection.last, lines[selection.last.line].toOpenArray)
+proc toCursor*(point: TSPoint, line: openArray[char]): Cursor = (point.row, point.column) #line.runeOffset(point.column))
+proc toSelection*(rang: TSRange, lines: openArray[string]): scripting_api.Selection =
+  result.first = rang.first.toCursor(lines[rang.first.row].toOpenArray)
+  result.last = rang.last.toCursor(lines[rang.last.row].toOpenArray)
+
