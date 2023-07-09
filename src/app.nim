@@ -423,7 +423,12 @@ proc addView*(self: App, view: View, addToHistory = true, append = false) =
   elif append:
     self.views.add view
   else:
+    if self.currentView < 0:
+      self.currentView = 0
     self.views.insert(view, self.currentView)
+
+  if self.currentView < 0:
+    self.currentView = 0
 
   view.editor.markDirty()
 

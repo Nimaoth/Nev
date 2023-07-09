@@ -6,22 +6,23 @@ import vmath, bumpy, chroma
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
 {.used.}
 
-proc clampToLine(selection: Selection, line: int, lineLength: int): tuple[first: int, last: int] =
-  result.first = if selection.first.line < line: 0 elif selection.first.line == line: selection.first.column else: lineLength
-  result.last = if selection.last.line < line: 0 elif selection.last.line == line: selection.last.column else: lineLength
+proc clampToLine(document: TextDocument, selection: Selection, line: var StyledLine): tuple[first: RuneIndex, last: RuneIndex] =
+  result.first = if selection.first.line < line.index: 0.RuneIndex elif selection.first.line == line.index: document.lines[line.index].runeIndex(selection.first.column) else: line.runeLen.RuneIndex
+  result.last = if selection.last.line < line.index: 0.RuneIndex elif selection.last.line == line.index: document.lines[line.index].runeIndex(selection.last.column) else: line.runeLen.RuneIndex
 
-proc renderTextHighlight(panel: WPanel, app: App, startOffset: float, endOffset: float, line: int, startIndex: int, selection: Selection, selectionClamped: tuple[first: int, last: int], part: StyledText, color: Color, totalLineHeight: float) =
+proc renderTextHighlight(panel: WPanel, app: App, startOffset: float, endOffset: float, line: int, startRuneIndex: RuneIndex,
+    selection: tuple[first: RuneIndex, last: RuneIndex], selectionClamped: tuple[first: RuneIndex, last: RuneIndex], part: StyledText, color: Color, totalLineHeight: float) =
   let startOffset = startOffset.floor
   let endOffset = endOffset.ceil
 
-  let runeCount = part.text.runeLen.int
+  let runeCount = part.text.runeLen
 
   ## Fills a selection rect in the given color
   var left, right: float
-  if startIndex < selectionClamped.last and startIndex + runeCount > selectionClamped.first and runeCount > 0:
-    left = startOffset + max(0, selectionClamped.first - startIndex).float32 / (runeCount.float32 - 0) * (endOffset - startOffset)
-    right = startOffset + min(runeCount, selectionClamped.last - startIndex).float32 / (runeCount.float32 - 0) * (endOffset - startOffset)
-  elif runeCount == 0 and selection.contains((line, startIndex)) and not selection.isEmpty:
+  if startRuneIndex < selectionClamped.last and startRuneIndex + runeCount > selectionClamped.first and runeCount > 0.RuneCount:
+    left = startOffset + max(0.RuneCount, selectionClamped.first - startRuneIndex).float32 / (runeCount.float32 - 0) * (endOffset - startOffset)
+    right = startOffset + min(runeCount, selectionClamped.last - startRuneIndex).float32 / (runeCount.float32 - 0) * (endOffset - startOffset)
+  elif runeCount == 0.RuneCount and startRuneIndex >= selection.first and startRuneIndex <= selection.last and selection.first != selection.last:
     left = startOffset
     right = ceil(startOffset + app.platform.charWidth * 0.5)
   else:
@@ -44,10 +45,11 @@ proc renderTextHighlight(panel: WPanel, app: App, startOffset: float, endOffset:
     lastHierarchyChange: panel.lastHierarchyChange
   ))
 
-proc renderTextHighlight(panel: WPanel, app: App, startOffset: float, endOffset: float, line: int, startIndex: int, selections: openArray[Selection], selectionClamped: openArray[tuple[first: int, last: int]], part: StyledText, color: Color, totalLineHeight: float) =
+proc renderTextHighlight(panel: WPanel, app: App, startOffset: float, endOffset: float, line: int, startRuneIndex: RuneIndex,
+    selections: openArray[tuple[first: RuneIndex, last: RuneIndex]], selectionClamped: openArray[tuple[first: RuneIndex, last: RuneIndex]], part: StyledText, color: Color, totalLineHeight: float) =
   ## Fills selections rect in the given color
   for i in 0..<selections.len:
-    renderTextHighlight(panel, app, startOffset, endOffset, line, startIndex, selections[i], selectionClamped[i], part, color, totalLineHeight)
+    renderTextHighlight(panel, app, startOffset, endOffset, line, startRuneIndex, selections[i], selectionClamped[i], part, color, totalLineHeight)
 
 proc createPartWidget*(text: string, startOffset: float, width: float, height: float, color: Color, frameIndex: int): WText
 
@@ -214,9 +216,11 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
 
     let workspaceName = self.document.workspace.map(wf => " - " & wf.name).get("")
 
+    proc cursorString(cursor: Cursor): string = $cursor.line & ":" & $cursor.column & ":" & $self.document.lines[cursor.line].toOpenArray.runeIndex(cursor.column)
+
     let mode = if self.currentMode.len == 0: "normal" else: self.currentMode
     headerPart1Text.text = fmt" {mode} - {self.document.filename} {workspaceName} "
-    headerPart2Text.text = fmt" {self.selection} - {self.id} "
+    headerPart2Text.text = fmt" {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} "
 
     if self.dirty:
       headerPanel.invalidateHierarchy frameIndex
@@ -292,10 +296,15 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
 
     var styledText = self.getStyledText(i)
 
-    let selectionsNormalizedOnLine = selectionsPerLine.getOrDefault(i, @[]).map (s) => s.normalized
-    let selectionsClampedOnLine = selectionsNormalizedOnLine.map (s) => s.clampToLine(i, styledText.len)
-    let highlightsNormalizedOnLine = highlightsPerLine.getOrDefault(i, @[]).map (s) => s.normalized
-    let highlightsClampedOnLine = highlightsNormalizedOnLine.map (s) => s.clampToLine(i, styledText.len)
+    let selectionsNormalizedOnLine = selectionsPerLine.getOrDefault(i, @[]).map proc(s: auto): auto =
+      let s = s.normalized
+      return (self.document.lines[s.first.line].toOpenArray.runeIndex(s.first.column), styledText.runeIndex(s.last.column))
+    let selectionsClampedOnLine = selectionsPerLine.getOrDefault(i, @[]).map (s) => self.document.clampToLine(s.normalized, styledText)
+
+    let highlightsNormalizedOnLine = highlightsPerLine.getOrDefault(i, @[]).map proc(s: auto): auto =
+      let s = s.normalized
+      return (self.document.lines[s.first.line].toOpenArray.runeIndex(s.first.column), styledText.runeIndex(s.last.column))
+    let highlightsClampedOnLine = highlightsPerLine.getOrDefault(i, @[]).map (s) => self.document.clampToLine(s.normalized, styledText)
 
     if lineNumbers != LineNumbers.None and cursorLine == i:
       var partWidget = createPartWidget($i, 0, lineNumberBounds.x, totalLineHeight, textColor, frameIndex)
@@ -316,13 +325,13 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
         discard
 
     var startOffset = if lineNumbers == LineNumbers.None: 0.0 else: (lineNumberBounds.x + lineNumberPadding).ceil
-    var startIndex = 0.RuneIndex
+    var startRuneIndex = 0.RuneIndex
     for partIndex, part in styledText.parts:
       let width = (part.text.runeLen.float * charWidth).ceil
 
       # Draw background if selected
-      renderTextHighlight(lineWidget, app, startOffset, startOffset + width, i, startIndex.int, selectionsNormalizedOnLine, selectionsClampedOnLine, part, selectionColor, totalLineHeight)
-      renderTextHighlight(lineWidget, app, startOffset, startOffset + width, i, startIndex.int, highlightsNormalizedOnLine, highlightsClampedOnLine, part, highlightColor, totalLineHeight)
+      renderTextHighlight(lineWidget, app, startOffset, startOffset + width, i, startRuneIndex, selectionsNormalizedOnLine, selectionsClampedOnLine, part, selectionColor, totalLineHeight)
+      renderTextHighlight(lineWidget, app, startOffset, startOffset + width, i, startRuneIndex, highlightsNormalizedOnLine, highlightsClampedOnLine, part, highlightColor, totalLineHeight)
       # echo "part text: '", part.text, "'"
 
       let color = if part.scope.len == 0: textColor else: app.theme.tokenColor(part.scope, rgb(255, 200, 200))
@@ -340,7 +349,8 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
 
       # Set last cursor pos if its contained in this part
       for selection in selectionsPerLine.getOrDefault(i, @[]):
-        let indexInPart: RuneIndex = selection.last.column.RuneIndex - startIndex.RuneCount
+        let selectionLastRune = self.document.lines[selection.last.line].toOpenArray.runeIndex(selection.last.column, returnLen=true)
+        let indexInPart: RuneIndex = selectionLastRune - startRuneIndex.RuneCount
         if selection.last.line == i and indexInPart >= 0.RuneIndex and indexInPart <= part.text.runeLen:
           let characterUnderCursor: Rune = if indexInPart < part.text.runeLen: part.text[indexInPart] else: ' '.Rune
           let offsetFromPartStart = if part.text.len == 0: 0.0 else: indexInPart.float32 / part.text.runeLen.float32 * width
@@ -358,7 +368,7 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
           cursorBounds = rect(startOffset + offsetFromPartStart, top, charWidth * cursorWidth, lineHeight)
 
       startOffset += width
-      startIndex += part.text.runeLen
+      startRuneIndex += part.text.runeLen
 
     self.lastRenderedLines.add styledText
 

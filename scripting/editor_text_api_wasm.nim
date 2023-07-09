@@ -4,6 +4,31 @@ import "../src/scripting_api"
 ## This file is auto generated, don't modify.
 
 
+proc editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_wasm(
+    arg: cstring): cstring {.importc.}
+proc doMoveCursorColumn*(self: TextDocumentEditor; cursor: Cursor; offset: int): Cursor =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when Cursor is JsonNode:
+      cursor
+    else:
+      cursor.toJson()
+  argsJson.add block:
+    when int is JsonNode:
+      offset
+    else:
+      offset.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
 proc editor_text_setMode_void_TextDocumentEditor_string_wasm(arg: cstring): cstring {.
     importc.}
 proc setMode*(self: TextDocumentEditor; mode: string) =
