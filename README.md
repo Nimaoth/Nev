@@ -29,6 +29,20 @@ You can try the browser version [here](https://nimaoth.github.io/AbsytreeBrowser
 - Embed the generated file `ast.js`
 - See `absytree_browser.html` for an example
 
+### Compiling tree sitter grammars to wasm
+- Go into the tree-sitter repositories root directory
+- Make sure the cli is built
+  - `cargo build`
+- Compile the desired language to wasm. The specified directory is the one containing the `src` folder which in turn contains the `grammar.js`
+  - `target/release/tree-sitter build-wasm ../dev/nimtreesitter/treesitter_nim/treesitter_nim/nim`
+
+### Compiling tree sitter wasm binding
+- Go into the tree-sitter repositories root directory
+- Build the binding:
+  - `script/build-wasm`
+- Copy the generated files to the AbsytreeBrowser directory:
+  - `cp lib/binding_web/tree-sitter.js <.../AbsytreeBrowser> && cp lib/binding_web/tree-sitter.wasm <.../AbsytreeBrowser>`
+
 ## Configuration
 
 ### options.json

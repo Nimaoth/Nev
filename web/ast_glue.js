@@ -12,7 +12,9 @@ function doLoadEditor() {
 var treeSitterInitialized = false
 function doInitTreesitter() {
     try {
-        return Parser.init().then(() => {
+        return Parser.init({
+            // "INITIAL_MEMORY": 33554432 * 4, // 134_217_728
+        }).then(() => {
             treeSitterInitialized = true
             console.log("treesitter is ready")
             doLoadEditor()
