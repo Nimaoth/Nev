@@ -339,6 +339,16 @@
       "checksums": {
         "sha1": "0e383626b94a7f8b9fcd9d0575bb3c2bfca63488"
       }
+    },
+    "patty": {
+      "version": "0.3.5",
+      "vcsRevision": "31bb61b990b8b3bae1cba2f353fb978448942318",
+      "url": "https://github.com/andreaferretti/patty",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "6bc181924709c8a2d06b1459a31e73eb42cf1283"
+      }
     }
   },
   "tasks": {}

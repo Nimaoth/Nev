@@ -36,3 +36,10 @@ function addTextCommand(mode, keys, action, ...args) {
         addCommand(context, keys, action, ...args)
     }
 }
+
+function getActiveTextEditor(f) {
+    const editor = gEditor.getActiveEditor()
+    if (gEditor.scriptIsTextEditor(editor)) {
+        f(gEditor.getActiveEditor2())
+    }
+}

@@ -757,21 +757,21 @@ proc saveAppState*(self: App) {.expose("editor").} =
       return OpenEditor(
         filename: textDocument.filename, ast: false, languageId: textDocument.languageId, appFile: textDocument.appFile,
         workspaceId: textDocument.workspace.map(wf => $wf.id).get(""),
-        customOptions: customOptions
+        customOptions: customOptions ?? newJObject()
         ).some
     elif view.document of AstDocument:
       let astDocument = AstDocument(view.document)
       return OpenEditor(
         filename: astDocument.filename, ast: true, languageId: "ast", appFile: astDocument.appFile,
         workspaceId: astDocument.workspace.map(wf => $wf.id).get(""),
-        customOptions: customOptions
+        customOptions: customOptions ?? newJObject()
         ).some
     elif view.document of ModelDocument:
       let astDocument = ModelDocument(view.document)
       return OpenEditor(
         filename: astDocument.filename, ast: false, languageId: "am", appFile: astDocument.appFile,
         workspaceId: astDocument.workspace.map(wf => $wf.id).get(""),
-        customOptions: customOptions
+        customOptions: customOptions ?? newJObject()
         ).some
 
   for view in self.views:
