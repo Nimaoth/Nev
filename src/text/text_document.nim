@@ -1,6 +1,7 @@
 import std/[strutils, logging, sequtils, sugar, options, json, strformat, tables, sets, jsonutils]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
+import patty
 import document, document_editor, id, util, event, ../regex, custom_logger, custom_async, custom_treesitter, indent, custom_unicode
 import text_language_config
 import platform/[filesystem, widgets]
@@ -43,6 +44,10 @@ type StyledLine* = ref object
   index*: int
   parts*: seq[StyledText]
 
+variantp TextDocumentChange:
+  Insert(insertStartByte: int, insertEndByte: int, insertStartColumn: int, insertEndColumn: int, insertStartLine: int, insertEndLine: int)
+  Delete(deleteStartByte: int, deleteEndByte: int, deleteStartColumn: int, deleteEndColumn: int, deleteStartLine: int, deleteEndLine: int)
+
 type TextDocument* = ref object of Document
   lines*: seq[string]
   languageId*: string
@@ -54,6 +59,8 @@ type TextDocument* = ref object of Document
   textDeleted*: Event[tuple[document: TextDocument, selection: Selection]]
   singleLine*: bool
 
+  changes: seq[TextDocumentChange]
+
   configProvider: ConfigProvider
   languageConfig*: Option[TextLanguageConfig]
   indentStyle*: IndentStyle
@@ -63,7 +70,7 @@ type TextDocument* = ref object of Document
 
   tsParser: TSParser
   tsLanguage: TSLanguage
-  currentTree*: TSTree
+  currentTree: TSTree
   highlightQuery: TSQuery
 
   languageServer*: Option[LanguageServer]
@@ -103,7 +110,37 @@ proc notifyTextChanged*(self: TextDocument) =
   self.textChanged.invoke self
   self.styledTextCache.clear()
 
+proc applyTreesitterChanges(self: TextDocument) =
+  if self.currentTree.isNotNil:
+    for change in self.changes:
+      let edit = (block:
+        match change:
+          Insert(startByte, endByte, startColumn, endColumn, startLine, endLine):
+            TSInputEdit(
+              startIndex: startByte,
+              oldEndIndex: startByte,
+              newEndIndex: endByte,
+              startPosition: TSPoint(row: startLine, column: startColumn),
+              oldEndPosition: TSPoint(row: startLine, column: startColumn),
+              newEndPosition: TSPoint(row: endLine, column: endColumn),
+            )
+          Delete(startByte, endByte, startColumn, endColumn, startLine, endLine):
+            TSInputEdit(
+              startIndex: startByte,
+              oldEndIndex: endByte,
+              newEndIndex: startByte,
+              startPosition: TSPoint(row: startLine, column: startColumn),
+              oldEndPosition: TSPoint(row: endLine, column: endColumn),
+              newEndPosition: TSPoint(row: startLine, column: startColumn),
+            )
+      )
+
+      discard self.currentTree.edit(edit)
+
+  self.changes.setLen 0
+
 proc reparseTreesitter*(self: TextDocument) =
+  self.applyTreesitterChanges()
   if self.tsParser.isNotNil:
     let strValue = self.lines.join("\n")
     if self.currentTree.isNotNil:
@@ -111,19 +148,22 @@ proc reparseTreesitter*(self: TextDocument) =
     else:
       self.currentTree = self.tsParser.parseString(strValue)
 
+proc tsTree*(self: TextDocument): TsTree =
+  if self.changes.len > 0 or self.currentTree.isNil:
+    self.reparseTreesitter()
+  return self.currentTree
+
 proc `content=`*(self: TextDocument, value: string) =
   if self.singleLine:
     self.lines = @[value.replace("\n", "")]
     if self.lines.len == 0:
       self.lines = @[""]
-    if not self.tsParser.isNil:
-      self.currentTree = self.tsParser.parseString(self.lines[0])
+    self.reparseTreesitter()
   else:
     self.lines = value.splitLines
     if self.lines.len == 0:
       self.lines = @[""]
-    if not self.tsParser.isNil:
-      self.currentTree = self.tsParser.parseString(value)
+    self.reparseTreesitter()
 
   inc self.version
 
@@ -138,10 +178,7 @@ proc `content=`*(self: TextDocument, value: seq[string]) =
   if self.lines.len == 0:
     self.lines = @[""]
 
-  let strValue = value.join("\n")
-
-  if not self.tsParser.isNil:
-    self.currentTree = self.tsParser.parseString(strValue)
+  self.reparseTreesitter()
 
   inc self.version
 
@@ -257,10 +294,10 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
 
     var regexes = initTable[string, Regex]()
 
-    if self.tsParser.isNil or self.highlightQuery.isNil or self.currentTree.isNil:
+    if self.tsParser.isNil or self.highlightQuery.isNil or self.tsTree.isNil:
       return
 
-    for match in self.highlightQuery.matches(self.currentTree.root, tsRange(tsPoint(i, 0), tsPoint(i, line.len))):
+    for match in self.highlightQuery.matches(self.tsTree.root, tsRange(tsPoint(i, 0), tsPoint(i, line.len))):
       let predicates = self.highlightQuery.predicatesForPattern(match.pattern)
 
       for capture in match.captures:
@@ -358,8 +395,6 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
         else:
           line.len
 
-        if i == 0:
-          debugf"{i}: first: {first}, last: {last}, scope: {scope}"
         overrideStyle(self, result, first, last, $scope, match.pattern)
 
     # override whitespace
@@ -402,7 +437,7 @@ proc initTreesitter*(self: TextDocument): Future[void] {.async.} =
   self.tsParser.setLanguage(language.get)
   self.tsLanguage = language.get
 
-  self.currentTree = self.tsParser.parseString(self.contentString)
+  self.reparseTreesitter()
 
   try:
     let queryString = fs.loadFile(fmt"./languages/{languageId}/queries/highlights.scm")
@@ -561,18 +596,7 @@ proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection:
       result[k] = result[k].subtract(selection)
 
     if not self.tsParser.isNil:
-      # debugf"delete {startByte}, {endByte}, {first.column}, {last.column}, {firstColumnRune}, {lastColumnRune}"
-      # debugf"delete1 {startByte}, {endByte}, {startByte}, {first.column}, {last.column}, {first.column}"
-      # debugf"delete2 {startByte}, {endByte}, {startByte}, {firstColumnRune.int}, {lastColumnRune.int}, {firstColumnRune.int}"
-      let edit = TSInputEdit(
-        startIndex: startByte,
-        oldEndIndex: endByte,
-        newEndIndex: startByte,
-        startPosition: TSPoint(row: selection.first.line, column: first.column),
-        oldEndPosition: TSPoint(row: selection.last.line, column: last.column),
-        newEndPosition: TSPoint(row: selection.first.line, column: first.column),
-      )
-      discard self.currentTree.edit(edit)
+      self.changes.add(Delete(startByte, endByte, first.column, last.column, selection.first.line, selection.last.line))
 
     inc self.version
 
@@ -582,8 +606,8 @@ proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection:
     if notify:
       self.textDeleted.invoke((self, selection))
 
-  if reparse:
-    self.reparseTreesitter()
+  # if reparse:
+  #   self.reparseTreesitter()
 
   if notify:
     self.notifyTextChanged()
@@ -594,14 +618,15 @@ proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection:
 
 proc getNodeRange*(self: TextDocument, selection: Selection, parentIndex: int = 0, siblingIndex: int = 0): Option[Selection] =
   result = Selection.none
-  if self.currentTree.isNil:
+  let tree = self.tsTree
+  if tree.isNil:
     return
 
   let rang = selection.tsRange
-  var node = self.currentTree.root.descendantForRange rang
+  var node = tree.root.descendantForRange rang
 
   for i in 0..<parentIndex:
-    if node == self.currentTree.root:
+    if node == tree.root:
       break
     node = node.parent
 
@@ -701,19 +726,7 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
 
     if not self.tsParser.isNil:
       let (end_line, end_column) = traverse(oldCursor.line, oldCursor.column, text)
-      # debugf"insert {startByte} + {text.len} = {(startByte + text.len)}, {oldCursor.column}, {cursor.column}, {lastColumnRune}, {cursorColumnRune}"
-      # debugf"insert1 {startByte}, {startByte}, {(startByte + text.len)}, {oldCursor.column}, {oldCursor.column}, {cursorColumnRune.int}"
-      # debugf"insert1 {startByte}, {startByte}, {(startByte + text.len)}, {oldCursor.column}, {oldCursor.column}, {end_column}"
-      # debugf"insert1 {startByte}, {startByte}, {(startByte + text.len)}, {lastColumnRune.int}, {lastColumnRune.int}, {cursorColumnRune.int}"
-      let edit = TSInputEdit(
-        startIndex: startByte,
-        oldEndIndex: startByte,
-        newEndIndex: startByte + text.len,
-        startPosition: TSPoint(row: oldCursor.line, column: oldCursor.column),
-        oldEndPosition: TSPoint(row: oldCursor.line, column: oldCursor.column),
-        newEndPosition: TSPoint(row: cursor.line, column: end_column),
-      )
-      discard self.currentTree.edit(edit)
+      self.changes.add(Insert(startByte, startByte + text.len, oldCursor.column, end_column, oldCursor.line, cursor.line))
 
     inc self.version
 
@@ -723,8 +736,8 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
     if notify:
       self.textInserted.invoke((self, oldCursor, text))
 
-  if reparse:
-    self.reparseTreesitter()
+  # if reparse:
+  #   self.reparseTreesitter()
 
   if notify:
     self.notifyTextChanged()
@@ -738,8 +751,8 @@ proc edit*(self: TextDocument, selections: openArray[Selection], oldSelection: o
   result = self.delete(selections, oldSelection, false, record=record, reparse=false)
   result = self.insert(result, oldSelection, texts, record=record, reparse=false)
 
-  if reparse:
-    self.reparseTreesitter()
+  # if reparse:
+  #   self.reparseTreesitter()
 
 proc doUndo(self: TextDocument, op: UndoOp, oldSelection: openArray[Selection], useOldSelection: bool, redoOps: var seq[UndoOp], reparse: bool = true): seq[Selection] =
   case op.kind:
