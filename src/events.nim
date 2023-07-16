@@ -75,7 +75,7 @@ template eventHandler*(inConfig: EventHandlerConfig, handlerBody: untyped): unty
     handler.config = inConfig
     handler.dfaInternal = inConfig.buildDFA()
 
-    template onAction(actionBody: untyped): untyped =
+    template onAction(actionBody: untyped): untyped {.used.} =
       handler.handleAction = proc(action: string, arg: string): EventResponse =
         if handler.config.handleActions:
           let action {.inject, used.} = action
@@ -89,7 +89,7 @@ template eventHandler*(inConfig: EventHandlerConfig, handlerBody: untyped): unty
         else:
           return Ignored
 
-    template onInput(inputBody: untyped): untyped =
+    template onInput(inputBody: untyped): untyped {.used.} =
       handler.handleInput = proc(input: string): EventResponse =
         if handler.config.handleInputs:
           let input {.inject, used.} = input
@@ -97,7 +97,7 @@ template eventHandler*(inConfig: EventHandlerConfig, handlerBody: untyped): unty
         else:
           return Ignored
 
-    template onProgress(progressBody: untyped): untyped =
+    template onProgress(progressBody: untyped): untyped {.used.} =
       handler.handleProgress = proc(i: int64) =
         let input {.inject, used.} = i
         progressBody

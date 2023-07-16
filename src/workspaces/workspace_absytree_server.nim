@@ -1,4 +1,4 @@
-import std/[tables, json, strutils, options]
+import std/[tables, json, options]
 import workspace, custom_async, custom_logger, async_http_client, platform/filesystem, array_buffer
 
 type

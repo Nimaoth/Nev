@@ -158,12 +158,13 @@ proc `content=`*(self: TextDocument, value: string) =
     self.lines = @[value.replace("\n", "")]
     if self.lines.len == 0:
       self.lines = @[""]
-    self.reparseTreesitter()
   else:
     self.lines = value.splitLines
     if self.lines.len == 0:
       self.lines = @[""]
-    self.reparseTreesitter()
+
+  self.currentTree.delete()
+  self.reparseTreesitter()
 
   inc self.version
 
@@ -178,6 +179,7 @@ proc `content=`*(self: TextDocument, value: seq[string]) =
   if self.lines.len == 0:
     self.lines = @[""]
 
+  self.currentTree.delete()
   self.reparseTreesitter()
 
   inc self.version
@@ -559,7 +561,7 @@ proc byteOffset*(self: TextDocument, cursor: Cursor): int =
 proc tabWidth*(self: TextDocument): int =
   return self.languageConfig.map(c => c.tabWidth).get(4)
 
-proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], notify: bool = true, record: bool = true, reparse: bool = true): seq[Selection] =
+proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], notify: bool = true, record: bool = true): seq[Selection] =
   result = self.clampAndMergeSelections selections
 
   var undoOp = UndoOp(kind: Nested, children: @[], oldSelection: @oldSelection)
@@ -575,9 +577,6 @@ proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection:
     let endByte = self.byteOffset(last)
 
     let deletedText = self.contentString(selection)
-
-    let firstColumnRune = self.lines[first.line].runeIndex(first.column)
-    let lastColumnRune = self.lines[last.line].runeIndex(last.column)
 
     if first.line == last.line:
       # Single line selection
@@ -605,9 +604,6 @@ proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection:
 
     if notify:
       self.textDeleted.invoke((self, selection))
-
-  # if reparse:
-  #   self.reparseTreesitter()
 
   if notify:
     self.notifyTextChanged()
@@ -673,7 +669,7 @@ proc traverse*(line, column: int, text: openArray[char]): (int, int) =
 
   return (line, column)
 
-proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true, reparse: bool = true): seq[Selection] =
+proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true): seq[Selection] =
   result = self.clampAndMergeSelections selections
 
   var undoOp = UndoOp(kind: Nested, children: @[], oldSelection: @oldSelection)
@@ -690,11 +686,9 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
     var cursor = selection.last
     let startByte = self.byteOffset(cursor)
 
-    let lastColumnRune = self.lines[oldCursor.line].toOpenArray.runeIndex(oldCursor.column)
     var cursorColumnRune = self.lines[cursor.line].toOpenArray.runeIndex(cursor.column)
 
     var lineCounter: int = 0
-    # echo "insert ", cursor, ": ", text
     if self.singleLine:
       let text = text.replace("\n", " ")
       if self.lines.len == 0:
@@ -736,9 +730,6 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
     if notify:
       self.textInserted.invoke((self, oldCursor, text))
 
-  # if reparse:
-  #   self.reparseTreesitter()
-
   if notify:
     self.notifyTextChanged()
 
@@ -746,23 +737,20 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
     self.undoOps.add undoOp
     self.redoOps = @[]
 
-proc edit*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true, reparse: bool = true): seq[Selection] =
+proc edit*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true): seq[Selection] =
   let selections = selections.map (s) => s.normalized
-  result = self.delete(selections, oldSelection, false, record=record, reparse=false)
-  result = self.insert(result, oldSelection, texts, record=record, reparse=false)
+  result = self.delete(selections, oldSelection, false, record=record)
+  result = self.insert(result, oldSelection, texts, record=record)
 
-  # if reparse:
-  #   self.reparseTreesitter()
-
-proc doUndo(self: TextDocument, op: UndoOp, oldSelection: openArray[Selection], useOldSelection: bool, redoOps: var seq[UndoOp], reparse: bool = true): seq[Selection] =
+proc doUndo(self: TextDocument, op: UndoOp, oldSelection: openArray[Selection], useOldSelection: bool, redoOps: var seq[UndoOp]): seq[Selection] =
   case op.kind:
   of Delete:
     let text = self.contentString(op.selection)
-    result = self.delete([op.selection], op.oldSelection, record=false, reparse=false)
+    result = self.delete([op.selection], op.oldSelection, record=false)
     redoOps.add UndoOp(kind: Insert, cursor: op.selection.first, text: text, oldSelection: @oldSelection)
 
   of Insert:
-    let selections = self.insert([op.cursor.toSelection], op.oldSelection, [op.text], record=false, reparse=false)
+    let selections = self.insert([op.cursor.toSelection], op.oldSelection, [op.text], record=false)
     result = selections
     redoOps.add UndoOp(kind: Delete, selection: (op.cursor, selections[0].last), oldSelection: @oldSelection)
 
@@ -771,12 +759,9 @@ proc doUndo(self: TextDocument, op: UndoOp, oldSelection: openArray[Selection], 
 
     var redoOp = UndoOp(kind: Nested, oldSelection: @oldSelection)
     for i in countdown(op.children.high, 0):
-      discard self.doUndo(op.children[i], oldSelection, useOldSelection, redoOp.children, reparse=false)
+      discard self.doUndo(op.children[i], oldSelection, useOldSelection, redoOp.children)
 
     redoOps.add redoOp
-
-  if reparse:
-    self.reparseTreesitter()
 
   if useOldSelection:
     result = op.oldSelection
@@ -790,15 +775,15 @@ proc undo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
   let op = self.undoOps.pop
   return self.doUndo(op, oldSelection, useOldSelection, self.redoOps).some
 
-proc doRedo(self: TextDocument, op: UndoOp, oldSelection: openArray[Selection], useOldSelection: bool, undoOps: var seq[UndoOp], reparse: bool = true): seq[Selection] =
+proc doRedo(self: TextDocument, op: UndoOp, oldSelection: openArray[Selection], useOldSelection: bool, undoOps: var seq[UndoOp]): seq[Selection] =
   case op.kind:
   of Delete:
     let text = self.contentString(op.selection)
-    result = self.delete([op.selection], op.oldSelection, record=false, reparse=false)
+    result = self.delete([op.selection], op.oldSelection, record=false)
     undoOps.add UndoOp(kind: Insert, cursor: op.selection.first, text: text, oldSelection: @oldSelection)
 
   of Insert:
-    result = self.insert([op.cursor.toSelection], [op.cursor.toSelection], [op.text], record=false, reparse=false)
+    result = self.insert([op.cursor.toSelection], [op.cursor.toSelection], [op.text], record=false)
     undoOps.add UndoOp(kind: Delete, selection: (op.cursor, result[0].last), oldSelection: @oldSelection)
 
   of Nested:
@@ -806,12 +791,9 @@ proc doRedo(self: TextDocument, op: UndoOp, oldSelection: openArray[Selection], 
 
     var undoOp = UndoOp(kind: Nested, oldSelection: @oldSelection)
     for i in countdown(op.children.high, 0):
-      discard self.doRedo(op.children[i], oldSelection, useOldSelection, undoOp.children, reparse=false)
+      discard self.doRedo(op.children[i], oldSelection, useOldSelection, undoOp.children)
 
     undoOps.add undoOp
-
-  if reparse:
-    self.reparseTreesitter()
 
   if useOldSelection:
     result = op.oldSelection
