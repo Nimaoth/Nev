@@ -18,6 +18,11 @@ type
     path*: seq[int]
     node*: AstNode
     cell*: Cell
+  CellCursorState = object
+    firstIndex*: int
+    lastIndex*: int
+    path*: seq[int]
+    node*: NodeId
 
 type Direction* = enum
   Left, Right
@@ -115,6 +120,7 @@ type
     cellWidgetContext*: UpdateContext
     mCursor: CellCursor
     mCursorBeforeTransaction: CellCursor
+    mTargetCursor: Option[CellCursorState]
 
     useDefaultCellBuilder*: bool
 
@@ -153,6 +159,7 @@ proc applySelectedCompletion*(self: ModelDocumentEditor)
 proc updateCompletions(self: ModelDocumentEditor)
 proc invalidateCompletions(self: ModelDocumentEditor)
 proc refilterCompletions(self: ModelDocumentEditor)
+proc updateCursor*(self: ModelDocumentEditor, cursor: CellCursor): Option[CellCursor]
 
 proc toCursor*(cell: Cell, column: int): CellCursor
 proc toCursor*(cell: Cell, start: bool): CellCursor
@@ -219,6 +226,15 @@ proc `cursor=`*(self: ModelDocumentEditor, cursor: CellCursor) =
   else:
     self.mCursor = cursor
     self.refilterCompletions()
+
+proc `cursor=`*(self: ModelDocumentEditor, cursor: CellCursorState) =
+  if self.document.model.resolveReference(cursor.node).getSome(node):
+    if self.updateCursor(CellCursor(firstIndex: cursor.firstIndex, lastIndex: cursor.lastIndex, path: cursor.path, node: node)).getSome(cursor):
+      self.cursor = cursor
+
+proc `targetCursor=`*(self: ModelDocumentEditor, cursor: CellCursorState) =
+  self.mTargetCursor = cursor.some
+  self.cursor = cursor
 
 proc handleNodeDeleted(self: ModelDocument, model: Model, parent: AstNode, child: AstNode, role: Id, index: int) =
   # debugf "handleNodeDeleted {parent}, {child}, {role}, {index}"
@@ -491,7 +507,12 @@ proc handleModelChanged(self: ModelDocumentEditor, document: ModelDocument) =
   discard self.document.model.onNodeReferenceChanged.subscribe proc(d: auto) = self.handleNodeReferenceChanged(d[0], d[1], d[2], d[3], d[4])
 
   self.rebuildCells()
-  self.cursor = self.getFirstEditableCellOfNode(self.document.model.rootNodes[0]).get
+
+  if self.mTargetCursor.getSome(c):
+    self.cursor = c
+  else:
+    self.cursor = self.getFirstEditableCellOfNode(self.document.model.rootNodes[0]).get
+
   self.mCursorBeforeTransaction = self.mCursor
 
   self.markDirty()
@@ -2240,3 +2261,25 @@ proc handleAction(self: ModelDocumentEditor, action: string, arg: string): Event
     return Handled
 
   return Ignored
+
+method getStateJson*(self: ModelDocumentEditor): JsonNode =
+  return %*{
+    "cursor": %*{
+      "firstIndex": self.cursor.firstIndex,
+      "lastIndex": self.cursor.lastIndex,
+      "path": self.cursor.path,
+      "nodeId": self.cursor.node.id.Id.toJson,
+    }
+  }
+
+method restoreStateJson*(self: ModelDocumentEditor, state: JsonNode) =
+  if state.kind != JObject:
+    return
+  if state.hasKey("cursor"):
+    let cursorState = state["cursor"]
+    echo cursorState.pretty
+    let firstIndex = cursorState["firstIndex"].jsonTo int
+    let lastIndex = cursorState["lastIndex"].jsonTo int
+    let path = cursorState["path"].jsonTo seq[int]
+    let nodeId = cursorState["nodeId"].jsonTo(Id).NodeId
+    self.targetCursor = CellCursorState(firstIndex: firstIndex, lastIndex: lastIndex, path: path, node: nodeId)
