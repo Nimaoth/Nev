@@ -57,7 +57,7 @@ proc requestRender(redrawEverything = false) =
       logger.log(lvlInfo, fmt"Frame: {frameTime:>5.2}ms (u: {updateTime:>5.2}ms, l: {layoutTime:>5.2}ms, r: {renderTime:>5.2}ms)")
 
 proc runApp(): Future[void] {.async.} =
-  var ed = await newEditor(Backend.Browser, rend)
+  discard await newEditor(Backend.Browser, rend)
 
   discard rend.onKeyPress.subscribe proc(event: auto): void = requestRender()
   discard rend.onKeyRelease.subscribe proc(event: auto): void = requestRender()

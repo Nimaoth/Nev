@@ -73,7 +73,8 @@ when defined(js):
 
   proc deleteJs(self: TSTree) {.importcpp("#.delete()").}
   proc delete*(self: var TSTree) =
-    deleteJs(self)
+    if self.isNotNil:
+      deleteJs(self)
     self = nil
 
   proc matchesJs(self: TSQuery, node: TSNode, first, last: TSPoint): seq[TSQueryMatch] {.importcpp("#.matches(#, #, #)").}
@@ -178,7 +179,8 @@ else:
     assert ts.tsParserSetLanguage(self.impl, language.impl)
 
   proc delete*(self: var TSTree) =
-    ts.tsTreeDelete(self.impl)
+    if self.isNotNil:
+      ts.tsTreeDelete(self.impl)
     self = nil
 
   func query*(self: TSLanguage, source: string): TSQuery =
