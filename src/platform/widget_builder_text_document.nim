@@ -88,10 +88,10 @@ proc createLinesInPanel*(app: App, contentPanel: WPanel, previousBaseIndex: int,
 
   let totalLineHeight = app.platform.totalLineHeight
 
+  var top = scrollOffset
+
   # Render all lines after base index
   for i in previousBaseIndex..<lines:
-    let top = (i - previousBaseIndex).float32 * totalLineHeight + scrollOffset
-
     # Bounds of the previous line part
     if onlyRenderInBounds and top >= contentPanel.lastBounds.h:
       break
@@ -99,18 +99,20 @@ proc createLinesInPanel*(app: App, contentPanel: WPanel, previousBaseIndex: int,
     if onlyRenderInBounds and top + totalLineHeight <= 0:
       continue
 
-    var lineWidget = WPanel(anchor: (vec2(0, 0), vec2(1, 0)), left: 0, right: 0, top: top, bottom: top + totalLineHeight, lastHierarchyChange: frameIndex)
+    var lineWidget = WPanel(anchor: (vec2(0, 0), vec2(0, 0)), left: 0, right: contentPanel.lastBounds.w, top: top, bottom: top + totalLineHeight, lastHierarchyChange: frameIndex)
+    lineWidget.layoutWidget(contentPanel.lastBounds, frameIndex, app.platform.layoutOptions)
 
     if not renderLine(lineWidget, i, true, frameIndex):
       break
 
     contentPanel.add lineWidget
+    top = lineWidget.bottom
+
+  top = scrollOffset
 
   # Render all lines before base index
   for k in 1..previousBaseIndex:
     let i = previousBaseIndex - k
-
-    let top = (i - previousBaseIndex).float32 * totalLineHeight + scrollOffset
 
     # Bounds of the previous line part
     if onlyRenderInBounds and top >= contentPanel.lastBounds.h:
@@ -119,10 +121,17 @@ proc createLinesInPanel*(app: App, contentPanel: WPanel, previousBaseIndex: int,
     if onlyRenderInBounds and top + totalLineHeight <= 0:
       break
 
-    var lineWidget = WPanel(anchor: (vec2(0, 0), vec2(1, 0)), left: 0, right: 0, top: top, bottom: top + totalLineHeight, lastHierarchyChange: frameIndex)
+    var lineWidget = WPanel(anchor: (vec2(0, 0), vec2(0, 0)), left: 0, right: contentPanel.lastBounds.w, top: top, bottom: top + totalLineHeight, lastHierarchyChange: frameIndex)
+    lineWidget.layoutWidget(contentPanel.lastBounds, frameIndex, app.platform.layoutOptions)
 
     if not renderLine(lineWidget, i, false, frameIndex):
       break
+
+    let height = lineWidget.height
+    lineWidget.top = top - height
+    lineWidget.bottom = top
+
+    top = lineWidget.top
 
     contentPanel.add lineWidget
 
@@ -248,6 +257,9 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
   # let timer = startTimer()
   contentPanel.setLen 0
 
+  if not sizeToContent:
+    contentPanel.layoutWidget(widget.lastBounds, frameIndex, app.platform.layoutOptions)
+
   if not self.disableScrolling:
     updateBaseIndexAndScrollOffset(contentPanel, self.previousBaseIndex, self.scrollOffset, self.document.lines.len, totalLineHeight, int.none)
 
@@ -324,14 +336,25 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
       else:
         discard
 
+    var subLineWidget = lineWidget
+
     var startOffset = if lineNumbers == LineNumbers.None: 0.0 else: (lineNumberBounds.x + lineNumberPadding).ceil
     var startRuneIndex = 0.RuneIndex
+    var subLineYOffset = 0.0
+    var subLineTop = lineWidget.top
     for partIndex, part in styledText.parts:
       let width = (part.text.runeLen.float * charWidth).ceil
+      if startOffset + width > lineWidget.lastBounds.w:
+        subLineYOffset += totalLineHeight
+        subLineWidget = WPanel(anchor: (vec2(0, 0), vec2(0, 0)), left: 0, right: contentPanel.lastBounds.w, top: subLineYOffset, bottom: subLineYOffset + totalLineHeight, lastHierarchyChange: frameIndex)
+        lineWidget.add subLineWidget
+        startOffset = if lineNumbers == LineNumbers.None: 0.0 else: (lineNumberBounds.x + lineNumberPadding).ceil
+        lineWidget.bottom += totalLineHeight
+        subLineTop += totalLineHeight
 
       # Draw background if selected
-      renderTextHighlight(lineWidget, app, startOffset, startOffset + width, i, startRuneIndex, selectionsNormalizedOnLine, selectionsClampedOnLine, part, selectionColor, totalLineHeight)
-      renderTextHighlight(lineWidget, app, startOffset, startOffset + width, i, startRuneIndex, highlightsNormalizedOnLine, highlightsClampedOnLine, part, highlightColor, totalLineHeight)
+      renderTextHighlight(subLineWidget, app, startOffset, startOffset + width, i, startRuneIndex, selectionsNormalizedOnLine, selectionsClampedOnLine, part, selectionColor, totalLineHeight)
+      renderTextHighlight(subLineWidget, app, startOffset, startOffset + width, i, startRuneIndex, highlightsNormalizedOnLine, highlightsClampedOnLine, part, highlightColor, totalLineHeight)
       # echo "part text: '", part.text, "'"
 
       let color = if part.scope.len == 0: textColor else: app.theme.tokenColor(part.scope, rgb(255, 200, 200))
@@ -341,11 +364,11 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
         partWidget.foregroundColor.a = opacity
 
       styledText.parts[partIndex].bounds.x = partWidget.left
-      styledText.parts[partIndex].bounds.y = lineWidget.top
+      styledText.parts[partIndex].bounds.y = subLineTop
       styledText.parts[partIndex].bounds.w = partWidget.right - partWidget.left
-      styledText.parts[partIndex].bounds.h = lineWidget.bottom - lineWidget.top
+      styledText.parts[partIndex].bounds.h = subLineWidget.height
 
-      lineWidget.add(partWidget)
+      subLineWidget.add(partWidget)
 
       # Set last cursor pos if its contained in this part
       for selection in selectionsPerLine.getOrDefault(i, @[]):
@@ -354,7 +377,7 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
         if selection.last.line == i and indexInPart >= 0.RuneIndex and indexInPart <= part.text.runeLen:
           let characterUnderCursor: Rune = if indexInPart < part.text.runeLen: part.text[indexInPart] else: ' '.Rune
           let offsetFromPartStart = if part.text.len == 0: 0.0 else: indexInPart.float32 / part.text.runeLen.float32 * width
-          lineWidget.add(WText(
+          subLineWidget.add(WText(
             anchor: (vec2(0, 0), vec2(0, 0)),
             left: startOffset + offsetFromPartStart,
             right: startOffset + offsetFromPartStart + cursorWidth * charWidth,
