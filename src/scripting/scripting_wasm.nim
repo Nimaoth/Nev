@@ -44,7 +44,7 @@ method init*(self: ScriptContextWasm, path: string): Future[void] {.async.} =
     for file in files:
       let module = await newWasmModule(file, @[editorImports])
       if module.getSome(module):
-        logger.log(lvlInfo, fmt"[scripting-wasm] Loaded wasm module {file}")
+        log(lvlInfo, fmt"[scripting-wasm] Loaded wasm module {file}")
 
         if findFunction(module, "handleUnknownPopupActionWasm", bool, proc(popup: int32, action: cstring, arg: cstring): bool).getSome(f):
           self.unknownPopupActions.add (module, f)
@@ -69,7 +69,7 @@ method init*(self: ScriptContextWasm, path: string): Future[void] {.async.} =
           f()
         self.modules.add module
       else:
-        logger.log(lvlError, fmt"Failed to create wasm module for file {file}")
+        log(lvlError, fmt"Failed to create wasm module for file {file}")
 
   await loadModules("./config/absytree_config_wasm.wasm")
 

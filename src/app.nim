@@ -122,6 +122,8 @@ type App* = ref object
   onEditorRegistered*: Event[DocumentEditor]
   onEditorDeregistered*: Event[DocumentEditor]
 
+  logDocument: Document
+
   commandLineTextEditor: DocumentEditor
   eventHandler*: EventHandler
   commandLineEventHandler*: EventHandler
@@ -154,6 +156,7 @@ implTrait ConfigProvider, App:
       return
     node[pathItems[^1]] = value
 
+proc handleLog(self: App, level: Level, args: openArray[string])
 proc getEventHandlerConfig*(self: App, context: string): EventHandlerConfig
 proc setRegisterText*(self: App, text: string, register: string = "")
 proc getRegisterText*(self: App, text: var string, register: string = "")
@@ -198,6 +201,14 @@ implTrait AppInterface, App:
   popPopup(void, App, Popup)
   openSymbolsPopup(void, App, seq[Symbol], proc(symbol: Symbol), proc(symbol: Symbol), proc())
 
+type
+  AppLogger* = ref object of Logger
+    app: App
+
+method log*(self: AppLogger, level: Level, args: varargs[string, `$`]) {.gcsafe.} =
+  {.cast(gcsafe).}:
+    self.app.handleLog(level, @args)
+
 proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers)
 proc handleKeyRelease*(self: App, input: int64, modifiers: Modifiers)
 proc handleRune*(self: App, input: int64, modifiers: Modifiers)
@@ -232,16 +243,16 @@ proc invokeCallback*(self: App, context: string, args: JsonNode): bool =
       return true
     return self.wasmScriptContext.handleCallback(id, args):
   except CatchableError:
-    logger.log(lvlError, fmt"[ed] Failed to run script handleCallback {id}: {getCurrentExceptionMsg()}")
-    logger.log(lvlError, getCurrentException().getStackTrace())
+    log(lvlError, fmt"[ed] Failed to run script handleCallback {id}: {getCurrentExceptionMsg()}")
+    log(lvlError, getCurrentException().getStackTrace())
     return false
 
 proc handleAction(action: string, arg: string): EventResponse =
-  logger.log(lvlInfo, "event: " & action & " - " & arg)
+  log(lvlInfo, "event: " & action & " - " & arg)
   return Handled
 
 proc handleInput(input: string): EventResponse =
-  logger.log(lvlInfo, "input: " & input)
+  log(lvlInfo, "input: " & input)
   return Handled
 
 proc getText(register: var Register): string =
@@ -296,8 +307,8 @@ proc handleUnknownPopupAction*(self: App, popup: Popup, action: string, arg: str
     if self.wasmScriptContext.handleUnknownPopupAction(popup, action, args):
       return Handled
   except CatchableError:
-    logger.log(lvlError, fmt"[ed] Failed to run script handleUnknownPopupAction '{action} {arg}': {getCurrentExceptionMsg()}")
-    logger.log(lvlError, getCurrentException().getStackTrace())
+    log(lvlError, fmt"[ed] Failed to run script handleUnknownPopupAction '{action} {arg}': {getCurrentExceptionMsg()}")
+    log(lvlError, getCurrentException().getStackTrace())
 
   return Failed
 
@@ -308,8 +319,8 @@ proc handleUnknownDocumentEditorAction*(self: App, editor: DocumentEditor, actio
     if self.wasmScriptContext.handleUnknownDocumentEditorAction(editor, action, args):
       return Handled
   except CatchableError:
-    logger.log(lvlError, fmt"[ed] Failed to run script handleUnknownDocumentEditorAction '{action} {args}': {getCurrentExceptionMsg()}")
-    logger.log(lvlError, getCurrentException().getStackTrace())
+    log(lvlError, fmt"[ed] Failed to run script handleUnknownDocumentEditorAction '{action} {args}': {getCurrentExceptionMsg()}")
+    log(lvlError, getCurrentException().getStackTrace())
 
   return Failed
 
@@ -318,8 +329,8 @@ proc handleModeChanged*(self: App, editor: DocumentEditor, oldMode: string, newM
     self.scriptContext.handleEditorModeChanged(editor, oldMode, newMode)
     self.wasmScriptContext.handleEditorModeChanged(editor, oldMode, newMode)
   except CatchableError:
-    logger.log(lvlError, fmt"[ed] Failed to run script handleDocumentModeChanged '{oldMode} -> {newMode}': {getCurrentExceptionMsg()}")
-    logger.log(lvlError, getCurrentException().getStackTrace())
+    log(lvlError, fmt"[ed] Failed to run script handleDocumentModeChanged '{oldMode} -> {newMode}': {getCurrentExceptionMsg()}")
+    log(lvlError, getCurrentException().getStackTrace())
 
 proc handleAction(self: App, action: string, arg: string): bool
 proc getFlag*(self: App, flag: string, default: bool = false): bool
@@ -329,7 +340,7 @@ proc createEditorForDocument(self: App, document: Document): DocumentEditor =
     if editor.canEdit document:
       return editor.createWithDocument(document, self.asConfigProvider)
 
-  logger.log(lvlError, "No editor found which can edit " & $document)
+  log(lvlError, "No editor found which can edit " & $document)
   return nil
 
 proc getOption*[T](editor: App, path: string, default: T = T.default): T =
@@ -483,7 +494,7 @@ proc getPopupForId*(self: App, id: EditorId): Option[Popup] =
 
   return Popup.none
 
-import text/text_editor, ast_document, model_document
+import text/text_editor, text/text_document, ast_document, model_document
 import selector_popup
 
 type ThemeSelectorItem* = ref object of SelectorItem
@@ -503,11 +514,11 @@ method changed*(self: ThemeSelectorItem, other: SelectorItem): bool =
   return self.name != other.name or self.path != other.path
 
 proc setTheme*(self: App, path: string) =
-  logger.log(lvlInfo, fmt"Loading theme {path}")
+  log(lvlInfo, fmt"Loading theme {path}")
   if theme.loadFromFile(path).getSome(theme):
     self.theme = theme
   else:
-    logger.log(lvlError, fmt"[ed] Failed to load theme {path}")
+    log(lvlError, fmt"[ed] Failed to load theme {path}")
   self.platform.requestRender()
 
 when not defined(js):
@@ -522,6 +533,8 @@ proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.}
   when defined(js):
     {.emit: [self, " = jsCreateWithPrototype(editor_prototype, ", self, ");"].}
     # This " is here to fix syntax highlighting
+
+  addHandler AppLogger(app: self)
 
   gEditor = self
   gAppInterface = self.asAppInterface
@@ -558,6 +571,8 @@ proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.}
 
   self.workspace.new()
 
+  self.logDocument = newTextDocument(self.asConfigProvider)
+
   self.theme = defaultTheme()
   self.currentView = 0
 
@@ -593,13 +608,13 @@ proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.}
   var state = EditorState()
   try:
     state = fs.loadApplicationFile("./config/config.json").parseJson.jsonTo(EditorState, JOptions(allowMissingKeys: true, allowExtraKeys: true))
-    logger.log(lvlInfo, fmt"Restoring state {state}")
+    log(lvlInfo, fmt"Restoring state {state}")
 
     if not state.theme.isEmptyOrWhitespace:
       try:
         self.setTheme(state.theme)
       except CatchableError:
-        logger.log(lvlError, fmt"Failed to load theme: {getCurrentExceptionMsg()}")
+        log(lvlError, fmt"Failed to load theme: {getCurrentExceptionMsg()}")
 
     if not state.layout.isEmptyOrWhitespace:
       self.setLayout(state.layout)
@@ -612,10 +627,10 @@ proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.}
     if state.fontBoldItalic.len > 0: self.fontBoldItalic = state.fontBoldItalic
 
     self.options = fs.loadApplicationFile("./config/options.json").parseJson
-    logger.log(lvlInfo, fmt"Restoring options: {self.options.pretty}")
+    log(lvlInfo, fmt"Restoring options: {self.options.pretty}")
 
   except CatchableError:
-    logger.log(lvlError, fmt"Failed to load previous state from config file: {getCurrentExceptionMsg()}")
+    log(lvlError, fmt"Failed to load previous state from config file: {getCurrentExceptionMsg()}")
 
   if self.getFlag("editor.restore-open-workspaces"):
     for wf in state.workspaceFolders:
@@ -627,7 +642,7 @@ proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.}
       folder.id = wf.id.parseId
       folder.name = wf.name
       if self.addWorkspaceFolder(folder):
-        logger.log(lvlInfo, fmt"Restoring workspace {folder.name} ({folder.id})")
+        log(lvlInfo, fmt"Restoring workspace {folder.name} ({folder.id})")
 
   try:
     var searchPaths = @["src", "scripting"]
@@ -643,20 +658,20 @@ proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.}
 
     self.wasmScriptContext = new ScriptContextWasm
 
-    logger.log(lvlInfo, fmt"[editor] init wasm configs")
+    log(lvlInfo, fmt"[editor] init wasm configs")
     await self.wasmScriptContext.init("./config")
-    logger.log(lvlInfo, fmt"[editor] post init wasm configs")
+    log(lvlInfo, fmt"[editor] post init wasm configs")
     discard self.wasmScriptContext.postInitialize()
 
-    logger.log(lvlInfo, fmt"[editor] init nim script config")
+    log(lvlInfo, fmt"[editor] init nim script config")
     await self.scriptContext.init("./config")
-    logger.log(lvlInfo, fmt"[editor] post init nim script config")
+    log(lvlInfo, fmt"[editor] post init nim script config")
     discard self.scriptContext.postInitialize()
 
-    logger.log(lvlInfo, fmt"[editor] finished configs")
+    log(lvlInfo, fmt"[editor] finished configs")
     self.initializeCalled = true
   except CatchableError:
-    logger.log(lvlError, fmt"Failed to load config: {(getCurrentExceptionMsg())}{'\n'}{(getCurrentException().getStackTrace())}")
+    log(lvlError, fmt"Failed to load config: {(getCurrentExceptionMsg())}{'\n'}{(getCurrentException().getStackTrace())}")
 
   # Restore open editors
   if self.getFlag("editor.restore-open-editors"):
@@ -681,6 +696,23 @@ proc shutdown*(self: App) =
   for editor in self.editors.values:
     editor.shutdown()
 
+var logBuffer = ""
+proc handleLog(self: App, level: Level, args: openArray[string]) =
+  let str = substituteLog(defaultFmtStr, level, args) & "\n"
+  if self.logDocument.isNotNil:
+    let selection = self.logDocument.TextDocument.lastCursor.toSelection
+    discard self.logDocument.TextDocument.insert([selection], [selection], [logBuffer & str])
+    logBuffer = ""
+
+    for view in self.views:
+      if view.document == self.logDocument:
+        let editor = view.editor.TextDocumentEditor
+        if editor.selection == selection:
+          editor.selection = editor.document.lastCursor.toSelection
+          editor.scrollToCursor()
+  else:
+    logBuffer.add str
+
 proc getEditor(): Option[App] =
   if gEditor.isNil: return App.none
   return gEditor.some
@@ -699,13 +731,13 @@ proc createView(self: App, editorState: OpenEditor): View =
     try:
       newModelDocument(editorState.filename, editorState.appFile, workspaceFolder)
     except CatchableError:
-      logger.log(lvlError, fmt"Failed to restore file {editorState.filename} from previous session: {getCurrentExceptionMsg()}")
+      log(lvlError, fmt"Failed to restore file {editorState.filename} from previous session: {getCurrentExceptionMsg()}")
       return
   else:
     try:
       newTextDocument(self.asConfigProvider, editorState.filename, editorState.appFile, workspaceFolder)
     except CatchableError:
-      logger.log(lvlError, fmt"Failed to restore file {editorState.filename} from previous session: {getCurrentExceptionMsg()}")
+      log(lvlError, fmt"Failed to restore file {editorState.filename} from previous session: {getCurrentExceptionMsg()}")
       return
   return self.createView(document)
 
@@ -751,6 +783,9 @@ proc saveAppState*(self: App) {.expose("editor").} =
 
   # Save open editors
   proc getEditorState(view: View): Option[OpenEditor] =
+    if view.document.filename == "":
+      return OpenEditor.none
+
     let customOptions = view.editor.getStateJson()
     if view.document of TextDocument:
       let textDocument = TextDocument(view.document)
@@ -816,7 +851,7 @@ proc addWorkspaceFolder(self: App, workspaceFolder: WorkspaceFolder): bool =
       return false
   if workspaceFolder.id == idNone():
     workspaceFolder.id = newId()
-  logger.log(lvlInfo, fmt"Opening workspace {workspaceFolder.name}")
+  log(lvlInfo, fmt"Opening workspace {workspaceFolder.name}")
   self.workspace.folders.add workspaceFolder
   return true
 
@@ -886,6 +921,9 @@ proc toggleStatusBarLocation*(self: App) {.expose("editor").} =
 
 proc createAndAddView*(self: App) {.expose("editor").} =
   discard self.createAndAddView(newTextDocument(self.asConfigProvider))
+
+proc logs*(self: App) {.expose("editor").} =
+  discard self.createAndAddView(self.logDocument)
 
 # proc createKeybindAutocompleteView*(self: App) {.expose("editor").} =
 #   self.createAndAddView(newKeybindAutocompletion())
@@ -967,8 +1005,8 @@ proc writeFile*(self: App, path: string = "", app: bool = false) {.expose("edito
     try:
       self.views[self.currentView].document.save(path, app)
     except CatchableError:
-      logger.log(lvlError, fmt"[ed] Failed to write file '{path}': {getCurrentExceptionMsg()}")
-      logger.log(lvlError, getCurrentException().getStackTrace())
+      log(lvlError, fmt"[ed] Failed to write file '{path}': {getCurrentExceptionMsg()}")
+      log(lvlError, getCurrentException().getStackTrace())
 
 proc loadFile*(self: App, path: string = "") {.expose("editor").} =
   defer:
@@ -978,8 +1016,8 @@ proc loadFile*(self: App, path: string = "") {.expose("editor").} =
       self.views[self.currentView].document.load(path)
       self.views[self.currentView].editor.handleDocumentChanged()
     except CatchableError:
-      logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
-      logger.log(lvlError, getCurrentException().getStackTrace())
+      log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
+      log(lvlError, getCurrentException().getStackTrace())
 
 proc loadWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder) =
   defer:
@@ -990,19 +1028,19 @@ proc loadWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder) =
       self.views[self.currentView].document.load(path)
       self.views[self.currentView].editor.handleDocumentChanged()
     except CatchableError:
-      logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
-      logger.log(lvlError, getCurrentException().getStackTrace())
+      log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
+      log(lvlError, getCurrentException().getStackTrace())
 
 proc tryOpenExisting*(self: App, path: string, folder: Option[WorkspaceFolder]): Option[DocumentEditor] =
   for i, view in self.views:
     if view.document.filename == path and view.document.workspace == folder:
-      logger.log(lvlInfo, fmt"Reusing open editor in view {i}")
+      log(lvlInfo, fmt"Reusing open editor in view {i}")
       self.currentView = i
       return view.editor.some
 
   for i, view in self.hiddenViews:
     if view.document.filename == path and view.document.workspace == folder:
-      logger.log(lvlInfo, fmt"Reusing hidden view")
+      log(lvlInfo, fmt"Reusing hidden view")
       self.hiddenViews.delete i
       self.addView(view)
       return view.editor.some
@@ -1012,13 +1050,13 @@ proc tryOpenExisting*(self: App, path: string, folder: Option[WorkspaceFolder]):
 proc tryOpenExisting*(self: App, editor: EditorId, addToHistory = true): Option[DocumentEditor] =
   for i, view in self.views:
     if view.editor.id == editor:
-      logger.log(lvlInfo, fmt"Reusing open editor in view {i}")
+      log(lvlInfo, fmt"Reusing open editor in view {i}")
       `currentView=`(self, i, addToHistory)
       return view.editor.some
 
   for i, view in self.hiddenViews:
     if view.editor.id == editor:
-      logger.log(lvlInfo, fmt"Reusing hidden view")
+      log(lvlInfo, fmt"Reusing hidden view")
       self.hiddenViews.delete i
       self.addView(view, addToHistory)
       return view.editor.some
@@ -1041,8 +1079,8 @@ proc openFile*(self: App, path: string, app: bool = false): Option[DocumentEdito
       let file = if app: fs.loadApplicationFile(path) else: fs.loadFile(path)
       return self.createAndAddView(newTextDocument(self.asConfigProvider, path, file.splitLines, app)).some
   except CatchableError:
-    logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
-    logger.log(lvlError, getCurrentException().getStackTrace())
+    log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
+    log(lvlError, getCurrentException().getStackTrace())
     return DocumentEditor.none
 
 proc openWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder): Option[DocumentEditor] =
@@ -1061,8 +1099,8 @@ proc openWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder): Optio
       return self.createAndAddView(newTextDocument(self.asConfigProvider, path, false, folder.some)).some
 
   except CatchableError:
-    logger.log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
-    logger.log(lvlError, getCurrentException().getStackTrace())
+    log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
+    log(lvlError, getCurrentException().getStackTrace())
     return DocumentEditor.none
 
 proc removeFromLocalStorage*(self: App) {.expose("editor").} =
@@ -1201,7 +1239,7 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
       else:
         discard self.openFile(item.FileSelectorItem.path)
     else:
-      logger.log(lvlError, fmt"Unknown argument {view}")
+      log(lvlError, fmt"Unknown argument {view}")
 
   popup.updateCompletions()
 
@@ -1235,7 +1273,7 @@ proc chooseOpen*(self: App, view: string = "new") {.expose("editor").} =
       else:
         discard self.openFile(item.FileSelectorItem.path)
     else:
-      logger.log(lvlError, fmt"Unknown argument {view}")
+      log(lvlError, fmt"Unknown argument {view}")
 
   popup.updateCompletions()
 
@@ -1312,10 +1350,10 @@ proc reloadConfig*(self: App) {.expose("editor").} =
         discard self.scriptContext.postInitialize()
         self.initializeCalled = true
     except CatchableError:
-      logger.log(lvlError, fmt"Failed to reload config")
+      log(lvlError, fmt"Failed to reload config")
 
 proc logOptions*(self: App) {.expose("editor").} =
-  logger.log(lvlInfo, self.options.pretty)
+  log(lvlInfo, self.options.pretty)
 
 proc clearCommands*(self: App, context: string) {.expose("editor").} =
   self.getEventHandlerConfig(context).clearCommands()
@@ -1457,7 +1495,7 @@ proc scriptRunAction*(action: string, arg: string) {.expose("editor").} =
   discard gEditor.handleAction(action, arg)
 
 proc scriptLog*(message: string) {.expose("editor").} =
-  logger.log(lvlInfo, fmt"[script] {message}")
+  log(lvlInfo, fmt"[script] {message}")
 
 proc setLeader*(self: App, leader: string) {.expose("editor").} =
   for config in self.eventHandlerConfigs.values:
@@ -1465,11 +1503,11 @@ proc setLeader*(self: App, leader: string) {.expose("editor").} =
 
 proc addCommandScript*(self: App, context: string, keys: string, action: string, arg: string = "") {.expose("editor").} =
   let command = if arg.len == 0: action else: action & " " & arg
-  # logger.log(lvlInfo, fmt"Adding command to '{context}': ('{keys}', '{command}')")
+  # log(lvlInfo, fmt"Adding command to '{context}': ('{keys}', '{command}')")
   self.getEventHandlerConfig(context).addCommand(keys, command)
 
 proc removeCommand*(self: App, context: string, keys: string) {.expose("editor").} =
-  # logger.log(lvlInfo, fmt"Removing command from '{context}': '{keys}'")
+  # log(lvlInfo, fmt"Removing command from '{context}': '{keys}'")
   self.getEventHandlerConfig(context).removeCommand(keys)
 
 proc getActivePopup*(): EditorId {.expose("editor").} =
@@ -1522,12 +1560,12 @@ proc sourceCurrentDocument*(self: App) {.expose("editor").} =
     if editor of TextDocumentEditor:
       let document = editor.TextDocumentEditor.document
       let contentStrict = "\"use strict\";\n" & document.contentString
-      logger.log lvlWarn, contentStrict
+      log lvlWarn, contentStrict
 
       if confirmJs((fmt"You are about to eval() some javascript ({document.filename}). Look in the console to see what's in there.").cstring):
         evalJs(contentStrict.cstring)
       else:
-        logger.log(lvlWarn, fmt"Did not load config file because user declined.")
+        log(lvlWarn, fmt"Did not load config file because user declined.")
 
 proc getEditor*(index: int): EditorId {.expose("editor").} =
   if gEditor.isNil:
@@ -1702,7 +1740,7 @@ proc getRegisterText*(self: App, text: var string, register: string = "") =
 genDispatcher("editor")
 
 proc handleAction(self: App, action: string, arg: string): bool =
-  logger.log(lvlInfo, "[ed] Action '$1 $2'" % [action, arg])
+  log(lvlInfo, "[ed] Action '$1 $2'" % [action, arg])
 
   var args = newJArray()
   for a in newStringStream(arg).parseJsonFragments():
@@ -1712,15 +1750,15 @@ proc handleAction(self: App, action: string, arg: string): bool =
     if self.scriptContext.handleGlobalAction(action, args):
       return true
   except CatchableError:
-    logger.log(lvlError, fmt"[ed] Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
-    logger.log(lvlError, getCurrentException().getStackTrace())
+    log(lvlError, fmt"[ed] Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
+    log(lvlError, getCurrentException().getStackTrace())
 
   try:
     if self.wasmScriptContext.handleGlobalAction(action, args):
       return true
   except CatchableError:
-    logger.log(lvlError, fmt"[ed] Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
-    logger.log(lvlError, getCurrentException().getStackTrace())
+    log(lvlError, fmt"[ed] Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
+    log(lvlError, getCurrentException().getStackTrace())
 
   return dispatch(action, args).isSome
 

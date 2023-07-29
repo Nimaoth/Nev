@@ -502,7 +502,7 @@ proc createLayoutLineForNode(ctx: Context, input: NodeLayoutInput, node: AstNode
       lastUsedChild = node.len - 1
 
   else:
-    logger.log(lvlError, fmt"createLayoutLineForNode not implemented for {node.kind}")
+    log(lvlError, fmt"createLayoutLineForNode not implemented for {node.kind}")
 
 proc centerChildrenVertically(vnode: VisualNode) =
   let height = vnode.bounds.h
@@ -513,7 +513,7 @@ proc centerChildrenVertically(vnode: VisualNode) =
     child.centerChildrenVertically()
 
 proc computeNodeLayoutImpl2*(ctx: Context, input: NodeLayoutInput): NodeLayout =
-  # logger.log(lvlInfo, fmt"computeNodeLayoutImpl2 {input.node}")
+  # log(lvlInfo, fmt"computeNodeLayoutImpl2 {input.node}")
   let node = input.node
   result = NodeLayout(node: node, root: VisualNode(id: newId(), orientation: Vertical), nodeToVisualNode: initTable[Id, VisualNodeRange]())
   var line = VisualNode(id: newId(), node: node, parent: result.root, orientation: Horizontal, depth: result.root.depth + 1)

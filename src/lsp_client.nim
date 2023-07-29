@@ -61,9 +61,9 @@ proc parseResponse(client: LSPClient): Future[JsonNode] {.async.} =
 
   # echo "[headers] ", headers
   if not success or not headers.contains("Content-Length"):
-    logger.log(lvlError, "[parseResponse] Failed to parse response:")
+    log(lvlError, "[parseResponse] Failed to parse response:")
     for line in lines:
-      logger.log(lvlError, line)
+      log(lvlError, line)
     return newJNull()
 
   let contentLength = headers["Content-Length"].parseInt
@@ -81,7 +81,7 @@ proc sendRPC(client: LSPClient, meth: string, params: JsonNode, id: Option[int])
     request["id"] = newJInt(id)
 
   if not client.isInitialized and meth != "initialize":
-    logger.log(lvlInfo, fmt"[sendRPC] client not initialized, add to pending ({meth})")
+    log(lvlInfo, fmt"[sendRPC] client not initialized, add to pending ({meth})")
     client.pendingRequests.add $request
     return
 
@@ -149,7 +149,7 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async.} =
     }
   }
 
-  logger.log(lvlInfo, fmt"[initialize] {params}")
+  log(lvlInfo, fmt"[initialize] {params}")
 
   result = await client.sendRequest("initialize", params)
   client.isInitialized = true
@@ -157,20 +157,20 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async.} =
   await client.sendNotification("initialized", newJObject())
 
   for req in client.pendingRequests:
-    logger.log(lvlInfo, fmt"[initialize] sending pending request {req}")
+    log(lvlInfo, fmt"[initialize] sending pending request {req}")
     let header = createHeader(req.len)
     await client.process.send(header & req)
 
 proc connect*(client: LSPClient, serverExecutablePath: string) {.async.} =
   client.process = startAsyncProcess(serverExecutablePath)
   client.process.onRestarted = proc() {.async.} =
-    logger.log(lvlInfo, "Initializing client...")
+    log(lvlInfo, "Initializing client...")
     let response = await client.initialize()
     if response.isError:
-      logger.log(lvlError, fmt"[onRestarted] Got error response: {response}")
+      log(lvlError, fmt"[onRestarted] Got error response: {response}")
       return
     var serverCapabilities: ServerCapabilities = response.result["capabilities"].jsonTo(ServerCapabilities, Joptions(allowMissingKeys: true, allowExtraKeys: true))
-    logger.log(lvlInfo, "Server capabilities: ", serverCapabilities)
+    log(lvlInfo, "Server capabilities: ", serverCapabilities)
 
 proc notifyOpenedTextDocument*(client: LSPClient, languageId: string, path: string, content: string) {.async.} =
   let params = %*{
@@ -266,7 +266,7 @@ proc runAsync*(client: LSPClient) {.async.} =
     # echo fmt"[run] Waiting for response {(client.activeRequests.len)}"
     let response = await client.parseResponse()
     if response.isNil or response.kind != JObject:
-      logger.log(lvlError, fmt"[LSP.run] Bad response: {response}")
+      log(lvlError, fmt"[LSP.run] Bad response: {response}")
       continue
 
     if not response.hasKey("id"):
@@ -281,13 +281,13 @@ proc runAsync*(client: LSPClient) {.async.} =
         of Info: "[lsp-info]"
         of Log: "[lsp-log]"
         let message = response["params"]["message"].jsonTo string
-        logger.log(lvlInfo, fmt"{prefix} {message}")
+        log(lvlInfo, fmt"{prefix} {message}")
       of "textDocument/publishDiagnostics":
         # todo
         # echo "textDocument/publishDiagnostics"
         discard
       else:
-        logger.log(lvlInfo, fmt"[LSP.run] {response}")
+        log(lvlInfo, fmt"[LSP.run] {response}")
 
     else:
       # echo fmt"[LSP.run] {response}"
@@ -306,7 +306,7 @@ proc runAsync*(client: LSPClient) {.async.} =
         # echo fmt"[LSP.run] Received response for canceled request {id}"
         client.canceledRequests.excl id
       else:
-        logger.log(lvlError, fmt"[LSP.run] error: received response with id {id} but got no active request for that id: {response}")
+        log(lvlError, fmt"[LSP.run] error: received response with id {id} but got no active request for that id: {response}")
 
 proc run*(client: LSPClient) =
   asyncCheck client.runAsync()

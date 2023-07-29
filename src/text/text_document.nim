@@ -39,6 +39,7 @@ type StyledText* = object
   priority*: int
   bounds*: Rect
   opacity*: Option[float]
+  joinNext*: bool
 
 type StyledLine* = ref object
   index*: int
@@ -92,6 +93,11 @@ proc lastValidIndex*(self: TextDocument, line: int): int =
   if line < self.lines.len:
     return self.lines[line].len
   return 0
+
+proc lastCursor*(self: TextDocument): Cursor =
+  if self.lines.len > 0:
+    return (self.lines.high, self.lastValidIndex(self.lines.high))
+  return (0, 0)
 
 proc clampCursor*(self: TextDocument, cursor: Cursor): Cursor =
   var cursor = cursor
@@ -233,19 +239,21 @@ proc runeLen*(line: var StyledLine): RuneCount =
   for part in line.parts.mitems:
     result += part.text.toOpenArray.runeLen
 
+proc splitPartAt*(line: var StyledLine, partIndex: int, index: RuneIndex) =
+  if partIndex < line.parts.len and index != 0.RuneIndex and index != line.parts[partIndex].text.runeLen.RuneIndex:
+    var copy = line.parts[partIndex]
+    let byteIndex = line.parts[partIndex].text.toOpenArray.runeOffset(index)
+    line.parts[partIndex].text = line.parts[partIndex].text[0..<byteIndex]
+    copy.text = copy.text[byteIndex..^1]
+    line.parts.insert(copy, partIndex + 1)
+
 proc splitAt*(line: var StyledLine, index: RuneIndex) =
   var index = index
   var i = 0
   while i < line.parts.len and index >= line.parts[i].text.runeLen.RuneIndex:
     index -= line.parts[i].text.runeLen
     i += 1
-
-  if i < line.parts.len and index != 0.RuneIndex and index != line.parts[i].text.runeLen.RuneIndex:
-    var copy = line.parts[i]
-    let byteIndex = line.parts[i].text.toOpenArray.runeOffset(index)
-    line.parts[i].text = line.parts[i].text[0..<byteIndex]
-    copy.text = copy.text[byteIndex..^1]
-    line.parts.insert(copy, i + 1)
+  splitPartAt(line, i, index)
 
 proc splitAt*(self: TextDocument, line: var StyledLine, index: int) =
   line.splitAt(self.lines[line.index].toOpenArray.runeIndex(index, returnLen=true))
@@ -267,7 +275,7 @@ proc overrideStyle*(line: var StyledLine, first: RuneIndex, last: RuneIndex, sco
       line.parts[i].priority = priority
     index += line.parts[i].text.runeLen
 
-proc overrideStyleAndText*(line: var StyledLine, first: RuneIndex, text: string, scope: string, priority: int, opacity: Option[float] = float.none) =
+proc overrideStyleAndText*(line: var StyledLine, first: RuneIndex, text: string, scope: string, priority: int, opacity: Option[float] = float.none, joinNext: bool = false) =
   var index = 0.RuneIndex
   for i in 0..line.parts.high:
     if index >= first and index + line.parts[i].text.runeLen <= first + text.runeLen and priority < line.parts[i].priority:
@@ -278,13 +286,14 @@ proc overrideStyleAndText*(line: var StyledLine, first: RuneIndex, text: string,
       let textOverrideFirst: RuneIndex = index - first.RuneCount
       let textOverrideLast: RuneIndex = index + (line.parts[i].text.runeLen.RuneIndex - first)
       line.parts[i].text = text[textOverrideFirst..<textOverrideLast]
+      line.parts[i].joinNext = joinNext or line.parts[i].joinNext
     index += line.parts[i].text.runeLen
 
 proc overrideStyle*(self: TextDocument, line: var StyledLine, first: int, last: int, scope: string, priority: int) =
   line.overrideStyle(self.lines[line.index].toOpenArray.runeIndex(first, returnLen=true), self.lines[line.index].toOpenArray.runeIndex(last, returnLen=true), scope, priority)
 
-proc overrideStyleAndText*(self: TextDocument, line: var StyledLine, first: int, text: string, scope: string, priority: int, opacity: Option[float] = float.none) =
-  line.overrideStyleAndText(self.lines[line.index].toOpenArray.runeIndex(first, returnLen=true), text, scope, priority, opacity)
+proc overrideStyleAndText*(self: TextDocument, line: var StyledLine, first: int, text: string, scope: string, priority: int, opacity: Option[float] = float.none, joinNext: bool = false) =
+  line.overrideStyleAndText(self.lines[line.index].toOpenArray.runeIndex(first, returnLen=true), text, scope, priority, opacity, joinNext)
 
 proc getStyledText*(self: TextDocument, i: int): StyledLine =
   if self.styledTextCache.contains(i):
@@ -362,14 +371,14 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
                 break
 
             # of "any-of?":
-            #   logger.log(lvlError, fmt"Unknown predicate '{predicate.name}'")
+            #   log(lvlError, fmt"Unknown predicate '{predicate.name}'")
 
             else:
-              logger.log(lvlError, fmt"Unknown predicate '{predicate.operator}'")
+              log(lvlError, fmt"Unknown predicate '{predicate.operator}'")
 
           if self.configProvider.getFlag("text.print-matches", false):
             let nodeText = self.contentString(node.getRange)
-            logger.log(lvlInfo, fmt"{match.pattern}: '{nodeText}' {node} (matches: {matches})")
+            log(lvlInfo, fmt"{match.pattern}: '{nodeText}' {node} (matches: {matches})")
 
         if not matches:
           continue
@@ -428,12 +437,12 @@ proc initTreesitter*(self: TextDocument): Future[void] {.async.} =
   var language = await loadLanguage(languageId, config)
 
   if language.isNone:
-    logger.log(lvlWarn, fmt"Language is not available: '{languageId}'")
+    log(lvlWarn, fmt"Language is not available: '{languageId}'")
     return
 
   self.tsParser = createTSParser()
   if self.tsParser.isNil:
-    logger.log(lvlWarn, fmt"Failed to create ts parser for: '{languageId}'")
+    log(lvlWarn, fmt"Failed to create ts parser for: '{languageId}'")
     return
 
   self.tsParser.setLanguage(language.get)
@@ -445,7 +454,7 @@ proc initTreesitter*(self: TextDocument): Future[void] {.async.} =
     let queryString = fs.loadFile(fmt"./languages/{languageId}/queries/highlights.scm")
     self.highlightQuery = language.get.query(queryString)
   except CatchableError:
-    logger.log(lvlError, fmt"[textedit] No highlight queries found for '{languageId}'")
+    log(lvlError, fmt"[textedit] No highlight queries found for '{languageId}'")
 
   # We now have a treesitter grammar + highlight query, so retrigger rendering
   self.notifyTextChanged()

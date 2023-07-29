@@ -54,7 +54,7 @@ proc requestRender(redrawEverything = false) =
       frameTime = gEditor.frameTimer.elapsed.ms
 
     if frameTime > 20:
-      logger.log(lvlInfo, fmt"Frame: {frameTime:>5.2}ms (u: {updateTime:>5.2}ms, l: {layoutTime:>5.2}ms, r: {renderTime:>5.2}ms)")
+      log(lvlDebug, fmt"Frame: {frameTime:>5.2}ms (u: {updateTime:>5.2}ms, l: {layoutTime:>5.2}ms, r: {renderTime:>5.2}ms)")
 
 proc runApp(): Future[void] {.async.} =
   discard await newEditor(Backend.Browser, rend)

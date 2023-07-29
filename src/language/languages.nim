@@ -28,7 +28,7 @@ proc getLanguageForFile*(filename: string): Option[string] =
   of "zig": "zig"
   else:
     # Unsupported language
-    # logger.log(lvlWarn, fmt"Unknown file extension '{extension}'")
+    # log(lvlWarn, fmt"Unknown file extension '{extension}'")
     return string.none
 
   return languageId.some

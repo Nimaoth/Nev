@@ -81,7 +81,7 @@ let funcAddStringInt = newFunctionValue proc(values: seq[Value]): Value =
 let funcPrintAny = newFunctionValue proc(values: seq[Value]): Value =
   result = stringValue(values.join "")
   executionOutput.addOutput $result
-  logger.log(lvlInfo, result)
+  log(lvlInfo, result)
   return voidValue()
 
 let funcBuildStringAny = newFunctionValue (values) => stringValue(values.join "")
@@ -484,7 +484,7 @@ method save*(self: AstDocument, filename: string = "", app: bool = false) =
   if self.filename.len == 0:
     raise newException(IOError, "Missing filename")
 
-  logger.log lvlInfo, fmt"[astdoc] Saving ast source file '{self.filename}'"
+  log lvlInfo, fmt"[astdoc] Saving ast source file '{self.filename}'"
   let serialized = self.rootNode.toJson
 
   if self.workspace.getSome(ws):
@@ -499,7 +499,7 @@ method save*(self: AstDocument, filename: string = "", app: bool = false) =
 proc handleNodeInserted*(doc: AstDocument, node: AstNode)
 
 proc loadAsync*(self: AstDocument): Future[void] {.async.} =
-  logger.log lvlInfo, fmt"[astdoc] Loading ast source file '{self.filename}'"
+  log lvlInfo, fmt"[astdoc] Loading ast source file '{self.filename}'"
   try:
     var jsonText = ""
     if self.workspace.getSome(ws):
@@ -512,7 +512,7 @@ proc loadAsync*(self: AstDocument): Future[void] {.async.} =
     let json = jsonText.parseJson
     let newAst = json.jsonToAstNode
 
-    logger.log(lvlInfo, fmt"[astdoc] Load new ast {newAst}")
+    log(lvlInfo, fmt"[astdoc] Load new ast {newAst}")
 
     ctx.deleteAllNodesAndSymbols()
     for symbol in ctx.globalScope.values:
@@ -525,7 +525,7 @@ proc loadAsync*(self: AstDocument): Future[void] {.async.} =
     self.redoOps.setLen 0
 
   except CatchableError:
-    logger.log lvlError, fmt"[astdoc] Failed to load ast source file '{self.filename}'"
+    log lvlError, fmt"[astdoc] Failed to load ast source file '{self.filename}'"
 
   self.saveHtml()
 
@@ -538,7 +538,7 @@ method load*(self: AstDocument, filename: string = "") =
   asyncCheck self.loadAsync()
 
 proc handleNodeInserted*(doc: AstDocument, node: AstNode) =
-  logger.log lvlInfo, fmt"[astdoc] Node inserted: {node}"
+  log lvlInfo, fmt"[astdoc] Node inserted: {node}"
   ctx.insertNode(node)
   for handler in doc.onNodeInserted:
     handler(doc, node)
@@ -550,7 +550,7 @@ proc handleNodeInserted*(doc: AstDocument, node: AstNode) =
 proc insertNode*(document: AstDocument, node: AstNode, index: int, newNode: AstNode): Option[AstNode]
 
 proc handleNodeDelete*(doc: AstDocument, node: AstNode) =
-  logger.log lvlInfo, fmt"[astdoc] Node deleted: {node}"
+  log lvlInfo, fmt"[astdoc] Node deleted: {node}"
   for child in node.children:
     doc.handleNodeDelete child
 
@@ -571,10 +571,10 @@ proc handleNodeInserted*(self: AstDocumentEditor, doc: AstDocument, node: AstNod
     self.node = doc.rootNode[0]
     self.lastRootNode = doc.rootNode
 
-  logger.log lvlInfo, fmt"[asteditor] Node inserted: {node}, {self.deletedNode}"
+  log lvlInfo, fmt"[asteditor] Node inserted: {node}, {self.deletedNode}"
   if self.deletedNode.getSome(deletedNode) and deletedNode == node:
     self.deletedNode = some(node.cloneAndMapIds())
-    logger.log lvlInfo, fmt"[asteditor] Clearing editor.deletedNode because it was just inserted"
+    log lvlInfo, fmt"[asteditor] Clearing editor.deletedNode because it was just inserted"
   self.markDirty()
 
 proc handleTextDocumentChanged*(self: AstDocumentEditor) =
@@ -586,9 +586,9 @@ proc handleTextDocumentChanged*(self: AstDocumentEditor) =
 proc isEditing*(self: AstDocumentEditor): bool = self.textEditor != nil
 
 proc editSymbol*(self: AstDocumentEditor, symbol: Symbol) =
-  logger.log(lvlInfo, fmt"Editing symbol {symbol.name} ({symbol.kind}, {symbol.id})")
+  log(lvlInfo, fmt"Editing symbol {symbol.name} ({symbol.kind}, {symbol.id})")
   if symbol.kind == skAstNode:
-    logger.log(lvlInfo, fmt"Editing symbol node {symbol.node}")
+    log(lvlInfo, fmt"Editing symbol node {symbol.node}")
   self.currentlyEditedNode = nil
   self.currentlyEditedSymbol = symbol.id
   self.textDocument = newTextDocument(self.configProvider)
@@ -605,7 +605,7 @@ proc editSymbol*(self: AstDocumentEditor, symbol: Symbol) =
   self.markDirty()
 
 proc editNode*(self: AstDocumentEditor, node: AstNode) =
-  logger.log(lvlInfo, fmt"Editing node {node}")
+  log(lvlInfo, fmt"Editing node {node}")
   self.currentlyEditedNode = node
   self.currentlyEditedSymbol = null
   self.textDocument = newTextDocument(self.configProvider)
@@ -703,7 +703,7 @@ method getEventHandlers*(self: AstDocumentEditor): seq[EventHandler] =
     result.add self.textEditEventHandler
 
 method handleDocumentChanged*(self: AstDocumentEditor) =
-  logger.log(lvlInfo, fmt"[ast-editor] Document changed")
+  log(lvlInfo, fmt"[ast-editor] Document changed")
   self.selectionHistory.clear
   self.selectionFuture.clear
   self.finishEdit false
@@ -903,7 +903,7 @@ proc undo*(document: AstDocument): Option[AstNode] =
     return none[AstNode]()
 
   let undoOp = document.undoOps.pop
-  logger.log(lvlInfo, fmt"Undoing {undoOp}")
+  log(lvlInfo, fmt"Undoing {undoOp}")
 
   case undoOp.kind:
   of Delete:
@@ -947,7 +947,7 @@ proc redo*(document: AstDocument): Option[AstNode] =
     return none[AstNode]()
 
   let redoOp = document.redoOps.pop
-  logger.log(lvlInfo, fmt"Redoing {redoOp}")
+  log(lvlInfo, fmt"Redoing {redoOp}")
 
   case redoOp.kind:
   of Delete:
@@ -1497,7 +1497,7 @@ proc insertAfterSmart*(self: AstDocumentEditor, nodeTemplate: string) {.expose("
         break
 
     else:
-      logger.log(lvlError, fmt"[astedit] Failed to insert node {newNode} into {self.node.parent} at {index + 1}")
+      log(lvlError, fmt"[astedit] Failed to insert node {newNode} into {self.node.parent} at {index + 1}")
 
 proc insertAfter*(self: AstDocumentEditor, nodeTemplate: string) {.expose("editor.ast").} =
   if self.isEditing: return
@@ -1515,7 +1515,7 @@ proc insertAfter*(self: AstDocumentEditor, nodeTemplate: string) {.expose("edito
         break
 
     else:
-      logger.log(lvlError, fmt"[astedit] Failed to insert node {newNode} into {self.node.parent} at {index + 1}")
+      log(lvlError, fmt"[astedit] Failed to insert node {newNode} into {self.node.parent} at {index + 1}")
 
 proc insertBefore*(self: AstDocumentEditor, nodeTemplate: string) {.expose("editor.ast").} =
   if self.isEditing: return
@@ -1531,7 +1531,7 @@ proc insertBefore*(self: AstDocumentEditor, nodeTemplate: string) {.expose("edit
         break
 
     else:
-      logger.log(lvlError, fmt"[astedit] Failed to insert node {newNode} into {self.node.parent} at {index}")
+      log(lvlError, fmt"[astedit] Failed to insert node {newNode} into {self.node.parent} at {index}")
 
 proc insertChild*(self: AstDocumentEditor, nodeTemplate: string) {.expose("editor.ast").} =
   if self.isEditing: return
@@ -1546,7 +1546,7 @@ proc insertChild*(self: AstDocumentEditor, nodeTemplate: string) {.expose("edito
         break
 
     else:
-      logger.log(lvlError, fmt"[astedit] Failed to insert node {newNode} into {self.node} at {self.node.len}")
+      log(lvlError, fmt"[astedit] Failed to insert node {newNode} into {self.node} at {self.node.len}")
 
 proc replace*(self: AstDocumentEditor, nodeTemplate: string) {.expose("editor.ast").} =
   if self.isEditing: return
@@ -1650,7 +1650,7 @@ proc applySelectedCompletion*(self: AstDocumentEditor) {.expose("editor.ast").} 
   let com = self.completions[self.selectedCompletion]
   let completionText = self.completionText
 
-  logger.log(lvlInfo, fmt"[astedit] Applying completion {self.selectedCompletion} ({completionText})")
+  log(lvlInfo, fmt"[astedit] Applying completion {self.selectedCompletion} ({completionText})")
 
   self.finishEdit false
   self.markDirty()
@@ -1698,7 +1698,7 @@ proc moveNodeToPrevSpace(self: AstDocumentEditor) {.expose("editor.ast").} =
 
   # Find spot where to insert
   var targetNode = AstNode.none
-  # logger.log(lvlInfo, fmt"start: {self.node}")
+  # log(lvlInfo, fmt"start: {self.node}")
   for next in self.document.prevPostOrder(self.node):
     # echo next
     if next == self.node:
@@ -1874,31 +1874,31 @@ proc runSelectedFunction(self: AstDocumentEditor) {.expose("editor.ast").} =
   while node.parent != nil:
     if node.parent == self.document.rootNode and node.kind == Call:
       let timer = startTimer()
-      logger.log(lvlInfo, fmt"[asteditor] Executing call {node}")
+      log(lvlInfo, fmt"[asteditor] Executing call {node}")
 
       # Update node to force recomputation of value
       ctx.updateNode(node)
       let result = ctx.computeValue(node)
       if result.kind != vkVoid:
         executionOutput.addOutput($result, if result.kind == vkError: rgb(255, 50, 50) else: rgb(50, 255, 50))
-      logger.log(lvlInfo, fmt"[asteditor] {node} returned {result} (Took {timer.elapsed.ms}ms)")
+      log(lvlInfo, fmt"[asteditor] {node} returned {result} (Took {timer.elapsed.ms}ms)")
       return
 
     if node.kind == ConstDecl and node.len > 0 and node[0].kind == FunctionDefinition:
       let functionType = ctx.computeType(node)
       if functionType.kind == tError:
-        logger.log(lvlError, fmt"[asteditor] Function failed to compile: {node}")
+        log(lvlError, fmt"[asteditor] Function failed to compile: {node}")
         return
 
       if functionType.kind != tFunction:
-        logger.log(lvlError, fmt"[asteditor] Function has wrong type: {node}, type is {functionType}")
+        log(lvlError, fmt"[asteditor] Function has wrong type: {node}, type is {functionType}")
         return
 
       if functionType.paramTypes.len > 0:
-        logger.log(lvlError, fmt"[asteditor] Can't call function with arguments directly {node}, type is {functionType}")
+        log(lvlError, fmt"[asteditor] Can't call function with arguments directly {node}, type is {functionType}")
         return
 
-      logger.log(lvlInfo, fmt"[asteditor] Calling function {node} ({functionType})")
+      log(lvlInfo, fmt"[asteditor] Calling function {node} ({functionType})")
 
       let timer = startTimer()
 
@@ -1907,12 +1907,12 @@ proc runSelectedFunction(self: AstDocumentEditor) {.expose("editor.ast").} =
       let result = ctx.computeFunctionExecution(fec)
       if result.kind != vkVoid:
         executionOutput.addOutput($result, if result.kind == vkError: rgb(255, 50, 50) else: rgb(50, 255, 50))
-      logger.log(lvlInfo, fmt"[asteditor] Function {node} returned {result} (Took {timer.elapsed.ms}ms)")
+      log(lvlInfo, fmt"[asteditor] Function {node} returned {result} (Took {timer.elapsed.ms}ms)")
       return
 
     node = node.parent
 
-  logger.log(lvlError, fmt"[asteditor] No function or call found to execute for {self.node}")
+  log(lvlError, fmt"[asteditor] No function or call found to execute for {self.node}")
 
 proc toggleOption(self: AstDocumentEditor, name: string) {.expose("editor.ast").} =
   case name
@@ -1969,9 +1969,9 @@ proc scrollOutput(self: AstDocumentEditor, arg: string) {.expose("editor.ast").}
     executionOutput.scroll = clamp(executionOutput.scroll + arg.parseInt, 0, executionOutput.lines.len)
 
 proc dumpContext(self: AstDocumentEditor) {.expose("editor.ast").} =
-  logger.log(lvlInfo, "=================================================")
-  logger.log(lvlInfo, ctx.toString)
-  logger.log(lvlInfo, "=================================================")
+  log(lvlInfo, "=================================================")
+  log(lvlInfo, ctx.toString)
+  log(lvlInfo, "=================================================")
 
 proc getModeConfig(self: AstDocumentEditor, mode: string): EventHandlerConfig =
   return self.app.getEventHandlerConfig("editor.ast." & mode)
@@ -1998,7 +1998,7 @@ proc getContextWithMode(self: AstDocumentEditor, context: string): string {.expo
 genDispatcher("editor.ast")
 
 proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventResponse =
-  # logger.log lvlInfo, fmt"[asteditor]: Handle action {action}, '{arg}'"
+  # log lvlInfo, fmt"[asteditor]: Handle action {action}, '{arg}'"
 
   var args = newJArray()
   args.add api.AstDocumentEditor(id: self.id).toJson
@@ -2017,7 +2017,7 @@ proc handleAction(self: AstDocumentEditor, action: string, arg: string): EventRe
   return Ignored
 
 proc handleInput(self: AstDocumentEditor, input: string): EventResponse =
-  # logger.log lvlInfo, fmt"[asteditor]: Handle input '{input}'"
+  # log lvlInfo, fmt"[asteditor]: Handle input '{input}'"
   return Ignored
 
 proc getItemAtPixelPosition(self: AstDocumentEditor, posWindow: Vec2): Option[int] =

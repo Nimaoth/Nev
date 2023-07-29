@@ -65,7 +65,7 @@ proc updateCompletions*(self: SelectorPopup) =
   elif not self.getCompletionsAsyncIter.isNil:
     asyncCheck self.updateCompletionsAsyncIter()
   else:
-    logger.log(lvlError, fmt"No completion provider set on popup {self.id}")
+    log(lvlError, fmt"No completion provider set on popup {self.id}")
 
 proc getItemAtPixelPosition(self: SelectorPopup, posWindow: Vec2): Option[SelectorItem] =
   result = SelectorItem.none

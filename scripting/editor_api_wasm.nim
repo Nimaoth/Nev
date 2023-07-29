@@ -294,6 +294,13 @@ proc createAndAddView*() =
       argsJsonString.cstring)
 
 
+proc editor_logs_void_App_wasm(arg: cstring): cstring {.importc.}
+proc logs*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_logs_void_App_wasm(argsJsonString.cstring)
+
+
 proc editor_closeCurrentView_void_App_wasm(arg: cstring): cstring {.importc.}
 proc closeCurrentView*() =
   var argsJson = newJArray()

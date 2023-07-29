@@ -43,7 +43,7 @@ proc tryGetPortFromLanguagesServer(self: LanguageServerNimSuggest, url: string, 
     var socket = await newWebSocket(fmt"ws://localhost:{self.port.int}")
     self.impl = LanguageServerImpl(kind: LanguagesServer, url: url, port: port, socket: socket)
   except CatchableError:
-    logger.log(lvlError, fmt"Failed to connect to languages server {url}:{port.int}: {getCurrentExceptionMsg()}")
+    log(lvlError, fmt"Failed to connect to languages server {url}:{port.int}: {getCurrentExceptionMsg()}")
 
 when not defined(js):
   import std/asynchttpserver
@@ -81,7 +81,7 @@ proc newLanguageServerNimSuggest*(filename: string, languagesServer: Option[(str
       server.impl = LanguageServerImpl(kind: Process, process: process)
       return server.some
     except CatchableError:
-      logger.log(lvlWarn, fmt"Couldn't open nimsuggest locally")
+      log(lvlWarn, fmt"Couldn't open nimsuggest locally")
 
   if languagesServer.getSome(config):
     await server.tryGetPortFromLanguagesServer(config[0], config[1])
@@ -97,10 +97,10 @@ proc restart*(self: LanguageServerNimSuggest): Future[void] {.async.} =
     discard
 
 method start*(self: LanguageServerNimSuggest): Future[void] {.async.} =
-  logger.log(lvlInfo, fmt"Starting language server for {self.filename}")
+  log(lvlInfo, fmt"Starting language server for {self.filename}")
 
 method stop*(self: LanguageServerNimSuggest) =
-  logger.log(lvlInfo, fmt"Stopping language server for {self.filename}")
+  log(lvlInfo, fmt"Stopping language server for {self.filename}")
   # self.nimsuggest.terminate()
   # removeFile(self.tempFilename)
 

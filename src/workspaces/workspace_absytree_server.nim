@@ -28,7 +28,7 @@ method loadFile*(self: WorkspaceFolderAbsytreeServer, relativePath: string): Fut
   let relativePath = relativePath.normalizePathUnix
 
   let url = self.baseUrl & "/contents/" & relativePath
-  logger.log(lvlInfo, fmt"[absytree-server] loadFile '{url}'")
+  log(lvlInfo, fmt"[absytree-server] loadFile '{url}'")
 
   return await httpGet(url)
 
@@ -36,7 +36,7 @@ method saveFile*(self: WorkspaceFolderAbsytreeServer, relativePath: string, cont
   let relativePath = relativePath.normalizePathUnix
 
   let url = self.baseUrl & "/contents/" & relativePath
-  logger.log(lvlInfo, fmt"[absytree-server] saveFile '{url}'")
+  log(lvlInfo, fmt"[absytree-server] saveFile '{url}'")
 
   await httpPost(url, content)
 
@@ -44,7 +44,7 @@ method saveFile*(self: WorkspaceFolderAbsytreeServer, relativePath: string, cont
   let relativePath = relativePath.normalizePathUnix
 
   let url = self.baseUrl & "/contents/" & relativePath
-  logger.log(lvlInfo, fmt"[absytree-server] saveFileBinary '{url}'")
+  log(lvlInfo, fmt"[absytree-server] saveFileBinary '{url}'")
 
   await httpPost(url, content)
 
@@ -81,7 +81,7 @@ method getDirectoryListing*(self: WorkspaceFolderAbsytreeServer, relativePath: s
     self.cachedDirectoryListings[relativePath] = DirectoryListingWrapper(done: true, listing: listing)
     return listing
   except CatchableError:
-    logger.log(lvlError, fmt"Failed to parse absytree-server response: {response}")
+    log(lvlError, fmt"Failed to parse absytree-server response: {response}")
 
   if self.cachedDirectoryListings.contains(relativePath):
     self.cachedDirectoryListings[relativePath].done = true

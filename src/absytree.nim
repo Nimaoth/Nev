@@ -66,7 +66,7 @@ var rend: Platform = nil
 case backend.get
 of Terminal:
   when enableTerminal:
-    logger.log(lvlInfo, "Creating terminal renderer")
+    log(lvlInfo, "Creating terminal renderer")
     rend = new TerminalPlatform
   else:
     echo "[error] Terminal backend not available in this build"
@@ -74,7 +74,7 @@ of Terminal:
 
 of Gui:
   when enableGui:
-    logger.log(lvlInfo, "Creating GUI renderer")
+    log(lvlInfo, "Creating GUI renderer")
     rend = new GuiPlatform
   else:
     echo "[error] GUI backend not available in this build"
@@ -142,7 +142,7 @@ proc runApp(): Future[void] {.async.} =
           poll(maxPollPerFrameMs.int)
           pollBudgetMs -= start.elapsed.ms
       except CatchableError:
-        # logger.log(lvlError, fmt"[async] Failed to poll async dispatcher: {getCurrentExceptionMsg()}: {getCurrentException().getStackTrace()}")
+        # log(lvlError, fmt"[async] Failed to poll async dispatcher: {getCurrentExceptionMsg()}: {getCurrentException().getStackTrace()}")
         discard
     let pollTime = pollTimer.elapsed.ms
 
@@ -153,10 +153,10 @@ proc runApp(): Future[void] {.async.} =
 
     let totalTime = totalTimer.elapsed.ms
     if eventCounter > 0:
-      logger.log(lvlInfo, fmt"Total: {totalTime:>5.2}, Poll: {pollTime:>5.2}ms, Event: {eventTime:>5.2}ms, Frame: {frameTime:>5.2}ms (u: {updateTime:>5.2}ms, l: {layoutTime:>5.2}ms, r: {renderTime:>5.2}ms)")
+      log(lvlDebug, fmt"Total: {totalTime:>5.2}, Poll: {pollTime:>5.2}ms, Event: {eventTime:>5.2}ms, Frame: {frameTime:>5.2}ms (u: {updateTime:>5.2}ms, l: {layoutTime:>5.2}ms, r: {renderTime:>5.2}ms)")
       discard
 
-    # logger.log(lvlInfo, fmt"Total: {totalTime:>5.2}, Frame: {frameTime:>5.2}ms ({layoutTime:>5.2}ms, {updateTime:>5.2}ms, {renderTime:>5.2}ms), Poll: {pollTime:>5.2}ms, Event: {eventTime:>5.2}ms")
+    # log(lvlDebug, fmt"Total: {totalTime:>5.2}, Frame: {frameTime:>5.2}ms ({layoutTime:>5.2}ms, {updateTime:>5.2}ms, {renderTime:>5.2}ms), Poll: {pollTime:>5.2}ms, Event: {eventTime:>5.2}ms")
 
     logger.flush()
 

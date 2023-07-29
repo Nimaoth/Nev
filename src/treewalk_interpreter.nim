@@ -54,7 +54,7 @@ proc executeNodeRec(ctx: Context, fec: FunctionExecutionContext, node: AstNode, 
         return errorValue()
 
       if conditionValue.kind != vkNumber:
-        logger.log(lvlError, fmt"[compiler] Condition of if statement must be an int but is {conditionValue}")
+        log(lvlError, fmt"[compiler] Condition of if statement must be an int but is {conditionValue}")
         return errorValue()
 
       if conditionValue.intValue != 0:
@@ -80,7 +80,7 @@ proc executeNodeRec(ctx: Context, fec: FunctionExecutionContext, node: AstNode, 
       defer: index += 1
       let maxLoopIterations = fec.maxLoopIterations.get(1000)
       if index > maxLoopIterations:
-        logger.log(lvlError, fmt"[compiler] Max loop iterations ({maxLoopIterations}) reached for {node}")
+        log(lvlError, fmt"[compiler] Max loop iterations ({maxLoopIterations}) reached for {node}")
         return errorValue()
 
       let conditionValue = ctx.executeNodeRec(fec, condition, variables)
@@ -88,7 +88,7 @@ proc executeNodeRec(ctx: Context, fec: FunctionExecutionContext, node: AstNode, 
         return errorValue()
 
       if conditionValue.kind != vkNumber:
-        logger.log(lvlError, fmt"[compiler] Condition of if statement must be an int but is {conditionValue}")
+        log(lvlError, fmt"[compiler] Condition of if statement must be an int but is {conditionValue}")
         return errorValue()
 
       if conditionValue.intValue == 0:
@@ -110,7 +110,7 @@ proc executeNodeRec(ctx: Context, fec: FunctionExecutionContext, node: AstNode, 
       variables[id] = value
       return value
 
-    logger.log(lvlError, fmt"executeNodeRec {node}: Failed to look up value for identifier")
+    log(lvlError, fmt"executeNodeRec {node}: Failed to look up value for identifier")
     return errorValue()
 
   of Call():
@@ -173,11 +173,11 @@ proc executeNodeRec(ctx: Context, fec: FunctionExecutionContext, node: AstNode, 
       variables[sym.id] = value
       return voidValue()
     else:
-      logger.log(lvlError, fmt"executeNodeRec {node}: Failed to assign to {targetNode}: no symbol found")
+      log(lvlError, fmt"executeNodeRec {node}: Failed to assign to {targetNode}: no symbol found")
       return errorValue()
 
   else:
-    logger.log(lvlError, fmt"executeNodeRec not implemented for {node}")
+    log(lvlError, fmt"executeNodeRec not implemented for {node}")
     return errorValue()
 
 proc computeFunctionExecutionImpl2*(ctx: Context, fec: FunctionExecutionContext): Value =
@@ -189,7 +189,7 @@ proc computeFunctionExecutionImpl2*(ctx: Context, fec: FunctionExecutionContext)
   let params = fec.node[0]
   for i, arg in fec.arguments:
     if i >= params.len:
-      logger.log(lvlError, fmt"Wrong number of arguments, expected {params.len}, got {fec.arguments.len}")
+      log(lvlError, fmt"Wrong number of arguments, expected {params.len}, got {fec.arguments.len}")
       return errorValue()
     let param = params[i]
     variables[param.id] = arg

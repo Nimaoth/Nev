@@ -801,7 +801,7 @@ proc fromJsonHook*(value: var PropertyValue, json: JsonNode) =
   elif json.kind == JInt:
     value = PropertyValue(kind: Int, intValue: json.num.int)
   else:
-    logger.log(lvlError, fmt"Unknown PropertyValue {json}")
+    log(lvlError, fmt"Unknown PropertyValue {json}")
 
 proc jsonToAstNode(json: JsonNode, model: Model, opt = Joptions()): Option[AstNode] =
   let id = json["id"].jsonTo NodeId
@@ -833,11 +833,11 @@ proc jsonToAstNode(json: JsonNode, model: Model, opt = Joptions()): Option[AstNo
         if childJson.jsonToAstNode(model, opt).getSome(childNode):
           node.add(role, childNode)
         else:
-          logger.log(lvlError, fmt"Failed to parse node from json")
+          log(lvlError, fmt"Failed to parse node from json")
 
 proc loadFromJson*(model: Model, json: JsonNode, opt = Joptions()) =
   for node in json:
     if node.jsonToAstNode(model, opt).getSome(node):
       model.addRootNode(node)
     else:
-      logger.log(lvlError, fmt"Failed to parse node from json")
+      log(lvlError, fmt"Failed to parse node from json")
