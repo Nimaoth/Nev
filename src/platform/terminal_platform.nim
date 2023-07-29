@@ -61,6 +61,8 @@ method init*(self: TerminalPlatform) =
   setControlCHook(exitProc)
   hideCursor()
 
+  self.supportsThinCursor = false
+
   if myEnableTrueColors():
     logger.log(lvlInfo, "Enable true color support")
     self.trueColorSupport = true

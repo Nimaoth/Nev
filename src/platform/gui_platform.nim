@@ -45,6 +45,7 @@ method init*(self: GuiPlatform) =
   self.cachedImages = newLruCache[string, string](1000, true)
   self.window = newWindow("Absytree", ivec2(1280, 800), vsync=true)
   self.window.runeInputEnabled = true
+  self.supportsThinCursor = true
 
   self.window.centerWindowOnMonitor(1)
   self.window.maximized = true
