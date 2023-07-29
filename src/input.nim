@@ -134,12 +134,16 @@ proc inputToString*(input: int64, modifiers: Modifiers = {}): string =
     result.add inputAsString(input)
   if modifiers != {} or input < 0: result.add ">"
 
-proc getInputCodeFromSpecialKey(specialKey: string): int64 =
+proc getInputCodeFromSpecialKey(specialKey: string, leader: (int64, Modifiers)): (int64, Modifiers) =
   let runes = specialKey.toRunes
   if runes.len == 1:
-    result = runes[0].int32
+    result = (runes[0].int64, {})
   else:
-    result = case specialKey:
+    result[1] = {}
+    result[0] = case specialKey:
+      of "LEADER":
+        return leader
+
       of "ENTER": INPUT_ENTER
       of "ESCAPE": INPUT_ESCAPE
       of "BACKSPACE": INPUT_BACKSPACE
@@ -154,6 +158,7 @@ proc getInputCodeFromSpecialKey(specialKey: string): int64 =
       of "END": INPUT_END
       of "PAGE_UP": INPUT_PAGE_UP
       of "PAGE_DOWN": INPUT_PAGE_DOWN
+
       of "F1": INPUT_F1
       of "F2": INPUT_F2
       of "F3": INPUT_F3
@@ -166,6 +171,7 @@ proc getInputCodeFromSpecialKey(specialKey: string): int64 =
       of "F10": INPUT_F10
       of "F11": INPUT_F11
       of "F12": INPUT_F12
+
       else:
         logger.log(lvlError, fmt"Invalid key '{specialKey}'")
         0
@@ -190,29 +196,18 @@ proc createOrUpdateState(dfa: var CommandDFA, currentState: int, inputCode: int6
   linkState(dfa, currentState, nextState, inputCode, mods)
   return nextState
 
-proc handleNextInput(dfa: var CommandDFA, input: seq[Rune], function: string, index: int, currentState: int, defaultState: int) =
-  ##
-  ## function: the action to be executed when reaching the final state
-  ## index: index into input
-  ## currentState: the state we are currently in
+proc parseNextInput(input: openArray[Rune], index: int, leader: (int64, Modifiers) = (0, {})): tuple[inputCode: int64, mods: Modifiers, nextIndex: int, persistent: bool] =
+  result.inputCode = 0
+  result.mods = {}
+  result.nextIndex = index
+  result.persistent = false
+
   type State = enum
     Normal
     Special
 
   var state = State.Normal
-  var mods: Modifiers = {}
   var specialKey = ""
-
-  if index >= input.len:
-    # Mark last state as terminal state.
-    dfa.states[currentState].isTerminal = true
-    dfa.states[currentState].function = function
-    dfa.states[currentState].nextState = defaultState
-    return
-
-  var inputCode: int64 = 0
-  var persistent = false
-  var nextIndex = index
 
   for i in index..<input.len:
     var rune = input[i]
@@ -222,14 +217,15 @@ proc handleNextInput(dfa: var CommandDFA, input: seq[Rune], function: string, in
     if not isEscaped and ascii == '\\':
       continue
 
-    inputCode = if not isEscaped and ascii == '<':
+    result.inputCode = if not isEscaped and ascii == '<':
       state = State.Special
       0.int64
     elif not isEscaped and ascii == '>':
       if state != State.Special:
         logger.log(lvlError, "Error: > without <")
         return
-      let inputCode = getInputCodeFromSpecialKey(specialKey)
+      let (inputCode, specialMods) = getInputCodeFromSpecialKey(specialKey, leader)
+      result.mods = result.mods + specialMods
       state = State.Normal
       specialKey = ""
       inputCode
@@ -238,25 +234,40 @@ proc handleNextInput(dfa: var CommandDFA, input: seq[Rune], function: string, in
       if state == State.Special:
         if not isEscaped and ascii == '-':
           # Parse stuff so far as mods
-          mods = {}
+          result.mods = {}
           for m in specialKey:
             case m:
-              of 'C': mods = mods + {Modifier.Control}
-              of 'S': mods = mods + {Modifier.Shift}
-              of 'A': mods = mods + {Modifier.Alt}
-              of '*': persistent = true
+              of 'C': result.mods = result.mods + {Modifier.Control}
+              of 'S': result.mods = result.mods + {Modifier.Shift}
+              of 'A': result.mods = result.mods + {Modifier.Alt}
+              of '*': result.persistent = true
               else: logger.log(lvlError, fmt"Invalid modifier '{m}'")
           specialKey = ""
         else:
           specialKey.add rune
         0.int64
       else:
-        mods = {}
+        result.mods = {}
         rune.int64
 
-    if inputCode != 0:
-      nextIndex = i + 1
-      break
+    if result.inputCode != 0:
+      result.nextIndex = i + 1
+      return
+
+proc handleNextInput(dfa: var CommandDFA, input: openArray[Rune], function: string, index: int, currentState: int, defaultState: int, leader: (int64, Modifiers)) =
+  ##
+  ## function: the action to be executed when reaching the final state
+  ## index: index into input
+  ## currentState: the state we are currently in
+
+  if index >= input.len:
+    # Mark last state as terminal state.
+    dfa.states[currentState].isTerminal = true
+    dfa.states[currentState].function = function
+    dfa.states[currentState].nextState = defaultState
+    return
+
+  let (inputCode, mods, nextIndex, persistent) = parseNextInput(input, index, leader)
 
   if inputCode == 0:
     logger.log(lvlError, fmt"Failed to parse input")
@@ -276,13 +287,15 @@ proc handleNextInput(dfa: var CommandDFA, input: seq[Rune], function: string, in
       linkState(dfa, currentState, nextState, rune.toUpper.int64, mods)
 
   let nextDefaultState = if persistent: nextState else: defaultState
-  handleNextInput(dfa, input, function, nextIndex, nextState, nextDefaultState)
+  handleNextInput(dfa, input, function, nextIndex, nextState, nextDefaultState, leader)
 
-proc buildDFA*(commands: seq[(string, string)]): CommandDFA =
+proc buildDFA*(commands: seq[(string, string)], leader: string): CommandDFA =
   new(result)
 
   result.states.add DFAState()
   var currentState = 0
+
+  let (leaderInput, leaderMods, _, _) = parseNextInput(leader.toRunes, 0)
 
   for command in commands:
     currentState = 0
@@ -291,7 +304,7 @@ proc buildDFA*(commands: seq[(string, string)]): CommandDFA =
     let function = command[1]
 
     if input.len > 0:
-      handleNextInput(result, input.toRunes, function, index = 0, currentState = 0, defaultState = 0)
+      handleNextInput(result, input.toRunes, function, index = 0, currentState = 0, defaultState = 0, leader = (leaderInput, leaderMods))
 
 proc autoCompleteRec(dfa: CommandDFA, result: var seq[(string, string)], currentInputs: string, currentState: int) =
   let state = dfa.states[currentState]

@@ -1,6 +1,6 @@
-import std/[strformat, tables, macros, json, strutils, sugar, sequtils]
+import std/[strformat, tables, macros, json, strutils, sugar, sequtils, genasts]
 
-import absytree_api, event
+import absytree_api, event, util
 export absytree_api, strformat, tables, json, strutils, sugar, sequtils, scripting_api
 
 type AnyDocumentEditor = TextDocumentEditor | AstDocumentEditor
@@ -131,6 +131,17 @@ proc setOption*[T](path: string, value: T) =
   else:
     {.fatal: ("Can't set option with type " & $T).}
 
+var keysPrefix: string = ""
+
+template withKeys*(keys: varargs[string], body: untyped): untyped =
+  for key in keys:
+    with keysPrefix, keysPrefix & key:
+      body
+
+# template withKeys*(keys: string, body: untyped): untyped =
+#   with keysPrefix, keysPrefix & keys:
+#     body
+
 macro addCommand*(context: string, keys: string, action: string, args: varargs[untyped]): untyped =
   var stmts = nnkStmtList.newTree()
   let str = nskVar.genSym "str"
@@ -141,14 +152,14 @@ macro addCommand*(context: string, keys: string, action: string, args: varargs[u
       `str`.add " "
       `str`.add `arg`.toJsonString
 
-  return quote do:
-    `stmts`
-    addCommandScript(`context`, `keys`, `action`, `str`)
+  return genAst(stmts, context, keys, action, str):
+    stmts
+    addCommandScript(context, keysPrefix & keys, action, str)
 
 proc addCommand*(context: string, keys: string, action: proc(): void) =
   let key = context & keys
   lambdaActions[key] = action
-  addCommandScript(context, keys, "lambda-action", key.toJsonString)
+  addCommandScript(context, keysPrefix & keys, "lambda-action", key.toJsonString)
 
 template addCommandBlock*(context: static[string], keys: string, body: untyped): untyped =
   addCommand context, keys, proc() =
@@ -176,9 +187,9 @@ macro addEditorCommand*(mode: static[string], keys: string, action: string, args
       `str`.add " "
       `str`.add `arg`.toJsonString
 
-  return quote do:
-    `stmts`
-    addCommandScript(`context`, `keys`, `action`, `str`)
+  return genAst(stmts, context, keys, action, str):
+    stmts
+    addCommandScript(context, keysPrefix & keys, action, str)
 
 # Text commands
 template addTextCommandBlock*(mode: static[string], keys: string, body: untyped): untyped =
@@ -203,9 +214,9 @@ macro addTextCommand*(mode: static[string], keys: string, action: string, args: 
       `str`.add " "
       `str`.add `arg`.toJsonString
 
-  return quote do:
-    `stmts`
-    addCommandScript(`context`, `keys`, `action`, `str`)
+  return genAst(stmts, context, keys, action, str):
+    stmts
+    addCommandScript(context, keysPrefix & keys, action, str)
 
 proc setTextInputHandler*(context: string, action: proc(editor: TextDocumentEditor, input: string): bool) =
   let id = addCallback proc(args: JsonNode): bool =
@@ -237,9 +248,9 @@ macro addAstCommand*(mode: static[string], keys: string, action: string, args: v
       `str`.add " "
       `str`.add `arg`.toJsonString
 
-  return quote do:
-    `stmts`
-    addCommandScript(`context`, `keys`, `action`, `str`)
+  return genAst(stmts, context, keys, action, str):
+    stmts
+    addCommandScript(context, keysPrefix & keys, action, str)
 
 when defined(wasm):
   macro wasmexport*(t: typed): untyped =

@@ -1459,6 +1459,10 @@ proc scriptRunAction*(action: string, arg: string) {.expose("editor").} =
 proc scriptLog*(message: string) {.expose("editor").} =
   logger.log(lvlInfo, fmt"[script] {message}")
 
+proc setLeader*(self: App, leader: string) {.expose("editor").} =
+  for config in self.eventHandlerConfigs.values:
+    config.setLeader leader
+
 proc addCommandScript*(self: App, context: string, keys: string, action: string, arg: string = "") {.expose("editor").} =
   let command = if arg.len == 0: action else: action & " " & arg
   # logger.log(lvlInfo, fmt"Adding command to '{context}': ('{keys}', '{command}')")
@@ -1518,7 +1522,7 @@ proc sourceCurrentDocument*(self: App) {.expose("editor").} =
     if editor of TextDocumentEditor:
       let document = editor.TextDocumentEditor.document
       let contentStrict = "\"use strict\";\n" & document.contentString
-      echo contentStrict
+      logger.log lvlWarn, contentStrict
 
       if confirmJs((fmt"You are about to eval() some javascript ({document.filename}). Look in the console to see what's in there.").cstring):
         evalJs(contentStrict.cstring)

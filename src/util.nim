@@ -11,3 +11,11 @@ template toOpenArray*(s: string): auto = s.toOpenArray(0, s.high)
 
 proc `??`*[T: ref object](self: T, els: T): T =
   return if not self.isNil: self else: els
+
+template with*(exp, val, body: untyped): untyped =
+  block:
+    let oldValue = exp
+    exp = val
+    defer:
+      exp = oldValue
+    body

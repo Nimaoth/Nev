@@ -598,6 +598,19 @@ proc scriptLog*(message: string) =
   let res {.used.} = editor_scriptLog_void_string_wasm(argsJsonString.cstring)
 
 
+proc editor_setLeader_void_App_string_wasm(arg: cstring): cstring {.importc.}
+proc setLeader*(leader: string) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      leader
+    else:
+      leader.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_setLeader_void_App_string_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_addCommandScript_void_App_string_string_string_string_wasm(
     arg: cstring): cstring {.importc.}
 proc addCommandScript*(context: string; keys: string; action: string;
