@@ -64,7 +64,7 @@ method init*(self: TerminalPlatform) =
   self.supportsThinCursor = false
 
   if myEnableTrueColors():
-    logger.log(lvlInfo, "Enable true color support")
+    log(lvlInfo, "Enable true color support")
     self.trueColorSupport = true
 
   self.layoutOptions.getTextBounds = proc(text: string, fontSizeIncreasePercent: float = 0): Vec2 =
@@ -121,18 +121,58 @@ proc toInput(key: Key, modifiers: var Modifiers): int64 =
   of Key.A..Key.Z: ord(key) - ord(Key.A) + ord('a')
   of Key.ShiftA..Key.ShiftZ:
     modifiers.incl Modifier.Shift
-    ord(key) - ord(Key.ShiftA) + ord('a')
+    ord(key) - ord(Key.ShiftA) + ord('A')
   of Key.CtrlA..Key.CtrlH, Key.CtrlJ..Key.CtrlL, Key.CtrlN..Key.CtrlZ:
     modifiers.incl Modifier.Control
     ord(key) - ord(Key.CtrlA) + ord('a')
   of Key.Zero..Key.Nine: ord(key) - ord(Key.Zero) + ord('0')
   of Key.F1..Key.F12: INPUT_F1 - (ord(key) - ord(Key.F1))
+
+  of Key.ExclamationMark : '!'.int64
+  of Key.DoubleQuote     : '"'.int64
+  of Key.Hash            : '#'.int64
+  of Key.Dollar          : '$'.int64
+  of Key.Percent         : '%'.int64
+  of Key.Ampersand       : '&'.int64
+  of Key.SingleQuote     : '\''.int64
+  of Key.LeftParen       : '('.int64
+  of Key.RightParen      : ')'.int64
+  of Key.Asterisk        : '*'.int64
+  of Key.Plus            : '+'.int64
+  of Key.Comma           : ','.int64
+  of Key.Minus           : '-'.int64
+  of Key.Dot             : '.'.int64
+  of Key.Slash           : '/'.int64
+
+  of Colon        : ':'.int64
+  of Semicolon    : ';'.int64
+  of LessThan     : '<'.int64
+  of Equals       : '='.int64
+  of GreaterThan  : '>'.int64
+  of QuestionMark : '?'.int64
+  of At           : '@'.int64
+
+  of LeftBracket  : '['.int64
+  of Backslash    : '\\'.int64
+  of RightBracket : ']'.int64
+  of Caret        : '^'.int64
+  of Underscore   : '_'.int64
+  of GraveAccent  : '`'.int64
+
+  of LeftBrace  : '{'.int64
+  of Pipe       : '|'.int64
+  of RightBrace : '}'.int64
+  of Tilde      : '~'.int64
+
+
   # of Numpad0..Numpad9: ord(key) - ord(Numpad0) + ord('0')
   # of NumpadAdd: ord '+'
   # of NumpadSubtract: ord '-'
   # of NumpadMultiply: ord '*'
   # of NumpadDivide: ord '/'
-  else: 0
+  else:
+    log lvlError, fmt"Unknown input {key}"
+    0
 
 method processEvents*(self: TerminalPlatform): int =
   var eventCounter = 0
@@ -162,10 +202,10 @@ method processEvents*(self: TerminalPlatform): int =
         let scroll = if mouseInfo.scrollDir == ScrollDirection.sdDown: -1.0 else: 1.0
         self.onScroll.invoke (pos, vec2(0, scroll), {})
       elif mouseInfo.move:
-        # logger.log(lvlInfo, fmt"move to {pos}")
+        # log(lvlInfo, fmt"move to {pos}")
         self.onMouseMove.invoke (pos, vec2(0, 0), {}, self.mouseButtons)
       else:
-        # logger.log(lvlInfo, fmt"{mouseInfo.action} {button} at {pos}")
+        # log(lvlInfo, fmt"{mouseInfo.action} {button} at {pos}")
         case mouseInfo.action
         of mbaPressed:
           self.onMousePress.invoke (button, modifiers, pos)
@@ -193,7 +233,7 @@ method renderWidget(self: WWidget, renderer: TerminalPlatform, forceRedraw: bool
 method render*(self: TerminalPlatform, widget: WWidget, frameIndex: int) =
   if self.sizeChanged:
     let (w, h) = (terminalWidth(), terminalHeight())
-    logger.log(lvlInfo, fmt"Terminal size changed from {self.buffer.width}x{self.buffer.height} to {w}x{h}, recreate buffer")
+    log(lvlInfo, fmt"Terminal size changed from {self.buffer.width}x{self.buffer.height} to {w}x{h}, recreate buffer")
     self.buffer = newTerminalBuffer(w, h)
     self.redrawEverything = true
 
@@ -204,7 +244,7 @@ method render*(self: TerminalPlatform, widget: WWidget, frameIndex: int) =
     self.buffer.display()
     self.redrawEverything = false
   except CatchableError:
-    logger.log(lvlError, fmt"[term-render] Failed to display buffer: {getCurrentExceptionMsg()}")
+    log(lvlError, fmt"[term-render] Failed to display buffer: {getCurrentExceptionMsg()}")
     self.redrawEverything = true
 
 proc setForegroundColor(self: TerminalPlatform, color: chroma.Color) =

@@ -36,7 +36,7 @@ proc initAsync(self: ScriptContextJs): Future[void] {.async.} =
       # evalJs(contentStrict.cstring)
       discard await loadScriptContentJs(config.cstring)
     else:
-      logger.log(lvlWarn, fmt"Did not load config file because user declined.")
+      log(lvlWarn, fmt"Did not load config file because user declined.")
   else:
     discard await loadScriptJs("./config/absytree_config.js")
 

@@ -535,6 +535,8 @@ proc editor_toggleStatusBarLocation_void_App_impl*() =
   discard
 proc editor_createAndAddView_void_App_impl*() =
   discard
+proc editor_logs_void_App_impl*() =
+  discard
 proc editor_closeCurrentView_void_App_impl*() =
   discard
 proc editor_moveCurrentViewToTop_void_App_impl*() =

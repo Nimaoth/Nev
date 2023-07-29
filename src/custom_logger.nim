@@ -20,6 +20,7 @@ proc newCustomLogger*(levelThreshold = lvlAll, fmtStr = defaultFmtStr): CustomLo
   new result
   result.fmtStr = fmtStr
   result.levelThreshold = levelThreshold
+  addHandler(result)
 
 proc enableFileLogger*(self: CustomLogger) =
   when not defined(js):
@@ -45,7 +46,7 @@ proc flush*(logger: Logger) =
     l.flush()
 
 template debug*(x: varargs[typed, `$`]) =
-  logger.log(lvlDebug, x.join "")
+  log(lvlDebug, x.join "")
 
 template debugf*(x: static string) =
-  logger.log(lvlDebug, fmt x)
+  log(lvlDebug, fmt x)

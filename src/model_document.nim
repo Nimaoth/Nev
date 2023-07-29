@@ -207,7 +207,7 @@ method save*(self: ModelDocument, filename: string = "", app: bool = false) =
   if self.filename.len == 0:
     raise newException(IOError, "Missing filename")
 
-  logger.log lvlInfo, fmt"[modeldoc] Saving model source file '{self.filename}'"
+  log lvlInfo, fmt"[modeldoc] Saving model source file '{self.filename}'"
   let serialized = self.model.toJson.pretty
 
   if self.workspace.getSome(ws):
@@ -253,7 +253,7 @@ proc handleNodeReferenceChanged(self: ModelDocument, model: Model, node: AstNode
   self.currentTransaction.operations.add ModelOperation(kind: ReferenceChange, node: node, role: role, id: oldRef)
 
 proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
-  logger.log lvlInfo, fmt"[modeldoc] Loading model source file '{self.filename}'"
+  log lvlInfo, fmt"[modeldoc] Loading model source file '{self.filename}'"
   try:
     var jsonText = ""
     if self.workspace.getSome(ws):
@@ -286,7 +286,7 @@ proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
     self.redoList.setLen 0
 
   except CatchableError:
-    logger.log lvlError, fmt"[modeldoc] Failed to load model source file '{self.filename}': {getCurrentExceptionMsg()}"
+    log lvlError, fmt"[modeldoc] Failed to load model source file '{self.filename}': {getCurrentExceptionMsg()}"
 
   self.onModelChanged.invoke (self)
 
@@ -457,7 +457,7 @@ proc undo*(self: ModelDocument): Option[(Id, ModelOperation)] =
     return
 
   let t = self.undoList.pop
-  logger.log(lvlInfo, fmt"Undoing {t}")
+  log(lvlInfo, fmt"Undoing {t}")
 
   for i in countdown(t.operations.high, 0):
     let op = t.operations[i]
@@ -473,7 +473,7 @@ proc redo*(self: ModelDocument): Option[(Id, ModelOperation)] =
     return
 
   let t = self.redoList.pop
-  logger.log(lvlInfo, fmt"Redoing {t}")
+  log(lvlInfo, fmt"Redoing {t}")
 
   for i in countdown(t.operations.high, 0):
     let op = t.operations[i]
@@ -526,7 +526,7 @@ proc handleFinishedRedoTransaction*(self: ModelDocumentEditor, document: ModelDo
   self.mCursorBeforeTransaction = self.mCursor
 
 method handleDocumentChanged*(self: ModelDocumentEditor) =
-  logger.log(lvlInfo, fmt"[model-editor] Document changed")
+  log(lvlInfo, fmt"[model-editor] Document changed")
   # self.selectionHistory.clear
   # self.selectionFuture.clear
   # self.finishEdit false
@@ -628,7 +628,7 @@ proc fromJsonHook*(t: var api.ModelDocumentEditor, jsonNode: JsonNode) =
   t.id = api.EditorId(jsonNode["id"].jsonTo(int))
 
 proc handleInput(self: ModelDocumentEditor, input: string): EventResponse =
-  logger.log lvlInfo, fmt"[modeleditor]: Handle input '{input}'"
+  log lvlInfo, fmt"[modeleditor]: Handle input '{input}'"
 
   self.mCursorBeforeTransaction = self.mCursor
 
@@ -2190,11 +2190,11 @@ import scripting/wasm
 proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.} =
   let function = self.cursor.node.findContainingFunction()
   if function.isNone:
-    logger.log(lvlInfo, fmt"Not inside function")
+    log(lvlInfo, fmt"Not inside function")
     return
 
   if function.get.childCount(IdFunctionDefinitionParameters) > 0:
-    logger.log(lvlInfo, fmt"Can't call function with parameters")
+    log(lvlInfo, fmt"Can't call function with parameters")
     return
 
   let parent = function.get.parent
@@ -2203,11 +2203,11 @@ proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.
   else:
     "<anonymous>"
 
-  logger.log(lvlInfo, fmt"Running function {name}")
+  log(lvlInfo, fmt"Running function {name}")
 
   let timer = startTimer()
   defer:
-    logger.log(lvlInfo, fmt"Running function took {timer.elapsed.ms} ms")
+    log(lvlInfo, fmt"Running function took {timer.elapsed.ms} ms")
 
   var compiler = newBaseLanguageWasmCompiler()
   let binary = compiler.compileToBinary(function.get)
@@ -2240,9 +2240,9 @@ proc runSelectedFunction*(self: ModelDocumentEditor) {.expose("editor.model").} 
 genDispatcher("editor.model")
 
 proc handleAction(self: ModelDocumentEditor, action: string, arg: string): EventResponse =
-  # logger.log lvlInfo, fmt"[modeleditor]: Handle action {action}, '{arg}'"
+  # log lvlInfo, fmt"[modeleditor]: Handle action {action}, '{arg}'"
   # defer:
-  #   logger.log lvlDebug, &"line: {self.cursor.targetCell.line}, cursor: {self.cursor},\ncell: {self.cursor.cell.dump()}\ntargetCell: {self.cursor.targetCell.dump()}"
+  #   log lvlDebug, &"line: {self.cursor.targetCell.line}, cursor: {self.cursor},\ncell: {self.cursor.cell.dump()}\ntargetCell: {self.cursor.targetCell.dump()}"
 
   self.mCursorBeforeTransaction = self.mCursor
 

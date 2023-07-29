@@ -32,7 +32,7 @@ method clearDirectoryCache*(self: WorkspaceFolderGithub) =
 method loadFile*(self: WorkspaceFolderGithub, relativePath: string): Future[string] {.async.} =
   let relativePath = if relativePath.startsWith("./"): relativePath[2..^1] else: relativePath
   let url = self.baseUrl & "/contents/" & relativePath & "?ref=" & self.branchOrHash
-  logger.log(lvlInfo, fmt"[github] loadFile '{url}'")
+  log(lvlInfo, fmt"[github] loadFile '{url}'")
 
   let token = getAccessToken()
   let response = await httpGet(url, token)
@@ -46,7 +46,7 @@ method loadFile*(self: WorkspaceFolderGithub, relativePath: string): Future[stri
       return content
 
   except CatchableError:
-    logger.log(lvlError, fmt"Failed to parse github response: {response}")
+    log(lvlError, fmt"Failed to parse github response: {response}")
 
   return ""
 
@@ -78,7 +78,7 @@ method getDirectoryListing*(self: WorkspaceFolderGithub, relativePath: string): 
   if self.cachedDirectoryListings.contains(relativePath):
     return self.cachedDirectoryListings[relativePath]
 
-  logger.log(lvlInfo, fmt"[github] getDirectoryListing for {self.baseUrl}")
+  log(lvlInfo, fmt"[github] getDirectoryListing for {self.baseUrl}")
 
   let token = getAccessToken()
 
@@ -87,7 +87,7 @@ method getDirectoryListing*(self: WorkspaceFolderGithub, relativePath: string): 
   elif self.pathToSha.contains(relativePath):
     self.baseUrl & "/git/trees/" & self.pathToSha[relativePath]
   else:
-    logger.log(lvlError, fmt"[github] Failed to get directory listing for '{relativePath}'")
+    log(lvlError, fmt"[github] Failed to get directory listing for '{relativePath}'")
     return DirectoryListing()
 
   let response = await httpGet(url, token)
@@ -100,7 +100,7 @@ method getDirectoryListing*(self: WorkspaceFolderGithub, relativePath: string): 
     return listing
 
   except CatchableError:
-    logger.log(lvlError, fmt"Failed to parse github response: {response}")
+    log(lvlError, fmt"Failed to parse github response: {response}")
 
   return DirectoryListing()
 

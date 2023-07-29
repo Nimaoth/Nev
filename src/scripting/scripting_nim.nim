@@ -151,16 +151,16 @@ proc newScriptContext*(path: string, apiModule: string, addins: VMAddins, postCo
   result.addins = addins
   result.postCodeAdditions = postCodeAdditions
   result.searchPaths = searchPaths
-  logger.log(lvlInfo, fmt"Creating new script context (search paths: {searchPaths})")
+  log(lvlInfo, fmt"Creating new script context (search paths: {searchPaths})")
   result.inter = myLoadScript(result.script, apiModule, addins, postCodeAdditions, ["scripting_api", "std/json"], stdPath = stdPath, searchPaths = searchPaths, vmErrorHook = errorHook, moreAddins = timerAddins)
   if result.inter.isNone:
-    logger.log(lvlError, fmt"Failed to create script context")
+    log(lvlError, fmt"Failed to create script context")
 
 method init*(self: ScriptContextNim, path: string): Future[void] {.async.} =
   discard
 
 method reload*(ctx: ScriptContextNim) =
-  logger.log(lvlInfo, fmt"Reloading script context (search paths: {ctx.searchPaths})")
+  log(lvlInfo, fmt"Reloading script context (search paths: {ctx.searchPaths})")
   ctx.inter.mySafeLoadScriptWithState(ctx.script, ctx.apiModule, ctx.addins, ctx.postCodeAdditions, ["scripting_api", "std/json"], stdPath = stdPath, searchPaths = ctx.searchPaths, vmErrorHook = errorHook)
 
 proc generateScriptingApi*(addins: VMAddins) {.compileTime.} =
@@ -211,7 +211,7 @@ macro invoke*(self: ScriptContext; pName: untyped;
 
   return genAst(self, call):
     if self.inter.isNone:
-      logger.log(lvlError, fmt"Script context is none")
+      log(lvlError, fmt"Script context is none")
       return
     call
 

@@ -88,7 +88,7 @@ method stop*(self: LanguageServerLSP) =
 method getDefinition*(self: LanguageServerLSP, filename: string, location: Cursor): Future[Option[Definition]] {.async.} =
   let response = await self.client.getDefinition(filename, location.line, location.column)
   if response.isError:
-    logger.log(lvlError, fmt"[LSP] Error: {response.error}")
+    log(lvlError, fmt"[LSP] Error: {response.error}")
     return Definition.none
 
 
@@ -107,18 +107,18 @@ method getDefinition*(self: LanguageServerLSP, filename: string, location: Curso
       filename: location.targetUri.parseUri.path,
       location: (line: location.targetSelectionRange.start.line, column: location.targetSelectionRange.start.character)).some
 
-  logger.log(lvlError, "No definition found")
+  log(lvlError, "No definition found")
   return Definition.none
 
 
 method getCompletions*(self: LanguageServerLSP, languageId: string, filename: string, location: Cursor): Future[seq[TextCompletion]] {.async.} =
   let response = await self.client.getCompletions(filename, location.line, location.column)
   if response.isError:
-    logger.log(lvlError, fmt"[LSP] Error: {response.error}")
+    log(lvlError, fmt"[LSP] Error: {response.error}")
     return @[]
 
   let completions = response.result
-  logger.log(lvlError, fmt"[LSP] getCompletions: {completions.items.len}")
+  log(lvlError, fmt"[LSP] getCompletions: {completions.items.len}")
   var completionsResult: seq[TextCompletion]
   for c in completions.items:
     # echo c

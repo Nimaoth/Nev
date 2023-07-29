@@ -273,6 +273,9 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
 
   let lineNumbers = self.lineNumbers.get getOption[LineNumbers](app, "editor.text.line-numbers", LineNumbers.Absolute) # """
 
+  # ↲ ↩ ⤦ ⤶ ⤸ ⮠
+  let wrapLineEndChar = getOption[string](app, "editor.text.wrap-line-end-char", "⤶")
+
   let maxLineNumber = case lineNumbers
     of LineNumbers.Absolute: self.previousBaseIndex + ((contentPanel.lastBounds.h - self.scrollOffset) / totalLineHeight).int
     of LineNumbers.Relative: 99
@@ -286,6 +289,15 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
   else:
     vec2()
 
+  let lineNumberTotalWidth = if lineNumbers != LineNumbers.None:
+    (lineNumberBounds.x + lineNumberPadding).ceil
+  else:
+    0.0
+
+  self.lastTextAreaBounds = self.lastContentBounds
+  self.lastTextAreaBounds.x += lineNumberTotalWidth
+  self.lastTextAreaBounds.w -= lineNumberTotalWidth
+
   self.lastRenderedLines.setLen 0
 
   let isWide = self.isThickCursor()
@@ -295,6 +307,7 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
   let highlightColor = app.theme.color(@["editor.findMatchBackground", "editor.rangeHighlightBackground"], rgb(200, 200, 200))
   let cursorForegroundColor = app.theme.color(@["editorCursor.foreground", "foreground"], rgb(200, 200, 200))
   let cursorBackgroundColor = app.theme.color(@["editorCursor.background", "background"], rgb(50, 50, 50))
+  let wrapLineEndColor = app.theme.tokenColor(@["comment"], rgb(100, 100, 100))
 
   var cursorBounds = rect(vec2(), vec2())
 
@@ -338,24 +351,36 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
 
     var subLineWidget = lineWidget
 
-    var startOffset = if lineNumbers == LineNumbers.None: 0.0 else: (lineNumberBounds.x + lineNumberPadding).ceil
+    var startOffset = lineNumberTotalWidth
     var startRuneIndex = 0.RuneIndex
     var subLineYOffset = 0.0
     var subLineTop = lineWidget.top
     for partIndex, part in styledText.parts:
       let width = (part.text.runeLen.float * charWidth).ceil
-      if startOffset + width > lineWidget.lastBounds.w:
+
+      var wrapWidth = width
+      for partIndex2 in partIndex..<styledText.parts.high:
+        if styledText.parts[partIndex2].joinNext:
+          let nextWidth = (styledText.parts[partIndex2 + 1].text.runeLen.float * charWidth).ceil
+          if lineNumberTotalWidth + wrapWidth + nextWidth + charWidth <= lineWidget.lastBounds.w:
+            wrapWidth += nextWidth
+            continue
+        break
+
+      if startOffset + wrapWidth + charWidth >= lineWidget.lastBounds.w:
+        var partWidget = createPartWidget(wrapLineEndChar, startOffset, wrapLineEndChar.runeLen.float * charWidth, totalLineHeight, wrapLineEndColor, frameIndex)
+        subLineWidget.add partWidget
+
         subLineYOffset += totalLineHeight
         subLineWidget = WPanel(anchor: (vec2(0, 0), vec2(0, 0)), left: 0, right: contentPanel.lastBounds.w, top: subLineYOffset, bottom: subLineYOffset + totalLineHeight, lastHierarchyChange: frameIndex)
         lineWidget.add subLineWidget
-        startOffset = if lineNumbers == LineNumbers.None: 0.0 else: (lineNumberBounds.x + lineNumberPadding).ceil
+        startOffset = lineNumberTotalWidth
         lineWidget.bottom += totalLineHeight
         subLineTop += totalLineHeight
 
       # Draw background if selected
       renderTextHighlight(subLineWidget, app, startOffset, startOffset + width, i, startRuneIndex, selectionsNormalizedOnLine, selectionsClampedOnLine, part, selectionColor, totalLineHeight)
       renderTextHighlight(subLineWidget, app, startOffset, startOffset + width, i, startRuneIndex, highlightsNormalizedOnLine, highlightsClampedOnLine, part, highlightColor, totalLineHeight)
-      # echo "part text: '", part.text, "'"
 
       let color = if part.scope.len == 0: textColor else: app.theme.tokenColor(part.scope, rgb(255, 200, 200))
       var partWidget = createPartWidget(part.text, startOffset, width, totalLineHeight, color, frameIndex)
@@ -394,6 +419,10 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
       startRuneIndex += part.text.runeLen
 
     self.lastRenderedLines.add styledText
+
+    if not down:
+      for partIndex in 0..styledText.parts.high:
+        styledText.parts[partIndex].bounds.y -= lineWidget.height
 
     return true
 

@@ -70,22 +70,22 @@ proc computeFunctionExecutionImpl(ctx: Context, fec: FunctionExecutionContext): 
   return computeFunctionExecutionImpl2(ctx, fec)
 
 proc recoverValue(ctx: Context, key: Dependency) =
-  logger.log(lvlInfo, fmt"[compiler] Recovering value for {key}")
+  log(lvlInfo, fmt"[compiler] Recovering value for {key}")
   if ctx.getAstNode(key.item.id).getSome(node):
     ctx.queryCacheValue[node] = errorValue()
 
 proc recoverType(ctx: Context, key: Dependency) =
-  logger.log(lvlInfo, fmt"[compiler] Recovering type for {key}")
+  log(lvlInfo, fmt"[compiler] Recovering type for {key}")
   if ctx.getAstNode(key.item.id).getSome(node):
     ctx.queryCacheType[node] = errorType()
 
 proc recoverSymbol(ctx: Context, key: Dependency) =
-  logger.log(lvlInfo, fmt"[compiler] Recovering symbol for {key}")
+  log(lvlInfo, fmt"[compiler] Recovering symbol for {key}")
   if ctx.getAstNode(key.item.id).getSome(node):
     ctx.queryCacheSymbol[node] = none[Symbol]()
 
 proc recoverSymbols(ctx: Context, key: Dependency) =
-  logger.log(lvlInfo, fmt"[compiler] Recovering symbols for {key}")
+  log(lvlInfo, fmt"[compiler] Recovering symbols for {key}")
   if ctx.getAstNode(key.item.id).getSome(node):
     ctx.queryCacheSymbols[node] = newTable[Id, Symbol]()
 
@@ -530,7 +530,7 @@ proc computeValueImpl(ctx: Context, node: AstNode): Value =
 
     if functionValue.kind == vkBuiltinFunction:
       if functionValue.impl == nil:
-        logger.log lvlError, fmt"[compiler]: Can't call function at compile time '{function.id}' at {node}"
+        log lvlError, fmt"[compiler]: Can't call function at compile time '{function.id}' at {node}"
         return errorValue()
       return functionValue.impl(args)
 
@@ -576,7 +576,7 @@ proc computeValueImpl(ctx: Context, node: AstNode): Value =
         return errorValue()
 
       if conditionValue.kind != vkNumber:
-        logger.log(lvlError, fmt"[compiler] Condition of if statement must be an int but is {conditionValue}")
+        log(lvlError, fmt"[compiler] Condition of if statement must be an int but is {conditionValue}")
         return errorValue()
 
       if conditionValue.intValue != 0:
@@ -617,7 +617,7 @@ proc computeSymbolImpl(ctx: Context, node: AstNode): Option[Symbol] =
     return some(ctx.newSymbol(Symbol(kind: skAstNode, id: node.id, node: node, name: node.text)))
 
   else:
-    logger.log(lvlError, fmt"Failed to get symbol from node {node}")
+    log(lvlError, fmt"Failed to get symbol from node {node}")
     return none[Symbol]()
 
 proc computeSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, Symbol] =
@@ -670,7 +670,7 @@ proc computeSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, Symbol] =
 proc notifySymbolChanged*(ctx: Context, sym: Symbol) =
   ctx.depGraph.revision += 1
   ctx.depGraph.changed[(sym.getItem, -1)] = ctx.depGraph.revision
-  logger.log(lvlInfo, fmt"[compiler] Invalidating symbol {sym.name} ({sym.id})")
+  log(lvlInfo, fmt"[compiler] Invalidating symbol {sym.name} ({sym.id})")
 
 proc insertNode*(ctx: Context, node: AstNode) =
   ctx.depGraph.revision += 1
@@ -700,7 +700,7 @@ proc updateNode*(ctx: Context, node: AstNode) =
     ctx.depGraph.changed[(functionDefinition.getItem, -1)] = ctx.depGraph.revision
     parent = functionDefinition.parent
 
-  logger.log(lvlInfo, fmt"[compiler] Invalidating node {node}")
+  log(lvlInfo, fmt"[compiler] Invalidating node {node}")
 
 proc deleteNode*(ctx: Context, node: AstNode) =
   ctx.depGraph.revision += 1

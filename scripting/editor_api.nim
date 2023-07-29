@@ -51,6 +51,8 @@ proc toggleStatusBarLocation*() =
   editor_toggleStatusBarLocation_void_App_impl()
 proc createAndAddView*() =
   editor_createAndAddView_void_App_impl()
+proc logs*() =
+  editor_logs_void_App_impl()
 proc closeCurrentView*() =
   editor_closeCurrentView_void_App_impl()
 proc moveCurrentViewToTop*() =

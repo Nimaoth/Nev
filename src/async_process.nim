@@ -187,12 +187,12 @@ proc startAsyncProcess*(name: string, args: openArray[string] = [], autoRestart 
         discard process.serverDiedNotifications[].recv
 
       if startCounter > 0 and process.dontRestart:
-        logger.log(lvlInfo, "[process] Don't restart")
+        log(lvlInfo, "[process] Don't restart")
         return
 
       inc startCounter
 
-      logger.log(lvlInfo, "[process] start")
+      log(lvlInfo, "[process] start")
       process.process = startProcess(process.name, args=process.args)
 
       process.readerFlowVar = spawn(readInput(process.inputStreamChannel, process.serverDiedNotifications, process.input.chan, process.output.chan))

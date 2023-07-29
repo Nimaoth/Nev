@@ -862,8 +862,8 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
             return ctx.`queryCache`[input]
 
           except CatchableError:
-            logger.log(lvlError, getCurrentExceptionMsg())
-            logger.log(lvlError, getCurrentException().getStackTrace())
+            log(lvlError, getCurrentExceptionMsg())
+            log(lvlError, getCurrentException().getStackTrace())
             if ctx.dependencyStack.len > 0:
               raise
 
@@ -897,8 +897,8 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
             return ctx.`queryCache`[input]
 
           except CatchableError:
-            logger.log(lvlError, getCurrentExceptionMsg())
-            logger.log(lvlError, getCurrentException().getStackTrace())
+            log(lvlError, getCurrentExceptionMsg())
+            log(lvlError, getCurrentException().getStackTrace())
             if ctx.dependencyStack.len > 0:
               raise
 

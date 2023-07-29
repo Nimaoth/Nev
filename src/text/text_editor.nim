@@ -59,6 +59,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   lineNumbers*: Option[LineNumbers]
 
   lastRenderedLines*: seq[StyledLine]
+  lastTextAreaBounds*: Rect
 
   disableCompletions*: bool
   completions*: seq[TextCompletion]
@@ -401,7 +402,7 @@ proc setMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} 
   ## If mode is e.g. "insert", then the scope "editor.text.insert" will be pushed on the scope stack above "editor.text"
   ## Don't use "completion", as that is used for when a completion window is open.
   if mode == "completion":
-    logger.log(lvlError, fmt"Can't set mode to '{mode}'")
+    log(lvlError, fmt"Can't set mode to '{mode}'")
     return
 
   if self.currentMode == mode:
@@ -758,7 +759,7 @@ proc centerCursor*(self: TextDocumentEditor, cursor: SelectionCursor = Selection
   self.centerCursor(self.getCursor(cursor))
 
 proc reloadTreesitter*(self: TextDocumentEditor) {.expose("editor.text").} =
-  logger.log(lvlInfo, "reloadTreesitter")
+  log(lvlInfo, "reloadTreesitter")
 
   asyncCheck self.document.initTreesitter()
   self.platform.requestRender()
@@ -937,7 +938,7 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
           result.last = (result.last.line, index)
     else:
       result = cursor.toSelection
-      logger.log(lvlError, fmt"[error] Unknown move '{move}'")
+      log(lvlError, fmt"[error] Unknown move '{move}'")
 
 proc mapAllOrLast[T](self: seq[T], all: bool, p: proc(v: T): T): seq[T] =
   if all:
@@ -1260,7 +1261,7 @@ proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").
     return
 
   let com = self.completions[self.selectedCompletion]
-  logger.log(lvlInfo, fmt"Applying completion {com}")
+  log(lvlInfo, fmt"Applying completion {com}")
 
   let cursor = self.selection.last
   if cursor.column == 0:
@@ -1439,13 +1440,22 @@ genDispatcher("editor.text")
 
 proc getStyledText*(self: TextDocumentEditor, i: int): StyledLine =
   result = self.document.getStyledText(i)
+
+  let chars = (self.lastTextAreaBounds.w / self.platform.charWidth - 2).RuneCount
+  if chars > 0.RuneCount:
+    var i = 0
+    while i < result.parts.len:
+      if result.parts[i].text.runeLen > chars:
+        splitPartAt(result, i, chars.RuneIndex)
+      inc i
+
   if self.styledTextOverrides.contains(i):
     result.overrideStyle(0.RuneIndex, result.runeLen.RuneIndex, "", -1)
 
     for override in self.styledTextOverrides[i]:
       self.document.splitAt(result, override.cursor.column)
       self.document.splitAt(result, override.cursor.column + override.text.len)
-      self.document.overrideStyleAndText(result, override.cursor.column, override.text, override.scope, -2)
+      self.document.overrideStyleAndText(result, override.cursor.column, override.text, override.scope, -2, joinNext = true)
 
 proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): EventResponse =
   # echo "[textedit] handleAction ", action, " '", arg, "'"
@@ -1485,7 +1495,7 @@ proc handleAction(self: TextDocumentEditor, action: string, arg: string): EventR
 
     return self.handleActionInternal(action, args)
   except CatchableError:
-    logger.log(lvlError, fmt"[editor.text] handleAction: {action}, Failed to parse args: '{arg}'")
+    log(lvlError, fmt"[editor.text] handleAction: {action}, Failed to parse args: '{arg}'")
     return Failed
 
 proc handleInput(self: TextDocumentEditor, input: string): EventResponse =

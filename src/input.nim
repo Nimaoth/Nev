@@ -64,7 +64,7 @@ proc isAscii*(input: int64): bool =
 
 proc step*(dfa: CommandDFA, state: CommandState, currentInput: int64, mods: Modifiers): CommandState =
   if currentInput == 0:
-    logger.log(lvlError, "Input 0 is invalid")
+    log(lvlError, "Input 0 is invalid")
     return
 
   if currentInput notin dfa.states[state.current].inputs:
@@ -173,7 +173,7 @@ proc getInputCodeFromSpecialKey(specialKey: string, leader: (int64, Modifiers)):
       of "F12": INPUT_F12
 
       else:
-        logger.log(lvlError, fmt"Invalid key '{specialKey}'")
+        log(lvlError, fmt"Invalid key '{specialKey}'")
         0
 
 proc linkState(dfa: var CommandDFA, currentState: int, nextState: int, inputCode: int64, mods: Modifiers) =
@@ -222,7 +222,7 @@ proc parseNextInput(input: openArray[Rune], index: int, leader: (int64, Modifier
       0.int64
     elif not isEscaped and ascii == '>':
       if state != State.Special:
-        logger.log(lvlError, "Error: > without <")
+        log(lvlError, "Error: > without <")
         return
       let (inputCode, specialMods) = getInputCodeFromSpecialKey(specialKey, leader)
       result.mods = result.mods + specialMods
@@ -241,7 +241,7 @@ proc parseNextInput(input: openArray[Rune], index: int, leader: (int64, Modifier
               of 'S': result.mods = result.mods + {Modifier.Shift}
               of 'A': result.mods = result.mods + {Modifier.Alt}
               of '*': result.persistent = true
-              else: logger.log(lvlError, fmt"Invalid modifier '{m}'")
+              else: log(lvlError, fmt"Invalid modifier '{m}'")
           specialKey = ""
         else:
           specialKey.add rune
@@ -270,7 +270,7 @@ proc handleNextInput(dfa: var CommandDFA, input: openArray[Rune], function: stri
   let (inputCode, mods, nextIndex, persistent) = parseNextInput(input, index, leader)
 
   if inputCode == 0:
-    logger.log(lvlError, fmt"Failed to parse input")
+    log(lvlError, fmt"Failed to parse input")
     return
 
   let nextState = createOrUpdateState(dfa, currentState, inputCode, mods, persistent)
