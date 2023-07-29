@@ -1397,7 +1397,7 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
 
       let cursor = (cursors[i].line, cursors[i].column + progress.len)
       let text = keys[i][progress.len..^1]
-      self.styledTextOverrides[cursors[i].line].add (cursor, text, "keyword")
+      self.styledTextOverrides[cursors[i].line].add (cursor, text, "variable")
 
       options.add cursors[i]
 

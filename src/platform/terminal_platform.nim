@@ -208,11 +208,11 @@ method processEvents*(self: TerminalPlatform): int =
         # log(lvlInfo, fmt"{mouseInfo.action} {button} at {pos}")
         case mouseInfo.action
         of mbaPressed:
-          self.onMousePress.invoke (button, modifiers, pos)
           self.mouseButtons.incl button
+          self.onMousePress.invoke (button, modifiers, pos)
         of mbaReleased:
+          self.mouseButtons = {}
           self.onMouseRelease.invoke (button, modifiers, pos)
-          self.mouseButtons.excl button
         else:
           discard
 
