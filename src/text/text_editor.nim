@@ -264,7 +264,9 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[fl
 
 proc getContextWithMode*(self: TextDocumentEditor, context: string): string
 
-proc isThickCursor(self: TextDocumentEditor): bool =
+proc isThickCursor*(self: TextDocumentEditor): bool =
+  if not self.platform.supportsThinCursor:
+    return true
   return self.configProvider.getValue(self.getContextWithMode("editor.text.cursor.wide"), false)
 
 proc getCursor(self: TextDocumentEditor, cursor: SelectionCursor): Cursor =

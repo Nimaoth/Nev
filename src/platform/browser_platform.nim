@@ -72,6 +72,7 @@ method init*(self: BrowserPlatform) =
   self.mLineHeight = 20
   self.mLineDistance = 2
   self.mCharWidth = 18
+  self.supportsThinCursor = true
 
   self.escapedText = newLruCache[string, string](1000)
 

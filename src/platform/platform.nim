@@ -4,6 +4,7 @@ import vmath
 type
   Platform* = ref object of RootObj
     redrawEverything*: bool
+    supportsThinCursor*: bool
     onKeyPress*: Event[tuple[input: int64, modifiers: Modifiers]]
     onKeyRelease*: Event[tuple[input: int64, modifiers: Modifiers]]
     onRune*: Event[tuple[input: int64, modifiers: Modifiers]]

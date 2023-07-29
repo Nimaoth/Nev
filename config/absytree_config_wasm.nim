@@ -119,7 +119,7 @@ setOption "editor.text.auto-start-language-server", true
 info fmt"Backend: {getBackend()}"
 case getBackend()
 of Terminal:
-  setOption "text.scroll-speed", 1
+  setOption "text.scroll-speed", 3
   setOption "text.cursor-margin", 0.5
   setOption "text.cursor-margin-relative", true
   setOption "ast.scroll-speed", 1

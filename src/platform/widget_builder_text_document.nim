@@ -288,7 +288,7 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
 
   self.lastRenderedLines.setLen 0
 
-  let isWide = getOption[bool](app, self.getContextWithMode("editor.text.cursor.wide"))
+  let isWide = self.isThickCursor()
   let cursorWidth = if isWide: 1.0 else: 0.2
 
   let selectionColor = app.theme.color("selection.background", rgb(200, 200, 200))
