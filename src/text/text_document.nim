@@ -666,6 +666,19 @@ proc lastNonWhitespace*(str: string): int =
 proc getIndentForLine*(self: TextDocument, line: int): int =
   return self.lines[line].firstNonWhitespace
 
+proc getIndentLevelForLine*(self: TextDocument, line: int): int =
+  let indentWidth = self.indentStyle.indentWidth(self.tabWidth)
+  return indentLevelForLine(self.lines[line], self.tabWidth, indentWidth)
+
+proc getIndentLevelForClosestLine*(self: TextDocument, line: int): int =
+  for i in line..self.lines.high:
+    if self.lineLength(i) > 0:
+        return self.getIndentLevelForLine(i)
+  for i in countdown(line, 0):
+    if self.lineLength(i) > 0:
+        return self.getIndentLevelForLine(i)
+  return 0
+
 proc traverse*(line, column: int, text: openArray[char]): (int, int) =
   var line = line
   var column = column

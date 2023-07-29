@@ -6,6 +6,23 @@ import vmath, bumpy, chroma
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
 {.used.}
 
+proc getPreviousLineWithIndent(self: TextDocument, line: int, indent: int): int =
+  result = line
+  while true:
+    if result notin 0..self.lines.high:
+      return line
+
+    if self.lines[result] == "":
+      dec result
+      continue
+
+    let i = self.getIndentLevelForLine(result)
+    if i == indent or result <= 0:
+      return
+
+    dec result
+
+
 proc clampToLine(document: TextDocument, selection: Selection, line: var StyledLine): tuple[first: RuneIndex, last: RuneIndex] =
   result.first = if selection.first.line < line.index: 0.RuneIndex elif selection.first.line == line.index: document.lines[line.index].runeIndex(selection.first.column) else: line.runeLen.RuneIndex
   result.last = if selection.last.line < line.index: 0.RuneIndex elif selection.last.line == line.index: document.lines[line.index].runeIndex(selection.last.column) else: line.runeLen.RuneIndex
@@ -88,7 +105,7 @@ proc createLinesInPanel*(app: App, contentPanel: WPanel, previousBaseIndex: int,
 
   let totalLineHeight = app.platform.totalLineHeight
 
-  var top = scrollOffset
+  var top = (scrollOffset / totalLineHeight).floor * totalLineHeight
 
   # Render all lines after base index
   for i in previousBaseIndex..<lines:
@@ -108,7 +125,7 @@ proc createLinesInPanel*(app: App, contentPanel: WPanel, previousBaseIndex: int,
     contentPanel.add lineWidget
     top = lineWidget.bottom
 
-  top = scrollOffset
+  top = (scrollOffset / totalLineHeight).floor * totalLineHeight
 
   # Render all lines before base index
   for k in 1..previousBaseIndex:
@@ -245,7 +262,7 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
 
   contentPanel.sizeToContent = sizeToContent
   contentPanel.updateBackgroundColor(
-    if self.active: app.theme.color("editor.background", rgb(25, 25, 40)) else: app.theme.color("editor.background", rgb(25, 25, 25)) * 0.75,
+    if self.active: app.theme.color("editor.background", rgb(25, 25, 40)) else: app.theme.color("editor.background", rgb(25, 25, 25)) * 0.85,
     frameIndex)
 
   if not (contentPanel.changed(frameIndex) or self.dirty or app.platform.redrawEverything):
@@ -275,6 +292,8 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
 
   # ↲ ↩ ⤦ ⤶ ⤸ ⮠
   let wrapLineEndChar = getOption[string](app, "editor.text.wrap-line-end-char", "⤶")
+  let wrapLines = getOption[bool](app, "editor.text.wrap-lines", true)
+  let showContextLines = getOption[bool](app, "editor.text.context-lines", true)
 
   let maxLineNumber = case lineNumbers
     of LineNumbers.Absolute: self.previousBaseIndex + ((contentPanel.lastBounds.h - self.scrollOffset) / totalLineHeight).int
@@ -307,14 +326,33 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
   let highlightColor = app.theme.color(@["editor.findMatchBackground", "editor.rangeHighlightBackground"], rgb(200, 200, 200))
   let cursorForegroundColor = app.theme.color(@["editorCursor.foreground", "foreground"], rgb(200, 200, 200))
   let cursorBackgroundColor = app.theme.color(@["editorCursor.background", "background"], rgb(50, 50, 50))
+  let contextBackgroundColor = app.theme.color(@["breadcrumbPicker.background", "background"], rgb(50, 70, 70))
   let wrapLineEndColor = app.theme.tokenColor(@["comment"], rgb(100, 100, 100))
 
   var cursorBounds = rect(vec2(), vec2())
 
   # Update content
   proc renderLine(lineWidget: WPanel, i: int, down: bool, frameIndex: int): bool =
+    var i = i
+
     # Pixel coordinate of the top left corner of the entire line. Includes line number
-    let top = (i - self.previousBaseIndex).float32 * totalLineHeight + self.scrollOffset
+    let top = lineWidget.top
+
+    let indexFromTop = if down:
+      (top / totalLineHeight).ceil.int
+    else:
+      (top / totalLineHeight - 1).ceil.int
+
+    let indentLevel = self.document.getIndentLevelForClosestLine(i)
+
+    var showingContext = false
+    var wrapLine = wrapLines
+    if showContextLines and indexFromTop < indentLevel:
+      i = self.document.getPreviousLineWithIndent(i, indexFromTop)
+      showingContext = true
+      wrapLine = false
+      lineWidget.backgroundColor = contextBackgroundColor
+      lineWidget.fillBackground = true
 
     if sizeToContent:
       lineWidget.sizeToContent = true
@@ -331,18 +369,20 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
       return (self.document.lines[s.first.line].toOpenArray.runeIndex(s.first.column), styledText.runeIndex(s.last.column))
     let highlightsClampedOnLine = highlightsPerLine.getOrDefault(i, @[]).map (s) => self.document.clampToLine(s.normalized, styledText)
 
-    if lineNumbers != LineNumbers.None and cursorLine == i:
-      var partWidget = createPartWidget($i, 0, lineNumberBounds.x, totalLineHeight, textColor, frameIndex)
+    let lineNumber = i
+
+    if lineNumbers != LineNumbers.None and cursorLine == lineNumber:
+      var partWidget = createPartWidget($lineNumber, 0, lineNumberBounds.x, totalLineHeight, textColor, frameIndex)
       lineWidget.add partWidget
     else:
       case lineNumbers
       of LineNumbers.Absolute:
-        let text = $i
+        let text = $lineNumber
         let x = max(0.0, lineNumberBounds.x - text.len.float * charWidth)
         var partWidget = createPartWidget(text, x, lineNumberBounds.x, totalLineHeight, textColor, frameIndex)
         lineWidget.add partWidget
       of LineNumbers.Relative:
-        let text = $(i - cursorLine).abs
+        let text = $(lineNumber - cursorLine).abs
         let x = max(0.0, lineNumberBounds.x - text.len.float * charWidth)
         var partWidget = createPartWidget(text, x, lineNumberBounds.x, totalLineHeight, textColor, frameIndex)
         lineWidget.add partWidget
@@ -358,25 +398,26 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
     for partIndex, part in styledText.parts:
       let width = (part.text.runeLen.float * charWidth).ceil
 
-      var wrapWidth = width
-      for partIndex2 in partIndex..<styledText.parts.high:
-        if styledText.parts[partIndex2].joinNext:
-          let nextWidth = (styledText.parts[partIndex2 + 1].text.runeLen.float * charWidth).ceil
-          if lineNumberTotalWidth + wrapWidth + nextWidth + charWidth <= lineWidget.lastBounds.w:
-            wrapWidth += nextWidth
-            continue
-        break
+      if wrapLine:
+        var wrapWidth = width
+        for partIndex2 in partIndex..<styledText.parts.high:
+          if styledText.parts[partIndex2].joinNext:
+            let nextWidth = (styledText.parts[partIndex2 + 1].text.runeLen.float * charWidth).ceil
+            if lineNumberTotalWidth + wrapWidth + nextWidth + charWidth <= lineWidget.lastBounds.w:
+              wrapWidth += nextWidth
+              continue
+          break
 
-      if startOffset + wrapWidth + charWidth >= lineWidget.lastBounds.w:
-        var partWidget = createPartWidget(wrapLineEndChar, startOffset, wrapLineEndChar.runeLen.float * charWidth, totalLineHeight, wrapLineEndColor, frameIndex)
-        subLineWidget.add partWidget
+        if startOffset + wrapWidth + charWidth >= lineWidget.lastBounds.w:
+          var partWidget = createPartWidget(wrapLineEndChar, startOffset, wrapLineEndChar.runeLen.float * charWidth, totalLineHeight, wrapLineEndColor, frameIndex)
+          subLineWidget.add partWidget
 
-        subLineYOffset += totalLineHeight
-        subLineWidget = WPanel(anchor: (vec2(0, 0), vec2(0, 0)), left: 0, right: contentPanel.lastBounds.w, top: subLineYOffset, bottom: subLineYOffset + totalLineHeight, lastHierarchyChange: frameIndex)
-        lineWidget.add subLineWidget
-        startOffset = lineNumberTotalWidth
-        lineWidget.bottom += totalLineHeight
-        subLineTop += totalLineHeight
+          subLineYOffset += totalLineHeight
+          subLineWidget = WPanel(anchor: (vec2(0, 0), vec2(0, 0)), left: 0, right: contentPanel.lastBounds.w, top: subLineYOffset, bottom: subLineYOffset + totalLineHeight, lastHierarchyChange: frameIndex)
+          lineWidget.add subLineWidget
+          startOffset = lineNumberTotalWidth
+          lineWidget.bottom += totalLineHeight
+          subLineTop += totalLineHeight
 
       # Draw background if selected
       renderTextHighlight(subLineWidget, app, startOffset, startOffset + width, i, startRuneIndex, selectionsNormalizedOnLine, selectionsClampedOnLine, part, selectionColor, totalLineHeight)
