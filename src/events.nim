@@ -16,6 +16,7 @@ type EventHandlerConfig* = ref object
   consumeAllActions*: bool
   consumeAllInput*: bool
   revision: int
+  leader: string
 
 type EventHandler* = ref object
   state*: CommandState
@@ -33,7 +34,7 @@ func newEventHandlerConfig*(context: string): EventHandlerConfig =
   result.context = context
 
 proc buildDFA*(config: EventHandlerConfig): CommandDFA =
-  return buildDFA(config.commands.pairs.toSeq)
+  return buildDFA(config.commands.pairs.toSeq, config.leader)
 
 proc dfa*(handler: EventHandler): CommandDFA =
   if handler.revision < handler.config.revision:
@@ -67,6 +68,10 @@ proc removeCommand*(config: EventHandlerConfig, keys: string) =
 
 proc clearCommands*(config: EventHandlerConfig) =
   config.commands.clear
+  config.revision += 1
+
+proc setLeader*(config: EventHandlerConfig, leader: string) =
+  config.leader = leader
   config.revision += 1
 
 template eventHandler*(inConfig: EventHandlerConfig, handlerBody: untyped): untyped =

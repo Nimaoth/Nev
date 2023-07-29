@@ -594,6 +594,8 @@ proc editor_scriptRunAction_void_string_string_impl*(action: string; arg: string
   discard
 proc editor_scriptLog_void_string_impl*(message: string) =
   discard
+proc editor_setLeader_void_App_string_impl*(leader: string) =
+  discard
 proc editor_addCommandScript_void_App_string_string_string_string_impl*(
     context: string; keys: string; action: string; arg: string = "") =
   discard

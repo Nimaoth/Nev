@@ -52,7 +52,7 @@ proc loadNormalBindings*() =
   addTextCommand "", "<DELETE>", "delete-right"
   addTextCommand "", "<C-DELETE>", "delete-move", "word-line"
   addTextCommand "", "<ENTER>", "insert-text", "\n"
-  addTextCommand "", "<SPACE>", "insert-text", " "
+  addTextCommand "insert", "<SPACE>", "insert-text", " "
   addTextCommand "", "<C-l>", "select-line-current"
   addTextCommand "", "<A-UP>", "select-parent-current-ts"
   addTextCommand "", "<C-r>", "select-prev"

@@ -158,33 +158,35 @@ of Browser:
 loadTheme "synthwave-color-theme"
 # loadTheme "tokyo-night-storm-color-theme"
 
-addCommand "editor", "<S-SPACE><*-T>1", "load-theme", "synthwave-color-theme"
-addCommand "editor", "<S-SPACE><*-T>2", "load-theme", "tokyo-night-storm-color-theme"
+setLeader "<SPACE>"
 
-addCommand "editor", "<S-SPACE><*-a>i", "toggle-flag", "ast.inline-blocks"
-addCommand "editor", "<S-SPACE><*-a>d", "toggle-flag", "ast.vertical-division"
+addCommand "editor", "<LEADER><*-T>1", "load-theme", "synthwave-color-theme"
+addCommand "editor", "<LEADER><*-T>2", "load-theme", "tokyo-night-storm-color-theme"
 
-addCommand "editor", "<SPACE>tt", proc() =
+addCommand "editor", "<LEADER><*-a>i", "toggle-flag", "ast.inline-blocks"
+addCommand "editor", "<LEADER><*-a>d", "toggle-flag", "ast.vertical-division"
+
+addCommand "editor", "<LEADER>tt", proc() =
   setOption("ast.max-loop-iterations", clamp(getOption[int]("ast.max-loop-iterations") * 2, 1, 1000000))
   echo "ast.max-loop-iterations: ", getOption[int]("ast.max-loop-iterations")
 
-addCommand "editor", "<SPACE>tr", proc() =
+addCommand "editor", "<LEADER>tr", proc() =
   setOption("ast.max-loop-iterations", clamp(getOption[int]("ast.max-loop-iterations") div 2, 1, 1000000))
   echo "ast.max-loop-iterations: ", getOption[int]("ast.max-loop-iterations")
 
-addCommand "editor", "<C-SPACE>ft", "toggle-flag", "editor.log-frame-time"
+addCommand "editor", "<LEADER>ft", "toggle-flag", "editor.log-frame-time"
 # addCommand "editor", "<C-SPACE>pp", proc() =
   # toggleFlag "editor.poll"
   # echo "-> ", getFlag("editor.poll")
-addCommand "editor", "<C-SPACE>td", "toggle-flag", "ast.render-vnode-depth"
-addCommand "editor", "<C-SPACE>l", "toggle-flag", "logging"
-addCommand "editor", "<C-SPACE>fs", "toggle-flag", "render-selected-value"
-addCommand "editor", "<C-SPACE>fr", "toggle-flag", "log-render-duration"
-addCommand "editor", "<C-SPACE>fd", "toggle-flag", "render-debug-info"
-addCommand "editor", "<C-SPACE>fo", "toggle-flag", "render-execution-output"
-addCommand "editor", "<C-SPACE>fg", "toggle-flag", "text.print-scopes"
-addCommand "editor", "<C-SPACE>fm", "toggle-flag", "text.print-matches"
-addCommand "editor", "<C-SPACE>fh", "toggle-flag", "text.show-node-highlight"
+addCommand "editor", "<LEADER>ftd", "toggle-flag", "ast.render-vnode-depth"
+addCommand "editor", "<LEADER>fl", "toggle-flag", "logging"
+addCommand "editor", "<LEADER>ffs", "toggle-flag", "render-selected-value"
+addCommand "editor", "<LEADER>ffr", "toggle-flag", "log-render-duration"
+addCommand "editor", "<LEADER>ffd", "toggle-flag", "render-debug-info"
+addCommand "editor", "<LEADER>ffo", "toggle-flag", "render-execution-output"
+addCommand "editor", "<LEADER>ffg", "toggle-flag", "text.print-scopes"
+addCommand "editor", "<LEADER>ffm", "toggle-flag", "text.print-matches"
+addCommand "editor", "<LEADER>ffh", "toggle-flag", "text.show-node-highlight"
 addCommand "editor", "<C-5>", proc() =
   setOption("text.node-highlight-parent-index", clamp(getOption[int]("text.node-highlight-parent-index") - 1, 0, 100000))
   echo "text.node-highlight-parent-index: ", getOption[int]("text.node-highlight-parent-index")
@@ -198,33 +200,48 @@ addCommand "editor", "<C-3>", proc() =
   setOption("text.node-highlight-sibling-index", clamp(getOption[int]("text.node-highlight-sibling-index") + 1, -100000, 100000))
 
 # addCommand "editor", "<S-SPACE><*-l>", ""
-addCommand "editor", "<S-SPACE>ff", "log-options"
+addCommand "editor", "<LEADER>ff", "log-options"
 addCommand "editor", "<ESCAPE>", "escape"
-addCommand "editor", "<S-SPACE><*-l>-", "change-font-size", -1
-addCommand "editor", "<S-SPACE><*-l>+", "change-font-size", 1
-# addCommand "editor", "<C-g>", "toggle-status-bar-location"
-addCommand "editor", "<S-SPACE>l1", "set-layout", "horizontal"
-addCommand "editor", "<S-SPACE>l2", "set-layout", "vertical"
-addCommand "editor", "<S-SPACE>l3", "set-layout", "fibonacci"
-addCommand "editor", "<CA*-g>h", "change-layout-prop", "main-split", -0.05
-addCommand "editor", "<CA*-g>f", "change-layout-prop", "main-split", 0.05
-addCommand "editor", "<CA-v>", "create-view"
-addCommand "editor", "<CA-a>", "create-keybind-autocomplete-view"
-addCommand "editor", "<CA-x>", "close-current-view"
-addCommand "editor", "<CA-n>", "prev-view"
-addCommand "editor", "<CA-t>", "next-view"
-addCommand "editor", "<CS-n>", "move-current-view-prev"
-addCommand "editor", "<CS-t>", "move-current-view-next"
-addCommand "editor", "<CA-r>", "move-current-view-to-top"
-addCommand "editor", "<CA-h>", "open-previous-editor"
-addCommand "editor", "<CA-f>", "open-next-editor"
+
+# Window stuff <LEADER>w
+withKeys "<LEADER>w", "<C-w>":
+  addCommand "editor", "<*-f>-", "change-font-size", -1
+  addCommand "editor", "<*-f>+", "change-font-size", 1
+  addCommand "editor", "b", "toggle-status-bar-location"
+  addCommand "editor", "1", "set-layout", "horizontal"
+  addCommand "editor", "2", "set-layout", "vertical"
+  addCommand "editor", "3", "set-layout", "fibonacci"
+  addCommand "editor", "<*-l>n", "change-layout-prop", "main-split", -0.05
+  addCommand "editor", "<*-l>t", "change-layout-prop", "main-split", 0.05
+  addCommand "editor", "v", "create-view"
+  addCommand "editor", "a", "create-keybind-autocomplete-view"
+  addCommand "editor", "x", "close-current-view"
+  addCommand "editor", "n", "prev-view"
+  addCommand "editor", "t", "next-view"
+  addCommand "editor", "N", "move-current-view-prev"
+  addCommand "editor", "T", "move-current-view-next"
+  addCommand "editor", "r", "move-current-view-to-top"
+  addCommand "editor", "h", "open-previous-editor"
+  addCommand "editor", "f", "open-next-editor"
+
+if getBackend() != Terminal:
+  addCommand "editor", "<CA-v>", "create-view"
+  addCommand "editor", "<CA-a>", "create-keybind-autocomplete-view"
+  addCommand "editor", "<CA-x>", "close-current-view"
+  addCommand "editor", "<CA-n>", "prev-view"
+  addCommand "editor", "<CA-t>", "next-view"
+  addCommand "editor", "<CS-n>", "move-current-view-prev"
+  addCommand "editor", "<CS-t>", "move-current-view-next"
+  addCommand "editor", "<CA-r>", "move-current-view-to-top"
+  addCommand "editor", "<CA-h>", "open-previous-editor"
+  addCommand "editor", "<CA-f>", "open-next-editor"
+
 addCommand "editor", "<C-s>", "write-file"
 addCommand "editor", "<CS-r>", "load-file"
-addCommand "editor", "<S-SPACE><S-SPACE>", "command-line"
-addCommand "editor", "<S-SPACE>t", "choose-theme"
-addCommand "editor", "<S-SPACE>f", "choose-file", "new"
-addCommand "editor", "<S-SPACE>e", "choose-open", "new"
-addCommand "editor", "<C-o>", "choose-file", "new"
+addCommand "editor", "<LEADER><LEADER>", "command-line"
+addCommand "editor", "<LEADER>gt", "choose-theme"
+addCommand "editor", "<LEADER>gf", "choose-file", "new"
+addCommand "editor", "<LEADER>ge", "choose-open", "new"
 
 addCommandBlock "editor", "<S-SPACE>l<*-n>1":
   setOption("editor.text.line-numbers", LineNumbers.None)
