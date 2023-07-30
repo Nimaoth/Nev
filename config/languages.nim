@@ -12,25 +12,30 @@ setOption "editor.text.treesitter.python.dll", "D:/dev/Nim/nimtreesitter/treesit
 
 setOption "editor.text.language.nim", %*{
   "tabWidth": 2,
+  "indent": "spaces",
   "indentAfter": [":", "=", "(", "{", "[", "enum", "object"],
   "lineComment": "#",
 }
 
 setOption "editor.text.language.python", %*{
   "tabWidth": 2,
+  "indent": "spaces",
   "indentAfter": [":", "=", "(", "{", "["],
   "lineComment": "#",
 }
 
 setOption "editor.text.language.javascript", %*{
   "tabWidth": 4,
+  "indent": "spaces",
   "indentAfter": [":", "=", "(", "{", "["],
   "lineComment": "//",
   "blockComment": ["/*", "*/"],
+  "ignoreContextLinePrefix": "{",
 }
 
 setOption "editor.text.language.typescript", %*{
   "tabWidth": 4,
+  "indent": "tab",
   "indentAfter": [":", "=", "(", "{", "["],
   "lineComment": "//",
   "blockComment": ["/*", "*/"],
@@ -38,6 +43,7 @@ setOption "editor.text.language.typescript", %*{
 
 setOption "editor.text.language.rust", %*{
   "tabWidth": 4,
+  "indent": "tab",
   "indentAfter": [":", "=", "(", "{", "["],
   "lineComment": "//",
   "blockComment": ["/*", "*/"],
@@ -45,6 +51,7 @@ setOption "editor.text.language.rust", %*{
 
 setOption "editor.text.language.c", %*{
   "tabWidth": 4,
+  "indent": "tab",
   "indentAfter": [":", "=", "(", "{", "["],
   "lineComment": "//",
   "blockComment": ["/*", "*/"],
@@ -52,6 +59,7 @@ setOption "editor.text.language.c", %*{
 
 setOption "editor.text.language.cpp", %*{
   "tabWidth": 4,
+  "indent": "tab",
   "indentAfter": [":", "=", "(", "{", "["],
   "lineComment": "//",
   "blockComment": ["/*", "*/"],
@@ -59,6 +67,7 @@ setOption "editor.text.language.cpp", %*{
 
 setOption "editor.text.language.java", %*{
   "tabWidth": 4,
+  "indent": "tab",
   "indentAfter": [":", "=", "(", "{", "["],
   "lineComment": "//",
   "blockComment": ["/*", "*/"],
@@ -66,6 +75,7 @@ setOption "editor.text.language.java", %*{
 
 setOption "editor.text.language.zig", %*{
   "tabWidth": 4,
+  "indent": "tab",
   "indentAfter": [":", "=", "(", "{", "["],
   "lineComment": "//",
 }

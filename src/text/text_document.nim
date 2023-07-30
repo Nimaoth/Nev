@@ -476,7 +476,16 @@ proc newTextDocument*(configProvider: ConfigProvider, filename: string = "", con
     self.languageId = language.get
 
     if (let value = self.configProvider.getValue("editor.text.language." & self.languageId, newJNull()); value.kind == JObject):
-      self.languageConfig = value.jsonTo(TextLanguageConfig).some
+      self.languageConfig = value.jsonTo(TextLanguageConfig, Joptions(allowExtraKeys: true, allowMissingKeys: true)).some
+      if value.hasKey("indent"):
+        case value["indent"].str:
+        of "spaces":
+          self.indentStyle = IndentStyle(kind: Spaces, spaces: self.languageConfig.map((c) => c.tabWidth).get(4))
+        of "tabs":
+          self.indentStyle = IndentStyle(kind: Tabs)
+
+      debugf"using language for {filename}: {value}, {self.indentStyle}"
+
 
     if self.configProvider.getValue("editor.text.auto-start-language-server", false):
       asyncCheck self.getLanguageServer()
@@ -655,6 +664,13 @@ proc firstNonWhitespace*(str: string): int =
     if c != ' ':
       break
     result += 1
+
+proc lineStartsWith*(self: TextDocument, line: int, text: string, ignoreWhitespace: bool): bool =
+  if ignoreWhitespace:
+    let index = self.lines[line].firstNonWhitespace
+    return self.lines[line][index..^1].startsWith(text)
+  else:
+    return self.lines[line].startsWith(text)
 
 proc lastNonWhitespace*(str: string): int =
   result = str.high
