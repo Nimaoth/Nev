@@ -260,13 +260,13 @@ withKeys "<LEADER>s":
   addCommand "editor", "kv", () => loadVimBindings()
   addCommand "editor", "kh", () => loadHelixBindings()
 
-addCommand "editor", "<S-SPACE>lf", "load-file"
-addCommand "editor", "<S-SPACE>wf", "write-file"
-addCommand "editor", "<S-SPACE>SS", "write-file", "", true
-addCommand "editor", "<S-SPACE>SA", "save-app-state"
-addCommand "editor", "<S-SPACE>SC", "remove-from-local-storage"
-addCommand "editor", "<S-SPACE>CC", "clear-workspace-caches"
-addCommand "editor", "<S-SPACE>CC", "clear-workspace-caches"
+addCommand "editor", "<LEADER>rlf", "load-file"
+addCommand "editor", "<LEADER>rwf", "write-file"
+addCommand "editor", "<LEADER>rSS", "write-file", "", true
+addCommand "editor", "<LEADER>rSA", "save-app-state"
+addCommand "editor", "<LEADER>rSC", "remove-from-local-storage"
+addCommand "editor", "<LEADER>rCC", "clear-workspace-caches"
+addCommand "editor", "<LEADER>rCC", "clear-workspace-caches"
 
 addCommand "commandLine", "<ESCAPE>", "exit-command-line"
 addCommand "commandLine", "<ENTER>", "execute-command-line"

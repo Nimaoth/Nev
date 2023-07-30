@@ -1,5 +1,5 @@
 import std/[strformat, tables, dom, unicode, strutils, sugar]
-import platform, widgets, custom_logger, rect_utils, input, event, lrucache, theme
+import platform, widgets, custom_logger, rect_utils, input, event, lrucache, theme, timer
 import vmath
 import chroma as chroma
 
@@ -28,6 +28,10 @@ type
     mLineHeight: float
     mLineDistance: float
     mCharWidth: float
+
+    doubleClickTimer: Timer
+    doubleClickCounter: int
+    doubleClickTime: float
 
     escapedText: LruCache[string, string]
 
@@ -73,6 +77,7 @@ method init*(self: BrowserPlatform) =
   self.mLineDistance = 2
   self.mCharWidth = 18
   self.supportsThinCursor = true
+  self.doubleClickTime = 0.35
 
   self.escapedText = newLruCache[string, string](1000)
 
@@ -129,6 +134,24 @@ method init*(self: BrowserPlatform) =
     let y = me.pageY.float - currentTargetRect.y
     # debugf"click {me.button}, {modifiers}, {x}, {y}"
     self.onMousePress.invoke (mouseButton, modifiers, vec2(x.float, y.float))
+
+    if mouseButton == MouseButton.Left:
+      if self.doubleClickTimer.elapsed.float < self.doubleClickTime:
+        inc self.doubleClickCounter
+        case self.doubleClickCounter
+        of 1:
+          self.onMousePress.invoke (MouseButton.DoubleClick, modifiers, vec2(x.float, y.float))
+        of 2:
+          self.onMousePress.invoke (MouseButton.TripleClick, modifiers, vec2(x.float, y.float))
+        else:
+          self.doubleClickCounter = 0
+      else:
+        self.doubleClickCounter = 0
+
+      self.doubleClickTimer = startTimer()
+    else:
+      self.doubleClickCounter = 0
+
   )
 
   self.content.addEventListener("mouseup", proc(e: dom.Event) =
