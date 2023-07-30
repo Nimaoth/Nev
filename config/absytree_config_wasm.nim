@@ -243,21 +243,22 @@ addCommand "editor", "<LEADER>gt", "choose-theme"
 addCommand "editor", "<LEADER>gf", "choose-file", "new"
 addCommand "editor", "<LEADER>ge", "choose-open", "new"
 
-addCommandBlock "editor", "<S-SPACE>l<*-n>1":
-  setOption("editor.text.line-numbers", LineNumbers.None)
-  requestRender(true)
+withKeys "<LEADER>s":
+  addCommandBlock "editor", "l<*-n>1":
+    setOption("editor.text.line-numbers", LineNumbers.None)
+    requestRender(true)
 
-addCommandBlock "editor", "<S-SPACE>l<*-n>2":
-  setOption("editor.text.line-numbers", LineNumbers.Absolute)
-  requestRender(true)
+  addCommandBlock "editor", "l<*-n>2":
+    setOption("editor.text.line-numbers", LineNumbers.Absolute)
+    requestRender(true)
 
-addCommandBlock "editor", "<S-SPACE>l<*-n>3":
-  setOption("editor.text.line-numbers", LineNumbers.Relative)
-  requestRender(true)
+  addCommandBlock "editor", "l<*-n>3":
+    setOption("editor.text.line-numbers", LineNumbers.Relative)
+    requestRender(true)
 
-addCommand "editor", "<S-SPACE>kn", () => loadNormalBindings()
-addCommand "editor", "<S-SPACE>kv", () => loadVimBindings()
-addCommand "editor", "<S-SPACE>kh", () => loadHelixBindings()
+  addCommand "editor", "kn", () => loadNormalBindings()
+  addCommand "editor", "kv", () => loadVimBindings()
+  addCommand "editor", "kh", () => loadHelixBindings()
 
 addCommand "editor", "<S-SPACE>lf", "load-file"
 addCommand "editor", "<S-SPACE>wf", "write-file"
