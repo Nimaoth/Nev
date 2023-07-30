@@ -88,6 +88,7 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
 proc handleInput(self: TextDocumentEditor, input: string): EventResponse
 proc showCompletionWindow(self: TextDocumentEditor)
 proc refilterCompletions(self: TextDocumentEditor)
+proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string, count: int = 0): Selection
 
 proc clampCursor*(self: TextDocumentEditor, cursor: Cursor): Cursor = self.document.clampCursor(cursor)
 
@@ -465,15 +466,16 @@ proc selectNext(self: TextDocumentEditor) {.expose("editor.text").} =
   self.scrollToCursor(self.selection.last)
 
 proc selectInside(self: TextDocumentEditor, cursor: Cursor) {.expose("editor.text").} =
-  let regex = re("[a-zA-Z0-9_]")
-  var first = cursor.column
-  # echo self.document.lines[cursor.line], ", ", first, ", ", self.document.lines[cursor.line].matchLen(regex, start = first - 1)
-  while first > 0 and self.document.lines[cursor.line].matchLen(regex, start = first - 1) == 1:
-    first -= 1
-  var last = cursor.column
-  while last < self.document.lines[cursor.line].len and self.document.lines[cursor.line].matchLen(regex, start = last) == 1:
-    last += 1
-  self.selection = ((cursor.line, first), (cursor.line, last))
+  self.selection = self.getSelectionForMove(cursor, "word")
+  # let regex = re("[a-zA-Z0-9_]")
+  # var first = cursor.column
+  # # echo self.document.lines[cursor.line], ", ", first, ", ", self.document.lines[cursor.line].matchLen(regex, start = first - 1)
+  # while first > 0 and self.document.lines[cursor.line].matchLen(regex, start = first - 1) == 1:
+  #   first -= 1
+  # var last = cursor.column
+  # while last < self.document.lines[cursor.line].len and self.document.lines[cursor.line].matchLen(regex, start = last) == 1:
+  #   last += 1
+  # self.selection = ((cursor.line, first), (cursor.line, last))
 
 proc selectInsideCurrent(self: TextDocumentEditor) {.expose("editor.text").} =
   self.selectInside(self.selection.last)

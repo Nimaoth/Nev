@@ -1,6 +1,6 @@
 import std/[strformat, terminal, typetraits, enumutils]
 import platform, widgets
-import tui, custom_logger, rect_utils, input, event
+import tui, custom_logger, rect_utils, input, event, timer
 import vmath
 import chroma as chroma
 import std/colors as stdcolors
@@ -13,6 +13,10 @@ type
     trueColorSupport*: bool
     mouseButtons: set[input.MouseButton]
     masks: seq[Rect]
+
+    doubleClickTimer: Timer
+    doubleClickCounter: int
+    doubleClickTime: float
 
 proc exitProc() {.noconv.} =
   resetAttributes()
@@ -62,6 +66,7 @@ method init*(self: TerminalPlatform) =
   hideCursor()
 
   self.supportsThinCursor = false
+  self.doubleClickTime = 0.35
 
   if myEnableTrueColors():
     log(lvlInfo, "Enable true color support")
@@ -210,6 +215,24 @@ method processEvents*(self: TerminalPlatform): int =
         of mbaPressed:
           self.mouseButtons.incl button
           self.onMousePress.invoke (button, modifiers, pos)
+
+          if button == input.MouseButton.Left:
+            if self.doubleClickTimer.elapsed.float < self.doubleClickTime:
+              inc self.doubleClickCounter
+              case self.doubleClickCounter
+              of 1:
+                self.onMousePress.invoke (input.MouseButton.DoubleClick, modifiers, pos)
+              of 2:
+                self.onMousePress.invoke (input.MouseButton.TripleClick, modifiers, pos)
+              else:
+                self.doubleClickCounter = 0
+            else:
+              self.doubleClickCounter = 0
+
+            self.doubleClickTimer = startTimer()
+          else:
+            self.doubleClickCounter = 0
+
         of mbaReleased:
           self.mouseButtons = {}
           self.onMouseRelease.invoke (button, modifiers, pos)
