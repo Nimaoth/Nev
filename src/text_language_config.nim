@@ -6,6 +6,7 @@ type
     indentAfter*: seq[string]
     lineComment*: Option[string]
     blockComment*: Option[(string, string)]
+    ignoreContextLinePrefix*: Option[string]
 
 proc fromJsonHook*(self: var TextLanguageConfig, node: JsonNode, opt = Joptions()) =
   if self.isNil:
@@ -33,5 +34,10 @@ proc fromJsonHook*(self: var TextLanguageConfig, node: JsonNode, opt = Joptions(
       self.blockComment = (node["blockComment"][0].str, node["blockComment"][1].str).some
     else:
       self.blockComment = (string, string).none
+
+    if node.hasKey("ignoreContextLinePrefix"):
+      self.ignoreContextLinePrefix = node["ignoreContextLinePrefix"].str.some
+    else:
+      self.ignoreContextLinePrefix = string.none
   except CatchableError:
     discard

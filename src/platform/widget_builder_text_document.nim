@@ -1,10 +1,15 @@
-import std/[strformat, tables, sugar, sequtils]
+import std/[strformat, tables, sugar, sequtils, strutils]
 import util, app, document_editor, text/text_editor, custom_logger, widgets, platform, theme, custom_unicode
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import vmath, bumpy, chroma
 
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
 {.used.}
+
+proc shouldIgnoreAsContextLine(self: TextDocument, line: int): bool =
+  let indent = self.getIndentLevelForLine(line)
+  return line > 0 and self.languageConfig.isSome and self.languageConfig.get.ignoreContextLinePrefix.isSome and
+        self.lineStartsWith(line, self.languageConfig.get.ignoreContextLinePrefix.get, true) and self.getIndentLevelForLine(line - 1) == indent
 
 proc getPreviousLineWithIndent(self: TextDocument, line: int, indent: int): int =
   result = line
@@ -17,6 +22,11 @@ proc getPreviousLineWithIndent(self: TextDocument, line: int, indent: int): int 
       continue
 
     let i = self.getIndentLevelForLine(result)
+
+    if self.shouldIgnoreAsContextLine(result):
+      dec result
+      continue
+
     if i == indent or result <= 0:
       return
 
@@ -347,7 +357,7 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
 
     var showingContext = false
     var wrapLine = wrapLines
-    if showContextLines and indexFromTop < indentLevel:
+    if showContextLines and (indexFromTop < indentLevel or (indexFromTop == indentLevel and self.document.shouldIgnoreAsContextLine(i))):
       i = self.document.getPreviousLineWithIndent(i, indexFromTop)
       showingContext = true
       wrapLine = false
