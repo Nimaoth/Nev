@@ -27,8 +27,11 @@ node_modules/**
 GithubAccessToken
 nimble.develop
 nimble.paths
+testresults
+tests/**/*.js
 
 loc.csv
 count_loc.ps1
 todo.md
 a.html
+
