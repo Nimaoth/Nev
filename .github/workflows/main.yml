@@ -12,18 +12,9 @@ jobs:
     steps:
       - name: Checkout the repo
         uses: actions/checkout@v2
-      - name: test
-        run: ls
-      - name: uaie
-        run: echo $PATH
       - name: add safe directory
         run: git config --global --add safe.directory /__w/Absytree/Absytree
-      - name: Test123
-        run: nim
       - name: nimble setup
-        run: PATH=/github/home/.nimble/bin:/root/.nimble/bin:$PATH nimble --verbose setup
-        continue-on-error: true
-      - name: xvlc
-        run: ls /root/.nimble/bin
+        run: PATH=/github/home/.nimble/bin:$PATH nimble setup
       - name: nimble buildDesktop
         run: nimble buildDesktop
