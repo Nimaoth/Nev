@@ -15,6 +15,7 @@ You can try the browser version [here](https://nimaoth.github.io/AbsytreeBrowser
 ## Building
 
 ### Setup
+- Requires OpenGL 4.1 for the GUI version
 - Install Nim version 2.0.0
 - Clone the repository
 - Run `nimble setup`

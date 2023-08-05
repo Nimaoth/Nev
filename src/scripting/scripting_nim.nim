@@ -149,10 +149,6 @@ proc myFindNimStdLib(): string =
   ## Tries to find a path to a valid "system.nim" file.
   ## Returns "" on failure.
 
-  result = findNimStdLib()
-  if result != "":
-    return
-
   try:
     let nimdump = execProcess("nim --verbosity:0 dump --dump.format:json .", ".", [])
     let nimdumpJson = nimdump.parseJson()
