@@ -1,6 +1,16 @@
 {
   "version": 2,
   "packages": {
+    "c2nim": {
+      "version": "0.9.19",
+      "vcsRevision": "5753fa7658ed50432ea6c2df84f0a45e36bcb2ea",
+      "url": "https://github.com/nim-lang/c2nim",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "1954eb89cc353cf2a4e54804d38d5a1e72f3c98e"
+      }
+    },
     "unicodedb": {
       "version": "0.12.0",
       "vcsRevision": "b055310c08db8f879057b4fec15c8301ee93bb2a",
@@ -21,6 +31,32 @@
       ],
       "checksums": {
         "sha1": "f376a11f34d2dfbfd18abdd31e6379e3cf2e7c6d"
+      }
+    },
+    "nimgen": {
+      "version": "0.5.4",
+      "vcsRevision": "e6697aabbe36e42e4dd261cfd0b8a8be16f6f342",
+      "url": "https://github.com/Nimaoth/nimgen",
+      "downloadMethod": "git",
+      "dependencies": [
+        "c2nim",
+        "regex",
+        "unicodedb"
+      ],
+      "checksums": {
+        "sha1": "d563cc29937e4d2d66ebeb3eaacef95c6284fb4c"
+      }
+    },
+    "treesitter": {
+      "version": "0.1.2",
+      "vcsRevision": "97e99e60802c2122459af1b50eded804f06c77ef",
+      "url": "https://github.com/Nimaoth/nimtreesitter",
+      "downloadMethod": "git",
+      "dependencies": [
+        "nimgen"
+      ],
+      "checksums": {
+        "sha1": "dc11c5d8ded827ac0d8c66f9da35a8348cfc827e"
       }
     },
     "patty": {
@@ -73,41 +109,6 @@
       "dependencies": [],
       "checksums": {
         "sha1": "99b26039cfa38ee375f5eb469eec15d842c4fac6"
-      }
-    },
-    "c2nim": {
-      "version": "0.9.19",
-      "vcsRevision": "5753fa7658ed50432ea6c2df84f0a45e36bcb2ea",
-      "url": "https://github.com/nim-lang/c2nim",
-      "downloadMethod": "git",
-      "dependencies": [],
-      "checksums": {
-        "sha1": "1954eb89cc353cf2a4e54804d38d5a1e72f3c98e"
-      }
-    },
-    "nimgen": {
-      "version": "0.5.3",
-      "vcsRevision": "6c24d4a727045313b46165f62a815558ba4e0873",
-      "url": "https://github.com/genotrance/nimgen",
-      "downloadMethod": "git",
-      "dependencies": [
-        "c2nim",
-        "regex"
-      ],
-      "checksums": {
-        "sha1": "2784d36f26becd5a9714d07428b88c7f820ede7f"
-      }
-    },
-    "treesitter": {
-      "version": "0.1.1",
-      "vcsRevision": "a9753e59c1b99da68dc0719065dfe4dd42397154",
-      "url": "https://github.com/Nimaoth/nimtreesitter",
-      "downloadMethod": "git",
-      "dependencies": [
-        "nimgen"
-      ],
-      "checksums": {
-        "sha1": "f11abf804628ba6f629ae1af131a63d4d638e5a7"
       }
     },
     "chroma": {
@@ -230,19 +231,6 @@
       "dependencies": [],
       "checksums": {
         "sha1": "c19fc867d0a999ebb078fc14ea142aa7cf057ba8"
-      }
-    },
-    "treesitter_nim": {
-      "version": "0.1.1",
-      "vcsRevision": "a9753e59c1b99da68dc0719065dfe4dd42397154",
-      "url": "https://github.com/Nimaoth/nimtreesitter",
-      "downloadMethod": "git",
-      "dependencies": [
-        "nimgen",
-        "treesitter"
-      ],
-      "checksums": {
-        "sha1": "b37f6fac99226d86a3ccbab1c2cffe1eaf3adec2"
       }
     },
     "lrucache": {

@@ -26,7 +26,7 @@ requires "https://github.com/Nimaoth/lrucache.nim >= 1.1.4"
 requires "https://github.com/Nimaoth/boxy >= 0.4.2"
 requires "https://github.com/Nimaoth/nimscripter >= 1.0.18"
 requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter >= 0.1.1"
-requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_nim >= 0.1.1"
+# requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_nim >= 0.1.1"
 
 task createScriptingDocs, "Build the documentation for the scripting API":
   exec "nim doc --project --index:on --git.url:https://github.com/Nimaoth/Absytree/ --git.commit:main ./scripting/absytree_runtime.nim"
