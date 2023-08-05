@@ -1,0 +1,14 @@
+name: Build desktop version
+on: push
+
+jobs:
+  build-desktop:
+    name: Build desktop version
+    runs-on: ubuntu-latest
+    container:
+      image: nimlang/nim
+      volumes:
+        - my-app:/app
+    steps:
+      - name: Test123
+        run: ls
