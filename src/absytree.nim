@@ -1,6 +1,19 @@
 when defined(js):
   {.error: "absytree_terminal.nim does not work in js backend. Use absytree_js.nim instead.".}
 
+when defined(windows):
+  static:
+    echo "Compiling for windows"
+elif defined(linux):
+  static:
+    echo "Compiling for linux"
+elif defined(posix):
+  static:
+    echo "Compiling for posix"
+else:
+  static:
+    echo "Compiling for unknown"
+
 import std/[parseopt, options, os]
 
 import compilation_config, custom_logger, scripting_api
