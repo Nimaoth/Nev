@@ -15,7 +15,11 @@ jobs:
       - name: test
         run: ls
       - name: Add .nimble to PATH
-        run: PATH=~/.nimble/bin:$PATH
+        run: PATH=/github/home/.nimble/bin:~/.nimble/bin:$PATH
+      - name: uaie
+        run: echo $PATH
+      - name: xvlc
+        run: ls /github/home/.nimble/bin
       - name: add safe directory
         run: git config --global --add safe.directory /__w/Absytree/Absytree
       - name: Test123
