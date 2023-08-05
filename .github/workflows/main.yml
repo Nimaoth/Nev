@@ -6,7 +6,7 @@ jobs:
     name: Build desktop version
     runs-on: ubuntu-latest
     container:
-      image: nimlang/nim
+      image: nimlang/nim:2.0.0-regular
       volumes:
         - my-app:/app
     steps:
