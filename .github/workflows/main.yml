@@ -11,4 +11,4 @@ jobs:
         - my-app:/app
     steps:
       - name: Test123
-        run: ls
+        run: nim
