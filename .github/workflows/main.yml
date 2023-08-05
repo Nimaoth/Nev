@@ -45,9 +45,38 @@ jobs:
       - name: nimble buildDesktop
         if: always()
         run: nimble buildDesktop
+      - name: nimble buildDesktopWindows
+        if: always()
+        run: nimble buildDesktopWindows
       - name: nimble buildBrowser
         if: always()
         run: nimble buildBrowser
+
+      - run: mkdir release
+      - run: cp config release
+      - run: cp fonts release
+      - run: cp languages release
+      - run: cp themes release
+      - run: cp scripting release
+      - run: cp LINCENCES release
+      - run: cp LICENSE release
+        continue-on-error: true
+      - run: cp ast.exe release
+        continue-on-error: true
+      - run: cp absytree-server release
+        continue-on-error: true
+      - run: cp nimsuggest-ws release
+        continue-on-error: true
+      - run: cp libgcc_s_seh-1.dll release
+      - run: cp libstdc++-6.dll release
+      - run: cp libwinpthread-1.dll release
+        continue-on-error: true
+      - run: cp ast.exe release
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: release
+          path: release
 
   run-tests:
     name: Run tests
