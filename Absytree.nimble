@@ -5,7 +5,7 @@ author        = "Nimaoth"
 description   = "Programming language + editor"
 license       = "MIT"
 srcDir        = "src"
-bin           = @["absytree"]
+bin           = @["abs"]
 
 # Dependencies
 
@@ -29,25 +29,34 @@ requires "https://github.com/Nimaoth/nimtreesitter-api >= 0.1.2"
 # requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter >= 0.1.2"
 # requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_nim >= 0.1.1"
 
+import strformat
+
 task createScriptingDocs, "Build the documentation for the scripting API":
   exec "nim doc --project --index:on --git.url:https://github.com/Nimaoth/Absytree/ --git.commit:main ./scripting/absytree_runtime.nim"
   exec "nim buildIndex -o:./scripting/htmldocs/theindex.html ./scripting/htmldocs"
   exec "nim ./postprocess_docs.nims"
 
+const exe = when defined(windows):
+    ".exe"
+  else:
+    ""
+
+echo fmt"extension: {exe}"
+
 task buildDesktop, "Build the desktop version":
-  selfExec "c -d:exposeScriptingApi ./src/absytree.nim"
+  selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi ./src/absytree.nim"
 
 task buildWorkspaceServer, "Build the server for hosting workspaces":
-  selfExec "c -o:workspace-server.exe ./src/servers/workspace_server.nim"
+  selfExec fmt"c -o:workspace-server{exe} ./src/servers/workspace_server.nim"
 
 task buildLanguagesServer, "Build the server for hosting languages servers":
-  selfExec "c -o:languages-server.exe ./src/servers/languages_server.nim"
+  selfExec fmt"c -o:languages-server{exe} ./src/servers/languages_server.nim"
 
 task buildAbsytreeServer, "Build the server for hosting workspaces and language servers":
-  selfExec "c -o:absytree-server.exe ./src/servers/absytree_server.nim"
+  selfExec fmt"c -o:absytree-server{exe} ./src/servers/absytree_server.nim"
 
 task buildNimsuggestWS, "Build the server for hosting workspaces and language servers":
-  selfExec "c -o:nimsuggest-ws.exe ./nimsuggest_ws.nim"
+  selfExec fmt"c -o:nimsuggest-ws{exe} ./nimsuggest_ws.nim"
 
 task buildBrowser, "Build the browser version":
   selfExec "js -o:ast.js -d:exposeScriptingApi -d:vmathObjBased -d:enableTableIdCacheChecking --boundChecks:on --rangeChecks:on ./src/absytree_js.nim"
