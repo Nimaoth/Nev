@@ -12,6 +12,10 @@ jobs:
     steps:
       - name: Checkout the repo
         uses: actions/checkout@v2
+      - name: test
+        run: ls
+      - name: add safe directory
+        run: git config --global --add safe.directory /__w/Absytree/Absytree
       - name: Test123
         run: nim
       - name: nimble setup
