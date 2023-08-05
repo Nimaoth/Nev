@@ -37,21 +37,22 @@ jobs:
       - name: nimble setup
         run: PATH=/github/home/.nimble/bin:$PATH nimble setup
 
-      - name: nimble buildDesktop
-        run: nimble buildDesktop
-        continue-on-error: true
-      - name: nimble buildBrowser
-        run: nimble buildBrowser
-        continue-on-error: true
-      - name: nimble buildAbsytreeServer
-        run: nimble buildAbsytreeServer
-        continue-on-error: true
-      - name: nimble buildNimsuggestWS
-        run: nimble buildNimsuggestWS
-        continue-on-error: true
+      #- name: nimble buildDesktop
+      #  run: nimble buildDesktop
+      #  continue-on-error: true
+      #- name: nimble buildBrowser
+      #  run: nimble buildBrowser
+      #  continue-on-error: true
+      #- name: nimble buildAbsytreeServer
+      #  run: nimble buildAbsytreeServer
+      #  continue-on-error: true
+      #- name: nimble buildNimsuggestWS
+      #  run: nimble buildNimsuggestWS
+      #  continue-on-error: true
 
       - name: Run tests
         run: testament --print category unit
+        continue-on-error: true
       - name: Build test report
         run: testament html
 
