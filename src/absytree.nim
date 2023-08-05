@@ -152,7 +152,7 @@ proc runApp(): Future[void] {.async.} =
       sleep(timeToSleep.int)
 
     let totalTime = totalTimer.elapsed.ms
-    if eventCounter > 0:
+    if eventCounter > 0 and totalTime > 20:
       log(lvlDebug, fmt"Total: {totalTime:>5.2}, Poll: {pollTime:>5.2}ms, Event: {eventTime:>5.2}ms, Frame: {frameTime:>5.2}ms (u: {updateTime:>5.2}ms, l: {layoutTime:>5.2}ms, r: {renderTime:>5.2}ms)")
       discard
 

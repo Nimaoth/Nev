@@ -1,7 +1,7 @@
 when defined(js):
   {.error: "scripting_nim.nim does not work in js backend. Use scripting_js.nim instead.".}
 
-import std/[os, tables, strformat, json, strutils, macrocache, macros, genasts, times]
+import std/[os, osproc, tables, strformat, json, strutils, macrocache, macros, genasts, times]
 import fusion/matching
 import compiler/[renderer, ast, llstream, lineinfos]
 import compiler/options as copts
@@ -20,6 +20,7 @@ type ScriptContextNim* = ref object of ScriptContext
   addins: VMAddins
   postCodeAdditions: string # Text which gets appended to the script before being executed
   searchPaths: seq[string]
+  stdPath: string
 
 let stdPath = "C:/Users/nimao/.choosenim/toolchains/nim-2.0.0/lib"
 
@@ -144,6 +145,22 @@ proc mySafeLoadScriptWithState*(
     intr = tempIntr
     intr.get.loadState(state)
 
+proc myFindNimStdLib(): string =
+  ## Tries to find a path to a valid "system.nim" file.
+  ## Returns "" on failure.
+
+  result = findNimStdLib()
+  if result != "":
+    return
+
+  try:
+    let nimdump = execProcess("nim --verbosity:0 dump --dump.format:json .", ".", [])
+    let nimdumpJson = nimdump.parseJson()
+    return nimdumpJson["libpath"].getStr ""
+  except OSError, ValueError:
+    log lvlError, fmt"Failed to find nim std path using nim dump: {getCurrentExceptionMsg()}"
+    return ""
+
 proc newScriptContext*(path: string, apiModule: string, addins: VMAddins, postCodeAdditions: string, searchPaths: seq[string]): ScriptContextNim =
   new result
   result.script = NimScriptPath(path)
@@ -151,8 +168,14 @@ proc newScriptContext*(path: string, apiModule: string, addins: VMAddins, postCo
   result.addins = addins
   result.postCodeAdditions = postCodeAdditions
   result.searchPaths = searchPaths
-  log(lvlInfo, fmt"Creating new script context (search paths: {searchPaths})")
-  result.inter = myLoadScript(result.script, apiModule, addins, postCodeAdditions, ["scripting_api", "std/json"], stdPath = stdPath, searchPaths = searchPaths, vmErrorHook = errorHook, moreAddins = timerAddins)
+
+  result.stdPath = myFindNimStdLib()
+  if result.stdPath == "":
+    result.stdPath = stdPath
+
+  log(lvlInfo, fmt"Creating new script context (search paths: {searchPaths}, std path: {result.stdPath})")
+
+  result.inter = myLoadScript(result.script, apiModule, addins, postCodeAdditions, ["scripting_api", "std/json"], stdPath = result.stdPath, searchPaths = searchPaths, vmErrorHook = errorHook, moreAddins = timerAddins)
   if result.inter.isNone:
     log(lvlError, fmt"Failed to create script context")
 
