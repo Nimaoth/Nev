@@ -8,7 +8,13 @@ jobs:
     container:
       image: nimlang/nim:2.0.0-regular
       volumes:
-        - my-app:/app
+        - ${{ github.workspace }}:/app
     steps:
+      - name: Checkout the repo
+        uses: actions/checkout@v2
       - name: Test123
         run: nim
+      - name: nimble setup
+        run: nimble setup
+      - name: nimble buildDesktop
+        run: nimble buildDesktop
