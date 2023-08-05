@@ -14,17 +14,16 @@ jobs:
         uses: actions/checkout@v2
       - name: test
         run: ls
-      - name: Add .nimble to PATH
-        run: PATH=/github/home/.nimble/bin:/root/.nimble/bin:$PATH
       - name: uaie
         run: echo $PATH
-      - name: xvlc
-        run: ls /root/.nimble/bin
       - name: add safe directory
         run: git config --global --add safe.directory /__w/Absytree/Absytree
       - name: Test123
         run: nim
       - name: nimble setup
         run: PATH=/github/home/.nimble/bin:/root/.nimble/bin:$PATH nimble --verbose setup
+        continue-on-error: true
+      - name: xvlc
+        run: ls /root/.nimble/bin
       - name: nimble buildDesktop
         run: nimble buildDesktop
