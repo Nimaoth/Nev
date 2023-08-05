@@ -35,11 +35,9 @@ jobs:
       - name: add Absytree as git safe.directory so nimble can install stuff
         run: git config --global --add safe.directory /__w/Absytree/Absytree
 
-      - run: x86_64-w64-mingw32-gcc
-        continue-on-error: true
       - run: apt-get update
         continue-on-error: true
-      - run: apt-get install gcc-mingw-w64
+      - run: apt-get install gcc-mingw-w64 -y
         continue-on-error: true
       - run: x86_64-w64-mingw32-gcc
         continue-on-error: true
