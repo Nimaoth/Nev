@@ -23,7 +23,7 @@ concurrency:
 
 jobs:
   build-absytree:
-    name: Build and test Absytree
+    name: Build Absytree
     runs-on: ubuntu-latest
     container:
       image: nimlang/nim:2.0.0-regular
@@ -37,18 +37,32 @@ jobs:
       - name: nimble setup
         run: PATH=/github/home/.nimble/bin:$PATH nimble setup
 
-      #- name: nimble buildDesktop
-      #  run: nimble buildDesktop
-      #  continue-on-error: true
-      #- name: nimble buildBrowser
-      #  run: nimble buildBrowser
-      #  continue-on-error: true
-      #- name: nimble buildAbsytreeServer
-      #  run: nimble buildAbsytreeServer
-      #  continue-on-error: true
-      #- name: nimble buildNimsuggestWS
-      #  run: nimble buildNimsuggestWS
-      #  continue-on-error: true
+      - name: nimble buildAbsytreeServer
+        run: nimble buildAbsytreeServer
+      - name: nimble buildNimsuggestWS
+        if: always()
+        run: nimble buildNimsuggestWS
+      - name: nimble buildDesktop
+        if: always()
+        run: nimble buildDesktop
+      - name: nimble buildBrowser
+        if: always()
+        run: nimble buildBrowser
+
+  run-tests:
+    name: Run tests
+    runs-on: ubuntu-latest
+    container:
+      image: nimlang/nim:2.0.0-regular
+      volumes:
+        - ${{ github.workspace }}:/app
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@v3
+      - name: add Absytree as git safe.directory so nimble can install stuff
+        run: git config --global --add safe.directory /__w/Absytree/Absytree
+      - name: nimble setup
+        run: PATH=/github/home/.nimble/bin:$PATH nimble setup
 
       - name: Run tests
         run: testament --print category unit
@@ -57,6 +71,7 @@ jobs:
         run: testament html
 
       - uses: actions/upload-artifact@v3
+        if: success()
         with:
           name: testresults.html
           path: testresults.html
@@ -64,7 +79,7 @@ jobs:
   # Build job
   build-page:
     runs-on: ubuntu-latest
-    needs: build-absytree
+    needs: run-tests
     if: always()
     steps:
       - name: Checkout
@@ -72,6 +87,7 @@ jobs:
       - uses: actions/download-artifact@v3
         with:
           name: testresults.html
+        continue-on-error: true
       - name: Setup Pages
         uses: actions/configure-pages@v3
       - name: Build with Jekyll
