@@ -1305,9 +1305,9 @@ proc canInsertInto*(self: AstDocumentEditor, parent: AstNode): bool =
   of Empty, Identifier, NumberLiteral, StringLiteral:
     return false
   of ConstDecl:
-    return parent.len < 1:
+    return parent.len < 1
   of LetDecl, VarDecl, While, Assignment:
-    return parent.len < 2:
+    return parent.len < 2
   of FunctionDefinition:
     return parent.len < 3
   of NodeList, If, Params:

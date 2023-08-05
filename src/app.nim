@@ -241,7 +241,7 @@ proc invokeCallback*(self: App, context: string, args: JsonNode): bool =
   try:
     if self.scriptContext.handleCallback(id, args):
       return true
-    return self.wasmScriptContext.handleCallback(id, args):
+    return self.wasmScriptContext.handleCallback(id, args)
   except CatchableError:
     log(lvlError, fmt"[ed] Failed to run script handleCallback {id}: {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())

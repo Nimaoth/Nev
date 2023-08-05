@@ -21,7 +21,7 @@ type ScriptContextNim* = ref object of ScriptContext
   postCodeAdditions: string # Text which gets appended to the script before being executed
   searchPaths: seq[string]
 
-let stdPath = "D:/.choosenim/toolchains/nim-#devel/lib"
+let stdPath = "C:/Users/nimao/.choosenim/toolchains/nim-2.0.0/lib"
 
 let loggerPtr = addr logger
 
