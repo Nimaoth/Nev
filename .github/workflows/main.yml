@@ -41,6 +41,13 @@ jobs:
         continue-on-error: true
       - run: x86_64-w64-mingw32-gcc
         continue-on-error: true
+        
+      - name: nimble setup
+        run: PATH=/github/home/.nimble/bin:$PATH nimble setup
+      - name: nimble buildDesktopWindows
+        if: always()
+        run: nimble buildDesktopWindows
+      - run: ls
 
 
 # jobs:
