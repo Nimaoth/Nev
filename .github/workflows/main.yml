@@ -60,12 +60,12 @@ jobs:
         run: nimble buildNimsuggestWSWindows
 
       - run: mkdir release
-      - run: cp config release
-      - run: cp fonts release
-      - run: cp languages release
-      - run: cp themes release
-      - run: cp scripting release
-      - run: cp LINCENCES release
+      - run: cp -r config release
+      - run: cp -r fonts release
+      - run: cp -r languages release
+      - run: cp -r themes release
+      - run: cp -r scripting release
+      - run: cp -r LINCENCES release
       - run: cp LICENSE release
         continue-on-error: true
       - run: cp ast.exe release
