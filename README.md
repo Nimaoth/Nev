@@ -15,7 +15,7 @@ You can try the browser version [here](https://nimaoth.github.io/AbsytreeBrowser
 ## Building
 
 ### Setup
-- Install Nim version 1.9.1
+- Install Nim version 2.0.0
 - Clone the repository
 - Run `nimble setup`
 
