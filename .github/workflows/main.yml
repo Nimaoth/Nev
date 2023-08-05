@@ -71,7 +71,7 @@ jobs:
         run: testament html
 
       - uses: actions/upload-artifact@v3
-        if: success()
+        if: always()
         with:
           name: testresults.html
           path: testresults.html
@@ -105,6 +105,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     needs: build-page
+    if: always()
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
