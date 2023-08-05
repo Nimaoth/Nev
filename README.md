@@ -1,5 +1,7 @@
 # Absytree
 
+![Build and tests](https://github.com/Nimaoth/Absytree/actions/workflows/main.yml/badge.svg?event=push)
+
 This is still very early in developement and very experimental!
 
 ## Programming Language + Editor
