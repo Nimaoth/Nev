@@ -49,8 +49,8 @@
     },
     "treesitter": {
       "version": "0.1.2",
-      "vcsRevision": "97e99e60802c2122459af1b50eded804f06c77ef",
-      "url": "https://github.com/Nimaoth/nimtreesitter",
+      "vcsRevision": "56f1bbf6487a52f53d71b9f76e3b5cad18cfaf66",
+      "url": "https://github.com/Nimaoth/nimtreesitter-api",
       "downloadMethod": "git",
       "dependencies": [
         "nimgen"
