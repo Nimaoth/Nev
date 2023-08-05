@@ -399,10 +399,15 @@ proc loadLanguageDynamically*(languageId: string, config: JsonNode): Future[Opti
       else:
         fmt"tree_sitter_{languageId}"
 
-      let dllPath = if config.hasKey("dll"):
-        config["dll"].getStr
+      const fileExtension = when defined(windows):
+        "dll"
       else:
-        fmt"./languages/{languageId}.dll"
+        "so"
+
+      let dllPath = if config.hasKey(fileExtension):
+        config[fileExtension].getStr
+      else:
+        fmt"./languages/{languageId}.{fileExtension}"
 
       log(lvlInfo, fmt"Trying to load treesitter from '{dllPath}' using function '{ctorSymbolName}'")
 
