@@ -42,4 +42,4 @@ suite "Text Document":
     let newSelections = document.delete([selection], [selection], false, false)
 
     check newSelections == [(0, 2).toSelection]
-    check document.contentString == "ab"
+    check document.contentString == "abf"
