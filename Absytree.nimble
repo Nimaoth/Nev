@@ -9,7 +9,7 @@ bin           = @["absytree"]
 
 # Dependencies
 
-requires "nim >= 1.7.3"
+requires "nim >= 2.0.0"
 requires "chroma >= 0.2.7"
 requires "winim >= 3.8.1"
 requires "fusion >= 1.2"
@@ -21,7 +21,7 @@ requires "glob >= 0.11.2"
 requires "patty >= 0.3.5"
 requires "https://github.com/Nimaoth/ws >= 0.5.0"
 requires "https://github.com/Nimaoth/windy >= 0.0.1"
-requires "https://github.com/Nimaoth/wasm3 >= 0.1.10"
+requires "https://github.com/Nimaoth/wasm3 >= 0.1.11"
 requires "https://github.com/Nimaoth/lrucache.nim >= 1.1.4"
 requires "https://github.com/Nimaoth/boxy >= 0.4.2"
 requires "https://github.com/Nimaoth/nimscripter >= 1.0.18"
