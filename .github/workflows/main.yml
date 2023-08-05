@@ -1,0 +1,24 @@
+name: Build desktop version
+on: push
+
+jobs:
+  build-desktop:
+    name: Build desktop version
+    runs-on: ubuntu-latest
+    container:
+      image: nimlang/nim:2.0.0-regular
+      volumes:
+        - ${{ github.workspace }}:/app
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@v2
+      - name: test
+        run: ls
+      - name: add safe directory
+        run: git config --global --add safe.directory /__w/Absytree/Absytree
+      - name: Test123
+        run: nim
+      - name: nimble setup
+        run: nimble setup
+      - name: nimble buildDesktop
+        run: nimble buildDesktop
