@@ -24,7 +24,7 @@ requires "https://github.com/Nimaoth/windy >= 0.0.1"
 requires "https://github.com/Nimaoth/wasm3 >= 0.1.10"
 requires "https://github.com/Nimaoth/lrucache.nim >= 1.1.4"
 requires "https://github.com/Nimaoth/boxy >= 0.4.2"
-requires "https://github.com/Nimaoth/nimscripter >= 1.0.17"
+requires "https://github.com/Nimaoth/nimscripter >= 1.0.18"
 requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter >= 0.1.1"
 requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_nim >= 0.1.1"
 
