@@ -1,5 +1,5 @@
-import std/[tables, strutils]
-import platform, widgets
+import std/[tables, strutils, options]
+import platform, widgets, util
 import custom_logger, input, event, monitors, lrucache, id, rect_utils, theme
 import chroma, vmath, windy, boxy, boxy/textures, opengl, pixie/[contexts, fonts]
 
@@ -34,6 +34,8 @@ type
     typefaces: Table[string, Typeface]
 
     cachedImages: LruCache[string, string]
+
+    lastEvent: Option[(int64, Modifiers)]
 
 proc toInput(rune: Rune): int64
 proc toInput(button: Button): int64
@@ -107,7 +109,13 @@ method init*(self: GuiPlatform) =
     if rune.int32 in char.low.ord .. char.high.ord:
       case rune.char
       of ' ': return
+      of 8.char: return # backspace
+      of 127.char: return # delete
       else: discard
+
+    # debugf"rune {rune.int} '{rune}' {inputToString(rune.toInput, self.currentModifiers)}"
+    if self.lastEvent.getSome(e):
+      self.lastEvent = (int64, Modifiers).none
 
     self.onRune.invoke (rune.toInput, self.currentModifiers)
 
@@ -131,11 +139,12 @@ method init*(self: GuiPlatform) =
 
   self.window.onButtonPress = proc(button: Button) =
     inc self.eventCounter
-    # If the key event would also generate a char afterwards then ignore it, except for some special keys
-    if isNextMsgChar():
-      case button:
-      of KeySpace, KeyEnter: discard
-      else: return
+
+    # debugf"button {button} {inputToString(button.toInput, self.currentModifiers)}"
+
+    if self.lastEvent.getSome(event):
+      self.onKeyPress.invoke event
+      self.lastEvent = (int64, Modifiers).none
 
     case button
     of  MouseLeft, MouseRight, MouseMiddle, MouseButton4, MouseButton5, DoubleClick, TripleClick, QuadrupleClick:
@@ -146,10 +155,15 @@ method init*(self: GuiPlatform) =
     of KeyLeftAlt, KeyRightAlt: self.currentModifiers = self.currentModifiers + {Alt}
     # of KeyLeftSuper, KeyRightSuper: currentModifiers = currentModifiers + {Super}
     else:
-      self.onKeyPress.invoke (button.toInput, self.currentModifiers)
+      self.lastEvent = (button.toInput, self.currentModifiers).some
 
   self.window.onButtonRelease = proc(button: Button) =
     inc self.eventCounter
+
+    if self.lastEvent.getSome(event):
+      self.onKeyPress.invoke event
+      self.lastEvent = (int64, Modifiers).none
+
     case button
     of  MouseLeft, MouseRight, MouseMiddle, MouseButton4, MouseButton5, DoubleClick, TripleClick, QuadrupleClick:
       self.currentMouseButtons.excl button.toMouseButton
@@ -216,6 +230,10 @@ method measureText*(self: GuiPlatform, text: string): Vec2 = self.getFont(self.c
 method processEvents*(self: GuiPlatform): int =
   self.eventCounter = 0
   pollEvents()
+
+  if self.lastEvent.getSome(event):
+    self.onKeyPress.invoke event
+    self.lastEvent = (int64, Modifiers).none
 
   if self.window.closeRequested:
     inc self.eventCounter

@@ -1474,7 +1474,7 @@ proc handleScroll*(self: App, scroll: Vec2, mousePosWindow: Vec2, modifiers: Mod
       return
 
 proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers) =
-  # debugf"key press: {(inputToString(input, modifiers))}"
+  # debugf"handleKeyPress {inputToString(input, modifiers)}"
   if self.currentEventHandlers.handleEvent(input, modifiers):
     self.platform.preventDefault()
 
@@ -1482,6 +1482,7 @@ proc handleKeyRelease*(self: App, input: int64, modifiers: Modifiers) =
   discard
 
 proc handleRune*(self: App, input: int64, modifiers: Modifiers) =
+  # debugf"handleRune {inputToString(input, modifiers)}"
   let modifiers = if input.isAscii and input.char.isAlphaNumeric: modifiers else: {}
   if self.currentEventHandlers.handleEvent(input, modifiers):
     self.platform.preventDefault()
