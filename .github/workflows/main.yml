@@ -59,41 +59,45 @@ jobs:
       - if: always()
         run: nimble buildNimsuggestWSWindows
 
-      - run: mkdir release
-      - run: cp -r config release
-      - run: cp -r fonts release
-      - run: cp -r languages release
-      - run: cp -r themes release
-      - run: cp -r scripting release
-      - run: cp -r LICENSES release
-      - run: cp LICENSE release
-        continue-on-error: true
-      - run: cp ast.exe release
-        continue-on-error: true
-      - run: cp ast release
-        continue-on-error: true
-      - run: cp absytree-server release
-        continue-on-error: true
-      - run: cp absytree-server.exe release
-        continue-on-error: true
-      - run: cp nimsuggest-ws release
-        continue-on-error: true
-      - run: cp nimsuggest-ws.exe release
-        continue-on-error: true
-      - run: cp libgcc_s_seh-1.dll release
-      - run: cp libstdc++-6.dll release
-      - run: cp libwinpthread-1.dll release
-        continue-on-error: true
-        
-      - uses: vimtor/action-zip@v1
-        with:
-          files: release
-          dest: release.zip
+      # create release packages
+      - run: nim package_release.nims
+      - run: ll release_windows
+      - run: ll release_linux
+      - run: ll release_web
 
-      - uses: actions/upload-artifact@v3
+      # make zips
+      - name: Zip release_windows
+        uses: vimtor/action-zip@v1
         with:
-          name: release.zip
-          path: release.zip
+          files: release_windows
+          dest: release_windows.zip
+      - name: Zip release_linux
+        uses: vimtor/action-zip@v1
+        with:
+          files: release_linux
+          dest: release_linux.zip
+      - name: Zip release_web
+        uses: vimtor/action-zip@v1
+        with:
+          files: release_web
+          dest: release_web.zip
+
+      # upload artifacts
+      - name: Upload release_windows
+        uses: actions/upload-artifact@v3
+        with:
+          name: release_windows
+          path: release_windows.zip
+      - name: Upload release_linux
+        uses: actions/upload-artifact@v3
+        with:
+          name: release_linux
+          path: release_linux.zip
+      - name: Upload release_web
+        uses: actions/upload-artifact@v3
+        with:
+          name: release_web
+          path: release_web.zip
 
   run-tests:
     name: Run tests
