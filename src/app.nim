@@ -632,7 +632,7 @@ proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.}
   except CatchableError:
     log(lvlError, fmt"Failed to load previous state from config file: {getCurrentExceptionMsg()}")
 
-  if self.getFlag("editor.restore-open-workspaces"):
+  if self.getFlag("editor.restore-open-workspaces", true):
     for wf in state.workspaceFolders:
       var folder: WorkspaceFolder = case wf.kind
       of OpenWorkspaceKind.Local: newWorkspaceFolderLocal(wf.settings)
@@ -674,14 +674,21 @@ proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.}
     log(lvlError, fmt"Failed to load config: {(getCurrentExceptionMsg())}{'\n'}{(getCurrentException().getStackTrace())}")
 
   # Restore open editors
-  if self.getFlag("editor.restore-open-editors"):
+  if self.getFlag("editor.restore-open-editors", true):
     for editorState in state.openEditors:
       let view = self.createView(editorState)
+      if view.isNil:
+        continue
+
       self.addView(view, append=true)
       if editorState.customOptions.isNotNil:
         view.editor.restoreStateJson(editorState.customOptions)
+
     for editorState in state.hiddenEditors:
       let view = self.createView(editorState)
+      if view.isNil:
+        continue
+
       self.hiddenViews.add view
       if editorState.customOptions.isNotNil:
         view.editor.restoreStateJson(editorState.customOptions)

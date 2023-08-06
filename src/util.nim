@@ -19,3 +19,9 @@ template with*(exp, val, body: untyped): untyped =
     defer:
       exp = oldValue
     body
+
+template catch*(exp: untyped, then: untyped): untyped =
+  try:
+    exp
+  except CatchableError:
+    then

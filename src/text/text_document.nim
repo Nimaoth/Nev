@@ -486,7 +486,6 @@ proc newTextDocument*(configProvider: ConfigProvider, filename: string = "", con
 
       debugf"using language for {filename}: {value}, {self.indentStyle}"
 
-
     if self.configProvider.getValue("editor.text.auto-start-language-server", false):
       asyncCheck self.getLanguageServer()
 
@@ -527,7 +526,10 @@ method save*(self: TextDocument, filename: string = "", app: bool = false) =
     fs.saveFile(self.filename, self.contentString)
 
 proc loadAsync(self: TextDocument, ws: WorkspaceFolder): Future[void] {.async.} =
-  self.content = await ws.loadFile(self.filename)
+  # self.content = await ws.loadFile(self.filename)
+  self.content = catch ws.loadFile(self.filename).await:
+    log lvlError, fmt"Failed to load workspace file {self.filename}"
+    ""
   self.onLoaded.invoke self
 
 method load*(self: TextDocument, filename: string = "") =
@@ -540,10 +542,14 @@ method load*(self: TextDocument, filename: string = "") =
   if self.workspace.getSome(ws):
     asyncCheck self.loadAsync(ws)
   elif self.appFile:
-    self.content = fs.loadApplicationFile(self.filename)
+    self.content = catch fs.loadApplicationFile(self.filename):
+      log lvlError, fmt"Failed to load application file {filename}"
+      ""
     self.onLoaded.invoke self
   else:
-    self.content = fs.loadFile(self.filename)
+    self.content = catch fs.loadFile(self.filename):
+      log lvlError, fmt"Failed to load file {filename}"
+      ""
     self.onLoaded.invoke self
 
 proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.async.} =
