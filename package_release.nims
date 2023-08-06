@@ -44,8 +44,9 @@ proc copySharedFilesTo(dir: string) =
   cpDir2 "languages", dir
   cpDir2 "themes", dir
   cpDir2 "scripting", dir
-  cpFile2 "src/util.nim", dir/"scripting"
-  cpFile2 "src/scripting_api.nim", dir/"scripting"
+  mkDir dir/"src"
+  cpFile2 "src/util.nim", dir/"src"
+  cpFile2 "src/scripting_api.nim", dir/"src"
   cpDir2 "LICENSES", dir
   cpFile2 "LICENSE", dir
 
