@@ -61,6 +61,9 @@ jobs:
 
       # create release packages
       - run: nim package_release.nims
+      - run: ll release_windows
+      - run: ll release_linux
+      - run: ll release_web
 
       # make zips
       - name: Zip release_windows
