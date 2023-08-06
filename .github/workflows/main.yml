@@ -84,11 +84,16 @@ jobs:
       - run: cp libstdc++-6.dll release
       - run: cp libwinpthread-1.dll release
         continue-on-error: true
+        
+      - uses: vimtor/action-zip@v1
+        with:
+          files: release
+          dest: release.zip
 
       - uses: actions/upload-artifact@v3
         with:
-          name: release
-          path: release
+          name: release.zip
+          path: release.zip
 
   run-tests:
     name: Run tests
