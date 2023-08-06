@@ -100,7 +100,7 @@ when defined(wasm):
   infof "{env}: Loading absytree_config_wasm.nim"
 
   # openLocalWorkspace(".")
-  openAbsytreeServerWorkspace("http://localhost:3000")
+  # openAbsytreeServerWorkspace("http://localhost:3000")
   # openGithubWorkspace("Nimaoth", "AbsytreeBrowser", "main")
   # openGithubWorkspace("Nimaoth", "Absytree", "main")
 
@@ -115,6 +115,7 @@ when defined(wasm):
   addCommand "editor", "<C-x><C-x>", "quit"
   addCommand "editor", "<CAS-r>", "reload-config"
 
+  setOption "editor.restore-open-workspaces", true
   setOption "editor.restore-open-editors", true
   setOption "editor.frame-time-smoothing", 0.8
 

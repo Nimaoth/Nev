@@ -133,14 +133,6 @@ proc setOption*[T](path: string, value: T) =
 
 var keysPrefix: string = ""
 
-template with*(exp, val, body: untyped): untyped =
-  block:
-    let oldValue = exp
-    exp = val
-    defer:
-      exp = oldValue
-    body
-
 template withKeys*(keys: varargs[string], body: untyped): untyped =
   for key in keys:
     with keysPrefix, keysPrefix & key:
