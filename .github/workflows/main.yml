@@ -65,7 +65,7 @@ jobs:
       - run: cp -r languages release
       - run: cp -r themes release
       - run: cp -r scripting release
-      - run: cp -r LINCENSES release
+      - run: cp -r LICENSES release
       - run: cp LICENSE release
         continue-on-error: true
       - run: cp ast.exe release
