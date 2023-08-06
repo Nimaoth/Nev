@@ -49,6 +49,7 @@ proc copySharedFilesTo(dir: string) =
   cpFile2 "src/timer.nim", dir/"src"
   cpFile2 "src/id.nim", dir/"src"
   cpFile2 "src/myjsonutils.nim", dir/"src"
+  cpFile2 "src/event.nim", dir/"src"
   cpFile2 "src/util.nim", dir/"src"
   cpDir2 "LICENSES", dir
   cpFile2 "LICENSE", dir
