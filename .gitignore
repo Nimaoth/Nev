@@ -29,6 +29,9 @@ nimble.develop
 nimble.paths
 testresults
 tests/**/*.js
+release_windows
+release_linux
+release_web
 
 loc.csv
 count_loc.ps1
