@@ -450,8 +450,8 @@ method renderWidget(self: WStack, renderer: BrowserPlatform, element: var Elemen
   if self.lastRenderedBounds != self.lastBounds:
     self.lastRenderedBounds = self.lastBounds
 
-proc getTextStyle(x, y, width, height: int, color, backgroundColor: cstring, italic, bold: bool): cstring
-proc getTextStyle(x, y, width, height: int, color, backgroundColor: cstring, italic, bold: bool, fontSize: float): cstring
+proc getTextStyle(x, y, width, height: int, color, backgroundColor: cstring, italic, bold: bool, wrap: bool): cstring
+proc getTextStyle(x, y, width, height: int, color, backgroundColor: cstring, italic, bold: bool, wrap: bool, fontSize: float): cstring
 
 method renderWidget(self: WText, renderer: BrowserPlatform, element: var Element, forceRedraw: bool, frameIndex: int, buffer: var string) =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
@@ -477,12 +477,13 @@ method renderWidget(self: WText, renderer: BrowserPlatform, element: var Element
 
   let italic = FontStyle.Italic in self.style.fontStyle
   let bold = FontStyle.Bold in self.style.fontStyle
+  let wrap = self.wrap
 
   renderer.domUpdates.add proc() =
     if self.fontSizeIncreasePercent != 0:
-      element.setAttribute("style", getTextStyle(relBounds.x.int, relBounds.y.int, relBounds.w.int, relBounds.h.int, color, backgroundColor, italic, bold, renderer.mFontSize * (1 + self.fontSizeIncreasePercent)))
+      element.setAttribute("style", getTextStyle(relBounds.x.int, relBounds.y.int, relBounds.w.int, relBounds.h.int, color, backgroundColor, italic, bold, wrap, renderer.mFontSize * (1 + self.fontSizeIncreasePercent)))
     else:
-      element.setAttribute("style", getTextStyle(relBounds.x.int, relBounds.y.int, relBounds.w.int, relBounds.h.int, color, backgroundColor, italic, bold))
+      element.setAttribute("style", getTextStyle(relBounds.x.int, relBounds.y.int, relBounds.w.int, relBounds.h.int, color, backgroundColor, italic, bold, wrap))
     if updateText:
       element.innerText = text
       element.setAttribute("data-text", text)
@@ -492,16 +493,24 @@ method renderWidget(self: WText, renderer: BrowserPlatform, element: var Element
   if self.lastRenderedBounds != self.lastBounds:
     self.lastRenderedBounds = self.lastBounds
 
-proc getTextStyle(x, y, width, height: int, color, backgroundColor: cstring, italic, bold: bool): cstring =
+proc getTextStyle(x, y, width, height: int, color, backgroundColor: cstring, italic, bold: bool, wrap: bool): cstring =
   {.emit: [result, " = `left: ${", x, "}px; top: ${", y, "}px; width: ${", width, "}px; height: ${", height, "}px; overflow: visible; color: ${", color, "}; ${", backgroundColor, "}`"].} #"""
   if italic:
     {.emit: [result, " += `font-style: italic;`"].} #"""
   if bold:
     {.emit: [result, " += `font-weight: bold;`"].} #"""
+  if wrap:
+    {.emit: [result, " += `word-wrap: break-word;`"].} #"""
+    {.emit: [result, " += `display: inline-block;`"].} #"""
+    {.emit: [result, " += `white-space: pre-wrap;`"].} #"""
 
-proc getTextStyle(x, y, width, height: int, color, backgroundColor: cstring, italic, bold: bool, fontSize: float): cstring =
+proc getTextStyle(x, y, width, height: int, color, backgroundColor: cstring, italic, bold: bool, wrap: bool, fontSize: float): cstring =
   {.emit: [result, " = `left: ${", x, "}px; top: ${", y, "}px; width: ${", width, "}px; height: ${", height, "}px; overflow: visible; color: ${", color, "}; ${", backgroundColor, "}; font-size: ${", fontSize, "}`"].} #"""
   if italic:
     {.emit: [result, " += `font-style: italic;`"].} #"""
   if bold:
     {.emit: [result, " += `font-weight: bold;`"].} #"""
+  if wrap:
+    {.emit: [result, " += `word-wrap: break-word;`"].} #"""
+    {.emit: [result, " += `display: inline-block;`"].} #"""
+    {.emit: [result, " += `white-space: pre-wrap;`"].} #"""

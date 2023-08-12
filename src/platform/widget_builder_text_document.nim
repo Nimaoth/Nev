@@ -212,6 +212,7 @@ proc renderCompletions(self: TextDocumentEditor, app: App, completionsPanel: WPa
   docs.backgroundColor = backgroundColor
   docs.foregroundColor = docsColor
   docs.lastHierarchyChange = frameIndex
+  docs.wrap = true
 
   panel.layoutWidget(completionsPanel.lastBounds, frameIndex, app.platform.layoutOptions)
   list.layoutWidget(panel.lastBounds, frameIndex, app.platform.layoutOptions)

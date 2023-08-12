@@ -1,6 +1,6 @@
-import std/[strformat, terminal, typetraits, enumutils]
+import std/[strformat, terminal, typetraits, enumutils, strutils]
 import platform, widgets
-import tui, custom_logger, rect_utils, input, event, timer
+import tui, custom_logger, rect_utils, input, event, timer, custom_unicode
 import vmath
 import chroma as chroma
 import std/colors as stdcolors
@@ -361,7 +361,7 @@ method renderWidget(self: WHorizontalList, renderer: TerminalPlatform, forceRedr
   if self.lastRenderedBounds != self.lastBounds:
     self.lastRenderedBounds = self.lastBounds
 
-proc writeText(self: TerminalPlatform, pos: Vec2, text: string) =
+proc writeLine(self: TerminalPlatform, pos: Vec2, text: string) =
   let mask = if self.masks.len > 0:
     self.masks[self.masks.high]
   else:
@@ -379,6 +379,59 @@ proc writeText(self: TerminalPlatform, pos: Vec2, text: string) =
 
   self.buffer.write(pos.x.int + cutoffLeft.int, pos.y.int, text[cutoffLeft..^(cutoffRight + 1)])
 
+proc nextWrapBoundary(str: openArray[char], start: int, maxLen: RuneCount): (int, RuneCount) =
+  var len = 0.RuneCount
+  var bytes = 0
+  while start + bytes < str.len and len < maxLen:
+    let rune = str.runeAt(start + bytes)
+    if bytes > 0 and rune.isWhiteSpace:
+      break
+    inc len
+    bytes += str.runeLenAt(start + bytes)
+
+  return (bytes, len)
+
+proc writeText(self: TerminalPlatform, pos: Vec2, text: string, wrap: bool, lineLen: RuneCount) =
+  var yOffset = 0.0
+
+  for line in text.splitLines:
+    let runeLen = line.runeLen
+
+    if wrap and runeLen > lineLen:
+      var startByte = 0
+      var startRune = 0.RuneIndex
+
+      while startByte < line.len:
+        var endByte = startByte
+        var endRune = startRune
+        var currentRuneLen = 0.RuneCount
+
+        while true:
+          let (bytes, runes) = line.nextWrapBoundary(endByte, lineLen - currentRuneLen)
+          if currentRuneLen + runes >= lineLen.RuneIndex or bytes == 0:
+            break
+
+          endByte += bytes
+          endRune += runes
+          currentRuneLen += runes
+
+        if startByte >= line.len or endByte > line.len:
+          break
+
+        self.writeLine(pos + vec2(0, yOffset), line[startByte..<endByte])
+
+        yOffset += 1
+
+        if startByte == endByte:
+          break
+
+        startByte = endByte
+        startRune = endRune
+
+    else:
+      self.writeLine(pos + vec2(0, yOffset), line)
+      yOffset += 1
+
 method renderWidget(self: WText, renderer: TerminalPlatform, forceRedraw: bool, frameIndex: int) =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
     return
@@ -389,7 +442,7 @@ method renderWidget(self: WText, renderer: TerminalPlatform, forceRedraw: bool, 
 
   renderer.buffer.setBackgroundColor(bgNone)
   renderer.setForegroundColor(self.getForegroundColor)
-  renderer.writeText(self.lastBounds.xy, self.text)
+  renderer.writeText(self.lastBounds.xy, self.text, self.wrap, round(self.lastBounds.w).RuneCount)
 
   self.lastRenderedText = self.text
 
