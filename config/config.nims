@@ -21,7 +21,12 @@ else:
 --noMain:on
 --threads:off # 1.7.1 defaults this on
 
+switch("path", "$nim")
+switch("path", "../scripting")
+switch("path", "../src")
+switch("d", "release")
 switch("d", "wasm")
+switch("nimcache", "./nimcache")
 
 let outputName = projectName() & ".wasm"
 # Pass this to Emscripten linker to generate html file scaffold for us.
