@@ -51,6 +51,7 @@ type
     text*: string
     lastRenderedText*: string
     style*: Style
+    wrap*: bool = false
 
   WLayoutOptions* = object
     getTextBounds*: proc(text: string, fontSizeIncreasePercent: float = 0): Vec2

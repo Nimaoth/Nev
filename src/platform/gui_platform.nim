@@ -430,7 +430,9 @@ method renderWidget(self: WText, renderer: GuiPlatform, forceRedraw: bool, frame
     renderer.cachedImages[key] = imageId
 
     let font = renderer.getFont(renderer.ctx.fontSize * (1 + self.fontSizeIncreasePercent), self.style.fontStyle)
-    let arrangement = font.typeset(self.text)
+
+    let wrapBounds = if self.wrap: self.lastBounds.wh else: vec2(0, 0)
+    let arrangement = font.typeset(self.text, bounds=wrapBounds)
     var bounds = arrangement.layoutBounds()
     if bounds.x == 0:
       bounds.x = 1

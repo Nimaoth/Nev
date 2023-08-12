@@ -2,7 +2,7 @@
 import std/unicode
 
 export Rune
-export runeLenAt, runeAt, strip, validateUtf8, graphemeLen, lastRune, `$`, runes, `==`
+export runeLenAt, runeAt, strip, validateUtf8, graphemeLen, lastRune, `$`, runes, `==`, isWhiteSpace
 
 type
   RuneIndex* = distinct int
