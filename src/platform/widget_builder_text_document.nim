@@ -181,12 +181,20 @@ proc renderCompletions(self: TextDocumentEditor, app: App, completionsPanel: WPa
   else:
     (cursorBounds.yh.float, cursorBounds.yh.float + totalLineHeight * numLinesToShow)
 
+  completionsPanel.updateLastHierarchyChange frameIndex
   let panel: WPanel = completionsPanel[self.completionWidgetId, WPanel]
   panel.anchor = (vec2(0, 0), vec2(1, 1))
 
+  const listWidth = 120.0
+  const docsWidth = 50.0
+  let totalWidth = charWidth * listWidth + charWidth * docsWidth
+  var clampedX = cursorBounds.x
+  if clampedX + totalWidth > completionsPanel.lastBounds.w:
+    clampedX = max(completionsPanel.lastBounds.w - totalWidth, 0)
+
   let list: WPanel = panel[completionListWidgetId, WPanel]
-  list.left = cursorBounds.x
-  list.right = cursorBounds.x + charWidth * 120.0
+  list.left = clampedX
+  list.right = clampedX + charWidth * listWidth
   list.top = top
   list.bottom = bottom
   list.fillBackground = true
@@ -196,8 +204,8 @@ proc renderCompletions(self: TextDocumentEditor, app: App, completionsPanel: WPa
   list.children.setLen 0
 
   let docs: WText = panel[completionDocsWidgetId, WText]
-  docs.left = cursorBounds.x + charWidth * 120.0
-  docs.right = docs.left + charWidth * 50
+  docs.left = clampedX + charWidth * listWidth
+  docs.right = docs.left + charWidth * docsWidth
   docs.top = top
   docs.bottom = bottom
   docs.fillBackground = true
@@ -437,6 +445,7 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, complet
       else:
         discard
 
+    var containsCursor = false
     var subLineWidget = lineWidget
 
     var startOffset = lineNumberTotalWidth
@@ -502,6 +511,8 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, complet
             lastHierarchyChange: frameIndex,
             text: if self.cursorVisible and isWide: $characterUnderCursor else: ""
           ))
+
+          containsCursor = true
           cursorBounds = rect(startOffset + offsetFromPartStart, top, charWidth * cursorWidth, lineHeight)
 
       startOffset += width
@@ -512,6 +523,9 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, complet
     if not down:
       for partIndex in 0..styledText.parts.high:
         styledText.parts[partIndex].bounds.y -= lineWidget.height
+
+      if containsCursor:
+        cursorBounds.y -= lineWidget.height
 
     return true
 
@@ -524,6 +538,7 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, complet
     self.renderCompletions(app, completionsPanel, bounds, frameIndex, renderAbove)
   else:
     completionsPanel.delete self.completionWidgetId
+    completionsPanel.updateLastHierarchyChange frameIndex
 
   contentPanel.lastHierarchyChange = frameIndex
   widget.lastHierarchyChange = max(widget.lastHierarchyChange, contentPanel.lastHierarchyChange)

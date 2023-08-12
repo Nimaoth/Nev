@@ -1,6 +1,8 @@
 import std/[macros]
 import bumpy, vmath
 
+export bumpy, vmath
+
 type
   MeasurementKind* = enum
     Relative
@@ -153,3 +155,16 @@ proc contains*(a: Rect, b: Vec2): bool =
 
 proc contains*(a: Rect, b: Rect): bool =
   return b.x >= a.x and b.xw <= a.xw and b.y >= a.y and b.yh <= a.yh
+
+proc area*(a: Rect): float = a.w * a.h
+
+proc invalidationRect*(a: Rect, b: Rect): Rect =
+  if b.x >= a.x and b.xw >= a.xw and b.y <= a.y and b.yh >= a.yh: # invalidate left side
+    return rect(a.x, a.y, min(b.x - a.x, a.w), a.h)
+  if b.x <= a.x and b.xw <= a.xw and b.y <= a.y and b.yh >= a.yh: # invalidate right side
+    return rect(max(b.xw, a.x), a.y, a.xw - max(b.xw, a.x), a.h)
+  if b.x <= a.x and b.xw >= a.xw and b.y >= a.y and b.yh >= a.yh: # invalidate top side
+    return rect(a.x, a.y, a.w, min(b.y - a.y, a.h))
+  if b.x <= a.x and b.xw >= a.xw and b.y <= a.y and b.yh <= a.yh: # invalidate bottom side
+    return rect(a.x, max(b.yh, a.y), a.w, a.yh - max(b.yh, a.y))
+  return a

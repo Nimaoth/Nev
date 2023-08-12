@@ -316,6 +316,9 @@ method renderWidget(self: WPanel, renderer: TerminalPlatform, forceRedraw: bool,
   for c in self.children:
     c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex)
 
+  if self.lastRenderedBounds != self.lastBounds:
+    self.lastRenderedBounds = self.lastBounds
+
 method renderWidget(self: WStack, renderer: TerminalPlatform, forceRedraw: bool, frameIndex: int) =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
     return
@@ -326,6 +329,9 @@ method renderWidget(self: WStack, renderer: TerminalPlatform, forceRedraw: bool,
 
   for c in self.children:
     c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex)
+
+  if self.lastRenderedBounds != self.lastBounds:
+    self.lastRenderedBounds = self.lastBounds
 
 method renderWidget(self: WVerticalList, renderer: TerminalPlatform, forceRedraw: bool, frameIndex: int) =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
@@ -338,6 +344,9 @@ method renderWidget(self: WVerticalList, renderer: TerminalPlatform, forceRedraw
   for c in self.children:
     c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex)
 
+  if self.lastRenderedBounds != self.lastBounds:
+    self.lastRenderedBounds = self.lastBounds
+
 method renderWidget(self: WHorizontalList, renderer: TerminalPlatform, forceRedraw: bool, frameIndex: int) =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
     return
@@ -348,6 +357,9 @@ method renderWidget(self: WHorizontalList, renderer: TerminalPlatform, forceRedr
 
   for c in self.children:
     c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex)
+
+  if self.lastRenderedBounds != self.lastBounds:
+    self.lastRenderedBounds = self.lastBounds
 
 proc writeText(self: TerminalPlatform, pos: Vec2, text: string) =
   let mask = if self.masks.len > 0:
@@ -380,3 +392,6 @@ method renderWidget(self: WText, renderer: TerminalPlatform, forceRedraw: bool, 
   renderer.writeText(self.lastBounds.xy, self.text)
 
   self.lastRenderedText = self.text
+
+  if self.lastRenderedBounds != self.lastBounds:
+    self.lastRenderedBounds = self.lastBounds
