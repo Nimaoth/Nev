@@ -1,10 +1,10 @@
 import std/[tables]
 import app, custom_logger, document_editor, widgets, platform, rect_utils, theme
-import widget_builders_base, widget_builder_ast_document, widget_builder_text_document, widget_builder_selector_popup, widget_builder_model_document
+import widget_builders_base, widget_builder_ast_document, widget_builder_text_document, widget_builder_selector_popup, widget_builder_model_document, timer
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import vmath, bumpy, chroma
 
-proc updateStatusBar*(self: App, frameIndex: int, statusBarWidget: WPanel) =
+proc updateStatusBar*(self: App, frameIndex: int, statusBarWidget: WPanel, completionsPanel: WPanel) =
   var statusWidget: WText
   var commandLineWidget: WPanel
   if statusBarWidget.len == 0:
@@ -28,13 +28,14 @@ proc updateStatusBar*(self: App, frameIndex: int, statusBarWidget: WPanel) =
   statusBarWidget.lastHierarchyChange = max(statusBarWidget.lastHierarchyChange, statusWidget.lastHierarchyChange)
 
   self.getCommandLineTextEditor.active = self.commandLineMode
-  self.getCommandLineTextEditor.updateWidget(self, commandLineWidget, frameIndex)
+  self.getCommandLineTextEditor.updateWidget(self, commandLineWidget, completionsPanel, frameIndex)
   statusBarWidget.lastHierarchyChange = max(statusBarWidget.lastHierarchyChange, commandLineWidget.lastHierarchyChange)
 
 var commandLineWidget: WPanel
 var mainStack: WStack
 var viewPanel: WPanel
 var mainPanel: WPanel
+var completionsPanel: WPanel
 var widgetsPerEditor = initTable[EditorId, WPanel]()
 
 proc updateWidgetTree*(self: App, frameIndex: int) =
@@ -45,6 +46,8 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
     mainPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 1)))
     mainStack.children.add(mainPanel)
 
+    completionsPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 1)))
+
     viewPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 1)), bottom: -2 * self.platform.totalLineHeight)
     mainPanel.add(viewPanel)
 
@@ -53,10 +56,12 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
 
     self.widget.layoutWidget(rect(vec2(0, 0), self.platform.size), frameIndex, self.platform.layoutOptions)
 
-  # views
-  let previousChildren = viewPanel.children
+  completionsPanel.layoutWidget(mainStack.lastBounds, frameIndex, self.platform.layoutOptions)
 
+  # views
+  let previousChildren = viewPanel.children[0..^1]
   viewPanel.setLen 0
+
   let rects = self.layout.layoutViews(self.layout_props, rect(0, 0, 1, 1), self.views.len)
   for i, view in self.views:
     var widget: WPanel
@@ -77,10 +82,13 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
       viewPanel.add widget
 
       view.editor.active = self.currentView == i
-      view.editor.updateWidget(self, widget, frameIndex)
+      view.editor.updateWidget(self, widget, completionsPanel, frameIndex)
       viewPanel.lastHierarchyChange = max(viewPanel.lastHierarchyChange, widget.lastHierarchyChange)
 
   mainPanel.lastHierarchyChange = max(mainPanel.lastHierarchyChange, viewPanel.lastHierarchyChange)
+
+  if mainStack.children[mainStack.children.high] == completionsPanel:
+    discard mainStack.children.pop()
 
   # popups
   let lastPopups: seq[WWidget] = mainStack.children[1..^1]
@@ -98,19 +106,25 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
     widget.layoutWidget(mainStack.lastBounds, frameIndex, self.platform.layoutOptions)
 
     mainStack.children.add widget
-    popup.updateWidget(self, widget, frameIndex)
+    popup.updateWidget(self, widget, completionsPanel, frameIndex)
     mainStack.lastHierarchyChange = max(mainStack.lastHierarchyChange, widget.lastHierarchyChange)
 
+  self.updateStatusBar(frameIndex, commandLineWidget, completionsPanel)
+  mainPanel.updateLastHierarchyChange commandLineWidget.lastHierarchyChange
+
+  if completionsPanel.children.len > 0:
+    mainStack.children.add completionsPanel
+    mainStack.updateLastHierarchyChange completionsPanel.lastHierarchyChange
+
+  mainStack.updateLastHierarchyChange mainPanel.lastHierarchyChange
+
+  # invalidate the bounds of all popups which existed in the previous frame but don't exist anymore
   for p in lastPopups:
     if mainStack.children.contains(p):
       continue
     for c in mainStack.children:
       c.invalidate(frameIndex, p.lastBounds)
 
-  self.updateStatusBar(frameIndex, commandLineWidget)
-  mainPanel.lastHierarchyChange = max(mainPanel.lastHierarchyChange, commandLineWidget.lastHierarchyChange)
-
-  mainStack.lastHierarchyChange = max(mainStack.lastHierarchyChange, mainPanel.lastHierarchyChange)
   mainStack.updateInvalidationFromChildren(currentIndex = -1, recurse = false)
 
   # Status bar

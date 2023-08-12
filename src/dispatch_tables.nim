@@ -20,5 +20,4 @@ proc addGlobalDispatchTable*(scope: string, functions: seq[ExposedFunction]) =
   table.functions = initTable[string, ExposedFunction]()
   for function in functions:
     table.functions[function.name] = function
-  echo table
   globalDispatchTables.add table

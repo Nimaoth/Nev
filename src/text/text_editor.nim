@@ -61,6 +61,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   lastRenderedLines*: seq[StyledLine]
   lastTextAreaBounds*: Rect
 
+  completionWidgetId*: Id
   disableCompletions*: bool
   completions*: seq[TextCompletion]
   selectedCompletion*: int
@@ -1125,6 +1126,9 @@ proc splitIdentifier(str: string): seq[string] =
   if buffer.len > 0:
     result.add buffer
 
+  if result.len == 0:
+    result.add str
+
 proc refilterCompletions(self: TextDocumentEditor) =
   var matches: seq[(TextCompletion, float)]
   var noMatches: seq[(TextCompletion, float)]
@@ -1566,6 +1570,7 @@ proc newTextEditor*(document: TextDocument, app: AppInterface, configProvider: C
   var self = createTextEditorInstance()
   self.configProvider = configProvider
   self.document = document
+  self.completionWidgetId = newId()
 
   self.init()
   if self.document.lines.len == 0:

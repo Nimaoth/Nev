@@ -361,7 +361,7 @@ proc renderCompletions*(self: AstDocumentEditor, app: App, widget: WPanel, frame
 
   self.scrollToCompletion = int.none
 
-method updateWidget*(self: AstDocumentEditor, app: App, widget: WPanel, frameIndex: int) =
+method updateWidget*(self: AstDocumentEditor, app: App, widget: WPanel, completionsPanel: WPanel, frameIndex: int) =
   let totalLineHeight = app.platform.totalLineHeight
 
   let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
@@ -441,7 +441,7 @@ method updateWidget*(self: AstDocumentEditor, app: App, widget: WPanel, frameInd
       self.textEditorWidget = WPanel(sizeToContent: true)
     self.textEditor.active = true
     self.textEditor.markDirty()
-    self.textEditor.updateWidget(app, self.textEditorWidget, frameIndex)
+    self.textEditor.updateWidget(app, self.textEditorWidget, completionsPanel, frameIndex)
     self.textEditorWidget.layoutWidget(rect(0, 0, 0, 0), frameIndex, app.platform.layoutOptions)
   else:
     self.textEditorWidget = nil
