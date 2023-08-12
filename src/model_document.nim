@@ -2257,8 +2257,12 @@ proc handleAction(self: ModelDocumentEditor, action: string, arg: string): Event
   if self.app.handleUnknownDocumentEditorAction(self, action, args) == Handled:
     return Handled
 
-  if dispatch(action, args).isSome:
-    return Handled
+  try:
+    if dispatch(action, args).isSome:
+      return Handled
+  except CatchableError:
+    log(lvlError, fmt"[model-ed] Failed to dispatch action '{action} {args}': {getCurrentExceptionMsg()}")
+    log(lvlError, getCurrentException().getStackTrace())
 
   return Ignored
 

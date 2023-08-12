@@ -673,6 +673,11 @@ proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.}
   except CatchableError:
     log(lvlError, fmt"Failed to load config: {(getCurrentExceptionMsg())}{'\n'}{(getCurrentException().getStackTrace())}")
 
+  # Open current working dir as local workspace if no workspace exists yet
+  if self.workspace.folders.len == 0:
+    log lvlInfo, "No workspace open yet, opening current working directory as local workspace"
+    discard self.addWorkspaceFolder newWorkspaceFolderLocal(".")
+
   # Restore open editors
   if self.getFlag("editor.restore-open-editors", true):
     for editorState in state.openEditors:
@@ -1210,6 +1215,10 @@ proc iterateDirectoryRec(self: App, folder: WorkspaceFolder, path: string, cance
     await fut
 
 proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
+  ## Opens a file dialog which show all files in the currently open workspaces
+  ## Press <ENTER> to select a file
+  ## Press <ESCAPE> to close the dialogue
+
   defer:
     self.platform.requestRender()
 

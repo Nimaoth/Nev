@@ -86,6 +86,9 @@ proc loadTheme*(name: string) =
 proc chooseTheme*() =
   editor_chooseTheme_void_App_impl()
 proc chooseFile*(view: string = "new") =
+  ## Opens a file dialog which show all files in the currently open workspaces
+  ## Press <ENTER> to select a file
+  ## Press <ESCAPE> to close the dialogue
   editor_chooseFile_void_App_string_impl(view)
 proc chooseOpen*(view: string = "new") =
   editor_chooseOpen_void_App_string_impl(view)
