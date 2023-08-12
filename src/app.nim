@@ -1,5 +1,5 @@
 import std/[strformat, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils, macros, macrocache, sugar, streams, deques]
-import input, id, events, rect_utils, document, document_editor, popup, timer, event, cancellation_token
+import input, id, events, rect_utils, document, document_editor, popup, timer, event, cancellation_token, dispatch_tables
 import theme, util, custom_logger, custom_async, fuzzy_matching
 import scripting/[expose, scripting_base]
 import platform/[platform, widgets, filesystem]
@@ -7,7 +7,7 @@ import workspaces/[workspace]
 import ast/types
 import traits
 import config_provider, app_interface
-import language/language_server_base
+import language/language_server_base, language_server_absytree_commands
 
 when not defined(js):
   import scripting/scripting_nim
@@ -124,6 +124,7 @@ type App* = ref object
 
   logDocument: Document
 
+  absytreeCommandsServer: LanguageServer
   commandLineTextEditor: DocumentEditor
   eventHandler*: EventHandler
   commandLineEventHandler*: EventHandler
@@ -599,7 +600,9 @@ proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.}
       Ignored
   self.commandLineMode = false
 
-  self.commandLineTextEditor = newTextEditor(newTextDocument(self.asConfigProvider), self.asAppInterface, self.asConfigProvider)
+  self.absytreeCommandsServer = newLanguageServerAbsytreeCommands()
+  let commandLineTextDocument = newTextDocument(self.asConfigProvider, language="absytree-commands".some, languageServer=self.absytreeCommandsServer.some)
+  self.commandLineTextEditor = newTextEditor(commandLineTextDocument, self.asAppInterface, self.asConfigProvider)
   self.commandLineTextEditor.renderHeader = false
   self.commandLineTextEditor.TextDocumentEditor.disableScrolling = true
   self.commandLineTextEditor.TextDocumentEditor.lineNumbers = api.LineNumbers.None.some
@@ -1755,13 +1758,19 @@ proc getRegisterText*(self: App, text: var string, register: string = "") =
     text = self.registers[register].getText()
 
 genDispatcher("editor")
+addGlobalDispatchTable "editor", genDispatchTable("editor")
 
 proc handleAction(self: App, action: string, arg: string): bool =
   log(lvlInfo, "[ed] Action '$1 $2'" % [action, arg])
 
   var args = newJArray()
-  for a in newStringStream(arg).parseJsonFragments():
-    args.add a
+  try:
+    for a in newStringStream(arg).parseJsonFragments():
+      args.add a
+  except CatchableError:
+    log(lvlError, fmt"[ed] Failed to parse arguments '{arg}': {getCurrentExceptionMsg()}")
+    log(lvlError, getCurrentException().getStackTrace())
+    return true
 
   try:
     if self.scriptContext.handleGlobalAction(action, args):
@@ -1777,7 +1786,13 @@ proc handleAction(self: App, action: string, arg: string): bool =
     log(lvlError, fmt"[ed] Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
 
-  return dispatch(action, args).isSome
+  try:
+    return dispatch(action, args).isSome
+  except CatchableError:
+    log(lvlError, fmt"[ed] Failed to dispatch action '{action} {arg}': {getCurrentExceptionMsg()}")
+    log(lvlError, getCurrentException().getStackTrace())
+
+  return true
 
 when not defined(js):
   proc createAddins(): VmAddins =

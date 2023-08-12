@@ -1,9 +1,9 @@
 
 
-import std/[json, strutils, tables, options, macros, genasts, macrocache, typetraits]
+import std/[json, strutils, sequtils, tables, options, macros, genasts, macrocache, typetraits, sugar]
 
 import fusion/matching
-import util, custom_logger
+import util, custom_logger, dispatch_tables
 import compilation_config
 
 when not defined(js):
@@ -39,11 +39,11 @@ macro addWasmImportedFunction*(moduleName: static string, name: untyped, thisSid
       return
   wasmImportedFunctions[moduleName] = nnkStmtList.newTree(n)
 
-macro addFunction(name: untyped, wrapper: typed, moduleName: static string) =
+macro addFunction(name: untyped, original: typed, wrapper: typed, moduleName: static string, docs: typed) =
   ## Registers the nim function `name` in the module `moduleName`. `script` is a symbol referring
   ## to the version of this function with the 'Script' suffix, which is exported to the nim script.
   ## `wrapper`
-  let n = nnkStmtList.newTree(name, wrapper)
+  let n = nnkStmtList.newTree(name, wrapper, original, docs)
   for name, _ in functions:
     if name == moduleName:
       functions[name].add n
@@ -156,7 +156,8 @@ macro expose*(moduleName: static string, def: untyped): untyped =
 
   defer:
     discard
-  #   echo result.repr
+    # echo result.repr
+    # echo "===================================================================="
 
   # echo def.repr
   # echo def.treeRepr
@@ -170,6 +171,8 @@ macro expose*(moduleName: static string, def: untyped): untyped =
       def[6][0].some
     else:
       NimNode.none
+  let documentationStr = documentation.map((it) => it.strVal).get("").newLit
+  let signature = nnkProcDef.newTree(newEmptyNode(), newEMptyNode(), newEmptyNode(), def[3], newEmptyNode(), newEmptyNode(), newEmptyNode())
 
   var runnableExampls: seq[NimNode] = @[]
   for n in def[6]:
@@ -436,10 +439,52 @@ macro expose*(moduleName: static string, def: untyped): untyped =
     result.add quote do:
       static:
         # This makes the function dispatchable
-        addFunction(`pureFunctionName`, `jsonWrapperFunctionName`, `moduleName`)
+        addFunction(`pureFunctionName`, `signature`, `jsonWrapperFunctionName`, `moduleName`, `documentationStr`)
 
     # echo result[result.len - 1].repr
 
+macro genDispatchTable*(moduleName: static string): untyped =
+  defer:
+    discard
+    # echo result.repr
+    # echo result.treeRepr
+
+  var funcs = genSym(nskVar, "functionList")
+
+  let blk = nnkStmtList.newTree()
+
+  for module, functions in functions.pairs:
+    if module == moduleName:
+      for entry in functions:
+        let name = entry[0].strVal
+        let target = entry[1]
+        let def: NimNode = entry[2]
+        let docs = entry[3].strVal
+
+        var alternative = ""
+        for c in name:
+          if c.isUpperAscii:
+            alternative.add "-"
+            alternative.add c.toLowerAscii
+          else:
+            alternative.add c
+
+        let returnType = if def[3][0].kind == nnkEmpty: "" else: def[3][0].repr
+        var params: seq[(string, string)] = @[]
+        for param in def[3][1..^1]:
+          params.add (param[0].repr, param[1].repr)
+
+        let signature = "(" & params.mapIt(it[0] & ": " & it[1]).join(", ") & ")" & returnType
+
+        let stm = genAst(funcs, n = alternative, d = target, ddocs = docs, pparams = params, rreturnType = returnType, ssignature = signature):
+          funcs.add(ExposedFunction(name: n, dispatch: d, docs: ddocs, params: pparams, returnType: rreturnType, signature: ssignature))
+        blk.add stm
+
+  return genAst(funcs, blk):
+    block:
+      var funcs: seq[ExposedFunction] = @[]
+      blk
+      funcs
 
 macro genDispatcher*(moduleName: static string): untyped =
   # defer:

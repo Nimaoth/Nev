@@ -1,7 +1,7 @@
 import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, tables, deques, sets, algorithm]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
-import document, document_editor, events, id, util, vmath, bumpy, rect_utils, event, input, ../regex, custom_logger, custom_async, custom_treesitter, indent, fuzzy_matching, custom_unicode
+import document, document_editor, events, id, util, vmath, bumpy, rect_utils, event, input, ../regex, custom_logger, custom_async, custom_treesitter, indent, fuzzy_matching, custom_unicode, dispatch_tables
 import scripting/[expose]
 import platform/[platform, filesystem, widgets]
 import language/[language_server_base]
@@ -1439,6 +1439,7 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
   self.markDirty()
 
 genDispatcher("editor.text")
+# addGlobalDispatchTable "editor.text", genDispatchTable("editor.text")
 
 proc getStyledText*(self: TextDocumentEditor, i: int): StyledLine =
   result = self.document.getStyledText(i)
@@ -1471,17 +1472,21 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
     self.commandCountRestore = 0
     return Handled
 
-  var args = args.copy
-  args.elems.insert api.TextDocumentEditor(id: self.id).toJson, 0
-  if dispatch(action, args).isSome:
-    dec self.commandCount
-    while self.commandCount > 0:
-      if dispatch(action, args).isNone:
-        break
+  try:
+    var args = args.copy
+    args.elems.insert api.TextDocumentEditor(id: self.id).toJson, 0
+    if dispatch(action, args).isSome:
       dec self.commandCount
-    self.commandCount = self.commandCountRestore
-    self.commandCountRestore = 0
-    return Handled
+      while self.commandCount > 0:
+        if dispatch(action, args).isNone:
+          break
+        dec self.commandCount
+      self.commandCount = self.commandCountRestore
+      self.commandCountRestore = 0
+      return Handled
+  except CatchableError:
+    log(lvlError, fmt"[text-ed] Failed to dispatch action '{action} {args}': {getCurrentExceptionMsg()}")
+    log(lvlError, getCurrentException().getStackTrace())
 
   return Ignored
 

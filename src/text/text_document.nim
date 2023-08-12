@@ -459,7 +459,7 @@ proc initTreesitter*(self: TextDocument): Future[void] {.async.} =
   # We now have a treesitter grammar + highlight query, so retrigger rendering
   self.notifyTextChanged()
 
-proc newTextDocument*(configProvider: ConfigProvider, filename: string = "", content: string | seq[string] = "", app: bool = false): TextDocument =
+proc newTextDocument*(configProvider: ConfigProvider, filename: string = "", content: string | seq[string] = "", app: bool = false, language: Option[string] = string.none, languageServer: Option[LanguageServer] = LanguageServer.none): TextDocument =
   new(result)
   var self = result
   self.filename = filename
@@ -471,10 +471,14 @@ proc newTextDocument*(configProvider: ConfigProvider, filename: string = "", con
 
   asyncCheck self.initTreesitter()
 
-  let language = getLanguageForFile(filename)
-  if language.isSome:
-    self.languageId = language.get
+  if language.getSome(language):
+    self.languageId = language
+  elif getLanguageForFile(filename).getSome(language):
+    self.languageId = language
 
+  self.languageServer = languageServer
+
+  if self.languageId != "":
     if (let value = self.configProvider.getValue("editor.text.language." & self.languageId, newJNull()); value.kind == JObject):
       self.languageConfig = value.jsonTo(TextLanguageConfig, Joptions(allowExtraKeys: true, allowMissingKeys: true)).some
       if value.hasKey("indent"):
@@ -486,13 +490,13 @@ proc newTextDocument*(configProvider: ConfigProvider, filename: string = "", con
 
       debugf"using language for {filename}: {value}, {self.indentStyle}"
 
-    if self.configProvider.getValue("editor.text.auto-start-language-server", false):
+    if self.configProvider.getValue("editor.text.auto-start-language-server", false) and self.languageServer.isNone:
       asyncCheck self.getLanguageServer()
 
   self.content = content
 
-proc newTextDocument*(configProvider: ConfigProvider, filename: string, app: bool, workspaceFolder: Option[WorkspaceFolder]): TextDocument =
-  result = newTextDocument(configProvider, filename, "", app)
+proc newTextDocument*(configProvider: ConfigProvider, filename: string, app: bool, workspaceFolder: Option[WorkspaceFolder], language: Option[string] = string.none, languageServer: Option[LanguageServer] = LanguageServer.none): TextDocument =
+  result = newTextDocument(configProvider, filename, "", app, language, languageServer)
   result.workspace = workspaceFolder
   result.load()
 
@@ -553,7 +557,9 @@ method load*(self: TextDocument, filename: string = "") =
     self.onLoaded.invoke self
 
 proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.async.} =
-  let languageId = if getLanguageForFile(self.filename).getSome(languageId):
+  let languageId = if self.languageId != "":
+    self.languageId
+  elif getLanguageForFile(self.filename).getSome(languageId):
     languageId
   else:
     return LanguageServer.none
