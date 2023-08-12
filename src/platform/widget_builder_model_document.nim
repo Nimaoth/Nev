@@ -490,7 +490,7 @@ proc renderCompletions(self: ModelDocumentEditor, app: App, contentPanel: WPanel
 
   app.createLinesInPanel(panel, self.completionsBaseIndex, self.completionsScrollOffset, self.completions.len, frameIndex, onlyRenderInBounds=true, renderLine)
 
-method updateWidget*(self: ModelDocumentEditor, app: App, widget: WPanel, frameIndex: int) =
+method updateWidget*(self: ModelDocumentEditor, app: App, widget: WPanel, completionsPanel: WPanel, frameIndex: int) =
   let totalLineHeight = app.platform.totalLineHeight
 
   let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))

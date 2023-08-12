@@ -6,6 +6,9 @@ import vmath, bumpy, chroma
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
 {.used.}
 
+let completionListWidgetId* = newId()
+let completionDocsWidgetId* = newId()
+
 proc shouldIgnoreAsContextLine(self: TextDocument, line: int): bool =
   let indent = self.getIndentLevelForLine(line)
   return line > 0 and self.languageConfig.isSome and self.languageConfig.get.ignoreContextLinePrefix.isSome and
@@ -162,40 +165,71 @@ proc createLinesInPanel*(app: App, contentPanel: WPanel, previousBaseIndex: int,
 
     contentPanel.add lineWidget
 
-proc renderCompletions(self: TextDocumentEditor, app: App, contentPanel: WPanel, cursorBounds: Rect, frameIndex: int) =
+proc renderCompletions(self: TextDocumentEditor, app: App, completionsPanel: WPanel, cursorBounds: Rect, frameIndex: int, renderAboveCursor: bool) =
   let totalLineHeight = app.platform.totalLineHeight
   let charWidth = app.platform.charWidth
 
   let backgroundColor = app.theme.color("panel.background", rgb(30, 30, 30))
   let selectedBackgroundColor = app.theme.color("list.activeSelectionBackground", rgb(200, 200, 200))
+  let docsColor = app.theme.color("editor.foreground", rgb(255, 255, 255))
   let nameColor = app.theme.tokenColor(@["entity.name.label", "entity.name"], rgb(255, 255, 255))
   let scopeColor = app.theme.color("string", rgb(175, 255, 175))
 
-  var panel = WPanel(
-    left: cursorBounds.x, top: cursorBounds.yh, right: cursorBounds.x + charWidth * 60.0, bottom: cursorBounds.yh + totalLineHeight * 20.0,
-    fillBackground: true, backgroundColor: backgroundColor, lastHierarchyChange: frameIndex, maskContent: true)
-  panel.layoutWidget(contentPanel.lastBounds, frameIndex, app.platform.layoutOptions)
-  contentPanel.add(panel)
+  const numLinesToShow = 20
+  let (top, bottom) = if renderAboveCursor:
+    (cursorBounds.y.float - totalLineHeight * (numLinesToShow + 1), cursorBounds.y.float)
+  else:
+    (cursorBounds.yh.float, cursorBounds.yh.float + totalLineHeight * numLinesToShow)
 
-  self.lastCompletionsWidget = panel
+  let panel: WPanel = completionsPanel[self.completionWidgetId, WPanel]
+  panel.anchor = (vec2(0, 0), vec2(1, 1))
 
-  updateBaseIndexAndScrollOffset(panel, self.completionsBaseIndex, self.completionsScrollOffset, self.completions.len, totalLineHeight, self.scrollToCompletion)
+  let list: WPanel = panel[completionListWidgetId, WPanel]
+  list.left = cursorBounds.x
+  list.right = cursorBounds.x + charWidth * 120.0
+  list.top = top
+  list.bottom = bottom
+  list.fillBackground = true
+  list.backgroundColor = backgroundColor
+  list.lastHierarchyChange = frameIndex
+  list.maskContent = true
+  list.children.setLen 0
+
+  let docs: WText = panel[completionDocsWidgetId, WText]
+  docs.left = cursorBounds.x + charWidth * 120.0
+  docs.right = docs.left + charWidth * 50
+  docs.top = top
+  docs.bottom = bottom
+  docs.fillBackground = true
+  docs.backgroundColor = backgroundColor
+  docs.foregroundColor = docsColor
+  docs.lastHierarchyChange = frameIndex
+
+  panel.layoutWidget(completionsPanel.lastBounds, frameIndex, app.platform.layoutOptions)
+  list.layoutWidget(panel.lastBounds, frameIndex, app.platform.layoutOptions)
+  docs.layoutWidget(panel.lastBounds, frameIndex, app.platform.layoutOptions)
+
+  self.lastCompletionsWidget = list
+
+  updateBaseIndexAndScrollOffset(list, self.completionsBaseIndex, self.completionsScrollOffset, self.completions.len, totalLineHeight, self.scrollToCompletion)
   self.scrollToCompletion = int.none
 
   self.lastCompletionWidgets.setLen 0
 
   proc renderLine(lineWidget: WPanel, i: int, down: bool, frameIndex: int): bool =
+    let completion = self.completions[i]
 
     if i == self.selectedCompletion:
       lineWidget.fillBackground = true
       lineWidget.backgroundColor = selectedBackgroundColor
-
-    let completion = self.completions[i]
+      docs.text = completion.doc
+      docs.updateLastHierarchyChangeFromChildren()
 
     let nameWidget = createPartWidget(completion.name, 0, completion.name.len.float * charWidth, totalLineHeight, nameColor, frameIndex)
     lineWidget.add(nameWidget)
 
-    var scopeWidget = createPartWidget(completion.scope, -completion.scope.len.float * charWidth, totalLineHeight, completion.scope.len.float * charWidth, scopeColor, frameIndex)
+    let scopeText = completion.typ & " : " & completion.scope
+    var scopeWidget = createPartWidget(scopeText, -scopeText.len.float * charWidth, totalLineHeight, scopeText.len.float * charWidth, scopeColor, frameIndex)
     scopeWidget.anchor.min.x = 1
     scopeWidget.anchor.max.x = 1
     lineWidget.add(scopeWidget)
@@ -204,9 +238,13 @@ proc renderCompletions(self: TextDocumentEditor, app: App, contentPanel: WPanel,
 
     return true
 
-  app.createLinesInPanel(panel, self.completionsBaseIndex, self.completionsScrollOffset, self.completions.len, frameIndex, onlyRenderInBounds=true, renderLine)
+  app.createLinesInPanel(list, self.completionsBaseIndex, self.completionsScrollOffset, self.completions.len, frameIndex, onlyRenderInBounds=true, renderLine)
 
-method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIndex: int) =
+  panel.updateLastHierarchyChange list.lastHierarchyChange
+  panel.updateLastHierarchyChange docs.lastHierarchyChange
+  completionsPanel.updateLastHierarchyChange panel.lastHierarchyChange
+
+method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, completionsPanel: WPanel, frameIndex: int) =
   let lineHeight = app.platform.lineHeight
   let totalLineHeight = app.platform.totalLineHeight
   let charWidth = app.platform.charWidth
@@ -481,7 +519,11 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, frameIn
   app.createLinesInPanel(contentPanel, self.previousBaseIndex, self.scrollOffset, self.document.lines.len, frameIndex, renderOnlyLinesInBounds, renderLine)
 
   if self.showCompletions:
-    self.renderCompletions(app, contentPanel, cursorBounds, frameIndex)
+    let bounds = cursorBounds + (contentPanel.lastBounds.xy - completionsPanel.lastBounds.xy)
+    let renderAbove = bounds.y > completionsPanel.lastBounds.h / 2
+    self.renderCompletions(app, completionsPanel, bounds, frameIndex, renderAbove)
+  else:
+    completionsPanel.delete self.completionWidgetId
 
   contentPanel.lastHierarchyChange = frameIndex
   widget.lastHierarchyChange = max(widget.lastHierarchyChange, contentPanel.lastHierarchyChange)

@@ -56,7 +56,7 @@ method updateWidget*(self: ThemeSelectorItem, app: App, widget: WPanel, frameInd
   text.updateForegroundColor(textColor, frameIndex)
   text.updateLastHierarchyChangeFromChildren()
 
-method updateWidget*(self: SelectorPopup, app: App, widget: WPanel, frameIndex: int) =
+method updateWidget*(self: SelectorPopup, app: App, widget: WPanel, completionsPanel: WPanel, frameIndex: int) =
   let totalLineHeight = app.platform.totalLineHeight
 
   var headerPanel: WPanel
@@ -75,7 +75,7 @@ method updateWidget*(self: SelectorPopup, app: App, widget: WPanel, frameIndex: 
     headerPanel = widget[0].WPanel
     contentPanel = widget[1].WPanel
 
-  self.textEditor.updateWidget(app, headerPanel, frameIndex)
+  self.textEditor.updateWidget(app, headerPanel, completionsPanel, frameIndex)
   headerPanel.updateLastHierarchyChangeFromChildren frameIndex
 
   widget.lastHierarchyChange = max(widget.lastHierarchyChange, headerPanel.lastHierarchyChange)

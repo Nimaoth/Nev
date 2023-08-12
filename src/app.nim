@@ -998,6 +998,7 @@ proc commandLine*(self: App, initialValue: string = "") {.expose("editor").} =
 
 proc exitCommandLine*(self: App) {.expose("editor").} =
   self.getCommandLineTextEditor.document.content = @[""]
+  self.getCommandLineTextEditor.hideCompletions()
   self.commandLineMode = false
   self.platform.requestRender()
 

@@ -1,11 +1,12 @@
 import std/options
 import vmath, bumpy, chroma
-import theme, rect_utils, custom_logger, util
+import theme, rect_utils, custom_logger, util, id
 
 export rect_utils, vmath, bumpy
 
 type
   WWidget* = ref object of RootObj
+    id*: Id
     parent*: WWidget
     anchor*: tuple[min: Vec2, max: Vec2]
     pivot*: Vec2
@@ -65,6 +66,15 @@ proc `[]=`*(self: WPanel, index: int, child: WWidget) =
     child.parent = self
   self.children[index] = child
 
+proc `[]`*(self: WPanel, id: Id, T: typedesc[WWidget]): T =
+  for c in self.children:
+    if c.id == id and c of T:
+      return T(c)
+
+  var child = T(id: id, parent: self)
+  self.children.add(child)
+  return child
+
 proc insert*(self: WPanel, index: int, child: WWidget) =
   child.parent = self
   self.children.insert(child, index)
@@ -72,6 +82,13 @@ proc insert*(self: WPanel, index: int, child: WWidget) =
 proc delete*(self: WPanel, index: int) =
   self.children[index].parent = nil
   self.children.delete index
+
+proc delete*(self: WPanel, id: Id) =
+  for i, c in self.children:
+    if c.id == id:
+      c.parent = nil
+      self.delete i
+      return
 
 proc pop*(self: WPanel): WWidget = self.children.pop()
 
@@ -155,6 +172,9 @@ proc updateForegroundColor*(self: WWidget, color: Color, frameIndex: int) =
 proc updateBackgroundColor*(self: WWidget, color: Color, frameIndex: int) =
   if self.backgroundColor != color: self.lastHierarchyChange = max(self.lastHierarchyChange, frameIndex)
   self.backgroundColor = color
+
+proc updateLastHierarchyChange*(self: WWidget, frameIndex: int) =
+  self.lastHierarchyChange = max(self.lastHierarchyChange, frameIndex)
 
 proc updateLastHierarchyChangeFromChildren*(self: WWidget, currentIndex = -1) =
   if self of WPanel:
