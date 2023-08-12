@@ -11,17 +11,26 @@ var boolCallbacks = initTable[int, proc(args: JsonNode): bool]()
 var onEditorModeChanged*: Event[tuple[editor: EditorId, oldMode: string, newMode: string]]
 var callbackId = 0
 
+when defined(wasm):
+  const env* = "wasm"
+else:
+  const env* = "nims"
+
 proc info*(args: varargs[string, `$`]) =
   var msgLen = 0
   for arg in args:
     msgLen += arg.len
-  var result = newStringOfCap(msgLen + 5)
+  var result = newStringOfCap(msgLen + 12)
+  result.add "["
+  result.add env
+  result.add "] "
+
   for arg in args:
     result.add(arg)
   scriptLog(result)
 
 template infof*(x: static string) =
-  scriptLog(fmt x)
+  scriptLog("[" & env & "] " & fmt(x))
 
 proc addCallback*(action: proc(args: JsonNode): void): int =
   result = callbackId

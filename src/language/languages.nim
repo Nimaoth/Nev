@@ -14,7 +14,7 @@ proc getLanguageForFile*(filename: string): Option[string] =
   of "css": "css"
   of "go": "go"
   of "hs": "haskell"
-  of "html": "html"
+  of "html", "htmx": "html"
   of "java": "java"
   of "js", "jsx", "json": "javascript"
   of "ocaml": "ocaml"
@@ -23,8 +23,8 @@ proc getLanguageForFile*(filename: string): Option[string] =
   of "ruby": "ruby"
   of "rs": "rust"
   of "scala": "scala"
-  of "ts": "typescript"
-  of "nim", "nims": "nim"
+  of "ts", "tsx": "typescript"
+  of "nim", "nims", "nimble": "nim"
   of "zig": "zig"
   else:
     # Unsupported language
