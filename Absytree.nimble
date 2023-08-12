@@ -2,10 +2,10 @@
 
 version       = "0.1.1"
 author        = "Nimaoth"
-description   = "Programming language + editor"
+description   = "Text Editor"
 license       = "MIT"
 srcDir        = "src"
-bin           = @["abs"]
+bin           = @["ast"]
 
 # Dependencies
 
@@ -26,8 +26,6 @@ requires "https://github.com/Nimaoth/lrucache.nim >= 1.1.4"
 requires "https://github.com/Nimaoth/boxy >= 0.4.2"
 requires "https://github.com/Nimaoth/nimscripter >= 1.0.18"
 requires "https://github.com/Nimaoth/nimtreesitter-api >= 0.1.3"
-# requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter >= 0.1.2"
-# requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_nim >= 0.1.1"
 
 import strformat
 

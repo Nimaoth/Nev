@@ -53,6 +53,7 @@ proc copySharedFilesTo(dir: string) =
   cpFile2 "src/util.nim", dir/"src"
   cpDir2 "LICENSES", dir
   cpFile2 "LICENSE", dir
+  cpFile2 "Absytree.nimble", dir
 
 copySharedFilesTo releaseWindows
 copySharedFilesTo releaseLinux
