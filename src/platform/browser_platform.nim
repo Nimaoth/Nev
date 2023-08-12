@@ -420,6 +420,9 @@ method renderWidget(self: WPanel, renderer: BrowserPlatform, element: var Elemen
     if i >= existingCount and not childElement.isNil:
       newChildren.add childElement
 
+  if self.lastRenderedBounds != self.lastBounds:
+    self.lastRenderedBounds = self.lastBounds
+
 method renderWidget(self: WStack, renderer: BrowserPlatform, element: var Element, forceRedraw: bool, frameIndex: int, buffer: var string) =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
     return
@@ -443,6 +446,9 @@ method renderWidget(self: WStack, renderer: BrowserPlatform, element: var Elemen
     c.renderWidget(renderer, childElement, forceRedraw or self.fillBackground, frameIndex, buffer)
     if i >= existingCount and not childElement.isNil:
       element.appendChild childElement
+
+  if self.lastRenderedBounds != self.lastBounds:
+    self.lastRenderedBounds = self.lastBounds
 
 proc getTextStyle(x, y, width, height: int, color, backgroundColor: cstring, italic, bold: bool): cstring
 proc getTextStyle(x, y, width, height: int, color, backgroundColor: cstring, italic, bold: bool, fontSize: float): cstring
@@ -482,6 +488,9 @@ method renderWidget(self: WText, renderer: BrowserPlatform, element: var Element
       element.setAttribute("data-text", text)
 
   self.lastRenderedText = self.text
+
+  if self.lastRenderedBounds != self.lastBounds:
+    self.lastRenderedBounds = self.lastBounds
 
 proc getTextStyle(x, y, width, height: int, color, backgroundColor: cstring, italic, bold: bool): cstring =
   {.emit: [result, " = `left: ${", x, "}px; top: ${", y, "}px; width: ${", width, "}px; height: ${", height, "}px; overflow: visible; color: ${", color, "}; ${", backgroundColor, "}`"].} #"""

@@ -13,6 +13,7 @@ type
     left*, right*, top*, bottom*: float
     backgroundColor*: Color
     foregroundColor*: Color
+    lastRenderedBounds*: Rect
     lastBounds*: Rect
     lastBoundsChange*: int
     lastHierarchyChange*: int
@@ -152,6 +153,23 @@ proc toString*(self: WWidget, indent: string): string =
   result.add name
   result.add fmt"(ltwh: ({self.left}, {self.top}, {self.width}, {self.height}), anchor: {self.anchor}, bounds: {self.lastBounds}, {self.sizeToContent})"
   result.add rest
+
+iterator invalidationRects*(self: WWidget): Rect =
+  var stack: seq[(WWidget, int)] = @[]
+  stack.add (self, 0)
+
+  while stack.len > 0:
+    let (widget, index) = stack.pop
+
+    if widget.fillBackground:
+      yield widget.lastRenderedBounds.invalidationRect(widget.lastBounds)
+    elif widget of WPanel:
+      let panel = WPanel widget
+      if index < panel.children.high:
+        stack.add (panel, index + 1)
+
+      if index <= panel.children.high:
+        stack.add (panel.children[index], 0)
 
 proc `$`*(self: WWidget): string = self.toString("")
 
@@ -295,7 +313,7 @@ method layoutWidget*(self: WPanel, container: Rect, frameIndex: int, options: WL
   if self.sizeToContent:
     newBounds.wh = vec2()
 
-  if newBounds != self.lastBounds:
+  if newBounds != self.lastBounds or newBounds != self.lastRenderedBounds:
     self.lastBounds = newBounds
     self.lastBoundsChange = frameIndex
 
@@ -334,18 +352,18 @@ method layoutWidget*(self: WStack, container: Rect, frameIndex: int, options: WL
     if newBounds != self.lastBounds:
       debugf"bounds changed {self.lastBounds} -> {newBounds}"
 
-  if newBounds != self.lastBounds:
+  if newBounds != self.lastBounds or newBounds != self.lastRenderedBounds:
     self.lastBounds = newBounds
     self.lastBoundsChange = frameIndex
 
   if self.lastHierarchyChange >= frameIndex or self.lastBoundsChange >= frameIndex:
     for i, c in self.children:
-      let oldBounds = c.lastBounds
       c.layoutWidget(newBounds, frameIndex, options)
-      let newBounds = c.lastBounds
-      if oldBounds != newBounds and not newBounds.contains(oldBounds):
-        # Bounds shrinked
-        let invalidationRect = oldBounds
+
+      for invalidationRect in c.invalidationRects:
+        if invalidationRect.area == 0:
+          continue
+
         for k in countdown(i - 1, 0):
           self.children[k].invalidate(frameIndex, invalidationRect)
           # If the k-child bounds fully contains the invalidion rect, then we don't need to invalidate any more children before k

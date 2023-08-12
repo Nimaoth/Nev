@@ -359,6 +359,9 @@ method renderWidget(self: WPanel, renderer: GuiPlatform, forceRedraw: bool, fram
   for i, c in self.children:
     result = c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex, context & "." & $i) or result
 
+  if self.lastRenderedBounds != self.lastBounds:
+    self.lastRenderedBounds = self.lastBounds
+
 method renderWidget(self: WStack, renderer: GuiPlatform, forceRedraw: bool, frameIndex: int, context: string): bool =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
     return
@@ -370,6 +373,9 @@ method renderWidget(self: WStack, renderer: GuiPlatform, forceRedraw: bool, fram
 
   for i, c in self.children:
     result = c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex, context & "." & $i) or result
+
+  if self.lastRenderedBounds != self.lastBounds:
+    self.lastRenderedBounds = self.lastBounds
 
 method renderWidget(self: WVerticalList, renderer: GuiPlatform, forceRedraw: bool, frameIndex: int, context: string): bool =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
@@ -383,6 +389,9 @@ method renderWidget(self: WVerticalList, renderer: GuiPlatform, forceRedraw: boo
   for i, c in self.children:
     result = c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex, context & "." & $i) or result
 
+  if self.lastRenderedBounds != self.lastBounds:
+    self.lastRenderedBounds = self.lastBounds
+
 method renderWidget(self: WHorizontalList, renderer: GuiPlatform, forceRedraw: bool, frameIndex: int, context: string): bool =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
     return
@@ -394,6 +403,9 @@ method renderWidget(self: WHorizontalList, renderer: GuiPlatform, forceRedraw: b
 
   for i, c in self.children:
     result = c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex, context & "." & $i) or result
+
+  if self.lastRenderedBounds != self.lastBounds:
+    self.lastRenderedBounds = self.lastBounds
 
 method renderWidget(self: WText, renderer: GuiPlatform, forceRedraw: bool, frameIndex: int, context: string): bool =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
@@ -436,3 +448,6 @@ method renderWidget(self: WText, renderer: GuiPlatform, forceRedraw: bool, frame
 
   if self.lastRenderedText != self.text:
     self.lastRenderedText = self.text
+
+  if self.lastRenderedBounds != self.lastBounds:
+    self.lastRenderedBounds = self.lastBounds
