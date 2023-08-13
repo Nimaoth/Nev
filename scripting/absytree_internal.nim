@@ -526,6 +526,8 @@ proc editor_setOption_void_App_string_JsonNode_impl*(option: string;
   discard
 proc editor_quit_void_App_impl*() =
   discard
+proc editor_help_void_App_string_impl*(about: string = "") =
+  discard
 proc editor_changeFontSize_void_App_float32_impl*(amount: float32) =
   discard
 proc editor_changeLayoutProp_void_App_string_float32_impl*(prop: string;

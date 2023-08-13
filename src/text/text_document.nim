@@ -451,7 +451,7 @@ proc initTreesitter*(self: TextDocument): Future[void] {.async.} =
   self.reparseTreesitter()
 
   try:
-    let queryString = fs.loadFile(fmt"./languages/{languageId}/queries/highlights.scm")
+    let queryString = fs.loadApplicationFile(fmt"./languages/{languageId}/queries/highlights.scm")
     self.highlightQuery = language.get.query(queryString)
   except CatchableError:
     log(lvlError, fmt"[textedit] No highlight queries found for '{languageId}'")

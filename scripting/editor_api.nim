@@ -43,6 +43,8 @@ proc setOption*(option: string; value: JsonNode) =
   editor_setOption_void_App_string_JsonNode_impl(option, value)
 proc quit*() =
   editor_quit_void_App_impl()
+proc help*(about: string = "") =
+  editor_help_void_App_string_impl(about)
 proc changeFontSize*(amount: float32) =
   editor_changeFontSize_void_App_float32_impl(amount)
 proc changeLayoutProp*(prop: string; change: float32) =

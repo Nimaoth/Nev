@@ -7,9 +7,9 @@ type
 
 method settings*(self: WorkspaceFolderLocal): JsonNode =
   result = newJObject()
-  result["path"] = newJString(self.path)
+  result["path"] = newJString(self.path.absolutePath)
 
-func getAbsolutePath(self: WorkspaceFolderLocal, relativePath: string): string = self.path / relativePath
+proc getAbsolutePath(self: WorkspaceFolderLocal, relativePath: string): string = self.path.absolutePath / relativePath
 
 method isReadOnly*(self: WorkspaceFolderLocal): bool = false
 
@@ -21,11 +21,16 @@ method saveFile*(self: WorkspaceFolderLocal, relativePath: string, content: stri
 
 method getDirectoryListing*(self: WorkspaceFolderLocal, relativePath: string): Future[DirectoryListing] {.async.} =
   when not defined(js):
-    for file in walkDirRec(".", relative=true):
-      if file.fileExists:
-        result.files.add file
+    var res = DirectoryListing()
+    for (kind, file) in walkDir(self.getAbsolutePath(relativePath), relative=true):
+      case kind
+      of pcFile:
+        res.files.add file
+      of pcDir:
+        res.folders.add file
       else:
-        result.folders.add file
+        log lvlError, fmt"[ws-local] getDirectoryListing: Unhandled file type {kind} for {file}"
+    return res
 
 proc newWorkspaceFolderLocal*(path: string): WorkspaceFolderLocal =
   new result

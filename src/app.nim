@@ -175,6 +175,7 @@ proc createSelectorPopup*(self: App): Popup
 proc pushPopup*(self: App, popup: Popup)
 proc popPopup*(self: App, popup: Popup)
 proc openSymbolsPopup*(self: App, symbols: seq[Symbol], handleItemSelected: proc(symbol: Symbol), handleItemConfirmed: proc(symbol: Symbol), handleCanceled: proc())
+proc help*(self: App, about: string = "")
 
 implTrait AppInterface, App:
   proc platform*(self: App): Platform = self.platform
@@ -610,8 +611,9 @@ proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.}
 
   var state = EditorState()
   try:
-    state = fs.loadApplicationFile("./config/config.json").parseJson.jsonTo(EditorState, JOptions(allowMissingKeys: true, allowExtraKeys: true))
-    log(lvlInfo, fmt"Restoring state {state}")
+    let stateJson = fs.loadApplicationFile("./config/config.json").parseJson
+    state = stateJson.jsonTo(EditorState, JOptions(allowMissingKeys: true, allowExtraKeys: true))
+    log(lvlInfo, fmt"Restoring state {stateJson.pretty}")
 
     if not state.theme.isEmptyOrWhitespace:
       try:
@@ -648,11 +650,15 @@ proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.}
         log(lvlInfo, fmt"Restoring workspace {folder.name} ({folder.id})")
 
   try:
-    var searchPaths = @["src", "scripting"]
+    var searchPaths = @["app://src", "app://scripting"]
     let searchPathsJson = self.options{@["scripting", "search-paths"]}
     if not searchPathsJson.isNil:
       for sp in searchPathsJson:
         searchPaths.add sp.getStr
+
+    for path in searchPaths.mitems:
+      if path.hasPrefix("app://", rest):
+        path = fs.getApplicationFilePath(rest)
 
     when defined(js):
       self.scriptContext = new ScriptContextJs
@@ -700,6 +706,9 @@ proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.}
       self.hiddenViews.add view
       if editorState.customOptions.isNotNil:
         view.editor.restoreStateJson(editorState.customOptions)
+
+  if self.views.len == 0:
+    self.help()
 
   return self
 
@@ -922,6 +931,13 @@ proc setOption*(self: App, option: string, value: JsonNode) {.expose("editor").}
 proc quit*(self: App) {.expose("editor").} =
   self.closeRequested = true
 
+proc help*(self: App, about: string = "") {.expose("editor").} =
+  const introductionMd = staticRead"../docs/introduction.md"
+  let docsPath = "docs/introduction.md"
+  let textDocument = newTextDocument(self.asConfigProvider, docsPath, introductionMd, app=true)
+  textDocument.load()
+  discard self.createAndAddView(textDocument)
+
 proc changeFontSize*(self: App, amount: float32) {.expose("editor").} =
   self.platform.fontSize = self.platform.fontSize + amount.float
   self.platform.requestRender(true)
@@ -946,6 +962,14 @@ proc logs*(self: App) {.expose("editor").} =
 proc closeCurrentView*(self: App) {.expose("editor").} =
   self.views[self.currentView].editor.unregister()
   self.views.delete self.currentView
+
+  if self.views.len == 0:
+    if self.hiddenViews.len > 0:
+      let view = self.hiddenViews.pop
+      self.addView view
+    else:
+      self.help()
+
   self.currentView = self.currentView.clamp(0, self.views.len - 1)
   self.platform.requestRender()
 
@@ -1204,6 +1228,8 @@ proc iterateDirectoryRec(self: App, folder: WorkspaceFolder, path: string, cance
 
   for dir in items.folders:
     folders.add(path / dir)
+
+  await sleepAsync(1)
 
   callback(resultItems)
 

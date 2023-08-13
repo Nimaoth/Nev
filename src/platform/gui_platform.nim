@@ -1,5 +1,5 @@
 import std/[tables, strutils, options]
-import platform, widgets, util
+import platform, widgets, util, platform/filesystem
 import custom_logger, input, event, monitors, lrucache, id, rect_utils, theme
 import chroma, vmath, windy, boxy, boxy/textures, opengl, pixie/[contexts, fonts]
 
@@ -186,7 +186,7 @@ proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font =
     raise newException(PixieError, "No font has been set on this Context")
 
   if font notin self.typefaces:
-    self.typefaces[font] = readTypeface(font)
+    self.typefaces[font] = readTypeface(fs.getApplicationFilePath(font))
 
   result = newFont(self.typefaces.getOrDefault(font, nil))
   result.paint.color = color(1, 1, 1)
