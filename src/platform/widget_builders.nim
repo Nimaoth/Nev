@@ -81,7 +81,11 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
 
       viewPanel.add widget
 
+      let wasActive = view.editor.active
       view.editor.active = self.currentView == i
+      if view.editor.active != wasActive:
+        view.editor.markDirty(notify=false)
+
       view.editor.updateWidget(self, widget, completionsPanel, frameIndex)
       viewPanel.lastHierarchyChange = max(viewPanel.lastHierarchyChange, widget.lastHierarchyChange)
 

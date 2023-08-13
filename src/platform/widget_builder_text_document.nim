@@ -533,7 +533,7 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, complet
   let renderOnlyLinesInBounds = not sizeToContent
   app.createLinesInPanel(contentPanel, self.previousBaseIndex, self.scrollOffset, self.document.lines.len, frameIndex, renderOnlyLinesInBounds, renderLine)
 
-  if self.showCompletions:
+  if self.showCompletions and self.active:
     let bounds = cursorBounds + (contentPanel.lastBounds.xy - completionsPanel.lastBounds.xy)
     let renderAbove = bounds.y > completionsPanel.lastBounds.h / 2
     self.renderCompletions(app, completionsPanel, bounds, frameIndex, renderAbove)
@@ -541,8 +541,8 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, complet
     completionsPanel.delete self.completionWidgetId
     completionsPanel.updateLastHierarchyChange frameIndex
 
-  contentPanel.lastHierarchyChange = frameIndex
-  widget.lastHierarchyChange = max(widget.lastHierarchyChange, contentPanel.lastHierarchyChange)
+  contentPanel.updateLastHierarchyChange frameIndex
+  widget.updateLastHierarchyChange frameIndex
 
   self.lastContentBounds = contentPanel.lastBounds
 
