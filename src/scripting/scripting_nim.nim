@@ -7,6 +7,7 @@ import compiler/[renderer, ast, llstream, lineinfos]
 import compiler/options as copts
 from compiler/vmdef import TSandboxFlag
 import nimscripter, nimscripter/[vmconversion, vmaddins]
+import platform/filesystem
 
 import util, custom_logger, custom_async, scripting_base, compilation_config, expose, popup, document_editor, timer
 import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, Popup, SelectorPopup
@@ -86,41 +87,47 @@ proc myLoadScript(
   ## `vmErrorHook` a callback which should raise `VmQuit`, refer to `errorHook` for reference.
   ## `searchPaths` optional paths one can use to supply libraries or packages for the
   const isFile = script is NimScriptPath
-  if not isFile or fileExists(script.string):
-    var additions = addins.additions
-    for `mod` in modules: # Add modules
-      additions.insert("import " & `mod` & "\n", 0)
 
-    var searchPaths = getSearchPath(stdPath) & searchPaths
-    let scriptName = when isFile: script.string.splitFile.name else: "script"
-
-    when isFile: # If is file we want to enable relative imports
-      searchPaths.add script.string.parentDir
-
-    let
-      intr = createInterpreter(scriptName, searchPaths, flags = {allowInfiniteLoops},
-        defines = defines
-      )
-      script = when isFile: readFile(script.string) else: script.string
-
-    for uProc in addins.procs:
-      intr.implementRoutine("Absytree", apiModule, uProc.name, uProc.vmProc)
-
-    for (module, addins) in moreAddins:
-      for uProc in addins.procs:
-        intr.implementRoutine("Absytree", module, uProc.name, uProc.vmProc)
-
-    intr.registerErrorHook(vmErrorHook)
+  let path = when isFile: fs.getApplicationFilePath(script.string) else: ""
+  var script = script.string
+  when isFile:
     try:
-      additions.add script
-      additions.add addins.postCodeAdditions
-      additions.add "\n"
-      additions.add postCodeAdditions
-      when defined(debugScript):
-        writeFile("debugscript.nims", additions)
-      intr.evalScript(llStreamOpen(additions))
-      result = option(intr)
-    except VMQuit: discard
+      script = fs.loadApplicationFile(script)
+    except CatchableError:
+      return Interpreter.none
+
+  var additions = addins.additions
+  for `mod` in modules: # Add modules
+    additions.insert("import " & `mod` & "\n", 0)
+
+  var searchPaths = getSearchPath(stdPath) & searchPaths
+
+  when isFile: # If is file we want to enable relative imports
+    searchPaths.add path.parentDir
+
+  let
+    intr = createInterpreter(path, searchPaths, flags = {allowInfiniteLoops},
+      defines = defines
+    )
+
+  for uProc in addins.procs:
+    intr.implementRoutine("Absytree", apiModule, uProc.name, uProc.vmProc)
+
+  for (module, addins) in moreAddins:
+    for uProc in addins.procs:
+      intr.implementRoutine("Absytree", module, uProc.name, uProc.vmProc)
+
+  intr.registerErrorHook(vmErrorHook)
+  try:
+    additions.add script
+    additions.add addins.postCodeAdditions
+    additions.add "\n"
+    additions.add postCodeAdditions
+    when defined(debugScript):
+      writeFile("debugscript.nims", additions)
+    intr.evalScript(llStreamOpen(additions))
+    result = option(intr)
+  except VMQuit: discard
 
 proc mySafeLoadScriptWithState*(
   intr: var Option[Interpreter];

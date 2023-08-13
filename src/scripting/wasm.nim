@@ -1,5 +1,5 @@
 import std/[macros, macrocache, strutils, json, options, tables, genasts]
-import custom_logger, custom_async, util, array_buffer
+import custom_logger, custom_async, util, array_buffer, platform/filesystem
 
 when defined(js):
   import std/jsffi
@@ -378,7 +378,7 @@ proc newWasmModule*(path: string, importsOld: seq[WasmImports]): Future[Option[W
     let res = WasmModule()
 
     try:
-      res.env = loadWasmEnv(readFile(path), hostProcs=allFunctions, loadAlloc=true, allocName="my_alloc", deallocName="my_dealloc", userdata=cast[pointer](res))
+      res.env = loadWasmEnv(fs.loadApplicationFile(path), hostProcs=allFunctions, loadAlloc=true, allocName="my_alloc", deallocName="my_dealloc", userdata=cast[pointer](res))
     except CatchableError:
       return WasmModule.none
 

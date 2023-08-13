@@ -13,6 +13,7 @@ method loadFileBinaryAsync*(self: FileSystem, name: string): Future[ArrayBuffer]
 
 method saveFile*(self: FileSystem, path: string, content: string) {.base.} = discard
 
+method getApplicationFilePath*(self: FileSystem, name: string): string {.base.} = discard
 method loadApplicationFile*(self: FileSystem, name: string): string {.base.} = discard
 method saveApplicationFile*(self: FileSystem, name: string, content: string) {.base.} = discard
 

@@ -244,6 +244,18 @@ proc quit*() =
   let res {.used.} = editor_quit_void_App_wasm(argsJsonString.cstring)
 
 
+proc editor_help_void_App_string_wasm(arg: cstring): cstring {.importc.}
+proc help*(about: string = "") =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      about
+    else:
+      about.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_help_void_App_string_wasm(argsJsonString.cstring)
+
+
 proc editor_changeFontSize_void_App_float32_wasm(arg: cstring): cstring {.
     importc.}
 proc changeFontSize*(amount: float32) =

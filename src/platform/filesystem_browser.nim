@@ -25,6 +25,8 @@ proc localStorageHasItem(name: cstring): bool {.importjs: "(window.localStorage.
 
 var cachedAppFiles = initTable[string, string]()
 
+method getApplicationFilePath*(self: FileSystemBrowser, name: string): string = ""
+
 method loadApplicationFile*(self: FileSystemBrowser, name: string): string =
   if localStorageHasItem(name.cstring):
     return $window.localStorage.getItem(name.cstring)

@@ -25,3 +25,13 @@ template catch*(exp: untyped, then: untyped): untyped =
     exp
   except CatchableError:
     then
+
+template hasPrefix*(exp: untyped, prefix: string, v: untyped): untyped =
+  let temp = exp
+  let matches = temp.startsWith(prefix)
+  let v {.inject.} = if matches:
+    temp[prefix.len..^1]
+  else:
+    temp
+
+  matches

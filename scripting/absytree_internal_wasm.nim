@@ -347,6 +347,7 @@ proc editor_toggleFlag_void_App_string_impl(flag: string)  {.importc.}
 proc editor_setOption_void_App_string_JsonNode_impl(option: string;
     value: JsonNode)  {.importc.}
 proc editor_quit_void_App_impl()  {.importc.}
+proc editor_help_void_App_string_impl(about: string = "")  {.importc.}
 proc editor_changeFontSize_void_App_float32_impl(amount: float32)  {.importc.}
 proc editor_changeLayoutProp_void_App_string_float32_impl(prop: string;
     change: float32)  {.importc.}
