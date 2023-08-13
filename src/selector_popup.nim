@@ -181,6 +181,7 @@ proc newSelectorPopup*(app: AppInterface): SelectorPopup =
   popup.textEditor.lineNumbers = api.LineNumbers.None.some
   popup.textEditor.document.singleLine = true
   popup.textEditor.disableScrolling = true
+  popup.textEditor.disableCompletions = true
   discard popup.textEditor.document.textChanged.subscribe (doc: TextDocument) => popup.handleTextChanged()
 
   popup.eventHandler = eventHandler(app.getEventHandlerConfig("popup.selector")):
