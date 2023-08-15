@@ -3,7 +3,7 @@
 import std/[json, strutils, sequtils, tables, options, macros, genasts, macrocache, typetraits, sugar]
 
 import fusion/matching
-import util, custom_logger, dispatch_tables
+import util, custom_logger, dispatch_tables, macro_utils, wrap
 import compilation_config
 
 when not defined(js):
@@ -57,36 +57,6 @@ macro addScriptWrapper(name: untyped, moduleName: static string, lineNumber: sta
       exposedFunctions[list].add val
       return
   exposedFunctions[moduleName] = nnkStmtList.newTree(val)
-
-proc argName(def: NimNode, arg: int): NimNode =
-  result = def[3][arg + 1][0]
-  if result.kind == nnkPragmaExpr:
-    result = result[0]
-
-proc hasCustomPragma(def: NimNode, pragma: string): bool =
-  case def.kind
-  of nnkProcDef:
-    if def[4].kind == nnkPragma:
-      for c in def[4]:
-        if c.kind == nnkIdent and c.strVal == pragma:
-          return true
-  else:
-    return false
-
-proc argHasPragma(def: NimNode, arg: int, pragma: string): bool =
-  let node = def[3][arg + 1][0]
-  if node.kind == nnkPragmaExpr and node.len >= 2 and node[1].kind == nnkPragma and node[1][0].strVal == pragma:
-    return true
-  return false
-proc isVarargs(def: NimNode, arg: int): bool = def.argHasPragma(arg, "varargs")
-proc argType(def: NimNode, arg: int): NimNode = def[3][arg + 1][1]
-proc argDefaultValue(def: NimNode, arg: int): Option[NimNode] =
-  if def[3][arg + 1][2].kind != nnkEMpty:
-    return def[3][arg + 1][2].some
-  return NimNode.none
-
-proc returnType(def: NimNode): Option[NimNode] =
-  return if def[3][0].kind != nnkEmpty: def[3][0].some else: NimNode.none
 
 when defined(js):
 
@@ -148,7 +118,13 @@ proc generateUniqueName*(moduleName: string, def: NimNode): string =
     result.add "_"
     result.add originalArgumentType.repr
 
-  return result.multiReplace(("[", "_"), ("]", "_"), (".", "_")).multiReplace(("__", "_")).multiReplace(("__", "_")).multiReplace(("__", "_")).strip(chars={'_'})
+  return result.multiReplace(("[", "_"), ("]", "_"), ("(", "_"), (")", "_"), (":", "_"), (".", "_"), (",", "_"), (";", "_"), (" ", "")).multiReplace(("__", "_")).multiReplace(("__", "_")).multiReplace(("__", "_")).strip(chars={'_'})
+
+proc removePragmas(node: var NimNode) =
+  for param in node[3]:
+    case param
+    of IdentDefs[PragmaExpr[@name, .._], .._]:
+      param[0] = name
 
 macro expose*(moduleName: static string, def: untyped): untyped =
   if not exposeScriptingApi:
@@ -162,15 +138,14 @@ macro expose*(moduleName: static string, def: untyped): untyped =
   # echo def.repr
   # echo def.treeRepr
 
+  var def = def
+
   let uniqueName = generateUniqueName(moduleName, def)
 
   let functionName = if def[0].kind == nnkPostfix: def[0][1] else: def[0]
   let argCount = def[3].len - 1
   let returnType = def.returnType
-  let documentation = if def[6].len > 0 and def[6][0].kind == nnkCommentStmt:
-      def[6][0].some
-    else:
-      NimNode.none
+  let documentation = def.getDocumentation()
   let documentationStr = documentation.map((it) => it.strVal).get("").newLit
   let signature = nnkProcDef.newTree(newEmptyNode(), newEMptyNode(), newEmptyNode(), def[3], newEmptyNode(), newEmptyNode(), newEmptyNode())
 
@@ -230,16 +205,6 @@ macro expose*(moduleName: static string, def: untyped): untyped =
     var argsJson = newJArray()
     let argsJsonString = $argsJson
     let res {.used.} = f(argsJsonString.cstring)
-
-  proc removePragmas(node: var NimNode) =
-    for param in node[3]:
-      case param
-      of IdentDefs[PragmaExpr[@name, .._], .._]:
-        param[0] = name
-
-  removePragmas(scriptFunction)
-  removePragmas(scriptFunctionWrapper)
-  removePragmas(jsonStringWrapperFunctionWasm)
 
   var callScriptFuncFromJson = nnkCall.newTree(scriptFunctionSym)
 
@@ -305,7 +270,7 @@ macro expose*(moduleName: static string, def: untyped): untyped =
             `jsonArg`[`index`].jsonTo `mappedArgumentType`
 
     #
-    var callFromScriptArg = scriptFunction[3][i + 1][0]
+    var callFromScriptArg = scriptFunction.argName(i)
 
     for source, mapperFunction in mapperFunctions.pairs:
       if source == def.argType(i).repr:
@@ -384,6 +349,14 @@ macro expose*(moduleName: static string, def: untyped): untyped =
 
   jsonStringWrapperFunctionWasm[6] = callJsonStringWrapperFunctionWasm
 
+
+  let jsonWrapperFunction = createJsonWrapper(scriptFunction, jsonWrapperFunctionName)
+
+  removePragmas(def)
+  removePragmas(scriptFunction)
+  removePragmas(scriptFunctionWrapper)
+  removePragmas(jsonStringWrapperFunctionWasm)
+
   result = quote do:
     `def`
 
@@ -408,16 +381,9 @@ macro expose*(moduleName: static string, def: untyped): untyped =
     let jsonStringWrapperFunctionReturnValue = genSym(nskVar, functionName.strVal & "WasmReturnValue")
     let arg = ident"arg"
 
-    result.add quote do:
-      proc `jsonWrapperFunctionName`*(`jsonArg`: JsonNode): JsonNode {.nimcall, used.} =
-        result = newJNull()
-        # try:
-        `callScriptFuncFromJsonWithReturn`
-        # except CatchableError:
-        #   let name = `pureFunctionNameStr`
-        #   echo "[editor] Failed to run function " & name & fmt": Invalid arguments: {getCurrentExceptionMsg()}"
-        #   echo getCurrentException().getStackTrace
+    result.add jsonWrapperFunction
 
+    result.add quote do:
       var `jsonStringWrapperFunctionReturnValue`: string = ""
       proc `jsonStringWrapperFunctionName`*(arg: cstring): cstring {.exportc, used.} =
         # try:

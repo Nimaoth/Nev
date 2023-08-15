@@ -1,5 +1,5 @@
-import std/[strformat, strutils, tables, logging, unicode, options, os, algorithm, json, jsonutils, macros, macrocache, sugar, streams, deques]
-import input, id, events, rect_utils, document, document_editor, popup, timer, event, cancellation_token, dispatch_tables
+import std/[sequtils, strformat, strutils, tables, logging, unicode, options, os, algorithm, json, macros, macrocache, sugar, streams, deques]
+import input, id, events, rect_utils, document, document_editor, popup, timer, event, cancellation_token, dispatch_tables, myjsonutils
 import theme, util, custom_logger, custom_async, fuzzy_matching
 import scripting/[expose, scripting_base]
 import platform/[platform, widgets, filesystem]
@@ -72,6 +72,10 @@ type
     of AstNode:
       node*: AstNode
 
+type ScriptAction = object
+  name: string
+  scriptContext: ScriptContext
+
 type App* = ref object
   backend: api.Backend
   platform*: Platform
@@ -101,6 +105,8 @@ type App* = ref object
   scriptContext*: ScriptContext
   wasmScriptContext*: ScriptContextWasm
   initializeCalled: bool
+
+  currentScriptContext: Option[ScriptContext] = ScriptContext.none
 
   statusBarOnTop*: bool
 
@@ -134,6 +140,8 @@ type App* = ref object
   currentMode*: string
 
   editor_defaults: seq[DocumentEditor]
+
+  scriptActions: Table[string, ScriptAction]
 
 var gEditor* {.exportc.}: App = nil
 
@@ -225,6 +233,16 @@ proc addWorkspaceFolder(self: App, workspaceFolder: WorkspaceFolder): bool
 proc getWorkspaceFolder(self: App, id: Id): Option[WorkspaceFolder]
 proc setLayout*(self: App, layout: string)
 
+template withScriptContext(self: App, scriptContext: untyped, body: untyped): untyped =
+  if scriptContext.isNotNil:
+    let oldScriptContext = self.currentScriptContext
+    {.push hint[ConvFromXtoItselfNotNeeded]:off.}
+    self.currentScriptContext = scriptContext.ScriptContext.some
+    {.pop.}
+    defer:
+      self.currentScriptContext = oldScriptContext
+    body
+
 proc registerEditor*(self: App, editor: DocumentEditor): void =
   self.editors[editor.id] = editor
   self.onEditorRegistered.invoke editor
@@ -241,10 +259,12 @@ proc invokeCallback*(self: App, context: string, args: JsonNode): bool =
     return false
   let id = self.callbacks[context]
   try:
-    if self.scriptContext.isNotNil and self.scriptContext.handleCallback(id, args):
-      return true
-    if self.wasmScriptContext.isNotNil and self.wasmScriptContext.handleCallback(id, args):
-      return true
+    withScriptContext self, self.scriptContext:
+      if self.scriptContext.handleCallback(id, args):
+        return true
+    withScriptContext self, self.wasmScriptContext:
+      if self.wasmScriptContext.handleCallback(id, args):
+        return true
     return false
   except CatchableError:
     log(lvlError, fmt"[ed] Failed to run script handleCallback {id}: {getCurrentExceptionMsg()}")
@@ -306,10 +326,12 @@ proc handleUnknownPopupAction*(self: App, popup: Popup, action: string, arg: str
     for a in newStringStream(arg).parseJsonFragments():
       args.add a
 
-    if self.scriptContext.isNotNil and self.scriptContext.handleUnknownPopupAction(popup, action, args):
-      return Handled
-    if self.wasmScriptContext.isNotNil and self.wasmScriptContext.handleUnknownPopupAction(popup, action, args):
-      return Handled
+    withScriptContext self, self.scriptContext:
+      if self.scriptContext.handleUnknownPopupAction(popup, action, args):
+        return Handled
+    withScriptContext self, self.wasmScriptContext:
+      if self.wasmScriptContext.handleUnknownPopupAction(popup, action, args):
+        return Handled
   except CatchableError:
     log(lvlError, fmt"[ed] Failed to run script handleUnknownPopupAction '{action} {arg}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
@@ -318,10 +340,12 @@ proc handleUnknownPopupAction*(self: App, popup: Popup, action: string, arg: str
 
 proc handleUnknownDocumentEditorAction*(self: App, editor: DocumentEditor, action: string, args: JsonNode): EventResponse =
   try:
-    if self.scriptContext.isNotNil and self.scriptContext.handleUnknownDocumentEditorAction(editor, action, args):
-      return Handled
-    if self.wasmScriptContext.isNotNil and self.wasmScriptContext.handleUnknownDocumentEditorAction(editor, action, args):
-      return Handled
+    withScriptContext self, self.scriptContext:
+      if self.scriptContext.handleUnknownDocumentEditorAction(editor, action, args):
+        return Handled
+    withScriptContext self, self.wasmScriptContext:
+      if self.wasmScriptContext.handleUnknownDocumentEditorAction(editor, action, args):
+        return Handled
   except CatchableError:
     log(lvlError, fmt"[ed] Failed to run script handleUnknownDocumentEditorAction '{action} {args}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
@@ -330,10 +354,10 @@ proc handleUnknownDocumentEditorAction*(self: App, editor: DocumentEditor, actio
 
 proc handleModeChanged*(self: App, editor: DocumentEditor, oldMode: string, newMode: string) =
   try:
-    if self.scriptContext.isNotNil:
-    self.scriptContext.handleEditorModeChanged(editor, oldMode, newMode)
-    if self.wasmScriptContext.isNotNil:
-    self.wasmScriptContext.handleEditorModeChanged(editor, oldMode, newMode)
+    withScriptContext self, self.scriptContext:
+      self.scriptContext.handleEditorModeChanged(editor, oldMode, newMode)
+    withScriptContext self, self.wasmScriptContext:
+      self.wasmScriptContext.handleEditorModeChanged(editor, oldMode, newMode)
   except CatchableError:
     log(lvlError, fmt"[ed] Failed to run script handleDocumentModeChanged '{oldMode} -> {newMode}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
@@ -528,9 +552,55 @@ proc setTheme*(self: App, path: string) =
   self.platform.requestRender()
 
 when not defined(js):
-  proc createScriptContext(filepath: string, searchPaths: seq[string]): ScriptContext
+  proc createScriptContext(filepath: string, searchPaths: seq[string]): Future[ScriptContext]
 
 proc getCommandLineTextEditor*(self: App): TextDocumentEditor = self.commandLineTextEditor.TextDocumentEditor
+
+proc initScripting(self: App) {.async.} =
+  try:
+    log(lvlInfo, fmt"[editor] load wasm configs")
+    self.wasmScriptContext = new ScriptContextWasm
+
+    withScriptContext self, self.wasmScriptContext:
+      let t1 = startTimer()
+      await self.wasmScriptContext.init("./config")
+      log(lvlInfo, fmt"[editor] init wasm configs ({t1.elapsed.ms}ms)")
+
+      let t2 = startTimer()
+      discard self.wasmScriptContext.postInitialize()
+      log(lvlInfo, fmt"[editor] post init wasm configs ({t2.elapsed.ms}ms)")
+  except CatchableError:
+    log(lvlError, fmt"Failed to load wasm configs: {(getCurrentExceptionMsg())}{'\n'}{(getCurrentException().getStackTrace())}")
+
+  await sleepAsync(1)
+
+  try:
+    var searchPaths = @["app://src", "app://scripting"]
+    let searchPathsJson = self.options{@["scripting", "search-paths"]}
+    if not searchPathsJson.isNil:
+      for sp in searchPathsJson:
+        searchPaths.add sp.getStr
+
+    for path in searchPaths.mitems:
+      if path.hasPrefix("app://", rest):
+        path = fs.getApplicationFilePath(rest)
+
+    when defined(js):
+      self.scriptContext = new ScriptContextJs
+    else:
+      self.scriptContext = await createScriptContext("./config/absytree_config.nim", searchPaths)
+
+    withScriptContext self, self.scriptContext:
+      log(lvlInfo, fmt"[editor] init nim script config")
+      await self.scriptContext.init("./config")
+      log(lvlInfo, fmt"[editor] post init nim script config")
+      discard self.scriptContext.postInitialize()
+
+    log(lvlInfo, fmt"[editor] finished configs")
+    self.initializeCalled = true
+  except CatchableError:
+    log(lvlError, fmt"Failed to load config: {(getCurrentExceptionMsg())}{'\n'}{(getCurrentException().getStackTrace())}")
+
 
 proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.} =
   var self = App()
@@ -653,39 +723,6 @@ proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.}
       if self.addWorkspaceFolder(folder):
         log(lvlInfo, fmt"Restoring workspace {folder.name} ({folder.id})")
 
-  try:
-    var searchPaths = @["app://src", "app://scripting"]
-    let searchPathsJson = self.options{@["scripting", "search-paths"]}
-    if not searchPathsJson.isNil:
-      for sp in searchPathsJson:
-        searchPaths.add sp.getStr
-
-    for path in searchPaths.mitems:
-      if path.hasPrefix("app://", rest):
-        path = fs.getApplicationFilePath(rest)
-
-    when defined(js):
-      self.scriptContext = new ScriptContextJs
-    else:
-      self.scriptContext = createScriptContext("./config/absytree_config_wasm.nim", searchPaths)
-
-    self.wasmScriptContext = new ScriptContextWasm
-
-    log(lvlInfo, fmt"[editor] init wasm configs")
-    await self.wasmScriptContext.init("./config")
-    log(lvlInfo, fmt"[editor] post init wasm configs")
-    discard self.wasmScriptContext.postInitialize()
-
-    log(lvlInfo, fmt"[editor] init nim script config")
-    await self.scriptContext.init("./config")
-    log(lvlInfo, fmt"[editor] post init nim script config")
-    discard self.scriptContext.postInitialize()
-
-    log(lvlInfo, fmt"[editor] finished configs")
-    self.initializeCalled = true
-  except CatchableError:
-    log(lvlError, fmt"Failed to load config: {(getCurrentExceptionMsg())}{'\n'}{(getCurrentException().getStackTrace())}")
-
   # Open current working dir as local workspace if no workspace exists yet
   if self.workspace.folders.len == 0:
     log lvlInfo, "No workspace open yet, opening current working directory as local workspace"
@@ -713,6 +750,8 @@ proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.}
 
   if self.views.len == 0:
     self.help()
+
+  asyncCheck self.initScripting()
 
   return self
 
@@ -898,6 +937,38 @@ proc openGithubWorkspace*(self: App, user: string, repository: string, branchOrH
 
 proc openAbsytreeServerWorkspace*(self: App, url: string) {.expose("editor").} =
   discard self.addWorkspaceFolder newWorkspaceFolderAbsytreeServer(url)
+
+proc callScriptAction*(self: App, context: string, args: JsonNode): JsonNode {.expose("editor").} =
+  if not self.scriptActions.contains(context):
+    log lvlError, fmt"[app] Unknown script action '{context}'"
+    return nil
+  let action = self.scriptActions[context]
+  try:
+    withScriptContext self, action.scriptContext:
+      return action.scriptContext.handleScriptAction(context, args)
+    log lvlError, fmt"[app] No script context for action '{context}'"
+    return nil
+  except CatchableError:
+    log(lvlError, fmt"[ed] Failed to run script action {context}: {getCurrentExceptionMsg()}")
+    log(lvlError, getCurrentException().getStackTrace())
+    return nil
+
+proc addScriptAction*(self: App, name: string, docs: string = "", params: seq[tuple[name: string, typ: string]] = @[], returnType: string = "") {.expose("editor").} =
+  if self.scriptActions.contains(name):
+    log lvlError, fmt"[app] Duplicate script action {name}"
+    return
+
+  if self.currentScriptContext.isNone:
+    log lvlError, fmt"[app] addScriptAction({name}) should only be called from a script"
+    return
+
+  self.scriptActions[name] = ScriptAction(name: name, scriptContext: self.currentScriptContext.get)
+
+  proc dispatch(arg: JsonNode): JsonNode =
+    return self.callScriptAction(name, arg)
+
+  let signature = "(" & params.mapIt(it[0] & ": " & it[1]).join(", ") & ")" & returnType
+  extendGlobalDispatchTable "script", ExposedFunction(name: name, docs: docs, dispatch: dispatch, params: params, returnType: returnType, signature: signature)
 
 when not defined(js):
   proc openLocalWorkspace*(self: App, path: string) {.expose("editor").} =
@@ -1397,7 +1468,8 @@ proc reloadConfig*(self: App) {.expose("editor").} =
     try:
       self.scriptContext.reload()
       if not self.initializeCalled:
-        discard self.scriptContext.postInitialize()
+        withScriptContext self, self.scriptContext:
+          discard self.scriptContext.postInitialize()
         self.initializeCalled = true
     except CatchableError:
       log(lvlError, fmt"Failed to reload config")
@@ -1801,20 +1873,31 @@ proc handleAction(self: App, action: string, arg: string): bool =
   except CatchableError:
     log(lvlError, fmt"[ed] Failed to parse arguments '{arg}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
-    return true
 
   try:
-    if self.scriptContext.isNotNil and self.scriptContext.handleGlobalAction(action, args):
-      return true
+    withScriptContext self, self.scriptContext:
+      if self.scriptContext.handleGlobalAction(action, args):
+        return true
   except CatchableError:
     log(lvlError, fmt"[ed] Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
 
   try:
-    if self.wasmScriptContext.isNotNil and self.wasmScriptContext.handleGlobalAction(action, args):
-      return true
+    withScriptContext self, self.scriptContext:
+      if self.wasmScriptContext.handleGlobalAction(action, args):
+        return true
   except CatchableError:
     log(lvlError, fmt"[ed] Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
+    log(lvlError, getCurrentException().getStackTrace())
+
+  try:
+    if self.scriptActions.contains(action):
+      let res = self.callScriptAction(action, args)
+      if res.isNotNil:
+        log lvlInfo, fmt"[ed] callScriptAction {action} returned {res}"
+        return true
+  except CatchableError:
+    log(lvlError, fmt"[ed] Failed to dispatch action '{action} {arg}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
 
   try:
@@ -1829,11 +1912,18 @@ when not defined(js):
   proc createAddins(): VmAddins =
     addCallable(myImpl):
       proc postInitialize(): bool
+    addCallable(myImpl):
       proc handleGlobalAction(action: string, args: JsonNode): bool
+    addCallable(myImpl):
       proc handleEditorAction(id: EditorId, action: string, args: JsonNode): bool
+    addCallable(myImpl):
       proc handleEditorModeChanged(id: EditorId, oldMode: string, newMode: string)
+    addCallable(myImpl):
       proc handleUnknownPopupAction(id: EditorId, action: string, args: JsonNode): bool
+    addCallable(myImpl):
       proc handleCallback(id: int, args: JsonNode): bool
+    addCallable(myImpl):
+      proc handleScriptAction(name: string, args: JsonNode): JsonNode
 
     return implNimScriptModule(myImpl)
 
@@ -1844,7 +1934,7 @@ when not defined(js):
 
   createScriptContextConstructor(addins)
 
-  proc createScriptContext(filepath: string, searchPaths: seq[string]): ScriptContext = createScriptContextNim(filepath, searchPaths)
+  proc createScriptContext(filepath: string, searchPaths: seq[string]): Future[ScriptContext] = createScriptContextNim(filepath, searchPaths)
 
 when not defined(js):
   import wasm3, wasm3/[wasm3c, wasmconversions]

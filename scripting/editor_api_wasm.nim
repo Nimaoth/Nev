@@ -1,5 +1,5 @@
-import std/[json, jsonutils]
-import "../src/scripting_api"
+import std/[json]
+import scripting_api, myjsonutils
 
 ## This file is auto generated, don't modify.
 
@@ -151,6 +151,57 @@ proc openAbsytreeServerWorkspace*(url: string) =
       url.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_openAbsytreeServerWorkspace_void_App_string_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_callScriptAction_JsonNode_App_string_JsonNode_wasm(arg: cstring): cstring {.
+    importc.}
+proc callScriptAction*(context: string; args: JsonNode): JsonNode =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      context
+    else:
+      context.toJson()
+  argsJson.add block:
+    when JsonNode is JsonNode:
+      args
+    else:
+      args.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_callScriptAction_JsonNode_App_string_JsonNode_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_addScriptAction_void_App_string_string_seq_tuple_name_string_typ_string_string_wasm(
+    arg: cstring): cstring {.importc.}
+proc addScriptAction*(name: string; docs: string = "";
+                      params: seq[tuple[name: string, typ: string]] = @[];
+                      returnType: string = "") =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      name
+    else:
+      name.toJson()
+  argsJson.add block:
+    when string is JsonNode:
+      docs
+    else:
+      docs.toJson()
+  argsJson.add block:
+    when seq[tuple[name: string, typ: string]] is JsonNode:
+      params
+    else:
+      params.toJson()
+  argsJson.add block:
+    when string is JsonNode:
+      returnType
+    else:
+      returnType.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_addScriptAction_void_App_string_string_seq_tuple_name_string_typ_string_string_wasm(
       argsJsonString.cstring)
 
 

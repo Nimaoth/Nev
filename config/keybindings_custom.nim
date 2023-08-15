@@ -1,9 +1,9 @@
 import absytree_runtime, keybindings_normal
 
-proc loadVimBindings*() =
-  loadNormalBindings()
+proc loadCustomKeybindings*() {.scriptActionWasmNims("load-custom-keybindings").} =
+  loadNormalKeybindings()
 
-  info "Applying Vim keybindings"
+  info "Applying Custom keybindings"
 
   # clearCommands("editor.text")
   # for id in getAllEditors():

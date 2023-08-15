@@ -1,7 +1,7 @@
 import std/[strformat, tables, macros, json, strutils, sugar, sequtils, genasts]
 
-import absytree_api, event, util
-export absytree_api, strformat, tables, json, strutils, sugar, sequtils, scripting_api
+import absytree_api, event, util, wrap
+export absytree_api, util, strformat, tables, json, strutils, sugar, sequtils, scripting_api
 
 type AnyDocumentEditor = TextDocumentEditor | AstDocumentEditor
 
@@ -10,6 +10,7 @@ var voidCallbacks = initTable[int, proc(args: JsonNode): void]()
 var boolCallbacks = initTable[int, proc(args: JsonNode): bool]()
 var onEditorModeChanged*: Event[tuple[editor: EditorId, oldMode: string, newMode: string]]
 var callbackId = 0
+var scriptActions = initTable[string, proc(args: JsonNode): JsonNode]()
 
 when defined(wasm):
   const env* = "wasm"
@@ -84,6 +85,11 @@ proc handleCallbackImpl*(id: int, args: JsonNode): bool =
     return boolCallbacks[id](args)
   return false
 
+proc handleScriptActionImpl*(name: string, args: JsonNode): JsonNode =
+  if scriptActions.contains(name):
+    return scriptActions[name](args)
+  return nil
+
 proc runAction*(id: EditorId, action: string, arg: string = "") =
   scriptRunActionFor(id, action, arg)
 
@@ -144,12 +150,11 @@ var keysPrefix: string = ""
 
 template withKeys*(keys: varargs[string], body: untyped): untyped =
   for key in keys:
-    with keysPrefix, keysPrefix & key:
-      body
-
-# template withKeys*(keys: string, body: untyped): untyped =
-#   with keysPrefix, keysPrefix & keys:
-#     body
+    let oldValue = keysPrefix
+    keysPrefix = keysPrefix & key
+    defer:
+      keysPrefix = oldValue
+    body
 
 macro addCommand*(context: string, keys: string, action: string, args: varargs[untyped]): untyped =
   var stmts = nnkStmtList.newTree()
@@ -295,6 +300,59 @@ when defined(wasm):
   proc my_dealloc*(p: pointer) {.wasmexport.} =
     dealloc(p)
 
-
 else:
   template wasmexport*(t: typed): untyped = t
+
+proc exportImpl(name: string, implementNims: bool, def: NimNode): NimNode =
+  # defer:
+  #   echo result.repr
+
+  when defined(wasm):
+    let jsonWrapperName = (def.name.repr & "Json").ident
+    let jsonWrapper = createJsonWrapper(def, jsonWrapperName)
+
+    let documentation = def.getDocumentation()
+    let documentationStr = documentation.map((it) => it.strVal).get("").newLit
+
+    let returnType = if def[3][0].kind == nnkEmpty: "" else: def[3][0].repr
+    var params: seq[(string, string)] = @[]
+    for param in def[3][1..^1]:
+      params.add (param[0].repr, param[1].repr)
+
+    return genAst(name, def, jsonWrapper, jsonWrapperName, documentationStr, params, returnType):
+      def
+      jsonWrapper
+
+      static:
+        echo "Expose script action ", name, " (", params, ", ", returnType, ")"
+      scriptActions[name] = jsonWrapperName
+      addScriptAction(name, documentationStr, params, returnType)
+
+  else:
+    let argsName2 = genSym(nskVar)
+    let (addArgs, argsName) = def.serializeArgumentsToJson(argsName2)
+    var call = genAst(name, argsName, addArgs):
+      # var argsName = newJArray()
+      addArgs
+      let temp = callScriptAction(name, argsName)
+      if not temp.isNil:
+        return
+
+    if implementNims:
+      def.body.insert(0, call)
+    else:
+      def.body = call
+
+    return def
+
+macro scriptActionWasm*(name: static string, def: untyped): untyped =
+  ## Register as a script action
+  ## If called in wasm then it directly runs the function
+  ## If called in nimscript the script action is executed instead
+  return exportImpl(name, false, def)
+
+macro scriptActionWasmNims*(name: static string, def: untyped): untyped =
+  ## Register as a script action
+  ## If called in wasm then it directly runs the function
+  ## If called in nimscript the script action. If no script action is found, runs directly in nimscript
+  return exportImpl(name, true, def)

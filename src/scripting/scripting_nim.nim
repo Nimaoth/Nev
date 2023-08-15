@@ -1,7 +1,7 @@
 when defined(js):
   {.error: "scripting_nim.nim does not work in js backend. Use scripting_js.nim instead.".}
 
-import std/[os, osproc, tables, strformat, json, strutils, macrocache, macros, genasts, times]
+import std/[os, osproc, tables, strformat, json, strutils, macrocache, macros, genasts, times, sugar]
 import fusion/matching
 import compiler/[renderer, ast, llstream, lineinfos]
 import compiler/options as copts
@@ -14,7 +14,10 @@ import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocume
 
 export scripting_base, nimscripter
 
+type InterpreterState = enum Uninitialized, Initializing, Initialized
+
 type ScriptContextNim* = ref object of ScriptContext
+  state: InterpreterState = Uninitialized
   inter*: Option[Interpreter]
   script: NimScriptPath
   apiModule: string # The module in which functions exposed to the script will be implemented using `implementRoutine`
@@ -60,24 +63,90 @@ proc setGlobalVariable*[T](intr: Option[Interpreter] or Interpreter; name: strin
   else:
     raise newException(VmSymNotFound, name & " is not a global symbol in the script.")
 
-const defaultDefines = @{"nimscript": "true", "nimconfig": "true"}
+const defaultDefines = @{"nimscript": "true", "nimvm": "true"}
 
 proc getSearchPath(path: string): seq[string] =
   result.add path
   for dir in walkDirRec(path, {pcDir}):
     result.add dir
 
+proc evalString(intr: Interpreter; code: string) =
+  let stream = llStreamOpen(code)
+  intr.evalScript(stream)
+  llStreamClose(stream)
+
+proc createInterpreterAsync(args: (ptr Interpreter, string, seq[string], seq[(string, string)], VMAddins, seq[(string, VMAddins)], string)): void =
+  {.gcsafe.}:
+    setUseIc(true)
+
+    var intr = createInterpreter(args[1], args[2], flags = {allowInfiniteLoops}, defines = args[3])
+
+    for uProc in args[4].procs:
+      intr.implementRoutine("Absytree", args[6], uProc.name, uProc.vmProc)
+
+    for (module, addins) in args[5]:
+      for uProc in addins.procs:
+        intr.implementRoutine("Absytree", module, uProc.name, uProc.vmProc)
+
+    setUseIc(true)
+
+    let initCode = """
+import std/[strformat, sequtils, macros, tables, options, sugar, strutils, genasts, json, typetraits]
+
+import scripting_api, util, myjsonutils
+import absytree_runtime
+
+import keybindings_vim
+import keybindings_helix
+import keybindings_normal
+
+import languages
+    """
+    intr.evalString(initCode)
+
+    args[0][] = intr
+
+proc myCreateInterpreter(
+  script: NimScriptFile or NimScriptPath;
+  apiModule: string,
+  addins: VMAddins;
+  stdPath: string;
+  searchPaths: sink seq[string] = @[];
+  moreAddins: seq[(string, VMAddins)];
+  defines = defaultDefines): Future[Option[Interpreter]] {.async.} =
+
+  const isFile = script is NimScriptPath
+  let path = when isFile: fs.getApplicationFilePath(script.string) else: ""
+
+  var searchPaths = getSearchPath(stdPath) & searchPaths
+
+  when isFile: # If is file we want to enable relative imports
+    searchPaths.add path.parentDir
+
+  let timer = startTimer()
+  var intr: Interpreter = nil
+  when true:
+    await spawnAsync(createInterpreterAsync, (intr.addr, path, searchPaths, defines, addins, moreAddins, apiModule))
+    setUseIc(true)
+  else:
+    createInterpreterAsync((intr.addr, path, searchPaths, defines, addins, moreAddins, apiModule))
+
+  log lvlInfo, fmt"[scripting-nim] createInterpreter took {timer.elapsed.ms}ms"
+
+  return intr.option
+
 proc myLoadScript(
+  intr: Interpreter,
   script: NimScriptFile or NimScriptPath;
   apiModule: string,
   addins: VMAddins;
   postCodeAdditions: string,
-  modules: varargs[string];
+  modules: seq[string];
   vmErrorHook: proc(config: ConfigRef; info: TLineInfo; msg: string; severity: Severity) {.gcsafe.};
   stdPath: string;
   searchPaths: sink seq[string] = @[];
   moreAddins: seq[(string, VMAddins)];
-  defines = defaultDefines): Option[Interpreter] =
+  defines = defaultDefines) {.async.} =
   ## Loads an interpreter from a file or from string, with given addtions and userprocs.
   ## To load from the filesystem use `NimScriptPath(yourPath)`.
   ## To load from a string use `NimScriptFile(yourFile)`.
@@ -88,69 +157,46 @@ proc myLoadScript(
   ## `searchPaths` optional paths one can use to supply libraries or packages for the
   const isFile = script is NimScriptPath
 
-  let path = when isFile: fs.getApplicationFilePath(script.string) else: ""
   var script = script.string
   when isFile:
     try:
       script = fs.loadApplicationFile(script)
     except CatchableError:
-      return Interpreter.none
+      return
 
   var additions = addins.additions
   for `mod` in modules: # Add modules
     additions.insert("import " & `mod` & "\n", 0)
 
-  var searchPaths = getSearchPath(stdPath) & searchPaths
-
-  when isFile: # If is file we want to enable relative imports
-    searchPaths.add path.parentDir
-
-  let
-    intr = createInterpreter(path, searchPaths, flags = {allowInfiniteLoops},
-      defines = defines
-    )
-
-  for uProc in addins.procs:
-    intr.implementRoutine("Absytree", apiModule, uProc.name, uProc.vmProc)
-
-  for (module, addins) in moreAddins:
-    for uProc in addins.procs:
-      intr.implementRoutine("Absytree", module, uProc.name, uProc.vmProc)
-
   intr.registerErrorHook(vmErrorHook)
   try:
     additions.add script
-    additions.add addins.postCodeAdditions
     additions.add "\n"
     additions.add postCodeAdditions
+    additions.add "\n"
+    additions.add addins.postCodeAdditions
     when defined(debugScript):
       writeFile("debugscript.nims", additions)
+
+    log lvlInfo, fmt"[scripting-nim] evalScript"
+    let timer = startTimer()
     intr.evalScript(llStreamOpen(additions))
-    result = option(intr)
+    log lvlInfo, fmt"[scripting-nim] evalScript took {timer.elapsed.ms}ms"
+
   except VMQuit: discard
 
-proc mySafeLoadScriptWithState*(
-  intr: var Option[Interpreter];
-  script: NimScriptFile or NimScriptPath;
-  apiModule: string,
-  addins: VMAddins = VMaddins();
-  postCodeAdditions: string,
-  modules: varargs[string];
-  vmErrorHook: proc(config: ConfigRef; info: TLineInfo; msg: string; severity: Severity) {.gcsafe.};
-  stdPath: string;
-  searchPaths: sink seq[string] = @[];
-  defines = defaultDefines) =
+proc mySafeLoadScriptWithState*(self: ScriptContextNim, modules: seq[string]) {.async.} =
   ## Same as loadScriptWithState but saves state then loads the intepreter into `intr` if there were no script errors.
   ## Tries to keep the interpreter running.
-  let state =
-    if intr.isSome:
-      intr.get.saveState()
-    else:
-      @[]
-  let tempIntr = myLoadScript(script, apiModule, addins, postCodeAdditions, modules, vmErrorHook, stdPath, searchPaths, timerAddins, defines)
-  if tempIntr.isSome:
-    intr = tempIntr
-    intr.get.loadState(state)
+  let state = self.inter.map((i) => i.saveState())
+  self.state = Initializing
+  let newIntr = await myCreateInterpreter(self.script, self.apiModule, self.addins, self.stdPath, self.searchPaths, timerAddins, defaultDefines)
+  self.state = Initialized
+  if newIntr.getSome(inter):
+    self.inter = inter.some
+    await myLoadScript(inter, self.script, self.apiModule, self.addins, self.postCodeAdditions, modules, errorHook, self.stdPath, self.searchPaths, timerAddins, defaultDefines)
+    if state.getSome(state):
+      inter.loadState(state)
 
 proc myFindNimStdLib(): string =
   ## Tries to find a path to a valid "system.nim" file.
@@ -164,7 +210,7 @@ proc myFindNimStdLib(): string =
     log lvlError, fmt"Failed to find nim std path using nim dump: {getCurrentExceptionMsg()}"
     return ""
 
-proc newScriptContext*(path: string, apiModule: string, addins: VMAddins, postCodeAdditions: string, searchPaths: seq[string]): ScriptContextNim =
+proc newScriptContext*(path: string, apiModule: string, addins: VMAddins, postCodeAdditions: string, searchPaths: seq[string]): Future[ScriptContextNim] {.async.} =
   new result
   result.script = NimScriptPath(path)
   result.apiModule = apiModule
@@ -178,22 +224,35 @@ proc newScriptContext*(path: string, apiModule: string, addins: VMAddins, postCo
 
   log(lvlInfo, fmt"Creating new script context (search paths: {searchPaths}, std path: {result.stdPath})")
 
-  result.inter = myLoadScript(result.script, apiModule, addins, postCodeAdditions, ["scripting_api", "std/json"], stdPath = result.stdPath, searchPaths = searchPaths, vmErrorHook = errorHook, moreAddins = timerAddins)
-  if result.inter.isNone:
-    log(lvlError, fmt"Failed to create script context")
-
 method init*(self: ScriptContextNim, path: string): Future[void] {.async.} =
-  discard
+  self.state = Initializing
+  self.inter = await myCreateInterpreter(self.script, self.apiModule, self.addins, self.stdPath, self.searchPaths, timerAddins, defaultDefines)
+  self.state = Initialized
+  if self.inter.getSome(inter):
+    await myLoadScript(
+      inter,
+      self.script, self.apiModule, self.addins, self.postCodeAdditions, @["scripting_api", "std/json", "util", "myjsonutils"],
+      stdPath = self.stdPath, searchPaths = self.searchPaths, vmErrorHook = errorHook, moreAddins = timerAddins)
+  if self.inter.isNone:
+    log(lvlError, fmt"Failed to create script context")
 
 method reload*(ctx: ScriptContextNim) =
   log(lvlInfo, fmt"Reloading script context (search paths: {ctx.searchPaths})")
-  ctx.inter.mySafeLoadScriptWithState(ctx.script, ctx.apiModule, ctx.addins, ctx.postCodeAdditions, ["scripting_api", "std/json"], stdPath = stdPath, searchPaths = ctx.searchPaths, vmErrorHook = errorHook)
+  asyncCheck ctx.mySafeLoadScriptWithState(@["scripting_api", "std/json"])
 
 proc generateScriptingApi*(addins: VMAddins) {.compileTime.} =
   if exposeScriptingApi:
     echo "Generate scripting api files"
 
-    var script_internal_content = "import std/[json]\nimport \"../src/scripting_api\"\n\n## This file is auto generated, don't modify.\n\n"
+    var script_internal_content = """
+      ## This file is auto generated, don't modify.
+
+      import std/[json]
+      import scripting_api
+
+      template varargs*() {.pragma.}
+
+    """.unindent(8, " ")
     createDir("scripting")
     createDir("int")
 
@@ -220,10 +279,9 @@ proc generateScriptingApi*(addins: VMAddins) {.compileTime.} =
 
     generateScriptingApiPerModule()
 
-macro createScriptContextConstructor*(addins: untyped): untyped =
-  return quote do:
-    proc createScriptContextNim(filepath: string, searchPaths: seq[string]): ScriptContext =
-      return newScriptContext(filepath, "absytree_internal", `addins`, "include absytree_runtime_impl", searchPaths)
+template createScriptContextConstructor*(addins: untyped): untyped =
+  proc createScriptContextNim(filepath: string, searchPaths: seq[string]): Future[ScriptContext] {.async.} =
+    return await newScriptContext(filepath, "absytree_internal", addins, "include absytree_runtime_impl", searchPaths)
 
 macro invoke*(self: ScriptContext; pName: untyped;
     args: varargs[typed]; returnType: typedesc = void): untyped =
@@ -236,8 +294,11 @@ macro invoke*(self: ScriptContext; pName: untyped;
   call.add nnkExprEqExpr.newTree(ident"returnType", returnType)
 
   return genAst(self, call):
+    if self.state != Initialized:
+      log lvlError, fmt"[scripting-nim] ScriptContext not initialized yet. State is {self.state}"
+      return
     if self.inter.isNone:
-      log(lvlError, fmt"Script context is none")
+      log(lvlError, fmt"[scripting-nim] Interpreter is none. State is {self.state}")
       return
     call
 
@@ -258,3 +319,6 @@ method postInitialize*(self: ScriptContextNim): bool =
 
 method handleCallback*(self: ScriptContextNim, id: int, arg: JsonNode): bool =
   return self.invoke(handleCallback, id, arg, returnType = bool)
+
+method handleScriptAction*(self: ScriptContextNim, name: string, args: JsonNode): JsonNode =
+  return self.invoke(handleScriptAction, name, args, returnType = JsonNode)

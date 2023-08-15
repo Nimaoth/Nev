@@ -31,6 +31,13 @@ proc openGithubWorkspace*(user: string; repository: string; branchOrHash: string
       repository, branchOrHash)
 proc openAbsytreeServerWorkspace*(url: string) =
   editor_openAbsytreeServerWorkspace_void_App_string_impl(url)
+proc callScriptAction*(context: string; args: JsonNode): JsonNode =
+  editor_callScriptAction_JsonNode_App_string_JsonNode_impl(context, args)
+proc addScriptAction*(name: string; docs: string = "";
+                      params: seq[tuple[name: string, typ: string]] = @[];
+                      returnType: string = "") =
+  editor_addScriptAction_void_App_string_string_seq_tuple_name_string_typ_string_string_impl(
+      name, docs, params, returnType)
 proc openLocalWorkspace*(path: string) =
   editor_openLocalWorkspace_void_App_string_impl(path)
 proc getFlag*(flag: string; default: bool = false): bool =
