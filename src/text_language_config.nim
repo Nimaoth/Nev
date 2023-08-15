@@ -1,4 +1,5 @@
-import std/[options, json, jsonutils]
+import std/[options, json]
+import myjsonutils
 
 type
   TextLanguageConfig* = ref object

@@ -1,6 +1,7 @@
-import std/[json, jsonutils, tables, strutils, options]
+import std/[json, tables, strutils, options]
 import chroma
 import custom_logger, platform/[filesystem]
+import myjsonutils
 
 type
   FontStyle* = enum Italic, Underline, Bold

@@ -1,6 +1,6 @@
-import std/[strformat, strutils, math, logging, sugar, tables, options, json, jsonutils, streams]
+import std/[strformat, strutils, math, logging, sugar, tables, options, json, streams]
 import fusion/matching, bumpy, rect_utils, vmath
-import util, document, document_editor, text/text_document, events, id, ast_ids, scripting/expose, event, input, custom_async
+import util, document, document_editor, text/text_document, events, id, ast_ids, scripting/expose, event, input, custom_async, myjsonutils
 from scripting_api as api import nil
 import custom_logger, timer, array_buffer, config_provider, app_interface
 import platform/[filesystem, platform, widgets]

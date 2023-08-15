@@ -1,5 +1,5 @@
-import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros, macrocache, options, deques, sets, json, jsonutils, sequtils, streams]
-import timer
+import std/[strformat, strutils, algorithm, math, logging, sugar, tables, macros, macrocache, options, deques, sets, json, sequtils, streams]
+import timer, myjsonutils
 import fusion/matching, fuzzy, bumpy, rect_utils, vmath, chroma
 import util, document, document_editor, text/text_editor, events, id, ast_ids, ast, scripting/expose, event, theme, input, custom_async
 import compiler, selector_popup, config_provider, app_interface

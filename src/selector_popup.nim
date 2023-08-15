@@ -1,6 +1,6 @@
-import std/[strutils, sugar, options, json, jsonutils, streams]
+import std/[strutils, sugar, options, json, streams]
 import bumpy, vmath
-import app_interface, text/text_editor, popup, events, util, rect_utils, scripting/expose, event, input, custom_async, custom_logger, cancellation_token
+import app_interface, text/text_editor, popup, events, util, rect_utils, scripting/expose, event, input, custom_async, custom_logger, cancellation_token, myjsonutils
 from scripting_api as api import nil
 
 export popup
