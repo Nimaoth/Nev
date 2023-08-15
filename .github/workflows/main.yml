@@ -25,18 +25,16 @@ jobs:
   build-absytree:
     name: Build Absytree
     runs-on: ubuntu-latest
-    #container:
+    container:
       #image: nimlang/nim:2.0.0-regular
-      #volumes:
-      #  - ${{ github.workspace }}:/app
+      volumes:
+        - ${{ github.workspace }}:/app
     steps:
       - uses: alaviss/setup-nim@0.1.1
         with:
           version: 'version-2-0'
           path: 'nim'
       - run: nim --version
-      - run: ls /home/runner/work/Absytree/Absytree/nim/bin
-      - run: ls /home/runner/.nimble/bin
 
       - name: Checkout the repo
         uses: actions/checkout@v3
@@ -110,10 +108,10 @@ jobs:
   run-tests:
     name: Run tests
     runs-on: ubuntu-latest
-    #container:
+    container:
       #image: nimlang/nim:2.0.0-regular
-      #volumes:
-      #  - ${{ github.workspace }}:/app
+      volumes:
+        - ${{ github.workspace }}:/app
     steps:
       - uses: alaviss/setup-nim@0.1.1
         with:
