@@ -35,6 +35,8 @@ jobs:
           version: 'version-2-0'
           path: 'nim'
       - run: nim --version
+      - run: ls /home/runner/work/Absytree/Absytree/nim/bin
+      - run: ls /home/runner/.nimble/bin
 
       - name: Checkout the repo
         uses: actions/checkout@v3
