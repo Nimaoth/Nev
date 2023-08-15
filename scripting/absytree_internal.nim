@@ -1,7 +1,9 @@
-import std/[json]
-import "../src/scripting_api"
-
 ## This file is auto generated, don't modify.
+
+import std/[json]
+import scripting_api
+
+template varargs*() {.pragma.}
 
 proc editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_impl*(
     self: TextDocumentEditor; cursor: Cursor; offset: int): Cursor =
@@ -511,6 +513,13 @@ proc editor_openGithubWorkspace_void_App_string_string_string_impl*(user: string
     repository: string; branchOrHash: string) =
   discard
 proc editor_openAbsytreeServerWorkspace_void_App_string_impl*(url: string) =
+  discard
+proc editor_callScriptAction_JsonNode_App_string_JsonNode_impl*(context: string;
+    args: JsonNode): JsonNode =
+  discard
+proc editor_addScriptAction_void_App_string_string_seq_tuple_name_string_typ_string_string_impl*(
+    name: string; docs: string = "";
+    params: seq[tuple[name: string, typ: string]] = @[]; returnType: string = "") =
   discard
 proc editor_openLocalWorkspace_void_App_string_impl*(path: string) =
   discard

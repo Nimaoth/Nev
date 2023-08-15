@@ -15,9 +15,16 @@ type
 
 var globalDispatchTables*: seq[DispatchTable] = @[]
 
-proc addGlobalDispatchTable*(scope: string, functions: seq[ExposedFunction]) =
+proc addGlobalDispatchTable*(scope: string, functions: openArray[ExposedFunction]) =
   var table = DispatchTable(scope: scope)
   table.functions = initTable[string, ExposedFunction]()
   for function in functions:
     table.functions[function.name] = function
   globalDispatchTables.add table
+
+proc extendGlobalDispatchTable*(scope: string, function: ExposedFunction) =
+  for table in globalDispatchTables.mitems:
+    if table.scope == scope:
+      table.functions[function.name] = function
+      return
+  addGlobalDispatchTable(scope, [function])

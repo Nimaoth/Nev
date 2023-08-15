@@ -9,7 +9,7 @@ proc setModeChangedHandler*(handler: proc(editor: TextDocumentEditor, oldMode: s
       handler(editor, arg.oldMode, arg.newMode)
   setOption("editor.text.mode-changed-handler", $id)
 
-proc loadNormalBindings*() =
+proc loadNormalKeybindings*() {.scriptActionWasmNims("load-normal-keybindings").} =
   info "Applying normal keybindings"
 
   clearCommands("editor.text")

@@ -1,5 +1,5 @@
-import std/[json, jsonutils]
-import "../src/scripting_api"
+import std/[json]
+import scripting_api, myjsonutils
 
 ## This file is auto generated, don't modify.
 

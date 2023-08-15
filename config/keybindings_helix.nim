@@ -1,7 +1,7 @@
 import absytree_runtime, keybindings_normal
 
-proc loadHelixBindings*() =
-  loadNormalBindings()
+proc loadHelixKeybindings*() {.scriptActionWasmNims("load-helix-keybindings").} =
+  loadNormalKeybindings()
 
   info "Applying Helix keybindings"
 

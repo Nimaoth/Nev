@@ -52,6 +52,8 @@ proc copySharedFilesTo(dir: string) =
   cpFile2 "src/myjsonutils.nim", dir/"src"
   cpFile2 "src/event.nim", dir/"src"
   cpFile2 "src/util.nim", dir/"src"
+  cpFile2 "src/macro_utils.nim", dir/"src"
+  cpFile2 "src/wrap.nim", dir/"src"
   cpDir2 "LICENSES", dir
   cpFile2 "LICENSE", dir
   cpFile2 "Absytree.nimble", dir

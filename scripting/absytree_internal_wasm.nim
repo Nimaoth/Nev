@@ -339,6 +339,11 @@ proc editor_clearWorkspaceCaches_void_App_impl()  {.importc.}
 proc editor_openGithubWorkspace_void_App_string_string_string_impl(user: string;
     repository: string; branchOrHash: string)  {.importc.}
 proc editor_openAbsytreeServerWorkspace_void_App_string_impl(url: string)  {.importc.}
+proc editor_callScriptAction_JsonNode_App_string_JsonNode_impl(context: string;
+    args: JsonNode): JsonNode  {.importc.}
+proc editor_addScriptAction_void_App_string_string_seq_tuple_name_string_typ_string_string_impl(
+    name: string; docs: string = "";
+    params: seq[tuple[name: string, typ: string]] = @[]; returnType: string = "")  {.importc.}
 proc editor_openLocalWorkspace_void_App_string_impl(path: string)  {.importc.}
 proc editor_getFlag_bool_App_string_bool_impl(flag: string;
     default: bool = false): bool  {.importc.}

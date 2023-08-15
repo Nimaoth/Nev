@@ -177,7 +177,7 @@ proc getSelectionForMove*(self: TextDocumentEditor; cursor: Cursor;
                           move: string; count: int = 0): Selection =
   editor_text_getSelectionForMove_Selection_TextDocumentEditor_Cursor_string_int_impl(
       self, cursor, move, count)
-proc applyMove*(self: TextDocumentEditor; args: JsonNode) =
+proc applyMove*(self: TextDocumentEditor; args {.varargs.}: JsonNode) =
   editor_text_applyMove_void_TextDocumentEditor_JsonNode_impl(self, args)
 proc deleteMove*(self: TextDocumentEditor; move: string; inside: bool = false;
                  which: SelectionCursor = SelectionCursor.Config;

@@ -1,12 +1,12 @@
 import absytree_runtime, keybindings_normal
 import timer
 
-proc loadVimBindings*() =
-  loadNormalBindings()
+proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
+  loadNormalKeybindings()
 
   let t = startTimer()
   defer:
-    infof"loadVimBindings: {t.elapsed.ms} ms"
+    infof"loadVimKeybindings: {t.elapsed.ms} ms"
 
   info "Applying Vim keybindings"
 

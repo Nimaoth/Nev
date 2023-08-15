@@ -13,6 +13,7 @@ method handleGlobalAction*(self: ScriptContext, action: string, arg: JsonNode): 
 method handleEditorModeChanged*(self: ScriptContext, editor: DocumentEditor, oldMode: string, newMode: string) {.base.} = discard
 method postInitialize*(self: ScriptContext): bool {.base.} = discard
 method handleCallback*(self: ScriptContext, id: int, arg: JsonNode): bool {.base.} = discard
+method handleScriptAction*(self: ScriptContext, name: string, args: JsonNode): JsonNode {.base.} = discard
 
 proc generateScriptingApiPerModule*() {.compileTime.} =
   var imports_content = "import \"../src/scripting_api\"\nexport scripting_api\n\n## This file is auto generated, don't modify.\n\n"
@@ -44,8 +45,8 @@ else:
       lineNumber += code.countLines - 1
 
     var script_api_content_wasm = """
-import std/[json, jsonutils]
-import "../src/scripting_api"
+import std/[json]
+import scripting_api, myjsonutils
 
 ## This file is auto generated, don't modify.
 
