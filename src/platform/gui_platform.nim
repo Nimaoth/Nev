@@ -114,7 +114,7 @@ method init*(self: GuiPlatform) =
       else: discard
 
     # debugf"rune {rune.int} '{rune}' {inputToString(rune.toInput, self.currentModifiers)}"
-    if self.lastEvent.getSome(e):
+    if self.lastEvent.isSome:
       self.lastEvent = (int64, Modifiers).none
 
     self.onRune.invoke (rune.toInput, self.currentModifiers)

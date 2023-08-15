@@ -1,4 +1,4 @@
-import std/[json, tables, strutils, sequtils]
+import std/[json, tables]
 
 type
   ExposedFunction* = object
