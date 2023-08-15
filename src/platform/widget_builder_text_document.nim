@@ -69,9 +69,8 @@ proc renderTextHighlight(panel: WPanel, app: App, startOffset: float, endOffset:
     left: left,
     right: right,
     bottom: totalLineHeight,
-    fillBackground: true,
+    flags: &{FillBackground, AllowAlpha},
     backgroundColor: color,
-    allowAlpha: true,
     lastHierarchyChange: panel.lastHierarchyChange
   ))
 
@@ -267,16 +266,16 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, complet
   var headerPart2Text: WText
   var contentPanel: WPanel
   if widget.len == 0:
-    headerPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 0)), bottom: totalLineHeight, lastHierarchyChange: frameIndex, fillBackground: true, backgroundColor: color(0, 0, 0))
+    headerPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 0)), bottom: totalLineHeight, lastHierarchyChange: frameIndex, flags: &{FillBackground}, backgroundColor: color(0, 0, 0))
     widget.add(headerPanel)
 
-    headerPart1Text = WText(text: "", sizeToContent: true, anchor: (vec2(0, 0), vec2(0, 1)), lastHierarchyChange: frameIndex, foregroundColor: textColor)
+    headerPart1Text = WText(text: "", flags: &{SizeToContent}, anchor: (vec2(0, 0), vec2(0, 1)), lastHierarchyChange: frameIndex, foregroundColor: textColor)
     headerPanel.add(headerPart1Text)
 
-    headerPart2Text = WText(text: "", sizeToContent: true, anchor: (vec2(1, 0), vec2(1, 1)), pivot: vec2(1, 0), lastHierarchyChange: frameIndex, foregroundColor: textColor)
+    headerPart2Text = WText(text: "", flags: &{SizeToContent}, anchor: (vec2(1, 0), vec2(1, 1)), pivot: vec2(1, 0), lastHierarchyChange: frameIndex, foregroundColor: textColor)
     headerPanel.add(headerPart2Text)
 
-    contentPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 1)), top: totalLineHeight, lastHierarchyChange: frameIndex, fillBackground: true, backgroundColor: color(0, 0, 0))
+    contentPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 1)), top: totalLineHeight, lastHierarchyChange: frameIndex, flags: &{FillBackground}, backgroundColor: color(0, 0, 0))
     contentPanel.maskContent = true
     widget.add(contentPanel)
 
@@ -501,17 +500,19 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, complet
         if selection.last.line == i and indexInPart >= 0.RuneIndex and indexInPart <= part.text.runeLen:
           let characterUnderCursor: Rune = if indexInPart < part.text.runeLen: part.text[indexInPart] else: ' '.Rune
           let offsetFromPartStart = if part.text.len == 0: 0.0 else: indexInPart.float32 / part.text.runeLen.float32 * width
-          subLineWidget.add(WText(
+          var w = WText(
             anchor: (vec2(0, 0), vec2(0, 0)),
             left: startOffset + offsetFromPartStart,
             right: startOffset + offsetFromPartStart + cursorWidth * charWidth,
             bottom: totalLineHeight,
-            fillBackground: self.cursorVisible,
             backgroundColor: cursorForegroundColor,
             foregroundColor: cursorBackgroundColor,
             lastHierarchyChange: frameIndex,
             text: if self.cursorVisible and isWide: $characterUnderCursor else: ""
-          ))
+          )
+
+          w.fillBackground = self.cursorVisible
+          subLineWidget.add w
 
           containsCursor = true
           cursorBounds = rect(startOffset + offsetFromPartStart, top, charWidth * cursorWidth, lineHeight)
