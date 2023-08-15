@@ -408,7 +408,7 @@ proc updateSelections(self: ModelDocumentEditor, app: App, cell: Cell, cursor: O
 
       var parent = widget.parent.WPanel
       if parent.isNotNil:
-        var cursorWidget = WPanel(top: widget.top, bottom: widget.bottom, fillBackground: true, allowAlpha: true, backgroundColor: primaryColor.withAlpha(1))
+        var cursorWidget = WPanel(top: widget.top, bottom: widget.bottom, flags: &{FillBackground, AllowAlpha}, backgroundColor: primaryColor.withAlpha(1))
 
         let text = cell.currentText
         if text.len == 0:
@@ -419,7 +419,7 @@ proc updateSelections(self: ModelDocumentEditor, app: App, cell: Cell, cursor: O
           let alpha2 = cursor.lastIndex.float / text.len.float
 
           if cursor.firstIndex != cursor.lastIndex:
-            var selectionWidget = WPanel(top: widget.top, bottom: widget.bottom, fillBackground: true, allowAlpha: true, backgroundColor: primaryColor)
+            var selectionWidget = WPanel(top: widget.top, bottom: widget.bottom, flags: &{FillBackground, AllowAlpha}, backgroundColor: primaryColor)
             selectionWidget.left = widget.left * (1 - min(alpha1, alpha2)) + widget.right * min(alpha1, alpha2)
             selectionWidget.right = widget.left * (1 - max(alpha1, alpha2)) + widget.right * max(alpha1, alpha2)
             parent.add selectionWidget
@@ -448,7 +448,7 @@ proc renderCompletions(self: ModelDocumentEditor, app: App, contentPanel: WPanel
 
   var panel = WPanel(
     left: cursorBounds.x, top: cursorBounds.yh, right: cursorBounds.x + charWidth * 60.0, bottom: cursorBounds.yh + totalLineHeight * 20.0,
-    fillBackground: true, backgroundColor: backgroundColor, lastHierarchyChange: frameIndex, maskContent: true)
+    flags: &{FillBackground}, backgroundColor: backgroundColor, lastHierarchyChange: frameIndex, maskContent: true)
   panel.layoutWidget(contentPanel.lastBounds, frameIndex, app.platform.layoutOptions)
   contentPanel.add(panel)
 
@@ -500,16 +500,16 @@ method updateWidget*(self: ModelDocumentEditor, app: App, widget: WPanel, comple
   var headerPart2Text: WText
   var contentPanel: WPanel
   if widget.len == 0:
-    headerPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 0)), bottom: totalLineHeight, lastHierarchyChange: frameIndex, fillBackground: true, backgroundColor: color(0, 0, 0))
+    headerPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 0)), bottom: totalLineHeight, lastHierarchyChange: frameIndex, flags: &{FillBackground}, backgroundColor: color(0, 0, 0))
     widget.add(headerPanel)
 
-    headerPart1Text = WText(text: "", sizeToContent: true, anchor: (vec2(0, 0), vec2(0, 1)), lastHierarchyChange: frameIndex, foregroundColor: textColor)
+    headerPart1Text = WText(text: "", flags: &{SizeToContent}, anchor: (vec2(0, 0), vec2(0, 1)), lastHierarchyChange: frameIndex, foregroundColor: textColor)
     headerPanel.add(headerPart1Text)
 
-    headerPart2Text = WText(text: "", sizeToContent: true, anchor: (vec2(1, 0), vec2(1, 1)), pivot: vec2(1, 0), lastHierarchyChange: frameIndex, foregroundColor: textColor)
+    headerPart2Text = WText(text: "", flags: &{SizeToContent}, anchor: (vec2(1, 0), vec2(1, 1)), pivot: vec2(1, 0), lastHierarchyChange: frameIndex, foregroundColor: textColor)
     headerPanel.add(headerPart2Text)
 
-    contentPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 1)), top: totalLineHeight, lastHierarchyChange: frameIndex, fillBackground: true, backgroundColor: color(0, 0, 0))
+    contentPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 1)), top: totalLineHeight, lastHierarchyChange: frameIndex, flags: &{FillBackground}, backgroundColor: color(0, 0, 0))
     contentPanel.maskContent = true
     widget.add(contentPanel)
 

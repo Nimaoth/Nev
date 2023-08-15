@@ -152,7 +152,7 @@ proc renderBlockIndent(editor: AstDocumentEditor, app: App, layout: NodeLayout, 
       let color = app.theme.color(@[fmt"editorBracketHighlight.foreground{indent}", "editor.foreground"]).withAlpha(indentLineAlpha)
 
       var panel = WPanel(left: bounds.x, right: bounds.x + indentLineWidth, top: bounds.y, bottom: bounds.yh,
-        fillBackground: true, allowAlpha: true,
+        flags: &{FillBackground, AllowAlpha},
         backgroundColor: color)
       widget.insert(0, panel)
 
@@ -179,12 +179,12 @@ proc renderVisualNodeLayout*(self: AstDocumentEditor, app: App, node: AstNode, b
         for diagnostic in diagnostics:
           var panel = WText(text: diagnostic.message,
             left: -diagnostic.message.len.float * charWidth, right: 0, top: last.yh, bottom: last.yh + totalLineHeight,
-            anchor: (vec2(1, 0), vec2(1, 0)), sizeToContent: true, foregroundColor: errorColor)
+            anchor: (vec2(1, 0), vec2(1, 0)), flags: &{SizeToContent}, foregroundColor: errorColor)
           contentWidget.add panel
           foundErrors = true
       if foundErrors:
         var panel = WPanel(left: bounds.x, right: bounds.xw, top: bounds.y, bottom: bounds.yh,
-          allowAlpha: true, fillBackground: true, drawBorder: true, backgroundColor: errorColor.withAlpha(0.25), foregroundColor: errorColor)
+          flags: &{AllowAlpha, FillBackground, DrawBorder}, backgroundColor: errorColor.withAlpha(0.25), foregroundColor: errorColor)
         contentWidget.add panel
 
   # Render outline for selected node
@@ -193,7 +193,7 @@ proc renderVisualNodeLayout*(self: AstDocumentEditor, app: App, node: AstNode, b
     let bounds = visualRange.absoluteBounds
 
     var panel = WPanel(left: bounds.x, right: bounds.xw, top: bounds.y, bottom: bounds.yh,
-      fillBackground: true, drawBorder: true, allowAlpha: true,
+      flags: &{AllowAlpha, FillBackground, DrawBorder},
       backgroundColor: app.theme.color("inputValidation.warningBorder", color(1, 1, 1)).withAlpha(0.25),
       foregroundColor: app.theme.color("inputValidation.warningBorder", rgb(255, 255, 255)))
     widget.add panel
@@ -343,7 +343,7 @@ proc renderCompletions*(self: AstDocumentEditor, app: App, widget: WPanel, frame
       let selectedDeclRect = layout.nodeToVisualNode[symbol.node.id]
       let bounds = selectedDeclRect.absoluteBounds + offset
       var panel = WPanel(left: bounds.x, right: bounds.xw, top: bounds.y, bottom: bounds.yh,
-        fillBackground: true, drawBorder: true, allowAlpha: true,
+        flags: &{AllowAlpha, FillBackground, DrawBorder},
         backgroundColor: matchColor.withAlpha(0.25),
         foregroundColor: matchColor)
       widget.add panel
@@ -353,7 +353,7 @@ proc renderCompletions*(self: AstDocumentEditor, app: App, widget: WPanel, frame
     if layout.nodeToVisualNode.contains(self.node.id):
       let visualRange = layout.nodeToVisualNode[self.node.id]
       let bounds = visualRange.absoluteBounds + offset
-      let panel = WPanel(left: bounds.x, top: bounds.yh, right: bounds.x + 100, bottom: bounds.yh + 100, fillBackground: true, backgroundColor: backgroundColor, drawBorder: true, foregroundColor: borderColor, maskContent: true)
+      let panel = WPanel(left: bounds.x, top: bounds.yh, right: bounds.x + 100, bottom: bounds.yh + 100, flags: &{FillBackground, DrawBorder, MaskContent}, backgroundColor: backgroundColor, foregroundColor: borderColor, maskContent: true)
       self.renderCompletionList(app, panel, widget.lastBounds, frameIndex, self.completions, self.selectedCompletion, false, self.scrollToCompletion, self.lastItems, self.completionsBaseIndex, self.completionsScrollOffset)
       self.lastCompletionsWidget = panel
       widget.add panel
@@ -371,16 +371,16 @@ method updateWidget*(self: AstDocumentEditor, app: App, widget: WPanel, completi
   var headerPart2Text: WText
   var contentPanel: WPanel
   if widget.len == 0:
-    headerPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 0)), bottom: totalLineHeight, lastHierarchyChange: frameIndex, fillBackground: true, backgroundColor: color(0, 0, 0))
+    headerPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 0)), bottom: totalLineHeight, lastHierarchyChange: frameIndex, flags: &{FillBackground}, backgroundColor: color(0, 0, 0))
     widget.add(headerPanel)
 
-    headerPart1Text = WText(text: "", sizeToContent: true, anchor: (vec2(0, 0), vec2(0, 1)), lastHierarchyChange: frameIndex, foregroundColor: textColor)
+    headerPart1Text = WText(text: "", flags: &{SizeToContent}, anchor: (vec2(0, 0), vec2(0, 1)), lastHierarchyChange: frameIndex, foregroundColor: textColor)
     headerPanel.add(headerPart1Text)
 
-    headerPart2Text = WText(text: "", sizeToContent: true, anchor: (vec2(1, 0), vec2(1, 1)), pivot: vec2(1, 0), lastHierarchyChange: frameIndex, foregroundColor: textColor)
+    headerPart2Text = WText(text: "", flags: &{SizeToContent}, anchor: (vec2(1, 0), vec2(1, 1)), pivot: vec2(1, 0), lastHierarchyChange: frameIndex, foregroundColor: textColor)
     headerPanel.add(headerPart2Text)
 
-    contentPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 1)), top: totalLineHeight, lastHierarchyChange: frameIndex, fillBackground: true, backgroundColor: color(0, 0, 0))
+    contentPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 1)), top: totalLineHeight, lastHierarchyChange: frameIndex, flags: &{FillBackground}, backgroundColor: color(0, 0, 0))
     contentPanel.maskContent = true
     widget.add(contentPanel)
 
@@ -438,7 +438,7 @@ method updateWidget*(self: AstDocumentEditor, app: App, widget: WPanel, completi
 
   if not self.currentlyEditedNode.isNil or self.currentlyEditedSymbol != null:
     if self.textEditorWidget.isNil:
-      self.textEditorWidget = WPanel(sizeToContent: true)
+      self.textEditorWidget = WPanel(flags: &{SizeToContent})
     self.textEditor.active = true
     self.textEditor.markDirty()
     self.textEditor.updateWidget(app, self.textEditorWidget, completionsPanel, frameIndex)

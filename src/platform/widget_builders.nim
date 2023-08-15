@@ -40,7 +40,7 @@ var widgetsPerEditor = initTable[EditorId, WPanel]()
 
 proc updateWidgetTree*(self: App, frameIndex: int) =
   if self.widget.isNil:
-    mainStack = WStack(anchor: (vec2(0, 0), vec2(1, 1)), right: -1, logLayout: false)
+    mainStack = WStack(anchor: (vec2(0, 0), vec2(1, 1)), right: -1)
     self.widget = mainStack
 
     mainPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 1)))
@@ -51,7 +51,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
     viewPanel = WPanel(anchor: (vec2(0, 0), vec2(1, 1)), bottom: -2 * self.platform.totalLineHeight)
     mainPanel.add(viewPanel)
 
-    commandLineWidget = WPanel(anchor: (vec2(0, 1), vec2(1, 1)), top: -2 * self.platform.totalLineHeight, fillBackground: true, backgroundColor: color(0, 0, 0))
+    commandLineWidget = WPanel(anchor: (vec2(0, 1), vec2(1, 1)), top: -2 * self.platform.totalLineHeight, flags: &{FillBackground}, backgroundColor: color(0, 0, 0))
     mainPanel.add(commandLineWidget)
 
     self.widget.layoutWidget(rect(vec2(0, 0), self.platform.size), frameIndex, self.platform.layoutOptions)
@@ -68,7 +68,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
     if widgetsPerEditor.contains(view.editor.id):
       widget = widgetsPerEditor[view.editor.id]
     else:
-      widget = WPanel(lastHierarchyChange: frameIndex, logLayout: false)
+      widget = WPanel(lastHierarchyChange: frameIndex)
       widgetsPerEditor[view.editor.id] = widget
 
     if i < rects.len:
@@ -102,7 +102,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
     if widgetsPerEditor.contains(popup.id):
       widget = widgetsPerEditor[popup.id]
     else:
-      widget = WPanel(backgroundColor: color(1, 0, 1), fillBackground: true, lastHierarchyChange: frameIndex, logLayout: false)
+      widget = WPanel(backgroundColor: color(1, 0, 1), flags: &{FillBackground}, lastHierarchyChange: frameIndex)
       widgetsPerEditor[popup.id] = widget
 
     widget.anchor = (vec2(0.25, 0.25), vec2(0.75, 0.75))

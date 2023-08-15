@@ -1,10 +1,13 @@
-import std/options
+import std/[options, macros, genasts]
 import vmath, bumpy, chroma
 import theme, rect_utils, custom_logger, util, id
 
 export rect_utils, vmath, bumpy
 
 type
+  WWidgetFlag* = enum SizeToContent = 0, DrawBorder = 1, FillBackground = 2, LogLayout = 3, AllowAlpha = 4, MaskContent = 5
+  WWidgetFlags* = distinct int
+
   WWidget* = ref object of RootObj
     id*: Id
     parent*: WWidget
@@ -19,11 +22,7 @@ type
     lastHierarchyChange*: int
     lastInvalidationRect*: Rect
     lastInvalidation*: int
-    sizeToContent*: bool
-    drawBorder*: bool
-    fillBackground*: bool
-    logLayout*: bool
-    allowAlpha*: bool
+    flags*: WWidgetFlags
     fontSizeIncreasePercent*: float
 
   WPanelLayoutKind* = enum
@@ -55,6 +54,37 @@ type
 
   WLayoutOptions* = object
     getTextBounds*: proc(text: string, fontSizeIncreasePercent: float = 0): Vec2
+
+func `in`*(flag: WWidgetFlag, flags: WWidgetFlags): bool {.inline.} = (flags.int and (1 shl flag.int)) != 0
+func incl*(flags: var WWidgetFlags, flag: WWidgetFlag) {.inline.} =
+  flags = (flags.int or (1 shl flag.int)).WWidgetFlags
+func excl*(flags: var WWidgetFlags, flag: WWidgetFlag) {.inline.} =
+  flags = (flags.int and not (1 shl flag.int)).WWidgetFlags
+
+macro `&`*(flags: static set[WWidgetFlag]): WWidgetFlags =
+  var res = 0.WWidgetFlags
+  for flag in flags:
+    res.incl flag
+  return genAst(res = res.int):
+    res.WWidgetFlags
+
+func sizeToContent*(self: WWidget): bool = SizeToContent in self.flags
+func drawBorder*(self: WWidget): bool = DrawBorder in self.flags
+func fillBackground*(self: WWidget): bool = FillBackground in self.flags
+func logLayout*(self: WWidget): bool = LogLayout in self.flags
+func allowAlpha*(self: WWidget): bool = AllowAlpha in self.flags
+
+func incl(x: var WWidgetFlags, y: WWidgetFlag, value: bool) =
+  if value:
+    x.incl(y)
+  else:
+    x.excl(y)
+
+proc `sizeToContent=`*(self: WWidget, value: bool) = self.flags.incl(SizeToContent, value)
+proc `drawBorder=`*(self: WWidget, value: bool) = self.flags.incl(DrawBorder, value)
+proc `fillBackground=`*(self: WWidget, value: bool) = self.flags.incl(FillBackground, value)
+proc `logLayout=`*(self: WWidget, value: bool) = self.flags.incl(LogLayout, value)
+proc `allowAlpha=`*(self: WWidget, value: bool) = self.flags.incl(AllowAlpha, value)
 
 proc width*(self: WWidget): float = self.right - self.left
 proc height*(self: WWidget): float = self.bottom - self.top
