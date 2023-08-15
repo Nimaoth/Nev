@@ -25,11 +25,17 @@ jobs:
   build-absytree:
     name: Build Absytree
     runs-on: ubuntu-latest
-    container:
-      image: nimlang/nim:2.0.0-regular
-      volumes:
-        - ${{ github.workspace }}:/app
+    #container:
+      #image: nimlang/nim:2.0.0-regular
+      #volumes:
+      #  - ${{ github.workspace }}:/app
     steps:
+      - uses: alaviss/setup-nim@0.1.1
+        with:
+          version: 'version-2-0'
+          path: 'nim'
+      - run: nim --version
+
       - name: Checkout the repo
         uses: actions/checkout@v3
       - name: add Absytree as git safe.directory so nimble can install stuff
@@ -102,10 +108,10 @@ jobs:
   run-tests:
     name: Run tests
     runs-on: ubuntu-latest
-    container:
-      image: nimlang/nim:2.0.0-regular
-      volumes:
-        - ${{ github.workspace }}:/app
+    #container:
+      #image: nimlang/nim:2.0.0-regular
+      #volumes:
+      #  - ${{ github.workspace }}:/app
     steps:
       - name: Checkout the repo
         uses: actions/checkout@v3
