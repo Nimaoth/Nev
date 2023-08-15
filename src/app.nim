@@ -241,9 +241,11 @@ proc invokeCallback*(self: App, context: string, args: JsonNode): bool =
     return false
   let id = self.callbacks[context]
   try:
-    if self.scriptContext.handleCallback(id, args):
+    if self.scriptContext.isNotNil and self.scriptContext.handleCallback(id, args):
       return true
-    return self.wasmScriptContext.handleCallback(id, args)
+    if self.wasmScriptContext.isNotNil and self.wasmScriptContext.handleCallback(id, args):
+      return true
+    return false
   except CatchableError:
     log(lvlError, fmt"[ed] Failed to run script handleCallback {id}: {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
@@ -304,9 +306,9 @@ proc handleUnknownPopupAction*(self: App, popup: Popup, action: string, arg: str
     for a in newStringStream(arg).parseJsonFragments():
       args.add a
 
-    if self.scriptContext.handleUnknownPopupAction(popup, action, args):
+    if self.scriptContext.isNotNil and self.scriptContext.handleUnknownPopupAction(popup, action, args):
       return Handled
-    if self.wasmScriptContext.handleUnknownPopupAction(popup, action, args):
+    if self.wasmScriptContext.isNotNil and self.wasmScriptContext.handleUnknownPopupAction(popup, action, args):
       return Handled
   except CatchableError:
     log(lvlError, fmt"[ed] Failed to run script handleUnknownPopupAction '{action} {arg}': {getCurrentExceptionMsg()}")
@@ -316,9 +318,9 @@ proc handleUnknownPopupAction*(self: App, popup: Popup, action: string, arg: str
 
 proc handleUnknownDocumentEditorAction*(self: App, editor: DocumentEditor, action: string, args: JsonNode): EventResponse =
   try:
-    if self.scriptContext.handleUnknownDocumentEditorAction(editor, action, args):
+    if self.scriptContext.isNotNil and self.scriptContext.handleUnknownDocumentEditorAction(editor, action, args):
       return Handled
-    if self.wasmScriptContext.handleUnknownDocumentEditorAction(editor, action, args):
+    if self.wasmScriptContext.isNotNil and self.wasmScriptContext.handleUnknownDocumentEditorAction(editor, action, args):
       return Handled
   except CatchableError:
     log(lvlError, fmt"[ed] Failed to run script handleUnknownDocumentEditorAction '{action} {args}': {getCurrentExceptionMsg()}")
@@ -328,7 +330,9 @@ proc handleUnknownDocumentEditorAction*(self: App, editor: DocumentEditor, actio
 
 proc handleModeChanged*(self: App, editor: DocumentEditor, oldMode: string, newMode: string) =
   try:
+    if self.scriptContext.isNotNil:
     self.scriptContext.handleEditorModeChanged(editor, oldMode, newMode)
+    if self.wasmScriptContext.isNotNil:
     self.wasmScriptContext.handleEditorModeChanged(editor, oldMode, newMode)
   except CatchableError:
     log(lvlError, fmt"[ed] Failed to run script handleDocumentModeChanged '{oldMode} -> {newMode}': {getCurrentExceptionMsg()}")
@@ -1800,14 +1804,14 @@ proc handleAction(self: App, action: string, arg: string): bool =
     return true
 
   try:
-    if self.scriptContext.handleGlobalAction(action, args):
+    if self.scriptContext.isNotNil and self.scriptContext.handleGlobalAction(action, args):
       return true
   except CatchableError:
     log(lvlError, fmt"[ed] Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
 
   try:
-    if self.wasmScriptContext.handleGlobalAction(action, args):
+    if self.wasmScriptContext.isNotNil and self.wasmScriptContext.handleGlobalAction(action, args):
       return true
   except CatchableError:
     log(lvlError, fmt"[ed] Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
