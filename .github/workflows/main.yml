@@ -26,22 +26,16 @@ jobs:
     name: Build Absytree
     runs-on: ubuntu-latest
     container:
-      image: ubuntu
+      image: nimlang/nim:2.0.0-regular
       volumes:
         - ${{ github.workspace }}:/app
     steps:
-      - uses: alaviss/setup-nim@0.1.1
-        with:
-          version: 'version-2-0'
-          path: 'nim'
-      - run: nim --version
-
       - name: Checkout the repo
         uses: actions/checkout@v3
       - name: add Absytree as git safe.directory so nimble can install stuff
         run: git config --global --add safe.directory /__w/Absytree/Absytree
       - name: nimble setup
-        run: PATH=/home/runner/work/Absytree/Absytree/nim/bin/:$PATH nimble setup
+        run: PATH=/github/home/.nimble/bin:$PATH nimble setup
 
       - run: apt-get update
         continue-on-error: true
@@ -109,21 +103,16 @@ jobs:
     name: Run tests
     runs-on: ubuntu-latest
     container:
-      image: ubuntu
+      image: nimlang/nim:2.0.0-regular
       volumes:
         - ${{ github.workspace }}:/app
     steps:
-      - uses: alaviss/setup-nim@0.1.1
-        with:
-          version: 'version-2-0'
-          path: 'nim'
-
       - name: Checkout the repo
         uses: actions/checkout@v3
       - name: add Absytree as git safe.directory so nimble can install stuff
         run: git config --global --add safe.directory /__w/Absytree/Absytree
       - name: nimble setup
-        run: PATH=/home/runner/work/Absytree/Absytree/nim/bin/:$PATH nimble setup
+        run: PATH=/github/home/.nimble/bin:$PATH nimble setup
 
       - name: Run tests
         run: testament --print category unit
