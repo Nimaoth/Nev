@@ -1,6 +1,6 @@
-import std/[options, algorithm, strutils, hashes, enumutils, json, jsonutils, tables]
+import std/[options, algorithm, strutils, hashes, enumutils, json, tables]
 import fusion/matching
-import util, id
+import util, id, myjsonutils
 
 type
   AstNodeKind* = enum

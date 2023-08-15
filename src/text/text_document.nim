@@ -1,8 +1,8 @@
-import std/[strutils, logging, sequtils, sugar, options, json, strformat, tables, sets, jsonutils]
+import std/[strutils, logging, sequtils, sugar, options, json, strformat, tables, sets]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import patty
-import document, document_editor, id, util, event, ../regex, custom_logger, custom_async, custom_treesitter, indent, custom_unicode
+import document, document_editor, id, util, event, ../regex, custom_logger, custom_async, custom_treesitter, indent, custom_unicode, myjsonutils
 import text_language_config
 import platform/[filesystem, widgets]
 import language/[languages, language_server_base]

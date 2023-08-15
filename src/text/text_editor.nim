@@ -1,7 +1,8 @@
-import std/[strutils, logging, sequtils, sugar, options, json, jsonutils, streams, strformat, tables, deques, sets, algorithm]
+import std/[strutils, logging, sequtils, sugar, options, json, streams, strformat, tables, deques, sets, algorithm]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import document, document_editor, events, id, util, vmath, bumpy, rect_utils, event, input, ../regex, custom_logger, custom_async, custom_treesitter, indent, fuzzy_matching, custom_unicode, dispatch_tables
+import myjsonutils
 import scripting/[expose]
 import platform/[platform, filesystem, widgets]
 import language/[language_server_base]
