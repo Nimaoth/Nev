@@ -43,7 +43,7 @@ jobs:
       - name: add Absytree as git safe.directory so nimble can install stuff
         run: git config --global --add safe.directory /__w/Absytree/Absytree
       - name: nimble setup
-        run: PATH=/home/runner/work/Absytree/Absytree/nim/bin/nimble setup
+        run: PATH=/home/runner/work/Absytree/Absytree/nim/bin/:$PATH nimble setup
 
       - run: apt-get update
         continue-on-error: true
@@ -125,7 +125,7 @@ jobs:
       - name: add Absytree as git safe.directory so nimble can install stuff
         run: git config --global --add safe.directory /__w/Absytree/Absytree
       - name: nimble setup
-        run: PATH=/home/runner/work/Absytree/Absytree/nim/bin/nimble setup
+        run: PATH=/home/runner/work/Absytree/Absytree/nim/bin/:$PATH nimble setup
 
       - name: Run tests
         run: testament --print category unit
