@@ -333,12 +333,6 @@ macro expose*(moduleName: static string, def: untyped): untyped =
   scriptFunctionWrapperBody.add callScriptFuncFromScriptFuncWrapper
   scriptFunctionWrapper[6] = scriptFunctionWrapperBody
 
-  let callScriptFuncFromJsonWithReturn = if returnType.isNone:
-    callScriptFuncFromJson
-  else:
-    quote do:
-      return `callScriptFuncFromJson`.toJson
-
   let scriptFunctionWrapperRepr = scriptFunctionWrapper.repr
   let lineNumber = def.lineInfoObj.line
 

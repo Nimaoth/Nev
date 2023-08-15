@@ -769,7 +769,7 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
       result[k] = result[k].add((oldCursor, cursor))
 
     if not self.tsParser.isNil:
-      let (end_line, end_column) = traverse(oldCursor.line, oldCursor.column, text)
+      let (_, end_column) = traverse(oldCursor.line, oldCursor.column, text)
       self.changes.add(Insert(startByte, startByte + text.len, oldCursor.column, end_column, oldCursor.line, cursor.line))
 
     inc self.version

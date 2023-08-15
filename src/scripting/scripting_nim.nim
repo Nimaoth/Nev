@@ -1,7 +1,7 @@
 when defined(js):
   {.error: "scripting_nim.nim does not work in js backend. Use scripting_js.nim instead.".}
 
-import std/[os, osproc, tables, strformat, json, strutils, macrocache, macros, genasts, times, sugar]
+import std/[os, osproc, tables, strformat, json, strutils, macrocache, macros, genasts, sugar]
 import fusion/matching
 import compiler/[renderer, ast, llstream, lineinfos]
 import compiler/options as copts
@@ -9,7 +9,7 @@ from compiler/vmdef import TSandboxFlag
 import nimscripter, nimscripter/[vmconversion, vmaddins]
 import platform/filesystem
 
-import util, custom_logger, custom_async, scripting_base, compilation_config, expose, popup, document_editor, timer
+import util, custom_logger, custom_async, scripting_base, compilation_config, popup, document_editor, timer
 import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, Popup, SelectorPopup
 
 export scripting_base, nimscripter
