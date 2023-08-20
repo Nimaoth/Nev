@@ -177,6 +177,8 @@ when not defined(js):
           "declaration": %*{
             "linkSupport": true,
           },
+          "documentSymbol": %*{
+          },
         },
         "window": %*{
           "showDocument": %*{
@@ -271,6 +273,17 @@ when not defined(js):
     ).toJson
 
     return (await client.sendRequest("textDocument/declaration", params)).to DeclarationResponse
+
+  proc getSymbols*(client: LSPClient, filename: string): Future[Response[DocumentSymbolResponse]] {.async.} =
+    # echo fmt"[getCompletions] {filename.absolutePath}:{line}:{column}"
+
+    client.cancelAllOf("textDocument/documentSymbol")
+
+    let params = DocumentSymbolParams(
+      textDocument: TextDocumentIdentifier(uri: $filename.toUri),
+    ).toJson
+
+    return (await client.sendRequest("textDocument/documentSymbol", params)).to DocumentSymbolResponse
 
   proc getCompletions*(client: LSPClient, filename: string, line: int, column: int): Future[Response[CompletionList]] {.async.} =
     # echo fmt"[getCompletions] {filename.absolutePath}:{line}:{column}"

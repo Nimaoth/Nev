@@ -1,4 +1,4 @@
-import json, strutils, tables, options, macros
+import std/[json, strutils, tables, options, macros, genasts]
 import myjsonutils
 
 macro variant(name: untyped, types: varargs[untyped]): untyped =
@@ -20,20 +20,22 @@ macro variant(name: untyped, types: varargs[untyped]): untyped =
     let isSeqLit = newLit(isSeq)
 
     let procName = ident("as" & typeName.capitalizeAscii)
-    procs.add quote do:
-      proc `procName`*(arg: `name`): Option[`t`] =
+    let ast = genAst(procName, name, t, isSeqLit):
+      proc procName*(arg: name): Option[t] =
         try:
-          when `isSeqLit`:
+          when isSeqLit:
             if arg.node.kind != JArray:
-              return `t`.none
-          return arg.node.jsonTo(`t`, Joptions(allowMissingKeys: true, allowExtraKeys: false)).some
+              return t.none
+          return arg.node.jsonTo(t, Joptions(allowMissingKeys: true, allowExtraKeys: false)).some
         except CatchableError:
-          return `t`.none
-      proc `procName`*(arg: Option[`name`]): Option[`t`] =
+          return t.none
+      proc procName*(arg: Option[name]): Option[t] =
         if arg.isSome:
-          return `procName`(arg.get)
+          return procName(arg.get)
         else:
-          return `t`.none
+          return t.none
+
+    procs.add ast
 
   return quote do:
     `variantType`
@@ -449,6 +451,55 @@ type
     itemDefaults*: bool # todo
     items*: seq[CompletionItem]
 
+  SymbolKind* = enum
+    File = 1
+    Module = 2
+    Namespace = 3
+    Package = 4
+    Class = 5
+    Method = 6
+    Property = 7
+    Field = 8
+    Constructor = 9
+    Enum = 10
+    Interface = 11
+    Function = 12
+    Variable = 13
+    Constant = 14
+    String = 15
+    Number = 16
+    Boolean = 17
+    Array = 18
+    Object = 19
+    Key = 20
+    Null = 21
+    EnumMember = 22
+    Struct = 23
+    Event = 24
+    Operator = 25
+    TypeParameter = 26
+
+  SymbolTag* = enum
+    Deprecated = 1
+
+  SymbolInformation* = object
+    name*: string
+    kind*: SymbolKind
+    tags*: seq[SymbolTag]
+    deprecated*: Option[bool]
+    location*: Location
+    containerName*: Option[string]
+
+  DocumentSymbol* = object
+    name*: string
+    detail*: Option[string]
+    kind*: SymbolKind
+    tags*: seq[SymbolTag]
+    deprecated*: Option[bool]
+    range*: Range
+    selectionRange*: Range
+    children*: seq[DocumentSymbol]
+
 type
   CompletionParams* = object
     workDoneProgress*: bool
@@ -469,13 +520,20 @@ type
     position*: Position
     partialResultToken*: Option[ProgressToken]
 
+  DocumentSymbolParams* = object
+    workDoneProgress*: bool
+    textDocument*: TextDocumentIdentifier
+    partialResultToken*: Option[ProgressToken]
+
 variant(CompletionResponseVariant, seq[CompletionItem], CompletionList)
 variant(DefinitionResponseVariant, Location, seq[Location], seq[LocationLink])
 variant(DeclarationResponseVariant, Location, seq[Location], seq[LocationLink])
+variant(DocumentSymbolResponseVariant, seq[DocumentSymbol], seq[SymbolInformation])
 
 type CompletionResponse* = CompletionResponseVariant
 type DefinitionResponse* = DefinitionResponseVariant
 type DeclarationResponse* = DeclarationResponseVariant
+type DocumentSymbolResponse* = DocumentSymbolResponseVariant
 
 variant(TextDocumentSyncVariant, TextDocumentSyncOptions, TextDocumentSyncKind)
 variant(HoverProviderVariant, bool, HoverOptions)
