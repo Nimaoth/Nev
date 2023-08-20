@@ -105,9 +105,8 @@ method getDefinition*(self: LanguageServerLSP, filename: string, location: Curso
     log(lvlError, fmt"Error: {response.error}")
     return Definition.none
 
-
   let parsedResponse = response.result
-  # echo parsedResponse
+
   if parsedResponse.asLocation().getSome(location):
     return Definition(filename: location.uri.parseUri.path.myNormalizedPath, location: (line: location.`range`.start.line, column: location.`range`.start.character)).some
 
@@ -123,6 +122,59 @@ method getDefinition*(self: LanguageServerLSP, filename: string, location: Curso
 
   log(lvlError, "No definition found")
   return Definition.none
+
+method getSymbols*(self: LanguageServerLSP, filename: string): Future[seq[Symbol]] {.async.} =
+  let response = await self.client.getSymbols(filename)
+  if response.isError:
+    log(lvlError, fmt"Error: {response.error}")
+    return @[]
+
+  let parsedResponse = response.result
+  var completions: seq[Symbol]
+
+  if parsedResponse.asDocumentSymbolSeq().getSome(symbols):
+    for s in symbols:
+      debug s
+
+  elif parsedResponse.asSymbolInformationSeq().getSome(symbols):
+    for r in symbols:
+      let symbolKind: SymbolType = case r.kind
+      # of File: 1
+      # of Module: 2
+      # of Namespace: 3
+      # of Package: 4
+      # of Class: 5
+      of Method: SymbolType.Procedure
+      # of Property: 7
+      # of Field: 8
+      # of Constructor: 9
+      # of Enum: 10
+      # of Interface: 11
+      of Function: Procedure
+      of Variable: MutableVariable
+      # of Constant: 14
+      # of String: 15
+      # of Number: 16
+      # of Boolean: 17
+      # of Array: 18
+      # of Object: 19
+      # of Key: 20
+      # of Null: 21
+      # of EnumMember: 22
+      # of Struct: 23
+      # of Event: 24
+      # of Operator: 25
+      # of TypeParameter: 26
+      else: Unknown
+
+      completions.add Symbol(
+        location: (line: r.location.range.start.line, column: r.location.range.start.character),
+        name: r.name,
+        symbolType: symbolKind,
+        filename: r.location.uri.parseUri.path.myNormalizedPath,
+      )
+
+  return completions
 
 
 method getCompletions*(self: LanguageServerLSP, languageId: string, filename: string, location: Cursor): Future[seq[TextCompletion]] {.async.} =
