@@ -18,6 +18,8 @@ import std/[parseopt, options, os]
 
 import compilation_config, custom_logger, scripting_api
 
+logCategory "main"
+
 var backend: Option[Backend] = if enableGui: Backend.Gui.some
 elif enableTerminal: Backend.Terminal.some
 else: Backend.none
@@ -155,7 +157,7 @@ proc runApp(): Future[void] {.async.} =
           poll(maxPollPerFrameMs.int)
           pollBudgetMs -= start.elapsed.ms
       except CatchableError:
-        # log(lvlError, fmt"[async] Failed to poll async dispatcher: {getCurrentExceptionMsg()}: {getCurrentException().getStackTrace()}")
+        # log(lvlError, fmt"Failed to poll async dispatcher: {getCurrentExceptionMsg()}: {getCurrentException().getStackTrace()}")
         discard
     let pollTime = pollTimer.elapsed.ms
 

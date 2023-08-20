@@ -2,6 +2,8 @@ import std/[strutils, options, json, tables, uri, strformat]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import language_server_base, event, util, app, app_interface, config_provider, text/text_editor, custom_logger, custom_async, lsp_client, myjsonutils
 
+logCategory "lsp"
+
 type LanguageServerLSP* = ref object of LanguageServer
   client: LSPClient
 
@@ -88,7 +90,7 @@ method stop*(self: LanguageServerLSP) =
 method getDefinition*(self: LanguageServerLSP, filename: string, location: Cursor): Future[Option[Definition]] {.async.} =
   let response = await self.client.getDefinition(filename, location.line, location.column)
   if response.isError:
-    log(lvlError, fmt"[LSP] Error: {response.error}")
+    log(lvlError, fmt"Error: {response.error}")
     return Definition.none
 
 
@@ -114,11 +116,11 @@ method getDefinition*(self: LanguageServerLSP, filename: string, location: Curso
 method getCompletions*(self: LanguageServerLSP, languageId: string, filename: string, location: Cursor): Future[seq[TextCompletion]] {.async.} =
   let response = await self.client.getCompletions(filename, location.line, location.column)
   if response.isError:
-    log(lvlError, fmt"[LSP] Error: {response.error}")
+    log(lvlError, fmt"Error: {response.error}")
     return @[]
 
   let completions = response.result
-  log(lvlError, fmt"[LSP] getCompletions: {completions.items.len}")
+  log(lvlError, fmt"getCompletions: {completions.items.len}")
   var completionsResult: seq[TextCompletion]
   for c in completions.items:
     # echo c

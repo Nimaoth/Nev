@@ -1,6 +1,8 @@
 import std/[macros, macrocache, strutils, json, options, tables, genasts]
 import custom_logger, custom_async, util, array_buffer, platform/filesystem
 
+logCategory "wasi"
+
 when defined(js):
   import std/jsffi
   export jsffi
@@ -235,7 +237,7 @@ when defined(js):
       echo "[WASI] fd_close"
 
     result.addFunction "fd_seek", proc(fd: int32, offset: int32, whence: int64, ret: WasmPtr): int32 =
-      debugf"[WASI] fd_seek {fd}, {offset}, {whence}"
+      debugf"fd_seek {fd}, {offset}, {whence}"
       return 70
 
     result.addFunction "clock_time_get", proc(clk_id: int32, ignored_precision: int64, ptime: WasmPtr): int32 =
@@ -244,7 +246,7 @@ when defined(js):
 
     result.addFunction "fd_write", proc(fd: int32, iovs: WasmPtr, len: int64, ret: WasmPtr): int32 =
       let memory = context["memory"]
-      # debugf"[WASI] fd_write {fd}, {len}"
+      # debugf"fd_write {fd}, {len}"
 
       proc js_fd_write(memory: JsObject, fd: int32, iovs: WasmPtr, len: int64, ret: WasmPtr): int32 {.importc.}
 

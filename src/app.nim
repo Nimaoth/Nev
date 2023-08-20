@@ -1,4 +1,4 @@
-import std/[sequtils, strformat, strutils, tables, logging, unicode, options, os, algorithm, json, macros, macrocache, sugar, streams, deques]
+import std/[sequtils, strformat, strutils, tables, unicode, options, os, algorithm, json, macros, macrocache, sugar, streams, deques]
 import input, id, events, rect_utils, document, document_editor, popup, timer, event, cancellation_token, dispatch_tables, myjsonutils
 import theme, util, custom_logger, custom_async, fuzzy_matching
 import scripting/[expose, scripting_base]
@@ -18,6 +18,8 @@ import scripting/scripting_wasm
 
 import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, ModelDocumentEditor, Popup, SelectorPopup
 from scripting_api import Backend
+
+logCategory "app"
 
 type View* = ref object
   document*: Document
@@ -267,7 +269,7 @@ proc invokeCallback*(self: App, context: string, args: JsonNode): bool =
         return true
     return false
   except CatchableError:
-    log(lvlError, fmt"[ed] Failed to run script handleCallback {id}: {getCurrentExceptionMsg()}")
+    log(lvlError, fmt"Failed to run script handleCallback {id}: {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
     return false
 
@@ -333,7 +335,7 @@ proc handleUnknownPopupAction*(self: App, popup: Popup, action: string, arg: str
       if self.wasmScriptContext.handleUnknownPopupAction(popup, action, args):
         return Handled
   except CatchableError:
-    log(lvlError, fmt"[ed] Failed to run script handleUnknownPopupAction '{action} {arg}': {getCurrentExceptionMsg()}")
+    log(lvlError, fmt"Failed to run script handleUnknownPopupAction '{action} {arg}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
 
   return Failed
@@ -347,7 +349,7 @@ proc handleUnknownDocumentEditorAction*(self: App, editor: DocumentEditor, actio
       if self.wasmScriptContext.handleUnknownDocumentEditorAction(editor, action, args):
         return Handled
   except CatchableError:
-    log(lvlError, fmt"[ed] Failed to run script handleUnknownDocumentEditorAction '{action} {args}': {getCurrentExceptionMsg()}")
+    log(lvlError, fmt"Failed to run script handleUnknownDocumentEditorAction '{action} {args}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
 
   return Failed
@@ -359,7 +361,7 @@ proc handleModeChanged*(self: App, editor: DocumentEditor, oldMode: string, newM
     withScriptContext self, self.wasmScriptContext:
       self.wasmScriptContext.handleEditorModeChanged(editor, oldMode, newMode)
   except CatchableError:
-    log(lvlError, fmt"[ed] Failed to run script handleDocumentModeChanged '{oldMode} -> {newMode}': {getCurrentExceptionMsg()}")
+    log(lvlError, fmt"Failed to run script handleDocumentModeChanged '{oldMode} -> {newMode}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
 
 proc handleAction(self: App, action: string, arg: string): bool
@@ -548,7 +550,7 @@ proc setTheme*(self: App, path: string) =
   if theme.loadFromFile(path).getSome(theme):
     self.theme = theme
   else:
-    log(lvlError, fmt"[ed] Failed to load theme {path}")
+    log(lvlError, fmt"Failed to load theme {path}")
   self.platform.requestRender()
 
 when not defined(js):
@@ -558,17 +560,17 @@ proc getCommandLineTextEditor*(self: App): TextDocumentEditor = self.commandLine
 
 proc initScripting(self: App) {.async.} =
   try:
-    log(lvlInfo, fmt"[editor] load wasm configs")
+    log(lvlInfo, fmt"load wasm configs")
     self.wasmScriptContext = new ScriptContextWasm
 
     withScriptContext self, self.wasmScriptContext:
       let t1 = startTimer()
       await self.wasmScriptContext.init("./config")
-      log(lvlInfo, fmt"[editor] init wasm configs ({t1.elapsed.ms}ms)")
+      log(lvlInfo, fmt"init wasm configs ({t1.elapsed.ms}ms)")
 
       let t2 = startTimer()
       discard self.wasmScriptContext.postInitialize()
-      log(lvlInfo, fmt"[editor] post init wasm configs ({t2.elapsed.ms}ms)")
+      log(lvlInfo, fmt"post init wasm configs ({t2.elapsed.ms}ms)")
   except CatchableError:
     log(lvlError, fmt"Failed to load wasm configs: {(getCurrentExceptionMsg())}{'\n'}{(getCurrentException().getStackTrace())}")
 
@@ -591,12 +593,12 @@ proc initScripting(self: App) {.async.} =
       self.scriptContext = await createScriptContext("./config/absytree_config.nim", searchPaths)
 
     withScriptContext self, self.scriptContext:
-      log(lvlInfo, fmt"[editor] init nim script config")
+      log(lvlInfo, fmt"init nim script config")
       await self.scriptContext.init("./config")
-      log(lvlInfo, fmt"[editor] post init nim script config")
+      log(lvlInfo, fmt"post init nim script config")
       discard self.scriptContext.postInitialize()
 
-    log(lvlInfo, fmt"[editor] finished configs")
+    log(lvlInfo, fmt"finished configs")
     self.initializeCalled = true
   except CatchableError:
     log(lvlError, fmt"Failed to load config: {(getCurrentExceptionMsg())}{'\n'}{(getCurrentException().getStackTrace())}")
@@ -940,26 +942,26 @@ proc openAbsytreeServerWorkspace*(self: App, url: string) {.expose("editor").} =
 
 proc callScriptAction*(self: App, context: string, args: JsonNode): JsonNode {.expose("editor").} =
   if not self.scriptActions.contains(context):
-    log lvlError, fmt"[app] Unknown script action '{context}'"
+    log lvlError, fmt"Unknown script action '{context}'"
     return nil
   let action = self.scriptActions[context]
   try:
     withScriptContext self, action.scriptContext:
       return action.scriptContext.handleScriptAction(context, args)
-    log lvlError, fmt"[app] No script context for action '{context}'"
+    log lvlError, fmt"No script context for action '{context}'"
     return nil
   except CatchableError:
-    log(lvlError, fmt"[ed] Failed to run script action {context}: {getCurrentExceptionMsg()}")
+    log(lvlError, fmt"Failed to run script action {context}: {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
     return nil
 
 proc addScriptAction*(self: App, name: string, docs: string = "", params: seq[tuple[name: string, typ: string]] = @[], returnType: string = "") {.expose("editor").} =
   if self.scriptActions.contains(name):
-    log lvlError, fmt"[app] Duplicate script action {name}"
+    log lvlError, fmt"Duplicate script action {name}"
     return
 
   if self.currentScriptContext.isNone:
-    log lvlError, fmt"[app] addScriptAction({name}) should only be called from a script"
+    log lvlError, fmt"addScriptAction({name}) should only be called from a script"
     return
 
   self.scriptActions[name] = ScriptAction(name: name, scriptContext: self.currentScriptContext.get)
@@ -1120,7 +1122,7 @@ proc writeFile*(self: App, path: string = "", app: bool = false) {.expose("edito
     try:
       self.views[self.currentView].document.save(path, app)
     except CatchableError:
-      log(lvlError, fmt"[ed] Failed to write file '{path}': {getCurrentExceptionMsg()}")
+      log(lvlError, fmt"Failed to write file '{path}': {getCurrentExceptionMsg()}")
       log(lvlError, getCurrentException().getStackTrace())
 
 proc loadFile*(self: App, path: string = "") {.expose("editor").} =
@@ -1131,7 +1133,7 @@ proc loadFile*(self: App, path: string = "") {.expose("editor").} =
       self.views[self.currentView].document.load(path)
       self.views[self.currentView].editor.handleDocumentChanged()
     except CatchableError:
-      log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
+      log(lvlError, fmt"Failed to load file '{path}': {getCurrentExceptionMsg()}")
       log(lvlError, getCurrentException().getStackTrace())
 
 proc loadWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder) =
@@ -1143,7 +1145,7 @@ proc loadWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder) =
       self.views[self.currentView].document.load(path)
       self.views[self.currentView].editor.handleDocumentChanged()
     except CatchableError:
-      log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
+      log(lvlError, fmt"Failed to load file '{path}': {getCurrentExceptionMsg()}")
       log(lvlError, getCurrentException().getStackTrace())
 
 proc tryOpenExisting*(self: App, path: string, folder: Option[WorkspaceFolder]): Option[DocumentEditor] =
@@ -1194,7 +1196,7 @@ proc openFile*(self: App, path: string, app: bool = false): Option[DocumentEdito
       let file = if app: fs.loadApplicationFile(path) else: fs.loadFile(path)
       return self.createAndAddView(newTextDocument(self.asConfigProvider, path, file.splitLines, app)).some
   except CatchableError:
-    log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
+    log(lvlError, fmt"Failed to load file '{path}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
     return DocumentEditor.none
 
@@ -1214,7 +1216,7 @@ proc openWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder): Optio
       return self.createAndAddView(newTextDocument(self.asConfigProvider, path, false, folder.some)).some
 
   except CatchableError:
-    log(lvlError, fmt"[ed] Failed to load file '{path}': {getCurrentExceptionMsg()}")
+    log(lvlError, fmt"Failed to load file '{path}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
     return DocumentEditor.none
 
@@ -1618,7 +1620,7 @@ proc scriptRunAction*(action: string, arg: string) {.expose("editor").} =
   discard gEditor.handleAction(action, arg)
 
 proc scriptLog*(message: string) {.expose("editor").} =
-  log(lvlInfo, fmt"[script] {message}")
+  logNoCategory lvlInfo, fmt"[script] {message}"
 
 proc setLeader*(self: App, leader: string) {.expose("editor").} =
   for config in self.eventHandlerConfigs.values:
@@ -1864,14 +1866,14 @@ genDispatcher("editor")
 addGlobalDispatchTable "editor", genDispatchTable("editor")
 
 proc handleAction(self: App, action: string, arg: string): bool =
-  log(lvlInfo, "[ed] Action '$1 $2'" % [action, arg])
+  log(lvlInfo, "Action '$1 $2'" % [action, arg])
 
   var args = newJArray()
   try:
     for a in newStringStream(arg).parseJsonFragments():
       args.add a
   except CatchableError:
-    log(lvlError, fmt"[ed] Failed to parse arguments '{arg}': {getCurrentExceptionMsg()}")
+    log(lvlError, fmt"Failed to parse arguments '{arg}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
 
   try:
@@ -1879,7 +1881,7 @@ proc handleAction(self: App, action: string, arg: string): bool =
       if self.scriptContext.handleGlobalAction(action, args):
         return true
   except CatchableError:
-    log(lvlError, fmt"[ed] Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
+    log(lvlError, fmt"Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
 
   try:
@@ -1887,23 +1889,23 @@ proc handleAction(self: App, action: string, arg: string): bool =
       if self.wasmScriptContext.handleGlobalAction(action, args):
         return true
   except CatchableError:
-    log(lvlError, fmt"[ed] Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
+    log(lvlError, fmt"Failed to run script handleGlobalAction '{action} {arg}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
 
   try:
     if self.scriptActions.contains(action):
       let res = self.callScriptAction(action, args)
       if res.isNotNil:
-        log lvlInfo, fmt"[ed] callScriptAction {action} returned {res}"
+        log lvlInfo, fmt"callScriptAction {action} returned {res}"
         return true
   except CatchableError:
-    log(lvlError, fmt"[ed] Failed to dispatch action '{action} {arg}': {getCurrentExceptionMsg()}")
+    log(lvlError, fmt"Failed to dispatch action '{action} {arg}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
 
   try:
     return dispatch(action, args).isSome
   except CatchableError:
-    log(lvlError, fmt"[ed] Failed to dispatch action '{action} {arg}': {getCurrentExceptionMsg()}")
+    log(lvlError, fmt"Failed to dispatch action '{action} {arg}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
 
   return true

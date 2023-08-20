@@ -1,6 +1,8 @@
 import std/[os, json]
 import workspace, custom_async, custom_logger
 
+logCategory "ws-local"
+
 type
   WorkspaceFolderLocal* = ref object of WorkspaceFolder
     path*: string
@@ -29,7 +31,7 @@ method getDirectoryListing*(self: WorkspaceFolderLocal, relativePath: string): F
       of pcDir:
         res.folders.add file
       else:
-        log lvlError, fmt"[ws-local] getDirectoryListing: Unhandled file type {kind} for {file}"
+        log lvlError, fmt"getDirectoryListing: Unhandled file type {kind} for {file}"
     return res
 
 proc newWorkspaceFolderLocal*(path: string): WorkspaceFolderLocal =

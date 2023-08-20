@@ -1,7 +1,9 @@
-import std/[tables, strutils, hashes, options, logging, strformat]
+import std/[tables, strutils, hashes, options, strformat]
 import fusion/matching
 import compiler, ast, util, id, query_system
 import custom_logger
+
+logCategory "twinterp"
 
 proc cacheValuesInFunction(ctx: Context, node: AstNode, values: var Table[Id, Value]) =
   case node.kind:
@@ -54,7 +56,7 @@ proc executeNodeRec(ctx: Context, fec: FunctionExecutionContext, node: AstNode, 
         return errorValue()
 
       if conditionValue.kind != vkNumber:
-        log(lvlError, fmt"[compiler] Condition of if statement must be an int but is {conditionValue}")
+        log(lvlError, fmt"Condition of if statement must be an int but is {conditionValue}")
         return errorValue()
 
       if conditionValue.intValue != 0:
@@ -80,7 +82,7 @@ proc executeNodeRec(ctx: Context, fec: FunctionExecutionContext, node: AstNode, 
       defer: index += 1
       let maxLoopIterations = fec.maxLoopIterations.get(1000)
       if index > maxLoopIterations:
-        log(lvlError, fmt"[compiler] Max loop iterations ({maxLoopIterations}) reached for {node}")
+        log(lvlError, fmt"Max loop iterations ({maxLoopIterations}) reached for {node}")
         return errorValue()
 
       let conditionValue = ctx.executeNodeRec(fec, condition, variables)
@@ -88,7 +90,7 @@ proc executeNodeRec(ctx: Context, fec: FunctionExecutionContext, node: AstNode, 
         return errorValue()
 
       if conditionValue.kind != vkNumber:
-        log(lvlError, fmt"[compiler] Condition of if statement must be an int but is {conditionValue}")
+        log(lvlError, fmt"Condition of if statement must be an int but is {conditionValue}")
         return errorValue()
 
       if conditionValue.intValue == 0:

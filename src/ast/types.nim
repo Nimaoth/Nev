@@ -4,6 +4,8 @@ import fusion/matching
 import chroma
 import util, array_table, myjsonutils, id, macro_utils, custom_logger, event, regex
 
+logCategory "types"
+
 type
   ClassId* = Id
   NodeId* = Id

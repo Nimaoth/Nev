@@ -3,6 +3,8 @@ import custom_logger, custom_async, util, custom_unicode
 
 from scripting_api import Cursor, Selection
 
+logCategory "treesitter"
+
 when defined(js):
   import std/[asyncjs]
 
@@ -188,7 +190,7 @@ else:
     var queryError: ts.TSQueryError = ts.TSQueryErrorNone
     result = TSQuery(impl: self.impl.tsQueryNew(source.cstring, source.len.uint32, addr errorOffset, addr queryError))
     if queryError != ts.TSQueryErrorNone:
-      # log(lvlError, fmt"[textedit] Failed to load highlights query for {languageId}:{errorOffset}: {queryError}: {source}")
+      # log(lvlError, fmt"Failed to load highlights query for {languageId}:{errorOffset}: {queryError}: {source}")
       return nil
 
   proc parseString*(self: TSParser, text: string, oldTree: Option[TSTree] = TSTree.none): TSTree =
@@ -389,7 +391,7 @@ proc loadLanguageDynamically*(languageId: string, config: JsonNode): Future[Opti
         return TSLanguage.none
       return language.some
     except CatchableError:
-      log(lvlError, fmt"[textedit] Failed to load language from wasm: '{languageId}': {getCurrentExceptionMsg()}")
+      log(lvlError, fmt"Failed to load language from wasm: '{languageId}': {getCurrentExceptionMsg()}")
       return TSLanguage.none
 
   else:
@@ -414,22 +416,22 @@ proc loadLanguageDynamically*(languageId: string, config: JsonNode): Future[Opti
       # @todo: unload lib
       let lib = loadLib(dllPath)
       if lib.isNil:
-        log(lvlError, fmt"[textedit] Failed to load treesitter dll for '{languageId}': '{dllPath}'")
+        log(lvlError, fmt"Failed to load treesitter dll for '{languageId}': '{dllPath}'")
         return TSLanguage.none
 
       let ctor = cast[TSLanguageCtor](lib.symAddr(ctorSymbolName.cstring))
       if ctor.isNil:
-        log(lvlError, fmt"[textedit] Failed to load treesitter dll for '{languageId}': '{dllPath}'")
+        log(lvlError, fmt"Failed to load treesitter dll for '{languageId}': '{dllPath}'")
         return TSLanguage.none
 
       let tsLanguage = ctor()
       if tsLanguage.isNil:
-        log(lvlError, fmt"[textedit] Failed to create language from dll '{languageId}': '{dllPath}'")
+        log(lvlError, fmt"Failed to create language from dll '{languageId}': '{dllPath}'")
         return TSLanguage.none
 
       return TSLanguage(impl: tsLanguage).some
     except CatchableError:
-      log(lvlError, fmt"[textedit] Failed to load language from dll: '{languageId}': {getCurrentExceptionMsg()}")
+      log(lvlError, fmt"Failed to load language from dll: '{languageId}': {getCurrentExceptionMsg()}")
       return TSLanguage.none
 
 proc loadLanguage*(languageId: string, config: JsonNode): Future[Option[TSLanguage]] {.async.} =

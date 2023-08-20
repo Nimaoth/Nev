@@ -1,6 +1,8 @@
 import std/[os]
 import filesystem, custom_logger
 
+logCategory "fs-desktop"
+
 type FileSystemDesktop* = ref object of FileSystem
   discard
 

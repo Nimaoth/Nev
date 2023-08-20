@@ -1,6 +1,8 @@
 import std/[strformat, strutils, tables, algorithm, unicode, sequtils]
 import custom_logger
 
+logCategory "input"
+
 const
   INPUT_ENTER* = -1
   INPUT_ESCAPE* = -2

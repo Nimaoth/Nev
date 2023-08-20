@@ -2,6 +2,7 @@ when defined(js):
   {.error: "scripting_nim.nim does not work in js backend. Use scripting_js.nim instead.".}
 
 import std/[os, osproc, tables, strformat, json, strutils, macrocache, macros, genasts, sugar]
+from logging import nil
 import fusion/matching
 import compiler/[renderer, ast, llstream, lineinfos]
 import compiler/options as copts
@@ -14,6 +15,8 @@ import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocume
 
 export scripting_base, nimscripter
 
+logCategory "scripting-wasm"
+
 type InterpreterState = enum Uninitialized, Initializing, Initialized
 
 type ScriptContextNim* = ref object of ScriptContext
@@ -25,8 +28,6 @@ type ScriptContextNim* = ref object of ScriptContext
   postCodeAdditions: string # Text which gets appended to the script before being executed
   searchPaths: seq[string]
   stdPath: string
-
-let stdPath = "C:/Users/nimao/.choosenim/toolchains/nim-2.0.0/lib"
 
 let loggerPtr = addr logger
 
@@ -49,7 +50,7 @@ proc errorHook(config: ConfigRef; info: TLineInfo; msg: string; severity: Severi
     var line = info.line
     if fileName == "absytree_config":
       line -= 935
-    loggerPtr[].log(lvlError, fmt"[vm {severity}]: {fileName}:{line}:{(info.col + 1)} {msg}.")
+    logging.log(loggerPtr[], lvlError, fmt"[vm {severity}]: {fileName}:{line}:{(info.col + 1)} {msg}.")
     raise (ref VMQuit)(info: info, msg: msg)
 
 proc setGlobalVariable*[T](intr: Option[Interpreter] or Interpreter; name: string, value: T) =
@@ -131,7 +132,7 @@ proc myCreateInterpreter(
   else:
     createInterpreterAsync((intr.addr, path, searchPaths, defines, addins, moreAddins, apiModule))
 
-  log lvlInfo, fmt"[scripting-nim] createInterpreter took {timer.elapsed.ms}ms"
+  log lvlInfo, fmt"createInterpreter took {timer.elapsed.ms}ms"
 
   return intr.option
 
@@ -178,10 +179,10 @@ proc myLoadScript(
     when defined(debugScript):
       writeFile("debugscript.nims", additions)
 
-    log lvlInfo, fmt"[scripting-nim] evalScript"
+    log lvlInfo, fmt"evalScript"
     let timer = startTimer()
     intr.evalScript(llStreamOpen(additions))
-    log lvlInfo, fmt"[scripting-nim] evalScript took {timer.elapsed.ms}ms"
+    log lvlInfo, fmt"evalScript took {timer.elapsed.ms}ms"
 
   except VMQuit: discard
 
@@ -226,9 +227,9 @@ proc newScriptContext*(path: string, apiModule: string, addins: VMAddins, postCo
 
   result.stdPath = myFindNimStdLib()
   if result.stdPath == "":
-    result.stdPath = stdPath
+    log lvlError, "Failed to find nim std path"
 
-  log(lvlInfo, fmt"Creating new script context (search paths: {searchPaths}, std path: {result.stdPath})")
+  log lvlInfo, fmt"Creating new script context (search paths: {searchPaths}, std path: {result.stdPath})"
 
 method init*(self: ScriptContextNim, path: string): Future[void] {.async.} =
   self.state = Initializing
@@ -301,10 +302,10 @@ macro invoke*(self: ScriptContext; pName: untyped;
 
   return genAst(self, call):
     if self.state != Initialized:
-      log lvlError, fmt"[scripting-nim] ScriptContext not initialized yet. State is {self.state}"
+      log lvlError, fmt"ScriptContext not initialized yet. State is {self.state}"
       return
     if self.inter.isNone:
-      log(lvlError, fmt"[scripting-nim] Interpreter is none. State is {self.state}")
+      log(lvlError, fmt"Interpreter is none. State is {self.state}")
       return
     call
 

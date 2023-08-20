@@ -1,6 +1,8 @@
 import std/[tables, json, options]
 import workspace, custom_async, custom_logger, async_http_client, platform/filesystem, array_buffer
 
+logCategory "ws-absytree-server"
+
 type
   DirectoryListingWrapper = object
     done: bool
@@ -28,7 +30,7 @@ method loadFile*(self: WorkspaceFolderAbsytreeServer, relativePath: string): Fut
   let relativePath = relativePath.normalizePathUnix
 
   let url = self.baseUrl & "/contents/" & relativePath
-  log(lvlInfo, fmt"[absytree-server] loadFile '{url}'")
+  log(lvlInfo, fmt"loadFile '{url}'")
 
   return await httpGet(url)
 
@@ -36,7 +38,7 @@ method saveFile*(self: WorkspaceFolderAbsytreeServer, relativePath: string, cont
   let relativePath = relativePath.normalizePathUnix
 
   let url = self.baseUrl & "/contents/" & relativePath
-  log(lvlInfo, fmt"[absytree-server] saveFile '{url}'")
+  log(lvlInfo, fmt"saveFile '{url}'")
 
   await httpPost(url, content)
 
@@ -44,7 +46,7 @@ method saveFile*(self: WorkspaceFolderAbsytreeServer, relativePath: string, cont
   let relativePath = relativePath.normalizePathUnix
 
   let url = self.baseUrl & "/contents/" & relativePath
-  log(lvlInfo, fmt"[absytree-server] saveFileBinary '{url}'")
+  log(lvlInfo, fmt"saveFileBinary '{url}'")
 
   await httpPost(url, content)
 

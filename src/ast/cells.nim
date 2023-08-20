@@ -3,6 +3,8 @@ import platform/[widgets]
 import types, id, util, custom_logger
 import ast_ids
 
+logCategory "cells"
+
 type
   CollectionCell* = ref object of Cell
     layout*: WPanelLayout

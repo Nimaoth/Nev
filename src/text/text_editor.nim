@@ -1,4 +1,4 @@
-import std/[strutils, logging, sequtils, sugar, options, json, streams, strformat, tables, deques, sets, algorithm]
+import std/[strutils, sequtils, sugar, options, json, streams, strformat, tables, deques, sets, algorithm]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import document, document_editor, events, id, util, vmath, bumpy, rect_utils, event, input, ../regex, custom_logger, custom_async, custom_treesitter, indent, fuzzy_matching, custom_unicode
@@ -12,6 +12,8 @@ import config_provider, app_interface
 import delayed_task
 
 export text_document, document_editor, id
+
+logCategory "texted"
 
 type
   Command = object
@@ -942,7 +944,7 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
           result.last = (result.last.line, index)
     else:
       result = cursor.toSelection
-      log(lvlError, fmt"[error] Unknown move '{move}'")
+      log(lvlError, fmt"Unknown move '{move}'")
 
 proc mapAllOrLast[T](self: seq[T], all: bool, p: proc(v: T): T): seq[T] =
   if all:
@@ -1490,7 +1492,7 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
       self.commandCountRestore = 0
       return Handled
   except CatchableError:
-    log(lvlError, fmt"[text-ed] Failed to dispatch action '{action} {args}': {getCurrentExceptionMsg()}")
+    log(lvlError, fmt"Failed to dispatch action '{action} {args}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
 
   return Ignored
@@ -1507,7 +1509,7 @@ proc handleAction(self: TextDocumentEditor, action: string, arg: string): EventR
 
     return self.handleActionInternal(action, args)
   except CatchableError:
-    log(lvlError, fmt"[editor.text] handleAction: {action}, Failed to parse args: '{arg}'")
+    log(lvlError, fmt"handleAction: {action}, Failed to parse args: '{arg}'")
     return Failed
 
 proc handleInput(self: TextDocumentEditor, input: string): EventResponse =

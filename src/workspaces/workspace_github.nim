@@ -1,6 +1,8 @@
 import std/[os, tables, json, base64, strutils, options]
 import workspace, custom_async, custom_logger, async_http_client, platform/filesystem
 
+logCategory "ws-github"
+
 type
   WorkspaceFolderGithub* = ref object of WorkspaceFolder
     baseUrl: string
@@ -32,7 +34,7 @@ method clearDirectoryCache*(self: WorkspaceFolderGithub) =
 method loadFile*(self: WorkspaceFolderGithub, relativePath: string): Future[string] {.async.} =
   let relativePath = if relativePath.startsWith("./"): relativePath[2..^1] else: relativePath
   let url = self.baseUrl & "/contents/" & relativePath & "?ref=" & self.branchOrHash
-  log(lvlInfo, fmt"[github] loadFile '{url}'")
+  log(lvlInfo, fmt"loadFile '{url}'")
 
   let token = getAccessToken()
   let response = await httpGet(url, token)
@@ -78,7 +80,7 @@ method getDirectoryListing*(self: WorkspaceFolderGithub, relativePath: string): 
   if self.cachedDirectoryListings.contains(relativePath):
     return self.cachedDirectoryListings[relativePath]
 
-  log(lvlInfo, fmt"[github] getDirectoryListing for {self.baseUrl}")
+  log(lvlInfo, fmt"getDirectoryListing for {self.baseUrl}")
 
   let token = getAccessToken()
 
@@ -87,7 +89,7 @@ method getDirectoryListing*(self: WorkspaceFolderGithub, relativePath: string): 
   elif self.pathToSha.contains(relativePath):
     self.baseUrl & "/git/trees/" & self.pathToSha[relativePath]
   else:
-    log(lvlError, fmt"[github] Failed to get directory listing for '{relativePath}'")
+    log(lvlError, fmt"Failed to get directory listing for '{relativePath}'")
     return DirectoryListing()
 
   let response = await httpGet(url, token)

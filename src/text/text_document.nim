@@ -1,4 +1,4 @@
-import std/[strutils, logging, sequtils, sugar, options, json, strformat, tables, sets]
+import std/[strutils, sequtils, sugar, options, json, strformat, tables, sets]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import patty
@@ -10,6 +10,8 @@ import workspaces/[workspace]
 import config_provider
 
 export document, document_editor, id
+
+logCategory "text"
 
 type
   UndoOpKind = enum
@@ -454,7 +456,7 @@ proc initTreesitter*(self: TextDocument): Future[void] {.async.} =
     let queryString = fs.loadApplicationFile(fmt"./languages/{languageId}/queries/highlights.scm")
     self.highlightQuery = language.get.query(queryString)
   except CatchableError:
-    log(lvlError, fmt"[textedit] No highlight queries found for '{languageId}'")
+    log(lvlError, fmt"No highlight queries found for '{languageId}'")
 
   # We now have a treesitter grammar + highlight query, so retrigger rendering
   self.notifyTextChanged()
