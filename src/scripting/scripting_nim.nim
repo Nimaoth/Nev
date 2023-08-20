@@ -203,7 +203,8 @@ proc myFindNimStdLib(): string =
   ## Returns "" on failure.
 
   try:
-    let nimdump = execProcess("nim --verbosity:0 dump --dump.format:json .", ".", [])
+    log lvlInfo, "Searching for nim std lib directory using 'nim --verbosity:0 dump --dump.format:json .'"
+    let nimdump = execProcess("nim", ".", ["--verbosity:0", "dump", "--dump.format:json", "."], options={poUsePath, poDaemon})
     let nimdumpJson = nimdump.parseJson()
     return nimdumpJson["libpath"].getStr ""
   except OSError, ValueError:

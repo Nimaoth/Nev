@@ -75,7 +75,7 @@ proc newLanguageServerNimSuggest*(filename: string, languagesServer: Option[(str
       let parts = filename.splitFile
       server.port = getFreePort()
       server.tempFilename = genTempPath("absytree_", "_" & parts.name & parts.ext).replace('\\', '/')
-      let process = startProcess("nimsuggest", args = ["--port:" & $server.port.int, filename])
+      let process = startProcess("nimsuggest", args = ["--port:" & $server.port.int, filename], options={poUsePath, poDaemon})
       if process.isNil:
         raise newException(IOError, "Failed to start process nimguggest")
       server.impl = LanguageServerImpl(kind: Process, process: process)
