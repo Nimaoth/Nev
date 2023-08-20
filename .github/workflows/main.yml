@@ -49,11 +49,11 @@ jobs:
       - if: always()
         run: nimble buildBrowser
       - if: always()
-        run: nimble buildDesktop
+        run: nimble buildDesktop --app:gui -D:forceLogToFile
 
       # windows builds
       - if: always()
-        run: nimble buildDesktopWindows
+        run: nimble buildDesktopWindows --app:gui -D:forceLogToFile
       - if: always()
         run: nimble buildAbsytreeServerWindows
       - if: always()
