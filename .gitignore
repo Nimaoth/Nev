@@ -32,6 +32,7 @@ tests/**/*.js
 release_windows
 release_linux
 release_web
+scripting/nim/lib
 
 loc.csv
 count_loc.ps1
