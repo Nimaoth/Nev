@@ -20,10 +20,10 @@ method getApplicationFilePath*(self: FileSystemDesktop, name: string): string =
 
 method loadApplicationFile*(self: FileSystemDesktop, name: string): string =
   let path = self.getApplicationFilePath name
-  log lvlInfo, "loadApplicationFile {name} -> {path}"
+  log lvlInfo, fmt"loadApplicationFile {name} -> {path}"
   return readFile(path)
 
 method saveApplicationFile*(self: FileSystemDesktop, name: string, content: string) =
   let path = self.getApplicationFilePath name
-  log lvlInfo, "saveApplicationFile {name} -> {path}"
+  log lvlInfo, fmt"saveApplicationFile {name} -> {path}"
   writeFile(path, content)

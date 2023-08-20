@@ -78,7 +78,7 @@ when enableGui:
 
   if backend.get == Gui:
     let trueColorSupport = myEnableTrueColors()
-    log lvlInfo, fmt"True colors:  {trueColorSupport}"
+    log lvlInfo, fmt"True colors: {trueColorSupport}"
 
 # Initialize renderer
 var rend: Platform = nil
