@@ -179,6 +179,9 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
     addCommand "editor", "kv", () => loadVimKeybindings()
     addCommand "editor", "kh", () => loadHelixKeybindings()
 
+    addCommandBlock "editor", "dl": lspLogVerbose(true)
+    addCommandBlock "editor", "dL": lspLogVerbose(false)
+
   addCommand "editor", "<LEADER>rlf", "load-file"
   addCommand "editor", "<LEADER>rwf", "write-file"
   addCommand "editor", "<LEADER>rSS", "write-file", "", true

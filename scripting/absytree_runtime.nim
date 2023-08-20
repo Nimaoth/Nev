@@ -150,7 +150,7 @@ var keysPrefix: string = ""
 
 template withKeys*(keys: varargs[string], body: untyped): untyped =
   for key in keys:
-    let oldValue = keysPrefix
+    let oldValue = keysPrefix & "" # do this to copy the value (only really necessary in nimscript for some reason)
     keysPrefix = keysPrefix & key
     defer:
       keysPrefix = oldValue

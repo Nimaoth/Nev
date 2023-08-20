@@ -1,4 +1,4 @@
-import std/[strutils, sequtils, sugar, options, json, strformat, tables, sets]
+import std/[os, strutils, sequtils, sugar, options, json, strformat, tables, sets]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import patty
@@ -80,6 +80,16 @@ type TextDocument* = ref object of Document
   onRequestSaveHandle*: OnRequestSaveHandle
 
   styledTextCache: Table[int, StyledLine]
+
+proc fullPath*(self: TextDocument): string =
+  if self.filename.isAbsolute:
+    return self.filename
+  if self.workspace.getSome(ws):
+    return ws.getWorkspacePath() / self.filename
+  if self.appFile:
+    return fs.getApplicationFilePath(self.filename)
+
+  return self.filename.absolutePath
 
 proc getLine*(self: TextDocument, line: int): string =
   if line < self.lines.len:
@@ -461,12 +471,22 @@ proc initTreesitter*(self: TextDocument): Future[void] {.async.} =
   # We now have a treesitter grammar + highlight query, so retrigger rendering
   self.notifyTextChanged()
 
-proc newTextDocument*(configProvider: ConfigProvider, filename: string = "", content: string | seq[string] = "", app: bool = false, language: Option[string] = string.none, languageServer: Option[LanguageServer] = LanguageServer.none): TextDocument =
+proc newTextDocument*(
+    configProvider: ConfigProvider,
+    filename: string = "",
+    content: string = "",
+    app: bool = false,
+    workspaceFolder: Option[WorkspaceFolder] = WorkspaceFolder.none,
+    language: Option[string] = string.none,
+    languageServer: Option[LanguageServer] = LanguageServer.none,
+    load: bool = false): TextDocument =
+
   new(result)
   var self = result
   self.filename = filename
   self.currentTree = nil
   self.appFile = app
+  self.workspace = workspaceFolder
   self.configProvider = configProvider
 
   self.indentStyle = IndentStyle(kind: Spaces, spaces: 2)
@@ -497,19 +517,18 @@ proc newTextDocument*(configProvider: ConfigProvider, filename: string = "", con
 
   self.content = content
 
-proc newTextDocument*(configProvider: ConfigProvider, filename: string, app: bool, workspaceFolder: Option[WorkspaceFolder], language: Option[string] = string.none, languageServer: Option[LanguageServer] = LanguageServer.none): TextDocument =
-  result = newTextDocument(configProvider, filename, "", app, language, languageServer)
-  result.workspace = workspaceFolder
-  result.load()
+  if load:
+    self.load()
 
 proc destroy*(self: TextDocument) =
+  log lvlInfo, fmt"Destroying text document {self.filename}"
   if not self.tsParser.isNil:
     self.tsParser.deinit()
     self.tsParser = nil
 
   if self.languageServer.getSome(ls):
     ls.removeOnRequestSaveHandler(self.onRequestSaveHandle)
-    ls.stop()
+    ls.disconnect()
     self.languageServer = LanguageServer.none
 
 method `$`*(self: TextDocument): string =
@@ -576,8 +595,18 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
   else:
     (string, int).none
 
-  self.languageServer = await getOrCreateLanguageServer(languageId, self.filename, config)
+  let workspaces = if self.workspace.getSome(ws):
+    echo ws.getWorkspacePath
+    @[ws.getWorkspacePath()]
+  else:
+    when declared(getCurrentDir):
+      @[getCurrentDir()]
+    else:
+      @[]
+
+  self.languageServer = await getOrCreateLanguageServer(languageId, self.filename, workspaces, config)
   if self.languageServer.getSome(ls):
+    ls.connect()
     let callback = proc (targetFilename: string): Future[void] {.async.} =
       if self.languageServer.getSome(ls):
         await ls.saveTempFile(targetFilename, self.contentString)

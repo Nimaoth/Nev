@@ -20,6 +20,7 @@ import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocume
 from scripting_api import Backend
 
 logCategory "app"
+createJavascriptPrototype("editor")
 
 type View* = ref object
   document*: Document
@@ -554,7 +555,7 @@ proc setTheme*(self: App, path: string) =
   self.platform.requestRender()
 
 when not defined(js):
-  proc createScriptContext(filepath: string, searchPaths: seq[string]): Future[ScriptContext]
+  var createScriptContext: proc(filepath: string, searchPaths: seq[string]): Future[ScriptContext] = nil
 
 proc getCommandLineTextEditor*(self: App): TextDocumentEditor = self.commandLineTextEditor.TextDocumentEditor
 
@@ -602,7 +603,6 @@ proc initScripting(self: App) {.async.} =
     self.initializeCalled = true
   except CatchableError:
     log(lvlError, fmt"Failed to load config: {(getCurrentExceptionMsg())}{'\n'}{(getCurrentException().getStackTrace())}")
-
 
 proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.} =
   var self = App()
@@ -804,7 +804,7 @@ proc createView(self: App, editorState: OpenEditor): View =
       return
   else:
     try:
-      newTextDocument(self.asConfigProvider, editorState.filename, editorState.appFile, workspaceFolder)
+      newTextDocument(self.asConfigProvider, editorState.filename, "", editorState.appFile, workspaceFolder, load=true)
     except CatchableError:
       log(lvlError, fmt"Failed to restore file {editorState.filename} from previous session: {getCurrentExceptionMsg()}")
       return
@@ -1011,7 +1011,7 @@ proc quit*(self: App) {.expose("editor").} =
 proc help*(self: App, about: string = "") {.expose("editor").} =
   const introductionMd = staticRead"../docs/introduction.md"
   let docsPath = "docs/introduction.md"
-  let textDocument = newTextDocument(self.asConfigProvider, docsPath, introductionMd, app=true)
+  let textDocument = newTextDocument(self.asConfigProvider, docsPath, introductionMd, app=true, load=true)
   textDocument.load()
   discard self.createAndAddView(textDocument)
 
@@ -1184,8 +1184,8 @@ proc openFile*(self: App, path: string, app: bool = false): Option[DocumentEdito
   defer:
     self.platform.requestRender()
 
-  if self.tryOpenExisting(path, WorkspaceFolder.none).isSome:
-    return
+  if self.tryOpenExisting(path, WorkspaceFolder.none).getSome(ed):
+    return ed.some
 
   try:
     if path.endsWith(".ast"):
@@ -1193,8 +1193,7 @@ proc openFile*(self: App, path: string, app: bool = false): Option[DocumentEdito
     elif path.endsWith(".am"):
       return self.createAndAddView(newModelDocument(path, app, WorkspaceFolder.none)).some
     else:
-      let file = if app: fs.loadApplicationFile(path) else: fs.loadFile(path)
-      return self.createAndAddView(newTextDocument(self.asConfigProvider, path, file.splitLines, app)).some
+      return self.createAndAddView(newTextDocument(self.asConfigProvider, path, "", app, load=true)).some
   except CatchableError:
     log(lvlError, fmt"Failed to load file '{path}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
@@ -1213,7 +1212,7 @@ proc openWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder): Optio
     elif path.endsWith(".am"):
       return self.createAndAddView(newModelDocument(path, false, folder.some)).some
     else:
-      return self.createAndAddView(newTextDocument(self.asConfigProvider, path, false, folder.some)).some
+      return self.createAndAddView(newTextDocument(self.asConfigProvider, path, "", false, folder.some, load=true)).some
 
   except CatchableError:
     log(lvlError, fmt"Failed to load file '{path}': {getCurrentExceptionMsg()}")
@@ -1910,35 +1909,39 @@ proc handleAction(self: App, action: string, arg: string): bool =
 
   return true
 
-when not defined(js):
-  proc createAddins(): VmAddins =
-    addCallable(myImpl):
-      proc postInitialize(): bool
-    addCallable(myImpl):
-      proc handleGlobalAction(action: string, args: JsonNode): bool
-    addCallable(myImpl):
-      proc handleEditorAction(id: EditorId, action: string, args: JsonNode): bool
-    addCallable(myImpl):
-      proc handleEditorModeChanged(id: EditorId, oldMode: string, newMode: string)
-    addCallable(myImpl):
-      proc handleUnknownPopupAction(id: EditorId, action: string, args: JsonNode): bool
-    addCallable(myImpl):
-      proc handleCallback(id: int, args: JsonNode): bool
-    addCallable(myImpl):
-      proc handleScriptAction(name: string, args: JsonNode): JsonNode
+template createNimScriptContextConstructorAndGenerateBindings*(): untyped =
+  import std/[macros, macrocache]
+  import ast_document, model_document, text/text_editor, selector_popup, lsp_client
+  when not defined(js):
+    proc createAddins(): VmAddins =
+      addCallable(myImpl):
+        proc postInitialize(): bool
+      addCallable(myImpl):
+        proc handleGlobalAction(action: string, args: JsonNode): bool
+      addCallable(myImpl):
+        proc handleEditorAction(id: EditorId, action: string, args: JsonNode): bool
+      addCallable(myImpl):
+        proc handleEditorModeChanged(id: EditorId, oldMode: string, newMode: string)
+      addCallable(myImpl):
+        proc handleUnknownPopupAction(id: EditorId, action: string, args: JsonNode): bool
+      addCallable(myImpl):
+        proc handleCallback(id: int, args: JsonNode): bool
+      addCallable(myImpl):
+        proc handleScriptAction(name: string, args: JsonNode): JsonNode
 
-    return implNimScriptModule(myImpl)
+      return implNimScriptModule(myImpl)
 
-  const addins = createAddins()
+    const addins = createAddins()
 
-  static:
-    generateScriptingApi(addins)
+    static:
+      generateScriptingApi(addins)
 
-  createScriptContextConstructor(addins)
+    createScriptContextConstructor(addins)
 
-  proc createScriptContext(filepath: string, searchPaths: seq[string]): Future[ScriptContext] = createScriptContextNim(filepath, searchPaths)
+    proc createScriptContextImpl(filepath: string, searchPaths: seq[string]): Future[ScriptContext] = createScriptContextNim(filepath, searchPaths)
+    createScriptContext = createScriptContextImpl
 
-when not defined(js):
-  import wasm3, wasm3/[wasm3c, wasmconversions]
+  when not defined(js):
+    import wasm3, wasm3/[wasm3c, wasmconversions]
 
-createEditorWasmImportConstructor()
+  createEditorWasmImportConstructor()

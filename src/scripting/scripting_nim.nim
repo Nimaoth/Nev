@@ -175,7 +175,10 @@ proc myLoadScript(
     additions.add "\n"
     additions.add postCodeAdditions
     additions.add "\n"
-    additions.add addins.postCodeAdditions
+    # @note 2023-08-20: this current generates code containing generated names which contain `, which is not a valid nim identifier
+    # but this right now only includes checks which aren't necessary for running scripts,
+    # only for reporting errors of missing functions
+    # additions.add addins.postCodeAdditions
     when defined(debugScript):
       writeFile("debugscript.nims", additions)
 

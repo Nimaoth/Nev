@@ -80,6 +80,9 @@ when enableGui:
     let trueColorSupport = myEnableTrueColors()
     log lvlInfo, fmt"True colors: {trueColorSupport}"
 
+# Do this after every import
+createNimScriptContextConstructorAndGenerateBindings()
+
 # Initialize renderer
 var rend: Platform = nil
 case backend.get

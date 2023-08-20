@@ -14,6 +14,7 @@ import delayed_task
 export text_document, document_editor, id
 
 logCategory "texted"
+createJavascriptPrototype("editor.text")
 
 type
   Command = object
@@ -93,6 +94,7 @@ proc handleInput(self: TextDocumentEditor, input: string): EventResponse
 proc showCompletionWindow(self: TextDocumentEditor)
 proc refilterCompletions(self: TextDocumentEditor)
 proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string, count: int = 0): Selection
+proc updateTargetColumn(self: TextDocumentEditor, cursor: SelectionCursor)
 
 proc clampCursor*(self: TextDocumentEditor, cursor: Cursor): Cursor = self.document.clampCursor(cursor)
 
@@ -135,6 +137,7 @@ proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
 proc `targetSelection=`*(self: TextDocumentEditor, selection: Selection) =
   self.targetSelectionsInternal = @[selection].some
   self.selection = selection
+  self.updateTargetColumn(Last)
 
 proc clampSelection*(self: TextDocumentEditor) =
   self.selections = self.clampAndMergeSelections(self.selectionsInternal)
@@ -157,6 +160,7 @@ proc startBlinkCursorTask(self: TextDocumentEditor) =
     self.blinkCursorTask.reschedule()
 
 method shutdown*(self: TextDocumentEditor) =
+  log lvlInfo, fmt"shutting down {self.document.filename}"
   self.document.destroy()
 
 # proc `=destroy`[T: object](doc: var TextDocument) =
@@ -1055,17 +1059,21 @@ proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
     return
 
   if languageServer.getSome(ls):
-    let definition = await ls.getDefinition(self.document.filename, self.selection.last)
+    let definition = await ls.getDefinition(self.document.fullPath, self.selection.last)
     if definition.getSome(d):
-      let relativePath = if self.document.workspace.getSome(workspace):
-        await workspace.getRelativePath(d.filename)
+      let (relativePath, isInSameWorkspace) = if self.document.workspace.getSome(workspace):
+        if workspace.getRelativePath(d.filename).await.getSome(filePath):
+          (filePath.some, true)
+        else:
+          (d.filename.some, false)
       else:
-        string.none
+        (d.filename.some, false)
 
+      debugf"{self.document.filename} found definition in {relativePath}: {d}"
       let path = relativePath.get(self.document.filename)
 
       if path != self.document.filename:
-        let editor: Option[DocumentEditor] = if self.document.workspace.getSome(workspace):
+        let editor: Option[DocumentEditor] = if isInSameWorkspace and self.document.workspace.getSome(workspace):
           self.app.openWorkspaceFile(path, workspace)
         else:
           self.app.openFile(path)
@@ -1077,6 +1085,7 @@ proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
 
       else:
         self.selection = d.location.toSelection
+        self.updateTargetColumn(Last)
         self.scrollToCursor()
 
 proc getCompletionSelectionAt(self: TextDocumentEditor, cursor: Cursor): Selection =
@@ -1179,7 +1188,7 @@ proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.} =
   if languageServer.getSome(ls):
     if self.completions.len == 0:
       self.completions = self.getCompletionsFromContent()
-    self.completions = await ls.getCompletions(self.document.languageId, self.document.filename, self.selection.last)
+    self.completions = await ls.getCompletions(self.document.languageId, self.document.fullPath, self.selection.last)
 
   if self.completions.len == 0:
     self.completions = self.getCompletionsFromContent()
@@ -1222,7 +1231,7 @@ proc gotoSymbolAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = await self.document.getLanguageServer()
 
   if languageServer.getSome(ls):
-    let symbols = await ls.getSymbols(self.document.filename)
+    let symbols = await ls.getSymbols(self.document.fullPath)
     if symbols.len == 0:
       return
 

@@ -15,6 +15,8 @@ proc getAbsolutePath(self: WorkspaceFolderLocal, relativePath: string): string =
 
 method isReadOnly*(self: WorkspaceFolderLocal): bool = false
 
+method getWorkspacePath*(self: WorkspaceFolderLocal): string = self.path.absolutePath
+
 method loadFile*(self: WorkspaceFolderLocal, relativePath: string): Future[string] {.async.} =
   return readFile(self.getAbsolutePath(relativePath))
 

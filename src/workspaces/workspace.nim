@@ -21,6 +21,7 @@ method clearDirectoryCache*(self: WorkspaceFolder) {.base.} = discard
 method loadFile*(self: WorkspaceFolder, relativePath: string): Future[string] {.base.} = discard
 method saveFile*(self: WorkspaceFolder, relativePath: string, content: string): Future[void] {.base.} = discard
 method saveFile*(self: WorkspaceFolder, relativePath: string, content: ArrayBuffer): Future[void] {.base.} = discard
+method getWorkspacePath*(self: WorkspaceFolder): string {.base.} = discard
 
 method getDirectoryListing*(self: WorkspaceFolder, relativePath: string): Future[DirectoryListing] {.base.} = discard
 

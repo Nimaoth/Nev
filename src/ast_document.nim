@@ -9,6 +9,7 @@ import platform/[filesystem, platform, widgets]
 import workspaces/[workspace]
 
 logCategory "ast"
+createJavascriptPrototype("editor.ast")
 
 type ExecutionOutput* = ref object
   lines*: seq[(string, Color)]
