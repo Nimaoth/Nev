@@ -4,6 +4,8 @@ import theme, rect_utils, custom_logger, util, id
 
 export rect_utils, vmath, bumpy
 
+logCategory "widgets"
+
 type
   WWidgetFlag* = enum SizeToContent = 0, DrawBorder = 1, FillBackground = 2, LogLayout = 3, AllowAlpha = 4, MaskContent = 5
   WWidgetFlags* = distinct int

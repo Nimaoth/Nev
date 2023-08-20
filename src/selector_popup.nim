@@ -5,6 +5,8 @@ from scripting_api as api import nil
 
 export popup
 
+logCategory "selector"
+
 type
   SelectorItem* = ref object of RootObj
     score*: float32

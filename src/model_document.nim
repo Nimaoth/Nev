@@ -1,4 +1,4 @@
-import std/[strformat, strutils, math, logging, sugar, tables, options, json, streams]
+import std/[strformat, strutils, math, sugar, tables, options, json, streams]
 import fusion/matching, bumpy, rect_utils, vmath
 import util, document, document_editor, text/text_document, events, id, ast_ids, scripting/expose, event, input, custom_async, myjsonutils
 from scripting_api as api import nil
@@ -10,6 +10,8 @@ import ast/[types, base_language, cells]
 import ast/base_language_wasm
 
 var project = newProject()
+
+logCategory "model"
 
 type
   CellCursor* = object
@@ -207,7 +209,7 @@ method save*(self: ModelDocument, filename: string = "", app: bool = false) =
   if self.filename.len == 0:
     raise newException(IOError, "Missing filename")
 
-  log lvlInfo, fmt"[modeldoc] Saving model source file '{self.filename}'"
+  log lvlInfo, fmt"Saving model source file '{self.filename}'"
   let serialized = self.model.toJson.pretty
 
   if self.workspace.getSome(ws):
@@ -253,7 +255,7 @@ proc handleNodeReferenceChanged(self: ModelDocument, model: Model, node: AstNode
   self.currentTransaction.operations.add ModelOperation(kind: ReferenceChange, node: node, role: role, id: oldRef)
 
 proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
-  log lvlInfo, fmt"[modeldoc] Loading model source file '{self.filename}'"
+  log lvlInfo, fmt"Loading model source file '{self.filename}'"
   try:
     var jsonText = ""
     if self.workspace.getSome(ws):
@@ -286,7 +288,7 @@ proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
     self.redoList.setLen 0
 
   except CatchableError:
-    log lvlError, fmt"[modeldoc] Failed to load model source file '{self.filename}': {getCurrentExceptionMsg()}"
+    log lvlError, fmt"Failed to load model source file '{self.filename}': {getCurrentExceptionMsg()}"
 
   self.onModelChanged.invoke (self)
 
@@ -526,7 +528,7 @@ proc handleFinishedRedoTransaction*(self: ModelDocumentEditor, document: ModelDo
   self.mCursorBeforeTransaction = self.mCursor
 
 method handleDocumentChanged*(self: ModelDocumentEditor) =
-  log(lvlInfo, fmt"[model-editor] Document changed")
+  log lvlInfo, fmt"Document changed"
   # self.selectionHistory.clear
   # self.selectionFuture.clear
   # self.finishEdit false
@@ -2261,8 +2263,8 @@ proc handleAction(self: ModelDocumentEditor, action: string, arg: string): Event
     if dispatch(action, args).isSome:
       return Handled
   except CatchableError:
-    log(lvlError, fmt"[model-ed] Failed to dispatch action '{action} {args}': {getCurrentExceptionMsg()}")
-    log(lvlError, getCurrentException().getStackTrace())
+    log lvlError, fmt"Failed to dispatch action '{action} {args}': {getCurrentExceptionMsg()}"
+    log lvlError, getCurrentException().getStackTrace()
 
   return Ignored
 

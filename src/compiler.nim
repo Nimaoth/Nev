@@ -1,4 +1,4 @@
-import std/[tables, sets, strutils, hashes, options, logging, strformat]
+import std/[tables, sets, strutils, hashes, options, strformat]
 import timer
 import fusion/matching
 import vmath
@@ -8,6 +8,8 @@ import lrucache
 import custom_logger
 
 export compiler_types
+
+logCategory "astcomp"
 
 type
   Diagnostic* = object
@@ -70,22 +72,22 @@ proc computeFunctionExecutionImpl(ctx: Context, fec: FunctionExecutionContext): 
   return computeFunctionExecutionImpl2(ctx, fec)
 
 proc recoverValue(ctx: Context, key: Dependency) =
-  log(lvlInfo, fmt"[compiler] Recovering value for {key}")
+  log(lvlInfo, fmt"Recovering value for {key}")
   if ctx.getAstNode(key.item.id).getSome(node):
     ctx.queryCacheValue[node] = errorValue()
 
 proc recoverType(ctx: Context, key: Dependency) =
-  log(lvlInfo, fmt"[compiler] Recovering type for {key}")
+  log(lvlInfo, fmt"Recovering type for {key}")
   if ctx.getAstNode(key.item.id).getSome(node):
     ctx.queryCacheType[node] = errorType()
 
 proc recoverSymbol(ctx: Context, key: Dependency) =
-  log(lvlInfo, fmt"[compiler] Recovering symbol for {key}")
+  log(lvlInfo, fmt"Recovering symbol for {key}")
   if ctx.getAstNode(key.item.id).getSome(node):
     ctx.queryCacheSymbol[node] = none[Symbol]()
 
 proc recoverSymbols(ctx: Context, key: Dependency) =
-  log(lvlInfo, fmt"[compiler] Recovering symbols for {key}")
+  log(lvlInfo, fmt"Recovering symbols for {key}")
   if ctx.getAstNode(key.item.id).getSome(node):
     ctx.queryCacheSymbols[node] = newTable[Id, Symbol]()
 
@@ -576,7 +578,7 @@ proc computeValueImpl(ctx: Context, node: AstNode): Value =
         return errorValue()
 
       if conditionValue.kind != vkNumber:
-        log(lvlError, fmt"[compiler] Condition of if statement must be an int but is {conditionValue}")
+        log(lvlError, fmt"Condition of if statement must be an int but is {conditionValue}")
         return errorValue()
 
       if conditionValue.intValue != 0:
@@ -670,7 +672,7 @@ proc computeSymbolsImpl(ctx: Context, node: AstNode): TableRef[Id, Symbol] =
 proc notifySymbolChanged*(ctx: Context, sym: Symbol) =
   ctx.depGraph.revision += 1
   ctx.depGraph.changed[(sym.getItem, -1)] = ctx.depGraph.revision
-  log(lvlInfo, fmt"[compiler] Invalidating symbol {sym.name} ({sym.id})")
+  log(lvlInfo, fmt"Invalidating symbol {sym.name} ({sym.id})")
 
 proc insertNode*(ctx: Context, node: AstNode) =
   ctx.depGraph.revision += 1
@@ -700,7 +702,7 @@ proc updateNode*(ctx: Context, node: AstNode) =
     ctx.depGraph.changed[(functionDefinition.getItem, -1)] = ctx.depGraph.revision
     parent = functionDefinition.parent
 
-  log(lvlInfo, fmt"[compiler] Invalidating node {node}")
+  log(lvlInfo, fmt"Invalidating node {node}")
 
 proc deleteNode*(ctx: Context, node: AstNode) =
   ctx.depGraph.revision += 1

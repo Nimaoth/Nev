@@ -4,6 +4,8 @@ import id, types, ast_ids
 import scripting/[wasm_builder]
 import custom_logger
 
+logCategory "bl-wasm"
+
 type
   BaseLanguageWasmCompiler* = ref object
     builder: WasmBuilder
@@ -49,7 +51,7 @@ proc genNode*(self: BaseLanguageWasmCompiler, node: AstNode) =
     generator(self, node)
   else:
     let class = node.nodeClass
-    log(lvlWarn, fmt"[genNode] Node class not implemented: {class.name}")
+    log(lvlWarn, fmt"genNode: Node class not implemented: {class.name}")
 
 proc toWasmValueType(typ: AstNode): WasmValueType =
   if typ.class == IdInt:

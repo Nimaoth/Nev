@@ -4,6 +4,8 @@ import language_server_base, util
 import custom_logger, custom_async, async_http_client, websocket
 import platform/filesystem
 
+logCategory "ls-nimsuggest"
+
 when not defined(js):
   import std/[asyncdispatch, osproc, asyncnet, tempfiles]
 else:

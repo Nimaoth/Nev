@@ -4,6 +4,8 @@ import bumpy, chroma, vmath, theme
 import compiler, ast, util, id, ast_ids
 import custom_logger
 
+logCategory "nodelayout"
+
 proc getPrecedenceForNode(ctx: Context, node: AstNode): int =
   if node.kind != Call or node.len == 0:
     return 0

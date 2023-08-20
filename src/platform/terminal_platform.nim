@@ -7,6 +7,8 @@ import std/colors as stdcolors
 
 export platform, widgets
 
+logCategory "terminal"
+
 type
   TerminalPlatform* = ref object of Platform
     buffer: TerminalBuffer
@@ -267,7 +269,7 @@ method render*(self: TerminalPlatform, widget: WWidget, frameIndex: int) =
     self.buffer.display()
     self.redrawEverything = false
   except CatchableError:
-    log(lvlError, fmt"[term-render] Failed to display buffer: {getCurrentExceptionMsg()}")
+    log(lvlError, fmt"Failed to display buffer: {getCurrentExceptionMsg()}")
     self.redrawEverything = true
 
 proc setForegroundColor(self: TerminalPlatform, color: chroma.Color) =

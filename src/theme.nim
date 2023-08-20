@@ -3,6 +3,8 @@ import chroma
 import custom_logger, platform/[filesystem]
 import myjsonutils
 
+logCategory "theme"
+
 type
   FontStyle* = enum Italic, Underline, Bold
   Style* = object

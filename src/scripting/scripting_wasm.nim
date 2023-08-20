@@ -9,6 +9,8 @@ when not defined(js):
 
 export scripting_base, wasm
 
+logCategory "scripting-wasm"
+
 type ScriptContextWasm* = ref object of ScriptContext
   modules: seq[WasmModule]
 
@@ -45,7 +47,7 @@ method init*(self: ScriptContextWasm, path: string): Future[void] {.async.} =
     for file in files:
       let module = await newWasmModule(file, @[editorImports])
       if module.getSome(module):
-        log(lvlInfo, fmt"[scripting-wasm] Loaded wasm module {file}")
+        log(lvlInfo, fmt"Loaded wasm module {file}")
 
         if findFunction(module, "handleUnknownPopupActionWasm", bool, proc(popup: int32, action: cstring, arg: cstring): bool).getSome(f):
           self.unknownPopupActions.add (module, f)

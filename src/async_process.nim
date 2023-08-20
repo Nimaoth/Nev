@@ -1,6 +1,8 @@
 import asyncdispatch, asyncnet, json, strutils, tables, os, osproc, streams, threadpool, options, macros
 import custom_logger
 
+logCategory "asyncprocess"
+
 type AsyncChannel*[T] = ref object
   chan: ptr Channel[T]
 
@@ -187,12 +189,12 @@ proc startAsyncProcess*(name: string, args: openArray[string] = [], autoRestart 
         discard process.serverDiedNotifications[].recv
 
       if startCounter > 0 and process.dontRestart:
-        log(lvlInfo, "[process] Don't restart")
+        log(lvlInfo, "Don't restart")
         return
 
       inc startCounter
 
-      log(lvlInfo, fmt"[process] start {process.name} {process.args}")
+      log(lvlInfo, fmt"start {process.name} {process.args}")
       process.process = startProcess(process.name, args=process.args, options={poUsePath, poDaemon})
 
       process.readerFlowVar = spawn(readInput(process.inputStreamChannel, process.serverDiedNotifications, process.input.chan, process.output.chan))

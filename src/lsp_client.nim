@@ -4,6 +4,8 @@ import custom_logger, custom_async
 
 export lsp_types
 
+logCategory "lsp"
+
 type
   LSPClient* = ref object
     # socket: AsyncSocket
@@ -122,12 +124,12 @@ proc cancelAllOf*(client: LSPClient, meth: string) =
     future.complete error[JsonNode](-1, fmt"{meth}:{id} canceled")
 
 proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async.} =
-  let workspacePath = "D:/dev/Nim/Absytree/temp/rust-test"
+  let workspacePath = "D:/dev/Nim/Absytree"
   let params = %*{
     "processId": os.getCurrentProcessId(),
     "rootPath": workspacePath,
     "rootUri": "file://" & workspacePath,
-    "workspaceFolders": %*[WorkspaceFolder(uri: "file://" & workspacePath, name: "rust-test").toJson],
+    "workspaceFolders": %*[WorkspaceFolder(uri: "file://" & workspacePath, name: "test-name").toJson],
     "capabilities": %*{
       "general": %*{
         "positionEncodings": %*["utf-8"]
@@ -266,7 +268,7 @@ proc runAsync*(client: LSPClient) {.async.} =
     # echo fmt"[run] Waiting for response {(client.activeRequests.len)}"
     let response = await client.parseResponse()
     if response.isNil or response.kind != JObject:
-      log(lvlError, fmt"[LSP.run] Bad response: {response}")
+      log(lvlError, fmt"[run] Bad response: {response}")
       continue
 
     if not response.hasKey("id"):
@@ -275,19 +277,19 @@ proc runAsync*(client: LSPClient) {.async.} =
       case response["method"].getStr
       of "window/logMessage", "window/showMessage":
         let messageType =  response["params"]["type"].jsonTo MessageType
-        let prefix = case messageType
-        of Error: "[lsp-error]"
-        of Warning: "[lsp-warning]"
-        of Info: "[lsp-info]"
-        of Log: "[lsp-log]"
+        let level = case messageType
+        of Error: lvlError
+        of Warning: lvlWarn
+        of Info: lvlInfo
+        of Log: lvlDebug
         let message = response["params"]["message"].jsonTo string
-        log(lvlInfo, fmt"{prefix} {message}")
+        log(level, message)
       of "textDocument/publishDiagnostics":
         # todo
         # echo "textDocument/publishDiagnostics"
         discard
       else:
-        log(lvlInfo, fmt"[LSP.run] {response}")
+        log(lvlInfo, fmt"[run] {response}")
 
     else:
       # echo fmt"[LSP.run] {response}"
@@ -306,7 +308,7 @@ proc runAsync*(client: LSPClient) {.async.} =
         # echo fmt"[LSP.run] Received response for canceled request {id}"
         client.canceledRequests.excl id
       else:
-        log(lvlError, fmt"[LSP.run] error: received response with id {id} but got no active request for that id: {response}")
+        log(lvlError, fmt"[run] error: received response with id {id} but got no active request for that id: {response}")
 
 proc run*(client: LSPClient) =
   asyncCheck client.runAsync()
