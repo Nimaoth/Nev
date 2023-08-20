@@ -15,7 +15,7 @@ import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocume
 
 export scripting_base, nimscripter
 
-logCategory "scripting-wasm"
+logCategory "scripting-nim"
 
 type InterpreterState = enum Uninitialized, Initializing, Initialized
 

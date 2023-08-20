@@ -16,7 +16,7 @@ else:
 type
   CustomLogger* = ref object of logging.Logger
     consoleLogger: Option[logging.ConsoleLogger]
-    fileLogger: Option[logging.FileLogger]
+    fileLogger: Option[FileLogger]
 
 proc newCustomLogger*(levelThreshold = logging.lvlAll, fmtStr = logging.defaultFmtStr): CustomLogger =
   new result
@@ -41,7 +41,7 @@ method log(self: CustomLogger, level: logging.Level, args: varargs[string, `$`])
 var logger* = newCustomLogger()
 
 proc flush*(logger: logging.Logger) =
-  if logger of logging.FileLogger:
+  if logger of FileLogger:
     when not defined(js):
       logger.FileLogger.file.flushFile()
   elif logger of CustomLogger and logger.CustomLogger.fileLogger.getSome(l):

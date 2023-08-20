@@ -6,6 +6,8 @@ import lrucache
 
 {.experimental: "dynamicBindSym".}
 
+logCategory "query"
+
 var currentIndent* = 0
 
 func repeat2*(s: string, n: Natural): string = repeat s, n
