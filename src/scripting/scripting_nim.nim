@@ -202,6 +202,11 @@ proc myFindNimStdLib(): string =
   ## Tries to find a path to a valid "system.nim" file.
   ## Returns "" on failure.
 
+  let customNimStdLib = getAppDir() / "scripting" / "nim" / "lib"
+  if existsDir(customNimStdLib):
+    log lvlInfo, fmt"Using custom nim std lib '{customNimStdLib}'"
+    return customNimStdLib
+
   try:
     log lvlInfo, "Searching for nim std lib directory using 'nim --verbosity:0 dump --dump.format:json .'"
     let nimdump = execProcess("nim", ".", ["--verbosity:0", "dump", "--dump.format:json", "."], options={poUsePath, poDaemon})
