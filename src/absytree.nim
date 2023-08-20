@@ -74,7 +74,11 @@ when enableTerminal:
   import platform/terminal_platform
 
 when enableGui:
-  import platform/gui_platform
+  import platform/[gui_platform, tui]
+
+  if backend.get == Gui:
+    let trueColorSupport = myEnableTrueColors()
+    log lvlInfo, fmt"True colors:  {trueColorSupport}"
 
 # Initialize renderer
 var rend: Platform = nil
@@ -98,7 +102,6 @@ of Gui:
 else:
     echo "[error] This should not happen"
     quit(1)
-
 
 rend.init()
 
@@ -179,3 +182,7 @@ proc runApp(): Future[void] {.async.} =
   rend.deinit()
 
 waitFor runApp()
+
+when enableGui:
+  if backend.get == Gui:
+    myDisableTrueColors()

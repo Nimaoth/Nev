@@ -8,6 +8,7 @@ export strformat
 export logging.Level, logging.Logger, logging.defaultFmtStr, logging.addHandler
 
 when not defined(js):
+  import std/[terminal, colors]
   type FileLogger = logging.FileLogger
 else:
   type FileLogger = ref object of logging.Logger
@@ -32,11 +33,30 @@ proc enableFileLogger*(self: CustomLogger) =
 proc enableConsoleLogger*(self: CustomLogger) =
   self.consoleLogger = logging.newConsoleLogger(self.levelThreshold, self.fmtStr, flushThreshold=logging.lvlAll).some
 
+let isTerminal = when declared(isatty): isatty(stdout) else: false
+
 method log(self: CustomLogger, level: logging.Level, args: varargs[string, `$`]) =
   if self.fileLogger.getSome(l):
     logging.log(l, level, args)
+
   if self.consoleLogger.getSome(l):
+    when not defined(js):
+      if isTerminal:
+        let color = case level
+        of lvlDebug: rgb(100, 100, 200)
+        of lvlInfo: rgb(200, 200, 200)
+        of lvlNotice: rgb(200, 255, 255)
+        of lvlWarn: rgb(200, 200, 100)
+        of lvlError: rgb(255, 150, 150)
+        of lvlFatal: rgb(255, 0, 0)
+        else: rgb(255, 255, 255)
+        stdout.write(ansiForegroundColorCode(color))
+
     logging.log(l, level, args)
+
+    when not defined(js):
+      if isTerminal:
+        stdout.write(ansiForegroundColorCode(rgb(255, 255, 255)))
 
 var logger* = newCustomLogger()
 
