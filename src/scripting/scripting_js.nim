@@ -7,6 +7,8 @@ import platform/filesystem
 
 export scripting_base
 
+logCategory "scripting-js"
+
 type ScriptContextJs* = ref object of ScriptContext
   discard
 

@@ -1,6 +1,8 @@
 
 import custom_logger
 
+logCategory "main-js"
+
 logger.enableConsoleLogger()
 
 import std/[strformat, dom, macros]
