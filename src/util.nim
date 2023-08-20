@@ -1,4 +1,4 @@
-import std/[options]
+import std/[options, strutils]
 export options
 
 {.used.}
@@ -35,3 +35,5 @@ template hasPrefix*(exp: untyped, prefix: string, v: untyped): untyped =
     temp
 
   matches
+
+func myNormalizedPath*(path: string): string = path.replace('\\', '/')
