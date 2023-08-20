@@ -12,6 +12,7 @@ import ast/base_language_wasm
 var project = newProject()
 
 logCategory "model"
+createJavascriptPrototype("editor.model")
 
 type
   CellCursor* = object

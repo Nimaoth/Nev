@@ -10,6 +10,8 @@ import util, app, timer, platform/widget_builders, platform/platform, platform/b
 import language/language_server
 from scripting_api import Backend
 
+createNimScriptContextConstructorAndGenerateBindings()
+
 # Initialize renderer
 var rend: BrowserPlatform = new BrowserPlatform
 rend.init()

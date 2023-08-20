@@ -143,14 +143,6 @@ function jsDecodeString(str) {
     return decoder.decode(str)
 }
 
-// These are prototype objects which are filled with wrapper functions for the respective
-// nim types (Editor, TextDocumentEditor, ...) when loading ast.js
-var editor_prototype = {}
-var editor_ast_prototype = {}
-var editor_model_prototype = {}
-var editor_text_prototype = {}
-var popup_selector_prototype = {}
-
 // This function is used when instantiating (Editor, TextDocumentEditor, ...)
 function jsCreateWithPrototype(prototype, template) {
     var result = Object.create(prototype)

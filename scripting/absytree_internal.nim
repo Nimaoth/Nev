@@ -681,3 +681,5 @@ proc editor_scriptSetCallback_void_string_int_impl*(path: string; id: int) =
 proc editor_setRegisterText_void_App_string_string_impl*(text: string;
     register: string = "") =
   discard
+proc lsp_lspLogVerbose_void_bool_impl*(val: bool) =
+  discard

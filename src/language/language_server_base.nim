@@ -31,10 +31,12 @@ type TextCompletion* = object
   typ*: string
   doc*: string
 
-var getOrCreateLanguageServer*: proc(languageId: string, filename: string, languagesServer: Option[(string, int)] = (string, int).none): Future[Option[LanguageServer]] = nil
+var getOrCreateLanguageServer*: proc(languageId: string, filename: string, workspaces: seq[string], languagesServer: Option[(string, int)] = (string, int).none): Future[Option[LanguageServer]] = nil
 
 method start*(self: LanguageServer): Future[void] {.base.} = discard
 method stop*(self: LanguageServer) {.base.} = discard
+method connect*(self: LanguageServer) {.base.} = discard
+method disconnect*(self: LanguageServer) {.base.} = discard
 method getDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[Option[Definition]] {.base.} = discard
 method getCompletions*(self: LanguageServer, languageId: string, filename: string, location: Cursor): Future[seq[TextCompletion]] {.base.} = discard
 method saveTempFile*(self: LanguageServer, filename: string, content: string): Future[void] {.base.} = discard

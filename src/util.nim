@@ -36,4 +36,4 @@ template hasPrefix*(exp: untyped, prefix: string, v: untyped): untyped =
 
   matches
 
-func myNormalizedPath*(path: string): string = path.replace('\\', '/')
+func myNormalizedPath*(path: string): string = path.replace('\\', '/').strip(chars={'/'})

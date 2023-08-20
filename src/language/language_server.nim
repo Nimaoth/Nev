@@ -10,10 +10,10 @@ when not defined(js):
 
 {.used.}
 
-proc getOrCreateLanguageServerImpl*(languageId: string, filename: string, languagesServer: Option[(string, int)] = (string, int).none): Future[Option[LanguageServer]] {.async.} =
+proc getOrCreateLanguageServerImpl*(languageId: string, filename: string, workspaces: seq[string], languagesServer: Option[(string, int)] = (string, int).none): Future[Option[LanguageServer]] {.async.} =
 
   when not defined(js):
-    let lsp = await getOrCreateLanguageServerLSP(languageId)
+    let lsp = await getOrCreateLanguageServerLSP(languageId, workspaces)
     if lsp.getSome(server):
       return server.LanguageServer.some
 

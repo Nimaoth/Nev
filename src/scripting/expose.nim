@@ -15,6 +15,7 @@ const functions = CacheTable"DispatcherFunctions"   # Maps from scope name to li
 const injectors = CacheTable"Injectors"             # Maps from type name (referring to nim type) to function
 const exposedFunctions* = CacheTable"ExposedFunctions" # Maps from type name (referring to nim type) to type name of the api type (from scripting_api)
 const wasmImportedFunctions* = CacheTable"WasmImportedFunctions"
+const jsPrototypes = CacheTable"JsPrototypes"
 
 template varargs*() {.pragma.}
 
@@ -30,6 +31,9 @@ macro addTypeMap*(source: untyped, wrapper: typed, mapperFunction: typed) =
 
 macro addInjector*(name: untyped, function: typed) =
   injectors[$name] = function
+
+macro registerJsPrototype*(name: static string) =
+  jsPrototypes[name] = nnkStmtList.newTree()
 
 macro addWasmImportedFunction*(moduleName: static string, name: untyped, thisSide: untyped, wasmSide: untyped) =
   let n = nnkStmtList.newTree(name, thisSide, wasmSide)
@@ -58,8 +62,14 @@ macro addScriptWrapper(name: untyped, moduleName: static string, lineNumber: sta
       return
   exposedFunctions[moduleName] = nnkStmtList.newTree(val)
 
-when defined(js):
+template createJavascriptPrototype*(moduleName: static string) =
+  when defined(js):
+    registerJsPrototype(moduleName)
+    const prototypeName = moduleName.replace(".", "_")
+    {.emit: ["""var """, prototypeName, """_prototype = {}"""].}
+    # """
 
+when defined(js):
   proc jsonStringify[T](value: T): cstring {.importjs: "JSON.stringify(#)".}
 
   proc createJavascriptWrapper(moduleName: string, def: NimNode, scriptFunctionSym: NimNode, jsFunctionName: string): NimNode =
@@ -363,7 +373,9 @@ macro expose*(moduleName: static string, def: untyped): untyped =
   when defined(js):
     result.add quote do:
       `defJsWrapperFunction`
-    result.add createJavascriptWrapper(moduleName, def, defJsWrapperSym, pureFunctionNameStr & suffix)
+
+    if jsPrototypes.contains moduleName:
+      result.add createJavascriptWrapper(moduleName, def, defJsWrapperSym, pureFunctionNameStr & suffix)
 
   when not defined(js):
     result.add quote do:

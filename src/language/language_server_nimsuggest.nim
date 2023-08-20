@@ -106,6 +106,13 @@ method stop*(self: LanguageServerNimSuggest) =
   # self.nimsuggest.terminate()
   # removeFile(self.tempFilename)
 
+method connect*(self: LanguageServerNimSuggest) =
+  log lvlInfo, fmt"Connecting document"
+
+method disconnect*(self: LanguageServerNimSuggest) =
+  log lvlInfo, fmt"Disconnecting document"
+  self.stop()
+
 method saveTempFile*(self: LanguageServerNimSuggest, filename: string, content: string): Future[void] {.async.} =
   case self.impl.kind
   of LanguagesServer:

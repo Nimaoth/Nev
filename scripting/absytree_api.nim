@@ -28,6 +28,12 @@ else:
   import editor_text_api
   export editor_text_api
 when defined(wasm):
+  import lsp_api_wasm
+  export lsp_api_wasm
+else:
+  import lsp_api
+  export lsp_api
+when defined(wasm):
   import popup_selector_api_wasm
   export popup_selector_api_wasm
 else:
