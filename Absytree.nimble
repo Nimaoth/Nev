@@ -27,7 +27,7 @@ requires "https://github.com/Nimaoth/boxy >= 0.4.2"
 requires "https://github.com/Nimaoth/nimscripter >= 1.0.18"
 requires "https://github.com/Nimaoth/nimtreesitter-api >= 0.1.3"
 
-import strformat
+import strformat, strutils
 
 task createScriptingDocs, "Build the documentation for the scripting API":
   exec "nim doc --project --index:on --git.url:https://github.com/Nimaoth/Absytree/ --git.commit:main ./scripting/absytree_runtime.nim"
@@ -43,33 +43,40 @@ echo fmt"extension: {exe}"
 
 const crossCompileWinArgs = "--gcc.exe:x86_64-w64-mingw32-gcc --gcc.linkerexe:x86_64-w64-mingw32-gcc --os:windows --cpu:amd64 -d:crossCompileToWindows"
 
+proc getCommandLineParams(): string =
+  defer:
+    echo fmt"Additional command line params: {result}"
+  if commandLineParams.len < 3:
+    return ""
+  return commandLineParams[3..^1].join(" ")
+
 task buildDesktop, "Build the desktop version":
-  selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi ./src/absytree.nim"
+  selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi {getCommandLineParams()} ./src/absytree.nim"
 
 task buildDesktopWindows, "Build the desktop version for windows":
-  selfExec fmt"c -o:ast.exe {crossCompileWinArgs} -d:exposeScriptingApi ./src/absytree.nim"
+  selfExec fmt"c -o:ast.exe {crossCompileWinArgs} -d:exposeScriptingApi {getCommandLineParams()} ./src/absytree.nim"
 
 task buildWorkspaceServer, "Build the server for hosting workspaces":
-  selfExec fmt"c -o:workspace-server{exe} ./src/servers/workspace_server.nim"
+  selfExec fmt"c -o:workspace-server{exe} {getCommandLineParams()} ./src/servers/workspace_server.nim"
 
 task buildLanguagesServer, "Build the server for hosting languages servers":
-  selfExec fmt"c -o:languages-server{exe} ./src/servers/languages_server.nim"
+  selfExec fmt"c -o:languages-server{exe} {getCommandLineParams()} ./src/servers/languages_server.nim"
 
 task buildAbsytreeServer, "Build the server for hosting workspaces and language servers":
-  selfExec fmt"c -o:absytree-server{exe} ./src/servers/absytree_server.nim"
+  selfExec fmt"c -o:absytree-server{exe} {getCommandLineParams()} ./src/servers/absytree_server.nim"
 
 task buildAbsytreeServerWindows, "Build the server for hosting workspaces and language servers":
-  selfExec fmt"c -o:absytree-server.exe {crossCompileWinArgs} ./src/servers/absytree_server.nim"
+  selfExec fmt"c -o:absytree-server.exe {crossCompileWinArgs} {getCommandLineParams()} ./src/servers/absytree_server.nim"
 
 task buildNimsuggestWS, "Build the server for hosting workspaces and language servers":
-  selfExec fmt"c -o:nimsuggest-ws{exe} ./nimsuggest_ws.nim"
+  selfExec fmt"c -o:nimsuggest-ws{exe} {getCommandLineParams()} ./nimsuggest_ws.nim"
 
 task buildNimsuggestWSWindows, "Build the server for hosting workspaces and language servers":
-  selfExec fmt"c -o:nimsuggest-ws.exe {crossCompileWinArgs} ./nimsuggest_ws.nim"
+  selfExec fmt"c -o:nimsuggest-ws.exe {crossCompileWinArgs} {getCommandLineParams()} ./nimsuggest_ws.nim"
 
 task buildBrowser, "Build the browser version":
-  selfExec "js -o:ast.js -d:exposeScriptingApi -d:vmathObjBased -d:enableTableIdCacheChecking --boundChecks:on --rangeChecks:on ./src/absytree_js.nim"
+  selfExec fmt"js -o:ast.js -d:exposeScriptingApi -d:vmathObjBased -d:enableTableIdCacheChecking --boundChecks:on --rangeChecks:on {getCommandLineParams()} ./src/absytree_js.nim"
 
 task buildNimConfigWasm, "Compile the nim script config file to wasm":
   withDir "config":
-    selfExec "c -d:release -o:./absytree_config_wasm.wasm ./absytree_config_wasm.nim"
+    selfExec fmt"c -d:release -o:./absytree_config_wasm.wasm {getCommandLineParams()} ./absytree_config_wasm.nim"

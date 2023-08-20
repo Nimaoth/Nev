@@ -36,7 +36,7 @@ proc callback(req: Request): Future[void] {.async.} =
         echo fmt"start {nimsuggestPath} on localhost:{port} for '{fullPath}'"
 
         let nimsuggest = getCurrentDir() / "nimsuggest-ws.exe"
-        let process = startProcess(nimsuggest, args=[fmt"--port:{port}", fmt"--nimsuggest:{nimsuggestPath}", "--", fullPath])
+        let process = startProcess(nimsuggest, args=[fmt"--port:{port}", fmt"--nimsuggest:{nimsuggestPath}", "--", fullPath], options={poUsePath, poDaemon})
 
         {.gcsafe.}:
           processes.add process

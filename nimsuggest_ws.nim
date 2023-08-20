@@ -36,7 +36,7 @@ for arg in commandLineParams():
 
 echo fmt"Exposing 'nimsuggest {forwardedArgs}' under ws://localhost:{port}"
 
-let process = startProcess(nimsuggestPath, args = forwardedArgs)
+let process = startProcess(nimsuggestPath, args = forwardedArgs, options={poUsePath, poDaemon})
 
 var server = newAsyncHttpServer()
 

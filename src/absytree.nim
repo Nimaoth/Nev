@@ -59,7 +59,7 @@ if backend.isNone:
 assert backend.isSome
 
 block: ## Enable loggers
-  if backend.get == Terminal or logToFile:
+  if backend.get == Terminal or logToFile or defined(forceLogToFile):
     logger.enableFileLogger()
   if backend.get != Terminal:
     logger.enableConsoleLogger()

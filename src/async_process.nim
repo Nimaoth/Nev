@@ -192,8 +192,8 @@ proc startAsyncProcess*(name: string, args: openArray[string] = [], autoRestart 
 
       inc startCounter
 
-      log(lvlInfo, "[process] start")
-      process.process = startProcess(process.name, args=process.args)
+      log(lvlInfo, fmt"[process] start {process.name} {process.args}")
+      process.process = startProcess(process.name, args=process.args, options={poUsePath, poDaemon})
 
       process.readerFlowVar = spawn(readInput(process.inputStreamChannel, process.serverDiedNotifications, process.input.chan, process.output.chan))
       process.inputStreamChannel[].send process.process.outputStream()

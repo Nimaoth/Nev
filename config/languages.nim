@@ -3,7 +3,7 @@ import absytree_runtime
 setOption "editor.text.languages-server.url", "localhost"
 setOption "editor.text.languages-server.port", 3001
 setOption "editor.text.lsp.zig.path", "zls"
-setOption "editor.text.lsp.rust.path", "C:/Users/nimao/.vscode/extensions/rust-lang.rust-analyzer-0.3.1325-win32-x64/server/rust-analyzer.exe"
+setOption "editor.text.lsp.rust.path", "C:/Users/nimao/.vscode/extensions/rust-lang.rust-analyzer-0.3.1623-win32-x64/server/rust-analyzer.exe"
 setOption "editor.text.treesitter.rust.dll", "D:/dev/Nim/nimtreesitter/treesitter_rust/treesitter_rust/rust.dll"
 setOption "editor.text.treesitter.zig.dll", "D:/dev/Nim/nimtreesitter/treesitter_zig/treesitter_zig/zig.dll"
 setOption "editor.text.treesitter.javascript.dll", "D:/dev/Nim/nimtreesitter/treesitter_javascript/treesitter_javascript/javascript.dll"
@@ -43,7 +43,7 @@ setOption "editor.text.language.typescript", %*{
 
 setOption "editor.text.language.rust", %*{
   "tabWidth": 4,
-  "indent": "tab",
+  "indent": "spaces",
   "indentAfter": [":", "=", "(", "{", "["],
   "lineComment": "//",
   "blockComment": ["/*", "*/"],
