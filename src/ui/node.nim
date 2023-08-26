@@ -113,6 +113,8 @@ type
     lineHeight*: float32
     lineGap*: float32
 
+    draggedNode*: Option[UINode] = UINode.none
+
     forwardInvalidationRects: seq[Option[Rect]]
     currentInvalidationRects: seq[Option[Rect]]
     backInvalidationRects: seq[Option[Rect]]
