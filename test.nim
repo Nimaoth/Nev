@@ -299,8 +299,12 @@ iterator drawFrames() {.closure.} =
   var counter = 0
   var testWidth = 10.float32
 
-  var popupPos = vec2(100, 100)
-  var popupPos2 = vec2(400, 400)
+  var popup1Pos = vec2(100, 100)
+  var popup1Offset = vec2(0, 0)
+  var popup2Pos = vec2(400, 400)
+  var popup2Offset = vec2(0, 0)
+
+  var startMousePos = vec2(0, 0)
 
   while true:
     builder.frame:
@@ -347,15 +351,21 @@ iterator drawFrames() {.closure.} =
             currentNode.setBackgroundColor(0, 0, 1)
 
         builder.panel(&{LayoutVertical, DrawBorder}): # draggable overlay
-          currentNode.x = popupPos.x
-          currentNode.y = popupPos.y
+          currentNode.x = popup1Pos.x + popup1Offset.x
+          currentNode.y = popup1Pos.y + popup1Offset.y
           currentNode.w = 150
           currentNode.h = 150
           currentNode.setBorderColor(1, 0, 1)
 
+          onClick:
+            popup1Pos += popup1Offset
+            popup1Offset = vec2(0, 0)
+            startMousePos = window.mousePos.vec2
+            builder.draggedNode = currentNode.some
+
           onDrag(MouseButton.Left, delta):
-            echo "drag ", delta
-            popupPos += delta
+            if currentNode.some == builder.draggedNode:
+              popup1Offset = window.mousePos.vec2 - startMousePos
 
           builder.renderText(testText2, 0, (0, 0))
 
@@ -364,15 +374,21 @@ iterator drawFrames() {.closure.} =
             currentNode.setBackgroundColor(0, 0, 0)
 
         builder.panel(&{LayoutVertical, DrawBorder}): # draggable overlay 2
-          currentNode.x = popupPos2.x
-          currentNode.y = popupPos2.y
+          currentNode.x = popup2Pos.x + popup2Offset.x
+          currentNode.y = popup2Pos.y + popup2Offset.y
           currentNode.w = 150
           currentNode.h = 150
           currentNode.setBorderColor(0, 1, 1)
 
+          onClick:
+            popup2Pos += popup2Offset
+            popup2Offset = vec2(0, 0)
+            startMousePos = window.mousePos.vec2
+            builder.draggedNode = currentNode.some
+
           onDrag(MouseButton.Left, delta):
-            echo "drag2 ", delta
-            popupPos2 += delta
+            if currentNode.some == builder.draggedNode:
+              popup2Offset = window.mousePos.vec2 - startMousePos
 
           builder.renderText(testText2, 0, (0, 0))
 
@@ -403,12 +419,24 @@ window.onMouseMove = proc() =
   if buttons.len > 0:
     # echo buttons, ", ", mouseDelta
 
-    let targetNode = builder.root.findNodeContaining(window.mousePos.vec2, (node) => node.handleDrag.isNotNil)
-    if targetNode.getSome(node):
+    if builder.draggedNode.getSome(node):
       # echo "Found target ", node.dump
       for button in buttons:
         discard node.handleDrag()(node, button.toMouseButton, mouseDelta)
         advanceFrame = true
+
+window.onButtonRelease = proc(button: Button) =
+  case button
+  of MouseLeft, MouseRight, MouseMiddle, MouseButton4, MouseButton5, DoubleClick, TripleClick, QuadrupleClick:
+    if builder.draggedNode.getSome(node):
+      # discard node.handleEndDrag()(node)
+      builder.draggedNode = UINode.none
+      advanceFrame = true
+    return
+  else:
+    return
+
+  advanceFrame = true
 
 window.onButtonPress = proc(button: Button) =
   case button
