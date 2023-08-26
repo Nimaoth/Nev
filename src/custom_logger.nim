@@ -71,7 +71,7 @@ proc substituteLog*(frmt: string, level: logging.Level,
                     args: varargs[string, `$`]): string =
   logging.substituteLog(frmt, level, args)
 
-template logCategory*(category: static string): untyped =
+template logCategory*(category: static string, noDebug = false): untyped =
   proc logImpl(level: NimNode, args: NimNode, includeCategory: bool): NimNode {.used.} =
     var args = args
     if includeCategory:
@@ -86,14 +86,22 @@ template logCategory*(category: static string): untyped =
   macro logNoCategory(level: logging.Level, args: varargs[untyped, `$`]): untyped {.used.} =
     return logImpl(level, args, false)
 
-  macro debug(x: varargs[typed, `$`]): untyped {.used.} =
-    let level = genAst(): lvlDebug
-    let arg = genAst(x):
-      x.join ""
-    return logImpl(level, nnkArgList.newTree(arg), true)
+  when noDebug:
+    macro debug(x: varargs[typed, `$`]): untyped {.used.} =
+      discard
 
-  macro debugf(x: static string): untyped {.used.} =
-    let level = genAst(): lvlDebug
-    let arg = genAst(str = x):
-      fmt str
-    return logImpl(level, nnkArgList.newTree(arg), true)
+    macro debugf(x: static string): untyped {.used.} =
+      discard
+
+  else:
+    macro debug(x: varargs[typed, `$`]): untyped {.used.} =
+      let level = genAst(): lvlDebug
+      let arg = genAst(x):
+        x.join ""
+      return logImpl(level, nnkArgList.newTree(arg), true)
+
+    macro debugf(x: static string): untyped {.used.} =
+      let level = genAst(): lvlDebug
+      let arg = genAst(str = x):
+        fmt str
+      return logImpl(level, nnkArgList.newTree(arg), true)
