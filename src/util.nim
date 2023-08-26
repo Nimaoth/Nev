@@ -48,3 +48,33 @@ template first*(x: untyped): untyped = x[x.low]
 template last*(x: untyped): untyped = x[x.high]
 proc `first=`*[S, T](x: var S, value: T) = x[x.low] = value
 proc `last=`*[S, T](x: var S, value: T) = x[x.high] = value
+
+proc `or`*[T, U](a: Option[T], b: Option[U]): Option[T] =
+  if a.isSome and b.isSome:
+    return some a.get or b.get
+  if a.isSome:
+    return a
+  when U is T:
+    return b
+  else:
+    return T.none
+
+proc `+`*[T, U](a: Option[T], b: Option[U]): Option[T] =
+  if a.isSome and b.isSome:
+    return some a.get + b.get
+  if a.isSome:
+    return a
+  when U is T:
+    return b
+  else:
+    return T.none
+
+proc `-`*[T, U](a: Option[T], b: Option[U]): Option[T] =
+  if a.isSome and b.isSome:
+    return some a.get + b.get
+  if a.isSome:
+    return a
+  when U is T:
+    return b
+  else:
+    return T.none

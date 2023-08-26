@@ -114,17 +114,23 @@ proc strokeRect*(boxy: Boxy, rect: Rect, color: Color, thickness: float = 1, off
   boxy.drawRect(rect.splitH(thickness.relative)[0], color)
   boxy.drawRect(rect.splitHInv(thickness.relative)[1], color)
 
-proc drawNode(builder: UINodeBuilder, node: UINode, offset: Vec2 = vec2(0, 0)) =
+proc drawNode(builder: UINodeBuilder, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false) =
   var nodePos = offset
   nodePos.x += node.x
   nodePos.y += node.y
 
-  if node.lastChange < builder.frameIndex and node.lx == nodePos.x and node.ly == nodePos.y and node.lw == node.w and node.lh == node.h:
+  var force = force
+
+  if invalidateOverlapping and not force and node.lastChange < builder.frameIndex and node.lx == nodePos.x and node.ly == nodePos.y and node.lw == node.w and node.lh == node.h:
     return
 
   if node.flags.any &{FillBackground, DrawBorder, DrawText}:
     inc nodesDrawn
     drawnNodes.add node
+
+  if node.flags.any &{FillBackground, DrawText}:
+    force = true
+
   debug "draw ", node.dump
 
   node.lx = nodePos.x
@@ -175,8 +181,8 @@ proc drawNode(builder: UINodeBuilder, node: UINode, offset: Vec2 = vec2(0, 0)) =
     let pos = vec2(nodePos.x.floor, nodePos.y.floor)
     bxy.drawImage(imageId, pos, node.textColor)
 
-  for c in node.children:
-    builder.drawNode(c, nodePos)
+  for _, c in node.children:
+    builder.drawNode(c, nodePos, force)
 
   if DrawBorder in node.flags:
     bxy.strokeRect(bounds, node.borderColor)
@@ -211,6 +217,7 @@ proc randomColor(node: UINode, a: float32): Color =
   result.a = a
 
 var logRoot = false
+var showDrawnNodes = true
 
 template frame(builder: UINodeBuilder, body: untyped) =
   block:
@@ -220,7 +227,7 @@ template frame(builder: UINodeBuilder, body: untyped) =
     let buildTime = startTimer()
     body
     builder.endFrame()
-    echo "[build] ", buildTime.elapsed.ms, "ms"
+    # echo "[build] ", buildTime.elapsed.ms, "ms"
 
     if logRoot:
       echo builder.root.dump(true)
@@ -242,9 +249,9 @@ template frame(builder: UINodeBuilder, body: untyped) =
 
     let drawTime = startTimer()
     builder.drawNode(builder.root)
-    echo "[draw] ", drawTime.elapsed.ms, "ms (", nodesDrawn, " nodes)"
+    # echo "[draw] ", drawTime.elapsed.ms, "ms (", nodesDrawn, " nodes)"
 
-    if true:
+    if showDrawnNodes:
       bxy.drawRect(rect(image.width.float32, 0, image.width.float32, image.height.float32), color(0, 0, 0))
 
       for node in drawnNodes:
@@ -326,6 +333,8 @@ iterator drawFrames() {.closure.} =
               discard
             builder.withText($(counter * counter)):
               discard
+            builder.panel(&{FillX, FillY, FillBackground}):
+              currentNode.setBackgroundColor(0, 0, 0)
 
           builder.panel(&{LayoutHorizontal, FillX, SizeToContentY}): # second row
             builder.button("-"):
@@ -431,7 +440,7 @@ window.onButtonRelease = proc(button: Button) =
     if builder.draggedNode.getSome(node):
       # discard node.handleEndDrag()(node)
       builder.draggedNode = UINode.none
-      advanceFrame = true
+      # advanceFrame = true
     return
   else:
     return
@@ -450,11 +459,15 @@ window.onButtonPress = proc(button: Button) =
   of Button.KeyX:
     window.closeRequested = true
     return
+  of Button.KeyV:
+    invalidateOverlapping = not invalidateOverlapping
   of Button.KeyL:
+    showDrawnNodes = not showDrawnNodes
+  of Button.KeyU:
     logRoot = not logRoot
-  of Button.KeyC:
+  of Button.KeyI:
     logInvalidationRects = not logInvalidationRects
-  of Button.KeyW:
+  of Button.KeyA:
     logPanel = not logPanel
 
   of Button.KeyUp:
