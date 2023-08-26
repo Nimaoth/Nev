@@ -1,4 +1,4 @@
-import std/[os, macros, genasts, strutils, sequtils, sugar, strformat, options, random]
+import std/[os, macros, genasts, strutils, sequtils, sugar, strformat, options, random, tables, sets]
 import src/macro_utils, src/util, src/id
 import boxy, boxy/textures, pixie, windy, vmath, rect_utils, opengl, timer, lrucache, ui/node
 import custom_logger
@@ -44,6 +44,13 @@ macro defineBitFlag*(body: untyped): untyped =
         res2.add $flag
       res2.add "}"
       return res2
+""".splitLines(keepEol=false)
+
+const testText2 = """
+hi, wassup?
+lol
+uiaeuiaeuiae
+uiui uia eu
 """.splitLines(keepEol=false)
 
 proc getFont*(font: string, fontSize: float32): Font =
@@ -129,9 +136,6 @@ proc drawNode(builder: UINodeBuilder, node: UINode, offset: Vec2 = vec2(0, 0)) =
   if FillBackground in node.flags:
     bxy.drawRect(bounds, node.backgroundColor)
 
-  if DrawBorder in node.flags:
-    bxy.strokeRect(bounds, node.backgroundColor)
-
   # Mask the rest of the rendering is this function to the contentBounds
   if MaskContent in node.flags:
     bxy.pushLayer()
@@ -173,6 +177,9 @@ proc drawNode(builder: UINodeBuilder, node: UINode, offset: Vec2 = vec2(0, 0)) =
 
   for c in node.children:
     builder.drawNode(c, nodePos)
+
+  if DrawBorder in node.flags:
+    bxy.strokeRect(bounds, node.borderColor)
 
 template panel*(builder: UINodeBuilder, body: untyped): untyped =
   builder.panel(0.UINodeFlags, body)
@@ -293,10 +300,11 @@ iterator drawFrames() {.closure.} =
   var testWidth = 10.float32
 
   var popupPos = vec2(100, 100)
+  var popupPos2 = vec2(400, 400)
 
   while true:
     builder.frame:
-      builder.panel(&{FillX, FillY, OverlappingChildren}):
+      builder.panel(&{FillX, FillY, OverlappingChildren}): # fullscreen overlay
 
         builder.panel(&{FillX, FillY, LayoutVertical}): # main panel
 
@@ -338,18 +346,33 @@ iterator drawFrames() {.closure.} =
           builder.panel(&{FillX, FillY, FillBackground}):
             currentNode.setBackgroundColor(0, 0, 1)
 
-        builder.panel(&{FillBackground}):
+        builder.panel(&{LayoutVertical, DrawBorder}): # draggable overlay
           currentNode.x = popupPos.x
           currentNode.y = popupPos.y
-          currentNode.w = 100
-          currentNode.h = 100
-          currentNode.setBackgroundColor(1, 0, 1)
+          currentNode.w = 150
+          currentNode.h = 150
+          currentNode.setBorderColor(1, 0, 1)
 
           onDrag(MouseButton.Left, delta):
             echo "drag ", delta
             popupPos += delta
 
+          builder.renderText(testText2, 0, (0, 0))
 
+          # background filler
+          builder.panel(&{FillX, FillY, FillBackground}):
+            currentNode.setBackgroundColor(0, 0, 0)
+
+        builder.panel(&{FillBackground}): # draggable overlay 2
+          currentNode.x = popupPos2.x
+          currentNode.y = popupPos2.y
+          currentNode.w = 100
+          currentNode.h = 100
+          currentNode.setBackgroundColor(0, 1, 1)
+
+          onDrag(MouseButton.Left, delta):
+            echo "drag2 ", delta
+            popupPos2 += delta
 
   builder.frameIndex = 0
   ctx.fillStyle = rgb(0, 0, 0)
@@ -395,7 +418,10 @@ window.onButtonPress = proc(button: Button) =
     return
   of Button.KeyL:
     logRoot = not logRoot
-    return
+  of Button.KeyC:
+    logInvalidationRects = not logInvalidationRects
+  of Button.KeyW:
+    logPanel = not logPanel
 
   of Button.KeyUp:
     cursor[0] = max(0, cursor[0] - 1)
