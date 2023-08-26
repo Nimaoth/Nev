@@ -366,6 +366,27 @@ proc preLayout*(builder: UINodeBuilder, node: UINode) =
   elif FillY in node.flags:
     node.h = parent.h - node.y
 
+  # Add current invalidation rect for new node, copying parent if it exists
+  if builder.currentInvalidationRects.len > 0:
+    if builder.currentInvalidationRects.last.isSome:
+      node.logi "panel begin, copy invalidation rect from parent ", builder.currentInvalidationRects.last.get, ", ", vec2(node.mX, node.mY), " -> ", builder.currentInvalidationRects.last.get - vec2(node.mX, node.mY)
+      builder.currentInvalidationRects.add some(builder.currentInvalidationRects.last.get - vec2(node.mX, node.mY))
+    else:
+      builder.currentInvalidationRects.add Rect.none
+  else:
+    builder.currentInvalidationRects.add Rect.none
+
+  if builder.currentInvalidationRects.len > 0 and builder.currentInvalidationRects.last.isSome:
+    node.logi "preLayout, invalidate", builder.currentInvalidationRects.last.get, ", ", rect(0, 0, node.mW, node.mH), " -> ", builder.currentInvalidationRects.last.get.intersects(rect(0, 0, node.mW, node.mH))
+    if builder.currentInvalidationRects.last.get.intersects(rect(0, 0, node.mW, node.mH)):
+      node.mContentDirty = true
+
+      if node.mFlags.any &{DrawText, FillBackground}:
+        if builder.currentInvalidationRects.last.isSome:
+          builder.currentInvalidationRects.last = some(builder.currentInvalidationRects.last.get or rect(0, 0, node.mW, node.mH))
+        else:
+          builder.currentInvalidationRects.last = some rect(0, 0, node.mW, node.mH)
+
 proc postLayoutChild*(builder: UINodeBuilder, node: UINode, child: UINode) =
   if SizeToContentX in node.flags:
     node.w = max(node.w, child.xw)
@@ -514,20 +535,15 @@ template panel*(builder: UINodeBuilder, inFlags: UINodeFlags, body: untyped): un
           let delta {.inject.} = d
           onDragBody
 
-
     builder.currentParent = currentNode
     builder.currentChild = nil
     builder.forwardInvalidationRects.add Rect.none
 
-    # Add current invalidation rect for new node, copying parent if it exists
-    if builder.currentInvalidationRects.len > 0:
-      if builder.currentInvalidationRects.last.isSome:
-        currentNode.logi "panel begin, copy invalidation rect from parent ", builder.currentInvalidationRects.last.get, ", ", vec2(currentNode.mX, currentNode.mY), " -> ", builder.currentInvalidationRects.last.get - vec2(currentNode.mX, currentNode.mY)
-        builder.currentInvalidationRects.add some(builder.currentInvalidationRects.last.get - vec2(currentNode.mX, currentNode.mY))
-      else:
-        builder.currentInvalidationRects.add Rect.none
-    else:
-      builder.currentInvalidationRects.add Rect.none
+    # if currentNode.mFlags.any &{DrawText, FillBackground}:
+    #   if builder.currentInvalidationRects.last.isSome:
+    #     builder.currentInvalidationRects.last = some(builder.currentInvalidationRects.last.get or rect(0, 0, currentNode.mW, currentNode.mH))
+    #   else:
+    #     builder.currentInvalidationRects.last = some rect(0, 0, currentNode.mW, currentNode.mH)
 
     # if OverlappingChildren in currentNode.mFlags:
     #   if builder.currentInvalidationRects.len > 0:
@@ -603,7 +619,7 @@ proc findNodeContaining*(node: UINode, pos: Vec2, predicate: proc(node: UINode):
 proc dump*(node: UINode, recurse = false): string =
   if node.isNil:
     return "nil"
-  result.add fmt"Node({node.mLastContentChange}, {node.mLastPositionChange}, {node.mLastSizeChange}, {node.id} '{node.text}', {node.flags}, ({node.x}, {node.y}, {node.w}, {node.h}))"
+  result.add fmt"Node({node.mLastContentChange} ({node.mContentDirty}), {node.mLastPositionChange} ({node.mPositionDirty}), {node.mLastSizeChange} ({node.mSizeDirty}), {node.id} '{node.text}', {node.flags}, ({node.x}, {node.y}, {node.w}, {node.h}))"
   if recurse and node.first.isNotNil:
     result.add ":"
     for c in node.children:

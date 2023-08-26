@@ -281,9 +281,9 @@ proc renderLine(builder: UINodeBuilder, line: string, curs: Option[int]) =
       builder.panel(&{FillY, FillBackground}):
         currentNode.w = builder.charWidth
         currentNode.setBackgroundColor(0.5, 0.5, 1, 1)
-        onClick:
-          # echo "clicked cursor ", btn
-          cursor[1] = rand(0..line.len)
+        # onClick:
+        #   # echo "clicked cursor ", btn
+        #   cursor[1] = rand(0..line.len)
 
     # Fill rest of line with background
     builder.panel(&{FillX, FillY, FillBackground}):
@@ -363,16 +363,22 @@ iterator drawFrames() {.closure.} =
           builder.panel(&{FillX, FillY, FillBackground}):
             currentNode.setBackgroundColor(0, 0, 0)
 
-        builder.panel(&{FillBackground}): # draggable overlay 2
+        builder.panel(&{LayoutVertical, DrawBorder}): # draggable overlay 2
           currentNode.x = popupPos2.x
           currentNode.y = popupPos2.y
-          currentNode.w = 100
-          currentNode.h = 100
-          currentNode.setBackgroundColor(0, 1, 1)
+          currentNode.w = 150
+          currentNode.h = 150
+          currentNode.setBorderColor(0, 1, 1)
 
           onDrag(MouseButton.Left, delta):
             echo "drag2 ", delta
             popupPos2 += delta
+
+          builder.renderText(testText2, 0, (0, 0))
+
+          # background filler
+          builder.panel(&{FillX, FillY, FillBackground}):
+            currentNode.setBackgroundColor(0, 0, 0)
 
   builder.frameIndex = 0
   ctx.fillStyle = rgb(0, 0, 0)
