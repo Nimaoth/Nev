@@ -37,3 +37,14 @@ template hasPrefix*(exp: untyped, prefix: string, v: untyped): untyped =
   matches
 
 func myNormalizedPath*(path: string): string = path.replace('\\', '/').strip(chars={'/'})
+
+# type ArrayLike*[T] {.explain.} = concept x, var v
+#   x.low is int
+#   x.high is int
+  # x[int] is T
+  # v[int] = T
+
+template first*(x: untyped): untyped = x[x.low]
+template last*(x: untyped): untyped = x[x.high]
+proc `first=`*[S, T](x: var S, value: T) = x[x.low] = value
+proc `last=`*[S, T](x: var S, value: T) = x[x.high] = value
