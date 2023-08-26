@@ -1,5 +1,8 @@
 import std/[macros]
+import fusion/matching
 import util
+
+{.experimental: "caseStmtMacros".}
 
 template getter*() {.pragma.}
 
@@ -45,6 +48,16 @@ proc argName*(def: NimNode, arg: int): NimNode =
   result = def[3][arg + 1][0]
   if result.kind == nnkPragmaExpr:
     result = result[0]
+
+proc typeName*(def: NimNode): NimNode =
+  assert def.kind == nnkTypeDef
+  case def
+  of TypeDef[@ident is Ident(), .._]:
+    return ident
+  of TypeDef[Postfix[_, @ident is Ident()], .._]:
+    return ident
+  else:
+    assert false
 
 proc hasCustomPragma*(def: NimNode, pragma: string): bool =
   case def.kind
