@@ -1,4 +1,5 @@
 import std/[os, macros, genasts, strutils, sequtils, sugar, strformat, options]
+import fusion/matching
 import macro_utils, util, id, input, custom_unicode
 import chroma, vmath, rect_utils
 import custom_logger
@@ -65,6 +66,7 @@ defineBitFlag:
     LayoutVertical
     LayoutHorizontal
     OverlappingChildren
+    MouseHover
 
 type
   UINode* = ref object
@@ -82,6 +84,7 @@ type
     mLastPositionChange: int
     mLastSizeChange: int
 
+    mFlagsOld: UINodeFlags
     mFlags: UINodeFlags
 
     mText: string
@@ -97,7 +100,8 @@ type
     clearRect: Option[Rect] # Rect which describes the area the widget occupied in the previous frame but not in the current frame
     invalidationRect: Option[Rect] # Rect which describes the area which needs to rerendered, and therefore invalidate later siblings in overlay contexts
 
-    mHandleClick: proc(node: UINode, button: MouseButton): bool
+    mHandlePressed: proc(node: UINode, button: MouseButton): bool
+    mHandleReleased: proc(node: UINode, button: MouseButton): bool
     mHandleDrag: proc(node: UINode, button: MouseButton, delta: Vec2): bool
     mHandleBeginHover: proc(node: UINode): bool
     mHandleEndHover: proc(node: UINode): bool
@@ -118,10 +122,15 @@ type
     lineGap*: float32
 
     draggedNode*: Option[UINode] = UINode.none
+    hoveredNode*: Option[UINode] = UINode.none
 
     forwardInvalidationRects: seq[Option[Rect]]
     currentInvalidationRects: seq[Option[Rect]]
     backInvalidationRects: seq[Option[Rect]]
+
+    mousePos: Vec2
+    mouseDelta: Vec2
+    mousePosClick: array[MouseButton, Vec2]
 
 proc dump*(node: UINode, recurse = false): string
 
@@ -134,7 +143,7 @@ func prev*(node: UINode): UINode = node.prev
 func id*(node: UINode): Id = node.mId
 func dirty*(node: UINode): bool = node.mContentDirty or node.mPositionDirty or node.mSizeDirty
 func lastChange*(node: UINode): int = max(node.mLastContentChange, max(node.mLastPositionChange, node.mLastSizeChange))
-func flags*(node: UINode): UINodeFlags = node.mFlags
+func flags*(node: UINode): var UINodeFlags = node.mFlags
 func text*(node: UINode): string = node.mText
 func backgroundColor*(node: UINode): Color = node.mBackgroundColor
 func borderColor*(node: UINode): Color = node.mBorderColor
@@ -146,17 +155,19 @@ func `backgroundColor=`*(node: UINode, value: Color) = node.mContentDirty = node
 func `borderColor=`*(node: UINode, value: Color)     = node.mContentDirty = node.mContentDirty or (value != node.mBorderColor);     node.mBorderColor     = value
 func `textColor=`*(node: UINode, value: Color)       = node.mContentDirty = node.mContentDirty or (value != node.mTextColor);       node.mTextColor       = value
 
-func handleClick*(node: UINode):        (proc(node: UINode, button: MouseButton): bool) = node.mHandleClick
+func handlePressed*(node: UINode):        (proc(node: UINode, button: MouseButton): bool) = node.mHandlePressed
+func handleReleased*(node: UINode):        (proc(node: UINode, button: MouseButton): bool) = node.mHandleReleased
 func handleDrag*(node: UINode):         (proc(node: UINode, button: MouseButton, delta: Vec2): bool) = node.mHandleDrag
-# func handleBeginOverlap*(node: UINode): (proc(node: UINode, button: MouseButton): bool) = node.mHandleBeginOverlap
-# func handleEndOverlap*(node: UINode):   (proc(node: UINode, button: MouseButton): bool) = node.mHandleEndOverlap
-# func handleOverlap*(node: UINode):      (proc(node: UINode, button: MouseButton): bool) = node.mHandleOverlap
+func handleBeginHover*(node: UINode): (proc(node: UINode): bool) = node.mHandleBeginHover
+func handleEndHover*(node: UINode):   (proc(node: UINode): bool) = node.mHandleEndHover
+func handleHover*(node: UINode):      (proc(node: UINode): bool) = node.mHandleHover
 
-func `handleClick=`*(node: UINode, value: proc(node: UINode, button: MouseButton): bool)              = node.mContentDirty = node.mContentDirty or (value != node.mHandleClick);        node.mHandleClick = value
+func `handlePressed=`*(node: UINode, value: proc(node: UINode, button: MouseButton): bool)              = node.mContentDirty = node.mContentDirty or (value != node.mHandlePressed);        node.mHandlePressed = value
+func `handleReleased=`*(node: UINode, value: proc(node: UINode, button: MouseButton): bool)              = node.mContentDirty = node.mContentDirty or (value != node.mHandleReleased);        node.mHandleReleased = value
 func `handleDrag=`* (node: UINode, value: proc(node: UINode, button: MouseButton, delta: Vec2): bool) = node.mContentDirty = node.mContentDirty or (value != node.mHandleDrag);         node.mHandleDrag = value
-# func `handleBeginOverlap=`*(node: UINode, value: proc(node: UINode, button: MouseButton): bool) = node.mContentDirty = node.mContentDirty or (value != node.mHandleBeginOverlap); node.mHandleBeginOverlap = value
-# func `handleEndOverlap=`*(node: UINode,   value: proc(node: UINode, button: MouseButton): bool) = node.mContentDirty = node.mContentDirty or (value != node.mHandleEndOverlap);   node.mHandleEndOverlap = value
-# func `handleOverlap=`*(node: UINode,      value: proc(node: UINode, button: MouseButton): bool) = node.mContentDirty = node.mContentDirty or (value != node.mHandleOverlap);      node.mHandleOverlap = value
+func `handleBeginHover=`*(node: UINode, value: proc(node: UINode): bool) = node.mContentDirty = node.mContentDirty or (value != node.mHandleBeginHover); node.mHandleBeginHover = value
+func `handleEndHover=`*(node: UINode,   value: proc(node: UINode): bool) = node.mContentDirty = node.mContentDirty or (value != node.mHandleEndHover);   node.mHandleEndHover = value
+func `handleHover=`*(node: UINode,      value: proc(node: UINode): bool) = node.mContentDirty = node.mContentDirty or (value != node.mHandleHover);      node.mHandleHover = value
 
 func bounds*(node: UINode): Rect = rect(node.mX, node.mY, node.mW, node.mH)
 func xy*(node: UINode): Vec2 = vec2(node.mX, node.mY)
@@ -189,6 +200,7 @@ proc textWidth*(builder: UINodeBuilder, textLen: int): float32 = textLen.float32
 proc textHeight*(builder: UINodeBuilder): float32 = builder.lineHeight + builder.lineGap
 
 proc createNode*(pool: UINodePool): UINode
+proc findNodeContaining*(node: UINode, pos: Vec2, predicate: proc(node: UINode): bool): Option[UINode]
 
 var stackSize = 0
 template logi(node: UINode, msg: varargs[string, `$`]) =
@@ -207,6 +219,59 @@ proc newNodeBuilder*(): UINodeBuilder =
   new result.nodePool
   result.frameIndex = 0
   result.root = result.nodePool.createNode()
+
+proc hovered*(builder: UINodeBuilder, node: UINode): bool = node.some == builder.hoveredNode
+
+proc handleMousePressed*(builder: UINodeBuilder, button: MouseButton, pos: Vec2) =
+  builder.mousePosClick[button] = pos
+
+  let targetNode = builder.root.findNodeContaining(pos, (node) => node.handlePressed.isNotNil)
+  if targetNode.getSome(node):
+    discard node.handlePressed()(node, button)
+
+proc handleMouseReleased*(builder: UINodeBuilder, button: MouseButton, pos: Vec2) =
+  if builder.draggedNode.getSome(node):
+    builder.draggedNode = UINode.none
+
+proc handleMouseMoved*(builder: UINodeBuilder, pos: Vec2, buttons: set[MouseButton]): bool =
+  builder.mouseDelta = pos - builder.mousePos
+  builder.mousePos = pos
+
+  var targetNode: Option[UINode] = builder.draggedNode
+
+  if buttons.len > 0:
+    if builder.draggedNode.getSome(node):
+      for button in buttons:
+        discard node.handleDrag()(node, button, builder.mouseDelta)
+        result = true
+
+  if targetNode.isNone:
+    targetNode = builder.root.findNodeContaining(pos, (node) => MouseHover in node.mFlags)
+
+  case (builder.hoveredNode, targetNode)
+  of (Some(@a), Some(@b)):
+    if a == b:
+      if a.handleHover.isNotNil:
+        result = a.handleHover()(a) or result
+    else:
+      if a.handleEndHover.isNotNil:
+        result = a.handleEndHover()(a) or result
+      if b.handleBeginHover.isNotNil:
+        result = b.handleBeginHover()(b) or result
+      result = true
+
+  of (None(), Some(@b)):
+    if b.handleBeginHover.isNotNil:
+      result = b.handleBeginHover()(b) or result
+    result = true
+  of (Some(@a), None()):
+    if a.handleEndHover.isNotNil:
+      result = a.handleEndHover()(a) or result
+    result = true
+  of (None(), None()):
+    discard
+
+  builder.hoveredNode = targetNode
 
 proc setBackgroundColor*(node: UINode, r, g, b: float32, a: float32 = 1) =
   if r != node.mBackgroundColor.r or g != node.mBackgroundColor.g or b != node.mBackgroundColor.b or node.mBackgroundColor.a != a:
@@ -291,7 +356,8 @@ proc returnNode*(pool: UINodePool, node: UINode) =
   node.mLw = 0
   node.mLh = 0
 
-  node.mHandleClick = nil
+  node.mHandlePressed = nil
+  node.mHandleReleased = nil
   node.mHandleDrag = nil
   node.mHandleBeginHover = nil
   node.mHandleEndHover = nil
@@ -384,16 +450,18 @@ proc preLayout*(builder: UINodeBuilder, node: UINode) =
   else:
     builder.currentInvalidationRects.add Rect.none
 
-  if builder.currentInvalidationRects.len > 0 and builder.currentInvalidationRects.last.isSome:
+  # invalidate if it intersects with the current invalidation rect
+  if builder.currentInvalidationRects.last.isSome:
     node.logi "preLayout, invalidate", builder.currentInvalidationRects.last.get, ", ", rect(0, 0, node.mW, node.mH), " -> ", builder.currentInvalidationRects.last.get.intersects(rect(0, 0, node.mW, node.mH))
     if builder.currentInvalidationRects.last.get.intersects(rect(0, 0, node.mW, node.mH)):
       node.mContentDirty = true
 
       if node.mFlags.any &{DrawText, FillBackground}:
-        if builder.currentInvalidationRects.last.isSome:
-          builder.currentInvalidationRects.last = some(builder.currentInvalidationRects.last.get or rect(0, 0, node.mW, node.mH))
-        else:
-          builder.currentInvalidationRects.last = some rect(0, 0, node.mW, node.mH)
+        builder.currentInvalidationRects.last = builder.currentInvalidationRects.last or rect(0, 0, node.mW, node.mH).some
+
+  # invalidate if border dissappeared
+  if invalidateOverlapping and DrawBorder in node.mFlagsOld and DrawBorder notin node.mFlags:
+    builder.currentInvalidationRects.last = builder.currentInvalidationRects.last or rect(0, 0, node.mW, node.mH).some
 
 proc postLayoutChild*(builder: UINodeBuilder, node: UINode, child: UINode) =
   if SizeToContentX in node.flags:
@@ -453,6 +521,7 @@ proc postLayout*(builder: UINodeBuilder, node: UINode) =
     node.mSizeDirty = true
 
   node.mBoundsOld = some node.bounds
+  node.mFlagsOld = node.mFlags
 
   if builder.currentInvalidationRects.len > 0 and builder.currentInvalidationRects.last.isSome:
     node.logi "postLayout, invalidate", builder.currentInvalidationRects.last.get, ", ", node.bounds, " -> ", builder.currentInvalidationRects.last.get.intersects(node.bounds)
@@ -594,14 +663,30 @@ template panel*(builder: UINodeBuilder, inFlags: UINodeFlags, body: untyped): un
     let currentNode {.used, inject.} = node
 
     template onClick(onClickBody: untyped) {.used.} =
-      currentNode.handleClick = proc(node {.inject.}: UINode, btn {.inject.}: MouseButton): bool =
+      currentNode.handlePressed = proc(node {.inject.}: UINode, btn {.inject.}: MouseButton): bool =
         onClickBody
+
+    template onReleased(onBody: untyped) {.used.} =
+      currentNode.handleReleased = proc(node {.inject.}: UINode, btn {.inject.}: MouseButton): bool =
+        onBody
 
     template onDrag(button: MouseButton, delta: untyped, onDragBody: untyped) {.used.} =
       currentNode.handleDrag = proc(node: UINode, btn {.inject.}: MouseButton, d: Vec2): bool =
         if btn == button:
           let delta {.inject.} = d
           onDragBody
+
+    template onBeginHover(onBody: untyped) {.used.} =
+      currentNode.handleBeginHover = proc(node: UINode): bool =
+        onBody
+
+    template onEndHover(onBody: untyped) {.used.} =
+      currentNode.handleEndHover = proc(node: UINode): bool =
+        onBody
+
+    template onHover(onBody: untyped) {.used.} =
+      currentNode.handleHover = proc(node: UINode): bool =
+        onBody
 
     inc stackSize
     defer:

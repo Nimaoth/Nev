@@ -185,15 +185,19 @@ proc drawNode(builder: UINodeBuilder, node: UINode, offset: Vec2 = vec2(0, 0), f
     builder.drawNode(c, nodePos, force)
 
   if DrawBorder in node.flags:
-    bxy.strokeRect(bounds, node.borderColor)
+    bxy.strokeRect(bounds, node.borderColor, thickness = 5, offset = -1)
 
 template panel*(builder: UINodeBuilder, body: untyped): untyped =
   builder.panel(0.UINodeFlags, body)
 
 template button*(builder: UINodeBuilder, name: string, body: untyped): untyped =
-  builder.panel(&{DrawText, DrawBorder, FillBackground, SizeToContentX, SizeToContentY}):
+  builder.panel(&{DrawText, DrawBorder, FillBackground, SizeToContentX, SizeToContentY, MouseHover}):
     currentNode.setTextColor(1, 0, 0)
-    currentNode.setBackgroundColor(0.5, 0.5, 0)
+
+    if currentNode.some == builder.hoveredNode:
+      currentNode.setBackgroundColor(0.5, 0.6, 0.4)
+    else:
+      currentNode.setBackgroundColor(0.5, 0.5, 0.2)
 
     currentNode.text = name
 
@@ -217,6 +221,7 @@ proc randomColor(node: UINode, a: float32): Color =
   result.a = a
 
 var logRoot = false
+var logFrameTime = false
 var showDrawnNodes = true
 
 template frame(builder: UINodeBuilder, body: untyped) =
@@ -302,16 +307,41 @@ proc renderText(builder: UINodeBuilder, lines: openArray[string], first: int, cu
       let column = if cursor[0] == i: cursor[1].some else: int.none
       builder.renderLine(line, column)
 
+proc createPopup(builder: UINodeBuilder, lines: openArray[string], popupPos: ref tuple[pos: Vec2, offset: Vec2]) =
+  builder.panel(&{LayoutVertical, MouseHover}): # draggable overlay
+    let pos = popupPos.pos + popupPos.offset
+    currentNode.x = pos.x
+    currentNode.y = pos.y
+    currentNode.w = 150
+    currentNode.h = 150
+    if builder.hovered currentNode:
+      currentNode.setBorderColor(1, 0, 1)
+      currentNode.flags.incl DrawBorder
+
+    onClick:
+      popupPos.pos += popupPos.offset
+      popupPos.offset = vec2(0, 0)
+      builder.draggedNode = currentNode.some
+
+    onDrag(MouseButton.Left, delta):
+      popupPos.offset = builder.mousePos - builder.mousePosClick[Left]
+
+    builder.renderText(testText2, 0, (0, 0))
+
+    # background filler
+    builder.panel(&{FillX, FillY, FillBackground}):
+      currentNode.setBackgroundColor(0, 0, 0)
+
+proc neww*[T](value: T): ref T =
+  new result
+  result[] = value
+
 iterator drawFrames() {.closure.} =
   var counter = 0
   var testWidth = 10.float32
 
-  var popup1Pos = vec2(100, 100)
-  var popup1Offset = vec2(0, 0)
-  var popup2Pos = vec2(400, 400)
-  var popup2Offset = vec2(0, 0)
-
-  var startMousePos = vec2(0, 0)
+  var popup1 = neww (vec2(100, 100), vec2(0, 0))
+  var popup2 = neww (vec2(200, 200), vec2(0, 0))
 
   while true:
     builder.frame:
@@ -359,51 +389,8 @@ iterator drawFrames() {.closure.} =
           builder.panel(&{FillX, FillY, FillBackground}):
             currentNode.setBackgroundColor(0, 0, 1)
 
-        builder.panel(&{LayoutVertical, DrawBorder}): # draggable overlay
-          currentNode.x = popup1Pos.x + popup1Offset.x
-          currentNode.y = popup1Pos.y + popup1Offset.y
-          currentNode.w = 150
-          currentNode.h = 150
-          currentNode.setBorderColor(1, 0, 1)
-
-          onClick:
-            popup1Pos += popup1Offset
-            popup1Offset = vec2(0, 0)
-            startMousePos = window.mousePos.vec2
-            builder.draggedNode = currentNode.some
-
-          onDrag(MouseButton.Left, delta):
-            if currentNode.some == builder.draggedNode:
-              popup1Offset = window.mousePos.vec2 - startMousePos
-
-          builder.renderText(testText2, 0, (0, 0))
-
-          # background filler
-          builder.panel(&{FillX, FillY, FillBackground}):
-            currentNode.setBackgroundColor(0, 0, 0)
-
-        builder.panel(&{LayoutVertical, DrawBorder}): # draggable overlay 2
-          currentNode.x = popup2Pos.x + popup2Offset.x
-          currentNode.y = popup2Pos.y + popup2Offset.y
-          currentNode.w = 150
-          currentNode.h = 150
-          currentNode.setBorderColor(0, 1, 1)
-
-          onClick:
-            popup2Pos += popup2Offset
-            popup2Offset = vec2(0, 0)
-            startMousePos = window.mousePos.vec2
-            builder.draggedNode = currentNode.some
-
-          onDrag(MouseButton.Left, delta):
-            if currentNode.some == builder.draggedNode:
-              popup2Offset = window.mousePos.vec2 - startMousePos
-
-          builder.renderText(testText2, 0, (0, 0))
-
-          # background filler
-          builder.panel(&{FillX, FillY, FillBackground}):
-            currentNode.setBackgroundColor(0, 0, 0)
+        builder.createPopup(testText2, popup1)
+        builder.createPopup(testText2, popup2)
 
   builder.frameIndex = 0
   ctx.fillStyle = rgb(0, 0, 0)
@@ -423,24 +410,16 @@ proc toMouseButton(button: Button): MouseButton =
     else: MouseButton.Unknown
 
 window.onMouseMove = proc() =
-  let buttons = set[Button](window.buttonDown)
-  let mouseDelta = window.mouseDelta.vec2
-  if buttons.len > 0:
-    # echo buttons, ", ", mouseDelta
+  var mouseButtons: set[MouseButton]
+  for button in set[Button](window.buttonDown):
+    mouseButtons.incl button.toMouseButton
 
-    if builder.draggedNode.getSome(node):
-      # echo "Found target ", node.dump
-      for button in buttons:
-        discard node.handleDrag()(node, button.toMouseButton, mouseDelta)
-        advanceFrame = true
+  advanceFrame = builder.handleMouseMoved(window.mousePos.vec2, mouseButtons) or advanceFrame
 
 window.onButtonRelease = proc(button: Button) =
   case button
   of MouseLeft, MouseRight, MouseMiddle, MouseButton4, MouseButton5, DoubleClick, TripleClick, QuadrupleClick:
-    if builder.draggedNode.getSome(node):
-      # discard node.handleEndDrag()(node)
-      builder.draggedNode = UINode.none
-      # advanceFrame = true
+    builder.handleMouseReleased(button.toMouseButton, window.mousePos.vec2)
     return
   else:
     return
@@ -450,11 +429,7 @@ window.onButtonRelease = proc(button: Button) =
 window.onButtonPress = proc(button: Button) =
   case button
   of MouseLeft, MouseRight, MouseMiddle, MouseButton4, MouseButton5, DoubleClick, TripleClick, QuadrupleClick:
-    # echo "click ", button, ", ", window.mousePos
-    let targetNode = builder.root.findNodeContaining(window.mousePos.vec2, (node) => node.handleClick.isNotNil)
-    if targetNode.getSome(node):
-      # echo "Found target ", node.dump
-      discard node.handleClick()(node, button.toMouseButton)
+    builder.handleMousePressed(button.toMouseButton, window.mousePos.vec2)
 
   of Button.KeyX:
     window.closeRequested = true
@@ -466,8 +441,10 @@ window.onButtonPress = proc(button: Button) =
   of Button.KeyU:
     logRoot = not logRoot
   of Button.KeyI:
-    logInvalidationRects = not logInvalidationRects
+    logFrameTime = not logFrameTime
   of Button.KeyA:
+    logInvalidationRects = not logInvalidationRects
+  of Button.KeyE:
     logPanel = not logPanel
 
   of Button.KeyUp:
@@ -516,16 +493,13 @@ while not window.closeRequested:
     frameIterator()
   let msAdvanceFrame = tAdvanceFrame.elapsed.ms
 
-  # if bxy.hasImage("image1_" & $(builder.frameIndex mod 2)):
-  #   bxy.drawImage("image1_" & $(builder.frameIndex mod 2), vec2(0, 0))
-  # if bxy.hasImage("image2_" & $(builder.frameIndex mod 2)):
-  #   bxy.drawImage("image2_" & $(builder.frameIndex mod 2), vec2(image.width.float32, 0))
   let tEndFrame = startTimer()
   bxy.endFrame()
   let msEndFrame = tEndFrame.elapsed.ms
 
   if advanceFrame:
-    echo fmt"[frame] {nodesDrawn} {frameTimer.elapsed.ms}, begin: {msBeginFrame}, remove: {msRemoveImages}, advance: {msAdvanceFrame}, end: {msEndFrame}"
+    if logFrameTime:
+      echo fmt"[frame] {nodesDrawn} {frameTimer.elapsed.ms}, begin: {msBeginFrame}, remove: {msRemoveImages}, advance: {msAdvanceFrame}, end: {msEndFrame}"
 
     glBindFramebuffer(GL_READ_FRAMEBUFFER, framebufferId)
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
