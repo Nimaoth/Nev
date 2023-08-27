@@ -78,3 +78,24 @@ proc `-`*[T, U](a: Option[T], b: Option[U]): Option[T] =
     return b
   else:
     return T.none
+
+proc someOption*[T: not Option](self: T): Option[T] = some(self)
+proc someOption*[T: Option](self: T): T = self
+
+template mapIt*[T](self: Option[T], op: untyped): untyped =
+  type OutType = typeof((
+    block:
+      var it{.inject.}: typeof(self.get, typeOfProc);
+      op), typeOfProc)
+  if self.isSome:
+    let it {.inject.} = self.get
+    some(op)
+  else:
+    OutType.none
+
+proc maybeFlatten*[T](self: Option[T]): Option[T] = self
+proc maybeFlatten*[T](self: Option[Option[T]]): Option[T] = self.flatten
+
+proc neww*[T](value: T): ref T =
+  new result
+  result[] = value
