@@ -6,6 +6,20 @@ import custom_logger
 logger.enableConsoleLogger()
 logCategory "test", true
 
+var showPopup1 = false
+var showPopup2 = false
+
+var logRoot = false
+var logFrameTime = false
+var showDrawnNodes = true
+
+var advanceFrame = false
+var counter = 0
+var testWidth = 10.float32
+
+var popup1 = neww (vec2(100, 100), vec2(0, 0), false)
+var popup2 = neww (vec2(200, 200), vec2(0, 0), false)
+
 const testText = """
 macro defineBitFlag*(body: untyped): untyped =
   let flagName = body[0][0].typeName
@@ -47,7 +61,16 @@ macro defineBitFlag*(body: untyped): untyped =
 const testText2 = """hi, wassup?
 lol
 uiaeuiaeuiae
-uiui uia eu """.splitLines(keepEol=false)
+uiui uia eu""".splitLines(keepEol=false)
+
+const testText3 = """    glBindFramebuffer(GL_READ_FRAMEBUFFER, framebufferId)
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
+    glBlitFramebuffer(
+      0, 0, framebuffer.width.GLint, framebuffer.height.GLint,
+      0, 0, window.size.x.GLint, window.size.y.GLint,
+      GL_COLOR_BUFFER_BIT, GL_NEAREST.GLenum)
+
+    window.swapBuffers()""".splitLines(keepEol=false)
 
 proc getFont*(font: string, fontSize: float32): Font =
   let typeface = readTypeface(font)
@@ -74,7 +97,7 @@ builder.lineGap = 6
 var framebufferId: GLuint
 var framebuffer: Texture
 
-var window = newWindow("", ivec2(image.width.int32 * 2, image.height.int32), WindowStyle.DecoratedResizable)
+var window = newWindow("", ivec2(image.width.int32 * 2, image.height.int32), WindowStyle.DecoratedResizable, vsync=false)
 makeContextCurrent(window)
 loadExtensions()
 enableAutoGLerrorCheck(false)
@@ -98,10 +121,170 @@ glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fram
 glBindFramebuffer(GL_FRAMEBUFFER, 0)
 bxy.setTargetFramebuffer framebufferId
 
-var nodesDrawn = 0
 var drawnNodes: seq[UINode] = @[]
 
 var cachedImages: LruCache[string, string] = newLruCache[string, string](1000, true)
+
+template button*(builder: UINodeBuilder, name: string, body: untyped): untyped =
+  builder.panel(&{DrawText, DrawBorder, FillBackground, SizeToContentX, SizeToContentY, MouseHover}, text = name):
+    currentNode.setTextColor(1, 0, 0)
+
+    if currentNode.some == builder.hoveredNode:
+      currentNode.setBackgroundColor(0.6, 0.5, 0.5)
+    else:
+      currentNode.setBackgroundColor(0.3, 0.2, 0.2)
+
+    onClick Left:
+      body
+
+template withText*(builder: UINodeBuilder, str: string, body: untyped): untyped =
+  builder.panel(&{DrawText, FillBackground, SizeToContentX, SizeToContentY, LayoutHorizontal}, text = str):
+    # currentNode.setTextColor(1, 0, 0)
+    # currentNode.setBackgroundColor(0, 0, 0)
+
+    body
+
+var cursor = (0, 0)
+
+proc renderLine(builder: UINodeBuilder, line: string, curs: Option[int], backgroundColor, textColor: Color, sizeToContentX: bool) =
+  var flags = &{LayoutHorizontal, FillX, SizeToContentY}
+  if sizeToContentX:
+    flags.incl SizeToContentX
+  # else:
+  #   flags.incl FillX
+
+  builder.panel(flags):
+
+    builder.withText(line):
+      currentNode.backgroundColor = backgroundColor
+      currentNode.textColor = textColor
+
+      if curs.getSome(curs) and curs <= line.high:
+        let width = builder.textWidth(curs).round
+        builder.panel(&{FillY}, w = width)
+
+        # cursor
+        builder.panel(&{FillY, FillBackground}, w = builder.charWidth):
+          currentNode.setBackgroundColor(0.7, 0.7, 1, 0.7)
+          # onClick:
+          #   # echo "clicked cursor ", btn
+          #   cursor[1] = rand(0..line.len)
+
+    # cursor after latest char
+    if curs.getSome(curs) and curs == line.len:
+      builder.panel(&{FillY, FillBackground}, w = builder.charWidth):
+        currentNode.setBackgroundColor(0.5, 0.5, 1, 1)
+        # onClick:
+        #   # echo "clicked cursor ", btn
+        #   cursor[1] = rand(0..line.len)
+
+    # Fill rest of line with background
+    builder.panel(&{FillX, FillY, FillBackground}):
+      currentNode.backgroundColor = backgroundColor * 2
+
+proc renderText(builder: UINodeBuilder, lines: openArray[string], first: int, cursor: (int, int), backgroundColor, textColor: Color, sizeToContentX = false, sizeToContentY = true) =
+  var flags = &{MaskContent, LayoutVertical}
+  if sizeToContentX:
+    flags.incl SizeToContentX
+  else:
+    flags.incl FillX
+
+  if sizeToContentY:
+    flags.incl SizeToContentY
+  else:
+    flags.incl FillY
+
+  builder.panel(flags):
+    for i, line in lines:
+      let column = if cursor[0] == i: cursor[1].some else: int.none
+      builder.renderLine(line, column, backgroundColor, textColor, sizeToContentX)
+
+proc createPopup(builder: UINodeBuilder, lines: openArray[string], pop: ref tuple[pos: Vec2, offset: Vec2, collapsed: bool], backgroundColor, borderColor, headerColor, textColor: Color) =
+  let pos = pop.pos + pop.offset
+
+  var flags = &{LayoutVertical, SizeToContentX, SizeToContentY, MouseHover, MaskContent}
+  if pop.collapsed:
+    flags.incl SizeToContentY
+
+  builder.panel(flags, x = pos.x, y = pos.y): # draggable overlay
+    currentNode.setBorderColor(1, 0, 1)
+    currentNode.flags.incl DrawBorder
+
+    let headerWidth = if pop.collapsed: 100.float32.some else: float32.none
+
+    # header
+    builder.panel(&{FillX, SizeToContentY, FillBackground, LayoutHorizontal}, w = headerWidth):
+      currentNode.setBackgroundColor(0.2, 0.2, 0.2)
+      builder.button("X"):
+        pop.collapsed = not pop.collapsed
+
+      onClick Left:
+        pop.pos += pop.offset
+        pop.offset = vec2(0, 0)
+        builder.draggedNode = currentNode.some
+
+      onDrag Left:
+        pop.offset = builder.mousePos - builder.mousePosClick[Left]
+
+    if not pop.collapsed:
+      builder.renderText(lines, 0, (0, 0), backgroundColor=backgroundColor, textColor = textColor, sizeToContentX = true)
+
+      # # background filler
+      # builder.panel(&{FillX, FillY, FillBackground}):
+      #   currentNode.setBackgroundColor(0, 0, 0)
+
+proc buildUINodes(builder: UINodeBuilder) =
+  builder.panel(&{FillX, FillY, OverlappingChildren, MaskContent}): # fullscreen overlay
+
+    builder.panel(&{FillX, FillY, LayoutVertical}): # main panel
+
+      builder.panel(&{LayoutHorizontal, FillX, SizeToContentY}): # first row
+        builder.button("press me"):
+          if btn == MouseButton.Left:
+            inc counter
+        builder.withText($counter):
+          currentNode.textColor = color(1, 1, 1)
+          currentNode.backgroundColor = color(0, 0, 0)
+        builder.withText(" * "):
+          currentNode.textColor = color(1, 1, 1)
+          currentNode.backgroundColor = color(0, 0, 0)
+        builder.withText($counter):
+          currentNode.textColor = color(1, 1, 1)
+          currentNode.backgroundColor = color(0, 0, 0)
+        builder.withText(" = "):
+          currentNode.textColor = color(1, 1, 1)
+          currentNode.backgroundColor = color(0, 0, 0)
+        builder.withText($(counter * counter)):
+          currentNode.textColor = color(1, 1, 1)
+          currentNode.backgroundColor = color(0, 0, 0)
+        builder.panel(&{FillX, FillY, FillBackground}):
+          currentNode.backgroundColor = color(0, 0, 0)
+
+      builder.panel(&{LayoutHorizontal, FillX, SizeToContentY}): # second row
+        builder.button("-"):
+          if btn == MouseButton.Left:
+            testWidth = testWidth / 1.5
+        builder.button("+"):
+          if btn == MouseButton.Left:
+            testWidth = testWidth * 1.5
+        builder.panel(&{FillBackground, FillY}, w = testWidth):
+          currentNode.setBackgroundColor(0, 1, 0)
+        builder.panel(&{FillBackground, FillY}, w = 50):
+          currentNode.setBackgroundColor(1, 0, 0)
+        builder.panel(&{FillX, FillY, FillBackground}):
+          currentNode.setBackgroundColor(0, 0, 1)
+
+      # text area
+      builder.renderText(testText, 0, cursor, backgroundColor = color(0.1, 0.1, 0.1), textColor = color(0.9, 0.9, 0.9), sizeToContentX = false)
+
+      # background filler
+      builder.panel(&{FillX, FillY, FillBackground}):
+        currentNode.setBackgroundColor(0, 0, 1)
+
+    if showPopup1:
+      builder.createPopup(testText2, popup1, backgroundColor = color(0.3, 0.1, 0.1), textColor = color(0.9, 0.5, 0.5), headerColor = color(0.4, 0.2, 0.2), borderColor = color(1, 0.1, 0.1))
+    if showPopup2:
+      builder.createPopup(testText3, popup2, backgroundColor = color(0.1, 0.3, 0.1), textColor = color(0.5, 0.9, 0.5), headerColor = color(0.2, 0.4, 0.2), borderColor = color(0.1, 1, 0.1))
 
 proc strokeRect*(boxy: Boxy, rect: Rect, color: Color, thickness: float = 1, offset: float = 0) =
   let rect = rect.grow(vec2(thickness * offset, thickness * offset))
@@ -121,7 +304,6 @@ proc drawNode(builder: UINodeBuilder, node: UINode, offset: Vec2 = vec2(0, 0), f
     return
 
   if node.flags.any &{FillBackground, DrawBorder, DrawText}:
-    inc nodesDrawn
     drawnNodes.add node
 
   if node.flags.any &{FillBackground, DrawText}:
@@ -183,32 +365,6 @@ proc drawNode(builder: UINodeBuilder, node: UINode, offset: Vec2 = vec2(0, 0), f
   if DrawBorder in node.flags:
     bxy.strokeRect(bounds, node.borderColor)
 
-template panel*(builder: UINodeBuilder, body: untyped): untyped =
-  builder.panel(0.UINodeFlags, body)
-
-template button*(builder: UINodeBuilder, name: string, body: untyped): untyped =
-  builder.panel(&{DrawText, DrawBorder, FillBackground, SizeToContentX, SizeToContentY, MouseHover}):
-    currentNode.setTextColor(1, 0, 0)
-
-    if currentNode.some == builder.hoveredNode:
-      currentNode.setBackgroundColor(0.6, 0.5, 0.5)
-    else:
-      currentNode.setBackgroundColor(0.3, 0.2, 0.2)
-
-    currentNode.text = name
-
-    onClick Left:
-      body
-
-template withText*(builder: UINodeBuilder, str: string, body: untyped): untyped =
-  builder.panel(&{DrawText, FillBackground, SizeToContentX, SizeToContentY, LayoutHorizontal}):
-    currentNode.setTextColor(1, 0, 0)
-    currentNode.setBackgroundColor(0, 0, 0)
-
-    currentNode.text = str
-
-    body
-
 proc randomColor(node: UINode, a: float32): Color =
   let h = node.id.hash
   result.r = (((h shr 0) and 0xff).float32 / 255.0).sqrt
@@ -216,43 +372,31 @@ proc randomColor(node: UINode, a: float32): Color =
   result.b = (((h shr 16) and 0xff).float32 / 255.0).sqrt
   result.a = a
 
-var logRoot = false
-var logFrameTime = false
-var showDrawnNodes = true
-
-template frame(builder: UINodeBuilder, body: untyped) =
+proc renderNewFrame(builder: UINodeBuilder) =
   block:
-    # echo "=========================== ", builder.frameIndex
+    # let buildTime = startTimer()
     builder.beginFrame(vec2(image.width.float32, image.height.float32))
-
-    let buildTime = startTimer()
-    body
+    builder.buildUINodes()
     builder.endFrame()
     # echo "[build] ", buildTime.elapsed.ms, "ms"
 
     if logRoot:
       echo builder.root.dump(true)
-    # for n in builder.nodePool.allNodes:
-    #   debug n.dump
-    #   if n.parent.isNotNil:
-    #     debug "  parent: ", n.parent.dump
-    #   if n.prev.isNotNil:
-    #     debug "  prev: ", n.prev.dump
-    #   if n.next.isNotNil:
-    #     debug "  next: ", n.next.dump
-    #   if n.first.isNotNil:
-    #     debug "  first: ", n.first.dump
-    #   if n.last.isNotNil:
-    #     debug "  last: ", n.last.dump
 
-    nodesDrawn = 0
     drawnNodes.setLen 0
 
     let drawTime = startTimer()
     builder.drawNode(builder.root)
-    # echo "[draw] ", drawTime.elapsed.ms, "ms (", nodesDrawn, " nodes)"
+    # echo "[draw] ", drawTime.elapsed.ms, "ms (", drawnNodes.len, " nodes)"
 
     if showDrawnNodes:
+      bxy.pushLayer()
+      defer:
+        bxy.pushLayer()
+        bxy.drawRect(rect(image.width.float32, 0, image.width.float32, image.height.float32), color(1, 0, 0, 1))
+        bxy.popLayer(blendMode = MaskBlend)
+        bxy.popLayer()
+
       bxy.drawRect(rect(image.width.float32, 0, image.width.float32, image.height.float32), color(0, 0, 0))
 
       for node in drawnNodes:
@@ -261,164 +405,6 @@ template frame(builder: UINodeBuilder, body: untyped) =
 
         if DrawBorder in node.flags:
           bxy.strokeRect(rect(node.lx + image.width.float32, node.ly, node.lw, node.lh), color(c.r, c.g, c.b, 0.5), 5, offset = 0.5)
-
-    # builder.frameIndex.inc
-
-    yield
-
-var cursor = (0, 0)
-
-proc renderLine(builder: UINodeBuilder, line: string, curs: Option[int], sizeToContentX: bool) =
-  builder.panel(&{LayoutHorizontal, FillX, SizeToContentY}):
-    if sizeToContentX:
-      currentNode.flags.incl SizeToContentX
-
-    builder.withText(line):
-      if curs.getSome(curs) and curs <= line.high:
-        builder.panel(&{FillY}):
-          let width = builder.textWidth(curs).round
-          currentNode.w = width
-
-        # cursor
-        builder.panel(&{FillY, FillBackground}):
-          currentNode.w = builder.charWidth
-          currentNode.setBackgroundColor(0.5, 0.5, 1, 0.7)
-          # onClick:
-          #   # echo "clicked cursor ", btn
-          #   cursor[1] = rand(0..line.len)
-
-    # cursor after latest char
-    if curs.getSome(curs) and curs == line.len:
-      builder.panel(&{FillY, FillBackground}):
-        currentNode.w = builder.charWidth
-        currentNode.setBackgroundColor(0.5, 0.5, 1, 1)
-        # onClick:
-        #   # echo "clicked cursor ", btn
-        #   cursor[1] = rand(0..line.len)
-
-    # Fill rest of line with background
-    builder.panel(&{FillX, FillY, FillBackground}):
-      currentNode.setBackgroundColor(0, 0, 0, 1)
-
-proc renderText(builder: UINodeBuilder, lines: openArray[string], first: int, cursor: (int, int), sizeToContentX = false, sizeToContentY = true) =
-  builder.panel(&{MaskContent, LayoutVertical}):
-    if sizeToContentX:
-      currentNode.flags.incl SizeToContentX
-    else:
-      currentNode.flags.incl FillX
-      builder.preLayout currentNode
-
-    if sizeToContentY:
-      currentNode.flags.incl SizeToContentY
-    else:
-      currentNode.flags.incl FillY
-      builder.preLayout currentNode
-
-    for i, line in lines:
-      let column = if cursor[0] == i: cursor[1].some else: int.none
-      builder.renderLine(line, column, sizeToContentX)
-
-proc createPopup(builder: UINodeBuilder, lines: openArray[string], pop: ref tuple[pos: Vec2, offset: Vec2, collapsed: bool]) =
-  builder.panel(&{LayoutVertical, SizeToContentX, SizeToContentY, MouseHover, MaskContent}): # draggable overlay
-    let pos = pop.pos + pop.offset
-    currentNode.x = pos.x
-    currentNode.y = pos.y
-    # currentNode.w = 100
-
-    currentNode.setBorderColor(1, 0, 1)
-    currentNode.flags.incl DrawBorder
-
-    # header
-    builder.panel(&{FillX, SizeToContentY, FillBackground, LayoutHorizontal}):
-      # currentNode.h = 20
-      currentNode.setBackgroundColor(0.2, 0.2, 0.2)
-      builder.button("X"):
-        pop.collapsed = not pop.collapsed
-
-      onClick Left:
-        pop.pos += pop.offset
-        pop.offset = vec2(0, 0)
-        builder.draggedNode = currentNode.some
-
-      onDrag Left:
-        pop.offset = builder.mousePos - builder.mousePosClick[Left]
-
-    if pop.collapsed:
-      currentNode.flags.incl SizeToContentY
-    else:
-      builder.renderText(testText2, 0, (0, 0), sizeToContentX = true)
-
-      # # background filler
-      # builder.panel(&{FillX, FillY, FillBackground}):
-      #   currentNode.setBackgroundColor(0, 0, 0)
-
-proc neww*[T](value: T): ref T =
-  new result
-  result[] = value
-
-iterator drawFrames() {.closure.} =
-  var counter = 0
-  var testWidth = 10.float32
-
-  var popup1 = neww (vec2(100, 100), vec2(0, 0), false)
-  var popup2 = neww (vec2(200, 200), vec2(0, 0), false)
-
-  while true:
-    builder.frame:
-      builder.panel(&{FillX, FillY, OverlappingChildren}): # fullscreen overlay
-
-        builder.panel(&{FillX, FillY, LayoutVertical}): # main panel
-
-          builder.panel(&{LayoutHorizontal, FillX, SizeToContentY}): # first row
-            builder.button("press me"):
-              if btn == MouseButton.Left:
-                inc counter
-            builder.withText($counter):
-              discard
-            builder.withText(" * "):
-              discard
-            builder.withText($counter):
-              discard
-            builder.withText(" = "):
-              discard
-            builder.withText($(counter * counter)):
-              discard
-            builder.panel(&{FillX, FillY, FillBackground}):
-              currentNode.setBackgroundColor(0, 0, 0)
-
-          builder.panel(&{LayoutHorizontal, FillX, SizeToContentY}): # second row
-            builder.button("-"):
-              if btn == MouseButton.Left:
-                testWidth = testWidth / 1.5
-            builder.button("+"):
-              if btn == MouseButton.Left:
-                testWidth = testWidth * 1.5
-            builder.panel(&{FillBackground, FillY}):
-              currentNode.w = testWidth
-              currentNode.setBackgroundColor(0, 1, 0)
-            builder.panel(&{FillBackground, FillY}):
-              currentNode.w = 50
-              currentNode.setBackgroundColor(1, 0, 0)
-            builder.panel(&{FillX, FillY, FillBackground}):
-              currentNode.setBackgroundColor(0, 0, 1)
-
-          # text area
-          builder.renderText(testText, 0, cursor, sizeToContentX = false)
-
-          # background filler
-          builder.panel(&{FillX, FillY, FillBackground}):
-            currentNode.setBackgroundColor(0, 0, 1)
-
-        builder.createPopup(testText2, popup1)
-        builder.createPopup(testText2, popup2)
-
-  builder.frameIndex = 0
-  ctx.fillStyle = rgb(0, 0, 0)
-  ctx.fillRect(0, 0, ctx.image.width.float32, ctx.image.height.float32)
-  bxy.addImage("image" & $(builder.frameIndex mod 2), image)
-
-var frameIterator: iterator() = drawFrames
-var advanceFrame = false
 
 proc toMouseButton(button: Button): MouseButton =
   result = case button:
@@ -467,6 +453,12 @@ window.onButtonPress = proc(button: Button) =
   of Button.KeyE:
     logPanel = not logPanel
 
+  of Button.Key1:
+    showPopup1 = not showPopup1
+
+  of Button.Key2:
+    showPopup2 = not showPopup2
+
   of Button.KeyUp:
     cursor[0] = max(0, cursor[0] - 1)
     cursor[1] = cursor[1].clamp(0, testText[cursor[0]].len)
@@ -507,10 +499,7 @@ while not window.closeRequested:
 
   let tAdvanceFrame = startTimer()
   if advanceFrame:
-    if frameIterator.finished:
-      echo "============================================================== restarting frames"
-      frameIterator = drawFrames
-    frameIterator()
+    builder.renderNewFrame()
   let msAdvanceFrame = tAdvanceFrame.elapsed.ms
 
   let tEndFrame = startTimer()
@@ -519,7 +508,7 @@ while not window.closeRequested:
 
   if advanceFrame:
     if logFrameTime:
-      echo fmt"[frame] {nodesDrawn} {frameTimer.elapsed.ms}, begin: {msBeginFrame}, remove: {msRemoveImages}, advance: {msAdvanceFrame}, end: {msEndFrame}"
+      echo fmt"[frame] {drawnNodes.len} {frameTimer.elapsed.ms}, begin: {msBeginFrame}, remove: {msRemoveImages}, advance: {msAdvanceFrame}, end: {msEndFrame}"
 
     glBindFramebuffer(GL_READ_FRAMEBUFFER, framebufferId)
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)

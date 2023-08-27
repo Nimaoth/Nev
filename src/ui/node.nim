@@ -146,8 +146,12 @@ func last*(node: UINode): UINode = node.last
 func next*(node: UINode): UINode = node.next
 func prev*(node: UINode): UINode = node.prev
 
+func contentDirty*(node: UINode): bool = node.mContentDirty
+proc `contentDirty=`*(node: UINode, value: bool) =
+  node.mContentDirty = value
+
 func id*(node: UINode): Id = node.mId
-func dirty*(node: UINode): bool = node.mContentDirty or node.mPositionDirty or node.mSizeDirty
+func dirty*(node: UINode): bool = node.contentDirty or node.mPositionDirty or node.mSizeDirty
 func lastChange*(node: UINode): int = max(node.mLastContentChange, max(node.mLastPositionChange, node.mLastSizeChange))
 func flags*(node: UINode): var UINodeFlags = node.mFlags
 func text*(node: UINode): string = node.mText
@@ -155,11 +159,11 @@ func backgroundColor*(node: UINode): Color = node.mBackgroundColor
 func borderColor*(node: UINode): Color = node.mBorderColor
 func textColor*(node: UINode): Color = node.mTextColor
 
-func `flags=`*(node: UINode, value: UINodeFlags)     = node.mFlags        = value
-func `text=`*(node: UINode, value: string)           = node.mContentDirty = node.mContentDirty or (value != node.mText);            node.mText            = value
-func `backgroundColor=`*(node: UINode, value: Color) = node.mContentDirty = node.mContentDirty or (value != node.mBackgroundColor); node.mBackgroundColor = value
-func `borderColor=`*(node: UINode, value: Color)     = node.mContentDirty = node.mContentDirty or (value != node.mBorderColor);     node.mBorderColor     = value
-func `textColor=`*(node: UINode, value: Color)       = node.mContentDirty = node.mContentDirty or (value != node.mTextColor);       node.mTextColor       = value
+proc `flags=`*(node: UINode, value: UINodeFlags)     = node.mFlags        = value
+proc `text=`*(node: UINode, value: string)           = node.contentDirty = node.contentDirty or (value != node.mText);            node.mText            = value
+proc `backgroundColor=`*(node: UINode, value: Color) = node.contentDirty = node.contentDirty or (value != node.mBackgroundColor); node.mBackgroundColor = value
+proc `borderColor=`*(node: UINode, value: Color)     = node.contentDirty = node.contentDirty or (value != node.mBorderColor);     node.mBorderColor     = value
+proc `textColor=`*(node: UINode, value: Color)       = node.contentDirty = node.contentDirty or (value != node.mTextColor);       node.mTextColor       = value
 
 func handlePressed*(node: UINode):        (proc(node: UINode, button: MouseButton): bool) = node.mHandlePressed
 func handleReleased*(node: UINode):        (proc(node: UINode, button: MouseButton): bool) = node.mHandleReleased
@@ -205,7 +209,7 @@ func `lh=`*(node: UINode, value: float32) = node.mLh = value
 proc textWidth*(builder: UINodeBuilder, textLen: int): float32 = textLen.float32 * builder.charWidth
 proc textHeight*(builder: UINodeBuilder): float32 = builder.lineHeight + builder.lineGap
 
-proc createNode*(pool: UINodePool): UINode
+proc unpoolNode*(pool: UINodePool): UINode
 proc findNodeContaining*(node: UINode, pos: Vec2, predicate: proc(node: UINode): bool): Option[UINode]
 
 var stackSize = 0
@@ -224,7 +228,7 @@ proc newNodeBuilder*(): UINodeBuilder =
   new result
   new result.nodePool
   result.frameIndex = 0
-  result.root = result.nodePool.createNode()
+  result.root = result.nodePool.unpoolNode()
 
 proc hovered*(builder: UINodeBuilder, node: UINode): bool = node.some == builder.hoveredNode
 
@@ -281,7 +285,7 @@ proc handleMouseMoved*(builder: UINodeBuilder, pos: Vec2, buttons: set[MouseButt
 
 proc setBackgroundColor*(node: UINode, r, g, b: float32, a: float32 = 1) =
   if r != node.mBackgroundColor.r or g != node.mBackgroundColor.g or b != node.mBackgroundColor.b or node.mBackgroundColor.a != a:
-    node.mContentDirty = true
+    node.contentDirty = true
   node.mBackgroundColor.r = r
   node.mBackgroundColor.g = g
   node.mBackgroundColor.b = b
@@ -289,7 +293,7 @@ proc setBackgroundColor*(node: UINode, r, g, b: float32, a: float32 = 1) =
 
 proc setBorderColor*(node: UINode, r, g, b: float32, a: float32 = 1) =
   if r != node.mBorderColor.r or g != node.mBorderColor.g or b != node.mBorderColor.b or node.mBorderColor.a != a:
-    node.mContentDirty = true
+    node.contentDirty = true
   node.mBorderColor.r = r
   node.mBorderColor.g = g
   node.mBorderColor.b = b
@@ -297,7 +301,7 @@ proc setBorderColor*(node: UINode, r, g, b: float32, a: float32 = 1) =
 
 proc setTextColor*(node: UINode, r, g, b: float32, a: float32 = 1) =
   if r != node.mTextColor.r or g != node.mTextColor.g or b != node.mTextColor.b or node.mTextColor.a != a:
-    node.mContentDirty = true
+    node.contentDirty = true
   node.mTextColor.r = r
   node.mTextColor.g = g
   node.mTextColor.b = b
@@ -319,7 +323,7 @@ iterator rchildren*(node: UINode): UINode =
     yield current
     current = prev
 
-proc createNode*(pool: UINodePool): UINode =
+proc unpoolNode*(pool: UINodePool): UINode =
   if pool.nodes.len > 0:
     # debug "reusing node ", pool.nodes[pool.nodes.high].id
     return pool.nodes.pop
@@ -329,10 +333,10 @@ proc createNode*(pool: UINodePool): UINode =
   pool.allNodes.add result
 
 proc returnNode*(pool: UINodePool, node: UINode) =
+  pool.nodes.add node
+
   for _, c in node.children:
     pool.returnNode c
-
-  # debug "returning node ", node.id
 
   node.parent = nil
   node.first = nil
@@ -340,15 +344,16 @@ proc returnNode*(pool: UINodePool, node: UINode) =
   node.next = nil
   node.prev = nil
   node.mFlags = 0.UINodeFlags
-  node.mLastContentChange = 0
-  node.mLastPositionChange = 0
-  node.mLastSizeChange = 0
+  node.mFlagsOld = 0.UINodeFlags
 
   node.mContext = UIContextRoot.none
 
-  node.mContentDirty = false
+  node.contentDirty = false
   node.mPositionDirty = false
   node.mSizeDirty = false
+  node.mLastContentChange = 0
+  node.mLastPositionChange = 0
+  node.mLastSizeChange = 0
 
   node.mText = ""
 
@@ -364,6 +369,10 @@ proc returnNode*(pool: UINodePool, node: UINode) =
   node.mLw = 0
   node.mLh = 0
 
+  node.backgroundColor = color(0, 0, 0)
+  node.textColor = color(1, 1, 1)
+  node.borderColor = color(0.5, 0.5, 0.5)
+
   node.mHandlePressed = nil
   node.mHandleReleased = nil
   node.mHandleDrag = nil
@@ -371,14 +380,15 @@ proc returnNode*(pool: UINodePool, node: UINode) =
   node.mHandleEndHover = nil
   node.mHandleHover = nil
 
-  pool.nodes.add node
+  node.clearRect = Rect.none
+  node.invalidationRect = Rect.none
 
 proc getNextOrNewNode*(pool: UINodePool, node: UINode, last: UINode): UINode =
   if last.isNil:
     if node.first.isNotNil:
       return node.first
 
-    let newNode = pool.createNode()
+    let newNode = pool.unpoolNode()
     newNode.parent = node
     node.first = newNode
     node.last = newNode
@@ -389,18 +399,19 @@ proc getNextOrNewNode*(pool: UINodePool, node: UINode, last: UINode): UINode =
     assert last.next.prev == last
     return last.next
 
-  let newNode = pool.createNode()
+  let newNode = pool.unpoolNode()
   newNode.parent = node
   newNode.prev = last
   last.next = newNode
   node.last = newNode
   return newNode
 
-proc clearUnusedChildren*(pool: UINodePool, node: UINode, last: UINode) =
+proc clearUnusedChildren*(pool: UINodePool, node: UINode, last: UINode): Option[Rect] =
   if last.isNil:
     for _, child in node.children:
+      result = result or child.bounds.some
       pool.returnNode child
-      node.mContentDirty = true
+      node.contentDirty = true
     node.first = nil
     node.last = nil
 
@@ -410,8 +421,9 @@ proc clearUnusedChildren*(pool: UINodePool, node: UINode, last: UINode) =
     var n = last.next
     while n.isNotNil:
       let next = n.next
+      result = result or n.bounds.some
       pool.returnNode n
-      node.mContentDirty = true
+      node.contentDirty = true
       n = next
 
     node.last = last
@@ -428,14 +440,10 @@ proc preLayout*(builder: UINodeBuilder, node: UINode) =
   if LayoutHorizontal in parent.flags:
     if node.prev.isNotNil:
       node.x = node.prev.x + node.prev.w
-    else:
-      node.x = 0
 
   if LayoutVertical in parent.flags:
     if node.prev.isNotNil:
       node.y = node.prev.y + node.prev.h
-    else:
-      node.y = 0
 
   if node.mFlags.all &{SizeToContentX, FillX}:
     if DrawText in node.flags:
@@ -460,7 +468,6 @@ proc preLayout*(builder: UINodeBuilder, node: UINode) =
     node.h = parent.h - node.y
 
 proc relayout*(builder: UINodeBuilder, node: UINode) =
-  # echo "relayout ", node.dump
   builder.preLayout node
   for _, c in node.children:
     builder.relayout c
@@ -525,7 +532,6 @@ proc postLayout*(builder: UINodeBuilder, node: UINode) =
       node.mSizeDirty = true
 
     if node.mPositionDirty or node.mSizeDirty and not node.bounds.contains(b):
-      # echo "invalidate ", b.invalidationRect(node.bounds)
       node.clearRect = some b.invalidationRect(node.bounds)
 
   else:
@@ -536,19 +542,18 @@ proc postLayout*(builder: UINodeBuilder, node: UINode) =
 
   # mark content dirty if flags changed
   if node.mFlags != node.mFlagsOld:
-    node.mContentDirty = true
+    node.contentDirty = true
   node.mFlagsOld = node.mFlags
 
   # mark content dirty if intersects with current invalidation rect
   if builder.currentInvalidationRects.len > 0 and builder.currentInvalidationRects.last.isSome:
     node.logi "postLayout, invalidate", builder.currentInvalidationRects.last.get, ", ", node.bounds, " -> ", builder.currentInvalidationRects.last.get.intersects(node.bounds)
     if builder.currentInvalidationRects.last.get.intersects(node.bounds):
-      node.mContentDirty = true
+      node.contentDirty = true
 
   # mark parent dirty if size or position changed
   if node.parent.isNotNil:
     builder.postLayoutChild(node.parent, node)
-    node.parent.mContentDirty = node.parent.mContentDirty or node.dirty
 
   if node.dirty and node.mFlags.any(&{DrawText, DrawBorder, FillBackground}):
     let existing = builder.forwardInvalidationRects[builder.forwardInvalidationRects.high]
@@ -559,10 +564,15 @@ proc postLayout*(builder: UINodeBuilder, node: UINode) =
       node.logi "postLayout, b: ",  "none -> ", rect(0, 0, node.mW, node.mH)
       builder.forwardInvalidationRects[builder.forwardInvalidationRects.high] = some rect(0, 0, node.mW, node.mH)
 
+  for _, c in node.children:
+    if c .lastChange == builder.frameIndex:
+      node.contentDirty = true
+      break
+
   # update last change indices
-  if node.mContentDirty:
+  if node.contentDirty:
     node.mLastContentChange = builder.frameIndex
-    node.mContentDirty = false
+    node.contentDirty = false
 
   if node.mPositionDirty:
     node.mLastPositionChange = builder.frameIndex
@@ -586,7 +596,7 @@ proc invalidateByRect*(builder: UINodeBuilder, node: UINode, rect: Rect): Option
 
     result = result or (childRect + node.xy.some)
 
-proc prepareNode(builder: UINodeBuilder, inFlags: UINodeFlags): UINode =
+proc prepareNode(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[string], inX, inY, inW, inH: Option[float32]): UINode =
   assert builder.currentParent.isNotNil
 
   if builder.currentChild.isNil: # first child, extent current invalidation rect if parent border dissappeared
@@ -603,8 +613,20 @@ proc prepareNode(builder: UINodeBuilder, inFlags: UINodeFlags): UINode =
   builder.currentChild = node
 
   node.flags = inFlags
+  if inText.isSome: node.text = inText.get
+  else: node.text = ""
+
+  node.mX = 0
+  node.mY = 0
+  node.mW = 0
+  node.mH = 0
 
   builder.preLayout(node)
+
+  if inX.isSome: node.x = inX.get
+  if inY.isSome: node.y = inY.get
+  if inW.isSome: node.w = inW.get
+  if inH.isSome: node.h = inH.get
 
   # Add current invalidation rect for new node, copying parent if it exists
   if builder.currentInvalidationRects.len > 0:
@@ -620,7 +642,7 @@ proc prepareNode(builder: UINodeBuilder, inFlags: UINodeFlags): UINode =
   if builder.currentInvalidationRects.last.isSome:
     node.logi "preLayout, invalidate", builder.currentInvalidationRects.last.get, ", ", rect(0, 0, node.mW, node.mH), " -> ", builder.currentInvalidationRects.last.get.intersects(rect(0, 0, node.mW, node.mH))
     if builder.currentInvalidationRects.last.get.intersects(rect(0, 0, node.mW, node.mH)):
-      node.mContentDirty = true
+      node.contentDirty = true
 
       if node.mFlags.any &{DrawText, FillBackground}:
         builder.currentInvalidationRects.last = builder.currentInvalidationRects.last or rect(0, 0, node.mW, node.mH).some
@@ -639,7 +661,7 @@ proc finishNode(builder: UINodeBuilder, currentNode: UINode) =
 
   currentNode.logp fmt"panel end"
 
-  builder.nodePool.clearUnusedChildren(currentNode, builder.currentChild)
+  let clearedChildrenBounds = builder.nodePool.clearUnusedChildren(currentNode, builder.currentChild)
   builder.postLayout(currentNode)
 
   builder.currentParent = currentNode.parent
@@ -669,12 +691,10 @@ proc finishNode(builder: UINodeBuilder, currentNode: UINode) =
 
   if invalidateOverlapping and OverlappingChildren in currentNode.mFlags:
     # invalidate cleared areas backwards
-    # echo "backwards pass"
     var rects: seq[Option[Rect]]
 
-    var currRect = Rect.none
+    var currRect = clearedChildrenBounds
     for child in currentNode.rchildren:
-      # echo currRect
       if currRect.getSome(rec):
         rects.add builder.invalidateByRect(child, rec)
       else:
@@ -687,76 +707,104 @@ proc finishNode(builder: UINodeBuilder, currentNode: UINode) =
         else:
           currRect = some rec
 
-    # echo rects
     # invalidate areas forwards one last time
 
-    # echo "forwards pass"
     currRect = Rect.none
     for i, child in currentNode.children:
-      # echo currRect
       if currRect.getSome(rec):
         discard builder.invalidateByRect(child, rec)
 
       # create/extend invalidation rect with child
       currRect = currRect or rects[^(i + 1)]
 
-template panel*(builder: UINodeBuilder, inFlags: UINodeFlags, body: untyped): untyped =
-  var node = builder.prepareNode(inFlags)
+macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped]): untyped =
+  var body = genAst(): discard
 
-  block:
-    let currentNode {.used, inject.} = node
+  var inText = genAst(): string.none
+  var inX = genAst(): float32.none
+  var inY = genAst(): float32.none
+  var inW = genAst(): float32.none
+  var inH = genAst(): float32.none
 
-    template onClick(onClickBody: untyped) {.used.} =
-      currentNode.handlePressed = proc(node {.inject.}: UINode, btn {.inject.}: MouseButton): bool =
-        onClickBody
+  for i, arg in args:
+    case arg
+    of ExprEqExpr[(kind: _ in {nnkSym, nnkIdent}), @value]:
+      let name = arg[0].repr
+      case name
+      of "text":
+        inText = genAst(value): some(value)
+      of "x":
+        inX = genAst(value): some(value).maybeFlatten.mapIt(it.float32)
+      of "y":
+        inY = genAst(value): some(value).maybeFlatten.mapIt(it.float32)
+      of "w":
+        inW = genAst(value): some(value).maybeFlatten.mapIt(it.float32)
+      of "h":
+        inH = genAst(value): some(value).maybeFlatten.mapIt(it.float32)
+      else:
+        error("Unknown ui node property '" & name & "'", arg[0])
 
-    template onClick(button: MouseButton, onClickBody: untyped) {.used.} =
-      currentNode.handlePressed = proc(node {.inject.}: UINode, btn {.inject.}: MouseButton): bool =
-        if btn == button:
+    elif i == args.len - 1:
+      body = arg
+
+    else:
+      error("Only <name> = <value> is allowed here.", arg)
+
+  return genAst(builder, inFlags, inText, inX, inY, inW, inH, body):
+    var node = builder.prepareNode(inFlags, inText, inX, inY, inW, inH)
+
+    block:
+      let currentNode {.used, inject.} = node
+
+      template onClick(onClickBody: untyped) {.used.} =
+        currentNode.handlePressed = proc(node {.inject.}: UINode, btn {.inject.}: MouseButton): bool =
           onClickBody
 
-    template onClick(button: MouseButton, ctx: untyped, onClickBody: untyped) {.used.} =
-      type ContextType = UIContext[typeof(ctx)]
-      let assign = if currentNode.mContext.isNone or not (currentNode.mContext.get of ContextType) or ContextType(currentNode.mContext.get).data != ctx:
-        echo "context changed"
-        currentNode.mContext = ContextType(data: ctx).UIContextRoot.some
-        true
-      else:
-        currentNode.handlePressed.isNil
-
-      if assign:
-        echo "assign "
+      template onClick(button: MouseButton, onClickBody: untyped) {.used.} =
         currentNode.handlePressed = proc(node {.inject.}: UINode, btn {.inject.}: MouseButton): bool =
           if btn == button:
             onClickBody
 
-    template onReleased(onBody: untyped) {.used.} =
-      currentNode.handleReleased = proc(node {.inject.}: UINode, btn {.inject.}: MouseButton): bool =
-        onBody
+      template onClick(button: MouseButton, ctx: untyped, onClickBody: untyped) {.used.} =
+        type ContextType = UIContext[typeof(ctx)]
+        let assign = if currentNode.mContext.isNone or not (currentNode.mContext.get of ContextType) or ContextType(currentNode.mContext.get).data != ctx:
+          currentNode.mContext = ContextType(data: ctx).UIContextRoot.some
+          true
+        else:
+          currentNode.handlePressed.isNil
 
-    template onDrag(button: MouseButton, onDragBody: untyped) {.used.} =
-      currentNode.handleDrag = proc(node: UINode, btn {.inject.}: MouseButton, d: Vec2): bool =
-        if btn == button:
-          onDragBody
+        if assign:
+          currentNode.handlePressed = proc(node {.inject.}: UINode, btn {.inject.}: MouseButton): bool =
+            if btn == button:
+              onClickBody
 
-    template onBeginHover(onBody: untyped) {.used.} =
-      currentNode.handleBeginHover = proc(node: UINode): bool =
-        onBody
+      template onReleased(onBody: untyped) {.used.} =
+        currentNode.handleReleased = proc(node {.inject.}: UINode, btn {.inject.}: MouseButton): bool =
+          onBody
 
-    template onEndHover(onBody: untyped) {.used.} =
-      currentNode.handleEndHover = proc(node: UINode): bool =
-        onBody
+      template onDrag(button: MouseButton, onDragBody: untyped) {.used.} =
+        currentNode.handleDrag = proc(node: UINode, btn {.inject.}: MouseButton, d: Vec2): bool =
+          if btn == button:
+            onDragBody
 
-    template onHover(onBody: untyped) {.used.} =
-      currentNode.handleHover = proc(node: UINode): bool =
-        onBody
+      template onBeginHover(onBody: untyped) {.used.} =
+        currentNode.handleBeginHover = proc(node: UINode): bool =
+          onBody
 
-    inc stackSize
-    defer:
-      dec stackSize
-      builder.finishNode(currentNode)
+      template onEndHover(onBody: untyped) {.used.} =
+        currentNode.handleEndHover = proc(node: UINode): bool =
+          onBody
 
-    body
+      template onHover(onBody: untyped) {.used.} =
+        currentNode.handleHover = proc(node: UINode): bool =
+          onBody
+
+      inc stackSize
+      defer:
+        dec stackSize
+        builder.finishNode(currentNode)
+
+      body
 
 proc findNodeContaining*(node: UINode, pos: Vec2, predicate: proc(node: UINode): bool): Option[UINode] =
   result = UINode.none
@@ -793,7 +841,7 @@ proc beginFrame*(builder: UINodeBuilder, size: Vec2) =
   builder.root.flags = &{LayoutVertical}
 
 proc endFrame*(builder: UINodeBuilder) =
-  builder.nodePool.clearUnusedChildren(builder.root, builder.currentChild)
+  discard builder.nodePool.clearUnusedChildren(builder.root, builder.currentChild)
   builder.postLayout(builder.root)
 
 proc retain*(builder: UINodeBuilder) =
@@ -809,7 +857,7 @@ proc retain*(builder: UINodeBuilder) =
 proc dump*(node: UINode, recurse = false): string =
   if node.isNil:
     return "nil"
-  result.add fmt"Node({node.mLastContentChange} ({node.mContentDirty}), {node.mLastPositionChange} ({node.mPositionDirty}), {node.mLastSizeChange} ({node.mSizeDirty}), {node.id} '{node.text}', {node.flags}, ({node.x}, {node.y}, {node.w}, {node.h}))"
+  result.add fmt"Node({node.mLastContentChange} ({node.contentDirty}), {node.mLastPositionChange} ({node.mPositionDirty}), {node.mLastSizeChange} ({node.mSizeDirty}), {node.id} '{node.text}', {node.flags}, ({node.x}, {node.y}, {node.w}, {node.h}), {node.mBoundsOld})"
   if recurse and node.first.isNotNil:
     result.add ":"
     for _, c in node.children:
