@@ -15,8 +15,6 @@ macro defineBitFlag*(body: untyped): untyped =
     body
     type flagsName* = distinct uint32
 
-    func contains*(flags: flagsName, flag: flagName): bool {.inline.} = (flags.uint32 and (1.uint32 shl flag.uint32)) != 0
-    func contains*(flags: flagsName, expected: flagsName): bool {.inline.} = (flags.uint32 and expected.uint32) == expected.uint32
     func incl*(flags: var flagsName, flag: flagName) {.inline.} =
       flags = (flags.uint32 or (1.uint32 shl flag.uint32)).flagsName
     func excl*(flags: var flagsName, flag: flagName) {.inline.} =
@@ -46,12 +44,10 @@ macro defineBitFlag*(body: untyped): untyped =
       return res2
 """.splitLines(keepEol=false)
 
-const testText2 = """
-hi, wassup?
+const testText2 = """hi, wassup?
 lol
 uiaeuiaeuiae
-uiui uia eu
-""".splitLines(keepEol=false)
+uiui uia eu """.splitLines(keepEol=false)
 
 proc getFont*(font: string, fontSize: float32): Font =
   let typeface = readTypeface(font)
@@ -185,7 +181,7 @@ proc drawNode(builder: UINodeBuilder, node: UINode, offset: Vec2 = vec2(0, 0), f
     builder.drawNode(c, nodePos, force)
 
   if DrawBorder in node.flags:
-    bxy.strokeRect(bounds, node.borderColor, thickness = 5, offset = -1)
+    bxy.strokeRect(bounds, node.borderColor)
 
 template panel*(builder: UINodeBuilder, body: untyped): untyped =
   builder.panel(0.UINodeFlags, body)
@@ -195,13 +191,13 @@ template button*(builder: UINodeBuilder, name: string, body: untyped): untyped =
     currentNode.setTextColor(1, 0, 0)
 
     if currentNode.some == builder.hoveredNode:
-      currentNode.setBackgroundColor(0.5, 0.6, 0.4)
+      currentNode.setBackgroundColor(0.6, 0.5, 0.5)
     else:
-      currentNode.setBackgroundColor(0.5, 0.5, 0.2)
+      currentNode.setBackgroundColor(0.3, 0.2, 0.2)
 
     currentNode.text = name
 
-    onClick:
+    onClick Left:
       body
 
 template withText*(builder: UINodeBuilder, str: string, body: untyped): untyped =
@@ -272,8 +268,11 @@ template frame(builder: UINodeBuilder, body: untyped) =
 
 var cursor = (0, 0)
 
-proc renderLine(builder: UINodeBuilder, line: string, curs: Option[int]) =
+proc renderLine(builder: UINodeBuilder, line: string, curs: Option[int], sizeToContentX: bool) =
   builder.panel(&{LayoutHorizontal, FillX, SizeToContentY}):
+    if sizeToContentX:
+      currentNode.flags.incl SizeToContentX
+
     builder.withText(line):
       if curs.getSome(curs) and curs <= line.high:
         builder.panel(&{FillY}):
@@ -299,38 +298,59 @@ proc renderLine(builder: UINodeBuilder, line: string, curs: Option[int]) =
 
     # Fill rest of line with background
     builder.panel(&{FillX, FillY, FillBackground}):
-      currentNode.setBackgroundColor(0, 1, 0, 1)
+      currentNode.setBackgroundColor(0, 0, 0, 1)
 
-proc renderText(builder: UINodeBuilder, lines: openArray[string], first: int, cursor: (int, int)) =
-  builder.panel(&{MaskContent, LayoutVertical, FillX, SizeToContentY}):
+proc renderText(builder: UINodeBuilder, lines: openArray[string], first: int, cursor: (int, int), sizeToContentX = false, sizeToContentY = true) =
+  builder.panel(&{MaskContent, LayoutVertical}):
+    if sizeToContentX:
+      currentNode.flags.incl SizeToContentX
+    else:
+      currentNode.flags.incl FillX
+      builder.preLayout currentNode
+
+    if sizeToContentY:
+      currentNode.flags.incl SizeToContentY
+    else:
+      currentNode.flags.incl FillY
+      builder.preLayout currentNode
+
     for i, line in lines:
       let column = if cursor[0] == i: cursor[1].some else: int.none
-      builder.renderLine(line, column)
+      builder.renderLine(line, column, sizeToContentX)
 
-proc createPopup(builder: UINodeBuilder, lines: openArray[string], popupPos: ref tuple[pos: Vec2, offset: Vec2]) =
-  builder.panel(&{LayoutVertical, MouseHover}): # draggable overlay
-    let pos = popupPos.pos + popupPos.offset
+proc createPopup(builder: UINodeBuilder, lines: openArray[string], pop: ref tuple[pos: Vec2, offset: Vec2, collapsed: bool]) =
+  builder.panel(&{LayoutVertical, SizeToContentX, SizeToContentY, MouseHover, MaskContent}): # draggable overlay
+    let pos = pop.pos + pop.offset
     currentNode.x = pos.x
     currentNode.y = pos.y
-    currentNode.w = 150
-    currentNode.h = 150
-    if builder.hovered currentNode:
-      currentNode.setBorderColor(1, 0, 1)
-      currentNode.flags.incl DrawBorder
+    # currentNode.w = 100
 
-    onClick:
-      popupPos.pos += popupPos.offset
-      popupPos.offset = vec2(0, 0)
-      builder.draggedNode = currentNode.some
+    currentNode.setBorderColor(1, 0, 1)
+    currentNode.flags.incl DrawBorder
 
-    onDrag(MouseButton.Left, delta):
-      popupPos.offset = builder.mousePos - builder.mousePosClick[Left]
+    # header
+    builder.panel(&{FillX, SizeToContentY, FillBackground, LayoutHorizontal}):
+      # currentNode.h = 20
+      currentNode.setBackgroundColor(0.2, 0.2, 0.2)
+      builder.button("X"):
+        pop.collapsed = not pop.collapsed
 
-    builder.renderText(testText2, 0, (0, 0))
+      onClick Left:
+        pop.pos += pop.offset
+        pop.offset = vec2(0, 0)
+        builder.draggedNode = currentNode.some
 
-    # background filler
-    builder.panel(&{FillX, FillY, FillBackground}):
-      currentNode.setBackgroundColor(0, 0, 0)
+      onDrag Left:
+        pop.offset = builder.mousePos - builder.mousePosClick[Left]
+
+    if pop.collapsed:
+      currentNode.flags.incl SizeToContentY
+    else:
+      builder.renderText(testText2, 0, (0, 0), sizeToContentX = true)
+
+      # # background filler
+      # builder.panel(&{FillX, FillY, FillBackground}):
+      #   currentNode.setBackgroundColor(0, 0, 0)
 
 proc neww*[T](value: T): ref T =
   new result
@@ -340,8 +360,8 @@ iterator drawFrames() {.closure.} =
   var counter = 0
   var testWidth = 10.float32
 
-  var popup1 = neww (vec2(100, 100), vec2(0, 0))
-  var popup2 = neww (vec2(200, 200), vec2(0, 0))
+  var popup1 = neww (vec2(100, 100), vec2(0, 0), false)
+  var popup2 = neww (vec2(200, 200), vec2(0, 0), false)
 
   while true:
     builder.frame:
@@ -383,7 +403,7 @@ iterator drawFrames() {.closure.} =
               currentNode.setBackgroundColor(0, 0, 1)
 
           # text area
-          builder.renderText(testText, 0, cursor)
+          builder.renderText(testText, 0, cursor, sizeToContentX = false)
 
           # background filler
           builder.panel(&{FillX, FillY, FillBackground}):
