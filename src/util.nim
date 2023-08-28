@@ -71,7 +71,7 @@ proc `+`*[T, U](a: Option[T], b: Option[U]): Option[T] =
 
 proc `-`*[T, U](a: Option[T], b: Option[U]): Option[T] =
   if a.isSome and b.isSome:
-    return some a.get + b.get
+    return some a.get - b.get
   if a.isSome:
     return a
   when U is T:
