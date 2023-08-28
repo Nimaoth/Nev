@@ -146,6 +146,24 @@ template withText*(builder: UINodeBuilder, str: string, body: untyped): untyped 
 
 var cursor = (0, 0)
 
+
+iterator splitLine(str: string): string =
+  if str.len == 0:
+    yield ""
+  else:
+    var start = 0
+    var i = 0
+    var ws = str[0] in Whitespace
+    while i < str.len:
+      let currWs = str[i] in Whitespace
+      if ws != currWs:
+        yield str[start..<i]
+        start = i
+        ws = currWs
+      inc i
+    if start < i:
+      yield str[start..<i]
+
 proc renderLine(builder: UINodeBuilder, line: string, curs: Option[int], backgroundColor, textColor: Color, sizeToContentX: bool) =
   var flags = &{LayoutHorizontal, FillX, SizeToContentY}
   if sizeToContentX:
@@ -154,33 +172,36 @@ proc renderLine(builder: UINodeBuilder, line: string, curs: Option[int], backgro
   #   flags.incl FillX
 
   builder.panel(flags):
+    var start = 0
+    for part in line.splitLine:
+      defer:
+        start += part.len
 
-    builder.withText(line):
-      currentNode.backgroundColor = backgroundColor
-      currentNode.textColor = textColor
+      builder.withText(part):
+        currentNode.backgroundColor = backgroundColor
+        currentNode.textColor = textColor
 
-      if curs.getSome(curs) and curs <= line.high:
-        let width = builder.textWidth(curs).round
-        builder.panel(&{FillY}, w = width)
+        if curs.getSome(curs) and curs >= start and curs < start + part.len:
+          let width = builder.textWidth(curs - start).round
+          builder.panel(&{FillY}, w = width)
 
-        # cursor
-        builder.panel(&{FillY, FillBackground}, w = builder.charWidth):
-          currentNode.setBackgroundColor(0.7, 0.7, 1, 0.7)
-          # onClick:
-          #   # echo "clicked cursor ", btn
-          #   cursor[1] = rand(0..line.len)
+          # cursor
+          builder.panel(&{FillY, FillBackground}, w = builder.charWidth):
+            currentNode.setBackgroundColor(0.7, 0.7, 1, 0.7)
+            # onClick:
+            #   # echo "clicked cursor ", btn
+            #   cursor[1] = rand(0..line.len)
 
     # cursor after latest char
     if curs.getSome(curs) and curs == line.len:
-      builder.panel(&{FillY, FillBackground}, w = builder.charWidth):
-        currentNode.setBackgroundColor(0.5, 0.5, 1, 1)
+      builder.panel(&{FillY, FillBackground}, w = builder.charWidth, backgroundColor = color(0.5, 0.5, 1, 1))
         # onClick:
         #   # echo "clicked cursor ", btn
         #   cursor[1] = rand(0..line.len)
 
     # Fill rest of line with background
-    builder.panel(&{FillX, FillY, FillBackground}):
-      currentNode.backgroundColor = backgroundColor * 2
+    builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = backgroundColor * 2)
+
 
 proc renderText(builder: UINodeBuilder, lines: openArray[string], first: int, cursor: (int, int), backgroundColor, textColor: Color, sizeToContentX = false, sizeToContentY = true) =
   var flags = &{MaskContent, LayoutVertical}
