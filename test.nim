@@ -6,11 +6,11 @@ import custom_logger
 logger.enableConsoleLogger()
 logCategory "test", true
 
-var showPopup1 = false
+var showPopup1 = true
 var showPopup2 = false
 
 var logRoot = false
-var logFrameTime = false
+var logFrameTime = true
 var showDrawnNodes = true
 
 var advanceFrame = false
@@ -370,11 +370,12 @@ proc drawNode(builder: UINodeBuilder, node: UINode, offset: Vec2 = vec2(0, 0), f
 
   var force = force
 
-  if invalidateOverlapping and not force and node.lastChange < builder.frameIndex and node.lx == nodePos.x and node.ly == nodePos.y and node.lw == node.w and node.lh == node.h:
+  if invalidateOverlapping and not force and node.lastChange < builder.frameIndex:
     return
 
   if node.flags.any &{FillBackground, DrawBorder, DrawText}:
     drawnNodes.add node
+  # drawnNodes.add node
 
   if node.flags.any &{FillBackground, DrawText}:
     force = true
