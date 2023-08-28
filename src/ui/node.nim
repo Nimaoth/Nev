@@ -84,6 +84,7 @@ type
     mContentDirty: bool
     mPositionDirty: bool
     mSizeDirty: bool
+    mInvalidated: bool
     mLastContentChange: int
     mLastPositionChange: int
     mLastSizeChange: int
@@ -99,8 +100,8 @@ type
     mBorderColor: Color
     mTextColor: Color
 
-    mBoundsOld: Option[Rect]
-    mX, mY, mW, mH: float32
+    mBoundsOld: Rect
+    bounds: Rect
     mLx, mLy, mLw, mLh: float32
 
     clearRect: Option[Rect] # Rect which describes the area the widget occupied in the previous frame but not in the current frame
@@ -179,15 +180,15 @@ func `handleBeginHover=`*(node: UINode, value: proc(node: UINode): bool)        
 func `handleEndHover=`*(node: UINode,   value: proc(node: UINode): bool)                                  = node.mHandleEndHover = value
 func `handleHover=`*(node: UINode,      value: proc(node: UINode): bool)                                  = node.mHandleHover = value
 
-func bounds*(node: UINode): Rect = rect(node.mX, node.mY, node.mW, node.mH)
-func xy*(node: UINode): Vec2 = vec2(node.mX, node.mY)
+func xy*(node: UINode): Vec2 = node.bounds.xy
 
-func x*(node: UINode): float32 = node.mX
-func y*(node: UINode): float32 = node.mY
-func w*(node: UINode): float32 = node.mW
-func h*(node: UINode): float32 = node.mH
-func xw*(node: UINode): float32 = node.mX + node.mW
-func yh*(node: UINode): float32 = node.mY + node.mH
+func x*(node: UINode): float32 = node.bounds.x
+func y*(node: UINode): float32 = node.bounds.y
+func w*(node: UINode): float32 = node.bounds.w
+func h*(node: UINode): float32 = node.bounds.h
+func xw*(node: UINode): float32 = node.bounds.xw
+func yh*(node: UINode): float32 = node.bounds.yh
+func wh*(node: UINode): Rect = rect(0, 0, node.bounds.w, node.bounds.h)
 
 func lx*(node: UINode): float32 = node.mLx
 func ly*(node: UINode): float32 = node.mLy
@@ -196,10 +197,10 @@ func lh*(node: UINode): float32 = node.mLh
 func lxw*(node: UINode): float32 = node.mLx + node.mLw
 func lyh*(node: UINode): float32 = node.mLy + node.mLh
 
-func `x=`*(node: UINode, value: float32) = node.mX = value
-func `y=`*(node: UINode, value: float32) = node.mY = value
-proc `w=`*(node: UINode, value: float32) = node.mW = value
-proc `h=`*(node: UINode, value: float32) = node.mH = value
+func `x=`*(node: UINode, value: float32) = node.bounds.x = value
+func `y=`*(node: UINode, value: float32) = node.bounds.y = value
+proc `w=`*(node: UINode, value: float32) = node.bounds.w = value
+proc `h=`*(node: UINode, value: float32) = node.bounds.h = value
 
 func `lx=`*(node: UINode, value: float32) = node.mLx = value
 func `ly=`*(node: UINode, value: float32) = node.mLy = value
@@ -240,7 +241,7 @@ proc handleMousePressed*(builder: UINodeBuilder, button: MouseButton, pos: Vec2)
     discard node.handlePressed()(node, button)
 
 proc handleMouseReleased*(builder: UINodeBuilder, button: MouseButton, pos: Vec2) =
-  if builder.draggedNode.getSome(node):
+  if builder.draggedNode.isSome:
     builder.draggedNode = UINode.none
 
 proc handleMouseMoved*(builder: UINodeBuilder, pos: Vec2, buttons: set[MouseButton]): bool =
@@ -357,12 +358,15 @@ proc returnNode*(pool: UINodePool, node: UINode) =
 
   node.mText = ""
 
-  node.mBoundsOld = Rect.none
+  node.mBoundsOld.x = 0
+  node.mBoundsOld.y = 0
+  node.mBoundsOld.w = 0
+  node.mBoundsOld.h = 0
 
-  node.mX = 0
-  node.mY = 0
-  node.mW = 0
-  node.mH = 0
+  node.bounds.x = 0
+  node.bounds.y = 0
+  node.bounds.w = 0
+  node.bounds.h = 0
 
   node.mLx = 0
   node.mLy = 0
@@ -525,20 +529,17 @@ proc postLayout*(builder: UINodeBuilder, node: UINode) =
 
   node.clearRect = Rect.none
 
-  if node.mBoundsOld.getSome(b):
-    if node.mX != b.x or node.mY != b.y:
-      node.mPositionDirty = true
-    if node.mW != b.w or node.mH != b.h:
-      node.mSizeDirty = true
-
-    if node.mPositionDirty or node.mSizeDirty and not node.bounds.contains(b):
-      node.clearRect = some b.invalidationRect(node.bounds)
-
-  else:
+  if node.x != node.mBoundsOld.x or node.y != node.mBoundsOld.y:
     node.mPositionDirty = true
+  if node.w != node.mBoundsOld.w or node.h != node.mBoundsOld.h:
     node.mSizeDirty = true
 
-  node.mBoundsOld = some node.bounds
+  if (node.mPositionDirty or node.mSizeDirty) and not node.bounds.contains(node.mBoundsOld):
+    node.clearRect = some node.mBoundsOld.invalidationRect(node.bounds)
+  else:
+    node.clearRect = Rect.none
+
+  node.mBoundsOld = node.bounds
 
   # mark content dirty if flags changed
   if node.mFlags != node.mFlagsOld:
@@ -558,11 +559,11 @@ proc postLayout*(builder: UINodeBuilder, node: UINode) =
   if node.dirty and node.mFlags.any(&{DrawText, DrawBorder, FillBackground}):
     let existing = builder.forwardInvalidationRects[builder.forwardInvalidationRects.high]
     if existing.isSome:
-      node.logi "postLayout: a: ",  existing.get, " , ", rect(0, 0, node.mW, node.mH), " -> ", rect(0, 0, node.mW, node.mH) or existing.get
-      builder.forwardInvalidationRects[builder.forwardInvalidationRects.high] = some rect(0, 0, node.mW, node.mH) or existing.get
+      node.logi "postLayout: a: ",  existing.get, " , ", node.wh, " -> ", node.wh or existing.get
+      builder.forwardInvalidationRects[builder.forwardInvalidationRects.high] = some node.wh or existing.get
     else:
-      node.logi "postLayout, b: ",  "none -> ", rect(0, 0, node.mW, node.mH)
-      builder.forwardInvalidationRects[builder.forwardInvalidationRects.high] = some rect(0, 0, node.mW, node.mH)
+      node.logi "postLayout, b: ",  "none -> ", node.wh
+      builder.forwardInvalidationRects[builder.forwardInvalidationRects.high] = some node.wh
 
   for _, c in node.children:
     if c .lastChange == builder.frameIndex:
@@ -601,8 +602,8 @@ proc prepareNode(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[st
 
   if builder.currentChild.isNil: # first child, extent current invalidation rect if parent border dissappeared
     if invalidateOverlapping and DrawBorder in builder.currentParent.mFlagsOld and DrawBorder notin builder.currentParent.mFlags:
-      builder.currentParent.logi "preLayout, border dissappeared, extend current invalidation rect ", builder.currentInvalidationRects.last, " , ", rect(0, 0, builder.currentParent.mW, builder.currentParent.mH), " -> ", rect(0, 0, builder.currentParent.mW, builder.currentParent.mH).some or builder.currentInvalidationRects.last
-      builder.currentInvalidationRects.last = builder.currentInvalidationRects.last or rect(0, 0, builder.currentParent.mW, builder.currentParent.mH).some
+      builder.currentParent.logi "preLayout, border dissappeared, extend current invalidation rect ", builder.currentInvalidationRects.last, " , ", builder.currentParent.wh, " -> ", builder.currentParent.wh.some or builder.currentInvalidationRects.last
+      builder.currentInvalidationRects.last = builder.currentInvalidationRects.last or builder.currentParent.wh.some
 
   var node = builder.nodePool.getNextOrNewNode(builder.currentParent, builder.currentChild)
   node.logp "panel begin"
@@ -616,10 +617,10 @@ proc prepareNode(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[st
   if inText.isSome: node.text = inText.get
   else: node.text = ""
 
-  node.mX = 0
-  node.mY = 0
-  node.mW = 0
-  node.mH = 0
+  node.bounds.x = 0
+  node.bounds.y = 0
+  node.bounds.w = 0
+  node.bounds.h = 0
 
   builder.preLayout(node)
 
@@ -631,8 +632,8 @@ proc prepareNode(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[st
   # Add current invalidation rect for new node, copying parent if it exists
   if builder.currentInvalidationRects.len > 0:
     if builder.currentInvalidationRects.last.isSome:
-      node.logi "panel begin, copy invalidation rect from parent ", builder.currentInvalidationRects.last.get, ", ", vec2(node.mX, node.mY), " -> ", builder.currentInvalidationRects.last.get - vec2(node.mX, node.mY)
-      builder.currentInvalidationRects.add some(builder.currentInvalidationRects.last.get - vec2(node.mX, node.mY))
+      node.logi "panel begin, copy invalidation rect from parent ", builder.currentInvalidationRects.last.get, ", ", node.bounds.xy, " -> ", builder.currentInvalidationRects.last.get - node.bounds.xy
+      builder.currentInvalidationRects.add some(builder.currentInvalidationRects.last.get - node.bounds.xy)
     else:
       builder.currentInvalidationRects.add Rect.none
   else:
@@ -640,12 +641,12 @@ proc prepareNode(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[st
 
   # invalidate if it intersects with the current invalidation rect
   if builder.currentInvalidationRects.last.isSome:
-    node.logi "preLayout, invalidate", builder.currentInvalidationRects.last.get, ", ", rect(0, 0, node.mW, node.mH), " -> ", builder.currentInvalidationRects.last.get.intersects(rect(0, 0, node.mW, node.mH))
-    if builder.currentInvalidationRects.last.get.intersects(rect(0, 0, node.mW, node.mH)):
+    node.logi "preLayout, invalidate", builder.currentInvalidationRects.last.get, ", ", node.wh, " -> ", builder.currentInvalidationRects.last.get.intersects(node.wh)
+    if builder.currentInvalidationRects.last.get.intersects(node.wh):
       node.contentDirty = true
 
       if node.mFlags.any &{DrawText, FillBackground}:
-        builder.currentInvalidationRects.last = builder.currentInvalidationRects.last or rect(0, 0, node.mW, node.mH).some
+        builder.currentInvalidationRects.last = builder.currentInvalidationRects.last or node.wh.some
 
 
   builder.currentParent = node
@@ -674,20 +675,20 @@ proc finishNode(builder: UINodeBuilder, currentNode: UINode) =
   if invalidationRect.isSome and OverlappingChildren in currentNode.parent.mFlags:
     if builder.currentInvalidationRects.last.isSome:
       currentNode.logi "panel end, parent overlapping, extend: ", builder.currentInvalidationRects.last.get, " or ", invalidationRect.get, " -> ", builder.currentInvalidationRects.last.get or invalidationRect.get
-      builder.currentInvalidationRects.last = some builder.currentInvalidationRects.last.get or (invalidationRect.get + vec2(currentNode.mX, currentNode.mY))
+      builder.currentInvalidationRects.last = some builder.currentInvalidationRects.last.get or (invalidationRect.get + currentNode.bounds.xy)
     else:
-      currentNode.logi "panel end, parent overlapping, new: ", invalidationRect.get + vec2(currentNode.mX, currentNode.mY)
-      builder.currentInvalidationRects.last = some invalidationRect.get + vec2(currentNode.mX, currentNode.mY)
+      currentNode.logi "panel end, parent overlapping, new: ", invalidationRect.get + currentNode.bounds.xy
+      builder.currentInvalidationRects.last = some invalidationRect.get + currentNode.bounds.xy
 
   #
   if builder.forwardInvalidationRects.len > 0:
     let existing = builder.forwardInvalidationRects[builder.forwardInvalidationRects.high]
     if existing.isSome and invalidationRect.isSome:
-      currentNode.logi "panel, c: ",  existing.get, ", ", invalidationRect.get, " -> ", invalidationRect.get + vec2(currentNode.mX, currentNode.mY), " -> ", (invalidationRect.get + vec2(currentNode.mX, currentNode.mY)) or existing.get
-      builder.forwardInvalidationRects[builder.forwardInvalidationRects.high] = some (invalidationRect.get + vec2(currentNode.mX, currentNode.mY)) or existing.get
+      currentNode.logi "panel, c: ",  existing.get, ", ", invalidationRect.get, " -> ", invalidationRect.get + currentNode.bounds.xy, " -> ", (invalidationRect.get + currentNode.bounds.xy) or existing.get
+      builder.forwardInvalidationRects[builder.forwardInvalidationRects.high] = some (invalidationRect.get + currentNode.bounds.xy) or existing.get
     elif invalidationRect.isSome:
-      currentNode.logi "panel, d: ",  "none, ", invalidationRect.get, " -> ", invalidationRect.get + vec2(currentNode.mX, currentNode.mY)
-      builder.forwardInvalidationRects[builder.forwardInvalidationRects.high] = some invalidationRect.get + vec2(currentNode.mX, currentNode.mY)
+      currentNode.logi "panel, d: ",  "none, ", invalidationRect.get, " -> ", invalidationRect.get + currentNode.bounds.xy
+      builder.forwardInvalidationRects[builder.forwardInvalidationRects.high] = some invalidationRect.get + currentNode.bounds.xy
 
   if invalidateOverlapping and OverlappingChildren in currentNode.mFlags:
     # invalidate cleared areas backwards
@@ -717,6 +718,16 @@ proc finishNode(builder: UINodeBuilder, currentNode: UINode) =
       # create/extend invalidation rect with child
       currRect = currRect or rects[^(i + 1)]
 
+proc postProcessNode(builder: UINodeBuilder, node: UINode) =
+  echo "postProcessNode ", node.dump
+
+  for _, c in node.children:
+    builder.postProcessNode(c)
+
+proc postProcessNodes(builder: UINodeBuilder) =
+  builder.postProcessNode(builder.root)
+
+
 macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped]): untyped =
   var body = genAst(): discard
 
@@ -725,6 +736,9 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
   var inY = genAst(): float32.none
   var inW = genAst(): float32.none
   var inH = genAst(): float32.none
+  var inBackgroundColor = genAst(): Color.none
+  var inBorderColor = genAst(): Color.none
+  var inTextColor = genAst(): Color.none
 
   for i, arg in args:
     case arg
@@ -733,6 +747,12 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
       case name
       of "text":
         inText = genAst(value): some(value)
+      of "backgroundColor":
+        inBackgroundColor = genAst(value): some(value)
+      of "borderColor":
+        inBorderColor = genAst(value): some(value)
+      of "textColor":
+        inTextColor = genAst(value): some(value)
       of "x":
         inX = genAst(value): some(value).maybeFlatten.mapIt(it.float32)
       of "y":
@@ -750,8 +770,12 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
     else:
       error("Only <name> = <value> is allowed here.", arg)
 
-  return genAst(builder, inFlags, inText, inX, inY, inW, inH, body):
+  return genAst(builder, inFlags, inText, inX, inY, inW, inH, body, inBackgroundColor, inBorderColor, inTextColor):
     var node = builder.prepareNode(inFlags, inText, inX, inY, inW, inH)
+
+    if inBackgroundColor.isSome: node.backgroundColor = inBackgroundColor.get
+    if inBorderColor.isSome:     node.borderColor     = inBorderColor.get
+    if inTextColor.isSome:       node.textColor       = inTextColor.get
 
     block:
       let currentNode {.used, inject.} = node
@@ -827,7 +851,6 @@ proc findNodeContaining*(node: UINode, pos: Vec2, predicate: proc(node: UINode):
     if predicate.isNotNil and predicate(node):
       return node.some
 
-
 proc beginFrame*(builder: UINodeBuilder, size: Vec2) =
   builder.frameIndex.inc
 
@@ -841,6 +864,7 @@ proc beginFrame*(builder: UINodeBuilder, size: Vec2) =
   builder.root.flags = &{LayoutVertical}
 
 proc endFrame*(builder: UINodeBuilder) =
+  # builder.postProcessNodes()
   discard builder.nodePool.clearUnusedChildren(builder.root, builder.currentChild)
   builder.postLayout(builder.root)
 

@@ -97,7 +97,7 @@ builder.lineGap = 6
 var framebufferId: GLuint
 var framebuffer: Texture
 
-var window = newWindow("", ivec2(image.width.int32 * 2, image.height.int32), WindowStyle.DecoratedResizable, vsync=false)
+var window = newWindow("", ivec2(image.width.int32 * 2, image.height.int32), WindowStyle.Decorated, vsync=false)
 makeContextCurrent(window)
 loadExtensions()
 enableAutoGLerrorCheck(false)
@@ -233,10 +233,80 @@ proc createPopup(builder: UINodeBuilder, lines: openArray[string], pop: ref tupl
       # builder.panel(&{FillX, FillY, FillBackground}):
       #   currentNode.setBackgroundColor(0, 0, 0)
 
+proc createSlider(builder: UINodeBuilder, value: float32, inBackgroundColor, handleColor: Color, min: float32 = 0, max: float32 = 1, step = float32.none, valueChanged: proc(value: float32) = nil) =
+  builder.panel(&{FillX, FillBackground, LayoutHorizontal}, h = builder.textHeight):
+    currentNode.backgroundColor = inBackgroundColor
+
+    # let slider = currentNode
+
+    builder.panel(&{SizeToContentY, DrawText}, text = $value, textColor = color(1, 1, 1), w = 100)
+
+    builder.panel(&{FillX, FillY, DrawBorder}, borderColor = handleColor):
+      let slider = currentNode
+
+      let x = (slider.w - builder.charWidth) * ((value - min).abs / (max - min).abs).clamp(0, 1)
+      builder.panel(&{FillY, FillBackground}, x = x, w = builder.charWidth):
+        currentNode.backgroundColor = handleColor
+
+      proc updateValue() =
+        let alpha = ((builder.mousePos.x - slider.lx - builder.charWidth * 0.5) / (slider.w - builder.charWidth)).clamp(0, 1)
+        var targetValue = if max >= min:
+          min + alpha * (max - min)
+        else:
+          min - alpha * (min - max)
+
+        # var targetValue = (max - min).abs * (builder.mousePos.x - slider.lx - builder.charWidth / 2) / (slider.w - builder.charWidth) + min
+        if step.getSome(step):
+          targetValue = (targetValue / step).round * step
+
+        if valueChanged.isNotNil:
+          valueChanged(targetValue)
+
+      onClick Left:
+        builder.draggedNode = currentNode.some
+        updateValue()
+
+      onDrag Left:
+        updateValue()
+
+proc createCheckbox(builder: UINodeBuilder, value: bool, valueChanged: proc(value: bool) = nil) =
+  let margin = builder.textHeight * 0.2
+  builder.panel(&{FillBackground}, w = builder.textHeight, h = builder.textHeight, backgroundColor = color(0.5, 0.5, 0.5)):
+    if value:
+      builder.panel(&{FillBackground}, x = margin, y = margin, w = builder.textHeight - margin * 2, h = builder.textHeight - margin * 2, backgroundColor = color(0.8, 0.8, 0.8))
+
+    onClick Left:
+      if valueChanged.isNotNil:
+        valueChanged(not value)
+
+var sliderMin = 0.float32
+var sliderMax = 100.float32
+var sliderStep = 1.float32
+var slider = 35.float32
+
+template createLine(builder: UINodeBuilder, body: untyped) =
+  builder.panel(&{FillX, SizeToContentY, FillBackground}, backgroundColor = color(0, 0, 0)):
+    body
+
+    # # Fill rest of line with background
+    # builder.panel(&{FillX, FillY, FillBackground}):
+    #   currentNode.backgroundColor = color(0, 0, 0)
+
 proc buildUINodes(builder: UINodeBuilder) =
-  builder.panel(&{FillX, FillY, OverlappingChildren, MaskContent}): # fullscreen overlay
+  var rootFlags = &{FillX, FillY, OverlappingChildren, MaskContent}
+  if not invalidateOverlapping:
+    rootFlags.incl FillBackground
+
+  builder.panel(rootFlags, backgroundColor = color(0, 0, 0)): # fullscreen overlay
 
     builder.panel(&{FillX, FillY, LayoutVertical}): # main panel
+
+      builder.createLine: builder.createSlider(sliderMin, color(0.5, 0.3, 0.3), color(0.9, 0.6, 0.6), min = -200, max = 200, step = 0.1.float32.some, (value: float32) => (sliderMin = value))
+      builder.createLine: builder.createSlider(sliderMax, color(0.3, 0.5, 0.3), color(0.6, 0.9, 0.6), min = -200, max = 200, step = 0.1.float32.some, (v: float32) => (sliderMax = v))
+      builder.createLine: builder.createSlider(sliderStep, color(0.3, 0.3, 0.5), color(0.6, 0.6, 0.9), min = 0.1, max = 10, step = 0.1.float32.some, (v: float32) => (sliderStep = v))
+      builder.createLine: builder.createSlider(slider, color(0.3, 0.5, 0.3), color(0.6, 0.9, 0.6), min = sliderMin, max = sliderMax, step = sliderStep.some, (v: float32) => (slider = v))
+      builder.createLine: builder.createCheckbox(showPopup1, (v: bool) => (showPopup1 = v))
+      builder.createLine: builder.createCheckbox(showPopup2, (v: bool) => (showPopup2 = v))
 
       builder.panel(&{LayoutHorizontal, FillX, SizeToContentY}): # first row
         builder.button("press me"):
