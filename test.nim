@@ -135,7 +135,6 @@ template withText*(builder: UINodeBuilder, str: string, body: untyped): untyped 
 
     body
 
-
 iterator splitLine(str: string): string =
   if str.len == 0:
     yield ""
@@ -153,7 +152,7 @@ iterator splitLine(str: string): string =
     if start < i:
       yield str[start..<i]
 
-proc renderLine(builder: UINodeBuilder, line: string, curs: Option[int], backgroundColor, textColor: Color, sizeToContentX: bool) =
+proc renderLine(builder: UINodeBuilder, line: string, curs: Option[int], backgroundColor, textColor: Color, sizeToContentX: bool): Option[(UINode, string, Rect)] =
   var flags = &{LayoutHorizontal, FillX, SizeToContentY}
   if sizeToContentX:
     flags.incl SizeToContentX
@@ -162,6 +161,7 @@ proc renderLine(builder: UINodeBuilder, line: string, curs: Option[int], backgro
 
   builder.panel(flags):
     var start = 0
+    var lastPartXW: float32 = 0
     for part in line.splitLine:
       defer:
         start += part.len
@@ -173,14 +173,18 @@ proc renderLine(builder: UINodeBuilder, line: string, curs: Option[int], backgro
         # cursor
         if curs.getSome(curs) and curs >= start and curs < start + part.len:
           let cursorX = builder.textWidth(curs - start).round
-          builder.panel(&{FillY, FillBackground}, x = cursorX, w = builder.charWidth, backgroundColor = color(0.7, 0.7, 1, 0.7))
+          result = some (currentNode, $part[curs - start], rect(cursorX, 0, builder.charWidth, builder.textHeight))
+          # builder.panel(&{FillY, FillBackground}, x = cursorX, w = builder.charWidth, backgroundColor = color(0.7, 0.7, 1, 0.7))
             # onClick:
             #   # echo "clicked cursor ", btn
             #   cursor[1] = rand(0..line.len)
 
+        lastPartXW = currentNode.bounds.xw
+
     # cursor after latest char
     if curs.getSome(curs) and curs == line.len:
-      builder.panel(&{FillY, FillBackground}, w = builder.charWidth, backgroundColor = color(0.5, 0.5, 1, 1))
+      result = some (currentNode, "", rect(lastPartXW, 0, builder.charWidth, builder.textHeight))
+      # builder.panel(&{FillY, FillBackground}, w = builder.charWidth, backgroundColor = color(0.5, 0.5, 1, 1))
         # onClick:
         #   # echo "clicked cursor ", btn
         #   cursor[1] = rand(0..line.len)
@@ -188,23 +192,39 @@ proc renderLine(builder: UINodeBuilder, line: string, curs: Option[int], backgro
     # Fill rest of line with background
     builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = backgroundColor * 2)
 
-
 proc renderText(builder: UINodeBuilder, lines: openArray[string], first: int, cursor: (int, int), backgroundColor, textColor: Color, sizeToContentX = false, sizeToContentY = true, id = Id.none) =
-  var flags = &{MaskContent, LayoutVertical}
+  var flags = &{MaskContent, OverlappingChildren}
+  var flagsInner = &{LayoutVertical}
   if sizeToContentX:
     flags.incl SizeToContentX
+    flagsInner.incl SizeToContentX
   else:
     flags.incl FillX
+    flagsInner.incl FillX
 
   if sizeToContentY:
     flags.incl SizeToContentY
+    flagsInner.incl SizeToContentY
   else:
     flags.incl FillY
+    flagsInner.incl FillY
 
   builder.panel(flags, userId = id):
-    for i, line in lines:
-      let column = if cursor[0] == i: cursor[1].some else: int.none
-      builder.renderLine(line, column, backgroundColor, textColor, sizeToContentX)
+
+    var cursorLocation = (UINode, string, Rect).none
+
+    builder.panel(flagsInner):
+      for i, line in lines:
+        let column = if cursor[0] == i: cursor[1].some else: int.none
+        if builder.renderLine(line, column, backgroundColor, textColor, sizeToContentX).getSome(cl):
+          cursorLocation = cl.some
+
+    # let cursorX = builder.textWidth(curs - start).round
+    if cursorLocation.getSome(cl):
+      var bounds = cl[2].transformRect(cl[0], currentNode) - vec2(1, 0)
+      bounds.w += 1
+      builder.panel(&{FillBackground}, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h, backgroundColor = color(0.7, 0.7, 1)):
+        builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, x = 1, y = 0, text = cl[1], textColor = color(0.4, 0.2, 2))
 
 proc createPopup(builder: UINodeBuilder, lines: openArray[string], pop: ref tuple[pos: Vec2, offset: Vec2, collapsed: bool], backgroundColor, borderColor, headerColor, textColor: Color) =
   let pos = pop.pos + pop.offset
