@@ -315,6 +315,13 @@ iterator rchildren*(node: UINode): UINode =
     yield current
     current = prev
 
+proc transformRect*(rect: Rect, src: UINode, dst: UINode): Rect =
+  result = rect
+  var curr = src
+  while curr.parent != dst:
+    result = result + curr.xy
+    curr = curr.parent
+
 proc unpoolNode*(pool: UINodePool): UINode =
   if pool.nodes.len > 0:
     # debug "reusing node ", pool.nodes[pool.nodes.high].id
@@ -489,7 +496,7 @@ proc postLayout*(builder: UINodeBuilder, node: UINode) =
       builder.textWidth(node.text.runeLen.int)
     else: 0
 
-    node.w = max(childrenWidth, strWidth)
+    node.w = max(node.w, max(childrenWidth, strWidth))
 
   elif FillX in node.flags:
     assert node.parent.isNotNil
@@ -504,7 +511,7 @@ proc postLayout*(builder: UINodeBuilder, node: UINode) =
       builder.textHeight
     else: 0
 
-    node.h = max(childrenHeight, strHeight)
+    node.h = max(node.h, max(childrenHeight, strHeight))
 
   elif FillY in node.flags:
     assert node.parent.isNotNil
