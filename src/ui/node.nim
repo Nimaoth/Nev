@@ -10,7 +10,6 @@ logCategory "ui-node"
 
 var logInvalidationRects* = false
 var logPanel* = false
-var invalidateOverlapping* = true
 
 macro defineBitFlag*(body: untyped): untyped =
   let flagName = body[0][0].typeName
@@ -111,7 +110,6 @@ type
 
   UINodePool* = ref object
     nodes: seq[UINode]
-    allNodes: seq[UINode]
 
   UINodeBuilder* = ref object
     nodePool: UINodePool = nil
@@ -125,10 +123,6 @@ type
 
     draggedNode*: Option[UINode] = UINode.none
     hoveredNode*: Option[UINode] = UINode.none
-
-    forwardInvalidationRects: seq[Option[Rect]]
-    currentInvalidationRects: seq[Option[Rect]]
-    backInvalidationRects: seq[Option[Rect]]
 
     mousePos: Vec2
     mouseDelta: Vec2
@@ -325,9 +319,8 @@ proc unpoolNode*(pool: UINodePool): UINode =
     # debug "reusing node ", pool.nodes[pool.nodes.high].id
     return pool.nodes.pop
   # defer:
-    # debug "creating new node ", result.id
+  #   debug "creating new node ", result.id
   result = UINode(mId: newId())
-  pool.allNodes.add result
 
 proc returnNode*(pool: UINodePool, node: UINode) =
   pool.nodes.add node
@@ -465,8 +458,6 @@ proc preLayout*(builder: UINodeBuilder, node: UINode) =
 
 proc relayout*(builder: UINodeBuilder, node: UINode) =
   builder.preLayout node
-  for _, c in node.children:
-    builder.relayout c
   builder.postLayout node
 
 proc postLayoutChild*(builder: UINodeBuilder, node: UINode, child: UINode) =
@@ -479,13 +470,11 @@ proc postLayoutChild*(builder: UINodeBuilder, node: UINode, child: UINode) =
     node.h = child.yh
     recurse = true
 
-  if recurse:
+proc postLayout*(builder: UINodeBuilder, node: UINode) =
+  if node.flags.any &{SizeToContentX, SizeToContentY}:
     for _, c in node.children:
-      if c == child:
-        break
       builder.relayout(c)
 
-proc postLayout*(builder: UINodeBuilder, node: UINode) =
   if node.parent.isNotNil:
     builder.postLayoutChild(node.parent, node)
 
@@ -562,7 +551,6 @@ proc prepareNode(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[st
 
   builder.currentParent = node
   builder.currentChild = nil
-  builder.forwardInvalidationRects.add Rect.none
 
   return node
 
