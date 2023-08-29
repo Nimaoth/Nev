@@ -16,6 +16,7 @@ var showDrawnNodes = true
 var advanceFrame = false
 var counter = 0
 var testWidth = 10.float32
+var invalidateOverlapping* = true
 
 var popup1 = neww (vec2(100, 100), vec2(0, 0), false)
 var popup2 = neww (vec2(200, 200), vec2(0, 0), false)
@@ -138,7 +139,7 @@ template button*(builder: UINodeBuilder, name: string, body: untyped): untyped =
       body
 
 template withText*(builder: UINodeBuilder, str: string, body: untyped): untyped =
-  builder.panel(&{DrawText, FillBackground, SizeToContentX, SizeToContentY, LayoutHorizontal}, text = str):
+  builder.panel(&{DrawText, FillBackground, SizeToContentX, SizeToContentY}, text = str):
     # currentNode.setTextColor(1, 0, 0)
     # currentNode.setBackgroundColor(0, 0, 0)
 
@@ -181,13 +182,10 @@ proc renderLine(builder: UINodeBuilder, line: string, curs: Option[int], backgro
         currentNode.backgroundColor = backgroundColor
         currentNode.textColor = textColor
 
+        # cursor
         if curs.getSome(curs) and curs >= start and curs < start + part.len:
-          let width = builder.textWidth(curs - start).round
-          builder.panel(&{FillY}, w = width)
-
-          # cursor
-          builder.panel(&{FillY, FillBackground}, w = builder.charWidth):
-            currentNode.setBackgroundColor(0.7, 0.7, 1, 0.7)
+          let cursorX = builder.textWidth(curs - start).round
+          builder.panel(&{FillY, FillBackground}, x = cursorX, w = builder.charWidth, backgroundColor = color(0.7, 0.7, 1, 0.7))
             # onClick:
             #   # echo "clicked cursor ", btn
             #   cursor[1] = rand(0..line.len)
@@ -315,8 +313,8 @@ template createLine(builder: UINodeBuilder, body: untyped) =
 
 proc buildUINodes(builder: UINodeBuilder) =
   var rootFlags = &{FillX, FillY, OverlappingChildren, MaskContent}
-  if not invalidateOverlapping:
-    rootFlags.incl FillBackground
+  # if not invalidateOverlapping:
+  #   rootFlags.incl FillBackground
 
   builder.panel(rootFlags, backgroundColor = color(0, 0, 0)): # fullscreen overlay
 
@@ -579,28 +577,22 @@ while not window.closeRequested:
 
   pollEvents()
 
-  let tBeginFrame = startTimer()
   bxy.beginFrame(window.size, clearFrame=false)
-  let msBeginFrame = tBeginFrame.elapsed.ms
 
-  let tRemoveImages = startTimer()
   for image in cachedImages.removedKeys:
     bxy.removeImage(image)
   cachedImages.clearRemovedKeys()
-  let msRemoveImages = tRemoveImages.elapsed.ms
 
   let tAdvanceFrame = startTimer()
   if advanceFrame:
     builder.renderNewFrame()
   let msAdvanceFrame = tAdvanceFrame.elapsed.ms
 
-  let tEndFrame = startTimer()
   bxy.endFrame()
-  let msEndFrame = tEndFrame.elapsed.ms
 
   if advanceFrame:
     if logFrameTime:
-      echo fmt"[frame] {drawnNodes.len} {frameTimer.elapsed.ms}, begin: {msBeginFrame}, remove: {msRemoveImages}, advance: {msAdvanceFrame}, end: {msEndFrame}"
+      echo fmt"[frame] {drawnNodes.len} {frameTimer.elapsed.ms}, advance: {msAdvanceFrame}"
 
     glBindFramebuffer(GL_READ_FRAMEBUFFER, framebufferId)
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
