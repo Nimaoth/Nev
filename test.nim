@@ -21,6 +21,10 @@ var invalidateOverlapping* = true
 var popup1 = neww (vec2(100, 100), vec2(0, 0), false)
 var popup2 = neww (vec2(200, 200), vec2(0, 0), false)
 
+var cursor = (0, 0)
+var mainTextChanged = false
+var retainMainText = false
+
 const testText = """
 macro defineBitFlag*(body: untyped): untyped =
   let flagName = body[0][0].typeName
@@ -43,20 +47,6 @@ macro defineBitFlag*(body: untyped): untyped =
         res.incl flag
       return genAst(res2 = res.uint32):
         res2.flagsName
-
-    iterator flags*(self: flagsName): flagName =
-      for v in flagName.low..flagName.high:
-        if (self.uint32 and (1.uint32 shl v.uint32)) != 0:
-          yield v
-
-    proc `$`*(self: flagsName): string =
-      var res2: string = "{"
-      for flag in self.flags:
-        if res2.len > 1:
-          res2.add ", "
-        res2.add $flag
-      res2.add "}"
-      return res2
 """.splitLines(keepEol=false)
 
 const testText2 = """hi, wassup?
@@ -145,8 +135,6 @@ template withText*(builder: UINodeBuilder, str: string, body: untyped): untyped 
 
     body
 
-var cursor = (0, 0)
-
 
 iterator splitLine(str: string): string =
   if str.len == 0:
@@ -201,7 +189,7 @@ proc renderLine(builder: UINodeBuilder, line: string, curs: Option[int], backgro
     builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = backgroundColor * 2)
 
 
-proc renderText(builder: UINodeBuilder, lines: openArray[string], first: int, cursor: (int, int), backgroundColor, textColor: Color, sizeToContentX = false, sizeToContentY = true) =
+proc renderText(builder: UINodeBuilder, lines: openArray[string], first: int, cursor: (int, int), backgroundColor, textColor: Color, sizeToContentX = false, sizeToContentY = true, id = Id.none) =
   var flags = &{MaskContent, LayoutVertical}
   if sizeToContentX:
     flags.incl SizeToContentX
@@ -213,7 +201,7 @@ proc renderText(builder: UINodeBuilder, lines: openArray[string], first: int, cu
   else:
     flags.incl FillY
 
-  builder.panel(flags):
+  builder.panel(flags, userId = id):
     for i, line in lines:
       let column = if cursor[0] == i: cursor[1].some else: int.none
       builder.renderLine(line, column, backgroundColor, textColor, sizeToContentX)
@@ -304,13 +292,15 @@ var sliderStep = 1.float32
 var slider = 35.float32
 
 template createLine(builder: UINodeBuilder, body: untyped) =
-  builder.panel(&{FillX, SizeToContentY, FillBackground}, backgroundColor = color(0, 0, 0)):
+  builder.panel(&{FillX, SizeToContentY, LayoutHorizontal}):
     body
+    builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = color(0, 0, 0))
 
     # # Fill rest of line with background
     # builder.panel(&{FillX, FillY, FillBackground}):
     #   currentNode.backgroundColor = color(0, 0, 0)
 
+var lastTextArea = newId()
 proc buildUINodes(builder: UINodeBuilder) =
   var rootFlags = &{FillX, FillY, OverlappingChildren, MaskContent}
   # if not invalidateOverlapping:
@@ -326,6 +316,9 @@ proc buildUINodes(builder: UINodeBuilder) =
       builder.createLine: builder.createSlider(slider, color(0.3, 0.5, 0.3), color(0.6, 0.9, 0.6), min = sliderMin, max = sliderMax, step = sliderStep.some, (v: float32) => (slider = v))
       builder.createLine: builder.createCheckbox(showPopup1, (v: bool) => (showPopup1 = v))
       builder.createLine: builder.createCheckbox(showPopup2, (v: bool) => (showPopup2 = v))
+
+      if not showPopup2:
+        builder.createLine: builder.createCheckbox(showPopup2, (v: bool) => (showPopup2 = v))
 
       builder.panel(&{LayoutHorizontal, FillX, SizeToContentY}): # first row
         builder.button("press me"):
@@ -364,7 +357,8 @@ proc buildUINodes(builder: UINodeBuilder) =
           currentNode.setBackgroundColor(0, 0, 1)
 
       # text area
-      builder.renderText(testText, 0, cursor, backgroundColor = color(0.1, 0.1, 0.1), textColor = color(0.9, 0.9, 0.9), sizeToContentX = false)
+      if not retainMainText or mainTextChanged or not builder.retain(lastTextArea):
+        builder.renderText(testText, 0, cursor, backgroundColor = color(0.1, 0.1, 0.1), textColor = color(0.9, 0.9, 0.9), sizeToContentX = false, id = lastTextArea.some)
 
       # background filler
       builder.panel(&{FillX, FillY, FillBackground}):
@@ -534,6 +528,8 @@ window.onButtonPress = proc(button: Button) =
     invalidateOverlapping = not invalidateOverlapping
   of Button.KeyL:
     showDrawnNodes = not showDrawnNodes
+  of Button.KeyW:
+    retainMainText = not retainMainText
   of Button.KeyU:
     logRoot = not logRoot
   of Button.KeyI:
@@ -552,19 +548,25 @@ window.onButtonPress = proc(button: Button) =
   of Button.KeyUp:
     cursor[0] = max(0, cursor[0] - 1)
     cursor[1] = cursor[1].clamp(0, testText[cursor[0]].len)
+    mainTextChanged = true
   of Button.KeyDown:
     cursor[0] = min(testText.high, cursor[0] + 1)
     cursor[1] = cursor[1].clamp(0, testText[cursor[0]].len)
+    mainTextChanged = true
 
   of Button.KeyLeft:
     cursor[1] = max(0, cursor[1] - 1)
+    mainTextChanged = true
   of Button.KeyRight:
     cursor[1] = min(testText[cursor[0]].len, cursor[1] + 1)
+    mainTextChanged = true
 
   of Button.KeyHome:
     cursor[1] = 0
+    mainTextChanged = true
   of Button.KeyEnd:
     cursor[1] = testText[cursor[0]].len
+    mainTextChanged = true
 
   else:
     discard
@@ -572,6 +574,7 @@ window.onButtonPress = proc(button: Button) =
   advanceFrame = true
 
 advanceFrame = true
+mainTextChanged = true
 while not window.closeRequested:
   let frameTimer = startTimer()
 
@@ -607,5 +610,6 @@ while not window.closeRequested:
     sleep(3)
 
   advanceFrame = false
+  mainTextChanged = false
 
 window.close()

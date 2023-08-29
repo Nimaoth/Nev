@@ -76,6 +76,7 @@ type
     next: UINode
 
     mId: Id
+    userId*: Id
     mContentDirty: bool
     mLastContentChange: int
     mLastPositionChange: int
@@ -341,6 +342,7 @@ proc returnNode*(pool: UINodePool, node: UINode) =
   node.mLastPositionChange = 0
   node.mLastSizeChange = 0
 
+  node.userId = idNone()
   node.mText = ""
 
   node.mBoundsOld.x = 0
@@ -525,7 +527,7 @@ proc postLayout*(builder: UINodeBuilder, node: UINode) =
 
 #     result = result or (childRect + node.xy.some)
 
-proc prepareNode(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[string], inX, inY, inW, inH: Option[float32]): UINode =
+proc prepareNode(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[string], inX, inY, inW, inH: Option[float32], userId: Option[Id]): UINode =
   assert builder.currentParent.isNotNil
 
   var node = builder.nodePool.getNextOrNewNode(builder.currentParent, builder.currentChild)
@@ -536,6 +538,15 @@ proc prepareNode(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[st
   node.flags = inFlags
   if inText.isSome: node.text = inText.get
   else: node.text = ""
+
+  node.userId = userId.get(idNone())
+
+  node.mHandlePressed = nil
+  node.mHandleReleased = nil
+  node.mHandleDrag = nil
+  node.mHandleBeginHover = nil
+  node.mHandleEndHover = nil
+  node.mHandleHover = nil
 
   node.bounds.x = 0
   node.bounds.y = 0
@@ -661,6 +672,7 @@ proc postProcessNodes(builder: UINodeBuilder) =
 macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped]): untyped =
   var body = genAst(): discard
 
+  var inUserId = genAst(): Id.none
   var inText = genAst(): string.none
   var inX = genAst(): float32.none
   var inY = genAst(): float32.none
@@ -675,6 +687,8 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
     of ExprEqExpr[(kind: _ in {nnkSym, nnkIdent}), @value]:
       let name = arg[0].repr
       case name
+      of "userId":
+        inUserId = genAst(value): some(value).maybeFlatten
       of "text":
         inText = genAst(value): some(value)
       of "backgroundColor":
@@ -700,8 +714,8 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
     else:
       error("Only <name> = <value> is allowed here.", arg)
 
-  return genAst(builder, inFlags, inText, inX, inY, inW, inH, body, inBackgroundColor, inBorderColor, inTextColor):
-    var node = builder.prepareNode(inFlags, inText, inX, inY, inW, inH)
+  return genAst(builder, inFlags, inText, inX, inY, inW, inH, body, inBackgroundColor, inBorderColor, inTextColor, inUserId):
+    var node = builder.prepareNode(inFlags, inText, inX, inY, inW, inH, inUserId)
 
     if inBackgroundColor.isSome: node.backgroundColor = inBackgroundColor.get
     if inBorderColor.isSome:     node.borderColor     = inBorderColor.get
@@ -785,15 +799,22 @@ proc endFrame*(builder: UINodeBuilder) =
   builder.postLayout(builder.root)
   builder.postProcessNodes()
 
-proc retain*(builder: UINodeBuilder) =
-  if builder.currentChild.isNotNil and builder.currentChild.next.isNotNil:
+proc retain*(builder: UINodeBuilder, id: Id): bool =
+  if builder.currentChild.isNotNil and builder.currentChild.next.isNotNil and builder.currentChild.next.userId == id:
     builder.currentChild = builder.currentChild.next
-  elif builder.currentChild.isNil and builder.currentParent.first.isNotNil:
+  elif builder.currentChild.isNil and builder.currentParent.first.isNotNil and builder.currentParent.first.userId == id:
     builder.currentChild = builder.currentParent.first
+  else:
+    return false
 
-  if builder.currentChild.isNotNil:
-    builder.preLayout(builder.currentChild)
-    builder.postLayout(builder.currentChild)
+  builder.currentChild.bounds.x = 0
+  builder.currentChild.bounds.y = 0
+  builder.currentChild.bounds.w = 0
+  builder.currentChild.bounds.h = 0
+  builder.preLayout(builder.currentChild)
+  builder.postLayout(builder.currentChild)
+
+  return true
 
 proc dump*(node: UINode, recurse = false): string =
   if node.isNil:
