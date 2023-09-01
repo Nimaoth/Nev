@@ -23,45 +23,68 @@ var popup2 = neww (vec2(200, 200), vec2(0, 0), false)
 
 var cursor = (0, 0)
 var mainTextChanged = false
-var retainMainText = false
+var retainMainText = true
 
 const testText = """
-macro defineBitFlag*(body: untyped): untyped =
-  let flagName = body[0][0].typeName
-  let flagsName = (flagName.repr & "s").ident
+import std/[os, macros, genasts, strutils, sequtils, sugar, strformat, options, random, tables, sets]
+import src/macro_utils, src/util, src/id
+import boxy, boxy/textures, pixie, windy, vmath, rect_utils, opengl, timer, lrucache, ui/node
+import custom_logger
 
-  result = genAst(body, flagName, flagsName):
-    body
-    type flagsName* = distinct uint32
+logger.enableConsoleLogger()
+logCategory "test", true
 
-    func incl*(flags: var flagsName, flag: flagName) {.inline.} =
-      flags = (flags.uint32 or (1.uint32 shl flag.uint32)).flagsName
-    func excl*(flags: var flagsName, flag: flagName) {.inline.} =
-      flags = (flags.uint32 and not (1.uint32 shl flag.uint32)).flagsName
+var showPopup1 = true
+var showPopup2 = false
 
-    func `==`*(a, b: flagsName): bool {.borrow.}
+var logRoot = false
+var logFrameTime = true
+var showDrawnNodes = true
 
-    macro `&`*(flags: static set[flagName]): flagsName =
-      var res = 0.flagsName
-      for flag in flags:
-        res.incl flag
-      return genAst(res2 = res.uint32):
-        res2.flagsName
+var advanceFrame = false
+var counter = 0
+var testWidth = 10.float32
+var invalidateOverlapping* = true
+
+var popup1 = neww (vec2(100, 100), vec2(0, 0), false)
+var popup2 = neww (vec2(200, 200), vec2(0, 0), false)
+
+var cursor = (0, 0)
+var mainTextChanged = false
+var retainMainText = true
 """.splitLines(keepEol=false)
 
-const testText2 = """hi, wassup?
-lol
-uiaeuiaeuiae
-uiui uia eu""".splitLines(keepEol=false)
+const testText2 = """
+proc getFont*(font: string, fontSize: float32): Font =
+  let typeface = readTypeface(font)
 
-const testText3 = """    glBindFramebuffer(GL_READ_FRAMEBUFFER, framebufferId)
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
-    glBlitFramebuffer(
-      0, 0, framebuffer.width.GLint, framebuffer.height.GLint,
-      0, 0, window.size.x.GLint, window.size.y.GLint,
-      GL_COLOR_BUFFER_BIT, GL_NEAREST.GLenum)
+  result = newFont(typeface)
+  result.paint.color = color(1, 1, 1)
+  result.size = fontSize
+""".splitLines(keepEol=false)
 
-    window.swapBuffers()""".splitLines(keepEol=false)
+const testText3 = """
+var bxy = newBoxy()
+bxy.addImage("image", image)
+
+framebuffer = Texture()
+framebuffer.width = image.width.int32 * 2
+framebuffer.height = image.height.int32
+framebuffer.componentType = GL_UNSIGNED_BYTE
+framebuffer.format = GL_RGBA
+framebuffer.internalFormat = GL_RGBA8
+framebuffer.minFilter = minLinear
+framebuffer.magFilter = magLinear
+bindTextureData(framebuffer, nil)
+
+glGenFramebuffers(1, framebufferId.addr)
+glBindFramebuffer(GL_FRAMEBUFFER, framebufferId)
+glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, framebuffer.textureId, 0)
+glBindFramebuffer(GL_FRAMEBUFFER, 0)
+bxy.setTargetFramebuffer framebufferId
+
+var drawnNodes: seq[UINode] = @[]
+""".splitLines(keepEol=false)
 
 proc getFont*(font: string, fontSize: float32): Font =
   let typeface = readTypeface(font)
@@ -117,7 +140,7 @@ var drawnNodes: seq[UINode] = @[]
 var cachedImages: LruCache[string, string] = newLruCache[string, string](1000, true)
 
 template button*(builder: UINodeBuilder, name: string, body: untyped): untyped =
-  builder.panel(&{DrawText, DrawBorder, FillBackground, SizeToContentX, SizeToContentY, MouseHover}, text = name):
+  builder.panel(&{DrawText, FillBackground, SizeToContentX, SizeToContentY, MouseHover}, text = name):
     currentNode.setTextColor(1, 0, 0)
 
     if currentNode.some == builder.hoveredNode:
@@ -156,8 +179,6 @@ proc renderLine(builder: UINodeBuilder, line: string, curs: Option[int], backgro
   var flags = &{LayoutHorizontal, FillX, SizeToContentY}
   if sizeToContentX:
     flags.incl SizeToContentX
-  # else:
-  #   flags.incl FillX
 
   builder.panel(flags):
     var start = 0
@@ -174,25 +195,17 @@ proc renderLine(builder: UINodeBuilder, line: string, curs: Option[int], backgro
         if curs.getSome(curs) and curs >= start and curs < start + part.len:
           let cursorX = builder.textWidth(curs - start).round
           result = some (currentNode, $part[curs - start], rect(cursorX, 0, builder.charWidth, builder.textHeight))
-          # builder.panel(&{FillY, FillBackground}, x = cursorX, w = builder.charWidth, backgroundColor = color(0.7, 0.7, 1, 0.7))
-            # onClick:
-            #   # echo "clicked cursor ", btn
-            #   cursor[1] = rand(0..line.len)
 
         lastPartXW = currentNode.bounds.xw
 
     # cursor after latest char
     if curs.getSome(curs) and curs == line.len:
       result = some (currentNode, "", rect(lastPartXW, 0, builder.charWidth, builder.textHeight))
-      # builder.panel(&{FillY, FillBackground}, w = builder.charWidth, backgroundColor = color(0.5, 0.5, 1, 1))
-        # onClick:
-        #   # echo "clicked cursor ", btn
-        #   cursor[1] = rand(0..line.len)
 
     # Fill rest of line with background
     builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = backgroundColor * 2)
 
-proc renderText(builder: UINodeBuilder, lines: openArray[string], first: int, cursor: (int, int), backgroundColor, textColor: Color, sizeToContentX = false, sizeToContentY = true, id = Id.none) =
+proc renderText(builder: UINodeBuilder, changed: bool, lines: openArray[string], first: int, cursor: (int, int), backgroundColor, textColor: Color, sizeToContentX = false, sizeToContentY = true, id = Id.none) =
   var flags = &{MaskContent, OverlappingChildren}
   var flagsInner = &{LayoutVertical}
   if sizeToContentX:
@@ -210,30 +223,34 @@ proc renderText(builder: UINodeBuilder, lines: openArray[string], first: int, cu
     flagsInner.incl FillY
 
   builder.panel(flags, userId = id):
+    if not retainMainText or changed or not builder.retain():
+      # echo "render text ", lines[0]
 
-    var cursorLocation = (UINode, string, Rect).none
+      var cursorLocation = (UINode, string, Rect).none
 
-    builder.panel(flagsInner):
-      for i, line in lines:
-        let column = if cursor[0] == i: cursor[1].some else: int.none
-        if builder.renderLine(line, column, backgroundColor, textColor, sizeToContentX).getSome(cl):
-          cursorLocation = cl.some
+      builder.panel(flagsInner):
+        for i, line in lines:
+          let column = if cursor[0] == i: cursor[1].some else: int.none
+          if builder.renderLine(line, column, backgroundColor, textColor, sizeToContentX).getSome(cl):
+            cursorLocation = cl.some
 
-    # let cursorX = builder.textWidth(curs - start).round
-    if cursorLocation.getSome(cl):
-      var bounds = cl[2].transformRect(cl[0], currentNode) - vec2(1, 0)
-      bounds.w += 1
-      builder.panel(&{FillBackground}, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h, backgroundColor = color(0.7, 0.7, 1)):
-        builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, x = 1, y = 0, text = cl[1], textColor = color(0.4, 0.2, 2))
+          # break
 
-proc createPopup(builder: UINodeBuilder, lines: openArray[string], pop: ref tuple[pos: Vec2, offset: Vec2, collapsed: bool], backgroundColor, borderColor, headerColor, textColor: Color) =
+      # let cursorX = builder.textWidth(curs - start).round
+      if cursorLocation.getSome(cl):
+        var bounds = cl[2].transformRect(cl[0], currentNode) - vec2(1, 0)
+        bounds.w += 1
+        builder.panel(&{FillBackground}, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h, backgroundColor = color(0.7, 0.7, 1)):
+          builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, x = 1, y = 0, text = cl[1], textColor = color(0.4, 0.2, 2))
+
+proc createPopup(builder: UINodeBuilder, lines: openArray[string], pop: ref tuple[pos: Vec2, offset: Vec2, collapsed: bool], backgroundColor, borderColor, headerColor, textColor: Color, id = Id.none) =
   let pos = pop.pos + pop.offset
 
   var flags = &{LayoutVertical, SizeToContentX, SizeToContentY, MouseHover, MaskContent}
   if pop.collapsed:
     flags.incl SizeToContentY
 
-  builder.panel(flags, x = pos.x, y = pos.y): # draggable overlay
+  builder.panel(flags, x = pos.x, y = pos.y, userId = id): # draggable overlay
     currentNode.setBorderColor(1, 0, 1)
     currentNode.flags.incl DrawBorder
 
@@ -254,7 +271,7 @@ proc createPopup(builder: UINodeBuilder, lines: openArray[string], pop: ref tupl
         pop.offset = builder.mousePos - builder.mousePosClick[Left]
 
     if not pop.collapsed:
-      builder.renderText(lines, 0, (0, 0), backgroundColor=backgroundColor, textColor = textColor, sizeToContentX = true)
+      builder.renderText(false, lines, 0, (0, 0), backgroundColor=backgroundColor, textColor = textColor, sizeToContentX = true)
 
       # # background filler
       # builder.panel(&{FillX, FillY, FillBackground}):
@@ -310,6 +327,9 @@ var sliderMin = 0.float32
 var sliderMax = 100.float32
 var sliderStep = 1.float32
 var slider = 35.float32
+let lastTextArea = newId()
+let pop1Id = newId()
+let pop2Id = newId()
 
 template createLine(builder: UINodeBuilder, body: untyped) =
   builder.panel(&{FillX, SizeToContentY, LayoutHorizontal}):
@@ -320,7 +340,6 @@ template createLine(builder: UINodeBuilder, body: untyped) =
     # builder.panel(&{FillX, FillY, FillBackground}):
     #   currentNode.backgroundColor = color(0, 0, 0)
 
-var lastTextArea = newId()
 proc buildUINodes(builder: UINodeBuilder) =
   var rootFlags = &{FillX, FillY, OverlappingChildren, MaskContent}
   # if not invalidateOverlapping:
@@ -377,17 +396,16 @@ proc buildUINodes(builder: UINodeBuilder) =
           currentNode.setBackgroundColor(0, 0, 1)
 
       # text area
-      if not retainMainText or mainTextChanged or not builder.retain(lastTextArea):
-        builder.renderText(testText, 0, cursor, backgroundColor = color(0.1, 0.1, 0.1), textColor = color(0.9, 0.9, 0.9), sizeToContentX = false, id = lastTextArea.some)
+      builder.renderText(mainTextChanged, testText, 0, cursor, backgroundColor = color(0.1, 0.1, 0.1), textColor = color(0.9, 0.9, 0.9), sizeToContentX = false, id = lastTextArea.some)
 
       # background filler
       builder.panel(&{FillX, FillY, FillBackground}):
         currentNode.setBackgroundColor(0, 0, 1)
 
     if showPopup1:
-      builder.createPopup(testText2, popup1, backgroundColor = color(0.3, 0.1, 0.1), textColor = color(0.9, 0.5, 0.5), headerColor = color(0.4, 0.2, 0.2), borderColor = color(1, 0.1, 0.1))
+      builder.createPopup(testText2, popup1, backgroundColor = color(0.3, 0.1, 0.1), textColor = color(0.9, 0.5, 0.5), headerColor = color(0.4, 0.2, 0.2), borderColor = color(1, 0.1, 0.1), id = pop1Id.some)
     if showPopup2:
-      builder.createPopup(testText3, popup2, backgroundColor = color(0.1, 0.3, 0.1), textColor = color(0.5, 0.9, 0.5), headerColor = color(0.2, 0.4, 0.2), borderColor = color(0.1, 1, 0.1))
+      builder.createPopup(testText3, popup2, backgroundColor = color(0.1, 0.3, 0.1), textColor = color(0.5, 0.9, 0.5), headerColor = color(0.2, 0.4, 0.2), borderColor = color(0.1, 1, 0.1), id = pop2Id.some)
 
 proc strokeRect*(boxy: Boxy, rect: Rect, color: Color, thickness: float = 1, offset: float = 0) =
   let rect = rect.grow(vec2(thickness * offset, thickness * offset))
@@ -615,7 +633,7 @@ while not window.closeRequested:
 
   if advanceFrame:
     if logFrameTime:
-      echo fmt"[frame] {drawnNodes.len} {frameTimer.elapsed.ms}, advance: {msAdvanceFrame}"
+      echo fmt"[frame] nodes: {drawnNodes.len:>4}, advance: {msAdvanceFrame:<5.3}, total: {frameTimer.elapsed.ms:<5.3}"
 
     glBindFramebuffer(GL_READ_FRAMEBUFFER, framebufferId)
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
