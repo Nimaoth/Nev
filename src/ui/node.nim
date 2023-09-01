@@ -1,4 +1,4 @@
-import std/[os, macros, genasts, strutils, sequtils, sugar, strformat, options]
+import std/[os, macros, genasts, strutils, sequtils, sugar, strformat, options, tables]
 import fusion/matching
 import macro_utils, util, id, input, custom_unicode
 import chroma, vmath, rect_utils
@@ -76,7 +76,7 @@ type
     next: UINode
 
     mId: Id
-    userId*: Id
+    userId*: Option[Id]
     mContentDirty: bool
     mLastContentChange: int
     mLastPositionChange: int
@@ -109,11 +109,10 @@ type
     mHandleEndHover: proc(node: UINode): bool
     mHandleHover: proc(node: UINode): bool
 
-  UINodePool* = ref object
-    nodes: seq[UINode]
-
   UINodeBuilder* = ref object
-    nodePool: UINodePool = nil
+    nodes: seq[UINode]
+    namedNodes: Table[Id, UINode]
+
     currentChild: UINode = nil
     currentParent: UINode = nil
     root*: UINode = nil
@@ -201,7 +200,7 @@ func `lh=`*(node: UINode, value: float32) = node.boundsAbsolute.h = value
 proc textWidth*(builder: UINodeBuilder, textLen: int): float32 = textLen.float32 * builder.charWidth
 proc textHeight*(builder: UINodeBuilder): float32 = builder.lineHeight + builder.lineGap
 
-proc unpoolNode*(pool: UINodePool): UINode
+proc unpoolNode*(builder: UINodeBuilder, userId = Id.none): UINode
 proc findNodeContaining*(node: UINode, pos: Vec2, predicate: proc(node: UINode): bool): Option[UINode]
 
 var stackSize = 0
@@ -218,9 +217,8 @@ template logp(node: UINode, msg: untyped) =
 
 proc newNodeBuilder*(): UINodeBuilder =
   new result
-  new result.nodePool
   result.frameIndex = 0
-  result.root = result.nodePool.unpoolNode()
+  result.root = result.unpoolNode()
 
 proc hovered*(builder: UINodeBuilder, node: UINode): bool = node.some == builder.hoveredNode
 
@@ -299,6 +297,15 @@ proc setTextColor*(node: UINode, r, g, b: float32, a: float32 = 1) =
   node.mTextColor.b = b
   node.mTextColor.a = a
 
+iterator nextSiblings*(node: UINode): (int, UINode) =
+  var i = 0
+  var current = node.next
+  while current.isNotNil:
+    defer: inc i
+    let next = current.next
+    yield (i, current)
+    current = next
+
 iterator children*(node: UINode): (int, UINode) =
   var i = 0
   var current = node.first
@@ -322,19 +329,20 @@ proc transformRect*(rect: Rect, src: UINode, dst: UINode): Rect =
     result = result + curr.xy
     curr = curr.parent
 
-proc unpoolNode*(pool: UINodePool): UINode =
-  if pool.nodes.len > 0:
-    # debug "reusing node ", pool.nodes[pool.nodes.high].id
-    return pool.nodes.pop
-  # defer:
-  #   debug "creating new node ", result.id
-  result = UINode(mId: newId())
-
-proc returnNode*(pool: UINodePool, node: UINode) =
-  pool.nodes.add node
+proc returnNode*(builder: UINodeBuilder, node: UINode) =
+  if node.userId.isSome:
+    discard
+  else:
+    builder.nodes.add node
 
   for _, c in node.children:
-    pool.returnNode c
+    builder.returnNode c
+
+  if builder.draggedNode == node.some:
+    builder.draggedNode = UINode.none
+
+  if builder.hoveredNode == node.some:
+    builder.hoveredNode = UINode.none
 
   node.parent = nil
   node.first = nil
@@ -348,8 +356,9 @@ proc returnNode*(pool: UINodePool, node: UINode) =
   node.mLastContentChange = 0
   node.mLastPositionChange = 0
   node.mLastSizeChange = 0
+  node.mLastClearInvalidation = 0
+  node.mLastDrawInvalidation = 0
 
-  node.userId = idNone()
   node.mText = ""
 
   node.mBoundsOld.x = 0
@@ -381,34 +390,11 @@ proc returnNode*(pool: UINodePool, node: UINode) =
   node.clearRect = Rect.none
   node.invalidationRect = Rect.none
 
-proc getNextOrNewNode*(pool: UINodePool, node: UINode, last: UINode): UINode =
-  if last.isNil:
-    if node.first.isNotNil:
-      return node.first
-
-    let newNode = pool.unpoolNode()
-    newNode.parent = node
-    node.first = newNode
-    node.last = newNode
-    return newNode
-
-  if last.next.isNotNil:
-    assert last.next.parent == last.parent
-    assert last.next.prev == last
-    return last.next
-
-  let newNode = pool.unpoolNode()
-  newNode.parent = node
-  newNode.prev = last
-  last.next = newNode
-  node.last = newNode
-  return newNode
-
-proc clearUnusedChildren*(pool: UINodePool, node: UINode, last: UINode): Option[Rect] =
+proc clearUnusedChildren*(builder: UINodeBuilder, node: UINode, last: UINode): Option[Rect] =
   if last.isNil:
     for _, child in node.children:
       result = result or child.bounds.some
-      pool.returnNode child
+      builder.returnNode child
       node.contentDirty = true
     node.first = nil
     node.last = nil
@@ -420,7 +406,7 @@ proc clearUnusedChildren*(pool: UINodePool, node: UINode, last: UINode): Option[
     while n.isNotNil:
       let next = n.next
       result = result or n.bounds.some
-      pool.returnNode n
+      builder.returnNode n
       node.contentDirty = true
       n = next
 
@@ -520,24 +506,163 @@ proc postLayout*(builder: UINodeBuilder, node: UINode) =
   if node.parent.isNotNil:
     builder.postLayoutChild(node.parent, node)
 
-# proc invalidateByRect*(builder: UINodeBuilder, node: UINode, rect: Rect): Option[Rect] =
-#   if not node.bounds.intersects(rect):
-#     return Rect.none
+proc unpoolNode*(builder: UINodeBuilder, userId = Id.none): UINode =
+  if userId.getSome(id) and builder.namedNodes.contains(id):
+    result = builder.namedNodes[id]
+    assert result.userId == userId
+    return
 
-#   node.mLastContentChange = builder.frameIndex
+  if builder.nodes.len > 0:
+    result = builder.nodes.pop
+    result.userId = userId
+    if userId.isSome:
+      builder.namedNodes[userId.get] = result
 
-#   if node.mFlags.any &{DrawText, DrawBorder, FillBackground}:
-#     result = node.bounds.some
+    return
 
-#   for _, c in node.children:
-#     let childRect = builder.invalidateByRect(c, rect - node.xy)
+  result = UINode(mId: newId(), userId: userId)
+  if userId.isSome:
+    builder.namedNodes[userId.get] = result
 
-#     result = result or (childRect + node.xy.some)
+proc insert*(node: UINode, n: UINode, after: UINode = nil) =
+  assert n.parent == nil
+
+  if after.isNil:
+    if node.first.isNil:
+      node.first = n
+      node.last = n
+      n.parent = node
+      n.prev = nil
+      n.next = nil
+    else:
+      let oldFirst = node.first
+      node.first = n
+      n.parent = node
+      n.next = oldFirst
+      n.prev = nil
+      oldFirst.prev = n
+  else:
+    assert after.parent == node
+    assert node.first.isNotNil
+    assert n != after
+
+    n.parent = node
+    n.prev = after
+    n.next = after.next
+
+    if after.next.isNotNil:
+      assert after != node.last
+      after.next.prev = n
+    after.next = n
+
+    if node.last == after:
+      assert n.next.isNil
+      node.last = n
+
+proc replaceWith*(node: UINode, n: UINode) =
+  n.parent = node.parent
+  n.prev = node.prev
+  n.next = node.next
+
+  if node.prev.isNotNil:
+    node.prev.next = n
+
+  if node.next.isNotNil:
+    node.next.prev = n
+
+  if node.parent.first == node:
+    node.parent.first = n
+
+  if node.parent.last == node:
+    node.parent.last = n
+
+proc removeFromParent*(node: UINode) =
+  if node.prev.isNotNil:
+    node.prev.next = node.next
+  else:
+    assert node.parent.first == node
+    node.parent.first = node.next
+
+  if node.next.isNotNil:
+    node.next.prev = node.prev
+  else:
+    assert node.parent.last == node
+    node.parent.last = node.prev
+
+  node.prev = nil
+  node.next = nil
+  node.parent = nil
+
+proc getNextOrNewNode(builder: UINodeBuilder, node: UINode, last: UINode, userId: Option[Id]): UINode =
+  let insert = true
+
+  if last.isNil: # Creating/Updating first child
+    if node.first.isNotNil: # First child already exists
+      if node.first.userId == userId: # User id matches, reuse existing
+        return node.first
+      else: # User id doesn't match
+        let newNode = builder.unpoolNode(userId)
+        node.insert(newNode)
+        return newNode
+
+    let newNode = builder.unpoolNode(userId)
+    node.insert(newNode)
+    return newNode
+
+  if last.next.isNotNil:
+    assert last.next.parent == last.parent
+    assert last.next.prev == last
+    if last.next.userId == userId:
+      return last.next
+    elif userId.isSome: # User id doesn't match
+
+      # search ahead to see if we find a matching node
+      var matchingNode = UINode.none
+      for _, c in last.nextSiblings:
+        if c.userId == userId:
+          matchingNode = c.some
+          break
+
+      if matchingNode.isSome:
+        # echo "found matching node later, delete inbetween"
+        # remove all nodes in between
+        for _, c in last.nextSiblings:
+          if c == matchingNode.get:
+            break
+          # echo "delete old node ", c.dump(), ", ", node.clearRect
+          node.clearedChildrenBounds = node.clearedChildrenBounds or c.mBoundsOld.some
+          c.removeFromParent()
+          builder.returnNode(c)
+        assert last.next == matchingNode.get
+        assert last.next.userId == userId
+
+        return last.next
+
+      let newNode = builder.unpoolNode(userId)
+
+      if newNode.parent.isNotNil:
+        # node is still in use somewhere else
+        # echo "remove target node from parent because we insert it here: ", node.dump
+        newNode.parent.clearedChildrenBounds = newNode.parent.clearedChildrenBounds or newNode.mBoundsOld.some
+        newNode.removeFromParent()
+
+      node.insert(newNode, last)
+      return newNode
+
+    else: # User id doesn't match and user id is none
+      assert userId.isNone
+      let newNode = builder.unpoolNode()
+      node.insert(newNode, last)
+      return newNode
+
+  let newNode = builder.unpoolNode(userId)
+  node.insert(newNode, last)
+  return newNode
 
 proc prepareNode(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[string], inX, inY, inW, inH: Option[float32], userId: Option[Id]): UINode =
   assert builder.currentParent.isNotNil
 
-  var node = builder.nodePool.getNextOrNewNode(builder.currentParent, builder.currentChild)
+  var node = builder.getNextOrNewNode(builder.currentParent, builder.currentChild, userId)
   node.logp "panel begin"
 
   builder.currentChild = node
@@ -546,8 +671,6 @@ proc prepareNode(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[st
   if inText.isSome: node.text = inText.get
   else: node.text = ""
 
-  node.userId = userId.get(idNone())
-
   node.mHandlePressed = nil
   node.mHandleReleased = nil
   node.mHandleDrag = nil
@@ -555,6 +678,9 @@ proc prepareNode(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[st
   node.mHandleEndHover = nil
   node.mHandleHover = nil
 
+  node.clearRect = Rect.none
+  node.clearedChildrenBounds = Rect.none
+  node.mBoundsOld = node.bounds
   node.bounds.x = 0
   node.bounds.y = 0
   node.bounds.w = 0
@@ -576,14 +702,14 @@ proc finishNode(builder: UINodeBuilder, currentNode: UINode) =
   # remove current invalidation rect
   currentNode.logp fmt"panel end"
 
-  currentNode.clearedChildrenBounds = builder.nodePool.clearUnusedChildren(currentNode, builder.currentChild)
+  currentNode.clearedChildrenBounds = currentNode.clearedChildrenBounds or builder.clearUnusedChildren(currentNode, builder.currentChild)
   builder.postLayout(currentNode)
 
   builder.currentParent = currentNode.parent
   builder.currentChild = currentNode
 
-proc postProcessNodeBackwards(builder: UINodeBuilder, node: UINode, offset = vec2(0, 0), clearRect = Rect.none) =
-  node.logi "postProcessNodeBackwards ", offset, ", ", clearRect, ", "
+proc postProcessNodeBackwards(builder: UINodeBuilder, node: UINode, offset = vec2(0, 0), inClearRect = Rect.none) =
+  node.logi "postProcessNodeBackwards ", offset, ", ", inClearRect, ", "
 
   stackSize.inc
   defer: stackSize.dec
@@ -600,10 +726,10 @@ proc postProcessNodeBackwards(builder: UINodeBuilder, node: UINode, offset = vec
   if positionDirty or sizeDirty:
     if node.mFlags.all(&{FillBackground}):
       if not node.bounds.contains(node.mBoundsOld):
-        node.clearRect = some node.mBoundsOld.invalidationRect(node.bounds)
+        node.clearRect = node.clearRect or some node.mBoundsOld.invalidationRect(node.bounds)
     else:
       if not node.bounds.contains(node.mBoundsOld):
-        node.clearRect = some node.mBoundsOld.invalidationRect(node.bounds)
+        node.clearRect = node.clearRect or some node.mBoundsOld.invalidationRect(node.bounds)
 
   node.lx = newPosAbsolute.x
   node.ly = newPosAbsolute.y
@@ -617,11 +743,11 @@ proc postProcessNodeBackwards(builder: UINodeBuilder, node: UINode, offset = vec
 
   node.mFlagsOld = node.mFlags
 
-  if clearRect.isSome and clearRect.get.intersects(node.bounds):
+  if inClearRect.isSome and inClearRect.get.intersects(node.bounds):
     node.mLastClearInvalidation = builder.frameIndex
     node.logi "invalidate clear"
 
-  var childClearRect = (clearRect or node.clearedChildrenBounds) - node.xy.some
+  var childClearRect = (inClearRect or node.clearedChildrenBounds) - node.xy.some
 
   for c in node.rchildren:
     builder.postProcessNodeBackwards(c, vec2(node.lx, node.ly), childClearRect)
@@ -802,31 +928,36 @@ proc beginFrame*(builder: UINodeBuilder, size: Vec2) =
   builder.root.flags = &{LayoutVertical}
 
 proc endFrame*(builder: UINodeBuilder) =
-  discard builder.nodePool.clearUnusedChildren(builder.root, builder.currentChild)
+  discard builder.clearUnusedChildren(builder.root, builder.currentChild)
   builder.postLayout(builder.root)
   builder.postProcessNodes()
 
-proc retain*(builder: UINodeBuilder, id: Id): bool =
-  if builder.currentChild.isNotNil and builder.currentChild.next.isNotNil and builder.currentChild.next.userId == id:
-    builder.currentChild = builder.currentChild.next
-  elif builder.currentChild.isNil and builder.currentParent.first.isNotNil and builder.currentParent.first.userId == id:
-    builder.currentChild = builder.currentParent.first
-  else:
+proc retain*(builder: UINodeBuilder): bool =
+  let node = builder.currentParent
+
+  if node.lastChange == 0:
+    # first time the node was created, can't retain because content wasn't created yet
+    # echo "first time for ", node.dump
     return false
 
-  builder.currentChild.bounds.x = 0
-  builder.currentChild.bounds.y = 0
-  builder.currentChild.bounds.w = 0
-  builder.currentChild.bounds.h = 0
-  builder.preLayout(builder.currentChild)
-  builder.postLayout(builder.currentChild)
+  let w = if SizeToContentX in node.mFlags: max(node.w, node.mBoundsOld.w) else: node.w
+  let h = if SizeToContentY in node.mFlags: max(node.h, node.mBoundsOld.h) else: node.h
+
+  if w != node.mBoundsOld.w or h != node.mBoundsOld.h:
+    # echo "size dirty ", node.bounds.wh, ", ", node.mBoundsOld.wh, ", (", w, ", ", h, ")"
+    return false
+
+  node.bounds.w = w
+  node.bounds.h = h
+
+  builder.currentChild = builder.currentParent.last
 
   return true
 
 proc dump*(node: UINode, recurse = false): string =
   if node.isNil:
     return "nil"
-  result.add fmt"Node({node.mLastContentChange}, {node.mLastPositionChange}, {node.mLastSizeChange}, {node.mLastClearInvalidation}, {node.mLastDrawInvalidation}, {node.id} '{node.text}', {node.flags}, ({node.x}, {node.y}, {node.w}, {node.h}), {node.mBoundsOld})"
+  result.add fmt"Node({node.userId}, {node.mLastContentChange}, {node.mLastPositionChange}, {node.mLastSizeChange}, {node.mLastClearInvalidation}, {node.mLastDrawInvalidation}, {node.id} '{node.text}', {node.flags}, ({node.x}, {node.y}, {node.w}, {node.h}), {node.mBoundsOld})"
   if recurse and node.first.isNotNil:
     result.add ":"
     for _, c in node.children:
