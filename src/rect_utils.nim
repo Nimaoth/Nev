@@ -176,5 +176,12 @@ proc mix*[T: SomeFloat](a, b: Rect, v: T): Rect =
   result.w = a.w * (1.0 - v) + b.w * v
   result.h = a.h * (1.0 - v) + b.h * v
 
+proc mix*[T: SomeFloat](a: var Rect, b: Rect, v: T) =
+  let v = v.clamp(0, 1)
+  a.x = a.x * (1.0 - v) + b.x * v
+  a.y = a.y * (1.0 - v) + b.y * v
+  a.w = a.w * (1.0 - v) + b.w * v
+  a.h = a.h * (1.0 - v) + b.h * v
+
 proc almostEqual*(a, b: Rect, epsilon: float32): bool =
   result = abs(a.x - b.x) <= epsilon and abs(a.y - b.y) <= epsilon and abs(a.w - b.w) <= epsilon and abs(a.h - b.h) <= epsilon

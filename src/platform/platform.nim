@@ -1,6 +1,8 @@
 import widgets, event, input
 import vmath
 
+export widgets, input, event
+
 type
   Platform* = ref object of RootObj
     redrawEverything*: bool
