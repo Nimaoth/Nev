@@ -393,8 +393,22 @@ var isRenderInProgress = false
 
 var frameIndex = 0
 
-proc doRender(time: float) =
+var start: float = -1
+var previousTimestep: float = 0
+
+proc doRender(timestep: float) =
   # echo "requestAnimationFrame ", time
+
+  if timestep == previousTimestep:
+    # echo "multiple per frame"
+    return
+
+  if start < 0 or builder.animatingNodes.len == 0:
+    start = timestep
+    builder.frameTime = 0
+  else:
+    builder.frameTime = timestep - previousTimestep
+  previousTimestep = timestep
 
   defer:
     if builder.animatingNodes.len > 0:
@@ -429,7 +443,6 @@ proc doRender(time: float) =
     renderTime = renderTimer.elapsed.ms
 
     frameTime = frameTimer.elapsed.ms
-    builder.frameTime = frameTime
 
   # if frameTime > 20:
   if logFrameTime:
@@ -466,7 +479,7 @@ proc drawNode(builder: UINodeBuilder, platform: BrowserPlatform, element: var El
     css += "overflow: hidden;".cstring
 
   if DrawBorder in node.flags:
-    css += "border: 1px solid ".cstring
+    css += "outline: 1px solid ".cstring
     css += node.borderColor.myToHtmlHex
     css += ";".cstring
 
