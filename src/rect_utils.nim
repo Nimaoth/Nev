@@ -168,3 +168,13 @@ proc invalidationRect*(a: Rect, b: Rect): Rect =
   if b.x <= a.x and b.xw >= a.xw and b.y <= a.y and b.yh <= a.yh: # invalidate bottom side
     return rect(a.x, max(b.yh, a.y), a.w, a.yh - max(b.yh, a.y))
   return a
+
+proc mix*[T: SomeFloat](a, b: Rect, v: T): Rect =
+  let v = v.clamp(0, 1)
+  result.x = a.x * (1.0 - v) + b.x * v
+  result.y = a.y * (1.0 - v) + b.y * v
+  result.w = a.w * (1.0 - v) + b.w * v
+  result.h = a.h * (1.0 - v) + b.h * v
+
+proc almostEqual*(a, b: Rect, epsilon: float32): bool =
+  result = abs(a.x - b.x) <= epsilon and abs(a.y - b.y) <= epsilon and abs(a.w - b.w) <= epsilon and abs(a.h - b.h) <= epsilon
