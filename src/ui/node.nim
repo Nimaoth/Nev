@@ -1,4 +1,4 @@
-import std/[os, macros, genasts, strutils, sequtils, sugar, strformat, options, tables]
+import std/[os, macros, genasts, strutils, sequtils, sugar, strformat, options, tables, sets]
 import fusion/matching
 import macro_utils, util, id, input, custom_unicode
 import chroma, vmath, rect_utils
@@ -66,6 +66,7 @@ defineBitFlag:
     LayoutHorizontal
     OverlappingChildren
     MouseHover
+    AnimateBounds
 
 type
   UINode* = ref object
@@ -93,9 +94,12 @@ type
     mBorderColor: Color
     mTextColor: Color
 
-    mBoundsOld: Rect
-    bounds: Rect
-    boundsAbsolute: Rect
+    bounds: Rect          # The target bounds, used for layouting.
+    boundsOld: Rect       # The last boundsActual
+    boundsActual*: Rect   # The actual bounds, used for rendering and invalidation. If not animated then the boundsActual will immediately snap to this position, otherwise it will smoothly interpolate.
+    boundsAbsolute: Rect  # The absolute bounds (relative to the root), based on boundsActual
+
+    boundsLerpSpeed: float32 = 0.03
 
     clearRect: Option[Rect] # Rect which describes the area the widget occupied in the previous frame but not in the current frame
     clearedChildrenBounds: Option[Rect] # Rect which describes the area the widget occupied in the previous frame but not in the current frame
@@ -123,6 +127,10 @@ type
 
     draggedNode*: Option[UINode] = UINode.none
     hoveredNode*: Option[UINode] = UINode.none
+
+    animatingNodes*: HashSet[Id]
+    frameTime*: float32 = 0.1
+    animationSpeedModifier*: float32 = 1
 
     mousePos: Vec2
     mouseDelta: Vec2
@@ -219,6 +227,7 @@ proc newNodeBuilder*(): UINodeBuilder =
   new result
   result.frameIndex = 0
   result.root = result.unpoolNode()
+  result.animatingNodes = initHashSet[Id]()
 
 proc hovered*(builder: UINodeBuilder, node: UINode): bool = node.some == builder.hoveredNode
 
@@ -361,15 +370,20 @@ proc returnNode*(builder: UINodeBuilder, node: UINode) =
 
   node.mText = ""
 
-  node.mBoundsOld.x = 0
-  node.mBoundsOld.y = 0
-  node.mBoundsOld.w = 0
-  node.mBoundsOld.h = 0
+  node.boundsOld.x = 0
+  node.boundsOld.y = 0
+  node.boundsOld.w = 0
+  node.boundsOld.h = 0
 
   node.bounds.x = 0
   node.bounds.y = 0
   node.bounds.w = 0
   node.bounds.h = 0
+
+  node.boundsActual.x = 0
+  node.boundsActual.y = 0
+  node.boundsActual.w = 0
+  node.boundsActual.h = 0
 
   node.boundsAbsolute.x = 0
   node.boundsAbsolute.y = 0
@@ -630,7 +644,7 @@ proc getNextOrNewNode(builder: UINodeBuilder, node: UINode, last: UINode, userId
           if c == matchingNode.get:
             break
           # echo "delete old node ", c.dump(), ", ", node.clearRect
-          node.clearedChildrenBounds = node.clearedChildrenBounds or c.mBoundsOld.some
+          node.clearedChildrenBounds = node.clearedChildrenBounds or c.boundsOld.some
           c.removeFromParent()
           builder.returnNode(c)
         assert last.next == matchingNode.get
@@ -643,7 +657,7 @@ proc getNextOrNewNode(builder: UINodeBuilder, node: UINode, last: UINode, userId
       if newNode.parent.isNotNil:
         # node is still in use somewhere else
         # echo "remove target node from parent because we insert it here: ", node.dump
-        newNode.parent.clearedChildrenBounds = newNode.parent.clearedChildrenBounds or newNode.mBoundsOld.some
+        newNode.parent.clearedChildrenBounds = newNode.parent.clearedChildrenBounds or newNode.boundsOld.some
         newNode.removeFromParent()
 
       node.insert(newNode, last)
@@ -680,7 +694,6 @@ proc prepareNode(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[st
 
   node.clearRect = Rect.none
   node.clearedChildrenBounds = Rect.none
-  node.mBoundsOld = node.bounds
   node.bounds.x = 0
   node.bounds.y = 0
   node.bounds.w = 0
@@ -716,52 +729,30 @@ proc postProcessNodeBackwards(builder: UINodeBuilder, node: UINode, offset = vec
 
   if node.mFlags != node.mFlagsOld:
     node.contentDirty = true
+    node.mLastContentChange = builder.frameIndex
 
-  let newPosAbsolute = node.xy + offset
+  if AnimateBounds in node.flags:
+    if node.boundsActual == node.bounds:
+      builder.animatingNodes.excl node.id
+    else:
+      node.boundsActual = mix(node.boundsActual, node.bounds, node.boundsLerpSpeed * builder.animationSpeedModifier * builder.frameTime)
+      if node.boundsActual.almostEqual(node.bounds, 1):
+        node.boundsActual.x = node.bounds.x
+        node.boundsActual.y = node.bounds.y
+        node.boundsActual.w = node.bounds.w
+        node.boundsActual.h = node.bounds.h
+      builder.animatingNodes.incl node.id
+  else:
+    node.boundsActual.x = node.bounds.x
+    node.boundsActual.y = node.bounds.y
+    node.boundsActual.w = node.bounds.w
+    node.boundsActual.h = node.bounds.h
+    builder.animatingNodes.excl node.id
+
+  let newPosAbsolute = node.boundsActual.xy + offset
 
   let positionDirty = node.lx != newPosAbsolute.x or node.ly != newPosAbsolute.y
-  let sizeDirty = node.lw != node.bounds.w or node.lh != node.bounds.h
-
-  node.clearRect = Rect.none
-  if positionDirty or sizeDirty:
-    if node.mFlags.all(&{FillBackground}):
-      if not node.bounds.contains(node.mBoundsOld):
-        node.clearRect = node.clearRect or some node.mBoundsOld.invalidationRect(node.bounds)
-    else:
-      if not node.bounds.contains(node.mBoundsOld):
-        node.clearRect = node.clearRect or some node.mBoundsOld.invalidationRect(node.bounds)
-
-  node.lx = newPosAbsolute.x
-  node.ly = newPosAbsolute.y
-  node.lw = node.bounds.w
-  node.lh = node.bounds.h
-
-  node.mBoundsOld.x = node.bounds.x
-  node.mBoundsOld.y = node.bounds.y
-  node.mBoundsOld.w = node.bounds.w
-  node.mBoundsOld.h = node.bounds.h
-
-  node.mFlagsOld = node.mFlags
-
-  if inClearRect.isSome and inClearRect.get.intersects(node.bounds):
-    node.mLastClearInvalidation = builder.frameIndex
-    node.logi "invalidate clear"
-
-  var childClearRect = (inClearRect or node.clearedChildrenBounds) - node.xy.some
-
-  for c in node.rchildren:
-    builder.postProcessNodeBackwards(c, vec2(node.lx, node.ly), childClearRect)
-
-    if OverlappingChildren in node.flags:
-      childClearRect = childClearRect or c.clearRect
-
-    if c.lastChange == builder.frameIndex:
-      node.contentDirty = true
-
-  # update last change indices
-  if node.contentDirty:
-    node.mLastContentChange = builder.frameIndex
-    node.contentDirty = false
+  let sizeDirty = node.lw != node.boundsActual.w or node.lh != node.boundsActual.h
 
   if positionDirty:
     node.mLastPositionChange = builder.frameIndex
@@ -769,20 +760,67 @@ proc postProcessNodeBackwards(builder: UINodeBuilder, node: UINode, offset = vec
   if sizeDirty:
     node.mLastSizeChange = builder.frameIndex
 
+  node.clearRect = Rect.none
+  if positionDirty or sizeDirty:
+    if node.mFlags.all(&{FillBackground}):
+      if not node.boundsActual.contains(node.boundsOld):
+        node.clearRect = node.clearRect or some node.boundsOld.invalidationRect(node.boundsActual)
+        if node.clearRect.isSome:
+          node.logi "1 node clear rect ", node.clearRect.get
+    else:
+      if not node.boundsActual.contains(node.boundsOld):
+        node.clearRect = node.clearRect or some node.boundsOld.invalidationRect(node.boundsActual)
+        if node.clearRect.isSome:
+          node.logi "2 node clear rect ", node.clearRect.get
+
+  node.lx = newPosAbsolute.x
+  node.ly = newPosAbsolute.y
+  node.lw = node.boundsActual.w
+  node.lh = node.boundsActual.h
+
+  node.boundsOld.x = node.boundsActual.x
+  node.boundsOld.y = node.boundsActual.y
+  node.boundsOld.w = node.boundsActual.w
+  node.boundsOld.h = node.boundsActual.h
+
+  node.mFlagsOld = node.mFlags
+
+  if inClearRect.isSome and inClearRect.get.intersects(node.boundsActual):
+    node.mLastClearInvalidation = builder.frameIndex
+    node.logi "invalidate clear"
+
+  var childClearRect = (inClearRect or node.clearedChildrenBounds) - node.xy.some
+
+  for c in node.rchildren:
+    if childClearRect.isSome:
+      node.logi "child clear rect ", childClearRect.get
+
+    builder.postProcessNodeBackwards(c, vec2(node.lx, node.ly), childClearRect)
+
+    if OverlappingChildren in node.flags or true: # todo: only when ovelapping or child is animating
+      childClearRect = childClearRect or c.clearRect
+
+    if c.lastChange == builder.frameIndex:
+      node.contentDirty = true
+
+  if node.contentDirty:
+    node.mLastContentChange = builder.frameIndex
+    node.contentDirty = false
+
 proc postProcessNodeForwards(builder: UINodeBuilder, node: UINode, drawRect = Rect.none) =
-  node.logi "postProcessNodeForwards ", drawRect
+  # node.logi "postProcessNodeForwards ", drawRect
 
   stackSize.inc
   defer: stackSize.dec
 
-  if drawRect.isSome and drawRect.get.intersects(node.bounds):
+  if drawRect.isSome and drawRect.get.intersects(node.boundsActual):
     node.mLastDrawInvalidation = builder.frameIndex
-    node.logi "invalidate draw"
+    # node.logi "invalidate draw"
 
   node.drawRect = Rect.none
   if node.lastChange == builder.frameIndex:
     if node.mFlags.any(&{DrawText, FillBackground}):
-      node.drawRect = node.bounds.some
+      node.drawRect = node.boundsActual.some
 
   var childDrawRect = (drawRect or node.drawRect) - node.xy.some
 
@@ -794,11 +832,14 @@ proc postProcessNodeForwards(builder: UINodeBuilder, node: UINode, drawRect = Re
 
     node.drawRect = node.drawRect or (c.drawRect + node.xy.some)
 
+    if c.lastChange == builder.frameIndex:
+      node.mLastContentChange = builder.frameIndex
+
   if node.lastChange == builder.frameIndex:
     if node.mFlags.any(&{DrawBorder}):
-      node.drawRect = node.bounds.some
+      node.drawRect = node.boundsActual.some
 
-proc postProcessNodes(builder: UINodeBuilder) =
+proc postProcessNodes*(builder: UINodeBuilder) =
   builder.postProcessNodeBackwards(builder.root)
   builder.postProcessNodeForwards(builder.root)
 
@@ -940,11 +981,11 @@ proc retain*(builder: UINodeBuilder): bool =
     # echo "first time for ", node.dump
     return false
 
-  let w = if SizeToContentX in node.mFlags: max(node.w, node.mBoundsOld.w) else: node.w
-  let h = if SizeToContentY in node.mFlags: max(node.h, node.mBoundsOld.h) else: node.h
+  let w = if SizeToContentX in node.mFlags: max(node.w, node.boundsOld.w) else: node.w
+  let h = if SizeToContentY in node.mFlags: max(node.h, node.boundsOld.h) else: node.h
 
-  if w != node.mBoundsOld.w or h != node.mBoundsOld.h:
-    # echo "size dirty ", node.bounds.wh, ", ", node.mBoundsOld.wh, ", (", w, ", ", h, ")"
+  if w != node.boundsOld.w or h != node.boundsOld.h:
+    # echo "size dirty ", node.bounds.wh, ", ", node.boundsOld.wh, ", (", w, ", ", h, ")"
     return false
 
   node.bounds.w = w
@@ -957,7 +998,7 @@ proc retain*(builder: UINodeBuilder): bool =
 proc dump*(node: UINode, recurse = false): string =
   if node.isNil:
     return "nil"
-  result.add fmt"Node({node.userId}, {node.mLastContentChange}, {node.mLastPositionChange}, {node.mLastSizeChange}, {node.mLastClearInvalidation}, {node.mLastDrawInvalidation}, {node.id} '{node.text}', {node.flags}, ({node.x}, {node.y}, {node.w}, {node.h}), {node.mBoundsOld})"
+  result.add fmt"Node({node.userId}, {node.mLastContentChange}, {node.mLastPositionChange}, {node.mLastSizeChange}, {node.mLastClearInvalidation}, {node.mLastDrawInvalidation}, {node.id} '{node.text}', {node.flags}, ({node.x}, {node.y}, {node.w}, {node.h}), {node.boundsActual}, {node.boundsOld})"
   if recurse and node.first.isNotNil:
     result.add ":"
     for _, c in node.children:
