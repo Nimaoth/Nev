@@ -151,7 +151,7 @@ proc renderLine*(builder: UINodeBuilder, line: string, curs: Option[int], backgr
       result = some (currentNode, "", rect(lastPartXW, 0, builder.charWidth, builder.textHeight))
 
     # Fill rest of line with background
-    builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = backgroundColor * 2)
+    builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = backgroundColor)
 
 proc renderText*(builder: UINodeBuilder, changed: bool, lines: openArray[string], first: int, cursor: (int, int), backgroundColor, textColor: Color, sizeToContentX = false, sizeToContentY = true, id = Id.none) =
   var flags = &{MaskContent, OverlappingChildren}
