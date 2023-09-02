@@ -412,7 +412,7 @@ proc doRender(time: float) =
 
     let updateTimer = startTimer()
     if advanceFrame:
-      builder.beginFrame(vec2(1000, 1000))
+      builder.beginFrame(rend.size)
       builder.buildUINodes()
       builder.endFrame()
     elif builder.animatingNodes.len > 0:
@@ -492,12 +492,6 @@ proc drawNode(builder: UINodeBuilder, platform: BrowserPlatform, element: var El
   var childrenToRemove: seq[Element] = @[]
 
   platform.domUpdates.add proc() =
-    let elementLen = element.children.len
-    # echo element.children.len, " -> ", node.len
-    # for i in node.len..<elementLen:
-      # echo "remove child ", i
-      # element.removeChild(element.lastChild)
-
     for (c, rel, other) in newChildren:
       if rel == "":
         element.appendChild c
@@ -543,7 +537,6 @@ proc drawNode(builder: UINodeBuilder, platform: BrowserPlatform, element: var El
         # echo "found different id, delete"
         childrenToRemove.add element
 
-    let insertNew = childElement == nil
     builder.drawNode(platform, childElement, c, force)
     if not childElement.isNil:
       if childElement.parentElement != element:
@@ -749,7 +742,7 @@ overrideFunction(hashWangYi1(1.int64), "hashWangYi1_override")
 overrideFunction(hashWangYi1(2.uint64), "hashWangYi1_override")
 overrideFunction(hashWangYi1(3.Hash), "hashWangYi1_override")
 
-overrideFunction("nimCopy", "nimCopyOverride")
+# overrideFunction("nimCopy", "nimCopyOverride")
 
 proc getTextStyle(x, y, width, height: int, color, backgroundColor: cstring, italic, bold: bool, wrap: bool): cstring =
   {.emit: [result, " = `left: ${", x, "}px; top: ${", y, "}px; width: ${", width, "}px; height: ${", height, "}px; overflow: visible; color: ${", color, "}; ${", backgroundColor, "}`"].} #"""

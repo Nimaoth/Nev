@@ -24,13 +24,7 @@ proc getFont*(font: string, fontSize: float32): Font =
 var builder = newNodeBuilder()
 builder.useInvalidation = true
 
-var image = newImage(1000, 1000)
-var ctx = newContext(image)
-ctx.strokeStyle = rgb(255, 0, 0)
-ctx.font = "fonts/FiraCode-Regular.ttf"
-ctx.fontSize = 17
-
-let font = getFont(ctx.font, ctx.fontSize)
+let font = getFont("fonts/FiraCode-Regular.ttf", 17)
 let bounds = font.typeset(repeat("#", 100)).layoutBounds()
 
 builder.charWidth = bounds.x / 100.0
@@ -40,17 +34,16 @@ builder.lineGap = 6
 var framebufferId: GLuint
 var framebuffer: Texture
 
-var window = newWindow("", ivec2(image.width.int32 * 2, image.height.int32), WindowStyle.Decorated, vsync=false)
+var window = newWindow("", ivec2(1680, 1080), WindowStyle.DecoratedResizable, vsync=false)
 makeContextCurrent(window)
 loadExtensions()
 enableAutoGLerrorCheck(false)
 
 var bxy = newBoxy()
-bxy.addImage("image", image)
 
 framebuffer = Texture()
-framebuffer.width = image.width.int32 * 2
-framebuffer.height = image.height.int32
+framebuffer.width = window.size.x
+framebuffer.height = window.size.y
 framebuffer.componentType = GL_UNSIGNED_BYTE
 framebuffer.format = GL_RGBA
 framebuffer.internalFormat = GL_RGBA8
@@ -121,8 +114,6 @@ proc drawNode(builder: UINodeBuilder, node: UINode, offset: Vec2 = vec2(0, 0), f
       imageId = $newId()
       cachedImages[key] = imageId
 
-      # let font = renderer.getFont(renderer.ctx.fontSize * (1 + self.fontSizeIncreasePercent), self.style.fontStyle)
-
       const wrap = false
       let wrapBounds = if wrap: vec2(node.boundsActual.w, node.boundsActual.h) else: vec2(0, 0)
       let arrangement = font.typeset(node.text, bounds=wrapBounds)
@@ -152,12 +143,16 @@ proc randomColor(node: UINode, a: float32): Color =
   result.b = (((h shr 16) and 0xff).float32 / 255.0).sqrt
   result.a = a
 
-proc renderNewFrame(builder: UINodeBuilder): bool =
+proc renderNewFrame(builder: UINodeBuilder, force: bool): bool =
   # let buildTime = startTimer()
   result = false
 
+  var force = force
+
+  let size = if showDrawnNodes: window.size.vec2 * vec2(0.5, 1) else: window.size.vec2
+
   if advanceFrame:
-    builder.beginFrame(vec2(image.width.float32, image.height.float32))
+    builder.beginFrame(size)
     builder.buildUINodes()
     builder.endFrame()
     result = true
@@ -165,6 +160,9 @@ proc renderNewFrame(builder: UINodeBuilder): bool =
     builder.frameIndex.inc
     builder.postProcessNodes()
     result = true
+
+  if builder.root.lastSizeChange == builder.frameIndex:
+    force = true
 
   # echo "[build] ", buildTime.elapsed.ms, "ms"
 
@@ -176,25 +174,25 @@ proc renderNewFrame(builder: UINodeBuilder): bool =
       echo "frame ", builder.frameIndex
       echo builder.root.dump(true)
 
-    builder.drawNode(builder.root)
+    builder.drawNode(builder.root, force = force)
   # echo "[draw] ", drawTime.elapsed.ms, "ms (", drawnNodes.len, " nodes)"
 
   if showDrawnNodes and result:
     bxy.pushLayer()
     defer:
       bxy.pushLayer()
-      bxy.drawRect(rect(image.width.float32, 0, image.width.float32, image.height.float32), color(1, 0, 0, 1))
+      bxy.drawRect(rect(size.x, 0, size.x, size.y), color(1, 0, 0, 1))
       bxy.popLayer(blendMode = MaskBlend)
       bxy.popLayer()
 
-    bxy.drawRect(rect(image.width.float32, 0, image.width.float32, image.height.float32), color(0, 0, 0))
+    bxy.drawRect(rect(size.x, 0, size.x, size.y), color(0, 0, 0))
 
     for node in drawnNodes:
       let c = node.randomColor(0.3)
-      bxy.drawRect(rect(node.lx + image.width.float32, node.ly, node.lw, node.lh), c)
+      bxy.drawRect(rect(node.lx + size.x, node.ly, node.lw, node.lh), c)
 
       if DrawBorder in node.flags:
-        bxy.strokeRect(rect(node.lx + image.width.float32, node.ly, node.lw, node.lh), color(c.r, c.g, c.b, 0.5), 5, offset = 0.5)
+        bxy.strokeRect(rect(node.lx + size.x, node.ly, node.lw, node.lh), color(c.r, c.g, c.b, 0.5), 5, offset = 0.5)
 
 proc toMouseButton(button: Button): MouseButton =
   result = case button:
@@ -302,6 +300,15 @@ while not window.closeRequested:
 
   pollEvents()
 
+  var force = false
+
+  if framebuffer.width != window.size.x.int32 or framebuffer.height != window.size.y.int32:
+    framebuffer.width = window.size.x.int32
+    framebuffer.height = window.size.y.int32
+    bindTextureData(framebuffer, nil)
+    advanceFrame = true
+    force = true
+
   bxy.beginFrame(window.size, clearFrame=false)
 
   for image in cachedImages.removedKeys:
@@ -311,7 +318,7 @@ while not window.closeRequested:
   builder.frameTime = delta
 
   let tAdvanceFrame = startTimer()
-  let drewSomething = builder.renderNewFrame()
+  let drewSomething = builder.renderNewFrame(force)
   let msAdvanceFrame = tAdvanceFrame.elapsed.ms
 
   bxy.endFrame()

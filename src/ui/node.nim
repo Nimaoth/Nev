@@ -154,7 +154,6 @@ proc `contentDirty=`*(node: UINode, value: bool) {.inline.} =
 
 when defined(js):
   func id*(node: UINode): lent Id {.importjs: "#.mId".}
-  func lastChange*(node: UINode): int {.inline.} = max(node.mLastContentChange, max(node.mLastPositionChange, max(node.mLastSizeChange, max(node.mLastClearInvalidation, node.mLastDrawInvalidation))))
   func text*(node: UINode): lent string {.importjs: "#.mText".}
   func backgroundColor*(node: UINode): Color {.importjs: "#.mBackgroundColor".}
   func borderColor*(node: UINode): Color {.importjs: "#.mBorderColor".}
@@ -162,13 +161,15 @@ when defined(js):
   func flags*(node: UINode): UINodeFlags {.importjs: "#.flags".}
 else:
   func id*(node: UINode): lent Id {.inline.} = node.mId
-  func lastChange*(node: UINode): int {.inline.} = max(node.mLastContentChange, max(node.mLastPositionChange, max(node.mLastSizeChange, max(node.mLastClearInvalidation, node.mLastDrawInvalidation))))
   func text*(node: UINode): lent string {.inline.} = node.mText
   func backgroundColor*(node: UINode): Color {.inline.} = node.mBackgroundColor
   func borderColor*(node: UINode): Color {.inline.} = node.mBorderColor
   func textColor*(node: UINode): Color {.inline.} = node.mTextColor
 
   func flags*(node: UINode): UINodeFlags {.inline.} = node.flags
+
+func lastChange*(node: UINode): int {.inline.} = max(node.mLastContentChange, max(node.mLastPositionChange, max(node.mLastSizeChange, max(node.mLastClearInvalidation, node.mLastDrawInvalidation))))
+func lastSizeChange*(node: UINode): int {.inline.} = node.mLastSizeChange
 
 proc `text=`*(node: UINode, value: string)           {.inline.} = (let changed = (value != node.mText);            node.contentDirty = node.contentDirty or changed; if changed: node.mText            = value else: discard)
 proc `backgroundColor=`*(node: UINode, value: Color) {.inline.} = (let changed = (value != node.mBackgroundColor); node.contentDirty = node.contentDirty or changed; if changed: node.mBackgroundColor = value else: discard)
