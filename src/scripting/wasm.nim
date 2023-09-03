@@ -130,14 +130,14 @@ macro createHostWrapper(module: WasmModule, function: typed, outFunction: untype
 
   var body = if returnType.repr == "void":
     genAst(function):
-      let f = function
-      f(`parameters`)
+      let x = function
+      x(`parameters`)
 
   elif returnCString:
     when defined(js):
       genAst(function, module):
-        let f = function
-        let str = f(`parameters`)
+        let x = function
+        let str = x(`parameters`)
         let a = jsEncodeString(str)
         proc len(arr: JsObject): int {.importjs: "#.length".}
         let p: WasmPtr = module.alloc(a.len.uint32 + 1)
@@ -146,8 +146,8 @@ macro createHostWrapper(module: WasmModule, function: typed, outFunction: untype
 
     else:
       genAst(function, module):
-        let f = function
-        let str = f(`parameters`)
+        let x = function
+        let str = x(`parameters`)
         let len = str.len
         let p: WasmPtr = module.alloc(len.uint32 + 1)
         module.copyMem(p, cast[pointer](str), len + 1)
@@ -155,8 +155,8 @@ macro createHostWrapper(module: WasmModule, function: typed, outFunction: untype
 
   else:
     genAst(function):
-      let f = function
-      let res = f(`parameters`)
+      let x = function
+      let res = x(`parameters`)
       return res
 
   discard body.replace("parameters", args)
@@ -169,11 +169,10 @@ when defined(js):
   proc castFunction[T: proc](f: T): (proc()) {.importjs: "#".}
   proc toFunction(f: JsObject, R: typedesc): R {.importjs: "#".}
 
-  template addFunction*(self: var WasmImports, name: string, function: static proc) =
+  template addFunction*(self: var WasmImports, name: static string, function: static proc) =
     block:
-      # let module = self.module
-      createHostWrapper(self.module, function, f)
-      self.functions[name.cstring] = castFunction(f)
+      createHostWrapper(self.module, function, generatedFunctionName)
+      self.functions[name.cstring] = castFunction(generatedFunctionName)
 
 else:
   proc getWasmType(typ: NimNode): string =

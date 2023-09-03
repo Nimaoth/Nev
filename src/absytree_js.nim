@@ -5,10 +5,12 @@ logCategory "main-js"
 
 logger.enableConsoleLogger()
 
-import std/[strformat, dom, macros]
+import std/[strformat, dom, macros, sets]
 import util, app, timer, platform/widget_builders, platform/platform, platform/browser_platform, text/text_document, event, theme, custom_async
 import language/language_server
 from scripting_api import Backend
+
+import ui/node
 
 createNimScriptContextConstructorAndGenerateBindings()
 
@@ -23,7 +25,68 @@ var isRenderInProgress = false
 var frameTime = 0.0
 var frameIndex = 0
 
+var advanceFrame = false
+var start: float = -1
+var previousTimestep: float = 0
+
+proc requestRender(redrawEverything = false)
+
+proc doRender(timestep: float) =
+  # echo "requestAnimationFrame ", time
+
+  if timestep == previousTimestep:
+    # echo "multiple per frame"
+    return
+
+  if start < 0 or rend.builder.animatingNodes.len == 0:
+    start = timestep
+    rend.builder.frameTime = 0
+  else:
+    rend.builder.frameTime = timestep - previousTimestep
+  previousTimestep = timestep
+
+  defer:
+    if rend.builder.animatingNodes.len > 0:
+      requestRender()
+
+  hasRequestedRerender = false
+  isRenderInProgress = true
+  defer: isRenderInProgress = false
+  defer: inc frameIndex
+
+  var layoutTime, updateTime, renderTime: float
+  var frameTime = 0.0
+  block:
+    gEditor.frameTimer = startTimer()
+
+    let updateTimer = startTimer()
+    if advanceFrame:
+      rend.builder.beginFrame(rend.size)
+      gEditor.updateWidgetTree(frameIndex)
+      rend.builder.endFrame()
+    elif rend.builder.animatingNodes.len > 0:
+      rend.builder.frameIndex.inc
+      rend.builder.postProcessNodes()
+    updateTime = updateTimer.elapsed.ms
+
+    # if logRoot:
+    #   echo "frame ", rend.builder.frameIndex
+    #   echo rend.builder.root.dump(true)
+
+    let renderTimer = startTimer()
+    rend.render(nil, frameIndex)
+    renderTime = renderTimer.elapsed.ms
+
+    frameTime = gEditor.frameTimer.elapsed.ms
+
+  # if frameTime > 20:
+  # if logFrameTime:
+  echo fmt"Frame: {frameTime:>5.2}ms (u: {updateTime:>5.2}ms, l: {layoutTime:>5.2}ms, r: {renderTime:>5.2}ms)"
+
+
 proc requestRender(redrawEverything = false) =
+  advanceFrame = true
+
   if not initializedEditor:
     return
   if hasRequestedRerender:
@@ -31,34 +94,7 @@ proc requestRender(redrawEverything = false) =
   if isRenderInProgress:
     return
 
-  discard window.requestAnimationFrame proc(time: float) =
-    # echo "requestAnimationFrame ", time
-
-    hasRequestedRerender = false
-    isRenderInProgress = true
-    defer: isRenderInProgress = false
-    defer: inc frameIndex
-
-    var layoutTime, updateTime, renderTime: float
-    block:
-      gEditor.frameTimer = startTimer()
-
-      let updateTimer = startTimer()
-      gEditor.updateWidgetTree(frameIndex)
-      updateTime = updateTimer.elapsed.ms
-
-      let layoutTimer = startTimer()
-      gEditor.layoutWidgetTree(rend.size, frameIndex)
-      layoutTime = layoutTimer.elapsed.ms
-
-      let renderTimer = startTimer()
-      rend.render(gEditor.widget, frameIndex)
-      renderTime = renderTimer.elapsed.ms
-
-      frameTime = gEditor.frameTimer.elapsed.ms
-
-    if frameTime > 20:
-      log(lvlDebug, fmt"Frame: {frameTime:>5.2}ms (u: {updateTime:>5.2}ms, l: {layoutTime:>5.2}ms, r: {renderTime:>5.2}ms)")
+  discard window.requestAnimationFrame doRender
 
 proc runApp(): Future[void] {.async.} =
   discard await newEditor(Backend.Browser, rend)
@@ -68,7 +104,7 @@ proc runApp(): Future[void] {.async.} =
   discard rend.onRune.subscribe proc(event: auto): void = requestRender()
   discard rend.onMousePress.subscribe proc(event: auto): void = requestRender()
   discard rend.onMouseRelease.subscribe proc(event: auto): void = requestRender()
-  discard rend.onMouseMove.subscribe proc(event: auto): void = requestRender()
+  # discard rend.onMouseMove.subscribe proc(event: auto): void = requestRender()
   discard rend.onScroll.subscribe proc(event: auto): void = requestRender()
   discard rend.onCloseRequested.subscribe proc(_: auto) = requestRender()
   discard rend.onResized.subscribe proc(redrawEverything: bool) = requestRender(redrawEverything)

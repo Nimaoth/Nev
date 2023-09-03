@@ -12,6 +12,13 @@ type
     background*: Option[Color]
     fontStyle*: set[FontStyle]
 
+when defined(js):
+  import std/[jsffi]
+  type StyleCache = distinct JsObject
+else:
+  type StyleCache = distinct object
+
+type
   Theme* = ref object
     path*: string
     name*: string
@@ -19,6 +26,7 @@ type
     colorSpace*: string
     colors*: Table[string, Color]
     tokenColors*: Table[string, Style]
+    tokenStyleCache: StyleCache
 
 proc parseHexVar*(text: string): Color =
   let offset = if text.startsWith "#": 1 else: 0
@@ -52,6 +60,51 @@ proc color*(theme: Theme, names: seq[string], default: SomeColor = Color(r: 0, g
     if theme.colors.contains(name):
       return theme.colors[name]
   return default.color
+
+proc newStyleCache(): StyleCache =
+  when defined(js):
+    return newJsObject().StyleCache
+
+proc contains(cache: StyleCache, name: cstring): bool =
+  result = false
+  when defined(js):
+    proc impl(cache: StyleCache, name: cstring): bool {.importjs: "#[#] != null".}
+    return impl(cache, name)
+
+proc containsEmpty(cache: StyleCache, name: cstring): bool =
+  result = false
+  when defined(js):
+    proc impl(cache: StyleCache, name: cstring): bool {.importjs: "#[#] === null".}
+    return impl(cache, name)
+
+proc `[]=`(cache: var StyleCache, name: cstring, value: Color) =
+  when defined(js):
+    proc impl(cache: StyleCache, name: cstring, value: Color) {.importjs: "#[#] = #;".}
+    impl(cache, name, value)
+
+proc addEmpty(cache: var StyleCache, name: cstring) =
+  when defined(js):
+    proc impl(cache: StyleCache, name: cstring) {.importjs: "#[#] = null;".}
+    impl(cache, name)
+
+proc `[]`(cache: StyleCache, name: cstring): Color =
+  when defined(js):
+    proc impl(cache: StyleCache, name: cstring): Color {.importjs: "#[#]".}
+    return impl(cache, name)
+
+proc tokenColor*(theme: Theme, name: cstring, default: SomeColor = Color(r: 0, g: 0, b: 0, a: 1)): Color =
+  if theme.tokenStyleCache.contains(name):
+    return theme.tokenStyleCache[name]
+  if theme.tokenStyleCache.containsEmpty(name):
+    return default.color
+
+  let res = theme.tokenColors.getCascading($name, Style()).foreground
+  if res.isSome:
+    theme.tokenStyleCache[name] = res.get
+  else:
+    theme.tokenStyleCache.addEmpty(name)
+
+  return res.get default.color
 
 proc tokenColor*(theme: Theme, name: string, default: SomeColor = Color(r: 0, g: 0, b: 0, a: 1)): Color =
   return theme.tokenColors.getCascading(name, Style()).foreground.get default.color
@@ -123,6 +176,7 @@ proc fromJsonHook*(style: var Style, jsonNode: JsonNode) =
 
 proc jsonToTheme*(json: JsonNode, opt = Joptions()): Theme =
   result = Theme()
+  result.tokenStyleCache = newStyleCache()
   result.name = json["name"].jsonTo string
 
   if json.hasKey("type"):
@@ -134,6 +188,7 @@ proc jsonToTheme*(json: JsonNode, opt = Joptions()): Theme =
   if json.hasKey("colors"):
     for (key, value) in json["colors"].fields.pairs:
       result.colors[key] = value.jsonTo Color
+      # result.colorsC[key.cstring] = value.jsonTo Color
 
   if json.hasKey("tokenColors"):
     for item in json["tokenColors"].elems:
@@ -155,10 +210,13 @@ proc jsonToTheme*(json: JsonNode, opt = Joptions()): Theme =
           result.tokenColors[scope] = Style(foreground: Color.none, background: Color.none)
         if settings.hasKey("foreground"):
           result.tokenColors[scope].foreground = some(settings["foreground"].jsonTo Color)
+          # result.tokenColorsC[scope.cstring].foreground = some(settings["foreground"].jsonTo Color)
         if settings.hasKey("background"):
           result.tokenColors[scope].background = some(settings["background"].jsonTo Color)
+          # result.tokenColorsC[scope.cstring].background = some(settings["background"].jsonTo Color)
         if settings.hasKey("fontStyle"):
           result.tokenColors[scope].fontStyle = settings["fontStyle"].jsonTo set[FontStyle]
+          # result.tokenColorsC[scope.cstring].fontStyle = settings["fontStyle"].jsonTo set[FontStyle]
 
 
 proc loadFromString*(input: string, path: string = "string"): Option[Theme] =
@@ -187,6 +245,7 @@ proc loadFromFile*(path: string): Option[Theme] =
 
 proc defaultTheme*(): Theme =
   new result
+  result.tokenStyleCache = newStyleCache()
   result.name = "default"
   result.typ = "dark"
 

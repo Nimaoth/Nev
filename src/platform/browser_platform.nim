@@ -2,6 +2,7 @@ import std/[strformat, tables, dom, unicode, strutils, sugar]
 import platform, widgets, custom_logger, rect_utils, input, event, lrucache, theme, timer
 import vmath
 import chroma as chroma
+import ui/node
 
 export platform, widgets
 
@@ -78,6 +79,9 @@ method init*(self: BrowserPlatform) =
   self.mCharWidth = 18
   self.supportsThinCursor = true
   self.doubleClickTime = 0.35
+
+  self.builder = newNodeBuilder()
+  self.builder.useInvalidation = false
 
   self.escapedText = newLruCache[string, string](1000)
 
@@ -250,6 +254,10 @@ proc updateFontSettings*(self: BrowserPlatform) =
   self.mCharWidth = d.clientWidth.float / 100
   self.content.removeChild(d)
 
+  self.builder.charWidth = self.mCharWidth
+  self.builder.lineHeight = self.mLineHeight
+  self.builder.lineGap = self.mLineDistance
+
 method `fontSize=`*(self: BrowserPlatform, fontSize: float) =
   if self.mFontSize != fontSize:
     self.mFontSize = fontSize
@@ -311,6 +319,7 @@ method processEvents*(self: BrowserPlatform): int =
   result = 0
 
 method renderWidget(self: WWidget, renderer: BrowserPlatform, element: var Element, forceRedraw: bool, frameIndex: int, buffer: var string) {.base.} = discard
+proc drawNode(builder: UINodeBuilder, platform: BrowserPlatform, element: var Element, node: UINode, force: bool = false)
 
 proc applyDomUpdates*(self: BrowserPlatform) =
   for update in self.domUpdates:
@@ -326,7 +335,7 @@ method render*(self: BrowserPlatform, widget: WWidget, frameIndex: int) =
 
   var element: Element = if self.content.children.len > 0: self.content.children[0].Element else: nil
   let wasNil = element.isNil
-  widget.renderWidget(self, element, self.redrawEverything, frameIndex, buffer)
+  self.builder.drawNode(self, element, self.builder.root)
 
   self.applyDomUpdates()
 
@@ -363,6 +372,116 @@ proc myToHtmlHex(c: Color): cstring =
   result += ", ".cstring
   result += c.a
   result += ")".cstring
+
+proc drawNode(builder: UINodeBuilder, platform: BrowserPlatform, element: var Element, node: UINode, force: bool = false) =
+  if element.isNotNil and node.lastChange < builder.frameIndex:
+    return
+
+  node.lastRenderTime = builder.frameIndex
+
+  let force = force or element.isNil
+
+  element.createOrReplaceElement("div", "DIV")
+
+  let relBounds = node.boundsActual
+
+  var css: cstring = "left: "
+  css += relBounds.x.int
+  css += "px; top: ".cstring
+  css += relBounds.y.int
+  css += "px; width: ".cstring
+  css += relBounds.w.int
+  css += "px; height: ".cstring
+  css += relBounds.h.int
+  css += "px;".cstring
+
+  if FillBackground in node.flags:
+    css += "background: ".cstring
+    css += node.backgroundColor.myToHtmlHex
+    css += ";".cstring
+
+  if MaskContent in node.flags:
+    css += "overflow: hidden;".cstring
+
+  if DrawBorder in node.flags:
+    css += "outline: 1px solid ".cstring
+    css += node.borderColor.myToHtmlHex
+    css += ";".cstring
+
+  var text = "".cstring
+  var updateText = false
+  if DrawText in node.flags:
+    css += "color: ".cstring
+    css += node.textColor.myToHtmlHex
+    css += ";".cstring
+    # if italic:
+    #   {.emit: [result, " += `font-style: italic;`"].} #"""
+    # if bold:
+    #   {.emit: [result, " += `font-weight: bold;`"].} #"""
+    # if wrap:
+    #   {.emit: [result, " += `word-wrap: break-word;`"].} #"""
+    #   {.emit: [result, " += `display: inline-block;`"].} #"""
+    #   {.emit: [result, " += `white-space: pre-wrap;`"].} #"""
+
+    text = node.text.cstring
+    updateText = element.getAttribute("data-text") != text
+
+  var newChildren: seq[(Element, cstring, Node)] = @[]
+  var childrenToRemove: seq[Element] = @[]
+
+  platform.domUpdates.add proc() =
+    for (c, rel, other) in newChildren:
+      if rel == "":
+        element.appendChild c
+      else:
+        other.insertAdjacentElement(rel, c)
+
+    for c in childrenToRemove:
+      c.remove()
+
+    element.class = "widget"
+    element.setAttribute("style", css)
+
+    if updateText:
+      element.innerText = text
+      element.setAttribute("data-text", text)
+
+    element.setAttribute("id", ($node.id).cstring)
+
+  var existingCount = element.children.len
+  var k = 0
+  for i, c in node.children:
+    var childElement: Element = nil
+    var insertRel: cstring = ""
+    var insertNeighbor: Element = nil
+
+    if c.lastRenderTime == 0:
+      # new node, insert
+      if k < existingCount:
+        # echo i, ", insert after ", k - 1
+        insertNeighbor = element.children[k].Element
+        insertRel = "beforebegin"
+
+    else:
+      let childId = ($c.id).cstring
+      while k < existingCount:
+        defer: inc k
+
+        let element = element.children[k].Element
+        if element.getAttribute("id") == childId:
+          childElement = element
+          break
+
+        # echo "found different id, delete"
+        childrenToRemove.add element
+
+    builder.drawNode(platform, childElement, c, force)
+    if not childElement.isNil:
+      if childElement.parentElement != element:
+        newChildren.add (childElement, insertRel, insertNeighbor)
+
+  for i in k..<existingCount:
+    childrenToRemove.add element.children[i].Element
 
 method renderWidget(self: WPanel, renderer: BrowserPlatform, element: var Element, forceRedraw: bool, frameIndex: int, buffer: var string) =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
