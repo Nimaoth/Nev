@@ -106,6 +106,7 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
   addCommand "editor", "<LEADER>ffg", "toggle-flag", "text.print-scopes"
   addCommand "editor", "<LEADER>ffm", "toggle-flag", "text.print-matches"
   addCommand "editor", "<LEADER>ffh", "toggle-flag", "text.show-node-highlight"
+  addCommand "editor", "<LEADER>iii", "toggleShowDrawnNodes"
   addCommand "editor", "<C-5>", proc() =
     setOption("text.node-highlight-parent-index", clamp(getOption[int]("text.node-highlight-parent-index") - 1, 0, 100000))
     echo "text.node-highlight-parent-index: ", getOption[int]("text.node-highlight-parent-index")

@@ -1,7 +1,8 @@
 import std/[tables, strutils, options, sets]
-import platform, widgets, util, platform/filesystem
+import platform, widgets, util, platform/filesystem, timer
 import custom_logger, input, event, monitors, lrucache, id, rect_utils, theme
 import chroma, vmath, windy, boxy, boxy/textures, opengl, pixie/[contexts, fonts]
+import ui/node
 
 export platform, widgets
 
@@ -37,6 +38,8 @@ type
 
     lastEvent: Option[(int64, Modifiers)]
 
+    drawnNodes: seq[UINode]
+
 proc toInput(rune: Rune): int64
 proc toInput(button: Button): int64
 proc centerWindowOnMonitor(window: Window, monitor: int)
@@ -45,12 +48,15 @@ proc getFont*(self: GuiPlatform, fontSize: float32, style: set[FontStyle]): Font
 
 method init*(self: GuiPlatform) =
   self.cachedImages = newLruCache[string, string](1000, true)
-  self.window = newWindow("Absytree", ivec2(1280, 800), vsync=true)
+  self.window = newWindow("Absytree", ivec2(2000, 1000), vsync=false)
   self.window.runeInputEnabled = true
   self.supportsThinCursor = true
 
-  self.window.centerWindowOnMonitor(1)
-  self.window.maximized = true
+  self.builder = newNodeBuilder()
+  self.builder.useInvalidation = true
+
+  # self.window.centerWindowOnMonitor(1)
+  # self.window.maximized = true
   makeContextCurrent(self.window)
   loadExtensions()
 
@@ -215,6 +221,10 @@ proc updateCharWidth*(self: GuiPlatform) =
   self.mCharWidth = bounds.x / 100
   self.mLineHeight = bounds.y
 
+  self.builder.charWidth = bounds.x / 100.0
+  self.builder.lineHeight = bounds.y - 3
+  self.builder.lineGap = 6
+
 method `fontSize=`*(self: GuiPlatform, fontSize: float) =
   self.ctx.fontSize = fontSize
   self.updateCharWidth()
@@ -286,13 +296,21 @@ proc centerWindowOnMonitor(window: Window, monitor: int) =
                      int32(top + (monitorHeight - windowHeight) / 2))
 
 method renderWidget(self: WWidget, renderer: GuiPlatform, forceRedraw: bool, frameIndex: int, context: string): bool {.base.} = discard
+proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false)
 
-proc strokeRect*(boxy: Boxy, rect: Rect, color: Color, thickness: float = 1) =
-  let rect = rect.grow(vec2(thickness, thickness))
+proc strokeRect*(boxy: Boxy, rect: Rect, color: Color, thickness: float = 1, offset: float = 0) =
+  let rect = rect.grow(vec2(thickness * offset, thickness * offset))
   boxy.drawRect(rect.splitV(thickness.relative)[0].shrink(vec2(0, thickness)), color)
   boxy.drawRect(rect.splitVInv(thickness.relative)[1].shrink(vec2(0, thickness)), color)
   boxy.drawRect(rect.splitH(thickness.relative)[0], color)
   boxy.drawRect(rect.splitHInv(thickness.relative)[1], color)
+
+proc randomColor(node: UINode, a: float32): Color =
+  let h = node.id.hash
+  result.r = (((h shr 0) and 0xff).float32 / 255.0).sqrt
+  result.g = (((h shr 8) and 0xff).float32 / 255.0).sqrt
+  result.b = (((h shr 16) and 0xff).float32 / 255.0).sqrt
+  result.a = a
 
 method render*(self: GuiPlatform, widget: WWidget, frameIndex: int) =
   if self.framebuffer.width != self.size.x.int32 or self.framebuffer.height != self.size.y.int32:
@@ -314,7 +332,32 @@ method render*(self: GuiPlatform, widget: WWidget, frameIndex: int) =
       self.boxy.removeImage(kv[0])
     self.cachedImages.clear()
 
-  let renderedSomething = widget.renderWidget(self, self.redrawEverything, frameIndex, "#")
+  if self.builder.root.lastSizeChange == self.builder.frameIndex:
+    self.redrawEverything = true
+
+  self.drawnNodes.setLen 0
+
+  var renderedSomething = true
+  self.builder.drawNode(self, self.builder.root, force = self.redrawEverything)
+
+  if self.showDrawnNodes and renderedSomething:
+    let size = if self.showDrawnNodes: self.size * vec2(0.5, 1) else: self.size
+
+    self.boxy.pushLayer()
+    defer:
+      self.boxy.pushLayer()
+      self.boxy.drawRect(rect(size.x, 0, size.x, size.y), color(1, 0, 0, 1))
+      self.boxy.popLayer(blendMode = MaskBlend)
+      self.boxy.popLayer()
+
+    self.boxy.drawRect(rect(size.x, 0, size.x, size.y), color(0, 0, 0))
+
+    for node in self.drawnNodes:
+      let c = node.randomColor(0.3)
+      self.boxy.drawRect(rect(node.lx + size.x, node.ly, node.lw, node.lh), c)
+
+      if DrawBorder in node.flags:
+        self.boxy.strokeRect(rect(node.lx + size.x, node.ly, node.lw, node.lh), color(c.r, c.g, c.b, 0.5), 5, offset = 0.5)
 
   # End this frame, flushing the draw commands. Draw to framebuffer.
   self.boxy.endFrame()
@@ -332,6 +375,76 @@ method render*(self: GuiPlatform, widget: WWidget, frameIndex: int) =
   self.renderedSomethingLastFrame = renderedSomething;
   self.redrawEverything = false
   self.lastSize = self.size
+
+proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false) =
+  var nodePos = offset
+  nodePos.x += node.boundsActual.x
+  nodePos.y += node.boundsActual.y
+
+  var force = force
+
+  if builder.useInvalidation and not force and node.lastChange < builder.frameIndex:
+    return
+
+  if node.flags.any &{UINodeFlag.FillBackground, DrawBorder, DrawText}:
+    platform.drawnNodes.add node
+
+  if node.flags.any &{UINodeFlag.FillBackground, DrawText}:
+    force = true
+
+  node.lx = nodePos.x
+  node.ly = nodePos.y
+  node.lw = node.boundsActual.w
+  node.lh = node.boundsActual.h
+  let bounds = rect(nodePos.x, nodePos.y, node.boundsActual.w, node.boundsActual.h)
+
+  if FillBackground in node.flags:
+    platform.boxy.drawRect(bounds, node.backgroundColor)
+
+  # Mask the rest of the rendering is this function to the contentBounds
+  if MaskContent in node.flags:
+    platform.boxy.pushLayer()
+  defer:
+    if MaskContent in node.flags:
+      platform.boxy.pushLayer()
+      platform.boxy.drawRect(bounds, color(1, 0, 0, 1))
+      platform.boxy.popLayer(blendMode = MaskBlend)
+      platform.boxy.popLayer()
+
+  if DrawText in node.flags:
+    let key = node.text
+    var imageId: string
+    if platform.cachedImages.contains(key):
+      imageId = platform.cachedImages[key]
+    else:
+      imageId = $newId()
+      platform.cachedImages[key] = imageId
+
+      # let font = renderer.getFont(renderer.ctx.fontSize * (1 + self.fontSizeIncreasePercent), self.style.fontStyle)
+      let font = platform.getFont(platform.ctx.fontSize, {}) # todo: add font style support
+
+      const wrap = false
+      let wrapBounds = if wrap: vec2(node.boundsActual.w, node.boundsActual.h) else: vec2(0, 0)
+      let arrangement = font.typeset(node.text, bounds=wrapBounds)
+      var bounds = arrangement.layoutBounds()
+      if bounds.x == 0:
+        bounds.x = 1
+      if bounds.y == 0:
+        bounds.y = builder.textHeight
+
+      var image = newImage(bounds.x.int, bounds.y.int)
+      image.fillText(arrangement)
+      platform.boxy.addImage(imageId, image, false)
+
+    let pos = vec2(nodePos.x.floor, nodePos.y.floor)
+    platform.boxy.drawImage(imageId, pos, node.textColor)
+
+  for _, c in node.children:
+    builder.drawNode(platform, c, nodePos, force)
+
+  if DrawBorder in node.flags:
+    platform.boxy.strokeRect(bounds, node.borderColor)
+
 
 method renderWidget(self: WPanel, renderer: GuiPlatform, forceRedraw: bool, frameIndex: int, context: string): bool =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
