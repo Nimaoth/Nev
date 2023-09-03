@@ -491,6 +491,8 @@ proc editor_model_runSelectedFunction_void_ModelDocumentEditor_impl*(
   discard
 proc editor_getBackend_Backend_App_impl*(): Backend =
   discard
+proc editor_toggleShowDrawnNodes_void_App_impl*() =
+  discard
 proc editor_saveAppState_void_App_impl*() =
   discard
 proc editor_requestRender_void_App_bool_impl*(redrawEverything: bool = false) =

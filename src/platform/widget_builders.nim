@@ -4,6 +4,9 @@ import widget_builders_base, widget_builder_ast_document, widget_builder_text_do
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import vmath, bumpy, chroma
 
+import ../../test_lib
+import ui/node
+
 proc updateStatusBar*(self: App, frameIndex: int, statusBarWidget: WPanel, completionsPanel: WPanel) =
   var statusWidget: WText
   var commandLineWidget: WPanel
@@ -39,6 +42,42 @@ var completionsPanel: WPanel
 var widgetsPerEditor = initTable[EditorId, WPanel]()
 
 proc updateWidgetTree*(self: App, frameIndex: int) =
+  # self.platform.builder.buildUINodes()
+
+  var rootFlags = &{FillX, FillY, OverlappingChildren, MaskContent}
+  let builder = self.platform.builder
+  builder.panel(rootFlags, backgroundColor = color(0, 0, 0)): # fullscreen overlay
+
+    builder.panel(&{FillX, FillY, LayoutVertical}): # main panel
+      builder.panel(&{FillX, SizeToContentY, LayoutHorizontal}): # status bar
+        let textColor = self.theme.color("editor.foreground", rgb(225, 200, 200))
+        let text = if self.currentMode.len == 0: "normal" else: self.currentMode
+        builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = text, textColor = textColor): #
+          discard
+
+      builder.panel(&{FillX, FillY}): # main panel
+        let overlay = currentNode
+
+        let rects = self.layout.layoutViews(self.layout_props, rect(0, 0, 1, 1), self.views.len)
+        for i, view in self.views:
+          let xy = rects[i].xy * overlay.bounds.wh
+          let xwyh = rects[i].xwyh * overlay.bounds.wh
+          let bounds = rect(xy, xwyh - xy)
+
+          let wasActive = view.editor.active
+          view.editor.active = self.currentView == i
+          if view.editor.active != wasActive:
+            view.editor.markDirty(notify=false)
+
+          builder.panel(0.UINodeFlags, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h, borderColor = color(1, 0, 0)):
+            view.editor.createUI(builder, self)
+
+  # self.getCommandLineTextEditor.active = self.commandLineMode
+  # self.getCommandLineTextEditor.updateWidget(self, commandLineWidget, completionsPanel, frameIndex)
+  # statusBarWidget.lastHierarchyChange = max(statusBarWidget.lastHierarchyChange, commandLineWidget.lastHierarchyChange)
+
+
+  return
   if self.widget.isNil:
     mainStack = WStack(anchor: (vec2(0, 0), vec2(1, 1)), right: -1)
     self.widget = mainStack

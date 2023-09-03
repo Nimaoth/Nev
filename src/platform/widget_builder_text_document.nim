@@ -3,8 +3,110 @@ import util, app, document_editor, text/text_editor, custom_logger, widgets, pla
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import vmath, bumpy, chroma
 
+import ../../test_lib
+import ui/node
+
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
 {.used.}
+
+proc renderLine*(builder: UINodeBuilder, app: App, line: StyledLine, curs: Option[int], sizeToContentX: bool, backgroundColor: Color, textColor: Color): Option[(UINode, string, Rect)] =
+  var flags = &{LayoutHorizontal, FillX, SizeToContentY}
+  if sizeToContentX:
+    flags.incl SizeToContentX
+
+  builder.panel(flags):
+    var start = 0
+    var lastPartXW: float32 = 0
+    for part in line.parts:
+      defer:
+        start += part.text.len
+
+      builder.withText(part.text):
+        currentNode.backgroundColor = backgroundColor
+        currentNode.textColor = if part.scope.len == 0: textColor else: app.theme.tokenColor(part.scope, rgb(255, 200, 200))
+
+        # cursor
+        if curs.getSome(curs) and curs >= start and curs < start + part.text.len:
+          let cursorX = builder.textWidth(curs - start).round
+          result = some (currentNode, $part.text[curs - start], rect(cursorX, 0, builder.charWidth, builder.textHeight))
+
+        lastPartXW = currentNode.bounds.xw
+
+    # cursor after latest char
+    if curs.getSome(curs) and curs == line.len:
+      result = some (currentNode, "", rect(lastPartXW, 0, builder.charWidth, builder.textHeight))
+
+    # Fill rest of line with background
+    builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = backgroundColor)
+
+proc createHeader(self: TextDocumentEditor, builder: UINodeBuilder, app: App, headerColor: Color, textColor: Color) =
+  if self.renderHeader:
+    builder.panel(&{FillX, SizeToContentY, FillBackground, LayoutHorizontal}, backgroundColor = headerColor):
+      let workspaceName = self.document.workspace.map(wf => " - " & wf.name).get("")
+
+      proc cursorString(cursor: Cursor): string = $cursor.line & ":" & $cursor.column & ":" & $self.document.lines[cursor.line].toOpenArray.runeIndex(cursor.column)
+
+      let mode = if self.currentMode.len == 0: "normal" else: self.currentMode
+      builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = fmt" {mode} - {self.document.filename} {workspaceName} ")
+      builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = fmt" {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} ")
+
+  else:
+    builder.panel(&{FillX})
+
+proc createLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, backgroundColor: Color, textColor: Color, sizeToContentX: bool): Option[(UINode, string, Rect)] =
+  let cursor = self.selection.last
+
+  for i in 0..self.document.lines.high:
+    let column = if cursor.line == i: cursor.column.some else: int.none
+    let line = self.getStyledText i
+    if builder.renderLine(app, line, column, sizeToContentX, backgroundColor, textColor).getSome(cl):
+      result = cl.some
+
+method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App) =
+  let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
+  var backgroundColor = if self.active: app.theme.color("editor.background", rgb(25, 25, 40)) else: app.theme.color("editor.background", rgb(25, 25, 25)) * 0.85
+  backgroundColor.a = 1
+
+  var headerColor = if self.active: app.theme.color("tab.activeBackground", rgb(45, 45, 60)) else: app.theme.color("tab.inactiveBackground", rgb(45, 45, 45))
+  headerColor.a = 1
+
+  var flags = &{UINodeFlag.MaskContent, OverlappingChildren}
+  var flagsInner = &{LayoutVertical}
+
+  let sizeToContentX = false
+  let sizeToContentY = false
+  if sizeToContentX:
+    flags.incl SizeToContentX
+    flagsInner.incl SizeToContentX
+  else:
+    flags.incl FillX
+    flagsInner.incl FillX
+
+  if sizeToContentY:
+    flags.incl SizeToContentY
+    flagsInner.incl SizeToContentY
+  else:
+    flags.incl FillY
+    flagsInner.incl FillY
+
+  builder.panel(flags): #, userId = id):
+    # if self.dirty or app.platform.redrawEverything or not builder.retain():
+    block:
+      # echo "render text ", lines[0]
+
+      var cursorLocation = (UINode, string, Rect).none
+
+      builder.panel(flagsInner):
+        self.createHeader(builder, app, backgroundColor, textColor)
+        cursorLocation = self.createLines(builder, app, backgroundColor, textColor, sizeToContentX)
+        builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = backgroundColor) # Fill rest of line with background
+
+      # overlay selection
+      if cursorLocation.getSome(cl):
+        var bounds = cl[2].transformRect(cl[0], currentNode) - vec2(1, 0)
+        bounds.w += 1
+        builder.panel(&{UINodeFlag.FillBackground, AnimateBounds}, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h, backgroundColor = color(0.7, 0.7, 1)):
+          builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, x = 1, y = 0, text = cl[1], textColor = color(0.4, 0.2, 2))
 
 let completionListWidgetId* = newId()
 let completionDocsWidgetId* = newId()

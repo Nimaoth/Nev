@@ -1,11 +1,14 @@
 import widgets, event, input
 import vmath
+import ui/node
 
 export widgets, input, event
 
 type
   Platform* = ref object of RootObj
+    builder*: UINodeBuilder
     redrawEverything*: bool
+    showDrawnNodes*: bool = false
     supportsThinCursor*: bool
     onKeyPress*: Event[tuple[input: int64, modifiers: Modifiers]]
     onKeyRelease*: Event[tuple[input: int64, modifiers: Modifiers]]

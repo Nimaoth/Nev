@@ -1,5 +1,4 @@
 import std/[macros]
-import fusion/matching
 import util
 
 {.experimental: "caseStmtMacros".}
@@ -51,11 +50,13 @@ proc argName*(def: NimNode, arg: int): NimNode =
 
 proc typeName*(def: NimNode): NimNode =
   assert def.kind == nnkTypeDef
-  case def
-  of TypeDef[@ident is Ident(), .._]:
-    return ident
-  of TypeDef[Postfix[_, @ident is Ident()], .._]:
-    return ident
+  case def.kind
+  of nnkTypeDef:
+    if def[0].kind == nnkIdent:
+      return def[0]
+    if def[0].kind == nnkPostfix and def[0][1].kind == nnkIdent:
+      return def[0][1]
+    assert false
   else:
     assert false
 

@@ -12,6 +12,14 @@ proc getBackend*(): Backend =
   result = parseJson($res).jsonTo(typeof(result))
 
 
+proc editor_toggleShowDrawnNodes_void_App_wasm(arg: cstring): cstring {.importc.}
+proc toggleShowDrawnNodes*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_toggleShowDrawnNodes_void_App_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_saveAppState_void_App_wasm(arg: cstring): cstring {.importc.}
 proc saveAppState*() =
   var argsJson = newJArray()

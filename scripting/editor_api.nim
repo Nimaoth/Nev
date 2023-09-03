@@ -12,6 +12,8 @@ else:
 
 proc getBackend*(): Backend =
   editor_getBackend_Backend_App_impl()
+proc toggleShowDrawnNodes*() =
+  editor_toggleShowDrawnNodes_void_App_impl()
 proc saveAppState*() =
   editor_saveAppState_void_App_impl()
 proc requestRender*(redrawEverything: bool = false) =

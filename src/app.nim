@@ -792,6 +792,9 @@ static:
 proc getBackend*(self: App): Backend {.expose("editor").} =
   return self.backend
 
+proc toggleShowDrawnNodes*(self: App) {.expose("editor").} =
+  self.platform.showDrawnNodes = not self.platform.showDrawnNodes
+
 proc createView(self: App, editorState: OpenEditor): View =
   let workspaceFolder = self.getWorkspaceFolder(editorState.workspaceId.parseId)
   let document = if editorState.ast:

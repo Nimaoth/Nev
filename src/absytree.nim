@@ -14,7 +14,7 @@ else:
   static:
     echo "Compiling for unknown"
 
-import std/[parseopt, options, os]
+import std/[parseopt, options, os, sets]
 
 import compilation_config, custom_logger, scripting_api
 
@@ -108,6 +108,8 @@ else:
 
 rend.init()
 
+import ui/node
+
 proc runApp(): Future[void] {.async.} =
   var ed = await newEditor(backend.get, rend)
 
@@ -133,19 +135,31 @@ proc runApp(): Future[void] {.async.} =
 
     var layoutTime, updateTime, renderTime: float
     block:
+      let delta = ed.frameTimer.elapsed.ms
       ed.frameTimer = startTimer()
 
       let updateTimer = startTimer()
-      ed.updateWidgetTree(frameIndex)
+
+      rend.builder.frameTime = delta
+
+      let size = if rend.GuiPlatform.showDrawnNodes: rend.size * vec2(0.5, 1) else: rend.size
+      var rerender = false
+      if eventCounter > 0 or size != rend.builder.root.boundsActual.wh:
+        rend.builder.beginFrame(size)
+        ed.updateWidgetTree(frameIndex)
+        rend.builder.endFrame()
+        rerender = true
+      elif rend.builder.animatingNodes.len > 0:
+        rend.builder.frameIndex.inc
+        rend.builder.postProcessNodes()
+        rerender = true
+
       updateTime = updateTimer.elapsed.ms
 
-      let layoutTimer = startTimer()
-      ed.layoutWidgetTree(rend.size, frameIndex)
-      layoutTime = layoutTimer.elapsed.ms
-
-      let renderTimer = startTimer()
-      rend.render(ed.widget, frameIndex)
-      renderTime = renderTimer.elapsed.ms
+      if rerender:
+        let renderTimer = startTimer()
+        rend.render(ed.widget, frameIndex)
+        renderTime = renderTimer.elapsed.ms
 
       frameTime = ed.frameTimer.elapsed.ms
 
@@ -173,8 +187,8 @@ proc runApp(): Future[void] {.async.} =
       sleep(timeToSleep.int)
 
     let totalTime = totalTimer.elapsed.ms
-    if eventCounter > 0 and totalTime > 20:
-      log(lvlDebug, fmt"Total: {totalTime:>5.2}, Poll: {pollTime:>5.2}ms, Event: {eventTime:>5.2}ms, Frame: {frameTime:>5.2}ms (u: {updateTime:>5.2}ms, l: {layoutTime:>5.2}ms, r: {renderTime:>5.2}ms)")
+    if eventCounter > 0 or totalTime > 20:
+      log(lvlDebug, fmt"Total: {totalTime:>5.2f}, Poll: {pollTime:>5.2f}ms, Event: {eventTime:>5.2f}ms, Frame: {frameTime:>5.2f}ms (u: {updateTime:>5.2f}ms, r: {renderTime:>5.2f}ms)")
       discard
 
     # log(lvlDebug, fmt"Total: {totalTime:>5.2}, Frame: {frameTime:>5.2}ms ({layoutTime:>5.2}ms, {updateTime:>5.2}ms, {renderTime:>5.2}ms), Poll: {pollTime:>5.2}ms, Event: {eventTime:>5.2}ms")

@@ -325,6 +325,7 @@ proc editor_model_applySelectedCompletion_void_ModelDocumentEditor_impl(
 proc editor_model_runSelectedFunction_void_ModelDocumentEditor_impl(
     self: ModelDocumentEditor)  {.importc.}
 proc editor_getBackend_Backend_App_impl(): Backend  {.importc.}
+proc editor_toggleShowDrawnNodes_void_App_impl()  {.importc.}
 proc editor_saveAppState_void_App_impl()  {.importc.}
 proc editor_requestRender_void_App_bool_impl(redrawEverything: bool = false)  {.importc.}
 proc editor_setHandleInputs_void_App_string_bool_impl(context: string;
