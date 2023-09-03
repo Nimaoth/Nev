@@ -38,6 +38,7 @@ proc `$`*(op: UndoOp): string =
 type StyledText* = object
   text*: string
   scope*: string
+  scopeC*: cstring
   priority*: int
   bounds*: Rect
   opacity*: Option[float]
@@ -284,6 +285,7 @@ proc overrideStyle*(line: var StyledLine, first: RuneIndex, last: RuneIndex, sco
   for i in 0..line.parts.high:
     if index >= first and index + line.parts[i].text.runeLen <= last and priority < line.parts[i].priority:
       line.parts[i].scope = scope
+      line.parts[i].scopeC = line.parts[i].scope.cstring
       line.parts[i].priority = priority
     index += line.parts[i].text.runeLen
 
@@ -292,6 +294,7 @@ proc overrideStyleAndText*(line: var StyledLine, first: RuneIndex, text: string,
   for i in 0..line.parts.high:
     if index >= first and index + line.parts[i].text.runeLen <= first + text.runeLen and priority < line.parts[i].priority:
       line.parts[i].scope = scope
+      line.parts[i].scopeC = line.parts[i].scope.cstring
       line.parts[i].priority = priority
       line.parts[i].opacity = opacity
 

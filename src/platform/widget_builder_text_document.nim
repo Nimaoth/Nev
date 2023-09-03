@@ -9,6 +9,14 @@ import ui/node
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
 {.used.}
 
+
+when defined(js):
+  template tokenColor*(theme: Theme, part: StyledText, default: untyped): Color =
+    theme.tokenColor(part.scopeC, default)
+else:
+  template tokenColor*(theme: Theme, part: StyledText, default: untyped): Color =
+    theme.tokenColor(part.scope, default)
+
 proc renderLine*(builder: UINodeBuilder, app: App, line: StyledLine, curs: Option[int], sizeToContentX: bool, backgroundColor: Color, textColor: Color): Option[(UINode, string, Rect)] =
   var flags = &{LayoutHorizontal, FillX, SizeToContentY}
   if sizeToContentX:
@@ -23,7 +31,7 @@ proc renderLine*(builder: UINodeBuilder, app: App, line: StyledLine, curs: Optio
 
       builder.withText(part.text):
         currentNode.backgroundColor = backgroundColor
-        currentNode.textColor = if part.scope.len == 0: textColor else: app.theme.tokenColor(part.scope, rgb(255, 200, 200))
+        currentNode.textColor = if part.scope.len == 0: textColor else: app.theme.tokenColor(part, rgb(255, 200, 200))
 
         # cursor
         if curs.getSome(curs) and curs >= start and curs < start + part.text.len:
@@ -61,6 +69,9 @@ proc createLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, bac
     let line = self.getStyledText i
     if builder.renderLine(app, line, column, sizeToContentX, backgroundColor, textColor).getSome(cl):
       result = cl.some
+
+    if i > 25:
+      break
 
 method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App) =
   let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
