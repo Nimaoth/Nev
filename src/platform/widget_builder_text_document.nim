@@ -1,5 +1,5 @@
 import std/[strformat, tables, sugar, sequtils, strutils]
-import util, app, document_editor, text/text_editor, custom_logger, widgets, platform, theme, custom_unicode
+import util, app, document_editor, text/text_editor, custom_logger, widgets, platform, theme, custom_unicode, config_provider
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import vmath, bumpy, chroma
 
@@ -17,12 +17,21 @@ else:
   template tokenColor*(theme: Theme, part: StyledText, default: untyped): Color =
     theme.tokenColor(part.scope, default)
 
-proc renderLine*(builder: UINodeBuilder, app: App, line: StyledLine, curs: Option[int], sizeToContentX: bool, backgroundColor: Color, textColor: Color): Option[(UINode, string, Rect)] =
-  var flags = &{LayoutHorizontal, FillX, SizeToContentY}
+proc updateBaseIndexAndScrollOffset*(height: float, previousBaseIndex: var int, scrollOffset: var float, lines: int, totalLineHeight: float, targetLine: Option[int])
+
+proc renderLine*(builder: UINodeBuilder, app: App, line: StyledLine, curs: Option[int], y: float, sizeToContentX: bool, backgroundColor: Color, textColor: Color): Option[(UINode, string, Rect)] =
+  var flags = &{LayoutVertical, FillX, SizeToContentY}
+  var flagsInner = &{LayoutHorizontal, FillX, SizeToContentY}
   if sizeToContentX:
     flags.incl SizeToContentX
+    flagsInner.incl SizeToContentX
 
-  builder.panel(flags):
+  # let lineNumbers = self.lineNumbers.get getOption[LineNumbers](app, "editor.text.line-numbers", LineNumbers.Absolute) # """
+
+  # builder.panel(flags):
+  #   var currentPart = 0
+  # block:
+  builder.panel(flagsInner, y = y):
     var start = 0
     var lastPartXW: float32 = 0
     for part in line.parts:
@@ -61,17 +70,54 @@ proc createHeader(self: TextDocumentEditor, builder: UINodeBuilder, app: App, he
   else:
     builder.panel(&{FillX})
 
-proc createLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, backgroundColor: Color, textColor: Color, sizeToContentX: bool): Option[(UINode, string, Rect)] =
+proc createLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, backgroundColor: Color, textColor: Color, sizeToContentX: bool, sizeToContentY: bool): Option[(UINode, string, Rect)] =
   let cursor = self.selection.last
 
-  for i in 0..self.document.lines.high:
-    let column = if cursor.line == i: cursor.column.some else: int.none
-    let line = self.getStyledText i
-    if builder.renderLine(app, line, column, sizeToContentX, backgroundColor, textColor).getSome(cl):
-      result = cl.some
+  # builder.panel(&{FillX, LayoutVertical}, flags += (if sizeToContentY: &{SizeToContentY} else: &{FillY})):
+  builder.panel(&{FillX, FillY, MaskContent}):
+    onScroll:
+      let scrollAmount = delta.y * 40 # self.configProvider.getValue("text.scroll-speed", 40.0) # todo
+      self.scrollOffset += scrollAmount
+      # echo "onScroll ", delta, " -> ", self.scrollOffset
+      self.markDirty()
 
-    if i > 25:
-      break
+    let height = currentNode.bounds.h
+    var y = self.scrollOffset
+
+    for i in self.previousBaseIndex..self.document.lines.high:
+      let column = if cursor.line == i: cursor.column.some else: int.none
+      let line = self.getStyledText i
+
+      if builder.renderLine(app, line, column, y, sizeToContentX, backgroundColor, textColor).getSome(cl):
+        result = cl.some
+
+      y = builder.currentChild.yh
+      if builder.currentChild.bounds.y > height:
+        break
+
+    if y < height:
+      builder.panel(&{FillX, FillY, FillBackground}, y = y, backgroundColor = backgroundColor)
+
+    y = self.scrollOffset
+
+    for i in countdown(self.previousBaseIndex - 1, 0):
+      let column = if cursor.line == i: cursor.column.some else: int.none
+      let line = self.getStyledText i
+
+      if builder.renderLine(app, line, column, y, sizeToContentX, backgroundColor, textColor).getSome(cl):
+        result = cl.some
+
+      builder.currentChild.y = builder.currentChild.y - builder.currentChild.h
+
+      y = builder.currentChild.y
+      if builder.currentChild.bounds.yh < 0:
+        break
+
+    if y > 0:
+      builder.panel(&{FillX, FillBackground}, h = y, backgroundColor = backgroundColor)
+
+    defer:
+      self.lastContentBounds = currentNode.bounds
 
 method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App) =
   let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
@@ -109,8 +155,8 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App) =
 
       builder.panel(flagsInner):
         self.createHeader(builder, app, backgroundColor, textColor)
-        cursorLocation = self.createLines(builder, app, backgroundColor, textColor, sizeToContentX)
-        builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = backgroundColor) # Fill rest of line with background
+        cursorLocation = self.createLines(builder, app, backgroundColor, textColor, sizeToContentX, sizeToContentY)
+        # builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = backgroundColor) # Fill rest of line with background
 
       # overlay selection
       if cursorLocation.getSome(cl):
@@ -118,6 +164,9 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App) =
         bounds.w += 1
         builder.panel(&{UINodeFlag.FillBackground, AnimateBounds}, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h, backgroundColor = color(0.7, 0.7, 1)):
           builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, x = 1, y = 0, text = cl[1], textColor = color(0.4, 0.2, 2))
+
+    if not self.disableScrolling:
+      updateBaseIndexAndScrollOffset(currentNode.bounds.h, self.previousBaseIndex, self.scrollOffset, self.document.lines.len, app.platform.totalLineHeight, int.none)
 
 let completionListWidgetId* = newId()
 let completionDocsWidgetId* = newId()
@@ -195,7 +244,7 @@ proc renderTextHighlight(panel: WPanel, app: App, startOffset: float, endOffset:
 
 proc createPartWidget*(text: string, startOffset: float, width: float, height: float, color: Color, frameIndex: int): WText
 
-proc updateBaseIndexAndScrollOffset*(contentPanel: WPanel, previousBaseIndex: var int, scrollOffset: var float, lines: int, totalLineHeight: float, targetLine: Option[int]) =
+proc updateBaseIndexAndScrollOffset*(height: float, previousBaseIndex: var int, scrollOffset: var float, lines: int, totalLineHeight: float, targetLine: Option[int]) =
 
   if targetLine.getSome(targetLine):
     let targetLineY = (targetLine - previousBaseIndex).float32 * totalLineHeight + scrollOffset
@@ -205,21 +254,21 @@ proc updateBaseIndexAndScrollOffset*(contentPanel: WPanel, previousBaseIndex: va
     if targetLineY < margin:
       scrollOffset = margin
       previousBaseIndex = targetLine
-    elif targetLineY + totalLineHeight > contentPanel.lastBounds.h - margin:
-      scrollOffset = contentPanel.lastBounds.h - margin - totalLineHeight
+    elif targetLineY + totalLineHeight > height - margin:
+      scrollOffset = height - margin - totalLineHeight
       previousBaseIndex = targetLine
 
   previousBaseIndex = previousBaseIndex.clamp(0..lines)
 
   # Adjust scroll offset and base index so that the first node on screen is the base
   while scrollOffset < 0 and previousBaseIndex + 1 < lines:
-    if scrollOffset + totalLineHeight >= contentPanel.lastBounds.h:
+    if scrollOffset + totalLineHeight >= height:
       break
     previousBaseIndex += 1
     scrollOffset += totalLineHeight
 
   # Adjust scroll offset and base index so that the first node on screen is the base
-  while scrollOffset > contentPanel.lastBounds.h and previousBaseIndex > 0:
+  while scrollOffset > height and previousBaseIndex > 0:
     if scrollOffset - totalLineHeight <= 0:
       break
     previousBaseIndex -= 1
@@ -332,7 +381,7 @@ proc renderCompletions(self: TextDocumentEditor, app: App, completionsPanel: WPa
 
   self.lastCompletionsWidget = list
 
-  updateBaseIndexAndScrollOffset(list, self.completionsBaseIndex, self.completionsScrollOffset, self.completions.len, totalLineHeight, self.scrollToCompletion)
+  updateBaseIndexAndScrollOffset(list.lastBounds.h, self.completionsBaseIndex, self.completionsScrollOffset, self.completions.len, totalLineHeight, self.scrollToCompletion)
   self.scrollToCompletion = int.none
 
   self.lastCompletionWidgets.setLen 0
@@ -447,7 +496,7 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, complet
     contentPanel.layoutWidget(widget.lastBounds, frameIndex, app.platform.layoutOptions)
 
   if not self.disableScrolling:
-    updateBaseIndexAndScrollOffset(contentPanel, self.previousBaseIndex, self.scrollOffset, self.document.lines.len, totalLineHeight, int.none)
+    updateBaseIndexAndScrollOffset(contentPanel.lastBounds.h, self.previousBaseIndex, self.scrollOffset, self.document.lines.len, totalLineHeight, int.none)
 
   var selectionsPerLine = initTable[int, seq[Selection]]()
   for s in self.selections:

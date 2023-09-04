@@ -231,7 +231,7 @@ proc renderCompletionList*(self: AstDocumentEditor, app: App, widget: WPanel, pa
 
   widget.bottom = widget.top + renderedCompletions.float * totalLineHeight
   widget.layoutWidget(parentBounds, frameIndex, app.platform.layoutOptions)
-  updateBaseIndexAndScrollOffset(widget, previousBaseIndex, scrollOffset, completions.len, totalLineHeight, targetLine)
+  updateBaseIndexAndScrollOffset(widget.lastBounds.h, previousBaseIndex, scrollOffset, completions.len, totalLineHeight, targetLine)
 
   var firstCompletion = previousBaseIndex
   block:

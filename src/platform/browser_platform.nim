@@ -121,7 +121,8 @@ method init*(self: BrowserPlatform) =
     let modifiers = we.getModifiers
 
     # debugf"wheel {we.deltaX}, {we.deltaY}, {we.deltaZ}, {we.deltaMode}, {modifiers}"
-    self.onScroll.invoke (vec2(we.clientX.float, we.clientY.float), vec2(we.deltaX, -we.deltaY) * 0.01, modifiers)
+    if not self.builder.handleMouseScroll(vec2(we.clientX.float, we.clientY.float), vec2(we.deltaX, -we.deltaY) * 0.01, modifiers):
+      self.onScroll.invoke (vec2(we.clientX.float, we.clientY.float), vec2(we.deltaX, -we.deltaY) * 0.01, modifiers)
   , AddEventListenerOptions(passive: true))
 
   self.content.addEventListener("mousedown", proc(e: dom.Event) =
@@ -410,6 +411,7 @@ proc drawNode(builder: UINodeBuilder, platform: BrowserPlatform, element: var El
 
   var text = "".cstring
   var updateText = false
+  var removeText = false
   if DrawText in node.flags:
     css += "color: ".cstring
     css += node.textColor.myToHtmlHex
@@ -425,6 +427,8 @@ proc drawNode(builder: UINodeBuilder, platform: BrowserPlatform, element: var El
 
     text = node.text.cstring
     updateText = element.getAttribute("data-text") != text
+  elif element.hasAttribute("data-text"):
+    removeText = true
 
   var newChildren: seq[(Element, cstring, Node)] = @[]
   var childrenToRemove: seq[Element] = @[]
@@ -445,6 +449,9 @@ proc drawNode(builder: UINodeBuilder, platform: BrowserPlatform, element: var El
     if updateText:
       element.innerText = text
       element.setAttribute("data-text", text)
+    elif removeText:
+      element.removeAttribute("data-text")
+      element.innerText = ""
 
     element.setAttribute("id", ($node.id).cstring)
 

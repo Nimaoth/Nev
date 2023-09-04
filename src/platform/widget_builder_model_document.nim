@@ -454,7 +454,7 @@ proc renderCompletions(self: ModelDocumentEditor, app: App, contentPanel: WPanel
 
   self.lastCompletionsWidget = panel
 
-  updateBaseIndexAndScrollOffset(panel, self.completionsBaseIndex, self.completionsScrollOffset, self.completions.len, totalLineHeight, self.scrollToCompletion)
+  updateBaseIndexAndScrollOffset(panel.lastBounds.h, self.completionsBaseIndex, self.completionsScrollOffset, self.completions.len, totalLineHeight, self.scrollToCompletion)
   self.scrollToCompletion = int.none
 
   self.lastItems.setLen 0

@@ -26,6 +26,7 @@ macro defineBitFlag*(body: untyped): untyped =
       flags = (flags.uint32 or (1.uint32 shl flag.uint32)).flagsName
     func excl*(flags: var flagsName, flag: flagName) {.inline.} =
       flags = (flags.uint32 and not (1.uint32 shl flag.uint32)).flagsName
+    func `or`*(a: flagsName, b: flagsName): flagsName {.inline.} = (a.uint32 or b.uint32).flagsName
 
     func `==`*(a, b: flagsName): bool {.borrow.}
 
@@ -112,6 +113,7 @@ type
     mHandleBeginHover: proc(node: UINode): bool
     mHandleEndHover: proc(node: UINode): bool
     mHandleHover: proc(node: UINode): bool
+    mHandleScroll: proc(node: UINode, pos: Vec2, delta: Vec2, modifiers: set[Modifier]): bool
 
   UINodeBuilder* = ref object
     nodes: seq[UINode]
@@ -182,6 +184,7 @@ func handleDrag*(node: UINode):       (proc(node: UINode, button: MouseButton, d
 func handleBeginHover*(node: UINode): (proc(node: UINode): bool)                                   {.inline.} = node.mHandleBeginHover
 func handleEndHover*(node: UINode):   (proc(node: UINode): bool)                                   {.inline.} = node.mHandleEndHover
 func handleHover*(node: UINode):      (proc(node: UINode): bool)                                   {.inline.} = node.mHandleHover
+func handleScroll*(node: UINode):     (proc(node: UINode, pos: Vec2, delta: Vec2, modifiers: set[Modifier]): bool) {.inline.} = node.mHandleScroll
 
 func `handlePressed=`*(node: UINode, value: proc(node: UINode, button: MouseButton): bool)                {.inline.} = node.mHandlePressed = value
 func `handleReleased=`*(node: UINode, value: proc(node: UINode, button: MouseButton): bool)               {.inline.} = node.mHandleReleased = value
@@ -189,6 +192,7 @@ func `handleDrag=`* (node: UINode, value: proc(node: UINode, button: MouseButton
 func `handleBeginHover=`*(node: UINode, value: proc(node: UINode): bool)                                  {.inline.} = node.mHandleBeginHover = value
 func `handleEndHover=`*(node: UINode,   value: proc(node: UINode): bool)                                  {.inline.} = node.mHandleEndHover = value
 func `handleHover=`*(node: UINode,      value: proc(node: UINode): bool)                                  {.inline.} = node.mHandleHover = value
+func `handleScroll=`*(node: UINode,     value: proc(node: UINode, pos: Vec2, delta: Vec2, modifiers: set[Modifier]): bool) {.inline.} = node.mHandleScroll = value
 
 func xy*(node: UINode): Vec2 {.inline.} = node.bounds.xy
 
@@ -244,6 +248,12 @@ proc newNodeBuilder*(): UINodeBuilder =
   result.animatingNodes = initHashSet[Id]()
 
 proc hovered*(builder: UINodeBuilder, node: UINode): bool = node.some == builder.hoveredNode
+
+proc handleMouseScroll*(builder: UINodeBuilder, pos: Vec2, delta: Vec2, modifiers: set[Modifier]): bool =
+  let targetNode = builder.root.findNodeContaining(pos, (node) => node.handleScroll.isNotNil)
+  if targetNode.getSome(node):
+    return node.handleScroll()(node, pos, delta, modifiers)
+  return false
 
 proc handleMousePressed*(builder: UINodeBuilder, button: MouseButton, pos: Vec2) =
   builder.mousePosClick[button] = pos
@@ -707,7 +717,7 @@ proc getNextOrNewNode(builder: UINodeBuilder, node: UINode, last: UINode, userId
   node.insert(newNode, last)
   return newNode
 
-proc prepareNode(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[string], inX, inY, inW, inH: Option[float32], userId: var Option[Id]): UINode =
+proc prepareNode(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[string], inX, inY, inW, inH: Option[float32], userId: var Option[Id], inAdditionalFlags: Option[UINodeFlags]): UINode =
   assert builder.currentParent.isNotNil
 
   var node = builder.getNextOrNewNode(builder.currentParent, builder.currentChild, userId)
@@ -716,6 +726,9 @@ proc prepareNode(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[st
   builder.currentChild = node
 
   node.flags = inFlags
+  if inAdditionalFlags.isSome:
+    node.flags = node.flags or inAdditionalFlags.get
+
   if inText.isSome: node.text = inText.get
   else: node.text = ""
 
@@ -904,6 +917,7 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
   var inBackgroundColor = genAst(): Color.none
   var inBorderColor = genAst(): Color.none
   var inTextColor = genAst(): Color.none
+  var inAdditionalFlags = genAst(): UINodeFlags.none
 
   for i, arg in args:
     case arg
@@ -931,15 +945,22 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
       else:
         error("Unknown ui node property '" & name & "'", arg[0])
 
+    of Infix[Ident(strVal: "+="), Ident(strVal: "flags"), @value]:
+      inAdditionalFlags = genAst(value): some(value).maybeFlatten
+      # echo inAdditionalFlags.repr
+      # echo arg.treeRepr
+      # echo "add to flags"
+
     elif i == args.len - 1:
       body = arg
 
     else:
+      # echo arg.treeRepr
       error("Only <name> = <value> is allowed here.", arg)
 
-  return genAst(builder, inFlags, inText, inX, inY, inW, inH, body, inBackgroundColor, inBorderColor, inTextColor, inUserId):
+  return genAst(builder, inFlags, inText, inX, inY, inW, inH, body, inBackgroundColor, inBorderColor, inTextColor, inUserId, inAdditionalFlags):
     var userId = inUserId
-    var node = builder.prepareNode(inFlags, inText, inX, inY, inW, inH, userId)
+    var node = builder.prepareNode(inFlags, inText, inX, inY, inW, inH, userId, inAdditionalFlags)
 
     if inBackgroundColor.isSome: node.backgroundColor = inBackgroundColor.get
     if inBorderColor.isSome:     node.borderColor     = inBorderColor.get
@@ -977,6 +998,11 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
       template onHover(onBody: untyped) {.used.} =
         currentNode.handleHover = proc(node: UINode): bool =
           onBody
+
+      template onScroll(onBody: untyped) {.used.} =
+        currentNode.handleScroll = proc(node: UINode, pos {.inject.}: Vec2, delta {.inject.}: Vec2, modifiers {.inject.}: set[Modifier]): bool =
+          onBody
+          return true
 
       inc stackSize
       defer:
