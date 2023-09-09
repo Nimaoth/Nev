@@ -91,6 +91,7 @@ type
     flags: UINodeFlags
 
     mText: string
+    mTextRuneLen: int
 
     mBackgroundColor: Color
     mBorderColor: Color
@@ -173,7 +174,13 @@ else:
 func lastChange*(node: UINode): int {.inline.} = max(node.mLastContentChange, max(node.mLastPositionChange, max(node.mLastSizeChange, max(node.mLastClearInvalidation, node.mLastDrawInvalidation))))
 func lastSizeChange*(node: UINode): int {.inline.} = node.mLastSizeChange
 
-proc `text=`*(node: UINode, value: string)           {.inline.} = (let changed = (value != node.mText);            node.contentDirty = node.contentDirty or changed; if changed: node.mText            = value else: discard)
+proc `text=`*(node: UINode, value: string)           {.inline.} =
+  let changed = (value != node.mText)
+  node.contentDirty = node.contentDirty or changed
+  if changed:
+    node.mText = value
+    node.mTextRuneLen = value.runeLen.int
+
 proc `backgroundColor=`*(node: UINode, value: Color) {.inline.} = (let changed = (value != node.mBackgroundColor); node.contentDirty = node.contentDirty or changed; if changed: node.mBackgroundColor = value else: discard)
 proc `borderColor=`*(node: UINode, value: Color)     {.inline.} = (let changed = (value != node.mBorderColor);     node.contentDirty = node.contentDirty or changed; if changed: node.mBorderColor     = value else: discard)
 proc `textColor=`*(node: UINode, value: Color)       {.inline.} = (let changed = (value != node.mTextColor);       node.contentDirty = node.contentDirty or changed; if changed: node.mTextColor       = value else: discard)
@@ -444,7 +451,28 @@ proc returnNode*(builder: UINodeBuilder, node: UINode) =
 
   node.clearRect = Rect.none
 
-proc clearUnusedChildren*(builder: UINodeBuilder, node: UINode, last: UINode): Option[Rect] =
+proc clearUnusedChildren*(builder: UINodeBuilder, node: UINode, last: UINode) =
+  if last.isNil:
+    for _, child in node.children:
+      builder.returnNode child
+      node.contentDirty = true
+    node.first = nil
+    node.last = nil
+
+  else:
+    assert last.parent == node
+
+    var n = last.next
+    while n.isNotNil:
+      let next = n.next
+      builder.returnNode n
+      node.contentDirty = true
+      n = next
+
+    node.last = last
+    last.next = nil
+
+proc clearUnusedChildrenAndGetBounds*(builder: UINodeBuilder, node: UINode, last: UINode): Option[Rect] =
   if last.isNil:
     for _, child in node.children:
       result = result or child.bounds.some
@@ -485,12 +513,12 @@ proc preLayout*(builder: UINodeBuilder, node: UINode) =
 
   if node.flags.all &{SizeToContentX, FillX}:
     if DrawText in node.flags:
-      node.w = max(parent.w - node.x, builder.textWidth(node.text.runeLen.int))
+      node.w = max(parent.w - node.x, builder.textWidth(node.mTextRuneLen))
     else:
       node.w = parent.w - node.x
   elif SizeToContentX in node.flags:
     if DrawText in node.flags:
-      node.w = builder.textWidth(node.text.runeLen.int)
+      node.w = builder.textWidth(node.mTextRuneLen)
   elif FillX in node.flags:
     node.w = parent.w - node.x
 
@@ -533,7 +561,7 @@ proc postLayout*(builder: UINodeBuilder, node: UINode) =
     else: 0
 
     let strWidth = if DrawText in node.flags:
-      builder.textWidth(node.text.runeLen.int)
+      builder.textWidth(node.mTextRuneLen)
     else: 0
 
     node.w = max(node.w, max(childrenWidth, strWidth))
@@ -730,7 +758,7 @@ proc prepareNode(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[st
     node.flags = node.flags or inAdditionalFlags.get
 
   if inText.isSome: node.text = inText.get
-  else: node.text = ""
+  elif node.text.len != 0: node.text = ""
 
   node.mHandlePressed = nil
   node.mHandleReleased = nil
@@ -765,9 +793,9 @@ proc finishNode(builder: UINodeBuilder, currentNode: UINode) =
   currentNode.logp fmt"panel end"
 
   if builder.useInvalidation:
-    currentNode.clearedChildrenBounds = currentNode.clearedChildrenBounds or builder.clearUnusedChildren(currentNode, builder.currentChild)
+    currentNode.clearedChildrenBounds = currentNode.clearedChildrenBounds or builder.clearUnusedChildrenAndGetBounds(currentNode, builder.currentChild)
   else:
-    discard builder.clearUnusedChildren(currentNode, builder.currentChild)
+    builder.clearUnusedChildren(currentNode, builder.currentChild)
 
   builder.postLayout(currentNode)
 
@@ -1045,7 +1073,7 @@ proc beginFrame*(builder: UINodeBuilder, size: Vec2) =
   builder.root.flags = &{LayoutVertical}
 
 proc endFrame*(builder: UINodeBuilder) =
-  discard builder.clearUnusedChildren(builder.root, builder.currentChild)
+  builder.clearUnusedChildren(builder.root, builder.currentChild)
   builder.postLayout(builder.root)
   builder.postProcessNodes()
 

@@ -5,7 +5,7 @@ import vmath, bumpy, chroma
 {.used.}
 
 method updateWidget*(self: FileSelectorItem, app: App, widget: WPanel, frameIndex: int) =
-  let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
+  let textColor = app.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
 
   var text = if widget.len == 0:
     var text = WText(anchor: (vec2(0, 0), vec2(1, 1)), lastHierarchyChange: frameIndex)
@@ -19,8 +19,8 @@ method updateWidget*(self: FileSelectorItem, app: App, widget: WPanel, frameInde
   text.updateLastHierarchyChangeFromChildren()
 
 method updateWidget*(self: TextSymbolSelectorItem, app: App, widget: WPanel, frameIndex: int) =
-  let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
-  let scopeColor = app.theme.tokenColor("string", rgb(175, 255, 175))
+  let textColor = app.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
+  let scopeColor = app.theme.tokenColor("string", color(175/255, 255/255, 175/255))
   let charWidth = app.platform.charWidth
 
   var (nameText, typeText) = if widget.len == 0:
@@ -43,7 +43,7 @@ method updateWidget*(self: TextSymbolSelectorItem, app: App, widget: WPanel, fra
   typeText.updateLastHierarchyChangeFromChildren()
 
 method updateWidget*(self: ThemeSelectorItem, app: App, widget: WPanel, frameIndex: int) =
-  let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
+  let textColor = app.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
 
   var text = if widget.len == 0:
     var text = WText(anchor: (vec2(0, 0), vec2(1, 1)), lastHierarchyChange: frameIndex)
@@ -80,7 +80,7 @@ method updateWidget*(self: SelectorPopup, app: App, widget: WPanel, completionsP
 
   widget.lastHierarchyChange = max(widget.lastHierarchyChange, headerPanel.lastHierarchyChange)
 
-  contentPanel.updateBackgroundColor(app.theme.color("panel.background", rgb(25, 25, 25)), frameIndex)
+  contentPanel.updateBackgroundColor(app.theme.color("panel.background", color(25/255, 25/255, 25/255)), frameIndex)
   self.lastContentBounds = contentPanel.lastBounds
 
   if not (contentPanel.changed(frameIndex) or self.dirty or app.platform.redrawEverything):
@@ -108,7 +108,7 @@ method updateWidget*(self: SelectorPopup, app: App, widget: WPanel, completionsP
   while contentPanel.len < numRenderedItems:
     contentPanel.add WPanel(anchor: (vec2(0, 0), vec2(1, 0)))
 
-  let selectionColor = app.theme.color("list.activeSelectionBackground", rgb(200, 200, 200))
+  let selectionColor = app.theme.color("list.activeSelectionBackground", color(200/255, 200/255, 200/255))
 
   var top = 0.0
   var widgetIndex = 0

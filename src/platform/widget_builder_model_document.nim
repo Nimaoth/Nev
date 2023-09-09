@@ -145,7 +145,7 @@ proc getTextAndColor(app: App, cell: Cell, defaultShadowText: string = ""): (str
       defaultShadowText
     else:
       cell.shadowText
-    let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200)).withAlpha(0.7)
+    let textColor = app.theme.color("editor.foreground", color(225/255, 200/255, 200/255)).withAlpha(0.7)
     return (text, textColor)
   else:
     let defaultColor = if cell.foregroundColor.a != 0: cell.foregroundColor else: color(1, 1, 1)
@@ -440,11 +440,11 @@ proc renderCompletions(self: ModelDocumentEditor, app: App, contentPanel: WPanel
   let totalLineHeight = app.platform.totalLineHeight
   let charWidth = app.platform.charWidth
 
-  let backgroundColor = app.theme.color("panel.background", rgb(30, 30, 30))
-  let selectedBackgroundColor = app.theme.color("list.activeSelectionBackground", rgb(200, 200, 200))
-  let nameColor = app.theme.tokenColor(@["entity.name.label", "entity.name"], rgb(255, 255, 255))
-  let textColor = app.theme.color("list.inactiveSelectionForeground", rgb(175, 175, 175))
-  let scopeColor = app.theme.color("string", rgb(175, 255, 175))
+  let backgroundColor = app.theme.color("panel.background", color(30/255, 30/255, 30/255))
+  let selectedBackgroundColor = app.theme.color("list.activeSelectionBackground", color(200/255, 200/255, 200/255))
+  let nameColor = app.theme.tokenColor(@["entity.name.label", "entity.name"], color(255/255, 255/255, 255/255))
+  let textColor = app.theme.color("list.inactiveSelectionForeground", color(175/255, 175/255, 175/255))
+  let scopeColor = app.theme.color("string", color(175/255, 255/255, 175/255))
 
   var panel = WPanel(
     left: cursorBounds.x, top: cursorBounds.yh, right: cursorBounds.x + charWidth * 60.0, bottom: cursorBounds.yh + totalLineHeight * 20.0,
@@ -493,7 +493,7 @@ proc renderCompletions(self: ModelDocumentEditor, app: App, contentPanel: WPanel
 method updateWidget*(self: ModelDocumentEditor, app: App, widget: WPanel, completionsPanel: WPanel, frameIndex: int) =
   let totalLineHeight = app.platform.totalLineHeight
 
-  let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
+  let textColor = app.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
 
   var headerPanel: WPanel
   var headerPart1Text: WText
@@ -526,8 +526,8 @@ method updateWidget*(self: ModelDocumentEditor, app: App, widget: WPanel, comple
     headerPanel.bottom = totalLineHeight
     contentPanel.top = totalLineHeight
 
-    let color = if self.active: app.theme.color("tab.activeBackground", rgb(45, 45, 60))
-    else: app.theme.color("tab.inactiveBackground", rgb(45, 45, 45))
+    let color = if self.active: app.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255))
+    else: app.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
     headerPanel.updateBackgroundColor(color, frameIndex)
 
     let workspaceName = self.document.workspace.map(wf => " - " & wf.name).get("")
@@ -546,7 +546,7 @@ method updateWidget*(self: ModelDocumentEditor, app: App, widget: WPanel, comple
   widget.lastHierarchyChange = max(widget.lastHierarchyChange, headerPanel.lastHierarchyChange)
 
   contentPanel.updateBackgroundColor(
-    if self.active: app.theme.color("editor.background", rgb(25, 25, 40)) else: app.theme.color("editor.background", rgb(25, 25, 25)) * 0.75,
+    if self.active: app.theme.color("editor.background", color(25/255, 25/255, 40/255)) else: app.theme.color("editor.background", color(25/255, 25/255, 25/255)) * 0.75,
     frameIndex)
 
   if not (contentPanel.changed(frameIndex) or self.dirty or app.platform.redrawEverything):
