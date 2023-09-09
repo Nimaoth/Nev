@@ -23,7 +23,7 @@ proc updateStatusBar*(self: App, frameIndex: int, statusBarWidget: WPanel, compl
     statusWidget = statusBarWidget[0].WText
     commandLineWidget = statusBarWidget[1].WPanel
 
-  let textColor = self.theme.color("editor.foreground", rgb(225, 200, 200))
+  let textColor = self.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
 
   statusWidget.text = if self.currentMode.len == 0: "normal" else: self.currentMode
   statusWidget.updateForegroundColor(textColor, frameIndex)
@@ -50,7 +50,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
 
     builder.panel(&{FillX, FillY, LayoutVertical}): # main panel
       builder.panel(&{FillX, SizeToContentY, LayoutHorizontal}): # status bar
-        let textColor = self.theme.color("editor.foreground", rgb(225, 200, 200))
+        let textColor = self.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
         let text = if self.currentMode.len == 0: "normal" else: self.currentMode
         builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = text, textColor = textColor): #
           discard

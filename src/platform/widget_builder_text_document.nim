@@ -40,7 +40,7 @@ proc renderLine*(builder: UINodeBuilder, app: App, line: StyledLine, curs: Optio
 
       builder.withText(part.text):
         currentNode.backgroundColor = backgroundColor
-        currentNode.textColor = if part.scope.len == 0: textColor else: app.theme.tokenColor(part, rgb(255, 200, 200))
+        currentNode.textColor = if part.scope.len == 0: textColor else: app.theme.tokenColor(part, textColor)
 
         # cursor
         if curs.getSome(curs) and curs >= start and curs < start + part.text.len:
@@ -78,7 +78,6 @@ proc createLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, bac
     onScroll:
       let scrollAmount = delta.y * 40 # self.configProvider.getValue("text.scroll-speed", 40.0) # todo
       self.scrollOffset += scrollAmount
-      # echo "onScroll ", delta, " -> ", self.scrollOffset
       self.markDirty()
 
     let height = currentNode.bounds.h
@@ -120,11 +119,14 @@ proc createLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, bac
       self.lastContentBounds = currentNode.bounds
 
 method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App) =
-  let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
-  var backgroundColor = if self.active: app.theme.color("editor.background", rgb(25, 25, 40)) else: app.theme.color("editor.background", rgb(25, 25, 25)) * 0.85
+  let dirty = self.dirty
+  self.resetDirty()
+
+  let textColor = app.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
+  var backgroundColor = if self.active: app.theme.color("editor.background", color(25/255, 25/255, 40/255)) else: app.theme.color("editor.background", color(25/255, 25/255, 25/255)) * 0.85
   backgroundColor.a = 1
 
-  var headerColor = if self.active: app.theme.color("tab.activeBackground", rgb(45, 45, 60)) else: app.theme.color("tab.inactiveBackground", rgb(45, 45, 45))
+  var headerColor = if self.active: app.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)) else: app.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
   headerColor.a = 1
 
   var flags = &{UINodeFlag.MaskContent, OverlappingChildren}
@@ -330,11 +332,11 @@ proc renderCompletions(self: TextDocumentEditor, app: App, completionsPanel: WPa
   let totalLineHeight = app.platform.totalLineHeight
   let charWidth = app.platform.charWidth
 
-  let backgroundColor = app.theme.color("panel.background", rgb(30, 30, 30))
-  let selectedBackgroundColor = app.theme.color("list.activeSelectionBackground", rgb(200, 200, 200))
-  let docsColor = app.theme.color("editor.foreground", rgb(255, 255, 255))
-  let nameColor = app.theme.tokenColor(@["entity.name.label", "entity.name"], rgb(255, 255, 255))
-  let scopeColor = app.theme.color("string", rgb(175, 255, 175))
+  let backgroundColor = app.theme.color("panel.background", color(30/255, 30/255, 30/255))
+  let selectedBackgroundColor = app.theme.color("list.activeSelectionBackground", color(200/255, 200/255, 200/255))
+  let docsColor = app.theme.color("editor.foreground", color(1, 1, 1))
+  let nameColor = app.theme.tokenColor(@["entity.name.label", "entity.name"], color(1, 1, 1))
+  let scopeColor = app.theme.color("string", color(175/255, 1, 175/255))
 
   const numLinesToShow = 20
   let (top, bottom) = if renderAboveCursor:
@@ -419,7 +421,7 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, complet
   let totalLineHeight = app.platform.totalLineHeight
   let charWidth = app.platform.charWidth
 
-  let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
+  let textColor = app.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
 
   let sizeToContent = widget.sizeToContent
 
@@ -454,8 +456,8 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, complet
     headerPanel.bottom = totalLineHeight
     contentPanel.top = totalLineHeight
 
-    let color = if self.active: app.theme.color("tab.activeBackground", rgb(45, 45, 60))
-    else: app.theme.color("tab.inactiveBackground", rgb(45, 45, 45))
+    let color = if self.active: app.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255))
+    else: app.theme.color("tab.inactiveBackground", color(45/255/255/255, 45/255/255, 45/255))
     headerPanel.updateBackgroundColor(color, frameIndex)
 
     let workspaceName = self.document.workspace.map(wf => " - " & wf.name).get("")
@@ -480,7 +482,7 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, complet
 
   contentPanel.sizeToContent = sizeToContent
   contentPanel.updateBackgroundColor(
-    if self.active: app.theme.color("editor.background", rgb(25, 25, 40)) else: app.theme.color("editor.background", rgb(25, 25, 25)) * 0.85,
+    if self.active: app.theme.color("editor.background", color(25/255/255/255, 25/255/255, 40/255)) else: app.theme.color("editor.background", color(25/255, 25/255, 25/255)) * 0.85,
     frameIndex)
 
   if not (contentPanel.changed(frameIndex) or self.dirty or app.platform.redrawEverything):
@@ -540,12 +542,12 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, complet
   let isWide = self.isThickCursor()
   let cursorWidth = if isWide: 1.0 else: 0.2
 
-  let selectionColor = app.theme.color("selection.background", rgb(200, 200, 200))
-  let highlightColor = app.theme.color(@["editor.findMatchBackground", "editor.rangeHighlightBackground"], rgb(200, 200, 200))
-  let cursorForegroundColor = app.theme.color(@["editorCursor.foreground", "foreground"], rgb(200, 200, 200))
-  let cursorBackgroundColor = app.theme.color(@["editorCursor.background", "background"], rgb(50, 50, 50))
-  let contextBackgroundColor = app.theme.color(@["breadcrumbPicker.background", "background"], rgb(50, 70, 70))
-  let wrapLineEndColor = app.theme.tokenColor(@["comment"], rgb(100, 100, 100))
+  let selectionColor = app.theme.color("selection.background", color(200/255, 200/255, 200/255))
+  let highlightColor = app.theme.color(@["editor.findMatchBackground", "editor.rangeHighlightBackground"], color(200/255, 200/255, 200/255))
+  let cursorForegroundColor = app.theme.color(@["editorCursor.foreground", "foreground"], color(200/255, 200/255, 200/255))
+  let cursorBackgroundColor = app.theme.color(@["editorCursor.background", "background"], color(50/255, 50/255, 50/255))
+  let contextBackgroundColor = app.theme.color(@["breadcrumbPicker.background", "background"], color(50/255, 70/255, 70/255))
+  let wrapLineEndColor = app.theme.tokenColor(@["comment"], color(100/255, 100/255, 100/255))
 
   var cursorBounds = rect(vec2(), vec2())
 
@@ -642,7 +644,7 @@ method updateWidget*(self: TextDocumentEditor, app: App, widget: WPanel, complet
       renderTextHighlight(subLineWidget, app, startOffset, startOffset + width, i, startRuneIndex, selectionsNormalizedOnLine, selectionsClampedOnLine, part, selectionColor, totalLineHeight)
       renderTextHighlight(subLineWidget, app, startOffset, startOffset + width, i, startRuneIndex, highlightsNormalizedOnLine, highlightsClampedOnLine, part, highlightColor, totalLineHeight)
 
-      let color = if part.scope.len == 0: textColor else: app.theme.tokenColor(part.scope, rgb(255, 200, 200))
+      let color = if part.scope.len == 0: textColor else: app.theme.tokenColor(part.scope, color(255/255, 200/255, 200/255))
       var partWidget = createPartWidget(part.text, startOffset, width, totalLineHeight, color, frameIndex)
       if part.opacity.getSome(opacity):
         partWidget.allowAlpha = true

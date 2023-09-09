@@ -93,8 +93,8 @@ template mapIt*[T](self: Option[T], op: untyped): untyped =
   else:
     OutType.none
 
-proc maybeFlatten*[T](self: Option[T]): Option[T] = self
-proc maybeFlatten*[T](self: Option[Option[T]]): Option[T] = self.flatten
+template maybeFlatten*[T](self: Option[T]): Option[T] = self
+template maybeFlatten*[T](self: Option[Option[T]]): Option[T] = self.flatten
 
 proc neww*[T](value: T): ref T =
   new result

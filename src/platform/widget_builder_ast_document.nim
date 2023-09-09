@@ -28,11 +28,11 @@ method updateWidget*(self: AstSymbolSelectorItem, app: App, widget: WPanel, fram
   else:
     return
 
-  let nameColor = app.theme.tokenColor(nameColors, rgb(255, 255, 255))
+  let nameColor = app.theme.tokenColor(nameColors, color(255/255, 255/255, 255/255))
   let nameWidget = createPartWidget(name, 0.0, name.len.float * charWidth, totalLineHeight, nameColor, frameIndex)
   widget.add(nameWidget)
 
-  let typeColor = app.theme.tokenColor(typeColors, rgb(255, 255, 255))
+  let typeColor = app.theme.tokenColor(typeColors, color(255/255, 255/255, 255/255))
   var typeWidget = createPartWidget(typ, -typ.len.float * charWidth, 0, totalLineHeight, typeColor, frameIndex)
   typeWidget.anchor.min.x = 1
   typeWidget.anchor.max.x = 1
@@ -93,12 +93,12 @@ proc renderVisualNode*(self: AstDocumentEditor, app: App, node: VisualNode, sele
   widget.add panel
 
   if node.background.getSome(colors):
-    let color = app.theme.anyColor(colors, rgb(255, 255, 255))
+    let color = app.theme.anyColor(colors, color(255/255, 255/255, 255/255))
     panel.backgroundColor = color
     panel.fillBackground = true
 
   if node.text.len > 0:
-    let color = app.theme.anyColor(node.colors, rgb(255, 255, 255))
+    let color = app.theme.anyColor(node.colors, color(255/255, 255/255, 255/255))
     var style = app.theme.tokenFontStyle(node.colors)
     if node.styleOverride.getSome(override):
       style.incl override
@@ -126,16 +126,16 @@ proc renderVisualNode*(self: AstDocumentEditor, app: App, node: VisualNode, sele
     panel.fillBackground = true
     panel.allowAlpha = true
     panel.drawBorder = true
-    panel.backgroundColor = app.theme.color("foreground", rgb(175, 175, 255)).withAlpha(0.25)
-    panel.foregroundColor = app.theme.color("foreground", rgb(175, 175, 255))
+    panel.backgroundColor = app.theme.color("foreground", color(175/255, 175/255, 255/255)).withAlpha(0.25)
+    panel.foregroundColor = app.theme.color("foreground", color(175/255, 175/255, 255/255))
 
   # Draw outline around node it is being refered to by the selected node
   elif node.node != nil and self.node.reff == node.node.id:
     panel.fillBackground = true
     panel.allowAlpha = true
     panel.drawBorder = true
-    panel.backgroundColor = app.theme.color("inputValidation.infoBorder", rgb(175, 255, 200)).withAlpha(0.25)
-    panel.foregroundColor = app.theme.color("inputValidation.infoBorder", rgb(175, 255, 200))
+    panel.backgroundColor = app.theme.color("inputValidation.infoBorder", color(175/255, 255/255, 200/255)).withAlpha(0.25)
+    panel.foregroundColor = app.theme.color("inputValidation.infoBorder", color(175/255, 255/255, 200/255))
 
 proc renderBlockIndent(editor: AstDocumentEditor, app: App, layout: NodeLayout, node: AstNode, offset: Vec2, widget: WPanel) =
   let indentLineWidth = editor.configProvider.getValue("ast.indent-line-width", 1.0)
@@ -169,7 +169,7 @@ proc renderVisualNodeLayout*(self: AstDocumentEditor, app: App, node: AstNode, b
   contentWidget.add widget
 
   # Draw diagnostics
-  let errorColor = app.theme.color("editorError.foreground", rgb(255, 0, 0))
+  let errorColor = app.theme.color("editorError.foreground", color(255/255, 0/255, 0/255))
   for (id, visualRange) in layout.nodeToVisualNode.pairs:
     if ctx.diagnosticsPerNode.contains(id):
       var foundErrors = false
@@ -195,9 +195,9 @@ proc renderVisualNodeLayout*(self: AstDocumentEditor, app: App, node: AstNode, b
     var panel = WPanel(left: bounds.x, right: bounds.xw, top: bounds.y, bottom: bounds.yh,
       flags: &{AllowAlpha, FillBackground, DrawBorder},
       backgroundColor: app.theme.color("inputValidation.warningBorder", color(1, 1, 1)).withAlpha(0.25),
-      foregroundColor: app.theme.color("inputValidation.warningBorder", rgb(255, 255, 255)))
+      foregroundColor: app.theme.color("inputValidation.warningBorder", color(255/255, 255/255, 255/255)))
     widget.add panel
-    # renderCtx.boxy.strokeRect(bounds, app.theme.color("foreground", rgb(255, 255, 255)), 2)
+    # renderCtx.boxy.strokeRect(bounds, app.theme.color("foreground", color(255/255, 255/255, 255/255)), 2)
 
     # let value = ctx.getValue(self.node)
     # let typ = ctx.computeType(self.node)
@@ -205,11 +205,11 @@ proc renderVisualNodeLayout*(self: AstDocumentEditor, app: App, node: AstNode, b
     # let parentBounds = visualRange.parent.absoluteBounds
 
     # var last = rect(vec2(contentBounds.xw - 25, parentBounds.y + offset.y), vec2())
-    # last = renderCtx.drawText(last.xy, $typ, app.theme.tokenColor("storage.type", rgb(255, 255, 255)), pivot = vec2(1, 0))
+    # last = renderCtx.drawText(last.xy, $typ, app.theme.tokenColor("storage.type", color(255/255, 255/255, 255/255)), pivot = vec2(1, 0))
 
     # if value.getSome(value) and value.kind != vkVoid and value.kind != vkBuiltinFunction and value.kind != vkAstFunction and value.kind != vkError:
-    #   last = renderCtx.drawText(last.xy, " : ", app.theme.tokenColor("punctuation", rgb(255, 255, 255)), pivot = vec2(1, 0))
-    #   last = renderCtx.drawText(last.xy, $value, app.theme.tokenColor("string", rgb(255, 255, 255)), pivot = vec2(1, 0))
+    #   last = renderCtx.drawText(last.xy, " : ", app.theme.tokenColor("punctuation", color(255/255, 255/255, 255/255)), pivot = vec2(1, 0))
+    #   last = renderCtx.drawText(last.xy, $value, app.theme.tokenColor("string", color(255/255, 255/255, 255/255)), pivot = vec2(1, 0))
 
   self.renderBlockIndent(app, layout, node, offset, widget)
 
@@ -279,8 +279,8 @@ proc renderCompletionList*(self: AstDocumentEditor, app: App, widget: WPanel, pa
   widget.right = widget.left + totalWidth
   widget.bottom = widget.top + renderedCompletions.float * totalLineHeight
 
-  let selectionColor = app.theme.color("list.activeSelectionBackground", rgb(200, 200, 200))
-  let sepColor = app.theme.color("list.inactiveSelectionForeground", rgb(175, 175, 175))
+  let selectionColor = app.theme.color("list.activeSelectionBackground", color(200/255, 200/255, 200/255))
+  let sepColor = app.theme.color("list.inactiveSelectionForeground", color(175/255, 175/255, 175/255))
 
   var newRenderedItems: seq[tuple[index: int, widget: WWidget]]
 
@@ -296,7 +296,7 @@ proc renderCompletionList*(self: AstDocumentEditor, app: App, widget: WPanel, pa
 
     let entry = entries[k]
 
-    let nameColor = app.theme.tokenColor(entry.color1, rgb(255, 255, 255))
+    let nameColor = app.theme.tokenColor(entry.color1, color(255/255, 255/255, 255/255))
     let nameWidget = createPartWidget(entry.name, 0.0, entry.name.len.float * charWidth, totalLineHeight, nameColor, frameIndex)
     nameWidget.style.fontStyle = entry.nameStyle
     lineWidget.add(nameWidget)
@@ -304,7 +304,7 @@ proc renderCompletionList*(self: AstDocumentEditor, app: App, widget: WPanel, pa
     var tempWidget = createPartWidget(" : ", nameWidth, 3 * charWidth, totalLineHeight, sepColor, frameIndex)
     lineWidget.add(tempWidget)
 
-    let typeColor = app.theme.tokenColor(entry.color2, rgb(255, 255, 255))
+    let typeColor = app.theme.tokenColor(entry.color2, color(255/255, 255/255, 255/255))
     let typeWidget = createPartWidget(entry.typ, tempWidget.right, entry.typ.len.float * charWidth, totalLineHeight, typeColor, frameIndex)
     lineWidget.add(typeWidget)
 
@@ -312,7 +312,7 @@ proc renderCompletionList*(self: AstDocumentEditor, app: App, widget: WPanel, pa
     lineWidget.add(tempWidget)
 
     if entry.value.len > 0:
-      let valueColor = app.theme.tokenColor(entry.color3, rgb(255, 255, 255))
+      let valueColor = app.theme.tokenColor(entry.color3, color(255/255, 255/255, 255/255))
       var valueWidget = createPartWidget(entry.value, -entry.value.len.float * charWidth, 0, totalLineHeight, valueColor, frameIndex)
       valueWidget.anchor.min.x = 1
       valueWidget.anchor.max.x = 1
@@ -332,9 +332,9 @@ proc renderCompletions*(self: AstDocumentEditor, app: App, widget: WPanel, frame
   if self.completions.len == 0:
     return
 
-  let matchColor = app.theme.color("editor.findMatchBorder", rgb(150, 150, 220))
-  let backgroundColor = app.theme.color("panel.background", rgb(30, 30, 30))
-  let borderColor = app.theme.color("panel.border", rgb(255, 255, 255))
+  let matchColor = app.theme.color("editor.findMatchBorder", color(150/255, 150/255, 220/255))
+  let backgroundColor = app.theme.color("panel.background", color(30/255, 30/255, 30/255))
+  let borderColor = app.theme.color("panel.border", color(255/255, 255/255, 255/255))
 
   # Render outline around all nodes which reference the selected symbol in the completion list
   for (layout, offset) in self.lastLayouts:
@@ -364,7 +364,7 @@ proc renderCompletions*(self: AstDocumentEditor, app: App, widget: WPanel, frame
 method updateWidget*(self: AstDocumentEditor, app: App, widget: WPanel, completionsPanel: WPanel, frameIndex: int) =
   let totalLineHeight = app.platform.totalLineHeight
 
-  let textColor = app.theme.color("editor.foreground", rgb(225, 200, 200))
+  let textColor = app.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
 
   var headerPanel: WPanel
   var headerPart1Text: WText
@@ -397,8 +397,8 @@ method updateWidget*(self: AstDocumentEditor, app: App, widget: WPanel, completi
     headerPanel.bottom = totalLineHeight
     contentPanel.top = totalLineHeight
 
-    let color = if self.active: app.theme.color("tab.activeBackground", rgb(45, 45, 60))
-    else: app.theme.color("tab.inactiveBackground", rgb(45, 45, 45))
+    let color = if self.active: app.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255))
+    else: app.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
     headerPanel.updateBackgroundColor(color, frameIndex)
 
     let workspaceName = self.document.workspace.map(wf => " - " & wf.name).get("")
@@ -417,7 +417,7 @@ method updateWidget*(self: AstDocumentEditor, app: App, widget: WPanel, completi
   widget.lastHierarchyChange = max(widget.lastHierarchyChange, headerPanel.lastHierarchyChange)
 
   contentPanel.updateBackgroundColor(
-    if self.active: app.theme.color("editor.background", rgb(25, 25, 40)) else: app.theme.color("editor.background", rgb(25, 25, 25)) * 0.75,
+    if self.active: app.theme.color("editor.background", color(25/255, 25/255, 40/255)) else: app.theme.color("editor.background", color(25/255, 25/255, 25/255)) * 0.75,
     frameIndex)
 
   let textEditorDirty = if self.textEditor.isNil: false else: self.textEditor.dirty

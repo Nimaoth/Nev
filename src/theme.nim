@@ -52,10 +52,10 @@ proc getCascading[T](table: var Table[string, T], key: string, default: T): T =
     return table.getCascading(key[0..<index], default)
   return default
 
-proc color*(theme: Theme, name: string, default: SomeColor = Color(r: 0, g: 0, b: 0, a: 1)): Color =
+proc color*(theme: Theme, name: string, default: Color = Color(r: 0, g: 0, b: 0, a: 1)): Color =
   return theme.colors.getCascading(name, default.color)
 
-proc color*(theme: Theme, names: seq[string], default: SomeColor = Color(r: 0, g: 0, b: 0, a: 1)): Color =
+proc color*(theme: Theme, names: seq[string], default: Color = Color(r: 0, g: 0, b: 0, a: 1)): Color =
   for name in names:
     if theme.colors.contains(name):
       return theme.colors[name]
@@ -92,7 +92,7 @@ proc `[]`(cache: StyleCache, name: cstring): Color =
     proc impl(cache: StyleCache, name: cstring): Color {.importjs: "#[#]".}
     return impl(cache, name)
 
-proc tokenColor*(theme: Theme, name: cstring, default: SomeColor = Color(r: 0, g: 0, b: 0, a: 1)): Color =
+proc tokenColor*(theme: Theme, name: cstring, default: Color = Color(r: 0, g: 0, b: 0, a: 1)): Color =
   if theme.tokenStyleCache.contains(name):
     return theme.tokenStyleCache[name]
   if theme.tokenStyleCache.containsEmpty(name):
@@ -106,10 +106,10 @@ proc tokenColor*(theme: Theme, name: cstring, default: SomeColor = Color(r: 0, g
 
   return res.get default.color
 
-proc tokenColor*(theme: Theme, name: string, default: SomeColor = Color(r: 0, g: 0, b: 0, a: 1)): Color =
+proc tokenColor*(theme: Theme, name: string, default: Color = Color(r: 0, g: 0, b: 0, a: 1)): Color =
   return theme.tokenColors.getCascading(name, Style()).foreground.get default.color
 
-proc tokenColor*(theme: Theme, names: seq[string], default: SomeColor = Color(r: 0, g: 0, b: 0, a: 1)): Color =
+proc tokenColor*(theme: Theme, names: seq[string], default: Color = Color(r: 0, g: 0, b: 0, a: 1)): Color =
   for name in names:
     if theme.tokenColors.contains(name):
       let style = theme.tokenColors[name]
@@ -117,7 +117,7 @@ proc tokenColor*(theme: Theme, names: seq[string], default: SomeColor = Color(r:
         return style.foreground.get
   return default.color
 
-proc anyColor*(theme: Theme, names: seq[string], default: SomeColor = Color(r: 0, g: 0, b: 0, a: 1)): Color =
+proc anyColor*(theme: Theme, names: seq[string], default: Color = Color(r: 0, g: 0, b: 0, a: 1)): Color =
   for name in names:
     if name.startsWith "#":
       return parseHexVar name
@@ -130,7 +130,7 @@ proc anyColor*(theme: Theme, names: seq[string], default: SomeColor = Color(r: 0
 
   return default.color
 
-proc tokenBackgroundColor*(theme: Theme, name: string, default: SomeColor = Color(r: 0, g: 0, b: 0, a: 1)): Color =
+proc tokenBackgroundColor*(theme: Theme, name: string, default: Color = Color(r: 0, g: 0, b: 0, a: 1)): Color =
   return (theme.tokenColors.getCascading(name, Style())).background.get default.color
 
 proc tokenFontStyle*(theme: Theme, name: string): set[FontStyle] =
@@ -142,7 +142,7 @@ proc tokenFontStyle*(theme: Theme, names: seq[string]): set[FontStyle] =
       return theme.tokenColors[name].fontStyle
   return {}
 
-proc anyColor*(theme: Theme, color: string, default: SomeColor = Color(r: 0, g: 0, b: 0, a: 1)): Color =
+proc anyColor*(theme: Theme, color: string, default: Color = Color(r: 0, g: 0, b: 0, a: 1)): Color =
   return if color.startsWith "#":
     parseHexVar color
   elif color.startsWith "&":

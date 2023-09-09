@@ -2,7 +2,7 @@ discard """
   action: "run"
   cmd: "nim $target --nimblePath:./nimbleDir/simplePkgs $options $file"
   timeout: 60
-  targets: "c js"
+  targets: "c js vcc"
   matrix: ""
 """
 
