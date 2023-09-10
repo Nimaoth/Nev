@@ -1,9 +1,10 @@
-import events, input, vmath, bumpy, event
+import events, input, vmath, bumpy, event, id
 
 from scripting_api import EditorId, newEditorId
 
 type Popup* = ref object of RootObj
   id*: EditorId
+  userId*: Id
   eventHandler*: EventHandler
   lastBounds*: Rect
   onMarkedDirty*: Event[void]
@@ -23,6 +24,7 @@ proc resetDirty*(self: Popup) =
 
 proc init*(self: Popup) =
   self.id = newEditorId()
+  self.userId = newId()
 
 method getEventHandlers*(self: Popup): seq[EventHandler] {.base.} =
   return @[self.eventHandler]

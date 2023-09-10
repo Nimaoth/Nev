@@ -26,7 +26,10 @@ macro defineBitFlag*(body: untyped): untyped =
       flags = (flags.uint32 or (1.uint32 shl flag.uint32)).flagsName
     func excl*(flags: var flagsName, flag: flagName) {.inline.} =
       flags = (flags.uint32 and not (1.uint32 shl flag.uint32)).flagsName
-    func `or`*(a: flagsName, b: flagsName): flagsName {.inline.} = (a.uint32 or b.uint32).flagsName
+    func `-`*(a: flagsName, b: flagsName): flagsName {.inline.} = (a.uint32 and not b.uint32).flagsName
+    func `-`*(a: flagsName, b: flagName): flagsName {.inline.} = (a.uint32 and not (1.uint32 shl b.uint32)).flagsName
+    func `+`*(a: flagsName, b: flagsName): flagsName {.inline.} = (a.uint32 or b.uint32).flagsName
+    func `+`*(a: flagsName, b: flagName): flagsName {.inline.} = (a.uint32 or (1.uint32 shl b.uint32)).flagsName
 
     func `==`*(a, b: flagsName): bool {.borrow.}
 
@@ -64,12 +67,26 @@ defineBitFlag:
     MaskContent
     DrawText
     LayoutVertical
+    LayoutVerticalReverse
     LayoutHorizontal
+    LayoutHorizontalReverse
     OverlappingChildren
     MouseHover
     AnimateBounds
+    AnimatePosition
+    AnimateSize
 
 type
+  UIUserIdKind* = enum None, Int, UniqueID
+  UIUserId* = object
+    case kind*: UIUserIdKind
+    of Int:
+      intValue1*: int32
+      intValue2*: int32
+    of UniqueID:
+      idValue*: Id
+    else: discard
+
   UINode* = ref object
     parent: UINode
     first: UINode
@@ -229,7 +246,7 @@ func `lw=`*(node: UINode, value: float32) {.inline.} = node.boundsAbsolute.w = v
 func `lh=`*(node: UINode, value: float32) {.inline.} = node.boundsAbsolute.h = value
 
 proc textWidth*(builder: UINodeBuilder, textLen: int): float32 {.inline.} = textLen.float32 * builder.charWidth
-proc textHeight*(builder: UINodeBuilder): float32 {.inline.} = builder.lineHeight + builder.lineGap
+proc textHeight*(builder: UINodeBuilder): float32 {.inline.} = round(builder.lineHeight + builder.lineGap)
 
 proc unpoolNode*(builder: UINodeBuilder, userId: var Option[Id]): UINode
 proc findNodeContaining*(node: UINode, pos: Vec2, predicate: proc(node: UINode): bool): Option[UINode]
@@ -253,6 +270,8 @@ proc newNodeBuilder*(): UINodeBuilder =
   var id = Id.none
   result.root = result.unpoolNode(userId = id)
   result.animatingNodes = initHashSet[Id]()
+
+proc currentParent*(builder: UINodeBuilder): UINode = builder.currentParent
 
 proc hovered*(builder: UINodeBuilder, node: UINode): bool = node.some == builder.hoveredNode
 
@@ -370,7 +389,7 @@ iterator rchildren*(node: UINode): UINode =
 proc transformRect*(rect: Rect, src: UINode, dst: UINode): Rect =
   result = rect
   var curr = src
-  while curr.parent != dst:
+  while curr != dst:
     result = result + curr.xy
     curr = curr.parent
 
@@ -505,33 +524,36 @@ proc preLayout*(builder: UINodeBuilder, node: UINode) =
 
   if LayoutHorizontal in parent.flags:
     if node.prev.isNotNil:
-      node.x = node.prev.x + node.prev.w
+      node.x = (node.prev.x + node.prev.w).round
 
   if LayoutVertical in parent.flags:
     if node.prev.isNotNil:
-      node.y = node.prev.y + node.prev.h
+      node.y = (node.prev.y + node.prev.h).round
+  elif LayoutVerticalReverse in parent.flags:
+    if node.prev.isNotNil:
+      node.y = (node.prev.y + node.prev.h).round
 
   if node.flags.all &{SizeToContentX, FillX}:
     if DrawText in node.flags:
-      node.w = max(parent.w - node.x, builder.textWidth(node.mTextRuneLen))
+      node.w = max(parent.w - node.x, builder.textWidth(node.mTextRuneLen)).round
     else:
-      node.w = parent.w - node.x
+      node.w = (parent.w - node.x).round
   elif SizeToContentX in node.flags:
     if DrawText in node.flags:
-      node.w = builder.textWidth(node.mTextRuneLen)
+      node.w = builder.textWidth(node.mTextRuneLen).round
   elif FillX in node.flags:
-    node.w = parent.w - node.x
+    node.w = (parent.w - node.x).round
 
   if node.flags.all &{SizeToContentY, FillY}:
     if DrawText in node.flags:
-      node.h = max(parent.h - node.y, builder.textHeight)
+      node.h = max(parent.h - node.y, builder.textHeight).round
     else:
-      node.h = parent.h - node.y
+      node.h = (parent.h - node.y).round
   elif SizeToContentY in node.flags:
     if DrawText in node.flags:
-      node.h = builder.textHeight
+      node.h = builder.textHeight.round
   elif FillY in node.flags:
-    node.h = parent.h - node.y
+    node.h = (parent.h - node.y).round
 
 proc relayout*(builder: UINodeBuilder, node: UINode) =
   builder.preLayout node
@@ -540,11 +562,11 @@ proc relayout*(builder: UINodeBuilder, node: UINode) =
 proc postLayoutChild*(builder: UINodeBuilder, node: UINode, child: UINode) =
   var recurse = false
   if SizeToContentX in node.flags and child.xw > node.w:
-    node.w = child.xw
+    node.w = child.xw.round
     recurse = true
 
   if SizeToContentY in node.flags and child.yh > node.h:
-    node.h = child.yh
+    node.h = child.yh.round
     recurse = true
 
 proc postLayout*(builder: UINodeBuilder, node: UINode) =
@@ -564,26 +586,26 @@ proc postLayout*(builder: UINodeBuilder, node: UINode) =
       builder.textWidth(node.mTextRuneLen)
     else: 0
 
-    node.w = max(node.w, max(childrenWidth, strWidth))
+    node.w = max(node.w, max(childrenWidth, strWidth)).round
 
   elif FillX in node.flags:
     assert node.parent.isNotNil
-    node.w = node.parent.w - node.x
+    node.w = (node.parent.w - node.x).round
 
   if SizeToContentY in node.flags:
     let childrenHeight = if node.last.isNotNil:
-      node.last.y + node.last.h
+      node.last.y + node.last.h.round
     else: 0
 
     let strHeight = if DrawText in node.flags:
       builder.textHeight
     else: 0
 
-    node.h = max(node.h, max(childrenHeight, strHeight))
+    node.h = max(node.h, max(childrenHeight, strHeight)).round
 
   elif FillY in node.flags:
     assert node.parent.isNotNil
-    node.h = node.parent.h - node.y
+    node.h = (node.parent.h - node.y).round
 
   if node.parent.isNotNil:
     builder.postLayoutChild(node.parent, node)
@@ -755,7 +777,7 @@ proc prepareNode(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[st
 
   node.flags = inFlags
   if inAdditionalFlags.isSome:
-    node.flags = node.flags or inAdditionalFlags.get
+    node.flags = node.flags + inAdditionalFlags.get
 
   if inText.isSome: node.text = inText.get
   elif node.text.len != 0: node.text = ""
@@ -778,10 +800,10 @@ proc prepareNode(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[st
 
   builder.preLayout(node)
 
-  if inX.isSome: node.x = inX.get
-  if inY.isSome: node.y = inY.get
-  if inW.isSome: node.w = inW.get
-  if inH.isSome: node.h = inH.get
+  if inX.isSome: node.x = inX.get.round
+  if inY.isSome: node.y = inY.get.round
+  if inW.isSome: node.w = inW.get.round
+  if inH.isSome: node.h = inH.get.round
 
   builder.currentParent = node
   builder.currentChild = nil
@@ -813,7 +835,9 @@ proc postProcessNodeBackwards(builder: UINodeBuilder, node: UINode, offsetX: flo
     node.contentDirty = true
     node.mLastContentChange = builder.frameIndex
 
-  if AnimateBounds in node.flags:
+  let wasAnimating = node.id in builder.animatingNodes
+
+  if AnimateBounds in node.flags or node.flags.all &{AnimatePosition, AnimateSize}:
     if node.boundsActual == node.bounds:
       builder.animatingNodes.excl node.id
     else:
@@ -824,6 +848,37 @@ proc postProcessNodeBackwards(builder: UINodeBuilder, node: UINode, offsetX: flo
         node.boundsActual.w = node.bounds.w
         node.boundsActual.h = node.bounds.h
       builder.animatingNodes.incl node.id
+
+  elif AnimatePosition in node.flags:
+    if node.boundsActual.xy == node.bounds.xy:
+      builder.animatingNodes.excl node.id
+    else:
+      let progress = node.boundsLerpSpeed * builder.animationSpeedModifier * builder.frameTime
+      node.boundsActual.x = node.boundsActual.x.mix(node.bounds.x, progress)
+      node.boundsActual.y = node.boundsActual.y.mix(node.bounds.y, progress)
+      if node.boundsActual.xy.almostEqual(node.bounds.xy, 1):
+        node.boundsActual.x = node.bounds.x
+        node.boundsActual.y = node.bounds.y
+      builder.animatingNodes.incl node.id
+
+    node.boundsActual.w = node.bounds.w
+    node.boundsActual.h = node.bounds.h
+
+  elif AnimateSize in node.flags:
+    if node.boundsActual.wh == node.bounds.wh:
+      builder.animatingNodes.excl node.id
+    else:
+      let progress = node.boundsLerpSpeed * builder.animationSpeedModifier * builder.frameTime
+      node.boundsActual.w = node.boundsActual.w.mix(node.bounds.w, progress)
+      node.boundsActual.h = node.boundsActual.h.mix(node.bounds.h, progress)
+      if node.boundsActual.wh.almostEqual(node.bounds.wh, 1):
+        node.boundsActual.w = node.bounds.w
+        node.boundsActual.h = node.bounds.h
+      builder.animatingNodes.incl node.id
+
+    node.boundsActual.x = node.bounds.x
+    node.boundsActual.y = node.bounds.y
+
   else:
     node.boundsActual.x = node.bounds.x
     node.boundsActual.y = node.bounds.y
@@ -836,6 +891,11 @@ proc postProcessNodeBackwards(builder: UINodeBuilder, node: UINode, offsetX: flo
 
   let positionDirty = node.lx != newPosAbsoluteX or node.ly != newPosAbsoluteY
   let sizeDirty = node.lw != node.boundsActual.w or node.lh != node.boundsActual.h
+
+  let animatingDirty = wasAnimating != (node.id in builder.animatingNodes)
+  if animatingDirty:
+    node.mLastPositionChange = builder.frameIndex
+    node.mLastSizeChange = builder.frameIndex
 
   if positionDirty:
     node.mLastPositionChange = builder.frameIndex
@@ -895,13 +955,13 @@ proc postProcessNodeBackwards(builder: UINodeBuilder, node: UINode, offsetX: flo
     node.mLastContentChange = builder.frameIndex
     node.contentDirty = false
 
-proc postProcessNodeForwards(builder: UINodeBuilder, node: UINode, drawRect = Rect.none) =
-  # node.logi "postProcessNodeForwards ", drawRect
+proc postProcessNodeForwards(builder: UINodeBuilder, node: UINode, inDrawRect = Rect.none) =
+  # node.logi "postProcessNodeForwards ", inDrawRect
 
   stackSize.inc
   defer: stackSize.dec
 
-  if drawRect.isSome and drawRect.get.intersects(node.boundsActual):
+  if inDrawRect.isSome and inDrawRect.get.intersects(node.boundsActual):
     node.mLastDrawInvalidation = builder.frameIndex
     # node.logi "invalidate draw"
 
@@ -910,7 +970,7 @@ proc postProcessNodeForwards(builder: UINodeBuilder, node: UINode, drawRect = Re
     if node.flags.any(&{DrawText, FillBackground}):
       node.drawRect = node.boundsActual.some
 
-  var childDrawRect = (drawRect or node.drawRect) - node.xy.some
+  var childDrawRect = (inDrawRect or node.drawRect) - node.xy.some
 
   for _, c in node.children:
     builder.postProcessNodeForwards(c, childDrawRect)

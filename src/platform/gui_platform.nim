@@ -186,6 +186,7 @@ method deinit*(self: GuiPlatform) =
   self.window.close()
 
 method requestRender*(self: GuiPlatform, redrawEverything = false) =
+  self.requestedRender = true
   self.redrawEverything = self.redrawEverything or redrawEverything
 
 proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font =

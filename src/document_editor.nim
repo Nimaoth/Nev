@@ -1,11 +1,12 @@
 import std/[json]
-import document, events, event, input, custom_logger, config_provider
+import document, events, event, input, custom_logger, config_provider, id
 import vmath, bumpy
 
 from scripting_api import EditorId, newEditorId
 
 type DocumentEditor* = ref object of RootObj
   id*: EditorId
+  userId*: Id
   eventHandler*: EventHandler
   renderHeader*: bool
   fillAvailableSpace*: bool
@@ -18,6 +19,7 @@ func id*(self: DocumentEditor): EditorId = self.id
 
 proc init*(self: DocumentEditor) =
   self.id = newEditorId()
+  self.userId = newId()
 
   self.renderHeader = true
   self.fillAvailableSpace = true

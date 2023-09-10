@@ -110,6 +110,8 @@ rend.init()
 
 import ui/node
 
+var renderedLastFrame = false
+
 proc runApp(): Future[void] {.async.} =
   var ed = await newEditor(backend.get, rend)
 
@@ -144,7 +146,8 @@ proc runApp(): Future[void] {.async.} =
 
       let size = if rend.GuiPlatform.showDrawnNodes: rend.size * vec2(0.5, 1) else: rend.size
       var rerender = false
-      if eventCounter > 0 or size != rend.builder.root.boundsActual.wh:
+      if eventCounter > 0 or size != rend.builder.root.boundsActual.wh or rend.requestedRender:
+        rend.requestedRender = false
         rend.builder.beginFrame(size)
         ed.updateWidgetTree(frameIndex)
         rend.builder.endFrame()
@@ -155,6 +158,8 @@ proc runApp(): Future[void] {.async.} =
         rerender = true
 
       updateTime = updateTimer.elapsed.ms
+
+      renderedLastFrame = rerender
 
       if rerender:
         let renderTimer = startTimer()
