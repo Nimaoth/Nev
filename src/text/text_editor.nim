@@ -29,6 +29,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
   platform*: Platform
   document*: TextDocument
 
+  cursorsId*: Id
+
   configProvider: ConfigProvider
 
   selectionsInternal: Selections
@@ -44,8 +46,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   targetColumn: int
   hideCursorWhenInactive*: bool
-  cursorVisible*: bool
-  blinkCursor: bool
+  cursorVisible*: bool = true
+  blinkCursor: bool = true
   blinkCursorTask: DelayedTask
 
   completionEventHandler: EventHandler
@@ -1574,8 +1576,7 @@ proc createTextEditorInstance(): TextDocumentEditor =
   when defined(js):
     {.emit: [editor, " = jsCreateWithPrototype(editor_text_prototype, ", editor, ");"].}
     # This " is here to fix syntax highlighting
-  editor.cursorVisible = true
-  editor.blinkCursor = true
+  editor.cursorsId = newId()
   return editor
 
 proc newTextEditor*(document: TextDocument, app: AppInterface, configProvider: ConfigProvider): TextDocumentEditor =

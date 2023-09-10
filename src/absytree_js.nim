@@ -79,9 +79,9 @@ proc doRender(timestep: float) =
 
     frameTime = gEditor.frameTimer.elapsed.ms
 
-  # if frameTime > 20:
+  if frameTime > 5:
   # if logFrameTime:
-  echo fmt"Frame: {frameTime:>5.2}ms (u: {updateTime:>5.2}ms, l: {layoutTime:>5.2}ms, r: {renderTime:>5.2}ms)"
+    echo fmt"Frame: {frameTime:>5.2}ms (u: {updateTime:>5.2}ms, l: {layoutTime:>5.2}ms, r: {renderTime:>5.2}ms)"
 
 
 proc requestRender(redrawEverything = false) =

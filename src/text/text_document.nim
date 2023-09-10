@@ -239,7 +239,7 @@ func len*(line: StyledLine): int =
   for p in line.parts:
     result += p.text.len
 
-proc runeIndex*(line: var StyledLine, index: int): RuneIndex =
+proc runeIndex*(line: StyledLine, index: int): RuneIndex =
   var i = 0
   for part in line.parts.mitems:
     if index >= i and index < i + part.text.len:
@@ -248,7 +248,7 @@ proc runeIndex*(line: var StyledLine, index: int): RuneIndex =
     i += part.text.len
     result += part.text.toOpenArray.runeLen
 
-proc runeLen*(line: var StyledLine): RuneCount =
+proc runeLen*(line: StyledLine): RuneCount =
   for part in line.parts.mitems:
     result += part.text.toOpenArray.runeLen
 

@@ -185,3 +185,6 @@ proc mix*[T: SomeFloat](a: var Rect, b: Rect, v: T) =
 
 proc almostEqual*(a, b: Rect, epsilon: float32): bool =
   result = abs(a.x - b.x) <= epsilon and abs(a.y - b.y) <= epsilon and abs(a.w - b.w) <= epsilon and abs(a.h - b.h) <= epsilon
+
+proc almostEqual*(a, b: Vec2, epsilon: float32): bool =
+  result = abs(a.x - b.x) <= epsilon and abs(a.y - b.y) <= epsilon

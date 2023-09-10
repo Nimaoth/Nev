@@ -88,6 +88,7 @@ method deinit*(self: TerminalPlatform) =
   showCursor()
 
 method requestRender*(self: TerminalPlatform, redrawEverything = false) =
+  self.requestedRender = true
   self.redrawEverything = self.redrawEverything or redrawEverything
 
 method size*(self: TerminalPlatform): Vec2 = vec2(self.buffer.width.float, self.buffer.height.float)

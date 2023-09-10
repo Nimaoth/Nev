@@ -6,8 +6,6 @@ import vmath, bumpy, chroma
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
 {.used.}
 
-func withAlpha(color: Color, alpha: float32): Color = color(color.r, color.g, color.b, alpha)
-
 method updateWidget*(self: AstSymbolSelectorItem, app: App, widget: WPanel, frameIndex: int) =
   let charWidth = app.platform.charWidth
   let totalLineHeight = app.platform.totalLineHeight
