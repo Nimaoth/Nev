@@ -19,7 +19,14 @@ else:
 
 proc updateBaseIndexAndScrollOffset*(height: float, previousBaseIndex: var int, scrollOffset: var float, lines: int, totalLineHeight: float, targetLine: Option[int])
 
-proc renderLine*(builder: UINodeBuilder, app: App, line: StyledLine, lineOriginal: openArray[char], lineId: int32, parentId: Id, curs: Option[int], y: float, sizeToContentX: bool, backgroundColor: Color, textColor: Color): Option[CursorLocationInfo] =
+proc renderLine*(
+  builder: UINodeBuilder, app: App,
+  line: StyledLine, lineOriginal: openArray[char],
+  lineId: int32, parentId: Id, curs: Option[int], cursorLine: int,
+  lineNumber: int, lineNumbers: LineNumbers,
+  y: float, sizeToContentX: bool, lineNumberTotalWidth: float, lineNumberWidth: float,
+  backgroundColor: Color, textColor: Color): Option[CursorLocationInfo] =
+
   var flags = &{LayoutVertical, FillX, SizeToContentY}
   var flagsInner = &{LayoutHorizontal, FillX, SizeToContentY}
   if sizeToContentX:
@@ -33,9 +40,30 @@ proc renderLine*(builder: UINodeBuilder, app: App, line: StyledLine, lineOrigina
     var startRune = 0.RuneCount
     var lastPartXW: float32 = 0
 
-    let lineIdStr = $lineId & ": "
-    builder.panel(&{DrawText, FillBackground, SizeToContentX, SizeToContentY}, text = lineIdStr, backgroundColor = backgroundColor, textColor = textColor):
-      lastPartXW = currentNode.bounds.xw
+    # let lineIdStr = $lineId & ": "
+    # builder.panel(&{DrawText, FillBackground, SizeToContentX, SizeToContentY}, text = lineIdStr, backgroundColor = backgroundColor, textColor = textColor):
+    #   lastPartXW = currentNode.bounds.xw
+
+    block:
+      var lineNumberText = ""
+      var lineNumberX = 0.float
+      if lineNumbers != LineNumbers.None and cursorLine == lineNumber:
+        lineNumberText = $lineNumber
+      else:
+        case lineNumbers
+        of LineNumbers.Absolute:
+          lineNumberText = $lineNumber
+          lineNumberX = max(0.0, lineNumberWidth - lineNumberText.len.float * builder.charWidth)
+        of LineNumbers.Relative:
+          lineNumberText = $(lineNumber - cursorLine).abs
+          lineNumberX = max(0.0, lineNumberWidth - lineNumberText.len.float * builder.charWidth)
+        else:
+          discard
+
+      if lineNumberText.len > 0:
+        builder.panel(&{UINodeFlag.FillBackground, SizeToContentY}, w = lineNumberTotalWidth, backgroundColor = backgroundColor):
+          builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = lineNumberText, x = lineNumberX, textColor = textColor):
+            lastPartXW = currentNode.bounds.xw
 
     for part in line.parts:
       defer:
@@ -97,6 +125,9 @@ proc createLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, bac
   else:
     flags.incl FillY
 
+  let lineNumbers = self.lineNumbers.get getOption[LineNumbers](app, "editor.text.line-numbers", LineNumbers.Absolute)
+  let charWidth = builder.charWidth
+
   # builder.panel(&{FillX, LayoutVertical}, flags += (if sizeToContentY: &{SizeToContentY} else: &{FillY})):
   builder.panel(flags + MaskContent + OverlappingChildren):
     let linesPanel = currentNode
@@ -110,11 +141,30 @@ proc createLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, bac
       let height = currentNode.bounds.h
       var y = self.scrollOffset
 
+      # line numbers
+      let maxLineNumber = case lineNumbers
+        of LineNumbers.Absolute: self.previousBaseIndex + ((height - self.scrollOffset) / builder.textHeight).int
+        of LineNumbers.Relative: 99
+        else: 0
+      let maxLineNumberLen = ($maxLineNumber).len + 1
+      let cursorLine = self.selection.last.line
+
+      let lineNumberPadding = charWidth
+      let lineNumberBounds = if lineNumbers != LineNumbers.None:
+        vec2(maxLineNumberLen.float32 * charWidth, 0)
+      else:
+        vec2()
+
+      let lineNumberWidth = if lineNumbers != LineNumbers.None:
+        (lineNumberBounds.x + lineNumberPadding).ceil
+      else:
+        0.0
+
       for i in self.previousBaseIndex..self.document.lines.high:
         let column = if cursor.line == i: cursor.column.some else: int.none
         let line = self.getStyledText i
 
-        if builder.renderLine(app, line, self.document.lines[i], self.document.lineIds[i], self.userId, column, y, sizeToContentX, backgroundColor, textColor).getSome(cl):
+        if builder.renderLine(app, line, self.document.lines[i], self.document.lineIds[i], self.userId, column, cursorLine, i, lineNumbers, y, sizeToContentX, lineNumberWidth, lineNumberBounds.x, backgroundColor, textColor).getSome(cl):
           result = cl.some
 
         y = builder.currentChild.yh
@@ -130,7 +180,7 @@ proc createLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, bac
         let column = if cursor.line == i: cursor.column.some else: int.none
         let line = self.getStyledText i
 
-        if builder.renderLine(app, line, self.document.lines[i], self.document.lineIds[i], self.userId, column, y, sizeToContentX, backgroundColor, textColor).getSome(cl):
+        if builder.renderLine(app, line, self.document.lines[i], self.document.lineIds[i], self.userId, column, cursorLine, i, lineNumbers, y, sizeToContentX, lineNumberWidth, lineNumberBounds.x, backgroundColor, textColor).getSome(cl):
           result = cl.some
 
         builder.currentChild.y = builder.currentChild.y - builder.currentChild.h
