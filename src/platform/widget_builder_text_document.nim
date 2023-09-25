@@ -3,7 +3,6 @@ import util, app, document_editor, text/text_editor, custom_logger, widgets, pla
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import vmath, bumpy, chroma
 
-import ../../test_lib
 import ui/node
 
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
@@ -20,7 +19,7 @@ else:
 
 proc updateBaseIndexAndScrollOffset*(height: float, previousBaseIndex: var int, scrollOffset: var float, lines: int, totalLineHeight: float, targetLine: Option[int])
 
-proc renderLine*(builder: UINodeBuilder, app: App, line: StyledLine, lineOriginal: openArray[char], curs: Option[int], y: float, sizeToContentX: bool, backgroundColor: Color, textColor: Color): Option[CursorLocationInfo] =
+proc renderLine*(builder: UINodeBuilder, app: App, line: StyledLine, lineOriginal: openArray[char], lineId: int32, parentId: Id, curs: Option[int], y: float, sizeToContentX: bool, backgroundColor: Color, textColor: Color): Option[CursorLocationInfo] =
   var flags = &{LayoutVertical, FillX, SizeToContentY}
   var flagsInner = &{LayoutHorizontal, FillX, SizeToContentY}
   if sizeToContentX:
@@ -29,16 +28,21 @@ proc renderLine*(builder: UINodeBuilder, app: App, line: StyledLine, lineOrigina
 
   # let lineNumbers = self.lineNumbers.get getOption[LineNumbers](app, "editor.text.line-numbers", LineNumbers.Absolute) # """
 
-  builder.panel(flagsInner, y = y):
+  builder.panel(flagsInner, y = y, userId = newSecondaryId(parentId, lineId)):
     var start = 0
     var startRune = 0.RuneCount
     var lastPartXW: float32 = 0
+
+    let lineIdStr = $lineId & ": "
+    builder.panel(&{DrawText, FillBackground, SizeToContentX, SizeToContentY}, text = lineIdStr, backgroundColor = backgroundColor, textColor = textColor):
+      lastPartXW = currentNode.bounds.xw
+
     for part in line.parts:
       defer:
         start += part.text.len
         startRune += part.text.runeLen
 
-      builder.withText(part.text):
+      builder.panel(&{DrawText, FillBackground, SizeToContentX, SizeToContentY}, text = part.text):
         currentNode.backgroundColor = backgroundColor
         currentNode.textColor = if part.scope.len == 0: textColor else: app.theme.tokenColor(part, textColor)
 
@@ -110,7 +114,7 @@ proc createLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, bac
         let column = if cursor.line == i: cursor.column.some else: int.none
         let line = self.getStyledText i
 
-        if builder.renderLine(app, line, self.document.lines[i], column, y, sizeToContentX, backgroundColor, textColor).getSome(cl):
+        if builder.renderLine(app, line, self.document.lines[i], self.document.lineIds[i], self.userId, column, y, sizeToContentX, backgroundColor, textColor).getSome(cl):
           result = cl.some
 
         y = builder.currentChild.yh
@@ -126,7 +130,7 @@ proc createLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, bac
         let column = if cursor.line == i: cursor.column.some else: int.none
         let line = self.getStyledText i
 
-        if builder.renderLine(app, line, self.document.lines[i], column, y, sizeToContentX, backgroundColor, textColor).getSome(cl):
+        if builder.renderLine(app, line, self.document.lines[i], self.document.lineIds[i], self.userId, column, y, sizeToContentX, backgroundColor, textColor).getSome(cl):
           result = cl.some
 
         builder.currentChild.y = builder.currentChild.y - builder.currentChild.h
@@ -149,7 +153,7 @@ proc createLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, bac
       else:
         (float32.none, float32.none, 0, 0, "")
 
-      builder.panel(&{UINodeFlag.FillBackground, AnimatePosition, MaskContent}, x = x, y = y, w = w, h = h, backgroundColor = color(0.7, 0.7, 1), userId = self.cursorsId):
+      builder.panel(&{UINodeFlag.FillBackground, AnimatePosition, MaskContent}, x = x, y = y, w = w, h = h, backgroundColor = color(0.7, 0.7, 1), userId = self.cursorsId.newPrimaryId):
         builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, x = 1, y = 0, text = text, textColor = color(0.4, 0.2, 2))
 
     defer:
@@ -185,7 +189,7 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App) =
     flags.incl FillY
     flagsInner.incl FillY
 
-  builder.panel(flags, userId = self.userId):
+  builder.panel(flags, userId = self.userId.newPrimaryId):
     if dirty or app.platform.redrawEverything or not builder.retain():
       # echo "render text editor ", self.document.filename
 

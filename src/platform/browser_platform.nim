@@ -417,14 +417,14 @@ proc drawNode(builder: UINodeBuilder, platform: BrowserPlatform, element: var El
     css += "color: ".cstring
     css += node.textColor.myToHtmlHex
     css += ";".cstring
-    # if italic:
-    #   {.emit: [result, " += `font-style: italic;`"].} #"""
-    # if bold:
-    #   {.emit: [result, " += `font-weight: bold;`"].} #"""
-    # if wrap:
-    #   {.emit: [result, " += `word-wrap: break-word;`"].} #"""
-    #   {.emit: [result, " += `display: inline-block;`"].} #"""
-    #   {.emit: [result, " += `white-space: pre-wrap;`"].} #"""
+    if TextItalic in node.flags:
+      css += "font-style: italic;".cstring
+    if TextBold in node.flags:
+      css += "font-weight: bold;".cstring
+    if TextWrap in node.flags:
+      css += "word-wrap: break-word;".cstring
+      css += "display: inline-block;".cstring
+      css += "white-space: pre-wrap;".cstring
 
     text = node.text.cstring
     updateText = element.getAttribute("data-text") != text

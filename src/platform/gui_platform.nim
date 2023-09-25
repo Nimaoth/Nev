@@ -45,6 +45,7 @@ proc toInput(button: Button): int64
 proc centerWindowOnMonitor(window: Window, monitor: int)
 proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font
 proc getFont*(self: GuiPlatform, fontSize: float32, style: set[FontStyle]): Font
+proc getFont*(self: GuiPlatform, fontSize: float32, flags: UINodeFlags): Font
 
 method init*(self: GuiPlatform) =
   self.cachedImages = newLruCache[string, string](1000, true)
@@ -208,6 +209,16 @@ proc getFont*(self: GuiPlatform, fontSize: float32, style: set[FontStyle]): Font
   if Bold in style:
     return self.getFont(self.fontBold, fontSize)
   return self.getFont(self.fontRegular, fontSize)
+
+proc getFont*(self: GuiPlatform, fontSize: float32, flags: UINodeFlags): Font =
+  if TextItalic in flags and TextBold in flags:
+    return self.getFont(self.fontBoldItalic, fontSize)
+  if TextItalic in flags:
+    return self.getFont(self.fontItalic, fontSize)
+  if TextBold in flags:
+    return self.getFont(self.fontBold, fontSize)
+  return self.getFont(self.fontRegular, fontSize)
+
 
 method size*(self: GuiPlatform): Vec2 =
   let size = self.window.size
@@ -422,8 +433,9 @@ proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offse
       imageId = $newId()
       platform.cachedImages[key] = imageId
 
+      # todo: font size scaling
       # let font = renderer.getFont(renderer.ctx.fontSize * (1 + self.fontSizeIncreasePercent), self.style.fontStyle)
-      let font = platform.getFont(platform.ctx.fontSize, {}) # todo: add font style support
+      let font = platform.getFont(platform.ctx.fontSize, node.flags)
 
       const wrap = false
       let wrapBounds = if wrap: vec2(node.boundsActual.w, node.boundsActual.h) else: vec2(0, 0)

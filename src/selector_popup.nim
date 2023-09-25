@@ -1,6 +1,7 @@
-import std/[strutils, sugar, options, json, streams]
+import std/[strutils, sugar, options, json, streams, random]
 import bumpy, vmath
 import app_interface, text/text_editor, popup, events, util, rect_utils, scripting/expose, event, input, custom_async, custom_logger, cancellation_token, myjsonutils
+import comb_sort, timer
 from scripting_api as api import nil
 
 export popup
@@ -31,14 +32,60 @@ type
     lastContentBounds*: Rect
     lastItems*: seq[tuple[index: int, bounds: Rect]]
 
+    maxItemsToShow: int = 50
+
     cancellationToken*: CancellationToken
 
+    # sort stuff
+    useAutoSort: bool = false
+    sortSteps: int = 5
+    sortTimeboxMs: float = 5
+    startSortGap: int = 1
+    lastSortGap: int = 1
+    autoSortActive: bool = false
+    sortFunction*: proc(a, b: SelectorItem): int
+
 method changed*(self: SelectorItem, other: SelectorItem): bool {.base.} = discard
+
+proc autoSort(self: SelectorPopup) {.async.} =
+  self.autoSortActive = true
+  defer:
+    self.autoSortActive = false
+
+  while true:
+    self.markDirty()
+
+    # echo "sort ", self.lastSortGap
+    var t = startTimer()
+    var iterations = 0
+    while t.elapsed.ms < self.sortTimeboxMs:
+      if self.completions.combSort(self.sortFunction, Ascending, steps = self.sortSteps, gap = self.lastSortGap):
+        return
+
+      if self.lastSortGap > 1:
+        self.lastSortGap = int(self.lastSortGap.float / 1.3)
+      iterations += 1
+
+    # echo iterations, " iterations, ", t.elapsed.ms, "ms"
+
+    await sleepAsync(1)
+
+proc enableAutoSort*(self: SelectorPopup) =
+  self.useAutoSort = true
+  self.lastSortGap = self.startSortGap
+  # self.completions.shuffle()
+  if self.autoSortActive:
+    return
+  asyncCheck self.autoSort()
 
 proc setCompletions(self: SelectorPopup, newCompletions: seq[SelectorItem]) =
   self.markDirty()
 
   self.completions = newCompletions
+  self.lastSortGap = self.startSortGap
+
+  if self.useAutoSort and not self.autoSortActive:
+    self.enableAutoSort()
 
   if self.completions.len > 0:
     self.selected = self.selected.clamp(0, self.completions.len - 1)
@@ -55,7 +102,7 @@ proc updateCompletionsAsync(self: SelectorPopup): Future[void] {.async.} =
 
 proc updateCompletionsAsyncIter(self: SelectorPopup): Future[void] {.async.} =
   let text = self.textEditor.document.content.join
-  self.setCompletions @[]
+  # self.setCompletions @[]
   await self.getCompletionsAsyncIter(self, text)
 
 proc updateCompletions*(self: SelectorPopup) =

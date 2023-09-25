@@ -5,8 +5,8 @@ import custom_logger
 
 var retainMainText* = true
 
-let pop1Id* = newId()
-let pop2Id* = newId()
+let pop1Id* = newPrimaryId()
+let pop2Id* = newPrimaryId()
 var popup1* = neww (vec2(100, 100), vec2(0, 0), false)
 var popup2* = neww (vec2(200, 200), vec2(0, 0), false)
 var showPopup1* = false
@@ -20,7 +20,7 @@ var slider* = 35.float32
 var counter = 0
 var testWidth = 10.float32
 
-let lastTextArea* = newId()
+let lastTextArea* = newPrimaryId()
 var cursor*: (int, int) = (0, 0)
 
 var mainTextChanged* = false
@@ -153,7 +153,7 @@ proc renderLine*(builder: UINodeBuilder, line: string, curs: Option[int], backgr
     # Fill rest of line with background
     builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = backgroundColor)
 
-proc renderText*(builder: UINodeBuilder, changed: bool, lines: openArray[string], first: int, cursor: (int, int), backgroundColor, textColor: Color, sizeToContentX = false, sizeToContentY = true, id = Id.none) =
+proc renderText*(builder: UINodeBuilder, changed: bool, lines: openArray[string], first: int, cursor: (int, int), backgroundColor, textColor: Color, sizeToContentX = false, sizeToContentY = true, id = noneUserId()) =
   var flags = &{MaskContent, OverlappingChildren}
   var flagsInner = &{LayoutVertical}
   if sizeToContentX:
@@ -190,7 +190,7 @@ proc renderText*(builder: UINodeBuilder, changed: bool, lines: openArray[string]
         builder.panel(&{FillBackground, AnimateBounds}, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h, backgroundColor = color(0.7, 0.7, 1)):
           builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, x = 1, y = 0, text = cl[1], textColor = color(0.4, 0.2, 2))
 
-proc createPopup*(builder: UINodeBuilder, lines: openArray[string], pop: ref tuple[pos: Vec2, offset: Vec2, collapsed: bool], backgroundColor, borderColor, headerColor, textColor: Color, id = Id.none) =
+proc createPopup*(builder: UINodeBuilder, lines: openArray[string], pop: ref tuple[pos: Vec2, offset: Vec2, collapsed: bool], backgroundColor, borderColor, headerColor, textColor: Color, id = noneUserId()) =
   let pos = pop.pos + pop.offset
 
   var flags = &{LayoutVertical, SizeToContentX, SizeToContentY, MouseHover, MaskContent}
@@ -331,13 +331,13 @@ proc buildUINodes*(builder: UINodeBuilder) =
           currentNode.setBackgroundColor(0, 0, 1)
 
       # text area
-      builder.renderText(mainTextChanged, testText, 0, cursor, backgroundColor = color(0.1, 0.1, 0.1), textColor = color(0.9, 0.9, 0.9), sizeToContentX = false, id = lastTextArea.some)
+      builder.renderText(mainTextChanged, testText, 0, cursor, backgroundColor = color(0.1, 0.1, 0.1), textColor = color(0.9, 0.9, 0.9), sizeToContentX = false, id = lastTextArea)
 
       # background filler
       builder.panel(&{FillX, FillY, FillBackground}):
         currentNode.setBackgroundColor(0, 0, 1)
 
     if showPopup1:
-      builder.createPopup(testText2, popup1, backgroundColor = color(0.3, 0.1, 0.1), textColor = color(0.9, 0.5, 0.5), headerColor = color(0.4, 0.2, 0.2), borderColor = color(1, 0.1, 0.1), id = pop1Id.some)
+      builder.createPopup(testText2, popup1, backgroundColor = color(0.3, 0.1, 0.1), textColor = color(0.9, 0.5, 0.5), headerColor = color(0.4, 0.2, 0.2), borderColor = color(1, 0.1, 0.1), id = pop1Id)
     if showPopup2:
-      builder.createPopup(testText3, popup2, backgroundColor = color(0.1, 0.3, 0.1), textColor = color(0.5, 0.9, 0.5), headerColor = color(0.2, 0.4, 0.2), borderColor = color(0.1, 1, 0.1), id = pop2Id.some)
+      builder.createPopup(testText3, popup2, backgroundColor = color(0.1, 0.3, 0.1), textColor = color(0.5, 0.9, 0.5), headerColor = color(0.2, 0.4, 0.2), borderColor = color(0.1, 1, 0.1), id = pop2Id)
