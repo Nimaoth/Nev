@@ -71,9 +71,10 @@ method init*(self: ScriptContextWasm, path: string): Future[void] {.async.} =
           self.handleScriptActionCallbacks.add (module, f)
 
         if findFunction(module, "absytree_main", void, proc(): void).getSome(f):
-          echo "run absytree_main"
           f()
+
         self.modules.add module
+
       else:
         log(lvlError, fmt"Failed to create wasm module for file {file}")
 

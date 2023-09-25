@@ -144,7 +144,8 @@ proc runApp(): Future[void] {.async.} =
 
       rend.builder.frameTime = delta
 
-      let size = if rend.GuiPlatform.showDrawnNodes: rend.size * vec2(0.5, 1) else: rend.size
+      let size = if rend of GuiPlatform and rend.GuiPlatform.showDrawnNodes: rend.size * vec2(0.5, 1) else: rend.size
+
       var rerender = false
       if eventCounter > 0 or size != rend.builder.root.boundsActual.wh or rend.requestedRender:
         rend.requestedRender = false

@@ -1,6 +1,6 @@
 import std/[strformat, terminal, typetraits, enumutils, strutils]
 import platform, widgets
-import tui, custom_logger, rect_utils, input, event, timer, custom_unicode
+import tui, custom_logger, rect_utils, input, event, timer, custom_unicode, ui/node
 import vmath
 import chroma as chroma
 import std/colors as stdcolors
@@ -66,6 +66,12 @@ method init*(self: TerminalPlatform) =
   illwillInit(fullscreen=true, mouse=true)
   setControlCHook(exitProc)
   hideCursor()
+
+  self.builder = newNodeBuilder()
+  self.builder.useInvalidation = true
+  self.builder.charWidth = 1
+  self.builder.lineHeight = 1
+  self.builder.lineGap = 0
 
   self.supportsThinCursor = false
   self.doubleClickTime = 0.35
@@ -255,6 +261,7 @@ proc toStdColor(color: chroma.Color): stdcolors.Color =
   return stdcolors.rgb(rgb.r, rgb.g, rgb.b)
 
 method renderWidget(self: WWidget, renderer: TerminalPlatform, forceRedraw: bool, frameIndex: int) {.base.} = discard
+proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false)
 
 method render*(self: TerminalPlatform, widget: WWidget, frameIndex: int) =
   if self.sizeChanged:
@@ -263,15 +270,24 @@ method render*(self: TerminalPlatform, widget: WWidget, frameIndex: int) =
     self.buffer = newTerminalBuffer(w, h)
     self.redrawEverything = true
 
-  widget.renderWidget(self, self.redrawEverything, frameIndex)
+  if self.builder.root.lastSizeChange == self.builder.frameIndex:
+    self.redrawEverything = true
+
+  let t1 = startTimer()
+  self.builder.drawNode(self, self.builder.root, force = self.redrawEverything)
+  let t1Ms = t1.elapsed.ms
 
   # This can fail if the terminal was resized during rendering, but in that case we'll just rerender next frame
+  let t2 = startTimer()
   try:
     self.buffer.display()
     self.redrawEverything = false
   except CatchableError:
     log(lvlError, fmt"Failed to display buffer: {getCurrentExceptionMsg()}")
     self.redrawEverything = true
+  let t2Ms = t2.elapsed.ms
+
+  debugf"{t1Ms}, {t2Ms}"
 
 proc setForegroundColor(self: TerminalPlatform, color: chroma.Color) =
   if self.trueColorSupport:
@@ -301,68 +317,17 @@ proc fillRect(self: TerminalPlatform, bounds: Rect, color: chroma.Color) =
   self.buffer.fillBackground(bounds.x.int, bounds.y.int, bounds.xw.int - 1, bounds.yh.int - 1)
   self.buffer.setBackgroundColor(bgNone)
 
+proc drawRect(self: TerminalPlatform, bounds: Rect, color: chroma.Color) =
+  let mask = if self.masks.len > 0:
+    self.masks[self.masks.high]
+  else:
+    rect(vec2(0, 0), self.size)
 
-method renderWidget(self: WPanel, renderer: TerminalPlatform, forceRedraw: bool, frameIndex: int) =
-  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
-    return
+  let bounds = bounds and mask
 
-  if self.fillBackground:
-    # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange} fill background {self.children.len}"
-    renderer.fillRect(self.lastBounds, self.getBackgroundColor)
-
-  if self.maskContent:
-    renderer.pushMask(self.lastBounds)
-  defer:
-    if self.maskContent:
-      renderer.popMask()
-
-  for c in self.children:
-    c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex)
-
-  if self.lastRenderedBounds != self.lastBounds:
-    self.lastRenderedBounds = self.lastBounds
-
-method renderWidget(self: WStack, renderer: TerminalPlatform, forceRedraw: bool, frameIndex: int) =
-  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
-    return
-
-  if self.fillBackground:
-    # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
-    renderer.fillRect(self.lastBounds, self.getBackgroundColor)
-
-  for c in self.children:
-    c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex)
-
-  if self.lastRenderedBounds != self.lastBounds:
-    self.lastRenderedBounds = self.lastBounds
-
-method renderWidget(self: WVerticalList, renderer: TerminalPlatform, forceRedraw: bool, frameIndex: int) =
-  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
-    return
-
-  if self.fillBackground:
-    # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
-    renderer.fillRect(self.lastBounds, self.getBackgroundColor)
-
-  for c in self.children:
-    c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex)
-
-  if self.lastRenderedBounds != self.lastBounds:
-    self.lastRenderedBounds = self.lastBounds
-
-method renderWidget(self: WHorizontalList, renderer: TerminalPlatform, forceRedraw: bool, frameIndex: int) =
-  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
-    return
-
-  if self.fillBackground:
-    # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
-    renderer.fillRect(self.lastBounds, self.getBackgroundColor)
-
-  for c in self.children:
-    c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex)
-
-  if self.lastRenderedBounds != self.lastBounds:
-    self.lastRenderedBounds = self.lastBounds
+  self.setBackgroundColor(color)
+  self.buffer.drawRect(bounds.x.int, bounds.y.int, bounds.xw.int - 1, bounds.yh.int - 1)
+  self.buffer.setBackgroundColor(bgNone)
 
 proc writeLine(self: TerminalPlatform, pos: Vec2, text: string) =
   let mask = if self.masks.len > 0:
@@ -434,6 +399,108 @@ proc writeText(self: TerminalPlatform, pos: Vec2, text: string, wrap: bool, line
     else:
       self.writeLine(pos + vec2(0, yOffset), line)
       yOffset += 1
+
+proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false) =
+  var nodePos = offset
+  nodePos.x += node.boundsActual.x
+  nodePos.y += node.boundsActual.y
+
+  var force = force
+
+  if builder.useInvalidation and not force and node.lastChange < builder.frameIndex:
+    return
+
+  if node.flags.any &{UINodeFlag.FillBackground, DrawText}:
+    force = true
+
+  node.lx = nodePos.x
+  node.ly = nodePos.y
+  node.lw = node.boundsActual.w
+  node.lh = node.boundsActual.h
+  let bounds = rect(nodePos.x, nodePos.y, node.boundsActual.w, node.boundsActual.h)
+
+  if FillBackground in node.flags:
+    platform.fillRect(bounds, node.backgroundColor)
+
+  # Mask the rest of the rendering is this function to the contentBounds
+  if MaskContent in node.flags:
+    platform.pushMask(bounds)
+  defer:
+    if MaskContent in node.flags:
+      platform.popMask()
+
+  if DrawText in node.flags:
+    platform.buffer.setBackgroundColor(bgNone)
+    platform.setForegroundColor(node.textColor)
+    platform.writeText(bounds.xy, node.text, TextWrap in node.flags, round(bounds.w).RuneCount)
+
+  for _, c in node.children:
+    builder.drawNode(platform, c, nodePos, force)
+
+  # if DrawBorder in node.flags:
+  #   platform.drawRect(bounds, node.borderColor)
+
+method renderWidget(self: WPanel, renderer: TerminalPlatform, forceRedraw: bool, frameIndex: int) =
+  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
+    return
+
+  if self.fillBackground:
+    # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange} fill background {self.children.len}"
+    renderer.fillRect(self.lastBounds, self.getBackgroundColor)
+
+  if self.maskContent:
+    renderer.pushMask(self.lastBounds)
+  defer:
+    if self.maskContent:
+      renderer.popMask()
+
+  for c in self.children:
+    c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex)
+
+  if self.lastRenderedBounds != self.lastBounds:
+    self.lastRenderedBounds = self.lastBounds
+
+method renderWidget(self: WStack, renderer: TerminalPlatform, forceRedraw: bool, frameIndex: int) =
+  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
+    return
+
+  if self.fillBackground:
+    # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
+    renderer.fillRect(self.lastBounds, self.getBackgroundColor)
+
+  for c in self.children:
+    c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex)
+
+  if self.lastRenderedBounds != self.lastBounds:
+    self.lastRenderedBounds = self.lastBounds
+
+method renderWidget(self: WVerticalList, renderer: TerminalPlatform, forceRedraw: bool, frameIndex: int) =
+  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
+    return
+
+  if self.fillBackground:
+    # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
+    renderer.fillRect(self.lastBounds, self.getBackgroundColor)
+
+  for c in self.children:
+    c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex)
+
+  if self.lastRenderedBounds != self.lastBounds:
+    self.lastRenderedBounds = self.lastBounds
+
+method renderWidget(self: WHorizontalList, renderer: TerminalPlatform, forceRedraw: bool, frameIndex: int) =
+  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
+    return
+
+  if self.fillBackground:
+    # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
+    renderer.fillRect(self.lastBounds, self.getBackgroundColor)
+
+  for c in self.children:
+    c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex)
+
+  if self.lastRenderedBounds != self.lastBounds:
+    self.lastRenderedBounds = self.lastBounds
 
 method renderWidget(self: WText, renderer: TerminalPlatform, forceRedraw: bool, frameIndex: int) =
   if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
