@@ -228,7 +228,6 @@ proc idNone*(): Id =
 
 proc parseId*(s: string): Id =
   if s.len != 24:
-    echo "invalid id '", s, "'"
     return idNone()
   return s.parseOid.Id
 
