@@ -1334,7 +1334,13 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
   var popup = newSelectorPopup(self.asAppInterface)
   popup.getCompletionsAsyncIter = proc(popup: SelectorPopup, text: string): Future[void] {.async.} =
     if not popup.cancellationToken.isNil:
-      popup.cancellationToken.cancel()
+      # popup.cancellationToken.cancel()
+      for item in popup.completions:
+        let score = matchPath(item.FileSelectorItem.path, text)
+        item.score = score
+      popup.enableAutoSort()
+
+      return
 
     var cancellationToken = newCancellationToken()
     popup.cancellationToken = cancellationToken
@@ -1347,7 +1353,8 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
           let score = matchPath(file, text)
           popup.completions.add FileSelectorItem(path: fmt"{file}", score: score, workspaceFolder: folder.some)
 
-        popup.completions.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Descending)
+        # popup.completions.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Descending)
+        popup.enableAutoSort()
         popup.markDirty()
       )
 
@@ -1367,6 +1374,8 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
       log(lvlError, fmt"Unknown argument {view}")
 
   popup.updateCompletions()
+  popup.sortFunction = proc(a, b: SelectorItem): int = cmp(a.FileSelectorItem.score, b.FileSelectorItem.score)
+  popup.enableAutoSort()
 
   self.pushPopup popup
 

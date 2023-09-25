@@ -174,7 +174,7 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App) =
     flagsInner.incl FillY
 
   let bounds = builder.currentParent.boundsActual.shrink(absolute(0.25 * builder.currentParent.boundsActual.w), absolute(0.25 * builder.currentParent.boundsActual.h))
-  builder.panel(&{SizeToContentY}, x = bounds.x, y = bounds.y, w = bounds.w, userId = self.userId):
+  builder.panel(&{SizeToContentY}, x = bounds.x, y = bounds.y, w = bounds.w, userId = self.userId.newPrimaryId):
     builder.panel(flags): #, userId = id):
       let totalLineHeight = app.platform.totalLineHeight
       let maxLineCount = if sizeToContentY:
@@ -215,6 +215,6 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App) =
               backgroundColor
 
             builder.panel(&{FillX, SizeToContentY, FillBackground}, backgroundColor = backgroundColor):
-              self.completions[completionIndex].createUI(builder, app)
+              self.completions[self.completions.high - completionIndex].createUI(builder, app)
 
           # builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = backgroundColor)

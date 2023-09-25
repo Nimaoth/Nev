@@ -66,6 +66,9 @@ defineBitFlag:
     AllowAlpha
     MaskContent
     DrawText
+    TextItalic
+    TextBold
+    TextWrap
     LayoutVertical
     LayoutVerticalReverse
     LayoutHorizontal
@@ -77,14 +80,14 @@ defineBitFlag:
     AnimateSize
 
 type
-  UIUserIdKind* = enum None, Int, UniqueID
+  UIUserIdKind* = enum None, Primary, Secondary
   UIUserId* = object
     case kind*: UIUserIdKind
-    of Int:
-      intValue1*: int32
-      intValue2*: int32
-    of UniqueID:
-      idValue*: Id
+    of Primary:
+      id*: Id
+    of Secondary:
+      parentId*: Id
+      subId*: int32
     else: discard
 
   UINode* = ref object
@@ -95,7 +98,7 @@ type
     next: UINode
 
     mId: Id
-    userId*: Option[Id]
+    userId*: UIUserId = UIUserId(kind: None)
     mContentDirty: bool
     mLastContentChange: int
     mLastPositionChange: int
@@ -157,6 +160,17 @@ type
     mousePos: Vec2
     mouseDelta: Vec2
     mousePosClick: array[MouseButton, Vec2]
+
+proc noneUserId*(): UIUserId = UIUserId(kind: None)
+proc newPrimaryId*(id: Id = newId()): UIUserId = UIUserId(kind: Primary, id: id)
+proc newSecondaryId*(primary: Id, secondary: int32): UIUserId = UIUserId(kind: Secondary, parentId: primary, subId: secondary)
+func `==`*(a, b: UIUserId): bool =
+  if a.kind != b.kind:
+    return false
+  return case a.kind
+  of None: true
+  of Primary: a.id == b.id
+  of Secondary: a.subId == b.subId and a.parentId == b.parentId
 
 proc dump*(node: UINode, recurse = false): string
 
@@ -248,7 +262,7 @@ func `lh=`*(node: UINode, value: float32) {.inline.} = node.boundsAbsolute.h = v
 proc textWidth*(builder: UINodeBuilder, textLen: int): float32 {.inline.} = textLen.float32 * builder.charWidth
 proc textHeight*(builder: UINodeBuilder): float32 {.inline.} = round(builder.lineHeight + builder.lineGap)
 
-proc unpoolNode*(builder: UINodeBuilder, userId: var Option[Id]): UINode
+proc unpoolNode*(builder: UINodeBuilder, userId: var UIUserId): UINode
 proc findNodeContaining*(node: UINode, pos: Vec2, predicate: proc(node: UINode): bool): Option[UINode]
 
 var stackSize = 0
@@ -267,7 +281,7 @@ proc newNodeBuilder*(): UINodeBuilder =
   new result
   result.frameIndex = 0
 
-  var id = Id.none
+  var id = UIUserId(kind: None)
   result.root = result.unpoolNode(userId = id)
   result.animatingNodes = initHashSet[Id]()
 
@@ -374,6 +388,13 @@ iterator children*(node: UINode): (int, UINode) =
     yield (i, current)
     current = next
 
+proc `[]`*(node: UINode, index: int): UINode =
+  result = node.first
+  for i in 0..<index:
+    if result.isNil:
+      raise newException(IndexDefect, "Index " & $index & " out of node child range 0..<" & $i)
+    result = result.next
+
 proc len*(node: UINode): int =
   result = 0
   for _, _ in node.children:
@@ -394,9 +415,12 @@ proc transformRect*(rect: Rect, src: UINode, dst: UINode): Rect =
     curr = curr.parent
 
 proc returnNode*(builder: UINodeBuilder, node: UINode) =
-  if node.userId.isSome:
+  case node.userId.kind
+  of None:
+    builder.nodes.add node
+  of Primary:
     discard
-  else:
+  of Secondary:
     builder.nodes.add node
 
   for _, c in node.children:
@@ -611,23 +635,23 @@ proc postLayout*(builder: UINodeBuilder, node: UINode) =
     builder.postLayoutChild(node.parent, node)
 
 # todo: use sink instead of var (doesn't work properly in js, it thinks it's a ref but it isn't)
-proc unpoolNode*(builder: UINodeBuilder, userId: var Option[Id]): UINode =
-  if userId.isSome and builder.namedNodes.contains(userId.get):
-    result = builder.namedNodes[userId.get]
+proc unpoolNode*(builder: UINodeBuilder, userId: var UIUserId): UINode =
+  if userId.kind == Primary and builder.namedNodes.contains(userId.id):
+    result = builder.namedNodes[userId.id]
     # assert result.userId == userId
     return
 
   if builder.nodes.len > 0:
     result = builder.nodes.pop
     result.userId = userId
-    if userId.isSome:
-      builder.namedNodes[userId.get] = result
+    if userId.kind == Primary:
+      builder.namedNodes[userId.id] = result
 
     return
 
   result = UINode(mId: newId(), userId: userId)
-  if userId.isSome:
-    builder.namedNodes[userId.get] = result
+  if userId.kind == Primary:
+    builder.namedNodes[userId.id] = result
 
 proc insert*(node: UINode, n: UINode, after: UINode = nil) =
   assert n.parent == nil
@@ -694,12 +718,14 @@ proc removeFromParent*(node: UINode) =
     assert node.parent.last == node
     node.parent.last = node.prev
 
+  node.parent.contentDirty = true
+
   node.prev = nil
   node.next = nil
   node.parent = nil
 
 # todo: use sink instead of var (doesn't work properly in js, it thinks it's a ref but it isn't)
-proc getNextOrNewNode(builder: UINodeBuilder, node: UINode, last: UINode, userId: var Option[Id]): UINode =
+proc getNextOrNewNode(builder: UINodeBuilder, node: UINode, last: UINode, userId: var UIUserId): UINode =
   let insert = true
 
   if last.isNil: # Creating/Updating first child
@@ -720,7 +746,7 @@ proc getNextOrNewNode(builder: UINodeBuilder, node: UINode, last: UINode, userId
     assert last.next.prev == last
     if last.next.userId == userId:
       return last.next
-    elif userId.isSome: # User id doesn't match
+    elif userId.kind != None: # Has user id, doesn't match
 
       # search ahead to see if we find a matching node
       var matchingNode = UINode.none
@@ -758,7 +784,7 @@ proc getNextOrNewNode(builder: UINodeBuilder, node: UINode, last: UINode, userId
       return newNode
 
     else: # User id doesn't match and user id is none
-      assert userId.isNone
+      assert userId.kind == None
       let newNode = builder.unpoolNode(userId)
       node.insert(newNode, last)
       return newNode
@@ -767,7 +793,7 @@ proc getNextOrNewNode(builder: UINodeBuilder, node: UINode, last: UINode, userId
   node.insert(newNode, last)
   return newNode
 
-proc prepareNode(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[string], inX, inY, inW, inH: Option[float32], userId: var Option[Id], inAdditionalFlags: Option[UINodeFlags]): UINode =
+proc prepareNode(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[string], inX, inY, inW, inH: Option[float32], userId: var UIUserId, inAdditionalFlags: Option[UINodeFlags]): UINode =
   assert builder.currentParent.isNotNil
 
   var node = builder.getNextOrNewNode(builder.currentParent, builder.currentChild, userId)
@@ -996,7 +1022,7 @@ proc postProcessNodes*(builder: UINodeBuilder) =
 macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped]): untyped =
   var body = genAst(): discard
 
-  var inUserId = genAst(): Id.none
+  var inUserId = genAst(): UIUserId(kind: None)
   var inText = genAst(): string.none
   var inX = genAst(): float32.none
   var inY = genAst(): float32.none
@@ -1013,7 +1039,7 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
       let name = arg[0].repr
       case name
       of "userId":
-        inUserId = genAst(value): some(value).maybeFlatten
+        inUserId = genAst(value): value
       of "text":
         inText = genAst(value): some(value)
       of "backgroundColor":

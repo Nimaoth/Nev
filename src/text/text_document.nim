@@ -54,8 +54,11 @@ variantp TextDocumentChange:
 
 type TextDocument* = ref object of Document
   lines*: seq[string]
+  lineIds*: seq[int32]
   languageId*: string
   version*: int
+
+  nextLineIdCounter: int32 = 0
 
   onLoaded*: Event[TextDocument]
   textChanged*: Event[TextDocument]
@@ -81,6 +84,10 @@ type TextDocument* = ref object of Document
   onRequestSaveHandle*: OnRequestSaveHandle
 
   styledTextCache: Table[int, StyledLine]
+
+proc nextLineId*(self: TextDocument): int32 =
+  result = self.nextLineIdCounter
+  self.nextLineIdCounter.inc
 
 proc fullPath*(self: TextDocument): string =
   if self.filename.isAbsolute:
@@ -182,6 +189,10 @@ proc `content=`*(self: TextDocument, value: string) =
     if self.lines.len == 0:
       self.lines = @[""]
 
+  self.lineIds.setLen self.lines.len
+  for id in self.lineIds.mitems:
+    id = self.nextLineId
+
   self.currentTree.delete()
   self.reparseTreesitter()
 
@@ -197,6 +208,10 @@ proc `content=`*(self: TextDocument, value: seq[string]) =
 
   if self.lines.len == 0:
     self.lines = @[""]
+
+  self.lineIds.setLen self.lines.len
+  for id in self.lineIds.mitems:
+    id = self.nextLineId
 
   self.currentTree.delete()
   self.reparseTreesitter()
@@ -652,7 +667,9 @@ proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection:
         self.lines[first.line].delete(first.column..<(self.lineLength first.line))
       self.lines[first.line].add self.lines[last.line][last.column..^1]
       # Delete all lines in between
+      assert self.lines.len == self.lineIds.len
       self.lines.delete (first.line + 1)..last.line
+      self.lineIds.delete (first.line + 1)..last.line
 
     result[i] = selection.first.toSelection
     for k in (i+1)..result.high:
@@ -777,6 +794,8 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
       let text = text.replace("\n", " ")
       if self.lines.len == 0:
         self.lines.add text
+        self.lineIds.add self.nextLineId
+        assert self.lines.len == self.lineIds.len
       else:
         self.lines[0].insert(text, cursor.column)
       cursor.column += text.len
@@ -788,6 +807,8 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
         if lineCounter > 0:
           # Split line
           self.lines.insert(self.lines[cursor.line][cursor.column..^1], cursor.line + 1)
+          self.lineIds.insert(self.nextLineId, cursor.line + 1)
+          assert self.lines.len == self.lineIds.len
 
           if cursor.column < self.lastValidIndex cursor.line:
             self.lines[cursor.line].delete(cursor.column..<(self.lineLength cursor.line))
