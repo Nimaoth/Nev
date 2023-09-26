@@ -134,7 +134,8 @@ method init*(self: GuiPlatform) =
 
   self.window.onMouseMove = proc() =
     inc self.eventCounter
-    self.onMouseMove.invoke (self.window.mousePos.vec2, self.window.mouseDelta.vec2, {}, self.currentMouseButtons)
+    if not self.builder.handleMouseMoved(self.window.mousePos.vec2, self.currentMouseButtons):
+      self.onMouseMove.invoke (self.window.mousePos.vec2, self.window.mouseDelta.vec2, {}, self.currentMouseButtons)
 
   proc toMouseButton(button: Button): MouseButton =
     inc self.eventCounter
@@ -152,13 +153,15 @@ method init*(self: GuiPlatform) =
     # debugf"button {button} {inputToString(button.toInput, self.currentModifiers)}"
 
     if self.lastEvent.getSome(event):
-      self.onKeyPress.invoke event
+      if not self.builder.handleKeyPressed(event[0], event[1]):
+        self.onKeyPress.invoke event
       self.lastEvent = (int64, Modifiers).none
 
     case button
     of  MouseLeft, MouseRight, MouseMiddle, MouseButton4, MouseButton5, DoubleClick, TripleClick, QuadrupleClick:
       self.currentMouseButtons.incl button.toMouseButton
-      self.onMousePress.invoke (button.toMouseButton, self.currentModifiers, self.window.mousePos.vec2)
+      if not self.builder.handleMousePressed(button.toMouseButton, self.currentModifiers, self.window.mousePos.vec2):
+        self.onMousePress.invoke (button.toMouseButton, self.currentModifiers, self.window.mousePos.vec2)
     of KeyLeftShift, KeyRightShift: self.currentModifiers = self.currentModifiers + {Shift}
     of KeyLeftControl, KeyRightControl: self.currentModifiers = self.currentModifiers + {Control}
     of KeyLeftAlt, KeyRightAlt: self.currentModifiers = self.currentModifiers + {Alt}
@@ -170,19 +173,22 @@ method init*(self: GuiPlatform) =
     inc self.eventCounter
 
     if self.lastEvent.getSome(event):
-      self.onKeyPress.invoke event
+      if not self.builder.handleKeyPressed(event[0], event[1]):
+        self.onKeyPress.invoke event
       self.lastEvent = (int64, Modifiers).none
 
     case button
     of  MouseLeft, MouseRight, MouseMiddle, MouseButton4, MouseButton5, DoubleClick, TripleClick, QuadrupleClick:
       self.currentMouseButtons.excl button.toMouseButton
-      self.onMouseRelease.invoke (button.toMouseButton, self.currentModifiers, self.window.mousePos.vec2)
+      if not self.builder.handleMouseReleased(button.toMouseButton, self.currentModifiers, self.window.mousePos.vec2):
+        self.onMouseRelease.invoke (button.toMouseButton, self.currentModifiers, self.window.mousePos.vec2)
     of KeyLeftShift, KeyRightShift: self.currentModifiers = self.currentModifiers - {Shift}
     of KeyLeftControl, KeyRightControl: self.currentModifiers = self.currentModifiers - {Control}
     of KeyLeftAlt, KeyRightAlt: self.currentModifiers = self.currentModifiers - {Alt}
     # of KeyLeftSuper, KeyRightSuper: currentModifiers = currentModifiers - {Super}
     else:
-      self.onKeyRelease.invoke (button.toInput, self.currentModifiers)
+      if not self.builder.handleKeyPressed(button.toInput, self.currentModifiers):
+        self.onKeyRelease.invoke (button.toInput, self.currentModifiers)
 
 method deinit*(self: GuiPlatform) =
   self.window.close()
@@ -259,7 +265,8 @@ method processEvents*(self: GuiPlatform): int =
   pollEvents()
 
   if self.lastEvent.getSome(event):
-    self.onKeyPress.invoke event
+    if not self.builder.handleKeyPressed(event[0], event[1]):
+      self.onKeyPress.invoke event
     self.lastEvent = (int64, Modifiers).none
 
   if self.window.closeRequested:
