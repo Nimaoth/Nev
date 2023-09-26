@@ -177,7 +177,7 @@ proc createLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, bac
 
     builder.panel(flags):
       onScroll:
-        let scrollAmount = delta.y * 40 # self.configProvider.getValue("text.scroll-speed", 40.0) # todo
+        let scrollAmount = delta.y * app.asConfigProvider.getValue("text.scroll-speed", 40.0)
         self.scrollOffset += scrollAmount
         self.markDirty()
 

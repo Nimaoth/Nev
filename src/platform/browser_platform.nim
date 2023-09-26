@@ -149,9 +149,9 @@ method init*(self: BrowserPlatform) =
         inc self.doubleClickCounter
         case self.doubleClickCounter
         of 1:
-          self.onMousePress.invoke (MouseButton.DoubleClick, modifiers, vec2(x.float, y.float))
+          events.add MouseButton.DoubleClick
         of 2:
-          self.onMousePress.invoke (MouseButton.TripleClick, modifiers, vec2(x.float, y.float))
+          events.add MouseButton.TripleClick
         else:
           self.doubleClickCounter = 0
       else:
