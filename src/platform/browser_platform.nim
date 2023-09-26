@@ -111,7 +111,8 @@ method init*(self: BrowserPlatform) =
 
     var input = toInput(ke.key, ke.code, ke.keyCode)
     # debugf"{inputToString(input)}, {modifiers}"
-    self.onKeyPress.invoke (input, modifiers)
+    if not self.builder.handleKeyPressed(input, modifiers):
+      self.onKeyPress.invoke (input, modifiers)
   )
 
   self.content.addEventListener("wheel", proc(e: dom.Event) =
@@ -140,7 +141,8 @@ method init*(self: BrowserPlatform) =
     let x = me.pageX.float - currentTargetRect.x
     let y = me.pageY.float - currentTargetRect.y
     # debugf"click {me.button}, {modifiers}, {x}, {y}"
-    self.onMousePress.invoke (mouseButton, modifiers, vec2(x.float, y.float))
+
+    var events = @[mouseButton]
 
     if mouseButton == MouseButton.Left:
       if self.doubleClickTimer.elapsed.float < self.doubleClickTime:
@@ -159,6 +161,10 @@ method init*(self: BrowserPlatform) =
     else:
       self.doubleClickCounter = 0
 
+    for event in events:
+      if not self.builder.handleMousePressed(event, modifiers, vec2(x.float, y.float)):
+        self.onMousePress.invoke (event, modifiers, vec2(x.float, y.float))
+
   )
 
   self.content.addEventListener("mouseup", proc(e: dom.Event) =
@@ -174,7 +180,9 @@ method init*(self: BrowserPlatform) =
     let x = me.pageX.float - currentTargetRect.x
     let y = me.pageY.float - currentTargetRect.y
     # debugf"click {me.button}, {modifiers}, {x}, {y}"
-    self.onMouseRelease.invoke (mouseButton, modifiers, vec2(x.float, y.float))
+
+    if not self.builder.handleMouseReleased(mouseButton, modifiers, vec2(x.float, y.float)):
+      self.onMouseRelease.invoke (mouseButton, modifiers, vec2(x.float, y.float))
   )
 
   self.content.addEventListener("mousemove", proc(e: dom.Event) =
@@ -186,7 +194,8 @@ method init*(self: BrowserPlatform) =
     let modifiers = me.getModifiers
 
     # debugf"move {me.button}, {modifiers}, {me.clientX}, {me.clientY}, {me.movementX}, {me.movementY}, {me.getMouseButtons}"
-    self.onMouseMove.invoke (vec2(me.clientX.float, me.clientY.float), vec2(me.movementX.float, me.movementY.float), modifiers, me.getMouseButtons) # @todo: buttons
+    if not self.builder.handleMouseMoved(vec2(me.clientX.float, me.clientY.float), me.getMouseButtons):
+      self.onMouseMove.invoke (vec2(me.clientX.float, me.clientY.float), vec2(me.movementX.float, me.movementY.float), modifiers, me.getMouseButtons) # @todo: buttons
   )
 
   proc console[T](t: T) {.importjs: "console.log(#);".}

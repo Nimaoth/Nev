@@ -22,8 +22,19 @@ else:
 
 proc updateBaseIndexAndScrollOffset*(height: float, previousBaseIndex: var int, scrollOffset: var float, lines: int, totalLineHeight: float, targetLine: Option[int])
 
+proc getCursorPos(self: TextDocumentEditor, node: UINode, line: int, startOffset: RuneIndex, pos: Vec2): int =
+  var offsetFromLeft = pos.x / self.platform.charWidth
+  if self.isThickCursor():
+    offsetFromLeft -= 0.0
+  else:
+    offsetFromLeft += 0.5
+
+  let index = clamp(offsetFromLeft.int, 0, node.textRuneLen)
+  let byteIndex = self.document.lines[line].toOpenArray.runeOffset(startOffset + index.RuneCount)
+  return byteIndex
+
 proc renderLine*(
-  builder: UINodeBuilder, app: App,
+  self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   line: StyledLine, lineOriginal: openArray[char],
   lineId: int32, parentId: Id, curs: Option[int], cursorLine: int,
   lineNumber: int, lineNumbers: LineNumbers,
@@ -73,6 +84,8 @@ proc renderLine*(
         start += part.text.len
         startRune += part.text.runeLen
 
+      let startRune = startRune
+
       var partNode: UINode
       builder.panel(&{DrawText, FillBackground, SizeToContentX, SizeToContentY}, text = part.text):
         currentNode.backgroundColor = backgroundColor
@@ -80,8 +93,20 @@ proc renderLine*(
 
         partNode = currentNode
 
-        onClick Left:
-          echo "clicked "
+        capture line, currentNode, startRune:
+          onClickAny btn:
+            if btn == Left:
+              let offset = self.getCursorPos(currentNode, line.index, startRune.RuneIndex, pos)
+              self.selection = (line.index, offset).toSelection
+              self.markDirty()
+            elif btn == TripleClick:
+              self.selection = ((line.index, 0), (line.index, self.document.lineLength(line.index)))
+              self.markDirty()
+
+          onDrag Left:
+            let offset = self.getCursorPos(currentNode, line.index, startRune.RuneIndex, pos)
+            self.selection = (line.index, offset).toSelection
+            self.markDirty()
 
         # cursor
         if curs.getSome(curs):
@@ -98,7 +123,19 @@ proc renderLine*(
       result = some (currentNode, "", rect(lastPartXW, 0, builder.charWidth, builder.textHeight))
 
     # Fill rest of line with background
-    builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = backgroundColor)
+    builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = backgroundColor):
+      capture line, currentNode:
+        onClickAny btn:
+          if btn == Left:
+            self.selection = (line.index, self.document.lineLength(line.index)).toSelection
+            self.markDirty()
+          elif btn == TripleClick:
+            self.selection = ((line.index, 0), (line.index, self.document.lineLength(line.index)))
+            self.markDirty()
+
+        onDrag Left:
+          self.selection = (line.index, self.document.lineLength(line.index)).toSelection
+          self.markDirty()
 
 proc createHeader(self: TextDocumentEditor, builder: UINodeBuilder, app: App, headerColor: Color, textColor: Color): UINode =
   if self.renderHeader:
@@ -170,7 +207,7 @@ proc createLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, bac
         let column = if cursor.line == i: cursor.column.some else: int.none
         let line = self.getStyledText i
 
-        if builder.renderLine(app, line, self.document.lines[i], self.document.lineIds[i], self.userId, column, cursorLine, i, lineNumbers, y, sizeToContentX, lineNumberWidth, lineNumberBounds.x, backgroundColor, textColor).getSome(cl):
+        if self.renderLine(builder, app, line, self.document.lines[i], self.document.lineIds[i], self.userId, column, cursorLine, i, lineNumbers, y, sizeToContentX, lineNumberWidth, lineNumberBounds.x, backgroundColor, textColor).getSome(cl):
           result = cl.some
 
         y = builder.currentChild.yh
@@ -186,7 +223,7 @@ proc createLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, bac
         let column = if cursor.line == i: cursor.column.some else: int.none
         let line = self.getStyledText i
 
-        if builder.renderLine(app, line, self.document.lines[i], self.document.lineIds[i], self.userId, column, cursorLine, i, lineNumbers, y, sizeToContentX, lineNumberWidth, lineNumberBounds.x, backgroundColor, textColor).getSome(cl):
+        if self.renderLine(builder, app, line, self.document.lines[i], self.document.lineIds[i], self.userId, column, cursorLine, i, lineNumbers, y, sizeToContentX, lineNumberWidth, lineNumberBounds.x, backgroundColor, textColor).getSome(cl):
           result = cl.some
 
         builder.currentChild.rawY = builder.currentChild.y - builder.currentChild.h
