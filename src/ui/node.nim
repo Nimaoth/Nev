@@ -219,21 +219,21 @@ proc `backgroundColor=`*(node: UINode, value: Color) {.inline.} = (let changed =
 proc `borderColor=`*(node: UINode, value: Color)     {.inline.} = (let changed = (value != node.mBorderColor);     node.contentDirty = node.contentDirty or changed; if changed: node.mBorderColor     = value else: discard)
 proc `textColor=`*(node: UINode, value: Color)       {.inline.} = (let changed = (value != node.mTextColor);       node.contentDirty = node.contentDirty or changed; if changed: node.mTextColor       = value else: discard)
 
-func handlePressed*(node: UINode):    (proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool) {.inline.} = node.mHandlePressed
-func handleReleased*(node: UINode):   (proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool) {.inline.} = node.mHandleReleased
-func handleDrag*(node: UINode):       (proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2, delta: Vec2): bool)                         {.inline.} = node.mHandleDrag
-func handleBeginHover*(node: UINode): (proc(node: UINode): bool)                                                           {.inline.} = node.mHandleBeginHover
-func handleEndHover*(node: UINode):   (proc(node: UINode): bool)                                                           {.inline.} = node.mHandleEndHover
-func handleHover*(node: UINode):      (proc(node: UINode): bool)                                                           {.inline.} = node.mHandleHover
-func handleScroll*(node: UINode):     (proc(node: UINode, pos: Vec2, delta: Vec2, modifiers: set[Modifier]): bool)         {.inline.} = node.mHandleScroll
+func handlePressed*   (node: UINode): (proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool)              {.inline.} = node.mHandlePressed
+func handleReleased*  (node: UINode): (proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool)              {.inline.} = node.mHandleReleased
+func handleDrag*      (node: UINode): (proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2, delta: Vec2): bool) {.inline.} = node.mHandleDrag
+func handleBeginHover*(node: UINode): (proc(node: UINode): bool)                                                                        {.inline.} = node.mHandleBeginHover
+func handleEndHover*  (node: UINode): (proc(node: UINode): bool)                                                                        {.inline.} = node.mHandleEndHover
+func handleHover*     (node: UINode): (proc(node: UINode): bool)                                                                        {.inline.} = node.mHandleHover
+func handleScroll*    (node: UINode): (proc(node: UINode, pos: Vec2, delta: Vec2, modifiers: set[Modifier]): bool)                      {.inline.} = node.mHandleScroll
 
-func `handlePressed=`*(node: UINode, value: proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool)  {.inline.} = node.mHandlePressed = value
-func `handleReleased=`*(node: UINode, value: proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool) {.inline.} = node.mHandleReleased = value
-func `handleDrag=`* (node: UINode, value: proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2, delta: Vec2): bool)                            {.inline.} = node.mHandleDrag = value
-func `handleBeginHover=`*(node: UINode, value: proc(node: UINode): bool)                                                         {.inline.} = node.mHandleBeginHover = value
-func `handleEndHover=`*(node: UINode,   value: proc(node: UINode): bool)                                                         {.inline.} = node.mHandleEndHover = value
-func `handleHover=`*(node: UINode,      value: proc(node: UINode): bool)                                                         {.inline.} = node.mHandleHover = value
-func `handleScroll=`*(node: UINode,     value: proc(node: UINode, pos: Vec2, delta: Vec2, modifiers: set[Modifier]): bool)       {.inline.} = node.mHandleScroll = value
+func `handlePressed=`*   (node: UINode, value: proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool)              {.inline.} = node.mHandlePressed = value
+func `handleReleased=`*  (node: UINode, value: proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool)              {.inline.} = node.mHandleReleased = value
+func `handleDrag=`*      (node: UINode, value: proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2, delta: Vec2): bool) {.inline.} = node.mHandleDrag = value
+func `handleBeginHover=`*(node: UINode, value: proc(node: UINode): bool)                                                                        {.inline.} = node.mHandleBeginHover = value
+func `handleEndHover=`*  (node: UINode, value: proc(node: UINode): bool)                                                                        {.inline.} = node.mHandleEndHover = value
+func `handleHover=`*     (node: UINode, value: proc(node: UINode): bool)                                                                        {.inline.} = node.mHandleHover = value
+func `handleScroll=`*    (node: UINode, value: proc(node: UINode, pos: Vec2, delta: Vec2, modifiers: set[Modifier]): bool)                      {.inline.} = node.mHandleScroll = value
 
 func xy*(node: UINode): Vec2 {.inline.} = vec2(mix(node.boundsRaw.x, node.boundsRaw.x - node.boundsRaw.w, node.pivot.x), mix(node.boundsRaw.y, node.boundsRaw.y - node.boundsRaw.h, node.pivot.y))
 
