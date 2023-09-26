@@ -233,7 +233,7 @@ func `handleEndHover=`*(node: UINode,   value: proc(node: UINode): bool)        
 func `handleHover=`*(node: UINode,      value: proc(node: UINode): bool)                                  {.inline.} = node.mHandleHover = value
 func `handleScroll=`*(node: UINode,     value: proc(node: UINode, pos: Vec2, delta: Vec2, modifiers: set[Modifier]): bool) {.inline.} = node.mHandleScroll = value
 
-func xy*(node: UINode): Vec2 {.inline.} = node.boundsRaw.xy
+func xy*(node: UINode): Vec2 {.inline.} = vec2(mix(node.boundsRaw.x, node.boundsRaw.x - node.boundsRaw.w, node.pivot.x), mix(node.boundsRaw.y, node.boundsRaw.y - node.boundsRaw.h, node.pivot.y))
 
 func x*(node: UINode): float32 {.inline.} = mix(node.boundsRaw.x, node.boundsRaw.x - node.boundsRaw.w, node.pivot.x)
 func y*(node: UINode): float32 {.inline.} = mix(node.boundsRaw.y, node.boundsRaw.y - node.boundsRaw.h, node.pivot.y)
@@ -894,7 +894,8 @@ proc finishNode(builder: UINodeBuilder, currentNode: UINode) =
 
 let rectNone = Rect.none
 proc postProcessNodeBackwards(builder: UINodeBuilder, node: UINode, offsetX: float32 = 0, offsetY: float32 = 0, inClearRect = Rect.none) =
-  # node.logi "postProcessNodeBackwards ", offset, ", ", inClearRect, ", "
+  if inClearRect.isSome:
+    node.logi "postProcessNodeBackwards ", offsetX, ", ", offsetY, ", ", inClearRect
 
   stackSize.inc
   defer: stackSize.dec
@@ -905,6 +906,7 @@ proc postProcessNodeBackwards(builder: UINodeBuilder, node: UINode, offsetX: flo
 
   let wasAnimating = node.id in builder.animatingNodes
 
+  let animationProgress = clamp(node.boundsLerpSpeed * builder.animationSpeedModifier * builder.frameTime, 0, 1)
   if AnimateBounds in node.flags or node.flags.all &{AnimatePosition, AnimateSize}:
     if node.boundsActual.x == node.x and
       node.boundsActual.y == node.y and
@@ -912,7 +914,7 @@ proc postProcessNodeBackwards(builder: UINodeBuilder, node: UINode, offsetX: flo
       node.boundsActual.h == node.h:
       builder.animatingNodes.excl node.id
     else:
-      node.boundsActual.mix(node.bounds, node.boundsLerpSpeed * builder.animationSpeedModifier * builder.frameTime)
+      node.boundsActual.mix(node.bounds, animationProgress)
       if node.boundsActual.x.almostEqual(node.x, 1) and
         node.boundsActual.y.almostEqual(node.y, 1) and
         node.boundsActual.w.almostEqual(node.w, 1) and
@@ -928,9 +930,8 @@ proc postProcessNodeBackwards(builder: UINodeBuilder, node: UINode, offsetX: flo
     if node.boundsActual.xy == node.xy:
       builder.animatingNodes.excl node.id
     else:
-      let progress = node.boundsLerpSpeed * builder.animationSpeedModifier * builder.frameTime
-      node.boundsActual.x = node.boundsActual.x.mix(node.x, progress)
-      node.boundsActual.y = node.boundsActual.y.mix(node.y, progress)
+      node.boundsActual.x = node.boundsActual.x.mix(node.x, animationProgress)
+      node.boundsActual.y = node.boundsActual.y.mix(node.y, animationProgress)
       if node.boundsActual.xy.almostEqual(node.xy, 1):
         node.boundsActual.x = node.x
         node.boundsActual.y = node.y
@@ -943,9 +944,8 @@ proc postProcessNodeBackwards(builder: UINodeBuilder, node: UINode, offsetX: flo
     if node.boundsActual.wh == node.wh.wh:
       builder.animatingNodes.excl node.id
     else:
-      let progress = node.boundsLerpSpeed * builder.animationSpeedModifier * builder.frameTime
-      node.boundsActual.w = node.boundsActual.w.mix(node.w, progress)
-      node.boundsActual.h = node.boundsActual.h.mix(node.h, progress)
+      node.boundsActual.w = node.boundsActual.w.mix(node.w, animationProgress)
+      node.boundsActual.h = node.boundsActual.h.mix(node.h, animationProgress)
       if node.boundsActual.wh.almostEqual(node.wh.wh, 1):
         node.boundsActual.w = node.w
         node.boundsActual.h = node.h
@@ -1031,14 +1031,15 @@ proc postProcessNodeBackwards(builder: UINodeBuilder, node: UINode, offsetX: flo
     node.contentDirty = false
 
 proc postProcessNodeForwards(builder: UINodeBuilder, node: UINode, inDrawRect = Rect.none) =
-  # node.logi "postProcessNodeForwards ", inDrawRect
+  if inDrawRect.isSome:
+    node.logi "postProcessNodeForwards ", inDrawRect, ", ", node.boundsActual
 
   stackSize.inc
   defer: stackSize.dec
 
   if inDrawRect.isSome and inDrawRect.get.intersects(node.boundsActual):
     node.mLastDrawInvalidation = builder.frameIndex
-    # node.logi "invalidate draw"
+    node.logi "invalidate draw"
 
   node.drawRect = Rect.none
   if node.lastChange == builder.frameIndex:

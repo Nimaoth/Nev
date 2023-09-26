@@ -1289,7 +1289,7 @@ proc getDirectoryListingRec(self: App, folder: WorkspaceFolder, path: string): F
 
   return resultItems
 
-proc iterateDirectoryRec(self: App, folder: WorkspaceFolder, path: string, cancellationToken: CancellationToken, callback: proc(files: seq[string]): void): Future[void] {.async.} =
+proc iterateDirectoryRec(self: App, folder: WorkspaceFolder, path: string, cancellationToken: CancellationToken, callback: proc(files: seq[string]): Future[void]): Future[void] {.async.} =
   let path = path
   var resultItems: seq[string]
   var folders: seq[string]
@@ -1310,7 +1310,7 @@ proc iterateDirectoryRec(self: App, folder: WorkspaceFolder, path: string, cance
 
   await sleepAsync(1)
 
-  callback(resultItems)
+  await callback(resultItems)
 
   if cancellationToken.canceled:
     return
@@ -1332,12 +1332,30 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
     self.platform.requestRender()
 
   var popup = newSelectorPopup(self.asAppInterface)
+  var sortCancellationToken = newCancellationToken()
+
   popup.getCompletionsAsyncIter = proc(popup: SelectorPopup, text: string): Future[void] {.async.} =
     if not popup.cancellationToken.isNil:
-      # popup.cancellationToken.cancel()
-      for item in popup.completions:
-        let score = matchPath(item.FileSelectorItem.path, text)
-        item.score = score
+      sortCancellationToken.cancel()
+      let cancellationToken = newCancellationToken()
+      sortCancellationToken = cancellationToken
+
+      var timer = startTimer()
+
+      var i = 0
+      while i < popup.completions.len:
+        defer: inc i
+
+        if cancellationToken.canceled:
+          return
+
+        let score = matchPath(popup.completions[i].FileSelectorItem.path, text)
+        popup.completions[i].score = score
+
+        if timer.elapsed.ms > 10:
+          await sleepAsync(1)
+          timer = startTimer()
+
       popup.enableAutoSort()
 
       return
@@ -1345,13 +1363,18 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
     var cancellationToken = newCancellationToken()
     popup.cancellationToken = cancellationToken
 
+    var timer = startTimer()
     for folder in self.workspace.folders:
       var folder = folder
-      await self.iterateDirectoryRec(folder, "", cancellationToken, proc(files: seq[string]) =
+      await self.iterateDirectoryRec(folder, "", cancellationToken, proc(files: seq[string]) {.async.} =
         let folder = folder
         for file in files:
           let score = matchPath(file, text)
           popup.completions.add FileSelectorItem(path: fmt"{file}", score: score, workspaceFolder: folder.some)
+
+          if timer.elapsed.ms > 5:
+            await sleepAsync(1)
+            timer = startTimer()
 
         # popup.completions.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Descending)
         popup.enableAutoSort()
