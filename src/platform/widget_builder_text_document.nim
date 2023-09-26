@@ -2,11 +2,14 @@ import std/[strformat, tables, sugar, sequtils, strutils]
 import util, app, document_editor, text/text_editor, custom_logger, widgets, platform, theme, custom_unicode, config_provider
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import vmath, bumpy, chroma
+import custom_logger
 
 import ui/node
 
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
 {.used.}
+
+logCategory "widget_builder_text"
 
 type CursorLocationInfo = tuple[node: UINode, text: string, bounds: Rect]
 
@@ -62,17 +65,20 @@ proc renderLine*(
 
       if lineNumberText.len > 0:
         builder.panel(&{UINodeFlag.FillBackground, SizeToContentY}, w = lineNumberTotalWidth, backgroundColor = backgroundColor):
-          builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = lineNumberText, x = lineNumberX, textColor = textColor):
-            lastPartXW = currentNode.bounds.xw
+          builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = lineNumberText, x = lineNumberX, textColor = textColor)
+        lastPartXW = lineNumberTotalWidth
 
     for part in line.parts:
       defer:
         start += part.text.len
         startRune += part.text.runeLen
 
+      var partNode: UINode
       builder.panel(&{DrawText, FillBackground, SizeToContentX, SizeToContentY}, text = part.text):
         currentNode.backgroundColor = backgroundColor
         currentNode.textColor = if part.scope.len == 0: textColor else: app.theme.tokenColor(part, textColor)
+
+        partNode = currentNode
 
         onClick Left:
           echo "clicked "
@@ -85,7 +91,7 @@ proc renderLine*(
             let cursorX = builder.textWidth(int(selectionLastRune - startRune)).round
             result = some (currentNode, $part.text[selectionLastRune - startRune], rect(cursorX, 0, builder.charWidth, builder.textHeight))
 
-        lastPartXW = currentNode.bounds.xw
+      lastPartXW = partNode.bounds.xw
 
     # cursor after latest char
     if curs.getSome(curs) and curs == lineOriginal.len:
