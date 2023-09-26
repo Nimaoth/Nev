@@ -28,6 +28,7 @@ type
     mLineHeight: float
     mLineDistance: float
     mCharWidth: float
+    mCharGap: float
 
     framebufferId: GLuint
     framebuffer: Texture
@@ -231,7 +232,9 @@ method sizeChanged*(self: GuiPlatform): bool =
 proc updateCharWidth*(self: GuiPlatform) =
   let font = self.getFont(self.ctx.font, self.ctx.fontSize)
   let bounds = font.typeset(repeat("#", 100)).layoutBounds()
+  let boundsSingle = font.typeset("#").layoutBounds()
   self.mCharWidth = bounds.x / 100
+  self.mCharGap = (bounds.x / 100) - boundsSingle.x
   self.mLineHeight = bounds.y
 
   self.builder.charWidth = bounds.x / 100.0
@@ -247,6 +250,7 @@ method fontSize*(self: GuiPlatform): float = self.ctx.fontSize
 method lineDistance*(self: GuiPlatform): float = self.mLineDistance
 method lineHeight*(self: GuiPlatform): float = self.mLineHeight
 method charWidth*(self: GuiPlatform): float = self.mCharWidth
+method charGap*(self: GuiPlatform): float = self.mCharGap
 
 method measureText*(self: GuiPlatform, text: string): Vec2 = self.getFont(self.ctx.font, self.ctx.fontSize).typeset(text).layoutBounds()
 

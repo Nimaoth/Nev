@@ -4,8 +4,9 @@ import widget_builders_base, widget_builder_ast_document, widget_builder_text_do
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import vmath, bumpy, chroma
 
-import ../../test_lib
 import ui/node
+
+logCategory "widget_builder"
 
 proc updateStatusBar*(self: App, frameIndex: int, statusBarWidget: WPanel, completionsPanel: WPanel) =
   var statusWidget: WText
@@ -34,28 +35,28 @@ proc updateStatusBar*(self: App, frameIndex: int, statusBarWidget: WPanel, compl
   self.getCommandLineTextEditor.updateWidget(self, commandLineWidget, completionsPanel, frameIndex)
   statusBarWidget.lastHierarchyChange = max(statusBarWidget.lastHierarchyChange, commandLineWidget.lastHierarchyChange)
 
-var commandLineWidget: WPanel
-var mainStack: WStack
-var viewPanel: WPanel
-var mainPanel: WPanel
-var completionsPanel: WPanel
-var widgetsPerEditor = initTable[EditorId, WPanel]()
-
 proc updateWidgetTree*(self: App, frameIndex: int) =
   # self.platform.builder.buildUINodes()
+
+  var headerColor = if self.commandLineMode: self.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)) else: self.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
+  headerColor.a = 1
 
   var rootFlags = &{FillX, FillY, OverlappingChildren, MaskContent}
   let builder = self.platform.builder
   builder.panel(rootFlags, backgroundColor = color(0, 0, 0)): # fullscreen overlay
 
-    builder.panel(&{FillX, FillY, LayoutVertical}): # main panel
-      builder.panel(&{FillX, SizeToContentY, LayoutHorizontal}): # status bar
+    builder.panel(&{FillX, FillY, LayoutVerticalReverse}): # main panel
+      builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse, FillBackground}, backgroundColor = headerColor, pivot = vec2(0, 1)): # status bar
         let textColor = self.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
         let text = if self.currentMode.len == 0: "normal" else: self.currentMode
-        builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = text, textColor = textColor): #
+
+        builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = text, textColor = textColor, pivot = vec2(1, 0)):
           discard
 
-      builder.panel(&{FillX, FillY}): # main panel
+        builder.panel(&{FillX, SizeToContentY}, pivot = vec2(1, 0)):
+          self.getCommandLineTextEditor.createUI(builder, self)
+
+      builder.panel(&{FillX, FillY}, pivot = vec2(0, 1)): # main panel
         let overlay = currentNode
 
         let rects = self.layout.layoutViews(self.layout_props, rect(0, 0, 1, 1), self.views.len)

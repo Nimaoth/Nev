@@ -29,6 +29,7 @@ type
     mLineHeight: float
     mLineDistance: float
     mCharWidth: float
+    mCharGap: float
 
     doubleClickTimer: Timer
     doubleClickCounter: int
@@ -77,6 +78,7 @@ method init*(self: BrowserPlatform) =
   self.mLineHeight = 20
   self.mLineDistance = 2
   self.mCharWidth = 18
+  self.mCharGap = 1
   self.supportsThinCursor = true
   self.doubleClickTime = 0.35
 
@@ -254,6 +256,7 @@ proc updateFontSettings*(self: BrowserPlatform) =
   self.content.appendChild(d)
   self.mLineHeight = d.clientHeight.float
   self.mCharWidth = d.clientWidth.float / 100
+  self.mCharGap = 1
   self.content.removeChild(d)
 
   self.builder.charWidth = self.mCharWidth
@@ -278,6 +281,9 @@ method lineHeight*(self: BrowserPlatform): float =
 
 method charWidth*(self: BrowserPlatform): float =
   self.mCharWidth
+
+method charGap*(self: BrowserPlatform): float =
+  self.mCharGap
 
 method measureText*(self: BrowserPlatform, text: string): Vec2 =
   return vec2(text.len.float * self.mCharWidth, self.totalLineHeight)
