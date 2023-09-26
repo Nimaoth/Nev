@@ -452,6 +452,10 @@ proc returnNode*(builder: UINodeBuilder, node: UINode) =
   node.lastRenderTime = 0
 
   node.mText = ""
+  node.mTextRuneLen = 0
+
+  node.pivot.x = 0
+  node.pivot.y = 0
 
   node.boundsOld.x = 0
   node.boundsOld.y = 0
