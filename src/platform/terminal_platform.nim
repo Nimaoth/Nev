@@ -215,25 +215,29 @@ method processEvents*(self: TerminalPlatform): int =
 
       if mouseInfo.scroll:
         let scroll = if mouseInfo.scrollDir == ScrollDirection.sdDown: -1.0 else: 1.0
-        self.onScroll.invoke (pos, vec2(0, scroll), {})
+
+        if not self.builder.handleMouseScroll(pos, vec2(0, scroll), {}):
+          self.onScroll.invoke (pos, vec2(0, scroll), {})
       elif mouseInfo.move:
         # log(lvlInfo, fmt"move to {pos}")
-        self.onMouseMove.invoke (pos, vec2(0, 0), {}, self.mouseButtons)
+        if not self.builder.handleMouseMoved(pos, self.mouseButtons):
+          self.onMouseMove.invoke (pos, vec2(0, 0), {}, self.mouseButtons)
       else:
         # log(lvlInfo, fmt"{mouseInfo.action} {button} at {pos}")
         case mouseInfo.action
         of mbaPressed:
           self.mouseButtons.incl button
-          self.onMousePress.invoke (button, modifiers, pos)
+
+          var events = @[button]
 
           if button == input.MouseButton.Left:
             if self.doubleClickTimer.elapsed.float < self.doubleClickTime:
               inc self.doubleClickCounter
               case self.doubleClickCounter
               of 1:
-                self.onMousePress.invoke (input.MouseButton.DoubleClick, modifiers, pos)
+                events.add input.MouseButton.DoubleClick
               of 2:
-                self.onMousePress.invoke (input.MouseButton.TripleClick, modifiers, pos)
+                events.add input.MouseButton.TripleClick
               else:
                 self.doubleClickCounter = 0
             else:
@@ -243,17 +247,22 @@ method processEvents*(self: TerminalPlatform): int =
           else:
             self.doubleClickCounter = 0
 
+          for event in events:
+            if not self.builder.handleMousePressed(event, modifiers, pos):
+              self.onMousePress.invoke (event, modifiers, pos)
+
         of mbaReleased:
           self.mouseButtons = {}
-          self.onMouseRelease.invoke (button, modifiers, pos)
+          if not self.builder.handleMouseReleased(button, modifiers, pos):
+            self.onMouseRelease.invoke (button, modifiers, pos)
         else:
           discard
 
     else:
       var modifiers: Modifiers = {}
       let button = key.toInput(modifiers)
-      self.onKeyPress.invoke (button, modifiers)
-      discard
+      if not self.builder.handleKeyPressed(button, modifiers):
+        self.onKeyPress.invoke (button, modifiers)
 
   return eventCounter
 
