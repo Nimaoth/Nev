@@ -204,3 +204,159 @@ suite "UI Nodes":
     check node40.lastChange == 1
     check node41.lastChange == 3
     check node42.lastChange == 3
+
+  test "FillX, LayoutHorizontalReverse":
+    let builder = newNodeBuilder()
+
+    builder.frame:
+      builder.panel(&{FillX, LayoutHorizontalReverse}):
+        builder.panel(&{}, w = 10, pivot = vec2(1, 0))
+        builder.panel(&{}, w = 10, pivot = vec2(1, 0))
+        builder.panel(&{FillX}, pivot = vec2(1, 0))
+
+    check builder.root[0][0].bounds == rect(90, 0, 10, 0)
+    check builder.root[0][0].boundsRaw == rect(100, 0, 10, 0)
+
+    check builder.root[0][1].bounds == rect(80, 0, 10, 0)
+    check builder.root[0][1].boundsRaw == rect(90, 0, 10, 0)
+
+    check builder.root[0][2].bounds == rect(0, 0, 80, 0)
+    check builder.root[0][2].boundsRaw == rect(80, 0, 80, 0)
+
+  test "FillY, LayoutVerticalReverse":
+    let builder = newNodeBuilder()
+
+    builder.frame:
+      builder.panel(&{FillY, LayoutVerticalReverse}):
+        builder.panel(&{}, h = 10, pivot = vec2(0, 1))
+        builder.panel(&{}, h = 10, pivot = vec2(0, 1))
+        builder.panel(&{FillY}, pivot = vec2(0, 1))
+
+    check builder.root[0][0].bounds == rect(0, 90, 0, 10)
+    check builder.root[0][0].boundsRaw == rect(0, 100, 0, 10)
+
+    check builder.root[0][1].bounds == rect(0, 80, 0, 10)
+    check builder.root[0][1].boundsRaw == rect(0, 90, 0, 10)
+
+    check builder.root[0][2].bounds == rect(0, 0, 0, 80)
+    check builder.root[0][2].boundsRaw == rect(0, 80, 0, 80)
+
+  test "LayoutHorizontalReverse, SizeToContentX":
+    let builder = newNodeBuilder()
+
+    builder.frame:
+      builder.panel(&{LayoutHorizontalReverse, SizeToContentX}):
+        builder.panel(&{}, w = 15, pivot = vec2(1, 0))
+        builder.panel(&{}, w = 10, pivot = vec2(1, 0))
+        builder.panel(&{}, w = 5, pivot = vec2(1, 0))
+
+    check builder.root[0].boundsRaw == rect(0, 0, 30, 0)
+
+    check builder.root[0][0].bounds == rect(15, 0, 15, 0)
+    check builder.root[0][0].boundsRaw == rect(30, 0, 15, 0)
+
+    check builder.root[0][1].bounds == rect(5, 0, 10, 0)
+    check builder.root[0][1].boundsRaw == rect(15, 0, 10, 0)
+
+    check builder.root[0][2].bounds == rect(0, 0, 5, 0)
+    check builder.root[0][2].boundsRaw == rect(5, 0, 5, 0)
+
+  test "LayoutVerticalReverse, SizeToContentY":
+    let builder = newNodeBuilder()
+
+    builder.frame:
+      builder.panel(&{LayoutVerticalReverse, SizeToContentY}):
+        builder.panel(&{}, h = 15, pivot = vec2(0, 1))
+        builder.panel(&{}, h = 10, pivot = vec2(0, 1))
+        builder.panel(&{}, h = 5, pivot = vec2(0, 1))
+
+    check builder.root[0].boundsRaw == rect(0, 0, 0, 30)
+
+    check builder.root[0][0].bounds == rect(0, 15, 0, 15)
+    check builder.root[0][0].boundsRaw == rect(0, 30, 0, 15)
+
+    check builder.root[0][1].bounds == rect(0, 5, 0, 10)
+    check builder.root[0][1].boundsRaw == rect(0, 15, 0, 10)
+
+    check builder.root[0][2].bounds == rect(0, 0, 0, 5)
+    check builder.root[0][2].boundsRaw == rect(0, 5, 0, 5)
+
+  test "LayoutHorizontal, FillX":
+    let builder = newNodeBuilder()
+
+    builder.frame:
+      builder.panel(&{LayoutHorizontal, FillX}):
+        builder.panel(&{}, w = 10)
+        builder.panel(&{}, w = 20)
+        builder.panel(&{FillX})
+
+    check builder.root[0].boundsRaw == rect(0, 0, 100, 0)
+
+    check builder.root[0][0].bounds == rect(0, 0, 10, 0)
+    check builder.root[0][0].boundsRaw == rect(0, 0, 10, 0)
+
+    check builder.root[0][1].bounds == rect(10, 0, 20, 0)
+    check builder.root[0][1].boundsRaw == rect(10, 0, 20, 0)
+
+    check builder.root[0][2].bounds == rect(30, 0, 70, 0)
+    check builder.root[0][2].boundsRaw == rect(30, 0, 70, 0)
+
+  test "LayoutHorizontal, SizeToContentX":
+    let builder = newNodeBuilder()
+
+    builder.frame:
+      builder.panel(&{LayoutHorizontal, SizeToContentX}):
+        builder.panel(&{}, w = 10)
+        builder.panel(&{}, w = 20)
+        builder.panel(&{FillX})
+
+    check builder.root[0].boundsRaw == rect(0, 0, 30, 0)
+
+    check builder.root[0][0].bounds == rect(0, 0, 10, 0)
+    check builder.root[0][0].boundsRaw == rect(0, 0, 10, 0)
+
+    check builder.root[0][1].bounds == rect(10, 0, 20, 0)
+    check builder.root[0][1].boundsRaw == rect(10, 0, 20, 0)
+
+    check builder.root[0][2].bounds == rect(30, 0, 0, 0)
+    check builder.root[0][2].boundsRaw == rect(30, 0, 0, 0)
+
+  test "LayoutVertical, FillY":
+    let builder = newNodeBuilder()
+
+    builder.frame:
+      builder.panel(&{LayoutVertical, FillY}):
+        builder.panel(&{}, h = 10)
+        builder.panel(&{}, h = 20)
+        builder.panel(&{FillY})
+
+    check builder.root[0].boundsRaw == rect(0, 0, 0, 100)
+
+    check builder.root[0][0].bounds == rect(0, 0, 0, 10)
+    check builder.root[0][0].boundsRaw == rect(0, 0, 0, 10)
+
+    check builder.root[0][1].bounds == rect(0, 10, 0, 20)
+    check builder.root[0][1].boundsRaw == rect(0, 10, 0, 20)
+
+    check builder.root[0][2].bounds == rect(0, 30, 0, 70)
+    check builder.root[0][2].boundsRaw == rect(0, 30, 0, 70)
+
+  test "LayoutVertical, SizeToContentY":
+    let builder = newNodeBuilder()
+
+    builder.frame:
+      builder.panel(&{LayoutVertical, SizeToContentY}):
+        builder.panel(&{}, h = 10)
+        builder.panel(&{}, h = 20)
+        builder.panel(&{FillY})
+
+    check builder.root[0].boundsRaw == rect(0, 0, 0, 30)
+
+    check builder.root[0][0].bounds == rect(0, 0, 0, 10)
+    check builder.root[0][0].boundsRaw == rect(0, 0, 0, 10)
+
+    check builder.root[0][1].bounds == rect(0, 10, 0, 20)
+    check builder.root[0][1].boundsRaw == rect(0, 10, 0, 20)
+
+    check builder.root[0][2].bounds == rect(0, 30, 0, 0)
+    check builder.root[0][2].boundsRaw == rect(0, 30, 0, 0)

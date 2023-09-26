@@ -97,7 +97,12 @@ proc fullPath*(self: TextDocument): string =
   if self.appFile:
     return fs.getApplicationFilePath(self.filename)
 
-  return self.filename.absolutePath
+  when not defined(js):
+    return self.filename.absolutePath
+
+  else:
+    log lvlError, fmt"[js] Unable to get full path for text document {self.filename}"
+    return self.filename
 
 proc getLine*(self: TextDocument, line: int): string =
   if line < self.lines.len:

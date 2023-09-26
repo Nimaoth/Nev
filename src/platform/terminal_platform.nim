@@ -107,6 +107,7 @@ method fontSize*(self: TerminalPlatform): float = 1
 method lineDistance*(self: TerminalPlatform): float = 0
 method lineHeight*(self: TerminalPlatform): float = 1
 method charWidth*(self: TerminalPlatform): float = 1
+method charGap*(self: TerminalPlatform): float = 0
 method measureText*(self: TerminalPlatform, text: string): Vec2 = vec2(text.len.float, 1)
 
 proc pushMask(self: TerminalPlatform, mask: Rect) =

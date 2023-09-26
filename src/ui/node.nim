@@ -1,6 +1,6 @@
 import std/[os, macros, genasts, strutils, sequtils, sugar, strformat, options, tables, sets]
 import fusion/matching
-import macro_utils, util, id, input, custom_unicode
+import macro_utils, util, id, input, custom_unicode, array_set
 import chroma, vmath, rect_utils
 import custom_logger
 
@@ -117,7 +117,8 @@ type
     mBorderColor: Color
     mTextColor: Color
 
-    bounds: Rect          # The target bounds, used for layouting.
+    pivot: Vec2
+    boundsRaw: Rect       # The target bounds, used for layouting.
     boundsOld: Rect       # The last boundsActual
     boundsActual*: Rect   # The actual bounds, used for rendering and invalidation. If not animated then the boundsActual will immediately snap to this position, otherwise it will smoothly interpolate.
     boundsAbsolute: Rect  # The absolute bounds (relative to the root), based on boundsActual
@@ -153,7 +154,7 @@ type
     draggedNode*: Option[UINode] = UINode.none
     hoveredNode*: Option[UINode] = UINode.none
 
-    animatingNodes*: HashSet[Id]
+    animatingNodes*: seq[Id]
     frameTime*: float32 = 0.1
     animationSpeedModifier*: float32 = 1
 
@@ -232,15 +233,17 @@ func `handleEndHover=`*(node: UINode,   value: proc(node: UINode): bool)        
 func `handleHover=`*(node: UINode,      value: proc(node: UINode): bool)                                  {.inline.} = node.mHandleHover = value
 func `handleScroll=`*(node: UINode,     value: proc(node: UINode, pos: Vec2, delta: Vec2, modifiers: set[Modifier]): bool) {.inline.} = node.mHandleScroll = value
 
-func xy*(node: UINode): Vec2 {.inline.} = node.bounds.xy
+func xy*(node: UINode): Vec2 {.inline.} = node.boundsRaw.xy
 
-func x*(node: UINode): float32 {.inline.} = node.bounds.x
-func y*(node: UINode): float32 {.inline.} = node.bounds.y
-func w*(node: UINode): float32 {.inline.} = node.bounds.w
-func h*(node: UINode): float32 {.inline.} = node.bounds.h
-func xw*(node: UINode): float32 {.inline.} = node.bounds.xw
-func yh*(node: UINode): float32 {.inline.} = node.bounds.yh
-func wh*(node: UINode): Rect {.inline.} = rect(0, 0, node.bounds.w, node.bounds.h)
+func x*(node: UINode): float32 {.inline.} = mix(node.boundsRaw.x, node.boundsRaw.x - node.boundsRaw.w, node.pivot.x)
+func y*(node: UINode): float32 {.inline.} = mix(node.boundsRaw.y, node.boundsRaw.y - node.boundsRaw.h, node.pivot.y)
+func w*(node: UINode): float32 {.inline.} = node.boundsRaw.w
+func h*(node: UINode): float32 {.inline.} = node.boundsRaw.h
+func xw*(node: UINode): float32 {.inline.} = node.x + node.boundsRaw.w
+func yh*(node: UINode): float32 {.inline.} = node.y + node.boundsRaw.h
+func wh*(node: UINode): Rect {.inline.} = rect(0, 0, node.boundsRaw.w, node.boundsRaw.h)
+func bounds*(node: UINode): Rect {.inline.} = rect(mix(node.boundsRaw.x, node.boundsRaw.x - node.boundsRaw.w, node.pivot.x), mix(node.boundsRaw.y, node.boundsRaw.y - node.boundsRaw.h, node.pivot.y), node.boundsRaw.w, node.boundsRaw.h)
+func boundsRaw*(node: UINode): Rect {.inline.} = node.boundsRaw
 
 func lx*(node: UINode): float32 {.inline.} = node.boundsAbsolute.x
 func ly*(node: UINode): float32 {.inline.} = node.boundsAbsolute.y
@@ -249,10 +252,10 @@ func lh*(node: UINode): float32 {.inline.} = node.boundsAbsolute.h
 func lxw*(node: UINode): float32 {.inline.} = node.boundsAbsolute.xw
 func lyh*(node: UINode): float32 {.inline.} = node.boundsAbsolute.yh
 
-func `x=`*(node: UINode, value: float32) {.inline.} = node.bounds.x = value
-func `y=`*(node: UINode, value: float32) {.inline.} = node.bounds.y = value
-proc `w=`*(node: UINode, value: float32) {.inline.} = node.bounds.w = value
-proc `h=`*(node: UINode, value: float32) {.inline.} = node.bounds.h = value
+func `rawX=`*(node: UINode, value: float32) {.inline.} = node.boundsRaw.x = value
+func `rawY=`*(node: UINode, value: float32) {.inline.} = node.boundsRaw.y = value
+proc `w=`*(node: UINode, value: float32) {.inline.} = node.boundsRaw.w = value
+proc `h=`*(node: UINode, value: float32) {.inline.} = node.boundsRaw.h = value
 
 func `lx=`*(node: UINode, value: float32) {.inline.} = node.boundsAbsolute.x = value
 func `ly=`*(node: UINode, value: float32) {.inline.} = node.boundsAbsolute.y = value
@@ -283,7 +286,7 @@ proc newNodeBuilder*(): UINodeBuilder =
 
   var id = UIUserId(kind: None)
   result.root = result.unpoolNode(userId = id)
-  result.animatingNodes = initHashSet[Id]()
+  result.animatingNodes = @[]
 
 proc currentParent*(builder: UINodeBuilder): UINode = builder.currentParent
 
@@ -455,10 +458,10 @@ proc returnNode*(builder: UINodeBuilder, node: UINode) =
   node.boundsOld.w = 0
   node.boundsOld.h = 0
 
-  node.bounds.x = 0
-  node.bounds.y = 0
-  node.bounds.w = 0
-  node.bounds.h = 0
+  node.boundsRaw.x = 0
+  node.boundsRaw.y = 0
+  node.boundsRaw.w = 0
+  node.boundsRaw.h = 0
 
   node.boundsActual.x = 0
   node.boundsActual.y = 0
@@ -548,36 +551,53 @@ proc preLayout*(builder: UINodeBuilder, node: UINode) =
 
   if LayoutHorizontal in parent.flags:
     if node.prev.isNotNil:
-      node.x = (node.prev.x + node.prev.w).round
+      node.boundsRaw.x = node.prev.xw.round
+    else:
+      node.boundsRaw.x = 0
+  elif LayoutHorizontalReverse in parent.flags:
+    if node.prev.isNotNil:
+      node.boundsRaw.x = node.prev.x.round
+    else:
+      node.boundsRaw.x = parent.w
 
   if LayoutVertical in parent.flags:
     if node.prev.isNotNil:
-      node.y = (node.prev.y + node.prev.h).round
+      node.boundsRaw.y = node.prev.yh.round
+    else:
+      node.boundsRaw.y = 0
   elif LayoutVerticalReverse in parent.flags:
     if node.prev.isNotNil:
-      node.y = (node.prev.y + node.prev.h).round
+      node.boundsRaw.y = node.prev.y.round
+    else:
+      node.boundsRaw.y = parent.h
 
   if node.flags.all &{SizeToContentX, FillX}:
     if DrawText in node.flags:
-      node.w = max(parent.w - node.x, builder.textWidth(node.mTextRuneLen)).round
+      node.boundsRaw.w = max(parent.w - node.x, builder.textWidth(node.mTextRuneLen)).round
     else:
-      node.w = (parent.w - node.x).round
+      node.boundsRaw.w = (parent.w - node.x).round
   elif SizeToContentX in node.flags:
     if DrawText in node.flags:
-      node.w = builder.textWidth(node.mTextRuneLen).round
+      node.boundsRaw.w = builder.textWidth(node.mTextRuneLen).round
   elif FillX in node.flags:
-    node.w = (parent.w - node.x).round
+    if LayoutHorizontalReverse in parent.flags:
+      node.boundsRaw.w = node.boundsRaw.x.round
+    else:
+      node.boundsRaw.w = (parent.w - node.x).round
 
   if node.flags.all &{SizeToContentY, FillY}:
     if DrawText in node.flags:
-      node.h = max(parent.h - node.y, builder.textHeight).round
+      node.boundsRaw.h = max(parent.h - node.y, builder.textHeight).round
     else:
-      node.h = (parent.h - node.y).round
+      node.boundsRaw.h = (parent.h - node.y).round
   elif SizeToContentY in node.flags:
     if DrawText in node.flags:
-      node.h = builder.textHeight.round
+      node.boundsRaw.h = builder.textHeight.round
   elif FillY in node.flags:
-    node.h = (parent.h - node.y).round
+    if LayoutVerticalReverse in parent.flags:
+      node.boundsRaw.h = node.boundsRaw.y.round
+    else:
+      node.boundsRaw.h = (parent.h - node.y).round
 
 proc relayout*(builder: UINodeBuilder, node: UINode) =
   builder.preLayout node
@@ -586,14 +606,45 @@ proc relayout*(builder: UINodeBuilder, node: UINode) =
 proc postLayoutChild*(builder: UINodeBuilder, node: UINode, child: UINode) =
   var recurse = false
   if SizeToContentX in node.flags and child.xw > node.w:
-    node.w = child.xw.round
+    node.boundsRaw.w = child.xw.round
     recurse = true
 
   if SizeToContentY in node.flags and child.yh > node.h:
-    node.h = child.yh.round
+    node.boundsRaw.h = child.yh.round
     recurse = true
 
+proc updateSizeToContent(builder: UINodeBuilder, node: UINode) =
+  if SizeToContentX in node.flags:
+    let childrenWidth = if node.first.isNotNil:
+      if LayoutHorizontalReverse in node.flags:
+        node.first.xw - node.last.x
+      else:
+        node.last.xw - node.first.x
+    else: 0
+
+    let strWidth = if DrawText in node.flags:
+      builder.textWidth(node.mTextRuneLen)
+    else: 0
+
+    node.boundsRaw.w = max(node.w, max(childrenWidth, strWidth)).round
+
+  if SizeToContentY in node.flags:
+    let childrenHeight = if node.first.isNotNil:
+      if LayoutVerticalReverse in node.flags:
+        node.first.yh - node.last.y
+      else:
+        node.last.yh - node.first.y
+    else: 0
+
+    let strHeight = if DrawText in node.flags:
+      builder.textHeight
+    else: 0
+
+    node.boundsRaw.h = max(node.h, max(childrenHeight, strHeight)).round
+
 proc postLayout*(builder: UINodeBuilder, node: UINode) =
+  builder.updateSizeToContent node
+
   if node.flags.any &{SizeToContentX, SizeToContentY}:
     for _, c in node.children:
       builder.relayout(c)
@@ -601,35 +652,21 @@ proc postLayout*(builder: UINodeBuilder, node: UINode) =
   if node.parent.isNotNil:
     builder.postLayoutChild(node.parent, node)
 
-  if SizeToContentX in node.flags:
-    let childrenWidth = if node.last.isNotNil:
-      node.last.x + node.last.w
-    else: 0
+  builder.updateSizeToContent node
 
-    let strWidth = if DrawText in node.flags:
-      builder.textWidth(node.mTextRuneLen)
-    else: 0
-
-    node.w = max(node.w, max(childrenWidth, strWidth)).round
-
-  elif FillX in node.flags:
+  if FillX in node.flags:
     assert node.parent.isNotNil
-    node.w = (node.parent.w - node.x).round
+    if LayoutHorizontalReverse in node.parent.flags:
+      node.boundsRaw.w = node.boundsRaw.x.round
+    else:
+      node.boundsRaw.w = (node.parent.w - node.x).round
 
-  if SizeToContentY in node.flags:
-    let childrenHeight = if node.last.isNotNil:
-      node.last.y + node.last.h.round
-    else: 0
-
-    let strHeight = if DrawText in node.flags:
-      builder.textHeight
-    else: 0
-
-    node.h = max(node.h, max(childrenHeight, strHeight)).round
-
-  elif FillY in node.flags:
+  if FillY in node.flags:
     assert node.parent.isNotNil
-    node.h = (node.parent.h - node.y).round
+    if LayoutVerticalReverse in node.parent.flags:
+      node.boundsRaw.h = node.boundsRaw.y.round
+    else:
+      node.boundsRaw.h = (node.parent.h - node.y).round
 
   if node.parent.isNotNil:
     builder.postLayoutChild(node.parent, node)
@@ -793,7 +830,7 @@ proc getNextOrNewNode(builder: UINodeBuilder, node: UINode, last: UINode, userId
   node.insert(newNode, last)
   return newNode
 
-proc prepareNode(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[string], inX, inY, inW, inH: Option[float32], userId: var UIUserId, inAdditionalFlags: Option[UINodeFlags]): UINode =
+proc prepareNode(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[string], inX, inY, inW, inH: Option[float32], inPivot: Option[Vec2], userId: var UIUserId, inAdditionalFlags: Option[UINodeFlags]): UINode =
   assert builder.currentParent.isNotNil
 
   var node = builder.getNextOrNewNode(builder.currentParent, builder.currentChild, userId)
@@ -819,17 +856,18 @@ proc prepareNode(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[st
     node.clearRect = Rect.none
     node.clearedChildrenBounds = Rect.none
 
-  node.bounds.x = 0
-  node.bounds.y = 0
-  node.bounds.w = 0
-  node.bounds.h = 0
+  node.boundsRaw.x = 0
+  node.boundsRaw.y = 0
+  node.boundsRaw.w = 0
+  node.boundsRaw.h = 0
 
   builder.preLayout(node)
 
-  if inX.isSome: node.x = inX.get.round
-  if inY.isSome: node.y = inY.get.round
-  if inW.isSome: node.w = inW.get.round
-  if inH.isSome: node.h = inH.get.round
+  if inX.isSome: node.boundsRaw.x = inX.get.round
+  if inY.isSome: node.boundsRaw.y = inY.get.round
+  if inW.isSome: node.boundsRaw.w = inW.get.round
+  if inH.isSome: node.boundsRaw.h = inH.get.round
+  if inPivot.isSome: node.pivot = inPivot.get
 
   builder.currentParent = node
   builder.currentChild = nil
@@ -864,52 +902,59 @@ proc postProcessNodeBackwards(builder: UINodeBuilder, node: UINode, offsetX: flo
   let wasAnimating = node.id in builder.animatingNodes
 
   if AnimateBounds in node.flags or node.flags.all &{AnimatePosition, AnimateSize}:
-    if node.boundsActual == node.bounds:
+    if node.boundsActual.x == node.x and
+      node.boundsActual.y == node.y and
+      node.boundsActual.w == node.w and
+      node.boundsActual.h == node.h:
       builder.animatingNodes.excl node.id
     else:
       node.boundsActual.mix(node.bounds, node.boundsLerpSpeed * builder.animationSpeedModifier * builder.frameTime)
-      if node.boundsActual.almostEqual(node.bounds, 1):
-        node.boundsActual.x = node.bounds.x
-        node.boundsActual.y = node.bounds.y
-        node.boundsActual.w = node.bounds.w
-        node.boundsActual.h = node.bounds.h
+      if node.boundsActual.x.almostEqual(node.x, 1) and
+        node.boundsActual.y.almostEqual(node.y, 1) and
+        node.boundsActual.w.almostEqual(node.w, 1) and
+        node.boundsActual.h.almostEqual(node.h, 1):
+
+        node.boundsActual.x = node.x
+        node.boundsActual.y = node.y
+        node.boundsActual.w = node.w
+        node.boundsActual.h = node.h
       builder.animatingNodes.incl node.id
 
   elif AnimatePosition in node.flags:
-    if node.boundsActual.xy == node.bounds.xy:
+    if node.boundsActual.xy == node.xy:
       builder.animatingNodes.excl node.id
     else:
       let progress = node.boundsLerpSpeed * builder.animationSpeedModifier * builder.frameTime
-      node.boundsActual.x = node.boundsActual.x.mix(node.bounds.x, progress)
-      node.boundsActual.y = node.boundsActual.y.mix(node.bounds.y, progress)
-      if node.boundsActual.xy.almostEqual(node.bounds.xy, 1):
-        node.boundsActual.x = node.bounds.x
-        node.boundsActual.y = node.bounds.y
+      node.boundsActual.x = node.boundsActual.x.mix(node.x, progress)
+      node.boundsActual.y = node.boundsActual.y.mix(node.y, progress)
+      if node.boundsActual.xy.almostEqual(node.xy, 1):
+        node.boundsActual.x = node.x
+        node.boundsActual.y = node.y
       builder.animatingNodes.incl node.id
 
-    node.boundsActual.w = node.bounds.w
-    node.boundsActual.h = node.bounds.h
+    node.boundsActual.w = node.w
+    node.boundsActual.h = node.h
 
   elif AnimateSize in node.flags:
-    if node.boundsActual.wh == node.bounds.wh:
+    if node.boundsActual.wh == node.wh.wh:
       builder.animatingNodes.excl node.id
     else:
       let progress = node.boundsLerpSpeed * builder.animationSpeedModifier * builder.frameTime
-      node.boundsActual.w = node.boundsActual.w.mix(node.bounds.w, progress)
-      node.boundsActual.h = node.boundsActual.h.mix(node.bounds.h, progress)
-      if node.boundsActual.wh.almostEqual(node.bounds.wh, 1):
-        node.boundsActual.w = node.bounds.w
-        node.boundsActual.h = node.bounds.h
+      node.boundsActual.w = node.boundsActual.w.mix(node.w, progress)
+      node.boundsActual.h = node.boundsActual.h.mix(node.h, progress)
+      if node.boundsActual.wh.almostEqual(node.wh.wh, 1):
+        node.boundsActual.w = node.w
+        node.boundsActual.h = node.h
       builder.animatingNodes.incl node.id
 
-    node.boundsActual.x = node.bounds.x
-    node.boundsActual.y = node.bounds.y
+    node.boundsActual.x = node.x
+    node.boundsActual.y = node.y
 
   else:
-    node.boundsActual.x = node.bounds.x
-    node.boundsActual.y = node.bounds.y
-    node.boundsActual.w = node.bounds.w
-    node.boundsActual.h = node.bounds.h
+    node.boundsActual.x = node.x
+    node.boundsActual.y = node.y
+    node.boundsActual.w = node.w
+    node.boundsActual.h = node.h
     builder.animatingNodes.excl node.id
 
   let newPosAbsoluteX = node.boundsActual.x + offsetX
@@ -1028,6 +1073,7 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
   var inY = genAst(): float32.none
   var inW = genAst(): float32.none
   var inH = genAst(): float32.none
+  var inPivot = genAst(): Vec2.none
   var inBackgroundColor = genAst(): Color.none
   var inBorderColor = genAst(): Color.none
   var inTextColor = genAst(): Color.none
@@ -1056,14 +1102,13 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
         inW = genAst(value): some(value).maybeFlatten.mapIt(it.float32)
       of "h":
         inH = genAst(value): some(value).maybeFlatten.mapIt(it.float32)
+      of "pivot":
+        inPivot = genAst(value): some(value).maybeFlatten
       else:
         error("Unknown ui node property '" & name & "'", arg[0])
 
     of Infix[Ident(strVal: "+="), Ident(strVal: "flags"), @value]:
       inAdditionalFlags = genAst(value): some(value).maybeFlatten
-      # echo inAdditionalFlags.repr
-      # echo arg.treeRepr
-      # echo "add to flags"
 
     elif i == args.len - 1:
       body = arg
@@ -1072,9 +1117,9 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
       # echo arg.treeRepr
       error("Only <name> = <value> is allowed here.", arg)
 
-  return genAst(builder, inFlags, inText, inX, inY, inW, inH, body, inBackgroundColor, inBorderColor, inTextColor, inUserId, inAdditionalFlags):
+  return genAst(builder, inFlags, inText, inX, inY, inW, inH, inPivot, body, inBackgroundColor, inBorderColor, inTextColor, inUserId, inAdditionalFlags):
     var userId = inUserId
-    var node = builder.prepareNode(inFlags, inText, inX, inY, inW, inH, userId, inAdditionalFlags)
+    var node = builder.prepareNode(inFlags, inText, inX, inY, inW, inH, inPivot, userId, inAdditionalFlags)
 
     if inBackgroundColor.isSome: node.backgroundColor = inBackgroundColor.get
     if inBorderColor.isSome:     node.borderColor     = inBorderColor.get
@@ -1152,10 +1197,10 @@ proc beginFrame*(builder: UINodeBuilder, size: Vec2) =
   builder.currentParent = builder.root
   builder.currentChild = nil
 
-  builder.root.x = 0
-  builder.root.y = 0
-  builder.root.w = size.x
-  builder.root.h = size.y
+  builder.root.boundsRaw.x = 0
+  builder.root.boundsRaw.y = 0
+  builder.root.boundsRaw.w = size.x
+  builder.root.boundsRaw.h = size.y
   builder.root.flags = &{LayoutVertical}
 
 proc endFrame*(builder: UINodeBuilder) =
@@ -1175,11 +1220,11 @@ proc retain*(builder: UINodeBuilder): bool =
   let h = if SizeToContentY in node.flags: max(node.h, node.boundsOld.h) else: node.h
 
   if w != node.boundsOld.w or h != node.boundsOld.h:
-    # echo "size dirty ", node.bounds.wh, ", ", node.boundsOld.wh, ", (", w, ", ", h, ")"
+    # echo "size dirty ", node.boundsRaw.wh, ", ", node.boundsOld.wh, ", (", w, ", ", h, ")"
     return false
 
-  node.bounds.w = w
-  node.bounds.h = h
+  node.boundsRaw.w = w
+  node.boundsRaw.h = h
 
   builder.currentChild = builder.currentParent.last
 

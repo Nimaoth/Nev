@@ -35,6 +35,7 @@ method fontSize*(self: Platform): float {.base.} = discard
 method lineDistance*(self: Platform): float {.base.} = discard
 method lineHeight*(self: Platform): float {.base.} = discard
 method charWidth*(self: Platform): float {.base.} = discard
+method charGap*(self: Platform): float {.base.} = discard
 method measureText*(self: Platform, text: string): Vec2 {.base.} = discard
 method preventDefault*(self: Platform) {.base.} = discard
 

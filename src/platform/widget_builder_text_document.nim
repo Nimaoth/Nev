@@ -183,7 +183,7 @@ proc createLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, bac
         if builder.renderLine(app, line, self.document.lines[i], self.document.lineIds[i], self.userId, column, cursorLine, i, lineNumbers, y, sizeToContentX, lineNumberWidth, lineNumberBounds.x, backgroundColor, textColor).getSome(cl):
           result = cl.some
 
-        builder.currentChild.y = builder.currentChild.y - builder.currentChild.h
+        builder.currentChild.rawY = builder.currentChild.y - builder.currentChild.h
 
         y = builder.currentChild.y
         if not sizeToContentY and builder.currentChild.bounds.yh < 0:
@@ -195,8 +195,8 @@ proc createLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, bac
     block: #cursor
       let cursorLocation = result
       let (x, y, w, h, text) = if cursorLocation.isSome:
-        var bounds = cursorLocation.get.bounds.transformRect(cursorLocation.get.node, linesPanel) - vec2(1, 0)
-        bounds.w += 1
+        var bounds = cursorLocation.get.bounds.transformRect(cursorLocation.get.node, linesPanel) - vec2(app.platform.charGap, 0)
+        bounds.w += app.platform.charGap
         if not self.cursorVisible:
           bounds.w = 0
         (bounds.x.some, bounds.y.some, bounds.w, bounds.h, cursorLocation.get.text)
@@ -204,7 +204,7 @@ proc createLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, bac
         (float32.none, float32.none, 0, 0, "")
 
       builder.panel(&{UINodeFlag.FillBackground, AnimatePosition, MaskContent}, x = x, y = y, w = w, h = h, backgroundColor = color(0.7, 0.7, 1), userId = self.cursorsId.newPrimaryId):
-        builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, x = 1, y = 0, text = text, textColor = color(0.4, 0.2, 2))
+        builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, x = app.platform.charGap, y = 0, text = text, textColor = color(0.4, 0.2, 2))
 
     defer:
       self.lastContentBounds = currentNode.bounds
