@@ -297,8 +297,6 @@ method render*(self: TerminalPlatform, widget: WWidget, frameIndex: int) =
     self.redrawEverything = true
   let t2Ms = t2.elapsed.ms
 
-  debugf"{t1Ms}, {t2Ms}"
-
 proc setForegroundColor(self: TerminalPlatform, color: chroma.Color) =
   if self.trueColorSupport:
     self.buffer.setForegroundColor(color.toStdColor)
