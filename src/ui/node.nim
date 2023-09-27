@@ -790,12 +790,16 @@ proc getNextOrNewNode(builder: UINodeBuilder, node: UINode, last: UINode, userId
     if node.first.isNotNil: # First child already exists
       if node.first.userId == userId: # User id matches, reuse existing
         return node.first
-      else: # User id doesn't match
-        let newNode = builder.unpoolNode(userId)
-        node.insert(newNode)
-        return newNode
 
     let newNode = builder.unpoolNode(userId)
+
+    if newNode.parent.isNotNil:
+      # node is still in use somewhere else
+      # echo "remove target node from parent because we insert it here: ", node.dump
+      if builder.useInvalidation:
+        newNode.parent.clearedChildrenBounds = newNode.parent.clearedChildrenBounds or newNode.boundsOld.some
+      newNode.removeFromParent()
+
     node.insert(newNode)
     return newNode
 
