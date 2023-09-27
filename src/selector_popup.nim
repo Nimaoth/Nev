@@ -91,7 +91,7 @@ proc setCompletions(self: SelectorPopup, newCompletions: seq[SelectorItem]) =
     self.selected = self.selected.clamp(0, self.completions.len - 1)
 
     if not self.handleItemSelected.isNil:
-      self.handleItemSelected self.completions[self.selected]
+      self.handleItemSelected self.completions[self.completions.high - self.selected]
   else:
     self.selected = 0
 
@@ -121,7 +121,7 @@ proc getItemAtPixelPosition(self: SelectorPopup, posWindow: Vec2): Option[Select
   result = SelectorItem.none
   for (index, rect) in self.lastItems:
     if rect.contains(posWindow) and index >= 0 and index <= self.completions.high:
-      return self.completions[index].some
+      return self.completions[self.completions.high - index].some
 
 method getEventHandlers*(self: SelectorPopup): seq[EventHandler] =
   return self.textEditor.getEventHandlers() & @[self.eventHandler]
@@ -146,7 +146,7 @@ proc fromJsonHook*(t: var api.SelectorPopup, jsonNode: JsonNode) =
 
 proc accept*(self: SelectorPopup) {.expose("popup.selector").} =
   if not self.handleItemConfirmed.isNil and self.selected < self.completions.len:
-    self.handleItemConfirmed self.completions[self.selected]
+    self.handleItemConfirmed self.completions[self.completions.high - self.selected]
   self.app.popPopup(self)
 
   self.markDirty()
@@ -165,7 +165,7 @@ proc prev*(self: SelectorPopup) {.expose("popup.selector").} =
     (self.selected + self.completions.len - 1) mod self.completions.len
 
   if self.completions.len > 0 and self.handleItemSelected != nil:
-    self.handleItemSelected self.completions[self.selected]
+    self.handleItemSelected self.completions[self.completions.high - self.selected]
 
   self.markDirty()
 
@@ -176,7 +176,7 @@ proc next*(self: SelectorPopup) {.expose("popup.selector").} =
     (self.selected + 1) mod self.completions.len
 
   if self.completions.len > 0 and self.handleItemSelected != nil:
-    self.handleItemSelected self.completions[self.selected]
+    self.handleItemSelected self.completions[self.completions.high - self.selected]
 
   self.markDirty()
 
@@ -202,7 +202,7 @@ proc handleTextChanged*(self: SelectorPopup) =
   self.selected = 0
 
   if not self.handleItemSelected.isNil and self.selected < self.completions.len:
-    self.handleItemSelected self.completions[self.selected]
+    self.handleItemSelected self.completions[self.completions.high - self.selected]
 
   self.markDirty()
 
