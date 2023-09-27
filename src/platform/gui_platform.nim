@@ -448,7 +448,7 @@ proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offse
       # let font = renderer.getFont(renderer.ctx.fontSize * (1 + self.fontSizeIncreasePercent), self.style.fontStyle)
       let font = platform.getFont(platform.ctx.fontSize, node.flags)
 
-      const wrap = false
+      let wrap = TextWrap in node.flags
       let wrapBounds = if wrap: vec2(node.boundsActual.w, node.boundsActual.h) else: vec2(0, 0)
       let arrangement = font.typeset(node.text, bounds=wrapBounds)
       var bounds = arrangement.layoutBounds()

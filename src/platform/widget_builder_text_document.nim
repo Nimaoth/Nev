@@ -375,7 +375,7 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
   self.lastCompletionWidgets.setLen 0
 
   var completionsPanel: UINode = nil
-  builder.panel(&{UINodeFlag.MaskContent, OverlappingChildren, AnimateBounds}, x = clampedX, y = top, w = totalWidth, h = bottom - top, pivot = vec2(0, 0), userId = self.completionsId.newPrimaryId):
+  builder.panel(&{SizeToContentX, SizeToContentY, AnimateBounds}, x = clampedX, y = top, w = totalWidth, h = bottom - top, pivot = vec2(0, 0), userId = self.completionsId.newPrimaryId):
     completionsPanel = currentNode
 
     proc handleScroll(delta: float) =
@@ -397,20 +397,18 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
 
       builder.panel(&{FillX, SizeToContentY, FillBackground}, y = y, pivot = pivot, backgroundColor = backgroundColor):
         let completion = self.completions[i]
-          # docs.text = completion.doc
 
         builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = completion.name, textColor = nameColor)
 
-        # let scopeText = completion.typ & " : " & completion.scope
-        # var scopeWidget = createPartWidget(scopeText, -scopeText.len.float * charWidth, totalLineHeight, scopeText.len.float * charWidth, scopeColor, frameIndex)
-        # scopeWidget.anchor.min.x = 1
-        # scopeWidget.anchor.max.x = 1
-        # lineWidget.add(scopeWidget)
+        let scopeText = completion.typ & " : " & completion.scope
+        builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, x = currentNode.w, pivot = vec2(1, 0), text = scopeText, textColor = scopeColor)
 
-        # self.lastCompletionWidgets.add (i, lineWidget)
+    builder.panel(&{UINodeFlag.MaskContent}, w = listWidth * charWidth, h = bottom - top):
+      builder.createLines(self.completionsBaseIndex, self.completionsScrollOffset, self.completions.high, false, false, backgroundColor, handleScroll, handleLine)
 
-    # app.createLinesInPanel(list, self.completionsBaseIndex, self.completionsScrollOffset, self.completions.len, frameIndex, onlyRenderInBounds=true, renderLine)
-    builder.createLines(self.completionsBaseIndex, self.completionsScrollOffset, self.completions.high, false, false, backgroundColor, handleScroll, handleLine)
+    builder.panel(&{UINodeFlag.FillBackground, DrawText, MaskContent, TextWrap},
+      x = listWidth * charWidth, w = docsWidth * charWidth, h = bottom - top,
+      backgroundColor = backgroundColor, textColor = docsColor, text = self.completions[self.selectedCompletion].doc)
 
   if completionsPanel.bounds.yh > completionsPanel.parent.bounds.h:
     completionsPanel.rawY = cursorBounds.y
