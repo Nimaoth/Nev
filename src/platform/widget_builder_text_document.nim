@@ -390,7 +390,12 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
 
       backgroundColor.a = 1
 
-      builder.panel(&{FillX, SizeToContentY, FillBackground}, y = y, backgroundColor = backgroundColor):
+      let pivot = if down:
+        vec2(0, 0)
+      else:
+        vec2(0, 1)
+
+      builder.panel(&{FillX, SizeToContentY, FillBackground}, y = y, pivot = pivot, backgroundColor = backgroundColor):
         let completion = self.completions[i]
           # docs.text = completion.doc
 

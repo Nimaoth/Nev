@@ -125,8 +125,8 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
 
   # Window stuff <LEADER>w
   withKeys "<LEADER>w", "<C-w>":
-    addCommand "editor", "<*-f>-", "change-font-size", -1
-    addCommand "editor", "<*-f>+", "change-font-size", 1
+    addCommand "editor", "<*-F>-", "change-font-size", -1
+    addCommand "editor", "<*-F>+", "change-font-size", 1
     addCommand "editor", "b", "toggle-status-bar-location"
     addCommand "editor", "1", "set-layout", "horizontal"
     addCommand "editor", "2", "set-layout", "vertical"
