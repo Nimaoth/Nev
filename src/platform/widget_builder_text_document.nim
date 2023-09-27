@@ -10,7 +10,7 @@ import ui/node
 
 logCategory "widget_builder_text"
 
-type CursorLocationInfo = tuple[node: UINode, text: string, bounds: Rect]
+type CursorLocationInfo* = tuple[node: UINode, text: string, bounds: Rect, original: Cursor]
 
 when defined(js):
   template tokenColor*(theme: Theme, part: StyledText, default: untyped): Color =
@@ -40,7 +40,7 @@ proc renderLine*(
   line: StyledLine, lineOriginal: openArray[char],
   lineId: int32, parentId: Id, cursorLine: int,
   lineNumber: int, lineNumbers: LineNumbers,
-  y: float, sizeToContentX: bool, lineNumberTotalWidth: float, lineNumberWidth: float,
+  y: float, sizeToContentX: bool, lineNumberTotalWidth: float, lineNumberWidth: float, pivot: Vec2,
   backgroundColor: Color, textColor: Color,
   selections: openArray[tuple[first: RuneIndex, last: RuneIndex]], selectionClamped: openArray[tuple[first: RuneIndex, last: RuneIndex]], cursors: openArray[int],
   wrapLine: bool): seq[CursorLocationInfo] =
@@ -61,7 +61,7 @@ proc renderLine*(
     lineNumberText = $(lineNumber - cursorLine).abs
     lineNumberX = max(0.0, lineNumberWidth - lineNumberText.len.float * builder.charWidth)
 
-  builder.panel(flagsInner + LayoutVertical, y = y, userId = newSecondaryId(parentId, lineId)):
+  builder.panel(flagsInner + LayoutVertical, y = y, pivot = pivot, userId = newSecondaryId(parentId, lineId)):
     let lineWidth = currentNode.bounds.w
 
     var start = 0
@@ -127,7 +127,7 @@ proc renderLine*(
 
               if selectionLastRune >= startRune.RuneIndex and selectionLastRune < startRune.RuneIndex + part.text.runeLen:
                 let cursorX = builder.textWidth(int(selectionLastRune - startRune)).round
-                result.add (currentNode, $part.text[selectionLastRune - startRune], rect(cursorX, 0, builder.charWidth, builder.textHeight))
+                result.add (currentNode, $part.text[selectionLastRune - startRune], rect(cursorX, 0, builder.charWidth, builder.textHeight), (line.index, curs))
 
           lastPartXW = partNode.bounds.xw
           start += part.text.len
@@ -138,7 +138,7 @@ proc renderLine*(
         # cursor after latest char
         for curs in cursors:
           if curs == lineOriginal.len:
-            result.add (currentNode, "", rect(lastPartXW, 0, builder.charWidth, builder.textHeight))
+            result.add (currentNode, "", rect(lastPartXW, 0, builder.charWidth, builder.textHeight), (line.index, curs))
 
         # Fill rest of line with background
         builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = backgroundColor):
@@ -172,9 +172,50 @@ proc createHeader(self: TextDocumentEditor, builder: UINodeBuilder, app: App, he
     builder.panel(&{FillX}):
       result = currentNode
 
-proc createLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, backgroundColor: Color, textColor: Color, sizeToContentX: bool, sizeToContentY: bool): Option[CursorLocationInfo] =
-  let cursor = self.selection.last
+proc createLines(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: float, maxLine: int, sizeToContentX: bool, sizeToContentY: bool, backgroundColor: Color, handleScroll: proc(delta: float), handleLine: proc(line: int, y: float, down: bool)) =
+  var flags = 0.UINodeFlags
+  if sizeToContentX:
+    flags.incl SizeToContentX
+  else:
+    flags.incl FillX
 
+  if sizeToContentY:
+    flags.incl SizeToContentY
+  else:
+    flags.incl FillY
+
+  builder.panel(flags):
+    onScroll:
+      handleScroll(delta.y)
+
+    let height = currentNode.bounds.h
+    var y = scrollOffset
+
+    # draw lines downwards
+    for i in previousBaseIndex..maxLine:
+      handleLine(i, y, true)
+
+      y = builder.currentChild.yh
+      if not sizeToContentY and builder.currentChild.bounds.y > height:
+        break
+
+    if y < height: # fill remaining space with background color
+      builder.panel(&{FillX, FillY, FillBackground}, y = y, backgroundColor = backgroundColor)
+
+    y = scrollOffset
+
+    # draw lines upwards
+    for i in countdown(previousBaseIndex - 1, 0):
+      handleLine(i, y, false)
+
+      y = builder.currentChild.y
+      if not sizeToContentY and builder.currentChild.bounds.yh < 0:
+        break
+
+    if not sizeToContentY and y > 0: # fill remaining space with background color
+      builder.panel(&{FillX, FillBackground}, h = y, backgroundColor = backgroundColor)
+
+proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, backgroundColor: Color, textColor: Color, sizeToContentX: bool, sizeToContentY: bool): Option[CursorLocationInfo] =
   var flags = 0.UINodeFlags
   if sizeToContentX:
     flags.incl SizeToContentX
@@ -213,106 +254,90 @@ proc createLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, bac
   builder.panel(flags + MaskContent + OverlappingChildren):
     let linesPanel = currentNode
 
+    let height = currentNode.bounds.h
+
+    # line numbers
+    let maxLineNumber = case lineNumbers
+      of LineNumbers.Absolute: self.previousBaseIndex + ((height - self.scrollOffset) / builder.textHeight).int
+      of LineNumbers.Relative: 99
+      else: 0
+    let maxLineNumberLen = ($maxLineNumber).len + 1
+    let cursorLine = self.selection.last.line
+
+    let lineNumberPadding = charWidth
+    let lineNumberBounds = if lineNumbers != LineNumbers.None:
+      vec2(maxLineNumberLen.float32 * charWidth, 0)
+    else:
+      vec2()
+
+    let lineNumberWidth = if lineNumbers != LineNumbers.None:
+      (lineNumberBounds.x + lineNumberPadding).ceil
+    else:
+      0.0
+
     var cursors: seq[CursorLocationInfo]
 
-    builder.panel(flags):
-      onScroll:
-        let scrollAmount = delta.y * app.asConfigProvider.getValue("text.scroll-speed", 40.0)
-        self.scrollOffset += scrollAmount
-        self.markDirty()
+    proc handleScroll(delta: float) =
+      let scrollAmount = delta * app.asConfigProvider.getValue("text.scroll-speed", 40.0)
+      self.scrollOffset += scrollAmount
+      self.markDirty()
 
-      let height = currentNode.bounds.h
-      var y = self.scrollOffset
+    proc handleLine(i: int, y: float, down: bool) =
+      let styledLine = self.getStyledText i
+      let totalLineHeight = builder.textHeight
 
+      self.lastRenderedLines.add styledLine
 
-      # line numbers
-      let maxLineNumber = case lineNumbers
-        of LineNumbers.Absolute: self.previousBaseIndex + ((height - self.scrollOffset) / builder.textHeight).int
-        of LineNumbers.Relative: 99
-        else: 0
-      let maxLineNumberLen = ($maxLineNumber).len + 1
-      let cursorLine = self.selection.last.line
-
-      let lineNumberPadding = charWidth
-      let lineNumberBounds = if lineNumbers != LineNumbers.None:
-        vec2(maxLineNumberLen.float32 * charWidth, 0)
+      let indexFromTop = if down:
+        (y / totalLineHeight).ceil.int
       else:
-        vec2()
+        (y / totalLineHeight - 1).ceil.int
 
-      let lineNumberWidth = if lineNumbers != LineNumbers.None:
-        (lineNumberBounds.x + lineNumberPadding).ceil
+      let indentLevel = self.document.getIndentLevelForClosestLine(i)
+
+      var showingContext = false
+      var wrapLine = wrapLines
+      var i = i
+      var backgroundColor = backgroundColor
+      if showContextLines and (indexFromTop < indentLevel or (indexFromTop == indentLevel and self.document.shouldIgnoreAsContextLine(i))):
+        i = self.document.getPreviousLineWithIndent(i, indexFromTop)
+        showingContext = true
+        wrapLine = false
+        backgroundColor = contextBackgroundColor
+
+      # selections and highlights
+      let selectionsNormalizedOnLine = selectionsPerLine.getOrDefault(i, @[]).map proc(s: auto): auto =
+        let s = s.normalized
+        return (self.document.lines[s.first.line].toOpenArray.runeIndex(s.first.column), styledLine.runeIndex(s.last.column))
+      let selectionsClampedOnLine = selectionsPerLine.getOrDefault(i, @[]).map (s) => self.document.clampToLine(s.normalized, styledLine)
+
+      let highlightsNormalizedOnLine = highlightsPerLine.getOrDefault(i, @[]).map proc(s: auto): auto =
+        let s = s.normalized
+        return (self.document.lines[s.first.line].toOpenArray.runeIndex(s.first.column), styledLine.runeIndex(s.last.column))
+      let highlightsClampedOnLine = highlightsPerLine.getOrDefault(i, @[]).map (s) => self.document.clampToLine(s.normalized, styledLine)
+
+      var cursorsPerLine: seq[int]
+      for s in self.selections:
+        if s.last.line == i:
+          cursorsPerLine.add s.last.column
+
+      let pivot = if down:
+        vec2(0, 0)
       else:
-        0.0
+        vec2(0, 1)
 
-      proc handleLine(i: int, down: bool) =
-        let styledLine = self.getStyledText i
-        let totalLineHeight = builder.textHeight
+      cursors.add self.renderLine(builder, app.theme, styledLine, self.document.lines[i], self.document.lineIds[i],
+        self.userId, cursorLine, i, lineNumbers, y, sizeToContentX, lineNumberWidth, lineNumberBounds.x, pivot,
+        backgroundColor, textColor,
+        selectionsNormalizedOnLine, selectionsClampedOnLine, cursorsPerLine, wrapLine
+        )
 
-        let indexFromTop = if down:
-          (y / totalLineHeight).ceil.int
-        else:
-          (y / totalLineHeight - 1).ceil.int
-
-        let indentLevel = self.document.getIndentLevelForClosestLine(i)
-
-        var showingContext = false
-        var wrapLine = wrapLines
-        var i = i
-        var backgroundColor = backgroundColor
-        if showContextLines and (indexFromTop < indentLevel or (indexFromTop == indentLevel and self.document.shouldIgnoreAsContextLine(i))):
-          i = self.document.getPreviousLineWithIndent(i, indexFromTop)
-          showingContext = true
-          wrapLine = false
-          backgroundColor = contextBackgroundColor
-
-        # selections and highlights
-        let selectionsNormalizedOnLine = selectionsPerLine.getOrDefault(i, @[]).map proc(s: auto): auto =
-          let s = s.normalized
-          return (self.document.lines[s.first.line].toOpenArray.runeIndex(s.first.column), styledLine.runeIndex(s.last.column))
-        let selectionsClampedOnLine = selectionsPerLine.getOrDefault(i, @[]).map (s) => self.document.clampToLine(s.normalized, styledLine)
-
-        let highlightsNormalizedOnLine = highlightsPerLine.getOrDefault(i, @[]).map proc(s: auto): auto =
-          let s = s.normalized
-          return (self.document.lines[s.first.line].toOpenArray.runeIndex(s.first.column), styledLine.runeIndex(s.last.column))
-        let highlightsClampedOnLine = highlightsPerLine.getOrDefault(i, @[]).map (s) => self.document.clampToLine(s.normalized, styledLine)
-
-        var cursorsPerLine: seq[int]
-        for s in self.selections:
-          if s.last.line == i:
-            cursorsPerLine.add s.last.column
-
-        cursors.add self.renderLine(builder, app.theme, styledLine, self.document.lines[i], self.document.lineIds[i],
-          self.userId, cursorLine, i, lineNumbers, y, sizeToContentX, lineNumberWidth, lineNumberBounds.x, backgroundColor, textColor,
-          selectionsNormalizedOnLine, selectionsClampedOnLine, cursorsPerLine, wrapLine
-          )
-
-      # draw lines downwards
-      for i in self.previousBaseIndex..self.document.lines.high:
-        handleLine(i, true)
-
-        y = builder.currentChild.yh
-        if not sizeToContentY and builder.currentChild.bounds.y > height:
-          break
-
-      if y < height: # fill remaining space with background color
-        builder.panel(&{FillX, FillY, FillBackground}, y = y, backgroundColor = backgroundColor)
-
-      y = self.scrollOffset
-
-      # draw lines upwards
-      for i in countdown(self.previousBaseIndex - 1, 0):
-        handleLine(i, false)
-
-        builder.currentChild.rawY = builder.currentChild.y - builder.currentChild.h
-
-        y = builder.currentChild.y
-        if not sizeToContentY and builder.currentChild.bounds.yh < 0:
-          break
-
-      if not sizeToContentY and y > 0: # fill remaining space with background color
-        builder.panel(&{FillX, FillBackground}, h = y, backgroundColor = backgroundColor)
+    builder.createLines(self.previousBaseIndex, self.scrollOffset, self.document.lines.high, sizeToContentX, sizeToContentY, backgroundColor, handleScroll, handleLine)
 
     for cursorIndex, cursorLocation in cursors: #cursor
+      if cursorLocation.original == self.selection.last:
+        result = cursorLocation.some
+
       var bounds = cursorLocation.bounds.transformRect(cursorLocation.node, linesPanel) - vec2(app.platform.charGap, 0)
       bounds.w += app.platform.charGap
       if not self.cursorVisible:
@@ -324,7 +349,69 @@ proc createLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, bac
     defer:
       self.lastContentBounds = currentNode.bounds
 
-method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App) =
+proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cursorBounds: Rect) =
+  let totalLineHeight = app.platform.totalLineHeight
+  let charWidth = app.platform.charWidth
+
+  let backgroundColor = app.theme.color("panel.background", color(30/255, 30/255, 30/255))
+  let selectedBackgroundColor = app.theme.color("list.activeSelectionBackground", color(200/255, 200/255, 200/255))
+  let docsColor = app.theme.color("editor.foreground", color(1, 1, 1))
+  let nameColor = app.theme.tokenColor(@["entity.name.label", "entity.name"], color(1, 1, 1))
+  let scopeColor = app.theme.color("string", color(175/255, 1, 175/255))
+
+  const numLinesToShow = 20
+  let (top, bottom) = (cursorBounds.yh.float, cursorBounds.yh.float + totalLineHeight * numLinesToShow)
+
+  const listWidth = 120.0
+  const docsWidth = 50.0
+  let totalWidth = charWidth * listWidth + charWidth * docsWidth
+  var clampedX = cursorBounds.x
+  if clampedX + totalWidth > builder.root.w:
+    clampedX = max(builder.root.w - totalWidth, 0)
+
+  updateBaseIndexAndScrollOffset(bottom - top, self.completionsBaseIndex, self.completionsScrollOffset, self.completions.len, totalLineHeight, self.scrollToCompletion)
+  self.scrollToCompletion = int.none
+
+  self.lastCompletionWidgets.setLen 0
+
+  var completionsPanel: UINode = nil
+  builder.panel(&{UINodeFlag.MaskContent, OverlappingChildren, AnimateBounds}, x = clampedX, y = top, w = totalWidth, h = bottom - top, pivot = vec2(0, 0), userId = self.completionsId.newPrimaryId):
+    completionsPanel = currentNode
+
+    proc handleScroll(delta: float) =
+      let scrollAmount = delta * app.asConfigProvider.getValue("text.scroll-speed", 40.0)
+      self.scrollOffset += scrollAmount
+      self.markDirty()
+
+    proc handleLine(i: int, y: float, down: bool) =
+      var backgroundColor = backgroundColor
+      if i == self.selectedCompletion:
+        backgroundColor = selectedBackgroundColor
+
+      backgroundColor.a = 1
+
+      builder.panel(&{FillX, SizeToContentY, FillBackground}, y = y, backgroundColor = backgroundColor):
+        let completion = self.completions[i]
+          # docs.text = completion.doc
+
+        builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = completion.name, textColor = nameColor)
+
+        # let scopeText = completion.typ & " : " & completion.scope
+        # var scopeWidget = createPartWidget(scopeText, -scopeText.len.float * charWidth, totalLineHeight, scopeText.len.float * charWidth, scopeColor, frameIndex)
+        # scopeWidget.anchor.min.x = 1
+        # scopeWidget.anchor.max.x = 1
+        # lineWidget.add(scopeWidget)
+
+        # self.lastCompletionWidgets.add (i, lineWidget)
+
+    # app.createLinesInPanel(list, self.completionsBaseIndex, self.completionsScrollOffset, self.completions.len, frameIndex, onlyRenderInBounds=true, renderLine)
+    builder.createLines(self.completionsBaseIndex, self.completionsScrollOffset, self.completions.high, false, false, backgroundColor, handleScroll, handleLine)
+
+  if completionsPanel.bounds.yh > completionsPanel.parent.bounds.h:
+    completionsPanel.rawY = cursorBounds.y
+    completionsPanel.pivot = vec2(0, 1)
+
+method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
   let dirty = self.dirty
   self.resetDirty()
 
@@ -356,17 +443,19 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App) =
 
   builder.panel(flags, userId = self.userId.newPrimaryId):
     if dirty or app.platform.redrawEverything or not builder.retain():
-      # echo "render text editor ", self.document.filename
-
-      var cursorLocation = CursorLocationInfo.none
       var header: UINode
 
       builder.panel(flagsInner):
         header = self.createHeader(builder, app, backgroundColor, textColor)
-        cursorLocation = self.createLines(builder, app, backgroundColor, textColor, sizeToContentX, sizeToContentY)
+        if self.createTextLines(builder, app, backgroundColor, textColor, sizeToContentX, sizeToContentY).getSome(info):
+          self.lastCursorLocationBounds = info.bounds.transformRect(info.node, builder.root).some
 
     if not self.disableScrolling and not sizeToContentY:
       updateBaseIndexAndScrollOffset(currentNode.bounds.h, self.previousBaseIndex, self.scrollOffset, self.document.lines.len, builder.textHeight, int.none)
+
+  if self.showCompletions and self.active:
+    result.add proc() =
+      self.createCompletions(builder, app, self.lastCursorLocationBounds.get(rect(100, 100, 10, 10)))
 
 let completionListWidgetId* = newId()
 let completionDocsWidgetId* = newId()
@@ -396,7 +485,6 @@ proc getPreviousLineWithIndent(self: TextDocument, line: int, indent: int): int 
       return
 
     dec result
-
 
 proc clampToLine(document: TextDocument, selection: Selection, line: StyledLine): tuple[first: RuneIndex, last: RuneIndex] =
   result.first = if selection.first.line < line.index: 0.RuneIndex elif selection.first.line == line.index: document.lines[line.index].runeIndex(selection.first.column) else: line.runeLen.RuneIndex
