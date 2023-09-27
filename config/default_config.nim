@@ -162,6 +162,11 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
   addCommand "editor", "<LEADER>gt", "choose-theme"
   addCommand "editor", "<LEADER>gf", "choose-file", "new"
   addCommand "editor", "<LEADER>ge", "choose-open", "new"
+  addCommandBlock "editor", "<LEADER>gl":
+    runAction "logs"
+    if getActiveEditor().isTextEditor(ed):
+      ed.moveLast("file")
+    runAction "next-view"
 
   withKeys "<LEADER>s":
     addCommandBlock "editor", "l<*-n>1":
