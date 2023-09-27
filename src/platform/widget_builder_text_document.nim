@@ -1,4 +1,4 @@
-import std/[strformat, tables, sugar, sequtils, strutils]
+import std/[strformat, tables, sugar, sequtils, strutils, algorithm, math]
 import util, app, document_editor, text/text_editor, custom_logger, widgets, platform, theme, custom_unicode, config_provider
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import vmath, bumpy, chroma
@@ -276,6 +276,8 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       0.0
 
     var cursors: seq[CursorLocationInfo]
+    var contextLines: seq[int]
+    var contextLineTarget: int = -1
 
     proc handleScroll(delta: float) =
       let scrollAmount = delta * app.asConfigProvider.getValue("text.scroll-speed", 40.0)
@@ -288,10 +290,12 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
       self.lastRenderedLines.add styledLine
 
-      let indexFromTop = if down:
-        (y / totalLineHeight).ceil.int
+      var indexFromTop = if down:
+        (y / totalLineHeight + 0.5).ceil.int
       else:
-        (y / totalLineHeight - 1).ceil.int
+        (y / totalLineHeight - 0.5).ceil.int
+
+      indexFromTop -= 1
 
       let indentLevel = self.document.getIndentLevelForClosestLine(i)
 
@@ -299,11 +303,8 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       var wrapLine = wrapLines
       var i = i
       var backgroundColor = backgroundColor
-      if showContextLines and (indexFromTop < indentLevel or (indexFromTop == indentLevel and self.document.shouldIgnoreAsContextLine(i))):
-        i = self.document.getPreviousLineWithIndent(i, indexFromTop)
-        showingContext = true
-        wrapLine = false
-        backgroundColor = contextBackgroundColor
+      if showContextLines and (indexFromTop <= indentLevel and not self.document.shouldIgnoreAsContextLine(i)):
+        contextLineTarget = max(contextLineTarget, i)
 
       # selections and highlights
       let selectionsNormalizedOnLine = selectionsPerLine.getOrDefault(i, @[]).map proc(s: auto): auto =
@@ -333,6 +334,32 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
         )
 
     builder.createLines(self.previousBaseIndex, self.scrollOffset, self.document.lines.high, sizeToContentX, sizeToContentY, backgroundColor, handleScroll, handleLine)
+
+    # context lines
+    if contextLineTarget >= 0:
+      var indentLevel = self.document.getIndentLevelForClosestLine(contextLineTarget)
+      while indentLevel > 0 and contextLineTarget > 0:
+        contextLineTarget -= 1
+        let newIndentLevel = self.document.getIndentLevelForClosestLine(contextLineTarget)
+        if newIndentLevel < indentLevel and not self.document.shouldIgnoreAsContextLine(contextLineTarget):
+          contextLines.add contextLineTarget
+          indentLevel = newIndentLevel
+
+      contextLines.sort(Ascending)
+
+      if contextLines.len > 0:
+        for indexFromTop, contextLine in contextLines:
+          let styledLine = self.getStyledText contextLine
+          let y = indexFromTop.float * builder.textHeight
+          cursors.add self.renderLine(builder, app.theme, styledLine, self.document.lines[contextLine], self.document.lineIds[contextLine],
+            self.userId, cursorLine, contextLine, lineNumbers, y, sizeToContentX, lineNumberWidth, lineNumberBounds.x, vec2(0, 0),
+            contextBackgroundColor, textColor,
+            [], [], [], false
+            )
+
+        let fill = self.scrollOffset mod builder.textHeight
+        # if fill < builder.textHeight / 2:
+        #   builder.panel(&{FillX, FillBackground}, y = contextLines.len.float * builder.textHeight, h = fill, backgroundColor = contextBackgroundColor)
 
     for cursorIndex, cursorLocation in cursors: #cursor
       if cursorLocation.original == self.selection.last:
@@ -445,6 +472,9 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
     flagsInner.incl FillY
 
   builder.panel(flags, userId = self.userId.newPrimaryId):
+    if not self.disableScrolling and not sizeToContentY:
+      updateBaseIndexAndScrollOffset(currentNode.bounds.h, self.previousBaseIndex, self.scrollOffset, self.document.lines.len, builder.textHeight, int.none)
+
     if dirty or app.platform.redrawEverything or not builder.retain():
       var header: UINode
 
@@ -452,9 +482,6 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
         header = self.createHeader(builder, app, backgroundColor, textColor)
         if self.createTextLines(builder, app, backgroundColor, textColor, sizeToContentX, sizeToContentY).getSome(info):
           self.lastCursorLocationBounds = info.bounds.transformRect(info.node, builder.root).some
-
-    if not self.disableScrolling and not sizeToContentY:
-      updateBaseIndexAndScrollOffset(currentNode.bounds.h, self.previousBaseIndex, self.scrollOffset, self.document.lines.len, builder.textHeight, int.none)
 
   if self.showCompletions and self.active:
     result.add proc() =
