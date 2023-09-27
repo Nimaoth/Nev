@@ -1258,14 +1258,17 @@ proc chooseTheme*(self: App) {.expose("editor").} =
   popup.handleItemSelected = proc(item: SelectorItem) =
     if theme.loadFromFile(item.ThemeSelectorItem.path).getSome(theme):
       self.theme = theme
+      self.platform.requestRender(true)
 
   popup.handleItemConfirmed = proc(item: SelectorItem) =
     if theme.loadFromFile(item.ThemeSelectorItem.path).getSome(theme):
       self.theme = theme
+      self.platform.requestRender(true)
 
   popup.handleCanceled = proc() =
     if theme.loadFromFile(originalTheme).getSome(theme):
       self.theme = theme
+      self.platform.requestRender(true)
 
   popup.updateCompletions()
 
