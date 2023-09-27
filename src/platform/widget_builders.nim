@@ -45,6 +45,8 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
   let builder = self.platform.builder
   builder.panel(rootFlags, backgroundColor = color(0, 0, 0)): # fullscreen overlay
 
+    var overlays: seq[proc() {.closure.}]
+
     builder.panel(&{FillX, FillY, LayoutVerticalReverse}): # main panel
       builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse, FillBackground}, backgroundColor = headerColor, pivot = vec2(0, 1)): # status bar
         let textColor = self.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
@@ -54,7 +56,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
           discard
 
         builder.panel(&{FillX, SizeToContentY}, pivot = vec2(1, 0)):
-          self.getCommandLineTextEditor.createUI(builder, self)
+          overlays.add self.getCommandLineTextEditor.createUI(builder, self)
 
       builder.panel(&{FillX, FillY}, pivot = vec2(0, 1)): # main panel
         let overlay = currentNode
@@ -71,11 +73,14 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
             view.editor.markDirty(notify=false)
 
           builder.panel(0.UINodeFlags, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h):
-            view.editor.createUI(builder, self)
+            overlays.add view.editor.createUI(builder, self)
 
     # popups
     for i, popup in self.popups:
-      popup.createUI(builder, self)
+      overlays.add popup.createUI(builder, self)
+
+    for overlay in overlays:
+      overlay()
 
   #     if viewPanel.children.len > previousChildren.high or widget.WWidget != previousChildren[viewPanel.children.len]:
   #       view.editor.markDirty(notify=false)

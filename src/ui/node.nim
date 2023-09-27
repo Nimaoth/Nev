@@ -263,6 +263,7 @@ func `lx=`*(node: UINode, value: float32) {.inline.} = node.boundsAbsolute.x = v
 func `ly=`*(node: UINode, value: float32) {.inline.} = node.boundsAbsolute.y = value
 func `lw=`*(node: UINode, value: float32) {.inline.} = node.boundsAbsolute.w = value
 func `lh=`*(node: UINode, value: float32) {.inline.} = node.boundsAbsolute.h = value
+func `pivot=`*(node: UINode, value: Vec2) {.inline.} = node.pivot = value
 
 proc textWidth*(builder: UINodeBuilder, textLen: int): float32 {.inline.} = textLen.float32 * builder.charWidth
 proc textHeight*(builder: UINodeBuilder): float32 {.inline.} = round(builder.lineHeight + builder.lineGap)

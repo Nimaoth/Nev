@@ -30,6 +30,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
   document*: TextDocument
 
   cursorsId*: Id
+  completionsId*: Id
+  lastCursorLocationBounds*: Option[Rect]
 
   configProvider: ConfigProvider
 
@@ -1577,6 +1579,7 @@ proc createTextEditorInstance(): TextDocumentEditor =
     {.emit: [editor, " = jsCreateWithPrototype(editor_text_prototype, ", editor, ");"].}
     # This " is here to fix syntax highlighting
   editor.cursorsId = newId()
+  editor.completionsId = newId()
   return editor
 
 proc newTextEditor*(document: TextDocument, app: AppInterface, configProvider: ConfigProvider): TextDocumentEditor =

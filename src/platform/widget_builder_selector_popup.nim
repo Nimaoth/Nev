@@ -133,11 +133,11 @@ method updateWidget*(self: SelectorPopup, app: App, widget: WPanel, completionsP
   contentPanel.lastHierarchyChange = frameIndex
   widget.lastHierarchyChange = max(widget.lastHierarchyChange, contentPanel.lastHierarchyChange)
 
-method createUI*(self: FileSelectorItem, builder: UINodeBuilder, app: App) =
+method createUI*(self: FileSelectorItem, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
   let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
   builder.panel(&{FillX, SizeToContentY, DrawText}, text = self.path, textColor = textColor)
 
-method createUI*(self: TextSymbolSelectorItem, builder: UINodeBuilder, app: App) =
+method createUI*(self: TextSymbolSelectorItem, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
   let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
   let scopeColor = app.theme.tokenColor("string", color(175/255, 255/255, 175/255))
 
@@ -146,11 +146,11 @@ method createUI*(self: TextSymbolSelectorItem, builder: UINodeBuilder, app: App)
     builder.panel(&{FillX, SizeToContentY, DrawText}, text = $self.symbol.symbolType, textColor = scopeColor)
     # typeText.right = -($self.symbol.symbolType).len.float * charWidth
 
-method createUI*(self: ThemeSelectorItem, builder: UINodeBuilder, app: App) =
+method createUI*(self: ThemeSelectorItem, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
   let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
   builder.panel(&{FillX, SizeToContentY, DrawText}, text = self.path, textColor = textColor)
 
-method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App) =
+method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
   let dirty = self.dirty
   self.resetDirty()
 
@@ -202,7 +202,7 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App) =
       block:
         builder.panel(flagsInner):
           builder.panel(&{FillX, SizeToContentY}):
-            self.textEditor.createUI(builder, app)
+            result.add self.textEditor.createUI(builder, app)
 
           var top = 0.0
           var widgetIndex = 0
@@ -215,6 +215,6 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App) =
               backgroundColor
 
             builder.panel(&{FillX, SizeToContentY, FillBackground}, backgroundColor = backgroundColor):
-              self.completions[self.completions.high - completionIndex].createUI(builder, app)
+              result.add self.completions[self.completions.high - completionIndex].createUI(builder, app)
 
           # builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = backgroundColor)
