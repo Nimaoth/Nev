@@ -435,8 +435,8 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       if not self.cursorVisible:
         bounds.w = 0
 
-      builder.panel(&{UINodeFlag.FillBackground, AnimatePosition, MaskContent}, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h, backgroundColor = color(0.7, 0.7, 1), userId = newSecondaryId(self.cursorsId, cursorIndex.int32)):
-        builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, x = app.platform.charGap, y = 0, text = cursorLocation.text, textColor = color(0.4, 0.2, 2))
+      builder.panel(&{UINodeFlag.FillBackground, AnimatePosition, MaskContent}, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h, backgroundColor = cursorForegroundColor, userId = newSecondaryId(self.cursorsId, cursorIndex.int32)):
+        builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, x = app.platform.charGap, y = 0, text = cursorLocation.text, textColor = cursorBackgroundColor)
 
     defer:
       self.lastContentBounds = currentNode.bounds
