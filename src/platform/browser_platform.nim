@@ -450,17 +450,10 @@ proc drawNode(builder: UINodeBuilder, platform: BrowserPlatform, element: var El
   var childrenToRemove: seq[Element] = @[]
 
   platform.domUpdates.add proc() =
-    for (c, rel, other) in newChildren:
-      if rel == "":
-        element.appendChild c
-      else:
-        other.insertAdjacentElement(rel, c)
-
-    for c in childrenToRemove:
-      c.remove()
-
     element.class = "widget"
     element.setAttribute("style", css)
+
+    # element.setAttribute("data-flags", $node.flags)
 
     if updateText:
       element.innerText = text
@@ -470,6 +463,15 @@ proc drawNode(builder: UINodeBuilder, platform: BrowserPlatform, element: var El
       element.innerText = ""
 
     element.setAttribute("id", ($node.id).cstring)
+
+    for (c, rel, other) in newChildren:
+      if rel == "":
+        element.appendChild c
+      else:
+        other.insertAdjacentElement(rel, c)
+
+    for c in childrenToRemove:
+      c.remove()
 
   var existingCount = element.children.len
   var k = 0
