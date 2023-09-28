@@ -542,7 +542,7 @@ proc clearUnusedChildren*(builder: UINodeBuilder, node: UINode, last: UINode) =
 proc clearUnusedChildrenAndGetBounds*(builder: UINodeBuilder, node: UINode, last: UINode): Option[Rect] =
   if last.isNil:
     for _, child in node.children:
-      result = result or child.bounds.some
+      result = result or child.boundsActual.some
       builder.returnNode child
       node.contentDirty = true
     node.first = nil
@@ -554,7 +554,7 @@ proc clearUnusedChildrenAndGetBounds*(builder: UINodeBuilder, node: UINode, last
     var n = last.next
     while n.isNotNil:
       let next = n.next
-      result = result or n.bounds.some
+      result = result or n.boundsActual.some
       builder.returnNode n
       node.contentDirty = true
       n = next
@@ -797,7 +797,7 @@ proc getNextOrNewNode(builder: UINodeBuilder, node: UINode, last: UINode, userId
       # node is still in use somewhere else
       # echo "remove target node from parent because we insert it here: ", node.dump
       if builder.useInvalidation:
-        newNode.parent.clearedChildrenBounds = newNode.parent.clearedChildrenBounds or newNode.boundsOld.some
+        newNode.parent.clearedChildrenBounds = newNode.parent.clearedChildrenBounds or newNode.boundsActual.some
       newNode.removeFromParent()
 
     node.insert(newNode)
@@ -825,7 +825,7 @@ proc getNextOrNewNode(builder: UINodeBuilder, node: UINode, last: UINode, userId
             break
           # echo "delete old node ", c.dump(), ", ", node.clearRect
           if builder.useInvalidation:
-            node.clearedChildrenBounds = node.clearedChildrenBounds or c.boundsOld.some
+            node.clearedChildrenBounds = node.clearedChildrenBounds or c.boundsActual.some
           c.removeFromParent()
           builder.returnNode(c)
         assert last.next == matchingNode.get
@@ -839,7 +839,7 @@ proc getNextOrNewNode(builder: UINodeBuilder, node: UINode, last: UINode, userId
         # node is still in use somewhere else
         # echo "remove target node from parent because we insert it here: ", node.dump
         if builder.useInvalidation:
-          newNode.parent.clearedChildrenBounds = newNode.parent.clearedChildrenBounds or newNode.boundsOld.some
+          newNode.parent.clearedChildrenBounds = newNode.parent.clearedChildrenBounds or newNode.boundsActual.some
         newNode.removeFromParent()
 
       node.insert(newNode, last)
@@ -935,7 +935,11 @@ proc postProcessNodeBackwards(builder: UINodeBuilder, node: UINode, offsetX: flo
       node.boundsActual.h == node.h:
       builder.animatingNodes.excl node.id
     else:
-      node.boundsActual.mix(node.bounds, animationProgress)
+      node.boundsActual.x = node.boundsActual.x.mix(node.x, animationProgress)
+      node.boundsActual.y = node.boundsActual.y.mix(node.y, animationProgress)
+      node.boundsActual.w = node.boundsActual.w.mix(node.w, animationProgress)
+      node.boundsActual.h = node.boundsActual.h.mix(node.h, animationProgress)
+
       if node.boundsActual.x.almostEqual(node.x, 1) and
         node.boundsActual.y.almostEqual(node.y, 1) and
         node.boundsActual.w.almostEqual(node.w, 1) and
@@ -945,6 +949,7 @@ proc postProcessNodeBackwards(builder: UINodeBuilder, node: UINode, offsetX: flo
         node.boundsActual.y = node.y
         node.boundsActual.w = node.w
         node.boundsActual.h = node.h
+
       builder.animatingNodes.incl node.id
 
   elif AnimatePosition in node.flags:

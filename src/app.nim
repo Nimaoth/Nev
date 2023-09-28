@@ -1659,6 +1659,10 @@ proc scriptRunAction*(action: string, arg: string) {.expose("editor").} =
 proc scriptLog*(message: string) {.expose("editor").} =
   logNoCategory lvlInfo, fmt"[script] {message}"
 
+proc changeAnimationSpeed*(self: App, factor: float) {.expose("editor").} =
+  self.platform.builder.animationSpeedModifier *= factor
+  debugf"{self.platform.builder.animationSpeedModifier}"
+
 proc setLeader*(self: App, leader: string) {.expose("editor").} =
   for config in self.eventHandlerConfigs.values:
     config.setLeader leader

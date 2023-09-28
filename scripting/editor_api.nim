@@ -128,6 +128,8 @@ proc scriptRunAction*(action: string; arg: string) =
   editor_scriptRunAction_void_string_string_impl(action, arg)
 proc scriptLog*(message: string) =
   editor_scriptLog_void_string_impl(message)
+proc changeAnimationSpeed*(factor: float) =
+  editor_changeAnimationSpeed_void_App_float_impl(factor)
 proc setLeader*(leader: string) =
   editor_setLeader_void_App_string_impl(leader)
 proc addCommandScript*(context: string; keys: string; action: string;

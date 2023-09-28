@@ -390,6 +390,7 @@ proc editor_mode_string_App_impl(): string  {.importc.}
 proc editor_getContextWithMode_string_App_string_impl(context: string): string  {.importc.}
 proc editor_scriptRunAction_void_string_string_impl(action: string; arg: string)  {.importc.}
 proc editor_scriptLog_void_string_impl(message: string)  {.importc.}
+proc editor_changeAnimationSpeed_void_App_float_impl(factor: float)  {.importc.}
 proc editor_setLeader_void_App_string_impl(leader: string)  {.importc.}
 proc editor_addCommandScript_void_App_string_string_string_string_impl(
     context: string; keys: string; action: string; arg: string = "")  {.importc.}

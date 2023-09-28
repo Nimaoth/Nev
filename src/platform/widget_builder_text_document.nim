@@ -402,7 +402,7 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
   self.lastCompletionWidgets.setLen 0
 
   var completionsPanel: UINode = nil
-  builder.panel(&{SizeToContentX, SizeToContentY, AnimateBounds}, x = clampedX, y = top, w = totalWidth, h = bottom - top, pivot = vec2(0, 0), userId = self.completionsId.newPrimaryId):
+  builder.panel(&{SizeToContentX, SizeToContentY, AnimateBounds, MaskContent}, x = clampedX, y = top, w = totalWidth, h = bottom - top, pivot = vec2(0, 0), userId = self.completionsId.newPrimaryId):
     completionsPanel = currentNode
 
     proc handleScroll(delta: float) =

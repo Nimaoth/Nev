@@ -676,6 +676,20 @@ proc scriptLog*(message: string) =
   let res {.used.} = editor_scriptLog_void_string_wasm(argsJsonString.cstring)
 
 
+proc editor_changeAnimationSpeed_void_App_float_wasm(arg: cstring): cstring {.
+    importc.}
+proc changeAnimationSpeed*(factor: float) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when float is JsonNode:
+      factor
+    else:
+      factor.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_changeAnimationSpeed_void_App_float_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_setLeader_void_App_string_wasm(arg: cstring): cstring {.importc.}
 proc setLeader*(leader: string) =
   var argsJson = newJArray()
