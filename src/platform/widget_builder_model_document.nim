@@ -9,6 +9,23 @@ import ast/[types, cells]
 
 func withAlpha(color: Color, alpha: float32): Color = color(color.r, color.g, color.b, alpha)
 
+when defined(js):
+  # Optimized version for javascript backend
+  proc createPartWidget*(text: string, startOffset: float, width: float, height: float, color: Color, frameIndex: int): WText =
+    new result
+    {.emit: [result, ".text = ", text, ".slice(0);"] .} #"""
+    {.emit: [result, ".anchor = {Field0: {x: 0, y: 0}, Field1: {x: 0, y: 0}};"] .} #"""
+    {.emit: [result, ".left = ", startOffset, ";"] .} #"""
+    {.emit: [result, ".right = ", startOffset, " + ", width, ";"] .} #"""
+    {.emit: [result, ".bottom = ", height, ";"] .} #"""
+    {.emit: [result, ".frameIndex = ", frameIndex, ";"] .} #"""
+    {.emit: [result, ".foregroundColor = ", color, ";"] .} #"""
+    # """
+
+else:
+  proc createPartWidget*(text: string, startOffset: float, width: float, height: float, color: Color, frameIndex: int): WText =
+    result = WText(text: text, anchor: (vec2(0, 0), vec2(0, 0)), left: startOffset, right: startOffset + width, bottom: height, foregroundColor: color, lastHierarchyChange: frameIndex)
+
 
 proc updateBaseIndexAndScrollOffset(self: ModelDocumentEditor, app: App, contentPanel: WPanel) =
   # let totalLineHeight = app.platform.totalLineHeight
