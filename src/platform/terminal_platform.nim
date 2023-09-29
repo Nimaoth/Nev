@@ -418,6 +418,8 @@ proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, 
   if builder.useInvalidation and not force and node.lastChange < builder.frameIndex:
     return
 
+  node.lastRenderTime = builder.frameIndex
+
   if node.flags.any &{UINodeFlag.FillBackground, DrawText}:
     force = true
 

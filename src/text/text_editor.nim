@@ -468,6 +468,9 @@ proc selectPrev(self: TextDocumentEditor) {.expose("editor.text").} =
     let selection = self.selectionHistory.popLast
     self.selectionHistory.addFirst self.selections
     self.selectionsInternal = selection
+    self.cursorVisible = true
+    if self.blinkCursorTask.isNotNil and self.active:
+      self.blinkCursorTask.reschedule()
   self.scrollToCursor(self.selection.last)
 
 proc selectNext(self: TextDocumentEditor) {.expose("editor.text").} =
@@ -475,10 +478,14 @@ proc selectNext(self: TextDocumentEditor) {.expose("editor.text").} =
     let selection = self.selectionHistory.popFirst
     self.selectionHistory.addLast self.selections
     self.selectionsInternal = selection
+    self.cursorVisible = true
+    if self.blinkCursorTask.isNotNil and self.active:
+      self.blinkCursorTask.reschedule()
   self.scrollToCursor(self.selection.last)
 
 proc selectInside(self: TextDocumentEditor, cursor: Cursor) {.expose("editor.text").} =
   self.selection = self.getSelectionForMove(cursor, "word")
+  # todo
   # let regex = re("[a-zA-Z0-9_]")
   # var first = cursor.column
   # # echo self.document.lines[cursor.line], ", ", first, ", ", self.document.lines[cursor.line].matchLen(regex, start = first - 1)
