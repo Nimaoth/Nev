@@ -4,6 +4,8 @@ import vmath, bumpy
 
 from scripting_api import EditorId, newEditorId
 
+logCategory "document-editor"
+
 type DocumentEditor* = ref object of RootObj
   id*: EditorId
   userId*: Id
