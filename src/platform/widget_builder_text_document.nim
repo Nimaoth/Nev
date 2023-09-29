@@ -1,5 +1,5 @@
 import std/[strformat, tables, sugar, sequtils, strutils, algorithm, math]
-import util, app, document_editor, text/text_editor, custom_logger, widgets, widget_builders_base, platform, theme, custom_unicode, config_provider
+import util, app, document_editor, text/text_editor, custom_logger, widgets, widget_builders_base, platform, theme, custom_unicode, config_provider, widget_library
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import vmath, bumpy, chroma
 
@@ -199,25 +199,6 @@ proc renderLine*(
     for curs in cursors:
       if curs == lineOriginal.len:
         result.add (subLine, "", rect(lastPartXW, 0, builder.charWidth, builder.textHeight), (line.index, curs))
-
-proc createHeader(self: TextDocumentEditor, builder: UINodeBuilder, app: App, headerColor: Color, textColor: Color): UINode =
-  if self.renderHeader:
-    builder.panel(&{FillX, SizeToContentY, FillBackground, LayoutHorizontal}, backgroundColor = headerColor):
-      let bar = currentNode
-      result = bar
-
-      let workspaceName = self.document.workspace.map(wf => " - " & wf.name).get("")
-
-      proc cursorString(cursor: Cursor): string = $cursor.line & ":" & $cursor.column & ":" & $self.document.lines[cursor.line].toOpenArray.runeIndex(cursor.column)
-
-      let mode = if self.currentMode.len == 0: "normal" else: self.currentMode
-      builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = fmt" {mode} - {self.document.filename} {workspaceName} ")
-      builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse}):
-        builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = fmt" {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} ")
-
-  else:
-    builder.panel(&{FillX}):
-      result = currentNode
 
 proc createLines(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: float, maxLine: int, sizeToContentX: bool, sizeToContentY: bool, backgroundColor: Color, handleScroll: proc(delta: float), handleLine: proc(line: int, y: float, down: bool)) =
   var flags = 0.UINodeFlags
@@ -551,7 +532,10 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
       var header: UINode
 
       builder.panel(flagsInner):
-        header = self.createHeader(builder, app, backgroundColor, textColor)
+        header = builder.createHeader(self.renderHeader, self.currentMode, self.document, backgroundColor, textColor):
+          right:
+            proc cursorString(cursor: Cursor): string = $cursor.line & ":" & $cursor.column & ":" & $self.document.lines[cursor.line].toOpenArray.runeIndex(cursor.column)
+            builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = fmt" {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} ")
         if self.createTextLines(builder, app, backgroundColor, textColor, sizeToContentX, sizeToContentY).getSome(info):
           self.lastCursorLocationBounds = info.bounds.transformRect(info.node, builder.root).some
 
