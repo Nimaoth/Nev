@@ -1,6 +1,6 @@
 import std/[strformat, tables, sugar, strutils]
 import util, app, document_editor, model_document, text/text_document, custom_logger, widgets, platform, theme, widget_builder_text_document
-import widget_builders_base
+import widget_builders_base, ui/node
 import vmath, bumpy, chroma
 import ast/[types, cells]
 
@@ -632,3 +632,66 @@ method updateWidget*(self: ModelDocumentEditor, app: App, widget: WPanel, comple
   self.lastContentBounds = contentPanel.lastBounds
 
   # debugf"rerender {rendered} lines for {self.document.filename} took {timer.elapsed.ms:>5.2}ms"
+
+proc createHeader(self: ModelDocumentEditor, builder: UINodeBuilder, app: App, headerColor: Color, textColor: Color): UINode =
+  if self.renderHeader:
+    builder.panel(&{FillX, SizeToContentY, FillBackground, LayoutHorizontal}, backgroundColor = headerColor):
+      let bar = currentNode
+      result = bar
+
+      let workspaceName = self.document.workspace.map(wf => " - " & wf.name).get("")
+
+      let mode = if self.currentMode.len == 0: "normal" else: self.currentMode
+      builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = fmt" {mode} - {self.document.filename} {workspaceName} ")
+      builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse}):
+        builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = fmt" {self.id} ")
+
+  else:
+    builder.panel(&{FillX}):
+      result = currentNode
+
+method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
+  let dirty = self.dirty
+  self.resetDirty()
+
+  let textColor = app.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
+  var backgroundColor = if self.active: app.theme.color("editor.background", color(25/255, 25/255, 40/255)) else: app.theme.color("editor.background", color(25/255, 25/255, 25/255)) * 0.85
+  backgroundColor.a = 1
+
+  var headerColor = if self.active: app.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)) else: app.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
+  headerColor.a = 1
+
+  var flags = &{UINodeFlag.MaskContent, OverlappingChildren}
+  var flagsInner = &{LayoutVertical}
+
+  let sizeToContentX = SizeToContentX in builder.currentParent.flags
+  let sizeToContentY = SizeToContentY in builder.currentParent.flags
+  if sizeToContentX:
+    flags.incl SizeToContentX
+    flagsInner.incl SizeToContentX
+  else:
+    flags.incl FillX
+    flagsInner.incl FillX
+
+  if sizeToContentY:
+    flags.incl SizeToContentY
+    flagsInner.incl SizeToContentY
+  else:
+    flags.incl FillY
+    flagsInner.incl FillY
+
+  builder.panel(flags, userId = self.userId.newPrimaryId):
+    # if not self.disableScrolling and not sizeToContentY:
+    #   updateBaseIndexAndScrollOffset(currentNode.bounds.h, self.previousBaseIndex, self.scrollOffset, self.document.lines.len, builder.textHeight, int.none)
+
+    if dirty or app.platform.redrawEverything or not builder.retain():
+      var header: UINode
+
+      builder.panel(flagsInner):
+        header = self.createHeader(builder, app, backgroundColor, textColor)
+        # if self.createTextLines(builder, app, backgroundColor, textColor, sizeToContentX, sizeToContentY).getSome(info):
+        #   self.lastCursorLocationBounds = info.bounds.transformRect(info.node, builder.root).some
+
+  # if self.showCompletions and self.active:
+  #   result.add proc() =
+  #     self.createCompletions(builder, app, self.lastCursorLocationBounds.get(rect(100, 100, 10, 10)))
