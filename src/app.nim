@@ -684,6 +684,7 @@ proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.}
   self.commandLineTextEditor.TextDocumentEditor.disableScrolling = true
   self.commandLineTextEditor.TextDocumentEditor.lineNumbers = api.LineNumbers.None.some
   self.getCommandLineTextEditor.hideCursorWhenInactive = true
+  discard self.commandLineTextEditor.onMarkedDirty.subscribe () => self.platform.requestRender()
 
   var state = EditorState()
   try:

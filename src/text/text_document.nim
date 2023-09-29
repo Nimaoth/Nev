@@ -617,7 +617,6 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
     (string, int).none
 
   let workspaces = if self.workspace.getSome(ws):
-    echo ws.getWorkspacePath
     @[ws.getWorkspacePath()]
   else:
     when declared(getCurrentDir):
