@@ -1,6 +1,6 @@
 import std/[strformat, tables, sugar]
 import util, app, app_interface, config_provider, document_editor, ast_document, ast, node_layout, compiler, text/text_document, custom_logger, widgets, platform, theme, widget_builder_text_document
-import widget_builders_base
+import widget_builders_base, widget_library, ui/node
 import vmath, bumpy, chroma
 
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
@@ -511,3 +511,47 @@ method updateWidget*(self: AstDocumentEditor, app: App, widget: WPanel, completi
   self.lastContentBounds = contentPanel.lastBounds
 
   # debugf"rerender {rendered} lines for {self.document.filename} took {timer.elapsed.ms:>5.2}ms"
+
+# "
+
+method createUI*(self: AstDocumentEditor, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
+  let dirty = self.dirty
+  self.resetDirty()
+
+  let textColor = app.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
+  var backgroundColor = if self.active: app.theme.color("editor.background", color(25/255, 25/255, 40/255)) else: app.theme.color("editor.background", color(25/255, 25/255, 25/255)) * 0.85
+  backgroundColor.a = 1
+
+  var headerColor = if self.active: app.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)) else: app.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
+  headerColor.a = 1
+
+  var flags = &{UINodeFlag.MaskContent, OverlappingChildren}
+  var flagsInner = &{LayoutVertical}
+
+  let sizeToContentX = SizeToContentX in builder.currentParent.flags
+  let sizeToContentY = SizeToContentY in builder.currentParent.flags
+  if sizeToContentX:
+    flags.incl SizeToContentX
+    flagsInner.incl SizeToContentX
+  else:
+    flags.incl FillX
+    flagsInner.incl FillX
+
+  if sizeToContentY:
+    flags.incl SizeToContentY
+    flagsInner.incl SizeToContentY
+  else:
+    flags.incl FillY
+    flagsInner.incl FillY
+
+  builder.panel(flags, userId = self.userId.newPrimaryId):
+    if dirty or app.platform.redrawEverything or not builder.retain():
+      var header: UINode
+
+      builder.panel(flagsInner):
+        header = builder.createHeader(self.renderHeader, self.currentMode, self.document, backgroundColor, textColor):
+          right:
+            builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = fmt" {self.id} ")
+
+        if not sizeToContentY:
+          builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = backgroundColor)
