@@ -1177,7 +1177,6 @@ proc refilterCompletions(self: TextDocumentEditor) =
   for i in 0..noMatches.high:
     self.completions[i + matches.len] = noMatches[i][0]
 
-
 proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.} =
   if self.disableCompletions:
     return
@@ -1210,6 +1209,7 @@ proc showCompletionWindow(self: TextDocumentEditor) =
   if not self.updateCompletionsTask.isActive:
     self.updateCompletionsTask.reschedule()
 
+  log lvlInfo, fmt"showCompletions {self.document.filename}"
   self.showCompletions = true
   self.markDirty()
 
@@ -1253,6 +1253,7 @@ proc gotoSymbol*(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncCheck self.gotoSymbolAsync()
 
 proc hideCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
+  log lvlInfo, fmt"hideCompletions {self.document.filename}"
   self.showCompletions = false
   if self.updateCompletionsTask.isNotNil:
     self.updateCompletionsTask.pause()

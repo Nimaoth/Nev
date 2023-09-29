@@ -56,6 +56,10 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
           discard
 
         builder.panel(&{FillX, SizeToContentY}, pivot = vec2(1, 0)):
+          let wasActive = self.getCommandLineTextEditor.active
+          self.getCommandLineTextEditor.active = self.commandLineMode
+          if self.getCommandLineTextEditor.active != wasActive:
+            self.getCommandLineTextEditor.markDirty(notify=false)
           overlays.add self.getCommandLineTextEditor.createUI(builder, self)
 
       builder.panel(&{FillX, FillY}, pivot = vec2(0, 1)): # main panel
@@ -68,7 +72,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
           let bounds = rect(xy, xwyh - xy)
 
           let wasActive = view.editor.active
-          view.editor.active = self.currentView == i
+          view.editor.active = (self.currentView == i) and not self.commandLineMode
           if view.editor.active != wasActive:
             view.editor.markDirty(notify=false)
 

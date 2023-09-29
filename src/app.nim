@@ -1327,7 +1327,7 @@ proc iterateDirectoryRec(self: App, folder: WorkspaceFolder, path: string, cance
     await fut
 
 proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
-  ## Opens a file dialog which show all files in the currently open workspaces
+  ## Opens a file dialog which shows all files in the currently open workspaces
   ## Press <ENTER> to select a file
   ## Press <ESCAPE> to close the dialogue
 
