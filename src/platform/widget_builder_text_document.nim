@@ -203,7 +203,8 @@ proc renderLine*(
 proc createHeader(self: TextDocumentEditor, builder: UINodeBuilder, app: App, headerColor: Color, textColor: Color): UINode =
   if self.renderHeader:
     builder.panel(&{FillX, SizeToContentY, FillBackground, LayoutHorizontal}, backgroundColor = headerColor):
-      result = currentNode
+      let bar = currentNode
+      result = bar
 
       let workspaceName = self.document.workspace.map(wf => " - " & wf.name).get("")
 
@@ -211,7 +212,8 @@ proc createHeader(self: TextDocumentEditor, builder: UINodeBuilder, app: App, he
 
       let mode = if self.currentMode.len == 0: "normal" else: self.currentMode
       builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = fmt" {mode} - {self.document.filename} {workspaceName} ")
-      builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = fmt" {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} ")
+      builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse}):
+        builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = fmt" {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} ")
 
   else:
     builder.panel(&{FillX}):
@@ -556,9 +558,6 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
   if self.showCompletions and self.active:
     result.add proc() =
       self.createCompletions(builder, app, self.lastCursorLocationBounds.get(rect(100, 100, 10, 10)))
-
-let completionListWidgetId* = newId()
-let completionDocsWidgetId* = newId()
 
 proc shouldIgnoreAsContextLine(self: TextDocument, line: int): bool =
   let indent = self.getIndentLevelForLine(line)
