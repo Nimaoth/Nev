@@ -410,6 +410,8 @@ proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offse
   if builder.useInvalidation and not force and node.lastChange < builder.frameIndex:
     return
 
+  node.lastRenderTime = builder.frameIndex
+
   if node.flags.any &{UINodeFlag.FillBackground, DrawBorder, DrawText}:
     platform.drawnNodes.add node
 

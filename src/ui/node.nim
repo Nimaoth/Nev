@@ -78,6 +78,7 @@ defineBitFlag:
     AnimateBounds
     AnimatePosition
     AnimateSize
+    SnapInitialBounds
 
 type
   UIUserIdKind* = enum None, Primary, Secondary
@@ -786,6 +787,25 @@ proc removeFromParent*(node: UINode) =
 proc getNextOrNewNode(builder: UINodeBuilder, node: UINode, last: UINode, userId: var UIUserId): UINode =
   let insert = true
 
+  let firstOrLast = if last.isNotNil: last else: node.first
+
+  # search ahead to see if we find a matching node
+  var matchingNode = UINode.none
+  if userId.kind != None and node.first.isNotNil:
+    for _, c in firstOrLast.nextSiblings:
+      if c.userId == userId:
+        matchingNode = c.some
+        break
+
+  if matchingNode.isSome:
+    matchingNode.get.removeFromParent()
+    node.insert(matchingNode.get, firstOrLast)
+
+    assert firstOrLast.next == matchingNode.get
+    assert firstOrLast.next.userId == userId
+
+    return firstOrLast.next
+
   if last.isNil: # Creating/Updating first child
     if node.first.isNotNil: # First child already exists
       if node.first.userId == userId: # User id matches, reuse existing
@@ -809,30 +829,6 @@ proc getNextOrNewNode(builder: UINodeBuilder, node: UINode, last: UINode, userId
     if last.next.userId == userId:
       return last.next
     elif userId.kind != None: # Has user id, doesn't match
-
-      # search ahead to see if we find a matching node
-      var matchingNode = UINode.none
-      for _, c in last.nextSiblings:
-        if c.userId == userId:
-          matchingNode = c.some
-          break
-
-      if matchingNode.isSome:
-        # echo "found matching node later, delete inbetween"
-        # remove all nodes in between
-        for _, c in last.nextSiblings:
-          if c == matchingNode.get:
-            break
-          # echo "delete old node ", c.dump(), ", ", node.clearRect
-          if builder.useInvalidation:
-            node.clearedChildrenBounds = node.clearedChildrenBounds or c.boundsActual.some
-          c.removeFromParent()
-          builder.returnNode(c)
-        assert last.next == matchingNode.get
-        assert last.next.userId == userId
-
-        return last.next
-
       let newNode = builder.unpoolNode(userId)
 
       if newNode.parent.isNotNil:
@@ -928,7 +924,14 @@ proc postProcessNodeBackwards(builder: UINodeBuilder, node: UINode, offsetX: flo
   let wasAnimating = node.id in builder.animatingNodes
 
   let animationProgress = clamp(node.boundsLerpSpeed * builder.animationSpeedModifier * builder.frameTime, 0, 1)
-  if AnimateBounds in node.flags or node.flags.all &{AnimatePosition, AnimateSize}:
+  if node.lastRenderTime == 0 and SnapInitialBounds in node.flags:
+    node.boundsActual.x = node.x
+    node.boundsActual.y = node.y
+    node.boundsActual.w = node.w
+    node.boundsActual.h = node.h
+    builder.animatingNodes.excl node.id
+
+  elif AnimateBounds in node.flags or node.flags.all &{AnimatePosition, AnimateSize}:
     if node.boundsActual.x == node.x and
       node.boundsActual.y == node.y and
       node.boundsActual.w == node.w and

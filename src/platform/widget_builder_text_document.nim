@@ -64,6 +64,8 @@ proc renderLine*(
   builder.panel(flagsInner + LayoutVertical, y = y, pivot = pivot, userId = newSecondaryId(parentId, lineId)):
     let lineWidth = currentNode.bounds.w
 
+    var subLine: UINode = nil
+
     var start = 0
     var startRune = 0.RuneCount
     var lastPartXW: float32 = 0
@@ -73,6 +75,7 @@ proc renderLine*(
     while partIndex < line.parts.len:
 
       builder.panel(flagsInner + LayoutHorizontal):
+        subLine = currentNode
 
         if lineNumberText.len > 0:
           builder.panel(&{UINodeFlag.FillBackground, FillY}, w = lineNumberTotalWidth, backgroundColor = backgroundColor):
@@ -174,11 +177,6 @@ proc renderLine*(
           partIndex += 1
           subLinePartIndex += 1
 
-        # cursor after latest char
-        for curs in cursors:
-          if curs == lineOriginal.len:
-            result.add (currentNode, "", rect(lastPartXW, 0, builder.charWidth, builder.textHeight), (line.index, curs))
-
         # Fill rest of line with background
         builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = backgroundColor):
           capture line, currentNode:
@@ -194,6 +192,11 @@ proc renderLine*(
               let currentSelection = self.selection
               self.selection = (currentSelection.first, (line.index, self.document.lineLength(line.index)))
               self.markDirty()
+
+    # cursor after latest char
+    for curs in cursors:
+      if curs == lineOriginal.len:
+        result.add (subLine, "", rect(lastPartXW, 0, builder.charWidth, builder.textHeight), (line.index, curs))
 
 proc createHeader(self: TextDocumentEditor, builder: UINodeBuilder, app: App, headerColor: Color, textColor: Color): UINode =
   if self.renderHeader:
