@@ -43,7 +43,7 @@ proc renderLine*(
   y: float, sizeToContentX: bool, lineNumberTotalWidth: float, lineNumberWidth: float, pivot: Vec2,
   backgroundColor: Color, textColor: Color,
   backgroundColors: openArray[tuple[first: RuneIndex, last: RuneIndex, color: Color]], cursors: openArray[int],
-  wrapLine: bool): seq[CursorLocationInfo] =
+  wrapLine: bool, wrapLineEndChar: string, wrapLineEndColor: Color): seq[CursorLocationInfo] =
 
   var flagsInner = &{FillX, SizeToContentY}
   if sizeToContentX:
@@ -100,6 +100,9 @@ proc renderLine*(
               break
 
             if lastPartXW + wrapWidth + builder.charWidth >= lineWidth:
+              builder.panel(&{DrawText, FillBackground, SizeToContentX, SizeToContentY}, text = wrapLineEndChar, backgroundColor = backgroundColor, textColor = wrapLineEndColor):
+                defer:
+                  lastPartXW = currentNode.xw
               subLineIndex += 1
               subLinePartIndex = 0
               break
@@ -297,7 +300,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   let charWidth = builder.charWidth
 
   # ↲ ↩ ⤦ ⤶ ⤸ ⮠
-  let wrapLineEndChar = getOption[string](app, "editor.text.wrap-line-end-char", "⤶")
+  let wrapLineEndChar = getOption[string](app, "editor.text.wrap-line-end-char", "↲")
   let wrapLines = getOption[bool](app, "editor.text.wrap-lines", true)
   let showContextLines = getOption[bool](app, "editor.text.context-lines", true)
 
@@ -396,7 +399,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       cursors.add self.renderLine(builder, app.theme, styledLine, self.document.lines[i], self.document.lineIds[i],
         self.userId, cursorLine, i, lineNumbers, y, sizeToContentX, lineNumberWidth, lineNumberBounds.x, pivot,
         backgroundColor, textColor,
-        colors, cursorsPerLine, wrapLine
+        colors, cursorsPerLine, wrapLine, wrapLineEndChar, wrapLineEndColor,
         )
 
     builder.createLines(self.previousBaseIndex, self.scrollOffset, self.document.lines.high, sizeToContentX, sizeToContentY, backgroundColor, handleScroll, handleLine)
@@ -422,7 +425,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
           cursors.add self.renderLine(builder, app.theme, styledLine, self.document.lines[contextLine], self.document.lineIds[contextLine],
             self.userId, cursorLine, contextLine, lineNumbers, y, sizeToContentX, lineNumberWidth, lineNumberBounds.x, vec2(0, 0),
             contextBackgroundColor, textColor,
-            colors, [], false
+            colors, [], false, wrapLineEndChar, wrapLineEndColor,
             )
 
         # let fill = self.scrollOffset mod builder.textHeight

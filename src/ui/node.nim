@@ -787,24 +787,25 @@ proc removeFromParent*(node: UINode) =
 proc getNextOrNewNode(builder: UINodeBuilder, node: UINode, last: UINode, userId: var UIUserId): UINode =
   let insert = true
 
-  let firstOrLast = if last.isNotNil: last else: node.first
+  # # search ahead to see if we find a matching node
+  # let firstOrLast = if last.isNotNil: last else: node.first
+  # var matchingNode = UINode.none
+  # if userId.kind != None and firstOrLast.isNotNil:
+  #   for _, c in firstOrLast.nextSiblings:
+  #     if c.userId == userId:
+  #       matchingNode = c.some
+  #       break
 
-  # search ahead to see if we find a matching node
-  var matchingNode = UINode.none
-  if userId.kind != None and node.first.isNotNil:
-    for _, c in firstOrLast.nextSiblings:
-      if c.userId == userId:
-        matchingNode = c.some
-        break
+  # if matchingNode.isSome:
+  #   if builder.useInvalidation:
+  #     node.clearedChildrenBounds = node.clearedChildrenBounds or matchingNode.get.boundsActual.some
+  #   matchingNode.get.removeFromParent()
+  #   node.insert(matchingNode.get, firstOrLast)
 
-  if matchingNode.isSome:
-    matchingNode.get.removeFromParent()
-    node.insert(matchingNode.get, firstOrLast)
+  #   assert firstOrLast.next == matchingNode.get
+  #   assert firstOrLast.next.userId == userId
 
-    assert firstOrLast.next == matchingNode.get
-    assert firstOrLast.next.userId == userId
-
-    return firstOrLast.next
+  #   return firstOrLast.next
 
   if last.isNil: # Creating/Updating first child
     if node.first.isNotNil: # First child already exists
@@ -829,6 +830,30 @@ proc getNextOrNewNode(builder: UINodeBuilder, node: UINode, last: UINode, userId
     if last.next.userId == userId:
       return last.next
     elif userId.kind != None: # Has user id, doesn't match
+
+      # search ahead to see if we find a matching node
+      var matchingNode = UINode.none
+      for _, c in last.nextSiblings:
+        if c.userId == userId:
+          matchingNode = c.some
+          break
+
+      if matchingNode.isSome:
+        # echo "found matching node later, delete inbetween"
+        # remove all nodes in between
+        for _, c in last.nextSiblings:
+          if c == matchingNode.get:
+            break
+          # echo "delete old node ", c.dump(), ", ", node.clearRect
+          if builder.useInvalidation:
+            node.clearedChildrenBounds = node.clearedChildrenBounds or c.boundsActual.some
+          c.removeFromParent()
+          builder.returnNode(c)
+        assert last.next == matchingNode.get
+        assert last.next.userId == userId
+
+        return last.next
+
       let newNode = builder.unpoolNode(userId)
 
       if newNode.parent.isNotNil:
