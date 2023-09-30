@@ -1,5 +1,5 @@
 import std/[strformat, tables, sugar, strutils]
-import util, app, document_editor, model_document, text/text_document, custom_logger, widgets, platform, theme, widget_builder_text_document, config_provider
+import util, app, document_editor, model_document, text/text_document, custom_logger, platform, theme, config_provider
 import widget_builders_base, widget_library, ui/node
 import vmath, bumpy, chroma
 import ast/[types, cells]
@@ -9,17 +9,11 @@ import ast/[types, cells]
 
 func withAlpha(color: Color, alpha: float32): Color = color(color.r, color.g, color.b, alpha)
 
-proc updateBaseIndexAndScrollOffset(self: ModelDocumentEditor, app: App, contentPanel: WPanel) =
-  # let totalLineHeight = app.platform.totalLineHeight
-  discard
-
 type CellLayoutContext = ref object
   builder: UINodeBuilder
   currentLine: int
   indexInLine: int
   currentIndent: int
-  # parentWidget: WPanel
-  lineWidget: WPanel
   parentNode: UINode
   lineNode: UINode
   indentNode: UINode
@@ -85,29 +79,9 @@ proc newLine(self: CellLayoutContext) =
     self.indentNode = currentNode
 
   self.indexInLine = 0
-
   self.hasIndent = false
 
   self.indent()
-
-proc addWidget(self: CellLayoutContext, widget: WWidget, spaceLeft: bool) =
-  let width = widget.right
-  let height = widget.bottom
-
-  self.lineWidget[self.indexInLine] = nil
-  if spaceLeft:
-    self.addSpace()
-
-  widget.left = self.lineWidget.right
-  widget.right = widget.left + width
-  widget.top = 0
-  widget.bottom = height
-
-  self.lineWidget.right = widget.right
-  self.lineWidget.bottom = max(self.lineWidget.bottom, self.lineWidget.top + height)
-
-  self.lineWidget[self.indexInLine] = widget
-  inc self.indexInLine
 
 proc finish(self: CellLayoutContext) =
   self.builder.finishNode(self.lineNode)
