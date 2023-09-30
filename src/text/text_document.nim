@@ -1,10 +1,10 @@
 import std/[os, strutils, sequtils, sugar, options, json, strformat, tables, sets]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
-import patty
+import patty, bumpy
 import document, document_editor, id, util, event, ../regex, custom_logger, custom_async, custom_treesitter, indent, custom_unicode, myjsonutils
 import text_language_config
-import platform/[filesystem, widgets]
+import platform/[filesystem]
 import language/[languages, language_server_base]
 import workspaces/[workspace]
 import config_provider

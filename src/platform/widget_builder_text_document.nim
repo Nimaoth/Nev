@@ -1,5 +1,5 @@
 import std/[strformat, tables, sugar, sequtils, strutils, algorithm, math]
-import util, app, document_editor, text/text_editor, custom_logger, widgets, widget_builders_base, platform, theme, custom_unicode, config_provider, widget_library
+import util, app, document_editor, text/text_editor, custom_logger, widget_builders_base, platform, theme, custom_unicode, config_provider, widget_library
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import vmath, bumpy, chroma
 
@@ -408,8 +408,6 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
   updateBaseIndexAndScrollOffset(bottom - top, self.completionsBaseIndex, self.completionsScrollOffset, self.completions.len, totalLineHeight, self.scrollToCompletion)
   self.scrollToCompletion = int.none
 
-  self.lastCompletionWidgets.setLen 0
-
   var completionsPanel: UINode = nil
   builder.panel(&{SizeToContentX, SizeToContentY, AnimateBounds, MaskContent}, x = clampedX, y = top, w = totalWidth, h = bottom - top, pivot = vec2(0, 0), userId = self.completionsId.newPrimaryId):
     completionsPanel = currentNode
@@ -502,55 +500,3 @@ proc shouldIgnoreAsContextLine(self: TextDocument, line: int): bool =
 proc clampToLine(document: TextDocument, selection: Selection, line: StyledLine): tuple[first: RuneIndex, last: RuneIndex] =
   result.first = if selection.first.line < line.index: 0.RuneIndex elif selection.first.line == line.index: document.lines[line.index].runeIndex(selection.first.column) else: line.runeLen.RuneIndex
   result.last = if selection.last.line < line.index: 0.RuneIndex elif selection.last.line == line.index: document.lines[line.index].runeIndex(selection.last.column) else: line.runeLen.RuneIndex
-
-proc createLinesInPanel*(app: App, contentPanel: WPanel, previousBaseIndex: int, scrollOffset: float, lines: int, frameIndex: int, onlyRenderInBounds: bool,
-  renderLine: proc(lineWidget: WPanel, i: int, down: bool, frameIndex: int): bool) =
-
-  let totalLineHeight = app.platform.totalLineHeight
-
-  var top = (scrollOffset / totalLineHeight).floor * totalLineHeight
-
-  # Render all lines after base index
-  for i in previousBaseIndex..<lines:
-    # Bounds of the previous line part
-    if onlyRenderInBounds and top >= contentPanel.lastBounds.h:
-      break
-
-    if onlyRenderInBounds and top + totalLineHeight <= 0:
-      continue
-
-    var lineWidget = WPanel(anchor: (vec2(0, 0), vec2(0, 0)), left: 0, right: contentPanel.lastBounds.w, top: top, bottom: top + totalLineHeight, lastHierarchyChange: frameIndex)
-    lineWidget.layoutWidget(contentPanel.lastBounds, frameIndex, app.platform.layoutOptions)
-
-    if not renderLine(lineWidget, i, true, frameIndex):
-      break
-
-    contentPanel.add lineWidget
-    top = lineWidget.bottom
-
-  top = (scrollOffset / totalLineHeight).floor * totalLineHeight
-
-  # Render all lines before base index
-  for k in 1..previousBaseIndex:
-    let i = previousBaseIndex - k
-
-    # Bounds of the previous line part
-    if onlyRenderInBounds and top >= contentPanel.lastBounds.h:
-      continue
-
-    if onlyRenderInBounds and top + totalLineHeight <= 0:
-      break
-
-    var lineWidget = WPanel(anchor: (vec2(0, 0), vec2(0, 0)), left: 0, right: contentPanel.lastBounds.w, top: top, bottom: top + totalLineHeight, lastHierarchyChange: frameIndex)
-    lineWidget.layoutWidget(contentPanel.lastBounds, frameIndex, app.platform.layoutOptions)
-
-    if not renderLine(lineWidget, i, false, frameIndex):
-      break
-
-    let height = lineWidget.height
-    lineWidget.top = top - height
-    lineWidget.bottom = top
-
-    top = lineWidget.top
-
-    contentPanel.add lineWidget

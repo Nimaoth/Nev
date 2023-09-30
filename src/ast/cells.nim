@@ -1,5 +1,5 @@
 import std/[tables, strutils, strformat, options, sugar]
-import platform/[widgets]
+import ui/node
 import types, id, util, custom_logger
 import ast_ids
 
@@ -7,7 +7,7 @@ logCategory "cells"
 
 type
   CollectionCell* = ref object of Cell
-    layout*: WPanelLayout
+    flags*: UINodeFlags
     inline*: bool
     children*: seq[Cell]
 
@@ -222,7 +222,7 @@ method getText*(cell: AliasCell): string =
 method getText*(cell: PlaceholderCell): string = cell.displayText.get("")
 
 method dump(self: CollectionCell, recurse: bool = false): string =
-  result = fmt"CollectionCell(inline: {self.inline}, layout: {self.layout}): {self.node}"
+  result = fmt"CollectionCell(inline: {self.inline}, flags: {self.flags}): {self.node}"
   if recurse:
     result.add "\n"
     if self.filled or self.fillChildren.isNil:
@@ -285,7 +285,7 @@ proc buildCell*(self: CellBuilder, node: AstNode, useDefault: bool = false): Cel
 proc buildCellDefault*(self: CellBuilder, node: AstNode, useDefaultRecursive: bool): Cell =
   let class = node.nodeClass
 
-  var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: Horizontal))
+  var cell = CollectionCell(id: newId(), node: node, flags: &{LayoutHorizontal})
   cell.fillChildren = proc() =
     cell.add ConstantCell(node: node, text: class.name, disableEditing: true)
     cell.add ConstantCell(node: node, text: "{", increaseIndentAfter: true, disableEditing: true)
@@ -355,14 +355,14 @@ proc buildCell*(self: CellBuilder, node: AstNode, useDefault: bool = false): Cel
 proc buildDefaultPlaceholder*(builder: CellBuilder, node: AstNode, role: Id): Cell =
   return PlaceholderCell(id: newId(), node: node, role: role, shadowText: "...")
 
-proc buildChildren*(builder: CellBuilder, node: AstNode, role: Id, layout: WPanelLayoutKind,
+proc buildChildren*(builder: CellBuilder, node: AstNode, role: Id, flags: UINodeFlags,
     isVisible: proc(node: AstNode): bool = nil,
     separatorFunc: proc(builder: CellBuilder): Cell = nil,
     placeholderFunc: proc(builder: CellBuilder, node: AstNode, role: Id): Cell = buildDefaultPlaceholder): Cell =
 
   let children = node.children(role)
   if children.len > 1 or (children.len == 0 and placeholderFunc.isNil):
-    var cell = CollectionCell(id: newId(), node: node, layout: WPanelLayout(kind: layout))
+    var cell = CollectionCell(id: newId(), node: node, flags: flags)
     for i, c in node.children(role):
       if i > 0 and separatorFunc.isNotNil:
         cell.add separatorFunc(builder)
@@ -374,7 +374,7 @@ proc buildChildren*(builder: CellBuilder, node: AstNode, role: Id, layout: WPane
     result = placeholderFunc(builder, node, role)
   result.isVisible = isVisible
 
-template buildChildrenT*(b: CellBuilder, n: AstNode, r: Id, layout: WPanelLayoutKind, body: untyped): Cell =
+template buildChildrenT*(b: CellBuilder, n: AstNode, r: Id, flags: UINodeFlags, body: untyped): Cell =
   var isVisibleFunc: proc(node: AstNode): bool = nil
   var separatorFunc: proc(builder: CellBuilder): Cell = nil
   var placeholderFunc: proc(builder: CellBuilder, node: AstNode, role: Id): Cell = nil
@@ -403,4 +403,4 @@ template buildChildrenT*(b: CellBuilder, n: AstNode, r: Id, layout: WPanelLayout
 
   body
 
-  builder.buildChildren(node, role, layout, isVisibleFunc, separatorFunc, placeholderFunc)
+  builder.buildChildren(node, role, flags, isVisibleFunc, separatorFunc, placeholderFunc)

@@ -1,10 +1,12 @@
-import widgets, event, input
+import event, input
 import vmath
 import ui/node
 
-export widgets, input, event
+export input, event
 
 type
+  WLayoutOptions* = object
+    getTextBounds*: proc(text: string, fontSizeIncreasePercent: float = 0): Vec2
   Platform* = ref object of RootObj
     builder*: UINodeBuilder
     redrawEverything*: bool
@@ -23,7 +25,7 @@ type
     layoutOptions*: WLayoutOptions
 
 method requestRender*(self: Platform, redrawEverything = false) {.base.} = discard
-method render*(self: Platform, widget: WWidget, frameIndex: int) {.base.} = discard
+method render*(self: Platform) {.base.} = discard
 method sizeChanged*(self: Platform): bool {.base.} = discard
 method size*(self: Platform): Vec2 {.base.} = discard
 method init*(self: Platform) {.base.} = discard

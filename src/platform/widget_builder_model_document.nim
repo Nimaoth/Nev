@@ -22,7 +22,7 @@ type CellLayoutContext = ref object
   layoutOptions: WLayoutOptions
   indentText: string
 
-proc newCellLayoutContext(builder: UINodeBuilder, widget: WWidget): CellLayoutContext =
+proc newCellLayoutContext(builder: UINodeBuilder): CellLayoutContext =
   new result
 
   var noneId = noneUserId()
@@ -99,8 +99,6 @@ proc getTextAndColor(app: App, cell: Cell, defaultShadowText: string = ""): (str
     let defaultColor = if cell.foregroundColor.a != 0: cell.foregroundColor else: color(1, 1, 1)
     let textColor = if cell.themeForegroundColors.len == 0: defaultColor else: app.theme.anyColor(cell.themeForegroundColors, defaultColor)
     return (cell.currentText, textColor)
-
-method updateCellWidget*(cell: Cell, app: App, widget: WWidget, frameIndex: int, ctx: CellLayoutContext, updateContext: UpdateContext): WWidget {.base.} = widget
 
 # proc updateSelections(self: ModelDocumentEditor, app: App, cell: Cell, cursor: Option[CellCursor], primary: bool, reverse: bool) =
 #   let charWidth = app.platform.charWidth
@@ -320,13 +318,11 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
   if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
     return
 
-  # debugf"updateCellWidget {cell.node}"
-
   let myCtx = if ctx.isNil or cell.inline:
     if spaceLeft and ctx.isNotNil:
       ctx.addSpace()
 
-    newCellLayoutContext(builder, nil)
+    newCellLayoutContext(builder)
   else:
     ctx
 
@@ -336,7 +332,7 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
 
   cell.fill()
 
-  let vertical = cell.layout.kind == Vertical
+  let vertical = LayoutVertical in cell.flags
 
   if cell.style.isNotNil and cell.style.indentChildren:
     myCtx.increaseIndent()
@@ -410,7 +406,8 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
 
   if self.cellWidgetContext.isNil:
     self.cellWidgetContext = UpdateContext()
-  self.cellWidgetContext.cellToWidget = initTable[Id, WWidget](self.cellWidgetContext.cellToWidget.len)
+  # todo
+  # self.cellWidgetContext.cellToWidget = initTable[Id, WWidget](self.cellWidgetContext.cellToWidget.len)
 
   builder.panel(&{UINodeFlag.MaskContent, OverlappingChildren} + sizeFlags, userId = self.userId.newPrimaryId):
     # if not self.disableScrolling and not sizeToContentY:

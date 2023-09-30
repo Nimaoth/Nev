@@ -74,7 +74,7 @@ proc doRender(timestep: float) =
     #   echo rend.builder.root.dump(true)
 
     let renderTimer = startTimer()
-    rend.render(nil, frameIndex)
+    rend.render()
     renderTime = renderTimer.elapsed.ms
 
     frameTime = gEditor.frameTimer.elapsed.ms

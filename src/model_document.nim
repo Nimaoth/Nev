@@ -3,9 +3,10 @@ import fusion/matching, bumpy, rect_utils, vmath
 import util, document, document_editor, text/text_document, events, id, ast_ids, scripting/expose, event, input, custom_async, myjsonutils
 from scripting_api as api import nil
 import custom_logger, timer, array_buffer, config_provider, app_interface
-import platform/[filesystem, platform, widgets]
+import platform/[filesystem, platform]
 import workspaces/[workspace]
 import ast/[types, base_language, cells]
+import ui/node
 
 import ast/base_language_wasm
 
@@ -142,14 +143,14 @@ type
     filteredCompletions*: seq[ModelCompletion]
     unfilteredCompletions*: seq[ModelCompletion]
     selectedCompletion*: int
-    lastItems*: seq[tuple[index: int, widget: WWidget]]
     completionsBaseIndex*: int
     completionsScrollOffset*: float
     scrollToCompletion*: Option[int]
-    lastCompletionsWidget*: WWidget
 
   UpdateContext* = ref object
-    cellToWidget*: Table[Id, WWidget]
+    # cellToWidget*: Table[Id, WWidget]
+    # todo
+    discard
 
 proc `$`(op: ModelOperation): string =
   result = fmt"{op.kind}, '{op.value}'"
@@ -560,7 +561,7 @@ proc assignToLogicalLines(self: ModelDocumentEditor, cell: Cell, startLine: int,
 
   if cell of CollectionCell:
     let coll = cell.CollectionCell
-    let vertical = coll.layout.kind == Vertical
+    let vertical = LayoutVertical in coll.flags
 
     var currentLine = startLine
     var maxLine = startLine
@@ -647,37 +648,41 @@ proc handleInput(self: ModelDocumentEditor, input: string): EventResponse =
 
 proc getItemAtPixelPosition(self: ModelDocumentEditor, posWindow: Vec2): Option[int] =
   result = int.none
-  for (index, widget) in self.lastItems:
-    if widget.lastBounds.contains(posWindow) and index >= 0 and index < self.completionsLen:
-      return index.some
+  # todo
+  # for (index, widget) in self.lastItems:
+  #   if widget.lastBounds.contains(posWindow) and index >= 0 and index < self.completionsLen:
+  #     return index.some
 
 method handleScroll*(self: ModelDocumentEditor, scroll: Vec2, mousePosWindow: Vec2) =
   let scrollAmount = scroll.y * self.configProvider.getValue("model.scroll-speed", 20.0)
 
-  if self.showCompletions and not self.lastCompletionsWidget.isNil and self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
-    self.completionsScrollOffset += scrollAmount
-    self.markDirty()
-  else:
-    self.scrollOffset += scrollAmount
-    self.markDirty()
+  # todo
+  # if self.showCompletions and not self.lastCompletionsWidget.isNil and self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
+  #   self.completionsScrollOffset += scrollAmount
+  #   self.markDirty()
+  # else:
+  self.scrollOffset += scrollAmount
+  self.markDirty()
 
 proc getLeafCellContainingPoint*(self: ModelDocumentEditor, cell: Cell, point: Vec2): Option[Cell] =
-  let widget = self.cellWidgetContext.cellToWidget.getOrDefault(cell.id, nil)
-  if widget.isNil:
-    return Cell.none
+  discard
+  # todo
+  # let widget = self.cellWidgetContext.cellToWidget.getOrDefault(cell.id, nil)
+  # if widget.isNil:
+  #   return Cell.none
 
-  # debugf"getLeafCellContainingPoint {cell.node}, {point}, {widget.lastBounds}"
-  if not widget.lastBounds.contains(point):
-    return Cell.none
+  # # debugf"getLeafCellContainingPoint {cell.node}, {point}, {widget.lastBounds}"
+  # if not widget.lastBounds.contains(point):
+  #   return Cell.none
 
-  if cell of CollectionCell:
-    for c in cell.CollectionCell.children:
-      if self.getLeafCellContainingPoint(c, point).getSome(leaf):
-        return leaf.some
-    return Cell.none
+  # if cell of CollectionCell:
+  #   for c in cell.CollectionCell.children:
+  #     if self.getLeafCellContainingPoint(c, point).getSome(leaf):
+  #       return leaf.some
+  #   return Cell.none
 
-  # debugf"-> {cell.node}, {point}, {widget.lastBounds}"
-  return cell.some
+  # # debugf"-> {cell.node}, {point}, {widget.lastBounds}"
+  # return cell.some
 
 method handleMousePress*(self: ModelDocumentEditor, button: MouseButton, mousePosWindow: Vec2, modifiers: Modifiers) =
   if self.showCompletions and self.getItemAtPixelPosition(mousePosWindow).getSome(item):
@@ -855,54 +860,56 @@ proc getCursorInLine*(self: ModelDocumentEditor, line: int, xPos: float): Option
 
   let charWidth = self.app.platform.charWidth
 
-  var closest = 10000000000.0
-  for c in line:
-    if not c.canSelect:
-      continue
-    let widget = self.cellWidgetContext.cellToWidget.getOrDefault(c.id, nil)
-    if widget.isNil:
-      continue
+  # todo
+  # var closest = 10000000000.0
+  # for c in line:
+  #   if not c.canSelect:
+  #     continue
+    # let widget = self.cellWidgetContext.cellToWidget.getOrDefault(c.id, nil)
+    # if widget.isNil:
+    #   continue
 
-    let xMin = if c.style.isNotNil and c.style.noSpaceLeft:
-      widget.lastBounds.x + charWidth
-    else:
-      widget.lastBounds.x
+    # let xMin = if c.style.isNotNil and c.style.noSpaceLeft:
+    #   widget.lastBounds.x + charWidth
+    # else:
+    #   widget.lastBounds.x
 
-    let xMax = if c.style.isNotNil and c.style.noSpaceRight:
-      widget.lastBounds.xw - charWidth
-    else:
-      widget.lastBounds.xw
+    # let xMax = if c.style.isNotNil and c.style.noSpaceRight:
+    #   widget.lastBounds.xw - charWidth
+    # else:
+    #   widget.lastBounds.xw
 
-    if xPos < xMin:
-      if result.isNone or xMin - xPos < closest:
-        result = c.toCursor(true).some
-        closest = xMin - xPos
-    elif xPos > xMax:
-      if result.isNone or xPos - xMax < closest:
-        result = c.toCursor(false).some
-        closest = xPos - xMax
-    else:
-      result = c.toCursor(true).some
+    # if xPos < xMin:
+    #   if result.isNone or xMin - xPos < closest:
+    #     result = c.toCursor(true).some
+    #     closest = xMin - xPos
+    # elif xPos > xMax:
+    #   if result.isNone or xPos - xMax < closest:
+    #     result = c.toCursor(false).some
+    #     closest = xPos - xMax
+    # else:
+    #   result = c.toCursor(true).some
 
-      let text = c.currentText
-      if text.len > 0:
-        let alpha = (xPos - widget.lastBounds.x) / widget.lastBounds.w
-        result.get.firstIndex = (alpha * text.len.float).round.int
-        result.get.lastIndex = (alpha * text.len.float).round.int
+    #   let text = c.currentText
+    #   if text.len > 0:
+    #     let alpha = (xPos - widget.lastBounds.x) / widget.lastBounds.w
+    #     result.get.firstIndex = (alpha * text.len.float).round.int
+    #     result.get.lastIndex = (alpha * text.len.float).round.int
 
-      return
+    #   return
 
 proc getCursorXPos*(self: ModelDocumentEditor, cursor: CellCursor): float =
   result = 0
-  if getTargetCell(cursor).getSome(cell):
-    let widget = self.cellWidgetContext.cellToWidget.getOrDefault(cell.id, nil)
-    if widget.isNotNil:
-      let text = cell.currentText
-      if text.len == 0:
-        result = widget.lastBounds.x
-      else:
-        let alpha = cursor.lastIndex.float / text.len.float
-        result = widget.lastBounds.x * (1 - alpha) + widget.lastBounds.xw * alpha
+  # todo
+  # if getTargetCell(cursor).getSome(cell):
+  #   let widget = self.cellWidgetContext.cellToWidget.getOrDefault(cell.id, nil)
+  #   if widget.isNotNil:
+  #     let text = cell.currentText
+  #     if text.len == 0:
+  #       result = widget.lastBounds.x
+  #     else:
+  #       let alpha = cursor.lastIndex.float / text.len.float
+  #       result = widget.lastBounds.x * (1 - alpha) + widget.lastBounds.xw * alpha
 
 proc getPreviousCellInLine*(self: ModelDocumentEditor, cell: Cell): Cell =
   # defer:

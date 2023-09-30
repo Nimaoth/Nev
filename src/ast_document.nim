@@ -5,7 +5,7 @@ import util, document, document_editor, text/text_editor, events, id, ast_ids, a
 import compiler, selector_popup, config_provider, app_interface
 from scripting_api as api import nil
 import custom_logger
-import platform/[filesystem, platform, widgets]
+import platform/[filesystem, platform]
 import workspaces/[workspace]
 
 logCategory "ast"
@@ -188,7 +188,6 @@ type AstDocumentEditor* = ref object of DocumentEditor
   textEditor*: TextDocumentEditor
   textDocument*: TextDocument
   textEditEventHandler*: EventHandler
-  textEditorWidget*: WPanel
 
   modeEventHandler: EventHandler
   currentMode*: string
@@ -196,11 +195,9 @@ type AstDocumentEditor* = ref object of DocumentEditor
   completionText: string
   completions*: seq[Completion]
   selectedCompletion*: int
-  lastItems*: seq[tuple[index: int, widget: WWidget]]
   completionsBaseIndex*: int
   completionsScrollOffset*: float
   scrollToCompletion*: Option[int]
-  lastCompletionsWidget*: WWidget
 
   scrollOffset*: float
   previousBaseIndex*: int
@@ -2025,19 +2022,21 @@ proc handleInput(self: AstDocumentEditor, input: string): EventResponse =
 
 proc getItemAtPixelPosition(self: AstDocumentEditor, posWindow: Vec2): Option[int] =
   result = int.none
-  for (index, widget) in self.lastItems:
-    if widget.lastBounds.contains(posWindow) and index >= 0 and index <= self.completions.high:
-      return index.some
+  # todo
+  # for (index, widget) in self.lastItems:
+  #   if widget.lastBounds.contains(posWindow) and index >= 0 and index <= self.completions.high:
+  #     return index.some
 
 method handleScroll*(self: AstDocumentEditor, scroll: Vec2, mousePosWindow: Vec2) =
   let scrollAmount = scroll.y * self.configProvider.getValue("ast.scroll-speed", 20.0)
 
-  if not self.lastCompletionsWidget.isNil and self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
-    self.completionsScrollOffset += scrollAmount
-    self.markDirty()
-  else:
-    self.scrollOffset += scrollAmount
-    self.markDirty()
+  # todo
+  # if not self.lastCompletionsWidget.isNil and self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
+  #   self.completionsScrollOffset += scrollAmount
+  #   self.markDirty()
+  # else:
+  #   self.scrollOffset += scrollAmount
+  #   self.markDirty()
 
 method handleMousePress*(self: AstDocumentEditor, button: MouseButton, mousePosWindow: Vec2, modifiers: Modifiers) =
   # Make mousePos relative to contentBounds
