@@ -164,7 +164,7 @@ proc runApp(): Future[void] {.async.} =
 
       if rerender:
         let renderTimer = startTimer()
-        rend.render(ed.widget, frameIndex)
+        rend.render()
         renderTime = renderTimer.elapsed.ms
 
       frameTime = ed.frameTimer.elapsed.ms

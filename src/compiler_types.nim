@@ -2,7 +2,6 @@ import std/[tables, strutils, sequtils, sugar, hashes, options, strformat]
 import fusion/matching
 import bumpy, vmath
 import ast, id, util, rect_utils, query_system, theme
-import platform/[widgets]
 
 type
   TypeKind* = enum
@@ -97,7 +96,7 @@ type
     styleOverride*: Option[set[FontStyle]]
     background*: Option[seq[string]]
     depth*: int
-    widgetTemplate*: WWidget
+    widgetTemplate*: proc()
     cloneWidget*: bool
 
   VisualNodeRange* = object

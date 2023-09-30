@@ -1,10 +1,10 @@
 import std/[strformat, tables, dom, unicode, strutils, sugar]
-import platform, widgets, custom_logger, rect_utils, input, event, lrucache, theme, timer
+import platform, custom_logger, rect_utils, input, event, lrucache, theme, timer
 import vmath
 import chroma as chroma
 import ui/node
 
-export platform, widgets
+export platform
 
 type
   WheelEvent* {.importc.} = ref object of MouseEvent ## see `docs<https://developer.mozilla.org/en-US/docs/Web/API/WheelEvent>`_
@@ -335,7 +335,6 @@ proc toInput(key: cstring, code: cstring, keyCode: int): int64 =
 method processEvents*(self: BrowserPlatform): int =
   result = 0
 
-method renderWidget(self: WWidget, renderer: BrowserPlatform, element: var Element, forceRedraw: bool, frameIndex: int, buffer: var string) {.base.} = discard
 proc drawNode(builder: UINodeBuilder, platform: BrowserPlatform, element: var Element, node: UINode, force: bool = false)
 
 proc applyDomUpdates*(self: BrowserPlatform) =
@@ -344,7 +343,7 @@ proc applyDomUpdates*(self: BrowserPlatform) =
 
   self.domUpdates.setLen 0
 
-method render*(self: BrowserPlatform, widget: WWidget, frameIndex: int) =
+method render*(self: BrowserPlatform) =
   self.boundsStack.add rect(vec2(), self.size)
   defer: discard self.boundsStack.pop()
 
@@ -507,154 +506,3 @@ proc drawNode(builder: UINodeBuilder, platform: BrowserPlatform, element: var El
 
   for i in k..<existingCount:
     childrenToRemove.add element.children[i].Element
-
-method renderWidget(self: WPanel, renderer: BrowserPlatform, element: var Element, forceRedraw: bool, frameIndex: int, buffer: var string) =
-  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
-    return
-
-  # debugf"renderPanel (frame {frameIndex}) {self.lastHierarchyChange}, {self.lastBoundsChange}, {self.lastBounds}"
-
-  element.createOrReplaceElement("div", "DIV")
-
-  let relBounds = self.lastBounds - renderer.boundsStack[renderer.boundsStack.high].xy
-  renderer.boundsStack.add self.lastBounds
-  defer: discard renderer.boundsStack.pop()
-
-  var css: cstring = "left: "
-  css += relBounds.x.int
-  css += "px; top: ".cstring
-  css += relBounds.y.int
-  css += "px; width: ".cstring
-  css += relBounds.w.int
-  css += "px; height: ".cstring
-  css += relBounds.h.int
-  css += "px;".cstring
-
-  let backgroundColor = self.getBackgroundColor
-  if self.fillBackground:
-    css += "background: ".cstring
-    css += backgroundColor.myToHtmlHex
-    css += ";".cstring
-
-  if self.maskContent:
-    css += "overflow: hidden;".cstring
-
-  if self.drawBorder:
-    css += "border: 1px solid ".cstring
-    css += self.getForegroundColor.myToHtmlHex
-    css += ";".cstring
-
-  var newChildren: seq[Element] = @[]
-
-  renderer.domUpdates.add proc() =
-    let elementLen = element.children.len
-    for i in self.len..<elementLen:
-      element.removeChild(element.lastChild)
-
-    for c in newChildren:
-      element.appendChild c
-
-    element.class = "widget"
-    element.setAttribute("style", css)
-
-  let existingCount = element.children.len
-  for i, c in self.children:
-    var childElement: Element = if i < existingCount: element.children[i].Element else: nil
-    c.renderWidget(renderer, childElement, forceRedraw or self.fillBackground, frameIndex, buffer)
-    if i >= existingCount and not childElement.isNil:
-      newChildren.add childElement
-
-  if self.lastRenderedBounds != self.lastBounds:
-    self.lastRenderedBounds = self.lastBounds
-
-method renderWidget(self: WStack, renderer: BrowserPlatform, element: var Element, forceRedraw: bool, frameIndex: int, buffer: var string) =
-  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
-    return
-
-  # debugf"renderWidget (frame {frameIndex}) {self.lastHierarchyChange}, {self.lastBoundsChange}, {self.lastBounds}"
-
-  element.createOrReplaceElement("div", "DIV")
-
-  while element.children.len > self.children.len:
-    element.removeChild(element.lastChild)
-
-  let relBounds = self.lastBounds - renderer.boundsStack[renderer.boundsStack.high].xy
-  renderer.boundsStack.add self.lastBounds
-  defer: discard renderer.boundsStack.pop()
-
-  element.updateRelativePosition(relBounds)
-
-  let existingCount = element.children.len
-  for i, c in self.children:
-    var childElement: Element = if i < existingCount: element.children[i].Element else: nil
-    c.renderWidget(renderer, childElement, forceRedraw or self.fillBackground, frameIndex, buffer)
-    if i >= existingCount and not childElement.isNil:
-      element.appendChild childElement
-
-  if self.lastRenderedBounds != self.lastBounds:
-    self.lastRenderedBounds = self.lastBounds
-
-proc getTextStyle(x, y, width, height: int, color, backgroundColor: cstring, italic, bold: bool, wrap: bool): cstring
-proc getTextStyle(x, y, width, height: int, color, backgroundColor: cstring, italic, bold: bool, wrap: bool, fontSize: float): cstring
-
-method renderWidget(self: WText, renderer: BrowserPlatform, element: var Element, forceRedraw: bool, frameIndex: int, buffer: var string) =
-  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
-    return
-
-  # debugf"renderText {stackDepth} {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}, {self.text}"
-
-  element.createOrReplaceElement("span", "SPAN")
-
-  let relBounds = self.lastBounds - renderer.boundsStack[renderer.boundsStack.high].xy
-  renderer.boundsStack.add self.lastBounds
-  defer: discard renderer.boundsStack.pop()
-
-  let color = self.foregroundColor.myToHtmlHex
-
-  let text = self.text.cstring
-  let updateText = element.getAttribute("data-text") != text
-
-  let backgroundColor = if self.fillBackground:
-    fmt"background: {self.backgroundColor.myToHtmlHex};".cstring
-  else:
-    ""
-
-  let italic = FontStyle.Italic in self.style.fontStyle
-  let bold = FontStyle.Bold in self.style.fontStyle
-  let wrap = self.wrap
-
-  renderer.domUpdates.add proc() =
-    if self.fontSizeIncreasePercent != 0:
-      element.setAttribute("style", getTextStyle(relBounds.x.int, relBounds.y.int, relBounds.w.int, relBounds.h.int, color, backgroundColor, italic, bold, wrap, renderer.mFontSize * (1 + self.fontSizeIncreasePercent)))
-    else:
-      element.setAttribute("style", getTextStyle(relBounds.x.int, relBounds.y.int, relBounds.w.int, relBounds.h.int, color, backgroundColor, italic, bold, wrap))
-    if updateText:
-      element.innerText = text
-      element.setAttribute("data-text", text)
-
-  self.lastRenderedText = self.text
-
-  if self.lastRenderedBounds != self.lastBounds:
-    self.lastRenderedBounds = self.lastBounds
-
-proc getTextStyle(x, y, width, height: int, color, backgroundColor: cstring, italic, bold: bool, wrap: bool): cstring =
-  {.emit: [result, " = `left: ${", x, "}px; top: ${", y, "}px; width: ${", width, "}px; height: ${", height, "}px; overflow: visible; color: ${", color, "}; ${", backgroundColor, "}`"].} #"""
-  if italic:
-    {.emit: [result, " += `font-style: italic;`"].} #"""
-  if bold:
-    {.emit: [result, " += `font-weight: bold;`"].} #"""
-  if wrap:
-    {.emit: [result, " += `word-wrap: break-word;`"].} #"""
-    {.emit: [result, " += `display: inline-block;`"].} #"""
-    {.emit: [result, " += `white-space: pre-wrap;`"].} #"""
-
-proc getTextStyle(x, y, width, height: int, color, backgroundColor: cstring, italic, bold: bool, wrap: bool, fontSize: float): cstring =
-  {.emit: [result, " = `left: ${", x, "}px; top: ${", y, "}px; width: ${", width, "}px; height: ${", height, "}px; overflow: visible; color: ${", color, "}; ${", backgroundColor, "}; font-size: ${", fontSize, "}`"].} #"""
-  if italic:
-    {.emit: [result, " += `font-style: italic;`"].} #"""
-  if bold:
-    {.emit: [result, " += `font-weight: bold;`"].} #"""
-  if wrap:
-    {.emit: [result, " += `word-wrap: break-word;`"].} #"""
-    {.emit: [result, " += `display: inline-block;`"].} #"""
-    {.emit: [result, " += `white-space: pre-wrap;`"].} #"""

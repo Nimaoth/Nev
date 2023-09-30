@@ -1,10 +1,10 @@
 import std/[tables, strutils, options, sets]
-import platform, widgets, util, platform/filesystem, timer
+import platform, util, platform/filesystem, timer
 import custom_logger, input, event, monitors, lrucache, id, rect_utils, theme
 import chroma, vmath, windy, boxy, boxy/textures, opengl, pixie/[contexts, fonts]
 import ui/node
 
-export platform, widgets
+export platform
 
 type
   GuiPlatform* = ref object of Platform
@@ -319,7 +319,6 @@ proc centerWindowOnMonitor(window: Window, monitor: int) =
   window.pos = ivec2(int32(left + (monitorWidth - windowWidth) / 2),
                      int32(top + (monitorHeight - windowHeight) / 2))
 
-method renderWidget(self: WWidget, renderer: GuiPlatform, forceRedraw: bool, frameIndex: int, context: string): bool {.base.} = discard
 proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false)
 
 proc strokeRect*(boxy: Boxy, rect: Rect, color: Color, thickness: float = 1, offset: float = 0) =
@@ -336,7 +335,7 @@ proc randomColor(node: UINode, a: float32): Color =
   result.b = (((h shr 16) and 0xff).float32 / 255.0).sqrt
   result.a = a
 
-method render*(self: GuiPlatform, widget: WWidget, frameIndex: int) =
+method render*(self: GuiPlatform) =
   if self.framebuffer.width != self.size.x.int32 or self.framebuffer.height != self.size.y.int32:
     self.framebuffer.width = self.size.x.int32
     self.framebuffer.height = self.size.y.int32
@@ -471,125 +470,3 @@ proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offse
 
   if DrawBorder in node.flags:
     platform.boxy.strokeRect(bounds, node.borderColor)
-
-
-method renderWidget(self: WPanel, renderer: GuiPlatform, forceRedraw: bool, frameIndex: int, context: string): bool =
-  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
-    return
-
-  if self.fillBackground:
-    # debugf"renderPanel {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}, {self.getBackgroundColor}"
-    renderer.boxy.drawRect(self.lastBounds, self.getBackgroundColor)
-    result = true
-
-  if self.drawBorder:
-    renderer.boxy.strokeRect(self.lastBounds, self.getForegroundColor)
-    result = true
-
-  # Mask the rest of the rendering is this function to the contentBounds
-  if self.maskContent:
-    renderer.boxy.pushLayer()
-  defer:
-    if self.maskContent:
-      renderer.boxy.pushLayer()
-      renderer.boxy.drawRect(self.lastBounds, color(1, 0, 0, 1))
-      renderer.boxy.popLayer(blendMode = MaskBlend)
-      renderer.boxy.popLayer()
-
-  for i, c in self.children:
-    result = c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex, context & "." & $i) or result
-
-  if self.lastRenderedBounds != self.lastBounds:
-    self.lastRenderedBounds = self.lastBounds
-
-method renderWidget(self: WStack, renderer: GuiPlatform, forceRedraw: bool, frameIndex: int, context: string): bool =
-  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
-    return
-
-  if self.fillBackground:
-    # debugf"renderStack {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}, {self.getBackgroundColor}"
-    renderer.boxy.drawRect(self.lastBounds, self.getBackgroundColor)
-    result = true
-
-  for i, c in self.children:
-    result = c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex, context & "." & $i) or result
-
-  if self.lastRenderedBounds != self.lastBounds:
-    self.lastRenderedBounds = self.lastBounds
-
-method renderWidget(self: WVerticalList, renderer: GuiPlatform, forceRedraw: bool, frameIndex: int, context: string): bool =
-  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
-    return
-
-  if self.fillBackground:
-    # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
-    renderer.boxy.drawRect(self.lastBounds, self.getBackgroundColor)
-    result = true
-
-  for i, c in self.children:
-    result = c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex, context & "." & $i) or result
-
-  if self.lastRenderedBounds != self.lastBounds:
-    self.lastRenderedBounds = self.lastBounds
-
-method renderWidget(self: WHorizontalList, renderer: GuiPlatform, forceRedraw: bool, frameIndex: int, context: string): bool =
-  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
-    return
-
-  if self.fillBackground:
-    # debugf"renderWidget {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}"
-    renderer.boxy.drawRect(self.lastBounds, self.getBackgroundColor)
-    result = true
-
-  for i, c in self.children:
-    result = c.renderWidget(renderer, forceRedraw or self.fillBackground, frameIndex, context & "." & $i) or result
-
-  if self.lastRenderedBounds != self.lastBounds:
-    self.lastRenderedBounds = self.lastBounds
-
-method renderWidget(self: WText, renderer: GuiPlatform, forceRedraw: bool, frameIndex: int, context: string): bool =
-  if self.lastHierarchyChange < frameIndex and self.lastBoundsChange < frameIndex and self.lastInvalidation < frameIndex and not forceRedraw:
-    return
-
-  result = true
-
-  if self.fillBackground:
-    # debugf"renderText {self.lastBounds}, {self.lastHierarchyChange}, {self.lastBoundsChange}, {self.getBackgroundColor}"
-    renderer.boxy.drawRect(self.lastBounds, self.getBackgroundColor)
-
-  if self.text == "":
-    self.lastRenderedText = ""
-    return
-
-  let key = $self.style.fontStyle & self.text
-  var imageId: string
-  if renderer.cachedImages.contains(key):
-    imageId = renderer.cachedImages[key]
-  else:
-    imageId = $newId()
-    renderer.cachedImages[key] = imageId
-
-    let font = renderer.getFont(renderer.ctx.fontSize * (1 + self.fontSizeIncreasePercent), self.style.fontStyle)
-
-    let wrapBounds = if self.wrap: self.lastBounds.wh else: vec2(0, 0)
-    let arrangement = font.typeset(self.text, bounds=wrapBounds)
-    var bounds = arrangement.layoutBounds()
-    if bounds.x == 0:
-      bounds.x = 1
-    if bounds.y == 0:
-      bounds.y = renderer.lineHeight
-    const textExtraHeight = 10.0
-    bounds.y += textExtraHeight
-
-    var image = newImage(bounds.x.int, bounds.y.int)
-    image.fillText(arrangement)
-    renderer.boxy.addImage(imageId, image, false)
-
-  let pos = vec2(self.lastBounds.x.floor, self.lastBounds.y.floor)
-  renderer.boxy.drawImage(imageId, pos, self.foregroundColor)
-
-  if self.lastRenderedText != self.text:
-    self.lastRenderedText = self.text
-
-  if self.lastRenderedBounds != self.lastBounds:
-    self.lastRenderedBounds = self.lastBounds

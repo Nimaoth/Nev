@@ -2,7 +2,7 @@ import std/[sequtils, strformat, strutils, tables, unicode, options, os, algorit
 import input, id, events, rect_utils, document, document_editor, popup, timer, event, cancellation_token, dispatch_tables, myjsonutils
 import theme, util, custom_logger, custom_async, fuzzy_matching
 import scripting/[expose, scripting_base]
-import platform/[platform, widgets, filesystem]
+import platform/[platform, filesystem]
 import workspaces/[workspace]
 import ast/types
 import traits
@@ -91,8 +91,6 @@ type App* = ref object
   frameTimer*: Timer
   lastBounds*: Rect
   closeRequested*: bool
-
-  widget*: WWidget
 
   registers*: Table[string, Register]
 
