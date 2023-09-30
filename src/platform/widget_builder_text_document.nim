@@ -200,49 +200,6 @@ proc renderLine*(
       if curs == lineOriginal.len:
         result.add (subLine, "", rect(lastPartXW, 0, builder.charWidth, builder.textHeight), (line.index, curs))
 
-proc createLines(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: float, maxLine: int, sizeToContentX: bool, sizeToContentY: bool, backgroundColor: Color, handleScroll: proc(delta: float), handleLine: proc(line: int, y: float, down: bool)) =
-  var flags = 0.UINodeFlags
-  if sizeToContentX:
-    flags.incl SizeToContentX
-  else:
-    flags.incl FillX
-
-  if sizeToContentY:
-    flags.incl SizeToContentY
-  else:
-    flags.incl FillY
-
-  builder.panel(flags):
-    onScroll:
-      handleScroll(delta.y)
-
-    let height = currentNode.bounds.h
-    var y = scrollOffset
-
-    # draw lines downwards
-    for i in previousBaseIndex..maxLine:
-      handleLine(i, y, true)
-
-      y = builder.currentChild.yh
-      if not sizeToContentY and builder.currentChild.bounds.y > height:
-        break
-
-    if y < height: # fill remaining space with background color
-      builder.panel(&{FillX, FillY, FillBackground}, y = y, backgroundColor = backgroundColor)
-
-    y = scrollOffset
-
-    # draw lines upwards
-    for i in countdown(previousBaseIndex - 1, 0):
-      handleLine(i, y, false)
-
-      y = builder.currentChild.y
-      if not sizeToContentY and builder.currentChild.bounds.yh < 0:
-        break
-
-    if not sizeToContentY and y > 0: # fill remaining space with background color
-      builder.panel(&{FillX, FillBackground}, h = y, backgroundColor = backgroundColor)
-
 proc blendColorRanges(colors: var seq[tuple[first: RuneIndex, last: RuneIndex, color: Color]], ranges: var seq[tuple[first: RuneIndex, last: RuneIndex]], color: Color) =
   for s in ranges.mitems:
     var colorIndex = 0
@@ -505,34 +462,29 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
   var headerColor = if self.active: app.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)) else: app.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
   headerColor.a = 1
 
-  var flags = &{UINodeFlag.MaskContent, OverlappingChildren}
-  var flagsInner = &{LayoutVertical}
-
   let sizeToContentX = SizeToContentX in builder.currentParent.flags
   let sizeToContentY = SizeToContentY in builder.currentParent.flags
+
+  var sizeFlags = 0.UINodeFlags
   if sizeToContentX:
-    flags.incl SizeToContentX
-    flagsInner.incl SizeToContentX
+    sizeFlags.incl SizeToContentX
   else:
-    flags.incl FillX
-    flagsInner.incl FillX
+    sizeFlags.incl FillX
 
   if sizeToContentY:
-    flags.incl SizeToContentY
-    flagsInner.incl SizeToContentY
+    sizeFlags.incl SizeToContentY
   else:
-    flags.incl FillY
-    flagsInner.incl FillY
+    sizeFlags.incl FillY
 
-  builder.panel(flags, userId = self.userId.newPrimaryId):
+  builder.panel(&{UINodeFlag.MaskContent, OverlappingChildren} + sizeFlags, userId = self.userId.newPrimaryId):
     if not self.disableScrolling and not sizeToContentY:
       updateBaseIndexAndScrollOffset(currentNode.bounds.h, self.previousBaseIndex, self.scrollOffset, self.document.lines.len, builder.textHeight, int.none)
 
     if dirty or app.platform.redrawEverything or not builder.retain():
       var header: UINode
 
-      builder.panel(flagsInner):
-        header = builder.createHeader(self.renderHeader, self.currentMode, self.document, backgroundColor, textColor):
+      builder.panel(&{LayoutVertical} + sizeFlags):
+        header = builder.createHeader(self.renderHeader, self.currentMode, self.document, headerColor, textColor):
           right:
             proc cursorString(cursor: Cursor): string = $cursor.line & ":" & $cursor.column & ":" & $self.document.lines[cursor.line].toOpenArray.runeIndex(cursor.column)
             builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = fmt" {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} ")

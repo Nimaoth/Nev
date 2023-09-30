@@ -144,8 +144,8 @@ type
 
     useInvalidation*: bool = false
 
-    currentChild: UINode = nil
-    currentParent: UINode = nil
+    currentChild*: UINode = nil
+    currentParent*: UINode = nil
     root*: UINode = nil
     frameIndex*: int = 0
     charWidth*: float32
@@ -876,7 +876,7 @@ proc getNextOrNewNode(builder: UINodeBuilder, node: UINode, last: UINode, userId
   node.insert(newNode, last)
   return newNode
 
-proc prepareNode(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[string], inX, inY, inW, inH: Option[float32], inPivot: Option[Vec2], userId: var UIUserId, inAdditionalFlags: Option[UINodeFlags]): UINode =
+proc prepareNode*(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[string], inX, inY, inW, inH: Option[float32], inPivot: Option[Vec2], userId: var UIUserId, inAdditionalFlags: Option[UINodeFlags]): UINode =
   assert builder.currentParent.isNotNil
 
   var node = builder.getNextOrNewNode(builder.currentParent, builder.currentChild, userId)
@@ -920,7 +920,7 @@ proc prepareNode(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[st
 
   return node
 
-proc finishNode(builder: UINodeBuilder, currentNode: UINode) =
+proc finishNode*(builder: UINodeBuilder, currentNode: UINode) =
   # remove current invalidation rect
   currentNode.logp fmt"panel end"
 
