@@ -112,6 +112,10 @@ type
     configProvider*: ConfigProvider
     document*: ModelDocument
 
+    cursorsId*: Id
+    completionsId*: Id
+    lastCursorLocationBounds*: Option[Rect]
+
     transactionCursors: Table[Id, CellCursor]
 
     modeEventHandler: EventHandler
@@ -755,6 +759,9 @@ method createWithDocument*(_: ModelDocumentEditor, document: Document, configPro
   when defined(js):
     {.emit: [self, " = jsCreateWithPrototype(editor_model_prototype, ", self, ");"].}
     # This " is here to fix syntax highlighting
+
+  self.cursorsId = newId()
+  self.completionsId = newId()
 
   self.init()
   discard self.document.onModelChanged.subscribe proc(d: auto) = self.handleModelChanged(d)
