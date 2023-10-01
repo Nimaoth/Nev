@@ -341,22 +341,24 @@ suite "UI Nodes":
     check builder.root[0][2].bounds == rect(0, 30, 0, 70)
     check builder.root[0][2].boundsRaw == rect(0, 30, 0, 70)
 
-  test "LayoutVertical, SizeToContentY":
+
+  test "LayoutVerticalReverse > LayoutVertical":
     let builder = newNodeBuilder()
 
     builder.frame:
-      builder.panel(&{LayoutVertical, SizeToContentY}):
-        builder.panel(&{}, h = 10)
-        builder.panel(&{}, h = 20)
-        builder.panel(&{FillY})
+      builder.panel(&{SizeToContentX, SizeToContentY}):
+        builder.panel(&{SizeToContentX, SizeToContentY, LayoutVerticalReverse}):
+          builder.panel(&{SizeToContentX, SizeToContentY, LayoutVertical}, pivot = vec2(0, 1)):
+            builder.panel(&{SizeToContentX, SizeToContentY, LayoutHorizontal}):
+              builder.panel(&{}, w = 10, h = 15)
 
-    check builder.root[0].boundsRaw == rect(0, 0, 0, 30)
+    check builder.root[0][0].boundsRaw == rect(0, 0, 10, 15)
 
-    check builder.root[0][0].bounds == rect(0, 0, 0, 10)
-    check builder.root[0][0].boundsRaw == rect(0, 0, 0, 10)
+    check builder.root[0][0][0].bounds == rect(0, 0, 10, 15)
+    check builder.root[0][0][0].boundsRaw == rect(0, 15, 10, 15)
 
-    check builder.root[0][1].bounds == rect(0, 10, 0, 20)
-    check builder.root[0][1].boundsRaw == rect(0, 10, 0, 20)
+    check builder.root[0][0][0][0].bounds == rect(0, 0, 10, 15)
+    check builder.root[0][0][0][0].boundsRaw == rect(0, 0, 10, 15)
 
-    check builder.root[0][2].bounds == rect(0, 30, 0, 0)
-    check builder.root[0][2].boundsRaw == rect(0, 30, 0, 0)
+    check builder.root[0][0][0][0][0].bounds == rect(0, 0, 10, 15)
+    check builder.root[0][0][0][0][0].boundsRaw == rect(0, 0, 10, 15)
