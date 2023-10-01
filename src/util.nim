@@ -1,4 +1,4 @@
-import std/[options, strutils]
+import std/[options, strutils, macros, genasts]
 export options
 
 {.used.}
@@ -11,6 +11,11 @@ template toOpenArray*(s: string): auto = s.toOpenArray(0, s.high)
 
 proc `??`*[T: ref object](self: T, els: T): T =
   return if not self.isNil: self else: els
+
+macro `.?`*(self: untyped, value: untyped): untyped =
+  let member = nnkDotExpr.newTree(self, value)
+  return genAst(self, member):
+    if not self.isNil: member else: default(typeof(member))
 
 template with*(exp, val, body: untyped): untyped =
   block:

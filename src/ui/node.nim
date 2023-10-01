@@ -79,6 +79,7 @@ defineBitFlag:
     AnimatePosition
     AnimateSize
     SnapInitialBounds
+    AutoPivotChildren
 
 type
   UIUserIdKind* = enum None, Primary, Secondary
@@ -92,6 +93,8 @@ type
     else: discard
 
   UINode* = ref object
+    aId: cstring
+
     parent: UINode
     first: UINode
     last: UINode
@@ -118,7 +121,7 @@ type
     mBorderColor: Color
     mTextColor: Color
 
-    pivot: Vec2
+    pivot*: Vec2
     boundsRaw: Rect       # The target bounds, used for layouting.
     boundsOld: Rect       # The last boundsActual
     boundsActual*: Rect   # The actual bounds, used for rendering and invalidation. If not animated then the boundsActual will immediately snap to this position, otherwise it will smoothly interpolate.
@@ -569,6 +572,7 @@ proc relayout*(builder: UINodeBuilder, node: UINode)
 proc preLayout*(builder: UINodeBuilder, node: UINode)
 
 proc preLayout*(builder: UINodeBuilder, node: UINode) =
+  node.logp "preLayout"
   let parent = node.parent
 
   if LayoutHorizontal in parent.flags:
@@ -639,9 +643,9 @@ proc updateSizeToContent(builder: UINodeBuilder, node: UINode) =
   if SizeToContentX in node.flags:
     let childrenWidth = if node.first.isNotNil:
       if LayoutHorizontalReverse in node.flags:
-        node.first.xw - node.last.x
+        node.first.bounds.xw - node.last.bounds.x
       else:
-        node.last.xw - node.first.x
+        node.last.bounds.xw - node.first.bounds.x
     else: 0
 
     let strWidth = if DrawText in node.flags:
@@ -652,10 +656,13 @@ proc updateSizeToContent(builder: UINodeBuilder, node: UINode) =
 
   if SizeToContentY in node.flags:
     let childrenHeight = if node.first.isNotNil:
-      if LayoutVerticalReverse in node.flags:
-        node.first.yh - node.last.y
+      if node.flags.any &{LayoutVertical, LayoutVerticalReverse}:
+        var childrenHeight = 0.0
+        for i, c in node.children:
+          childrenHeight += c.bounds.h
+        childrenheight
       else:
-        node.last.yh - node.first.y
+        node.last.bounds.yh - node.first.bounds.y
     else: 0
 
     let strHeight = if DrawText in node.flags:
@@ -665,6 +672,7 @@ proc updateSizeToContent(builder: UINodeBuilder, node: UINode) =
     node.boundsRaw.h = max(node.h, max(childrenHeight, strHeight)).round
 
 proc postLayout*(builder: UINodeBuilder, node: UINode) =
+  node.logp "postLayout"
   builder.updateSizeToContent node
 
   if node.flags.any &{SizeToContentX, SizeToContentY}:
@@ -709,6 +717,7 @@ proc unpoolNode*(builder: UINodeBuilder, userId: var UIUserId): UINode =
     return
 
   result = UINode(mId: newId(), userId: userId)
+  result.aId = ($result.mId).cstring
   if userId.kind == Primary:
     builder.namedNodes[userId.id] = result
 
@@ -872,7 +881,16 @@ proc getNextOrNewNode(builder: UINodeBuilder, node: UINode, last: UINode, userId
       node.insert(newNode, last)
       return newNode
 
+  # new node at end
   let newNode = builder.unpoolNode(userId)
+
+  if newNode.parent.isNotNil:
+    # node is still in use somewhere else
+    # echo "remove target node from parent because we insert it here: ", node.dump
+    if builder.useInvalidation:
+      newNode.parent.clearedChildrenBounds = newNode.parent.clearedChildrenBounds or newNode.boundsActual.some
+    newNode.removeFromParent()
+
   node.insert(newNode, last)
   return newNode
 
@@ -880,7 +898,6 @@ proc prepareNode*(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[s
   assert builder.currentParent.isNotNil
 
   var node = builder.getNextOrNewNode(builder.currentParent, builder.currentChild, userId)
-  node.logp "panel begin"
 
   builder.currentChild = node
 
@@ -907,6 +924,16 @@ proc prepareNode*(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[s
   node.boundsRaw.w = 0
   node.boundsRaw.h = 0
 
+  if node.parent.isNotNil and AutoPivotChildren in node.parent.flags:
+    if LayoutHorizontalReverse in node.parent.flags:
+      node.pivot.x = 1
+    elif LayoutHorizontal in node.parent.flags:
+      node.pivot.x = 0
+    if LayoutVerticalReverse in node.parent.flags:
+      node.pivot.y = 1
+    elif LayoutVertical in node.parent.flags:
+      node.pivot.y = 0
+
   builder.preLayout(node)
 
   if inX.isSome: node.boundsRaw.x = inX.get.round
@@ -915,6 +942,8 @@ proc prepareNode*(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[s
   if inH.isSome: node.boundsRaw.h = inH.get.round
   if inPivot.isSome: node.pivot = inPivot.get
 
+  node.logp fmt"panel begin {builder.currentParent.id}, {builder.currentChild.?id} {node.id}"
+
   builder.currentParent = node
   builder.currentChild = nil
 
@@ -922,7 +951,7 @@ proc prepareNode*(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[s
 
 proc finishNode*(builder: UINodeBuilder, currentNode: UINode) =
   # remove current invalidation rect
-  currentNode.logp fmt"panel end"
+  currentNode.logp fmt"panel end {builder.currentParent.id}, {builder.currentChild.?id}, {currentNode.parent.id}, {currentNode.id}"
 
   if builder.useInvalidation:
     currentNode.clearedChildrenBounds = currentNode.clearedChildrenBounds or builder.clearUnusedChildrenAndGetBounds(currentNode, builder.currentChild)
@@ -1267,6 +1296,13 @@ proc endFrame*(builder: UINodeBuilder) =
   builder.postLayout(builder.root)
   builder.postProcessNodes()
 
+proc continueFrom*(builder: UINodeBuilder, node: UINode, last: UINode = nil) =
+  # let lastDump = if last.isNotNil: last.dump else: ""
+  # debugf"continueFrom {node.dump} -> {lastDump}"
+  assert last.isNil or last.parent == node
+  builder.currentParent = node
+  builder.currentChild = last
+
 proc retain*(builder: UINodeBuilder): bool =
   let node = builder.currentParent
 
@@ -1292,7 +1328,8 @@ proc retain*(builder: UINodeBuilder): bool =
 proc dump*(node: UINode, recurse = false): string =
   if node.isNil:
     return "nil"
-  result.add fmt"Node({node.userId}, {node.mLastContentChange}, {node.mLastPositionChange}, {node.mLastSizeChange}, {node.mLastClearInvalidation}, {node.mLastDrawInvalidation}, {node.id} '{node.text}', {node.flags}, ({node.x}, {node.y}, {node.w}, {node.h}), {node.boundsActual}, {node.boundsOld})"
+  # result.add fmt"Node({node.userId}, {node.mLastContentChange}, {node.mLastPositionChange}, {node.mLastSizeChange}, {node.mLastClearInvalidation}, {node.mLastDrawInvalidation}, {node.id} '{node.text}', {node.flags}, ({node.bounds}), {node.boundsActual}, {node.boundsOld})"
+  result.add fmt"Node({node.id} '{node.text}', {node.flags}, bounds: {node.bounds}, raw: {node.boundsRaw}, actual: {node.boundsActual})"
   if recurse and node.first.isNotNil:
     result.add ":"
     for _, c in node.children:

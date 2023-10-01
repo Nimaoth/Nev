@@ -227,7 +227,8 @@ method dump(self: CollectionCell, recurse: bool = false): string =
     result.add "\n"
     if self.filled or self.fillChildren.isNil:
       for c in self.children:
-        result.add c.dump.indent(4)
+        for c in c.dump(recurse).indent(4):
+          result.add c
         result.add "\n"
     else:
       result.add "...".indent(4)
