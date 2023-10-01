@@ -25,6 +25,7 @@ type
   CellLayoutContext = ref object
     parent: CellLayoutContext
     builder: UINodeBuilder
+    cell: Cell
     currentLine: int
     currentIndent: int
     parentNode: UINode
@@ -35,7 +36,8 @@ type
     prevNoSpaceRight: bool
     layoutOptions: WLayoutOptions
     indentText: string
-    remainingHeight: float
+    remainingHeightDown: float
+    remainingHeightUp: float
     currentDirection = Direction.Forwards # Which line direction data we're currently using
     targetDirection = Direction.Forwards # Whether we want to generate cells forwards or backwards
     pivot: Vec2
@@ -88,9 +90,19 @@ proc newCellLayoutContext(builder: UINodeBuilder): CellLayoutContext =
 
   result.indentText = "··"
 
-proc newCellLayoutContext(parent: CellLayoutContext): CellLayoutContext =
+proc goBackward(self: CellLayoutContext)
+
+proc newCellLayoutContext(parent: CellLayoutContext, cell: Cell, remainingHeightDown, remainingHeightUp: float): CellLayoutContext =
   result = newCellLayoutContext(parent.builder)
   result.parent = parent
+  result.remainingHeightDown = remainingHeightDown
+  result.remainingHeightUp = remainingHeightUp
+  result.cell = cell
+
+  if parent.targetDirection == Backwards:
+    result.targetDirection = Backwards
+
+  cell.logc fmt"newCellLayoutContext {remainingHeightDown}, {remainingHeightUp}"
 
 proc currentDirectionData(self: CellLayoutContext): var DirectionData =
   case self.currentDirection
@@ -154,7 +166,7 @@ proc newLine(self: CellLayoutContext) =
   self.indent()
 
 proc goForward(self: CellLayoutContext) =
-  if self.targetDirection == Backwards:
+  if self.currentDirection == Backwards:
     echo "go forward"
     # self.currentDirectionData.saveLastNode(self.builder)
     # self.builder.continueFrom(self.forwardData.lineForwardNode, self.forwardData.lastLineForwardNode)
@@ -164,7 +176,7 @@ proc goForward(self: CellLayoutContext) =
     # self.forwardData.pivot = vec2(0, 0)
 
 proc goBackward(self: CellLayoutContext) =
-  if self.targetDirection == Forwards:
+  if self.currentDirection == Forwards:
     echo "go backward"
 
     # self.currentDirectionData.saveLastNode(self.builder)
@@ -180,8 +192,8 @@ proc goBackward(self: CellLayoutContext) =
 
     self.forwardData.saveLastNode(self.builder)
     self.builder.continueFrom(self.backwardData.lineNode, self.backwardData.lastNode)
-    self.targetDirection = Backwards
     self.currentDirection = Backwards
+    self.targetDirection = Backwards
 
 proc finish(self: CellLayoutContext) =
   # self.currentParent.logp ""
@@ -197,6 +209,9 @@ proc finish(self: CellLayoutContext) =
   self.builder.continueFrom(self.backwardData.lineNode, self.backwardData.lastNode)
   self.builder.finishLine(self.backwardData)
   self.builder.finishNode(self.parentNode)
+
+  if self.cell.isNotNil:
+    self.cell.logc fmt"finish CellLayoutContext {self.remainingHeightDown}, {self.remainingHeightUp}"
 
 proc getTextAndColor(app: App, cell: Cell, defaultShadowText: string = ""): (string, Color) =
   if cell.currentText.len == 0:
@@ -446,7 +461,6 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
     return
 
   if vertical:
-    # echo "center ", centerIndex
     let c = cell.children[centerIndex]
     cellPath.add centerIndex
     ctx.newLine()
@@ -460,10 +474,24 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
         ctx.indent()
 
     block:
-      let myCtx = newCellLayoutContext(ctx)
+      # echo "center ", centerIndex
+      let myCtx = newCellLayoutContext(ctx, c, ctx.remainingHeightDown, ctx.remainingHeightUp)
       defer:
         myCtx.finish()
-      c.createCellUI(builder, app, myCtx, updateContext, false, if path.len > 1: path[1..^1] else: @[0])
+        # echo myCtx.parentNode.h, ", ", (ctx.remainingHeightDown - myCtx.remainingHeightDown), ", ", (ctx.remainingHeightUp - myCtx.remainingHeightUp)
+        let heightDownChange = ctx.remainingHeightDown - myCtx.remainingHeightDown
+        let heightUpChange = ctx.remainingHeightUp - myCtx.remainingHeightUp
+
+        ctx.remainingHeightDown -= myCtx.parentNode.h
+        # ctx.remainingHeightUp -= myCtx.parentNode.h
+        # ctx.remainingHeightDown -= heightDownChange
+        # ctx.remainingHeightUp -= heightUpChange
+
+        if ctx.remainingHeightDown < 0 and ctx.remainingHeightUp < 0:
+          cell.logc "1: reached bottom"
+          return
+
+      c.createCellUI(builder, app, myCtx, updateContext, false, if path.len > 1: path[1..^1] else: @[])
       discard cellPath.pop
 
     for i in (centerIndex + 1)..cell.children.high:
@@ -475,16 +503,23 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
         ctx.increaseIndent()
         ctx.indent()
 
-      let myCtx = newCellLayoutContext(ctx)
+
+      let myCtx = newCellLayoutContext(ctx, c, ctx.remainingHeightDown, 0)
       defer:
         myCtx.finish()
-      c.createCellUI(builder, app, myCtx, updateContext, false, @[0])
+        echo myCtx.parentNode.h
+        ctx.remainingHeightDown -= myCtx.parentNode.h
+        if ctx.remainingHeightDown < 0:
+          cell.logc "2: reached bottom"
+          break
+
+      c.createCellUI(builder, app, myCtx, updateContext, false, @[])
       discard cellPath.pop
 
     if centerIndex > 0:
       ctx.goBackward()
       for i in countdown(centerIndex - 1, 0):
-        echo "up ", i
+        # echo "up ", i
         let c = cell.children[i]
         cellPath.add i
         ctx.newLine()
@@ -492,10 +527,16 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
           ctx.increaseIndent()
           ctx.indent()
 
-        let myCtx = newCellLayoutContext(ctx)
+        let myCtx = newCellLayoutContext(ctx, c, 0, ctx.remainingHeightUp)
         defer:
           myCtx.finish()
-        c.createCellUI(builder, app, myCtx, updateContext, false, @[0])
+          echo myCtx.parentNode.h
+          ctx.remainingHeightUp -= myCtx.parentNode.h
+          if ctx.remainingHeightUp < 0:
+            cell.logc "3: reached top"
+            break
+
+        c.createCellUI(builder, app, myCtx, updateContext, false, @[])
         discard cellPath.pop
 
   else:
@@ -509,7 +550,7 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
 
 
       cellPath.add i
-      c.createCellUI(builder, app, ctx, updateContext, spaceLeft, if i == centerIndex and path.len > 1: path[1..^1] else: @[0])
+      c.createCellUI(builder, app, ctx, updateContext, spaceLeft, if i == centerIndex and path.len > 1: path[1..^1] else: @[])
       discard cellPath.pop
 
       ctx.prevNoSpaceRight = false
@@ -689,7 +730,8 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
               # echo cell.dump(true)
 
               let myCtx = newCellLayoutContext(builder)
-              myCtx.remainingHeight = h
+              myCtx.remainingHeightUp = 200
+              myCtx.remainingHeightDown = 400
               cell.createCellUI(builder, app, myCtx, self.cellWidgetContext, false, targetCellPath)
               # cell.createCellUI(builder, app, myCtx, self.cellWidgetContext, false, [0, 2, 2])
               myCtx.finish()
