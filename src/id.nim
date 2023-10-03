@@ -61,6 +61,7 @@ proc hashInt32(x: uint32): uint32 {.inline.} =
   result = ((result shr 16) xor result) * 0x45d9f3b
   result = ((result shr 16) xor result) * 0x45d9f3b
   result = (result shr 16) xor result
+  result = result and 0x7FFFFFFF.uint32
 
 proc hash*(oid: Oid): Hash =
   ## Generates the hash of an OID for use in hashtables.
