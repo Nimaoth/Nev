@@ -259,27 +259,27 @@ proc expand*(self: Cell, path: openArray[int]) =
   if path.len > 0 and self.getChildAt(path[0], true).getSome(child):
     child.expand path[1..^1]
 
-proc findBuilder(self: CellBuilder, class: NodeClass, preferred: Id): Option[CellBuilderFunction] =
+proc findBuilder(self: CellBuilder, class: NodeClass, preferred: Id): CellBuilderFunction =
   if not self.builders.contains(class.id):
     if class.base.isNotNil:
       return self.findBuilder(class.base, preferred)
-    return CellBuilderFunction.none
+    return nil
 
   let builders = self.builders[class.id]
   if builders.len == 0:
     if class.base.isNotNil:
       return self.findBuilder(class.base, preferred)
-    return CellBuilderFunction.none
+    return nil
 
   if builders.len == 1:
-    return builders[0].impl.some
+    return builders[0].impl
 
   let preferredBuilder = self.preferredBuilders.getOrDefault(class.id, idNone())
   for builder in builders:
     if builder.builderId == preferredBuilder:
-      return builder.impl.some
+      return builder.impl
 
-  return builders[0].impl.some
+  return builders[0].impl
 
 proc buildCell*(self: CellBuilder, node: AstNode, useDefault: bool = false): Cell
 
@@ -344,14 +344,14 @@ proc buildCell*(self: CellBuilder, node: AstNode, useDefault: bool = false): Cel
     debugf"Unknown class {node.class}"
     return EmptyCell(node: node)
 
-  if not useDefault and self.findBuilder(class, idNone()).getSome(builder):
+  if not useDefault and (let builder = self.findBuilder(class, idNone()); builder.isNotNil):
     result = builder(self, node)
-    result.fill()
+    # result.fill()
   else:
     if not useDefault:
       debugf"Unknown builder for {class.name}, using default"
     result = self.buildCellDefault(node, useDefault)
-    result.fill()
+    # result.fill()
 
 proc buildDefaultPlaceholder*(builder: CellBuilder, node: AstNode, role: Id): Cell =
   return PlaceholderCell(id: newId(), node: node, role: role, shadowText: "...")

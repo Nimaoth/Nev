@@ -153,7 +153,7 @@ proc renderLine*(builder: UINodeBuilder, line: string, curs: Option[int], backgr
     # Fill rest of line with background
     builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = backgroundColor)
 
-proc renderText*(builder: UINodeBuilder, changed: bool, lines: openArray[string], first: int, cursor: (int, int), backgroundColor, textColor: Color, sizeToContentX = false, sizeToContentY = true, id = noneUserId()) =
+proc renderText*(builder: UINodeBuilder, changed: bool, lines: openArray[string], first: int, cursor: (int, int), backgroundColor, textColor: Color, sizeToContentX = false, sizeToContentY = true, id = noneUserId) =
   var flags = &{MaskContent, OverlappingChildren}
   var flagsInner = &{LayoutVertical}
   if sizeToContentX:
@@ -190,7 +190,7 @@ proc renderText*(builder: UINodeBuilder, changed: bool, lines: openArray[string]
         builder.panel(&{FillBackground, AnimateBounds}, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h, backgroundColor = color(0.7, 0.7, 1)):
           builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, x = 1, y = 0, text = cl[1], textColor = color(0.4, 0.2, 2))
 
-proc createPopup*(builder: UINodeBuilder, lines: openArray[string], pop: ref tuple[pos: Vec2, offset: Vec2, collapsed: bool], backgroundColor, borderColor, headerColor, textColor: Color, id = noneUserId()) =
+proc createPopup*(builder: UINodeBuilder, lines: openArray[string], pop: ref tuple[pos: Vec2, offset: Vec2, collapsed: bool], backgroundColor, borderColor, headerColor, textColor: Color, id = noneUserId) =
   let pos = pop.pos + pop.offset
 
   var flags = &{LayoutVertical, SizeToContentX, SizeToContentY, MouseHover, MaskContent}

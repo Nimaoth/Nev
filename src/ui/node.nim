@@ -81,6 +81,16 @@ defineBitFlag:
     SnapInitialBounds
     AutoPivotChildren
 
+
+when defined(uiNodeDebugData):
+  import std/json
+  type UINodeDebugData* = object
+    id*: cstring
+    metaData*: JsonNode
+    css*: seq[string]
+else:
+  type UINodeDebugData* = object
+
 type
   UIUserIdKind* = enum None, Primary, Secondary
   UIUserId* = object
@@ -93,7 +103,7 @@ type
     else: discard
 
   UINode* = ref object
-    aId: cstring
+    aDebugData*: UINodeDebugData
 
     parent: UINode
     first: UINode
@@ -166,7 +176,7 @@ type
     mouseDelta: Vec2
     mousePosClick: array[MouseButton, Vec2]
 
-proc noneUserId*(): UIUserId = UIUserId(kind: None)
+const noneUserId* = UIUserId(kind: None)
 proc newPrimaryId*(id: Id = newId()): UIUserId = UIUserId(kind: Primary, id: id)
 proc newSecondaryId*(primary: Id, secondary: int32): UIUserId = UIUserId(kind: Secondary, parentId: primary, subId: secondary)
 func `==`*(a, b: UIUserId): bool =
@@ -270,7 +280,7 @@ func `lh=`*(node: UINode, value: float32) {.inline.} = node.boundsAbsolute.h = v
 func `pivot=`*(node: UINode, value: Vec2) {.inline.} = node.pivot = value
 
 proc textWidth*(builder: UINodeBuilder, textLen: int): float32 {.inline.} = textLen.float32 * builder.charWidth
-proc textHeight*(builder: UINodeBuilder): float32 {.inline.} = round(builder.lineHeight + builder.lineGap)
+proc textHeight*(builder: UINodeBuilder): float32 {.inline.} = roundPositive(builder.lineHeight + builder.lineGap)
 
 proc unpoolNode*(builder: UINodeBuilder, userId: var UIUserId): UINode
 proc findNodeContaining*(node: UINode, pos: Vec2, predicate: proc(node: UINode): bool): Option[UINode]
@@ -456,6 +466,10 @@ proc returnNode*(builder: UINodeBuilder, node: UINode) =
   if builder.hoveredNode == node.some:
     builder.hoveredNode = UINode.none
 
+  when defined(uiNodeDebugData):
+    node.aDebugData.metaData = nil
+    node.aDebugData.css.setLen 0
+
   node.parent = nil
   node.first = nil
   node.last = nil
@@ -577,53 +591,53 @@ proc preLayout*(builder: UINodeBuilder, node: UINode) =
 
   if LayoutHorizontal in parent.flags:
     if node.prev.isNotNil:
-      node.boundsRaw.x = node.prev.xw.round
+      node.boundsRaw.x = node.prev.xw.roundPositive
     else:
       node.boundsRaw.x = 0
   elif LayoutHorizontalReverse in parent.flags:
     if node.prev.isNotNil:
-      node.boundsRaw.x = node.prev.x.round
+      node.boundsRaw.x = node.prev.x.roundPositive
     else:
       node.boundsRaw.x = parent.w
 
   if LayoutVertical in parent.flags:
     if node.prev.isNotNil:
-      node.boundsRaw.y = node.prev.yh.round
+      node.boundsRaw.y = node.prev.yh.roundPositive
     else:
       node.boundsRaw.y = 0
   elif LayoutVerticalReverse in parent.flags:
     if node.prev.isNotNil:
-      node.boundsRaw.y = node.prev.y.round
+      node.boundsRaw.y = node.prev.y.roundPositive
     else:
       node.boundsRaw.y = parent.h
 
   if node.flags.all &{SizeToContentX, FillX}:
     if DrawText in node.flags:
-      node.boundsRaw.w = max(parent.w - node.x, builder.textWidth(node.mTextRuneLen)).round
+      node.boundsRaw.w = max(parent.w - node.x, builder.textWidth(node.mTextRuneLen)).roundPositive
     else:
-      node.boundsRaw.w = (parent.w - node.x).round
+      node.boundsRaw.w = (parent.w - node.x).roundPositive
   elif SizeToContentX in node.flags:
     if DrawText in node.flags:
-      node.boundsRaw.w = builder.textWidth(node.mTextRuneLen).round
+      node.boundsRaw.w = builder.textWidth(node.mTextRuneLen).roundPositive
   elif FillX in node.flags:
     if LayoutHorizontalReverse in parent.flags:
-      node.boundsRaw.w = node.boundsRaw.x.round
+      node.boundsRaw.w = node.boundsRaw.x.roundPositive
     else:
-      node.boundsRaw.w = (parent.w - node.x).round
+      node.boundsRaw.w = (parent.w - node.x).roundPositive
 
   if node.flags.all &{SizeToContentY, FillY}:
     if DrawText in node.flags:
-      node.boundsRaw.h = max(parent.h - node.y, builder.textHeight).round
+      node.boundsRaw.h = max(parent.h - node.y, builder.textHeight).roundPositive
     else:
-      node.boundsRaw.h = (parent.h - node.y).round
+      node.boundsRaw.h = (parent.h - node.y).roundPositive
   elif SizeToContentY in node.flags:
     if DrawText in node.flags:
-      node.boundsRaw.h = builder.textHeight.round
+      node.boundsRaw.h = builder.textHeight.roundPositive
   elif FillY in node.flags:
     if LayoutVerticalReverse in parent.flags:
-      node.boundsRaw.h = node.boundsRaw.y.round
+      node.boundsRaw.h = node.boundsRaw.y.roundPositive
     else:
-      node.boundsRaw.h = (parent.h - node.y).round
+      node.boundsRaw.h = (parent.h - node.y).roundPositive
 
 proc relayout*(builder: UINodeBuilder, node: UINode) =
   builder.preLayout node
@@ -632,44 +646,44 @@ proc relayout*(builder: UINodeBuilder, node: UINode) =
 proc postLayoutChild*(builder: UINodeBuilder, node: UINode, child: UINode) =
   var recurse = false
   if SizeToContentX in node.flags and child.xw > node.w:
-    node.boundsRaw.w = child.xw.round
+    node.boundsRaw.w = child.xw.roundPositive
     recurse = true
 
   if SizeToContentY in node.flags and child.yh > node.h:
-    node.boundsRaw.h = child.yh.round
+    node.boundsRaw.h = child.yh.roundPositive
     recurse = true
 
 proc updateSizeToContent(builder: UINodeBuilder, node: UINode) =
   if SizeToContentX in node.flags:
     let childrenWidth = if node.first.isNotNil:
       if LayoutHorizontalReverse in node.flags:
-        node.first.bounds.xw - node.last.bounds.x
+        node.first.xw - node.last.x
       else:
-        node.last.bounds.xw - node.first.bounds.x
+        node.last.xw - node.first.x
     else: 0
 
     let strWidth = if DrawText in node.flags:
       builder.textWidth(node.mTextRuneLen)
     else: 0
 
-    node.boundsRaw.w = max(node.w, max(childrenWidth, strWidth)).round
+    node.boundsRaw.w = max(node.w, max(childrenWidth, strWidth)).roundPositive
 
   if SizeToContentY in node.flags:
     let childrenHeight = if node.first.isNotNil:
       if node.flags.any &{LayoutVertical, LayoutVerticalReverse}:
         var childrenHeight = 0.0
         for i, c in node.children:
-          childrenHeight += c.bounds.h
+          childrenHeight = childrenHeight + c.boundsRaw.h
         childrenheight
       else:
-        node.last.bounds.yh - node.first.bounds.y
+        node.last.yh - node.first.y
     else: 0
 
     let strHeight = if DrawText in node.flags:
       builder.textHeight
     else: 0
 
-    node.boundsRaw.h = max(node.h, max(childrenHeight, strHeight)).round
+    node.boundsRaw.h = max(node.h, max(childrenHeight, strHeight)).roundPositive
 
 proc postLayout*(builder: UINodeBuilder, node: UINode) =
   node.logp "postLayout"
@@ -687,16 +701,16 @@ proc postLayout*(builder: UINodeBuilder, node: UINode) =
   if FillX in node.flags:
     assert node.parent.isNotNil
     if LayoutHorizontalReverse in node.parent.flags:
-      node.boundsRaw.w = node.boundsRaw.x.round
+      node.boundsRaw.w = node.boundsRaw.x.roundPositive
     else:
-      node.boundsRaw.w = (node.parent.w - node.x).round
+      node.boundsRaw.w = (node.parent.w - node.x).roundPositive
 
   if FillY in node.flags:
     assert node.parent.isNotNil
     if LayoutVerticalReverse in node.parent.flags:
-      node.boundsRaw.h = node.boundsRaw.y.round
+      node.boundsRaw.h = node.boundsRaw.y.roundPositive
     else:
-      node.boundsRaw.h = (node.parent.h - node.y).round
+      node.boundsRaw.h = (node.parent.h - node.y).roundPositive
 
   if node.parent.isNotNil:
     builder.postLayoutChild(node.parent, node)
@@ -717,7 +731,8 @@ proc unpoolNode*(builder: UINodeBuilder, userId: var UIUserId): UINode =
     return
 
   result = UINode(mId: newId(), userId: userId)
-  result.aId = ($result.mId).cstring
+  when defined(uiNodeDebugData):
+    result.aDebugData.id = ($result.mId).cstring
   if userId.kind == Primary:
     builder.namedNodes[userId.id] = result
 
@@ -899,14 +914,16 @@ proc prepareNode*(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[s
 
   var node = builder.getNextOrNewNode(builder.currentParent, builder.currentChild, userId)
 
-  builder.currentChild = node
-
   node.flags = inFlags
   if inAdditionalFlags.isSome:
     node.flags = node.flags + inAdditionalFlags.get
 
   if inText.isSome: node.text = inText.get
   elif node.text.len != 0: node.text = ""
+
+  when defined(uiNodeDebugData):
+    node.aDebugData.metaData = newJObject()
+    node.aDebugData.css.setLen 0
 
   node.mHandlePressed = nil
   node.mHandleReleased = nil
@@ -936,10 +953,10 @@ proc prepareNode*(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[s
 
   builder.preLayout(node)
 
-  if inX.isSome: node.boundsRaw.x = inX.get.round
-  if inY.isSome: node.boundsRaw.y = inY.get.round
-  if inW.isSome: node.boundsRaw.w = inW.get.round
-  if inH.isSome: node.boundsRaw.h = inH.get.round
+  if inX.isSome: node.boundsRaw.x = inX.get.roundPositive
+  if inY.isSome: node.boundsRaw.y = inY.get.roundPositive
+  if inW.isSome: node.boundsRaw.w = inW.get.roundPositive
+  if inH.isSome: node.boundsRaw.h = inH.get.roundPositive
   if inPivot.isSome: node.pivot = inPivot.get
 
   node.logp fmt"panel begin {builder.currentParent.id}, {builder.currentChild.?id} {node.id}"
@@ -1329,9 +1346,10 @@ proc dump*(node: UINode, recurse = false): string =
   if node.isNil:
     return "nil"
   # result.add fmt"Node({node.userId}, {node.mLastContentChange}, {node.mLastPositionChange}, {node.mLastSizeChange}, {node.mLastClearInvalidation}, {node.mLastDrawInvalidation}, {node.id} '{node.text}', {node.flags}, ({node.bounds}), {node.boundsActual}, {node.boundsOld})"
-  result.add fmt"Node({node.id} '{node.text}', {node.flags}, bounds: {node.bounds}, raw: {node.boundsRaw}, actual: {node.boundsActual})"
+  result.add fmt"Node({node.id} '{node.text}', {node.flags}, bounds: {node.bounds}, raw: {node.boundsRaw}, actual: {node.boundsActual}), pivot: {node.pivot}"
   if recurse and node.first.isNotNil:
     result.add ":"
     for _, c in node.children:
       result.add "\n"
-      result.add c.dump(recurse=recurse).indent(1, "  ")
+      for c in c.dump(recurse=recurse).indent(1, "  "):
+        result.add c

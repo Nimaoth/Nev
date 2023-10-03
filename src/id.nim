@@ -56,12 +56,18 @@ proc `==`*(oid1: Oid, oid2: Oid): bool {.inline.} =
   result = (oid1.time == oid2.time) and (oid1.fuzz == oid2.fuzz) and
           (oid1.count == oid2.count)
 
+proc hashInt32(x: uint32): uint32 {.inline.} =
+  result = x
+  result = ((result shr 16) xor result) * 0x45d9f3b
+  result = ((result shr 16) xor result) * 0x45d9f3b
+  result = (result shr 16) xor result
+
 proc hash*(oid: Oid): Hash =
   ## Generates the hash of an OID for use in hashtables.
   var h: Hash = 0
-  h = h !& hash(oid.time)
-  h = h !& hash(oid.fuzz)
-  h = h !& hash(oid.count)
+  h = h !& hashInt32(oid.time.uint32).Hash
+  h = h !& hashInt32(oid.fuzz.uint32).Hash
+  h = h !& hashInt32(oid.count.uint32).Hash
   result = !$h
 
 proc hexbyte*(hex: char): int {.inline.} =
@@ -179,7 +185,7 @@ template genOid(result: var Oid, incr: var int, fuzz: int32) =
   var i: int32
   when defined(js) or defined(nimscript):
     inc incr
-    i = cast[int32](incr and 0x7FFFFFFF)
+    i = (incr and 0x7FFFFFFF).int32
   else:
     i = cast[int32](atomicInc(incr))
 

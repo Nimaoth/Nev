@@ -46,7 +46,7 @@ proc loadDefaultOptions*() =
     setOption "ast.indent-line-alpha", 1
     setOption "ast.inline-blocks", true
     setOption "ast.vertical-division", true
-    setOption "model.scroll-speed", 50
+    setOption "model.scroll-speed", 40
 
   of Browser:
     setOption "text.scroll-speed", 50
@@ -58,7 +58,7 @@ proc loadDefaultOptions*() =
     setOption "ast.indent-line-alpha", 1
     setOption "ast.inline-blocks", true
     setOption "ast.vertical-division", true
-    setOption "model.scroll-speed", 50
+    setOption "model.scroll-speed", 40
     addCommand "editor", "<C-r>", "do-nothing"
 
   loadTheme "synthwave-color-theme"
