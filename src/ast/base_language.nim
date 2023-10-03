@@ -149,55 +149,55 @@ builder.addBuilderFor nodeListClass.id, idNone(), proc(builder: CellBuilder, nod
   var cell = CollectionCell(id: newId(), node: node, flags: &{LayoutVertical})
   cell.nodeFactory = proc(): AstNode =
     return newAstNode(emptyLineClass)
-  cell.fillChildren = proc() =
+  cell.fillChildren = proc(map: NodeCellMap) =
     # echo "fill collection node list"
-    cell.add builder.buildChildren(node, IdNodeListChildren, &{LayoutVertical})
+    cell.add builder.buildChildren(map, node, IdNodeListChildren, &{LayoutVertical})
   return cell
 
 builder.addBuilderFor blockClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId(), node: node, flags: &{LayoutVertical}, style: CellStyle(indentChildren: true))
   cell.nodeFactory = proc(): AstNode =
     return newAstNode(emptyLineClass)
-  cell.fillChildren = proc() =
+  cell.fillChildren = proc(map: NodeCellMap) =
     # echo "fill collection block"
-    cell.add builder.buildChildren(node, IdBlockChildren, &{LayoutVertical})
+    cell.add builder.buildChildren(map, node, IdBlockChildren, &{LayoutVertical})
   return cell
 
 builder.addBuilderFor constDeclClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId(), node: node, flags: &{LayoutHorizontal})
-  cell.fillChildren = proc() =
+  cell.fillChildren = proc(map: NodeCellMap) =
     proc isVisible(node: AstNode): bool = node.hasChild(IdConstDeclType)
 
     # echo "fill collection const decl"
     cell.add ConstantCell(node: node, text: "const", themeForegroundColors: @["keyword"], disableEditing: true)
     cell.add PropertyCell(node: node, property: IdINamedName)
     cell.add ConstantCell(node: node, text: ":", isVisible: isVisible, style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
-    cell.add builder.buildChildren(node, IdConstDeclType, &{LayoutHorizontal}, isVisible = isVisible)
+    cell.add builder.buildChildren(map, node, IdConstDeclType, &{LayoutHorizontal}, isVisible = isVisible)
     cell.add ConstantCell(node: node, text: "=", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
     cell.add block:
-      buildChildrenT(builder, node, IdConstDeclValue, &{LayoutHorizontal}):
+      buildChildrenT(builder, map, node, IdConstDeclValue, &{LayoutHorizontal}):
         placeholder: PlaceholderCell(id: newId(), node: node, role: role, shadowText: "...")
   return cell
 
 builder.addBuilderFor letDeclClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId(), node: node, flags: &{LayoutHorizontal})
-  cell.fillChildren = proc() =
+  cell.fillChildren = proc(map: NodeCellMap) =
     proc isVisible(node: AstNode): bool = node.hasChild(IdLetDeclType)
 
     # echo "fill collection let decl"
     cell.add ConstantCell(node: node, text: "let", themeForegroundColors: @["keyword"], disableEditing: true)
     cell.add PropertyCell(node: node, property: IdINamedName)
     cell.add ConstantCell(node: node, text: ":", isVisible: isVisible, style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
-    cell.add builder.buildChildren(node, IdLetDeclType, &{LayoutHorizontal}, isVisible = isVisible)
+    cell.add builder.buildChildren(map, node, IdLetDeclType, &{LayoutHorizontal}, isVisible = isVisible)
     cell.add ConstantCell(node: node, text: "=", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
     cell.add block:
-      buildChildrenT(builder, node, IdLetDeclValue, &{LayoutHorizontal}):
+      buildChildrenT(builder, map, node, IdLetDeclValue, &{LayoutHorizontal}):
         placeholder: PlaceholderCell(id: newId(), node: node, role: role, shadowText: "...")
   return cell
 
 builder.addBuilderFor varDeclClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId(), node: node, flags: &{LayoutHorizontal})
-  cell.fillChildren = proc() =
+  cell.fillChildren = proc(map: NodeCellMap) =
     proc isTypeVisible(node: AstNode): bool = node.hasChild(IdVarDeclType)
     proc isValueVisible(node: AstNode): bool = node.hasChild(IdVarDeclValue)
 
@@ -205,25 +205,25 @@ builder.addBuilderFor varDeclClass.id, idNone(), proc(builder: CellBuilder, node
     cell.add ConstantCell(node: node, text: "var", themeForegroundColors: @["keyword"], disableEditing: true)
     cell.add PropertyCell(node: node, property: IdINamedName)
     cell.add ConstantCell(node: node, text: ":", isVisible: isTypeVisible, style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
-    cell.add builder.buildChildren(node, IdVarDeclType, &{LayoutHorizontal}, isVisible = isTypeVisible)
+    cell.add builder.buildChildren(map, node, IdVarDeclType, &{LayoutHorizontal}, isVisible = isTypeVisible)
     cell.add ConstantCell(node: node, text: "=", isVisible: isValueVisible, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
     cell.add block:
-      buildChildrenT(builder, node, IdVarDeclValue, &{LayoutHorizontal}):
+      buildChildrenT(builder, map, node, IdVarDeclValue, &{LayoutHorizontal}):
         placeholder: PlaceholderCell(id: newId(), node: node, role: role, shadowText: "...")
   return cell
 
 builder.addBuilderFor assignmentClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId(), node: node, flags: &{LayoutHorizontal})
-  cell.fillChildren = proc() =
+  cell.fillChildren = proc(map: NodeCellMap) =
     # echo "fill collection assignment"
-    cell.add builder.buildChildren(node, IdAssignmentTarget, &{LayoutHorizontal})
+    cell.add builder.buildChildren(map, node, IdAssignmentTarget, &{LayoutHorizontal})
     cell.add ConstantCell(node: node, text: "=", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
-    cell.add builder.buildChildren(node, IdAssignmentValue, &{LayoutHorizontal})
+    cell.add builder.buildChildren(map, node, IdAssignmentValue, &{LayoutHorizontal})
   return cell
 
 builder.addBuilderFor parameterDeclClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId(), node: node, flags: &{LayoutHorizontal})
-  cell.fillChildren = proc() =
+  cell.fillChildren = proc(map: NodeCellMap) =
     proc isVisible(node: AstNode): bool = node.hasChild(IdParameterDeclValue)
 
     # echo "fill collection parameter decl"
@@ -231,53 +231,53 @@ builder.addBuilderFor parameterDeclClass.id, idNone(), proc(builder: CellBuilder
     cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
 
     cell.add block:
-      builder.buildChildrenT(node, IdParameterDeclType, &{LayoutHorizontal}):
+      builder.buildChildrenT(map, node, IdParameterDeclType, &{LayoutHorizontal}):
         placeholder: PlaceholderCell(id: newId(), node: node, role: role, shadowText: "...")
 
     cell.add ConstantCell(node: node, text: "=", isVisible: isVisible, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
 
     cell.add block:
-      buildChildrenT(builder, node, IdParameterDeclValue, &{LayoutHorizontal}):
+      buildChildrenT(builder, map, node, IdParameterDeclValue, &{LayoutHorizontal}):
         visible: isVisible(node)
         placeholder: PlaceholderCell(id: newId(), node: node, role: role, shadowText: "...")
   return cell
 
 builder.addBuilderFor functionDefinitionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId(), node: node, flags: &{LayoutHorizontal})
-  cell.fillChildren = proc() =
+  cell.fillChildren = proc(map: NodeCellMap) =
     # echo "fill collection func def"
     cell.add ConstantCell(node: node, text: "fn", themeForegroundColors: @["keyword"], disableEditing: true)
     cell.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
 
     cell.add block:
-      buildChildrenT(builder, node, IdFunctionDefinitionParameters, &{LayoutHorizontal}):
+      buildChildrenT(builder, map, node, IdFunctionDefinitionParameters, &{LayoutHorizontal}):
         separator: ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true, disableSelection: true, deleteNeighbor: true)
         placeholder: "..."
 
     cell.add ConstantCell(node: node, text: "):", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
 
     cell.add block:
-      builder.buildChildrenT(node, IdFunctionDefinitionReturnType, &{LayoutHorizontal}):
+      builder.buildChildrenT(map, node, IdFunctionDefinitionReturnType, &{LayoutHorizontal}):
         placeholder: "..."
 
     cell.add ConstantCell(node: node, text: "=", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
 
     cell.add block:
-      builder.buildChildrenT(node, IdFunctionDefinitionBody, &{LayoutVertical}):
+      builder.buildChildrenT(map, node, IdFunctionDefinitionBody, &{LayoutVertical}):
         placeholder: "..."
 
   return cell
 
 builder.addBuilderFor callClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId(), node: node, flags: &{LayoutHorizontal})
-  cell.fillChildren = proc() =
+  cell.fillChildren = proc(map: NodeCellMap) =
     # echo "fill collection call"
 
-    cell.add builder.buildChildren(node, IdCallFunction, &{LayoutHorizontal})
+    cell.add builder.buildChildren(map, node, IdCallFunction, &{LayoutHorizontal})
     cell.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
 
     cell.add block:
-      buildChildrenT(builder, node, IdCallArguments, &{LayoutHorizontal}):
+      buildChildrenT(builder, map, node, IdCallArguments, &{LayoutHorizontal}):
         separator: ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true, disableSelection: true, deleteNeighbor: true)
         placeholder: PlaceholderCell(id: newId(), node: node, role: role, shadowText: "")
 
@@ -287,41 +287,41 @@ builder.addBuilderFor callClass.id, idNone(), proc(builder: CellBuilder, node: A
 
 builder.addBuilderFor thenCaseClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId(), node: node, flags: &{LayoutHorizontal})
-  cell.fillChildren = proc() =
+  cell.fillChildren = proc(map: NodeCellMap) =
     # echo "fill collection ThenCase"
 
     cell.add ConstantCell(node: node, text: "if", themeForegroundColors: @["keyword"], disableEditing: true)
-    cell.add builder.buildChildren(node, IdThenCaseCondition, &{LayoutHorizontal})
+    cell.add builder.buildChildren(map, node, IdThenCaseCondition, &{LayoutHorizontal})
     cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
-    cell.add builder.buildChildren(node, IdThenCaseBody, &{LayoutHorizontal})
+    cell.add builder.buildChildren(map, node, IdThenCaseBody, &{LayoutHorizontal})
 
   return cell
 
 builder.addBuilderFor ifClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId(), node: node, flags: &{LayoutHorizontal})
-  cell.fillChildren = proc() =
+  cell.fillChildren = proc(map: NodeCellMap) =
     # echo "fill collection if"
 
     cell.add block:
-      builder.buildChildrenT(node, IdIfExpressionThenCase, &{LayoutHorizontal}):
+      builder.buildChildrenT(map, node, IdIfExpressionThenCase, &{LayoutHorizontal}):
         separator: ConstantCell(node: node, text: "el", style: CellStyle(noSpaceRight: true, onNewLine: true), themeForegroundColors: @["keyword"], disableEditing: true, deleteNeighbor: true)
 
     for i, c in node.children(IdIfExpressionElseCase):
       if i == 0:
         cell.add ConstantCell(node: node, text: "else", style: CellStyle(onNewLine: true), themeForegroundColors: @["keyword"], disableEditing: true)
         cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
-      cell.add builder.buildCell(c)
+      cell.add builder.buildCell(map, c)
 
   return cell
 
 builder.addBuilderFor whileClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId(), node: node, flags: &{LayoutHorizontal})
-  cell.fillChildren = proc() =
+  cell.fillChildren = proc(map: NodeCellMap) =
     # echo "fill collection while"
     cell.add ConstantCell(node: node, text: "while", themeForegroundColors: @["keyword"], disableEditing: true)
-    cell.add builder.buildChildren(node, IdWhileExpressionCondition, &{LayoutHorizontal})
+    cell.add builder.buildChildren(map, node, IdWhileExpressionCondition, &{LayoutHorizontal})
     cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
-    cell.add builder.buildChildren(node, IdWhileExpressionBody, &{LayoutHorizontal})
+    cell.add builder.buildChildren(map, node, IdWhileExpressionBody, &{LayoutHorizontal})
 
   return cell
 
@@ -337,28 +337,28 @@ builder.addBuilderFor expressionClass.id, idNone(), proc(builder: CellBuilder, n
 
 builder.addBuilderFor binaryExpressionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId(), node: node, flags: &{LayoutHorizontal})
-  cell.fillChildren = proc() =
+  cell.fillChildren = proc(map: NodeCellMap) =
     # echo "fill collection binary"
-    cell.add builder.buildChildren(node, IdBinaryExpressionLeft, &{LayoutHorizontal})
+    cell.add builder.buildChildren(map, node, IdBinaryExpressionLeft, &{LayoutHorizontal})
     cell.add AliasCell(node: node)
-    cell.add builder.buildChildren(node, IdBinaryExpressionRight, &{LayoutHorizontal})
+    cell.add builder.buildChildren(map, node, IdBinaryExpressionRight, &{LayoutHorizontal})
   return cell
 
 builder.addBuilderFor divExpressionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId(), node: node, flags: &{LayoutVertical}, inline: true)
-  cell.fillChildren = proc() =
+  cell.fillChildren = proc(map: NodeCellMap) =
     # echo "fill collection binary"
-    cell.add builder.buildChildren(node, IdBinaryExpressionLeft, &{LayoutHorizontal})
+    cell.add builder.buildChildren(map, node, IdBinaryExpressionLeft, &{LayoutHorizontal})
     cell.add ConstantCell(node: node, text: "------", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
-    cell.add builder.buildChildren(node, IdBinaryExpressionRight, &{LayoutHorizontal})
+    cell.add builder.buildChildren(map, node, IdBinaryExpressionRight, &{LayoutHorizontal})
   return cell
 
 builder.addBuilderFor unaryExpressionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId(), node: node, flags: &{LayoutHorizontal})
-  cell.fillChildren = proc() =
+  cell.fillChildren = proc(map: NodeCellMap) =
     # echo "fill collection binary"
     cell.add AliasCell(node: node, style: CellStyle(noSpaceRight: true), disableEditing: true)
-    cell.add builder.buildChildren(node, IdUnaryExpressionChild, &{LayoutHorizontal})
+    cell.add builder.buildChildren(map, node, IdUnaryExpressionChild, &{LayoutHorizontal})
   return cell
 
 builder.addBuilderFor stringTypeClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
@@ -375,14 +375,14 @@ builder.addBuilderFor intTypeClass.id, idNone(), proc(builder: CellBuilder, node
 
 builder.addBuilderFor printExpressionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId(), node: node, flags: &{LayoutHorizontal})
-  cell.fillChildren = proc() =
+  cell.fillChildren = proc(map: NodeCellMap) =
     # echo "fill collection call"
 
     cell.add AliasCell(node: node)
     cell.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
 
     cell.add block:
-      buildChildrenT(builder, node, IdPrintArguments, &{LayoutHorizontal}):
+      buildChildrenT(builder, map, node, IdPrintArguments, &{LayoutHorizontal}):
         separator: ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true, disableSelection: true, deleteNeighbor: true)
         placeholder: PlaceholderCell(id: newId(), node: node, role: role, shadowText: "")
 
@@ -392,14 +392,14 @@ builder.addBuilderFor printExpressionClass.id, idNone(), proc(builder: CellBuild
 
 builder.addBuilderFor buildExpressionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId(), node: node, flags: &{LayoutHorizontal})
-  cell.fillChildren = proc() =
+  cell.fillChildren = proc(map: NodeCellMap) =
     # echo "fill collection call"
 
     cell.add AliasCell(node: node)
     cell.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
 
     cell.add block:
-      buildChildrenT(builder, node, IdBuildArguments, &{LayoutHorizontal}):
+      buildChildrenT(builder, map, node, IdBuildArguments, &{LayoutHorizontal}):
         separator: ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true, disableSelection: true, deleteNeighbor: true)
         placeholder: PlaceholderCell(id: newId(), node: node, role: role, shadowText: "")
 

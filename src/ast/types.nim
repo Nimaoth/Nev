@@ -86,7 +86,7 @@ type
     line*: int
     displayText*: Option[string]
     shadowText*: string
-    fillChildren*: proc(): void
+    fillChildren*: proc(map: NodeCellMap): void
     filled*: bool
     isVisible*: CellIsVisiblePredicate
     nodeFactory*: CellNodeFactory
@@ -114,6 +114,10 @@ type
   CellBuilder* = ref object
     builders*: Table[ClassId, seq[tuple[builderId: Id, impl: CellBuilderFunction]]]
     preferredBuilders*: Table[ClassId, Id]
+
+  NodeCellMap* = ref object
+    map*: Table[Id, Cell]
+    builder*: CellBuilder
 
   PropertyValidator* = ref object
     pattern*: Regex

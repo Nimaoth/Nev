@@ -20,13 +20,18 @@ type
   NodeReferenceCell* = ref object of Cell
     reference*: Id
     property*: Id
-    child*: Cell
+    child: Cell
 
   AliasCell* = ref object of Cell
     discard
 
   PlaceholderCell* = ref object of Cell
     role*: Id
+
+proc child*(cell: NodeReferenceCell): Cell = cell.child
+proc `child=`*(cell: NodeReferenceCell, c: Cell) =
+  cell.child = c
+  c.parent = cell
 
 method getText*(cell: Cell): string {.base.} = discard
 method setText*(cell: Cell, text: string, slice: Slice[int] = 0..0) {.base.} = discard
@@ -248,16 +253,16 @@ method dump(self: AliasCell, recurse: bool = false): string =
 method dump(self: PlaceholderCell, recurse: bool = false): string =
   result.add fmt"PlaceholderCell(node: {self.node.id}, role: {self.role})"
 
-proc fill*(self: Cell) =
+proc fill*(map: NodeCellMap, self: Cell) =
   if self.fillChildren.isNil or self.filled:
     return
-  self.fillChildren()
+  self.fillChildren(map)
   self.filled = true
 
-proc expand*(self: Cell, path: openArray[int]) =
-  self.fill()
+proc expand*(map: NodeCellMap, self: Cell, path: openArray[int]) =
+  map.fill(self)
   if path.len > 0 and self.getChildAt(path[0], true).getSome(child):
-    child.expand path[1..^1]
+    map.expand child, path[1..^1]
 
 proc findBuilder(self: CellBuilder, class: NodeClass, preferred: Id): CellBuilderFunction =
   if not self.builders.contains(class.id):
@@ -281,13 +286,13 @@ proc findBuilder(self: CellBuilder, class: NodeClass, preferred: Id): CellBuilde
 
   return builders[0].impl
 
-proc buildCell*(self: CellBuilder, node: AstNode, useDefault: bool = false): Cell
+proc buildCell*(self: CellBuilder, map: NodeCellMap, node: AstNode, useDefault: bool = false): Cell
 
-proc buildCellDefault*(self: CellBuilder, node: AstNode, useDefaultRecursive: bool): Cell =
+proc buildCellDefault*(self: CellBuilder, m: NodeCellMap, node: AstNode, useDefaultRecursive: bool): Cell =
   let class = node.nodeClass
 
   var cell = CollectionCell(id: newId(), node: node, flags: &{LayoutHorizontal})
-  cell.fillChildren = proc() =
+  cell.fillChildren = proc(m: NodeCellMap) =
     cell.add ConstantCell(node: node, text: class.name, disableEditing: true)
     cell.add ConstantCell(node: node, text: "{", increaseIndentAfter: true, disableEditing: true)
 
@@ -322,7 +327,7 @@ proc buildCellDefault*(self: CellBuilder, node: AstNode, useDefaultRecursive: bo
 
       var hasChildren = false
       for i, c in children:
-        var childCell = self.buildCell(c, useDefaultRecursive)
+        var childCell = self.buildCell(m, c, useDefaultRecursive)
         if childCell.style.isNil:
           childCell.style = CellStyle()
         childCell.style.onNewLine = children.len > 1
@@ -338,7 +343,7 @@ proc buildCellDefault*(self: CellBuilder, node: AstNode, useDefaultRecursive: bo
 
   return cell
 
-proc buildCell*(self: CellBuilder, node: AstNode, useDefault: bool = false): Cell =
+proc buildCell*(self: CellBuilder, map: NodeCellMap, node: AstNode, useDefault: bool = false): Cell =
   let class = node.nodeClass
   if class.isNil:
     debugf"Unknown class {node.class}"
@@ -350,13 +355,15 @@ proc buildCell*(self: CellBuilder, node: AstNode, useDefault: bool = false): Cel
   else:
     if not useDefault:
       debugf"Unknown builder for {class.name}, using default"
-    result = self.buildCellDefault(node, useDefault)
+    result = self.buildCellDefault(map, node, useDefault)
     # result.fill()
+
+  map.map[node.id] = result
 
 proc buildDefaultPlaceholder*(builder: CellBuilder, node: AstNode, role: Id): Cell =
   return PlaceholderCell(id: newId(), node: node, role: role, shadowText: "...")
 
-proc buildChildren*(builder: CellBuilder, node: AstNode, role: Id, flags: UINodeFlags,
+proc buildChildren*(builder: CellBuilder, map: NodeCellMap, node: AstNode, role: Id, flags: UINodeFlags,
     isVisible: proc(node: AstNode): bool = nil,
     separatorFunc: proc(builder: CellBuilder): Cell = nil,
     placeholderFunc: proc(builder: CellBuilder, node: AstNode, role: Id): Cell = buildDefaultPlaceholder): Cell =
@@ -367,15 +374,15 @@ proc buildChildren*(builder: CellBuilder, node: AstNode, role: Id, flags: UINode
     for i, c in node.children(role):
       if i > 0 and separatorFunc.isNotNil:
         cell.add separatorFunc(builder)
-      cell.add builder.buildCell(c)
+      cell.add builder.buildCell(map, c)
     result = cell
   elif children.len == 1:
-    result = builder.buildCell(children[0])
+    result = builder.buildCell(map, children[0])
   else:
     result = placeholderFunc(builder, node, role)
   result.isVisible = isVisible
 
-template buildChildrenT*(b: CellBuilder, n: AstNode, r: Id, flags: UINodeFlags, body: untyped): Cell =
+template buildChildrenT*(b: CellBuilder, map: NodeCellMap, n: AstNode, r: Id, flags: UINodeFlags, body: untyped): Cell =
   var isVisibleFunc: proc(node: AstNode): bool = nil
   var separatorFunc: proc(builder: CellBuilder): Cell = nil
   var placeholderFunc: proc(builder: CellBuilder, node: AstNode, role: Id): Cell = nil
@@ -404,4 +411,4 @@ template buildChildrenT*(b: CellBuilder, n: AstNode, r: Id, flags: UINodeFlags, 
 
   body
 
-  builder.buildChildren(node, role, flags, isVisibleFunc, separatorFunc, placeholderFunc)
+  builder.buildChildren(map, node, role, flags, isVisibleFunc, separatorFunc, placeholderFunc)
