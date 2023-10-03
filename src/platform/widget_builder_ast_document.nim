@@ -438,7 +438,7 @@ method createUI*(self: AstDocumentEditor, builder: UINodeBuilder, app: App): seq
 
       builder.panel(flagsInner):
         discard builder.createHeader(self.renderHeader, self.currentMode, self.document, backgroundColor, textColor):
-          right:
+          onRight:
             builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = fmt" {self.id} ")
 
         builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = backgroundColor):
