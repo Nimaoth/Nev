@@ -152,7 +152,7 @@ type
     targetNodeOld*: UINode
     targetNode*: UINode
     targetCell*: Cell
-    handleClick*: proc(node: UINode, cell: Cell, path: seq[int])
+    handleClick*: proc(node: UINode, cell: Cell, path: seq[int], cursor: CellCursor)
 
 proc `$`(op: ModelOperation): string =
   result = fmt"{op.kind}, '{op.value}'"
