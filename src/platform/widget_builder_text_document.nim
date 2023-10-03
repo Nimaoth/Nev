@@ -482,7 +482,7 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
 
       builder.panel(&{LayoutVertical} + sizeFlags):
         header = builder.createHeader(self.renderHeader, self.currentMode, self.document, headerColor, textColor):
-          right:
+          onRight:
             proc cursorString(cursor: Cursor): string = $cursor.line & ":" & $cursor.column & ":" & $self.document.lines[cursor.line].toOpenArray.runeIndex(cursor.column)
             builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = fmt" {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} ")
         if self.createTextLines(builder, app, backgroundColor, textColor, sizeToContentX, sizeToContentY).getSome(info):

@@ -7,11 +7,11 @@ template createHeader*(builder: UINodeBuilder, inRenderHeader: bool, inMode: str
     var leftFunc: proc()
     var rightFunc: proc()
 
-    template left(inBody: untyped) =
+    template onLeft(inBody: untyped) {.used.} =
       leftFunc = proc() =
         inBody
 
-    template right(inBody: untyped) =
+    template onRight(inBody: untyped) {.used.} =
       rightFunc = proc() =
         inBody
 

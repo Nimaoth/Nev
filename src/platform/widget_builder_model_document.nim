@@ -694,7 +694,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
 
       builder.panel(&{LayoutVertical} + sizeFlags):
         header = builder.createHeader(self.renderHeader, self.currentMode, self.document, headerColor, textColor):
-          right:
+          onRight:
             builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = fmt" {self.id} ")
 
         var scrollContent: UINode
