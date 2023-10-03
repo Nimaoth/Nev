@@ -149,6 +149,7 @@ type
 
   UpdateContext* = ref object
     cellToWidget*: Table[Id, UINode]
+    targetNodeOld*: UINode
     targetNode*: UINode
     targetCell*: Cell
     handleClick*: proc(node: UINode, cell: Cell, path: seq[int])

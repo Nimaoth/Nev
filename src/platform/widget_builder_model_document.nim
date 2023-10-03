@@ -549,7 +549,6 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
       if c.style.isNotNil:
         ctx.prevNoSpaceRight = c.style.noSpaceRight
 
-
 proc updateTargetPath(updateContext: UpdateContext, root: UINode, cell: Cell, forward: bool, targetPath: openArray[int], currentPath: seq[int]): Option[(float32, seq[int])] =
   if cell of CollectionCell:
     let centerIndex = if targetPath.len > 0: targetPath[0].clamp(0, cell.CollectionCell.children.high) elif forward: 0 else: cell.CollectionCell.children.high
@@ -653,7 +652,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
                   targetCellPath = cellPath
                   # debugf"click: {self.scrollOffset} -> {bounds.y} | {cell.dump} | {node.dump}"
                   self.scrollOffset = bounds.y
-                  app.platform.requestRender(true)
+                  self.markDirty()
 
                 # echo self.scrollOffset
                 let myCtx = newCellLayoutContext(builder)
@@ -661,6 +660,12 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
                 myCtx.remainingHeightDown = (h - self.scrollOffset) - cellGenerationBuffer
                 cell.createCellUI(builder, app, myCtx, self.cellWidgetContext, false, targetCellPath)
                 myCtx.finish()
+
+                if self.cellWidgetContext.targetNodeOld.isNotNil and self.cellWidgetContext.targetNodeOld != self.cellWidgetContext.targetNode:
+                  self.cellWidgetContext.targetNodeOld.contentDirty = true
+                  self.cellWidgetContext.targetNode.contentDirty = true
+
+                self.cellWidgetContext.targetNodeOld = self.cellWidgetContext.targetNode
 
                 if self.cellWidgetContext.targetNode.isNotNil:
                   var bounds = self.cellWidgetContext.targetNode.bounds.transformRect(self.cellWidgetContext.targetNode.parent, uiae.parent)
