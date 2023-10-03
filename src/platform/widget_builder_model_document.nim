@@ -11,7 +11,7 @@ logCategory "widget_builder_model_document"
 
 func withAlpha(color: Color, alpha: float32): Color = color(color.r, color.g, color.b, alpha)
 
-const cellGenerationBuffer = -150
+const cellGenerationBuffer = -10
 
 type
   Direction = enum
@@ -441,20 +441,32 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
         ctx.decreaseIndent()
         ctx.indent()
 
+    # center
     block:
       # echo "center ", centerIndex
       let myCtx = newCellLayoutContext(ctx, c, ctx.remainingHeightDown, ctx.remainingHeightUp)
       defer:
         myCtx.finish()
 
-        # echo myCtx.parentNode.h, ", ", (ctx.remainingHeightDown - myCtx.remainingHeightDown), ", ", (ctx.remainingHeightUp - myCtx.remainingHeightUp)
-        let heightDownChange = ctx.remainingHeightDown - myCtx.remainingHeightDown
-        let heightUpChange = ctx.remainingHeightUp - myCtx.remainingHeightUp
+        if updateContext.targetNode.isNotNil and path.len > 1:
+          let targetBounds = updateContext.targetNode.bounds.transformRect(updateContext.targetNode.parent, myCtx.parentNode)
+          # debugf"targetBounds: {targetBounds}, h: {myCtx.parentNode.h}, down: {myCtx.parentNode.h - targetBounds.y}, up: {targetBounds.y}"
+          ctx.remainingHeightUp -= targetBounds.y
+          ctx.remainingHeightDown -= myCtx.parentNode.h - targetBounds.y
+        elif ctx.targetDirection == Direction.Forwards:
+          ctx.remainingHeightDown -= myCtx.parentNode.h
+        elif ctx.targetDirection == Direction.Backwards:
+          ctx.remainingHeightUp -= myCtx.parentNode.h
+        else:
 
-        # ctx.remainingHeightDown -= myCtx.parentNode.h - heightUpChange
-        # ctx.remainingHeightUp -= myCtx.parentNode.h
-        ctx.remainingHeightDown -= heightDownChange
-        ctx.remainingHeightUp -= heightUpChange
+          # echo myCtx.parentNode.h, ", ", (ctx.remainingHeightDown - myCtx.remainingHeightDown), ", ", (ctx.remainingHeightUp - myCtx.remainingHeightUp)
+          let heightDownChange = ctx.remainingHeightDown - myCtx.remainingHeightDown
+          let heightUpChange = ctx.remainingHeightUp - myCtx.remainingHeightUp
+
+          # ctx.remainingHeightDown -= myCtx.parentNode.h - heightUpChange
+          # ctx.remainingHeightUp -= myCtx.parentNode.h
+          ctx.remainingHeightDown -= heightDownChange
+          ctx.remainingHeightUp -= heightUpChange
 
         if ctx.remainingHeightDown < 0 and ctx.remainingHeightUp < 0:
           cell.logc "1: reached bottom"
@@ -464,9 +476,8 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
       c.createCellUI(builder, app, myCtx, updateContext, false, if path.len > 1: path[1..^1] else: @[])
       discard cellPath.pop
 
-      # builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = fmt"{myCtx.parentNode.h}, {ctx.remainingHeightDown}, {ctx.remainingHeightUp}", textColor = color(0, 1, 1))
-
       if path.len == 1 and updateContext.targetNode.isNil:
+        # echo "set target ", cellPath, ", ", path
         updateContext.targetCell = c
         updateContext.targetNode = builder.currentChild
 
@@ -475,6 +486,7 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
           builder.currentChild.aDebugData.css.add "border: 1px solid red;"
           builder.currentChild.aDebugData.metaData["target"] = newJBool(true)
 
+    # forwards
     for i in (centerIndex + 1)..cell.children.high:
       # echo "down ", i
       let c = cell.children[i]
@@ -499,6 +511,7 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
 
       # builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = fmt"{myCtx.parentNode.h}, {ctx.remainingHeightDown}, {ctx.remainingHeightUp}", textColor = color(0, 1, 0))
 
+    # backwards
     if centerIndex > 0:
       ctx.goBackward()
       for i in countdown(centerIndex - 1, 0):
@@ -538,6 +551,7 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
       discard cellPath.pop
 
       if i == centerIndex and path.len == 1:
+        # echo "set target ", cellPath, ", ", path
         when defined(uiNodeDebugData):
           builder.currentChild.aDebugData.css.add "border: 1px solid red;"
           builder.currentChild.aDebugData.metaData["target"] = newJBool(true)
@@ -615,10 +629,11 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
 
         var scrollContent: UINode
 
-        when defined(js):
-          let animate = 0.UINodeFlags
-        else:
-          let animate = if builder.charWidth > 1: &{AnimatePosition} else: 0.UINodeFlags
+        let animate = 0.UINodeFlags
+        # when defined(js):
+        #   let animate = 0.UINodeFlags
+        # else:
+        #   let animate = if builder.charWidth > 1: &{AnimatePosition} else: 0.UINodeFlags
 
         builder.panel(&{FillX, FillY, FillBackground, MaskContent}, backgroundColor = backgroundColor):
           onScroll:
@@ -635,7 +650,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
           builder.panel(&{FillX, FillY} + animate, y = 0, userId = newSecondaryId(self.userId, -1)):
             scrollContent = currentNode
 
-            builder.panel(&{FillX, SizeToContentY, FillBackground}, y = 0, pivot = vec2(0, 0), backgroundColor = backgroundColor.lighten(0.1)):
+            builder.panel(&{FillX, SizeToContentY}):
               let uiae = currentNode
 
               defer:
