@@ -296,9 +296,17 @@ method createCellUI*(cell: ConstantCell, builder: UINodeBuilder, app: App, ctx: 
       if btn == MouseButton.Left:
         if cell.canSelect:
           let offset = builder.getCursorPos(text, 0.RuneIndex, pos)
-          let cursor = cell.toCursor(offset)
+          let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
           capture cellPath:
             updateContext.handleClick(currentNode, cell, cellPath, cursor)
+
+    onDrag MouseButton.Left:
+      if cell.canSelect:
+        let offset = builder.getCursorPos(text, 0.RuneIndex, pos)
+        let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
+        capture cellPath:
+          updateContext.handleClick(currentNode, cell, cellPath, cursor)
+
 
 
   # widget.fontSizeIncreasePercent = cell.fontSizeIncreasePercent
@@ -326,9 +334,16 @@ method createCellUI*(cell: PlaceholderCell, builder: UINodeBuilder, app: App, ct
       if btn == MouseButton.Left:
         if cell.canSelect:
           let offset = builder.getCursorPos(text, 0.RuneIndex, pos)
-          let cursor = cell.toCursor(offset)
+          let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
           capture cellPath:
             updateContext.handleClick(currentNode, cell, cellPath, cursor)
+
+    onDrag MouseButton.Left:
+      if cell.canSelect:
+        let offset = builder.getCursorPos(text, 0.RuneIndex, pos)
+        let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
+        capture cellPath:
+          updateContext.handleClick(currentNode, cell, cellPath, cursor)
 
   # widget.fontSizeIncreasePercent = cell.fontSizeIncreasePercent
   # setBackgroundColor(app, cell, widget)
@@ -355,9 +370,16 @@ method createCellUI*(cell: AliasCell, builder: UINodeBuilder, app: App, ctx: Cel
       if btn == MouseButton.Left:
         if cell.canSelect:
           let offset = builder.getCursorPos(text, 0.RuneIndex, pos)
-          let cursor = cell.toCursor(offset)
+          let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
           capture cellPath:
             updateContext.handleClick(currentNode, cell, cellPath, cursor)
+
+    onDrag MouseButton.Left:
+      if cell.canSelect:
+        let offset = builder.getCursorPos(text, 0.RuneIndex, pos)
+        let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
+        capture cellPath:
+          updateContext.handleClick(currentNode, cell, cellPath, cursor)
 
   # widget.fontSizeIncreasePercent = cell.fontSizeIncreasePercent
   # setBackgroundColor(app, cell, widget)
@@ -384,9 +406,16 @@ method createCellUI*(cell: PropertyCell, builder: UINodeBuilder, app: App, ctx: 
       if btn == MouseButton.Left:
         if cell.canSelect:
           let offset = builder.getCursorPos(text, 0.RuneIndex, pos)
-          let cursor = cell.toCursor(offset)
+          let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
           capture cellPath:
             updateContext.handleClick(currentNode, cell, cellPath, cursor)
+
+    onDrag MouseButton.Left:
+      if cell.canSelect:
+        let offset = builder.getCursorPos(text, 0.RuneIndex, pos)
+        let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
+        capture cellPath:
+          updateContext.handleClick(currentNode, cell, cellPath, cursor)
 
   # widget.fontSizeIncreasePercent = cell.fontSizeIncreasePercent
   # setBackgroundColor(app, cell, widget)
@@ -418,12 +447,20 @@ method createCellUI*(cell: NodeReferenceCell, builder: UINodeBuilder, app: App, 
         if btn == MouseButton.Left:
           if cell.canSelect:
             let offset = builder.getCursorPos(text, 0.RuneIndex, pos)
-            let cursor = cell.toCursor(offset)
+            let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
             capture cellPath:
               updateContext.handleClick(currentNode, cell, cellPath, cursor)
 
+      onDrag MouseButton.Left:
+        if cell.canSelect:
+          let offset = builder.getCursorPos(text, 0.RuneIndex, pos)
+          let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
+          capture cellPath:
+            updateContext.handleClick(currentNode, cell, cellPath, cursor)
+
   else:
     cell.child.createCellUI(builder, app, ctx, updateContext, spaceLeft, path)
+    updateContext.cellToWidget[cell.id] = builder.currentChild
 
   # widget.fontSizeIncreasePercent = cell.fontSizeIncreasePercent
   # setBackgroundColor(app, cell, widget)
@@ -455,7 +492,7 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
 
   let vertical = LayoutVertical in cell.flags
 
-  cell.fill()
+  updateContext.nodeCellMap.fill(cell)
 
   let centerIndex = if path.len > 0: path[0].clamp(0, cell.children.high) elif ctx.targetDirection == Direction.Backwards: cell.children.high else: 0
 
@@ -644,7 +681,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
     sizeFlags.incl FillY
 
   if self.cellWidgetContext.isNil:
-    self.cellWidgetContext = UpdateContext()
+    self.cellWidgetContext = UpdateContext(nodeCellMap: self.nodeCellMap)
 
   self.cellWidgetContext.cellToWidget = initTable[Id, UINode](self.cellWidgetContext.cellToWidget.len)
 
@@ -668,7 +705,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
         # else:
         #   let animate = if builder.charWidth > 1: &{AnimatePosition} else: 0.UINodeFlags
 
-        builder.panel(&{FillX, FillY, FillBackground, MaskContent}, backgroundColor = backgroundColor):
+        builder.panel(&{FillX, FillY, FillBackground, MaskContent, OverlappingChildren}, backgroundColor = backgroundColor):
           onScroll:
             let scrollAmount = delta.y * app.asConfigProvider.getValue("model.scroll-speed", 10.0)
             self.scrollOffset += scrollAmount
@@ -678,6 +715,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
 
             self.markDirty()
 
+          let overlapPanel = currentNode
 
           let h = currentNode.h
           builder.panel(&{FillX, FillY} + animate, y = 0, userId = newSecondaryId(self.userId, -1)):
@@ -690,7 +728,8 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
                 self.lastBounds = currentNode.bounds
 
               for node in self.document.model.rootNodes:
-                let cell = self.document.builder.buildCell(node, self.useDefaultCellBuilder)
+                let cell = self.nodeCellMap.cell(node)
+                # let cell = self.document.builder.buildCell(self.nodeCellMap, node, self.useDefaultCellBuilder)
                 if cell.isNil:
                   continue
 
@@ -701,6 +740,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
                   # debugf"click: {self.scrollOffset} -> {bounds.y} | {cell.dump} | {node.dump}"
                   self.scrollOffset = bounds.y
                   self.cursor = cursor
+                  # echo cursor.node
                   self.markDirty()
 
                 # echo self.scrollOffset
@@ -731,6 +771,16 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
                     # echo "update path ", path, " (was ", targetCellPath, ")"
                     targetCellPath = path[1]
                     self.scrollOffset = path[0]
+
+          # cursor
+          block:
+            if self.cursor.getTargetCell(true).getSome(targetCell) and self.cellWidgetContext.cellToWidget.contains(targetCell.id):
+              let node = self.cellWidgetContext.cellToWidget[targetCell.id]
+              # debugf"cursor {self.cursor} at {targetCell.dump}, {node.dump}"
+
+              let index = self.cursor.lastIndex
+              var bounds = rect(index.float * builder.charWidth, 0, 0, 0).transformRect(node, overlapPanel)
+              builder.panel(&{UINodeFlag.FillBackground, AnimatePosition}, x = bounds.x, y = bounds.y, w = max(builder.charWidth * 0.2, 1), h = builder.textHeight, backgroundColor = textColor, userId = newPrimaryId(self.cursorsId))
 
         # echo builder.currentChild.dump(true)
 
