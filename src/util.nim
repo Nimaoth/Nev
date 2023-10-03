@@ -1,4 +1,4 @@
-import std/[options, strutils, macros, genasts]
+import std/[options, strutils, macros, genasts, math]
 export options
 
 {.used.}
@@ -104,3 +104,10 @@ template maybeFlatten*[T](self: Option[Option[T]]): Option[T] = self.flatten
 proc neww*[T](value: T): ref T =
   new result
   result[] = value
+
+when defined(js):
+  func jsRound(x: float): float {.importc: "Math.round", nodecl.}
+  func roundPositive*[T: float64 | float32](x: T): T =
+    jsRound(x)
+else:
+  func roundPositive*[T: float64 | float32](x: T): T = round(x)

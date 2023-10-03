@@ -148,9 +148,10 @@ type
     scrollToCompletion*: Option[int]
 
   UpdateContext* = ref object
-    # cellToWidget*: Table[Id, WWidget]
-    # todo
-    discard
+    cellToWidget*: Table[Id, UINode]
+    targetNode*: UINode
+    targetCell*: Cell
+    handleClick*: proc(node: UINode, cell: Cell, path: seq[int])
 
 proc `$`(op: ModelOperation): string =
   result = fmt"{op.kind}, '{op.value}'"

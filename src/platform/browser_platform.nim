@@ -1,4 +1,4 @@
-import std/[strformat, tables, dom, unicode, strutils, sugar]
+import std/[strformat, tables, dom, unicode, strutils, sugar, json]
 import platform, custom_logger, rect_utils, input, event, lrucache, theme, timer
 import vmath
 import chroma as chroma
@@ -445,14 +445,17 @@ proc drawNode(builder: UINodeBuilder, platform: BrowserPlatform, element: var El
   elif element.hasAttribute("data-text"):
     removeText = true
 
+  when defined(uiNodeDebugData):
+    for c in node.aDebugData.css:
+      css += ";".cstring
+      css += c.cstring
+
   var newChildren: seq[(Element, cstring, Node)] = @[]
   var childrenToRemove: seq[Element] = @[]
 
   platform.domUpdates.add proc() =
     element.class = "widget"
     element.setAttribute("style", css)
-
-    # element.setAttribute("data-flags", $node.flags)
 
     if updateText:
       element.innerText = text
@@ -462,6 +465,12 @@ proc drawNode(builder: UINodeBuilder, platform: BrowserPlatform, element: var El
       element.innerText = ""
 
     element.setAttribute("id", ($node.id).cstring)
+    when defined(uiNodeDebugData):
+      element.setAttribute("data-flags", ($node.flags).cstring)
+      element.setAttribute("data-pivot", ($node.pivot).cstring)
+
+      if node.aDebugData.metaData.isNotNil:
+        element.setAttribute("data-meta", ($node.aDebugData.metaData).replace('"', '\'').cstring)
 
     for (c, rel, other) in newChildren:
       if rel == "":

@@ -37,8 +37,7 @@ macro generateGetters*(T: typedesc): untyped =
     let memberName = member.strVal.ident
 
     result.add quote do:
-      proc `memberName`*(self: `selfType`): `returnType` =
-        return self.`member`
+      template `memberName`*(self: `selfType`): `returnType` = self.`member`
 
   # echo result.treeRepr
   # echo result.repr

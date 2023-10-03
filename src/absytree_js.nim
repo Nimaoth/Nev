@@ -141,6 +141,87 @@ function hashWangYi1_override(x) {
     }
 }
 
+function imul_override(a_1342177593, b_1342177594) {
+  var result_1342177595 = 0;
+
+    var mask_1342177596 = 65535;
+    var aHi_1342177601 = (((a_1342177593 >>> 16) & mask_1342177596) >>> 0);
+    var aLo_1342177602 = ((a_1342177593 & mask_1342177596) >>> 0);
+    var bHi_1342177607 = (((b_1342177594 >>> 16) & mask_1342177596) >>> 0);
+    var bLo_1342177608 = ((b_1342177594 & mask_1342177596) >>> 0);
+    result_1342177595 = ((((aLo_1342177602 * bLo_1342177608) >>> 0) + ((((((aHi_1342177601 * bLo_1342177608) >>> 0) + ((aLo_1342177602 * bHi_1342177607) >>> 0)) >>> 0) << 16) >>> 0)) >>> 0);
+
+  return result_1342177595;
+
+}
+
+function rotl32_override(x_1342177614, r_1342177615) {
+  var result_1342177616 = 0;
+
+    result_1342177616 = ((((x_1342177614 << r_1342177615) >>> 0) | (x_1342177614 >>> (32 - r_1342177615))) >>> 0);
+
+  return result_1342177616;
+
+}
+
+function murmurHash_override(x_1342177626) {
+  var result_1342177627 = 0;
+
+  BeforeRet: {
+    var size_1342177636 = (x_1342177626).length;
+    var stepSize_1342177637 = 4;
+    var n_1342177638 = Math.trunc(size_1342177636 / stepSize_1342177637);
+    var h1_1342177639 = 0;
+    var i_1342177640 = 0;
+    Label1: {
+        Label2: while (true) {
+        if (!(i_1342177640 < (n_1342177638 * stepSize_1342177637))) break Label2;
+          var k1_1342177641 = 0;
+          var j_1342177642 = stepSize_1342177637;
+          Label3: {
+              Label4: while (true) {
+              if (!(0 < j_1342177642)) break Label4;
+                j_1342177642 -= 1;
+                k1_1342177641 = ((((k1_1342177641 << 8) >>> 0) | x_1342177626[(i_1342177640 + j_1342177642)]) >>> 0);
+              }
+          };
+          i_1342177640 += stepSize_1342177637;
+          k1_1342177641 = imul_override(k1_1342177641, 3432918353);
+          k1_1342177641 = rotl32_override(k1_1342177641, 15);
+          k1_1342177641 = imul_override(k1_1342177641, 461845907);
+          h1_1342177639 = ((h1_1342177639 ^ k1_1342177641) >>> 0);
+          h1_1342177639 = rotl32_override(h1_1342177639, 13);
+          h1_1342177639 = ((((h1_1342177639 * 5) >>> 0) + 3864292196) >>> 0);
+        }
+    };
+    var k1_1342177661 = 0;
+    var rem_1342177662 = Math.trunc(size_1342177636 % stepSize_1342177637);
+    Label5: {
+        Label6: while (true) {
+        if (!(0 < rem_1342177662)) break Label6;
+          rem_1342177662 -= 1;
+          k1_1342177661 = ((((k1_1342177661 << 8) >>> 0) | x_1342177626[(i_1342177640 + rem_1342177662)]) >>> 0);
+        }
+    };
+    k1_1342177661 = imul_override(k1_1342177661, 3432918353);
+    k1_1342177661 = rotl32_override(k1_1342177661, 15);
+    k1_1342177661 = imul_override(k1_1342177661, 461845907);
+    h1_1342177639 = ((h1_1342177639 ^ k1_1342177661) >>> 0);
+    h1_1342177639 = ((h1_1342177639 ^ size_1342177636) >>> 0);
+    h1_1342177639 = ((h1_1342177639 ^ (h1_1342177639 >>> 16)) >>> 0);
+    h1_1342177639 = imul_override(h1_1342177639, 2246822507);
+    h1_1342177639 = ((h1_1342177639 ^ (h1_1342177639 >>> 13)) >>> 0);
+    h1_1342177639 = imul_override(h1_1342177639, 3266489909);
+    h1_1342177639 = ((h1_1342177639 ^ (h1_1342177639 >>> 16)) >>> 0);
+    result_1342177627 = h1_1342177639 & 0xffffffff;
+    break BeforeRet;
+  };
+
+  return result_1342177627;
+
+}
+
+
 let nimCopyCounters = new Map();
 let nimCopyTimers = new Map();
 let breakOnCopyType = null;
@@ -204,6 +285,18 @@ function nimCopyOverride(dest, src, ti) {
 
     return result;
 }
+
+function overrideFunction(name, original, override) {
+    window["_old_" + name] = original
+    window[name] = override
+}
+
+for (name of Object.keys(window)) {
+    if (name.startsWith("murmurHash_") && name != "murmurHash_override") {
+        let original = window[name]
+        overrideFunction(name, original, murmurHash_override)
+    }
+}
 """.}
 
 import hashes
@@ -216,8 +309,7 @@ macro overrideFunction(body: typed, override: untyped): untyped =
   else: body
 
   return quote do:
-    {.emit: ["window._old_", `original`, " = ", `original`, ";"].}
-    {.emit: ["window.", `original`, " = ", `override`, ";"].}
+    {.emit: ["overrideFunction(\"", `original`, "\", ", `original`, ", ", `override`, ");"].}
 
 overrideFunction(hashWangYi1(1.int64), "hashWangYi1_override")
 overrideFunction(hashWangYi1(2.uint64), "hashWangYi1_override")
