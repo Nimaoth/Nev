@@ -340,6 +340,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
         colors, cursorsPerLine, wrapLine, wrapLineEndChar, wrapLineEndColor,
         )
 
+    self.lastRenderedLines.setLen 0
     builder.createLines(self.previousBaseIndex, self.scrollOffset, self.document.lines.high, sizeToContentX, sizeToContentY, backgroundColor, handleScroll, handleLine)
 
     # context lines
