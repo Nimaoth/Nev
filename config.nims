@@ -3,7 +3,6 @@ switch("path", "scripting")
 switch("path", "src")
 
 switch("d", "mingw")
-switch("mm", "refc")
 switch("tlsEmulation", "off")
 switch("d", "enableGui=true")
 switch("d", "enableTerminal=true")
@@ -18,6 +17,10 @@ switch("d", "wasm3VerboseErrorMessages")
 # switch("d", "wasm3LogCompile")
 # switch("d", "wasm3LogParse")
 # switch("d", "wasm3LogRuntime")
+# switch("d", "uiNodeDebugData")
+
+# switch("cc", "vcc")
+# switch("nimcache", "D:\\nc")
 
 let mode = 0
 case mode
@@ -28,6 +31,7 @@ of 1:
   switch("stackTrace", "on")
   switch("lineTrace", "on")
 of 2:
+  switch("cc", "vcc")
   switch("d", "debug")
   switch("debuginfo", "on")
   switch("nimcache", "nimcache")
@@ -38,8 +42,6 @@ of 3:
   switch("nimcache", "D:\\nc")
 else:
   discard
-
-
 
 # begin Nimble config (version 2)
 --noNimblePath

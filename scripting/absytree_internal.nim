@@ -613,6 +613,10 @@ proc editor_changeAnimationSpeed_void_App_float_impl*(factor: float) =
   discard
 proc editor_setLeader_void_App_string_impl*(leader: string) =
   discard
+proc editor_setLeaders_void_App_seq_string_impl*(leaders: seq[string]) =
+  discard
+proc editor_addLeader_void_App_string_impl*(leader: string) =
+  discard
 proc editor_addCommandScript_void_App_string_string_string_string_impl*(
     context: string; keys: string; action: string; arg: string = "") =
   discard

@@ -1666,6 +1666,14 @@ proc setLeader*(self: App, leader: string) {.expose("editor").} =
   for config in self.eventHandlerConfigs.values:
     config.setLeader leader
 
+proc setLeaders*(self: App, leaders: seq[string]) {.expose("editor").} =
+  for config in self.eventHandlerConfigs.values:
+    config.setLeaders leaders
+
+proc addLeader*(self: App, leader: string) {.expose("editor").} =
+  for config in self.eventHandlerConfigs.values:
+    config.addLeader leader
+
 proc addCommandScript*(self: App, context: string, keys: string, action: string, arg: string = "") {.expose("editor").} =
   let command = if arg.len == 0: action else: action & " " & arg
   # log(lvlInfo, fmt"Adding command to '{context}': ('{keys}', '{command}')")

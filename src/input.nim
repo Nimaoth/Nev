@@ -291,22 +291,21 @@ proc handleNextInput(dfa: var CommandDFA, input: openArray[Rune], function: stri
   let nextDefaultState = if persistent: nextState else: defaultState
   handleNextInput(dfa, input, function, nextIndex, nextState, nextDefaultState, leader)
 
-proc buildDFA*(commands: seq[(string, string)], leader: string): CommandDFA =
+proc buildDFA*(commands: seq[(string, string)], leaders: seq[string]): CommandDFA =
   new(result)
 
   result.states.add DFAState()
-  var currentState = 0
 
-  let (leaderInput, leaderMods, _, _) = parseNextInput(leader.toRunes, 0)
+  for leader in leaders:
+    let (leaderInput, leaderMods, _, _) = parseNextInput(leader.toRunes, 0)
 
-  for command in commands:
-    currentState = 0
+    for command in commands:
 
-    let input = command[0]
-    let function = command[1]
+      let input = command[0]
+      let function = command[1]
 
-    if input.len > 0:
-      handleNextInput(result, input.toRunes, function, index = 0, currentState = 0, defaultState = 0, leader = (leaderInput, leaderMods))
+      if input.len > 0:
+        handleNextInput(result, input.toRunes, function, index = 0, currentState = 0, defaultState = 0, leader = (leaderInput, leaderMods))
 
 proc autoCompleteRec(dfa: CommandDFA, result: var seq[(string, string)], currentInputs: string, currentState: int) =
   let state = dfa.states[currentState]

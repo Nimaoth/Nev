@@ -703,6 +703,32 @@ proc setLeader*(leader: string) =
       argsJsonString.cstring)
 
 
+proc editor_setLeaders_void_App_seq_string_wasm(arg: cstring): cstring {.importc.}
+proc setLeaders*(leaders: seq[string]) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when seq[string] is JsonNode:
+      leaders
+    else:
+      leaders.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_setLeaders_void_App_seq_string_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_addLeader_void_App_string_wasm(arg: cstring): cstring {.importc.}
+proc addLeader*(leader: string) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      leader
+    else:
+      leader.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_addLeader_void_App_string_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_addCommandScript_void_App_string_string_string_string_wasm(
     arg: cstring): cstring {.importc.}
 proc addCommandScript*(context: string; keys: string; action: string;
