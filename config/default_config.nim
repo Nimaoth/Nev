@@ -74,7 +74,7 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
     clearCommands "commandLine"
     clearCommands "popup.selector"
 
-  setLeader "<SPACE>"
+  setLeaders @["<SPACE>", "<C-b>"]
 
   addCommand "editor", "<C-x><C-x>", "quit"
   addCommand "editor", "<CAS-r>", "reload-config"

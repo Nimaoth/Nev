@@ -132,6 +132,10 @@ proc changeAnimationSpeed*(factor: float) =
   editor_changeAnimationSpeed_void_App_float_impl(factor)
 proc setLeader*(leader: string) =
   editor_setLeader_void_App_string_impl(leader)
+proc setLeaders*(leaders: seq[string]) =
+  editor_setLeaders_void_App_seq_string_impl(leaders)
+proc addLeader*(leader: string) =
+  editor_addLeader_void_App_string_impl(leader)
 proc addCommandScript*(context: string; keys: string; action: string;
                        arg: string = "") =
   editor_addCommandScript_void_App_string_string_string_string_impl(context,

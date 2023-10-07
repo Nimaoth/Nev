@@ -2123,7 +2123,7 @@ proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool {.expos
     if cell.disableEditing:
       return false
 
-    let newColumn = cell.replaceText(self.cursor.orderedRange, input)
+    let newColumn = cell.replaceText(self.cursor.lastIndex..self.cursor.lastIndex, input)
     if newColumn != self.cursor.lastIndex:
       self.mSelection.last.column = newColumn
       self.mSelection.first = self.mSelection.last
