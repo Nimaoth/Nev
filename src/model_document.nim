@@ -1,4 +1,4 @@
-import std/[strformat, strutils, math, sugar, tables, options, json, streams]
+import std/[strformat, strutils, math, sugar, tables, options, json, streams, algorithm]
 import fusion/matching, bumpy, rect_utils, vmath
 import util, document, document_editor, text/text_document, events, id, ast_ids, scripting/expose, event, input, custom_async, myjsonutils
 from scripting_api as api import nil
@@ -22,6 +22,8 @@ type
     lastIndex*: int
     path*: seq[int]
     node*: AstNode
+
+  CellSelection* = tuple[first: CellCursor, last: CellCursor]
 
   CellCursorState = object
     firstIndex*: int
@@ -47,8 +49,13 @@ proc cell*(map: NodeCellMap, node: AstNode): Cell =
   map.map[node.id] = cell
   return cell
 
-proc `$`*(cursor: CellCursor): string =
-  return fmt"CellCursor({cursor.firstIndex}:{cursor.lastIndex}, {cursor.path}, {cursor.node})"
+proc toSelection*(cursor: CellCursor): CellSelection = (cursor, cursor)
+
+proc empty*(selection: CellSelection): bool = selection.first == selection.last
+
+proc `$`*(cursor: CellCursor): string = fmt"CellCursor({cursor.firstIndex}:{cursor.lastIndex}, {cursor.path}, {cursor.node})"
+
+proc `$`*(selection: CellSelection): string = fmt"({selection.first}, {selection.last})"
 
 proc `column=`(cursor: var CellCursor, column: int) =
   cursor.firstIndex = column
@@ -58,13 +65,27 @@ proc orderedRange*(cursor: CellCursor): Slice[int] =
   return min(cursor.firstIndex, cursor.lastIndex)..max(cursor.firstIndex, cursor.lastIndex)
 
 proc cell*(cursor: CellCursor): Cell =
-  return cursor.map.map.getOrDefault(cursor.node.id, nil)
+  return cursor.map.cell(cursor.node)
 
 proc targetCell*(cursor: CellCursor): Cell =
   result = cursor.cell
+  cursor.map.fill(result)
   for i in cursor.path:
     if result of CollectionCell:
       result = result.CollectionCell.children[i]
+
+proc rootPath*(cursor: CellCursor): tuple[root: Cell, path: seq[int]] =
+  var cell = cursor.targetCell
+  var path: seq[int] = @[]
+  while cell.parent.isNotNil:
+    let idx = cell.parent.CollectionCell.children.find(cell)
+    path.add idx
+    cell = cell.parent
+
+  path.reverse()
+  path.add cursor.lastIndex
+
+  return (cell, path)
 
 type
   ModelOperationKind = enum
@@ -131,7 +152,7 @@ type
     completionsId*: Id
     lastCursorLocationBounds*: Option[Rect]
 
-    transactionCursors: Table[Id, CellCursor]
+    transactionCursors: Table[Id, CellSelection]
 
     modeEventHandler: EventHandler
     completionEventHandler: EventHandler
@@ -140,8 +161,8 @@ type
     nodeCellMap*: NodeCellMap
     logicalLines*: seq[seq[Cell]]
     cellWidgetContext*: UpdateContext
-    mCursor: CellCursor
-    mCursorBeforeTransaction: CellCursor
+    mCursorBeforeTransaction: CellSelection
+    mSelection: CellSelection
     mTargetCursor: Option[CellCursorState]
 
     useDefaultCellBuilder*: bool
@@ -167,7 +188,8 @@ type
     targetNodeOld*: UINode
     targetNode*: UINode
     targetCell*: Cell
-    handleClick*: proc(node: UINode, cell: Cell, path: seq[int], cursor: CellCursor)
+    handleClick*: proc(node: UINode, cell: Cell, path: seq[int], cursor: CellCursor, drag: bool)
+    selectionColor*: Color
 
 proc `$`(op: ModelOperation): string =
   result = fmt"{op.kind}, '{op.value}'"
@@ -242,16 +264,21 @@ method save*(self: ModelDocument, filename: string = "", app: bool = false) =
   else:
     fs.saveFile(self.filename, serialized)
 
-proc cursor*(self: ModelDocumentEditor): CellCursor = self.mCursor
+template cursor*(self: ModelDocumentEditor): CellCursor = self.mSelection.last
+template selection*(self: ModelDocumentEditor): CellSelection = self.mSelection
 
-proc `cursor=`*(self: ModelDocumentEditor, cursor: CellCursor) =
-  assert self.mCursor.map.isNotNil
-  if self.mCursor.targetCell != cursor.targetCell:
-    self.mCursor = cursor
+proc `selection=`*(self: ModelDocumentEditor, selection: CellSelection) =
+  assert self.mSelection.first.map.isNotNil
+  assert self.mSelection.last.map.isNotNil
+  if self.mSelection.last.targetCell != selection.last.targetCell:
+    self.mSelection = selection
     self.invalidateCompletions()
   else:
-    self.mCursor = cursor
+    self.mSelection = selection
     self.refilterCompletions()
+
+proc `cursor=`*(self: ModelDocumentEditor, cursor: CellCursor) =
+  self.selection = (cursor, cursor)
 
 proc `cursor=`*(self: ModelDocumentEditor, cursor: CellCursorState) =
   if self.document.model.resolveReference(cursor.node).getSome(node):
@@ -534,7 +561,8 @@ proc handleModelChanged(self: ModelDocumentEditor, document: ModelDocument) =
 
   self.rebuildCells()
 
-  self.mCursor.node = self.document.model.rootNodes[0]
+  self.mSelection.first.node = self.document.model.rootNodes[0]
+  self.mSelection.last.node = self.document.model.rootNodes[0]
 
   if self.mTargetCursor.getSome(c):
     self.cursor = c
@@ -542,17 +570,17 @@ proc handleModelChanged(self: ModelDocumentEditor, document: ModelDocument) =
   else:
     self.cursor = self.getFirstEditableCellOfNode(self.document.model.rootNodes[0]).get
 
-  self.mCursorBeforeTransaction = self.mCursor
+  self.mCursorBeforeTransaction = self.selection
 
   self.markDirty()
 
 proc handleFinishedUndoTransaction*(self: ModelDocumentEditor, document: ModelDocument, transaction: ModelTransaction) =
   self.transactionCursors[transaction.id] = self.mCursorBeforeTransaction
-  self.mCursorBeforeTransaction = self.mCursor
+  self.mCursorBeforeTransaction = self.selection
 
 proc handleFinishedRedoTransaction*(self: ModelDocumentEditor, document: ModelDocument, transaction: ModelTransaction) =
   self.transactionCursors[transaction.id] = self.mCursorBeforeTransaction
-  self.mCursorBeforeTransaction = self.mCursor
+  self.mCursorBeforeTransaction = self.selection
 
 method handleDocumentChanged*(self: ModelDocumentEditor) =
   log lvlInfo, fmt"Document changed"
@@ -660,7 +688,7 @@ proc fromJsonHook*(t: var api.ModelDocumentEditor, jsonNode: JsonNode) =
 proc handleInput(self: ModelDocumentEditor, input: string): EventResponse =
   log lvlInfo, fmt"[modeleditor]: Handle input '{input}'"
 
-  self.mCursorBeforeTransaction = self.mCursor
+  self.mCursorBeforeTransaction = self.selection
 
   if self.insertTextAtCursor(input):
     self.document.finishTransaction()
@@ -717,7 +745,7 @@ method handleMousePress*(self: ModelDocumentEditor, button: MouseButton, mousePo
     return
 
   for rootNode in self.document.model.rootNodes:
-    let cell = self.nodeCellMap.map.getOrDefault(rootNode.id, nil)
+    let cell = self.nodeCellMap.cell(rootNode)
     if cell.isNil:
       continue
 
@@ -747,7 +775,7 @@ method handleMouseMove*(self: ModelDocumentEditor, mousePosWindow: Vec2, mousePo
 
   if MouseButton.Left in buttons:
     for rootNode in self.document.model.rootNodes:
-      let cell = self.nodeCellMap.map.getOrDefault(rootNode.id, nil)
+      let cell = self.nodeCellMap.cell(rootNode)
       if cell.isNil:
         continue
 
@@ -791,7 +819,8 @@ method createWithDocument*(_: ModelDocumentEditor, document: Document, configPro
   self.completionsId = newId()
   self.nodeCellMap.new
   self.nodeCellMap.builder = self.document.builder
-  self.mCursor.map = self.nodeCellMap
+  self.mSelection.first.map = self.nodeCellMap
+  self.mSelection.last.map = self.nodeCellMap
 
   self.init()
   discard self.document.onModelChanged.subscribe proc(d: auto) = self.handleModelChanged(d)
@@ -799,7 +828,8 @@ method createWithDocument*(_: ModelDocumentEditor, document: Document, configPro
   discard self.document.onFinishedRedoTransaction.subscribe proc(d: auto) = self.handleFinishedRedoTransaction(d[0], d[1])
 
   self.rebuildCells()
-  self.mCursor.node = self.document.model.rootNodes[0]
+  self.mSelection.first.node = self.document.model.rootNodes[0]
+  self.mSelection.last.node = self.document.model.rootNodes[0]
   self.cursor = self.getFirstEditableCellOfNode(self.document.model.rootNodes[0]).get
   # echo self.cursor
 
@@ -842,13 +872,13 @@ proc getTargetCell*(cursor: CellCursor, resolveCollection: bool = true): Option[
 
   var subCell = cell
   for i in cursor.path:
-    if subCell of CollectionCell:
+    if subCell of CollectionCell and subCell.CollectionCell.children.len > 0:
       var collectionCell = subCell.CollectionCell
       subCell = collectionCell.children[i.clamp(0, collectionCell.children.high)]
     else:
       break
 
-  if resolveCollection and subCell of CollectionCell and cursor.lastIndex < subCell.CollectionCell.children.len:
+  if resolveCollection and subCell of CollectionCell and cursor.lastIndex >= 0 and cursor.lastIndex < subCell.CollectionCell.children.len:
     return subCell.CollectionCell.children[cursor.lastIndex].some
 
   return subCell.some
@@ -941,7 +971,7 @@ proc getPreviousCellInLine*(self: ModelDocumentEditor, cell: Cell): Cell =
   # defer:
   #   debugf"getPreviousCellInLine {cell.dump} -> {result.dump}"
 
-  if cell.line < 0 and cell.line > self.logicalLines.high:
+  if cell.line < 0 or cell.line > self.logicalLines.high:
     return cell
 
   let line = self.logicalLines[cell.line]
@@ -973,7 +1003,7 @@ proc getNextCellInLine*(self: ModelDocumentEditor, cell: Cell): Cell =
   # defer:
   #   debugf"getNextCellInLine {cell.dump} -> {result.dump}"
 
-  if cell.line < 0 and cell.line > self.logicalLines.high:
+  if cell.line < 0 or cell.line > self.logicalLines.high:
     return cell
 
   let line = self.logicalLines[cell.line]
@@ -1268,7 +1298,7 @@ proc selectParentNodeCell*(cursor: CellCursor): CellCursor =
     result = result.selectParentCell()
 
 proc updateCursor*(self: ModelDocumentEditor, cursor: CellCursor): Option[CellCursor] =
-  let nodeCell = self.nodeCellMap.map.getOrDefault(cursor.node.id)
+  let nodeCell = self.nodeCellMap.cell(cursor.node)
   if nodeCell.isNil:
     return CellCursor.none
 
@@ -1295,7 +1325,7 @@ proc updateCursor*(self: ModelDocumentEditor, cursor: CellCursor): Option[CellCu
 proc getFirstEditableCellOfNode*(self: ModelDocumentEditor, node: AstNode): Option[CellCursor] =
   result = CellCursor.none
 
-  var nodeCell = self.nodeCellMap.map.getOrDefault(node.id)
+  var nodeCell = self.nodeCellMap.cell(node)
   if nodeCell.isNil:
     return
 
@@ -1316,7 +1346,7 @@ proc getFirstEditableCellOfNode*(self: ModelDocumentEditor, node: AstNode): Opti
 proc getFirstPropertyCellOfNode*(self: ModelDocumentEditor, node: AstNode, role: Id): Option[CellCursor] =
   result = CellCursor.none
 
-  let nodeCell = self.nodeCellMap.map.getOrDefault(node.id)
+  let nodeCell = self.nodeCellMap.cell(node)
   if nodeCell.isNil:
     return
 
@@ -1963,7 +1993,7 @@ proc isAtEndOfLastCellOfNode*(cursor: CellCursor): bool =
     return cursor.lastIndex == cell.high + 1
 
 proc insertIntoNode*(self: ModelDocumentEditor, parent: AstNode, role: Id, index: int): Option[AstNode] =
-  let parentCell = self.nodeCellMap.map.getOrDefault(parent.id)
+  let parentCell = self.nodeCellMap.cell(parent)
   debugf"insertIntoNode {index} {parent}, {parentCell.nodeFactory.isNotNil}"
 
   if parentCell.nodeFactory.isNotNil:
@@ -1974,13 +2004,13 @@ proc insertIntoNode*(self: ModelDocumentEditor, parent: AstNode, role: Id, index
     return parent.insertDefaultNode(role, index)
 
 proc insertBeforeNode*(self: ModelDocumentEditor, node: AstNode): Option[AstNode] =
-  let parentCell = self.nodeCellMap.map.getOrDefault(node.parent.id)
+  let parentCell = self.nodeCellMap.cell(node.parent)
   debugf"01 insert before {node.index} {node.parent}, {parentCell.nodeFactory.isNotNil}"
 
   return self.insertIntoNode(node.parent, node.role, node.index)
 
 proc insertAfterNode*(self: ModelDocumentEditor, node: AstNode): Option[AstNode] =
-  let parentCell = self.nodeCellMap.map.getOrDefault(node.parent.id)
+  let parentCell = self.nodeCellMap.cell(node.parent)
   debugf"01 insert before {node.index} {node.parent}, {parentCell.nodeFactory.isNotNil}"
 
   return self.insertIntoNode(node.parent, node.role, node.index + 1)
@@ -2095,7 +2125,8 @@ proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool {.expos
 
     let newColumn = cell.replaceText(self.cursor.orderedRange, input)
     if newColumn != self.cursor.lastIndex:
-      self.mCursor.column = newColumn
+      self.mSelection.last.column = newColumn
+      self.mSelection.first = self.mSelection.last
 
       if self.unfilteredCompletions.len == 0:
         self.updateCompletions()
@@ -2129,8 +2160,8 @@ proc getCursorForOp(self: ModelDocumentEditor, op: ModelOperation): CellCursor =
 proc undo*(self: ModelDocumentEditor) {.expose("editor.model").} =
   if self.document.undo().getSome(t):
     self.rebuildCells()
-    if self.transactionCursors.contains(t[0]) and self.updateCursor(self.transactionCursors[t[0]]).getSome(newCursor):
-      self.cursor = newCursor
+    if self.transactionCursors.contains(t[0]):
+      self.selection = self.transactionCursors[t[0]]
     else:
       self.cursor = self.getCursorForOp(t[1])
     self.markDirty()
@@ -2138,8 +2169,8 @@ proc undo*(self: ModelDocumentEditor) {.expose("editor.model").} =
 proc redo*(self: ModelDocumentEditor) {.expose("editor.model").} =
   if self.document.redo().getSome(t):
     self.rebuildCells()
-    if self.transactionCursors.contains(t[0]) and self.updateCursor(self.transactionCursors[t[0]]).getSome(newCursor):
-      self.cursor = newCursor
+    if self.transactionCursors.contains(t[0]):
+      self.selection = self.transactionCursors[t[0]]
     else:
       self.cursor = self.getCursorForOp(t[1])
     self.markDirty()
@@ -2151,7 +2182,8 @@ proc toggleUseDefaultCellBuilder*(self: ModelDocumentEditor) {.expose("editor.mo
 
 proc showCompletions*(self: ModelDocumentEditor) {.expose("editor.model").} =
   if self.showCompletions:
-    self.mCursor.column = 0
+    self.mSelection.last.column = 0
+    self.mSelection.first = self.mSelection.last
   self.updateCompletions()
   self.showCompletions = true
   self.markDirty()
@@ -2291,7 +2323,7 @@ proc handleAction(self: ModelDocumentEditor, action: string, arg: string): Event
   # defer:
   #   log lvlDebug, &"line: {self.cursor.targetCell.line}, cursor: {self.cursor},\ncell: {self.cursor.cell.dump()}\ntargetCell: {self.cursor.targetCell.dump()}"
 
-  self.mCursorBeforeTransaction = self.mCursor
+  self.mCursorBeforeTransaction = self.selection
 
   var args = newJArray()
   args.add api.ModelDocumentEditor(id: self.id).toJson

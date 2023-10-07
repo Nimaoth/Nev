@@ -143,6 +143,12 @@ proc addSpace(self: CellLayoutContext) =
 
   self.builder.panel(&{FillY}, w = self.builder.charWidth)
 
+proc addSpace(self: CellLayoutContext, color: Color) =
+  if self.isCurrentLineEmpty:
+    return
+
+  self.builder.panel(&{FillY, FillBackground}, w = self.builder.charWidth, backgroundColor = color)
+
 proc newLine(self: CellLayoutContext) =
   inc self.currentLine
 
@@ -271,209 +277,174 @@ proc getCursorPos(builder: UINodeBuilder, line: openArray[char], startOffset: Ru
   let byteIndex = line.runeOffset(startOffset + index.RuneCount)
   return byteIndex
 
-method createCellUI*(cell: Cell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int]) {.base.} = discard
-
-method createCellUI*(cell: ConstantCell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int]) =
-  if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
-    return
+proc createLeafCellUI*(cell: Cell, builder: UINodeBuilder, inText: string, inTextColor: Color, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, cursorFirst: openArray[int], cursorLast: openArray[int]) =
 
   let cellPath = cellPath
 
-  stackSize.inc
-  defer:
-    stackSize.dec
+  var selectionStart = 0
+  var selectionEnd = 0
+  var spaceSelected = false
 
-  cell.logc fmt"createCellUI (ConstantCell) {path}"
+  var backgroundFlags = 0.UINodeFlags
+  var backgroundColor = color(0, 0, 0)
+  if cursorFirst.len == 1 and cursorLast.len == 1 and cell.canSelect:
+    let first = cursorFirst[0]
+    let last = cursorLast[0]
+    if first <= 0 and last >= inText.len:
+      backgroundColor = updateContext.selectionColor
+      backgroundFlags.incl FillBackground
+      # cell.logc fmt"full selection {selectionStart}, {selectionEnd}"
+    else:
+      selectionStart = first.clamp(0, inText.len)
+      selectionEnd = last.clamp(0, inText.len)
+
+    if first < 0 and last >= 0:
+      spaceSelected = true
 
   if spaceLeft:
-    ctx.addSpace()
+    if spaceSelected:
+      ctx.addSpace(updateContext.selectionColor)
+    else:
+      ctx.addSpace()
 
-  let (text, color) = app.getTextAndColor(cell)
-  # builder.panel(&{SizeToContentX, SizeToContentY, FillY, DrawText}, text = text, textColor = color, userId = cell.id.newPrimaryId):
-  builder.panel(&{SizeToContentX, SizeToContentY, FillY, DrawText}, text = text, textColor = color):
-    updateContext.cellToWidget[cell.id] = currentNode
-    onClickAny btn:
-      if btn == MouseButton.Left:
+  if selectionStart == selectionEnd:
+    builder.panel(&{SizeToContentX, SizeToContentY, FillY, DrawText} + backgroundFlags, text = inText, textColor = inTextColor, backgroundColor = backgroundColor):
+      updateContext.cellToWidget[cell.id] = currentNode
+      onClickAny btn:
+        if btn == MouseButton.Left:
+          if cell.canSelect:
+            let offset = builder.getCursorPos(inText, 0.RuneIndex, pos)
+            let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
+            capture cellPath:
+              updateContext.handleClick(currentNode, cell, cellPath, cursor, false)
+
+      onDrag MouseButton.Left:
         if cell.canSelect:
-          let offset = builder.getCursorPos(text, 0.RuneIndex, pos)
+          let offset = builder.getCursorPos(inText, 0.RuneIndex, pos)
           let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
           capture cellPath:
-            updateContext.handleClick(currentNode, cell, cellPath, cursor)
+            updateContext.handleClick(currentNode, cell, cellPath, cursor, true)
 
-    onDrag MouseButton.Left:
-      if cell.canSelect:
-        let offset = builder.getCursorPos(text, 0.RuneIndex, pos)
-        let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
-        capture cellPath:
-          updateContext.handleClick(currentNode, cell, cellPath, cursor)
+  else:
+    # cell.logc fmt"partial selection {selectionStart}, {selectionEnd}"
+    builder.panel(&{SizeToContentX, SizeToContentY, FillY, OverlappingChildren}):
+      let x = selectionStart.float * builder.charWidth
+      let xw = selectionEnd.float * builder.charWidth
+      builder.panel(&{FillY, FillBackground}, x = x, w = xw - x, backgroundColor = updateContext.selectionColor)
 
+      builder.panel(&{SizeToContentX, SizeToContentY, FillY, DrawText}, text = inText, textColor = inTextColor):
+        updateContext.cellToWidget[cell.id] = currentNode
+        onClickAny btn:
+          if btn == MouseButton.Left:
+            if cell.canSelect:
+              let offset = builder.getCursorPos(inText, 0.RuneIndex, pos)
+              let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
+              capture cellPath:
+                updateContext.handleClick(currentNode, cell, cellPath, cursor, false)
 
+        onDrag MouseButton.Left:
+          if cell.canSelect:
+            let offset = builder.getCursorPos(inText, 0.RuneIndex, pos)
+            let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
+            capture cellPath:
+              updateContext.handleClick(currentNode, cell, cellPath, cursor, true)
 
-  # widget.fontSizeIncreasePercent = cell.fontSizeIncreasePercent
-  # setBackgroundColor(app, cell, widget)
+method createCellUI*(cell: Cell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int], cursorFirst: openArray[int], cursorLast: openArray[int]) {.base.} = discard
 
-method createCellUI*(cell: PlaceholderCell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int]) =
+method createCellUI*(cell: ConstantCell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int], cursorFirst: openArray[int], cursorLast: openArray[int]) =
   if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
     return
-
-  let cellPath = cellPath
 
   stackSize.inc
   defer:
     stackSize.dec
-  cell.logc fmt"createCellUI (ConstantCell) {path}"
 
-  if spaceLeft:
-    ctx.addSpace()
+  cell.logc fmt"createCellUI (ConstantCell) {path}, {cursorFirst}, {cursorLast}"
 
   let (text, color) = app.getTextAndColor(cell)
-  # builder.panel(&{SizeToContentX, SizeToContentY, FillY, DrawText}, text = text, textColor = color, userId = cell.id.newPrimaryId):
-  builder.panel(&{SizeToContentX, SizeToContentY, FillY, DrawText}, text = text, textColor = color):
-    updateContext.cellToWidget[cell.id] = currentNode
-    onClickAny btn:
-      if btn == MouseButton.Left:
-        if cell.canSelect:
-          let offset = builder.getCursorPos(text, 0.RuneIndex, pos)
-          let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
-          capture cellPath:
-            updateContext.handleClick(currentNode, cell, cellPath, cursor)
+  createLeafCellUI(cell, builder, text, color, ctx, updateContext, spaceLeft, cursorFirst, cursorLast)
 
-    onDrag MouseButton.Left:
-      if cell.canSelect:
-        let offset = builder.getCursorPos(text, 0.RuneIndex, pos)
-        let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
-        capture cellPath:
-          updateContext.handleClick(currentNode, cell, cellPath, cursor)
-
-  # widget.fontSizeIncreasePercent = cell.fontSizeIncreasePercent
-  # setBackgroundColor(app, cell, widget)
-
-method createCellUI*(cell: AliasCell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int]) =
+method createCellUI*(cell: PlaceholderCell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int], cursorFirst: openArray[int], cursorLast: openArray[int]) =
   if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
     return
-
-  let cellPath = cellPath
 
   stackSize.inc
   defer:
     stackSize.dec
-  cell.logc fmt"createCellUI (ConstantCell) {path}"
-
-  if spaceLeft:
-    ctx.addSpace()
+  cell.logc fmt"createCellUI (ConstantCell) {path}, {cursorFirst}, {cursorLast}"
 
   let (text, color) = app.getTextAndColor(cell)
-  # builder.panel(&{SizeToContentX, SizeToContentY, FillY, DrawText}, text = text, textColor = color, userId = cell.id.newPrimaryId):
-  builder.panel(&{SizeToContentX, SizeToContentY, FillY, DrawText}, text = text, textColor = color):
-    updateContext.cellToWidget[cell.id] = currentNode
-    onClickAny btn:
-      if btn == MouseButton.Left:
-        if cell.canSelect:
-          let offset = builder.getCursorPos(text, 0.RuneIndex, pos)
-          let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
-          capture cellPath:
-            updateContext.handleClick(currentNode, cell, cellPath, cursor)
+  createLeafCellUI(cell, builder, text, color, ctx, updateContext, spaceLeft, cursorFirst, cursorLast)
 
-    onDrag MouseButton.Left:
-      if cell.canSelect:
-        let offset = builder.getCursorPos(text, 0.RuneIndex, pos)
-        let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
-        capture cellPath:
-          updateContext.handleClick(currentNode, cell, cellPath, cursor)
-
-  # widget.fontSizeIncreasePercent = cell.fontSizeIncreasePercent
-  # setBackgroundColor(app, cell, widget)
-
-method createCellUI*(cell: PropertyCell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int]) =
+method createCellUI*(cell: AliasCell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int], cursorFirst: openArray[int], cursorLast: openArray[int]) =
   if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
     return
-
-  let cellPath = cellPath
 
   stackSize.inc
   defer:
     stackSize.dec
-  cell.logc fmt"createCellUI (ConstantCell) {path}"
-
-  if spaceLeft:
-    ctx.addSpace()
+  cell.logc fmt"createCellUI (ConstantCell) {path}, {cursorFirst}, {cursorLast}"
 
   let (text, color) = app.getTextAndColor(cell)
-  # builder.panel(&{SizeToContentX, SizeToContentY, FillY, DrawText}, text = text, textColor = color, userId = cell.id.newPrimaryId):
-  builder.panel(&{SizeToContentX, SizeToContentY, FillY, DrawText}, text = text, textColor = color):
-    updateContext.cellToWidget[cell.id] = currentNode
-    onClickAny btn:
-      if btn == MouseButton.Left:
-        if cell.canSelect:
-          let offset = builder.getCursorPos(text, 0.RuneIndex, pos)
-          let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
-          capture cellPath:
-            updateContext.handleClick(currentNode, cell, cellPath, cursor)
+  createLeafCellUI(cell, builder, text, color, ctx, updateContext, spaceLeft, cursorFirst, cursorLast)
 
-    onDrag MouseButton.Left:
-      if cell.canSelect:
-        let offset = builder.getCursorPos(text, 0.RuneIndex, pos)
-        let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
-        capture cellPath:
-          updateContext.handleClick(currentNode, cell, cellPath, cursor)
-
-  # widget.fontSizeIncreasePercent = cell.fontSizeIncreasePercent
-  # setBackgroundColor(app, cell, widget)
-
-method createCellUI*(cell: NodeReferenceCell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int]) =
+method createCellUI*(cell: PropertyCell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int], cursorFirst: openArray[int], cursorLast: openArray[int]) =
   if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
     return
-
-  let cellPath = cellPath
 
   stackSize.inc
   defer:
     stackSize.dec
-  cell.logc fmt"createCellUI (ConstantCell) {path}"
+  cell.logc fmt"createCellUI (ConstantCell) {path}, {cursorFirst}, {cursorLast}"
+
+  let (text, color) = app.getTextAndColor(cell)
+  createLeafCellUI(cell, builder, text, color, ctx, updateContext, spaceLeft, cursorFirst, cursorLast)
+
+method createCellUI*(cell: NodeReferenceCell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int], cursorFirst: openArray[int], cursorLast: openArray[int]) =
+  if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
+    return
+
+  stackSize.inc
+  defer:
+    stackSize.dec
+  cell.logc fmt"createCellUI (ConstantCell) {path}, {cursorFirst}, {cursorLast}"
 
   if cell.child.isNil:
     let reference = cell.node.reference(cell.reference)
     let defaultColor = if cell.foregroundColor.a != 0: cell.foregroundColor else: color(1, 1, 1)
     let textColor = if cell.themeForegroundColors.len == 0: defaultColor else: app.theme.anyColor(cell.themeForegroundColors, defaultColor)
 
-    if spaceLeft:
-      ctx.addSpace()
-
-    # builder.panel(&{SizeToContentX, SizeToContentY, FillY, DrawText}, text = $reference, textColor = textColor, userId = cell.id.newPrimaryId):
     let text = $reference
-    builder.panel(&{SizeToContentX, SizeToContentY, FillY, DrawText}, text = text, textColor = textColor):
-      updateContext.cellToWidget[cell.id] = currentNode
-      onClickAny btn:
-        if btn == MouseButton.Left:
-          if cell.canSelect:
-            let offset = builder.getCursorPos(text, 0.RuneIndex, pos)
-            let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
-            capture cellPath:
-              updateContext.handleClick(currentNode, cell, cellPath, cursor)
-
-      onDrag MouseButton.Left:
-        if cell.canSelect:
-          let offset = builder.getCursorPos(text, 0.RuneIndex, pos)
-          let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
-          capture cellPath:
-            updateContext.handleClick(currentNode, cell, cellPath, cursor)
+    createLeafCellUI(cell, builder, text, textColor, ctx, updateContext, spaceLeft, cursorFirst, cursorLast)
 
   else:
-    cell.child.createCellUI(builder, app, ctx, updateContext, spaceLeft, path)
+    cell.child.createCellUI(builder, app, ctx, updateContext, spaceLeft, path, cursorFirst, cursorLast)
     updateContext.cellToWidget[cell.id] = builder.currentChild
 
   # widget.fontSizeIncreasePercent = cell.fontSizeIncreasePercent
   # setBackgroundColor(app, cell, widget)
 
-method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int]) =
+template getChildPath(cursor: openArray[int], index: int): openArray[int] =
+  if cursor.len > 0:
+    if index == cursor[0]:
+      cursor[1..^1]
+    else:
+      if index < cursor[0]:
+        @[int.high]
+      else:
+        @[-1]
+  else:
+    @[]
+
+method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int], cursorFirst: openArray[int], cursorLast: openArray[int]) =
   if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
     return
 
   stackSize.inc
   defer:
-    cell.logc fmt"createCellUI end (CollectionCell) {path}"
+    cell.logc fmt"createCellUI end (CollectionCell) {path}, {cursorFirst}, {cursorLast}"
     stackSize.dec
-  cell.logc fmt"createCellUI begin (CollectionCell) {path}"
+  cell.logc fmt"createCellUI begin (CollectionCell) {path}, {cursorFirst}, {cursorLast}"
 
   let parentCtx = ctx
   var ctx = ctx
@@ -539,11 +510,11 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
           ctx.remainingHeightUp -= heightUpChange
 
         if ctx.remainingHeightDown < 0 and ctx.remainingHeightUp < 0:
-          cell.logc "1: reached bottom"
+          # cell.logc "1: reached bottom"
           return
 
       cellPath.add centerIndex
-      c.createCellUI(builder, app, myCtx, updateContext, false, if path.len > 1: path[1..^1] else: @[])
+      c.createCellUI(builder, app, myCtx, updateContext, false, if path.len > 1: path[1..^1] else: @[], cursorFirst.getChildPath(centerIndex), cursorLast.getChildPath(centerIndex))
       discard cellPath.pop
 
       if path.len == 1 and updateContext.targetNode.isNil:
@@ -572,11 +543,11 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
         # echo myCtx.parentNode.h
         ctx.remainingHeightDown -= myCtx.parentNode.h
         if ctx.remainingHeightDown < 0:
-          cell.logc "2: reached bottom"
+          # cell.logc "2: reached bottom"
           break
 
       cellPath.add i
-      c.createCellUI(builder, app, myCtx, updateContext, false, @[])
+      c.createCellUI(builder, app, myCtx, updateContext, false, @[], cursorFirst.getChildPath(i), cursorLast.getChildPath(i))
       discard cellPath.pop
 
       # builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = fmt"{myCtx.parentNode.h}, {ctx.remainingHeightDown}, {ctx.remainingHeightUp}", textColor = color(0, 1, 0))
@@ -598,11 +569,11 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
           # echo myCtx.parentNode.h
           ctx.remainingHeightUp -= myCtx.parentNode.h
           if ctx.remainingHeightUp < 0:
-            cell.logc "3: reached top"
+            # cell.logc "3: reached top"
             break
 
         cellPath.add i
-        c.createCellUI(builder, app, myCtx, updateContext, false, @[])
+        c.createCellUI(builder, app, myCtx, updateContext, false, @[], cursorFirst.getChildPath(i), cursorLast.getChildPath(i))
         discard cellPath.pop
 
   else:
@@ -617,7 +588,7 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
           ctx.newLine()
 
       cellPath.add i
-      c.createCellUI(builder, app, ctx, updateContext, spaceLeft, if i == centerIndex and path.len > 1: path[1..^1] else: @[])
+      c.createCellUI(builder, app, ctx, updateContext, spaceLeft, if i == centerIndex and path.len > 1: path[1..^1] else: @[], cursorFirst.getChildPath(i), cursorLast.getChildPath(i))
       discard cellPath.pop
 
       if i == centerIndex and path.len == 1:
@@ -655,6 +626,12 @@ proc updateTargetPath(updateContext: UpdateContext, root: UINode, cell: Cell, fo
     if bounds.y > cellGenerationBuffer and bounds.yh < root.h - cellGenerationBuffer:
       return (bounds.y, currentPath).some
 
+proc pathAfter(a, b: openArray[int]): bool =
+  for i in 0..min(a.high, b.high):
+    if a[i] != b[i]:
+      return a[i] > b[i]
+  return a.len > b.len
+
 method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
   let dirty = self.dirty
   self.resetDirty()
@@ -682,6 +659,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
 
   if self.cellWidgetContext.isNil:
     self.cellWidgetContext = UpdateContext(nodeCellMap: self.nodeCellMap)
+  self.cellWidgetContext.selectionColor = app.theme.color("selection.background", color(200/255, 200/255, 200/255))
 
   self.cellWidgetContext.cellToWidget = initTable[Id, UINode](self.cellWidgetContext.cellToWidget.len)
 
@@ -734,21 +712,32 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
                   continue
 
                 self.cellWidgetContext.targetNode = nil
-                self.cellWidgetContext.handleClick = proc(node: UINode, cell: Cell, cellPath: seq[int], cursor: CellCursor) =
+                self.cellWidgetContext.handleClick = proc(node: UINode, cell: Cell, cellPath: seq[int], cursor: CellCursor, drag: bool) =
                   let bounds = node.bounds.transformRect(node.parent, uiae.parent)
                   targetCellPath = cellPath
                   # debugf"click: {self.scrollOffset} -> {bounds.y} | {cell.dump} | {node.dump}"
                   self.scrollOffset = bounds.y
-                  self.cursor = cursor
-                  # echo cursor.node
+                  if drag:
+                    self.selection.last = cursor
+                  else:
+                    self.cursor = cursor
                   self.markDirty()
 
                 # echo self.scrollOffset
-                let myCtx = newCellLayoutContext(builder)
-                myCtx.remainingHeightUp = self.scrollOffset - cellGenerationBuffer
-                myCtx.remainingHeightDown = (h - self.scrollOffset) - cellGenerationBuffer
-                cell.createCellUI(builder, app, myCtx, self.cellWidgetContext, false, targetCellPath)
-                myCtx.finish()
+                block:
+                  let myCtx = newCellLayoutContext(builder)
+                  defer:
+                    myCtx.finish()
+
+                  myCtx.remainingHeightUp = self.scrollOffset - cellGenerationBuffer
+                  myCtx.remainingHeightDown = (h - self.scrollOffset) - cellGenerationBuffer
+
+                  var cursorFirst = self.selection.first.rootPath
+                  var cursorLast = self.selection.last.rootPath
+                  if cursorFirst.path.pathAfter(cursorLast.path):
+                    swap(cursorFirst, cursorLast)
+
+                  cell.createCellUI(builder, app, myCtx, self.cellWidgetContext, false, targetCellPath, cursorFirst.path, cursorLast.path)
 
                 if self.cellWidgetContext.targetNodeOld != self.cellWidgetContext.targetNode:
                   if self.cellWidgetContext.targetNodeOld.isNotNil:
@@ -774,13 +763,21 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
 
           # cursor
           block:
-            if self.cursor.getTargetCell(true).getSome(targetCell) and self.cellWidgetContext.cellToWidget.contains(targetCell.id):
+            if self.selection.last.getTargetCell(true).getSome(targetCell) and self.cellWidgetContext.cellToWidget.contains(targetCell.id):
               let node = self.cellWidgetContext.cellToWidget[targetCell.id]
               # debugf"cursor {self.cursor} at {targetCell.dump}, {node.dump}"
 
-              let index = self.cursor.lastIndex
+              let index = self.selection.last.lastIndex
               var bounds = rect(index.float * builder.charWidth, 0, 0, 0).transformRect(node, overlapPanel)
-              builder.panel(&{UINodeFlag.FillBackground, AnimatePosition}, x = bounds.x, y = bounds.y, w = max(builder.charWidth * 0.2, 1), h = builder.textHeight, backgroundColor = textColor, userId = newPrimaryId(self.cursorsId))
+              builder.panel(&{UINodeFlag.FillBackground, AnimatePosition, SnapInitialBounds}, x = bounds.x, y = bounds.y, w = max(builder.charWidth * 0.2, 1), h = builder.textHeight, backgroundColor = textColor, userId = newSecondaryId(self.cursorsId, 0))
+
+            if not self.selection.empty and self.selection.first.getTargetCell(true).getSome(targetCell) and self.cellWidgetContext.cellToWidget.contains(targetCell.id):
+              let node = self.cellWidgetContext.cellToWidget[targetCell.id]
+              # debugf"cursor {self.cursor} at {targetCell.dump}, {node.dump}"
+
+              let index = self.selection.first.lastIndex
+              var bounds = rect(index.float * builder.charWidth, 0, 0, 0).transformRect(node, overlapPanel)
+              builder.panel(&{UINodeFlag.FillBackground, AnimatePosition, SnapInitialBounds}, x = bounds.x, y = bounds.y, w = max(builder.charWidth * 0.2, 1), h = builder.textHeight, backgroundColor = textColor, userId = newSecondaryId(self.cursorsId, 1))
 
         # echo builder.currentChild.dump(true)
 
