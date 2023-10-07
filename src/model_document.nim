@@ -213,7 +213,6 @@ proc toCursor*(map: NodeCellMap, cell: Cell, start: bool): CellCursor
 proc getFirstEditableCellOfNode*(self: ModelDocumentEditor, node: AstNode): Option[CellCursor]
 proc canSelect*(cell: Cell): bool
 proc isVisible*(cell: Cell): bool
-proc selectCursor(a, b: CellCursor, combine: bool): CellCursor
 
 method `$`*(document: ModelDocument): string =
   return document.filename
@@ -670,12 +669,12 @@ proc rebuildCells(self: ModelDocumentEditor) =
 
   self.logicalLines.setLen 0
 
-  for node in self.document.model.rootNodes:
-    let cell = builder.buildCell(self.nodeCellMap, node, self.useDefaultCellBuilder)
-    cell.buildNodeCellMap(self.nodeCellMap.map)
+  # for node in self.document.model.rootNodes:
+  #   let cell = builder.buildCell(self.nodeCellMap, node, self.useDefaultCellBuilder)
+  #   cell.buildNodeCellMap(self.nodeCellMap.map)
 
-    var temp = true
-    discard self.assignToLogicalLines(cell, 0, temp)
+  #   var temp = true
+  #   discard self.assignToLogicalLines(cell, 0, temp)
 
 proc toJson*(self: api.ModelDocumentEditor, opt = initToJsonOptions()): JsonNode =
   result = newJObject()
@@ -752,7 +751,7 @@ method handleMousePress*(self: ModelDocumentEditor, button: MouseButton, mousePo
     if self.getLeafCellContainingPoint(cell, mousePosWindow).getSome(leafCell):
       if leafCell.line < self.logicalLines.high:
         if self.getCursorInLine(leafCell.line, mousePosWindow.x).getSome(newCursor):
-          self.cursor = selectCursor(self.cursor, newCursor, false)
+          self.cursor = newCursor
           self.markDirty()
           break
 
@@ -782,12 +781,12 @@ method handleMouseMove*(self: ModelDocumentEditor, mousePosWindow: Vec2, mousePo
       if self.getLeafCellContainingPoint(cell, mousePosWindow).getSome(leafCell):
         if leafCell.line < self.logicalLines.high:
           if self.getCursorInLine(leafCell.line, mousePosWindow.x).getSome(newCursor):
-            self.cursor = selectCursor(self.cursor, newCursor, true)
+            self.selection.last = newCursor
             self.markDirty()
             break
 
         # debugf"line {leafCell.parent.id}|{leafCell.id}: {leafCell.line}"
-        self.cursor = selectCursor(self.cursor, self.nodeCellMap.toCursor(leafCell, true), true)
+        self.selection.last = self.nodeCellMap.toCursor(leafCell, true)
         self.markDirty()
         break
 
@@ -1472,119 +1471,6 @@ method getCursorRight*(cell: CollectionCell, cursor: CellCursor): CellCursor =
   result.path = if cell.node == childCell.node: cursor.path & cell.children.high else: @[]
   result.column = 0
 
-proc combineCursors(a, b: CellCursor): CellCursor =
-  # defer:
-    # echo result
-
-  if a.node == b.node:
-    result.node = a.node
-    if a.path == b.path:
-      # debugf"same node and path {a.firstIndex}:{a.lastIndex}, {b.firstIndex}:{b.lastIndex}, {a.path}, {a.node}"
-      result.path = a.path
-      result.firstIndex = a.firstIndex
-      result.lastIndex = b.lastIndex
-    elif a.path.len == 0 or b.path.len == 0:
-      # debugf"same node one path empty {a.firstIndex}:{a.lastIndex}, {b.firstIndex}:{b.lastIndex}, {a.path}, {b.path}, {a.node}"
-      result.path = @[]
-      result.firstIndex = 0
-      result.lastIndex = 0
-
-      if a.path.len == 0 and b.path.len > 0:
-        result.firstIndex = a.firstIndex
-        # result.firstIndex = child.cell.ancestor(result.cell).index
-        result.lastIndex = b.path[0]
-      elif a.path.len > 0 and b.path.len == 0:
-        result.firstIndex = a.path[0]
-        result.lastIndex = b.lastIndex
-        # result.lastIndex = child.cell.ancestor(result.cell).index
-
-    else:
-      # debugf"same node diff path {a.firstIndex}:{a.lastIndex}, {b.firstIndex}:{b.lastIndex}, {a.path}, {b.path}, {a.node}"
-      var firstDifference = 0
-      for i in 0..min(a.path.high, b.path.high):
-        if a.path[i] != b.path[i]:
-          firstDifference = i
-          break
-
-      result.path = a.path[0..<firstDifference]
-      result.firstIndex = a.path[firstDifference]
-      result.lastIndex = b.path[firstDifference]
-
-  else:
-    # debugf"different node {a.firstIndex}:{a.lastIndex}, {b.firstIndex}:{b.lastIndex}, {a.path}, {b.path}, {a.node}, {b.node}"
-    let depthA = a.node.depth
-    let depthB = b.node.depth
-
-    # Selector ancestors of a.node and b.node so they are at the same depth
-    var node1 = a.node
-    var node2 = b.node
-    var child = a   # Either a or b, the one lower in the tree
-    if depthA < depthB:
-      child = b
-      node2 = node2.ancestor(depthB - depthA)
-    elif depthA > depthB:
-      child = a
-      node1 = node1.ancestor(depthA - depthB)
-
-    # debugf"same depth: {node1}, {node2}, {child.node}"
-
-    if node1 == node2:
-      # After moving one node up they node are the same, so one was the child of the other
-      result.node = node1
-      # result.cell = a.cell.nodeRootCell(result.node.some)
-
-      result.path = @[]
-
-      let childIndex = child.cell.ancestor(result.cell).index
-
-      if depthA < depthB:
-        # b is child
-        # echo "b is child"
-        result.firstIndex = if a.path.len > 0: a.path[0] else: a.firstIndex
-        result.lastIndex = childIndex
-      elif depthA > depthB:
-        # b is child
-        # echo "a is child"
-        result.firstIndex = childIndex
-        result.lastIndex = if b.path.len > 0: b.path[0] else: b.lastIndex
-
-      # if a.path.len == 0 and b.path.len > 0:
-      #   # result.firstIndex = a.firstIndex
-      #   result.firstIndex =
-      #   result.lastIndex = b.path[0]
-      # elif a.path.len > 0 and b.path.len == 0:
-      #   result.firstIndex = a.path[0]
-      #   # result.lastIndex = b.lastIndex
-      #   result.lastIndex = child.cell.ancestor(result.cell).index
-      else:
-        result.firstIndex = 0
-        result.lastIndex = result.cell.high
-      return
-
-    # Find common parent of node1 and node2, assuming they are at the same depth
-    while node1.parent != node2.parent and node1.parent.isNotNil and node2.parent.isNotNil:
-      node1 = node1.parent
-      node2 = node2.parent
-
-    # debugf"common parent: {node1}, {node2}, {node1.parent}, {node2.parent}"
-
-    if node1.parent == node2.parent:
-      result.node = node1.parent
-      result.path = @[]
-      # echo a.cell.dump
-      # echo b.cell.dump
-      # echo result.cell.dump true
-      result.firstIndex = a.cell.ancestor(result.cell).index
-      result.lastIndex = b.cell.ancestor(result.cell).index
-      # result.lastIndex = result.cell.high
-    else:
-      return b
-
-proc selectCursor(a, b: CellCursor, combine: bool): CellCursor =
-  if combine:
-    return combineCursors(a, b)
-  return b
-
 method handleDeleteLeft*(map: NodeCellMap, cell: Cell, slice: Slice[int]): Option[CellCursor] {.base.} = discard
 method handleDeleteRight*(map: NodeCellMap, cell: Cell, slice: Slice[int]): Option[CellCursor] {.base.} = discard
 
@@ -1665,7 +1551,10 @@ proc moveCursorLeft*(self: ModelDocumentEditor, select: bool = false) {.expose("
   if getTargetCell(self.cursor, false).getSome(cell):
     let newCursor = cell.getCursorLeft(self.cursor)
     if newCursor.node.isNotNil:
-      self.cursor = selectCursor(self.cursor, newCursor, select)
+      if select:
+        self.selection.last = newCursor
+      else:
+        self.cursor = newCursor
     # echo self.cursor
 
   self.markDirty()
@@ -1674,7 +1563,10 @@ proc moveCursorRight*(self: ModelDocumentEditor, select: bool = false) {.expose(
   if getTargetCell(self.cursor, false).getSome(cell):
     let newCursor = cell.getCursorRight(self.cursor)
     if newCursor.node.isNotNil:
-      self.cursor = selectCursor(self.cursor, newCursor, select)
+      if select:
+        self.selection.last = newCursor
+      else:
+        self.cursor = newCursor
     # echo self.cursor
 
   self.markDirty()
@@ -1682,18 +1574,26 @@ proc moveCursorRight*(self: ModelDocumentEditor, select: bool = false) {.expose(
 proc moveCursorLeftLine*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
   if getTargetCell(self.cursor, false).getSome(cell):
     var newCursor = cell.getCursorLeft(self.cursor)
+    echo self.cursor
+    echo newCursor
     # echo newCursor
     if newCursor.node == self.cursor.node:
       # echo "a"
-      self.cursor = selectCursor(self.cursor, newCursor, select)
+      if select:
+        self.selection.last = newCursor
+      else:
+        self.cursor = newCursor
     else:
       # self.cursor = selectCursor(self.cursor, self.getPreviousSelectableInLine(cell).toCursor(false), select)
       # echo "b"
       let nextCell = self.getPreviousSelectableInLine(cell)
-      # echo nextCell.dump
+      echo nextCell.dump
       newCursor = self.nodeCellMap.toCursor(nextCell, false)
       # echo newCursor
-      self.cursor = selectCursor(self.cursor, newCursor, select)
+      if select:
+        self.selection.last = newCursor
+      else:
+        self.cursor = newCursor
 
   self.markDirty()
 
@@ -1703,14 +1603,20 @@ proc moveCursorRightLine*(self: ModelDocumentEditor, select: bool = false) {.exp
     # echo newCursor
     if newCursor.node == self.cursor.node:
       # echo "a"
-      self.cursor = selectCursor(self.cursor, newCursor, select)
+      if select:
+        self.selection.last = newCursor
+      else:
+        self.cursor = newCursor
     else:
       # echo "b"
       let nextCell = self.getNextSelectableInLine(cell)
       # echo nextCell.dump
       newCursor = self.nodeCellMap.toCursor(nextCell, true)
       # echo newCursor
-      self.cursor = selectCursor(self.cursor, newCursor, select)
+      if select:
+        self.selection.last = newCursor
+      else:
+        self.cursor = newCursor
 
   self.markDirty()
 
@@ -1718,14 +1624,20 @@ proc moveCursorLineStart*(self: ModelDocumentEditor, select: bool = false) {.exp
   if getTargetCell(self.cursor).getSome(cell):
     if cell.line >= 0 and cell.line <= self.logicalLines.high and self.logicalLines[cell.line].len > 0:
       let newCursor = self.nodeCellMap.toCursor(self.logicalLines[cell.line][0], true)
-      self.cursor = selectCursor(self.cursor, newCursor, select)
+      if select:
+        self.selection.last = newCursor
+      else:
+        self.cursor = newCursor
   self.markDirty()
 
 proc moveCursorLineEnd*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
   if getTargetCell(self.cursor).getSome(cell):
     if cell.line >= 0 and cell.line <= self.logicalLines.high and self.logicalLines[cell.line].len > 0:
       let newCursor = self.nodeCellMap.toCursor(self.logicalLines[cell.line][self.logicalLines[cell.line].high], false)
-      self.cursor = selectCursor(self.cursor, newCursor, select)
+      if select:
+        self.selection.last = newCursor
+      else:
+        self.cursor = newCursor
   self.markDirty()
 
 proc moveCursorLineStartInline*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
@@ -1747,7 +1659,10 @@ proc moveCursorLineStartInline*(self: ModelDocumentEditor, select: bool = false)
       prevCell = currentCell
 
     let newCursor = self.nodeCellMap.toCursor(prevCell, true)
-    self.cursor = selectCursor(self.cursor, newCursor, select)
+    if select:
+      self.selection.last = newCursor
+    else:
+      self.cursor = newCursor
 
   self.markDirty()
 
@@ -1770,7 +1685,10 @@ proc moveCursorLineEndInline*(self: ModelDocumentEditor, select: bool = false) {
       prevCell = currentCell
 
     let newCursor = self.nodeCellMap.toCursor(prevCell, false)
-    self.cursor = selectCursor(self.cursor, newCursor, select)
+    if select:
+      self.selection.last = newCursor
+    else:
+      self.cursor = newCursor
 
   self.markDirty()
 
@@ -1778,7 +1696,10 @@ proc moveCursorUp*(self: ModelDocumentEditor, select: bool = false) {.expose("ed
   if getTargetCell(self.cursor).getSome(cell):
     if cell.line > 0 and cell.line <= self.logicalLines.high:
       if self.getCursorInLine(cell.line - 1, self.getCursorXPos(self.cursor)).getSome(newCursor):
-        self.cursor = selectCursor(self.cursor, newCursor, select)
+        if select:
+          self.selection.last = newCursor
+        else:
+          self.cursor = newCursor
 
   self.markDirty()
 
@@ -1786,21 +1707,32 @@ proc moveCursorDown*(self: ModelDocumentEditor, select: bool = false) {.expose("
   if getTargetCell(self.cursor).getSome(cell):
     if cell.line < self.logicalLines.high:
       if self.getCursorInLine(cell.line + 1, self.getCursorXPos(self.cursor)).getSome(newCursor):
-        self.cursor = selectCursor(self.cursor, newCursor, select)
+        if select:
+          self.selection.last = newCursor
+        else:
+          self.cursor = newCursor
 
   self.markDirty()
 
 proc moveCursorLeftCell*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
   if getTargetCell(self.cursor).getSome(cell):
     if cell.getPreviousSelectableLeaf().getSome(c):
-      self.cursor = selectCursor(self.cursor, self.nodeCellMap.toCursor(c, false), select)
+      let newCursor = self.nodeCellMap.toCursor(c, false)
+      if select:
+        self.selection.last = newCursor
+      else:
+        self.cursor = newCursor
 
   self.markDirty()
 
 proc moveCursorRightCell*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
   if getTargetCell(self.cursor).getSome(cell):
     if cell.getNextSelectableLeaf().getSome(c):
-      self.cursor = selectCursor(self.cursor, self.nodeCellMap.toCursor(c, true), select)
+      let newCursor = self.nodeCellMap.toCursor(c, true)
+      if select:
+        self.selection.last = newCursor
+      else:
+        self.cursor = newCursor
 
   self.markDirty()
 
