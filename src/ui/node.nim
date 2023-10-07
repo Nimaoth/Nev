@@ -176,7 +176,7 @@ type
     mouseDelta: Vec2
     mousePosClick: array[MouseButton, Vec2]
 
-const noneUserId* = UIUserId(kind: None)
+let noneUserId* = UIUserId(kind: None)
 proc newPrimaryId*(id: Id = newId()): UIUserId = UIUserId(kind: Primary, id: id)
 proc newSecondaryId*(primary: Id, secondary: int32): UIUserId = UIUserId(kind: Secondary, parentId: primary, subId: secondary)
 func `==`*(a, b: UIUserId): bool =
@@ -586,7 +586,7 @@ proc relayout*(builder: UINodeBuilder, node: UINode)
 proc preLayout*(builder: UINodeBuilder, node: UINode)
 
 proc preLayout*(builder: UINodeBuilder, node: UINode) =
-  node.logp "preLayout"
+  # node.logp "preLayout"
   let parent = node.parent
 
   if LayoutHorizontal in parent.flags:
@@ -686,7 +686,7 @@ proc updateSizeToContent(builder: UINodeBuilder, node: UINode) =
     node.boundsRaw.h = max(node.h, max(childrenHeight, strHeight)).roundPositive
 
 proc postLayout*(builder: UINodeBuilder, node: UINode) =
-  node.logp "postLayout"
+  # node.logp "postLayout"
   builder.updateSizeToContent node
 
   if node.flags.any &{SizeToContentX, SizeToContentY}:
