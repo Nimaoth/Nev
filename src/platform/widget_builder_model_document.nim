@@ -148,12 +148,55 @@ proc currentDirectionData(self: CellLayoutContext): var DirectionData =
 proc isCurrentLineEmpty(self: CellLayoutContext): bool =
   return self.builder.currentChild == self.currentDirectionData.indentNode
 
+proc findNodeContainingMinX(node: UINode, pos: Vec2, predicate: proc(node: UINode): bool): Option[UINode] =
+  result = UINode.none
+  if pos.x > node.lx + node.lw or pos.y < node.ly or pos.y > node.ly + node.lh:
+    return
+
+  if node.first.isNil: # has no children
+    if predicate.isNotNil and not predicate(node):
+      return
+
+    return node.some
+
+  else: # has children
+    var minX = float.high
+    var minNode: UINode = nil
+    for c in node.rchildren:
+      if c.findNodeContainingMinX(pos, predicate).getSome(res):
+        if res.lx < minX:
+          minX = res.lx
+          minNode = res
+
+    if minNode.isNotNil:
+      return minNode.some
+
+    if predicate.isNotNil and predicate(node):
+      return node.some
+
+proc handleIndentClickOrDrag(builder: UINodeBuilder, btn: MouseButton, modifiers: Modifiers, currentNode: UINode, drag: bool, pos: Vec2) =
+  if currentNode.next.isNotNil:
+    let posAbs = rect(pos, vec2()).transformRect(currentNode, builder.root).xy
+    let targetNode = currentNode.next.findNodeContainingMinX(posAbs, (node) => node.handlePressed.isNotNil)
+    if targetNode.getSome(node):
+      if drag:
+        discard node.handleDrag()(node, btn, modifiers, posAbs - node.boundsAbsolute.xy, vec2())
+      else:
+        discard node.handlePressed()(node, btn, modifiers, posAbs - node.boundsAbsolute.xy)
+
 proc updateCurrentIndent(self: CellLayoutContext) =
   if self.isCurrentLineEmpty():
     if self.currentDirectionData.indentNode.isNil:
       self.builder.panel(&{FillY}, textColor = color(0, 1, 0)):
         self.currentDirectionData.indentNode = currentNode
         self.currentDirectionData.lastNode = currentNode
+
+        onClickAny btn:
+          if btn == MouseButton.Left:
+            handleIndentClickOrDrag(self.builder, btn, modifiers, currentNode, false, pos)
+
+        onDrag MouseButton.Left:
+          handleIndentClickOrDrag(self.builder, btn, modifiers, currentNode, true, pos)
 
     self.currentDirectionData.indentNode.w = self.indentText.len.float * self.currentIndent.float * self.builder.charWidth
 
