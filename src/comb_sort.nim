@@ -1,4 +1,4 @@
-import std/[algorithm, random]
+import std/[algorithm]
 
 export algorithm
 

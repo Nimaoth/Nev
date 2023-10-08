@@ -1,4 +1,4 @@
-import std/[strutils, options, json, os, tables, macros, strformat, sugar]
+import std/[strutils, options, json, tables, macros, strformat, sugar]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import language_server_base, util
 import custom_logger, custom_async, async_http_client, websocket
@@ -7,7 +7,7 @@ import platform/filesystem
 logCategory "ls-nimsuggest"
 
 when not defined(js):
-  import std/[asyncdispatch, osproc, asyncnet, tempfiles]
+  import std/[asyncdispatch, os, osproc, asyncnet, tempfiles]
 else:
   type Port* = distinct uint16
 

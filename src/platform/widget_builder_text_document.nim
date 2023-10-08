@@ -306,7 +306,6 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
       let indentLevel = self.document.getIndentLevelForClosestLine(i)
 
-      var showingContext = false
       var wrapLine = wrapLines
       var i = i
       var backgroundColor = backgroundColor

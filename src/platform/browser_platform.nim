@@ -1,8 +1,11 @@
-import std/[strformat, tables, dom, unicode, strutils, sugar, json]
-import platform, custom_logger, rect_utils, input, event, lrucache, theme, timer
+import std/[tables, dom, unicode, strutils, sugar]
+import platform, custom_logger, rect_utils, input, event, lrucache, timer
 import vmath
 import chroma as chroma
 import ui/node
+
+when defined(uiNodeDebugData):
+  import std/json
 
 export platform
 
@@ -347,8 +350,6 @@ method render*(self: BrowserPlatform) =
   self.boundsStack.add rect(vec2(), self.size)
   defer: discard self.boundsStack.pop()
 
-  var buffer = ""
-
   var element: Element = if self.content.children.len > 0: self.content.children[0].Element else: nil
   let wasNil = element.isNil
   self.builder.drawNode(self, element, self.builder.root)
@@ -371,12 +372,6 @@ proc createOrReplaceElement(element: var Element, name: cstring, nameUpper: cstr
     element.replaceWith(dif)
     element = dif
     element.class = "widget"
-
-proc updateRelativePosition(element: var Element, bounds: Rect) =
-  element.style.left = ($bounds.x.int).cstring
-  element.style.top = ($bounds.y.int).cstring
-  element.style.width = ($bounds.w.int).cstring
-  element.style.height = ($bounds.h.int).cstring
 
 proc myToHtmlHex(c: Color): cstring =
   result = "rgba(".cstring

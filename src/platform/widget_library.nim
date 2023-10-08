@@ -1,5 +1,5 @@
 import std/[strformat, strutils]
-import document, workspaces/workspace, ui/node
+import document, ui/node
 import chroma
 
 template createHeader*(builder: UINodeBuilder, inRenderHeader: bool, inMode: string, inDocument: Document, inHeaderColor: Color, inTextColor: Color, body: untyped): UINode =

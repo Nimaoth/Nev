@@ -1,6 +1,4 @@
-when not defined(nimscript):
-  include system/timers
-else:
+when defined(nimscript):
   type
     Ticks* = distinct int64
     Nanos* = int64
@@ -41,6 +39,7 @@ else:
       result.nanosecond = 0
 
   else:
+    include system/timers
     import std/times
     export Ticks, Nanos
     proc myGetTime*(): int32 = getTime().toUnix.int32

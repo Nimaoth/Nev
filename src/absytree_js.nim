@@ -5,8 +5,8 @@ logCategory "main-js"
 
 logger.enableConsoleLogger()
 
-import std/[strformat, dom, macros, sets]
-import util, app, timer, platform/widget_builders, platform/platform, platform/browser_platform, text/text_document, event, theme, custom_async
+import std/[strformat, dom, macros]
+import util, app, timer, platform/widget_builders, platform/platform, platform/browser_platform, text/text_document, event, custom_async
 import language/language_server
 from scripting_api import Backend
 
@@ -22,7 +22,6 @@ var initializedEditor = false
 var hasRequestedRerender = false
 var isRenderInProgress = false
 
-var frameTime = 0.0
 var frameIndex = 0
 
 var advanceFrame = false

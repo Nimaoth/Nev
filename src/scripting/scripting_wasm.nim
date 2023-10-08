@@ -134,6 +134,7 @@ method handleScriptAction*(self: ScriptContextWasm, name: string, args: JsonNode
 # because this goes through all exposed functions at compile time to create the wasm import data.
 # That's why it's in a template
 template createEditorWasmImportConstructor*() =
+  import std/[macrocache]
   proc createEditorWasmImportsImpl(): WasmImports =
     macro addEditorFunctions(imports: WasmImports): untyped =
       var list = nnkStmtList.newTree()

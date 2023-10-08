@@ -1,4 +1,4 @@
-import std/[options, strutils, macros, genasts, math]
+import std/[options, strutils, macros, genasts]
 export options
 
 {.used.}
@@ -110,4 +110,5 @@ when defined(js):
   func roundPositive*[T: float64 | float32](x: T): T =
     jsRound(x)
 else:
+  import std/math
   func roundPositive*[T: float64 | float32](x: T): T = round(x)

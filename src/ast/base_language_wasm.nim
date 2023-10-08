@@ -99,7 +99,7 @@ proc compileRemainingFunctions(self: BaseLanguageWasmCompiler) =
     self.compileFunction(function[0], function[1])
 
 proc compileToBinary*(self: BaseLanguageWasmCompiler, node: AstNode): seq[uint8] =
-  let funcIdx = self.getOrCreateWasmFunc(node, exportName="test".some)
+  discard self.getOrCreateWasmFunc(node, exportName="test".some)
   self.compileRemainingFunctions()
 
   let binary = self.builder.generateBinary()

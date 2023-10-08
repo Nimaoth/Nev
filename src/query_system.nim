@@ -21,8 +21,6 @@ when defined(js):
   proc newCache[K, V](capacity: int): Cache[K, V] {.importjs: "(new Map())".}
 
   proc mapKeyJs*[A](key: A): cstring =
-    static:
-      echo "#### '", A, "'"
     const typeName = $A
     {.emit: ["let temp = ", key, ";"].}
     # @note: This assumes that the object doesn't actuall change so the generated id can be cached

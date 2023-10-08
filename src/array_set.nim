@@ -1,5 +1,3 @@
-import std/[sequtils]
-
 func `in`*[T](x: T, xs: openArray[T]): bool = xs.find(x) != -1
 
 func incl*[T](xs: var seq[T], x: T) =

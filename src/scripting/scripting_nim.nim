@@ -207,7 +207,7 @@ proc myFindNimStdLib(): string =
   ## Returns "" on failure.
 
   let customNimStdLib = getAppDir() / "scripting" / "nim" / "lib"
-  if existsDir(customNimStdLib):
+  if dirExists(customNimStdLib):
     log lvlInfo, fmt"Using custom nim std lib '{customNimStdLib}'"
     return customNimStdLib
 
