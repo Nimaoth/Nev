@@ -689,6 +689,13 @@ proc postLayout*(builder: UINodeBuilder, node: UINode) =
   # node.logp "postLayout"
   builder.updateSizeToContent node
 
+  if FillX in node.flags:
+    assert node.parent.isNotNil
+    if LayoutHorizontalReverse in node.parent.flags:
+      node.boundsRaw.w = node.boundsRaw.x.roundPositive
+    else:
+      node.boundsRaw.w = max(node.boundsRaw.w, (node.parent.w - node.x).roundPositive)
+
   if node.flags.any &{SizeToContentX, SizeToContentY}:
     for _, c in node.children:
       builder.relayout(c)
@@ -703,7 +710,7 @@ proc postLayout*(builder: UINodeBuilder, node: UINode) =
     if LayoutHorizontalReverse in node.parent.flags:
       node.boundsRaw.w = node.boundsRaw.x.roundPositive
     else:
-      node.boundsRaw.w = (node.parent.w - node.x).roundPositive
+      node.boundsRaw.w = max(node.boundsRaw.w, (node.parent.w - node.x).roundPositive)
 
   if FillY in node.flags:
     assert node.parent.isNotNil
