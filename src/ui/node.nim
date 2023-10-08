@@ -135,7 +135,7 @@ type
     boundsRaw: Rect       # The target bounds, used for layouting.
     boundsOld: Rect       # The last boundsActual
     boundsActual*: Rect   # The actual bounds, used for rendering and invalidation. If not animated then the boundsActual will immediately snap to this position, otherwise it will smoothly interpolate.
-    boundsAbsolute: Rect  # The absolute bounds (relative to the root), based on boundsActual
+    boundsAbsolute*: Rect # The absolute bounds (relative to the root), based on boundsActual
 
     boundsLerpSpeed: float32 = 0.03
 
