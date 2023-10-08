@@ -1,4 +1,4 @@
-import std/[strutils, sugar, options, json, streams, random]
+import std/[strutils, sugar, options, json, streams]
 import bumpy, vmath
 import app_interface, text/text_editor, popup, events, util, rect_utils, scripting/expose, event, input, custom_async, custom_logger, cancellation_token, myjsonutils
 import comb_sort, timer

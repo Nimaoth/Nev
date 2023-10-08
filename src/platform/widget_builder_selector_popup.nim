@@ -23,7 +23,7 @@ method createUI*(self: ThemeSelectorItem, builder: UINodeBuilder, app: App): seq
   builder.panel(&{FillX, SizeToContentY, DrawText}, text = self.path, textColor = textColor)
 
 method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
-  let dirty = self.dirty
+  # let dirty = self.dirty
   self.resetDirty()
 
   var flags = &{UINodeFlag.MaskContent, OverlappingChildren}
@@ -65,9 +65,6 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[pro
         self.scrollOffset = max(self.selected - targetNumRenderedItems + 1, 0)
         lastRenderedIndex = min(self.scrollOffset + targetNumRenderedItems - 1, self.completions.high)
 
-      let numRenderedItems = max(lastRenderedIndex - self.scrollOffset + 1, 0)
-
-      let textColor = app.theme.color("editor.foreground", color(225/255, 200/255, 200/255)).withAlpha(1)
       let backgroundColor = app.theme.color("panel.background", color(0.1, 0.1, 0.1)).withAlpha(1)
       let selectionColor = app.theme.color("list.activeSelectionBackground", color(0.8, 0.8, 0.8)).withAlpha(1)
 
@@ -76,7 +73,6 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[pro
           builder.panel(&{FillX, SizeToContentY}):
             result.add self.textEditor.createUI(builder, app)
 
-          var top = 0.0
           var widgetIndex = 0
           for completionIndex in self.scrollOffset..lastRenderedIndex:
             defer: inc widgetIndex

@@ -1,5 +1,5 @@
 import std/[strformat, tables, sugar]
-import util, app, app_interface, config_provider, document_editor, ast_document, ast, node_layout, compiler, text/text_document, custom_logger, platform, theme
+import util, app, config_provider, document_editor, ast_document, ast, node_layout, compiler, text/text_document, custom_logger, platform, theme
 import widget_builders_base, widget_library, ui/node
 import vmath, bumpy, chroma
 
@@ -36,42 +36,42 @@ import vmath, bumpy, chroma
 #   typeWidget.anchor.max.x = 1
 #   widget.add(typeWidget)
 
-proc updateBaseIndexAndScrollOffset(self: AstDocumentEditor, app: App, height: float) =
-  let totalLineHeight = app.platform.totalLineHeight
-  self.previousBaseIndex = self.previousBaseIndex.clamp(0..self.document.rootNode.len)
+# proc updateBaseIndexAndScrollOffset(self: AstDocumentEditor, app: App, height: float) =
+#   let totalLineHeight = app.platform.totalLineHeight
+#   self.previousBaseIndex = self.previousBaseIndex.clamp(0..self.document.rootNode.len)
 
-  let selectedNodeId = self.node.id
+#   let selectedNodeId = self.node.id
 
-  var replacements = initTable[Id, VisualNode]()
+#   var replacements = initTable[Id, VisualNode]()
 
-  let indent = getOption[float32](app, "ast.indent", 20)
-  let inlineBlocks = getOption[bool](app, "ast.inline-blocks", false)
-  let verticalDivision = getOption[bool](app, "ast.vertical-division", false)
+#   let indent = getOption[float32](app, "ast.indent", 20)
+#   let inlineBlocks = getOption[bool](app, "ast.inline-blocks", false)
+#   let verticalDivision = getOption[bool](app, "ast.vertical-division", false)
 
-  # Adjust scroll offset and base index so that the first node on screen is the base
-  while self.scrollOffset < 0 and self.previousBaseIndex + 1 < self.document.rootNode.len:
-    let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: self.document.rootNode[self.previousBaseIndex], selectedNode: selectedNodeId, replacements: replacements, revision: config.revision, measureText: (t) => self.app.platform.measureText(t), indent: indent, renderDivisionVertically: verticalDivision, inlineBlocks: inlineBlocks)
-    let layout = ctx.computeNodeLayout(input)
+#   # Adjust scroll offset and base index so that the first node on screen is the base
+#   while self.scrollOffset < 0 and self.previousBaseIndex + 1 < self.document.rootNode.len:
+#     let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: self.document.rootNode[self.previousBaseIndex], selectedNode: selectedNodeId, replacements: replacements, revision: config.revision, measureText: (t) => self.app.platform.measureText(t), indent: indent, renderDivisionVertically: verticalDivision, inlineBlocks: inlineBlocks)
+#     let layout = ctx.computeNodeLayout(input)
 
-    if self.scrollOffset + layout.bounds.h + totalLineHeight >= height:
-      break
+#     if self.scrollOffset + layout.bounds.h + totalLineHeight >= height:
+#       break
 
-    self.previousBaseIndex += 1
-    self.scrollOffset += layout.bounds.h + totalLineHeight
+#     self.previousBaseIndex += 1
+#     self.scrollOffset += layout.bounds.h + totalLineHeight
 
-  # Adjust scroll offset and base index so that the first node on screen is the base
-  while self.scrollOffset > height and self.previousBaseIndex > 0:
-    let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: self.document.rootNode[self.previousBaseIndex - 1], selectedNode: selectedNodeId, replacements: replacements, revision: config.revision, measureText: (t) => self.app.platform.measureText(t), indent: indent, renderDivisionVertically: verticalDivision, inlineBlocks: inlineBlocks)
-    let layout = ctx.computeNodeLayout(input)
+#   # Adjust scroll offset and base index so that the first node on screen is the base
+#   while self.scrollOffset > height and self.previousBaseIndex > 0:
+#     let input = ctx.getOrCreateNodeLayoutInput NodeLayoutInput(node: self.document.rootNode[self.previousBaseIndex - 1], selectedNode: selectedNodeId, replacements: replacements, revision: config.revision, measureText: (t) => self.app.platform.measureText(t), indent: indent, renderDivisionVertically: verticalDivision, inlineBlocks: inlineBlocks)
+#     let layout = ctx.computeNodeLayout(input)
 
-    if self.scrollOffset - layout.bounds.h <= 0:
-      break
+#     if self.scrollOffset - layout.bounds.h <= 0:
+#       break
 
-    self.previousBaseIndex -= 1
-    self.scrollOffset -= layout.bounds.h + totalLineHeight
+#     self.previousBaseIndex -= 1
+#     self.scrollOffset -= layout.bounds.h + totalLineHeight
 
 proc renderVisualNode*(self: AstDocumentEditor, builder: UINodeBuilder, app: App, node: VisualNode, selected: AstNode, bounds: Rect, offset: Vec2) =
-  let charWidth = app.platform.charWidth
+  # let charWidth = app.platform.charWidth
 
   # echo "renderVisualNode ", node
 
@@ -148,8 +148,8 @@ proc renderVisualNode*(self: AstDocumentEditor, builder: UINodeBuilder, app: App
 #       widget.insert(0, panel)
 
 proc renderVisualNodeLayout*(self: AstDocumentEditor, builder: UINodeBuilder, app: App, node: AstNode, bounds: Rect, layout: NodeLayout, offset: Vec2, y: float) =
-  let totalLineHeight = app.platform.totalLineHeight
-  let charWidth = app.platform.charWidth
+  # let totalLineHeight = app.platform.totalLineHeight
+  # let charWidth = app.platform.charWidth
 
   self.lastLayouts.add (layout, offset)
 
@@ -375,7 +375,6 @@ proc createAstUI*(self: AstDocumentEditor, builder: UINodeBuilder, app: App, con
 
   var selectedNode = self.node
 
-  let totalLineHeight = builder.textHeight
   let indent = getOption[float32](app, "ast.indent", 20)
   let inlineBlocks = getOption[bool](app, "ast.inline-blocks", false)
   let verticalDivision = getOption[bool](app, "ast.vertical-division", false)

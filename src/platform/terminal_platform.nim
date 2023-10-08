@@ -282,19 +282,15 @@ method render*(self: TerminalPlatform) =
   if self.builder.root.lastSizeChange == self.builder.frameIndex:
     self.redrawEverything = true
 
-  let t1 = startTimer()
   self.builder.drawNode(self, self.builder.root, force = self.redrawEverything)
-  let t1Ms = t1.elapsed.ms
 
   # This can fail if the terminal was resized during rendering, but in that case we'll just rerender next frame
-  let t2 = startTimer()
   try:
     self.buffer.display()
     self.redrawEverything = false
   except CatchableError:
     log(lvlError, fmt"Failed to display buffer: {getCurrentExceptionMsg()}")
     self.redrawEverything = true
-  let t2Ms = t2.elapsed.ms
 
 proc setForegroundColor(self: TerminalPlatform, color: chroma.Color) =
   if self.trueColorSupport:
@@ -324,17 +320,17 @@ proc fillRect(self: TerminalPlatform, bounds: Rect, color: chroma.Color) =
   self.buffer.fillBackground(bounds.x.int, bounds.y.int, bounds.xw.int - 1, bounds.yh.int - 1)
   self.buffer.setBackgroundColor(bgNone)
 
-proc drawRect(self: TerminalPlatform, bounds: Rect, color: chroma.Color) =
-  let mask = if self.masks.len > 0:
-    self.masks[self.masks.high]
-  else:
-    rect(vec2(0, 0), self.size)
+# proc drawRect(self: TerminalPlatform, bounds: Rect, color: chroma.Color) =
+#   let mask = if self.masks.len > 0:
+#     self.masks[self.masks.high]
+#   else:
+#     rect(vec2(0, 0), self.size)
 
-  let bounds = bounds and mask
+#   let bounds = bounds and mask
 
-  self.setBackgroundColor(color)
-  self.buffer.drawRect(bounds.x.int, bounds.y.int, bounds.xw.int - 1, bounds.yh.int - 1)
-  self.buffer.setBackgroundColor(bgNone)
+#   self.setBackgroundColor(color)
+#   self.buffer.drawRect(bounds.x.int, bounds.y.int, bounds.xw.int - 1, bounds.yh.int - 1)
+#   self.buffer.setBackgroundColor(bgNone)
 
 proc writeLine(self: TerminalPlatform, pos: Vec2, text: string) =
   let mask = if self.masks.len > 0:

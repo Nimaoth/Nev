@@ -1959,7 +1959,6 @@ proc handleAction(self: App, action: string, arg: string): bool =
   return true
 
 template createNimScriptContextConstructorAndGenerateBindings*(): untyped =
-  import std/[macros, macrocache]
   import ast_document, model_document, text/text_editor, selector_popup, lsp_client
   when not defined(js):
     proc createAddins(): VmAddins =

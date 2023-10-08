@@ -2028,7 +2028,8 @@ proc getItemAtPixelPosition(self: AstDocumentEditor, posWindow: Vec2): Option[in
   #     return index.some
 
 method handleScroll*(self: AstDocumentEditor, scroll: Vec2, mousePosWindow: Vec2) =
-  let scrollAmount = scroll.y * self.configProvider.getValue("ast.scroll-speed", 20.0)
+  discard
+  # let scrollAmount = scroll.y * self.configProvider.getValue("ast.scroll-speed", 20.0)
 
   # todo
   # if not self.lastCompletionsWidget.isNil and self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):

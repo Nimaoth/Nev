@@ -1,5 +1,5 @@
 import std/[tables, strutils, options, sets]
-import platform, util, platform/filesystem, timer
+import platform, util, platform/filesystem
 import custom_logger, input, event, monitors, lrucache, id, rect_utils, theme
 import chroma, vmath, windy, boxy, boxy/textures, opengl, pixie/[contexts, fonts]
 import ui/node
@@ -43,7 +43,7 @@ type
 
 proc toInput(rune: Rune): int64
 proc toInput(button: Button): int64
-proc centerWindowOnMonitor(window: Window, monitor: int)
+proc centerWindowOnMonitor*(window: Window, monitor: int)
 proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font
 proc getFont*(self: GuiPlatform, fontSize: float32, style: set[FontStyle]): Font
 proc getFont*(self: GuiPlatform, fontSize: float32, flags: UINodeFlags): Font
@@ -304,7 +304,7 @@ proc toInput(button: Button): int64 =
   of NumpadDivide: ord '/'
   else: 0
 
-proc centerWindowOnMonitor(window: Window, monitor: int) =
+proc centerWindowOnMonitor*(window: Window, monitor: int) =
   let monitorPos = getMonitorRect(monitor)
 
   let left = float(monitorPos.left)

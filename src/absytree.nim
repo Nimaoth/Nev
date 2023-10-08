@@ -14,7 +14,7 @@ else:
   static:
     echo "Compiling for unknown"
 
-import std/[parseopt, options, os, sets]
+import std/[parseopt, options, macros]
 
 import compilation_config, custom_logger, scripting_api
 
@@ -115,14 +115,14 @@ var renderedLastFrame = false
 proc runApp(): Future[void] {.async.} =
   var ed = await newEditor(backend.get, rend)
 
-  addTimer 1000, false, proc(fd: AsyncFD): bool =
+  addTimer 2, false, proc(fd: AsyncFD): bool =
     return false
 
   var frameIndex = 0
   var frameTime = 0.0
 
   let minPollPerFrameMs = 1.0
-  let maxPollPerFrameMs = 10.0
+  let maxPollPerFrameMs = 5.0
   var pollBudgetMs = 0.0
   while not ed.closeRequested:
     defer:
@@ -135,7 +135,7 @@ proc runApp(): Future[void] {.async.} =
     let eventCounter = rend.processEvents()
     let eventTime = eventTimer.elapsed.ms
 
-    var layoutTime, updateTime, renderTime: float
+    var updateTime, renderTime: float
     block:
       let delta = ed.frameTimer.elapsed.ms
       ed.frameTimer = startTimer()
@@ -177,20 +177,22 @@ proc runApp(): Future[void] {.async.} =
         poll(2)
     else:
       try:
-        pollBudgetMs += max(minPollPerFrameMs, maxPollPerFrameMs - totalTimer.elapsed.ms)
+        pollBudgetMs += clamp(15 - totalTimer.elapsed.ms, minPollPerFrameMs, maxPollPerFrameMs)
+        var totalPollTime = 0.0
         while pollBudgetMs > maxPollPerFrameMs:
           let start = startTimer()
           poll(maxPollPerFrameMs.int)
           pollBudgetMs -= start.elapsed.ms
+          totalPollTime = totalPollTime + start.elapsed.ms
       except CatchableError:
         # log(lvlError, fmt"Failed to poll async dispatcher: {getCurrentExceptionMsg()}: {getCurrentException().getStackTrace()}")
         discard
     let pollTime = pollTimer.elapsed.ms
 
-    let timeToSleep = 8 - totalTimer.elapsed.ms
-    if timeToSleep > 1:
-      # debugf"sleep for {timeToSleep.int}ms"
-      sleep(timeToSleep.int)
+    # let timeToSleep = 8 - totalTimer.elapsed.ms
+    # if timeToSleep > 1:
+    #   # debugf"sleep for {timeToSleep.int}ms"
+    #   sleep(timeToSleep.int)
 
     let totalTime = totalTimer.elapsed.ms
     if eventCounter > 0 or totalTime > 20:

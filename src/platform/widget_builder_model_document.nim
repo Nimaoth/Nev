@@ -320,7 +320,7 @@ proc createCompletions(self: ModelDocumentEditor, builder: UINodeBuilder, app: A
 
   let backgroundColor = app.theme.color("panel.background", color(30/255, 30/255, 30/255))
   let selectedBackgroundColor = app.theme.color("list.activeSelectionBackground", color(200/255, 200/255, 200/255))
-  let docsColor = app.theme.color("editor.foreground", color(1, 1, 1))
+  # let docsColor = app.theme.color("editor.foreground", color(1, 1, 1))
   let nameColor = app.theme.tokenColor(@["entity.name.label", "entity.name"], color(1, 1, 1))
   let scopeColor = app.theme.color("string", color(175/255, 1, 175/255))
 
