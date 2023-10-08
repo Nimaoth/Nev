@@ -894,6 +894,8 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
               var bounds = rect(index.float * builder.charWidth, 0, 0, 0).transformRect(node, overlapPanel)
               builder.panel(&{UINodeFlag.FillBackground, AnimatePosition, SnapInitialBounds}, x = bounds.x, y = bounds.y, w = max(builder.charWidth * 0.2, 1), h = builder.textHeight, backgroundColor = textColor, userId = newSecondaryId(self.cursorsId, 0))
 
+              self.lastCursorLocationBounds = rect(index.float * builder.charWidth, 0, builder.charWidth, builder.textHeight).transformRect(node, builder.root).some
+
             if not self.selection.empty and self.selection.first.getTargetCell(true).getSome(targetCell) and self.cellWidgetContext.cellToWidget.contains(targetCell.id):
               let node = self.cellWidgetContext.cellToWidget[targetCell.id]
               # debugf"cursor {self.cursor} at {targetCell.dump}, {node.dump}"
