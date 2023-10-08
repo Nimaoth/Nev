@@ -393,6 +393,10 @@ proc drawNode(builder: UINodeBuilder, platform: BrowserPlatform, element: var El
   if element.isNotNil and node.lastChange < builder.frameIndex:
     return
 
+  if not node.flags.any(&{DrawText, FillBackground, DrawBorder}) and node.first.isNil:
+    element = nil
+    return
+
   node.lastRenderTime = builder.frameIndex
 
   let force = force or element.isNil
@@ -508,8 +512,12 @@ proc drawNode(builder: UINodeBuilder, platform: BrowserPlatform, element: var El
         # echo "found different id, delete"
         childrenToRemove.add element
 
+    let oldChildElement = childElement
     builder.drawNode(platform, childElement, c, force)
-    if not childElement.isNil:
+
+    if oldChildElement.isNotNil and childElement.isNil:
+      childrenToRemove.add oldChildElement
+    elif not childElement.isNil:
       if childElement.parentElement != element:
         newChildren.add (childElement, insertRel, insertNeighbor)
 

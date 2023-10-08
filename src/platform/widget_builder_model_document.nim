@@ -24,10 +24,12 @@ type
     indentNode: UINode            #   node which contains the indent
     lastNode: UINode              # the last node which was created inside lineNode
     pivot: Vec2
+    lastCell: Cell
 
   CellLayoutContext = ref object
     parent: CellLayoutContext
     builder: UINodeBuilder
+    updateContext: UpdateContext
     cell: Cell
     currentIndent: int
     parentNode: UINode
@@ -56,17 +58,30 @@ template logc(node: untyped, msg: varargs[string, `$`]) =
 
 proc createLineNode(builder: UINodeBuilder, self: var DirectionData) =
   var noneId = noneUserId
-  self.lineNode = builder.prepareNode(&{SizeToContentX, SizeToContentY, LayoutHorizontal}, string.none, float32.none, float32.none, float32.none, float32.none, self.pivot.some, noneId, UINodeFlags.none)
+  self.lineNode = builder.prepareNode(&{SizeToContentX, FillX, SizeToContentY, LayoutHorizontal}, string.none, float32.none, float32.none, float32.none, float32.none, self.pivot.some, noneId, UINodeFlags.none)
 
 proc saveLastNode(self: var DirectionData, builder: UINodeBuilder) =
   assert builder.currentChild.parent == self.lineNode
   assert builder.currentParent == self.lineNode
   self.lastNode = builder.currentChild
 
-proc finishLine(builder: UINodeBuilder, data: var DirectionData) =
+proc finishLine(builder: UINodeBuilder, updateContext: UpdateContext, data: var DirectionData) =
+  let lastCell = data.lastCell
+
+  if lastCell.isNotNil:
+    builder.panel(&{FillX, FillY}):
+      onClickAny btn:
+        if btn == MouseButton.Left:
+          let cursor = updateContext.nodeCellMap.toCursor(lastCell, int.high)
+          updateContext.handleClick(nil, nil, @[], cursor, false)
+
+      onDrag MouseButton.Left:
+        let cursor = updateContext.nodeCellMap.toCursor(lastCell, int.high)
+        updateContext.handleClick(nil, nil, @[], cursor, true)
+
   builder.finishNode(data.lineNode)
 
-proc newCellLayoutContext(builder: UINodeBuilder, requiredDirection: Direction): CellLayoutContext =
+proc newCellLayoutContext(builder: UINodeBuilder, updateContext: UpdateContext, requiredDirection: Direction, fillX: bool): CellLayoutContext =
   new result
 
   var noneId = noneUserId
@@ -75,11 +90,14 @@ proc newCellLayoutContext(builder: UINodeBuilder, requiredDirection: Direction):
   result.backwardData.pivot = vec2(0, 1)
 
   result.builder = builder
+  result.updateContext = updateContext
+
+  let fillXFlag = if fillX: &{FillX} else: 0.UINodeFlags
 
   case requiredDirection
   of Center:
-    result.parentNode = builder.prepareNode(&{SizeToContentX, SizeToContentY, LayoutVerticalReverse}, string.none, float32.none, float32.none, float32.none, float32.none, Vec2.none, noneId, UINodeFlags.none)
-    result.forwardLinesNode = builder.prepareNode(&{SizeToContentX, SizeToContentY, LayoutVertical}, string.none, float32.none, float32.none, float32.none, float32.none, vec2(0, 1).some, noneId, UINodeFlags.none)
+    result.parentNode = builder.prepareNode(&{SizeToContentX, SizeToContentY, LayoutVerticalReverse} + fillXFlag, string.none, float32.none, float32.none, float32.none, float32.none, Vec2.none, noneId, UINodeFlags.none)
+    result.forwardLinesNode = builder.prepareNode(&{SizeToContentX, FillX, SizeToContentY, LayoutVertical}, string.none, float32.none, float32.none, float32.none, float32.none, vec2(0, 1).some, noneId, UINodeFlags.none)
     result.builder.createLineNode(result.forwardData)
 
     result.builder.continueFrom(result.parentNode, result.forwardLinesNode)
@@ -87,11 +105,11 @@ proc newCellLayoutContext(builder: UINodeBuilder, requiredDirection: Direction):
 
     result.builder.continueFrom(result.forwardData.lineNode, result.forwardData.lastNode)
   of Forwards:
-    result.parentNode = builder.prepareNode(&{SizeToContentX, SizeToContentY, LayoutVertical}, string.none, float32.none, float32.none, float32.none, float32.none, Vec2.none, noneId, UINodeFlags.none)
+    result.parentNode = builder.prepareNode(&{SizeToContentX, SizeToContentY, LayoutVertical} + fillXFlag, string.none, float32.none, float32.none, float32.none, float32.none, Vec2.none, noneId, UINodeFlags.none)
     result.builder.createLineNode(result.forwardData)
     result.currentDirection = Forwards
   of Backwards:
-    result.parentNode = builder.prepareNode(&{SizeToContentX, SizeToContentY, LayoutVerticalReverse}, string.none, float32.none, float32.none, float32.none, float32.none, Vec2.none, noneId, UINodeFlags.none)
+    result.parentNode = builder.prepareNode(&{SizeToContentX, SizeToContentY, LayoutVerticalReverse} + fillXFlag, string.none, float32.none, float32.none, float32.none, float32.none, Vec2.none, noneId, UINodeFlags.none)
     result.builder.createLineNode(result.backwardData)
     result.currentDirection = Backwards
 
@@ -99,13 +117,13 @@ proc newCellLayoutContext(builder: UINodeBuilder, requiredDirection: Direction):
 
 proc goBackward(self: CellLayoutContext)
 
-proc newCellLayoutContext(parent: CellLayoutContext, cell: Cell, remainingHeightDown, remainingHeightUp: float): CellLayoutContext =
+proc newCellLayoutContext(parent: CellLayoutContext, cell: Cell, remainingHeightDown, remainingHeightUp: float, fillX: bool): CellLayoutContext =
   let requiredDirection = if cell of CollectionCell and LayoutVertical notin cell.CollectionCell.flags:
     Direction.Forwards
   else:
     parent.targetDirection
 
-  result = newCellLayoutContext(parent.builder, requiredDirection)
+  result = newCellLayoutContext(parent.builder, parent.updateContext, requiredDirection, fillX)
   result.parent = parent
   result.remainingHeightDown = remainingHeightDown
   result.remainingHeightUp = remainingHeightUp
@@ -156,20 +174,53 @@ proc indent(self: CellLayoutContext) =
   self.hasIndent = true
   self.updateCurrentIndent()
 
-proc addSpace(self: CellLayoutContext) =
+proc notifyCellCreated(self: CellLayoutContext, cell: Cell) =
+  self.currentDirectionData.lastCell = cell
+
+proc handleSpaceClickOrDrag(builder: UINodeBuilder, updateContext: UpdateContext, node: UINode, lastCell: Cell, cell: Cell, cellPath: seq[int], drag: bool, pos: Vec2) =
+  let cursor = if pos.x <= builder.charWidth * 0.5 and lastCell.isNotNil and lastCell.canSelect:
+    updateContext.nodeCellMap.toCursor(lastCell, int.high)
+  elif cell.canSelect:
+    updateContext.nodeCellMap.toCursor(cell, -1)
+  else:
+    return
+
+  updateContext.handleClick(node, cell, cellPath, cursor, drag)
+
+proc addSpace(self: CellLayoutContext, cell: Cell, updateContext: UpdateContext) =
   if self.isCurrentLineEmpty:
     return
 
-  self.builder.panel(&{FillY}, w = self.builder.charWidth)
+  let cellPath = cellPath
+  let builder = self.builder
+  let lastCell = self.currentDirectionData.lastCell
 
-proc addSpace(self: CellLayoutContext, color: Color) =
+  self.builder.panel(&{FillY}, w = self.builder.charWidth):
+    onClickAny btn:
+      if btn == MouseButton.Left:
+        handleSpaceClickOrDrag(builder, updateContext, currentNode, lastCell, cell, cellPath, false, pos)
+
+    onDrag MouseButton.Left:
+      handleSpaceClickOrDrag(builder, updateContext, currentNode, lastCell, cell, cellPath, true, pos)
+
+proc addSpace(self: CellLayoutContext, cell: Cell, updateContext: UpdateContext, color: Color) =
   if self.isCurrentLineEmpty:
     return
 
-  self.builder.panel(&{FillY, FillBackground}, w = self.builder.charWidth, backgroundColor = color)
+  let cellPath = cellPath
+  let builder = self.builder
+  let lastCell = self.currentDirectionData.lastCell
+
+  self.builder.panel(&{FillY, FillBackground}, w = self.builder.charWidth, backgroundColor = color):
+    onClickAny btn:
+      if btn == MouseButton.Left:
+        handleSpaceClickOrDrag(builder, updateContext, currentNode, lastCell, cell, cellPath, false, pos)
+
+    onDrag MouseButton.Left:
+      handleSpaceClickOrDrag(builder, updateContext, currentNode, lastCell, cell, cellPath, true, pos)
 
 proc newLine(self: CellLayoutContext) =
-  self.builder.finishLine(self.currentDirectionData)
+  self.builder.finishLine(self.updateContext, self.currentDirectionData)
   self.builder.createLineNode(self.currentDirectionData)
 
   self.hasIndent = false
@@ -192,7 +243,7 @@ proc finish(self: CellLayoutContext) =
   # finish forward
   if self.forwardData.lineNode.isNotNil:
     self.builder.continueFrom(self.forwardData.lineNode, self.forwardData.lastNode)
-    self.builder.finishLine(self.forwardData)
+    self.builder.finishLine(self.updateContext, self.forwardData)
 
   if self.forwardLinesNode.isNotNil:
     self.builder.finishNode(self.forwardLinesNode)
@@ -200,7 +251,7 @@ proc finish(self: CellLayoutContext) =
   # finish backward
   if self.backwardData.lineNode.isNotNil:
     self.builder.continueFrom(self.backwardData.lineNode, self.backwardData.lastNode)
-    self.builder.finishLine(self.backwardData)
+    self.builder.finishLine(self.updateContext, self.backwardData)
 
   self.builder.finishNode(self.parentNode)
 
@@ -302,7 +353,6 @@ proc getCursorPos(builder: UINodeBuilder, line: openArray[char], startOffset: Ru
   return byteIndex
 
 proc createLeafCellUI*(cell: Cell, builder: UINodeBuilder, inText: string, inTextColor: Color, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, cursorFirst: openArray[int], cursorLast: openArray[int]) =
-
   let cellPath = cellPath
 
   var selectionStart = 0
@@ -325,11 +375,14 @@ proc createLeafCellUI*(cell: Cell, builder: UINodeBuilder, inText: string, inTex
     if first < 0 and last >= 0:
       spaceSelected = true
 
+  defer:
+    ctx.notifyCellCreated(cell)
+
   if spaceLeft:
     if spaceSelected:
-      ctx.addSpace(updateContext.selectionColor)
+      ctx.addSpace(cell, updateContext, updateContext.selectionColor)
     else:
-      ctx.addSpace()
+      ctx.addSpace(cell, updateContext)
 
   if selectionStart == selectionEnd:
     builder.panel(&{SizeToContentX, SizeToContentY, FillY, DrawText} + backgroundFlags, text = inText, textColor = inTextColor, backgroundColor = backgroundColor):
@@ -474,7 +527,7 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
   var ctx = ctx
   var hasContext = false
   if cell.inline and ctx.cell != cell:
-    ctx = newCellLayoutContext(ctx, cell, ctx.remainingHeightDown, ctx.remainingHeightUp)
+    ctx = newCellLayoutContext(ctx, cell, ctx.remainingHeightDown, ctx.remainingHeightUp, false)
     hasContext = true
 
   defer:
@@ -509,7 +562,7 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
     # center
     block:
       # echo "center ", centerIndex
-      let myCtx = newCellLayoutContext(ctx, c, ctx.remainingHeightDown, ctx.remainingHeightUp)
+      let myCtx = newCellLayoutContext(ctx, c, ctx.remainingHeightDown, ctx.remainingHeightUp, true)
       defer:
         myCtx.finish()
 
@@ -562,7 +615,7 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
         if cell.style.isNotNil and cell.style.indentChildren:
           ctx.increaseIndent()
 
-        let myCtx = newCellLayoutContext(ctx, c, ctx.remainingHeightDown, 0)
+        let myCtx = newCellLayoutContext(ctx, c, ctx.remainingHeightDown, 0, true)
         defer:
           myCtx.finish()
           # echo myCtx.parentNode.h
@@ -587,7 +640,7 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
         if cell.style.isNotNil and cell.style.indentChildren:
           ctx.increaseIndent()
 
-        let myCtx = newCellLayoutContext(ctx, c, 0, ctx.remainingHeightUp)
+        let myCtx = newCellLayoutContext(ctx, c, 0, ctx.remainingHeightUp, true)
         defer:
           myCtx.finish()
           # echo myCtx.parentNode.h
@@ -737,19 +790,22 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
 
                 self.cellWidgetContext.targetNode = nil
                 self.cellWidgetContext.handleClick = proc(node: UINode, cell: Cell, cellPath: seq[int], cursor: CellCursor, drag: bool) =
-                  let bounds = node.bounds.transformRect(node.parent, uiae.parent)
-                  targetCellPath = cellPath
-                  # debugf"click: {self.scrollOffset} -> {bounds.y} | {cell.dump} | {node.dump}"
-                  self.scrollOffset = bounds.y
+                  if node.isNotNil:
+                    let bounds = node.bounds.transformRect(node.parent, uiae.parent)
+                    targetCellPath = cellPath
+                    # debugf"click: {self.scrollOffset} -> {bounds.y} | {cell.dump} | {node.dump}"
+                    self.scrollOffset = bounds.y
+
                   if drag:
                     self.selection.last = cursor
                   else:
                     self.cursor = cursor
+
                   self.markDirty()
 
                 # echo self.scrollOffset
                 block:
-                  let myCtx = newCellLayoutContext(builder, Direction.Center)
+                  let myCtx = newCellLayoutContext(builder, self.cellWidgetContext, Direction.Center, true)
                   defer:
                     myCtx.finish()
 
