@@ -13,7 +13,7 @@ suite "Input DFA":
   test "a":
     var commands: seq[(string, string)] = @[]
     commands.add ("a", "a")
-    var dfa = buildDFA(commands, "")
+    var dfa = buildDFA(commands, @[""])
     let state = dfa.step(CommandState.default, ord('a'), {})
     check dfa.isTerminal(state.current)
     check dfa.getAction(state.current) == "a"
@@ -21,7 +21,7 @@ suite "Input DFA":
   test "A : A":
     var commands: seq[(string, string)] = @[]
     commands.add ("A", "A")
-    var dfa = buildDFA(commands, "")
+    var dfa = buildDFA(commands, @[""])
     let state = dfa.step(CommandState.default, ord('A'), {})
     check dfa.isTerminal(state.current)
     check dfa.getAction(state.current) == "A"
@@ -29,7 +29,7 @@ suite "Input DFA":
   test "A : <S-a>":
     var commands: seq[(string, string)] = @[]
     commands.add ("A", "A")
-    var dfa = buildDFA(commands, "")
+    var dfa = buildDFA(commands, @[""])
     let state = dfa.step(CommandState.default, ord('a'), {Shift})
     check dfa.isTerminal(state.current)
     check dfa.getAction(state.current) == "A"
@@ -37,7 +37,7 @@ suite "Input DFA":
   test "<S-a> : A":
     var commands: seq[(string, string)] = @[]
     commands.add ("<S-a>", "A")
-    var dfa = buildDFA(commands, "")
+    var dfa = buildDFA(commands, @[""])
     let state = dfa.step(CommandState.default, ord('A'), {})
     check dfa.isTerminal(state.current)
     check dfa.getAction(state.current) == "A"
@@ -45,7 +45,7 @@ suite "Input DFA":
   test "shift a : shift a":
     var commands: seq[(string, string)] = @[]
     commands.add ("<S-a>", "A")
-    var dfa = buildDFA(commands, "")
+    var dfa = buildDFA(commands, @[""])
     let state = dfa.step(CommandState.default, ord('a'), {Shift})
     check dfa.isTerminal(state.current)
     check dfa.getAction(state.current) == "A"
@@ -53,7 +53,7 @@ suite "Input DFA":
   test "escape":
     var commands: seq[(string, string)] = @[]
     commands.add ("<ESCAPE>", "escape")
-    var dfa = buildDFA(commands, "")
+    var dfa = buildDFA(commands, @[""])
     let state = dfa.step(CommandState.default, INPUT_ESCAPE, {})
     check dfa.isTerminal(state.current)
     check dfa.getAction(state.current) == "escape"
@@ -61,7 +61,7 @@ suite "Input DFA":
   test "aB<A-c><C-ENTER>":
     var commands: seq[(string, string)] = @[]
     commands.add ("aB<A-c><C-ENTER>", "success")
-    var dfa = buildDFA(commands, "")
+    var dfa = buildDFA(commands, @[""])
 
     var state = dfa.step(CommandState.default, ord('a'), {})
     check not dfa.isTerminal(state.current)
