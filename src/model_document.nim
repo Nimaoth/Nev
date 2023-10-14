@@ -268,8 +268,6 @@ proc updateScrollOffset(self: ModelDocumentEditor, oldCell: Cell) =
   if self.cellWidgetContext.isNotNil:
     let newCell = self.selection.last.targetCell
     if oldCell.isNotNil and self.cellWidgetContext.cellToWidget.contains(oldCell.id):
-      let oldUINode = self.cellWidgetContext.cellToWidget[oldCell.id]
-
       if newCell.isNotNil and self.cellWidgetContext.cellToWidget.contains(newCell.id):
         let newUINode = self.cellWidgetContext.cellToWidget[newCell.id]
         let newY = newUINode.transformBounds(self.scrolledNode.parent).y
