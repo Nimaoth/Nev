@@ -113,6 +113,7 @@ type
 
     mId: Id
     userId*: UIUserId = UIUserId(kind: None)
+    userData*: ref RootObj
     mContentDirty: bool
     mLastContentChange: int
     mLastPositionChange: int
@@ -491,6 +492,8 @@ proc returnNode*(builder: UINodeBuilder, node: UINode) =
 
   node.pivot.x = 0
   node.pivot.y = 0
+
+  node.userData = nil
 
   node.boundsOld.x = 0
   node.boundsOld.y = 0
@@ -939,6 +942,8 @@ proc prepareNode*(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[s
   node.mHandleEndHover = nil
   node.mHandleHover = nil
 
+  node.userData = nil
+
   if builder.useInvalidation:
     node.clearRect = Rect.none
     node.clearedChildrenBounds = Rect.none
@@ -1302,6 +1307,16 @@ proc findNodeContaining*(node: UINode, pos: Vec2, predicate: proc(node: UINode):
 
     if predicate.isNotNil and predicate(node):
       return node.some
+
+proc forEachOverlappingLeafNode*(node: UINode, rect: Rect, f: proc(node: UINode)) =
+  if not node.boundsAbsolute.intersects(rect):
+    return
+
+  f(node)
+
+  if node.first.isNotNil:
+    for _, c in node.children:
+      c.forEachOverlappingLeafNode(rect, f)
 
 proc beginFrame*(builder: UINodeBuilder, size: Vec2) =
   builder.frameIndex.inc

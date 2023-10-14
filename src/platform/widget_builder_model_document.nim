@@ -430,6 +430,7 @@ proc createLeafCellUI*(cell: Cell, builder: UINodeBuilder, inText: string, inTex
   if selectionStart == selectionEnd:
     builder.panel(&{SizeToContentX, SizeToContentY, FillY, DrawText} + backgroundFlags, text = inText, textColor = inTextColor, backgroundColor = backgroundColor):
       updateContext.cellToWidget[cell.id] = currentNode
+      currentNode.userData = cell
       onClickAny btn:
         if btn == MouseButton.Left:
           if cell.canSelect:
@@ -454,6 +455,7 @@ proc createLeafCellUI*(cell: Cell, builder: UINodeBuilder, inText: string, inTex
 
       builder.panel(&{SizeToContentX, SizeToContentY, FillY, DrawText}, text = inText, textColor = inTextColor):
         updateContext.cellToWidget[cell.id] = currentNode
+        currentNode.userData = cell
         onClickAny btn:
           if btn == MouseButton.Left:
             if cell.canSelect:
@@ -781,14 +783,14 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
     self.cellWidgetContext = UpdateContext(nodeCellMap: self.nodeCellMap)
   self.cellWidgetContext.selectionColor = app.theme.color("selection.background", color(200/255, 200/255, 200/255))
 
-  self.cellWidgetContext.cellToWidget = initTable[Id, UINode](self.cellWidgetContext.cellToWidget.len)
-
   builder.panel(&{UINodeFlag.MaskContent, OverlappingChildren} + sizeFlags, userId = self.userId.newPrimaryId):
     defer:
       self.lastContentBounds = currentNode.bounds
 
     if dirty or app.platform.redrawEverything or not builder.retain():
       var header: UINode
+
+      self.cellWidgetContext.cellToWidget = initTable[Id, UINode](self.cellWidgetContext.cellToWidget.len)
 
       builder.panel(&{LayoutVertical} + sizeFlags):
         header = builder.createHeader(self.renderHeader, self.currentMode, self.document, headerColor, textColor):
