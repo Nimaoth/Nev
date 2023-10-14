@@ -449,6 +449,13 @@ proc transformRect*(rect: Rect, src: UINode, dst: UINode): Rect =
     result = result + curr.xy
     curr = curr.parent
 
+proc transformBounds*(src: UINode, dst: UINode): Rect =
+  result = src.bounds
+  var curr = src.parent
+  while curr != dst:
+    result = result + curr.xy
+    curr = curr.parent
+
 proc returnNode*(builder: UINodeBuilder, node: UINode) =
   case node.userId.kind
   of None:
@@ -462,10 +469,10 @@ proc returnNode*(builder: UINodeBuilder, node: UINode) =
     builder.returnNode c
 
   if builder.draggedNode == node.some:
-    builder.draggedNode = UINode.none
+    builder.draggedNode.resetOption()
 
   if builder.hoveredNode == node.some:
-    builder.hoveredNode = UINode.none
+    builder.hoveredNode.resetOption()
 
   when defined(uiNodeDebugData):
     node.aDebugData.metaData = nil
@@ -537,7 +544,7 @@ proc returnNode*(builder: UINodeBuilder, node: UINode) =
   node.mHandleEndHover = nil
   node.mHandleHover = nil
 
-  node.clearRect = Rect.none
+  node.clearRect.resetOption()
 
 proc clearUnusedChildren*(builder: UINodeBuilder, node: UINode, last: UINode) =
   if last.isNil:

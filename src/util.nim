@@ -116,3 +116,10 @@ else:
 template yieldAll*(iter: untyped): untyped =
   for i in iter:
     yield i
+
+proc resetOption*[T](self: var Option[T]) =
+  when defined(js):
+    proc resetOptionJs[T](self: var Option[T]) {.importJs: "#.has = false;".}
+    resetOptionJs(self)
+  else:
+    self = none(T)
