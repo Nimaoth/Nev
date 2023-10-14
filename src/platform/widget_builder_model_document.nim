@@ -11,7 +11,7 @@ logCategory "widget_builder_model_document"
 
 func withAlpha(color: Color, alpha: float32): Color = color(color.r, color.g, color.b, alpha)
 
-const cellGenerationBuffer = -10
+const cellGenerationBuffer = -15
 
 type
   Direction = enum
@@ -47,7 +47,6 @@ type
 
 var stackSize = 0
 var cellPath = newSeq[int]()
-var targetCellPath = @[0, 0]
 template logc(node: untyped, msg: varargs[string, `$`]) =
   if false:
     var uiae = ""
@@ -396,8 +395,6 @@ proc getCursorPos(builder: UINodeBuilder, line: openArray[char], startOffset: Ru
   return byteIndex
 
 proc createLeafCellUI*(cell: Cell, builder: UINodeBuilder, inText: string, inTextColor: Color, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, cursorFirst: openArray[int], cursorLast: openArray[int]) =
-  let cellPath = cellPath
-
   var selectionStart = 0
   var selectionEnd = 0
   var spaceSelected = false
@@ -436,15 +433,15 @@ proc createLeafCellUI*(cell: Cell, builder: UINodeBuilder, inText: string, inTex
           if cell.canSelect:
             let offset = builder.getCursorPos(inText, 0.RuneIndex, pos)
             let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
-            capture cellPath:
-              updateContext.handleClick(currentNode, cell, cellPath, cursor, false)
+            let cellPath = cell.rootPath.path
+            updateContext.handleClick(currentNode, cell, cellPath, cursor, false)
 
       onDrag MouseButton.Left:
         if cell.canSelect:
           let offset = builder.getCursorPos(inText, 0.RuneIndex, pos)
           let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
-          capture cellPath:
-            updateContext.handleClick(currentNode, cell, cellPath, cursor, true)
+          let cellPath = cell.rootPath.path
+          updateContext.handleClick(currentNode, cell, cellPath, cursor, true)
 
   else:
     # cell.logc fmt"partial selection {selectionStart}, {selectionEnd}"
@@ -461,15 +458,15 @@ proc createLeafCellUI*(cell: Cell, builder: UINodeBuilder, inText: string, inTex
             if cell.canSelect:
               let offset = builder.getCursorPos(inText, 0.RuneIndex, pos)
               let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
-              capture cellPath:
-                updateContext.handleClick(currentNode, cell, cellPath, cursor, false)
+              let cellPath = cell.rootPath.path
+              updateContext.handleClick(currentNode, cell, cellPath, cursor, false)
 
         onDrag MouseButton.Left:
           if cell.canSelect:
             let offset = builder.getCursorPos(inText, 0.RuneIndex, pos)
             let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
-            capture cellPath:
-              updateContext.handleClick(currentNode, cell, cellPath, cursor, true)
+            let cellPath = cell.rootPath.path
+            updateContext.handleClick(currentNode, cell, cellPath, cursor, true)
 
 method createCellUI*(cell: Cell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int], cursorFirst: openArray[int], cursorLast: openArray[int]) {.base.} = discard
 
@@ -822,7 +819,8 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
             scrollContent = currentNode
 
             builder.panel(&{FillX, SizeToContentY}):
-              let uiae = currentNode
+              let scrolledNode = currentNode
+              self.scrolledNode = scrolledNode
 
               defer:
                 self.lastBounds = currentNode.bounds
@@ -836,15 +834,12 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
                 self.cellWidgetContext.targetNode = nil
                 self.cellWidgetContext.handleClick = proc(node: UINode, cell: Cell, cellPath: seq[int], cursor: CellCursor, drag: bool) =
                   if node.isNotNil:
-                    let bounds = node.bounds.transformRect(node.parent, uiae.parent)
-                    targetCellPath = cellPath
+                    let bounds = node.bounds.transformRect(node.parent, scrolledNode.parent)
+                    self.targetCellPath = cellPath
                     # debugf"click: {self.scrollOffset} -> {bounds.y} | {cell.dump} | {node.dump}"
                     self.scrollOffset = bounds.y
 
-                  if drag:
-                    self.selection.last = cursor
-                  else:
-                    self.cursor = cursor
+                  self.updateSelection(cursor, drag)
 
                   self.markDirty()
 
@@ -862,7 +857,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
                   if cursorFirst.path.pathAfter(cursorLast.path):
                     swap(cursorFirst, cursorLast)
 
-                  cell.createCellUI(builder, app, myCtx, self.cellWidgetContext, false, targetCellPath, cursorFirst.path, cursorLast.path)
+                  cell.createCellUI(builder, app, myCtx, self.cellWidgetContext, false, self.targetCellPath, cursorFirst.path, cursorLast.path)
 
                 if self.cellWidgetContext.targetNodeOld != self.cellWidgetContext.targetNode:
                   if self.cellWidgetContext.targetNodeOld.isNotNil:
@@ -873,17 +868,17 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
                 self.cellWidgetContext.targetNodeOld = self.cellWidgetContext.targetNode
 
                 if self.cellWidgetContext.targetNode.isNotNil:
-                  var bounds = self.cellWidgetContext.targetNode.bounds.transformRect(self.cellWidgetContext.targetNode.parent, uiae.parent)
+                  var bounds = self.cellWidgetContext.targetNode.bounds.transformRect(self.cellWidgetContext.targetNode.parent, scrolledNode.parent)
                   # echo fmt"1 target node {bounds}: {self.cellWidgetContext.targetNode.dump}"
                   currentNode.rawY = currentNode.boundsRaw.y + (self.scrollOffset - bounds.y)
-                  bounds = self.cellWidgetContext.targetNode.bounds.transformRect(self.cellWidgetContext.targetNode.parent, uiae.parent)
+                  bounds = self.cellWidgetContext.targetNode.bounds.transformRect(self.cellWidgetContext.targetNode.parent, scrolledNode.parent)
                   # echo fmt"2 target node {bounds}: {self.cellWidgetContext.targetNode.dump}"
 
                 if self.scrollOffset < cellGenerationBuffer or self.scrollOffset >= h - cellGenerationBuffer:
                   let forward = self.scrollOffset < cellGenerationBuffer
-                  if self.cellWidgetContext.updateTargetPath(currentNode.parent, cell, forward, targetCellPath, @[]).getSome(path):
+                  if self.cellWidgetContext.updateTargetPath(currentNode.parent, cell, forward, self.targetCellPath, @[]).getSome(path):
                     # echo "update path ", path, " (was ", targetCellPath, ")"
-                    targetCellPath = path[1]
+                    self.targetCellPath = path[1]
                     self.scrollOffset = path[0]
 
           # cursor

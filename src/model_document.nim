@@ -1,4 +1,4 @@
-import std/[strformat, strutils, sequtils, sugar, tables, options, json, streams, algorithm]
+import std/[strformat, strutils, sugar, tables, options, json, streams, algorithm]
 import fusion/matching, bumpy, rect_utils, vmath
 import util, document, document_editor, text/text_document, events, id, ast_ids, scripting/expose, event, input, custom_async, myjsonutils, custom_unicode
 from scripting_api as api import nil
@@ -68,8 +68,9 @@ proc rootPath*(cell: Cell): tuple[root: Cell, path: seq[int]] =
   var cell = cell
   var path: seq[int] = @[]
   while cell.parent.isNotNil:
-    let idx = cell.parent.CollectionCell.children.find(cell)
-    path.add idx
+    if cell.parent of CollectionCell:
+      path.add cell.parent.CollectionCell.children.find(cell)
+
     cell = cell.parent
 
   path.reverse()
@@ -144,6 +145,8 @@ type
     cursorsId*: Id
     completionsId*: Id
     lastCursorLocationBounds*: Option[Rect]
+    scrolledNode*: UINode
+    targetCellPath* = @[0, 0]
 
     transactionCursors: Table[Id, CellSelection]
 
@@ -258,15 +261,46 @@ method save*(self: ModelDocument, filename: string = "", app: bool = false) =
 template cursor*(self: ModelDocumentEditor): CellCursor = self.mSelection.last
 template selection*(self: ModelDocumentEditor): CellSelection = self.mSelection
 
+proc updateScrollOffset(self: ModelDocumentEditor, oldCell: Cell) =
+  if self.cellWidgetContext.isNotNil:
+    let newCell = self.selection.last.targetCell
+    if oldCell.isNotNil and self.cellWidgetContext.cellToWidget.contains(oldCell.id):
+      let oldUINode = self.cellWidgetContext.cellToWidget[oldCell.id]
+
+      if newCell.isNotNil and self.cellWidgetContext.cellToWidget.contains(newCell.id):
+        let newUINode = self.cellWidgetContext.cellToWidget[newCell.id]
+        let newY = newUINode.transformBounds(self.scrolledNode.parent).y
+
+        let buffer = 5.0
+        if newY < buffer * self.app.platform.builder.textHeight:
+          self.targetCellPath = newCell.rootPath.path
+          self.scrollOffset = buffer * self.app.platform.builder.textHeight
+        elif newY > self.scrolledNode.parent.h - buffer * self.app.platform.builder.textHeight:
+          self.targetCellPath = newCell.rootPath.path
+          self.scrollOffset = self.scrolledNode.parent.h - buffer * self.app.platform.builder.textHeight
+
+      else:
+        self.targetCellPath = self.selection.last.targetCell.rootPath.path
+        self.scrollOffset = self.scrolledNode.parent.h / 2
+
 proc `selection=`*(self: ModelDocumentEditor, selection: CellSelection) =
   assert self.mSelection.first.map.isNotNil
   assert self.mSelection.last.map.isNotNil
+  let oldCell = self.selection.last.targetCell
   if self.mSelection.last.targetCell != selection.last.targetCell:
     self.mSelection = selection
     self.invalidateCompletions()
   else:
     self.mSelection = selection
     self.refilterCompletions()
+
+  self.updateScrollOffset(oldCell)
+
+proc updateSelection*(self: ModelDocumentEditor, cursor: CellCursor, extend: bool) =
+  if extend:
+    self.selection = (self.selection.first, cursor)
+  else:
+    self.selection = (cursor, cursor)
 
 proc `cursor=`*(self: ModelDocumentEditor, cursor: CellCursor) =
   self.selection = (cursor, cursor)
@@ -802,8 +836,9 @@ proc getCursorOffset(builder: UINodeBuilder, cell: Cell, posX: float): int =
 
 proc getCellInLine*(self: ModelDocumentEditor, cell: Cell, direction: int, targetX: float): Option[tuple[cell: Cell, offset: int]] =
   let builder = self.app.platform.builder
-  let uiRoot = builder.root
+  let uiRoot = self.scrolledNode
   let maxYDiff = builder.lineHeight / 2
+  let buffer = 2.0
 
   if not self.cellWidgetContext.cellToWidget.contains(cell.id):
     return
@@ -813,9 +848,9 @@ proc getCellInLine*(self: ModelDocumentEditor, cell: Cell, direction: int, targe
   var offset = 0
   while true:
     offset = offset + direction
-    let searchRect = rect(-1, cellUINode.ly + offset.float * builder.lineHeight + 1, uiRoot.w, builder.lineHeight - 2)
+    let searchRect = rect(uiRoot.lx, cellUINode.ly + offset.float * builder.lineHeight + 1, uiRoot.lw, builder.lineHeight - 2)
 
-    if searchRect.yh < 0 or searchRect.y > uiRoot.h:
+    if searchRect.yh < -builder.lineHeight * buffer or searchRect.y > uiRoot.lyh + builder.lineHeight * buffer:
       return
 
     var xDiffMin = float.high
@@ -854,14 +889,14 @@ proc getCellInLine*(self: ModelDocumentEditor, cell: Cell, direction: int, targe
       return
 
 proc getPreviousCellInLine*(self: ModelDocumentEditor, cell: Cell): Cell =
-  let uiRoot = self.app.platform.builder.root
+  let uiRoot = self.scrolledNode
   let maxYDiff = self.app.platform.builder.lineHeight / 2
 
   if not self.cellWidgetContext.cellToWidget.contains(cell.id):
     return cell
 
   let cellUINode = self.cellWidgetContext.cellToWidget[cell.id]
-  let searchRect = rect(0, cellUINode.ly + 1, cellUINode.lx, cellUINode.lh - 2)
+  let searchRect = rect(uiRoot.lx, cellUINode.ly + 1, cellUINode.lx - uiRoot.lx, cellUINode.lh - 2)
 
   var xMax = float.low
   var selectedNode: UINode = nil
@@ -893,14 +928,14 @@ proc getPreviousCellInLine*(self: ModelDocumentEditor, cell: Cell): Cell =
   return cell
 
 proc getNextCellInLine*(self: ModelDocumentEditor, cell: Cell): Cell =
-  let uiRoot = self.app.platform.builder.root
+  let uiRoot = self.scrolledNode
   let maxYDiff = self.app.platform.builder.lineHeight / 2
 
   if not self.cellWidgetContext.cellToWidget.contains(cell.id):
     return cell
 
   let cellUINode = self.cellWidgetContext.cellToWidget[cell.id]
-  let searchRect = rect(cellUINode.lxw, cellUINode.ly + 1, uiRoot.lw, cellUINode.lh - 2)
+  let searchRect = rect(cellUINode.lxw, cellUINode.ly + 1, uiRoot.lxw - cellUINode.lxw, cellUINode.lh - 2)
 
   var xMin = float.high
   var selectedNode: UINode = nil
@@ -1458,10 +1493,7 @@ proc moveCursorLeft*(self: ModelDocumentEditor, select: bool = false) {.expose("
   if getTargetCell(self.cursor, false).getSome(cell):
     let newCursor = cell.getCursorLeft(self.cursor)
     if newCursor.node.isNotNil:
-      if select:
-        self.selection.last = newCursor
-      else:
-        self.cursor = newCursor
+      self.updateSelection(newCursor, select)
 
   self.markDirty()
 
@@ -1469,10 +1501,7 @@ proc moveCursorRight*(self: ModelDocumentEditor, select: bool = false) {.expose(
   if getTargetCell(self.cursor, false).getSome(cell):
     let newCursor = cell.getCursorRight(self.cursor)
     if newCursor.node.isNotNil:
-      if select:
-        self.selection.last = newCursor
-      else:
-        self.cursor = newCursor
+      self.updateSelection(newCursor, select)
 
   self.markDirty()
 
@@ -1480,17 +1509,11 @@ proc moveCursorLeftLine*(self: ModelDocumentEditor, select: bool = false) {.expo
   if getTargetCell(self.cursor, false).getSome(cell):
     var newCursor = cell.getCursorLeft(self.cursor)
     if newCursor.node == self.cursor.node:
-      if select:
-        self.selection.last = newCursor
-      else:
-        self.cursor = newCursor
+      self.updateSelection(newCursor, select)
     else:
       let nextCell = self.getPreviousSelectableInLine(cell)
       newCursor = self.nodeCellMap.toCursor(nextCell, false)
-      if select:
-        self.selection.last = newCursor
-      else:
-        self.cursor = newCursor
+      self.updateSelection(newCursor, select)
 
   self.markDirty()
 
@@ -1498,17 +1521,11 @@ proc moveCursorRightLine*(self: ModelDocumentEditor, select: bool = false) {.exp
   if getTargetCell(self.cursor, false).getSome(cell):
     var newCursor = cell.getCursorRight(self.cursor)
     if newCursor.node == self.cursor.node:
-      if select:
-        self.selection.last = newCursor
-      else:
-        self.cursor = newCursor
+      self.updateSelection(newCursor, select)
     else:
       let nextCell = self.getNextSelectableInLine(cell)
       newCursor = self.nodeCellMap.toCursor(nextCell, true)
-      if select:
-        self.selection.last = newCursor
-      else:
-        self.cursor = newCursor
+      self.updateSelection(newCursor, select)
 
   self.markDirty()
 
@@ -1516,20 +1533,14 @@ proc moveCursorLineStart*(self: ModelDocumentEditor, select: bool = false) {.exp
   if getTargetCell(self.cursor).getSome(cell):
     if self.getCellInLine(cell, 0, 0).getSome(target):
       let newCursor = self.nodeCellMap.toCursor(target.cell, target.offset)
-      if select:
-        self.selection.last = newCursor
-      else:
-        self.cursor = newCursor
+      self.updateSelection(newCursor, select)
   self.markDirty()
 
 proc moveCursorLineEnd*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
   if getTargetCell(self.cursor).getSome(cell):
     if self.getCellInLine(cell, 0, 10000).getSome(target):
       let newCursor = self.nodeCellMap.toCursor(target.cell, target.offset)
-      if select:
-        self.selection.last = newCursor
-      else:
-        self.cursor = newCursor
+      self.updateSelection(newCursor, select)
   self.markDirty()
 
 proc moveCursorLineStartInline*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
@@ -1551,10 +1562,7 @@ proc moveCursorLineStartInline*(self: ModelDocumentEditor, select: bool = false)
       prevCell = currentCell
 
     let newCursor = self.nodeCellMap.toCursor(prevCell, true)
-    if select:
-      self.selection.last = newCursor
-    else:
-      self.cursor = newCursor
+    self.updateSelection(newCursor, select)
 
   self.markDirty()
 
@@ -1577,10 +1585,7 @@ proc moveCursorLineEndInline*(self: ModelDocumentEditor, select: bool = false) {
       prevCell = currentCell
 
     let newCursor = self.nodeCellMap.toCursor(prevCell, false)
-    if select:
-      self.selection.last = newCursor
-    else:
-      self.cursor = newCursor
+    self.updateSelection(newCursor, select)
 
   self.markDirty()
 
@@ -1588,10 +1593,7 @@ proc moveCursorUp*(self: ModelDocumentEditor, select: bool = false) {.expose("ed
   if getTargetCell(self.cursor).getSome(cell) and self.lastCursorLocationBounds.getSome(cursorBounds):
     if self.getCellInLine(cell, -1, cursorBounds.x).getSome(target):
       let newCursor = self.nodeCellMap.toCursor(target.cell, target.offset)
-      if select:
-        self.selection.last = newCursor
-      else:
-        self.cursor = newCursor
+      self.updateSelection(newCursor, select)
 
   self.markDirty()
 
@@ -1599,10 +1601,7 @@ proc moveCursorDown*(self: ModelDocumentEditor, select: bool = false) {.expose("
   if getTargetCell(self.cursor).getSome(cell) and self.lastCursorLocationBounds.getSome(cursorBounds):
     if self.getCellInLine(cell, 1, cursorBounds.x).getSome(target):
       let newCursor = self.nodeCellMap.toCursor(target.cell, target.offset)
-      if select:
-        self.selection.last = newCursor
-      else:
-        self.cursor = newCursor
+      self.updateSelection(newCursor, select)
 
   self.markDirty()
 
@@ -1610,10 +1609,7 @@ proc moveCursorLeftCell*(self: ModelDocumentEditor, select: bool = false) {.expo
   if getTargetCell(self.cursor).getSome(cell):
     if cell.getPreviousSelectableLeaf().getSome(c):
       let newCursor = self.nodeCellMap.toCursor(c, false)
-      if select:
-        self.selection.last = newCursor
-      else:
-        self.cursor = newCursor
+      self.updateSelection(newCursor, select)
 
   self.markDirty()
 
@@ -1621,10 +1617,7 @@ proc moveCursorRightCell*(self: ModelDocumentEditor, select: bool = false) {.exp
   if getTargetCell(self.cursor).getSome(cell):
     if cell.getNextSelectableLeaf().getSome(c):
       let newCursor = self.nodeCellMap.toCursor(c, true)
-      if select:
-        self.selection.last = newCursor
-      else:
-        self.cursor = newCursor
+      self.updateSelection(newCursor, select)
 
   self.markDirty()
 
