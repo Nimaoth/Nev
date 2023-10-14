@@ -19,6 +19,8 @@ proc mode*(self: ModelDocumentEditor): string =
 proc getContextWithMode*(self: ModelDocumentEditor; context: string): string =
   editor_model_getContextWithMode_string_ModelDocumentEditor_string_impl(self,
       context)
+proc isThickCursor*(self: ModelDocumentEditor): bool =
+  editor_model_isThickCursor_bool_ModelDocumentEditor_impl(self)
 proc moveCursorLeft*(self: ModelDocumentEditor; select: bool = false) =
   editor_model_moveCursorLeft_void_ModelDocumentEditor_bool_impl(self, select)
 proc moveCursorRight*(self: ModelDocumentEditor; select: bool = false) =

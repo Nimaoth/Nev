@@ -383,9 +383,9 @@ proc createCompletions(self: ModelDocumentEditor, builder: UINodeBuilder, app: A
     completionsPanel.rawY = cursorBounds.y
     completionsPanel.pivot = vec2(0, 1)
 
-proc getCursorPos(builder: UINodeBuilder, line: openArray[char], startOffset: RuneIndex, pos: Vec2): int =
+proc getCursorPos(builder: UINodeBuilder, line: openArray[char], startOffset: RuneIndex, pos: Vec2, isThickCursor: bool): int =
   var offsetFromLeft = pos.x / builder.charWidth
-  if false: # self.isThickCursor(): # todo
+  if isThickCursor:
     offsetFromLeft -= 0.0
   else:
     offsetFromLeft += 0.5
@@ -431,14 +431,14 @@ proc createLeafCellUI*(cell: Cell, builder: UINodeBuilder, inText: string, inTex
       onClickAny btn:
         if btn == MouseButton.Left:
           if cell.canSelect:
-            let offset = builder.getCursorPos(inText, 0.RuneIndex, pos)
+            let offset = builder.getCursorPos(inText, 0.RuneIndex, pos, updateContext.isThickCursor)
             let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
             let cellPath = cell.rootPath.path
             updateContext.handleClick(currentNode, cell, cellPath, cursor, false)
 
       onDrag MouseButton.Left:
         if cell.canSelect:
-          let offset = builder.getCursorPos(inText, 0.RuneIndex, pos)
+          let offset = builder.getCursorPos(inText, 0.RuneIndex, pos, updateContext.isThickCursor)
           let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
           let cellPath = cell.rootPath.path
           updateContext.handleClick(currentNode, cell, cellPath, cursor, true)
@@ -456,14 +456,14 @@ proc createLeafCellUI*(cell: Cell, builder: UINodeBuilder, inText: string, inTex
         onClickAny btn:
           if btn == MouseButton.Left:
             if cell.canSelect:
-              let offset = builder.getCursorPos(inText, 0.RuneIndex, pos)
+              let offset = builder.getCursorPos(inText, 0.RuneIndex, pos, updateContext.isThickCursor)
               let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
               let cellPath = cell.rootPath.path
               updateContext.handleClick(currentNode, cell, cellPath, cursor, false)
 
         onDrag MouseButton.Left:
           if cell.canSelect:
-            let offset = builder.getCursorPos(inText, 0.RuneIndex, pos)
+            let offset = builder.getCursorPos(inText, 0.RuneIndex, pos, updateContext.isThickCursor)
             let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
             let cellPath = cell.rootPath.path
             updateContext.handleClick(currentNode, cell, cellPath, cursor, true)
@@ -788,6 +788,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
       var header: UINode
 
       self.cellWidgetContext.cellToWidget = initTable[Id, UINode](self.cellWidgetContext.cellToWidget.len)
+      self.cellWidgetContext.isThickCursor = self.isThickCursor()
 
       builder.panel(&{LayoutVertical} + sizeFlags):
         header = builder.createHeader(self.renderHeader, self.currentMode, self.document, headerColor, textColor):
@@ -889,7 +890,15 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
 
               let index = self.selection.last.lastIndex
               var bounds = rect(index.float * builder.charWidth, 0, 0, 0).transformRect(node, overlapPanel)
-              builder.panel(&{UINodeFlag.FillBackground, AnimatePosition, SnapInitialBounds}, x = bounds.x, y = bounds.y, w = max(builder.charWidth * 0.2, 1), h = builder.textHeight, backgroundColor = textColor, userId = newSecondaryId(self.cursorsId, 0))
+
+              if self.isThickCursor:
+                let index = self.selection.last.lastIndex.clamp(0, node.text.runeLen.int).RuneIndex
+                let ch = if index < node.text.runeLen.RuneIndex: node.text[index..index] else: " "
+
+                builder.panel(&{UINodeFlag.FillBackground, AnimatePosition, SnapInitialBounds}, x = bounds.x, y = bounds.y, w = builder.charWidth, h = builder.textHeight, backgroundColor = textColor, userId = newSecondaryId(self.cursorsId, 0)):
+                  builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = backgroundColor, text = ch)
+              else:
+                builder.panel(&{UINodeFlag.FillBackground, AnimatePosition, SnapInitialBounds}, x = bounds.x, y = bounds.y, w = max(builder.charWidth * 0.2, 1), h = builder.textHeight, backgroundColor = textColor, userId = newSecondaryId(self.cursorsId, 0))
 
               self.lastCursorLocationBounds = rect(index.float * builder.charWidth, 0, builder.charWidth, builder.textHeight).transformRect(node, builder.root).some
 
@@ -899,7 +908,15 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
 
               let index = self.selection.first.lastIndex
               var bounds = rect(index.float * builder.charWidth, 0, 0, 0).transformRect(node, overlapPanel)
-              builder.panel(&{UINodeFlag.FillBackground, AnimatePosition, SnapInitialBounds}, x = bounds.x, y = bounds.y, w = max(builder.charWidth * 0.2, 1), h = builder.textHeight, backgroundColor = textColor, userId = newSecondaryId(self.cursorsId, 1))
+
+              if self.isThickCursor:
+                let index = self.selection.first.lastIndex.clamp(0, node.text.runeLen.int).RuneIndex
+                let ch = if index < node.text.runeLen.RuneIndex: node.text[index..index] else: " "
+
+                builder.panel(&{UINodeFlag.FillBackground, AnimatePosition, SnapInitialBounds}, x = bounds.x, y = bounds.y, w = builder.charWidth, h = builder.textHeight, backgroundColor = textColor, userId = newSecondaryId(self.cursorsId, 1)):
+                  builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = backgroundColor, text = ch)
+              else:
+                builder.panel(&{UINodeFlag.FillBackground, AnimatePosition, SnapInitialBounds}, x = bounds.x, y = bounds.y, w = max(builder.charWidth * 0.2, 1), h = builder.textHeight, backgroundColor = textColor, userId = newSecondaryId(self.cursorsId, 1))
 
         # echo builder.currentChild.dump(true)
 
