@@ -268,6 +268,8 @@ proc editor_model_setMode_void_ModelDocumentEditor_string_impl(
 proc editor_model_mode_string_ModelDocumentEditor_impl(self: ModelDocumentEditor): string  {.importc.}
 proc editor_model_getContextWithMode_string_ModelDocumentEditor_string_impl(
     self: ModelDocumentEditor; context: string): string  {.importc.}
+proc editor_model_isThickCursor_bool_ModelDocumentEditor_impl(
+    self: ModelDocumentEditor): bool  {.importc.}
 proc editor_model_moveCursorLeft_void_ModelDocumentEditor_bool_impl(
     self: ModelDocumentEditor; select: bool = false)  {.importc.}
 proc editor_model_moveCursorRight_void_ModelDocumentEditor_bool_impl(

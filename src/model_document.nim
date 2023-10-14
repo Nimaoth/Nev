@@ -186,6 +186,7 @@ type
     targetCell*: Cell
     handleClick*: proc(node: UINode, cell: Cell, path: seq[int], cursor: CellCursor, drag: bool)
     selectionColor*: Color
+    isThickCursor*: bool
 
 proc `$`(op: ModelOperation): string =
   result = fmt"{op.kind}, '{op.value}'"
@@ -202,6 +203,8 @@ proc updateCompletions(self: ModelDocumentEditor)
 proc invalidateCompletions(self: ModelDocumentEditor)
 proc refilterCompletions(self: ModelDocumentEditor)
 proc updateCursor*(self: ModelDocumentEditor, cursor: CellCursor): Option[CellCursor]
+proc isThickCursor*(self: ModelDocumentEditor): bool
+proc getContextWithMode*(self: ModelDocumentEditor, context: string): string
 
 proc toCursor*(map: NodeCellMap, cell: Cell, column: int): CellCursor
 proc toCursor*(map: NodeCellMap, cell: Cell, start: bool): CellCursor
@@ -640,9 +643,13 @@ proc fromJsonHook*(t: var api.ModelDocumentEditor, jsonNode: JsonNode) =
   t.id = api.EditorId(jsonNode["id"].jsonTo(int))
 
 proc handleInput(self: ModelDocumentEditor, input: string): EventResponse =
-  log lvlInfo, fmt"[modeleditor]: Handle input '{input}'"
+  # log lvlInfo, fmt"[modeleditor]: Handle input '{input}'"
 
   self.mCursorBeforeTransaction = self.selection
+
+  if self.app.invokeCallback(self.getContextWithMode("editor.model.input-handler"), input.newJString):
+    self.document.finishTransaction()
+    return Handled
 
   if self.insertTextAtCursor(input):
     self.document.finishTransaction()
@@ -818,13 +825,14 @@ proc setMode*(self: ModelDocumentEditor, mode: string) {.expose("editor.model").
       onAction:
         self.handleAction action, arg
       onInput:
-        Ignored
+        self.handleInput input
 
   self.currentMode = mode
+  self.markDirty()
 
-proc getCursorOffset(builder: UINodeBuilder, cell: Cell, posX: float): int =
+proc getCursorOffset(self: ModelDocumentEditor, builder: UINodeBuilder, cell: Cell, posX: float): int =
   var offsetFromLeft = posX / builder.charWidth
-  if false: # self.isThickCursor(): # todo
+  if self.isThickCursor():
     offsetFromLeft -= 0.0
   else:
     offsetFromLeft += 0.5
@@ -848,7 +856,8 @@ proc getCellInLine*(self: ModelDocumentEditor, cell: Cell, direction: int, targe
   var offset = 0
   while true:
     offset = offset + direction
-    let searchRect = rect(uiRoot.lx, cellUINode.ly + offset.float * builder.lineHeight + 1, uiRoot.lw, builder.lineHeight - 2)
+    let charGap = self.app.platform.charGap
+    let searchRect = rect(uiRoot.lx, cellUINode.ly + offset.float * builder.lineHeight + charGap, uiRoot.lw, builder.lineHeight - charGap * 2)
 
     if searchRect.yh < -builder.lineHeight * buffer or searchRect.y > uiRoot.lyh + builder.lineHeight * buffer:
       return
@@ -871,7 +880,7 @@ proc getCellInLine*(self: ModelDocumentEditor, cell: Cell, direction: int, targe
         0
 
       if xDiff == 0:
-        let offset = getCursorOffset(builder, currentCell, targetX - uiNode.lx)
+        let offset = self.getCursorOffset(builder, currentCell, targetX - uiNode.lx)
         if offset < currentCell.editableLow or offset > currentCell.editableHigh:
           return
 
@@ -882,7 +891,7 @@ proc getCellInLine*(self: ModelDocumentEditor, cell: Cell, direction: int, targe
     )
 
     if selectedCell.isNotNil:
-      let offset = builder.getCursorOffset(selectedCell, targetX - selectedNode.lx)
+      let offset = self.getCursorOffset(builder, selectedCell, targetX - selectedNode.lx)
       return (selectedCell, offset).some
 
     if direction == 0:
@@ -896,7 +905,8 @@ proc getPreviousCellInLine*(self: ModelDocumentEditor, cell: Cell): Cell =
     return cell
 
   let cellUINode = self.cellWidgetContext.cellToWidget[cell.id]
-  let searchRect = rect(uiRoot.lx, cellUINode.ly + 1, cellUINode.lx - uiRoot.lx, cellUINode.lh - 2)
+  let charGap = self.app.platform.charGap
+  let searchRect = rect(uiRoot.lx, cellUINode.ly + charGap, cellUINode.lx - uiRoot.lx, cellUINode.lh - charGap * 2)
 
   var xMax = float.low
   var selectedNode: UINode = nil
@@ -935,7 +945,8 @@ proc getNextCellInLine*(self: ModelDocumentEditor, cell: Cell): Cell =
     return cell
 
   let cellUINode = self.cellWidgetContext.cellToWidget[cell.id]
-  let searchRect = rect(cellUINode.lxw, cellUINode.ly + 1, uiRoot.lxw - cellUINode.lxw, cellUINode.lh - 2)
+  let charGap = self.app.platform.charGap
+  let searchRect = rect(cellUINode.lxw, cellUINode.ly + charGap, uiRoot.lxw - cellUINode.lxw, cellUINode.lh - charGap * 2)
 
   var xMin = float.high
   var selectedNode: UINode = nil
@@ -1488,6 +1499,11 @@ proc mode*(self: ModelDocumentEditor): string {.expose("editor.model").} =
 
 proc getContextWithMode*(self: ModelDocumentEditor, context: string): string {.expose("editor.model").} =
   return context & "." & $self.currentMode
+
+proc isThickCursor*(self: ModelDocumentEditor): bool {.expose("editor.model").} =
+  if not self.app.platform.supportsThinCursor:
+    return true
+  return self.configProvider.getValue(self.getContextWithMode("editor.model.cursor.wide"), false)
 
 proc moveCursorLeft*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
   if getTargetCell(self.cursor, false).getSome(cell):
@@ -2143,17 +2159,15 @@ proc handleAction(self: ModelDocumentEditor, action: string, arg: string): Event
   self.mCursorBeforeTransaction = self.selection
 
   var args = newJArray()
-  args.add api.ModelDocumentEditor(id: self.id).toJson
-  for a in newStringStream(arg).parseJsonFragments():
-    args.add a
-
-  # var newLastCommand = (action, arg)
-  # defer: self.lastCommand = newLastCommand
-
-  if self.app.handleUnknownDocumentEditorAction(self, action, args) == Handled:
-    return Handled
-
   try:
+    for a in newStringStream(arg).parseJsonFragments():
+      args.add a
+
+    if self.app.handleUnknownDocumentEditorAction(self, action, args) == Handled:
+      return Handled
+
+    args.elems.insert api.ModelDocumentEditor(id: self.id).toJson, 0
+
     if dispatch(action, args).isSome:
       return Handled
   except CatchableError:

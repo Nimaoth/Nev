@@ -77,6 +77,21 @@ proc getContextWithMode*(self: ModelDocumentEditor; context: string): string =
   result = parseJson($res).jsonTo(typeof(result))
 
 
+proc editor_model_isThickCursor_bool_ModelDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc isThickCursor*(self: ModelDocumentEditor): bool =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when ModelDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_model_isThickCursor_bool_ModelDocumentEditor_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
 proc editor_model_moveCursorLeft_void_ModelDocumentEditor_bool_wasm(arg: cstring): cstring {.
     importc.}
 proc moveCursorLeft*(self: ModelDocumentEditor; select: bool = false) =
