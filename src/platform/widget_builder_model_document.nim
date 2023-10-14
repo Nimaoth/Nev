@@ -892,8 +892,9 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
               var bounds = rect(index.float * builder.charWidth, 0, 0, 0).transformRect(node, overlapPanel)
 
               if self.isThickCursor:
-                let index = self.selection.last.lastIndex.clamp(0, node.text.runeLen.int).RuneIndex
-                let ch = if index < node.text.runeLen.RuneIndex: node.text[index..index] else: " "
+                let text = targetCell.getText
+                let index = self.selection.last.lastIndex.clamp(0, text.runeLen.int).RuneIndex
+                let ch = if index < text.runeLen.RuneIndex: text[index..index] else: " "
 
                 builder.panel(&{UINodeFlag.FillBackground, AnimatePosition, SnapInitialBounds}, x = bounds.x, y = bounds.y, w = builder.charWidth, h = builder.textHeight, backgroundColor = textColor, userId = newSecondaryId(self.cursorsId, 0)):
                   builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = backgroundColor, text = ch)
@@ -910,8 +911,9 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
               var bounds = rect(index.float * builder.charWidth, 0, 0, 0).transformRect(node, overlapPanel)
 
               if self.isThickCursor:
-                let index = self.selection.first.lastIndex.clamp(0, node.text.runeLen.int).RuneIndex
-                let ch = if index < node.text.runeLen.RuneIndex: node.text[index..index] else: " "
+                let text = targetCell.getText
+                let index = self.selection.first.lastIndex.clamp(0, text.runeLen.int).RuneIndex
+                let ch = if index < text.runeLen.RuneIndex: text[index..index] else: " "
 
                 builder.panel(&{UINodeFlag.FillBackground, AnimatePosition, SnapInitialBounds}, x = bounds.x, y = bounds.y, w = builder.charWidth, h = builder.textHeight, backgroundColor = textColor, userId = newSecondaryId(self.cursorsId, 1)):
                   builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = backgroundColor, text = ch)
