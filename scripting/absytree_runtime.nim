@@ -239,7 +239,41 @@ proc setTextInputHandler*(context: string, action: proc(editor: TextDocumentEdit
   scriptSetCallback("editor.text.input-handler." & context, id)
   setHandleInputs("editor.text." & context, true)
 
-# Text commands
+# Model commands
+template addModelCommandBlock*(mode: static[string], keys: string, body: untyped): untyped =
+  let context = if mode.len == 0: "editor.model" else: "editor.model." & mode
+  addCommand context, keys, proc() =
+    let editor {.inject.} = ModelDocumentEditor(id: getActiveEditor())
+    body
+
+proc addModelCommand*(mode: string, keys: string, action: proc(editor: ModelDocumentEditor): void) =
+  let context = if mode.len == 0: "editor.model" else: "editor.model." & mode
+  addCommand context, keys, proc() =
+    action(ModelDocumentEditor(id: getActiveEditor()))
+
+macro addModelCommand*(mode: static[string], keys: string, action: string, args: varargs[untyped]): untyped =
+  let context = if mode.len == 0: "editor.model" else: "editor.model." & mode
+  var stmts = nnkStmtList.newTree()
+  let str = nskVar.genSym "str"
+  stmts.add quote do:
+    var `str` = ""
+  for arg in args:
+    stmts.add quote do:
+      `str`.add " "
+      `str`.add `arg`.toJsonString
+
+  return genAst(stmts, context, keys, action, str):
+    stmts
+    addCommandScript(context, keysPrefix & keys, action, str)
+
+proc setModelInputHandler*(context: string, action: proc(editor: ModelDocumentEditor, input: string): bool) =
+  let id = addCallback proc(args: JsonNode): bool =
+    let input = args.str
+    action(ModelDocumentEditor(id: getActiveEditor()), input)
+  scriptSetCallback("editor.model.input-handler." & context, id)
+  setHandleInputs("editor.model." & context, true)
+
+# Ast commands
 template addAstCommandBlock*(mode: static[string], keys: string, body: untyped): untyped =
   let context = if mode.len == 0: "editor.ast" else: "editor.ast." & mode
   addCommand context, keys, proc() =
