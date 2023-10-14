@@ -28,6 +28,8 @@ type
   PlaceholderCell* = ref object of Cell
     role*: Id
 
+proc buildCell*(self: CellBuilder, map: NodeCellMap, node: AstNode, useDefault: bool = false): Cell
+
 proc child*(cell: NodeReferenceCell): Cell = cell.child
 proc `child=`*(cell: NodeReferenceCell, c: Cell) =
   cell.child = c
@@ -253,6 +255,10 @@ method dump(self: AliasCell, recurse: bool = false): string =
 method dump(self: PlaceholderCell, recurse: bool = false): string =
   result.add fmt"PlaceholderCell(node: {self.node.id}, role: {self.role})"
 
+proc invalidate*(map: NodeCellMap) =
+  map.map.clear()
+  map.cells.clear()
+
 proc fill*(map: NodeCellMap, self: Cell) =
   if self.fillChildren.isNil or self.filled:
     return
@@ -263,6 +269,13 @@ proc expand*(map: NodeCellMap, self: Cell, path: openArray[int]) =
   map.fill(self)
   if path.len > 0 and self.getChildAt(path[0], true).getSome(child):
     map.expand child, path[1..^1]
+
+proc cell*(map: NodeCellMap, node: AstNode): Cell =
+  if map.map.contains(node.id):
+    return map.map[node.id]
+  let cell = map.builder.buildCell(map, node, false)
+  map.map[node.id] = cell
+  return cell
 
 proc findBuilder(self: CellBuilder, class: NodeClass, preferred: Id): CellBuilderFunction =
   if not self.builders.contains(class.id):
@@ -285,8 +298,6 @@ proc findBuilder(self: CellBuilder, class: NodeClass, preferred: Id): CellBuilde
       return builder.impl
 
   return builders[0].impl
-
-proc buildCell*(self: CellBuilder, map: NodeCellMap, node: AstNode, useDefault: bool = false): Cell
 
 proc buildCellDefault*(self: CellBuilder, m: NodeCellMap, node: AstNode, useDefaultRecursive: bool): Cell =
   let class = node.nodeClass
@@ -359,6 +370,7 @@ proc buildCell*(self: CellBuilder, map: NodeCellMap, node: AstNode, useDefault: 
     # result.fill()
 
   map.map[node.id] = result
+  map.cells[result.id] = result
 
 proc buildDefaultPlaceholder*(builder: CellBuilder, node: AstNode, role: Id): Cell =
   return PlaceholderCell(id: newId(), node: node, role: role, shadowText: "...")
@@ -412,3 +424,41 @@ template buildChildrenT*(b: CellBuilder, map: NodeCellMap, n: AstNode, r: Id, fl
   body
 
   builder.buildChildren(map, node, role, flags, isVisibleFunc, separatorFunc, placeholderFunc)
+
+template visitFromCenter*(inCell: Cell, inPath: openArray[int], inForwards: bool, onTarget, onCenterVertical, onCenterHorizontal, onForwards, onBackwards, onHorizontal, onLeaf: untyped) =
+  if inCell of CollectionCell:
+    let cell = inCell.CollectionCell
+    let vertical = LayoutVertical in cell.flags
+    let centerIndex = if inPath.len > 0: inPath[0].clamp(0, cell.children.high) elif inForwards: 0 else: cell.children.high
+
+    if vertical: # Vertical collection
+      if cell.children.len > 0: # center
+        let c = cell.children[centerIndex]
+        onCenterVertical(centerIndex, c, if inPath.len > 1: inPath[1..^1] else: @[])
+
+        if inPath.len == 1:
+          onTarget(c)
+
+      for i in (centerIndex + 1)..cell.children.high: # forwards
+        let c = cell.children[i]
+        onForwards(i, c, @[])
+
+      if centerIndex > 0: # backwards
+        for i in countdown(centerIndex - 1, 0):
+          let c = cell.children[i]
+          onBackwards(i, c, @[])
+
+    else: # Horizontal collection
+      for i in 0..cell.children.high:
+        let c = cell.children[i]
+
+        if i == centerIndex:
+          onCenterHorizontal(i, c, if inPath.len > 1: inPath[1..^1] else: @[])
+        else:
+          onHorizontal(i, c, @[])
+
+        if i == centerIndex and inPath.len == 1:
+          onTarget(c)
+
+  else: # Leaf cell
+    onLeaf

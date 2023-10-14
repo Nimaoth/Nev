@@ -112,3 +112,7 @@ when defined(js):
 else:
   import std/math
   func roundPositive*[T: float64 | float32](x: T): T = round(x)
+
+template yieldAll*(iter: untyped): untyped =
+  for i in iter:
+    yield i

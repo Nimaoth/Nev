@@ -117,6 +117,7 @@ type
 
   NodeCellMap* = ref object
     map*: Table[Id, Cell]
+    cells*: Table[Id, Cell]
     builder*: CellBuilder
 
   PropertyValidator* = ref object

@@ -147,6 +147,10 @@ template xyRect*(r: Rect): Rect = rect(r.x, r.y, 0, 0)
 template whRect*(r: Rect): Rect = rect(0, 0, r.w, r.h)
 
 proc intersects*(a, b: Rect): bool =
+  if a.w == 0 or b.w == 0:
+    return b.y <= a.yh and b.yh >= a.y
+  if a.h == 0 or b.h == 0:
+    return b.x <= a.xw and b.xw >= a.x
   let intersection = a and b
   return intersection.w > 0 and intersection.h > 0
 
