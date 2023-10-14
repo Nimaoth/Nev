@@ -1,6 +1,6 @@
-import std/[strformat, strutils, math, sugar, tables, options, json, streams, algorithm]
+import std/[strformat, strutils, sequtils, sugar, tables, options, json, streams, algorithm]
 import fusion/matching, bumpy, rect_utils, vmath
-import util, document, document_editor, text/text_document, events, id, ast_ids, scripting/expose, event, input, custom_async, myjsonutils
+import util, document, document_editor, text/text_document, events, id, ast_ids, scripting/expose, event, input, custom_async, myjsonutils, custom_unicode
 from scripting_api as api import nil
 import custom_logger, timer, array_buffer, config_provider, app_interface
 import platform/[filesystem, platform]
@@ -39,16 +39,6 @@ func `-`*(d: Direction): Direction =
   of Left: return Right
   of Right: return Left
 
-proc invalidate*(map: NodeCellMap) =
-  map.map.clear()
-
-proc cell*(map: NodeCellMap, node: AstNode): Cell =
-  if map.map.contains(node.id):
-    return map.map[node.id]
-  let cell = map.builder.buildCell(map, node, false)
-  map.map[node.id] = cell
-  return cell
-
 proc toSelection*(cursor: CellCursor): CellSelection = (cursor, cursor)
 
 proc empty*(selection: CellSelection): bool = selection.first == selection.last
@@ -74,8 +64,8 @@ proc targetCell*(cursor: CellCursor): Cell =
     if result of CollectionCell:
       result = result.CollectionCell.children[i]
 
-proc rootPath*(cursor: CellCursor): tuple[root: Cell, path: seq[int]] =
-  var cell = cursor.targetCell
+proc rootPath*(cell: Cell): tuple[root: Cell, path: seq[int]] =
+  var cell = cell
   var path: seq[int] = @[]
   while cell.parent.isNotNil:
     let idx = cell.parent.CollectionCell.children.find(cell)
@@ -83,9 +73,12 @@ proc rootPath*(cursor: CellCursor): tuple[root: Cell, path: seq[int]] =
     cell = cell.parent
 
   path.reverse()
-  path.add cursor.lastIndex
 
   return (cell, path)
+
+proc rootPath*(cursor: CellCursor): tuple[root: Cell, path: seq[int]] =
+  result = cursor.targetCell.rootPath
+  result.path.add cursor.lastIndex
 
 type
   ModelOperationKind = enum
@@ -201,7 +194,6 @@ proc handleAction(self: ModelDocumentEditor, action: string, arg: string): Event
 proc rebuildCells*(self: ModelDocumentEditor)
 proc getTargetCell*(cursor: CellCursor, resolveCollection: bool = true): Option[Cell]
 proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool
-proc getCursorInLine*(self: ModelDocumentEditor, line: int, xPos: float): Option[CellCursor]
 proc applySelectedCompletion*(self: ModelDocumentEditor)
 proc updateCompletions(self: ModelDocumentEditor)
 proc invalidateCompletions(self: ModelDocumentEditor)
@@ -281,8 +273,7 @@ proc `cursor=`*(self: ModelDocumentEditor, cursor: CellCursor) =
 
 proc `cursor=`*(self: ModelDocumentEditor, cursor: CellCursorState) =
   if self.document.model.resolveReference(cursor.node).getSome(node):
-    if self.updateCursor(CellCursor(map: self.nodeCellMap, firstIndex: cursor.firstIndex, lastIndex: cursor.lastIndex, path: cursor.path, node: node)).getSome(cursor):
-      self.cursor = cursor
+    self.cursor = CellCursor(map: self.nodeCellMap, firstIndex: cursor.firstIndex, lastIndex: cursor.lastIndex, path: cursor.path, node: node)
 
 proc `targetCursor=`*(self: ModelDocumentEditor, cursor: CellCursorState) =
   self.mTargetCursor = cursor.some
@@ -602,79 +593,9 @@ proc buildNodeCellMap(self: Cell, map: var Table[Id, Cell]) =
     for c in self.CollectionCell.children:
       c.buildNodeCellMap(map)
 
-proc assignToLogicalLines(self: ModelDocumentEditor, cell: Cell, startLine: int, currentLineEmpty: var bool): tuple[currentLine: int, maxLine: int] =
-  if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
-    return (startLine, startLine)
-
-  cell.line = startLine
-
-  if cell of CollectionCell:
-    let coll = cell.CollectionCell
-    let vertical = LayoutVertical in coll.flags
-
-    var currentLine = startLine
-    var maxLine = startLine
-
-    # debugf"assignToLogicalLines {cell.id}, {startLine}, {currentLineEmpty}"
-
-    var currentLineEmptyTemp = currentLineEmpty
-    if coll.inline:
-      currentLineEmptyTemp = true
-
-    for i, c in coll.children:
-      if vertical and (i > 0 or not currentLineEmptyTemp):
-        currentLineEmptyTemp = true
-        currentLine = maxLine
-        inc currentLine
-        maxLine = max(maxLine, currentLine)
-
-      if c.style.isNotNil:
-        if c.style.onNewLine and not currentLineEmptyTemp:
-          currentLineEmptyTemp = true
-          currentLine = maxLine
-          inc currentLine
-          maxLine = max(maxLine, currentLine)
-
-      let (newCurrentLine, newMaxLine) = self.assignToLogicalLines(c, currentLine, currentLineEmptyTemp)
-      maxLine = max(maxLine, newMaxLine)
-
-      if not (c of CollectionCell and c.CollectionCell.inline):
-        currentLine = newCurrentLine
-
-      maxLine = max(maxLine, currentLine)
-
-      if c.style.isNotNil:
-        if c.style.addNewlineAfter:
-          currentLine = maxLine
-          currentLineEmptyTemp = true
-          inc currentLine
-          maxLine = max(maxLine, currentLine)
-
-    if not coll.inline:
-      currentLineEmpty = currentLineEmptyTemp
-
-    return (currentLine, maxLine)
-
-  else:
-    while self.logicalLines.len <= startLine:
-      self.logicalLines.add @[]
-    self.logicalLines[startLine].add cell
-    currentLineEmpty = false
-    return (startLine, startLine)
-
 proc rebuildCells(self: ModelDocumentEditor) =
-  var builder = self.document.builder
-
   self.nodeCellMap.invalidate()
-
   self.logicalLines.setLen 0
-
-  # for node in self.document.model.rootNodes:
-  #   let cell = builder.buildCell(self.nodeCellMap, node, self.useDefaultCellBuilder)
-  #   cell.buildNodeCellMap(self.nodeCellMap.map)
-
-  #   var temp = true
-  #   discard self.assignToLogicalLines(cell, 0, temp)
 
 proc toJson*(self: api.ModelDocumentEditor, opt = initToJsonOptions()): JsonNode =
   result = newJObject()
@@ -740,25 +661,6 @@ method handleMousePress*(self: ModelDocumentEditor, button: MouseButton, mousePo
       self.markDirty()
     return
 
-  if button != MouseButton.Left:
-    return
-
-  for rootNode in self.document.model.rootNodes:
-    let cell = self.nodeCellMap.cell(rootNode)
-    if cell.isNil:
-      continue
-
-    if self.getLeafCellContainingPoint(cell, mousePosWindow).getSome(leafCell):
-      if leafCell.line < self.logicalLines.high:
-        if self.getCursorInLine(leafCell.line, mousePosWindow.x).getSome(newCursor):
-          self.cursor = newCursor
-          self.markDirty()
-          break
-
-      self.cursor = self.nodeCellMap.toCursor(leafCell, true)
-      self.markDirty()
-      break
-
 method handleMouseRelease*(self: ModelDocumentEditor, button: MouseButton, mousePosWindow: Vec2) =
   if self.showCompletions and button == MouseButton.Left and self.getItemAtPixelPosition(mousePosWindow).getSome(item):
     if self.selectedCompletion == item:
@@ -771,24 +673,6 @@ method handleMouseMove*(self: ModelDocumentEditor, mousePosWindow: Vec2, mousePo
       self.selectedCompletion = item
       self.markDirty()
     return
-
-  if MouseButton.Left in buttons:
-    for rootNode in self.document.model.rootNodes:
-      let cell = self.nodeCellMap.cell(rootNode)
-      if cell.isNil:
-        continue
-
-      if self.getLeafCellContainingPoint(cell, mousePosWindow).getSome(leafCell):
-        if leafCell.line < self.logicalLines.high:
-          if self.getCursorInLine(leafCell.line, mousePosWindow.x).getSome(newCursor):
-            self.selection.last = newCursor
-            self.markDirty()
-            break
-
-        # debugf"line {leafCell.parent.id}|{leafCell.id}: {leafCell.line}"
-        self.selection.last = self.nodeCellMap.toCursor(leafCell, true)
-        self.markDirty()
-        break
 
 method canEdit*(self: ModelDocumentEditor, document: Document): bool =
   if document of ModelDocument: return true
@@ -830,7 +714,6 @@ method createWithDocument*(_: ModelDocumentEditor, document: Document, configPro
   self.mSelection.first.node = self.document.model.rootNodes[0]
   self.mSelection.last.node = self.document.model.rootNodes[0]
   self.cursor = self.getFirstEditableCellOfNode(self.document.model.rootNodes[0]).get
-  # echo self.cursor
 
   return self
 
@@ -905,124 +788,148 @@ proc setMode*(self: ModelDocumentEditor, mode: string) {.expose("editor.model").
 
   self.currentMode = mode
 
-proc getCursorInLine*(self: ModelDocumentEditor, line: int, xPos: float): Option[CellCursor] =
-  if line notin 0..self.logicalLines.high:
-    return CellCursor.none
+proc getCursorOffset(builder: UINodeBuilder, cell: Cell, posX: float): int =
+  var offsetFromLeft = posX / builder.charWidth
+  if false: # self.isThickCursor(): # todo
+    offsetFromLeft -= 0.0
+  else:
+    offsetFromLeft += 0.5
 
-  let line = self.logicalLines[line]
-  if line.len == 0:
-    return CellCursor.none
+  let line = cell.getText
+  let index = clamp(offsetFromLeft.int, 0, line.runeLen.int)
+  let byteIndex = line.runeOffset(index.RuneIndex)
+  return byteIndex
 
-  let charWidth = self.app.platform.charWidth
+proc getCellInLine*(self: ModelDocumentEditor, cell: Cell, direction: int, targetX: float): Option[tuple[cell: Cell, offset: int]] =
+  let builder = self.app.platform.builder
+  let uiRoot = builder.root
+  let maxYDiff = builder.lineHeight / 2
 
-  # todo
-  # var closest = 10000000000.0
-  # for c in line:
-  #   if not c.canSelect:
-  #     continue
-    # let widget = self.cellWidgetContext.cellToWidget.getOrDefault(c.id, nil)
-    # if widget.isNil:
-    #   continue
+  if not self.cellWidgetContext.cellToWidget.contains(cell.id):
+    return
 
-    # let xMin = if c.style.isNotNil and c.style.noSpaceLeft:
-    #   widget.lastBounds.x + charWidth
-    # else:
-    #   widget.lastBounds.x
+  let cellUINode = self.cellWidgetContext.cellToWidget[cell.id]
 
-    # let xMax = if c.style.isNotNil and c.style.noSpaceRight:
-    #   widget.lastBounds.xw - charWidth
-    # else:
-    #   widget.lastBounds.xw
+  var offset = 0
+  while true:
+    offset = offset + direction
+    let searchRect = rect(-1, cellUINode.ly + offset.float * builder.lineHeight + 1, uiRoot.w, builder.lineHeight - 2)
 
-    # if xPos < xMin:
-    #   if result.isNone or xMin - xPos < closest:
-    #     result = c.toCursor(true).some
-    #     closest = xMin - xPos
-    # elif xPos > xMax:
-    #   if result.isNone or xPos - xMax < closest:
-    #     result = c.toCursor(false).some
-    #     closest = xPos - xMax
-    # else:
-    #   result = c.toCursor(true).some
+    if searchRect.yh < 0 or searchRect.y > uiRoot.h:
+      return
 
-    #   let text = c.currentText
-    #   if text.len > 0:
-    #     let alpha = (xPos - widget.lastBounds.x) / widget.lastBounds.w
-    #     result.get.firstIndex = (alpha * text.len.float).round.int
-    #     result.get.lastIndex = (alpha * text.len.float).round.int
+    var xDiffMin = float.high
+    var selectedNode: UINode = nil
+    var selectedCell: Cell = nil
+    uiRoot.forEachOverlappingLeafNode(searchRect, proc(uiNode: UINode) =
+      if abs(uiNode.ly - searchRect.y) > maxYDiff:
+        return
+      if uiNode.userData.isNil or not (uiNode.userData of Cell):
+        return
+      let currentCell = uiNode.userData.Cell
 
-    #   return
+      let xDiff = if targetX < uiNode.lx:
+        uiNode.lx - targetX
+      elif targetX > uiNode.lxw:
+        targetX - uiNode.lxw
+      else:
+        0
 
-proc getCursorXPos*(self: ModelDocumentEditor, cursor: CellCursor): float =
-  result = 0
-  # todo
-  # if getTargetCell(cursor).getSome(cell):
-  #   let widget = self.cellWidgetContext.cellToWidget.getOrDefault(cell.id, nil)
-  #   if widget.isNotNil:
-  #     let text = cell.currentText
-  #     if text.len == 0:
-  #       result = widget.lastBounds.x
-  #     else:
-  #       let alpha = cursor.lastIndex.float / text.len.float
-  #       result = widget.lastBounds.x * (1 - alpha) + widget.lastBounds.xw * alpha
+      if xDiff == 0:
+        let offset = getCursorOffset(builder, currentCell, targetX - uiNode.lx)
+        if offset < currentCell.editableLow or offset > currentCell.editableHigh:
+          return
+
+      if xDiff < xDiffMin:
+        xDiffMin = xDiff
+        selectedNode = uiNode
+        selectedCell = currentCell
+    )
+
+    if selectedCell.isNotNil:
+      let offset = builder.getCursorOffset(selectedCell, targetX - selectedNode.lx)
+      return (selectedCell, offset).some
+
+    if direction == 0:
+      return
 
 proc getPreviousCellInLine*(self: ModelDocumentEditor, cell: Cell): Cell =
-  # defer:
-  #   debugf"getPreviousCellInLine {cell.dump} -> {result.dump}"
+  let uiRoot = self.app.platform.builder.root
+  let maxYDiff = self.app.platform.builder.lineHeight / 2
 
-  if cell.line < 0 or cell.line > self.logicalLines.high:
+  if not self.cellWidgetContext.cellToWidget.contains(cell.id):
     return cell
 
-  let line = self.logicalLines[cell.line]
+  let cellUINode = self.cellWidgetContext.cellToWidget[cell.id]
+  let searchRect = rect(0, cellUINode.ly + 1, cellUINode.lx, cellUINode.lh - 2)
 
-  var index = -1
-  for i, c in line:
-    if c.isDecendant(cell) and index == -1:
-      index = i
-    elif c == cell:
-      index = i
-      break
+  var xMax = float.low
+  var selectedNode: UINode = nil
+  var selectedCell: Cell = nil
+  uiRoot.forEachOverlappingLeafNode(searchRect, proc(uiNode: UINode) =
+    if uiNode.lxw > searchRect.xw or abs(uiNode.ly - searchRect.y) > maxYDiff:
+      return
 
-  if index == -1:
-    index = 0
+    if uiNode.userData.isNil or not (uiNode.userData of Cell):
+      return
 
-  # echo index
+    let currentCell = uiNode.userData.Cell
 
-  if index == 0:
-    # Last cell in line, find next cell on next line
-    for k in 0..(cell.line - 1):
-      let i = cell.line - 1 - k
-      if self.logicalLines[i].len > 0:
-        return self.logicalLines[i][self.logicalLines[i].high]
-    return cell
-  else:
-    return line[index - 1]
+    if currentCell == cell:
+      return
+
+    if uiNode.lxw > xMax:
+      xMax = uiNode.lxw
+      selectedNode = uiNode
+      selectedCell = currentCell
+  )
+
+  if selectedCell.isNotNil:
+    return selectedCell
+
+  if self.getCellInLine(cell, -1, 10000).getSome(target):
+    return target.cell
+
+  return cell
 
 proc getNextCellInLine*(self: ModelDocumentEditor, cell: Cell): Cell =
-  # defer:
-  #   debugf"getNextCellInLine {cell.dump} -> {result.dump}"
+  let uiRoot = self.app.platform.builder.root
+  let maxYDiff = self.app.platform.builder.lineHeight / 2
 
-  if cell.line < 0 or cell.line > self.logicalLines.high:
+  if not self.cellWidgetContext.cellToWidget.contains(cell.id):
     return cell
 
-  let line = self.logicalLines[cell.line]
+  let cellUINode = self.cellWidgetContext.cellToWidget[cell.id]
+  let searchRect = rect(cellUINode.lxw, cellUINode.ly + 1, uiRoot.lw, cellUINode.lh - 2)
 
-  var index = line.high
-  for i, c in line:
-    if c.isDecendant(cell):
-      index = i
-    elif c == cell:
-      index = i
-      break
+  var xMin = float.high
+  var selectedNode: UINode = nil
+  var selectedCell: Cell = nil
+  uiRoot.forEachOverlappingLeafNode(searchRect, proc(uiNode: UINode) =
+    if uiNode.lx < searchRect.x or abs(uiNode.ly - searchRect.y) > maxYDiff:
+      return
 
-  if index >= line.high:
-    # Last cell in line, find next cell on next line
-    for i in (cell.line + 1)..self.logicalLines.high:
-      if self.logicalLines[i].len > 0:
-        return self.logicalLines[i][0]
-    return cell
-  else:
-    return line[index + 1]
+    if uiNode.userData.isNil or not (uiNode.userData of Cell):
+      return
+
+    let currentCell = uiNode.userData.Cell
+
+    if currentCell == cell:
+      return
+
+    if uiNode.lx < xMin:
+      xMin = uiNode.lx
+      selectedNode = uiNode
+      selectedCell = currentCell
+  )
+
+  if selectedCell.isNotNil:
+    return selectedCell
+
+  if self.getCellInLine(cell, 1, 0).getSome(target):
+    return target.cell
+
+  return cell
 
 proc getPreviousInLineWhere*(self: ModelDocumentEditor, cell: Cell, predicate: proc(cell: Cell): bool): Cell =
   result = self.getPreviousCellInLine(cell)
@@ -1471,45 +1378,45 @@ method getCursorRight*(cell: CollectionCell, cursor: CellCursor): CellCursor =
   result.path = if cell.node == childCell.node: cursor.path & cell.children.high else: @[]
   result.column = 0
 
-method handleDeleteLeft*(map: NodeCellMap, cell: Cell, slice: Slice[int]): Option[CellCursor] {.base.} = discard
-method handleDeleteRight*(map: NodeCellMap, cell: Cell, slice: Slice[int]): Option[CellCursor] {.base.} = discard
+method handleDeleteLeft*(cell: Cell, map: NodeCellMap, slice: Slice[int]): Option[CellCursor] {.base.} = discard
+method handleDeleteRight*(cell: Cell, map: NodeCellMap, slice: Slice[int]): Option[CellCursor] {.base.} = discard
 
 proc handleDelete*(map: NodeCellMap, cell: Cell, slice: Slice[int], direction: Direction): Option[CellCursor] =
   case direction
   of Left:
-    return map.handleDeleteLeft(cell, slice)
+    return cell.handleDeleteLeft(map, slice)
   of Right:
-    return map.handleDeleteRight(cell, slice)
+    return cell.handleDeleteRight(map, slice)
 
-method handleDeleteLeft*(map: NodeCellMap, cell: PropertyCell, slice: Slice[int]): Option[CellCursor] =
+method handleDeleteLeft*(cell: PropertyCell, map: NodeCellMap, slice: Slice[int]): Option[CellCursor] =
   if cell.disableEditing or cell.currentText.len == 0 or slice == 0..0:
     return CellCursor.none
   let slice = if slice.a != slice.b: slice else: max(0, slice.a - 1)..slice.b
   let newIndex = cell.replaceText(slice, "")
   return map.toCursor(cell, newIndex).some
 
-method handleDeleteLeft*(map: NodeCellMap, cell: ConstantCell, slice: Slice[int]): Option[CellCursor] =
+method handleDeleteLeft*(cell: ConstantCell, map: NodeCellMap, slice: Slice[int]): Option[CellCursor] =
   if cell.disableEditing or cell.currentText.len == 0 or slice == 0..0:
     return CellCursor.none
   let slice = if slice.a != slice.b: slice else: max(0, slice.a - 1)..slice.b
   let newIndex = cell.replaceText(slice, "")
   return map.toCursor(cell, newIndex).some
 
-method handleDeleteLeft*(map: NodeCellMap, cell: PlaceholderCell, slice: Slice[int]): Option[CellCursor] =
+method handleDeleteLeft*(cell: PlaceholderCell, map: NodeCellMap, slice: Slice[int]): Option[CellCursor] =
   if cell.disableEditing or cell.currentText.len == 0 or slice == 0..0:
     return CellCursor.none
   let slice = if slice.a != slice.b: slice else: max(0, slice.a - 1)..slice.b
   let newIndex = cell.replaceText(slice, "")
   return map.toCursor(cell, newIndex).some
 
-method handleDeleteLeft*(map: NodeCellMap, cell: AliasCell, slice: Slice[int]): Option[CellCursor] =
+method handleDeleteLeft*(cell: AliasCell, map: NodeCellMap, slice: Slice[int]): Option[CellCursor] =
   if cell.disableEditing or cell.currentText.len == 0 or slice == 0..0:
     return CellCursor.none
   let slice = if slice.a != slice.b: slice else: max(0, slice.a - 1)..slice.b
   let newIndex = cell.replaceText(slice, "")
   return map.toCursor(cell, newIndex).some
 
-method handleDeleteRight*(map: NodeCellMap, cell: PropertyCell, slice: Slice[int]): Option[CellCursor] =
+method handleDeleteRight*(cell: PropertyCell, map: NodeCellMap, slice: Slice[int]): Option[CellCursor] =
   let currentText = cell.currentText
   if cell.disableEditing or currentText.len == 0 or slice == currentText.len..currentText.len:
     return CellCursor.none
@@ -1517,7 +1424,7 @@ method handleDeleteRight*(map: NodeCellMap, cell: PropertyCell, slice: Slice[int
   let newIndex = cell.replaceText(slice, "")
   return map.toCursor(cell, newIndex).some
 
-method handleDeleteRight*(map: NodeCellMap, cell: ConstantCell, slice: Slice[int]): Option[CellCursor] =
+method handleDeleteRight*(cell: ConstantCell, map: NodeCellMap, slice: Slice[int]): Option[CellCursor] =
   let currentText = cell.currentText
   if cell.disableEditing or currentText.len == 0 or slice == currentText.len..currentText.len:
     return CellCursor.none
@@ -1525,7 +1432,7 @@ method handleDeleteRight*(map: NodeCellMap, cell: ConstantCell, slice: Slice[int
   let newIndex = cell.replaceText(slice, "")
   return map.toCursor(cell, newIndex).some
 
-method handleDeleteRight*(map: NodeCellMap, cell: PlaceholderCell, slice: Slice[int]): Option[CellCursor] =
+method handleDeleteRight*(cell: PlaceholderCell, map: NodeCellMap, slice: Slice[int]): Option[CellCursor] =
   let currentText = cell.currentText
   if cell.disableEditing or currentText.len == 0 or slice == currentText.len..currentText.len:
     return CellCursor.none
@@ -1533,7 +1440,7 @@ method handleDeleteRight*(map: NodeCellMap, cell: PlaceholderCell, slice: Slice[
   let newIndex = cell.replaceText(slice, "")
   return map.toCursor(cell, newIndex).some
 
-method handleDeleteRight*(map: NodeCellMap, cell: AliasCell, slice: Slice[int]): Option[CellCursor] =
+method handleDeleteRight*(cell: AliasCell, map: NodeCellMap, slice: Slice[int]): Option[CellCursor] =
   let currentText = cell.currentText
   if cell.disableEditing or currentText.len == 0 or slice == currentText.len..currentText.len:
     return CellCursor.none
@@ -1555,7 +1462,6 @@ proc moveCursorLeft*(self: ModelDocumentEditor, select: bool = false) {.expose("
         self.selection.last = newCursor
       else:
         self.cursor = newCursor
-    # echo self.cursor
 
   self.markDirty()
 
@@ -1567,29 +1473,20 @@ proc moveCursorRight*(self: ModelDocumentEditor, select: bool = false) {.expose(
         self.selection.last = newCursor
       else:
         self.cursor = newCursor
-    # echo self.cursor
 
   self.markDirty()
 
 proc moveCursorLeftLine*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
   if getTargetCell(self.cursor, false).getSome(cell):
     var newCursor = cell.getCursorLeft(self.cursor)
-    echo self.cursor
-    echo newCursor
-    # echo newCursor
     if newCursor.node == self.cursor.node:
-      # echo "a"
       if select:
         self.selection.last = newCursor
       else:
         self.cursor = newCursor
     else:
-      # self.cursor = selectCursor(self.cursor, self.getPreviousSelectableInLine(cell).toCursor(false), select)
-      # echo "b"
       let nextCell = self.getPreviousSelectableInLine(cell)
-      echo nextCell.dump
       newCursor = self.nodeCellMap.toCursor(nextCell, false)
-      # echo newCursor
       if select:
         self.selection.last = newCursor
       else:
@@ -1600,19 +1497,14 @@ proc moveCursorLeftLine*(self: ModelDocumentEditor, select: bool = false) {.expo
 proc moveCursorRightLine*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
   if getTargetCell(self.cursor, false).getSome(cell):
     var newCursor = cell.getCursorRight(self.cursor)
-    # echo newCursor
     if newCursor.node == self.cursor.node:
-      # echo "a"
       if select:
         self.selection.last = newCursor
       else:
         self.cursor = newCursor
     else:
-      # echo "b"
       let nextCell = self.getNextSelectableInLine(cell)
-      # echo nextCell.dump
       newCursor = self.nodeCellMap.toCursor(nextCell, true)
-      # echo newCursor
       if select:
         self.selection.last = newCursor
       else:
@@ -1622,8 +1514,8 @@ proc moveCursorRightLine*(self: ModelDocumentEditor, select: bool = false) {.exp
 
 proc moveCursorLineStart*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
   if getTargetCell(self.cursor).getSome(cell):
-    if cell.line >= 0 and cell.line <= self.logicalLines.high and self.logicalLines[cell.line].len > 0:
-      let newCursor = self.nodeCellMap.toCursor(self.logicalLines[cell.line][0], true)
+    if self.getCellInLine(cell, 0, 0).getSome(target):
+      let newCursor = self.nodeCellMap.toCursor(target.cell, target.offset)
       if select:
         self.selection.last = newCursor
       else:
@@ -1632,8 +1524,8 @@ proc moveCursorLineStart*(self: ModelDocumentEditor, select: bool = false) {.exp
 
 proc moveCursorLineEnd*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
   if getTargetCell(self.cursor).getSome(cell):
-    if cell.line >= 0 and cell.line <= self.logicalLines.high and self.logicalLines[cell.line].len > 0:
-      let newCursor = self.nodeCellMap.toCursor(self.logicalLines[cell.line][self.logicalLines[cell.line].high], false)
+    if self.getCellInLine(cell, 0, 10000).getSome(target):
+      let newCursor = self.nodeCellMap.toCursor(target.cell, target.offset)
       if select:
         self.selection.last = newCursor
       else:
@@ -1693,24 +1585,24 @@ proc moveCursorLineEndInline*(self: ModelDocumentEditor, select: bool = false) {
   self.markDirty()
 
 proc moveCursorUp*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
-  if getTargetCell(self.cursor).getSome(cell):
-    if cell.line > 0 and cell.line <= self.logicalLines.high:
-      if self.getCursorInLine(cell.line - 1, self.getCursorXPos(self.cursor)).getSome(newCursor):
-        if select:
-          self.selection.last = newCursor
-        else:
-          self.cursor = newCursor
+  if getTargetCell(self.cursor).getSome(cell) and self.lastCursorLocationBounds.getSome(cursorBounds):
+    if self.getCellInLine(cell, -1, cursorBounds.x).getSome(target):
+      let newCursor = self.nodeCellMap.toCursor(target.cell, target.offset)
+      if select:
+        self.selection.last = newCursor
+      else:
+        self.cursor = newCursor
 
   self.markDirty()
 
 proc moveCursorDown*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
-  if getTargetCell(self.cursor).getSome(cell):
-    if cell.line < self.logicalLines.high:
-      if self.getCursorInLine(cell.line + 1, self.getCursorXPos(self.cursor)).getSome(newCursor):
-        if select:
-          self.selection.last = newCursor
-        else:
-          self.cursor = newCursor
+  if getTargetCell(self.cursor).getSome(cell) and self.lastCursorLocationBounds.getSome(cursorBounds):
+    if self.getCellInLine(cell, 1, cursorBounds.x).getSome(target):
+      let newCursor = self.nodeCellMap.toCursor(target.cell, target.offset)
+      if select:
+        self.selection.last = newCursor
+      else:
+        self.cursor = newCursor
 
   self.markDirty()
 
@@ -2001,7 +1893,7 @@ proc createNewNodeAt*(self: ModelDocumentEditor, cursor: CellCursor): Option[Ast
     return false
 
   if (not ok or candidate.isNone) and not originalNode.canHaveSiblings():
-    echo "search outside"
+    debug "search outside"
     candidate = cell.getSelfOrNextLeafWhere proc(c: Cell): bool =
       # inc i
       if c.node.selfDescription().getSome(desc):
@@ -2038,12 +1930,12 @@ proc createNewNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
   if self.cursor.firstIndex != self.cursor.lastIndex:
     return
 
-  echo "createNewNode"
+  debug "createNewNode"
 
   if self.createNewNodeAt(self.cursor).getSome(newNode):
     self.rebuildCells()
     self.cursor = self.getFirstEditableCellOfNode(newNode).get
-    echo self.cursor
+    debug self.cursor
 
   self.markDirty()
 
@@ -2226,23 +2118,23 @@ proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.
     discard workspace.saveFile("jstest.wasm", binary.toArrayBuffer)
 
   proc test(a: int32) =
-    echo "test ", a
+    debug "test ", a
 
   var imp = WasmImports(namespace: "env")
   imp.addFunction("test", test)
 
   let module = await newWasmModule(binary.toArrayBuffer, @[imp])
   if module.isNone:
-    echo "Failed to load module"
+    debug "Failed to load module"
     return
 
   if module.get.findFunction("test", int32, proc(): int32).getSome(f):
-    echo "call test"
+    debug "call test"
     let r = f()
-    echo "Result: ", r
+    debug "Result: ", r
 
   if module.get.findFunction("test", void, proc(): void).getSome(f):
-    echo "call test"
+    debug "call test"
     f()
 
 proc runSelectedFunction*(self: ModelDocumentEditor) {.expose("editor.model").} =
@@ -2292,9 +2184,9 @@ method restoreStateJson*(self: ModelDocumentEditor, state: JsonNode) =
     return
   if state.hasKey("cursor"):
     let cursorState = state["cursor"]
-    echo cursorState.pretty
+    debug cursorState.pretty
     let firstIndex = cursorState["firstIndex"].jsonTo int
     let lastIndex = cursorState["lastIndex"].jsonTo int
     let path = cursorState["path"].jsonTo seq[int]
-    let nodeId = cursorState["nodeId"].jsonTo(Id).NodeId
+    let nodeId = cursorState["nodeId"].jsonTo(NodeId)
     self.targetCursor = CellCursorState(firstIndex: firstIndex, lastIndex: lastIndex, path: path, node: nodeId)
