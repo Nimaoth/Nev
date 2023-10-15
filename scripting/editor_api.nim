@@ -153,6 +153,8 @@ proc loadCurrentConfig*() =
   ## Javascript backend only!
   ## Opens the config file in a new view.
   editor_loadCurrentConfig_void_App_impl()
+proc logRootNode*() =
+  editor_logRootNode_void_App_impl()
 proc sourceCurrentDocument*() =
   ## Javascript backend only!
   ## Runs the content of the active editor as javascript using `eval()`.

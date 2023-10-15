@@ -267,7 +267,7 @@ template selection*(self: ModelDocumentEditor): CellSelection = self.mSelection
 proc updateScrollOffset(self: ModelDocumentEditor, oldCell: Cell) =
   if self.cellWidgetContext.isNotNil:
     let newCell = self.selection.last.targetCell
-    if oldCell.isNotNil and self.cellWidgetContext.cellToWidget.contains(oldCell.id):
+    if self.scrolledNode.isNotNil:
       if newCell.isNotNil and self.cellWidgetContext.cellToWidget.contains(newCell.id):
         let newUINode = self.cellWidgetContext.cellToWidget[newCell.id]
         let newY = newUINode.transformBounds(self.scrolledNode.parent).y
@@ -281,8 +281,13 @@ proc updateScrollOffset(self: ModelDocumentEditor, oldCell: Cell) =
           self.scrollOffset = self.scrolledNode.parent.h - buffer * self.app.platform.builder.textHeight
 
       else:
-        self.targetCellPath = self.selection.last.targetCell.rootPath.path
-        self.scrollOffset = self.scrolledNode.parent.h / 2
+        discard
+        # todo
+        # echo fmt"new cell doesn't exist, scroll offset {self.scrollOffset}, {self.targetCellPath}"
+        # self.targetCellPath = self.selection.last.targetCell.rootPath.path
+        # self.scrollOffset = self.scrolledNode.parent.h / 2
+
+      self.markDirty()
 
 proc `selection=`*(self: ModelDocumentEditor, selection: CellSelection) =
   assert self.mSelection.first.map.isNotNil
@@ -294,7 +299,7 @@ proc `selection=`*(self: ModelDocumentEditor, selection: CellSelection) =
   else:
     self.mSelection = selection
     self.refilterCompletions()
-
+  # debugf"selection = {selection}"
   self.updateScrollOffset(oldCell)
 
 proc updateSelection*(self: ModelDocumentEditor, cursor: CellCursor, extend: bool) =
@@ -629,8 +634,10 @@ proc buildNodeCellMap(self: Cell, map: var Table[Id, Cell]) =
       c.buildNodeCellMap(map)
 
 proc rebuildCells(self: ModelDocumentEditor) =
+  # debugf"rebuildCells"
   self.nodeCellMap.invalidate()
   self.logicalLines.setLen 0
+  self.markDirty()
 
 proc toJson*(self: api.ModelDocumentEditor, opt = initToJsonOptions()): JsonNode =
   result = newJObject()
@@ -1940,10 +1947,10 @@ proc createNewNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
   debug "createNewNode"
 
   if self.createNewNodeAt(self.cursor).getSome(newNode):
-    self.rebuildCells()
     self.cursor = self.getFirstEditableCellOfNode(newNode).get
     debug self.cursor
 
+  self.rebuildCells()
   self.markDirty()
 
 proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool {.expose("editor.model").} =

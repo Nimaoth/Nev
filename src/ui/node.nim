@@ -1083,8 +1083,8 @@ proc postProcessNodeBackwards(builder: UINodeBuilder, node: UINode, offsetX: flo
   let newPosAbsoluteX = node.boundsActual.x + offsetX
   let newPosAbsoluteY = node.boundsActual.y + offsetY
 
-  let positionDirty = node.lx != newPosAbsoluteX or node.ly != newPosAbsoluteY
-  let sizeDirty = node.lw != node.boundsActual.w or node.lh != node.boundsActual.h
+  let positionDirty = node.lx != newPosAbsoluteX or node.ly != newPosAbsoluteY or (node.parent.isNotNil and node.parent.mLastPositionChange == builder.frameIndex)
+  let sizeDirty = node.lw != node.boundsActual.w or node.lh != node.boundsActual.h or (node.parent.isNotNil and node.parent.mLastSizeChange == builder.frameIndex)
 
   let animatingDirty = wasAnimating != (node.id in builder.animatingNodes)
   if animatingDirty:

@@ -404,6 +404,7 @@ proc editor_getActivePopup_EditorId_impl(): EditorId  {.importc.}
 proc editor_getActiveEditor_EditorId_impl(): EditorId  {.importc.}
 proc editor_getActiveEditor2_EditorId_App_impl(): EditorId  {.importc.}
 proc editor_loadCurrentConfig_void_App_impl()  {.importc.}
+proc editor_logRootNode_void_App_impl()  {.importc.}
 proc editor_sourceCurrentDocument_void_App_impl()  {.importc.}
 proc editor_getEditor_EditorId_int_impl(index: int): EditorId  {.importc.}
 proc editor_scriptIsTextEditor_bool_EditorId_impl(editorId: EditorId): bool  {.importc.}

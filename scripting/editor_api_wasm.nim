@@ -811,6 +811,13 @@ proc loadCurrentConfig*() =
       argsJsonString.cstring)
 
 
+proc editor_logRootNode_void_App_wasm(arg: cstring): cstring {.importc.}
+proc logRootNode*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_logRootNode_void_App_wasm(argsJsonString.cstring)
+
+
 proc editor_sourceCurrentDocument_void_App_wasm(arg: cstring): cstring {.importc.}
 proc sourceCurrentDocument*() =
   var argsJson = newJArray()

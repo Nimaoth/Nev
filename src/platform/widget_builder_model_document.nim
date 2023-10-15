@@ -844,7 +844,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
 
                   self.markDirty()
 
-                # echo self.scrollOffset
+                # echo fmt"scroll offset {self.scrollOffset}"
                 block:
                   let myCtx = newCellLayoutContext(builder, self.cellWidgetContext, Direction.Center, true)
                   defer:
@@ -871,13 +871,14 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
                 if self.cellWidgetContext.targetNode.isNotNil:
                   var bounds = self.cellWidgetContext.targetNode.bounds.transformRect(self.cellWidgetContext.targetNode.parent, scrolledNode.parent)
                   # echo fmt"1 target node {bounds}: {self.cellWidgetContext.targetNode.dump}"
-                  currentNode.rawY = currentNode.boundsRaw.y + (self.scrollOffset - bounds.y)
+                  # echo scrolledNode.boundsRaw.y, " -> ", scrolledNode.boundsRaw.y + (self.scrollOffset - bounds.y)
+                  scrolledNode.rawY = scrolledNode.boundsRaw.y + (self.scrollOffset - bounds.y)
                   bounds = self.cellWidgetContext.targetNode.bounds.transformRect(self.cellWidgetContext.targetNode.parent, scrolledNode.parent)
                   # echo fmt"2 target node {bounds}: {self.cellWidgetContext.targetNode.dump}"
 
                 if self.scrollOffset < cellGenerationBuffer or self.scrollOffset >= h - cellGenerationBuffer:
                   let forward = self.scrollOffset < cellGenerationBuffer
-                  if self.cellWidgetContext.updateTargetPath(currentNode.parent, cell, forward, self.targetCellPath, @[]).getSome(path):
+                  if self.cellWidgetContext.updateTargetPath(scrolledNode.parent, cell, forward, self.targetCellPath, @[]).getSome(path):
                     # echo "update path ", path, " (was ", targetCellPath, ")"
                     self.targetCellPath = path[1]
                     self.scrollOffset = path[0]

@@ -275,6 +275,7 @@ proc cell*(map: NodeCellMap, node: AstNode): Cell =
     return map.map[node.id]
   let cell = map.builder.buildCell(map, node, false)
   map.map[node.id] = cell
+  map.cells[cell.id] = cell
   return cell
 
 proc findBuilder(self: CellBuilder, class: NodeClass, preferred: Id): CellBuilderFunction =
@@ -357,7 +358,7 @@ proc buildCellDefault*(self: CellBuilder, m: NodeCellMap, node: AstNode, useDefa
 proc buildCell*(self: CellBuilder, map: NodeCellMap, node: AstNode, useDefault: bool = false): Cell =
   let class = node.nodeClass
   if class.isNil:
-    debugf"Unknown class {node.class}"
+    debugf"Unknown class {node.class} for node {node}"
     return EmptyCell(node: node)
 
   if not useDefault and (let builder = self.findBuilder(class, idNone()); builder.isNotNil):
