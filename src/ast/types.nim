@@ -626,7 +626,7 @@ proc replace*(node: AstNode, role: RoleId, index: int, child: AstNode) =
       if node.model.isNotNil:
         node.model.notifyNodeInserted(node, child, role, index)
 
-proc removeFromParent*(node: AstNode) =
+proc removeFromParent(node: AstNode) =
   if node.parent.isNil:
     return
   node.parent.remove(node)
@@ -644,6 +644,7 @@ proc replaceWithDefault*(node: AstNode, fillDefaultChildren: bool = false): Opti
   if fillDefaultChildren:
     child.fillDefaultChildren(node.language)
 
+  # debugf"replaceWithDefault: replacing {node} with {child}"
   node.parent.replace(node.role, node.index, child)
 
   return child.some
@@ -658,11 +659,13 @@ proc deleteOrReplaceWithDefault*(node: AstNode, fillDefaultChildren: bool = fals
     if fillDefaultChildren:
       child.fillDefaultChildren(node.language)
 
+    # debugf"deleteOrReplaceWithDefault: replacing {node} with {child}"
     node.parent.replace(node.role, node.index, child)
 
     return child.some
 
   else:
+    # debugf"deleteOrReplaceWithDefault: removing {node} from parent"
     node.removeFromParent()
     return AstNode.none
 

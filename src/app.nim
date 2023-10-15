@@ -1,5 +1,5 @@
 import std/[sequtils, strformat, strutils, tables, unicode, options, os, algorithm, json, macros, macrocache, sugar, streams, deques]
-import input, id, events, rect_utils, document, document_editor, popup, timer, event, cancellation_token, dispatch_tables, myjsonutils
+import input, id, events, rect_utils, document, document_editor, popup, timer, event, cancellation_token, dispatch_tables, myjsonutils, ui/node
 import theme, util, custom_logger, custom_async, fuzzy_matching
 import scripting/[expose, scripting_base]
 import platform/[platform, filesystem]
@@ -1721,6 +1721,10 @@ proc loadCurrentConfig*(self: App) {.expose("editor").} =
   ## Opens the config file in a new view.
   when defined(js):
     discard self.createAndAddView(newTextDocument(self.asConfigProvider, "./config/absytree_config.js", fs.loadApplicationFile("./config/absytree_config.js"), true))
+
+proc logRootNode*(self: App) {.expose("editor").} =
+  let str = self.platform.builder.root.dump(true)
+  debug "logRootNode: ", str
 
 proc sourceCurrentDocument*(self: App) {.expose("editor").} =
   ## Javascript backend only!
