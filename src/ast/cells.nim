@@ -271,8 +271,19 @@ proc expand*(map: NodeCellMap, self: Cell, path: openArray[int]) =
     map.expand child, path[1..^1]
 
 proc cell*(map: NodeCellMap, node: AstNode): Cell =
+  assert node.model.isNotNil, fmt"Trying to get cell for node which is not in a model: {node}"
+  defer:
+    map.fill(result)
+
   if map.map.contains(node.id):
     return map.map[node.id]
+
+  if node.parent.isNotNil:
+    let parentCell = map.cell(node.parent)
+    map.fill(parentCell)
+    assert map.map.contains(node.id)
+    return map.map[node.id]
+
   let cell = map.builder.buildCell(map, node, false)
   map.map[node.id] = cell
   map.cells[cell.id] = cell

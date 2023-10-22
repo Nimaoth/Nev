@@ -168,7 +168,7 @@ proc notifyNodePropertyChanged(self: Model, node: AstNode, role: RoleId, oldValu
 proc notifyNodeReferenceChanged(self: Model, node: AstNode, role: RoleId, oldRef: NodeId, newRef: NodeId) =
   self.onNodeReferenceChanged.invoke (self, node, role, oldRef, newRef)
 
-proc `$`*(node: AstNode, recursive: bool = false): string
+proc `$`*(node: AstNode, recurse: bool = false): string
 proc nodeClass*(node: AstNode): NodeClass
 proc add*(node: AstNode, role: RoleId, child: AstNode)
 
@@ -710,10 +710,12 @@ proc addBuilder*(self: CellBuilder, other: CellBuilder) =
 method dump*(self: Cell, recurse: bool = false): string {.base.} = discard
 method getChildAt*(self: Cell, index: int, clamp: bool): Option[Cell] {.base.} = Cell.none
 
+proc `$`*(cell: Cell, recurse: bool = false): string = cell.dump(recurse)
+
 method dump*(self: EmptyCell, recurse: bool = false): string =
   result.add fmt"EmptyCell(node: {self.node.id})"
 
-proc `$`*(node: AstNode, recursive: bool = false): string =
+proc `$`*(node: AstNode, recurse: bool = false): string =
   let class = node.nodeClass
 
   if class.isNil:
@@ -743,7 +745,7 @@ proc `$`*(node: AstNode, recursive: bool = false): string =
     result.add ": "
     result.add $role.node
 
-  if not recursive:
+  if not recurse:
     return
 
   var roleIndex = 0
@@ -764,7 +766,7 @@ proc `$`*(node: AstNode, recursive: bool = false): string =
         result.add "\n├───"
 
       let indent = if i < role.nodes.high or roleIndex < node.childLists.high: "│   " else: "    "
-      result.add indent(`$`(c, recursive), 1, indent)[indent.len..^1]
+      result.add indent(`$`(c, recurse), 1, indent)[indent.len..^1]
 
 proc toJson*(value: PropertyValue, opt = initToJsonOptions()): JsonNode =
   case value.kind

@@ -889,12 +889,12 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
               let node = self.cellWidgetContext.cellToWidget[targetCell.id]
               # debugf"cursor {self.cursor} at {targetCell.dump}, {node.dump}"
 
-              let index = self.selection.last.lastIndex
+              let index = self.selection.last.index
               var bounds = rect(index.float * builder.charWidth, 0, 0, 0).transformRect(node, overlapPanel)
 
               if self.isThickCursor:
                 let text = targetCell.getText
-                let index = self.selection.last.lastIndex.clamp(0, text.runeLen.int).RuneIndex
+                let index = self.selection.last.index.clamp(0, text.runeLen.int).RuneIndex
                 let ch = if index < text.runeLen.RuneIndex: text[index..index] else: " "
 
                 builder.panel(&{UINodeFlag.FillBackground, AnimatePosition, SnapInitialBounds}, x = bounds.x, y = bounds.y, w = builder.charWidth, h = builder.textHeight, backgroundColor = textColor, userId = newSecondaryId(self.cursorsId, 0)):
@@ -904,22 +904,23 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
 
               self.lastCursorLocationBounds = rect(index.float * builder.charWidth, 0, builder.charWidth, builder.textHeight).transformRect(node, builder.root).some
 
-            if not self.selection.empty and self.selection.first.getTargetCell(true).getSome(targetCell) and self.cellWidgetContext.cellToWidget.contains(targetCell.id):
+            if not self.selection.isEmpty and self.selection.first.getTargetCell(true).getSome(targetCell) and self.cellWidgetContext.cellToWidget.contains(targetCell.id):
               let node = self.cellWidgetContext.cellToWidget[targetCell.id]
               # debugf"cursor {self.cursor} at {targetCell.dump}, {node.dump}"
 
-              let index = self.selection.first.lastIndex
+              let index = self.selection.first.index
               var bounds = rect(index.float * builder.charWidth, 0, 0, 0).transformRect(node, overlapPanel)
+              let cursorColor = textColor.darken(0.2)
 
-              if self.isThickCursor:
+              if not app.platform.supportsThinCursor:
                 let text = targetCell.getText
-                let index = self.selection.first.lastIndex.clamp(0, text.runeLen.int).RuneIndex
+                let index = self.selection.first.index.clamp(0, text.runeLen.int).RuneIndex
                 let ch = if index < text.runeLen.RuneIndex: text[index..index] else: " "
 
-                builder.panel(&{UINodeFlag.FillBackground, AnimatePosition, SnapInitialBounds}, x = bounds.x, y = bounds.y, w = builder.charWidth, h = builder.textHeight, backgroundColor = textColor, userId = newSecondaryId(self.cursorsId, 1)):
+                builder.panel(&{UINodeFlag.FillBackground, AnimatePosition, SnapInitialBounds}, x = bounds.x, y = bounds.y, w = builder.charWidth, h = builder.textHeight, backgroundColor = cursorColor, userId = newSecondaryId(self.cursorsId, 1)):
                   builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = backgroundColor, text = ch)
               else:
-                builder.panel(&{UINodeFlag.FillBackground, AnimatePosition, SnapInitialBounds}, x = bounds.x, y = bounds.y, w = max(builder.charWidth * 0.2, 1), h = builder.textHeight, backgroundColor = textColor, userId = newSecondaryId(self.cursorsId, 1))
+                builder.panel(&{UINodeFlag.FillBackground, AnimatePosition, SnapInitialBounds}, x = bounds.x, y = bounds.y, w = max(builder.charWidth * 0.2, 1), h = builder.textHeight, backgroundColor = cursorColor, userId = newSecondaryId(self.cursorsId, 1))
 
         # echo builder.currentChild.dump(true)
 
