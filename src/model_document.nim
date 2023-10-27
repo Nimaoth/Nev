@@ -1,6 +1,6 @@
 import std/[strformat, strutils, sugar, tables, options, json, streams, algorithm]
 import fusion/matching, bumpy, rect_utils, vmath
-import util, document, document_editor, text/text_document, events, id, ast_ids, scripting/expose, event, input, custom_async, myjsonutils, custom_unicode
+import util, document, document_editor, text/text_document, events, id, ast_ids, scripting/expose, event, input, custom_async, myjsonutils, custom_unicode, delayed_task
 from scripting_api as api import nil
 import custom_logger, timer, array_buffer, config_provider, app_interface
 import platform/[filesystem, platform]
@@ -157,6 +157,10 @@ type
     lastTargetCell: Cell
     mTargetCursor: Option[CellCursorState]
 
+    cursorVisible*: bool = true
+    blinkCursor: bool = true
+    blinkCursorTask: DelayedTask
+
     useDefaultCellBuilder*: bool
 
     scrollOffset*: float
@@ -260,6 +264,22 @@ method save*(self: ModelDocument, filename: string = "", app: bool = false) =
 template cursor*(self: ModelDocumentEditor): CellCursor = self.mSelection.last
 template selection*(self: ModelDocumentEditor): CellSelection = self.mSelection
 
+proc startBlinkCursorTask(self: ModelDocumentEditor) =
+  if not self.blinkCursor:
+    return
+
+  if self.blinkCursorTask.isNil:
+    self.blinkCursorTask = startDelayed(500, repeat=true):
+      if not self.active:
+        self.cursorVisible = true
+        self.markDirty()
+        self.blinkCursorTask.pause()
+        return
+      self.cursorVisible = not self.cursorVisible
+      self.markDirty()
+  else:
+    self.blinkCursorTask.reschedule()
+
 proc updateScrollOffset(self: ModelDocumentEditor) =
   if self.cellWidgetContext.isNotNil:
     let newCell = self.selection.last.targetCell
@@ -289,7 +309,7 @@ proc `selection=`*(self: ModelDocumentEditor, selection: CellSelection) =
   assert self.mSelection.first.map.isNotNil
   assert self.mSelection.last.map.isNotNil
 
-  echo fmt"selection = {selection.last}"
+  # debugf"selection = {selection.last}"
 
   if self.lastTargetCell != selection.last.targetCell:
     self.mSelection = selection
@@ -300,6 +320,10 @@ proc `selection=`*(self: ModelDocumentEditor, selection: CellSelection) =
   # debugf"selection = {selection}"
   self.lastTargetCell = selection.last.targetCell
   self.updateScrollOffset()
+
+  self.cursorVisible = true
+  if self.blinkCursorTask.isNotNil and self.active:
+    self.blinkCursorTask.reschedule()
 
 proc updateSelection*(self: ModelDocumentEditor, cursor: CellCursor, extend: bool) =
   if extend:
@@ -625,6 +649,15 @@ method handleDocumentChanged*(self: ModelDocumentEditor) =
 
   self.markDirty()
 
+method handleActivate*(self: ModelDocumentEditor) =
+  self.startBlinkCursorTask()
+
+method handleDeactivate*(self: ModelDocumentEditor) =
+  if self.blinkCursorTask.isNotNil:
+    self.blinkCursorTask.pause()
+    self.cursorVisible = true
+    self.markDirty()
+
 proc buildNodeCellMap(self: Cell, map: var Table[Id, Cell]) =
   if self.node.isNotNil and not map.contains(self.node.id):
     map[self.node.id] = self
@@ -760,6 +793,8 @@ method createWithDocument*(_: ModelDocumentEditor, document: Document, configPro
   self.mSelection.last.node = self.document.model.rootNodes[0]
   self.cursor = self.getFirstEditableCellOfNode(self.document.model.rootNodes[0]).get
 
+  self.startBlinkCursorTask()
+
   return self
 
 method injectDependencies*(self: ModelDocumentEditor, app: AppInterface) =
@@ -830,6 +865,10 @@ proc setMode*(self: ModelDocumentEditor, mode: string) {.expose("editor.model").
         self.handleAction action, arg
       onInput:
         self.handleInput input
+
+  self.cursorVisible = true
+  if self.blinkCursorTask.isNotNil and self.active:
+    self.blinkCursorTask.reschedule()
 
   self.currentMode = mode
   self.markDirty()
@@ -1746,7 +1785,7 @@ proc delete*(self: ModelDocumentEditor, direction: Direction) =
           )
 
           if targetCell.getSome(targetCell):
-            echo fmt"delete left "
+            debugf"delete left "
             let cursor = self.nodeCellMap.toCursor(targetCell, cursorMoveDirection == Right)
             debugf"{targetCell}, {cursor}"
             self.rebuildCells()
@@ -1971,8 +2010,9 @@ proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool {.expos
 
     let newColumn = cell.replaceText(self.cursor.index..self.cursor.index, input)
     if newColumn != self.cursor.index:
-      self.mSelection.last.index = newColumn
-      self.mSelection.first = self.mSelection.last
+      var newCursor = self.selection.last
+      newCursor.index = newColumn
+      self.cursor = newCursor
 
       if self.unfilteredCompletions.len == 0:
         self.updateCompletions()
@@ -2028,8 +2068,9 @@ proc toggleUseDefaultCellBuilder*(self: ModelDocumentEditor) {.expose("editor.mo
 
 proc showCompletions*(self: ModelDocumentEditor) {.expose("editor.model").} =
   if self.showCompletions:
-    self.mSelection.last.index = 0
-    self.mSelection.first = self.mSelection.last
+    var newCursor = self.selection.last
+    newCursor.index = 0
+    self.cursor = newCursor
   self.updateCompletions()
   self.showCompletions = true
   self.markDirty()
