@@ -884,7 +884,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
                     self.scrollOffset = path[0]
 
           # cursor
-          proc drawCursor(cursor: CellCursor, thick: bool, cursorColor: Color, id: int): Option[UINode] =
+          proc drawCursor(cursor: CellCursor, thick: bool, cursorColor: Color, id: int32): Option[UINode] =
             if cursor.getTargetCell(true).getSome(targetCell) and self.cellWidgetContext.cellToWidget.contains(targetCell.id):
               let node = self.cellWidgetContext.cellToWidget[targetCell.id]
               # debugf"cursor {self.cursor} at {targetCell.dump}, {node.dump}"

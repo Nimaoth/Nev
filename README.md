@@ -12,7 +12,7 @@ the abstract syntac tree (AST) is edited directly by a custom editor.
 ## Editor
 
 The editor is available for the terminal, as a desktop GUI app and in the browser.
-You can try the browser version [here](https://nimaoth.github.io/AbsytreeBrowser/).
+You can try the browser version [here](https://nimaoth.github.io/AbsytreeBrowser/) ([old version](https://nimaoth.github.io/AbsytreeBrowser/old/absytree_browser.html)).
 
 [Test report](https://nimaoth.github.io/Absytree/testresults.html)
 
