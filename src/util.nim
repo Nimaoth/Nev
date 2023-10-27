@@ -7,6 +7,10 @@ template getSome*[T](opt: Option[T], injected: untyped): bool =
   ((let o = opt; o.isSome())) and ((let injected {.inject.} = o.get(); true))
 
 template isNotNil*(v: untyped): untyped = not v.isNil
+
+template isNotNil*(v: untyped, injected: untyped): bool =
+  (let injected {.inject.} = v; not injected.isNil)
+
 template toOpenArray*(s: string): auto = s.toOpenArray(0, s.high)
 
 proc `??`*[T: ref object](self: T, els: T): T =
