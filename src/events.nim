@@ -1,6 +1,8 @@
 import std/[tables, sequtils]
 import input, custom_logger
 
+logCategory "events"
+
 type EventResponse* = enum
   Failed,
   Ignored,
@@ -38,6 +40,7 @@ proc buildDFA*(config: EventHandlerConfig): CommandDFA =
 
 proc dfa*(handler: EventHandler): CommandDFA =
   if handler.revision < handler.config.revision:
+    # debugf"build dfa for {handler.config.context}"
     handler.dfaInternal = handler.config.buildDFA()
     handler.revision = handler.config.revision
   return handler.dfaInternal
@@ -133,6 +136,7 @@ proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers,
     let prevState = handler.state
     handler.state = handler.dfa.step(handler.state, input, modifiers)
     # debugf"handleEvent {(inputToString(input, modifiers))}, {prevState.current} -> {handler.state.current}, term = {(handler.dfa.isTerminal(handler.state.current))}, default = {(handler.dfa.getDefaultState(handler.state.current))}"
+    # debugf"handleEvent {handler.config.context} {(inputToString(input, modifiers))}"
     if handler.state.current == 0:
       if prevState.current == 0:
         # undefined input in state 0

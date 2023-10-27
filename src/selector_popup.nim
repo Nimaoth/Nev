@@ -183,7 +183,7 @@ proc next*(self: SelectorPopup) {.expose("popup.selector").} =
 genDispatcher("popup.selector")
 
 proc handleAction*(self: SelectorPopup, action: string, arg: string): EventResponse =
-  # echo "SelectorPopup.handleAction ", action, ", '", arg, "'"
+  # debugf"SelectorPopup.handleAction {action} '{arg}'"
 
   if self.app.handleUnknownPopupAction(self, action, arg) == Handled:
     return Handled
