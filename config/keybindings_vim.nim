@@ -349,5 +349,4 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     # Insert mode
     setHandleInputs "editor.model.insert", true
     setOption "editor.model.cursor.wide.insert", false
-    addModelCommand "insert", "<ENTER>", "insert-text-at-cursor", "\n"
     addModelCommand "insert", "<SPACE>", "insert-text-at-cursor", " "

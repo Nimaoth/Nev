@@ -76,6 +76,19 @@ proc rootPath*(cursor: CellCursor): tuple[root: Cell, path: seq[int]] =
   result = cursor.targetCell.rootPath
   result.path.add cursor.index
 
+proc `<`*(a, b: CellCursor): bool =
+  let pathA = a.rootPath
+  let pathB = b.rootPath
+  for i in 0..min(pathA.path.high, pathB.path.high):
+    if pathA.path[i] < pathB.path[i]:
+      return true
+    if pathA.path[i] > pathB.path[i]:
+      return false
+  return pathA.path.len < pathB.path.len
+
+proc normalized*(selection: CellSelection): CellSelection =
+  return if selection.first < selection.last: selection else: (selection.last, selection.first)
+
 type
   ModelOperationKind = enum
     Delete
@@ -184,6 +197,7 @@ type
     targetNodeOld*: UINode
     targetNode*: UINode
     targetCell*: Cell
+    selection*: CellSelection
     handleClick*: proc(node: UINode, cell: Cell, path: seq[int], cursor: CellCursor, drag: bool)
     selectionColor*: Color
     isThickCursor*: bool
@@ -1738,57 +1752,58 @@ proc selectNextPlaceholder*(self: ModelDocumentEditor, select: bool = false) {.e
     self.cursor = self.nodeCellMap.toCursor(candidate, true)
     self.markDirty()
 
-proc delete*(self: ModelDocumentEditor, direction: Direction) =
-  let cell = self.cursor.targetCell
-  if cell of CollectionCell:
+proc deleteDirection*(self: ModelDocumentEditor, direction: Direction) =
+  let cell = self.selection.last.targetCell
+  let endIndex = if direction == Left: 0 else: cell.currentText.len
 
-    let parent = cell.node.parent
-
-    if cell.node.deleteOrReplaceWithDefault().getSome(newNode):
-      self.rebuildCells()
-      self.cursor = self.getFirstEditableCellOfNode(newNode).get
+  var potentialCells: seq[(Cell, Slice[int], Direction)] = @[(cell, self.selection.orderedRange, direction)]
+  if self.selection.last.index == endIndex and self.selection.first.index == self.selection.last.index and cell.getNeighborSelectableLeaf(direction).getSome(prev):
+    let index = if direction == Left:
+      prev.editableHigh(true)
     else:
-      self.rebuildCells()
-      if self.getFirstEditableCellOfNode(parent).getSome(c):
-        self.cursor = c
+      prev.editableLow(true)
 
-  else:
-    let endIndex = if direction == Left: 0 else: cell.currentText.len
+    potentialCells.add (prev, index..index, -direction)
 
-    var potentialCells: seq[(Cell, Slice[int], Direction)] = @[(cell, self.selection.orderedRange, direction)]
-    if self.selection.last.index == endIndex and self.selection.first.index == self.selection.last.index and cell.getNeighborSelectableLeaf(direction).getSome(prev):
-      let index = if direction == Left:
-        prev.editableHigh(true)
-      else:
-        prev.editableLow(true)
+  for i, (c, slice, cursorMoveDirection) in potentialCells:
+    let node = c.node
+    let parent = node.parent
+    assert parent.isNotNil
 
-      potentialCells.add (prev, index..index, -direction)
+    let endIndex = if direction == Left: 0 else: c.currentText.len
 
-    for i, (c, slice, cursorMoveDirection) in potentialCells:
-      let node = c.node
-      let parent = node.parent
-      assert parent.isNotNil
+    if self.nodeCellMap.handleDelete(c, slice, direction).getSome(newCursor):
+      self.cursor = newCursor
 
-      let endIndex = if direction == Left: 0 else: c.currentText.len
-
-      if self.nodeCellMap.handleDelete(c, slice, direction).getSome(newCursor):
-        self.cursor = newCursor
-
-        if c.currentText.len == 0 and not c.dontReplaceWithDefault and c.parent.node != c.node:
-          if c.node.replaceWithDefault().getSome(newNode):
-            self.rebuildCells()
-            self.cursor = self.getFirstEditableCellOfNode(newNode).get
-
-        break
-
-      if c.currentText.len == 0 and not c.dontReplaceWithDefault and c.parent.node != c.node and not c.node.isRequiredAndDefault():
-        let parent = c.node.parent
-
-        if c.node.deleteOrReplaceWithDefault().getSome(newNode):
+      if c.currentText.len == 0 and not c.dontReplaceWithDefault and c.parent.node != c.node:
+        if c.node.replaceWithDefault().getSome(newNode):
           self.rebuildCells()
           self.cursor = self.getFirstEditableCellOfNode(newNode).get
-        else:
-          let targetCell = c.getNeighborLeafWhere(cursorMoveDirection, proc(cell: Cell): (bool, Option[Cell]) =
+
+      break
+
+    if c.currentText.len == 0 and not c.dontReplaceWithDefault and c.parent.node != c.node and not c.node.isRequiredAndDefault():
+      let parent = c.node.parent
+
+      if c.node.deleteOrReplaceWithDefault().getSome(newNode): # Node was replaced
+        self.rebuildCells()
+        self.cursor = self.getFirstEditableCellOfNode(newNode).get
+      else: # Node was removed
+
+        # Get next neighbor cell which is of a different node and not a child, and can be selected
+        var targetCell = c.getNeighborLeafWhere(cursorMoveDirection, proc(cell: Cell): (bool, Option[Cell]) =
+          if cell.node != c.node and cell.node != parent and not cell.node.isDescendant(parent):
+            return (true, Cell.none)
+          if not isVisible(cell) or not canSelect(cell):
+            return (false, Cell.none)
+          if cell == c or cell.node == c.node or cell.node == parent:
+            return (false, Cell.none)
+          return (true, cell.some)
+        )
+
+        # Get next neighbor cell which is of a different node and not a child, and can be selected
+        if targetCell.isNone:
+          targetCell = c.getNeighborLeafWhere(-cursorMoveDirection, proc(cell: Cell): (bool, Option[Cell]) =
             if cell.node != c.node and cell.node != parent and not cell.node.isDescendant(parent):
               return (true, Cell.none)
             if not isVisible(cell) or not canSelect(cell):
@@ -1798,65 +1813,193 @@ proc delete*(self: ModelDocumentEditor, direction: Direction) =
             return (true, cell.some)
           )
 
-          if targetCell.getSome(targetCell):
-            debugf"delete left "
-            let cursor = self.nodeCellMap.toCursor(targetCell, cursorMoveDirection == Right)
-            debugf"{targetCell}, {cursor}"
-            self.rebuildCells()
-            if self.updateCursor(cursor).getSome(newCursor):
-              self.cursor = newCursor
-              break
 
-          let uiae = self.nodeCellMap.toCursor(c)
-
-          var parentCellCursor = uiae.selectParentCell()
-          assert parentCellCursor.node == c.node.parent
-
+        if targetCell.getSome(targetCell):
+          debugf"delete left "
+          let cursor = self.nodeCellMap.toCursor(targetCell, cursorMoveDirection == Right)
+          debugf"{targetCell}, {cursor}"
           self.rebuildCells()
-          if self.updateCursor(parentCellCursor).flatMap((c: CellCursor) -> Option[Cell] => c.getTargetCell(true)).getSome(newCell):
-            if i == 0 and direction == Left and newCell.getNeighborSelectableLeaf(direction).getSome(c):
-              self.cursor = self.nodeCellMap.toCursor(c)
-            elif newCell.getSelfOrNeighborLeafWhere(direction, (c) -> bool => isVisible(c)).getSome(c):
-              self.cursor = self.nodeCellMap.toCursor(c, true)
-            else:
-              self.cursor = self.nodeCellMap.toCursor(newCell, true)
+          if self.updateCursor(cursor).getSome(newCursor):
+            self.cursor = newCursor
+            break
+
+        let uiae = self.nodeCellMap.toCursor(c)
+
+        var parentCellCursor = uiae.selectParentCell()
+        assert parentCellCursor.node == c.node.parent
+
+        self.rebuildCells()
+        if self.updateCursor(parentCellCursor).flatMap((c: CellCursor) -> Option[Cell] => c.getTargetCell(true)).getSome(newCell):
+          if i == 0 and direction == Left and newCell.getNeighborSelectableLeaf(direction).getSome(c):
+            self.cursor = self.nodeCellMap.toCursor(c)
+          elif newCell.getSelfOrNeighborLeafWhere(direction, (c) -> bool => isVisible(c)).getSome(c):
+            self.cursor = self.nodeCellMap.toCursor(c, true)
           else:
-            self.cursor = self.getFirstEditableCellOfNode(parent).get
-        break
+            self.cursor = self.nodeCellMap.toCursor(newCell, true)
+        else:
+          self.cursor = self.getFirstEditableCellOfNode(parent).get
+      break
 
-      if slice.a == slice.b and slice.a == endIndex:
-        continue
+    if slice.a == slice.b and slice.a == endIndex:
+      continue
 
-      if c.disableEditing:
-        if c.deleteImmediately or (slice.a == 0 and slice.b == c.currentText.len):
+    if c.disableEditing:
+      if c.deleteImmediately or (slice.a == 0 and slice.b == c.currentText.len):
 
-          if c.deleteNeighbor:
-            let neighbor = if direction == Left: c.previousDirect() else: c.nextDirect()
-            if neighbor.getSome(neighbor):
-              let parent = neighbor.node.parent
+        if c.deleteNeighbor:
+          let neighbor = if direction == Left: c.previousDirect() else: c.nextDirect()
+          if neighbor.getSome(neighbor):
+            let parent = neighbor.node.parent
 
-              let selectionTarget = c.getNeighborSelectableLeaf(-direction)
+            let selectionTarget = c.getNeighborSelectableLeaf(-direction)
 
-              if neighbor.node.deleteOrReplaceWithDefault().getSome(newNode):
-                self.rebuildCells()
-                self.cursor = self.getFirstEditableCellOfNode(newNode).get
-              else:
-                self.rebuildCells()
-                if selectionTarget.getSome(selectionTarget) and self.updateCursor(self.nodeCellMap.toCursor(selectionTarget, direction == Left)).getSome(newCursor):
-                  self.cursor = newCursor
-                else:
-                  self.cursor = self.getFirstEditableCellOfNode(parent).get
-
-          elif c.node.replaceWithDefault().getSome(newNode):
+            if neighbor.node.deleteOrReplaceWithDefault().getSome(newNode):
               self.rebuildCells()
               self.cursor = self.getFirstEditableCellOfNode(newNode).get
+            else:
+              self.rebuildCells()
+              if selectionTarget.getSome(selectionTarget) and self.updateCursor(self.nodeCellMap.toCursor(selectionTarget, direction == Left)).getSome(newCursor):
+                self.cursor = newCursor
+              else:
+                self.cursor = self.getFirstEditableCellOfNode(parent).get
+
+        elif c.node.replaceWithDefault().getSome(newNode):
+            self.rebuildCells()
+            self.cursor = self.getFirstEditableCellOfNode(newNode).get
+      else:
+        case direction
+        of Left:
+          self.selection = self.nodeCellMap.toSelectionBackwards(c)
+        of Right:
+          self.selection = self.nodeCellMap.toSelection(c)
+      break
+
+proc getParentInfo*(selection: CellSelection): tuple[cell: Cell, left: seq[int], right: seq[int]] =
+  if selection.isEmpty:
+    return (selection.first.targetCell, @[], @[])
+
+  let firstPath = selection.first.rootPath
+  let lastPath = selection.last.rootPath
+
+  if firstPath.root != lastPath.root:
+    return (nil, @[], @[])
+
+  var commonParentIndex = -1
+  for i in 0..min(firstPath.path.high, lastPath.path.high):
+    if firstPath.path[i] != lastPath.path[i]:
+      break
+    commonParentIndex = i
+  let childIndex = commonParentIndex + 1
+
+  let rootCell = firstPath.root
+  var parentCursor = CellCursor(map: selection.first.map, node: rootCell.node, path: firstPath.path[0..commonParentIndex], index: 0)
+  let parentCell = parentCursor.targetCell
+  return (parentCell, firstPath.path[childIndex+1..^1], lastPath.path[childIndex+1..^1])
+
+proc clampedPathToCell*(cursor: CellCursor, cell: Cell, direction: Direction): tuple[path: seq[int], outside: bool] =
+  let cellPath = cell.rootPath
+  let cursorPath = cursor.rootPath
+
+  # debugf"clampedPathToCell {cursor}, {cell}"
+  # echo cursorPath.path, ", ", cellPath.path
+
+  let count = min(cellPath.path.high, cursorPath.path.high)
+  for i in 0..count:
+    if cursorPath.path[i] < cellPath.path[i]:
+      return (@[], direction == Left)
+    if cursorPath.path[i] > cellPath.path[i]:
+      return (@[], direction == Right)
+
+  return (cursorPath.path[count+1..^1], false)
+
+proc contains*(selection: CellSelection, cell: Cell): bool =
+  let selection = selection.normalized
+  let parentInfo = selection.getParentInfo()
+  if parentInfo.cell.isNil:
+    return false
+
+  if not cell.isDescendant(parentInfo.cell) and cell != parentInfo.cell:
+    return false
+
+  let left = selection.first.clampedPathToCell(cell, Right)
+  let right = selection.last.clampedPathToCell(cell, Left)
+  if left.outside or right.outside:
+    return false
+
+  # echo "contains ", cell, ": ", left, ", ", right
+
+  return cell.isFullyContained(left.path, right.path)
+
+proc delete*(self: ModelDocumentEditor, direction: Direction) =
+  # debugf"delete {self.selection.first} .. {self.selection.last}"
+  # debugf"delete {self.selection.first.rootPath.path} .. {self.selection.last.rootPath.path}"
+
+  if self.selection.isEmpty:
+    self.deleteDirection(direction)
+    return
+
+  let selection = self.selection.normalized
+  let firstPath = selection.first.rootPath
+  let lastPath = selection.last.rootPath
+
+  if firstPath.root != lastPath.root:
+    return
+
+  var commonParentIndex = -1
+  for i in 0..min(firstPath.path.high, lastPath.path.high):
+    if firstPath.path[i] != lastPath.path[i]:
+      break
+    commonParentIndex = i
+  let childIndex = commonParentIndex + 1
+
+  let rootCell = firstPath.root
+  var parentCursor = CellCursor(map: self.nodeCellMap, node: rootCell.node, path: firstPath.path[0..commonParentIndex], index: 0)
+  let parentTargetCell = parentCursor.targetCell  # the actual targeted cell
+  parentCursor = self.nodeCellMap.toCursor(parentTargetCell, true)
+  let parentBaseCell = parentCursor.baseCell      # the root cell for the given node
+
+  let firstIndex = if commonParentIndex < firstPath.path.len: firstPath.path[childIndex] else: 0
+  let lastIndex = if commonParentIndex < lastPath.path.len: lastPath.path[childIndex] else: parentTargetCell.len
+
+  # debugf"common parent {commonParentIndex}, {firstIndex}..{lastIndex}, {parentBaseCell}, {parentTargetCell}, {parentBaseCell == parentTargetCell}"
+
+  # let firstCell = parentCell.getSelfOrNextLeafWhere(proc(cell: Cell): bool = cell.canSelect())
+  # let lastCell = parentCell.getSelfOrPreviousLeafWhere(proc(cell: Cell): bool = cell.canSelect())
+
+  if parentTargetCell of CollectionCell:
+    let parentCell = parentTargetCell.CollectionCell
+    let firstContained = self.selection.contains(parentCell.children[firstIndex])
+    let lastContained = self.selection.contains(parentCell.children[lastIndex])
+
+    # echo firstContained, ", ", lastContained
+    if firstContained and lastContained:
+      let parent = parentCell.node.parent
+      if firstIndex == 0 and lastIndex == parentCell.high and parentTargetCell == parentBaseCell: # entire parent selected
+        if parentCell.node.replaceWithDefault().getSome(newNode):
+          self.rebuildCells()
+          self.cursor = self.getFirstEditableCellOfNode(newNode).get
         else:
-          case direction
-          of Left:
-            self.selection = self.nodeCellMap.toSelectionBackwards(c)
-          of Right:
-            self.selection = self.nodeCellMap.toSelection(c)
-        break
+          self.rebuildCells()
+          if self.getFirstEditableCellOfNode(parent).getSome(c):
+            self.cursor = c
+
+      else: # some children of parent cell selected
+        var nodesToDelete: seq[AstNode]
+        for c in parentCell.children[firstIndex..lastIndex]:
+          if c.node != parentCell.node:
+            nodesToDelete.add c.node
+
+        # echo "some children of parent cell selected ", nodesToDelete
+
+        for n in nodesToDelete:
+          discard n.deleteOrReplaceWithDefault()
+
+        self.rebuildCells()
+        self.cursor = self.getFirstEditableCellOfNode(parentCell.node).get
+
+    else: # not all nodes fully contained
+      # echo "not all nodes fully contained"
+      discard
 
 proc deleteLeft*(self: ModelDocumentEditor) {.expose("editor.model").} =
   defer:
