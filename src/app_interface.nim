@@ -19,6 +19,7 @@ traitRef AppInterface:
   method invokeCallback*(self: AppInterface, context: string, args: JsonNode): bool
   method registerEditor*(self: AppInterface, editor: DocumentEditor): void
   method unregisterEditor*(self: AppInterface, editor: DocumentEditor): void
+  method tryActivateEditor*(self: AppInterface, editor: DocumentEditor)
   method getEditorForId*(self: AppInterface, id: EditorId): Option[DocumentEditor]
   method getPopupForId*(self: AppInterface, id: EditorId): Option[Popup]
   method createSelectorPopup*(self: AppInterface): Popup

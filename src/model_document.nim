@@ -281,29 +281,33 @@ proc startBlinkCursorTask(self: ModelDocumentEditor) =
     self.blinkCursorTask.reschedule()
 
 proc updateScrollOffset(self: ModelDocumentEditor) =
-  if self.cellWidgetContext.isNotNil:
-    let newCell = self.selection.last.targetCell
-    if self.scrolledNode.isNotNil:
-      if newCell.isNotNil and self.cellWidgetContext.cellToWidget.contains(newCell.id):
-        let newUINode = self.cellWidgetContext.cellToWidget[newCell.id]
-        let newY = newUINode.transformBounds(self.scrolledNode.parent).y
+  if self.cellWidgetContext.isNil:
+    return
 
-        let buffer = 5.0
-        if newY < buffer * self.app.platform.builder.textHeight:
-          self.targetCellPath = newCell.rootPath.path
-          self.scrollOffset = buffer * self.app.platform.builder.textHeight
-        elif newY > self.scrolledNode.parent.h - buffer * self.app.platform.builder.textHeight:
-          self.targetCellPath = newCell.rootPath.path
-          self.scrollOffset = self.scrolledNode.parent.h - buffer * self.app.platform.builder.textHeight
+  let newCell = self.selection.last.targetCell
+  if self.scrolledNode.isNil:
+    return
 
-      else:
-        discard
-        # todo
-        # echo fmt"new cell doesn't exist, scroll offset {self.scrollOffset}, {self.targetCellPath}"
-        # self.targetCellPath = self.selection.last.targetCell.rootPath.path
-        # self.scrollOffset = self.scrolledNode.parent.h / 2
+  if newCell.isNotNil and self.cellWidgetContext.cellToWidget.contains(newCell.id):
+    let newUINode = self.cellWidgetContext.cellToWidget[newCell.id]
+    let newY = newUINode.transformBounds(self.scrolledNode.parent).y
 
-      self.markDirty()
+    let buffer = 5.0
+    if newY < buffer * self.app.platform.builder.textHeight:
+      self.targetCellPath = newCell.rootPath.path
+      self.scrollOffset = buffer * self.app.platform.builder.textHeight
+    elif newY > self.scrolledNode.parent.h - buffer * self.app.platform.builder.textHeight:
+      self.targetCellPath = newCell.rootPath.path
+      self.scrollOffset = self.scrolledNode.parent.h - buffer * self.app.platform.builder.textHeight
+
+  else:
+    discard
+    # todo
+    # echo fmt"new cell doesn't exist, scroll offset {self.scrollOffset}, {self.targetCellPath}"
+    # self.targetCellPath = self.selection.last.targetCell.rootPath.path
+    # self.scrollOffset = self.scrolledNode.parent.h / 2
+
+  self.markDirty()
 
 proc `selection=`*(self: ModelDocumentEditor, selection: CellSelection) =
   assert self.mSelection.first.map.isNotNil
@@ -1647,18 +1651,28 @@ proc moveCursorLineEndInline*(self: ModelDocumentEditor, select: bool = false) {
   self.markDirty()
 
 proc moveCursorUp*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
-  if getTargetCell(self.cursor).getSome(cell) and self.lastCursorLocationBounds.getSome(cursorBounds):
-    if self.getCellInLine(cell, -1, cursorBounds.x).getSome(target):
-      let newCursor = self.nodeCellMap.toCursor(target.cell, target.offset)
-      self.updateSelection(newCursor, select)
+  if getTargetCell(self.cursor).getSome(cell) and
+    self.lastCursorLocationBounds.getSome(cursorBounds) and
+    self.getCellInLine(cell, -1, cursorBounds.x).getSome(target):
+
+    let newCursor = self.nodeCellMap.toCursor(target.cell, target.offset)
+    self.updateSelection(newCursor, select)
+
+  else:
+    self.moveCursorLeft(select)
 
   self.markDirty()
 
 proc moveCursorDown*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
-  if getTargetCell(self.cursor).getSome(cell) and self.lastCursorLocationBounds.getSome(cursorBounds):
-    if self.getCellInLine(cell, 1, cursorBounds.x).getSome(target):
-      let newCursor = self.nodeCellMap.toCursor(target.cell, target.offset)
-      self.updateSelection(newCursor, select)
+  if getTargetCell(self.cursor).getSome(cell) and
+    self.lastCursorLocationBounds.getSome(cursorBounds) and
+    self.getCellInLine(cell, 1, cursorBounds.x).getSome(target):
+
+    let newCursor = self.nodeCellMap.toCursor(target.cell, target.offset)
+    self.updateSelection(newCursor, select)
+
+  else:
+    self.moveCursorRight(select)
 
   self.markDirty()
 
