@@ -300,12 +300,19 @@ proc buildDFA*(commands: seq[(string, string)], leaders: seq[string]): CommandDF
     let (leaderInput, leaderMods, _, _) = parseNextInput(leader.toRunes, 0)
 
     for command in commands:
-
       let input = command[0]
       let function = command[1]
 
       if input.len > 0:
         handleNextInput(result, input.toRunes, function, index = 0, currentState = 0, defaultState = 0, leader = (leaderInput, leaderMods))
+
+  if leaders.len == 0:
+    for command in commands:
+      let input = command[0]
+      let function = command[1]
+
+      if input.len > 0:
+        handleNextInput(result, input.toRunes, function, index = 0, currentState = 0, defaultState = 0, leader = (0.int64, {}))
 
 proc autoCompleteRec(dfa: CommandDFA, result: var seq[(string, string)], currentInputs: string, currentState: int) =
   let state = dfa.states[currentState]

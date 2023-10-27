@@ -139,6 +139,7 @@ type App* = ref object
 
   modeEventHandler: EventHandler
   currentMode*: string
+  leaders: seq[string]
 
   editor_defaults: seq[DocumentEditor]
 
@@ -516,6 +517,7 @@ proc popPopup*(self: App, popup: Popup) =
 proc getEventHandlerConfig*(self: App, context: string): EventHandlerConfig =
   if not self.eventHandlerConfigs.contains(context):
     self.eventHandlerConfigs[context] = newEventHandlerConfig(context)
+    self.eventHandlerConfigs[context].setLeaders(self.leaders)
   return self.eventHandlerConfigs[context]
 
 proc getEditorForId*(self: App, id: EditorId): Option[DocumentEditor] =
@@ -1525,6 +1527,7 @@ proc logOptions*(self: App) {.expose("editor").} =
   log(lvlInfo, self.options.pretty)
 
 proc clearCommands*(self: App, context: string) {.expose("editor").} =
+  log(lvlInfo, fmt"Clearing keybindings for {context}")
   self.getEventHandlerConfig(context).clearCommands()
 
 proc getAllEditors*(self: App): seq[EditorId] {.expose("editor").} =
@@ -1669,19 +1672,22 @@ proc scriptLog*(message: string) {.expose("editor").} =
 
 proc changeAnimationSpeed*(self: App, factor: float) {.expose("editor").} =
   self.platform.builder.animationSpeedModifier *= factor
-  debugf"{self.platform.builder.animationSpeedModifier}"
+  log lvlInfo, fmt"{self.platform.builder.animationSpeedModifier}"
 
 proc setLeader*(self: App, leader: string) {.expose("editor").} =
+  self.leaders = @[leader]
   for config in self.eventHandlerConfigs.values:
-    config.setLeader leader
+    config.setLeaders self.leaders
 
 proc setLeaders*(self: App, leaders: seq[string]) {.expose("editor").} =
+  self.leaders = leaders
   for config in self.eventHandlerConfigs.values:
-    config.setLeaders leaders
+    config.setLeaders self.leaders
 
 proc addLeader*(self: App, leader: string) {.expose("editor").} =
+  self.leaders.add leader
   for config in self.eventHandlerConfigs.values:
-    config.addLeader leader
+    config.setLeaders self.leaders
 
 proc addCommandScript*(self: App, context: string, keys: string, action: string, arg: string = "") {.expose("editor").} =
   let command = if arg.len == 0: action else: action & " " & arg
