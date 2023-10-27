@@ -178,6 +178,7 @@ proc handleModeChanged*(self: App, editor: DocumentEditor, oldMode: string, newM
 proc invokeCallback*(self: App, context: string, args: JsonNode): bool
 proc registerEditor*(self: App, editor: DocumentEditor): void
 proc unregisterEditor*(self: App, editor: DocumentEditor): void
+proc tryActivateEditor*(self: App, editor: DocumentEditor): void
 proc getEditorForId*(self: App, id: EditorId): Option[DocumentEditor]
 proc getPopupForId*(self: App, id: EditorId): Option[Popup]
 proc createSelectorPopup*(self: App): Popup
@@ -204,6 +205,7 @@ implTrait AppInterface, App:
   handleModeChanged(void, App, DocumentEditor, string, string)
   invokeCallback(bool, App, string, JsonNode)
   registerEditor(void, App, DocumentEditor)
+  tryActivateEditor(void, App, DocumentEditor)
   unregisterEditor(void, App, DocumentEditor)
   getEditorForId(Option[DocumentEditor], App, EditorId)
   getPopupForId(Option[Popup], App, EditorId)
@@ -492,6 +494,13 @@ proc createAndAddView*(self: App, document: Document, append = false): DocumentE
   var view = View(document: document, editor: editor)
   self.addView(view, append=append)
   return editor
+
+proc tryActivateEditor*(self: App, editor: DocumentEditor): void =
+  if self.popups.len > 0:
+    return
+  for i, view in self.views:
+    if view.editor == editor:
+      self.currentView = i
 
 proc pushPopup*(self: App, popup: Popup) =
   popup.init()

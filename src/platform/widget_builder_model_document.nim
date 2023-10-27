@@ -1,5 +1,5 @@
 import std/[strformat, tables, sugar, strutils, json]
-import util, app, document_editor, model_document, text/text_document, custom_logger, platform, theme, config_provider, input
+import util, app, document_editor, model_document, text/text_document, custom_logger, platform, theme, config_provider, input, app_interface
 import widget_builders_base, widget_library, ui/node, custom_unicode
 import vmath, bumpy, chroma
 import ast/[types, cells]
@@ -842,6 +842,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
 
                   self.updateSelection(cursor, drag)
 
+                  self.app.tryActivateEditor(self)
                   self.markDirty()
 
                 # echo fmt"scroll offset {self.scrollOffset}"

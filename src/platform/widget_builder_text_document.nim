@@ -1,5 +1,5 @@
 import std/[strformat, tables, sugar, sequtils, strutils, algorithm, math]
-import util, app, document_editor, text/text_editor, custom_logger, widget_builders_base, platform, theme, custom_unicode, config_provider, widget_library
+import util, app, document_editor, text/text_editor, custom_logger, widget_builders_base, platform, theme, custom_unicode, config_provider, widget_library, app_interface
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import vmath, bumpy, chroma
 
@@ -140,15 +140,18 @@ proc renderLine*(
                 if btn == Left:
                   let offset = self.getCursorPos(textRuneLen, line.index, startRune.RuneIndex, pos)
                   self.selection = (line.index, offset).toSelection
+                  self.app.tryActivateEditor(self)
                   self.markDirty()
                 elif btn == TripleClick:
                   self.selection = ((line.index, 0), (line.index, self.document.lineLength(line.index)))
+                  self.app.tryActivateEditor(self)
                   self.markDirty()
 
               onDrag Left:
                 let offset = self.getCursorPos(textRuneLen, line.index, startRune.RuneIndex, pos)
                 let currentSelection = self.selection
                 self.selection = (currentSelection.first, (line.index, offset))
+                self.app.tryActivateEditor(self)
                 self.markDirty()
 
             if addBackgroundAsChildren:
@@ -184,14 +187,17 @@ proc renderLine*(
             onClickAny btn:
               if btn == Left:
                 self.selection = (line.index, self.document.lineLength(line.index)).toSelection
+                self.app.tryActivateEditor(self)
                 self.markDirty()
               elif btn == TripleClick:
                 self.selection = ((line.index, 0), (line.index, self.document.lineLength(line.index)))
+                self.app.tryActivateEditor(self)
                 self.markDirty()
 
             onDrag Left:
               let currentSelection = self.selection
               self.selection = (currentSelection.first, (line.index, self.document.lineLength(line.index)))
+              self.app.tryActivateEditor(self)
               self.markDirty()
 
     # cursor after latest char
