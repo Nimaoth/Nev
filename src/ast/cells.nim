@@ -64,7 +64,7 @@ proc ancestor*(cell: Cell, targetParent: Cell): Cell =
   while result.parent.isNotNil and result.parent != targetParent:
     result = result.parent
 
-proc isDecendant*(cell: Cell, ancestor: Cell): bool =
+proc isDescendant*(cell: Cell, ancestor: Cell): bool =
   ### Returns true if cell has ancestor in it's parent chain
   result = false
   var temp = cell
@@ -99,6 +99,13 @@ proc parentLen*(self: Cell): int =
   if self.parent.isNil:
     return -1
   return self.parent.CollectionCell.children.len
+
+proc len*(self: Cell): int =
+  if self of CollectionCell:
+    return self.CollectionCell.children.len
+  if self of NodeReferenceCell:
+    return 1
+  return self.getText.len
 
 proc low*(self: Cell): int =
   if self of CollectionCell:
@@ -141,6 +148,41 @@ proc nextDirect*(self: Cell): Option[Cell] =
 proc isLeaf*(self: Cell): bool =
   if self of CollectionCell and self.CollectionCell.children.len > 0:
     return false
+  return true
+
+proc isFullyContained*(cell: Cell, left: openArray[int], right: openArray[int]): bool =
+  # debugf"isFullyContained {cell}, {left}, {right}"
+  # defer:
+  #   echo " -> ", result
+
+  if left.len == 0 and right.len == 0:
+    return true
+
+  let firstIndex = if left.len > 0: left[0] else: cell.editableLow
+  let lastIndex = if right.len > 0: right[0] else: cell.editableHigh
+  # echo firstIndex, "/", cell.editableLow, ", ", lastIndex, "/", cell.editableHigh
+
+  if firstIndex > cell.editableLow or lastIndex < cell.editableHigh:
+    # echo "x"
+    return false
+
+  if cell of CollectionCell:
+    let cell = cell.CollectionCell
+
+    if not cell.children[0].isFullyContained(
+      if firstIndex == cell.editableLow and left.len > 0: left[1..^1] else: @[],
+      if lastIndex == cell.editableLow and right.len > 0: right[1..^1] else: @[]
+    ):
+      # echo "x2"
+      return false
+
+    if not cell.children.last.isFullyContained(
+      if firstIndex == cell.editableHigh and left.len > 0: left[1..^1] else: @[],
+      if lastIndex == cell.editableHigh and right.len > 0: right[1..^1] else: @[]
+    ):
+      # echo "x3"
+      return false
+
   return true
 
 method getChildAt*(self: CollectionCell, index: int, clamp: bool): Option[Cell] =
@@ -276,14 +318,18 @@ proc cell*(map: NodeCellMap, node: AstNode): Cell =
     map.fill(result)
 
   if map.map.contains(node.id):
+    # debugf"cell for {node} already exists"
     return map.map[node.id]
 
   if node.parent.isNotNil:
+    # debugf"get parent cell for {node}"
     let parentCell = map.cell(node.parent)
     map.fill(parentCell)
     assert map.map.contains(node.id)
     return map.map[node.id]
 
+  # root node
+  # debugf"get cell for root node {node}"
   let cell = map.builder.buildCell(map, node, false)
   map.map[node.id] = cell
   map.cells[cell.id] = cell
@@ -381,6 +427,7 @@ proc buildCell*(self: CellBuilder, map: NodeCellMap, node: AstNode, useDefault: 
     result = self.buildCellDefault(map, node, useDefault)
     # result.fill()
 
+  # debugf"store cell for {node}"
   map.map[node.id] = result
   map.cells[result.id] = result
 

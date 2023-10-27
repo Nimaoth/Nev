@@ -340,7 +340,7 @@ builder.addBuilderFor binaryExpressionClass.id, idNone(), proc(builder: CellBuil
   cell.fillChildren = proc(map: NodeCellMap) =
     # echo "fill collection binary"
     cell.add builder.buildChildren(map, node, IdBinaryExpressionLeft, &{LayoutHorizontal})
-    cell.add AliasCell(node: node)
+    cell.add AliasCell(node: node, disableEditing: true)
     cell.add builder.buildChildren(map, node, IdBinaryExpressionRight, &{LayoutHorizontal})
   return cell
 
@@ -378,7 +378,7 @@ builder.addBuilderFor printExpressionClass.id, idNone(), proc(builder: CellBuild
   cell.fillChildren = proc(map: NodeCellMap) =
     # echo "fill collection call"
 
-    cell.add AliasCell(node: node)
+    cell.add AliasCell(node: node, disableEditing: true)
     cell.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
 
     cell.add block:
@@ -395,7 +395,7 @@ builder.addBuilderFor buildExpressionClass.id, idNone(), proc(builder: CellBuild
   cell.fillChildren = proc(map: NodeCellMap) =
     # echo "fill collection call"
 
-    cell.add AliasCell(node: node)
+    cell.add AliasCell(node: node, disableEditing: true)
     cell.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
 
     cell.add block:

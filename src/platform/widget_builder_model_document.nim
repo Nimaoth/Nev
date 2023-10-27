@@ -443,12 +443,18 @@ proc createLeafCellUI*(cell: Cell, builder: UINodeBuilder, inText: string, inTex
           let cellPath = cell.rootPath.path
           updateContext.handleClick(currentNode, cell, cellPath, cursor, true)
 
+
+      when defined(uiNodeDebugData):
+        if updateContext.selection.contains(cell):
+          currentNode.aDebugData.css.add "border: 1px solid yellow;"
+          backgroundColor = backgroundColor.lighten(0.2)
+
   else:
     # cell.logc fmt"partial selection {selectionStart}, {selectionEnd}"
     builder.panel(&{SizeToContentX, SizeToContentY, FillY, OverlappingChildren}):
       let x = selectionStart.float * builder.charWidth
       let xw = selectionEnd.float * builder.charWidth
-      builder.panel(&{FillY, FillBackground}, x = x, w = xw - x, backgroundColor = updateContext.selectionColor)
+      builder.panel(&{FillY, FillBackground}, x = x, w = xw - x, backgroundColor = backgroundColor)
 
       builder.panel(&{SizeToContentX, SizeToContentY, FillY, DrawText}, text = inText, textColor = inTextColor):
         updateContext.cellToWidget[cell.id] = currentNode
@@ -467,6 +473,11 @@ proc createLeafCellUI*(cell: Cell, builder: UINodeBuilder, inText: string, inTex
             let cursor = updateContext.nodeCellMap.toCursor(cell, offset)
             let cellPath = cell.rootPath.path
             updateContext.handleClick(currentNode, cell, cellPath, cursor, true)
+
+      when defined(uiNodeDebugData):
+        if updateContext.selection.contains(cell):
+          currentNode.aDebugData.css.add "border: 1px solid yellow;"
+          backgroundColor = backgroundColor.lighten(0.2)
 
 method createCellUI*(cell: Cell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int], cursorFirst: openArray[int], cursorLast: openArray[int]) {.base.} = discard
 
@@ -833,6 +844,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
                   continue
 
                 self.cellWidgetContext.targetNode = nil
+                self.cellWidgetContext.selection = self.selection
                 self.cellWidgetContext.handleClick = proc(node: UINode, cell: Cell, cellPath: seq[int], cursor: CellCursor, drag: bool) =
                   if node.isNotNil:
                     let bounds = node.bounds.transformRect(node.parent, scrolledNode.parent)

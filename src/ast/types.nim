@@ -650,6 +650,8 @@ proc replaceWithDefault*(node: AstNode, fillDefaultChildren: bool = false): Opti
   return child.some
 
 proc deleteOrReplaceWithDefault*(node: AstNode, fillDefaultChildren: bool = false): Option[AstNode] =
+  ## Remove the given node from it's parent. If the role requires at least one child then replace the node with a default node.
+  ## Returns the new default node if replaced or none if removed.
   if node.parent.isNil:
     return AstNode.none
 
