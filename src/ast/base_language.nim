@@ -104,6 +104,10 @@ let whileClass* = newNodeClass(IdWhileExpression, "WhileExpression", alias="whil
     NodeChildDescription(id: IdWhileExpressionBody, role: "body", class: expressionClass.id, count: ChildCount.One),
   ])
 
+let breakClass* = newNodeClass(IdBreakExpression, "BreakExpression", alias="break", base=expressionClass)
+let continueClass* = newNodeClass(IdContinueExpression, "ContinueExpression", alias="continue", base=expressionClass)
+let returnClass* = newNodeClass(IdReturnExpression, "ReturnExpression", alias="return", base=expressionClass)
+
 let parameterDeclClass* = newNodeClass(IdParameterDecl, "ParameterDecl", alias="param", base=expressionClass, interfaces=[declarationInterface],
   children=[
     NodeChildDescription(id: IdParameterDeclType, role: "type", class: typeClass.id, count: ChildCount.One),
@@ -325,6 +329,18 @@ builder.addBuilderFor whileClass.id, idNone(), proc(builder: CellBuilder, node: 
 
   return cell
 
+builder.addBuilderFor breakClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  var cell = AliasCell(id: newId(), node: node, themeForegroundColors: @["keyword"], disableEditing: true)
+  return cell
+
+builder.addBuilderFor continueClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  var cell = AliasCell(id: newId(), node: node, themeForegroundColors: @["keyword"], disableEditing: true)
+  return cell
+
+builder.addBuilderFor returnClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  var cell = AliasCell(id: newId(), node: node, themeForegroundColors: @["keyword"], disableEditing: true)
+  return cell
+
 builder.addBuilderFor nodeReferenceClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = NodeReferenceCell(id: newId(), node: node, reference: IdNodeReferenceTarget, property: IdINamedName, disableEditing: true)
   if node.resolveReference(IdNodeReferenceTarget).getSome(targetNode):
@@ -415,6 +431,7 @@ let baseLanguage* = newLanguage(IdBaseLanguage, @[
   expressionClass, binaryExpressionClass, unaryExpressionClass, emptyLineClass,
   numberLiteralClass, stringLiteralClass, boolLiteralClass, nodeReferenceClass, emptyClass, constDeclClass, letDeclClass, varDeclClass, nodeListClass, blockClass, callClass, thenCaseClass, ifClass, whileClass,
   parameterDeclClass, functionDefinitionClass, assignmentClass,
+  breakClass, continueClass, returnClass,
   addExpressionClass, subExpressionClass, mulExpressionClass, divExpressionClass, modExpressionClass,
   lessExpressionClass, lessEqualExpressionClass, greaterExpressionClass, greaterEqualExpressionClass, equalExpressionClass, notEqualExpressionClass, andExpressionClass, orExpressionClass, orderExpressionClass,
   negateExpressionClass, notExpressionClass,

@@ -2,7 +2,9 @@
 import std/[options, tables]
 import id, types, ast_ids
 import scripting/[wasm_builder]
-import custom_logger
+import custom_logger, util
+
+import print
 
 logCategory "bl-wasm"
 
@@ -15,12 +17,16 @@ type
     functionsToCompile: seq[(AstNode, WasmFuncIdx)]
     localIndices: Table[Id, WasmLocalIdx]
     globalIndices: Table[Id, WasmGlobalIdx]
+    labelIndices: Table[Id, int] # Not the actual index
 
     exprStack: seq[WasmExpr]
     currentExpr: WasmExpr
     currentLocals: seq[WasmValueType]
 
     generators: Table[Id, proc(self: BaseLanguageWasmCompiler, node: AstNode)]
+
+    printI32: WasmFuncIdx
+    printLine: WasmFuncIdx
 
 proc setupGenerators(self: BaseLanguageWasmCompiler)
 
@@ -39,11 +45,8 @@ proc newBaseLanguageWasmCompiler*(): BaseLanguageWasmCompiler =
       WasmInstr(kind: Nop),
   ]))
 
-  result.builder.imports.add(WasmImport(
-    module: "env",
-    name: "test",
-    desc: WasmImportDesc(kind: Func, funcTypeIdx: 1.WasmTypeIdx)
-  ))
+  result.printI32 = result.builder.addImport("env", "print_i32", result.builder.addType([I32], []))
+  result.printLine = result.builder.addImport("env", "print_line", result.builder.addType([], []))
 
 proc genNode*(self: BaseLanguageWasmCompiler, node: AstNode) =
   if self.generators.contains(node.class):
@@ -73,7 +76,6 @@ proc getOrCreateWasmFunc(self: BaseLanguageWasmCompiler, node: AstNode, exportNa
     for c in node.children(IdFunctionDefinitionReturnType):
       outputs.add c.toWasmValueType
 
-
     let funcIdx = self.builder.addFunction(inputs, outputs, exportName=exportName)
     self.wasmFuncs[node.id] = funcIdx
     self.functionsToCompile.add (node, funcIdx)
@@ -99,8 +101,11 @@ proc compileRemainingFunctions(self: BaseLanguageWasmCompiler) =
     self.compileFunction(function[0], function[1])
 
 proc compileToBinary*(self: BaseLanguageWasmCompiler, node: AstNode): seq[uint8] =
-  discard self.getOrCreateWasmFunc(node, exportName="test".some)
+  let functionName = $node.id
+  discard self.getOrCreateWasmFunc(node, exportName=functionName.some)
   self.compileRemainingFunctions()
+
+  print self.builder
 
   let binary = self.builder.generateBinary()
   return binary
@@ -119,11 +124,11 @@ macro instr(self: BaseLanguageWasmCompiler, op: WasmInstrKind, args: varargs[unt
   for arg in args:
     result[1].add arg
 
-###################### Node Generators ##############################
-
 proc genDrop(self: BaseLanguageWasmCompiler, node: AstNode) =
   self.instr(Drop)
   # todo: size of node, stack
+
+###################### Node Generators ##############################
 
 proc genNodeBlock(self: BaseLanguageWasmCompiler, node: AstNode) =
   # self.exprStack.add self.currentExpr
@@ -167,9 +172,37 @@ proc genNodeBinaryModExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
   self.genNodeBinaryExpression(node)
   self.instr(I32RemS)
 
+proc genNodeBinaryLessExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
+  self.genNodeBinaryExpression(node)
+  self.instr(I32LtS)
+
+proc genNodeBinaryLessEqualExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
+  self.genNodeBinaryExpression(node)
+  self.instr(I32LeS)
+
+proc genNodeBinaryGreaterExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
+  self.genNodeBinaryExpression(node)
+  self.instr(I32GtS)
+
+proc genNodeBinaryGreaterEqualExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
+  self.genNodeBinaryExpression(node)
+  self.instr(I32GeS)
+
+proc genNodeBinaryEqualExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
+  self.genNodeBinaryExpression(node)
+  self.instr(I32Eq)
+
+proc genNodeBinaryNotEqualExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
+  self.genNodeBinaryExpression(node)
+  self.instr(I32Ne)
+
 proc genNodeIntegerLiteral(self: BaseLanguageWasmCompiler, node: AstNode) =
   let value = node.property(IdIntegerLiteralValue).get
   self.instr(I32Const, i32Const: value.intValue.int32)
+
+proc genNodeBoolLiteral(self: BaseLanguageWasmCompiler, node: AstNode) =
+  let value = node.property(IdBoolLiteralValue).get
+  self.instr(I32Const, i32Const: value.boolValue.int32)
 
 proc genNodeIfExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
   var ifStack: seq[WasmExpr]
@@ -213,6 +246,167 @@ proc genNodeIfExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
   if typ.isNone:
     self.instr(I32Const, i32Const: 0)
 
+template genBlock(self: BaseLanguageWasmCompiler, typ: WasmBlockType, body: untyped): untyped =
+  self.exprStack.add self.currentExpr
+  self.currentExpr = WasmExpr()
+
+  try:
+    body
+  finally:
+    let bodyExpr = self.currentExpr
+    self.currentExpr = self.exprStack.pop
+    self.instr(Block, blockType: typ, blockInstr: move bodyExpr.instr)
+
+template genLoop(self: BaseLanguageWasmCompiler, typ: WasmBlockType, body: untyped): untyped =
+  self.exprStack.add self.currentExpr
+  self.currentExpr = WasmExpr()
+
+  try:
+    body
+  finally:
+    let bodyExpr = self.currentExpr
+    self.currentExpr = self.exprStack.pop
+    self.instr(Loop, loopType: typ, loopInstr: move bodyExpr.instr)
+
+proc genBranchLabel(self: BaseLanguageWasmCompiler, node: AstNode, offset: int) =
+  assert self.labelIndices.contains(node.id)
+  let index = self.labelIndices[node.id]
+  let actualIndex = WasmLabelIdx(self.exprStack.high - index - offset)
+  self.instr(Br, brLabelIdx: actualIndex)
+
+proc genNodeWhileExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
+  let condition = node.children(IdWhileExpressionCondition)
+  let body = node.children(IdWhileExpressionBody)
+
+  let typ = WasmValueType.none
+
+  # outer block for break
+  self.genBlock WasmBlockType(kind: ValType, typ: typ):
+    self.labelIndices[node.id] = self.exprStack.high
+
+    # generate body in loop block
+    self.genLoop WasmBlockType(kind: ValType, typ: typ):
+
+      # generate condition
+      for i, c in condition:
+        if i > 0: self.genDrop(c)
+        self.genNode(c)
+
+      # break block if condition is false
+      self.instr(I32Eqz)
+      self.instr(BrIf, brLabelIdx: 1.WasmLabelIdx)
+
+      for i, c in body:
+        self.genNode(c)
+        self.genDrop(c)
+
+      # continue loop
+      self.instr(Br, brLabelIdx: 0.WasmLabelIdx)
+
+  # Loop doesn't generate a value, but right now every node needs to produce an int32
+  self.instr(I32Const, i32Const: 0)
+
+proc createLocal(self: BaseLanguageWasmCompiler, id: Id, typ: RootRef): WasmLocalIdx =
+  self.currentLocals.add(I32)
+  result = self.currentLocals.high.WasmLocalIdx
+  self.localIndices[id] = result
+
+proc genNodeConstDecl(self: BaseLanguageWasmCompiler, node: AstNode) =
+  let index = self.createLocal(node.id, nil)
+
+  let values = node.children(IdConstDeclValue)
+  assert values.len > 0
+  self.genNode(values[0])
+
+  self.instr(LocalTee, localIdx: index)
+
+proc genNodeLetDecl(self: BaseLanguageWasmCompiler, node: AstNode) =
+  let index = self.createLocal(node.id, nil)
+
+  let values = node.children(IdLetDeclValue)
+  assert values.len > 0
+  self.genNode(values[0])
+
+  self.instr(LocalTee, localIdx: index)
+
+proc genNodeVarDecl(self: BaseLanguageWasmCompiler, node: AstNode) =
+  let index = self.createLocal(node.id, nil)
+
+  let values = node.children(IdVarDeclValue)
+  assert values.len > 0
+  self.genNode(values[0])
+
+  self.instr(LocalTee, localIdx: index)
+
+proc genNodeBreakExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
+  var parent = node.parent
+  while parent.isNotNil and parent.class != IdWhileExpression:
+    parent = parent.parent
+
+  if parent.isNil:
+    log lvlError, fmt"Break outside of loop"
+    return
+
+  self.genBranchLabel(parent, 0)
+
+proc genNodeContinueExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
+  var parent = node.parent
+  while parent.isNotNil and parent.class != IdWhileExpression:
+    parent = parent.parent
+
+  if parent.isNil:
+    log lvlError, fmt"Break outside of loop"
+    return
+
+  self.genBranchLabel(parent, 1)
+
+proc genNodeReturnExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
+  discard
+
+proc genNodeNodeReference(self: BaseLanguageWasmCompiler, node: AstNode) =
+  let id = node.reference(IdNodeReferenceTarget)
+  if node.resolveReference(IdNodeReferenceTarget).getSome(target) and target.class == IdConstDecl:
+    echo "const"
+    for i, c in target.children(IdConstDeclValue):
+      if i > 0: self.genDrop(c)
+      self.genNode(c)
+
+  else:
+    if not self.localIndices.contains(id):
+      log lvlError, fmt"Variable not found found in locals: {id}"
+      return
+
+    let index = self.localIndices[id]
+    self.instr(LocalGet, localIdx: index)
+
+proc genAssignmentExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
+  let targetNodes = node.children(IdAssignmentTarget)
+
+  let id = if targetNodes[0].class == IdNodeReference:
+    targetNodes[0].reference(IdNodeReferenceTarget)
+  else:
+    log lvlError, fmt"Assignment target not found: {targetNodes[0].class}"
+    return
+
+  if not self.localIndices.contains(id):
+    log lvlError, fmt"Variable not found found in locals: {id}"
+    return
+
+  for i, c in node.children(IdAssignmentValue):
+    if i > 0: self.genDrop(c)
+    self.genNode(c)
+
+  let index = self.localIndices[id]
+  self.instr(LocalTee, localIdx: index)
+
+proc genPrintExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
+  for i, c in node.children(IdPrintArguments):
+    self.genNode(c)
+    self.instr(Call, callFuncIdx: self.printI32)
+
+  self.instr(Call, callFuncIdx: self.printLine)
+  self.instr(I32Const, i32Const: 0)
+
 proc setupGenerators(self: BaseLanguageWasmCompiler) =
   self.generators[IdBlock] = genNodeBlock
   self.generators[IdAdd] = genNodeBinaryAddExpression
@@ -220,5 +414,21 @@ proc setupGenerators(self: BaseLanguageWasmCompiler) =
   self.generators[IdMul] = genNodeBinaryMulExpression
   self.generators[IdDiv] = genNodeBinaryDivExpression
   self.generators[IdMod] = genNodeBinaryModExpression
+  self.generators[IdLess] = genNodeBinaryLessExpression
+  self.generators[IdLessEqual] = genNodeBinaryLessEqualExpression
+  self.generators[IdGreater] = genNodeBinaryGreaterExpression
+  self.generators[IdGreaterEqual] = genNodeBinaryGreaterEqualExpression
+  self.generators[IdEqual] = genNodeBinaryEqualExpression
+  self.generators[IdNotEqual] = genNodeBinaryNotEqualExpression
   self.generators[IdIntegerLiteral] = genNodeIntegerLiteral
+  self.generators[IdBoolLiteral] = genNodeBoolLiteral
   self.generators[IdIfExpression] = genNodeIfExpression
+  self.generators[IdWhileExpression] = genNodeWhileExpression
+  self.generators[IdConstDecl] = genNodeConstDecl
+  self.generators[IdLetDecl] = genNodeLetDecl
+  self.generators[IdVarDecl] = genNodeVarDecl
+  self.generators[IdNodeReference] = genNodeNodeReference
+  self.generators[IdAssignment] = genAssignmentExpression
+  self.generators[IdBreakExpression] = genNodeBreakExpression
+  self.generators[IdContinueExpression] = genNodeContinueExpression
+  self.generators[IdPrint] = genPrintExpression

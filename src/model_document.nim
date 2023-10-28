@@ -355,6 +355,8 @@ proc `cursor=`*(self: ModelDocumentEditor, cursor: CellCursor) =
 proc `cursor=`*(self: ModelDocumentEditor, cursor: CellCursorState) =
   if self.document.model.resolveReference(cursor.node).getSome(node):
     self.cursor = CellCursor(map: self.nodeCellMap, index: cursor.index, path: cursor.path, node: node)
+  else:
+    self.cursor = self.getFirstEditableCellOfNode(self.document.model.rootNodes[0]).get
 
 proc `targetCursor=`*(self: ModelDocumentEditor, cursor: CellCursorState) =
   self.mTargetCursor = cursor.some
@@ -2001,6 +2003,17 @@ proc delete*(self: ModelDocumentEditor, direction: Direction) =
       # echo "not all nodes fully contained"
       discard
 
+  else: # not collection cell
+    echo firstIndex, ", ", lastIndex, "/", parentTargetCell.len
+    if selection.contains(parentTargetCell):
+      if parentTargetCell.node.replaceWithDefault().getSome(newNode):
+        self.rebuildCells()
+        self.cursor = self.getFirstEditableCellOfNode(newNode).get
+      else:
+        self.rebuildCells()
+        if self.getFirstEditableCellOfNode(parentTargetCell.node.parent).getSome(c):
+          self.cursor = c
+
 proc deleteLeft*(self: ModelDocumentEditor) {.expose("editor.model").} =
   defer:
     self.document.finishTransaction()
@@ -2337,23 +2350,27 @@ proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.
   if self.document.workspace.getSome(workspace):
     discard workspace.saveFile("jstest.wasm", binary.toArrayBuffer)
 
-  proc test(a: int32) =
-    debug "test ", a
+  var lineBuffer = ""
+
+  proc printI32(a: int32) =
+    if lineBuffer.len > 0:
+      lineBuffer.add " "
+    lineBuffer.add $a
+
+  proc printLine() =
+    log lvlInfo, lineBuffer
+    lineBuffer = ""
 
   var imp = WasmImports(namespace: "env")
-  imp.addFunction("test", test)
+  imp.addFunction("print_i32", printI32)
+  imp.addFunction("print_line", printLine)
 
   let module = await newWasmModule(binary.toArrayBuffer, @[imp])
   if module.isNone:
     debug "Failed to load module"
     return
 
-  if module.get.findFunction("test", int32, proc(): int32).getSome(f):
-    debug "call test"
-    let r = f()
-    debug "Result: ", r
-
-  if module.get.findFunction("test", void, proc(): void).getSome(f):
+  if module.get.findFunction($function.get.id, void, proc(): void).getSome(f):
     debug "call test"
     f()
 

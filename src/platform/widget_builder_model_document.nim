@@ -447,14 +447,13 @@ proc createLeafCellUI*(cell: Cell, builder: UINodeBuilder, inText: string, inTex
       when defined(uiNodeDebugData):
         if updateContext.selection.contains(cell):
           currentNode.aDebugData.css.add "border: 1px solid yellow;"
-          backgroundColor = backgroundColor.lighten(0.2)
 
   else:
     # cell.logc fmt"partial selection {selectionStart}, {selectionEnd}"
     builder.panel(&{SizeToContentX, SizeToContentY, FillY, OverlappingChildren}):
       let x = selectionStart.float * builder.charWidth
       let xw = selectionEnd.float * builder.charWidth
-      builder.panel(&{FillY, FillBackground}, x = x, w = xw - x, backgroundColor = backgroundColor)
+      builder.panel(&{FillY, FillBackground}, x = x, w = xw - x, backgroundColor = updateContext.selectionColor)
 
       builder.panel(&{SizeToContentX, SizeToContentY, FillY, DrawText}, text = inText, textColor = inTextColor):
         updateContext.cellToWidget[cell.id] = currentNode
@@ -477,7 +476,6 @@ proc createLeafCellUI*(cell: Cell, builder: UINodeBuilder, inText: string, inTex
       when defined(uiNodeDebugData):
         if updateContext.selection.contains(cell):
           currentNode.aDebugData.css.add "border: 1px solid yellow;"
-          backgroundColor = backgroundColor.lighten(0.2)
 
 method createCellUI*(cell: Cell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int], cursorFirst: openArray[int], cursorLast: openArray[int]) {.base.} = discard
 
