@@ -37,7 +37,7 @@ proc callback(req: Request): Future[void] {.async.} =
 
   let headers = newHttpHeaders([
     ("Access-Control-Allow-Origin", "*"),
-    ("Access-Control-Allow-Headers", "authorization"),
+    ("Access-Control-Allow-Headers", "authorization, content-type"),
     ("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE"),
   ])
 

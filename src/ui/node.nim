@@ -1375,7 +1375,7 @@ proc dump*(node: UINode, recurse = false): string =
   if node.isNil:
     return "nil"
   # result.add fmt"Node({node.userId}, {node.mLastContentChange}, {node.mLastPositionChange}, {node.mLastSizeChange}, {node.mLastClearInvalidation}, {node.mLastDrawInvalidation}, {node.id} '{node.text}', {node.flags}, ({node.bounds}), {node.boundsActual}, {node.boundsOld})"
-  result.add fmt"Node({node.id} '{node.text}', {node.flags}, bounds: {node.bounds}, raw: {node.boundsRaw}, actual: {node.boundsActual}), pivot: {node.pivot}"
+  result.add fmt"Node({node.id} '{node.text}', ({node.mLastContentChange}, {node.mLastPositionChange}, {node.mLastSizeChange}), {node.flags}, {node.boundsAbsolute}, bounds: {node.bounds}, raw: {node.boundsRaw}, actual: {node.boundsActual}), pivot: {node.pivot}"
   if recurse and node.first.isNotNil:
     result.add ":"
     for _, c in node.children:
