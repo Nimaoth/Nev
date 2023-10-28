@@ -276,10 +276,27 @@ proc getNumFunctionImports(self: WasmBuilder): int =
       inc result
 
 proc getEffectiveFunctionIdx(self: WasmBuilder, funcIdx: WasmFuncIdx): int =
-  return funcIdx.int + self.getNumFunctionImports()
+  if funcIdx.int < 0:
+    return funcIdx.int.abs - 1
+  else:
+    return funcIdx.int + self.getNumFunctionImports()
 
-proc addFunction*(self: WasmBuilder,
-  inputs: openArray[WasmValueType], outputs: openArray[WasmValueType], exportName: Option[string] = string.none): WasmFuncIdx =
+proc addType*(self: WasmBuilder, inputs: openArray[WasmValueType], outputs: openArray[WasmValueType]): WasmTypeIdx =
+  result = self.types.len.WasmTypeIdx
+  self.types.add WasmFunctionType(input: WasmResultType(types: @inputs), output: WasmResultType(types: @outputs))
+
+proc addImport*(self: WasmBuilder, module: string, name: string, typeIdx: WasmTypeIdx): WasmFuncIdx =
+  let funcIdx = (-self.imports.len - 1).WasmFuncIdx
+
+  self.imports.add WasmImport(
+    module: module,
+    name: name,
+    desc: WasmImportDesc(kind: Func, funcTypeIdx: typeIdx)
+  )
+
+  return funcIdx
+
+proc addFunction*(self: WasmBuilder, inputs: openArray[WasmValueType], outputs: openArray[WasmValueType], exportName: Option[string] = string.none): WasmFuncIdx =
   let typeIdx = self.types.len.WasmTypeIdx
   self.types.add WasmFunctionType(input: WasmResultType(types: @inputs), output: WasmResultType(types: @outputs))
 

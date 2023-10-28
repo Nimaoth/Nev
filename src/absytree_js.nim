@@ -78,7 +78,7 @@ proc doRender(timestep: float) =
 
     frameTime = gEditor.frameTimer.elapsed.ms
 
-  if frameTime > 5:
+  if frameTime > 10:
   # if logFrameTime:
     echo fmt"Frame: {frameTime:>5.2}ms (u: {updateTime:>5.2}ms, l: {layoutTime:>5.2}ms, r: {renderTime:>5.2}ms)"
 

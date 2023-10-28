@@ -314,7 +314,7 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
     addCommand("editor.model", "<CA-g>", "toggle-use-default-cell-builder")
 
-    addCommand("editor.model", "<S-SPACE>R", "run-selected-function")
+    addCommand("editor.model", "<LEADER>mr", "run-selected-function")
 
     addCommand("editor.model.completion", "<ENTER>", "finish-edit", true)
     addCommand("editor.model.completion", "<ESCAPE>", "hide-completions")
