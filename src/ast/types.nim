@@ -6,6 +6,10 @@ import util, array_table, myjsonutils, id, macro_utils, custom_logger, event, re
 
 logCategory "types"
 
+defineBitFlag:
+  type CellBuilderFlag* = enum
+    OnlyExactMatch
+
 type
   ClassId* = Id
   NodeId* = Id
@@ -74,12 +78,13 @@ type
 
   CellStyle* = ref object
     onNewLine*: bool
-    addNewlineAfter*: bool
     indentChildren*: bool
     noSpaceLeft*: bool
     noSpaceRight*: bool
 
   Cell* = ref object of RootObj
+    when defined(js):
+      aDebug*: cstring
     id*: Id
     parent*: Cell
     node*: AstNode
@@ -96,10 +101,6 @@ type
     deleteImmediately*: bool              # If true then when this cell handles a delete event it will delete it immediately and not first select the entire cell
     deleteNeighbor*: bool                 # If true then when this cell handles a delete event it will delete the left or right neighbor cell instead
     dontReplaceWithDefault*: bool         # If true thennn
-    increaseIndentBefore*: bool
-    decreaseIndentBefore*: bool
-    increaseIndentAfter*: bool
-    decreaseIndentAfter*: bool
     fontSizeIncreasePercent*: float
     themeForegroundColors*: seq[string]
     themeBackgroundColors*: seq[string]
@@ -112,8 +113,9 @@ type
   CellBuilderFunction* = proc(builder: CellBuilder, node: AstNode): Cell
 
   CellBuilder* = ref object
-    builders*: Table[ClassId, seq[tuple[builderId: Id, impl: CellBuilderFunction]]]
+    builders*: Table[ClassId, seq[tuple[builderId: Id, impl: CellBuilderFunction, flags: CellBuilderFlags]]]
     preferredBuilders*: Table[ClassId, Id]
+    forceDefault*: bool
 
   NodeCellMap* = ref object
     map*: Table[Id, Cell]
@@ -696,16 +698,19 @@ proc insertDefaultNode*(node: AstNode, role: RoleId, index: int, fillDefaultChil
 proc newCellBuilder*(): CellBuilder =
   new result
 
-proc addBuilderFor*(self: CellBuilder, classId: ClassId, builderId: Id, builder: CellBuilderFunction) =
+proc addBuilderFor*(self: CellBuilder, classId: ClassId, builderId: Id, flags: CellBuilderFlags, builder: CellBuilderFunction) =
   if self.builders.contains(classId):
-    self.builders[classId].add (builderId, builder)
+    self.builders[classId].add (builderId, builder, flags)
   else:
-    self.builders[classId] = @[(builderId, builder)]
+    self.builders[classId] = @[(builderId, builder, flags)]
+
+proc addBuilderFor*(self: CellBuilder, classId: ClassId, builderId: Id, builder: CellBuilderFunction) =
+  self.addBuilderFor(classId, builderId, 0.CellBuilderFlags, builder)
 
 proc addBuilder*(self: CellBuilder, other: CellBuilder) =
   for pair in other.builders.pairs:
     for builder in pair[1]:
-      self.addBuilderFor(pair[0], builder[0], builder[1])
+      self.addBuilderFor(pair[0], builder.builderId, builder.flags, builder.impl)
   for pair in other.preferredBuilders.pairs:
     self.preferredBuilders[pair[0]] = pair[1]
 

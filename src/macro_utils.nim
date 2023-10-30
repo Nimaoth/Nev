@@ -1,4 +1,4 @@
-import std/[macros]
+import std/[macros, genasts]
 import util
 
 {.experimental: "caseStmtMacros".}
@@ -89,3 +89,46 @@ proc getDocumentation*(def: NimNode): Option[NimNode] =
     return def[6][0].some
   else:
     NimNode.none
+
+macro defineBitFlag*(body: untyped): untyped =
+  let flagName = body[0][0].typeName
+  let flagsName = (flagName.repr & "s").ident
+
+  result = genAst(body, flagName, flagsName):
+    body
+    type flagsName* = distinct uint32
+
+    func contains*(flags: flagsName, flag: flagName): bool {.inline.} = (flags.uint32 and (1.uint32 shl flag.uint32)) != 0
+    func all*(flags: flagsName, expected: flagsName): bool {.inline.} = (flags.uint32 and expected.uint32) == expected.uint32
+    func any*(flags: flagsName, expected: flagsName): bool {.inline.} = (flags.uint32 and expected.uint32) != 0
+    func incl*(flags: var flagsName, flag: flagName) {.inline.} =
+      flags = (flags.uint32 or (1.uint32 shl flag.uint32)).flagsName
+    func excl*(flags: var flagsName, flag: flagName) {.inline.} =
+      flags = (flags.uint32 and not (1.uint32 shl flag.uint32)).flagsName
+    func `-`*(a: flagsName, b: flagsName): flagsName {.inline.} = (a.uint32 and not b.uint32).flagsName
+    func `-`*(a: flagsName, b: flagName): flagsName {.inline.} = (a.uint32 and not (1.uint32 shl b.uint32)).flagsName
+    func `+`*(a: flagsName, b: flagsName): flagsName {.inline.} = (a.uint32 or b.uint32).flagsName
+    func `+`*(a: flagsName, b: flagName): flagsName {.inline.} = (a.uint32 or (1.uint32 shl b.uint32)).flagsName
+
+    func `==`*(a, b: flagsName): bool {.borrow.}
+
+    macro `&`*(flags: static set[flagName]): flagsName =
+      var res = 0.flagsName
+      for flag in flags:
+        res.incl flag
+      return genAst(res2 = res.uint32):
+        res2.flagsName
+
+    iterator flags*(self: flagsName): flagName =
+      for v in flagName.low..flagName.high:
+        if (self.uint32 and (1.uint32 shl v.uint32)) != 0:
+          yield v
+
+    proc `$`*(self: flagsName): string =
+      var res2: string = "{"
+      for flag in self.flags:
+        if res2.len > 1:
+          res2.add ", "
+        res2.add $flag
+      res2.add "}"
+      return res2
