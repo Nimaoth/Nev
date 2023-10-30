@@ -107,9 +107,6 @@ proc currentDirectionData(self: CellLayoutContext): var DirectionData =
     assert false
 
 proc isCurrentLineEmpty(self: CellLayoutContext): bool =
-  # return self.builder.currentChild == self.currentDirectionData.indentNode or
-    # (self.currentDirectionData.indentNode.isNil and self.builder.currentChild == self.currentDirectionData.lastNode)
-  # return self.builder.currentChild == self.currentDirectionData.lastNode
   return (self.currentDirectionData.lines.len == 0 or self.currentDirectionData.lines.last.len == 0) and self.tempNode.first.isNil
 
 proc findNodeContainingMinX(node: UINode, pos: Vec2, predicate: proc(node: UINode): bool): Option[UINode] =
@@ -159,15 +156,19 @@ proc decreaseIndent(self: CellLayoutContext) =
 proc notifyCellCreated(self: CellLayoutContext, cell: Cell) =
   self.currentDirectionData.lastCell = cell
 
-proc handleSpaceClickOrDrag(builder: UINodeBuilder, updateContext: UpdateContext, node: UINode, lastCell: Cell, cell: Cell, cellPath: seq[int], drag: bool, pos: Vec2) =
-  let cursor = if pos.x <= builder.charWidth * 0.5 and lastCell.isNotNil and lastCell.canSelect:
-    updateContext.nodeCellMap.toCursor(lastCell, int.high)
-  elif cell.canSelect:
-    updateContext.nodeCellMap.toCursor(cell, -1)
-  else:
-    return
+proc handleSpaceClickOrDrag(builder: UINodeBuilder, updateContext: UpdateContext, node: UINode, lastCell: Cell, cell: Cell, cellPath: seq[int], drag: bool, pos: Vec2, btn: MouseButton, modifiers: Modifiers) =
+  let posAbs = rect(pos, vec2()).transformRect(node, builder.root).xy
 
-  updateContext.handleClick(node, cell, cellPath, cursor, drag)
+  let targetNode = if pos.x <= builder.charWidth * 0.5:
+    node.prev
+  else:
+    node.next
+
+  if targetNode.isNotNil:
+    if drag and targetNode.handleDrag.isNotNil:
+      discard targetNode.handleDrag()(targetNode, btn, modifiers, posAbs - targetNode.boundsAbsolute.xy, vec2())
+    elif not drag and targetNode.handlePressed.isNotNil:
+      discard targetNode.handlePressed()(targetNode, btn, modifiers, posAbs - targetNode.boundsAbsolute.xy)
 
 proc addSpace(self: CellLayoutContext, cell: Cell, updateContext: UpdateContext) =
   if self.isCurrentLineEmpty and not (self.joinLines and self.currentDirectionData.lines.len == 0):
@@ -182,10 +183,10 @@ proc addSpace(self: CellLayoutContext, cell: Cell, updateContext: UpdateContext)
   self.builder.panel(&{FillY}, w = self.builder.charWidth):
     onClickAny btn:
       if btn == MouseButton.Left:
-        handleSpaceClickOrDrag(builder, updateContext, currentNode, lastCell, cell, cellPath, false, pos)
+        handleSpaceClickOrDrag(builder, updateContext, currentNode, lastCell, cell, cellPath, false, pos, btn, modifiers)
 
     onDrag MouseButton.Left:
-      handleSpaceClickOrDrag(builder, updateContext, currentNode, lastCell, cell, cellPath, true, pos)
+      handleSpaceClickOrDrag(builder, updateContext, currentNode, lastCell, cell, cellPath, true, pos, btn, modifiers)
 
     when defined(uiNodeDebugData):
       currentNode.aDebugData.metaData["isForward"] = newJBool self.currentDirection == Forwards
@@ -203,10 +204,10 @@ proc addSpace(self: CellLayoutContext, cell: Cell, updateContext: UpdateContext,
   self.builder.panel(&{FillY, FillBackground}, w = self.builder.charWidth, backgroundColor = color):
     onClickAny btn:
       if btn == MouseButton.Left:
-        handleSpaceClickOrDrag(builder, updateContext, currentNode, lastCell, cell, cellPath, false, pos)
+        handleSpaceClickOrDrag(builder, updateContext, currentNode, lastCell, cell, cellPath, false, pos, btn, modifiers)
 
     onDrag MouseButton.Left:
-      handleSpaceClickOrDrag(builder, updateContext, currentNode, lastCell, cell, cellPath, true, pos)
+      handleSpaceClickOrDrag(builder, updateContext, currentNode, lastCell, cell, cellPath, true, pos, btn, modifiers)
 
     when defined(uiNodeDebugData):
       currentNode.aDebugData.metaData["isSpace"] = newJBool true
@@ -615,7 +616,6 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
   if vertical and spaceLeft:
     ctx.addSpace(cell, updateContext)
 
-  let parentCtx = ctx
   var ctx = ctx
   var hasContext = false
   if cell.inline or vertical:
@@ -642,12 +642,10 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
   let adjustedCenterIndex = centerIndex.clamp(0, cell.children.len)
 
   var centerNewLine = false
-  var centerNoSpaceLeft = false
   var lastNewLine = false
 
   # forwards
   if adjustedCenterIndex <= cell.children.high:
-    # assert ctx.currentDirection == Forwards
     for i in adjustedCenterIndex..cell.children.high:
       ctx.goForward()
 
@@ -676,8 +674,6 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
       else:
         lastNewLine = false
 
-      # let myCtx = newCellLayoutContext(ctx, c, ctx.remainingHeightDown, 0, true)
-
       try:
         cellPath.add i
         c.createCellUI(
@@ -694,15 +690,10 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
 
         if i == centerIndex:
           centerNewLine = onNewLine
-          # centerNoSpaceLeft = noSpaceLeft
           ctx.centerNoSpaceLeft = noSpaceLeft
           if not c.shouldBeOnNewLine and ctx.forwardData.lines.len == 0:
             # echo "join lines for ", c, "     ", cell
             ctx.joinLines = true
-
-        # if i == 0 and onNewLine:
-        #   echo "don't join lines ", path, ", ", c
-        #   ctx.joinLines = false
 
         if i == centerIndex and path.len == 1 and updateContext.targetNode.isNil:
           centerNewLine = onNewLine
@@ -716,7 +707,6 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
             updateContext.targetNode.aDebugData.metaData["target"] = newJBool(true)
 
       finally:
-        # myCtx.finish()
         ctx.prevNoSpaceRight = false
         if c.style.isNotNil:
           ctx.prevNoSpaceRight = c.style.noSpaceRight
@@ -726,13 +716,6 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
   # backwards
   if adjustedCenterIndex > 0:
     # echo "go backward"
-    # if not vertical and centerIndex >= 0 and centerIndex < cell.children.len:
-    #   ctx.joinLines = false
-
-    # if centerNewLine:
-    # echo ctx.joinLines
-
-
     # debugf"center no space left {centerNoSpaceLeft}"
 
     ctx.goBackward()
@@ -890,6 +873,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
 
                 self.cellWidgetContext.targetNode = nil
                 self.cellWidgetContext.selection = self.selection
+                self.cellWidgetContext.scrolledNode = scrolledNode
                 self.cellWidgetContext.handleClick = proc(node: UINode, cell: Cell, cellPath: seq[int], cursor: CellCursor, drag: bool) =
                   if node.isNotNil:
                     let bounds = node.bounds.transformRect(node.parent, scrolledNode.parent)

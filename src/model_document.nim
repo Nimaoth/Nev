@@ -195,6 +195,7 @@ type
     targetNodeOld*: UINode
     targetNode*: UINode
     targetCell*: Cell
+    scrolledNode*: UINode
     selection*: CellSelection
     handleClick*: proc(node: UINode, cell: Cell, path: seq[int], cursor: CellCursor, drag: bool)
     selectionColor*: Color
