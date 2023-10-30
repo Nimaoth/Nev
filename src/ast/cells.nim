@@ -306,13 +306,15 @@ proc fill*(map: NodeCellMap, self: Cell) =
     return
   self.fillChildren(map)
   self.filled = true
+  when defined(js):
+    self.aDebug = cstring $self
 
 proc expand*(map: NodeCellMap, self: Cell, path: openArray[int]) =
   map.fill(self)
   if path.len > 0 and self.getChildAt(path[0], true).getSome(child):
     map.expand child, path[1..^1]
 
-proc cell*(map: NodeCellMap, node: AstNode): Cell =
+proc cell*(map: NodeCellMap, node: AstNode, useDefault: bool = false): Cell =
   assert node.model.isNotNil, fmt"Trying to get cell for node which is not in a model: {node}"
   defer:
     map.fill(result)
@@ -323,92 +325,129 @@ proc cell*(map: NodeCellMap, node: AstNode): Cell =
 
   if node.parent.isNotNil:
     # debugf"get parent cell for {node}"
-    let parentCell = map.cell(node.parent)
+    let parentCell = map.cell(node.parent, useDefault)
     map.fill(parentCell)
     assert map.map.contains(node.id)
     return map.map[node.id]
 
   # root node
   # debugf"get cell for root node {node}"
-  let cell = map.builder.buildCell(map, node, false)
+  let cell = map.builder.buildCell(map, node, useDefault)
   map.map[node.id] = cell
   map.cells[cell.id] = cell
   return cell
 
-proc findBuilder(self: CellBuilder, class: NodeClass, preferred: Id): CellBuilderFunction =
+proc findBuilder(self: CellBuilder, class: NodeClass, preferred: Id, isBase: bool = false): CellBuilderFunction =
   if not self.builders.contains(class.id):
     if class.base.isNotNil:
-      return self.findBuilder(class.base, preferred)
+      return self.findBuilder(class.base, preferred, true)
     return nil
 
   let builders = self.builders[class.id]
   if builders.len == 0:
     if class.base.isNotNil:
-      return self.findBuilder(class.base, preferred)
+      return self.findBuilder(class.base, preferred, true)
     return nil
 
   if builders.len == 1:
+    if isBase and OnlyExactMatch in builders[0].flags:
+      return nil
     return builders[0].impl
 
   let preferredBuilder = self.preferredBuilders.getOrDefault(class.id, idNone())
   for builder in builders:
+    if isBase and OnlyExactMatch in builder.flags:
+      continue
     if builder.builderId == preferredBuilder:
       return builder.impl
 
+  if isBase and OnlyExactMatch in builders[0].flags:
+    return nil
+
   return builders[0].impl
+
+template horizontalCell(cell: Cell, node: AstNode, childCell: untyped, body: untyped) =
+  var childCell {.inject.} = CollectionCell(id: newId(), node: node, flags: &{LayoutHorizontal})
+  try:
+    body
+  finally:
+    cell.add childCell
 
 proc buildCellDefault*(self: CellBuilder, m: NodeCellMap, node: AstNode, useDefaultRecursive: bool): Cell =
   let class = node.nodeClass
 
   var cell = CollectionCell(id: newId(), node: node, flags: &{LayoutHorizontal})
   cell.fillChildren = proc(m: NodeCellMap) =
-    cell.add ConstantCell(node: node, text: class.name, disableEditing: true)
-    cell.add ConstantCell(node: node, text: "{", increaseIndentAfter: true, disableEditing: true)
+    var hasAnyChildren = node.properties.len > 0 or node.references.len > 0 or node.childLists.len > 0
+    for prop in node.childLists:
+      if node.children(prop.role).len > 0:
+        hasAnyChildren = true
+        break
 
-    var hasAnyChildren = false
+    cell.horizontalCell(node, header):
+      # header.increaseIndentAfter = true
+      header.add ConstantCell(node: node, text: class.name, disableEditing: true)
+      header.add ConstantCell(node: node, text: "{", disableEditing: true)
 
+      if not hasAnyChildren:
+        header.add ConstantCell(node: node, text: "}", disableEditing: true)
+
+    var childrenCell = CollectionCell(id: newId(), node: node, flags: &{LayoutVertical}, style: CellStyle(indentChildren: true, onNewLine: true), inline: true)
     for prop in node.properties:
-      hasAnyChildren = true
-      let name: string = class.propertyDescription(prop.role).map((decs) => decs.role).get($prop.role)
-      cell.add ConstantCell(node: node, text: name, style: CellStyle(onNewLine: true), disableEditing: true)
-      cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), disableEditing: true)
-      cell.add PropertyCell(id: newId(), node: node, property: prop.role)
+      # var propCell = CollectionCell(id: newId(), node: node, flags: &{LayoutHorizontal})
+      childrenCell.horizontalCell(node, propCell):
+        let name: string = class.propertyDescription(prop.role).map((decs) => decs.role).get($prop.role)
+        propCell.add ConstantCell(node: node, text: name, disableEditing: true)
+        propCell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), disableEditing: true)
+        propCell.add PropertyCell(id: newId(), node: node, property: prop.role)
+      # childrenCell.add propCell
 
     for prop in node.references:
-      hasAnyChildren = true
-      let name: string = class.nodeReferenceDescription(prop.role).map((decs) => decs.role).get($prop.role)
-      cell.add ConstantCell(node: node, text: name, style: CellStyle(onNewLine: true), disableEditing: true)
-      cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), disableEditing: true)
+      # var propCell = CollectionCell(id: newId(), node: node, flags: &{LayoutHorizontal})
+      childrenCell.horizontalCell(node, propCell):
+        let name: string = class.nodeReferenceDescription(prop.role).map((decs) => decs.role).get($prop.role)
+        propCell.add ConstantCell(node: node, text: name, disableEditing: true)
+        propCell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), disableEditing: true)
 
-      var nodeRefCell = NodeReferenceCell(id: newId(), node: node, reference: prop.role, property: IdINamedName)
-      if node.resolveReference(prop.role).getSome(targetNode):
-        nodeRefCell.child = PropertyCell(id: newId(), node: targetNode, property: IdINamedName)
+        var nodeRefCell = NodeReferenceCell(id: newId(), node: node, reference: prop.role, property: IdINamedName)
+        if node.resolveReference(prop.role).getSome(targetNode):
+          nodeRefCell.child = PropertyCell(id: newId(), node: targetNode, property: IdINamedName)
 
-      cell.add nodeRefCell
+        propCell.add nodeRefCell
+
+      # childrenCell.add propCell
 
     for prop in node.childLists:
-      hasAnyChildren = true
       let children = node.children(prop.role)
 
-      let name: string = class.nodeChildDescription(prop.role).map((decs) => decs.role).get($prop.role)
-      cell.add ConstantCell(node: node, text: name, style: CellStyle(onNewLine: true), disableEditing: true)
-      cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), disableEditing: true, increaseIndentAfter: children.len > 1)
+      # var propCell = CollectionCell(id: newId(), node: node, flags: &{LayoutHorizontal})
+      childrenCell.horizontalCell(node, propCell):
 
-      var hasChildren = false
-      for i, c in children:
-        var childCell = self.buildCell(m, c, useDefaultRecursive)
-        if childCell.style.isNil:
-          childCell.style = CellStyle()
-        childCell.style.onNewLine = children.len > 1
-        if children.len > 1 and i == children.high:
-          childCell.decreaseIndentAfter = true
-        cell.add childCell
-        hasChildren = true
+        let name: string = class.nodeChildDescription(prop.role).map((decs) => decs.role).get($prop.role)
+        propCell.add ConstantCell(node: node, text: name, disableEditing: true)
+        propCell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), disableEditing: true) #, increaseIndentAfter: children.len > 1)
 
-      if not hasChildren:
-        cell.add PlaceholderCell(node: node, role: prop.role, shadowText: "...")
+        var hasChildren = false
+        for i, c in children:
+          hasAnyChildren = true
+          var childCell = self.buildCell(m, c, useDefaultRecursive)
+          if childCell.style.isNil:
+            childCell.style = CellStyle()
+          childCell.style.onNewLine = childCell.style.onNewLine or children.len > 1
+          # if children.len > 1 and i == children.high:
+          #   childCell.decreaseIndentAfter = true
+          propCell.add childCell
+          hasChildren = true
 
-    cell.add ConstantCell(node: node, text: "}", decreaseIndentBefore: true, style: CellStyle(onNewLine: hasAnyChildren), disableEditing: true)
+        if not hasChildren:
+          propCell.add PlaceholderCell(node: node, role: prop.role, shadowText: "...")
+
+      # childrenCell.add propCell
+
+    cell.add childrenCell
+
+    if hasAnyChildren:
+      cell.add ConstantCell(node: node, text: "}", style: CellStyle(onNewLine: true, noSpaceLeft: true), disableEditing: true)
 
   return cell
 
@@ -418,12 +457,16 @@ proc buildCell*(self: CellBuilder, map: NodeCellMap, node: AstNode, useDefault: 
     debugf"Unknown class {node.class} for node {node}"
     return EmptyCell(node: node)
 
-  if not useDefault and (let builder = self.findBuilder(class, idNone()); builder.isNotNil):
+  # echo fmt"build {node}"
+  let useDefault = self.forceDefault or useDefault
+
+  if not useDefault and self.findBuilder(class, idNone()).isNotNil(builder):
     result = builder(self, node)
     # result.fill()
   else:
     if not useDefault:
       debugf"Unknown builder for {class.name}, using default"
+    # echo fmt"build default {node}"
     result = self.buildCellDefault(map, node, useDefault)
     # result.fill()
 

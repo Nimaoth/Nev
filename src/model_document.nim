@@ -171,10 +171,8 @@ type
     mTargetCursor: Option[CellCursorState]
 
     cursorVisible*: bool = true
-    blinkCursor: bool = true
+    blinkCursor: bool = false
     blinkCursorTask: DelayedTask
-
-    useDefaultCellBuilder*: bool
 
     scrollOffset*: float
     previousBaseIndex*: seq[int]
@@ -2232,7 +2230,7 @@ proc redo*(self: ModelDocumentEditor) {.expose("editor.model").} =
     self.markDirty()
 
 proc toggleUseDefaultCellBuilder*(self: ModelDocumentEditor) {.expose("editor.model").} =
-  self.useDefaultCellBuilder = not self.useDefaultCellBuilder
+  self.nodeCellMap.builder.forceDefault = not self.nodeCellMap.builder.forceDefault
   self.rebuildCells()
   self.markDirty()
 
@@ -2350,16 +2348,18 @@ proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.
   if self.document.workspace.getSome(workspace):
     discard workspace.saveFile("jstest.wasm", binary.toArrayBuffer)
 
-  var lineBuffer = ""
+  # var lineBuffer = ""
 
   proc printI32(a: int32) =
-    if lineBuffer.len > 0:
-      lineBuffer.add " "
-    lineBuffer.add $a
+    # if lineBuffer.len > 0:
+    #   lineBuffer.add " "
+    # lineBuffer.add $a
+    echo a
 
   proc printLine() =
-    log lvlInfo, lineBuffer
-    lineBuffer = ""
+    # log lvlInfo, lineBuffer
+    # lineBuffer = ""
+    discard
 
   var imp = WasmImports(namespace: "env")
   imp.addFunction("print_i32", printI32)
