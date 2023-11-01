@@ -196,6 +196,7 @@ type
     targetNode*: UINode
     targetCell*: Cell
     scrolledNode*: UINode
+    targetCellPosition*: Vec2
     selection*: CellSelection
     handleClick*: proc(node: UINode, cell: Cell, path: seq[int], cursor: CellCursor, drag: bool)
     selectionColor*: Color
@@ -314,11 +315,11 @@ proc updateScrollOffset(self: ModelDocumentEditor) =
       self.scrollOffset = self.scrolledNode.parent.h - buffer * self.app.platform.builder.textHeight
 
   else:
-    discard
+    # discard
     # todo
     # echo fmt"new cell doesn't exist, scroll offset {self.scrollOffset}, {self.targetCellPath}"
-    # self.targetCellPath = self.selection.last.targetCell.rootPath.path
-    # self.scrollOffset = self.scrolledNode.parent.h / 2
+    self.targetCellPath = self.selection.last.targetCell.rootPath.path
+    self.scrollOffset = self.scrolledNode.parent.h / 2
 
   self.markDirty()
 
@@ -905,6 +906,13 @@ proc getCursorOffset(self: ModelDocumentEditor, builder: UINodeBuilder, cell: Ce
   return byteIndex
 
 proc getCellInLine*(self: ModelDocumentEditor, cell: Cell, direction: int, targetX: float): Option[tuple[cell: Cell, offset: int]] =
+  ## Searches for the next cell in a line base way.
+  ## direction:
+  ##   If direction is 0 then only the same line as the input cell is searched.
+  ##   If direction is -1 then the previous lines will be searched.
+  ##   If direction is +1 then the next lines will be searched.
+  ## targetX: return the cell closest to this X location
+
   let builder = self.app.platform.builder
   let uiRoot = self.scrolledNode
   let maxYDiff = builder.lineHeight / 2
@@ -1359,6 +1367,31 @@ proc getFirstEditableCellOfNode*(self: ModelDocumentEditor, node: AstNode): Opti
 
   if nodeCell.getSelfOrNeighborLeafWhere(Right, editableDescendant).getSome(targetCell):
     echo fmt"a: editable descendant {targetCell}"
+    return self.nodeCellMap.toCursor(targetCell, true).some
+
+  if nodeCell.getSelfOrNextLeafWhere((n) => isVisible(n) and not n.disableSelection).getSome(targetCell):
+    echo fmt"a: visible descendant {targetCell}"
+    return self.nodeCellMap.toCursor(targetCell, true).some
+
+proc getFirstSelectableCellOfNode*(self: ModelDocumentEditor, node: AstNode): Option[CellCursor] =
+  result = CellCursor.none
+
+  debugf"getFirstSelectableCellOfNode {node}"
+  var nodeCell = self.nodeCellMap.cell(node)
+  if nodeCell.isNil:
+    return
+
+  nodeCell = nodeCell.getFirstLeaf()
+  echo fmt"first leaf {nodeCell}"
+
+  proc selectableDescendant(n: Cell): (bool, Option[Cell]) =
+    if n.node == nodeCell.node or n.node.isDescendant(nodeCell.node):
+      return (isVisible(n) and n.canSelect, n.some)
+    else:
+      return (true, Cell.none)
+
+  if nodeCell.getSelfOrNeighborLeafWhere(Right, selectableDescendant).getSome(targetCell):
+    echo fmt"a: selectable descendant {targetCell}"
     return self.nodeCellMap.toCursor(targetCell, true).some
 
   if nodeCell.getSelfOrNextLeafWhere((n) => isVisible(n) and not n.disableSelection).getSome(targetCell):
@@ -2233,6 +2266,10 @@ proc redo*(self: ModelDocumentEditor) {.expose("editor.model").} =
 proc toggleUseDefaultCellBuilder*(self: ModelDocumentEditor) {.expose("editor.model").} =
   self.nodeCellMap.builder.forceDefault = not self.nodeCellMap.builder.forceDefault
   self.rebuildCells()
+  if self.getFirstSelectableCellOfNode(self.selection.first.node).getSome(first) and self.getFirstSelectableCellOfNode(self.selection.last.node).getSome(last):
+    self.selection = (first, last)
+  else:
+    self.cursor = self.nodeCellMap.toCursor(self.nodeCellMap.cell(self.cursor.node).getFirstLeaf(), true)
   self.markDirty()
 
 proc showCompletions*(self: ModelDocumentEditor) {.expose("editor.model").} =

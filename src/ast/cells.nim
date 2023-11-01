@@ -20,7 +20,7 @@ type
   NodeReferenceCell* = ref object of Cell
     reference*: Id
     property*: Id
-    child: Cell
+    targetNodeCell: Cell
 
   AliasCell* = ref object of Cell
     discard
@@ -30,9 +30,9 @@ type
 
 proc buildCell*(self: CellBuilder, map: NodeCellMap, node: AstNode, useDefault: bool = false): Cell
 
-proc child*(cell: NodeReferenceCell): Cell = cell.child
+proc child*(cell: NodeReferenceCell): Cell = cell.targetNodeCell
 proc `child=`*(cell: NodeReferenceCell, c: Cell) =
-  cell.child = c
+  cell.targetNodeCell = c
   c.parent = cell
 
 method getText*(cell: Cell): string {.base.} = discard
@@ -146,7 +146,7 @@ proc nextDirect*(self: Cell): Option[Cell] =
   return self.parent.CollectionCell.children[i + 1].some
 
 proc isLeaf*(self: Cell): bool =
-  if self of CollectionCell and self.CollectionCell.children.len > 0:
+  if self of CollectionCell:
     return false
   return true
 
