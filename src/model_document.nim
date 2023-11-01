@@ -199,6 +199,7 @@ type
     targetCellPosition*: Vec2
     selection*: CellSelection
     handleClick*: proc(node: UINode, cell: Cell, path: seq[int], cursor: CellCursor, drag: bool)
+    setCursor*: proc(cell: Cell, offset: int, drag: bool)
     selectionColor*: Color
     isThickCursor*: bool
 
@@ -294,7 +295,7 @@ proc startBlinkCursorTask(self: ModelDocumentEditor) =
   else:
     self.blinkCursorTask.reschedule()
 
-proc updateScrollOffset(self: ModelDocumentEditor) =
+proc updateScrollOffset*(self: ModelDocumentEditor) =
   if self.cellWidgetContext.isNil:
     return
 
@@ -337,7 +338,6 @@ proc `selection=`*(self: ModelDocumentEditor, selection: CellSelection) =
     self.refilterCompletions()
   # debugf"selection = {selection}"
   self.lastTargetCell = selection.last.targetCell
-  self.updateScrollOffset()
 
   self.cursorVisible = true
   if self.blinkCursorTask.isNotNil and self.active:
@@ -643,6 +643,8 @@ proc handleModelChanged(self: ModelDocumentEditor, document: ModelDocument) =
   else:
     self.cursor = self.getFirstEditableCellOfNode(self.document.model.rootNodes[0]).get
 
+  self.updateScrollOffset()
+
   self.mCursorBeforeTransaction = self.selection
 
   self.markDirty()
@@ -666,6 +668,7 @@ method handleDocumentChanged*(self: ModelDocumentEditor) =
   self.nodeCellMap.builder = self.document.builder
   self.rebuildCells()
   self.cursor = self.getFirstEditableCellOfNode(self.document.model.rootNodes[0]).get
+  self.updateScrollOffset()
 
   self.markDirty()
 
@@ -812,6 +815,7 @@ method createWithDocument*(_: ModelDocumentEditor, document: Document, configPro
   self.mSelection.first.node = self.document.model.rootNodes[0]
   self.mSelection.last.node = self.document.model.rootNodes[0]
   self.cursor = self.getFirstEditableCellOfNode(self.document.model.rootNodes[0]).get
+  self.updateScrollOffset()
 
   self.startBlinkCursorTask()
 
@@ -893,9 +897,9 @@ proc setMode*(self: ModelDocumentEditor, mode: string) {.expose("editor.model").
   self.currentMode = mode
   self.markDirty()
 
-proc getCursorOffset(self: ModelDocumentEditor, builder: UINodeBuilder, cell: Cell, posX: float): int =
+proc getCursorOffset(builder: UINodeBuilder, cell: Cell, posX: float, isThickCursor: bool): int =
   var offsetFromLeft = posX / builder.charWidth
-  if self.isThickCursor():
+  if isThickCursor:
     offsetFromLeft -= 0.0
   else:
     offsetFromLeft += 0.5
@@ -905,7 +909,7 @@ proc getCursorOffset(self: ModelDocumentEditor, builder: UINodeBuilder, cell: Ce
   let byteIndex = line.runeOffset(index.RuneIndex)
   return byteIndex
 
-proc getCellInLine*(self: ModelDocumentEditor, cell: Cell, direction: int, targetX: float): Option[tuple[cell: Cell, offset: int]] =
+proc getCellInLine*(builder: UINodeBuilder, updateContext: UpdateContext, target: Vec2, direction: int, isThickCursor: bool): Option[tuple[cell: Cell, offset: int]] =
   ## Searches for the next cell in a line base way.
   ## direction:
   ##   If direction is 0 then only the same line as the input cell is searched.
@@ -913,21 +917,15 @@ proc getCellInLine*(self: ModelDocumentEditor, cell: Cell, direction: int, targe
   ##   If direction is +1 then the next lines will be searched.
   ## targetX: return the cell closest to this X location
 
-  let builder = self.app.platform.builder
-  let uiRoot = self.scrolledNode
+  let uiRoot = updateContext.scrolledNode
   let maxYDiff = builder.lineHeight / 2
   let buffer = 2.0
-
-  if not self.cellWidgetContext.cellToWidget.contains(cell.id):
-    return
-
-  let cellUINode = self.cellWidgetContext.cellToWidget[cell.id]
 
   var offset = 0
   while true:
     offset = offset + direction
-    let charGap = self.app.platform.charGap
-    let searchRect = rect(uiRoot.lx, cellUINode.ly + offset.float * builder.lineHeight + charGap, uiRoot.lw, builder.lineHeight - charGap * 2)
+    let gap = builder.lineGap
+    let searchRect = rect(uiRoot.lx, target.y + offset.float * builder.lineHeight + gap, uiRoot.lw, builder.lineHeight - gap * 2)
 
     if searchRect.yh < -builder.lineHeight * buffer or searchRect.y > uiRoot.lyh + builder.lineHeight * buffer:
       return
@@ -942,15 +940,15 @@ proc getCellInLine*(self: ModelDocumentEditor, cell: Cell, direction: int, targe
         return
       let currentCell = uiNode.userData.Cell
 
-      let xDiff = if targetX < uiNode.lx:
-        uiNode.lx - targetX
-      elif targetX > uiNode.lxw:
-        targetX - uiNode.lxw
+      let xDiff = if target.x < uiNode.lx:
+        uiNode.lx - target.x
+      elif target.x > uiNode.lxw:
+        target.x - uiNode.lxw
       else:
         0
 
       if xDiff == 0:
-        let offset = self.getCursorOffset(builder, currentCell, targetX - uiNode.lx)
+        let offset = getCursorOffset(builder, currentCell, target.x - uiNode.lx, isThickCursor)
         if offset < currentCell.editableLow or offset > currentCell.editableHigh:
           return
 
@@ -961,11 +959,25 @@ proc getCellInLine*(self: ModelDocumentEditor, cell: Cell, direction: int, targe
     )
 
     if selectedCell.isNotNil:
-      let offset = self.getCursorOffset(builder, selectedCell, targetX - selectedNode.lx)
+      let offset = getCursorOffset(builder, selectedCell, target.x - selectedNode.lx, isThickCursor)
       return (selectedCell, offset).some
 
     if direction == 0:
       return
+
+proc getCellInLine*(self: ModelDocumentEditor, cell: Cell, direction: int, targetX: float): Option[tuple[cell: Cell, offset: int]] =
+  ## Searches for the next cell in a line base way.
+  ## direction:
+  ##   If direction is 0 then only the same line as the input cell is searched.
+  ##   If direction is -1 then the previous lines will be searched.
+  ##   If direction is +1 then the next lines will be searched.
+  ## targetX: return the cell closest to this X location
+
+  if not self.cellWidgetContext.cellToWidget.contains(cell.id):
+    return
+
+  let cellUINode = self.cellWidgetContext.cellToWidget[cell.id]
+  return getCellInLine(self.app.platform.builder, self.cellWidgetContext, vec2(targetX, cellUINode.ly), direction, self.isThickCursor)
 
 proc getPreviousCellInLine*(self: ModelDocumentEditor, cell: Cell): Cell =
   let uiRoot = self.scrolledNode
@@ -1603,6 +1615,7 @@ proc moveCursorLeft*(self: ModelDocumentEditor, select: bool = false) {.expose("
     let newCursor = cell.getCursorLeft(self.cursor)
     if newCursor.node.isNotNil:
       self.updateSelection(newCursor, select)
+      self.updateScrollOffset()
 
   self.markDirty()
 
@@ -1611,6 +1624,7 @@ proc moveCursorRight*(self: ModelDocumentEditor, select: bool = false) {.expose(
     let newCursor = cell.getCursorRight(self.cursor)
     if newCursor.node.isNotNil:
       self.updateSelection(newCursor, select)
+      self.updateScrollOffset()
 
   self.markDirty()
 
@@ -1619,10 +1633,12 @@ proc moveCursorLeftLine*(self: ModelDocumentEditor, select: bool = false) {.expo
     var newCursor = cell.getCursorLeft(self.cursor)
     if newCursor.node == self.cursor.node:
       self.updateSelection(newCursor, select)
+      self.updateScrollOffset()
     else:
       let nextCell = self.getPreviousSelectableInLine(cell)
       newCursor = self.nodeCellMap.toCursor(nextCell, false)
       self.updateSelection(newCursor, select)
+      self.updateScrollOffset()
 
   self.markDirty()
 
@@ -1631,10 +1647,12 @@ proc moveCursorRightLine*(self: ModelDocumentEditor, select: bool = false) {.exp
     var newCursor = cell.getCursorRight(self.cursor)
     if newCursor.node == self.cursor.node:
       self.updateSelection(newCursor, select)
+      self.updateScrollOffset()
     else:
       let nextCell = self.getNextSelectableInLine(cell)
       newCursor = self.nodeCellMap.toCursor(nextCell, true)
       self.updateSelection(newCursor, select)
+      self.updateScrollOffset()
 
   self.markDirty()
 
@@ -1643,6 +1661,7 @@ proc moveCursorLineStart*(self: ModelDocumentEditor, select: bool = false) {.exp
     if self.getCellInLine(cell, 0, 0).getSome(target):
       let newCursor = self.nodeCellMap.toCursor(target.cell, target.offset)
       self.updateSelection(newCursor, select)
+      self.updateScrollOffset()
   self.markDirty()
 
 proc moveCursorLineEnd*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
@@ -1650,6 +1669,7 @@ proc moveCursorLineEnd*(self: ModelDocumentEditor, select: bool = false) {.expos
     if self.getCellInLine(cell, 0, 10000).getSome(target):
       let newCursor = self.nodeCellMap.toCursor(target.cell, target.offset)
       self.updateSelection(newCursor, select)
+      self.updateScrollOffset()
   self.markDirty()
 
 proc moveCursorLineStartInline*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
@@ -1672,6 +1692,7 @@ proc moveCursorLineStartInline*(self: ModelDocumentEditor, select: bool = false)
 
     let newCursor = self.nodeCellMap.toCursor(prevCell, true)
     self.updateSelection(newCursor, select)
+    self.updateScrollOffset()
 
   self.markDirty()
 
@@ -1695,6 +1716,7 @@ proc moveCursorLineEndInline*(self: ModelDocumentEditor, select: bool = false) {
 
     let newCursor = self.nodeCellMap.toCursor(prevCell, false)
     self.updateSelection(newCursor, select)
+    self.updateScrollOffset()
 
   self.markDirty()
 
@@ -1705,6 +1727,7 @@ proc moveCursorUp*(self: ModelDocumentEditor, select: bool = false) {.expose("ed
 
     let newCursor = self.nodeCellMap.toCursor(target.cell, target.offset)
     self.updateSelection(newCursor, select)
+    self.updateScrollOffset()
 
   else:
     self.moveCursorLeft(select)
@@ -1718,6 +1741,7 @@ proc moveCursorDown*(self: ModelDocumentEditor, select: bool = false) {.expose("
 
     let newCursor = self.nodeCellMap.toCursor(target.cell, target.offset)
     self.updateSelection(newCursor, select)
+    self.updateScrollOffset()
 
   else:
     self.moveCursorRight(select)
@@ -1729,6 +1753,7 @@ proc moveCursorLeftCell*(self: ModelDocumentEditor, select: bool = false) {.expo
     if cell.getPreviousSelectableLeaf().getSome(c):
       let newCursor = self.nodeCellMap.toCursor(c, false)
       self.updateSelection(newCursor, select)
+      self.updateScrollOffset()
 
   self.markDirty()
 
@@ -1737,6 +1762,7 @@ proc moveCursorRightCell*(self: ModelDocumentEditor, select: bool = false) {.exp
     if cell.getNextSelectableLeaf().getSome(c):
       let newCursor = self.nodeCellMap.toCursor(c, true)
       self.updateSelection(newCursor, select)
+      self.updateScrollOffset()
 
   self.markDirty()
 
@@ -1755,11 +1781,13 @@ proc selectNode*(self: ModelDocumentEditor, select: bool = false) {.expose("edit
   #     self.cursor = CellCursor(map: self.nodeCellMap, node: self.cursor.node, path: self.cursor.path, firstIndex: 0, index: self.cursor.cell.editableHigh)
   # else:
   #   self.cursor = CellCursor(map: self.nodeCellMap, node: self.cursor.node, path: @[], firstIndex: 0, index: self.cursor.cell.editableHigh)
+  self.updateScrollOffset()
 
   self.markDirty()
 
 proc selectParentCell*(self: ModelDocumentEditor) {.expose("editor.model").} =
   self.cursor = self.cursor.selectParentCell()
+  self.updateScrollOffset()
   self.markDirty()
 
 proc shouldEdit*(cell: Cell): bool =
@@ -1776,6 +1804,7 @@ proc selectPrevPlaceholder*(self: ModelDocumentEditor, select: bool = false) {.e
       return
 
     self.cursor = self.nodeCellMap.toCursor(candidate, true)
+    self.updateScrollOffset()
     self.markDirty()
 
 proc selectNextPlaceholder*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
@@ -1784,6 +1813,7 @@ proc selectNextPlaceholder*(self: ModelDocumentEditor, select: bool = false) {.e
       return
 
     self.cursor = self.nodeCellMap.toCursor(candidate, true)
+    self.updateScrollOffset()
     self.markDirty()
 
 proc deleteDirection*(self: ModelDocumentEditor, direction: Direction) =
@@ -2215,6 +2245,7 @@ proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool {.expos
       var newCursor = self.selection.last
       newCursor.index = newColumn
       self.cursor = newCursor
+      self.updateScrollOffset()
 
       if self.unfilteredCompletions.len == 0:
         self.updateCompletions()
@@ -2270,6 +2301,7 @@ proc toggleUseDefaultCellBuilder*(self: ModelDocumentEditor) {.expose("editor.mo
     self.selection = (first, last)
   else:
     self.cursor = self.nodeCellMap.toCursor(self.nodeCellMap.cell(self.cursor.node).getFirstLeaf(), true)
+  self.updateScrollOffset()
   self.markDirty()
 
 proc showCompletions*(self: ModelDocumentEditor) {.expose("editor.model").} =
