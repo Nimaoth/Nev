@@ -224,6 +224,7 @@ proc getContextWithMode*(self: ModelDocumentEditor, context: string): string
 proc toCursor*(map: NodeCellMap, cell: Cell, column: int): CellCursor
 proc toCursor*(map: NodeCellMap, cell: Cell, start: bool): CellCursor
 proc getFirstEditableCellOfNode*(self: ModelDocumentEditor, node: AstNode): Option[CellCursor]
+proc getPreviousLeafWhere*(cell: Cell, predicate: proc(cell: Cell): bool): Option[Cell]
 proc canSelect*(cell: Cell): bool
 proc isVisible*(cell: Cell): bool
 
@@ -295,7 +296,7 @@ proc startBlinkCursorTask(self: ModelDocumentEditor) =
   else:
     self.blinkCursorTask.reschedule()
 
-proc updateScrollOffset*(self: ModelDocumentEditor) =
+proc updateScrollOffset*(self: ModelDocumentEditor, scrollToCursor: bool = true) =
   if self.cellWidgetContext.isNil:
     return
 
@@ -315,14 +316,46 @@ proc updateScrollOffset*(self: ModelDocumentEditor) =
       self.targetCellPath = newCell.rootPath.path
       self.scrollOffset = self.scrolledNode.parent.h - buffer * self.app.platform.builder.textHeight
 
-  else:
+  elif scrollToCursor:
     # discard
     # todo
     # echo fmt"new cell doesn't exist, scroll offset {self.scrollOffset}, {self.targetCellPath}"
     self.targetCellPath = self.selection.last.targetCell.rootPath.path
     self.scrollOffset = self.scrolledNode.parent.h / 2
 
+  elif self.lastTargetCell.isNotNil and self.lastTargetCell.node.model.isNotNil:
+    self.targetCellPath = self.nodeCellMap.cell(self.lastTargetCell.node).rootPath.path
+
+  else:
+    self.targetCellPath = newCell.rootPath.path
+
   self.markDirty()
+
+proc updateScrollOffsetToPrevCell(self: ModelDocumentEditor): bool =
+  if self.cellWidgetContext.isNil:
+    return false
+  if self.scrolledNode.isNil:
+    return false
+
+  let cursor = self.selection.normalized.first
+  let sourceCell = cursor.targetCell
+
+  let prevLeaf = sourceCell.getPreviousLeafWhere proc(cell: Cell): bool =
+    return not cell.node.isDescendant(sourceCell.node)
+
+  if prevLeaf.isNone:
+    return false
+
+  let newCell = prevLeaf.get
+  if not self.cellWidgetContext.cellToWidget.contains(newCell.id):
+    return false
+
+  let newUINode = self.cellWidgetContext.cellToWidget[newCell.id]
+  let newY = newUINode.transformBounds(self.scrolledNode.parent).y
+
+  self.targetCellPath = newCell.rootPath.path
+  self.scrollOffset = newY
+  return true
 
 proc `selection=`*(self: ModelDocumentEditor, selection: CellSelection) =
   assert self.mSelection.first.map.isNotNil
@@ -1817,6 +1850,11 @@ proc selectNextPlaceholder*(self: ModelDocumentEditor, select: bool = false) {.e
     self.markDirty()
 
 proc deleteDirection*(self: ModelDocumentEditor, direction: Direction) =
+  let updatedScrollOffset = self.updateScrollOffsetToPrevCell()
+  defer:
+    if not updatedScrollOffset:
+      self.updateScrollOffset()
+
   let cell = self.selection.last.targetCell
   let endIndex = if direction == Left: 0 else: cell.currentText.len
 
@@ -2001,6 +2039,11 @@ proc delete*(self: ModelDocumentEditor, direction: Direction) =
   if self.selection.isEmpty:
     self.deleteDirection(direction)
     return
+
+  let updatedScrollOffset = self.updateScrollOffsetToPrevCell()
+  defer:
+    if not updatedScrollOffset:
+      self.updateScrollOffset()
 
   let selection = self.selection.normalized
   let firstPath = selection.first.rootPath
@@ -2223,6 +2266,11 @@ proc createNewNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
   if not self.selection.isEmpty:
     return
 
+  let updatedScrollOffset = self.updateScrollOffsetToPrevCell()
+  defer:
+    if not updatedScrollOffset:
+      self.updateScrollOffset()
+
   debug "createNewNode"
 
   if self.createNewNodeAt(self.cursor).getSome(newNode):
@@ -2283,6 +2331,7 @@ proc undo*(self: ModelDocumentEditor) {.expose("editor.model").} =
       self.selection = self.transactionCursors[t[0]]
     else:
       self.selection = self.getCursorForOp(t[1])
+    self.updateScrollOffset(false)
     self.markDirty()
 
 proc redo*(self: ModelDocumentEditor) {.expose("editor.model").} =
@@ -2292,6 +2341,7 @@ proc redo*(self: ModelDocumentEditor) {.expose("editor.model").} =
       self.selection = self.transactionCursors[t[0]]
     else:
       self.selection = self.getCursorForOp(t[1])
+    self.updateScrollOffset(false)
     self.markDirty()
 
 proc toggleUseDefaultCellBuilder*(self: ModelDocumentEditor) {.expose("editor.model").} =
