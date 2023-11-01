@@ -399,12 +399,21 @@ iterator rchildren*(node: UINode): UINode =
     yield current
     current = prev
 
+proc transformPos*(vec: Vec2, src: UINode, dst: UINode): Vec2 =
+  result = vec
+  var curr = src
+  while curr != dst:
+    result = result + curr.xy
+    curr = curr.parent
+    assert curr.isNotNil, "transformPos: dst is not a (in)direct parent of src"
+
 proc transformRect*(rect: Rect, src: UINode, dst: UINode): Rect =
   result = rect
   var curr = src
   while curr != dst:
     result = result + curr.xy
     curr = curr.parent
+    assert curr.isNotNil, "transformPos: dst is not a (in)direct parent of src"
 
 proc transformBounds*(src: UINode, dst: UINode): Rect =
   result = src.bounds
@@ -412,6 +421,7 @@ proc transformBounds*(src: UINode, dst: UINode): Rect =
   while curr != dst:
     result = result + curr.xy
     curr = curr.parent
+    assert curr.isNotNil, "transformPos: dst is not a (in)direct parent of src"
 
 proc returnNode*(builder: UINodeBuilder, node: UINode) =
   case node.userId.kind
@@ -620,7 +630,7 @@ proc postLayoutChild*(builder: UINodeBuilder, node: UINode, child: UINode) =
     node.boundsRaw.h = child.yh.roundPositive
     recurse = true
 
-proc updateSizeToContent(builder: UINodeBuilder, node: UINode) =
+proc updateSizeToContent*(builder: UINodeBuilder, node: UINode) =
   if SizeToContentX in node.flags:
     let childrenWidth = if node.first.isNotNil:
       if LayoutHorizontalReverse in node.flags:
