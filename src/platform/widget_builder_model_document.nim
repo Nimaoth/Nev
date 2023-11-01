@@ -140,15 +140,10 @@ proc findNodeContainingMinX(node: UINode, pos: Vec2, predicate: proc(node: UINod
     if predicate.isNotNil and predicate(node):
       return node.some
 
-proc handleIndentClickOrDrag(builder: UINodeBuilder, btn: MouseButton, modifiers: Modifiers, currentNode: UINode, drag: bool, pos: Vec2) =
-  if currentNode.next.isNotNil:
-    let posAbs = rect(pos, vec2()).transformRect(currentNode, builder.root).xy
-    let targetNode = currentNode.next.findNodeContainingMinX(posAbs, (node) => node.handlePressed.isNotNil)
-    if targetNode.getSome(node):
-      if drag:
-        discard node.handleDrag()(node, btn, modifiers, posAbs - node.boundsAbsolute.xy, vec2())
-      else:
-        discard node.handlePressed()(node, btn, modifiers, posAbs - node.boundsAbsolute.xy)
+proc handleIndentClickOrDrag(builder: UINodeBuilder, updateContext: UpdateContext, btn: MouseButton, modifiers: Modifiers, currentNode: UINode, drag: bool, pos: Vec2) =
+  let posAbs = pos.transformPos(currentNode, builder.root).xy
+  if getCellInLine(builder, updateContext, posAbs - vec2(0, builder.textHeight / 2), 0, true).getSome(target):
+    updateContext.setCursor(target.cell, target.offset, drag)
 
 proc increaseIndent(self: CellLayoutContext) =
   inc self.currentIndent
@@ -557,12 +552,13 @@ proc finish(self: CellLayoutContext) =
 
     if self.currentIndent > 0:
       builder.panel(&{FillY}, w = self.indentText.len.float * self.currentIndent.float * builder.charWidth, textColor = color(0, 1, 0)):
-        onClickAny btn:
-          if btn == MouseButton.Left:
-            handleIndentClickOrDrag(builder, btn, modifiers, currentNode, false, pos)
+        capture currentNode:
+          onClickAny btn:
+            if btn == MouseButton.Left:
+              handleIndentClickOrDrag(builder, self.updateContext, btn, modifiers, currentNode, false, pos)
 
-        onDrag MouseButton.Left:
-          handleIndentClickOrDrag(builder, btn, modifiers, currentNode, true, pos)
+          onDrag MouseButton.Left:
+            handleIndentClickOrDrag(builder, self.updateContext, btn, modifiers, currentNode, true, pos)
 
         when defined(uiNodeDebugData):
           currentNode.aDebugData.metaData["isBackwards"] = newJBool true
@@ -574,6 +570,21 @@ proc finish(self: CellLayoutContext) =
       builder.continueFrom(lineNode, lineNode.last)
 
     if line != 0 or not self.joinLines:
+
+      # add space after last cell in line for mouse handling
+      builder.panel(&{FillX, FillY}):
+        capture currentNode:
+          onClickAny btn:
+            if btn == MouseButton.Left:
+              handleIndentClickOrDrag(builder, self.updateContext, btn, modifiers, currentNode, false, pos)
+
+          onDrag MouseButton.Left:
+            handleIndentClickOrDrag(builder, self.updateContext, btn, modifiers, currentNode, true, pos)
+
+        when defined(uiNodeDebugData):
+          currentNode.aDebugData.metaData["isPostSpace"] = newJBool true
+          currentNode.aDebugData.metaData["isForward"] = newJBool true
+
       builder.finishNode(lineNode)
 
   for line in 0..self.forwardData.lines.high:
@@ -584,12 +595,13 @@ proc finish(self: CellLayoutContext) =
 
       if self.currentIndent > 0:
         builder.panel(&{FillY}, w = self.indentText.len.float * self.currentIndent.float * builder.charWidth, textColor = color(0, 1, 0)):
-          onClickAny btn:
-            if btn == MouseButton.Left:
-              handleIndentClickOrDrag(builder, btn, modifiers, currentNode, false, pos)
+          capture currentNode:
+            onClickAny btn:
+              if btn == MouseButton.Left:
+                handleIndentClickOrDrag(builder, self.updateContext, btn, modifiers, currentNode, false, pos)
 
-          onDrag MouseButton.Left:
-            handleIndentClickOrDrag(builder, btn, modifiers, currentNode, true, pos)
+            onDrag MouseButton.Left:
+              handleIndentClickOrDrag(builder, self.updateContext, btn, modifiers, currentNode, true, pos)
 
           when defined(uiNodeDebugData):
             currentNode.aDebugData.metaData["isForwards"] = newJBool true
@@ -602,18 +614,19 @@ proc finish(self: CellLayoutContext) =
       lineNode.insert(self.forwardData.lines[line][i], lineNode.last)
       builder.continueFrom(lineNode, lineNode.last)
 
-    # todo: add space after last cell in line for mouse handling
-    # builder.panel(&{FillX, FillY}):
-    #   onClickAny btn:
-    #     if btn == MouseButton.Left:
-    #       handleSpaceClickOrDrag(builder, currentNode, false, pos, btn, modifiers)
+    # add space after last cell in line for mouse handling
+    builder.panel(&{FillX, FillY}):
+      capture currentNode:
+        onClickAny btn:
+          if btn == MouseButton.Left:
+            handleIndentClickOrDrag(builder, self.updateContext, btn, modifiers, currentNode, false, pos)
 
-    #   onDrag MouseButton.Left:
-    #     handleSpaceClickOrDrag(builder, currentNode, true, pos, btn, modifiers)
+        onDrag MouseButton.Left:
+          handleIndentClickOrDrag(builder, self.updateContext, btn, modifiers, currentNode, true, pos)
 
-    #   when defined(uiNodeDebugData):
-    #     currentNode.aDebugData.metaData["isPostSpace"] = newJBool true
-    #     currentNode.aDebugData.metaData["isForward"] = newJBool true
+      when defined(uiNodeDebugData):
+        currentNode.aDebugData.metaData["isPostSpace"] = newJBool true
+        currentNode.aDebugData.metaData["isForward"] = newJBool true
 
     builder.finishNode(lineNode)
 
@@ -944,6 +957,10 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
 
                   self.app.tryActivateEditor(self)
                   self.markDirty()
+
+                self.cellWidgetContext.setCursor = proc(cell: Cell, offset: int, drag: bool) =
+                  self.updateSelection(self.nodeCellMap.toCursor(cell, offset), drag)
+                  self.updateScrollOffset()
 
                 # echo fmt"scroll offset {self.scrollOffset}"
                 try:
