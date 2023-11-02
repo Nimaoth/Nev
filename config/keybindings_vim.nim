@@ -274,7 +274,6 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     addCommand("editor.model", "<UP>", "move-cursor-up")
     addCommand("editor.model", "<DOWN>", "move-cursor-down")
     addCommand("editor.model", "<A-UP>", "select-node")
-    addCommand("editor.model", "<C-UP>", "select-parent-cell")
     addCommand("editor.model", "<A-DOWN>", "move-cursor-down")
     addCommand("editor.model", "<C-LEFT>", "move-cursor-left-cell")
     addCommand("editor.model", "<C-RIGHT>", "move-cursor-right-cell")
@@ -284,6 +283,8 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     addCommand("editor.model", "<END>", "move-cursor-line-end")
     addCommand("editor.model", "<A-HOME>", "move-cursor-line-start-inline")
     addCommand("editor.model", "<A-END>", "move-cursor-line-end-inline")
+    addCommand("editor.model", "<C-UP>", "scroll-lines", 1)
+    addCommand("editor.model", "<C-DOWN>", "scroll-lines", -1)
 
     addCommand("editor.model", "<S-LEFT>", "move-cursor-left-line", true)
     addCommand("editor.model", "<S-RIGHT>", "move-cursor-right-line", true)

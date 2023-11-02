@@ -227,6 +227,7 @@ proc getFirstEditableCellOfNode*(self: ModelDocumentEditor, node: AstNode): Opti
 proc getPreviousLeafWhere*(cell: Cell, predicate: proc(cell: Cell): bool): Option[Cell]
 proc canSelect*(cell: Cell): bool
 proc isVisible*(cell: Cell): bool
+proc getParentInfo*(selection: CellSelection): tuple[cell: Cell, left: seq[int], right: seq[int]]
 
 method `$`*(document: ModelDocument): string =
   return document.filename
@@ -905,8 +906,12 @@ proc getTargetCell*(cursor: CellCursor, resolveCollection: bool = true): Option[
 static:
   addTypeMap(ModelDocumentEditor, api.ModelDocumentEditor, getModelDocumentEditor)
 
-proc scroll*(self: ModelDocumentEditor, amount: float32) {.expose("editor.model").} =
+proc scrollPixels*(self: ModelDocumentEditor, amount: float32) {.expose("editor.model").} =
   self.scrollOffset += amount
+  self.markDirty()
+
+proc scrollLines*(self: ModelDocumentEditor, lines: float32) {.expose("editor.model").} =
+  self.scrollOffset += self.app.platform.builder.textHeight * lines.float
   self.markDirty()
 
 proc getModeConfig(self: ModelDocumentEditor, mode: string): EventHandlerConfig =
@@ -1800,27 +1805,30 @@ proc moveCursorRightCell*(self: ModelDocumentEditor, select: bool = false) {.exp
   self.markDirty()
 
 proc selectNode*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
-  if self.selection.first.node == self.selection.last.node:
-    let a = self.nodeCellMap.toCursor(self.selection.first.targetCell, true)
-    let b = self.nodeCellMap.toCursor(self.selection.last.targetCell, false)
-    self.selection = (a, b)
+  let (parentCell, _, _) = self.selection.getParentInfo
+  if parentCell.isNil:
+    return
 
-  # todo
-  # if self.cursor.path.len == 0:
-  #   if self.cursor.firstIndex == 0 and self.cursor.index == self.cursor.cell.high:
-  #     if self.cursor.node.parent.isNotNil:
-  #       self.cursor = CellCursor(map: self.nodeCellMap, node: self.cursor.node.parent, path: self.cursor.path, firstIndex: 0, index: self.cursor.cell.editableHigh)
-  #   else:
-  #     self.cursor = CellCursor(map: self.nodeCellMap, node: self.cursor.node, path: self.cursor.path, firstIndex: 0, index: self.cursor.cell.editableHigh)
-  # else:
-  #   self.cursor = CellCursor(map: self.nodeCellMap, node: self.cursor.node, path: @[], firstIndex: 0, index: self.cursor.cell.editableHigh)
+  var newSelection = (
+    parentCell.getFirstLeaf.getSelfOrNextLeafWhere(canSelect).mapIt(self.nodeCellMap.toCursor(it, true)),
+    parentCell.getLastLeaf.getSelfOrPreviousLeafWhere(canSelect).mapIt(self.nodeCellMap.toCursor(it, false)))
+
+  if parentCell.parent.isNotNil and (newSelection[0].isNone or newSelection[1].isNone or self.selection.normalized == (newSelection[0].get, newSelection[1].get)):
+    newSelection = (
+      parentCell.parent.getFirstLeaf.getSelfOrNextLeafWhere(canSelect).mapIt(self.nodeCellMap.toCursor(it, true)),
+      parentCell.parent.getLastLeaf.getSelfOrPreviousLeafWhere(canSelect).mapIt(self.nodeCellMap.toCursor(it, false)))
+
+  if parentCell.node.parent.isNotNil and (newSelection[0].isNone or newSelection[1].isNone or self.selection.normalized == (newSelection[0].get, newSelection[1].get)):
+    let parentNodeCell = self.nodeCellMap.cell(parentCell.node.parent)
+    newSelection = (
+      parentNodeCell.getFirstLeaf.getSelfOrNextLeafWhere(canSelect).mapIt(self.nodeCellMap.toCursor(it, true)),
+      parentNodeCell.getLastLeaf.getSelfOrPreviousLeafWhere(canSelect).mapIt(self.nodeCellMap.toCursor(it, false)))
+
+  if newSelection[0].isSome and newSelection[1].isSome:
+    self.selection = (newSelection[0].get, newSelection[1].get)
+
   self.updateScrollOffset()
 
-  self.markDirty()
-
-proc selectParentCell*(self: ModelDocumentEditor) {.expose("editor.model").} =
-  self.cursor = self.cursor.selectParentCell()
-  self.updateScrollOffset()
   self.markDirty()
 
 proc shouldEdit*(cell: Cell): bool =
@@ -1977,6 +1985,11 @@ proc deleteDirection*(self: ModelDocumentEditor, direction: Direction) =
       break
 
 proc getParentInfo*(selection: CellSelection): tuple[cell: Cell, left: seq[int], right: seq[int]] =
+  ## Returns information about common parent cell of the selection, as well as the path from the parent cell to the first and last selected cell
+  ## result.cell: the common parent cell. Nil if the cells don't share a common root
+  ## result.left: the path from the parent cell to the first selected cell
+  ## result.right: the path from the parent cell to the last selected cell
+
   if selection.isEmpty:
     return (selection.first.targetCell, @[], @[])
 
@@ -2347,7 +2360,9 @@ proc redo*(self: ModelDocumentEditor) {.expose("editor.model").} =
 proc toggleUseDefaultCellBuilder*(self: ModelDocumentEditor) {.expose("editor.model").} =
   self.nodeCellMap.builder.forceDefault = not self.nodeCellMap.builder.forceDefault
   self.rebuildCells()
-  if self.getFirstSelectableCellOfNode(self.selection.first.node).getSome(first) and self.getFirstSelectableCellOfNode(self.selection.last.node).getSome(last):
+  if self.getFirstEditableCellOfNode(self.selection.first.node).getSome(first) and self.getFirstEditableCellOfNode(self.selection.last.node).getSome(last):
+    self.selection = (first, last)
+  elif self.getFirstSelectableCellOfNode(self.selection.first.node).getSome(first) and self.getFirstSelectableCellOfNode(self.selection.last.node).getSome(last):
     self.selection = (first, last)
   else:
     self.cursor = self.nodeCellMap.toCursor(self.nodeCellMap.cell(self.cursor.node).getFirstLeaf(), true)
