@@ -12,6 +12,7 @@ logCategory "widget_builder_model_document"
 func withAlpha(color: Color, alpha: float32): Color = color(color.r, color.g, color.b, alpha)
 
 const cellGenerationBuffer = -15
+const targetCellBuffer = 50
 # const cellGenerationBuffer = 150
 
 type
@@ -851,7 +852,7 @@ proc updateTargetPath(updateContext: UpdateContext, root: UINode, cell: Cell, fo
     let node = updateContext.cellToWidget[cell.id]
     let bounds = node.bounds.transformRect(node.parent, root)
     # echo "found ", cell.dump, ", ", node.dump, ": ", bounds
-    if bounds.y > cellGenerationBuffer and bounds.yh < root.h - cellGenerationBuffer:
+    if bounds.y > cellGenerationBuffer + targetCellBuffer and bounds.yh < root.h - cellGenerationBuffer - targetCellBuffer:
       return (bounds.y, currentPath).some
 
 proc pathAfter(a, b: openArray[int]): bool =
@@ -998,8 +999,8 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
                   bounds = self.cellWidgetContext.targetNode.bounds.transformRect(self.cellWidgetContext.targetNode.parent, scrolledNode.parent)
                   # echo fmt"2 target node {bounds}: {self.cellWidgetContext.targetNode.dump}"
 
-                if self.scrollOffset < cellGenerationBuffer or self.scrollOffset >= h - cellGenerationBuffer:
-                  let forward = self.scrollOffset < cellGenerationBuffer
+                if self.scrollOffset < cellGenerationBuffer + targetCellBuffer or self.scrollOffset >= h - cellGenerationBuffer - targetCellBuffer:
+                  let forward = self.scrollOffset < cellGenerationBuffer + targetCellBuffer
                   if self.cellWidgetContext.updateTargetPath(scrolledNode.parent, cell, forward, self.targetCellPath, @[]).getSome(path):
                     # echo "update path ", path, " (was ", targetCellPath, ")"
                     self.targetCellPath = path[1]

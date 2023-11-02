@@ -346,7 +346,6 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
   addCommand("editor.model", "<UP>", "move-cursor-up")
   addCommand("editor.model", "<DOWN>", "move-cursor-down")
   addCommand("editor.model", "<A-UP>", "select-node")
-  addCommand("editor.model", "<C-UP>", "select-parent-cell")
   addCommand("editor.model", "<A-DOWN>", "move-cursor-down")
   addCommand("editor.model", "<C-LEFT>", "move-cursor-left-cell")
   addCommand("editor.model", "<C-RIGHT>", "move-cursor-right-cell")
