@@ -639,6 +639,8 @@ proc finish(self: CellLayoutContext) =
 proc shouldBeOnNewLine(cell: Cell): bool =
   if cell.style.isNotNil and cell.style.onNewLine:
     return true
+  if OnNewLine in cell.flags:
+    return true
   if cell.parent.isNil:
     return false
 
@@ -729,6 +731,8 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
           noSpaceLeft = true
         if c.style.onNewLine:
           onNewLine = true
+      if OnNewLine in c.flags:
+        onNewLine = true
 
       var spaceLeft = not ctx.prevNoSpaceRight and not noSpaceLeft
       if onNewLine and not ctx.isCurrentLineEmpty:
@@ -753,25 +757,27 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
         discard cellPath.pop
 
         if i == centerIndex:
+          # echo "center ", cellPath, ", ", path
           centerNewLine = onNewLine
           ctx.centerNoSpaceLeft = noSpaceLeft
           if not c.shouldBeOnNewLine and ctx.forwardData.lines.len == 0:
             # echo "join lines for ", c, "     ", cell
             ctx.joinLines = true
 
-        if i == centerIndex and path.len == 1 and updateContext.targetNode.isNil:
+        if i == centerIndex and updateContext.targetNode.isNil:
+          # echo "set target ", cellPath, ", ", path
+          updateContext.targetNode = ctx.tempNode.last
+          updateContext.targetCell = c
+          when defined(uiNodeDebugData):
+            updateContext.targetNode.aDebugData.css.add "border: 1px solid red;"
+            updateContext.targetNode.aDebugData.metaData["target"] = newJBool(true)
+
+        if i == centerIndex and path.len == 1:
           centerNewLine = onNewLine
           ctx.containsCenter = true
 
           ctx.forwardData.currentPos = updateContext.targetCellPosition
           ctx.backwardData.currentPos = updateContext.targetCellPosition
-
-          # echo "set target ", cellPath, ", ", path
-          updateContext.targetCell = c
-          updateContext.targetNode = ctx.tempNode.last
-          when defined(uiNodeDebugData):
-            updateContext.targetNode.aDebugData.css.add "border: 1px solid red;"
-            updateContext.targetNode.aDebugData.metaData["target"] = newJBool(true)
 
       finally:
         ctx.prevNoSpaceRight = false
@@ -815,6 +821,8 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
           spaceLeft = false
         if c.style.onNewLine:
           onNewLine = true
+      if OnNewLine in c.flags:
+        onNewLine = true
 
       if vertical:
         spaceLeft = false
@@ -963,6 +971,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
                   self.updateSelection(self.nodeCellMap.toCursor(cell, offset), drag)
                   self.updateScrollOffset()
 
+                # debugf"render: {self.targetCellPath}:{self.scrollOffset}"
                 # echo fmt"scroll offset {self.scrollOffset}"
                 try:
                   let myCtx = newCellLayoutContext(builder, self.cellWidgetContext, Direction.Forwards, true)
@@ -995,18 +1004,18 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
                   var bounds = self.cellWidgetContext.targetNode.bounds.transformRect(self.cellWidgetContext.targetNode.parent, scrolledNode.parent)
                   # echo fmt"1 target node {bounds}: {self.cellWidgetContext.targetNode.dump}"
                   # echo scrolledNode.boundsRaw.y, " -> ", scrolledNode.boundsRaw.y + (self.scrollOffset - bounds.y)
+                  # debugf"update scrolled node y: {scrolledNode.boundsRaw.y} -> {(scrolledNode.boundsRaw.y + (self.scrollOffset - bounds.y))}"
                   scrolledNode.rawY = scrolledNode.boundsRaw.y + (self.scrollOffset - bounds.y)
-                  bounds = self.cellWidgetContext.targetNode.bounds.transformRect(self.cellWidgetContext.targetNode.parent, scrolledNode.parent)
                   # echo fmt"2 target node {bounds}: {self.cellWidgetContext.targetNode.dump}"
 
                 if self.scrollOffset < cellGenerationBuffer + targetCellBuffer or self.scrollOffset >= h - cellGenerationBuffer - targetCellBuffer:
                   let forward = self.scrollOffset < cellGenerationBuffer + targetCellBuffer
                   if self.cellWidgetContext.updateTargetPath(scrolledNode.parent, cell, forward, self.targetCellPath, @[]).getSome(path):
                     # echo "update path ", path, " (was ", targetCellPath, ")"
+                    # debugf"update target cell path: {self.targetCellPath}:{self.scrollOffset} -> {path[0]}:{path[1]}"
                     self.targetCellPath = path[1]
                     self.scrollOffset = path[0]
-                    # debugf"update target path: {self.targetCellPath}"
-
+#
           # cursor
           proc drawCursor(cursor: CellCursor, thick: bool, cursorColor: Color, id: int32): Option[UINode] =
             if cursor.getTargetCell(true).getSome(targetCell) and self.cellWidgetContext.cellToWidget.contains(targetCell.id):

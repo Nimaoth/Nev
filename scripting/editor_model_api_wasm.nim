@@ -4,9 +4,9 @@ import scripting_api, myjsonutils
 ## This file is auto generated, don't modify.
 
 
-proc editor_model_scroll_void_ModelDocumentEditor_float32_wasm(arg: cstring): cstring {.
-    importc.}
-proc scroll*(self: ModelDocumentEditor; amount: float32) =
+proc editor_model_scrollPixels_void_ModelDocumentEditor_float32_wasm(
+    arg: cstring): cstring {.importc.}
+proc scrollPixels*(self: ModelDocumentEditor; amount: float32) =
   var argsJson = newJArray()
   argsJson.add block:
     when ModelDocumentEditor is JsonNode:
@@ -19,7 +19,26 @@ proc scroll*(self: ModelDocumentEditor; amount: float32) =
     else:
       amount.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_model_scroll_void_ModelDocumentEditor_float32_wasm(
+  let res {.used.} = editor_model_scrollPixels_void_ModelDocumentEditor_float32_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_model_scrollLines_void_ModelDocumentEditor_float32_wasm(arg: cstring): cstring {.
+    importc.}
+proc scrollLines*(self: ModelDocumentEditor; lines: float32) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when ModelDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when float32 is JsonNode:
+      lines
+    else:
+      lines.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_model_scrollLines_void_ModelDocumentEditor_float32_wasm(
       argsJsonString.cstring)
 
 
@@ -339,20 +358,6 @@ proc selectNode*(self: ModelDocumentEditor; select: bool = false) =
       argsJsonString.cstring)
 
 
-proc editor_model_selectParentCell_void_ModelDocumentEditor_wasm(arg: cstring): cstring {.
-    importc.}
-proc selectParentCell*(self: ModelDocumentEditor) =
-  var argsJson = newJArray()
-  argsJson.add block:
-    when ModelDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_model_selectParentCell_void_ModelDocumentEditor_wasm(
-      argsJsonString.cstring)
-
-
 proc editor_model_selectPrevPlaceholder_void_ModelDocumentEditor_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc selectPrevPlaceholder*(self: ModelDocumentEditor; select: bool = false) =
@@ -416,6 +421,34 @@ proc deleteRight*(self: ModelDocumentEditor) =
       self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_model_deleteRight_void_ModelDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_model_replaceLeft_void_ModelDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc replaceLeft*(self: ModelDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when ModelDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_model_replaceLeft_void_ModelDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_model_replaceRight_void_ModelDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc replaceRight*(self: ModelDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when ModelDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_model_replaceRight_void_ModelDocumentEditor_wasm(
       argsJsonString.cstring)
 
 

@@ -261,8 +261,10 @@ proc editor_ast_setMode_void_AstDocumentEditor_string_impl(
 proc editor_ast_mode_string_AstDocumentEditor_impl(self: AstDocumentEditor): string  {.importc.}
 proc editor_ast_getContextWithMode_string_AstDocumentEditor_string_impl(
     self: AstDocumentEditor; context: string): string  {.importc.}
-proc editor_model_scroll_void_ModelDocumentEditor_float32_impl(
+proc editor_model_scrollPixels_void_ModelDocumentEditor_float32_impl(
     self: ModelDocumentEditor; amount: float32)  {.importc.}
+proc editor_model_scrollLines_void_ModelDocumentEditor_float32_impl(
+    self: ModelDocumentEditor; lines: float32)  {.importc.}
 proc editor_model_setMode_void_ModelDocumentEditor_string_impl(
     self: ModelDocumentEditor; mode: string)  {.importc.}
 proc editor_model_mode_string_ModelDocumentEditor_impl(self: ModelDocumentEditor): string  {.importc.}
@@ -296,8 +298,6 @@ proc editor_model_moveCursorRightCell_void_ModelDocumentEditor_bool_impl(
     self: ModelDocumentEditor; select: bool = false)  {.importc.}
 proc editor_model_selectNode_void_ModelDocumentEditor_bool_impl(
     self: ModelDocumentEditor; select: bool = false)  {.importc.}
-proc editor_model_selectParentCell_void_ModelDocumentEditor_impl(
-    self: ModelDocumentEditor)  {.importc.}
 proc editor_model_selectPrevPlaceholder_void_ModelDocumentEditor_bool_impl(
     self: ModelDocumentEditor; select: bool = false)  {.importc.}
 proc editor_model_selectNextPlaceholder_void_ModelDocumentEditor_bool_impl(
@@ -305,6 +305,10 @@ proc editor_model_selectNextPlaceholder_void_ModelDocumentEditor_bool_impl(
 proc editor_model_deleteLeft_void_ModelDocumentEditor_impl(
     self: ModelDocumentEditor)  {.importc.}
 proc editor_model_deleteRight_void_ModelDocumentEditor_impl(
+    self: ModelDocumentEditor)  {.importc.}
+proc editor_model_replaceLeft_void_ModelDocumentEditor_impl(
+    self: ModelDocumentEditor)  {.importc.}
+proc editor_model_replaceRight_void_ModelDocumentEditor_impl(
     self: ModelDocumentEditor)  {.importc.}
 proc editor_model_createNewNode_void_ModelDocumentEditor_impl(
     self: ModelDocumentEditor)  {.importc.}

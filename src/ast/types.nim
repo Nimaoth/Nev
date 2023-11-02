@@ -13,6 +13,7 @@ defineBitFlag:
 defineBitFlag:
   type CellFlag* = enum
     DeleteWhenEmpty
+    OnNewLine
 
 type
   ClassId* = Id
@@ -195,22 +196,21 @@ proc newProject*(): Project =
   new result
 
 proc verify*(self: Language): bool =
+  result = true
   for c in self.classes.values:
     if c.base.isNotNil:
       if not self.classes.contains(c.base.id):
         log(lvlError, fmt"Class {c.name} has unknown base class {c.base.name}")
-        return false
+        result = false
 
       let baseClass = self.classes[c.base.id]
       if baseClass.isFinal:
         log(lvlError, fmt"Class {c.name} has base class {c.base.name} which is final")
-        return false
+        result = false
 
     if c.isFinal and c.isAbstract:
       log(lvlError, fmt"Class {c.name} is both final and abstract")
-      return false
-
-  return true
+      result = false
 
 proc newLanguage*(id: LanguageId, classes: seq[NodeClass], builder: CellBuilder): Language =
   new result
@@ -229,7 +229,6 @@ proc newLanguage*(id: LanguageId, classes: seq[NodeClass], builder: CellBuilder)
       result.childClasses[i.id].add c
 
   result.builder = builder
-  discard result.verify()
 
 proc forEachChildClass*(self: Language, base: NodeClass, handler: proc(c: NodeClass)) =
   handler(base)
@@ -255,6 +254,8 @@ proc addModel*(self: Project, model: Model) =
   self.models[model.id] = model
 
 proc addLanguage*(self: Model, language: Language) =
+  if not language.verify():
+    return
   self.languages.add language
   for c in language.classes.keys:
     self.classesToLanguages[c] = language
