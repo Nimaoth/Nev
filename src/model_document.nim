@@ -330,6 +330,8 @@ proc updateScrollOffset*(self: ModelDocumentEditor, scrollToCursor: bool = true)
   else:
     self.targetCellPath = newCell.rootPath.path
 
+  # debugf"updateScrollOffset {self.targetCellPath}:{self.scrollOffset}"
+
   self.markDirty()
 
 proc updateScrollOffsetToPrevCell(self: ModelDocumentEditor): bool =
@@ -340,10 +342,17 @@ proc updateScrollOffsetToPrevCell(self: ModelDocumentEditor): bool =
 
   let cursor = self.selection.normalized.first
   let sourceCell = cursor.targetCell
+  # echo fmt"source {sourceCell}"
 
-  let prevLeaf = sourceCell.getPreviousLeafWhere(self.nodeCellMap, proc(cell: Cell): bool =
-    return not cell.node.isDescendant(sourceCell.node)
+  var lastLeafOnScreen = Cell.none
+  discard sourceCell.getPreviousLeafWhere(self.nodeCellMap, proc(cell: Cell): bool =
+    if self.cellWidgetContext.cellToWidget.contains(cell.id):
+      lastLeafOnScreen = cell.some
+      return false
+    return true
   )
+
+  let prevLeaf = lastLeafOnScreen
 
   if prevLeaf.isNone:
     return false
@@ -352,9 +361,12 @@ proc updateScrollOffsetToPrevCell(self: ModelDocumentEditor): bool =
   if not self.cellWidgetContext.cellToWidget.contains(newCell.id):
     return false
 
+  let oldY = self.cellWidgetContext.targetNode.transformBounds(self.scrolledNode.parent).y
+
   let newUINode = self.cellWidgetContext.cellToWidget[newCell.id]
   let newY = newUINode.transformBounds(self.scrolledNode.parent).y
 
+  # debugf"updateScrollOffsetToPrevCell {self.targetCellPath}:{self.scrollOffset} -> {newCell.rootPath.path}:{newY}, {newCell}, {newCell.parent}, {oldY}"
   self.targetCellPath = newCell.rootPath.path
   self.scrollOffset = newY
   return true
@@ -1214,6 +1226,7 @@ proc getPreviousLeafWhere*(cell: Cell, map: NodeCellMap, predicate: proc(cell: C
   var temp = cell
   while true:
     var c = temp.getPreviousLeaf(map)
+    # echo fmt"getPreviousLeafWhere {c}"
     if c.isNone:
       return Cell.none
     if predicate(c.get):
@@ -1410,7 +1423,7 @@ proc getFirstEditableCellOfNode*(self: ModelDocumentEditor, node: AstNode): Opti
     return
 
   nodeCell = nodeCell.getFirstLeaf(self.nodeCellMap)
-  echo fmt"first leaf {nodeCell}"
+  # echo fmt"first leaf {nodeCell}"
 
   proc editableDescendant(n: Cell): (bool, Option[Cell]) =
     if n.node == nodeCell.node or n.node.isDescendant(nodeCell.node):
@@ -1419,11 +1432,11 @@ proc getFirstEditableCellOfNode*(self: ModelDocumentEditor, node: AstNode): Opti
       return (true, Cell.none)
 
   if nodeCell.getSelfOrNeighborLeafWhere(self.nodeCellMap, Right, editableDescendant).getSome(targetCell):
-    echo fmt"a: editable descendant {targetCell}"
+    # echo fmt"a: editable descendant {targetCell}"
     return self.nodeCellMap.toCursor(targetCell, true).some
 
   if nodeCell.getSelfOrNextLeafWhere(self.nodeCellMap, (n) => isVisible(n) and not n.disableSelection).getSome(targetCell):
-    echo fmt"a: visible descendant {targetCell}"
+    # echo fmt"a: visible descendant {targetCell}"
     return self.nodeCellMap.toCursor(targetCell, true).some
 
 proc getFirstSelectableCellOfNode*(self: ModelDocumentEditor, node: AstNode): Option[CellCursor] =
@@ -1435,7 +1448,7 @@ proc getFirstSelectableCellOfNode*(self: ModelDocumentEditor, node: AstNode): Op
     return
 
   nodeCell = nodeCell.getFirstLeaf(self.nodeCellMap)
-  echo fmt"first leaf {nodeCell}"
+  # echo fmt"first leaf {nodeCell}"
 
   proc selectableDescendant(n: Cell): (bool, Option[Cell]) =
     if n.node == nodeCell.node or n.node.isDescendant(nodeCell.node):
@@ -1444,11 +1457,11 @@ proc getFirstSelectableCellOfNode*(self: ModelDocumentEditor, node: AstNode): Op
       return (true, Cell.none)
 
   if nodeCell.getSelfOrNeighborLeafWhere(self.nodeCellMap, Right, selectableDescendant).getSome(targetCell):
-    echo fmt"a: selectable descendant {targetCell}"
+    # echo fmt"a: selectable descendant {targetCell}"
     return self.nodeCellMap.toCursor(targetCell, true).some
 
   if nodeCell.getSelfOrNextLeafWhere(self.nodeCellMap, (n) => isVisible(n) and not n.disableSelection).getSome(targetCell):
-    echo fmt"a: visible descendant {targetCell}"
+    # echo fmt"a: visible descendant {targetCell}"
     return self.nodeCellMap.toCursor(targetCell, true).some
 
 proc getFirstPropertyCellOfNode*(self: ModelDocumentEditor, node: AstNode, role: Id): Option[CellCursor] =
@@ -2094,10 +2107,10 @@ proc deleteOrReplace*(self: ModelDocumentEditor, direction: Direction, replace: 
     let firstContained = self.selection.contains(parentCell.children[firstIndex])
     let lastContained = self.selection.contains(parentCell.children[lastIndex])
 
-    echo firstContained, ", ", lastContained
+    # echo firstContained, ", ", lastContained
     if firstContained and lastContained:
       if firstIndex == 0 and lastIndex == parentCell.high and parentTargetCell == parentBaseCell: # entire parent selected
-        echo "all cells selected"
+        # echo "all cells selected"
 
         var targetNode = parentCell.node
 
@@ -2123,7 +2136,7 @@ proc deleteOrReplace*(self: ModelDocumentEditor, direction: Direction, replace: 
           if c.node != parentCell.node:
             nodesToDelete.add c.node
 
-        echo "some children of parent cell selected ", nodesToDelete
+        # echo "some children of parent cell selected ", nodesToDelete
 
         for n in nodesToDelete:
           if replace:
@@ -2135,11 +2148,11 @@ proc deleteOrReplace*(self: ModelDocumentEditor, direction: Direction, replace: 
         self.cursor = self.getFirstEditableCellOfNode(parentCell.node).get
 
     else: # not all nodes fully contained
-      echo "not all nodes fully contained"
+      # echo "not all nodes fully contained"
       discard
 
   else: # not collection cell
-    echo firstIndex, ", ", lastIndex, "/", parentTargetCell.len
+    # echo firstIndex, ", ", lastIndex, "/", parentTargetCell.len
     if selection.contains(parentTargetCell):
       if replace and parentTargetCell.node.replaceWithDefault().getSome(newNode):
         self.rebuildCells()
@@ -2321,10 +2334,10 @@ proc createNewNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
   debug "createNewNode"
 
   if self.createNewNodeAt(self.cursor).getSome(newNode):
+    self.rebuildCells()
     self.cursor = self.getFirstEditableCellOfNode(newNode).get
     debug self.cursor
 
-  self.rebuildCells()
   self.markDirty()
 
 proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool {.expose("editor.model").} =
@@ -2518,18 +2531,16 @@ proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.
   if self.document.workspace.getSome(workspace):
     discard workspace.saveFile("jstest.wasm", binary.toArrayBuffer)
 
-  # var lineBuffer = ""
+  var lineBuffer {.global.} = ""
 
   proc printI32(a: int32) =
-    # if lineBuffer.len > 0:
-    #   lineBuffer.add " "
-    # lineBuffer.add $a
-    echo a
+    if lineBuffer.len > 0:
+      lineBuffer.add " "
+    lineBuffer.add $a
 
   proc printLine() =
-    # log lvlInfo, lineBuffer
-    # lineBuffer = ""
-    discard
+    log lvlInfo, lineBuffer
+    lineBuffer = ""
 
   var imp = WasmImports(namespace: "env")
   imp.addFunction("print_i32", printI32)

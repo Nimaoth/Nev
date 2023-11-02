@@ -10,8 +10,10 @@ else:
 
 ## This file is auto generated, don't modify.
 
-proc scroll*(self: ModelDocumentEditor; amount: float32) =
-  editor_model_scroll_void_ModelDocumentEditor_float32_impl(self, amount)
+proc scrollPixels*(self: ModelDocumentEditor; amount: float32) =
+  editor_model_scrollPixels_void_ModelDocumentEditor_float32_impl(self, amount)
+proc scrollLines*(self: ModelDocumentEditor; lines: float32) =
+  editor_model_scrollLines_void_ModelDocumentEditor_float32_impl(self, lines)
 proc setMode*(self: ModelDocumentEditor; mode: string) =
   editor_model_setMode_void_ModelDocumentEditor_string_impl(self, mode)
 proc mode*(self: ModelDocumentEditor): string =
@@ -54,8 +56,6 @@ proc moveCursorRightCell*(self: ModelDocumentEditor; select: bool = false) =
       select)
 proc selectNode*(self: ModelDocumentEditor; select: bool = false) =
   editor_model_selectNode_void_ModelDocumentEditor_bool_impl(self, select)
-proc selectParentCell*(self: ModelDocumentEditor) =
-  editor_model_selectParentCell_void_ModelDocumentEditor_impl(self)
 proc selectPrevPlaceholder*(self: ModelDocumentEditor; select: bool = false) =
   editor_model_selectPrevPlaceholder_void_ModelDocumentEditor_bool_impl(self,
       select)
@@ -66,6 +66,10 @@ proc deleteLeft*(self: ModelDocumentEditor) =
   editor_model_deleteLeft_void_ModelDocumentEditor_impl(self)
 proc deleteRight*(self: ModelDocumentEditor) =
   editor_model_deleteRight_void_ModelDocumentEditor_impl(self)
+proc replaceLeft*(self: ModelDocumentEditor) =
+  editor_model_replaceLeft_void_ModelDocumentEditor_impl(self)
+proc replaceRight*(self: ModelDocumentEditor) =
+  editor_model_replaceRight_void_ModelDocumentEditor_impl(self)
 proc createNewNode*(self: ModelDocumentEditor) =
   editor_model_createNewNode_void_ModelDocumentEditor_impl(self)
 proc insertTextAtCursor*(self: ModelDocumentEditor; input: string): bool =

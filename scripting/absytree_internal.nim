@@ -393,8 +393,11 @@ proc editor_ast_mode_string_AstDocumentEditor_impl*(self: AstDocumentEditor): st
 proc editor_ast_getContextWithMode_string_AstDocumentEditor_string_impl*(
     self: AstDocumentEditor; context: string): string =
   discard
-proc editor_model_scroll_void_ModelDocumentEditor_float32_impl*(
+proc editor_model_scrollPixels_void_ModelDocumentEditor_float32_impl*(
     self: ModelDocumentEditor; amount: float32) =
+  discard
+proc editor_model_scrollLines_void_ModelDocumentEditor_float32_impl*(
+    self: ModelDocumentEditor; lines: float32) =
   discard
 proc editor_model_setMode_void_ModelDocumentEditor_string_impl*(
     self: ModelDocumentEditor; mode: string) =
@@ -446,9 +449,6 @@ proc editor_model_moveCursorRightCell_void_ModelDocumentEditor_bool_impl*(
 proc editor_model_selectNode_void_ModelDocumentEditor_bool_impl*(
     self: ModelDocumentEditor; select: bool = false) =
   discard
-proc editor_model_selectParentCell_void_ModelDocumentEditor_impl*(
-    self: ModelDocumentEditor) =
-  discard
 proc editor_model_selectPrevPlaceholder_void_ModelDocumentEditor_bool_impl*(
     self: ModelDocumentEditor; select: bool = false) =
   discard
@@ -459,6 +459,12 @@ proc editor_model_deleteLeft_void_ModelDocumentEditor_impl*(
     self: ModelDocumentEditor) =
   discard
 proc editor_model_deleteRight_void_ModelDocumentEditor_impl*(
+    self: ModelDocumentEditor) =
+  discard
+proc editor_model_replaceLeft_void_ModelDocumentEditor_impl*(
+    self: ModelDocumentEditor) =
+  discard
+proc editor_model_replaceRight_void_ModelDocumentEditor_impl*(
     self: ModelDocumentEditor) =
   discard
 proc editor_model_createNewNode_void_ModelDocumentEditor_impl*(

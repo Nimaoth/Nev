@@ -305,18 +305,24 @@ builder.addBuilderFor thenCaseClass.id, idNone(), proc(builder: CellBuilder, nod
   return cell
 
 builder.addBuilderFor ifClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = CollectionCell(id: newId(), node: node, uiFlags: &{LayoutHorizontal}, flags: &{DeleteWhenEmpty})
+  var cell = CollectionCell(id: newId(), node: node, uiFlags: &{LayoutHorizontal}, flags: &{DeleteWhenEmpty}, inline: true)
   cell.fillChildren = proc(map: NodeCellMap) =
     # echo "fill collection if"
 
     cell.add block:
       builder.buildChildren(map, node, IdIfExpressionThenCase, &{LayoutVertical}, &{DeleteWhenEmpty})
 
-    for i, c in node.children(IdIfExpressionElseCase):
-      if i == 0:
-        cell.add ConstantCell(node: node, text: "else", style: CellStyle(onNewLine: true), themeForegroundColors: @["keyword"], disableEditing: true)
-        cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
-      cell.add builder.buildCell(map, c)
+    if node.childCount(IdIfExpressionElseCase) == 0:
+      var flags = 0.CellFlags
+      if node.childCount(IdIfExpressionThenCase) > 0:
+        flags.incl OnNewLine
+      cell.add PlaceholderCell(id: newId(), node: node, role: IdIfExpressionElseCase, shadowText: "<else>", flags: flags)
+    else:
+      for i, c in node.children(IdIfExpressionElseCase):
+        if i == 0:
+          cell.add ConstantCell(node: node, text: "else", style: CellStyle(onNewLine: true), themeForegroundColors: @["keyword"], disableEditing: true)
+          cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+        cell.add builder.buildCell(map, c)
 
   return cell
 

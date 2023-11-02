@@ -474,32 +474,34 @@ proc buildCell*(self: CellBuilder, map: NodeCellMap, node: AstNode, useDefault: 
   map.map[node.id] = result
   map.cells[result.id] = result
 
-proc buildDefaultPlaceholder*(builder: CellBuilder, node: AstNode, role: Id): Cell =
-  return PlaceholderCell(id: newId(), node: node, role: role, shadowText: "...")
+proc buildDefaultPlaceholder*(builder: CellBuilder, node: AstNode, role: Id, flags: CellFlags = 0.CellFlags): Cell =
+  return PlaceholderCell(id: newId(), node: node, role: role, flags: flags, shadowText: "...")
 
 proc buildChildren*(builder: CellBuilder, map: NodeCellMap, node: AstNode, role: Id, uiFlags: UINodeFlags = 0.UINodeFlags, flags: CellFlags = 0.CellFlags,
     isVisible: proc(node: AstNode): bool = nil,
     separatorFunc: proc(builder: CellBuilder): Cell = nil,
-    placeholderFunc: proc(builder: CellBuilder, node: AstNode, role: Id): Cell = buildDefaultPlaceholder): Cell =
+    placeholderFunc: proc(builder: CellBuilder, node: AstNode, role: Id, flags: CellFlags): Cell = buildDefaultPlaceholder): Cell =
 
   let children = node.children(role)
-  if children.len > 1 or (children.len == 0 and placeholderFunc.isNil):
+
+  if children.len == 1 and node.nodeClass.nodeChildDescription(role).get.count in {ZeroOrOne, One}:
+    result = builder.buildCell(map, children[0])
+  elif children.len > 0:
     var cell = CollectionCell(id: newId(), node: node, uiFlags: uiFlags, flags: flags)
-    for i, c in node.children(role):
+    for i, c in children:
       if i > 0 and separatorFunc.isNotNil:
         cell.add separatorFunc(builder)
       cell.add builder.buildCell(map, c)
     result = cell
-  elif children.len == 1:
-    result = builder.buildCell(map, children[0])
   else:
-    result = placeholderFunc(builder, node, role)
+    result = placeholderFunc(builder, node, role, 0.CellFlags)
+
   result.isVisible = isVisible
 
-template buildChildrenT*(b: CellBuilder, map: NodeCellMap, n: AstNode, r: Id, uiFlags: UINodeFlags, flags: CellFlags, body: untyped): Cell =
+template buildChildrenT*(b: CellBuilder, map: NodeCellMap, n: AstNode, r: Id, uiFlags: UINodeFlags, cellFlags: CellFlags, body: untyped): Cell =
   var isVisibleFunc: proc(node: AstNode): bool = nil
   var separatorFunc: proc(builder: CellBuilder): Cell = nil
-  var placeholderFunc: proc(builder: CellBuilder, node: AstNode, role: Id): Cell = nil
+  var placeholderFunc: proc(builder: CellBuilder, node: AstNode, role: Id, childFlags: CellFlags): Cell = nil
 
   var builder {.inject.} = b
   var node {.inject.} = n
@@ -510,12 +512,12 @@ template buildChildrenT*(b: CellBuilder, map: NodeCellMap, n: AstNode, r: Id, ui
       return bod
 
   template placeholder(bod: untyped): untyped {.used.} =
-    placeholderFunc = proc(builder {.inject.}: CellBuilder, node {.inject.}: AstNode, role {.inject.}: Id): Cell =
+    placeholderFunc = proc(builder {.inject.}: CellBuilder, node {.inject.}: AstNode, role {.inject.}: Id, childFlags: CellFlags): Cell =
       return bod
 
   template placeholder(text: string): untyped {.used.} =
-    placeholderFunc = proc(builder {.inject.}: CellBuilder, node {.inject.}: AstNode, role {.inject.}: Id): Cell =
-      return PlaceholderCell(id: newId(), node: node, role: role, shadowText: text)
+    placeholderFunc = proc(builder {.inject.}: CellBuilder, node {.inject.}: AstNode, role {.inject.}: Id, childFlags: CellFlags): Cell =
+      return PlaceholderCell(id: newId(), node: node, role: role, shadowText: text, flags: childFlags)
 
   template visible(bod: untyped): untyped {.used.} =
     isVisibleFunc = proc(node {.inject.}: AstNode): bool =
@@ -525,7 +527,7 @@ template buildChildrenT*(b: CellBuilder, map: NodeCellMap, n: AstNode, r: Id, ui
 
   body
 
-  builder.buildChildren(map, node, role, uiFlags, flags, isVisibleFunc, separatorFunc, placeholderFunc)
+  builder.buildChildren(map, node, role, uiFlags, cellFlags, isVisibleFunc, separatorFunc, placeholderFunc)
 
 template visitFromCenter*(inCell: Cell, inPath: openArray[int], inForwards: bool, onTarget, onCenterVertical, onCenterHorizontal, onForwards, onBackwards, onHorizontal, onLeaf: untyped) =
   if inCell of CollectionCell:
