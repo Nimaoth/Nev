@@ -307,6 +307,8 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     addCommand("editor.model", "U", "redo")
     addCommand("editor.model", "<BACKSPACE>", "delete-left")
     addCommand("editor.model", "<DELETE>", "delete-right")
+    addCommand("editor.model", "<s>", "replace-left")
+    addCommand("editor.model", "<S>", "replace-right")
     addCommand("editor.model", "<ENTER>", "create-new-node")
     addCommand("editor.model", "<TAB>", "select-next-placeholder")
     addCommand("editor.model", "<S-TAB>", "select-prev-placeholder")

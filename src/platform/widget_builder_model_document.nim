@@ -642,7 +642,7 @@ proc shouldBeOnNewLine(cell: Cell): bool =
   if cell.parent.isNil:
     return false
 
-  if LayoutVertical in cell.parent.CollectionCell.flags:
+  if LayoutVertical in cell.parent.CollectionCell.uiFlags:
     return true
 
   if cell == cell.parent.CollectionCell.children[0]:
@@ -660,7 +660,7 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
     stackSize.dec
   cell.logc fmt"createCellUI begin (CollectionCell) {path}, {cursorFirst}, {cursorLast}"
 
-  let vertical = LayoutVertical in cell.flags
+  let vertical = LayoutVertical in cell.uiFlags
 
   if vertical and spaceLeft:
     ctx.addSpace(cell, updateContext)
