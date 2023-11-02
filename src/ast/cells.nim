@@ -7,7 +7,7 @@ logCategory "cells"
 
 type
   CollectionCell* = ref object of Cell
-    flags*: UINodeFlags
+    uiFlags*: UINodeFlags
     inline*: bool
     children*: seq[Cell]
 
@@ -271,7 +271,7 @@ method getText*(cell: AliasCell): string =
 method getText*(cell: PlaceholderCell): string = cell.displayText.get("")
 
 method dump(self: CollectionCell, recurse: bool = false): string =
-  result = fmt"CollectionCell(inline: {self.inline}, flags: {self.flags}): {self.node}"
+  result = fmt"CollectionCell(inline: {self.inline}, uiFlags: {self.uiFlags}): {self.node}"
   if recurse:
     result.add "\n"
     if self.filled or self.fillChildren.isNil:
@@ -367,7 +367,7 @@ proc findBuilder(self: CellBuilder, class: NodeClass, preferred: Id, isBase: boo
   return builders[0].impl
 
 template horizontalCell(cell: Cell, node: AstNode, childCell: untyped, body: untyped) =
-  var childCell {.inject.} = CollectionCell(id: newId(), node: node, flags: &{LayoutHorizontal})
+  var childCell {.inject.} = CollectionCell(id: newId(), node: node, uiFlags: &{LayoutHorizontal})
   try:
     body
   finally:
@@ -376,7 +376,7 @@ template horizontalCell(cell: Cell, node: AstNode, childCell: untyped, body: unt
 proc buildCellDefault*(self: CellBuilder, m: NodeCellMap, node: AstNode, useDefaultRecursive: bool): Cell =
   let class = node.nodeClass
 
-  var cell = CollectionCell(id: newId(), node: node, flags: &{LayoutHorizontal})
+  var cell = CollectionCell(id: newId(), node: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(m: NodeCellMap) =
     var hasAnyChildren = node.properties.len > 0 or node.references.len > 0 or node.childLists.len > 0
     for prop in node.childLists:
@@ -392,9 +392,9 @@ proc buildCellDefault*(self: CellBuilder, m: NodeCellMap, node: AstNode, useDefa
       if not hasAnyChildren:
         header.add ConstantCell(node: node, text: "}", disableEditing: true)
 
-    var childrenCell = CollectionCell(id: newId(), node: node, flags: &{LayoutVertical}, style: CellStyle(indentChildren: true, onNewLine: true), inline: true)
+    var childrenCell = CollectionCell(id: newId(), node: node, uiFlags: &{LayoutVertical}, style: CellStyle(indentChildren: true, onNewLine: true), inline: true)
     for prop in node.properties:
-      # var propCell = CollectionCell(id: newId(), node: node, flags: &{LayoutHorizontal})
+      # var propCell = CollectionCell(id: newId(), node: node, uiFlags: &{LayoutHorizontal})
       childrenCell.horizontalCell(node, propCell):
         let name: string = class.propertyDescription(prop.role).map((decs) => decs.role).get($prop.role)
         propCell.add ConstantCell(node: node, text: name, disableEditing: true)
@@ -403,7 +403,7 @@ proc buildCellDefault*(self: CellBuilder, m: NodeCellMap, node: AstNode, useDefa
       # childrenCell.add propCell
 
     for prop in node.references:
-      # var propCell = CollectionCell(id: newId(), node: node, flags: &{LayoutHorizontal})
+      # var propCell = CollectionCell(id: newId(), node: node, uiFlags: &{LayoutHorizontal})
       childrenCell.horizontalCell(node, propCell):
         let name: string = class.nodeReferenceDescription(prop.role).map((decs) => decs.role).get($prop.role)
         propCell.add ConstantCell(node: node, text: name, disableEditing: true)
@@ -420,7 +420,7 @@ proc buildCellDefault*(self: CellBuilder, m: NodeCellMap, node: AstNode, useDefa
     for prop in node.childLists:
       let children = node.children(prop.role)
 
-      # var propCell = CollectionCell(id: newId(), node: node, flags: &{LayoutHorizontal})
+      # var propCell = CollectionCell(id: newId(), node: node, uiFlags: &{LayoutHorizontal})
       childrenCell.horizontalCell(node, propCell):
 
         let name: string = class.nodeChildDescription(prop.role).map((decs) => decs.role).get($prop.role)
@@ -477,14 +477,14 @@ proc buildCell*(self: CellBuilder, map: NodeCellMap, node: AstNode, useDefault: 
 proc buildDefaultPlaceholder*(builder: CellBuilder, node: AstNode, role: Id): Cell =
   return PlaceholderCell(id: newId(), node: node, role: role, shadowText: "...")
 
-proc buildChildren*(builder: CellBuilder, map: NodeCellMap, node: AstNode, role: Id, flags: UINodeFlags,
+proc buildChildren*(builder: CellBuilder, map: NodeCellMap, node: AstNode, role: Id, uiFlags: UINodeFlags = 0.UINodeFlags, flags: CellFlags = 0.CellFlags,
     isVisible: proc(node: AstNode): bool = nil,
     separatorFunc: proc(builder: CellBuilder): Cell = nil,
     placeholderFunc: proc(builder: CellBuilder, node: AstNode, role: Id): Cell = buildDefaultPlaceholder): Cell =
 
   let children = node.children(role)
   if children.len > 1 or (children.len == 0 and placeholderFunc.isNil):
-    var cell = CollectionCell(id: newId(), node: node, flags: flags)
+    var cell = CollectionCell(id: newId(), node: node, uiFlags: uiFlags, flags: flags)
     for i, c in node.children(role):
       if i > 0 and separatorFunc.isNotNil:
         cell.add separatorFunc(builder)
@@ -496,7 +496,7 @@ proc buildChildren*(builder: CellBuilder, map: NodeCellMap, node: AstNode, role:
     result = placeholderFunc(builder, node, role)
   result.isVisible = isVisible
 
-template buildChildrenT*(b: CellBuilder, map: NodeCellMap, n: AstNode, r: Id, flags: UINodeFlags, body: untyped): Cell =
+template buildChildrenT*(b: CellBuilder, map: NodeCellMap, n: AstNode, r: Id, uiFlags: UINodeFlags, flags: CellFlags, body: untyped): Cell =
   var isVisibleFunc: proc(node: AstNode): bool = nil
   var separatorFunc: proc(builder: CellBuilder): Cell = nil
   var placeholderFunc: proc(builder: CellBuilder, node: AstNode, role: Id): Cell = nil
@@ -525,12 +525,12 @@ template buildChildrenT*(b: CellBuilder, map: NodeCellMap, n: AstNode, r: Id, fl
 
   body
 
-  builder.buildChildren(map, node, role, flags, isVisibleFunc, separatorFunc, placeholderFunc)
+  builder.buildChildren(map, node, role, uiFlags, flags, isVisibleFunc, separatorFunc, placeholderFunc)
 
 template visitFromCenter*(inCell: Cell, inPath: openArray[int], inForwards: bool, onTarget, onCenterVertical, onCenterHorizontal, onForwards, onBackwards, onHorizontal, onLeaf: untyped) =
   if inCell of CollectionCell:
     let cell = inCell.CollectionCell
-    let vertical = LayoutVertical in cell.flags
+    let vertical = LayoutVertical in cell.uiFlags
     let centerIndex = if inPath.len > 0: inPath[0].clamp(0, cell.children.high) elif inForwards: 0 else: cell.children.high
 
     if vertical: # Vertical collection

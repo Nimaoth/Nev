@@ -224,7 +224,7 @@ proc getContextWithMode*(self: ModelDocumentEditor, context: string): string
 proc toCursor*(map: NodeCellMap, cell: Cell, column: int): CellCursor
 proc toCursor*(map: NodeCellMap, cell: Cell, start: bool): CellCursor
 proc getFirstEditableCellOfNode*(self: ModelDocumentEditor, node: AstNode): Option[CellCursor]
-proc getPreviousLeafWhere*(cell: Cell, predicate: proc(cell: Cell): bool): Option[Cell]
+proc getPreviousLeafWhere*(cell: Cell, map: NodeCellMap, predicate: proc(cell: Cell): bool): Option[Cell]
 proc canSelect*(cell: Cell): bool
 proc isVisible*(cell: Cell): bool
 proc getParentInfo*(selection: CellSelection): tuple[cell: Cell, left: seq[int], right: seq[int]]
@@ -341,8 +341,9 @@ proc updateScrollOffsetToPrevCell(self: ModelDocumentEditor): bool =
   let cursor = self.selection.normalized.first
   let sourceCell = cursor.targetCell
 
-  let prevLeaf = sourceCell.getPreviousLeafWhere proc(cell: Cell): bool =
+  let prevLeaf = sourceCell.getPreviousLeafWhere(self.nodeCellMap, proc(cell: Cell): bool =
     return not cell.node.isDescendant(sourceCell.node)
+  )
 
   if prevLeaf.isNone:
     return false
@@ -1125,8 +1126,8 @@ proc getPreviousVisibleInLine*(self: ModelDocumentEditor, cell: Cell): Cell =
 proc getNextVisibleInLine*(self: ModelDocumentEditor, cell: Cell): Cell =
   return self.getNextInLineWhere(cell, isVisible)
 
-method getCursorLeft*(cell: Cell, cursor: CellCursor): CellCursor {.base.} = discard
-method getCursorRight*(cell: Cell, cursor: CellCursor): CellCursor {.base.} = discard
+method getCursorLeft*(cell: Cell, map: NodeCellMap, cursor: CellCursor): CellCursor {.base.} = discard
+method getCursorRight*(cell: Cell, map: NodeCellMap, cursor: CellCursor): CellCursor {.base.} = discard
 
 proc isVisible*(cell: Cell): bool =
   if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
@@ -1147,19 +1148,21 @@ proc canSelect*(cell: Cell): bool =
 
   return true
 
-proc getFirstLeaf*(cell: Cell): Cell =
+proc getFirstLeaf*(cell: Cell, map: NodeCellMap): Cell =
+  map.fill(cell)
   if cell of CollectionCell and cell.CollectionCell.children.len > 0:
-    return cell.CollectionCell.children[0].getFirstLeaf()
+    return cell.CollectionCell.children[0].getFirstLeaf(map)
   return cell
 
-proc getLastLeaf*(cell: Cell): Cell =
+proc getLastLeaf*(cell: Cell, map: NodeCellMap): Cell =
+  map.fill(cell)
   if cell of CollectionCell and cell.CollectionCell.children.len > 0:
-    return cell.CollectionCell.children[cell.CollectionCell.children.high].getLastLeaf()
+    return cell.CollectionCell.children[cell.CollectionCell.children.high].getLastLeaf(map)
   return cell
 
-proc getPreviousLeaf*(cell: Cell, childIndex: Option[int] = int.none): Option[Cell] =
+proc getPreviousLeaf*(cell: Cell, map: NodeCellMap, childIndex: Option[int] = int.none): Option[Cell] =
   if cell.parent.isNil and cell of CollectionCell and cell.CollectionCell.children.len > 0:
-    return cell.getLastLeaf().some
+    return cell.getLastLeaf(map).some
 
   if cell.parent.isNil:
     return Cell.none
@@ -1169,7 +1172,7 @@ proc getPreviousLeaf*(cell: Cell, childIndex: Option[int] = int.none): Option[Ce
   var index = parent.indexOf(cell)
 
   if index > 0:
-    return parent.children[index - 1].getLastLeaf().some
+    return parent.children[index - 1].getLastLeaf(map).some
   else:
     var newParent: Cell = parent
     var parentIndex = newParent.index
@@ -1178,13 +1181,13 @@ proc getPreviousLeaf*(cell: Cell, childIndex: Option[int] = int.none): Option[Ce
       parentIndex = newParent.index
 
     if parentIndex > 0:
-      return newParent.previousDirect().map(p => p.getLastLeaf())
+      return newParent.previousDirect().map(proc(p: Cell): Cell = p.getLastLeaf(map))
 
     return cell.some
 
-proc getNextLeaf*(cell: Cell, childIndex: Option[int] = int.none): Option[Cell] =
+proc getNextLeaf*(cell: Cell, map: NodeCellMap, childIndex: Option[int] = int.none): Option[Cell] =
   if cell.parent.isNil and cell of CollectionCell and cell.CollectionCell.children.len > 0:
-    return cell.getFirstLeaf().some
+    return cell.getFirstLeaf(map).some
 
   if cell.parent.isNil:
     return Cell.none
@@ -1194,7 +1197,7 @@ proc getNextLeaf*(cell: Cell, childIndex: Option[int] = int.none): Option[Cell] 
   var index = parent.indexOf(cell)
 
   if index < parent.children.high:
-    return parent.children[index + 1].getFirstLeaf().some
+    return parent.children[index + 1].getFirstLeaf(map).some
   else:
     var newParent: Cell = parent
     var parentIndex = newParent.index
@@ -1203,14 +1206,14 @@ proc getNextLeaf*(cell: Cell, childIndex: Option[int] = int.none): Option[Cell] 
       parentIndex = newParent.index
 
     if parentIndex < newParent.parentHigh:
-      return newParent.nextDirect().map(p => p.getFirstLeaf())
+      return newParent.nextDirect().map(proc(p: Cell): Cell = p.getFirstLeaf(map))
 
     return cell.some
 
-proc getPreviousLeafWhere*(cell: Cell, predicate: proc(cell: Cell): bool): Option[Cell] =
+proc getPreviousLeafWhere*(cell: Cell, map: NodeCellMap, predicate: proc(cell: Cell): bool): Option[Cell] =
   var temp = cell
   while true:
-    var c = temp.getPreviousLeaf()
+    var c = temp.getPreviousLeaf(map)
     if c.isNone:
       return Cell.none
     if predicate(c.get):
@@ -1219,10 +1222,10 @@ proc getPreviousLeafWhere*(cell: Cell, predicate: proc(cell: Cell): bool): Optio
       return Cell.none
     temp = c.get
 
-proc getNextLeafWhere*(cell: Cell, predicate: proc(cell: Cell): bool): Option[Cell] =
+proc getNextLeafWhere*(cell: Cell, map: NodeCellMap, predicate: proc(cell: Cell): bool): Option[Cell] =
   var temp = cell
   while true:
-    var c = temp.getNextLeaf()
+    var c = temp.getNextLeaf(map)
     if c.isNone:
       return Cell.none
     if predicate(c.get):
@@ -1231,10 +1234,10 @@ proc getNextLeafWhere*(cell: Cell, predicate: proc(cell: Cell): bool): Option[Ce
       return Cell.none
     temp = c.get
 
-proc getNeighborLeafWhere*(cell: Cell, direction: Direction, predicate: proc(cell: Cell): (bool, Option[Cell])): Option[Cell] =
+proc getNeighborLeafWhere*(cell: Cell, map: NodeCellMap, direction: Direction, predicate: proc(cell: Cell): (bool, Option[Cell])): Option[Cell] =
   var temp = cell
   while true:
-    var c = if direction == Left: temp.getPreviousLeaf() else: temp.getNextLeaf()
+    var c = if direction == Left: temp.getPreviousLeaf(map) else: temp.getNextLeaf(map)
     if c.isNone:
       return Cell.none
     let (done, res) = predicate(c.get)
@@ -1244,52 +1247,52 @@ proc getNeighborLeafWhere*(cell: Cell, direction: Direction, predicate: proc(cel
       return Cell.none
     temp = c.get
 
-proc getNeighborLeafWhere*(cell: Cell, direction: Direction, predicate: proc(cell: Cell): bool): Option[Cell] =
+proc getNeighborLeafWhere*(cell: Cell, map: NodeCellMap, direction: Direction, predicate: proc(cell: Cell): bool): Option[Cell] =
   case direction
   of Left:
-    return cell.getPreviousLeafWhere(isVisible)
+    return cell.getPreviousLeafWhere(map, isVisible)
   of Right:
-    return cell.getNextLeafWhere(isVisible)
+    return cell.getNextLeafWhere(map, isVisible)
 
-proc getSelfOrPreviousLeafWhere*(cell: Cell, predicate: proc(cell: Cell): bool): Option[Cell] =
+proc getSelfOrPreviousLeafWhere*(cell: Cell, map: NodeCellMap, predicate: proc(cell: Cell): bool): Option[Cell] =
   if cell.isLeaf and predicate(cell):
     return cell.some
-  return cell.getPreviousLeafWhere(predicate)
+  return cell.getPreviousLeafWhere(map, predicate)
 
-proc getSelfOrNextLeafWhere*(cell: Cell, predicate: proc(cell: Cell): bool): Option[Cell] =
+proc getSelfOrNextLeafWhere*(cell: Cell, map: NodeCellMap, predicate: proc(cell: Cell): bool): Option[Cell] =
   if cell.isLeaf and predicate(cell):
     return cell.some
-  return cell.getNextLeafWhere(predicate)
+  return cell.getNextLeafWhere(map, predicate)
 
-proc getSelfOrNeighborLeafWhere*(cell: Cell, direction: Direction, predicate: proc(cell: Cell): (bool, Option[Cell])): Option[Cell] =
+proc getSelfOrNeighborLeafWhere*(cell: Cell, map: NodeCellMap, direction: Direction, predicate: proc(cell: Cell): (bool, Option[Cell])): Option[Cell] =
   if cell.isLeaf:
     let (stop, res) = predicate(cell)
     if stop:
       return res
-  return cell.getNeighborLeafWhere(direction, predicate)
+  return cell.getNeighborLeafWhere(map, direction, predicate)
 
-proc getSelfOrNeighborLeafWhere*(cell: Cell, direction: Direction, predicate: proc(cell: Cell): bool): Option[Cell] =
+proc getSelfOrNeighborLeafWhere*(cell: Cell, map: NodeCellMap, direction: Direction, predicate: proc(cell: Cell): bool): Option[Cell] =
   if cell.isLeaf and predicate(cell):
     return cell.some
-  return cell.getNeighborLeafWhere(direction, predicate)
+  return cell.getNeighborLeafWhere(map, direction, predicate)
 
-proc getPreviousSelectableLeaf*(cell: Cell): Option[Cell] =
-  return cell.getPreviousLeafWhere(canSelect)
+proc getPreviousSelectableLeaf*(cell: Cell, map: NodeCellMap): Option[Cell] =
+  return cell.getPreviousLeafWhere(map, canSelect)
 
-proc getNextSelectableLeaf*(cell: Cell): Option[Cell] =
-  return cell.getNextLeafWhere(canSelect)
+proc getNextSelectableLeaf*(cell: Cell, map: NodeCellMap): Option[Cell] =
+  return cell.getNextLeafWhere(map, canSelect)
 
-proc getNeighborSelectableLeaf*(cell: Cell, direction: Direction): Option[Cell] =
-  return cell.getNeighborLeafWhere(direction, canSelect)
+proc getNeighborSelectableLeaf*(cell: Cell, map: NodeCellMap, direction: Direction): Option[Cell] =
+  return cell.getNeighborLeafWhere(map, direction, canSelect)
 
-proc getPreviousVisibleLeaf*(cell: Cell): Option[Cell] =
-  return cell.getPreviousLeafWhere(isVisible)
+proc getPreviousVisibleLeaf*(cell: Cell, map: NodeCellMap): Option[Cell] =
+  return cell.getPreviousLeafWhere(map, isVisible)
 
-proc getNextVisibleLeaf*(cell: Cell): Option[Cell] =
-  return cell.getNextLeafWhere(isVisible)
+proc getNextVisibleLeaf*(cell: Cell, map: NodeCellMap): Option[Cell] =
+  return cell.getNextLeafWhere(map, isVisible)
 
-proc getNeighborVisibleLeaf*(cell: Cell, direction: Direction): Option[Cell] =
-  return cell.getNeighborLeafWhere(direction, isVisible)
+proc getNeighborVisibleLeaf*(cell: Cell, map: NodeCellMap, direction: Direction): Option[Cell] =
+  return cell.getNeighborLeafWhere(map, direction, isVisible)
 
 proc nodeRootCell*(cell: Cell, targetNode: Option[AstNode] = AstNode.none): Cell =
   ### Returns the highest parent cell which has the same node (or itself if the parent has a different node)
@@ -1406,7 +1409,7 @@ proc getFirstEditableCellOfNode*(self: ModelDocumentEditor, node: AstNode): Opti
   if nodeCell.isNil:
     return
 
-  nodeCell = nodeCell.getFirstLeaf()
+  nodeCell = nodeCell.getFirstLeaf(self.nodeCellMap)
   echo fmt"first leaf {nodeCell}"
 
   proc editableDescendant(n: Cell): (bool, Option[Cell]) =
@@ -1415,11 +1418,11 @@ proc getFirstEditableCellOfNode*(self: ModelDocumentEditor, node: AstNode): Opti
     else:
       return (true, Cell.none)
 
-  if nodeCell.getSelfOrNeighborLeafWhere(Right, editableDescendant).getSome(targetCell):
+  if nodeCell.getSelfOrNeighborLeafWhere(self.nodeCellMap, Right, editableDescendant).getSome(targetCell):
     echo fmt"a: editable descendant {targetCell}"
     return self.nodeCellMap.toCursor(targetCell, true).some
 
-  if nodeCell.getSelfOrNextLeafWhere((n) => isVisible(n) and not n.disableSelection).getSome(targetCell):
+  if nodeCell.getSelfOrNextLeafWhere(self.nodeCellMap, (n) => isVisible(n) and not n.disableSelection).getSome(targetCell):
     echo fmt"a: visible descendant {targetCell}"
     return self.nodeCellMap.toCursor(targetCell, true).some
 
@@ -1431,7 +1434,7 @@ proc getFirstSelectableCellOfNode*(self: ModelDocumentEditor, node: AstNode): Op
   if nodeCell.isNil:
     return
 
-  nodeCell = nodeCell.getFirstLeaf()
+  nodeCell = nodeCell.getFirstLeaf(self.nodeCellMap)
   echo fmt"first leaf {nodeCell}"
 
   proc selectableDescendant(n: Cell): (bool, Option[Cell]) =
@@ -1440,11 +1443,11 @@ proc getFirstSelectableCellOfNode*(self: ModelDocumentEditor, node: AstNode): Op
     else:
       return (true, Cell.none)
 
-  if nodeCell.getSelfOrNeighborLeafWhere(Right, selectableDescendant).getSome(targetCell):
+  if nodeCell.getSelfOrNeighborLeafWhere(self.nodeCellMap, Right, selectableDescendant).getSome(targetCell):
     echo fmt"a: selectable descendant {targetCell}"
     return self.nodeCellMap.toCursor(targetCell, true).some
 
-  if nodeCell.getSelfOrNextLeafWhere((n) => isVisible(n) and not n.disableSelection).getSome(targetCell):
+  if nodeCell.getSelfOrNextLeafWhere(self.nodeCellMap, (n) => isVisible(n) and not n.disableSelection).getSome(targetCell):
     echo fmt"a: visible descendant {targetCell}"
     return self.nodeCellMap.toCursor(targetCell, true).some
 
@@ -1455,97 +1458,97 @@ proc getFirstPropertyCellOfNode*(self: ModelDocumentEditor, node: AstNode, role:
   if nodeCell.isNil:
     return
 
-  if nodeCell.getSelfOrNextLeafWhere((n) => isVisible(n) and not n.disableEditing and n of PropertyCell and n.PropertyCell.property == role).getSome(targetCell):
+  if nodeCell.getSelfOrNextLeafWhere(self.nodeCellMap, (n) => isVisible(n) and not n.disableEditing and n of PropertyCell and n.PropertyCell.property == role).getSome(targetCell):
     return self.nodeCellMap.toCursor(targetCell, true).some
 
-method getCursorLeft*(cell: ConstantCell, cursor: CellCursor): CellCursor =
+method getCursorLeft*(cell: ConstantCell, map: NodeCellMap, cursor: CellCursor): CellCursor =
   result = cursor
   if cursor.index > cell.editableLow:
     dec result.index
   else:
-    if cell.getPreviousSelectableLeaf().getSome(c):
+    if cell.getPreviousSelectableLeaf(map).getSome(c):
       result = cursor.map.toCursor(c, false)
 
-method getCursorLeft*(cell: NodeReferenceCell, cursor: CellCursor): CellCursor =
+method getCursorLeft*(cell: NodeReferenceCell, map: NodeCellMap, cursor: CellCursor): CellCursor =
   result = cursor
   if cursor.index > cell.editableLow:
     dec result.index
   else:
-    if cell.getPreviousSelectableLeaf().getSome(c):
+    if cell.getPreviousSelectableLeaf(map).getSome(c):
       result = cursor.map.toCursor(c, false)
 
-method getCursorLeft*(cell: AliasCell, cursor: CellCursor): CellCursor =
+method getCursorLeft*(cell: AliasCell, map: NodeCellMap, cursor: CellCursor): CellCursor =
   result = cursor
   if cursor.index > cell.editableLow:
     dec result.index
   else:
-    if cell.getPreviousSelectableLeaf().getSome(c):
+    if cell.getPreviousSelectableLeaf(map).getSome(c):
       result = cursor.map.toCursor(c, false)
 
-method getCursorLeft*(cell: PlaceholderCell, cursor: CellCursor): CellCursor =
+method getCursorLeft*(cell: PlaceholderCell, map: NodeCellMap, cursor: CellCursor): CellCursor =
   result = cursor
   if cursor.index > cell.editableLow:
     dec result.index
   else:
-    if cell.getPreviousSelectableLeaf().getSome(c):
+    if cell.getPreviousSelectableLeaf(map).getSome(c):
       result = cursor.map.toCursor(c, false)
 
-method getCursorLeft*(cell: PropertyCell, cursor: CellCursor): CellCursor =
+method getCursorLeft*(cell: PropertyCell, map: NodeCellMap, cursor: CellCursor): CellCursor =
   result = cursor
   if cursor.index > cell.editableLow:
     dec result.index
   else:
-    if cell.getPreviousSelectableLeaf().getSome(c):
+    if cell.getPreviousSelectableLeaf(map).getSome(c):
       result = cursor.map.toCursor(c, false)
 
-method getCursorRight*(cell: ConstantCell, cursor: CellCursor): CellCursor =
+method getCursorRight*(cell: ConstantCell, map: NodeCellMap, cursor: CellCursor): CellCursor =
   result = cursor
   if cursor.index < cell.editableHigh:
     inc result.index
   else:
-    if cell.getNextSelectableLeaf().getSome(c):
+    if cell.getNextSelectableLeaf(map).getSome(c):
       result = cursor.map.toCursor(c, true)
 
-method getCursorRight*(cell: NodeReferenceCell, cursor: CellCursor): CellCursor =
+method getCursorRight*(cell: NodeReferenceCell, map: NodeCellMap, cursor: CellCursor): CellCursor =
   result = cursor
   if cursor.index < cell.editableHigh:
     inc result.index
   else:
-    if cell.getNextSelectableLeaf().getSome(c):
+    if cell.getNextSelectableLeaf(map).getSome(c):
       result = cursor.map.toCursor(c, true)
 
-method getCursorRight*(cell: AliasCell, cursor: CellCursor): CellCursor =
+method getCursorRight*(cell: AliasCell, map: NodeCellMap, cursor: CellCursor): CellCursor =
   result = cursor
   if cursor.index < cell.editableHigh:
     inc result.index
   else:
-    if cell.getNextSelectableLeaf().getSome(c):
+    if cell.getNextSelectableLeaf(map).getSome(c):
       result = cursor.map.toCursor(c, true)
 
-method getCursorRight*(cell: PlaceholderCell, cursor: CellCursor): CellCursor =
+method getCursorRight*(cell: PlaceholderCell, map: NodeCellMap, cursor: CellCursor): CellCursor =
   result = cursor
   if cursor.index < cell.editableHigh:
     inc result.index
   else:
-    if cell.getNextSelectableLeaf().getSome(c):
+    if cell.getNextSelectableLeaf(map).getSome(c):
       result = cursor.map.toCursor(c, true)
 
-method getCursorRight*(cell: PropertyCell, cursor: CellCursor): CellCursor =
+method getCursorRight*(cell: PropertyCell, map: NodeCellMap, cursor: CellCursor): CellCursor =
   result = cursor
   if cursor.index < cell.editableHigh:
     inc result.index
   else:
-    if cell.getNextSelectableLeaf().getSome(c):
+    if cell.getNextSelectableLeaf(map).getSome(c):
       result = cursor.map.toCursor(c, true)
 
-method getCursorLeft*(cell: CollectionCell, cursor: CellCursor): CellCursor =
+method getCursorLeft*(cell: CollectionCell, map: NodeCellMap, cursor: CellCursor): CellCursor =
   result = cursor
   # if cell.children.len == 0 or cursor.index == 0:
   #   if cell.getPreviousSelectableLeaf().getSome(c):
   #     result = c.toCursor(true)
   #   return
 
-  if cell.getPreviousSelectableLeaf().getSome(c):
+  if cell.getPreviousSelectableLeaf(map).getSome(c):
     result = cursor.map.toCursor(c, true)
     return
 
@@ -1554,11 +1557,11 @@ method getCursorLeft*(cell: CollectionCell, cursor: CellCursor): CellCursor =
   result.path = if cell.node == childCell.node: cursor.path & 0 else: @[]
   result.index = 0
 
-method getCursorRight*(cell: CollectionCell, cursor: CellCursor): CellCursor =
+method getCursorRight*(cell: CollectionCell, map: NodeCellMap, cursor: CellCursor): CellCursor =
   # if cell.children.len == 0:
   #   return cursor
 
-  if cell.getNextSelectableLeaf().getSome(c):
+  if cell.getNextSelectableLeaf(map).getSome(c):
     result = cursor.map.toCursor(c, true)
     return
 
@@ -1650,7 +1653,7 @@ proc isThickCursor*(self: ModelDocumentEditor): bool {.expose("editor.model").} 
 
 proc moveCursorLeft*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
   if getTargetCell(self.cursor, false).getSome(cell):
-    let newCursor = cell.getCursorLeft(self.cursor)
+    let newCursor = cell.getCursorLeft(self.nodeCellMap, self.cursor)
     if newCursor.node.isNotNil:
       self.updateSelection(newCursor, select)
       self.updateScrollOffset()
@@ -1659,7 +1662,7 @@ proc moveCursorLeft*(self: ModelDocumentEditor, select: bool = false) {.expose("
 
 proc moveCursorRight*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
   if getTargetCell(self.cursor, false).getSome(cell):
-    let newCursor = cell.getCursorRight(self.cursor)
+    let newCursor = cell.getCursorRight(self.nodeCellMap, self.cursor)
     if newCursor.node.isNotNil:
       self.updateSelection(newCursor, select)
       self.updateScrollOffset()
@@ -1668,7 +1671,7 @@ proc moveCursorRight*(self: ModelDocumentEditor, select: bool = false) {.expose(
 
 proc moveCursorLeftLine*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
   if getTargetCell(self.cursor, false).getSome(cell):
-    var newCursor = cell.getCursorLeft(self.cursor)
+    var newCursor = cell.getCursorLeft(self.nodeCellMap, self.cursor)
     if newCursor.node == self.cursor.node:
       self.updateSelection(newCursor, select)
       self.updateScrollOffset()
@@ -1682,7 +1685,7 @@ proc moveCursorLeftLine*(self: ModelDocumentEditor, select: bool = false) {.expo
 
 proc moveCursorRightLine*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
   if getTargetCell(self.cursor, false).getSome(cell):
-    var newCursor = cell.getCursorRight(self.cursor)
+    var newCursor = cell.getCursorRight(self.nodeCellMap, self.cursor)
     if newCursor.node == self.cursor.node:
       self.updateSelection(newCursor, select)
       self.updateScrollOffset()
@@ -1788,7 +1791,7 @@ proc moveCursorDown*(self: ModelDocumentEditor, select: bool = false) {.expose("
 
 proc moveCursorLeftCell*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
   if getTargetCell(self.cursor).getSome(cell):
-    if cell.getPreviousSelectableLeaf().getSome(c):
+    if cell.getPreviousSelectableLeaf(self.nodeCellMap).getSome(c):
       let newCursor = self.nodeCellMap.toCursor(c, false)
       self.updateSelection(newCursor, select)
       self.updateScrollOffset()
@@ -1797,7 +1800,7 @@ proc moveCursorLeftCell*(self: ModelDocumentEditor, select: bool = false) {.expo
 
 proc moveCursorRightCell*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
   if getTargetCell(self.cursor).getSome(cell):
-    if cell.getNextSelectableLeaf().getSome(c):
+    if cell.getNextSelectableLeaf(self.nodeCellMap).getSome(c):
       let newCursor = self.nodeCellMap.toCursor(c, true)
       self.updateSelection(newCursor, select)
       self.updateScrollOffset()
@@ -1810,19 +1813,19 @@ proc selectNode*(self: ModelDocumentEditor, select: bool = false) {.expose("edit
     return
 
   var newSelection = (
-    parentCell.getFirstLeaf.getSelfOrNextLeafWhere(canSelect).mapIt(self.nodeCellMap.toCursor(it, true)),
-    parentCell.getLastLeaf.getSelfOrPreviousLeafWhere(canSelect).mapIt(self.nodeCellMap.toCursor(it, false)))
+    parentCell.getFirstLeaf(self.nodeCellMap).getSelfOrNextLeafWhere(self.nodeCellMap, canSelect).mapIt(self.nodeCellMap.toCursor(it, true)),
+    parentCell.getLastLeaf(self.nodeCellMap).getSelfOrPreviousLeafWhere(self.nodeCellMap, canSelect).mapIt(self.nodeCellMap.toCursor(it, false)))
 
   if parentCell.parent.isNotNil and (newSelection[0].isNone or newSelection[1].isNone or self.selection.normalized == (newSelection[0].get, newSelection[1].get)):
     newSelection = (
-      parentCell.parent.getFirstLeaf.getSelfOrNextLeafWhere(canSelect).mapIt(self.nodeCellMap.toCursor(it, true)),
-      parentCell.parent.getLastLeaf.getSelfOrPreviousLeafWhere(canSelect).mapIt(self.nodeCellMap.toCursor(it, false)))
+      parentCell.parent.getFirstLeaf(self.nodeCellMap).getSelfOrNextLeafWhere(self.nodeCellMap, canSelect).mapIt(self.nodeCellMap.toCursor(it, true)),
+      parentCell.parent.getLastLeaf(self.nodeCellMap).getSelfOrPreviousLeafWhere(self.nodeCellMap, canSelect).mapIt(self.nodeCellMap.toCursor(it, false)))
 
   if parentCell.node.parent.isNotNil and (newSelection[0].isNone or newSelection[1].isNone or self.selection.normalized == (newSelection[0].get, newSelection[1].get)):
     let parentNodeCell = self.nodeCellMap.cell(parentCell.node.parent)
     newSelection = (
-      parentNodeCell.getFirstLeaf.getSelfOrNextLeafWhere(canSelect).mapIt(self.nodeCellMap.toCursor(it, true)),
-      parentNodeCell.getLastLeaf.getSelfOrPreviousLeafWhere(canSelect).mapIt(self.nodeCellMap.toCursor(it, false)))
+      parentNodeCell.getFirstLeaf(self.nodeCellMap).getSelfOrNextLeafWhere(self.nodeCellMap, canSelect).mapIt(self.nodeCellMap.toCursor(it, true)),
+      parentNodeCell.getLastLeaf(self.nodeCellMap).getSelfOrPreviousLeafWhere(self.nodeCellMap, canSelect).mapIt(self.nodeCellMap.toCursor(it, false)))
 
   if newSelection[0].isSome and newSelection[1].isSome:
     self.selection = (newSelection[0].get, newSelection[1].get)
@@ -1840,7 +1843,7 @@ proc shouldEdit*(cell: Cell): bool =
   return false
 
 proc selectPrevPlaceholder*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
-  if self.cursor.targetCell.getPreviousLeafWhere(proc(c: Cell): bool = isVisible(c) and shouldEdit(c)).getSome(candidate):
+  if self.cursor.targetCell.getPreviousLeafWhere(self.nodeCellMap, proc(c: Cell): bool = isVisible(c) and shouldEdit(c)).getSome(candidate):
     if not shouldEdit(candidate):
       return
 
@@ -1849,7 +1852,7 @@ proc selectPrevPlaceholder*(self: ModelDocumentEditor, select: bool = false) {.e
     self.markDirty()
 
 proc selectNextPlaceholder*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
-  if self.cursor.targetCell.getNextLeafWhere(proc(c: Cell): bool = isVisible(c) and shouldEdit(c)).getSome(candidate):
+  if self.cursor.targetCell.getNextLeafWhere(self.nodeCellMap, proc(c: Cell): bool = isVisible(c) and shouldEdit(c)).getSome(candidate):
     if not shouldEdit(candidate):
       return
 
@@ -1867,7 +1870,7 @@ proc deleteDirection*(self: ModelDocumentEditor, direction: Direction) =
   let endIndex = if direction == Left: 0 else: cell.currentText.len
 
   var potentialCells: seq[(Cell, Slice[int], Direction)] = @[(cell, self.selection.orderedRange, direction)]
-  if self.selection.last.index == endIndex and self.selection.first.index == self.selection.last.index and cell.getNeighborSelectableLeaf(direction).getSome(prev):
+  if self.selection.last.index == endIndex and self.selection.first.index == self.selection.last.index and cell.getNeighborSelectableLeaf(self.nodeCellMap, direction).getSome(prev):
     let index = if direction == Left:
       prev.editableHigh(true)
     else:
@@ -1901,7 +1904,7 @@ proc deleteDirection*(self: ModelDocumentEditor, direction: Direction) =
       else: # Node was removed
 
         # Get next neighbor cell which is of a different node and not a child, and can be selected
-        var targetCell = c.getNeighborLeafWhere(cursorMoveDirection, proc(cell: Cell): (bool, Option[Cell]) =
+        var targetCell = c.getNeighborLeafWhere(self.nodeCellMap, cursorMoveDirection, proc(cell: Cell): (bool, Option[Cell]) =
           if cell.node != c.node and cell.node != parent and not cell.node.isDescendant(parent):
             return (true, Cell.none)
           if not isVisible(cell) or not canSelect(cell):
@@ -1913,7 +1916,7 @@ proc deleteDirection*(self: ModelDocumentEditor, direction: Direction) =
 
         # Get next neighbor cell which is of a different node and not a child, and can be selected
         if targetCell.isNone:
-          targetCell = c.getNeighborLeafWhere(-cursorMoveDirection, proc(cell: Cell): (bool, Option[Cell]) =
+          targetCell = c.getNeighborLeafWhere(self.nodeCellMap, -cursorMoveDirection, proc(cell: Cell): (bool, Option[Cell]) =
             if cell.node != c.node and cell.node != parent and not cell.node.isDescendant(parent):
               return (true, Cell.none)
             if not isVisible(cell) or not canSelect(cell):
@@ -1940,9 +1943,9 @@ proc deleteDirection*(self: ModelDocumentEditor, direction: Direction) =
 
         self.rebuildCells()
         if self.updateCursor(parentCellCursor).flatMap((c: CellCursor) -> Option[Cell] => c.getTargetCell(true)).getSome(newCell):
-          if i == 0 and direction == Left and newCell.getNeighborSelectableLeaf(direction).getSome(c):
+          if i == 0 and direction == Left and newCell.getNeighborSelectableLeaf(self.nodeCellMap, direction).getSome(c):
             self.cursor = self.nodeCellMap.toCursor(c)
-          elif newCell.getSelfOrNeighborLeafWhere(direction, (c) -> bool => isVisible(c)).getSome(c):
+          elif newCell.getSelfOrNeighborLeafWhere(self.nodeCellMap, direction, (c) -> bool => isVisible(c)).getSome(c):
             self.cursor = self.nodeCellMap.toCursor(c, true)
           else:
             self.cursor = self.nodeCellMap.toCursor(newCell, true)
@@ -1961,7 +1964,7 @@ proc deleteDirection*(self: ModelDocumentEditor, direction: Direction) =
           if neighbor.getSome(neighbor):
             let parent = neighbor.node.parent
 
-            let selectionTarget = c.getNeighborSelectableLeaf(-direction)
+            let selectionTarget = c.getNeighborSelectableLeaf(self.nodeCellMap, -direction)
 
             if neighbor.node.deleteOrReplaceWithDefault().getSome(newNode):
               self.rebuildCells()
@@ -2045,7 +2048,7 @@ proc contains*(selection: CellSelection, cell: Cell): bool =
 
   return cell.isFullyContained(left.path, right.path)
 
-proc delete*(self: ModelDocumentEditor, direction: Direction) =
+proc deleteOrReplace*(self: ModelDocumentEditor, direction: Direction, replace: bool) =
   # debugf"delete {self.selection.first} .. {self.selection.last}"
   # debugf"delete {self.selection.first.rootPath.path} .. {self.selection.last.rootPath.path}"
 
@@ -2081,7 +2084,7 @@ proc delete*(self: ModelDocumentEditor, direction: Direction) =
   let firstIndex = if commonParentIndex < firstPath.path.len: firstPath.path[childIndex] else: 0
   let lastIndex = if commonParentIndex < lastPath.path.len: lastPath.path[childIndex] else: parentTargetCell.len
 
-  # debugf"common parent {commonParentIndex}, {firstIndex}..{lastIndex}, {parentBaseCell}, {parentTargetCell}, {parentBaseCell == parentTargetCell}"
+  debugf"common parent {commonParentIndex}, {firstIndex}..{lastIndex}, {parentBaseCell}, {parentTargetCell}, {parentBaseCell == parentTargetCell}"
 
   # let firstCell = parentCell.getSelfOrNextLeafWhere(proc(cell: Cell): bool = cell.canSelect())
   # let lastCell = parentCell.getSelfOrPreviousLeafWhere(proc(cell: Cell): bool = cell.canSelect())
@@ -2091,16 +2094,27 @@ proc delete*(self: ModelDocumentEditor, direction: Direction) =
     let firstContained = self.selection.contains(parentCell.children[firstIndex])
     let lastContained = self.selection.contains(parentCell.children[lastIndex])
 
-    # echo firstContained, ", ", lastContained
+    echo firstContained, ", ", lastContained
     if firstContained and lastContained:
-      let parent = parentCell.node.parent
       if firstIndex == 0 and lastIndex == parentCell.high and parentTargetCell == parentBaseCell: # entire parent selected
-        if parentCell.node.replaceWithDefault().getSome(newNode):
+        echo "all cells selected"
+
+        var targetNode = parentCell.node
+
+        if DeleteWhenEmpty in parentCell.parent.flags and parentCell.parent.len == 1: # Selected only child of parent:
+          targetNode = parentCell.parent.node
+
+        let targetParentNode = targetNode.parent
+
+        if replace and targetNode.replaceWithDefault().getSome(newNode):
+          self.rebuildCells()
+          self.cursor = self.getFirstEditableCellOfNode(newNode).get
+        elif not replace and targetNode.deleteOrReplaceWithDefault().getSome(newNode):
           self.rebuildCells()
           self.cursor = self.getFirstEditableCellOfNode(newNode).get
         else:
           self.rebuildCells()
-          if self.getFirstEditableCellOfNode(parent).getSome(c):
+          if self.getFirstEditableCellOfNode(targetParentNode).getSome(c):
             self.cursor = c
 
       else: # some children of parent cell selected
@@ -2109,22 +2123,28 @@ proc delete*(self: ModelDocumentEditor, direction: Direction) =
           if c.node != parentCell.node:
             nodesToDelete.add c.node
 
-        # echo "some children of parent cell selected ", nodesToDelete
+        echo "some children of parent cell selected ", nodesToDelete
 
         for n in nodesToDelete:
-          discard n.deleteOrReplaceWithDefault()
+          if replace:
+            discard n.replaceWithDefault()
+          else:
+            discard n.deleteOrReplaceWithDefault()
 
         self.rebuildCells()
         self.cursor = self.getFirstEditableCellOfNode(parentCell.node).get
 
     else: # not all nodes fully contained
-      # echo "not all nodes fully contained"
+      echo "not all nodes fully contained"
       discard
 
   else: # not collection cell
     echo firstIndex, ", ", lastIndex, "/", parentTargetCell.len
     if selection.contains(parentTargetCell):
-      if parentTargetCell.node.replaceWithDefault().getSome(newNode):
+      if replace and parentTargetCell.node.replaceWithDefault().getSome(newNode):
+        self.rebuildCells()
+        self.cursor = self.getFirstEditableCellOfNode(newNode).get
+      elif not replace and parentTargetCell.node.deleteOrReplaceWithDefault().getSome(newNode):
         self.rebuildCells()
         self.cursor = self.getFirstEditableCellOfNode(newNode).get
       else:
@@ -2135,13 +2155,25 @@ proc delete*(self: ModelDocumentEditor, direction: Direction) =
 proc deleteLeft*(self: ModelDocumentEditor) {.expose("editor.model").} =
   defer:
     self.document.finishTransaction()
-  self.delete(Left)
+  self.deleteOrReplace(Left, false)
   self.markDirty()
 
 proc deleteRight*(self: ModelDocumentEditor) {.expose("editor.model").} =
   defer:
     self.document.finishTransaction()
-  self.delete(Right)
+  self.deleteOrReplace(Right, false)
+  self.markDirty()
+
+proc replaceLeft*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  defer:
+    self.document.finishTransaction()
+  self.deleteOrReplace(Left, true)
+  self.markDirty()
+
+proc replaceRight*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  defer:
+    self.document.finishTransaction()
+  self.deleteOrReplace(Right, true)
   self.markDirty()
 
 proc isAtBeginningOfFirstCellOfNode*(cursor: CellCursor): bool =
@@ -2224,7 +2256,7 @@ proc createNewNodeAt*(self: ModelDocumentEditor, cursor: CellCursor): Option[Ast
 
   var ok = false
   var addBefore = true
-  var candidate = cell.getSelfOrNextLeafWhere proc(c: Cell): bool =
+  var candidate = cell.getSelfOrNextLeafWhere(self.nodeCellMap, proc(c: Cell): bool =
     if c.node.selfDescription().getSome(desc):
       debugf"{desc.role}, {desc.count}, {c.node.index}, {c.dump}, {c.node}"
 
@@ -2240,10 +2272,11 @@ proc createNewNodeAt*(self: ModelDocumentEditor, cursor: CellCursor): Option[Ast
       return true
 
     return false
+  )
 
   if (not ok or candidate.isNone) and not originalNode.canHaveSiblings():
     debug "search outside"
-    candidate = cell.getSelfOrNextLeafWhere proc(c: Cell): bool =
+    candidate = cell.getSelfOrNextLeafWhere(self.nodeCellMap, proc(c: Cell): bool =
       # inc i
       if c.node.selfDescription().getSome(desc):
         debugf"{desc.role}, {desc.count}, {c.node.index}, {c.dump}, {c.node}"
@@ -2256,6 +2289,7 @@ proc createNewNodeAt*(self: ModelDocumentEditor, cursor: CellCursor): Option[Ast
         return true
 
       return false
+    )
 
   debugf"ok: {ok}, addBefore: {addBefore}"
   if ok and candidate.isSome:
@@ -2365,7 +2399,7 @@ proc toggleUseDefaultCellBuilder*(self: ModelDocumentEditor) {.expose("editor.mo
   elif self.getFirstSelectableCellOfNode(self.selection.first.node).getSome(first) and self.getFirstSelectableCellOfNode(self.selection.last.node).getSome(last):
     self.selection = (first, last)
   else:
-    self.cursor = self.nodeCellMap.toCursor(self.nodeCellMap.cell(self.cursor.node).getFirstLeaf(), true)
+    self.cursor = self.nodeCellMap.toCursor(self.nodeCellMap.cell(self.cursor.node).getFirstLeaf(self.nodeCellMap), true)
   self.updateScrollOffset()
   self.markDirty()
 
@@ -2422,6 +2456,7 @@ proc applySelectedCompletion*(self: ModelDocumentEditor) {.expose("editor.model"
       parent.remove(role, index)
 
       var newNode = newAstNode(completion.class)
+      newNode.fillDefaultChildren(parent.language, true)
       parent.insert(role, index, newNode)
       self.rebuildCells()
       self.cursor = self.getFirstEditableCellOfNode(newNode).get

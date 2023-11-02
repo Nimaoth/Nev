@@ -10,6 +10,10 @@ defineBitFlag:
   type CellBuilderFlag* = enum
     OnlyExactMatch
 
+defineBitFlag:
+  type CellFlag* = enum
+    DeleteWhenEmpty
+
 type
   ClassId* = Id
   NodeId* = Id
@@ -55,6 +59,7 @@ type
     base {.getter.}: NodeClass
     interfaces {.getter.}: seq[NodeClass]
     isAbstract {.getter.}: bool
+    isFinal {.getter.}: bool
     isInterface {.getter.}: bool
     properties {.getter.}: seq[PropertyDescription]
     children {.getter.}: seq[NodeChildDescription]
@@ -87,6 +92,7 @@ type
       aDebug*: cstring
     id*: Id
     parent*: Cell
+    flags*: CellFlags
     node*: AstNode
     line*: int
     displayText*: Option[string]
@@ -188,6 +194,24 @@ template forEach2*(node: AstNode, it: untyped, body: untyped): untyped =
 proc newProject*(): Project =
   new result
 
+proc verify*(self: Language): bool =
+  for c in self.classes.values:
+    if c.base.isNotNil:
+      if not self.classes.contains(c.base.id):
+        log(lvlError, fmt"Class {c.name} has unknown base class {c.base.name}")
+        return false
+
+      let baseClass = self.classes[c.base.id]
+      if baseClass.isFinal:
+        log(lvlError, fmt"Class {c.name} has base class {c.base.name} which is final")
+        return false
+
+    if c.isFinal and c.isAbstract:
+      log(lvlError, fmt"Class {c.name} is both final and abstract")
+      return false
+
+  return true
+
 proc newLanguage*(id: LanguageId, classes: seq[NodeClass], builder: CellBuilder): Language =
   new result
   result.id = id
@@ -205,6 +229,7 @@ proc newLanguage*(id: LanguageId, classes: seq[NodeClass], builder: CellBuilder)
       result.childClasses[i.id].add c
 
   result.builder = builder
+  discard result.verify()
 
 proc forEachChildClass*(self: Language, base: NodeClass, handler: proc(c: NodeClass)) =
   handler(base)
@@ -254,6 +279,7 @@ proc newNodeClass*(
       base: NodeClass = nil,
       interfaces: openArray[NodeClass] = [],
       isAbstract: bool = false,
+      isFinal: bool = false,
       isInterface: bool = false,
       properties: openArray[PropertyDescription] = [],
       children: openArray[NodeChildDescription] = [],
@@ -268,6 +294,7 @@ proc newNodeClass*(
   result.base = base
   result.interfaces = @interfaces
   result.isAbstract = isAbstract
+  result.isFinal = isFinal
   result.isInterface = isInterface
   result.properties = @properties
   result.children = @children
@@ -454,13 +481,28 @@ proc newAstNode*(class: NodeClass, id: Option[NodeId] = NodeId.none): AstNode =
   result.class = class.id
   result.addMissingFieldsForClass(class)
 
-proc fillDefaultChildren*(node: AstNode, language: Language) =
+proc isUnique*(language: Language, class: NodeClass): bool =
+  if class.isFinal:
+    return true
+  if not language.childClasses.contains(class.id):
+    return true
+  return false
+
+proc fillDefaultChildren*(node: AstNode, language: Language, onlyUnique: bool = false) =
   let class = language.classes.getOrDefault(node.class, nil)
   for desc in class.children:
     if desc.count in {ChildCount.One, ChildCount.OneOrMore}:
       let childClass = language.classes.getOrDefault(desc.class)
+      if childClass.isNil:
+        log lvlError, fmt"Unknown class {desc.class}"
+        continue
+
+      let isUnique = language.isUnique(childClass)
+      if onlyUnique and not isUnique:
+        continue
+
       let child = newAstNode(childClass)
-      child.fillDefaultChildren(language)
+      child.fillDefaultChildren(language, onlyUnique)
       node.add(desc.id, child)
 
 proc ancestor*(node: AstNode, distance: int): AstNode =
