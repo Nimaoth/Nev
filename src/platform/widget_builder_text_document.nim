@@ -293,6 +293,8 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     var contextLineTarget: int = -1
 
     proc handleScroll(delta: float) =
+      if self.disableScrolling:
+        return
       let scrollAmount = delta * app.asConfigProvider.getValue("text.scroll-speed", 40.0)
       self.scrollOffset += scrollAmount
       self.markDirty()
