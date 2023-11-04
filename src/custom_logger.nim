@@ -91,8 +91,7 @@ template logCategory*(category: static string, noDebug = false): untyped =
     body
     block:
       let descriptionString = description
-      bind log
-      logger.log(lvlInfo, "[" & category & "] " & descriptionString & " took " & $timer.elapsed.ms & " ms")
+      logging.log(lvlInfo, "[" & category & "] " & descriptionString & " took " & $timer.elapsed.ms & " ms")
 
   when noDebug:
     macro debug(x: varargs[typed, `$`]): untyped {.used.} =
