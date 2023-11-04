@@ -4,7 +4,7 @@ import theme, util, custom_logger, custom_async, fuzzy_matching
 import scripting/[expose, scripting_base]
 import platform/[platform, filesystem]
 import workspaces/[workspace]
-import ast/types
+import ast/model
 import traits
 import config_provider, app_interface
 import language/language_server_base, language_server_absytree_commands

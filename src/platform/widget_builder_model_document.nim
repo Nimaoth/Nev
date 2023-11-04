@@ -2,7 +2,7 @@ import std/[strformat, tables, sugar, strutils, json]
 import util, app, document_editor, model_document, text/text_document, custom_logger, platform, theme, config_provider, input, app_interface
 import widget_builders_base, widget_library, ui/node, custom_unicode
 import vmath, bumpy, chroma
-import ast/[types, cells]
+import ast/[model, cells]
 
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
 {.used.}
