@@ -63,8 +63,10 @@ assert backend.isSome
 block: ## Enable loggers
   if backend.get == Terminal or logToFile or defined(forceLogToFile):
     logger.enableFileLogger()
-  if backend.get != Terminal:
-    logger.enableConsoleLogger()
+
+  when defined(allowConsoleLogger):
+    if backend.get != Terminal:
+      logger.enableConsoleLogger()
 
 import std/[strformat]
 import util, app, timer, platform/widget_builders, platform/platform, custom_async
