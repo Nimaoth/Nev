@@ -9,6 +9,9 @@ switch("d", "enableGui=true")
 switch("d", "enableTerminal=true")
 switch("d", "ssl")
 
+# uncomment to see logs in the console
+# switch("d", "allowConsoleLogger")
+
 switch("d", "wasm3HasWasi")
 switch("d", "wasm3VerboseErrorMessages")
 # switch("d", "wasm3EnableStrace2")
