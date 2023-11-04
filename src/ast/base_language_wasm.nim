@@ -4,9 +4,7 @@ import id, model, ast_ids
 import scripting/[wasm_builder]
 import custom_logger, util
 
-import print
-
-logCategory "bl-wasm"
+logCategory "base-language-wasm"
 
 type
   BaseLanguageWasmCompiler* = ref object
@@ -105,7 +103,7 @@ proc compileToBinary*(self: BaseLanguageWasmCompiler, node: AstNode): seq[uint8]
   discard self.getOrCreateWasmFunc(node, exportName=functionName.some)
   self.compileRemainingFunctions()
 
-  print self.builder
+  debugf"{self.builder}"
 
   let binary = self.builder.generateBinary()
   return binary
@@ -366,7 +364,6 @@ proc genNodeReturnExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
 proc genNodeNodeReference(self: BaseLanguageWasmCompiler, node: AstNode) =
   let id = node.reference(IdNodeReferenceTarget)
   if node.resolveReference(IdNodeReferenceTarget).getSome(target) and target.class == IdConstDecl:
-    echo "const"
     for i, c in target.children(IdConstDeclValue):
       if i > 0: self.genDrop(c)
       self.genNode(c)

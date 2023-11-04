@@ -1,5 +1,4 @@
-
-import std/[macrocache, json, options, tables]
+import std/[macrocache, json, options, tables, strutils, strformat]
 import binary_encoder
 import util
 
@@ -14,7 +13,7 @@ type
   WasmLocalIdx* = distinct uint32
   WasmLabelIdx* = distinct uint32
 
-  WasmValueType* {.pure.} = enum I32, I64, F32, F64, V128, FuncRef, ExternRef
+  WasmValueType* {.pure.} = enum I32 = "i32", I64 = "i64", F32 = "f32", F64 = "f64", V128 = "v128", FuncRef = "funcref", ExternRef = "externref"
   WasmRefType* = WasmValueType
 
   WasmResultType* = object
@@ -266,6 +265,16 @@ type
     start*: Option[WasmStart]
     imports*: seq[WasmImport]
     exports*: seq[WasmExport]
+
+proc `$`*(idx: WasmTypeIdx): string {.borrow.}
+proc `$`*(idx: WasmFuncIdx): string {.borrow.}
+proc `$`*(idx: WasmTableIdx): string {.borrow.}
+proc `$`*(idx: WasmMemIdx): string {.borrow.}
+proc `$`*(idx: WasmGlobalIdx): string {.borrow.}
+proc `$`*(idx: WasmElemIdx): string {.borrow.}
+proc `$`*(idx: WasmDataIdx): string {.borrow.}
+proc `$`*(idx: WasmLocalIdx): string {.borrow.}
+proc `$`*(idx: WasmLabelIdx): string {.borrow.}
 
 proc newWasmBuilder*(): WasmBuilder =
   new result
@@ -814,6 +823,266 @@ proc generateBinary*(self: WasmBuilder): seq[byte] =
 
   return encoder.buffer
 
+proc `$`(self: WasmLimits): string =
+  result = $self.min
+  if self.max.getSome(max):
+    result.add " "
+    result.add $max
+
+proc `$`(self: WasmFunctionType): string =
+  result = "(func (param"
+  for i, typ in self.input.types:
+    result.add " "
+    result.add $typ
+  result.add ") (result"
+  for i, typ in self.output.types:
+    result.add " "
+    result.add $typ
+  result.add "))"
+
+proc `$`(typ: WasmTableType): string = fmt"{typ.limits} {typ.refType}"
+
+proc `$`(typ: WasmMemoryType): string = $typ.limits
+
+proc `$`(typ: WasmGlobalType): string =
+  if typ.mut:
+    fmt"(mut {typ.typ})"
+  else:
+    $typ.typ
+
+proc `$`(typ: WasmBlockType): string =
+  case typ.kind
+  of TypeIdx:
+    return fmt"(type {typ.idx})"
+  of ValType:
+    if typ.typ.getSome(valueType):
+      return fmt"(result {valueType})"
+    return ""
+
+proc getResultTypeWat(typ: WasmResultType, name: string): string =
+  result.add "("
+  result.add name
+  for i, typ in typ.types:
+    result.add " "
+    result.add $typ
+  result.add ")"
+
+proc getTypeUseWat(self: WasmBuilder, typ: WasmTypeIdx, inline: bool): string =
+  result = fmt"(type {typ})"
+  if inline:
+    let funcType = self.types[typ.uint32]
+    if funcType.input.types.len > 0:
+      result.add " "
+      result.add getResultTypeWat(funcType.input, "param")
+    if funcType.output.types.len > 0:
+      result.add " "
+      result.add getResultTypeWat(funcType.output, "result")
+
+proc getImportDescWat(self: WasmBuilder, imp: WasmImportDesc): string =
+  case imp.kind
+  of Func:
+    result = "(func "
+    result.add self.getTypeUseWat(imp.funcTypeIdx, false)
+    result.add ")"
+  of Table:
+    # (table (;0;) 104 104 funcref)
+    result = fmt"(table {imp.table})"
+  of Mem:
+    # (memory (;0;) 256 256)
+    result = fmt"(memory {imp.mem.limits})"
+  of Global:
+    # (global $a i32 (i32.const 65536))
+    # (global $b (mut i32) (i32.const 65536))
+    result = fmt"(global {imp.global})"
+
+proc getInstrWat(self: WasmBuilder, instr: WasmInstr, blockLevel: int = 0): string =
+  case instr.kind
+
+  of Block:
+    result.add &"block $label{blockLevel} {instr.blockType}"
+    for subInstr in instr.blockInstr:
+      result.add "\n"
+      result.add getInstrWat(self, subInstr, blockLevel + 1).indent(1, "  ")
+    result.add &"\nend $label{blockLevel}"
+
+  of Loop:
+    result.add &"loop $label{blockLevel} {instr.loopType}"
+    for subInstr in instr.loopInstr:
+      result.add "\n"
+      result.add getInstrWat(self, subInstr, blockLevel + 1).indent(1, "  ")
+    result.add &"\nend $label{blockLevel}"
+
+  of If:
+    result.add &"if $label{blockLevel} {instr.ifType}"
+    for subInstr in instr.ifThenInstr:
+      result.add "\n"
+      result.add getInstrWat(self, subInstr, blockLevel + 1).indent(1, "  ")
+    result.add "\nelse"
+    for subInstr in instr.ifElseInstr:
+      result.add "\n"
+      result.add getInstrWat(self, subInstr, blockLevel + 1).indent(1, "  ")
+    result.add &"\nend $label{blockLevel}"
+
+  # of Unreachable: result.add "unreachable"
+  # of Nop: result.add "nop"
+  # of Br: result.add &"br {instr.brLabelIdx}"
+  # of BrIf: result.add &"br_if {instr.brLabelIdx}"
+  # of BrTable:
+  #   result.add &"br_table"
+  #   for label in instr.brTableIndices:
+  #     result.add &" {label}"
+  #   result.add &" {instr.brTableDefaultIdx}"
+  # of Return: result.add "return"
+  # of Call: result.add &"call {instr.callFuncIdx}"
+  # of CallIndirect: result.add &"call {instr.callIndirectTableIdx} (type {instr.callIndirectTypeIdx})"
+
+  else:
+    result.add $instr
+
+proc getExprWat(self: WasmBuilder, exp: WasmExpr): string =
+  for i, instr in exp.instr:
+    if i > 0: result.add "\n"
+    result.add self.getInstrWat(instr, 0)
+
+proc getTypeSectionWat(self: WasmBuilder): string =
+  # (type (;9;) (func (param i32 i32 i32 i32) (result i32)))
+  for i, typ in self.types:
+    result.add "\n"
+    result.add "(type (;"
+    result.add $i
+    result.add ";) "
+    result.add $typ
+    result.add ")"
+
+proc getImportSectionWat(self: WasmBuilder): string =
+  # (import "wasi_snapshot_preview1" "fd_seek" (func $__wasi_fd_seek (type 28)))
+  for i, imp in self.imports:
+    result.add "\n"
+    result.add "(import \""
+    result.add imp.module
+    result.add "\" \""
+    result.add imp.name
+    result.add "\" "
+    result.add self.getImportDescWat(imp.desc)
+    result.add ")"
+
+proc getFunctionSectionWat(self: WasmBuilder): string =
+  # (func $emscripten_stack_get_current (type 7) (result i32)
+  #     global.get $__stack_pointer)
+  for i, v in self.funcs:
+    result.add "\n"
+    result.add fmt"(func (;{i};) (type {v.typeIdx}) "
+    result.add getResultTypeWat(self.types[v.typeIdx.uint32].output, "result")
+    result.add " "
+
+    for k, local in v.locals:
+      result.add &"\n  (local (;{k};) {local})"
+
+    result.add " "
+    result.add getExprWat(self, v.body).indent(1, "  ")
+
+    result.add ")"
+
+proc getTableSectionWat(self: WasmBuilder): string =
+  for i, v in self.tables:
+    result.add "\n"
+    result.add fmt"(table (;{i};) {v.typ})"
+
+proc getMemorySectionWat(self: WasmBuilder): string =
+  for i, v in self.mems:
+    result.add "\n"
+    result.add fmt"(memory (;{i};) {v.typ})"
+
+proc getGlobalSectionWat(self: WasmBuilder): string =
+  for i, v in self.globals:
+    let init = self.getExprWat(v.init)
+    result.add fmt"(global (;{i};) {v.typ} {init})\n"
+
+proc getExportSectionWat(self: WasmBuilder): string =
+  for i, v in self.exports:
+    result.add "\n"
+    result.add "(export "
+    result.add v.name
+    result.add " "
+
+    case v.desc.kind
+    of Func:
+      result.add fmt"(func {v.desc.funcIdx})"
+    of Table:
+      result.add fmt"(table {v.desc.tableIdx})"
+    of Mem:
+      result.add fmt"(memory {v.desc.memIdx})"
+    of Global:
+      result.add fmt"(global {v.desc.globalIdx})"
+
+proc getStartSectionWat(self: WasmBuilder): string =
+  if self.start.getSome(start):
+    result.add &"\n(start {start.start})"
+
+proc getElementListWat(self: WasmBuilder, typ: WasmValueType, exprs: openArray[WasmExpr]): string =
+  result.add $typ
+  for e in exprs:
+    result.add " (item "
+    result.add self.getExprWat(e)
+    result.add ")"
+
+proc getElementSectionWat(self: WasmBuilder): string =
+  for i, v in self.elems:
+    result.add "\n"
+
+    case v.mode.kind:
+    of Passive:
+      result.add fmt"(elem {getElementListWat(self, v.typ, v.init)})"
+    of Active:
+      result.add fmt"(elem (table {v.mode.tableIdx}) (offset {getExprWat(self, v.mode.offset)}) {getElementListWat(self, v.typ, v.init)})"
+    of Declarative:
+      result.add fmt"(elem declare {getElementListWat(self, v.typ, v.init)})"
+
+proc getDataSectionWat(self: WasmBuilder): string =
+  proc dataStringWat(str: openArray[uint8]): string =
+    result = newStringOfCap(str.len * 4)
+    const hexChars = "0123456789ABCDEF"
+    for c in str:
+      case c.char
+      of '\t': result.add "\\t"
+      of '\n': result.add "\\n"
+      of '\r': result.add "\\r"
+      of '\'': result.add "\\'"
+      of '"': result.add "\\\""
+      else:
+        result.add "\\u"
+        result.add hexChars[c and 0xF]
+        result.add hexChars[c shr 4]
+
+  for i, v in self.datas:
+    result.add "\n"
+
+    case v.mode.kind:
+    of Passive:
+
+      result.add fmt"(data {dataStringWat(v.init)}"
+    of Active:
+      result.add fmt"(data (memory {v.mode.memIdx}) (offset {getExprWat(self, v.mode.offset)}) {dataStringWat(v.init)}"
+
+proc generateWat*(self: WasmBuilder): string =
+  let indentString = "  "
+
+  result.add "(module"
+  result.add self.getTypeSectionWat().indent(1, indentString)
+  result.add self.getImportSectionWat().indent(1, indentString)
+  result.add self.getFunctionSectionWat().indent(1, indentString)
+  result.add self.getTableSectionWat().indent(1, indentString)
+  result.add self.getMemorySectionWat().indent(1, indentString)
+  result.add self.getGlobalSectionWat().indent(1, indentString)
+  result.add self.getExportSectionWat().indent(1, indentString)
+  result.add self.getStartSectionWat().indent(1, indentString)
+  result.add self.getElementSectionWat().indent(1, indentString)
+  result.add self.getDataSectionWat().indent(1, indentString)
+  result.add ")"
+
+proc `$`*(self: WasmBuilder): string =
+  return self.generateWat()
+
 when isMainModule:
   var builder = newWasmBuilder()
 
@@ -937,15 +1206,16 @@ when isMainModule:
     ]),
   ))
 
-  # builder.tables.add(WasmTable(
-  #   typ: WasmTableType(limits: WasmLimits(min: 0, max: 10.uint32.some), refType: FuncRef)
-  # ))
-
+  builder.tables.add(WasmTable(
+    typ: WasmTableType(limits: WasmLimits(min: 0, max: 10.uint32.some), refType: FuncRef)
+  ))
 
   let binary = builder.generateBinary()
   writeFile("./config/test.wasm", binary)
 
-  import wasm
+  echo builder
+
+  import wasm, custom_async, array_buffer
 
   proc foo() =
     echo "foo"
@@ -961,7 +1231,7 @@ when isMainModule:
   imp.addFunction("test name", foo)
   imp.addFunction("test name 2", bar)
 
-  let module = waitFor newWasmModule(binary, @[imp])
+  let module = waitFor newWasmModule(binary.toArrayBuffer, @[imp])
   if module.isNone:
     echo "Failed to load module"
     quit(0)
