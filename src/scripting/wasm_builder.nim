@@ -85,7 +85,7 @@ type
     F64ConvertI32S = 0xB7, F64ConvertI32U, F64ConvertI64S, F64ConvertI64U, F64PromoteF32,
     I32ReinterpretF32 = 0xBC, I64ReinterpretF64, F32ReinterpretI32, F64ReinterpretI64,
     I32Extend8S = 0xC0, I32Extend16S, I64Extend8S, I64Extend16S, I64Extend32S,
-    RefNull = 0xD0, RefIsNul, RefFunc,
+    RefNull = 0xD0, RefIsNull, RefFunc,
 
     I32TruncSatF32S = 0xF00, I32TruncSatF32U, I32TruncSatF64S, I32TruncSatF64U, I64TruncSatF32S, I64TruncSatF32U, I64TruncSatF64S, I64TruncSatF64U,
     MemoryInit = 0xF08, DataDrop, MemoryCopy, MemoryFill,
@@ -123,7 +123,7 @@ type
     of RefFunc: refFuncIdx*: WasmFuncIdx
 
     # Parametric Instructions
-    of Select: selectValType*: Option[WasmValueType]
+    of Select: selectValType*: Option[WasmValueType] # might be seq in the future
 
     # Variable Instructions
     of LocalGet, LocalSet, LocalTee: localIdx*: WasmLocalIdx
@@ -859,6 +859,16 @@ proc `$`(typ: WasmBlockType): string =
       return fmt"(result {valueType})"
     return ""
 
+proc `$`(memArg: WasmMemArg): string =
+  if memArg.offset != 0:
+    result.add "offset="
+    result.add $memArg.offset
+  if memArg.align != 0:
+    if result.len > 0:
+      result.add " "
+    result.add "align="
+    result.add $memArg.align
+
 proc getResultTypeWat(typ: WasmResultType, name: string): string =
   result.add "("
   result.add name
@@ -895,6 +905,12 @@ proc getImportDescWat(self: WasmBuilder, imp: WasmImportDesc): string =
     # (global $b (mut i32) (i32.const 65536))
     result = fmt"(global {imp.global})"
 
+proc getHeapTypeWat(typ: WasmRefType): string =
+  if typ == FuncRef:
+    "func"
+  else:
+    "extern"
+
 proc getInstrWat(self: WasmBuilder, instr: WasmInstr, blockLevel: int = 0): string =
   case instr.kind
 
@@ -923,21 +939,232 @@ proc getInstrWat(self: WasmBuilder, instr: WasmInstr, blockLevel: int = 0): stri
       result.add getInstrWat(self, subInstr, blockLevel + 1).indent(1, "  ")
     result.add &"\nend $label{blockLevel}"
 
-  # of Unreachable: result.add "unreachable"
-  # of Nop: result.add "nop"
-  # of Br: result.add &"br {instr.brLabelIdx}"
-  # of BrIf: result.add &"br_if {instr.brLabelIdx}"
-  # of BrTable:
-  #   result.add &"br_table"
-  #   for label in instr.brTableIndices:
-  #     result.add &" {label}"
-  #   result.add &" {instr.brTableDefaultIdx}"
-  # of Return: result.add "return"
+  of Unreachable: result.add "unreachable"
+  of Nop: result.add "nop"
+  of Drop: result.add "drop"
+  of Br: result.add &"br $label{(blockLevel - instr.brLabelIdx.int - 1)}"
+  of BrIf: result.add &"br_if $label{(blockLevel - instr.brLabelIdx.int - 1)}"
+  of BrTable:
+    result.add &"br_table"
+    for label in instr.brTableIndices:
+      result.add &" {label}"
+    result.add &" {instr.brTableDefaultIdx}"
+  of Return: result.add "return"
   of Call: result.add &"call {getEffectiveFunctionIdx(self, instr.callFuncIdx)}"
-  # of CallIndirect: result.add &"call {instr.callIndirectTableIdx} (type {instr.callIndirectTypeIdx})"
+  of CallIndirect: result.add &"call {instr.callIndirectTableIdx} (type {instr.callIndirectTypeIdx})"
 
-  else:
-    result.add $instr
+  of RefNull: result.add &"ref.null {getHeapTypeWat(instr.refNullType)}"
+  of RefIsNull: result.add "ref.is_null"
+  of RefFunc: result.add &"ref.func {getEffectiveFunctionIdx(self, instr.refFuncIdx)}"
+
+  of Select:
+    result.add "select"
+    if instr.selectValType.getSome(valType):
+      result.add " (result "
+      result.add $valType
+      result.add ")"
+
+  of LocalGet: result.add &"local.get $var{instr.localIdx}"
+  of LocalSet: result.add &"local.set $var{instr.localIdx}"
+  of LocalTee: result.add &"local.tee $var{instr.localIdx}"
+  of GlobalGet: result.add &"global.get $var{instr.globalIdx}"
+  of GlobalSet: result.add &"global.set $var{instr.globalIdx}"
+
+  of TableGet: result.add &"table.get {instr.tableOpIdx}"
+  of TableSet: result.add &"table.set {instr.tableOpIdx}"
+  of TableSize: result.add &"table.size {instr.tableOpIdx}"
+  of TableGrow: result.add &"table.grow {instr.tableOpIdx}"
+  of TableFill: result.add &"table.fill {instr.tableOpIdx}"
+  of TableCopy: result.add &"table.copy {instr.tableCopyTargetIdx} {instr.tableCopySourceIdx}"
+  of TableInit: result.add &"table.init {instr.tableInitIdx} {instr.tableInitElementIdx}"
+  of ElemDrop: result.add &"elem.drop {instr.elemDropIdx}"
+
+  of I32Load: result.add &"i32.load {instr.memArg}"
+  of I64Load: result.add &"i64.load {instr.memArg}"
+  of F32Load: result.add &"f32.load {instr.memArg}"
+  of F64Load: result.add &"f64.load {instr.memArg}"
+  of I32Load8S: result.add &"i32.load8_s {instr.memArg}"
+  of I32Load8U: result.add &"i32.load8_u {instr.memArg}"
+  of I32Load16S: result.add &"i32.load16_s {instr.memArg}"
+  of I32Load16U: result.add &"i32.load16_u {instr.memArg}"
+  of I64Load8S: result.add &"i64.load8_s {instr.memArg}"
+  of I64Load8U: result.add &"i64.load8_u {instr.memArg}"
+  of I64Load16S: result.add &"i64.load16_s {instr.memArg}"
+  of I64Load16U: result.add &"i64.load16_u {instr.memArg}"
+  of I64Load32S: result.add &"i64.load32_s {instr.memArg}"
+  of I64Load32U: result.add &"i64.load32_u {instr.memArg}"
+
+  of I32Store: result.add &"i32.store {instr.memArg}"
+  of I64Store: result.add &"i64.store {instr.memArg}"
+  of F32Store: result.add &"f32.store {instr.memArg}"
+  of F64Store: result.add &"f64.store {instr.memArg}"
+  of I32Store8: result.add &"i32.store8 {instr.memArg}"
+  of I32Store16: result.add &"i32.store16 {instr.memArg}"
+  of I64Store8: result.add &"i64.store8 {instr.memArg}"
+  of I64Store16: result.add &"i64.store16 {instr.memArg}"
+  of I64Store32: result.add &"i64.store32 {instr.memArg}"
+
+  of MemorySize: result.add "memory.size"
+  of MemoryGrow: result.add "memory.grow"
+  of MemoryFill: result.add "memory.fill"
+  of MemoryCopy: result.add "memory.copy"
+  of MemoryInit: result.add &"memory.init {instr.memoryInitDataIdx}"
+  of DataDrop: result.add &"data.drop {instr.dataDropDataIdx}"
+
+  of I32Const: result.add &"i32.const {instr.i32Const}"
+  of I64Const: result.add &"i64.const {instr.i64Const}"
+  of F32Const: result.add &"f32.const {instr.f32Const}"
+  of F64Const: result.add &"f64.const {instr.f64Const}"
+
+  of I32Clz: result.add "i32.clz"
+  of I32Ctz: result.add "i32.ctz"
+  of I32Popcnt: result.add "i32.popcnt"
+  of I32Add: result.add "i32.add"
+  of I32Sub: result.add "i32.sub"
+  of I32Mul: result.add "i32.mul"
+  of I32DivS: result.add "i32.div_s"
+  of I32DivU: result.add "i32.div_u"
+  of I32RemS: result.add "i32.rem_s"
+  of I32RemU: result.add "i32.rem_u"
+  of I32And: result.add "i32.and"
+  of I32Or: result.add "i32.or"
+  of I32Xor: result.add "i32.xor"
+  of I32Shl: result.add "i32.shl"
+  of I32ShrS: result.add "i32.shr_s"
+  of I32ShrU: result.add "i32.shr_u"
+  of I32Rotl: result.add "i32.rotl"
+  of I32Rotr: result.add "i32.rotr"
+
+  of I64Clz: result.add "i64.clz"
+  of I64Ctz: result.add "i64.ctz"
+  of I64Popcnt: result.add "i64.popcnt"
+  of I64Add: result.add "i64.add"
+  of I64Sub: result.add "i64.sub"
+  of I64Mul: result.add "i64.mul"
+  of I64DivS: result.add "i64.div_s"
+  of I64DivU: result.add "i64.div_u"
+  of I64RemS: result.add "i64.rem_s"
+  of I64RemU: result.add "i64.rem_u"
+  of I64And: result.add "i64.and"
+  of I64Or: result.add "i64.or"
+  of I64Xor: result.add "i64.xor"
+  of I64Shl: result.add "i64.shl"
+  of I64ShrS: result.add "i64.shr_s"
+  of I64ShrU: result.add "i64.shr_u"
+  of I64Rotl: result.add "i64.rotl"
+  of I64Rotr: result.add "i64.rotr"
+
+  of F32Abs: result.add "f32.abs"
+  of F32Neg: result.add "f32.neg"
+  of F32Ceil: result.add "f32.ceil"
+  of F32Floor: result.add "f32.floor"
+  of F32Trunc: result.add "f32.trunc"
+  of F32Nearest: result.add "f32.nearest"
+  of F32Sqrt: result.add "f32.sqrt"
+  of F32Add: result.add "f32.add"
+  of F32Sub: result.add "f32.sub"
+  of F32Mul: result.add "f32.mul"
+  of F32Div: result.add "f32.div"
+  of F32Min: result.add "f32.min"
+  of F32Max: result.add "f32.max"
+  of F32Copysign: result.add "f32.copysign"
+
+  of F64Abs: result.add "f64.abs"
+  of F64Neg: result.add "f64.neg"
+  of F64Ceil: result.add "f64.ceil"
+  of F64Floor: result.add "f64.floor"
+  of F64Trunc: result.add "f64.trunc"
+  of F64Nearest: result.add "f64.nearest"
+  of F64Sqrt: result.add "f64.sqrt"
+  of F64Add: result.add "f64.add"
+  of F64Sub: result.add "f64.sub"
+  of F64Mul: result.add "f64.mul"
+  of F64Div: result.add "f64.div"
+  of F64Min: result.add "f64.min"
+  of F64Max: result.add "f64.max"
+  of F64Copysign: result.add "f64.copysign"
+
+  of I32Eqz: result.add "i32.eqz"
+  of I32Eq: result.add "i32.eq"
+  of I32Ne: result.add "i32.ne"
+  of I32LtS: result.add "i32.lt_s"
+  of I32LtU: result.add "i32.lt_u"
+  of I32GtS: result.add "i32.gt_s"
+  of I32GtU: result.add "i32.gt_u"
+  of I32LeS: result.add "i32.le_s"
+  of I32LeU: result.add "i32.le_u"
+  of I32GeS: result.add "i32.ge_s"
+  of I32GeU: result.add "i32.ge_u"
+
+  of I64Eqz: result.add "i64.eqz"
+  of I64Eq: result.add "i64.eq"
+  of I64Ne: result.add "i64.ne"
+  of I64LtS: result.add "i64.lt_s"
+  of I64LtU: result.add "i64.lt_u"
+  of I64GtS: result.add "i64.gt_s"
+  of I64GtU: result.add "i64.gt_u"
+  of I64LeS: result.add "i64.le_s"
+  of I64LeU: result.add "i64.le_u"
+  of I64GeS: result.add "i64.ge_s"
+  of I64GeU: result.add "i64.ge_u"
+
+  of F32Eq: result.add "f32.eq"
+  of F32Ne: result.add "f32.ne"
+  of F32Lt: result.add "f32.lt"
+  of F32Gt: result.add "f32.gt"
+  of F32Le: result.add "f32.le"
+  of F32Ge: result.add "f32.ge"
+
+  of F64Eq: result.add "f64.eq"
+  of F64Ne: result.add "f64.ne"
+  of F64Lt: result.add "f64.lt"
+  of F64Gt: result.add "f64.gt"
+  of F64Le: result.add "f64.le"
+  of F64Ge: result.add "f64.ge"
+
+  of I32WrapI64: result.add "i32.wrap_i64"
+  of I32TruncF32S: result.add "i32.trunc_f32_s"
+  of I32TruncF32U: result.add "i32.trunc_f32_u"
+  of I32TruncF64S: result.add "i32.trunc_f64_s"
+  of I32TruncF64U: result.add "i32.trunc_f64_u"
+  of I32TruncSatF32S: result.add "i32.trunc_sat_f32_s"
+  of I32TruncSatF32U: result.add "i32.trunc_sat_f32_u"
+  of I32TruncSatF64S: result.add "i32.trunc_sat_f64_s"
+  of I32TruncSatF64U: result.add "i32.trunc_sat_f64_u"
+
+  of I64ExtendI32S: result.add "i64.extend_i32_s"
+  of I64ExtendI32U: result.add "i64.extend_i32_u"
+  of I64TruncF32S: result.add "i64.trunc_f32_s"
+  of I64TruncF32U: result.add "i64.trunc_f32_u"
+  of I64TruncF64S: result.add "i64.trunc_f64_s"
+  of I64TruncF64U: result.add "i64.trunc_f64_u"
+  of I64TruncSatF32S: result.add "i64.trunc_sat_f32_s"
+  of I64TruncSatF32U: result.add "i64.trunc_sat_f32_u"
+  of I64TruncSatF64S: result.add "i64.trunc_sat_f64_s"
+  of I64TruncSatF64U: result.add "i64.trunc_sat_f64_u"
+
+  of F32ConvertI32S: result.add "f32.convert_i32_s"
+  of F32ConvertI32U: result.add "f32.convert_i32_u"
+  of F32ConvertI64S: result.add "f32.convert_i64_s"
+  of F32ConvertI64U: result.add "f32.convert_i64_u"
+  of F32DemoteF64: result.add "f32.demote_f64"
+
+  of F64ConvertI32S: result.add "f64.convert_i32_s"
+  of F64ConvertI32U: result.add "f64.convert_i32_u"
+  of F64ConvertI64S: result.add "f64.convert_i64_s"
+  of F64ConvertI64U: result.add "f64.convert_i64_u"
+  of F64PromoteF32: result.add "f64.promote_f32"
+
+  of I32ReinterpretF32: result.add "i32.reinterpret_f32"
+  of I64ReinterpretF64: result.add "i64.reinterpret_f64"
+  of F32ReinterpretI32: result.add "f32.reinterpret_i32"
+  of F64ReinterpretI64: result.add "f64.reinterpret_i64"
+
+  of I32Extend8S: result.add "i32.extend8_s"
+  of I32Extend16S: result.add "i32.extend16_s"
+  of I64Extend8S: result.add "i64.extend8_s"
+  of I64Extend16S: result.add "i64.extend16_s"
+  of I64Extend32S: result.add "i64.extend32_s"
 
 proc getExprWat(self: WasmBuilder, exp: WasmExpr): string =
   for i, instr in exp.instr:
@@ -976,9 +1203,9 @@ proc getFunctionSectionWat(self: WasmBuilder): string =
     result.add " "
 
     for k, local in v.locals:
-      result.add &"\n  (local (;{k};) {local})"
+      result.add &"\n  (local $var{k} {local})"
 
-    result.add " "
+    result.add "\n"
     result.add getExprWat(self, v.body).indent(1, "  ")
 
     result.add ")"
@@ -1070,7 +1297,6 @@ proc generateWat*(self: WasmBuilder): string =
   result.add "(module"
   result.add self.getTypeSectionWat().indent(1, indentString)
   result.add self.getImportSectionWat().indent(1, indentString)
-  result.add self.getFunctionSectionWat().indent(1, indentString)
   result.add self.getTableSectionWat().indent(1, indentString)
   result.add self.getMemorySectionWat().indent(1, indentString)
   result.add self.getGlobalSectionWat().indent(1, indentString)
@@ -1078,6 +1304,7 @@ proc generateWat*(self: WasmBuilder): string =
   result.add self.getStartSectionWat().indent(1, indentString)
   result.add self.getElementSectionWat().indent(1, indentString)
   result.add self.getDataSectionWat().indent(1, indentString)
+  result.add self.getFunctionSectionWat().indent(1, indentString)
   result.add ")"
 
 proc `$`*(self: WasmBuilder): string =
