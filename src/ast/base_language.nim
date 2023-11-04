@@ -1,5 +1,5 @@
 import id, ast_ids, util, custom_logger
-import types, cells
+import model, cells
 import ui/node
 
 let typeClass* = newNodeClass(IdType, "Type", isAbstract=true)

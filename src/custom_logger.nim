@@ -1,6 +1,6 @@
 import std/[strformat, options, macros, genasts]
 from logging import nil
-import util
+import util, timer
 export strformat
 
 {.used.}
@@ -85,6 +85,14 @@ template logCategory*(category: static string, noDebug = false): untyped =
 
   macro logNoCategory(level: logging.Level, args: varargs[untyped, `$`]): untyped {.used.} =
     return logImpl(level, args, false)
+
+  template measureBlock(description: string, body: untyped): untyped {.used.} =
+    let timer = startTimer()
+    body
+    block:
+      let descriptionString = description
+      bind log
+      logger.log(lvlInfo, "[" & category & "] " & descriptionString & " took " & $timer.elapsed.ms & " ms")
 
   when noDebug:
     macro debug(x: varargs[typed, `$`]): untyped {.used.} =

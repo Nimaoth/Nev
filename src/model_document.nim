@@ -5,7 +5,7 @@ from scripting_api as api import nil
 import custom_logger, timer, array_buffer, config_provider, app_interface
 import platform/[filesystem, platform]
 import workspaces/[workspace]
-import ast/[types, base_language, cells]
+import ast/[model, base_language, cells]
 import ui/node
 
 import ast/base_language_wasm
@@ -2505,13 +2505,17 @@ proc findContainingFunction(node: AstNode): Option[AstNode] =
 import scripting/wasm
 
 proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.} =
+  let timer = startTimer()
+  defer:
+    log(lvlInfo, fmt"runSelectedFunctionAsync took {timer.elapsed.ms} ms")
+
   let function = self.cursor.node.findContainingFunction()
   if function.isNone:
-    log(lvlInfo, fmt"Not inside function")
+    log(lvlError, fmt"Not inside function")
     return
 
   if function.get.childCount(IdFunctionDefinitionParameters) > 0:
-    log(lvlInfo, fmt"Can't call function with parameters")
+    log(lvlError, fmt"Can't call function with parameters")
     return
 
   let parent = function.get.parent
@@ -2520,14 +2524,10 @@ proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.
   else:
     "<anonymous>"
 
-  log(lvlInfo, fmt"Running function {name}")
+  measureBlock fmt"Compile '{name}' to wasm":
+    var compiler = newBaseLanguageWasmCompiler()
+    let binary = compiler.compileToBinary(function.get)
 
-  let timer = startTimer()
-  defer:
-    log(lvlInfo, fmt"Running function took {timer.elapsed.ms} ms")
-
-  var compiler = newBaseLanguageWasmCompiler()
-  let binary = compiler.compileToBinary(function.get)
   if self.document.workspace.getSome(workspace):
     discard workspace.saveFile("jstest.wasm", binary.toArrayBuffer)
 
@@ -2546,14 +2546,17 @@ proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.
   imp.addFunction("print_i32", printI32)
   imp.addFunction("print_line", printLine)
 
-  let module = await newWasmModule(binary.toArrayBuffer, @[imp])
-  if module.isNone:
-    debug "Failed to load module"
-    return
+  measureBlock fmt"Create wasm module for '{name}'":
+    let module = await newWasmModule(binary.toArrayBuffer, @[imp])
+    if module.isNone:
+      log lvlError, "Failed to create wasm module from generated binary for {name}"
+      return
 
   if module.get.findFunction($function.get.id, void, proc(): void).getSome(f):
-    debug "call test"
-    f()
+    measureBlock fmt"Run '{name}'":
+      f()
+  else:
+    log lvlError, fmt"Failed to find function {function.get.id} in wasm module"
 
 proc runSelectedFunction*(self: ModelDocumentEditor) {.expose("editor.model").} =
   asyncCheck runSelectedFunctionAsync(self)

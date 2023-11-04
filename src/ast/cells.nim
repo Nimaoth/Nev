@@ -1,6 +1,6 @@
 import std/[tables, strutils, strformat, options, sugar]
 import ui/node
-import types, id, util, custom_logger
+import model, id, util, custom_logger
 import ast_ids
 
 logCategory "cells"

@@ -1,6 +1,6 @@
 
 import std/[options, tables]
-import id, types, ast_ids
+import id, model, ast_ids
 import scripting/[wasm_builder]
 import custom_logger, util
 
