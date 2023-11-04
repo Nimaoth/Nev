@@ -285,8 +285,8 @@ proc getNumFunctionImports(self: WasmBuilder): int =
       inc result
 
 proc getEffectiveFunctionIdx(self: WasmBuilder, funcIdx: WasmFuncIdx): int =
-  if funcIdx.int < 0:
-    return funcIdx.int.abs - 1
+  if (funcIdx.uint32 and 0x80000000.uint32) != 0:
+    return (not funcIdx.uint32).int
   else:
     return funcIdx.int + self.getNumFunctionImports()
 
@@ -933,7 +933,7 @@ proc getInstrWat(self: WasmBuilder, instr: WasmInstr, blockLevel: int = 0): stri
   #     result.add &" {label}"
   #   result.add &" {instr.brTableDefaultIdx}"
   # of Return: result.add "return"
-  # of Call: result.add &"call {instr.callFuncIdx}"
+  of Call: result.add &"call {getEffectiveFunctionIdx(self, instr.callFuncIdx)}"
   # of CallIndirect: result.add &"call {instr.callIndirectTableIdx} (type {instr.callIndirectTypeIdx})"
 
   else:
@@ -971,7 +971,7 @@ proc getFunctionSectionWat(self: WasmBuilder): string =
   #     global.get $__stack_pointer)
   for i, v in self.funcs:
     result.add "\n"
-    result.add fmt"(func (;{i};) (type {v.typeIdx}) "
+    result.add fmt"(func (;{getEffectiveFunctionIdx(self, i.WasmFuncIdx)};) (type {v.typeIdx}) "
     result.add getResultTypeWat(self.types[v.typeIdx.uint32].output, "result")
     result.add " "
 
@@ -1007,7 +1007,7 @@ proc getExportSectionWat(self: WasmBuilder): string =
 
     case v.desc.kind
     of Func:
-      result.add fmt"(func {v.desc.funcIdx})"
+      result.add fmt"(func {getEffectiveFunctionIdx(self, v.desc.funcIdx)})"
     of Table:
       result.add fmt"(table {v.desc.tableIdx})"
     of Mem:
@@ -1017,7 +1017,7 @@ proc getExportSectionWat(self: WasmBuilder): string =
 
 proc getStartSectionWat(self: WasmBuilder): string =
   if self.start.getSome(start):
-    result.add &"\n(start {start.start})"
+    result.add &"\n(start {getEffectiveFunctionIdx(self, start.start)})"
 
 proc getElementListWat(self: WasmBuilder, typ: WasmValueType, exprs: openArray[WasmExpr]): string =
   result.add $typ
