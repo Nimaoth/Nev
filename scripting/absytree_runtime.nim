@@ -3,7 +3,7 @@ import std/[strformat, tables, macros, json, strutils, sugar, sequtils, genasts]
 import absytree_api, event, util, wrap
 export absytree_api, util, strformat, tables, json, strutils, sugar, sequtils, scripting_api
 
-type AnyDocumentEditor = TextDocumentEditor | AstDocumentEditor
+type AnyDocumentEditor = TextDocumentEditor | ModelDocumentEditor
 
 var lambdaActions = initTable[string, proc(): void]()
 var voidCallbacks = initTable[int, proc(args: JsonNode): void]()
@@ -74,8 +74,8 @@ macro runAction*(action: string, args: varargs[untyped]): untyped =
 template isTextEditor*(editorId: EditorId, injected: untyped): bool =
   (scriptIsTextEditor(editorId) and ((let injected {.inject.} = TextDocumentEditor(id: editorId); true)))
 
-template isAstEditor*(editorId: EditorId, injected: untyped): bool =
-  (scriptIsAstEditor(editorId) and ((let injected {.inject.} = AstDocumentEditor(id: editorId); true)))
+template isModelEditor*(editorId: EditorId, injected: untyped): bool =
+  (scriptIsModelEditor(editorId) and ((let injected {.inject.} = ModelDocumentEditor(id: editorId); true)))
 
 proc handleCallbackImpl*(id: int, args: JsonNode): bool =
   if voidCallbacks.contains(id):
@@ -272,33 +272,6 @@ proc setModelInputHandler*(context: string, action: proc(editor: ModelDocumentEd
     action(ModelDocumentEditor(id: getActiveEditor()), input)
   scriptSetCallback("editor.model.input-handler." & context, id)
   setHandleInputs("editor.model." & context, true)
-
-# Ast commands
-template addAstCommandBlock*(mode: static[string], keys: string, body: untyped): untyped =
-  let context = if mode.len == 0: "editor.ast" else: "editor.ast." & mode
-  addCommand context, keys, proc() =
-    let editor {.inject.} = AstDocumentEditor(id: getActiveEditor())
-    body
-
-proc addAstCommand*(mode: string, keys: string, action: proc(editor: AstDocumentEditor): void) =
-  let context = if mode.len == 0: "editor.ast" else: "editor.ast." & mode
-  addCommand context, keys, proc() =
-    action(AstDocumentEditor(id: getActiveEditor()))
-
-macro addAstCommand*(mode: static[string], keys: string, action: string, args: varargs[untyped]): untyped =
-  let context = if mode.len == 0: "editor.ast" else: "editor.ast." & mode
-  var stmts = nnkStmtList.newTree()
-  let str = nskVar.genSym "str"
-  stmts.add quote do:
-    var `str` = ""
-  for arg in args:
-    stmts.add quote do:
-      `str`.add " "
-      `str`.add `arg`.toJsonString
-
-  return genAst(stmts, context, keys, action, str):
-    stmts
-    addCommandScript(context, keysPrefix & keys, action, str)
 
 when defined(wasm):
   macro wasmexport*(t: typed): untyped =

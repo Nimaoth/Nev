@@ -40,7 +40,6 @@ type
 
 type OpenEditor = object
   filename: string
-  ast: bool
   languageID: string
   appFile: bool
   workspaceId: string
@@ -536,7 +535,7 @@ proc getPopupForId*(self: App, id: EditorId): Option[Popup] =
 
   return Popup.none
 
-import text/text_editor, text/text_document, ast_document, model_document
+import text/text_editor, text/text_document, model_document
 import selector_popup
 
 type ThemeSelectorItem* = ref object of SelectorItem
@@ -654,7 +653,7 @@ proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.}
   self.fontItalic = "./fonts/DejaVuSansMono-Oblique.ttf"
   self.fontBoldItalic = "./fonts/DejaVuSansMono-BoldOblique.ttf"
 
-  self.editor_defaults = @[TextDocumentEditor(), AstDocumentEditor(), ModelDocumentEditor()]
+  self.editor_defaults = @[TextDocumentEditor(), ModelDocumentEditor()]
 
   self.workspace.new()
 
@@ -807,9 +806,7 @@ proc toggleShowDrawnNodes*(self: App) {.expose("editor").} =
 
 proc createView(self: App, editorState: OpenEditor): View =
   let workspaceFolder = self.getWorkspaceFolder(editorState.workspaceId.parseId)
-  let document = if editorState.ast:
-    newAstDocument(editorState.filename, editorState.appFile, workspaceFolder)
-  elif editorState.filename.endsWith ".am":
+  let document = if editorState.filename.endsWith ".am":
     try:
       newModelDocument(editorState.filename, editorState.appFile, workspaceFolder)
     except CatchableError:
@@ -870,24 +867,17 @@ proc saveAppState*(self: App) {.expose("editor").} =
 
     let customOptions = view.editor.getStateJson()
     if view.document of TextDocument:
-      let textDocument = TextDocument(view.document)
+      let document = TextDocument(view.document)
       return OpenEditor(
-        filename: textDocument.filename, ast: false, languageId: textDocument.languageId, appFile: textDocument.appFile,
-        workspaceId: textDocument.workspace.map(wf => $wf.id).get(""),
-        customOptions: customOptions ?? newJObject()
-        ).some
-    elif view.document of AstDocument:
-      let astDocument = AstDocument(view.document)
-      return OpenEditor(
-        filename: astDocument.filename, ast: true, languageId: "ast", appFile: astDocument.appFile,
-        workspaceId: astDocument.workspace.map(wf => $wf.id).get(""),
+        filename: document.filename, languageId: document.languageId, appFile: document.appFile,
+        workspaceId: document.workspace.map(wf => $wf.id).get(""),
         customOptions: customOptions ?? newJObject()
         ).some
     elif view.document of ModelDocument:
-      let astDocument = ModelDocument(view.document)
+      let document = ModelDocument(view.document)
       return OpenEditor(
-        filename: astDocument.filename, ast: false, languageId: "am", appFile: astDocument.appFile,
-        workspaceId: astDocument.workspace.map(wf => $wf.id).get(""),
+        filename: document.filename, languageId: "am", appFile: document.appFile,
+        workspaceId: document.workspace.map(wf => $wf.id).get(""),
         customOptions: customOptions ?? newJObject()
         ).some
 
@@ -1201,9 +1191,7 @@ proc openFile*(self: App, path: string, app: bool = false): Option[DocumentEdito
     return ed.some
 
   try:
-    if path.endsWith(".ast"):
-      return self.createAndAddView(newAstDocument(path, app, WorkspaceFolder.none)).some
-    elif path.endsWith(".am"):
+    if path.endsWith(".am"):
       return self.createAndAddView(newModelDocument(path, app, WorkspaceFolder.none)).some
     else:
       return self.createAndAddView(newTextDocument(self.asConfigProvider, path, "", app, load=true)).some
@@ -1220,9 +1208,7 @@ proc openWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder): Optio
     return editor.some
 
   try:
-    if path.endsWith(".ast"):
-      return self.createAndAddView(newAstDocument(path, false, folder.some)).some
-    elif path.endsWith(".am"):
+    if path.endsWith(".am"):
       return self.createAndAddView(newModelDocument(path, false, folder.some)).some
     else:
       return self.createAndAddView(newTextDocument(self.asConfigProvider, path, "", false, folder.some, load=true)).some
@@ -1240,8 +1226,11 @@ proc removeFromLocalStorage*(self: App) {.expose("editor").} =
     if self.currentView >= 0 and self.currentView < self.views.len and self.views[self.currentView].document != nil:
       let filename = if self.views[self.currentView].document of TextDocument:
         self.views[self.currentView].document.TextDocument.filename
+      elif self.views[self.currentView].document of ModelDocument:
+        self.views[self.currentView].document.ModelDocument.filename
       else:
-        self.views[self.currentView].document.AstDocument.filename
+        log lvlError, fmt"removeFromLocalStorage: Unknown document type"
+        return
       clearStorage(filename.cstring)
 
 proc createSelectorPopup*(self: App): Popup =
@@ -1775,10 +1764,6 @@ proc scriptIsTextEditor*(editorId: EditorId): bool {.expose("editor").} =
   return false
 
 proc scriptIsAstEditor*(editorId: EditorId): bool {.expose("editor").} =
-  if gEditor.isNil:
-    return false
-  if gEditor.getEditorForId(editorId).getSome(editor):
-    return editor of AstDocumentEditor
   return false
 
 proc scriptIsModelEditor*(editorId: EditorId): bool {.expose("editor").} =
@@ -1978,7 +1963,7 @@ proc handleAction(self: App, action: string, arg: string): bool =
   return true
 
 template createNimScriptContextConstructorAndGenerateBindings*(): untyped =
-  import ast_document, model_document, text/text_editor, selector_popup, lsp_client
+  import model_document, text/text_editor, selector_popup, lsp_client
   when not defined(js):
     proc createAddins(): VmAddins =
       addCallable(myImpl):

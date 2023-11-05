@@ -63,12 +63,25 @@ proc hashInt32(x: uint32): uint32 {.inline.} =
   result = (result shr 16) xor result
   result = result and 0x7FFFFFFF.uint32
 
+proc hashInt32(x: int32): uint32 {.inline.} =
+  # convert int32 to uint32 without cast[] because it's using BigInt in js
+  let b = (x and 1).uint32 # last bit
+  let y = ((x shr 1) and 0x7FFFFFFF).uint32 shl 1 # every bit except last
+
+  result = hashInt32(y or b)
+
+static:
+  assert hashInt32(0.uint32) == hashInt32(0.int32)
+  assert hashInt32(1.uint32) == hashInt32(1.int32)
+  assert hashInt32(0xffffffff'u32) == hashInt32(-1'i32)
+  assert hashInt32(0xfffffffe'u32) == hashInt32(-2'i32)
+
 proc hash*(oid: Oid): Hash =
   ## Generates the hash of an OID for use in hashtables.
   var h: Hash = 0
-  h = h !& hashInt32(oid.time.uint32).Hash
-  h = h !& hashInt32(oid.fuzz.uint32).Hash
-  h = h !& hashInt32(oid.count.uint32).Hash
+  h = h !& hashInt32(oid.time).Hash
+  h = h !& hashInt32(oid.fuzz).Hash
+  h = h !& hashInt32(oid.count).Hash
   result = !$h
 
 proc hexbyte*(hex: char): int {.inline.} =
@@ -251,3 +264,5 @@ proc fromJsonHook*(id: var Id, json: JsonNode) =
 
 proc toJson*(id: Id, opt = initToJsonOptions()): JsonNode =
   return newJString $id
+
+proc deconstruct*(id: Id): tuple[time: int32, fuzz: int32, count: int32] {.borrow.}

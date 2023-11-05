@@ -10,12 +10,6 @@ else:
   import editor_api
   export editor_api
 when defined(wasm):
-  import editor_ast_api_wasm
-  export editor_ast_api_wasm
-else:
-  import editor_ast_api
-  export editor_ast_api
-when defined(wasm):
   import editor_model_api_wasm
   export editor_model_api_wasm
 else:

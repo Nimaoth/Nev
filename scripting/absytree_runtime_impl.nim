@@ -12,8 +12,8 @@ proc handleEditorAction*(id: EditorId, action: string, args: JsonNode): bool =
   if id.isTextEditor(editor):
     return handleTextEditorAction(editor, action, args)
 
-  elif id.isAstEditor(editor):
-    return handleAstEditorAction(editor, action, args)
+  elif id.isModelEditor(editor):
+    return handleModelEditorAction(editor, action, args)
 
   return handleDocumentEditorAction(id, action, args)
 

@@ -174,93 +174,6 @@ proc editor_text_setSelection_void_TextDocumentEditor_Cursor_string_impl(
     self: TextDocumentEditor; cursor: Cursor; nextMode: string)  {.importc.}
 proc editor_text_enterChooseCursorMode_void_TextDocumentEditor_string_impl(
     self: TextDocumentEditor; action: string)  {.importc.}
-proc popup_selector_accept_void_SelectorPopup_impl(self: SelectorPopup)  {.importc.}
-proc popup_selector_cancel_void_SelectorPopup_impl(self: SelectorPopup)  {.importc.}
-proc popup_selector_prev_void_SelectorPopup_impl(self: SelectorPopup)  {.importc.}
-proc popup_selector_next_void_SelectorPopup_impl(self: SelectorPopup)  {.importc.}
-proc editor_ast_moveCursor_void_AstDocumentEditor_int_impl(
-    self: AstDocumentEditor; direction: int)  {.importc.}
-proc editor_ast_moveCursorUp_void_AstDocumentEditor_impl(self: AstDocumentEditor)  {.importc.}
-proc editor_ast_moveCursorDown_void_AstDocumentEditor_impl(
-    self: AstDocumentEditor)  {.importc.}
-proc editor_ast_moveCursorNext_void_AstDocumentEditor_impl(
-    self: AstDocumentEditor)  {.importc.}
-proc editor_ast_moveCursorPrev_void_AstDocumentEditor_impl(
-    self: AstDocumentEditor)  {.importc.}
-proc editor_ast_moveCursorNextLine_void_AstDocumentEditor_impl(
-    self: AstDocumentEditor)  {.importc.}
-proc editor_ast_moveCursorPrevLine_void_AstDocumentEditor_impl(
-    self: AstDocumentEditor)  {.importc.}
-proc editor_ast_selectContaining_void_AstDocumentEditor_string_impl(
-    self: AstDocumentEditor; container: string)  {.importc.}
-proc editor_ast_deleteSelected_void_AstDocumentEditor_impl(
-    self: AstDocumentEditor)  {.importc.}
-proc editor_ast_copySelected_void_AstDocumentEditor_impl(self: AstDocumentEditor)  {.importc.}
-proc editor_ast_finishEdit_void_AstDocumentEditor_bool_impl(
-    self: AstDocumentEditor; apply: bool)  {.importc.}
-proc editor_ast_undo_void_AstDocumentEditor_impl(self: AstDocumentEditor)  {.importc.}
-proc editor_ast_redo_void_AstDocumentEditor_impl(self: AstDocumentEditor)  {.importc.}
-proc editor_ast_insertAfterSmart_void_AstDocumentEditor_string_impl(
-    self: AstDocumentEditor; nodeTemplate: string)  {.importc.}
-proc editor_ast_insertAfter_void_AstDocumentEditor_string_impl(
-    self: AstDocumentEditor; nodeTemplate: string)  {.importc.}
-proc editor_ast_insertBefore_void_AstDocumentEditor_string_impl(
-    self: AstDocumentEditor; nodeTemplate: string)  {.importc.}
-proc editor_ast_insertChild_void_AstDocumentEditor_string_impl(
-    self: AstDocumentEditor; nodeTemplate: string)  {.importc.}
-proc editor_ast_replace_void_AstDocumentEditor_string_impl(
-    self: AstDocumentEditor; nodeTemplate: string)  {.importc.}
-proc editor_ast_replaceEmpty_void_AstDocumentEditor_string_impl(
-    self: AstDocumentEditor; nodeTemplate: string)  {.importc.}
-proc editor_ast_replaceParent_void_AstDocumentEditor_impl(
-    self: AstDocumentEditor)  {.importc.}
-proc editor_ast_wrap_void_AstDocumentEditor_string_impl(self: AstDocumentEditor;
-    nodeTemplate: string)  {.importc.}
-proc editor_ast_editPrevEmpty_void_AstDocumentEditor_impl(
-    self: AstDocumentEditor)  {.importc.}
-proc editor_ast_editNextEmpty_void_AstDocumentEditor_impl(
-    self: AstDocumentEditor)  {.importc.}
-proc editor_ast_rename_void_AstDocumentEditor_impl(self: AstDocumentEditor)  {.importc.}
-proc editor_ast_selectPrevCompletion_void_AstDocumentEditor_impl(
-    self: AstDocumentEditor)  {.importc.}
-proc editor_ast_selectNextCompletion_void_AstDocumentEditor_impl(
-    self: AstDocumentEditor)  {.importc.}
-proc editor_ast_applySelectedCompletion_void_AstDocumentEditor_impl(
-    self: AstDocumentEditor)  {.importc.}
-proc editor_ast_cancelAndNextCompletion_void_AstDocumentEditor_impl(
-    self: AstDocumentEditor)  {.importc.}
-proc editor_ast_cancelAndPrevCompletion_void_AstDocumentEditor_impl(
-    self: AstDocumentEditor)  {.importc.}
-proc editor_ast_cancelAndDelete_void_AstDocumentEditor_impl(
-    self: AstDocumentEditor)  {.importc.}
-proc editor_ast_moveNodeToPrevSpace_void_AstDocumentEditor_impl(
-    self: AstDocumentEditor)  {.importc.}
-proc editor_ast_moveNodeToNextSpace_void_AstDocumentEditor_impl(
-    self: AstDocumentEditor)  {.importc.}
-proc editor_ast_selectPrev_void_AstDocumentEditor_impl(self: AstDocumentEditor)  {.importc.}
-proc editor_ast_selectNext_void_AstDocumentEditor_impl(self: AstDocumentEditor)  {.importc.}
-proc editor_ast_openGotoSymbolPopup_void_AstDocumentEditor_impl(
-    self: AstDocumentEditor)  {.importc.}
-proc editor_ast_goto_void_AstDocumentEditor_string_impl(self: AstDocumentEditor;
-    where: string)  {.importc.}
-proc editor_ast_runSelectedFunction_void_AstDocumentEditor_impl(
-    self: AstDocumentEditor)  {.importc.}
-proc editor_ast_toggleOption_void_AstDocumentEditor_string_impl(
-    self: AstDocumentEditor; name: string)  {.importc.}
-proc editor_ast_runLastCommand_void_AstDocumentEditor_string_impl(
-    self: AstDocumentEditor; which: string)  {.importc.}
-proc editor_ast_selectCenterNode_void_AstDocumentEditor_impl(
-    self: AstDocumentEditor)  {.importc.}
-proc editor_ast_scroll_void_AstDocumentEditor_float32_impl(
-    self: AstDocumentEditor; amount: float32)  {.importc.}
-proc editor_ast_scrollOutput_void_AstDocumentEditor_string_impl(
-    self: AstDocumentEditor; arg: string)  {.importc.}
-proc editor_ast_dumpContext_void_AstDocumentEditor_impl(self: AstDocumentEditor)  {.importc.}
-proc editor_ast_setMode_void_AstDocumentEditor_string_impl(
-    self: AstDocumentEditor; mode: string)  {.importc.}
-proc editor_ast_mode_string_AstDocumentEditor_impl(self: AstDocumentEditor): string  {.importc.}
-proc editor_ast_getContextWithMode_string_AstDocumentEditor_string_impl(
-    self: AstDocumentEditor; context: string): string  {.importc.}
 proc editor_model_scrollPixels_void_ModelDocumentEditor_float32_impl(
     self: ModelDocumentEditor; amount: float32)  {.importc.}
 proc editor_model_scrollLines_void_ModelDocumentEditor_float32_impl(
@@ -330,6 +243,10 @@ proc editor_model_applySelectedCompletion_void_ModelDocumentEditor_impl(
     self: ModelDocumentEditor)  {.importc.}
 proc editor_model_runSelectedFunction_void_ModelDocumentEditor_impl(
     self: ModelDocumentEditor)  {.importc.}
+proc popup_selector_accept_void_SelectorPopup_impl(self: SelectorPopup)  {.importc.}
+proc popup_selector_cancel_void_SelectorPopup_impl(self: SelectorPopup)  {.importc.}
+proc popup_selector_prev_void_SelectorPopup_impl(self: SelectorPopup)  {.importc.}
+proc popup_selector_next_void_SelectorPopup_impl(self: SelectorPopup)  {.importc.}
 proc editor_getBackend_Backend_App_impl(): Backend  {.importc.}
 proc editor_toggleShowDrawnNodes_void_App_impl()  {.importc.}
 proc editor_saveAppState_void_App_impl()  {.importc.}
