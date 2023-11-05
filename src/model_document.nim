@@ -8,7 +8,7 @@ import workspaces/[workspace]
 import ast/[model, base_language, cells]
 import ui/node
 
-import ast/base_language_wasm
+import ast/[base_language_wasm, model_state]
 
 var project = newProject()
 
@@ -114,6 +114,7 @@ type
   ModelDocument* = ref object of Document
     model*: Model
     project*: Project
+    ctx*: ModelComputationContext
 
     currentTransaction: ModelTransaction
     undoList: seq[ModelTransaction]
@@ -122,7 +123,6 @@ type
     onModelChanged*: Event[ModelDocument]
     onFinishedUndoTransaction*: Event[(ModelDocument, ModelTransaction)]
     onFinishedRedoTransaction*: Event[(ModelDocument, ModelTransaction)]
-
 
     builder*: CellBuilder
 
@@ -252,6 +252,7 @@ proc newModelDocument*(filename: string = "", app: bool = false, workspaceFolder
   testModel.addRootNode(c)
 
   result.model = testModel
+  result.ctx = newModelComputationContext()
 
   result.builder = newCellBuilder()
   for language in result.model.languages:
@@ -457,6 +458,9 @@ proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
 
     self.undoList.setLen 0
     self.redoList.setLen 0
+
+    for rootNode in self.model.rootNodes:
+      self.ctx.state.insertNode(rootNode)
 
   except CatchableError:
     log lvlError, fmt"Failed to load model source file '{self.filename}': {getCurrentExceptionMsg()}"
@@ -2513,6 +2517,12 @@ proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.
   if function.isNone:
     log(lvlError, fmt"Not inside function")
     return
+
+  block: # todo
+    self.document.ctx.state.updateNode(function.get)
+
+    let typ = self.document.ctx.computeType(function.get)
+    echo `$`(typ, true)
 
   if function.get.childCount(IdFunctionDefinitionParameters) > 0:
     log(lvlError, fmt"Can't call function with parameters")

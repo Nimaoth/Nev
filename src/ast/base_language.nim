@@ -1,6 +1,9 @@
+import std/[tables, strformat]
 import id, ast_ids, util, custom_logger
 import model, cells
 import ui/node
+
+logCategory "base-language"
 
 let typeClass* = newNodeClass(IdType, "Type", isAbstract=true)
 let stringTypeClass* = newNodeClass(IdString, "StringType", alias="string", base=typeClass)
@@ -431,6 +434,87 @@ builder.addBuilderFor buildExpressionClass.id, idNone(), proc(builder: CellBuild
 
   return cell
 
+var typeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]()
+
+let stringTypeInstance* = newAstNode(stringTypeClass)
+let intTypeInstance* = newAstNode(intTypeClass)
+let voidTypeInstance* = newAstNode(voidTypeClass)
+
+# todo: those should technically return something like typeTypeInstance which needs a new typeTypeClass
+# and the valueComputer should return the type instance
+typeComputers[stringTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for string type literal {node}"
+  return stringTypeInstance
+typeComputers[intTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for int type literal {node}"
+  return intTypeInstance
+typeComputers[voidTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for void type literal {node}"
+  return voidTypeInstance
+
+# literals
+typeComputers[stringLiteralClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for string type literal {node}"
+  return stringTypeInstance
+
+typeComputers[numberLiteralClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for int type literal {node}"
+  return intTypeInstance
+
+typeComputers[boolLiteralClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for bool type literal {node}"
+  return intTypeInstance
+
+# declarations
+typeComputers[letDeclClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for let decl {node}"
+  return voidTypeInstance
+
+typeComputers[varDeclClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for var decl {node}"
+  return voidTypeInstance
+
+typeComputers[constDeclClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for const decl {node}"
+  return voidTypeInstance
+
+# control flow
+typeComputers[whileClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for while loop {node}"
+  return voidTypeInstance
+
+typeComputers[ifClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for if expr {node}"
+  return voidTypeInstance
+
+# function definition
+typeComputers[functionDefinitionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for function definition {node}"
+  var returnType = voidTypeInstance
+
+  if node.firstChild(IdFunctionDefinitionReturnType).getSome(returnTypeNode):
+    returnType = ctx.computeType(returnTypeNode)
+
+  var functionType = newAstNode(functionTypeClass)
+  functionType.add(IdFunctionTypeReturnType, returnType)
+
+  for _, c in node.children(IdFunctionDefinitionParameters):
+    if c.firstChild(IdParameterDeclType).getSome(paramTypeNode):
+      # todo: This needs computeValue in the future since the type of a type is 'type', and the value is 'int' or 'string' etc.
+      var parameterType = ctx.computeType(paramTypeNode)
+      if parameterType.isNil:
+        # addDiagnostic(paramTypeNode, "Could not compute type for parameter")
+        continue
+      functionType.add(IdFunctionTypeParameterTypes, parameterType)
+
+  functionType.model = node.model
+  functionType.forEach2 n:
+    n.model = node.model
+
+  echo fmt"computed function type: {`$`(functionType, true)}"
+
+  return functionType
+
 let baseLanguage* = newLanguage(IdBaseLanguage, @[
   namedInterface, declarationInterface,
 
@@ -444,6 +528,6 @@ let baseLanguage* = newLanguage(IdBaseLanguage, @[
   lessExpressionClass, lessEqualExpressionClass, greaterExpressionClass, greaterEqualExpressionClass, equalExpressionClass, notEqualExpressionClass, andExpressionClass, orExpressionClass, orderExpressionClass,
   negateExpressionClass, notExpressionClass,
   appendStringExpressionClass, printExpressionClass, buildExpressionClass,
-], builder)
+], builder, typeComputers)
 
 # print baseLanguage
