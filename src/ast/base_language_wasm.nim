@@ -1,8 +1,7 @@
 
 import std/[options, tables]
-import id, model, ast_ids
+import id, model, ast_ids, custom_logger, util, model_state
 import scripting/[wasm_builder]
-import custom_logger, util
 
 logCategory "base-language-wasm"
 
@@ -67,11 +66,11 @@ proc getOrCreateWasmFunc(self: BaseLanguageWasmCompiler, node: AstNode, exportNa
   if not self.wasmFuncs.contains(node.id):
     var inputs, outputs: seq[WasmValueType]
 
-    for c in node.children(IdFunctionDefinitionParameters):
+    for _, c in node.children(IdFunctionDefinitionParameters):
       let typ = c.children(IdParameterDeclType)[0]
       inputs.add typ.toWasmValueType
 
-    for c in node.children(IdFunctionDefinitionReturnType):
+    for _, c in node.children(IdFunctionDefinitionReturnType):
       outputs.add c.toWasmValueType
 
     let funcIdx = self.builder.addFunction(inputs, outputs, exportName=exportName)

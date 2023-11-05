@@ -135,6 +135,8 @@ type
   NodeValidator* = ref object
     propertyValidators*: ArrayTable[RoleId, PropertyValidator]
 
+  ModelComputationContextBase* = ref object of RootObj
+
   Language* = ref object
     id {.getter.}: LanguageId
     version {.getter.}: int
@@ -143,6 +145,9 @@ type
     builder {.getter.}: CellBuilder
 
     validators: Table[ClassId, NodeValidator]
+
+    # functions for computing the type of a node
+    typeComputers*: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]
 
   Model* = ref object
     id {.getter.}: ModelId
@@ -164,6 +169,10 @@ type
 generateGetters(NodeClass)
 generateGetters(Model)
 generateGetters(Language)
+
+proc hash*(node: AstNode): Hash = node.id.hash
+
+method computeType*(self: ModelComputationContextBase, node: AstNode): AstNode {.base.} = discard
 
 proc notifyNodeDeleted(self: Model, parent: AstNode, child: AstNode, role: RoleId, index: int) =
   self.onNodeDeleted.invoke (self, parent, child, role, index)
@@ -212,9 +221,11 @@ proc verify*(self: Language): bool =
       log(lvlError, fmt"Class {c.name} is both final and abstract")
       result = false
 
-proc newLanguage*(id: LanguageId, classes: seq[NodeClass], builder: CellBuilder): Language =
+proc newLanguage*(id: LanguageId, classes: seq[NodeClass], builder: CellBuilder, typeComputers: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]): Language =
   new result
   result.id = id
+  result.typeComputers = typeComputers
+
   for c in classes:
     result.classes[c.id] = c
 
@@ -390,6 +401,21 @@ proc children*(node: AstNode, role: RoleId): seq[AstNode] =
   for c in node.childLists.mitems:
     if c.role == role:
       result = c.nodes
+      break
+
+iterator children*(node: AstNode, role: RoleId): (int, AstNode) =
+  for c in node.childLists.mitems:
+    if c.role == role:
+      for i, node in c.nodes:
+        yield (i, node)
+      break
+
+proc firstChild*(node: AstNode, role: RoleId): Option[AstNode] =
+  result = AstNode.none
+  for c in node.childLists.mitems:
+    if c.role == role:
+      if c.nodes.len > 0:
+        result = c.nodes[0].some
       break
 
 proc hasReference*(node: AstNode, role: RoleId): bool =
@@ -766,6 +792,8 @@ method dump*(self: EmptyCell, recurse: bool = false): string =
   result.add fmt"EmptyCell(node: {self.node.id})"
 
 proc `$`*(node: AstNode, recurse: bool = false): string =
+  if node.isNil:
+    return "AstNode(nil)"
   let class = node.nodeClass
 
   if class.isNil:
