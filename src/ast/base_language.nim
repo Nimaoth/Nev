@@ -507,13 +507,139 @@ typeComputers[functionDefinitionClass.id] = proc(ctx: ModelComputationContextBas
         continue
       functionType.add(IdFunctionTypeParameterTypes, parameterType)
 
+  # todo: this shouldn't set the model
   functionType.model = node.model
   functionType.forEach2 n:
     n.model = node.model
 
-  echo fmt"computed function type: {`$`(functionType, true)}"
+  debugf"computed function type: {`$`(functionType, true)}"
 
   return functionType
+
+typeComputers[assignmentClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for assignment {node}"
+  return voidTypeInstance
+
+typeComputers[emptyClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for empty {node}"
+  return voidTypeInstance
+
+typeComputers[nodeListClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for node list {node}"
+
+  if node.firstChild(IdNodeListChildren).getSome(childNode):
+    return ctx.computeType(childNode)
+
+  return voidTypeInstance
+
+typeComputers[blockClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for block {node}"
+
+  if node.firstChild(IdBlockChildren).getSome(childNode):
+    return ctx.computeType(childNode)
+
+  return voidTypeInstance
+
+typeComputers[nodeReferenceClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for node reference {node}"
+  # todo
+  return voidTypeInstance
+
+typeComputers[breakClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for break {node}"
+  return voidTypeInstance
+
+typeComputers[continueClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for continue {node}"
+  return voidTypeInstance
+
+typeComputers[returnClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for return {node}"
+  return voidTypeInstance
+
+# binary expressions
+typeComputers[addExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for add {node}"
+  return voidTypeInstance
+
+typeComputers[subExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for sub {node}"
+  return voidTypeInstance
+
+typeComputers[mulExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for mul {node}"
+  return voidTypeInstance
+
+typeComputers[divExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for div {node}"
+  return voidTypeInstance
+
+typeComputers[modExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for mod {node}"
+  return voidTypeInstance
+
+typeComputers[lessExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for less {node}"
+  return voidTypeInstance
+
+typeComputers[lessEqualExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for less equal {node}"
+  return voidTypeInstance
+
+typeComputers[greaterExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for greater {node}"
+  return voidTypeInstance
+
+typeComputers[greaterEqualExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for greater equal {node}"
+  return voidTypeInstance
+
+typeComputers[equalExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for equal {node}"
+  return voidTypeInstance
+
+typeComputers[notEqualExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for not equal {node}"
+  return voidTypeInstance
+
+typeComputers[andExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for and {node}"
+  return voidTypeInstance
+
+typeComputers[orExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for or {node}"
+  return voidTypeInstance
+
+typeComputers[orderExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for order {node}"
+  return voidTypeInstance
+
+# unary expressions
+typeComputers[negateExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for negate {node}"
+  return voidTypeInstance
+
+typeComputers[notExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for not {node}"
+  return voidTypeInstance
+
+# calls
+typeComputers[callClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for call {node}"
+  # todo
+  return voidTypeInstance
+
+typeComputers[appendStringExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for append string {node}"
+  return voidTypeInstance
+
+typeComputers[printExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for print {node}"
+  return voidTypeInstance
+
+typeComputers[buildExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for build {node}"
+  return voidTypeInstance
 
 let baseLanguage* = newLanguage(IdBaseLanguage, @[
   namedInterface, declarationInterface,

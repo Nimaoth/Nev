@@ -563,16 +563,15 @@ proc updateCompletions(self: ModelDocumentEditor) =
 
   debugf"updateCompletions {node}, {node.model.isNotNil}, {slotClass.name}"
 
-  for language in model.languages:
-    language.forEachChildClass slotClass, proc(childClass: NodeClass) =
-      if self.getSubstitutionsForClass(targetCell, childClass, (c) -> void => self.unfilteredCompletions.add(c)):
-        return
+  model.forEachChildClass slotClass, proc(childClass: NodeClass) =
+    if self.getSubstitutionsForClass(targetCell, childClass, (c) -> void => self.unfilteredCompletions.add(c)):
+      return
 
-      if childClass.isAbstract or childClass.isInterface:
-        return
+    if childClass.isAbstract or childClass.isInterface:
+      return
 
-      let name = if childClass.alias.len > 0: childClass.alias else: childClass.name
-      self.unfilteredCompletions.add ModelCompletion(kind: ModelCompletionKind.SubstituteClass, name: name, class: childClass, parent: parent, role: role, index: index)
+    let name = if childClass.alias.len > 0: childClass.alias else: childClass.name
+    self.unfilteredCompletions.add ModelCompletion(kind: ModelCompletionKind.SubstituteClass, name: name, class: childClass, parent: parent, role: role, index: index)
 
   self.refilterCompletions()
   self.markDirty()
@@ -2473,7 +2472,7 @@ proc applySelectedCompletion*(self: ModelDocumentEditor) {.expose("editor.model"
       parent.remove(role, index)
 
       var newNode = newAstNode(completion.class)
-      newNode.fillDefaultChildren(parent.language, true)
+      newNode.fillDefaultChildren(parent.model, true)
       parent.insert(role, index, newNode)
       self.rebuildCells()
       self.cursor = self.getFirstEditableCellOfNode(newNode).get
@@ -2522,7 +2521,7 @@ proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.
     self.document.ctx.state.updateNode(function.get)
 
     let typ = self.document.ctx.computeType(function.get)
-    echo `$`(typ, true)
+    log lvlDebug, `$`(typ, true)
 
   if function.get.childCount(IdFunctionDefinitionParameters) > 0:
     log(lvlError, fmt"Can't call function with parameters")
@@ -2535,7 +2534,7 @@ proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.
     "<anonymous>"
 
   measureBlock fmt"Compile '{name}' to wasm":
-    var compiler = newBaseLanguageWasmCompiler()
+    var compiler = newBaseLanguageWasmCompiler(self.document.ctx)
     let binary = compiler.compileToBinary(function.get)
 
   if self.document.workspace.getSome(workspace):
