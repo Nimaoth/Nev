@@ -1,11 +1,27 @@
-
+import std/[macros, genasts]
 import std/[options, tables]
+import fusion/matching
 import id, model, ast_ids, custom_logger, util, model_state
 import scripting/[wasm_builder]
 
 logCategory "base-language-wasm"
 
 type
+  LocalVariableStorage = enum Local, Stack
+  LocalVariable = object
+    case kind: LocalVariableStorage
+    of Local: localIdx: WasmLocalIdx
+    of Stack: stackOffset: int32
+
+  DestinationStorage = enum Stack, Memory, Discard
+  Destination = object
+    case kind: DestinationStorage
+    of Stack: discard
+    of Memory:
+      offset: uint32
+      align: uint32
+    of Discard: discard
+
   BaseLanguageWasmCompiler* = ref object
     builder: WasmBuilder
 
@@ -14,18 +30,29 @@ type
     wasmFuncs: Table[Id, WasmFuncIdx]
 
     functionsToCompile: seq[(AstNode, WasmFuncIdx)]
-    localIndices: Table[Id, WasmLocalIdx]
+    localIndices: Table[Id, LocalVariable]
     globalIndices: Table[Id, WasmGlobalIdx]
     labelIndices: Table[Id, int] # Not the actual index
 
     exprStack: seq[WasmExpr]
     currentExpr: WasmExpr
     currentLocals: seq[WasmValueType]
+    currentStackLocals: seq[int32]
+    currentStackLocalsSize: int32
 
-    generators: Table[Id, proc(self: BaseLanguageWasmCompiler, node: AstNode)]
+    generators: Table[Id, proc(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination)]
 
     printI32: WasmFuncIdx
     printLine: WasmFuncIdx
+
+    stackBase: WasmGlobalIdx
+    stackEnd: WasmGlobalIdx
+    stackPointer: WasmGlobalIdx
+
+    currentBasePointer: WasmLocalIdx
+
+    memoryBase: WasmGlobalIdx
+    tableBase: WasmGlobalIdx
 
 proc setupGenerators(self: BaseLanguageWasmCompiler)
 
@@ -47,11 +74,16 @@ proc newBaseLanguageWasmCompiler*(ctx: ModelComputationContextBase): BaseLanguag
 
   result.printI32 = result.builder.addImport("env", "print_i32", result.builder.addType([I32], []))
   result.printLine = result.builder.addImport("env", "print_line", result.builder.addType([], []))
+  result.stackBase = result.builder.addGlobal(I32, mut=true, 0, id="__stack_base")
+  result.stackEnd = result.builder.addGlobal(I32, mut=true, 0, id="__stack_end")
+  result.stackPointer = result.builder.addGlobal(I32, mut=true, 65536, id="__stack_pointer")
+  result.memoryBase = result.builder.addGlobal(I32, mut=false, 0, id="__memory_base")
+  result.tableBase = result.builder.addGlobal(I32, mut=false, 0, id="__table_base")
 
-proc genNode*(self: BaseLanguageWasmCompiler, node: AstNode) =
+proc genNode*(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   if self.generators.contains(node.class):
     let generator = self.generators[node.class]
-    generator(self, node)
+    generator(self, node, dest)
   else:
     let class = node.nodeClass
     log(lvlWarn, fmt"genNode: Node class not implemented: {class.name}")
@@ -82,6 +114,80 @@ proc getOrCreateWasmFunc(self: BaseLanguageWasmCompiler, node: AstNode, exportNa
 
   return self.wasmFuncs[node.id]
 
+proc getTypeAttributes(self: BaseLanguageWasmCompiler, typ: AstNode): tuple[size: int32, align: int32] =
+  if typ.class == IdInt:
+    return (4, 4)
+  if typ.class == IdString:
+    return (8, 4)
+  if typ.class == IdFunctionType:
+    return (0, 1)
+  if typ.class == IdVoid:
+    return (0, 1)
+  return (0, 1)
+
+proc getTypeMemInstructions(self: BaseLanguageWasmCompiler, typ: AstNode): tuple[load: WasmInstrKind, store: WasmInstrKind] =
+  if typ.class == IdInt:
+    return (I32Load, I32Store)
+  if typ.class == IdString:
+    return (I64Load, I64Store)
+  log lvlError, fmt"getTypeMemInstructions: Type not implemented: {`$`(typ, true)}"
+  return (Nop, Nop)
+
+proc createLocal(self: BaseLanguageWasmCompiler, id: Id, typ: AstNode): WasmLocalIdx =
+  self.currentLocals.add(I32)
+  result = self.currentLocals.high.WasmLocalIdx
+  self.localIndices[id] = LocalVariable(kind: Local, localIdx: result)
+
+proc align(address, alignment: int32): int32 =
+  if alignment == 0: # Actually, this is illegal. This branch exists to actively
+                     # hide problems.
+    result = address
+  else:
+    result = (address + (alignment - 1)) and not (alignment - 1)
+
+proc createStackLocal(self: BaseLanguageWasmCompiler, id: Id, typ: AstNode): int32 =
+  let (size, alignment) = self.getTypeAttributes(typ)
+
+  self.currentStackLocalsSize = self.currentStackLocalsSize.align(alignment)
+  result = self.currentStackLocalsSize
+
+  self.currentStackLocals.add(self.currentStackLocalsSize)
+  debugf"createStackLocal size {size}, alignment {alignment}, offset {self.currentStackLocalsSize}"
+
+  self.localIndices[id] = LocalVariable(kind: Stack, stackOffset: self.currentStackLocalsSize)
+
+  self.currentStackLocalsSize += size
+
+macro instr(self: WasmExpr, op: WasmInstrKind, args: varargs[untyped]): untyped =
+  result = genAst(self, op):
+    self.instr.add WasmInstr(kind: op)
+  for arg in args:
+    result[1].add arg
+
+macro instr(self: BaseLanguageWasmCompiler, op: WasmInstrKind, args: varargs[untyped]): untyped =
+  result = genAst(self, op):
+    self.currentExpr.instr.add WasmInstr(kind: op)
+  for arg in args:
+    result[1].add arg
+
+proc storeInstr(self: BaseLanguageWasmCompiler, op: WasmInstrKind, offset: uint32, align: uint32) =
+  debugf"storeInstr {op}, offset {offset}, align {align}"
+  assert op in {I32Store, I64Store, F32Store, F64Store, I32Store8, I64Store8, I32Store16, I64Store16, I64Store32}
+  var instr = WasmInstr(kind: op)
+  instr.memArg = WasmMemArg(offset: offset, align: align)
+  self.currentExpr.instr.add instr
+
+proc loadInstr(self: BaseLanguageWasmCompiler, op: WasmInstrKind, offset: uint32, align: uint32) =
+  debugf"loadInstr {op}, offset {offset}, align {align}"
+  assert op in {I32Load, I64Load, F32Load, F64Load, I32Load8U, I32Load8S, I64Load8U, I64Load8S, I32Load16U, I32Load16S, I64Load16U, I64Load16S, I64Load32U, I64Load32S}
+  var instr = WasmInstr(kind: op)
+  instr.memArg = WasmMemArg(offset: offset, align: align)
+  self.currentExpr.instr.add instr
+
+proc generateEpiloque(self: BaseLanguageWasmCompiler) =
+  self.instr(LocalGet, localIdx: self.currentBasePointer)
+  self.instr(GlobalSet, globalIdx: self.stackPointer)
+
 proc compileFunction(self: BaseLanguageWasmCompiler, node: AstNode, funcIdx: WasmFuncIdx) =
   let body = node.children(IdFunctionDefinitionBody)
   if body.len != 1:
@@ -91,7 +197,24 @@ proc compileFunction(self: BaseLanguageWasmCompiler, node: AstNode, funcIdx: Was
   self.currentExpr = WasmExpr()
   self.currentLocals.setLen 0
 
-  self.genNode(body[0])
+  self.currentBasePointer = self.currentLocals.len.WasmLocalIdx
+  self.currentLocals.add(I32) # base pointer
+
+  let stackSizeInstrIndex = block: # prologue
+    self.instr(GlobalGet, globalIdx: self.stackPointer)
+    self.instr(I32Const, i32Const: 0) # size, patched at end when we know the size of locals
+    let i = self.currentExpr.instr.high
+    self.instr(I32Sub)
+    self.instr(LocalTee, localIdx: self.currentBasePointer)
+    self.instr(GlobalSet, globalIdx: self.stackPointer)
+    i
+
+  self.genNode(body[0], Destination(kind: Stack))
+
+  let requiredStackSize: int32 = self.currentStackLocalsSize
+  self.currentExpr.instr[stackSizeInstrIndex].i32Const = requiredStackSize
+
+  self.generateEpiloque()
 
   self.builder.setBody(funcIdx, self.currentLocals, self.currentExpr)
 
@@ -110,101 +233,110 @@ proc compileToBinary*(self: BaseLanguageWasmCompiler, node: AstNode): seq[uint8]
   let binary = self.builder.generateBinary()
   return binary
 
-import std/[macros, genasts]
-
-macro instr(self: WasmExpr, op: WasmInstrKind, args: varargs[untyped]): untyped =
-  result = genAst(self, op):
-    self.instr.add WasmInstr(kind: op)
-  for arg in args:
-    result[1].add arg
-
-macro instr(self: BaseLanguageWasmCompiler, op: WasmInstrKind, args: varargs[untyped]): untyped =
-  result = genAst(self, op):
-    self.currentExpr.instr.add WasmInstr(kind: op)
-  for arg in args:
-    result[1].add arg
-
 proc genDrop(self: BaseLanguageWasmCompiler, node: AstNode) =
   self.instr(Drop)
   # todo: size of node, stack
 
+proc genStoreDestination(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  case dest
+  of Stack(): discard
+  of Memory(offset: @offset, align: @align):
+    let typ = self.ctx.computeType(node)
+    let instr = self.getTypeMemInstructions(typ).store
+    self.storeInstr(instr, offset, align)
+  of Discard():
+    self.genDrop(node)
+
+proc genNodeChildren(self: BaseLanguageWasmCompiler, node: AstNode, role: Id, dest: Destination) =
+  let count = node.childCount(role)
+  for i, c in node.children(role):
+    let childDest = if i == count - 1:
+      dest
+    else:
+      Destination(kind: Discard)
+
+    self.genNode(c, childDest)
+
 ###################### Node Generators ##############################
 
-proc genNodeBlock(self: BaseLanguageWasmCompiler, node: AstNode) =
+proc genNodeBlock(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   # self.exprStack.add self.currentExpr
   # self.currentExpr = WasmExpr()
 
-  for i, c in node.children(IdBlockChildren):
-    if i > 0:
-      self.genDrop(c)
-    self.genNode(c)
+  self.genNodeChildren(node, IdBlockChildren, dest)
 
   # self.currentExpr = self.exprStack.pop
 
-proc genNodeBinaryExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
-  for i, c in node.children(IdBinaryExpressionLeft):
-    if i > 0:
-      self.genDrop(c)
-    self.genNode(c)
+proc genNodeBinaryExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  self.genNodeChildren(node, IdBinaryExpressionLeft, dest)
+  self.genNodeChildren(node, IdBinaryExpressionRight, dest)
 
-  for i, c in node.children(IdBinaryExpressionRight):
-    if i > 0:
-      self.genDrop(c)
-    self.genNode(c)
-
-proc genNodeBinaryAddExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
-  self.genNodeBinaryExpression(node)
+proc genNodeBinaryAddExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  self.genNodeBinaryExpression(node, Destination(kind: Stack))
   self.instr(I32Add)
+  self.genStoreDestination(node, dest)
 
-proc genNodeBinarySubExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
-  self.genNodeBinaryExpression(node)
+proc genNodeBinarySubExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  self.genNodeBinaryExpression(node, Destination(kind: Stack))
   self.instr(I32Sub)
+  self.genStoreDestination(node, dest)
 
-proc genNodeBinaryMulExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
-  self.genNodeBinaryExpression(node)
+proc genNodeBinaryMulExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  self.genNodeBinaryExpression(node, Destination(kind: Stack))
   self.instr(I32Mul)
+  self.genStoreDestination(node, dest)
 
-proc genNodeBinaryDivExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
-  self.genNodeBinaryExpression(node)
+proc genNodeBinaryDivExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  self.genNodeBinaryExpression(node, Destination(kind: Stack))
   self.instr(I32DivS)
+  self.genStoreDestination(node, dest)
 
-proc genNodeBinaryModExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
-  self.genNodeBinaryExpression(node)
+proc genNodeBinaryModExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  self.genNodeBinaryExpression(node, Destination(kind: Stack))
   self.instr(I32RemS)
+  self.genStoreDestination(node, dest)
 
-proc genNodeBinaryLessExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
-  self.genNodeBinaryExpression(node)
+proc genNodeBinaryLessExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  self.genNodeBinaryExpression(node, Destination(kind: Stack))
   self.instr(I32LtS)
+  self.genStoreDestination(node, dest)
 
-proc genNodeBinaryLessEqualExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
-  self.genNodeBinaryExpression(node)
+proc genNodeBinaryLessEqualExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  self.genNodeBinaryExpression(node, Destination(kind: Stack))
   self.instr(I32LeS)
+  self.genStoreDestination(node, dest)
 
-proc genNodeBinaryGreaterExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
-  self.genNodeBinaryExpression(node)
+proc genNodeBinaryGreaterExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  self.genNodeBinaryExpression(node, Destination(kind: Stack))
   self.instr(I32GtS)
+  self.genStoreDestination(node, dest)
 
-proc genNodeBinaryGreaterEqualExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
-  self.genNodeBinaryExpression(node)
+proc genNodeBinaryGreaterEqualExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  self.genNodeBinaryExpression(node, Destination(kind: Stack))
   self.instr(I32GeS)
+  self.genStoreDestination(node, dest)
 
-proc genNodeBinaryEqualExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
-  self.genNodeBinaryExpression(node)
+proc genNodeBinaryEqualExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  self.genNodeBinaryExpression(node, Destination(kind: Stack))
   self.instr(I32Eq)
+  self.genStoreDestination(node, dest)
 
-proc genNodeBinaryNotEqualExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
-  self.genNodeBinaryExpression(node)
+proc genNodeBinaryNotEqualExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  self.genNodeBinaryExpression(node, Destination(kind: Stack))
   self.instr(I32Ne)
+  self.genStoreDestination(node, dest)
 
-proc genNodeIntegerLiteral(self: BaseLanguageWasmCompiler, node: AstNode) =
+proc genNodeIntegerLiteral(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   let value = node.property(IdIntegerLiteralValue).get
   self.instr(I32Const, i32Const: value.intValue.int32)
+  self.genStoreDestination(node, dest)
 
-proc genNodeBoolLiteral(self: BaseLanguageWasmCompiler, node: AstNode) =
+proc genNodeBoolLiteral(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   let value = node.property(IdBoolLiteralValue).get
   self.instr(I32Const, i32Const: value.boolValue.int32)
+  self.genStoreDestination(node, dest)
 
-proc genNodeIfExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
+proc genNodeIfExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   var ifStack: seq[WasmExpr]
 
   let thenCases = node.children(IdIfExpressionThenCase)
@@ -217,17 +349,13 @@ proc genNodeIfExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
 
   for k, c in thenCases:
     # condition
-    for i, c in c.children(IdThenCaseCondition):
-      if i > 0: self.genDrop(c)
-      self.genNode(c)
+    self.genNodeChildren(node, IdThenCaseCondition, Destination(kind: Stack))
 
     # then case
     self.exprStack.add self.currentExpr
     self.currentExpr = WasmExpr()
-    for i, c in c.children(IdThenCaseBody):
-      if i > 0 and typ.isSome: self.genDrop(c)
-      self.genNode(c)
-      if typ.isNone: self.genDrop(c)
+
+    self.genNodeChildren(node, IdThenCaseBody, dest)
 
     ifStack.add self.currentExpr
     self.currentExpr = WasmExpr()
@@ -235,7 +363,7 @@ proc genNodeIfExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
   self.instr(Nop)
   for i, c in elseCase:
     if i > 0 and typ.isSome: self.genDrop(c)
-    self.genNode(c)
+    self.genNode(c, dest)
     if typ.isNone: self.genDrop(c)
 
   for i in countdown(ifStack.high, 0):
@@ -274,10 +402,7 @@ proc genBranchLabel(self: BaseLanguageWasmCompiler, node: AstNode, offset: int) 
   let actualIndex = WasmLabelIdx(self.exprStack.high - index - offset)
   self.instr(Br, brLabelIdx: actualIndex)
 
-proc genNodeWhileExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
-  let condition = node.children(IdWhileExpressionCondition)
-  let body = node.children(IdWhileExpressionBody)
-
+proc genNodeWhileExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   let typ = WasmValueType.none
 
   # outer block for break
@@ -288,17 +413,13 @@ proc genNodeWhileExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
     self.genLoop WasmBlockType(kind: ValType, typ: typ):
 
       # generate condition
-      for i, c in condition:
-        if i > 0: self.genDrop(c)
-        self.genNode(c)
+      self.genNodeChildren(node, IdWhileExpressionCondition, Destination(kind: Stack))
 
       # break block if condition is false
       self.instr(I32Eqz)
       self.instr(BrIf, brLabelIdx: 1.WasmLabelIdx)
 
-      for i, c in body:
-        self.genNode(c)
-        self.genDrop(c)
+      self.genNodeChildren(node, IdWhileExpressionBody, Destination(kind: Discard))
 
       # continue loop
       self.instr(Br, brLabelIdx: 0.WasmLabelIdx)
@@ -306,39 +427,47 @@ proc genNodeWhileExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
   # Loop doesn't generate a value, but right now every node needs to produce an int32
   self.instr(I32Const, i32Const: 0)
 
-proc createLocal(self: BaseLanguageWasmCompiler, id: Id, typ: RootRef): WasmLocalIdx =
-  self.currentLocals.add(I32)
-  result = self.currentLocals.high.WasmLocalIdx
-  self.localIndices[id] = result
+proc genNodeConstDecl(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  # let index = self.createLocal(node.id, nil)
 
-proc genNodeConstDecl(self: BaseLanguageWasmCompiler, node: AstNode) =
-  let index = self.createLocal(node.id, nil)
+  # let values = node.children(IdConstDeclValue)
+  # assert values.len > 0
+  # self.genNode(values[0], dest)
 
-  let values = node.children(IdConstDeclValue)
-  assert values.len > 0
-  self.genNode(values[0])
+  # self.instr(LocalTee, localIdx: index)
 
-  self.instr(LocalTee, localIdx: index)
+  assert dest.kind == Discard
 
-proc genNodeLetDecl(self: BaseLanguageWasmCompiler, node: AstNode) =
-  let index = self.createLocal(node.id, nil)
+proc genNodeLetDecl(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  let typ = self.ctx.computeType(node)
+  let offset = self.createStackLocal(node.id, typ)
 
   let values = node.children(IdLetDeclValue)
   assert values.len > 0
-  self.genNode(values[0])
 
-  self.instr(LocalTee, localIdx: index)
+  self.instr(LocalGet, localIdx: self.currentBasePointer)
+  self.genNode(values[0], Destination(kind: Memory, offset: offset.uint32, align: 0))
 
-proc genNodeVarDecl(self: BaseLanguageWasmCompiler, node: AstNode) =
-  let index = self.createLocal(node.id, nil)
+  # self.instr(LocalTee, localIdx: index)
+
+  assert dest.kind == Discard
+
+proc genNodeVarDecl(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  let typ = self.ctx.computeType(node)
+  let offset = self.createStackLocal(node.id, typ)
+  # let index = self.createLocal(node.id, nil)
 
   let values = node.children(IdVarDeclValue)
   assert values.len > 0
-  self.genNode(values[0])
 
-  self.instr(LocalTee, localIdx: index)
+  self.instr(LocalGet, localIdx: self.currentBasePointer)
+  self.genNode(values[0], Destination(kind: Memory, offset: offset.uint32, align: 0))
 
-proc genNodeBreakExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
+  # self.instr(LocalTee, localIdx: index)
+
+  assert dest.kind == Discard
+
+proc genNodeBreakExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   var parent = node.parent
   while parent.isNotNil and parent.class != IdWhileExpression:
     parent = parent.parent
@@ -349,7 +478,7 @@ proc genNodeBreakExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
 
   self.genBranchLabel(parent, 0)
 
-proc genNodeContinueExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
+proc genNodeContinueExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   var parent = node.parent
   while parent.isNotNil and parent.class != IdWhileExpression:
     parent = parent.parent
@@ -360,25 +489,32 @@ proc genNodeContinueExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
 
   self.genBranchLabel(parent, 1)
 
-proc genNodeReturnExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
+proc genNodeReturnExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   discard
 
-proc genNodeNodeReference(self: BaseLanguageWasmCompiler, node: AstNode) =
+proc genNodeNodeReference(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   let id = node.reference(IdNodeReferenceTarget)
   if node.resolveReference(IdNodeReferenceTarget).getSome(target) and target.class == IdConstDecl:
-    for i, c in target.children(IdConstDeclValue):
-      if i > 0: self.genDrop(c)
-      self.genNode(c)
+    self.genNodeChildren(target, IdConstDeclValue, dest)
 
   else:
     if not self.localIndices.contains(id):
       log lvlError, fmt"Variable not found found in locals: {id}"
       return
 
-    let index = self.localIndices[id]
-    self.instr(LocalGet, localIdx: index)
+    case self.localIndices[id]:
+    of Local(localIdx: @index):
+      self.instr(LocalGet, localIdx: index)
+    of Stack(stackOffset: @offset):
+      self.instr(LocalGet, localIdx: self.currentBasePointer)
 
-proc genAssignmentExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
+      let typ = self.ctx.computeType(node)
+      let instr = self.getTypeMemInstructions(typ).load
+      self.loadInstr(instr, offset.uint32, 0)
+
+    self.genStoreDestination(node, dest)
+
+proc genAssignmentExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   let targetNodes = node.children(IdAssignmentTarget)
 
   let id = if targetNodes[0].class == IdNodeReference:
@@ -391,16 +527,28 @@ proc genAssignmentExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
     log lvlError, fmt"Variable not found found in locals: {id}"
     return
 
-  for i, c in node.children(IdAssignmentValue):
-    if i > 0: self.genDrop(c)
-    self.genNode(c)
+  var valueDest = Destination(kind: Stack)
 
-  let index = self.localIndices[id]
-  self.instr(LocalTee, localIdx: index)
+  case self.localIndices[id]
+  of Local(localIdx: @index):
+    discard
+  of Stack(stackOffset: @offset):
+    self.instr(LocalGet, localIdx: self.currentBasePointer)
+    valueDest = Destination(kind: Memory, offset: offset.uint32, align: 0)
 
-proc genPrintExpression(self: BaseLanguageWasmCompiler, node: AstNode) =
+  self.genNodeChildren(node, IdAssignmentValue, valueDest)
+
+  case self.localIndices[id]
+  of Local(localIdx: @index):
+    self.instr(LocalSet, localIdx: index)
+  of Stack():
+    discard
+
+  assert dest.kind == Discard
+
+proc genPrintExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   for i, c in node.children(IdPrintArguments):
-    self.genNode(c)
+    self.genNode(c, Destination(kind: Stack))
     self.instr(Call, callFuncIdx: self.printI32)
 
   self.instr(Call, callFuncIdx: self.printLine)
