@@ -141,7 +141,7 @@ type
     id {.getter.}: LanguageId
     version {.getter.}: int
     classes {.getter.}: Table[ClassId, NodeClass]
-    childClasses {.getter.}: Table[ClassId, seq[NodeClass]]
+    # childClasses {.getter.}: Table[ClassId, seq[NodeClass]]
     builder {.getter.}: CellBuilder
 
     validators: Table[ClassId, NodeValidator]
@@ -155,6 +155,7 @@ type
     languages {.getter.}: seq[Language]
     importedModels {.getter.}: seq[Model]
     classesToLanguages {.getter.}: Table[ModelId, Language]
+    childClasses {.getter.}: Table[ClassId, seq[NodeClass]]
     nodes {.getter.}: Table[NodeId, AstNode]
 
     onNodeDeleted*: Event[tuple[self: Model, parent: AstNode, child: AstNode, role: RoleId, index: int]]
@@ -229,19 +230,19 @@ proc newLanguage*(id: LanguageId, classes: seq[NodeClass], builder: CellBuilder,
   for c in classes:
     result.classes[c.id] = c
 
-    if c.base.isNotNil:
-      if not result.childClasses.contains(c.base.id):
-        result.childClasses[c.base.id] = @[]
-      result.childClasses[c.base.id].add c
+    # if c.base.isNotNil:
+    #   if not result.childClasses.contains(c.base.id):
+    #     result.childClasses[c.base.id] = @[]
+    #   result.childClasses[c.base.id].add c
 
-    for i in c.interfaces:
-      if not result.childClasses.contains(i.id):
-        result.childClasses[i.id] = @[]
-      result.childClasses[i.id].add c
+    # for i in c.interfaces:
+    #   if not result.childClasses.contains(i.id):
+    #     result.childClasses[i.id] = @[]
+    #   result.childClasses[i.id].add c
 
   result.builder = builder
 
-proc forEachChildClass*(self: Language, base: NodeClass, handler: proc(c: NodeClass)) =
+proc forEachChildClass*(self: Model, base: NodeClass, handler: proc(c: NodeClass)) =
   handler(base)
   if self.childClasses.contains(base.id):
     for c in self.childClasses[base.id]:
@@ -267,9 +268,22 @@ proc addModel*(self: Project, model: Model) =
 proc addLanguage*(self: Model, language: Language) =
   if not language.verify():
     return
+
   self.languages.add language
+
   for c in language.classes.keys:
     self.classesToLanguages[c] = language
+
+  for c in language.classes.values:
+    if c.base.isNotNil:
+      if not self.childClasses.contains(c.base.id):
+        self.childClasses[c.base.id] = @[]
+      self.childClasses[c.base.id].add c
+
+    for i in c.interfaces:
+      if not self.childClasses.contains(i.id):
+        self.childClasses[i.id] = @[]
+      self.childClasses[i.id].add c
 
 proc addRootNode*(self: Model, node: AstNode) =
   self.rootNodes.add node
@@ -418,6 +432,14 @@ proc firstChild*(node: AstNode, role: RoleId): Option[AstNode] =
         result = c.nodes[0].some
       break
 
+proc lastChild*(node: AstNode, role: RoleId): Option[AstNode] =
+  result = AstNode.none
+  for c in node.childLists.mitems:
+    if c.role == role:
+      if c.nodes.len > 0:
+        result = c.nodes.last.some
+      break
+
 proc hasReference*(node: AstNode, role: RoleId): bool =
   result = false
   for c in node.references:
@@ -508,15 +530,17 @@ proc newAstNode*(class: NodeClass, id: Option[NodeId] = NodeId.none): AstNode =
   result.class = class.id
   result.addMissingFieldsForClass(class)
 
-proc isUnique*(language: Language, class: NodeClass): bool =
+proc isUnique*(model: Model, class: NodeClass): bool =
   if class.isFinal:
     return true
-  if not language.childClasses.contains(class.id):
+  if not model.childClasses.contains(class.id):
     return true
   return false
 
-proc fillDefaultChildren*(node: AstNode, language: Language, onlyUnique: bool = false) =
+proc fillDefaultChildren*(node: AstNode, model: Model, onlyUnique: bool = false) =
+  let language = model.classesToLanguages.getOrDefault(node.class, nil)
   let class = language.classes.getOrDefault(node.class, nil)
+
   for desc in class.children:
     if desc.count in {ChildCount.One, ChildCount.OneOrMore}:
       let childClass = language.classes.getOrDefault(desc.class)
@@ -524,12 +548,12 @@ proc fillDefaultChildren*(node: AstNode, language: Language, onlyUnique: bool = 
         log lvlError, fmt"Unknown class {desc.class}"
         continue
 
-      let isUnique = language.isUnique(childClass)
+      let isUnique = model.isUnique(childClass)
       if onlyUnique and not isUnique:
         continue
 
       let child = newAstNode(childClass)
-      child.fillDefaultChildren(language, onlyUnique)
+      child.fillDefaultChildren(model, onlyUnique)
       node.add(desc.id, child)
 
 proc ancestor*(node: AstNode, distance: int): AstNode =
@@ -713,7 +737,7 @@ proc replaceWithDefault*(node: AstNode, fillDefaultChildren: bool = false): Opti
 
   var child = newAstNode(node.model.resolveClass(desc.class))
   if fillDefaultChildren:
-    child.fillDefaultChildren(node.language)
+    child.fillDefaultChildren(node.model)
 
   # debugf"replaceWithDefault: replacing {node} with {child}"
   node.parent.replace(node.role, node.index, child)
@@ -730,7 +754,7 @@ proc deleteOrReplaceWithDefault*(node: AstNode, fillDefaultChildren: bool = fals
   if desc.count in {One, OneOrMore} and node.parent.childCount(node.role) == 1:
     var child = newAstNode(node.model.resolveClass(desc.class))
     if fillDefaultChildren:
-      child.fillDefaultChildren(node.language)
+      child.fillDefaultChildren(node.model)
 
     # debugf"deleteOrReplaceWithDefault: replacing {node} with {child}"
     node.parent.replace(node.role, node.index, child)
@@ -748,7 +772,7 @@ proc insertDefaultNode*(node: AstNode, role: RoleId, index: int, fillDefaultChil
   let class = node.nodeClass
   let desc = class.nodeChildDescription(role).get
 
-  let language = node.language
+  let language = node.model.classesToLanguages.getOrDefault(desc.class, nil)
   if language.isNil:
     return
 
@@ -758,7 +782,7 @@ proc insertDefaultNode*(node: AstNode, role: RoleId, index: int, fillDefaultChil
 
   var child = newAstNode(childClass)
   if fillDefaultChildren:
-    child.fillDefaultChildren(language)
+    child.fillDefaultChildren(node.model)
 
   node.insert(role, index, child)
 

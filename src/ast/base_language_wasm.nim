@@ -9,6 +9,8 @@ type
   BaseLanguageWasmCompiler* = ref object
     builder: WasmBuilder
 
+    ctx: ModelComputationContextBase
+
     wasmFuncs: Table[Id, WasmFuncIdx]
 
     functionsToCompile: seq[(AstNode, WasmFuncIdx)]
@@ -27,10 +29,11 @@ type
 
 proc setupGenerators(self: BaseLanguageWasmCompiler)
 
-proc newBaseLanguageWasmCompiler*(): BaseLanguageWasmCompiler =
+proc newBaseLanguageWasmCompiler*(ctx: ModelComputationContextBase): BaseLanguageWasmCompiler =
   new result
   result.setupGenerators()
   result.builder = newWasmBuilder()
+  result.ctx = ctx
 
   result.builder.mems.add(WasmMem(typ: WasmMemoryType(limits: WasmLimits(min: 255))))
 
