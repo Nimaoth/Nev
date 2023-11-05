@@ -127,3 +127,24 @@ proc resetOption*[T](self: var Option[T]) =
     resetOptionJs(self)
   else:
     self = none(T)
+
+proc safeIntCast[T: SomeSignedInt](x: T, Target: typedesc[SomeUnsignedInt]): Target {.inline.} =
+  ## Cast signed integer to unsigned integer.
+  ## Same as cast[Target](x), but on js backend doesn't use BigInt
+  static:
+    assert sizeof(T) == sizeof(Target)
+
+  when defined(js):
+    const signBitMask = T.high
+    let b = (x and 1).Target # last bit
+    let y = ((x shr 1) and signBitMask).Target shl 1 # every bit except last
+    result = b or y
+  else:
+    result = cast[Target](x)
+
+static:
+  assert cast[uint32](0) == 0.int32.safeIntCast(uint32)
+  assert cast[uint32](1) == 1.int32.safeIntCast(uint32)
+  assert cast[uint32](-1) == -1.int32.safeIntCast(uint32)
+  assert cast[uint16](-1) == -1.int16.safeIntCast(uint16)
+  assert cast[uint8](-1) == -1.int8.safeIntCast(uint8)

@@ -56,8 +56,8 @@ proc handleTextEditorAction*(editor: TextDocumentEditor, action: string, args: J
   case action
   else: return false
 
-proc handleAstEditorAction*(editor: AstDocumentEditor, action: string, args: JsonNode): bool {.wasmexport.} =
-  # infof "handleAstEditorAction: {action}, {args}"
+proc handleModelEditorAction*(editor: ModelDocumentEditor, action: string, args: JsonNode): bool {.wasmexport.} =
+  # infof "handleModelEditorAction: {action}, {args}"
 
   case action
   else: return false
