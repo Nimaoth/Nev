@@ -188,6 +188,7 @@ type
     typ*: WasmMemoryType
 
   WasmGlobal* = object
+    id*: string
     typ*: WasmGlobalType
     init*: WasmExpr
 
@@ -263,7 +264,10 @@ type
     elems*: seq[WasmElem]
     datas*: seq[WasmData]
     start*: Option[WasmStart]
-    imports*: seq[WasmImport]
+    functionImports: seq[WasmImport]
+    tableImports: seq[WasmImport]
+    memImports: seq[WasmImport]
+    globalImports: seq[WasmImport]
     exports*: seq[WasmExport]
 
 proc `$`*(idx: WasmTypeIdx): string {.borrow.}
@@ -279,31 +283,74 @@ proc `$`*(idx: WasmLabelIdx): string {.borrow.}
 proc newWasmBuilder*(): WasmBuilder =
   new result
 
-proc getNumFunctionImports(self: WasmBuilder): int =
-  for i in self.imports:
-    if i.desc.kind == WasmImportDescKind.Func:
-      inc result
-
-proc getEffectiveFunctionIdx(self: WasmBuilder, funcIdx: WasmFuncIdx): int =
-  if (funcIdx.uint32 and 0x80000000.uint32) != 0:
-    return (not funcIdx.uint32).int
+proc getEffectiveFunctionIdx(self: WasmBuilder, idx: WasmFuncIdx): int =
+  if (idx.uint32 and 0x80000000.uint32) != 0:
+    return (not idx.uint32).int
   else:
-    return funcIdx.int + self.getNumFunctionImports()
+    return idx.int + self.functionImports.len
+
+proc getEffectiveTableIdx(self: WasmBuilder, idx: WasmTableIdx): int =
+  if (idx.uint32 and 0x80000000.uint32) != 0:
+    return (not idx.uint32).int
+  else:
+    return idx.int + self.tableImports.len
+
+proc getEffectiveMemIdx(self: WasmBuilder, idx: WasmMemIdx): int =
+  if (idx.uint32 and 0x80000000.uint32) != 0:
+    return (not idx.uint32).int
+  else:
+    return idx.int + self.memImports.len
+
+proc getEffectiveGlobalIdx(self: WasmBuilder, idx: WasmGlobalIdx): int =
+  if (idx.uint32 and 0x80000000.uint32) != 0:
+    return (not idx.uint32).int
+  else:
+    return idx.int + self.globalImports.len
 
 proc addType*(self: WasmBuilder, inputs: openArray[WasmValueType], outputs: openArray[WasmValueType]): WasmTypeIdx =
   result = self.types.len.WasmTypeIdx
   self.types.add WasmFunctionType(input: WasmResultType(types: @inputs), output: WasmResultType(types: @outputs))
 
 proc addImport*(self: WasmBuilder, module: string, name: string, typeIdx: WasmTypeIdx): WasmFuncIdx =
-  let funcIdx = (-self.imports.len - 1).WasmFuncIdx
+  result = (-self.functionImports.len - 1).WasmFuncIdx
 
-  self.imports.add WasmImport(
+  self.functionImports.add WasmImport(
     module: module,
     name: name,
     desc: WasmImportDesc(kind: Func, funcTypeIdx: typeIdx)
   )
 
-  return funcIdx
+proc addImport*(self: WasmBuilder, module: string, name: string, typ: WasmGlobalType): WasmGlobalIdx =
+  result = (-self.globalImports.len - 1).WasmGlobalIdx
+  self.globalImports.add WasmImport(
+    module: module,
+    name: name,
+    desc: WasmImportDesc(kind: Global, global: typ)
+  )
+
+proc addImport*(self: WasmBuilder, module: string, name: string, typ: WasmValueType, mut: bool): WasmGlobalIdx =
+  result = (-self.globalImports.len - 1).WasmGlobalIdx
+  self.globalImports.add WasmImport(
+    module: module,
+    name: name,
+    desc: WasmImportDesc(kind: Global, global: WasmGlobalType(typ: typ, mut: mut))
+  )
+
+proc addGlobal*(self: WasmBuilder, typ: WasmValueType, mut: bool, init: WasmExpr, id: string = ""): WasmGlobalIdx =
+  result = self.globals.len.WasmGlobalIdx
+  self.globals.add WasmGlobal(id: id, typ: WasmGlobalType(typ: typ, mut: mut), init: init)
+
+proc addGlobal*[T](self: WasmBuilder, typ: WasmValueType, mut: bool, init: T, id: string = ""): WasmGlobalIdx =
+  let instr = case typ
+  of I32: WasmInstr(kind: I32Const, i32Const: init.int32)
+  of I64: WasmInstr(kind: I64Const, i64Const: init.int64)
+  of F32: WasmInstr(kind: F32Const, f32Const: init.float32)
+  of F64: WasmInstr(kind: F64Const, f64Const: init.float64)
+  of V128: raise newException(Exception, "V128 not supported")
+  of FuncRef: raise newException(Exception, "FuncRef not supported")
+  of ExternRef: raise newException(Exception, "ExternRef not supported")
+
+  return self.addGlobal(typ, mut, WasmExpr(instr: @[instr]))
 
 proc addFunction*(self: WasmBuilder, inputs: openArray[WasmValueType], outputs: openArray[WasmValueType], exportName: Option[string] = string.none): WasmFuncIdx =
   let typeIdx = self.types.len.WasmTypeIdx
@@ -472,7 +519,7 @@ proc writeInstr(self: WasmBuilder, encoder: var BinaryEncoder, instr: WasmInstr)
 
   of GlobalGet, GlobalSet:
     encoder.write(byte, instr.kind.byte)
-    encoder.writeLength(instr.globalIdx.int)
+    encoder.writeLength(self.getEffectiveGlobalIdx(instr.globalIdx))
 
   of TableGet, TableSet:
     encoder.write(byte, instr.kind.byte)
@@ -588,26 +635,34 @@ proc generateTypeSection(self: WasmBuilder, encoder: var BinaryEncoder) =
         e.writeType(typ)
 
 proc generateImportSection(self: WasmBuilder, encoder: var BinaryEncoder) =
-  if self.imports.len > 0:
+  let totalImports = self.functionImports.len + self.tableImports.len + self.memImports.len + self.globalImports.len
+  if totalImports > 0:
     generateSection(self, encoder, 2):
-      e.writeLength(self.imports.len)
-      for v in self.imports:
+      e.writeLength(totalImports)
+
+      for v in self.functionImports:
         e.writeString(v.module)
         e.writeString(v.name)
+        e.write(byte, 0x00)
+        e.writeLEB128(uint32, v.desc.funcTypeIdx.uint32)
 
-        case v.desc.kind
-        of Func:
-          e.write(byte, 0x00)
-          e.writeLEB128(uint32, v.desc.funcTypeIdx.uint32)
-        of Table:
-          e.write(byte, 0x01)
-          e.writeType(v.desc.table)
-        of Mem:
-          e.write(byte, 0x02)
-          e.writeType(v.desc.mem)
-        of Global:
-          e.write(byte, 0x03)
-          e.writeType(v.desc.global)
+      for v in self.tableImports:
+        e.writeString(v.module)
+        e.writeString(v.name)
+        e.write(byte, 0x01)
+        e.writeType(v.desc.table)
+
+      for v in self.memImports:
+        e.writeString(v.module)
+        e.writeString(v.name)
+        e.write(byte, 0x02)
+        e.writeType(v.desc.mem)
+
+      for v in self.globalImports:
+        e.writeString(v.module)
+        e.writeString(v.name)
+        e.write(byte, 0x03)
+        e.writeType(v.desc.global)
 
 proc generateFunctionSection(self: WasmBuilder, encoder: var BinaryEncoder) =
   if self.funcs.len > 0:
@@ -651,13 +706,13 @@ proc generateExportSection(self: WasmBuilder, encoder: var BinaryEncoder) =
           e.writeLength(self.getEffectiveFunctionIdx(v.desc.funcIdx))
         of Table:
           e.write(byte, 0x01)
-          e.writeLength(v.desc.tableIdx.int)
+          e.writeLength(self.getEffectiveTableIdx(v.desc.tableIdx))
         of Mem:
           e.write(byte, 0x02)
-          e.writeLength(v.desc.memIdx.int)
+          e.writeLength(self.getEffectiveMemIdx(v.desc.memIdx))
         of Global:
           e.write(byte, 0x03)
-          e.writeLength(v.desc.globalIdx.int)
+          e.writeLength(self.getEffectiveGlobalIdx(v.desc.globalIdx))
 
 proc generateStartSection(self: WasmBuilder, encoder: var BinaryEncoder) =
   if self.start.isSome:
@@ -967,8 +1022,8 @@ proc getInstrWat(self: WasmBuilder, instr: WasmInstr, blockLevel: int = 0): stri
   of LocalGet: result.add &"local.get $var{instr.localIdx}"
   of LocalSet: result.add &"local.set $var{instr.localIdx}"
   of LocalTee: result.add &"local.tee $var{instr.localIdx}"
-  of GlobalGet: result.add &"global.get $var{instr.globalIdx}"
-  of GlobalSet: result.add &"global.set $var{instr.globalIdx}"
+  of GlobalGet: result.add &"global.get $var{getEffectiveGlobalIdx(self, instr.globalIdx)}"
+  of GlobalSet: result.add &"global.set $var{getEffectiveGlobalIdx(self, instr.globalIdx)}"
 
   of TableGet: result.add &"table.get {instr.tableOpIdx}"
   of TableSet: result.add &"table.set {instr.tableOpIdx}"
@@ -1183,7 +1238,8 @@ proc getTypeSectionWat(self: WasmBuilder): string =
 
 proc getImportSectionWat(self: WasmBuilder): string =
   # (import "wasi_snapshot_preview1" "fd_seek" (func $__wasi_fd_seek (type 28)))
-  for i, imp in self.imports:
+
+  proc genImport(imp: WasmImport): string =
     result.add "\n"
     result.add "(import \""
     result.add imp.module
@@ -1192,6 +1248,18 @@ proc getImportSectionWat(self: WasmBuilder): string =
     result.add "\" "
     result.add self.getImportDescWat(imp.desc)
     result.add ")"
+
+  for imp in self.functionImports:
+    result.add genImport(imp)
+
+  for imp in self.tableImports:
+    result.add genImport(imp)
+
+  for imp in self.memImports:
+    result.add genImport(imp)
+
+  for imp in self.tableImports:
+    result.add genImport(imp)
 
 proc getFunctionSectionWat(self: WasmBuilder): string =
   # (func $emscripten_stack_get_current (type 7) (result i32)
@@ -1223,7 +1291,8 @@ proc getMemorySectionWat(self: WasmBuilder): string =
 proc getGlobalSectionWat(self: WasmBuilder): string =
   for i, v in self.globals:
     let init = self.getExprWat(v.init)
-    result.add fmt"(global (;{i};) {v.typ} {init})\n"
+    let id = if v.id.len > 0: v.id else: fmt"global{i}"
+    result.add &"(global (;{i};) ${id} {v.typ} {init})\n"
 
 proc getExportSectionWat(self: WasmBuilder): string =
   for i, v in self.exports:
@@ -1351,17 +1420,8 @@ when isMainModule:
     ]))
   ))
 
-  builder.imports.add(WasmImport(
-    module: "test module",
-    name: "test name",
-    desc: WasmImportDesc(kind: Func, funcTypeIdx: 2.WasmTypeIdx)
-  ))
-
-  builder.imports.add(WasmImport(
-    module: "test module",
-    name: "test name 2",
-    desc: WasmImportDesc(kind: Func, funcTypeIdx: 3.WasmTypeIdx)
-  ))
+  discard builder.addImport("test module", "test name", 2.WasmTypeIdx)
+  discard builder.addImport("test module", "test name 2", 3.WasmTypeIdx)
 
   builder.exports.add(WasmExport(
     name: "my_alloc",
