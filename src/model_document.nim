@@ -2547,12 +2547,16 @@ proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.
       lineBuffer.add " "
     lineBuffer.add $a
 
+  proc printString(a: cstring) =
+    lineBuffer.add $a
+
   proc printLine() =
     log lvlInfo, lineBuffer
     lineBuffer = ""
 
   var imp = WasmImports(namespace: "env")
   imp.addFunction("print_i32", printI32)
+  imp.addFunction("print_string", printString)
   imp.addFunction("print_line", printLine)
 
   measureBlock fmt"Create wasm module for '{name}'":

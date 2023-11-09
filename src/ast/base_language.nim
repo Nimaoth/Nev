@@ -640,7 +640,39 @@ typeComputers[notExpressionClass.id] = proc(ctx: ModelComputationContextBase, no
 # calls
 typeComputers[callClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   debugf"compute type for call {node}"
-  # todo
+  defer:
+    debugf"result {result} for {node}"
+
+  let funcExprNode = node.firstChild(IdCallFunction).getOr:
+    log lvlError, fmt"No function specified for call {node}"
+    return voidTypeInstance
+
+  var funcType: AstNode
+  if funcExprNode.class == IdNodeReference:
+    let funcDeclNode = funcExprNode.resolveReference(IdNodeReferenceTarget).getOr:
+      log lvlError, fmt"Function not found: {funcExprNode}"
+      return voidTypeInstance
+
+    if funcDeclNode.class == IdConstDecl:
+      let funcDefNode = funcDeclNode.firstChild(IdConstDeclValue).getOr:
+        log lvlError, fmt"No value: {funcDeclNode} in call {node}"
+        return voidTypeInstance
+
+      funcType = ctx.computeType(funcDefNode)
+
+    else: # not a const decl, so call indirect
+      funcType = ctx.computeType(funcExprNode)
+
+  else: # not a node reference
+    funcType = ctx.computeType(funcExprNode)
+
+  if funcType.class != IdFunctionType:
+    log lvlError, fmt"Function type expected, got {funcType}"
+    return voidTypeInstance
+
+  if funcType.firstChild(IdFunctionTypeReturnType).getSome(returnType):
+    return returnType
+
   return voidTypeInstance
 
 typeComputers[appendStringExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =

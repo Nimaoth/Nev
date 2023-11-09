@@ -13,6 +13,13 @@ template isNotNil*(v: untyped, injected: untyped): bool =
 
 template toOpenArray*(s: string): auto = s.toOpenArray(0, s.high)
 
+template getOr*[T](opt: Option[T], body: untyped): T =
+  let temp = opt
+  if temp.isSome:
+    temp.get
+  else:
+    body
+
 proc `??`*[T: ref object](self: T, els: T): T =
   return if not self.isNil: self else: els
 
@@ -128,7 +135,7 @@ proc resetOption*[T](self: var Option[T]) =
   else:
     self = none(T)
 
-proc safeIntCast[T: SomeSignedInt](x: T, Target: typedesc[SomeUnsignedInt]): Target {.inline.} =
+proc safeIntCast*[T: SomeSignedInt](x: T, Target: typedesc[SomeUnsignedInt]): Target {.inline.} =
   ## Cast signed integer to unsigned integer.
   ## Same as cast[Target](x), but on js backend doesn't use BigInt
   static:
