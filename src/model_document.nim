@@ -2507,6 +2507,10 @@ proc findContainingFunction(node: AstNode): Option[AstNode] =
 
 import scripting/wasm
 
+proc intToString(a: int32): cstring =
+  let res = $a
+  return res.cstring
+
 proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.} =
   let timer = startTimer()
   defer:
@@ -2558,6 +2562,7 @@ proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.
   imp.addFunction("print_i32", printI32)
   imp.addFunction("print_string", printString)
   imp.addFunction("print_line", printLine)
+  imp.addFunction("intToString", intToString)
 
   measureBlock fmt"Create wasm module for '{name}'":
     let module = await newWasmModule(binary.toArrayBuffer, @[imp])

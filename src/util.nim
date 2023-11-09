@@ -155,3 +155,10 @@ static:
   assert cast[uint32](-1) == -1.int32.safeIntCast(uint32)
   assert cast[uint16](-1) == -1.int16.safeIntCast(uint16)
   assert cast[uint8](-1) == -1.int8.safeIntCast(uint8)
+
+proc align*[T](address, alignment: T): T =
+  if alignment == 0: # Actually, this is illegal. This branch exists to actively
+                     # hide problems.
+    result = address
+  else:
+    result = (address + (alignment - 1)) and not (alignment - 1)
