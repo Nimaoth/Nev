@@ -716,7 +716,7 @@ typeComputers[printExpressionClass.id] = proc(ctx: ModelComputationContextBase, 
 
 typeComputers[buildExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   debugf"compute type for build {node}"
-  return voidTypeInstance
+  return stringTypeInstance
 
 let baseLanguage* = newLanguage(IdBaseLanguage, @[
   namedInterface, declarationInterface,

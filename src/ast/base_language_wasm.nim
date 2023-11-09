@@ -1,7 +1,7 @@
 import std/[macros, genasts]
 import std/[options, tables]
 import fusion/matching
-import id, model, ast_ids, custom_logger, util, model_state
+import id, model, ast_ids, custom_logger, util, base_language, model_state
 import scripting/[wasm_builder]
 
 logCategory "base-language-wasm"
@@ -43,9 +43,15 @@ type
 
     generators: Table[Id, proc(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination)]
 
+    # imported
     printI32: WasmFuncIdx
     printString: WasmFuncIdx
     printLine: WasmFuncIdx
+    intToString: WasmFuncIdx
+
+    # implemented inline
+    buildString: WasmFuncIdx
+    strlen: WasmFuncIdx
 
     stackBase: WasmGlobalIdx
     stackEnd: WasmGlobalIdx
@@ -55,10 +61,15 @@ type
 
     memoryBase: WasmGlobalIdx
     tableBase: WasmGlobalIdx
+    heapBase: WasmGlobalIdx
+    heapSize: WasmGlobalIdx
 
     globalData: seq[uint8]
 
 proc setupGenerators(self: BaseLanguageWasmCompiler)
+proc compileFunction(self: BaseLanguageWasmCompiler, node: AstNode, funcIdx: WasmFuncIdx)
+proc getOrCreateWasmFunc(self: BaseLanguageWasmCompiler, node: AstNode, exportName: Option[string] = string.none): WasmFuncIdx
+proc compileRemainingFunctions(self: BaseLanguageWasmCompiler)
 
 proc newBaseLanguageWasmCompiler*(ctx: ModelComputationContextBase): BaseLanguageWasmCompiler =
   new result
@@ -68,24 +79,161 @@ proc newBaseLanguageWasmCompiler*(ctx: ModelComputationContextBase): BaseLanguag
 
   result.builder.mems.add(WasmMem(typ: WasmMemoryType(limits: WasmLimits(min: 255))))
 
-  discard result.builder.addFunction([I32], [I32], [], exportName="my_alloc".some, body=WasmExpr(instr: @[
-    WasmInstr(kind: I32Const, i32Const: 0),
+  result.builder.addExport("memory", 0.WasmMemIdx)
+
+  result.printI32 = result.builder.addImport("env", "print_i32", result.builder.addType([I32], []))
+  result.printString = result.builder.addImport("env", "print_string", result.builder.addType([I32], []))
+  result.printLine = result.builder.addImport("env", "print_line", result.builder.addType([], []))
+  result.intToString = result.builder.addImport("env", "intToString", result.builder.addType([I32], [I32]))
+  result.stackBase = result.builder.addGlobal(I32, mut=true, 0, id="__stack_base")
+  result.stackEnd = result.builder.addGlobal(I32, mut=true, 0, id="__stack_end")
+  result.stackPointer = result.builder.addGlobal(I32, mut=true, 65536, id="__stack_pointer")
+  result.memoryBase = result.builder.addGlobal(I32, mut=false, 0, id="__memory_base")
+  result.tableBase = result.builder.addGlobal(I32, mut=false, 0, id="__table_base")
+  result.heapBase = result.builder.addGlobal(I32, mut=false, 0, id="__heap_base")
+  result.heapSize = result.builder.addGlobal(I32, mut=true, 0, id="__heap_size")
+
+  # todo: add proper allocator. For now just a bump allocator without freeing
+  let alloc = result.builder.addFunction([I32], [I32], [], exportName="my_alloc".some, body=WasmExpr(instr: @[
+    WasmInstr(kind: GlobalGet, globalIdx: result.heapBase),
+    WasmInstr(kind: GlobalGet, globalIdx: result.heapSize),
+    WasmInstr(kind: I32Add),
+    WasmInstr(kind: GlobalGet, globalIdx: result.heapSize),
+    WasmInstr(kind: LocalGet, localIdx: 0.WasmLocalIdx),
+    WasmInstr(kind: I32Add),
+    WasmInstr(kind: GlobalSet, globalIdx: result.heapSize),
   ]))
 
   discard result.builder.addFunction([I32], [], [], exportName="my_dealloc".some, body=WasmExpr(instr: @[
       WasmInstr(kind: Nop),
   ]))
 
-  result.builder.addExport("memory", 0.WasmMemIdx)
+  # strlen
+  block:
+    let param = 0.WasmLocalIdx
+    let current = 1.WasmLocalIdx
+    result.strlen = result.builder.addFunction([I32], [I32], [
+        (I32, "current"),
+      ], body=WasmExpr(instr: @[
 
-  result.printI32 = result.builder.addImport("env", "print_i32", result.builder.addType([I32], []))
-  result.printString = result.builder.addImport("env", "print_string", result.builder.addType([I32], []))
-  result.printLine = result.builder.addImport("env", "print_line", result.builder.addType([], []))
-  result.stackBase = result.builder.addGlobal(I32, mut=true, 0, id="__stack_base")
-  result.stackEnd = result.builder.addGlobal(I32, mut=true, 0, id="__stack_end")
-  result.stackPointer = result.builder.addGlobal(I32, mut=true, 65536, id="__stack_pointer")
-  result.memoryBase = result.builder.addGlobal(I32, mut=false, 0, id="__memory_base")
-  result.tableBase = result.builder.addGlobal(I32, mut=false, 0, id="__table_base")
+      # a.length
+      WasmInstr(kind: LocalGet, localIdx: param),
+      WasmInstr(kind: LocalSet, localIdx: current),
+
+      WasmInstr(kind: Block, blockType: WasmBlockType(kind: ValType), blockInstr: @[
+        WasmInstr(kind: Loop, loopType: WasmBlockType(kind: ValType), loopInstr: @[
+          WasmInstr(kind: LocalGet, localIdx: current),
+          WasmInstr(kind: I32Load8U),
+          WasmInstr(kind: I32Eqz),
+          WasmInstr(kind: BrIf, brLabelIdx: 1.WasmLabelIdx),
+
+          WasmInstr(kind: LocalGet, localIdx: current),
+          WasmInstr(kind: I32Const, i32Const: 1),
+          WasmInstr(kind: I32Add),
+          WasmInstr(kind: LocalSet, localIdx: current),
+          WasmInstr(kind: Br, brLabelIdx: 0.WasmLabelIdx),
+        ]),
+      ]),
+
+      WasmInstr(kind: LocalGet, localIdx: current),
+      WasmInstr(kind: LocalGet, localIdx: param),
+      WasmInstr(kind: I32Sub),
+    ]))
+
+  # build
+  block:
+    let paramA = 0.WasmLocalIdx
+    let paramB = 1.WasmLocalIdx
+    let lengthA = 2.WasmLocalIdx
+    let lengthB = 3.WasmLocalIdx
+    let resultLength = 4.WasmLocalIdx
+    let resultAddress = 5.WasmLocalIdx
+    result.buildString = result.builder.addFunction([I64, I64], [I64], [
+        (I32, "lengthA"),
+        (I32, "lengthB"),
+        (I32, "resultLength"),
+        (I32, "resultAddress")
+      ], body=WasmExpr(instr: @[
+
+      # params: a: string, b: string
+      # a.length
+      WasmInstr(kind: LocalGet, localIdx: paramA),
+      WasmInstr(kind: I64Const, i64Const: 32),
+      WasmInstr(kind: I64ShrU),
+      WasmInstr(kind: I32WrapI64),
+      WasmInstr(kind: LocalTee, localIdx: lengthA),
+
+      # b.length
+      WasmInstr(kind: LocalGet, localIdx: paramB),
+      WasmInstr(kind: I64Const, i64Const: 32),
+      WasmInstr(kind: I64ShrU),
+      WasmInstr(kind: I32WrapI64),
+      WasmInstr(kind: LocalTee, localIdx: lengthB),
+
+      # resultLength = a.length + b.length
+      WasmInstr(kind: I32Add),
+      WasmInstr(kind: LocalTee, localIdx: resultLength),
+
+      # result = alloc(resultLength)
+      WasmInstr(kind: I32Const, i32Const: 1),
+      WasmInstr(kind: I32Add),
+      WasmInstr(kind: Call, callFuncIdx: alloc),
+      WasmInstr(kind: LocalTee, localIdx: resultAddress),
+
+      # memcpy(resultAddress, a, a.length)
+      WasmInstr(kind: LocalGet, localIdx: paramA),
+      WasmInstr(kind: I32WrapI64),
+      WasmInstr(kind: LocalGet, localIdx: lengthA),
+      WasmInstr(kind: MemoryCopy),
+
+      # memcpy(resultAddress + a.length, b, b.length)
+      WasmInstr(kind: LocalGet, localIdx: resultAddress),
+      WasmInstr(kind: LocalGet, localIdx: lengthA),
+      WasmInstr(kind: I32Add),
+
+      WasmInstr(kind: LocalGet, localIdx: paramB),
+      WasmInstr(kind: I32WrapI64),
+      WasmInstr(kind: LocalGet, localIdx: lengthB),
+      WasmInstr(kind: MemoryCopy),
+
+      # *(resultAddress + resultLength) = 0
+      WasmInstr(kind: LocalGet, localIdx: resultAddress),
+      WasmInstr(kind: LocalGet, localIdx: resultLength),
+      WasmInstr(kind: I32Add),
+      WasmInstr(kind: I32Const, i32Const: 0),
+      WasmInstr(kind: I32Store),
+
+      # result = ptr or (resultLength << 32)
+      WasmInstr(kind: LocalGet, localIdx: resultAddress),
+      WasmInstr(kind: I64ExtendI32U),
+      WasmINstr(kind: LocalGet, localIdx: resultLength),
+      WasmInstr(kind: I64ExtendI32U),
+      WasmInstr(kind: I64Const, i64Const: 32),
+      WasmInstr(kind: I64Shl),
+      WasmInstr(kind: I64Or),
+    ]))
+
+proc compileToBinary*(self: BaseLanguageWasmCompiler, node: AstNode): seq[uint8] =
+  let functionName = $node.id
+  discard self.getOrCreateWasmFunc(node, exportName=functionName.some)
+  self.compileRemainingFunctions()
+
+  let activeDataOffset = wasmPageSize # todo: after stack
+  let activeDataSize = self.globalData.len.int32
+  discard self.builder.addActiveData(0.WasmMemIdx, activeDataOffset, self.globalData)
+
+  let heapBase = align(activeDataOffset + activeDataSize, wasmPageSize)
+  self.builder.globals[self.heapBase.int].init = WasmInstr(kind: I32Const, i32Const: heapBase)
+
+  debugf"{self.builder}"
+
+  let binary = self.builder.generateBinary()
+  return binary
+
+proc compileRemainingFunctions(self: BaseLanguageWasmCompiler) =
+  while self.functionsToCompile.len > 0:
+    let function = self.functionsToCompile.pop
+    self.compileFunction(function[0], function[1])
 
 proc genNode*(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   if self.generators.contains(node.class):
@@ -99,7 +247,7 @@ proc toWasmValueType(typ: AstNode): Option[WasmValueType] =
   if typ.class == IdInt:
     return WasmValueType.I32.some
   if typ.class == IdString:
-    return WasmValueType.I32.some
+    return WasmValueType.I64.some
   if typ.class == IdFunctionType:
     return WasmValueType.I32.some
   return WasmValueType.none
@@ -141,16 +289,10 @@ proc getTypeMemInstructions(self: BaseLanguageWasmCompiler, typ: AstNode): tuple
   return (Nop, Nop)
 
 proc createLocal(self: BaseLanguageWasmCompiler, id: Id, typ: AstNode, name: string): WasmLocalIdx =
-  result = (self.currentLocals.len + self.currentParamCount).WasmLocalIdx
-  self.currentLocals.add((I32, name))
-  self.localIndices[id] = LocalVariable(kind: Local, localIdx: result)
-
-proc align(address, alignment: int32): int32 =
-  if alignment == 0: # Actually, this is illegal. This branch exists to actively
-                     # hide problems.
-    result = address
-  else:
-    result = (address + (alignment - 1)) and not (alignment - 1)
+  if typ.toWasmValueType.getSome(wasmType):
+    result = (self.currentLocals.len + self.currentParamCount).WasmLocalIdx
+    self.currentLocals.add((wasmType, name))
+    self.localIndices[id] = LocalVariable(kind: Local, localIdx: result)
 
 proc createStackLocal(self: BaseLanguageWasmCompiler, id: Id, typ: AstNode): int32 =
   let (size, alignment) = self.getTypeAttributes(typ)
@@ -164,6 +306,12 @@ proc createStackLocal(self: BaseLanguageWasmCompiler, id: Id, typ: AstNode): int
   self.localIndices[id] = LocalVariable(kind: Stack, stackOffset: self.currentStackLocalsSize)
 
   self.currentStackLocalsSize += size
+
+proc getTempLocal(self: BaseLanguageWasmCompiler, typ: AstNode): WasmLocalIdx =
+  if self.localIndices.contains(typ.id):
+    return self.localIndices[typ.id].localIdx
+
+  return self.createLocal(typ.id, typ, fmt"__temp_{typ.id}")
 
 proc addStringData(self: BaseLanguageWasmCompiler, value: string): int32 =
   let offset = self.globalData.len.int32
@@ -183,6 +331,11 @@ macro instr(self: BaseLanguageWasmCompiler, op: WasmInstrKind, args: varargs[unt
     self.currentExpr.instr.add WasmInstr(kind: op)
   for arg in args:
     result[1].add arg
+
+proc genDup(self: BaseLanguageWasmCompiler, typ: AstNode) =
+  let tempIdx = self.getTempLocal(typ)
+  self.instr(LocalTee, localIdx: tempIdx)
+  self.instr(LocalGet, localIdx: tempIdx)
 
 proc storeInstr(self: BaseLanguageWasmCompiler, op: WasmInstrKind, offset: uint32, align: uint32) =
   debugf"storeInstr {op}, offset {offset}, align {align}"
@@ -237,23 +390,6 @@ proc compileFunction(self: BaseLanguageWasmCompiler, node: AstNode, funcIdx: Was
   self.generateEpiloque()
 
   self.builder.setBody(funcIdx, self.currentLocals, self.currentExpr)
-
-proc compileRemainingFunctions(self: BaseLanguageWasmCompiler) =
-  while self.functionsToCompile.len > 0:
-    let function = self.functionsToCompile.pop
-    self.compileFunction(function[0], function[1])
-
-proc compileToBinary*(self: BaseLanguageWasmCompiler, node: AstNode): seq[uint8] =
-  let functionName = $node.id
-  discard self.getOrCreateWasmFunc(node, exportName=functionName.some)
-  self.compileRemainingFunctions()
-
-  discard self.builder.addActiveData(0.WasmMemIdx, wasmPageSize, self.globalData)
-
-  debugf"{self.builder}"
-
-  let binary = self.builder.generateBinary()
-  return binary
 
 proc genDrop(self: BaseLanguageWasmCompiler, node: AstNode) =
   self.instr(Drop)
@@ -353,6 +489,18 @@ proc genNodeBinaryNotEqualExpression(self: BaseLanguageWasmCompiler, node: AstNo
   self.instr(I32Ne)
   self.genStoreDestination(node, dest)
 
+proc genNodeUnaryNegateExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  self.instr(I32Const, i32Const: 0)
+  self.genNodeChildren(node, IdUnaryExpressionChild, Destination(kind: Stack))
+  self.instr(I32Sub)
+  self.genStoreDestination(node, dest)
+
+proc genNodeUnaryNotExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  self.instr(I32Const, i32Const: 1)
+  self.genNodeChildren(node, IdUnaryExpressionChild, Destination(kind: Stack))
+  self.instr(I32Sub)
+  self.genStoreDestination(node, dest)
+
 proc genNodeIntegerLiteral(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   let value = node.property(IdIntegerLiteralValue).get
   self.instr(I32Const, i32Const: value.intValue.int32)
@@ -378,10 +526,8 @@ proc genNodeIfExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: De
   let thenCases = node.children(IdIfExpressionThenCase)
   let elseCase = node.children(IdIfExpressionElseCase)
 
-  let typ = if elseCase.len > 0:
-    WasmValueType.I32.some
-  else:
-    WasmValueType.none
+  let typ = self.ctx.computeType(node)
+  let wasmType = typ.toWasmValueType
 
   for k, c in thenCases:
     # condition
@@ -397,14 +543,14 @@ proc genNodeIfExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: De
     self.currentExpr = WasmExpr()
 
   for i, c in elseCase:
-    if i > 0 and typ.isSome: self.genDrop(c)
+    if i > 0 and wasmType.isSome: self.genDrop(c)
     self.genNode(c, dest)
-    if typ.isNone: self.genDrop(c)
+    if wasmType.isNone: self.genDrop(c)
 
   for i in countdown(ifStack.high, 0):
     let elseCase = self.currentExpr
     self.currentExpr = self.exprStack.pop
-    self.instr(If, ifType: WasmBlockType(kind: ValType, typ: typ), ifThenInstr: move ifStack[i].instr, ifElseInstr: move elseCase.instr)
+    self.instr(If, ifType: WasmBlockType(kind: ValType, typ: wasmType), ifThenInstr: move ifStack[i].instr, ifElseInstr: move elseCase.instr)
 
 template genBlock(self: BaseLanguageWasmCompiler, typ: WasmBlockType, body: untyped): untyped =
   self.exprStack.add self.currentExpr
@@ -590,20 +736,34 @@ proc genNodePrintExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest:
 
   self.instr(Call, callFuncIdx: self.printLine)
 
+proc genToString(self: BaseLanguageWasmCompiler, typ: AstNode) =
+  if typ.class == IdInt:
+    let tempIdx = self.getTempLocal(typ)
+    self.instr(Call, callFuncIdx: self.intToString)
+    self.instr(LocalTee, localIdx: tempIdx)
+    self.instr(I64ExtendI32U)
+    self.instr(LocalGet, localIdx: tempIdx)
+    self.instr(Call, callFuncIdx: self.strlen)
+    self.instr(I64ExtendI32U)
+    self.instr(I64Const, i64Const: 32)
+    self.instr(I64Shl)
+    self.instr(I64Or)
+  else:
+    self.instr(Drop)
+    self.instr(I64Const, i64Const: 0)
+
 proc genNodeBuildExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   for i, c in node.children(IdBuildArguments):
     self.genNode(c, Destination(kind: Stack))
 
     let typ = self.ctx.computeType(c)
-    if typ.class == IdInt:
-      self.instr(Call, callFuncIdx: self.printI32)
-    elif typ.class == IdString:
-      self.instr(I32WrapI64)
-      self.instr(Call, callFuncIdx: self.printString)
-    else:
-      log lvlError, fmt"genNodeBuildExpression: Type not implemented: {`$`(typ, true)}"
+    if typ.class != IdString:
+      self.genToString(typ)
 
-  self.instr(Call, callFuncIdx: self.printLine)
+    if i > 0:
+      self.instr(Call, callFuncIdx: self.buildString)
+
+  self.genStoreDestination(node, dest)
 
 proc genNodeCallExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   for i, c in node.children(IdCallArguments):
@@ -657,6 +817,8 @@ proc setupGenerators(self: BaseLanguageWasmCompiler) =
   self.generators[IdGreaterEqual] = genNodeBinaryGreaterEqualExpression
   self.generators[IdEqual] = genNodeBinaryEqualExpression
   self.generators[IdNotEqual] = genNodeBinaryNotEqualExpression
+  self.generators[IdNegate] = genNodeUnaryNegateExpression
+  self.generators[IdNot] = genNodeUnaryNotExpression
   self.generators[IdIntegerLiteral] = genNodeIntegerLiteral
   self.generators[IdBoolLiteral] = genNodeBoolLiteral
   self.generators[IdStringLiteral] = genNodeStringLiteral
