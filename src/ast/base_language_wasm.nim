@@ -95,14 +95,14 @@ proc genNode*(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) 
     let class = node.nodeClass
     log(lvlWarn, fmt"genNode: Node class not implemented: {class.name}")
 
-proc toWasmValueType(typ: AstNode): WasmValueType =
+proc toWasmValueType(typ: AstNode): Option[WasmValueType] =
   if typ.class == IdInt:
-    return WasmValueType.I32
+    return WasmValueType.I32.some
   if typ.class == IdString:
-    return WasmValueType.I32
+    return WasmValueType.I32.some
   if typ.class == IdFunctionType:
-    return WasmValueType.FuncRef
-  return WasmValueType.I32
+    return WasmValueType.I32.some
+  return WasmValueType.none
 
 proc getOrCreateWasmFunc(self: BaseLanguageWasmCompiler, node: AstNode, exportName: Option[string] = string.none): WasmFuncIdx =
   if not self.wasmFuncs.contains(node.id):
@@ -110,10 +110,10 @@ proc getOrCreateWasmFunc(self: BaseLanguageWasmCompiler, node: AstNode, exportNa
 
     for _, c in node.children(IdFunctionDefinitionParameters):
       let typ = c.children(IdParameterDeclType)[0]
-      inputs.add typ.toWasmValueType
+      inputs.add typ.toWasmValueType.get
 
     for _, c in node.children(IdFunctionDefinitionReturnType):
-      outputs.add c.toWasmValueType
+      outputs.add c.toWasmValueType.get
 
     let funcIdx = self.builder.addFunction(inputs, outputs, exportName=exportName)
     self.wasmFuncs[node.id] = funcIdx
@@ -282,12 +282,17 @@ proc genNodeChildren(self: BaseLanguageWasmCompiler, node: AstNode, role: Id, de
 ###################### Node Generators ##############################
 
 proc genNodeBlock(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
-  # self.exprStack.add self.currentExpr
-  # self.currentExpr = WasmExpr()
+  self.exprStack.add self.currentExpr
+  self.currentExpr = WasmExpr()
 
   self.genNodeChildren(node, IdBlockChildren, dest)
 
-  # self.currentExpr = self.exprStack.pop
+  let blockExpr = self.currentExpr
+  self.currentExpr = self.exprStack.pop
+
+  let typ = self.ctx.computeType(node)
+  let wasmType = typ.toWasmValueType
+  self.instr(Block, blockType: WasmBlockType(kind: ValType, typ: wasmType), blockInstr: move blockExpr.instr)
 
 proc genNodeBinaryExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   self.genNodeChildren(node, IdBinaryExpressionLeft, dest)
@@ -451,9 +456,6 @@ proc genNodeWhileExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest:
       # continue loop
       self.instr(Br, brLabelIdx: 0.WasmLabelIdx)
 
-  # Loop doesn't generate a value, but right now every node needs to produce an int32
-  self.instr(I32Const, i32Const: 0)
-
 proc genNodeConstDecl(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   # let index = self.createLocal(node.id, nil)
 
@@ -587,7 +589,6 @@ proc genNodePrintExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest:
       log lvlError, fmt"genNodePrintExpression: Type not implemented: {`$`(typ, true)}"
 
   self.instr(Call, callFuncIdx: self.printLine)
-  self.instr(I32Const, i32Const: 0)
 
 proc genNodeBuildExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   for i, c in node.children(IdBuildArguments):
@@ -603,7 +604,6 @@ proc genNodeBuildExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest:
       log lvlError, fmt"genNodeBuildExpression: Type not implemented: {`$`(typ, true)}"
 
   self.instr(Call, callFuncIdx: self.printLine)
-  self.instr(I32Const, i32Const: 0)
 
 proc genNodeCallExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   for i, c in node.children(IdCallArguments):

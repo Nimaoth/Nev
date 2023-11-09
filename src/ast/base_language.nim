@@ -490,13 +490,44 @@ typeComputers[constDeclClass.id] = proc(ctx: ModelComputationContextBase, node: 
     return ctx.computeType(valueNode)
   return voidTypeInstance
 
+typeComputers[parameterDeclClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for const decl {node}"
+  if node.firstChild(IdParameterDeclType).getSome(typeNode):
+    return ctx.computeType(typeNode)
+  if node.firstChild(IdParameterDeclValue).getSome(valueNode):
+    return ctx.computeType(valueNode)
+  return voidTypeInstance
+
 # control flow
 typeComputers[whileClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   debugf"compute type for while loop {node}"
   return voidTypeInstance
 
+typeComputers[thenCaseClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for then case {node}"
+  if node.firstChild(IdThenCaseBody).getSome(body):
+    return ctx.computeType(body)
+  return voidTypeInstance
+
 typeComputers[ifClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   debugf"compute type for if expr {node}"
+
+  var ifType: AstNode = voidTypeInstance
+  for i, thenCase in node.children(IdIfExpressionThenCase):
+    let thenType = ctx.computeType(thenCase)
+    if i == 0:
+      ifType = thenType
+    elif ifType == thenType:
+      continue
+    else:
+      ifType = voidTypeInstance
+      break
+
+  if ifType.class != IdVoid and node.firstChild(IdIfExpressionElseCase).getSome(elseCase):
+    let elseType = ctx.computeType(elseCase)
+    if ifType == elseType:
+      return ifType
+
   return voidTypeInstance
 
 # function definition
@@ -547,7 +578,7 @@ typeComputers[nodeListClass.id] = proc(ctx: ModelComputationContextBase, node: A
 typeComputers[blockClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   debugf"compute type for block {node}"
 
-  if node.firstChild(IdBlockChildren).getSome(childNode):
+  if node.lastChild(IdBlockChildren).getSome(childNode):
     return ctx.computeType(childNode)
 
   return voidTypeInstance
