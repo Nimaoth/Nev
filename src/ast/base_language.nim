@@ -452,6 +452,11 @@ typeComputers[voidTypeClass.id] = proc(ctx: ModelComputationContextBase, node: A
   debugf"compute type for void type literal {node}"
   return voidTypeInstance
 
+# base expression
+typeComputers[expressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for base expression {node}"
+  return voidTypeInstance
+
 # literals
 typeComputers[stringLiteralClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   debugf"compute type for string type literal {node}"
@@ -732,5 +737,14 @@ let baseLanguage* = newLanguage(IdBaseLanguage, @[
   negateExpressionClass, notExpressionClass,
   appendStringExpressionClass, printExpressionClass, buildExpressionClass,
 ], builder, typeComputers)
+
+let baseModel* = block:
+  var model = newModel(newId())
+  model.addLanguage(baseLanguage)
+  model.addRootNode(intTypeInstance)
+  model.addRootNode(stringTypeInstance)
+  model.addRootNode(voidTypeInstance)
+
+  model
 
 # print baseLanguage
