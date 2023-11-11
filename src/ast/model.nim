@@ -15,6 +15,8 @@ defineBitFlag:
     DeleteWhenEmpty
     OnNewLine
     IndentChildren
+    NoSpaceLeft
+    NoSpaceRight
 
 type
   ClassId* = Id
@@ -147,6 +149,7 @@ type
 
     # functions for computing the type of a node
     typeComputers*: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]
+    scopeComputers*: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]]
 
   Model* = ref object
     id {.getter.}: ModelId
@@ -173,6 +176,7 @@ generateGetters(Language)
 proc hash*(node: AstNode): Hash = node.id.hash
 
 method computeType*(self: ModelComputationContextBase, node: AstNode): AstNode {.base.} = discard
+method getScope*(self: ModelComputationContextBase, node: AstNode): seq[AstNode] {.base.} = discard
 method dependOn*(self: ModelComputationContextBase, node: AstNode) {.base.} = discard
 
 proc notifyNodeDeleted(self: Model, parent: AstNode, child: AstNode, role: RoleId, index: int) =
@@ -222,10 +226,13 @@ proc verify*(self: Language): bool =
       log(lvlError, fmt"Class {c.name} is both final and abstract")
       result = false
 
-proc newLanguage*(id: LanguageId, classes: seq[NodeClass], builder: CellBuilder, typeComputers: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]): Language =
+proc newLanguage*(id: LanguageId, classes: seq[NodeClass], builder: CellBuilder,
+  typeComputers: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode],
+  scopeComputers: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]]): Language =
   new result
   result.id = id
   result.typeComputers = typeComputers
+  result.scopeComputers = scopeComputers
 
   for c in classes:
     result.classes[c.id] = c

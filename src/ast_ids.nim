@@ -127,11 +127,12 @@ let IdStructMemberDefinitionValue* = "654fbb281446e19b38225206".parseId
 let IdStructType* = "654fbb281446e19b38225204".parseId
 let IdStructTypeMemberTypes* = "654fbb281446e19b38225207".parseId
 
+let IdStructMemberAccess* = "654fbb281446e19b3822520a".parseId
+let IdStructMemberAccessMember* = "654fbb281446e19b38225208".parseId
+let IdStructMemberAccessValue* = "654fbb281446e19b38225209".parseId
+
 # new ids
 
-let Id654fbb281446e19b38225208* = "654fbb281446e19b38225208".parseId
-let Id654fbb281446e19b38225209* = "654fbb281446e19b38225209".parseId
-let Id654fbb281446e19b3822520a* = "654fbb281446e19b3822520a".parseId
 let Id654fbb281446e19b3822520b* = "654fbb281446e19b3822520b".parseId
 let Id654fbb281446e19b3822520c* = "654fbb281446e19b3822520c".parseId
 let Id654fbb281446e19b3822520d* = "654fbb281446e19b3822520d".parseId
