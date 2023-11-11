@@ -907,6 +907,9 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
     defer:
       self.lastContentBounds = currentNode.bounds
 
+    onClickAny btn:
+      self.app.tryActivateEditor(self)
+
     if dirty or app.platform.redrawEverything or not builder.retain():
       var header: UINode
 
@@ -967,14 +970,16 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
                     # debugf"click: {self.scrollOffset} -> {bounds.y} | {cell.dump} | {node.dump}"
                     self.scrollOffset = bounds.y
 
-                  self.updateSelection(cursor, drag)
-
-                  self.app.tryActivateEditor(self)
-                  self.markDirty()
+                  if self.active or not drag:
+                    self.updateSelection(cursor, drag)
+                    self.app.tryActivateEditor(self)
+                    self.markDirty()
 
                 self.cellWidgetContext.setCursor = proc(cell: Cell, offset: int, drag: bool) =
-                  self.updateSelection(self.nodeCellMap.toCursor(cell, offset), drag)
-                  self.updateScrollOffset()
+                  if self.active or not drag:
+                    self.updateSelection(self.nodeCellMap.toCursor(cell, offset), drag)
+                    self.updateScrollOffset()
+                    self.app.tryActivateEditor(self)
 
                 # debugf"render: {self.targetCellPath}:{self.scrollOffset}"
                 # echo fmt"scroll offset {self.scrollOffset}"

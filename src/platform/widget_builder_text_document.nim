@@ -148,11 +148,12 @@ proc renderLine*(
                   self.markDirty()
 
               onDrag Left:
-                let offset = self.getCursorPos(textRuneLen, line.index, startRune.RuneIndex, pos)
-                let currentSelection = self.selection
-                self.selection = (currentSelection.first, (line.index, offset))
-                self.app.tryActivateEditor(self)
-                self.markDirty()
+                if self.active:
+                  let offset = self.getCursorPos(textRuneLen, line.index, startRune.RuneIndex, pos)
+                  let currentSelection = self.selection
+                  self.selection = (currentSelection.first, (line.index, offset))
+                  self.app.tryActivateEditor(self)
+                  self.markDirty()
 
             if addBackgroundAsChildren:
               # Add separate background colors for selections/highlights
@@ -195,10 +196,11 @@ proc renderLine*(
                 self.markDirty()
 
             onDrag Left:
-              let currentSelection = self.selection
-              self.selection = (currentSelection.first, (line.index, self.document.lineLength(line.index)))
-              self.app.tryActivateEditor(self)
-              self.markDirty()
+              if self.active:
+                let currentSelection = self.selection
+                self.selection = (currentSelection.first, (line.index, self.document.lineLength(line.index)))
+                self.app.tryActivateEditor(self)
+                self.markDirty()
 
     # cursor after latest char
     for curs in cursors:
@@ -482,6 +484,9 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
     sizeFlags.incl FillY
 
   builder.panel(&{UINodeFlag.MaskContent, OverlappingChildren} + sizeFlags, userId = self.userId.newPrimaryId):
+    onClickAny btn:
+      self.app.tryActivateEditor(self)
+
     if not self.disableScrolling and not sizeToContentY:
       updateBaseIndexAndScrollOffset(currentNode.bounds.h, self.previousBaseIndex, self.scrollOffset, self.document.lines.len, builder.textHeight, int.none)
 
