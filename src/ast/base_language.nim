@@ -5,21 +5,26 @@ import ui/node
 
 logCategory "base-language"
 
-let typeClass* = newNodeClass(IdType, "Type", isAbstract=true)
-let stringTypeClass* = newNodeClass(IdString, "StringType", alias="string", base=typeClass)
-let intTypeClass* = newNodeClass(IdInt, "IntType", alias="int", base=typeClass)
-let voidTypeClass* = newNodeClass(IdVoid, "VoidType", alias="void", base=typeClass)
-let functionTypeClass* = newNodeClass(IdFunctionType, "FunctionType", base=typeClass,
+let expressionClass* = newNodeClass(IdExpression, "Expression", isAbstract=true)
+# let typeClass* = newNodeClass(IdType, "Type", isAbstract=true)
+
+let metaTypeClass* = newNodeClass(IdType, "Type", alias="type", base=expressionClass)
+let stringTypeClass* = newNodeClass(IdString, "StringType", alias="string", base=expressionClass)
+let intTypeClass* = newNodeClass(IdInt, "IntType", alias="int", base=expressionClass)
+let voidTypeClass* = newNodeClass(IdVoid, "VoidType", alias="void", base=expressionClass)
+let functionTypeClass* = newNodeClass(IdFunctionType, "FunctionType", alias="fn", base=expressionClass,
   children=[
-    NodeChildDescription(id: IdFunctionTypeReturnType, role: "returnType", class: typeClass.id, count: ChildCount.One),
-    NodeChildDescription(id: IdFunctionTypeParameterTypes, role: "parameterTypes", class: typeClass.id, count: ChildCount.ZeroOrMore)])
+    NodeChildDescription(id: IdFunctionTypeReturnType, role: "returnType", class: expressionClass.id, count: ChildCount.One),
+    NodeChildDescription(id: IdFunctionTypeParameterTypes, role: "parameterTypes", class: expressionClass.id, count: ChildCount.ZeroOrMore)])
+let structTypeClass* = newNodeClass(IdStructType, "StructType", alias="struct", base=expressionClass,
+  children=[
+    NodeChildDescription(id: IdStructTypeMemberTypes, role: "memberTypes", class: expressionClass.id, count: ChildCount.ZeroOrMore)])
 
 let namedInterface* = newNodeClass(IdINamed, "INamed", isAbstract=true, isInterface=true,
   properties=[PropertyDescription(id: IdINamedName, role: "name", typ: PropertyType.String)])
 
 let declarationInterface* = newNodeClass(IdIDeclaration, "IDeclaration", isAbstract=true, isInterface=true, base=namedInterface)
 
-let expressionClass* = newNodeClass(IdExpression, "Expression", isAbstract=true)
 let binaryExpressionClass* = newNodeClass(IdBinaryExpression, "BinaryExpression", isAbstract=true, base=expressionClass, children=[
     NodeChildDescription(id: IdBinaryExpressionLeft, role: "left", class: expressionClass.id, count: ChildCount.One),
     NodeChildDescription(id: IdBinaryExpressionRight, role: "right", class: expressionClass.id, count: ChildCount.One),
@@ -66,17 +71,17 @@ let boolLiteralClass* = newNodeClass(IdBoolLiteral, "BoolLiteral", alias="bool",
 
 let constDeclClass* = newNodeClass(IdConstDecl, "ConstDecl", alias="const", base=expressionClass, interfaces=[declarationInterface],
   children=[
-    NodeChildDescription(id: IdConstDeclType, role: "type", class: typeClass.id, count: ChildCount.ZeroOrOne),
+    NodeChildDescription(id: IdConstDeclType, role: "type", class: expressionClass.id, count: ChildCount.ZeroOrOne),
     NodeChildDescription(id: IdConstDeclValue, role: "value", class: expressionClass.id, count: ChildCount.One)])
 
 let letDeclClass* = newNodeClass(IdLetDecl, "LetDecl", alias="let", base=expressionClass, interfaces=[declarationInterface],
   children=[
-    NodeChildDescription(id: IdLetDeclType, role: "type", class: typeClass.id, count: ChildCount.ZeroOrOne),
+    NodeChildDescription(id: IdLetDeclType, role: "type", class: expressionClass.id, count: ChildCount.ZeroOrOne),
     NodeChildDescription(id: IdLetDeclValue, role: "value", class: expressionClass.id, count: ChildCount.ZeroOrOne)])
 
 let varDeclClass* = newNodeClass(IdVarDecl, "VarDecl", alias="var", base=expressionClass, interfaces=[declarationInterface],
   children=[
-    NodeChildDescription(id: IdVarDeclType, role: "type", class: typeClass.id, count: ChildCount.ZeroOrOne),
+    NodeChildDescription(id: IdVarDeclType, role: "type", class: expressionClass.id, count: ChildCount.ZeroOrOne),
     NodeChildDescription(id: IdVarDeclValue, role: "value", class: expressionClass.id, count: ChildCount.ZeroOrOne)])
 
 let nodeListClass* = newNodeClass(IdNodeList, "NodeList",
@@ -113,14 +118,23 @@ let returnClass* = newNodeClass(IdReturnExpression, "ReturnExpression", alias="r
 
 let parameterDeclClass* = newNodeClass(IdParameterDecl, "ParameterDecl", alias="param", base=expressionClass, interfaces=[declarationInterface],
   children=[
-    NodeChildDescription(id: IdParameterDeclType, role: "type", class: typeClass.id, count: ChildCount.One),
+    NodeChildDescription(id: IdParameterDeclType, role: "type", class: expressionClass.id, count: ChildCount.One),
     NodeChildDescription(id: IdParameterDeclValue, role: "value", class: expressionClass.id, count: ChildCount.ZeroOrOne)])
 
 let functionDefinitionClass* = newNodeClass(IdFunctionDefinition, "FunctionDefinition", alias="fn", base=expressionClass,
   children=[
     NodeChildDescription(id: IdFunctionDefinitionParameters, role: "parameters", class: parameterDeclClass.id, count: ChildCount.ZeroOrMore),
-    NodeChildDescription(id: IdFunctionDefinitionReturnType, role: "returnType", class: typeClass.id, count: ChildCount.ZeroOrOne),
+    NodeChildDescription(id: IdFunctionDefinitionReturnType, role: "returnType", class: expressionClass.id, count: ChildCount.ZeroOrOne),
     NodeChildDescription(id: IdFunctionDefinitionBody, role: "body", class: expressionClass.id, count: ChildCount.One)])
+
+let structMemberDefinitionClass* = newNodeClass(IdStructMemberDefinition, "StructMemberDefinition", alias="member", interfaces=[declarationInterface],
+  children=[
+    NodeChildDescription(id: IdStructMemberDefinitionType, role: "type", class: expressionClass.id, count: ChildCount.One),
+    NodeChildDescription(id: IdStructMemberDefinitionValue, role: "value", class: expressionClass.id, count: ChildCount.ZeroOrOne)])
+
+let structDefinitionClass* = newNodeClass(IdStructDefinition, "StructDefinition", alias="struct", base=expressionClass,
+  children=[
+    NodeChildDescription(id: IdStructDefinitionMembers, role: "members", class: structMemberDefinitionClass.id, count: ChildCount.ZeroOrMore)])
 
 let assignmentClass* = newNodeClass(IdAssignment, "Assignment", alias="=", base=expressionClass, children=[
     NodeChildDescription(id: IdAssignmentTarget, role: "target", class: expressionClass.id, count: ChildCount.One),
@@ -162,7 +176,7 @@ builder.addBuilderFor nodeListClass.id, idNone(), proc(builder: CellBuilder, nod
   return cell
 
 builder.addBuilderFor blockClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = CollectionCell(id: newId(), node: node, uiFlags: &{LayoutVertical}, style: CellStyle(indentChildren: true, onNewLine: true))
+  var cell = CollectionCell(id: newId(), node: node, uiFlags: &{LayoutVertical}, flags: &{IndentChildren, OnNewLine})
   cell.nodeFactory = proc(): AstNode =
     return newAstNode(emptyLineClass)
   cell.fillChildren = proc(map: NodeCellMap) =
@@ -179,7 +193,9 @@ builder.addBuilderFor constDeclClass.id, idNone(), proc(builder: CellBuilder, no
     cell.add ConstantCell(node: node, text: "const", themeForegroundColors: @["keyword"], disableEditing: true)
     cell.add PropertyCell(node: node, property: IdINamedName)
     cell.add ConstantCell(node: node, text: ":", isVisible: isVisible, style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
-    cell.add builder.buildChildren(map, node, IdConstDeclType, &{LayoutHorizontal}, isVisible = isVisible)
+    cell.add block:
+      buildChildrenT(builder, map, node, IdConstDeclType, &{LayoutHorizontal}, 0.CellFlags):
+        placeholder: PlaceholderCell(id: newId(), node: node, role: role, shadowText: "<type>")
     cell.add ConstantCell(node: node, text: "=", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
     cell.add block:
       buildChildrenT(builder, map, node, IdConstDeclValue, &{LayoutHorizontal}, 0.CellFlags):
@@ -195,7 +211,9 @@ builder.addBuilderFor letDeclClass.id, idNone(), proc(builder: CellBuilder, node
     cell.add ConstantCell(node: node, text: "let", themeForegroundColors: @["keyword"], disableEditing: true)
     cell.add PropertyCell(node: node, property: IdINamedName)
     cell.add ConstantCell(node: node, text: ":", isVisible: isVisible, style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
-    cell.add builder.buildChildren(map, node, IdLetDeclType, &{LayoutHorizontal}, isVisible = isVisible)
+    cell.add block:
+      buildChildrenT(builder, map, node, IdLetDeclType, &{LayoutHorizontal}, 0.CellFlags):
+        placeholder: PlaceholderCell(id: newId(), node: node, role: role, shadowText: "<type>")
     cell.add ConstantCell(node: node, text: "=", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
     cell.add block:
       buildChildrenT(builder, map, node, IdLetDeclValue, &{LayoutHorizontal}, 0.CellFlags):
@@ -212,7 +230,9 @@ builder.addBuilderFor varDeclClass.id, idNone(), proc(builder: CellBuilder, node
     cell.add ConstantCell(node: node, text: "var", themeForegroundColors: @["keyword"], disableEditing: true)
     cell.add PropertyCell(node: node, property: IdINamedName)
     cell.add ConstantCell(node: node, text: ":", isVisible: isTypeVisible, style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
-    cell.add builder.buildChildren(map, node, IdVarDeclType, &{LayoutHorizontal}, isVisible = isTypeVisible)
+    cell.add block:
+      buildChildrenT(builder, map, node, IdVarDeclType, &{LayoutHorizontal}, 0.CellFlags):
+        placeholder: PlaceholderCell(id: newId(), node: node, role: role, shadowText: "<type>")
     cell.add ConstantCell(node: node, text: "=", isVisible: isValueVisible, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
     cell.add block:
       buildChildrenT(builder, map, node, IdVarDeclValue, &{LayoutHorizontal}, 0.CellFlags):
@@ -275,6 +295,36 @@ builder.addBuilderFor functionDefinitionClass.id, idNone(), proc(builder: CellBu
 
   return cell
 
+builder.addBuilderFor structMemberDefinitionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  var cell = CollectionCell(id: newId(), node: node, uiFlags: &{LayoutHorizontal})
+  cell.fillChildren = proc(map: NodeCellMap) =
+    proc isVisible(node: AstNode): bool = node.hasChild(IdStructMemberDefinitionValue)
+
+    # echo "fill collection let decl"
+    cell.add PropertyCell(node: node, property: IdINamedName)
+    cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+    cell.add builder.buildChildren(map, node, IdStructMemberDefinitionType, &{LayoutHorizontal})
+    cell.add ConstantCell(node: node, text: "=", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+    cell.add block:
+      buildChildrenT(builder, map, node, IdStructMemberDefinitionValue, &{LayoutHorizontal}, 0.CellFlags):
+        placeholder: PlaceholderCell(id: newId(), node: node, role: role, shadowText: "...")
+  return cell
+
+builder.addBuilderFor structDefinitionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  var cell = CollectionCell(id: newId(), node: node, uiFlags: &{LayoutHorizontal})
+  cell.fillChildren = proc(map: NodeCellMap) =
+    # echo "fill collection func def"
+    cell.add ConstantCell(node: node, text: "struct", themeForegroundColors: @["keyword"], disableEditing: true)
+    cell.add ConstantCell(node: node, text: "{", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+
+    cell.add block:
+      buildChildrenT(builder, map, node, IdStructDefinitionMembers, &{LayoutVertical}, &{OnNewLine, IndentChildren}):
+        placeholder: "..."
+
+    cell.add ConstantCell(node: node, text: "}", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true, flags: &{OnNewLine})
+
+  return cell
+
 builder.addBuilderFor callClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId(), node: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
@@ -300,7 +350,7 @@ builder.addBuilderFor thenCaseClass.id, idNone(), proc(builder: CellBuilder, nod
     if node.index == 0:
       cell.add ConstantCell(node: node, text: "if", themeForegroundColors: @["keyword"], disableEditing: true)
     else:
-      cell.add ConstantCell(node: node, text: "elif", themeForegroundColors: @["keyword"], disableEditing: true, style: CellStyle(onNewLine: true))
+      cell.add ConstantCell(node: node, text: "elif", themeForegroundColors: @["keyword"], disableEditing: true, flags: &{OnNewLine})
     cell.add builder.buildChildren(map, node, IdThenCaseCondition, &{LayoutHorizontal})
     cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
     cell.add builder.buildChildren(map, node, IdThenCaseBody, &{LayoutHorizontal})
@@ -323,7 +373,7 @@ builder.addBuilderFor ifClass.id, idNone(), proc(builder: CellBuilder, node: Ast
     else:
       for i, c in node.children(IdIfExpressionElseCase):
         if i == 0:
-          cell.add ConstantCell(node: node, text: "else", style: CellStyle(onNewLine: true), themeForegroundColors: @["keyword"], disableEditing: true)
+          cell.add ConstantCell(node: node, text: "else", flags: &{OnNewLine}, themeForegroundColors: @["keyword"], disableEditing: true)
           cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
         cell.add builder.buildCell(map, c)
 
@@ -357,6 +407,10 @@ builder.addBuilderFor nodeReferenceClass.id, idNone(), proc(builder: CellBuilder
   if node.resolveReference(IdNodeReferenceTarget).getSome(targetNode):
     cell.child = PropertyCell(id: newId(), node: targetNode, property: IdINamedName, themeForegroundColors: @["variable", "&editor.foreground"])
   return cell
+
+# builder.addBuilderFor typeClass.id, idNone(), &{OnlyExactMatch}, proc(builder: CellBuilder, node: AstNode): Cell =
+#   var cell = ConstantCell(id: newId(), node: node, shadowText: "<type>", themeBackgroundColors: @["&inputValidation.errorBackground", "&debugConsole.errorForeground"])
+  # return cell
 
 builder.addBuilderFor expressionClass.id, idNone(), &{OnlyExactMatch}, proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = ConstantCell(id: newId(), node: node, shadowText: "<expr>", themeBackgroundColors: @["&inputValidation.errorBackground", "&debugConsole.errorForeground"])
@@ -436,11 +490,12 @@ builder.addBuilderFor buildExpressionClass.id, idNone(), proc(builder: CellBuild
 
 var typeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]()
 
+let metaTypeInstance* = newAstNode(metaTypeClass)
 let stringTypeInstance* = newAstNode(stringTypeClass)
 let intTypeInstance* = newAstNode(intTypeClass)
 let voidTypeInstance* = newAstNode(voidTypeClass)
 
-# todo: those should technically return something like typeTypeInstance which needs a new typeTypeClass
+# todo: those should technically return something like metaTypeInstance which needs a new metaTypeClass
 # and the valueComputer should return the type instance
 typeComputers[stringTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   debugf"compute type for string type literal {node}"
@@ -723,10 +778,43 @@ typeComputers[buildExpressionClass.id] = proc(ctx: ModelComputationContextBase, 
   debugf"compute type for build {node}"
   return stringTypeInstance
 
+typeComputers[structDefinitionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for struct definition {node}"
+
+  var structType = newAstNode(structTypeClass)
+
+  for _, c in node.children(IdStructDefinitionMembers):
+    if c.firstChild(IdStructMemberDefinitionType).getSome(typeNode):
+      # todo: This needs computeValue in the future since the type of a type is 'type', and the value is 'int' or 'string' etc.
+      var typ = ctx.computeType(typeNode)
+      if typ.isNil:
+        # addDiagnostic(typeNode, "Could not compute type for parameter")
+        continue
+      structType.add(IdStructTypeMemberTypes, typ)
+    else:
+      echo "no type node found for struct member definition"
+      ctx.dependOn(c)
+
+  # todo: this shouldn't set the model
+  structType.model = node.model
+  structType.forEach2 n:
+    n.model = node.model
+
+  return structType
+
+typeComputers[structMemberDefinitionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for struct member definition {node}"
+
+  if node.firstChild(IdStructMemberDefinitionType).getSome(typeNode):
+    return ctx.computeType(typeNode)
+
+  return voidTypeInstance
+
 let baseLanguage* = newLanguage(IdBaseLanguage, @[
   namedInterface, declarationInterface,
 
-  typeClass, stringTypeClass, intTypeClass, voidTypeClass, functionTypeClass,
+  # typeClass,
+  stringTypeClass, intTypeClass, voidTypeClass, functionTypeClass, structTypeClass,
 
   expressionClass, binaryExpressionClass, unaryExpressionClass, emptyLineClass,
   numberLiteralClass, stringLiteralClass, boolLiteralClass, nodeReferenceClass, emptyClass, constDeclClass, letDeclClass, varDeclClass, nodeListClass, blockClass, callClass, thenCaseClass, ifClass, whileClass,
@@ -736,6 +824,8 @@ let baseLanguage* = newLanguage(IdBaseLanguage, @[
   lessExpressionClass, lessEqualExpressionClass, greaterExpressionClass, greaterEqualExpressionClass, equalExpressionClass, notEqualExpressionClass, andExpressionClass, orExpressionClass, orderExpressionClass,
   negateExpressionClass, notExpressionClass,
   appendStringExpressionClass, printExpressionClass, buildExpressionClass,
+
+  structDefinitionClass, structMemberDefinitionClass,
 ], builder, typeComputers)
 
 let baseModel* = block:

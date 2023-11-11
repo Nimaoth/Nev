@@ -42,6 +42,9 @@ proc newModelComputationContext*(): ModelComputationContext =
 method computeType*(self: ModelComputationContext, node: AstNode): AstNode =
   return self.state.computeType(node)
 
+method dependOn*(self: ModelComputationContext, node: AstNode) =
+  self.state.recordDependency(node.getItem)
+
 func fingerprint*(node: AstNode): Fingerprint =
   if node.isNil:
     return @[]

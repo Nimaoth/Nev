@@ -14,6 +14,7 @@ defineBitFlag:
   type CellFlag* = enum
     DeleteWhenEmpty
     OnNewLine
+    IndentChildren
 
 type
   ClassId* = Id
@@ -83,8 +84,6 @@ type
   CellNodeFactory* = proc(): AstNode
 
   CellStyle* = ref object
-    onNewLine*: bool
-    indentChildren*: bool
     noSpaceLeft*: bool
     noSpaceRight*: bool
 
@@ -174,6 +173,7 @@ generateGetters(Language)
 proc hash*(node: AstNode): Hash = node.id.hash
 
 method computeType*(self: ModelComputationContextBase, node: AstNode): AstNode {.base.} = discard
+method dependOn*(self: ModelComputationContextBase, node: AstNode) {.base.} = discard
 
 proc notifyNodeDeleted(self: Model, parent: AstNode, child: AstNode, role: RoleId, index: int) =
   self.onNodeDeleted.invoke (self, parent, child, role, index)
