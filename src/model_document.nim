@@ -413,18 +413,22 @@ proc `targetCursor=`*(self: ModelDocumentEditor, cursor: CellCursorState) =
 proc handleNodeDeleted(self: ModelDocument, model: Model, parent: AstNode, child: AstNode, role: Id, index: int) =
   # debugf "handleNodeDeleted {parent}, {child}, {role}, {index}"
   self.currentTransaction.operations.add ModelOperation(kind: Delete, parent: parent, node: child, idx: index, role: role)
+  self.ctx.state.deleteNode(child, recurse=true)
 
 proc handleNodeInserted(self: ModelDocument, model: Model, parent: AstNode, child: AstNode, role: Id, index: int) =
   # debugf "handleNodeInserted {parent}, {child}, {role}, {index}"
   self.currentTransaction.operations.add ModelOperation(kind: Insert, parent: parent, node: child, idx: index, role: role)
+  self.ctx.state.insertNode(child)
 
 proc handleNodePropertyChanged(self: ModelDocument, model: Model, node: AstNode, role: Id, oldValue: PropertyValue, newValue: PropertyValue, slice: Slice[int]) =
   # debugf "handleNodePropertyChanged {node}, {role}, {oldValue}, {newValue}"
   self.currentTransaction.operations.add ModelOperation(kind: PropertyChange, node: node, role: role, value: oldValue, slice: slice)
+  self.ctx.state.updateNode(node)
 
 proc handleNodeReferenceChanged(self: ModelDocument, model: Model, node: AstNode, role: Id, oldRef: Id, newRef: Id) =
   # debugf "handleNodeReferenceChanged {node}, {role}, {oldRef}, {newRef}"
   self.currentTransaction.operations.add ModelOperation(kind: ReferenceChange, node: node, role: role, id: oldRef)
+  self.ctx.state.updateNode(node)
 
 proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
   log lvlInfo, fmt"Loading model source file '{self.filename}'"
