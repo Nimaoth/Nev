@@ -642,8 +642,6 @@ proc finish(self: CellLayoutContext) =
   builder.returnNode(self.tempNode)
 
 proc shouldBeOnNewLine(cell: Cell): bool =
-  if cell.style.isNotNil and cell.style.onNewLine:
-    return true
   if OnNewLine in cell.flags:
     return true
   if cell.parent.isNil:
@@ -679,11 +677,11 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
     ctx = newCellLayoutContext(parentCtx, cell, ctx.remainingHeightDown, ctx.remainingHeightUp, not cell.inline)
     hasContext = true
 
-  if cell.style.isNotNil and cell.style.indentChildren:
+  if IndentChildren in cell.flags:
     ctx.increaseIndent()
 
   defer:
-    if cell.style.isNotNil and cell.style.indentChildren:
+    if IndentChildren in cell.flags:
       ctx.decreaseIndent()
 
   defer:
@@ -734,8 +732,6 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
       if c.style.isNotNil:
         if c.style.noSpaceLeft:
           noSpaceLeft = true
-        if c.style.onNewLine:
-          onNewLine = true
       if OnNewLine in c.flags:
         onNewLine = true
 
@@ -824,8 +820,6 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
       if c.style.isNotNil:
         if c.style.noSpaceRight:
           spaceLeft = false
-        if c.style.onNewLine:
-          onNewLine = true
       if OnNewLine in c.flags:
         onNewLine = true
 

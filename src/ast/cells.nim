@@ -392,7 +392,7 @@ proc buildCellDefault*(self: CellBuilder, m: NodeCellMap, node: AstNode, useDefa
       if not hasAnyChildren:
         header.add ConstantCell(node: node, text: "}", disableEditing: true)
 
-    var childrenCell = CollectionCell(id: newId(), node: node, uiFlags: &{LayoutVertical}, style: CellStyle(indentChildren: true, onNewLine: true), inline: true)
+    var childrenCell = CollectionCell(id: newId(), node: node, uiFlags: &{LayoutVertical}, flags: &{IndentChildren, OnNewLine}, inline: true)
     for prop in node.properties:
       # var propCell = CollectionCell(id: newId(), node: node, uiFlags: &{LayoutHorizontal})
       childrenCell.horizontalCell(node, propCell):
@@ -433,7 +433,8 @@ proc buildCellDefault*(self: CellBuilder, m: NodeCellMap, node: AstNode, useDefa
           var childCell = self.buildCell(m, c, useDefaultRecursive)
           if childCell.style.isNil:
             childCell.style = CellStyle()
-          childCell.style.onNewLine = childCell.style.onNewLine or children.len > 1
+          if children.len > 0:
+            childCell.flags.incl OnNewLine
           # if children.len > 1 and i == children.high:
           #   childCell.decreaseIndentAfter = true
           propCell.add childCell
@@ -447,7 +448,7 @@ proc buildCellDefault*(self: CellBuilder, m: NodeCellMap, node: AstNode, useDefa
     cell.add childrenCell
 
     if hasAnyChildren:
-      cell.add ConstantCell(node: node, text: "}", style: CellStyle(onNewLine: true, noSpaceLeft: true), disableEditing: true)
+      cell.add ConstantCell(node: node, text: "}", flags: &{OnNewLine}, style: CellStyle(noSpaceLeft: true), disableEditing: true)
 
   return cell
 

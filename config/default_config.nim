@@ -246,8 +246,8 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
 
   addCommand("editor.model", "<C-y>", "undo")
   addCommand("editor.model", "<C-z>", "redo")
-  addCommand("editor.model", "<BACKSPACE>", "delete-left")
-  addCommand("editor.model", "<DELETE>", "delete-right")
+  addCommand("editor.model", "<BACKSPACE>", "replace-left")
+  addCommand("editor.model", "<DELETE>", "replace-right")
   addCommand("editor.model", "<SPACE>", "insert-text-at-cursor", " ")
   addCommand("editor.model", "<ENTER>", "create-new-node")
   addCommand("editor.model", "<TAB>", "select-next-placeholder")

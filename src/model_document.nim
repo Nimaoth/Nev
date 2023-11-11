@@ -1424,13 +1424,13 @@ proc updateCursor*(self: ModelDocumentEditor, cursor: CellCursor): Option[CellCu
 proc getFirstEditableCellOfNode*(self: ModelDocumentEditor, node: AstNode): Option[CellCursor] =
   result = CellCursor.none
 
-  debugf"getFirstEditableCellOfNode {node}"
+  # debugf"getFirstEditableCellOfNode {node}"
   var nodeCell = self.nodeCellMap.cell(node)
   if nodeCell.isNil:
     return
 
   nodeCell = nodeCell.getFirstLeaf(self.nodeCellMap)
-  # echo fmt"first leaf {nodeCell}"
+  # debugf"first leaf {nodeCell}"
 
   proc editableDescendant(n: Cell): (bool, Option[Cell]) =
     if n.node == nodeCell.node or n.node.isDescendant(nodeCell.node):
@@ -1439,11 +1439,11 @@ proc getFirstEditableCellOfNode*(self: ModelDocumentEditor, node: AstNode): Opti
       return (true, Cell.none)
 
   if nodeCell.getSelfOrNeighborLeafWhere(self.nodeCellMap, Right, editableDescendant).getSome(targetCell):
-    # echo fmt"a: editable descendant {targetCell}"
+    # debugf"a: editable descendant {targetCell}"
     return self.nodeCellMap.toCursor(targetCell, true).some
 
   if nodeCell.getSelfOrNextLeafWhere(self.nodeCellMap, (n) => isVisible(n) and not n.disableSelection).getSome(targetCell):
-    # echo fmt"a: visible descendant {targetCell}"
+    # debugf"a: visible descendant {targetCell}"
     return self.nodeCellMap.toCursor(targetCell, true).some
 
 proc getFirstSelectableCellOfNode*(self: ModelDocumentEditor, node: AstNode): Option[CellCursor] =
@@ -1905,6 +1905,20 @@ proc deleteDirection*(self: ModelDocumentEditor, direction: Direction) =
 
     let endIndex = if direction == Left: 0 else: c.currentText.len
 
+    proc getAdjacentCell(c: Cell, direction: Direction): Option[Cell] =
+      if direction == Left:
+        let leaf = c.nodeRootCell.getFirstLeaf(self.nodeCellMap)
+        leaf.getPreviousSelectableLeaf(self.nodeCellMap)
+      else:
+        let leaf = c.nodeRootCell.getLastLeaf(self.nodeCellMap)
+        leaf.getNextSelectableLeaf(self.nodeCellMap)
+
+    var nextCellDirection = direction
+    var nextSelectableCell = getAdjacentCell(c, direction)
+    if nextSelectableCell.isNone:
+      nextCellDirection = -direction
+      nextSelectableCell = getAdjacentCell(c, -direction)
+
     if self.nodeCellMap.handleDelete(c, slice, direction).getSome(newCursor):
       self.cursor = newCursor
 
@@ -1915,6 +1929,8 @@ proc deleteDirection*(self: ModelDocumentEditor, direction: Direction) =
 
       break
 
+    let nextSelectableCursor = self.nodeCellMap.toCursor(nextSelectableCell.get, nextCellDirection == Right)
+
     if c.currentText.len == 0 and not c.dontReplaceWithDefault and c.parent.node != c.node and not c.node.isRequiredAndDefault():
       let parent = c.node.parent
 
@@ -1922,55 +1938,59 @@ proc deleteDirection*(self: ModelDocumentEditor, direction: Direction) =
         self.rebuildCells()
         self.cursor = self.getFirstEditableCellOfNode(newNode).get
       else: # Node was removed
-
-        # Get next neighbor cell which is of a different node and not a child, and can be selected
-        var targetCell = c.getNeighborLeafWhere(self.nodeCellMap, cursorMoveDirection, proc(cell: Cell): (bool, Option[Cell]) =
-          if cell.node != c.node and cell.node != parent and not cell.node.isDescendant(parent):
-            return (true, Cell.none)
-          if not isVisible(cell) or not canSelect(cell):
-            return (false, Cell.none)
-          if cell == c or cell.node == c.node or cell.node == parent:
-            return (false, Cell.none)
-          return (true, cell.some)
-        )
-
-        # Get next neighbor cell which is of a different node and not a child, and can be selected
-        if targetCell.isNone:
-          targetCell = c.getNeighborLeafWhere(self.nodeCellMap, -cursorMoveDirection, proc(cell: Cell): (bool, Option[Cell]) =
-            if cell.node != c.node and cell.node != parent and not cell.node.isDescendant(parent):
-              return (true, Cell.none)
-            if not isVisible(cell) or not canSelect(cell):
-              return (false, Cell.none)
-            if cell == c or cell.node == c.node or cell.node == parent:
-              return (false, Cell.none)
-            return (true, cell.some)
-          )
-
-
-        if targetCell.getSome(targetCell):
-          debugf"delete left "
-          let cursor = self.nodeCellMap.toCursor(targetCell, cursorMoveDirection == Right)
-          debugf"{targetCell}, {cursor}"
-          self.rebuildCells()
-          if self.updateCursor(cursor).getSome(newCursor):
-            self.cursor = newCursor
-            break
-
-        let uiae = self.nodeCellMap.toCursor(c)
-
-        var parentCellCursor = uiae.selectParentCell()
-        assert parentCellCursor.node == c.node.parent
-
         self.rebuildCells()
-        if self.updateCursor(parentCellCursor).flatMap((c: CellCursor) -> Option[Cell] => c.getTargetCell(true)).getSome(newCell):
-          if i == 0 and direction == Left and newCell.getNeighborSelectableLeaf(self.nodeCellMap, direction).getSome(c):
-            self.cursor = self.nodeCellMap.toCursor(c)
-          elif newCell.getSelfOrNeighborLeafWhere(self.nodeCellMap, direction, (c) -> bool => isVisible(c)).getSome(c):
-            self.cursor = self.nodeCellMap.toCursor(c, true)
-          else:
-            self.cursor = self.nodeCellMap.toCursor(newCell, true)
+        if self.updateCursor(nextSelectableCursor).getSome(newCursor):
+          self.cursor = newCursor
         else:
           self.cursor = self.getFirstEditableCellOfNode(parent).get
+
+        # # Get next neighbor cell which is of a different node and not a child, and can be selected
+        # var targetCell = c.getNeighborLeafWhere(self.nodeCellMap, cursorMoveDirection, proc(cell: Cell): (bool, Option[Cell]) =
+        #   if cell.node != c.node and cell.node != parent and not cell.node.isDescendant(parent):
+        #     return (true, Cell.none)
+        #   if not isVisible(cell) or not canSelect(cell):
+        #     return (false, Cell.none)
+        #   if cell == c or cell.node == c.node or cell.node == parent:
+        #     return (false, Cell.none)
+        #   return (true, cell.some)
+        # )
+
+        # # Get next neighbor cell which is of a different node and not a child, and can be selected
+        # if targetCell.isNone:
+        #   targetCell = c.getNeighborLeafWhere(self.nodeCellMap, -cursorMoveDirection, proc(cell: Cell): (bool, Option[Cell]) =
+        #     if cell.node != c.node and cell.node != parent and not cell.node.isDescendant(parent):
+        #       return (true, Cell.none)
+        #     if not isVisible(cell) or not canSelect(cell):
+        #       return (false, Cell.none)
+        #     if cell == c or cell.node == c.node or cell.node == parent:
+        #       return (false, Cell.none)
+        #     return (true, cell.some)
+        #   )
+
+        # if targetCell.getSome(targetCell):
+        #   debugf"delete left "
+        #   let cursor = self.nodeCellMap.toCursor(targetCell, cursorMoveDirection == Right)
+        #   debugf"{targetCell}, {cursor}"
+        #   self.rebuildCells()
+        #   if self.updateCursor(cursor).getSome(newCursor):
+        #     self.cursor = newCursor
+        #     break
+
+        # let uiae = self.nodeCellMap.toCursor(c)
+
+        # var parentCellCursor = uiae.selectParentCell()
+        # assert parentCellCursor.node == c.node.parent
+
+        # self.rebuildCells()
+        # if self.updateCursor(parentCellCursor).flatMap((c: CellCursor) -> Option[Cell] => c.getTargetCell(true)).getSome(newCell):
+        #   if i == 0 and direction == Left and newCell.getNeighborSelectableLeaf(self.nodeCellMap, direction).getSome(c):
+        #     self.cursor = self.nodeCellMap.toCursor(c)
+        #   elif newCell.getSelfOrNeighborLeafWhere(self.nodeCellMap, direction, (c) -> bool => isVisible(c)).getSome(c):
+        #     self.cursor = self.nodeCellMap.toCursor(c, true)
+        #   else:
+        #     self.cursor = self.nodeCellMap.toCursor(newCell, true)
+        # else:
+        #   self.cursor = self.getFirstEditableCellOfNode(parent).get
       break
 
     if slice.a == slice.b and slice.a == endIndex:
@@ -2104,7 +2124,7 @@ proc deleteOrReplace*(self: ModelDocumentEditor, direction: Direction, replace: 
   let firstIndex = if commonParentIndex < firstPath.path.len: firstPath.path[childIndex] else: 0
   let lastIndex = if commonParentIndex < lastPath.path.len: lastPath.path[childIndex] else: parentTargetCell.len
 
-  debugf"common parent {commonParentIndex}, {firstIndex}..{lastIndex}, {parentBaseCell}, {parentTargetCell}, {parentBaseCell == parentTargetCell}"
+  # debugf"common parent {commonParentIndex}, {firstIndex}..{lastIndex}, {parentBaseCell}, {parentTargetCell}, {parentBaseCell == parentTargetCell}"
 
   # let firstCell = parentCell.getSelfOrNextLeafWhere(proc(cell: Cell): bool = cell.canSelect())
   # let lastCell = parentCell.getSelfOrPreviousLeafWhere(proc(cell: Cell): bool = cell.canSelect())
@@ -2114,10 +2134,10 @@ proc deleteOrReplace*(self: ModelDocumentEditor, direction: Direction, replace: 
     let firstContained = self.selection.contains(parentCell.children[firstIndex])
     let lastContained = self.selection.contains(parentCell.children[lastIndex])
 
-    # echo firstContained, ", ", lastContained
+    # debug firstContained, ", ", lastContained
     if firstContained and lastContained:
       if firstIndex == 0 and lastIndex == parentCell.high and parentTargetCell == parentBaseCell: # entire parent selected
-        # echo "all cells selected"
+        # debugf"all cells selected"
 
         var targetNode = parentCell.node
 
@@ -2143,7 +2163,7 @@ proc deleteOrReplace*(self: ModelDocumentEditor, direction: Direction, replace: 
           if c.node != parentCell.node:
             nodesToDelete.add c.node
 
-        # echo "some children of parent cell selected ", nodesToDelete
+        # debug "some children of parent cell selected ", nodesToDelete
 
         for n in nodesToDelete:
           if replace:
@@ -2155,22 +2175,25 @@ proc deleteOrReplace*(self: ModelDocumentEditor, direction: Direction, replace: 
         self.cursor = self.getFirstEditableCellOfNode(parentCell.node).get
 
     else: # not all nodes fully contained
-      # echo "not all nodes fully contained"
+      # debugf"not all nodes fully contained"
       discard
 
   else: # not collection cell
-    # echo firstIndex, ", ", lastIndex, "/", parentTargetCell.len
+    # debug firstIndex, ", ", lastIndex, "/", parentTargetCell.len
     if selection.contains(parentTargetCell):
       if replace and parentTargetCell.node.replaceWithDefault().getSome(newNode):
         self.rebuildCells()
         self.cursor = self.getFirstEditableCellOfNode(newNode).get
+        self.updateScrollOffset()
       elif not replace and parentTargetCell.node.deleteOrReplaceWithDefault().getSome(newNode):
         self.rebuildCells()
         self.cursor = self.getFirstEditableCellOfNode(newNode).get
+        self.updateScrollOffset()
       else:
         self.rebuildCells()
         if self.getFirstEditableCellOfNode(parentTargetCell.node.parent).getSome(c):
           self.cursor = c
+          self.updateScrollOffset()
 
 proc deleteLeft*(self: ModelDocumentEditor) {.expose("editor.model").} =
   defer:
