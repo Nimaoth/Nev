@@ -37,7 +37,7 @@ defineBitFlag:
     AnimateSize
     SnapInitialBounds
     AutoPivotChildren
-
+    IgnoreBoundsForSizeToContent
 
 when defined(uiNodeDebugData):
   import std/json
@@ -621,22 +621,34 @@ proc relayout*(builder: UINodeBuilder, node: UINode) =
   builder.postLayout node
 
 proc postLayoutChild*(builder: UINodeBuilder, node: UINode, child: UINode) =
-  var recurse = false
+  if IgnoreBoundsForSizeToContent in child.flags:
+    return
+
   if SizeToContentX in node.flags and child.xw > node.w:
     node.boundsRaw.w = child.xw.roundPositive
-    recurse = true
 
   if SizeToContentY in node.flags and child.yh > node.h:
     node.boundsRaw.h = child.yh.roundPositive
-    recurse = true
 
 proc updateSizeToContent*(builder: UINodeBuilder, node: UINode) =
   if SizeToContentX in node.flags:
     let childrenWidth = if node.first.isNotNil:
       if LayoutHorizontalReverse in node.flags:
         node.first.xw - node.last.x
-      else:
+      elif LayoutHorizontal in node.flags:
         node.last.xw - node.first.x
+      else: # no horizontal layout, check all children
+        var xMin = float.high
+        var xMax = float.low
+
+        for _, c in node.children:
+          if IgnoreBoundsForSizeToContent in c.flags:
+            continue
+          xMin = min(xMin, c.x)
+          xMax = max(xMax, c.xw)
+
+        xMax - xMin
+
     else: 0
 
     let strWidth = if DrawText in node.flags:
@@ -647,13 +659,21 @@ proc updateSizeToContent*(builder: UINodeBuilder, node: UINode) =
 
   if SizeToContentY in node.flags:
     let childrenHeight = if node.first.isNotNil:
-      if node.flags.any &{LayoutVertical, LayoutVerticalReverse}:
-        var childrenHeight = 0.0
-        for i, c in node.children:
-          childrenHeight = childrenHeight + c.boundsRaw.h
-        childrenheight
-      else:
+      if LayoutVerticalReverse in node.flags:
+        node.first.yh - node.last.y
+      elif LayoutVertical in node.flags:
         node.last.yh - node.first.y
+      else: # no vertical layout, check all children
+        var yMin = float.high
+        var yMax = float.low
+
+        for _, c in node.children:
+          if IgnoreBoundsForSizeToContent in c.flags:
+            continue
+          yMin = min(yMin, c.y)
+          yMax = max(yMax, c.yh)
+
+        yMax - yMin
     else: 0
 
     let strHeight = if DrawText in node.flags:

@@ -378,8 +378,12 @@ proc createLeafCellUI*(cell: Cell, builder: UINodeBuilder, inText: string, inTex
       selectionStart = first.clamp(0, inText.len)
       selectionEnd = last.clamp(0, inText.len)
 
-    if first < 0 and last >= 0:
-      spaceSelected = true
+    if ctx.currentDirection == Forwards:
+      if first < 0 and last >= 0:
+        spaceSelected = true
+    else:
+      if first <= inText.len and last > inText.len:
+        spaceSelected = true
 
   defer:
     ctx.notifyCellCreated(cell)
@@ -421,7 +425,8 @@ proc createLeafCellUI*(cell: Cell, builder: UINodeBuilder, inText: string, inTex
     builder.panel(&{SizeToContentX, SizeToContentY, FillY, OverlappingChildren}):
       let x = selectionStart.float * builder.charWidth
       let xw = selectionEnd.float * builder.charWidth
-      builder.panel(&{FillY, FillBackground}, x = x, w = xw - x, backgroundColor = updateContext.selectionColor)
+      let w = xw - x
+      builder.panel(&{FillY, FillBackground, IgnoreBoundsForSizeToContent}, x = x, w = w, backgroundColor = updateContext.selectionColor)
 
       builder.panel(&{SizeToContentX, SizeToContentY, FillY, DrawText}, text = inText, textColor = inTextColor):
         updateContext.cellToWidget[cell.id] = currentNode
