@@ -136,6 +136,10 @@ let structDefinitionClass* = newNodeClass(IdStructDefinition, "StructDefinition"
   children=[
     NodeChildDescription(id: IdStructDefinitionMembers, role: "members", class: structMemberDefinitionClass.id, count: ChildCount.ZeroOrMore)])
 
+let structMemberAccessClass* = newNodeClass(IdStructMemberAccess, "StructMemberAccess", base=expressionClass,
+  references=[NodeReferenceDescription(id: IdStructMemberAccessMember, role: "member", class: structMemberDefinitionClass.id)],
+  children=[NodeChildDescription(id: IdStructMemberAccessValue, role: "value", class: expressionClass.id, count: ChildCount.One)])
+
 let assignmentClass* = newNodeClass(IdAssignment, "Assignment", alias="=", base=expressionClass, children=[
     NodeChildDescription(id: IdAssignmentTarget, role: "target", class: expressionClass.id, count: ChildCount.One),
     NodeChildDescription(id: IdAssignmentValue, role: "value", class: expressionClass.id, count: ChildCount.One),
@@ -325,6 +329,26 @@ builder.addBuilderFor structDefinitionClass.id, idNone(), proc(builder: CellBuil
 
   return cell
 
+builder.addBuilderFor structMemberAccessClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  var cell = CollectionCell(id: newId(), node: node, uiFlags: &{LayoutHorizontal})
+  cell.fillChildren = proc(map: NodeCellMap) =
+    # echo "fill collection func def"
+    cell.add block:
+      buildChildrenT(builder, map, node, IdStructMemberAccessValue, &{LayoutHorizontal}, 0.CellFlags):
+        placeholder: "..."
+
+    cell.add ConstantCell(node: node, text: ".", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true, flags: &{NoSpaceLeft, NoSpaceRight})
+
+    cell.add block:
+      if node.resolveReference(IdStructMemberAccessMember).getSome(targetNode):
+        var refCell = NodeReferenceCell(id: newId(), node: node, reference: IdStructMemberAccessMember, property: IdINamedName, disableEditing: true)
+        refCell.child = PropertyCell(id: newId(), node: targetNode, property: IdINamedName, themeForegroundColors: @["variable", "&editor.foreground"])
+        refCell
+      else:
+        PlaceholderCell(id: newId(), node: node, role: IdStructMemberAccessMember, shadowText: "_")
+
+  return cell
+
 builder.addBuilderFor callClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId(), node: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
@@ -489,6 +513,7 @@ builder.addBuilderFor buildExpressionClass.id, idNone(), proc(builder: CellBuild
   return cell
 
 var typeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]()
+var scopeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]]()
 
 let metaTypeInstance* = newAstNode(metaTypeClass)
 let stringTypeInstance* = newAstNode(stringTypeClass)
@@ -778,30 +803,6 @@ typeComputers[buildExpressionClass.id] = proc(ctx: ModelComputationContextBase, 
   debugf"compute type for build {node}"
   return stringTypeInstance
 
-typeComputers[structDefinitionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
-  debugf"compute type for struct definition {node}"
-
-  var structType = newAstNode(structTypeClass)
-
-  for _, c in node.children(IdStructDefinitionMembers):
-    if c.firstChild(IdStructMemberDefinitionType).getSome(typeNode):
-      # todo: This needs computeValue in the future since the type of a type is 'type', and the value is 'int' or 'string' etc.
-      var typ = ctx.computeType(typeNode)
-      if typ.isNil:
-        # addDiagnostic(typeNode, "Could not compute type for parameter")
-        continue
-      structType.add(IdStructTypeMemberTypes, typ)
-    else:
-      echo "no type node found for struct member definition"
-      ctx.dependOn(c)
-
-  # todo: this shouldn't set the model
-  structType.model = node.model
-  structType.forEach2 n:
-    n.model = node.model
-
-  return structType
-
 typeComputers[structMemberDefinitionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   debugf"compute type for struct member definition {node}"
 
@@ -809,6 +810,60 @@ typeComputers[structMemberDefinitionClass.id] = proc(ctx: ModelComputationContex
     return ctx.computeType(typeNode)
 
   return voidTypeInstance
+
+typeComputers[structDefinitionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for struct definition {node}"
+
+  return node
+
+  # var structType = newAstNode(structTypeClass)
+
+  # for _, c in node.children(IdStructDefinitionMembers):
+  #   if c.firstChild(IdStructMemberDefinitionType).getSome(typeNode):
+  #     # todo: This needs computeValue in the future since the type of a type is 'type', and the value is 'int' or 'string' etc.
+  #     var typ = ctx.computeType(typeNode)
+  #     if typ.isNil:
+  #       # addDiagnostic(typeNode, "Could not compute type for parameter")
+  #       continue
+  #     structType.add(IdStructTypeMemberTypes, typ)
+  #   else:
+  #     echo "no type node found for struct member definition"
+  #     ctx.dependOn(c)
+
+  # # todo: this shouldn't set the model
+  # structType.model = node.model
+  # structType.forEach2 n:
+  #   n.model = node.model
+
+  # return structType
+
+typeComputers[structMemberAccessClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for struct member access {node}"
+  if node.resolveReference(IdStructMemberAccessMember).getSome(targetNode):
+    return ctx.computeType(targetNode)
+
+  return voidTypeInstance
+
+typeComputers[structMemberDefinitionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute scope for struct member definition {node}"
+
+  if node.firstChild(IdStructMemberDefinitionType).getSome(typeNode):
+    return ctx.computeType(typeNode)
+
+  return voidTypeInstance
+
+# scope
+scopeComputers[structMemberAccessClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode] =
+  debugf"compute scope for struct member access {node}"
+
+  let valueNode = node.firstChild(IdStructMemberAccessValue).getOr:
+    return @[]
+
+  let valueType = ctx.computeType(valueNode)
+  if valueType.class != IdStructDefinition:
+    return @[]
+
+  return valueType.children(IdStructDefinitionMembers)
 
 let baseLanguage* = newLanguage(IdBaseLanguage, @[
   namedInterface, declarationInterface,
@@ -825,8 +880,8 @@ let baseLanguage* = newLanguage(IdBaseLanguage, @[
   negateExpressionClass, notExpressionClass,
   appendStringExpressionClass, printExpressionClass, buildExpressionClass,
 
-  structDefinitionClass, structMemberDefinitionClass,
-], builder, typeComputers)
+  structDefinitionClass, structMemberDefinitionClass, structMemberAccessClass,
+], builder, typeComputers, scopeComputers)
 
 let baseModel* = block:
   var model = newModel(newId())

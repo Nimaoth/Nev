@@ -2,7 +2,7 @@ import std/[tables, sets, strutils, hashes, options, strformat]
 import fusion/matching
 import vmath
 import lrucache
-import id, util, timer, query_system, custom_logger, model
+import id, util, timer, query_system, custom_logger, model, ast_ids
 
 logCategory "model-state"
 
@@ -29,6 +29,7 @@ CreateContext ModelState:
   # proc recoverValue(ctx: ModelState, key: Dependency) {.recover("Value").}
 
   proc computeTypeImpl(ctx: ModelState, node: AstNode): AstNode {.query("Type").}
+  proc computeScopeImpl(ctx: ModelState, node: AstNode): seq[AstNode] {.query("Scope").}
   # proc computeValueImpl(ctx: ModelState, node: AstNode): Value {.query("Value").}
 
 type ModelComputationContext* = ref object of ModelComputationContextBase
@@ -41,6 +42,9 @@ proc newModelComputationContext*(): ModelComputationContext =
 
 method computeType*(self: ModelComputationContext, node: AstNode): AstNode =
   return self.state.computeType(node)
+
+method getScope*(self: ModelComputationContext, node: AstNode): seq[AstNode] =
+  return self.state.computeScope(node)
 
 method dependOn*(self: ModelComputationContext, node: AstNode) =
   self.state.recordDependency(node.getItem)
@@ -198,3 +202,25 @@ proc computeTypeImpl(ctx: ModelState, node: AstNode): AstNode =
   let typ = typeComputer(ctx.computationContextOwner.ModelComputationContext, node)
 
   return typ
+
+proc computeScopeImpl(ctx: ModelState, node: AstNode): seq[AstNode] =
+  logIf(ctx.enableLogging or ctx.enableQueryLogging, "computeScopeImpl " & $node, true)
+
+  let language = node.language
+  if language.isNil:
+    return @[]
+
+  if not language.scopeComputers.contains(node.class):
+    var declarations: seq[AstNode] = @[]
+    for root in node.model.rootNodes:
+      ctx.computationContextOwner.ModelComputationContext.dependOn(root)
+      for children in root.childLists:
+        for child in children.nodes:
+          let class: NodeClass = child.nodeClass
+          if class.isSubclassOf(IdIDeclaration):
+            declarations.add child
+
+    return declarations
+
+  let scopeComputer = language.scopeComputers[node.class]
+  return scopeComputer(ctx.computationContextOwner.ModelComputationContext, node)

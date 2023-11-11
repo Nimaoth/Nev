@@ -2,7 +2,7 @@ import std/[strformat, tables, sugar, strutils, json]
 import util, app, document_editor, model_document, text/text_document, custom_logger, platform, theme, config_provider, input, app_interface
 import widget_builders_base, widget_library, ui/node, custom_unicode
 import vmath, bumpy, chroma
-import ast/[model, cells]
+import ast/[model, cells, model_state]
 
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
 {.used.}
@@ -337,6 +337,13 @@ proc createCompletions(self: ModelDocumentEditor, builder: UINodeBuilder, app: A
 
           let className = if completion.class.alias.len > 0: completion.class.alias else: completion.class.name
           builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, x = currentNode.w, pivot = vec2(1, 0), text = className, textColor = scopeColor)
+
+        of ModelCompletionKind.ChangeReference:
+          builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = completion.name, textColor = nameColor)
+
+          let className = if completion.class.alias.len > 0: completion.class.alias else: completion.class.name
+          builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, x = currentNode.w, pivot = vec2(1, 0), text = className, textColor = scopeColor)
+
 
     builder.panel(&{UINodeFlag.MaskContent}, w = listWidth * charWidth, h = bottom - top):
       builder.createLines(self.completionsBaseIndex, self.completionsScrollOffset, self.completions.high, false, false, backgroundColor, handleScroll, handleLine)
@@ -732,6 +739,8 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
       if c.style.isNotNil:
         if c.style.noSpaceLeft:
           noSpaceLeft = true
+      if NoSpaceLeft in c.flags:
+        noSpaceLeft = true
       if OnNewLine in c.flags:
         onNewLine = true
 
@@ -784,6 +793,8 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
         ctx.prevNoSpaceRight = false
         if c.style.isNotNil:
           ctx.prevNoSpaceRight = c.style.noSpaceRight
+        if NoSpaceRight in c.flags:
+          ctx.prevNoSpaceRight = true
 
       # builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = fmt"{myCtx.parentNode.h}, {ctx.remainingHeightDown}, {ctx.remainingHeightUp}", textColor = color(0, 1, 0))
 
@@ -820,6 +831,8 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
       if c.style.isNotNil:
         if c.style.noSpaceRight:
           spaceLeft = false
+      if NoSpaceRight in c.flags:
+        spaceLeft = false
       if OnNewLine in c.flags:
         onNewLine = true
 
@@ -834,6 +847,8 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
         ctx.prevNoSpaceRight = false
         if c.style.isNotNil:
           ctx.prevNoSpaceRight = c.style.noSpaceLeft
+        if NoSpaceLeft in c.flags:
+          ctx.prevNoSpaceRight = true
 
       if onNewLine:
         ctx.newLine()
@@ -1054,6 +1069,8 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
           if self.cursorVisible:
             if drawCursor(self.selection.last, self.isThickCursor, textColor, 0).getSome(node):
               self.lastCursorLocationBounds = rect(self.selection.last.index.float * builder.charWidth, 0, builder.charWidth, builder.textHeight).transformRect(node, builder.root).some
+              let typ = self.document.ctx.computeType(self.selection.last.node)
+              log lvlWarn, fmt"selected type: {`$`(typ, true)}"
 
             if not self.selection.isEmpty:
               let cursorColor = textColor.darken(0.2)

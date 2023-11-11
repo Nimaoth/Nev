@@ -129,6 +129,7 @@ type
   ModelCompletionKind* {.pure.} = enum
     SubstituteClass
     SubstituteReference
+    ChangeReference
 
   ModelCompletion* = object
     parent*: AstNode
@@ -144,6 +145,8 @@ type
     of SubstituteReference:
       referenceRole*: Id
       referenceTarget*: AstNode
+    of ChangeReference:
+      changeReferenceTarget*: AstNode
 
   ModelDocumentEditor* = ref object of DocumentEditor
     app*: AppInterface
@@ -486,7 +489,7 @@ proc getSubstitutionTarget(cell: Cell): (AstNode, Id, int) =
   return (cell.node.parent, cell.node.role, cell.node.index)
 
 proc getSubstitutionsForClass(self: ModelDocumentEditor, targetCell: Cell, class: NodeClass, addCompletion: proc(c: ModelCompletion): void): bool =
-  if class.references.len == 1:
+  if class.references.len == 1 and class.children.len == 0 and class.properties.len == 0:
     let desc = class.references[0]
     let language = self.document.model.getLanguageForClass(desc.class)
     let refClass = language.resolveClass(desc.class)
@@ -557,25 +560,29 @@ proc updateCompletions(self: ModelDocumentEditor) =
   let (parent, role, index) = targetCell.getSubstitutionTarget()
   let node = self.cursor.node
 
-  let parentClass = parent.nodeClass
-  let childDesc = parentClass.nodeChildDescription(role).get
-
   let model = node.model
+  let parentClass = parent.nodeClass
+  if parentClass.nodeChildDescription(role).getSome(childDesc):
+    let slotClass = model.resolveClass(childDesc.class)
+    debugf"updateCompletions {node}, {node.model.isNotNil}, {slotClass.name}"
 
-  let desc = childDesc
-  let slotClass = model.resolveClass(desc.class)
+    model.forEachChildClass slotClass, proc(childClass: NodeClass) =
+      if self.getSubstitutionsForClass(targetCell, childClass, (c) -> void => self.unfilteredCompletions.add(c)):
+        return
 
-  debugf"updateCompletions {node}, {node.model.isNotNil}, {slotClass.name}"
+      if childClass.isAbstract or childClass.isInterface:
+        return
 
-  model.forEachChildClass slotClass, proc(childClass: NodeClass) =
-    if self.getSubstitutionsForClass(targetCell, childClass, (c) -> void => self.unfilteredCompletions.add(c)):
-      return
-
-    if childClass.isAbstract or childClass.isInterface:
-      return
-
-    let name = if childClass.alias.len > 0: childClass.alias else: childClass.name
-    self.unfilteredCompletions.add ModelCompletion(kind: ModelCompletionKind.SubstituteClass, name: name, class: childClass, parent: parent, role: role, index: index)
+      let name = if childClass.alias.len > 0: childClass.alias else: childClass.name
+      self.unfilteredCompletions.add ModelCompletion(kind: ModelCompletionKind.SubstituteClass, name: name, class: childClass, parent: parent, role: role, index: index)
+  elif parentClass.nodeReferenceDescription(role).getSome(desc):
+    let slotClass = model.resolveClass(desc.class)
+    debugf"updateCompletions {node}, {node.model.isNotNil}, {slotClass.name}"
+    let scope = self.document.ctx.getScope(node)
+    for decl in scope:
+      if decl.nodeClass.isSubclassOf(slotClass.id):
+        let name = if decl.property(IdINamedName).getSome(name): name.stringValue else: $decl.id
+        self.unfilteredCompletions.add ModelCompletion(kind: ModelCompletionKind.ChangeReference, name: name, class: slotClass, parent: node, role: role, index: index, changeReferenceTarget: decl)
 
   self.refilterCompletions()
   self.markDirty()
@@ -2516,6 +2523,12 @@ proc applySelectedCompletion*(self: ModelDocumentEditor) {.expose("editor.model"
       parent.insert(role, index, newNode)
       self.rebuildCells()
       self.cursor = self.getFirstEditableCellOfNode(newNode).get
+
+    of ModelCompletionKind.ChangeReference:
+      debugf"update reference of {completion.parent}:{completion.role} to {completion.changeReferenceTarget}"
+      completion.parent.setReference(completion.role, completion.changeReferenceTarget.id)
+      self.rebuildCells()
+      # self.cursor = self.getFirstEditableCellOfNode(newNode).get
 
     self.showCompletions = false
 
