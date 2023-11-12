@@ -21,7 +21,7 @@ type
     discard
 
   PlaceholderCell* = ref object of Cell
-    role*: Id
+    discard
 
 proc buildCell*(self: CellBuilder, map: NodeCellMap, node: AstNode, useDefault: bool = false): Cell
 

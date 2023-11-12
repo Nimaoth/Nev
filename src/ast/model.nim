@@ -24,6 +24,7 @@ type
   ModelId* = Id
   LanguageId* = Id
   RoleId* = Id
+  CellId* = Id
 
   PropertyType* {.pure.} = enum
     Int, String, Bool
@@ -92,11 +93,12 @@ type
   Cell* = ref object of RootObj
     when defined(js):
       aDebug*: cstring
-    id*: Id
+    id*: CellId
     parent*: Cell
     flags*: CellFlags
     node*: AstNode
     referenceNode*: AstNode
+    role*: RoleId                         # Which role of the target node this cell represents
     line*: int
     displayText*: Option[string]
     shadowText*: string
@@ -556,6 +558,9 @@ proc fillDefaultChildren*(node: AstNode, model: Model, onlyUnique: bool = false)
 
   for desc in class.children:
     if desc.count in {ChildCount.One, ChildCount.OneOrMore}:
+      if node.childCount(desc.id) > 0:
+        continue
+
       let childClass = language.classes.getOrDefault(desc.class)
       if childClass.isNil:
         log lvlError, fmt"Unknown class {desc.class}"
