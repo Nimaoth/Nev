@@ -8,7 +8,6 @@ let IdDiv* = "62e53397564d29f7729344fb".parseId.ClassId
 let IdMod* = "62e53397564d29f7729344fc".parseId.ClassId
 let IdNegate* = "62e53397564d29f7729344fd".parseId.ClassId
 let IdNot* = "62e53397564d29f7729344fe".parseId.ClassId
-let IdDeref* = "62e53397564d29f7729344ff".parseId.ClassId
 let IdAppendString* = "62e53397564d29f772934500".parseId.ClassId
 let IdInt* = "62e53397564d29f772934501".parseId.ClassId
 let IdString* = "62e53397564d29f772934502".parseId.ClassId
@@ -42,9 +41,6 @@ let IdIDeclaration* = "62e5339a564d29f77293451d".parseId.ClassId
 let IdBreakExpression* = "62e5339b564d29f772934520".parseId.ClassId
 let IdContinueExpression* = "62e5339b564d29f772934521".parseId.ClassId
 let IdReturnExpression* = "62e5339b564d29f772934522".parseId.ClassId
-let Id62e5339b564d29f772934523* = "62e5339b564d29f772934523".parseId.ClassId
-let Id62e5339b564d29f772934524* = "62e5339b564d29f772934524".parseId.ClassId
-let Id62e5339b564d29f772934525* = "62e5339b564d29f772934525".parseId.ClassId
 
 let IdEmptyLine* = "62e5339b564d29f772934526".parseId.ClassId
 
@@ -131,11 +127,16 @@ let IdStructMemberAccess* = "654fbb281446e19b3822520a".parseId.ClassId
 let IdStructMemberAccessMember* = "654fbb281446e19b38225208".parseId.RoleId
 let IdStructMemberAccessValue* = "654fbb281446e19b38225209".parseId.RoleId
 
+let IdPointerType* = "62e5339b564d29f772934523".parseId.ClassId
+let IdPointerTypeTarget* = "62e5339b564d29f772934524".parseId.RoleId
+
+let IdAddressOf* = "62e5339b564d29f772934525".parseId.ClassId
+let IdAddressOfValue* = "654fbb281446e19b3822520b".parseId.RoleId
+let IdDeref* = "654fbb281446e19b3822520c".parseId.ClassId
+let IdDerefValue* = "654fbb281446e19b3822520d".parseId.RoleId
+
 # new ids
 
-let Id654fbb281446e19b3822520b* = "654fbb281446e19b3822520b".parseId
-let Id654fbb281446e19b3822520c* = "654fbb281446e19b3822520c".parseId
-let Id654fbb281446e19b3822520d* = "654fbb281446e19b3822520d".parseId
 let Id654fbb281446e19b3822520e* = "654fbb281446e19b3822520e".parseId
 let Id654fbb281446e19b3822520f* = "654fbb281446e19b3822520f".parseId
 let Id654fbb281446e19b38225210* = "654fbb281446e19b38225210".parseId

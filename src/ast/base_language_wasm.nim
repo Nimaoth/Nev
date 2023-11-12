@@ -274,6 +274,8 @@ proc getOrCreateWasmFunc(self: BaseLanguageWasmCompiler, node: AstNode, exportNa
 proc getTypeAttributes(self: BaseLanguageWasmCompiler, typ: AstNode): tuple[size: int32, align: int32] =
   if typ.class == IdInt:
     return (4, 4)
+  if typ.class == IdPointerType:
+    return (4, 4)
   if typ.class == IdString:
     return (8, 4)
   if typ.class == IdFunctionType:
@@ -294,6 +296,8 @@ proc getTypeAttributes(self: BaseLanguageWasmCompiler, typ: AstNode): tuple[size
 
 proc getTypeMemInstructions(self: BaseLanguageWasmCompiler, typ: AstNode): tuple[load: WasmInstrKind, store: WasmInstrKind] =
   if typ.class == IdInt:
+    return (I32Load, I32Store)
+  if typ.class == IdPointerType:
     return (I32Load, I32Store)
   if typ.class == IdString:
     return (I64Load, I64Store)
@@ -860,8 +864,6 @@ proc genNodeStructMemberAccessExpression(self: BaseLanguageWasmCompiler, node: A
     log lvlError, fmt"No value: {node}"
     return
 
-  self.genNode(valueNode, Destination(kind: LValue))
-
   let typ = self.ctx.computeType(valueNode)
 
   var offset = 0.int32
@@ -873,9 +875,18 @@ proc genNodeStructMemberAccessExpression(self: BaseLanguageWasmCompiler, node: A
     let (memberSize, memberAlign) = self.getTypeAttributes(memberType)
     offset = align(offset, memberAlign)
     if member == memberDefinition:
+      size = memberSize
       align = memberAlign
       break
     offset += memberSize
+
+  case dest
+  of Memory(offset: @offset, align: @align):
+    if offset > 0:
+      self.instr(I32Const, i32Const: offset.int32)
+      self.instr(I32Add)
+
+  self.genNode(valueNode, Destination(kind: LValue))
 
   case dest
   of Stack():
@@ -883,7 +894,7 @@ proc genNodeStructMemberAccessExpression(self: BaseLanguageWasmCompiler, node: A
     let instr = self.getTypeMemInstructions(typ).load
     self.loadInstr(instr, offset.uint32, 0)
 
-  of Memory(offset: @offset, align: @align):
+  of Memory():
     if offset > 0:
       self.instr(I32Const, i32Const: offset.int32)
       self.instr(I32Add)
@@ -897,6 +908,41 @@ proc genNodeStructMemberAccessExpression(self: BaseLanguageWasmCompiler, node: A
     if offset > 0:
       self.instr(I32Const, i32Const: offset)
       self.instr(I32Add)
+
+proc genNodeAddressOf(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  let valueNode = node.firstChild(IdAddressOfValue).getOr:
+    log lvlError, fmt"No value: {node}"
+    return
+
+  self.genNode(valueNode, Destination(kind: LValue))
+  self.genStoreDestination(node, dest)
+
+proc genCopyToDestination(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  case dest
+  of Stack():
+    let typ = self.ctx.computeType(node)
+    let instr = self.getTypeMemInstructions(typ).load
+    self.loadInstr(instr, 0, 0)
+
+  of Memory():
+    let typ = self.ctx.computeType(node)
+    let (sourceSize, sourceAlign) = self.getTypeAttributes(typ)
+    self.instr(I32Const, i32Const: sourceSize)
+    self.instr(MemoryCopy)
+
+  of Discard():
+    self.instr(Drop)
+
+  of LValue():
+    discard
+
+proc genNodeDeref(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  let valueNode = node.firstChild(IdDerefValue).getOr:
+    log lvlError, fmt"No value: {node}"
+    return
+
+  self.genNode(valueNode, Destination(kind: Stack))
+  self.genCopyToDestination(node, dest)
 
 proc setupGenerators(self: BaseLanguageWasmCompiler) =
   self.generators[IdBlock] = genNodeBlock
@@ -929,3 +975,5 @@ proc setupGenerators(self: BaseLanguageWasmCompiler) =
   self.generators[IdBuildString] = genNodeBuildExpression
   self.generators[IdCall] = genNodeCallExpression
   self.generators[IdStructMemberAccess] = genNodeStructMemberAccessExpression
+  self.generators[IdAddressOf] = genNodeAddressOf
+  self.generators[IdDeref] = genNodeDeref
