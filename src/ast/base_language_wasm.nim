@@ -690,7 +690,6 @@ proc genNodeNodeReference(self: BaseLanguageWasmCompiler, node: AstNode, dest: D
 
     let typ = self.ctx.computeType(node)
     let (size, align) = self.getTypeAttributes(typ)
-    let memInstr = self.getTypeMemInstructions(typ)
 
     case dest
     of Stack():
@@ -699,12 +698,14 @@ proc genNodeNodeReference(self: BaseLanguageWasmCompiler, node: AstNode, dest: D
         self.instr(LocalGet, localIdx: index)
       of Stack(stackOffset: @offset):
         self.instr(LocalGet, localIdx: self.currentBasePointer)
+        let memInstr = self.getTypeMemInstructions(typ)
         self.loadInstr(memInstr.load, offset.uint32, 0)
 
     of Memory(offset: @offset, align: @align):
       case self.localIndices[id]:
       of Local(localIdx: @index):
         self.instr(LocalGet, localIdx: index)
+        let memInstr = self.getTypeMemInstructions(typ)
         self.storeInstr(memInstr.store, offset, align)
 
       of Stack(stackOffset: @offset):
