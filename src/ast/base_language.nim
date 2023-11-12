@@ -6,7 +6,7 @@ import ui/node
 logCategory "base-language"
 
 let expressionClass* = newNodeClass(IdExpression, "Expression", isAbstract=true)
-# let typeClass* = newNodeClass(IdType, "Type", isAbstract=true)
+# let typeClass* = newNodeClass(IdType, "Type", base=expressionClass)
 
 let metaTypeClass* = newNodeClass(IdType, "Type", alias="type", base=expressionClass)
 let stringTypeClass* = newNodeClass(IdString, "StringType", alias="string", base=expressionClass)
@@ -19,6 +19,9 @@ let functionTypeClass* = newNodeClass(IdFunctionType, "FunctionType", alias="fn"
 let structTypeClass* = newNodeClass(IdStructType, "StructType", alias="struct", base=expressionClass,
   children=[
     NodeChildDescription(id: IdStructTypeMemberTypes, role: "memberTypes", class: expressionClass.id, count: ChildCount.ZeroOrMore)])
+let pointerTypeClass* = newNodeClass(IdPointerType, "PointerType", alias="ptr", base=expressionClass,
+  children=[
+    NodeChildDescription(id: IdPointerTypeTarget, role: "target", class: expressionClass.id, count: ChildCount.One)])
 
 let namedInterface* = newNodeClass(IdINamed, "INamed", isAbstract=true, isInterface=true,
   properties=[PropertyDescription(id: IdINamedName, role: "name", typ: PropertyType.String)])
@@ -68,6 +71,14 @@ let nodeReferenceClass* = newNodeClass(IdNodeReference, "NodeReference", alias="
 let numberLiteralClass* = newNodeClass(IdIntegerLiteral, "IntegerLiteral", alias="number", base=expressionClass, properties=[PropertyDescription(id: IdIntegerLiteralValue, role: "value", typ: PropertyType.Int)], substitutionProperty=IdIntegerLiteralValue.some)
 let stringLiteralClass* = newNodeClass(IdStringLiteral, "StringLiteral", alias="''", base=expressionClass, properties=[PropertyDescription(id: IdStringLiteralValue, role: "value", typ: PropertyType.String)])
 let boolLiteralClass* = newNodeClass(IdBoolLiteral, "BoolLiteral", alias="bool", base=expressionClass, properties=[PropertyDescription(id: IdBoolLiteralValue, role: "value", typ: PropertyType.Bool)])
+
+let addressOfClass* = newNodeClass(IdAddressOf, "AddressOf", alias="addr", base=expressionClass,
+  children=[
+    NodeChildDescription(id: IdAddressOfValue, role: "value", class: expressionClass.id, count: ChildCount.One)])
+
+let derefClass* = newNodeClass(IdDeref, "Deref", alias="deref", base=expressionClass,
+  children=[
+    NodeChildDescription(id: IdDerefValue, role: "value", class: expressionClass.id, count: ChildCount.One)])
 
 let constDeclClass* = newNodeClass(IdConstDecl, "ConstDecl", alias="const", base=expressionClass, interfaces=[declarationInterface],
   children=[
@@ -348,6 +359,30 @@ builder.addBuilderFor structMemberAccessClass.id, idNone(), proc(builder: CellBu
 
   return cell
 
+builder.addBuilderFor pointerTypeClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
+  cell.fillChildren = proc(map: NodeCellMap) =
+    # echo "fill collection assignment"
+    cell.add ConstantCell(node: node, text: "ptr", themeForegroundColors: @["keyword"], disableEditing: true)
+    cell.add builder.buildChildren(map, node, IdPointerTypeTarget, &{LayoutHorizontal})
+  return cell
+
+builder.addBuilderFor addressOfClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
+  cell.fillChildren = proc(map: NodeCellMap) =
+    # echo "fill collection assignment"
+    cell.add ConstantCell(node: node, text: "addr", themeForegroundColors: @["keyword"], disableEditing: true)
+    cell.add builder.buildChildren(map, node, IdAddressOfValue, &{LayoutHorizontal})
+  return cell
+
+builder.addBuilderFor derefClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
+  cell.fillChildren = proc(map: NodeCellMap) =
+    # echo "fill collection assignment"
+    cell.add ConstantCell(node: node, text: "deref", themeForegroundColors: @["keyword"], disableEditing: true)
+    cell.add builder.buildChildren(map, node, IdDerefValue, &{LayoutHorizontal})
+  return cell
+
 builder.addBuilderFor callClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
@@ -539,6 +574,10 @@ typeComputers[intTypeClass.id] = proc(ctx: ModelComputationContextBase, node: As
 typeComputers[voidTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   debugf"compute type for void type literal {node}"
   return voidTypeInstance
+
+typeComputers[pointerTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for pointer type {node}"
+  return node
 
 # base expression
 typeComputers[expressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
@@ -860,6 +899,30 @@ typeComputers[structMemberDefinitionClass.id] = proc(ctx: ModelComputationContex
 
   return voidTypeInstance
 
+typeComputers[IdAddressOf] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute scope for address of {node}"
+
+  if node.firstChild(IdAddressOfValue).getSome(typeNode):
+    let targetType = ctx.computeType(typeNode)
+    var typ = newAstNode(pointerTypeClass)
+    typ.add(IdPointerTypeTarget, targetType)
+    typ.model = node.model
+    typ.forEach2 n:
+      n.model = node.model
+    return typ
+
+  return voidTypeInstance
+
+typeComputers[IdDeref] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute scope for deref {node}"
+
+  if node.firstChild(IdDerefValue).getSome(typeNode):
+    let pointerType = ctx.computeType(typeNode)
+    if pointerType.class == IdPointerType and pointerType.firstChild(IdPointerTypeTarget).getSome(targetType):
+      return targetType
+
+  return voidTypeInstance
+
 # scope
 scopeComputers[structMemberAccessClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode] =
   debugf"compute scope for struct member access {node}"
@@ -877,7 +940,7 @@ let baseLanguage* = newLanguage(IdBaseLanguage, @[
   namedInterface, declarationInterface,
 
   # typeClass,
-  stringTypeClass, intTypeClass, voidTypeClass, functionTypeClass, structTypeClass,
+  stringTypeClass, intTypeClass, voidTypeClass, functionTypeClass, structTypeClass, pointerTypeClass,
 
   expressionClass, binaryExpressionClass, unaryExpressionClass, emptyLineClass,
   numberLiteralClass, stringLiteralClass, boolLiteralClass, nodeReferenceClass, emptyClass, constDeclClass, letDeclClass, varDeclClass, nodeListClass, blockClass, callClass, thenCaseClass, ifClass, whileClass,
@@ -889,6 +952,7 @@ let baseLanguage* = newLanguage(IdBaseLanguage, @[
   appendStringExpressionClass, printExpressionClass, buildExpressionClass,
 
   structDefinitionClass, structMemberDefinitionClass, structMemberAccessClass,
+  addressOfClass, derefClass,
 ], builder, typeComputers, scopeComputers)
 
 let baseModel* = block:
