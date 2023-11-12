@@ -53,6 +53,7 @@ type
     # implemented inline
     buildString: WasmFuncIdx
     strlen: WasmFuncIdx
+    allocFunc: WasmFuncIdx
 
     stackBase: WasmGlobalIdx
     stackEnd: WasmGlobalIdx
@@ -95,7 +96,7 @@ proc newBaseLanguageWasmCompiler*(ctx: ModelComputationContextBase): BaseLanguag
   result.heapSize = result.builder.addGlobal(I32, mut=true, 0, id="__heap_size")
 
   # todo: add proper allocator. For now just a bump allocator without freeing
-  let alloc = result.builder.addFunction([I32], [I32], [], exportName="my_alloc".some, body=WasmExpr(instr: @[
+  result.allocFunc = result.builder.addFunction([I32], [I32], [], exportName="my_alloc".some, body=WasmExpr(instr: @[
     WasmInstr(kind: GlobalGet, globalIdx: result.heapBase),
     WasmInstr(kind: GlobalGet, globalIdx: result.heapSize),
     WasmInstr(kind: I32Add),
@@ -178,7 +179,7 @@ proc newBaseLanguageWasmCompiler*(ctx: ModelComputationContextBase): BaseLanguag
       # result = alloc(resultLength)
       WasmInstr(kind: I32Const, i32Const: 1),
       WasmInstr(kind: I32Add),
-      WasmInstr(kind: Call, callFuncIdx: alloc),
+      WasmInstr(kind: Call, callFuncIdx: result.allocFunc),
       WasmInstr(kind: LocalTee, localIdx: resultAddress),
 
       # memcpy(resultAddress, a, a.length)
@@ -246,6 +247,8 @@ proc genNode*(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) 
 
 proc toWasmValueType(typ: AstNode): Option[WasmValueType] =
   if typ.class == IdInt:
+    return WasmValueType.I32.some
+  if typ.class == IdPointerType:
     return WasmValueType.I32.some
   if typ.class == IdString:
     return WasmValueType.I64.some
@@ -778,6 +781,8 @@ proc genNodePrintExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest:
     let typ = self.ctx.computeType(c)
     if typ.class == IdInt:
       self.instr(Call, callFuncIdx: self.printI32)
+    elif typ.class == IdPointerType:
+      self.instr(Call, callFuncIdx: self.printI32)
     elif typ.class == IdString:
       self.instr(I32WrapI64)
       self.instr(Call, callFuncIdx: self.printString)
@@ -964,6 +969,23 @@ proc genNodeArrayAccess(self: BaseLanguageWasmCompiler, node: AstNode, dest: Des
 
   self.genCopyToDestination(node, dest)
 
+proc genNodeAllocate(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  let typeNode = node.firstChild(IdAllocateType).getOr:
+    log lvlError, fmt"No type: {node}"
+    return
+
+  let typ = self.ctx.computeType(typeNode) # todo: replace with get value once implemented
+  let (size, align) = self.getTypeAttributes(typ)
+
+  self.instr(I32Const, i32Const: size)
+
+  if node.firstChild(IdAllocateCount).getSome(countNode):
+    self.genNode(countNode, Destination(kind: Stack))
+    self.instr(I32Mul)
+
+  self.instr(Call, callFuncIdx: self.allocFunc)
+  self.genStoreDestination(node, dest)
+
 proc setupGenerators(self: BaseLanguageWasmCompiler) =
   self.generators[IdBlock] = genNodeBlock
   self.generators[IdAdd] = genNodeBinaryAddExpression
@@ -998,3 +1020,4 @@ proc setupGenerators(self: BaseLanguageWasmCompiler) =
   self.generators[IdAddressOf] = genNodeAddressOf
   self.generators[IdDeref] = genNodeDeref
   self.generators[IdArrayAccess] = genNodeArrayAccess
+  self.generators[IdAllocate] = genNodeAllocate

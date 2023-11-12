@@ -85,6 +85,11 @@ let arrayAccessClass* = newNodeClass(IdArrayAccess, "ArrayAccess", alias="[]", b
     NodeChildDescription(id: IdArrayAccessValue, role: "value", class: expressionClass.id, count: ChildCount.One),
     NodeChildDescription(id: IdArrayAccessIndex, role: "index", class: expressionClass.id, count: ChildCount.One)])
 
+let allocateClass* = newNodeClass(IdAllocate, "Allocate", alias="alloc", base=expressionClass,
+  children=[
+    NodeChildDescription(id: IdAllocateType, role: "type", class: expressionClass.id, count: ChildCount.One),
+    NodeChildDescription(id: IdAllocateCount, role: "count", class: expressionClass.id, count: ChildCount.ZeroOrOne)])
+
 let constDeclClass* = newNodeClass(IdConstDecl, "ConstDecl", alias="const", base=expressionClass, interfaces=[declarationInterface],
   children=[
     NodeChildDescription(id: IdConstDeclType, role: "type", class: expressionClass.id, count: ChildCount.ZeroOrOne),
@@ -396,6 +401,18 @@ builder.addBuilderFor IdArrayAccess, idNone(), proc(builder: CellBuilder, node: 
     cell.add ConstantCell(node: node, text: "[", flags: &{NoSpaceLeft, NoSpaceRight}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
     cell.add builder.buildChildren(map, node, IdArrayAccessIndex, &{LayoutHorizontal})
     cell.add ConstantCell(node: node, text: "]", flags: &{NoSpaceLeft}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+  return cell
+
+builder.addBuilderFor IdAllocate, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
+  cell.fillChildren = proc(map: NodeCellMap) =
+    # echo "fill collection assignment"
+    cell.add ConstantCell(node: node, text: "alloc", themeForegroundColors: @["keyword"], disableEditing: true)
+    cell.add builder.buildChildren(map, node, IdAllocateType, &{LayoutHorizontal})
+    cell.add ConstantCell(node: node, text: ",", flags: &{NoSpaceLeft}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+    cell.add block:
+      buildChildrenT(builder, map, node, IdAllocateCount, &{LayoutHorizontal}, 0.CellFlags):
+        placeholder: PlaceholderCell(id: newId().CellId, node: node, role: role, shadowText: "1")
   return cell
 
 builder.addBuilderFor callClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
@@ -914,6 +931,20 @@ typeComputers[structMemberDefinitionClass.id] = proc(ctx: ModelComputationContex
 
   return voidTypeInstance
 
+typeComputers[IdAllocate] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute scope for allocate {node}"
+
+  if node.firstChild(IdAllocateType).getSome(typeNode):
+    let targetType = ctx.computeType(typeNode)
+    var typ = newAstNode(pointerTypeClass)
+    typ.add(IdPointerTypeTarget, targetType)
+    typ.model = node.model
+    typ.forEach2 n:
+      n.model = node.model
+    return typ
+
+  return voidTypeInstance
+
 typeComputers[IdAddressOf] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   debugf"compute scope for address of {node}"
 
@@ -1005,7 +1036,7 @@ let baseLanguage* = newLanguage(IdBaseLanguage, @[
   addExpressionClass, subExpressionClass, mulExpressionClass, divExpressionClass, modExpressionClass,
   lessExpressionClass, lessEqualExpressionClass, greaterExpressionClass, greaterEqualExpressionClass, equalExpressionClass, notEqualExpressionClass, andExpressionClass, orExpressionClass, orderExpressionClass,
   negateExpressionClass, notExpressionClass,
-  appendStringExpressionClass, printExpressionClass, buildExpressionClass,
+  appendStringExpressionClass, printExpressionClass, buildExpressionClass, allocateClass,
 
   structDefinitionClass, structMemberDefinitionClass, structMemberAccessClass,
   addressOfClass, derefClass, arrayAccessClass,

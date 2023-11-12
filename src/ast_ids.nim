@@ -139,11 +139,12 @@ let IdArrayAccess* = "654fbb281446e19b3822520e".parseId.ClassId
 let IdArrayAccessValue* = "654fbb281446e19b3822520f".parseId.RoleId
 let IdArrayAccessIndex* = "654fbb281446e19b38225210".parseId.RoleId
 
+let IdAllocate* = "654fbb281446e19b38225211".parseId.ClassId
+let IdAllocateType* = "654fbb281446e19b38225212".parseId.RoleId
+let IdAllocateCount* = "654fbb281446e19b38225213".parseId.RoleId
+
 # new ids
 
-let Id654fbb281446e19b38225211* = "654fbb281446e19b38225211".parseId
-let Id654fbb281446e19b38225212* = "654fbb281446e19b38225212".parseId
-let Id654fbb281446e19b38225213* = "654fbb281446e19b38225213".parseId
 let Id654fbb281446e19b38225214* = "654fbb281446e19b38225214".parseId
 let Id654fbb281446e19b38225215* = "654fbb281446e19b38225215".parseId
 let Id654fbb281446e19b38225216* = "654fbb281446e19b38225216".parseId
