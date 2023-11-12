@@ -123,6 +123,10 @@ func fingerprint*(id: Id): Fingerprint =
   let p2: ptr int64 = cast[ptr int64](addr id)
   return @[p2[], p[2]]
 
+func fingerprint*[T](items: openArray[T]): Fingerprint =
+  for i in items:
+    result.add i.fingerprint
+
 proc newDependencyGraph*(): DependencyGraph =
   new result
   result.revision = 0

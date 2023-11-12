@@ -2421,6 +2421,21 @@ proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool {.expos
   var prefixTransformations: NodeClassTransformations
   var selectionTransformations: NodeClassTransformations
 
+  selectionTransformations.transformations = toTable {
+    IdExpression: NodeTransformations(
+      transformations: toTable {
+        "+": NodeTransformation(kind: Wrap, wrapClass: IdAdd, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
+        "-": NodeTransformation(kind: Wrap, wrapClass: IdSub, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
+        "*": NodeTransformation(kind: Wrap, wrapClass: IdMul, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
+        "/": NodeTransformation(kind: Wrap, wrapClass: IdDiv, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
+        "%": NodeTransformation(kind: Wrap, wrapClass: IdMod, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
+        "=": NodeTransformation(kind: Wrap, wrapClass: IdAssignment, wrapRole: IdAssignmentTarget, wrapCursorTargetRole: IdAssignmentValue, selectNextPlaceholder: true, wrapChildIndex: 0),
+        ".": NodeTransformation(kind: Wrap, wrapClass: IdStructMemberAccess, wrapRole: IdStructMemberAccessValue, wrapCursorTargetRole: IdStructMemberAccessMember, selectNextPlaceholder: true, wrapChildIndex: 0),
+        "(": NodeTransformation(kind: Wrap, wrapClass: IdCall, wrapRole: IdCallFunction, wrapCursorTargetRole: IdCallArguments, selectNextPlaceholder: true, wrapChildIndex: 0),
+      }
+    ),
+  }
+
   postfixTransformations.transformations = toTable {
     IdExpression: NodeTransformations(
       transformations: toTable {
@@ -2449,6 +2464,12 @@ proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool {.expos
       }
     ),
   }
+
+  if not self.selection.isEmpty:
+    let (parentCell, leftPath, rightPath) = self.selection.getParentInfo
+    if selectionTransformations.findTransformation(parentCell.node.nodeClass, input).getSome(transformation):
+      self.cursor = self.applyTransformation(parentCell.node, transformation)
+      return
 
   if getTargetCell(self.cursor).getSome(cell):
     if self.selection.isEmpty:
