@@ -421,7 +421,8 @@ proc addFunction*(self: WasmBuilder,
   self.funcs.add WasmFunc(
     typeIdx: typeIdx,
     locals: @locals,
-    body: body
+    body: body,
+    id: exportName.get ""
   )
 
   if exportName.getSome(exportName):
