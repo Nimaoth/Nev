@@ -420,7 +420,7 @@ proc genStoreDestination(self: BaseLanguageWasmCompiler, node: AstNode, dest: De
   of Discard():
     self.genDrop(node)
 
-proc genNodeChildren(self: BaseLanguageWasmCompiler, node: AstNode, role: Id, dest: Destination) =
+proc genNodeChildren(self: BaseLanguageWasmCompiler, node: AstNode, role: RoleId, dest: Destination) =
   let count = node.childCount(role)
   for i, c in node.children(role):
     let childDest = if i == count - 1:

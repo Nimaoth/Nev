@@ -15,7 +15,7 @@ type
     text*: string
 
   PropertyCell* = ref object of Cell
-    property*: Id
+    property*: RoleId
 
   AliasCell* = ref object of Cell
     discard
@@ -452,13 +452,13 @@ proc buildCell*(self: CellBuilder, map: NodeCellMap, node: AstNode, useDefault: 
   map.map[node.id] = result
   map.cells[result.id] = result
 
-proc buildDefaultPlaceholder*(builder: CellBuilder, node: AstNode, role: Id, flags: CellFlags = 0.CellFlags): Cell =
+proc buildDefaultPlaceholder*(builder: CellBuilder, node: AstNode, role: RoleId, flags: CellFlags = 0.CellFlags): Cell =
   return PlaceholderCell(id: newId(), node: node, role: role, flags: flags, shadowText: "...")
 
-proc buildChildren*(builder: CellBuilder, map: NodeCellMap, node: AstNode, role: Id, uiFlags: UINodeFlags = 0.UINodeFlags, flags: CellFlags = 0.CellFlags,
+proc buildChildren*(builder: CellBuilder, map: NodeCellMap, node: AstNode, role: RoleId, uiFlags: UINodeFlags = 0.UINodeFlags, flags: CellFlags = 0.CellFlags,
     isVisible: proc(node: AstNode): bool = nil,
     separatorFunc: proc(builder: CellBuilder): Cell = nil,
-    placeholderFunc: proc(builder: CellBuilder, node: AstNode, role: Id, flags: CellFlags): Cell = buildDefaultPlaceholder): Cell =
+    placeholderFunc: proc(builder: CellBuilder, node: AstNode, role: RoleId, flags: CellFlags): Cell = buildDefaultPlaceholder): Cell =
 
   let children = node.children(role)
 
@@ -476,10 +476,10 @@ proc buildChildren*(builder: CellBuilder, map: NodeCellMap, node: AstNode, role:
 
   result.isVisible = isVisible
 
-template buildChildrenT*(b: CellBuilder, map: NodeCellMap, n: AstNode, r: Id, uiFlags: UINodeFlags, cellFlags: CellFlags, body: untyped): Cell =
+template buildChildrenT*(b: CellBuilder, map: NodeCellMap, n: AstNode, r: RoleId, uiFlags: UINodeFlags, cellFlags: CellFlags, body: untyped): Cell =
   var isVisibleFunc: proc(node: AstNode): bool = nil
   var separatorFunc: proc(builder: CellBuilder): Cell = nil
-  var placeholderFunc: proc(builder: CellBuilder, node: AstNode, role: Id, childFlags: CellFlags): Cell = nil
+  var placeholderFunc: proc(builder: CellBuilder, node: AstNode, role: RoleId, childFlags: CellFlags): Cell = nil
 
   var builder {.inject.} = b
   var node {.inject.} = n
@@ -490,11 +490,11 @@ template buildChildrenT*(b: CellBuilder, map: NodeCellMap, n: AstNode, r: Id, ui
       return bod
 
   template placeholder(bod: untyped): untyped {.used.} =
-    placeholderFunc = proc(builder {.inject.}: CellBuilder, node {.inject.}: AstNode, role {.inject.}: Id, childFlags: CellFlags): Cell =
+    placeholderFunc = proc(builder {.inject.}: CellBuilder, node {.inject.}: AstNode, role {.inject.}: RoleId, childFlags: CellFlags): Cell =
       return bod
 
   template placeholder(text: string): untyped {.used.} =
-    placeholderFunc = proc(builder {.inject.}: CellBuilder, node {.inject.}: AstNode, role {.inject.}: Id, childFlags: CellFlags): Cell =
+    placeholderFunc = proc(builder {.inject.}: CellBuilder, node {.inject.}: AstNode, role {.inject.}: RoleId, childFlags: CellFlags): Cell =
       return PlaceholderCell(id: newId(), node: node, role: role, shadowText: text, flags: childFlags)
 
   template visible(bod: untyped): untyped {.used.} =
