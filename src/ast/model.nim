@@ -23,9 +23,15 @@ type
   NodeId* = Id
   ModelId* = Id
   LanguageId* = Id
-  RoleId* = Id
+  RoleId* = distinct Id
   CellId* = Id
 
+proc `==`*(a, b: RoleId): bool {.borrow.}
+proc `$`*(a: RoleId): string {.borrow.}
+proc isNone*(id: RoleId): bool {.borrow.}
+proc isSome*(id: RoleId): bool {.borrow.}
+
+type
   PropertyType* {.pure.} = enum
     Int, String, Bool
 

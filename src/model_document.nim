@@ -102,7 +102,7 @@ type
     parent: AstNode       # The parent where a node was in inserted or deleted
     node: AstNode         # The node which was inserted/deleted
     idx: int              # The index where a node was inserted/deleted
-    role: Id              # The role where a node was inserted/deleted
+    role: RoleId          # The role where a node was inserted/deleted
     value: PropertyValue  # The new/old text of a property
     id: Id                # The new/old id of a reference
     slice: Slice[int]     # The range of text that changed
@@ -133,7 +133,7 @@ type
 
   ModelCompletion* = object
     parent*: AstNode
-    role*: Id
+    role*: RoleId
     index*: int
     class*: NodeClass
     name*: string
@@ -143,7 +143,7 @@ type
     of SubstituteClass:
       property: Option[RoleId] # Property to set on new node from completion text
     of SubstituteReference:
-      referenceRole*: Id
+      referenceRole*: RoleId
       referenceTarget*: AstNode
     of ChangeReference:
       changeReferenceTarget*: AstNode
@@ -413,22 +413,22 @@ proc `targetCursor=`*(self: ModelDocumentEditor, cursor: CellCursorState) =
   self.mTargetCursor = cursor.some
   self.cursor = cursor
 
-proc handleNodeDeleted(self: ModelDocument, model: Model, parent: AstNode, child: AstNode, role: Id, index: int) =
+proc handleNodeDeleted(self: ModelDocument, model: Model, parent: AstNode, child: AstNode, role: RoleId, index: int) =
   # debugf "handleNodeDeleted {parent}, {child}, {role}, {index}"
   self.currentTransaction.operations.add ModelOperation(kind: Delete, parent: parent, node: child, idx: index, role: role)
   self.ctx.state.deleteNode(child, recurse=true)
 
-proc handleNodeInserted(self: ModelDocument, model: Model, parent: AstNode, child: AstNode, role: Id, index: int) =
+proc handleNodeInserted(self: ModelDocument, model: Model, parent: AstNode, child: AstNode, role: RoleId, index: int) =
   # debugf "handleNodeInserted {parent}, {child}, {role}, {index}"
   self.currentTransaction.operations.add ModelOperation(kind: Insert, parent: parent, node: child, idx: index, role: role)
   self.ctx.state.insertNode(child)
 
-proc handleNodePropertyChanged(self: ModelDocument, model: Model, node: AstNode, role: Id, oldValue: PropertyValue, newValue: PropertyValue, slice: Slice[int]) =
+proc handleNodePropertyChanged(self: ModelDocument, model: Model, node: AstNode, role: RoleId, oldValue: PropertyValue, newValue: PropertyValue, slice: Slice[int]) =
   # debugf "handleNodePropertyChanged {node}, {role}, {oldValue}, {newValue}"
   self.currentTransaction.operations.add ModelOperation(kind: PropertyChange, node: node, role: role, value: oldValue, slice: slice)
   self.ctx.state.updateNode(node)
 
-proc handleNodeReferenceChanged(self: ModelDocument, model: Model, node: AstNode, role: Id, oldRef: Id, newRef: Id) =
+proc handleNodeReferenceChanged(self: ModelDocument, model: Model, node: AstNode, role: RoleId, oldRef: Id, newRef: Id) =
   # debugf "handleNodeReferenceChanged {node}, {role}, {oldRef}, {newRef}"
   self.currentTransaction.operations.add ModelOperation(kind: ReferenceChange, node: node, role: role, id: oldRef)
   self.ctx.state.updateNode(node)
@@ -482,7 +482,7 @@ method load*(self: ModelDocument, filename: string = "") =
   self.filename = filename
   asyncCheck self.loadAsync()
 
-proc getSubstitutionTarget(cell: Cell): (AstNode, Id, int) =
+proc getSubstitutionTarget(cell: Cell): (AstNode, RoleId, int) =
   ## Returns the parent cell, role, and index where to insert/replace a substitution
   if cell of PlaceholderCell:
     return (cell.node, cell.PlaceholderCell.role, 0)
@@ -669,19 +669,19 @@ proc redo*(self: ModelDocument): Option[(Id, ModelOperation)] =
 
   self.finishTransaction(false)
 
-proc handleNodeDeleted(self: ModelDocumentEditor, model: Model, parent: AstNode, child: AstNode, role: Id, index: int) =
+proc handleNodeDeleted(self: ModelDocumentEditor, model: Model, parent: AstNode, child: AstNode, role: RoleId, index: int) =
   # debugf "handleNodeDeleted {parent}, {child}, {role}, {index}"
   self.invalidateCompletions()
 
-proc handleNodeInserted(self: ModelDocumentEditor, model: Model, parent: AstNode, child: AstNode, role: Id, index: int) =
+proc handleNodeInserted(self: ModelDocumentEditor, model: Model, parent: AstNode, child: AstNode, role: RoleId, index: int) =
   # debugf "handleNodeInserted {parent}, {child}, {role}, {index}"
   self.invalidateCompletions()
 
-proc handleNodePropertyChanged(self: ModelDocumentEditor, model: Model, node: AstNode, role: Id, oldValue: PropertyValue, newValue: PropertyValue, slice: Slice[int]) =
+proc handleNodePropertyChanged(self: ModelDocumentEditor, model: Model, node: AstNode, role: RoleId, oldValue: PropertyValue, newValue: PropertyValue, slice: Slice[int]) =
   # debugf "handleNodePropertyChanged {node}, {role}, {oldValue}, {newValue}"
   self.invalidateCompletions()
 
-proc handleNodeReferenceChanged(self: ModelDocumentEditor, model: Model, node: AstNode, role: Id, oldRef: Id, newRef: Id) =
+proc handleNodeReferenceChanged(self: ModelDocumentEditor, model: Model, node: AstNode, role: RoleId, oldRef: Id, newRef: Id) =
   # debugf "handleNodeReferenceChanged {node}, {role}, {oldRef}, {newRef}"
   self.invalidateCompletions()
 
@@ -1470,7 +1470,7 @@ proc getFirstSelectableCellOfNode*(self: ModelDocumentEditor, node: AstNode): Op
     # echo fmt"a: visible descendant {targetCell}"
     return self.nodeCellMap.toCursor(targetCell, true).some
 
-proc getFirstPropertyCellOfNode*(self: ModelDocumentEditor, node: AstNode, role: Id): Option[CellCursor] =
+proc getFirstPropertyCellOfNode*(self: ModelDocumentEditor, node: AstNode, role: RoleId): Option[CellCursor] =
   result = CellCursor.none
 
   let nodeCell = self.nodeCellMap.cell(node)
@@ -2220,7 +2220,7 @@ proc isAtEndOfLastCellOfNode*(cursor: CellCursor): bool =
   else:
     return cursor.index == cell.high + 1
 
-proc insertIntoNode*(self: ModelDocumentEditor, parent: AstNode, role: Id, index: int): Option[AstNode] =
+proc insertIntoNode*(self: ModelDocumentEditor, parent: AstNode, role: RoleId, index: int): Option[AstNode] =
   let parentCell = self.nodeCellMap.cell(parent)
   debugf"insertIntoNode {index} {parent}, {parentCell.nodeFactory.isNotNil}"
 
@@ -2361,22 +2361,18 @@ type
     case kind*: NodeTransformationKind
     of Wrap:
       wrapClass*: ClassId
-      wrapRole*: Id
-      wrapCursorTargetRole*: Id
+      wrapRole*: RoleId
+      wrapCursorTargetRole*: RoleId
       wrapChildIndex*: int
 
-  NodeTransformations* = object
-    transformations: Table[string, NodeTransformation]
-
-  NodeClassTransformations* = object
-    transformations: Table[ClassId, NodeTransformations]
+  NodeClassTransformations* = Table[ClassId, Table[string, NodeTransformation]]
 
 proc findTransformation(self: NodeClassTransformations, class: NodeClass, input: string): Option[NodeTransformation] =
   var class = class
   while class.isNotNil:
-    if self.transformations.contains(class.id):
-      if self.transformations[class.id].transformations.contains(input):
-        return self.transformations[class.id].transformations[input].some
+    if self.contains(class.id):
+      if self[class.id].contains(input):
+        return self[class.id][input].some
     class = class.base
 
 proc applyTransformation(self: ModelDocumentEditor, node: AstNode, transformation: NodeTransformation): CellCursor =
@@ -2392,7 +2388,7 @@ proc applyTransformation(self: ModelDocumentEditor, node: AstNode, transformatio
 
     self.rebuildCells()
 
-    if transformation.wrapCursorTargetRole != idNone():
+    if transformation.wrapCursorTargetRole.isSome:
       if self.nodeCellMap.cell(newNode).getFirstLeaf(self.nodeCellMap).getSelfOrNextLeafWhere(self.nodeCellMap, proc(c: Cell): bool =
           echo c
           isVisible(c) and c.role == transformation.wrapCursorTargetRole
@@ -2417,52 +2413,42 @@ proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool {.expos
       self.updateScrollOffset()
 
   # todo: get these transformations from the language itself
-  var postfixTransformations: NodeClassTransformations
-  var prefixTransformations: NodeClassTransformations
-  var selectionTransformations: NodeClassTransformations
-
-  selectionTransformations.transformations = toTable {
-    IdExpression: NodeTransformations(
-      transformations: toTable {
-        "+": NodeTransformation(kind: Wrap, wrapClass: IdAdd, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
-        "-": NodeTransformation(kind: Wrap, wrapClass: IdSub, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
-        "*": NodeTransformation(kind: Wrap, wrapClass: IdMul, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
-        "/": NodeTransformation(kind: Wrap, wrapClass: IdDiv, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
-        "%": NodeTransformation(kind: Wrap, wrapClass: IdMod, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
-        "=": NodeTransformation(kind: Wrap, wrapClass: IdAssignment, wrapRole: IdAssignmentTarget, wrapCursorTargetRole: IdAssignmentValue, selectNextPlaceholder: true, wrapChildIndex: 0),
-        ".": NodeTransformation(kind: Wrap, wrapClass: IdStructMemberAccess, wrapRole: IdStructMemberAccessValue, wrapCursorTargetRole: IdStructMemberAccessMember, selectNextPlaceholder: true, wrapChildIndex: 0),
-        "(": NodeTransformation(kind: Wrap, wrapClass: IdCall, wrapRole: IdCallFunction, wrapCursorTargetRole: IdCallArguments, selectNextPlaceholder: true, wrapChildIndex: 0),
-      }
-    ),
+  let selectionTransformations = toTable {
+    IdExpression: {
+      "+": NodeTransformation(kind: Wrap, wrapClass: IdAdd, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
+      "-": NodeTransformation(kind: Wrap, wrapClass: IdSub, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
+      "*": NodeTransformation(kind: Wrap, wrapClass: IdMul, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
+      "/": NodeTransformation(kind: Wrap, wrapClass: IdDiv, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
+      "%": NodeTransformation(kind: Wrap, wrapClass: IdMod, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
+      "=": NodeTransformation(kind: Wrap, wrapClass: IdAssignment, wrapRole: IdAssignmentTarget, wrapCursorTargetRole: IdAssignmentValue, selectNextPlaceholder: true, wrapChildIndex: 0),
+      ".": NodeTransformation(kind: Wrap, wrapClass: IdStructMemberAccess, wrapRole: IdStructMemberAccessValue, wrapCursorTargetRole: IdStructMemberAccessMember, selectNextPlaceholder: true, wrapChildIndex: 0),
+      "(": NodeTransformation(kind: Wrap, wrapClass: IdCall, wrapRole: IdCallFunction, wrapCursorTargetRole: IdCallArguments, selectNextPlaceholder: true, wrapChildIndex: 0),
+    }.toTable
   }
 
-  postfixTransformations.transformations = toTable {
-    IdExpression: NodeTransformations(
-      transformations: toTable {
-        "+": NodeTransformation(kind: Wrap, wrapClass: IdAdd, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
-        "-": NodeTransformation(kind: Wrap, wrapClass: IdSub, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
-        "*": NodeTransformation(kind: Wrap, wrapClass: IdMul, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
-        "/": NodeTransformation(kind: Wrap, wrapClass: IdDiv, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
-        "%": NodeTransformation(kind: Wrap, wrapClass: IdMod, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
-        "=": NodeTransformation(kind: Wrap, wrapClass: IdAssignment, wrapRole: IdAssignmentTarget, wrapCursorTargetRole: IdAssignmentValue, selectNextPlaceholder: true, wrapChildIndex: 0),
-        ".": NodeTransformation(kind: Wrap, wrapClass: IdStructMemberAccess, wrapRole: IdStructMemberAccessValue, wrapCursorTargetRole: IdStructMemberAccessMember, selectNextPlaceholder: true, wrapChildIndex: 0),
-        "(": NodeTransformation(kind: Wrap, wrapClass: IdCall, wrapRole: IdCallFunction, wrapCursorTargetRole: IdCallArguments, selectNextPlaceholder: true, wrapChildIndex: 0),
-      }
-    ),
+  let postfixTransformations = toTable {
+    IdExpression: {
+      "+": NodeTransformation(kind: Wrap, wrapClass: IdAdd, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
+      "-": NodeTransformation(kind: Wrap, wrapClass: IdSub, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
+      "*": NodeTransformation(kind: Wrap, wrapClass: IdMul, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
+      "/": NodeTransformation(kind: Wrap, wrapClass: IdDiv, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
+      "%": NodeTransformation(kind: Wrap, wrapClass: IdMod, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
+      "=": NodeTransformation(kind: Wrap, wrapClass: IdAssignment, wrapRole: IdAssignmentTarget, wrapCursorTargetRole: IdAssignmentValue, selectNextPlaceholder: true, wrapChildIndex: 0),
+      ".": NodeTransformation(kind: Wrap, wrapClass: IdStructMemberAccess, wrapRole: IdStructMemberAccessValue, wrapCursorTargetRole: IdStructMemberAccessMember, selectNextPlaceholder: true, wrapChildIndex: 0),
+      "(": NodeTransformation(kind: Wrap, wrapClass: IdCall, wrapRole: IdCallFunction, wrapCursorTargetRole: IdCallArguments, selectNextPlaceholder: true, wrapChildIndex: 0),
+    }.toTable
   }
 
-  prefixTransformations.transformations = toTable {
-    IdExpression: NodeTransformations(
-      transformations: toTable {
-        "+": NodeTransformation(kind: Wrap, wrapClass: IdAdd, wrapRole: IdBinaryExpressionRight, wrapCursorTargetRole: IdBinaryExpressionLeft, selectPrevPlaceholder: true, wrapChildIndex: 0),
-        "-": NodeTransformation(kind: Wrap, wrapClass: IdSub, wrapRole: IdBinaryExpressionRight, wrapCursorTargetRole: IdBinaryExpressionLeft, selectPrevPlaceholder: true, wrapChildIndex: 0),
-        "*": NodeTransformation(kind: Wrap, wrapClass: IdMul, wrapRole: IdBinaryExpressionRight, wrapCursorTargetRole: IdBinaryExpressionLeft, selectPrevPlaceholder: true, wrapChildIndex: 0),
-        "/": NodeTransformation(kind: Wrap, wrapClass: IdDiv, wrapRole: IdBinaryExpressionRight, wrapCursorTargetRole: IdBinaryExpressionLeft, selectPrevPlaceholder: true, wrapChildIndex: 0),
-        "%": NodeTransformation(kind: Wrap, wrapClass: IdMod, wrapRole: IdBinaryExpressionRight, wrapCursorTargetRole: IdBinaryExpressionLeft, selectPrevPlaceholder: true, wrapChildIndex: 0),
-        "=": NodeTransformation(kind: Wrap, wrapClass: IdAssignment, wrapRole: IdAssignmentValue, wrapCursorTargetRole: IdAssignmentTarget, selectPrevPlaceholder: true, wrapChildIndex: 0),
-        "(": NodeTransformation(kind: Wrap, wrapClass: IdCall, wrapRole: IdCallArguments, wrapCursorTargetRole: IdCallFunction, selectPrevPlaceholder: true, wrapChildIndex: 0),
-      }
-    ),
+  let prefixTransformations = toTable {
+    IdExpression: {
+      "+": NodeTransformation(kind: Wrap, wrapClass: IdAdd, wrapRole: IdBinaryExpressionRight, wrapCursorTargetRole: IdBinaryExpressionLeft, selectPrevPlaceholder: true, wrapChildIndex: 0),
+      "-": NodeTransformation(kind: Wrap, wrapClass: IdSub, wrapRole: IdBinaryExpressionRight, wrapCursorTargetRole: IdBinaryExpressionLeft, selectPrevPlaceholder: true, wrapChildIndex: 0),
+      "*": NodeTransformation(kind: Wrap, wrapClass: IdMul, wrapRole: IdBinaryExpressionRight, wrapCursorTargetRole: IdBinaryExpressionLeft, selectPrevPlaceholder: true, wrapChildIndex: 0),
+      "/": NodeTransformation(kind: Wrap, wrapClass: IdDiv, wrapRole: IdBinaryExpressionRight, wrapCursorTargetRole: IdBinaryExpressionLeft, selectPrevPlaceholder: true, wrapChildIndex: 0),
+      "%": NodeTransformation(kind: Wrap, wrapClass: IdMod, wrapRole: IdBinaryExpressionRight, wrapCursorTargetRole: IdBinaryExpressionLeft, selectPrevPlaceholder: true, wrapChildIndex: 0),
+      "=": NodeTransformation(kind: Wrap, wrapClass: IdAssignment, wrapRole: IdAssignmentValue, wrapCursorTargetRole: IdAssignmentTarget, selectPrevPlaceholder: true, wrapChildIndex: 0),
+      "(": NodeTransformation(kind: Wrap, wrapClass: IdCall, wrapRole: IdCallArguments, wrapCursorTargetRole: IdCallFunction, selectPrevPlaceholder: true, wrapChildIndex: 0),
+    }.toTable
   }
 
   if not self.selection.isEmpty:

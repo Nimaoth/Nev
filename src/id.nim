@@ -246,6 +246,9 @@ proc hash*(id: Id): Hash =
 proc idNone*(): Id =
   return default(Id)
 
+proc isNone*(id: Id): bool = id == default(Id)
+proc isSome*(id: Id): bool = id != default(Id)
+
 proc parseId*(s: string): Id =
   if s.len != 24:
     return idNone()
