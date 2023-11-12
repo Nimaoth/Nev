@@ -52,7 +52,7 @@ method dependOn*(self: ModelComputationContext, node: AstNode) =
 func fingerprint*(node: AstNode): Fingerprint =
   if node.isNil:
     return @[]
-  let (a, b, c) = node.id.deconstruct
+  let (a, b, c) = node.id.Id.deconstruct
   result = @[a.int64, b.int64, c.int64]
 
 template logIf(condition: bool, message: string, logResult: bool) =
@@ -89,8 +89,8 @@ template enableDiagnostics(key: untyped): untyped =
     else:
       ctx.diagnosticsPerQuery.del key
 
-  template addDiagnostic(id: Id, msg: untyped) {.used.} =
-    ids.add(id)
+  template addDiagnostic[T](id: T, msg: untyped) {.used.} =
+    ids.add(id.Id)
     diagnostics.add Diagnostic(message: msg)
 
 # proc notifySymbolChanged*(ctx: ModelState, sym: Symbol) =

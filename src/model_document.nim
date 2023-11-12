@@ -104,7 +104,7 @@ type
     idx: int              # The index where a node was inserted/deleted
     role: RoleId          # The role where a node was inserted/deleted
     value: PropertyValue  # The new/old text of a property
-    id: Id                # The new/old id of a reference
+    id: NodeId            # The new/old id of a reference
     slice: Slice[int]     # The range of text that changed
 
   ModelTransaction* = object
@@ -208,7 +208,7 @@ type
 
 proc `$`(op: ModelOperation): string =
   result = fmt"{op.kind}, '{op.value}'"
-  if op.id != null: result.add fmt", id = {op.id}"
+  if op.id.isSome: result.add fmt", id = {op.id}"
   if op.node != nil: result.add fmt", node = {op.node}"
   if op.parent != nil: result.add fmt", parent = {op.parent}, index = {op.idx}"
 
@@ -428,7 +428,7 @@ proc handleNodePropertyChanged(self: ModelDocument, model: Model, node: AstNode,
   self.currentTransaction.operations.add ModelOperation(kind: PropertyChange, node: node, role: role, value: oldValue, slice: slice)
   self.ctx.state.updateNode(node)
 
-proc handleNodeReferenceChanged(self: ModelDocument, model: Model, node: AstNode, role: RoleId, oldRef: Id, newRef: Id) =
+proc handleNodeReferenceChanged(self: ModelDocument, model: Model, node: AstNode, role: RoleId, oldRef: NodeId, newRef: NodeId) =
   # debugf "handleNodeReferenceChanged {node}, {role}, {oldRef}, {newRef}"
   self.currentTransaction.operations.add ModelOperation(kind: ReferenceChange, node: node, role: role, id: oldRef)
   self.ctx.state.updateNode(node)
@@ -681,7 +681,7 @@ proc handleNodePropertyChanged(self: ModelDocumentEditor, model: Model, node: As
   # debugf "handleNodePropertyChanged {node}, {role}, {oldValue}, {newValue}"
   self.invalidateCompletions()
 
-proc handleNodeReferenceChanged(self: ModelDocumentEditor, model: Model, node: AstNode, role: RoleId, oldRef: Id, newRef: Id) =
+proc handleNodeReferenceChanged(self: ModelDocumentEditor, model: Model, node: AstNode, role: RoleId, oldRef: NodeId, newRef: NodeId) =
   # debugf "handleNodeReferenceChanged {node}, {role}, {oldRef}, {newRef}"
   self.invalidateCompletions()
 
@@ -742,7 +742,7 @@ method handleDeactivate*(self: ModelDocumentEditor) =
     self.cursorVisible = true
     self.markDirty()
 
-proc buildNodeCellMap(self: Cell, map: var Table[Id, Cell]) =
+proc buildNodeCellMap(self: Cell, map: var Table[NodeId, Cell]) =
   if self.node.isNotNil and not map.contains(self.node.id):
     map[self.node.id] = self
   if self of CollectionCell:
