@@ -70,6 +70,7 @@ type
     children {.getter.}: seq[NodeChildDescription]
     references {.getter.}: seq[NodeReferenceDescription]
     substitutionProperty {.getter.}: Option[RoleId]
+    precedence {.getter.}: int
 
   AstNode* = ref object
     id*: NodeId
@@ -325,7 +326,8 @@ proc newNodeClass*(
       properties: openArray[PropertyDescription] = [],
       children: openArray[NodeChildDescription] = [],
       references: openArray[NodeReferenceDescription] = [],
-      substitutionProperty: Option[RoleId] = RoleId.none
+      substitutionProperty: Option[RoleId] = RoleId.none,
+      precedence: int = 0,
     ): NodeClass =
 
   new result
@@ -341,6 +343,7 @@ proc newNodeClass*(
   result.children = @children
   result.references = @references
   result.substitutionProperty = substitutionProperty
+  result.precedence = precedence
 
 proc isSubclassOf*(self: NodeClass, baseClassId: ClassId): bool =
   if self.id == baseClassId:
