@@ -1340,18 +1340,10 @@ proc nodeRootCellPath*(cell: Cell): tuple[cell: Cell, path: seq[int]] =
 
   var node = cell.node
 
-  if result.cell.parent.isNotNil and result.cell.parent of NodeReferenceCell:
-    result.cell = result.cell.parent
-    node = result.cell.node
-
   while result.cell.parent.isNotNil and result.cell.parent.node == node:
     let index = result.cell.parent.CollectionCell.indexOf(result.cell)
     result.path.insert index, 0
     result.cell = result.cell.parent
-
-    if result.cell.parent.isNotNil and result.cell.parent of NodeReferenceCell:
-      result.cell = result.cell.parent
-      node = result.cell.node
 
 proc toCursor*(map: NodeCellMap, cell: Cell, column: int): CellCursor =
   let (rootCell, path) = cell.nodeRootCellPath()
@@ -1496,14 +1488,6 @@ method getCursorLeft*(cell: ConstantCell, map: NodeCellMap, cursor: CellCursor):
     if cell.getPreviousSelectableLeaf(map).getSome(c):
       result = cursor.map.toCursor(c, false)
 
-method getCursorLeft*(cell: NodeReferenceCell, map: NodeCellMap, cursor: CellCursor): CellCursor =
-  result = cursor
-  if cursor.index > cell.editableLow:
-    dec result.index
-  else:
-    if cell.getPreviousSelectableLeaf(map).getSome(c):
-      result = cursor.map.toCursor(c, false)
-
 method getCursorLeft*(cell: AliasCell, map: NodeCellMap, cursor: CellCursor): CellCursor =
   result = cursor
   if cursor.index > cell.editableLow:
@@ -1529,14 +1513,6 @@ method getCursorLeft*(cell: PropertyCell, map: NodeCellMap, cursor: CellCursor):
       result = cursor.map.toCursor(c, false)
 
 method getCursorRight*(cell: ConstantCell, map: NodeCellMap, cursor: CellCursor): CellCursor =
-  result = cursor
-  if cursor.index < cell.editableHigh:
-    inc result.index
-  else:
-    if cell.getNextSelectableLeaf(map).getSome(c):
-      result = cursor.map.toCursor(c, true)
-
-method getCursorRight*(cell: NodeReferenceCell, map: NodeCellMap, cursor: CellCursor): CellCursor =
   result = cursor
   if cursor.index < cell.editableHigh:
     inc result.index

@@ -96,6 +96,7 @@ type
     parent*: Cell
     flags*: CellFlags
     node*: AstNode
+    referenceNode*: AstNode
     line*: int
     displayText*: Option[string]
     shadowText*: string
@@ -194,6 +195,11 @@ proc notifyNodeReferenceChanged(self: Model, node: AstNode, role: RoleId, oldRef
 proc `$`*(node: AstNode, recurse: bool = false): string
 proc nodeClass*(node: AstNode): NodeClass
 proc add*(node: AstNode, role: RoleId, child: AstNode)
+
+proc targetNode*(cell: Cell): AstNode =
+  if cell.referenceNode.isNotNil:
+    return cell.referenceNode
+  return cell.node
 
 proc forEach*(node: AstNode, f: proc(node: AstNode) {.closure.}) =
   f(node)
@@ -727,6 +733,9 @@ proc replace*(node: AstNode, role: RoleId, index: int, child: AstNode) =
 
       if node.model.isNotNil:
         node.model.notifyNodeInserted(node, child, role, index)
+
+proc replaceWith*(node: AstNode, other: AstNode) =
+  node.parent.replace(node.role, node.index, other)
 
 proc removeFromParent(node: AstNode) =
   if node.parent.isNil:
