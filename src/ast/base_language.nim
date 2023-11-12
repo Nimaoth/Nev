@@ -80,6 +80,11 @@ let derefClass* = newNodeClass(IdDeref, "Deref", alias="deref", base=expressionC
   children=[
     NodeChildDescription(id: IdDerefValue, role: "value", class: expressionClass.id, count: ChildCount.One)])
 
+let arrayAccessClass* = newNodeClass(IdArrayAccess, "ArrayAccess", alias="[]", base=expressionClass,
+  children=[
+    NodeChildDescription(id: IdArrayAccessValue, role: "value", class: expressionClass.id, count: ChildCount.One),
+    NodeChildDescription(id: IdArrayAccessIndex, role: "index", class: expressionClass.id, count: ChildCount.One)])
+
 let constDeclClass* = newNodeClass(IdConstDecl, "ConstDecl", alias="const", base=expressionClass, interfaces=[declarationInterface],
   children=[
     NodeChildDescription(id: IdConstDeclType, role: "type", class: expressionClass.id, count: ChildCount.ZeroOrOne),
@@ -381,6 +386,16 @@ builder.addBuilderFor derefClass.id, idNone(), proc(builder: CellBuilder, node: 
     # echo "fill collection assignment"
     cell.add ConstantCell(node: node, text: "deref", themeForegroundColors: @["keyword"], disableEditing: true)
     cell.add builder.buildChildren(map, node, IdDerefValue, &{LayoutHorizontal})
+  return cell
+
+builder.addBuilderFor IdArrayAccess, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
+  cell.fillChildren = proc(map: NodeCellMap) =
+    # echo "fill collection assignment"
+    cell.add builder.buildChildren(map, node, IdArrayAccessValue, &{LayoutHorizontal})
+    cell.add ConstantCell(node: node, text: "[", flags: &{NoSpaceLeft, NoSpaceRight}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+    cell.add builder.buildChildren(map, node, IdArrayAccessIndex, &{LayoutHorizontal})
+    cell.add ConstantCell(node: node, text: "]", flags: &{NoSpaceLeft}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
   return cell
 
 builder.addBuilderFor callClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
@@ -923,6 +938,16 @@ typeComputers[IdDeref] = proc(ctx: ModelComputationContextBase, node: AstNode): 
 
   return voidTypeInstance
 
+typeComputers[IdArrayAccess] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute scope for deref {node}"
+
+  if node.firstChild(IdArrayAccessValue).getSome(typeNode):
+    let pointerType = ctx.computeType(typeNode)
+    if pointerType.class == IdPointerType and pointerType.firstChild(IdPointerTypeTarget).getSome(targetType):
+      return targetType
+
+  return voidTypeInstance
+
 # scope
 scopeComputers[structMemberAccessClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode] =
   debugf"compute scope for struct member access {node}"
@@ -952,7 +977,7 @@ let baseLanguage* = newLanguage(IdBaseLanguage, @[
   appendStringExpressionClass, printExpressionClass, buildExpressionClass,
 
   structDefinitionClass, structMemberDefinitionClass, structMemberAccessClass,
-  addressOfClass, derefClass,
+  addressOfClass, derefClass, arrayAccessClass,
 ], builder, typeComputers, scopeComputers)
 
 let baseModel* = block:
