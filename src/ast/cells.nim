@@ -64,8 +64,8 @@ proc isDescendant*(cell: Cell, ancestor: Cell): bool =
     temp = temp.parent
 
 proc add*(self: CollectionCell, cell: Cell) =
-  if cell.id == idNone():
-    cell.id = newId()
+  if cell.id.isNone:
+    cell.id = newId().CellId
   cell.parent = self
   self.children.add cell
 
@@ -342,7 +342,7 @@ proc findBuilder(self: CellBuilder, class: NodeClass, preferred: Id, isBase: boo
   return builders[0].impl
 
 template horizontalCell(cell: Cell, node: AstNode, childCell: untyped, body: untyped) =
-  var childCell {.inject.} = CollectionCell(id: newId(), node: node, uiFlags: &{LayoutHorizontal})
+  var childCell {.inject.} = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
   try:
     body
   finally:
@@ -351,7 +351,7 @@ template horizontalCell(cell: Cell, node: AstNode, childCell: untyped, body: unt
 proc buildCellDefault*(self: CellBuilder, m: NodeCellMap, node: AstNode, useDefaultRecursive: bool): Cell =
   let class = node.nodeClass
 
-  var cell = CollectionCell(id: newId(), node: node, uiFlags: &{LayoutHorizontal})
+  var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(m: NodeCellMap) =
     var hasAnyChildren = node.properties.len > 0 or node.references.len > 0 or node.childLists.len > 0
     for prop in node.childLists:
@@ -367,28 +367,28 @@ proc buildCellDefault*(self: CellBuilder, m: NodeCellMap, node: AstNode, useDefa
       if not hasAnyChildren:
         header.add ConstantCell(node: node, text: "}", disableEditing: true)
 
-    var childrenCell = CollectionCell(id: newId(), node: node, uiFlags: &{LayoutVertical}, flags: &{IndentChildren, OnNewLine}, inline: true)
+    var childrenCell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutVertical}, flags: &{IndentChildren, OnNewLine}, inline: true)
     for prop in node.properties:
-      # var propCell = CollectionCell(id: newId(), node: node, uiFlags: &{LayoutHorizontal})
+      # var propCell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
       childrenCell.horizontalCell(node, propCell):
         let name: string = class.propertyDescription(prop.role).map((decs) => decs.role).get($prop.role)
         propCell.add ConstantCell(node: node, text: name, disableEditing: true)
         propCell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), disableEditing: true)
-        propCell.add PropertyCell(id: newId(), node: node, property: prop.role)
+        propCell.add PropertyCell(id: newId().CellId, node: node, property: prop.role)
       # childrenCell.add propCell
 
     for prop in node.references:
-      # var propCell = CollectionCell(id: newId(), node: node, uiFlags: &{LayoutHorizontal})
+      # var propCell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
       childrenCell.horizontalCell(node, propCell):
         let name: string = class.nodeReferenceDescription(prop.role).map((decs) => decs.role).get($prop.role)
         propCell.add ConstantCell(node: node, text: name, disableEditing: true)
         propCell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), disableEditing: true)
 
         var nodeRefCell = if node.resolveReference(prop.role).getSome(targetNode):
-          PropertyCell(id: newId(), node: node, referenceNode: targetNode, property: IdINamedName, themeForegroundColors: @["variable", "&editor.foreground"])
+          PropertyCell(id: newId().CellId, node: node, referenceNode: targetNode, property: IdINamedName, themeForegroundColors: @["variable", "&editor.foreground"])
         else:
-          ConstantCell(id: newId(), node: node, text: $node.reference(IdNodeReferenceTarget))
-        # var nodeRefCell = NodeReferenceCell(id: newId(), node: node, reference: prop.role, property: IdINamedName)
+          ConstantCell(id: newId().CellId, node: node, text: $node.reference(IdNodeReferenceTarget))
+        # var nodeRefCell = NodeReferenceCell(id: newId().CellId, node: node, reference: prop.role, property: IdINamedName)
 
         propCell.add nodeRefCell
 
@@ -397,7 +397,7 @@ proc buildCellDefault*(self: CellBuilder, m: NodeCellMap, node: AstNode, useDefa
     for prop in node.childLists:
       let children = node.children(prop.role)
 
-      # var propCell = CollectionCell(id: newId(), node: node, uiFlags: &{LayoutHorizontal})
+      # var propCell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
       childrenCell.horizontalCell(node, propCell):
 
         let name: string = class.nodeChildDescription(prop.role).map((decs) => decs.role).get($prop.role)
@@ -453,7 +453,7 @@ proc buildCell*(self: CellBuilder, map: NodeCellMap, node: AstNode, useDefault: 
   map.cells[result.id] = result
 
 proc buildDefaultPlaceholder*(builder: CellBuilder, node: AstNode, role: RoleId, flags: CellFlags = 0.CellFlags): Cell =
-  return PlaceholderCell(id: newId(), node: node, role: role, flags: flags, shadowText: "...")
+  return PlaceholderCell(id: newId().CellId, node: node, role: role, flags: flags, shadowText: "...")
 
 proc buildChildren*(builder: CellBuilder, map: NodeCellMap, node: AstNode, role: RoleId, uiFlags: UINodeFlags = 0.UINodeFlags, flags: CellFlags = 0.CellFlags,
     isVisible: proc(node: AstNode): bool = nil,
@@ -465,7 +465,7 @@ proc buildChildren*(builder: CellBuilder, map: NodeCellMap, node: AstNode, role:
   if children.len == 1 and node.nodeClass.nodeChildDescription(role).get.count in {ZeroOrOne, One}:
     result = builder.buildCell(map, children[0])
   elif children.len > 0:
-    var cell = CollectionCell(id: newId(), node: node, uiFlags: uiFlags, flags: flags)
+    var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: uiFlags, flags: flags)
     for i, c in children:
       if i > 0 and separatorFunc.isNotNil:
         cell.add separatorFunc(builder)
@@ -495,7 +495,7 @@ template buildChildrenT*(b: CellBuilder, map: NodeCellMap, n: AstNode, r: RoleId
 
   template placeholder(text: string): untyped {.used.} =
     placeholderFunc = proc(builder {.inject.}: CellBuilder, node {.inject.}: AstNode, role {.inject.}: RoleId, childFlags: CellFlags): Cell =
-      return PlaceholderCell(id: newId(), node: node, role: role, shadowText: text, flags: childFlags)
+      return PlaceholderCell(id: newId().CellId, node: node, role: role, shadowText: text, flags: childFlags)
 
   template visible(bod: untyped): untyped {.used.} =
     isVisibleFunc = proc(node {.inject.}: AstNode): bool =

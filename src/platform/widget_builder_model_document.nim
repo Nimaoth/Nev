@@ -898,7 +898,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
     if dirty or app.platform.redrawEverything or not builder.retain():
       var header: UINode
 
-      self.cellWidgetContext.cellToWidget = initTable[Id, UINode](self.cellWidgetContext.cellToWidget.len)
+      self.cellWidgetContext.cellToWidget = initTable[CellId, UINode](self.cellWidgetContext.cellToWidget.len)
       self.cellWidgetContext.isThickCursor = self.isThickCursor()
 
       builder.panel(&{LayoutVertical} + sizeFlags):

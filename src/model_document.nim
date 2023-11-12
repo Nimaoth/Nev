@@ -194,7 +194,7 @@ type
 
   UpdateContext* = ref object
     nodeCellMap*: NodeCellMap
-    cellToWidget*: Table[Id, UINode]
+    cellToWidget*: Table[CellId, UINode]
     targetNodeOld*: UINode
     targetNode*: UINode
     targetCell*: Cell

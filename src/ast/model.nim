@@ -18,9 +18,6 @@ defineBitFlag:
     NoSpaceLeft
     NoSpaceRight
 
-type
-  CellId* = Id
-
 template defineUniqueId(name: untyped): untyped =
   type name* = distinct Id
 
@@ -32,6 +29,7 @@ template defineUniqueId(name: untyped): untyped =
   proc fromJsonHook*(id: var name, json: JsonNode) {.borrow.}
   proc toJson*(id: name, opt: ToJsonOptions): JsonNode = newJString $id
 
+defineUniqueId(CellId)
 defineUniqueId(RoleId)
 defineUniqueId(ClassId)
 defineUniqueId(NodeId)
