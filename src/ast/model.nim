@@ -19,8 +19,6 @@ defineBitFlag:
     NoSpaceRight
 
 type
-  ClassId* = Id
-  NodeId* = Id
   CellId* = Id
 
 template defineUniqueId(name: untyped): untyped =
@@ -31,8 +29,12 @@ template defineUniqueId(name: untyped): untyped =
   proc isNone*(id: name): bool {.borrow.}
   proc isSome*(id: name): bool {.borrow.}
   proc hash*(id: name): Hash {.borrow.}
+  proc fromJsonHook*(id: var name, json: JsonNode) {.borrow.}
+  proc toJson*(id: name, opt: ToJsonOptions): JsonNode = newJString $id
 
 defineUniqueId(RoleId)
+defineUniqueId(ClassId)
+defineUniqueId(NodeId)
 defineUniqueId(ModelId)
 defineUniqueId(LanguageId)
 
@@ -141,8 +143,8 @@ type
     forceDefault*: bool
 
   NodeCellMap* = ref object
-    map*: Table[Id, Cell]
-    cells*: Table[Id, Cell]
+    map*: Table[NodeId, Cell]
+    cells*: Table[CellId, Cell]
     builder*: CellBuilder
 
   PropertyValidator* = ref object
@@ -476,7 +478,7 @@ proc hasReference*(node: AstNode, role: RoleId): bool =
       return true
 
 proc reference*(node: AstNode, role: RoleId): NodeId =
-  result = idNone()
+  result = default(NodeId)
   for c in node.references:
     if c.role == role:
       result = c.node
@@ -550,10 +552,10 @@ proc addMissingFieldsForClass*(self: AstNode, class: NodeClass) =
 
   for desc in class.references:
     if not self.hasReference(desc.id):
-      self.references.add (desc.id, idNone())
+      self.references.add (desc.id, NodeId.default)
 
 proc newAstNode*(class: NodeClass, id: Option[NodeId] = NodeId.none): AstNode =
-  let id = if id.isSome: id.get else: newId()
+  let id = if id.isSome: id.get else: newId().NodeId
   new result
   result.id = id
   result.class = class.id
@@ -669,8 +671,8 @@ proc insert*(node: AstNode, role: RoleId, index: int, child: AstNode) =
   if child.isNil:
     return
 
-  if child.id == idNone():
-    child.id = newId()
+  if child.id.isNone:
+    child.id = newId().NodeId
   child.parent = node
   child.role = role
 
@@ -724,8 +726,8 @@ proc remove*(node: AstNode, role: RoleId, index: int) =
       return
 
 proc replace*(node: AstNode, role: RoleId, index: int, child: AstNode) =
-  if child.id == idNone():
-    child.id = newId()
+  if child.id.isNone:
+    child.id = newId().NodeId
   child.parent = node
   child.role = role
 

@@ -590,10 +590,11 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     result.add quote do:
       proc getItem*(self: `name`): ItemId =
         when typeof(self) is ref:
-          if self.id == null:
-            self.id = newId()
-        assert self.id != null
-        return (self.id, `itemIndex`)
+          if self.id.isNone:
+            type IdType = typeof(self.id)
+            self.id = IdType newId()
+        assert self.id.isSome
+        return (self.id.Id, `itemIndex`)
 
     result.add quote do:
       proc `getOrCreateFunction`*(ctx: `contextName`, data: `name`): `name` =

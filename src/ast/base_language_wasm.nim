@@ -28,12 +28,12 @@ type
 
     ctx: ModelComputationContextBase
 
-    wasmFuncs: Table[Id, WasmFuncIdx]
+    wasmFuncs: Table[NodeId, WasmFuncIdx]
 
     functionsToCompile: seq[(AstNode, WasmFuncIdx)]
-    localIndices: Table[Id, LocalVariable]
-    globalIndices: Table[Id, WasmGlobalIdx]
-    labelIndices: Table[Id, int] # Not the actual index
+    localIndices: Table[NodeId, LocalVariable]
+    globalIndices: Table[NodeId, WasmGlobalIdx]
+    labelIndices: Table[NodeId, int] # Not the actual index
 
     exprStack: seq[WasmExpr]
     currentExpr: WasmExpr
@@ -42,7 +42,7 @@ type
     currentStackLocals: seq[int32]
     currentStackLocalsSize: int32
 
-    generators: Table[Id, proc(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination)]
+    generators: Table[ClassId, proc(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination)]
 
     # imported
     printI32: WasmFuncIdx
@@ -300,13 +300,13 @@ proc getTypeMemInstructions(self: BaseLanguageWasmCompiler, typ: AstNode): tuple
   log lvlError, fmt"getTypeMemInstructions: Type not implemented: {`$`(typ, true)}"
   return (Nop, Nop)
 
-proc createLocal(self: BaseLanguageWasmCompiler, id: Id, typ: AstNode, name: string): WasmLocalIdx =
+proc createLocal(self: BaseLanguageWasmCompiler, id: NodeId, typ: AstNode, name: string): WasmLocalIdx =
   if typ.toWasmValueType.getSome(wasmType):
     result = (self.currentLocals.len + self.currentParamCount).WasmLocalIdx
     self.currentLocals.add((wasmType, name))
     self.localIndices[id] = LocalVariable(kind: Local, localIdx: result)
 
-proc createStackLocal(self: BaseLanguageWasmCompiler, id: Id, typ: AstNode): int32 =
+proc createStackLocal(self: BaseLanguageWasmCompiler, id: NodeId, typ: AstNode): int32 =
   let (size, alignment) = self.getTypeAttributes(typ)
 
   self.currentStackLocalsSize = self.currentStackLocalsSize.align(alignment)
@@ -736,7 +736,7 @@ proc genAssignmentExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest
   let id = if targetNode.class == IdNodeReference:
     targetNode.reference(IdNodeReferenceTarget).some
   else:
-    Id.none
+    NodeId.none
 
   var valueDest = Destination(kind: Stack)
 
@@ -846,7 +846,7 @@ proc genNodeCallExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: 
     self.instr(CallIndirect, callIndirectTableIdx: tableIdx, callIndirectTypeIdx: typeIdx)
 
   let typ = self.ctx.computeType(node)
-  if typ.id != IdVoid:
+  if typ.class != IdVoid:
     self.genStoreDestination(node, dest)
 
 proc genNodeStructMemberAccessExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
