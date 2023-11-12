@@ -489,6 +489,7 @@ proc getSubstitutionTarget(cell: Cell): (AstNode, RoleId, int) =
   return (cell.node.parent, cell.node.role, cell.node.index)
 
 proc getSubstitutionsForClass(self: ModelDocumentEditor, targetCell: Cell, class: NodeClass, addCompletion: proc(c: ModelCompletion): void): bool =
+  # if it's a reference and there is only one reference role, then we can substitute the reference using the scope
   if class.references.len == 1 and class.children.len == 0 and class.properties.len == 0:
     let desc = class.references[0]
     let language = self.document.model.getLanguageForClass(desc.class)
@@ -496,15 +497,22 @@ proc getSubstitutionsForClass(self: ModelDocumentEditor, targetCell: Cell, class
 
     let (parent, role, index) = targetCell.getSubstitutionTarget()
 
-    for node in self.document.model.rootNodes:
-      var res = false
-      node.forEach2 n:
-        let nClass = language.resolveClass(n.class)
-        if nClass.isSubclassOf(refClass.id):
-          let name = if n.property(IdINamedName).getSome(name): name.stringValue else: $n.id
-          addCompletion ModelCompletion(kind: ModelCompletionKind.SubstituteReference, name: name, class: class, parent: parent, role: role, index: index, referenceRole: desc.id, referenceTarget: n)
-          res = true
-      if res:
+    # for node in self.document.model.rootNodes:
+    #   var res = false
+    #   node.forEach2 n:
+    #     let nClass = language.resolveClass(n.class)
+    #     if nClass.isSubclassOf(refClass.id):
+    #       let name = if n.property(IdINamedName).getSome(name): name.stringValue else: $n.id
+    #       addCompletion ModelCompletion(kind: ModelCompletionKind.SubstituteReference, name: name, class: class, parent: parent, role: role, index: index, referenceRole: desc.id, referenceTarget: n)
+    #       res = true
+    #   if res:
+    #     result = true
+
+    let scope = self.document.ctx.getScope(targetCell.node)
+    for decl in scope:
+      if decl.nodeClass.isSubclassOf(refClass.id):
+        let name = if decl.property(IdINamedName).getSome(name): name.stringValue else: $decl.id
+        addCompletion ModelCompletion(kind: ModelCompletionKind.SubstituteReference, name: name, class: class, parent: parent, role: role, index: index, referenceRole: desc.id, referenceTarget: decl)
         result = true
 
   if class.substitutionProperty.getSome(propertyRole):
@@ -562,7 +570,7 @@ proc updateCompletions(self: ModelDocumentEditor) =
 
   let model = node.model
   let parentClass = parent.nodeClass
-  if parentClass.nodeChildDescription(role).getSome(childDesc):
+  if parentClass.nodeChildDescription(role).getSome(childDesc): # add class substitutions
     let slotClass = model.resolveClass(childDesc.class)
     debugf"updateCompletions {node}, {node.model.isNotNil}, {slotClass.name}"
 
