@@ -961,6 +961,37 @@ scopeComputers[structMemberAccessClass.id] = proc(ctx: ModelComputationContextBa
 
   return valueType.children(IdStructDefinitionMembers)
 
+scopeComputers[IdExpression] = proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode] =
+  debugf"compute scope for base expression {node}"
+
+  var nodes: seq[AstNode] = @[]
+
+  var prev = node
+  var current = node.parent
+  while current.isNotNil:
+    ctx.dependOn(current)
+    if current.class == IdFunctionDefinition:
+      for _, c in current.children(IdFunctionDefinitionParameters):
+        ctx.dependOn(c)
+        nodes.add c
+
+    if current.class == IdBlock:
+      for _, c in current.children(IdBlockChildren):
+        if c == prev:
+          break
+        ctx.dependOn(c)
+        nodes.add c
+
+    if current.class == IdNodeList and current.parent.isNil:
+      for _, c in current.children(IdNodeListChildren):
+        ctx.dependOn(c)
+        nodes.add c
+
+    prev = current
+    current = current.parent
+
+  return nodes
+
 let baseLanguage* = newLanguage(IdBaseLanguage, @[
   namedInterface, declarationInterface,
 

@@ -210,17 +210,21 @@ proc computeScopeImpl(ctx: ModelState, node: AstNode): seq[AstNode] =
   if language.isNil:
     return @[]
 
-  if not language.scopeComputers.contains(node.class):
-    var declarations: seq[AstNode] = @[]
-    for root in node.model.rootNodes:
-      ctx.computationContextOwner.ModelComputationContext.dependOn(root)
-      for children in root.childLists:
-        for child in children.nodes:
-          let class: NodeClass = child.nodeClass
-          if class.isSubclassOf(IdIDeclaration):
-            declarations.add child
+  var class = node.nodeClass
 
-    return declarations
+  while class.isNotNil:
+    if language.scopeComputers.contains(class.id):
+      let scopeComputer = language.scopeComputers[class.id]
+      return scopeComputer(ctx.computationContextOwner.ModelComputationContext, node)
+    class = class.base
 
-  let scopeComputer = language.scopeComputers[node.class]
-  return scopeComputer(ctx.computationContextOwner.ModelComputationContext, node)
+  var declarations: seq[AstNode] = @[]
+  for root in node.model.rootNodes:
+    ctx.computationContextOwner.ModelComputationContext.dependOn(root)
+    for children in root.childLists:
+      for child in children.nodes:
+        let class: NodeClass = child.nodeClass
+        if class.isSubclassOf(IdIDeclaration):
+          declarations.add child
+
+  return declarations
