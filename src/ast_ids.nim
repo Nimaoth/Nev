@@ -26,7 +26,7 @@ let IdBuildString* = "62e53399564d29f77293450d".parseId
 
 let IdType* = "62e53399564d29f77293450f".parseId
 
-let IdBaseLanguage* = "62e53399564d29f77293450e".parseId
+let IdBaseLanguage* = "62e53399564d29f77293450e".parseId.LanguageId
 let IdFunctionType* = "62e5339a564d29f77293451c".parseId
 let IdFunctionTypeReturnType* = "62e53399564d29f772934510".parseId.RoleId
 let IdFunctionTypeParameterTypes* = "62e53399564d29f772934511".parseId.RoleId

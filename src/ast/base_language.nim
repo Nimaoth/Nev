@@ -892,7 +892,7 @@ let baseLanguage* = newLanguage(IdBaseLanguage, @[
 ], builder, typeComputers, scopeComputers)
 
 let baseModel* = block:
-  var model = newModel(newId())
+  var model = newModel(newId().ModelId)
   model.addLanguage(baseLanguage)
   model.addRootNode(intTypeInstance)
   model.addRootNode(stringTypeInstance)

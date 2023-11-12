@@ -242,7 +242,7 @@ proc newModelDocument*(filename: string = "", app: bool = false, workspaceFolder
   result.workspace = workspaceFolder
   result.project = project
 
-  var testModel = newModel(newId())
+  var testModel = newModel(newId().ModelId)
   testModel.addLanguage(base_language.baseLanguage)
 
   let a = newAstNode(stringLiteralClass)
@@ -446,7 +446,7 @@ proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
 
     let json = jsonText.parseJson
 
-    var model = newModel(newId())
+    var model = newModel(newId().ModelId)
     model.addLanguage(base_language.baseLanguage)
     model.loadFromJson(json)
     self.model = model

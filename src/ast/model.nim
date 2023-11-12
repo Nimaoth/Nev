@@ -21,15 +21,20 @@ defineBitFlag:
 type
   ClassId* = Id
   NodeId* = Id
-  ModelId* = Id
-  LanguageId* = Id
-  RoleId* = distinct Id
   CellId* = Id
 
-proc `==`*(a, b: RoleId): bool {.borrow.}
-proc `$`*(a: RoleId): string {.borrow.}
-proc isNone*(id: RoleId): bool {.borrow.}
-proc isSome*(id: RoleId): bool {.borrow.}
+template defineUniqueId(name: untyped): untyped =
+  type name* = distinct Id
+
+  proc `==`*(a, b: name): bool {.borrow.}
+  proc `$`*(a: name): string {.borrow.}
+  proc isNone*(id: name): bool {.borrow.}
+  proc isSome*(id: name): bool {.borrow.}
+  proc hash*(id: name): Hash {.borrow.}
+
+defineUniqueId(RoleId)
+defineUniqueId(ModelId)
+defineUniqueId(LanguageId)
 
 type
   PropertyType* {.pure.} = enum
@@ -166,7 +171,7 @@ type
     rootNodes {.getter.}: seq[AstNode]
     languages {.getter.}: seq[Language]
     importedModels {.getter.}: seq[Model]
-    classesToLanguages {.getter.}: Table[ModelId, Language]
+    classesToLanguages {.getter.}: Table[ClassId, Language]
     childClasses {.getter.}: Table[ClassId, seq[NodeClass]]
     nodes {.getter.}: Table[NodeId, AstNode]
 
