@@ -2353,11 +2353,113 @@ proc createNewNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
 
   self.markDirty()
 
+type
+  NodeTransformationKind* = enum Wrap
+  NodeTransformation* = object
+    selectNextPlaceholder*: bool
+    selectPrevPlaceholder*: bool
+    case kind*: NodeTransformationKind
+    of Wrap:
+      wrapClass*: ClassId
+      wrapRole*: Id
+      wrapCursorTargetRole*: Id
+      wrapChildIndex*: int
+
+  NodeTransformations* = object
+    transformations: Table[string, NodeTransformation]
+
+  NodeClassTransformations* = object
+    transformations: Table[ClassId, NodeTransformations]
+
+proc findTransformation(self: NodeClassTransformations, class: NodeClass, input: string): Option[NodeTransformation] =
+  var class = class
+  while class.isNotNil:
+    if self.transformations.contains(class.id):
+      if self.transformations[class.id].transformations.contains(input):
+        return self.transformations[class.id].transformations[input].some
+    class = class.base
+
+proc applyTransformation(self: ModelDocumentEditor, node: AstNode, transformation: NodeTransformation): CellCursor =
+  case transformation.kind
+  of Wrap:
+    debugf"applyTransformation wrap {transformation.wrapRole}, {transformation.wrapChildIndex}"
+
+    let class = node.model.resolveClass(transformation.wrapClass)
+
+    var newNode = newAstNode(class)
+    node.replaceWith(newNode)
+    newNode.insert(transformation.wrapRole, transformation.wrapChildIndex, node)
+
+    self.rebuildCells()
+
+    if transformation.wrapCursorTargetRole != idNone():
+      if self.nodeCellMap.cell(newNode).getFirstLeaf(self.nodeCellMap).getSelfOrNextLeafWhere(self.nodeCellMap, proc(c: Cell): bool =
+          echo c
+          isVisible(c) and c.role == transformation.wrapCursorTargetRole
+        ).getSome(candidate):
+        return self.nodeCellMap.toCursor(candidate, true)
+
+    if transformation.selectNextPlaceholder and self.cursor.targetCell.getNextLeafWhere(self.nodeCellMap, proc(c: Cell): bool = isVisible(c) and shouldEdit(c)).getSome(candidate):
+      return self.nodeCellMap.toCursor(candidate, true)
+
+    if transformation.selectPrevPlaceholder and self.cursor.targetCell.getPreviousLeafWhere(self.nodeCellMap, proc(c: Cell): bool = isVisible(c) and shouldEdit(c)).getSome(candidate):
+      return self.nodeCellMap.toCursor(candidate, true)
+
+    return self.cursor
+
 proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool {.expose("editor.model").} =
   defer:
     self.document.finishTransaction()
 
+  let updatedScrollOffset = self.updateScrollOffsetToPrevCell()
+  defer:
+    if not updatedScrollOffset:
+      self.updateScrollOffset()
+
+  # todo: get these transformations from the language itself
+  var postfixTransformations: NodeClassTransformations
+  var prefixTransformations: NodeClassTransformations
+  var selectionTransformations: NodeClassTransformations
+
+  postfixTransformations.transformations = toTable {
+    IdExpression: NodeTransformations(
+      transformations: toTable {
+        "+": NodeTransformation(kind: Wrap, wrapClass: IdAdd, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
+        "-": NodeTransformation(kind: Wrap, wrapClass: IdSub, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
+        "*": NodeTransformation(kind: Wrap, wrapClass: IdMul, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
+        "/": NodeTransformation(kind: Wrap, wrapClass: IdDiv, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
+        "%": NodeTransformation(kind: Wrap, wrapClass: IdMod, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
+        "=": NodeTransformation(kind: Wrap, wrapClass: IdAssignment, wrapRole: IdAssignmentTarget, wrapCursorTargetRole: IdAssignmentValue, selectNextPlaceholder: true, wrapChildIndex: 0),
+        ".": NodeTransformation(kind: Wrap, wrapClass: IdStructMemberAccess, wrapRole: IdStructMemberAccessValue, wrapCursorTargetRole: IdStructMemberAccessMember, selectNextPlaceholder: true, wrapChildIndex: 0),
+        "(": NodeTransformation(kind: Wrap, wrapClass: IdCall, wrapRole: IdCallFunction, wrapCursorTargetRole: IdCallArguments, selectNextPlaceholder: true, wrapChildIndex: 0),
+      }
+    ),
+  }
+
+  prefixTransformations.transformations = toTable {
+    IdExpression: NodeTransformations(
+      transformations: toTable {
+        "+": NodeTransformation(kind: Wrap, wrapClass: IdAdd, wrapRole: IdBinaryExpressionRight, wrapCursorTargetRole: IdBinaryExpressionLeft, selectPrevPlaceholder: true, wrapChildIndex: 0),
+        "-": NodeTransformation(kind: Wrap, wrapClass: IdSub, wrapRole: IdBinaryExpressionRight, wrapCursorTargetRole: IdBinaryExpressionLeft, selectPrevPlaceholder: true, wrapChildIndex: 0),
+        "*": NodeTransformation(kind: Wrap, wrapClass: IdMul, wrapRole: IdBinaryExpressionRight, wrapCursorTargetRole: IdBinaryExpressionLeft, selectPrevPlaceholder: true, wrapChildIndex: 0),
+        "/": NodeTransformation(kind: Wrap, wrapClass: IdDiv, wrapRole: IdBinaryExpressionRight, wrapCursorTargetRole: IdBinaryExpressionLeft, selectPrevPlaceholder: true, wrapChildIndex: 0),
+        "%": NodeTransformation(kind: Wrap, wrapClass: IdMod, wrapRole: IdBinaryExpressionRight, wrapCursorTargetRole: IdBinaryExpressionLeft, selectPrevPlaceholder: true, wrapChildIndex: 0),
+        "=": NodeTransformation(kind: Wrap, wrapClass: IdAssignment, wrapRole: IdAssignmentValue, wrapCursorTargetRole: IdAssignmentTarget, selectPrevPlaceholder: true, wrapChildIndex: 0),
+        "(": NodeTransformation(kind: Wrap, wrapClass: IdCall, wrapRole: IdCallArguments, wrapCursorTargetRole: IdCallFunction, selectPrevPlaceholder: true, wrapChildIndex: 0),
+      }
+    ),
+  }
+
   if getTargetCell(self.cursor).getSome(cell):
+    if self.selection.isEmpty:
+      if self.cursor.index == cell.len and postfixTransformations.findTransformation(cell.node.nodeClass, input).getSome(transformation):
+        self.cursor = self.applyTransformation(cell.node, transformation)
+        return
+
+      elif self.cursor.index == 0 and prefixTransformations.findTransformation(cell.node.nodeClass, input).getSome(transformation):
+        self.cursor = self.applyTransformation(cell.node, transformation)
+        return
+
     if cell.disableEditing:
       return false
 
