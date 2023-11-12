@@ -944,6 +944,26 @@ proc genNodeDeref(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destinati
   self.genNode(valueNode, Destination(kind: Stack))
   self.genCopyToDestination(node, dest)
 
+proc genNodeArrayAccess(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  let valueNode = node.firstChild(IdArrayAccessValue).getOr:
+    log lvlError, fmt"No value: {node}"
+    return
+
+  let indexNode = node.firstChild(IdArrayAccessIndex).getOr:
+    log lvlError, fmt"No index: {node}"
+    return
+
+  let typ = self.ctx.computeType(node)
+  let (size, _) = self.getTypeAttributes(typ)
+
+  self.genNode(valueNode, Destination(kind: Stack))
+  self.genNode(indexNode, Destination(kind: Stack))
+  self.instr(I32Const, i32Const: size)
+  self.instr(I32Mul)
+  self.instr(I32Add)
+
+  self.genCopyToDestination(node, dest)
+
 proc setupGenerators(self: BaseLanguageWasmCompiler) =
   self.generators[IdBlock] = genNodeBlock
   self.generators[IdAdd] = genNodeBinaryAddExpression
@@ -977,3 +997,4 @@ proc setupGenerators(self: BaseLanguageWasmCompiler) =
   self.generators[IdStructMemberAccess] = genNodeStructMemberAccessExpression
   self.generators[IdAddressOf] = genNodeAddressOf
   self.generators[IdDeref] = genNodeDeref
+  self.generators[IdArrayAccess] = genNodeArrayAccess

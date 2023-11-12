@@ -2423,6 +2423,7 @@ proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool {.expos
       "=": NodeTransformation(kind: Wrap, wrapClass: IdAssignment, wrapRole: IdAssignmentTarget, wrapCursorTargetRole: IdAssignmentValue, selectNextPlaceholder: true, wrapChildIndex: 0),
       ".": NodeTransformation(kind: Wrap, wrapClass: IdStructMemberAccess, wrapRole: IdStructMemberAccessValue, wrapCursorTargetRole: IdStructMemberAccessMember, selectNextPlaceholder: true, wrapChildIndex: 0),
       "(": NodeTransformation(kind: Wrap, wrapClass: IdCall, wrapRole: IdCallFunction, wrapCursorTargetRole: IdCallArguments, selectNextPlaceholder: true, wrapChildIndex: 0),
+      "[": NodeTransformation(kind: Wrap, wrapClass: IdArrayAccess, wrapRole: IdArrayAccessValue, wrapCursorTargetRole: IdArrayAccessIndex, selectNextPlaceholder: true, wrapChildIndex: 0),
     }.toTable
   }
 
@@ -2436,6 +2437,7 @@ proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool {.expos
       "=": NodeTransformation(kind: Wrap, wrapClass: IdAssignment, wrapRole: IdAssignmentTarget, wrapCursorTargetRole: IdAssignmentValue, selectNextPlaceholder: true, wrapChildIndex: 0),
       ".": NodeTransformation(kind: Wrap, wrapClass: IdStructMemberAccess, wrapRole: IdStructMemberAccessValue, wrapCursorTargetRole: IdStructMemberAccessMember, selectNextPlaceholder: true, wrapChildIndex: 0),
       "(": NodeTransformation(kind: Wrap, wrapClass: IdCall, wrapRole: IdCallFunction, wrapCursorTargetRole: IdCallArguments, selectNextPlaceholder: true, wrapChildIndex: 0),
+      "[": NodeTransformation(kind: Wrap, wrapClass: IdArrayAccess, wrapRole: IdArrayAccessValue, wrapCursorTargetRole: IdArrayAccessIndex, selectNextPlaceholder: true, wrapChildIndex: 0),
     }.toTable
   }
 
@@ -2448,6 +2450,7 @@ proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool {.expos
       "%": NodeTransformation(kind: Wrap, wrapClass: IdMod, wrapRole: IdBinaryExpressionRight, wrapCursorTargetRole: IdBinaryExpressionLeft, selectPrevPlaceholder: true, wrapChildIndex: 0),
       "=": NodeTransformation(kind: Wrap, wrapClass: IdAssignment, wrapRole: IdAssignmentValue, wrapCursorTargetRole: IdAssignmentTarget, selectPrevPlaceholder: true, wrapChildIndex: 0),
       "(": NodeTransformation(kind: Wrap, wrapClass: IdCall, wrapRole: IdCallArguments, wrapCursorTargetRole: IdCallFunction, selectPrevPlaceholder: true, wrapChildIndex: 0),
+      "[": NodeTransformation(kind: Wrap, wrapClass: IdArrayAccess, wrapRole: IdArrayAccessIndex, wrapCursorTargetRole: IdArrayAccessValue, selectPrevPlaceholder: true, wrapChildIndex: 0),
     }.toTable
   }
 
