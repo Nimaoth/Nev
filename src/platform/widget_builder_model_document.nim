@@ -511,30 +511,6 @@ method createCellUI*(cell: PropertyCell, builder: UINodeBuilder, app: App, ctx: 
   let (text, color) = app.getTextAndColor(cell)
   createLeafCellUI(cell, builder, text, color, ctx, updateContext, spaceLeft, cursorFirst, cursorLast)
 
-method createCellUI*(cell: NodeReferenceCell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int], cursorFirst: openArray[int], cursorLast: openArray[int]) =
-  if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
-    return
-
-  stackSize.inc
-  defer:
-    stackSize.dec
-  cell.logc fmt"createCellUI (NodeRefCell) {ctx.remainingHeightDown}, {ctx.remainingHeightUp}, {path}, {cursorFirst}, {cursorLast}"
-
-  if cell.child.isNil:
-    let reference = cell.node.reference(cell.reference)
-    let defaultColor = if cell.foregroundColor.a != 0: cell.foregroundColor else: color(1, 1, 1)
-    let textColor = if cell.themeForegroundColors.len == 0: defaultColor else: app.theme.anyColor(cell.themeForegroundColors, defaultColor)
-
-    let text = $reference
-    createLeafCellUI(cell, builder, text, textColor, ctx, updateContext, spaceLeft, cursorFirst, cursorLast)
-
-  else:
-    cell.child.createCellUI(builder, app, ctx, updateContext, spaceLeft, path, cursorFirst, cursorLast)
-    updateContext.cellToWidget[cell.id] = builder.currentChild
-
-  # widget.fontSizeIncreasePercent = cell.fontSizeIncreasePercent
-  # setBackgroundColor(app, cell, widget)
-
 template getChildPath(cursor: openArray[int], index: int): openArray[int] =
   if cursor.len > 0:
     if index == cursor[0]:

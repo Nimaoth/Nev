@@ -341,9 +341,8 @@ builder.addBuilderFor structMemberAccessClass.id, idNone(), proc(builder: CellBu
 
     cell.add block:
       if node.resolveReference(IdStructMemberAccessMember).getSome(targetNode):
-        var refCell = NodeReferenceCell(id: newId(), node: node, reference: IdStructMemberAccessMember, property: IdINamedName, disableEditing: true)
-        refCell.child = PropertyCell(id: newId(), node: targetNode, property: IdINamedName, themeForegroundColors: @["variable", "&editor.foreground"])
-        refCell
+        # var refCell = NodeReferenceCell(id: newId(), node: node, reference: IdStructMemberAccessMember, property: IdINamedName, disableEditing: true)
+        PropertyCell(id: newId(), node: node, referenceNode: targetNode, property: IdINamedName, themeForegroundColors: @["variable", "&editor.foreground"])
       else:
         PlaceholderCell(id: newId(), node: node, role: IdStructMemberAccessMember, shadowText: "_")
 
@@ -427,10 +426,10 @@ builder.addBuilderFor returnClass.id, idNone(), proc(builder: CellBuilder, node:
   return cell
 
 builder.addBuilderFor nodeReferenceClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = NodeReferenceCell(id: newId(), node: node, reference: IdNodeReferenceTarget, property: IdINamedName, disableEditing: true)
   if node.resolveReference(IdNodeReferenceTarget).getSome(targetNode):
-    cell.child = PropertyCell(id: newId(), node: targetNode, property: IdINamedName, themeForegroundColors: @["variable", "&editor.foreground"])
-  return cell
+    return PropertyCell(id: newId(), node: node, referenceNode: targetNode, property: IdINamedName, themeForegroundColors: @["variable", "&editor.foreground"])
+  else:
+    return ConstantCell(id: newId(), node: node, text: $node.reference(IdNodeReferenceTarget))
 
 # builder.addBuilderFor typeClass.id, idNone(), &{OnlyExactMatch}, proc(builder: CellBuilder, node: AstNode): Cell =
 #   var cell = ConstantCell(id: newId(), node: node, shadowText: "<type>", themeBackgroundColors: @["&inputValidation.errorBackground", "&debugConsole.errorForeground"])

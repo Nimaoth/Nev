@@ -17,11 +17,6 @@ type
   PropertyCell* = ref object of Cell
     property*: Id
 
-  NodeReferenceCell* = ref object of Cell
-    reference*: Id
-    property*: Id
-    targetNodeCell: Cell
-
   AliasCell* = ref object of Cell
     discard
 
@@ -29,11 +24,6 @@ type
     role*: Id
 
 proc buildCell*(self: CellBuilder, map: NodeCellMap, node: AstNode, useDefault: bool = false): Cell
-
-proc child*(cell: NodeReferenceCell): Cell = cell.targetNodeCell
-proc `child=`*(cell: NodeReferenceCell, c: Cell) =
-  cell.targetNodeCell = c
-  c.parent = cell
 
 method getText*(cell: Cell): string {.base.} = discard
 method setText*(cell: Cell, text: string, slice: Slice[int] = 0..0) {.base.} = discard
@@ -103,8 +93,6 @@ proc parentLen*(self: Cell): int =
 proc len*(self: Cell): int =
   if self of CollectionCell:
     return self.CollectionCell.children.len
-  if self of NodeReferenceCell:
-    return 1
   return self.getText.len
 
 proc low*(self: Cell): int =
@@ -209,23 +197,20 @@ method setText*(cell: CollectionCell, text: string, slice: Slice[int] = 0..0) = 
 
 method setText*(cell: ConstantCell, text: string, slice: Slice[int] = 0..0) = cell.currentText = text
 
-method setText*(cell: NodeReferenceCell, text: string, slice: Slice[int] = 0..0) =
-  cell.currentText = text
-
 method setText*(cell: PropertyCell, text: string, slice: Slice[int] = 0..0) =
   cell.currentText = text
   try:
-    if cell.node.propertyDescription(cell.property).getSome(prop):
+    if cell.targetNode.propertyDescription(cell.property).getSome(prop):
 
       case prop.typ
       of String:
-        cell.node.setProperty(cell.property, PropertyValue(kind: PropertyType.String, stringValue: cell.currentText), slice)
+        cell.targetNode.setProperty(cell.property, PropertyValue(kind: PropertyType.String, stringValue: cell.currentText), slice)
       of Int:
         let intValue = cell.currentText.parseInt
-        cell.node.setProperty(cell.property, PropertyValue(kind: PropertyType.Int, intValue: intValue), slice)
+        cell.targetNode.setProperty(cell.property, PropertyValue(kind: PropertyType.Int, intValue: intValue), slice)
       of Bool:
         let boolValue = cell.currentText.parseBool
-        cell.node.setProperty(cell.property, PropertyValue(kind: PropertyType.Bool, boolValue: boolValue), slice)
+        cell.targetNode.setProperty(cell.property, PropertyValue(kind: PropertyType.Bool, boolValue: boolValue), slice)
 
   except CatchableError:
     discard
@@ -240,15 +225,8 @@ method getText*(cell: CollectionCell): string = "<>"
 
 method getText*(cell: ConstantCell): string = cell.text
 
-method getText*(cell: NodeReferenceCell): string =
-  if cell.child.isNil:
-    let reference = cell.node.reference(cell.reference)
-    return $reference
-  else:
-    return cell.child.getText()
-
 method getText*(cell: PropertyCell): string =
-  let value = cell.node.property(cell.property)
+  let value = cell.targetNode.property(cell.property)
   if value.getSome(value):
     case value.kind
     of String:
@@ -262,16 +240,16 @@ method getText*(cell: PropertyCell): string =
 
 
 method getText*(cell: AliasCell): string =
-  let class = cell.node.nodeClass
+  let class = cell.targetNode.nodeClass
   if class.isNotNil:
     return class.alias
   else:
-    return $cell.node.class
+    return $cell.targetNode.class
 
 method getText*(cell: PlaceholderCell): string = cell.displayText.get("")
 
 method dump(self: CollectionCell, recurse: bool = false): string =
-  result = fmt"CollectionCell(inline: {self.inline}, uiFlags: {self.uiFlags}): {self.node}"
+  result = fmt"CollectionCell(inline: {self.inline}, uiFlags: {self.uiFlags}): {self.node}, {self.referenceNode}"
   if recurse:
     result.add "\n"
     if self.filled or self.fillChildren.isNil:
@@ -283,19 +261,16 @@ method dump(self: CollectionCell, recurse: bool = false): string =
       result.add "...".indent(4)
 
 method dump(self: ConstantCell, recurse: bool = false): string =
-  result.add fmt"ConstantCell(node: {self.node.id}, text: {self.text})"
+  result.add fmt"ConstantCell(node: {self.node.id}, text: {self.text}): {self.node}, {self.referenceNode}"
 
 method dump(self: PropertyCell, recurse: bool = false): string =
-  result.add fmt"PropertyCell(node: {self.node.id}, property: {self.property})"
-
-method dump(self: NodeReferenceCell, recurse: bool = false): string =
-  result.add fmt"NodeReferenceCell(node: {self.node.id}, target: {self.reference}, target property: {self.property})"
+  result.add fmt"PropertyCell(node: {self.node.id}, property: {self.property}): {self.node}, {self.referenceNode}"
 
 method dump(self: AliasCell, recurse: bool = false): string =
-  result.add fmt"AliasCell(node: {self.node.id})"
+  result.add fmt"AliasCell(node: {self.node.id}): {self.node}, {self.referenceNode}"
 
 method dump(self: PlaceholderCell, recurse: bool = false): string =
-  result.add fmt"PlaceholderCell(node: {self.node.id}, role: {self.role})"
+  result.add fmt"PlaceholderCell(node: {self.node.id}, role: {self.role}): {self.node}, {self.referenceNode}"
 
 proc invalidate*(map: NodeCellMap) =
   map.map.clear()
@@ -409,9 +384,11 @@ proc buildCellDefault*(self: CellBuilder, m: NodeCellMap, node: AstNode, useDefa
         propCell.add ConstantCell(node: node, text: name, disableEditing: true)
         propCell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), disableEditing: true)
 
-        var nodeRefCell = NodeReferenceCell(id: newId(), node: node, reference: prop.role, property: IdINamedName)
-        if node.resolveReference(prop.role).getSome(targetNode):
-          nodeRefCell.child = PropertyCell(id: newId(), node: targetNode, property: IdINamedName)
+        var nodeRefCell = if node.resolveReference(prop.role).getSome(targetNode):
+          PropertyCell(id: newId(), node: node, referenceNode: targetNode, property: IdINamedName, themeForegroundColors: @["variable", "&editor.foreground"])
+        else:
+          ConstantCell(id: newId(), node: node, text: $node.reference(IdNodeReferenceTarget))
+        # var nodeRefCell = NodeReferenceCell(id: newId(), node: node, reference: prop.role, property: IdINamedName)
 
         propCell.add nodeRefCell
 
