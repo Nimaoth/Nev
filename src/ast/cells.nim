@@ -102,7 +102,8 @@ proc low*(self: Cell): int =
     return self.currentText.low
 
 proc editableLow*(self: Cell, ignoreStyle: bool = false): int =
-  if not ignoreStyle and self.style.isNotNil and self.style.noSpaceLeft and self.currentText.len > 0:
+  let noSpaceLeft = NoSpaceLeft in self.flags or (self.style.isNotNil and self.style.noSpaceLeft)
+  if not ignoreStyle and noSpaceLeft and self.currentText.len > 0:
     return self.low + 1
   return self.low
 
@@ -115,7 +116,8 @@ proc high*(self: Cell): int =
 proc editableHigh*(self: Cell, ignoreStyle: bool = false): int =
   if self of CollectionCell:
     return self.CollectionCell.children.high
-  if not ignoreStyle and self.style.isNotNil and self.style.noSpaceRight and self.currentText.len > 0:
+  let noSpaceRight = NoSpaceRight in self.flags or (self.style.isNotNil and self.style.noSpaceRight)
+  if not ignoreStyle and noSpaceRight and self.currentText.len > 0:
     return self.high
   return self.high + 1
 
