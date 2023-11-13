@@ -59,7 +59,7 @@ template logc(node: untyped, msg: varargs[string, `$`]) =
     for c in msg:
       uiae.add $c
     let xvlc: string = dump(node, false)
-    echo "| ".repeat(stackSize), " (", cellPath, "): ", uiae, "    | ", xvlc, ""
+    debug "| ".repeat(stackSize), " (", cellPath, "): ", uiae, "    | ", xvlc, ""
 
 proc newCellLayoutContext(builder: UINodeBuilder, updateContext: UpdateContext, requiredDirection: Direction, fillX: bool): CellLayoutContext =
   new result
@@ -859,6 +859,52 @@ proc pathAfter(a, b: openArray[int]): bool =
       return a[i] > b[i]
   return a.len > b.len
 
+proc createNodeUI(self: ModelDocumentEditor, builder: UINodeBuilder, app: App, container: UINode, updateContext: UpdateContext, remainingHeightUp: float, remainingHeightDown: float, node: AstNode, targetCellPath: seq[int], scrollOffset: float) =
+  let cell = self.nodeCellMap.cell(node)
+  if cell.isNil:
+    return
+
+  # debugf"render: {targetCellPath}:{self.scrollOffset}"
+  # echo fmt"scroll offset {scrollOffset}"
+  try:
+    let myCtx = newCellLayoutContext(builder, self.cellWidgetContext, Direction.Forwards, true)
+    defer:
+      myCtx.finish()
+
+    myCtx.remainingHeightUp = remainingHeightUp
+    myCtx.remainingHeightDown = remainingHeightDown
+
+    var cursorFirst = self.selection.first.rootPath
+    var cursorLast = self.selection.last.rootPath
+    if cursorFirst.path.pathAfter(cursorLast.path):
+      swap(cursorFirst, cursorLast)
+
+    # debugf"target cell: {targetCellPath}"
+    cell.createCellUI(builder, app, myCtx, updateContext, false, targetCellPath, cursorFirst.path, cursorLast.path)
+    if not (cell of CollectionCell):
+      updateContext.targetNode = myCtx.parentNode
+      updateContext.targetCell = cell
+
+  except Defect:
+    log lvlError, fmt"failed to creat UI nodes {getCurrentExceptionMsg()}"
+
+  if updateContext.targetNodeOld != updateContext.targetNode:
+    if updateContext.targetNodeOld.isNotNil:
+      updateContext.targetNodeOld.contentDirty = true
+    if updateContext.targetNode.isNotNil:
+      updateContext.targetNode.contentDirty = true
+
+  updateContext.targetNodeOld = updateContext.targetNode
+
+  # move the container position so the target cell is at the desired scroll offset
+  if updateContext.targetNode.isNotNil:
+    var bounds = updateContext.targetNode.bounds.transformRect(updateContext.targetNode.parent, container.parent)
+    # echo fmt"1 target node {bounds}: {updateContext.targetNode.dump}"
+    # echo container.boundsRaw.y, " -> ", container.boundsRaw.y + (scrollOffset - bounds.y)
+    # debugf"update scrolled node y: {container.boundsRaw.y} -> {(container.boundsRaw.y + (scrollOffset - bounds.y))}"
+    container.rawY = container.boundsRaw.y + (scrollOffset - bounds.y)
+    # echo fmt"2 target node {bounds}: {updateContext.targetNode.dump}"
+
 method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
   let dirty = self.dirty
   self.resetDirty()
@@ -995,6 +1041,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
 
                 self.cellWidgetContext.targetNodeOld = self.cellWidgetContext.targetNode
 
+                # move the container position so the target cell is at the desired scroll offset
                 if self.cellWidgetContext.targetNode.isNotNil:
                   var bounds = self.cellWidgetContext.targetNode.bounds.transformRect(self.cellWidgetContext.targetNode.parent, scrolledNode.parent)
                   # echo fmt"1 target node {bounds}: {self.cellWidgetContext.targetNode.dump}"
@@ -1003,6 +1050,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
                   scrolledNode.rawY = scrolledNode.boundsRaw.y + (self.scrollOffset - bounds.y)
                   # echo fmt"2 target node {bounds}: {self.cellWidgetContext.targetNode.dump}"
 
+                # update targetCellPath and scrollOffset to visible cell if currently outside of visible area
                 if self.scrollOffset < cellGenerationBuffer + targetCellBuffer or self.scrollOffset >= h - cellGenerationBuffer - targetCellBuffer:
                   let forward = self.scrollOffset < cellGenerationBuffer + targetCellBuffer
                   if self.cellWidgetContext.updateTargetPath(scrolledNode.parent, cell, forward, self.targetCellPath, @[]).getSome(path):
@@ -1010,7 +1058,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
                     # debugf"update target cell path: {self.targetCellPath}:{self.scrollOffset} -> {path[0]}:{path[1]}"
                     self.targetCellPath = path[1]
                     self.scrollOffset = path[0]
-#
+
           # cursor
           proc drawCursor(cursor: CellCursor, thick: bool, cursorColor: Color, id: int32): Option[UINode] =
             if cursor.getTargetCell(true).getSome(targetCell) and self.cellWidgetContext.cellToWidget.contains(targetCell.id):
@@ -1045,8 +1093,44 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
           if self.cursorVisible:
             if drawCursor(self.selection.last, self.isThickCursor, textColor, 0).getSome(node):
               self.lastCursorLocationBounds = rect(self.selection.last.index.float * builder.charWidth, 0, builder.charWidth, builder.textHeight).transformRect(node, builder.root).some
+
               let typ = self.document.ctx.computeType(self.selection.last.node)
-              log lvlWarn, fmt"selected type: {`$`(typ, true)}"
+              let value = self.document.ctx.getValue(self.selection.last.node)
+
+              var scrollOffset = node.transformBounds(overlapPanel).y
+
+              if typ.isNotNil or value.isNotNil:
+                builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse}, y = scrollOffset):
+                  builder.panel(&{FillY}, pivot = vec2(1, 0), w = builder.charWidth)
+
+                  if typ.isNotNil:
+                    builder.panel(&{SizeToContentX, SizeToContentY, DrawBorder}, pivot = vec2(1, 0), borderColor = textColor):
+                      let updateContext = UpdateContext(
+                        nodeCellMap: self.nodeCellMap,
+                        cellToWidget: initTable[CellId, UINode](),
+                        targetCellPosition: vec2(0, 0),
+                        handleClick: proc(node: UINode, cell: Cell, path: seq[int], cursor: CellCursor, drag: bool) = discard,
+                        setCursor: proc(cell: Cell, offset: int, drag: bool) = discard,
+                      )
+                      self.createNodeUI(builder, app, currentNode, updateContext, remainingHeightUp=0, remainingHeightDown=h, typ, @[0], 0)
+
+                    builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), text = "Type: ", textColor = textColor)
+
+                  if value.isNotNil:
+                    if typ.isNotNil:
+                      builder.panel(&{FillY}, pivot = vec2(1, 0), w = builder.charWidth)
+
+                    builder.panel(&{SizeToContentX, SizeToContentY, DrawBorder}, pivot = vec2(1, 0), borderColor = textColor):
+                      let updateContext = UpdateContext(
+                        nodeCellMap: self.nodeCellMap,
+                        cellToWidget: initTable[CellId, UINode](),
+                        targetCellPosition: vec2(0, 0),
+                        handleClick: proc(node: UINode, cell: Cell, path: seq[int], cursor: CellCursor, drag: bool) = discard,
+                        setCursor: proc(cell: Cell, offset: int, drag: bool) = discard,
+                      )
+                      self.createNodeUI(builder, app, currentNode, updateContext, remainingHeightUp=0, remainingHeightDown=h, value, @[0], 0)
+
+                    builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), text = "Value: ", textColor = textColor)
 
             if not self.selection.isEmpty:
               let cursorColor = textColor.darken(0.2)
