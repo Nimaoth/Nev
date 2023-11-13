@@ -164,6 +164,7 @@ type
 
     # functions for computing the type of a node
     typeComputers*: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]
+    valueComputers*: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]
     scopeComputers*: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]]
 
   Model* = ref object
@@ -191,6 +192,7 @@ generateGetters(Language)
 proc hash*(node: AstNode): Hash = node.id.hash
 
 method computeType*(self: ModelComputationContextBase, node: AstNode): AstNode {.base.} = discard
+method getValue*(self: ModelComputationContextBase, node: AstNode): AstNode {.base.} = discard
 method getScope*(self: ModelComputationContextBase, node: AstNode): seq[AstNode] {.base.} = discard
 method dependOn*(self: ModelComputationContextBase, node: AstNode) {.base.} = discard
 
@@ -248,10 +250,12 @@ proc verify*(self: Language): bool =
 
 proc newLanguage*(id: LanguageId, classes: seq[NodeClass], builder: CellBuilder,
   typeComputers: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode],
+  valueComputers: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode],
   scopeComputers: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]]): Language =
   new result
   result.id = id
   result.typeComputers = typeComputers
+  result.valueComputers = valueComputers
   result.scopeComputers = scopeComputers
 
   for c in classes:
@@ -417,7 +421,7 @@ proc isValidPropertyValue*(language: Language, class: NodeClass, role: RoleId, v
     case desc.typ
     of Bool: return value.match(defaultBoolPattern)
     of Int: return value.match(defaultNumberPattern)
-    of String: discard
+    of String: return true # todo: custom regex for string
 
   return false
 

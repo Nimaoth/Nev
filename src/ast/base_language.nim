@@ -12,11 +12,11 @@ let metaTypeClass* = newNodeClass(IdType, "Type", alias="type", base=expressionC
 let stringTypeClass* = newNodeClass(IdString, "StringType", alias="string", base=expressionClass)
 let intTypeClass* = newNodeClass(IdInt, "IntType", alias="int", base=expressionClass)
 let voidTypeClass* = newNodeClass(IdVoid, "VoidType", alias="void", base=expressionClass)
-let functionTypeClass* = newNodeClass(IdFunctionType, "FunctionType", alias="fn", base=expressionClass,
+let functionTypeClass* = newNodeClass(IdFunctionType, "FunctionType", base=expressionClass,
   children=[
     NodeChildDescription(id: IdFunctionTypeReturnType, role: "returnType", class: expressionClass.id, count: ChildCount.One),
     NodeChildDescription(id: IdFunctionTypeParameterTypes, role: "parameterTypes", class: expressionClass.id, count: ChildCount.ZeroOrMore)])
-let structTypeClass* = newNodeClass(IdStructType, "StructType", alias="struct", base=expressionClass,
+let structTypeClass* = newNodeClass(IdStructType, "StructType", base=expressionClass,
   children=[
     NodeChildDescription(id: IdStructTypeMemberTypes, role: "memberTypes", class: expressionClass.id, count: ChildCount.ZeroOrMore)])
 let pointerTypeClass* = newNodeClass(IdPointerType, "PointerType", alias="ptr", base=expressionClass,
@@ -137,7 +137,7 @@ let breakClass* = newNodeClass(IdBreakExpression, "BreakExpression", alias="brea
 let continueClass* = newNodeClass(IdContinueExpression, "ContinueExpression", alias="continue", base=expressionClass)
 let returnClass* = newNodeClass(IdReturnExpression, "ReturnExpression", alias="return", base=expressionClass)
 
-let parameterDeclClass* = newNodeClass(IdParameterDecl, "ParameterDecl", alias="param", base=expressionClass, interfaces=[declarationInterface],
+let parameterDeclClass* = newNodeClass(IdParameterDecl, "ParameterDecl", alias="param", interfaces=[declarationInterface], substitutionProperty=IdINamedName.some,
   children=[
     NodeChildDescription(id: IdParameterDeclType, role: "type", class: expressionClass.id, count: ChildCount.One),
     NodeChildDescription(id: IdParameterDeclValue, role: "value", class: expressionClass.id, count: ChildCount.ZeroOrOne)])
@@ -148,13 +148,17 @@ let functionDefinitionClass* = newNodeClass(IdFunctionDefinition, "FunctionDefin
     NodeChildDescription(id: IdFunctionDefinitionReturnType, role: "returnType", class: expressionClass.id, count: ChildCount.ZeroOrOne),
     NodeChildDescription(id: IdFunctionDefinitionBody, role: "body", class: expressionClass.id, count: ChildCount.One)])
 
-let structMemberDefinitionClass* = newNodeClass(IdStructMemberDefinition, "StructMemberDefinition", alias="member", interfaces=[declarationInterface],
+let structMemberDefinitionClass* = newNodeClass(IdStructMemberDefinition, "StructMemberDefinition", alias="member", interfaces=[declarationInterface], substitutionProperty=IdINamedName.some,
   children=[
     NodeChildDescription(id: IdStructMemberDefinitionType, role: "type", class: expressionClass.id, count: ChildCount.One),
     NodeChildDescription(id: IdStructMemberDefinitionValue, role: "value", class: expressionClass.id, count: ChildCount.ZeroOrOne)])
 
+let structParameterClass* = newNodeClass(IdStructParameter, "StructParameter", alias="param", interfaces=[declarationInterface], substitutionProperty=IdINamedName.some,
+  children=[NodeChildDescription(id: IdStructParameterType, role: "type", class: expressionClass.id, count: ChildCount.One)])
+
 let structDefinitionClass* = newNodeClass(IdStructDefinition, "StructDefinition", alias="struct", base=expressionClass,
   children=[
+    NodeChildDescription(id: IdStructDefinitionParameter, role: "params", class: structParameterClass.id, count: ChildCount.ZeroOrMore),
     NodeChildDescription(id: IdStructDefinitionMembers, role: "members", class: structMemberDefinitionClass.id, count: ChildCount.ZeroOrMore)])
 
 let structMemberAccessClass* = newNodeClass(IdStructMemberAccess, "StructMemberAccess", base=expressionClass,
@@ -196,7 +200,6 @@ builder.addBuilderFor nodeListClass.id, idNone(), proc(builder: CellBuilder, nod
   cell.nodeFactory = proc(): AstNode =
     return newAstNode(emptyLineClass)
   cell.fillChildren = proc(map: NodeCellMap) =
-    # echo "fill collection node list"
     cell.add builder.buildChildren(map, node, IdNodeListChildren, &{LayoutVertical})
   return cell
 
@@ -205,7 +208,6 @@ builder.addBuilderFor blockClass.id, idNone(), proc(builder: CellBuilder, node: 
   cell.nodeFactory = proc(): AstNode =
     return newAstNode(emptyLineClass)
   cell.fillChildren = proc(map: NodeCellMap) =
-    # echo "fill collection block"
     cell.add builder.buildChildren(map, node, IdBlockChildren, &{LayoutVertical})
   return cell
 
@@ -214,7 +216,6 @@ builder.addBuilderFor constDeclClass.id, idNone(), proc(builder: CellBuilder, no
   cell.fillChildren = proc(map: NodeCellMap) =
     proc isVisible(node: AstNode): bool = node.hasChild(IdConstDeclType)
 
-    # echo "fill collection const decl"
     cell.add ConstantCell(node: node, text: "const", themeForegroundColors: @["keyword"], disableEditing: true)
     cell.add PropertyCell(node: node, property: IdINamedName)
     cell.add ConstantCell(node: node, text: ":", isVisible: isVisible, style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
@@ -232,7 +233,6 @@ builder.addBuilderFor letDeclClass.id, idNone(), proc(builder: CellBuilder, node
   cell.fillChildren = proc(map: NodeCellMap) =
     proc isVisible(node: AstNode): bool = node.hasChild(IdLetDeclType)
 
-    # echo "fill collection let decl"
     cell.add ConstantCell(node: node, text: "let", themeForegroundColors: @["keyword"], disableEditing: true)
     cell.add PropertyCell(node: node, property: IdINamedName)
     cell.add ConstantCell(node: node, text: ":", isVisible: isVisible, style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
@@ -251,7 +251,6 @@ builder.addBuilderFor varDeclClass.id, idNone(), proc(builder: CellBuilder, node
     proc isTypeVisible(node: AstNode): bool = node.hasChild(IdVarDeclType)
     proc isValueVisible(node: AstNode): bool = node.hasChild(IdVarDeclValue)
 
-    # echo "fill collection var decl"
     cell.add ConstantCell(node: node, text: "var", themeForegroundColors: @["keyword"], disableEditing: true)
     cell.add PropertyCell(node: node, property: IdINamedName)
     cell.add ConstantCell(node: node, text: ":", isVisible: isTypeVisible, style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
@@ -267,7 +266,6 @@ builder.addBuilderFor varDeclClass.id, idNone(), proc(builder: CellBuilder, node
 builder.addBuilderFor assignmentClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
-    # echo "fill collection assignment"
     cell.add builder.buildChildren(map, node, IdAssignmentTarget, &{LayoutHorizontal})
     cell.add ConstantCell(node: node, text: "=", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
     cell.add builder.buildChildren(map, node, IdAssignmentValue, &{LayoutHorizontal})
@@ -278,7 +276,6 @@ builder.addBuilderFor parameterDeclClass.id, idNone(), proc(builder: CellBuilder
   cell.fillChildren = proc(map: NodeCellMap) =
     proc isVisible(node: AstNode): bool = node.hasChild(IdParameterDeclValue)
 
-    # echo "fill collection parameter decl"
     cell.add PropertyCell(node: node, property: IdINamedName)
     cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
 
@@ -297,7 +294,6 @@ builder.addBuilderFor parameterDeclClass.id, idNone(), proc(builder: CellBuilder
 builder.addBuilderFor functionDefinitionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
-    # echo "fill collection func def"
     cell.add ConstantCell(node: node, text: "fn", themeForegroundColors: @["keyword"], disableEditing: true)
     cell.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
 
@@ -325,7 +321,6 @@ builder.addBuilderFor structMemberDefinitionClass.id, idNone(), proc(builder: Ce
   cell.fillChildren = proc(map: NodeCellMap) =
     proc isVisible(node: AstNode): bool = node.hasChild(IdStructMemberDefinitionValue)
 
-    # echo "fill collection let decl"
     cell.add PropertyCell(node: node, property: IdINamedName)
     cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
     cell.add builder.buildChildren(map, node, IdStructMemberDefinitionType, &{LayoutHorizontal})
@@ -335,25 +330,40 @@ builder.addBuilderFor structMemberDefinitionClass.id, idNone(), proc(builder: Ce
         placeholder: PlaceholderCell(id: newId().CellId, node: node, role: role, shadowText: "...")
   return cell
 
+builder.addBuilderFor structParameterClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
+  cell.fillChildren = proc(map: NodeCellMap) =
+    cell.add PropertyCell(node: node, property: IdINamedName)
+    cell.add ConstantCell(node: node, text: ":", flags: &{NoSpaceLeft}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+    cell.add block:
+      buildChildrenT(builder, map, node, IdStructParameterType, &{LayoutHorizontal}, 0.CellFlags):
+        placeholder: PlaceholderCell(id: newId().CellId, node: node, role: role, shadowText: "<type>")
+  return cell
+
 builder.addBuilderFor structDefinitionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
-    # echo "fill collection func def"
     cell.add ConstantCell(node: node, text: "struct", themeForegroundColors: @["keyword"], disableEditing: true)
+
+    cell.add block:
+      buildChildrenT(builder, map, node, IdStructDefinitionParameter, &{LayoutHorizontal}, 0.CellFlags):
+        separator: ConstantCell(node: node, text: ",", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true, disableSelection: true, deleteNeighbor: true)
+        placeholder: "<params>"
+
     cell.add ConstantCell(node: node, text: "{", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
 
     cell.add block:
       buildChildrenT(builder, map, node, IdStructDefinitionMembers, &{LayoutVertical}, &{OnNewLine, IndentChildren}):
         placeholder: "..."
 
-    cell.add ConstantCell(node: node, text: "}", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true, flags: &{OnNewLine})
+    let hasChildren = node.childCount(IdStructDefinitionMembers) > 0
+    cell.add ConstantCell(node: node, text: "}", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true, flags: hasChildren ?? OnNewLine)
 
   return cell
 
 builder.addBuilderFor structMemberAccessClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
-    # echo "fill collection func def"
     cell.add block:
       buildChildrenT(builder, map, node, IdStructMemberAccessValue, &{LayoutHorizontal}, 0.CellFlags):
         placeholder: "..."
@@ -372,7 +382,6 @@ builder.addBuilderFor structMemberAccessClass.id, idNone(), proc(builder: CellBu
 builder.addBuilderFor pointerTypeClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
-    # echo "fill collection assignment"
     cell.add ConstantCell(node: node, text: "ptr", themeForegroundColors: @["keyword"], disableEditing: true)
     cell.add builder.buildChildren(map, node, IdPointerTypeTarget, &{LayoutHorizontal})
   return cell
@@ -380,7 +389,6 @@ builder.addBuilderFor pointerTypeClass.id, idNone(), proc(builder: CellBuilder, 
 builder.addBuilderFor addressOfClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
-    # echo "fill collection assignment"
     cell.add ConstantCell(node: node, text: "addr", themeForegroundColors: @["keyword"], disableEditing: true)
     cell.add builder.buildChildren(map, node, IdAddressOfValue, &{LayoutHorizontal})
   return cell
@@ -388,7 +396,6 @@ builder.addBuilderFor addressOfClass.id, idNone(), proc(builder: CellBuilder, no
 builder.addBuilderFor derefClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
-    # echo "fill collection assignment"
     cell.add ConstantCell(node: node, text: "deref", themeForegroundColors: @["keyword"], disableEditing: true)
     cell.add builder.buildChildren(map, node, IdDerefValue, &{LayoutHorizontal})
   return cell
@@ -396,7 +403,6 @@ builder.addBuilderFor derefClass.id, idNone(), proc(builder: CellBuilder, node: 
 builder.addBuilderFor IdArrayAccess, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
-    # echo "fill collection assignment"
     cell.add builder.buildChildren(map, node, IdArrayAccessValue, &{LayoutHorizontal})
     cell.add ConstantCell(node: node, text: "[", flags: &{NoSpaceLeft, NoSpaceRight}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
     cell.add builder.buildChildren(map, node, IdArrayAccessIndex, &{LayoutHorizontal})
@@ -406,7 +412,6 @@ builder.addBuilderFor IdArrayAccess, idNone(), proc(builder: CellBuilder, node: 
 builder.addBuilderFor IdAllocate, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
-    # echo "fill collection assignment"
     cell.add ConstantCell(node: node, text: "alloc", themeForegroundColors: @["keyword"], disableEditing: true)
     cell.add builder.buildChildren(map, node, IdAllocateType, &{LayoutHorizontal})
     cell.add ConstantCell(node: node, text: ",", flags: &{NoSpaceLeft}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
@@ -418,7 +423,6 @@ builder.addBuilderFor IdAllocate, idNone(), proc(builder: CellBuilder, node: Ast
 builder.addBuilderFor callClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
-    # echo "fill collection call"
 
     cell.add builder.buildChildren(map, node, IdCallFunction, &{LayoutHorizontal})
     cell.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
@@ -435,7 +439,6 @@ builder.addBuilderFor callClass.id, idNone(), proc(builder: CellBuilder, node: A
 builder.addBuilderFor thenCaseClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
-    # echo "fill collection ThenCase"
 
     if node.index == 0:
       cell.add ConstantCell(node: node, text: "if", themeForegroundColors: @["keyword"], disableEditing: true)
@@ -450,7 +453,6 @@ builder.addBuilderFor thenCaseClass.id, idNone(), proc(builder: CellBuilder, nod
 builder.addBuilderFor ifClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal}, flags: &{DeleteWhenEmpty}, inline: true)
   cell.fillChildren = proc(map: NodeCellMap) =
-    # echo "fill collection if"
 
     cell.add block:
       builder.buildChildren(map, node, IdIfExpressionThenCase, &{LayoutVertical}, &{DeleteWhenEmpty})
@@ -472,7 +474,6 @@ builder.addBuilderFor ifClass.id, idNone(), proc(builder: CellBuilder, node: Ast
 builder.addBuilderFor whileClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
-    # echo "fill collection while"
     cell.add ConstantCell(node: node, text: "while", themeForegroundColors: @["keyword"], disableEditing: true)
     cell.add builder.buildChildren(map, node, IdWhileExpressionCondition, &{LayoutHorizontal})
     cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
@@ -509,7 +510,6 @@ builder.addBuilderFor expressionClass.id, idNone(), &{OnlyExactMatch}, proc(buil
 builder.addBuilderFor binaryExpressionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
-    # echo "fill collection binary"
     let lowerPrecedence = node.parent.isNotNil and node.parent.nodeClass.precedence >= node.nodeClass.precedence
 
     if lowerPrecedence:
@@ -527,7 +527,6 @@ builder.addBuilderFor binaryExpressionClass.id, idNone(), proc(builder: CellBuil
 builder.addBuilderFor divExpressionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutVertical}, inline: true)
   cell.fillChildren = proc(map: NodeCellMap) =
-    # echo "fill collection binary"
     cell.add builder.buildChildren(map, node, IdBinaryExpressionLeft, &{LayoutHorizontal})
     cell.add ConstantCell(node: node, text: "------", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
     cell.add builder.buildChildren(map, node, IdBinaryExpressionRight, &{LayoutHorizontal})
@@ -536,9 +535,12 @@ builder.addBuilderFor divExpressionClass.id, idNone(), proc(builder: CellBuilder
 builder.addBuilderFor unaryExpressionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
-    # echo "fill collection binary"
     cell.add AliasCell(node: node, style: CellStyle(noSpaceRight: true), disableEditing: true)
     cell.add builder.buildChildren(map, node, IdUnaryExpressionChild, &{LayoutHorizontal})
+  return cell
+
+builder.addBuilderFor metaTypeClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  var cell = AliasCell(id: newId().CellId, node: node, themeForegroundColors: @["storage.type", "&editor.foreground"], disableEditing: true)
   return cell
 
 builder.addBuilderFor stringTypeClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
@@ -556,7 +558,6 @@ builder.addBuilderFor intTypeClass.id, idNone(), proc(builder: CellBuilder, node
 builder.addBuilderFor printExpressionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
-    # echo "fill collection call"
 
     cell.add AliasCell(node: node, disableEditing: true)
     cell.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
@@ -573,7 +574,6 @@ builder.addBuilderFor printExpressionClass.id, idNone(), proc(builder: CellBuild
 builder.addBuilderFor buildExpressionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
-    # echo "fill collection call"
 
     cell.add AliasCell(node: node, disableEditing: true)
     cell.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
@@ -588,6 +588,7 @@ builder.addBuilderFor buildExpressionClass.id, idNone(), proc(builder: CellBuild
   return cell
 
 var typeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]()
+var valueComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]()
 var scopeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]]()
 
 let metaTypeInstance* = newAstNode(metaTypeClass)
@@ -597,24 +598,56 @@ let voidTypeInstance* = newAstNode(voidTypeClass)
 
 # todo: those should technically return something like metaTypeInstance which needs a new metaTypeClass
 # and the valueComputer should return the type instance
+typeComputers[metaTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for meta type literal {node}"
+  return metaTypeInstance
 typeComputers[stringTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   debugf"compute type for string type literal {node}"
-  return stringTypeInstance
+  return metaTypeInstance
 typeComputers[intTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   debugf"compute type for int type literal {node}"
-  return intTypeInstance
+  return metaTypeInstance
 typeComputers[voidTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   debugf"compute type for void type literal {node}"
-  return voidTypeInstance
-
+  return metaTypeInstance
 typeComputers[pointerTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   debugf"compute type for pointer type {node}"
+  return metaTypeInstance
+
+valueComputers[metaTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute value for meta type literal {node}"
+  return metaTypeInstance
+valueComputers[stringTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute value for string type literal {node}"
+  return stringTypeInstance
+valueComputers[intTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute value for int type literal {node}"
+  return intTypeInstance
+valueComputers[voidTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute value for void type literal {node}"
+  return voidTypeInstance
+valueComputers[pointerTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute value for pointer type {node}"
+
+  if node.firstChild(IdPointerTypeTarget).getSome(targetTypeNode):
+    let targetType = ctx.getValue(targetTypeNode)
+    var typ = newAstNode(pointerTypeClass)
+    typ.add(IdPointerTypeTarget, targetType)
+    typ.model = node.model
+    typ.forEach2 n:
+      n.model = node.model
+    return typ
+
   return node
 
 # base expression
 typeComputers[expressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   debugf"compute type for base expression {node}"
   return voidTypeInstance
+
+valueComputers[expressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute value for base expression {node}"
+  return nil
 
 # literals
 typeComputers[stringLiteralClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
@@ -633,7 +666,7 @@ typeComputers[boolLiteralClass.id] = proc(ctx: ModelComputationContextBase, node
 typeComputers[letDeclClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   debugf"compute type for let decl {node}"
   if node.firstChild(IdLetDeclType).getSome(typeNode):
-    return ctx.computeType(typeNode)
+    return ctx.getValue(typeNode)
   if node.firstChild(IdLetDeclValue).getSome(valueNode):
     return ctx.computeType(valueNode)
   return voidTypeInstance
@@ -641,7 +674,7 @@ typeComputers[letDeclClass.id] = proc(ctx: ModelComputationContextBase, node: As
 typeComputers[varDeclClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   debugf"compute type for var decl {node}"
   if node.firstChild(IdVarDeclType).getSome(typeNode):
-    return ctx.computeType(typeNode)
+    return ctx.getValue(typeNode)
   if node.firstChild(IdVarDeclValue).getSome(valueNode):
     return ctx.computeType(valueNode)
   return voidTypeInstance
@@ -649,7 +682,7 @@ typeComputers[varDeclClass.id] = proc(ctx: ModelComputationContextBase, node: As
 typeComputers[constDeclClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   debugf"compute type for const decl {node}"
   if node.firstChild(IdConstDeclType).getSome(typeNode):
-    return ctx.computeType(typeNode)
+    return ctx.getValue(typeNode)
   if node.firstChild(IdConstDeclValue).getSome(valueNode):
     return ctx.computeType(valueNode)
   return voidTypeInstance
@@ -657,7 +690,7 @@ typeComputers[constDeclClass.id] = proc(ctx: ModelComputationContextBase, node: 
 typeComputers[parameterDeclClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   debugf"compute type for const decl {node}"
   if node.firstChild(IdParameterDeclType).getSome(typeNode):
-    return ctx.computeType(typeNode)
+    return ctx.getValue(typeNode)
   if node.firstChild(IdParameterDeclValue).getSome(valueNode):
     return ctx.computeType(valueNode)
   return voidTypeInstance
@@ -700,7 +733,7 @@ typeComputers[functionDefinitionClass.id] = proc(ctx: ModelComputationContextBas
   var returnType = voidTypeInstance
 
   if node.firstChild(IdFunctionDefinitionReturnType).getSome(returnTypeNode):
-    returnType = ctx.computeType(returnTypeNode)
+    returnType = ctx.getValue(returnTypeNode)
 
   var functionType = newAstNode(functionTypeClass)
   functionType.add(IdFunctionTypeReturnType, returnType)
@@ -708,7 +741,7 @@ typeComputers[functionDefinitionClass.id] = proc(ctx: ModelComputationContextBas
   for _, c in node.children(IdFunctionDefinitionParameters):
     if c.firstChild(IdParameterDeclType).getSome(paramTypeNode):
       # todo: This needs computeValue in the future since the type of a type is 'type', and the value is 'int' or 'string' etc.
-      var parameterType = ctx.computeType(paramTypeNode)
+      var parameterType = ctx.getValue(paramTypeNode)
       if parameterType.isNil:
         # addDiagnostic(paramTypeNode, "Could not compute type for parameter")
         continue
@@ -749,10 +782,15 @@ typeComputers[blockClass.id] = proc(ctx: ModelComputationContextBase, node: AstN
 
 typeComputers[nodeReferenceClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   debugf"compute type for node reference {node}"
-  # todo
   if node.resolveReference(IdNodeReferenceTarget).getSome(targetNode):
     return ctx.computeType(targetNode)
   return voidTypeInstance
+
+valueComputers[nodeReferenceClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute value for node reference {node}"
+  if node.resolveReference(IdNodeReferenceTarget).getSome(targetNode):
+    return ctx.getValue(targetNode)
+  return nil
 
 typeComputers[breakClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   debugf"compute type for break {node}"
@@ -842,7 +880,7 @@ typeComputers[callClass.id] = proc(ctx: ModelComputationContextBase, node: AstNo
     log lvlError, fmt"No function specified for call {node}"
     return voidTypeInstance
 
-  var funcType: AstNode
+  var targetType: AstNode
   if funcExprNode.class == IdNodeReference:
     let funcDeclNode = funcExprNode.resolveReference(IdNodeReferenceTarget).getOr:
       log lvlError, fmt"Function not found: {funcExprNode}"
@@ -853,20 +891,26 @@ typeComputers[callClass.id] = proc(ctx: ModelComputationContextBase, node: AstNo
         log lvlError, fmt"No value: {funcDeclNode} in call {node}"
         return voidTypeInstance
 
-      funcType = ctx.computeType(funcDefNode)
+      targetType = ctx.computeType(funcDefNode)
 
     else: # not a const decl, so call indirect
-      funcType = ctx.computeType(funcExprNode)
+      targetType = ctx.computeType(funcExprNode)
 
   else: # not a node reference
-    funcType = ctx.computeType(funcExprNode)
+    targetType = ctx.computeType(funcExprNode)
 
-  if funcType.class != IdFunctionType:
-    log lvlError, fmt"Function type expected, got {funcType}"
+  if targetType.class == IdFunctionType:
+    if targetType.firstChild(IdFunctionTypeReturnType).getSome(returnType):
+      return returnType
+
+    log lvlError, fmt"Function type expected, got {targetType}"
     return voidTypeInstance
 
-  if funcType.firstChild(IdFunctionTypeReturnType).getSome(returnType):
-    return returnType
+  if targetType.class == IdStructDefinition:
+    return targetType
+
+    log lvlError, fmt"Function type expected, got {targetType}"
+    return voidTypeInstance
 
   return voidTypeInstance
 
@@ -882,11 +926,19 @@ typeComputers[buildExpressionClass.id] = proc(ctx: ModelComputationContextBase, 
   debugf"compute type for build {node}"
   return stringTypeInstance
 
+typeComputers[structParameterClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  debugf"compute type for struct parameter {node}"
+
+  if node.firstChild(IdStructParameterType).getSome(typeNode):
+    return ctx.getValue(typeNode)
+
+  return voidTypeInstance
+
 typeComputers[structMemberDefinitionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   debugf"compute type for struct member definition {node}"
 
   if node.firstChild(IdStructMemberDefinitionType).getSome(typeNode):
-    return ctx.computeType(typeNode)
+    return ctx.getValue(typeNode)
 
   return voidTypeInstance
 
@@ -900,7 +952,7 @@ typeComputers[structDefinitionClass.id] = proc(ctx: ModelComputationContextBase,
   # for _, c in node.children(IdStructDefinitionMembers):
   #   if c.firstChild(IdStructMemberDefinitionType).getSome(typeNode):
   #     # todo: This needs computeValue in the future since the type of a type is 'type', and the value is 'int' or 'string' etc.
-  #     var typ = ctx.computeType(typeNode)
+  #     var typ = ctx.getValue(typeNode)
   #     if typ.isNil:
   #       # addDiagnostic(typeNode, "Could not compute type for parameter")
   #       continue
@@ -918,16 +970,22 @@ typeComputers[structDefinitionClass.id] = proc(ctx: ModelComputationContextBase,
 
 typeComputers[structMemberAccessClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   debugf"compute type for struct member access {node}"
-  if node.resolveReference(IdStructMemberAccessMember).getSome(targetNode):
-    return ctx.computeType(targetNode)
+  let memberNode = node.resolveReference(IdStructMemberAccessMember).getOr:
+    return voidTypeInstance
 
-  return voidTypeInstance
+  let valueNode = node.firstChild(IdStructMemberAccessValue).getOr:
+    return voidTypeInstance
+
+  let structType = ctx.computeType(valueNode)
+  # echo structType
+
+  return ctx.computeType(memberNode)
 
 typeComputers[structMemberDefinitionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   debugf"compute scope for struct member definition {node}"
 
   if node.firstChild(IdStructMemberDefinitionType).getSome(typeNode):
-    return ctx.computeType(typeNode)
+    return ctx.getValue(typeNode)
 
   return voidTypeInstance
 
@@ -935,7 +993,7 @@ typeComputers[IdAllocate] = proc(ctx: ModelComputationContextBase, node: AstNode
   debugf"compute scope for allocate {node}"
 
   if node.firstChild(IdAllocateType).getSome(typeNode):
-    let targetType = ctx.computeType(typeNode)
+    let targetType = ctx.getValue(typeNode)
     var typ = newAstNode(pointerTypeClass)
     typ.add(IdPointerTypeTarget, targetType)
     typ.model = node.model
@@ -948,8 +1006,8 @@ typeComputers[IdAllocate] = proc(ctx: ModelComputationContextBase, node: AstNode
 typeComputers[IdAddressOf] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   debugf"compute scope for address of {node}"
 
-  if node.firstChild(IdAddressOfValue).getSome(typeNode):
-    let targetType = ctx.computeType(typeNode)
+  if node.firstChild(IdAddressOfValue).getSome(valueNode):
+    let targetType = ctx.computeType(valueNode)
     var typ = newAstNode(pointerTypeClass)
     typ.add(IdPointerTypeTarget, targetType)
     typ.model = node.model
@@ -992,17 +1050,24 @@ scopeComputers[structMemberAccessClass.id] = proc(ctx: ModelComputationContextBa
 
   return valueType.children(IdStructDefinitionMembers)
 
-scopeComputers[IdExpression] = proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode] =
-  debugf"compute scope for base expression {node}"
-
+proc computeDefaultScope(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode] =
   var nodes: seq[AstNode] = @[]
 
   var prev = node
   var current = node.parent
   while current.isNotNil:
     ctx.dependOn(current)
+
     if current.class == IdFunctionDefinition:
       for _, c in current.children(IdFunctionDefinitionParameters):
+        ctx.dependOn(c)
+        nodes.add c
+
+    if current.class == IdStructDefinition:
+      for _, c in current.children(IdStructDefinitionParameter):
+        ctx.dependOn(c)
+        nodes.add c
+      for _, c in current.children(IdStructDefinitionMembers):
         ctx.dependOn(c)
         nodes.add c
 
@@ -1023,11 +1088,27 @@ scopeComputers[IdExpression] = proc(ctx: ModelComputationContextBase, node: AstN
 
   return nodes
 
+scopeComputers[IdExpression] = proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode] =
+  debugf"compute scope for base expression {node}"
+  return ctx.computeDefaultScope(node)
+
+scopeComputers[IdStructMemberDefinition] = proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode] =
+  debugf"compute scope for struct member {node}"
+  return ctx.computeDefaultScope(node)
+
+scopeComputers[IdStructParameter] = proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode] =
+  debugf"compute scope for struct parameter {node}"
+  return ctx.computeDefaultScope(node)
+
+scopeComputers[IdParameterDecl] = proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode] =
+  debugf"compute scope for parameter {node}"
+  return ctx.computeDefaultScope(node)
+
 let baseLanguage* = newLanguage(IdBaseLanguage, @[
   namedInterface, declarationInterface,
 
   # typeClass,
-  stringTypeClass, intTypeClass, voidTypeClass, functionTypeClass, structTypeClass, pointerTypeClass,
+  metaTypeClass, stringTypeClass, intTypeClass, voidTypeClass, functionTypeClass, structTypeClass, pointerTypeClass,
 
   expressionClass, binaryExpressionClass, unaryExpressionClass, emptyLineClass,
   numberLiteralClass, stringLiteralClass, boolLiteralClass, nodeReferenceClass, emptyClass, constDeclClass, letDeclClass, varDeclClass, nodeListClass, blockClass, callClass, thenCaseClass, ifClass, whileClass,
@@ -1038,9 +1119,9 @@ let baseLanguage* = newLanguage(IdBaseLanguage, @[
   negateExpressionClass, notExpressionClass,
   appendStringExpressionClass, printExpressionClass, buildExpressionClass, allocateClass,
 
-  structDefinitionClass, structMemberDefinitionClass, structMemberAccessClass,
+  structDefinitionClass, structMemberDefinitionClass, structParameterClass, structMemberAccessClass,
   addressOfClass, derefClass, arrayAccessClass,
-], builder, typeComputers, scopeComputers)
+], builder, typeComputers, valueComputers, scopeComputers)
 
 let baseModel* = block:
   var model = newModel(newId().ModelId)
@@ -1048,6 +1129,7 @@ let baseModel* = block:
   model.addRootNode(intTypeInstance)
   model.addRootNode(stringTypeInstance)
   model.addRootNode(voidTypeInstance)
+  model.addRootNode(metaTypeInstance)
 
   model
 
