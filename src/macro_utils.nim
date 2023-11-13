@@ -112,6 +112,12 @@ macro defineBitFlag*(body: untyped): untyped =
 
     func `==`*(a, b: flagsName): bool {.borrow.}
 
+    func `??`*(a: bool, b: flagName): flagsName {.inline.} =
+      if a:
+        (1.uint32 shl b.uint32).flagsName
+      else:
+        0.flagsName
+
     macro `&`*(flags: static set[flagName]): flagsName =
       var res = 0.flagsName
       for flag in flags:

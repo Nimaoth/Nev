@@ -974,7 +974,7 @@ proc genNodeAllocate(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destin
     log lvlError, fmt"No type: {node}"
     return
 
-  let typ = self.ctx.computeType(typeNode) # todo: replace with get value once implemented
+  let typ = self.ctx.getValue(typeNode)
   let (size, align) = self.getTypeAttributes(typ)
 
   self.instr(I32Const, i32Const: size)

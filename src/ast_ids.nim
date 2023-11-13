@@ -115,6 +115,10 @@ let IdIntegerLiteral* = "62e533a1564d29f77293455a".parseId.ClassId
 
 let IdStructDefinition* = "654fbb281446e19b38225201".parseId.ClassId
 let IdStructDefinitionMembers* = "654fbb281446e19b38225202".parseId.RoleId
+let IdStructDefinitionParameter* = "654fbb281446e19b38225207".parseId.RoleId
+
+let IdStructParameter* = "654fbb281446e19b38225217".parseId.ClassId
+let IdStructParameterType* = "654fbb281446e19b38225215".parseId.RoleId
 
 let IdStructMemberDefinition* = "654fbb281446e19b38225203".parseId.ClassId
 let IdStructMemberDefinitionType* = "654fbb281446e19b38225205".parseId.RoleId
@@ -145,10 +149,6 @@ let IdAllocateCount* = "654fbb281446e19b38225213".parseId.RoleId
 
 # new ids
 
-let Id654fbb281446e19b38225214* = "654fbb281446e19b38225214".parseId
-let Id654fbb281446e19b38225215* = "654fbb281446e19b38225215".parseId
-let Id654fbb281446e19b38225216* = "654fbb281446e19b38225216".parseId
-let Id654fbb281446e19b38225217* = "654fbb281446e19b38225217".parseId
 let Id654fbb281446e19b38225218* = "654fbb281446e19b38225218".parseId
 let Id654fbb281446e19b38225219* = "654fbb281446e19b38225219".parseId
 let Id654fbb281446e19b3822521a* = "654fbb281446e19b3822521a".parseId

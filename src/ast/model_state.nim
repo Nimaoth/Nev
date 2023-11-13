@@ -29,6 +29,7 @@ CreateContext ModelState:
   # proc recoverValue(ctx: ModelState, key: Dependency) {.recover("Value").}
 
   proc computeTypeImpl(ctx: ModelState, node: AstNode): AstNode {.query("Type").}
+  proc computeValueImpl(ctx: ModelState, node: AstNode): AstNode {.query("Value").}
   proc computeScopeImpl(ctx: ModelState, node: AstNode): seq[AstNode] {.query("Scope").}
   # proc computeValueImpl(ctx: ModelState, node: AstNode): Value {.query("Value").}
 
@@ -46,6 +47,9 @@ method computeType*(self: ModelComputationContext, node: AstNode): AstNode =
 method getScope*(self: ModelComputationContext, node: AstNode): seq[AstNode] =
   return self.state.computeScope(node)
 
+method getValue*(self: ModelComputationContext, node: AstNode): AstNode =
+  return self.state.computeValue(node)
+
 method dependOn*(self: ModelComputationContext, node: AstNode) =
   self.state.recordDependency(node.getItem)
 
@@ -60,10 +64,10 @@ template logIf(condition: bool, message: string, logResult: bool) =
   if logQuery: inc currentIndent, 1
   defer:
     if logQuery: dec currentIndent, 1
-  if logQuery: echo repeat2("| ", currentIndent - 1), message
+  if logQuery: log lvlDebug, repeat2("| ", currentIndent - 1) & message
   defer:
     if logQuery and logResult:
-      echo repeat2("| ", currentIndent) & "-> " & $result
+      log lvlDebug, repeat2("| ", currentIndent) & "-> " & $result
 
 template enableDiagnostics(key: untyped): untyped =
   # Delete old diagnostics
@@ -202,6 +206,27 @@ proc computeTypeImpl(ctx: ModelState, node: AstNode): AstNode =
   let typ = typeComputer(ctx.computationContextOwner.ModelComputationContext, node)
 
   return typ
+
+proc computeValueImpl(ctx: ModelState, node: AstNode): AstNode =
+  logIf(ctx.enableLogging or ctx.enableQueryLogging, "computeValueImpl " & $node, true)
+
+  let key: Dependency = ctx.getTypeKey(node.getItem)
+  enableDiagnostics(key)
+
+  let language = node.language
+  if language.isNil:
+    addDiagnostic(node.id, fmt"Node has no language: {node}")
+    return nil
+
+  if not language.valueComputers.contains(node.class):
+    addDiagnostic(node.id, fmt"Node has no value computer: {node}")
+    return nil
+
+  let valueComputer = language.valueComputers[node.class]
+
+  let value = valueComputer(ctx.computationContextOwner.ModelComputationContext, node)
+
+  return value
 
 proc computeScopeImpl(ctx: ModelState, node: AstNode): seq[AstNode] =
   logIf(ctx.enableLogging or ctx.enableQueryLogging, "computeScopeImpl " & $node, true)

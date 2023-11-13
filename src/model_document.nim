@@ -400,6 +400,10 @@ proc updateSelection*(self: ModelDocumentEditor, cursor: CellCursor, extend: boo
   else:
     self.selection = (cursor, cursor)
 
+  let typ = self.document.ctx.computeType(self.selection.last.node)
+  let value = self.document.ctx.getValue(self.selection.last.node)
+  log lvlWarn, &"selected:\n  type: {`$`(typ, true)}\n  value: {`$`(value, true)}"
+
 proc `cursor=`*(self: ModelDocumentEditor, cursor: CellCursor) =
   self.selection = (cursor, cursor)
 
@@ -491,6 +495,7 @@ proc getSubstitutionTarget(cell: Cell): (AstNode, RoleId, int) =
 proc getSubstitutionsForClass(self: ModelDocumentEditor, targetCell: Cell, class: NodeClass, addCompletion: proc(c: ModelCompletion): void): bool =
   # if it's a reference and there is only one reference role, then we can substitute the reference using the scope
   if class.references.len == 1 and class.children.len == 0 and class.properties.len == 0:
+    # debugf"getSubstitutionsForClass {class.name}"
     let desc = class.references[0]
     let language = self.document.model.getLanguageForClass(desc.class)
     let refClass = language.resolveClass(desc.class)
@@ -509,6 +514,7 @@ proc getSubstitutionsForClass(self: ModelDocumentEditor, targetCell: Cell, class
     #     result = true
 
     let scope = self.document.ctx.getScope(targetCell.node)
+    # debugf"getScope {parent}, {targetCell.node}"
     for decl in scope:
       if decl.nodeClass.isSubclassOf(refClass.id):
         let name = if decl.property(IdINamedName).getSome(name): name.stringValue else: $decl.id
@@ -517,6 +523,7 @@ proc getSubstitutionsForClass(self: ModelDocumentEditor, targetCell: Cell, class
 
   if class.substitutionProperty.getSome(propertyRole):
     let (parent, role, index) = targetCell.getSubstitutionTarget()
+    # debugf"substitutionProperty {propertyRole} for {class.name}"
     addCompletion ModelCompletion(kind: ModelCompletionKind.SubstituteClass, name: class.alias, class: class, parent: parent, role: role, index: index, alwaysApply: true, property: propertyRole.some)
     result = true
 
@@ -572,7 +579,7 @@ proc updateCompletions(self: ModelDocumentEditor) =
   let parentClass = parent.nodeClass
   if parentClass.nodeChildDescription(role).getSome(childDesc): # add class substitutions
     let slotClass = model.resolveClass(childDesc.class)
-    debugf"updateCompletions {node}, {node.model.isNotNil}, {slotClass.name}"
+    # debugf"updateCompletions child {parent}, {node}, {node.model.isNotNil}, {slotClass.name}"
 
     model.forEachChildClass slotClass, proc(childClass: NodeClass) =
       if self.getSubstitutionsForClass(targetCell, childClass, (c) -> void => self.unfilteredCompletions.add(c)):
@@ -585,7 +592,7 @@ proc updateCompletions(self: ModelDocumentEditor) =
       self.unfilteredCompletions.add ModelCompletion(kind: ModelCompletionKind.SubstituteClass, name: name, class: childClass, parent: parent, role: role, index: index)
   elif parentClass.nodeReferenceDescription(role).getSome(desc):
     let slotClass = model.resolveClass(desc.class)
-    debugf"updateCompletions {node}, {node.model.isNotNil}, {slotClass.name}"
+    # debugf"updateCompletions ref {parent}, {node}, {node.model.isNotNil}, {slotClass.name}"
     let scope = self.document.ctx.getScope(node)
     for decl in scope:
       if decl.nodeClass.isSubclassOf(slotClass.id):
@@ -2398,7 +2405,6 @@ proc applyTransformation(self: ModelDocumentEditor, node: AstNode, transformatio
 
     if transformation.wrapCursorTargetRole.isSome:
       if self.nodeCellMap.cell(newNode).getFirstLeaf(self.nodeCellMap).getSelfOrNextLeafWhere(self.nodeCellMap, proc(c: Cell): bool =
-          echo c
           isVisible(c) and c.role == transformation.wrapCursorTargetRole
         ).getSome(candidate):
         return self.nodeCellMap.toCursor(candidate, true)
