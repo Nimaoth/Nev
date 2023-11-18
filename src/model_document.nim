@@ -524,6 +524,7 @@ proc getSubstitutionsForClass(self: ModelDocumentEditor, targetCell: Cell, class
     let scope = self.document.ctx.getScope(targetCell.node)
     # debugf"getScope {parent}, {targetCell.node}"
     for decl in scope:
+      # debugf"scope: {decl}, {decl.nodeClass.isSubclassOf(refClass.id)}"
       if decl.nodeClass.isSubclassOf(refClass.id):
         let name = if decl.property(IdINamedName).getSome(name): name.stringValue else: $decl.id
         addCompletion ModelCompletion(kind: ModelCompletionKind.SubstituteReference, name: name, class: class, parent: parent, role: role, index: index, referenceRole: desc.id, referenceTarget: decl)
@@ -603,6 +604,7 @@ proc updateCompletions(self: ModelDocumentEditor) =
     # debugf"updateCompletions ref {parent}, {node}, {node.model.isNotNil}, {slotClass.name}"
     let scope = self.document.ctx.getScope(node)
     for decl in scope:
+      # debugf"scope: {decl}, {decl.nodeClass.name}, {decl.nodeClass.isSubclassOf(slotClass.id)}"
       if decl.nodeClass.isSubclassOf(slotClass.id):
         let name = if decl.property(IdINamedName).getSome(name): name.stringValue else: $decl.id
         self.unfilteredCompletions.add ModelCompletion(kind: ModelCompletionKind.ChangeReference, name: name, class: slotClass, parent: node, role: role, index: index, changeReferenceTarget: decl)
