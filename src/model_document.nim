@@ -400,9 +400,16 @@ proc updateSelection*(self: ModelDocumentEditor, cursor: CellCursor, extend: boo
   else:
     self.selection = (cursor, cursor)
 
-  let typ = self.document.ctx.computeType(self.selection.last.node)
-  let value = self.document.ctx.getValue(self.selection.last.node)
-  log lvlWarn, &"selected:\n  type: {`$`(typ, true)}\n  value: {`$`(value, true)}"
+  # debugf"updateSelection to {self.selection}"
+
+  try:
+    let typ = self.document.ctx.computeType(self.selection.last.node)
+    let value = self.document.ctx.getValue(self.selection.last.node)
+    log lvlWarn, &"selected:\n  type: {`$`(typ, true)}\n  value: {`$`(value, true)}"
+  except CatchableError:
+    log lvlError, &"Failet to get type and value of selected: {getCurrentExceptionMsg()}"
+    log lvlError, getCurrentException().getStackTrace()
+    raise
 
 proc `cursor=`*(self: ModelDocumentEditor, cursor: CellCursor) =
   self.selection = (cursor, cursor)
@@ -475,6 +482,7 @@ proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
 
   except CatchableError:
     log lvlError, fmt"Failed to load model source file '{self.filename}': {getCurrentExceptionMsg()}"
+    log lvlError, getCurrentException().getStackTrace()
 
   self.onModelChanged.invoke (self)
 

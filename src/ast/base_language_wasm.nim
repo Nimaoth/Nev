@@ -320,7 +320,7 @@ proc createStackLocal(self: BaseLanguageWasmCompiler, id: NodeId, typ: AstNode):
   result = self.currentStackLocalsSize
 
   self.currentStackLocals.add(self.currentStackLocalsSize)
-  debugf"createStackLocal size {size}, alignment {alignment}, offset {self.currentStackLocalsSize}"
+  # debugf"createStackLocal size {size}, alignment {alignment}, offset {self.currentStackLocalsSize}"
 
   self.localIndices[id] = LocalVariable(kind: Stack, stackOffset: self.currentStackLocalsSize)
 
@@ -357,14 +357,14 @@ proc genDup(self: BaseLanguageWasmCompiler, typ: AstNode) =
   self.instr(LocalGet, localIdx: tempIdx)
 
 proc storeInstr(self: BaseLanguageWasmCompiler, op: WasmInstrKind, offset: uint32, align: uint32) =
-  debugf"storeInstr {op}, offset {offset}, align {align}"
+  # debugf"storeInstr {op}, offset {offset}, align {align}"
   assert op in {I32Store, I64Store, F32Store, F64Store, I32Store8, I64Store8, I32Store16, I64Store16, I64Store32}
   var instr = WasmInstr(kind: op)
   instr.memArg = WasmMemArg(offset: offset, align: align)
   self.currentExpr.instr.add instr
 
 proc loadInstr(self: BaseLanguageWasmCompiler, op: WasmInstrKind, offset: uint32, align: uint32) =
-  debugf"loadInstr {op}, offset {offset}, align {align}"
+  # debugf"loadInstr {op}, offset {offset}, align {align}"
   assert op in {I32Load, I64Load, F32Load, F64Load, I32Load8U, I32Load8S, I64Load8U, I64Load8S, I32Load16U, I32Load16S, I64Load16U, I64Load16S, I64Load32U, I64Load32S}
   var instr = WasmInstr(kind: op)
   instr.memArg = WasmMemArg(offset: offset, align: align)
@@ -879,7 +879,13 @@ proc genNodeStructMemberAccessExpression(self: BaseLanguageWasmCompiler, node: A
     let memberType = self.ctx.computeType(memberDefinition)
     let (memberSize, memberAlign) = self.getTypeAttributes(memberType)
     offset = align(offset, memberAlign)
-    if member == memberDefinition:
+
+    let originalMemberId = if memberDefinition.hasReference(IdStructTypeGenericMember):
+      memberDefinition.reference(IdStructTypeGenericMember)
+    else:
+      memberDefinition.id
+
+    if member.id == originalMemberId:
       size = memberSize
       align = memberAlign
       break

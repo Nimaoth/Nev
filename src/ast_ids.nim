@@ -119,6 +119,7 @@ let IdStructDefinitionParameter* = "654fbb281446e19b38225207".parseId.RoleId
 
 let IdStructParameter* = "654fbb281446e19b38225217".parseId.ClassId
 let IdStructParameterType* = "654fbb281446e19b38225215".parseId.RoleId
+let IdStructParameterValue* = "654fbb281446e19b38225218".parseId.RoleId
 
 let IdStructMemberDefinition* = "654fbb281446e19b38225203".parseId.ClassId
 let IdStructMemberDefinitionType* = "654fbb281446e19b38225205".parseId.RoleId
@@ -126,6 +127,8 @@ let IdStructMemberDefinitionValue* = "654fbb281446e19b38225206".parseId.RoleId
 
 let IdStructType* = "654fbb281446e19b38225204".parseId.ClassId
 let IdStructTypeMemberTypes* = "654fbb281446e19b38225207".parseId.RoleId
+let IdStructTypeGenericMember* = "654fbb281446e19b38225218".parseId.RoleId
+let IdStructTypeGenericBase* = "654fbb281446e19b38225219".parseId.RoleId
 
 let IdStructMemberAccess* = "654fbb281446e19b3822520a".parseId.ClassId
 let IdStructMemberAccessMember* = "654fbb281446e19b38225208".parseId.RoleId
@@ -149,7 +152,6 @@ let IdAllocateCount* = "654fbb281446e19b38225213".parseId.RoleId
 
 # new ids
 
-let Id654fbb281446e19b38225218* = "654fbb281446e19b38225218".parseId
 let Id654fbb281446e19b38225219* = "654fbb281446e19b38225219".parseId
 let Id654fbb281446e19b3822521a* = "654fbb281446e19b3822521a".parseId
 let Id654fbb281446e19b3822521b* = "654fbb281446e19b3822521b".parseId

@@ -170,6 +170,7 @@ type
   Model* = ref object
     id {.getter.}: ModelId
     rootNodes {.getter.}: seq[AstNode]
+    tempNodes {.getter.}: seq[AstNode]
     languages {.getter.}: seq[Language]
     importedModels {.getter.}: seq[Model]
     classesToLanguages {.getter.}: Table[ClassId, Language]
@@ -318,10 +319,23 @@ proc addLanguage*(self: Model, language: Language) =
 
 proc addRootNode*(self: Model, node: AstNode) =
   self.rootNodes.add node
-  # node.forEach proc(n: AstNode) =
   node.forEach2 n:
     n.model = self
     self.nodes[n.id] = n
+
+proc addTempNode*(self: Model, node: AstNode) =
+  self.tempNodes.add node
+  node.forEach2 n:
+    n.model = self
+    self.nodes[n.id] = n
+
+proc removeTempNode*(self: Model, node: AstNode) =
+  let i = self.tempNodes.find(node)
+  if i >= 0:
+    self.tempNodes.del i
+  node.forEach2 n:
+    n.model = nil
+    self.nodes.del n.id
 
 proc resolveReference*(self: Model, id: NodeId): Option[AstNode] =
   if self.nodes.contains(id):
@@ -845,6 +859,33 @@ proc addBuilder*(self: CellBuilder, other: CellBuilder) =
       self.addBuilderFor(pair[0], builder.builderId, builder.flags, builder.impl)
   for pair in other.preferredBuilders.pairs:
     self.preferredBuilders[pair[0]] = pair[1]
+
+proc clone*(node: AstNode, idMap: var Table[NodeId, NodeId]): AstNode =
+  let newNodeId = newId().NodeId
+  result = newAstNode(node.nodeClass, newNodeId.some)
+  idMap[node.id] = newNodeId
+
+  result.references = node.references
+  result.properties = node.properties
+
+  for children in node.childLists.mitems:
+    for child in children.nodes:
+      result.add(children.role, child.clone(idMap))
+
+proc replaceReferences*(node: AstNode, idMap: var Table[NodeId, NodeId]) =
+  for role in node.references.mitems:
+    if idMap.contains(role.node):
+      role.node = idMap[role.node]
+
+  for children in node.childLists.mitems:
+    for child in children.nodes:
+      child.replaceReferences(idMap)
+
+proc cloneAndMapIds*(node: AstNode): AstNode =
+  var idMap = initTable[NodeId, NodeId]()
+  let newNode = node.clone(idMap)
+  newNode.replaceReferences(idMap)
+  return newNode
 
 method dump*(self: Cell, recurse: bool = false): string {.base.} = discard
 method getChildAt*(self: Cell, index: int, clamp: bool): Option[Cell] {.base.} = Cell.none
