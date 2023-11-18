@@ -293,7 +293,6 @@ proc getOrCreateWasmFunc(self: BaseLanguageWasmCompiler, node: AstNode, exportNa
 
     for _, c in node.children(IdFunctionDefinitionReturnType):
       let typ = self.ctx.getValue(c)
-      echo "return type: ", typ
       if self.shouldPassAsOutParamater(typ):
         inputs.add WasmValueType.I32
       elif typ.class != IdVoid:
@@ -301,10 +300,8 @@ proc getOrCreateWasmFunc(self: BaseLanguageWasmCompiler, node: AstNode, exportNa
 
     for _, c in node.children(IdFunctionDefinitionParameters):
       let typ = self.ctx.computeType(c)
-      echo typ
       if typ.class == IdType:
         continue
-      echo typ.toWasmValueType.get
       inputs.add typ.toWasmValueType.get
 
     let funcIdx = self.builder.addFunction(inputs, outputs, exportName=exportName)
@@ -321,6 +318,7 @@ proc getTypeMemInstructions(self: BaseLanguageWasmCompiler, typ: AstNode): tuple
   if typ.class == IdString:
     return (I64Load, I64Store)
   log lvlError, fmt"getTypeMemInstructions: Type not implemented: {`$`(typ, true)}"
+  assert false
   return (Nop, Nop)
 
 proc createLocal(self: BaseLanguageWasmCompiler, id: NodeId, typ: AstNode, name: string): WasmLocalIdx =
