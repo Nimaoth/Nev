@@ -14,8 +14,8 @@ let intTypeClass* = newNodeClass(IdInt, "IntType", alias="int", base=expressionC
 let voidTypeClass* = newNodeClass(IdVoid, "VoidType", alias="void", base=expressionClass)
 let functionTypeClass* = newNodeClass(IdFunctionType, "FunctionType", base=expressionClass,
   children=[
-    NodeChildDescription(id: IdFunctionTypeReturnType, role: "returnType", class: expressionClass.id, count: ChildCount.One),
-    NodeChildDescription(id: IdFunctionTypeParameterTypes, role: "parameterTypes", class: expressionClass.id, count: ChildCount.ZeroOrMore)])
+    NodeChildDescription(id: IdFunctionTypeParameterTypes, role: "parameterTypes", class: expressionClass.id, count: ChildCount.ZeroOrMore),
+    NodeChildDescription(id: IdFunctionTypeReturnType, role: "returnType", class: expressionClass.id, count: ChildCount.One)])
 let structTypeClass* = newNodeClass(IdStructType, "StructType", base=expressionClass,
   children=[
     NodeChildDescription(id: IdStructTypeMemberTypes, role: "memberTypes", class: expressionClass.id, count: ChildCount.ZeroOrMore)])
@@ -164,7 +164,7 @@ let structDefinitionClass* = newNodeClass(IdStructDefinition, "StructDefinition"
     NodeChildDescription(id: IdStructDefinitionMembers, role: "members", class: structMemberDefinitionClass.id, count: ChildCount.ZeroOrMore)])
 
 let structMemberAccessClass* = newNodeClass(IdStructMemberAccess, "StructMemberAccess", base=expressionClass,
-  references=[NodeReferenceDescription(id: IdStructMemberAccessMember, role: "member", class: structMemberDefinitionClass.id)],
+  references=[NodeReferenceDescription(id: IdStructMemberAccessMember, role: "member", class: IdINamed)],
   children=[NodeChildDescription(id: IdStructMemberAccessValue, role: "value", class: expressionClass.id, count: ChildCount.One)])
 
 let assignmentClass* = newNodeClass(IdAssignment, "Assignment", alias="=", base=expressionClass, children=[
@@ -681,6 +681,10 @@ valueComputers[boolLiteralClass.id] = proc(ctx: ModelComputationContextBase, nod
   # debugf"compute value for bool literal {node}"
   return node
 
+typeComputers[emptyLineClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  # debugf"compute type for empty line {node}"
+  return voidTypeInstance
+
 # declarations
 typeComputers[letDeclClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for let decl {node}"
@@ -713,11 +717,17 @@ valueComputers[constDeclClass.id] = proc(ctx: ModelComputationContextBase, node:
   return voidTypeInstance
 
 typeComputers[parameterDeclClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
-  # debugf"compute type for const decl {node}"
+  # debugf"compute type for parameter decl {node}"
   if node.firstChild(IdParameterDeclType).getSome(typeNode):
     return ctx.getValue(typeNode)
   if node.firstChild(IdParameterDeclValue).getSome(valueNode):
     return ctx.computeType(valueNode)
+  return voidTypeInstance
+
+valueComputers[parameterDeclClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  # debugf"compute value for parameter decl {node}"
+  if node.firstChild(IdParameterDeclValue).getSome(valueNode):
+    return ctx.getValue(valueNode)
   return voidTypeInstance
 
 # control flow
@@ -780,6 +790,10 @@ typeComputers[functionDefinitionClass.id] = proc(ctx: ModelComputationContextBas
   # debugf"computed function type: {`$`(functionType, true)}"
 
   return functionType
+
+valueComputers[functionDefinitionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  # debugf"compute value for function definition {node}"
+  return node
 
 typeComputers[assignmentClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for assignment {node}"
@@ -895,17 +909,50 @@ typeComputers[notExpressionClass.id] = proc(ctx: ModelComputationContextBase, no
   # debugf"compute type for not {node}"
   return intTypeInstance
 
+proc isGeneric*(function: AstNode, ctx: ModelComputationContextBase): bool =
+  result = false
+  for _, param in function.children(IdFunctionDefinitionParameters):
+    let paramType = ctx.computeType(param)
+    if paramType.isNil:
+      return true
+
+    # debugf"param: {param}, type: {paramType}"
+    if paramType.class == IdType:
+      return true
+
+proc instantiateFunction*(ctx: ModelComputationContextBase, genericFunction: AstNode, arguments: openArray[AstNode]): AstNode =
+  var concreteFunction = genericFunction.cloneAndMapIds()
+
+  let parameters = concreteFunction.children(IdFunctionDefinitionParameters)
+  for i, arg in arguments:
+    let value = ctx.getValue(arg)
+    if i < parameters.len:
+      # todo: replace instead of add
+
+      if value.isNotNil:
+        parameters[i].add(IdParameterDeclValue, value.cloneAndMapIds())
+      else:
+        parameters[i].add(IdParameterDeclValue, nil)
+
+  # todo
+  genericFunction.model.addTempNode(concreteFunction)
+  ctx.ModelComputationContext.state.insertNode(concreteFunction)
+  # debugf"concrete function {`$`(concreteFunction, true)}"
+
+  return concreteFunction
+
 # calls
 typeComputers[callClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for call {node}"
   # defer:
-  #   debugf"result {result} for {node}"
+  #   debugf"result type {result} for {node}"
 
   let funcExprNode = node.firstChild(IdCallFunction).getOr:
     log lvlError, fmt"No function specified for call {node}"
     return voidTypeInstance
 
   var targetType: AstNode
+  var targetValue: AstNode
   if funcExprNode.class == IdNodeReference:
     let funcDeclNode = funcExprNode.resolveReference(IdNodeReferenceTarget).getOr:
       log lvlError, fmt"Function not found: {funcExprNode}"
@@ -917,14 +964,30 @@ typeComputers[callClass.id] = proc(ctx: ModelComputationContextBase, node: AstNo
         return voidTypeInstance
 
       targetType = ctx.computeType(funcDefNode)
+      targetValue = ctx.getValue(funcDefNode)
 
     else: # not a const decl, so call indirect
       targetType = ctx.computeType(funcExprNode)
+      targetValue = ctx.getValue(funcExprNode)
 
   else: # not a node reference
     targetType = ctx.computeType(funcExprNode)
+    targetValue = ctx.getValue(funcExprNode)
+
+  # debugf"type targetType: {targetType}"
+  # debugf"type targetValue: {targetValue}"
 
   if targetType.class == IdFunctionType:
+    if targetValue.isNotNil and targetValue.class == IdFunctionDefinition:
+      if targetValue.isGeneric(ctx):
+        let concreteFunction = ctx.instantiateFunction(targetValue, node.children(IdCallArguments))
+        let concreteFunctionType = ctx.computeType(concreteFunction)
+        if concreteFunctionType.firstChild(IdFunctionTypeReturnType).getSome(returnType):
+          return returnType
+
+        log lvlError, fmt"Function type expected, got {targetType}"
+        return voidTypeInstance
+
     if targetType.firstChild(IdFunctionTypeReturnType).getSome(returnType):
       return returnType
 
@@ -940,7 +1003,7 @@ typeComputers[callClass.id] = proc(ctx: ModelComputationContextBase, node: AstNo
 valueComputers[callClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute value for call {node}"
   # defer:
-  #   debugf"result {result} for {node}"
+  #   debugf"result value {result} for {node}"
 
   let funcExprNode = node.firstChild(IdCallFunction).getOr:
     log lvlError, fmt"No function specified for call {node}"
@@ -972,12 +1035,20 @@ valueComputers[callClass.id] = proc(ctx: ModelComputationContextBase, node: AstN
   if targetType.class == IdFunctionType:
     return nil
 
+  # debugf"value targetType: {targetType}"
+  # debugf"value targetValue: {targetValue}"
+
   if targetType.class == IdType and targetValue.class == IdStructDefinition:
     var parameters: seq[AstNode]
     for _, arg in node.children(IdCallArguments):
-      parameters.add ctx.getValue(arg).cloneAndMapIds()
+      let value = ctx.getValue(arg)
+      if value.isNotNil:
+        parameters.add value.cloneAndMapIds()
+      else:
+        parameters.add nil
 
     if parameters.len != targetValue.childCount(IdStructDefinitionParameter):
+      # debugf"wrong number of parameters"
       return voidTypeInstance
 
     var concreteType = targetValue.cloneAndMapIds()
@@ -1058,7 +1129,7 @@ typeComputers[structMemberAccessClass.id] = proc(ctx: ModelComputationContextBas
 
   let structType = ctx.computeType(valueNode)
   # echo structType
-  var isGeneric = structType.hasReference(IdStructTypeGenericBase)
+  let isGeneric = structType.hasReference(IdStructTypeGenericBase)
 
   if isGeneric:
     var genericInstanceMemberNode: AstNode = nil
@@ -1078,7 +1149,7 @@ typeComputers[structMemberAccessClass.id] = proc(ctx: ModelComputationContextBas
     return ctx.computeType(memberNode)
 
 typeComputers[structMemberDefinitionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
-  # debugf"compute scope for struct member definition {node}"
+  # debugf"compute type for struct member definition {node}"
 
   if node.firstChild(IdStructMemberDefinitionType).getSome(typeNode):
     return ctx.getValue(typeNode)
@@ -1086,7 +1157,7 @@ typeComputers[structMemberDefinitionClass.id] = proc(ctx: ModelComputationContex
   return voidTypeInstance
 
 typeComputers[IdAllocate] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
-  # debugf"compute scope for allocate {node}"
+  # debugf"compute type for allocate {node}"
 
   if node.firstChild(IdAllocateType).getSome(typeNode):
     let targetType = ctx.getValue(typeNode)
@@ -1100,7 +1171,7 @@ typeComputers[IdAllocate] = proc(ctx: ModelComputationContextBase, node: AstNode
   return voidTypeInstance
 
 typeComputers[IdAddressOf] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
-  # debugf"compute scope for address of {node}"
+  # debugf"compute type for address of {node}"
 
   if node.firstChild(IdAddressOfValue).getSome(valueNode):
     let targetType = ctx.computeType(valueNode)
@@ -1114,7 +1185,7 @@ typeComputers[IdAddressOf] = proc(ctx: ModelComputationContextBase, node: AstNod
   return voidTypeInstance
 
 typeComputers[IdDeref] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
-  # debugf"compute scope for deref {node}"
+  # debugf"compute type for deref {node}"
 
   if node.firstChild(IdDerefValue).getSome(typeNode):
     let pointerType = ctx.computeType(typeNode)
@@ -1124,7 +1195,7 @@ typeComputers[IdDeref] = proc(ctx: ModelComputationContextBase, node: AstNode): 
   return voidTypeInstance
 
 typeComputers[IdArrayAccess] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
-  # debugf"compute scope for deref {node}"
+  # debugf"compute type for deref {node}"
 
   if node.firstChild(IdArrayAccessValue).getSome(typeNode):
     let pointerType = ctx.computeType(typeNode)
@@ -1141,7 +1212,12 @@ scopeComputers[structMemberAccessClass.id] = proc(ctx: ModelComputationContextBa
     return @[]
 
   let valueType = ctx.computeType(valueNode)
-  if valueType.class != IdStructDefinition:
+  if valueType.class == IdType:
+    let actualType = ctx.getValue(valueNode)
+    echo actualType
+    if actualType.class == IdStructDefinition:
+      return actualType.children(IdStructDefinitionParameter)
+
     return @[]
 
   let genericType = valueType.reference(IdStructTypeGenericBase)
