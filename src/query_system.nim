@@ -1,4 +1,4 @@
-import std/[tables, sets, strutils, hashes, options, macros, strformat]
+import std/[tables, sets, strutils, hashes, options, macros, strformat, genasts]
 import timer
 import fusion/matching
 import ast, id, util, custom_logger
@@ -63,8 +63,10 @@ when defined(js):
     {.emit: ["for (var i in ", iter, ") {", result, ".push(i);}"].} #"""
 
 else:
-  type Cache[K, V] = LruCache[K, V]
-  proc newCache[K, V](capacity: int): Cache[K, V] = newLRUCache[K, V](capacity)
+  # type Cache[K, V] = LruCache[K, V]
+  # proc newCache[K, V](capacity: int): Cache[K, V] = newLRUCache[K, V](capacity)
+  type Cache[K, V] = Table[K, V]
+  proc newCache[K, V](capacity: int): Cache[K, V] = initTable[K, V](capacity)
 
 proc init[K, V](result: var Cache[K, V], capacity: int) =
   result = newCache[K, V](capacity)
@@ -161,6 +163,12 @@ proc getDependencies*(graph: DependencyGraph, key: Dependency): seq[Dependency] 
   if result.len == 0 and key.update != -1:
     result.add (key.item, -1)
 
+proc clearAll*(graph: DependencyGraph) =
+  graph.dependencies.clear()
+  graph.changed.clear()
+  graph.fingerprints.clear()
+  graph.verified.clear()
+
 proc clearEdges*(graph: DependencyGraph, key: Dependency) =
   graph.dependencies[key] = @[]
 
@@ -176,7 +184,7 @@ proc markGreen*(graph: DependencyGraph, key: Dependency) =
 
 proc markRed*(graph: DependencyGraph, key: Dependency, fingerprint: Fingerprint) =
   graph.verified[key] = graph.revision
-  graph.changed[key] = graph.revision
+  graph.changed[key] = graph.revision # todo: maybe instead of setting to graph.revision we can delete it from the table so save some memory
   graph.fingerprints[key] = fingerprint
 
 proc `$`*(graph: DependencyGraph): string =
@@ -350,6 +358,8 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     for member in customMembers:
       memberList.add nnkIdentDefs.newTree(member[0], member[1], newEmptyNode())
 
+  var queryCaches: seq[NimNode]
+
   # Add two members for each query
   # queryCache: Table[QueryInput, QueryOutput]
   # update: proc(item: ItemId): Fingerprint
@@ -360,8 +370,11 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     let key = queryArgType query
     let value = queryValueType query
 
+    let queryCacheName = ident("queryCache" & name)
+    queryCaches.add queryCacheName
+
     memberList.add nnkIdentDefs.newTree(
-      nnkPostfix.newTree(ident"*", ident("queryCache" & name)),
+      nnkPostfix.newTree(ident"*", queryCacheName),
       quote do: Cache[`key`, `value`],
       newEmptyNode()
     )
@@ -444,7 +457,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     queryInitializers.add quote do:
       `ctx`.`updateName` = proc (item: ItemId): Fingerprint =
         if not `ctx`.`items`.contains(item):
-          raise newException(Defect, "update" & `name` & "(" & $item & "): not in cache anymore")
+          raise newException(CatchableError, "update" & `name` & "(" & $item & "): not in cache anymore")
         `ctx`.`stats`.forcedCalls += 1
         let arg = `ctx`.`items`[item]
         let value: `value` = `queryFunction`(`ctx`, arg)
@@ -557,6 +570,32 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     for node in executionTimeResets:
       resetExecutionTimesFn[6].add node
     result.add resetExecutionTimesFn
+
+  # Add clearCache(ctx: Context) which clears all caches
+  block:
+    var ctx = genSym(nskParam, "ctx")
+    var clearCacheFunction = genAst(ctx, contextName):
+      proc clearCache*(ctx: contextName) =
+        ctx.depGraph.clearAll()
+
+    for decl in body:
+      if isInputDefinition(decl) or isDataDefinition(decl):
+        let name = inputName decl
+        let items = ident "items" & name.strVal
+        clearCacheFunction[6].add block:
+          genAst(ctx, items):
+            ctx.items.clear()
+
+      if decl.isQuery:
+        let name = queryName decl
+        let queryCache = ident "queryCache" & name
+        clearCacheFunction[6].add block:
+          genAst(ctx, queryCache):
+            ctx.queryCache.clear()
+
+    result.add clearCacheFunction
+
+    echo clearCacheFunction.repr
 
   # proc recordDependency(ctx: Context, item: ItemId, update: UpdateFunction)
   result.add quote do:
@@ -830,7 +869,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
               else:
                 if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "green, in cache, result: ", $ctx.`queryCache`[input]
               if not ctx.`queryCache`.contains(input):
-                raise newException(Defect, "compute" & `name` & "(" & $input & "): not in cache anymore")
+                raise newException(CatchableError, "compute" & `name` & "(" & $input & "): not in cache anymore")
               return ctx.`queryCache`[input]
 
             if color == Grey:
@@ -840,14 +879,14 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
                 if not `useFingerprinting`: ctx.depGraph.markRed(key, @[])
                 if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "result: ", $ctx.`queryCache`[input]
                 if not ctx.`queryCache`.contains(input):
-                  raise newException(Defect, "compute" & `name` & "(" & $input & "): not in cache anymore")
+                  raise newException(CatchableError, "compute" & `name` & "(" & $input & "): not in cache anymore")
                 return ctx.`queryCache`[input]
 
               if ctx.enableLogging: echo repeat2("| ", currentIndent), "grey, in cache"
               if ctx.tryMarkGreen(key) == Ok:
                 if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "green, result: ", $ctx.`queryCache`[input]
                 if not ctx.`queryCache`.contains(input):
-                  raise newException(Defect, "compute" & `name` & "(" & $input & "): not in cache anymore")
+                  raise newException(CatchableError, "compute" & `name` & "(" & $input & "): not in cache anymore")
                 return ctx.`queryCache`[input]
               else:
                 if ctx.enableLogging: echo repeat2("| ", currentIndent), "failed to mark green"
@@ -855,7 +894,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
                 if not `useFingerprinting`: ctx.depGraph.markRed(key, @[])
                 if ctx.enableLogging and ctx.`queryCache`.contains(input): echo repeat2("| ", currentIndent), "result: ", $ctx.`queryCache`[input]
                 if not ctx.`queryCache`.contains(input):
-                  raise newException(Defect, "compute" & `name` & "(" & $input & "): not in cache anymore")
+                  raise newException(CatchableError, "compute" & `name` & "(" & $input & "): not in cache anymore")
                 return ctx.`queryCache`[input]
 
             assert color == Red
@@ -863,7 +902,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
             if not ctx.`queryCache`.contains(input):
               ctx.force(key)
             if not ctx.`queryCache`.contains(input):
-              raise newException(Defect, "compute" & `name` & "(" & $input & "): not in cache anymore")
+              raise newException(CatchableError, "compute" & `name` & "(" & $input & "): not in cache anymore")
             return ctx.`queryCache`[input]
 
           except CatchableError:
@@ -898,7 +937,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
             ctx.force(key)
             if not ctx.`queryCache`.contains(input):
-              raise newException(Defect, "compute" & `name` & "(" & $input & "): not in cache anymore")
+              raise newException(CatchableError, "compute" & `name` & "(" & $input & "): not in cache anymore")
             return ctx.`queryCache`[input]
 
           except CatchableError:

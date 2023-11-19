@@ -2669,6 +2669,11 @@ proc clearModelCache*(self: ModelDocumentEditor) {.expose("editor.model").} =
       n.model = nil
   self.document.model.tempNodes.setLen 0
 
+  functionInstances.clear()
+
+  for rootNode in self.document.model.rootNodes:
+    self.document.ctx.state.insertNode(rootNode)
+
 proc findContainingFunction(node: AstNode): Option[AstNode] =
   if node.class == IdFunctionDefinition:
     return node.some
