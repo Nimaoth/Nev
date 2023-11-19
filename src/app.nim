@@ -1930,6 +1930,18 @@ addGlobalDispatchTable "editor", genDispatchTable("editor")
 proc handleAction(self: App, action: string, arg: string): bool =
   log(lvlInfo, "Action '$1 $2'" % [action, arg])
 
+  if action.startsWith("."): # active action
+    if self.currentView >= 0 and self.currentView < gEditor.views.len:
+      let editor = self.views[gEditor.currentView].editor
+      return case editor.handleAction(action[1..^1], arg)
+      of Handled:
+        true
+      else:
+        false
+
+    log lvlError, fmt"No current view"
+    return false
+
   var args = newJArray()
   try:
     for a in newStringStream(arg).parseJsonFragments():

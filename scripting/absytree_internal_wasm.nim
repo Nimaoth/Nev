@@ -243,6 +243,8 @@ proc editor_model_applySelectedCompletion_void_ModelDocumentEditor_impl(
     self: ModelDocumentEditor)  {.importc.}
 proc editor_model_printSelectionInfo_void_ModelDocumentEditor_impl(
     self: ModelDocumentEditor)  {.importc.}
+proc editor_model_clearModelCache_void_ModelDocumentEditor_impl(
+    self: ModelDocumentEditor)  {.importc.}
 proc editor_model_runSelectedFunction_void_ModelDocumentEditor_impl(
     self: ModelDocumentEditor)  {.importc.}
 proc popup_selector_accept_void_SelectorPopup_impl(self: SelectorPopup)  {.importc.}

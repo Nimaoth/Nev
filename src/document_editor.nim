@@ -66,6 +66,8 @@ method createWithDocument*(self: DocumentEditor, document: Document, configProvi
 
 method getDocument*(self: DocumentEditor): Document {.base.} = discard
 
+method handleAction*(self: DocumentEditor, action: string, arg: string): EventResponse {.base.} = discard
+
 method getEventHandlers*(self: DocumentEditor): seq[EventHandler] {.base.} =
   return @[]
 
