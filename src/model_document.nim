@@ -2,7 +2,7 @@ import std/[strformat, strutils, sugar, tables, options, json, streams, algorith
 import fusion/matching, bumpy, rect_utils, vmath
 import util, document, document_editor, text/text_document, events, id, ast_ids, scripting/expose, event, input, custom_async, myjsonutils, custom_unicode, delayed_task
 from scripting_api as api import nil
-import custom_logger, timer, array_buffer, config_provider, app_interface
+import custom_logger, timer, array_buffer, config_provider, app_interface, dispatch_tables
 import platform/[filesystem, platform]
 import workspaces/[workspace]
 import ast/[model, base_language, cells]
@@ -213,7 +213,6 @@ proc `$`(op: ModelOperation): string =
   if op.node != nil: result.add fmt", node = {op.node}"
   if op.parent != nil: result.add fmt", parent = {op.parent}, index = {op.idx}"
 
-proc handleAction(self: ModelDocumentEditor, action: string, arg: string): EventResponse
 proc rebuildCells*(self: ModelDocumentEditor)
 proc getTargetCell*(cursor: CellCursor, resolveCollection: bool = true): Option[Cell]
 proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool
@@ -2660,6 +2659,16 @@ proc printSelectionInfo*(self: ModelDocumentEditor) {.expose("editor.model").} =
     log lvlError, &"Failet to get type and value of selected: {getCurrentExceptionMsg()}"
     log lvlError, getCurrentException().getStackTrace()
 
+proc clearModelCache*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  log lvlInfo, fmt"Clearing model cache"
+  self.document.ctx.state.clearCache()
+  for node in self.document.model.tempNodes:
+    log lvlInfo, fmt"Deleting temporary node from model: {node}"
+    node.forEach2 n:
+      n.model.nodes.del n.id
+      n.model = nil
+  self.document.model.tempNodes.setLen 0
+
 proc findContainingFunction(node: AstNode): Option[AstNode] =
   if node.class == IdFunctionDefinition:
     return node.some
@@ -2742,8 +2751,9 @@ proc runSelectedFunction*(self: ModelDocumentEditor) {.expose("editor.model").} 
   asyncCheck runSelectedFunctionAsync(self)
 
 genDispatcher("editor.model")
+addActiveDispatchTable "editor.model", genDispatchTable("editor.model")
 
-proc handleAction(self: ModelDocumentEditor, action: string, arg: string): EventResponse =
+method handleAction*(self: ModelDocumentEditor, action: string, arg: string): EventResponse =
   # log lvlInfo, fmt"[modeleditor]: Handle action {action}, '{arg}'"
   # defer:
   #   log lvlDebug, &"line: {self.cursor.targetCell.line}, cursor: {self.cursor},\ncell: {self.cursor.cell.dump()}\ntargetCell: {self.cursor.targetCell.dump()}"

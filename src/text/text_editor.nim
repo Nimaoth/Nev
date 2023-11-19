@@ -90,7 +90,6 @@ template noSelectionHistory(self, body: untyped): untyped =
     body
 
 proc newTextEditor*(document: TextDocument, app: AppInterface, configProvider: ConfigProvider): TextDocumentEditor
-proc handleAction(self: TextDocumentEditor, action: string, arg: string): EventResponse
 proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): EventResponse
 proc handleInput(self: TextDocumentEditor, input: string): EventResponse
 proc showCompletionWindow(self: TextDocumentEditor)
@@ -1518,7 +1517,7 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
 
   return Ignored
 
-proc handleAction(self: TextDocumentEditor, action: string, arg: string): EventResponse =
+method handleAction*(self: TextDocumentEditor, action: string, arg: string): EventResponse =
   # debugf "handleAction {action}, {arg}"
   var args = newJArray()
   try:

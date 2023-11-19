@@ -612,6 +612,20 @@ proc printSelectionInfo*(self: ModelDocumentEditor) =
       argsJsonString.cstring)
 
 
+proc editor_model_clearModelCache_void_ModelDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc clearModelCache*(self: ModelDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when ModelDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_model_clearModelCache_void_ModelDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_model_runSelectedFunction_void_ModelDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
 proc runSelectedFunction*(self: ModelDocumentEditor) =

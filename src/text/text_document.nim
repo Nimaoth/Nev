@@ -520,8 +520,13 @@ proc newTextDocument*(
     self.languageId = language
 
   self.languageServer = languageServer
+  if self.languageServer.getSome(ls):
+    let callback = proc (targetFilename: string): Future[void] {.async.} =
+      if self.languageServer.getSome(ls):
+        await ls.saveTempFile(targetFilename, self.contentString)
+    self.onRequestSaveHandle = ls.addOnRequestSaveHandler(self.filename, callback)
 
-  if self.languageId != "":
+  elif self.languageId != "":
     if (let value = self.configProvider.getValue("editor.text.language." & self.languageId, newJNull()); value.kind == JObject):
       self.languageConfig = value.jsonTo(TextLanguageConfig, Joptions(allowExtraKeys: true, allowMissingKeys: true)).some
       if value.hasKey("indent"):
