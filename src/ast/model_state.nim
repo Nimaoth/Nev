@@ -152,6 +152,7 @@ proc deleteNode*(ctx: ModelState, node: AstNode, recurse: bool) =
 
     let item = node.getItem
     ctx.depGraph.changed.del((item, -1))
+    ctx.itemsAstNode.del(item)
 
     # Remove diagnostics added by the removed node
     for i, update in ctx.updateFunctions:
@@ -176,9 +177,9 @@ proc deleteAllNodesAndSymbols*(ctx: ModelState) =
   ctx.depGraph.fingerprints.clear
   ctx.depGraph.dependencies.clear
   ctx.itemsAstNode.clear
-  # ctx.itemsSymbol.clear
   ctx.queryCacheType.clear
-  # ctx.queryCacheValue.clear
+  ctx.queryCacheValue.clear
+  ctx.queryCacheScope.clear
 
 proc recoverType(ctx: ModelState, key: Dependency) =
   log(lvlInfo, fmt"Recovering type for {key}")

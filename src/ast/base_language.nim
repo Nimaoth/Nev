@@ -655,9 +655,10 @@ valueComputers[pointerTypeClass.id] = proc(ctx: ModelComputationContextBase, nod
   # debugf"compute value for pointer type {node}"
 
   if node.firstChild(IdPointerTypeTarget).getSome(targetTypeNode):
-    let targetType = ctx.getValue(targetTypeNode)
     var typ = newAstNode(pointerTypeClass)
-    typ.add(IdPointerTypeTarget, targetType)
+    if ctx.getValue(targetTypeNode).isNotNil(targetType):
+      typ.setChild(IdPointerTypeTarget, targetType)
+
     typ.model = node.model
     typ.forEach2 n:
       n.model = node.model
@@ -857,6 +858,8 @@ valueComputers[nodeReferenceClass.id] = proc(ctx: ModelComputationContextBase, n
   # debugf"compute value for node reference {node}"
   if node.resolveReference(IdNodeReferenceTarget).getSome(targetNode):
     return ctx.getValue(targetNode)
+  if node.reference(IdNodeReferenceTarget) != NodeId.default:
+    log lvlError, fmt"Couldn't resolve reference {node}"
   return nil
 
 typeComputers[breakClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
@@ -974,9 +977,16 @@ proc isGeneric*(function: AstNode, ctx: ModelComputationContextBase): bool =
 proc substituteGenericTypeValues*(ctx: ModelComputationContextBase, genericType: AstNode, concreteType: AstNode, map: var Table[AstNode, AstNode]) =
   # debugf"substitute {genericType} with {concreteType}"
   if genericType.class == IdGenericType:
-    # debugf"set generic {genericType.property(IdINamedName)}"
     # genericType.add(IdGenericTypeValue, concreteType.cloneAndMapIds())
-    map[genericType] = concreteType
+    let originalId = genericType.reference(IdCloneOriginal)
+    if originalId.isSome:
+      if genericType.model.resolveReference(originalId).getSome(original):
+        # debugf"set generic {original.property(IdINamedName)}, {original}"
+        map[original] = concreteType
+    else:
+      # debugf"set generic {genericType.property(IdINamedName)}, {genericType}"
+      map[genericType] = concreteType
+
     return
 
   if genericType.class != concreteType.class:
@@ -987,32 +997,37 @@ proc substituteGenericTypeValues*(ctx: ModelComputationContextBase, genericType:
     let concreteChildren = concreteType.children(IdStructDefinitionParameter)
     for i in 0..min(genericChildren.high, concreteChildren.high):
       ctx.substituteGenericTypeValues(genericChildren[i].firstChild(IdStructParameterValue).get, concreteChildren[i].firstChild(IdStructParameterValue).get, map)
-
     return
 
-  for genericChildren in genericType.childLists.mitems:
-    var concreteChildren = concreteType.children(genericChildren.role)
-    for i, genericChild in genericChildren.nodes:
-      if i < concreteChildren.len:
-        substituteGenericTypeValues(ctx, genericChild, concreteChildren[i], map)
+  if genericType.class == IdPointerType:
+    let genericChildren = genericType.children(IdPointerTypeTarget)
+    let concreteChildren = concreteType.children(IdPointerTypeTarget)
+    for i in 0..min(genericChildren.high, concreteChildren.high):
+      ctx.substituteGenericTypeValues(genericChildren[i], concreteChildren[i], map)
+    return
+
+  # for genericChildren in genericType.childLists.mitems:
+  #   var concreteChildren = concreteType.children(genericChildren.role)
+  #   for i, genericChild in genericChildren.nodes:
+  #     if i < concreteChildren.len:
+  #       substituteGenericTypeValues(ctx, genericChild, concreteChildren[i], map)
+
+type FunctionInstantiation = tuple[function: AstNode, arguments: Table[AstNode, AstNode]]
+
+var functionInstances = initTable[FunctionInstantiation, AstNode]()
 
 proc instantiateFunction*(ctx: ModelComputationContextBase, genericFunction: AstNode, arguments: openArray[AstNode]): AstNode =
-  # debugf"instantiateFunction {genericFunction}, args {arguments}"
-  # var concreteFunction = genericFunction.cloneAndMapIds()
-  var idMap = initTable[NodeId, NodeId]()
-  var concreteFunction = genericFunction.clone(idMap)
-  concreteFunction.replaceReferences(idMap)
+  # debugf"instantiateFunction, args {arguments}, {`$`(genericFunction, true)}"
 
+  let model = genericFunction.model
   let genericParams = genericFunction.children(IdFunctionDefinitionParameters)
-  let concreteParams = concreteFunction.children(IdFunctionDefinitionParameters)
+
+  var actualArguments = newSeq[AstNode]()
+  var map = initTable[AstNode, AstNode]()
+
   for i, arg in arguments:
-    if i < concreteParams.len:
+    if i < genericParams.len:
       let genericParam = genericParams[i]
-      let concreteParam = concreteParams[i]
-
-      genericFunction.model.addTempNode(concreteParam)
-      ctx.ModelComputationContext.state.insertNode(concreteParam)
-
       let genericParamType = ctx.computeType(genericParam)
 
       # debugf"{i}: generic param {`$`(genericParam, true)}"
@@ -1021,44 +1036,100 @@ proc instantiateFunction*(ctx: ModelComputationContextBase, genericFunction: Ast
       if genericParamType.class == IdType:
         let value = ctx.getValue(arg)
         # debugf"{i}: value {value}"
-
-        # todo: replace instead of add
-
-        if value.isNotNil:
-          # debugf"x: clone {value}"
-          concreteParams[i].add(IdParameterDeclValue, value.cloneAndMapIds())
-        else:
-          concreteParams[i].add(IdParameterDeclValue, nil)
+        actualArguments.add value
+        map[genericParam] = value
 
       else:
         let typ = ctx.computeType(arg)
         # debugf"{i}: type {typ}"
+        # debugf"{i}: substitute generic {`$`(genericParamType, true)}"
+        # debugf"{i}: with {`$`(typ, true)}"
+        ctx.substituteGenericTypeValues(genericParamType, typ, map)
 
-        let concreteParamType = ctx.computeType(concreteParam)
-        # debugf"substitute concrete {`$`(concreteParamType, true)}"
-        # debugf"with {`$`(typ, true)}"
-        var map = initTable[AstNode, AstNode]()
-        ctx.substituteGenericTypeValues(concreteParamType, typ, map)
-        # debugf"idMap: {idMap}"
-        # debugf"map: {map}"
+  # debugf"actualArguments: {actualArguments}"
+  # for (key, value) in map.pairs:
+  #   debugf"map: {key} -> {value}"
 
-        for (key, value) in map.pairs:
-          let originalId = key.reference(IdCloneOriginal)
-          if originalId.isSome:
-            if genericFunction.model.resolveReference(originalId).getSome(original):
-              assert original.isDescendant(concreteFunction)
-              assert original.class == IdGenericType
-              original.add(IdGenericTypeValue, value.cloneAndMapIds())
-            else:
-              log lvlError, fmt"failed to resolve original node with id {originalId} while instantiating generic function {genericFunction}"
-          else:
-            log lvlError, fmt"original id not found for {key} while instantiating generic function {genericFunction}"
+  let key = (genericFunction, map)
+  if functionInstances.contains(key):
+    # debugf"function instance already exists: {`$`(functionInstances[key], true)}"
+    return functionInstances[key]
+
+  log lvlWarn, fmt"instantiateFunction: clone generic function {genericFunction}"
+  var concreteFunction = genericFunction.cloneAndMapIds(linkOriginal=true)
+
+  # debug concreteFunction.dump(model, true)
+  concreteFunction.forEach2 n:
+    let original = n.reference(IdCloneOriginal)
+    if model.resolveReference(original).getSome(original):
+      if map.contains(original):
+        let role = if n.class == IdGenericType: IdGenericTypeValue
+        elif n.class == IdParameterDecl: IdParameterDeclValue
+        else:
+          assert false, "unknown class for generic type value substitution"
+          RoleId.default
+
+        log lvlWarn, fmt"instantiateFunction: clone argument {map[original]}"
+        n.forceSetChild(role, map[original].cloneAndMapIds())
+    elif original != NodeId.default:
+      log lvlError, fmt"Failed to find original node {original} for {n.dump(model)}"
+  # debug concreteFunction.dump(model, true)
+
+  # for i, arg in arguments:
+  #   if i < concreteParams.len:
+  #     let genericParam = genericParams[i]
+  #     let concreteParam = concreteParams[i]
+
+  #     genericFunction.model.addTempNode(concreteParam)
+  #     ctx.ModelComputationContext.state.insertNode(concreteParam)
+
+  #     let genericParamType = ctx.computeType(genericParam)
+
+  #     # debugf"{i}: generic param {`$`(genericParam, true)}"
+  #     # debugf"{i}: concrete param {`$`(concreteParam, true)}"
+  #     # debugf"{i}: generic param type {`$`(genericParamType, true)}"
+  #     if genericParamType.class == IdType:
+  #       let value = ctx.getValue(arg)
+  #       # debugf"{i}: value {value}"
+
+  #       # todo: replace instead of add
+
+  #       if value.isNotNil:
+  #         # debugf"x: clone {value}"
+  #         concreteParams[i].add(IdParameterDeclValue, value.cloneAndMapIds())
+  #       else:
+  #         concreteParams[i].add(IdParameterDeclValue, nil)
+
+  #     else:
+  #       let typ = ctx.computeType(arg)
+  #       # debugf"{i}: type {typ}"
+
+  #       let concreteParamType = ctx.computeType(concreteParam)
+  #       # debugf"substitute concrete {`$`(concreteParamType, true)}"
+  #       # debugf"with {`$`(typ, true)}"
+  #       var map = initTable[AstNode, AstNode]()
+  #       ctx.substituteGenericTypeValues(concreteParamType, typ, map)
+  #       for (key, value) in map.pairs:
+  #         debugf"map: {key} -> {value}"
+
+  #       for (key, value) in map.pairs:
+  #         let originalId = key.reference(IdCloneOriginal)
+  #         if originalId.isSome:
+  #           if genericFunction.model.resolveReference(originalId).getSome(original):
+  #             assert original.isDescendant(concreteFunction)
+  #             assert original.class == IdGenericType
+  #             original.add(IdGenericTypeValue, value.cloneAndMapIds())
+  #           else:
+  #             log lvlError, fmt"failed to resolve original node with id {originalId} while instantiating generic function {genericFunction}"
+  #         else:
+  #           log lvlError, fmt"original id not found for {key} while instantiating generic function {genericFunction}"
 
   # todo
   genericFunction.model.addTempNode(concreteFunction)
   ctx.ModelComputationContext.state.insertNode(concreteFunction)
   # debugf"concrete function {`$`(concreteFunction, true)}"
 
+  functionInstances[key] = concreteFunction
   return concreteFunction
 
 # calls
@@ -1159,29 +1230,33 @@ valueComputers[callClass.id] = proc(ctx: ModelComputationContextBase, node: AstN
   # debugf"value targetValue: {targetValue}"
 
   if targetType.class == IdType and targetValue.class == IdStructDefinition:
-    var parameters: seq[AstNode]
+    var arguments: seq[AstNode]
     for _, arg in node.children(IdCallArguments):
+      # debugf"compute value of {arg.dump(node.model, true)}"
       let value = ctx.getValue(arg)
       if value.isNotNil:
         # debugf"y: clone {value}"
-        parameters.add value.cloneAndMapIds()
-        # debugf"-> {parameters.last}"
-        parameters.last.references.add (IdCloneOriginal, value.id)
+        log lvlWarn, fmt"getValue call: clone arg value {value}"
+        arguments.add value.cloneAndMapIds(linkOriginal=true)
+        # debugf"-> {arguments.last}"
       else:
-        parameters.add nil
+        arguments.add nil
+        # log lvlError, fmt"Could not compute value for argument {arg} in call {node}"
 
-    if parameters.len != targetValue.childCount(IdStructDefinitionParameter):
-      # debugf"wrong number of parameters"
+    if arguments.len != targetValue.childCount(IdStructDefinitionParameter):
+      # debugf"wrong number of arguments"
       return voidTypeInstance
 
     # debugf"z: clone {targetValue}"
+    log lvlWarn, fmt"getValue call: clone struct decl {targetValue}"
     var concreteType = targetValue.cloneAndMapIds()
     # debugf"-> {concreteType}"
 
     concreteType.references.add (IdStructTypeGenericBase, targetValue.id)
 
     for i, param in concreteType.children(IdStructDefinitionParameter):
-      param.add(IdStructParameterValue, parameters[i])
+      if arguments[i].isNotNil:
+        param.add(IdStructParameterValue, arguments[i])
 
     for i, member in concreteType.children(IdStructDefinitionMembers):
       # debugf"link member {member} to {targetValue.children(IdStructDefinitionMembers)[i].id}"
@@ -1280,7 +1355,7 @@ typeComputers[structMemberDefinitionClass.id] = proc(ctx: ModelComputationContex
 
   return voidTypeInstance
 
-typeComputers[IdAllocate] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+typeComputers[allocateClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for allocate {node}"
 
   if node.firstChild(IdAllocateType).getSome(typeNode):
@@ -1294,7 +1369,7 @@ typeComputers[IdAllocate] = proc(ctx: ModelComputationContextBase, node: AstNode
 
   return voidTypeInstance
 
-typeComputers[IdAddressOf] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+typeComputers[addressOfClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for address of {node}"
 
   if node.firstChild(IdAddressOfValue).getSome(valueNode):
@@ -1308,7 +1383,7 @@ typeComputers[IdAddressOf] = proc(ctx: ModelComputationContextBase, node: AstNod
 
   return voidTypeInstance
 
-typeComputers[IdDeref] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+typeComputers[derefClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for deref {node}"
 
   if node.firstChild(IdDerefValue).getSome(typeNode):
@@ -1318,7 +1393,7 @@ typeComputers[IdDeref] = proc(ctx: ModelComputationContextBase, node: AstNode): 
 
   return voidTypeInstance
 
-typeComputers[IdArrayAccess] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+typeComputers[arrayAccessClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for deref {node}"
 
   if node.firstChild(IdArrayAccessValue).getSome(typeNode):

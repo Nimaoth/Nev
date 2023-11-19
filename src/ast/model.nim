@@ -36,6 +36,8 @@ defineUniqueId(NodeId)
 defineUniqueId(ModelId)
 defineUniqueId(LanguageId)
 
+let IdCloneOriginal* = "654fbb281446e19b3822521c".parseId.RoleId
+
 type
   PropertyType* {.pure.} = enum
     Int, String, Bool
@@ -439,7 +441,7 @@ proc isValidPropertyValue*(language: Language, class: NodeClass, role: RoleId, v
 
   return false
 
-proc hasChildList(node: AstNode, role: RoleId): bool =
+proc hasChildList*(node: AstNode, role: RoleId): bool =
   result = false
   for c in node.childLists:
     if c.role == role:
@@ -684,8 +686,8 @@ proc isRequiredAndDefault*(node: AstNode): bool =
   return false
 
 proc insert*(node: AstNode, role: RoleId, index: int, child: AstNode) =
-  if child.isNil:
-    return
+  ## Adds `child` as child of `node` at index `index` in the given `role`. Asserts that `node` has a child list for the given `role`
+  assert child.isNotNil
 
   if child.id.isNone:
     child.id = newId().NodeId
@@ -704,7 +706,39 @@ proc insert*(node: AstNode, role: RoleId, index: int, child: AstNode) =
         node.model.notifyNodeInserted(node, child, role, index)
       return
 
-  raise newException(Defect, fmt"Unknown role {role} for node {node.id} of class {node.class}")
+  raise newException(CatchableError, fmt"Unknown role {role} for node {node.id} of class {node.class}")
+
+proc setChild*(node: AstNode, role: RoleId, child: AstNode) =
+  ## Sets `child` as child of `node` in the given `role`. Asserts that `node` has a child list for the given `role`
+  assert child.isNotNil
+
+  if child.id.isNone:
+    child.id = newId().NodeId
+  child.parent = node
+  child.role = role
+
+  if node.model.isNotNil:
+    child.forEach2 n:
+      n.model = node.model
+      node.model.nodes[n.id] = n
+
+  for c in node.childLists.mitems:
+    if c.role == role:
+      # delete existing
+      for i, existing in c.nodes:
+        if node.model.isNotNil:
+          node.model.notifyNodeDeleted(node, existing, role, i)
+        existing.forEach2 n:
+          n.model = nil
+          node.model.nodes.del n.id
+
+      c.nodes.setLen 1
+      c.nodes[0] = child
+      if node.model.isNotNil:
+        node.model.notifyNodeInserted(node, child, role, 0)
+      return
+
+  raise newException(CatchableError, fmt"Unknown role {role} for node {node.id} of class {node.class}")
 
 proc remove*(node: AstNode, child: AstNode) =
   for children in node.childLists.mitems:
@@ -780,7 +814,27 @@ proc removeFromParent(node: AstNode) =
   node.parent.remove(node)
 
 proc add*(node: AstNode, role: RoleId, child: AstNode) =
+  ## Adds `child` as the last child of `node` in the given `role`. Asserts that `node` has a child list for the given `role`
   node.insert(role, node.children(role).len, child)
+
+proc addChild*(node: AstNode, role: RoleId, child: AstNode) =
+  ## Adds `child` as the last child of `node` in the given `role`. Asserts that `node` has a child list for the given `role`
+  node.insert(role, node.children(role).len, child)
+
+proc forceAddChild*(node: AstNode, role: RoleId, child: AstNode) =
+  ## Adds `child` as the last child of `node` in the given `role`. If `node` doesn't have a child list for the given `role` then one is created.
+  if node.hasChildList(role):
+    node.insert(role, node.children(role).len, child)
+  else:
+    node.childLists.add (role, @[child])
+
+proc forceSetChild*(node: AstNode, role: RoleId, child: AstNode) =
+  ## Sets `child` as the only child of `node` in the given `role`. If `node` doesn't have a child list for the given `role` then one is created.
+  ## If there is already a child in that role it is removed.
+  if node.hasChildList(role):
+    node.setChild(role, child)
+  else:
+    node.childLists.add (role, @[child])
 
 proc replaceWithDefault*(node: AstNode, fillDefaultChildren: bool = false): Option[AstNode] =
   if node.parent.isNil:
@@ -860,7 +914,7 @@ proc addBuilder*(self: CellBuilder, other: CellBuilder) =
   for pair in other.preferredBuilders.pairs:
     self.preferredBuilders[pair[0]] = pair[1]
 
-proc clone*(node: AstNode, idMap: var Table[NodeId, NodeId]): AstNode =
+proc clone*(node: AstNode, idMap: var Table[NodeId, NodeId], linkOriginal: bool = false): AstNode =
   let newNodeId = newId().NodeId
   result = newAstNode(node.nodeClass, newNodeId.some)
   idMap[node.id] = newNodeId
@@ -870,10 +924,19 @@ proc clone*(node: AstNode, idMap: var Table[NodeId, NodeId]): AstNode =
 
   for children in node.childLists.mitems:
     for child in children.nodes:
-      result.add(children.role, child.clone(idMap))
+      result.add(children.role, child.clone(idMap, linkOriginal))
+
+  if linkOriginal:
+    if result.hasReference(IdCloneOriginal):
+      result.setReference(IdCloneOriginal, node.id)
+    else:
+      result.references.add (IdCloneOriginal, node.id)
 
 proc replaceReferences*(node: AstNode, idMap: var Table[NodeId, NodeId]) =
   for role in node.references.mitems:
+    if role.role == IdCloneOriginal:
+      continue
+
     if idMap.contains(role.node):
       role.node = idMap[role.node]
 
@@ -881,9 +944,9 @@ proc replaceReferences*(node: AstNode, idMap: var Table[NodeId, NodeId]) =
     for child in children.nodes:
       child.replaceReferences(idMap)
 
-proc cloneAndMapIds*(node: AstNode): AstNode =
+proc cloneAndMapIds*(node: AstNode, linkOriginal: bool = false): AstNode =
   var idMap = initTable[NodeId, NodeId]()
-  let newNode = node.clone(idMap)
+  let newNode = node.clone(idMap, linkOriginal)
   newNode.replaceReferences(idMap)
   return newNode
 
@@ -895,10 +958,13 @@ proc `$`*(cell: Cell, recurse: bool = false): string = cell.dump(recurse)
 method dump*(self: EmptyCell, recurse: bool = false): string =
   result.add fmt"EmptyCell(node: {self.node.id})"
 
-proc `$`*(node: AstNode, recurse: bool = false): string =
+proc dump*(node: AstNode, model: Model = nil, recurse: bool = false): string =
   if node.isNil:
     return "AstNode(nil)"
-  let class = node.nodeClass
+
+  let model = model ?? node.model
+  let language = if model.isNil: nil else: model.classesToLanguages.getOrDefault(node.class, nil)
+  let class = if language.isNil: nil else: language.classes.getOrDefault(node.class, nil)
 
   if class.isNil:
     result.add $node.class
@@ -922,6 +988,8 @@ proc `$`*(node: AstNode, recurse: bool = false): string =
     result.add "\n│ "
     if class.isNotNil and class.nodeReferenceDescription(role.role).getSome(desc):
       result.add desc.role
+    elif role.role == IdCloneOriginal:
+      result.add "!CloneOriginal"
     else:
       result.add $role.role
     result.add ": "
@@ -948,7 +1016,13 @@ proc `$`*(node: AstNode, recurse: bool = false): string =
         result.add "\n├───"
 
       let indent = if i < role.nodes.high or roleIndex < node.childLists.high: "│   " else: "    "
-      result.add indent(`$`(c, recurse), 1, indent)[indent.len..^1]
+      result.add indent(dump(c, model, recurse), 1, indent)[indent.len..^1]
+
+proc `$`*(node: AstNode, recurse: bool = false): string =
+  if node.isNil:
+    return "AstNode(nil)"
+
+  node.dump(node.model, recurse)
 
 proc toJson*(value: PropertyValue, opt = initToJsonOptions()): JsonNode =
   case value.kind
