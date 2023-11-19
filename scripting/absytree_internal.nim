@@ -358,6 +358,9 @@ proc editor_model_selectNextCompletion_void_ModelDocumentEditor_impl*(
 proc editor_model_applySelectedCompletion_void_ModelDocumentEditor_impl*(
     self: ModelDocumentEditor) =
   discard
+proc editor_model_printSelectionInfo_void_ModelDocumentEditor_impl*(
+    self: ModelDocumentEditor) =
+  discard
 proc editor_model_runSelectedFunction_void_ModelDocumentEditor_impl*(
     self: ModelDocumentEditor) =
   discard

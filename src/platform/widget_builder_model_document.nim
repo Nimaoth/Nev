@@ -143,7 +143,7 @@ proc findNodeContainingMinX(node: UINode, pos: Vec2, predicate: proc(node: UINod
 
 proc handleIndentClickOrDrag(builder: UINodeBuilder, updateContext: UpdateContext, btn: MouseButton, modifiers: Modifiers, currentNode: UINode, drag: bool, pos: Vec2) =
   let posAbs = pos.transformPos(currentNode, builder.root).xy
-  if getCellInLine(builder, updateContext, posAbs - vec2(0, builder.textHeight / 2), 0, true).getSome(target):
+  if getCellInLine(builder, updateContext.scrolledNode, posAbs - vec2(0, builder.textHeight / 2), 0, true).getSome(target):
     updateContext.setCursor(target.cell, target.offset, drag)
 
 proc increaseIndent(self: CellLayoutContext) =
@@ -860,14 +860,14 @@ proc pathAfter(a, b: openArray[int]): bool =
   return a.len > b.len
 
 proc createNodeUI(self: ModelDocumentEditor, builder: UINodeBuilder, app: App, container: UINode, updateContext: UpdateContext, remainingHeightUp: float, remainingHeightDown: float, node: AstNode, targetCellPath: seq[int], scrollOffset: float) =
-  let cell = self.nodeCellMap.cell(node)
+  let cell = updateContext.nodeCellMap.cell(node)
   if cell.isNil:
     return
 
   # debugf"render: {targetCellPath}:{self.scrollOffset}"
   # echo fmt"scroll offset {scrollOffset}"
   try:
-    let myCtx = newCellLayoutContext(builder, self.cellWidgetContext, Direction.Forwards, true)
+    let myCtx = newCellLayoutContext(builder, updateContext, Direction.Forwards, true)
     defer:
       myCtx.finish()
 
@@ -1106,7 +1106,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
                   if typ.isNotNil:
                     builder.panel(&{SizeToContentX, SizeToContentY, DrawBorder}, pivot = vec2(1, 0), borderColor = textColor):
                       let updateContext = UpdateContext(
-                        nodeCellMap: self.nodeCellMap,
+                        nodeCellMap: self.detailsNodeCellMap,
                         cellToWidget: initTable[CellId, UINode](),
                         targetCellPosition: vec2(0, 0),
                         handleClick: proc(node: UINode, cell: Cell, path: seq[int], cursor: CellCursor, drag: bool) = discard,
@@ -1122,7 +1122,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
 
                     builder.panel(&{SizeToContentX, SizeToContentY, DrawBorder}, pivot = vec2(1, 0), borderColor = textColor):
                       let updateContext = UpdateContext(
-                        nodeCellMap: self.nodeCellMap,
+                        nodeCellMap: self.detailsNodeCellMap,
                         cellToWidget: initTable[CellId, UINode](),
                         targetCellPosition: vec2(0, 0),
                         handleClick: proc(node: UINode, cell: Cell, path: seq[int], cursor: CellCursor, drag: bool) = discard,
