@@ -1014,7 +1014,7 @@ proc substituteGenericTypeValues*(ctx: ModelComputationContextBase, genericType:
 
 type FunctionInstantiation = tuple[function: AstNode, arguments: Table[AstNode, AstNode]]
 
-var functionInstances = initTable[FunctionInstantiation, AstNode]()
+var functionInstances* = initTable[FunctionInstantiation, AstNode]()
 
 proc instantiateFunction*(ctx: ModelComputationContextBase, genericFunction: AstNode, arguments: openArray[AstNode]): AstNode =
   # debugf"instantiateFunction, args {arguments}, {`$`(genericFunction, true)}"

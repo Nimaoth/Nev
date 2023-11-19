@@ -16,12 +16,11 @@ proc newLanguageServerAbsytreeCommands*(): LanguageServer =
 method getDefinition*(self: LanguageServerAbsytreeCommands, filename: string, location: Cursor): Future[Option[Definition]] {.async.} =
   return Definition.none
 
-method saveTempFile*(self: LanguageServerAbsytreeCommands, filename: string, content: string): Future[void] =
+method saveTempFile*(self: LanguageServerAbsytreeCommands, filename: string, content: string): Future[void] {.async.} =
+  # debugf"LanguageServerAbsytreeCommands.saveTempFile '{filename}' '{content}'"
   self.files[filename] = content
 
 method getCompletions*(self: LanguageServerAbsytreeCommands, languageId: string, filename: string, location: Cursor): Future[seq[TextCompletion]] {.async.} =
-  var completions: seq[TextCompletion]
-
   await self.requestSave(filename, filename)
 
   var useActive = false
@@ -29,6 +28,7 @@ method getCompletions*(self: LanguageServerAbsytreeCommands, languageId: string,
     if self.files[filename].startsWith("."):
       useActive = true
 
+  var completions: seq[TextCompletion]
   if useActive:
     for table in activeDispatchTables.mitems:
       for value in table.functions.values:

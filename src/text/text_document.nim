@@ -58,6 +58,8 @@ type TextDocument* = ref object of Document
   languageId*: string
   version*: int
 
+  isBackedByFile*: bool = false
+
   nextLineIdCounter: int32 = 0
 
   onLoaded*: Event[TextDocument]
@@ -90,6 +92,9 @@ proc nextLineId*(self: TextDocument): int32 =
   self.nextLineIdCounter.inc
 
 proc fullPath*(self: TextDocument): string =
+  if not self.isBackedByFile:
+    return self.filename
+
   if self.filename.isAbsolute:
     return self.filename
   if self.workspace.getSome(ws):
@@ -521,7 +526,9 @@ proc newTextDocument*(
 
   self.languageServer = languageServer
   if self.languageServer.getSome(ls):
+    # debugf"register save handler '{self.filename}'"
     let callback = proc (targetFilename: string): Future[void] {.async.} =
+      # debugf"save temp file '{targetFilename}'"
       if self.languageServer.getSome(ls):
         await ls.saveTempFile(targetFilename, self.contentString)
     self.onRequestSaveHandle = ls.addOnRequestSaveHandler(self.filename, callback)
@@ -536,7 +543,7 @@ proc newTextDocument*(
         of "tabs":
           self.indentStyle = IndentStyle(kind: Tabs)
 
-      debugf"using language for {filename}: {value}, {self.indentStyle}"
+      # debugf"using language for {filename}: {value}, {self.indentStyle}"
 
     if self.configProvider.getValue("editor.text.auto-start-language-server", false) and self.languageServer.isNone:
       asyncCheck self.getLanguageServer()
@@ -578,6 +585,7 @@ method save*(self: TextDocument, filename: string = "", app: bool = false) =
 
 proc loadAsync(self: TextDocument, ws: WorkspaceFolder): Future[void] {.async.} =
   # self.content = await ws.loadFile(self.filename)
+  self.isBackedByFile = true
   self.content = catch ws.loadFile(self.filename).await:
     log lvlError, fmt"Failed to load workspace file {self.filename}"
     ""
@@ -589,6 +597,7 @@ method load*(self: TextDocument, filename: string = "") =
     raise newException(IOError, "Missing filename")
 
   self.filename = filename
+  self.isBackedByFile = true
 
   if self.workspace.getSome(ws):
     asyncCheck self.loadAsync(ws)
