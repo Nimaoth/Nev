@@ -285,6 +285,7 @@ proc editor_changeLayoutProp_void_App_string_float32_impl(prop: string;
 proc editor_toggleStatusBarLocation_void_App_impl()  {.importc.}
 proc editor_createAndAddView_void_App_impl()  {.importc.}
 proc editor_logs_void_App_impl()  {.importc.}
+proc editor_toggleConsoleLogger_void_App_impl()  {.importc.}
 proc editor_closeCurrentView_void_App_impl()  {.importc.}
 proc editor_moveCurrentViewToTop_void_App_impl()  {.importc.}
 proc editor_nextView_void_App_impl()  {.importc.}

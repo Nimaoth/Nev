@@ -1043,6 +1043,9 @@ proc createAndAddView*(self: App) {.expose("editor").} =
 proc logs*(self: App) {.expose("editor").} =
   discard self.createAndAddView(self.logDocument)
 
+proc toggleConsoleLogger*(self: App) {.expose("editor").} =
+  logger.toggleConsoleLogger()
+
 # proc createKeybindAutocompleteView*(self: App) {.expose("editor").} =
 #   self.createAndAddView(newKeybindAutocompletion())
 
