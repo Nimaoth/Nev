@@ -26,7 +26,7 @@ type
 
     lastFontSize: float
     mLineHeight: float
-    mLineDistance: float
+    mLineDistance: float = 2
     mCharWidth: float
     mCharGap: float
 
@@ -133,7 +133,7 @@ method init*(self: GuiPlatform) =
       self.onScroll.invoke (self.window.mousePos.vec2, self.window.scrollDelta, {})
 
   self.window.onMouseMove = proc() =
-    inc self.eventCounter
+    # inc self.eventCounter
     if not self.builder.handleMouseMoved(self.window.mousePos.vec2, self.currentMouseButtons):
       self.onMouseMove.invoke (self.window.mousePos.vec2, self.window.mouseDelta.vec2, {}, self.currentMouseButtons)
 
@@ -245,7 +245,7 @@ proc updateCharWidth*(self: GuiPlatform) =
 
   self.builder.charWidth = bounds.x / 100.0
   self.builder.lineHeight = bounds.y - 3
-  self.builder.lineGap = 6
+  self.builder.lineGap = self.mLineDistance
 
 method `fontSize=`*(self: GuiPlatform, fontSize: float) =
   self.ctx.fontSize = fontSize

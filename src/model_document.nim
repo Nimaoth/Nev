@@ -166,6 +166,7 @@ type
     currentMode*: string
 
     nodeCellMap*: NodeCellMap
+    detailsNodeCellMap*: NodeCellMap
     logicalLines*: seq[seq[Cell]]
     cellWidgetContext*: UpdateContext
     mCursorBeforeTransaction: CellSelection
@@ -401,15 +402,6 @@ proc updateSelection*(self: ModelDocumentEditor, cursor: CellCursor, extend: boo
     self.selection = (cursor, cursor)
 
   # debugf"updateSelection to {self.selection}"
-
-  try:
-    let typ = self.document.ctx.computeType(self.selection.last.node)
-    let value = self.document.ctx.getValue(self.selection.last.node)
-    log lvlWarn, &"selected:\n  type: {`$`(typ, true)}\n  value: {`$`(value, true)}"
-  except CatchableError:
-    log lvlError, &"Failet to get type and value of selected: {getCurrentExceptionMsg()}"
-    log lvlError, getCurrentException().getStackTrace()
-    raise
 
 proc `cursor=`*(self: ModelDocumentEditor, cursor: CellCursor) =
   self.selection = (cursor, cursor)
@@ -752,6 +744,7 @@ method handleDocumentChanged*(self: ModelDocumentEditor) =
   #   discard ctx.newSymbol(symbol)
   # self.node = self.document.rootNode[0]
   self.nodeCellMap.builder = self.document.builder
+  self.detailsNodeCellMap.builder = self.document.builder
   self.rebuildCells()
   self.cursor = self.getFirstEditableCellOfNode(self.document.model.rootNodes[0]).get
   self.updateScrollOffset()
@@ -777,6 +770,7 @@ proc buildNodeCellMap(self: Cell, map: var Table[NodeId, Cell]) =
 proc rebuildCells(self: ModelDocumentEditor) =
   # debugf"rebuildCells"
   self.nodeCellMap.invalidate()
+  self.detailsNodeCellMap.invalidate()
   self.logicalLines.setLen 0
   self.markDirty()
 
@@ -889,6 +883,8 @@ method createWithDocument*(_: ModelDocumentEditor, document: Document, configPro
   self.completionsId = newId()
   self.nodeCellMap.new
   self.nodeCellMap.builder = self.document.builder
+  self.detailsNodeCellMap.new
+  self.detailsNodeCellMap.builder = self.document.builder
   self.mSelection.first.map = self.nodeCellMap
   self.mSelection.last.map = self.nodeCellMap
 
@@ -999,7 +995,7 @@ proc getCursorOffset(builder: UINodeBuilder, cell: Cell, posX: float, isThickCur
   let byteIndex = line.runeOffset(index.RuneIndex)
   return byteIndex
 
-proc getCellInLine*(builder: UINodeBuilder, updateContext: UpdateContext, target: Vec2, direction: int, isThickCursor: bool): Option[tuple[cell: Cell, offset: int]] =
+proc getCellInLine*(builder: UINodeBuilder, uiRoot: UINode, target: Vec2, direction: int, isThickCursor: bool): Option[tuple[cell: Cell, offset: int]] =
   ## Searches for the next cell in a line base way.
   ## direction:
   ##   If direction is 0 then only the same line as the input cell is searched.
@@ -1007,7 +1003,8 @@ proc getCellInLine*(builder: UINodeBuilder, updateContext: UpdateContext, target
   ##   If direction is +1 then the next lines will be searched.
   ## targetX: return the cell closest to this X location
 
-  let uiRoot = updateContext.scrolledNode
+  # debugf"getCellInLine {target}, {direction}, {isThickCursor}"
+
   let maxYDiff = builder.lineHeight / 2
   let buffer = 2.0
 
@@ -1017,6 +1014,7 @@ proc getCellInLine*(builder: UINodeBuilder, updateContext: UpdateContext, target
     let gap = builder.lineGap
     let searchRect = rect(uiRoot.lx, target.y + offset.float * builder.lineHeight + gap, uiRoot.lw, builder.lineHeight - gap * 2)
 
+    # debugf"gap: {gap}, searchRect: {searchRect}, lineHeight: {builder.lineHeight}, offset: {offset}"
     if searchRect.yh < -builder.lineHeight * buffer or searchRect.y > uiRoot.lyh + builder.lineHeight * buffer:
       return
 
@@ -1043,15 +1041,18 @@ proc getCellInLine*(builder: UINodeBuilder, updateContext: UpdateContext, target
           return
 
       if xDiff < xDiffMin:
+        # debugf"update selectedCell: {xDiff}, {currentCell}"
         xDiffMin = xDiff
         selectedNode = uiNode
         selectedCell = currentCell
     )
 
     if selectedCell.isNotNil:
+      # debugf"selectedCell: {selectedCell}"
       let offset = getCursorOffset(builder, selectedCell, target.x - selectedNode.lx, isThickCursor)
       return (selectedCell, offset).some
 
+    # debugf"no selectedCell"
     if direction == 0:
       return
 
@@ -1067,7 +1068,7 @@ proc getCellInLine*(self: ModelDocumentEditor, cell: Cell, direction: int, targe
     return
 
   let cellUINode = self.cellWidgetContext.cellToWidget[cell.id]
-  return getCellInLine(self.app.platform.builder, self.cellWidgetContext, vec2(targetX, cellUINode.ly), direction, self.isThickCursor)
+  return getCellInLine(self.app.platform.builder, self.cellWidgetContext.scrolledNode, vec2(targetX, cellUINode.ly), direction, self.isThickCursor)
 
 proc getPreviousCellInLine*(self: ModelDocumentEditor, cell: Cell): Cell =
   let uiRoot = self.scrolledNode
@@ -2649,6 +2650,15 @@ proc applySelectedCompletion*(self: ModelDocumentEditor) {.expose("editor.model"
   self.cursor = c
 
   self.markDirty()
+
+proc printSelectionInfo*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  try:
+    let typ = self.document.ctx.computeType(self.selection.last.node)
+    let value = self.document.ctx.getValue(self.selection.last.node)
+    log lvlInfo, &"selected:\n  type: {`$`(typ, true)}\n  value: {`$`(value, true)}"
+  except CatchableError:
+    log lvlError, &"Failet to get type and value of selected: {getCurrentExceptionMsg()}"
+    log lvlError, getCurrentException().getStackTrace()
 
 proc findContainingFunction(node: AstNode): Option[AstNode] =
   if node.class == IdFunctionDefinition:

@@ -55,7 +55,8 @@ type
 
 type EditorState = object
   theme: string
-  fontSize: float32
+  fontSize: float32 = 20
+  lineDistance: float32 = 4
   fontRegular: string
   fontBold: string
   fontItalic: string
@@ -121,6 +122,7 @@ type App* = ref object
 
   theme*: Theme
   loadedFontSize: float
+  loadedLineDistance: float
 
   editors*: Table[EditorId, DocumentEditor]
   popups*: seq[Popup]
@@ -647,6 +649,7 @@ proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.}
   self.registers = initTable[string, Register]()
 
   self.platform.fontSize = 20
+  self.platform.lineDistance = 4
 
   self.fontRegular = "./fonts/DejaVuSansMono.ttf"
   self.fontBold = "./fonts/DejaVuSansMono-Bold.ttf"
@@ -711,6 +714,8 @@ proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.}
 
     self.loadedFontSize = state.fontSize.float
     self.platform.fontSize = state.fontSize.float
+    self.loadedLineDistance = state.lineDistance.float
+    self.platform.lineDistance = state.lineDistance.float
     if state.fontRegular.len > 0: self.fontRegular = state.fontRegular
     if state.fontBold.len > 0: self.fontBold = state.fontBold
     if state.fontItalic.len > 0: self.fontItalic = state.fontItalic
@@ -827,8 +832,10 @@ proc saveAppState*(self: App) {.expose("editor").} =
 
   if self.backend == api.Backend.Terminal:
     state.fontSize = self.loadedFontSize
+    state.lineDistance = self.loadedLineDistance
   else:
     state.fontSize = self.platform.fontSize
+    state.lineDistance = self.platform.lineDistance
 
   state.fontRegular = self.fontRegular
   state.fontBold = self.fontBold
