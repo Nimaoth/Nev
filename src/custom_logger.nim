@@ -33,6 +33,12 @@ proc enableFileLogger*(self: CustomLogger) =
 proc enableConsoleLogger*(self: CustomLogger) =
   self.consoleLogger = logging.newConsoleLogger(self.levelThreshold, self.fmtStr, flushThreshold=logging.lvlAll).some
 
+proc toggleConsoleLogger*(self: CustomLogger) =
+  if self.consoleLogger.isSome:
+    self.consoleLogger = logging.ConsoleLogger.none
+  else:
+    self.enableConsoleLogger()
+
 let isTerminal {.used.} = when declared(isatty): isatty(stdout) else: false
 
 method log(self: CustomLogger, level: logging.Level, args: varargs[string, `$`]) =
