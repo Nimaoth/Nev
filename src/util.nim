@@ -28,6 +28,11 @@ macro `.?`*(self: untyped, value: untyped): untyped =
   return genAst(self, member):
     if not self.isNil: member else: default(typeof(member))
 
+proc del*[T](x: var seq[T], val: T) {.noSideEffect.} =
+  let idx = x.find val
+  if idx >= 0:
+    x.del(idx)
+
 template with*(exp, val, body: untyped): untyped =
   block:
     let oldValue = exp

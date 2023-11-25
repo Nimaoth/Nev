@@ -1,10 +1,11 @@
 import std/[tables, sets, strutils, hashes, options, macros, strformat, genasts]
 import timer
 import fusion/matching
-import ast, id, util, custom_logger
+import ast, id, util, custom_logger, macro_utils
 import lrucache
 
 {.experimental: "dynamicBindSym".}
+{.experimental: "caseStmtMacros".}
 
 logCategory "query"
 
@@ -113,6 +114,7 @@ func getKey*(item: ItemId, update: UpdateFunction = -1): Dependency = (item, upd
 
 template query*(name: string, useCache: bool = true, useFingerprinting: bool = true) {.pragma.}
 template recover*(name: string) {.pragma.}
+template inputProvider*() {.pragma.}
 
 proc `$`*(item: ItemId): string =
   return fmt"({item.id}, {item.typ})"
@@ -220,6 +222,8 @@ proc `$`*(graph: DependencyGraph): string =
 
 macro CreateContext*(contextName: untyped, body: untyped): untyped =
   result = nnkStmtList.newTree()
+  # defer:
+  #   echo result.repr
 
   # Helper functions to access information about declarations
   proc queryFunctionName(query: NimNode): NimNode =
@@ -235,10 +239,15 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     let pragmas = arg[4]
     if pragmas.kind != nnkPragma or pragmas.len < 1: return none[NimNode]()
     for pragma in pragmas:
-      if pragma.kind != nnkCall: continue
-      if pragma[0].strVal == name:
-        return some(pragma)
-    return none[NimNode]()
+      case pragma.kind
+      of nnkCall:
+        if pragma[0].strVal == name:
+          return some(pragma)
+      of nnkIdent:
+        if pragma.repr == name:
+          return some(pragma)
+      else:
+        return none[NimNode]()
 
   proc queryName(query: NimNode): string =
     return query[4][0][1].strVal
@@ -264,6 +273,11 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
   proc isRecoveryFunction(arg: NimNode): bool =
     if arg.getPragma("recover").isSome:
+      return true
+    return false
+
+  proc isInputProvider(arg: NimNode): bool =
+    if arg.getPragma("inputProvider").isSome:
       return true
     return false
 
@@ -416,10 +430,10 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
   )
 
   # Add all statements in the input body of this macro as is to the output
-  for query in body:
-    if not isQuery(query) and not isRecoveryFunction(query):
+  for node in body:
+    if not node.isQuery and not node.isRecoveryFunction and not node.isInputProvider:
       continue
-    result.add query
+    result.add node
 
   # Create newContext function for initializing a new context
   # proc newContext(): Context = ...
@@ -433,6 +447,12 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
       `ctx`.dependencyStack = @[]
 
   var updateFunctionTable = initTable[string, int]()
+  var inputProviderFunctions = initTable[string, NimNode]()
+
+  for query in body:
+    if not isInputProvider query: continue
+    let inputType = query.returnType.get
+    inputProviderFunctions[inputType.repr] = query.name
 
   # Add initialization code to the newContext function for each query
   # ctx.update = proc(arg: QueryInput): Fingerprint = ...
@@ -442,7 +462,7 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
 
     let name = queryName query
     let key = queryArgType query
-    let value = queryValueType query
+    let valueType = queryValueType query
 
     let updateName = ident "update" & name
     let queryCache = ident "queryCache" & name
@@ -454,21 +474,36 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
     let idx = updateFunctionTable.len
     updateFunctionTable[updateName.strVal] = idx
 
-    queryInitializers.add quote do:
-      `ctx`.`updateName` = proc (item: ItemId): Fingerprint =
-        if not `ctx`.`items`.contains(item):
-          raise newException(CatchableError, "update" & `name` & "(" & $item & "): not in cache anymore")
-        `ctx`.`stats`.forcedCalls += 1
-        let arg = `ctx`.`items`[item]
-        let value: `value` = `queryFunction`(`ctx`, arg)
-        `ctx`.`queryCache`[arg] = value
-        when `useFingerprinting`:
-          return value.fingerprint
-        else:
-          return @[]
-      `ctx`.updateFunctions.add `ctx`.`updateName`
-      `ctx`.depGraph.queryNames[`idx`] = `name`
-      `ctx`.`queryCache`.init(2000)
+    let inputNotFoundHandler = if inputProviderFunctions.contains(key.repr):
+      inputProviderFunctions[key.repr]
+    else:
+      ident "won't compile"
+
+    queryInitializers.add block:
+      genAst(ctx, updateName, items, stats, valueType, queryCache, useFingerprinting, idx, name, queryFunction, inputNotFoundHandler):
+        ctx.updateName = proc (item: ItemId): Fingerprint =
+          let arg = if ctx.items.contains(item):
+            ctx.items[item]
+          else:
+            when compiles(inputNotFoundHandler(ctx, item)):
+              inputNotFoundHandler(ctx, item)
+            else:
+              nil
+
+          if arg.isNil:
+            raise newException(CatchableError, "update" & name & "(" & $item & "): not in cache (never added, deleted or no found in input provider)")
+
+          ctx.stats.forcedCalls += 1
+          let value: valueType = queryFunction(ctx, arg)
+          ctx.queryCache[arg] = value
+          when useFingerprinting:
+            return value.fingerprint
+          else:
+            return @[]
+
+        ctx.updateFunctions.add ctx.updateName
+        ctx.depGraph.queryNames[idx] = name
+        ctx.queryCache.init(2000)
 
   # Add recovery functions to ctx.recoveryFunctions
   for query in body:
@@ -594,8 +629,6 @@ macro CreateContext*(contextName: untyped, body: untyped): untyped =
             ctx.queryCache.clear()
 
     result.add clearCacheFunction
-
-    echo clearCacheFunction.repr
 
   # proc recordDependency(ctx: Context, item: ItemId, update: UpdateFunction)
   result.add quote do:
