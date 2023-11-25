@@ -232,6 +232,11 @@ proc canSelect*(cell: Cell): bool
 proc isVisible*(cell: Cell): bool
 proc getParentInfo*(selection: CellSelection): tuple[cell: Cell, left: seq[int], right: seq[int]]
 
+proc handleNodeDeleted(self: ModelDocument, model: Model, parent: AstNode, child: AstNode, role: RoleId, index: int)
+proc handleNodeInserted(self: ModelDocument, model: Model, parent: AstNode, child: AstNode, role: RoleId, index: int)
+proc handleNodePropertyChanged(self: ModelDocument, model: Model, node: AstNode, role: RoleId, oldValue: PropertyValue, newValue: PropertyValue, slice: Slice[int])
+proc handleNodeReferenceChanged(self: ModelDocument, model: Model, node: AstNode, role: RoleId, oldRef: NodeId, newRef: NodeId)
+
 method `$`*(document: ModelDocument): string =
   return document.filename
 
@@ -244,18 +249,20 @@ proc newModelDocument*(filename: string = "", app: bool = false, workspaceFolder
 
   var testModel = newModel(newId().ModelId)
   testModel.addLanguage(base_language.baseLanguage)
-
-  let a = newAstNode(stringLiteralClass)
-  let b = newAstNode(nodeReferenceClass)
-  let c = newAstNode(binaryExpressionClass)
-
-  c.add(IdBinaryExpressionLeft, a)
-  c.add(IdBinaryExpressionRight, b)
-
-  testModel.addRootNode(c)
+  let nodeList = newAstNode(nodeListClass)
+  nodeList.add(IdNodeListChildren, newAstNode(emptyLineClass))
+  testModel.addRootNode(nodeList)
 
   result.model = testModel
   result.ctx = newModelComputationContext()
+
+  discard result.model.onNodeDeleted.subscribe proc(d: auto) = result.handleNodeDeleted(d[0], d[1], d[2], d[3], d[4])
+  discard result.model.onNodeInserted.subscribe proc(d: auto) = result.handleNodeInserted(d[0], d[1], d[2], d[3], d[4])
+  discard result.model.onNodePropertyChanged.subscribe proc(d: auto) = result.handleNodePropertyChanged(d[0], d[1], d[2], d[3], d[4], d[5])
+  discard result.model.onNodeReferenceChanged.subscribe proc(d: auto) = result.handleNodeReferenceChanged(d[0], d[1], d[2], d[3], d[4])
+
+  for rootNode in testModel.rootNodes:
+    result.ctx.state.insertNode(rootNode)
 
   result.builder = newCellBuilder()
   for language in result.model.languages:
@@ -467,6 +474,9 @@ proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
 
     self.undoList.setLen 0
     self.redoList.setLen 0
+
+    functionInstances.clear()
+    self.ctx.state.clearCache()
 
     for rootNode in self.model.rootNodes:
       self.ctx.state.insertNode(rootNode)
