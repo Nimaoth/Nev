@@ -8,7 +8,7 @@ import workspaces/[workspace]
 import ast/[model, base_language, cells]
 import ui/node
 
-import ast/[base_language_wasm, model_state]
+import ast/[generator_wasm, base_language_wasm, model_state]
 
 var project = newProject()
 
@@ -2730,6 +2730,7 @@ proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.
 
   measureBlock fmt"Compile '{name}' to wasm":
     var compiler = newBaseLanguageWasmCompiler(self.document.ctx)
+    compiler.addBaseLanguageGenerators()
     let binary = compiler.compileToBinary(function.get)
 
   if self.document.workspace.getSome(workspace):
