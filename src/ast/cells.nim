@@ -445,7 +445,7 @@ proc buildCell*(self: CellBuilder, map: NodeCellMap, node: AstNode, useDefault: 
     # result.fill()
   else:
     if not useDefault:
-      debugf"Unknown builder for {class.name}, using default"
+      log lvlWarn, fmt"Unknown builder for {class.name}, using default"
     # echo fmt"build default {node}"
     result = self.buildCellDefault(map, node, useDefault)
     # result.fill()

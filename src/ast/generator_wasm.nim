@@ -1,10 +1,10 @@
 import std/[macros, genasts]
 import std/[options, tables]
 import fusion/matching
-import id, model, custom_logger, util, base_language, ast_ids
+import id, model, custom_logger, util
 import scripting/[wasm_builder]
 
-logCategory "base-language-wasm"
+logCategory "generator-wasm"
 
 type
   LocalVariableStorage* = enum Local, Stack
@@ -24,6 +24,7 @@ type
     of LValue: discard
 
   TypeAttributes* = tuple[size: int32, align: int32, passReturnAsOutParam: bool]
+  WasmTypeAttributes* = tuple[typ: WasmValueType, load: WasmInstrKind, store: WasmInstrKind]
 
   BaseLanguageWasmCompiler* = ref object
     builder*: WasmBuilder
@@ -36,9 +37,10 @@ type
     localIndices: Table[NodeId, LocalVariable]
     globalIndices: Table[NodeId, WasmGlobalIdx]
     labelIndices: Table[NodeId, int] # Not the actual index
-    wasmValueTypes*: Table[ClassId, WasmValueType]
+    wasmValueTypes*: Table[ClassId, WasmTypeAttributes]
     typeAttributes*: Table[ClassId, TypeAttributes]
     typeAttributeComputers*: Table[ClassId, proc(typ: AstNode): TypeAttributes]
+    functionInputOutputComputer*: Table[ClassId, proc(self: BaseLanguageWasmCompiler, node: AstNode): tuple[inputs: seq[WasmValueType], outputs: seq[WasmValueType]]]
 
     exprStack*: seq[WasmExpr]
     currentExpr*: WasmExpr
@@ -47,7 +49,7 @@ type
     currentStackLocals: seq[int32]
     currentStackLocalsSize: int32
 
-    generators: Table[ClassId, proc(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination)]
+    generators*: Table[ClassId, proc(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination)]
 
     # imported
     printI32: WasmFuncIdx
@@ -59,6 +61,7 @@ type
     buildString: WasmFuncIdx
     strlen: WasmFuncIdx
     allocFunc: WasmFuncIdx
+    cstrToInternal*: WasmFuncIdx
 
     stackBase: WasmGlobalIdx
     stackEnd: WasmGlobalIdx
@@ -143,6 +146,22 @@ proc newBaseLanguageWasmCompiler*(ctx: ModelComputationContextBase): BaseLanguag
       WasmInstr(kind: LocalGet, localIdx: current),
       WasmInstr(kind: LocalGet, localIdx: param),
       WasmInstr(kind: I32Sub),
+    ]))
+
+  # cstrToInternal
+  block:
+    let param = 0.WasmLocalIdx
+    result.cstrToInternal = result.builder.addFunction([I32], [I64], [], body=WasmExpr(instr: @[
+      WasmInstr(kind: LocalGet, localIdx: param),
+      WasmInstr(kind: I64ExtendI32U),
+
+      WasmInstr(kind: LocalGet, localIdx: param),
+      WasmInstr(kind: Call, callFuncIdx: result.strlen),
+      WasmInstr(kind: I64ExtendI32U),
+
+      WasmInstr(kind: I64Const, i64Const: 32),
+      WasmInstr(kind: I64Shl),
+      WasmInstr(kind: I64Or),
     ]))
 
   # build
@@ -240,6 +259,9 @@ proc compileRemainingFunctions*(self: BaseLanguageWasmCompiler) =
     let function = self.functionsToCompile.pop
     self.compileFunction(function[0], function[1])
 
+proc addImport*(self: BaseLanguageWasmCompiler, id: Id, env: string, name: string, inputs: openArray[WasmValueType], outputs: openArray[WasmValueType]) =
+  self.wasmFuncs[id.NodeId] = self.builder.addImport(env, name, self.builder.addType(inputs, outputs))
+
 proc genNode*(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   if self.generators.contains(node.class):
     let generator = self.generators[node.class]
@@ -250,7 +272,7 @@ proc genNode*(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) 
 
 proc toWasmValueType*(self: BaseLanguageWasmCompiler, typ: AstNode): Option[WasmValueType] =
   if self.wasmValueTypes.contains(typ.class):
-    return self.wasmValueTypes[typ.class].some
+    return self.wasmValueTypes[typ.class].typ.some
   return WasmValueType.none
 
 proc getTypeAttributes*(self: BaseLanguageWasmCompiler, typ: AstNode): TypeAttributes =
@@ -268,39 +290,33 @@ proc shouldPassAsOutParamater*(self: BaseLanguageWasmCompiler, typ: AstNode): bo
     return true
   return false
 
+proc getTypeMemInstructions*(self: BaseLanguageWasmCompiler, typ: AstNode): tuple[load: WasmInstrKind, store: WasmInstrKind] =
+  if self.wasmValueTypes.contains(typ.class):
+    let (_, load, store) = self.wasmValueTypes[typ.class]
+    return (load, store)
+
+  log lvlError, fmt"getTypeMemInstructions: Type not implemented: {`$`(typ, true)}"
+  assert false
+  return (Nop, Nop)
+
+proc getWasmFunc*(self: BaseLanguageWasmCompiler, id: Id): WasmFuncIdx =
+  if not self.wasmFuncs.contains(id.NodeId):
+    return 0.WasmFuncIdx
+  return self.wasmFuncs[id.NodeId]
+
 proc getOrCreateWasmFunc*(self: BaseLanguageWasmCompiler, node: AstNode, exportName: Option[string] = string.none): WasmFuncIdx =
   if not self.wasmFuncs.contains(node.id):
-    var inputs, outputs: seq[WasmValueType]
-
-    for _, c in node.children(IdFunctionDefinitionReturnType):
-      let typ = self.ctx.getValue(c)
-      if self.shouldPassAsOutParamater(typ):
-        inputs.add WasmValueType.I32
-      elif typ.class != IdVoid:
-        outputs.add self.toWasmValueType(typ).get
-
-    for _, c in node.children(IdFunctionDefinitionParameters):
-      let typ = self.ctx.computeType(c)
-      if typ.class == IdType:
-        continue
-      inputs.add self.toWasmValueType(typ).get
+    let (inputs, outputs) = if self.functionInputOutputComputer.contains(node.class):
+      self.functionInputOutputComputer[node.class](self, node)
+    else:
+      log lvlError, fmt"getOrCreateWasmFunc: Function not implemented: {`$`(node, true)}"
+      return 0.WasmFuncIdx
 
     let funcIdx = self.builder.addFunction(inputs, outputs, exportName=exportName)
     self.wasmFuncs[node.id] = funcIdx
     self.functionsToCompile.add (node, funcIdx)
 
   return self.wasmFuncs[node.id]
-
-proc getTypeMemInstructions*(self: BaseLanguageWasmCompiler, typ: AstNode): tuple[load: WasmInstrKind, store: WasmInstrKind] =
-  if typ.class == IdInt:
-    return (I32Load, I32Store)
-  if typ.class == IdPointerType:
-    return (I32Load, I32Store)
-  if typ.class == IdString:
-    return (I64Load, I64Store)
-  log lvlError, fmt"getTypeMemInstructions: Type not implemented: {`$`(typ, true)}"
-  assert false
-  return (Nop, Nop)
 
 proc createLocal*(self: BaseLanguageWasmCompiler, id: NodeId, typ: AstNode, name: string): WasmLocalIdx =
   if self.toWasmValueType(typ).getSome(wasmType):
@@ -365,62 +381,12 @@ proc loadInstr*(self: BaseLanguageWasmCompiler, op: WasmInstrKind, offset: uint3
   instr.memArg = WasmMemArg(offset: offset, align: align)
   self.currentExpr.instr.add instr
 
-proc generateEpiloque*(self: BaseLanguageWasmCompiler) =
-  self.instr(LocalGet, localIdx: self.currentBasePointer)
-  self.instr(GlobalSet, globalIdx: self.stackPointer)
-
 proc compileFunction*(self: BaseLanguageWasmCompiler, node: AstNode, funcIdx: WasmFuncIdx) =
-  let body = node.children(IdFunctionDefinitionBody)
-  if body.len != 1:
-    return
-
   assert self.exprStack.len == 0
   self.currentExpr = WasmExpr()
   self.currentLocals.setLen 0
   self.currentParamCount = 0.int32
-
-  let returnType = node.firstChild(IdFunctionDefinitionReturnType).mapIt(self.ctx.getValue(it)).get(voidTypeInstance)
-  let passReturnAsOutParam = self.shouldPassAsOutParamater(returnType)
-
-  if passReturnAsOutParam:
-    self.localIndices[IdFunctionDefinitionReturnType.NodeId] = LocalVariable(kind: Local, localIdx: self.currentParamCount.WasmLocalIdx)
-    inc self.currentParamCount
-
-  for i, param in node.children(IdFunctionDefinitionParameters):
-    let paramType = self.ctx.computeType(param)
-    if paramType.class == IdType:
-      continue
-
-    self.localIndices[param.id] = LocalVariable(kind: Local, localIdx: self.currentParamCount.WasmLocalIdx)
-    inc self.currentParamCount
-
-  self.currentBasePointer = (self.currentLocals.len + self.currentParamCount).WasmLocalIdx
-  self.currentLocals.add((I32, "__base_pointer")) # base pointer
-
-  let stackSizeInstrIndex = block: # prologue
-    self.instr(GlobalGet, globalIdx: self.stackPointer)
-    self.instr(I32Const, i32Const: 0) # size, patched at end when we know the size of locals
-    let i = self.currentExpr.instr.high
-    self.instr(I32Sub)
-    self.instr(LocalTee, localIdx: self.currentBasePointer)
-    self.instr(GlobalSet, globalIdx: self.stackPointer)
-    i
-
-  let destination = if returnType.class == IdVoid:
-    Destination(kind: Discard)
-  elif passReturnAsOutParam:
-    self.instr(LocalGet, localIdx: 0.WasmLocalIdx) # load return value address from first parameter
-    Destination(kind: Memory, offset: 0, align: 0)
-  else:
-    Destination(kind: Stack)
-
-  self.genNode(body[0], destination)
-
-  let requiredStackSize: int32 = self.currentStackLocalsSize
-  self.currentExpr.instr[stackSizeInstrIndex].i32Const = requiredStackSize
-
-  self.generateEpiloque()
-
+  self.genNode(node, Destination(kind: Discard))
   self.builder.setBody(funcIdx, self.currentLocals, self.currentExpr)
 
 proc genDrop*(self: BaseLanguageWasmCompiler, node: AstNode) =
@@ -497,7 +463,7 @@ proc genCopyToDestination*(self: BaseLanguageWasmCompiler, node: AstNode, dest: 
 
   of Memory():
     let typ = self.ctx.computeType(node)
-    let (sourceSize, sourceAlign, _) = self.getTypeAttributes(typ)
+    let (sourceSize, _, _) = self.getTypeAttributes(typ)
     self.instr(I32Const, i32Const: sourceSize)
     self.instr(MemoryCopy)
 
