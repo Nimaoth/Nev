@@ -42,6 +42,12 @@ template catch*(exp: untyped, then: untyped): untyped =
   except CatchableError:
     then
 
+template catch*(exp: untyped, error: untyped, then: untyped): untyped =
+  try:
+    exp
+  except error:
+    then
+
 template hasPrefix*(exp: untyped, prefix: string, v: untyped): untyped =
   let temp = exp
   let matches = temp.startsWith(prefix)
