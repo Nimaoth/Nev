@@ -85,6 +85,7 @@ type
     references {.getter.}: seq[NodeReferenceDescription]
     substitutionProperty {.getter.}: Option[RoleId]
     precedence {.getter.}: int
+    canBeRoot {.getter.}: bool
 
   AstNode* = ref object
     id*: NodeId
@@ -160,6 +161,7 @@ type
     id {.getter.}: LanguageId
     version {.getter.}: int
     classes {.getter.}: Table[ClassId, NodeClass]
+    rootNodeClasses {.getter.}: seq[NodeClass]
     # childClasses {.getter.}: Table[ClassId, seq[NodeClass]]
     builder {.getter.}: CellBuilder
 
@@ -274,6 +276,8 @@ proc newLanguage*(id: LanguageId, classes: seq[NodeClass], builder: CellBuilder,
 
   for c in classes:
     result.classes[c.id] = c
+    if c.canBeRoot:
+      result.rootNodeClasses.add c
 
     # if c.base.isNotNil:
     #   if not result.childClasses.contains(c.base.id):
@@ -313,6 +317,12 @@ proc newModel*(id: ModelId = default(ModelId)): Model =
 
 proc addModel*(self: Project, model: Model) =
   self.models[model.id] = model
+
+proc hasLanguage*(self: Model, language: LanguageId): bool =
+  for l in self.languages:
+    if l.id == language:
+      return true
+  return false
 
 proc addLanguage*(self: Model, language: Language) =
   if not language.verify():
@@ -369,6 +379,7 @@ proc newNodeClass*(
       isAbstract: bool = false,
       isFinal: bool = false,
       isInterface: bool = false,
+      canBeRoot: bool = false,
       properties: openArray[PropertyDescription] = [],
       children: openArray[NodeChildDescription] = [],
       references: openArray[NodeReferenceDescription] = [],
@@ -385,6 +396,7 @@ proc newNodeClass*(
   result.isAbstract = isAbstract
   result.isFinal = isFinal
   result.isInterface = isInterface
+  result.canBeRoot = canBeRoot
   result.properties = @properties
   result.children = @children
   result.references = @references

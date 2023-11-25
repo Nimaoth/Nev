@@ -1,8 +1,8 @@
 import std/[strformat, strutils, sugar, tables, options, json, streams, algorithm]
-import fusion/matching, bumpy, rect_utils, vmath
+import fusion/matching, bumpy, rect_utils, vmath, fuzzy
 import util, document, document_editor, text/text_document, events, id, ast_ids, scripting/expose, event, input, custom_async, myjsonutils, custom_unicode, delayed_task
 from scripting_api as api import nil
-import custom_logger, timer, array_buffer, config_provider, app_interface, dispatch_tables
+import custom_logger, timer, array_buffer, config_provider, app_interface, dispatch_tables, selector_popup
 import platform/[filesystem, platform]
 import workspaces/[workspace]
 import ast/[model, base_language, editor_language, cells]
@@ -250,10 +250,10 @@ proc newModelDocument*(filename: string = "", app: bool = false, workspaceFolder
   self.project = project
 
   var testModel = newModel(newId().ModelId)
-  testModel.addLanguage(base_language.baseLanguage)
-  let nodeList = newAstNode(nodeListClass)
-  nodeList.add(IdNodeListChildren, newAstNode(emptyLineClass))
-  testModel.addRootNode(nodeList)
+  # testModel.addLanguage(base_language.baseLanguage)
+  # let nodeList = newAstNode(nodeListClass)
+  # nodeList.add(IdNodeListChildren, newAstNode(emptyLineClass))
+  # testModel.addRootNode(nodeList)
 
   self.model = testModel
   self.ctx = newModelComputationContext()
@@ -416,6 +416,8 @@ proc `cursor=`*(self: ModelDocumentEditor, cursor: CellCursor) =
   self.selection = (cursor, cursor)
 
 proc `cursor=`*(self: ModelDocumentEditor, cursor: CellCursorState) =
+  if self.document.model.rootNodes.len == 0:
+    return
   if self.document.model.resolveReference(cursor.node).getSome(node):
     self.cursor = CellCursor(map: self.nodeCellMap, index: cursor.index, path: cursor.path, node: node)
   else:
@@ -738,16 +740,22 @@ proc handleModelChanged(self: ModelDocumentEditor, document: ModelDocument) =
 
   self.rebuildCells()
 
-  self.mSelection.first.node = self.document.model.rootNodes[0]
-  self.mSelection.last.node = self.document.model.rootNodes[0]
+  if self.document.model.rootNodes.len > 0:
+    self.mSelection.first.node = self.document.model.rootNodes[0]
+    self.mSelection.last.node = self.document.model.rootNodes[0]
 
-  if self.mTargetCursor.getSome(c):
-    self.cursor = c
-    assert self.cursor.map == self.nodeCellMap
+    if self.mTargetCursor.getSome(c):
+      self.cursor = c
+      assert self.cursor.map == self.nodeCellMap
+    else:
+      self.cursor = self.getFirstEditableCellOfNode(self.document.model.rootNodes[0]).get
+
+    self.updateScrollOffset()
   else:
-    self.cursor = self.getFirstEditableCellOfNode(self.document.model.rootNodes[0]).get
-
-  self.updateScrollOffset()
+    self.mSelection.first = CellCursor.default
+    self.mSelection.last = CellCursor.default
+    self.mSelection.first.map = self.nodeCellMap
+    self.mSelection.last.map = self.nodeCellMap
 
   self.mCursorBeforeTransaction = self.selection
 
@@ -920,10 +928,12 @@ method createWithDocument*(_: ModelDocumentEditor, document: Document, configPro
   discard self.document.onFinishedRedoTransaction.subscribe proc(d: auto) = self.handleFinishedRedoTransaction(d[0], d[1])
 
   self.rebuildCells()
-  self.mSelection.first.node = self.document.model.rootNodes[0]
-  self.mSelection.last.node = self.document.model.rootNodes[0]
-  self.cursor = self.getFirstEditableCellOfNode(self.document.model.rootNodes[0]).get
-  self.updateScrollOffset()
+
+  if self.document.model.rootNodes.len > 0:
+    self.mSelection.first.node = self.document.model.rootNodes[0]
+    self.mSelection.last.node = self.document.model.rootNodes[0]
+    self.cursor = self.getFirstEditableCellOfNode(self.document.model.rootNodes[0]).get
+    self.updateScrollOffset()
 
   self.startBlinkCursorTask()
 
@@ -2388,20 +2398,36 @@ proc createNewNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
   defer:
     self.document.finishTransaction()
 
-  if not self.selection.isEmpty:
-    return
+  if self.document.model.rootNodes.len == 0:
+    var class: NodeClass
+    for language in self.document.model.languages:
+      if language.rootNodeClasses.len > 0:
+        class = language.rootNodeClasses[0]
+        break
 
-  let updatedScrollOffset = self.updateScrollOffsetToPrevCell()
-  defer:
-    if not updatedScrollOffset:
-      self.updateScrollOffset()
+    if class.isNil:
+      log lvlError, "No root node classes found"
+      return
 
-  debug "createNewNode"
-
-  if self.createNewNodeAt(self.cursor).getSome(newNode):
+    self.document.model.addRootNode newAstNode(class)
     self.rebuildCells()
-    self.cursor = self.getFirstEditableCellOfNode(newNode).get
-    debug self.cursor
+    self.cursor = self.getFirstEditableCellOfNode(self.document.model.rootNodes[0]).get
+
+  else:
+    if not self.selection.isEmpty:
+      return
+
+    let updatedScrollOffset = self.updateScrollOffsetToPrevCell()
+    defer:
+      if not updatedScrollOffset:
+        self.updateScrollOffset()
+
+    debug "createNewNode"
+
+    if self.createNewNodeAt(self.cursor).getSome(newNode):
+      self.rebuildCells()
+      self.cursor = self.getFirstEditableCellOfNode(newNode).get
+      debug self.cursor
 
   self.markDirty()
 
@@ -2789,6 +2815,38 @@ proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.
 
 proc runSelectedFunction*(self: ModelDocumentEditor) {.expose("editor.model").} =
   asyncCheck runSelectedFunctionAsync(self)
+
+type ModelLanguageSelectorItem* = ref object of SelectorItem
+  language*: Language
+  name*: string
+
+method changed*(self: ModelLanguageSelectorItem, other: SelectorItem): bool =
+  let other = other.ModelLanguageSelectorItem
+  return self.language.id != other.language.id
+
+proc addLanguage*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  var popup = self.app.createSelectorPopup().SelectorPopup
+  popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
+    # Find everything matching text
+
+    let languages = {IdBaseLanguage: "Base Language", IdEditorLanguage: "Editor Language"}
+    for (id, name) in languages:
+      if self.document.model.hasLanguage(id):
+        continue
+      let score = fuzzyMatchSmart(text, name)
+      result.add ModelLanguageSelectorItem(language: resolveLanguage(id).get, name: name, score: score)
+
+    result.sort((a, b) => cmp(a.score, b.score), Descending)
+
+  popup.handleItemConfirmed = proc(item: SelectorItem) =
+    log lvlInfo, fmt"Add language {item.ModelLanguageSelectorItem.name} ({item.ModelLanguageSelectorItem.language.id}) to model {self.document.model.id}"
+    let language = item.ModelLanguageSelectorItem.language
+    self.document.model.addLanguage(language)
+    self.document.builder.addBuilder(language.builder)
+
+  popup.updateCompletions()
+
+  self.app.pushPopup popup
 
 genDispatcher("editor.model")
 addActiveDispatchTable "editor.model", genDispatchTable("editor.model")
