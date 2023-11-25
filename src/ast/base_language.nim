@@ -111,7 +111,7 @@ let varDeclClass* = newNodeClass(IdVarDecl, "VarDecl", alias="var", base=express
     NodeChildDescription(id: IdVarDeclType, role: "type", class: expressionClass.id, count: ChildCount.ZeroOrOne),
     NodeChildDescription(id: IdVarDeclValue, role: "value", class: expressionClass.id, count: ChildCount.ZeroOrOne)])
 
-let nodeListClass* = newNodeClass(IdNodeList, "NodeList",
+let nodeListClass* = newNodeClass(IdNodeList, "NodeList", canBeRoot=true,
   children=[
     NodeChildDescription(id: IdNodeListChildren, role: "children", class: expressionClass.id, count: ChildCount.ZeroOrMore)])
 

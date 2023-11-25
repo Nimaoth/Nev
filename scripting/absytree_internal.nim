@@ -256,6 +256,14 @@ proc editor_text_setSelection_void_TextDocumentEditor_Cursor_string_impl*(
 proc editor_text_enterChooseCursorMode_void_TextDocumentEditor_string_impl*(
     self: TextDocumentEditor; action: string) =
   discard
+proc popup_selector_accept_void_SelectorPopup_impl*(self: SelectorPopup) =
+  discard
+proc popup_selector_cancel_void_SelectorPopup_impl*(self: SelectorPopup) =
+  discard
+proc popup_selector_prev_void_SelectorPopup_impl*(self: SelectorPopup) =
+  discard
+proc popup_selector_next_void_SelectorPopup_impl*(self: SelectorPopup) =
+  discard
 proc editor_model_scrollPixels_void_ModelDocumentEditor_float32_impl*(
     self: ModelDocumentEditor; amount: float32) =
   discard
@@ -367,13 +375,8 @@ proc editor_model_clearModelCache_void_ModelDocumentEditor_impl*(
 proc editor_model_runSelectedFunction_void_ModelDocumentEditor_impl*(
     self: ModelDocumentEditor) =
   discard
-proc popup_selector_accept_void_SelectorPopup_impl*(self: SelectorPopup) =
-  discard
-proc popup_selector_cancel_void_SelectorPopup_impl*(self: SelectorPopup) =
-  discard
-proc popup_selector_prev_void_SelectorPopup_impl*(self: SelectorPopup) =
-  discard
-proc popup_selector_next_void_SelectorPopup_impl*(self: SelectorPopup) =
+proc editor_model_addLanguage_void_ModelDocumentEditor_impl*(
+    self: ModelDocumentEditor) =
   discard
 proc editor_getBackend_Backend_App_impl*(): Backend =
   discard

@@ -174,6 +174,10 @@ proc editor_text_setSelection_void_TextDocumentEditor_Cursor_string_impl(
     self: TextDocumentEditor; cursor: Cursor; nextMode: string)  {.importc.}
 proc editor_text_enterChooseCursorMode_void_TextDocumentEditor_string_impl(
     self: TextDocumentEditor; action: string)  {.importc.}
+proc popup_selector_accept_void_SelectorPopup_impl(self: SelectorPopup)  {.importc.}
+proc popup_selector_cancel_void_SelectorPopup_impl(self: SelectorPopup)  {.importc.}
+proc popup_selector_prev_void_SelectorPopup_impl(self: SelectorPopup)  {.importc.}
+proc popup_selector_next_void_SelectorPopup_impl(self: SelectorPopup)  {.importc.}
 proc editor_model_scrollPixels_void_ModelDocumentEditor_float32_impl(
     self: ModelDocumentEditor; amount: float32)  {.importc.}
 proc editor_model_scrollLines_void_ModelDocumentEditor_float32_impl(
@@ -247,10 +251,8 @@ proc editor_model_clearModelCache_void_ModelDocumentEditor_impl(
     self: ModelDocumentEditor)  {.importc.}
 proc editor_model_runSelectedFunction_void_ModelDocumentEditor_impl(
     self: ModelDocumentEditor)  {.importc.}
-proc popup_selector_accept_void_SelectorPopup_impl(self: SelectorPopup)  {.importc.}
-proc popup_selector_cancel_void_SelectorPopup_impl(self: SelectorPopup)  {.importc.}
-proc popup_selector_prev_void_SelectorPopup_impl(self: SelectorPopup)  {.importc.}
-proc popup_selector_next_void_SelectorPopup_impl(self: SelectorPopup)  {.importc.}
+proc editor_model_addLanguage_void_ModelDocumentEditor_impl(
+    self: ModelDocumentEditor)  {.importc.}
 proc editor_getBackend_Backend_App_impl(): Backend  {.importc.}
 proc editor_toggleShowDrawnNodes_void_App_impl()  {.importc.}
 proc editor_saveAppState_void_App_impl()  {.importc.}

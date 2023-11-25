@@ -1090,7 +1090,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
 
               return node.some
 
-          if self.cursorVisible:
+          if self.cursorVisible and self.document.model.rootNodes.len > 0:
             if drawCursor(self.selection.last, self.isThickCursor, textColor, 0).getSome(node):
               self.lastCursorLocationBounds = rect(self.selection.last.index.float * builder.charWidth, 0, builder.charWidth, builder.textHeight).transformRect(node, builder.root).some
 
@@ -1145,3 +1145,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
   if self.showCompletions and self.active:
     result.add proc() =
       self.createCompletions(builder, app, self.lastCursorLocationBounds.get(rect(100, 100, 10, 10)))
+
+method createUI*(self: ModelLanguageSelectorItem, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
+  let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
+  builder.panel(&{FillX, SizeToContentY, DrawText}, text = self.name, textColor = textColor)
