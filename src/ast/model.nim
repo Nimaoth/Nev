@@ -1,8 +1,9 @@
-
-import std/[options, strutils, hashes, json, tables, strformat]
+import std/[options, strutils, hashes, tables, strformat, sugar, sequtils]
 import fusion/matching
 import chroma
 import util, array_table, myjsonutils, id, macro_utils, custom_logger, event, regex
+
+export id
 
 logCategory "types"
 
@@ -306,7 +307,7 @@ proc resolveClass*(model: Model, classId: ClassId): NodeClass =
 proc getLanguageForClass*(model: Model, classId: ClassId): Language =
   return model.classesToLanguages.getOrDefault(classId, nil)
 
-proc newModel*(id: ModelId): Model =
+proc newModel*(id: ModelId = default(ModelId)): Model =
   new result
   result.id = id
 
@@ -1076,10 +1077,21 @@ proc toJson*(node: AstNode, opt = initToJsonOptions()): JsonNode =
       arr.add [key.toJson(opt), arr2].toJArray
     result["children"] = arr
 
-proc toJson*(model: Model, opt = initToJsonOptions()): JsonNode =
+proc toJson*(nodes: openArray[AstNode], opt = initToJsonOptions()): JsonNode =
   result = newJArray()
-  for node in model.rootNodes:
+  for node in nodes:
     result.add node.toJson(opt)
+
+proc toJson*(model: Model, opt = initToJsonOptions()): JsonNode =
+  result = newJObject()
+
+  result["id"] = model.id.toJson(opt)
+  result["languages"] = model.languages.mapIt(it.id.Id.toJson(opt)).toJson(opt)
+
+  var rootNodes = newJArray()
+  for node in model.rootNodes:
+    rootNodes.add node.toJson(opt)
+  result["rootNodes"] = rootNodes
 
 proc fromJsonHook*(value: var PropertyValue, json: JsonNode) =
   if json.kind == JString:
@@ -1123,9 +1135,31 @@ proc jsonToAstNode(json: JsonNode, model: Model, opt = Joptions()): Option[AstNo
         else:
           log(lvlError, fmt"Failed to parse node from json")
 
-proc loadFromJson*(model: Model, json: JsonNode, opt = Joptions()) =
-  for node in json:
-    if node.jsonToAstNode(model, opt).getSome(node):
-      model.addRootNode(node)
-    else:
-      log(lvlError, fmt"Failed to parse node from json")
+proc loadFromJson*(model: Model, json: JsonNode, resolveLanguage: proc(id: LanguageId): Option[Language], opt = Joptions()) =
+  if json.kind != JObject:
+    log(lvlError, fmt"Expected JObject")
+    return
+
+  if json.hasKey("id"):
+    model.id = json["id"].jsonTo ModelId
+  else:
+    log(lvlError, fmt"Missing id")
+
+  if json.hasKey("languages"):
+    for languageIdJson in json["languages"]:
+      let id = languageIdJson.jsonTo LanguageId
+      if resolveLanguage(id).getSome(language):
+        model.addLanguage(language)
+      else:
+        log(lvlError, fmt"Unknown language {id}")
+  else:
+    log(lvlWarn, fmt"Missing languages")
+
+  if json.hasKey("rootNodes"):
+    for node in json["rootNodes"]:
+      if node.jsonToAstNode(model, opt).getSome(node):
+        model.addRootNode(node)
+      else:
+        log(lvlError, fmt"Failed to parse root node from json")
+  else:
+    log(lvlWarn, fmt"Missing root nodes")
