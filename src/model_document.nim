@@ -445,6 +445,14 @@ proc handleNodeReferenceChanged(self: ModelDocument, model: Model, node: AstNode
   self.currentTransaction.operations.add ModelOperation(kind: ReferenceChange, node: node, role: role, id: oldRef)
   self.ctx.state.updateNode(node)
 
+proc resolveLanguage(id: LanguageId): Option[Language] =
+  if id == IdBaseLanguage:
+    return base_language.baseLanguage.some
+  elif id == IdEditorLanguage:
+    return editor_language.editorLanguage.some
+  else:
+    return Language.none
+
 proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
   log lvlInfo, fmt"Loading model source file '{self.filename}'"
   try:
@@ -458,10 +466,11 @@ proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
 
     let json = jsonText.parseJson
 
-    var model = newModel(newId().ModelId)
-    model.addLanguage(base_language.baseLanguage)
-    model.addLanguage(editor_language.editorLanguage)
-    model.loadFromJson(json)
+    var model = newModel()
+    model.loadFromJson(json, resolveLanguage)
+    if model.id.isNone:
+      log lvlError, fmt"Failed to load model: no id"
+      return
 
     let oldModel = self.model
     self.model = model

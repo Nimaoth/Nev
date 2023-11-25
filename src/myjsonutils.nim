@@ -41,6 +41,8 @@ import std/[json, strutils, tables, sets, strtabs, options, macros, uri]
 from std/enumutils import symbolName
 from std/typetraits import OrdinalEnum
 
+export json
+
 when defined(nimPreviewSlimSystem):
   import std/assertions
 
