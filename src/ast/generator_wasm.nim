@@ -1,7 +1,7 @@
 import std/[macros, genasts]
 import std/[options, tables]
 import fusion/matching
-import id, model, ast_ids, custom_logger, util, base_language, model_state
+import id, model, custom_logger, util, base_language, ast_ids
 import scripting/[wasm_builder]
 
 logCategory "base-language-wasm"
@@ -23,6 +23,8 @@ type
     of Discard: discard
     of LValue: discard
 
+  TypeAttributes* = tuple[size: int32, align: int32, passReturnAsOutParam: bool]
+
   BaseLanguageWasmCompiler* = ref object
     builder*: WasmBuilder
 
@@ -34,6 +36,9 @@ type
     localIndices: Table[NodeId, LocalVariable]
     globalIndices: Table[NodeId, WasmGlobalIdx]
     labelIndices: Table[NodeId, int] # Not the actual index
+    wasmValueTypes*: Table[ClassId, WasmValueType]
+    typeAttributes*: Table[ClassId, TypeAttributes]
+    typeAttributeComputers*: Table[ClassId, proc(typ: AstNode): TypeAttributes]
 
     exprStack*: seq[WasmExpr]
     currentExpr*: WasmExpr
@@ -243,45 +248,23 @@ proc genNode*(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) 
     let class = node.nodeClass
     log(lvlWarn, fmt"genNode: Node class not implemented: {class.name}")
 
-proc toWasmValueType*(typ: AstNode): Option[WasmValueType] =
-  if typ.class == IdInt:
-    return WasmValueType.I32.some # int32
-  if typ.class == IdPointerType:
-    return WasmValueType.I32.some # pointer
-  if typ.class == IdString:
-    return WasmValueType.I64.some # (len << 32) | ptr
-  if typ.class == IdFunctionType:
-    return WasmValueType.I32.some # table index
+proc toWasmValueType*(self: BaseLanguageWasmCompiler, typ: AstNode): Option[WasmValueType] =
+  if self.wasmValueTypes.contains(typ.class):
+    return self.wasmValueTypes[typ.class].some
   return WasmValueType.none
 
-proc getTypeAttributes*(self: BaseLanguageWasmCompiler, typ: AstNode): tuple[size: int32, align: int32] =
-  if typ.class == IdInt:
-    return (4, 4)
-  if typ.class == IdPointerType:
-    return (4, 4)
-  if typ.class == IdString:
-    return (8, 4)
-  if typ.class == IdFunctionType:
-    return (0, 1)
-  if typ.class == IdVoid:
-    return (0, 1)
-  if typ.class == IdStructDefinition:
-    for _, memberNode in typ.children(IdStructDefinitionMembers):
-      let memberType = self.ctx.computeType(memberNode)
-      let (memberSize, memberAlign) = self.getTypeAttributes(memberType)
-      assert memberAlign <= 4
-
-      result.size = align(result.size, memberAlign)
-      result.size += memberSize
-      result.align = max(result.align, memberAlign)
-    return
-  return (0, 1)
+proc getTypeAttributes*(self: BaseLanguageWasmCompiler, typ: AstNode): TypeAttributes =
+  if self.typeAttributes.contains(typ.class):
+    return self.typeAttributes[typ.class]
+  if self.typeAttributeComputers.contains(typ.class):
+    return self.typeAttributeComputers[typ.class](typ)
+  return (0, 1, false)
 
 proc shouldPassAsOutParamater*(self: BaseLanguageWasmCompiler, typ: AstNode): bool =
-  let (size, _) = self.getTypeAttributes(typ)
-  if size > 8:
+  let (size, _, passReturnAsOutParam) = self.getTypeAttributes(typ)
+  if passReturnAsOutParam:
     return true
-  if typ.class == IdStructDefinition:
+  if size > 8:
     return true
   return false
 
@@ -294,13 +277,13 @@ proc getOrCreateWasmFunc*(self: BaseLanguageWasmCompiler, node: AstNode, exportN
       if self.shouldPassAsOutParamater(typ):
         inputs.add WasmValueType.I32
       elif typ.class != IdVoid:
-        outputs.add typ.toWasmValueType.get
+        outputs.add self.toWasmValueType(typ).get
 
     for _, c in node.children(IdFunctionDefinitionParameters):
       let typ = self.ctx.computeType(c)
       if typ.class == IdType:
         continue
-      inputs.add typ.toWasmValueType.get
+      inputs.add self.toWasmValueType(typ).get
 
     let funcIdx = self.builder.addFunction(inputs, outputs, exportName=exportName)
     self.wasmFuncs[node.id] = funcIdx
@@ -320,13 +303,13 @@ proc getTypeMemInstructions*(self: BaseLanguageWasmCompiler, typ: AstNode): tupl
   return (Nop, Nop)
 
 proc createLocal*(self: BaseLanguageWasmCompiler, id: NodeId, typ: AstNode, name: string): WasmLocalIdx =
-  if typ.toWasmValueType.getSome(wasmType):
+  if self.toWasmValueType(typ).getSome(wasmType):
     result = (self.currentLocals.len + self.currentParamCount).WasmLocalIdx
     self.currentLocals.add((wasmType, name))
     self.localIndices[id] = LocalVariable(kind: Local, localIdx: result)
 
 proc createStackLocal*(self: BaseLanguageWasmCompiler, id: NodeId, typ: AstNode): int32 =
-  let (size, alignment) = self.getTypeAttributes(typ)
+  let (size, alignment, _) = self.getTypeAttributes(typ)
 
   self.currentStackLocalsSize = self.currentStackLocalsSize.align(alignment)
   result = self.currentStackLocalsSize
@@ -514,7 +497,7 @@ proc genCopyToDestination*(self: BaseLanguageWasmCompiler, node: AstNode, dest: 
 
   of Memory():
     let typ = self.ctx.computeType(node)
-    let (sourceSize, sourceAlign) = self.getTypeAttributes(typ)
+    let (sourceSize, sourceAlign, _) = self.getTypeAttributes(typ)
     self.instr(I32Const, i32Const: sourceSize)
     self.instr(MemoryCopy)
 

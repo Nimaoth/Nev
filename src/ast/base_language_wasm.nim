@@ -16,7 +16,7 @@ proc genNodeBlock(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destinati
   else:
     WasmLocalIdx.none
 
-  self.genBlock(WasmBlockType(kind: ValType, typ: typ.toWasmValueType)):
+  self.genBlock(WasmBlockType(kind: ValType, typ: self.toWasmValueType(typ))):
     if tempIdx.getSome(tempIdx):
       self.instr(LocalGet, localIdx: tempIdx)
 
@@ -119,7 +119,7 @@ proc genNodeIfExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: De
   let elseCase = node.children(IdIfExpressionElseCase)
 
   let typ = self.ctx.computeType(node)
-  let wasmType = typ.toWasmValueType
+  let wasmType = self.toWasmValueType(typ)
 
   for k, c in thenCases:
     # condition
@@ -238,7 +238,7 @@ proc genNodeNodeReference(self: BaseLanguageWasmCompiler, node: AstNode, dest: D
       return
 
     let typ = self.ctx.computeType(node)
-    let (size, align) = self.getTypeAttributes(typ)
+    let (size, align, _) = self.getTypeAttributes(typ)
 
     case dest
     of Stack():
@@ -438,7 +438,7 @@ proc genNodeStructMemberAccessExpression(self: BaseLanguageWasmCompiler, node: A
 
   for _, memberDefinition in typ.children(IdStructDefinitionMembers):
     let memberType = self.ctx.computeType(memberDefinition)
-    let (memberSize, memberAlign) = self.getTypeAttributes(memberType)
+    let (memberSize, memberAlign, _) = self.getTypeAttributes(memberType)
     offset = align(offset, memberAlign)
 
     let originalMemberId = if memberDefinition.hasReference(IdStructTypeGenericMember):
@@ -498,7 +498,7 @@ proc genCopyToDestination(self: BaseLanguageWasmCompiler, node: AstNode, dest: D
 
   of Memory():
     let typ = self.ctx.computeType(node)
-    let (sourceSize, sourceAlign) = self.getTypeAttributes(typ)
+    let (sourceSize, sourceAlign, _) = self.getTypeAttributes(typ)
     self.instr(I32Const, i32Const: sourceSize)
     self.instr(MemoryCopy)
 
@@ -526,7 +526,7 @@ proc genNodeArrayAccess(self: BaseLanguageWasmCompiler, node: AstNode, dest: Des
     return
 
   let typ = self.ctx.computeType(node)
-  let (size, _) = self.getTypeAttributes(typ)
+  let (size, _, _) = self.getTypeAttributes(typ)
 
   self.genNode(valueNode, Destination(kind: Stack))
   self.genNode(indexNode, Destination(kind: Stack))
@@ -542,7 +542,7 @@ proc genNodeAllocate(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destin
     return
 
   let typ = self.ctx.getValue(typeNode)
-  let (size, align) = self.getTypeAttributes(typ)
+  let (size, align, _) = self.getTypeAttributes(typ)
 
   self.instr(I32Const, i32Const: size)
 
@@ -552,6 +552,18 @@ proc genNodeAllocate(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destin
 
   self.instr(Call, callFuncIdx: self.allocFunc)
   self.genStoreDestination(node, dest)
+
+proc computeStructTypeAttributes(self: BaseLanguageWasmCompiler, typ: AstNode): TypeAttributes =
+  result.passReturnAsOutParam = true
+  for _, memberNode in typ.children(IdStructDefinitionMembers):
+    let memberType = self.ctx.computeType(memberNode)
+    let (memberSize, memberAlign, _) = self.getTypeAttributes(memberType)
+    assert memberAlign <= 4
+
+    result.size = align(result.size, memberAlign)
+    result.size += memberSize
+    result.align = max(result.align, memberAlign)
+  return
 
 proc addBaseLanguageGenerators*(self: BaseLanguageWasmCompiler) =
   self.generators[IdBlock] = genNodeBlock
@@ -588,3 +600,15 @@ proc addBaseLanguageGenerators*(self: BaseLanguageWasmCompiler) =
   self.generators[IdDeref] = genNodeDeref
   self.generators[IdArrayAccess] = genNodeArrayAccess
   self.generators[IdAllocate] = genNodeAllocate
+
+  self.wasmValueTypes[IdInt] = WasmValueType.I32 # int32
+  self.wasmValueTypes[IdPointerType] = WasmValueType.I32 # pointer
+  self.wasmValueTypes[IdString] = WasmValueType.I64 # (len << 32) | ptr
+  self.wasmValueTypes[IdFunctionType] = WasmValueType.I32 # table index
+
+  self.typeAttributes[IdInt] = (4'i32, 4'i32, false)
+  self.typeAttributes[IdPointerType] = (4'i32, 4'i32, false)
+  self.typeAttributes[IdString] = (8'i32, 4'i32, false)
+  self.typeAttributes[IdFunctionType] = (0'i32, 1'i32, false)
+  self.typeAttributes[IdVoid] = (0'i32, 1'i32, false)
+  self.typeAttributeComputers[IdStructDefinition] = proc(typ: AstNode): TypeAttributes = self.computeStructTypeAttributes(typ)
