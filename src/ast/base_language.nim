@@ -3,6 +3,8 @@ import id, ast_ids, util, custom_logger
 import model, cells, model_state
 import ui/node
 
+export id, ast_ids
+
 logCategory "base-language"
 
 let expressionClass* = newNodeClass(IdExpression, "Expression", isAbstract=true)

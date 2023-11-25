@@ -5,10 +5,10 @@ from scripting_api as api import nil
 import custom_logger, timer, array_buffer, config_provider, app_interface, dispatch_tables
 import platform/[filesystem, platform]
 import workspaces/[workspace]
-import ast/[model, base_language, cells]
+import ast/[model, base_language, editor_language, cells]
 import ui/node
 
-import ast/[generator_wasm, base_language_wasm, model_state]
+import ast/[generator_wasm, base_language_wasm, editor_language_wasm, model_state]
 
 var project = newProject()
 
@@ -242,10 +242,12 @@ method `$`*(document: ModelDocument): string =
 
 proc newModelDocument*(filename: string = "", app: bool = false, workspaceFolder: Option[WorkspaceFolder]): ModelDocument =
   new(result)
-  result.filename = filename
-  result.appFile = app
-  result.workspace = workspaceFolder
-  result.project = project
+  let self = result
+
+  self.filename = filename
+  self.appFile = app
+  self.workspace = workspaceFolder
+  self.project = project
 
   var testModel = newModel(newId().ModelId)
   testModel.addLanguage(base_language.baseLanguage)
@@ -253,27 +255,27 @@ proc newModelDocument*(filename: string = "", app: bool = false, workspaceFolder
   nodeList.add(IdNodeListChildren, newAstNode(emptyLineClass))
   testModel.addRootNode(nodeList)
 
-  result.model = testModel
-  result.ctx = newModelComputationContext()
+  self.model = testModel
+  self.ctx = newModelComputationContext()
 
-  discard result.model.onNodeDeleted.subscribe proc(d: auto) = result.handleNodeDeleted(d[0], d[1], d[2], d[3], d[4])
-  discard result.model.onNodeInserted.subscribe proc(d: auto) = result.handleNodeInserted(d[0], d[1], d[2], d[3], d[4])
-  discard result.model.onNodePropertyChanged.subscribe proc(d: auto) = result.handleNodePropertyChanged(d[0], d[1], d[2], d[3], d[4], d[5])
-  discard result.model.onNodeReferenceChanged.subscribe proc(d: auto) = result.handleNodeReferenceChanged(d[0], d[1], d[2], d[3], d[4])
+  discard self.model.onNodeDeleted.subscribe proc(d: auto) = self.handleNodeDeleted(d[0], d[1], d[2], d[3], d[4])
+  discard self.model.onNodeInserted.subscribe proc(d: auto) = self.handleNodeInserted(d[0], d[1], d[2], d[3], d[4])
+  discard self.model.onNodePropertyChanged.subscribe proc(d: auto) = self.handleNodePropertyChanged(d[0], d[1], d[2], d[3], d[4], d[5])
+  discard self.model.onNodeReferenceChanged.subscribe proc(d: auto) = self.handleNodeReferenceChanged(d[0], d[1], d[2], d[3], d[4])
 
-  result.ctx.state.addModel(testModel)
+  self.ctx.state.addModel(testModel)
   # for rootNode in testModel.rootNodes:
-  #   result.ctx.state.insertNode(rootNode)
+  #   self.ctx.state.insertNode(rootNode)
 
-  result.builder = newCellBuilder()
-  for language in result.model.languages:
-    result.builder.addBuilder(language.builder)
+  self.builder = newCellBuilder()
+  for language in self.model.languages:
+    self.builder.addBuilder(language.builder)
 
-  project.addModel(result.model)
-  project.builder = result.builder
+  project.addModel(self.model)
+  project.builder = self.builder
 
   if filename.len > 0:
-    result.load()
+    self.load()
 
 method save*(self: ModelDocument, filename: string = "", app: bool = false) =
   self.filename = if filename.len > 0: filename else: self.filename
@@ -458,6 +460,7 @@ proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
 
     var model = newModel(newId().ModelId)
     model.addLanguage(base_language.baseLanguage)
+    model.addLanguage(editor_language.editorLanguage)
     model.loadFromJson(json)
 
     let oldModel = self.model
@@ -468,7 +471,7 @@ proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
     discard self.model.onNodePropertyChanged.subscribe proc(d: auto) = self.handleNodePropertyChanged(d[0], d[1], d[2], d[3], d[4], d[5])
     discard self.model.onNodeReferenceChanged.subscribe proc(d: auto) = self.handleNodeReferenceChanged(d[0], d[1], d[2], d[3], d[4])
 
-    self.builder = newCellBuilder()
+    self.builder.clear()
     for language in self.model.languages:
       self.builder.addBuilder(language.builder)
 
@@ -2702,6 +2705,25 @@ proc intToString(a: int32): cstring =
   let res = $a
   return res.cstring
 
+var lineBuffer {.global.} = ""
+
+proc printI32(a: int32) =
+  if lineBuffer.len > 0:
+    lineBuffer.add " "
+  lineBuffer.add $a
+
+proc printString(a: cstring) =
+  lineBuffer.add $a
+
+proc printLine() =
+  log lvlInfo, lineBuffer
+  lineBuffer = ""
+
+proc loadAppFile(a: cstring): cstring =
+  let file = fs.loadApplicationFile($a)
+  log lvlInfo, fmt"loadAppFile {a} -> {file}"
+  return file.cstring
+
 proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.} =
   let timer = startTimer()
   defer:
@@ -2730,31 +2752,19 @@ proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.
 
   measureBlock fmt"Compile '{name}' to wasm":
     var compiler = newBaseLanguageWasmCompiler(self.document.ctx)
-    compiler.addBaseLanguageGenerators()
+    compiler.addBaseLanguage()
+    compiler.addEditorLanguage()
     let binary = compiler.compileToBinary(function.get)
 
   if self.document.workspace.getSome(workspace):
     discard workspace.saveFile("jstest.wasm", binary.toArrayBuffer)
-
-  var lineBuffer {.global.} = ""
-
-  proc printI32(a: int32) =
-    if lineBuffer.len > 0:
-      lineBuffer.add " "
-    lineBuffer.add $a
-
-  proc printString(a: cstring) =
-    lineBuffer.add $a
-
-  proc printLine() =
-    log lvlInfo, lineBuffer
-    lineBuffer = ""
 
   var imp = WasmImports(namespace: "env")
   imp.addFunction("print_i32", printI32)
   imp.addFunction("print_string", printString)
   imp.addFunction("print_line", printLine)
   imp.addFunction("intToString", intToString)
+  imp.addFunction("loadAppFile", loadAppFile)
 
   measureBlock fmt"Create wasm module for '{name}'":
     let module = await newWasmModule(binary.toArrayBuffer, @[imp])

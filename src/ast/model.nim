@@ -164,6 +164,9 @@ type
 
     validators: Table[ClassId, NodeValidator]
 
+    classesToLanguages {.getter.}: Table[ClassId, Language]
+    baseLanguages: seq[Language]
+
     # functions for computing the type of a node
     typeComputers*: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]
     valueComputers*: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]
@@ -214,6 +217,7 @@ proc notifyNodeReferenceChanged(self: Model, node: AstNode, role: RoleId, oldRef
 proc `$`*(node: AstNode, recurse: bool = false): string
 proc nodeClass*(node: AstNode): NodeClass
 proc add*(node: AstNode, role: RoleId, child: AstNode)
+proc resolveClass*(language: Language, classId: ClassId): NodeClass
 
 proc targetNode*(cell: Cell): AstNode =
   if cell.referenceNode.isNotNil:
@@ -238,11 +242,11 @@ proc verify*(self: Language): bool =
   result = true
   for c in self.classes.values:
     if c.base.isNotNil:
-      if not self.classes.contains(c.base.id):
+      let baseClass = self.resolveClass(c.base.id)
+      if baseClass.isNil:
         log(lvlError, fmt"Class {c.name} has unknown base class {c.base.name}")
         result = false
 
-      let baseClass = self.classes[c.base.id]
       if baseClass.isFinal:
         log(lvlError, fmt"Class {c.name} has base class {c.base.name} which is final")
         result = false
@@ -254,12 +258,18 @@ proc verify*(self: Language): bool =
 proc newLanguage*(id: LanguageId, classes: seq[NodeClass], builder: CellBuilder,
   typeComputers: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode],
   valueComputers: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode],
-  scopeComputers: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]]): Language =
+  scopeComputers: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]],
+  baseLanguages: openArray[Language] = []): Language =
   new result
   result.id = id
   result.typeComputers = typeComputers
   result.valueComputers = valueComputers
   result.scopeComputers = scopeComputers
+  result.baseLanguages = @baseLanguages
+
+  for l in baseLanguages:
+    for c in l.classes.values:
+      result.classesToLanguages[c.id] = l
 
   for c in classes:
     result.classes[c.id] = c
@@ -282,12 +292,16 @@ proc forEachChildClass*(self: Model, base: NodeClass, handler: proc(c: NodeClass
     for c in self.childClasses[base.id]:
       self.forEachChildClass(c, handler)
 
+proc resolveClass*(language: Language, classId: ClassId): NodeClass =
+  if language.classes.contains(classId):
+    return language.classes[classId]
+  if language.classesToLanguages.contains(classId):
+    return language.classesToLanguages[classId].resolveClass(classId)
+  return nil
+
 proc resolveClass*(model: Model, classId: ClassId): NodeClass =
   let language = model.classesToLanguages.getOrDefault(classId, nil)
-  result = if language.isNil: nil else: language.classes.getOrDefault(classId, nil)
-
-proc resolveClass*(language: Language, classId: ClassId): NodeClass =
-  return language.classes.getOrDefault(classId, nil)
+  result = if language.isNil: nil else: language.resolveClass(classId)
 
 proc getLanguageForClass*(model: Model, classId: ClassId): Language =
   return model.classesToLanguages.getOrDefault(classId, nil)
@@ -588,14 +602,14 @@ proc isUnique*(model: Model, class: NodeClass): bool =
 
 proc fillDefaultChildren*(node: AstNode, model: Model, onlyUnique: bool = false) =
   let language = model.classesToLanguages.getOrDefault(node.class, nil)
-  let class = language.classes.getOrDefault(node.class, nil)
+  let class = language.resolveClass(node.class)
 
   for desc in class.children:
     if desc.count in {ChildCount.One, ChildCount.OneOrMore}:
       if node.childCount(desc.id) > 0:
         continue
 
-      let childClass = language.classes.getOrDefault(desc.class)
+      let childClass = language.resolveClass(desc.class)
       if childClass.isNil:
         log lvlError, fmt"Unknown class {desc.class}"
         continue
@@ -634,7 +648,7 @@ proc language*(node: AstNode): Language =
 
 proc nodeClass*(node: AstNode): NodeClass =
   let language = node.language
-  result = if language.isNil: nil else: language.classes.getOrDefault(node.class, nil)
+  result = if language.isNil: nil else: language.resolveClass(node.class)
 
 proc selfDescription*(node: AstNode): Option[NodeChildDescription] =
   ### Returns the NodeChildDescription of the parent node which describes the role this node is used as.
@@ -883,7 +897,7 @@ proc insertDefaultNode*(node: AstNode, role: RoleId, index: int, fillDefaultChil
   if language.isNil:
     return
 
-  let childClass = language.classes.getOrDefault(desc.class, nil)
+  let childClass = language.resolveClass(desc.class)
   if childClass.isNil:
     return
 
@@ -898,7 +912,13 @@ proc insertDefaultNode*(node: AstNode, role: RoleId, index: int, fillDefaultChil
 proc newCellBuilder*(): CellBuilder =
   new result
 
+proc clear*(self: CellBuilder) =
+  self.builders.clear()
+  self.preferredBuilders.clear()
+  self.forceDefault = false
+
 proc addBuilderFor*(self: CellBuilder, classId: ClassId, builderId: Id, flags: CellBuilderFlags, builder: CellBuilderFunction) =
+  # log lvlWarn, fmt"addBuilderFor {classId}"
   if self.builders.contains(classId):
     self.builders[classId].add (builderId, builder, flags)
   else:
@@ -964,7 +984,7 @@ proc dump*(node: AstNode, model: Model = nil, recurse: bool = false): string =
 
   let model = model ?? node.model
   let language = if model.isNil: nil else: model.classesToLanguages.getOrDefault(node.class, nil)
-  let class = if language.isNil: nil else: language.classes.getOrDefault(node.class, nil)
+  let class = if language.isNil: nil else: language.resolveClass(node.class)
 
   if class.isNil:
     result.add $node.class
