@@ -261,8 +261,9 @@ proc newModelDocument*(filename: string = "", app: bool = false, workspaceFolder
   discard result.model.onNodePropertyChanged.subscribe proc(d: auto) = result.handleNodePropertyChanged(d[0], d[1], d[2], d[3], d[4], d[5])
   discard result.model.onNodeReferenceChanged.subscribe proc(d: auto) = result.handleNodeReferenceChanged(d[0], d[1], d[2], d[3], d[4])
 
-  for rootNode in testModel.rootNodes:
-    result.ctx.state.insertNode(rootNode)
+  result.ctx.state.addModel(testModel)
+  # for rootNode in testModel.rootNodes:
+  #   result.ctx.state.insertNode(rootNode)
 
   result.builder = newCellBuilder()
   for language in result.model.languages:
@@ -458,6 +459,8 @@ proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
     var model = newModel(newId().ModelId)
     model.addLanguage(base_language.baseLanguage)
     model.loadFromJson(json)
+
+    let oldModel = self.model
     self.model = model
 
     discard self.model.onNodeDeleted.subscribe proc(d: auto) = self.handleNodeDeleted(d[0], d[1], d[2], d[3], d[4])
@@ -478,8 +481,10 @@ proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
     functionInstances.clear()
     self.ctx.state.clearCache()
 
-    for rootNode in self.model.rootNodes:
-      self.ctx.state.insertNode(rootNode)
+    self.ctx.state.removeModel(oldModel)
+    self.ctx.state.addModel(model)
+    # for rootNode in self.model.rootNodes:
+    #   self.ctx.state.insertNode(rootNode)
 
   except CatchableError:
     log lvlError, fmt"Failed to load model source file '{self.filename}': {getCurrentExceptionMsg()}"
@@ -2681,8 +2686,8 @@ proc clearModelCache*(self: ModelDocumentEditor) {.expose("editor.model").} =
 
   functionInstances.clear()
 
-  for rootNode in self.document.model.rootNodes:
-    self.document.ctx.state.insertNode(rootNode)
+  # for rootNode in self.document.model.rootNodes:
+  #   self.document.ctx.state.insertNode(rootNode)
 
 proc findContainingFunction(node: AstNode): Option[AstNode] =
   if node.class == IdFunctionDefinition:

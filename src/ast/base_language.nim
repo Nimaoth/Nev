@@ -1055,7 +1055,7 @@ proc instantiateFunction*(ctx: ModelComputationContextBase, genericFunction: Ast
     # debugf"function instance already exists: {`$`(functionInstances[key], true)}"
     return functionInstances[key]
 
-  log lvlWarn, fmt"instantiateFunction: clone generic function {genericFunction}"
+  # log lvlWarn, fmt"instantiateFunction: clone generic function {genericFunction}"
   var concreteFunction = genericFunction.cloneAndMapIds(linkOriginal=true)
 
   # debug concreteFunction.dump(model, true)
@@ -1069,7 +1069,7 @@ proc instantiateFunction*(ctx: ModelComputationContextBase, genericFunction: Ast
           assert false, "unknown class for generic type value substitution"
           RoleId.default
 
-        log lvlWarn, fmt"instantiateFunction: clone argument {map[original]}"
+        # log lvlWarn, fmt"instantiateFunction: clone argument {map[original]}"
         n.forceSetChild(role, map[original].cloneAndMapIds())
     elif original != NodeId.default:
       log lvlError, fmt"Failed to find original node {original} for {n.dump(model)}"
@@ -1236,7 +1236,7 @@ valueComputers[callClass.id] = proc(ctx: ModelComputationContextBase, node: AstN
       let value = ctx.getValue(arg)
       if value.isNotNil:
         # debugf"y: clone {value}"
-        log lvlWarn, fmt"getValue call: clone arg value {value}"
+        # log lvlWarn, fmt"getValue call: clone arg value {value}"
         arguments.add value.cloneAndMapIds(linkOriginal=true)
         # debugf"-> {arguments.last}"
       else:
@@ -1248,7 +1248,7 @@ valueComputers[callClass.id] = proc(ctx: ModelComputationContextBase, node: AstN
       return voidTypeInstance
 
     # debugf"z: clone {targetValue}"
-    log lvlWarn, fmt"getValue call: clone struct decl {targetValue}"
+    # log lvlWarn, fmt"getValue call: clone struct decl {targetValue}"
     var concreteType = targetValue.cloneAndMapIds()
     # debugf"-> {concreteType}"
 

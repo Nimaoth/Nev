@@ -23,7 +23,10 @@ CreateContext ModelState:
   var enableExecutionLogging*: bool = false
   var diagnosticsPerNode*: Table[Id, Diagnostics] = initTable[Id, Diagnostics]()
   var diagnosticsPerQuery*: Table[Dependency, seq[Id]] = initTable[Dependency, seq[Id]]()
-  var computationContextOwner: RootRef = nil
+  var computationContextOwner: ModelComputationContextBase = nil
+  var models: seq[Model]
+
+  proc inputAstNode(ctx: ModelState, id: ItemId): AstNode {.inputProvider.}
 
   proc recoverType(ctx: ModelState, key: Dependency) {.recover("Type").}
   # proc recoverValue(ctx: ModelState, key: Dependency) {.recover("Value").}
@@ -101,6 +104,12 @@ template enableDiagnostics(key: untyped): untyped =
 #   ctx.depGraph.revision += 1
 #   ctx.depGraph.changed[(sym.getItem, -1)] = ctx.depGraph.revision
 #   log(lvlInfo, fmt"Invalidating symbol {sym.name} ({sym.id})")
+
+proc addModel*(ctx: ModelState, model: Model) =
+  ctx.models.add model
+
+proc removeModel*(ctx: ModelState, model: Model) =
+  ctx.models.del model
 
 proc insertNode*(ctx: ModelState, node: AstNode) =
   ctx.depGraph.revision += 1
@@ -180,6 +189,14 @@ proc deleteAllNodesAndSymbols*(ctx: ModelState) =
   ctx.queryCacheType.clear
   ctx.queryCacheValue.clear
   ctx.queryCacheScope.clear
+
+proc inputAstNode(ctx: ModelState, id: ItemId): AstNode =
+  for model in ctx.models:
+    if model.resolveReference(id.id.NodeId).getSome(node):
+      # debugf"inputAstNode {id} -> {node}"
+      ctx.itemsAstNode[id] = node
+      return node
+  return nil
 
 proc recoverType(ctx: ModelState, key: Dependency) =
   log(lvlInfo, fmt"Recovering type for {key}")
