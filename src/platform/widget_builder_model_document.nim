@@ -1094,8 +1094,12 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
             if drawCursor(self.selection.last, self.isThickCursor, textColor, 0).getSome(node):
               self.lastCursorLocationBounds = rect(self.selection.last.index.float * builder.charWidth, 0, builder.charWidth, builder.textHeight).transformRect(node, builder.root).some
 
-              let typ = self.document.ctx.computeType(self.selection.last.node)
-              let value = self.document.ctx.getValue(self.selection.last.node)
+              let typ = self.document.ctx.computeType(self.selection.last.node).catch:
+                log lvlError, fmt"failed to compute type {getCurrentExceptionMsg()}"
+                nil
+              let value = self.document.ctx.getValue(self.selection.last.node).catch:
+                log lvlError, fmt"failed to compute value {getCurrentExceptionMsg()}"
+                nil
 
               var scrollOffset = node.transformBounds(overlapPanel).y
 
