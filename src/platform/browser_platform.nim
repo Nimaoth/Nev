@@ -439,6 +439,13 @@ proc drawNode(builder: UINodeBuilder, platform: BrowserPlatform, element: var El
       css += "display: inline-block;".cstring
       css += "white-space: pre-wrap;".cstring
 
+    if TextAlignHorizontalLeft in node.flags:
+      css += "text-align: left;".cstring
+    elif TextAlignHorizontalCenter in node.flags:
+      css += "text-align: center;".cstring
+    elif TextAlignHorizontalRight in node.flags:
+      css += "text-align: right;".cstring
+
     text = node.text.cstring
     updateText = element.getAttribute("data-text") != text
   elif element.hasAttribute("data-text"):
