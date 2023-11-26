@@ -256,6 +256,7 @@ proc newModelDocument*(filename: string = "", app: bool = false, workspaceFolder
     if workspaceFolder.getSome(ws):
       gProject = newProject()
       gProject.path = projectPath
+      gProject.computationContext = newModelComputationContext()
       asyncCheck loadProjectAsync(gProject, ws)
 
   log lvlWarn, fmt"newModelDocument {filename}"
@@ -272,7 +273,7 @@ proc newModelDocument*(filename: string = "", app: bool = false, workspaceFolder
   # testModel.addRootNode(nodeList)
 
   self.model = testModel
-  self.ctx = newModelComputationContext()
+  self.ctx = self.project.computationContext.ModelComputationContext
 
   discard self.model.onNodeDeleted.subscribe proc(d: auto) = self.handleNodeDeleted(d[0], d[1], d[2], d[3], d[4])
   discard self.model.onNodeInserted.subscribe proc(d: auto) = self.handleNodeInserted(d[0], d[1], d[2], d[3], d[4])
@@ -2825,8 +2826,6 @@ proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.
     return
 
   block: # todo
-    self.document.ctx.state.updateNode(function.get)
-
     let typ = self.document.ctx.computeType(function.get)
     log lvlDebug, `$`(typ, true)
 

@@ -1,6 +1,6 @@
 import std/[tables, strformat]
 import id, ast_ids, util, custom_logger
-import model, cells, model_state
+import model, cells, model_state, query_system
 import ui/node
 
 export id, ast_ids
@@ -1016,12 +1016,13 @@ proc substituteGenericTypeValues*(ctx: ModelComputationContextBase, genericType:
 
 type FunctionInstantiation = tuple[function: AstNode, arguments: Table[AstNode, AstNode]]
 
-var functionInstances* = initTable[FunctionInstantiation, AstNode]()
+var functionInstances* = initTable[FunctionInstantiation, tuple[node: AstNode, revision: int]]()
 
 proc instantiateFunction*(ctx: ModelComputationContextBase, genericFunction: AstNode, arguments: openArray[AstNode]): AstNode =
   # debugf"instantiateFunction, args {arguments}, {`$`(genericFunction, true)}"
 
   let model = genericFunction.model
+  let depGraph = ctx.ModelComputationContext.state.depGraph
   let genericParams = genericFunction.children(IdFunctionDefinitionParameters)
 
   var actualArguments = newSeq[AstNode]()
@@ -1054,8 +1055,21 @@ proc instantiateFunction*(ctx: ModelComputationContextBase, genericFunction: Ast
 
   let key = (genericFunction, map)
   if functionInstances.contains(key):
+    let (existingConcreteFunction, existingRevision) = functionInstances[key]
+    var allGreen = true
+    genericFunction.forEach2 n:
+      let item = n.getItem
+      let key = (item, -1)
+      let lastChange = depGraph.lastChange(key, depGraph.revision)
+      if lastChange > existingRevision:
+        allGreen = false
+
     # debugf"function instance already exists: {`$`(functionInstances[key], true)}"
-    return functionInstances[key]
+    if allGreen:
+      # log lvlWarn, fmt"function instance already exists for {genericFunction}"
+      return existingConcreteFunction
+    # else:
+    #   log lvlWarn, fmt"function instance already exists but is not up to date for {genericFunction}"
 
   # log lvlWarn, fmt"instantiateFunction: clone generic function {genericFunction}"
   var concreteFunction = genericFunction.cloneAndMapIds(linkOriginal=true)
@@ -1126,12 +1140,10 @@ proc instantiateFunction*(ctx: ModelComputationContextBase, genericFunction: Ast
   #         else:
   #           log lvlError, fmt"original id not found for {key} while instantiating generic function {genericFunction}"
 
-  # todo
   genericFunction.model.addTempNode(concreteFunction)
-  ctx.ModelComputationContext.state.insertNode(concreteFunction)
   # debugf"concrete function {`$`(concreteFunction, true)}"
 
-  functionInstances[key] = concreteFunction
+  functionInstances[key] = (concreteFunction, depGraph.revision)
   return concreteFunction
 
 # calls
@@ -1264,9 +1276,7 @@ valueComputers[callClass.id] = proc(ctx: ModelComputationContextBase, node: AstN
       # debugf"link member {member} to {targetValue.children(IdStructDefinitionMembers)[i].id}"
       member.references.add (IdStructTypeGenericMember, targetValue.children(IdStructDefinitionMembers)[i].id)
 
-    # todo: this isn't very nice. When do we remove the temporary node?
     node.model.addTempNode(concreteType)
-    ctx.ModelComputationContext.state.insertNode(concreteType)
 
     # debugf"generic type {`$`(targetValue, true)}"
     # debugf"concrete type {`$`(concreteType, true)}"

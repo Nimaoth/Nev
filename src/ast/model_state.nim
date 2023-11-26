@@ -112,6 +112,7 @@ proc removeModel*(ctx: ModelState, model: Model) =
   ctx.models.del model
 
 proc insertNode*(ctx: ModelState, node: AstNode) =
+  # log lvlWarn, fmt"insertNode {node}"
   ctx.depGraph.revision += 1
 
   if node.parent != nil:
@@ -136,6 +137,7 @@ proc insertNode*(ctx: ModelState, node: AstNode) =
   #   parent = functionDefinition.parent
 
 proc updateNode*(ctx: ModelState, node: AstNode) =
+  # log lvlWarn, fmt"updateNode {node}"
   ctx.depGraph.revision += 1
   ctx.depGraph.changed[(node.getItem, -1)] = ctx.depGraph.revision
 
@@ -148,6 +150,7 @@ proc updateNode*(ctx: ModelState, node: AstNode) =
   log(lvlInfo, fmt"Invalidating node {node}")
 
 proc deleteNode*(ctx: ModelState, node: AstNode, recurse: bool) =
+  # log lvlWarn, fmt"deleteNode {node}"
   ctx.depGraph.revision += 1
 
   if node.parent != nil:
@@ -180,6 +183,7 @@ proc deleteNode*(ctx: ModelState, node: AstNode, recurse: bool) =
   #   parent = functionDefinition.parent
 
 proc deleteAllNodesAndSymbols*(ctx: ModelState) =
+  # log lvlWarn, fmt"deleteAllNodesAndSymbols"
   ctx.depGraph.revision += 1
   ctx.depGraph.changed.clear
   ctx.depGraph.verified.clear
