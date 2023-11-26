@@ -653,3 +653,31 @@ proc addLanguage*(self: ModelDocumentEditor) =
   let res {.used.} = editor_model_addLanguage_void_ModelDocumentEditor_wasm(
       argsJsonString.cstring)
 
+
+proc editor_model_addModelToProject_void_ModelDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc addModelToProject*(self: ModelDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when ModelDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_model_addModelToProject_void_ModelDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_model_importModel_void_ModelDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc importModel*(self: ModelDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when ModelDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_model_importModel_void_ModelDocumentEditor_wasm(
+      argsJsonString.cstring)
+

@@ -58,8 +58,6 @@ type TextDocument* = ref object of Document
   languageId*: string
   version*: int
 
-  isBackedByFile*: bool = false
-
   nextLineIdCounter: int32 = 0
 
   onLoaded*: Event[TextDocument]
@@ -90,22 +88,6 @@ type TextDocument* = ref object of Document
 proc nextLineId*(self: TextDocument): int32 =
   result = self.nextLineIdCounter
   self.nextLineIdCounter.inc
-
-proc fullPath*(self: TextDocument): string =
-  if not self.isBackedByFile:
-    return self.filename
-
-  if self.filename.isAbsolute:
-    return self.filename
-  if self.workspace.getSome(ws):
-    return ws.getWorkspacePath() / self.filename
-  if self.appFile:
-    return fs.getApplicationFilePath(self.filename)
-
-  when not defined(js):
-    return self.filename.absolutePath
-  else:
-    return self.filename
 
 proc getLine*(self: TextDocument, line: int): string =
   if line < self.lines.len:

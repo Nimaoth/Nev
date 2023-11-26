@@ -1155,3 +1155,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
 method createUI*(self: ModelLanguageSelectorItem, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
   let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
   builder.panel(&{FillX, SizeToContentY, DrawText}, text = self.name, textColor = textColor)
+
+method createUI*(self: ModelImportSelectorItem, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
+  let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
+  builder.panel(&{FillX, SizeToContentY, DrawText}, text = self.name, textColor = textColor)

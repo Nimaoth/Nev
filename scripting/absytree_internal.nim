@@ -378,6 +378,12 @@ proc editor_model_runSelectedFunction_void_ModelDocumentEditor_impl*(
 proc editor_model_addLanguage_void_ModelDocumentEditor_impl*(
     self: ModelDocumentEditor) =
   discard
+proc editor_model_addModelToProject_void_ModelDocumentEditor_impl*(
+    self: ModelDocumentEditor) =
+  discard
+proc editor_model_importModel_void_ModelDocumentEditor_impl*(
+    self: ModelDocumentEditor) =
+  discard
 proc editor_getBackend_Backend_App_impl*(): Backend =
   discard
 proc editor_toggleShowDrawnNodes_void_App_impl*() =
