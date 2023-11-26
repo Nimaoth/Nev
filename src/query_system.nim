@@ -140,6 +140,8 @@ proc newDependencyGraph*(): DependencyGraph =
   result.fingerprints = newCache[Dependency, Fingerprint](2000)
   result.dependencies = newCache[Dependency, seq[Dependency]](2000)
 
+proc lastChange*(graph: DependencyGraph, key: Dependency, default: int): int = graph.changed.getOrDefault(key, default)
+
 proc nodeColor*(graph: DependencyGraph, key: Dependency, parentVerified: int = 0): NodeColor =
   if key.update == -1:
     # Input

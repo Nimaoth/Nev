@@ -199,11 +199,13 @@ type
     modelPaths*: Table[ModelId, string]
     models*: Table[ModelId, Model]
     loaded*: bool = false
+    computationContext*: ModelComputationContextBase
 
 proc newProject*(): Project =
   new result
 
 proc addModel*(self: Project, model: Model) =
+  # log lvlWarn, fmt"addModel: {model.path}, {model.id}"
   assert model.project.isNil
   model.project = self
   self.models[model.id] = model
@@ -335,6 +337,7 @@ proc getLanguageForClass*(model: Model, classId: ClassId): Language =
   return model.classesToLanguages.getOrDefault(classId, nil)
 
 proc newModel*(id: ModelId = default(ModelId)): Model =
+  # log lvlWarn, fmt"newModel: {id}"
   new result
   result.id = id
 
@@ -345,6 +348,7 @@ proc hasLanguage*(self: Model, language: LanguageId): bool =
   return false
 
 proc addImport*(self: Model, model: Model) =
+  # log lvlWarn, fmt"addImport to {self.path} ({self.id}): {model.path} ({model.id})"
   self.importedModels.add model.id
   self.models.add model
 
