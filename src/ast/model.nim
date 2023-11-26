@@ -1197,7 +1197,7 @@ proc loadFromJson*(project: Project, json: JsonNode, opt = Joptions()): bool =
     for modelPath, modelIdJson in json["models"]:
       let id = modelIdJson.jsonTo ModelId
       project.modelPaths[id] = modelPath
-      echo "modelPath: ", modelPath, " id: ", id
+      # echo "modelPath: ", modelPath, " id: ", id
 
   return true
 
