@@ -681,3 +681,17 @@ proc importModel*(self: ModelDocumentEditor) =
   let res {.used.} = editor_model_importModel_void_ModelDocumentEditor_wasm(
       argsJsonString.cstring)
 
+
+proc editor_model_saveProject_void_ModelDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc saveProject*(self: ModelDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when ModelDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_model_saveProject_void_ModelDocumentEditor_wasm(
+      argsJsonString.cstring)
+
