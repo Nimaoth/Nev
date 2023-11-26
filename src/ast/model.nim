@@ -1,7 +1,8 @@
 import std/[options, strutils, hashes, tables, strformat, sugar, sequtils]
 import fusion/matching
 import chroma
-import util, array_table, myjsonutils, id, macro_utils, custom_logger, event, regex
+import workspaces/[workspace]
+import util, array_table, myjsonutils, id, macro_utils, custom_logger, event, regex, custom_async
 
 export id
 
@@ -181,15 +182,43 @@ type
     rootNodes {.getter.}: seq[AstNode]
     tempNodes {.getter.}: seq[AstNode]
     languages {.getter.}: seq[Language]
-    importedModels {.getter.}: seq[Model]
+    models {.getter.}: seq[Model]
+    importedModels {.getter.}: seq[ModelId]
     classesToLanguages {.getter.}: Table[ClassId, Language]
     childClasses {.getter.}: Table[ClassId, seq[NodeClass]]
     nodes {.getter.}: Table[NodeId, AstNode]
+    project*: Project
 
     onNodeDeleted*: Event[tuple[self: Model, parent: AstNode, child: AstNode, role: RoleId, index: int]]
     onNodeInserted*: Event[tuple[self: Model, parent: AstNode, child: AstNode, role: RoleId, index: int]]
     onNodePropertyChanged*: Event[tuple[self: Model, node: AstNode, role: RoleId, oldValue: PropertyValue, newValue: PropertyValue, slice: Slice[int]]]
     onNodeReferenceChanged*: Event[tuple[self: Model, node: AstNode, role: RoleId, oldRef: NodeId, newRef: NodeId]]
+
+  Project* = ref object
+    path*: string
+    modelPaths*: Table[ModelId, string]
+    models*: Table[ModelId, Model]
+    loaded*: bool = false
+
+proc newProject*(): Project =
+  new result
+
+proc addModel*(self: Project, model: Model) =
+  assert model.project.isNil
+  model.project = self
+  self.models[model.id] = model
+
+  if model.path.len > 0:
+    self.modelPaths[model.id] = model.path
+
+proc getModel*(self: Project, id: ModelId): Option[Model] =
+  if self.models.contains(id):
+    return self.models[id].some
+
+proc findModelByPath*(self: Project, path: string): Option[Model] =
+  for model in self.models.values:
+    if model.path == path:
+      return model.some
 
 generateGetters(NodeClass)
 generateGetters(Model)
@@ -316,7 +345,8 @@ proc hasLanguage*(self: Model, language: LanguageId): bool =
   return false
 
 proc addImport*(self: Model, model: Model) =
-  self.importedModels.add model
+  self.importedModels.add model.id
+  self.models.add model
 
 proc addLanguage*(self: Model, language: Language) =
   if not language.verify():
@@ -362,6 +392,9 @@ proc resolveReference*(self: Model, id: NodeId): Option[AstNode] =
   if self.nodes.contains(id):
     return self.nodes[id].some
   else:
+    for model in self.models:
+      if model.nodes.contains(id):
+        return model.nodes[id].some
     return AstNode.none
 
 proc newNodeClass*(
@@ -1093,18 +1126,21 @@ proc toJson*(model: Model, opt = initToJsonOptions()): JsonNode =
 
   result["id"] = model.id.toJson(opt)
   result["languages"] = model.languages.mapIt(it.id.Id.toJson(opt)).toJson(opt)
-
-  result["models"] = model.importedModels.mapIt(it.id.Id.toJson(opt)).toJson(opt)
+  result["models"] = model.importedModels.mapIt(it.Id.toJson(opt)).toJson(opt)
 
   var rootNodes = newJArray()
   for node in model.rootNodes:
     rootNodes.add node.toJson(opt)
   result["rootNodes"] = rootNodes
 
-# proc toJson*(project: Project, opt = initToJsonOptions()): JsonNode =
-#   result = newJObject()
+proc toJson*(project: Project, opt = initToJsonOptions()): JsonNode =
+  result = newJObject()
 
-#   result["models"] = project.models.mapIt(it.id.Id.toJson(opt)).toJson(opt)
+  var models = newJObject()
+  for (id, path) in project.modelPaths.pairs:
+    models[path] = id.toJson(opt)
+
+  result["models"] = models
 
 proc fromJsonHook*(value: var PropertyValue, json: JsonNode) =
   if json.kind == JString:
@@ -1148,7 +1184,23 @@ proc jsonToAstNode(json: JsonNode, model: Model, opt = Joptions()): Option[AstNo
         else:
           log(lvlError, fmt"Failed to parse node from json")
 
-proc loadFromJson*(model: Model, path: string, json: JsonNode, resolveLanguage: proc(id: LanguageId): Option[Language], opt = Joptions()) =
+proc loadFromJson*(project: Project, json: JsonNode, opt = Joptions()): bool =
+  if json.kind != JObject:
+    log(lvlError, fmt"Expected JObject")
+    return false
+
+  if json.hasKey("models"):
+    for modelPath, modelIdJson in json["models"]:
+      let id = modelIdJson.jsonTo ModelId
+      project.modelPaths[id] = modelPath
+      echo "modelPath: ", modelPath, " id: ", id
+
+  return true
+
+proc loadFromJson*(project: Project, model: Model, workspace: WorkspaceFolder, path: string, json: JsonNode,
+  resolveLanguage: proc(id: LanguageId): Option[Language],
+  resolveModel: proc(project: Project, workspace: WorkspaceFolder, id: ModelId): Future[Option[Model]],
+  opt = Joptions()): Future[void] {.async.} =
   model.path = path
   if json.kind != JObject:
     log(lvlError, fmt"Expected JObject")
@@ -1168,6 +1220,15 @@ proc loadFromJson*(model: Model, path: string, json: JsonNode, resolveLanguage: 
         log(lvlError, fmt"Unknown language {id}")
   else:
     log(lvlWarn, fmt"Missing languages")
+
+  if json.hasKey("models"):
+    for modelIdJson in json["models"]:
+      let id = modelIdJson.jsonTo ModelId
+      model.importedModels.add id
+      if project.resolveModel(workspace, id).await.getSome(m):
+        model.addImport(m)
+      else:
+        log(lvlError, fmt"Unknown model {id}")
 
   if json.hasKey("rootNodes"):
     for node in json["rootNodes"]:
