@@ -1445,6 +1445,13 @@ proc getGenericTypes(node: AstNode): seq[AstNode] =
 proc computeDefaultScope(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode] =
   var nodes: seq[AstNode] = @[]
 
+  # todo: improve this
+  for model in node.model.models:
+    for root in model.rootNodes:
+      if root.class == IdNodeList:
+        for _, c in root.children(IdNodeListChildren):
+          nodes.add c
+
   var prev = node
   var current = node.parent
   while current.isNotNil:

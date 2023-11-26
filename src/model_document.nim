@@ -13,30 +13,8 @@ import ast/[generator_wasm, base_language_wasm, editor_language_wasm, model_stat
 logCategory "model"
 createJavascriptPrototype("editor.model")
 
-type
-  Project* = ref object
-    models*: Table[ModelId, Model]
-    builder*: CellBuilder
-
-proc newProject*(): Project =
-  new result
-
-proc addModel*(self: Project, model: Model) =
-  self.models[model.id] = model
-
-proc getModel*(self: Project, id: ModelId): Option[Model] =
-  if self.models.contains(id):
-    return self.models[id].some
-
-proc findModelByPath*(self: Project, path: string): Option[Model] =
-  for model in self.models.values:
-    if model.path == path:
-      return model.some
-
-# proc addModel(self: Project, path: string) =
-#   self.models[model.id] = model
-
-var project = newProject()
+const projectPath = "./model/playground.ast-project"
+var gProject: Project = nil
 
 type
   CellCursor* = object
@@ -263,17 +241,31 @@ proc handleNodeReferenceChanged(self: ModelDocument, model: Model, node: AstNode
 method `$`*(document: ModelDocument): string =
   return document.filename
 
+proc loadProjectAsync(project: Project, ws: WorkspaceFolder): Future[void] {.async.} =
+  log lvlInfo, fmt"Loading project source file '{project.path}'"
+  let jsonText = await ws.loadFile(project.path)
+  let json = jsonText.parseJson
+  if gProject.loadFromJson(json):
+    gProject.loaded = true
+
 proc newModelDocument*(filename: string = "", app: bool = false, workspaceFolder: Option[WorkspaceFolder]): ModelDocument =
   new(result)
   let self = result
 
+  if gProject.isNil:
+    if workspaceFolder.getSome(ws):
+      gProject = newProject()
+      gProject.path = projectPath
+      asyncCheck loadProjectAsync(gProject, ws)
+
+  log lvlWarn, fmt"newModelDocument {filename}"
+
   self.filename = filename
   self.appFile = app
   self.workspace = workspaceFolder
-  self.project = project
+  self.project = gProject
 
   var testModel = newModel(newId().ModelId)
-  testModel.path = "test-model" & $project.models.len
   # testModel.addLanguage(base_language.baseLanguage)
   # let nodeList = newAstNode(nodeListClass)
   # nodeList.add(IdNodeListChildren, newAstNode(emptyLineClass))
@@ -295,8 +287,7 @@ proc newModelDocument*(filename: string = "", app: bool = false, workspaceFolder
   for language in self.model.languages:
     self.builder.addBuilder(language.builder)
 
-  project.addModel(self.model)
-  project.builder = self.builder
+  self.project.addModel(self.model)
 
   if filename.len > 0:
     self.load()
@@ -479,50 +470,90 @@ proc resolveLanguage(id: LanguageId): Option[Language] =
   else:
     return Language.none
 
+proc resolveModel(project: Project, ws: WorkspaceFolder, id: ModelId): Future[Option[Model]] {.async.}
+
+proc loadModelAsync(project: Project, ws: WorkspaceFolder, path: string): Future[Option[Model]] {.async.} =
+  log lvlInfo, fmt"loadModelAsync {path}"
+  let jsonText = await ws.loadFile(path)
+  let json = jsonText.parseJson
+
+  var model = newModel()
+  await project.loadFromJson(model, ws, path, json, resolveLanguage, resolveModel)
+  if model.id.isNone:
+    log lvlError, fmt"Failed to load model: no id"
+    return Model.none
+
+  if project.getModel(model.id).getSome(existing):
+    log lvlInfo, fmt"Model {model.id} already exists in project"
+    return existing.some
+
+  project.addModel(model)
+
+  return model.some
+
+proc resolveModel(project: Project, ws: WorkspaceFolder, id: ModelId): Future[Option[Model]] {.async.} =
+  while not project.loaded:
+    log lvlInfo, fmt"Waiting for project to load"
+    await sleepAsync(1)
+
+  log lvlInfo, fmt"resolveModel {id}"
+  if project.getModel(id).isSome:
+    return project.getModel(id)
+
+  if project.modelPaths.contains(id):
+    let path = project.modelPaths[id]
+    return await loadModelAsync(project, ws, path)
+
+  return Model.none
+
 proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
   log lvlInfo, fmt"Loading model source file '{self.filename}'"
   try:
-    var jsonText = ""
-    if self.workspace.getSome(ws):
-      jsonText = await ws.loadFile(self.filename)
-    elif self.appFile:
-      jsonText = fs.loadApplicationFile(self.filename)
-    else:
-      jsonText = fs.loadFile(self.filename)
-
-    let json = jsonText.parseJson
-
-    var model = newModel()
-    model.loadFromJson(self.fullPath, json, resolveLanguage)
-    if model.id.isNone:
-      log lvlError, fmt"Failed to load model: no id"
+    if self.workspace.isNone:
+      log lvlError, fmt"Can only open model files from workspaces right now"
       return
 
-    let oldModel = self.model
-    self.model = model
+    # var jsonText = ""
+    # if self.workspace.getSome(ws):
+    #   jsonText = await ws.loadFile(self.filename)
+    # elif self.appFile:
+    #   jsonText = fs.loadApplicationFile(self.filename)
+    # else:
+    #   jsonText = fs.loadFile(self.filename)
 
-    discard self.model.onNodeDeleted.subscribe proc(d: auto) = self.handleNodeDeleted(d[0], d[1], d[2], d[3], d[4])
-    discard self.model.onNodeInserted.subscribe proc(d: auto) = self.handleNodeInserted(d[0], d[1], d[2], d[3], d[4])
-    discard self.model.onNodePropertyChanged.subscribe proc(d: auto) = self.handleNodePropertyChanged(d[0], d[1], d[2], d[3], d[4], d[5])
-    discard self.model.onNodeReferenceChanged.subscribe proc(d: auto) = self.handleNodeReferenceChanged(d[0], d[1], d[2], d[3], d[4])
+    # let json = jsonText.parseJson
 
-    self.builder.clear()
-    for language in self.model.languages:
-      self.builder.addBuilder(language.builder)
+    # var model = newModel()
+    # await self.project.loadFromJson(model, self.workspace.get, self.fullPath, json, resolveLanguage, resolveModel)
+    # if model.id.isNone:
+    #   log lvlError, fmt"Failed to load model: no id"
+    #   return
 
-    project.addModel(self.model)
-    project.builder = self.builder
+    if self.project.loadModelAsync(self.workspace.get, self.filename).await.getSome(model):
+      let oldModel = self.model
+      self.model = model
 
-    self.undoList.setLen 0
-    self.redoList.setLen 0
+      discard self.model.onNodeDeleted.subscribe proc(d: auto) = self.handleNodeDeleted(d[0], d[1], d[2], d[3], d[4])
+      discard self.model.onNodeInserted.subscribe proc(d: auto) = self.handleNodeInserted(d[0], d[1], d[2], d[3], d[4])
+      discard self.model.onNodePropertyChanged.subscribe proc(d: auto) = self.handleNodePropertyChanged(d[0], d[1], d[2], d[3], d[4], d[5])
+      discard self.model.onNodeReferenceChanged.subscribe proc(d: auto) = self.handleNodeReferenceChanged(d[0], d[1], d[2], d[3], d[4])
 
-    functionInstances.clear()
-    self.ctx.state.clearCache()
+      self.builder.clear()
+      for language in self.model.languages:
+        self.builder.addBuilder(language.builder)
 
-    self.ctx.state.removeModel(oldModel)
-    self.ctx.state.addModel(model)
-    # for rootNode in self.model.rootNodes:
-    #   self.ctx.state.insertNode(rootNode)
+      # self.project.builder = self.builder
+
+      self.undoList.setLen 0
+      self.redoList.setLen 0
+
+      functionInstances.clear()
+      self.ctx.state.clearCache()
+
+      self.ctx.state.removeModel(oldModel)
+      self.ctx.state.addModel(model)
+      # for rootNode in self.model.rootNodes:
+      #   self.ctx.state.insertNode(rootNode)
 
   except CatchableError:
     log lvlError, fmt"Failed to load model source file '{self.filename}': {getCurrentExceptionMsg()}"
@@ -580,43 +611,6 @@ proc getSubstitutionsForClass(self: ModelDocumentEditor, targetCell: Cell, class
     addCompletion ModelCompletion(kind: ModelCompletionKind.SubstituteClass, name: class.alias, class: class, parent: parent, role: role, index: index, alwaysApply: true, property: propertyRole.some)
     result = true
 
-proc refilterCompletions(self: ModelDocumentEditor) =
-  self.filteredCompletions.setLen 0
-
-  let targetCell = self.cursor.targetCell
-  if targetCell of CollectionCell:
-    return
-
-  let text = targetCell.currentText
-  let index = self.cursor.index
-  let prefix = text[0..<index]
-
-  # debugf "refilter '{text}' {index} -> '{prefix}'"
-
-  for completion in self.unfilteredCompletions:
-    if completion.kind == ModelCompletionKind.SubstituteClass and completion.property.getSome(role):
-      let language = self.document.model.getLanguageForClass(completion.class.id)
-      if language.isValidPropertyValue(completion.class, role, prefix):
-        self.filteredCompletions.add completion
-        continue
-
-    if completion.name.startsWith(prefix):
-      self.filteredCompletions.add completion
-      continue
-
-  self.hasCompletions = true
-
-  if self.filteredCompletions.len > 0:
-    self.selectedCompletion = self.selectedCompletion.clamp(0, self.filteredCompletions.len - 1)
-  else:
-    self.selectedCompletion = 0
-  self.scrollToCompletion = self.selectedCompletion.some
-
-proc invalidateCompletions(self: ModelDocumentEditor) =
-  self.unfilteredCompletions.setLen 0
-  self.filteredCompletions.setLen 0
-  self.hasCompletions = false
-
 proc updateCompletions(self: ModelDocumentEditor) =
   self.unfilteredCompletions.setLen 0
 
@@ -655,6 +649,43 @@ proc updateCompletions(self: ModelDocumentEditor) =
 
   self.refilterCompletions()
   self.markDirty()
+
+proc refilterCompletions(self: ModelDocumentEditor) =
+  self.filteredCompletions.setLen 0
+
+  let targetCell = self.cursor.targetCell
+  if targetCell of CollectionCell:
+    return
+
+  let text = targetCell.currentText
+  let index = self.cursor.index
+  let prefix = text[0..<index]
+
+  # debugf "refilter '{text}' {index} -> '{prefix}'"
+
+  for completion in self.unfilteredCompletions:
+    if completion.kind == ModelCompletionKind.SubstituteClass and completion.property.getSome(role):
+      let language = self.document.model.getLanguageForClass(completion.class.id)
+      if language.isValidPropertyValue(completion.class, role, prefix):
+        self.filteredCompletions.add completion
+        continue
+
+    if completion.name.startsWith(prefix):
+      self.filteredCompletions.add completion
+      continue
+
+  self.hasCompletions = true
+
+  if self.filteredCompletions.len > 0:
+    self.selectedCompletion = self.selectedCompletion.clamp(0, self.filteredCompletions.len - 1)
+  else:
+    self.selectedCompletion = 0
+  self.scrollToCompletion = self.selectedCompletion.some
+
+proc invalidateCompletions(self: ModelDocumentEditor) =
+  self.unfilteredCompletions.setLen 0
+  self.filteredCompletions.setLen 0
+  self.hasCompletions = false
 
 proc getCompletion*(self: ModelDocumentEditor, index: int): ModelCompletion =
   if not self.hasCompletions:
@@ -2894,9 +2925,8 @@ proc addModelToProject*(self: ModelDocumentEditor) {.expose("editor.model").} =
     for file in files:
       if not file.endsWith(".ast-model"):
         continue
-      if project.findModelByPath(file).isSome:
+      if self.document.project.findModelByPath(file).isSome:
         continue
-      echo file
       let score = matchPath(file, text)
       items.add ModelImportSelectorItem(name: file, score: score)
 
@@ -2908,25 +2938,8 @@ proc addModelToProject*(self: ModelDocumentEditor) {.expose("editor.model").} =
     log lvlInfo, fmt"Import model {item.ModelImportSelectorItem.name} ({item.ModelImportSelectorItem.model}) to model {self.document.model.id}"
     let path = item.ModelImportSelectorItem.name
 
-    proc loadModelAsync(ws: WorkspaceFolder, path: string) {.async.} =
-      let jsonText = await ws.loadFile(path)
-
-      let json = jsonText.parseJson
-
-      var model = newModel()
-      model.loadFromJson(path, json, resolveLanguage)
-      if model.id.isNone:
-        log lvlError, fmt"Failed to load model: no id"
-        return
-
-      if project.getModel(model.id).isSome:
-        log lvlInfo, fmt"Model {model.id} already exists in project"
-        return
-
-      project.addModel(model)
-
     if self.document.workspace.getSome(ws):
-      asyncCheck ws.loadModelAsync(path)
+      asyncCheck self.document.project.loadModelAsync(ws, path)
     else:
       log lvlError, fmt"Failed to load model: no workspace"
       return
@@ -2943,18 +2956,22 @@ proc importModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
   popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
     # Find everything matching text
 
-    for model in project.models.values:
-      echo model.id
-      let score = matchPath(model.path, text)
-      result.add ModelImportSelectorItem(name: model.path, model: model.id, score: score)
+    for model in self.document.project.models.values:
+      let name = if model.path.len > 0:
+        model.path
+      else:
+        $model.id
+
+      let score = matchPath(name, text)
+      result.add ModelImportSelectorItem(name: name, model: model.id, score: score)
 
     # result.sort((a, b) => cmp(a.score, b.score), Descending)
 
   popup.handleItemConfirmed = proc(item: SelectorItem) =
     log lvlInfo, fmt"Import model {item.ModelImportSelectorItem.name} ({item.ModelImportSelectorItem.model}) to model {self.document.model.id}"
     let modelId = item.ModelImportSelectorItem.model
-    if project.getModel(modelId).getSome(model):
-      log lvlInfo, fmt"Add imported model {model.path}"
+    if self.document.project.getModel(modelId).getSome(model):
+      log lvlInfo, fmt"Add imported model {model.path} ({model.id})"
       self.document.model.addImport(model)
 
   popup.updateCompletions()
@@ -2962,6 +2979,14 @@ proc importModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
   popup.enableAutoSort()
 
   self.app.pushPopup popup
+
+proc saveProject*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  if self.document.workspace.getSome(ws):
+    log lvlInfo, fmt"Saving project '{self.document.project.path}'"
+    let serialized = self.document.project.toJson.pretty
+    asyncCheck ws.saveFile(self.document.project.path, serialized)
+  else:
+    log lvlError, fmt"Failed to save project: no workspace"
 
 genDispatcher("editor.model")
 addActiveDispatchTable "editor.model", genDispatchTable("editor.model")
