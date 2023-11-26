@@ -99,3 +99,7 @@ proc runSelectedFunction*(self: ModelDocumentEditor) =
   editor_model_runSelectedFunction_void_ModelDocumentEditor_impl(self)
 proc addLanguage*(self: ModelDocumentEditor) =
   editor_model_addLanguage_void_ModelDocumentEditor_impl(self)
+proc addModelToProject*(self: ModelDocumentEditor) =
+  editor_model_addModelToProject_void_ModelDocumentEditor_impl(self)
+proc importModel*(self: ModelDocumentEditor) =
+  editor_model_importModel_void_ModelDocumentEditor_impl(self)

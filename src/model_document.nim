@@ -2,7 +2,7 @@ import std/[strformat, strutils, sugar, tables, options, json, streams, algorith
 import fusion/matching, bumpy, rect_utils, vmath, fuzzy
 import util, document, document_editor, text/text_document, events, id, ast_ids, scripting/expose, event, input, custom_async, myjsonutils, custom_unicode, delayed_task
 from scripting_api as api import nil
-import custom_logger, timer, array_buffer, config_provider, app_interface, dispatch_tables, selector_popup
+import custom_logger, timer, array_buffer, config_provider, app_interface, dispatch_tables, selector_popup, cancellation_token, fuzzy_matching
 import platform/[filesystem, platform]
 import workspaces/[workspace]
 import ast/[model, base_language, editor_language, cells]
@@ -10,10 +10,33 @@ import ui/node
 
 import ast/[generator_wasm, base_language_wasm, editor_language_wasm, model_state]
 
-var project = newProject()
-
 logCategory "model"
 createJavascriptPrototype("editor.model")
+
+type
+  Project* = ref object
+    models*: Table[ModelId, Model]
+    builder*: CellBuilder
+
+proc newProject*(): Project =
+  new result
+
+proc addModel*(self: Project, model: Model) =
+  self.models[model.id] = model
+
+proc getModel*(self: Project, id: ModelId): Option[Model] =
+  if self.models.contains(id):
+    return self.models[id].some
+
+proc findModelByPath*(self: Project, path: string): Option[Model] =
+  for model in self.models.values:
+    if model.path == path:
+      return model.some
+
+# proc addModel(self: Project, path: string) =
+#   self.models[model.id] = model
+
+var project = newProject()
 
 type
   CellCursor* = object
@@ -250,6 +273,7 @@ proc newModelDocument*(filename: string = "", app: bool = false, workspaceFolder
   self.project = project
 
   var testModel = newModel(newId().ModelId)
+  testModel.path = "test-model" & $project.models.len
   # testModel.addLanguage(base_language.baseLanguage)
   # let nodeList = newAstNode(nodeListClass)
   # nodeList.add(IdNodeListChildren, newAstNode(emptyLineClass))
@@ -469,7 +493,7 @@ proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
     let json = jsonText.parseJson
 
     var model = newModel()
-    model.loadFromJson(json, resolveLanguage)
+    model.loadFromJson(self.fullPath, json, resolveLanguage)
     if model.id.isNone:
       log lvlError, fmt"Failed to load model: no id"
       return
@@ -2845,6 +2869,97 @@ proc addLanguage*(self: ModelDocumentEditor) {.expose("editor.model").} =
     self.document.builder.addBuilder(language.builder)
 
   popup.updateCompletions()
+
+  self.app.pushPopup popup
+
+type ModelImportSelectorItem* = ref object of SelectorItem
+  model*: ModelId
+  name*: string
+
+method changed*(self: ModelImportSelectorItem, other: SelectorItem): bool =
+  let other = other.ModelImportSelectorItem
+  return self.model != other.model
+
+proc addModelToProject*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  var popup = self.app.createSelectorPopup().SelectorPopup
+  var sortCancellationToken = newCancellationToken()
+
+  popup.getCompletionsAsync = proc(popup: SelectorPopup, text: string): Future[seq[SelectorItem]] {.async.} =
+    # Find everything matching text
+
+    let workspace: WorkspaceFolder = self.document.workspace.get
+    let files = await workspace.getDirectoryListingRec("")
+
+    var items = newSeq[SelectorItem]()
+    for file in files:
+      if not file.endsWith(".ast-model"):
+        continue
+      if project.findModelByPath(file).isSome:
+        continue
+      echo file
+      let score = matchPath(file, text)
+      items.add ModelImportSelectorItem(name: file, score: score)
+
+    return items
+
+    # result.sort((a, b) => cmp(a.score, b.score), Descending)
+
+  popup.handleItemConfirmed = proc(item: SelectorItem) =
+    log lvlInfo, fmt"Import model {item.ModelImportSelectorItem.name} ({item.ModelImportSelectorItem.model}) to model {self.document.model.id}"
+    let path = item.ModelImportSelectorItem.name
+
+    proc loadModelAsync(ws: WorkspaceFolder, path: string) {.async.} =
+      let jsonText = await ws.loadFile(path)
+
+      let json = jsonText.parseJson
+
+      var model = newModel()
+      model.loadFromJson(path, json, resolveLanguage)
+      if model.id.isNone:
+        log lvlError, fmt"Failed to load model: no id"
+        return
+
+      if project.getModel(model.id).isSome:
+        log lvlInfo, fmt"Model {model.id} already exists in project"
+        return
+
+      project.addModel(model)
+
+    if self.document.workspace.getSome(ws):
+      asyncCheck ws.loadModelAsync(path)
+    else:
+      log lvlError, fmt"Failed to load model: no workspace"
+      return
+
+  popup.updateCompletions()
+  popup.sortFunction = proc(a, b: SelectorItem): int = cmp(a.score, b.score)
+  popup.enableAutoSort()
+
+  self.app.pushPopup popup
+
+proc importModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  var popup = self.app.createSelectorPopup().SelectorPopup
+
+  popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
+    # Find everything matching text
+
+    for model in project.models.values:
+      echo model.id
+      let score = matchPath(model.path, text)
+      result.add ModelImportSelectorItem(name: model.path, model: model.id, score: score)
+
+    # result.sort((a, b) => cmp(a.score, b.score), Descending)
+
+  popup.handleItemConfirmed = proc(item: SelectorItem) =
+    log lvlInfo, fmt"Import model {item.ModelImportSelectorItem.name} ({item.ModelImportSelectorItem.model}) to model {self.document.model.id}"
+    let modelId = item.ModelImportSelectorItem.model
+    if project.getModel(modelId).getSome(model):
+      log lvlInfo, fmt"Add imported model {model.path}"
+      self.document.model.addImport(model)
+
+  popup.updateCompletions()
+  popup.sortFunction = proc(a, b: SelectorItem): int = cmp(a.score, b.score)
+  popup.enableAutoSort()
 
   self.app.pushPopup popup
 

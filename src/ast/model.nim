@@ -177,6 +177,7 @@ type
 
   Model* = ref object
     id {.getter.}: ModelId
+    path*: string
     rootNodes {.getter.}: seq[AstNode]
     tempNodes {.getter.}: seq[AstNode]
     languages {.getter.}: seq[Language]
@@ -189,10 +190,6 @@ type
     onNodeInserted*: Event[tuple[self: Model, parent: AstNode, child: AstNode, role: RoleId, index: int]]
     onNodePropertyChanged*: Event[tuple[self: Model, node: AstNode, role: RoleId, oldValue: PropertyValue, newValue: PropertyValue, slice: Slice[int]]]
     onNodeReferenceChanged*: Event[tuple[self: Model, node: AstNode, role: RoleId, oldRef: NodeId, newRef: NodeId]]
-
-  Project* = ref object
-    models*: Table[ModelId, Model]
-    builder*: CellBuilder
 
 generateGetters(NodeClass)
 generateGetters(Model)
@@ -237,9 +234,6 @@ template forEach2*(node: AstNode, it: untyped, body: untyped): untyped =
   node.forEach proc(n: AstNode) =
     let it = n
     body
-
-proc newProject*(): Project =
-  new result
 
 proc verify*(self: Language): bool =
   result = true
@@ -315,14 +309,14 @@ proc newModel*(id: ModelId = default(ModelId)): Model =
   new result
   result.id = id
 
-proc addModel*(self: Project, model: Model) =
-  self.models[model.id] = model
-
 proc hasLanguage*(self: Model, language: LanguageId): bool =
   for l in self.languages:
     if l.id == language:
       return true
   return false
+
+proc addImport*(self: Model, model: Model) =
+  self.importedModels.add model
 
 proc addLanguage*(self: Model, language: Language) =
   if not language.verify():
@@ -1100,10 +1094,17 @@ proc toJson*(model: Model, opt = initToJsonOptions()): JsonNode =
   result["id"] = model.id.toJson(opt)
   result["languages"] = model.languages.mapIt(it.id.Id.toJson(opt)).toJson(opt)
 
+  result["models"] = model.importedModels.mapIt(it.id.Id.toJson(opt)).toJson(opt)
+
   var rootNodes = newJArray()
   for node in model.rootNodes:
     rootNodes.add node.toJson(opt)
   result["rootNodes"] = rootNodes
+
+# proc toJson*(project: Project, opt = initToJsonOptions()): JsonNode =
+#   result = newJObject()
+
+#   result["models"] = project.models.mapIt(it.id.Id.toJson(opt)).toJson(opt)
 
 proc fromJsonHook*(value: var PropertyValue, json: JsonNode) =
   if json.kind == JString:
@@ -1147,7 +1148,8 @@ proc jsonToAstNode(json: JsonNode, model: Model, opt = Joptions()): Option[AstNo
         else:
           log(lvlError, fmt"Failed to parse node from json")
 
-proc loadFromJson*(model: Model, json: JsonNode, resolveLanguage: proc(id: LanguageId): Option[Language], opt = Joptions()) =
+proc loadFromJson*(model: Model, path: string, json: JsonNode, resolveLanguage: proc(id: LanguageId): Option[Language], opt = Joptions()) =
+  model.path = path
   if json.kind != JObject:
     log(lvlError, fmt"Expected JObject")
     return

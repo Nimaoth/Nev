@@ -1,5 +1,5 @@
-import std/[json, options]
-import custom_async, id, array_buffer
+import std/[json, options, os]
+import custom_async, id, array_buffer, cancellation_token
 
 type
   Workspace* = ref object
@@ -39,3 +39,55 @@ export workspace_github
 
 import workspace_absytree_server
 export workspace_absytree_server
+
+proc getDirectoryListingRec*(folder: WorkspaceFolder, path: string): Future[seq[string]] {.async.} =
+  var resultItems: seq[string]
+
+  let items = await folder.getDirectoryListing(path)
+  for file in items.files:
+    resultItems.add(path / file)
+
+  var futs: seq[Future[seq[string]]]
+
+  for dir in items.folders:
+    futs.add getDirectoryListingRec(folder, path / dir)
+
+  for fut in futs:
+    let children = await fut
+    resultItems.add children
+
+  return resultItems
+
+proc iterateDirectoryRec*(folder: WorkspaceFolder, path: string, cancellationToken: CancellationToken, callback: proc(files: seq[string]): Future[void]): Future[void] {.async.} =
+  let path = path
+  var resultItems: seq[string]
+  var folders: seq[string]
+
+  if cancellationToken.canceled:
+    return
+
+  let items = await folder.getDirectoryListing(path)
+
+  if cancellationToken.canceled:
+    return
+
+  for file in items.files:
+    resultItems.add(path / file)
+
+  for dir in items.folders:
+    folders.add(path / dir)
+
+  await sleepAsync(1)
+
+  await callback(resultItems)
+
+  if cancellationToken.canceled:
+    return
+
+  var futs: seq[Future[void]]
+
+  for dir in folders:
+    futs.add iterateDirectoryRec(folder, dir, cancellationToken, callback)
+
+  for fut in futs:
+    await fut

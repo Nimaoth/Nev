@@ -811,7 +811,7 @@ proc toggleShowDrawnNodes*(self: App) {.expose("editor").} =
 
 proc createView(self: App, editorState: OpenEditor): View =
   let workspaceFolder = self.getWorkspaceFolder(editorState.workspaceId.parseId)
-  let document = if editorState.filename.endsWith ".am":
+  let document = if editorState.filename.endsWith(".am") or editorState.filename.endsWith(".ast-model"):
     try:
       newModelDocument(editorState.filename, editorState.appFile, workspaceFolder)
     except CatchableError:
@@ -1201,7 +1201,7 @@ proc openFile*(self: App, path: string, app: bool = false): Option[DocumentEdito
     return ed.some
 
   try:
-    if path.endsWith(".am"):
+    if path.endsWith(".am") or path.endsWith(".ast-model"):
       return self.createAndAddView(newModelDocument(path, app, WorkspaceFolder.none)).some
     else:
       return self.createAndAddView(newTextDocument(self.asConfigProvider, path, "", app, load=true)).some
@@ -1218,7 +1218,7 @@ proc openWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder): Optio
     return editor.some
 
   try:
-    if path.endsWith(".am"):
+    if path.endsWith(".am") or path.endsWith(".ast-model"):
       return self.createAndAddView(newModelDocument(path, false, folder.some)).some
     else:
       return self.createAndAddView(newTextDocument(self.asConfigProvider, path, "", false, folder.some, load=true)).some
@@ -1283,58 +1283,6 @@ proc chooseTheme*(self: App) {.expose("editor").} =
 
   self.pushPopup popup
 
-proc getDirectoryListingRec(self: App, folder: WorkspaceFolder, path: string): Future[seq[string]] {.async.} =
-  var resultItems: seq[string]
-
-  let items = await folder.getDirectoryListing(path)
-  for file in items.files:
-    resultItems.add(path / file)
-
-  var futs: seq[Future[seq[string]]]
-
-  for dir in items.folders:
-    futs.add self.getDirectoryListingRec(folder, path / dir)
-
-  for fut in futs:
-    let children = await fut
-    resultItems.add children
-
-  return resultItems
-
-proc iterateDirectoryRec(self: App, folder: WorkspaceFolder, path: string, cancellationToken: CancellationToken, callback: proc(files: seq[string]): Future[void]): Future[void] {.async.} =
-  let path = path
-  var resultItems: seq[string]
-  var folders: seq[string]
-
-  if cancellationToken.canceled:
-    return
-
-  let items = await folder.getDirectoryListing(path)
-
-  if cancellationToken.canceled:
-    return
-
-  for file in items.files:
-    resultItems.add(path / file)
-
-  for dir in items.folders:
-    folders.add(path / dir)
-
-  await sleepAsync(1)
-
-  await callback(resultItems)
-
-  if cancellationToken.canceled:
-    return
-
-  var futs: seq[Future[void]]
-
-  for dir in folders:
-    futs.add self.iterateDirectoryRec(folder, dir, cancellationToken, callback)
-
-  for fut in futs:
-    await fut
-
 proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
   ## Opens a file dialog which shows all files in the currently open workspaces
   ## Press <ENTER> to select a file
@@ -1378,7 +1326,7 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
     var timer = startTimer()
     for folder in self.workspace.folders:
       var folder = folder
-      await self.iterateDirectoryRec(folder, "", cancellationToken, proc(files: seq[string]) {.async.} =
+      await iterateDirectoryRec(folder, "", cancellationToken, proc(files: seq[string]) {.async.} =
         let folder = folder
         for file in files:
           let score = matchPath(file, text)
