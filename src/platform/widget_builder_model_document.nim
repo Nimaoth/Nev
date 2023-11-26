@@ -1104,37 +1104,43 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
               var scrollOffset = node.transformBounds(overlapPanel).y
 
               if typ.isNotNil or value.isNotNil:
-                builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse}, y = scrollOffset):
-                  builder.panel(&{FillY}, pivot = vec2(1, 0), w = builder.charWidth)
+                builder.panel(&{FillX, SizeToContentY, LayoutVertical}, y = scrollOffset):
+                  # builder.panel(&{FillY}, pivot = vec2(1, 0), w = builder.charWidth)
 
                   if typ.isNotNil:
-                    builder.panel(&{SizeToContentX, SizeToContentY, DrawBorder}, pivot = vec2(1, 0), borderColor = textColor):
-                      let updateContext = UpdateContext(
-                        nodeCellMap: self.detailsNodeCellMap,
-                        cellToWidget: initTable[CellId, UINode](),
-                        targetCellPosition: vec2(0, 0),
-                        handleClick: proc(node: UINode, cell: Cell, path: seq[int], cursor: CellCursor, drag: bool) = discard,
-                        setCursor: proc(cell: Cell, offset: int, drag: bool) = discard,
-                      )
-                      self.createNodeUI(builder, app, currentNode, updateContext, remainingHeightUp=0, remainingHeightDown=h, typ, @[0], 0)
-
-                    builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), text = "Type: ", textColor = textColor)
+                    builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse}):
+                      builder.panel(&{FillY}, pivot = vec2(1, 0), w = builder.charWidth)
+                      builder.panel(&{SizeToContentX, SizeToContentY, LayoutVertical}, pivot = vec2(1, 0)):
+                        builder.panel(&{FillX, SizeToContentY, DrawText, TextAlignHorizontalRight}, text = "Type", textColor = textColor)
+                        builder.panel(&{SizeToContentX, SizeToContentY, DrawBorder}, borderColor = textColor):
+                          let updateContext = UpdateContext(
+                            nodeCellMap: self.detailsNodeCellMap,
+                            cellToWidget: initTable[CellId, UINode](),
+                            targetCellPosition: vec2(0, 0),
+                            handleClick: proc(node: UINode, cell: Cell, path: seq[int], cursor: CellCursor, drag: bool) = discard,
+                            setCursor: proc(cell: Cell, offset: int, drag: bool) = discard,
+                          )
+                          self.createNodeUI(builder, app, currentNode, updateContext, remainingHeightUp=0, remainingHeightDown=h, typ, @[0], 0)
 
                   if value.isNotNil:
                     if typ.isNotNil:
+                      # builder.panel(&{FillY}, pivot = vec2(1, 0), w = builder.charWidth)
+                      builder.panel(&{FillX}, h = builder.textHeight)
+
+                    builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse}):
                       builder.panel(&{FillY}, pivot = vec2(1, 0), w = builder.charWidth)
 
-                    builder.panel(&{SizeToContentX, SizeToContentY, DrawBorder}, pivot = vec2(1, 0), borderColor = textColor):
-                      let updateContext = UpdateContext(
-                        nodeCellMap: self.detailsNodeCellMap,
-                        cellToWidget: initTable[CellId, UINode](),
-                        targetCellPosition: vec2(0, 0),
-                        handleClick: proc(node: UINode, cell: Cell, path: seq[int], cursor: CellCursor, drag: bool) = discard,
-                        setCursor: proc(cell: Cell, offset: int, drag: bool) = discard,
-                      )
-                      self.createNodeUI(builder, app, currentNode, updateContext, remainingHeightUp=0, remainingHeightDown=h, value, @[0], 0)
-
-                    builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), text = "Value: ", textColor = textColor)
+                      builder.panel(&{SizeToContentX, SizeToContentY, LayoutVertical}, pivot = vec2(1, 0)):
+                        builder.panel(&{FillX, SizeToContentY, DrawText, TextAlignHorizontalRight}, text = "Value", textColor = textColor)
+                        builder.panel(&{SizeToContentX, SizeToContentY, DrawBorder}, borderColor = textColor):
+                          let updateContext = UpdateContext(
+                            nodeCellMap: self.detailsNodeCellMap,
+                            cellToWidget: initTable[CellId, UINode](),
+                            targetCellPosition: vec2(0, 0),
+                            handleClick: proc(node: UINode, cell: Cell, path: seq[int], cursor: CellCursor, drag: bool) = discard,
+                            setCursor: proc(cell: Cell, offset: int, drag: bool) = discard,
+                          )
+                          self.createNodeUI(builder, app, currentNode, updateContext, remainingHeightUp=0, remainingHeightDown=h, value, @[0], 0)
 
             if not self.selection.isEmpty:
               let cursorColor = textColor.darken(0.2)

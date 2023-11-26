@@ -450,8 +450,30 @@ proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offse
       let font = platform.getFont(platform.ctx.fontSize, node.flags)
 
       let wrap = TextWrap in node.flags
-      let wrapBounds = if wrap: vec2(node.boundsActual.w, node.boundsActual.h) else: vec2(0, 0)
-      let arrangement = font.typeset(node.text, bounds=wrapBounds)
+      let wrapBounds = if node.flags.any(&{TextWrap, TextAlignHorizontalLeft, TextAlignHorizontalCenter, TextAlignHorizontalRight, TextAlignVerticalTop, TextAlignVerticalCenter, TextAlignVerticalBottom}):
+        vec2(node.w, node.h)
+      else:
+        vec2(0, 0)
+
+      let hAlign = if TextAlignHorizontalLeft in node.flags:
+        HorizontalAlignment.LeftAlign
+      elif TextAlignHorizontalCenter in node.flags:
+        HorizontalAlignment.CenterAlign
+      elif TextAlignHorizontalRight in node.flags:
+        HorizontalAlignment.RightAlign
+      else:
+        HorizontalAlignment.LeftAlign
+
+      let vAlign = if TextAlignVerticalTop in node.flags:
+        VerticalAlignment.TopAlign
+      elif TextAlignVerticalCenter in node.flags:
+        VerticalAlignment.MiddleAlign
+      elif TextAlignVerticalBottom in node.flags:
+        VerticalAlignment.BottomAlign
+      else:
+        VerticalAlignment.TopAlign
+
+      let arrangement = font.typeset(node.text, bounds=wrapBounds, hAlign=hAlign, vAlign=vAlign, wrap=wrap)
       var bounds = arrangement.layoutBounds()
       if bounds.x == 0:
         bounds.x = 1

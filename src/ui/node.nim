@@ -26,6 +26,12 @@ defineBitFlag:
     TextItalic
     TextBold
     TextWrap
+    TextAlignHorizontalLeft
+    TextAlignHorizontalCenter
+    TextAlignHorizontalRight
+    TextAlignVerticalTop
+    TextAlignVerticalCenter
+    TextAlignVerticalBottom
     LayoutVertical
     LayoutVerticalReverse
     LayoutHorizontal
