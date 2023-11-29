@@ -623,8 +623,6 @@ let stringTypeInstance* = newAstNode(stringTypeClass)
 let intTypeInstance* = newAstNode(intTypeClass)
 let voidTypeInstance* = newAstNode(voidTypeClass)
 
-# todo: those should technically return something like metaTypeInstance which needs a new metaTypeClass
-# and the valueComputer should return the type instance
 typeComputers[metaTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for meta type literal {node}"
   return metaTypeInstance

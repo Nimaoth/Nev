@@ -6,6 +6,7 @@ import custom_logger, timer, array_buffer, config_provider, app_interface, dispa
 import platform/[filesystem, platform]
 import workspaces/[workspace]
 import ast/[model, base_language, editor_language, cells]
+import ast/lang/lang_language
 import ui/node
 
 import ast/[generator_wasm, base_language_wasm, editor_language_wasm, model_state]
@@ -468,6 +469,8 @@ proc resolveLanguage(id: LanguageId): Option[Language] =
     return base_language.baseLanguage.some
   elif id == IdEditorLanguage:
     return editor_language.editorLanguage.some
+  elif id == IdLangLanguage:
+    return lang_language.langLanguage.some
   else:
     return Language.none
 
@@ -2467,7 +2470,7 @@ proc createNewNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
 
     self.document.model.addRootNode newAstNode(class)
     self.rebuildCells()
-    self.cursor = self.getFirstEditableCellOfNode(self.document.model.rootNodes[0]).get
+    self.cursor = self.getFirstEditableCellOfNode(self.document.model.rootNodes.last).get
 
   else:
     if not self.selection.isEmpty:
@@ -2883,7 +2886,7 @@ proc addLanguage*(self: ModelDocumentEditor) {.expose("editor.model").} =
   popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
     # Find everything matching text
 
-    let languages = {IdBaseLanguage: "Base Language", IdEditorLanguage: "Editor Language"}
+    let languages = {IdBaseLanguage: "Base Language", IdEditorLanguage: "Editor Language", IdLangLanguage: "Lang Language"}
     for (id, name) in languages:
       if self.document.model.hasLanguage(id):
         continue
@@ -2972,6 +2975,50 @@ proc importModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
     if self.document.project.getModel(modelId).getSome(model):
       log lvlInfo, fmt"Add imported model {model.path} ({model.id})"
       self.document.model.addImport(model)
+
+  popup.updateCompletions()
+  popup.sortFunction = proc(a, b: SelectorItem): int = cmp(a.score, b.score)
+  popup.enableAutoSort()
+
+  self.app.pushPopup popup
+
+type ModelNodeClassSelectorItem* = ref object of NamedSelectorItem
+  class*: NodeClass
+
+method changed*(self: ModelNodeClassSelectorItem, other: SelectorItem): bool =
+  let other = other.ModelNodeClassSelectorItem
+  return self.class != other.class
+
+proc compileLanguage*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  if not self.document.model.hasLanguage(IdLangLanguage):
+    return
+
+  for root in self.document.model.rootNodes:
+    if root.class == IdClassDefinition:
+      let class = createNodeClassFromLangDefinition(root)
+      # todo
+
+proc addRootNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  var popup = self.app.createSelectorPopup().SelectorPopup
+
+  popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
+    for language in self.document.model.languages:
+      for rootNodeClass in language.rootNodeClasses:
+        let name = rootNodeClass.name
+        let score = matchPath(name, text)
+        result.add ModelNodeClassSelectorItem(name: name, class: rootNodeClass, score: score)
+
+  popup.handleItemConfirmed = proc(item: SelectorItem) =
+    log lvlInfo, fmt"Add root node of class {item.ModelNodeClassSelectorItem.name} to model {self.document.model.id}"
+    let class = item.ModelNodeClassSelectorItem.class
+
+    defer:
+      self.document.finishTransaction()
+
+    self.document.model.addRootNode newAstNode(class)
+
+    self.rebuildCells()
+    self.cursor = self.getFirstEditableCellOfNode(self.document.model.rootNodes.last).get
 
   popup.updateCompletions()
   popup.sortFunction = proc(a, b: SelectorItem): int = cmp(a.score, b.score)
