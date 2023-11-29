@@ -22,6 +22,10 @@ method createUI*(self: ThemeSelectorItem, builder: UINodeBuilder, app: App): seq
   let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
   builder.panel(&{FillX, SizeToContentY, DrawText}, text = self.path, textColor = textColor)
 
+method createUI*(self: NamedSelectorItem, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
+  let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
+  builder.panel(&{FillX, SizeToContentY, DrawText}, text = self.name, textColor = textColor)
+
 method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
   # let dirty = self.dirty
   self.resetDirty()

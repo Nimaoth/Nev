@@ -45,7 +45,14 @@ type
     autoSortActive: bool = false
     sortFunction*: proc(a, b: SelectorItem): int
 
+  NamedSelectorItem* = ref object of SelectorItem
+    name*: string
+
 method changed*(self: SelectorItem, other: SelectorItem): bool {.base.} = discard
+
+method changed*(self: NamedSelectorItem, other: SelectorItem): bool =
+  let other = other.NamedSelectorItem
+  return self.name != other.name
 
 proc autoSort(self: SelectorPopup) {.async.} =
   self.autoSortActive = true
