@@ -21,24 +21,26 @@
         "sha1": "8bccb6b02295a85eab30aeb8c411927680ca9192"
       }
     },
-    "zippy": {
-      "version": "0.10.9",
-      "vcsRevision": "8d75e3d7c010dcd5d050ea04cbdb5d64e0b6cf6a",
-      "url": "https://github.com/guzba/zippy",
-      "downloadMethod": "git",
-      "dependencies": [],
-      "checksums": {
-        "sha1": "2904d0fc88b38e02493f680ba326facf5978ab27"
-      }
-    },
     "x11": {
-      "version": "1.1",
-      "vcsRevision": "2093a4c01360cbb5dd33ab79fd4056e148b53ca1",
+      "version": "1.2",
+      "vcsRevision": "29aca5e519ebf5d833f63a6a2769e62ec7bfb83a",
       "url": "https://github.com/nim-lang/x11",
       "downloadMethod": "git",
       "dependencies": [],
       "checksums": {
-        "sha1": "dad7b243bb290af47fcd9603340f428e5590bb5a"
+        "sha1": "6db9aa495a228e9e68faa80acf301f60accd8e5a"
+      }
+    },
+    "opengl": {
+      "version": "1.2.9",
+      "vcsRevision": "8e2e098f82dc5eefd874488c37b5830233cd18f4",
+      "url": "https://github.com/nim-lang/opengl",
+      "downloadMethod": "git",
+      "dependencies": [
+        "x11"
+      ],
+      "checksums": {
+        "sha1": "87ece9f3a9f99d17332b50885e15a4dcb18c51b5"
       }
     },
     "urlly": {
@@ -51,28 +53,6 @@
         "sha1": "fa636c9852fbf196df05baa1c9a0c976f533150d"
       }
     },
-    "nimsimd": {
-      "version": "1.2.5",
-      "vcsRevision": "1d75f15c8bb8df9c1d4779072bbfc8a7e3e84c98",
-      "url": "https://github.com/guzba/nimsimd",
-      "downloadMethod": "git",
-      "dependencies": [],
-      "checksums": {
-        "sha1": "9f919415ad69edb599c3362b0cc0fe0b044097c9"
-      }
-    },
-    "crunchy": {
-      "version": "0.1.8",
-      "vcsRevision": "6dda0e3347e310ed883f9c0abee900cfc6c4a65a",
-      "url": "https://github.com/guzba/crunchy",
-      "downloadMethod": "git",
-      "dependencies": [
-        "nimsimd"
-      ],
-      "checksums": {
-        "sha1": "7271c3b0728c995e5b8d4d2267edcb2de98278a9"
-      }
-    },
     "vmath": {
       "version": "2.0.0",
       "vcsRevision": "7282ae1247f2f384ebeaec3826d7fa38fd0e1df1",
@@ -81,6 +61,30 @@
       "dependencies": [],
       "checksums": {
         "sha1": "c90a664f3425d26219e1262ed9a888b859b3127c"
+      }
+    },
+    "regex": {
+      "version": "0.23.0",
+      "vcsRevision": "577c4ec3b235c5fd2653a9c86cbc4a576cfc0869",
+      "url": "https://github.com/nitely/nim-regex",
+      "downloadMethod": "git",
+      "dependencies": [
+        "unicodedb"
+      ],
+      "checksums": {
+        "sha1": "89466caa353b571cdcd8271f2c797ba2c15a89f2"
+      }
+    },
+    "glob": {
+      "version": "0.11.2",
+      "vcsRevision": "64f71af2fa4572c2bdf8987a56a427c1d88fc34f",
+      "url": "https://github.com/haltcase/glob",
+      "downloadMethod": "git",
+      "dependencies": [
+        "regex"
+      ],
+      "checksums": {
+        "sha1": "58fadfae8cb82cab1061dded8066c03b0460ad4d"
       }
     },
     "c2nim": {
@@ -94,37 +98,49 @@
       }
     },
     "winim": {
-      "version": "3.9.0",
-      "vcsRevision": "3abd0ae122cd41efd0ce6d45fea720ef7091e4ac",
+      "version": "3.9.2",
+      "vcsRevision": "154d6c6ffb1f19fce684381cdba5e3f3a729053e",
       "url": "https://github.com/khchen/winim",
       "downloadMethod": "git",
       "dependencies": [],
       "checksums": {
-        "sha1": "02cf5882b51550d7faddbce7eedac35c94dea729"
+        "sha1": "154c271e1d766fca5aea32beecec5645e6d2e114"
       }
     },
-    "bumpy": {
-      "version": "1.1.1",
-      "vcsRevision": "2801fcff08996f3eb79ddfe8ebcb6e0ff8c19d19",
-      "url": "https://github.com/treeform/bumpy",
+    "zippy": {
+      "version": "0.10.11",
+      "vcsRevision": "9560f3d20479fb390c97f731ef8d100f1ed54e6c",
+      "url": "https://github.com/guzba/zippy",
       "downloadMethod": "git",
-      "dependencies": [
-        "vmath"
-      ],
+      "dependencies": [],
       "checksums": {
-        "sha1": "1239ab6d12e2ab99e5012ea3981ae52abd49e9a6"
+        "sha1": "12e761e18ccc0a1b0e931c74dd02bb4b74544d56"
       }
     },
-    "opengl": {
-      "version": "1.2.7",
-      "vcsRevision": "57e01c58741066e8dae7eb19929f85b1d7c83bf8",
-      "url": "https://github.com/nim-lang/opengl",
+    "nimgen": {
+      "version": "0.5.4",
+      "vcsRevision": "e6697aabbe36e42e4dd261cfd0b8a8be16f6f342",
+      "url": "https://github.com/Nimaoth/nimgen",
       "downloadMethod": "git",
       "dependencies": [
-        "x11"
+        "c2nim",
+        "regex",
+        "unicodedb"
       ],
       "checksums": {
-        "sha1": "c19fc867d0a999ebb078fc14ea142aa7cf057ba8"
+        "sha1": "d563cc29937e4d2d66ebeb3eaacef95c6284fb4c"
+      }
+    },
+    "treesitter": {
+      "version": "0.1.4",
+      "vcsRevision": "c7ea7381cf9fc8791c722dbbe1f37371df6af8dd",
+      "url": "https://github.com/Nimaoth/nimtreesitter-api",
+      "downloadMethod": "git",
+      "dependencies": [
+        "nimgen"
+      ],
+      "checksums": {
+        "sha1": "45ba77770a2b65ac78575f64dff7985dcfcefdf3"
       }
     },
     "chroma": {
@@ -145,6 +161,40 @@
       "dependencies": [],
       "checksums": {
         "sha1": "5775e6ea6ca339efc5bd37b082b8294342d49dc5"
+      }
+    },
+    "nimsimd": {
+      "version": "1.2.6",
+      "vcsRevision": "156e424306756a106442aca985eed61a8d12097b",
+      "url": "https://github.com/guzba/nimsimd",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "a371cce59834c8d56091f5c891fd182e2eb9b3c4"
+      }
+    },
+    "bumpy": {
+      "version": "1.1.2",
+      "vcsRevision": "d7eaf00c24820ad0317c9926737402e62431e931",
+      "url": "https://github.com/treeform/bumpy",
+      "downloadMethod": "git",
+      "dependencies": [
+        "vmath"
+      ],
+      "checksums": {
+        "sha1": "acc789c4e31b3ee969a13dd0c238d808f39b19c7"
+      }
+    },
+    "crunchy": {
+      "version": "0.1.9",
+      "vcsRevision": "d0c9ad33ae72aece49093d7688fc78a7101aa4b0",
+      "url": "https://github.com/guzba/crunchy",
+      "downloadMethod": "git",
+      "dependencies": [
+        "nimsimd"
+      ],
+      "checksums": {
+        "sha1": "3afda170fbe40158cd78e00375e34690f1fae263"
       }
     },
     "pixie": {
@@ -191,13 +241,13 @@
       }
     },
     "micros": {
-      "version": "0.1.12",
-      "vcsRevision": "049a2ff0984e58ed0d266f58b076469faf0e4add",
+      "version": "0.1.15",
+      "vcsRevision": "b20d211c61418cbcc23f40b1909603bff2c4ecb7",
       "url": "https://github.com/beef331/micros/",
       "downloadMethod": "git",
       "dependencies": [],
       "checksums": {
-        "sha1": "e20fdc9585c8fbb34b6aa97688ef9f71997feafc"
+        "sha1": "a79582b1cb0da043df443e796106d5b815dfd207"
       }
     },
     "wasm3": {
@@ -260,44 +310,6 @@
         "sha1": "408bde8679bce63dfb6f424e107eb37c5eb31510"
       }
     },
-    "regex": {
-      "version": "0.20.2",
-      "vcsRevision": "1f21ff2069c5d58aa3f326aa7b2ea458cf0a50cf",
-      "url": "https://github.com/nitely/nim-regex",
-      "downloadMethod": "git",
-      "dependencies": [
-        "unicodedb"
-      ],
-      "checksums": {
-        "sha1": "f376a11f34d2dfbfd18abdd31e6379e3cf2e7c6d"
-      }
-    },
-    "glob": {
-      "version": "0.11.2",
-      "vcsRevision": "286726e26ed9c4203bf41e6f1c41d2f0bc947122",
-      "url": "https://github.com/haltcase/glob",
-      "downloadMethod": "git",
-      "dependencies": [
-        "regex"
-      ],
-      "checksums": {
-        "sha1": "0e383626b94a7f8b9fcd9d0575bb3c2bfca63488"
-      }
-    },
-    "nimgen": {
-      "version": "0.5.4",
-      "vcsRevision": "e6697aabbe36e42e4dd261cfd0b8a8be16f6f342",
-      "url": "https://github.com/Nimaoth/nimgen",
-      "downloadMethod": "git",
-      "dependencies": [
-        "c2nim",
-        "regex",
-        "unicodedb"
-      ],
-      "checksums": {
-        "sha1": "d563cc29937e4d2d66ebeb3eaacef95c6284fb4c"
-      }
-    },
     "patty": {
       "version": "0.3.5",
       "vcsRevision": "31bb61b990b8b3bae1cba2f353fb978448942318",
@@ -336,18 +348,6 @@
       "dependencies": [],
       "checksums": {
         "sha1": "99b26039cfa38ee375f5eb469eec15d842c4fac6"
-      }
-    },
-    "treesitter": {
-      "version": "0.1.3",
-      "vcsRevision": "dc943631fd175f41c6d0d7baa0a238a8a616c901",
-      "url": "https://github.com/Nimaoth/nimtreesitter-api",
-      "downloadMethod": "git",
-      "dependencies": [
-        "nimgen"
-      ],
-      "checksums": {
-        "sha1": "5c7493221622a3a28f27706527284214f8527168"
       }
     }
   },
