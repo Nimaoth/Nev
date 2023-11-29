@@ -384,6 +384,12 @@ proc editor_model_addModelToProject_void_ModelDocumentEditor_impl*(
 proc editor_model_importModel_void_ModelDocumentEditor_impl*(
     self: ModelDocumentEditor) =
   discard
+proc editor_model_compileLanguage_void_ModelDocumentEditor_impl*(
+    self: ModelDocumentEditor) =
+  discard
+proc editor_model_addRootNode_void_ModelDocumentEditor_impl*(
+    self: ModelDocumentEditor) =
+  discard
 proc editor_model_saveProject_void_ModelDocumentEditor_impl*(
     self: ModelDocumentEditor) =
   discard

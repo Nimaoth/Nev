@@ -103,5 +103,9 @@ proc addModelToProject*(self: ModelDocumentEditor) =
   editor_model_addModelToProject_void_ModelDocumentEditor_impl(self)
 proc importModel*(self: ModelDocumentEditor) =
   editor_model_importModel_void_ModelDocumentEditor_impl(self)
+proc compileLanguage*(self: ModelDocumentEditor) =
+  editor_model_compileLanguage_void_ModelDocumentEditor_impl(self)
+proc addRootNode*(self: ModelDocumentEditor) =
+  editor_model_addRootNode_void_ModelDocumentEditor_impl(self)
 proc saveProject*(self: ModelDocumentEditor) =
   editor_model_saveProject_void_ModelDocumentEditor_impl(self)

@@ -1,5 +1,7 @@
 import id, ast/model
 
+# base language
+
 let IdPrint* = "62e53396564d29f7729344f7".parseId.ClassId
 let IdAdd* = "62e53396564d29f7729344f8".parseId.ClassId
 let IdSub* = "62e53396564d29f7729344f9".parseId.ClassId
@@ -153,38 +155,47 @@ let IdAllocateCount* = "654fbb281446e19b38225213".parseId.RoleId
 let IdGenericType* = "654fbb281446e19b3822521a".parseId.ClassId
 let IdGenericTypeValue* = "654fbb281446e19b3822521b".parseId.RoleId
 
+# lang language
+let IdLangLanguage* = "654fbb281446e19b3822523f".parseId.LanguageId
+
+let IdClassDefinition* = "654fbb281446e19b3822522a".parseId.ClassId
+let IdClassDefinitionAbstract* = "654fbb281446e19b38225236".parseId.RoleId
+let IdClassDefinitionInterface* = "654fbb281446e19b38225239".parseId.RoleId
+let IdClassDefinitionBaseClass* = "654fbb281446e19b38225237".parseId.RoleId
+let IdClassDefinitionInterfaces* = "654fbb281446e19b3822523a".parseId.RoleId
+let IdClassDefinitionAlias* = "654fbb281446e19b38225238".parseId.RoleId
+
+let IdClassDefinitionProperties* = "654fbb281446e19b3822522b".parseId.RoleId
+let IdClassDefinitionReferences* = "654fbb281446e19b3822522c".parseId.RoleId
+let IdClassDefinitionChildren* = "654fbb281446e19b3822522d".parseId.RoleId
+
+let IdPropertyDefinition* = "654fbb281446e19b3822522e".parseId.ClassId
+let IdPropertyDefinitionType* = "654fbb281446e19b3822522f".parseId.RoleId
+
+let IdReferenceDefinition* = "654fbb281446e19b38225230".parseId.ClassId
+let IdReferenceDefinitionClass* = "654fbb281446e19b38225231".parseId.RoleId
+let IdReferenceDefinitionCount* = "654fbb281446e19b38225232".parseId.RoleId
+
+let IdChildrenDefinition* = "654fbb281446e19b38225233".parseId.ClassId
+let IdChildrenDefinitionClass* = "654fbb281446e19b38225234".parseId.RoleId
+let IdChildrenDefinitionCount* = "654fbb281446e19b38225235".parseId.RoleId
+
+let IdPropertyType* = "654fbb281446e19b3822523b".parseId.ClassId
+let IdPropertyTypeBool* = "654fbb281446e19b3822523c".parseId.ClassId
+let IdPropertyTypeString* = "654fbb281446e19b3822523d".parseId.ClassId
+let IdPropertyTypeNumber* = "654fbb281446e19b3822523e".parseId.ClassId
+
+let IdCount* = "654fbb281446e19b38225243".parseId.ClassId
+let IdCountZeroOrOne* = "654fbb281446e19b38225244".parseId.ClassId
+let IdCountOne* = "654fbb281446e19b38225245".parseId.ClassId
+let IdCountZeroOrMore* = "654fbb281446e19b38225246".parseId.ClassId
+let IdCountOneOrMore* = "654fbb281446e19b38225247".parseId.ClassId
+
+let IdClassReference* = "654fbb281446e19b38225241".parseId.ClassId
+let IdClassReferenceTarget* = "654fbb281446e19b38225242".parseId.RoleId
+
 # new ids
 
-let Id654fbb281446e19b3822522a* = "654fbb281446e19b3822522a".parseId
-let Id654fbb281446e19b3822522b* = "654fbb281446e19b3822522b".parseId
-let Id654fbb281446e19b3822522c* = "654fbb281446e19b3822522c".parseId
-let Id654fbb281446e19b3822522d* = "654fbb281446e19b3822522d".parseId
-let Id654fbb281446e19b3822522e* = "654fbb281446e19b3822522e".parseId
-let Id654fbb281446e19b3822522f* = "654fbb281446e19b3822522f".parseId
-let Id654fbb281446e19b38225230* = "654fbb281446e19b38225230".parseId
-let Id654fbb281446e19b38225231* = "654fbb281446e19b38225231".parseId
-let Id654fbb281446e19b38225232* = "654fbb281446e19b38225232".parseId
-let Id654fbb281446e19b38225233* = "654fbb281446e19b38225233".parseId
-let Id654fbb281446e19b38225234* = "654fbb281446e19b38225234".parseId
-let Id654fbb281446e19b38225235* = "654fbb281446e19b38225235".parseId
-let Id654fbb281446e19b38225236* = "654fbb281446e19b38225236".parseId
-let Id654fbb281446e19b38225237* = "654fbb281446e19b38225237".parseId
-let Id654fbb281446e19b38225238* = "654fbb281446e19b38225238".parseId
-let Id654fbb281446e19b38225239* = "654fbb281446e19b38225239".parseId
-let Id654fbb281446e19b3822523a* = "654fbb281446e19b3822523a".parseId
-let Id654fbb281446e19b3822523b* = "654fbb281446e19b3822523b".parseId
-let Id654fbb281446e19b3822523c* = "654fbb281446e19b3822523c".parseId
-let Id654fbb281446e19b3822523d* = "654fbb281446e19b3822523d".parseId
-let Id654fbb281446e19b3822523e* = "654fbb281446e19b3822523e".parseId
-let Id654fbb281446e19b3822523f* = "654fbb281446e19b3822523f".parseId
-let Id654fbb281446e19b38225240* = "654fbb281446e19b38225240".parseId
-let Id654fbb281446e19b38225241* = "654fbb281446e19b38225241".parseId
-let Id654fbb281446e19b38225242* = "654fbb281446e19b38225242".parseId
-let Id654fbb281446e19b38225243* = "654fbb281446e19b38225243".parseId
-let Id654fbb281446e19b38225244* = "654fbb281446e19b38225244".parseId
-let Id654fbb281446e19b38225245* = "654fbb281446e19b38225245".parseId
-let Id654fbb281446e19b38225246* = "654fbb281446e19b38225246".parseId
-let Id654fbb281446e19b38225247* = "654fbb281446e19b38225247".parseId
 let Id654fbb281446e19b38225248* = "654fbb281446e19b38225248".parseId
 let Id654fbb281446e19b38225249* = "654fbb281446e19b38225249".parseId
 let Id654fbb281446e19b3822524a* = "654fbb281446e19b3822524a".parseId
