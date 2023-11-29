@@ -17,7 +17,7 @@ requires "print >= 1.0.2"
 requires "fuzzy >= 0.1.0"
 requires "nimsimd >= 1.2.4"
 requires "regex >= 0.20.2"
-requires "glob >= 0.11.2"
+requires "glob#64f71af" # "glob >= 0.11.2" # the newest version of glob doesn't have a version but is required for Nim 2.0
 requires "patty >= 0.3.5"
 requires "https://github.com/Nimaoth/ws >= 0.5.0"
 requires "https://github.com/Nimaoth/windy >= 0.0.1"
@@ -25,7 +25,7 @@ requires "https://github.com/Nimaoth/wasm3 >= 0.1.12"
 requires "https://github.com/Nimaoth/lrucache.nim >= 1.1.4"
 requires "https://github.com/Nimaoth/boxy >= 0.4.2"
 requires "https://github.com/Nimaoth/nimscripter >= 1.0.18"
-requires "https://github.com/Nimaoth/nimtreesitter-api >= 0.1.3"
+requires "https://github.com/Nimaoth/nimtreesitter-api >= 0.1.4"
 
 import strformat, strutils
 
