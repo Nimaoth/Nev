@@ -29,8 +29,9 @@ method getText*(cell: Cell): string {.base.} = discard
 method setText*(cell: Cell, text: string, slice: Slice[int] = 0..0) {.base.} = discard
 
 proc currentText*(cell: Cell): string =
-  if not cell.displayText.isNone:
-    return cell.displayText.get
+  # todo: maybe remove display text?
+  # if not cell.displayText.isNone:
+  #   return cell.displayText.get
   return cell.getText
 
 proc `currentText=`*(cell: Cell, text: string) =
@@ -206,12 +207,12 @@ method setText*(cell: PropertyCell, text: string, slice: Slice[int] = 0..0) =
 
       case prop.typ
       of String:
-        cell.targetNode.setProperty(cell.property, PropertyValue(kind: PropertyType.String, stringValue: cell.currentText), slice)
+        cell.targetNode.setProperty(cell.property, PropertyValue(kind: PropertyType.String, stringValue: text), slice)
       of Int:
-        let intValue = cell.currentText.parseInt
+        let intValue = text.parseInt
         cell.targetNode.setProperty(cell.property, PropertyValue(kind: PropertyType.Int, intValue: intValue), slice)
       of Bool:
-        let boolValue = cell.currentText.parseBool
+        let boolValue = text.parseBool
         cell.targetNode.setProperty(cell.property, PropertyValue(kind: PropertyType.Bool, boolValue: boolValue), slice)
 
   except CatchableError:

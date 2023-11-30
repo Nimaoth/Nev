@@ -267,7 +267,8 @@ proc goForward(self: CellLayoutContext) =
     self.currentDirection = Forwards
 
 proc getTextAndColor(app: App, cell: Cell, defaultShadowText: string = ""): (string, Color) =
-  if cell.currentText.len == 0:
+  let currentText = cell.currentText
+  if currentText.len == 0:
     let text = if cell.shadowText.len == 0:
       defaultShadowText
     else:
@@ -277,7 +278,7 @@ proc getTextAndColor(app: App, cell: Cell, defaultShadowText: string = ""): (str
   else:
     let defaultColor = if cell.foregroundColor.a != 0: cell.foregroundColor else: color(1, 1, 1)
     let textColor = if cell.themeForegroundColors.len == 0: defaultColor else: app.theme.anyColor(cell.themeForegroundColors, defaultColor)
-    return (cell.currentText, textColor)
+    return (currentText, textColor)
 
 proc createCompletions(self: ModelDocumentEditor, builder: UINodeBuilder, app: App, cursorBounds: Rect) =
   let totalLineHeight = app.platform.totalLineHeight
