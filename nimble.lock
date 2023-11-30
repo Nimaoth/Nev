@@ -21,6 +21,16 @@
         "sha1": "8bccb6b02295a85eab30aeb8c411927680ca9192"
       }
     },
+    "vmath": {
+      "version": "2.0.0",
+      "vcsRevision": "661bdaac7546e16d087f066adfeb6ea7590106b4",
+      "url": "https://github.com/Nimaoth/vmath",
+      "downloadMethod": "git",
+      "dependencies": [],
+      "checksums": {
+        "sha1": "db421090319e1a0ef028535eedfdadae6f3d7294"
+      }
+    },
     "x11": {
       "version": "1.2",
       "vcsRevision": "29aca5e519ebf5d833f63a6a2769e62ec7bfb83a",
@@ -51,16 +61,6 @@
       "dependencies": [],
       "checksums": {
         "sha1": "fa636c9852fbf196df05baa1c9a0c976f533150d"
-      }
-    },
-    "vmath": {
-      "version": "2.0.0",
-      "vcsRevision": "7282ae1247f2f384ebeaec3826d7fa38fd0e1df1",
-      "url": "https://github.com/treeform/vmath",
-      "downloadMethod": "git",
-      "dependencies": [],
-      "checksums": {
-        "sha1": "c90a664f3425d26219e1262ed9a888b859b3127c"
       }
     },
     "regex": {
