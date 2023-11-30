@@ -344,8 +344,12 @@ let langLanguage* = newLanguage(IdLangLanguage, @[
   countClass, countZeroOrOneClass, countOneClass, countZeroOrMoreClass, countOneOrMoreClass,
 ], builder, typeComputers, valueComputers, scopeComputers)
 
-proc createNodeClassFromLangDefinition*(def: AstNode): Option[NodeClass] =
-  log lvlInfo, fmt"createNodeClassFromLangDefinition {def.dump(recurse=true)}"
+proc createNodeClassFromLangDefinition*(classMap: var Table[ClassId, NodeClass], def: AstNode): Option[NodeClass] =
+  if classMap.contains(def.id.ClassId):
+    return classMap[def.id.ClassId].some
+
+  # log lvlInfo, fmt"createNodeClassFromLangDefinition {def.dump(recurse=true)}"
+
   let name = def.property(IdINamedName).get.stringValue
   let alias = def.property(IdClassDefinitionAlias).get.stringValue
 
@@ -364,6 +368,12 @@ proc createNodeClassFromLangDefinition*(def: AstNode): Option[NodeClass] =
   else:
     RoleId.none
 
+  # use node id of the class definition node as class id
+  var class = newNodeClass(def.id.ClassId, name, alias=alias,
+    isAbstract=isAbstract, isInterface=isInterface, isFinal=isFinal, canBeRoot=canBeRoot,
+    substitutionProperty=substitutionProperty, precedence=precedence)
+  classMap[def.id.ClassId] = class
+
   for _, prop in def.children(IdClassDefinitionProperties):
     let propName = prop.property(IdINamedName).get.stringValue
     let typ = if prop.firstChild(IdPropertyDefinitionType).getSome(typ):
@@ -380,11 +390,11 @@ proc createNodeClassFromLangDefinition*(def: AstNode): Option[NodeClass] =
       log lvlError, fmt"No property type specified for {prop}"
       return NodeClass.none
 
-    properties.add PropertyDescription(id: prop.id.RoleId, role: propName, typ: typ)
+    class.properties.add PropertyDescription(id: prop.id.RoleId, role: propName, typ: typ)
 
   for _, reference in def.children(IdClassDefinitionReferences):
     let referenceName = reference.property(IdINamedName).get.stringValue
-    let class: ClassId = if reference.firstChild(IdReferenceDefinitionClass).getSome(classNode):
+    let classId: ClassId = if reference.firstChild(IdReferenceDefinitionClass).getSome(classNode):
       assert classNode.class == IdClassReference
       if classNode.resolveReference(IdClassReferenceTarget).getSome(target):
         # use node id of the class definition node as class id
@@ -396,11 +406,11 @@ proc createNodeClassFromLangDefinition*(def: AstNode): Option[NodeClass] =
       log lvlError, fmt"No class specified for {reference}"
       return NodeClass.none
 
-    references.add NodeReferenceDescription(id: reference.id.RoleId, role: referenceName, class: class)
+    class.references.add NodeReferenceDescription(id: reference.id.RoleId, role: referenceName, class: classId)
 
   for _, children in def.children(IdClassDefinitionChildren):
     let childrenName = children.property(IdINamedName).get.stringValue
-    let class: ClassId = if children.firstChild(IdChildrenDefinitionClass).getSome(classNode):
+    let classId: ClassId = if children.firstChild(IdChildrenDefinitionClass).getSome(classNode):
       assert classNode.class == IdClassReference
       if classNode.resolveReference(IdClassReferenceTarget).getSome(target):
         # use node id of the class definition node as class id
@@ -428,20 +438,44 @@ proc createNodeClassFromLangDefinition*(def: AstNode): Option[NodeClass] =
       log lvlError, fmt"No child count specified for {children}"
       return NodeClass.none
 
-    childDescriptions.add NodeChildDescription(id: children.id.RoleId, role: childrenName, class: class, count: count)
+    class.children.add NodeChildDescription(id: children.id.RoleId, role: childrenName, class: classId, count: count)
 
-  let baseClass: NodeClass = nil # todo
-  let interfaces: seq[NodeClass] = @[] # todo
+  if def.firstChild(IdClassDefinitionBaseClass).getSome(baseClassReference):
+    if baseClassReference.resolveReference(IdClassReferenceTarget).getSome(baseClassNode):
+      if createNodeClassFromLangDefinition(classMap, baseClassNode).getSome(baseClass):
+        class.base = baseClass
+      else:
+        log lvlError, fmt"Failed to create base class for {def}: {baseClassNode}"
+        return NodeClass.none
 
-  # use node id of the class definition node as class id
-  let class = newNodeClass(def.id.ClassId, name, alias=alias, base=baseClass, interfaces=interfaces,
-    isAbstract=isAbstract, isInterface=isInterface, isFinal=isFinal, canBeRoot=canBeRoot,
-    substitutionProperty=substitutionProperty, precedence=precedence,
-    properties=properties, references=references, children=childDescriptions)
+  for _, interfaceReferenceNode in def.children(IdClassDefinitionInterfaces):
+    if interfaceReferenceNode.resolveReference(IdClassReferenceTarget).getSome(interfaceNode):
+      if createNodeClassFromLangDefinition(classMap, interfaceNode).getSome(interfaceClass):
+        class.interfaces.add interfaceClass
+      else:
+        log lvlError, fmt"Failed to create base class for {def}: {interfaceNode}"
+        return NodeClass.none
+
   # debugf"{class}"
-  print class
+  # print class
 
   return class.some
+
+proc createLanguageFromNodes*(def: AstNode): Language =
+  log lvlInfo, fmt"createLanguageFromNodes"
+  var classMap = initTable[ClassId, NodeClass]()
+  var classes: seq[NodeClass] = @[]
+  for _, c in def.children(IdLangRootChildren):
+    if c.class == IdClassDefinition:
+      if createNodeClassFromLangDefinition(classMap, c).getSome(class):
+        classes.add class
+
+  var builder = newCellBuilder()
+  var typeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]()
+  var valueComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]()
+  var scopeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]]()
+
+  result = newLanguage(def.id.LanguageId, classes, builder, typeComputers, valueComputers, scopeComputers)
 
 proc createNodeFromNodeClass(classes: var Table[ClassId, AstNode], class: NodeClass): AstNode =
   # log lvlInfo, fmt"createNodeFromNodeClass {class.name}"

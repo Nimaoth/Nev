@@ -3016,10 +3016,8 @@ proc compileLanguage*(self: ModelDocumentEditor) {.expose("editor.model").} =
     return
 
   for root in self.document.model.rootNodes:
-    for _, child in root.children(IdLangRootChildren):
-      if child.class == IdClassDefinition:
-        let class = createNodeClassFromLangDefinition(child)
-        # todo
+    let language = createLanguageFromNodes(root)
+    # todo
 
 proc addRootNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
   var popup = self.app.createSelectorPopup().SelectorPopup
