@@ -3016,9 +3016,10 @@ proc compileLanguage*(self: ModelDocumentEditor) {.expose("editor.model").} =
     return
 
   for root in self.document.model.rootNodes:
-    if root.class == IdClassDefinition:
-      let class = createNodeClassFromLangDefinition(root)
-      # todo
+    for _, child in root.children(IdLangRootChildren):
+      if child.class == IdClassDefinition:
+        let class = createNodeClassFromLangDefinition(child)
+        # todo
 
 proc addRootNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
   var popup = self.app.createSelectorPopup().SelectorPopup
@@ -3055,6 +3056,41 @@ proc saveProject*(self: ModelDocumentEditor) {.expose("editor.model").} =
     asyncCheck ws.saveFile(self.document.project.path, serialized)
   else:
     log lvlError, fmt"Failed to save project: no workspace"
+
+proc loadBaseLanguageModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  log lvlInfo, fmt"Loading base language model"
+  try:
+    var model = newModel()
+    var root = createNodesForLanguage(base_language.baseLanguage)
+    model.addLanguage(lang_language.langLanguage)
+    model.addRootNode(root)
+
+    let oldModel = self.document.model
+    self.document.model = model
+
+    discard self.document.model.onNodeDeleted.subscribe proc(d: auto) = self.document.handleNodeDeleted(d[0], d[1], d[2], d[3], d[4])
+    discard self.document.model.onNodeInserted.subscribe proc(d: auto) = self.document.handleNodeInserted(d[0], d[1], d[2], d[3], d[4])
+    discard self.document.model.onNodePropertyChanged.subscribe proc(d: auto) = self.document.handleNodePropertyChanged(d[0], d[1], d[2], d[3], d[4], d[5])
+    discard self.document.model.onNodeReferenceChanged.subscribe proc(d: auto) = self.document.handleNodeReferenceChanged(d[0], d[1], d[2], d[3], d[4])
+
+    self.document.builder.clear()
+    for language in self.document.model.languages:
+      self.document.builder.addBuilder(language.builder)
+
+    self.document.undoList.setLen 0
+    self.document.redoList.setLen 0
+
+    functionInstances.clear()
+    self.document.ctx.state.clearCache()
+
+    self.document.ctx.state.removeModel(oldModel)
+    self.document.ctx.state.addModel(model)
+
+  except CatchableError:
+    log lvlError, fmt"Failed to load model source file '{self.document.filename}': {getCurrentExceptionMsg()}"
+    log lvlError, getCurrentException().getStackTrace()
+
+  self.document.onModelChanged.invoke (self.document)
 
 genDispatcher("editor.model")
 addActiveDispatchTable "editor.model", genDispatchTable("editor.model")

@@ -47,8 +47,14 @@ let childrenDefinitionClass* = newNodeClass(IdChildrenDefinition, "ChildrenDefin
     NodeChildDescription(id: IdChildrenDefinitionCount, role: "count", class: IdCount, count: ChildCount.One),
     ])
 
-let classDefinitionClass* = newNodeClass(IdClassDefinition, "ClassDefinition", alias="class", interfaces=[namedInterface], canBeRoot=true,
+let langAspectClass* = newNodeClass(IdLangAspect, "LangAspect", isAbstract=true)
+
+let langRootClass* = newNodeClass(IdLangRoot, "LangRoot", canBeRoot=true,
+  children=[NodeChildDescription(id: IdLangRootChildren, role: "children", class: IdLangAspect, count: ChildCount.ZeroOrMore)])
+
+let classDefinitionClass* = newNodeClass(IdClassDefinition, "ClassDefinition", alias="class", base=langAspectClass, interfaces=[namedInterface],
   properties=[
+    PropertyDescription(id: IdClassDefinitionAlias, role: "alias", typ: PropertyType.String),
     PropertyDescription(id: IdClassDefinitionAbstract, role: "abstract", typ: PropertyType.Bool),
     PropertyDescription(id: IdClassDefinitionInterface, role: "interface", typ: PropertyType.Bool),
     PropertyDescription(id: IdClassDefinitionFinal, role: "final", typ: PropertyType.Bool),
@@ -128,6 +134,21 @@ builder.addBuilderFor IdChildrenDefinition, idNone(), proc(builder: CellBuilder,
 
   return cell
 
+builder.addBuilderFor IdLangRoot, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutVertical})
+  cell.fillChildren = proc(map: NodeCellMap) =
+    cell.add block:
+      buildChildrenT(builder, map, node, IdLangRootChildren, &{LayoutVertical}, 0.CellFlags):
+        separator: ConstantCell(node: node, text: "", disableEditing: true, disableSelection: true)
+        placeholder: "..."
+
+  return cell
+
+builder.addBuilderFor IdLangAspect, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  # return PlaceholderCell(id: newId().CellId, node: node, role: IdClassReferenceTarget, shadowText: "<class>")
+  var cell = ConstantCell(id: newId().CellId, node: node, shadowText: "...", themeBackgroundColors: @["&inputValidation.errorBackground", "&debugConsole.errorForeground"])
+  return cell
+
 builder.addBuilderFor IdClassDefinition, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
@@ -149,6 +170,10 @@ builder.addBuilderFor IdClassDefinition, idNone(), proc(builder: CellBuilder, no
     cell.add ConstantCell(node: node, text: "{", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
 
     var vertCell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutVertical}, flags: &{OnNewLine, IndentChildren})
+
+    vertCell.addHorizontal(node, 0.CellFlags):
+      sub.add ConstantCell(node: node, text: "alias", themeForegroundColors: @["keyword"], disableEditing: true)
+      sub.add PropertyCell(id: newId().CellId, node: node, property: IdClassDefinitionAlias, themeForegroundColors: @["variable"])
 
     vertCell.addHorizontal(node, 0.CellFlags):
       sub.add ConstantCell(node: node, text: "abstract", themeForegroundColors: @["keyword"], disableEditing: true)
@@ -246,13 +271,15 @@ scopeComputers[IdClassReference] = proc(ctx: ModelComputationContextBase, node: 
     echo "model ", model.id
     for root in model.rootNodes:
       echo "import root ", root
-      if root.class == IdClassDefinition:
-        nodes.add root
+      for _, aspect in root.children(IdLangRootChildren):
+        if aspect.class == IdClassDefinition:
+          nodes.add aspect
 
   for root in node.model.rootNodes:
     echo "root ", root
-    if root.class == IdClassDefinition:
-      nodes.add root
+    for _, aspect in root.children(IdLangRootChildren):
+      if aspect.class == IdClassDefinition:
+        nodes.add aspect
 
   return nodes
 
@@ -263,12 +290,14 @@ scopeComputers[IdClassDefinition] = proc(ctx: ModelComputationContextBase, node:
   # todo: improve this
   for model in node.model.models:
     for root in model.rootNodes:
-      if root.class == IdClassDefinition:
-        nodes.add root
+      for _, aspect in root.children(IdLangRootChildren):
+        if aspect.class == IdClassDefinition:
+          nodes.add aspect
 
   for root in node.model.rootNodes:
-    if root.class == IdClassDefinition:
-      nodes.add root
+    for _, aspect in root.children(IdLangRootChildren):
+      if aspect.class == IdClassDefinition:
+        nodes.add aspect
 
   for _, prop in node.children(IdClassDefinitionProperties):
     nodes.add prop
@@ -305,6 +334,7 @@ scopeComputers[IdRoleReference] = proc(ctx: ModelComputationContextBase, node: A
   return nodes
 
 let langLanguage* = newLanguage(IdLangLanguage, @[
+  langRootClass, langAspectClass,
   roleDescriptorInterface,
   propertyTypeClass, propertyTypeBoolClass, propertyTypeStringClass, propertyTypeNumberClass, propertyDefinitionClass, classDefinitionClass,
   classReferenceClass, roleReferenceClass, referenceDefinitionClass, childrenDefinitionClass,
@@ -314,12 +344,22 @@ let langLanguage* = newLanguage(IdLangLanguage, @[
 proc createNodeClassFromLangDefinition*(def: AstNode): Option[NodeClass] =
   log lvlInfo, fmt"createNodeClassFromLangDefinition {def.dump(recurse=true)}"
   let name = def.property(IdINamedName).get.stringValue
-  let alias = "todo"
-  let canBeRoot = true # todo
+  let alias = def.property(IdClassDefinitionAlias).get.stringValue
+
+  let isAbstract = def.property(IdClassDefinitionAbstract).get.boolValue
+  let isInterface = def.property(IdClassDefinitionInterface).get.boolValue
+  let isFinal = def.property(IdClassDefinitionFinal).get.boolValue
+  let canBeRoot = def.property(IdClassDefinitionCanBeRoot).get.boolValue
+  let precedence = def.property(IdClassDefinitionPrecedence).get.intValue
 
   var properties = newSeqOfCap[PropertyDescription](def.childCount(IdClassDefinitionProperties))
   var references = newSeqOfCap[NodeReferenceDescription](def.childCount(IdClassDefinitionReferences))
   var childDescriptions = newSeqOfCap[NodeChildDescription](def.childCount(IdClassDefinitionChildren))
+
+  let substitutionProperty = if def.firstChild(IdClassDefinitionSubstitutionProperty).getSome(substitutionProperty):
+    substitutionProperty.reference(IdRoleReferenceTarget).RoleId.some
+  else:
+    RoleId.none
 
   for _, prop in def.children(IdClassDefinitionProperties):
     let propName = prop.property(IdINamedName).get.stringValue
@@ -387,9 +427,94 @@ proc createNodeClassFromLangDefinition*(def: AstNode): Option[NodeClass] =
 
     childDescriptions.add NodeChildDescription(id: children.id.RoleId, role: childrenName, class: class, count: count)
 
+  let baseClass: NodeClass = nil
+
   # use node id of the class definition node as class id
-  let class = newNodeClass(def.id.ClassId, name, alias=alias, interfaces=[], canBeRoot=canBeRoot, properties=properties, references=references, children=childDescriptions)
+  let class = newNodeClass(def.id.ClassId, name, alias=alias, base=baseClass, interfaces=[],
+    isAbstract=isAbstract, isInterface=isInterface, isFinal=isFinal, canBeRoot=canBeRoot,
+    substitutionProperty=substitutionProperty, precedence=precedence,
+    properties=properties, references=references, children=childDescriptions)
   # debugf"{class}"
   print class
 
   return class.some
+
+proc createNodeFromNodeClass(classes: var Table[ClassId, AstNode], class: NodeClass): AstNode =
+  # log lvlInfo, fmt"createNodeFromNodeClass {class.name}"
+
+  result = newAstNode(classDefinitionClass, class.id.NodeId.some)
+  # classes[class.id] = result
+
+  result.setProperty(IdINamedName, PropertyValue(kind: String, stringValue: class.name))
+  result.setProperty(IdClassDefinitionAlias, PropertyValue(kind: String, stringValue: class.alias))
+
+  result.setProperty(IdClassDefinitionAbstract, PropertyValue(kind: Bool, boolValue: class.isAbstract))
+  result.setProperty(IdClassDefinitionInterface, PropertyValue(kind: Bool, boolValue: class.isInterface))
+  result.setProperty(IdClassDefinitionFinal, PropertyValue(kind: Bool, boolValue: class.isFinal))
+  result.setProperty(IdClassDefinitionCanBeRoot, PropertyValue(kind: Bool, boolValue: class.canBeRoot))
+  result.setProperty(IdClassDefinitionPrecedence, PropertyValue(kind: Int, intValue: class.precedence))
+
+  if class.substitutionProperty.getSome(property):
+    var roleReference = newAstNode(roleReferenceClass)
+    roleReference.setReference(IdRoleReferenceTarget, property.NodeId)
+    result.add(IdClassDefinitionSubstitutionProperty, roleReference)
+
+  for property in class.properties:
+    var propertyNode = newAstNode(propertyDefinitionClass, property.id.NodeId.some)
+    propertyNode.setProperty(IdINamedName, PropertyValue(kind: String, stringValue: property.role))
+
+    let propertyTypeClass = if property.typ == Int:
+      propertyTypeNumberClass
+    elif property.typ == String:
+      propertyTypeStringClass
+    elif property.typ == Bool:
+      propertyTypeBoolClass
+    else:
+      log lvlError, fmt"Invalid property type specified for {property}"
+      return nil
+
+    propertyNode.add(IdPropertyDefinitionType, newAstNode(propertyTypeClass))
+    result.add(IdClassDefinitionProperties, propertyNode)
+
+  for reference in class.references:
+    var referenceNode = newAstNode(referenceDefinitionClass, reference.id.NodeId.some)
+    referenceNode.setProperty(IdINamedName, PropertyValue(kind: String, stringValue: reference.role))
+
+    let classReference = newAstNode(classReferenceClass)
+    classReference.setReference(IdClassReferenceTarget, reference.class.NodeId)
+    referenceNode.add(IdReferenceDefinitionClass, classReference)
+
+    result.add(IdClassDefinitionReferences, referenceNode)
+
+  for children in class.children:
+    var childrenNode = newAstNode(childrenDefinitionClass, children.id.NodeId.some)
+    childrenNode.setProperty(IdINamedName, PropertyValue(kind: String, stringValue: children.role))
+
+    let classReference = newAstNode(classReferenceClass)
+    classReference.setReference(IdClassReferenceTarget, children.class.NodeId)
+    childrenNode.add(IdChildrenDefinitionClass, classReference)
+
+    let childrenCountClass = if children.count == ChildCount.ZeroOrOne:
+      countZeroOrOneClass
+    elif children.count == ChildCount.One:
+      countOneClass
+    elif children.count == ChildCount.ZeroOrMore:
+      countZeroOrMoreClass
+    elif children.count == ChildCount.OneOrMore:
+      countOneOrMoreClass
+    else:
+      log lvlError, fmt"Invalid child count specified for {children}"
+      return nil
+
+    childrenNode.add(IdChildrenDefinitionCount, newAstNode(childrenCountClass))
+
+    result.add(IdClassDefinitionChildren, childrenNode)
+
+  # debugf"node {result.dump(recurse=true)}"
+
+proc createNodesForLanguage*(language: Language): AstNode =
+  result = newAstNode(langRootClass)
+
+  var classes = initTable[ClassId, AstNode]()
+  for class in language.classes.values:
+    result.add IdLangRootChildren, createNodeFromNodeClass(classes, class)

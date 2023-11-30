@@ -189,6 +189,10 @@ proc editor_model_getContextWithMode_string_ModelDocumentEditor_string_impl(
     self: ModelDocumentEditor; context: string): string  {.importc.}
 proc editor_model_isThickCursor_bool_ModelDocumentEditor_impl(
     self: ModelDocumentEditor): bool  {.importc.}
+proc editor_model_gotoDefinition_void_ModelDocumentEditor_bool_impl(
+    self: ModelDocumentEditor; select: bool = false)  {.importc.}
+proc editor_model_toggleBoolCell_void_ModelDocumentEditor_bool_impl(
+    self: ModelDocumentEditor; select: bool = false)  {.importc.}
 proc editor_model_moveCursorLeft_void_ModelDocumentEditor_bool_impl(
     self: ModelDocumentEditor; select: bool = false)  {.importc.}
 proc editor_model_moveCursorRight_void_ModelDocumentEditor_bool_impl(
@@ -262,6 +266,8 @@ proc editor_model_compileLanguage_void_ModelDocumentEditor_impl(
 proc editor_model_addRootNode_void_ModelDocumentEditor_impl(
     self: ModelDocumentEditor)  {.importc.}
 proc editor_model_saveProject_void_ModelDocumentEditor_impl(
+    self: ModelDocumentEditor)  {.importc.}
+proc editor_model_loadBaseLanguageModel_void_ModelDocumentEditor_impl(
     self: ModelDocumentEditor)  {.importc.}
 proc editor_getBackend_Backend_App_impl(): Backend  {.importc.}
 proc editor_toggleShowDrawnNodes_void_App_impl()  {.importc.}

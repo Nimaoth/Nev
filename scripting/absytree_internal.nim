@@ -281,6 +281,12 @@ proc editor_model_getContextWithMode_string_ModelDocumentEditor_string_impl*(
 proc editor_model_isThickCursor_bool_ModelDocumentEditor_impl*(
     self: ModelDocumentEditor): bool =
   discard
+proc editor_model_gotoDefinition_void_ModelDocumentEditor_bool_impl*(
+    self: ModelDocumentEditor; select: bool = false) =
+  discard
+proc editor_model_toggleBoolCell_void_ModelDocumentEditor_bool_impl*(
+    self: ModelDocumentEditor; select: bool = false) =
+  discard
 proc editor_model_moveCursorLeft_void_ModelDocumentEditor_bool_impl*(
     self: ModelDocumentEditor; select: bool = false) =
   discard
@@ -391,6 +397,9 @@ proc editor_model_addRootNode_void_ModelDocumentEditor_impl*(
     self: ModelDocumentEditor) =
   discard
 proc editor_model_saveProject_void_ModelDocumentEditor_impl*(
+    self: ModelDocumentEditor) =
+  discard
+proc editor_model_loadBaseLanguageModel_void_ModelDocumentEditor_impl*(
     self: ModelDocumentEditor) =
   discard
 proc editor_getBackend_Backend_App_impl*(): Backend =
