@@ -10,6 +10,7 @@ bin           = @["ast"]
 # Dependencies
 
 requires "nim >= 2.0.0"
+requires "https://github.com/Nimaoth/vmath#661bdaa"
 requires "chroma >= 0.2.7"
 requires "winim >= 3.8.1"
 requires "fusion >= 1.2"
