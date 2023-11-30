@@ -546,3 +546,9 @@ template visitFromCenter*(inCell: Cell, inPath: openArray[int], inForwards: bool
 
   else: # Leaf cell
     onLeaf
+
+template addHorizontal*(cell: Cell, inNode: AstNode, inFlags: CellFlags, body: untyped): untyped =
+  block:
+    var sub {.inject.} = CollectionCell(id: newId().CellId, node: inNode, uiFlags: &{LayoutHorizontal}, flags: inFlags)
+    body
+    cell.add sub

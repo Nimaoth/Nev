@@ -13,6 +13,8 @@ let propertyTypeBoolClass* = newNodeClass(IdPropertyTypeBool, "PropertyTypeBool"
 let propertyTypeStringClass* = newNodeClass(IdPropertyTypeString, "PropertyTypeString", alias="string", base=propertyTypeClass)
 let propertyTypeNumberClass* = newNodeClass(IdPropertyTypeNumber, "PropertyTypeNumber", alias="number", base=propertyTypeClass)
 
+let roleDescriptorInterface* = newNodeClass(IdIRoleDescriptor, "roleDescriptorInterface", isInterface=true, interfaces=[namedInterface])
+
 let countClass* = newNodeClass(IdCount, "Count", isAbstract=true)
 let countZeroOrOneClass* = newNodeClass(IdCountZeroOrOne, "CountZeroOrOne", alias="0..1", base=countClass)
 let countOneClass* = newNodeClass(IdCountOne, "CountnOne", alias="1", base=countClass)
@@ -24,17 +26,22 @@ let classReferenceClass* = newNodeClass(IdClassReference, "ClassReference",
     NodeReferenceDescription(id: IdClassReferenceTarget, role: "class", class: IdClassDefinition),
     ])
 
-let propertyDefinitionClass* = newNodeClass(IdPropertyDefinition, "PropertyDefinition", alias="property", interfaces=[namedInterface],
+let roleReferenceClass* = newNodeClass(IdRoleReference, "RoleReference",
+  references=[
+    NodeReferenceDescription(id: IdRoleReferenceTarget, role: "role", class: IdIRoleDescriptor),
+    ])
+
+let propertyDefinitionClass* = newNodeClass(IdPropertyDefinition, "PropertyDefinition", alias="property", interfaces=[roleDescriptorInterface],
   children=[
     NodeChildDescription(id: IdPropertyDefinitionType, role: "type", class: IdPropertyType, count: ChildCount.One),
     ])
 
-let referenceDefinitionClass* = newNodeClass(IdReferenceDefinition, "ReferenceDefinition", alias="reference", interfaces=[namedInterface],
+let referenceDefinitionClass* = newNodeClass(IdReferenceDefinition, "ReferenceDefinition", alias="reference", interfaces=[roleDescriptorInterface],
   children=[
     NodeChildDescription(id: IdReferenceDefinitionClass, role: "class", class: IdClassReference, count: ChildCount.One),
     ])
 
-let childrenDefinitionClass* = newNodeClass(IdChildrenDefinition, "ChildrenDefinition", alias="children", interfaces=[namedInterface],
+let childrenDefinitionClass* = newNodeClass(IdChildrenDefinition, "ChildrenDefinition", alias="children", interfaces=[roleDescriptorInterface],
   children=[
     NodeChildDescription(id: IdChildrenDefinitionClass, role: "class", class: IdClassReference, count: ChildCount.One),
     NodeChildDescription(id: IdChildrenDefinitionCount, role: "count", class: IdCount, count: ChildCount.One),
@@ -44,14 +51,17 @@ let classDefinitionClass* = newNodeClass(IdClassDefinition, "ClassDefinition", a
   properties=[
     PropertyDescription(id: IdClassDefinitionAbstract, role: "abstract", typ: PropertyType.Bool),
     PropertyDescription(id: IdClassDefinitionInterface, role: "interface", typ: PropertyType.Bool),
+    PropertyDescription(id: IdClassDefinitionFinal, role: "final", typ: PropertyType.Bool),
+    PropertyDescription(id: IdClassDefinitionCanBeRoot, role: "can be root", typ: PropertyType.Bool),
+    PropertyDescription(id: IdClassDefinitionPrecedence, role: "precedence", typ: PropertyType.Int),
   ],
   children=[
     NodeChildDescription(id: IdClassDefinitionBaseClass, role: "base", class: IdClassReference, count: ChildCount.ZeroOrOne),
     NodeChildDescription(id: IdClassDefinitionInterfaces, role: "interfaces", class: IdClassReference, count: ChildCount.ZeroOrMore),
-    NodeChildDescription(id: IdClassDefinitionReferences, role: "references", class: IdReferenceDefinition, count: ChildCount.ZeroOrMore),
     NodeChildDescription(id: IdClassDefinitionProperties, role: "properties", class: IdPropertyDefinition, count: ChildCount.ZeroOrMore),
     NodeChildDescription(id: IdClassDefinitionReferences, role: "references", class: IdReferenceDefinition, count: ChildCount.ZeroOrMore),
     NodeChildDescription(id: IdClassDefinitionChildren, role: "children", class: IdChildrenDefinition, count: ChildCount.ZeroOrMore),
+    NodeChildDescription(id: IdClassDefinitionSubstitutionProperty, role: "substitution property", class: IdRoleReference, count: ChildCount.ZeroOrOne),
     ])
 
 var builder = newCellBuilder()
@@ -82,6 +92,12 @@ builder.addBuilderFor IdClassReference, idNone(), proc(builder: CellBuilder, nod
     return PropertyCell(id: newId().CellId, node: node, referenceNode: targetNode, property: IdINamedName, themeForegroundColors: @["variable", "&editor.foreground"])
   else:
     return PlaceholderCell(id: newId().CellId, node: node, role: IdClassReferenceTarget, shadowText: "<class>")
+
+builder.addBuilderFor IdRoleReference, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  if node.resolveReference(IdRoleReferenceTarget).getSome(targetNode):
+    return PropertyCell(id: newId().CellId, node: node, referenceNode: targetNode, property: IdINamedName, themeForegroundColors: @["variable", "&editor.foreground"])
+  else:
+    return PlaceholderCell(id: newId().CellId, node: node, role: IdRoleReferenceTarget, shadowText: "<role>")
 
 builder.addBuilderFor IdPropertyDefinition, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
@@ -132,33 +148,61 @@ builder.addBuilderFor IdClassDefinition, idNone(), proc(builder: CellBuilder, no
 
     cell.add ConstantCell(node: node, text: "{", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
 
-    cell.add block:
+    var vertCell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutVertical}, flags: &{OnNewLine, IndentChildren})
+
+    vertCell.addHorizontal(node, 0.CellFlags):
+      sub.add ConstantCell(node: node, text: "abstract", themeForegroundColors: @["keyword"], disableEditing: true)
+      sub.add PropertyCell(id: newId().CellId, node: node, property: IdClassDefinitionAbstract, themeForegroundColors: @["variable"])
+
+    vertCell.addHorizontal(node, 0.CellFlags):
+      sub.add ConstantCell(node: node, text: "interface", themeForegroundColors: @["keyword"], disableEditing: true)
+      sub.add PropertyCell(id: newId().CellId, node: node, property: IdClassDefinitionInterface, themeForegroundColors: @["variable"])
+
+    vertCell.addHorizontal(node, 0.CellFlags):
+      sub.add ConstantCell(node: node, text: "final", themeForegroundColors: @["keyword"], disableEditing: true)
+      sub.add PropertyCell(id: newId().CellId, node: node, property: IdClassDefinitionFinal, themeForegroundColors: @["variable"])
+
+    vertCell.addHorizontal(node, 0.CellFlags):
+      sub.add ConstantCell(node: node, text: "root", themeForegroundColors: @["keyword"], disableEditing: true)
+      sub.add PropertyCell(id: newId().CellId, node: node, property: IdClassDefinitionCanBeRoot, themeForegroundColors: @["variable"])
+
+    vertCell.addHorizontal(node, 0.CellFlags):
+      sub.add ConstantCell(node: node, text: "precedence", themeForegroundColors: @["keyword"], disableEditing: true)
+      sub.add PropertyCell(id: newId().CellId, node: node, property: IdClassDefinitionPrecedence, themeForegroundColors: @["variable"])
+
+    vertCell.add block:
       var sub = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
-      sub.add ConstantCell(node: node, text: "properties:", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true, flags: &{OnNewLine})
+      sub.add ConstantCell(node: node, text: "properties:", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
       sub.add block:
         buildChildrenT(builder, map, node, IdClassDefinitionProperties, &{LayoutVertical}, &{OnNewLine, IndentChildren}):
           placeholder: "..."
-
       sub
 
-    cell.add block:
+    vertCell.add block:
       var sub = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
-      sub.add ConstantCell(node: node, text: "references:", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true, flags: &{OnNewLine})
+      sub.add ConstantCell(node: node, text: "references:", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
       sub.add block:
         buildChildrenT(builder, map, node, IdClassDefinitionReferences, &{LayoutVertical}, &{OnNewLine, IndentChildren}):
           placeholder: "..."
-
       sub
 
-    cell.add block:
+    vertCell.add block:
       var sub = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
-      sub.add ConstantCell(node: node, text: "children:", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true, flags: &{OnNewLine})
+      sub.add ConstantCell(node: node, text: "children:", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
       sub.add block:
         buildChildrenT(builder, map, node, IdClassDefinitionChildren, &{LayoutVertical}, &{OnNewLine, IndentChildren}):
           placeholder: "..."
-
       sub
 
+    vertCell.add block:
+      var sub = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
+      sub.add ConstantCell(node: node, text: "substitution property:", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+      sub.add block:
+        buildChildrenT(builder, map, node, IdClassDefinitionSubstitutionProperty, &{LayoutVertical}, &{OnNewLine, IndentChildren}):
+          placeholder: "<role>"
+      sub
+
+    cell.add vertCell
     cell.add ConstantCell(node: node, text: "}", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true, flags: &{OnNewLine})
 
   return cell
@@ -226,11 +270,44 @@ scopeComputers[IdClassDefinition] = proc(ctx: ModelComputationContextBase, node:
     if root.class == IdClassDefinition:
       nodes.add root
 
+  for _, prop in node.children(IdClassDefinitionProperties):
+    nodes.add prop
+
+  for _, reference in node.children(IdClassDefinitionReferences):
+    nodes.add reference
+
+  for _, children in node.children(IdClassDefinitionChildren):
+    nodes.add children
+
+  return nodes
+
+scopeComputers[IdRoleReference] = proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode] =
+  debugf"compute scope for role reference {node}"
+  var nodes: seq[AstNode] = @[]
+
+  # todo: improve this
+  var parent = node.parent
+  while parent.isNotNil and parent.class != IdClassDefinition:
+    parent = parent.parent
+
+  if parent.isNil:
+    return nodes
+
+  for _, prop in parent.children(IdClassDefinitionProperties):
+    nodes.add prop
+
+  for _, reference in parent.children(IdClassDefinitionReferences):
+    nodes.add reference
+
+  for _, children in parent.children(IdClassDefinitionChildren):
+    nodes.add children
+
   return nodes
 
 let langLanguage* = newLanguage(IdLangLanguage, @[
+  roleDescriptorInterface,
   propertyTypeClass, propertyTypeBoolClass, propertyTypeStringClass, propertyTypeNumberClass, propertyDefinitionClass, classDefinitionClass,
-  classReferenceClass, referenceDefinitionClass, childrenDefinitionClass,
+  classReferenceClass, roleReferenceClass, referenceDefinitionClass, childrenDefinitionClass,
   countClass, countZeroOrOneClass, countOneClass, countZeroOrMoreClass, countOneOrMoreClass,
 ], builder, typeComputers, valueComputers, scopeComputers)
 

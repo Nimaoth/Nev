@@ -1,6 +1,7 @@
 {
   "models": {
     "model/array.ast-model": "654fbb281446e19b38225265",
+    "test-language.ast-model": "654fbb281446e19b38225240",
     "model/a.ast-model": "083671ebb3cd003f6c8faaf3"
   }
 }
