@@ -29,7 +29,7 @@ You can try the browser version [here](https://nimaoth.github.io/AbsytreeBrowser
 - It currently dynamically links against libstdc++ because some treesitter languages depend on that, so:
   - On windows: copy `libgcc_s_seh-1.dll` and `libstdc++-6.dll` (and optionally `libwinpthread-1.dll`) to the exe directory
 
-### Desktop version
+### Browser version
 - Run `nimble buildBrowser`
 - Embed the generated file `ast.js`
 - See `absytree_browser.html` for an example
@@ -254,3 +254,6 @@ Here is an overview of the modules:
 ![alt](screenshots/screenshot5.png)
 
 
+# Todo
+- get [https://github.com/treeform/vmath/pull/67] merged and change vmath back to original repo
+- finish [https://github.com/tree-sitter/tree-sitter/pull/2091]
