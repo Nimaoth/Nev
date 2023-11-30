@@ -76,14 +76,14 @@ type
     id {.getter.}: ClassId
     name {.getter.}: string
     alias {.getter.}: string
-    base {.getter.}: NodeClass
+    base*: NodeClass
     interfaces {.getter.}: seq[NodeClass]
     isAbstract {.getter.}: bool
     isFinal {.getter.}: bool
     isInterface {.getter.}: bool
-    properties {.getter.}: seq[PropertyDescription]
-    children {.getter.}: seq[NodeChildDescription]
-    references {.getter.}: seq[NodeReferenceDescription]
+    properties*: seq[PropertyDescription]
+    children*: seq[NodeChildDescription]
+    references*: seq[NodeReferenceDescription]
     substitutionProperty {.getter.}: Option[RoleId]
     precedence {.getter.}: int
     canBeRoot {.getter.}: bool
