@@ -111,6 +111,44 @@ proc isThickCursor*(self: ModelDocumentEditor): bool =
   result = parseJson($res).jsonTo(typeof(result))
 
 
+proc editor_model_gotoDefinition_void_ModelDocumentEditor_bool_wasm(arg: cstring): cstring {.
+    importc.}
+proc gotoDefinition*(self: ModelDocumentEditor; select: bool = false) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when ModelDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      select
+    else:
+      select.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_model_gotoDefinition_void_ModelDocumentEditor_bool_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_model_toggleBoolCell_void_ModelDocumentEditor_bool_wasm(arg: cstring): cstring {.
+    importc.}
+proc toggleBoolCell*(self: ModelDocumentEditor; select: bool = false) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when ModelDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      select
+    else:
+      select.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_model_toggleBoolCell_void_ModelDocumentEditor_bool_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_model_moveCursorLeft_void_ModelDocumentEditor_bool_wasm(arg: cstring): cstring {.
     importc.}
 proc moveCursorLeft*(self: ModelDocumentEditor; select: bool = false) =
@@ -721,5 +759,19 @@ proc saveProject*(self: ModelDocumentEditor) =
       self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_model_saveProject_void_ModelDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_model_loadBaseLanguageModel_void_ModelDocumentEditor_wasm(
+    arg: cstring): cstring {.importc.}
+proc loadBaseLanguageModel*(self: ModelDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when ModelDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_model_loadBaseLanguageModel_void_ModelDocumentEditor_wasm(
       argsJsonString.cstring)
 

@@ -158,6 +158,11 @@ let IdGenericTypeValue* = "654fbb281446e19b3822521b".parseId.RoleId
 # lang language
 let IdLangLanguage* = "654fbb281446e19b3822523f".parseId.LanguageId
 
+let IdLangRoot* = "654fbb281446e19b3822524f".parseId.ClassId
+let IdLangRootChildren* = "654fbb281446e19b38225250".parseId.RoleId
+
+let IdLangAspect* = "654fbb281446e19b38225251".parseId.ClassId
+
 let IdClassDefinition* = "654fbb281446e19b3822522a".parseId.ClassId
 let IdClassDefinitionAbstract* = "654fbb281446e19b38225236".parseId.RoleId
 let IdClassDefinitionInterface* = "654fbb281446e19b38225239".parseId.RoleId
@@ -205,9 +210,6 @@ let IdIRoleDescriptor* = "654fbb281446e19b3822524c".parseId.ClassId
 
 # new ids
 
-let Id654fbb281446e19b3822524f* = "654fbb281446e19b3822524f".parseId
-let Id654fbb281446e19b38225250* = "654fbb281446e19b38225250".parseId
-let Id654fbb281446e19b38225251* = "654fbb281446e19b38225251".parseId
 let Id654fbb281446e19b38225252* = "654fbb281446e19b38225252".parseId
 let Id654fbb281446e19b38225253* = "654fbb281446e19b38225253".parseId
 let Id654fbb281446e19b38225254* = "654fbb281446e19b38225254".parseId
@@ -226,7 +228,6 @@ let Id654fbb281446e19b38225260* = "654fbb281446e19b38225260".parseId
 let Id654fbb281446e19b38225261* = "654fbb281446e19b38225261".parseId
 let Id654fbb281446e19b38225262* = "654fbb281446e19b38225262".parseId
 let Id654fbb281446e19b38225263* = "654fbb281446e19b38225263".parseId
-let Id654fbb281446e19b38225264* = "654fbb281446e19b38225264".parseId
 
 # import strformat
 # for i in 0..100:

@@ -23,6 +23,10 @@ proc getContextWithMode*(self: ModelDocumentEditor; context: string): string =
       context)
 proc isThickCursor*(self: ModelDocumentEditor): bool =
   editor_model_isThickCursor_bool_ModelDocumentEditor_impl(self)
+proc gotoDefinition*(self: ModelDocumentEditor; select: bool = false) =
+  editor_model_gotoDefinition_void_ModelDocumentEditor_bool_impl(self, select)
+proc toggleBoolCell*(self: ModelDocumentEditor; select: bool = false) =
+  editor_model_toggleBoolCell_void_ModelDocumentEditor_bool_impl(self, select)
 proc moveCursorLeft*(self: ModelDocumentEditor; select: bool = false) =
   editor_model_moveCursorLeft_void_ModelDocumentEditor_bool_impl(self, select)
 proc moveCursorRight*(self: ModelDocumentEditor; select: bool = false) =
@@ -109,3 +113,5 @@ proc addRootNode*(self: ModelDocumentEditor) =
   editor_model_addRootNode_void_ModelDocumentEditor_impl(self)
 proc saveProject*(self: ModelDocumentEditor) =
   editor_model_saveProject_void_ModelDocumentEditor_impl(self)
+proc loadBaseLanguageModel*(self: ModelDocumentEditor) =
+  editor_model_loadBaseLanguageModel_void_ModelDocumentEditor_impl(self)
