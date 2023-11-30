@@ -161,9 +161,13 @@ let IdLangLanguage* = "654fbb281446e19b3822523f".parseId.LanguageId
 let IdClassDefinition* = "654fbb281446e19b3822522a".parseId.ClassId
 let IdClassDefinitionAbstract* = "654fbb281446e19b38225236".parseId.RoleId
 let IdClassDefinitionInterface* = "654fbb281446e19b38225239".parseId.RoleId
+let IdClassDefinitionFinal* = "654fbb281446e19b38225248".parseId.RoleId
+let IdClassDefinitionCanBeRoot* = "654fbb281446e19b3822524b".parseId.RoleId
 let IdClassDefinitionBaseClass* = "654fbb281446e19b38225237".parseId.RoleId
 let IdClassDefinitionInterfaces* = "654fbb281446e19b3822523a".parseId.RoleId
 let IdClassDefinitionAlias* = "654fbb281446e19b38225238".parseId.RoleId
+let IdClassDefinitionSubstitutionProperty* = "654fbb281446e19b38225249".parseId.RoleId
+let IdClassDefinitionPrecedence* = "654fbb281446e19b3822524a".parseId.RoleId
 
 let IdClassDefinitionProperties* = "654fbb281446e19b3822522b".parseId.RoleId
 let IdClassDefinitionReferences* = "654fbb281446e19b3822522c".parseId.RoleId
@@ -194,15 +198,13 @@ let IdCountOneOrMore* = "654fbb281446e19b38225247".parseId.ClassId
 let IdClassReference* = "654fbb281446e19b38225241".parseId.ClassId
 let IdClassReferenceTarget* = "654fbb281446e19b38225242".parseId.RoleId
 
+let IdRoleReference* = "654fbb281446e19b3822524d".parseId.ClassId
+let IdRoleReferenceTarget* = "654fbb281446e19b3822524e".parseId.RoleId
+
+let IdIRoleDescriptor* = "654fbb281446e19b3822524c".parseId.ClassId
+
 # new ids
 
-let Id654fbb281446e19b38225248* = "654fbb281446e19b38225248".parseId
-let Id654fbb281446e19b38225249* = "654fbb281446e19b38225249".parseId
-let Id654fbb281446e19b3822524a* = "654fbb281446e19b3822524a".parseId
-let Id654fbb281446e19b3822524b* = "654fbb281446e19b3822524b".parseId
-let Id654fbb281446e19b3822524c* = "654fbb281446e19b3822524c".parseId
-let Id654fbb281446e19b3822524d* = "654fbb281446e19b3822524d".parseId
-let Id654fbb281446e19b3822524e* = "654fbb281446e19b3822524e".parseId
 let Id654fbb281446e19b3822524f* = "654fbb281446e19b3822524f".parseId
 let Id654fbb281446e19b38225250* = "654fbb281446e19b38225250".parseId
 let Id654fbb281446e19b38225251* = "654fbb281446e19b38225251".parseId

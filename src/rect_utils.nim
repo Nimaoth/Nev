@@ -195,3 +195,6 @@ proc almostEqual*(a, b: Rect, epsilon: float32): bool =
 
 proc almostEqual*(a, b: Vec2, epsilon: float32): bool =
   result = abs(a.x - b.x) <= epsilon and abs(a.y - b.y) <= epsilon
+
+proc isNan*(rect: Rect): bool =
+  result = rect.x.isNan or rect.y.isNan or rect.w.isNan or rect.h.isNan
