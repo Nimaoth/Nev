@@ -1775,6 +1775,28 @@ proc isThickCursor*(self: ModelDocumentEditor): bool {.expose("editor.model").} 
     return true
   return self.configProvider.getValue(self.getContextWithMode("editor.model.cursor.wide"), false)
 
+proc gotoDefinition*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
+  if getTargetCell(self.cursor, false).getSome(cell):
+    if cell.node.references.len == 0:
+      return
+
+    if cell.node.references.len == 1:
+      if cell.node.model.resolveReference(cell.node.references[0].node).getSome(target):
+        self.cursor = self.getFirstEditableCellOfNode(target).get
+        self.updateScrollOffset()
+
+  self.markDirty()
+
+proc toggleBoolCell*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
+  if getTargetCell(self.cursor, false).getSome(cell):
+    if cell of PropertyCell:
+      let prop = cell.PropertyCell.property
+
+      if cell.targetNode.property(prop).getSome(value) and value.kind == PropertyType.Bool:
+        cell.targetNode.setProperty(prop, PropertyValue(kind: PropertyType.Bool, boolValue: not value.boolValue))
+
+  self.markDirty()
+
 proc moveCursorLeft*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
   if getTargetCell(self.cursor, false).getSome(cell):
     let newCursor = cell.getCursorLeft(self.nodeCellMap, self.cursor)

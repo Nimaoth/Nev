@@ -157,6 +157,9 @@ proc loadNormalKeybindings*() {.scriptActionWasmNims("load-normal-keybindings").
     addCommand("editor.model", "<LEADER>mr", "run-selected-function")
     addCommand("editor.model", "<LEADER>md", "toggle-use-default-cell-builder")
 
+    addCommand("editor.model", "gd", "goto-definition")
+    addCommand("editor.model", "tt", "toggle-bool-cell")
+
     addCommand("editor.model.completion", "<ENTER>", "finish-edit", true)
     addCommand("editor.model.completion", "<ESCAPE>", "hide-completions")
     addCommand("editor.model.completion", "<UP>", "select-prev-completion")
