@@ -39,3 +39,7 @@ count_loc.ps1
 todo.md
 a.html
 
+# Added by cargo
+
+rust_test
+/target
