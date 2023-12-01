@@ -257,3 +257,25 @@ Here is an overview of the modules:
 # Todo
 - get [https://github.com/treeform/vmath/pull/67] merged and change vmath back to original repo
 - finish [https://github.com/tree-sitter/tree-sitter/pull/2091]
+
+- add nicer way to write:
+  - StringGetPointer, StringGetLength
+  - <, <=, etc
+- fix pressing . at end of string literal creates member access node instead of inserting into string
+- add bool type
+- make [] work with strings
+- add type conversions
+- add char literal
+- change rendering of deref/addressOf to postfix
+- add copy/paste
+- add selection history
+- add string escape and/or allow entering \n
+- for loops
+- auto open completion window?
+- auto accept completion exact match even if other/longer completions exist
+- floats
+- render actual types in type placeholders
+- add move cursor to next/prev function/declaration/statement/expression etc
+- add text based search (fuzzy?)
+- add global symbol finder
+- goto definition to other files
