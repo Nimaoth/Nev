@@ -183,7 +183,9 @@ proc genNodeLetDecl(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destina
 
   if node.firstChild(IdLetDeclValue).getSome(value):
     self.instr(LocalGet, localIdx: self.currentBasePointer)
-    self.genNode(value, Destination(kind: Memory, offset: offset.uint32, align: 0))
+    self.instr(I32Const, i32Const: offset.int32)
+    self.instr(I32Add)
+    self.genNode(value, Destination(kind: Memory, offset: 0, align: 0))
 
   # self.instr(LocalTee, localIdx: index)
 
@@ -196,7 +198,9 @@ proc genNodeVarDecl(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destina
 
   if node.firstChild(IdVarDeclValue).getSome(value):
     self.instr(LocalGet, localIdx: self.currentBasePointer)
-    self.genNode(value, Destination(kind: Memory, offset: offset.uint32, align: 0))
+    self.instr(I32Const, i32Const: offset.int32)
+    self.instr(I32Add)
+    self.genNode(value, Destination(kind: Memory, offset: 0, align: 0))
 
   # self.instr(LocalTee, localIdx: index)
 
@@ -226,6 +230,17 @@ proc genNodeContinueExpression(self: BaseLanguageWasmCompiler, node: AstNode, de
 
 proc genNodeReturnExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   discard
+
+proc genNodeStringGetPointer(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  self.genNodeChildren(node, IdStringGetPointerValue, Destination(kind: Stack))
+  self.instr(I32WrapI64)
+  self.genStoreDestination(node, dest)
+
+proc genNodeStringGetLength(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  self.genNodeChildren(node, IdStringGetLengthValue, Destination(kind: Stack))
+  self.instr(I64Const, i64Const: 32)
+  self.instr(I64ShrU)
+  self.instr(I32WrapI64)
 
 proc genNodeNodeReference(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   let id = node.reference(IdNodeReferenceTarget)
@@ -300,7 +315,9 @@ proc genAssignmentExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest
       discard
     of Stack(stackOffset: @offset):
       self.instr(LocalGet, localIdx: self.currentBasePointer)
-      valueDest = Destination(kind: Memory, offset: offset.uint32, align: 0)
+      self.instr(I32Const, i32Const: offset.int32)
+      self.instr(I32Add)
+      valueDest = Destination(kind: Memory, offset: 0, align: 0)
   else:
     self.genNode(targetNode, Destination(kind: LValue))
     valueDest = Destination(kind: Memory, offset: 0, align: 0)
@@ -323,6 +340,8 @@ proc genNodePrintExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest:
     let typ = self.ctx.computeType(c)
     if typ.class == IdInt:
       self.instr(Call, callFuncIdx: self.printI32)
+    elif typ.class == IdChar:
+      self.instr(Call, callFuncIdx: self.printChar)
     elif typ.class == IdPointerType:
       self.instr(Call, callFuncIdx: self.printI32)
     elif typ.class == IdString:
@@ -467,7 +486,7 @@ proc genNodeStructMemberAccessExpression(self: BaseLanguageWasmCompiler, node: A
     self.loadInstr(instr, offset.uint32, 0)
 
   of Memory():
-    if offset > 0:
+    if offset > 0: # todo: is this offset correct? Do we need that/is adding it after generating the value correct?
       self.instr(I32Const, i32Const: offset.int32)
       self.instr(I32Add)
     self.instr(I32Const, i32Const: size)
@@ -612,6 +631,8 @@ proc genNodeFunctionDefinition(self: BaseLanguageWasmCompiler, node: AstNode, de
 
   # epilogue
   self.instr(LocalGet, localIdx: self.currentBasePointer)
+  self.instr(I32Const, i32Const: requiredStackSize)
+  self.instr(I32Add)
   self.instr(GlobalSet, globalIdx: self.stackPointer)
 
 proc getFunctionInputOutput(self: BaseLanguageWasmCompiler, node: AstNode): tuple[inputs: seq[WasmValueType], outputs: seq[WasmValueType]] =
@@ -666,13 +687,17 @@ proc addBaseLanguage*(self: BaseLanguageWasmCompiler) =
   self.generators[IdArrayAccess] = genNodeArrayAccess
   self.generators[IdAllocate] = genNodeAllocate
   self.generators[IdReturnExpression] = genNodeReturnExpression
+  self.generators[IdStringGetPointer] = genNodeStringGetPointer
+  self.generators[IdStringGetLength] = genNodeStringGetLength
 
   self.wasmValueTypes[IdInt] = (WasmValueType.I32, I32Load, I32Store) # int32
+  self.wasmValueTypes[IdChar] = (WasmValueType.I32, I32Load8U, I32Store8) # int32
   self.wasmValueTypes[IdPointerType] = (WasmValueType.I32, I32Load, I32Store) # pointer
   self.wasmValueTypes[IdString] = (WasmValueType.I64, I64Load, I64Store) # (len << 32) | ptr
   self.wasmValueTypes[IdFunctionType] = (WasmValueType.I32, I32Load, I32Store) # table index
 
   self.typeAttributes[IdInt] = (4'i32, 4'i32, false)
+  self.typeAttributes[IdChar] = (1'i32, 1'i32, false)
   self.typeAttributes[IdPointerType] = (4'i32, 4'i32, false)
   self.typeAttributes[IdString] = (8'i32, 4'i32, false)
   self.typeAttributes[IdFunctionType] = (0'i32, 1'i32, false)

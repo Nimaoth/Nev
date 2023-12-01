@@ -422,7 +422,7 @@ proc createLeafCellUI*(cell: Cell, builder: UINodeBuilder, inText: string, inTex
           updateContext.handleClick(currentNode, cell, cellPath, cursor, true)
 
       when defined(uiNodeDebugData):
-        if updateContext.selection.contains(cell):
+        if updateContext.selection.isValid and updateContext.selection.contains(cell):
           currentNode.aDebugData.css.add "border: 1px solid yellow;"
 
         if ctx.currentIndent > 0:
@@ -455,7 +455,7 @@ proc createLeafCellUI*(cell: Cell, builder: UINodeBuilder, inText: string, inTex
             updateContext.handleClick(currentNode, cell, cellPath, cursor, true)
 
       when defined(uiNodeDebugData):
-        if updateContext.selection.contains(cell):
+        if updateContext.selection.isValid and updateContext.selection.contains(cell):
           currentNode.aDebugData.css.add "border: 1px solid yellow;"
 
         if ctx.currentIndent > 0:
@@ -1054,11 +1054,14 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
                 # update targetCellPath and scrollOffset to visible cell if currently outside of visible area
                 if self.scrollOffset < cellGenerationBuffer + targetCellBuffer or self.scrollOffset >= h - cellGenerationBuffer - targetCellBuffer:
                   let forward = self.scrollOffset < cellGenerationBuffer + targetCellBuffer
+                  # log lvlInfo, fmt"update target path {cell}, {forward}, {self.targetCellPath}, {self.scrollOffset}"
                   if self.cellWidgetContext.updateTargetPath(scrolledNode.parent, cell, forward, self.targetCellPath, @[]).getSome(path):
-                    # echo "update path ", path, " (was ", targetCellPath, ")"
                     # debugf"update target cell path: {self.targetCellPath}:{self.scrollOffset} -> {path[0]}:{path[1]}"
                     self.targetCellPath = path[1]
                     self.scrollOffset = path[0]
+                  else:
+                    log lvlError, fmt"failed to find target cell path"
+                    discard self.cellWidgetContext.updateTargetPath(scrolledNode.parent, cell, forward, self.targetCellPath, @[])
 
           # cursor
           proc drawCursor(cursor: CellCursor, thick: bool, cursorColor: Color, id: int32): Option[UINode] =

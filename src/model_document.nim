@@ -47,6 +47,9 @@ proc `$`*(cursor: CellCursor): string = fmt"CellCursor({cursor.index}, {cursor.p
 
 proc `$`*(selection: CellSelection): string = fmt"({selection.first}, {selection.last})"
 
+proc isValid*(cursor: CellCursor): bool = cursor.map.isNotNil and cursor.node.isNotNil
+proc isValid*(selection: CellSelection): bool = selection.first.isValid and selection.last.isValid
+
 proc orderedRange*(selection: CellSelection): Slice[int] =
   return min(selection.first.index, selection.last.index)..max(selection.first.index, selection.last.index)
 
@@ -606,6 +609,7 @@ proc getSubstitutionsForClass(self: ModelDocumentEditor, targetCell: Cell, class
       # debugf"scope: {decl}, {decl.nodeClass.isSubclassOf(refClass.id)}"
       if decl.nodeClass.isSubclassOf(refClass.id):
         let name = if decl.property(IdINamedName).getSome(name): name.stringValue else: $decl.id
+        # echo fmt"add substitute reference {name}"
         addCompletion ModelCompletion(kind: ModelCompletionKind.SubstituteReference, name: name, class: class, parent: parent, role: role, index: index, referenceRole: desc.id, referenceTarget: decl)
         result = true
 
@@ -617,6 +621,7 @@ proc getSubstitutionsForClass(self: ModelDocumentEditor, targetCell: Cell, class
 
 proc updateCompletions(self: ModelDocumentEditor) =
   self.unfilteredCompletions.setLen 0
+  # debugf"updateCompletions"
 
   let targetCell = self.cursor.targetCell
   if targetCell of CollectionCell or targetCell of PropertyCell:
@@ -663,6 +668,7 @@ proc refilterCompletions(self: ModelDocumentEditor) =
 
   let text = targetCell.currentText
   let index = self.cursor.index
+  # debugf "refilter '{text}' {index}"
   let prefix = text[0..<index]
 
   # debugf "refilter '{text}' {index} -> '{prefix}'"
@@ -784,6 +790,7 @@ proc handleNodeInserted(self: ModelDocumentEditor, model: Model, parent: AstNode
 proc handleNodePropertyChanged(self: ModelDocumentEditor, model: Model, node: AstNode, role: RoleId, oldValue: PropertyValue, newValue: PropertyValue, slice: Slice[int]) =
   # debugf "handleNodePropertyChanged {node}, {role}, {oldValue}, {newValue}"
   self.invalidateCompletions()
+  self.markDirty()
 
 proc handleNodeReferenceChanged(self: ModelDocumentEditor, model: Model, node: AstNode, role: RoleId, oldRef: NodeId, newRef: NodeId) =
   # debugf "handleNodeReferenceChanged {node}, {role}, {oldRef}, {newRef}"
@@ -796,6 +803,9 @@ proc handleModelChanged(self: ModelDocumentEditor, document: ModelDocument) =
   discard self.document.model.onNodeInserted.subscribe proc(d: auto) = self.handleNodeInserted(d[0], d[1], d[2], d[3], d[4])
   discard self.document.model.onNodePropertyChanged.subscribe proc(d: auto) = self.handleNodePropertyChanged(d[0], d[1], d[2], d[3], d[4], d[5])
   discard self.document.model.onNodeReferenceChanged.subscribe proc(d: auto) = self.handleNodeReferenceChanged(d[0], d[1], d[2], d[3], d[4])
+
+  self.mSelection.first.map = self.nodeCellMap
+  self.mSelection.last.map = self.nodeCellMap
 
   self.rebuildCells()
 
@@ -865,7 +875,6 @@ proc rebuildCells(self: ModelDocumentEditor) =
   self.nodeCellMap.invalidate()
   self.detailsNodeCellMap.invalidate()
   self.logicalLines.setLen 0
-  self.markDirty()
 
 proc toJson*(self: api.ModelDocumentEditor, opt = initToJsonOptions()): JsonNode =
   result = newJObject()
@@ -882,10 +891,12 @@ proc handleInput(self: ModelDocumentEditor, input: string): EventResponse =
 
   if self.app.invokeCallback(self.getContextWithMode("editor.model.input-handler"), input.newJString):
     self.document.finishTransaction()
+    self.markDirty()
     return Handled
 
   if self.insertTextAtCursor(input):
     self.document.finishTransaction()
+    self.markDirty()
     return Handled
 
   return Ignored
@@ -2496,6 +2507,12 @@ proc createNewNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
 
   else:
     if not self.selection.isEmpty:
+      let (parentCell, _, _) = self.selection.getParentInfo
+      if parentCell.node.canHaveSiblings():
+        if self.insertAfterNode(parentCell.node).getSome(newNode):
+          self.rebuildCells()
+          self.cursor = self.getFirstEditableCellOfNode(newNode).get
+
       return
 
     let updatedScrollOffset = self.updateScrollOffsetToPrevCell()
@@ -2613,20 +2630,20 @@ proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool {.expos
   }
 
   if not self.selection.isEmpty:
-    let (parentCell, leftPath, rightPath) = self.selection.getParentInfo
+    let (parentCell, _, _) = self.selection.getParentInfo
     if selectionTransformations.findTransformation(parentCell.node.nodeClass, input).getSome(transformation):
       self.cursor = self.applyTransformation(parentCell.node, transformation)
-      return
+      return true
 
   if getTargetCell(self.cursor).getSome(cell):
     if self.selection.isEmpty:
       if self.cursor.index == cell.len and postfixTransformations.findTransformation(cell.node.nodeClass, input).getSome(transformation):
         self.cursor = self.applyTransformation(cell.node, transformation)
-        return
+        return true
 
       elif self.cursor.index == 0 and prefixTransformations.findTransformation(cell.node.nodeClass, input).getSome(transformation):
         self.cursor = self.applyTransformation(cell.node, transformation)
-        return
+        return true
 
     if cell.disableEditing:
       return false
@@ -2828,6 +2845,9 @@ proc printI32(a: int32) =
     lineBuffer.add " "
   lineBuffer.add $a
 
+proc printChar(a: int32) =
+  lineBuffer.add $a.Rune
+
 proc printString(a: cstring) =
   lineBuffer.add $a
 
@@ -2837,7 +2857,7 @@ proc printLine() =
 
 proc loadAppFile(a: cstring): cstring =
   let file = fs.loadApplicationFile($a)
-  log lvlInfo, fmt"loadAppFile {a} -> {file}"
+  # log lvlInfo, fmt"loadAppFile {a} -> {file}"
   return file.cstring
 
 proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.} =
@@ -2875,6 +2895,7 @@ proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.
 
   var imp = WasmImports(namespace: "env")
   imp.addFunction("print_i32", printI32)
+  imp.addFunction("print_char", printChar)
   imp.addFunction("print_string", printString)
   imp.addFunction("print_line", printLine)
   imp.addFunction("intToString", intToString)
@@ -3106,11 +3127,13 @@ method handleAction*(self: ModelDocumentEditor, action: string, arg: string): Ev
       args.add a
 
     if self.app.handleUnknownDocumentEditorAction(self, action, args) == Handled:
+      self.markDirty()
       return Handled
 
     args.elems.insert api.ModelDocumentEditor(id: self.id).toJson, 0
 
     if dispatch(action, args).isSome:
+      self.markDirty()
       return Handled
   except CatchableError:
     log lvlError, fmt"Failed to dispatch action '{action} {args}': {getCurrentExceptionMsg()}"

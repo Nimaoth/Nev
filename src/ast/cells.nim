@@ -30,8 +30,8 @@ method setText*(cell: Cell, text: string, slice: Slice[int] = 0..0) {.base.} = d
 
 proc currentText*(cell: Cell): string =
   # todo: maybe remove display text?
-  # if not cell.displayText.isNone:
-  #   return cell.displayText.get
+  if not cell.displayText.isNone:
+    return cell.displayText.get
   return cell.getText
 
 proc `currentText=`*(cell: Cell, text: string) =
@@ -214,6 +214,8 @@ method setText*(cell: PropertyCell, text: string, slice: Slice[int] = 0..0) =
       of Bool:
         let boolValue = text.parseBool
         cell.targetNode.setProperty(cell.property, PropertyValue(kind: PropertyType.Bool, boolValue: boolValue), slice)
+
+      cell.displayText = string.none
 
   except CatchableError:
     discard

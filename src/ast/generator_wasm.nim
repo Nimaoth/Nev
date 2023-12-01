@@ -18,7 +18,7 @@ type
     case kind*: DestinationStorage
     of Stack: discard
     of Memory:
-      offset*: uint32
+      offset: uint32 # todo: remove?
       align*: uint32
     of Discard: discard
     of LValue: discard
@@ -53,6 +53,7 @@ type
 
     # imported
     printI32: WasmFuncIdx
+    printChar: WasmFuncIdx
     printString: WasmFuncIdx
     printLine: WasmFuncIdx
     intToString: WasmFuncIdx
@@ -90,6 +91,7 @@ proc newBaseLanguageWasmCompiler*(ctx: ModelComputationContextBase): BaseLanguag
   result.builder.addExport("memory", 0.WasmMemIdx)
 
   result.printI32 = result.builder.addImport("env", "print_i32", result.builder.addType([I32], []))
+  result.printChar = result.builder.addImport("env", "print_char", result.builder.addType([I32], []))
   result.printString = result.builder.addImport("env", "print_string", result.builder.addType([I32], []))
   result.printLine = result.builder.addImport("env", "print_line", result.builder.addType([], []))
   result.intToString = result.builder.addImport("env", "intToString", result.builder.addType([I32], [I32]))
