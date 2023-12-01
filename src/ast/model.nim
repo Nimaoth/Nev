@@ -1,4 +1,4 @@
-import std/[options, strutils, hashes, tables, strformat, sugar, sequtils]
+import std/[options, strutils, hashes, tables, strformat, sugar, sequtils, sets]
 import fusion/matching
 import chroma
 import workspaces/[workspace]
@@ -183,7 +183,7 @@ type
     tempNodes {.getter.}: seq[AstNode]
     languages {.getter.}: seq[Language]
     models {.getter.}: seq[Model]
-    importedModels {.getter.}: seq[ModelId]
+    importedModels {.getter.}: HashSet[ModelId]
     classesToLanguages {.getter.}: Table[ClassId, Language]
     childClasses {.getter.}: Table[ClassId, seq[NodeClass]]
     nodes {.getter.}: Table[NodeId, AstNode]
@@ -349,7 +349,7 @@ proc hasLanguage*(self: Model, language: LanguageId): bool =
 
 proc addImport*(self: Model, model: Model) =
   # log lvlWarn, fmt"addImport to {self.path} ({self.id}): {model.path} ({model.id})"
-  self.importedModels.add model.id
+  self.importedModels.incl model.id
   self.models.add model
 
 proc addLanguage*(self: Model, language: Language) =
@@ -1228,7 +1228,7 @@ proc loadFromJson*(project: Project, model: Model, workspace: WorkspaceFolder, p
   if json.hasKey("models"):
     for modelIdJson in json["models"]:
       let id = modelIdJson.jsonTo ModelId
-      model.importedModels.add id
+      model.importedModels.incl id
       if project.resolveModel(workspace, id).await.getSome(m):
         model.addImport(m)
       else:

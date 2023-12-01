@@ -14,6 +14,7 @@ let metaTypeClass* = newNodeClass(IdType, "Type", alias="type", base=expressionC
 let stringTypeClass* = newNodeClass(IdString, "StringType", alias="string", base=expressionClass)
 let intTypeClass* = newNodeClass(IdInt, "IntType", alias="int", base=expressionClass)
 let voidTypeClass* = newNodeClass(IdVoid, "VoidType", alias="void", base=expressionClass)
+let charTypeClass * = newNodeClass(IdChar, "CharType", alias="char", base=expressionClass)
 let functionTypeClass* = newNodeClass(IdFunctionType, "FunctionType", base=expressionClass,
   children=[
     NodeChildDescription(id: IdFunctionTypeParameterTypes, role: "parameterTypes", class: expressionClass.id, count: ChildCount.ZeroOrMore),
@@ -81,6 +82,14 @@ let addressOfClass* = newNodeClass(IdAddressOf, "AddressOf", alias="addr", base=
 let derefClass* = newNodeClass(IdDeref, "Deref", alias="deref", base=expressionClass,
   children=[
     NodeChildDescription(id: IdDerefValue, role: "value", class: expressionClass.id, count: ChildCount.One)])
+
+let stringGetPointerClass* = newNodeClass(IdStringGetPointer, "StringGetPointer", base=expressionClass,
+  children=[
+    NodeChildDescription(id: IdStringGetPointerValue, role: "value", class: expressionClass.id, count: ChildCount.One)])
+
+let stringGetLengthClass* = newNodeClass(IdStringGetLength, "StringGetLength", base=expressionClass,
+  children=[
+    NodeChildDescription(id: IdStringGetLengthValue, role: "value", class: expressionClass.id, count: ChildCount.One)])
 
 let arrayAccessClass* = newNodeClass(IdArrayAccess, "ArrayAccess", alias="[]", base=expressionClass,
   children=[
@@ -427,6 +436,22 @@ builder.addBuilderFor derefClass.id, idNone(), proc(builder: CellBuilder, node: 
     cell.add builder.buildChildren(map, node, IdDerefValue, &{LayoutHorizontal})
   return cell
 
+builder.addBuilderFor stringGetPointerClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
+  cell.fillChildren = proc(map: NodeCellMap) =
+    cell.add builder.buildChildren(map, node, IdStringGetPointerValue, &{LayoutHorizontal})
+    cell.add ConstantCell(node: node, text: ".", flags: &{NoSpaceLeft, NoSpaceRight}, themeForegroundColors: @["punctuation"], disableEditing: true)
+    cell.add ConstantCell(node: node, text: "ptr", themeForegroundColors: @["keyword"], disableEditing: true)
+  return cell
+
+builder.addBuilderFor stringGetLengthClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
+  cell.fillChildren = proc(map: NodeCellMap) =
+    cell.add builder.buildChildren(map, node, IdStringGetLengthValue, &{LayoutHorizontal})
+    cell.add ConstantCell(node: node, text: ".", flags: &{NoSpaceLeft, NoSpaceRight}, themeForegroundColors: @["punctuation"], disableEditing: true)
+    cell.add ConstantCell(node: node, text: "len", themeForegroundColors: @["keyword"], disableEditing: true)
+  return cell
+
 builder.addBuilderFor IdArrayAccess, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
@@ -582,6 +607,10 @@ builder.addBuilderFor intTypeClass.id, idNone(), proc(builder: CellBuilder, node
   var cell = AliasCell(id: newId().CellId, node: node, themeForegroundColors: @["storage.type", "&editor.foreground"], disableEditing: true)
   return cell
 
+builder.addBuilderFor charTypeClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  var cell = AliasCell(id: newId().CellId, node: node, themeForegroundColors: @["storage.type", "&editor.foreground"], disableEditing: true)
+  return cell
+
 builder.addBuilderFor printExpressionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
@@ -622,6 +651,7 @@ let metaTypeInstance* = newAstNode(metaTypeClass)
 let stringTypeInstance* = newAstNode(stringTypeClass)
 let intTypeInstance* = newAstNode(intTypeClass)
 let voidTypeInstance* = newAstNode(voidTypeClass)
+let charTypeInstance* = newAstNode(charTypeClass)
 
 typeComputers[metaTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for meta type literal {node}"
@@ -631,6 +661,9 @@ typeComputers[stringTypeClass.id] = proc(ctx: ModelComputationContextBase, node:
   return metaTypeInstance
 typeComputers[intTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for int type literal {node}"
+  return metaTypeInstance
+typeComputers[charTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  # debugf"compute type for char type literal {node}"
   return metaTypeInstance
 typeComputers[voidTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for void type literal {node}"
@@ -648,6 +681,9 @@ valueComputers[stringTypeClass.id] = proc(ctx: ModelComputationContextBase, node
 valueComputers[intTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute value for int type literal {node}"
   return intTypeInstance
+valueComputers[charTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  # debugf"compute value for char type literal {node}"
+  return charTypeInstance
 valueComputers[voidTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute value for void type literal {node}"
   return voidTypeInstance
@@ -1386,9 +1422,7 @@ typeComputers[addressOfClass.id] = proc(ctx: ModelComputationContextBase, node: 
     let targetType = ctx.computeType(valueNode)
     var typ = newAstNode(pointerTypeClass)
     typ.add(IdPointerTypeTarget, targetType)
-    typ.model = node.model
-    typ.forEach2 n:
-      n.model = node.model
+    node.model.addTempNode(typ)
     return typ
 
   return voidTypeInstance
@@ -1402,6 +1436,17 @@ typeComputers[derefClass.id] = proc(ctx: ModelComputationContextBase, node: AstN
       return targetType
 
   return voidTypeInstance
+
+typeComputers[stringGetPointerClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  # debugf"compute type for deref {node}"
+  var typ = newAstNode(pointerTypeClass)
+  typ.add(IdPointerTypeTarget, charTypeInstance)
+  node.model.addTempNode(typ)
+  return typ
+
+typeComputers[stringGetLengthClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  # debugf"compute type for deref {node}"
+  return intTypeInstance
 
 typeComputers[arrayAccessClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for deref {node}"
@@ -1512,11 +1557,15 @@ scopeComputers[IdParameterDecl] = proc(ctx: ModelComputationContextBase, node: A
   # debugf"compute scope for parameter {node}"
   return ctx.computeDefaultScope(node)
 
+scopeComputers[IdThenCase] = proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode] =
+  # debugf"compute scope for then case {node}"
+  return ctx.computeDefaultScope(node)
+
 let baseLanguage* = newLanguage(IdBaseLanguage, @[
   namedInterface, declarationInterface,
 
   # typeClass,
-  metaTypeClass, stringTypeClass, intTypeClass, voidTypeClass, functionTypeClass, structTypeClass, pointerTypeClass,
+  metaTypeClass, stringTypeClass, intTypeClass, charTypeClass, voidTypeClass, functionTypeClass, structTypeClass, pointerTypeClass,
 
   expressionClass, binaryExpressionClass, unaryExpressionClass, emptyLineClass,
   numberLiteralClass, stringLiteralClass, boolLiteralClass, nodeReferenceClass, emptyClass, genericTypeClass, constDeclClass, letDeclClass, varDeclClass, nodeListClass, blockClass, callClass, thenCaseClass, ifClass, whileClass,
@@ -1526,6 +1575,7 @@ let baseLanguage* = newLanguage(IdBaseLanguage, @[
   lessExpressionClass, lessEqualExpressionClass, greaterExpressionClass, greaterEqualExpressionClass, equalExpressionClass, notEqualExpressionClass, andExpressionClass, orExpressionClass, orderExpressionClass,
   negateExpressionClass, notExpressionClass,
   appendStringExpressionClass, printExpressionClass, buildExpressionClass, allocateClass,
+  stringGetPointerClass, stringGetLengthClass,
 
   structDefinitionClass, structMemberDefinitionClass, structParameterClass, structMemberAccessClass,
   addressOfClass, derefClass, arrayAccessClass,
@@ -1537,6 +1587,7 @@ let baseModel* = block:
   model.addRootNode(intTypeInstance)
   model.addRootNode(stringTypeInstance)
   model.addRootNode(voidTypeInstance)
+  model.addRootNode(charTypeInstance)
   model.addRootNode(metaTypeInstance)
 
   model
