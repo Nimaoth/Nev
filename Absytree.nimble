@@ -78,8 +78,8 @@ task buildNimsuggestWSWindows, "Build the server for hosting workspaces and lang
   selfExec fmt"c -o:./tools/nimsuggest-ws{exe} {crossCompileWinArgs} {getCommandLineParams()} ./tools/nimsuggest_ws.nim"
 
 task buildBrowser, "Build the browser version":
-  # selfExec fmt"js -o:./build/ast.js -d:exposeScriptingApi -d:vmathObjBased -d:enableTableIdCacheChecking {getCommandLineParams()} ./src/absytree_js.nim"
-  selfExec fmt"js -o:./build/ast.js -d:exposeScriptingApi -d:vmathObjBased -d:enableTableIdCacheChecking --objChecks:off --fieldChecks:off --rangeChecks:off --boundChecks:off --overflowChecks:off --floatChecks:off --nanChecks:off --infChecks:off --jsbigint64:off {getCommandLineParams()} ./src/absytree_js.nim"
+  selfExec fmt"js -o:./build/ast.js -d:exposeScriptingApi -d:vmathObjBased -d:enableTableIdCacheChecking {getCommandLineParams()} ./src/absytree_js.nim"
+  # selfExec fmt"js -o:./build/ast.js -d:exposeScriptingApi -d:vmathObjBased -d:enableTableIdCacheChecking --objChecks:off --fieldChecks:off --rangeChecks:off --boundChecks:off --overflowChecks:off --floatChecks:off --nanChecks:off --infChecks:off --jsbigint64:off {getCommandLineParams()} ./src/absytree_js.nim"
 
 task buildNimConfigWasm, "Compile the nim script config file to wasm":
   withDir "config":
