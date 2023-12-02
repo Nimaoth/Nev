@@ -9,14 +9,19 @@ logCategory "base-language-wasm"
 
 proc genNodeBlock(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   let typ = self.ctx.computeType(node)
-  let tempIdx = if dest.kind == Memory:
+  let wasmValueType = self.toWasmValueType(typ)
+  let (size, _, _) = self.getTypeAttributes(typ)
+
+  # debugf"genNodeBlock: {node}, {dest}, {typ}, {wasmValueType}, {size}"
+
+  let tempIdx = if dest.kind == Memory and size > 0: # store result pointer in local, and load again in block
     let tempIdx = self.getTempLocal(intTypeInstance)
     self.instr(LocalSet, localIdx: tempIdx)
     tempIdx.some
   else:
     WasmLocalIdx.none
 
-  self.genBlock(WasmBlockType(kind: ValType, typ: self.toWasmValueType(typ))):
+  self.genBlock(WasmBlockType(kind: ValType, typ: wasmValueType)):
     if tempIdx.getSome(tempIdx):
       self.instr(LocalGet, localIdx: tempIdx)
 
@@ -81,6 +86,16 @@ proc genNodeBinaryNotEqualExpression(self: BaseLanguageWasmCompiler, node: AstNo
   self.instr(I32Ne)
   self.genStoreDestination(node, dest)
 
+proc genNodeBinaryAndExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  self.genNodeBinaryExpression(node, Destination(kind: Stack))
+  self.instr(I32And)
+  self.genStoreDestination(node, dest)
+
+proc genNodeBinaryOrExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  self.genNodeBinaryExpression(node, Destination(kind: Stack))
+  self.instr(I32Or)
+  self.genStoreDestination(node, dest)
+
 proc genNodeUnaryNegateExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   self.instr(I32Const, i32Const: 0)
   self.genNodeChildren(node, IdUnaryExpressionChild, Destination(kind: Stack))
@@ -135,9 +150,10 @@ proc genNodeIfExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: De
     self.currentExpr = WasmExpr()
 
   for i, c in elseCase:
-    if i > 0 and wasmType.isSome: self.genDrop(c)
     self.genNode(c, dest)
-    if wasmType.isNone: self.genDrop(c)
+    # if wasmType.isNone:
+      # log lvlError, fmt"drop {typ} -> {wasmType}"
+      # self.genDrop(c)
 
   for i in countdown(ifStack.high, 0):
     let elseCase = self.currentExpr
@@ -241,6 +257,7 @@ proc genNodeStringGetLength(self: BaseLanguageWasmCompiler, node: AstNode, dest:
   self.instr(I64Const, i64Const: 32)
   self.instr(I64ShrU)
   self.instr(I32WrapI64)
+  self.genStoreDestination(node, dest)
 
 proc genNodeNodeReference(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   let id = node.reference(IdNodeReferenceTarget)
@@ -345,7 +362,16 @@ proc genNodePrintExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest:
     elif typ.class == IdPointerType:
       self.instr(Call, callFuncIdx: self.printI32)
     elif typ.class == IdString:
+      let tempIdx = self.getTempLocal(stringTypeInstance)
+      self.instr(LocalTee, localIdx: tempIdx)
+      self.instr(I32WrapI64) # pointer
+
+      # length
+      self.instr(LocalGet, localIdx: tempIdx)
+      self.instr(I64Const, i64Const: 32)
+      self.instr(I64ShrU)
       self.instr(I32WrapI64)
+
       self.instr(Call, callFuncIdx: self.printString)
     else:
       log lvlError, fmt"genNodePrintExpression: Type not implemented: {`$`(typ, true)}"
@@ -589,6 +615,9 @@ proc genNodeFunctionDefinition(self: BaseLanguageWasmCompiler, node: AstNode, de
   if body.len != 1:
     return
 
+  self.localIndices.clear
+  self.currentLocals.setLen 0
+
   let returnType = node.firstChild(IdFunctionDefinitionReturnType).mapIt(self.ctx.getValue(it)).get(voidTypeInstance)
   let passReturnAsOutParam = self.shouldPassAsOutParamater(returnType)
 
@@ -664,6 +693,8 @@ proc addBaseLanguage*(self: BaseLanguageWasmCompiler) =
   self.generators[IdGreaterEqual] = genNodeBinaryGreaterEqualExpression
   self.generators[IdEqual] = genNodeBinaryEqualExpression
   self.generators[IdNotEqual] = genNodeBinaryNotEqualExpression
+  self.generators[IdAnd] = genNodeBinaryAndExpression
+  self.generators[IdOr] = genNodeBinaryOrExpression
   self.generators[IdNegate] = genNodeUnaryNegateExpression
   self.generators[IdNot] = genNodeUnaryNotExpression
   self.generators[IdIntegerLiteral] = genNodeIntegerLiteral

@@ -87,6 +87,8 @@ proc toggleUseDefaultCellBuilder*(self: ModelDocumentEditor) =
   editor_model_toggleUseDefaultCellBuilder_void_ModelDocumentEditor_impl(self)
 proc showCompletions*(self: ModelDocumentEditor) =
   editor_model_showCompletions_void_ModelDocumentEditor_impl(self)
+proc showCompletionWindow*(self: ModelDocumentEditor) =
+  editor_model_showCompletionWindow_void_ModelDocumentEditor_impl(self)
 proc hideCompletions*(self: ModelDocumentEditor) =
   editor_model_hideCompletions_void_ModelDocumentEditor_impl(self)
 proc selectPrevCompletion*(self: ModelDocumentEditor) =

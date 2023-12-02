@@ -695,9 +695,7 @@ valueComputers[pointerTypeClass.id] = proc(ctx: ModelComputationContextBase, nod
     if ctx.getValue(targetTypeNode).isNotNil(targetType):
       typ.setChild(IdPointerTypeTarget, targetType)
 
-    typ.model = node.model
-    typ.forEach2 n:
-      n.model = node.model
+    node.model.addTempNode(typ)
     return typ
 
   return node
@@ -879,8 +877,14 @@ typeComputers[nodeListClass.id] = proc(ctx: ModelComputationContextBase, node: A
 typeComputers[blockClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for block {node}"
 
-  if node.lastChild(IdBlockChildren).getSome(childNode):
-    return ctx.computeType(childNode)
+  # todo: maybe find better way to ignore empty line nodes
+  var lastChild: AstNode = nil
+  for _, child in node.children(IdBlockChildren):
+    if child.class != IdEmptyLine:
+      lastChild = child
+
+  if lastChild.isNotNil:
+    return ctx.computeType(lastChild)
 
   return voidTypeInstance
 
@@ -1408,9 +1412,7 @@ typeComputers[allocateClass.id] = proc(ctx: ModelComputationContextBase, node: A
     let targetType = ctx.getValue(typeNode)
     var typ = newAstNode(pointerTypeClass)
     typ.add(IdPointerTypeTarget, targetType)
-    typ.model = node.model
-    typ.forEach2 n:
-      n.model = node.model
+    node.model.addTempNode(typ)
     return typ
 
   return voidTypeInstance
