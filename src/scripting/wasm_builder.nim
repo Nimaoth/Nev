@@ -1,6 +1,9 @@
 import std/[macrocache, json, options, tables, strutils, strformat]
 import binary_encoder
 import util
+import custom_logger
+
+logCategory "wasm-builder"
 
 type
   WasmTypeIdx* = distinct uint32
@@ -1436,6 +1439,293 @@ proc generateWat*(self: WasmBuilder): string =
 
 proc `$`*(self: WasmBuilder): string =
   return self.generateWat()
+
+proc getStackChange*(self: WasmBuilder, instr: WasmInstr): int =
+  # echo "writeInstr ", instr
+  case instr.kind
+
+  of Nop: return 0
+
+  of Block:
+    case instr.blockType.kind
+    of TypeIdx:
+      return 1
+    of ValType:
+      return if instr.blockType.typ.isSome: 1 else: 0
+
+  of Loop:
+    case instr.loopType.kind
+    of TypeIdx:
+      return 1
+    of ValType:
+      return if instr.loopType.typ.isSome: 1 else: 0
+
+  of If:
+    case instr.ifType.kind
+    of TypeIdx:
+      return 1-1
+    of ValType:
+      return if instr.ifType.typ.isSome: 1-1 else: 0-1
+
+  of Br: return 0
+  of BrIf: return -1
+
+  of BrTable:
+    # todo
+    return 0
+
+  of Call:
+    let index = self.getEffectiveFunctionIdx(instr.callFuncIdx)
+    let typIndex = if index < self.functionImports.len:
+      self.functionImports[index].desc.funcTypeIdx
+    else:
+      self.funcs[index - self.functionImports.len].typeIdx
+    let typ = self.types[typIndex.int]
+    return typ.output.types.len - typ.input.types.len
+
+  of CallIndirect:
+    # let index = self.getEffectiveFunctionIdx(instr.callIndirectTableIdx)
+    # let typIndex = if index < self.functionImports.len:
+    #   self.functionImports[index].desc.funcTypeIdx
+    # else:
+    #   self.funcs[index - self.functionImports.len].typeIdx
+    # let typ = self.types[typIndex.int]
+    # return typ.output.types.len - typ.input.types.len
+    # todo
+    return 0
+
+  of RefNull, RefFunc: return 1
+
+  of Select:
+    if instr.selectValType.isSome:
+      return -2
+    else:
+      # todo?
+      return -2
+
+  of LocalGet: return 1
+  of LocalSet: return -1
+  of LocalTee: return 0
+
+  of GlobalGet: return 1
+  of GlobalSet: return -1
+
+  of TableGet: return 1
+  of TableSet: return -1
+  of TableInit: return -3
+  of ElemDrop: return 0
+  of TableCopy: return -3
+
+  of TableGrow: return 0
+  of TableSize: return 1
+  of TableFill: return -2
+
+  of I32Load, I64Load, F32Load, F64Load, I32Load8U, I32Load8S, I64Load8U, I64Load8S, I32Load16U, I32Load16S, I64Load16U, I64Load16S, I64Load32U, I64Load32S:
+    return 0
+  of I32Store, I64Store, F32Store, F64Store, I32Store8, I64Store8, I32Store16, I64Store16, I64Store32:
+    return -2
+
+  of MemorySize: return 1
+  of MemoryGrow: return 0
+  of MemoryInit: return -3
+  of DataDrop: return 0
+  of MemoryCopy: return -3
+  of MemoryFill: return -3
+
+  of I32Const, I64Const, F32Const, F64Const: return 1
+
+  # unop := iunop | funop | extentN_s
+  of I32Clz, I32Ctz, I32Popcnt: return 0 # iunop
+  of I64Clz, I64Ctz, I64Popcnt: return 0 # iunop
+  of F32Abs, F32Neg, F32Ceil, F32Floor, F32Trunc, F32Nearest, F32Sqrt: return 0 # funop
+  of F64Abs, F64Neg, F64Ceil, F64Floor, F64Trunc, F64Nearest, F64Sqrt: return 0 # funop
+  of I32Extend8S, I32Extend16S, I64Extend8S, I64Extend16S, I64Extend32S: return 0 # extentN_s
+
+  # binop := ibinop | fbinop
+  of I32Add, I32Sub, I32Mul, I32DivS, I32DivU, I32RemS, I32RemU, I32And, I32Or, I32Xor, I32Shl, I32ShrS, I32ShrU, I32Rotl, I32Rotr: return -1 # ibinop
+  of I64Add, I64Sub, I64Mul, I64DivS, I64DivU, I64RemS, I64RemU, I64And, I64Or, I64Xor, I64Shl, I64ShrS, I64ShrU, I64Rotl, I64Rotr: return -1 # ibinop
+  of F32Add, F32Sub, F32Mul, F32Div, F32Min, F32Max, F32Copysign: return -1 # fbinop
+  of F64Add, F64Sub, F64Mul, F64Div, F64Min, F64Max, F64Copysign: return -1 # fbinop
+
+  # testop := itestop
+  of I32Eqz, I64Eqz: return 0
+
+  # relop := irelop | frelop
+  of I32Eq, I32Ne, I32LtS, I32LtU, I32GtS, I32GtU, I32LeS, I32LeU, I32GeS, I32GeU: return -1 # irelop
+  of I64Eq, I64Ne, I64LtS, I64LtU, I64GtS, I64GtU, I64LeS, I64LeU, I64GeS, I64GeU: return -1 # irelop
+  of F32Eq, F32Ne, F32Lt, F32Gt, F32Le, F32Ge: return -1 # frelop
+  of F64Eq, F64Ne, F64Lt, F64Gt, F64Le, F64Ge: return -1 # frelop
+
+  # cvtop := wrap | extend | trunc | trunc_sat | convert | demote | promote | reinterpret
+  of I32WrapI64: return 0
+  of I32TruncF32S, I32TruncF32U, I32TruncF64S, I32TruncF64U: return 0
+  of I64ExtendI32S, I64ExtendI32U: return 0
+  of I64TruncF32S, I64TruncF32U, I64TruncF64S, I64TruncF64U: return 0
+  of F32ConvertI32S, F32ConvertI32U, F32ConvertI64S, F32ConvertI64U, F32DemoteF64: return 0
+  of F64ConvertI32S, F64ConvertI32U, F64ConvertI64S, F64ConvertI64U, F64PromoteF32: return 0
+  of I32ReinterpretF32, I64ReinterpretF64, F32ReinterpretI32, F64ReinterpretI64: return 0
+  of I32TruncSatF32S, I32TruncSatF32U, I32TruncSatF64S, I32TruncSatF64U, I64TruncSatF32S, I64TruncSatF32U, I64TruncSatF64S, I64TruncSatF64U: return 0
+
+  else:
+    # todo
+    log lvlError, fmt"getStackChange: unhandled instr {instr.kind}"
+    return 0
+
+var currentFunction {.exportc.}: cstring
+var currentInstruction {.exportc.}: cstring
+var currentSubInstruction {.exportc.}: cstring
+
+proc getInstrType*(self: WasmBuilder, instr: WasmInstr): WasmFunctionType =
+  return case instr.kind
+  of Block:
+    case instr.blockType.kind
+    of TypeIdx:
+      self.types[instr.blockType.idx.int]
+    of ValType:
+      if instr.blockType.typ.getSome(valueType):
+        WasmFunctionType(
+          input: WasmResultType(types: @[]),
+          output: WasmResultType(types: @[valueType]),
+        )
+      else:
+        WasmFunctionType()
+
+  of Loop:
+    case instr.loopType.kind
+    of TypeIdx:
+      self.types[instr.loopType.idx.int]
+    of ValType:
+      if instr.loopType.typ.getSome(valueType):
+        WasmFunctionType(
+          input: WasmResultType(types: @[]),
+          output: WasmResultType(types: @[valueType]),
+        )
+      else:
+        WasmFunctionType()
+
+  of If:
+    case instr.ifType.kind
+    of TypeIdx:
+      self.types[instr.ifType.idx.int]
+    of ValType:
+      if instr.ifType.typ.getSome(valueType):
+        WasmFunctionType(
+          input: WasmResultType(types: @[]),
+          output: WasmResultType(types: @[valueType]),
+        )
+      else:
+        WasmFunctionType()
+
+  else:
+    WasmFunctionType()
+
+proc validate*(self: WasmBuilder, instr: WasmInstr, expectedSize: Option[int], path: seq[int]): bool =
+  currentInstruction = ($instr).cstring
+  result = true
+  if expectedSize.getSome(expectedSize) and self.getStackChange(instr) != expectedSize:
+    log lvlError, fmt"{path} validate: stack size mismatch, expected {expectedSize}, got {self.getStackChange(instr)} at {instr}"
+    result = false
+
+  let blockType = self.getInstrType(instr)
+
+  case instr.kind:
+  of Block:
+    debugf"{path} validate (expect {expectedSize}): {instr}"
+    var stackSize = 0
+    for i, sub in instr.blockInstr:
+      currentSubInstruction = ($sub).cstring
+      let change = self.getStackChange(sub)
+      echo fmt"    block stackSize {stackSize} + {change} = {stackSize + change} ({sub})"
+      stackSize += change
+      if stackSize < 0:
+        log lvlError, fmt"{path}:{i} validate block: not enough values on stack at {instr}"
+
+      if not self.validate(sub, int.none, path & @[i]):
+        result = false
+
+    if stackSize != blockType.output.types.len:
+      log lvlError, fmt"{path} validate block: stack size mismatch at {instr}, expected {blockType.output.types.len}, got {stackSize}"
+      result = false
+
+  of Loop:
+    var stackSize = 0
+    for i, sub in instr.loopInstr:
+      currentSubInstruction = ($sub).cstring
+      let change = self.getStackChange(sub)
+      echo fmt"    loop stackSize {stackSize} + {change} = {stackSize + change} ({sub})"
+      stackSize += change
+      if stackSize < 0:
+        log lvlError, fmt"{path}:{i} validate loop: not enough values on stack at {instr}"
+
+      if not self.validate(sub, int.none, path & @[i]):
+        result = false
+
+    if stackSize != blockType.output.types.len:
+      log lvlError, fmt"{path} validate loop: stack size mismatch at {instr}, expected {blockType.output.types.len}, got {stackSize}"
+      result = false
+
+  of If:
+    var stackSize = 0
+    for i, sub in instr.ifThenInstr:
+      currentSubInstruction = ($sub).cstring
+      let change = self.getStackChange(sub)
+      echo fmt"    if then stackSize {stackSize} + {change} = {stackSize + change} ({sub})"
+      stackSize += change
+      if stackSize < 0:
+        log lvlError, fmt"{path}:{i} validate if then: not enough values on stack at {instr}"
+
+      if not self.validate(sub, int.none, path & @[i]):
+        result = false
+
+    if stackSize != blockType.output.types.len:
+      log lvlError, fmt"{path} validate if then: stack size mismatch at {instr}, expected {blockType.output.types.len}, got {stackSize}"
+      result = false
+
+    stackSize = 0
+    for i, sub in instr.ifElseInstr:
+      currentSubInstruction = ($sub).cstring
+      let change = self.getStackChange(sub)
+      echo fmt"    if else stackSize {stackSize} + {change} = {stackSize + change} ({sub})"
+      stackSize += change
+      if stackSize < 0:
+        log lvlError, fmt"{path}:{i} validate if else: not enough values on stack at {instr}"
+
+      if not self.validate(sub, int.none, path & @[i]):
+        result = false
+
+    if stackSize != blockType.output.types.len:
+      log lvlError, fmt"{path} validate if else: stack size mismatch at {instr}, expected {blockType.output.types.len}, got {stackSize}"
+      result = false
+
+  else:
+    discard
+
+proc validate*(self: WasmBuilder): bool =
+  for i, f in self.funcs:
+    let typ = self.types[f.typeIdx.int]
+    let expectedStackSize = typ.output.types.len
+    # if not self.validate(WasmInstr(kind: Block, blockInstr: f.body.instr), expectedStackSize.some, @[i]):
+    #   log lvlError, fmt"validate function {f.typeIdx} failed"
+    #   result = false
+    currentFunction = f.id.cstring
+
+    debugf"validate function {f.id} {typ}, expected stack size {expectedStackSize}"
+
+    var stackSize = 0
+    for k, sub in f.body.instr:
+      currentInstruction = ($sub).cstring
+      let change = self.getStackChange(sub)
+      echo fmt"    function body stackSize {stackSize} + {change} = {stackSize + change} ({sub})"
+      stackSize += change
+      if stackSize < 0:
+        log lvlError, fmt"{i}:{k} validate function: not enough values on stack at {sub}"
+
+      if not self.validate(sub, int.none, @[i, k]):
+        result = false
+
+    if stackSize != expectedStackSize:
+      log lvlError, fmt"{i} validate function: stack size mismatch, expected {expectedStackSize}, got {stackSize}"
+      result = false
 
 when isMainModule:
   var builder = newWasmBuilder()
