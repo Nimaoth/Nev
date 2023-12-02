@@ -266,6 +266,24 @@ template forEach2*(node: AstNode, it: untyped, body: untyped): untyped =
     let it = n
     body
 
+iterator childrenRec*(node: AstNode): AstNode =
+  var stack: seq[tuple[node: AstNode, listIndex: int, childIndex: int]]
+  stack.add (node, 0, 0)
+
+  while stack.len > 0:
+    let (currentNode, listIndex, childIndex) = stack.pop
+    if listIndex == 0 and childIndex == 0:
+      yield currentNode
+
+    if listIndex == currentNode.childLists.len:
+      continue
+
+    if childIndex == currentNode.childLists[listIndex].nodes.len:
+      stack.add (currentNode, listIndex + 1, 0)
+    else:
+      stack.add (currentNode, listIndex, childIndex + 1)
+      stack.add (currentNode.childLists[listIndex].nodes[childIndex], 0, 0)
+
 proc verify*(self: Language): bool =
   result = true
   for c in self.classes.values:
@@ -866,7 +884,7 @@ proc replace*(node: AstNode, role: RoleId, index: int, child: AstNode) =
 proc replaceWith*(node: AstNode, other: AstNode) =
   node.parent.replace(node.role, node.index, other)
 
-proc removeFromParent(node: AstNode) =
+proc removeFromParent*(node: AstNode) =
   if node.parent.isNil:
     return
   node.parent.remove(node)
@@ -978,9 +996,12 @@ proc addBuilder*(self: CellBuilder, other: CellBuilder) =
   for pair in other.preferredBuilders.pairs:
     self.preferredBuilders[pair[0]] = pair[1]
 
-proc clone*(node: AstNode, idMap: var Table[NodeId, NodeId], linkOriginal: bool = false): AstNode =
+proc clone*(node: AstNode, idMap: var Table[NodeId, NodeId], model: Model, linkOriginal: bool = false): AstNode =
+  assert model.isNotNil
+
   let newNodeId = newId().NodeId
-  result = newAstNode(node.nodeClass, newNodeId.some)
+  let class = model.resolveClass(node.class)
+  result = newAstNode(class, newNodeId.some)
   idMap[node.id] = newNodeId
 
   result.references = node.references
@@ -988,7 +1009,7 @@ proc clone*(node: AstNode, idMap: var Table[NodeId, NodeId], linkOriginal: bool 
 
   for children in node.childLists.mitems:
     for child in children.nodes:
-      result.add(children.role, child.clone(idMap, linkOriginal))
+      result.add(children.role, child.clone(idMap, model, linkOriginal))
 
   if linkOriginal:
     if result.hasReference(IdCloneOriginal):
@@ -1008,9 +1029,12 @@ proc replaceReferences*(node: AstNode, idMap: var Table[NodeId, NodeId]) =
     for child in children.nodes:
       child.replaceReferences(idMap)
 
-proc cloneAndMapIds*(node: AstNode, linkOriginal: bool = false): AstNode =
+proc cloneAndMapIds*(node: AstNode, model: Model = nil, linkOriginal: bool = false): AstNode =
+  let model = model ?? node.model
+  assert model.isNotNil
+
   var idMap = initTable[NodeId, NodeId]()
-  let newNode = node.clone(idMap, linkOriginal)
+  let newNode = node.clone(idMap, model, linkOriginal)
   newNode.replaceReferences(idMap)
   return newNode
 
@@ -1156,7 +1180,7 @@ proc fromJsonHook*(value: var PropertyValue, json: JsonNode) =
   else:
     log(lvlError, fmt"Unknown PropertyValue {json}")
 
-proc jsonToAstNode(json: JsonNode, model: Model, opt = Joptions()): Option[AstNode] =
+proc jsonToAstNode*(json: JsonNode, model: Model, opt = Joptions()): Option[AstNode] =
   let id = json["id"].jsonTo NodeId
   let classId = json["class"].jsonTo ClassId
 

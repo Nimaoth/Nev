@@ -144,6 +144,9 @@ proc loadNormalKeybindings*() {.scriptActionWasmNims("load-normal-keybindings").
     addCommand("editor.model", "<C-y>", "undo")
     addCommand("editor.model", "<C-z>", "redo")
 
+    addCommand("editor.model", "<C-c>", "copy-node")
+    addCommand("editor.model", "<C-v>", "paste-node")
+
     addCommand("editor.model", "<BACKSPACE>", "replace-left")
     addCommand("editor.model", "<DELETE>", "replace-right")
     addCommand("editor.model", "<C-BACKSPACE>", "delete-left")
