@@ -60,7 +60,7 @@ jobs:
         run: nimble buildNimsuggestWSWindows
 
       # create release packages
-      - run: nim package_release.nims
+      - run: nim ./tools/package_release.nims
       - run: ls -la release_windows
       - run: ls -la release_linux
       - run: ls -la release_web
