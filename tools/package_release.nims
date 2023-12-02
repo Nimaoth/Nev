@@ -64,15 +64,15 @@ copySharedFilesTo releaseLinux
 copySharedFilesTo releaseWeb
 
 cpFile2 "ast.exe", releaseWindows
-cpFile2 "absytree-server.exe", releaseWindows
-cpFile2 "nimsuggest-ws.exe", releaseWindows
+cpFile2 "tools/absytree-server.exe", releaseWindows
+cpFile2 "tools/nimsuggest-ws.exe", releaseWindows
 cpFile2 "libgcc_s_seh-1.dll", releaseWindows
 cpFile2 "libstdc++-6.dll", releaseWindows
 cpFile2 "libwinpthread-1.dll", releaseWindows
 
 cpFile2 "ast", releaseLinux
-cpFile2 "absytree-server", releaseLinux
-cpFile2 "nimsuggest-ws", releaseLinux
+cpFile2 "tools/absytree-server", releaseLinux
+cpFile2 "tools/nimsuggest-ws", releaseLinux
 
 cpFile2 "ast.js", releaseWeb
 cpFile2 "web/absytree_browser.html", releaseWeb
