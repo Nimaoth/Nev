@@ -101,6 +101,10 @@ proc clearModelCache*(self: ModelDocumentEditor) =
   editor_model_clearModelCache_void_ModelDocumentEditor_impl(self)
 proc runSelectedFunction*(self: ModelDocumentEditor) =
   editor_model_runSelectedFunction_void_ModelDocumentEditor_impl(self)
+proc copyNode*(self: ModelDocumentEditor) =
+  editor_model_copyNode_void_ModelDocumentEditor_impl(self)
+proc pasteNode*(self: ModelDocumentEditor) =
+  editor_model_pasteNode_void_ModelDocumentEditor_impl(self)
 proc addLanguage*(self: ModelDocumentEditor) =
   editor_model_addLanguage_void_ModelDocumentEditor_impl(self)
 proc addModelToProject*(self: ModelDocumentEditor) =

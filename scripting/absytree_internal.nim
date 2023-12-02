@@ -381,6 +381,12 @@ proc editor_model_clearModelCache_void_ModelDocumentEditor_impl*(
 proc editor_model_runSelectedFunction_void_ModelDocumentEditor_impl*(
     self: ModelDocumentEditor) =
   discard
+proc editor_model_copyNode_void_ModelDocumentEditor_impl*(
+    self: ModelDocumentEditor) =
+  discard
+proc editor_model_pasteNode_void_ModelDocumentEditor_impl*(
+    self: ModelDocumentEditor) =
+  discard
 proc editor_model_addLanguage_void_ModelDocumentEditor_impl*(
     self: ModelDocumentEditor) =
   discard

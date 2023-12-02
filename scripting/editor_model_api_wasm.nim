@@ -678,6 +678,34 @@ proc runSelectedFunction*(self: ModelDocumentEditor) =
       argsJsonString.cstring)
 
 
+proc editor_model_copyNode_void_ModelDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc copyNode*(self: ModelDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when ModelDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_model_copyNode_void_ModelDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_model_pasteNode_void_ModelDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc pasteNode*(self: ModelDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when ModelDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_model_pasteNode_void_ModelDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_model_addLanguage_void_ModelDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
 proc addLanguage*(self: ModelDocumentEditor) =

@@ -74,7 +74,7 @@ cpFile2 "ast", releaseLinux
 cpFile2 "tools/absytree-server", releaseLinux
 cpFile2 "tools/nimsuggest-ws", releaseLinux
 
-cpFile2 "ast.js", releaseWeb
+cpFile2 "build/ast.js", releaseWeb
 cpFile2 "web/absytree_browser.html", releaseWeb
 cpFile2 "web/ast_glue.js", releaseWeb
 cpFile2 "web/scripting_runtime.js", releaseWeb
