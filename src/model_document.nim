@@ -1,4 +1,4 @@
-import std/[strformat, strutils, sugar, tables, options, json, streams, algorithm]
+import std/[strformat, strutils, sugar, tables, options, json, streams, algorithm, sets]
 import fusion/matching, bumpy, rect_utils, vmath, fuzzy
 import util, document, document_editor, text/text_document, events, id, ast_ids, scripting/expose, event, input, custom_async, myjsonutils, custom_unicode, delayed_task
 from scripting_api as api import nil
@@ -2915,6 +2915,67 @@ proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.
 
 proc runSelectedFunction*(self: ModelDocumentEditor) {.expose("editor.model").} =
   asyncCheck runSelectedFunctionAsync(self)
+
+proc copyNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  let (parentCell, _, _) = self.selection.getParentInfo
+
+  let json = parentCell.node.toJson
+  self.app.setRegisterText($json, "")
+
+proc getNodeFromRegister(self: ModelDocumentEditor, register: string): Option[AstNode] =
+  let text = self.app.getRegisterText(register)
+  let json = text.parseJson
+  let node = json.jsonToAstNode(self.document.model)
+  return node
+
+proc pasteNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  let updatedScrollOffset = self.updateScrollOffsetToPrevCell()
+  defer:
+    if not updatedScrollOffset:
+      self.updateScrollOffset()
+
+  defer:
+    self.document.finishTransaction()
+
+  if self.getNodeFromRegister("").getSome(node):
+    var foundExisting = false
+    for child in node.childrenRec:
+      if self.document.model.resolveReference(node.id).isSome:
+        log lvlWarn, fmt"Node {node} already exists in model"
+        foundExisting = true
+        break
+
+    let newNode = if foundExisting:
+      # clone node because the model already contains a node with an id from new node
+      node.cloneAndMapIds(self.document.model)
+    else:
+      node
+
+    let (parent, role, index) = if self.selection.isEmpty:
+      let targetCell = self.cursor.targetCell
+      let (parent, role, index) = targetCell.getSubstitutionTarget
+      if targetCell.node != parent:
+        targetCell.node.removeFromParent()
+      # debugf"empty: targetCell: {targetCell} || {parent} || {role} || {index}"
+      (parent, role, index)
+    else:
+      let (parentCell, _, _) = self.selection.getParentInfo
+      let nodeToRemove = parentCell.node
+      let parent = nodeToRemove.parent
+      # debugf"replace {parentCell} ||| {parent} ||| {nodeToRemove}"
+      # debugf"paste node {newNode}"
+      let role = nodeToRemove.role
+      let index = nodeToRemove.index
+      nodeToRemove.removeFromParent()
+      (parent, role, index)
+
+    parent.insert(role, index, newNode)
+    self.rebuildCells()
+    self.cursor = self.getFirstEditableCellOfNode(newNode).get
+
+  else:
+    log lvlError, fmt"Can't parse node from register"
+    return
 
 type ModelLanguageSelectorItem* = ref object of SelectorItem
   language*: Language

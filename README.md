@@ -267,7 +267,6 @@ Here is an overview of the modules:
 - add type conversions
 - add char literal
 - change rendering of deref/addressOf to postfix
-- add copy/paste
 - add selection history
 - add string escape and/or allow entering \n
 - for loops
