@@ -92,7 +92,7 @@ proc newBaseLanguageWasmCompiler*(ctx: ModelComputationContextBase): BaseLanguag
 
   result.printI32 = result.builder.addImport("env", "print_i32", result.builder.addType([I32], []))
   result.printChar = result.builder.addImport("env", "print_char", result.builder.addType([I32], []))
-  result.printString = result.builder.addImport("env", "print_string", result.builder.addType([I32], []))
+  result.printString = result.builder.addImport("env", "print_string", result.builder.addType([I32, I32], []))
   result.printLine = result.builder.addImport("env", "print_line", result.builder.addType([], []))
   result.intToString = result.builder.addImport("env", "intToString", result.builder.addType([I32], [I32]))
   result.stackBase = result.builder.addGlobal(I32, mut=true, 0, id="__stack_base")
@@ -252,6 +252,8 @@ proc compileToBinary*(self: BaseLanguageWasmCompiler, node: AstNode): seq[uint8]
   self.builder.globals[self.heapBase.int].init = WasmInstr(kind: I32Const, i32Const: heapBase)
 
   debugf"{self.builder}"
+
+  # discard self.builder.validate()
 
   let binary = self.builder.generateBinary()
   return binary

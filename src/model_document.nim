@@ -228,6 +228,7 @@ proc refilterCompletions(self: ModelDocumentEditor)
 proc updateCursor*(self: ModelDocumentEditor, cursor: CellCursor): Option[CellCursor]
 proc isThickCursor*(self: ModelDocumentEditor): bool
 proc getContextWithMode*(self: ModelDocumentEditor, context: string): string
+proc showCompletionWindow*(self: ModelDocumentEditor)
 
 proc toCursor*(map: NodeCellMap, cell: Cell, column: int): CellCursor
 proc toCursor*(map: NodeCellMap, cell: Cell, start: bool): CellCursor
@@ -2660,8 +2661,13 @@ proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool {.expos
       else:
         self.refilterCompletions()
 
-      if not self.showCompletions and self.completionsLen == 1 and (self.getCompletion(0).alwaysApply or self.getCompletion(0).name == cell.currentText):
-        self.applySelectedCompletion()
+      if not self.showCompletions:
+        if self.completionsLen == 1 and (self.getCompletion(0).alwaysApply or self.getCompletion(0).name == cell.currentText):
+          self.applySelectedCompletion()
+        elif self.getCompletion(self.selectedCompletion).name == cell.currentText:
+          self.applySelectedCompletion()
+        else:
+          self.showCompletionWindow()
 
       self.markDirty()
       return true
@@ -2717,6 +2723,15 @@ proc toggleUseDefaultCellBuilder*(self: ModelDocumentEditor) {.expose("editor.mo
   self.markDirty()
 
 proc showCompletions*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  if self.showCompletions:
+    var newCursor = self.selection.last
+    newCursor.index = 0
+    self.cursor = newCursor
+  self.updateCompletions()
+  self.showCompletions = true
+  self.markDirty()
+
+proc showCompletionWindow*(self: ModelDocumentEditor) {.expose("editor.model").} =
   if self.showCompletions:
     var newCursor = self.selection.last
     newCursor.index = 0
@@ -2848,8 +2863,10 @@ proc printI32(a: int32) =
 proc printChar(a: int32) =
   lineBuffer.add $a.Rune
 
-proc printString(a: cstring) =
-  lineBuffer.add $a
+proc printString(a: cstring, len: int32) =
+  let str = $a
+  assert len <= a.len
+  lineBuffer.add str[0..<len]
 
 proc printLine() =
   log lvlInfo, lineBuffer

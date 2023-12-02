@@ -241,6 +241,8 @@ proc editor_model_toggleUseDefaultCellBuilder_void_ModelDocumentEditor_impl(
     self: ModelDocumentEditor)  {.importc.}
 proc editor_model_showCompletions_void_ModelDocumentEditor_impl(
     self: ModelDocumentEditor)  {.importc.}
+proc editor_model_showCompletionWindow_void_ModelDocumentEditor_impl(
+    self: ModelDocumentEditor)  {.importc.}
 proc editor_model_hideCompletions_void_ModelDocumentEditor_impl(
     self: ModelDocumentEditor)  {.importc.}
 proc editor_model_selectPrevCompletion_void_ModelDocumentEditor_impl(
