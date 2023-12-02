@@ -2661,13 +2661,12 @@ proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool {.expos
       else:
         self.refilterCompletions()
 
-      if not self.showCompletions:
-        if self.completionsLen == 1 and (self.getCompletion(0).alwaysApply or self.getCompletion(0).name == cell.currentText):
-          self.applySelectedCompletion()
-        elif self.getCompletion(self.selectedCompletion).name == cell.currentText:
-          self.applySelectedCompletion()
-        else:
-          self.showCompletionWindow()
+      if self.completionsLen == 1 and (self.getCompletion(0).alwaysApply or self.getCompletion(0).name == cell.currentText):
+        self.applySelectedCompletion()
+      elif self.getCompletion(self.selectedCompletion).name == cell.currentText:
+        self.applySelectedCompletion()
+      elif not self.showCompletions:
+        self.showCompletionWindow()
 
       self.markDirty()
       return true
