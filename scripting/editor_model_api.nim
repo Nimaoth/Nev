@@ -29,6 +29,10 @@ proc toggleBoolCell*(self: ModelDocumentEditor; select: bool = false) =
   editor_model_toggleBoolCell_void_ModelDocumentEditor_bool_impl(self, select)
 proc invertSelection*(self: ModelDocumentEditor) =
   editor_model_invertSelection_void_ModelDocumentEditor_impl(self)
+proc selectPrev*(self: ModelDocumentEditor) =
+  editor_model_selectPrev_void_ModelDocumentEditor_impl(self)
+proc selectNext*(self: ModelDocumentEditor) =
+  editor_model_selectNext_void_ModelDocumentEditor_impl(self)
 proc moveCursorLeft*(self: ModelDocumentEditor; select: bool = false) =
   editor_model_moveCursorLeft_void_ModelDocumentEditor_bool_impl(self, select)
 proc moveCursorRight*(self: ModelDocumentEditor; select: bool = false) =
