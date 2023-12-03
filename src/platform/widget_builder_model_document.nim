@@ -1147,7 +1147,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
                           self.createNodeUI(builder, app, currentNode, updateContext, remainingHeightUp=0, remainingHeightDown=h, value, @[0], 0)
 
             if not self.selection.isEmpty:
-              let cursorColor = textColor.darken(0.2)
+              let cursorColor = textColor.darken(0.3)
               discard drawCursor(self.selection.first, not app.platform.supportsThinCursor, cursorColor, 1)
 
         # echo builder.currentChild.dump(true)

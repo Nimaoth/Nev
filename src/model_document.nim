@@ -1809,6 +1809,10 @@ proc toggleBoolCell*(self: ModelDocumentEditor, select: bool = false) {.expose("
 
   self.markDirty()
 
+proc invertSelection*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  swap(self.selection.first, self.selection.last)
+  self.markDirty()
+
 proc moveCursorLeft*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
   if getTargetCell(self.cursor, false).getSome(cell):
     let newCursor = cell.getCursorLeft(self.nodeCellMap, self.cursor)
@@ -2632,17 +2636,22 @@ proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool {.expos
 
   if not self.selection.isEmpty:
     let (parentCell, _, _) = self.selection.getParentInfo
-    if selectionTransformations.findTransformation(parentCell.node.nodeClass, input).getSome(transformation):
-      self.cursor = self.applyTransformation(parentCell.node, transformation)
-      return true
+    if self.selection.first < self.selection.last:
+      if postfixTransformations.findTransformation(parentCell.node.nodeClass, input).getSome(transformation):
+        self.cursor = self.applyTransformation(parentCell.node, transformation)
+        return true
+    else:
+      if prefixTransformations.findTransformation(parentCell.node.nodeClass, input).getSome(transformation):
+        self.cursor = self.applyTransformation(parentCell.node, transformation)
+        return true
 
   if getTargetCell(self.cursor).getSome(cell):
     if self.selection.isEmpty:
-      if self.cursor.index == cell.len and postfixTransformations.findTransformation(cell.node.nodeClass, input).getSome(transformation):
+      if self.cursor.isAtEndOfLastCellOfNode and postfixTransformations.findTransformation(cell.node.nodeClass, input).getSome(transformation):
         self.cursor = self.applyTransformation(cell.node, transformation)
         return true
 
-      elif self.cursor.index == 0 and prefixTransformations.findTransformation(cell.node.nodeClass, input).getSome(transformation):
+      elif self.cursor.isAtBeginningOfFirstCellOfNode and prefixTransformations.findTransformation(cell.node.nodeClass, input).getSome(transformation):
         self.cursor = self.applyTransformation(cell.node, transformation)
         return true
 
@@ -2663,9 +2672,9 @@ proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool {.expos
 
       if self.completionsLen == 1 and (self.getCompletion(0).alwaysApply or self.getCompletion(0).name == cell.currentText):
         self.applySelectedCompletion()
-      elif self.getCompletion(self.selectedCompletion).name == cell.currentText:
+      elif self.completionsLen > 0 and self.getCompletion(self.selectedCompletion).name == cell.currentText:
         self.applySelectedCompletion()
-      elif not self.showCompletions:
+      elif self.completionsLen > 0 and not self.showCompletions:
         self.showCompletionWindow()
 
       self.markDirty()
