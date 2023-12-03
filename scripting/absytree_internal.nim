@@ -287,6 +287,9 @@ proc editor_model_gotoDefinition_void_ModelDocumentEditor_bool_impl*(
 proc editor_model_toggleBoolCell_void_ModelDocumentEditor_bool_impl*(
     self: ModelDocumentEditor; select: bool = false) =
   discard
+proc editor_model_invertSelection_void_ModelDocumentEditor_impl*(
+    self: ModelDocumentEditor) =
+  discard
 proc editor_model_moveCursorLeft_void_ModelDocumentEditor_bool_impl*(
     self: ModelDocumentEditor; select: bool = false) =
   discard

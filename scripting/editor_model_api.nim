@@ -27,6 +27,8 @@ proc gotoDefinition*(self: ModelDocumentEditor; select: bool = false) =
   editor_model_gotoDefinition_void_ModelDocumentEditor_bool_impl(self, select)
 proc toggleBoolCell*(self: ModelDocumentEditor; select: bool = false) =
   editor_model_toggleBoolCell_void_ModelDocumentEditor_bool_impl(self, select)
+proc invertSelection*(self: ModelDocumentEditor) =
+  editor_model_invertSelection_void_ModelDocumentEditor_impl(self)
 proc moveCursorLeft*(self: ModelDocumentEditor; select: bool = false) =
   editor_model_moveCursorLeft_void_ModelDocumentEditor_bool_impl(self, select)
 proc moveCursorRight*(self: ModelDocumentEditor; select: bool = false) =

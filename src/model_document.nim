@@ -1794,8 +1794,12 @@ proc gotoDefinition*(self: ModelDocumentEditor, select: bool = false) {.expose("
 
     if cell.node.references.len == 1:
       if cell.node.model.resolveReference(cell.node.references[0].node).getSome(target):
-        self.cursor = self.getFirstEditableCellOfNode(target).get
-        self.updateScrollOffset()
+        if target.model == self.document.model:
+          self.cursor = self.getFirstEditableCellOfNode(target).get
+          self.updateScrollOffset()
+        else:
+          # todo: open node in new/existing editor
+          discard
 
   self.markDirty()
 
@@ -2943,7 +2947,6 @@ proc runSelectedFunction*(self: ModelDocumentEditor) {.expose("editor.model").} 
 
 proc copyNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
   let (parentCell, _, _) = self.selection.getParentInfo
-
   let json = parentCell.node.toJson
   self.app.setRegisterText($json, "")
 
@@ -2965,7 +2968,7 @@ proc pasteNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
   if self.getNodeFromRegister("").getSome(node):
     var foundExisting = false
     for child in node.childrenRec:
-      if self.document.model.resolveReference(node.id).isSome:
+      if self.document.project.resolveReference(node.id).isSome:
         log lvlWarn, fmt"Node {node} already exists in model"
         foundExisting = true
         break

@@ -149,6 +149,20 @@ proc toggleBoolCell*(self: ModelDocumentEditor; select: bool = false) =
       argsJsonString.cstring)
 
 
+proc editor_model_invertSelection_void_ModelDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc invertSelection*(self: ModelDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when ModelDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_model_invertSelection_void_ModelDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_model_moveCursorLeft_void_ModelDocumentEditor_bool_wasm(arg: cstring): cstring {.
     importc.}
 proc moveCursorLeft*(self: ModelDocumentEditor; select: bool = false) =
