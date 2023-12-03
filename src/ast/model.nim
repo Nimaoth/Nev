@@ -201,11 +201,48 @@ type
     loaded*: bool = false
     computationContext*: ModelComputationContextBase
 
+proc resolveReference*(self: Model, id: NodeId): Option[AstNode]
+proc resolveReference*(self: Project, id: NodeId): Option[AstNode]
+proc dump*(node: AstNode, model: Model = nil, recurse: bool = false): string
+
+template forEach2*(node: AstNode, it: untyped, body: untyped): untyped =
+  node.forEach proc(n: AstNode) =
+    let it = n
+    body
+
+iterator childrenRec*(node: AstNode): AstNode =
+  var stack: seq[tuple[node: AstNode, listIndex: int, childIndex: int]]
+  stack.add (node, 0, 0)
+
+  while stack.len > 0:
+    let (currentNode, listIndex, childIndex) = stack.pop
+    if listIndex == 0 and childIndex == 0:
+      yield currentNode
+
+    if listIndex == currentNode.childLists.len:
+      continue
+
+    if childIndex == currentNode.childLists[listIndex].nodes.len:
+      stack.add (currentNode, listIndex + 1, 0)
+    else:
+      stack.add (currentNode, listIndex, childIndex + 1)
+      stack.add (currentNode.childLists[listIndex].nodes[childIndex], 0, 0)
+
 proc newProject*(): Project =
   new result
 
 proc addModel*(self: Project, model: Model) =
   # log lvlWarn, fmt"addModel: {model.path}, {model.id}"
+  var foundExistingNodes = false
+  for root in model.rootNodes:
+    for node in root.childrenRec:
+      if self.resolveReference(node.id).getSome(existing):
+        log lvlError, &"addModel({model.path} {model.id}): Node with id {node.id} already exists in model {existing.model.path} ({existing.model.id}).\nExisting node: {existing.dump(recurse=true)}\nNew node: {node.dump(recurse=true)}"
+        foundExistingNodes = true
+
+  if foundExistingNodes:
+    return
+
   assert model.project.isNil
   model.project = self
   self.models[model.id] = model
@@ -260,29 +297,6 @@ proc forEach*(node: AstNode, f: proc(node: AstNode) {.closure.}) =
   for item in node.childLists.mitems:
     for c in item.nodes:
       c.forEach(f)
-
-template forEach2*(node: AstNode, it: untyped, body: untyped): untyped =
-  node.forEach proc(n: AstNode) =
-    let it = n
-    body
-
-iterator childrenRec*(node: AstNode): AstNode =
-  var stack: seq[tuple[node: AstNode, listIndex: int, childIndex: int]]
-  stack.add (node, 0, 0)
-
-  while stack.len > 0:
-    let (currentNode, listIndex, childIndex) = stack.pop
-    if listIndex == 0 and childIndex == 0:
-      yield currentNode
-
-    if listIndex == currentNode.childLists.len:
-      continue
-
-    if childIndex == currentNode.childLists[listIndex].nodes.len:
-      stack.add (currentNode, listIndex + 1, 0)
-    else:
-      stack.add (currentNode, listIndex, childIndex + 1)
-      stack.add (currentNode.childLists[listIndex].nodes[childIndex], 0, 0)
 
 proc verify*(self: Language): bool =
   result = true
@@ -418,6 +432,12 @@ proc resolveReference*(self: Model, id: NodeId): Option[AstNode] =
       if model.nodes.contains(id):
         return model.nodes[id].some
     return AstNode.none
+
+proc resolveReference*(self: Project, id: NodeId): Option[AstNode] =
+  for model in self.models.values:
+    if model.nodes.contains(id):
+      return model.nodes[id].some
+  return AstNode.none
 
 proc newNodeClass*(
       id: ClassId,

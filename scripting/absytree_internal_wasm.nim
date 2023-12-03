@@ -193,6 +193,8 @@ proc editor_model_gotoDefinition_void_ModelDocumentEditor_bool_impl(
     self: ModelDocumentEditor; select: bool = false)  {.importc.}
 proc editor_model_toggleBoolCell_void_ModelDocumentEditor_bool_impl(
     self: ModelDocumentEditor; select: bool = false)  {.importc.}
+proc editor_model_invertSelection_void_ModelDocumentEditor_impl(
+    self: ModelDocumentEditor)  {.importc.}
 proc editor_model_moveCursorLeft_void_ModelDocumentEditor_bool_impl(
     self: ModelDocumentEditor; select: bool = false)  {.importc.}
 proc editor_model_moveCursorRight_void_ModelDocumentEditor_bool_impl(
