@@ -1193,7 +1193,7 @@ proc getCellInLine*(self: ModelDocumentEditor, cell: Cell, direction: int, targe
     return
 
   let cellUINode = self.cellWidgetContext.cellToWidget[cell.id]
-  return getCellInLine(self.app.platform.builder, self.cellWidgetContext.scrolledNode, vec2(targetX, cellUINode.ly), direction, self.isThickCursor)
+  return getCellInLine(self.app.platform.builder, self.cellWidgetContext.scrolledNode, vec2(targetX, cellUINode.ly), direction, false)
 
 proc getPreviousCellInLine*(self: ModelDocumentEditor, cell: Cell): Cell =
   let uiRoot = self.scrolledNode
