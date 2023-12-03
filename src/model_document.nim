@@ -39,6 +39,12 @@ func `-`*(d: Direction): Direction =
   of Left: return Right
   of Right: return Left
 
+proc toCellCursorState(cursor: CellCursor): CellCursorState =
+  return CellCursorState(index: cursor.index, path: cursor.path, node: cursor.node.id)
+
+proc toCellSelectionState(selection: CellSelection): (CellCursorState, CellCursorState) =
+  return (selection.first.toCellCursorState, selection.last.toCellCursorState)
+
 proc toSelection*(cursor: CellCursor): CellSelection = (cursor, cursor)
 
 proc isEmpty*(selection: CellSelection): bool = selection.first == selection.last
@@ -178,6 +184,7 @@ type
     mSelection: CellSelection
     lastTargetCell: Cell
     mTargetCursor: Option[CellCursorState]
+    selectionHistory: seq[(CellCursorState, CellCursorState)]
 
     cursorVisible*: bool = true
     blinkCursor: bool = false
@@ -412,6 +419,11 @@ proc `selection=`*(self: ModelDocumentEditor, selection: CellSelection) =
 
   # debugf"selection = {selection.last}"
 
+  if self.mSelection == selection:
+    return
+
+  self.selectionHistory.add (self.mSelection.first.toCellCursorState, self.mSelection.last.toCellCursorState)
+
   if self.lastTargetCell != selection.last.targetCell:
     self.mSelection = selection
     self.invalidateCompletions()
@@ -424,6 +436,12 @@ proc `selection=`*(self: ModelDocumentEditor, selection: CellSelection) =
   self.cursorVisible = true
   if self.blinkCursorTask.isNotNil and self.active:
     self.blinkCursorTask.reschedule()
+
+proc `selection=`*(self: ModelDocumentEditor, selection: (CellCursorState, CellCursorState)) =
+  if self.document.model.resolveReference(selection[0].node).getSome(first) and self.document.model.resolveReference(selection[1].node).getSome(last):
+    self.selection = (
+      CellCursor(map: self.nodeCellMap, index: selection[0].index, path: selection[0].path, node: first),
+      CellCursor(map: self.nodeCellMap, index: selection[1].index, path: selection[1].path, node: last))
 
 proc updateSelection*(self: ModelDocumentEditor, cursor: CellCursor, extend: bool) =
   if extend:
@@ -1815,6 +1833,31 @@ proc toggleBoolCell*(self: ModelDocumentEditor, select: bool = false) {.expose("
 
 proc invertSelection*(self: ModelDocumentEditor) {.expose("editor.model").} =
   swap(self.selection.first, self.selection.last)
+  self.markDirty()
+
+proc selectPrev*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  if self.selectionHistory.len == 0:
+    return
+
+  let oldSelection = self.selection
+  self.selection = self.selectionHistory.pop()
+  discard self.selectionHistory.pop() # remove latest selection
+  self.selectionHistory.insert(oldSelection.toCellSelectionState, 0)
+  self.updateScrollOffset(true)
+
+  self.markDirty()
+
+proc selectNext*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  if self.selectionHistory.len == 0:
+    return
+
+  let oldSelection = self.selection
+  self.selection = self.selectionHistory[0]
+  self.selectionHistory.delete 0
+  discard self.selectionHistory.pop() # remove latest selection
+  self.selectionHistory.add oldSelection.toCellSelectionState
+  self.updateScrollOffset(true)
+
   self.markDirty()
 
 proc moveCursorLeft*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
