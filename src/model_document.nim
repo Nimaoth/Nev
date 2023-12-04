@@ -705,6 +705,13 @@ proc refilterCompletions(self: ModelDocumentEditor) =
 
   self.hasCompletions = true
 
+  self.filteredCompletions.sort(proc(a, b: ModelCompletion): int =
+    if a.name.len < b.name.len:
+      return -1
+    if a.name.len > b.name.len:
+      return 1
+    return cmp(a.name, b.name))
+
   if self.filteredCompletions.len > 0:
     self.selectedCompletion = self.selectedCompletion.clamp(0, self.filteredCompletions.len - 1)
   else:
