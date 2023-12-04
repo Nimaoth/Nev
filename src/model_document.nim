@@ -311,7 +311,7 @@ method save*(self: ModelDocument, filename: string = "", app: bool = false) =
     raise newException(IOError, "Missing filename")
 
   log lvlInfo, fmt"Saving model source file '{self.filename}'"
-  let serialized = self.model.toJson.pretty
+  let serialized = $self.model.toJson
 
   if self.workspace.getSome(ws):
     asyncCheck ws.saveFile(self.filename, serialized)
@@ -2687,6 +2687,10 @@ proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool {.expos
       "[": NodeTransformation(kind: Wrap, wrapClass: IdArrayAccess, wrapRole: IdArrayAccessIndex, wrapCursorTargetRole: IdArrayAccessValue, selectPrevPlaceholder: true, wrapChildIndex: 0),
     }.toTable
   }
+
+  # var typePostfixTransformations = initTable[(ClassId, string), NodeTransformation]()
+  # typePostfixTransformations[(IdString, ".ptr")] = NodeTransformation(kind: Wrap, wrapClass: IdStringGetPointer, wrapRole: IdStringGetPointerValue, wrapCursorTargetRole: IdStringGetPointerValue, selectNextPlaceholder: true, wrapChildIndex: 0)
+  # typePostfixTransformations[(IdString, ".len")] = NodeTransformation(kind: Wrap, wrapClass: IdStringGetLength, wrapRole: IdStringGetLengthValue, wrapCursorTargetRole: IdStringGetLengthValue, selectNextPlaceholder: true, wrapChildIndex: 0)
 
   if not self.selection.isEmpty:
     let (parentCell, _, _) = self.selection.getParentInfo
