@@ -42,6 +42,8 @@ type
     typeAttributeComputers*: Table[ClassId, proc(typ: AstNode): TypeAttributes]
     functionInputOutputComputer*: Table[ClassId, proc(self: BaseLanguageWasmCompiler, node: AstNode): tuple[inputs: seq[WasmValueType], outputs: seq[WasmValueType]]]
 
+    loopBranchIndices*: Table[NodeId, tuple[breakIndex: int, continueIndex: int]]
+
     exprStack*: seq[WasmExpr]
     currentExpr*: WasmExpr
     currentLocals: seq[tuple[typ: WasmValueType, id: string]]

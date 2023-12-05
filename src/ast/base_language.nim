@@ -143,9 +143,18 @@ let ifClass* = newNodeClass(IdIfExpression, "IfExpression", alias="if", base=exp
     NodeChildDescription(id: IdIfExpressionElseCase, role: "elseCase", class: expressionClass.id, count: ChildCount.ZeroOrOne),
   ])
 
-let whileClass* = newNodeClass(IdWhileExpression, "WhileExpression", alias="while", base=expressionClass, children=[
+let loopInterface* = newNodeClass(IdILoop, "LoopInterface", isInterface=true)
+
+let whileClass* = newNodeClass(IdWhileExpression, "WhileExpression", alias="while", base=expressionClass, interfaces=[loopInterface], children=[
     NodeChildDescription(id: IdWhileExpressionCondition, role: "condition", class: expressionClass.id, count: ChildCount.One),
     NodeChildDescription(id: IdWhileExpressionBody, role: "body", class: expressionClass.id, count: ChildCount.One),
+  ])
+
+let forLoopClass* = newNodeClass(IdForLoop, "ForLoop", alias="for", base=expressionClass, interfaces=[loopInterface], children=[
+    NodeChildDescription(id: IdForLoopVariable, role: "variable", class: letDeclClass.id, count: ChildCount.One),
+    NodeChildDescription(id: IdForLoopStart, role: "start", class: expressionClass.id, count: ChildCount.One),
+    NodeChildDescription(id: IdForLoopEnd, role: "end", class: expressionClass.id, count: ChildCount.ZeroOrOne),
+    NodeChildDescription(id: IdForLoopBody, role: "body", class: expressionClass.id, count: ChildCount.One),
   ])
 
 let breakClass* = newNodeClass(IdBreakExpression, "BreakExpression", alias="break", base=expressionClass)
@@ -497,7 +506,7 @@ builder.addBuilderFor thenCaseClass.id, idNone(), proc(builder: CellBuilder, nod
     else:
       cell.add ConstantCell(node: node, text: "elif", themeForegroundColors: @["keyword"], disableEditing: true, flags: &{OnNewLine})
     cell.add builder.buildChildren(map, node, IdThenCaseCondition, &{LayoutHorizontal})
-    cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+    cell.add ConstantCell(node: node, text: ":", flags: &{NoSpaceLeft}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
     cell.add builder.buildChildren(map, node, IdThenCaseBody, &{LayoutHorizontal})
 
   return cell
@@ -518,7 +527,7 @@ builder.addBuilderFor ifClass.id, idNone(), proc(builder: CellBuilder, node: Ast
       for i, c in node.children(IdIfExpressionElseCase):
         if i == 0:
           cell.add ConstantCell(node: node, text: "else", flags: &{OnNewLine}, themeForegroundColors: @["keyword"], disableEditing: true)
-          cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+          cell.add ConstantCell(node: node, text: ":", flags: &{NoSpaceLeft}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
         cell.add builder.buildCell(map, c)
 
   return cell
@@ -528,8 +537,26 @@ builder.addBuilderFor whileClass.id, idNone(), proc(builder: CellBuilder, node: 
   cell.fillChildren = proc(map: NodeCellMap) =
     cell.add ConstantCell(node: node, text: "while", themeForegroundColors: @["keyword"], disableEditing: true)
     cell.add builder.buildChildren(map, node, IdWhileExpressionCondition, &{LayoutHorizontal})
-    cell.add ConstantCell(node: node, text: ":", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+    cell.add ConstantCell(node: node, text: ":", flags: &{NoSpaceLeft}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
     cell.add builder.buildChildren(map, node, IdWhileExpressionBody, &{LayoutHorizontal})
+
+  return cell
+
+builder.addBuilderFor forLoopClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
+  cell.fillChildren = proc(map: NodeCellMap) =
+    proc varDeclNameOnlyBuilder(builder: CellBuilder, node: AstNode): Cell = PropertyCell(node: node, property: IdINamedName)
+
+    cell.add ConstantCell(node: node, text: "for", themeForegroundColors: @["keyword"], disableEditing: true)
+    cell.add builder.buildChildren(map, node, IdForLoopVariable, &{LayoutHorizontal}, builderFunc=varDeclNameOnlyBuilder)
+    cell.add ConstantCell(node: node, text: "in", themeForegroundColors: @["keyword"], disableEditing: true)
+    cell.add builder.buildChildren(map, node, IdForLoopStart, &{LayoutHorizontal})
+    cell.add ConstantCell(node: node, text: "..<", flags: &{NoSpaceLeft, NoSpaceRight}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+    cell.add builder.buildChildren(map, node, IdForLoopEnd, &{LayoutHorizontal},
+      placeholderFunc = proc(builder: CellBuilder, node: AstNode, role: RoleId, flags: CellFlags = 0.CellFlags): Cell =
+        return PlaceholderCell(id: newId().CellId, node: node, role: role, flags: flags, shadowText: "∞"))
+    cell.add ConstantCell(node: node, text: ":", flags: &{NoSpaceLeft}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+    cell.add builder.buildChildren(map, node, IdForLoopBody, &{LayoutHorizontal})
 
   return cell
 
@@ -751,6 +778,9 @@ valueComputers[genericTypeClass.id] = proc(ctx: ModelComputationContextBase, nod
 
 typeComputers[letDeclClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for let decl {node}"
+  if node.role == IdForLoopVariable:
+    return intTypeInstance
+
   if node.firstChild(IdLetDeclType).getSome(typeNode):
     return ctx.getValue(typeNode)
   if node.firstChild(IdLetDeclValue).getSome(valueNode):
@@ -759,6 +789,9 @@ typeComputers[letDeclClass.id] = proc(ctx: ModelComputationContextBase, node: As
 
 typeComputers[varDeclClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for var decl {node}"
+  if node.role == IdForLoopVariable:
+    return intTypeInstance
+
   if node.firstChild(IdVarDeclType).getSome(typeNode):
     return ctx.getValue(typeNode)
   if node.firstChild(IdVarDeclValue).getSome(valueNode):
@@ -796,6 +829,10 @@ valueComputers[parameterDeclClass.id] = proc(ctx: ModelComputationContextBase, n
 # control flow
 typeComputers[whileClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for while loop {node}"
+  return voidTypeInstance
+
+typeComputers[forLoopClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  # debugf"compute type for for loop {node}"
   return voidTypeInstance
 
 typeComputers[thenCaseClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
@@ -1533,6 +1570,13 @@ proc computeDefaultScope(ctx: ModelComputationContextBase, node: AstNode): seq[A
         ctx.dependOn(c)
         nodes.add c
 
+    if current.class == IdForLoop:
+      for _, c in current.children(IdForLoopVariable):
+        if c == prev:
+          break
+        ctx.dependOn(c)
+        nodes.add c
+
     if current.class == IdNodeList and current.parent.isNil:
       for _, c in current.children(IdNodeListChildren):
         ctx.dependOn(c)
@@ -1570,7 +1614,7 @@ let baseLanguage* = newLanguage(IdBaseLanguage, @[
   metaTypeClass, stringTypeClass, intTypeClass, charTypeClass, voidTypeClass, functionTypeClass, structTypeClass, pointerTypeClass,
 
   expressionClass, binaryExpressionClass, unaryExpressionClass, emptyLineClass,
-  numberLiteralClass, stringLiteralClass, boolLiteralClass, nodeReferenceClass, emptyClass, genericTypeClass, constDeclClass, letDeclClass, varDeclClass, nodeListClass, blockClass, callClass, thenCaseClass, ifClass, whileClass,
+  numberLiteralClass, stringLiteralClass, boolLiteralClass, nodeReferenceClass, emptyClass, genericTypeClass, constDeclClass, letDeclClass, varDeclClass, nodeListClass, blockClass, callClass, thenCaseClass, ifClass, whileClass, forLoopClass,
   parameterDeclClass, functionDefinitionClass, assignmentClass,
   breakClass, continueClass, returnClass,
   addExpressionClass, subExpressionClass, mulExpressionClass, divExpressionClass, modExpressionClass,
