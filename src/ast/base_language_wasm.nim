@@ -163,6 +163,8 @@ proc genNodeIfExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: De
 proc genNodeWhileExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   let typ = WasmValueType.none
 
+  self.loopBranchIndices[node.id] = (breakIndex: 0, continueIndex: 1)
+
   # outer block for break
   self.genBlock WasmBlockType(kind: ValType, typ: typ):
     self.labelIndices[node.id] = self.exprStack.high
@@ -178,6 +180,62 @@ proc genNodeWhileExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest:
       self.instr(BrIf, brLabelIdx: 1.WasmLabelIdx)
 
       self.genNodeChildren(node, IdWhileExpressionBody, Destination(kind: Discard))
+
+      # continue loop
+      self.instr(Br, brLabelIdx: 0.WasmLabelIdx)
+
+proc genNodeForLoop(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  let typ = WasmValueType.none
+
+  let loopVariableNode = node.firstChild(IdForLoopVariable).getOr:
+    log lvlError, fmt"No loop variable: {node}"
+    return
+
+  let loopStartNode = node.firstChild(IdForLoopStart).getOr:
+    log lvlError, fmt"No loop start: {node}"
+    return
+
+  let loopEndNode = node.firstChild(IdForLoopEnd)
+
+  let offset = self.createStackLocal(loopVariableNode.id, intTypeInstance)
+  let loopEndLocalIndex = loopEndNode.mapIt(self.createLocal(it.id, intTypeInstance, "loop_end"))
+
+  self.loopBranchIndices[node.id] = (breakIndex: 0, continueIndex: 2)
+
+  self.instr(LocalGet, localIdx: self.currentBasePointer)
+  if offset > 0:
+    self.instr(I32Const, i32Const: offset.int32)
+    self.instr(I32Add)
+  self.genNode(loopStartNode, Destination(kind: Memory, offset: 0, align: 0))
+
+  if loopEndLocalIndex.getSome(localIndex):
+    self.genNode(loopEndNode.get, Destination(kind: Stack))
+    self.instr(LocalSet, localIdx: localIndex)
+
+  # outer block for break
+  self.genBlock WasmBlockType(kind: ValType, typ: typ):
+    self.labelIndices[node.id] = self.exprStack.high
+
+    # generate body in loop block
+    self.genLoop WasmBlockType(kind: ValType, typ: typ):
+      # condition if we have an end
+      if loopEndLocalIndex.getSome(localIndex):
+        self.instr(LocalGet, localIdx: self.currentBasePointer)
+        self.instr(I32Load, memArg: WasmMemArg(offset: offset.uint32, align: 0))
+        self.instr(LocalGet, localIdx: localIndex)
+        self.instr(I32GeS)
+        self.instr(BrIf, brLabelIdx: 1.WasmLabelIdx)
+
+      self.genBlock WasmBlockType(kind: ValType, typ: typ):
+        self.genNodeChildren(node, IdForLoopBody, Destination(kind: Discard))
+
+      # increment counter
+      self.instr(LocalGet, localIdx: self.currentBasePointer)
+      self.instr(LocalGet, localIdx: self.currentBasePointer)
+      self.instr(I32Load, memArg: WasmMemArg(offset: offset.uint32, align: 0))
+      self.instr(I32Const, i32Const: 1)
+      self.instr(I32Add)
+      self.instr(I32Store, memArg: WasmMemArg(offset: offset.uint32, align: 0))
 
       # continue loop
       self.instr(Br, brLabelIdx: 0.WasmLabelIdx)
@@ -224,25 +282,27 @@ proc genNodeVarDecl(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destina
 
 proc genNodeBreakExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   var parent = node.parent
-  while parent.isNotNil and parent.class != IdWhileExpression:
+  while parent.isNotNil and not parent.nodeClass.isSubclassOf(IdILoop):
     parent = parent.parent
 
   if parent.isNil:
     log lvlError, fmt"Break outside of loop"
     return
 
-  self.genBranchLabel(parent, 0)
+  let branchIndex = self.loopBranchIndices[parent.id].breakIndex
+  self.genBranchLabel(parent, branchIndex)
 
 proc genNodeContinueExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   var parent = node.parent
-  while parent.isNotNil and parent.class != IdWhileExpression:
+  while parent.isNotNil and not parent.nodeClass.isSubclassOf(IdILoop):
     parent = parent.parent
 
   if parent.isNil:
     log lvlError, fmt"Break outside of loop"
     return
 
-  self.genBranchLabel(parent, 1)
+  let branchIndex = self.loopBranchIndices[parent.id].continueIndex
+  self.genBranchLabel(parent, branchIndex)
 
 proc genNodeReturnExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   discard
@@ -702,6 +762,7 @@ proc addBaseLanguage*(self: BaseLanguageWasmCompiler) =
   self.generators[IdStringLiteral] = genNodeStringLiteral
   self.generators[IdIfExpression] = genNodeIfExpression
   self.generators[IdWhileExpression] = genNodeWhileExpression
+  self.generators[IdForLoop] = genNodeForLoop
   self.generators[IdConstDecl] = genNodeConstDecl
   self.generators[IdLetDecl] = genNodeLetDecl
   self.generators[IdVarDecl] = genNodeVarDecl

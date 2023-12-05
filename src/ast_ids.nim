@@ -66,9 +66,17 @@ let IdParameterDeclValue* = "62e5339d564d29f772934532".parseId.RoleId
 let IdParameterDeclType* = "62e5339d564d29f772934533".parseId.RoleId
 let IdParameterDecl* = "62e5339d564d29f772934535".parseId.ClassId
 
+let IdILoop* = "654fbb281446e19b3822525a".parseId.ClassId
+
 let IdWhileExpressionBody* = "62e5339d564d29f772934536".parseId.RoleId
 let IdWhileExpressionCondition* = "62e5339d564d29f772934537".parseId.RoleId
 let IdWhileExpression* = "62e5339d564d29f772934538".parseId.ClassId
+
+let IdForLoop* = "654fbb281446e19b38225256".parseId.ClassId
+let IdForLoopVariable* = "654fbb281446e19b3822525b".parseId.RoleId
+let IdForLoopStart* = "654fbb281446e19b38225258".parseId.RoleId
+let IdForLoopEnd* = "654fbb281446e19b38225259".parseId.RoleId
+let IdForLoopBody* = "654fbb281446e19b38225257".parseId.RoleId
 
 let IdIfExpressionElseCase* = "62e5339d564d29f772934539".parseId.RoleId
 let IdIfExpressionThenCase* = "62e5339d564d29f77293453a".parseId.RoleId
@@ -217,12 +225,6 @@ let IdIRoleDescriptor* = "654fbb281446e19b3822524c".parseId.ClassId
 
 # new ids
 
-let Id654fbb281446e19b38225256* = "654fbb281446e19b38225256".parseId
-let Id654fbb281446e19b38225257* = "654fbb281446e19b38225257".parseId
-let Id654fbb281446e19b38225258* = "654fbb281446e19b38225258".parseId
-let Id654fbb281446e19b38225259* = "654fbb281446e19b38225259".parseId
-let Id654fbb281446e19b3822525a* = "654fbb281446e19b3822525a".parseId
-let Id654fbb281446e19b3822525b* = "654fbb281446e19b3822525b".parseId
 let Id654fbb281446e19b3822525c* = "654fbb281446e19b3822525c".parseId
 let Id654fbb281446e19b3822525d* = "654fbb281446e19b3822525d".parseId
 let Id654fbb281446e19b3822525e* = "654fbb281446e19b3822525e".parseId
