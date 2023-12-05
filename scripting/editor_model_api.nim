@@ -135,3 +135,5 @@ proc saveProject*(self: ModelDocumentEditor) =
   editor_model_saveProject_void_ModelDocumentEditor_impl(self)
 proc loadBaseLanguageModel*(self: ModelDocumentEditor) =
   editor_model_loadBaseLanguageModel_void_ModelDocumentEditor_impl(self)
+proc findDeclaration*(self: ModelDocumentEditor; global: bool) =
+  editor_model_findDeclaration_void_ModelDocumentEditor_bool_impl(self, global)

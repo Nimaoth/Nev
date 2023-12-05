@@ -405,6 +405,14 @@ iterator rchildren*(node: UINode): UINode =
     yield current
     current = prev
 
+proc isDescendant*(node: UINode, ancestor: UINode): bool =
+  var curr = node
+  while curr.isNotNil:
+    if curr.parent == ancestor:
+      return true
+    curr = curr.parent
+  return false
+
 proc transformPos*(vec: Vec2, src: UINode, dst: UINode): Vec2 =
   result = vec
   var curr = src

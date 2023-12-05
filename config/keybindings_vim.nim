@@ -272,6 +272,8 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     addCommand("editor.model", "w", "move-cursor-right-cell")
     addCommand("editor.model", "u", "undo")
     addCommand("editor.model", "U", "redo")
+    addModelCommand "", "}", "goto-next-node-of-class", "EmptyLine"
+    addModelCommand "", "{", "goto-prev-node-of-class", "EmptyLine"
 
     addModelCommandBlock "", "<C-e>":
       editor.setMode("")

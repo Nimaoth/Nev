@@ -426,6 +426,9 @@ proc editor_model_saveProject_void_ModelDocumentEditor_impl*(
 proc editor_model_loadBaseLanguageModel_void_ModelDocumentEditor_impl*(
     self: ModelDocumentEditor) =
   discard
+proc editor_model_findDeclaration_void_ModelDocumentEditor_bool_impl*(
+    self: ModelDocumentEditor; global: bool) =
+  discard
 proc editor_getBackend_Backend_App_impl*(): Backend =
   discard
 proc editor_toggleShowDrawnNodes_void_App_impl*() =
