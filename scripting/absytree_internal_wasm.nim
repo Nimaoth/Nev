@@ -285,6 +285,8 @@ proc editor_model_saveProject_void_ModelDocumentEditor_impl(
     self: ModelDocumentEditor)  {.importc.}
 proc editor_model_loadBaseLanguageModel_void_ModelDocumentEditor_impl(
     self: ModelDocumentEditor)  {.importc.}
+proc editor_model_findDeclaration_void_ModelDocumentEditor_bool_impl(
+    self: ModelDocumentEditor; global: bool)  {.importc.}
 proc editor_getBackend_Backend_App_impl(): Backend  {.importc.}
 proc editor_toggleShowDrawnNodes_void_App_impl()  {.importc.}
 proc editor_saveAppState_void_App_impl()  {.importc.}

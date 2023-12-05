@@ -909,3 +909,22 @@ proc loadBaseLanguageModel*(self: ModelDocumentEditor) =
   let res {.used.} = editor_model_loadBaseLanguageModel_void_ModelDocumentEditor_wasm(
       argsJsonString.cstring)
 
+
+proc editor_model_findDeclaration_void_ModelDocumentEditor_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc findDeclaration*(self: ModelDocumentEditor; global: bool) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when ModelDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      global
+    else:
+      global.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_model_findDeclaration_void_ModelDocumentEditor_bool_wasm(
+      argsJsonString.cstring)
+

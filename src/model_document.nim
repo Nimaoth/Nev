@@ -323,6 +323,12 @@ method save*(self: ModelDocument, filename: string = "", app: bool = false) =
 template cursor*(self: ModelDocumentEditor): CellCursor = self.mSelection.last
 template selection*(self: ModelDocumentEditor): CellSelection = self.mSelection
 
+proc requestEditorForModel(self: ModelDocumentEditor, model: Model): Option[ModelDocumentEditor] =
+  let editor: Option[DocumentEditor] = self.app.openWorkspaceFile(model.path, self.document.workspace.get)
+  if editor.getSome(editor) and editor of ModelDocumentEditor:
+    return editor.ModelDocumentEditor.some
+  return ModelDocumentEditor.none
+
 proc startBlinkCursorTask(self: ModelDocumentEditor) =
   if not self.blinkCursor:
     return
@@ -340,7 +346,7 @@ proc startBlinkCursorTask(self: ModelDocumentEditor) =
     self.blinkCursorTask.reschedule()
 
 proc updateScrollOffset*(self: ModelDocumentEditor, scrollToCursor: bool = true) =
-  if self.cellWidgetContext.isNil:
+  if self.cellWidgetContext.isNil or self.scrolledNode.parent.isNil:
     return
 
   let newCell = self.selection.last.targetCell
@@ -349,15 +355,19 @@ proc updateScrollOffset*(self: ModelDocumentEditor, scrollToCursor: bool = true)
 
   if newCell.isNotNil and self.cellWidgetContext.cellToWidget.contains(newCell.id):
     let newUINode = self.cellWidgetContext.cellToWidget[newCell.id]
-    let newY = newUINode.transformBounds(self.scrolledNode.parent).y
+    if newUINode.isDescendant(self.scrolledNode.parent):
+      let newY = newUINode.transformBounds(self.scrolledNode.parent).y
 
-    let buffer = 5.0
-    if newY < buffer * self.app.platform.builder.textHeight:
-      self.targetCellPath = newCell.rootPath.path
-      self.scrollOffset = buffer * self.app.platform.builder.textHeight
-    elif newY > self.scrolledNode.parent.h - buffer * self.app.platform.builder.textHeight:
-      self.targetCellPath = newCell.rootPath.path
-      self.scrollOffset = self.scrolledNode.parent.h - buffer * self.app.platform.builder.textHeight
+      let buffer = 5.0
+      if newY < buffer * self.app.platform.builder.textHeight:
+        self.targetCellPath = newCell.rootPath.path
+        self.scrollOffset = buffer * self.app.platform.builder.textHeight
+      elif newY > self.scrolledNode.parent.h - buffer * self.app.platform.builder.textHeight:
+        self.targetCellPath = newCell.rootPath.path
+        self.scrollOffset = self.scrolledNode.parent.h - buffer * self.app.platform.builder.textHeight
+    else:
+      self.targetCellPath = self.selection.last.targetCell.rootPath.path
+      self.scrollOffset = self.scrolledNode.parent.h / 2
 
   elif scrollToCursor:
     # discard
@@ -1823,8 +1833,11 @@ proc gotoDefinition*(self: ModelDocumentEditor, select: bool = false) {.expose("
           self.cursor = self.getFirstEditableCellOfNode(target).get
           self.updateScrollOffset()
         else:
-          # todo: open node in new/existing editor
-          discard
+          if self.requestEditorForModel(target.model).getSome(editor):
+            editor.cursor = editor.getFirstEditableCellOfNode(target).get
+            editor.updateScrollOffset(true)
+            editor.markDirty()
+            self.app.tryActivateEditor(editor)
 
   self.markDirty()
 
@@ -3223,9 +3236,16 @@ proc importModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
 type ModelNodeClassSelectorItem* = ref object of NamedSelectorItem
   class*: NodeClass
 
+type AstNodeSelectorItem* = ref object of NamedSelectorItem
+  node*: AstNode
+
 method changed*(self: ModelNodeClassSelectorItem, other: SelectorItem): bool =
   let other = other.ModelNodeClassSelectorItem
   return self.class != other.class
+
+method changed*(self: AstNodeSelectorItem, other: SelectorItem): bool =
+  let other = other.AstNodeSelectorItem
+  return self.node != other.node
 
 proc compileLanguage*(self: ModelDocumentEditor) {.expose("editor.model").} =
   if not self.document.model.hasLanguage(IdLangLanguage):
@@ -3305,6 +3325,72 @@ proc loadBaseLanguageModel*(self: ModelDocumentEditor) {.expose("editor.model").
     log lvlError, getCurrentException().getStackTrace()
 
   self.document.onModelChanged.invoke (self.document)
+
+proc findDeclaration*(self: ModelDocumentEditor, global: bool) {.expose("editor.model").} =
+  var popup = self.app.createSelectorPopup().SelectorPopup
+
+  popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
+    var models = newSeq[Model]()
+    if global:
+      for model in self.document.project.models.values:
+        models.add model
+    else:
+      models.add self.document.model
+
+    for model in models:
+      for rootNode in model.rootNodes:
+        debugf"collect children of root {rootNode}"
+        for children in rootNode.childLists.mitems:
+          for child in children.nodes:
+            let class = child.nodeClass
+            if class.isNotNil and class.isSubclassOf(IdINamed):
+              let name = child.property(IdINamedName).get.stringValue
+              let score = matchPath(name, text)
+              result.add AstNodeSelectorItem(name: name, score: score, node: child)
+
+  popup.handleItemSelected = proc(item: SelectorItem) =
+    log lvlInfo, fmt"Select node {item.AstNodeSelectorItem.name}"
+    let node = item.AstNodeSelectorItem.node
+
+    if node.model.isNil:
+      log lvlError, fmt"Node is no longer part of a model"
+      return
+
+    if node.model == self.document.model and self.getFirstEditableCellOfNode(node).getSome(cursor):
+      self.cursor = cursor
+      self.updateScrollOffset(true)
+      self.markDirty()
+    elif node.model != self.document.model:
+      if self.requestEditorForModel(node.model).getSome(editor):
+        editor.cursor = editor.getFirstEditableCellOfNode(node).get
+        editor.updateScrollOffset(true)
+        editor.markDirty()
+        self.app.tryActivateEditor(editor)
+
+  popup.handleItemConfirmed = proc(item: SelectorItem) =
+    log lvlInfo, fmt"Select node {item.AstNodeSelectorItem.name}"
+    let node = item.AstNodeSelectorItem.node
+
+    if node.model.isNil:
+      log lvlError, fmt"Node is no longer part of a model"
+      return
+
+    if node.model == self.document.model and self.getFirstEditableCellOfNode(node).getSome(cursor):
+      self.cursor = cursor
+      self.updateScrollOffset(true)
+      self.markDirty()
+    elif node.model != self.document.model:
+      if self.requestEditorForModel(node.model).getSome(editor):
+        editor.cursor = editor.getFirstEditableCellOfNode(node).get
+        editor.updateScrollOffset(true)
+        editor.markDirty()
+        self.app.tryActivateEditor(editor)
+
+  popup.updateCompletions()
+  popup.sortFunction = proc(a, b: SelectorItem): int = cmp(a.score, b.score)
+  popup.enableAutoSort()
+
+  self.app.pushPopup popup
 
 genDispatcher("editor.model")
 addActiveDispatchTable "editor.model", genDispatchTable("editor.model")

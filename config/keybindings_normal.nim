@@ -152,6 +152,9 @@ proc loadNormalKeybindings*() {.scriptActionWasmNims("load-normal-keybindings").
     addModelCommand "", "<C-m>", "select-next"
     addModelCommand "", "<C-t>", "select-next"
 
+    addModelCommand "", "<C-g>g", "find-declaration", false
+    addModelCommand "", "<C-g>G", "find-declaration", true
+
     addModelCommand "", "<*C-g>c", "goto-next-node-of-class", "ConstDecl"
     addModelCommand "", "<*C-g>C", "goto-prev-node-of-class", "ConstDecl"
     addModelCommand "", "<*C-g>l", "goto-next-node-of-class", "LetDecl"
