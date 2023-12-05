@@ -25,6 +25,14 @@ proc isThickCursor*(self: ModelDocumentEditor): bool =
   editor_model_isThickCursor_bool_ModelDocumentEditor_impl(self)
 proc gotoDefinition*(self: ModelDocumentEditor; select: bool = false) =
   editor_model_gotoDefinition_void_ModelDocumentEditor_bool_impl(self, select)
+proc gotoPrevNodeOfClass*(self: ModelDocumentEditor; className: string;
+                          select: bool = false) =
+  editor_model_gotoPrevNodeOfClass_void_ModelDocumentEditor_string_bool_impl(
+      self, className, select)
+proc gotoNextNodeOfClass*(self: ModelDocumentEditor; className: string;
+                          select: bool = false) =
+  editor_model_gotoNextNodeOfClass_void_ModelDocumentEditor_string_bool_impl(
+      self, className, select)
 proc toggleBoolCell*(self: ModelDocumentEditor; select: bool = false) =
   editor_model_toggleBoolCell_void_ModelDocumentEditor_bool_impl(self, select)
 proc invertSelection*(self: ModelDocumentEditor) =

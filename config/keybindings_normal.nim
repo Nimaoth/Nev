@@ -152,6 +152,23 @@ proc loadNormalKeybindings*() {.scriptActionWasmNims("load-normal-keybindings").
     addModelCommand "", "<C-m>", "select-next"
     addModelCommand "", "<C-t>", "select-next"
 
+    addModelCommand "", "<*C-g>c", "goto-next-node-of-class", "ConstDecl"
+    addModelCommand "", "<*C-g>C", "goto-prev-node-of-class", "ConstDecl"
+    addModelCommand "", "<*C-g>l", "goto-next-node-of-class", "LetDecl"
+    addModelCommand "", "<*C-g>L", "goto-prev-node-of-class", "LetDecl"
+    addModelCommand "", "<*C-g>v", "goto-next-node-of-class", "VarDecl"
+    addModelCommand "", "<*C-g>V", "goto-prev-node-of-class", "VarDecl"
+    addModelCommand "", "<*C-g>f", "goto-next-node-of-class", "FunctionDefinition"
+    addModelCommand "", "<*C-g>F", "goto-prev-node-of-class", "FunctionDefinition"
+    addModelCommand "", "<*C-g>p", "goto-next-node-of-class", "ParameterDecl"
+    addModelCommand "", "<*C-g>P", "goto-prev-node-of-class", "ParameterDecl"
+    addModelCommand "", "<*C-g>i", "goto-next-node-of-class", "ThenCase"
+    addModelCommand "", "<*C-g>I", "goto-prev-node-of-class", "ThenCase"
+    addModelCommand "", "<*C-g>e", "goto-next-node-of-class", "ForLoop"
+    addModelCommand "", "<*C-g>E", "goto-prev-node-of-class", "ForLoop"
+    addModelCommand "", "<*C-g>w", "goto-next-node-of-class", "WhileExpression"
+    addModelCommand "", "<*C-g>W", "goto-prev-node-of-class", "WhileExpression"
+
     addCommand("editor.model", "<BACKSPACE>", "replace-left")
     addCommand("editor.model", "<DELETE>", "replace-right")
     addCommand("editor.model", "<C-BACKSPACE>", "delete-left")

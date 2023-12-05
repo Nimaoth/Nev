@@ -130,6 +130,56 @@ proc gotoDefinition*(self: ModelDocumentEditor; select: bool = false) =
       argsJsonString.cstring)
 
 
+proc editor_model_gotoPrevNodeOfClass_void_ModelDocumentEditor_string_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc gotoPrevNodeOfClass*(self: ModelDocumentEditor; className: string;
+                          select: bool = false) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when ModelDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when string is JsonNode:
+      className
+    else:
+      className.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      select
+    else:
+      select.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_model_gotoPrevNodeOfClass_void_ModelDocumentEditor_string_bool_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_model_gotoNextNodeOfClass_void_ModelDocumentEditor_string_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc gotoNextNodeOfClass*(self: ModelDocumentEditor; className: string;
+                          select: bool = false) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when ModelDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when string is JsonNode:
+      className
+    else:
+      className.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      select
+    else:
+      select.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_model_gotoNextNodeOfClass_void_ModelDocumentEditor_string_bool_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_model_toggleBoolCell_void_ModelDocumentEditor_bool_wasm(arg: cstring): cstring {.
     importc.}
 proc toggleBoolCell*(self: ModelDocumentEditor; select: bool = false) =
