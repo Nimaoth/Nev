@@ -284,6 +284,12 @@ proc editor_model_isThickCursor_bool_ModelDocumentEditor_impl*(
 proc editor_model_gotoDefinition_void_ModelDocumentEditor_bool_impl*(
     self: ModelDocumentEditor; select: bool = false) =
   discard
+proc editor_model_gotoPrevNodeOfClass_void_ModelDocumentEditor_string_bool_impl*(
+    self: ModelDocumentEditor; className: string; select: bool = false) =
+  discard
+proc editor_model_gotoNextNodeOfClass_void_ModelDocumentEditor_string_bool_impl*(
+    self: ModelDocumentEditor; className: string; select: bool = false) =
+  discard
 proc editor_model_toggleBoolCell_void_ModelDocumentEditor_bool_impl*(
     self: ModelDocumentEditor; select: bool = false) =
   discard

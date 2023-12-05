@@ -1828,6 +1828,58 @@ proc gotoDefinition*(self: ModelDocumentEditor, select: bool = false) {.expose("
 
   self.markDirty()
 
+proc gotoPrevNodeOfClass*(self: ModelDocumentEditor, className: string, select: bool = false) {.expose("editor.model").} =
+  log lvlInfo, fmt"gotoPrevNodeOfClass {className}"
+  if getTargetCell(self.cursor, false).getSome(cell):
+    let startNode = cell.node
+
+    proc predicate(cell: Cell): bool =
+      # debugf"prev cell {cell}"
+      if cell.node == startNode:
+        return false
+      let class = cell.node.nodeClass
+      if class.isNil:
+        return false
+      return class.name == className
+
+    if cell.getPreviousLeafWhere(self.nodeCellMap, predicate).getSome(c):
+      let node = c.node
+      if select:
+        discard
+      elif self.getFirstSelectableCellOfNode(node).getSome(cursor):
+        self.cursor = cursor
+      else:
+        self.cursor = self.nodeCellMap.toCursor(c, true)
+      self.updateScrollOffset(true)
+
+  self.markDirty()
+
+proc gotoNextNodeOfClass*(self: ModelDocumentEditor, className: string, select: bool = false) {.expose("editor.model").} =
+  log lvlInfo, fmt"gotoNextNodeOfClass {className}"
+  if getTargetCell(self.cursor, false).getSome(cell):
+    let startNode = cell.node
+
+    proc predicate(cell: Cell): bool =
+      if cell.node == startNode:
+        return false
+      let class = cell.node.nodeClass
+      if class.isNil:
+        return false
+      # debugf"next cell {cell}, {class.name} == {className}"
+      return class.name == className
+
+    if cell.getNextLeafWhere(self.nodeCellMap, predicate).getSome(c):
+      let node = c.node
+      if select:
+        discard
+      elif self.getFirstSelectableCellOfNode(node).getSome(cursor):
+        self.cursor = cursor
+      else:
+        self.cursor = self.nodeCellMap.toCursor(c, true)
+      self.updateScrollOffset(true)
+
+  self.markDirty()
+
 proc toggleBoolCell*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
   if getTargetCell(self.cursor, false).getSome(cell):
     if cell of PropertyCell:
