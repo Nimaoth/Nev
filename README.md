@@ -6,15 +6,24 @@ This is still very early in developement and very experimental!
 
 ## Programming Language + Editor
 
-Absytree is a programming languange where instead of writing the source code as text in text files,
+Absytree is a programming languange framework where instead of writing the source code as text in text files,
 the abstract syntac tree (AST) is edited directly by a custom editor.
-
-## Editor
+Languages will be extendable with custom AST node types, by either translating those to nodes of other languages or by implementing code generation
+for the backend (at the moment only WASM).
 
 The editor is available for the terminal, as a desktop GUI app and in the browser.
 You can try the browser version [here](https://nimaoth.github.io/AbsytreeBrowser/) ([old version](https://nimaoth.github.io/AbsytreeBrowser/old/absytree_browser.html)).
 
-[Test report](https://nimaoth.github.io/Absytree/testresults.html)
+## Goals
+- Sit somewhere inbetween Vim and VS Code
+- The most important tools are built in (e.g. syntax highlighting with tree-sitter, LSP support)
+- Little to no configuration needed to get nice experience out of the box
+- Easily extendable with scripting
+- Can be used purely as a text editor (ignoring the AST language framework)
+
+### Inspirations
+- [JetBrains MPS](https://github.com/JetBrains/MPS)
+- [Dion Systems Editor](https://dion.systems/gallery.html)
 
 ## Building
 
@@ -26,8 +35,6 @@ You can try the browser version [here](https://nimaoth.github.io/AbsytreeBrowser
 
 ### Desktop version
 - Use `nimble buildDesktop` to compile the desktop version of the editor.
-- It currently dynamically links against libstdc++ because some treesitter languages depend on that, so:
-  - On windows: copy `libgcc_s_seh-1.dll` and `libstdc++-6.dll` (and optionally `libwinpthread-1.dll`) to the exe directory
 
 ### Browser version
 - Run `nimble buildBrowser`
@@ -250,8 +257,6 @@ Here is an overview of the modules:
 ![alt](screenshots/screenshot1.png)
 ![alt](screenshots/screenshot2.png)
 ![alt](screenshots/screenshot3.png)
-![alt](screenshots/screenshot4.png)
-![alt](screenshots/screenshot5.png)
 
 
 # Todo
@@ -278,3 +283,5 @@ Here is an overview of the modules:
 - add text based search (fuzzy?)
 - add global symbol finder
 - goto definition to other files
+
+[Test report](https://nimaoth.github.io/Absytree/testresults.html)
