@@ -297,8 +297,11 @@ proc genNodeForLoop(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destina
 
   let loopEndNode = node.firstChild(IdForLoopEnd)
 
-  let offset = self.createStackLocal(loopVariableNode.id, int32TypeInstance)
-  let loopEndLocalIndex = loopEndNode.mapIt(self.createLocal(it.id, int32TypeInstance, "loop_end"))
+  let varType = self.ctx.computeType(loopVariableNode)
+  let varTypeSize = self.getTypeAttributes(varType).size
+
+  let offset = self.createStackLocal(loopVariableNode.id, varType)
+  let loopEndLocalIndex = loopEndNode.mapIt(self.createLocal(it.id, varType, "loop_end"))
 
   self.loopBranchIndices[node.id] = (breakIndex: 0, continueIndex: 2)
 
@@ -321,9 +324,18 @@ proc genNodeForLoop(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destina
       # condition if we have an end
       if loopEndLocalIndex.getSome(localIndex):
         self.instr(LocalGet, localIdx: self.currentBasePointer)
-        self.instr(I32Load, memArg: WasmMemArg(offset: offset.uint32, align: 0))
-        self.instr(LocalGet, localIdx: localIndex)
-        self.instr(I32GeS)
+
+        if varTypeSize == 4:
+          self.instr(I32Load, memArg: WasmMemArg(offset: offset.uint32, align: 0))
+          self.instr(LocalGet, localIdx: localIndex)
+          self.instr(I32GeS)
+        elif varTypeSize == 8:
+          self.instr(I64Load, memArg: WasmMemArg(offset: offset.uint32, align: 0))
+          self.instr(LocalGet, localIdx: localIndex)
+          self.instr(I64GeS)
+        else:
+          log lvlError, fmt"genNodeForLoop: Type not implemented: {`$`(varType, true)}"
+
         self.instr(BrIf, brLabelIdx: 1.WasmLabelIdx)
 
       self.genBlock WasmBlockType(kind: ValType, typ: typ):
@@ -332,10 +344,19 @@ proc genNodeForLoop(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destina
       # increment counter
       self.instr(LocalGet, localIdx: self.currentBasePointer)
       self.instr(LocalGet, localIdx: self.currentBasePointer)
-      self.instr(I32Load, memArg: WasmMemArg(offset: offset.uint32, align: 0))
-      self.instr(I32Const, i32Const: 1)
-      self.instr(I32Add)
-      self.instr(I32Store, memArg: WasmMemArg(offset: offset.uint32, align: 0))
+
+      if varTypeSize == 4:
+        self.instr(I32Load, memArg: WasmMemArg(offset: offset.uint32, align: 0))
+        self.instr(I32Const, i32Const: 1)
+        self.instr(I32Add)
+        self.instr(I32Store, memArg: WasmMemArg(offset: offset.uint32, align: 0))
+      elif varTypeSize == 8:
+        self.instr(I64Load, memArg: WasmMemArg(offset: offset.uint32, align: 0))
+        self.instr(I64Const, i64Const: 1)
+        self.instr(I64Add)
+        self.instr(I64Store, memArg: WasmMemArg(offset: offset.uint32, align: 0))
+      else:
+        log lvlError, fmt"genNodeForLoop: Type not implemented: {`$`(varType, true)}"
 
       # continue loop
       self.instr(Br, brLabelIdx: 0.WasmLabelIdx)
