@@ -4,10 +4,12 @@
 
 This is still very early in developement and very experimental!
 
+Written in Nim
+
 ## Programming Language + Editor
 
-Absytree is a programming languange framework where instead of writing the source code as text in text files,
-the abstract syntac tree (AST) is edited directly by a custom editor.
+Absytree is a text editor + programming languange workbench where instead of writing the source code as text in text files,
+the abstract syntac tree (AST) is edited directly (or rather through _projections_, which are still trees)
 Languages will be extendable with custom AST node types, by either translating those to nodes of other languages or by implementing code generation
 for the backend (at the moment only WASM).
 
@@ -15,13 +17,18 @@ The editor is available for the terminal, as a desktop GUI app and in the browse
 You can try the browser version [here](https://nimaoth.github.io/AbsytreeBrowser/) ([old version](https://nimaoth.github.io/AbsytreeBrowser/old/absytree_browser.html)).
 
 ## Goals
-- Sit somewhere inbetween Vim and VS Code
-- The most important tools are built in (e.g. syntax highlighting with tree-sitter, LSP support)
-- Little to no configuration needed to get nice experience out of the box
-- Easily extendable with scripting
-- Can be used purely as a text editor (ignoring the AST language framework)
+- For the text editor:
+  - Sit somewhere inbetween Vim and VS Code
+  - The most important tools are built in (e.g. syntax highlighting with tree-sitter, LSP support)
+  - Can be used purely as a text editor (ignoring the AST language framework)
+  - Little to no configuration needed to get nice experience out of the box
+  - Support Vim motions
+- General goals:
+  - Keyboard focused (only basic mouse support)
+  - Easily extendable with scripting
+  - Good performance
 
-### Inspirations
+## Inspirations
 - [JetBrains MPS](https://github.com/JetBrains/MPS)
 - [Dion Systems Editor](https://dion.systems/gallery.html)
 
