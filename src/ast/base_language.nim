@@ -819,6 +819,11 @@ valueComputers[genericTypeClass.id] = proc(ctx: ModelComputationContextBase, nod
 typeComputers[letDeclClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for let decl {node}"
   if node.role == IdForLoopVariable:
+    let forLoop = node.parent
+    if forLoop.firstChild(IdForLoopStart).getSome(startNode):
+      return ctx.computeType(startNode)
+    if forLoop.firstChild(IdForLoopEnd).getSome(endNode):
+      return ctx.computeType(endNode)
     return int32TypeInstance
 
   if node.firstChild(IdLetDeclType).getSome(typeNode):
@@ -830,6 +835,11 @@ typeComputers[letDeclClass.id] = proc(ctx: ModelComputationContextBase, node: As
 typeComputers[varDeclClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for var decl {node}"
   if node.role == IdForLoopVariable:
+    let forLoop = node.parent
+    if forLoop.firstChild(IdForLoopStart).getSome(startNode):
+      return ctx.computeType(startNode)
+    if forLoop.firstChild(IdForLoopEnd).getSome(endNode):
+      return ctx.computeType(endNode)
     return int32TypeInstance
 
   if node.firstChild(IdVarDeclType).getSome(typeNode):
