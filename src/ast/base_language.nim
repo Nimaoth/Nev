@@ -12,7 +12,12 @@ let expressionClass* = newNodeClass(IdExpression, "Expression", isAbstract=true)
 
 let metaTypeClass* = newNodeClass(IdType, "Type", alias="type", base=expressionClass)
 let stringTypeClass* = newNodeClass(IdString, "StringType", alias="string", base=expressionClass)
-let intTypeClass* = newNodeClass(IdInt, "IntType", alias="int", base=expressionClass)
+let int32TypeClass* = newNodeClass(IdInt32, "Int32Type", alias="i32", base=expressionClass)
+let uint32TypeClass* = newNodeClass(IdUInt32, "UInt32Type", alias="u32", base=expressionClass)
+let int64TypeClass* = newNodeClass(IdInt64, "Int64Type", alias="i64", base=expressionClass)
+let uint64TypeClass* = newNodeClass(IdUInt64, "UInt64Type", alias="u64", base=expressionClass)
+let float32TypeClass* = newNodeClass(IdFloat32, "Float32Type", alias="f32", base=expressionClass)
+let float64TypeClass* = newNodeClass(IdFloat64, "Float64Type", alias="f64", base=expressionClass)
 let voidTypeClass* = newNodeClass(IdVoid, "VoidType", alias="void", base=expressionClass)
 let charTypeClass * = newNodeClass(IdChar, "CharType", alias="char", base=expressionClass)
 let functionTypeClass* = newNodeClass(IdFunctionType, "FunctionType", base=expressionClass,
@@ -30,6 +35,11 @@ let namedInterface* = newNodeClass(IdINamed, "INamed", isAbstract=true, isInterf
   properties=[PropertyDescription(id: IdINamedName, role: "name", typ: PropertyType.String)])
 
 let declarationInterface* = newNodeClass(IdIDeclaration, "IDeclaration", isAbstract=true, isInterface=true, base=namedInterface)
+
+let castClass* = newNodeClass(IdCast, "Cast", alias="cast", base=expressionClass, children=[
+    NodeChildDescription(id: IdCastType, role: "type", class: expressionClass.id, count: ChildCount.One),
+    NodeChildDescription(id: IdCastValue, role: "value", class: expressionClass.id, count: ChildCount.One),
+  ])
 
 let binaryExpressionClass* = newNodeClass(IdBinaryExpression, "BinaryExpression", isAbstract=true, base=expressionClass, children=[
     NodeChildDescription(id: IdBinaryExpressionLeft, role: "left", class: expressionClass.id, count: ChildCount.One),
@@ -434,15 +444,26 @@ builder.addBuilderFor pointerTypeClass.id, idNone(), proc(builder: CellBuilder, 
 builder.addBuilderFor addressOfClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
-    cell.add ConstantCell(node: node, text: "addr", themeForegroundColors: @["keyword"], disableEditing: true)
     cell.add builder.buildChildren(map, node, IdAddressOfValue, &{LayoutHorizontal})
+    cell.add ConstantCell(node: node, text: ".addr", flags: &{NoSpaceLeft}, themeForegroundColors: @["keyword"], disableEditing: true)
   return cell
 
 builder.addBuilderFor derefClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
-    cell.add ConstantCell(node: node, text: "deref", themeForegroundColors: @["keyword"], disableEditing: true)
     cell.add builder.buildChildren(map, node, IdDerefValue, &{LayoutHorizontal})
+    cell.add ConstantCell(node: node, text: ".deref", flags: &{NoSpaceLeft}, themeForegroundColors: @["keyword"], disableEditing: true)
+  return cell
+
+builder.addBuilderFor castClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
+  cell.fillChildren = proc(map: NodeCellMap) =
+    cell.add builder.buildChildren(map, node, IdCastValue, &{LayoutHorizontal})
+    cell.add ConstantCell(node: node, text: ".", flags: &{NoSpaceLeft, NoSpaceRight}, themeForegroundColors: @["punctuation"], disableEditing: true)
+    cell.add ConstantCell(node: node, text: "as", flags: &{NoSpaceLeft, NoSpaceRight}, themeForegroundColors: @["keyword"], disableEditing: true)
+    cell.add ConstantCell(node: node, text: "(", flags: &{NoSpaceLeft, NoSpaceRight}, themeForegroundColors: @["punctuation"], disableEditing: true)
+    cell.add builder.buildChildren(map, node, IdCastType, &{LayoutHorizontal})
+    cell.add ConstantCell(node: node, text: ")", flags: &{NoSpaceLeft}, themeForegroundColors: @["punctuation"], disableEditing: true)
   return cell
 
 builder.addBuilderFor stringGetPointerClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
@@ -630,7 +651,27 @@ builder.addBuilderFor voidTypeClass.id, idNone(), proc(builder: CellBuilder, nod
   var cell = AliasCell(id: newId().CellId, node: node, themeForegroundColors: @["storage.type", "&editor.foreground"], disableEditing: true)
   return cell
 
-builder.addBuilderFor intTypeClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+builder.addBuilderFor int32TypeClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  var cell = AliasCell(id: newId().CellId, node: node, themeForegroundColors: @["storage.type", "&editor.foreground"], disableEditing: true)
+  return cell
+
+builder.addBuilderFor uint32TypeClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  var cell = AliasCell(id: newId().CellId, node: node, themeForegroundColors: @["storage.type", "&editor.foreground"], disableEditing: true)
+  return cell
+
+builder.addBuilderFor int64TypeClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  var cell = AliasCell(id: newId().CellId, node: node, themeForegroundColors: @["storage.type", "&editor.foreground"], disableEditing: true)
+  return cell
+
+builder.addBuilderFor uint64TypeClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  var cell = AliasCell(id: newId().CellId, node: node, themeForegroundColors: @["storage.type", "&editor.foreground"], disableEditing: true)
+  return cell
+
+builder.addBuilderFor float32TypeClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  var cell = AliasCell(id: newId().CellId, node: node, themeForegroundColors: @["storage.type", "&editor.foreground"], disableEditing: true)
+  return cell
+
+builder.addBuilderFor float64TypeClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
   var cell = AliasCell(id: newId().CellId, node: node, themeForegroundColors: @["storage.type", "&editor.foreground"], disableEditing: true)
   return cell
 
@@ -676,44 +717,38 @@ var scopeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, n
 
 let metaTypeInstance* = newAstNode(metaTypeClass)
 let stringTypeInstance* = newAstNode(stringTypeClass)
-let intTypeInstance* = newAstNode(intTypeClass)
+let int32TypeInstance* = newAstNode(int32TypeClass)
+let uint32TypeInstance* = newAstNode(uint32TypeClass)
+let int64TypeInstance* = newAstNode(int64TypeClass)
+let uint64TypeInstance* = newAstNode(uint64TypeClass)
+let float32TypeInstance* = newAstNode(float32TypeClass)
+let float64TypeInstance* = newAstNode(float64TypeClass)
 let voidTypeInstance* = newAstNode(voidTypeClass)
 let charTypeInstance* = newAstNode(charTypeClass)
 
-typeComputers[metaTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
-  # debugf"compute type for meta type literal {node}"
-  return metaTypeInstance
-typeComputers[stringTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
-  # debugf"compute type for string type literal {node}"
-  return metaTypeInstance
-typeComputers[intTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
-  # debugf"compute type for int type literal {node}"
-  return metaTypeInstance
-typeComputers[charTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
-  # debugf"compute type for char type literal {node}"
-  return metaTypeInstance
-typeComputers[voidTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
-  # debugf"compute type for void type literal {node}"
-  return metaTypeInstance
-typeComputers[pointerTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
-  # debugf"compute type for pointer type {node}"
-  return metaTypeInstance
+typeComputers[metaTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode = metaTypeInstance
+typeComputers[stringTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode = metaTypeInstance
+typeComputers[int32TypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode = metaTypeInstance
+typeComputers[uint32TypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode = metaTypeInstance
+typeComputers[int64TypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode = metaTypeInstance
+typeComputers[uint64TypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode = metaTypeInstance
+typeComputers[float32TypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode = metaTypeInstance
+typeComputers[float64TypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode = metaTypeInstance
+typeComputers[charTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode = metaTypeInstance
+typeComputers[voidTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode = metaTypeInstance
+typeComputers[pointerTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode = metaTypeInstance
 
-valueComputers[metaTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
-  # debugf"compute value for meta type literal {node}"
-  return metaTypeInstance
-valueComputers[stringTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
-  # debugf"compute value for string type literal {node}"
-  return stringTypeInstance
-valueComputers[intTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
-  # debugf"compute value for int type literal {node}"
-  return intTypeInstance
-valueComputers[charTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
-  # debugf"compute value for char type literal {node}"
-  return charTypeInstance
-valueComputers[voidTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
-  # debugf"compute value for void type literal {node}"
-  return voidTypeInstance
+valueComputers[metaTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode = metaTypeInstance
+valueComputers[stringTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode = stringTypeInstance
+valueComputers[int32TypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode = int32TypeInstance
+valueComputers[uint32TypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode = uint32TypeInstance
+valueComputers[int64TypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode = int64TypeInstance
+valueComputers[uint64TypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode = uint64TypeInstance
+valueComputers[float32TypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode = float32TypeInstance
+valueComputers[float64TypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode = float64TypeInstance
+valueComputers[charTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode = charTypeInstance
+valueComputers[voidTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode = voidTypeInstance
+
 valueComputers[pointerTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute value for pointer type {node}"
 
@@ -747,7 +782,12 @@ valueComputers[stringLiteralClass.id] = proc(ctx: ModelComputationContextBase, n
 
 typeComputers[numberLiteralClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for number literal {node}"
-  return intTypeInstance
+  if node.property(IdIntegerLiteralValue).getSome(value):
+    # if value.intValue.safeIntCast(uint64) > int64.high.uint64:
+    #   return uint64TypeInstance
+    if value.intValue < int32.low or value.intValue > int32.high:
+      return int64TypeInstance
+  return int32TypeInstance
 
 valueComputers[numberLiteralClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute value for number literal {node}"
@@ -755,7 +795,7 @@ valueComputers[numberLiteralClass.id] = proc(ctx: ModelComputationContextBase, n
 
 typeComputers[boolLiteralClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for bool literal {node}"
-  return intTypeInstance
+  return int32TypeInstance
 
 valueComputers[boolLiteralClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute value for bool literal {node}"
@@ -779,7 +819,7 @@ valueComputers[genericTypeClass.id] = proc(ctx: ModelComputationContextBase, nod
 typeComputers[letDeclClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for let decl {node}"
   if node.role == IdForLoopVariable:
-    return intTypeInstance
+    return int32TypeInstance
 
   if node.firstChild(IdLetDeclType).getSome(typeNode):
     return ctx.getValue(typeNode)
@@ -790,7 +830,7 @@ typeComputers[letDeclClass.id] = proc(ctx: ModelComputationContextBase, node: As
 typeComputers[varDeclClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for var decl {node}"
   if node.role == IdForLoopVariable:
-    return intTypeInstance
+    return int32TypeInstance
 
   if node.firstChild(IdVarDeclType).getSome(typeNode):
     return ctx.getValue(typeNode)
@@ -865,13 +905,17 @@ typeComputers[ifClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode
 # function definition
 typeComputers[functionDefinitionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for function definition {node}"
+  # defer:
+  #   debugf"-> {result}"
   var returnType = voidTypeInstance
 
   if node.firstChild(IdFunctionDefinitionReturnType).getSome(returnTypeNode):
     returnType = ctx.getValue(returnTypeNode)
 
   var functionType = newAstNode(functionTypeClass)
-  functionType.add(IdFunctionTypeReturnType, returnType)
+
+  if returnType.isNotNil:
+    functionType.add(IdFunctionTypeReturnType, returnType)
 
   for _, c in node.children(IdFunctionDefinitionParameters):
     if c.firstChild(IdParameterDeclType).getSome(paramTypeNode):
@@ -883,9 +927,7 @@ typeComputers[functionDefinitionClass.id] = proc(ctx: ModelComputationContextBas
       functionType.add(IdFunctionTypeParameterTypes, parameterType)
 
   # todo: this shouldn't set the model
-  functionType.model = node.model
-  functionType.forEach2 n:
-    n.model = node.model
+  node.model.addTempNode(functionType)
 
   # debugf"computed function type: {`$`(functionType, true)}"
 
@@ -925,6 +967,12 @@ typeComputers[blockClass.id] = proc(ctx: ModelComputationContextBase, node: AstN
 
   return voidTypeInstance
 
+typeComputers[castClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  # debugf"compute type for node reference {node}"
+  if node.firstChild(IdCastType).getSome(typeNode):
+    return ctx.getValue(typeNode)
+  return voidTypeInstance
+
 typeComputers[nodeReferenceClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for node reference {node}"
   if node.resolveReference(IdNodeReferenceTarget).getSome(targetNode):
@@ -951,71 +999,102 @@ typeComputers[returnClass.id] = proc(ctx: ModelComputationContextBase, node: Ast
   # debugf"compute type for return {node}"
   return voidTypeInstance
 
+proc getTypeSize(ctx: ModelComputationContextBase, typ: AstNode): int =
+  # if typ.class == IdMetaType: return 0
+  if typ.class == IdInt32 or typ.class == IdUInt32: return 4
+  if typ.class == IdInt64 or typ.class == IdUInt64: return 8
+  if typ.class == IdFloat32: return 4
+  if typ.class == IdFloat64: return 8
+  if typ.class == IdChar: return 1
+  if typ.class == IdPointerType: return 4
+  log lvlError, fmt"Not implemented: getTypeSize for {typ}"
+  return 0
+
+proc getBiggerIntType*(ctx: ModelComputationContextBase, left: AstNode, right: AstNode): AstNode =
+  let leftType = ctx.computeType(left)
+  let rightType = ctx.computeType(right)
+  let leftSize = ctx.getTypeSize(leftType)
+  let rightSize = ctx.getTypeSize(rightType)
+
+  if leftSize >= rightSize:
+    return leftType
+  return rightType
+
 # binary expressions
 typeComputers[addExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for add {node}"
-  return intTypeInstance
+  if node.firstChild(IdBinaryExpressionLeft).getSome(left) and node.firstChild(IdBinaryExpressionRight).getSome(right):
+    return ctx.getBiggerIntType(left, right)
+  return int32TypeInstance
 
 typeComputers[subExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for sub {node}"
-  return intTypeInstance
+  if node.firstChild(IdBinaryExpressionLeft).getSome(left) and node.firstChild(IdBinaryExpressionRight).getSome(right):
+    return ctx.getBiggerIntType(left, right)
+  return int32TypeInstance
 
 typeComputers[mulExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for mul {node}"
-  return intTypeInstance
+  if node.firstChild(IdBinaryExpressionLeft).getSome(left) and node.firstChild(IdBinaryExpressionRight).getSome(right):
+    return ctx.getBiggerIntType(left, right)
+  return int32TypeInstance
 
 typeComputers[divExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for div {node}"
-  return intTypeInstance
+  if node.firstChild(IdBinaryExpressionLeft).getSome(left) and node.firstChild(IdBinaryExpressionRight).getSome(right):
+    return ctx.getBiggerIntType(left, right)
+  return int32TypeInstance
 
 typeComputers[modExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for mod {node}"
-  return intTypeInstance
+  if node.firstChild(IdBinaryExpressionLeft).getSome(left) and node.firstChild(IdBinaryExpressionRight).getSome(right):
+    return ctx.getBiggerIntType(left, right)
+  return int32TypeInstance
 
 typeComputers[lessExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for less {node}"
-  return intTypeInstance
+  return int32TypeInstance
 
 typeComputers[lessEqualExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for less equal {node}"
-  return intTypeInstance
+  return int32TypeInstance
 
 typeComputers[greaterExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for greater {node}"
-  return intTypeInstance
+  return int32TypeInstance
 
 typeComputers[greaterEqualExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for greater equal {node}"
-  return intTypeInstance
+  return int32TypeInstance
 
 typeComputers[equalExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for equal {node}"
-  return intTypeInstance
+  return int32TypeInstance
 
 typeComputers[notEqualExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for not equal {node}"
-  return intTypeInstance
+  return int32TypeInstance
 
 typeComputers[andExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for and {node}"
-  return intTypeInstance
+  return int32TypeInstance
 
 typeComputers[orExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for or {node}"
-  return intTypeInstance
+  return int32TypeInstance
 
 typeComputers[orderExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for order {node}"
-  return intTypeInstance
+  return int32TypeInstance
 
 # unary expressions
 typeComputers[negateExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for negate {node}"
-  return intTypeInstance
+  return int32TypeInstance
 
 typeComputers[notExpressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for not {node}"
-  return intTypeInstance
+  return int32TypeInstance
 
 proc isTypeGeneric*(typ: AstNode, ctx: ModelComputationContextBase): bool =
   if typ.class == IdGenericType:
@@ -1262,6 +1341,8 @@ typeComputers[callClass.id] = proc(ctx: ModelComputationContextBase, node: AstNo
       if targetValue.isGeneric(ctx):
         let concreteFunction = ctx.instantiateFunction(targetValue, node.children(IdCallArguments))
         let concreteFunctionType = ctx.computeType(concreteFunction)
+        # debugf"concrete function: {concreteFunction.dump(recurse=true)}"
+        # debugf"concrete function: {concreteFunctionType.dump(recurse=true)}"
         if concreteFunctionType.firstChild(IdFunctionTypeReturnType).getSome(returnType):
           return returnType
 
@@ -1485,7 +1566,7 @@ typeComputers[stringGetPointerClass.id] = proc(ctx: ModelComputationContextBase,
 
 typeComputers[stringGetLengthClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for deref {node}"
-  return intTypeInstance
+  return int32TypeInstance
 
 typeComputers[arrayAccessClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for deref {node}"
@@ -1611,9 +1692,10 @@ let baseLanguage* = newLanguage(IdBaseLanguage, @[
   namedInterface, declarationInterface,
 
   # typeClass,
-  metaTypeClass, stringTypeClass, intTypeClass, charTypeClass, voidTypeClass, functionTypeClass, structTypeClass, pointerTypeClass,
+  metaTypeClass, stringTypeClass, charTypeClass, voidTypeClass, functionTypeClass, structTypeClass, pointerTypeClass,
+  int32TypeClass, uint32TypeClass, int64TypeClass, uint64TypeClass, float32TypeClass, float64TypeClass,
 
-  expressionClass, binaryExpressionClass, unaryExpressionClass, emptyLineClass,
+  expressionClass, binaryExpressionClass, unaryExpressionClass, emptyLineClass, castClass,
   numberLiteralClass, stringLiteralClass, boolLiteralClass, nodeReferenceClass, emptyClass, genericTypeClass, constDeclClass, letDeclClass, varDeclClass, nodeListClass, blockClass, callClass, thenCaseClass, ifClass, whileClass, forLoopClass,
   parameterDeclClass, functionDefinitionClass, assignmentClass,
   breakClass, continueClass, returnClass,
@@ -1630,7 +1712,12 @@ let baseLanguage* = newLanguage(IdBaseLanguage, @[
 let baseModel* = block:
   var model = newModel(newId().ModelId)
   model.addLanguage(baseLanguage)
-  model.addRootNode(intTypeInstance)
+  model.addRootNode(int32TypeInstance)
+  model.addRootNode(uint32TypeInstance)
+  model.addRootNode(int64TypeInstance)
+  model.addRootNode(uint64TypeInstance)
+  model.addRootNode(float32TypeInstance)
+  model.addRootNode(float64TypeInstance)
   model.addRootNode(stringTypeInstance)
   model.addRootNode(voidTypeInstance)
   model.addRootNode(charTypeInstance)

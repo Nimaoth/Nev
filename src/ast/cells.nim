@@ -209,7 +209,7 @@ method setText*(cell: PropertyCell, text: string, slice: Slice[int] = 0..0) =
       of String:
         cell.targetNode.setProperty(cell.property, PropertyValue(kind: PropertyType.String, stringValue: text), slice)
       of Int:
-        let intValue = text.parseInt
+        let intValue = text.parseBiggestInt
         cell.targetNode.setProperty(cell.property, PropertyValue(kind: PropertyType.Int, intValue: intValue), slice)
       of Bool:
         let boolValue = text.parseBool

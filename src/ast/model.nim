@@ -47,7 +47,7 @@ type
   PropertyValue* = object
     case kind*: PropertyType
     of Int:
-      intValue*: int
+      intValue*: int64
     of String:
       stringValue*: string
     of Bool:
@@ -1196,7 +1196,7 @@ proc fromJsonHook*(value: var PropertyValue, json: JsonNode) =
   elif json.kind == JBool:
     value = PropertyValue(kind: Bool, boolValue: json.getBool())
   elif json.kind == JInt:
-    value = PropertyValue(kind: Int, intValue: json.num.int)
+    value = PropertyValue(kind: Int, intValue: json.num)
   else:
     log(lvlError, fmt"Unknown PropertyValue {json}")
 

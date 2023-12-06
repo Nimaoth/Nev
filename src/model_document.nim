@@ -2614,6 +2614,11 @@ proc createNewNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
   defer:
     self.document.finishTransaction()
 
+  if self.showCompletions and self.hasCompletions:
+    self.applySelectedCompletion()
+    self.markDirty()
+    return
+
   if self.document.model.rootNodes.len == 0:
     var class: NodeClass
     for language in self.document.model.languages:
@@ -2991,6 +2996,31 @@ proc printI32(a: int32) =
     lineBuffer.add " "
   lineBuffer.add $a
 
+proc printU32(a: uint32) =
+  if lineBuffer.len > 0:
+    lineBuffer.add " "
+  lineBuffer.add $a
+
+proc printI64(a: int64) =
+  if lineBuffer.len > 0:
+    lineBuffer.add " "
+  lineBuffer.add $a
+
+proc printU64(a: uint64) =
+  if lineBuffer.len > 0:
+    lineBuffer.add " "
+  lineBuffer.add $a
+
+proc printF32(a: float32) =
+  if lineBuffer.len > 0:
+    lineBuffer.add " "
+  lineBuffer.add $a
+
+proc printF64(a: float64) =
+  if lineBuffer.len > 0:
+    lineBuffer.add " "
+  lineBuffer.add $a
+
 proc printChar(a: int32) =
   lineBuffer.add $a.Rune
 
@@ -3043,6 +3073,11 @@ proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.
 
   var imp = WasmImports(namespace: "env")
   imp.addFunction("print_i32", printI32)
+  imp.addFunction("print_u32", printU32)
+  imp.addFunction("print_i64", printI64)
+  imp.addFunction("print_u64", printU64)
+  imp.addFunction("print_f32", printF32)
+  imp.addFunction("print_f64", printF64)
   imp.addFunction("print_char", printChar)
   imp.addFunction("print_string", printString)
   imp.addFunction("print_line", printLine)

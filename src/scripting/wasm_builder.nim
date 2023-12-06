@@ -1571,10 +1571,6 @@ proc getStackChange*(self: WasmBuilder, instr: WasmInstr): int =
     log lvlError, fmt"getStackChange: unhandled instr {instr.kind}"
     return 0
 
-var currentFunction {.exportc.}: cstring
-var currentInstruction {.exportc.}: cstring
-var currentSubInstruction {.exportc.}: cstring
-
 proc getInstrType*(self: WasmBuilder, instr: WasmInstr): WasmFunctionType =
   return case instr.kind
   of Block:
@@ -1619,112 +1615,107 @@ proc getInstrType*(self: WasmBuilder, instr: WasmInstr): WasmFunctionType =
   else:
     WasmFunctionType()
 
-proc validate*(self: WasmBuilder, instr: WasmInstr, expectedSize: Option[int], path: seq[int]): bool =
-  currentInstruction = ($instr).cstring
+proc validate*(self: WasmBuilder, instr: WasmInstr, expectedSize: Option[int], path: seq[int], doLog: bool): bool =
   result = true
+
   if expectedSize.getSome(expectedSize) and self.getStackChange(instr) != expectedSize:
-    log lvlError, fmt"{path} validate: stack size mismatch, expected {expectedSize}, got {self.getStackChange(instr)} at {instr}"
+    if doLog: log lvlError, fmt"{path} validate: stack size mismatch, expected {expectedSize}, got {self.getStackChange(instr)} at {instr}"
     result = false
 
   let blockType = self.getInstrType(instr)
 
   case instr.kind:
   of Block:
-    debugf"{path} validate (expect {expectedSize}): {instr}"
+    if doLog: debugf"{path} validate (expect {expectedSize}): {instr}"
     var stackSize = 0
     for i, sub in instr.blockInstr:
-      currentSubInstruction = ($sub).cstring
       let change = self.getStackChange(sub)
-      echo fmt"    block stackSize {stackSize} + {change} = {stackSize + change} ({sub})"
+      if doLog: echo fmt"    block stackSize {stackSize} + {change} = {stackSize + change} ({sub})"
       stackSize += change
       if stackSize < 0:
-        log lvlError, fmt"{path}:{i} validate block: not enough values on stack at {instr}"
+        if doLog: log lvlError, fmt"{path}:{i} validate block: not enough values on stack at {instr}"
 
-      if not self.validate(sub, int.none, path & @[i]):
+      if not self.validate(sub, int.none, path & @[i], doLog):
         result = false
 
     if stackSize != blockType.output.types.len:
-      log lvlError, fmt"{path} validate block: stack size mismatch at {instr}, expected {blockType.output.types.len}, got {stackSize}"
+      if doLog: log lvlError, fmt"{path} validate block: stack size mismatch at {instr}, expected {blockType.output.types.len}, got {stackSize}"
       result = false
 
   of Loop:
     var stackSize = 0
     for i, sub in instr.loopInstr:
-      currentSubInstruction = ($sub).cstring
       let change = self.getStackChange(sub)
-      echo fmt"    loop stackSize {stackSize} + {change} = {stackSize + change} ({sub})"
+      if doLog: echo fmt"    loop stackSize {stackSize} + {change} = {stackSize + change} ({sub})"
       stackSize += change
       if stackSize < 0:
-        log lvlError, fmt"{path}:{i} validate loop: not enough values on stack at {instr}"
+        if doLog: log lvlError, fmt"{path}:{i} validate loop: not enough values on stack at {instr}"
 
-      if not self.validate(sub, int.none, path & @[i]):
+      if not self.validate(sub, int.none, path & @[i], doLog):
         result = false
 
     if stackSize != blockType.output.types.len:
-      log lvlError, fmt"{path} validate loop: stack size mismatch at {instr}, expected {blockType.output.types.len}, got {stackSize}"
+      if doLog: log lvlError, fmt"{path} validate loop: stack size mismatch at {instr}, expected {blockType.output.types.len}, got {stackSize}"
       result = false
 
   of If:
     var stackSize = 0
     for i, sub in instr.ifThenInstr:
-      currentSubInstruction = ($sub).cstring
       let change = self.getStackChange(sub)
-      echo fmt"    if then stackSize {stackSize} + {change} = {stackSize + change} ({sub})"
+      if doLog: echo fmt"    if then stackSize {stackSize} + {change} = {stackSize + change} ({sub})"
       stackSize += change
       if stackSize < 0:
-        log lvlError, fmt"{path}:{i} validate if then: not enough values on stack at {instr}"
+        if doLog: log lvlError, fmt"{path}:{i} validate if then: not enough values on stack at {instr}"
 
-      if not self.validate(sub, int.none, path & @[i]):
+      if not self.validate(sub, int.none, path & @[i], doLog):
         result = false
 
     if stackSize != blockType.output.types.len:
-      log lvlError, fmt"{path} validate if then: stack size mismatch at {instr}, expected {blockType.output.types.len}, got {stackSize}"
+      if doLog: log lvlError, fmt"{path} validate if then: stack size mismatch at {instr}, expected {blockType.output.types.len}, got {stackSize}"
       result = false
 
     stackSize = 0
     for i, sub in instr.ifElseInstr:
-      currentSubInstruction = ($sub).cstring
       let change = self.getStackChange(sub)
-      echo fmt"    if else stackSize {stackSize} + {change} = {stackSize + change} ({sub})"
+      if doLog: echo fmt"    if else stackSize {stackSize} + {change} = {stackSize + change} ({sub})"
       stackSize += change
       if stackSize < 0:
-        log lvlError, fmt"{path}:{i} validate if else: not enough values on stack at {instr}"
+        if doLog: log lvlError, fmt"{path}:{i} validate if else: not enough values on stack at {instr}"
 
-      if not self.validate(sub, int.none, path & @[i]):
+      if not self.validate(sub, int.none, path & @[i], doLog):
         result = false
 
     if stackSize != blockType.output.types.len:
-      log lvlError, fmt"{path} validate if else: stack size mismatch at {instr}, expected {blockType.output.types.len}, got {stackSize}"
+      if doLog: log lvlError, fmt"{path} validate if else: stack size mismatch at {instr}, expected {blockType.output.types.len}, got {stackSize}"
       result = false
 
   else:
     discard
 
-proc validate*(self: WasmBuilder): bool =
+proc validate*(self: WasmBuilder, doLog: bool): bool =
+  result = true
   for i, f in self.funcs:
     let typ = self.types[f.typeIdx.int]
     let expectedStackSize = typ.output.types.len
     # if not self.validate(WasmInstr(kind: Block, blockInstr: f.body.instr), expectedStackSize.some, @[i]):
     #   log lvlError, fmt"validate function {f.typeIdx} failed"
     #   result = false
-    currentFunction = f.id.cstring
 
-    debugf"validate function {f.id} {typ}, expected stack size {expectedStackSize}"
+    if doLog: debugf"validate function {f.id} {typ}, expected stack size {expectedStackSize}"
 
     var stackSize = 0
     for k, sub in f.body.instr:
-      currentInstruction = ($sub).cstring
       let change = self.getStackChange(sub)
-      echo fmt"    function body stackSize {stackSize} + {change} = {stackSize + change} ({sub})"
+      if doLog: echo fmt"    function body stackSize {stackSize} + {change} = {stackSize + change} ({sub})"
       stackSize += change
       if stackSize < 0:
-        log lvlError, fmt"{i}:{k} validate function: not enough values on stack at {sub}"
+        if doLog: log lvlError, fmt"{i}:{k} validate function: not enough values on stack at {sub}"
 
-      if not self.validate(sub, int.none, @[i, k]):
+      if not self.validate(sub, int.none, @[i, k], doLog):
         result = false
 
     if stackSize != expectedStackSize:
-      log lvlError, fmt"{i} validate function: stack size mismatch, expected {expectedStackSize}, got {stackSize}"
+      if doLog: log lvlError, fmt"{i} validate function: stack size mismatch, expected {expectedStackSize}, got {stackSize}"
       result = false
 
 when isMainModule:

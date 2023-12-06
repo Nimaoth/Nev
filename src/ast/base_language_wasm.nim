@@ -7,6 +7,61 @@ import scripting/[wasm_builder]
 
 logCategory "base-language-wasm"
 
+let conversionOps = toTable {
+  (IdInt32, IdInt64): I32WrapI64,
+  (IdInt32, IdUInt64): I32WrapI64,
+  (IdInt32, IdFloat32): I32TruncF32S,
+  (IdInt32, IdFloat64): I32TruncF64S,
+
+  (IdUInt32, IdInt64): I32WrapI64,
+  (IdUInt32, IdUInt64): I32WrapI64,
+  (IdUInt32, IdFloat32): I32TruncF32U,
+  (IdUInt32, IdFloat64): I32TruncF64U,
+  # (IdInt32, IdInt32): I32TruncSatF32S,
+  # (IdInt32, IdInt32): I32TruncSatF32U,
+  # (IdInt32, IdInt32): I32TruncSatF64S,
+  # (IdInt32, IdInt32): I32TruncSatF64U,
+  (IdInt64, IdInt32): I64ExtendI32S,
+  (IdInt64, IdUInt32): I64ExtendI32U,
+  (IdInt64, IdFloat32): I64TruncF32S,
+  (IdInt64, IdFloat64): I64TruncF64S,
+
+  (IdUInt64, IdInt32): I64ExtendI32S,
+  (IdUInt64, IdUInt32): I64ExtendI32U,
+  (IdUInt64, IdFloat32): I64TruncF32U,
+  (IdUInt64, IdFloat64): I64TruncF64U,
+  # (IdInt64, IdFloat32): I64TruncSatF32S,
+  # (IdUInt64, IdFloat32): I64TruncSatF32U,
+  # (IdInt64, IdFloat64): I64TruncSatF64S,
+  # (IdUInt64, IdFloat64): I64TruncSatF64U,
+  (IdFloat32, IdInt32): F32ConvertI32S,
+  (IdFloat32, IdUInt32): F32ConvertI32U,
+  (IdFloat32, IdInt64): F32ConvertI64S,
+  (IdFloat32, IdUInt64): F32ConvertI64U,
+  (IdFloat32, IdFloat64): F32DemoteF64,
+  (IdFloat64, IdInt32): F64ConvertI32S,
+  (IdFloat64, IdUInt32): F64ConvertI32U,
+  (IdFloat64, IdInt64): F64ConvertI64S,
+  (IdFloat64, IdUInt64): F64ConvertI64U,
+  (IdFloat64, IdFloat32): F64PromoteF32,
+  # (IdInt32, IdInt32): I32Extend8S,
+  # (IdInt32, IdInt32): I32Extend16S,
+  # (IdInt64, IdInt32): I64Extend8S,
+  # (IdInt64, IdInt32): I64Extend16S,
+  # (IdInt64, IdInt32): I64Extend32S,
+}
+
+let reinterpretOps = toTable {
+  (IdInt32, IdFloat32): I32ReinterpretF32,
+  (IdUInt32, IdFloat32): I32ReinterpretF32,
+  (IdInt64, IdFloat64): I64ReinterpretF64,
+  (IdUInt64, IdFloat64): I64ReinterpretF64,
+  (IdFloat32, IdInt32): F32ReinterpretI32,
+  (IdFloat32, IdUInt32): F32ReinterpretI32,
+  (IdFloat64, IdInt64): F64ReinterpretI64,
+  (IdFloat64, IdUInt64): F64ReinterpretI64,
+}
+
 proc genNodeBlock(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   let typ = self.ctx.computeType(node)
   let wasmValueType = self.toWasmValueType(typ)
@@ -15,7 +70,7 @@ proc genNodeBlock(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destinati
   # debugf"genNodeBlock: {node}, {dest}, {typ}, {wasmValueType}, {size}"
 
   let tempIdx = if dest.kind == Memory and size > 0: # store result pointer in local, and load again in block
-    let tempIdx = self.getTempLocal(intTypeInstance)
+    let tempIdx = self.getTempLocal(int32TypeInstance)
     self.instr(LocalSet, localIdx: tempIdx)
     tempIdx.some
   else:
@@ -27,90 +82,135 @@ proc genNodeBlock(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destinati
 
     self.genNodeChildren(node, IdBlockChildren, dest)
 
-proc genNodeBinaryExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
-  self.genNodeChildren(node, IdBinaryExpressionLeft, dest)
-  self.genNodeChildren(node, IdBinaryExpressionRight, dest)
+proc genNodeBinaryExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination, op32S: WasmInstrKind, op32U: WasmInstrKind, op64S: WasmInstrKind, op64U: WasmInstrKind, op32F: WasmInstrKind, op64F: WasmInstrKind) =
+  let left = node.firstChild(IdBinaryExpressionLeft).getOr:
+    return
+  let right = node.firstChild(IdBinaryExpressionRight).getOr:
+    return
+
+  let leftType = self.ctx.computeType(left)
+  let rightType = self.ctx.computeType(right)
+
+  let commonType = self.ctx.getBiggerIntType(left, right)
+
+  # debugf"genNodeBinaryExpression: {node}, {dest}, {leftType}, {rightType}, {commonType}, {op32S}"
+  self.genNode(left, dest)
+  if leftType.class != commonType.class and conversionOps.contains((commonType.class, leftType.class)):
+    let op = conversionOps[(commonType.class, leftType.class)]
+    self.currentExpr.instr.add WasmInstr(kind: op)
+
+  self.genNode(right, dest)
+  if rightType.class != commonType.class and conversionOps.contains((commonType.class, rightType.class)):
+    let op = conversionOps[(commonType.class, rightType.class)]
+    self.currentExpr.instr.add WasmInstr(kind: op)
+
+  if commonType.class == IdInt32 or commonType.class == IdChar or commonType.class == IdPointerType:
+    self.currentExpr.instr.add WasmInstr(kind: op32S)
+  elif commonType.class == IdUInt32:
+    self.currentExpr.instr.add WasmInstr(kind: op32U)
+  elif commonType.class == IdInt64:
+    self.currentExpr.instr.add WasmInstr(kind: op64S)
+  elif commonType.class == IdUInt64:
+    self.currentExpr.instr.add WasmInstr(kind: op64U)
+  elif commonType.class == IdFloat32:
+    self.currentExpr.instr.add WasmInstr(kind: op32F)
+  elif commonType.class == IdFloat64:
+    self.currentExpr.instr.add WasmInstr(kind: op64F)
+  else:
+    log lvlError, fmt"genNodeBinaryExpression: Type not implemented: {`$`(commonType, true)}"
 
 proc genNodeBinaryAddExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
-  self.genNodeBinaryExpression(node, Destination(kind: Stack))
-  self.instr(I32Add)
+  self.genNodeBinaryExpression(node, Destination(kind: Stack), I32Add, I32Add, I64Add, I64Add, F32Add, F64Add)
   self.genStoreDestination(node, dest)
 
 proc genNodeBinarySubExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
-  self.genNodeBinaryExpression(node, Destination(kind: Stack))
-  self.instr(I32Sub)
+  self.genNodeBinaryExpression(node, Destination(kind: Stack), I32Sub, I32Sub, I64Sub, I64Sub, F32Sub, F64Sub)
   self.genStoreDestination(node, dest)
 
 proc genNodeBinaryMulExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
-  self.genNodeBinaryExpression(node, Destination(kind: Stack))
-  self.instr(I32Mul)
+  self.genNodeBinaryExpression(node, Destination(kind: Stack), I32Mul, I32Mul, I64Mul, I64Mul, F32Mul, F64Mul)
   self.genStoreDestination(node, dest)
 
 proc genNodeBinaryDivExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
-  self.genNodeBinaryExpression(node, Destination(kind: Stack))
-  self.instr(I32DivS)
+  self.genNodeBinaryExpression(node, Destination(kind: Stack), I32DivS, I32DivU, I64DivS, I64DivU, F32Div, F64Div)
   self.genStoreDestination(node, dest)
 
 proc genNodeBinaryModExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
-  self.genNodeBinaryExpression(node, Destination(kind: Stack))
-  self.instr(I32RemS)
+  self.genNodeBinaryExpression(node, Destination(kind: Stack), I32RemS, I32RemU, I64RemS, I64RemU, F32Div, F64Div)
   self.genStoreDestination(node, dest)
 
 proc genNodeBinaryLessExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
-  self.genNodeBinaryExpression(node, Destination(kind: Stack))
-  self.instr(I32LtS)
+  self.genNodeBinaryExpression(node, Destination(kind: Stack), I32LtS, I32LtU, I64LtS, I64LtU, F32Lt, F64Lt)
   self.genStoreDestination(node, dest)
 
 proc genNodeBinaryLessEqualExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
-  self.genNodeBinaryExpression(node, Destination(kind: Stack))
-  self.instr(I32LeS)
+  self.genNodeBinaryExpression(node, Destination(kind: Stack), I32LeS, I32LeU, I64LeS, I64LeU, F32Le, F64Le)
   self.genStoreDestination(node, dest)
 
 proc genNodeBinaryGreaterExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
-  self.genNodeBinaryExpression(node, Destination(kind: Stack))
-  self.instr(I32GtS)
+  self.genNodeBinaryExpression(node, Destination(kind: Stack), I32GtS, I32GtU, I64GtS, I64GtU, F32Gt, F64Gt)
   self.genStoreDestination(node, dest)
 
 proc genNodeBinaryGreaterEqualExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
-  self.genNodeBinaryExpression(node, Destination(kind: Stack))
-  self.instr(I32GeS)
+  self.genNodeBinaryExpression(node, Destination(kind: Stack), I32GeS, I32GeU, I64GeS, I64GeU, F32Ge, F64Ge)
   self.genStoreDestination(node, dest)
 
 proc genNodeBinaryEqualExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
-  self.genNodeBinaryExpression(node, Destination(kind: Stack))
-  self.instr(I32Eq)
+  self.genNodeBinaryExpression(node, Destination(kind: Stack), I32Eq, I32Eq, I64Eq, I64Eq, F32Eq, F64Eq)
   self.genStoreDestination(node, dest)
 
 proc genNodeBinaryNotEqualExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
-  self.genNodeBinaryExpression(node, Destination(kind: Stack))
-  self.instr(I32Ne)
+  self.genNodeBinaryExpression(node, Destination(kind: Stack), I32Ne, I32Ne, I64Ne, I64Ne, F32Ne, F64Ne)
   self.genStoreDestination(node, dest)
 
 proc genNodeBinaryAndExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
-  self.genNodeBinaryExpression(node, Destination(kind: Stack))
-  self.instr(I32And)
+  self.genNodeBinaryExpression(node, Destination(kind: Stack), I32And, I32And, I64And, I64And, F32Mul, F64Mul)
   self.genStoreDestination(node, dest)
 
 proc genNodeBinaryOrExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
-  self.genNodeBinaryExpression(node, Destination(kind: Stack))
-  self.instr(I32Or)
+  self.genNodeBinaryExpression(node, Destination(kind: Stack), I32Or, I32Or, I64Or, I64Or, F32Add, F64Add)
   self.genStoreDestination(node, dest)
 
 proc genNodeUnaryNegateExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
-  self.instr(I32Const, i32Const: 0)
+  let typ = self.ctx.computeType(node)
+  let (iConst, iSub) = if typ.class == IdInt32 or typ.class == IdUInt32:
+    (WasmInstr(kind: I32Const, i32Const: 0), I32Sub)
+  elif typ.class == IdInt64 or typ.class == IdUInt64:
+    (WasmInstr(kind: I64Const, i64Const: 0), I64Sub)
+  else:
+    log lvlError, fmt"genNodeUnaryNegateExpression: Type not implemented: {`$`(typ, true)}"
+    return
+
+  self.currentExpr.instr.add iConst
   self.genNodeChildren(node, IdUnaryExpressionChild, Destination(kind: Stack))
-  self.instr(I32Sub)
+  self.instr(iSub)
   self.genStoreDestination(node, dest)
 
 proc genNodeUnaryNotExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
-  self.instr(I32Const, i32Const: 1)
+  let typ = self.ctx.computeType(node)
+  let (iConst, iSub) = if typ.class == IdInt32 or typ.class == IdUInt32:
+    (WasmInstr(kind: I32Const, i32Const: 1), I32Sub)
+  elif typ.class == IdInt64 or typ.class == IdUInt64:
+    (WasmInstr(kind: I64Const, i64Const: 1), I64Sub)
+  else:
+    log lvlError, fmt"genNodeUnaryNegateExpression: Type not implemented: {`$`(typ, true)}"
+    return
+
+  self.currentExpr.instr.add iConst
   self.genNodeChildren(node, IdUnaryExpressionChild, Destination(kind: Stack))
-  self.instr(I32Sub)
+  self.instr(iSub)
   self.genStoreDestination(node, dest)
 
 proc genNodeIntegerLiteral(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   let value = node.property(IdIntegerLiteralValue).get
-  self.instr(I32Const, i32Const: value.intValue.int32)
+  let typ = self.ctx.computeType(node)
+  if typ.class == IdInt32 or typ.class == IdUInt32:
+    self.instr(I32Const, i32Const: value.intValue.int32)
+  elif typ.class == IdInt64 or typ.class == IdUInt64:
+    self.instr(I64Const, i64Const: value.intValue.int64)
+  else:
+    log lvlError, fmt"genNodeIntegerLiteral: Type not implemented: {`$`(typ, true)}"
+
   self.genStoreDestination(node, dest)
 
 proc genNodeBoolLiteral(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
@@ -197,8 +297,8 @@ proc genNodeForLoop(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destina
 
   let loopEndNode = node.firstChild(IdForLoopEnd)
 
-  let offset = self.createStackLocal(loopVariableNode.id, intTypeInstance)
-  let loopEndLocalIndex = loopEndNode.mapIt(self.createLocal(it.id, intTypeInstance, "loop_end"))
+  let offset = self.createStackLocal(loopVariableNode.id, int32TypeInstance)
+  let loopEndLocalIndex = loopEndNode.mapIt(self.createLocal(it.id, int32TypeInstance, "loop_end"))
 
   self.loopBranchIndices[node.id] = (breakIndex: 0, continueIndex: 2)
 
@@ -319,6 +419,20 @@ proc genNodeStringGetLength(self: BaseLanguageWasmCompiler, node: AstNode, dest:
   self.instr(I32WrapI64)
   self.genStoreDestination(node, dest)
 
+proc genNodeCast(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  let sourceType = self.ctx.computeType node.firstChild(IdCastValue).getOr do:
+    return
+  let targetType = self.ctx.getValue node.firstChild(IdCastType).getOr do:
+    return
+
+  self.genNodeChildren(node, IdCastValue, Destination(kind: Stack))
+
+  if conversionOps.contains((targetType.class, sourceType.class)):
+    let op = conversionOps[(targetType.class, sourceType.class)]
+    self.currentExpr.instr.add WasmInstr(kind: op)
+
+  self.genStoreDestination(node, dest)
+
 proc genNodeNodeReference(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   let id = node.reference(IdNodeReferenceTarget)
   if node.resolveReference(IdNodeReferenceTarget).getSome(target) and target.class == IdConstDecl:
@@ -415,12 +529,22 @@ proc genNodePrintExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest:
     self.genNode(c, Destination(kind: Stack))
 
     let typ = self.ctx.computeType(c)
-    if typ.class == IdInt:
+    if typ.class == IdInt32:
       self.instr(Call, callFuncIdx: self.printI32)
+    elif typ.class == IdUInt32:
+      self.instr(Call, callFuncIdx: self.printU32)
+    elif typ.class == IdInt64:
+      self.instr(Call, callFuncIdx: self.printI64)
+    elif typ.class == IdUInt64:
+      self.instr(Call, callFuncIdx: self.printU64)
+    elif typ.class == IdFloat32:
+      self.instr(Call, callFuncIdx: self.printF32)
+    elif typ.class == IdFloat64:
+      self.instr(Call, callFuncIdx: self.printF64)
     elif typ.class == IdChar:
       self.instr(Call, callFuncIdx: self.printChar)
     elif typ.class == IdPointerType:
-      self.instr(Call, callFuncIdx: self.printI32)
+      self.instr(Call, callFuncIdx: self.printU32)
     elif typ.class == IdString:
       let tempIdx = self.getTempLocal(stringTypeInstance)
       self.instr(LocalTee, localIdx: tempIdx)
@@ -439,7 +563,7 @@ proc genNodePrintExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest:
   self.instr(Call, callFuncIdx: self.printLine)
 
 proc genToString(self: BaseLanguageWasmCompiler, typ: AstNode) =
-  if typ.class == IdInt:
+  if typ.class == IdInt32:
     let tempIdx = self.getTempLocal(typ)
     self.instr(Call, callFuncIdx: self.intToString)
     self.instr(LocalTee, localIdx: tempIdx)
@@ -635,8 +759,11 @@ proc genNodeArrayAccess(self: BaseLanguageWasmCompiler, node: AstNode, dest: Des
 
   self.genNode(valueNode, Destination(kind: Stack))
   self.genNode(indexNode, Destination(kind: Stack))
-  self.instr(I32Const, i32Const: size)
-  self.instr(I32Mul)
+
+  if size != 1:
+    self.instr(I32Const, i32Const: size)
+    self.instr(I32Mul)
+
   self.instr(I32Add)
 
   self.genCopyToDestination(node, dest)
@@ -663,8 +790,6 @@ proc computeStructTypeAttributes(self: BaseLanguageWasmCompiler, typ: AstNode): 
   for _, memberNode in typ.children(IdStructDefinitionMembers):
     let memberType = self.ctx.computeType(memberNode)
     let (memberSize, memberAlign, _) = self.getTypeAttributes(memberType)
-    assert memberAlign <= 4
-
     result.size = align(result.size, memberAlign)
     result.size += memberSize
     result.align = max(result.align, memberAlign)
@@ -781,14 +906,25 @@ proc addBaseLanguage*(self: BaseLanguageWasmCompiler) =
   self.generators[IdReturnExpression] = genNodeReturnExpression
   self.generators[IdStringGetPointer] = genNodeStringGetPointer
   self.generators[IdStringGetLength] = genNodeStringGetLength
+  self.generators[IdCast] = genNodeCast
 
-  self.wasmValueTypes[IdInt] = (WasmValueType.I32, I32Load, I32Store) # int32
+  self.wasmValueTypes[IdInt32] = (WasmValueType.I32, I32Load, I32Store) # int32
+  self.wasmValueTypes[IdUInt32] = (WasmValueType.I32, I32Load, I32Store) # uint32
+  self.wasmValueTypes[IdInt64] = (WasmValueType.I64, I64Load, I64Store) # int64
+  self.wasmValueTypes[IdUInt64] = (WasmValueType.I64, I64Load, I64Store) # uint64
+  self.wasmValueTypes[IdFloat32] = (WasmValueType.F32, F32Load, F32Store) # int64
+  self.wasmValueTypes[IdFloat64] = (WasmValueType.F64, F64Load, F64Store) # uint64
   self.wasmValueTypes[IdChar] = (WasmValueType.I32, I32Load8U, I32Store8) # int32
   self.wasmValueTypes[IdPointerType] = (WasmValueType.I32, I32Load, I32Store) # pointer
   self.wasmValueTypes[IdString] = (WasmValueType.I64, I64Load, I64Store) # (len << 32) | ptr
   self.wasmValueTypes[IdFunctionType] = (WasmValueType.I32, I32Load, I32Store) # table index
 
-  self.typeAttributes[IdInt] = (4'i32, 4'i32, false)
+  self.typeAttributes[IdInt32] = (4'i32, 4'i32, false)
+  self.typeAttributes[IdUInt32] = (4'i32, 4'i32, false)
+  self.typeAttributes[IdInt64] = (8'i32, 4'i32, false)
+  self.typeAttributes[IdUInt64] = (8'i32, 4'i32, false)
+  self.typeAttributes[IdFloat32] = (4'i32, 4'i32, false)
+  self.typeAttributes[IdFloat64] = (8'i32, 4'i32, false)
   self.typeAttributes[IdChar] = (1'i32, 1'i32, false)
   self.typeAttributes[IdPointerType] = (4'i32, 4'i32, false)
   self.typeAttributes[IdString] = (8'i32, 4'i32, false)

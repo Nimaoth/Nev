@@ -357,7 +357,7 @@ proc createNodeClassFromLangDefinition*(classMap: var Table[ClassId, NodeClass],
   let isInterface = def.property(IdClassDefinitionInterface).get.boolValue
   let isFinal = def.property(IdClassDefinitionFinal).get.boolValue
   let canBeRoot = def.property(IdClassDefinitionCanBeRoot).get.boolValue
-  let precedence = def.property(IdClassDefinitionPrecedence).get.intValue
+  let precedence = def.property(IdClassDefinitionPrecedence).get.intValue.int
 
   var properties = newSeqOfCap[PropertyDescription](def.childCount(IdClassDefinitionProperties))
   var references = newSeqOfCap[NodeReferenceDescription](def.childCount(IdClassDefinitionReferences))
