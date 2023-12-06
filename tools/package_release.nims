@@ -66,9 +66,9 @@ copySharedFilesTo releaseWeb
 cpFile2 "ast.exe", releaseWindows
 cpFile2 "tools/absytree-server.exe", releaseWindows
 cpFile2 "tools/nimsuggest-ws.exe", releaseWindows
-cpFile2 "libgcc_s_seh-1.dll", releaseWindows
-cpFile2 "libstdc++-6.dll", releaseWindows
-cpFile2 "libwinpthread-1.dll", releaseWindows
+# cpFile2 "libgcc_s_seh-1.dll", releaseWindows
+# cpFile2 "libstdc++-6.dll", releaseWindows
+# cpFile2 "libwinpthread-1.dll", releaseWindows
 
 cpFile2 "ast", releaseLinux
 cpFile2 "tools/absytree-server", releaseLinux
