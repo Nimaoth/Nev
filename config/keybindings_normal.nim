@@ -188,11 +188,11 @@ proc loadNormalKeybindings*() {.scriptActionWasmNims("load-normal-keybindings").
     addCommand("editor.model", "gd", "goto-definition")
     addCommand("editor.model", "tt", "toggle-bool-cell")
 
-    addCommand("editor.model.completion", "<ENTER>", "finish-edit", true)
     addCommand("editor.model.completion", "<ESCAPE>", "hide-completions")
     addCommand("editor.model.completion", "<UP>", "select-prev-completion")
     addCommand("editor.model.completion", "<DOWN>", "select-next-completion")
     addCommand("editor.model.completion", "<C-SPACE>", "move-cursor-start")
     addCommand("editor.model.completion", "<TAB>", "apply-selected-completion")
+    addCommand("editor.model.completion", "<ENTER>", "apply-selected-completion")
 
     addCommand "editor.model.goto", "<END>", "end"

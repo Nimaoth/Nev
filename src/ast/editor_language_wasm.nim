@@ -30,6 +30,6 @@ proc addEditorLanguage*(self: BaseLanguageWasmCompiler) =
   self.addImport(IdLoadAppFile.Id, "env", "loadAppFile", [WasmValueType.I32], [WasmValueType.I32])
 
   # self.functionInputOutputComputer[IdFunctionDefinition] = getFunctionInputOutput
-  # self.wasmValueTypes[IdInt] = (WasmValueType.I32, I32Load, I32Store) # int32
-  # self.typeAttributes[IdInt] = (4'i32, 4'i32, false)
+  # self.wasmValueTypes[IdInt32] = (WasmValueType.I32, I32Load, I32Store) # int32
+  # self.typeAttributes[IdInt32] = (4'i32, 4'i32, false)
   # self.typeAttributeComputers[IdStructDefinition] = proc(typ: AstNode): TypeAttributes = self.computeStructTypeAttributes(typ)

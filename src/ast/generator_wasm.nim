@@ -55,6 +55,11 @@ type
 
     # imported
     printI32: WasmFuncIdx
+    printU32: WasmFuncIdx
+    printI64: WasmFuncIdx
+    printU64: WasmFuncIdx
+    printF32: WasmFuncIdx
+    printF64: WasmFuncIdx
     printChar: WasmFuncIdx
     printString: WasmFuncIdx
     printLine: WasmFuncIdx
@@ -93,6 +98,11 @@ proc newBaseLanguageWasmCompiler*(ctx: ModelComputationContextBase): BaseLanguag
   result.builder.addExport("memory", 0.WasmMemIdx)
 
   result.printI32 = result.builder.addImport("env", "print_i32", result.builder.addType([I32], []))
+  result.printU32 = result.builder.addImport("env", "print_u32", result.builder.addType([I32], []))
+  result.printI64 = result.builder.addImport("env", "print_i64", result.builder.addType([I64], []))
+  result.printU64 = result.builder.addImport("env", "print_u64", result.builder.addType([I64], []))
+  result.printF32 = result.builder.addImport("env", "print_f32", result.builder.addType([F32], []))
+  result.printF64 = result.builder.addImport("env", "print_f64", result.builder.addType([F64], []))
   result.printChar = result.builder.addImport("env", "print_char", result.builder.addType([I32], []))
   result.printString = result.builder.addImport("env", "print_string", result.builder.addType([I32, I32], []))
   result.printLine = result.builder.addImport("env", "print_line", result.builder.addType([], []))
@@ -255,7 +265,9 @@ proc compileToBinary*(self: BaseLanguageWasmCompiler, node: AstNode): seq[uint8]
 
   debugf"{self.builder}"
 
-  # discard self.builder.validate()
+  if not self.builder.validate(false):
+    log(lvlError, "Wasm validation failed")
+    discard self.builder.validate(true)
 
   let binary = self.builder.generateBinary()
   return binary

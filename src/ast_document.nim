@@ -106,7 +106,7 @@ ctx.globalScope[IdNotEqual] = Symbol(id: IdNotEqual, name: "!=", kind: skBuiltin
 ctx.globalScope[IdAnd] = Symbol(id: IdAnd, name: "and", kind: skBuiltin, typ: typeFnIntIntInt, value: funcAndIntInt, operatorNotation: Infix, precedence: 5)
 ctx.globalScope[IdOr] = Symbol(id: IdOr, name: "or", kind: skBuiltin, typ: typeFnIntIntInt, value: funcOrIntInt, operatorNotation: Infix, precedence: 5)
 ctx.globalScope[IdOrder] = Symbol(id: IdOrder, name: "<=>", kind: skBuiltin, typ: typeFnIntIntInt, value: funcOrderIntInt, operatorNotation: Infix, precedence: 5)
-ctx.globalScope[IdInt] = Symbol(id: IdInt, name: "int", kind: skBuiltin, typ: typeType(), value: typeValue(intType()))
+ctx.globalScope[IdInt32] = Symbol(id: IdInt32, name: "int", kind: skBuiltin, typ: typeType(), value: typeValue(intType()))
 ctx.globalScope[IdString] = Symbol(id: IdString, name: "string", kind: skBuiltin, typ: typeType(), value: typeValue(stringType()))
 ctx.globalScope[IdVoid] = Symbol(id: IdVoid, name: "void", kind: skBuiltin, typ: typeType(), value: typeValue(voidType()))
 ctx.globalScope[IdPrint] = Symbol(id: IdPrint, name: "print", kind: skBuiltin, typ: newFunctionType(@[anyType(true)], voidType()), value: funcPrintAny)
@@ -2103,12 +2103,12 @@ method createWithDocument*(self: AstDocumentEditor, document: Document, configPr
   #       FunctionDefinition():
   #         Params():
   #           LetDecl(id: == paramA, text: "a"):
-  #             Identifier(reff: == IdInt)
+  #             Identifier(reff: == IdInt32)
   #             Empty()
   #           LetDecl(id: == paramB, text: "b"):
-  #             Identifier(reff: == IdInt)
+  #             Identifier(reff: == IdInt32)
   #             Empty()
-  #         Identifier(reff: == IdInt)
+  #         Identifier(reff: == IdInt32)
   #         NodeList():
   #           LetDecl(id: == resultId, text: "result"):
   #             Empty()
