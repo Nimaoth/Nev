@@ -85,6 +85,7 @@ type
     children*: seq[NodeChildDescription]
     references*: seq[NodeReferenceDescription]
     substitutionProperty {.getter.}: Option[RoleId]
+    substitutionReference {.getter.}: Option[RoleId]
     precedence {.getter.}: int
     canBeRoot {.getter.}: bool
 
@@ -264,6 +265,8 @@ generateGetters(Model)
 generateGetters(Language)
 
 proc hash*(node: AstNode): Hash = node.id.hash
+proc hash*(class: NodeClass): Hash = class.id.hash
+proc hash*(language: Language): Hash = language.id.hash
 
 method computeType*(self: ModelComputationContextBase, node: AstNode): AstNode {.base.} = discard
 method getValue*(self: ModelComputationContextBase, node: AstNode): AstNode {.base.} = discard
@@ -404,17 +407,27 @@ proc addLanguage*(self: Model, language: Language) =
         self.childClasses[i.id] = @[]
       self.childClasses[i.id].add c
 
+
+proc modelDumpNodes*(self: Model) {.exportc.} =
+  debugf"{self.path} modelNodes:"
+  for node in self.nodes.values:
+    debugf"    node {node}"
+
 proc addRootNode*(self: Model, node: AstNode) =
   self.rootNodes.add node
   node.forEach2 n:
     n.model = self
     self.nodes[n.id] = n
+    # debugf"{self.path} addFromRootNode {n}"
 
 proc addTempNode*(self: Model, node: AstNode) =
+  # log lvlWarn, &"{self.path} addTempNode {node.dump(self)}"
   self.tempNodes.add node
+  self.nodes[node.id] = node
   node.forEach2 n:
     n.model = self
     self.nodes[n.id] = n
+    # debugf"{self.path} addFromTempNode {n}"
 
 proc removeTempNode*(self: Model, node: AstNode) =
   let i = self.tempNodes.find(node)
@@ -431,6 +444,8 @@ proc resolveReference*(self: Model, id: NodeId): Option[AstNode] =
     for model in self.models:
       if model.nodes.contains(id):
         return model.nodes[id].some
+    if self.project.isNotNil:
+      return self.project.resolveReference(id)
     return AstNode.none
 
 proc resolveReference*(self: Project, id: NodeId): Option[AstNode] =
@@ -453,6 +468,7 @@ proc newNodeClass*(
       children: openArray[NodeChildDescription] = [],
       references: openArray[NodeReferenceDescription] = [],
       substitutionProperty: Option[RoleId] = RoleId.none,
+      substitutionReference: Option[RoleId] = RoleId.none,
       precedence: int = 0,
     ): NodeClass =
 
@@ -470,6 +486,7 @@ proc newNodeClass*(
   result.children = @children
   result.references = @references
   result.substitutionProperty = substitutionProperty
+  result.substitutionReference = substitutionReference
   result.precedence = precedence
 
 proc isSubclassOf*(self: NodeClass, baseClassId: ClassId): bool =
@@ -606,6 +623,20 @@ proc resolveReference*(node: AstNode, role: RoleId): Option[AstNode] =
     if c.role == role:
       result = node.model.resolveReference(c.node)
       break
+
+proc resolveOriginal*(node: AstNode, recurse: bool): Option[AstNode] =
+  result = AstNode.none
+  if node.model.isNil:
+    return
+
+  for c in node.references:
+    if c.role == IdCloneOriginal:
+      let original = node.model.resolveReference(c.node)
+      if recurse and original.isSome:
+        return original.get.resolveOriginal(recurse)
+      return original
+
+  return node.some
 
 proc setReference*(node: AstNode, role: RoleId, target: NodeId) =
   for c in node.references.mitems:
@@ -1056,6 +1087,7 @@ proc cloneAndMapIds*(node: AstNode, model: Model = nil, linkOriginal: bool = fal
   var idMap = initTable[NodeId, NodeId]()
   let newNode = node.clone(idMap, model, linkOriginal)
   newNode.replaceReferences(idMap)
+  # echo &"cloneAndMapIds: {node.dump(recurse=true)}\n->\n{newNode.dump(model=model, recurse=true)}"
   return newNode
 
 method dump*(self: Cell, recurse: bool = false): string {.base.} = discard

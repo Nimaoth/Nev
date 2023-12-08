@@ -27,9 +27,14 @@ let functionTypeClass* = newNodeClass(IdFunctionType, "FunctionType", base=expre
 let structTypeClass* = newNodeClass(IdStructType, "StructType", base=expressionClass,
   children=[
     NodeChildDescription(id: IdStructTypeMemberTypes, role: "memberTypes", class: expressionClass.id, count: ChildCount.ZeroOrMore)])
+
 let pointerTypeClass* = newNodeClass(IdPointerType, "PointerType", alias="ptr", base=expressionClass,
+  references=[
+    NodeReferenceDescription(id: IdPointerTypeTarget, role: "target", class: expressionClass.id)])
+
+let pointerTypeDeclClass* = newNodeClass(IdPointerTypeDecl, "PointerTypeDecl", alias="ptr", base=expressionClass,
   children=[
-    NodeChildDescription(id: IdPointerTypeTarget, role: "target", class: expressionClass.id, count: ChildCount.One)])
+    NodeChildDescription(id: IdPointerTypeDeclTarget, role: "target", class: expressionClass.id, count: ChildCount.One)])
 
 let namedInterface* = newNodeClass(IdINamed, "INamed", isAbstract=true, isInterface=true,
   properties=[PropertyDescription(id: IdINamedName, role: "name", typ: PropertyType.String)])
@@ -80,7 +85,7 @@ let buildExpressionClass* = newNodeClass(IdBuildString, "BuildExpression", alias
     NodeChildDescription(id: IdBuildArguments, role: "arguments", class: expressionClass.id, count: ChildCount.ZeroOrMore)])
 
 let emptyClass* = newNodeClass(IdEmpty, "Empty", base=expressionClass)
-let nodeReferenceClass* = newNodeClass(IdNodeReference, "NodeReference", alias="ref", base=expressionClass, references=[NodeReferenceDescription(id: IdNodeReferenceTarget, role: "target", class: declarationInterface.id)])
+let nodeReferenceClass* = newNodeClass(IdNodeReference, "NodeReference", alias="ref", base=expressionClass, substitutionReference=IdNodeReferenceTarget.some, references=[NodeReferenceDescription(id: IdNodeReferenceTarget, role: "target", class: declarationInterface.id)])
 let numberLiteralClass* = newNodeClass(IdIntegerLiteral, "IntegerLiteral", alias="number", base=expressionClass, properties=[PropertyDescription(id: IdIntegerLiteralValue, role: "value", typ: PropertyType.Int)], substitutionProperty=IdIntegerLiteralValue.some)
 let stringLiteralClass* = newNodeClass(IdStringLiteral, "StringLiteral", alias="''", base=expressionClass, properties=[PropertyDescription(id: IdStringLiteralValue, role: "value", typ: PropertyType.String)])
 let boolLiteralClass* = newNodeClass(IdBoolLiteral, "BoolLiteral", alias="bool", base=expressionClass, properties=[PropertyDescription(id: IdBoolLiteralValue, role: "value", typ: PropertyType.Bool)])
@@ -438,7 +443,14 @@ builder.addBuilderFor pointerTypeClass.id, idNone(), proc(builder: CellBuilder, 
   var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
     cell.add ConstantCell(node: node, text: "ptr", themeForegroundColors: @["keyword"], disableEditing: true)
-    cell.add builder.buildChildren(map, node, IdPointerTypeTarget, &{LayoutHorizontal})
+    # cell.add builder.buildChildren(map, node, IdPointerTypeTarget, &{LayoutHorizontal})
+  return cell
+
+builder.addBuilderFor pointerTypeDeclClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
+  var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
+  cell.fillChildren = proc(map: NodeCellMap) =
+    cell.add ConstantCell(node: node, text: "ptr", themeForegroundColors: @["keyword"], disableEditing: true)
+    cell.add builder.buildChildren(map, node, IdPointerTypeDeclTarget, &{LayoutHorizontal})
   return cell
 
 builder.addBuilderFor addressOfClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
@@ -737,6 +749,7 @@ typeComputers[float64TypeClass.id] = proc(ctx: ModelComputationContextBase, node
 typeComputers[charTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode = metaTypeInstance
 typeComputers[voidTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode = metaTypeInstance
 typeComputers[pointerTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode = metaTypeInstance
+typeComputers[pointerTypeDeclClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode = metaTypeInstance
 
 valueComputers[metaTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode = metaTypeInstance
 valueComputers[stringTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode = stringTypeInstance
@@ -751,16 +764,20 @@ valueComputers[voidTypeClass.id] = proc(ctx: ModelComputationContextBase, node: 
 
 valueComputers[pointerTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute value for pointer type {node}"
+  return node
 
-  if node.firstChild(IdPointerTypeTarget).getSome(targetTypeNode):
+valueComputers[pointerTypeDeclClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  # debugf"compute value for pointer type {node}"
+
+  if node.firstChild(IdPointerTypeDeclTarget).getSome(targetTypeNode):
     var typ = newAstNode(pointerTypeClass)
     if ctx.getValue(targetTypeNode).isNotNil(targetType):
-      typ.setChild(IdPointerTypeTarget, targetType)
+      typ.setReference(IdPointerTypeTarget, targetType.id)
 
     node.model.addTempNode(typ)
     return typ
 
-  return node
+  return voidTypeInstance
 
 # base expression
 typeComputers[expressionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
@@ -1120,7 +1137,7 @@ proc isTypeGeneric*(typ: AstNode, ctx: ModelComputationContextBase): bool =
     return false
 
   if typ.class == IdPointerType:
-    if typ.firstChild(IdPointerTypeTarget).getSome(targetTypeNode):
+    if typ.resolveReference(IdPointerTypeTarget).getSome(targetTypeNode):
       return targetTypeNode.isTypeGeneric(ctx)
     return true
 
@@ -1140,18 +1157,17 @@ proc isGeneric*(function: AstNode, ctx: ModelComputationContextBase): bool =
     return false
   assert false
 
-proc substituteGenericTypeValues*(ctx: ModelComputationContextBase, genericType: AstNode, concreteType: AstNode, map: var Table[AstNode, AstNode]) =
+proc substituteGenericTypeValues*(ctx: ModelComputationContextBase, genericType: AstNode, concreteType: AstNode, map: var Table[NodeId, AstNode]) =
   # debugf"substitute {genericType} with {concreteType}"
   if genericType.class == IdGenericType:
-    # genericType.add(IdGenericTypeValue, concreteType.cloneAndMapIds())
     let originalId = genericType.reference(IdCloneOriginal)
     if originalId.isSome:
       if genericType.model.resolveReference(originalId).getSome(original):
         # debugf"set generic {original.property(IdINamedName)}, {original}"
-        map[original] = concreteType
+        map[original.id] = concreteType
     else:
       # debugf"set generic {genericType.property(IdINamedName)}, {genericType}"
-      map[genericType] = concreteType
+      map[genericType.id] = concreteType
 
     return
 
@@ -1166,10 +1182,10 @@ proc substituteGenericTypeValues*(ctx: ModelComputationContextBase, genericType:
     return
 
   if genericType.class == IdPointerType:
-    let genericChildren = genericType.children(IdPointerTypeTarget)
-    let concreteChildren = concreteType.children(IdPointerTypeTarget)
-    for i in 0..min(genericChildren.high, concreteChildren.high):
-      ctx.substituteGenericTypeValues(genericChildren[i], concreteChildren[i], map)
+    let genericChild = genericType.resolveReference(IdPointerTypeTarget)
+    let concreteChild = concreteType.resolveReference(IdPointerTypeTarget)
+    if genericChild.isSome and concreteChild.isSome:
+      ctx.substituteGenericTypeValues(genericChild.get, concreteChild.get, map)
     return
 
   # for genericChildren in genericType.childLists.mitems:
@@ -1178,7 +1194,7 @@ proc substituteGenericTypeValues*(ctx: ModelComputationContextBase, genericType:
   #     if i < concreteChildren.len:
   #       substituteGenericTypeValues(ctx, genericChild, concreteChildren[i], map)
 
-type FunctionInstantiation = tuple[function: AstNode, arguments: Table[AstNode, AstNode]]
+type FunctionInstantiation = tuple[function: AstNode, arguments: Table[NodeId, AstNode]]
 
 var functionInstances* = initTable[FunctionInstantiation, tuple[node: AstNode, revision: int]]()
 
@@ -1190,7 +1206,7 @@ proc instantiateFunction*(ctx: ModelComputationContextBase, genericFunction: Ast
   let genericParams = genericFunction.children(IdFunctionDefinitionParameters)
 
   var actualArguments = newSeq[AstNode]()
-  var map = initTable[AstNode, AstNode]()
+  var map = initTable[NodeId, AstNode]()
 
   for i, arg in arguments:
     if i < genericParams.len:
@@ -1204,7 +1220,7 @@ proc instantiateFunction*(ctx: ModelComputationContextBase, genericFunction: Ast
         let value = ctx.getValue(arg)
         # debugf"{i}: value {value}"
         actualArguments.add value
-        map[genericParam] = value
+        map[genericParam.id] = value
 
       else:
         let typ = ctx.computeType(arg)
@@ -1239,71 +1255,21 @@ proc instantiateFunction*(ctx: ModelComputationContextBase, genericFunction: Ast
   var concreteFunction = genericFunction.cloneAndMapIds(linkOriginal=true)
 
   # debug concreteFunction.dump(model, true)
+  # set concrete function arguments as values for paramaters
   concreteFunction.forEach2 n:
-    let original = n.reference(IdCloneOriginal)
-    if model.resolveReference(original).getSome(original):
-      if map.contains(original):
-        let role = if n.class == IdGenericType: IdGenericTypeValue
-        elif n.class == IdParameterDecl: IdParameterDeclValue
-        else:
-          assert false, "unknown class for generic type value substitution"
-          RoleId.default
+    let originalId = n.reference(IdCloneOriginal)
+    if map.contains(originalId):
+      let role = if n.class == IdGenericType: IdGenericTypeValue
+      elif n.class == IdParameterDecl: IdParameterDeclValue
+      else:
+        assert false, "unknown class for generic type value substitution"
+        RoleId.default
 
-        # log lvlWarn, fmt"instantiateFunction: clone argument {map[original]}"
-        n.forceSetChild(role, map[original].cloneAndMapIds())
-    elif original != NodeId.default:
-      log lvlError, fmt"Failed to find original node {original} for {n.dump(model)}"
+      # log lvlWarn, fmt"instantiateFunction: clone argument {map[originalId]}"
+      n.forceSetChild(role, map[originalId].cloneAndMapIds(linkOriginal=true))
   # debug concreteFunction.dump(model, true)
 
-  # for i, arg in arguments:
-  #   if i < concreteParams.len:
-  #     let genericParam = genericParams[i]
-  #     let concreteParam = concreteParams[i]
-
-  #     genericFunction.model.addTempNode(concreteParam)
-  #     ctx.ModelComputationContext.state.insertNode(concreteParam)
-
-  #     let genericParamType = ctx.computeType(genericParam)
-
-  #     # debugf"{i}: generic param {`$`(genericParam, true)}"
-  #     # debugf"{i}: concrete param {`$`(concreteParam, true)}"
-  #     # debugf"{i}: generic param type {`$`(genericParamType, true)}"
-  #     if genericParamType.class == IdType:
-  #       let value = ctx.getValue(arg)
-  #       # debugf"{i}: value {value}"
-
-  #       # todo: replace instead of add
-
-  #       if value.isNotNil:
-  #         # debugf"x: clone {value}"
-  #         concreteParams[i].add(IdParameterDeclValue, value.cloneAndMapIds())
-  #       else:
-  #         concreteParams[i].add(IdParameterDeclValue, nil)
-
-  #     else:
-  #       let typ = ctx.computeType(arg)
-  #       # debugf"{i}: type {typ}"
-
-  #       let concreteParamType = ctx.computeType(concreteParam)
-  #       # debugf"substitute concrete {`$`(concreteParamType, true)}"
-  #       # debugf"with {`$`(typ, true)}"
-  #       var map = initTable[AstNode, AstNode]()
-  #       ctx.substituteGenericTypeValues(concreteParamType, typ, map)
-  #       for (key, value) in map.pairs:
-  #         debugf"map: {key} -> {value}"
-
-  #       for (key, value) in map.pairs:
-  #         let originalId = key.reference(IdCloneOriginal)
-  #         if originalId.isSome:
-  #           if genericFunction.model.resolveReference(originalId).getSome(original):
-  #             assert original.isDescendant(concreteFunction)
-  #             assert original.class == IdGenericType
-  #             original.add(IdGenericTypeValue, value.cloneAndMapIds())
-  #           else:
-  #             log lvlError, fmt"failed to resolve original node with id {originalId} while instantiating generic function {genericFunction}"
-  #         else:
-  #           log lvlError, fmt"original id not found for {key} while instantiating generic function {genericFunction}"
-
+  # log lvlWarn, &"addTempNode concrete function {concreteFunction}"
   genericFunction.model.addTempNode(concreteFunction)
   # debugf"concrete function {`$`(concreteFunction, true)}"
 
@@ -1421,7 +1387,7 @@ valueComputers[callClass.id] = proc(ctx: ModelComputationContextBase, node: AstN
         # debugf"-> {arguments.last}"
       else:
         arguments.add nil
-        # log lvlError, fmt"Could not compute value for argument {arg} in call {node}"
+        log lvlError, fmt"Could not compute value for argument {arg} in call {node}"
 
     if arguments.len != targetValue.childCount(IdStructDefinitionParameter):
       # debugf"wrong number of arguments"
@@ -1429,7 +1395,7 @@ valueComputers[callClass.id] = proc(ctx: ModelComputationContextBase, node: AstN
 
     # debugf"z: clone {targetValue}"
     # log lvlWarn, fmt"getValue call: clone struct decl {targetValue}"
-    var concreteType = targetValue.cloneAndMapIds()
+    var concreteType = targetValue.cloneAndMapIds(linkOriginal=true)
     # debugf"-> {concreteType}"
 
     concreteType.references.add (IdStructTypeGenericBase, targetValue.id)
@@ -1539,7 +1505,7 @@ typeComputers[allocateClass.id] = proc(ctx: ModelComputationContextBase, node: A
   if node.firstChild(IdAllocateType).getSome(typeNode):
     let targetType = ctx.getValue(typeNode)
     var typ = newAstNode(pointerTypeClass)
-    typ.add(IdPointerTypeTarget, targetType)
+    typ.setReference(IdPointerTypeTarget, targetType.id)
     node.model.addTempNode(typ)
     return typ
 
@@ -1551,7 +1517,7 @@ typeComputers[addressOfClass.id] = proc(ctx: ModelComputationContextBase, node: 
   if node.firstChild(IdAddressOfValue).getSome(valueNode):
     let targetType = ctx.computeType(valueNode)
     var typ = newAstNode(pointerTypeClass)
-    typ.add(IdPointerTypeTarget, targetType)
+    typ.setReference(IdPointerTypeTarget, targetType.id)
     node.model.addTempNode(typ)
     return typ
 
@@ -1560,9 +1526,13 @@ typeComputers[addressOfClass.id] = proc(ctx: ModelComputationContextBase, node: 
 typeComputers[derefClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for deref {node}"
 
-  if node.firstChild(IdDerefValue).getSome(typeNode):
-    let pointerType = ctx.computeType(typeNode)
-    if pointerType.class == IdPointerType and pointerType.firstChild(IdPointerTypeTarget).getSome(targetType):
+  if node.firstChild(IdDerefValue).getSome(valueNode):
+    let pointerType = ctx.computeType(valueNode)
+    # debugf"try resolve reference {pointerType.dump(recurse=true)}"
+    if pointerType.class == IdPointerType and pointerType.resolveReference(IdPointerTypeTarget).getSome(targetType):
+      return targetType
+    # log lvlError, fmt"Could not resolve pointer type {pointerType}"
+    if pointerType.resolveReference(IdPointerTypeTarget).getSome(targetType):
       return targetType
 
   return voidTypeInstance
@@ -1570,7 +1540,7 @@ typeComputers[derefClass.id] = proc(ctx: ModelComputationContextBase, node: AstN
 typeComputers[stringGetPointerClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for deref {node}"
   var typ = newAstNode(pointerTypeClass)
-  typ.add(IdPointerTypeTarget, charTypeInstance)
+  typ.setReference(IdPointerTypeTarget, charTypeInstance.id)
   node.model.addTempNode(typ)
   return typ
 
@@ -1583,7 +1553,7 @@ typeComputers[arrayAccessClass.id] = proc(ctx: ModelComputationContextBase, node
 
   if node.firstChild(IdArrayAccessValue).getSome(typeNode):
     let pointerType = ctx.computeType(typeNode)
-    if pointerType.class == IdPointerType and pointerType.firstChild(IdPointerTypeTarget).getSome(targetType):
+    if pointerType.class == IdPointerType and pointerType.resolveReference(IdPointerTypeTarget).getSome(targetType):
       return targetType
 
   return voidTypeInstance
@@ -1702,7 +1672,7 @@ let baseLanguage* = newLanguage(IdBaseLanguage, @[
   namedInterface, declarationInterface,
 
   # typeClass,
-  metaTypeClass, stringTypeClass, charTypeClass, voidTypeClass, functionTypeClass, structTypeClass, pointerTypeClass,
+  metaTypeClass, stringTypeClass, charTypeClass, voidTypeClass, functionTypeClass, structTypeClass, pointerTypeClass, pointerTypeDeclClass,
   int32TypeClass, uint32TypeClass, int64TypeClass, uint64TypeClass, float32TypeClass, float64TypeClass,
 
   expressionClass, binaryExpressionClass, unaryExpressionClass, emptyLineClass, castClass,

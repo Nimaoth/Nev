@@ -156,8 +156,11 @@ let IdStructMemberAccess* = "654fbb281446e19b3822520a".parseId.ClassId
 let IdStructMemberAccessMember* = "654fbb281446e19b38225208".parseId.RoleId
 let IdStructMemberAccessValue* = "654fbb281446e19b38225209".parseId.RoleId
 
-let IdPointerType* = "62e5339b564d29f772934523".parseId.ClassId
-let IdPointerTypeTarget* = "62e5339b564d29f772934524".parseId.RoleId
+let IdPointerTypeDecl* = "62e5339b564d29f772934523".parseId.ClassId
+let IdPointerTypeDeclTarget* = "62e5339b564d29f772934524".parseId.RoleId
+
+let IdPointerType* = "656f7f67d077504f640d86ca".parseId.ClassId
+let IdPointerTypeTarget* = "656f7f67d077504f640d86cb".parseId.RoleId
 
 let IdAddressOf* = "62e5339b564d29f772934525".parseId.ClassId
 let IdAddressOfValue* = "654fbb281446e19b3822520b".parseId.RoleId
@@ -329,13 +332,6 @@ let Id656f7f67d077504f640d8723* = "656f7f67d077504f640d8723".parseId
 let Id656f7f67d077504f640d8724* = "656f7f67d077504f640d8724".parseId
 let Id656f7f67d077504f640d8725* = "656f7f67d077504f640d8725".parseId
 let Id656f7f67d077504f640d8726* = "656f7f67d077504f640d8726".parseId
-let Id656f7f67d077504f640d8727* = "656f7f67d077504f640d8727".parseId
-let Id656f7f67d077504f640d8728* = "656f7f67d077504f640d8728".parseId
-let Id656f7f67d077504f640d8729* = "656f7f67d077504f640d8729".parseId
-let Id656f7f67d077504f640d872a* = "656f7f67d077504f640d872a".parseId
-let Id656f7f67d077504f640d872b* = "656f7f67d077504f640d872b".parseId
-let Id656f7f67d077504f640d872c* = "656f7f67d077504f640d872c".parseId
-let Id656f7f67d077504f640d872d* = "656f7f67d077504f640d872d".parseId
 
 import strformat
 for i in 0..100:

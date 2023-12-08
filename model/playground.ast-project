@@ -2,6 +2,13 @@
   "models": {
     "model/array.ast-model": "654fbb281446e19b38225265",
     "test-language.ast-model": "654fbb281446e19b38225240",
-    "model/a.ast-model": "083671ebb3cd003f6c8faaf3"
+    "model/a.ast-model": "083671ebb3cd003f6c8faaf3",
+    "model/aoc_day1.ast-model": "656f7f67d077504f640d8727",
+    "model/aoc_day2.ast-model": "656f7f67d077504f640d8728",
+    "model/aoc_day3.ast-model": "656f7f67d077504f640d8729",
+    "model/aoc_day4.ast-model": "656f7f67d077504f640d872a",
+    "model/aoc_day5.ast-model": "656f7f67d077504f640d872b",
+    "model/aoc_day6.ast-model": "656f7f67d077504f640d872c",
+    "model/aoc_day7.ast-model": "656f7f67d077504f640d872d"
   }
 }
