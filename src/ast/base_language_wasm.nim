@@ -1,4 +1,4 @@
-import std/[macros, genasts]
+import std/[macros, genasts, strformat]
 import std/[options, tables]
 import fusion/matching
 import model, ast_ids, custom_logger, util, base_language
@@ -475,6 +475,7 @@ proc genNodeNodeReference(self: BaseLanguageWasmCompiler, node: AstNode, dest: D
       of Stack(stackOffset: @offset):
         self.instr(LocalGet, localIdx: self.currentBasePointer)
         let memInstr = self.getTypeMemInstructions(typ)
+        # debugf"load node ref {node} from satck with offset {offset}"
         self.loadInstr(memInstr.load, offset.uint32, 0)
 
     of Memory(offset: @offset, align: @align):
@@ -686,15 +687,22 @@ proc genNodeStructMemberAccessExpression(self: BaseLanguageWasmCompiler, node: A
   var size = 0.int32
   var align = 0.int32
 
-  for _, memberDefinition in typ.children(IdStructDefinitionMembers):
+  for k, memberDefinition in typ.children(IdStructDefinitionMembers):
     let memberType = self.ctx.computeType(memberDefinition)
     let (memberSize, memberAlign, _) = self.getTypeAttributes(memberType)
+
     offset = align(offset, memberAlign)
 
-    let originalMemberId = if memberDefinition.hasReference(IdStructTypeGenericMember):
-      memberDefinition.reference(IdStructTypeGenericMember)
+    let originalMember = memberDefinition.resolveOriginal(recurse=true).getOr:
+      log lvlError, fmt"Original member not found: {memberDefinition}"
+      return
+
+    # echo &"calc member offset of {member}, {k}th member {memberDefinition}, prevOffset {prevOffset}, offset {offset}, size {memberSize}, align {memberAlign}\noriginal: {originalMember}"
+
+    let originalMemberId = if originalMember.hasReference(IdStructTypeGenericMember):
+      originalMember.reference(IdStructTypeGenericMember)
     else:
-      memberDefinition.id
+      originalMember.id
 
     if member.id == originalMemberId:
       size = memberSize
@@ -712,6 +720,7 @@ proc genNodeStructMemberAccessExpression(self: BaseLanguageWasmCompiler, node: A
 
   case dest
   of Stack():
+    # debugf"load member {member} from {valueNode}, offset {offset}"
     let typ = self.ctx.computeType(member)
     let instr = self.getTypeMemInstructions(typ).load
     self.loadInstr(instr, offset.uint32, 0)
@@ -744,6 +753,7 @@ proc genCopyToDestination(self: BaseLanguageWasmCompiler, node: AstNode, dest: D
   of Stack():
     let typ = self.ctx.computeType(node)
     let instr = self.getTypeMemInstructions(typ).load
+    # debugf"copy {node} to stack destination, type {typ}, instr {instr}, offset 0"
     self.loadInstr(instr, 0, 0)
 
   of Memory():

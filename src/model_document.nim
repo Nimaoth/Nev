@@ -199,7 +199,7 @@ type
     completionText: string
     hasCompletions*: bool
     filteredCompletions*: seq[ModelCompletion]
-    unfilteredCompletions*: seq[ModelCompletion]
+    unfilteredCompletions*: HashSet[ModelCompletion]
     selectedCompletion*: int
     completionsBaseIndex*: int
     completionsScrollOffset*: float
@@ -218,6 +218,24 @@ type
     setCursor*: proc(cell: Cell, offset: int, drag: bool)
     selectionColor*: Color
     isThickCursor*: bool
+
+proc `==`*(a, b: ModelCompletion): bool =
+  if a.parent != b.parent: return false
+  if a.role != b.role: return false
+  if a.index != b.index: return false
+  if a.class != b.class: return false
+  if a.name != b.name: return false
+  if a.alwaysApply != b.alwaysApply: return false
+  if a.kind != b.kind: return false
+  case a.kind
+  of SubstituteClass:
+    if a.property != b.property: return false
+  of SubstituteReference:
+    if a.referenceRole != b.referenceRole: return false
+    if a.referenceTarget != b.referenceTarget: return false
+  of ChangeReference:
+    if a.changeReferenceTarget != b.changeReferenceTarget: return false
+  return true
 
 proc `$`(op: ModelOperation): string =
   result = fmt"{op.kind}, '{op.value}'"
@@ -311,7 +329,7 @@ method save*(self: ModelDocument, filename: string = "", app: bool = false) =
     raise newException(IOError, "Missing filename")
 
   log lvlInfo, fmt"Saving model source file '{self.filename}'"
-  let serialized = $self.model.toJson
+  let serialized = $self.model.toJson.pretty
 
   if self.workspace.getSome(ws):
     asyncCheck ws.saveFile(self.filename, serialized)
@@ -613,24 +631,13 @@ proc getSubstitutionTarget(cell: Cell): (AstNode, RoleId, int) =
 
 proc getSubstitutionsForClass(self: ModelDocumentEditor, targetCell: Cell, class: NodeClass, addCompletion: proc(c: ModelCompletion): void): bool =
   # if it's a reference and there is only one reference role, then we can substitute the reference using the scope
-  if class.references.len == 1 and class.children.len == 0 and class.properties.len == 0:
+  if class.substitutionReference.getSome(referenceRole):
     # debugf"getSubstitutionsForClass {class.name}"
-    let desc = class.references[0]
+    let desc = class.nodeReferenceDescription(referenceRole).get
     let language = self.document.model.getLanguageForClass(desc.class)
     let refClass = language.resolveClass(desc.class)
 
     let (parent, role, index) = targetCell.getSubstitutionTarget()
-
-    # for node in self.document.model.rootNodes:
-    #   var res = false
-    #   node.forEach2 n:
-    #     let nClass = language.resolveClass(n.class)
-    #     if nClass.isSubclassOf(refClass.id):
-    #       let name = if n.property(IdINamedName).getSome(name): name.stringValue else: $n.id
-    #       addCompletion ModelCompletion(kind: ModelCompletionKind.SubstituteReference, name: name, class: class, parent: parent, role: role, index: index, referenceRole: desc.id, referenceTarget: n)
-    #       res = true
-    #   if res:
-    #     result = true
 
     let scope = self.document.ctx.getScope(targetCell.node)
     # debugf"getScope {parent}, {targetCell.node}"
@@ -649,7 +656,7 @@ proc getSubstitutionsForClass(self: ModelDocumentEditor, targetCell: Cell, class
     result = true
 
 proc updateCompletions(self: ModelDocumentEditor) =
-  self.unfilteredCompletions.setLen 0
+  self.unfilteredCompletions.clear()
   # debugf"updateCompletions"
 
   let targetCell = self.cursor.targetCell
@@ -667,14 +674,14 @@ proc updateCompletions(self: ModelDocumentEditor) =
     # debugf"updateCompletions child {parent}, {node}, {node.model.isNotNil}, {slotClass.name}"
 
     model.forEachChildClass slotClass, proc(childClass: NodeClass) =
-      if self.getSubstitutionsForClass(targetCell, childClass, (c) -> void => self.unfilteredCompletions.add(c)):
+      if self.getSubstitutionsForClass(targetCell, childClass, (c) -> void => self.unfilteredCompletions.incl(c)):
         return
 
       if childClass.isAbstract or childClass.isInterface:
         return
 
       let name = if childClass.alias.len > 0: childClass.alias else: childClass.name
-      self.unfilteredCompletions.add ModelCompletion(kind: ModelCompletionKind.SubstituteClass, name: name, class: childClass, parent: parent, role: role, index: index)
+      self.unfilteredCompletions.incl ModelCompletion(kind: ModelCompletionKind.SubstituteClass, name: name, class: childClass, parent: parent, role: role, index: index)
   elif parentClass.nodeReferenceDescription(role).getSome(desc):
     let slotClass = model.resolveClass(desc.class)
     # debugf"updateCompletions ref {parent}, {node}, {node.model.isNotNil}, {slotClass.name}"
@@ -683,7 +690,7 @@ proc updateCompletions(self: ModelDocumentEditor) =
       # debugf"scope: {decl}, {decl.nodeClass.name}, {decl.nodeClass.isSubclassOf(slotClass.id)}"
       if decl.nodeClass.isSubclassOf(slotClass.id):
         let name = if decl.property(IdINamedName).getSome(name): name.stringValue else: $decl.id
-        self.unfilteredCompletions.add ModelCompletion(kind: ModelCompletionKind.ChangeReference, name: name, class: slotClass, parent: node, role: role, index: index, changeReferenceTarget: decl)
+        self.unfilteredCompletions.incl ModelCompletion(kind: ModelCompletionKind.ChangeReference, name: name, class: slotClass, parent: node, role: role, index: index, changeReferenceTarget: decl)
 
   self.refilterCompletions()
   self.markDirty()
@@ -729,7 +736,7 @@ proc refilterCompletions(self: ModelDocumentEditor) =
   self.scrollToCompletion = self.selectedCompletion.some
 
 proc invalidateCompletions(self: ModelDocumentEditor) =
-  self.unfilteredCompletions.setLen 0
+  self.unfilteredCompletions.clear()
   self.filteredCompletions.setLen 0
   self.hasCompletions = false
 
@@ -1013,6 +1020,7 @@ method getDocument*(self: ModelDocumentEditor): Document = self.document
 method createWithDocument*(_: ModelDocumentEditor, document: Document, configProvider: ConfigProvider): DocumentEditor =
   let self = ModelDocumentEditor(eventHandler: nil, document: ModelDocument(document))
   self.configProvider = configProvider
+  self.unfilteredCompletions = initHashSet[ModelCompletion]()
 
   # Emit this to set the editor prototype to editor_model_prototype, which needs to be set up before calling this
   when defined(js):
@@ -2877,7 +2885,7 @@ proc showCompletionWindow*(self: ModelDocumentEditor) {.expose("editor.model").}
   self.markDirty()
 
 proc hideCompletions*(self: ModelDocumentEditor) {.expose("editor.model").} =
-  self.unfilteredCompletions.setLen 0
+  self.unfilteredCompletions.clear()
   self.showCompletions = false
   self.markDirty()
 
