@@ -13,7 +13,6 @@ var currentIndent* = 0
 
 func repeat2*(s: string, n: Natural): string = repeat s, n
 
-
 when defined(js):
   import compilation_config
 
@@ -130,6 +129,8 @@ func fingerprint*(id: Id): Fingerprint =
 func fingerprint*[T](items: openArray[T]): Fingerprint =
   for i in items:
     result.add i.fingerprint
+
+func fingerprint*(b: bool): Fingerprint = @[b.int64]
 
 proc newDependencyGraph*(): DependencyGraph =
   new result

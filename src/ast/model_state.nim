@@ -21,10 +21,11 @@ CreateContext ModelState:
   # var globalScope*: Table[Id, Symbol] = initTable[Id, Symbol]()
   var enableQueryLogging*: bool = false
   var enableExecutionLogging*: bool = false
-  var diagnosticsPerNode*: Table[Id, Diagnostics] = initTable[Id, Diagnostics]()
-  var diagnosticsPerQuery*: Table[Dependency, seq[Id]] = initTable[Dependency, seq[Id]]()
+  var diagnosticsPerNode*: Table[NodeId, Diagnostics] = initTable[NodeId, Diagnostics]()
+  var diagnosticsPerQuery*: Table[Dependency, seq[NodeId]] = initTable[Dependency, seq[NodeId]]()
   var computationContextOwner: ModelComputationContextBase = nil
   var models: seq[Model]
+  var currentKey: Dependency
 
   proc inputAstNode(ctx: ModelState, id: ItemId): AstNode {.inputProvider.}
 
@@ -34,6 +35,7 @@ CreateContext ModelState:
   proc computeTypeImpl(ctx: ModelState, node: AstNode): AstNode {.query("Type").}
   proc computeValueImpl(ctx: ModelState, node: AstNode): AstNode {.query("Value").}
   proc computeScopeImpl(ctx: ModelState, node: AstNode): seq[AstNode] {.query("Scope").}
+  proc computeValidImpl(ctx: ModelState, node: AstNode): bool {.query("Valid").}
   # proc computeValueImpl(ctx: ModelState, node: AstNode): Value {.query("Value").}
 
 type ModelComputationContext* = ref object of ModelComputationContextBase
@@ -52,6 +54,35 @@ method getScope*(self: ModelComputationContext, node: AstNode): seq[AstNode] =
 
 method getValue*(self: ModelComputationContext, node: AstNode): AstNode =
   return self.state.computeValue(node)
+
+method validateNode*(self: ModelComputationContext, node: AstNode): bool =
+  self.state.computeValid(node)
+
+proc addDiagnostic*(self: ModelState, node: AstNode, msg: string) =
+  # debugf"addDiagnostic {msg} for {node}"
+  let key = self.currentKey
+
+  if not self.diagnosticsPerQuery.contains(key):
+    self.diagnosticsPerQuery[key] = @[]
+
+  self.diagnosticsPerQuery[key].add node.id
+
+  if not self.diagnosticsPerNode.contains(node.id):
+    self.diagnosticsPerNode[node.id] = Diagnostics()
+  if not self.diagnosticsPerNode[node.id].queries.contains(key):
+    self.diagnosticsPerNode[node.id].queries[key] = @[]
+
+  self.diagnosticsPerNode[node.id].queries[key].add Diagnostic(message: msg)
+
+method addDiagnostic*(self: ModelComputationContext, node: AstNode, msg: string) =
+  self.state.addDiagnostic(node, msg)
+
+method getDiagnostics*(self: ModelComputationContext, node: NodeId): seq[string] =
+  if not self.state.diagnosticsPerNode.contains(node):
+    return @[]
+  for ds in self.state.diagnosticsPerNode[node].queries.values:
+    for d in ds:
+      result.add d.message
 
 method dependOn*(self: ModelComputationContext, node: AstNode) =
   self.state.recordDependency(node.getItem)
@@ -74,31 +105,39 @@ template logIf(condition: bool, message: string, logResult: bool) =
 
 template enableDiagnostics(key: untyped): untyped =
   # Delete old diagnostics
+
+  let previousKey = ctx.currentKey
+  ctx.currentKey = key
   if ctx.diagnosticsPerQuery.contains(key):
+    # debugf"clear diagnostics for {key}"
     for id in ctx.diagnosticsPerQuery[key]:
+      # debug "clear diagnostics for " & $id
       ctx.diagnosticsPerNode[id].queries.del key
 
-  var diagnostics: seq[Diagnostic] = @[]
-  var ids: seq[Id] = @[]
   defer:
-    if diagnostics.len > 0:
-      ctx.diagnosticsPerQuery[key] = ids
+    ctx.currentKey = previousKey
 
-      for i in 0..ids.high:
-        let id = ids[i]
-        let diag = diagnostics[i]
-        if not ctx.diagnosticsPerNode.contains(id):
-          ctx.diagnosticsPerNode[id] = Diagnostics()
-        if not ctx.diagnosticsPerNode[id].queries.contains(key):
-          ctx.diagnosticsPerNode[id].queries[key] = @[]
+  # var diagnostics: seq[Diagnostic] = @[]
+  # var ids: seq[NodeId] = @[]
+  # defer:
+  #   if diagnostics.len > 0:
+  #     ctx.diagnosticsPerQuery[key] = ids
 
-        ctx.diagnosticsPerNode[id].queries[key].add diag
-    else:
-      ctx.diagnosticsPerQuery.del key
+  #     for i in 0..ids.high:
+  #       let id = ids[i]
+  #       let diag = diagnostics[i]
+  #       if not ctx.diagnosticsPerNode.contains(id):
+  #         ctx.diagnosticsPerNode[id] = Diagnostics()
+  #       if not ctx.diagnosticsPerNode[id].queries.contains(key):
+  #         ctx.diagnosticsPerNode[id].queries[key] = @[]
 
-  template addDiagnostic[T](id: T, msg: untyped) {.used.} =
-    ids.add(id.Id)
-    diagnostics.add Diagnostic(message: msg)
+  #       ctx.diagnosticsPerNode[id].queries[key].add diag
+  #   else:
+  #     ctx.diagnosticsPerQuery.del key
+
+  # template addDiagnostic[T](id: T, msg: untyped) {.used.} =
+  #   ids.add(id)
+  #   diagnostics.add Diagnostic(message: msg)
 
 # proc notifySymbolChanged*(ctx: ModelState, sym: Symbol) =
 #   ctx.depGraph.revision += 1
@@ -216,11 +255,10 @@ proc computeTypeImpl(ctx: ModelState, node: AstNode): AstNode =
 
   let language = node.language
   if language.isNil:
-    addDiagnostic(node.id, fmt"Node has no language: {node}")
+    ctx.addDiagnostic(node, fmt"Missing language for: {node}")
     return nil
 
   if not language.typeComputers.contains(node.class):
-    addDiagnostic(node.id, fmt"Node has no type computer: {node}")
     return nil
 
   let typeComputer = language.typeComputers[node.class]
@@ -232,16 +270,15 @@ proc computeTypeImpl(ctx: ModelState, node: AstNode): AstNode =
 proc computeValueImpl(ctx: ModelState, node: AstNode): AstNode =
   logIf(ctx.enableLogging or ctx.enableQueryLogging, "computeValueImpl " & $node, true)
 
-  let key: Dependency = ctx.getTypeKey(node.getItem)
+  let key: Dependency = ctx.getValueKey(node.getItem)
   enableDiagnostics(key)
 
   let language = node.language
   if language.isNil:
-    addDiagnostic(node.id, fmt"Node has no language: {node}")
+    ctx.addDiagnostic(node, fmt"Missing language for: {node}")
     return nil
 
   if not language.valueComputers.contains(node.class):
-    addDiagnostic(node.id, fmt"Node has no value computer: {node}")
     return nil
 
   let valueComputer = language.valueComputers[node.class]
@@ -275,3 +312,24 @@ proc computeScopeImpl(ctx: ModelState, node: AstNode): seq[AstNode] =
           declarations.add child
 
   return declarations
+
+proc computeValidImpl(ctx: ModelState, node: AstNode): bool =
+  logIf(ctx.enableLogging or ctx.enableQueryLogging, "computeScopeImpl " & $node, true)
+
+  let key: Dependency = ctx.getValidKey(node.getItem)
+  enableDiagnostics(key)
+
+  let language = node.language
+  if language.isNil:
+    ctx.addDiagnostic(node, fmt"Missing language for: {node}")
+    return false
+
+  var class = node.nodeClass
+
+  while class.isNotNil:
+    if language.validationComputers.contains(class.id):
+      let validationComputer = language.validationComputers[class.id]
+      return validationComputer(ctx.computationContextOwner.ModelComputationContext, node)
+    class = class.base
+
+  return true

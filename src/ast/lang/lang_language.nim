@@ -239,6 +239,7 @@ builder.addBuilderFor IdClassDefinition, idNone(), proc(builder: CellBuilder, no
 var typeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]()
 var valueComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]()
 var scopeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]]()
+var validationComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): bool]()
 
 proc computeDefaultScope(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode] =
   var nodes: seq[AstNode] = @[]
@@ -342,7 +343,7 @@ let langLanguage* = newLanguage(IdLangLanguage, @[
   propertyTypeClass, propertyTypeBoolClass, propertyTypeStringClass, propertyTypeNumberClass, propertyDefinitionClass, classDefinitionClass,
   classReferenceClass, roleReferenceClass, referenceDefinitionClass, childrenDefinitionClass,
   countClass, countZeroOrOneClass, countOneClass, countZeroOrMoreClass, countOneOrMoreClass,
-], builder, typeComputers, valueComputers, scopeComputers)
+], builder, typeComputers, valueComputers, scopeComputers, validationComputers)
 
 proc createNodeClassFromLangDefinition*(classMap: var Table[ClassId, NodeClass], def: AstNode): Option[NodeClass] =
   if classMap.contains(def.id.ClassId):
@@ -474,8 +475,9 @@ proc createLanguageFromNodes*(def: AstNode): Language =
   var typeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]()
   var valueComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]()
   var scopeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]]()
+  var validationComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): bool]()
 
-  result = newLanguage(def.id.LanguageId, classes, builder, typeComputers, valueComputers, scopeComputers)
+  result = newLanguage(def.id.LanguageId, classes, builder, typeComputers, valueComputers, scopeComputers, validationComputers)
 
 proc createNodeFromNodeClass(classes: var Table[ClassId, AstNode], class: NodeClass): AstNode =
   # log lvlInfo, fmt"createNodeFromNodeClass {class.name}"
