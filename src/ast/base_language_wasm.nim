@@ -457,54 +457,61 @@ proc genNodeCast(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destinatio
 proc genNodeNodeReference(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   let id = node.reference(IdNodeReferenceTarget)
   if node.resolveReference(IdNodeReferenceTarget).getSome(target) and target.class == IdConstDecl:
-    self.genNodeChildren(target, IdConstDeclValue, dest)
+    if target.firstChild(IdConstDeclValue).getSome(value) and value.class == IdFunctionDefinition:
+      var name = target.property(IdINamedName).get.stringValue
+      let (tableIdx, elemIndex) = self.getOrCreateFuncRef(value, name.some)
+      self.instr(I32Const, i32Const: elemIndex)
+      self.genStoreDestination(node, dest)
+    else:
+      self.genNodeChildren(target, IdConstDeclValue, dest)
 
-  else:
-    if not self.localIndices.contains(id):
-      log lvlError, fmt"Variable not found found in locals: {id}, from here {node}"
-      return
+    return
 
-    let typ = self.ctx.computeType(node)
-    let (size, _, _) = self.getTypeAttributes(typ)
+  if not self.localIndices.contains(id):
+    log lvlError, fmt"Variable not found found in locals: {id}, from here {node}"
+    return
 
-    case dest
-    of Stack():
-      case self.localIndices[id]:
-      of Local(localIdx: @index):
-        self.instr(LocalGet, localIdx: index)
-      of Stack(stackOffset: @offset):
-        self.instr(LocalGet, localIdx: self.currentBasePointer)
-        let memInstr = self.getTypeMemInstructions(typ)
-        # debugf"load node ref {node} from satck with offset {offset}"
-        self.loadInstr(memInstr.load, offset.uint32, 0)
+  let typ = self.ctx.computeType(node)
+  let (size, _, _) = self.getTypeAttributes(typ)
 
-    of Memory(offset: @offset, align: @align):
-      case self.localIndices[id]:
-      of Local(localIdx: @index):
-        self.instr(LocalGet, localIdx: index)
-        let memInstr = self.getTypeMemInstructions(typ)
-        self.storeInstr(memInstr.store, offset, align)
+  case dest
+  of Stack():
+    case self.localIndices[id]:
+    of Local(localIdx: @index):
+      self.instr(LocalGet, localIdx: index)
+    of Stack(stackOffset: @offset):
+      self.instr(LocalGet, localIdx: self.currentBasePointer)
+      let memInstr = self.getTypeMemInstructions(typ)
+      # debugf"load node ref {node} from satck with offset {offset}"
+      self.loadInstr(memInstr.load, offset.uint32, 0)
 
-      of Stack(stackOffset: @offset):
-        self.instr(LocalGet, localIdx: self.currentBasePointer)
-        if offset > 0:
-          self.instr(I32Const, i32Const: offset)
-          self.instr(I32Add)
-        self.instr(I32Const, i32Const: size)
-        self.instr(MemoryCopy)
+  of Memory(offset: @offset, align: @align):
+    case self.localIndices[id]:
+    of Local(localIdx: @index):
+      self.instr(LocalGet, localIdx: index)
+      let memInstr = self.getTypeMemInstructions(typ)
+      self.storeInstr(memInstr.store, offset, align)
 
-    of Discard():
-      discard
+    of Stack(stackOffset: @offset):
+      self.instr(LocalGet, localIdx: self.currentBasePointer)
+      if offset > 0:
+        self.instr(I32Const, i32Const: offset)
+        self.instr(I32Add)
+      self.instr(I32Const, i32Const: size)
+      self.instr(MemoryCopy)
 
-    of LValue():
-      case self.localIndices[id]:
-      of Local(localIdx: @index):
-        log lvlError, fmt"Can't get lvalue of local: {id}, from here {node}"
-      of Stack(stackOffset: @offset):
-        self.instr(LocalGet, localIdx: self.currentBasePointer)
-        if offset > 0:
-          self.instr(I32Const, i32Const: offset)
-          self.instr(I32Add)
+  of Discard():
+    discard
+
+  of LValue():
+    case self.localIndices[id]:
+    of Local(localIdx: @index):
+      log lvlError, fmt"Can't get lvalue of local: {id}, from here {node}"
+    of Stack(stackOffset: @offset):
+      self.instr(LocalGet, localIdx: self.currentBasePointer)
+      if offset > 0:
+        self.instr(I32Const, i32Const: offset)
+        self.instr(I32Add)
 
 proc genAssignmentExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   let targetNode = node.firstChild(IdAssignmentTarget).getOr:
@@ -657,9 +664,9 @@ proc genNodeCallExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: 
 
     else: # not a const decl, so call indirect
       self.genNode(funcExprNode, Destination(kind: Stack))
-      const tableIdx = 0.WasmTableIdx
-      let typeIdx = 0.WasmTypeIdx
-      self.instr(CallIndirect, callIndirectTableIdx: tableIdx, callIndirectTypeIdx: typeIdx)
+      let functionType = self.ctx.computeType(funcExprNode)
+      let typeIdx = self.getFunctionTypeIdx(functionType)
+      self.instr(CallIndirect, callIndirectTableIdx: self.functionRefTableIdx, callIndirectTypeIdx: typeIdx)
 
   else: # not a node reference
     self.genNode(funcExprNode, Destination(kind: Stack))
@@ -894,8 +901,22 @@ proc getFunctionInputOutput(self: BaseLanguageWasmCompiler, node: AstNode): tupl
       continue
     result.inputs.add self.toWasmValueType(typ).get
 
+proc getFunctionTypeInputOutput(self: BaseLanguageWasmCompiler, node: AstNode): tuple[inputs: seq[WasmValueType], outputs: seq[WasmValueType]] =
+  for _, typ in node.children(IdFunctionTypeReturnType):
+    if self.shouldPassAsOutParamater(typ):
+      result.inputs.add WasmValueType.I32
+    elif typ.class != IdVoid:
+      result.outputs.add self.toWasmValueType(typ).get
+
+  for _, typ in node.children(IdFunctionTypeParameterTypes):
+    if typ.class == IdType:
+      continue
+    result.inputs.add self.toWasmValueType(typ).get
+
 proc addBaseLanguage*(self: BaseLanguageWasmCompiler) =
   self.functionInputOutputComputer[IdFunctionDefinition] = getFunctionInputOutput
+  self.functionInputOutputComputer[IdFunctionType] = getFunctionTypeInputOutput
+
   self.generators[IdFunctionDefinition] = genNodeFunctionDefinition
   self.generators[IdBlock] = genNodeBlock
   self.generators[IdAdd] = genNodeBinaryAddExpression
@@ -949,6 +970,7 @@ proc addBaseLanguage*(self: BaseLanguageWasmCompiler) =
   self.wasmValueTypes[IdPointerType] = (WasmValueType.I32, I32Load, I32Store) # pointer
   self.wasmValueTypes[IdString] = (WasmValueType.I64, I64Load, I64Store) # (len << 32) | ptr
   self.wasmValueTypes[IdFunctionType] = (WasmValueType.I32, I32Load, I32Store) # table index
+  self.wasmValueTypes[IdFunctionDefinition] = (WasmValueType.I32, I32Load, I32Store) # table index
 
   self.typeAttributes[IdInt32] = (4'i32, 4'i32, false)
   self.typeAttributes[IdUInt32] = (4'i32, 4'i32, false)
@@ -959,6 +981,7 @@ proc addBaseLanguage*(self: BaseLanguageWasmCompiler) =
   self.typeAttributes[IdChar] = (1'i32, 1'i32, false)
   self.typeAttributes[IdPointerType] = (4'i32, 4'i32, false)
   self.typeAttributes[IdString] = (8'i32, 4'i32, false)
-  self.typeAttributes[IdFunctionType] = (0'i32, 1'i32, false)
+  self.typeAttributes[IdFunctionType] = (4'i32, 4'i32, false)
+  self.typeAttributes[IdFunctionDefinition] = (4'i32, 4'i32, false)
   self.typeAttributes[IdVoid] = (0'i32, 1'i32, false)
   self.typeAttributeComputers[IdStructDefinition] = proc(typ: AstNode): TypeAttributes = self.computeStructTypeAttributes(typ)

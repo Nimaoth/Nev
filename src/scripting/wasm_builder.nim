@@ -1,4 +1,4 @@
-import std/[macrocache, json, options, tables, strutils, strformat]
+import std/[macrocache, json, options, tables, strutils, strformat, sequtils]
 import binary_encoder
 import util
 import custom_logger
@@ -319,6 +319,23 @@ proc addType*(self: WasmBuilder, inputs: openArray[WasmValueType], outputs: open
   result = self.types.len.WasmTypeIdx
   self.types.add WasmFunctionType(input: WasmResultType(types: @inputs), output: WasmResultType(types: @outputs))
 
+proc addTable*(self: WasmBuilder): WasmTableIdx =
+  result = (-self.tables.len - 1).WasmTableIdx
+  self.tables.add(WasmTable(
+    typ: WasmTableType(
+      limits: WasmLimits(min: 1, max: uint32.none),
+      refType: FuncRef)))
+
+proc addFunctionElements*(self: WasmBuilder, name: string, table: WasmTableIdx, funcs: seq[WasmFuncIdx]) =
+  self.elems.add WasmElem(
+    typ: FuncRef,
+    init: funcs.mapIt(WasmExpr(instr: @[WasmInstr(kind: RefFunc, refFuncIdx: it)])),
+    mode: WasmElementMode(
+      kind: Active,
+      tableIdx: table,
+      offset: WasmExpr(instr: @[WasmInstr(kind: I32Const, i32Const: 0)])
+  ))
+
 proc addImport*(self: WasmBuilder, module: string, name: string, typeIdx: WasmTypeIdx): WasmFuncIdx =
   result = (-self.functionImports.len - 1).WasmFuncIdx
 
@@ -436,6 +453,18 @@ proc addFunction*(self: WasmBuilder,
 
   return funcIdx
 
+proc getFunctionTypeIdx*(self: WasmBuilder, funcIdx: WasmFuncIdx): WasmTypeIdx =
+  let index = self.getEffectiveFunctionIdx(funcIdx)
+  if index < self.functionImports.len:
+    return self.functionImports[index].desc.funcTypeIdx
+  else:
+    return self.funcs[index - self.functionImports.len].typeIdx
+
+proc getFunctionTypeIdx*(self: WasmBuilder, inputs: openArray[WasmValueType], outputs: openArray[WasmValueType]): WasmTypeIdx =
+  for i, typ in self.types:
+    if typ.input.types == inputs and typ.output.types == outputs:
+      return i.WasmTypeIdx
+
 proc setBody*(self: WasmBuilder, funcIdx: WasmFuncIdx, locals: openArray[tuple[typ: WasmValueType, id: string]], body: WasmExpr) =
   assert funcIdx.int < self.funcs.len
   self.funcs[funcIdx.int].locals = @locals
@@ -540,7 +569,7 @@ proc writeInstr(self: WasmBuilder, encoder: var BinaryEncoder, instr: WasmInstr)
   of CallIndirect:
     encoder.write(byte, instr.kind.byte)
     encoder.writeLength(instr.callIndirectTypeIdx.int)
-    encoder.writeLength(instr.callIndirectTableIdx.int)
+    encoder.writeLength(self.getEffectiveTableIdx(instr.callIndirectTableIdx))
 
   of RefNull:
     encoder.write(byte, instr.kind.byte)
@@ -568,13 +597,13 @@ proc writeInstr(self: WasmBuilder, encoder: var BinaryEncoder, instr: WasmInstr)
 
   of TableGet, TableSet:
     encoder.write(byte, instr.kind.byte)
-    encoder.writeLength(instr.tableOpIdx.int)
+    encoder.writeLength(self.getEffectiveTableIdx(instr.tableOpIdx))
 
   of TableInit:
     encoder.write(byte, 0xFC)
     encoder.writeLength(instr.kind.int and 0xFF)
     encoder.writeLength(instr.tableInitElementIdx.int)
-    encoder.writeLength(instr.tableInitIdx.int)
+    encoder.writeLength(self.getEffectiveTableIdx(instr.tableInitIdx))
 
   of ElemDrop:
     encoder.write(byte, 0xFC)
@@ -584,13 +613,13 @@ proc writeInstr(self: WasmBuilder, encoder: var BinaryEncoder, instr: WasmInstr)
   of TableCopy:
     encoder.write(byte, 0xFC)
     encoder.writeLength(instr.kind.int and 0xFF)
-    encoder.writeLength(instr.tableCopyTargetIdx.int)
-    encoder.writeLength(instr.tableCopySourceIdx.int)
+    encoder.writeLength(self.getEffectiveTableIdx(instr.tableCopyTargetIdx))
+    encoder.writeLength(self.getEffectiveTableIdx(instr.tableCopySourceIdx))
 
   of TableGrow, TableSize, TableFill:
     encoder.write(byte, 0xFC)
     encoder.writeLength(instr.kind.int and 0xFF)
-    encoder.writeLength(instr.tableOpIdx.int)
+    encoder.writeLength(self.getEffectiveTableIdx(instr.tableOpIdx))
 
   of I32Load, I64Load, F32Load, F64Load, I32Store, I64Store, F32Store, F64Store,
     I32Load8U, I32Load8S, I64Load8U, I64Load8S, I32Load16U, I32Load16S, I64Load16U, I64Load16S, I64Load32U, I64Load32S,
@@ -771,7 +800,6 @@ proc generateElementSection(self: WasmBuilder, encoder: var BinaryEncoder) =
       e.writeLength(self.elems.len)
 
       for v in self.elems.mitems:
-
         let allInitsFunctionRefs = block:
           var res = true
           for expr in v.init:
@@ -787,7 +815,7 @@ proc generateElementSection(self: WasmBuilder, encoder: var BinaryEncoder) =
         of WasmElementModeKind.Declarative:
           idx = idx or 0b011
         of Active:
-          if v.typ != FuncRef and v.mode.tableIdx.int == 0:
+          if v.typ != FuncRef and self.getEffectiveTableIdx(v.mode.tableIdx) == 0:
             idx = idx or 0b010
 
         if not allInitsFunctionRefs:
@@ -812,7 +840,7 @@ proc generateElementSection(self: WasmBuilder, encoder: var BinaryEncoder) =
 
         of 2:
           assert allInitsFunctionRefs
-          e.writeLength(v.mode.tableIdx.int)
+          e.writeLength(self.getEffectiveTableIdx(v.mode.tableIdx))
           self.writeExpr(e, v.mode.offset)
           e.writeType(v.typ)
           e.writeLength(v.init.len)
@@ -842,7 +870,7 @@ proc generateElementSection(self: WasmBuilder, encoder: var BinaryEncoder) =
 
         of 6:
           assert not allInitsFunctionRefs
-          e.writeLength(v.mode.tableIdx.int)
+          e.writeLength(self.getEffectiveTableIdx(v.mode.tableIdx))
           self.writeExpr(e, v.mode.offset)
           e.writeType(v.typ)
           e.writeLength(v.init.len)
@@ -1051,7 +1079,7 @@ proc getInstrWat(self: WasmBuilder, instr: WasmInstr, blockLevel: int = 0): stri
     result.add &" {instr.brTableDefaultIdx}"
   of Return: result.add "return"
   of Call: result.add &"call {getEffectiveFunctionIdx(self, instr.callFuncIdx)}"
-  of CallIndirect: result.add &"call {instr.callIndirectTableIdx} (type {instr.callIndirectTypeIdx})"
+  of CallIndirect: result.add &"call {getEffectiveTableIdx(self, instr.callIndirectTableIdx)} (type {instr.callIndirectTypeIdx})"
 
   of RefNull: result.add &"ref.null {getHeapTypeWat(instr.refNullType)}"
   of RefIsNull: result.add "ref.is_null"
@@ -1070,13 +1098,13 @@ proc getInstrWat(self: WasmBuilder, instr: WasmInstr, blockLevel: int = 0): stri
   of GlobalGet: result.add &"global.get $var{getEffectiveGlobalIdx(self, instr.globalIdx)}"
   of GlobalSet: result.add &"global.set $var{getEffectiveGlobalIdx(self, instr.globalIdx)}"
 
-  of TableGet: result.add &"table.get {instr.tableOpIdx}"
-  of TableSet: result.add &"table.set {instr.tableOpIdx}"
-  of TableSize: result.add &"table.size {instr.tableOpIdx}"
-  of TableGrow: result.add &"table.grow {instr.tableOpIdx}"
-  of TableFill: result.add &"table.fill {instr.tableOpIdx}"
-  of TableCopy: result.add &"table.copy {instr.tableCopyTargetIdx} {instr.tableCopySourceIdx}"
-  of TableInit: result.add &"table.init {instr.tableInitIdx} {instr.tableInitElementIdx}"
+  of TableGet: result.add &"table.get {getEffectiveTableIdx(self, instr.tableOpIdx)}"
+  of TableSet: result.add &"table.set {getEffectiveTableIdx(self, instr.tableOpIdx)}"
+  of TableSize: result.add &"table.size {getEffectiveTableIdx(self, instr.tableOpIdx)}"
+  of TableGrow: result.add &"table.grow {getEffectiveTableIdx(self, instr.tableOpIdx)}"
+  of TableFill: result.add &"table.fill {getEffectiveTableIdx(self, instr.tableOpIdx)}"
+  of TableCopy: result.add &"table.copy {getEffectiveTableIdx(self, instr.tableCopyTargetIdx)} {getEffectiveTableIdx(self, instr.tableCopySourceIdx)}"
+  of TableInit: result.add &"table.init {getEffectiveTableIdx(self, instr.tableInitIdx)} {instr.tableInitElementIdx}"
   of ElemDrop: result.add &"elem.drop {instr.elemDropIdx}"
 
   of I32Load: result.add &"i32.load {instr.memArg}"
@@ -1359,11 +1387,11 @@ proc getExportSectionWat(self: WasmBuilder): string =
     of Func:
       result.add fmt"(func {getEffectiveFunctionIdx(self, v.desc.funcIdx)})"
     of Table:
-      result.add fmt"(table {v.desc.tableIdx})"
+      result.add fmt"(table {getEffectiveTableIdx(self, v.desc.tableIdx)})"
     of Mem:
-      result.add fmt"(memory {v.desc.memIdx})"
+      result.add fmt"(memory {getEffectiveMemIdx(self, v.desc.memIdx)})"
     of Global:
-      result.add fmt"(global {v.desc.globalIdx})"
+      result.add fmt"(global {getEffectiveGlobalIdx(self, v.desc.globalIdx)})"
 
 proc getStartSectionWat(self: WasmBuilder): string =
   if self.start.getSome(start):
@@ -1384,7 +1412,7 @@ proc getElementSectionWat(self: WasmBuilder): string =
     of Passive:
       result.add fmt"(elem {getElementListWat(self, v.typ, v.init)})"
     of Active:
-      result.add fmt"(elem (table {v.mode.tableIdx}) (offset {getExprWat(self, v.mode.offset)}) {getElementListWat(self, v.typ, v.init)})"
+      result.add fmt"(elem (table {getEffectiveTableIdx(self, v.mode.tableIdx)}) (offset {getExprWat(self, v.mode.offset)}) {getElementListWat(self, v.typ, v.init)})"
     of Declarative:
       result.add fmt"(elem declare {getElementListWat(self, v.typ, v.init)})"
 
@@ -1445,6 +1473,7 @@ proc getStackChange*(self: WasmBuilder, instr: WasmInstr): int =
   case instr.kind
 
   of Nop: return 0
+  of Drop: return -1
 
   of Block:
     case instr.blockType.kind
@@ -1484,15 +1513,9 @@ proc getStackChange*(self: WasmBuilder, instr: WasmInstr): int =
     return typ.output.types.len - typ.input.types.len
 
   of CallIndirect:
-    # let index = self.getEffectiveFunctionIdx(instr.callIndirectTableIdx)
-    # let typIndex = if index < self.functionImports.len:
-    #   self.functionImports[index].desc.funcTypeIdx
-    # else:
-    #   self.funcs[index - self.functionImports.len].typeIdx
-    # let typ = self.types[typIndex.int]
-    # return typ.output.types.len - typ.input.types.len
-    # todo
-    return 0
+    let typIndex = instr.callIndirectTypeIdx
+    let typ = self.types[typIndex.int]
+    return typ.output.types.len - typ.input.types.len + 1
 
   of RefNull, RefFunc: return 1
 
