@@ -28,7 +28,7 @@ let structTypeClass* = newNodeClass(IdStructType, "StructType", base=expressionC
   children=[
     NodeChildDescription(id: IdStructTypeMemberTypes, role: "memberTypes", class: expressionClass.id, count: ChildCount.ZeroOrMore)])
 
-let pointerTypeClass* = newNodeClass(IdPointerType, "PointerType", alias="ptr", base=expressionClass,
+let pointerTypeClass* = newNodeClass(IdPointerType, "PointerType", base=expressionClass,
   references=[
     NodeReferenceDescription(id: IdPointerTypeTarget, role: "target", class: expressionClass.id)])
 
@@ -930,10 +930,7 @@ typeComputers[ifClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode
   return voidTypeInstance
 
 # function definition
-typeComputers[functionDefinitionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
-  # debugf"compute type for function definition {node}"
-  # defer:
-  #   debugf"-> {result}"
+proc computeFunctionDefinitionType(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   var returnType = voidTypeInstance
 
   if node.firstChild(IdFunctionDefinitionReturnType).getSome(returnTypeNode):
@@ -946,22 +943,38 @@ typeComputers[functionDefinitionClass.id] = proc(ctx: ModelComputationContextBas
 
   for _, c in node.children(IdFunctionDefinitionParameters):
     if c.firstChild(IdParameterDeclType).getSome(paramTypeNode):
-      # todo: This needs computeValue in the future since the type of a type is 'type', and the value is 'int' or 'string' etc.
       var parameterType = ctx.getValue(paramTypeNode)
       if parameterType.isNil:
         # addDiagnostic(paramTypeNode, "Could not compute type for parameter")
         continue
       functionType.add(IdFunctionTypeParameterTypes, parameterType)
 
-  # todo: this shouldn't set the model
   node.model.addTempNode(functionType)
 
   # debugf"computed function type: {`$`(functionType, true)}"
 
   return functionType
 
+# function definition
+typeComputers[functionDefinitionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  # debugf"compute type for function definition {node}"
+  # defer:
+  #   debugf"-> {result}"
+
+  if not node.hasChild(IdFunctionDefinitionBody):
+    return metaTypeInstance
+
+  return ctx.computeFunctionDefinitionType(node)
+
+# function definition
 valueComputers[functionDefinitionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute value for function definition {node}"
+  # defer:
+  #   debugf"-> {result}"
+
+  if not node.hasChild(IdFunctionDefinitionBody):
+    return ctx.computeFunctionDefinitionType(node)
+
   return node
 
 typeComputers[assignmentClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
