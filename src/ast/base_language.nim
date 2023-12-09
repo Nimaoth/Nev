@@ -1251,6 +1251,20 @@ valueComputers[nodeReferenceClass.id] = proc(ctx: ModelComputationContextBase, n
     log lvlError, fmt"Couldn't resolve reference {node}"
   return nil
 
+validationComputers[nodeReferenceClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): bool =
+  # debugf"validate node reference {node}"
+
+  let targetNode = node.resolveReference(IdNodeReferenceTarget).getOr:
+    ctx.addDiagnostic(node, "Could not resolve node reference")
+    return false
+
+  let scope = ctx.getScope(node)
+  if not scope.contains(targetNode):
+    ctx.addDiagnostic(node, fmt"Target not in scope")
+    return false
+
+  return true
+
 typeComputers[breakClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for break {node}"
   return voidTypeInstance
