@@ -166,6 +166,7 @@ type
     rootNodeClasses {.getter.}: seq[NodeClass]
     # childClasses {.getter.}: Table[ClassId, seq[NodeClass]]
     builder {.getter.}: CellBuilder
+    model*: Model
 
     validators: Table[ClassId, NodeValidator]
 
@@ -302,6 +303,9 @@ proc `$`*(node: AstNode, recurse: bool = false): string
 proc nodeClass*(node: AstNode): NodeClass
 proc add*(node: AstNode, role: RoleId, child: AstNode)
 proc resolveClass*(language: Language, classId: ClassId): NodeClass
+proc newModel*(id: ModelId = default(ModelId)): Model
+proc addRootNode*(self: Model, node: AstNode)
+proc addLanguage*(self: Model, language: Language)
 
 proc targetNode*(cell: Cell): AstNode =
   if cell.referenceNode.isNotNil:
@@ -336,7 +340,9 @@ proc newLanguage*(id: LanguageId, classes: seq[NodeClass], builder: CellBuilder,
   valueComputers: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode],
   scopeComputers: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]],
   validationComputers: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): bool],
-  baseLanguages: openArray[Language] = []): Language =
+  baseLanguages: openArray[Language] = [],
+  rootNodes: openArray[AstNode] = [],
+  ): Language =
   new result
   result.id = id
   result.typeComputers = typeComputers
@@ -365,6 +371,11 @@ proc newLanguage*(id: LanguageId, classes: seq[NodeClass], builder: CellBuilder,
     #   result.childClasses[i.id].add c
 
   result.builder = builder
+
+  result.model = newModel(id.ModelId)
+  for node in rootNodes:
+    result.model.addRootNode node
+  result.model.addLanguage(result)
 
 proc forEachChildClass*(self: Model, base: NodeClass, handler: proc(c: NodeClass)) =
   handler(base)
@@ -452,16 +463,33 @@ proc removeTempNode*(self: Model, node: AstNode) =
     n.model = nil
     self.nodes.del n.id
 
+proc resolveReference*(self: Language, id: NodeId): Option[AstNode] =
+  if self.model.nodes.contains(id):
+    # log lvlDebug, fmt"resove reference: {id} found in language model nodes: {self.model.nodes[id]}"
+    return self.model.nodes[id].some
+
+  for language in self.baseLanguages:
+    if language.resolveReference(id).getSome(node):
+      return node.some
+
+  return AstNode.none
+
 proc resolveReference*(self: Model, id: NodeId): Option[AstNode] =
   if self.nodes.contains(id):
     return self.nodes[id].some
-  else:
-    for model in self.models:
-      if model.nodes.contains(id):
-        return model.nodes[id].some
-    if self.project.isNotNil:
-      return self.project.resolveReference(id)
-    return AstNode.none
+
+  for model in self.models:
+    if model.nodes.contains(id):
+      return model.nodes[id].some
+
+  for language in self.languages:
+    if language.resolveReference(id).getSome(node):
+      return node.some
+
+  if self.project.isNotNil:
+    return self.project.resolveReference(id)
+
+  return AstNode.none
 
 proc resolveReference*(self: Project, id: NodeId): Option[AstNode] =
   for model in self.models.values:

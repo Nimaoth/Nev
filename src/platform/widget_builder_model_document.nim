@@ -375,10 +375,18 @@ proc createLeafCellUI*(cell: Cell, builder: UINodeBuilder, inText: string, inTex
 
   var backgroundFlags = 0.UINodeFlags
   var backgroundColor = color(0, 0, 0)
+  var selectionColor = updateContext.selectionColor
+
+  let hasErrors = if cell.parent == nil or cell.parent.node != cell.node or true:
+    # this is a root cell of a node
+    updateContext.ctx.getDiagnostics(cell.node.id).len > 0
+  else:
+    false
+
   if cursorFirst.len == 1 and cursorLast.len == 1:
     let first = cursorFirst[0]
     let last = cursorLast[0]
-    if first <= 0 and last >= inText.len:
+    if not hasErrors and first <= 0 and last >= inText.len:
       backgroundColor = updateContext.selectionColor
       backgroundFlags.incl FillBackground
       # cell.logc fmt"full selection {selectionStart}, {selectionEnd}"
@@ -395,6 +403,11 @@ proc createLeafCellUI*(cell: Cell, builder: UINodeBuilder, inText: string, inTex
 
   defer:
     ctx.notifyCellCreated(cell)
+
+  if hasErrors:
+    backgroundFlags.incl FillBackground
+    backgroundColor = mix(backgroundColor, updateContext.errorColor, 0.7)
+    selectionColor = mix(selectionColor, backgroundColor, 0.5)
 
   if spaceLeft:
     if spaceSelected:
@@ -430,11 +443,11 @@ proc createLeafCellUI*(cell: Cell, builder: UINodeBuilder, inText: string, inTex
 
   else:
     # cell.logc fmt"partial selection {selectionStart}, {selectionEnd}"
-    builder.panel(&{SizeToContentX, SizeToContentY, FillY, OverlappingChildren}):
+    builder.panel(&{SizeToContentX, SizeToContentY, FillY, OverlappingChildren} + backgroundFlags, backgroundColor = backgroundColor):
       let x = selectionStart.float * builder.charWidth
       let xw = selectionEnd.float * builder.charWidth
       let w = xw - x
-      builder.panel(&{FillY, FillBackground, IgnoreBoundsForSizeToContent}, x = x, w = w, backgroundColor = updateContext.selectionColor)
+      builder.panel(&{FillY, FillBackground, IgnoreBoundsForSizeToContent}, x = x, w = w, backgroundColor = selectionColor)
 
       builder.panel(&{SizeToContentX, SizeToContentY, FillY, DrawText}, text = inText, textColor = inTextColor):
         updateContext.cellToWidget[cell.id] = currentNode
@@ -935,6 +948,8 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
   if self.cellWidgetContext.isNil:
     self.cellWidgetContext = UpdateContext(nodeCellMap: self.nodeCellMap)
   self.cellWidgetContext.selectionColor = app.theme.color("selection.background", color(200/255, 200/255, 200/255))
+  self.cellWidgetContext.errorColor = errorColor
+  self.cellWidgetContext.ctx = self.document.ctx
 
   builder.panel(&{UINodeFlag.MaskContent, OverlappingChildren} + sizeFlags, userId = self.userId.newPrimaryId):
     defer:
@@ -970,6 +985,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
             if AnimatePosition in animate:
               scrollContent.boundsActual.y -= scrollAmount
 
+            self.retriggerValidation()
             self.markDirty()
 
           let overlapPanel = currentNode
@@ -1120,8 +1136,11 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
                 builder.panel(&{FillX, SizeToContentY, LayoutVertical}, y = scrollOffset):
                   # builder.panel(&{FillY}, pivot = vec2(1, 0), w = builder.charWidth)
 
-                  for err in errors:
-                    builder.panel(&{FillX, SizeToContentY, DrawText, TextAlignHorizontalRight}, text = err, textColor = errorColor)
+                  builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse}):
+                    builder.panel(&{FillY}, pivot = vec2(1, 0), w = builder.charWidth)
+                    builder.panel(&{SizeToContentX, SizeToContentY, LayoutVertical}, pivot = vec2(1, 0)):
+                      for err in errors:
+                        builder.panel(&{SizeToContentX, SizeToContentY, FillBackground, DrawText, TextAlignHorizontalRight}, text = err, textColor = errorColor, backgroundColor = backgroundColor)
 
                   if typ.isNotNil:
                     builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse}):
@@ -1130,6 +1149,8 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
                         builder.panel(&{FillX, SizeToContentY, DrawText, TextAlignHorizontalRight}, text = "Type", textColor = textColor)
                         builder.panel(&{SizeToContentX, SizeToContentY, DrawBorder}, borderColor = textColor):
                           let updateContext = UpdateContext(
+                            ctx: self.document.ctx,
+                            errorColor: errorColor,
                             nodeCellMap: self.detailsNodeCellMap,
                             cellToWidget: initTable[CellId, UINode](),
                             targetCellPosition: vec2(0, 0),
@@ -1150,6 +1171,8 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
                         builder.panel(&{FillX, SizeToContentY, DrawText, TextAlignHorizontalRight}, text = "Value", textColor = textColor)
                         builder.panel(&{SizeToContentX, SizeToContentY, DrawBorder}, borderColor = textColor):
                           let updateContext = UpdateContext(
+                            ctx: self.document.ctx,
+                            errorColor: errorColor,
                             nodeCellMap: self.detailsNodeCellMap,
                             cellToWidget: initTable[CellId, UINode](),
                             targetCellPosition: vec2(0, 0),

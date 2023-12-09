@@ -190,6 +190,8 @@ type
     blinkCursor: bool = false
     blinkCursorTask: DelayedTask
 
+    validateNodesTask: DelayedTask
+
     scrollOffset*: float
     previousBaseIndex*: seq[int]
 
@@ -217,7 +219,9 @@ type
     handleClick*: proc(node: UINode, cell: Cell, path: seq[int], cursor: CellCursor, drag: bool)
     setCursor*: proc(cell: Cell, offset: int, drag: bool)
     selectionColor*: Color
+    errorColor*: Color
     isThickCursor*: bool
+    ctx*: ModelComputationContext
 
 proc `==`*(a, b: ModelCompletion): bool =
   if a.parent != b.parent: return false
@@ -362,6 +366,16 @@ proc startBlinkCursorTask(self: ModelDocumentEditor) =
       self.markDirty()
   else:
     self.blinkCursorTask.reschedule()
+
+proc retriggerValidation*(self: ModelDocumentEditor) =
+  if self.validateNodesTask.isNil:
+    self.validateNodesTask = startDelayed(500, repeat=false):
+      measureBlock "validateNodes":
+        for cell in self.nodeCellMap.cells.values:
+          discard self.document.ctx.validateNode(cell.node)
+      self.markDirty()
+  else:
+    self.validateNodesTask.reschedule()
 
 proc updateScrollOffset*(self: ModelDocumentEditor, scrollToCursor: bool = true) =
   if self.cellWidgetContext.isNil or self.scrolledNode.parent.isNil:
@@ -825,19 +839,23 @@ proc redo*(self: ModelDocument): Option[(Id, ModelOperation)] =
 proc handleNodeDeleted(self: ModelDocumentEditor, model: Model, parent: AstNode, child: AstNode, role: RoleId, index: int) =
   # debugf "handleNodeDeleted {parent}, {child}, {role}, {index}"
   self.invalidateCompletions()
+  self.retriggerValidation()
 
 proc handleNodeInserted(self: ModelDocumentEditor, model: Model, parent: AstNode, child: AstNode, role: RoleId, index: int) =
   # debugf "handleNodeInserted {parent}, {child}, {role}, {index}"
   self.invalidateCompletions()
+  self.retriggerValidation()
 
 proc handleNodePropertyChanged(self: ModelDocumentEditor, model: Model, node: AstNode, role: RoleId, oldValue: PropertyValue, newValue: PropertyValue, slice: Slice[int]) =
   # debugf "handleNodePropertyChanged {node}, {role}, {oldValue}, {newValue}"
   self.invalidateCompletions()
+  self.retriggerValidation()
   self.markDirty()
 
 proc handleNodeReferenceChanged(self: ModelDocumentEditor, model: Model, node: AstNode, role: RoleId, oldRef: NodeId, newRef: NodeId) =
   # debugf "handleNodeReferenceChanged {node}, {role}, {oldRef}, {newRef}"
   self.invalidateCompletions()
+  self.retriggerValidation()
 
 proc handleModelChanged(self: ModelDocumentEditor, document: ModelDocument) =
   # debugf "handleModelChanged"
@@ -870,6 +888,8 @@ proc handleModelChanged(self: ModelDocumentEditor, document: ModelDocument) =
     self.mSelection.last.map = self.nodeCellMap
 
   self.mCursorBeforeTransaction = self.selection
+
+  self.retriggerValidation()
 
   self.markDirty()
 
@@ -960,6 +980,7 @@ method handleScroll*(self: ModelDocumentEditor, scroll: Vec2, mousePosWindow: Ve
   #   self.markDirty()
   # else:
   self.scrollOffset += scrollAmount
+  self.retriggerValidation()
   self.markDirty()
 
 proc getLeafCellContainingPoint*(self: ModelDocumentEditor, cell: Cell, point: Vec2): Option[Cell] =
