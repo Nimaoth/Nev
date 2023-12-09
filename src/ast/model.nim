@@ -176,6 +176,7 @@ type
     typeComputers*: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]
     valueComputers*: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]
     scopeComputers*: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]]
+    validationComputers*: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): bool]
 
   Model* = ref object
     id {.getter.}: ModelId
@@ -205,6 +206,7 @@ type
 proc resolveReference*(self: Model, id: NodeId): Option[AstNode]
 proc resolveReference*(self: Project, id: NodeId): Option[AstNode]
 proc dump*(node: AstNode, model: Model = nil, recurse: bool = false): string
+proc replaceReferences*(node: AstNode, idMap: var Table[NodeId, NodeId])
 
 template forEach2*(node: AstNode, it: untyped, body: untyped): untyped =
   node.forEach proc(n: AstNode) =
@@ -235,14 +237,22 @@ proc newProject*(): Project =
 proc addModel*(self: Project, model: Model) =
   # log lvlWarn, fmt"addModel: {model.path}, {model.id}"
   var foundExistingNodes = false
+  var map = initTable[NodeId, NodeId]()
   for root in model.rootNodes:
     for node in root.childrenRec:
       if self.resolveReference(node.id).getSome(existing):
-        log lvlError, &"addModel({model.path} {model.id}): Node with id {node.id} already exists in model {existing.model.path} ({existing.model.id}).\nExisting node: {existing.dump(recurse=true)}\nNew node: {node.dump(recurse=true)}"
+        let newId = newId().NodeId
+        map[node.id] = newId
+        node.id = newId
+
+        log lvlWarn, &"addModel({model.path} {model.id}): Node with id {node.id} already exists in model {existing.model.path} ({existing.model.id}).\nExisting node: {existing.dump(recurse=true)}\nNew node: {node.dump(recurse=true)}"
         foundExistingNodes = true
 
   if foundExistingNodes:
-    return
+    log lvlWarn, &"Replacing references in {model.path} {model.id}: {map}"
+    for root in model.rootNodes:
+      root.replaceReferences(map)
+    # return
 
   assert model.project.isNil
   model.project = self
@@ -271,7 +281,10 @@ proc hash*(language: Language): Hash = language.id.hash
 method computeType*(self: ModelComputationContextBase, node: AstNode): AstNode {.base.} = discard
 method getValue*(self: ModelComputationContextBase, node: AstNode): AstNode {.base.} = discard
 method getScope*(self: ModelComputationContextBase, node: AstNode): seq[AstNode] {.base.} = discard
+method validateNode*(self: ModelComputationContextBase, node: AstNode): bool {.base.} = discard
 method dependOn*(self: ModelComputationContextBase, node: AstNode) {.base.} = discard
+method addDiagnostic*(self: ModelComputationContextBase, node: AstNode, msg: string) {.base.} = discard
+method getDiagnostics*(self: ModelComputationContextBase, node: NodeId): seq[string] {.base.} = discard
 
 proc notifyNodeDeleted(self: Model, parent: AstNode, child: AstNode, role: RoleId, index: int) =
   self.onNodeDeleted.invoke (self, parent, child, role, index)
@@ -322,12 +335,14 @@ proc newLanguage*(id: LanguageId, classes: seq[NodeClass], builder: CellBuilder,
   typeComputers: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode],
   valueComputers: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode],
   scopeComputers: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]],
+  validationComputers: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): bool],
   baseLanguages: openArray[Language] = []): Language =
   new result
   result.id = id
   result.typeComputers = typeComputers
   result.valueComputers = valueComputers
   result.scopeComputers = scopeComputers
+  result.validationComputers = validationComputers
   result.baseLanguages = @baseLanguages
 
   for l in baseLanguages:

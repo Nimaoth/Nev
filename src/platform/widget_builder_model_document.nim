@@ -911,6 +911,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
   self.resetDirty()
 
   let textColor = app.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
+  let errorColor = app.theme.color("editorError.foreground", color(255/255, 0/255, 0/255))
   var backgroundColor = if self.active: app.theme.color("editor.background", color(25/255, 25/255, 40/255)) else: app.theme.color("editor.background", color(25/255, 25/255, 25/255)) * 0.85
   backgroundColor.a = 1
 
@@ -1095,21 +1096,32 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
               return node.some
 
           if self.cursorVisible and self.document.model.rootNodes.len > 0:
-            if drawCursor(self.selection.last, self.isThickCursor, textColor, 0).getSome(node):
-              self.lastCursorLocationBounds = rect(self.selection.last.index.float * builder.charWidth, 0, builder.charWidth, builder.textHeight).transformRect(node, builder.root).some
+            if drawCursor(self.selection.last, self.isThickCursor, textColor, 0).getSome(uiNode):
+              self.lastCursorLocationBounds = rect(self.selection.last.index.float * builder.charWidth, 0, builder.charWidth, builder.textHeight).transformRect(uiNode, builder.root).some
+              let node = self.selection.last.node
 
-              let typ = self.document.ctx.computeType(self.selection.last.node).catch:
+              let typ = self.document.ctx.computeType(node).catch:
                 log lvlError, fmt"failed to compute type {getCurrentExceptionMsg()}"
                 nil
-              let value = self.document.ctx.getValue(self.selection.last.node).catch:
+              let value = self.document.ctx.getValue(node).catch:
                 log lvlError, fmt"failed to compute value {getCurrentExceptionMsg()}"
                 nil
 
-              var scrollOffset = node.transformBounds(overlapPanel).y
+              var scrollOffset = uiNode.transformBounds(overlapPanel).y
 
-              if typ.isNotNil or value.isNotNil:
+              discard self.document.ctx.validateNode(node)
+              if node.parent.isNotNil: discard self.document.ctx.validateNode(node.parent)
+              var errors = self.document.ctx.getDiagnostics(node.id)
+              if node.parent.isNotNil: errors.add self.document.ctx.getDiagnostics(node.parent.id)
+
+              # debugf"errors: {errors}"
+
+              if typ.isNotNil or value.isNotNil or errors.len > 0:
                 builder.panel(&{FillX, SizeToContentY, LayoutVertical}, y = scrollOffset):
                   # builder.panel(&{FillY}, pivot = vec2(1, 0), w = builder.charWidth)
+
+                  for err in errors:
+                    builder.panel(&{FillX, SizeToContentY, DrawText, TextAlignHorizontalRight}, text = err, textColor = errorColor)
 
                   if typ.isNotNil:
                     builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse}):

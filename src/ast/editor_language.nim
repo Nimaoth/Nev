@@ -46,6 +46,7 @@ builder.addBuilderFor loadAppFileClass.id, idNone(), proc(builder: CellBuilder, 
 var typeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]()
 var valueComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]()
 var scopeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]]()
+var validationComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): bool]()
 
 typeComputers[loadAppFileClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   debugf"compute type for load app file {node}"
@@ -55,7 +56,7 @@ typeComputers[loadAppFileClass.id] = proc(ctx: ModelComputationContextBase, node
 
 let editorLanguage* = newLanguage(IdEditorLanguage, @[
   loadAppFileClass,
-], builder, typeComputers, valueComputers, scopeComputers, [base_language.baseLanguage])
+], builder, typeComputers, valueComputers, scopeComputers, validationComputers, [base_language.baseLanguage])
 
 let editorModel* = block:
   var model = newModel(newId().ModelId)
