@@ -7,9 +7,52 @@ export id, ast_ids
 
 logCategory "base-language"
 
+proc typesMatch(ctx: ModelComputationContextBase, expected: AstNode, actual: AstNode): bool =
+  if expected.isNil or actual.isNil:
+    return false
+
+  # debug &"typesMatch: {expected} <> {actual}"
+  # defer:
+  #   debug &"-> {result}"
+
+  let expected = expected.resolveOriginal(true).get expected
+  let actual = actual.resolveOriginal(true).get actual
+
+  if expected == actual:
+    return true
+  if expected.class != actual.class:
+    return false
+
+  if expected.class == IdPointerType:
+    # debug &"try compare pointer target types {expected} <> {actual}"
+    if expected.resolveReference(IdPointerTypeTarget).getSome(expectedTarget) and actual.resolveReference(IdPointerTypeTarget).getSome(actualTarget):
+      # debug &"compare pointer target types {expectedTarget} <> {actualTarget}"
+      return ctx.typesMatch(expectedTarget, actualTarget)
+
+  if expected.class == IdFunctionType:
+    if expected.firstChild(IdFunctionTypeReturnType).getSome(expectedReturnType) and actual.firstChild(IdFunctionTypeReturnType).getSome(actualReturnType):
+      if not ctx.typesMatch(expectedReturnType, actualReturnType):
+        return false
+
+    let expectedChildren = expected.children(IdFunctionTypeParameterTypes)
+    let actualChildren = actual.children(IdFunctionTypeParameterTypes)
+    if expectedChildren.len != actualChildren.len:
+      return false
+
+    for i in 0..expectedChildren.high:
+      if not ctx.typesMatch(expectedChildren[i], actualChildren[i]):
+        return false
+
+    return true
+
+  if [IdInt32, IdUInt32, IdInt64, IdUInt64, IdFloat32, IdFloat64, IdChar, IdString, IdVoid].contains(expected.class):
+    return true
+
+  return false
+
 proc validateNodeType(ctx: ModelComputationContextBase, node: AstNode, expectedType: AstNode): bool =
   let typ = ctx.computeType(node)
-  if typ != expectedType:
+  if not ctx.typesMatch(expectedType, typ):
     ctx.addDiagnostic(node, fmt"Expected {expectedType}, got {typ}")
     return false
   return true
@@ -799,13 +842,14 @@ valueComputers[pointerTypeDeclClass.id] = proc(ctx: ModelComputationContextBase,
   return voidTypeInstance
 
 validationComputers[pointerTypeDeclClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): bool =
-  debugf"validate pointer type decl {node}"
+  # debugf"validate pointer type decl {node}"
 
   let targetTypeNode = node.firstChild(IdPointerTypeDeclTarget).getOr:
     ctx.addDiagnostic(node, "Pointer type must have a target type")
     return false
 
-  if (let typ = ctx.computeType(targetTypeNode); typ) != metaTypeInstance:
+  let typ = ctx.computeType(targetTypeNode)
+  if not ctx.typesMatch(metaTypeInstance, typ):
     ctx.addDiagnostic(node, fmt"Expected meta type, got {typ}")
     return false
 
@@ -866,7 +910,7 @@ valueComputers[genericTypeClass.id] = proc(ctx: ModelComputationContextBase, nod
   return node
 
 validationComputers[genericTypeClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): bool =
-  debugf"validate generic type {node}"
+  # debugf"validate generic type {node}"
 
   if not ctx.validateChildType(node, IdGenericTypeValue, metaTypeInstance):
     return false
@@ -890,7 +934,10 @@ typeComputers[letDeclClass.id] = proc(ctx: ModelComputationContextBase, node: As
   return voidTypeInstance
 
 validationComputers[letDeclClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): bool =
-  debugf"validate let decl {node}"
+  # debugf"validate let decl {node}"
+
+  if node.role == IdForLoopVariable:
+    return true
 
   if not ctx.validateHasChild(node, IdLetDeclValue):
     return false
@@ -900,7 +947,7 @@ validationComputers[letDeclClass.id] = proc(ctx: ModelComputationContextBase, no
       return false
 
     let expectedType = ctx.getValue(typeNode)
-    if expectedType.class == IdType:
+    if ctx.typesMatch(metaTypeInstance, expectedType):
       ctx.addDiagnostic(node, "Let decl can't be of type meta type")
       return false
 
@@ -910,7 +957,7 @@ validationComputers[letDeclClass.id] = proc(ctx: ModelComputationContextBase, no
   else:
     let valueNode = node.firstChild(IdLetDeclValue).get
     let valueType = ctx.computeType(valueNode)
-    if valueType.class == IdType:
+    if ctx.typesMatch(metaTypeInstance, valueType):
       ctx.addDiagnostic(node, "Let decl can't be of type meta type")
       return false
 
@@ -933,14 +980,17 @@ typeComputers[varDeclClass.id] = proc(ctx: ModelComputationContextBase, node: As
   return voidTypeInstance
 
 validationComputers[varDeclClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): bool =
-  debugf"validate var decl {node}"
+  # debugf"validate var decl {node}"
+
+  if node.role == IdForLoopVariable:
+    return true
 
   if node.firstChild(IdVarDeclType).getSome(typeNode):
     if not ctx.validateNodeType(typeNode, metaTypeInstance):
       return false
 
     let expectedType = ctx.getValue(typeNode)
-    if expectedType.class == IdType:
+    if ctx.typesMatch(metaTypeInstance, expectedType):
       ctx.addDiagnostic(node, "Var decl can't be of type meta type")
       return false
 
@@ -950,7 +1000,7 @@ validationComputers[varDeclClass.id] = proc(ctx: ModelComputationContextBase, no
   else:
     let valueNode = node.firstChild(IdVarDeclValue).get
     let valueType = ctx.computeType(valueNode)
-    if valueType.class == IdType:
+    if ctx.typesMatch(metaTypeInstance, valueType):
       ctx.addDiagnostic(node, "Var decl can't be of type meta type")
       return false
 
@@ -971,7 +1021,7 @@ valueComputers[constDeclClass.id] = proc(ctx: ModelComputationContextBase, node:
   return nil
 
 validationComputers[constDeclClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): bool =
-  debugf"validate const decl {node}"
+  # debugf"validate const decl {node}"
 
   if not ctx.validateHasChild(node, IdConstDeclValue):
     return false
@@ -1003,10 +1053,19 @@ valueComputers[parameterDeclClass.id] = proc(ctx: ModelComputationContextBase, n
   # debugf"compute value for parameter decl {node}"
   if node.firstChild(IdParameterDeclValue).getSome(valueNode):
     return ctx.getValue(valueNode)
+  if node.firstChild(IdParameterDeclType).getSome(typeNode):
+    let typ = ctx.getValue(typeNode)
+    if typ.class == IdType:
+      var genericType = newAstNode(genericTypeClass)
+      let name = node.property(IdINamedName).get.stringValue
+      genericType.setProperty(IdINamedName, PropertyValue(kind: String, stringValue: name))
+      node.model.addTempNode(genericType)
+      return genericType
+
   return nil
 
 validationComputers[parameterDeclClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): bool =
-  debugf"validate parameter decl {node}"
+  # debugf"validate parameter decl {node}"
 
   if node.firstChild(IdParameterDeclType).getSome(typeNode):
     if not ctx.validateNodeType(typeNode, metaTypeInstance):
@@ -1025,7 +1084,7 @@ typeComputers[whileClass.id] = proc(ctx: ModelComputationContextBase, node: AstN
   return voidTypeInstance
 
 validationComputers[whileClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): bool =
-  debugf"validate while {node}"
+  # debugf"validate while {node}"
 
   if not ctx.validateHasChild(node, IdWhileExpressionCondition):
     return false
@@ -1046,7 +1105,7 @@ typeComputers[thenCaseClass.id] = proc(ctx: ModelComputationContextBase, node: A
   return voidTypeInstance
 
 validationComputers[thenCaseClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): bool =
-  debugf"validate then case {node}"
+  # debugf"validate then case {node}"
 
   if not ctx.validateHasChild(node, IdThenCaseCondition):
     return false
@@ -1130,7 +1189,7 @@ typeComputers[assignmentClass.id] = proc(ctx: ModelComputationContextBase, node:
   return voidTypeInstance
 
 validationComputers[assignmentClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): bool =
-  debugf"validate assignment {node}"
+  # debugf"validate assignment {node}"
 
   if not ctx.validateHasChild(node, IdAssignmentTarget):
     return false
@@ -1140,7 +1199,7 @@ validationComputers[assignmentClass.id] = proc(ctx: ModelComputationContextBase,
   let targetType = ctx.computeType(node.firstChild(IdAssignmentTarget).get)
   let valueType = ctx.computeType(node.firstChild(IdAssignmentValue).get)
 
-  if valueType.class != targetType.class:
+  if not ctx.typesMatch(targetType, valueType):
     ctx.addDiagnostic(node, fmt"Expected {targetType}, got {valueType}")
     return false
 
@@ -1212,6 +1271,7 @@ proc getTypeSize(ctx: ModelComputationContextBase, typ: AstNode): int =
   if typ.class == IdFloat64: return 8
   if typ.class == IdChar: return 1
   if typ.class == IdPointerType: return 4
+  if typ.class == IdGenericType: return 0
   log lvlError, fmt"Not implemented: getTypeSize for {typ}"
   return 0
 
@@ -1595,7 +1655,7 @@ valueComputers[callClass.id] = proc(ctx: ModelComputationContextBase, node: AstN
   return nil
 
 validationComputers[callClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): bool =
-  debugf"validate call {node}"
+  # debugf"validate call {node}"
 
   if not ctx.validateHasChild(node, IdCallFunction):
     return false
@@ -1610,17 +1670,25 @@ validationComputers[callClass.id] = proc(ctx: ModelComputationContextBase, node:
   var arguments = node.children(IdCallArguments)
 
   if targetType.class == IdFunctionType:
-    let parameters = targetType.children(IdFunctionTypeParameterTypes)
-    if arguments.len != parameters.len:
-      ctx.addDiagnostic(node, fmt"Wrong number of arguments, expected {parameters.len}, got {arguments.len}")
+
+    var parameterTypes: seq[AstNode]
+    if targetValue.isNotNil and targetValue.class == IdFunctionDefinition and targetValue.isGeneric(ctx):
+      let concreteFunction = ctx.instantiateFunction(targetValue, arguments)
+      let concreteFunctionType = ctx.computeType(concreteFunction)
+      parameterTypes = concreteFunctionType.children(IdFunctionTypeParameterTypes)
+    else:
+      parameterTypes = targetType.children(IdFunctionTypeParameterTypes)
+
+    if arguments.len != parameterTypes.len:
+      ctx.addDiagnostic(node, fmt"Wrong number of arguments, expected {parameterTypes.len}, got {arguments.len}")
       return false
 
-    for i in 0..<min(arguments.len, parameters.len):
+    for i in 0..<min(arguments.len, parameterTypes.len):
       let argument = arguments[i]
-      let parameterType = parameters[i]
+      let parameterType = parameterTypes[i]
       let argumentType = ctx.computeType(argument)
-      if argumentType.class != parameterType.class:
-        ctx.addDiagnostic(node, fmt"Expected {parameterType}, got {argumentType}")
+      if not ctx.typesMatch(parameterType, argumentType):
+        ctx.addDiagnostic(argument, fmt"Expected {parameterType}, got {argumentType}")
         result = false
 
   if targetType.class == IdType:
@@ -1880,41 +1948,29 @@ scopeComputers[IdThenCase] = proc(ctx: ModelComputationContextBase, node: AstNod
   # debugf"compute scope for then case {node}"
   return ctx.computeDefaultScope(node)
 
-let baseLanguage* = newLanguage(IdBaseLanguage, @[
-  namedInterface, declarationInterface,
+let baseLanguage* = newLanguage(IdBaseLanguage,
+  @[
+    namedInterface, declarationInterface,
 
-  # typeClass,
-  metaTypeClass, stringTypeClass, charTypeClass, voidTypeClass, functionTypeClass, structTypeClass, pointerTypeClass, pointerTypeDeclClass,
-  int32TypeClass, uint32TypeClass, int64TypeClass, uint64TypeClass, float32TypeClass, float64TypeClass,
+    # typeClass,
+    metaTypeClass, stringTypeClass, charTypeClass, voidTypeClass, functionTypeClass, structTypeClass, pointerTypeClass, pointerTypeDeclClass,
+    int32TypeClass, uint32TypeClass, int64TypeClass, uint64TypeClass, float32TypeClass, float64TypeClass,
 
-  expressionClass, binaryExpressionClass, unaryExpressionClass, emptyLineClass, castClass,
-  numberLiteralClass, stringLiteralClass, boolLiteralClass, nodeReferenceClass, emptyClass, genericTypeClass, constDeclClass, letDeclClass, varDeclClass, nodeListClass, blockClass, callClass, thenCaseClass, ifClass, whileClass, forLoopClass,
-  parameterDeclClass, functionDefinitionClass, assignmentClass,
-  breakClass, continueClass, returnClass,
-  addExpressionClass, subExpressionClass, mulExpressionClass, divExpressionClass, modExpressionClass,
-  lessExpressionClass, lessEqualExpressionClass, greaterExpressionClass, greaterEqualExpressionClass, equalExpressionClass, notEqualExpressionClass, andExpressionClass, orExpressionClass, orderExpressionClass,
-  negateExpressionClass, notExpressionClass,
-  appendStringExpressionClass, printExpressionClass, buildExpressionClass, allocateClass,
-  stringGetPointerClass, stringGetLengthClass,
+    expressionClass, binaryExpressionClass, unaryExpressionClass, emptyLineClass, castClass,
+    numberLiteralClass, stringLiteralClass, boolLiteralClass, nodeReferenceClass, emptyClass, genericTypeClass, constDeclClass, letDeclClass, varDeclClass, nodeListClass, blockClass, callClass, thenCaseClass, ifClass, whileClass, forLoopClass,
+    parameterDeclClass, functionDefinitionClass, assignmentClass,
+    breakClass, continueClass, returnClass,
+    addExpressionClass, subExpressionClass, mulExpressionClass, divExpressionClass, modExpressionClass,
+    lessExpressionClass, lessEqualExpressionClass, greaterExpressionClass, greaterEqualExpressionClass, equalExpressionClass, notEqualExpressionClass, andExpressionClass, orExpressionClass, orderExpressionClass,
+    negateExpressionClass, notExpressionClass,
+    appendStringExpressionClass, printExpressionClass, buildExpressionClass, allocateClass,
+    stringGetPointerClass, stringGetLengthClass,
 
-  structDefinitionClass, structMemberDefinitionClass, structParameterClass, structMemberAccessClass,
-  addressOfClass, derefClass, arrayAccessClass,
-], builder, typeComputers, valueComputers, scopeComputers, validationComputers)
-
-let baseModel* = block:
-  var model = newModel(newId().ModelId)
-  model.addLanguage(baseLanguage)
-  model.addRootNode(int32TypeInstance)
-  model.addRootNode(uint32TypeInstance)
-  model.addRootNode(int64TypeInstance)
-  model.addRootNode(uint64TypeInstance)
-  model.addRootNode(float32TypeInstance)
-  model.addRootNode(float64TypeInstance)
-  model.addRootNode(stringTypeInstance)
-  model.addRootNode(voidTypeInstance)
-  model.addRootNode(charTypeInstance)
-  model.addRootNode(metaTypeInstance)
-
-  model
+    structDefinitionClass, structMemberDefinitionClass, structParameterClass, structMemberAccessClass,
+    addressOfClass, derefClass, arrayAccessClass,
+  ], builder, typeComputers, valueComputers, scopeComputers, validationComputers,
+  rootNodes=[
+    int32TypeInstance, uint32TypeInstance, int64TypeInstance, uint64TypeInstance, float32TypeInstance, float64TypeInstance, stringTypeInstance, voidTypeInstance, charTypeInstance, metaTypeInstance
+  ])
 
 # print baseLanguage

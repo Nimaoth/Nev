@@ -72,7 +72,7 @@ proc addDiagnostic*(self: ModelState, node: AstNode, msg: string) =
   if not self.diagnosticsPerNode[node.id].queries.contains(key):
     self.diagnosticsPerNode[node.id].queries[key] = @[]
 
-  self.diagnosticsPerNode[node.id].queries[key].add Diagnostic(message: msg)
+  self.diagnosticsPerNode[node.id].queries[key].add Diagnostic(message: msg.replace('\n', ' '))
 
 method addDiagnostic*(self: ModelComputationContext, node: AstNode, msg: string) =
   self.state.addDiagnostic(node, msg)
