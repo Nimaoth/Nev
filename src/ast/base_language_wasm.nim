@@ -383,8 +383,9 @@ proc genNodeLetDecl(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destina
 
   if node.firstChild(IdLetDeclValue).getSome(value):
     self.instr(LocalGet, localIdx: self.currentBasePointer)
-    self.instr(I32Const, i32Const: offset.int32)
-    self.instr(I32Add)
+    if offset > 0:
+      self.instr(I32Const, i32Const: offset.int32)
+      self.instr(I32Add)
     self.genNode(value, Destination(kind: Memory, offset: 0, align: 0))
 
   # self.instr(LocalTee, localIdx: index)
@@ -398,8 +399,9 @@ proc genNodeVarDecl(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destina
 
   if node.firstChild(IdVarDeclValue).getSome(value):
     self.instr(LocalGet, localIdx: self.currentBasePointer)
-    self.instr(I32Const, i32Const: offset.int32)
-    self.instr(I32Add)
+    if offset > 0:
+      self.instr(I32Const, i32Const: offset.int32)
+      self.instr(I32Add)
     self.genNode(value, Destination(kind: Memory, offset: 0, align: 0))
 
   # self.instr(LocalTee, localIdx: index)
@@ -484,6 +486,12 @@ proc genNodeNodeReference(self: BaseLanguageWasmCompiler, node: AstNode, dest: D
     case self.localIndices[id]:
     of Local(localIdx: @index):
       self.instr(LocalGet, localIdx: index)
+
+    of LocalStackPointer(localIdx: @index):
+      self.instr(LocalGet, localIdx: index)
+      let memInstr = self.getTypeMemInstructions(typ)
+      self.loadInstr(memInstr.load, 0, 0)
+
     of Stack(stackOffset: @offset):
       self.instr(LocalGet, localIdx: self.currentBasePointer)
       let memInstr = self.getTypeMemInstructions(typ)
@@ -496,6 +504,11 @@ proc genNodeNodeReference(self: BaseLanguageWasmCompiler, node: AstNode, dest: D
       self.instr(LocalGet, localIdx: index)
       let memInstr = self.getTypeMemInstructions(typ)
       self.storeInstr(memInstr.store, offset, align)
+
+    of LocalStackPointer(localIdx: @index):
+      self.instr(LocalGet, localIdx: index)
+      self.instr(I32Const, i32Const: size)
+      self.instr(MemoryCopy)
 
     of Stack(stackOffset: @offset):
       self.instr(LocalGet, localIdx: self.currentBasePointer)
@@ -512,6 +525,8 @@ proc genNodeNodeReference(self: BaseLanguageWasmCompiler, node: AstNode, dest: D
     case self.localIndices[id]:
     of Local(localIdx: @index):
       log lvlError, fmt"Can't get lvalue of local: {id}, from here {node}"
+    of LocalStackPointer(localIdx: @index):
+      self.instr(LocalGet, localIdx: index)
     of Stack(stackOffset: @offset):
       self.instr(LocalGet, localIdx: self.currentBasePointer)
       if offset > 0:
@@ -538,11 +553,18 @@ proc genAssignmentExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest
     case self.localIndices[id.get]
     of Local(localIdx: @index):
       discard
+
+    of LocalStackPointer(localIdx: @index):
+      self.instr(LocalGet, localIdx: index)
+      valueDest = Destination(kind: Memory, offset: 0, align: 0)
+
     of Stack(stackOffset: @offset):
       self.instr(LocalGet, localIdx: self.currentBasePointer)
-      self.instr(I32Const, i32Const: offset.int32)
-      self.instr(I32Add)
+      if offset > 0:
+        self.instr(I32Const, i32Const: offset.int32)
+        self.instr(I32Add)
       valueDest = Destination(kind: Memory, offset: 0, align: 0)
+
   else:
     self.genNode(targetNode, Destination(kind: LValue))
     valueDest = Destination(kind: Memory, offset: 0, align: 0)
@@ -553,6 +575,8 @@ proc genAssignmentExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest
     case self.localIndices[id.get]
     of Local(localIdx: @index):
       self.instr(LocalSet, localIdx: index)
+    of LocalStackPointer():
+      discard
     of Stack():
       discard
 
@@ -626,8 +650,6 @@ proc genNodeBuildExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest:
   self.genStoreDestination(node, dest)
 
 proc genNodeCallExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
-  for i, c in node.children(IdCallArguments):
-    self.genNode(c, Destination(kind: Stack))
 
   let funcExprNode = node.firstChild(IdCallFunction).getOr:
     log lvlError, fmt"No function specified for call {node}"
@@ -641,9 +663,24 @@ proc genNodeCallExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: 
     of Stack(): return # todo error
     of Memory(offset: @offset):
       if offset > 0:
+        log lvlError, fmt"test: apply offset for return value (not really an error)"
         self.instr(I32Const, i32Const: offset.int32)
+        self.instr(I32Add)
     of Discard(): discard
     of LValue(): return # todo error
+
+  for i, c in node.children(IdCallArguments):
+    let argType = self.ctx.computeType(c)
+    if argType.class == IdType:
+      continue
+
+    let passByReference = self.shouldPassAsOutParamater(argType)
+    let argDest = if passByReference:
+      Destination(kind: LValue)
+    else:
+      Destination(kind: Stack)
+
+    self.genNode(c, argDest)
 
   if funcExprNode.class == IdNodeReference:
     let funcDeclNode = funcExprNode.resolveReference(IdNodeReferenceTarget).getOr:
@@ -694,12 +731,18 @@ proc genNodeStructMemberAccessExpression(self: BaseLanguageWasmCompiler, node: A
     return
 
   let typ = self.ctx.computeType(valueNode)
+  let structType = if typ.class == IdPointerType:
+    typ.resolveReference(IdPointerTypeTarget).getOr:
+      log lvlError, fmt"No target: {typ}"
+      return
+  else:
+    typ
 
   var offset = 0.int32
   var size = 0.int32
   var align = 0.int32
 
-  for k, memberDefinition in typ.children(IdStructDefinitionMembers):
+  for k, memberDefinition in structType.children(IdStructDefinitionMembers):
     let memberType = self.ctx.computeType(memberDefinition)
     let (memberSize, memberAlign, _) = self.getTypeAttributes(memberType)
 
@@ -728,7 +771,10 @@ proc genNodeStructMemberAccessExpression(self: BaseLanguageWasmCompiler, node: A
       self.instr(I32Const, i32Const: offset.int32)
       self.instr(I32Add)
 
-  self.genNode(valueNode, Destination(kind: LValue))
+  if typ.class == IdPointerType:
+    self.genNode(valueNode, Destination(kind: Stack))
+  else:
+    self.genNode(valueNode, Destination(kind: LValue))
 
   case dest
   of Stack():
@@ -843,8 +889,10 @@ proc genNodeFunctionDefinition(self: BaseLanguageWasmCompiler, node: AstNode, de
   if body.len != 1:
     return
 
+  # todo: should these resets be here?
   self.localIndices.clear
   self.currentLocals.setLen 0
+  self.currentStackLocalsSize = 0
 
   let returnType = node.firstChild(IdFunctionDefinitionReturnType).mapIt(self.ctx.getValue(it)).get(voidTypeInstance)
   let passReturnAsOutParam = self.shouldPassAsOutParamater(returnType)
@@ -858,7 +906,11 @@ proc genNodeFunctionDefinition(self: BaseLanguageWasmCompiler, node: AstNode, de
     if paramType.class == IdType:
       continue
 
-    self.localIndices[param.id] = LocalVariable(kind: Local, localIdx: self.currentParamCount.WasmLocalIdx)
+    let passByReference = self.shouldPassAsOutParamater(paramType)
+    if passByReference:
+      self.localIndices[param.id] = LocalVariable(kind: LocalStackPointer, localIdx: self.currentParamCount.WasmLocalIdx)
+    else:
+      self.localIndices[param.id] = LocalVariable(kind: Local, localIdx: self.currentParamCount.WasmLocalIdx)
     inc self.currentParamCount
 
   self.currentBasePointer = (self.currentLocals.len + self.currentParamCount).WasmLocalIdx
@@ -904,7 +956,10 @@ proc getFunctionInputOutput(self: BaseLanguageWasmCompiler, node: AstNode): tupl
     let typ = self.ctx.computeType(c)
     if typ.class == IdType:
       continue
-    result.inputs.add self.toWasmValueType(typ).get
+    if self.shouldPassAsOutParamater(typ):
+      result.inputs.add WasmValueType.I32
+    else:
+      result.inputs.add self.toWasmValueType(typ).get
 
 proc getFunctionTypeInputOutput(self: BaseLanguageWasmCompiler, node: AstNode): tuple[inputs: seq[WasmValueType], outputs: seq[WasmValueType]] =
   for _, typ in node.children(IdFunctionTypeReturnType):
@@ -916,7 +971,10 @@ proc getFunctionTypeInputOutput(self: BaseLanguageWasmCompiler, node: AstNode): 
   for _, typ in node.children(IdFunctionTypeParameterTypes):
     if typ.class == IdType:
       continue
-    result.inputs.add self.toWasmValueType(typ).get
+    if self.shouldPassAsOutParamater(typ):
+      result.inputs.add WasmValueType.I32
+    else:
+      result.inputs.add self.toWasmValueType(typ).get
 
 proc addBaseLanguage*(self: BaseLanguageWasmCompiler) =
   self.functionInputOutputComputer[IdFunctionDefinition] = getFunctionInputOutput
