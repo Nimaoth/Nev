@@ -284,6 +284,7 @@ method getValue*(self: ModelComputationContextBase, node: AstNode): AstNode {.ba
 method getScope*(self: ModelComputationContextBase, node: AstNode): seq[AstNode] {.base.} = discard
 method validateNode*(self: ModelComputationContextBase, node: AstNode): bool {.base.} = discard
 method dependOn*(self: ModelComputationContextBase, node: AstNode) {.base.} = discard
+method dependOnCurrentRevision*(self: ModelComputationContextBase) {.base.} = discard
 method addDiagnostic*(self: ModelComputationContextBase, node: AstNode, msg: string) {.base.} = discard
 method getDiagnostics*(self: ModelComputationContextBase, node: NodeId): seq[string] {.base.} = discard
 

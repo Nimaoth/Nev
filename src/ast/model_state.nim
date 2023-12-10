@@ -87,6 +87,9 @@ method getDiagnostics*(self: ModelComputationContext, node: NodeId): seq[string]
 method dependOn*(self: ModelComputationContext, node: AstNode) =
   self.state.recordDependency(node.getItem)
 
+method dependOnCurrentRevision*(self: ModelComputationContext) =
+  self.state.dependOnCurrentRevision()
+
 func fingerprint*(node: AstNode): Fingerprint =
   if node.isNil:
     return @[]

@@ -1125,8 +1125,11 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
 
               var scrollOffset = uiNode.transformBounds(overlapPanel).y
 
-              discard self.document.ctx.validateNode(node)
-              if node.parent.isNotNil: discard self.document.ctx.validateNode(node.parent)
+              try:
+                discard self.document.ctx.validateNode(node)
+                if node.parent.isNotNil: discard self.document.ctx.validateNode(node.parent)
+              except CatchableError:
+                log lvlError, fmt"failed to validate node {node.dump}"
               var errors = self.document.ctx.getDiagnostics(node.id)
               if node.parent.isNotNil: errors.add self.document.ctx.getDiagnostics(node.parent.id)
 
@@ -1135,12 +1138,6 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
               if typ.isNotNil or value.isNotNil or errors.len > 0:
                 builder.panel(&{FillX, SizeToContentY, LayoutVertical}, y = scrollOffset):
                   # builder.panel(&{FillY}, pivot = vec2(1, 0), w = builder.charWidth)
-
-                  builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse}):
-                    builder.panel(&{FillY}, pivot = vec2(1, 0), w = builder.charWidth)
-                    builder.panel(&{SizeToContentX, SizeToContentY, LayoutVertical}, pivot = vec2(1, 0)):
-                      for err in errors:
-                        builder.panel(&{SizeToContentX, SizeToContentY, FillBackground, DrawText, TextAlignHorizontalRight}, text = err, textColor = errorColor, backgroundColor = backgroundColor)
 
                   if typ.isNotNil:
                     builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse}):
@@ -1158,6 +1155,12 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
                             setCursor: proc(cell: Cell, offset: int, drag: bool) = discard,
                           )
                           self.createNodeUI(builder, app, currentNode, updateContext, remainingHeightUp=0, remainingHeightDown=h, typ, @[0], 0)
+
+                  builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse}):
+                    builder.panel(&{FillY}, pivot = vec2(1, 0), w = builder.charWidth)
+                    builder.panel(&{SizeToContentX, SizeToContentY, LayoutVertical}, pivot = vec2(1, 0)):
+                      for err in errors:
+                        builder.panel(&{SizeToContentX, SizeToContentY, FillBackground, DrawText, TextAlignHorizontalRight}, text = err, textColor = errorColor, backgroundColor = backgroundColor)
 
                   if value.isNotNil:
                     if typ.isNotNil:
