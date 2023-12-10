@@ -76,7 +76,12 @@ proc genNodeBlock(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destinati
   else:
     WasmLocalIdx.none
 
-  self.genBlock(WasmBlockType(kind: ValType, typ: wasmValueType)):
+  let blockType = if dest.kind == Discard:
+    WasmBlockType(kind: ValType, typ: WasmValueType.none)
+  else:
+    WasmBlockType(kind: ValType, typ: wasmValueType)
+
+  self.genBlock(blockType):
     if tempIdx.getSome(tempIdx):
       self.instr(LocalGet, localIdx: tempIdx)
 

@@ -997,8 +997,7 @@ validationComputers[varDeclClass.id] = proc(ctx: ModelComputationContextBase, no
     if not ctx.validateChildType(node, IdVarDeclValue, expectedType):
       return false
 
-  else:
-    let valueNode = node.firstChild(IdVarDeclValue).get
+  elif node.firstChild(IdVarDeclValue).getSome(valueNode):
     let valueType = ctx.computeType(valueNode)
     if ctx.typesMatch(metaTypeInstance, valueType):
       ctx.addDiagnostic(node, "Var decl can't be of type meta type")
@@ -1256,6 +1255,7 @@ validationComputers[nodeReferenceClass.id] = proc(ctx: ModelComputationContextBa
 
   let targetNode = node.resolveReference(IdNodeReferenceTarget).getOr:
     ctx.addDiagnostic(node, "Could not resolve node reference")
+    ctx.dependOnCurrentRevision()
     return false
 
   let scope = ctx.getScope(node)
@@ -1452,6 +1452,7 @@ var functionInstances* = initTable[FunctionInstantiation, tuple[node: AstNode, r
 
 proc instantiateFunction*(ctx: ModelComputationContextBase, genericFunction: AstNode, arguments: openArray[AstNode]): AstNode =
   # debugf"instantiateFunction, args {arguments}, {`$`(genericFunction, true)}"
+  assert genericFunction.isNotNil
 
   let model = genericFunction.model
   let depGraph = ctx.ModelComputationContext.state.depGraph
@@ -1470,6 +1471,9 @@ proc instantiateFunction*(ctx: ModelComputationContextBase, genericFunction: Ast
       # debugf"{i}: generic param type {`$`(genericParamType, true)}"
       if genericParamType.class == IdType:
         let value = ctx.getValue(arg)
+        if value.isNil:
+          log lvlError, fmt"Could not compute value for argument {arg}"
+          continue
         # debugf"{i}: value {value}"
         actualArguments.add value
         map[genericParam.id] = value
@@ -1784,6 +1788,23 @@ typeComputers[structMemberAccessClass.id] = proc(ctx: ModelComputationContextBas
 
   else:
     return ctx.computeType(memberNode)
+
+validationComputers[structMemberAccessClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): bool =
+  # debugf"validate assignment {node}"
+
+  if not ctx.validateHasChild(node, IdStructMemberAccessValue):
+    return false
+  # if not ctx.validateHasChild(node, IdStructMemberAccessMember):
+  #   return false
+
+  let structType = ctx.computeType(node.firstChild(IdStructMemberAccessValue).get)
+  # let valueType = ctx.computeType(node.firstChild(IdAssignmentValue).get)
+
+  if structType.class != IdStructDefinition:
+    ctx.addDiagnostic(node, fmt"Expected struct type, got {structType}")
+    return false
+
+  return true
 
 typeComputers[structMemberDefinitionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for struct member definition {node}"
