@@ -1407,7 +1407,9 @@ proc isGeneric*(function: AstNode, ctx: ModelComputationContextBase): bool =
       if paramType.class == IdType:
         return true
     return false
-  assert false
+
+  log lvlError, fmt"Unknown class for isGeneric: {function}"
+  return false
 
 proc substituteGenericTypeValues*(ctx: ModelComputationContextBase, genericType: AstNode, concreteType: AstNode, map: var Table[NodeId, AstNode]) =
   # debugf"substitute {genericType} with {concreteType}"
@@ -1769,7 +1771,13 @@ typeComputers[structMemberAccessClass.id] = proc(ctx: ModelComputationContextBas
   let valueNode = node.firstChild(IdStructMemberAccessValue).getOr:
     return voidTypeInstance
 
-  let structType = ctx.computeType(valueNode)
+  let typ = ctx.computeType(valueNode)
+  let structType = if typ.class == IdPointerType:
+    typ.resolveReference(IdPointerTypeTarget).getOr:
+      return
+  else:
+    typ
+
   let isGeneric = structType.hasReference(IdStructTypeGenericBase)
 
   if isGeneric:
@@ -1797,11 +1805,16 @@ validationComputers[structMemberAccessClass.id] = proc(ctx: ModelComputationCont
   # if not ctx.validateHasChild(node, IdStructMemberAccessMember):
   #   return false
 
-  let structType = ctx.computeType(node.firstChild(IdStructMemberAccessValue).get)
-  # let valueType = ctx.computeType(node.firstChild(IdAssignmentValue).get)
+  let typ = ctx.computeType(node.firstChild(IdStructMemberAccessValue).get)
+
+  let structType = if typ.class == IdPointerType:
+    typ.resolveReference(IdPointerTypeTarget).getOr:
+      return
+  else:
+    typ
 
   if structType.class != IdStructDefinition:
-    ctx.addDiagnostic(node, fmt"Expected struct type, got {structType}")
+    ctx.addDiagnostic(node, fmt"Expected struct type or pointer to struct typ, got {structType}")
     return false
 
   return true
@@ -1881,22 +1894,29 @@ scopeComputers[structMemberAccessClass.id] = proc(ctx: ModelComputationContextBa
     return @[]
 
   let valueType = ctx.computeType(valueNode)
-  if valueType.class == IdType:
+
+  let structType = if valueType.class == IdPointerType:
+    valueType.resolveReference(IdPointerTypeTarget).getOr:
+      return
+  else:
+    valueType
+
+  if structType.class == IdType:
     let actualType = ctx.getValue(valueNode)
     if actualType.class == IdStructDefinition:
       return actualType.children(IdStructDefinitionParameter)
 
     return @[]
 
-  let genericType = valueType.reference(IdStructTypeGenericBase)
-  # debugf"value type {`$`(valueType, true)}"
+  let genericType = structType.reference(IdStructTypeGenericBase)
+  # debugf"value type {`$`(structType, true)}"
   if genericType.isSome:
     if node.model.resolveReference(genericType).getSome(genericTypeNode):
       # debugf"generic type {`$`(genericTypeNode, true)}"
       return genericTypeNode.children(IdStructDefinitionMembers)
     return @[]
 
-  return valueType.children(IdStructDefinitionMembers)
+  return structType.children(IdStructDefinitionMembers)
 
 proc getGenericTypes(node: AstNode, res: var seq[AstNode]) =
   if node.class == IdGenericType:

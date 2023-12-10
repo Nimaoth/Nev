@@ -7,10 +7,10 @@ import scripting/[wasm_builder]
 logCategory "generator-wasm"
 
 type
-  LocalVariableStorage* = enum Local, Stack
+  LocalVariableStorage* = enum Local, Stack, LocalStackPointer
   LocalVariable* = object
     case kind*: LocalVariableStorage
-    of Local: localIdx*: WasmLocalIdx
+    of Local, LocalStackPointer: localIdx*: WasmLocalIdx
     of Stack: stackOffset*: int32
 
   DestinationStorage* = enum Stack, Memory, Discard, LValue
