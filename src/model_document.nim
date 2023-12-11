@@ -333,7 +333,7 @@ method save*(self: ModelDocument, filename: string = "", app: bool = false) =
     raise newException(IOError, "Missing filename")
 
   log lvlInfo, fmt"Saving model source file '{self.filename}'"
-  let serialized = $self.model.toJson.pretty
+  let serialized = $self.model.toJson
 
   if self.workspace.getSome(ws):
     asyncCheck ws.saveFile(self.filename, serialized)
