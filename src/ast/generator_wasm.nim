@@ -54,6 +54,11 @@ type
     currentStackLocals: seq[int32]
     currentStackLocalsSize: int32
 
+    returnValueDestination: Destination
+    passReturnAsOutParam: bool
+
+    genDebugCode: bool
+
     generators*: Table[ClassId, proc(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination)]
 
     # imported
