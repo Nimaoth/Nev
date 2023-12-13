@@ -273,6 +273,7 @@ proc compileToBinary*(self: BaseLanguageWasmCompiler, node: AstNode): seq[uint8]
   let heapBase = align(activeDataOffset + activeDataSize, wasmPageSize)
   self.builder.globals[self.heapBase.int].init = WasmInstr(kind: I32Const, i32Const: heapBase)
 
+  self.builder.getTable(self.functionRefTableIdx).typ.limits.min = self.functionRefIndices.len.uint32
   self.builder.addFunctionElements("function pointers", self.functionRefTableIdx, self.functionRefIndices)
 
   debugf"{self.builder}"
@@ -338,13 +339,14 @@ proc getFunctionTypeIdx*(self: BaseLanguageWasmCompiler, node: AstNode): WasmTyp
   let (inputs, outputs) = if self.functionInputOutputComputer.contains(node.class):
     self.functionInputOutputComputer[node.class](self, node)
   else:
-    log lvlError, fmt"getOrCreateWasmFunc: Function not implemented: {`$`(node, true)}"
+    log lvlError, fmt"getFunctionTypeIdx: Function not implemented: {`$`(node, true)}"
     return 0.WasmTypeIdx
 
   return self.builder.getFunctionTypeIdx(inputs, outputs)
 
 proc getOrCreateWasmFunc*(self: BaseLanguageWasmCompiler, node: AstNode, exportName: Option[string] = string.none): WasmFuncIdx =
   if not self.wasmFuncs.contains(node.id):
+    # debugf"getOrCreateWasmFunc {exportName}: {node}"
     let (inputs, outputs) = if self.functionInputOutputComputer.contains(node.class):
       self.functionInputOutputComputer[node.class](self, node)
     else:

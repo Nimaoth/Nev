@@ -323,8 +323,11 @@ proc addTable*(self: WasmBuilder): WasmTableIdx =
   result = (-self.tables.len - 1).WasmTableIdx
   self.tables.add(WasmTable(
     typ: WasmTableType(
-      limits: WasmLimits(min: 1, max: uint32.none),
+      limits: WasmLimits(min: 0, max: uint32.none),
       refType: FuncRef)))
+
+proc getTable*(self: WasmBuilder, idx: WasmTableIdx): var WasmTable =
+  return self.tables[(not idx.uint32).int]
 
 proc addFunctionElements*(self: WasmBuilder, name: string, table: WasmTableIdx, funcs: seq[WasmFuncIdx]) =
   self.elems.add WasmElem(

@@ -173,3 +173,10 @@ proc align*[T](address, alignment: T): T =
     result = address
   else:
     result = (address + (alignment - 1)) and not (alignment - 1)
+
+type CatchableAssertion* = object of CatchableError
+
+template softAssert*(condition: bool, message: string): untyped =
+  if not condition:
+    echo message
+    raise newException(CatchableAssertion, message)
