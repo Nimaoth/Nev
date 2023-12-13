@@ -273,6 +273,8 @@ proc editor_model_pasteNode_void_ModelDocumentEditor_impl(
     self: ModelDocumentEditor)  {.importc.}
 proc editor_model_addLanguage_void_ModelDocumentEditor_impl(
     self: ModelDocumentEditor)  {.importc.}
+proc editor_model_createNewModel_void_ModelDocumentEditor_string_impl(
+    self: ModelDocumentEditor; name: string)  {.importc.}
 proc editor_model_addModelToProject_void_ModelDocumentEditor_impl(
     self: ModelDocumentEditor)  {.importc.}
 proc editor_model_importModel_void_ModelDocumentEditor_impl(

@@ -246,7 +246,7 @@ proc addModel*(self: Project, model: Model) =
         map[node.id] = newId
         node.id = newId
 
-        log lvlWarn, &"addModel({model.path} {model.id}): Node with id {node.id} already exists in model {existing.model.path} ({existing.model.id}).\nExisting node: {existing.dump(recurse=true)}\nNew node: {node.dump(recurse=true)}"
+        log lvlWarn, &"addModel({model.path} {model.id}): Node with id {existing.id} already exists in model {existing.model.path} ({existing.model.id}).\nExisting node: {existing.dump(recurse=true)}\nNew node: {node.dump(recurse=true)}"
         foundExistingNodes = true
 
   if foundExistingNodes:

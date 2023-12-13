@@ -416,6 +416,8 @@ proc updateScrollOffset*(self: ModelDocumentEditor, scrollToCursor: bool = true)
 
   # debugf"updateScrollOffset {self.targetCellPath}:{self.scrollOffset}"
 
+  self.retriggerValidation()
+
   self.markDirty()
 
 proc updateScrollOffsetToPrevCell(self: ModelDocumentEditor): bool =
@@ -1132,10 +1134,12 @@ static:
 
 proc scrollPixels*(self: ModelDocumentEditor, amount: float32) {.expose("editor.model").} =
   self.scrollOffset += amount
+  self.retriggerValidation()
   self.markDirty()
 
 proc scrollLines*(self: ModelDocumentEditor, lines: float32) {.expose("editor.model").} =
   self.scrollOffset += self.app.platform.builder.textHeight * lines.float
+  self.retriggerValidation()
   self.markDirty()
 
 proc getModeConfig(self: ModelDocumentEditor, mode: string): EventHandlerConfig =
