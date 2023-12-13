@@ -464,9 +464,11 @@ proc `selection=`*(self: ModelDocumentEditor, selection: CellSelection) =
   if self.mSelection == selection:
     return
 
-  self.selectionHistory.add (self.mSelection.first.toCellCursorState, self.mSelection.last.toCellCursorState)
+  let hasValidSelection = self.mSelection.first.node.isNotNil and self.mSelection.last.node.isNotNil
+  if hasValidSelection:
+    self.selectionHistory.add (self.mSelection.first.toCellCursorState, self.mSelection.last.toCellCursorState)
 
-  if self.lastTargetCell != selection.last.targetCell:
+  if hasValidSelection and self.lastTargetCell != selection.last.targetCell:
     self.mSelection = selection
     self.invalidateCompletions()
   else:
@@ -3228,6 +3230,21 @@ method changed*(self: ModelImportSelectorItem, other: SelectorItem): bool =
   let other = other.ModelImportSelectorItem
   return self.model != other.model
 
+proc createNewModelAsync*(self: ModelDocumentEditor, name: string) {.async.} =
+  if self.document.workspace.getSome(ws):
+    var model = newModel(newId().ModelId)
+    model.path = name & ".ast-model"
+    self.document.project.addModel(model)
+    let serialized = $model.toJson
+    await ws.saveFile(model.path, serialized)
+
+    discard self.app.openWorkspaceFile(model.path, ws)
+  else:
+    log lvlError, fmt"Failed to create model: no workspace"
+
+proc createNewModel*(self: ModelDocumentEditor, name: string) {.expose("editor.model").} =
+  asyncCheck self.createNewModelAsync(name)
+
 proc addModelToProject*(self: ModelDocumentEditor) {.expose("editor.model").} =
   var popup = self.app.createSelectorPopup().SelectorPopup
   var sortCancellationToken = newCancellationToken()
@@ -3337,9 +3354,10 @@ proc addRootNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
       self.document.finishTransaction()
 
     self.document.model.addRootNode newAstNode(class)
-
     self.rebuildCells()
     self.cursor = self.getFirstEditableCellOfNode(self.document.model.rootNodes.last).get
+    self.updateScrollOffset(true)
+    self.markDirty()
 
   popup.updateCompletions()
   popup.sortFunction = proc(a, b: SelectorItem): int = cmp(a.score, b.score)

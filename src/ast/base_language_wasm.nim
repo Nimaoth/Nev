@@ -433,7 +433,11 @@ proc genNodeContinueExpression(self: BaseLanguageWasmCompiler, node: AstNode, de
   self.genBranchLabel(parent, branchIndex)
 
 proc genNodeReturnExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
-  discard
+  if self.passReturnAsOutParam:
+    self.instr(LocalGet, localIdx: 0.WasmLocalIdx) # load return value address from first parameter
+  self.genNodeChildren(node, IdReturnExpressionValue, self.returnValueDestination)
+  let actualIndex = WasmLabelIdx(self.exprStack.high)
+  self.instr(Br, brLabelIdx: actualIndex)
 
 proc genNodeStringGetPointer(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   self.genNodeChildren(node, IdStringGetPointerValue, Destination(kind: Stack))
@@ -932,6 +936,9 @@ proc genNodeFunctionDefinition(self: BaseLanguageWasmCompiler, node: AstNode, de
     Destination(kind: Memory, offset: 0, align: 0)
   else:
     Destination(kind: Stack)
+
+  self.returnValueDestination = destination
+  self.passReturnAsOutParam = passReturnAsOutParam
 
   self.genNode(body[0], destination)
 

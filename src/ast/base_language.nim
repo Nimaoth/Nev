@@ -235,7 +235,9 @@ let forLoopClass* = newNodeClass(IdForLoop, "ForLoop", alias="for", base=express
 
 let breakClass* = newNodeClass(IdBreakExpression, "BreakExpression", alias="break", base=expressionClass)
 let continueClass* = newNodeClass(IdContinueExpression, "ContinueExpression", alias="continue", base=expressionClass)
-let returnClass* = newNodeClass(IdReturnExpression, "ReturnExpression", alias="return", base=expressionClass)
+let returnClass* = newNodeClass(IdReturnExpression, "ReturnExpression", alias="return", base=expressionClass,
+  children=[
+    NodeChildDescription(id: IdReturnExpressionValue, role: "value", class: expressionClass.id, count: ChildCount.ZeroOrOne)])
 
 let parameterDeclClass* = newNodeClass(IdParameterDecl, "ParameterDecl", alias="param", interfaces=[declarationInterface], substitutionProperty=IdINamedName.some,
   children=[
@@ -663,7 +665,10 @@ builder.addBuilderFor continueClass.id, idNone(), proc(builder: CellBuilder, nod
   return cell
 
 builder.addBuilderFor returnClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = AliasCell(id: newId().CellId, node: node, themeForegroundColors: @["keyword"], disableEditing: true)
+  var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
+  cell.fillChildren = proc(map: NodeCellMap) =
+    cell.add AliasCell(id: newId().CellId, node: node, themeForegroundColors: @["keyword"], disableEditing: true)
+    cell.add builder.buildChildren(map, node, IdReturnExpressionValue, &{LayoutHorizontal})
   return cell
 
 builder.addBuilderFor nodeReferenceClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =

@@ -55,6 +55,7 @@ let IdIDeclaration* = "62e5339a564d29f77293451d".parseId.ClassId
 let IdBreakExpression* = "62e5339b564d29f772934520".parseId.ClassId
 let IdContinueExpression* = "62e5339b564d29f772934521".parseId.ClassId
 let IdReturnExpression* = "62e5339b564d29f772934522".parseId.ClassId
+let IdReturnExpressionValue* = "656f7f67d077504f640d8719".parseId.RoleId
 
 let IdEmptyLine* = "62e5339b564d29f772934526".parseId.ClassId
 
@@ -318,7 +319,6 @@ let Id656f7f67d077504f640d8715* = "656f7f67d077504f640d8715".parseId
 let Id656f7f67d077504f640d8716* = "656f7f67d077504f640d8716".parseId
 let Id656f7f67d077504f640d8717* = "656f7f67d077504f640d8717".parseId
 let Id656f7f67d077504f640d8718* = "656f7f67d077504f640d8718".parseId
-let Id656f7f67d077504f640d8719* = "656f7f67d077504f640d8719".parseId
 
 import strformat
 for i in 0..100:
