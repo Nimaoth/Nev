@@ -123,6 +123,8 @@ proc pasteNode*(self: ModelDocumentEditor) =
   editor_model_pasteNode_void_ModelDocumentEditor_impl(self)
 proc addLanguage*(self: ModelDocumentEditor) =
   editor_model_addLanguage_void_ModelDocumentEditor_impl(self)
+proc createNewModel*(self: ModelDocumentEditor; name: string) =
+  editor_model_createNewModel_void_ModelDocumentEditor_string_impl(self, name)
 proc addModelToProject*(self: ModelDocumentEditor) =
   editor_model_addModelToProject_void_ModelDocumentEditor_impl(self)
 proc importModel*(self: ModelDocumentEditor) =

@@ -408,6 +408,9 @@ proc editor_model_pasteNode_void_ModelDocumentEditor_impl*(
 proc editor_model_addLanguage_void_ModelDocumentEditor_impl*(
     self: ModelDocumentEditor) =
   discard
+proc editor_model_createNewModel_void_ModelDocumentEditor_string_impl*(
+    self: ModelDocumentEditor; name: string) =
+  discard
 proc editor_model_addModelToProject_void_ModelDocumentEditor_impl*(
     self: ModelDocumentEditor) =
   discard

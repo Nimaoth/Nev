@@ -826,6 +826,25 @@ proc addLanguage*(self: ModelDocumentEditor) =
       argsJsonString.cstring)
 
 
+proc editor_model_createNewModel_void_ModelDocumentEditor_string_wasm(
+    arg: cstring): cstring {.importc.}
+proc createNewModel*(self: ModelDocumentEditor; name: string) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when ModelDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when string is JsonNode:
+      name
+    else:
+      name.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_model_createNewModel_void_ModelDocumentEditor_string_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_model_addModelToProject_void_ModelDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
 proc addModelToProject*(self: ModelDocumentEditor) =
