@@ -618,6 +618,7 @@ proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
       self.redoList.setLen 0
 
       functionInstances.clear()
+      structInstances.clear()
       self.ctx.state.clearCache()
 
       self.ctx.state.removeModel(oldModel)
@@ -867,6 +868,8 @@ proc handleModelChanged(self: ModelDocumentEditor, document: ModelDocument) =
   discard self.document.model.onNodePropertyChanged.subscribe proc(d: auto) = self.handleNodePropertyChanged(d[0], d[1], d[2], d[3], d[4], d[5])
   discard self.document.model.onNodeReferenceChanged.subscribe proc(d: auto) = self.handleNodeReferenceChanged(d[0], d[1], d[2], d[3], d[4])
 
+  self.mSelection.first = CellCursor.default
+  self.mSelection.last = CellCursor.default
   self.mSelection.first.map = self.nodeCellMap
   self.mSelection.last.map = self.nodeCellMap
 
@@ -3003,6 +3006,7 @@ proc clearModelCache*(self: ModelDocumentEditor) {.expose("editor.model").} =
   self.document.model.tempNodes.setLen 0
 
   functionInstances.clear()
+  structInstances.clear()
 
   # for rootNode in self.document.model.rootNodes:
   #   self.document.ctx.state.insertNode(rootNode)
@@ -3397,6 +3401,7 @@ proc loadBaseLanguageModel*(self: ModelDocumentEditor) {.expose("editor.model").
     self.document.redoList.setLen 0
 
     functionInstances.clear()
+    structInstances.clear()
     self.document.ctx.state.clearCache()
 
     self.document.ctx.state.removeModel(oldModel)

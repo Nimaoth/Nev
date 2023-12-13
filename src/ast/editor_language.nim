@@ -29,17 +29,17 @@ let loadAppFileClass* = newNodeClass(IdLoadAppFile, "LoadAppFile", alias="load a
 
 var builder = newCellBuilder()
 
-builder.addBuilderFor loadAppFileClass.id, idNone(), proc(builder: CellBuilder, node: AstNode): Cell =
-  var cell = CollectionCell(id: newId().CellId, node: node, uiFlags: &{LayoutHorizontal})
+builder.addBuilderFor loadAppFileClass.id, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
+  var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
-    cell.add AliasCell(node: node, disableEditing: true)
-    # cell.add ConstantCell(node: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+    cell.add AliasCell(node: owner ?? node, referenceNode: node, disableEditing: true)
+    # cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: "(", style: CellStyle(noSpaceLeft: true, noSpaceRight: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
 
     cell.add block:
-      buildChildrenT(builder, map, node, IdLoadAppFileArgument, &{LayoutHorizontal}, 0.CellFlags):
-        placeholder: PlaceholderCell(id: newId().CellId, node: node, role: role, shadowText: "<file_name>")
+      buildChildrenT(builder, map, node, owner, IdLoadAppFileArgument, &{LayoutHorizontal}, 0.CellFlags):
+        placeholder: PlaceholderCell(id: newId().CellId, node: owner ?? node, referenceNode: node, role: role, shadowText: "<file_name>")
 
-    # cell.add ConstantCell(node: node, text: ")", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+    # cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: ")", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
 
   return cell
 

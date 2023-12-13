@@ -874,13 +874,14 @@ proc pathAfter(a, b: openArray[int]): bool =
   return a.len > b.len
 
 proc createNodeUI(self: ModelDocumentEditor, builder: UINodeBuilder, app: App, container: UINode, updateContext: UpdateContext, remainingHeightUp: float, remainingHeightDown: float, node: AstNode, targetCellPath: seq[int], scrollOffset: float) =
-  let cell = updateContext.nodeCellMap.cell(node)
-  if cell.isNil:
-    return
-
-  # debugf"render: {targetCellPath}:{self.scrollOffset}"
-  # echo fmt"scroll offset {scrollOffset}"
   try:
+    let cell = updateContext.nodeCellMap.cell(node)
+    if cell.isNil:
+      return
+
+    # debugf"render: {targetCellPath}:{self.scrollOffset}"
+    # echo fmt"scroll offset {scrollOffset}"
+
     let myCtx = newCellLayoutContext(builder, updateContext, Direction.Forwards, true)
     defer:
       myCtx.finish()

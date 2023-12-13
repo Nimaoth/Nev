@@ -465,6 +465,9 @@ proc genNodeCast(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destinatio
 
   self.genStoreDestination(node, dest)
 
+proc genNodeEmptyLine(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  discard
+
 proc genNodeNodeReference(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   let id = node.reference(IdNodeReferenceTarget)
   if node.resolveReference(IdNodeReferenceTarget).getSome(target) and target.class == IdConstDecl:
@@ -716,9 +719,9 @@ proc genNodeCallExpression(self: BaseLanguageWasmCompiler, node: AstNode, dest: 
 
   else: # not a node reference
     self.genNode(funcExprNode, Destination(kind: Stack))
-    const tableIdx = 0.WasmTableIdx
-    let typeIdx = 0.WasmTypeIdx
-    self.instr(CallIndirect, callIndirectTableIdx: tableIdx, callIndirectTypeIdx: typeIdx)
+    let functionType = self.ctx.computeType(funcExprNode)
+    let typeIdx = self.getFunctionTypeIdx(functionType)
+    self.instr(CallIndirect, callIndirectTableIdx: self.functionRefTableIdx, callIndirectTypeIdx: typeIdx)
 
   let typ = self.ctx.computeType(node)
   if typ.class != IdVoid and not passReturnAsOutParam: # todo: should handlediscard here aswell even if passReturnAsOutParam
@@ -742,13 +745,17 @@ proc genNodeStructMemberAccessExpression(self: BaseLanguageWasmCompiler, node: A
   else:
     typ
 
+  # debugf"genNodeStructMemberAccessExpression {node}, {member}: {structType.dump(recurse=true)}"
+
   var offset = 0.int32
   var size = 0.int32
   var align = 0.int32
 
+  var memberType: AstNode
+
   for k, memberDefinition in structType.children(IdStructDefinitionMembers):
-    let memberType = self.ctx.computeType(memberDefinition)
-    let (memberSize, memberAlign, _) = self.getTypeAttributes(memberType)
+    let currentMemberType = self.ctx.computeType(memberDefinition)
+    let (memberSize, memberAlign, _) = self.getTypeAttributes(currentMemberType)
 
     offset = align(offset, memberAlign)
 
@@ -766,6 +773,7 @@ proc genNodeStructMemberAccessExpression(self: BaseLanguageWasmCompiler, node: A
     if member.id == originalMemberId:
       size = memberSize
       align = memberAlign
+      memberType = currentMemberType
       break
     offset += memberSize
 
@@ -783,12 +791,13 @@ proc genNodeStructMemberAccessExpression(self: BaseLanguageWasmCompiler, node: A
   case dest
   of Stack():
     # debugf"load member {member} from {valueNode}, offset {offset}"
-    let typ = self.ctx.computeType(member)
-    let instr = self.getTypeMemInstructions(typ).load
+    # debugf"{memberType}"
+    let instr = self.getTypeMemInstructions(memberType).load
     self.loadInstr(instr, offset.uint32, 0)
 
   of Memory():
-    if offset > 0: # todo: is this offset correct? Do we need that/is adding it after generating the value correct?
+    if offset > 0: # todo: is this offset correct? Do we need that/is adding it after generating the value correct? We already add the offset above before generating the value
+      log lvlWarn, "does this happen?"
       self.instr(I32Const, i32Const: offset.int32)
       self.instr(I32Add)
     self.instr(I32Const, i32Const: size)
@@ -889,6 +898,9 @@ proc computeStructTypeAttributes(self: BaseLanguageWasmCompiler, typ: AstNode): 
   return
 
 proc genNodeFunctionDefinition(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
+  # let isGeneric = node.isGeneric(self.ctx)
+  # debugf"gen function {node.dump(recurse=true)}, generic: {isGeneric}"
+
   let body = node.children(IdFunctionDefinitionBody)
   if body.len != 1:
     return
@@ -1029,6 +1041,7 @@ proc addBaseLanguage*(self: BaseLanguageWasmCompiler) =
   self.generators[IdStringGetPointer] = genNodeStringGetPointer
   self.generators[IdStringGetLength] = genNodeStringGetLength
   self.generators[IdCast] = genNodeCast
+  self.generators[IdEmptyLine] = genNodeEmptyLine
 
   self.wasmValueTypes[IdInt32] = (WasmValueType.I32, I32Load, I32Store) # int32
   self.wasmValueTypes[IdUInt32] = (WasmValueType.I32, I32Load, I32Store) # uint32

@@ -139,7 +139,7 @@ type
   EmptyCell* = ref object of Cell
     discard
 
-  CellBuilderFunction* = proc(builder: CellBuilder, node: AstNode): Cell
+  CellBuilderFunction* = proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell
 
   CellBuilder* = ref object
     builders*: Table[ClassId, seq[tuple[builderId: Id, impl: CellBuilderFunction, flags: CellBuilderFlags]]]
