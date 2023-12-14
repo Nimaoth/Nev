@@ -13,6 +13,9 @@
     "model/aoc_day8.ast-model": "656f7f67d077504f640d8726",
     "model/aoc_day9.ast-model": "656f7f67d077504f640d8724",
     "model/aoc_day10.ast-model": "656f7f67d077504f640d8722",
-    "model/aoc_day11.ast-model": "656f7f67d077504f640d871a"
+    "model/aoc_day11.ast-model": "656f7f67d077504f640d871a",
+    "model/aoc_day12.ast-model": "5f89c24493ac3f164315090d",
+    "model/aoc_day13.ast-model": "6579ff9b39394bb1b709c95b",
+    "model/aoc_day14.ast-model": "690ec4a65acc63703ad0a1c6"
   }
 }
