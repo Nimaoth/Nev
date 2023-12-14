@@ -273,22 +273,23 @@ Here is an overview of the modules:
 - add nicer way to write:
   - StringGetPointer, StringGetLength
   - <, <=, etc
-- fix pressing . at end of string literal creates member access node instead of inserting into string
 - add bool type
 - make [] work with strings
-- add type conversions
 - add char literal
-- change rendering of deref/addressOf to postfix
-- add selection history
 - add string escape and/or allow entering \n
-- for loops
 - auto open completion window?
 - auto accept completion exact match even if other/longer completions exist
-- floats
 - render actual types in type placeholders
-- add move cursor to next/prev function/declaration/statement/expression etc
 - add text based search (fuzzy?)
-- add global symbol finder
-- goto definition to other files
+- add validation for all ast node types
+- allow deleting selection in e.g. property cells
+- make node reference not editable
+- don't allow node substitution keys on empty expressions
+- improve auto parenthesis for cells
+- add struct scoped functions
+- support copying multiple nodes
+- fix deleting e.g parameters not possible
+- fix deleting e.g struct member type bug
+- add move to next error command
 
 [Test report](https://nimaoth.github.io/Absytree/testresults.html)

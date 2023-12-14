@@ -678,7 +678,7 @@ builder.addBuilderFor returnClass.id, idNone(), proc(builder: CellBuilder, node:
 builder.addBuilderFor nodeReferenceClass.id, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   if node.resolveReference(IdNodeReferenceTarget).getSome(targetNode):
     if targetNode.nodeClass.isSubclassOf(IdINamed):
-      return PropertyCell(id: newId().CellId, node: owner ?? node, referenceNode: targetNode, property: IdINamedName, themeForegroundColors: @["variable", "&editor.foreground"])
+      return PropertyCell(id: newId().CellId, node: owner ?? node, referenceNode: targetNode, property: IdINamedName, themeForegroundColors: @["variable", "&editor.foreground"], disableEditing: true)
 
     var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal})
     cell.fillChildren = proc(map: NodeCellMap) =
