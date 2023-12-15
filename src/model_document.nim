@@ -1483,9 +1483,9 @@ proc getNeighborLeafWhere*(cell: Cell, map: NodeCellMap, direction: Direction, p
 proc getNeighborLeafWhere*(cell: Cell, map: NodeCellMap, direction: Direction, predicate: proc(cell: Cell): bool): Option[Cell] =
   case direction
   of Left:
-    return cell.getPreviousLeafWhere(map, isVisible)
+    return cell.getPreviousLeafWhere(map, predicate)
   of Right:
-    return cell.getNextLeafWhere(map, isVisible)
+    return cell.getNextLeafWhere(map, predicate)
 
 proc getSelfOrPreviousLeafWhere*(cell: Cell, map: NodeCellMap, predicate: proc(cell: Cell): bool): Option[Cell] =
   if cell.isLeaf and predicate(cell):
@@ -1878,6 +1878,45 @@ proc gotoDefinition*(self: ModelDocumentEditor, select: bool = false) {.expose("
             self.app.tryActivateEditor(editor)
 
   self.markDirty()
+
+proc gotoNeighborReference*(self: ModelDocumentEditor, direction: Direction) =
+  if getTargetCell(self.cursor, false).getSome(cell):
+    let originalNode = cell.node
+    let targetId = if cell.node.references.len == 1:
+      cell.node.references[0].node
+    else:
+      cell.node.id
+
+    var nextCell = getNeighborLeafWhere(cell, self.nodeCellMap, direction, proc(cell: Cell): bool =
+        if cell.node == originalNode or cell.node.references.len == 0:
+          return false
+        for i in 0..cell.node.references.high:
+          if cell.node.references[i].node == targetId:
+            return true
+        return false
+      )
+
+    if nextCell.isNone: # wrap around
+      let endCell = if direction == Left: cell.rootPath.root.getLastLeaf(self.nodeCellMap) else: cell.rootPath.root.getFirstLeaf(self.nodeCellMap)
+      nextCell = getNeighborLeafWhere(endCell, self.nodeCellMap, direction, proc(cell: Cell): bool =
+          if cell.node.references.len == 0:
+            return false
+          for i in 0..cell.node.references.high:
+            if cell.node.references[i].node == targetId:
+              return true
+          return false
+        )
+
+    if nextCell.getSome(c):
+      self.cursor = self.getFirstEditableCellOfNode(c.node).get
+      self.updateScrollOffset()
+      self.markDirty()
+
+proc gotoPrevReference*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  self.gotoNeighborReference(Left)
+
+proc gotoNextReference*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  self.gotoNeighborReference(Right)
 
 proc gotoPrevNodeOfClass*(self: ModelDocumentEditor, className: string, select: bool = false) {.expose("editor.model").} =
   log lvlInfo, fmt"gotoPrevNodeOfClass {className}"
