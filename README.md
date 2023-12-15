@@ -290,6 +290,8 @@ Here is an overview of the modules:
 - support copying multiple nodes
 - fix deleting e.g parameters not possible
 - fix deleting e.g struct member type bug
-- add move to next error command
+- add move to next error command, move to next usage command
+- negative number literal, float literal
+- render cell indentation guides
 
 [Test report](https://nimaoth.github.io/Absytree/testresults.html)
