@@ -290,6 +290,12 @@ proc editor_model_gotoPrevReference_void_ModelDocumentEditor_impl*(
 proc editor_model_gotoNextReference_void_ModelDocumentEditor_impl*(
     self: ModelDocumentEditor) =
   discard
+proc editor_model_gotoPrevInvalidNode_void_ModelDocumentEditor_impl*(
+    self: ModelDocumentEditor) =
+  discard
+proc editor_model_gotoNextInvalidNode_void_ModelDocumentEditor_impl*(
+    self: ModelDocumentEditor) =
+  discard
 proc editor_model_gotoPrevNodeOfClass_void_ModelDocumentEditor_string_bool_impl*(
     self: ModelDocumentEditor; className: string; select: bool = false) =
   discard

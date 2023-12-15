@@ -1918,6 +1918,44 @@ proc gotoPrevReference*(self: ModelDocumentEditor) {.expose("editor.model").} =
 proc gotoNextReference*(self: ModelDocumentEditor) {.expose("editor.model").} =
   self.gotoNeighborReference(Right)
 
+proc gotoInvalidNode*(self: ModelDocumentEditor, direction: Direction) =
+  if getTargetCell(self.cursor, false).getSome(cell):
+    let originalNode = cell.node
+
+    var nextCell = getNeighborLeafWhere(cell, self.nodeCellMap, direction, proc(c: Cell): bool =
+        if c == cell or c.node == originalNode or not isVisible(cell):
+          return false
+        discard self.document.ctx.validateNode(c.node)
+        if self.document.ctx.getDiagnostics(c.node.id).len > 0:
+          return true
+        return false
+      )
+
+    if nextCell.isNone: # wrap around
+      let endCell = if direction == Left: cell.rootPath.root.getLastLeaf(self.nodeCellMap) else: cell.rootPath.root.getFirstLeaf(self.nodeCellMap)
+      nextCell = getNeighborLeafWhere(endCell, self.nodeCellMap, direction, proc(c: Cell): bool =
+          if not isVisible(cell):
+            return false
+          if c == cell:
+            return true
+          discard self.document.ctx.validateNode(c.node)
+          if self.document.ctx.getDiagnostics(c.node.id).len > 0:
+            return true
+          return false
+        )
+
+    if nextCell.getSome(c):
+      self.cursor = self.nodeCellMap.toCursor(c, true)
+      # self.cursor = self.getFirstEditableCellOfNode(c.node).get
+      self.updateScrollOffset()
+      self.markDirty()
+
+proc gotoPrevInvalidNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  self.gotoInvalidNode(Left)
+
+proc gotoNextInvalidNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  self.gotoInvalidNode(Right)
+
 proc gotoPrevNodeOfClass*(self: ModelDocumentEditor, className: string, select: bool = false) {.expose("editor.model").} =
   log lvlInfo, fmt"gotoPrevNodeOfClass {className}"
   if getTargetCell(self.cursor, false).getSome(cell):
