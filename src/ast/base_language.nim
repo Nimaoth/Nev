@@ -499,7 +499,7 @@ builder.addBuilderFor structMemberAccessClass.id, idNone(), proc(builder: CellBu
     cell.add block:
       if node.resolveReference(IdStructMemberAccessMember).getSome(targetNode):
         # var refCell = NodeReferenceCell(id: newId().CellId, node: owner ?? node, referenceNode: node, reference: IdStructMemberAccessMember, property: IdINamedName, disableEditing: true)
-        PropertyCell(id: newId().CellId, node: owner ?? node, referenceNode: targetNode, property: IdINamedName, themeForegroundColors: @["variable", "&editor.foreground"])
+        PropertyCell(id: newId().CellId, node: owner ?? node, referenceNode: targetNode, property: IdINamedName, themeForegroundColors: @["variable", "&editor.foreground"], disableEditing: true)
       else:
         PlaceholderCell(id: newId().CellId, node: owner ?? node, referenceNode: node, role: IdStructMemberAccessMember, shadowText: "_")
 
