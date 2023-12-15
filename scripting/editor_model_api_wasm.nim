@@ -130,6 +130,34 @@ proc gotoDefinition*(self: ModelDocumentEditor; select: bool = false) =
       argsJsonString.cstring)
 
 
+proc editor_model_gotoPrevReference_void_ModelDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc gotoPrevReference*(self: ModelDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when ModelDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_model_gotoPrevReference_void_ModelDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_model_gotoNextReference_void_ModelDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc gotoNextReference*(self: ModelDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when ModelDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_model_gotoNextReference_void_ModelDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_model_gotoPrevNodeOfClass_void_ModelDocumentEditor_string_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc gotoPrevNodeOfClass*(self: ModelDocumentEditor; className: string;

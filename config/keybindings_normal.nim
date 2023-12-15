@@ -171,28 +171,32 @@ proc loadNormalKeybindings*() {.scriptActionWasmNims("load-normal-keybindings").
     addModelCommand "", "<*C-g>E", "goto-prev-node-of-class", "ForLoop"
     addModelCommand "", "<*C-g>w", "goto-next-node-of-class", "WhileExpression"
     addModelCommand "", "<*C-g>W", "goto-prev-node-of-class", "WhileExpression"
+    addModelCommand "", "<*C-g>R", "goto-prev-reference"
+    addModelCommand "", "<*C-g>r", "goto-next-reference"
 
-    addCommand("editor.model", "<BACKSPACE>", "replace-left")
-    addCommand("editor.model", "<DELETE>", "replace-right")
-    addCommand("editor.model", "<C-BACKSPACE>", "delete-left")
-    addCommand("editor.model", "<C-DELETE>", "delete-right")
-    addCommand("editor.model", "<ENTER>", "create-new-node")
-    addCommand("editor.model", "<TAB>", "select-next-placeholder")
-    addCommand("editor.model", "<S-TAB>", "select-prev-placeholder")
+    addCommand "editor.model", "<BACKSPACE>", "replace-left"
+    addCommand "editor.model", "<DELETE>", "replace-right"
+    addCommand "editor.model", "<C-BACKSPACE>", "delete-left"
+    addCommand "editor.model", "<C-DELETE>", "delete-right"
+    addCommand "editor.model", "<ENTER>", "create-new-node"
+    addCommand "editor.model", "<TAB>", "select-next-placeholder"
+    addCommand "editor.model", "<S-TAB>", "select-prev-placeholder"
 
-    addCommand("editor.model", "<C-SPACE>", "show-completions")
+    addCommand "editor.model", "<C-SPACE>", "show-completions"
 
-    addCommand("editor.model", "<LEADER>mr", "run-selected-function")
-    addCommand("editor.model", "<LEADER>md", "toggle-use-default-cell-builder")
+    addCommand "editor.model", "<LEADER>mr", "run-selected-function"
+    addCommand "editor.model", "<LEADER>md", "toggle-use-default-cell-builder"
 
-    addCommand("editor.model", "gd", "goto-definition")
-    addCommand("editor.model", "tt", "toggle-bool-cell")
+    addCommand "editor.model", "gd", "goto-definition"
+    addCommand "editor.model", "gp", "goto-prev-reference"
+    addCommand "editor.model", "gn", "goto-next-reference"
+    addCommand "editor.model", "tt", "toggle-bool-cell"
 
-    addCommand("editor.model.completion", "<ESCAPE>", "hide-completions")
-    addCommand("editor.model.completion", "<UP>", "select-prev-completion")
-    addCommand("editor.model.completion", "<DOWN>", "select-next-completion")
-    addCommand("editor.model.completion", "<C-SPACE>", "move-cursor-start")
-    addCommand("editor.model.completion", "<TAB>", "apply-selected-completion")
-    addCommand("editor.model.completion", "<ENTER>", "apply-selected-completion")
+    addCommand "editor.model.completion", "<ESCAPE>", "hide-completions"
+    addCommand "editor.model.completion", "<UP>", "select-prev-completion"
+    addCommand "editor.model.completion", "<DOWN>", "select-next-completion"
+    addCommand "editor.model.completion", "<C-SPACE>", "move-cursor-start"
+    addCommand "editor.model.completion", "<TAB>", "apply-selected-completion"
+    addCommand "editor.model.completion", "<ENTER>", "apply-selected-completion"
 
     addCommand "editor.model.goto", "<END>", "end"
