@@ -29,6 +29,10 @@ proc gotoPrevReference*(self: ModelDocumentEditor) =
   editor_model_gotoPrevReference_void_ModelDocumentEditor_impl(self)
 proc gotoNextReference*(self: ModelDocumentEditor) =
   editor_model_gotoNextReference_void_ModelDocumentEditor_impl(self)
+proc gotoPrevInvalidNode*(self: ModelDocumentEditor) =
+  editor_model_gotoPrevInvalidNode_void_ModelDocumentEditor_impl(self)
+proc gotoNextInvalidNode*(self: ModelDocumentEditor) =
+  editor_model_gotoNextInvalidNode_void_ModelDocumentEditor_impl(self)
 proc gotoPrevNodeOfClass*(self: ModelDocumentEditor; className: string;
                           select: bool = false) =
   editor_model_gotoPrevNodeOfClass_void_ModelDocumentEditor_string_bool_impl(
