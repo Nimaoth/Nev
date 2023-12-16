@@ -1527,7 +1527,7 @@ proc instantiateStruct*(ctx: ModelComputationContextBase, genericStruct: AstNode
         # debugf"-> {arguments.last}"
       else:
         argumentValues.add nil
-        log lvlWarn, fmt"Could not compute value for argument {arg} in call {genericStruct}"
+        # log lvlWarn, fmt"Could not compute value for argument {arg} in call {genericStruct}"
 
   # debugf"instantiateStruct '{genericStruct.getContainingDeclName()}', args {map}, {genericStruct.dump(recurse=false)}"
   let key = (genericStruct, map)
@@ -1545,7 +1545,7 @@ proc instantiateStruct*(ctx: ModelComputationContextBase, genericStruct: AstNode
     if allGreen:
       # log lvlWarn, fmt"struct instance already exists for {genericStruct}"
       return existingConcreteStruct
-    log lvlWarn, fmt"struct instance already exists but is not up to date for {genericStruct}"
+    # log lvlWarn, fmt"struct instance already exists but is not up to date for {genericStruct}"
 
   # log lvlWarn, fmt"instantiateStruct: clone generic struct {genericStruct}"
   var concreteStruct = genericStruct.cloneAndMapIds(linkOriginal=true)
@@ -1624,7 +1624,7 @@ proc instantiateFunction*(ctx: ModelComputationContextBase, genericFunction: Ast
     if allGreen:
       # log lvlWarn, fmt"function instance already exists for {genericFunction}"
       return existingConcreteFunction
-    log lvlWarn, fmt"function instance already exists but is not up to date for {genericFunction}"
+    # log lvlWarn, fmt"function instance already exists but is not up to date for {genericFunction}"
 
   # log lvlWarn, fmt"instantiateFunction: clone generic function {genericFunction}"
   var concreteFunction = genericFunction.cloneAndMapIds(linkOriginal=true)
