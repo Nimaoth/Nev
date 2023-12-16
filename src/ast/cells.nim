@@ -1,4 +1,4 @@
-import std/[tables, strutils, strformat, options, sugar]
+import std/[tables, strutils, strformat, options, sugar, algorithm]
 import ui/node
 import model, id, util, custom_logger
 import ast_ids
@@ -23,7 +23,29 @@ type
   PlaceholderCell* = ref object of Cell
     discard
 
+proc editableLow*(self: Cell, ignoreStyle: bool = false): int
+proc editableHigh*(self: Cell, ignoreStyle: bool = false): int
+
 proc buildCell*(map: NodeCellMap, node: AstNode, useDefault: bool = false, builderFunc: CellBuilderFunction = nil, owner: AstNode = nil): Cell
+
+proc isVisible*(cell: Cell): bool =
+  if cell.customIsVisible.isNotNil and not cell.customIsVisible(cell.node):
+    return false
+
+  return true
+
+proc canSelect*(cell: Cell): bool =
+  if cell.customIsVisible.isNotNil and not cell.customIsVisible(cell.node):
+    return false
+  if cell.disableSelection:
+    return false
+  if cell.editableLow > cell.editableHigh:
+    return false
+
+  if cell of CollectionCell and cell.CollectionCell.children.len == 0:
+    return false
+
+  return true
 
 method getText*(cell: Cell): string {.base.} = discard
 method setText*(cell: Cell, text: string, slice: Slice[int] = 0..0) {.base.} = discard
@@ -96,6 +118,20 @@ proc len*(self: Cell): int =
     return self.CollectionCell.children.len
   return self.getText.len
 
+proc visibleLow*(self: CollectionCell): int =
+  assert self.fillChildren.isNil or self.filled
+  for i, child in self.children:
+    if child.isVisible:
+      return i
+  return -1
+
+proc visibleHigh*(self: CollectionCell): int =
+  assert self.fillChildren.isNil or self.filled
+  for i in countdown(self.children.high, self.children.low):
+    if self.children[i].isVisible:
+      return i
+  return -1
+
 proc low*(self: Cell): int =
   if self of CollectionCell:
     return self.CollectionCell.children.low
@@ -103,6 +139,8 @@ proc low*(self: Cell): int =
     return self.currentText.low
 
 proc editableLow*(self: Cell, ignoreStyle: bool = false): int =
+  if self of CollectionCell:
+    return self.CollectionCell.visibleLow
   let noSpaceLeft = NoSpaceLeft in self.flags or (self.style.isNotNil and self.style.noSpaceLeft)
   if not ignoreStyle and noSpaceLeft and self.currentText.len > 0:
     return self.low + 1
@@ -116,7 +154,7 @@ proc high*(self: Cell): int =
 
 proc editableHigh*(self: Cell, ignoreStyle: bool = false): int =
   if self of CollectionCell:
-    return self.CollectionCell.children.high
+    return self.CollectionCell.visibleHigh
   let noSpaceRight = NoSpaceRight in self.flags or (self.style.isNotNil and self.style.noSpaceRight)
   if not ignoreStyle and noSpaceRight and self.currentText.len > 0:
     return self.high
@@ -135,6 +173,19 @@ proc nextDirect*(self: Cell): Option[Cell] =
   if i == -1 or i >= self.parent.CollectionCell.children.high:
     return Cell.none
   return self.parent.CollectionCell.children[i + 1].some
+
+proc rootPath*(cell: Cell): tuple[root: Cell, path: seq[int]] =
+  var cell = cell
+  var path: seq[int] = @[]
+  while cell.parent.isNotNil:
+    if cell.parent of CollectionCell:
+      path.add cell.parent.CollectionCell.children.find(cell)
+
+    cell = cell.parent
+
+  path.reverse()
+
+  return (cell, path)
 
 proc isLeaf*(self: Cell): bool =
   if self of CollectionCell:
@@ -479,7 +530,7 @@ proc buildReference*(map: NodeCellMap, node: AstNode, owner: AstNode, role: Role
     return ConstantCell(id: newId().CellId, node: owner ?? node, referenceNode: node, text: $node.reference(role))
 
 proc buildChildren*(builder: CellBuilder, map: NodeCellMap, node: AstNode, owner: AstNode, role: RoleId, uiFlags: UINodeFlags = 0.UINodeFlags, flags: CellFlags = 0.CellFlags,
-    isVisible: proc(node: AstNode): bool = nil,
+    customIsVisible: proc(node: AstNode): bool = nil,
     separatorFunc: proc(builder: CellBuilder): Cell = nil,
     placeholderFunc: proc(builder: CellBuilder, node: AstNode, owner: AstNode, role: RoleId, flags: CellFlags): Cell = buildDefaultPlaceholder,
     builderFunc: CellBuilderFunction = nil): Cell =
@@ -498,7 +549,7 @@ proc buildChildren*(builder: CellBuilder, map: NodeCellMap, node: AstNode, owner
   else:
     result = placeholderFunc(builder, node, owner, role, 0.CellFlags)
 
-  result.isVisible = isVisible
+  result.customIsVisible = customIsVisible
 
 template buildChildrenT*(b: CellBuilder, map: NodeCellMap, n: AstNode, inOwner: AstNode, r: RoleId, uiFlags: UINodeFlags, cellFlags: CellFlags, body: untyped): Cell =
   var isVisibleFunc: proc(node: AstNode): bool = nil
