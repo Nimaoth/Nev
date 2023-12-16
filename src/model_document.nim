@@ -70,19 +70,6 @@ proc targetCell*(cursor: CellCursor): Cell =
     if result of CollectionCell:
       result = result.CollectionCell.children[i]
 
-proc rootPath*(cell: Cell): tuple[root: Cell, path: seq[int]] =
-  var cell = cell
-  var path: seq[int] = @[]
-  while cell.parent.isNotNil:
-    if cell.parent of CollectionCell:
-      path.add cell.parent.CollectionCell.children.find(cell)
-
-    cell = cell.parent
-
-  path.reverse()
-
-  return (cell, path)
-
 proc rootPath*(cursor: CellCursor): tuple[root: Cell, path: seq[int]] =
   result = cursor.targetCell.rootPath
   result.path.add cursor.index
@@ -263,8 +250,6 @@ proc toCursor*(map: NodeCellMap, cell: Cell, column: int): CellCursor
 proc toCursor*(map: NodeCellMap, cell: Cell, start: bool): CellCursor
 proc getFirstEditableCellOfNode*(self: ModelDocumentEditor, node: AstNode): Option[CellCursor]
 proc getPreviousLeafWhere*(cell: Cell, map: NodeCellMap, predicate: proc(cell: Cell): bool): Option[Cell]
-proc canSelect*(cell: Cell): bool
-proc isVisible*(cell: Cell): bool
 proc getParentInfo*(selection: CellSelection): tuple[cell: Cell, left: seq[int], right: seq[int]]
 
 proc handleNodeDeleted(self: ModelDocument, model: Model, parent: AstNode, child: AstNode, role: RoleId, index: int)
@@ -421,6 +406,7 @@ proc updateScrollOffset*(self: ModelDocumentEditor, scrollToCursor: bool = true)
   self.markDirty()
 
 proc updateScrollOffsetToPrevCell(self: ModelDocumentEditor): bool =
+  # debugf"updateScrollOffsetToPrevCell {self.selection}"
   if self.cellWidgetContext.isNil:
     return false
   if self.scrolledNode.isNil:
@@ -432,19 +418,25 @@ proc updateScrollOffsetToPrevCell(self: ModelDocumentEditor): bool =
 
   var lastLeafOnScreen = Cell.none
   discard sourceCell.getPreviousLeafWhere(self.nodeCellMap, proc(cell: Cell): bool =
-    if self.cellWidgetContext.cellToWidget.contains(cell.id):
-      lastLeafOnScreen = cell.some
-      return false
-    return true
+    if not self.cellWidgetContext.cellToWidget.contains(cell.id):
+      return true
+
+    if cell.node == sourceCell.node or cell.node == sourceCell.node.parent:
+      return true
+
+    lastLeafOnScreen = cell.some
+    return false
   )
 
   let prevLeaf = lastLeafOnScreen
 
   if prevLeaf.isNone:
+    # debugf"no previous leaf"
     return false
 
   let newCell = prevLeaf.get
   if not self.cellWidgetContext.cellToWidget.contains(newCell.id):
+    # debugf"new cell not found / visible"
     return false
 
   let oldY = self.cellWidgetContext.targetNode.transformBounds(self.scrolledNode.parent).y
@@ -1361,25 +1353,6 @@ proc getNextVisibleInLine*(self: ModelDocumentEditor, cell: Cell): Cell =
 method getCursorLeft*(cell: Cell, map: NodeCellMap, cursor: CellCursor): CellCursor {.base.} = discard
 method getCursorRight*(cell: Cell, map: NodeCellMap, cursor: CellCursor): CellCursor {.base.} = discard
 
-proc isVisible*(cell: Cell): bool =
-  if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
-    return false
-
-  return true
-
-proc canSelect*(cell: Cell): bool =
-  if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
-    return false
-  if cell.disableSelection:
-    return false
-  if cell.editableLow > cell.editableHigh:
-    return false
-
-  if cell of CollectionCell and cell.CollectionCell.children.len == 0:
-    return false
-
-  return true
-
 proc getFirstLeaf*(cell: Cell, map: NodeCellMap): Cell =
   map.fill(cell)
   if cell of CollectionCell and cell.CollectionCell.children.len > 0:
@@ -2230,6 +2203,12 @@ proc selectNode*(self: ModelDocumentEditor, select: bool = false) {.expose("edit
 
   self.markDirty()
 
+proc selectPrevNeighbor*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
+  discard
+
+proc selectNextNeighbor*(self: ModelDocumentEditor, select: bool = false) {.expose("editor.model").} =
+  discard
+
 proc shouldEdit*(cell: Cell): bool =
   if (cell of PlaceholderCell):
     return true
@@ -2428,7 +2407,7 @@ proc getParentInfo*(selection: CellSelection): tuple[cell: Cell, left: seq[int],
   let rootCell = firstPath.root
   var parentCursor = CellCursor(map: selection.first.map, node: rootCell.node, path: firstPath.path[0..commonParentIndex], index: 0)
   let parentCell = parentCursor.targetCell
-  return (parentCell, firstPath.path[childIndex+1..^1], lastPath.path[childIndex+1..^1])
+  return (parentCell, firstPath.path[childIndex..^1], lastPath.path[childIndex..^1])
 
 proc clampedPathToCell*(cursor: CellCursor, cell: Cell, direction: Direction): tuple[path: seq[int], outside: bool] =
   let cellPath = cell.rootPath
@@ -2478,41 +2457,29 @@ proc deleteOrReplace*(self: ModelDocumentEditor, direction: Direction, replace: 
       self.updateScrollOffset()
 
   let selection = self.selection.normalized
-  let firstPath = selection.first.rootPath
-  let lastPath = selection.last.rootPath
 
-  if firstPath.root != lastPath.root:
+  let (parentTargetCell, firstChildPath, lastChildPath) = selection.getParentInfo
+  if parentTargetCell.isNil:
     return
 
-  var commonParentIndex = -1
-  for i in 0..min(firstPath.path.high, lastPath.path.high):
-    if firstPath.path[i] != lastPath.path[i]:
-      break
-    commonParentIndex = i
-  let childIndex = commonParentIndex + 1
+  let parentBaseCell = parentTargetCell.nodeRootCell      # the root cell for the given node
 
-  let rootCell = firstPath.root
-  var parentCursor = CellCursor(map: self.nodeCellMap, node: rootCell.node, path: firstPath.path[0..commonParentIndex], index: 0)
-  let parentTargetCell = parentCursor.targetCell  # the actual targeted cell
-  parentCursor = self.nodeCellMap.toCursor(parentTargetCell, true)
-  let parentBaseCell = parentCursor.baseCell      # the root cell for the given node
+  let firstIndex = if firstChildPath.len > 0: firstChildPath[0] else: 0
+  let lastIndex = if lastChildPath.len > 0: lastChildPath[0] else: parentTargetCell.high
 
-  let firstIndex = if commonParentIndex < firstPath.path.len: firstPath.path[childIndex] else: 0
-  let lastIndex = if commonParentIndex < lastPath.path.len: lastPath.path[childIndex] else: parentTargetCell.len
-
-  # debugf"common parent {commonParentIndex}, {firstIndex}..{lastIndex}, {parentBaseCell}, {parentTargetCell}, {parentBaseCell == parentTargetCell}"
+  # debugf"common parent {firstIndex}..{lastIndex}, {parentBaseCell}, {parentTargetCell}, {parentBaseCell == parentTargetCell}"
 
   # let firstCell = parentCell.getSelfOrNextLeafWhere(proc(cell: Cell): bool = cell.canSelect())
   # let lastCell = parentCell.getSelfOrPreviousLeafWhere(proc(cell: Cell): bool = cell.canSelect())
 
   if parentTargetCell of CollectionCell:
     let parentCell = parentTargetCell.CollectionCell
-    let firstContained = self.selection.contains(parentCell.children[firstIndex])
-    let lastContained = self.selection.contains(parentCell.children[lastIndex])
+    let firstContained = selection.contains(parentCell.children[firstIndex])
+    let lastContained = selection.contains(parentCell.children[lastIndex])
 
-    # debug firstContained, ", ", lastContained
+    # debug firstContained, ", ", lastContained, ", ", parentCell.high
     if firstContained and lastContained:
-      if firstIndex == 0 and lastIndex == parentCell.high and parentTargetCell == parentBaseCell: # entire parent selected
+      if firstIndex == parentCell.visibleLow and lastIndex == parentCell.visibleHigh and parentTargetCell == parentBaseCell: # entire parent selected
         # debugf"all cells selected"
 
         var targetNode = parentCell.node
@@ -2541,14 +2508,21 @@ proc deleteOrReplace*(self: ModelDocumentEditor, direction: Direction, replace: 
 
         # debug "some children of parent cell selected ", nodesToDelete
 
-        for n in nodesToDelete:
-          if replace:
-            discard n.replaceWithDefault()
+        var targetSelectedNode: AstNode = nil
+        for i, n in nodesToDelete:
+          if i == 0 and replace:
+            if n.replaceWithDefault().getSome(n) and targetSelectedNode.isNil:
+              targetSelectedNode = n
           else:
-            discard n.deleteOrReplaceWithDefault()
+            if n.deleteOrReplaceWithDefault().getSome(n) and targetSelectedNode.isNil:
+              targetSelectedNode = n
 
         self.rebuildCells()
-        self.cursor = self.getFirstEditableCellOfNode(parentCell.node).get
+
+        if targetSelectedNode.isNotNil:
+          self.cursor = self.getFirstEditableCellOfNode(targetSelectedNode).get
+        else:
+          self.cursor = self.getFirstEditableCellOfNode(parentCell.node).get
 
     else: # not all nodes fully contained
       # debugf"not all nodes fully contained"
@@ -2560,16 +2534,13 @@ proc deleteOrReplace*(self: ModelDocumentEditor, direction: Direction, replace: 
       if replace and parentTargetCell.node.replaceWithDefault().getSome(newNode):
         self.rebuildCells()
         self.cursor = self.getFirstEditableCellOfNode(newNode).get
-        self.updateScrollOffset()
       elif not replace and parentTargetCell.node.deleteOrReplaceWithDefault().getSome(newNode):
         self.rebuildCells()
         self.cursor = self.getFirstEditableCellOfNode(newNode).get
-        self.updateScrollOffset()
       else:
         self.rebuildCells()
         if self.getFirstEditableCellOfNode(parentTargetCell.node.parent).getSome(c):
           self.cursor = c
-          self.updateScrollOffset()
 
 proc deleteLeft*(self: ModelDocumentEditor) {.expose("editor.model").} =
   defer:
@@ -2942,6 +2913,11 @@ proc getCursorForOp(self: ModelDocumentEditor, op: ModelOperation): CellSelectio
     discard
 
 proc undo*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  let updatedScrollOffset = self.updateScrollOffsetToPrevCell()
+  defer:
+    if not updatedScrollOffset:
+      self.updateScrollOffset()
+
   if self.document.undo().getSome(t):
     self.rebuildCells()
     if self.transactionCursors.contains(t[0]):
@@ -2952,6 +2928,11 @@ proc undo*(self: ModelDocumentEditor) {.expose("editor.model").} =
     self.markDirty()
 
 proc redo*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  let updatedScrollOffset = self.updateScrollOffsetToPrevCell()
+  defer:
+    if not updatedScrollOffset:
+      self.updateScrollOffset()
+
   if self.document.redo().getSome(t):
     self.rebuildCells()
     if self.transactionCursors.contains(t[0]):
@@ -3216,15 +3197,52 @@ proc runSelectedFunction*(self: ModelDocumentEditor) {.expose("editor.model").} 
   asyncCheck runSelectedFunctionAsync(self)
 
 proc copyNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
-  let (parentCell, _, _) = self.selection.getParentInfo
-  let json = parentCell.node.toJson
-  self.app.setRegisterText($json, "")
+  let selection = self.selection.normalized
+  let (parentTargetCell, firstPath, lastPath) = selection.getParentInfo
+  let parentBaseCell = parentTargetCell.nodeRootCell      # the root cell for the given node
+  let firstIndex = if firstPath.len > 0: firstPath[0] else: 0
+  let lastIndex = if lastPath.len > 0: lastPath[0] else: parentTargetCell.len
+  # debugf"copyNode {firstPath} {lastPath} {parentTargetCell}"
 
-proc getNodeFromRegister(self: ModelDocumentEditor, register: string): Option[AstNode] =
+  var json: JsonNode = nil
+
+  if parentTargetCell of CollectionCell:
+    let parentCell = parentTargetCell.CollectionCell
+    let firstContained = selection.contains(parentCell.children[firstIndex])
+    let lastContained = selection.contains(parentCell.children[lastIndex])
+
+    # debug firstContained, ", ", lastContained, ", ", parentCell.high
+    if firstContained and lastContained:
+      if firstIndex == parentCell.visibleLow and lastIndex == parentCell.visibleHigh and parentTargetCell == parentBaseCell: # entire parent selected
+        json = parentCell.node.toJson
+
+      else: # some children of parent selected
+        json = newJArray()
+        for c in parentCell.children[firstIndex..lastIndex]:
+          if c.node != parentCell.node:
+            json.add c.node.toJson
+
+    else: # not fully contained
+      discard # todo
+
+  else: # not collection cell
+    json = parentTargetCell.node.toJson
+
+  if json.isNotNil:
+    self.app.setRegisterText($json, "")
+
+proc getNodeFromRegister(self: ModelDocumentEditor, register: string): seq[AstNode] =
   let text = self.app.getRegisterText(register)
   let json = text.parseJson
-  let node = json.jsonToAstNode(self.document.model)
-  return node
+  if json.kind == JObject:
+    if json.jsonToAstNode(self.document.model).getSome(node):
+      result.add node
+  elif json.kind == JArray:
+    for j in json:
+      if j.jsonToAstNode(self.document.model).getSome(node):
+        result.add node
+  else:
+    log lvlError, fmt"Can't parse node from register"
 
 proc pasteNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
   let updatedScrollOffset = self.updateScrollOffsetToPrevCell()
@@ -3235,7 +3253,31 @@ proc pasteNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
   defer:
     self.document.finishTransaction()
 
-  if self.getNodeFromRegister("").getSome(node):
+  let nodes = self.getNodeFromRegister("")
+  if nodes.len == 0:
+    log lvlError, fmt"Can't parse node from register"
+    return
+
+  let (parent, role, index) = if self.selection.isEmpty:
+    let targetCell = self.cursor.targetCell
+    let (parent, role, index) = targetCell.getSubstitutionTarget
+    if targetCell.node != parent:
+      targetCell.node.removeFromParent()
+    # debugf"empty: targetCell: {targetCell} || {parent} || {role} || {index}"
+    (parent, role, index)
+  else:
+    let (parentCell, _, _) = self.selection.getParentInfo
+    let nodeToRemove = parentCell.node
+    let parent = nodeToRemove.parent
+    # debugf"replace {parentCell} ||| {parent} ||| {nodeToRemove}"
+    # debugf"paste node {newNode}"
+    let role = nodeToRemove.role
+    let index = nodeToRemove.index
+    nodeToRemove.removeFromParent()
+    (parent, role, index)
+
+  var idMap = initTable[NodeId, NodeId]()
+  for i, node in nodes:
     var foundExisting = false
     for child in node.childrenRec:
       if self.document.project.resolveReference(node.id).isSome:
@@ -3245,35 +3287,15 @@ proc pasteNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
 
     let newNode = if foundExisting:
       # clone node because the model already contains a node with an id from new node
-      node.cloneAndMapIds(self.document.model)
+      let newNode = node.clone(idMap, self.document.model, false)
+      newNode.replaceReferences(idMap)
+      newNode
     else:
       node
 
-    let (parent, role, index) = if self.selection.isEmpty:
-      let targetCell = self.cursor.targetCell
-      let (parent, role, index) = targetCell.getSubstitutionTarget
-      if targetCell.node != parent:
-        targetCell.node.removeFromParent()
-      # debugf"empty: targetCell: {targetCell} || {parent} || {role} || {index}"
-      (parent, role, index)
-    else:
-      let (parentCell, _, _) = self.selection.getParentInfo
-      let nodeToRemove = parentCell.node
-      let parent = nodeToRemove.parent
-      # debugf"replace {parentCell} ||| {parent} ||| {nodeToRemove}"
-      # debugf"paste node {newNode}"
-      let role = nodeToRemove.role
-      let index = nodeToRemove.index
-      nodeToRemove.removeFromParent()
-      (parent, role, index)
-
-    parent.insert(role, index, newNode)
+    parent.insert(role, index + i, newNode)
     self.rebuildCells()
     self.cursor = self.getFirstEditableCellOfNode(newNode).get
-
-  else:
-    log lvlError, fmt"Can't parse node from register"
-    return
 
 type ModelLanguageSelectorItem* = ref object of SelectorItem
   language*: Language

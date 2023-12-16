@@ -122,7 +122,7 @@ type
     shadowText*: string
     fillChildren*: proc(map: NodeCellMap): void
     filled*: bool
-    isVisible*: CellIsVisiblePredicate
+    customIsVisible*: CellIsVisiblePredicate
     nodeFactory*: CellNodeFactory
     style*: CellStyle
     disableSelection*: bool
@@ -1028,6 +1028,7 @@ proc deleteOrReplaceWithDefault*(node: AstNode, fillDefaultChildren: bool = fals
   if node.parent.isNil:
     return AstNode.none
 
+  # debugf"deleteOrReplaceWithDefault: {node} {node.selfDescription}"
   let desc = node.selfDescription.get
   if desc.count in {One, OneOrMore} and node.parent.childCount(node.role) == 1:
     var child = newAstNode(node.model.resolveClass(desc.class))

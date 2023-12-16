@@ -339,7 +339,7 @@ builder.addBuilderFor constDeclClass.id, idNone(), proc(builder: CellBuilder, no
 
     cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: "const", themeForegroundColors: @["keyword"], disableEditing: true)
     cell.add PropertyCell(node: owner ?? node, referenceNode: node, property: IdINamedName)
-    cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: ":", isVisible: isVisible, style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+    cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: ":", customIsVisible: isVisible, style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
     cell.add block:
       buildChildrenT(builder, map, node, owner, IdConstDeclType, &{LayoutHorizontal}, 0.CellFlags):
         placeholder: PlaceholderCell(id: newId().CellId, node: owner ?? node, referenceNode: node, role: role, shadowText: "<type>")
@@ -356,7 +356,7 @@ builder.addBuilderFor letDeclClass.id, idNone(), proc(builder: CellBuilder, node
 
     cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: "let", themeForegroundColors: @["keyword"], disableEditing: true)
     cell.add PropertyCell(node: owner ?? node, referenceNode: node, property: IdINamedName)
-    cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: ":", isVisible: isVisible, style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+    cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: ":", customIsVisible: isVisible, style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
     cell.add block:
       buildChildrenT(builder, map, node, owner, IdLetDeclType, &{LayoutHorizontal}, 0.CellFlags):
         placeholder: PlaceholderCell(id: newId().CellId, node: owner ?? node, referenceNode: node, role: role, shadowText: "<type>")
@@ -374,11 +374,11 @@ builder.addBuilderFor varDeclClass.id, idNone(), proc(builder: CellBuilder, node
 
     cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: "var", themeForegroundColors: @["keyword"], disableEditing: true)
     cell.add PropertyCell(node: owner ?? node, referenceNode: node, property: IdINamedName)
-    cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: ":", isVisible: isTypeVisible, style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+    cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: ":", customIsVisible: isTypeVisible, style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
     cell.add block:
       buildChildrenT(builder, map, node, owner, IdVarDeclType, &{LayoutHorizontal}, 0.CellFlags):
         placeholder: PlaceholderCell(id: newId().CellId, node: owner ?? node, referenceNode: node, role: role, shadowText: "<type>")
-    cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: "=", isVisible: isValueVisible, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+    cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: "=", customIsVisible: isValueVisible, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
     cell.add block:
       buildChildrenT(builder, map, node, owner, IdVarDeclValue, &{LayoutHorizontal}, 0.CellFlags):
         placeholder: PlaceholderCell(id: newId().CellId, node: owner ?? node, referenceNode: node, role: role, shadowText: "...")
@@ -404,7 +404,7 @@ builder.addBuilderFor parameterDeclClass.id, idNone(), proc(builder: CellBuilder
       builder.buildChildrenT(map, node, owner, IdParameterDeclType, &{LayoutHorizontal}, 0.CellFlags):
         placeholder: PlaceholderCell(id: newId().CellId, node: owner ?? node, referenceNode: node, role: role, shadowText: "...")
 
-    cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: "=", isVisible: isVisible, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+    cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: "=", customIsVisible: isVisible, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
 
     cell.add block:
       buildChildrenT(builder, map, node, owner, IdParameterDeclValue, &{LayoutHorizontal}, 0.CellFlags):
@@ -1071,7 +1071,7 @@ valueComputers[parameterDeclClass.id] = proc(ctx: ModelComputationContextBase, n
     return ctx.getValue(valueNode)
   if node.firstChild(IdParameterDeclType).getSome(typeNode):
     let typ = ctx.getValue(typeNode)
-    if typ.class == IdType:
+    if typ.isNotNil and typ.class == IdType:
       var genericType = newAstNode(genericTypeClass)
       let name = node.property(IdINamedName).get.stringValue
       genericType.setProperty(IdINamedName, PropertyValue(kind: String, stringValue: name))

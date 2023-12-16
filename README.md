@@ -288,9 +288,7 @@ Here is an overview of the modules:
 - improve auto parenthesis for cells
 - add struct scoped functions
 - support copying multiple nodes
-- fix deleting e.g parameters not possible
 - fix deleting e.g struct member type bug
-- add move to next error command, move to next usage command
 - negative number literal, float literal
 - render cell indentation guides
 

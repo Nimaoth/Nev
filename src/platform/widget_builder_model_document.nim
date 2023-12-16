@@ -477,7 +477,7 @@ proc createLeafCellUI*(cell: Cell, builder: UINodeBuilder, inText: string, inTex
 method createCellUI*(cell: Cell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int], cursorFirst: openArray[int], cursorLast: openArray[int]) {.base.} = discard
 
 method createCellUI*(cell: ConstantCell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int], cursorFirst: openArray[int], cursorLast: openArray[int]) =
-  if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
+  if not cell.isVisible:
     return
 
   stackSize.inc
@@ -490,7 +490,7 @@ method createCellUI*(cell: ConstantCell, builder: UINodeBuilder, app: App, ctx: 
   createLeafCellUI(cell, builder, text, color, ctx, updateContext, spaceLeft, cursorFirst, cursorLast)
 
 method createCellUI*(cell: PlaceholderCell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int], cursorFirst: openArray[int], cursorLast: openArray[int]) =
-  if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
+  if not cell.isVisible:
     return
 
   stackSize.inc
@@ -502,7 +502,7 @@ method createCellUI*(cell: PlaceholderCell, builder: UINodeBuilder, app: App, ct
   createLeafCellUI(cell, builder, text, color, ctx, updateContext, spaceLeft, cursorFirst, cursorLast)
 
 method createCellUI*(cell: AliasCell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int], cursorFirst: openArray[int], cursorLast: openArray[int]) =
-  if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
+  if not cell.isVisible:
     return
 
   stackSize.inc
@@ -514,7 +514,7 @@ method createCellUI*(cell: AliasCell, builder: UINodeBuilder, app: App, ctx: Cel
   createLeafCellUI(cell, builder, text, color, ctx, updateContext, spaceLeft, cursorFirst, cursorLast)
 
 method createCellUI*(cell: PropertyCell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int], cursorFirst: openArray[int], cursorLast: openArray[int]) =
-  if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
+  if not cell.isVisible:
     return
 
   stackSize.inc
@@ -653,7 +653,7 @@ proc shouldBeOnNewLine(cell: Cell): bool =
   return false
 
 method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx: CellLayoutContext, updateContext: UpdateContext, spaceLeft: bool, path: openArray[int], cursorFirst: openArray[int], cursorLast: openArray[int]) =
-  if cell.isVisible.isNotNil and not cell.isVisible(cell.node):
+  if not cell.isVisible:
     return
 
   stackSize.inc
@@ -718,7 +718,7 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
 
       let c = cell.children[i]
 
-      if c.isVisible.isNotNil and not c.isVisible(c.node):
+      if not c.isVisible:
         continue
 
       # c.logc fmt"down {i}, {ctx.remainingHeightDown}, {c}        {cell}"
@@ -812,7 +812,7 @@ method createCellUI*(cell: CollectionCell, builder: UINodeBuilder, app: App, ctx
       # echo "up ", i, ", ", ctx.remainingHeightUp, ", ", c, "        ", cell
       # c.logc fmt"up {i}, {ctx.remainingHeightUp}, {c}        {cell}"
 
-      if c.isVisible.isNotNil and not c.isVisible(c.node):
+      if not c.isVisible:
         continue
 
       var onNewLine = vertical
@@ -1120,6 +1120,7 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
               let typ = self.document.ctx.computeType(node).catch:
                 log lvlError, fmt"failed to compute type {getCurrentExceptionMsg()}"
                 nil
+
               let value = self.document.ctx.getValue(node).catch:
                 log lvlError, fmt"failed to compute value {getCurrentExceptionMsg()}"
                 nil
