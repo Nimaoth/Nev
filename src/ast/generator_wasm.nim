@@ -79,6 +79,9 @@ type
     allocFunc: WasmFuncIdx
     cstrToInternal*: WasmFuncIdx
 
+    stackSize: int32
+    activeDataOffset: int32
+
     stackBase: WasmGlobalIdx
     stackEnd: WasmGlobalIdx
     stackPointer: WasmGlobalIdx
@@ -106,6 +109,8 @@ proc newBaseLanguageWasmCompiler*(ctx: ModelComputationContextBase): BaseLanguag
   result.builder.addExport("memory", 0.WasmMemIdx)
   result.functionRefTableIdx = result.builder.addTable()
   result.builder.addExport("__indirect_function_table", result.functionRefTableIdx)
+  result.stackSize = wasmPageSize * 10
+  result.activeDataOffset = align(result.stackSize, wasmPageSize)
 
   result.printI32 = result.builder.addImport("env", "print_i32", result.builder.addType([I32], []))
   result.printU32 = result.builder.addImport("env", "print_u32", result.builder.addType([I32], []))
@@ -119,7 +124,7 @@ proc newBaseLanguageWasmCompiler*(ctx: ModelComputationContextBase): BaseLanguag
   result.intToString = result.builder.addImport("env", "intToString", result.builder.addType([I32], [I32]))
   result.stackBase = result.builder.addGlobal(I32, mut=true, 0, id="__stack_base")
   result.stackEnd = result.builder.addGlobal(I32, mut=true, 0, id="__stack_end")
-  result.stackPointer = result.builder.addGlobal(I32, mut=true, 65536, id="__stack_pointer")
+  result.stackPointer = result.builder.addGlobal(I32, mut=true, result.stackSize, id="__stack_pointer")
   result.memoryBase = result.builder.addGlobal(I32, mut=false, 0, id="__memory_base")
   result.tableBase = result.builder.addGlobal(I32, mut=false, 0, id="__table_base")
   result.heapBase = result.builder.addGlobal(I32, mut=false, 0, id="__heap_base")
@@ -134,6 +139,32 @@ proc newBaseLanguageWasmCompiler*(ctx: ModelComputationContextBase): BaseLanguag
     WasmInstr(kind: LocalGet, localIdx: 0.WasmLocalIdx),
     WasmInstr(kind: I32Add),
     WasmInstr(kind: GlobalSet, globalIdx: result.heapSize),
+
+    # check/grow memory size
+    WasmInstr(kind: MemorySize),
+    WasmInstr(kind: I32Const, i32Const: wasmPageSize),
+    WasmInstr(kind: I32Mul),
+    WasmInstr(kind: GlobalGet, globalIdx: result.heapBase),
+    WasmInstr(kind: GlobalGet, globalIdx: result.heapSize),
+    WasmInstr(kind: I32Add),
+    WasmInstr(kind: I32LeS),
+    WasmInstr(kind: If, ifType: WasmBlockType(kind: ValType, typ: WasmValueType.none),
+      ifThenInstr: @[
+        WasmInstr(kind: LocalGet, localIdx: 0.WasmLocalIdx),
+        WasmInstr(kind: I32Const, i32Const: wasmPageSize),
+        WasmInstr(kind: I32DivS),
+        WasmInstr(kind: I32Const, i32Const: 1),
+        WasmInstr(kind: I32Add),
+        WasmInstr(kind: MemoryGrow),
+        WasmInstr(kind: I32Const, i32Const: -1),
+        WasmInstr(kind: I32Eq),
+        WasmInstr(kind: If, ifType: WasmBlockType(kind: ValType, typ: WasmValueType.none),
+          ifThenInstr: @[
+            WasmInstr(kind: Unreachable),
+          ],
+          ifElseInstr: @[]),
+      ],
+      ifElseInstr: @[]),
   ]))
 
   discard result.builder.addFunction([I32], [], [], exportName="my_dealloc".some, body=WasmExpr(instr: @[
@@ -266,11 +297,10 @@ proc compileToBinary*(self: BaseLanguageWasmCompiler, node: AstNode): seq[uint8]
   discard self.getOrCreateWasmFunc(node, exportName=functionName.some)
   self.compileRemainingFunctions()
 
-  let activeDataOffset = wasmPageSize # todo: after stack
   let activeDataSize = self.globalData.len.int32
-  discard self.builder.addActiveData(0.WasmMemIdx, activeDataOffset, self.globalData)
+  discard self.builder.addActiveData(0.WasmMemIdx, self.activeDataOffset, self.globalData)
 
-  let heapBase = align(activeDataOffset + activeDataSize, wasmPageSize)
+  let heapBase = align(self.activeDataOffset + activeDataSize, wasmPageSize)
   self.builder.globals[self.heapBase.int].init = WasmInstr(kind: I32Const, i32Const: heapBase)
 
   self.builder.getTable(self.functionRefTableIdx).typ.limits.min = self.functionRefIndices.len.uint32
@@ -395,7 +425,7 @@ proc addStringData*(self: BaseLanguageWasmCompiler, value: string): int32 =
   self.globalData.add(value.toOpenArrayByte(0, value.high))
   self.globalData.add(0)
 
-  result = offset + wasmPageSize
+  result = offset + self.activeDataOffset
 
 macro instr*(self: WasmExpr, op: WasmInstrKind, args: varargs[untyped]): untyped =
   result = genAst(self, op):

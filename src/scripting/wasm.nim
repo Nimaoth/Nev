@@ -20,6 +20,15 @@ when defined(js):
     functions: Table[cstring, proc()]
     module: WasmModule
 
+  proc newUint8Array(memory: JsObject) {.importjs: "new Uint8Array(#.buffer)".}
+  proc newUint16Array(memory: JsObject) {.importjs: "new Uint16Array(#.buffer)".}
+  proc newUint32Array(memory: JsObject) {.importjs: "new Uint32Array(#.buffer)".}
+  proc newInt8Array(memory: JsObject) {.importjs: "new Int8Array(#.buffer)".}
+  proc newInt16Array(memory: JsObject) {.importjs: "new Int16Array(#.buffer)".}
+  proc newInt32Array(memory: JsObject) {.importjs: "new Int32Array(#.buffer)".}
+  proc newFloat32Array(memory: JsObject) {.importjs: "new Float32Array(#.buffer)".}
+  proc newFloat64Array(memory: JsObject) {.importjs: "new Float64Array(#.buffer)".}
+
 else:
   import wasm3, wasm3/[wasm3c, wasmconversions]
 
@@ -45,10 +54,22 @@ proc dealloc*(module: WasmModule, p: WasmPtr) =
 
 when defined(js):
   proc copyMem*(module: WasmModule, dest: WasmPtr, source: JsObject, len: int, offset = 0u32) =
-    let heap = module.memory["HEAPU8"]
     proc setJs(arr: JsObject, source: JsObject, pos: WasmPtr) {.importjs: "#.set(#, #)".}
     proc slice(arr: JsObject, first: int, last: int): JsObject {.importjs: "#.slice(#, #)".}
+    proc isDetached(arr: JsObject): bool {.importjs: "#.length == 0".}
 
+    if module.memory["HEAPU8"].isDetached:
+      let memory = module.memory["memory"]
+      module.memory["HEAPU32"] = newUint32Array(memory)
+      module.memory["HEAPU16"] = newUint16Array(memory)
+      module.memory["HEAPU8"] = newUint8Array(memory)
+      module.memory["HEAP32"] = newInt32Array(memory)
+      module.memory["HEAP16"] = newInt16Array(memory)
+      module.memory["HEAP8"] = newInt8Array(memory)
+      module.memory["HEAPF32"] = newFloat32Array(memory)
+      module.memory["HEAPF64"] = newFloat64Array(memory)
+
+    let heap = module.memory["HEAPU8"]
     let s = source.slice(0, len)
     heap.setJs(s, dest)
 
@@ -61,6 +82,18 @@ proc getString*(module: WasmModule, pos: WasmPtr): cstring =
     proc indexOf(arr: JsObject, elem: uint8, start: WasmPtr): WasmPtr {.importjs: "#.indexOf(#, #)".}
     proc slice(arr: JsObject, first: WasmPtr, last: WasmPtr): JsObject {.importjs: "#.slice(#, #)".}
     proc jsDecodeString(str: JsObject): cstring {.importc.}
+    proc isDetached(arr: JsObject): bool {.importjs: "#.length == 0".}
+
+    if module.memory["HEAPU8"].isDetached:
+      let memory = module.memory["memory"]
+      module.memory["HEAPU32"] = newUint32Array(memory)
+      module.memory["HEAPU16"] = newUint16Array(memory)
+      module.memory["HEAPU8"] = newUint8Array(memory)
+      module.memory["HEAP32"] = newInt32Array(memory)
+      module.memory["HEAP16"] = newInt16Array(memory)
+      module.memory["HEAP8"] = newInt8Array(memory)
+      module.memory["HEAPF32"] = newFloat32Array(memory)
+      module.memory["HEAPF64"] = newFloat64Array(memory)
 
     let heap = module.memory["HEAPU8"]
     let terminator = heap.indexOf(0, pos)

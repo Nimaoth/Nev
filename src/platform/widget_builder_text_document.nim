@@ -450,9 +450,10 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
     builder.panel(&{UINodeFlag.MaskContent}, w = listWidth * charWidth, h = bottom - top):
       builder.createLines(self.completionsBaseIndex, self.completionsScrollOffset, self.completions.high, false, false, backgroundColor, handleScroll, handleLine)
 
-    builder.panel(&{UINodeFlag.FillBackground, DrawText, MaskContent, TextWrap},
-      x = listWidth * charWidth, w = docsWidth * charWidth, h = bottom - top,
-      backgroundColor = backgroundColor, textColor = docsColor, text = self.completions[self.selectedCompletion].doc)
+    if self.selectedCompletion < self.completions.len:
+      builder.panel(&{UINodeFlag.FillBackground, DrawText, MaskContent, TextWrap},
+        x = listWidth * charWidth, w = docsWidth * charWidth, h = bottom - top,
+        backgroundColor = backgroundColor, textColor = docsColor, text = self.completions[self.selectedCompletion].doc)
 
   if completionsPanel.bounds.yh > completionsPanel.parent.bounds.h:
     completionsPanel.rawY = cursorBounds.y
