@@ -1,0 +1,8 @@
+{
+    "nim.project": ["src/absytree.nim"],
+    "nim.projectMapping": [{
+            "projectFile": "src/absytree.nim",
+            "fileRegex": ".*\\.nim"
+        }
+    ]
+}

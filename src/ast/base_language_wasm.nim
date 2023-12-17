@@ -941,6 +941,14 @@ proc genNodeFunctionDefinition(self: BaseLanguageWasmCompiler, node: AstNode, de
     self.instr(GlobalSet, globalIdx: self.stackPointer)
     i
 
+  # check stack pointer
+  self.instr(GlobalGet, globalIdx: self.stackPointer)
+  self.instr(I32Const, i32Const: 0)
+  self.instr(I32LeS)
+  self.instr(If, ifType: WasmBlockType(kind: ValType, typ: WasmValueType.none),
+    ifThenInstr: @[WasmInstr(kind: Unreachable)],
+    ifElseInstr: @[])
+
   let destination = if returnType.class == IdVoid:
     Destination(kind: Discard)
   elif passReturnAsOutParam:

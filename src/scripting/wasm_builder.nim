@@ -1477,6 +1477,7 @@ proc getStackChange*(self: WasmBuilder, instr: WasmInstr): int =
 
   of Nop: return 0
   of Drop: return -1
+  of Unreachable: return 0
 
   of Block:
     case instr.blockType.kind

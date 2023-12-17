@@ -2848,7 +2848,7 @@ proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool {.expos
   # typePostfixTransformations[(IdString, ".ptr")] = NodeTransformation(kind: Wrap, wrapClass: IdStringGetPointer, wrapRole: IdStringGetPointerValue, wrapCursorTargetRole: IdStringGetPointerValue, selectNextPlaceholder: true, wrapChildIndex: 0)
   # typePostfixTransformations[(IdString, ".len")] = NodeTransformation(kind: Wrap, wrapClass: IdStringGetLength, wrapRole: IdStringGetLengthValue, wrapCursorTargetRole: IdStringGetLengthValue, selectNextPlaceholder: true, wrapChildIndex: 0)
 
-  if not self.selection.isEmpty:
+  if not self.selection.isEmpty and not self.showCompletions:
     let (parentCell, _, _) = self.selection.getParentInfo
     if self.selection.first < self.selection.last:
       if postfixTransformations.findTransformation(parentCell.node.nodeClass, input).getSome(transformation):
@@ -2860,7 +2860,7 @@ proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool {.expos
         return true
 
   if getTargetCell(self.cursor).getSome(cell):
-    if self.selection.isEmpty:
+    if self.selection.isEmpty and not self.showCompletions:
       if self.cursor.isAtEndOfLastCellOfNode and postfixTransformations.findTransformation(cell.node.nodeClass, input).getSome(transformation):
         self.cursor = self.applyTransformation(cell.node, transformation)
         return true
