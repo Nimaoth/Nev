@@ -82,6 +82,12 @@ proc moveCursorRightCell*(self: ModelDocumentEditor; select: bool = false) =
       select)
 proc selectNode*(self: ModelDocumentEditor; select: bool = false) =
   editor_model_selectNode_void_ModelDocumentEditor_bool_impl(self, select)
+proc selectPrevNeighbor*(self: ModelDocumentEditor; select: bool = false) =
+  editor_model_selectPrevNeighbor_void_ModelDocumentEditor_bool_impl(self,
+      select)
+proc selectNextNeighbor*(self: ModelDocumentEditor; select: bool = false) =
+  editor_model_selectNextNeighbor_void_ModelDocumentEditor_bool_impl(self,
+      select)
 proc selectPrevPlaceholder*(self: ModelDocumentEditor; select: bool = false) =
   editor_model_selectPrevPlaceholder_void_ModelDocumentEditor_bool_impl(self,
       select)

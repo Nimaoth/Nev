@@ -544,6 +544,44 @@ proc selectNode*(self: ModelDocumentEditor; select: bool = false) =
       argsJsonString.cstring)
 
 
+proc editor_model_selectPrevNeighbor_void_ModelDocumentEditor_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc selectPrevNeighbor*(self: ModelDocumentEditor; select: bool = false) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when ModelDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      select
+    else:
+      select.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_model_selectPrevNeighbor_void_ModelDocumentEditor_bool_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_model_selectNextNeighbor_void_ModelDocumentEditor_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc selectNextNeighbor*(self: ModelDocumentEditor; select: bool = false) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when ModelDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      select
+    else:
+      select.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_model_selectNextNeighbor_void_ModelDocumentEditor_bool_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_model_selectPrevPlaceholder_void_ModelDocumentEditor_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc selectPrevPlaceholder*(self: ModelDocumentEditor; select: bool = false) =
