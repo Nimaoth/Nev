@@ -1,11 +1,71 @@
 import std/[tables, strutils, strformat, options, sugar, algorithm]
 import ui/node
-import model, id, util, custom_logger
+import model, id, util, custom_logger, macro_utils
 import ast_ids
 
 logCategory "cells"
 
+defineBitFlag:
+  type CellBuilderFlag* = enum
+    OnlyExactMatch
+
+defineBitFlag:
+  type CellFlag* = enum
+    DeleteWhenEmpty
+    OnNewLine
+    IndentChildren
+    NoSpaceLeft
+    NoSpaceRight
+
 type
+  CellIsVisiblePredicate* = proc(node: AstNode): bool
+  CellNodeFactory* = proc(): AstNode
+
+  CellStyle* = ref object
+    noSpaceLeft*: bool
+    noSpaceRight*: bool
+
+  Cell* = ref object of RootObj
+    when defined(js):
+      aDebug*: cstring
+    id*: CellId
+    parent*: Cell
+    flags*: CellFlags
+    node*: AstNode
+    referenceNode*: AstNode
+    role*: RoleId                         # Which role of the target node this cell represents
+    line*: int
+    displayText*: Option[string]
+    shadowText*: string
+    fillChildren*: proc(map: NodeCellMap): void
+    filled*: bool
+    customIsVisible*: CellIsVisiblePredicate
+    nodeFactory*: CellNodeFactory
+    style*: CellStyle
+    disableSelection*: bool
+    disableEditing*: bool
+    deleteImmediately*: bool              # If true then when this cell handles a delete event it will delete it immediately and not first select the entire cell
+    deleteNeighbor*: bool                 # If true then when this cell handles a delete event it will delete the left or right neighbor cell instead
+    dontReplaceWithDefault*: bool         # If true thennn
+    fontSizeIncreasePercent*: float
+    themeForegroundColors*: seq[string]
+    themeBackgroundColors*: seq[string]
+    foregroundColor*: Color
+    backgroundColor*: Color
+
+  CellBuilderFunction* = proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell
+
+  CellBuilder* = ref object
+    builders*: Table[ClassId, seq[tuple[builderId: Id, impl: CellBuilderFunction, flags: CellBuilderFlags]]]
+    builders2*: Table[ClassId, seq[tuple[builderId: Id, impl: CellBuilderCommands, flags: CellBuilderFlags]]]
+    preferredBuilders*: Table[ClassId, Id]
+    forceDefault*: bool
+
+  NodeCellMap* = ref object
+    map*: Table[NodeId, Cell]
+    cells*: Table[CellId, Cell]
+    builder*: CellBuilder
+
   CollectionCell* = ref object of Cell
     uiFlags*: UINodeFlags
     inline*: bool
@@ -23,8 +83,64 @@ type
   PlaceholderCell* = ref object of Cell
     discard
 
+  EmptyCell* = ref object of Cell
+    discard
+
+  CellBuilderCommands* = ref object
+    commands: seq[CellBuilderCommand]
+
+  CellBuilderCommandKind* {.pure.} = enum CollectionCell, EndCollectionCell, ConstantCell, PropertyCell, AliasCell, ReferenceCell, PlaceholderCell, Children
+  CellBuilderCommand* = object
+    disableEditing*: bool
+    disableSelection*: bool
+    deleteNeighbor*: bool
+    uiFlags*: UINodeFlags
+    flags*: CellFlags
+    shadowText*: string
+    themeForegroundColors*: seq[string]
+    themeBackgroundColors*: seq[string]
+
+    case kind*: CellBuilderCommandKind
+    of CollectionCell:
+      inline*: bool
+
+    of ConstantCell:
+      text*: string
+
+    of PropertyCell:
+      property*: RoleId
+
+    of ReferenceCell:
+      role*: RoleId
+      builderFunc*: CellBuilderFunction
+
+    of AliasCell:
+      discard
+
+    of PlaceholderCell:
+      discard
+
+    of Children:
+      childrenRole*: RoleId
+      separator*: Option[string]
+      placeholder*: Option[string]
+
+    of EndCollectionCell:
+      discard
+
+method dump*(self: Cell, recurse: bool = false): string {.base.} = discard
+method getChildAt*(self: Cell, index: int, clamp: bool): Option[Cell] {.base.} = Cell.none
 proc editableLow*(self: Cell, ignoreStyle: bool = false): int
 proc editableHigh*(self: Cell, ignoreStyle: bool = false): int
+proc buildDefaultPlaceholder*(builder: CellBuilder, node: AstNode, owner: AstNode, role: RoleId, flags: CellFlags = 0.CellFlags): Cell
+proc buildChildren*(builder: CellBuilder, map: NodeCellMap, node: AstNode, owner: AstNode, role: RoleId, uiFlags: UINodeFlags = 0.UINodeFlags, flags: CellFlags = 0.CellFlags,
+    customIsVisible: proc(node: AstNode): bool = nil,
+    separatorFunc: proc(builder: CellBuilder): Cell = nil,
+    placeholderFunc: proc(builder: CellBuilder, node: AstNode, owner: AstNode, role: RoleId, flags: CellFlags): Cell = buildDefaultPlaceholder,
+    builderFunc: CellBuilderFunction = nil): Cell
+
+
+proc `$`*(cell: Cell, recurse: bool = false): string = cell.dump(recurse)
 
 proc buildCell*(map: NodeCellMap, node: AstNode, useDefault: bool = false, builderFunc: CellBuilderFunction = nil, owner: AstNode = nil): Cell
 
@@ -186,6 +302,11 @@ proc rootPath*(cell: Cell): tuple[root: Cell, path: seq[int]] =
   path.reverse()
 
   return (cell, path)
+
+proc targetNode*(cell: Cell): AstNode =
+  if cell.referenceNode.isNotNil:
+    return cell.referenceNode
+  return cell.node
 
 proc isLeaf*(self: Cell): bool =
   if self of CollectionCell:
@@ -397,12 +518,80 @@ proc findBuilder(self: CellBuilder, class: NodeClass, preferred: Id, isBase: boo
 
   return builders[0].impl
 
+proc findBuilder2(self: CellBuilder, class: NodeClass, preferred: Id, isBase: bool = false): CellBuilderCommands =
+  if not self.builders2.contains(class.id):
+    if class.base.isNotNil:
+      return self.findBuilder2(class.base, preferred, true)
+    return nil
+
+  let builders = self.builders2[class.id]
+  if builders.len == 0:
+    if class.base.isNotNil:
+      return self.findBuilder2(class.base, preferred, true)
+    return nil
+
+  if builders.len == 1:
+    if isBase and OnlyExactMatch in builders[0].flags:
+      return nil
+    return builders[0].impl
+
+  let preferredBuilder = self.preferredBuilders.getOrDefault(class.id, idNone())
+  for builder in builders:
+    if isBase and OnlyExactMatch in builder.flags:
+      continue
+    if builder.builderId == preferredBuilder:
+      return builder.impl
+
+  if isBase and OnlyExactMatch in builders[0].flags:
+    return nil
+
+  return builders[0].impl
+
 template horizontalCell(cell: Cell, node: AstNode, owner: AstNode, childCell: untyped, body: untyped) =
   var childCell {.inject.} = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal})
   try:
     body
   finally:
     cell.add childCell
+
+proc newCellBuilder*(): CellBuilder =
+  new result
+
+proc clear*(self: CellBuilder) =
+  self.builders.clear()
+  self.preferredBuilders.clear()
+  self.forceDefault = false
+
+proc addBuilderFor*(self: CellBuilder, classId: ClassId, builderId: Id, flags: CellBuilderFlags, builder: CellBuilderFunction) =
+  # log lvlWarn, fmt"addBuilderFor {classId}"
+  if self.builders.contains(classId):
+    self.builders[classId].add (builderId, builder, flags)
+  else:
+    self.builders[classId] = @[(builderId, builder, flags)]
+
+proc addBuilderFor*(self: CellBuilder, classId: ClassId, builderId: Id, builder: CellBuilderFunction) =
+  self.addBuilderFor(classId, builderId, 0.CellBuilderFlags, builder)
+
+proc addBuilderFor*(self: CellBuilder, classId: ClassId, builderId: Id, flags: CellBuilderFlags, commands: openArray[CellBuilderCommand]) =
+  # log lvlWarn, fmt"addBuilderFor {classId}"
+  var builder = CellBuilderCommands(commands: @commands)
+  if self.builders2.contains(classId):
+    self.builders2[classId].add (builderId, builder, flags)
+  else:
+    self.builders2[classId] = @[(builderId, builder, flags)]
+
+proc addBuilderFor*(self: CellBuilder, classId: ClassId, builderId: Id, commands: openArray[CellBuilderCommand]) =
+  self.addBuilderFor(classId, builderId, 0.CellBuilderFlags, commands)
+
+proc addBuilder*(self: CellBuilder, other: CellBuilder) =
+  for pair in other.builders.pairs:
+    for builder in pair[1]:
+      self.addBuilderFor(pair[0], builder.builderId, builder.flags, builder.impl)
+  for pair in other.builders2.pairs:
+    for builder in pair[1]:
+      self.addBuilderFor(pair[0], builder.builderId, builder.flags, builder.impl.commands)
+  for pair in other.preferredBuilders.pairs:
+    self.preferredBuilders[pair[0]] = pair[1]
 
 proc buildCellDefault*(map: NodeCellMap, node: AstNode, useDefaultRecursive: bool, owner: AstNode = nil): Cell =
   let class = node.nodeClass
@@ -485,6 +674,83 @@ proc buildCellDefault*(map: NodeCellMap, node: AstNode, useDefaultRecursive: boo
 
   return cell
 
+proc buildCellWithCommands(map: NodeCellMap, node: AstNode, owner: AstNode, commands: CellBuilderCommands, parent: CollectionCell = nil, startIndex: int = 0): Cell =
+  let builder = map.builder
+
+  var stack: seq[CollectionCell] = @[]
+  var currentCollectionCell = parent
+
+  if parent.isNil and commands.commands[0].kind == CellBuilderCommandKind.CollectionCell:
+    var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: commands.commands[0].uiFlags)
+
+    if parent.isNil: # root
+      assert stack.len == 0
+      assert currentCollectionCell.isNil
+      cell.fillChildren = proc(m: NodeCellMap) =
+        discard map.buildCellWithCommands(node, owner, commands, cell, 1)
+      return cell
+
+  for i in startIndex..commands.commands.high:
+    let command = commands.commands[i]
+    case command.kind
+    of CollectionCell:
+      var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: command.uiFlags, flags: command.flags, inline: command.inline)
+
+      if currentCollectionCell.isNotNil:
+        currentCollectionCell.add cell
+        stack.add currentCollectionCell
+        currentCollectionCell = cell
+      else:
+        return cell
+
+    of EndCollectionCell:
+      currentCollectionCell = stack.pop
+
+    of ConstantCell:
+      var cell = ConstantCell(node: owner ?? node, referenceNode: node, text: command.text, flags: command.flags, themeForegroundColors: command.themeForegroundColors, disableEditing: command.disableEditing, disableSelection: command.disableSelection, deleteNeighbor: command.deleteNeighbor)
+      if currentCollectionCell.isNotNil:
+        currentCollectionCell.add cell
+      else:
+        return cell
+
+    of PropertyCell:
+      var cell = PropertyCell(node: owner ?? node, referenceNode: node, property: command.property, flags: command.flags, themeForegroundColors: command.themeForegroundColors, disableEditing: command.disableEditing, disableSelection: command.disableSelection, deleteNeighbor: command.deleteNeighbor)
+      if currentCollectionCell.isNotNil:
+        currentCollectionCell.add cell
+      else:
+        return cell
+
+    of ReferenceCell:
+      discard
+
+    of PlaceholderCell:
+      discard
+
+    of AliasCell:
+      var cell = AliasCell(node: owner ?? node, referenceNode: node, flags: command.flags, themeForegroundColors: command.themeForegroundColors, disableEditing: command.disableEditing, disableSelection: command.disableSelection, deleteNeighbor: command.deleteNeighbor)
+      if currentCollectionCell.isNotNil:
+        currentCollectionCell.add cell
+      else:
+        return cell
+
+    of Children:
+      var separator: proc(builder: CellBuilder): Cell
+      var placeholder: proc(builder: CellBuilder, node: AstNode, owner: AstNode, role: RoleId, flags: CellFlags): Cell
+      if command.separator.isSome:
+        separator = proc(builder: CellBuilder): Cell =
+          ConstantCell(node: owner ?? node, referenceNode: node, text: command.separator.get, flags: &{NoSpaceLeft}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true, disableSelection: true, deleteNeighbor: true)
+
+      if command.placeholder.isSome:
+        let text = command.placeholder.get
+        placeholder = proc(builder: CellBuilder, node: AstNode, owner: AstNode, role: RoleId, flags: CellFlags): Cell =
+          PlaceholderCell(node: owner ?? node, referenceNode: node, role: role, shadowText: text, flags: flags)
+
+      var cell = builder.buildChildren(map, node, owner, command.childrenRole, command.uiFlags, command.flags, customIsVisible=nil, separator, placeholder, builderFunc=nil)
+      if currentCollectionCell.isNotNil:
+        currentCollectionCell.add cell
+      else:
+        return cell
+
 proc buildCell*(map: NodeCellMap, node: AstNode, useDefault: bool = false, builderFunc: CellBuilderFunction = nil, owner: AstNode = nil): Cell =
   let builder = map.builder
   let class = node.nodeClass
@@ -499,6 +765,10 @@ proc buildCell*(map: NodeCellMap, node: AstNode, useDefault: bool = false, build
     if not useDefault:
       if builderFunc.isNotNil:
         result = builderFunc(map.builder, node, owner)
+        break blk
+
+      if builder.findBuilder2(class, idNone()).isNotNil(commands):
+        result = map.buildCellWithCommands(node, owner, commands)
         break blk
 
       if builder.findBuilder(class, idNone()).isNotNil(builderFunc):
@@ -625,3 +895,6 @@ template addHorizontal*(cell: Cell, inNode: AstNode, inFlags: CellFlags, body: u
     var sub {.inject.} = CollectionCell(id: newId().CellId, node: inNode, uiFlags: &{LayoutHorizontal}, flags: inFlags)
     body
     cell.add sub
+
+method dump*(self: EmptyCell, recurse: bool = false): string =
+  result.add fmt"EmptyCell(node: {self.node.id})"

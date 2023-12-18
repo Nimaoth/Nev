@@ -8,18 +8,6 @@ export id
 
 logCategory "types"
 
-defineBitFlag:
-  type CellBuilderFlag* = enum
-    OnlyExactMatch
-
-defineBitFlag:
-  type CellFlag* = enum
-    DeleteWhenEmpty
-    OnNewLine
-    IndentChildren
-    NoSpaceLeft
-    NoSpaceRight
-
 template defineUniqueId(name: untyped): untyped =
   type name* = distinct Id
 
@@ -101,56 +89,6 @@ type
     references*: seq[tuple[role: RoleId, node: NodeId]]
     childLists*: seq[tuple[role: RoleId, nodes: seq[AstNode]]]
 
-  CellIsVisiblePredicate* = proc(node: AstNode): bool
-  CellNodeFactory* = proc(): AstNode
-
-  CellStyle* = ref object
-    noSpaceLeft*: bool
-    noSpaceRight*: bool
-
-  Cell* = ref object of RootObj
-    when defined(js):
-      aDebug*: cstring
-    id*: CellId
-    parent*: Cell
-    flags*: CellFlags
-    node*: AstNode
-    referenceNode*: AstNode
-    role*: RoleId                         # Which role of the target node this cell represents
-    line*: int
-    displayText*: Option[string]
-    shadowText*: string
-    fillChildren*: proc(map: NodeCellMap): void
-    filled*: bool
-    customIsVisible*: CellIsVisiblePredicate
-    nodeFactory*: CellNodeFactory
-    style*: CellStyle
-    disableSelection*: bool
-    disableEditing*: bool
-    deleteImmediately*: bool              # If true then when this cell handles a delete event it will delete it immediately and not first select the entire cell
-    deleteNeighbor*: bool                 # If true then when this cell handles a delete event it will delete the left or right neighbor cell instead
-    dontReplaceWithDefault*: bool         # If true thennn
-    fontSizeIncreasePercent*: float
-    themeForegroundColors*: seq[string]
-    themeBackgroundColors*: seq[string]
-    foregroundColor*: Color
-    backgroundColor*: Color
-
-  EmptyCell* = ref object of Cell
-    discard
-
-  CellBuilderFunction* = proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell
-
-  CellBuilder* = ref object
-    builders*: Table[ClassId, seq[tuple[builderId: Id, impl: CellBuilderFunction, flags: CellBuilderFlags]]]
-    preferredBuilders*: Table[ClassId, Id]
-    forceDefault*: bool
-
-  NodeCellMap* = ref object
-    map*: Table[NodeId, Cell]
-    cells*: Table[CellId, Cell]
-    builder*: CellBuilder
-
   PropertyValidator* = ref object
     pattern*: Regex
 
@@ -165,7 +103,6 @@ type
     classes {.getter.}: Table[ClassId, NodeClass]
     rootNodeClasses {.getter.}: seq[NodeClass]
     # childClasses {.getter.}: Table[ClassId, seq[NodeClass]]
-    builder {.getter.}: CellBuilder
     model*: Model
 
     validators: Table[ClassId, NodeValidator]
@@ -308,11 +245,6 @@ proc newModel*(id: ModelId = default(ModelId)): Model
 proc addRootNode*(self: Model, node: AstNode)
 proc addLanguage*(self: Model, language: Language)
 
-proc targetNode*(cell: Cell): AstNode =
-  if cell.referenceNode.isNotNil:
-    return cell.referenceNode
-  return cell.node
-
 proc forEach*(node: AstNode, f: proc(node: AstNode) {.closure.}) =
   f(node)
   for item in node.childLists.mitems:
@@ -336,7 +268,7 @@ proc verify*(self: Language): bool =
       log(lvlError, fmt"Class {c.name} is both final and abstract")
       result = false
 
-proc newLanguage*(id: LanguageId, classes: seq[NodeClass], builder: CellBuilder,
+proc newLanguage*(id: LanguageId, classes: seq[NodeClass],
   typeComputers: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode],
   valueComputers: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode],
   scopeComputers: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]],
@@ -370,8 +302,6 @@ proc newLanguage*(id: LanguageId, classes: seq[NodeClass], builder: CellBuilder,
     #   if not result.childClasses.contains(i.id):
     #     result.childClasses[i.id] = @[]
     #   result.childClasses[i.id].add c
-
-  result.builder = builder
 
   result.model = newModel(id.ModelId)
   for node in rootNodes:
@@ -1067,31 +997,6 @@ proc insertDefaultNode*(node: AstNode, role: RoleId, index: int, fillDefaultChil
 
   return child.some
 
-proc newCellBuilder*(): CellBuilder =
-  new result
-
-proc clear*(self: CellBuilder) =
-  self.builders.clear()
-  self.preferredBuilders.clear()
-  self.forceDefault = false
-
-proc addBuilderFor*(self: CellBuilder, classId: ClassId, builderId: Id, flags: CellBuilderFlags, builder: CellBuilderFunction) =
-  # log lvlWarn, fmt"addBuilderFor {classId}"
-  if self.builders.contains(classId):
-    self.builders[classId].add (builderId, builder, flags)
-  else:
-    self.builders[classId] = @[(builderId, builder, flags)]
-
-proc addBuilderFor*(self: CellBuilder, classId: ClassId, builderId: Id, builder: CellBuilderFunction) =
-  self.addBuilderFor(classId, builderId, 0.CellBuilderFlags, builder)
-
-proc addBuilder*(self: CellBuilder, other: CellBuilder) =
-  for pair in other.builders.pairs:
-    for builder in pair[1]:
-      self.addBuilderFor(pair[0], builder.builderId, builder.flags, builder.impl)
-  for pair in other.preferredBuilders.pairs:
-    self.preferredBuilders[pair[0]] = pair[1]
-
 proc clone*(node: AstNode, idMap: var Table[NodeId, NodeId], model: Model, linkOriginal: bool = false): AstNode =
   assert model.isNotNil
 
@@ -1134,14 +1039,6 @@ proc cloneAndMapIds*(node: AstNode, model: Model = nil, linkOriginal: bool = fal
   newNode.replaceReferences(idMap)
   # echo &"cloneAndMapIds: {node.dump(recurse=true)}\n->\n{newNode.dump(model=model, recurse=true)}"
   return newNode
-
-method dump*(self: Cell, recurse: bool = false): string {.base.} = discard
-method getChildAt*(self: Cell, index: int, clamp: bool): Option[Cell] {.base.} = Cell.none
-
-proc `$`*(cell: Cell, recurse: bool = false): string = cell.dump(recurse)
-
-method dump*(self: EmptyCell, recurse: bool = false): string =
-  result.add fmt"EmptyCell(node: {self.node.id})"
 
 proc dump*(node: AstNode, model: Model = nil, recurse: bool = false): string =
   if node.isNil:

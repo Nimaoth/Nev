@@ -1,6 +1,6 @@
 import std/[tables, strformat]
 import id, ast_ids, util, custom_logger
-import model, cells, model_state, query_system
+import model, cells, model_state, query_system, cell_builder_database
 import ui/node
 
 export id, ast_ids
@@ -660,13 +660,27 @@ builder.addBuilderFor forLoopClass.id, idNone(), proc(builder: CellBuilder, node
 
   return cell
 
+# builder.addBuilderFor IdForLoop, idNone(), [
+#   CellBuilderCommand(kind: CollectionCell, uiFlags: &{LayourHorizontal}),
+#   CellBuilderCommand(kind: ConstantCell, text: "for", themeForegroundColors: @["keyword"], disableEditing: true),
+#   CellBuilderCommand(kind: Children, childrenRole: IdForLoopVariable, uiFlags: &{LayoutHorizontal}),
+# ]
+
 builder.addBuilderFor breakClass.id, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = AliasCell(id: newId().CellId, node: owner ?? node, referenceNode: node, themeForegroundColors: @["keyword"], disableEditing: true)
   return cell
 
+builder.addBuilderFor IdBreakExpression, idNone(), [
+  CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["keyword"], disableEditing: true),
+]
+
 builder.addBuilderFor continueClass.id, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = AliasCell(id: newId().CellId, node: owner ?? node, referenceNode: node, themeForegroundColors: @["keyword"], disableEditing: true)
   return cell
+
+builder.addBuilderFor IdContinueExpression, idNone(), [
+  CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["keyword"], disableEditing: true),
+]
 
 builder.addBuilderFor returnClass.id, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal})
@@ -674,6 +688,11 @@ builder.addBuilderFor returnClass.id, idNone(), proc(builder: CellBuilder, node:
     cell.add AliasCell(id: newId().CellId, node: owner ?? node, referenceNode: node, themeForegroundColors: @["keyword"], disableEditing: true)
     cell.add builder.buildChildren(map, node, owner, IdReturnExpressionValue, &{LayoutHorizontal})
   return cell
+
+builder.addBuilderFor IdContinueExpression, idNone(), [
+  CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["keyword"], disableEditing: true),
+  CellBuilderCommand(kind: Children, childrenRole: IdReturnExpressionValue, uiFlags: &{LayoutHorizontal}),
+]
 
 builder.addBuilderFor nodeReferenceClass.id, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   if node.resolveReference(IdNodeReferenceTarget).getSome(targetNode):
@@ -696,6 +715,10 @@ builder.addBuilderFor nodeReferenceClass.id, idNone(), proc(builder: CellBuilder
 builder.addBuilderFor expressionClass.id, idNone(), &{OnlyExactMatch}, proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = ConstantCell(id: newId().CellId, node: owner ?? node, referenceNode: node, shadowText: "<expr>", themeBackgroundColors: @["&inputValidation.errorBackground", "&debugConsole.errorForeground"])
   return cell
+
+builder.addBuilderFor IdExpression, idNone(), &{OnlyExactMatch}, [
+  CellBuilderCommand(kind: ConstantCell, shadowText: "<expr>", themeBackgroundColors: @["&inputValidation.errorBackground", "&debugConsole.errorForeground"]),
+]
 
 builder.addBuilderFor binaryExpressionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal})
@@ -722,12 +745,25 @@ builder.addBuilderFor divExpressionClass.id, idNone(), proc(builder: CellBuilder
     cell.add builder.buildChildren(map, node, owner, IdBinaryExpressionRight, &{LayoutHorizontal})
   return cell
 
+builder.addBuilderFor IdDiv, idNone(), [
+  CellBuilderCommand(kind: CollectionCell, uiFlags: &{LayoutVertical}, inline: true),
+  CellBuilderCommand(kind: Children, childrenRole: IdBinaryExpressionLeft, uiFlags: &{LayoutHorizontal}),
+  CellBuilderCommand(kind: ConstantCell, text: "------", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true),
+  CellBuilderCommand(kind: Children, childrenRole: IdBinaryExpressionRight, uiFlags: &{LayoutHorizontal}),
+]
+
 builder.addBuilderFor unaryExpressionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
     cell.add AliasCell(node: owner ?? node, referenceNode: node, style: CellStyle(noSpaceRight: true), disableEditing: true)
     cell.add builder.buildChildren(map, node, owner, IdUnaryExpressionChild, &{LayoutHorizontal})
   return cell
+
+builder.addBuilderFor IdUnaryExpression, idNone(), [
+  CellBuilderCommand(kind: CollectionCell, uiFlags: &{LayoutHorizontal}),
+  CellBuilderCommand(kind: AliasCell, flags: &{NoSpaceRight}, disableEditing: true),
+  CellBuilderCommand(kind: Children, childrenRole: IdUnaryExpressionChild, uiFlags: &{LayoutHorizontal}),
+]
 
 builder.addBuilderFor metaTypeClass.id, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = AliasCell(id: newId().CellId, node: owner ?? node, referenceNode: node, themeForegroundColors: @["storage.type", "&editor.foreground"], disableEditing: true)
@@ -769,6 +805,17 @@ builder.addBuilderFor charTypeClass.id, idNone(), proc(builder: CellBuilder, nod
   var cell = AliasCell(id: newId().CellId, node: owner ?? node, referenceNode: node, themeForegroundColors: @["storage.type", "&editor.foreground"], disableEditing: true)
   return cell
 
+builder.addBuilderFor IdType, idNone(), [CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["storage.type", "&editor.foreground"], disableEditing: true)]
+builder.addBuilderFor IdString, idNone(), [CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["storage.type", "&editor.foreground"], disableEditing: true)]
+builder.addBuilderFor IdVoid, idNone(), [CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["storage.type", "&editor.foreground"], disableEditing: true)]
+builder.addBuilderFor IdInt32, idNone(), [CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["storage.type", "&editor.foreground"], disableEditing: true)]
+builder.addBuilderFor IdUInt32, idNone(), [CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["storage.type", "&editor.foreground"], disableEditing: true)]
+builder.addBuilderFor IdInt64, idNone(), [CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["storage.type", "&editor.foreground"], disableEditing: true)]
+builder.addBuilderFor IdUInt64, idNone(), [CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["storage.type", "&editor.foreground"], disableEditing: true)]
+builder.addBuilderFor IdFloat32, idNone(), [CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["storage.type", "&editor.foreground"], disableEditing: true)]
+builder.addBuilderFor IdFloat64, idNone(), [CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["storage.type", "&editor.foreground"], disableEditing: true)]
+builder.addBuilderFor IdChar, idNone(), [CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["storage.type", "&editor.foreground"], disableEditing: true)]
+
 builder.addBuilderFor printExpressionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
@@ -785,6 +832,14 @@ builder.addBuilderFor printExpressionClass.id, idNone(), proc(builder: CellBuild
 
   return cell
 
+builder.addBuilderFor IdPrint, idNone(), [
+  CellBuilderCommand(kind: CollectionCell, uiFlags: &{LayoutHorizontal}),
+  CellBuilderCommand(kind: AliasCell, disableEditing: true),
+  CellBuilderCommand(kind: ConstantCell, text: "(", flags: &{NoSpaceLeft, NoSpaceRight}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true),
+  CellBuilderCommand(kind: Children, childrenRole: IdPrintArguments, separator: ",".some, placeholder: "".some, uiFlags: &{LayoutHorizontal}, flags: 0.CellFlags),
+  CellBuilderCommand(kind: ConstantCell, text: ")", flags: &{NoSpaceLeft}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true),
+]
+
 builder.addBuilderFor buildExpressionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
@@ -800,6 +855,14 @@ builder.addBuilderFor buildExpressionClass.id, idNone(), proc(builder: CellBuild
     cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: ")", style: CellStyle(noSpaceLeft: true), themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
 
   return cell
+
+builder.addBuilderFor IdBuildString, idNone(), [
+  CellBuilderCommand(kind: CollectionCell, uiFlags: &{LayoutHorizontal}),
+  CellBuilderCommand(kind: AliasCell, disableEditing: true),
+  CellBuilderCommand(kind: ConstantCell, text: "(", flags: &{NoSpaceLeft, NoSpaceRight}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true),
+  CellBuilderCommand(kind: Children, childrenRole: IdBuildArguments, separator: ",".some, placeholder: "".some, uiFlags: &{LayoutHorizontal}, flags: 0.CellFlags),
+  CellBuilderCommand(kind: ConstantCell, text: ")", flags: &{NoSpaceLeft}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true),
+]
 
 var typeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]()
 var valueComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]()
@@ -2131,9 +2194,10 @@ let baseLanguage* = newLanguage(IdBaseLanguage,
 
     structDefinitionClass, structMemberDefinitionClass, structParameterClass, structMemberAccessClass,
     addressOfClass, derefClass, arrayAccessClass,
-  ], builder, typeComputers, valueComputers, scopeComputers, validationComputers,
+  ], typeComputers, valueComputers, scopeComputers, validationComputers,
   rootNodes=[
     int32TypeInstance, uint32TypeInstance, int64TypeInstance, uint64TypeInstance, float32TypeInstance, float64TypeInstance, stringTypeInstance, voidTypeInstance, charTypeInstance, metaTypeInstance
   ])
 
+registerBuilder(IdBaseLanguage, builder)
 # print baseLanguage

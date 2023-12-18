@@ -1,6 +1,6 @@
 import std/[tables, strformat]
 import id, ast_ids, util, custom_logger
-import model, cells, model_state, base_language
+import model, cells, model_state, base_language, cell_builder_database
 import ui/node
 
 export base_language
@@ -56,7 +56,8 @@ typeComputers[loadAppFileClass.id] = proc(ctx: ModelComputationContextBase, node
 
 let editorLanguage* = newLanguage(IdEditorLanguage, @[
   loadAppFileClass,
-], builder, typeComputers, valueComputers, scopeComputers, validationComputers, [base_language.baseLanguage])
+], typeComputers, valueComputers, scopeComputers, validationComputers, [base_language.baseLanguage])
+registerBuilder(IdEditorLanguage, builder)
 
 let editorModel* = block:
   var model = newModel(newId().ModelId)
