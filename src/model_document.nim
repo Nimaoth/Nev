@@ -9,7 +9,7 @@ import ast/[model, base_language, editor_language, cells]
 import ast/lang/lang_language
 import ui/node
 
-import ast/[generator_wasm, base_language_wasm, editor_language_wasm, model_state]
+import ast/[generator_wasm, base_language_wasm, editor_language_wasm, model_state, cell_builder_database]
 
 logCategory "model"
 createJavascriptPrototype("editor.model")
@@ -305,7 +305,7 @@ proc newModelDocument*(filename: string = "", app: bool = false, workspaceFolder
 
   self.builder = newCellBuilder()
   for language in self.model.languages:
-    self.builder.addBuilder(language.builder)
+    self.builder.addBuilder(getBuilder(language.id))
 
   self.project.addModel(self.model)
 
@@ -604,7 +604,7 @@ proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
 
       self.builder.clear()
       for language in self.model.languages:
-        self.builder.addBuilder(language.builder)
+        self.builder.addBuilder(getBuilder(language.id))
 
       # self.project.builder = self.builder
 
@@ -3323,7 +3323,7 @@ proc addLanguage*(self: ModelDocumentEditor) {.expose("editor.model").} =
     log lvlInfo, fmt"Add language {item.ModelLanguageSelectorItem.name} ({item.ModelLanguageSelectorItem.language.id}) to model {self.document.model.id}"
     let language = item.ModelLanguageSelectorItem.language
     self.document.model.addLanguage(language)
-    self.document.builder.addBuilder(language.builder)
+    self.document.builder.addBuilder(getBuilder(language.id))
 
   popup.updateCompletions()
 
@@ -3498,7 +3498,7 @@ proc loadBaseLanguageModel*(self: ModelDocumentEditor) {.expose("editor.model").
 
     self.document.builder.clear()
     for language in self.document.model.languages:
-      self.document.builder.addBuilder(language.builder)
+      self.document.builder.addBuilder(getBuilder(language.id))
 
     self.document.undoList.setLen 0
     self.document.redoList.setLen 0

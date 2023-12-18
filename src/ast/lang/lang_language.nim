@@ -1,6 +1,6 @@
 import std/[tables, strformat, options]
 import id, ast_ids, util, custom_logger
-import ../model, ../cells, ../model_state, query_system
+import ../model, ../cells, ../model_state, query_system, ../cell_builder_database
 import ../base_language
 import ui/node
 import print
@@ -123,16 +123,14 @@ builder.addBuilderFor IdReferenceDefinition, idNone(), proc(builder: CellBuilder
 
   return cell
 
-builder.addBuilderFor IdChildrenDefinition, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
-  var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal})
-  cell.fillChildren = proc(map: NodeCellMap) =
-    cell.add PropertyCell(id: newId().CellId, node: owner ?? node, referenceNode: node, property: IdINamedName, themeForegroundColors: @["variable"])
-    cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: ":", flags: &{NoSpaceLeft}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
-    cell.add builder.buildChildren(map, node, owner, IdChildrenDefinitionClass, &{LayoutHorizontal})
-    cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: ",", flags: &{NoSpaceLeft}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
-    cell.add builder.buildChildren(map, node, owner, IdChildrenDefinitionCount, &{LayoutHorizontal})
-
-  return cell
+builder.addBuilderFor IdChildrenDefinition, idNone(), [
+  CellBuilderCommand(kind: CollectionCell, uiFlags: &{LayoutHorizontal}),
+  CellBuilderCommand(kind: PropertyCell, property: IdINamedName, themeForegroundColors: @["variable"]),
+  CellBuilderCommand(kind: ConstantCell, text: ":", flags: &{NoSpaceLeft}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true),
+  CellBuilderCommand(kind: Children, childrenRole: IdChildrenDefinitionClass, uiFlags: &{LayoutHorizontal}),
+  CellBuilderCommand(kind: ConstantCell, text: ",", flags: &{NoSpaceLeft}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true),
+  CellBuilderCommand(kind: Children, childrenRole: IdChildrenDefinitionCount, uiFlags: &{LayoutHorizontal}),
+]
 
 builder.addBuilderFor IdLangRoot, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutVertical})
@@ -143,6 +141,10 @@ builder.addBuilderFor IdLangRoot, idNone(), proc(builder: CellBuilder, node: Ast
         placeholder: "..."
 
   return cell
+
+# builder.addBuilderFor IdLangAspect, idNone(), [
+#   CellBuilderCommand(kind: ConstantCell, shadowText: "...", themeForegroundColors: @["keyword"], disableEditing: true),
+# ]
 
 builder.addBuilderFor IdLangAspect, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   # return PlaceholderCell(id: newId().CellId, node: owner ?? node, referenceNode: node, role: IdClassReferenceTarget, shadowText: "<class>")
@@ -343,7 +345,8 @@ let langLanguage* = newLanguage(IdLangLanguage, @[
   propertyTypeClass, propertyTypeBoolClass, propertyTypeStringClass, propertyTypeNumberClass, propertyDefinitionClass, classDefinitionClass,
   classReferenceClass, roleReferenceClass, referenceDefinitionClass, childrenDefinitionClass,
   countClass, countZeroOrOneClass, countOneClass, countZeroOrMoreClass, countOneOrMoreClass,
-], builder, typeComputers, valueComputers, scopeComputers, validationComputers)
+], typeComputers, valueComputers, scopeComputers, validationComputers)
+registerBuilder(IdLangLanguage, builder)
 
 proc createNodeClassFromLangDefinition*(classMap: var Table[ClassId, NodeClass], def: AstNode): Option[NodeClass] =
   if classMap.contains(def.id.ClassId):
@@ -477,7 +480,7 @@ proc createLanguageFromNodes*(def: AstNode): Language =
   var scopeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]]()
   var validationComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): bool]()
 
-  result = newLanguage(def.id.LanguageId, classes, builder, typeComputers, valueComputers, scopeComputers, validationComputers)
+  result = newLanguage(def.id.LanguageId, classes, typeComputers, valueComputers, scopeComputers, validationComputers)
 
 proc createNodeFromNodeClass(classes: var Table[ClassId, AstNode], class: NodeClass): AstNode =
   # log lvlInfo, fmt"createNodeFromNodeClass {class.name}"
