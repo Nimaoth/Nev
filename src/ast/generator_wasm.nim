@@ -304,7 +304,9 @@ proc compileToBinary*(self: BaseLanguageWasmCompiler, node: AstNode): seq[uint8]
   self.builder.globals[self.heapBase.int].init = WasmInstr(kind: I32Const, i32Const: heapBase)
 
   self.builder.getTable(self.functionRefTableIdx).typ.limits.min = self.functionRefIndices.len.uint32
-  self.builder.addFunctionElements("function pointers", self.functionRefTableIdx, self.functionRefIndices)
+
+  if self.functionRefIndices.len > 0:
+    self.builder.addFunctionElements("function pointers", self.functionRefTableIdx, self.functionRefIndices)
 
   debugf"{self.builder}"
 
