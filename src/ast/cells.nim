@@ -694,7 +694,7 @@ proc buildCellWithCommands(map: NodeCellMap, node: AstNode, owner: AstNode, comm
     let command = commands.commands[i]
     case command.kind
     of CollectionCell:
-      var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: command.uiFlags, flags: command.flags, inline: command.inline)
+      var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: command.uiFlags, shadowText: command.shadowText, flags: command.flags, inline: command.inline)
 
       if currentCollectionCell.isNotNil:
         currentCollectionCell.add cell
@@ -707,14 +707,18 @@ proc buildCellWithCommands(map: NodeCellMap, node: AstNode, owner: AstNode, comm
       currentCollectionCell = stack.pop
 
     of ConstantCell:
-      var cell = ConstantCell(node: owner ?? node, referenceNode: node, text: command.text, flags: command.flags, themeForegroundColors: command.themeForegroundColors, disableEditing: command.disableEditing, disableSelection: command.disableSelection, deleteNeighbor: command.deleteNeighbor)
+      var cell = ConstantCell(node: owner ?? node, referenceNode: node, text: command.text, shadowText: command.shadowText, flags: command.flags,
+        themeForegroundColors: command.themeForegroundColors, themeBackgroundColors: command.themeBackgroundColors,
+        disableEditing: command.disableEditing, disableSelection: command.disableSelection, deleteNeighbor: command.deleteNeighbor)
       if currentCollectionCell.isNotNil:
         currentCollectionCell.add cell
       else:
         return cell
 
     of PropertyCell:
-      var cell = PropertyCell(node: owner ?? node, referenceNode: node, property: command.property, flags: command.flags, themeForegroundColors: command.themeForegroundColors, disableEditing: command.disableEditing, disableSelection: command.disableSelection, deleteNeighbor: command.deleteNeighbor)
+      var cell = PropertyCell(node: owner ?? node, referenceNode: node, property: command.property, shadowText: command.shadowText, flags: command.flags,
+        themeForegroundColors: command.themeForegroundColors, themeBackgroundColors: command.themeBackgroundColors,
+        disableEditing: command.disableEditing, disableSelection: command.disableSelection, deleteNeighbor: command.deleteNeighbor)
       if currentCollectionCell.isNotNil:
         currentCollectionCell.add cell
       else:
@@ -727,7 +731,9 @@ proc buildCellWithCommands(map: NodeCellMap, node: AstNode, owner: AstNode, comm
       discard
 
     of AliasCell:
-      var cell = AliasCell(node: owner ?? node, referenceNode: node, flags: command.flags, themeForegroundColors: command.themeForegroundColors, disableEditing: command.disableEditing, disableSelection: command.disableSelection, deleteNeighbor: command.deleteNeighbor)
+      var cell = AliasCell(node: owner ?? node, referenceNode: node, shadowText: command.shadowText, flags: command.flags,
+        themeForegroundColors: command.themeForegroundColors, themeBackgroundColors: command.themeBackgroundColors,
+        disableEditing: command.disableEditing, disableSelection: command.disableSelection, deleteNeighbor: command.deleteNeighbor)
       if currentCollectionCell.isNotNil:
         currentCollectionCell.add cell
       else:

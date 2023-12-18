@@ -93,15 +93,23 @@ builder.addBuilderFor IdCountZeroOrMore, idNone(), proc(builder: CellBuilder, no
 builder.addBuilderFor IdCountOneOrMore, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   return AliasCell(id: newId().CellId, node: owner ?? node, referenceNode: node, themeForegroundColors: @["keyword"], disableEditing: true)
 
+builder.addBuilderFor IdPropertyTypeBool, idNone(), [CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["keyword"], disableEditing: true)]
+builder.addBuilderFor IdPropertyTypeString, idNone(), [CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["keyword"], disableEditing: true)]
+builder.addBuilderFor IdPropertyTypeNumber, idNone(), [CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["keyword"], disableEditing: true)]
+builder.addBuilderFor IdCountZeroOrOne, idNone(), [CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["keyword"], disableEditing: true)]
+builder.addBuilderFor IdCountOne, idNone(), [CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["keyword"], disableEditing: true)]
+builder.addBuilderFor IdCountZeroOrMore, idNone(), [CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["keyword"], disableEditing: true)]
+builder.addBuilderFor IdCountOneOrMore, idNone(), [CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["keyword"], disableEditing: true)]
+
 builder.addBuilderFor IdClassReference, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   if node.resolveReference(IdClassReferenceTarget).getSome(targetNode):
-    return PropertyCell(id: newId().CellId, node: owner ?? node, referenceNode: targetNode, property: IdINamedName, themeForegroundColors: @["variable", "&editor.foreground"])
+    return PropertyCell(id: newId().CellId, node: owner ?? node, referenceNode: targetNode, property: IdINamedName, themeForegroundColors: @["variable", "&editor.foreground"], disableEditing: true)
   else:
     return PlaceholderCell(id: newId().CellId, node: owner ?? node, referenceNode: node, role: IdClassReferenceTarget, shadowText: "<class>")
 
 builder.addBuilderFor IdRoleReference, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   if node.resolveReference(IdRoleReferenceTarget).getSome(targetNode):
-    return PropertyCell(id: newId().CellId, node: owner ?? node, referenceNode: targetNode, property: IdINamedName, themeForegroundColors: @["variable", "&editor.foreground"])
+    return PropertyCell(id: newId().CellId, node: owner ?? node, referenceNode: targetNode, property: IdINamedName, themeForegroundColors: @["variable", "&editor.foreground"], disableEditing: true)
   else:
     return PlaceholderCell(id: newId().CellId, node: owner ?? node, referenceNode: node, role: IdRoleReferenceTarget, shadowText: "<role>")
 
@@ -111,8 +119,14 @@ builder.addBuilderFor IdPropertyDefinition, idNone(), proc(builder: CellBuilder,
     cell.add PropertyCell(id: newId().CellId, node: owner ?? node, referenceNode: node, property: IdINamedName, themeForegroundColors: @["variable"])
     cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: ":", flags: &{NoSpaceLeft}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
     cell.add builder.buildChildren(map, node, owner, IdPropertyDefinitionType, &{LayoutHorizontal})
-
   return cell
+
+builder.addBuilderFor IdPropertyDefinition, idNone(), [
+  CellBuilderCommand(kind: CollectionCell, uiFlags: &{LayoutHorizontal}),
+  CellBuilderCommand(kind: PropertyCell, property: IdINamedName, themeForegroundColors: @["variable"]),
+  CellBuilderCommand(kind: ConstantCell, text: ":", flags: &{NoSpaceLeft}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true),
+  CellBuilderCommand(kind: Children, childrenRole: IdPropertyDefinitionType, uiFlags: &{LayoutHorizontal}),
+]
 
 builder.addBuilderFor IdReferenceDefinition, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal})
@@ -120,8 +134,14 @@ builder.addBuilderFor IdReferenceDefinition, idNone(), proc(builder: CellBuilder
     cell.add PropertyCell(id: newId().CellId, node: owner ?? node, referenceNode: node, property: IdINamedName, themeForegroundColors: @["variable"])
     cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: ":", flags: &{NoSpaceLeft}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
     cell.add builder.buildChildren(map, node, owner, IdReferenceDefinitionClass, &{LayoutHorizontal})
-
   return cell
+
+builder.addBuilderFor IdReferenceDefinition, idNone(), [
+  CellBuilderCommand(kind: CollectionCell, uiFlags: &{LayoutHorizontal}),
+  CellBuilderCommand(kind: PropertyCell, property: IdINamedName, themeForegroundColors: @["variable"]),
+  CellBuilderCommand(kind: ConstantCell, text: ":", flags: &{NoSpaceLeft}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true),
+  CellBuilderCommand(kind: Children, childrenRole: IdReferenceDefinitionClass, uiFlags: &{LayoutHorizontal}),
+]
 
 builder.addBuilderFor IdChildrenDefinition, idNone(), [
   CellBuilderCommand(kind: CollectionCell, uiFlags: &{LayoutHorizontal}),
@@ -139,17 +159,19 @@ builder.addBuilderFor IdLangRoot, idNone(), proc(builder: CellBuilder, node: Ast
       buildChildrenT(builder, map, node, owner, IdLangRootChildren, &{LayoutVertical}, 0.CellFlags):
         separator: ConstantCell(node: owner ?? node, referenceNode: node, text: "", disableEditing: true, disableSelection: true)
         placeholder: "..."
-
   return cell
 
-# builder.addBuilderFor IdLangAspect, idNone(), [
-#   CellBuilderCommand(kind: ConstantCell, shadowText: "...", themeForegroundColors: @["keyword"], disableEditing: true),
-# ]
+builder.addBuilderFor IdLangRoot, idNone(), [
+  CellBuilderCommand(kind: CollectionCell, uiFlags: &{LayoutVertical}),
+  CellBuilderCommand(kind: Children, childrenRole: IdLangRootChildren, separator: "".some, placeholder: "...".some, uiFlags: &{LayoutVertical}),
+]
 
 builder.addBuilderFor IdLangAspect, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   # return PlaceholderCell(id: newId().CellId, node: owner ?? node, referenceNode: node, role: IdClassReferenceTarget, shadowText: "<class>")
   var cell = ConstantCell(id: newId().CellId, node: owner ?? node, referenceNode: node, shadowText: "...", themeBackgroundColors: @["&inputValidation.errorBackground", "&debugConsole.errorForeground"])
   return cell
+
+builder.addBuilderFor IdLangAspect, idNone(), &{OnlyExactMatch}, [CellBuilderCommand(kind: ConstantCell, shadowText: "...", themeBackgroundColors: @["&inputValidation.errorBackground", "&debugConsole.errorForeground"])]
 
 builder.addBuilderFor IdClassDefinition, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal})
