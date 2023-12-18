@@ -346,6 +346,7 @@ proc newWasmModule*(wasmData: ArrayBuffer, importsOld: seq[WasmImports]): Future
     try:
       res.env = loadWasmEnv(wasmData.buffer, hostProcs=allFunctions, loadAlloc=true, allocName="my_alloc", deallocName="my_dealloc", userdata=cast[pointer](res))
     except CatchableError:
+      log lvlError, fmt"Failed to load wasm binary from array buffer: {getCurrentExceptionMsg()}"
       return WasmModule.none
 
     var imports = @importsOld

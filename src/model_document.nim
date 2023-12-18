@@ -3184,7 +3184,7 @@ proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.
   measureBlock fmt"Create wasm module for '{name}'":
     let module = await newWasmModule(binary.toArrayBuffer, @[imp])
     if module.isNone:
-      log lvlError, "Failed to create wasm module from generated binary for {name}"
+      log lvlError, fmt"Failed to create wasm module from generated binary for {name}: {getCurrentExceptionMsg()}"
       return
 
   if module.get.findFunction($function.get.id, void, proc(): void).getSome(f):
