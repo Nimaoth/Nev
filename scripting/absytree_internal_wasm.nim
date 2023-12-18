@@ -237,6 +237,10 @@ proc editor_model_moveCursorRightCell_void_ModelDocumentEditor_bool_impl(
     self: ModelDocumentEditor; select: bool = false)  {.importc.}
 proc editor_model_selectNode_void_ModelDocumentEditor_bool_impl(
     self: ModelDocumentEditor; select: bool = false)  {.importc.}
+proc editor_model_selectPrevNeighbor_void_ModelDocumentEditor_bool_impl(
+    self: ModelDocumentEditor; select: bool = false)  {.importc.}
+proc editor_model_selectNextNeighbor_void_ModelDocumentEditor_bool_impl(
+    self: ModelDocumentEditor; select: bool = false)  {.importc.}
 proc editor_model_selectPrevPlaceholder_void_ModelDocumentEditor_bool_impl(
     self: ModelDocumentEditor; select: bool = false)  {.importc.}
 proc editor_model_selectNextPlaceholder_void_ModelDocumentEditor_bool_impl(

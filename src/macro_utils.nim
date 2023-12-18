@@ -120,8 +120,9 @@ macro defineBitFlag*(body: untyped): untyped =
 
     macro `&`*(flags: static set[flagName]): flagsName =
       var res = 0.flagsName
-      for flag in flags:
-        res.incl flag
+      for i in low(flagName)..high(flagName):
+        if i in flags:
+          res.incl i
       return genAst(res2 = res.uint32):
         res2.flagsName
 
