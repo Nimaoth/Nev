@@ -46,7 +46,7 @@ typeComputers[loadAppFileClass.id] = proc(ctx: ModelComputationContextBase, node
 
 # scope
 
-let editorLanguage* = newLanguage(IdEditorLanguage, @[
+let editorLanguage* = newLanguage(IdEditorLanguage, "Editor", @[
   loadAppFileClass,
 ], typeComputers, valueComputers, scopeComputers, validationComputers, [base_language.baseLanguage])
 registerBuilder(IdEditorLanguage, builder)

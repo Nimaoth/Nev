@@ -98,6 +98,7 @@ type
   ModelComputationContextBase* = ref object of RootObj
 
   Language* = ref object
+    name* : string
     id {.getter.}: LanguageId
     version {.getter.}: int
     classes {.getter.}: Table[ClassId, NodeClass]
@@ -255,7 +256,7 @@ proc verify*(self: Language): bool =
   result = true
   for c in self.classes.values:
     if c.base.isNotNil:
-      let baseClass = self.resolveClass(c.base.id)
+      let baseClass = c.base
       if baseClass.isNil:
         log(lvlError, fmt"Class {c.name} has unknown base class {c.base.name}")
         result = false
@@ -268,7 +269,7 @@ proc verify*(self: Language): bool =
       log(lvlError, fmt"Class {c.name} is both final and abstract")
       result = false
 
-proc newLanguage*(id: LanguageId, classes: seq[NodeClass],
+proc newLanguage*(id: LanguageId, name: string, classes: seq[NodeClass],
   typeComputers: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode],
   valueComputers: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode],
   scopeComputers: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]],
@@ -278,6 +279,7 @@ proc newLanguage*(id: LanguageId, classes: seq[NodeClass],
   ): Language =
   new result
   result.id = id
+  result.name = name
   result.typeComputers = typeComputers
   result.valueComputers = valueComputers
   result.scopeComputers = scopeComputers
@@ -1219,7 +1221,7 @@ proc loadFromJson*(project: Project, json: JsonNode, opt = Joptions()): bool =
 
   return true
 
-proc loadFromJson*(project: Project, model: Model, workspace: WorkspaceFolder, path: string, json: JsonNode,
+proc loadFromJsonAsync*(model: Model, project: Project, workspace: WorkspaceFolder, path: string, json: JsonNode,
   resolveLanguage: proc(id: LanguageId): Option[Language],
   resolveModel: proc(project: Project, workspace: WorkspaceFolder, id: ModelId): Future[Option[Model]],
   opt = Joptions()): Future[void] {.async.} =
@@ -1247,7 +1249,7 @@ proc loadFromJson*(project: Project, model: Model, workspace: WorkspaceFolder, p
     for modelIdJson in json["models"]:
       let id = modelIdJson.jsonTo ModelId
       model.importedModels.incl id
-      if project.resolveModel(workspace, id).await.getSome(m):
+      if resolveModel(project, workspace, id).await.getSome(m):
         model.addImport(m)
       else:
         log(lvlError, fmt"Unknown model {id}")
@@ -1260,3 +1262,51 @@ proc loadFromJson*(project: Project, model: Model, workspace: WorkspaceFolder, p
         log(lvlError, fmt"Failed to parse root node from json")
   else:
     log(lvlWarn, fmt"Missing root nodes")
+
+proc loadFromJson*(model: Model, path: string, json: JsonNode,
+  resolveLanguage: proc(id: LanguageId): Option[Language],
+  resolveModel: proc(project: Project, id: ModelId): Option[Model],
+  opt = Joptions()): bool =
+  model.path = path
+  if json.kind != JObject:
+    log(lvlError, fmt"Expected JObject")
+    return false
+
+  if json.hasKey("id"):
+    model.id = json["id"].jsonTo ModelId
+  else:
+    log(lvlError, fmt"Missing id")
+    return false
+
+  if json.hasKey("languages"):
+    for languageIdJson in json["languages"]:
+      let id = languageIdJson.jsonTo LanguageId
+      if resolveLanguage(id).getSome(language):
+        model.addLanguage(language)
+      else:
+        log(lvlError, fmt"Unknown language {id}")
+        return false
+  else:
+    log(lvlWarn, fmt"Missing languages")
+
+  if json.hasKey("models"):
+    for modelIdJson in json["models"]:
+      let id = modelIdJson.jsonTo ModelId
+      model.importedModels.incl id
+      if resolveModel(model.project, id).getSome(m):
+        model.addImport(m)
+      else:
+        log(lvlError, fmt"Unknown model {id}")
+        return false
+
+  if json.hasKey("rootNodes"):
+    for node in json["rootNodes"]:
+      if node.jsonToAstNode(model, opt).getSome(node):
+        model.addRootNode(node)
+      else:
+        log(lvlError, fmt"Failed to parse root node from json")
+        return false
+  else:
+    log(lvlWarn, fmt"Missing root nodes")
+
+  return true

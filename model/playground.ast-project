@@ -1,7 +1,8 @@
 {
   "models": {
     "model/array.ast-model": "654fbb281446e19b38225265",
-    "test-language.ast-model": "654fbb281446e19b38225240",
+    "model/test-language.ast-model": "654fbb281446e19b38225240",
+    "model/cell-builder.ast-model": "82ffffff9afd1f08150838c9",
     "model/a.ast-model": "083671ebb3cd003f6c8faaf3",
     "model/aoc_day1.ast-model": "656f7f67d077504f640d8727",
     "model/aoc_day2.ast-model": "656f7f67d077504f640d8728",
