@@ -702,15 +702,15 @@ builder.addBuilderFor nodeReferenceClass.id, idNone(), proc(builder: CellBuilder
     var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal})
     cell.fillChildren = proc(map: NodeCellMap) =
       cell.add ConstantCell(id: newId().CellId, node: owner ?? node, referenceNode: node, text: "<", flags: &{NoSpaceRight}, themeForegroundColors: @["keyword"])
-      cell.add buildReference(map, node, owner, IdNodeReferenceTarget, &{LayoutHorizontal})
+      cell.add map.buildReference(node, owner, IdNodeReferenceTarget)
       cell.add ConstantCell(id: newId().CellId, node: owner ?? node, referenceNode: node, text: ">", flags: &{NoSpaceLeft}, themeForegroundColors: @["keyword"])
     return cell
   else:
-    return ConstantCell(id: newId().CellId, node: owner ?? node, referenceNode: node, text: $node.reference(IdNodeReferenceTarget))
+    return PlaceholderCell(id: newId().CellId, node: owner ?? node, referenceNode: node, role: IdNodeReferenceTarget, shadowText: fmt"<unknown {node.reference(IdNodeReferenceTarget)}>")
 
-# builder.addBuilderFor typeClass.id, idNone(), &{OnlyExactMatch}, proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
-#   var cell = ConstantCell(id: newId().CellId, node: owner ?? node, referenceNode: node, shadowText: "<type>", themeBackgroundColors: @["&inputValidation.errorBackground", "&debugConsole.errorForeground"])
-  # return cell
+builder.addBuilderFor IdNodeReference, idNone(), [
+  CellBuilderCommand(kind: ReferenceCell, referenceRole: IdNodeReferenceTarget, targetProperty: IdINamedName.some, themeForegroundColors: @["variable", "&editor.foreground"], disableEditing: true),
+]
 
 builder.addBuilderFor expressionClass.id, idNone(), &{OnlyExactMatch}, proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = ConstantCell(id: newId().CellId, node: owner ?? node, referenceNode: node, shadowText: "<expr>", themeBackgroundColors: @["&inputValidation.errorBackground", "&debugConsole.errorForeground"])

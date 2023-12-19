@@ -108,11 +108,12 @@ type
       text*: string
 
     of PropertyCell:
-      property*: RoleId
+      propertyRole*: RoleId
 
     of ReferenceCell:
-      role*: RoleId
+      referenceRole*: RoleId
       builderFunc*: CellBuilderFunction
+      targetProperty*: Option[RoleId]
 
     of AliasCell:
       discard
@@ -138,7 +139,7 @@ proc buildChildren*(builder: CellBuilder, map: NodeCellMap, node: AstNode, owner
     separatorFunc: proc(builder: CellBuilder): Cell = nil,
     placeholderFunc: proc(builder: CellBuilder, node: AstNode, owner: AstNode, role: RoleId, flags: CellFlags): Cell = buildDefaultPlaceholder,
     builderFunc: CellBuilderFunction = nil): Cell
-
+proc buildReference*(map: NodeCellMap, node: AstNode, owner: AstNode, role: RoleId, builderFunc: CellBuilderFunction = nil): Cell
 
 proc `$`*(cell: Cell, recurse: bool = false): string = cell.dump(recurse)
 
@@ -716,7 +717,7 @@ proc buildCellWithCommands(map: NodeCellMap, node: AstNode, owner: AstNode, comm
         return cell
 
     of PropertyCell:
-      var cell = PropertyCell(node: owner ?? node, referenceNode: node, property: command.property, shadowText: command.shadowText, flags: command.flags,
+      var cell = PropertyCell(node: owner ?? node, referenceNode: node, property: command.propertyRole, shadowText: command.shadowText, flags: command.flags,
         themeForegroundColors: command.themeForegroundColors, themeBackgroundColors: command.themeBackgroundColors,
         disableEditing: command.disableEditing, disableSelection: command.disableSelection, deleteNeighbor: command.deleteNeighbor)
       if currentCollectionCell.isNotNil:
@@ -725,7 +726,25 @@ proc buildCellWithCommands(map: NodeCellMap, node: AstNode, owner: AstNode, comm
         return cell
 
     of ReferenceCell:
-      discard
+      let cell = if node.resolveReference(command.referenceRole).getSome(targetNode):
+        if command.targetProperty.getSome(targetProperty) and targetNode.hasProperty(targetProperty):
+          PropertyCell(node: owner ?? node, referenceNode: targetNode, property: targetProperty, shadowText: command.shadowText, flags: command.flags,
+            themeForegroundColors: command.themeForegroundColors, themeBackgroundColors: command.themeBackgroundColors,
+            disableEditing: command.disableEditing, disableSelection: command.disableSelection, deleteNeighbor: command.deleteNeighbor)
+        else:
+          var cell = CollectionCell(node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal})
+          cell.fillChildren = proc(map: NodeCellMap) =
+            cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: "<", flags: &{NoSpaceRight})
+            cell.add map.buildCell(targetNode, owner=node)
+            cell.add ConstantCell( node: owner ?? node, referenceNode: node, text: ">", flags: &{NoSpaceLeft})
+          cell
+      else:
+        PlaceholderCell(node: owner ?? node, referenceNode: node, role: command.referenceRole, shadowText: fmt"<unknown {node.reference(command.referenceRole)}>")
+
+      if currentCollectionCell.isNotNil:
+        currentCollectionCell.add cell
+      else:
+        return cell
 
     of PlaceholderCell:
       discard
@@ -750,6 +769,8 @@ proc buildCellWithCommands(map: NodeCellMap, node: AstNode, owner: AstNode, comm
         let text = command.placeholder.get
         placeholder = proc(builder: CellBuilder, node: AstNode, owner: AstNode, role: RoleId, flags: CellFlags): Cell =
           PlaceholderCell(node: owner ?? node, referenceNode: node, role: role, shadowText: text, flags: flags)
+      else:
+        placeholder = buildDefaultPlaceholder
 
       var cell = builder.buildChildren(map, node, owner, command.childrenRole, command.uiFlags, command.flags, customIsVisible=nil, separator, placeholder, builderFunc=nil)
       if currentCollectionCell.isNotNil:
@@ -796,8 +817,7 @@ proc buildCell*(builder: CellBuilder, map: NodeCellMap, node: AstNode, useDefaul
 proc buildDefaultPlaceholder*(builder: CellBuilder, node: AstNode, owner: AstNode, role: RoleId, flags: CellFlags = 0.CellFlags): Cell =
   return PlaceholderCell(id: newId().CellId, node: owner ?? node, referenceNode: node, role: role, flags: flags, shadowText: "...")
 
-proc buildReference*(map: NodeCellMap, node: AstNode, owner: AstNode, role: RoleId, uiFlags: UINodeFlags = 0.UINodeFlags, flags: CellFlags = 0.CellFlags,
-    builderFunc: CellBuilderFunction = nil): Cell =
+proc buildReference*(map: NodeCellMap, node: AstNode, owner: AstNode, role: RoleId, builderFunc: CellBuilderFunction = nil): Cell =
 
   if node.resolveReference(role).getSome(target):
     result = buildCell(map, target, builderFunc=builderFunc, owner=node)
