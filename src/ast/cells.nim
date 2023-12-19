@@ -99,6 +99,7 @@ type
     shadowText*: string
     themeForegroundColors*: seq[string]
     themeBackgroundColors*: seq[string]
+    builderFunc*: CellBuilderFunction
 
     case kind*: CellBuilderCommandKind
     of CollectionCell:
@@ -112,7 +113,6 @@ type
 
     of ReferenceCell:
       referenceRole*: RoleId
-      builderFunc*: CellBuilderFunction
       targetProperty*: Option[RoleId]
 
     of AliasCell:
@@ -772,7 +772,7 @@ proc buildCellWithCommands(map: NodeCellMap, node: AstNode, owner: AstNode, comm
       else:
         placeholder = buildDefaultPlaceholder
 
-      var cell = builder.buildChildren(map, node, owner, command.childrenRole, command.uiFlags, command.flags, customIsVisible=nil, separator, placeholder, builderFunc=nil)
+      var cell = builder.buildChildren(map, node, owner, command.childrenRole, command.uiFlags, command.flags, customIsVisible=nil, separator, placeholder, builderFunc=command.builderFunc)
       if currentCollectionCell.isNotNil:
         currentCollectionCell.add cell
       else:

@@ -187,6 +187,7 @@ let IdStringGetLengthValue* = "654fbb281446e19b38225255".parseId.RoleId
 
 # lang language
 let IdLangLanguage* = "654fbb281446e19b3822523f".parseId.LanguageId
+let IdLangLanguageModel* = "656f7f67d077504f640d8718".parseId.ModelId
 
 let IdLangRoot* = "654fbb281446e19b3822524f".parseId.ClassId
 let IdLangRootChildren* = "654fbb281446e19b38225250".parseId.RoleId
@@ -238,11 +239,21 @@ let IdRoleReferenceTarget* = "654fbb281446e19b3822524e".parseId.RoleId
 
 let IdIRoleDescriptor* = "654fbb281446e19b3822524c".parseId.ClassId
 
+let IdCellLanguage* = "82ffffff9afd1f08150838c9".parseId.LanguageId
+let IdCellBuilderDefinition* = "82ffffff9afd1f08150838f7".parseId.ClassId
+let IdCellBuilderDefinitionClass* = "82ffffff0cfb77255e939d35".parseId.RoleId
+let IdCellBuilderDefinitionCellDefinitions* = "82ffffffb1fee44425c76425".parseId.RoleId
+let IdCellDefinition* = "82ffffffeb36250369ecc38d".parseId.ClassId
+let IdCollectionCellDefinition* = "82ffffffeb36250369ecc453".parseId.ClassId
+let IdHorizontalCellDefinition* = "82ffffffeb36250369ecc6f4".parseId.ClassId
+let IdVerticalCellDefinition* = "82ffffff65d17c4d369b48fc".parseId.ClassId
+let IdConstantCellDefinition* = "82ffffffb1fee44425c73d48".parseId.ClassId
+let IdPropertyCellDefinition* = "82ffffffb1fee44425c74037".parseId.ClassId
+let IdReferenceCellDefinition* = "82ffffffb1fee44425c74370".parseId.ClassId
+let IdChildrenCellDefinition* = "82ffffffb1fee44425c7489e".parseId.ClassId
+
 # new ids
 
-let Id656f7f67d077504f640d86ca* = "656f7f67d077504f640d86ca".parseId
-let Id656f7f67d077504f640d86cb* = "656f7f67d077504f640d86cb".parseId
-let Id656f7f67d077504f640d86cc* = "656f7f67d077504f640d86cc".parseId
 let Id656f7f67d077504f640d86cd* = "656f7f67d077504f640d86cd".parseId
 let Id656f7f67d077504f640d86ce* = "656f7f67d077504f640d86ce".parseId
 let Id656f7f67d077504f640d86cf* = "656f7f67d077504f640d86cf".parseId
@@ -318,9 +329,8 @@ let Id656f7f67d077504f640d8714* = "656f7f67d077504f640d8714".parseId
 let Id656f7f67d077504f640d8715* = "656f7f67d077504f640d8715".parseId
 let Id656f7f67d077504f640d8716* = "656f7f67d077504f640d8716".parseId
 let Id656f7f67d077504f640d8717* = "656f7f67d077504f640d8717".parseId
-let Id656f7f67d077504f640d8718* = "656f7f67d077504f640d8718".parseId
 
-import strformat
-for i in 0..100:
-  let id = newId()
-  echo &"let Id{id}* = \"{id}\".parseId"
+# import strformat
+# for i in 0..100:
+#   let id = newId()
+#   echo &"let Id{id}* = \"{id}\".parseId"

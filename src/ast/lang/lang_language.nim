@@ -291,19 +291,21 @@ proc computeDefaultScope(ctx: ModelComputationContextBase, node: AstNode): seq[A
 
 scopeComputers[IdClassReference] = proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode] =
   debugf"compute scope for class reference {node}"
-  log lvlWarn, "uaie"
   var nodes: seq[AstNode] = @[]
 
   for model in node.model.models:
-    echo "model ", model.id
     for root in model.rootNodes:
-      echo "import root ", root
+      for _, aspect in root.children(IdLangRootChildren):
+        if aspect.class == IdClassDefinition:
+          nodes.add aspect
+
+  for language in node.model.languages:
+    for root in language.model.rootNodes:
       for _, aspect in root.children(IdLangRootChildren):
         if aspect.class == IdClassDefinition:
           nodes.add aspect
 
   for root in node.model.rootNodes:
-    echo "root ", root
     for _, aspect in root.children(IdLangRootChildren):
       if aspect.class == IdClassDefinition:
         nodes.add aspect
@@ -317,6 +319,12 @@ scopeComputers[IdClassDefinition] = proc(ctx: ModelComputationContextBase, node:
   # todo: improve this
   for model in node.model.models:
     for root in model.rootNodes:
+      for _, aspect in root.children(IdLangRootChildren):
+        if aspect.class == IdClassDefinition:
+          nodes.add aspect
+
+  for language in node.model.languages:
+    for root in language.model.rootNodes:
       for _, aspect in root.children(IdLangRootChildren):
         if aspect.class == IdClassDefinition:
           nodes.add aspect
@@ -359,15 +367,6 @@ scopeComputers[IdRoleReference] = proc(ctx: ModelComputationContextBase, node: A
     nodes.add children
 
   return nodes
-
-let langLanguage* = newLanguage(IdLangLanguage, @[
-  langRootClass, langAspectClass,
-  roleDescriptorInterface,
-  propertyTypeClass, propertyTypeBoolClass, propertyTypeStringClass, propertyTypeNumberClass, propertyDefinitionClass, classDefinitionClass,
-  classReferenceClass, roleReferenceClass, referenceDefinitionClass, childrenDefinitionClass,
-  countClass, countZeroOrOneClass, countOneClass, countZeroOrMoreClass, countOneOrMoreClass,
-], typeComputers, valueComputers, scopeComputers, validationComputers)
-registerBuilder(IdLangLanguage, builder)
 
 proc createNodeClassFromLangDefinition*(classMap: var Table[ClassId, NodeClass], def: AstNode): Option[NodeClass] =
   if classMap.contains(def.id.ClassId):
@@ -486,14 +485,16 @@ proc createNodeClassFromLangDefinition*(classMap: var Table[ClassId, NodeClass],
 
   return class.some
 
-proc createLanguageFromNodes*(def: AstNode): Language =
-  log lvlInfo, fmt"createLanguageFromNodes"
+proc createLanguageFromModel*(model: Model): Language =
+  log lvlInfo, fmt"createLanguageFromModel {model.path} ({model.id})"
   var classMap = initTable[ClassId, NodeClass]()
   var classes: seq[NodeClass] = @[]
-  for _, c in def.children(IdLangRootChildren):
-    if c.class == IdClassDefinition:
-      if createNodeClassFromLangDefinition(classMap, c).getSome(class):
-        classes.add class
+
+  for def in model.rootNodes:
+    for _, c in def.children(IdLangRootChildren):
+      if c.class == IdClassDefinition:
+        if createNodeClassFromLangDefinition(classMap, c).getSome(class):
+          classes.add class
 
   var builder = newCellBuilder()
   var typeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]()
@@ -501,7 +502,7 @@ proc createLanguageFromNodes*(def: AstNode): Language =
   var scopeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]]()
   var validationComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): bool]()
 
-  result = newLanguage(def.id.LanguageId, classes, typeComputers, valueComputers, scopeComputers, validationComputers)
+  result = newLanguage(model.id.LanguageId, "", classes, typeComputers, valueComputers, scopeComputers, validationComputers)
 
 proc createNodeFromNodeClass(classes: var Table[ClassId, AstNode], class: NodeClass): AstNode =
   # log lvlInfo, fmt"createNodeFromNodeClass {class.name}"
@@ -592,3 +593,20 @@ proc createNodesForLanguage*(language: Language): AstNode =
   var classes = initTable[ClassId, AstNode]()
   for class in language.classes.values:
     result.add IdLangRootChildren, createNodeFromNodeClass(classes, class)
+
+let langLanguage* = newLanguage(IdLangLanguage, "Language Creation", @[
+  langRootClass, langAspectClass,
+  roleDescriptorInterface,
+  propertyTypeClass, propertyTypeBoolClass, propertyTypeStringClass, propertyTypeNumberClass, propertyDefinitionClass, classDefinitionClass,
+  classReferenceClass, roleReferenceClass, referenceDefinitionClass, childrenDefinitionClass,
+  countClass, countZeroOrOneClass, countOneClass, countZeroOrMoreClass, countOneOrMoreClass,
+], typeComputers, valueComputers, scopeComputers, validationComputers)
+registerBuilder(IdLangLanguage, builder)
+
+# let langLanguageModel = block:
+#   let model = newModel(IdLangLanguageModel)
+#   model.addLanguage(langLanguage)
+#   model.addRootNode createNodesForLanguage(langLanguage)
+#   model
+# langLanguage.model = langLanguageModel
+langLanguage.model.addRootNode createNodesForLanguage(langLanguage)

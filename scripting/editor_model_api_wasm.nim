@@ -1009,9 +1009,9 @@ proc saveProject*(self: ModelDocumentEditor) =
       argsJsonString.cstring)
 
 
-proc editor_model_loadBaseLanguageModel_void_ModelDocumentEditor_wasm(
-    arg: cstring): cstring {.importc.}
-proc loadBaseLanguageModel*(self: ModelDocumentEditor) =
+proc editor_model_loadLanguageModel_void_ModelDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc loadLanguageModel*(self: ModelDocumentEditor) =
   var argsJson = newJArray()
   argsJson.add block:
     when ModelDocumentEditor is JsonNode:
@@ -1019,7 +1019,7 @@ proc loadBaseLanguageModel*(self: ModelDocumentEditor) =
     else:
       self.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_model_loadBaseLanguageModel_void_ModelDocumentEditor_wasm(
+  let res {.used.} = editor_model_loadLanguageModel_void_ModelDocumentEditor_wasm(
       argsJsonString.cstring)
 
 

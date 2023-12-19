@@ -1,4 +1,4 @@
-import std/[strformat, strutils, sugar, tables, options, json, streams, algorithm, sets]
+import std/[strformat, strutils, sugar, tables, options, json, streams, algorithm, sets, sequtils]
 import fusion/matching, bumpy, rect_utils, vmath, fuzzy
 import util, document, document_editor, text/text_document, events, id, ast_ids, scripting/expose, event, input, custom_async, myjsonutils, custom_unicode, delayed_task
 from scripting_api as api import nil
@@ -6,7 +6,7 @@ import custom_logger, timer, array_buffer, config_provider, app_interface, dispa
 import platform/[filesystem, platform]
 import workspaces/[workspace]
 import ast/[model, base_language, editor_language, cells]
-import ast/lang/lang_language
+import ast/lang/[lang_language, cell_language]
 import ui/node
 
 import ast/[generator_wasm, base_language_wasm, editor_language_wasm, model_state, cell_builder_database]
@@ -531,6 +531,8 @@ proc resolveLanguage(id: LanguageId): Option[Language] =
     return editor_language.editorLanguage.some
   elif id == IdLangLanguage:
     return lang_language.langLanguage.some
+  elif id == IdCellLanguage:
+    return cell_language.cellLanguage.some
   else:
     return Language.none
 
@@ -542,7 +544,7 @@ proc loadModelAsync(project: Project, ws: WorkspaceFolder, path: string): Future
   let json = jsonText.parseJson
 
   var model = newModel()
-  await project.loadFromJson(model, ws, path, json, resolveLanguage, resolveModel)
+  await model.loadFromJsonAsync(project, ws, path, json, resolveLanguage, resolveModel)
   if model.id.isNone:
     log lvlError, fmt"Failed to load model: no id"
     return Model.none
@@ -650,8 +652,8 @@ proc getSubstitutionsForClass(self: ModelDocumentEditor, targetCell: Cell, class
 
     let (parent, role, index) = targetCell.getSubstitutionTarget()
 
-    let scope = self.document.ctx.getScope(targetCell.node)
     # debugf"getScope {parent}, {targetCell.node}"
+    let scope = self.document.ctx.getScope(targetCell.node)
     for decl in scope:
       # debugf"scope: {decl}, {decl.nodeClass.isSubclassOf(refClass.id)}"
       if decl.nodeClass.isSubclassOf(refClass.id):
@@ -3305,29 +3307,32 @@ method changed*(self: ModelLanguageSelectorItem, other: SelectorItem): bool =
   let other = other.ModelLanguageSelectorItem
   return self.language.id != other.language.id
 
-proc addLanguage*(self: ModelDocumentEditor) {.expose("editor.model").} =
+proc chooseLanguageFromUser*(self: ModelDocumentEditor, languages: openArray[LanguageId], handleConfirmed: proc(language: Language)) =
+  let languages = @languages
   var popup = self.app.createSelectorPopup().SelectorPopup
   popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
-    # Find everything matching text
-
-    let languages = {IdBaseLanguage: "Base Language", IdEditorLanguage: "Editor Language", IdLangLanguage: "Lang Language"}
-    for (id, name) in languages:
-      if self.document.model.hasLanguage(id):
-        continue
-      let score = fuzzyMatchSmart(text, name)
-      result.add ModelLanguageSelectorItem(language: resolveLanguage(id).get, name: name, score: score)
+    for id in languages:
+      if resolveLanguage(id).getSome(language):
+        let score = fuzzyMatchSmart(text, language.name)
+        result.add ModelLanguageSelectorItem(language: language, name: language.name, score: score)
 
     result.sort((a, b) => cmp(a.score, b.score), Descending)
 
   popup.handleItemConfirmed = proc(item: SelectorItem) =
-    log lvlInfo, fmt"Add language {item.ModelLanguageSelectorItem.name} ({item.ModelLanguageSelectorItem.language.id}) to model {self.document.model.id}"
     let language = item.ModelLanguageSelectorItem.language
-    self.document.model.addLanguage(language)
-    self.document.builder.addBuilder(getBuilder(language.id))
+    handleConfirmed(language)
 
   popup.updateCompletions()
 
   self.app.pushPopup popup
+
+proc addLanguage*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  let languages = [IdBaseLanguage, IdEditorLanguage, IdLangLanguage, IdCellLanguage].filterIt(not self.document.model.hasLanguage(it))
+  self.chooseLanguageFromUser(languages, proc(language: Language) =
+    log lvlInfo, fmt"Add language {language.name} ({language.id}) to model {self.document.model.id}"
+    self.document.model.addLanguage(language)
+    self.document.builder.addBuilder(getBuilder(language.id))
+  )
 
 type ModelImportSelectorItem* = ref object of SelectorItem
   model*: ModelId
@@ -3439,9 +3444,7 @@ proc compileLanguage*(self: ModelDocumentEditor) {.expose("editor.model").} =
   if not self.document.model.hasLanguage(IdLangLanguage):
     return
 
-  for root in self.document.model.rootNodes:
-    let language = createLanguageFromNodes(root)
-    # todo
+  let language = createLanguageFromModel(self.document.model)
 
 proc addRootNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
   var popup = self.app.createSelectorPopup().SelectorPopup
@@ -3480,41 +3483,46 @@ proc saveProject*(self: ModelDocumentEditor) {.expose("editor.model").} =
   else:
     log lvlError, fmt"Failed to save project: no workspace"
 
-proc loadBaseLanguageModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
-  log lvlInfo, fmt"Loading base language model"
-  try:
-    var model = newModel()
-    var root = createNodesForLanguage(base_language.baseLanguage)
-    model.addLanguage(lang_language.langLanguage)
-    model.addRootNode(root)
+proc loadLanguageModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  let languages = [IdBaseLanguage, IdEditorLanguage, IdLangLanguage, IdCellLanguage]
+  self.chooseLanguageFromUser(languages, proc(language: Language) =
+    log lvlInfo, fmt"Loading language model of {language.name} ({language.id})"
 
-    let oldModel = self.document.model
-    self.document.model = model
+    try:
+      var model = newModel()
+      var root = createNodesForLanguage(language)
+      model.addLanguage(lang_language.langLanguage)
+      model.addRootNode(root)
 
-    discard self.document.model.onNodeDeleted.subscribe proc(d: auto) = self.document.handleNodeDeleted(d[0], d[1], d[2], d[3], d[4])
-    discard self.document.model.onNodeInserted.subscribe proc(d: auto) = self.document.handleNodeInserted(d[0], d[1], d[2], d[3], d[4])
-    discard self.document.model.onNodePropertyChanged.subscribe proc(d: auto) = self.document.handleNodePropertyChanged(d[0], d[1], d[2], d[3], d[4], d[5])
-    discard self.document.model.onNodeReferenceChanged.subscribe proc(d: auto) = self.document.handleNodeReferenceChanged(d[0], d[1], d[2], d[3], d[4])
+      let oldModel = self.document.model
+      self.document.model = model
 
-    self.document.builder.clear()
-    for language in self.document.model.languages:
-      self.document.builder.addBuilder(getBuilder(language.id))
+      discard self.document.model.onNodeDeleted.subscribe proc(d: auto) = self.document.handleNodeDeleted(d[0], d[1], d[2], d[3], d[4])
+      discard self.document.model.onNodeInserted.subscribe proc(d: auto) = self.document.handleNodeInserted(d[0], d[1], d[2], d[3], d[4])
+      discard self.document.model.onNodePropertyChanged.subscribe proc(d: auto) = self.document.handleNodePropertyChanged(d[0], d[1], d[2], d[3], d[4], d[5])
+      discard self.document.model.onNodeReferenceChanged.subscribe proc(d: auto) = self.document.handleNodeReferenceChanged(d[0], d[1], d[2], d[3], d[4])
 
-    self.document.undoList.setLen 0
-    self.document.redoList.setLen 0
+      self.document.builder.clear()
+      for language in self.document.model.languages:
+        self.document.builder.addBuilder(getBuilder(language.id))
 
-    functionInstances.clear()
-    structInstances.clear()
-    self.document.ctx.state.clearCache()
+      self.document.undoList.setLen 0
+      self.document.redoList.setLen 0
 
-    self.document.ctx.state.removeModel(oldModel)
-    self.document.ctx.state.addModel(model)
+      functionInstances.clear()
+      structInstances.clear()
+      self.document.ctx.state.clearCache()
 
-  except CatchableError:
-    log lvlError, fmt"Failed to load model source file '{self.document.filename}': {getCurrentExceptionMsg()}"
-    log lvlError, getCurrentException().getStackTrace()
+      self.document.ctx.state.removeModel(oldModel)
+      self.document.ctx.state.addModel(model)
 
-  self.document.onModelChanged.invoke (self.document)
+    except CatchableError:
+      log lvlError, fmt"Failed to load model source file '{self.document.filename}': {getCurrentExceptionMsg()}"
+      log lvlError, getCurrentException().getStackTrace()
+
+    self.document.onModelChanged.invoke (self.document)
+
+  )
 
 proc findDeclaration*(self: ModelDocumentEditor, global: bool) {.expose("editor.model").} =
   var popup = self.app.createSelectorPopup().SelectorPopup
