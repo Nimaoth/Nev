@@ -278,30 +278,30 @@ let assignmentClass* = newNodeClass(IdAssignment, "Assignment", alias="=", base=
 
 var builder = newCellBuilder()
 
-builder.addBuilderFor emptyLineClass.id, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
+builder.addBuilderFor emptyLineClass.id, idNone(), proc(map: NodeCellMap, builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = ConstantCell(id: newId().CellId, node: owner ?? node, referenceNode: node)
   return cell
 
-builder.addBuilderFor emptyClass.id, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
+builder.addBuilderFor emptyClass.id, idNone(), proc(map: NodeCellMap, builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = ConstantCell(id: newId().CellId, node: owner ?? node, referenceNode: node)
   return cell
 
-builder.addBuilderFor numberLiteralClass.id, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
+builder.addBuilderFor numberLiteralClass.id, idNone(), proc(map: NodeCellMap, builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = PropertyCell(id: newId().CellId, node: owner ?? node, referenceNode: node, property: IdIntegerLiteralValue, themeForegroundColors: @["constant.numeric"])
   return cell
 
-builder.addBuilderFor boolLiteralClass.id, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
+builder.addBuilderFor boolLiteralClass.id, idNone(), proc(map: NodeCellMap, builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = PropertyCell(id: newId().CellId, node: owner ?? node, referenceNode: node, property: IdBoolLiteralValue, themeForegroundColors: @["constant.numeric"])
   return cell
 
-builder.addBuilderFor stringLiteralClass.id, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
+builder.addBuilderFor stringLiteralClass.id, idNone(), proc(map: NodeCellMap, builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal})
   cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: "'", style: CellStyle(noSpaceRight: true), disableEditing: true, deleteImmediately: true, themeForegroundColors: @["punctuation.definition.string", "punctuation", "&editor.foreground"])
   cell.add PropertyCell(node: owner ?? node, referenceNode: node, property: IdStringLiteralValue, themeForegroundColors: @["string"])
   cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: "'", style: CellStyle(noSpaceLeft: true), disableEditing: true, deleteImmediately: true, themeForegroundColors: @["punctuation.definition.string", "punctuation", "&editor.foreground"])
   return cell
 
-builder.addBuilderFor nodeListClass.id, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
+builder.addBuilderFor nodeListClass.id, idNone(), proc(map: NodeCellMap, builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutVertical})
   cell.nodeFactory = proc(): AstNode =
     return newAstNode(emptyLineClass)
@@ -309,7 +309,7 @@ builder.addBuilderFor nodeListClass.id, idNone(), proc(builder: CellBuilder, nod
     cell.add builder.buildChildren(map, node, owner, IdNodeListChildren, &{LayoutVertical})
   return cell
 
-builder.addBuilderFor blockClass.id, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
+builder.addBuilderFor blockClass.id, idNone(), proc(map: NodeCellMap, builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutVertical}, flags: &{IndentChildren, OnNewLine})
   cell.nodeFactory = proc(): AstNode =
     return newAstNode(emptyLineClass)
@@ -317,7 +317,7 @@ builder.addBuilderFor blockClass.id, idNone(), proc(builder: CellBuilder, node: 
     cell.add builder.buildChildren(map, node, owner, IdBlockChildren, &{LayoutVertical})
   return cell
 
-builder.addBuilderFor genericTypeClass.id, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
+builder.addBuilderFor genericTypeClass.id, idNone(), proc(map: NodeCellMap, builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
     cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: "generic", themeForegroundColors: @["keyword"], disableEditing: true)
@@ -332,7 +332,7 @@ builder.addBuilderFor genericTypeClass.id, idNone(), proc(builder: CellBuilder, 
 
   return cell
 
-builder.addBuilderFor constDeclClass.id, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
+builder.addBuilderFor constDeclClass.id, idNone(), proc(map: NodeCellMap, builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
     proc isVisible(node: AstNode): bool = node.hasChild(IdConstDeclType)
@@ -349,7 +349,7 @@ builder.addBuilderFor constDeclClass.id, idNone(), proc(builder: CellBuilder, no
         placeholder: PlaceholderCell(id: newId().CellId, node: owner ?? node, referenceNode: node, role: role, shadowText: "...")
   return cell
 
-builder.addBuilderFor letDeclClass.id, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
+builder.addBuilderFor letDeclClass.id, idNone(), proc(map: NodeCellMap, builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
     proc isVisible(node: AstNode): bool = node.hasChild(IdLetDeclType)
@@ -366,7 +366,7 @@ builder.addBuilderFor letDeclClass.id, idNone(), proc(builder: CellBuilder, node
         placeholder: PlaceholderCell(id: newId().CellId, node: owner ?? node, referenceNode: node, role: role, shadowText: "...")
   return cell
 
-builder.addBuilderFor varDeclClass.id, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
+builder.addBuilderFor varDeclClass.id, idNone(), proc(map: NodeCellMap, builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
     proc isTypeVisible(node: AstNode): bool = node.hasChild(IdVarDeclType)
@@ -384,7 +384,7 @@ builder.addBuilderFor varDeclClass.id, idNone(), proc(builder: CellBuilder, node
         placeholder: PlaceholderCell(id: newId().CellId, node: owner ?? node, referenceNode: node, role: role, shadowText: "...")
   return cell
 
-builder.addBuilderFor assignmentClass.id, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
+builder.addBuilderFor assignmentClass.id, idNone(), proc(map: NodeCellMap, builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
     cell.add builder.buildChildren(map, node, owner, IdAssignmentTarget, &{LayoutHorizontal})
@@ -392,7 +392,7 @@ builder.addBuilderFor assignmentClass.id, idNone(), proc(builder: CellBuilder, n
     cell.add builder.buildChildren(map, node, owner, IdAssignmentValue, &{LayoutHorizontal})
   return cell
 
-builder.addBuilderFor parameterDeclClass.id, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
+builder.addBuilderFor parameterDeclClass.id, idNone(), proc(map: NodeCellMap, builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
     proc isVisible(node: AstNode): bool = node.hasChild(IdParameterDeclValue)
@@ -412,7 +412,7 @@ builder.addBuilderFor parameterDeclClass.id, idNone(), proc(builder: CellBuilder
         placeholder: PlaceholderCell(id: newId().CellId, node: owner ?? node, referenceNode: node, role: role, shadowText: "...")
   return cell
 
-builder.addBuilderFor functionDefinitionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
+builder.addBuilderFor functionDefinitionClass.id, idNone(), proc(map: NodeCellMap, builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
     cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: "fn", themeForegroundColors: @["keyword"], disableEditing: true)
@@ -471,7 +471,7 @@ builder.addBuilderFor IdStructMemberAccess, idNone(), [
   CellBuilderCommand(kind: ReferenceCell, referenceRole: IdStructMemberAccessMember, targetProperty: IdINamedName.some, themeForegroundColors: @["variable", "&editor.foreground"], disableEditing: true),
 ]
 
-# builder.addBuilderFor pointerTypeClass.id, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
+# builder.addBuilderFor pointerTypeClass.id, idNone(), proc(map: NodeCellMap, builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
 #   var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal})
 #   cell.fillChildren = proc(map: NodeCellMap) =
 #     cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: "ptr", themeForegroundColors: @["keyword"], disableEditing: true)
@@ -551,7 +551,7 @@ builder.addBuilderFor IdCall, idNone(), [
   CellBuilderCommand(kind: ConstantCell, text: ")", flags: &{NoSpaceLeft}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true),
 ]
 
-builder.addBuilderFor thenCaseClass.id, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
+builder.addBuilderFor thenCaseClass.id, idNone(), proc(map: NodeCellMap, builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
 
@@ -565,7 +565,7 @@ builder.addBuilderFor thenCaseClass.id, idNone(), proc(builder: CellBuilder, nod
 
   return cell
 
-builder.addBuilderFor ifClass.id, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
+builder.addBuilderFor ifClass.id, idNone(), proc(map: NodeCellMap, builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal}, flags: &{DeleteWhenEmpty}, inline: true)
   cell.fillChildren = proc(map: NodeCellMap) =
 
@@ -594,7 +594,7 @@ builder.addBuilderFor IdWhileExpression, idNone(), [
   CellBuilderCommand(kind: Children, childrenRole: IdWhileExpressionBody, uiFlags: &{LayoutHorizontal}),
 ]
 
-proc varDeclNameOnlyBuilder(builder: CellBuilder, node: AstNode, owner: AstNode): Cell = PropertyCell(node: owner ?? node, referenceNode: node, property: IdINamedName)
+proc varDeclNameOnlyBuilder(map: NodeCellMap, builder: CellBuilder, node: AstNode, owner: AstNode): Cell = PropertyCell(node: owner ?? node, referenceNode: node, property: IdINamedName)
 
 builder.addBuilderFor IdForLoop, idNone(), [
   CellBuilderCommand(kind: CollectionCell, uiFlags: &{LayoutHorizontal}),
@@ -630,7 +630,7 @@ builder.addBuilderFor IdExpression, idNone(), &{OnlyExactMatch}, [
   CellBuilderCommand(kind: ConstantCell, shadowText: "<expr>", themeBackgroundColors: @["&inputValidation.errorBackground", "&debugConsole.errorForeground"]),
 ]
 
-builder.addBuilderFor binaryExpressionClass.id, idNone(), proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
+builder.addBuilderFor binaryExpressionClass.id, idNone(), proc(map: NodeCellMap, builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal})
   cell.fillChildren = proc(map: NodeCellMap) =
     let lowerPrecedence = node.parent.isNotNil and node.parent.nodeClass.precedence >= node.nodeClass.precedence

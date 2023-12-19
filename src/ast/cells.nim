@@ -53,7 +53,7 @@ type
     foregroundColor*: Color
     backgroundColor*: Color
 
-  CellBuilderFunction* = proc(builder: CellBuilder, node: AstNode, owner: AstNode): Cell
+  CellBuilderFunction* = proc(map: NodeCellMap, builder: CellBuilder, node: AstNode, owner: AstNode): Cell
 
   CellBuilder* = ref object
     builders*: Table[ClassId, seq[tuple[builderId: Id, impl: CellBuilderFunction, flags: CellBuilderFlags]]]
@@ -87,7 +87,7 @@ type
     discard
 
   CellBuilderCommands* = ref object
-    commands: seq[CellBuilderCommand]
+    commands*: seq[CellBuilderCommand]
 
   CellBuilderCommandKind* {.pure.} = enum CollectionCell, EndCollectionCell, ConstantCell, PropertyCell, AliasCell, ReferenceCell, PlaceholderCell, Children
   CellBuilderCommand* = object
@@ -675,7 +675,8 @@ proc buildCellDefault*(map: NodeCellMap, node: AstNode, useDefaultRecursive: boo
 
   return cell
 
-proc buildCellWithCommands(map: NodeCellMap, node: AstNode, owner: AstNode, commands: CellBuilderCommands, parent: CollectionCell = nil, startIndex: int = 0): Cell =
+proc buildCellWithCommands*(map: NodeCellMap, node: AstNode, owner: AstNode, commands: CellBuilderCommands, parent: CollectionCell = nil, startIndex: int = 0): Cell =
+  assert commands.commands.len > 0
   let builder = map.builder
 
   var stack: seq[CollectionCell] = @[]
@@ -736,7 +737,7 @@ proc buildCellWithCommands(map: NodeCellMap, node: AstNode, owner: AstNode, comm
           cell.fillChildren = proc(map: NodeCellMap) =
             cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: "<", flags: &{NoSpaceRight})
             cell.add map.buildCell(targetNode, owner=node)
-            cell.add ConstantCell( node: owner ?? node, referenceNode: node, text: ">", flags: &{NoSpaceLeft})
+            cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: ">", flags: &{NoSpaceLeft})
           cell
       else:
         PlaceholderCell(node: owner ?? node, referenceNode: node, role: command.referenceRole, shadowText: fmt"<unknown {node.reference(command.referenceRole)}>")
@@ -779,27 +780,26 @@ proc buildCellWithCommands(map: NodeCellMap, node: AstNode, owner: AstNode, comm
         return cell
 
 proc buildCell*(map: NodeCellMap, node: AstNode, useDefault: bool = false, builderFunc: CellBuilderFunction = nil, owner: AstNode = nil): Cell =
-  let builder = map.builder
   let class = node.nodeClass
   if class.isNil:
     debugf"Unknown class {node.class} for node {node}"
     return EmptyCell(node: node, referenceNode: node)
 
   # echo fmt"build {node}"
-  let useDefault = builder.forceDefault or useDefault
+  let useDefault = map.builder.forceDefault or useDefault
 
   block blk:
     if not useDefault:
       if builderFunc.isNotNil:
-        result = builderFunc(map.builder, node, owner)
+        result = builderFunc(map, map.builder, node, owner)
         break blk
 
-      if builder.findBuilder2(class, idNone()).isNotNil(commands):
+      if map.builder.findBuilder2(class, idNone()).isNotNil(commands) and commands.commands.len > 0:
         result = map.buildCellWithCommands(node, owner, commands)
         break blk
 
-      if builder.findBuilder(class, idNone()).isNotNil(builderFunc):
-        result = builderFunc(builder, node, owner)
+      if map.builder.findBuilder(class, idNone()).isNotNil(builderFunc):
+        result = builderFunc(map, map.builder, node, owner)
         break blk
 
     if not useDefault:
