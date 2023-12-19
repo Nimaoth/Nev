@@ -239,18 +239,46 @@ let IdRoleReferenceTarget* = "654fbb281446e19b3822524e".parseId.RoleId
 
 let IdIRoleDescriptor* = "654fbb281446e19b3822524c".parseId.ClassId
 
+# cell language
+
 let IdCellLanguage* = "82ffffff9afd1f08150838c9".parseId.LanguageId
 let IdCellBuilderDefinition* = "82ffffff9afd1f08150838f7".parseId.ClassId
 let IdCellBuilderDefinitionClass* = "82ffffff0cfb77255e939d35".parseId.RoleId
 let IdCellBuilderDefinitionCellDefinitions* = "82ffffffb1fee44425c76425".parseId.RoleId
 let IdCellDefinition* = "82ffffffeb36250369ecc38d".parseId.ClassId
+let IdCellDefinitionCellFlags* = "83ffffff2ff1f3327cb46f5e".parseId.RoleId
+let IdCellDefinitionForegroundColor* = "84ffffff2644c27942bd33c5".parseId.RoleId
+let IdCellDefinitionBackgroundColor* = "84ffffff2644c27942bd3ad1".parseId.RoleId
+let IdCellDefinitionShadowText* = "83ffffff5072ba5455ab0899".parseId.RoleId
 let IdCollectionCellDefinition* = "82ffffffeb36250369ecc453".parseId.ClassId
+let IdCollectionCellDefinitionChildren* = "82ffffffb1fee44425c74de5".parseId.RoleId
 let IdHorizontalCellDefinition* = "82ffffffeb36250369ecc6f4".parseId.ClassId
 let IdVerticalCellDefinition* = "82ffffff65d17c4d369b48fc".parseId.ClassId
 let IdConstantCellDefinition* = "82ffffffb1fee44425c73d48".parseId.ClassId
+let IdConstantCellDefinitionText* = "82ffffffb1fee44425c74b10".parseId.RoleId
 let IdPropertyCellDefinition* = "82ffffffb1fee44425c74037".parseId.ClassId
+let IdPropertyCellDefinitionRole* = "83ffffff7b692e136c254962".parseId.RoleId
 let IdReferenceCellDefinition* = "82ffffffb1fee44425c74370".parseId.ClassId
+let IdReferenceCellDefinitionRole* = "83ffffff6502967277395168".parseId.RoleId
 let IdChildrenCellDefinition* = "82ffffffb1fee44425c7489e".parseId.ClassId
+let IdChildrenCellDefinitionRole* = "83ffffff65029672773954de".parseId.RoleId
+let IdAliasCellDefinition* = "83ffffffd56370322839bd98".parseId.ClassId
+
+let IdColorDefinition* = "84ffffff2644c27942bd1b3d".parseId.ClassId
+let IdColorDefinitionText* = "84ffffff2644c27942bd1ed1".parseId.ClassId
+let IdColorDefinitionTextScope* = "84ffffff2644c27942bd2283".parseId.RoleId
+
+let IdCellFlag* = "83ffffff2ff1f3327cb4690a".parseId.ClassId
+let IdCellFlagDeleteWhenEmpty* = "83ffffff2ff1f3327cb46bf6".parseId.ClassId
+let IdCellFlagOnNewLine* = "83ffffff30ca3e3e3f8f79a5".parseId.ClassId
+let IdCellFlagIndentChildren* = "83ffffff30ca3e3e3f8f7c46".parseId.ClassId
+let IdCellFlagNoSpaceLeft* = "83ffffff30ca3e3e3f8f7f2d".parseId.ClassId
+let IdCellFlagNoSpaceRight* = "83ffffff30ca3e3e3f8f825a".parseId.ClassId
+let IdCellFlagVertical* = "83ffffffa9e6fd006c2f6ac4".parseId.ClassId
+let IdCellFlagHorizontal* = "83ffffffa9e6fd006c2f7076".parseId.ClassId
+let IdCellFlagDisableEditing* = "83ffffff0fe70c0b7dabe774".parseId.ClassId
+let IdCellFlagDisableSelection* = "83ffffff0fe70c0b7dabeb0c".parseId.ClassId
+let IdCellFlagDeleteNeighbor* = "83ffffff0fe70c0b7dabff35".parseId.ClassId
 
 # new ids
 

@@ -257,6 +257,14 @@ proc handleNodeInserted(self: ModelDocument, model: Model, parent: AstNode, chil
 proc handleNodePropertyChanged(self: ModelDocument, model: Model, node: AstNode, role: RoleId, oldValue: PropertyValue, newValue: PropertyValue, slice: Slice[int])
 proc handleNodeReferenceChanged(self: ModelDocument, model: Model, node: AstNode, role: RoleId, oldRef: NodeId, newRef: NodeId)
 
+var dynamicLanguages = initTable[LanguageId, Language]()
+
+proc getAllAvailableLanguages*(): seq[LanguageId] =
+  let l = collect(newSeq):
+    for languageId in dynamicLanguages.keys:
+      languageId
+  return @[IdBaseLanguage, IdEditorLanguage, IdLangLanguage, IdCellLanguage] & l
+
 method `$`*(document: ModelDocument): string =
   return document.filename
 
@@ -524,7 +532,9 @@ proc handleNodeReferenceChanged(self: ModelDocument, model: Model, node: AstNode
   self.currentTransaction.operations.add ModelOperation(kind: ReferenceChange, node: node, role: role, id: oldRef)
   self.ctx.state.updateNode(node)
 
-proc resolveLanguage(id: LanguageId): Option[Language] =
+proc loadModelAsync(project: Project, ws: WorkspaceFolder, path: string): Future[Option[Model]] {.async.}
+
+proc resolveLanguage(project: Project, ws: WorkspaceFolder, id: LanguageId): Future[Option[Language]] {.async.} =
   if id == IdBaseLanguage:
     return base_language.baseLanguage.some
   elif id == IdEditorLanguage:
@@ -533,6 +543,18 @@ proc resolveLanguage(id: LanguageId): Option[Language] =
     return lang_language.langLanguage.some
   elif id == IdCellLanguage:
     return cell_language.cellLanguage.some
+  elif dynamicLanguages.contains(id):
+    return dynamicLanguages[id].some
+  elif project.modelPaths.contains(id.ModelId):
+    let languageModel = project.loadModelAsync(ws, project.modelPaths[id.ModelId]).await.getOr:
+      return Language.none
+
+    if not languageModel.hasLanguage(IdLangLanguage):
+      return Language.none
+
+    let language = createLanguageFromModel(languageModel)
+    dynamicLanguages[language.id] = language
+    return language.some
   else:
     return Language.none
 
@@ -729,7 +751,7 @@ proc refilterCompletions(self: ModelDocumentEditor) =
         self.filteredCompletions.add completion
         continue
 
-    if completion.name.startsWith(prefix):
+    if completion.name.toLower.startsWith(prefix.toLower):
       self.filteredCompletions.add completion
       continue
 
@@ -1607,6 +1629,7 @@ proc getFirstEditableCellOfNode*(self: ModelDocumentEditor, node: AstNode): Opti
   # debugf"getFirstEditableCellOfNode {node}"
   var nodeCell = self.nodeCellMap.cell(node)
   if nodeCell.isNil:
+    log lvlError, fmt"nodeCell is nil"
     return
 
   nodeCell = nodeCell.getFirstLeaf(self.nodeCellMap)
@@ -1625,6 +1648,8 @@ proc getFirstEditableCellOfNode*(self: ModelDocumentEditor, node: AstNode): Opti
   if nodeCell.getSelfOrNextLeafWhere(self.nodeCellMap, (n) => isVisible(n) and not n.disableSelection).getSome(targetCell):
     # debugf"a: visible descendant {targetCell}"
     return self.nodeCellMap.toCursor(targetCell, true).some
+
+  log lvlError, fmt"no editable cell found"
 
 proc getFirstSelectableCellOfNode*(self: ModelDocumentEditor, node: AstNode): Option[CellCursor] =
   result = CellCursor.none
@@ -2486,10 +2511,8 @@ proc deleteOrReplace*(self: ModelDocumentEditor, direction: Direction, replace: 
 
         var targetNode = parentCell.node
 
-        if DeleteWhenEmpty in parentCell.parent.flags and parentCell.parent.len == 1: # Selected only child of parent:
+        if parentCell.parent.isNotNil and DeleteWhenEmpty in parentCell.parent.flags and parentCell.parent.len == 1: # Selected only child of parent:
           targetNode = parentCell.parent.node
-
-        let targetParentNode = targetNode.parent
 
         if replace and targetNode.replaceWithDefault().getSome(newNode):
           self.rebuildCells()
@@ -2497,10 +2520,14 @@ proc deleteOrReplace*(self: ModelDocumentEditor, direction: Direction, replace: 
         elif not replace and targetNode.deleteOrReplaceWithDefault().getSome(newNode):
           self.rebuildCells()
           self.cursor = self.getFirstEditableCellOfNode(newNode).get
-        else:
+        elif targetNode.parent.isNotNil:
+          let targetParentNode = targetNode.parent
           self.rebuildCells()
           if self.getFirstEditableCellOfNode(targetParentNode).getSome(c):
             self.cursor = c
+        else:
+          log lvlError, fmt"Failed to delete node {targetNode}"
+          return
 
       else: # some children of parent cell selected
         var nodesToDelete: seq[AstNode]
@@ -3310,13 +3337,15 @@ method changed*(self: ModelLanguageSelectorItem, other: SelectorItem): bool =
 proc chooseLanguageFromUser*(self: ModelDocumentEditor, languages: openArray[LanguageId], handleConfirmed: proc(language: Language)) =
   let languages = @languages
   var popup = self.app.createSelectorPopup().SelectorPopup
-  popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
+  popup.getCompletionsAsync = proc(popup: SelectorPopup, text: string): Future[seq[SelectorItem]] {.async.} =
+    var items = newSeq[SelectorItem]()
     for id in languages:
-      if resolveLanguage(id).getSome(language):
+      if resolveLanguage(self.document.model.project, self.document.workspace.get, id).await.getSome(language):
         let score = fuzzyMatchSmart(text, language.name)
-        result.add ModelLanguageSelectorItem(language: language, name: language.name, score: score)
+        items.add ModelLanguageSelectorItem(language: language, name: language.name, score: score)
 
-    result.sort((a, b) => cmp(a.score, b.score), Descending)
+    items.sort((a, b) => cmp(a.score, b.score), Descending)
+    return items
 
   popup.handleItemConfirmed = proc(item: SelectorItem) =
     let language = item.ModelLanguageSelectorItem.language
@@ -3327,7 +3356,7 @@ proc chooseLanguageFromUser*(self: ModelDocumentEditor, languages: openArray[Lan
   self.app.pushPopup popup
 
 proc addLanguage*(self: ModelDocumentEditor) {.expose("editor.model").} =
-  let languages = [IdBaseLanguage, IdEditorLanguage, IdLangLanguage, IdCellLanguage].filterIt(not self.document.model.hasLanguage(it))
+  let languages = getAllAvailableLanguages().filterIt(not self.document.model.hasLanguage(it))
   self.chooseLanguageFromUser(languages, proc(language: Language) =
     log lvlInfo, fmt"Add language {language.name} ({language.id}) to model {self.document.model.id}"
     self.document.model.addLanguage(language)
@@ -3445,6 +3474,7 @@ proc compileLanguage*(self: ModelDocumentEditor) {.expose("editor.model").} =
     return
 
   let language = createLanguageFromModel(self.document.model)
+  dynamicLanguages[language.id] = language
 
 proc addRootNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
   var popup = self.app.createSelectorPopup().SelectorPopup
@@ -3484,7 +3514,7 @@ proc saveProject*(self: ModelDocumentEditor) {.expose("editor.model").} =
     log lvlError, fmt"Failed to save project: no workspace"
 
 proc loadLanguageModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
-  let languages = [IdBaseLanguage, IdEditorLanguage, IdLangLanguage, IdCellLanguage]
+  let languages = getAllAvailableLanguages()
   self.chooseLanguageFromUser(languages, proc(language: Language) =
     log lvlInfo, fmt"Loading language model of {language.name} ({language.id})"
 

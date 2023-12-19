@@ -1222,7 +1222,7 @@ proc loadFromJson*(project: Project, json: JsonNode, opt = Joptions()): bool =
   return true
 
 proc loadFromJsonAsync*(model: Model, project: Project, workspace: WorkspaceFolder, path: string, json: JsonNode,
-  resolveLanguage: proc(id: LanguageId): Option[Language],
+  resolveLanguage: proc(project: Project, workspace: WorkspaceFolder, id: LanguageId): Future[Option[Language]],
   resolveModel: proc(project: Project, workspace: WorkspaceFolder, id: ModelId): Future[Option[Model]],
   opt = Joptions()): Future[void] {.async.} =
   model.path = path
@@ -1238,7 +1238,7 @@ proc loadFromJsonAsync*(model: Model, project: Project, workspace: WorkspaceFold
   if json.hasKey("languages"):
     for languageIdJson in json["languages"]:
       let id = languageIdJson.jsonTo LanguageId
-      if resolveLanguage(id).getSome(language):
+      if resolveLanguage(project, workspace, id).await.getSome(language):
         model.addLanguage(language)
       else:
         log(lvlError, fmt"Unknown language {id}")
