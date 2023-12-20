@@ -2,6 +2,7 @@ import id, ast/model
 
 # base language
 
+let IdBaseInterfaces* = "656f7f67d077504f640d8716".parseId.LanguageId
 let IdBaseLanguage* = "62e53399564d29f77293450e".parseId.LanguageId
 
 let IdPrint* = "62e53396564d29f7729344f7".parseId.ClassId
@@ -203,6 +204,7 @@ let IdClassDefinitionBaseClass* = "654fbb281446e19b38225237".parseId.RoleId
 let IdClassDefinitionInterfaces* = "654fbb281446e19b3822523a".parseId.RoleId
 let IdClassDefinitionAlias* = "654fbb281446e19b38225238".parseId.RoleId
 let IdClassDefinitionSubstitutionProperty* = "654fbb281446e19b38225249".parseId.RoleId
+let IdClassDefinitionSubstitutionReference* = "656f7f67d077504f640d8717".parseId.RoleId
 let IdClassDefinitionPrecedence* = "654fbb281446e19b3822524a".parseId.RoleId
 
 let IdClassDefinitionProperties* = "654fbb281446e19b3822522b".parseId.RoleId
@@ -260,6 +262,7 @@ let IdPropertyCellDefinition* = "82ffffffb1fee44425c74037".parseId.ClassId
 let IdPropertyCellDefinitionRole* = "83ffffff7b692e136c254962".parseId.RoleId
 let IdReferenceCellDefinition* = "82ffffffb1fee44425c74370".parseId.ClassId
 let IdReferenceCellDefinitionRole* = "83ffffff6502967277395168".parseId.RoleId
+let IdReferenceCellDefinitionTargetProperty* = "84ffffff8ded04333b862793".parseId.RoleId
 let IdChildrenCellDefinition* = "82ffffffb1fee44425c7489e".parseId.ClassId
 let IdChildrenCellDefinitionRole* = "83ffffff65029672773954de".parseId.RoleId
 let IdAliasCellDefinition* = "83ffffffd56370322839bd98".parseId.ClassId
@@ -355,8 +358,6 @@ let Id656f7f67d077504f640d8712* = "656f7f67d077504f640d8712".parseId
 let Id656f7f67d077504f640d8713* = "656f7f67d077504f640d8713".parseId
 let Id656f7f67d077504f640d8714* = "656f7f67d077504f640d8714".parseId
 let Id656f7f67d077504f640d8715* = "656f7f67d077504f640d8715".parseId
-let Id656f7f67d077504f640d8716* = "656f7f67d077504f640d8716".parseId
-let Id656f7f67d077504f640d8717* = "656f7f67d077504f640d8717".parseId
 
 # import strformat
 # for i in 0..100:

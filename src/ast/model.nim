@@ -270,10 +270,10 @@ proc verify*(self: Language): bool =
       result = false
 
 proc newLanguage*(id: LanguageId, name: string, classes: seq[NodeClass],
-  typeComputers: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode],
-  valueComputers: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode],
-  scopeComputers: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]],
-  validationComputers: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): bool],
+  typeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode](),
+  valueComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode](),
+  scopeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]](),
+  validationComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): bool](),
   baseLanguages: openArray[Language] = [],
   rootNodes: openArray[AstNode] = [],
   ): Language =

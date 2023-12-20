@@ -68,7 +68,8 @@ let classDefinitionClass* = newNodeClass(IdClassDefinition, "ClassDefinition", a
     NodeChildDescription(id: IdClassDefinitionReferences, role: "references", class: IdReferenceDefinition, count: ChildCount.ZeroOrMore),
     NodeChildDescription(id: IdClassDefinitionChildren, role: "children", class: IdChildrenDefinition, count: ChildCount.ZeroOrMore),
     NodeChildDescription(id: IdClassDefinitionSubstitutionProperty, role: "substitution property", class: IdRoleReference, count: ChildCount.ZeroOrOne),
-    ])
+    NodeChildDescription(id: IdClassDefinitionSubstitutionReference, role: "substitution reference", class: IdRoleReference, count: ChildCount.ZeroOrOne),
+  ])
 
 var builder = newCellBuilder()
 
@@ -254,6 +255,14 @@ builder.addBuilderFor IdClassDefinition, idNone(), proc(map: NodeCellMap, builde
             placeholder: "<role>"
         sub
 
+      vertCell.add block:
+        var sub = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal})
+        sub.add ConstantCell(node: owner ?? node, referenceNode: node, text: "substitution reference:", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true)
+        sub.add block:
+          buildChildrenT(builder, map, node, owner, IdClassDefinitionSubstitutionReference, &{LayoutVertical}, &{OnNewLine, IndentChildren}):
+            placeholder: "<role>"
+        sub
+
     cell.add vertCell
     cell.add ConstantCell(node: owner ?? node, referenceNode: node, text: "}", themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true, flags: &{OnNewLine})
 
@@ -299,6 +308,9 @@ scopeComputers[IdClassReference] = proc(ctx: ModelComputationContextBase, node: 
         if aspect.class == IdClassDefinition:
           nodes.add aspect
 
+  # todo: I want to be able to reference RoleReference in cell-builder.ast-model, which is only in the language model so far.
+  # Maybe move role reference to a separate model?
+  # With this I can also referene stuff from the lang language model in e.g. the test language, which shouldn't be possible
   for language in node.model.languages:
     for root in language.model.rootNodes:
       for _, aspect in root.children(IdLangRootChildren):
@@ -316,13 +328,15 @@ scopeComputers[IdClassDefinition] = proc(ctx: ModelComputationContextBase, node:
   debugf"compute scope for class definition {node}"
   var nodes: seq[AstNode] = @[]
 
-  # todo: improve this
   for model in node.model.models:
     for root in model.rootNodes:
       for _, aspect in root.children(IdLangRootChildren):
         if aspect.class == IdClassDefinition:
           nodes.add aspect
 
+  # todo: I want to be able to reference RoleReference in cell-builder.ast-model, which is only in the language model so far.
+  # Maybe move role reference to a separate model?
+  # With this I can also referene stuff from the lang language model in e.g. the test language, which shouldn't be possible
   for language in node.model.languages:
     for root in language.model.rootNodes:
       for _, aspect in root.children(IdLangRootChildren):
@@ -345,9 +359,50 @@ scopeComputers[IdClassDefinition] = proc(ctx: ModelComputationContextBase, node:
 
   return nodes
 
+proc collectRoles(classNode: AstNode, nodes: var seq[AstNode]) =
+  # echo fmt"collectRoles: {classNode.dump(recurse=true)}"
+  for _, prop in classNode.children(IdClassDefinitionProperties):
+    # echo fmt"{classNode}: {prop}"
+    nodes.add prop
+
+  for _, reference in classNode.children(IdClassDefinitionReferences):
+    nodes.add reference
+
+  for _, children in classNode.children(IdClassDefinitionChildren):
+    nodes.add children
+
+  if classNode.firstChild(IdClassDefinitionBaseClass).getSome(baseClassReference):
+    if baseClassReference.resolveReference(IdClassReferenceTarget).getSome(baseClassNode):
+      collectRoles(baseClassNode, nodes)
+
+  for _, interfaceReference in classNode.children(IdClassDefinitionInterfaces):
+    if interfaceReference.resolveReference(IdClassReferenceTarget).getSome(baseClassNode):
+      collectRoles(baseClassNode, nodes)
+
 scopeComputers[IdRoleReference] = proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode] =
   debugf"compute scope for role reference {node}"
   var nodes: seq[AstNode] = @[]
+
+  if node.role == IdReferenceCellDefinitionTargetProperty:
+    let referenceCellNode = node.parent
+    let referenceRoleNode = referenceCellNode.firstChild(IdReferenceCellDefinitionRole).getOr:
+      return @[]
+
+    let referenceRole = referenceRoleNode.resolveReference(IdRoleReferenceTarget).getOr:
+      return @[]
+
+    # debugf"referenceRole: {referenceRole}"
+
+    let classReferenceNode = referenceRole.firstChild(IdReferenceDefinitionClass).getOr:
+      return @[]
+
+    # debugf"classReferenceNode: {classReferenceNode}"
+    let classNode = classReferenceNode.resolveReference(IdClassReferenceTarget).getOr:
+      return @[]
+
+    # debugf"classNode: {classNode.dump(recurse=true)}"
+    collectRoles(classNode, nodes)
+    return nodes
 
   # todo: improve this
   var parent = node.parent
@@ -368,14 +423,7 @@ scopeComputers[IdRoleReference] = proc(ctx: ModelComputationContextBase, node: A
   if classNode.isNil:
     return nodes
 
-  for _, prop in classNode.children(IdClassDefinitionProperties):
-    nodes.add prop
-
-  for _, reference in classNode.children(IdClassDefinitionReferences):
-    nodes.add reference
-
-  for _, children in classNode.children(IdClassDefinitionChildren):
-    nodes.add children
+  collectRoles(classNode, nodes)
 
   return nodes
 
@@ -403,10 +451,15 @@ proc createNodeClassFromLangDefinition*(classMap: var Table[ClassId, NodeClass],
   else:
     RoleId.none
 
+  let substitutionReference = if def.firstChild(IdClassDefinitionSubstitutionReference).getSome(substitutionReference):
+    substitutionReference.reference(IdRoleReferenceTarget).RoleId.some
+  else:
+    RoleId.none
+
   # use node id of the class definition node as class id
   var class = newNodeClass(def.id.ClassId, name, alias=alias,
     isAbstract=isAbstract, isInterface=isInterface, isFinal=isFinal, canBeRoot=canBeRoot,
-    substitutionProperty=substitutionProperty, precedence=precedence)
+    substitutionProperty=substitutionProperty, substitutionReference=substitutionReference, precedence=precedence)
   classMap[def.id.ClassId] = class
 
   for _, prop in def.children(IdClassDefinitionProperties):
@@ -559,10 +612,13 @@ proc createCellBuilderCommandFromDefinition(builder: CellBuilder, def: AstNode, 
       themeForegroundColors: foregroundColors, themeBackgroundColors: backgroundColors)
 
   elif def.class == IdReferenceCellDefinition:
+    let targetProperty = def.firstChild(IdReferenceCellDefinitionTargetProperty).mapIt(it.reference(IdRoleReferenceTarget).RoleId)
+
     if def.firstChild(IdReferenceCellDefinitionRole).getSome(referenceRoleNode):
       let referenceRole = referenceRoleNode.reference(IdRoleReferenceTarget).RoleId
-      commands.add CellBuilderCommand(kind: ReferenceCell, referenceRole: referenceRole, uiFlags: uiFlags, flags: cellFlags, shadowText: shadowText, disableEditing: disableEditing, disableSelection: disableSelection, deleteNeighbor: deleteNeighbor,
-      themeForegroundColors: foregroundColors, themeBackgroundColors: backgroundColors)
+      commands.add CellBuilderCommand(kind: ReferenceCell, referenceRole: referenceRole, targetProperty: targetProperty, uiFlags: uiFlags, flags: cellFlags, shadowText: shadowText,
+        disableEditing: disableEditing, disableSelection: disableSelection, deleteNeighbor: deleteNeighbor,
+        themeForegroundColors: foregroundColors, themeBackgroundColors: backgroundColors)
     else:
       log lvlError, fmt"Missing role for property definition: {def}"
 
@@ -570,7 +626,7 @@ proc createCellBuilderCommandFromDefinition(builder: CellBuilder, def: AstNode, 
     if def.firstChild(IdPropertyCellDefinitionRole).getSome(propertyRoleNode):
       let propertyRole = propertyRoleNode.reference(IdRoleReferenceTarget).RoleId
       commands.add CellBuilderCommand(kind: PropertyCell, propertyRole: propertyRole, uiFlags: uiFlags, flags: cellFlags, shadowText: shadowText, disableEditing: disableEditing, disableSelection: disableSelection, deleteNeighbor: deleteNeighbor,
-      themeForegroundColors: foregroundColors, themeBackgroundColors: backgroundColors)
+        themeForegroundColors: foregroundColors, themeBackgroundColors: backgroundColors)
     else:
       log lvlError, fmt"Missing role for property definition: {def}"
 
@@ -578,7 +634,7 @@ proc createCellBuilderCommandFromDefinition(builder: CellBuilder, def: AstNode, 
     if def.firstChild(IdChildrenCellDefinitionRole).getSome(childRoleNode):
       let childRole = childRoleNode.reference(IdRoleReferenceTarget).RoleId
       commands.add CellBuilderCommand(kind: Children, childrenRole: childRole, uiFlags: uiFlags, flags: cellFlags, shadowText: shadowText, disableEditing: disableEditing, disableSelection: disableSelection, deleteNeighbor: deleteNeighbor,
-      themeForegroundColors: foregroundColors, themeBackgroundColors: backgroundColors)
+        themeForegroundColors: foregroundColors, themeBackgroundColors: backgroundColors)
     else:
       log lvlError, fmt"Missing role for children definition: {def}"
 
@@ -647,6 +703,11 @@ proc createNodeFromNodeClass(classes: var Table[ClassId, AstNode], class: NodeCl
     roleReference.setReference(IdRoleReferenceTarget, property.NodeId)
     result.add(IdClassDefinitionSubstitutionProperty, roleReference)
 
+  if class.substitutionReference.getSome(property):
+    var roleReference = newAstNode(roleReferenceClass)
+    roleReference.setReference(IdRoleReferenceTarget, property.NodeId)
+    result.add(IdClassDefinitionSubstitutionReference, roleReference)
+
   for property in class.properties:
     var propertyNode = newAstNode(propertyDefinitionClass, property.id.NodeId.some)
     propertyNode.setProperty(IdINamedName, PropertyValue(kind: String, stringValue: property.role))
@@ -700,13 +761,6 @@ proc createNodeFromNodeClass(classes: var Table[ClassId, AstNode], class: NodeCl
 
   # debugf"node {result.dump(recurse=true)}"
 
-proc createNodesForLanguage*(language: Language): AstNode =
-  result = newAstNode(langRootClass)
-
-  var classes = initTable[ClassId, AstNode]()
-  for class in language.classes.values:
-    result.add IdLangRootChildren, createNodeFromNodeClass(classes, class)
-
 let langLanguage* = newLanguage(IdLangLanguage, "Language Creation", @[
   langRootClass, langAspectClass,
   roleDescriptorInterface,
@@ -716,10 +770,23 @@ let langLanguage* = newLanguage(IdLangLanguage, "Language Creation", @[
 ], typeComputers, valueComputers, scopeComputers, validationComputers)
 registerBuilder(IdLangLanguage, builder)
 
+proc createModelForLanguage*(language: Language): Model =
+  result = newModel(language.id.ModelId)
+  result.addLanguage(langLanguage)
+
+  let root = newAstNode(langRootClass)
+  var classes = initTable[ClassId, AstNode]()
+  for class in language.classes.values:
+    root.add IdLangRootChildren, createNodeFromNodeClass(classes, class)
+
+  result.addRootNode(root)
+
 # let langLanguageModel = block:
 #   let model = newModel(IdLangLanguageModel)
 #   model.addLanguage(langLanguage)
-#   model.addRootNode createNodesForLanguage(langLanguage)
+#   model.addRootNode createModelForLanguage(langLanguage)
 #   model
 # langLanguage.model = langLanguageModel
-langLanguage.model.addRootNode createNodesForLanguage(langLanguage)
+langLanguage.model.addRootNode createModelForLanguage(langLanguage).rootNodes[0]
+
+let baseInterfacesModel* = createModelForLanguage(base_language.baseInterfaces)

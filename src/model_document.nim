@@ -580,13 +580,16 @@ proc loadModelAsync(project: Project, ws: WorkspaceFolder, path: string): Future
   return model.some
 
 proc resolveModel(project: Project, ws: WorkspaceFolder, id: ModelId): Future[Option[Model]] {.async.} =
+  if id == baseInterfacesModel.id:
+    return lang_language.baseInterfacesModel.some
+
   while not project.loaded:
     log lvlInfo, fmt"Waiting for project to load"
     await sleepAsync(1)
 
   log lvlInfo, fmt"resolveModel {id}"
-  if project.getModel(id).isSome:
-    return project.getModel(id)
+  if project.getModel(id).getSome(model):
+    return model.some
 
   if project.modelPaths.contains(id):
     let path = project.modelPaths[id]
@@ -3440,11 +3443,20 @@ proc importModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
       let score = matchPath(name, text)
       result.add ModelImportSelectorItem(name: name, model: model.id, score: score)
 
+    block:
+      let score = matchPath("BaseInterfaces", text)
+      result.add ModelImportSelectorItem(name: "BaseInterfaces", model: lang_language.baseInterfacesModel.id, score: score)
+
     # result.sort((a, b) => cmp(a.score, b.score), Descending)
 
   popup.handleItemConfirmed = proc(item: SelectorItem) =
     log lvlInfo, fmt"Import model {item.ModelImportSelectorItem.name} ({item.ModelImportSelectorItem.model}) to model {self.document.model.id}"
     let modelId = item.ModelImportSelectorItem.model
+    if modelId == baseInterfacesModel.id:
+      log lvlInfo, fmt"Add imported model {lang_language.baseInterfacesModel.path} ({lang_language.baseInterfacesModel.id})"
+      self.document.model.addImport(lang_language.baseInterfacesModel)
+      return
+
     if self.document.project.getModel(modelId).getSome(model):
       log lvlInfo, fmt"Add imported model {model.path} ({model.id})"
       self.document.model.addImport(model)
@@ -3519,10 +3531,7 @@ proc loadLanguageModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
     log lvlInfo, fmt"Loading language model of {language.name} ({language.id})"
 
     try:
-      var model = newModel()
-      var root = createNodesForLanguage(language)
-      model.addLanguage(lang_language.langLanguage)
-      model.addRootNode(root)
+      var model = createModelForLanguage(language)
 
       let oldModel = self.document.model
       self.document.model = model

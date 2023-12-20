@@ -306,13 +306,17 @@ proc computeScopeImpl(ctx: ModelState, node: AstNode): seq[AstNode] =
     class = class.base
 
   var declarations: seq[AstNode] = @[]
-  for root in node.model.rootNodes:
-    ctx.computationContextOwner.ModelComputationContext.dependOn(root)
-    for children in root.childLists:
+
+  var parent = node
+  while parent.isNotNil:
+    ctx.computationContextOwner.ModelComputationContext.dependOn(parent)
+    for children in parent.childLists:
       for child in children.nodes:
         let class: NodeClass = child.nodeClass
         if class.isSubclassOf(IdIDeclaration):
           declarations.add child
+
+    parent = parent.parent
 
   return declarations
 
