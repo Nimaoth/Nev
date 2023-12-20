@@ -70,8 +70,10 @@ block: ## Enable loggers
 
 import std/[strformat]
 import misc/[util, timer, custom_async]
-import app, platform/widget_builders, platform/platform
+import platform/platform
+import ui/widget_builders
 import text/language/language_server
+import app
 
 when enableTerminal:
   import platform/terminal_platform

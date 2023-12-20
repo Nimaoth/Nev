@@ -3,7 +3,9 @@ import vmath, bumpy, chroma
 import misc/[util, custom_logger, custom_unicode]
 import text/text_editor
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-import app, document_editor, widget_builders_base, platform, theme, config_provider, widget_library, app_interface
+import platform/platform
+import ui/[widget_builders_base, widget_library]
+import app, document_editor, theme, config_provider, app_interface
 
 import ui/node
 

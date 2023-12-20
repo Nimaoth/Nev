@@ -1,7 +1,9 @@
 import vmath, bumpy, chroma
 import misc/[util, custom_logger]
 import ui/node
-import app, selector_popup, platform, theme, widget_builders_base
+import platform/platform
+import ui/[widget_builders_base]
+import app, selector_popup, theme
 
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
 {.used.}
