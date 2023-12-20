@@ -1,5 +1,5 @@
 import std/[asynchttpserver, strutils]
-import custom_async
+import misc/[custom_async]
 
 template withRequest*(req: Request, body1: untyped): untyped =
   template route(meth: HttpMethod, pth: string, body2: untyped): untyped =

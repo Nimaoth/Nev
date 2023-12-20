@@ -1,6 +1,7 @@
 import std/[os, asynchttpserver, strutils, strformat, uri, asyncfile, json, sugar, sequtils]
-import custom_async, util, router, server_utils, myjsonutils
 import glob
+import misc/[custom_async, util, myjsonutils]
+import router, server_utils
 
 type DirInfo = object
   files: seq[string]

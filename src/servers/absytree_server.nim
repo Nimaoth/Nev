@@ -1,5 +1,5 @@
 import std/[os, strutils]
-import custom_async, util
+import misc/[custom_async, util]
 import languages_server, workspace_server
 
 when isMainModule:
