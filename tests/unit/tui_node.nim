@@ -7,7 +7,8 @@ discard """
 """
 
 import std/[unittest, options, json, sequtils]
-import util, ui/node
+import misc/[util]
+import ui/node
 
 template frame(builder: UINodeBuilder, body: untyped) =
   block:

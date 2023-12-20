@@ -7,7 +7,7 @@ discard """
 """
 
 import std/[unittest, options, json, sequtils]
-import util, rect_utils
+import misc/[util, rect_utils]
 
 suite "Rect Utils":
 
