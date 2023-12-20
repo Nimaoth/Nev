@@ -1,4 +1,5 @@
-import id, ast/model
+import misc/id
+import ast/model
 
 # base language
 

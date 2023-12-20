@@ -1,5 +1,6 @@
 import std/[os, tables, json, base64, strutils, options]
-import workspace, custom_async, custom_logger, async_http_client, platform/filesystem
+import misc/[custom_async, custom_logger, async_http_client]
+import workspace, platform/filesystem
 
 logCategory "ws-github"
 

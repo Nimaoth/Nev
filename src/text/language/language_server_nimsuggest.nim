@@ -1,8 +1,8 @@
 import std/[strutils, options, json, tables, macros, strformat, sugar]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-import language_server_base, util
-import custom_logger, custom_async, async_http_client, websocket
+import misc/[custom_logger, custom_async, async_http_client, websocket, util]
 import platform/filesystem
+import language_server_base
 
 logCategory "ls-nimsuggest"
 

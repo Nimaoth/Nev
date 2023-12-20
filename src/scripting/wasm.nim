@@ -1,5 +1,6 @@
 import std/[macros, macrocache, strutils, json, options, tables, genasts]
-import custom_logger, custom_async, util, array_buffer, platform/filesystem
+import misc/[custom_logger, custom_async, util, array_buffer]
+import platform/filesystem
 
 logCategory "wasi"
 

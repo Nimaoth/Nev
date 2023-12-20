@@ -8,9 +8,10 @@ import compiler/[renderer, ast, llstream, lineinfos]
 import compiler/options as copts
 from compiler/vmdef import TSandboxFlag
 import nimscripter, nimscripter/[vmconversion, vmaddins]
-import platform/filesystem
 
-import util, custom_logger, custom_async, scripting_base, compilation_config, popup, document_editor, timer
+import misc/[util, custom_logger, custom_async, timer]
+import platform/filesystem
+import scripting_base, compilation_config, popup, document_editor
 import scripting_api as api except DocumentEditor, TextDocumentEditor, AstDocumentEditor, Popup, SelectorPopup
 
 export scripting_base, nimscripter
@@ -94,7 +95,8 @@ proc createInterpreterAsync(args: (ptr Interpreter, string, seq[string], seq[(st
     let initCode = """
 import std/[strformat, sequtils, macros, tables, options, sugar, strutils, genasts, json, typetraits]
 
-import scripting_api, util, myjsonutils
+import scripting_api
+import misc/[util, myjsonutils]
 import absytree_runtime
 
 import keybindings_vim
@@ -241,7 +243,7 @@ method init*(self: ScriptContextNim, path: string): Future[void] {.async.} =
   if self.inter.getSome(inter):
     await myLoadScript(
       inter,
-      self.script, self.apiModule, self.addins, self.postCodeAdditions, @["scripting_api", "std/json", "util", "myjsonutils"],
+      self.script, self.apiModule, self.addins, self.postCodeAdditions, @["scripting_api", "std/json", "misc/util", "misc/myjsonutils"],
       stdPath = self.stdPath, searchPaths = self.searchPaths, vmErrorHook = errorHook, moreAddins = timerAddins)
   if self.inter.isNone:
     log(lvlError, fmt"Failed to create script context")
@@ -252,7 +254,7 @@ method reload*(ctx: ScriptContextNim) =
 
 proc generateScriptingApi*(addins: VMAddins) {.compileTime.} =
   if exposeScriptingApi:
-    echo "Generate scripting api files"
+    echo fmt"Generate scripting api files: {addins.procs.len} procs"
 
     var script_internal_content = """
       ## This file is auto generated, don't modify.
@@ -284,7 +286,9 @@ proc generateScriptingApi*(addins: VMAddins) {.compileTime.} =
 
       script_internal_wasm_content.add implWasm
 
+    echo fmt"Writing scripting/absytree_internal.nim"
     writeFile(fmt"scripting/absytree_internal.nim", script_internal_content)
+    echo fmt"Writing scripting/absytree_internal_wasm.nim"
     writeFile(fmt"scripting/absytree_internal_wasm.nim", script_internal_wasm_content)
 
     generateScriptingApiPerModule()

@@ -1,5 +1,5 @@
 import std/[tables, strformat, options, os]
-import id, util, custom_logger
+import misc/[id, util, custom_logger]
 import ui/node
 import ast/[ast_ids, model, cells, cell_builder_database, base_language]
 

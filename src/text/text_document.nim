@@ -2,12 +2,11 @@ import std/[os, strutils, sequtils, sugar, options, json, strformat, tables]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import patty, bumpy
-import document, document_editor, id, util, event, ../regex, custom_logger, custom_async, custom_treesitter, indent, custom_unicode, myjsonutils
-import text_language_config
+import misc/[id, util, event, custom_logger, custom_async, custom_unicode, myjsonutils, regex]
 import platform/[filesystem]
 import language/[languages, language_server_base]
 import workspaces/[workspace]
-import config_provider
+import document, document_editor, custom_treesitter, indent, text_language_config, config_provider
 
 export document, document_editor, id
 

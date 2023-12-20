@@ -1,8 +1,7 @@
 import std/[tables, sets, strutils, hashes, options, macros, strformat, genasts]
-import timer
 import fusion/matching
-import id, util, custom_logger, macro_utils
 import lrucache
+import misc/[id, util, custom_logger, macro_utils, timer]
 
 {.experimental: "dynamicBindSym".}
 {.experimental: "caseStmtMacros".}

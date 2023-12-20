@@ -1,5 +1,6 @@
 import std/[os, json]
-import workspace, custom_async, custom_logger
+import misc/[custom_async, custom_logger]
+import workspace
 
 logCategory "ws-local"
 

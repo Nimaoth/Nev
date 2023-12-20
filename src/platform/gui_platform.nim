@@ -1,8 +1,9 @@
 import std/[tables, strutils, options, sets]
-import platform, util, platform/filesystem
-import custom_logger, input, event, monitors, lrucache, id, rect_utils, theme
 import chroma, vmath, windy, boxy, boxy/textures, opengl, pixie/[contexts, fonts]
+import misc/[custom_logger, util, event, id, rect_utils]
 import ui/node
+import platform, platform/filesystem
+import input, monitors, lrucache, theme
 
 export platform
 

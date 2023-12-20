@@ -1,4 +1,6 @@
-import events, input, vmath, bumpy, event, id
+import vmath, bumpy
+import misc/[event, id]
+import events, input
 
 from scripting_api import EditorId, newEditorId
 

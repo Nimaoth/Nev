@@ -1,8 +1,8 @@
 import std/[options, strutils, hashes, tables, strformat, sequtils, sets]
 import fusion/matching
-import chroma
+import chroma, regex
+import misc/[util, array_table, myjsonutils, id, macro_utils, custom_logger, event, custom_async]
 import workspaces/[workspace]
-import util, array_table, myjsonutils, id, macro_utils, custom_logger, event, regex, custom_async
 
 export id
 

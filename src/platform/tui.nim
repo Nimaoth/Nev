@@ -49,7 +49,7 @@
 ##
 
 import macros, os, terminal, unicode, bitops, colors
-import custom_logger, timer
+import misc/[custom_logger, timer]
 
 export terminal.terminalWidth
 export terminal.terminalHeight

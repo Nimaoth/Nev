@@ -1,5 +1,5 @@
 import std/[json, options]
-import traits, util
+import misc/[traits, util]
 
 traitRef ConfigProvider:
   method getConfigValue(self: ConfigProvider, path: string): Option[JsonNode]

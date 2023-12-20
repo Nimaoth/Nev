@@ -15,8 +15,8 @@ else:
     echo "Compiling for unknown"
 
 import std/[parseopt, options, macros]
-
-import compilation_config, custom_logger, scripting_api
+import misc/[custom_logger]
+import compilation_config, scripting_api
 
 logCategory "main"
 
@@ -69,8 +69,9 @@ block: ## Enable loggers
       logger.enableConsoleLogger()
 
 import std/[strformat]
-import util, app, timer, platform/widget_builders, platform/platform, custom_async
-import language/language_server
+import misc/[util, timer, custom_async]
+import app, platform/widget_builders, platform/platform
+import text/language/language_server
 
 when enableTerminal:
   import platform/terminal_platform

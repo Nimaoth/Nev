@@ -1,5 +1,5 @@
 import std/[options, json]
-import custom_logger, custom_async, util, custom_unicode
+import misc/[custom_logger, custom_async, util, custom_unicode]
 
 from scripting_api import Cursor, Selection
 

@@ -1,7 +1,7 @@
 import std/[json, tables, strutils, options]
 import chroma
-import custom_logger, platform/[filesystem]
-import myjsonutils
+import misc/[custom_logger, myjsonutils]
+import platform/[filesystem]
 
 logCategory "theme"
 

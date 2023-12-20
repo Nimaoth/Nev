@@ -1,6 +1,7 @@
 import std/[macros, macrocache, genasts, json]
-import custom_logger, custom_async, scripting_base, popup, document_editor, util, expose
+import misc/[custom_logger, custom_async, util]
 import platform/filesystem
+import scripting_base, popup, document_editor, expose
 
 import wasm
 

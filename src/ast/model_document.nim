@@ -1,15 +1,16 @@
 import std/[strformat, strutils, sugar, tables, options, json, streams, algorithm, sets, sequtils]
-import fusion/matching, bumpy, rect_utils, vmath, fuzzy
-import util, document, document_editor, text/text_document, events, id, scripting/expose, event, input, custom_async, myjsonutils, custom_unicode, delayed_task
+import fusion/matching, bumpy, vmath, fuzzy
+import misc/[util, custom_logger, timer, array_buffer, id, event, custom_async, myjsonutils, custom_unicode, delayed_task, fuzzy_matching, rect_utils]
 from scripting_api as api import nil
-import custom_logger, timer, array_buffer, config_provider, app_interface, dispatch_tables, selector_popup, fuzzy_matching
 import platform/[filesystem, platform]
 import workspaces/[workspace]
 import ui/node
-import model, base_language, editor_language, cells, ast_ids
 import lang/[lang_language, cell_language]
 
 import ast/[generator_wasm, base_language_wasm, editor_language_wasm, model_state, cell_builder_database]
+import document, document_editor, text/text_document, events, scripting/expose, input
+import config_provider, app_interface, dispatch_tables, selector_popup
+import model, base_language, editor_language, cells, ast_ids
 
 logCategory "model"
 createJavascriptPrototype("editor.model")

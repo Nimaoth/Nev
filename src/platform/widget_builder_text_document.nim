@@ -1,7 +1,9 @@
 import std/[strformat, tables, sugar, sequtils, strutils, algorithm, math]
-import util, app, document_editor, text/text_editor, custom_logger, widget_builders_base, platform, theme, custom_unicode, config_provider, widget_library, app_interface
-import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import vmath, bumpy, chroma
+import misc/[util, custom_logger, custom_unicode]
+import text/text_editor
+import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
+import app, document_editor, widget_builders_base, platform, theme, config_provider, widget_library, app_interface
 
 import ui/node
 

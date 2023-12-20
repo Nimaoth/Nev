@@ -1,9 +1,10 @@
 import std/[strformat, terminal, typetraits, enumutils, strutils]
-import platform
-import tui, custom_logger, rect_utils, input, event, timer, custom_unicode, ui/node
+import std/colors as stdcolors
 import vmath
 import chroma as chroma
-import std/colors as stdcolors
+import misc/[custom_logger, rect_utils, event, timer, custom_unicode]
+import tui, input, ui/node
+import platform
 
 export platform
 

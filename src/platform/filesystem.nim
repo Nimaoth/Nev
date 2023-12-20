@@ -2,7 +2,7 @@
 
 import std/[strutils, os]
 
-import custom_async, array_buffer
+import misc/[custom_async, array_buffer]
 
 type FileSystem* = ref object of RootObj
   discard

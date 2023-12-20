@@ -1,6 +1,7 @@
-import event, input
 import vmath
 import ui/node
+import misc/[event]
+import input
 
 export input, event
 

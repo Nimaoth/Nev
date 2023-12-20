@@ -2,8 +2,9 @@ when not defined(js):
   {.error: "scripting_js.nim does not work in non-js backend. Use scripting_nim.nim instead.".}
 
 import std/[macros, dom, json]
-import custom_logger, custom_async, scripting_base, popup, document_editor
+import misc/[custom_logger, custom_async]
 import platform/filesystem
+import scripting_base, popup, document_editor
 
 export scripting_base
 

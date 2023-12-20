@@ -47,13 +47,13 @@ proc copySharedFilesTo(dir: string) =
   cpDir2 "docs", dir
   mkDir dir/"src"
   cpFile2 "src/scripting_api.nim", dir/"src"
-  cpFile2 "src/timer.nim", dir/"src"
-  cpFile2 "src/id.nim", dir/"src"
-  cpFile2 "src/myjsonutils.nim", dir/"src"
-  cpFile2 "src/event.nim", dir/"src"
-  cpFile2 "src/util.nim", dir/"src"
-  cpFile2 "src/macro_utils.nim", dir/"src"
-  cpFile2 "src/wrap.nim", dir/"src"
+  cpFile2 "src/misc/timer.nim", dir/"src/misc"
+  cpFile2 "src/misc/id.nim", dir/"src/misc"
+  cpFile2 "src/misc/myjsonutils.nim", dir/"src/misc"
+  cpFile2 "src/misc/event.nim", dir/"src/misc"
+  cpFile2 "src/misc/util.nim", dir/"src/misc"
+  cpFile2 "src/misc/macro_utils.nim", dir/"src/misc"
+  cpFile2 "src/misc/wrap.nim", dir/"src/misc"
   cpDir2 "LICENSES", dir
   cpFile2 "LICENSE", dir
   cpFile2 "absytree.nimble", dir

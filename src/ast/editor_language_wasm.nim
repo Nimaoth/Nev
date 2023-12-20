@@ -1,8 +1,8 @@
 import std/[macros, genasts]
 import std/[tables]
-import model, ast_ids, custom_logger, util, base_language, editor_language
-import generator_wasm
+import misc/[custom_logger, util]
 import scripting/[wasm_builder]
+import model, ast_ids, base_language, editor_language, generator_wasm
 
 logCategory "editor-language-wasm"
 

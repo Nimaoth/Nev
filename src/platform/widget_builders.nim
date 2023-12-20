@@ -1,8 +1,8 @@
-import app, custom_logger, document_editor, platform, rect_utils, theme
-import widget_builders_base, widget_builder_text_document, widget_builder_selector_popup, widget_builder_model_document
 import vmath, bumpy, chroma
-
+import misc/[custom_logger, rect_utils]
 import ui/node
+import app, document_editor, platform, theme
+import widget_builders_base, widget_builder_text_document, widget_builder_selector_popup, widget_builder_model_document
 
 logCategory "widget_builder"
 

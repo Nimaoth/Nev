@@ -1,7 +1,7 @@
 import std/[tables, strformat]
-import id, ast_ids, util, custom_logger
-import model, cells, model_state, query_system, cell_builder_database
+import misc/[id, util, custom_logger]
 import ui/node
+import model, cells, model_state, query_system, cell_builder_database, ast_ids
 
 export id, ast_ids
 

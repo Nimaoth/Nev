@@ -1,5 +1,6 @@
 import std/[tables, sequtils]
-import input, custom_logger
+import misc/custom_logger
+import input
 
 logCategory "events"
 
