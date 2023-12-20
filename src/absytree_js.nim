@@ -7,9 +7,12 @@ logger.enableConsoleLogger()
 
 import std/[strformat, dom, macros]
 import misc/[util, timer, event, custom_async]
-import app, platform/widget_builders, platform/platform, platform/browser_platform, text/text_document
+import platform/[platform, browser_platform]
+import ui/[widget_builders]
+import text/text_document
 import text/language/language_server
 from scripting_api import Backend
+import app
 
 import ui/node
 

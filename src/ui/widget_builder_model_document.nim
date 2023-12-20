@@ -4,8 +4,9 @@ import misc/[util, custom_logger, custom_unicode]
 import ui/node
 import text/text_document
 import ast/[model_document, model, cells, model_state]
-import app, document_editor, platform, theme, config_provider, input, app_interface
-import widget_builders_base, widget_library
+import platform/platform
+import ui/[widget_builders_base, widget_library]
+import app, document_editor, theme, config_provider, input, app_interface
 
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
 {.used.}
