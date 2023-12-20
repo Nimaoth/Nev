@@ -7,7 +7,7 @@ import workspaces/[workspace]
 import ast/model
 import traits
 import config_provider, app_interface
-import language/language_server_base, language_server_absytree_commands
+import text/language/language_server_base, language_server_absytree_commands
 
 when not defined(js):
   import scripting/scripting_nim
@@ -537,7 +537,8 @@ proc getPopupForId*(self: App, id: EditorId): Option[Popup] =
 
   return Popup.none
 
-import text/text_editor, text/text_document, model_document
+import text/[text_editor, text_document]
+import ast/[model_document]
 import selector_popup
 
 type ThemeSelectorItem* = ref object of SelectorItem
@@ -1933,7 +1934,7 @@ proc handleAction(self: App, action: string, arg: string): bool =
   return true
 
 template createNimScriptContextConstructorAndGenerateBindings*(): untyped =
-  import model_document, text/text_editor, selector_popup, lsp_client
+  import ast/model_document, text/text_editor, selector_popup, lsp_client
   when not defined(js):
     proc createAddins(): VmAddins =
       addCallable(myImpl):

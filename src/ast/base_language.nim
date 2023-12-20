@@ -1401,7 +1401,6 @@ proc instantiateStruct*(ctx: ModelComputationContextBase, genericStruct: AstNode
   for i, arg in arguments:
     if i < genericParams.len:
       let genericParam = genericParams[i]
-      let genericParamType = ctx.computeType(genericParam)
 
       # debugf"compute value of {arg.dump(node.model, true)}"
       let value = ctx.getValue(arg)
@@ -1912,7 +1911,7 @@ scopeComputers[structMemberAccessClass.id] = proc(ctx: ModelComputationContextBa
 
   return structType.children(IdStructDefinitionMembers)
 
-proc getGenericTypes(node: AstNode, res: var seq[AstNode]) =
+proc getGenericTypes*(node: AstNode, res: var seq[AstNode]) =
   if node.class == IdGenericType:
     res.add node
     return
@@ -1921,7 +1920,7 @@ proc getGenericTypes(node: AstNode, res: var seq[AstNode]) =
     for c in children.nodes:
       c.getGenericTypes(res)
 
-proc getGenericTypes(node: AstNode): seq[AstNode] =
+proc getGenericTypes*(node: AstNode): seq[AstNode] =
   node.getGenericTypes(result)
 
 proc computeDefaultScope(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode] =

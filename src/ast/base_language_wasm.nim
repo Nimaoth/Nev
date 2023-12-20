@@ -51,16 +51,16 @@ let conversionOps = toTable {
   # (IdInt64, IdInt32): I64Extend32S,
 }
 
-let reinterpretOps = toTable {
-  (IdInt32, IdFloat32): I32ReinterpretF32,
-  (IdUInt32, IdFloat32): I32ReinterpretF32,
-  (IdInt64, IdFloat64): I64ReinterpretF64,
-  (IdUInt64, IdFloat64): I64ReinterpretF64,
-  (IdFloat32, IdInt32): F32ReinterpretI32,
-  (IdFloat32, IdUInt32): F32ReinterpretI32,
-  (IdFloat64, IdInt64): F64ReinterpretI64,
-  (IdFloat64, IdUInt64): F64ReinterpretI64,
-}
+# let reinterpretOps = toTable {
+#   (IdInt32, IdFloat32): I32ReinterpretF32,
+#   (IdUInt32, IdFloat32): I32ReinterpretF32,
+#   (IdInt64, IdFloat64): I64ReinterpretF64,
+#   (IdUInt64, IdFloat64): I64ReinterpretF64,
+#   (IdFloat32, IdInt32): F32ReinterpretI32,
+#   (IdFloat32, IdUInt32): F32ReinterpretI32,
+#   (IdFloat64, IdInt64): F64ReinterpretI64,
+#   (IdFloat64, IdUInt64): F64ReinterpretI64,
+# }
 
 proc genNodeBlock(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) =
   let typ = self.ctx.computeType(node)
@@ -473,7 +473,7 @@ proc genNodeNodeReference(self: BaseLanguageWasmCompiler, node: AstNode, dest: D
   if node.resolveReference(IdNodeReferenceTarget).getSome(target) and target.class == IdConstDecl:
     if target.firstChild(IdConstDeclValue).getSome(value) and value.class == IdFunctionDefinition:
       var name = target.property(IdINamedName).get.stringValue
-      let (tableIdx, elemIndex) = self.getOrCreateFuncRef(value, name.some)
+      let (_, elemIndex) = self.getOrCreateFuncRef(value, name.some)
       self.instr(I32Const, i32Const: elemIndex)
       self.genStoreDestination(node, dest)
     else:

@@ -1,7 +1,7 @@
 import std/[json, options]
 import platform/platform
 import workspaces/workspace
-import language/language_server_base
+import text/language/language_server_base
 import traits, events, document_editor, popup, config_provider
 from scripting_api import EditorId
 

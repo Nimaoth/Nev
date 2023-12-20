@@ -1,9 +1,8 @@
 import std/[tables, strformat, options, os]
-import id, ast_ids, util, custom_logger
-import ../model, ../cells, ../model_state, query_system, ../cell_builder_database
-import ../base_language
+import id, util, custom_logger
 import ui/node
-import print
+import ast/[ast_ids, model, cells, cell_builder_database, base_language]
+
 export id, ast_ids
 
 logCategory "lang-language"
@@ -273,31 +272,6 @@ var valueComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, n
 var scopeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]]()
 var validationComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): bool]()
 
-proc computeDefaultScope(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode] =
-  var nodes: seq[AstNode] = @[]
-
-  # todo: improve this
-  for model in node.model.models:
-    for root in model.rootNodes:
-      if root.class == IdNodeList:
-        for _, c in root.children(IdNodeListChildren):
-          nodes.add c
-
-  var prev = node
-  var current = node.parent
-  while current.isNotNil:
-    ctx.dependOn(current)
-
-    if current.class == IdNodeList and current.parent.isNil:
-      for _, c in current.children(IdNodeListChildren):
-        ctx.dependOn(c)
-        nodes.add c
-
-    prev = current
-    current = current.parent
-
-  return nodes
-
 scopeComputers[IdClassReference] = proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode] =
   debugf"compute scope for class reference {node}"
   var nodes: seq[AstNode] = @[]
@@ -441,10 +415,6 @@ proc createNodeClassFromLangDefinition*(classMap: var Table[ClassId, NodeClass],
   let isFinal = def.property(IdClassDefinitionFinal).get.boolValue
   let canBeRoot = def.property(IdClassDefinitionCanBeRoot).get.boolValue
   let precedence = def.property(IdClassDefinitionPrecedence).get.intValue.int
-
-  var properties = newSeqOfCap[PropertyDescription](def.childCount(IdClassDefinitionProperties))
-  var references = newSeqOfCap[NodeReferenceDescription](def.childCount(IdClassDefinitionReferences))
-  var childDescriptions = newSeqOfCap[NodeChildDescription](def.childCount(IdClassDefinitionChildren))
 
   let substitutionProperty = if def.firstChild(IdClassDefinitionSubstitutionProperty).getSome(substitutionProperty):
     substitutionProperty.reference(IdRoleReferenceTarget).RoleId.some

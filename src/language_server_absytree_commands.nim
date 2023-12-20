@@ -1,6 +1,6 @@
 import std/[options, tables, strutils]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-import language/language_server_base, util
+import text/language/language_server_base, util
 import custom_logger, custom_async, dispatch_tables
 import platform/filesystem
 

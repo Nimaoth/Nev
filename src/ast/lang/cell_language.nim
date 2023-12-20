@@ -1,19 +1,18 @@
 import std/[tables, strformat, options, json]
-import id, ast_ids, util, custom_logger
-import ../model, ../cells, ../model_state, query_system, ../cell_builder_database
-import ../base_language
-import lang_language
+import id, util, custom_logger
 import ui/node
-import print
+import ast/[model, cells, cell_builder_database, base_language]
+import lang_language
+
 export id, ast_ids
 
 logCategory "cell-language"
 
 var builder = newCellBuilder()
-var typeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]()
-var valueComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]()
+# var typeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]()
+# var valueComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]()
 var scopeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]]()
-var validationComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): bool]()
+# var validationComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): bool]()
 
 builder.addBuilderFor IdCellBuilderDefinition, idNone(), [
   CellBuilderCommand(kind: CollectionCell, uiFlags: &{LayoutHorizontal}),
@@ -51,7 +50,7 @@ template defineCellDefinitionCommands*(inBuilder, inId, inBuilderId, commandList
   let commands = CellBuilderCommands(commands: @commandList)
   inBuilder.addBuilderFor inId, inBuilderId, proc(map: NodeCellMap, builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
     var cell = map.buildCellWithCommands(node, owner, commands)
-    let (cellFlags, uiFlags, _, _, _) = parseCellFlags(node.children(IdCellDefinitionCellFlags))
+    let (cellFlags, _, _, _, _) = parseCellFlags(node.children(IdCellDefinitionCellFlags))
     if OnNewLine in cellFlags: cell.flags.incl OnNewLine
     if IndentChildren in cellFlags: cell.flags.incl IndentChildren
     if NoSpaceLeft in cellFlags: cell.flags.incl NoSpaceLeft

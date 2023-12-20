@@ -1,13 +1,13 @@
 import std/[strformat, strutils, sugar, tables, options, json, streams, algorithm, sets, sequtils]
 import fusion/matching, bumpy, rect_utils, vmath, fuzzy
-import util, document, document_editor, text/text_document, events, id, ast_ids, scripting/expose, event, input, custom_async, myjsonutils, custom_unicode, delayed_task
+import util, document, document_editor, text/text_document, events, id, scripting/expose, event, input, custom_async, myjsonutils, custom_unicode, delayed_task
 from scripting_api as api import nil
-import custom_logger, timer, array_buffer, config_provider, app_interface, dispatch_tables, selector_popup, cancellation_token, fuzzy_matching
+import custom_logger, timer, array_buffer, config_provider, app_interface, dispatch_tables, selector_popup, fuzzy_matching
 import platform/[filesystem, platform]
 import workspaces/[workspace]
-import ast/[model, base_language, editor_language, cells]
-import ast/lang/[lang_language, cell_language]
 import ui/node
+import model, base_language, editor_language, cells, ast_ids
+import lang/[lang_language, cell_language]
 
 import ast/[generator_wasm, base_language_wasm, editor_language_wasm, model_state, cell_builder_database]
 
@@ -447,7 +447,7 @@ proc updateScrollOffsetToPrevCell(self: ModelDocumentEditor): bool =
     # debugf"new cell not found / visible"
     return false
 
-  let oldY = self.cellWidgetContext.targetNode.transformBounds(self.scrolledNode.parent).y
+  # let oldY = self.cellWidgetContext.targetNode.transformBounds(self.scrolledNode.parent).y
 
   let newUINode = self.cellWidgetContext.cellToWidget[newCell.id]
   let newY = newUINode.transformBounds(self.scrolledNode.parent).y
@@ -670,20 +670,20 @@ proc getSubstitutionTarget(cell: Cell): (AstNode, RoleId, int) =
 proc getSubstitutionsForClass(self: ModelDocumentEditor, targetCell: Cell, class: NodeClass, addCompletion: proc(c: ModelCompletion): void): bool =
   # if it's a reference and there is only one reference role, then we can substitute the reference using the scope
   if class.substitutionReference.getSome(referenceRole):
-    # debugf"getSubstitutionsForClass {class.name}"
+    debugf"getSubstitutionsForClass {class.name}"
     let desc = class.nodeReferenceDescription(referenceRole).get
     let language = self.document.model.getLanguageForClass(desc.class)
     let refClass = language.resolveClass(desc.class)
 
     let (parent, role, index) = targetCell.getSubstitutionTarget()
 
-    # debugf"getScope {parent}, {targetCell.node}"
+    debugf"getScope {parent}, {targetCell.node}"
     let scope = self.document.ctx.getScope(targetCell.node)
     for decl in scope:
-      # debugf"scope: {decl}, {decl.nodeClass.isSubclassOf(refClass.id)}"
+      debugf"scope: {decl}, {decl.nodeClass.isSubclassOf(refClass.id)}"
       if decl.nodeClass.isSubclassOf(refClass.id):
         let name = if decl.property(IdINamedName).getSome(name): name.stringValue else: $decl.id
-        # echo fmt"add substitute reference {name}"
+        echo fmt"add substitute reference {name}"
         addCompletion ModelCompletion(kind: ModelCompletionKind.SubstituteReference, name: name, class: class, parent: parent, role: role, index: index, referenceRole: desc.id, referenceTarget: decl)
         result = true
 
@@ -709,7 +709,7 @@ proc updateCompletions(self: ModelDocumentEditor) =
   let parentClass = parent.nodeClass
   if parentClass.nodeChildDescription(role).getSome(childDesc): # add class substitutions
     let slotClass = model.resolveClass(childDesc.class)
-    # debugf"updateCompletions child {parent}, {node}, {node.model.isNotNil}, {slotClass.name}"
+    debugf"updateCompletions child {parent}, {node}, {node.model.isNotNil}, {slotClass.name}"
 
     model.forEachChildClass slotClass, proc(childClass: NodeClass) =
       if self.getSubstitutionsForClass(targetCell, childClass, (c) -> void => self.unfilteredCompletions.incl(c)):
@@ -722,7 +722,7 @@ proc updateCompletions(self: ModelDocumentEditor) =
       self.unfilteredCompletions.incl ModelCompletion(kind: ModelCompletionKind.SubstituteClass, name: name, class: childClass, parent: parent, role: role, index: index)
   elif parentClass.nodeReferenceDescription(role).getSome(desc):
     let slotClass = model.resolveClass(desc.class)
-    # debugf"updateCompletions ref {parent}, {node}, {node.model.isNotNil}, {slotClass.name}"
+    debugf"updateCompletions ref {parent}, {node}, {node.model.isNotNil}, {slotClass.name}"
     let scope = self.document.ctx.getScope(node)
     for decl in scope:
       # debugf"scope: {decl}, {decl.nodeClass.name}, {decl.nodeClass.isSubclassOf(slotClass.id)}"
@@ -3391,7 +3391,6 @@ proc createNewModel*(self: ModelDocumentEditor, name: string) {.expose("editor.m
 
 proc addModelToProject*(self: ModelDocumentEditor) {.expose("editor.model").} =
   var popup = self.app.createSelectorPopup().SelectorPopup
-  var sortCancellationToken = newCancellationToken()
 
   popup.getCompletionsAsync = proc(popup: SelectorPopup, text: string): Future[seq[SelectorItem]] {.async.} =
     # Find everything matching text
