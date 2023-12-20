@@ -1934,7 +1934,10 @@ proc handleAction(self: App, action: string, arg: string): bool =
   return true
 
 template createNimScriptContextConstructorAndGenerateBindings*(): untyped =
-  import ast/model_document, text/text_editor, selector_popup, lsp_client
+  import ast/model_document
+  import text/text_editor
+  import text/language/lsp_client
+  import selector_popup
   when not defined(js):
     proc createAddins(): VmAddins =
       addCallable(myImpl):
