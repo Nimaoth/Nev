@@ -1,4 +1,4 @@
-import asyncdispatch, asyncnet, json, strutils, tables, os, osproc, streams, threadpool, options, macros
+import std/[asyncdispatch, asyncnet, json, strutils, tables, os, osproc, streams, threadpool, options, macros]
 import custom_logger
 
 logCategory "asyncprocess"
