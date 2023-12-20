@@ -19,6 +19,9 @@ builder.addBuilderFor IdCellBuilderDefinition, idNone(), [
   CellBuilderCommand(kind: CollectionCell, uiFlags: &{LayoutHorizontal}),
   CellBuilderCommand(kind: ConstantCell, text: "cell layout for", themeForegroundColors: @["keyword"], disableEditing: true),
   CellBuilderCommand(kind: ReferenceCell, referenceRole: IdCellBuilderDefinitionClass, targetProperty: IdINamedName.some, themeForegroundColors: @["variable"], disableEditing: true),
+  CellBuilderCommand(kind: ConstantCell, text: ",", flags: &{NoSpaceLeft}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true),
+  CellBuilderCommand(kind: ConstantCell, text: "only exact match", themeForegroundColors: @["keyword"], disableEditing: true),
+  CellBuilderCommand(kind: PropertyCell, propertyRole: IdCellBuilderDefinitionOnlyExactMatch, themeForegroundColors: @["variable"], disableEditing: true),
   CellBuilderCommand(kind: ConstantCell, text: ":", flags: &{NoSpaceLeft}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true),
 
   CellBuilderCommand(kind: CollectionCell, uiFlags: &{LayoutVertical}, flags: &{OnNewLine, IndentChildren}),
@@ -88,7 +91,7 @@ builder.defineCellDefinitionCommands IdPropertyCellDefinition, idNone(), [
   CellBuilderCommand(kind: ConstantCell, text: "(", themeForegroundColors: @["punctuation"], disableEditing: true, flags: &{NoSpaceRight}),
   CellBuilderCommand(kind: ConstantCell, text: "prop", themeForegroundColors: @["keyword"], disableEditing: true),
   CellBuilderCommand(kind: Children, childrenRole: IdPropertyCellDefinitionRole, themeForegroundColors: @["variable"]),
-  CellBuilderCommand(kind: ConstantCell, text: "|", themeForegroundColors: @["punctuation"], disableEditing: true),
+  CellBuilderCommand(kind: ConstantCell, text: "|", themeForegroundColors: @["punctuation"], disableEditing: true, flags: &{NoSpaceLeft, NoSpaceRight}),
   CellBuilderCommand(kind: Children, childrenRole: IdCellDefinitionCellFlags, separator: ",".some, placeholder: "flags".some, uiFlags: &{LayoutHorizontal}),
   CellBuilderCommand(kind: ConstantCell, text: "|", themeForegroundColors: @["punctuation"], disableEditing: true, flags: &{NoSpaceLeft, NoSpaceRight}),
   CellBuilderCommand(kind: Children, childrenRole: IdCellDefinitionForegroundColor, separator: ",".some, placeholder: "fg".some, uiFlags: &{LayoutHorizontal}),
@@ -171,6 +174,24 @@ scopeComputers[IdCellBuilderDefinition] = proc(ctx: ModelComputationContextBase,
         nodes.add aspect
 
   return nodes
+
+# scopeComputers[IdReferenceCellDefinition] = proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode] =
+#   debugf"compute scope for reference cell definition {node}"
+#   var nodes: seq[AstNode] = @[]
+
+#   # todo: improve this
+#   for model in node.model.models:
+#     for root in model.rootNodes:
+#       for _, aspect in root.children(IdLangRootChildren):
+#         if aspect.class == IdClassDefinition:
+#           nodes.add aspect
+
+#   for root in node.model.rootNodes:
+#     for _, aspect in root.children(IdLangRootChildren):
+#       if aspect.class == IdClassDefinition:
+#         nodes.add aspect
+
+#   return nodes
 
 var cellLanguage*: Language = block createCellLanguage:
   proc resolveLanguage(id: LanguageId): Option[Language] =

@@ -1135,11 +1135,19 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
               var errors = self.document.ctx.getDiagnostics(node.id)
               if node.parent.isNotNil: errors.add self.document.ctx.getDiagnostics(node.parent.id)
 
+              let class = node.nodeClass
+
               # debugf"errors: {errors}"
 
-              if typ.isNotNil or value.isNotNil or errors.len > 0:
+              if typ.isNotNil or value.isNotNil or errors.len > 0 or class.isNotNil:
                 builder.panel(&{FillX, SizeToContentY, LayoutVertical}, y = scrollOffset):
                   # builder.panel(&{FillY}, pivot = vec2(1, 0), w = builder.charWidth)
+
+                  if class.isNotNil:
+                    builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse}):
+                      builder.panel(&{FillY}, pivot = vec2(1, 0), w = builder.charWidth)
+                      builder.panel(&{SizeToContentX, SizeToContentY, LayoutVertical}, pivot = vec2(1, 0)):
+                        builder.panel(&{SizeToContentX, SizeToContentY, DrawBorder, DrawText}, borderColor = textColor, textColor = textColor, text = class.name)
 
                   if typ.isNotNil:
                     builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse}):

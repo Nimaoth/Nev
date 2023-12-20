@@ -246,6 +246,7 @@ let IdIRoleDescriptor* = "654fbb281446e19b3822524c".parseId.ClassId
 let IdCellLanguage* = "82ffffff9afd1f08150838c9".parseId.LanguageId
 let IdCellBuilderDefinition* = "82ffffff9afd1f08150838f7".parseId.ClassId
 let IdCellBuilderDefinitionClass* = "82ffffff0cfb77255e939d35".parseId.RoleId
+let IdCellBuilderDefinitionOnlyExactMatch* = "84ffffff2644c27942bd153c".parseId.RoleId
 let IdCellBuilderDefinitionCellDefinitions* = "82ffffffb1fee44425c76425".parseId.RoleId
 let IdCellDefinition* = "82ffffffeb36250369ecc38d".parseId.ClassId
 let IdCellDefinitionCellFlags* = "83ffffff2ff1f3327cb46f5e".parseId.RoleId
