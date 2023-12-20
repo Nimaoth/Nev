@@ -1,6 +1,6 @@
 import std/[tables, strformat]
 import ui/node
-import id, util, custom_logger
+import misc/[id, util, custom_logger]
 import model, cells, base_language, cell_builder_database
 
 export base_language

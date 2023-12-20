@@ -1,9 +1,6 @@
 import std/[options]
-import custom_async, util
-
-import language_server_base
-
-import language_server_nimsuggest
+import misc/[custom_async, util]
+import language_server_base, language_server_nimsuggest
 
 when not defined(js):
   import language_server_lsp

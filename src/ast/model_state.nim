@@ -1,8 +1,8 @@
 import std/[tables, sets, strutils, hashes, options, strformat]
 import fusion/matching
-import vmath
-import lrucache
-import id, util, timer, query_system, custom_logger, model, ast_ids
+import vmath, lrucache
+import misc/[id, util, timer, custom_logger]
+import query_system, model, ast_ids
 
 logCategory "model-state"
 

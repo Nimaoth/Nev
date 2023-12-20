@@ -1,7 +1,7 @@
 import std/[tables, strutils, strformat, options, algorithm]
 import ui/node
-import model, id, util, custom_logger, macro_utils
-import ast_ids
+import misc/[id, util, custom_logger, macro_utils]
+import model, ast_ids
 
 logCategory "cells"
 

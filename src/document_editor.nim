@@ -1,6 +1,7 @@
 import std/[json]
-import document, events, event, input, custom_logger, config_provider, id
 import vmath, bumpy
+import misc/[event, custom_logger, id]
+import document, events, input, config_provider
 
 from scripting_api import EditorId, newEditorId
 

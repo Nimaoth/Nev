@@ -1,6 +1,7 @@
 import std/[strutils, options, json, tables, uri, strformat]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-import language_server_base, event, util, app, app_interface, config_provider, text/text_editor, custom_logger, custom_async, lsp_client, myjsonutils
+import misc/[event, util, custom_logger, custom_async, myjsonutils]
+import language_server_base, app, app_interface, config_provider, text/text_editor, lsp_client
 
 logCategory "lsp"
 

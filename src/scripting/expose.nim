@@ -1,10 +1,9 @@
 
 
 import std/[json, strutils, sequtils, tables, options, macros, genasts, macrocache, typetraits, sugar]
-
 import fusion/matching
-import util, custom_logger, dispatch_tables, macro_utils, wrap
-import compilation_config
+import misc/[util, custom_logger, macro_utils, wrap]
+import compilation_config, dispatch_tables
 
 when not defined(js):
   import nimscripter

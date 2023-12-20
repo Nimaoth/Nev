@@ -1,9 +1,9 @@
 import std/[macros, genasts, strformat]
 import std/[options, tables]
 import fusion/matching
-import model, ast_ids, custom_logger, util, base_language
-import generator_wasm
+import misc/[custom_logger, util]
 import scripting/[wasm_builder]
+import model, ast_ids, base_language, generator_wasm
 
 logCategory "base-language-wasm"
 

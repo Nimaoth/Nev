@@ -1,5 +1,5 @@
 import std/[json, strutils, strformat, macros]
-import custom_logger
+import misc/[custom_logger]
 import scripting/expose
 
 logCategory "lsp"
@@ -8,7 +8,8 @@ var logVerbose = false
 
 when not defined(js):
   import std/[tables, sets, os, options, uri, sequtils, sugar]
-  import myjsonutils, util, async_process, lsp_types, custom_async
+  import misc/[myjsonutils, util, async_process, custom_async]
+  import lsp_types
 
   export lsp_types
 

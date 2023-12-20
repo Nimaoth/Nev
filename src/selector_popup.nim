@@ -1,7 +1,7 @@
 import std/[strutils, sugar, options, json, streams]
 import bumpy, vmath
-import app_interface, text/text_editor, popup, events, util, rect_utils, scripting/expose, event, input, custom_async, custom_logger, cancellation_token, myjsonutils
-import comb_sort, timer
+import misc/[util, rect_utils, comb_sort, timer, event, custom_async, custom_logger, cancellation_token, myjsonutils]
+import app_interface, text/text_editor, popup, events, scripting/expose, input
 from scripting_api as api import nil
 
 export popup

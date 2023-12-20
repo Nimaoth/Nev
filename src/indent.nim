@@ -1,5 +1,6 @@
 import std/strutils
-import text_language_config, util
+import misc/util
+import text_language_config
 
 type
   IndentStyleKind* {.pure.} = enum Tabs, Spaces

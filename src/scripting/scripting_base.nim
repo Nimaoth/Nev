@@ -1,5 +1,6 @@
 import std/[macros, macrocache, json, strutils]
-import custom_logger, custom_async, expose, popup, document_editor
+import misc/[custom_logger, custom_async]
+import expose, popup, document_editor
 
 type ScriptContext* = ref object of RootObj
   discard
@@ -46,7 +47,7 @@ else:
 
     var script_api_content_wasm = """
 import std/[json]
-import scripting_api, myjsonutils
+import scripting_api, misc/myjsonutils
 
 ## This file is auto generated, don't modify.
 
@@ -62,8 +63,13 @@ import scripting_api, myjsonutils
         script_api_content_wasm.add "\n"
 
     let file_name = moduleName.replace(".", "_")
+    echo fmt"Writing scripting/{file_name}_api.nim"
     writeFile(fmt"scripting/{file_name}_api.nim", script_api_content)
+
+    echo fmt"Writing scripting/{file_name}_api_wasm.nim"
     writeFile(fmt"scripting/{file_name}_api_wasm.nim", script_api_content_wasm)
+
+    echo fmt"Writing int/{file_name}_api.map"
     writeFile(fmt"int/{file_name}_api.map", $mappings)
     imports_content.add "when defined(wasm):\n"
     imports_content.add fmt"  import {file_name}_api_wasm" & "\n"
@@ -73,4 +79,5 @@ import scripting_api, myjsonutils
     imports_content.add fmt"  export {file_name}_api" & "\n"
 
 
+  echo fmt"Writing scripting/absytree_api.nim"
   writeFile(fmt"scripting/absytree_api.nim", imports_content)

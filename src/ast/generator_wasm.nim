@@ -1,8 +1,9 @@
 import std/[macros, genasts]
 import std/[options, tables]
 import fusion/matching
-import id, model, custom_logger, util
+import misc/[id, custom_logger, util]
 import scripting/[wasm_builder]
+import model
 
 logCategory "generator-wasm"
 

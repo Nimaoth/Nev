@@ -1,8 +1,9 @@
 import std/[json, options]
+import misc/[traits]
 import platform/platform
 import workspaces/workspace
 import text/language/language_server_base
-import traits, events, document_editor, popup, config_provider
+import events, document_editor, popup, config_provider
 from scripting_api import EditorId
 
 traitRef AppInterface:

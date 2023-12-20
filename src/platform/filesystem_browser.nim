@@ -1,5 +1,6 @@
 import std/[dom, tables]
-import filesystem, custom_async, array_buffer
+import misc/[custom_async, array_buffer]
+import filesystem
 
 type FileSystemBrowser* = ref object of FileSystem
   discard

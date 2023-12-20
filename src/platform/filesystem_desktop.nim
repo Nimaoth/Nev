@@ -1,5 +1,6 @@
 import std/[os]
-import filesystem, custom_logger
+import misc/[custom_logger]
+import filesystem
 
 logCategory "fs-desktop"
 

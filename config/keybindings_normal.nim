@@ -1,4 +1,5 @@
-import absytree_runtime, event, id
+import absytree_runtime
+import misc/[event, id]
 
 proc setModeChangedHandler*(handler: proc(editor: TextDocumentEditor, oldMode: string, newMode: string)) =
   let modeChangedHandler = getOption("editor.text.mode-changed-handler", "")

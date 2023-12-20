@@ -1,5 +1,5 @@
 import std/[options, os]
-import custom_logger
+import misc/custom_logger
 
 proc getLanguageForFile*(filename: string): Option[string] =
   var extension = filename.splitFile.ext

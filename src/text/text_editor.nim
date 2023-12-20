@@ -1,15 +1,13 @@
 import std/[strutils, sequtils, sugar, options, json, streams, strformat, tables, deques, sets, algorithm]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
-import document, document_editor, events, id, util, vmath, bumpy, rect_utils, event, input, ../regex, custom_logger, custom_async, custom_treesitter, indent, fuzzy_matching, custom_unicode
-import myjsonutils
+import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_matching, custom_unicode, delayed_task, myjsonutils, regex]
 import scripting/[expose]
 import platform/[platform, filesystem]
 import language/[language_server_base]
 import workspaces/[workspace]
-import text_document
+import document, document_editor, events, vmath, bumpy, input, custom_treesitter, indent, text_document
 import config_provider, app_interface
-import delayed_task
 
 export text_document, document_editor, id
 

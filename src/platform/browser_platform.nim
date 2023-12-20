@@ -1,8 +1,9 @@
 import std/[tables, dom, unicode, strutils, sugar]
-import platform, custom_logger, rect_utils, input, event, lrucache, timer
 import vmath
 import chroma as chroma
+import misc/[custom_logger, rect_utils, event, timer]
 import ui/node
+import platform, input, lrucache
 
 when defined(uiNodeDebugData):
   import std/json

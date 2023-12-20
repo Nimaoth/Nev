@@ -1,5 +1,6 @@
 import std/[tables, json, options]
-import workspace, custom_async, custom_logger, async_http_client, platform/filesystem, array_buffer
+import misc/[custom_async, custom_logger, async_http_client, array_buffer]
+import workspace, platform/filesystem
 
 logCategory "ws-absytree-server"
 

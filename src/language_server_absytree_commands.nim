@@ -1,8 +1,9 @@
 import std/[options, tables, strutils]
+import misc/[custom_logger, custom_async, util]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-import text/language/language_server_base, util
-import custom_logger, custom_async, dispatch_tables
+import text/language/language_server_base
 import platform/filesystem
+import dispatch_tables
 
 logCategory "language_server_absytree_commands"
 

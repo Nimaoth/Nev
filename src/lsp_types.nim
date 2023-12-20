@@ -1,5 +1,5 @@
 import std/[json, strutils, tables, options, macros, genasts]
-import myjsonutils
+import misc/[myjsonutils]
 
 macro variant(name: untyped, types: varargs[untyped]): untyped =
   var variantType = quote do:

@@ -1,5 +1,5 @@
 import absytree_runtime, keybindings_normal
-import timer
+import misc/[timer]
 
 proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   loadNormalKeybindings()

@@ -1,5 +1,5 @@
 import std/[options, tables]
-import custom_async, custom_logger
+import misc/[custom_async, custom_logger]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 
 type OnRequestSaveHandle* = distinct int

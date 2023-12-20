@@ -1,4 +1,5 @@
-import absytree_runtime, event
+import absytree_runtime
+import misc/[event]
 
 proc handleGlobalAction*(action: string, args: JsonNode): bool =
   if action == "lambda-action":

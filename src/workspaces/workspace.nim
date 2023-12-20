@@ -1,5 +1,5 @@
 import std/[json, options, os]
-import custom_async, id, array_buffer, cancellation_token
+import misc/[custom_async, id, array_buffer, cancellation_token]
 
 type
   Workspace* = ref object

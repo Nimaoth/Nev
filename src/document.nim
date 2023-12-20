@@ -1,7 +1,7 @@
 import std/[options, os]
+import misc/util
 import workspaces/[workspace]
 import platform/[filesystem]
-import util
 
 type Document* = ref object of RootObj
   appFile*: bool                        ## Whether this is an application file (e.g. stored in local storage on the browser)

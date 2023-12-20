@@ -1,7 +1,6 @@
 import std/[macrocache, json, options, tables, strutils, strformat, sequtils]
+import misc/[util, custom_logger]
 import binary_encoder
-import util
-import custom_logger
 
 logCategory "wasm-builder"
 

@@ -1,6 +1,7 @@
 import std/[strformat, tables, macros, json, strutils, sugar, sequtils, genasts]
+import misc/[event, util, wrap]
+import absytree_api
 
-import absytree_api, event, util, wrap
 export absytree_api, util, strformat, tables, json, strutils, sugar, sequtils, scripting_api
 
 type AnyDocumentEditor = TextDocumentEditor | ModelDocumentEditor

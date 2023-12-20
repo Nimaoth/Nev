@@ -1,13 +1,13 @@
 import std/[sequtils, strformat, strutils, tables, unicode, options, os, algorithm, json, macros, macrocache, sugar, streams, deques]
-import input, id, events, rect_utils, document, document_editor, popup, timer, event, cancellation_token, dispatch_tables, myjsonutils, ui/node
-import theme, util, custom_logger, custom_async, fuzzy_matching
+import misc/[id, util, timer, event, cancellation_token, myjsonutils, traits, rect_utils, custom_logger, custom_async, fuzzy_matching]
+import ui/node
 import scripting/[expose, scripting_base]
 import platform/[platform, filesystem]
 import workspaces/[workspace]
 import ast/model
-import traits
 import config_provider, app_interface
 import text/language/language_server_base, language_server_absytree_commands
+import input, events, document, document_editor, popup, dispatch_tables, theme
 
 when not defined(js):
   import scripting/scripting_nim

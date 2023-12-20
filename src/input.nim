@@ -1,5 +1,5 @@
 import std/[strformat, strutils, tables, algorithm, unicode, sequtils]
-import custom_logger
+import misc/custom_logger
 
 logCategory "input"
 
