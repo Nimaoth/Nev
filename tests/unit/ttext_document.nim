@@ -7,7 +7,9 @@ discard """
 """
 
 import std/[unittest, options, json, sequtils]
-import util, traits, text/text_document, config_provider, scripting_api
+import misc/[util, traits]
+import text/text_document
+import config_provider, scripting_api
 
 type MockConfigProvider = ref object
 
