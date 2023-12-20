@@ -247,6 +247,7 @@ proc inputAstNode(ctx: ModelState, id: ItemId): AstNode =
 proc recoverType(ctx: ModelState, key: Dependency) =
   log(lvlInfo, fmt"Recovering type for {key}")
   if ctx.getAstNode(key.item.id).getSome(node):
+    # todo
     # ctx.queryCacheType[node] = errorType()
     discard
 

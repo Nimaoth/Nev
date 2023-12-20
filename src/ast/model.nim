@@ -1,4 +1,4 @@
-import std/[options, strutils, hashes, tables, strformat, sugar, sequtils, sets]
+import std/[options, strutils, hashes, tables, strformat, sequtils, sets]
 import fusion/matching
 import chroma
 import workspaces/[workspace]

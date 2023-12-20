@@ -1,4 +1,4 @@
-import std/[tables, strutils, strformat, options, sugar, algorithm]
+import std/[tables, strutils, strformat, options, algorithm]
 import ui/node
 import model, id, util, custom_logger, macro_utils
 import ast_ids

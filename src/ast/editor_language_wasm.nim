@@ -1,6 +1,5 @@
 import std/[macros, genasts]
-import std/[options, tables]
-import fusion/matching
+import std/[tables]
 import model, ast_ids, custom_logger, util, base_language, editor_language
 import generator_wasm
 import scripting/[wasm_builder]
