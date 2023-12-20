@@ -1,5 +1,5 @@
 import std/[os, osproc, asynchttpserver, strutils, strformat, asyncnet]
-import custom_async, util, timer
+import misc/[custom_async, util, timer]
 import ws
 
 ## This program exposes a local process' std in and std out through a web socket
