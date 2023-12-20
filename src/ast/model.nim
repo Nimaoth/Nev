@@ -328,7 +328,10 @@ proc resolveClass*(model: Model, classId: ClassId): NodeClass =
   result = if language.isNil: nil else: language.resolveClass(classId)
 
 proc getLanguageForClass*(model: Model, classId: ClassId): Language =
-  return model.classesToLanguages.getOrDefault(classId, nil)
+  if model.classesToLanguages.contains(classId):
+    return model.classesToLanguages[classId]
+  log lvlError, fmt"getLanguageForClass: no language for class {classId}"
+  return nil
 
 proc newModel*(id: ModelId = default(ModelId)): Model =
   # log lvlWarn, fmt"newModel: {id}"
@@ -350,6 +353,9 @@ proc addLanguage*(self: Model, language: Language) =
   if not language.verify():
     return
 
+  for baseLanguage in language.baseLanguages:
+    self.addLanguage(baseLanguage)
+
   self.languages.add language
 
   for c in language.classes.keys:
@@ -365,7 +371,6 @@ proc addLanguage*(self: Model, language: Language) =
       if not self.childClasses.contains(i.id):
         self.childClasses[i.id] = @[]
       self.childClasses[i.id].add c
-
 
 proc modelDumpNodes*(self: Model) {.exportc.} =
   debugf"{self.path} modelNodes:"
