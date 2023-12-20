@@ -1,5 +1,6 @@
 import std/[os, osproc, asynchttpserver, strutils, strformat, uri, asyncfile, json]
-import custom_async, util, router, server_utils
+import misc/[custom_async, util]
+import router, server_utils
 
 var processes: seq[Process] = @[]
 var nimsuggestPath* = "nimsuggest"
