@@ -103,6 +103,8 @@ builder.defineCellDefinitionCommands IdReferenceCellDefinition, idNone(), [
   CellBuilderCommand(kind: ConstantCell, text: "ref", themeForegroundColors: @["keyword"], disableEditing: true),
   CellBuilderCommand(kind: Children, childrenRole: IdReferenceCellDefinitionRole, themeForegroundColors: @["variable"]),
   CellBuilderCommand(kind: ConstantCell, text: "|", themeForegroundColors: @["punctuation"], disableEditing: true, flags: &{NoSpaceLeft, NoSpaceRight}),
+  CellBuilderCommand(kind: Children, childrenRole: IdReferenceCellDefinitionTargetProperty, placeholder: "<target property>".some, themeForegroundColors: @["variable"]),
+  CellBuilderCommand(kind: ConstantCell, text: "|", themeForegroundColors: @["punctuation"], disableEditing: true, flags: &{NoSpaceLeft, NoSpaceRight}),
   CellBuilderCommand(kind: Children, childrenRole: IdCellDefinitionCellFlags, separator: ",".some, placeholder: "flags".some, uiFlags: &{LayoutHorizontal}),
   CellBuilderCommand(kind: ConstantCell, text: "|", themeForegroundColors: @["punctuation"], disableEditing: true, flags: &{NoSpaceLeft, NoSpaceRight}),
   CellBuilderCommand(kind: Children, childrenRole: IdCellDefinitionForegroundColor, separator: ",".some, placeholder: "fg".some, uiFlags: &{LayoutHorizontal}),

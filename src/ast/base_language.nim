@@ -73,6 +73,11 @@ proc validateChildType(ctx: ModelComputationContextBase, node: AstNode, role: Ro
 let expressionClass* = newNodeClass(IdExpression, "Expression", isAbstract=true)
 # let typeClass* = newNodeClass(IdType, "Type", base=expressionClass)
 
+let namedInterface* = newNodeClass(IdINamed, "INamed", isAbstract=true, isInterface=true,
+  properties=[PropertyDescription(id: IdINamedName, role: "name", typ: PropertyType.String)])
+
+let declarationInterface* = newNodeClass(IdIDeclaration, "IDeclaration", isAbstract=true, isInterface=true, base=namedInterface)
+
 let metaTypeClass* = newNodeClass(IdType, "Type", alias="type", base=expressionClass)
 let stringTypeClass* = newNodeClass(IdString, "StringType", alias="string", base=expressionClass)
 let int32TypeClass* = newNodeClass(IdInt32, "Int32Type", alias="i32", base=expressionClass)
@@ -98,11 +103,6 @@ let pointerTypeClass* = newNodeClass(IdPointerType, "PointerType", base=expressi
 let pointerTypeDeclClass* = newNodeClass(IdPointerTypeDecl, "PointerTypeDecl", alias="ptr", base=expressionClass,
   children=[
     NodeChildDescription(id: IdPointerTypeDeclTarget, role: "target", class: expressionClass.id, count: ChildCount.One)])
-
-let namedInterface* = newNodeClass(IdINamed, "INamed", isAbstract=true, isInterface=true,
-  properties=[PropertyDescription(id: IdINamedName, role: "name", typ: PropertyType.String)])
-
-let declarationInterface* = newNodeClass(IdIDeclaration, "IDeclaration", isAbstract=true, isInterface=true, base=namedInterface)
 
 let castClass* = newNodeClass(IdCast, "Cast", alias="cast", base=expressionClass, children=[
     NodeChildDescription(id: IdCastType, role: "type", class: expressionClass.id, count: ChildCount.One),
@@ -1997,10 +1997,11 @@ scopeComputers[IdThenCase] = proc(ctx: ModelComputationContextBase, node: AstNod
   # debugf"compute scope for then case {node}"
   return ctx.computeDefaultScope(node)
 
+let baseInterfaces* = newLanguage(IdBaseInterfaces, "BaseInterfaces", @[namedInterface, declarationInterface])
+registerBuilder(IdBaseInterfaces, newCellBuilder())
+
 let baseLanguage* = newLanguage(IdBaseLanguage, "Base",
   @[
-    namedInterface, declarationInterface,
-
     # typeClass,
     metaTypeClass, stringTypeClass, charTypeClass, voidTypeClass, functionTypeClass, structTypeClass, pointerTypeClass, pointerTypeDeclClass,
     int32TypeClass, uint32TypeClass, int64TypeClass, uint64TypeClass, float32TypeClass, float64TypeClass,
@@ -2018,6 +2019,7 @@ let baseLanguage* = newLanguage(IdBaseLanguage, "Base",
     structDefinitionClass, structMemberDefinitionClass, structParameterClass, structMemberAccessClass,
     addressOfClass, derefClass, arrayAccessClass,
   ], typeComputers, valueComputers, scopeComputers, validationComputers,
+  baseLanguages=[baseInterfaces],
   rootNodes=[
     int32TypeInstance, uint32TypeInstance, int64TypeInstance, uint64TypeInstance, float32TypeInstance, float64TypeInstance, stringTypeInstance, voidTypeInstance, charTypeInstance, metaTypeInstance
   ])
