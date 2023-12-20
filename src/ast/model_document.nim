@@ -264,7 +264,7 @@ proc getAllAvailableLanguages*(): seq[LanguageId] =
   let l = collect(newSeq):
     for languageId in dynamicLanguages.keys:
       languageId
-  return @[IdBaseLanguage, IdEditorLanguage, IdLangLanguage, IdCellLanguage] & l
+  return @[IdBaseLanguage, IdBaseInterfaces, IdEditorLanguage, IdLangLanguage, IdCellLanguage] & l
 
 method `$`*(document: ModelDocument): string =
   return document.filename
@@ -538,6 +538,8 @@ proc loadModelAsync(project: Project, ws: WorkspaceFolder, path: string): Future
 proc resolveLanguage(project: Project, ws: WorkspaceFolder, id: LanguageId): Future[Option[Language]] {.async.} =
   if id == IdBaseLanguage:
     return base_language.baseLanguage.some
+  elif id == IdBaseInterfaces:
+    return base_language.baseInterfaces.some
   elif id == IdEditorLanguage:
     return editor_language.editorLanguage.some
   elif id == IdLangLanguage:
