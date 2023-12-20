@@ -1,7 +1,7 @@
 import std/[tables, sets, strutils, hashes, options, macros, strformat, genasts]
 import timer
 import fusion/matching
-import ast, id, util, custom_logger, macro_utils
+import id, util, custom_logger, macro_utils
 import lrucache
 
 {.experimental: "dynamicBindSym".}
@@ -23,7 +23,7 @@ when defined(js):
   proc mapKeyJs*[A](key: A): cstring =
     const typeName = $A
     {.emit: ["let temp = ", key, ";"].}
-    # @note: This assumes that the object doesn't actuall change so the generated id can be cached
+    # @note: This assumes that the object doesn't actually change so the generated id can be cached
     #        The js backend will however sometimes reuse the same object, in which case you need to invalidate
     #        the cached id.
     when enableTableIdCacheChecking:
