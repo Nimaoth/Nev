@@ -20,6 +20,7 @@
 
 when defined(js):
   type Oid* = object ## An OID.
+    cstr: cstring
     padding: int
     time: int32
     fuzz: int32
@@ -87,12 +88,35 @@ proc hash*(oid: Oid): Hash =
 proc hexbyte*(hex: char): int {.inline.} =
   result = handleHexChar(hex)
 
+proc `$`*(oid: Oid): string =
+  ## Converts an OID to a string.
+  runnableExamples:
+    let oid = constructOid(time = -1707874974, fuzz = -148288170, count = 507876210)
+    doAssert ($oid) == "62e5339a564d29f77293451e"
+
+  const hex = "0123456789abcdef"
+
+  result.setLen 24
+
+  for i in 0..<12:
+    let value = if i < 4: oid.time
+      elif i < 8: oid.fuzz
+      else: oid.count
+
+    let byteOffset = i mod 4
+
+    let b = value shr (byteOffset * 8)
+
+    result[2 * i] = hex[(b and 0xF0) shr 4]
+    result[2 * i + 1] = hex[b and 0xF]
+
 proc constructOid*(time: int32, fuzz: int32, count: int32): Oid =
   result.time = time
   result.fuzz = fuzz
   result.count = count
   when defined(js):
     result.padding = result.hash
+    result.cstr = cstring $result
 
 proc deconstruct*(oid: Oid): tuple[time: int32, fuzz: int32, count: int32] =
   result = (oid.time, oid.fuzz, oid.count)
@@ -123,28 +147,7 @@ proc parseOid*(str: string): Oid =
 
   when defined(js):
     result.padding = result.hash
-
-proc `$`*(oid: Oid): string =
-  ## Converts an OID to a string.
-  runnableExamples:
-    let oid = constructOid(time = -1707874974, fuzz = -148288170, count = 507876210)
-    doAssert ($oid) == "62e5339a564d29f77293451e"
-
-  const hex = "0123456789abcdef"
-
-  result.setLen 24
-
-  for i in 0..<12:
-    let value = if i < 4: oid.time
-      elif i < 8: oid.fuzz
-      else: oid.count
-
-    let byteOffset = i mod 4
-
-    let b = value shr (byteOffset * 8)
-
-    result[2 * i] = hex[(b and 0xF0) shr 4]
-    result[2 * i + 1] = hex[b and 0xF]
+    result.cstr = cstring $result
 
 when defined(js):
   const hexChars: cstring = "0123456789abcdef"
@@ -209,6 +212,7 @@ template genOid(result: var Oid, incr: var int, fuzz: int32) =
 
   when defined(js):
     result.padding = result.hash
+    result.cstr = cstring $result
 
 proc genOid*(): Oid =
   ## Generates a new OID.

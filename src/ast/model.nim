@@ -117,6 +117,8 @@ type
     scopeComputers*: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]]
     validationComputers*: Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): bool]
 
+    onChanged*: Event[Language]
+
   Model* = ref object
     id {.getter.}: ModelId
     path*: string
@@ -327,6 +329,8 @@ proc update*(self: Language,
     self.model.addLanguage(self)
     self.addRootNodes(rootNodes)
 
+    self.onChanged.invoke self
+
 proc newLanguage*(id: LanguageId, name: string,
     classes: openArray[NodeClass] = [],
     typeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode](),
@@ -383,15 +387,7 @@ proc addImport*(self: Model, model: Model) =
   self.importedModels.incl model.id
   self.models.add model
 
-proc addLanguage*(self: Model, language: Language) =
-  if not language.verify():
-    return
-
-  for baseLanguage in language.baseLanguages:
-    self.addLanguage(baseLanguage)
-
-  self.languages.add language
-
+proc updateClassesFromLanguage(self: Model, language: Language) =
   for c in language.classes.keys:
     self.classesToLanguages[c] = language
 
@@ -405,6 +401,24 @@ proc addLanguage*(self: Model, language: Language) =
       if not self.childClasses.contains(i.id):
         self.childClasses[i.id] = @[]
       self.childClasses[i.id].add c
+
+proc addLanguage*(self: Model, language: Language) =
+  if not language.verify():
+    return
+
+  for baseLanguage in language.baseLanguages:
+    # self.addLanguage(baseLanguage)
+    self.updateClassesFromLanguage(baseLanguage)
+
+  discard language.onChanged.subscribe proc(language: Language) =
+    if self.hasLanguage(language.id):
+      self.classesToLanguages.clear
+      self.childClasses.clear
+      for l in self.languages:
+        self.updateClassesFromLanguage(l)
+
+  self.languages.add language
+  self.updateClassesFromLanguage(language)
 
 proc modelDumpNodes*(self: Model) {.exportc.} =
   debugf"{self.path} modelNodes:"
@@ -737,9 +751,9 @@ proc fillDefaultChildren*(node: AstNode, model: Model, onlyUnique: bool = false)
       if node.childCount(desc.id) > 0:
         continue
 
-      let childClass = language.resolveClass(desc.class)
+      let childClass = model.resolveClass(desc.class)
       if childClass.isNil:
-        log lvlError, fmt"Unknown class {desc.class}"
+        log lvlError, fmt"fillDefaultChildren {node} ({model.path}, {model.id}): Unknown class {desc.class}"
         continue
 
       let isUnique = model.isUnique(childClass)
@@ -1221,6 +1235,7 @@ proc jsonToAstNode*(json: JsonNode, model: Model, opt = Joptions()): Option[AstN
 
   let class = model.resolveClass(classId)
   if class.isNil:
+    log lvlError, fmt"jsonToAstNode: failed to resolve class {classId}"
     return AstNode.none
 
   var node = newAstNode(class, id.some)

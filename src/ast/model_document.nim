@@ -5,7 +5,7 @@ from scripting_api as api import nil
 import platform/[filesystem, platform]
 import workspaces/[workspace]
 import ui/node
-import lang/[lang_language, cell_language]
+import lang/[lang_language, cell_language, property_validator_language]
 
 import ast/[generator_wasm, base_language_wasm, editor_language_wasm, model_state, cell_builder_database]
 import document, document_editor, text/text_document, events, scripting/expose, input
@@ -265,7 +265,7 @@ proc getAllAvailableLanguages*(): seq[LanguageId] =
   let l = collect(newSeq):
     for languageId in dynamicLanguages.keys:
       languageId
-  return @[IdBaseLanguage, IdBaseInterfaces, IdEditorLanguage, IdLangLanguage, IdCellLanguage] & l
+  return @[IdBaseLanguage, IdBaseInterfaces, IdEditorLanguage, IdLangLanguage, IdCellLanguage, IdPropertyValidatorLanguage] & l
 
 method `$`*(document: ModelDocument): string =
   return document.filename
@@ -288,7 +288,7 @@ proc newModelDocument*(filename: string = "", app: bool = false, workspaceFolder
       gProject.computationContext = newModelComputationContext()
       asyncCheck loadProjectAsync(gProject, ws)
 
-  log lvlWarn, fmt"newModelDocument {filename}"
+  log lvlInfo, fmt"newModelDocument {filename}"
 
   self.filename = filename
   self.appFile = app
@@ -547,6 +547,8 @@ proc resolveLanguage(project: Project, ws: WorkspaceFolder, id: LanguageId): Fut
     return lang_language.langLanguage.some
   elif id == IdCellLanguage:
     return cell_language.cellLanguage.some
+  elif id == IdPropertyValidatorLanguage:
+    return property_validator_language.propertyValidatorLanguage.some
   elif dynamicLanguages.contains(id):
     return dynamicLanguages[id].some
   elif project.modelPaths.contains(id.ModelId):
@@ -586,6 +588,8 @@ proc loadModelAsync(project: Project, ws: WorkspaceFolder, path: string): Future
 proc resolveModel(project: Project, ws: WorkspaceFolder, id: ModelId): Future[Option[Model]] {.async.} =
   if id == baseInterfacesModel.id:
     return lang_language.baseInterfacesModel.some
+  if id == baseLanguageModel.id:
+    return lang_language.baseLanguageModel.some
 
   while not project.loaded:
     log lvlInfo, fmt"Waiting for project to load"
@@ -677,7 +681,14 @@ proc getSubstitutionsForClass(self: ModelDocumentEditor, targetCell: Cell, class
     debugf"getSubstitutionsForClass {class.name}"
     let desc = class.nodeReferenceDescription(referenceRole).get
     let language = self.document.model.getLanguageForClass(desc.class)
+    if language.isNil:
+      log lvlError, fmt"getSubstitutionsForClass: Failed to resolve language for class '{desc.class}'"
+      return false
+
     let refClass = language.resolveClass(desc.class)
+    if refClass.isNil:
+      log lvlError, fmt"getSubstitutionsForClass: Failed to resolve class '{desc.class}'"
+      return false
 
     let (parent, role, index) = targetCell.getSubstitutionTarget()
 
@@ -716,6 +727,10 @@ proc updateCompletions(self: ModelDocumentEditor) =
   let parentClass = parent.nodeClass
   if parentClass.nodeChildDescription(role).getSome(childDesc): # add class substitutions
     let slotClass = model.resolveClass(childDesc.class)
+    if slotClass.isNil:
+      log lvlError, fmt"updateCompletions: Failed to resolve class '{childDesc.class}'"
+      return
+
     debugf"updateCompletions child {parent}, {node}, {node.model.isNotNil}, {slotClass.name}"
 
     model.forEachChildClass slotClass, proc(childClass: NodeClass) =
@@ -729,6 +744,10 @@ proc updateCompletions(self: ModelDocumentEditor) =
       self.unfilteredCompletions.incl ModelCompletion(kind: ModelCompletionKind.SubstituteClass, name: name, class: childClass, parent: parent, role: role, index: index)
   elif parentClass.nodeReferenceDescription(role).getSome(desc):
     let slotClass = model.resolveClass(desc.class)
+    if slotClass.isNil:
+      log lvlError, fmt"updateCompletions: Failed to resolve class '{desc.class}'"
+      return
+
     debugf"updateCompletions ref {parent}, {node}, {node.model.isNotNil}, {slotClass.name}"
     let scope = self.document.ctx.getScope(node)
     for decl in scope:
@@ -890,6 +909,8 @@ proc handleNodeReferenceChanged(self: ModelDocumentEditor, model: Model, node: A
 
 proc handleBuilderChanged(self: ModelDocumentEditor) =
   self.rebuildCells()
+  self.cursor = self.getFirstEditableCellOfNode(self.document.model.rootNodes[0]).get
+  self.updateScrollOffset()
   self.markDirty()
 
 proc handleModelChanged(self: ModelDocumentEditor, document: ModelDocument) =
@@ -3325,7 +3346,7 @@ proc pasteNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
     var foundExisting = false
     for child in node.childrenRec:
       if self.document.project.resolveReference(node.id).isSome:
-        log lvlWarn, fmt"Node {node} already exists in model"
+        log lvlInfo, fmt"Node {node} already exists in model, inserting a clone"
         foundExisting = true
         break
 
@@ -3455,8 +3476,12 @@ proc importModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
       result.add ModelImportSelectorItem(name: name, model: model.id, score: score)
 
     block:
-      let score = matchPath("BaseInterfaces", text)
-      result.add ModelImportSelectorItem(name: "BaseInterfaces", model: lang_language.baseInterfacesModel.id, score: score)
+      let score = matchPath("BaseInterfacesModel", text)
+      result.add ModelImportSelectorItem(name: "BaseInterfacesModel", model: lang_language.baseInterfacesModel.id, score: score)
+
+    block:
+      let score = matchPath("BaseLanguageModel", text)
+      result.add ModelImportSelectorItem(name: "BaseLanguageModel", model: lang_language.baseLanguageModel.id, score: score)
 
     # result.sort((a, b) => cmp(a.score, b.score), Descending)
 
@@ -3466,6 +3491,11 @@ proc importModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
     if modelId == baseInterfacesModel.id:
       log lvlInfo, fmt"Add imported model {lang_language.baseInterfacesModel.path} ({lang_language.baseInterfacesModel.id})"
       self.document.model.addImport(lang_language.baseInterfacesModel)
+      return
+
+    if modelId == baseLanguageModel.id:
+      log lvlInfo, fmt"Add imported model {lang_language.baseLanguageModel.path} ({lang_language.baseLanguageModel.id})"
+      self.document.model.addImport(lang_language.baseLanguageModel)
       return
 
     if self.document.project.getModel(modelId).getSome(model):
@@ -3506,11 +3536,29 @@ proc compileLanguage*(self: ModelDocumentEditor) {.expose("editor.model").} =
           modelDocument.builder.addBuilder(getBuilder(languageId))
           modelDocument.onBuilderChanged.invoke()
 
+  if languageId == IdCellLanguage:
+    try:
+      log lvlInfo, fmt"Updating cell language ({languageId}) with model {self.document.model.path} ({self.document.model.id})"
+      updateCellLanguage(self.document.model)
+      return
+    except CatchableError:
+      log lvlError, fmt"Failed to update cell language from model: {getCurrentExceptionMsg()}"
+    return
+
+  if languageId == IdPropertyValidatorLanguage:
+    try:
+      log lvlInfo, fmt"Updating property validator language ({languageId}) with model {self.document.model.path} ({self.document.model.id})"
+      updatePropertyValidatorLanguage(self.document.model)
+      return
+    except CatchableError:
+      log lvlError, fmt"Failed to update cell language from model: {getCurrentExceptionMsg()}"
+    return
+
   if dynamicLanguages.contains(languageId):
     let language = dynamicLanguages[languageId]
     try:
       log lvlInfo, fmt"Updating language {language.name} ({language.id}) with model {self.document.model.path} ({self.document.model.id})"
-      language.updateLanguageFromModel(self.document.model)
+      discard language.updateLanguageFromModel(self.document.model)
       return
     except CatchableError:
       log lvlError, fmt"Failed to update language from model: {getCurrentExceptionMsg()}"

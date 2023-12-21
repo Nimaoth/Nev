@@ -66,6 +66,9 @@ method log(self: CustomLogger, level: logging.Level, args: varargs[string, `$`])
 
 var logger* = newCustomLogger()
 
+when defined(js):
+  logger.enableConsoleLogger()
+
 proc flush*(logger: logging.Logger) =
   if logger of FileLogger:
     when not defined(js):
