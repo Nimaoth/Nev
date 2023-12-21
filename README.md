@@ -291,5 +291,8 @@ Here is an overview of the modules:
 - fix deleting e.g struct member type bug
 - negative number literal, float literal
 - render cell indentation guides
+- invalidate models using language X when X gets rebuilt
+- finish/revise using string as parameter type for wasm functions (see createWasmWrapper, createHostWrapper)
+- fix potential issues because of loading order when loading test-language and test-language-playground
 
 [Test report](https://nimaoth.github.io/Absytree/testresults.html)

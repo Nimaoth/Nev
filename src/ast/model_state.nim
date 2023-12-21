@@ -334,10 +334,16 @@ proc computeValidImpl(ctx: ModelState, node: AstNode): bool =
 
   var class = node.nodeClass
 
+  result = true
+
+  for property in node.properties:
+    if property.value.kind == String:
+      if not language.isValidPropertyValue(class, property.role, property.value.stringValue):
+        ctx.addDiagnostic(node, fmt"Invalid property value")
+        result = false
+
   while class.isNotNil:
     if language.validationComputers.contains(class.id):
       let validationComputer = language.validationComputers[class.id]
       return validationComputer(ctx.computationContextOwner.ModelComputationContext, node)
     class = class.base
-
-  return true

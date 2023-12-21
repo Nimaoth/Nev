@@ -213,11 +213,12 @@ else:
     # echo typ.treeRepr
     case typ.repr
     of "void": return "v"
-    of "int32", "uint32": return "i"
+    of "int32", "uint32", "bool": return "i"
     of "int64", "uint64": return "I"
     of "float32": return "f"
     of "float64", "float": return "F"
     of "cstring", "pointer", "WasmPtr": return "*"
+    of "string": return "I"
     else:
       return ""
 
@@ -446,6 +447,7 @@ macro createWasmWrapper(module: WasmModule, returnType: typedesc, typ: typedesc,
     var arg = genSym(nskParam, "p" & $i)
 
     let isCString = p.repr == "cstring"
+    let isString = p.repr == "string"
 
     params.add nnkIdentDefs.newTree(arg, p, newEmptyNode())
 
@@ -459,6 +461,14 @@ macro createWasmWrapper(module: WasmModule, returnType: typedesc, typ: typedesc,
             module.copyMem(p, a, arg.len + 1)
             p
 
+      elif isString:
+        arg = genAst(arg):
+          block:
+            let a = jsEncodeString(arg.cstring)
+            let p: WasmPtr = module.alloc(arg.len.uint32 + 1)
+            module.copyMem(p, a, arg.len + 1)
+            p.uint64 or (arg.len.uint64 shl 32)
+
     else:
       if isCString:
         arg = genAst(arg):
@@ -466,6 +476,12 @@ macro createWasmWrapper(module: WasmModule, returnType: typedesc, typ: typedesc,
             let p: WasmPtr = module.alloc(arg.len.uint32 + 1)
             module.copyMem(p, cast[pointer](arg), arg.len + 1)
             p
+      elif isString:
+        arg = genAst(arg):
+          block:
+            let p: WasmPtr = module.alloc(arg.len.uint32 + 1)
+            module.copyMem(p, a.ptr, arg.len + 1)
+            p.uint64 or (arg.len.uint64 shl 32)
 
     args.add(arg)
 
