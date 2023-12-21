@@ -706,6 +706,9 @@ proc updateCompletions(self: ModelDocumentEditor) =
     return
 
   let (parent, role, index) = targetCell.getSubstitutionTarget()
+  if parent.isNil:
+    return
+
   let node = self.cursor.node
 
   let model = node.model
