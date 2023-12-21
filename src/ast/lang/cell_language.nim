@@ -8,7 +8,7 @@ export id, ast_ids
 
 logCategory "cell-language"
 
-var builder = newCellBuilder()
+var builder = newCellBuilder(IdCellLanguage)
 # var typeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]()
 # var valueComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]()
 var scopeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]]()
@@ -225,5 +225,4 @@ registerBuilder(IdCellLanguage, builder)
 # langLanguage.model.addRootNode createNodesForLanguage(langLanguage)
 
 proc updateCellLanguage*(model: Model) =
-  cellLanguage = createLanguageFromModel(model)
-  cellLanguage.name = "Cells"
+  cellLanguage.updateLanguageFromModel(model)

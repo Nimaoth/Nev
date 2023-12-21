@@ -276,7 +276,7 @@ let assignmentClass* = newNodeClass(IdAssignment, "Assignment", alias="=", base=
     NodeChildDescription(id: IdAssignmentValue, role: "value", class: expressionClass.id, count: ChildCount.One),
   ])
 
-var builder = newCellBuilder()
+var builder = newCellBuilder(IdBaseLanguage)
 
 builder.addBuilderFor emptyLineClass.id, idNone(), proc(map: NodeCellMap, builder: CellBuilder, node: AstNode, owner: AstNode): Cell =
   var cell = ConstantCell(id: newId().CellId, node: owner ?? node, referenceNode: node)
@@ -1997,7 +1997,7 @@ scopeComputers[IdThenCase] = proc(ctx: ModelComputationContextBase, node: AstNod
   return ctx.computeDefaultScope(node)
 
 let baseInterfaces* = newLanguage(IdBaseInterfaces, "BaseInterfaces", @[namedInterface, declarationInterface])
-registerBuilder(IdBaseInterfaces, newCellBuilder())
+registerBuilder(IdBaseInterfaces, newCellBuilder(IdBaseInterfaces))
 
 let baseLanguage* = newLanguage(IdBaseLanguage, "Base",
   @[

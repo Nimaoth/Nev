@@ -273,46 +273,76 @@ proc verify*(self: Language): bool =
       log(lvlError, fmt"Class {c.name} is both final and abstract")
       result = false
 
-proc newLanguage*(id: LanguageId, name: string, classes: seq[NodeClass],
-  typeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode](),
-  valueComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode](),
-  scopeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]](),
-  validationComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): bool](),
-  baseLanguages: openArray[Language] = [],
-  rootNodes: openArray[AstNode] = [],
+proc addClasses*(language: Language, classes: openArray[NodeClass]) =
+  for c in classes:
+    language.classes[c.id] = c
+    if c.canBeRoot:
+      language.rootNodeClasses.add c
+
+proc addBaseLanguages*(language: Language, baseLanguages: openArray[Language]) =
+  for l in baseLanguages:
+    for c in l.classes.values:
+      language.classesToLanguages[c.id] = l
+
+    # if c.base.isNotNil:
+    #   if not language.childClasses.contains(c.base.id):
+    #     language.childClasses[c.base.id] = @[]
+    #   language.childClasses[c.base.id].add c
+
+    # for i in c.interfaces:
+    #   if not language.childClasses.contains(i.id):
+    #     language.childClasses[i.id] = @[]
+    #   language.childClasses[i.id].add c
+
+proc addRootNodes*(language: Language, rootNodes: openArray[AstNode]) =
+  assert language.model.isNotNil
+  for node in rootNodes:
+    language.model.addRootNode node
+
+proc update*(self: Language,
+    classes: openArray[NodeClass] = [],
+    typeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode](),
+    valueComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode](),
+    scopeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]](),
+    validationComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): bool](),
+    baseLanguages: openArray[Language] = [],
+    rootNodes: openArray[AstNode] = [],
+  ) =
+    inc self.version
+    self.classes.clear
+    self.classesToLanguages.clear
+    self.rootNodeClasses.setLen 0
+
+    # validators: Table[ClassId, NodeValidator]
+    self.typeComputers = typeComputers
+    self.valueComputers = valueComputers
+    self.scopeComputers = scopeComputers
+    self.validationComputers = validationComputers
+
+    self.addBaseLanguages(baseLanguages)
+    self.addClasses(classes)
+
+    # todo: recreate model or reuse?
+    self.model = newModel(self.id.ModelId)
+    self.model.addLanguage(self)
+    self.addRootNodes(rootNodes)
+
+proc newLanguage*(id: LanguageId, name: string,
+    classes: openArray[NodeClass] = [],
+    typeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode](),
+    valueComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode](),
+    scopeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]](),
+    validationComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): bool](),
+    baseLanguages: openArray[Language] = [],
+    rootNodes: openArray[AstNode] = [],
   ): Language =
+
   new result
   result.id = id
   result.name = name
-  result.typeComputers = typeComputers
-  result.valueComputers = valueComputers
-  result.scopeComputers = scopeComputers
-  result.validationComputers = validationComputers
-  result.baseLanguages = @baseLanguages
+  result.version = -1
 
-  for l in baseLanguages:
-    for c in l.classes.values:
-      result.classesToLanguages[c.id] = l
-
-  for c in classes:
-    result.classes[c.id] = c
-    if c.canBeRoot:
-      result.rootNodeClasses.add c
-
-    # if c.base.isNotNil:
-    #   if not result.childClasses.contains(c.base.id):
-    #     result.childClasses[c.base.id] = @[]
-    #   result.childClasses[c.base.id].add c
-
-    # for i in c.interfaces:
-    #   if not result.childClasses.contains(i.id):
-    #     result.childClasses[i.id] = @[]
-    #   result.childClasses[i.id].add c
-
-  result.model = newModel(id.ModelId)
-  for node in rootNodes:
-    result.model.addRootNode node
-  result.model.addLanguage(result)
+  result.update(classes, typeComputers, valueComputers, scopeComputers, validationComputers, baseLanguages, rootNodes)
 
 proc forEachChildClass*(self: Model, base: NodeClass, handler: proc(c: NodeClass)) =
   handler(base)

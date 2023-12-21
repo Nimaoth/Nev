@@ -1,5 +1,5 @@
 import std/[sequtils, strformat, strutils, tables, unicode, options, os, algorithm, json, macros, macrocache, sugar, streams, deques]
-import misc/[id, util, timer, event, cancellation_token, myjsonutils, traits, rect_utils, custom_logger, custom_async, fuzzy_matching]
+import misc/[id, util, timer, event, cancellation_token, myjsonutils, traits, rect_utils, custom_logger, custom_async, fuzzy_matching, array_set]
 import ui/node
 import scripting/[expose, scripting_base]
 import platform/[platform, filesystem]
@@ -188,6 +188,7 @@ proc pushPopup*(self: App, popup: Popup)
 proc popPopup*(self: App, popup: Popup)
 proc openSymbolsPopup*(self: App, symbols: seq[Symbol], handleItemSelected: proc(symbol: Symbol), handleItemConfirmed: proc(symbol: Symbol), handleCanceled: proc())
 proc help*(self: App, about: string = "")
+proc getAllDocuments*(self: App): seq[Document]
 
 implTrait AppInterface, App:
   proc platform*(self: App): Platform = self.platform
@@ -215,6 +216,7 @@ implTrait AppInterface, App:
   pushPopup(void, App, Popup)
   popPopup(void, App, Popup)
   openSymbolsPopup(void, App, seq[Symbol], proc(symbol: Symbol), proc(symbol: Symbol), proc())
+  getAllDocuments(seq[Document], App)
 
 type
   AppLogger* = ref object of Logger
@@ -536,6 +538,10 @@ proc getPopupForId*(self: App, id: EditorId): Option[Popup] =
       return popup.some
 
   return Popup.none
+
+proc getAllDocuments*(self: App): seq[Document] =
+  for it in self.editors.values:
+    result.incl it.getDocument
 
 import text/[text_editor, text_document]
 import ast/[model_document]
@@ -1051,7 +1057,7 @@ proc toggleConsoleLogger*(self: App) {.expose("editor").} =
 #   self.createAndAddView(newKeybindAutocompletion())
 
 proc closeCurrentView*(self: App) {.expose("editor").} =
-  self.views[self.currentView].editor.unregister()
+  let view = self.views[self.currentView]
   self.views.delete self.currentView
 
   if self.views.len == 0:
@@ -1060,6 +1066,8 @@ proc closeCurrentView*(self: App) {.expose("editor").} =
       self.addView view
     else:
       self.help()
+
+  self.hiddenViews.add view
 
   self.currentView = self.currentView.clamp(0, self.views.len - 1)
   self.platform.requestRender()
@@ -1103,7 +1111,7 @@ proc setLayout*(self: App, layout: string) {.expose("editor").} =
     of "horizontal": HorizontalLayout()
     of "vertical": VerticalLayout()
     of "fibonacci": FibonacciLayout()
-    else: HorizontalLayout()
+    else: FibonacciLayout()
   self.platform.requestRender()
 
 proc commandLine*(self: App, initialValue: string = "") {.expose("editor").} =

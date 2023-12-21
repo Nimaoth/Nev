@@ -1,4 +1,4 @@
-import std/[tables, strutils, strformat, options, algorithm]
+import std/[tables, strutils, strformat, options, algorithm, sequtils]
 import ui/node
 import misc/[id, util, custom_logger, macro_utils]
 import model, ast_ids
@@ -56,8 +56,9 @@ type
   CellBuilderFunction* = proc(map: NodeCellMap, builder: CellBuilder, node: AstNode, owner: AstNode): Cell
 
   CellBuilder* = ref object
-    builders*: Table[ClassId, seq[tuple[builderId: Id, impl: CellBuilderFunction, flags: CellBuilderFlags]]]
-    builders2*: Table[ClassId, seq[tuple[builderId: Id, impl: CellBuilderCommands, flags: CellBuilderFlags]]]
+    sourceLanguage*: LanguageId
+    builders*: Table[ClassId, seq[tuple[builderId: Id, impl: CellBuilderFunction, flags: CellBuilderFlags, sourceLanguage: LanguageId]]]
+    builders2*: Table[ClassId, seq[tuple[builderId: Id, impl: CellBuilderCommands, flags: CellBuilderFlags, sourceLanguage: LanguageId]]]
     preferredBuilders*: Table[ClassId, Id]
     forceDefault*: bool
 
@@ -555,42 +556,52 @@ template horizontalCell(cell: Cell, node: AstNode, owner: AstNode, childCell: un
   finally:
     cell.add childCell
 
-proc newCellBuilder*(): CellBuilder =
+proc newCellBuilder*(sourceLanguageId: LanguageId): CellBuilder =
   new result
+  result.sourceLanguage = sourceLanguageId
 
 proc clear*(self: CellBuilder) =
   self.builders.clear()
   self.preferredBuilders.clear()
   self.forceDefault = false
 
-proc addBuilderFor*(self: CellBuilder, classId: ClassId, builderId: Id, flags: CellBuilderFlags, builder: CellBuilderFunction) =
+proc addBuilderFor*(self: CellBuilder, classId: ClassId, builderId: Id, flags: CellBuilderFlags, builder: CellBuilderFunction, sourceLanguage = LanguageId.none) =
   # log lvlWarn, fmt"addBuilderFor {classId}"
   if self.builders.contains(classId):
-    self.builders[classId].add (builderId, builder, flags)
+    self.builders[classId].add (builderId, builder, flags, self.sourceLanguage)
   else:
-    self.builders[classId] = @[(builderId, builder, flags)]
+    self.builders[classId] = @[(builderId, builder, flags, self.sourceLanguage)]
 
-proc addBuilderFor*(self: CellBuilder, classId: ClassId, builderId: Id, builder: CellBuilderFunction) =
-  self.addBuilderFor(classId, builderId, 0.CellBuilderFlags, builder)
+proc addBuilderFor*(self: CellBuilder, classId: ClassId, builderId: Id, builder: CellBuilderFunction, sourceLanguage = LanguageId.none) =
+  self.addBuilderFor(classId, builderId, 0.CellBuilderFlags, builder, sourceLanguage)
 
-proc addBuilderFor*(self: CellBuilder, classId: ClassId, builderId: Id, flags: CellBuilderFlags, commands: openArray[CellBuilderCommand]) =
+proc addBuilderFor*(self: CellBuilder, classId: ClassId, builderId: Id, flags: CellBuilderFlags, commands: openArray[CellBuilderCommand], sourceLanguage = LanguageId.none) =
   # log lvlWarn, fmt"addBuilderFor {classId}"
   var builder = CellBuilderCommands(commands: @commands)
   if self.builders2.contains(classId):
-    self.builders2[classId].add (builderId, builder, flags)
+    self.builders2[classId].add (builderId, builder, flags, sourceLanguage.get(self.sourceLanguage))
   else:
-    self.builders2[classId] = @[(builderId, builder, flags)]
+    self.builders2[classId] = @[(builderId, builder, flags, sourceLanguage.get(self.sourceLanguage))]
 
-proc addBuilderFor*(self: CellBuilder, classId: ClassId, builderId: Id, commands: openArray[CellBuilderCommand]) =
-  self.addBuilderFor(classId, builderId, 0.CellBuilderFlags, commands)
+proc addBuilderFor*(self: CellBuilder, classId: ClassId, builderId: Id, commands: openArray[CellBuilderCommand], sourceLanguage = LanguageId.none) =
+  self.addBuilderFor(classId, builderId, 0.CellBuilderFlags, commands, sourceLanguage)
 
 proc addBuilder*(self: CellBuilder, other: CellBuilder) =
+  # remove existing builders for the other source language
+  for (classId, builders) in self.builders.mpairs:
+    builders = builders.filterIt(it.sourceLanguage != other.sourceLanguage)
+    # todo: remove from preferredBuilders
+
+  for (classId, builders) in self.builders2.mpairs:
+    builders = builders.filterIt(it.sourceLanguage != other.sourceLanguage)
+    # todo: remove from preferredBuilders
+
   for pair in other.builders.pairs:
     for builder in pair[1]:
-      self.addBuilderFor(pair[0], builder.builderId, builder.flags, builder.impl)
+      self.addBuilderFor(pair[0], builder.builderId, builder.flags, builder.impl, builder.sourceLanguage.some)
   for pair in other.builders2.pairs:
     for builder in pair[1]:
-      self.addBuilderFor(pair[0], builder.builderId, builder.flags, builder.impl.commands)
+      self.addBuilderFor(pair[0], builder.builderId, builder.flags, builder.impl.commands, builder.sourceLanguage.some)
   for pair in other.preferredBuilders.pairs:
     self.preferredBuilders[pair[0]] = pair[1]
 

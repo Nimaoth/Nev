@@ -6,6 +6,9 @@ import keybindings_helix
 import keybindings_normal
 
 proc handleAction*(action: string, args: JsonNode): bool {.wasmexport.} =
+  when not defined(wasm):
+    return false
+
   infof "handleAction: {action}, {args}"
 
   case action
@@ -32,6 +35,9 @@ proc handleAction*(action: string, args: JsonNode): bool {.wasmexport.} =
   else: return false
 
 proc handlePopupAction*(popup: EditorId, action: string, args: JsonNode): bool {.wasmexport.} =
+  when not defined(wasm):
+    return false
+
   # infof "handlePopupAction: {action}, {args}"
 
   case action:
@@ -47,16 +53,25 @@ proc handlePopupAction*(popup: EditorId, action: string, args: JsonNode): bool {
   else: return false
 
 proc handleDocumentEditorAction*(id: EditorId, action: string, args: JsonNode): bool {.wasmexport.} =
+  when not defined(wasm):
+    return false
+
   # infof "handleDocumentEditorAction: {action}, {args}"
   return false
 
 proc handleTextEditorAction*(editor: TextDocumentEditor, action: string, args: JsonNode): bool {.wasmexport.} =
+  when not defined(wasm):
+    return false
+
   # infof "handleTextEditorAction: {action}, {args}"
 
   case action
   else: return false
 
 proc handleModelEditorAction*(editor: ModelDocumentEditor, action: string, args: JsonNode): bool {.wasmexport.} =
+  when not defined(wasm):
+    return false
+
   # infof "handleModelEditorAction: {action}, {args}"
 
   case action
@@ -68,6 +83,7 @@ proc postInitialize*(): bool {.wasmexport.} =
 
 import default_config
 
-loadDefaultOptions()
-loadDefaultKeybindings()
-loadVimKeybindings()
+when defined(wasm):
+  loadDefaultOptions()
+  loadDefaultKeybindings()
+  loadVimKeybindings()
