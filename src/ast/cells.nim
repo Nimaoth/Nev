@@ -618,7 +618,11 @@ proc buildCellDefault*(map: NodeCellMap, node: AstNode, useDefaultRecursive: boo
 
     cell.horizontalCell(node, owner, header):
       # header.increaseIndentAfter = true
-      header.add ConstantCell(node: owner ?? node, referenceNode: node, text: class.name, disableEditing: true)
+      let name = if class.isNil:
+        fmt"<unkown {node.class}>"
+      else:
+        class.name
+      header.add ConstantCell(node: owner ?? node, referenceNode: node, text: name, disableEditing: true)
       header.add ConstantCell(node: owner ?? node, referenceNode: node, text: "{", disableEditing: true)
 
       if not hasAnyChildren:
@@ -628,7 +632,10 @@ proc buildCellDefault*(map: NodeCellMap, node: AstNode, useDefaultRecursive: boo
     for prop in node.properties:
       # var propCell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal})
       childrenCell.horizontalCell(node, owner, propCell):
-        let name: string = class.propertyDescription(prop.role).map(proc(decs: PropertyDescription): string = decs.role).get($prop.role)
+        let name: string = if class.isNil:
+          fmt"<unkown {prop.role}>"
+        else:
+          class.propertyDescription(prop.role).map(proc(decs: PropertyDescription): string = decs.role).get($prop.role)
         propCell.add ConstantCell(node: owner ?? node, referenceNode: node, text: name, disableEditing: true)
         propCell.add ConstantCell(node: owner ?? node, referenceNode: node, text: ":", style: CellStyle(noSpaceLeft: true), disableEditing: true)
         propCell.add PropertyCell(id: newId().CellId, node: owner ?? node, referenceNode: node, property: prop.role)
@@ -637,7 +644,10 @@ proc buildCellDefault*(map: NodeCellMap, node: AstNode, useDefaultRecursive: boo
     for prop in node.references:
       # var propCell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal})
       childrenCell.horizontalCell(node, owner, propCell):
-        let name: string = class.nodeReferenceDescription(prop.role).map(proc(decs: NodeReferenceDescription): string = decs.role).get($prop.role)
+        let name: string = if class.isNil:
+          fmt"<unkown {prop.role}>"
+        else:
+          class.nodeReferenceDescription(prop.role).map(proc(decs: NodeReferenceDescription): string = decs.role).get($prop.role)
         propCell.add ConstantCell(node: owner ?? node, referenceNode: node, text: name, disableEditing: true)
         propCell.add ConstantCell(node: owner ?? node, referenceNode: node, text: ":", style: CellStyle(noSpaceLeft: true), disableEditing: true)
 
@@ -657,7 +667,10 @@ proc buildCellDefault*(map: NodeCellMap, node: AstNode, useDefaultRecursive: boo
       # var propCell = CollectionCell(id: newId().CellId, node: owner ?? node, referenceNode: node, uiFlags: &{LayoutHorizontal})
       childrenCell.horizontalCell(node, owner, propCell):
 
-        let name: string = class.nodeChildDescription(prop.role).map(proc(decs: NodeChildDescription): string = decs.role).get($prop.role)
+        let name: string = if class.isNil:
+          fmt"<unkown {prop.role}>"
+        else:
+          class.nodeChildDescription(prop.role).map(proc(decs: NodeChildDescription): string = decs.role).get($prop.role)
         propCell.add ConstantCell(node: owner ?? node, referenceNode: node, text: name, disableEditing: true)
         propCell.add ConstantCell(node: owner ?? node, referenceNode: node, text: ":", style: CellStyle(noSpaceLeft: true), disableEditing: true) #, increaseIndentAfter: children.len > 1)
 
@@ -792,15 +805,13 @@ proc buildCellWithCommands*(map: NodeCellMap, node: AstNode, owner: AstNode, com
 
 proc buildCell*(map: NodeCellMap, node: AstNode, useDefault: bool = false, builderFunc: CellBuilderFunction = nil, owner: AstNode = nil): Cell =
   let class = node.nodeClass
-  if class.isNil:
-    debugf"Unknown class {node.class} for node {node}"
-    return EmptyCell(node: node, referenceNode: node)
 
   # echo fmt"build {node}"
-  let useDefault = map.builder.forceDefault or useDefault
+  let useDefault = class.isNil or map.builder.forceDefault or useDefault
 
   block blk:
     if not useDefault:
+      assert class.isNotNil
       if builderFunc.isNotNil:
         result = builderFunc(map, map.builder, node, owner)
         break blk

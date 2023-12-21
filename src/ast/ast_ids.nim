@@ -285,6 +285,12 @@ let IdCellFlagDisableEditing* = "83ffffff0fe70c0b7dabe774".parseId.ClassId
 let IdCellFlagDisableSelection* = "83ffffff0fe70c0b7dabeb0c".parseId.ClassId
 let IdCellFlagDeleteNeighbor* = "83ffffff0fe70c0b7dabff35".parseId.ClassId
 
+# property validator language
+
+let IdPropertyValidatorLanguage* = "8cffffff484c682b4a6c4637".parseId.LanguageId
+let IdPropertyValidatorDefinition* = "8cffffff484c682b4a6c4667".parseId.ClassId
+let IdPropertyValidatorDefinitionClass* = "8cffffff2061f8026045266e".parseId.RoleId
+
 # new ids
 
 let Id656f7f67d077504f640d86cd* = "656f7f67d077504f640d86cd".parseId

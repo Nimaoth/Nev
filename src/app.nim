@@ -1147,6 +1147,8 @@ proc writeFile*(self: App, path: string = "", app: bool = false) {.expose("edito
       log(lvlError, fmt"Failed to write file '{path}': {getCurrentExceptionMsg()}")
       log(lvlError, getCurrentException().getStackTrace())
 
+    self.saveAppState()
+
 proc loadFile*(self: App, path: string = "") {.expose("editor").} =
   defer:
     self.platform.requestRender()

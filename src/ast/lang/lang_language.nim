@@ -334,9 +334,8 @@ scopeComputers[IdClassDefinition] = proc(ctx: ModelComputationContextBase, node:
   return nodes
 
 proc collectRoles(classNode: AstNode, nodes: var seq[AstNode]) =
-  # echo fmt"collectRoles: {classNode.dump(recurse=true)}"
+  # debugf"collectRoles: {classNode.dump(recurse=true)}"
   for _, prop in classNode.children(IdClassDefinitionProperties):
-    # echo fmt"{classNode}: {prop}"
     nodes.add prop
 
   for _, reference in classNode.children(IdClassDefinitionReferences):
@@ -378,6 +377,28 @@ scopeComputers[IdRoleReference] = proc(ctx: ModelComputationContextBase, node: A
     collectRoles(classNode, nodes)
     return nodes
 
+  if node.role == IdReferenceCellDefinitionTargetProperty:
+    let referenceCellNode = node.parent
+    let referenceRoleNode = referenceCellNode.firstChild(IdReferenceCellDefinitionRole).getOr:
+      return @[]
+
+    let referenceRole = referenceRoleNode.resolveReference(IdRoleReferenceTarget).getOr:
+      return @[]
+
+    # debugf"referenceRole: {referenceRole}"
+
+    let classReferenceNode = referenceRole.firstChild(IdReferenceDefinitionClass).getOr:
+      return @[]
+
+    # debugf"classReferenceNode: {classReferenceNode}"
+    let classNode = classReferenceNode.resolveReference(IdClassReferenceTarget).getOr:
+      return @[]
+
+    # debugf"classNode: {classNode.dump(recurse=true)}"
+    collectRoles(classNode, nodes)
+    return nodes
+
+
   # todo: improve this
   var parent = node.parent
   var classNode: AstNode = nil
@@ -389,6 +410,12 @@ scopeComputers[IdRoleReference] = proc(ctx: ModelComputationContextBase, node: A
     if parent.class == IdCellBuilderDefinition:
       ctx.dependOn(parent)
       if parent.resolveReference(IdCellBuilderDefinitionClass).getSome(node):
+        classNode = node
+      break
+
+    if parent.class == IdPropertyValidatorDefinition:
+      ctx.dependOn(parent)
+      if parent.resolveReference(IdPropertyValidatorDefinitionClass).getSome(node):
         classNode = node
       break
 
@@ -443,10 +470,10 @@ proc createNodeClassFromLangDefinition*(classMap: var Table[ClassId, NodeClass],
         PropertyType.Int
       else:
         log lvlError, fmt"Invalid property type specified for {prop}: {typ}"
-        return NodeClass.none
+        continue
     else:
       log lvlError, fmt"No property type specified for {prop}"
-      return NodeClass.none
+      continue
 
     class.properties.add PropertyDescription(id: prop.id.RoleId, role: propName, typ: typ)
 
@@ -459,10 +486,10 @@ proc createNodeClassFromLangDefinition*(classMap: var Table[ClassId, NodeClass],
         target.id.ClassId
       else:
         log lvlError, fmt"No class specified for {reference}: {classNode}"
-        return NodeClass.none
+        continue
     else:
       log lvlError, fmt"No class specified for {reference}"
-      return NodeClass.none
+      continue
 
     class.references.add NodeReferenceDescription(id: reference.id.RoleId, role: referenceName, class: classId)
 
@@ -475,10 +502,10 @@ proc createNodeClassFromLangDefinition*(classMap: var Table[ClassId, NodeClass],
         target.id.ClassId
       else:
         log lvlError, fmt"No class specified for {children}: {classNode}"
-        return NodeClass.none
+        continue
     else:
       log lvlError, fmt"No class specified for {children}"
-      return NodeClass.none
+      continue
 
     let count = if children.firstChild(IdChildrenDefinitionCount).getSome(count):
       if count.class == IdCountZeroOrOne:
@@ -491,10 +518,10 @@ proc createNodeClassFromLangDefinition*(classMap: var Table[ClassId, NodeClass],
         ChildCount.OneOrMore
       else:
         log lvlError, fmt"Invalid child count specified for {children}: {count}"
-        return NodeClass.none
+        continue
     else:
       log lvlError, fmt"No child count specified for {children}"
-      return NodeClass.none
+      continue
 
     class.children.add NodeChildDescription(id: children.id.RoleId, role: childrenName, class: classId, count: count)
 
@@ -504,7 +531,6 @@ proc createNodeClassFromLangDefinition*(classMap: var Table[ClassId, NodeClass],
         class.base = baseClass
       else:
         log lvlError, fmt"Failed to create base class for {def}: {baseClassNode}"
-        return NodeClass.none
 
   for _, interfaceReferenceNode in def.children(IdClassDefinitionInterfaces):
     if interfaceReferenceNode.resolveReference(IdClassReferenceTarget).getSome(interfaceNode):
@@ -512,7 +538,6 @@ proc createNodeClassFromLangDefinition*(classMap: var Table[ClassId, NodeClass],
         class.interfaces.add interfaceClass
       else:
         log lvlError, fmt"Failed to create base class for {def}: {interfaceNode}"
-        return NodeClass.none
 
   # debugf"{class}"
   # print class
@@ -531,16 +556,19 @@ proc parseCellFlags*(nodes: openArray[AstNode]): tuple[cellFlags: CellFlags, uiF
     elif node.class == IdCellFlagDisableEditing: result.disableEditing = true
     elif node.class == IdCellFlagDisableSelection: result.disableSelection = true
     elif node.class == IdCellFlagDeleteNeighbor: result.deleteNeighbor = true
+    elif node.class == IdCellFlag: discard
     else:
       log lvlError, fmt"Invalid cell flag: {node}"
 
-proc createCellBuilderCommandFromDefinition(builder: CellBuilder, def: AstNode, commands: var seq[CellBuilderCommand], isRoot: bool = false) =
+proc createCellBuilderCommandFromDefinition(builder: CellBuilder, def: AstNode, commands: var seq[CellBuilderCommand], isRoot: bool = false): bool =
   let shadowText = if def.property(IdCellDefinitionShadowText).getSome(shadowText):
     shadowText.stringValue
   else:
     ""
 
   let (cellFlags, uiFlags, disableEditing, disableSelection, deleteNeighbor)  = def.children(IdCellDefinitionCellFlags).parseCellFlags
+
+  result = true
 
   var foregroundColors: seq[string] = @[]
   var backgroundColors: seq[string] = @[]
@@ -549,18 +577,21 @@ proc createCellBuilderCommandFromDefinition(builder: CellBuilder, def: AstNode, 
       foregroundColors.add colorNode.property(IdColorDefinitionTextScope).get.stringValue
     else:
       log lvlError, fmt"Invalid theme foreground color: {colorNode}"
+      return false
 
   for _, colorNode in def.children(IdCellDefinitionBackgroundColor):
     if colorNode.class == IdColorDefinitionText:
       backgroundColors.add colorNode.property(IdColorDefinitionTextScope).get.stringValue
     else:
       log lvlError, fmt"Invalid theme foreground color: {colorNode}"
+      return false
 
   if def.class == IdHorizontalCellDefinition:
     commands.add CellBuilderCommand(kind: CollectionCell, uiFlags: &{LayoutHorizontal} + uiFlags, flags: cellFlags, shadowText: shadowText, disableEditing: disableEditing, disableSelection: disableSelection, deleteNeighbor: deleteNeighbor,
       themeForegroundColors: foregroundColors, themeBackgroundColors: backgroundColors)
     for _, c in def.children(IdCollectionCellDefinitionChildren):
-      createCellBuilderCommandFromDefinition(builder, c, commands)
+      if not createCellBuilderCommandFromDefinition(builder, c, commands):
+        return false
     if not isRoot:
       commands.add CellBuilderCommand(kind: EndCollectionCell)
 
@@ -568,7 +599,8 @@ proc createCellBuilderCommandFromDefinition(builder: CellBuilder, def: AstNode, 
     commands.add CellBuilderCommand(kind: CollectionCell, uiFlags: &{LayoutVertical} + uiFlags, flags: cellFlags, shadowText: shadowText, disableEditing: disableEditing, disableSelection: disableSelection, deleteNeighbor: deleteNeighbor,
       themeForegroundColors: foregroundColors, themeBackgroundColors: backgroundColors)
     for _, c in def.children(IdCollectionCellDefinitionChildren):
-      createCellBuilderCommandFromDefinition(builder, c, commands)
+      if not createCellBuilderCommandFromDefinition(builder, c, commands):
+        return false
     if not isRoot:
       commands.add CellBuilderCommand(kind: EndCollectionCell)
 
@@ -591,6 +623,7 @@ proc createCellBuilderCommandFromDefinition(builder: CellBuilder, def: AstNode, 
         themeForegroundColors: foregroundColors, themeBackgroundColors: backgroundColors)
     else:
       log lvlError, fmt"Missing role for property definition: {def}"
+      return false
 
   elif def.class == IdPropertyCellDefinition:
     if def.firstChild(IdPropertyCellDefinitionRole).getSome(propertyRoleNode):
@@ -599,6 +632,7 @@ proc createCellBuilderCommandFromDefinition(builder: CellBuilder, def: AstNode, 
         themeForegroundColors: foregroundColors, themeBackgroundColors: backgroundColors)
     else:
       log lvlError, fmt"Missing role for property definition: {def}"
+      return false
 
   elif def.class == IdChildrenCellDefinition:
     if def.firstChild(IdChildrenCellDefinitionRole).getSome(childRoleNode):
@@ -607,20 +641,25 @@ proc createCellBuilderCommandFromDefinition(builder: CellBuilder, def: AstNode, 
         themeForegroundColors: foregroundColors, themeBackgroundColors: backgroundColors)
     else:
       log lvlError, fmt"Missing role for children definition: {def}"
+      return false
 
   else:
     log lvlError, fmt"Invalid cell definition: {def}"
+    return false
 
-proc createCellBuilderFromDefinition(builder: CellBuilder, def: AstNode) =
+proc createCellBuilderFromDefinition(builder: CellBuilder, def: AstNode): bool =
   let targetClass = def.reference(IdCellBuilderDefinitionClass)
   var commands: seq[CellBuilderCommand] = @[]
 
   for _, c in def.children(IdCellBuilderDefinitionCellDefinitions):
-    builder.createCellBuilderCommandFromDefinition(c, commands, true)
+    if not builder.createCellBuilderCommandFromDefinition(c, commands, true):
+      return false
 
   builder.addBuilderFor targetClass.ClassId, idNone(), commands
 
-proc updateLanguageFromModel*(language: Language, model: Model) =
+  return true
+
+proc updateLanguageFromModel*(language: Language, model: Model, updateBuilder: bool = true): bool =
   log lvlInfo, fmt"updateLanguageFromModel {model.path} ({model.id})"
   var classMap = initTable[ClassId, NodeClass]()
   var classes: seq[NodeClass] = @[]
@@ -631,23 +670,32 @@ proc updateLanguageFromModel*(language: Language, model: Model) =
       if c.class == IdClassDefinition:
         if createNodeClassFromLangDefinition(classMap, c).getSome(class):
           classes.add class
-      if c.class == IdCellBuilderDefinition:
-        builder.createCellBuilderFromDefinition(c)
+        else:
+          log lvlError, fmt"Failed to create class for {c}"
+          return false
+      if updateBuilder and c.class == IdCellBuilderDefinition:
+          if not builder.createCellBuilderFromDefinition(c):
+            return false
 
   var typeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]()
   var valueComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]()
   var scopeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]]()
   var validationComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): bool]()
 
-  language.update(classes, typeComputers, valueComputers, scopeComputers, validationComputers, )
-  registerBuilder(language.id, builder)
+  language.update(classes, typeComputers, valueComputers, scopeComputers, validationComputers)
+
+  if updateBuilder:
+    registerBuilder(language.id, builder)
+
+  return true
 
 proc createLanguageFromModel*(model: Model): Language =
   log lvlInfo, fmt"createLanguageFromModel {model.path} ({model.id})"
 
   let name = model.path.splitFile.name
   result = newLanguage(model.id.LanguageId, name)
-  result.updateLanguageFromModel(model)
+  if not result.updateLanguageFromModel(model):
+    return nil
 
 proc createNodeFromNodeClass(classes: var Table[ClassId, AstNode], class: NodeClass): AstNode =
   # log lvlInfo, fmt"createNodeFromNodeClass {class.name}"
@@ -763,6 +811,12 @@ proc createModelForLanguage*(language: Language): Model =
 #   model.addRootNode createModelForLanguage(langLanguage)
 #   model
 # langLanguage.model = langLanguageModel
-langLanguage.model.addRootNode createModelForLanguage(langLanguage).rootNodes[0]
 
 let baseInterfacesModel* = createModelForLanguage(base_language.baseInterfaces)
+
+let baseLanguageModel* = createModelForLanguage(base_language.baseLanguage)
+baseLanguageModel.addImport(baseInterfacesModel)
+
+let langLanguageModel* = createModelForLanguage(langLanguage)
+langLanguageModel.addImport(baseInterfacesModel)
+langLanguage.model = langLanguageModel

@@ -29,17 +29,16 @@ builder.addBuilderFor IdCellBuilderDefinition, idNone(), [
 ]
 
 builder.addBuilderFor IdCellFlag, idNone(), [CellBuilderCommand(kind: ConstantCell, shadowText: "<cell flag>")]
-builder.addBuilderFor IdCellFlagDeleteWhenEmpty, idNone(), [CellBuilderCommand(kind: ConstantCell, text: "DeleteWhenEmpty", themeForegroundColors: @["keyword"], disableEditing: true)]
-builder.addBuilderFor IdCellFlagOnNewLine, idNone(), [CellBuilderCommand(kind: ConstantCell, text: "OnNewLine", themeForegroundColors: @["keyword"], disableEditing: true)]
-builder.addBuilderFor IdCellFlagIndentChildren, idNone(), [CellBuilderCommand(kind: ConstantCell, text: "IndentChildren", themeForegroundColors: @["keyword"], disableEditing: true)]
-builder.addBuilderFor IdCellFlagNoSpaceLeft, idNone(), [CellBuilderCommand(kind: ConstantCell, text: "NoSpaceLeft", themeForegroundColors: @["keyword"], disableEditing: true)]
-builder.addBuilderFor IdCellFlagNoSpaceRight, idNone(), [CellBuilderCommand(kind: ConstantCell, text: "NoSpaceRight", themeForegroundColors: @["keyword"], disableEditing: true)]
-builder.addBuilderFor IdCellFlagVertical, idNone(), [CellBuilderCommand(kind: ConstantCell, text: "Vertical", themeForegroundColors: @["keyword"], disableEditing: true)]
-builder.addBuilderFor IdCellFlagHorizontal, idNone(), [CellBuilderCommand(kind: ConstantCell, text: "Horizontal", themeForegroundColors: @["keyword"], disableEditing: true)]
-builder.addBuilderFor IdCellFlagDisableEditing, idNone(), [CellBuilderCommand(kind: ConstantCell, text: "DisableEditing", themeForegroundColors: @["keyword"], disableEditing: true)]
-builder.addBuilderFor IdCellFlagDisableSelection, idNone(), [CellBuilderCommand(kind: ConstantCell, text: "DisableSelection", themeForegroundColors: @["keyword"], disableEditing: true)]
-builder.addBuilderFor IdCellFlagDeleteNeighbor, idNone(), [CellBuilderCommand(kind: ConstantCell, text: "DeleteNeighbor", themeForegroundColors: @["keyword"], disableEditing: true)]
-
+builder.addBuilderFor IdCellFlagDeleteWhenEmpty, idNone(), [CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["keyword"], disableEditing: true)]
+builder.addBuilderFor IdCellFlagOnNewLine, idNone(), [CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["keyword"], disableEditing: true)]
+builder.addBuilderFor IdCellFlagIndentChildren, idNone(), [CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["keyword"], disableEditing: true)]
+builder.addBuilderFor IdCellFlagNoSpaceLeft, idNone(), [CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["keyword"], disableEditing: true)]
+builder.addBuilderFor IdCellFlagNoSpaceRight, idNone(), [CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["keyword"], disableEditing: true)]
+builder.addBuilderFor IdCellFlagVertical, idNone(), [CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["keyword"], disableEditing: true)]
+builder.addBuilderFor IdCellFlagHorizontal, idNone(), [CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["keyword"], disableEditing: true)]
+builder.addBuilderFor IdCellFlagDisableEditing, idNone(), [CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["keyword"], disableEditing: true)]
+builder.addBuilderFor IdCellFlagDisableSelection, idNone(), [CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["keyword"], disableEditing: true)]
+builder.addBuilderFor IdCellFlagDeleteNeighbor, idNone(), [CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["keyword"], disableEditing: true)]
 
 builder.addBuilderFor IdColorDefinition, idNone(), &{OnlyExactMatch}, [CellBuilderCommand(kind: ConstantCell, shadowText: "<color>")]
 builder.addBuilderFor IdColorDefinitionText, idNone(), [CellBuilderCommand(kind: PropertyCell, propertyRole: IdColorDefinitionTextScope, themeForegroundColors: @["constant.numeric"])]
@@ -197,9 +196,12 @@ var cellLanguage*: Language = block createCellLanguage:
     if id == IdLangLanguage:
       return lang_language.langLanguage.some
     else:
-      echo "Unknown language id: ", id
+      log lvlError, "createCellLanguage: unknown language id: {id}"
 
-  proc resolveModel(project: Project, id: ModelId): Option[Model] = discard
+  proc resolveModel(project: Project, id: ModelId): Option[Model] =
+    if id == baseInterfacesModel.id:
+      return baseInterfacesModel.some
+    log lvlError, fmt"createCellLanguage: unknown model id: {id}"
 
   let model = newModel(IdCellLanguage.ModelId)
   model.addLanguage(lang_language.langLanguage)
@@ -225,4 +227,4 @@ registerBuilder(IdCellLanguage, builder)
 # langLanguage.model.addRootNode createNodesForLanguage(langLanguage)
 
 proc updateCellLanguage*(model: Model) =
-  cellLanguage.updateLanguageFromModel(model)
+  discard cellLanguage.updateLanguageFromModel(model, updateBuilder=false)
