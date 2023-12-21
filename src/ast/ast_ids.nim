@@ -290,6 +290,8 @@ let IdCellFlagDeleteNeighbor* = "83ffffff0fe70c0b7dabff35".parseId.ClassId
 let IdPropertyValidatorLanguage* = "8cffffff484c682b4a6c4637".parseId.LanguageId
 let IdPropertyValidatorDefinition* = "8cffffff484c682b4a6c4667".parseId.ClassId
 let IdPropertyValidatorDefinitionClass* = "8cffffff2061f8026045266e".parseId.RoleId
+let IdPropertyValidatorDefinitionProperty* = "8cffffff2061f80260452a12".parseId.RoleId
+let IdPropertyValidatorDefinitionImplementation* = "8dffffffba19ff0d0d9c348c".parseId.RoleId
 
 # new ids
 

@@ -1,5 +1,5 @@
 import std/[tables, strformat, options, json]
-import misc/[id, util, custom_logger]
+import misc/[id, util, custom_logger, custom_async]
 import ui/node
 import ast/[model, cells, cell_builder_database, base_language]
 import lang_language
@@ -191,7 +191,7 @@ scopeComputers[IdCellBuilderDefinition] = proc(ctx: ModelComputationContextBase,
 
 #   return nodes
 
-var cellLanguage*: Language = block createCellLanguage:
+proc createCellLanguage*(): Future[Language] {.async.} =
   proc resolveLanguage(id: LanguageId): Option[Language] =
     if id == IdLangLanguage:
       return lang_language.langLanguage.some
@@ -208,13 +208,15 @@ var cellLanguage*: Language = block createCellLanguage:
 
   const jsonText = staticRead "../model/cell-builder.ast-model"
   if not model.loadFromJson("model/cell-builder.ast-model", jsonText.parseJson, resolveLanguage, resolveModel):
-    echo "Failed to load cell builder model"
-    break createCellLanguage
+    log lvlError, "createCellLanguage: Failed to load cell builder model"
+    return Language nil
 
-  var language = createLanguageFromModel(model)
+  var language = createLanguageFromModel(model).await
   language.name = "Cells"
   language.scopeComputers = scopeComputers
-  language
+  return language
+
+var cellLanguage*: Future[Language] = createCellLanguage()
 
 registerBuilder(IdCellLanguage, builder)
 
@@ -226,5 +228,5 @@ registerBuilder(IdCellLanguage, builder)
 # langLanguage.model = langLanguageModel
 # langLanguage.model.addRootNode createNodesForLanguage(langLanguage)
 
-proc updateCellLanguage*(model: Model) =
-  discard cellLanguage.updateLanguageFromModel(model, updateBuilder=false)
+proc updateCellLanguage*(model: Model) {.async.} =
+  discard cellLanguage.await.updateLanguageFromModel(model, updateBuilder=false).await

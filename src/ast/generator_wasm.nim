@@ -293,9 +293,11 @@ proc newBaseLanguageWasmCompiler*(ctx: ModelComputationContextBase): BaseLanguag
       WasmInstr(kind: I64Or),
     ]))
 
-proc compileToBinary*(self: BaseLanguageWasmCompiler, node: AstNode): seq[uint8] =
+proc addFunctionToCompile*(self: BaseLanguageWasmCompiler, node: AstNode) =
   let functionName = $node.id
   discard self.getOrCreateWasmFunc(node, exportName=functionName.some)
+
+proc compileToBinary*(self: BaseLanguageWasmCompiler): seq[uint8] =
   self.compileRemainingFunctions()
 
   let activeDataSize = self.globalData.len.int32

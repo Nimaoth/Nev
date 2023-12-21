@@ -1,5 +1,5 @@
 import std/[tables, strformat, options, json]
-import misc/[id, util, custom_logger]
+import misc/[id, util, custom_logger, custom_async]
 import ui/node
 import ast/[model, cells, cell_builder_database, base_language]
 import lang_language, cell_language
@@ -31,15 +31,17 @@ scopeComputers[IdPropertyValidatorDefinition] = proc(ctx: ModelComputationContex
 
   return nodes
 
-var propertyValidatorLanguage*: Language = nil
-proc createPropertyValidatorLanguage(): Language =
+var propertyValidatorLanguage*: Future[Language] = nil
+proc createPropertyValidatorLanguage(): Future[Language] {.async.} =
+  let cellLanguage =  cell_language.cellLanguage.await
+
   proc resolveLanguage(id: LanguageId): Option[Language] =
     if id == IdLangLanguage:
       assert lang_language.langLanguage.isNotNil
       return lang_language.langLanguage.some
     if id == IdCellLanguage:
-      assert cell_language.cellLanguage.isNotNil
-      return cell_language.cellLanguage.some
+      assert cellLanguage.isNotNil
+      return cellLanguage.some
     if id == IdBaseInterfaces:
       assert base_language.baseInterfaces.isNotNil
       return base_language.baseInterfaces.some
@@ -60,14 +62,14 @@ proc createPropertyValidatorLanguage(): Language =
   const jsonText = staticRead "../model/lang/property-validator.ast-model"
   if not model.loadFromJson("model/lang/property-validator.ast-model", jsonText.parseJson, resolveLanguage, resolveModel):
     log lvlError, "Failed to load property validator model"
-    return nil
+    return Language nil
 
-  var language = createLanguageFromModel(model)
+  var language = createLanguageFromModel(model).await
   language.name = "PropertyValidator"
   language.scopeComputers = scopeComputers
-  language
+  return language
 
 propertyValidatorLanguage = createPropertyValidatorLanguage()
 
-proc updatePropertyValidatorLanguage*(model: Model) =
-  discard propertyValidatorLanguage.updateLanguageFromModel(model)
+proc updatePropertyValidatorLanguage*(model: Model) {.async.} =
+  discard propertyValidatorLanguage.await.updateLanguageFromModel(model).await

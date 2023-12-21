@@ -1,7 +1,8 @@
-import std/[tables, strformat, options, os]
-import misc/[id, util, custom_logger]
+import std/[tables, strformat, options, os, sugar]
+import misc/[id, util, custom_logger, custom_async, array_buffer, array_table]
 import ui/node
-import ast/[ast_ids, model, cells, cell_builder_database, base_language]
+import ast/[ast_ids, model, cells, cell_builder_database, base_language, generator_wasm, base_language_wasm]
+import scripting/wasm
 
 export id, ast_ids
 
@@ -659,11 +660,64 @@ proc createCellBuilderFromDefinition(builder: CellBuilder, def: AstNode): bool =
 
   return true
 
-proc updateLanguageFromModel*(language: Language, model: Model, updateBuilder: bool = true): bool =
+##### temp stuff
+var lineBuffer {.global.} = ""
+
+proc printI32(a: int32) =
+  if lineBuffer.len > 0:
+    lineBuffer.add " "
+  lineBuffer.add $a
+
+proc printU32(a: uint32) =
+  if lineBuffer.len > 0:
+    lineBuffer.add " "
+  lineBuffer.add $a
+
+proc printI64(a: int64) =
+  if lineBuffer.len > 0:
+    lineBuffer.add " "
+  lineBuffer.add $a
+
+proc printU64(a: uint64) =
+  if lineBuffer.len > 0:
+    lineBuffer.add " "
+  lineBuffer.add $a
+
+proc printF32(a: float32) =
+  if lineBuffer.len > 0:
+    lineBuffer.add " "
+  lineBuffer.add $a
+
+proc printF64(a: float64) =
+  if lineBuffer.len > 0:
+    lineBuffer.add " "
+  lineBuffer.add $a
+
+proc printChar(a: int32) =
+  lineBuffer.add $a.char
+
+proc printString(a: cstring, len: int32) =
+  let str = $a
+  assert len <= a.len
+  lineBuffer.add str[0..<len]
+
+proc printLine() =
+  log lvlInfo, lineBuffer
+  lineBuffer = ""
+
+proc intToString(a: int32): cstring =
+  let res = $a
+  return res.cstring
+
+##### end of temp stuff
+
+proc updateLanguageFromModel*(language: Language, model: Model, updateBuilder: bool = true, ctx = ModelComputationContextBase.none): Future[bool] {.async.} =
   log lvlInfo, fmt"updateLanguageFromModel {model.path} ({model.id})"
   var classMap = initTable[ClassId, NodeClass]()
   var classes: seq[NodeClass] = @[]
   var builder = newCellBuilder(language.id)
+
+  var propertyValidators = newSeq[tuple[classId: ClassId, roleId: RoleId, functionNode: AstNode]]()
 
   for def in model.rootNodes:
     for _, c in def.children(IdLangRootChildren):
@@ -674,8 +728,63 @@ proc updateLanguageFromModel*(language: Language, model: Model, updateBuilder: b
           log lvlError, fmt"Failed to create class for {c}"
           return false
       if updateBuilder and c.class == IdCellBuilderDefinition:
-          if not builder.createCellBuilderFromDefinition(c):
-            return false
+        if not builder.createCellBuilderFromDefinition(c):
+          return false
+
+      if c.class == IdPropertyValidatorDefinition:
+        let functionNode = c.firstChild(IdPropertyValidatorDefinitionImplementation).getOr:
+          log lvlError, fmt"Missing function for property validator: {c}"
+          continue
+
+        if functionNode.class != IdFunctionDefinition:
+          log lvlError, fmt"Invalid function for property validator: {functionNode}"
+          continue
+
+        let classId = c.reference(IdPropertyValidatorDefinitionClass).ClassId
+
+        if functionNode.class != IdFunctionDefinition:
+          log lvlError, fmt"Invalid function for property validator: {functionNode}"
+          continue
+
+        let propertyRoleReference = c.firstChild(IdPropertyValidatorDefinitionProperty).getOr:
+          log lvlError, fmt"Missing property role for property validator: {c}"
+          continue
+
+        let roleId = propertyRoleReference.reference(IdRoleReferenceTarget).RoleId
+
+        propertyValidators.add (classId, roleId, functionNode)
+
+  let wasmModule = if ctx.getSome(ctx):
+    measureBlock fmt"Compile language model '{model.path}' to wasm":
+      var compiler = newBaseLanguageWasmCompiler(ctx)
+      compiler.addBaseLanguage()
+
+      for (_, _, functionNode) in propertyValidators:
+        compiler.addFunctionToCompile(functionNode)
+
+      let binary = compiler.compileToBinary()
+
+    var imp = WasmImports(namespace: "env")
+    imp.addFunction("print_i32", printI32)
+    imp.addFunction("print_u32", printU32)
+    imp.addFunction("print_i64", printI64)
+    imp.addFunction("print_u64", printU64)
+    imp.addFunction("print_f32", printF32)
+    imp.addFunction("print_f64", printF64)
+    imp.addFunction("print_char", printChar)
+    imp.addFunction("print_string", printString)
+    imp.addFunction("print_line", printLine)
+    imp.addFunction("intToString", intToString)
+
+    measureBlock fmt"Create wasm module for language '{model.path}'":
+      let module = await newWasmModule(binary.toArrayBuffer, @[imp])
+      if module.isNone:
+        log lvlError, fmt"Failed to create wasm module from generated binary for {model.path}: {getCurrentExceptionMsg()}"
+
+    module
+
+  else:
+    WasmModule.none
 
   var typeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]()
   var valueComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): AstNode]()
@@ -684,18 +793,33 @@ proc updateLanguageFromModel*(language: Language, model: Model, updateBuilder: b
 
   language.update(classes, typeComputers, valueComputers, scopeComputers, validationComputers)
 
+  if wasmModule.getSome(module):
+    for (class, role, functionNode) in propertyValidators:
+      let name = $functionNode.id
+      if module.findFunction(name, bool, proc(a: string): bool).getSome(validateImpl):
+        let validator = if not language.validators.contains(class):
+          let validator = NodeValidator()
+          language.validators[class] = validator
+          validator
+        else:
+          language.validators[class]
+
+        # debugf"register propertyy validator for {class}, {role}"
+        validator.propertyValidators[role] = PropertyValidator(kind: Custom, impl: validateImpl)
+
   if updateBuilder:
     registerBuilder(language.id, builder)
 
   return true
 
-proc createLanguageFromModel*(model: Model): Language =
+proc createLanguageFromModel*(model: Model, ctx = ModelComputationContextBase.none): Future[Language] {.async.} =
   log lvlInfo, fmt"createLanguageFromModel {model.path} ({model.id})"
 
   let name = model.path.splitFile.name
-  result = newLanguage(model.id.LanguageId, name)
-  if not result.updateLanguageFromModel(model):
-    return nil
+  let language = newLanguage(model.id.LanguageId, name)
+  if not language.updateLanguageFromModel(model, ctx = ctx).await:
+    return Language nil
+  return language
 
 proc createNodeFromNodeClass(classes: var Table[ClassId, AstNode], class: NodeClass): AstNode =
   # log lvlInfo, fmt"createNodeFromNodeClass {class.name}"

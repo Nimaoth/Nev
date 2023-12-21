@@ -546,9 +546,9 @@ proc resolveLanguage(project: Project, ws: WorkspaceFolder, id: LanguageId): Fut
   elif id == IdLangLanguage:
     return lang_language.langLanguage.some
   elif id == IdCellLanguage:
-    return cell_language.cellLanguage.some
+    return cell_language.cellLanguage.await.some
   elif id == IdPropertyValidatorLanguage:
-    return property_validator_language.propertyValidatorLanguage.some
+    return property_validator_language.propertyValidatorLanguage.await.some
   elif dynamicLanguages.contains(id):
     return dynamicLanguages[id].some
   elif project.modelPaths.contains(id.ModelId):
@@ -558,7 +558,7 @@ proc resolveLanguage(project: Project, ws: WorkspaceFolder, id: LanguageId): Fut
     if not languageModel.hasLanguage(IdLangLanguage):
       return Language.none
 
-    let language = createLanguageFromModel(languageModel)
+    let language = createLanguageFromModel(languageModel).await
     dynamicLanguages[language.id] = language
     return language.some
   else:
@@ -3228,7 +3228,8 @@ proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.
     var compiler = newBaseLanguageWasmCompiler(self.document.ctx)
     compiler.addBaseLanguage()
     compiler.addEditorLanguage()
-    let binary = compiler.compileToBinary(function.get)
+    compiler.addFunctionToCompile(function.get)
+    let binary = compiler.compileToBinary()
 
   if self.document.workspace.getSome(workspace):
     discard workspace.saveFile("jstest.wasm", binary.toArrayBuffer)
@@ -3522,7 +3523,7 @@ method changed*(self: AstNodeSelectorItem, other: SelectorItem): bool =
   let other = other.AstNodeSelectorItem
   return self.node != other.node
 
-proc compileLanguage*(self: ModelDocumentEditor) {.expose("editor.model").} =
+proc compileLanguageAsync*(self: ModelDocumentEditor) {.async.} =
   if not self.document.model.hasLanguage(IdLangLanguage):
     return
 
@@ -3539,7 +3540,7 @@ proc compileLanguage*(self: ModelDocumentEditor) {.expose("editor.model").} =
   if languageId == IdCellLanguage:
     try:
       log lvlInfo, fmt"Updating cell language ({languageId}) with model {self.document.model.path} ({self.document.model.id})"
-      updateCellLanguage(self.document.model)
+      updateCellLanguage(self.document.model).await
       return
     except CatchableError:
       log lvlError, fmt"Failed to update cell language from model: {getCurrentExceptionMsg()}"
@@ -3548,7 +3549,7 @@ proc compileLanguage*(self: ModelDocumentEditor) {.expose("editor.model").} =
   if languageId == IdPropertyValidatorLanguage:
     try:
       log lvlInfo, fmt"Updating property validator language ({languageId}) with model {self.document.model.path} ({self.document.model.id})"
-      updatePropertyValidatorLanguage(self.document.model)
+      updatePropertyValidatorLanguage(self.document.model).await
       return
     except CatchableError:
       log lvlError, fmt"Failed to update cell language from model: {getCurrentExceptionMsg()}"
@@ -3558,14 +3559,17 @@ proc compileLanguage*(self: ModelDocumentEditor) {.expose("editor.model").} =
     let language = dynamicLanguages[languageId]
     try:
       log lvlInfo, fmt"Updating language {language.name} ({language.id}) with model {self.document.model.path} ({self.document.model.id})"
-      discard language.updateLanguageFromModel(self.document.model)
+      discard language.updateLanguageFromModel(self.document.model, ctx = self.document.ctx.ModelComputationContextBase.some).await
       return
     except CatchableError:
       log lvlError, fmt"Failed to update language from model: {getCurrentExceptionMsg()}"
 
   log lvlInfo, fmt"Compiling language from model {self.document.model.path} ({self.document.model.id})"
-  let language = createLanguageFromModel(self.document.model)
+  let language = createLanguageFromModel(self.document.model, ctx = self.document.ctx.ModelComputationContextBase.some).await
   dynamicLanguages[language.id] = language
+
+proc compileLanguage*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  asyncCheck self.compileLanguageAsync()
 
 proc addRootNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
   var popup = self.app.createSelectorPopup().SelectorPopup

@@ -89,8 +89,14 @@ type
     references*: seq[tuple[role: RoleId, node: NodeId]]
     childLists*: seq[tuple[role: RoleId, nodes: seq[AstNode]]]
 
+
+  PropertyValidatorKind* = enum Regex, Custom
   PropertyValidator* = ref object
-    pattern*: Regex
+    case kind*: PropertyValidatorKind
+    of Regex:
+      pattern*: Regex
+    of Custom:
+      impl*: proc(property: string): bool
 
   NodeValidator* = ref object
     propertyValidators*: ArrayTable[RoleId, PropertyValidator]
@@ -106,7 +112,7 @@ type
     # childClasses {.getter.}: Table[ClassId, seq[NodeClass]]
     model*: Model
 
-    validators: Table[ClassId, NodeValidator]
+    validators*: Table[ClassId, NodeValidator]
 
     classesToLanguages {.getter.}: Table[ClassId, Language]
     baseLanguages: seq[Language]
@@ -571,9 +577,14 @@ let defaultNumberPattern = re"[0-9]+"
 let defaultBoolPattern = re"true|false"
 
 proc isValidPropertyValue*(language: Language, class: NodeClass, role: RoleId, value: string): bool =
+  # debugf"isValidPropertyValue {class.name} ({class.id}) {role} '{value}'"
   if language.validators.contains(class.id):
     if language.validators[class.id].propertyValidators.tryGet(role).getSome(validator):
-      return value.match(validator.pattern)
+      case validator.kind
+      of Regex:
+        return value.match(validator.pattern)
+      of Custom:
+        return validator.impl(value)
 
   if class.propertyDescription(role).getSome(desc):
     case desc.typ
