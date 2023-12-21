@@ -191,6 +191,7 @@ proc loadNormalKeybindings*() {.scriptActionWasmNims("load-normal-keybindings").
 
     addCommand "editor.model", "<LEADER>mr", "run-selected-function"
     addCommand "editor.model", "<LEADER>md", "toggle-use-default-cell-builder"
+    addCommand "editor.model", "<LEADER>mc", "compile-language"
 
     addCommand "editor.model", "gd", "goto-definition"
     addCommand "editor.model", "gp", "goto-prev-reference"

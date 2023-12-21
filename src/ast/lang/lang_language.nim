@@ -70,7 +70,7 @@ let classDefinitionClass* = newNodeClass(IdClassDefinition, "ClassDefinition", a
     NodeChildDescription(id: IdClassDefinitionSubstitutionReference, role: "substitution reference", class: IdRoleReference, count: ChildCount.ZeroOrOne),
   ])
 
-var builder = newCellBuilder()
+var builder = newCellBuilder(IdLangLanguage)
 
 builder.addBuilderFor IdPropertyTypeBool, idNone(), [CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["keyword"], disableEditing: true)]
 builder.addBuilderFor IdPropertyTypeString, idNone(), [CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["keyword"], disableEditing: true)]
@@ -620,11 +620,11 @@ proc createCellBuilderFromDefinition(builder: CellBuilder, def: AstNode) =
 
   builder.addBuilderFor targetClass.ClassId, idNone(), commands
 
-proc createLanguageFromModel*(model: Model): Language =
-  log lvlInfo, fmt"createLanguageFromModel {model.path} ({model.id})"
+proc updateLanguageFromModel*(language: Language, model: Model) =
+  log lvlInfo, fmt"updateLanguageFromModel {model.path} ({model.id})"
   var classMap = initTable[ClassId, NodeClass]()
   var classes: seq[NodeClass] = @[]
-  var builder = newCellBuilder()
+  var builder = newCellBuilder(language.id)
 
   for def in model.rootNodes:
     for _, c in def.children(IdLangRootChildren):
@@ -639,9 +639,15 @@ proc createLanguageFromModel*(model: Model): Language =
   var scopeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]]()
   var validationComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): bool]()
 
+  language.update(classes, typeComputers, valueComputers, scopeComputers, validationComputers, )
+  registerBuilder(language.id, builder)
+
+proc createLanguageFromModel*(model: Model): Language =
+  log lvlInfo, fmt"createLanguageFromModel {model.path} ({model.id})"
+
   let name = model.path.splitFile.name
-  result = newLanguage(model.id.LanguageId, name, classes, typeComputers, valueComputers, scopeComputers, validationComputers)
-  registerBuilder(result.id, builder)
+  result = newLanguage(model.id.LanguageId, name)
+  result.updateLanguageFromModel(model)
 
 proc createNodeFromNodeClass(classes: var Table[ClassId, AstNode], class: NodeClass): AstNode =
   # log lvlInfo, fmt"createNodeFromNodeClass {class.name}"

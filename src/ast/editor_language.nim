@@ -27,7 +27,7 @@ let loadAppFileClass* = newNodeClass(IdLoadAppFile, "LoadAppFile", alias="load a
   children=[
     NodeChildDescription(id: IdLoadAppFileArgument, role: "file", class: expressionClass.id, count: ChildCount.One)])
 
-var builder = newCellBuilder()
+var builder = newCellBuilder(IdEditorLanguage)
 
 builder.addBuilderFor IdLoadAppFile, idNone(), [
   CellBuilderCommand(kind: CollectionCell, uiFlags: &{LayoutHorizontal}),

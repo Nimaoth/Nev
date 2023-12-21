@@ -3,7 +3,7 @@ import misc/[traits]
 import platform/platform
 import workspaces/workspace
 import text/language/language_server_base
-import events, document_editor, popup, config_provider
+import events, document_editor, document, popup, config_provider
 from scripting_api import EditorId
 
 traitRef AppInterface:
@@ -27,5 +27,6 @@ traitRef AppInterface:
   method pushPopup*(self: AppInterface, popup: Popup)
   method popPopup*(self: AppInterface, popup: Popup)
   method openSymbolsPopup*(self: AppInterface, symbols: seq[Symbol], handleItemSelected: proc(symbol: Symbol), handleItemConfirmed: proc(symbol: Symbol), handleCanceled: proc())
+  method getAllDocuments*(self: AppInterface): seq[Document]
 
 var gAppInterface*: AppInterface = nil

@@ -122,6 +122,7 @@ type
     onModelChanged*: Event[ModelDocument]
     onFinishedUndoTransaction*: Event[(ModelDocument, ModelTransaction)]
     onFinishedRedoTransaction*: Event[(ModelDocument, ModelTransaction)]
+    onBuilderChanged*: Event[void]
 
     builder*: CellBuilder
 
@@ -312,7 +313,7 @@ proc newModelDocument*(filename: string = "", app: bool = false, workspaceFolder
   # for rootNode in testModel.rootNodes:
   #   self.ctx.state.insertNode(rootNode)
 
-  self.builder = newCellBuilder()
+  self.builder = newCellBuilder(idNone().LanguageId)
   for language in self.model.languages:
     self.builder.addBuilder(getBuilder(language.id))
 
@@ -887,6 +888,10 @@ proc handleNodeReferenceChanged(self: ModelDocumentEditor, model: Model, node: A
   self.invalidateCompletions()
   self.retriggerValidation()
 
+proc handleBuilderChanged(self: ModelDocumentEditor) =
+  self.rebuildCells()
+  self.markDirty()
+
 proc handleModelChanged(self: ModelDocumentEditor, document: ModelDocument) =
   # debugf "handleModelChanged"
 
@@ -1093,6 +1098,7 @@ method createWithDocument*(_: ModelDocumentEditor, document: Document, configPro
   discard self.document.onModelChanged.subscribe proc(d: auto) = self.handleModelChanged(d)
   discard self.document.onFinishedUndoTransaction.subscribe proc(d: auto) = self.handleFinishedUndoTransaction(d[0], d[1])
   discard self.document.onFinishedRedoTransaction.subscribe proc(d: auto) = self.handleFinishedRedoTransaction(d[0], d[1])
+  discard self.document.onBuilderChanged.subscribe proc() = self.handleBuilderChanged()
 
   self.rebuildCells()
 
@@ -3490,6 +3496,26 @@ proc compileLanguage*(self: ModelDocumentEditor) {.expose("editor.model").} =
   if not self.document.model.hasLanguage(IdLangLanguage):
     return
 
+  let languageId = self.document.model.id.LanguageId
+
+  defer:
+    for document in self.app.getAllDocuments:
+      if document of ModelDocument:
+        let modelDocument = document.ModelDocument
+        if modelDocument.model.hasLanguage(languageId):
+          modelDocument.builder.addBuilder(getBuilder(languageId))
+          modelDocument.onBuilderChanged.invoke()
+
+  if dynamicLanguages.contains(languageId):
+    let language = dynamicLanguages[languageId]
+    try:
+      log lvlInfo, fmt"Updating language {language.name} ({language.id}) with model {self.document.model.path} ({self.document.model.id})"
+      language.updateLanguageFromModel(self.document.model)
+      return
+    except CatchableError:
+      log lvlError, fmt"Failed to update language from model: {getCurrentExceptionMsg()}"
+
+  log lvlInfo, fmt"Compiling language from model {self.document.model.path} ({self.document.model.id})"
   let language = createLanguageFromModel(self.document.model)
   dynamicLanguages[language.id] = language
 
