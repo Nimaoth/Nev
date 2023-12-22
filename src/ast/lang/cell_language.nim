@@ -191,18 +191,18 @@ scopeComputers[IdCellBuilderDefinition] = proc(ctx: ModelComputationContextBase,
 
 #   return nodes
 
+proc resolveLanguage(id: LanguageId): Option[Language] =
+  if id == IdLangLanguage:
+    return lang_language.langLanguage.some
+  else:
+    log lvlError, "createCellLanguage: unknown language id: {id}"
+
+proc resolveModel(project: Project, id: ModelId): Option[Model] =
+  if id == baseInterfacesModel.id:
+    return baseInterfacesModel.some
+  log lvlError, fmt"createCellLanguage: unknown model id: {id}"
+
 proc createCellLanguage*(): Future[Language] {.async.} =
-  proc resolveLanguage(id: LanguageId): Option[Language] =
-    if id == IdLangLanguage:
-      return lang_language.langLanguage.some
-    else:
-      log lvlError, "createCellLanguage: unknown language id: {id}"
-
-  proc resolveModel(project: Project, id: ModelId): Option[Model] =
-    if id == baseInterfacesModel.id:
-      return baseInterfacesModel.some
-    log lvlError, fmt"createCellLanguage: unknown model id: {id}"
-
   let model = newModel(IdCellLanguage.ModelId)
   model.addLanguage(lang_language.langLanguage)
 
