@@ -444,44 +444,46 @@ macro createWasmWrapper(module: WasmModule, returnType: typedesc, typ: typedesc,
   # echo actualReturnType.treeRepr
 
   for i, p in typ.getType[1][2..^1]:
-    var arg = genSym(nskParam, "p" & $i)
+    let argSym = genSym(nskParam, "p" & $i)
 
     let isCString = p.repr == "cstring"
     let isString = p.repr == "string"
 
-    params.add nnkIdentDefs.newTree(arg, p, newEmptyNode())
+    params.add nnkIdentDefs.newTree(argSym, p, newEmptyNode())
+
+    var arg = argSym
 
     when defined(js):
       if isCString:
-        arg = genAst(arg):
+        arg = genAst(argSym):
           block:
-            let a = jsEncodeString(arg)
+            let a = jsEncodeString(argSym)
             proc len(arr: JsObject): int {.importjs: "#.length".}
             let p: WasmPtr = module.alloc(a.len.uint32 + 1)
-            module.copyMem(p, a, arg.len + 1)
+            module.copyMem(p, a, argSym.len + 1)
             p
 
       elif isString:
-        arg = genAst(arg):
+        arg = genAst(argSym):
           block:
-            let a = jsEncodeString(arg.cstring)
-            let p: WasmPtr = module.alloc(arg.len.uint32 + 1)
-            module.copyMem(p, a, arg.len + 1)
-            p.uint64 or (arg.len.uint64 shl 32)
+            let a = jsEncodeString(argSym.cstring)
+            let p: WasmPtr = module.alloc(argSym.len.uint32 + 1)
+            module.copyMem(p, a, argSym.len + 1)
+            p.uint64 or (argSym.len.uint64 shl 32)
 
     else:
       if isCString:
-        arg = genAst(arg):
+        arg = genAst(argSym):
           block:
-            let p: WasmPtr = module.alloc(arg.len.uint32 + 1)
-            module.copyMem(p, cast[pointer](arg), arg.len + 1)
+            let p: WasmPtr = module.alloc(argSym.len.uint32 + 1)
+            module.copyMem(p, cast[pointer](argSym), argSym.len + 1)
             p
       elif isString:
-        arg = genAst(arg):
+        arg = genAst(argSym):
           block:
-            let p: WasmPtr = module.alloc(arg.len.uint32 + 1)
-            module.copyMem(p, a.ptr, arg.len + 1)
-            p.uint64 or (arg.len.uint64 shl 32)
+            let p: WasmPtr = module.alloc(argSym.len.uint32 + 1)
+            module.copyMem(p, cast[ptr char](argSym.cstring), argSym.len + 1)
+            p.uint64 or (argSym.len.uint64 shl 32)
 
     args.add(arg)
 
@@ -521,6 +523,6 @@ proc findFunction*(module: WasmModule, name: string, R: typedesc, T: typedesc): 
       let wrapper = createWasmWrapper(module, R, T):
         f.call(`returnType`, `parameters`)
 
-      return wrapper.some
+      return wrapper.T.some
     except CatchableError:
       return T.none

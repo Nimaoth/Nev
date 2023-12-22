@@ -678,7 +678,7 @@ proc getSubstitutionTarget(cell: Cell): (AstNode, RoleId, int) =
 proc getSubstitutionsForClass(self: ModelDocumentEditor, targetCell: Cell, class: NodeClass, addCompletion: proc(c: ModelCompletion): void): bool =
   # if it's a reference and there is only one reference role, then we can substitute the reference using the scope
   if class.substitutionReference.getSome(referenceRole):
-    debugf"getSubstitutionsForClass {class.name}"
+    # debugf"getSubstitutionsForClass {class.name}"
     let desc = class.nodeReferenceDescription(referenceRole).get
     let language = self.document.model.getLanguageForClass(desc.class)
     if language.isNil:
@@ -692,13 +692,12 @@ proc getSubstitutionsForClass(self: ModelDocumentEditor, targetCell: Cell, class
 
     let (parent, role, index) = targetCell.getSubstitutionTarget()
 
-    debugf"getScope {parent}, {targetCell.node}"
+    # debugf"getScope {parent}, {targetCell.node}"
     let scope = self.document.ctx.getScope(targetCell.node)
     for decl in scope:
-      debugf"scope: {decl}, {decl.nodeClass.isSubclassOf(refClass.id)}"
+      # debugf"scope: {decl}, {decl.nodeClass.isSubclassOf(refClass.id)}"
       if decl.nodeClass.isSubclassOf(refClass.id):
         let name = if decl.property(IdINamedName).getSome(name): name.stringValue else: $decl.id
-        echo fmt"add substitute reference {name}"
         addCompletion ModelCompletion(kind: ModelCompletionKind.SubstituteReference, name: name, class: class, parent: parent, role: role, index: index, referenceRole: desc.id, referenceTarget: decl)
         result = true
 
