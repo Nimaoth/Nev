@@ -1289,16 +1289,17 @@ proc loadFromJson*(project: Project, json: JsonNode, opt = Joptions()): bool =
 proc loadFromJsonAsync*(model: Model, project: Project, workspace: WorkspaceFolder, path: string, json: JsonNode,
   resolveLanguage: proc(project: Project, workspace: WorkspaceFolder, id: LanguageId): Future[Option[Language]],
   resolveModel: proc(project: Project, workspace: WorkspaceFolder, id: ModelId): Future[Option[Model]],
-  opt = Joptions()): Future[void] {.async.} =
+  opt = Joptions()): Future[bool] {.async.} =
   model.path = path
   if json.kind != JObject:
     log(lvlError, fmt"Expected JObject")
-    return
+    return false
 
   if json.hasKey("id"):
     model.id = json["id"].jsonTo ModelId
   else:
     log(lvlError, fmt"Missing id")
+    return false
 
   if json.hasKey("languages"):
     for languageIdJson in json["languages"]:
@@ -1307,6 +1308,7 @@ proc loadFromJsonAsync*(model: Model, project: Project, workspace: WorkspaceFold
         model.addLanguage(language)
       else:
         log(lvlError, fmt"Unknown language {id}")
+        return false
   else:
     log(lvlWarn, fmt"Missing languages")
 
@@ -1318,6 +1320,7 @@ proc loadFromJsonAsync*(model: Model, project: Project, workspace: WorkspaceFold
         model.addImport(m)
       else:
         log(lvlError, fmt"Unknown model {id}")
+        return false
 
   if json.hasKey("rootNodes"):
     for node in json["rootNodes"]:
@@ -1325,8 +1328,11 @@ proc loadFromJsonAsync*(model: Model, project: Project, workspace: WorkspaceFold
         model.addRootNode(node)
       else:
         log(lvlError, fmt"Failed to parse root node from json")
+        return false
   else:
     log(lvlWarn, fmt"Missing root nodes")
+
+  return true
 
 proc loadFromJson*(model: Model, path: string, json: JsonNode,
   resolveLanguage: proc(id: LanguageId): Option[Language],

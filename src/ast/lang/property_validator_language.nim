@@ -2,6 +2,7 @@ import std/[tables, strformat, options, json]
 import misc/[id, util, custom_logger, custom_async]
 import ui/node
 import ast/[model, cells, cell_builder_database, base_language]
+import workspaces/[workspace]
 import lang_language, cell_language
 
 export id, ast_ids
@@ -31,36 +32,36 @@ scopeComputers[IdPropertyValidatorDefinition] = proc(ctx: ModelComputationContex
 
   return nodes
 
+proc resolveLanguage(project: Project, workspace: WorkspaceFolder, id: LanguageId): Future[Option[Language]] {.async.} =
+  if id == IdLangLanguage:
+    assert lang_language.langLanguage.isNotNil
+    return lang_language.langLanguage.some
+  if id == IdCellLanguage:
+    let cellLanguage =  cell_language.cellLanguage.await
+    assert cellLanguage.isNotNil
+    return cellLanguage.some
+  if id == IdBaseInterfaces:
+    assert base_language.baseInterfaces.isNotNil
+    return base_language.baseInterfaces.some
+  else:
+    log lvlError, "createPropertyValidatorLanguage::resolveLanguage: unknown language id: ", id
+
+proc resolveModel(project: Project, workspace: WorkspaceFolder, id: ModelId): Future[Option[Model]] {.async.} =
+  assert baseInterfacesModel.isNotNil
+  if id == baseInterfacesModel.id:
+    return baseInterfacesModel.some
+  if id == baseLanguageModel.id:
+    return baseLanguageModel.some
+  log lvlError, fmt"createPropertyValidatorLanguage::resolveModel: unknown model id: {id}"
+
 var propertyValidatorLanguage*: Future[Language] = nil
 proc createPropertyValidatorLanguage(): Future[Language] {.async.} =
-  let cellLanguage =  cell_language.cellLanguage.await
-
-  proc resolveLanguage(id: LanguageId): Option[Language] =
-    if id == IdLangLanguage:
-      assert lang_language.langLanguage.isNotNil
-      return lang_language.langLanguage.some
-    if id == IdCellLanguage:
-      assert cellLanguage.isNotNil
-      return cellLanguage.some
-    if id == IdBaseInterfaces:
-      assert base_language.baseInterfaces.isNotNil
-      return base_language.baseInterfaces.some
-    else:
-      log lvlError, "createPropertyValidatorLanguage::resolveLanguage: unknown language id: ", id
-
-  proc resolveModel(project: Project, id: ModelId): Option[Model] =
-    assert baseInterfacesModel.isNotNil
-    if id == baseInterfacesModel.id:
-      return baseInterfacesModel.some
-    if id == baseLanguageModel.id:
-      return baseLanguageModel.some
-    log lvlError, fmt"createPropertyValidatorLanguage::resolveModel: unknown model id: {id}"
 
   let model = newModel(IdPropertyValidatorLanguage.ModelId)
   model.addLanguage(lang_language.langLanguage)
 
   const jsonText = staticRead "../model/lang/property-validator.ast-model"
-  if not model.loadFromJson("model/lang/property-validator.ast-model", jsonText.parseJson, resolveLanguage, resolveModel):
+  if not model.loadFromJsonAsync(nil, nil, "model/lang/property-validator.ast-model", jsonText.parseJson, resolveLanguage, resolveModel).await:
     log lvlError, "Failed to load property validator model"
     return Language nil
 
