@@ -572,8 +572,7 @@ proc loadModelAsync(project: Project, ws: WorkspaceFolder, path: string): Future
   let json = jsonText.parseJson
 
   var model = newModel()
-  await model.loadFromJsonAsync(project, ws, path, json, resolveLanguage, resolveModel)
-  if model.id.isNone:
+  if not model.loadFromJsonAsync(project, ws, path, json, resolveLanguage, resolveModel).await:
     log lvlError, fmt"Failed to load model: no id"
     return Model.none
 
