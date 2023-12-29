@@ -924,6 +924,36 @@ proc createNodeUI(self: ModelDocumentEditor, builder: UINodeBuilder, app: App, c
     container.rawY = container.boundsRaw.y + (scrollOffset - bounds.y)
     # echo fmt"2 target node {bounds}: {updateContext.targetNode.dump}"
 
+proc drawCursor(self: ModelDocumentEditor, builder: UINodeBuilder, cursor: CellCursor, thick: bool, cursorColor: Color, textColor: Color, backgroundColor: Color, id: int32, overlapPanel: UINode): Option[UINode] =
+  if cursor.getTargetCell(true).getSome(targetCell) and self.cellWidgetContext.cellToWidget.contains(targetCell.id):
+    let node = self.cellWidgetContext.cellToWidget[targetCell.id]
+    # debugf"cursor {self.cursor} at {targetCell.dump}, {node.dump}"
+
+    var bounds = rect(cursor.index.float * builder.charWidth, 0, 0, 0).transformRect(node, overlapPanel)
+    let lx = node.lx + cursor.index.float * builder.charWidth
+
+    if thick:
+      let text = targetCell.getText
+      let index = cursor.index.clamp(0, text.runeLen.int + 1).RuneIndex
+      let ch = if index < text.runeLen.RuneIndex:
+        text[index..index]
+      elif self.getNextCellInLine(targetCell).isNotNil(nextCell) and self.cellWidgetContext.cellToWidget.contains(nextCell.id):
+        let nextNode = self.cellWidgetContext.cellToWidget[nextCell.id]
+        let nextText = nextCell.getText()
+        if abs(nextNode.lx - lx) < 1 and nextText.len > 0:
+          nextText[0..0]
+        else:
+          " "
+      else:
+        " "
+
+      builder.panel(&{UINodeFlag.FillBackground, AnimatePosition, SnapInitialBounds}, x = bounds.x, y = bounds.y, w = builder.charWidth, h = builder.textHeight, backgroundColor = textColor, userId = newSecondaryId(self.cursorsId, id)):
+        builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = backgroundColor, text = ch)
+    else:
+      builder.panel(&{UINodeFlag.FillBackground, AnimatePosition, SnapInitialBounds}, x = bounds.x, y = bounds.y, w = max(builder.charWidth * 0.2, 1), h = builder.textHeight, backgroundColor = cursorColor, userId = newSecondaryId(self.cursorsId, id))
+
+    return node.some
+
 method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
   let dirty = self.dirty
   self.resetDirty()
@@ -983,226 +1013,198 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
         #   let animate = if builder.charWidth > 1: &{AnimatePosition} else: 0.UINodeFlags
 
         builder.panel(&{FillX, FillY, FillBackground, MaskContent, OverlappingChildren}, backgroundColor = backgroundColor):
-          onScroll:
-            let scrollAmount = delta.y * app.asConfigProvider.getValue("model.scroll-speed", 10.0)
-            self.scrollOffset += scrollAmount
+          if self.document.model.isNotNil:
 
-            if AnimatePosition in animate:
-              scrollContent.boundsActual.y -= scrollAmount
+            onScroll:
+              let scrollAmount = delta.y * app.asConfigProvider.getValue("model.scroll-speed", 10.0)
+              self.scrollOffset += scrollAmount
 
-            self.retriggerValidation()
-            self.markDirty()
+              if AnimatePosition in animate:
+                scrollContent.boundsActual.y -= scrollAmount
 
-          let overlapPanel = currentNode
+              self.retriggerValidation()
+              self.markDirty()
 
-          let h = currentNode.h
-          builder.panel(&{FillX, FillY} + animate, y = 0, userId = newSecondaryId(self.userId, -1)):
-            scrollContent = currentNode
+            let overlapPanel = currentNode
 
-            builder.panel(&{FillX, SizeToContentY}):
-              let scrolledNode = currentNode
-              self.scrolledNode = scrolledNode
+            let h = currentNode.h
+            builder.panel(&{FillX, FillY} + animate, y = 0, userId = newSecondaryId(self.userId, -1)):
+              scrollContent = currentNode
 
-              defer:
-                self.lastBounds = currentNode.bounds
+              builder.panel(&{FillX, SizeToContentY}):
+                let scrolledNode = currentNode
+                self.scrolledNode = scrolledNode
 
-              for node in self.document.model.rootNodes:
-                let cell = self.nodeCellMap.cell(node)
-                # let cell = self.document.builder.buildCell(self.nodeCellMap, node, self.useDefaultCellBuilder)
-                if cell.isNil:
-                  continue
+                defer:
+                  self.lastBounds = currentNode.bounds
 
-                self.cellWidgetContext.targetNode = nil
-                self.cellWidgetContext.selection = self.selection
-                self.cellWidgetContext.scrolledNode = scrolledNode
-                self.cellWidgetContext.targetCellPosition = vec2(0, self.scrollOffset)
-                self.cellWidgetContext.handleClick = proc(node: UINode, cell: Cell, cellPath: seq[int], cursor: CellCursor, drag: bool) =
-                  if node.isNotNil:
-                    let bounds = node.bounds.transformRect(node.parent, scrolledNode.parent)
-                    self.targetCellPath = cellPath
-                    # debugf"click: {cellPath}"
-                    # debugf"click: {self.scrollOffset} -> {bounds.y} | {cell.dump} | {node.dump}"
-                    self.scrollOffset = bounds.y
+                for node in self.document.model.rootNodes:
+                  let cell = self.nodeCellMap.cell(node)
+                  # let cell = self.document.builder.buildCell(self.nodeCellMap, node, self.useDefaultCellBuilder)
+                  if cell.isNil:
+                    continue
 
-                  if self.active or not drag:
-                    self.updateSelection(cursor, drag)
-                    self.app.tryActivateEditor(self)
-                    self.markDirty()
+                  self.cellWidgetContext.targetNode = nil
+                  self.cellWidgetContext.selection = self.selection
+                  self.cellWidgetContext.scrolledNode = scrolledNode
+                  self.cellWidgetContext.targetCellPosition = vec2(0, self.scrollOffset)
+                  self.cellWidgetContext.handleClick = proc(node: UINode, cell: Cell, cellPath: seq[int], cursor: CellCursor, drag: bool) =
+                    if node.isNotNil:
+                      let bounds = node.bounds.transformRect(node.parent, scrolledNode.parent)
+                      self.targetCellPath = cellPath
+                      # debugf"click: {cellPath}"
+                      # debugf"click: {self.scrollOffset} -> {bounds.y} | {cell.dump} | {node.dump}"
+                      self.scrollOffset = bounds.y
 
-                self.cellWidgetContext.setCursor = proc(cell: Cell, offset: int, drag: bool) =
-                  if self.active or not drag:
-                    self.updateSelection(self.nodeCellMap.toCursor(cell, offset), drag)
-                    self.updateScrollOffset()
-                    self.app.tryActivateEditor(self)
+                    if self.active or not drag:
+                      self.updateSelection(cursor, drag)
+                      self.app.tryActivateEditor(self)
+                      self.markDirty()
 
-                # debugf"render: {self.targetCellPath}:{self.scrollOffset}"
-                # echo fmt"scroll offset {self.scrollOffset}"
-                try:
-                  let myCtx = newCellLayoutContext(builder, self.cellWidgetContext, Direction.Forwards, true)
-                  defer:
-                    myCtx.finish()
+                  self.cellWidgetContext.setCursor = proc(cell: Cell, offset: int, drag: bool) =
+                    if self.active or not drag:
+                      self.updateSelection(self.nodeCellMap.toCursor(cell, offset), drag)
+                      self.updateScrollOffset()
+                      self.app.tryActivateEditor(self)
 
-                  myCtx.remainingHeightUp = self.scrollOffset - cellGenerationBuffer
-                  myCtx.remainingHeightDown = (h - self.scrollOffset) - cellGenerationBuffer
+                  # debugf"render: {self.targetCellPath}:{self.scrollOffset}"
+                  # echo fmt"scroll offset {self.scrollOffset}"
+                  try:
+                    let myCtx = newCellLayoutContext(builder, self.cellWidgetContext, Direction.Forwards, true)
+                    defer:
+                      myCtx.finish()
 
-                  var cursorFirst = self.selection.first.rootPath
-                  var cursorLast = self.selection.last.rootPath
-                  if cursorFirst.path.pathAfter(cursorLast.path):
-                    swap(cursorFirst, cursorLast)
+                    myCtx.remainingHeightUp = self.scrollOffset - cellGenerationBuffer
+                    myCtx.remainingHeightDown = (h - self.scrollOffset) - cellGenerationBuffer
 
-                  # debugf"target cell: {self.targetCellPath}"
-                  cell.createCellUI(builder, app, myCtx, self.cellWidgetContext, false, self.targetCellPath, cursorFirst.path, cursorLast.path)
+                    var cursorFirst = self.selection.first.rootPath
+                    var cursorLast = self.selection.last.rootPath
+                    if cursorFirst.path.pathAfter(cursorLast.path):
+                      swap(cursorFirst, cursorLast)
 
-                except Defect:
-                  log lvlError, fmt"failed to creat UI nodes {getCurrentExceptionMsg()}"
+                    # debugf"target cell: {self.targetCellPath}"
+                    cell.createCellUI(builder, app, myCtx, self.cellWidgetContext, false, self.targetCellPath, cursorFirst.path, cursorLast.path)
 
-                if self.cellWidgetContext.targetNodeOld != self.cellWidgetContext.targetNode:
-                  if self.cellWidgetContext.targetNodeOld.isNotNil:
-                    self.cellWidgetContext.targetNodeOld.contentDirty = true
+                  except Defect:
+                    log lvlError, fmt"failed to creat UI nodes {getCurrentExceptionMsg()}"
+
+                  if self.cellWidgetContext.targetNodeOld != self.cellWidgetContext.targetNode:
+                    if self.cellWidgetContext.targetNodeOld.isNotNil:
+                      self.cellWidgetContext.targetNodeOld.contentDirty = true
+                    if self.cellWidgetContext.targetNode.isNotNil:
+                      self.cellWidgetContext.targetNode.contentDirty = true
+
+                  self.cellWidgetContext.targetNodeOld = self.cellWidgetContext.targetNode
+
+                  # move the container position so the target cell is at the desired scroll offset
                   if self.cellWidgetContext.targetNode.isNotNil:
-                    self.cellWidgetContext.targetNode.contentDirty = true
+                    var bounds = self.cellWidgetContext.targetNode.bounds.transformRect(self.cellWidgetContext.targetNode.parent, scrolledNode.parent)
+                    # echo fmt"1 target node {bounds}: {self.cellWidgetContext.targetNode.dump}"
+                    # echo scrolledNode.boundsRaw.y, " -> ", scrolledNode.boundsRaw.y + (self.scrollOffset - bounds.y)
+                    # debugf"update scrolled node y: {scrolledNode.boundsRaw.y} -> {(scrolledNode.boundsRaw.y + (self.scrollOffset - bounds.y))}"
+                    scrolledNode.rawY = scrolledNode.boundsRaw.y + (self.scrollOffset - bounds.y)
+                    # echo fmt"2 target node {bounds}: {self.cellWidgetContext.targetNode.dump}"
 
-                self.cellWidgetContext.targetNodeOld = self.cellWidgetContext.targetNode
-
-                # move the container position so the target cell is at the desired scroll offset
-                if self.cellWidgetContext.targetNode.isNotNil:
-                  var bounds = self.cellWidgetContext.targetNode.bounds.transformRect(self.cellWidgetContext.targetNode.parent, scrolledNode.parent)
-                  # echo fmt"1 target node {bounds}: {self.cellWidgetContext.targetNode.dump}"
-                  # echo scrolledNode.boundsRaw.y, " -> ", scrolledNode.boundsRaw.y + (self.scrollOffset - bounds.y)
-                  # debugf"update scrolled node y: {scrolledNode.boundsRaw.y} -> {(scrolledNode.boundsRaw.y + (self.scrollOffset - bounds.y))}"
-                  scrolledNode.rawY = scrolledNode.boundsRaw.y + (self.scrollOffset - bounds.y)
-                  # echo fmt"2 target node {bounds}: {self.cellWidgetContext.targetNode.dump}"
-
-                # update targetCellPath and scrollOffset to visible cell if currently outside of visible area
-                if self.scrollOffset < cellGenerationBuffer + targetCellBuffer or self.scrollOffset >= h - cellGenerationBuffer - targetCellBuffer:
-                  let forward = self.scrollOffset < cellGenerationBuffer + targetCellBuffer
-                  # log lvlInfo, fmt"update target path {cell}, {forward}, {self.targetCellPath}, {self.scrollOffset}"
-                  if self.cellWidgetContext.updateTargetPath(scrolledNode.parent, cell, forward, self.targetCellPath, @[]).getSome(path):
-                    # debugf"update target cell path: {self.targetCellPath}:{self.scrollOffset} -> {path[0]}:{path[1]}"
-                    self.targetCellPath = path[1]
-                    self.scrollOffset = path[0]
-                  else:
-                    log lvlError, fmt"failed to find target cell path"
-                    discard self.cellWidgetContext.updateTargetPath(scrolledNode.parent, cell, forward, self.targetCellPath, @[])
+                  # update targetCellPath and scrollOffset to visible cell if currently outside of visible area
+                  if self.scrollOffset < cellGenerationBuffer + targetCellBuffer or self.scrollOffset >= h - cellGenerationBuffer - targetCellBuffer:
+                    let forward = self.scrollOffset < cellGenerationBuffer + targetCellBuffer
+                    # log lvlInfo, fmt"update target path {cell}, {forward}, {self.targetCellPath}, {self.scrollOffset}"
+                    if self.cellWidgetContext.updateTargetPath(scrolledNode.parent, cell, forward, self.targetCellPath, @[]).getSome(path):
+                      # debugf"update target cell path: {self.targetCellPath}:{self.scrollOffset} -> {path[0]}:{path[1]}"
+                      self.targetCellPath = path[1]
+                      self.scrollOffset = path[0]
+                    else:
+                      log lvlError, fmt"failed to find target cell path"
+                      discard self.cellWidgetContext.updateTargetPath(scrolledNode.parent, cell, forward, self.targetCellPath, @[])
 
           # cursor
-          proc drawCursor(cursor: CellCursor, thick: bool, cursorColor: Color, id: int32): Option[UINode] =
-            if cursor.getTargetCell(true).getSome(targetCell) and self.cellWidgetContext.cellToWidget.contains(targetCell.id):
-              let node = self.cellWidgetContext.cellToWidget[targetCell.id]
-              # debugf"cursor {self.cursor} at {targetCell.dump}, {node.dump}"
+            if self.cursorVisible and self.document.model.rootNodes.len > 0:
+              if self.drawCursor(builder, self.selection.last, self.isThickCursor, textColor, textColor, backgroundColor, 0, overlapPanel).getSome(uiNode):
+                self.lastCursorLocationBounds = rect(self.selection.last.index.float * builder.charWidth, 0, builder.charWidth, builder.textHeight).transformRect(uiNode, builder.root).some
+                let node = self.selection.last.node
 
-              var bounds = rect(cursor.index.float * builder.charWidth, 0, 0, 0).transformRect(node, overlapPanel)
-              let lx = node.lx + cursor.index.float * builder.charWidth
+                let typ = self.document.ctx.computeType(node).catch:
+                  log lvlError, fmt"failed to compute type {getCurrentExceptionMsg()}"
+                  nil
 
-              if thick:
-                let text = targetCell.getText
-                let index = cursor.index.clamp(0, text.runeLen.int + 1).RuneIndex
-                let ch = if index < text.runeLen.RuneIndex:
-                  text[index..index]
-                elif self.getNextCellInLine(targetCell).isNotNil(nextCell) and self.cellWidgetContext.cellToWidget.contains(nextCell.id):
-                  let nextNode = self.cellWidgetContext.cellToWidget[nextCell.id]
-                  let nextText = nextCell.getText()
-                  if abs(nextNode.lx - lx) < 1 and nextText.len > 0:
-                    nextText[0..0]
-                  else:
-                    " "
-                else:
-                  " "
+                let value = self.document.ctx.getValue(node).catch:
+                  log lvlError, fmt"failed to compute value {getCurrentExceptionMsg()}"
+                  nil
 
-                builder.panel(&{UINodeFlag.FillBackground, AnimatePosition, SnapInitialBounds}, x = bounds.x, y = bounds.y, w = builder.charWidth, h = builder.textHeight, backgroundColor = textColor, userId = newSecondaryId(self.cursorsId, id)):
-                  builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = backgroundColor, text = ch)
-              else:
-                builder.panel(&{UINodeFlag.FillBackground, AnimatePosition, SnapInitialBounds}, x = bounds.x, y = bounds.y, w = max(builder.charWidth * 0.2, 1), h = builder.textHeight, backgroundColor = cursorColor, userId = newSecondaryId(self.cursorsId, id))
+                var scrollOffset = uiNode.transformBounds(overlapPanel).y
 
-              return node.some
+                try:
+                  discard self.document.ctx.validateNode(node)
+                  if node.parent.isNotNil: discard self.document.ctx.validateNode(node.parent)
+                except CatchableError:
+                  log lvlError, fmt"failed to validate node {node.dump}"
+                var errors = self.document.ctx.getDiagnostics(node.id)
+                if node.parent.isNotNil: errors.add self.document.ctx.getDiagnostics(node.parent.id)
 
-          if self.cursorVisible and self.document.model.rootNodes.len > 0:
-            if drawCursor(self.selection.last, self.isThickCursor, textColor, 0).getSome(uiNode):
-              self.lastCursorLocationBounds = rect(self.selection.last.index.float * builder.charWidth, 0, builder.charWidth, builder.textHeight).transformRect(uiNode, builder.root).some
-              let node = self.selection.last.node
+                let class = node.nodeClass
 
-              let typ = self.document.ctx.computeType(node).catch:
-                log lvlError, fmt"failed to compute type {getCurrentExceptionMsg()}"
-                nil
+                # debugf"errors: {errors}"
 
-              let value = self.document.ctx.getValue(node).catch:
-                log lvlError, fmt"failed to compute value {getCurrentExceptionMsg()}"
-                nil
+                if typ.isNotNil or value.isNotNil or errors.len > 0 or class.isNotNil:
+                  builder.panel(&{FillX, SizeToContentY, LayoutVertical}, y = scrollOffset):
+                    # builder.panel(&{FillY}, pivot = vec2(1, 0), w = builder.charWidth)
 
-              var scrollOffset = uiNode.transformBounds(overlapPanel).y
+                    if class.isNotNil:
+                      builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse}):
+                        builder.panel(&{FillY}, pivot = vec2(1, 0), w = builder.charWidth)
+                        builder.panel(&{SizeToContentX, SizeToContentY, LayoutVertical}, pivot = vec2(1, 0)):
+                          builder.panel(&{SizeToContentX, SizeToContentY, DrawBorder, DrawText}, borderColor = textColor, textColor = textColor, text = class.name)
 
-              try:
-                discard self.document.ctx.validateNode(node)
-                if node.parent.isNotNil: discard self.document.ctx.validateNode(node.parent)
-              except CatchableError:
-                log lvlError, fmt"failed to validate node {node.dump}"
-              var errors = self.document.ctx.getDiagnostics(node.id)
-              if node.parent.isNotNil: errors.add self.document.ctx.getDiagnostics(node.parent.id)
-
-              let class = node.nodeClass
-
-              # debugf"errors: {errors}"
-
-              if typ.isNotNil or value.isNotNil or errors.len > 0 or class.isNotNil:
-                builder.panel(&{FillX, SizeToContentY, LayoutVertical}, y = scrollOffset):
-                  # builder.panel(&{FillY}, pivot = vec2(1, 0), w = builder.charWidth)
-
-                  if class.isNotNil:
-                    builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse}):
-                      builder.panel(&{FillY}, pivot = vec2(1, 0), w = builder.charWidth)
-                      builder.panel(&{SizeToContentX, SizeToContentY, LayoutVertical}, pivot = vec2(1, 0)):
-                        builder.panel(&{SizeToContentX, SizeToContentY, DrawBorder, DrawText}, borderColor = textColor, textColor = textColor, text = class.name)
-
-                  if typ.isNotNil:
-                    builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse}):
-                      builder.panel(&{FillY}, pivot = vec2(1, 0), w = builder.charWidth)
-                      builder.panel(&{SizeToContentX, SizeToContentY, LayoutVertical}, pivot = vec2(1, 0)):
-                        builder.panel(&{FillX, SizeToContentY, DrawText, TextAlignHorizontalRight}, text = "Type", textColor = textColor)
-                        builder.panel(&{SizeToContentX, SizeToContentY, DrawBorder}, borderColor = textColor):
-                          let updateContext = UpdateContext(
-                            ctx: self.document.ctx,
-                            errorColor: errorColor,
-                            nodeCellMap: self.detailsNodeCellMap,
-                            cellToWidget: initTable[CellId, UINode](),
-                            targetCellPosition: vec2(0, 0),
-                            handleClick: proc(node: UINode, cell: Cell, path: seq[int], cursor: CellCursor, drag: bool) = discard,
-                            setCursor: proc(cell: Cell, offset: int, drag: bool) = discard,
-                          )
-                          self.createNodeUI(builder, app, currentNode, updateContext, remainingHeightUp=0, remainingHeightDown=h, typ, @[0], 0)
-
-                  builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse}):
-                    builder.panel(&{FillY}, pivot = vec2(1, 0), w = builder.charWidth)
-                    builder.panel(&{SizeToContentX, SizeToContentY, LayoutVertical}, pivot = vec2(1, 0)):
-                      for err in errors:
-                        builder.panel(&{SizeToContentX, SizeToContentY, FillBackground, DrawText, TextAlignHorizontalRight}, text = err, textColor = errorColor, backgroundColor = backgroundColor)
-
-                  if value.isNotNil:
                     if typ.isNotNil:
-                      # builder.panel(&{FillY}, pivot = vec2(1, 0), w = builder.charWidth)
-                      builder.panel(&{FillX}, h = builder.textHeight)
+                      builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse}):
+                        builder.panel(&{FillY}, pivot = vec2(1, 0), w = builder.charWidth)
+                        builder.panel(&{SizeToContentX, SizeToContentY, LayoutVertical}, pivot = vec2(1, 0)):
+                          builder.panel(&{FillX, SizeToContentY, DrawText, TextAlignHorizontalRight}, text = "Type", textColor = textColor)
+                          builder.panel(&{SizeToContentX, SizeToContentY, DrawBorder}, borderColor = textColor):
+                            let updateContext = UpdateContext(
+                              ctx: self.document.ctx,
+                              errorColor: errorColor,
+                              nodeCellMap: self.detailsNodeCellMap,
+                              cellToWidget: initTable[CellId, UINode](),
+                              targetCellPosition: vec2(0, 0),
+                              handleClick: proc(node: UINode, cell: Cell, path: seq[int], cursor: CellCursor, drag: bool) = discard,
+                              setCursor: proc(cell: Cell, offset: int, drag: bool) = discard,
+                            )
+                            self.createNodeUI(builder, app, currentNode, updateContext, remainingHeightUp=0, remainingHeightDown=h, typ, @[0], 0)
 
                     builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse}):
                       builder.panel(&{FillY}, pivot = vec2(1, 0), w = builder.charWidth)
-
                       builder.panel(&{SizeToContentX, SizeToContentY, LayoutVertical}, pivot = vec2(1, 0)):
-                        builder.panel(&{FillX, SizeToContentY, DrawText, TextAlignHorizontalRight}, text = "Value", textColor = textColor)
-                        builder.panel(&{SizeToContentX, SizeToContentY, DrawBorder}, borderColor = textColor):
-                          let updateContext = UpdateContext(
-                            ctx: self.document.ctx,
-                            errorColor: errorColor,
-                            nodeCellMap: self.detailsNodeCellMap,
-                            cellToWidget: initTable[CellId, UINode](),
-                            targetCellPosition: vec2(0, 0),
-                            handleClick: proc(node: UINode, cell: Cell, path: seq[int], cursor: CellCursor, drag: bool) = discard,
-                            setCursor: proc(cell: Cell, offset: int, drag: bool) = discard,
-                          )
-                          self.createNodeUI(builder, app, currentNode, updateContext, remainingHeightUp=0, remainingHeightDown=h, value, @[0], 0)
+                        for err in errors:
+                          builder.panel(&{SizeToContentX, SizeToContentY, FillBackground, DrawText, TextAlignHorizontalRight}, text = err, textColor = errorColor, backgroundColor = backgroundColor)
 
-            if not self.selection.isEmpty:
-              let cursorColor = textColor.darken(0.3)
-              discard drawCursor(self.selection.first, not app.platform.supportsThinCursor, cursorColor, 1)
+                    if value.isNotNil:
+                      if typ.isNotNil:
+                        # builder.panel(&{FillY}, pivot = vec2(1, 0), w = builder.charWidth)
+                        builder.panel(&{FillX}, h = builder.textHeight)
 
-        # echo builder.currentChild.dump(true)
+                      builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse}):
+                        builder.panel(&{FillY}, pivot = vec2(1, 0), w = builder.charWidth)
+
+                        builder.panel(&{SizeToContentX, SizeToContentY, LayoutVertical}, pivot = vec2(1, 0)):
+                          builder.panel(&{FillX, SizeToContentY, DrawText, TextAlignHorizontalRight}, text = "Value", textColor = textColor)
+                          builder.panel(&{SizeToContentX, SizeToContentY, DrawBorder}, borderColor = textColor):
+                            let updateContext = UpdateContext(
+                              ctx: self.document.ctx,
+                              errorColor: errorColor,
+                              nodeCellMap: self.detailsNodeCellMap,
+                              cellToWidget: initTable[CellId, UINode](),
+                              targetCellPosition: vec2(0, 0),
+                              handleClick: proc(node: UINode, cell: Cell, path: seq[int], cursor: CellCursor, drag: bool) = discard,
+                              setCursor: proc(cell: Cell, offset: int, drag: bool) = discard,
+                            )
+                            self.createNodeUI(builder, app, currentNode, updateContext, remainingHeightUp=0, remainingHeightDown=h, value, @[0], 0)
+
+              if not self.selection.isEmpty:
+                let cursorColor = textColor.darken(0.3)
+                discard self.drawCursor(builder, self.selection.first, not app.platform.supportsThinCursor, cursorColor, textColor, backgroundColor, 1, overlapPanel)
+
+          # echo builder.currentChild.dump(true)
 
   if self.showCompletions and self.active:
     result.add proc() =

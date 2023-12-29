@@ -24,7 +24,7 @@ CreateContext ModelState:
   var diagnosticsPerNode*: Table[NodeId, Diagnostics] = initTable[NodeId, Diagnostics]()
   var diagnosticsPerQuery*: Table[Dependency, seq[NodeId]] = initTable[Dependency, seq[NodeId]]()
   var computationContextOwner: ModelComputationContextBase = nil
-  var models: seq[Model]
+  var project: Project = nil
   var currentKey: Dependency
 
   proc inputAstNode(ctx: ModelState, id: ItemId): AstNode {.inputProvider.}
@@ -41,10 +41,11 @@ CreateContext ModelState:
 type ModelComputationContext* = ref object of ModelComputationContextBase
   state*: ModelState
 
-proc newModelComputationContext*(): ModelComputationContext =
+proc newModelComputationContext*(project: Project): ModelComputationContext =
   result = new(ModelComputationContext)
   result.state = newModelState()
   result.state.computationContextOwner = result
+  result.state.project = project
 
 method computeType*(self: ModelComputationContext, node: AstNode): AstNode =
   return self.state.computeType(node)
@@ -147,12 +148,6 @@ template enableDiagnostics(key: untyped): untyped =
 #   ctx.depGraph.changed[(sym.getItem, -1)] = ctx.depGraph.revision
 #   log(lvlInfo, fmt"Invalidating symbol {sym.name} ({sym.id})")
 
-proc addModel*(ctx: ModelState, model: Model) =
-  ctx.models.add model
-
-proc removeModel*(ctx: ModelState, model: Model) =
-  ctx.models.del model
-
 proc insertNode*(ctx: ModelState, node: AstNode) =
   # log lvlWarn, fmt"insertNode {node}"
   ctx.depGraph.revision += 1
@@ -237,7 +232,9 @@ proc deleteAllNodesAndSymbols*(ctx: ModelState) =
   ctx.queryCacheScope.clear
 
 proc inputAstNode(ctx: ModelState, id: ItemId): AstNode =
-  for model in ctx.models:
+  # debugf"inputAstNode {id}"
+  for model in ctx.project.models.values:
+    # debugf"  check model {model.path}"
     if model.resolveReference(id.id.NodeId).getSome(node):
       # debugf"inputAstNode {id} -> {node}"
       ctx.itemsAstNode[id] = node

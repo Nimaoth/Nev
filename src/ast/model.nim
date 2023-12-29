@@ -149,6 +149,7 @@ type
     models*: Table[ModelId, Model]
     loaded*: bool = false
     computationContext*: ModelComputationContextBase
+    dynamicLanguages*: Table[LanguageId, Language]
 
 proc resolveReference*(self: Model, id: NodeId): Option[AstNode]
 proc resolveReference*(self: Project, id: NodeId): Option[AstNode]
@@ -180,6 +181,7 @@ iterator childrenRec*(node: AstNode): AstNode =
 
 proc newProject*(): Project =
   new result
+  result.dynamicLanguages = initTable[LanguageId, Language]()
 
 proc addModel*(self: Project, model: Model) =
   # log lvlWarn, fmt"addModel: {model.path}, {model.id}"

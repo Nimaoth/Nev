@@ -4,7 +4,7 @@ import ui/node
 import scripting/[expose, scripting_base]
 import platform/[platform, filesystem]
 import workspaces/[workspace]
-import ast/model
+import ast/[model, project]
 import config_provider, app_interface
 import text/language/language_server_base, language_server_absytree_commands
 import input, events, document, document_editor, popup, dispatch_tables, theme
@@ -65,6 +65,9 @@ type EditorState = object
   workspaceFolders: seq[OpenWorkspace]
   openEditors: seq[OpenEditor]
   hiddenEditors: seq[OpenEditor]
+
+  astProjectWorkspaceId: string
+  astProjectPath: Option[string]
 
 type
   RegisterKind* {.pure.} = enum Text, AstNode
@@ -257,9 +260,6 @@ proc registerEditor*(self: App, editor: DocumentEditor): void =
 proc unregisterEditor*(self: App, editor: DocumentEditor): void =
   self.editors.del(editor.id)
   self.onEditorDeregistered.invoke editor
-
-method injectDependencies*(self: DocumentEditor, ed: AppInterface) {.base.} =
-  discard
 
 proc invokeCallback*(self: App, context: string, args: JsonNode): bool =
   if not self.callbacks.contains(context):
@@ -751,6 +751,16 @@ proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.}
     log lvlInfo, "No workspace open yet, opening current working directory as local workspace"
     discard self.addWorkspaceFolder newWorkspaceFolderLocal(".")
 
+  if state.astProjectWorkspaceId != "":
+    if self.getWorkspaceFolder(state.astProjectWorkspaceId.parseId).getSome(ws):
+      setProjectWorkspace(ws)
+    else:
+      log lvlError, fmt"Failed to restore project workspace {state.astProjectWorkspaceId}"
+
+  if gProjectWorkspace.isNil and self.workspace.folders.len > 0:
+    log lvlWarn, fmt"Use first workspace as project workspace"
+    setProjectWorkspace(self.workspace.folders[0])
+
   # Restore open editors
   if self.getFlag("editor.restore-open-editors", true):
     for editorState in state.openEditors:
@@ -836,6 +846,11 @@ proc saveAppState*(self: App) {.expose("editor").} =
   # Save some state
   var state = EditorState()
   state.theme = self.theme.path
+
+  if gProjectWorkspace.isNotNil:
+    state.astProjectWorkspaceId = $gProjectWorkspace.id
+  if gProject.isNotNil:
+    state.astProjectPath = gProject.path.some
 
   if self.backend == api.Backend.Terminal:
     state.fontSize = self.loadedFontSize
