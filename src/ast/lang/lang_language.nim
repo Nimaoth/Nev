@@ -929,13 +929,6 @@ proc createModelForLanguage*(language: Language): Model =
 
   result.addRootNode(root)
 
-# let langLanguageModel = block:
-#   let model = newModel(IdLangLanguageModel)
-#   model.addLanguage(langLanguage)
-#   model.addRootNode createModelForLanguage(langLanguage)
-#   model
-# langLanguage.model = langLanguageModel
-
 let baseInterfacesModel* = createModelForLanguage(base_language.baseInterfaces)
 
 let baseLanguageModel* = createModelForLanguage(base_language.baseLanguage)
@@ -943,4 +936,3 @@ baseLanguageModel.addImport(baseInterfacesModel)
 
 let langLanguageModel* = createModelForLanguage(langLanguage)
 langLanguageModel.addImport(baseInterfacesModel)
-langLanguage.model = langLanguageModel

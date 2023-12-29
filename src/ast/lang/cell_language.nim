@@ -199,7 +199,11 @@ proc resolveLanguage(id: LanguageId): Option[Language] =
 
 proc resolveModel(project: Project, id: ModelId): Option[Model] =
   if id == baseInterfacesModel.id:
-    return baseInterfacesModel.some
+    return lang_language.baseInterfacesModel.some
+  if id == baseLanguageModel.id:
+    return lang_language.baseLanguageModel.some
+  if id == langLanguageModel.id:
+    return lang_language.langLanguageModel.some
   log lvlError, fmt"createCellLanguage: unknown model id: {id}"
 
 proc createCellLanguage*(): Future[Language] {.async.} =
@@ -219,14 +223,6 @@ proc createCellLanguage*(): Future[Language] {.async.} =
 var cellLanguage*: Future[Language] = createCellLanguage()
 
 registerBuilder(IdCellLanguage, builder)
-
-# let langLanguageModel = block:
-#   let model = newModel(IdLangLanguageModel)
-#   model.addLanguage(langLanguage)
-#   model.addRootNode createNodesForLanguage(langLanguage)
-#   model
-# langLanguage.model = langLanguageModel
-# langLanguage.model.addRootNode createNodesForLanguage(langLanguage)
 
 proc updateCellLanguage*(model: Model) {.async.} =
   discard cellLanguage.await.updateLanguageFromModel(model, updateBuilder=false).await

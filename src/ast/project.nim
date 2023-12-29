@@ -62,11 +62,11 @@ proc loadModelAsync*(project: Project, path: string): Future[Option[Model]] {.as
 
   var model = newModel()
   if not model.loadFromJsonAsync(project, ws, path, json, resolveLanguage, resolveModel).await:
-    log lvlError, fmt"Failed to load model: no id"
+    log lvlError, fmt"project.loadModelAsync: Failed to load model: no id"
     return Model.none
 
   if project.getModel(model.id).getSome(existing):
-    log lvlInfo, fmt"Model {model.id} already exists in project"
+    log lvlInfo, fmt"project.loadModelAsync: Model {model.id} already exists in project"
     return existing.some
 
   project.addModel(model)
@@ -106,6 +106,8 @@ proc resolveModel*(project: Project, ws: WorkspaceFolder, id: ModelId): Future[O
     return lang_language.baseInterfacesModel.some
   if id == baseLanguageModel.id:
     return lang_language.baseLanguageModel.some
+  if id == langLanguageModel.id:
+    return lang_language.langLanguageModel.some
 
   while not project.loaded:
     log lvlInfo, fmt"Waiting for project to load"
@@ -119,6 +121,7 @@ proc resolveModel*(project: Project, ws: WorkspaceFolder, id: ModelId): Future[O
     let path = project.modelPaths[id]
     return project.loadModelAsync(path).await
 
+  log lvlError, fmt"project.resolveModel {id}: not found"
   return Model.none
 
 proc getAllAvailableLanguages*(project: Project): seq[LanguageId] =
