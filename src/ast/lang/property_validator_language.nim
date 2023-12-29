@@ -49,9 +49,11 @@ proc resolveLanguage(project: Project, workspace: WorkspaceFolder, id: LanguageI
 proc resolveModel(project: Project, workspace: WorkspaceFolder, id: ModelId): Future[Option[Model]] {.async.} =
   assert baseInterfacesModel.isNotNil
   if id == baseInterfacesModel.id:
-    return baseInterfacesModel.some
+    return lang_language.baseInterfacesModel.some
   if id == baseLanguageModel.id:
-    return baseLanguageModel.some
+    return lang_language.baseLanguageModel.some
+  if id == langLanguageModel.id:
+    return lang_language.langLanguageModel.some
   log lvlError, fmt"createPropertyValidatorLanguage::resolveModel: unknown model id: {id}"
 
 var propertyValidatorLanguage*: Future[Language] = nil

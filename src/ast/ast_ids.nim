@@ -189,7 +189,6 @@ let IdStringGetLengthValue* = "654fbb281446e19b38225255".parseId.RoleId
 
 # lang language
 let IdLangLanguage* = "654fbb281446e19b3822523f".parseId.LanguageId
-let IdLangLanguageModel* = "656f7f67d077504f640d8718".parseId.ModelId
 
 let IdLangRoot* = "654fbb281446e19b3822524f".parseId.ClassId
 let IdLangRootChildren* = "654fbb281446e19b38225250".parseId.RoleId
