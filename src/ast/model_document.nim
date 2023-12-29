@@ -10,13 +10,10 @@ import lang/[lang_language, cell_language, property_validator_language]
 import ast/[generator_wasm, base_language_wasm, editor_language_wasm, model_state, cell_builder_database]
 import document, document_editor, text/text_document, events, scripting/expose, input
 import config_provider, app_interface, dispatch_tables, selector_popup
-import model, base_language, editor_language, cells, ast_ids
+import model, base_language, editor_language, cells, ast_ids, project
 
 logCategory "model"
 createJavascriptPrototype("editor.model")
-
-const projectPath = "./model/playground.ast-project"
-var gProject: Project = nil
 
 type
   CellCursor* = object
@@ -259,68 +256,25 @@ proc handleNodeInserted(self: ModelDocument, model: Model, parent: AstNode, chil
 proc handleNodePropertyChanged(self: ModelDocument, model: Model, node: AstNode, role: RoleId, oldValue: PropertyValue, newValue: PropertyValue, slice: Slice[int])
 proc handleNodeReferenceChanged(self: ModelDocument, model: Model, node: AstNode, role: RoleId, oldRef: NodeId, newRef: NodeId)
 
-var dynamicLanguages = initTable[LanguageId, Language]()
-
-proc getAllAvailableLanguages*(): seq[LanguageId] =
-  let l = collect(newSeq):
-    for languageId in dynamicLanguages.keys:
-      languageId
-  return @[IdBaseLanguage, IdBaseInterfaces, IdEditorLanguage, IdLangLanguage, IdCellLanguage, IdPropertyValidatorLanguage] & l
-
 method `$`*(document: ModelDocument): string =
   return document.filename
-
-proc loadProjectAsync(project: Project, ws: WorkspaceFolder): Future[void] {.async.} =
-  log lvlInfo, fmt"Loading project source file '{project.path}'"
-  let jsonText = await ws.loadFile(project.path)
-  let json = jsonText.parseJson
-  if gProject.loadFromJson(json):
-    gProject.loaded = true
 
 proc newModelDocument*(filename: string = "", app: bool = false, workspaceFolder: Option[WorkspaceFolder]): ModelDocument =
   new(result)
   let self = result
-
-  if gProject.isNil:
-    if workspaceFolder.getSome(ws):
-      gProject = newProject()
-      gProject.path = projectPath
-      gProject.computationContext = newModelComputationContext()
-      asyncCheck loadProjectAsync(gProject, ws)
 
   log lvlInfo, fmt"newModelDocument {filename}"
 
   self.filename = filename
   self.appFile = app
   self.workspace = workspaceFolder
-  self.project = gProject
 
-  var testModel = newModel(newId().ModelId)
-  # testModel.addLanguage(base_language.baseLanguage)
-  # let nodeList = newAstNode(nodeListClass)
-  # nodeList.add(IdNodeListChildren, newAstNode(emptyLineClass))
-  # testModel.addRootNode(nodeList)
-
-  self.model = testModel
-  self.ctx = self.project.computationContext.ModelComputationContext
-
-  discard self.model.onNodeDeleted.subscribe proc(d: auto) = self.handleNodeDeleted(d[0], d[1], d[2], d[3], d[4])
-  discard self.model.onNodeInserted.subscribe proc(d: auto) = self.handleNodeInserted(d[0], d[1], d[2], d[3], d[4])
-  discard self.model.onNodePropertyChanged.subscribe proc(d: auto) = self.handleNodePropertyChanged(d[0], d[1], d[2], d[3], d[4], d[5])
-  discard self.model.onNodeReferenceChanged.subscribe proc(d: auto) = self.handleNodeReferenceChanged(d[0], d[1], d[2], d[3], d[4])
-
-  self.ctx.state.addModel(testModel)
-  # for rootNode in testModel.rootNodes:
-  #   self.ctx.state.insertNode(rootNode)
+  getGlobalProject().thenIt:
+    self.project = it
+    if self.filename.len > 0:
+      self.load()
 
   self.builder = newCellBuilder(idNone().LanguageId)
-  for language in self.model.languages:
-    self.builder.addBuilder(getBuilder(language.id))
-
-  self.project.addModel(self.model)
-
-  if filename.len > 0:
-    self.load()
 
 method save*(self: ModelDocument, filename: string = "", app: bool = false) =
   self.filename = if filename.len > 0: filename else: self.filename
@@ -373,7 +327,7 @@ proc retriggerValidation*(self: ModelDocumentEditor) =
     self.validateNodesTask.reschedule()
 
 proc updateScrollOffset*(self: ModelDocumentEditor, scrollToCursor: bool = true) =
-  if self.cellWidgetContext.isNil or self.scrolledNode.parent.isNil:
+  if self.cellWidgetContext.isNil or self.scrolledNode.isNil or self.scrolledNode.parent.isNil:
     return
 
   let newCell = self.selection.last.targetCell
@@ -512,7 +466,8 @@ proc `cursor=`*(self: ModelDocumentEditor, cursor: CellCursorState) =
 
 proc `targetCursor=`*(self: ModelDocumentEditor, cursor: CellCursorState) =
   self.mTargetCursor = cursor.some
-  self.cursor = cursor
+  if self.document.model.isNotNil and self.document.model.rootNodes.len > 0:
+    self.cursor = cursor
 
 proc handleNodeDeleted(self: ModelDocument, model: Model, parent: AstNode, child: AstNode, role: RoleId, index: int) =
   # debugf "handleNodeDeleted {parent}, {child}, {role}, {index}"
@@ -534,100 +489,19 @@ proc handleNodeReferenceChanged(self: ModelDocument, model: Model, node: AstNode
   self.currentTransaction.operations.add ModelOperation(kind: ReferenceChange, node: node, role: role, id: oldRef)
   self.ctx.state.updateNode(node)
 
-proc loadModelAsync(project: Project, ws: WorkspaceFolder, path: string): Future[Option[Model]] {.async.}
-
-proc resolveLanguage(project: Project, ws: WorkspaceFolder, id: LanguageId): Future[Option[Language]] {.async.} =
-  if id == IdBaseLanguage:
-    return base_language.baseLanguage.some
-  elif id == IdBaseInterfaces:
-    return base_language.baseInterfaces.some
-  elif id == IdEditorLanguage:
-    return editor_language.editorLanguage.some
-  elif id == IdLangLanguage:
-    return lang_language.langLanguage.some
-  elif id == IdCellLanguage:
-    return cell_language.cellLanguage.await.some
-  elif id == IdPropertyValidatorLanguage:
-    return property_validator_language.propertyValidatorLanguage.await.some
-  elif dynamicLanguages.contains(id):
-    return dynamicLanguages[id].some
-  elif project.modelPaths.contains(id.ModelId):
-    let languageModel = project.loadModelAsync(ws, project.modelPaths[id.ModelId]).await.getOr:
-      return Language.none
-
-    if not languageModel.hasLanguage(IdLangLanguage):
-      return Language.none
-
-    let language = createLanguageFromModel(languageModel).await
-    dynamicLanguages[language.id] = language
-    return language.some
-  else:
-    return Language.none
-
-proc resolveModel(project: Project, ws: WorkspaceFolder, id: ModelId): Future[Option[Model]] {.async.}
-
-proc loadModelAsync(project: Project, ws: WorkspaceFolder, path: string): Future[Option[Model]] {.async.} =
-  log lvlInfo, fmt"loadModelAsync {path}"
-  let jsonText = await ws.loadFile(path)
-  let json = jsonText.parseJson
-
-  var model = newModel()
-  if not model.loadFromJsonAsync(project, ws, path, json, resolveLanguage, resolveModel).await:
-    log lvlError, fmt"Failed to load model: no id"
-    return Model.none
-
-  if project.getModel(model.id).getSome(existing):
-    log lvlInfo, fmt"Model {model.id} already exists in project"
-    return existing.some
-
-  project.addModel(model)
-
-  return model.some
-
-proc resolveModel(project: Project, ws: WorkspaceFolder, id: ModelId): Future[Option[Model]] {.async.} =
-  if id == baseInterfacesModel.id:
-    return lang_language.baseInterfacesModel.some
-  if id == baseLanguageModel.id:
-    return lang_language.baseLanguageModel.some
-
-  while not project.loaded:
-    log lvlInfo, fmt"Waiting for project to load"
+proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
+  while self.project.isNil:
     await sleepAsync(1)
 
-  log lvlInfo, fmt"resolveModel {id}"
-  if project.getModel(id).getSome(model):
-    return model.some
+  self.ctx = self.project.computationContext.ModelComputationContext
 
-  if project.modelPaths.contains(id):
-    let path = project.modelPaths[id]
-    return await loadModelAsync(project, ws, path)
-
-  return Model.none
-
-proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
   log lvlInfo, fmt"Loading model source file '{self.filename}'"
   try:
     if self.workspace.isNone:
       log lvlError, fmt"Can only open model files from workspaces right now"
       return
 
-    # var jsonText = ""
-    # if self.workspace.getSome(ws):
-    #   jsonText = await ws.loadFile(self.filename)
-    # elif self.appFile:
-    #   jsonText = fs.loadApplicationFile(self.filename)
-    # else:
-    #   jsonText = fs.loadFile(self.filename)
-
-    # let json = jsonText.parseJson
-
-    # var model = newModel()
-    # await self.project.loadFromJson(model, self.workspace.get, self.fullPath, json, resolveLanguage, resolveModel)
-    # if model.id.isNone:
-    #   log lvlError, fmt"Failed to load model: no id"
-    #   return
-
-    if self.project.loadModelAsync(self.workspace.get, self.filename).await.getSome(model):
+    if self.project.loadModelAsync(self.filename).await.getSome(model):
       let oldModel = self.model
       self.model = model
 
@@ -648,11 +522,6 @@ proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
       functionInstances.clear()
       structInstances.clear()
       self.ctx.state.clearCache()
-
-      self.ctx.state.removeModel(oldModel)
-      self.ctx.state.addModel(model)
-      # for rootNode in self.model.rootNodes:
-      #   self.ctx.state.insertNode(rootNode)
 
   except CatchableError:
     log lvlError, fmt"Failed to load model source file '{self.filename}': {getCurrentExceptionMsg()}"
@@ -1120,13 +989,6 @@ method createWithDocument*(_: ModelDocumentEditor, document: Document, configPro
   discard self.document.onBuilderChanged.subscribe proc() = self.handleBuilderChanged()
 
   self.rebuildCells()
-
-  if self.document.model.rootNodes.len > 0:
-    self.mSelection.first.node = self.document.model.rootNodes[0]
-    self.mSelection.last.node = self.document.model.rootNodes[0]
-    self.cursor = self.getFirstEditableCellOfNode(self.document.model.rootNodes[0]).get
-    self.updateScrollOffset()
-
   self.startBlinkCursorTask()
 
   return self
@@ -3309,6 +3171,10 @@ proc getNodeFromRegister(self: ModelDocumentEditor, register: string): seq[AstNo
     log lvlError, fmt"Can't parse node from register"
 
 proc pasteNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  if self.document.project.isNil:
+    log lvlError, fmt"No project set for model document '{self.document.filename}'"
+    return
+
   let updatedScrollOffset = self.updateScrollOffsetToPrevCell()
   defer:
     if not updatedScrollOffset:
@@ -3370,6 +3236,10 @@ method changed*(self: ModelLanguageSelectorItem, other: SelectorItem): bool =
   return self.language.id != other.language.id
 
 proc chooseLanguageFromUser*(self: ModelDocumentEditor, languages: openArray[LanguageId], handleConfirmed: proc(language: Language)) =
+  if self.document.project.isNil:
+    log lvlError, fmt"No project set for model document '{self.document.filename}'"
+    return
+
   let languages = @languages
   var popup = self.app.createSelectorPopup().SelectorPopup
   popup.getCompletionsAsync = proc(popup: SelectorPopup, text: string): Future[seq[SelectorItem]] {.async.} =
@@ -3391,7 +3261,10 @@ proc chooseLanguageFromUser*(self: ModelDocumentEditor, languages: openArray[Lan
   self.app.pushPopup popup
 
 proc addLanguage*(self: ModelDocumentEditor) {.expose("editor.model").} =
-  let languages = getAllAvailableLanguages().filterIt(not self.document.model.hasLanguage(it))
+  if self.document.project.isNil:
+    log lvlError, fmt"No project set for model document '{self.document.filename}'"
+    return
+  let languages = self.document.project.getAllAvailableLanguages().filterIt(not self.document.model.hasLanguage(it))
   self.chooseLanguageFromUser(languages, proc(language: Language) =
     log lvlInfo, fmt"Add language {language.name} ({language.id}) to model {self.document.model.id}"
     self.document.model.addLanguage(language)
@@ -3407,6 +3280,10 @@ method changed*(self: ModelImportSelectorItem, other: SelectorItem): bool =
   return self.model != other.model
 
 proc createNewModelAsync*(self: ModelDocumentEditor, name: string) {.async.} =
+  if self.document.project.isNil:
+    log lvlError, fmt"No project set for model document '{self.document.filename}'"
+    return
+
   if self.document.workspace.getSome(ws):
     var model = newModel(newId().ModelId)
     model.path = name & ".ast-model"
@@ -3422,6 +3299,10 @@ proc createNewModel*(self: ModelDocumentEditor, name: string) {.expose("editor.m
   asyncCheck self.createNewModelAsync(name)
 
 proc addModelToProject*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  if self.document.project.isNil:
+    log lvlError, fmt"No project set for model document '{self.document.filename}'"
+    return
+
   var popup = self.app.createSelectorPopup().SelectorPopup
 
   popup.getCompletionsAsync = proc(popup: SelectorPopup, text: string): Future[seq[SelectorItem]] {.async.} =
@@ -3446,12 +3327,7 @@ proc addModelToProject*(self: ModelDocumentEditor) {.expose("editor.model").} =
   popup.handleItemConfirmed = proc(item: SelectorItem) =
     log lvlInfo, fmt"Import model {item.ModelImportSelectorItem.name} ({item.ModelImportSelectorItem.model}) to model {self.document.model.id}"
     let path = item.ModelImportSelectorItem.name
-
-    if self.document.workspace.getSome(ws):
-      asyncCheck self.document.project.loadModelAsync(ws, path)
-    else:
-      log lvlError, fmt"Failed to load model: no workspace"
-      return
+    asyncCheck self.document.project.loadModelAsync(path)
 
   popup.updateCompletions()
   popup.sortFunction = proc(a, b: SelectorItem): int = cmp(a.score, b.score)
@@ -3460,6 +3336,10 @@ proc addModelToProject*(self: ModelDocumentEditor) {.expose("editor.model").} =
   self.app.pushPopup popup
 
 proc importModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  if self.document.project.isNil:
+    log lvlError, fmt"No project set for model document '{self.document.filename}'"
+    return
+
   var popup = self.app.createSelectorPopup().SelectorPopup
 
   popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
@@ -3522,10 +3402,16 @@ method changed*(self: AstNodeSelectorItem, other: SelectorItem): bool =
   return self.node != other.node
 
 proc compileLanguageAsync*(self: ModelDocumentEditor) {.async.} =
-  if not self.document.model.hasLanguage(IdLangLanguage):
+  while self.document.project.isNil or self.document.model.isNil:
+    await sleepAsync(1)
+
+  let project = self.document.project
+  let model = self.document.model
+
+  if not model.hasLanguage(IdLangLanguage):
     return
 
-  let languageId = self.document.model.id.LanguageId
+  let languageId = model.id.LanguageId
 
   defer:
     for document in self.app.getAllDocuments:
@@ -3535,36 +3421,11 @@ proc compileLanguageAsync*(self: ModelDocumentEditor) {.async.} =
           modelDocument.builder.addBuilder(getBuilder(languageId))
           modelDocument.onBuilderChanged.invoke()
 
-  if languageId == IdCellLanguage:
-    try:
-      log lvlInfo, fmt"Updating cell language ({languageId}) with model {self.document.model.path} ({self.document.model.id})"
-      updateCellLanguage(self.document.model).await
-      return
-    except CatchableError:
-      log lvlError, fmt"Failed to update cell language from model: {getCurrentExceptionMsg()}"
-    return
+          for root in modelDocument.model.rootNodes:
+            root.forEach2 child:
+              modelDocument.ctx.state.updateNode(child)
 
-  if languageId == IdPropertyValidatorLanguage:
-    try:
-      log lvlInfo, fmt"Updating property validator language ({languageId}) with model {self.document.model.path} ({self.document.model.id})"
-      updatePropertyValidatorLanguage(self.document.model).await
-      return
-    except CatchableError:
-      log lvlError, fmt"Failed to update cell language from model: {getCurrentExceptionMsg()}"
-    return
-
-  if dynamicLanguages.contains(languageId):
-    let language = dynamicLanguages[languageId]
-    try:
-      log lvlInfo, fmt"Updating language {language.name} ({language.id}) with model {self.document.model.path} ({self.document.model.id})"
-      discard language.updateLanguageFromModel(self.document.model, ctx = self.document.ctx.ModelComputationContextBase.some).await
-      return
-    except CatchableError:
-      log lvlError, fmt"Failed to update language from model: {getCurrentExceptionMsg()}"
-
-  log lvlInfo, fmt"Compiling language from model {self.document.model.path} ({self.document.model.id})"
-  let language = createLanguageFromModel(self.document.model, ctx = self.document.ctx.ModelComputationContextBase.some).await
-  dynamicLanguages[language.id] = language
+  project.updateLanguageFromModel(model).await
 
 proc compileLanguage*(self: ModelDocumentEditor) {.expose("editor.model").} =
   asyncCheck self.compileLanguageAsync()
@@ -3599,22 +3460,30 @@ proc addRootNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
   self.app.pushPopup popup
 
 proc saveProject*(self: ModelDocumentEditor) {.expose("editor.model").} =
-  if self.document.workspace.getSome(ws):
-    log lvlInfo, fmt"Saving project '{self.document.project.path}'"
-    let serialized = self.document.project.toJson.pretty
-    asyncCheck ws.saveFile(self.document.project.path, serialized)
-  else:
-    log lvlError, fmt"Failed to save project: no workspace"
+  if self.document.project.isNil:
+    log lvlError, fmt"No project set for model document '{self.document.filename}'"
+    return
+
+  asyncCheck self.document.project.save()
 
 proc loadLanguageModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
-  let languages = getAllAvailableLanguages()
+  if self.document.project.isNil:
+    log lvlError, fmt"No project set for model document '{self.document.filename}'"
+    return
+  let languages = self.document.project.getAllAvailableLanguages()
   self.chooseLanguageFromUser(languages, proc(language: Language) =
     log lvlInfo, fmt"Loading language model of {language.name} ({language.id})"
 
     try:
-      var model = createModelForLanguage(language)
+      let project = self.document.project
 
-      let oldModel = self.document.model
+      let model = if project.getModel(language.id.ModelId).getSome(model):
+        model
+      else:
+        let model = createModelForLanguage(language)
+        project.addModel(model)
+        model
+
       self.document.model = model
 
       discard self.document.model.onNodeDeleted.subscribe proc(d: auto) = self.document.handleNodeDeleted(d[0], d[1], d[2], d[3], d[4])
@@ -3633,9 +3502,6 @@ proc loadLanguageModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
       structInstances.clear()
       self.document.ctx.state.clearCache()
 
-      self.document.ctx.state.removeModel(oldModel)
-      self.document.ctx.state.addModel(model)
-
     except CatchableError:
       log lvlError, fmt"Failed to load model source file '{self.document.filename}': {getCurrentExceptionMsg()}"
       log lvlError, getCurrentException().getStackTrace()
@@ -3645,6 +3511,10 @@ proc loadLanguageModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
   )
 
 proc findDeclaration*(self: ModelDocumentEditor, global: bool) {.expose("editor.model").} =
+  if self.document.project.isNil:
+    log lvlError, fmt"No project set for model document '{self.document.filename}'"
+    return
+
   var popup = self.app.createSelectorPopup().SelectorPopup
 
   popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =

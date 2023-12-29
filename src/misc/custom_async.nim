@@ -27,3 +27,15 @@ else:
       await sleepAsync(1)
 
     return ^flowVar
+
+template thenIt*[T](f: Future[T], body: untyped): untyped =
+  when defined(js):
+    discard f.then(proc(a: T) =
+      let it {.inject.} = a
+      body
+    )
+  else:
+    f.addCallback(proc(a: Future[T]) =
+      let it {.inject.} = a.read
+      body
+    )
