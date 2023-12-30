@@ -8,7 +8,7 @@ when defined(js):
   import std/jsffi
   export jsffi
 
-  type WasmPtr = distinct uint32
+  type WasmPtr* = distinct uint32
 
   type WasmModule* = ref object
     env: JsObject
@@ -33,6 +33,8 @@ when defined(js):
 else:
   import wasm3, wasm3/[wasm3c, wasmconversions]
 
+  export WasmPtr
+
   type WasmModule* = ref object
     env: WasmEnv
 
@@ -40,6 +42,10 @@ else:
     namespace*: string
     functions: seq[WasmHostProc]
     module: WasmModule
+
+proc `$`*(p: WasmPtr): string {.borrow.}
+proc `+`*(p: WasmPtr, offset: SomeNumber): WasmPtr =
+  return WasmPtr(p.int + offset.int)
 
 proc alloc*(module: WasmModule, size: uint32): WasmPtr =
   when defined(js):
@@ -54,11 +60,8 @@ proc dealloc*(module: WasmModule, p: WasmPtr) =
     module.env.dealloc(p)
 
 when defined(js):
-  proc copyMem*(module: WasmModule, dest: WasmPtr, source: JsObject, len: int, offset = 0u32) =
-    proc setJs(arr: JsObject, source: JsObject, pos: WasmPtr) {.importjs: "#.set(#, #)".}
-    proc slice(arr: JsObject, first: int, last: int): JsObject {.importjs: "#.slice(#, #)".}
+  proc validateMemory(module: WasmModule) =
     proc isDetached(arr: JsObject): bool {.importjs: "#.length == 0".}
-
     if module.memory["HEAPU8"].isDetached:
       let memory = module.memory["memory"]
       module.memory["HEAPU32"] = newUint32Array(memory)
@@ -70,31 +73,60 @@ when defined(js):
       module.memory["HEAPF32"] = newFloat32Array(memory)
       module.memory["HEAPF64"] = newFloat64Array(memory)
 
+  proc copyMem*(module: WasmModule, dest: WasmPtr, source: JsObject, len: int, offset = 0u32) =
+    proc setJs(arr: JsObject, source: JsObject, pos: WasmPtr) {.importjs: "#.set(#, #)".}
+    proc slice(arr: JsObject, first: int, last: int): JsObject {.importjs: "#.slice(#, #)".}
+
+    module.validateMemory()
+
     let heap = module.memory["HEAPU8"]
     let s = source.slice(0, len)
     heap.setJs(s, dest)
 
+  proc setInt32*(module: WasmModule, dest: WasmPtr, value: int32) =
+    proc setJs(arr: JsObject, dest: int32, value: int32) {.importjs: "#[#] = #".}
+    module.validateMemory()
+    if dest.int32 mod 4 == 0:
+      let heap = module.memory["HEAP32"]
+      heap.setJs(dest.int32 div 4, value)
+    else:
+      let heap = module.memory["HEAPU8"]
+      heap.setJs(dest.int32 + 0, 0xFF and (value shr 0))
+      heap.setJs(dest.int32 + 1, 0xFF and (value shr 8))
+      heap.setJs(dest.int32 + 2, 0xFF and (value shr 16))
+      heap.setJs(dest.int32 + 3, 0xFF and (value shr 24))
+
+  proc getInt32*(module: WasmModule, dest: WasmPtr): int32 =
+    proc getJs(arr: JsObject, dest: int32): int32 {.importjs: "#[#]".}
+    module.validateMemory()
+    if dest.int32 mod 4 == 0:
+      let heap = module.memory["HEAP32"]
+      return heap.getJs(dest.int32 div 4)
+    else:
+      let heap = module.memory["HEAPU8"]
+      result = 0
+      result = result or (heap.getJs(dest.int32 + 0) shl 0)
+      result = result or (heap.getJs(dest.int32 + 1) shl 8)
+      result = result or (heap.getJs(dest.int32 + 2) shl 16)
+      result = result or (heap.getJs(dest.int32 + 3) shl 24)
+
 else:
   proc copyMem*(module: WasmModule, dest: WasmPtr, source: pointer, len: int, offset = 0u32) =
     module.env.copyMem(dest, source, len, offset)
+
+  proc setInt32*(module: WasmModule, dest: WasmPtr, value: int32) =
+    module.env.setMem(value, dest.uint32)
+
+  proc getInt32*(module: WasmModule, dest: WasmPtr): int32 =
+    return module.env.getFromMem(int32, dest.uint32)
 
 proc getString*(module: WasmModule, pos: WasmPtr): cstring =
   when defined(js):
     proc indexOf(arr: JsObject, elem: uint8, start: WasmPtr): WasmPtr {.importjs: "#.indexOf(#, #)".}
     proc slice(arr: JsObject, first: WasmPtr, last: WasmPtr): JsObject {.importjs: "#.slice(#, #)".}
     proc jsDecodeString(str: JsObject): cstring {.importc.}
-    proc isDetached(arr: JsObject): bool {.importjs: "#.length == 0".}
 
-    if module.memory["HEAPU8"].isDetached:
-      let memory = module.memory["memory"]
-      module.memory["HEAPU32"] = newUint32Array(memory)
-      module.memory["HEAPU16"] = newUint16Array(memory)
-      module.memory["HEAPU8"] = newUint8Array(memory)
-      module.memory["HEAP32"] = newInt32Array(memory)
-      module.memory["HEAP16"] = newInt16Array(memory)
-      module.memory["HEAP8"] = newInt8Array(memory)
-      module.memory["HEAPF32"] = newFloat32Array(memory)
-      module.memory["HEAPF64"] = newFloat64Array(memory)
+    module.validateMemory()
 
     let heap = module.memory["HEAPU8"]
     let terminator = heap.indexOf(0, pos)
@@ -135,9 +167,12 @@ macro createHostWrapper(module: WasmModule, function: typed, outFunction: untype
   let argTypes = functionBody[3]
 
   let returnCString = returnType.repr == "cstring"
+  let returnString = returnType.repr == "string"
 
   if returnCString:
     params.add bindSym"WasmPtr"
+  elif returnString:
+    params.add bindSym"uint64"
   else:
     params.add returnType
 
@@ -148,19 +183,24 @@ macro createHostWrapper(module: WasmModule, function: typed, outFunction: untype
     var arg = genSym(nskParam, "p" & $i)
 
     let isCString = paramType.repr == "cstring"
+    let isWasmModule = paramType.repr == "WasmModule" # todo: nicer way to detect WasmModule?
 
     if isCString:
       params.add nnkIdentDefs.newTree(arg, bindSym"WasmPtr", newEmptyNode())
 
-      let arg = genAst(arg, module):
+      arg = genAst(arg, module):
         block:
           let res = module.getString(arg)
           res
 
-      args.add(arg)
+    elif isWasmModule:
+      arg = genAst(module):
+        module
+
     else:
       params.add nnkIdentDefs.newTree(arg, paramType, newEmptyNode())
-      args.add(arg)
+
+    args.add(arg)
 
   var body = if returnType.repr == "void":
     genAst(function):
@@ -186,6 +226,26 @@ macro createHostWrapper(module: WasmModule, function: typed, outFunction: untype
         let p: WasmPtr = module.alloc(len.uint32 + 1)
         module.copyMem(p, cast[pointer](str), len + 1)
         return p
+
+  elif returnString:
+    when defined(js):
+      genAst(function, module):
+        let x = function
+        let str = x(`parameters`)
+        let a = jsEncodeString(str)
+        proc len(arr: JsObject): int {.importjs: "#.length".}
+        let p: WasmPtr = module.alloc(a.len.uint32 + 1)
+        module.copyMem(p, a, a.len + 1)
+        return p.uint64 or (str.len.uint64 shl 32)
+
+    else:
+      genAst(function, module):
+        let x = function
+        let str = x(`parameters`)
+        let len = str.len
+        let p: WasmPtr = module.alloc(len.uint32 + 1)
+        module.copyMem(p, cast[pointer](str[0].addr), len + 1)
+        return p.uint64 or (len.uint64 shl 32)
 
   else:
     genAst(function):
@@ -220,6 +280,7 @@ else:
     of "cstring", "pointer", "WasmPtr": return "*"
     of "string": return "I"
     else:
+      error(fmt"getWasmType: Invalid type {typ.repr}", typ)
       return ""
 
   macro getWasmSignature(function: typed): string =
@@ -240,6 +301,10 @@ else:
     var signature = returnTypeWasm & "("
 
     for i in 2..<types.len:
+      if types[i].repr == "ref[WasmModule:ObjectType]":
+        # todo: nicer way to ignore WasmModule?
+        continue
+
       let argType = types[i].getWasmType
       if argType == "":
         error($(i-2) & ": Invalid argument type " & types[i].repr, function)

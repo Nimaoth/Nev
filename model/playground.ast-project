@@ -1,9 +1,10 @@
 {
   "models": {
-    "model/array.ast-model": "654fbb281446e19b38225265",
-    "model/test-language.ast-model": "654fbb281446e19b38225240",
-    "model/cell-builder.ast-model": "82ffffff9afd1f08150838c9",
+    "model/lang/lang-api.ast-model": "baffffff923169072e1f68f0",
+    "model/lang/property-validator.ast-model": "8cffffff484c682b4a6c4637",
+
     "model/a.ast-model": "083671ebb3cd003f6c8faaf3",
+
     "model/aoc_day1.ast-model": "656f7f67d077504f640d8727",
     "model/aoc_day2.ast-model": "656f7f67d077504f640d8728",
     "model/aoc_day3.ast-model": "656f7f67d077504f640d8729",
@@ -20,6 +21,11 @@
     "model/aoc_day14.ast-model": "690ec4a65acc63703ad0a1c6",
     "model/aoc_day15.ast-model": "6dc7461475f1fd6b6fbb16d6",
     "model/aoc_day16.ast-model": "7312c6bed7330a3d487534c3",
-    "model/aoc_day17.ast-model": "77a10a8453091e0b0069ad5d"
+    "model/aoc_day17.ast-model": "77a10a8453091e0b0069ad5d",
+
+    "model/array.ast-model": "654fbb281446e19b38225265",
+    "model/cell-builder.ast-model": "82ffffff9afd1f08150838c9",
+    "model/test-language.ast-model": "654fbb281446e19b38225240",
+    "model/test-language-playground.ast-model": "83ffffff498d873d63c0237c"
   }
 }

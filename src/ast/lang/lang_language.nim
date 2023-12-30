@@ -709,6 +709,45 @@ proc intToString(a: int32): cstring =
   let res = $a
   return res.cstring
 
+proc langApiNodeParent(module: WasmModule, retNodeHandlePtr: WasmPtr, nodeHandlePtr: WasmPtr) =
+  # debugf"langApiNodeParent {retNodeHandlePtr}, {nodeHandlePtr}"
+  let nodeIndex = module.getInt32(nodeHandlePtr)
+  let node = gNodeRegistry.getNode(nodeIndex).getOr:
+    log lvlError, fmt"Invalid node handle: {nodeIndex}"
+    module.setInt32(retNodeHandlePtr, 0)
+    return
+
+  # debugf"baseNodeParent: {retNodeHandlePtr}, {nodeHandlePtr}, {nodeIndex}, {node}"
+  if node.parent.isNil:
+    module.setInt32(retNodeHandlePtr, 0)
+    return
+
+  let parentIndex = gNodeRegistry.getNodeIndex(node.parent)
+  module.setInt32(retNodeHandlePtr, parentIndex)
+
+proc langApiNodeId(module: WasmModule, retPtr: WasmPtr, nodeIndexPtr: WasmPtr) =
+  # debugf"langApiNodeId {retPtr}, {nodeIndexPtr}"
+  let nodeIndex = module.getInt32(nodeIndexPtr)
+  let node = gNodeRegistry.getNode(nodeIndex).getOr:
+    log lvlError, fmt"Invalid node handle: {nodeIndex}"
+    module.setInt32(retPtr, 0)
+    module.setInt32(retPtr + 4, 0)
+    module.setInt32(retPtr + 8, 0)
+    return
+
+  let (a, b, c) = node.id.Id.deconstruct
+  module.setInt32(retPtr, a)
+  module.setInt32(retPtr + 4, b)
+  module.setInt32(retPtr + 8, c)
+
+proc langApiIdToString(module: WasmModule, idPtr: WasmPtr): string =
+  # debugf"langApiIdToString {idPtr}"
+  let a = module.getInt32(idPtr)
+  let b = module.getInt32(idPtr + 4)
+  let c = module.getInt32(idPtr + 8)
+  let id = construct(a, b, c)
+  return $id
+
 ##### end of temp stuff
 
 proc updateLanguageFromModel*(language: Language, model: Model, updateBuilder: bool = true, ctx = ModelComputationContextBase.none): Future[bool] {.async.} =
@@ -764,6 +803,8 @@ proc updateLanguageFromModel*(language: Language, model: Model, updateBuilder: b
 
       let binary = compiler.compileToBinary()
 
+    var imports = newSeq[WasmImports]()
+
     var imp = WasmImports(namespace: "env")
     imp.addFunction("print_i32", printI32)
     imp.addFunction("print_u32", printU32)
@@ -775,9 +816,16 @@ proc updateLanguageFromModel*(language: Language, model: Model, updateBuilder: b
     imp.addFunction("print_string", printString)
     imp.addFunction("print_line", printLine)
     imp.addFunction("intToString", intToString)
+    imports.add imp
+
+    var baseImports = WasmImports(namespace: "base")
+    baseImports.addFunction("node-parent", langApiNodeParent)
+    baseImports.addFunction("node-id", langApiNodeId)
+    baseImports.addFunction("id-to-string", langApiIdToString)
+    imports.add baseImports
 
     measureBlock fmt"Create wasm module for language '{model.path}'":
-      let module = await newWasmModule(binary.toArrayBuffer, @[imp])
+      let module = await newWasmModule(binary.toArrayBuffer, imports)
       if module.isNone:
         log lvlError, fmt"Failed to create wasm module from generated binary for {model.path}: {getCurrentExceptionMsg()}"
 
@@ -796,7 +844,7 @@ proc updateLanguageFromModel*(language: Language, model: Model, updateBuilder: b
   if wasmModule.getSome(module):
     for (class, role, functionNode) in propertyValidators:
       let name = $functionNode.id
-      if module.findFunction(name, bool, proc(a: string): bool).getSome(validateImpl):
+      if module.findFunction(name, bool, proc(node: WasmPtr, a: string): bool).getSome(validateImpl):
         let validator = if not language.validators.contains(class):
           let validator = NodeValidator()
           language.validators[class] = validator
@@ -804,8 +852,17 @@ proc updateLanguageFromModel*(language: Language, model: Model, updateBuilder: b
         else:
           language.validators[class]
 
+        proc validateImplWrapper(node: Option[AstNode], propertyValue: string): bool =
+          let p: WasmPtr = module.alloc(4)
+          let index: int32 = if node.getSome(node):
+            gNodeRegistry.getNodeIndex(node)
+          else:
+            0
+          module.setInt32(p, index)
+          validateImpl(p, propertyValue)
+
         # debugf"register propertyy validator for {class}, {role}"
-        validator.propertyValidators[role] = PropertyValidator(kind: Custom, impl: validateImpl)
+        validator.propertyValidators[role] = PropertyValidator(kind: Custom, impl: validateImplWrapper)
 
   if updateBuilder:
     registerBuilder(language.id, builder)

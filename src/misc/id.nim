@@ -272,4 +272,7 @@ proc fromJsonHook*(id: var Id, json: JsonNode) =
 proc toJson*(id: Id, opt = initToJsonOptions()): JsonNode =
   return newJString $id
 
+proc construct*(time, fuzz, count: int32): Id =
+  return constructOid(time, fuzz, count).Id
+
 proc deconstruct*(id: Id): tuple[time: int32, fuzz: int32, count: int32] {.borrow.}

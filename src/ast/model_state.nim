@@ -335,7 +335,7 @@ proc computeValidImpl(ctx: ModelState, node: AstNode): bool =
 
   for property in node.properties:
     if property.value.kind == String:
-      if not language.isValidPropertyValue(class, property.role, property.value.stringValue):
+      if not language.isValidPropertyValue(class, property.role, property.value.stringValue, node.some):
         ctx.addDiagnostic(node, fmt"Invalid property value")
         result = false
 

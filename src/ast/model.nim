@@ -81,6 +81,7 @@ type
     id*: NodeId
     class*: ClassId
 
+    registryIndex: int32 # Index in the global node registry (0 if not registered)
     model*: Model # gets set when inserted into a parent node which is in a model, or when inserted into a model
     parent*: AstNode # gets set when inserted into a parent node
     role*: RoleId # gets set when inserted into a parent node
@@ -89,6 +90,9 @@ type
     references*: seq[tuple[role: RoleId, node: NodeId]]
     childLists*: seq[tuple[role: RoleId, nodes: seq[AstNode]]]
 
+  AstNodeRegistry* = ref object
+    nodeToIndex*: Table[NodeId, int32]
+    nodes*: seq[AstNode]
 
   PropertyValidatorKind* = enum Regex, Custom
   PropertyValidator* = ref object
@@ -96,7 +100,7 @@ type
     of Regex:
       pattern*: Regex
     of Custom:
-      impl*: proc(property: string): bool
+      impl*: proc(node: Option[AstNode], property: string): bool
 
   NodeValidator* = ref object
     propertyValidators*: ArrayTable[RoleId, PropertyValidator]
@@ -578,7 +582,7 @@ proc propertyDescription*(self: NodeClass, id: RoleId): Option[PropertyDescripti
 let defaultNumberPattern = re"[0-9]+"
 let defaultBoolPattern = re"true|false"
 
-proc isValidPropertyValue*(language: Language, class: NodeClass, role: RoleId, value: string): bool =
+proc isValidPropertyValue*(language: Language, class: NodeClass, role: RoleId, value: string, node: Option[AstNode] = AstNode.none): bool =
   # debugf"isValidPropertyValue {class.name} ({class.id}) {role} '{value}'"
   if language.validators.contains(class.id):
     if language.validators[class.id].propertyValidators.tryGet(role).getSome(validator):
@@ -586,7 +590,7 @@ proc isValidPropertyValue*(language: Language, class: NodeClass, role: RoleId, v
       of Regex:
         return value.match(validator.pattern)
       of Custom:
-        return validator.impl(value)
+        return validator.impl(node, value)
 
   if class.propertyDescription(role).getSome(desc):
     case desc.typ
@@ -1271,7 +1275,7 @@ proc jsonToAstNode*(json: JsonNode, model: Model, opt = Joptions()): Option[AstN
       let role = entry[0].jsonTo RoleId
       for childJson in entry[1]:
         if childJson.jsonToAstNode(model, opt).getSome(childNode):
-          node.add(role, childNode)
+          node.forceAddChild(role, childNode)
         else:
           log(lvlError, fmt"Failed to parse node from json")
 
@@ -1383,3 +1387,28 @@ proc loadFromJson*(model: Model, path: string, json: JsonNode,
     log(lvlWarn, fmt"Missing root nodes")
 
   return true
+
+var gNodeRegistry* = AstNodeRegistry()
+gNodeRegistry.nodes.add nil
+
+proc getNode*(registry: AstNodeRegistry, index: int32): Option[AstNode] =
+  if index <= 0 or index >= registry.nodes.len:
+    log lvlError, fmt"getNode: index {index} out of range"
+    return AstNode.none
+  return registry.nodes[index].some
+
+proc registerNode*(registry: AstNodeRegistry, node: AstNode): int32 =
+  if node.registryIndex != 0:
+    log lvlWarn, fmt"registerNode: node {node} already registered"
+    return node.registryIndex
+
+  result = registry.nodes.len.int32
+  node.registryIndex = result
+  registry.nodes.add node
+  registry.nodeToIndex[node.id] = result
+
+proc getNodeIndex*(registry: AstNodeRegistry, node: AstNode): int32 =
+  if node.registryIndex != 0:
+    return node.registryIndex
+
+  return registry.registerNode(node)
