@@ -243,10 +243,10 @@ proc inputAstNode(ctx: ModelState, id: ItemId): AstNode =
 
 proc recoverType(ctx: ModelState, key: Dependency) =
   log(lvlInfo, fmt"Recovering type for {key}")
-  if ctx.getAstNode(key.item.id).getSome(node):
-    # todo
-    # ctx.queryCacheType[node] = errorType()
-    discard
+  # todo
+  # if ctx.getAstNode(key.item.id).getSome(node):
+  #   # ctx.queryCacheType[node] = errorType()
+  #   discard
 
 proc computeTypeImpl(ctx: ModelState, node: AstNode): AstNode =
   logIf(ctx.enableLogging or ctx.enableQueryLogging, "computeTypeImpl " & $node, true)

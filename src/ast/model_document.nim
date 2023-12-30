@@ -502,7 +502,6 @@ proc loadAsync*(self: ModelDocument): Future[void] {.async.} =
       return
 
     if self.project.loadModelAsync(self.filename).await.getSome(model):
-      let oldModel = self.model
       self.model = model
 
       discard self.model.onNodeDeleted.subscribe proc(d: auto) = self.handleNodeDeleted(d[0], d[1], d[2], d[3], d[4])
