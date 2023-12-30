@@ -289,6 +289,37 @@ proc intToString(a: int32): cstring =
 
 ##### end of temp stuff
 
+proc createScopeComputerFromNode*(class: ClassId, functionNode: AstNode, module: WasmModule, scopeComputers: var Table[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]]) =
+  let name = $functionNode.id
+  if module.findFunction(name, void, proc(arrPtr: WasmPtr, node: WasmPtr)).getSome(computeScopeImpl):
+    proc computeScopeImplWrapper(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode] =
+      let sp = module.stackSave()
+      defer:
+        module.stackRestore(sp)
+
+      let index = gNodeRegistry.getNodeIndex(node)
+
+      let arrPtr: WasmPtr = module.stackAlloc(4 * 3)
+      let indexPtr: WasmPtr = module.stackAlloc(4)
+      module.setInt32(indexPtr, index)
+      computeScopeImpl(arrPtr, indexPtr)
+
+      let resultLen = module.getInt32(arrPtr)
+      let resultPtr = module.getInt32(arrPtr + 8).WasmPtr
+
+      var nodes = newSeqOfCap[AstNode](resultLen)
+      for i in 0..<resultLen:
+        let nodeIndex = module.getInt32(resultPtr + i * 4)
+        if gNodeRegistry.getNode(nodeIndex).getSome(node):
+          nodes.add node
+        else:
+          log lvlError, fmt"Invalid node index returned from scope function: {nodeIndex}"
+
+      return nodes
+
+    scopeComputers[class] = computeScopeImplWrapper
+
+
 proc updateLanguageFromModel*(language: Language, model: Model, updateBuilder: bool = true, ctx = ModelComputationContextBase.none): Future[bool] {.async.} =
   log lvlInfo, fmt"updateLanguageFromModel {model.path} ({model.id})"
   var classMap = initTable[ClassId, NodeClass]()
@@ -395,35 +426,7 @@ proc updateLanguageFromModel*(language: Language, model: Model, updateBuilder: b
   if wasmModule.getSome(module):
     for (class, functionNode) in scopeDefinitions:
       capture class, functionNode:
-        let name = $functionNode.id
-        if module.findFunction(name, void, proc(arrPtr: WasmPtr, node: WasmPtr)).getSome(computeScopeImpl):
-          proc computeScopeImplWrapper(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode] =
-            let sp = module.stackSave()
-            defer:
-              module.stackRestore(sp)
-
-            let index = gNodeRegistry.getNodeIndex(node)
-
-            let arrPtr: WasmPtr = module.stackAlloc(4 * 3)
-            let indexPtr: WasmPtr = module.stackAlloc(4)
-            module.setInt32(indexPtr, index)
-            computeScopeImpl(arrPtr, indexPtr)
-
-            let resultLen = module.getInt32(arrPtr)
-            let resultPtr = module.getInt32(arrPtr + 8).WasmPtr
-
-            var res = newSeqOfCap[AstNode](resultLen)
-            for i in 0..<resultLen:
-              let nodeIndex = module.getInt32(resultPtr + i * 4)
-              if gNodeRegistry.getNode(nodeIndex).getSome(node):
-                res.add node
-              else:
-                log lvlError, fmt"Invalid node index returned from scope function: {nodeIndex}"
-
-            return res
-
-          scopeComputers[class] = computeScopeImplWrapper
-
+        createScopeComputerFromNode(class, functionNode, module, scopeComputers)
   language.update(classes, typeComputers, valueComputers, scopeComputers, validationComputers)
 
   if wasmModule.getSome(module):
