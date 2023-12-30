@@ -5,7 +5,7 @@ from scripting_api as api import nil
 import platform/[filesystem, platform]
 import workspaces/[workspace]
 import ui/node
-import lang/[lang_language, cell_language, property_validator_language]
+import lang/[lang_language, lang_builder, cell_language, property_validator_language]
 
 import ast/[generator_wasm, base_language_wasm, editor_language_wasm, model_state, cell_builder_database]
 import document, document_editor, text/text_document, events, scripting/expose, input
@@ -103,11 +103,11 @@ proc resolveLanguage*(project: Project, ws: WorkspaceFolder, id: LanguageId): Fu
 
 proc resolveModel*(project: Project, ws: WorkspaceFolder, id: ModelId): Future[Option[Model]] {.async.} =
   if id == baseInterfacesModel.id:
-    return lang_language.baseInterfacesModel.some
+    return lang_builder.baseInterfacesModel.some
   if id == baseLanguageModel.id:
-    return lang_language.baseLanguageModel.some
+    return lang_builder.baseLanguageModel.some
   if id == langLanguageModel.id:
-    return lang_language.langLanguageModel.some
+    return lang_builder.langLanguageModel.some
 
   while not project.loaded:
     log lvlInfo, fmt"Waiting for project to load"

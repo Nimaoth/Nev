@@ -3,7 +3,7 @@ import misc/[id, util, custom_logger, custom_async]
 import ui/node
 import ast/[model, cells, cell_builder_database, base_language]
 import workspaces/[workspace]
-import lang_language, cell_language
+import lang_language, lang_builder, cell_language
 
 export id, ast_ids
 
@@ -49,11 +49,11 @@ proc resolveLanguage(project: Project, workspace: WorkspaceFolder, id: LanguageI
 proc resolveModel(project: Project, workspace: WorkspaceFolder, id: ModelId): Future[Option[Model]] {.async.} =
   assert baseInterfacesModel.isNotNil
   if id == baseInterfacesModel.id:
-    return lang_language.baseInterfacesModel.some
+    return lang_builder.baseInterfacesModel.some
   if id == baseLanguageModel.id:
-    return lang_language.baseLanguageModel.some
+    return lang_builder.baseLanguageModel.some
   if id == langLanguageModel.id:
-    return lang_language.langLanguageModel.some
+    return lang_builder.langLanguageModel.some
   log lvlError, fmt"createPropertyValidatorLanguage::resolveModel: unknown model id: {id}"
 
 var propertyValidatorLanguage*: Future[Language] = nil

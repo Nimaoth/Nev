@@ -5,7 +5,7 @@ from scripting_api as api import nil
 import platform/[filesystem, platform]
 import workspaces/[workspace]
 import ui/node
-import lang/[lang_language, cell_language, property_validator_language]
+import lang/[lang_language, lang_builder, cell_language, property_validator_language]
 
 import ast/[generator_wasm, base_language_wasm, editor_language_wasm, model_state, cell_builder_database]
 import document, document_editor, text/text_document, events, scripting/expose, input
@@ -3356,11 +3356,11 @@ proc importModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
 
     block:
       let score = matchPath("BaseInterfacesModel", text)
-      result.add ModelImportSelectorItem(name: "BaseInterfacesModel", model: lang_language.baseInterfacesModel.id, score: score)
+      result.add ModelImportSelectorItem(name: "BaseInterfacesModel", model: lang_builder.baseInterfacesModel.id, score: score)
 
     block:
       let score = matchPath("BaseLanguageModel", text)
-      result.add ModelImportSelectorItem(name: "BaseLanguageModel", model: lang_language.baseLanguageModel.id, score: score)
+      result.add ModelImportSelectorItem(name: "BaseLanguageModel", model: lang_builder.baseLanguageModel.id, score: score)
 
     # result.sort((a, b) => cmp(a.score, b.score), Descending)
 
@@ -3368,13 +3368,13 @@ proc importModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
     log lvlInfo, fmt"Import model {item.ModelImportSelectorItem.name} ({item.ModelImportSelectorItem.model}) to model {self.document.model.id}"
     let modelId = item.ModelImportSelectorItem.model
     if modelId == baseInterfacesModel.id:
-      log lvlInfo, fmt"Add imported model {lang_language.baseInterfacesModel.path} ({lang_language.baseInterfacesModel.id})"
-      self.document.model.addImport(lang_language.baseInterfacesModel)
+      log lvlInfo, fmt"Add imported model {lang_builder.baseInterfacesModel.path} ({lang_builder.baseInterfacesModel.id})"
+      self.document.model.addImport(lang_builder.baseInterfacesModel)
       return
 
     if modelId == baseLanguageModel.id:
-      log lvlInfo, fmt"Add imported model {lang_language.baseLanguageModel.path} ({lang_language.baseLanguageModel.id})"
-      self.document.model.addImport(lang_language.baseLanguageModel)
+      log lvlInfo, fmt"Add imported model {lang_builder.baseLanguageModel.path} ({lang_builder.baseLanguageModel.id})"
+      self.document.model.addImport(lang_builder.baseLanguageModel)
       return
 
     if self.document.project.getModel(modelId).getSome(model):
