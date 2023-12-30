@@ -232,7 +232,7 @@ macro createHostWrapper(module: WasmModule, function: typed, outFunction: untype
       genAst(function, module):
         let x = function
         let str = x(`parameters`)
-        let a = jsEncodeString(str)
+        let a = jsEncodeString(str.cstring)
         proc len(arr: JsObject): int {.importjs: "#.length".}
         let p: WasmPtr = module.alloc(a.len.uint32 + 1)
         module.copyMem(p, a, a.len + 1)
