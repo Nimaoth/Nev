@@ -251,15 +251,15 @@
       }
     },
     "wasm3": {
-      "version": "0.1.12",
-      "vcsRevision": "e548d7bdde7c9c9cbbcd0c3ee928f598e7a0b269",
+      "version": "0.1.13",
+      "vcsRevision": "621461f9c660fafe837f52762731571d68ae61c8",
       "url": "https://github.com/Nimaoth/wasm3",
       "downloadMethod": "git",
       "dependencies": [
         "micros"
       ],
       "checksums": {
-        "sha1": "69922550ee2b788cf5f8e1b5981a2447f241ca95"
+        "sha1": "67b06dbf41e45be74755c1ea47216c4251aee40c"
       }
     },
     "shady": {
