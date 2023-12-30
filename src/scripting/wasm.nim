@@ -24,6 +24,8 @@ when defined(js):
     functions: Table[cstring, proc()]
     module: WasmModule
 
+  type WasmError* = object of CatchableError
+
   proc newUint8Array(memory: JsObject) {.importjs: "new Uint8Array(#.buffer)".}
   proc newUint16Array(memory: JsObject) {.importjs: "new Uint16Array(#.buffer)".}
   proc newUint32Array(memory: JsObject) {.importjs: "new Uint32Array(#.buffer)".}
@@ -374,149 +376,163 @@ when defined(js):
         return js_fd_write(context, fd, iovs, len, ret)
 
 proc newWasmModule*(wasmData: ArrayBuffer, importsOld: seq[WasmImports]): Future[Option[WasmModule]] {.async.} =
-  when defined(js):
-    proc jsLoadWasmModuleSync(wasmData: ArrayBuffer, importObject: JsObject): Future[JsObject] {.importc.}
+  try:
+    when defined(js):
+      proc jsLoadWasmModuleSync(wasmData: ArrayBuffer, importObject: JsObject): Future[JsObject] {.importc.}
 
-    let importObject = newJsObject()
+      let importObject = newJsObject()
 
-    var context = newJsObject()
+      var context = newJsObject()
 
-    var imports = @importsOld
-    imports.add createWasiJsImports(context)
+      var imports = @importsOld
+      imports.add createWasiJsImports(context)
 
-    for imp in imports:
-      var obj = newJsObject()
+      for imp in imports:
+        var obj = newJsObject()
 
-      for key, value in imp.functions.pairs:
-        obj[key] = value
+        for key, value in imp.functions.pairs:
+          obj[key] = value
 
-      importObject[imp.namespace.cstring] = obj
+        importObject[imp.namespace.cstring] = obj
 
-    var instance = await jsLoadWasmModuleSync(wasmData, importObject)
+      var instance: JsObject
+      try:
+        instance = await jsLoadWasmModuleSync(wasmData, importObject)
+      except JsError:
+        raise newException(WasmError, getCurrentExceptionMsg())
 
-    let memory = instance["exports"]["memory"]
-    if not memory.isUndefined:
-      context["memory"] = memory
+      let memory = instance["exports"]["memory"]
+      if not memory.isUndefined:
+        context["memory"] = memory
 
-      proc newUint8Array(memory: JsObject) {.importjs: "new Uint8Array(#.buffer)".}
-      proc newUint16Array(memory: JsObject) {.importjs: "new Uint16Array(#.buffer)".}
-      proc newUint32Array(memory: JsObject) {.importjs: "new Uint32Array(#.buffer)".}
-      proc newInt8Array(memory: JsObject) {.importjs: "new Int8Array(#.buffer)".}
-      proc newInt16Array(memory: JsObject) {.importjs: "new Int16Array(#.buffer)".}
-      proc newInt32Array(memory: JsObject) {.importjs: "new Int32Array(#.buffer)".}
-      proc newFloat32Array(memory: JsObject) {.importjs: "new Float32Array(#.buffer)".}
-      proc newFloat64Array(memory: JsObject) {.importjs: "new Float64Array(#.buffer)".}
+        proc newUint8Array(memory: JsObject) {.importjs: "new Uint8Array(#.buffer)".}
+        proc newUint16Array(memory: JsObject) {.importjs: "new Uint16Array(#.buffer)".}
+        proc newUint32Array(memory: JsObject) {.importjs: "new Uint32Array(#.buffer)".}
+        proc newInt8Array(memory: JsObject) {.importjs: "new Int8Array(#.buffer)".}
+        proc newInt16Array(memory: JsObject) {.importjs: "new Int16Array(#.buffer)".}
+        proc newInt32Array(memory: JsObject) {.importjs: "new Int32Array(#.buffer)".}
+        proc newFloat32Array(memory: JsObject) {.importjs: "new Float32Array(#.buffer)".}
+        proc newFloat64Array(memory: JsObject) {.importjs: "new Float64Array(#.buffer)".}
 
-      context["HEAPU32"] = newUint32Array(memory)
-      context["HEAPU16"] = newUint16Array(memory)
-      context["HEAPU8"] = newUint8Array(memory)
-      context["HEAP32"] = newInt32Array(memory)
-      context["HEAP16"] = newInt16Array(memory)
-      context["HEAP8"] = newInt8Array(memory)
-      context["HEAPF32"] = newFloat32Array(memory)
-      context["HEAPF64"] = newFloat64Array(memory)
+        context["HEAPU32"] = newUint32Array(memory)
+        context["HEAPU16"] = newUint16Array(memory)
+        context["HEAPU8"] = newUint8Array(memory)
+        context["HEAP32"] = newInt32Array(memory)
+        context["HEAP16"] = newInt16Array(memory)
+        context["HEAP8"] = newInt8Array(memory)
+        context["HEAPF32"] = newFloat32Array(memory)
+        context["HEAPF64"] = newFloat64Array(memory)
 
-    let myAlloc = instance["exports"]["my_alloc"].toFunction proc(size: uint32): WasmPtr
-    let myDealloc = instance["exports"]["my_dealloc"].toFunction proc(p: WasmPtr)
+      let myAlloc = instance["exports"]["my_alloc"].toFunction proc(size: uint32): WasmPtr
+      let myDealloc = instance["exports"]["my_dealloc"].toFunction proc(p: WasmPtr)
 
-    let myStackAlloc = instance["exports"]["stackAlloc"].toFunction proc(size: uint32): WasmPtr
-    let myStackSave = instance["exports"]["stackSave"].toFunction proc(): WasmPtr
-    let myStackRestore = instance["exports"]["stackRestore"].toFunction proc(p: WasmPtr)
+      let myStackAlloc = instance["exports"]["stackAlloc"].toFunction proc(size: uint32): WasmPtr
+      let myStackSave = instance["exports"]["stackSave"].toFunction proc(): WasmPtr
+      let myStackRestore = instance["exports"]["stackRestore"].toFunction proc(p: WasmPtr)
 
-    var res = WasmModule(env: instance, memory: context, myAlloc: myAlloc, myDealloc: myDealloc, myStackAlloc: myStackAlloc, myStackSave: myStackSave, myStackRestore: myStackRestore)
-    for imp in imports.mitems:
-      imp.module = res
-    return res.some
+      var res = WasmModule(env: instance, memory: context, myAlloc: myAlloc, myDealloc: myDealloc, myStackAlloc: myStackAlloc, myStackSave: myStackSave, myStackRestore: myStackRestore)
+      for imp in imports.mitems:
+        imp.module = res
+      return res.some
 
-  else:
-    var allFunctions: seq[WasmHostProc] = @[]
-    for imp in importsOld:
-      allFunctions.add imp.functions
+    else:
+      var allFunctions: seq[WasmHostProc] = @[]
+      for imp in importsOld:
+        allFunctions.add imp.functions
 
-    let res = WasmModule()
+      let res = WasmModule()
 
-    try:
       res.env = loadWasmEnv(wasmData.buffer, hostProcs=allFunctions, loadAlloc=true, allocName="my_alloc", deallocName="my_dealloc", userdata=cast[pointer](res))
-    except CatchableError:
-      log lvlError, fmt"Failed to load wasm binary from array buffer: {getCurrentExceptionMsg()}"
-      return WasmModule.none
 
-    var imports = @importsOld
-    for imp in imports.mitems:
-      imp.module = res
-    return res.some
+      var imports = @importsOld
+      for imp in imports.mitems:
+        imp.module = res
+      return res.some
+
+  except CatchableError:
+    log lvlError, fmt"Failed to load wasm binary from array buffer: {getCurrentExceptionMsg()}"
+    return WasmModule.none
 
 proc newWasmModule*(path: string, importsOld: seq[WasmImports]): Future[Option[WasmModule]] {.async.} =
-  when defined(js):
-    proc jsLoadWasmModuleAsync(path: cstring, importObject: JsObject): Future[JsObject] {.importc.}
+  try:
+    when defined(js):
+      proc jsLoadWasmModuleAsync(path: cstring, importObject: JsObject): Future[JsObject] {.importc.}
 
-    let importObject = newJsObject()
+      let importObject = newJsObject()
 
-    var context = newJsObject()
+      var context = newJsObject()
 
-    var imports = @importsOld
-    imports.add createWasiJsImports(context)
+      var imports = @importsOld
+      imports.add createWasiJsImports(context)
 
-    for imp in imports:
-      var obj = newJsObject()
+      for imp in imports:
+        var obj = newJsObject()
 
-      for key, value in imp.functions.pairs:
-        obj[key] = value
+        for key, value in imp.functions.pairs:
+          obj[key] = value
 
-      importObject[imp.namespace.cstring] = obj
+        importObject[imp.namespace.cstring] = obj
 
-    var instance = await jsLoadWasmModuleAsync(path.cstring, importObject)
+      var instance: JsObject
+      try:
+        instance = await jsLoadWasmModuleAsync(path.cstring, importObject)
+      except JsError:
+        raise newException(WasmError, getCurrentExceptionMsg())
 
-    let memory = instance["exports"]["memory"]
-    if not memory.isUndefined:
-      context["memory"] = memory
+      let memory = instance["exports"]["memory"]
+      if not memory.isUndefined:
+        context["memory"] = memory
 
-      proc newUint8Array(memory: JsObject) {.importjs: "new Uint8Array(#.buffer)".}
-      proc newUint16Array(memory: JsObject) {.importjs: "new Uint16Array(#.buffer)".}
-      proc newUint32Array(memory: JsObject) {.importjs: "new Uint32Array(#.buffer)".}
-      proc newInt8Array(memory: JsObject) {.importjs: "new Int8Array(#.buffer)".}
-      proc newInt16Array(memory: JsObject) {.importjs: "new Int16Array(#.buffer)".}
-      proc newInt32Array(memory: JsObject) {.importjs: "new Int32Array(#.buffer)".}
-      proc newFloat32Array(memory: JsObject) {.importjs: "new Float32Array(#.buffer)".}
-      proc newFloat64Array(memory: JsObject) {.importjs: "new Float64Array(#.buffer)".}
+        proc newUint8Array(memory: JsObject) {.importjs: "new Uint8Array(#.buffer)".}
+        proc newUint16Array(memory: JsObject) {.importjs: "new Uint16Array(#.buffer)".}
+        proc newUint32Array(memory: JsObject) {.importjs: "new Uint32Array(#.buffer)".}
+        proc newInt8Array(memory: JsObject) {.importjs: "new Int8Array(#.buffer)".}
+        proc newInt16Array(memory: JsObject) {.importjs: "new Int16Array(#.buffer)".}
+        proc newInt32Array(memory: JsObject) {.importjs: "new Int32Array(#.buffer)".}
+        proc newFloat32Array(memory: JsObject) {.importjs: "new Float32Array(#.buffer)".}
+        proc newFloat64Array(memory: JsObject) {.importjs: "new Float64Array(#.buffer)".}
 
-      context["HEAPU32"] = newUint32Array(memory)
-      context["HEAPU16"] = newUint16Array(memory)
-      context["HEAPU8"] = newUint8Array(memory)
-      context["HEAP32"] = newInt32Array(memory)
-      context["HEAP16"] = newInt16Array(memory)
-      context["HEAP8"] = newInt8Array(memory)
-      context["HEAPF32"] = newFloat32Array(memory)
-      context["HEAPF64"] = newFloat64Array(memory)
+        context["HEAPU32"] = newUint32Array(memory)
+        context["HEAPU16"] = newUint16Array(memory)
+        context["HEAPU8"] = newUint8Array(memory)
+        context["HEAP32"] = newInt32Array(memory)
+        context["HEAP16"] = newInt16Array(memory)
+        context["HEAP8"] = newInt8Array(memory)
+        context["HEAPF32"] = newFloat32Array(memory)
+        context["HEAPF64"] = newFloat64Array(memory)
 
-    let myAlloc = instance["exports"]["my_alloc"].toFunction proc(size: uint32): WasmPtr
-    let myDealloc = instance["exports"]["my_dealloc"].toFunction proc(p: WasmPtr)
+      let myAlloc = instance["exports"]["my_alloc"].toFunction proc(size: uint32): WasmPtr
+      let myDealloc = instance["exports"]["my_dealloc"].toFunction proc(p: WasmPtr)
 
-    let myStackAlloc = instance["exports"]["stackAlloc"].toFunction proc(size: uint32): WasmPtr
-    let myStackSave = instance["exports"]["stackSave"].toFunction proc(): WasmPtr
-    let myStackRestore = instance["exports"]["stackRestore"].toFunction proc(p: WasmPtr)
+      let myStackAlloc = instance["exports"]["stackAlloc"].toFunction proc(size: uint32): WasmPtr
+      let myStackSave = instance["exports"]["stackSave"].toFunction proc(): WasmPtr
+      let myStackRestore = instance["exports"]["stackRestore"].toFunction proc(p: WasmPtr)
 
-    var res = WasmModule(env: instance, memory: context, myAlloc: myAlloc, myDealloc: myDealloc, myStackAlloc: myStackAlloc, myStackSave: myStackSave, myStackRestore: myStackRestore)
-    for imp in imports.mitems:
-      imp.module = res
-    return res.some
+      var res = WasmModule(env: instance, memory: context, myAlloc: myAlloc, myDealloc: myDealloc, myStackAlloc: myStackAlloc, myStackSave: myStackSave, myStackRestore: myStackRestore)
+      for imp in imports.mitems:
+        imp.module = res
+      return res.some
 
-  else:
-    var allFunctions: seq[WasmHostProc] = @[]
-    for imp in importsOld:
-      allFunctions.add imp.functions
+    else:
+      var allFunctions: seq[WasmHostProc] = @[]
+      for imp in importsOld:
+        allFunctions.add imp.functions
 
-    let res = WasmModule()
+      let res = WasmModule()
 
-    try:
-      res.env = loadWasmEnv(fs.loadApplicationFile(path), hostProcs=allFunctions, loadAlloc=true, allocName="my_alloc", deallocName="my_dealloc", userdata=cast[pointer](res))
-    except CatchableError:
-      return WasmModule.none
+      try:
+        res.env = loadWasmEnv(fs.loadApplicationFile(path), hostProcs=allFunctions, loadAlloc=true, allocName="my_alloc", deallocName="my_dealloc", userdata=cast[pointer](res))
+      except CatchableError:
+        return WasmModule.none
 
-    var imports = @importsOld
-    for imp in imports.mitems:
-      imp.module = res
-    return res.some
+      var imports = @importsOld
+      for imp in imports.mitems:
+        imp.module = res
+      return res.some
+
+  except CatchableError:
+    log lvlError, fmt"Failed to load wasm binary from file {path}: {getCurrentExceptionMsg()}"
+    return WasmModule.none
 
 macro createWasmWrapper(module: WasmModule, returnType: typedesc, typ: typedesc, body: untyped): untyped =
   var params: seq[NimNode] = @[]
