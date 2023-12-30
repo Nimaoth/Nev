@@ -252,6 +252,10 @@ let functionDefinitionClass* = newNodeClass(IdFunctionDefinition, "FunctionDefin
     NodeChildDescription(id: IdFunctionDefinitionReturnType, role: "returnType", class: expressionClass.id, count: ChildCount.ZeroOrOne),
     NodeChildDescription(id: IdFunctionDefinitionBody, role: "body", class: expressionClass.id, count: ChildCount.One)])
 
+let functionImportClass* = newNodeClass(IdFunctionImport, "FunctionImport", alias="import function", base=expressionClass,
+  properties=[PropertyDescription(id: IdFunctionImportName, role: "name", typ: PropertyType.String)],
+  children=[NodeChildDescription(id: IdFunctionImportType, role: "type", class: expressionClass.id, count: ChildCount.One)])
+
 let structMemberDefinitionClass* = newNodeClass(IdStructMemberDefinition, "StructMemberDefinition", alias="member", interfaces=[declarationInterface], substitutionProperty=IdINamedName.some,
   children=[
     NodeChildDescription(id: IdStructMemberDefinitionType, role: "type", class: expressionClass.id, count: ChildCount.One),
@@ -436,6 +440,23 @@ builder.addBuilderFor functionDefinitionClass.id, idNone(), proc(map: NodeCellMa
         placeholder: "..."
 
   return cell
+
+builder.addBuilderFor IdFunctionType, idNone(), [
+  CellBuilderCommand(kind: CollectionCell, uiFlags: &{LayoutHorizontal}),
+  CellBuilderCommand(kind: ConstantCell, text: "(", flags: &{NoSpaceRight}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true),
+  CellBuilderCommand(kind: Children, childrenRole: IdFunctionTypeParameterTypes, separator: ",".some, placeholder: "".some, uiFlags: &{LayoutHorizontal}),
+  CellBuilderCommand(kind: ConstantCell, text: ")", flags: &{NoSpaceLeft, NoSpaceRight}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true),
+  CellBuilderCommand(kind: ConstantCell, text: ":", flags: &{NoSpaceLeft}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true),
+  CellBuilderCommand(kind: Children, childrenRole: IdFunctionTypeReturnType, placeholder: "<return type>".some, uiFlags: &{LayoutHorizontal}),
+]
+
+builder.addBuilderFor IdFunctionImport, idNone(), [
+  CellBuilderCommand(kind: CollectionCell, uiFlags: &{LayoutHorizontal}),
+  CellBuilderCommand(kind: AliasCell, themeForegroundColors: @["keyword"], disableEditing: true),
+  CellBuilderCommand(kind: PropertyCell, propertyRole: IdFunctionImportName),
+  CellBuilderCommand(kind: ConstantCell, text: ":", flags: &{NoSpaceLeft}, themeForegroundColors: @["punctuation", "&editor.foreground"], disableEditing: true),
+  CellBuilderCommand(kind: Children, childrenRole: IdFunctionImportType, uiFlags: &{LayoutHorizontal}),
+]
 
 builder.addBuilderFor IdStructMemberDefinition, idNone(), [
   CellBuilderCommand(kind: CollectionCell, uiFlags: &{LayoutHorizontal}),
@@ -1064,6 +1085,38 @@ proc computeFunctionDefinitionType(ctx: ModelComputationContextBase, node: AstNo
 
   return functionType
 
+typeComputers[IdFunctionType] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  return metaTypeInstance
+
+valueComputers[IdFunctionType] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  var functionType = newAstNode(functionTypeClass)
+
+  if node.firstChild(IdFunctionTypeReturnType).getSome(c):
+    var parameterType = ctx.getValue(c) ?? voidTypeInstance
+    functionType.add(IdFunctionTypeReturnType, parameterType)
+  else:
+    functionType.add(IdFunctionTypeReturnType, voidTypeInstance)
+
+  for _, c in node.children(IdFunctionTypeParameterTypes):
+    var parameterType = ctx.getValue(c) ?? voidTypeInstance
+    functionType.add(IdFunctionTypeParameterTypes, parameterType)
+
+  node.model.addTempNode(functionType)
+
+  return functionType
+
+# function import
+typeComputers[IdFunctionImport] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  # debugf"compute type for function import {node}"
+  let functionTypeNode = node.firstChild(IdFunctionImportType).getOr:
+    return voidTypeInstance
+
+  return ctx.getValue(functionTypeNode)
+
+valueComputers[IdFunctionImport] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
+  # debugf"compute value for function import {node}"
+  return node
+
 # function definition
 typeComputers[functionDefinitionClass.id] = proc(ctx: ModelComputationContextBase, node: AstNode): AstNode =
   # debugf"compute type for function definition {node}"
@@ -1316,6 +1369,9 @@ proc isGeneric*(function: AstNode, ctx: ModelComputationContextBase): bool =
       # debugf"param: {param}, type: {paramType}"
       if paramType.class == IdType:
         return true
+    return false
+
+  if function.class == IdFunctionImport:
     return false
 
   log lvlError, fmt"Unknown class for isGeneric: {function}"
@@ -2005,7 +2061,7 @@ let baseLanguage* = newLanguage(IdBaseLanguage, "Base",
     metaTypeClass, stringTypeClass, charTypeClass, voidTypeClass, functionTypeClass, structTypeClass, pointerTypeClass, pointerTypeDeclClass,
     int32TypeClass, uint32TypeClass, int64TypeClass, uint64TypeClass, float32TypeClass, float64TypeClass,
 
-    expressionClass, binaryExpressionClass, unaryExpressionClass, emptyLineClass, castClass,
+    expressionClass, binaryExpressionClass, unaryExpressionClass, emptyLineClass, castClass, functionImportClass,
     numberLiteralClass, stringLiteralClass, boolLiteralClass, nodeReferenceClass, emptyClass, genericTypeClass, constDeclClass, letDeclClass, varDeclClass, nodeListClass, blockClass, callClass, thenCaseClass, ifClass, whileClass, forLoopClass,
     parameterDeclClass, functionDefinitionClass, assignmentClass,
     breakClass, continueClass, returnClass,

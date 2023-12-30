@@ -42,6 +42,7 @@ type
     typeAttributes*: Table[ClassId, TypeAttributes]
     typeAttributeComputers*: Table[ClassId, proc(typ: AstNode): TypeAttributes]
     functionInputOutputComputer*: Table[ClassId, proc(self: BaseLanguageWasmCompiler, node: AstNode): tuple[inputs: seq[WasmValueType], outputs: seq[WasmValueType]]]
+    functionConstructors*: Table[ClassId, proc(self: BaseLanguageWasmCompiler, node: AstNode, exportName: Option[string], inputs: openArray[WasmValueType], outputs: openArray[WasmValueType]): WasmFuncIdx]
 
     loopBranchIndices*: Table[NodeId, tuple[breakIndex: int, continueIndex: int]]
     functionTableIndices*: Table[NodeId, (WasmTableIdx, int32)]
@@ -339,6 +340,7 @@ proc genNode*(self: BaseLanguageWasmCompiler, node: AstNode, dest: Destination) 
 proc toWasmValueType*(self: BaseLanguageWasmCompiler, typ: AstNode): Option[WasmValueType] =
   if self.wasmValueTypes.contains(typ.class):
     return self.wasmValueTypes[typ.class].typ.some
+  # log lvlError, fmt"toWasmValueType: Type not implemented: {`$`(typ, true)}"
   return WasmValueType.none
 
 proc getTypeAttributes*(self: BaseLanguageWasmCompiler, typ: AstNode): TypeAttributes =
@@ -385,12 +387,16 @@ proc getOrCreateWasmFunc*(self: BaseLanguageWasmCompiler, node: AstNode, exportN
     let (inputs, outputs) = if self.functionInputOutputComputer.contains(node.class):
       self.functionInputOutputComputer[node.class](self, node)
     else:
-      log lvlError, fmt"getOrCreateWasmFunc: Function not implemented: {`$`(node, true)}"
+      log lvlError, fmt"getOrCreateWasmFunc: Function IO not implemented: {`$`(node, true)}"
       return 0.WasmFuncIdx
 
-    let funcIdx = self.builder.addFunction(inputs, outputs, exportName=exportName)
+    let funcIdx = if self.functionConstructors.contains(node.class):
+      self.functionConstructors[node.class](self, node, exportName, inputs, outputs)
+    else:
+      log lvlError, fmt"getOrCreateWasmFunc: Function constructor not implemented: {`$`(node, true)}"
+      return 0.WasmFuncIdx
+
     self.wasmFuncs[node.id] = funcIdx
-    self.functionsToCompile.add (node, funcIdx)
 
   return self.wasmFuncs[node.id]
 

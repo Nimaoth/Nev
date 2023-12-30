@@ -894,21 +894,25 @@ proc saveAppState*(self: App) {.expose("editor").} =
     if view.document.filename == "":
       return OpenEditor.none
 
-    let customOptions = view.editor.getStateJson()
-    if view.document of TextDocument:
-      let document = TextDocument(view.document)
-      return OpenEditor(
-        filename: document.filename, languageId: document.languageId, appFile: document.appFile,
-        workspaceId: document.workspace.map(wf => $wf.id).get(""),
-        customOptions: customOptions ?? newJObject()
-        ).some
-    elif view.document of ModelDocument:
-      let document = ModelDocument(view.document)
-      return OpenEditor(
-        filename: document.filename, languageId: "am", appFile: document.appFile,
-        workspaceId: document.workspace.map(wf => $wf.id).get(""),
-        customOptions: customOptions ?? newJObject()
-        ).some
+    try:
+      let customOptions = view.editor.getStateJson()
+      if view.document of TextDocument:
+        let document = TextDocument(view.document)
+        return OpenEditor(
+          filename: document.filename, languageId: document.languageId, appFile: document.appFile,
+          workspaceId: document.workspace.map(wf => $wf.id).get(""),
+          customOptions: customOptions ?? newJObject()
+          ).some
+      elif view.document of ModelDocument:
+        let document = ModelDocument(view.document)
+        return OpenEditor(
+          filename: document.filename, languageId: "am", appFile: document.appFile,
+          workspaceId: document.workspace.map(wf => $wf.id).get(""),
+          customOptions: customOptions ?? newJObject()
+          ).some
+    except CatchableError:
+      log lvlError, fmt"Failed to get editor state for {view.document.filename}: {getCurrentExceptionMsg()}"
+      return OpenEditor.none
 
   for view in self.views:
     if view.getEditorState().getSome(editorState):

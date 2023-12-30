@@ -42,6 +42,10 @@ let IdFunctionType* = "62e5339a564d29f77293451c".parseId.ClassId
 let IdFunctionTypeReturnType* = "62e53399564d29f772934510".parseId.RoleId
 let IdFunctionTypeParameterTypes* = "62e53399564d29f772934511".parseId.RoleId
 
+let IdFunctionImport* = "656f7f67d077504f640d8713".parseId.ClassId
+let IdFunctionImportName* = "656f7f67d077504f640d8714".parseId.RoleId
+let IdFunctionImportType* = "656f7f67d077504f640d8715".parseId.RoleId
+
 let IdCast* = "654fbb281446e19b38225261".parseId.ClassId
 let IdCastType* = "654fbb281446e19b38225262".parseId.RoleId
 let IdCastValue* = "656f7f67d077504f640d86c9".parseId.RoleId
@@ -364,9 +368,6 @@ let Id656f7f67d077504f640d870f* = "656f7f67d077504f640d870f".parseId
 let Id656f7f67d077504f640d8710* = "656f7f67d077504f640d8710".parseId
 let Id656f7f67d077504f640d8711* = "656f7f67d077504f640d8711".parseId
 let Id656f7f67d077504f640d8712* = "656f7f67d077504f640d8712".parseId
-let Id656f7f67d077504f640d8713* = "656f7f67d077504f640d8713".parseId
-let Id656f7f67d077504f640d8714* = "656f7f67d077504f640d8714".parseId
-let Id656f7f67d077504f640d8715* = "656f7f67d077504f640d8715".parseId
 
 # import strformat
 # for i in 0..100:

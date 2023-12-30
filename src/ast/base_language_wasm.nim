@@ -1003,9 +1003,27 @@ proc getFunctionTypeInputOutput(self: BaseLanguageWasmCompiler, node: AstNode): 
     else:
       result.inputs.add self.toWasmValueType(typ).get
 
+proc getFunctionImportInputOutput(self: BaseLanguageWasmCompiler, node: AstNode): tuple[inputs: seq[WasmValueType], outputs: seq[WasmValueType]] =
+  if node.firstChild(IdFunctionImportType).getSome(typeNode):
+    let typ = self.ctx.getValue(typeNode)
+    return self.getFunctionTypeInputOutput(typ)
+
+proc getFunctionDefinitionIndex(self: BaseLanguageWasmCompiler, node: AstNode, exportName: Option[string], inputs: openArray[WasmValueType], outputs: openArray[WasmValueType]): WasmFuncIdx =
+  let funcIdx = self.builder.addFunction(inputs, outputs, exportName=exportName)
+  self.functionsToCompile.add (node, funcIdx)
+  return funcIdx
+
+proc getFunctionImportIndex(self: BaseLanguageWasmCompiler, node: AstNode, exportName: Option[string], inputs: openArray[WasmValueType], outputs: openArray[WasmValueType]): WasmFuncIdx =
+  let name = node.property(IdFunctionImportName).get.stringValue
+  return self.builder.addImport("base", name, self.builder.addType(inputs, outputs))
+
 proc addBaseLanguage*(self: BaseLanguageWasmCompiler) =
   self.functionInputOutputComputer[IdFunctionDefinition] = getFunctionInputOutput
   self.functionInputOutputComputer[IdFunctionType] = getFunctionTypeInputOutput
+  self.functionInputOutputComputer[IdFunctionImport] = getFunctionImportInputOutput
+
+  self.functionConstructors[IdFunctionDefinition] = getFunctionDefinitionIndex
+  self.functionConstructors[IdFunctionImport] = getFunctionImportIndex
 
   self.generators[IdFunctionDefinition] = genNodeFunctionDefinition
   self.generators[IdBlock] = genNodeBlock
