@@ -124,6 +124,7 @@ proc newBaseLanguageWasmCompiler*(ctx: ModelComputationContextBase): BaseLanguag
   result.printString = result.builder.addImport("env", "print_string", result.builder.addType([I32, I32], []))
   result.printLine = result.builder.addImport("env", "print_line", result.builder.addType([], []))
   result.intToString = result.builder.addImport("env", "intToString", result.builder.addType([I32], [I32]))
+
   result.stackBase = result.builder.addGlobal(I32, mut=true, 0, id="__stack_base")
   result.stackEnd = result.builder.addGlobal(I32, mut=true, 0, id="__stack_end")
   result.stackPointer = result.builder.addGlobal(I32, mut=true, result.stackSize, id="__stack_pointer")
@@ -171,6 +172,26 @@ proc newBaseLanguageWasmCompiler*(ctx: ModelComputationContextBase): BaseLanguag
 
   discard result.builder.addFunction([I32], [], [], exportName="my_dealloc".some, body=WasmExpr(instr: @[
       WasmInstr(kind: Nop),
+  ]))
+
+  discard result.builder.addFunction([I32], [I32], [], exportName="stackAlloc".some, body=WasmExpr(instr: @[
+      WasmInstr(kind: GlobalGet, globalIdx: result.stackPointer),
+      WasmInstr(kind: LocalGet, localIdx: 0.WasmLocalIdx),
+      WasmInstr(kind: I32Sub),
+      WasmInstr(kind: I32Const, i32Const: -16),
+      WasmInstr(kind: I32And),
+      WasmInstr(kind: LocalTee, localIdx: 0.WasmLocalIdx),
+      WasmInstr(kind: GlobalSet, globalIdx: result.stackPointer),
+      WasmInstr(kind: LocalGet, localIdx: 0.WasmLocalIdx),
+  ]))
+
+  discard result.builder.addFunction([], [I32], [], exportName="stackSave".some, body=WasmExpr(instr: @[
+      WasmInstr(kind: GlobalGet, globalIdx: result.stackPointer),
+  ]))
+
+  discard result.builder.addFunction([I32], [], [], exportName="stackRestore".some, body=WasmExpr(instr: @[
+      WasmInstr(kind: LocalGet, localIdx: 0.WasmLocalIdx),
+      WasmInstr(kind: GlobalSet, globalIdx: result.stackPointer),
   ]))
 
   # strlen

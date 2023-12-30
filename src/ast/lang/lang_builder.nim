@@ -388,7 +388,11 @@ proc updateLanguageFromModel*(language: Language, model: Model, updateBuilder: b
           language.validators[class]
 
         proc validateImplWrapper(node: Option[AstNode], propertyValue: string): bool =
-          let p: WasmPtr = module.alloc(4)
+          let sp = module.stackSave()
+          defer:
+            module.stackRestore(sp)
+
+          let p: WasmPtr = module.stackAlloc(4)
           let index: int32 = if node.getSome(node):
             gNodeRegistry.getNodeIndex(node)
           else:
