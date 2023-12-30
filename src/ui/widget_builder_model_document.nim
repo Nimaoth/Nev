@@ -1013,31 +1013,30 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
         #   let animate = if builder.charWidth > 1: &{AnimatePosition} else: 0.UINodeFlags
 
         builder.panel(&{FillX, FillY, FillBackground, MaskContent, OverlappingChildren}, backgroundColor = backgroundColor):
-          if self.document.model.isNotNil:
+          onScroll:
+            let scrollAmount = delta.y * app.asConfigProvider.getValue("model.scroll-speed", 10.0)
+            self.scrollOffset += scrollAmount
 
-            onScroll:
-              let scrollAmount = delta.y * app.asConfigProvider.getValue("model.scroll-speed", 10.0)
-              self.scrollOffset += scrollAmount
+            if AnimatePosition in animate:
+              scrollContent.boundsActual.y -= scrollAmount
 
-              if AnimatePosition in animate:
-                scrollContent.boundsActual.y -= scrollAmount
+            self.retriggerValidation()
+            self.markDirty()
 
-              self.retriggerValidation()
-              self.markDirty()
+          let overlapPanel = currentNode
 
-            let overlapPanel = currentNode
+          let h = currentNode.h
+          builder.panel(&{FillX, FillY} + animate, y = 0, userId = newSecondaryId(self.userId, -1)):
+            scrollContent = currentNode
 
-            let h = currentNode.h
-            builder.panel(&{FillX, FillY} + animate, y = 0, userId = newSecondaryId(self.userId, -1)):
-              scrollContent = currentNode
+            builder.panel(&{FillX, SizeToContentY}):
+              let scrolledNode = currentNode
+              self.scrolledNode = scrolledNode
 
-              builder.panel(&{FillX, SizeToContentY}):
-                let scrolledNode = currentNode
-                self.scrolledNode = scrolledNode
+              defer:
+                self.lastBounds = currentNode.bounds
 
-                defer:
-                  self.lastBounds = currentNode.bounds
-
+              if self.document.model.isNotNil:
                 for node in self.document.model.rootNodes:
                   let cell = self.nodeCellMap.cell(node)
                   # let cell = self.document.builder.buildCell(self.nodeCellMap, node, self.useDefaultCellBuilder)
@@ -1117,8 +1116,8 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
                       log lvlError, fmt"failed to find target cell path"
                       discard self.cellWidgetContext.updateTargetPath(scrolledNode.parent, cell, forward, self.targetCellPath, @[])
 
-          # cursor
-            if self.cursorVisible and self.document.model.rootNodes.len > 0:
+            # cursor
+            if self.document.model.isNotNil and self.cursorVisible and self.document.model.rootNodes.len > 0:
               if self.drawCursor(builder, self.selection.last, self.isThickCursor, textColor, textColor, backgroundColor, 0, overlapPanel).getSome(uiNode):
                 self.lastCursorLocationBounds = rect(self.selection.last.index.float * builder.charWidth, 0, builder.charWidth, builder.textHeight).transformRect(uiNode, builder.root).some
                 let node = self.selection.last.node

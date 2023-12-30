@@ -5,7 +5,7 @@ from scripting_api as api import nil
 import platform/[filesystem, platform]
 import workspaces/[workspace]
 import ui/node
-import lang/[lang_language, lang_builder, cell_language, property_validator_language]
+import lang/[lang_language, lang_builder, cell_language, property_validator_language, scope_language]
 
 import ast/[generator_wasm, base_language_wasm, editor_language_wasm, model_state, cell_builder_database]
 import document, document_editor, text/text_document, events, scripting/expose, input
@@ -804,7 +804,7 @@ proc handleModelChanged(self: ModelDocumentEditor, document: ModelDocument) =
     else:
       self.cursor = self.getFirstEditableCellOfNode(self.document.model.rootNodes[0]).get
 
-    self.updateScrollOffset()
+    self.updateScrollOffset(true)
   else:
     self.mSelection.first = CellCursor.default
     self.mSelection.last = CellCursor.default
@@ -3361,6 +3361,10 @@ proc importModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
       let score = matchPath("BaseLanguageModel", text)
       result.add ModelImportSelectorItem(name: "BaseLanguageModel", model: lang_builder.baseLanguageModel.id, score: score)
 
+    block:
+      let score = matchPath("LangLanguageModel", text)
+      result.add ModelImportSelectorItem(name: "LangLanguageModel", model: lang_builder.langLanguageModel.id, score: score)
+
     # result.sort((a, b) => cmp(a.score, b.score), Descending)
 
   popup.handleItemConfirmed = proc(item: SelectorItem) =
@@ -3374,6 +3378,11 @@ proc importModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
     if modelId == baseLanguageModel.id:
       log lvlInfo, fmt"Add imported model {lang_builder.baseLanguageModel.path} ({lang_builder.baseLanguageModel.id})"
       self.document.model.addImport(lang_builder.baseLanguageModel)
+      return
+
+    if modelId == langLanguageModel.id:
+      log lvlInfo, fmt"Add imported model {lang_builder.langLanguageModel.path} ({lang_builder.langLanguageModel.id})"
+      self.document.model.addImport(lang_builder.langLanguageModel)
       return
 
     if self.document.project.getModel(modelId).getSome(model):

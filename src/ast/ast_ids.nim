@@ -296,6 +296,13 @@ let IdPropertyValidatorDefinitionClass* = "8cffffff2061f8026045266e".parseId.Rol
 let IdPropertyValidatorDefinitionProperty* = "8cffffff2061f80260452a12".parseId.RoleId
 let IdPropertyValidatorDefinitionImplementation* = "8dffffffba19ff0d0d9c348c".parseId.RoleId
 
+# scope language
+
+let IdScopeLanguage* = "bbffffff26a84d413cfea9d3".parseId.LanguageId
+let IdScopeDefinition* = "bbffffff26a84d413cfeaa09".parseId.ClassId
+let IdScopeDefinitionClass* = "bbffffff924688011c5477fd".parseId.RoleId
+let IdScopeDefinitionImplementation* = "bbffffff924688011c547871".parseId.RoleId
+
 # new ids
 
 let Id656f7f67d077504f640d86cd* = "656f7f67d077504f640d86cd".parseId

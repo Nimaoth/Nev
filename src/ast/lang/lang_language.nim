@@ -419,6 +419,12 @@ scopeComputers[IdRoleReference] = proc(ctx: ModelComputationContextBase, node: A
         classNode = node
       break
 
+    if parent.class == IdScopeDefinition:
+      ctx.dependOn(parent)
+      if parent.resolveReference(IdScopeDefinitionClass).getSome(node):
+        classNode = node
+      break
+
     parent = parent.parent
 
   if classNode.isNil:
