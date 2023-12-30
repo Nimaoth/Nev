@@ -3,7 +3,7 @@ import fusion/matching
 import misc/[util, custom_logger, custom_async, myjsonutils, custom_unicode]
 import workspaces/[workspace]
 import ui/node
-import lang/[lang_language, lang_builder, cell_language, property_validator_language]
+import lang/[lang_language, lang_builder, cell_language, property_validator_language, scope_language]
 import ast/[model_state, base_language, editor_language, ast_ids, model]
 
 const projectPath = "./model/playground.ast-project"
@@ -80,6 +80,8 @@ proc resolveLanguage*(project: Project, ws: WorkspaceFolder, id: LanguageId): Fu
     return cell_language.cellLanguage.await.some
   elif id == IdPropertyValidatorLanguage:
     return property_validator_language.propertyValidatorLanguage.await.some
+  elif id == IdScopeLanguage:
+    return scope_language.scopeLanguage.await.some
   elif project.dynamicLanguages.contains(id):
     return project.dynamicLanguages[id].some
   elif project.modelPaths.contains(id.ModelId):
@@ -122,7 +124,7 @@ proc getAllAvailableLanguages*(project: Project): seq[LanguageId] =
   let l = collect(newSeq):
     for languageId in project.dynamicLanguages.keys:
       languageId
-  return @[IdBaseLanguage, IdBaseInterfaces, IdEditorLanguage, IdLangLanguage, IdCellLanguage, IdPropertyValidatorLanguage] & l
+  return @[IdBaseLanguage, IdBaseInterfaces, IdEditorLanguage, IdLangLanguage, IdCellLanguage, IdPropertyValidatorLanguage, IdScopeLanguage] & l
 
 proc updateLanguageFromModel*(project: Project, model: Model): Future[void] {.async.} =
   let languageId = model.id.LanguageId
@@ -142,7 +144,16 @@ proc updateLanguageFromModel*(project: Project, model: Model): Future[void] {.as
       updatePropertyValidatorLanguage(model).await
       return
     except CatchableError:
-      log lvlError, fmt"Failed to update cell language from model: {getCurrentExceptionMsg()}"
+      log lvlError, fmt"Failed to update property validator language from model: {getCurrentExceptionMsg()}"
+    return
+
+  if languageId == IdScopeLanguage:
+    try:
+      log lvlInfo, fmt"Updating scope language ({languageId}) with model {model.path} ({model.id})"
+      updateScopeLanguage(model).await
+      return
+    except CatchableError:
+      log lvlError, fmt"Failed to update scope language from model: {getCurrentExceptionMsg()}"
     return
 
   if project.dynamicLanguages.contains(languageId):
