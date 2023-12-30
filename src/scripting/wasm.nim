@@ -15,6 +15,9 @@ when defined(js):
     memory: JsObject
     myAlloc: proc(size: uint32): WasmPtr
     myDealloc: proc(p: WasmPtr)
+    myStackAlloc: proc(size: uint32): WasmPtr
+    myStackSave: proc(): WasmPtr
+    myStackRestore: proc(p: WasmPtr)
 
   type WasmImports* = ref object
     namespace*: string
@@ -52,6 +55,24 @@ proc alloc*(module: WasmModule, size: uint32): WasmPtr =
     return module.myAlloc(size)
   else:
     return module.env.alloc(size)
+
+proc stackAlloc*(module: WasmModule, size: uint32): WasmPtr =
+  when defined(js):
+    return module.myStackAlloc(size)
+  else:
+    return module.env.stackAlloc(size)
+
+proc stackSave*(module: WasmModule): WasmPtr =
+  when defined(js):
+    return module.myStackSave()
+  else:
+    return module.env.stackSave()
+
+proc stackRestore*(module: WasmModule, p: WasmPtr) =
+  when defined(js):
+    module.myStackRestore(p)
+  else:
+    module.env.stackRestore(p)
 
 proc dealloc*(module: WasmModule, p: WasmPtr) =
   when defined(js):
@@ -398,7 +419,11 @@ proc newWasmModule*(wasmData: ArrayBuffer, importsOld: seq[WasmImports]): Future
     let myAlloc = instance["exports"]["my_alloc"].toFunction proc(size: uint32): WasmPtr
     let myDealloc = instance["exports"]["my_dealloc"].toFunction proc(p: WasmPtr)
 
-    var res = WasmModule(env: instance, memory: context, myAlloc: myAlloc, myDealloc: myDealloc)
+    let myStackAlloc = instance["exports"]["stackAlloc"].toFunction proc(size: uint32): WasmPtr
+    let myStackSave = instance["exports"]["stackSave"].toFunction proc(): WasmPtr
+    let myStackRestore = instance["exports"]["stackRestore"].toFunction proc(p: WasmPtr)
+
+    var res = WasmModule(env: instance, memory: context, myAlloc: myAlloc, myDealloc: myDealloc, myStackAlloc: myStackAlloc, myStackSave: myStackSave, myStackRestore: myStackRestore)
     for imp in imports.mitems:
       imp.module = res
     return res.some
@@ -467,7 +492,11 @@ proc newWasmModule*(path: string, importsOld: seq[WasmImports]): Future[Option[W
     let myAlloc = instance["exports"]["my_alloc"].toFunction proc(size: uint32): WasmPtr
     let myDealloc = instance["exports"]["my_dealloc"].toFunction proc(p: WasmPtr)
 
-    var res = WasmModule(env: instance, memory: context, myAlloc: myAlloc, myDealloc: myDealloc)
+    let myStackAlloc = instance["exports"]["stackAlloc"].toFunction proc(size: uint32): WasmPtr
+    let myStackSave = instance["exports"]["stackSave"].toFunction proc(): WasmPtr
+    let myStackRestore = instance["exports"]["stackRestore"].toFunction proc(p: WasmPtr)
+
+    var res = WasmModule(env: instance, memory: context, myAlloc: myAlloc, myDealloc: myDealloc, myStackAlloc: myStackAlloc, myStackSave: myStackSave, myStackRestore: myStackRestore)
     for imp in imports.mitems:
       imp.module = res
     return res.some
