@@ -412,13 +412,15 @@ proc updateLanguageFromModel*(language: Language, model: Model, updateBuilder: b
             let resultLen = module.getInt32(arrPtr)
             let resultPtr = module.getInt32(arrPtr + 8).WasmPtr
 
-            result = newSeqOfCap[AstNode](resultLen)
+            var res = newSeqOfCap[AstNode](resultLen)
             for i in 0..<resultLen:
               let nodeIndex = module.getInt32(resultPtr + i * 4)
               if gNodeRegistry.getNode(nodeIndex).getSome(node):
-                result.add node
+                res.add node
               else:
                 log lvlError, fmt"Invalid node index returned from scope function: {nodeIndex}"
+
+            return res
 
           scopeComputers[class] = computeScopeImplWrapper
 
