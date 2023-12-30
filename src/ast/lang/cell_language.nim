@@ -2,7 +2,7 @@ import std/[tables, strformat, options, json]
 import misc/[id, util, custom_logger, custom_async]
 import ui/node
 import ast/[model, cells, cell_builder_database, base_language]
-import lang_language
+import lang_language, lang_builder
 
 export id, ast_ids
 
@@ -199,11 +199,11 @@ proc resolveLanguage(id: LanguageId): Option[Language] =
 
 proc resolveModel(project: Project, id: ModelId): Option[Model] =
   if id == baseInterfacesModel.id:
-    return lang_language.baseInterfacesModel.some
+    return lang_builder.baseInterfacesModel.some
   if id == baseLanguageModel.id:
-    return lang_language.baseLanguageModel.some
+    return lang_builder.baseLanguageModel.some
   if id == langLanguageModel.id:
-    return lang_language.langLanguageModel.some
+    return lang_builder.langLanguageModel.some
   log lvlError, fmt"createCellLanguage: unknown model id: {id}"
 
 proc createCellLanguage*(): Future[Language] {.async.} =
