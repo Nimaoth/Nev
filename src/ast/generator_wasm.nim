@@ -333,7 +333,7 @@ proc compileToBinary*(self: BaseLanguageWasmCompiler): seq[uint8] =
   if self.functionRefIndices.len > 0:
     self.builder.addFunctionElements("function pointers", self.functionRefTableIdx, self.functionRefIndices)
 
-  debugf"{self.builder}"
+  # debugf"{self.builder}"
 
   if not self.builder.validate(false):
     log(lvlError, "Wasm validation failed")

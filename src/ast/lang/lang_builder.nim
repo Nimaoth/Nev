@@ -1,4 +1,4 @@
-import std/[tables, strformat, options, os]
+import std/[tables, strformat, options, os, sugar]
 import misc/[id, util, custom_logger, custom_async, array_buffer, array_table]
 import ui/node
 import ast/[ast_ids, model, cells, cell_builder_database, base_language, generator_wasm, base_language_wasm]
@@ -296,6 +296,7 @@ proc updateLanguageFromModel*(language: Language, model: Model, updateBuilder: b
   var builder = newCellBuilder(language.id)
 
   var propertyValidators = newSeq[tuple[classId: ClassId, roleId: RoleId, functionNode: AstNode]]()
+  var scopeDefinitions = newSeq[tuple[classId: ClassId, functionNode: AstNode]]()
 
   for def in model.rootNodes:
     for _, c in def.children(IdLangRootChildren):
@@ -319,7 +320,6 @@ proc updateLanguageFromModel*(language: Language, model: Model, updateBuilder: b
           continue
 
         let classId = c.reference(IdPropertyValidatorDefinitionClass).ClassId
-
         if functionNode.class != IdFunctionDefinition:
           log lvlError, fmt"Invalid function for property validator: {functionNode}"
           continue
@@ -329,8 +329,23 @@ proc updateLanguageFromModel*(language: Language, model: Model, updateBuilder: b
           continue
 
         let roleId = propertyRoleReference.reference(IdRoleReferenceTarget).RoleId
-
         propertyValidators.add (classId, roleId, functionNode)
+
+      if c.class == IdScopeDefinition:
+        let functionNode = c.firstChild(IdScopeDefinitionImplementation).getOr:
+          log lvlError, fmt"Missing function for scope: {c}"
+          continue
+
+        if functionNode.class != IdFunctionDefinition:
+          log lvlError, fmt"Invalid function for scope: {functionNode}"
+          continue
+
+        let classId = c.reference(IdScopeDefinitionClass).ClassId
+        if functionNode.class != IdFunctionDefinition:
+          log lvlError, fmt"Invalid function for scope: {functionNode}"
+          continue
+
+        scopeDefinitions.add (classId, functionNode)
 
   let wasmModule = if ctx.getSome(ctx):
     measureBlock fmt"Compile language model '{model.path}' to wasm":
@@ -338,6 +353,9 @@ proc updateLanguageFromModel*(language: Language, model: Model, updateBuilder: b
       compiler.addBaseLanguage()
 
       for (_, _, functionNode) in propertyValidators:
+        compiler.addFunctionToCompile(functionNode)
+
+      for (_, functionNode) in scopeDefinitions:
         compiler.addFunctionToCompile(functionNode)
 
       let binary = compiler.compileToBinary()
@@ -362,7 +380,7 @@ proc updateLanguageFromModel*(language: Language, model: Model, updateBuilder: b
     measureBlock fmt"Create wasm module for language '{model.path}'":
       let module = await newWasmModule(binary.toArrayBuffer, imports)
       if module.isNone:
-        log lvlError, fmt"Failed to create wasm module from generated binary for {model.path}: {getCurrentExceptionMsg()}"
+        log lvlError, fmt"Failed to create wasm module from generated binary for {model.path}"
 
     module
 
@@ -374,34 +392,65 @@ proc updateLanguageFromModel*(language: Language, model: Model, updateBuilder: b
   var scopeComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode]]()
   var validationComputers = initTable[ClassId, proc(ctx: ModelComputationContextBase, node: AstNode): bool]()
 
+  if wasmModule.getSome(module):
+    for (class, functionNode) in scopeDefinitions:
+      capture class, functionNode:
+        let name = $functionNode.id
+        if module.findFunction(name, void, proc(arrPtr: WasmPtr, node: WasmPtr)).getSome(computeScopeImpl):
+          proc computeScopeImplWrapper(ctx: ModelComputationContextBase, node: AstNode): seq[AstNode] =
+            let sp = module.stackSave()
+            defer:
+              module.stackRestore(sp)
+
+            let index = gNodeRegistry.getNodeIndex(node)
+
+            let arrPtr: WasmPtr = module.stackAlloc(4 * 3)
+            let indexPtr: WasmPtr = module.stackAlloc(4)
+            module.setInt32(indexPtr, index)
+            computeScopeImpl(arrPtr, indexPtr)
+
+            let resultLen = module.getInt32(arrPtr)
+            let resultPtr = module.getInt32(arrPtr + 8).WasmPtr
+
+            result = newSeqOfCap[AstNode](resultLen)
+            for i in 0..<resultLen:
+              let nodeIndex = module.getInt32(resultPtr + i * 4)
+              if gNodeRegistry.getNode(nodeIndex).getSome(node):
+                result.add node
+              else:
+                log lvlError, fmt"Invalid node index returned from scope function: {nodeIndex}"
+
+          scopeComputers[class] = computeScopeImplWrapper
+
   language.update(classes, typeComputers, valueComputers, scopeComputers, validationComputers)
 
   if wasmModule.getSome(module):
     for (class, role, functionNode) in propertyValidators:
-      let name = $functionNode.id
-      if module.findFunction(name, bool, proc(node: WasmPtr, a: string): bool).getSome(validateImpl):
-        let validator = if not language.validators.contains(class):
-          let validator = NodeValidator()
-          language.validators[class] = validator
-          validator
-        else:
-          language.validators[class]
-
-        proc validateImplWrapper(node: Option[AstNode], propertyValue: string): bool =
-          let sp = module.stackSave()
-          defer:
-            module.stackRestore(sp)
-
-          let p: WasmPtr = module.stackAlloc(4)
-          let index: int32 = if node.getSome(node):
-            gNodeRegistry.getNodeIndex(node)
+      capture class, role, functionNode:
+        let name = $functionNode.id
+        if module.findFunction(name, bool, proc(node: WasmPtr, a: string): bool).getSome(validateImpl):
+          let validator = if not language.validators.contains(class):
+            let validator = NodeValidator()
+            language.validators[class] = validator
+            validator
           else:
-            0
-          module.setInt32(p, index)
-          validateImpl(p, propertyValue)
+            language.validators[class]
 
-        # debugf"register propertyy validator for {class}, {role}"
-        validator.propertyValidators[role] = PropertyValidator(kind: Custom, impl: validateImplWrapper)
+          proc validateImplWrapper(node: Option[AstNode], propertyValue: string): bool =
+            let sp = module.stackSave()
+            defer:
+              module.stackRestore(sp)
+
+            let p: WasmPtr = module.stackAlloc(4)
+            let index: int32 = if node.getSome(node):
+              gNodeRegistry.getNodeIndex(node)
+            else:
+              0
+            module.setInt32(p, index)
+            validateImpl(p, propertyValue)
+
+          # debugf"register propertyy validator for {class}, {role}"
+          validator.propertyValidators[role] = PropertyValidator(kind: Custom, impl: validateImplWrapper)
 
   if updateBuilder:
     registerBuilder(language.id, builder)

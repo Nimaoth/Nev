@@ -76,6 +76,7 @@ type
     substitutionReference {.getter.}: Option[RoleId]
     precedence {.getter.}: int
     canBeRoot {.getter.}: bool
+    registryIndex: int32 # Index in the global node registry (0 if not registered)
 
   AstNode* = ref object
     id*: NodeId
@@ -93,6 +94,9 @@ type
   AstNodeRegistry* = ref object
     nodeToIndex*: Table[NodeId, int32]
     nodes*: seq[AstNode]
+
+    modelToIndex*: Table[ModelId, int32]
+    models*: seq[Model]
 
   PropertyValidatorKind* = enum Regex, Custom
   PropertyValidator* = ref object
@@ -129,6 +133,8 @@ type
 
     onChanged*: Event[Language]
 
+    registryIndex: int32 # Index in the global node registry (0 if not registered)
+
   Model* = ref object
     id {.getter.}: ModelId
     path*: string
@@ -141,6 +147,8 @@ type
     childClasses {.getter.}: Table[ClassId, seq[NodeClass]]
     nodes {.getter.}: Table[NodeId, AstNode]
     project*: Project
+
+    registryIndex: int32 # Index in the global node registry (0 if not registered)
 
     onNodeDeleted*: Event[tuple[self: Model, parent: AstNode, child: AstNode, role: RoleId, index: int]]
     onNodeInserted*: Event[tuple[self: Model, parent: AstNode, child: AstNode, role: RoleId, index: int]]
@@ -1390,6 +1398,7 @@ proc loadFromJson*(model: Model, path: string, json: JsonNode,
 
 var gNodeRegistry* = AstNodeRegistry()
 gNodeRegistry.nodes.add nil
+gNodeRegistry.models.add nil
 
 proc getNode*(registry: AstNodeRegistry, index: int32): Option[AstNode] =
   if index <= 0 or index >= registry.nodes.len:
@@ -1412,3 +1421,25 @@ proc getNodeIndex*(registry: AstNodeRegistry, node: AstNode): int32 =
     return node.registryIndex
 
   return registry.registerNode(node)
+
+proc getModel*(registry: AstNodeRegistry, index: int32): Option[Model] =
+  if index <= 0 or index >= registry.models.len:
+    log lvlError, fmt"getModel: index {index} out of range"
+    return Model.none
+  return registry.models[index].some
+
+proc registerModel*(registry: AstNodeRegistry, model: Model): int32 =
+  if model.registryIndex != 0:
+    log lvlWarn, fmt"registerModel: model {model.path} ({model.id}) already registered"
+    return model.registryIndex
+
+  result = registry.models.len.int32
+  model.registryIndex = result
+  registry.models.add model
+  registry.modelToIndex[model.id] = result
+
+proc getModelIndex*(registry: AstNodeRegistry, model: Model): int32 =
+  if model.registryIndex != 0:
+    return model.registryIndex
+
+  return registry.registerModel(model)
