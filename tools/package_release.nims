@@ -64,25 +64,28 @@ copySharedFilesTo releaseWindows
 copySharedFilesTo releaseLinux
 copySharedFilesTo releaseWeb
 
-cpFile2 "ast.exe", releaseWindows
-cpFile2 "tools/absytree-server.exe", releaseWindows
-cpFile2 "tools/nimsuggest-ws.exe", releaseWindows
+if fileExists "ast.exe":
+  cpFile2 "ast.exe", releaseWindows
+  cpFile2 "tools/absytree-server.exe", releaseWindows
+  cpFile2 "tools/nimsuggest-ws.exe", releaseWindows
 
-cpFile2 "ast", releaseLinux
-cpFile2 "tools/absytree-server", releaseLinux
-cpFile2 "tools/nimsuggest-ws", releaseLinux
+if fileExists "ast":
+  cpFile2 "ast", releaseLinux
+  cpFile2 "tools/absytree-server", releaseLinux
+  cpFile2 "tools/nimsuggest-ws", releaseLinux
 
-cpFile2 "build/ast.js", releaseWeb
-cpFile2 "web/absytree_browser.html", releaseWeb
-cpFile2 "web/ast_glue.js", releaseWeb
-cpFile2 "web/scripting_runtime.js", releaseWeb
-withDir releaseWeb:
-  catch exec("wget -Otree-sitter.js https://raw.githubusercontent.com/Nimaoth/AbsytreeBrowser/main/tree-sitter.js"):
-    echo "[ERROR] Failed to download tree-sitter.js"
-    exitCode = 1
+if fileExists "build/ast.js":
+  cpFile2 "build/ast.js", releaseWeb
+  cpFile2 "web/absytree_browser.html", releaseWeb
+  cpFile2 "web/ast_glue.js", releaseWeb
+  cpFile2 "web/scripting_runtime.js", releaseWeb
+  withDir releaseWeb:
+    catch exec("wget -Otree-sitter.js https://raw.githubusercontent.com/Nimaoth/AbsytreeBrowser/main/tree-sitter.js"):
+      echo "[ERROR] Failed to download tree-sitter.js"
+      exitCode = 1
 
-  catch exec("wget -Otree-sitter.wasm https://raw.githubusercontent.com/Nimaoth/AbsytreeBrowser/main/tree-sitter.wasm"):
-    echo "[ERROR] Failed to download tree-sitter.wasm"
-    exitCode = 1
+    catch exec("wget -Otree-sitter.wasm https://raw.githubusercontent.com/Nimaoth/AbsytreeBrowser/main/tree-sitter.wasm"):
+      echo "[ERROR] Failed to download tree-sitter.wasm"
+      exitCode = 1
 
 quit exitCode
