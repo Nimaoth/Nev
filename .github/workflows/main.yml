@@ -87,7 +87,9 @@ jobs:
       - name: Checkout the repo
         uses: actions/checkout@v3
       - run: git clone https://github.com/nim-lang/Nim.git
+      - run: cd Nim
       - run: Nim/build_all.bat
+      - run: cd ..
       - name: nimble setup
         run: Nim/bin/nimble.exe setup
 
