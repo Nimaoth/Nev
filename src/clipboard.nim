@@ -1,11 +1,29 @@
 import std/[options]
+import misc/[util, custom_async, custom_logger]
+
+logCategory "clipboard"
 
 when defined(js):
-  proc setSystemClipboardText*(str: string) =
-    discard
+  import std/[jsffi, dom]
 
-  proc getSystemClipboardText*(): Option[string] =
-    return string.none
+  type Clipboard = ref object of JsObject
+
+  proc hasClipboard(): bool {.importjs: "!!navigator.clipboard@".}
+  proc getClipboard(): Clipboard {.importjs: "navigator.clipboard@".}
+  proc readText(clipboard: Clipboard): Future[cstring] {.importjs: "#.readText()".}
+  proc writeText(clipboard: Clipboard, str: cstring): Future[void] {.importjs: "#.writeText(@)".}
+
+  proc setSystemClipboardText*(str: string) =
+    if not hasClipboard():
+      log lvlError, "Clipboard not available"
+      return
+    asyncCheck getClipboard().writeText(str.cstring)
+
+  proc getSystemClipboardText*(): Future[Option[string]] {.async.} =
+    if not hasClipboard():
+      log lvlError, "Clipboard not available"
+      return string.none
+    return some $getClipboard().readText().await
 
 else:
   import nimclipboard/libclipboard
@@ -16,6 +34,6 @@ else:
     clipboard.clipboardClear(LCB_CLIPBOARD)
     discard clipboard.clipboardSetText(str.cstring)
 
-  proc getSystemClipboardText*(): Option[string] =
+  proc getSystemClipboardText*(): Future[Option[string]] {.async.} =
     return some $clipboard.clipboardText()
 

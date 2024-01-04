@@ -634,17 +634,20 @@ proc redo*(self: TextDocumentEditor) {.expose("editor.text").} =
     self.selections = selections
     self.scrollToCursor(Last)
 
-proc copy*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc copyAsync*(self: TextDocumentEditor): Future[void] {.async.} =
   var text = ""
   for i, selection in self.selections:
     if i > 0:
       text.add "\n"
     text.add self.document.contentString(selection)
 
-  self.app.setRegisterText(text, "")
+  self.app.setRegisterText(text, "").await
 
-proc paste*(self: TextDocumentEditor) {.expose("editor.text").} =
-  let text = self.app.getRegisterText("")
+proc copy*(self: TextDocumentEditor) {.expose("editor.text").} =
+  asyncCheck self.copyAsync()
+
+proc pasteAsync*(self: TextDocumentEditor): Future[void] {.async.} =
+  let text = self.app.getRegisterText("").await
 
   let numLines = text.count('\n') + 1
 
@@ -663,6 +666,9 @@ proc paste*(self: TextDocumentEditor) {.expose("editor.text").} =
 
   self.selections = newSelections
   self.scrollToCursor(Last)
+
+proc paste*(self: TextDocumentEditor) {.expose("editor.text").} =
+  asyncCheck self.pasteAsync()
 
 proc scrollText(self: TextDocumentEditor, amount: float32) {.expose("editor.text").} =
   if self.disableScrolling:

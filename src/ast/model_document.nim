@@ -3121,7 +3121,7 @@ proc runSelectedFunctionAsync*(self: ModelDocumentEditor): Future[void] {.async.
 proc runSelectedFunction*(self: ModelDocumentEditor) {.expose("editor.model").} =
   asyncCheck runSelectedFunctionAsync(self)
 
-proc copyNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
+proc copyNodeAsync*(self: ModelDocumentEditor): Future[void] {.async.} =
   let selection = self.selection.normalized
   let (parentTargetCell, firstPath, lastPath) = selection.getParentInfo
   let parentBaseCell = parentTargetCell.nodeRootCell      # the root cell for the given node
@@ -3154,22 +3154,29 @@ proc copyNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
     json = parentTargetCell.node.toJson
 
   if json.isNotNil:
-    self.app.setRegisterText($json, "")
+    self.app.setRegisterText($json, "").await
 
-proc getNodeFromRegister(self: ModelDocumentEditor, register: string): seq[AstNode] =
-  let text = self.app.getRegisterText(register)
+proc copyNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  asyncCheck self.copyNodeAsync()
+
+proc getNodeFromRegister(self: ModelDocumentEditor, register: string): Future[seq[AstNode]] {.async.} =
+  let text = self.app.getRegisterText(register).await
   let json = text.parseJson
+  var res = newSeq[AstNode]()
+
   if json.kind == JObject:
     if json.jsonToAstNode(self.document.model).getSome(node):
-      result.add node
+      res.add node
   elif json.kind == JArray:
     for j in json:
       if j.jsonToAstNode(self.document.model).getSome(node):
-        result.add node
+        res.add node
   else:
     log lvlError, fmt"Can't parse node from register"
 
-proc pasteNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  return res
+
+proc pasteNodeAsync*(self: ModelDocumentEditor): Future[void] {.async.} =
   if self.document.project.isNil:
     log lvlError, fmt"No project set for model document '{self.document.filename}'"
     return
@@ -3182,7 +3189,7 @@ proc pasteNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
   defer:
     self.document.finishTransaction()
 
-  let nodes = self.getNodeFromRegister("")
+  let nodes = self.getNodeFromRegister("").await
   if nodes.len == 0:
     log lvlError, fmt"Can't parse node from register"
     return
@@ -3225,6 +3232,11 @@ proc pasteNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
     parent.insert(role, index + i, newNode)
     self.rebuildCells()
     self.cursor = self.getFirstEditableCellOfNode(newNode).get
+
+  self.markDirty()
+
+proc pasteNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
+  asyncCheck self.pasteNodeAsync()
 
 type ModelLanguageSelectorItem* = ref object of SelectorItem
   language*: Language

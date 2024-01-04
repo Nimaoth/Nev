@@ -414,6 +414,4 @@ proc editor_scriptSetOptionBool_void_string_bool_impl(path: string; value: bool)
 proc editor_scriptSetOptionString_void_string_string_impl(path: string;
     value: string)  {.importc.}
 proc editor_scriptSetCallback_void_string_int_impl(path: string; id: int)  {.importc.}
-proc editor_setRegisterText_void_App_string_string_impl(text: string;
-    register: string = "")  {.importc.}
 proc lsp_lspLogVerbose_void_bool_impl(val: bool)  {.importc.}
