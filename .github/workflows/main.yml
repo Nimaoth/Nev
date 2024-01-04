@@ -22,8 +22,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-absytree:
-    name: Build Absytree
+  build-absytree-linux:
+    name: Build Absytree Linux
     runs-on: ubuntu-latest
     container:
       image: nimlang/nim:2.0.0-regular
@@ -51,26 +51,12 @@ jobs:
       - if: always()
         run: nimble buildDesktop --app:gui -D:forceLogToFile
 
-      # windows builds
-      - if: always()
-        run: nimble buildDesktopWindows --app:gui -D:forceLogToFile
-      - if: always()
-        run: nimble buildAbsytreeServerWindows
-      - if: always()
-        run: nimble buildNimsuggestWSWindows
-
       # create release packages
       - run: nim ./tools/package_release.nims
-      - run: ls -la release_windows
       - run: ls -la release_linux
       - run: ls -la release_web
 
       # make zips
-      - name: Zip release_windows
-        uses: vimtor/action-zip@v1
-        with:
-          files: release_windows
-          dest: release_windows.zip
       - name: Zip release_linux
         uses: vimtor/action-zip@v1
         with:
@@ -83,11 +69,6 @@ jobs:
           dest: release_web.zip
 
       # upload artifacts
-      - name: Upload release_windows
-        uses: actions/upload-artifact@v3
-        with:
-          name: release_windows
-          path: release_windows.zip
       - name: Upload release_linux
         uses: actions/upload-artifact@v3
         with:
@@ -98,6 +79,44 @@ jobs:
         with:
           name: release_web
           path: release_web.zip
+
+  build-absytree-windows:
+    name: Build Absytree Windows
+    runs-on: windows-2022
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@v3
+      - name: add Absytree as git safe.directory so nimble can install stuff
+        run: git config --global --add safe.directory /__w/Absytree/Absytree
+      - run: ls -la
+      - name: nimble setup
+        run: PATH=/github/home/.nimble/bin:$PATH nimble setup
+
+      # windows builds
+      - if: always()
+        run: nimble buildDesktopWindows --app:gui -D:forceLogToFile
+      - if: always()
+        run: nimble buildAbsytreeServerWindows
+      - if: always()
+        run: nimble buildNimsuggestWSWindows
+
+      # create release packages
+      - run: nim ./tools/package_release.nims
+      - run: ls -la release_windows
+
+      # make zips
+      - name: Zip release_windows
+        uses: vimtor/action-zip@v1
+        with:
+          files: release_windows
+          dest: release_windows.zip
+
+      # upload artifacts
+      - name: Upload release_windows
+        uses: actions/upload-artifact@v3
+        with:
+          name: release_windows
+          path: release_windows.zip
 
   run-tests:
     name: Run tests
