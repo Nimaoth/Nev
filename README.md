@@ -81,7 +81,6 @@ Absytree supports different scripting languages/mechanisms. The editor API is ex
 At startup Absytree loads the following scripts in order:
 - `config/absytree_config_wasm.wasm`
 - `config/absytree_config_wasm.nim` (NimScript, only in desktop version)
-- `config/absytree_config.js` (Only in browser version)
 
 
 At the moment `config/absytree_config_wasm.wasm` is generated from `config/absytree_config_wasm.nim` by compiling it to wasm using `config/config.nims` (uses Emscripten). So `absytree_config_wasm.nim` can be used as NimScript or as wasm plugin.

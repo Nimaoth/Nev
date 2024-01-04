@@ -11,8 +11,6 @@ import input, events, document, document_editor, popup, dispatch_tables, theme, 
 
 when not defined(js):
   import scripting/scripting_nim
-else:
-  import scripting/scripting_js
 
 import scripting/scripting_wasm
 
@@ -604,9 +602,7 @@ proc initScripting(self: App) {.async.} =
       if path.hasPrefix("app://", rest):
         path = fs.getApplicationFilePath(rest)
 
-    when defined(js):
-      self.scriptContext = new ScriptContextJs
-    else:
+    when not defined(js):
       self.scriptContext = await createScriptContext("./config/absytree_config.nim", searchPaths)
 
     withScriptContext self, self.scriptContext:
@@ -1489,7 +1485,7 @@ proc setGithubAccessToken*(self: App, token: string) {.expose("editor").} =
 proc reloadConfig*(self: App) {.expose("editor").} =
   defer:
     self.platform.requestRender()
-  if self.scriptContext.isNil.not:
+  if self.scriptContext.isNotNil:
     try:
       self.scriptContext.reload()
       if not self.initializeCalled:
@@ -1708,10 +1704,8 @@ else:
     return getActiveEditor()
 
 proc loadCurrentConfig*(self: App) {.expose("editor").} =
-  ## Javascript backend only!
-  ## Opens the config file in a new view.
-  when defined(js):
-    discard self.createAndAddView(newTextDocument(self.asConfigProvider, "./config/absytree_config.js", fs.loadApplicationFile("./config/absytree_config.js"), true))
+  ## Opens the default config file in a new view.
+  discard self.createAndAddView(newTextDocument(self.asConfigProvider, "./config/absytree_config.nim", fs.loadApplicationFile("./config/absytree_config.nim"), true))
 
 proc logRootNode*(self: App) {.expose("editor").} =
   let str = self.platform.builder.root.dump(true)
