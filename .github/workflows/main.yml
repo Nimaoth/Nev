@@ -39,7 +39,7 @@ jobs:
 
       - run: apt-get update
         continue-on-error: true
-      - run: apt-get install gcc-mingw-w64 -y
+      - run: apt-get install gcc-mingw-w64 xcb -y
         continue-on-error: true
 
       # linux builds
