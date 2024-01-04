@@ -1,5 +1,5 @@
 import std/[json, options]
-import misc/[traits]
+import misc/[traits, custom_async]
 import platform/platform
 import workspaces/workspace
 import text/language/language_server_base
@@ -10,8 +10,8 @@ traitRef AppInterface:
   method platform*(self: AppInterface): Platform
   method configProvider*(self: AppInterface): ConfigProvider
   method getEventHandlerConfig*(self: AppInterface, context: string): EventHandlerConfig
-  method setRegisterText*(self: AppInterface, text: string, register: string)
-  method getRegisterText*(self: AppInterface, register: string): string
+  method setRegisterText*(self: AppInterface, text: string, register: string): Future[void]
+  method getRegisterText*(self: AppInterface, register: string): Future[string]
   method openWorkspaceFile*(self: AppInterface, path: string, workspace: WorkspaceFolder): Option[DocumentEditor]
   method openFile*(self: AppInterface, path: string): Option[DocumentEditor]
   method handleUnknownDocumentEditorAction*(self: AppInterface, editor: DocumentEditor, action: string, args: JsonNode): EventResponse

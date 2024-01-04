@@ -173,8 +173,8 @@ implTrait ConfigProvider, App:
 
 proc handleLog(self: App, level: Level, args: openArray[string])
 proc getEventHandlerConfig*(self: App, context: string): EventHandlerConfig
-proc setRegisterText*(self: App, text: string, register: string = "")
-proc getRegisterText*(self: App, text: var string, register: string = "")
+proc setRegisterText*(self: App, text: string, register: string = ""): Future[void] {.async.}
+proc getRegisterText*(self: App, register: string = ""): Future[string] {.async.}
 proc openWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder): Option[DocumentEditor]
 proc openFile*(self: App, path: string, app: bool = false): Option[DocumentEditor]
 proc handleUnknownDocumentEditorAction*(self: App, editor: DocumentEditor, action: string, args: JsonNode): EventResponse
@@ -198,9 +198,8 @@ implTrait AppInterface, App:
 
   getEventHandlerConfig(EventHandlerConfig, App, string)
 
-  setRegisterText(void, App, string, string)
-  proc getRegisterText*(self: App, register: string): string =
-    self.getRegisterText(result, register)
+  setRegisterText(Future[void], App, string, string)
+  getRegisterText(Future[string], App, string)
 
   proc configProvider*(self: App): ConfigProvider = self.asConfigProvider
 
@@ -1892,21 +1891,23 @@ proc scriptSetCallback*(path: string, id: int) {.expose("editor").} =
     return
   gEditor.callbacks[path] = id
 
-proc setRegisterText*(self: App, text: string, register: string = "") {.expose("editor").} =
+proc setRegisterText*(self: App, text: string, register: string = ""): Future[void] {.async.} =
   self.registers[register] = Register(kind: Text, text: text)
   if register.len == 0:
     setSystemClipboardText(text)
 
-proc getRegisterText*(self: App, text: var string, register: string = "") =
+proc getRegisterText*(self: App, register: string = ""): Future[string] {.async.} =
   # For some reason returning string causes a crash, the returned pointer is just different at the call site for some reason.
   # var string parameter seems to fix it
-  text = ""
-  if register.len == 0 and getSystemClipboardText().getSome(t):
-    text = t
-    return
+  if register.len == 0:
+    let text = getSystemClipboardText().await
+    if text.isSome:
+      return text.get
 
   if self.registers.contains(register):
-    text = self.registers[register].getText()
+    return self.registers[register].getText()
+
+  return ""
 
 genDispatcher("editor")
 addGlobalDispatchTable "editor", genDispatchTable("editor")
