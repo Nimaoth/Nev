@@ -86,22 +86,21 @@ jobs:
     steps:
       - name: Checkout the repo
         uses: actions/checkout@v3
-      - name: add Absytree as git safe.directory so nimble can install stuff
-        run: git config --global --add safe.directory /__w/Absytree/Absytree
-      - run: ls
+      - run: git status
+      - run: tools/install-nim.ps1
       - name: nimble setup
-        run: nimble setup
+        run: nim/bin/nimble.exe setup
 
       # windows builds
       - if: always()
-        run: nimble buildDesktopWindows --app:gui -D:forceLogToFile
+        run: nim/bin/nimble.exe buildDesktopWindows --app:gui -D:forceLogToFile
       - if: always()
-        run: nimble buildAbsytreeServerWindows
+        run: nim/bin/nimble.exe buildAbsytreeServerWindows
       - if: always()
-        run: nimble buildNimsuggestWSWindows
+        run: nim/bin/nimble.exe buildNimsuggestWSWindows
 
       # create release packages
-      - run: nim ./tools/package_release.nims
+      - run: nim/bin/nim.exe ./tools/package_release.nims
       - run: ls -la release_windows
 
       # make zips
