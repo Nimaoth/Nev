@@ -349,6 +349,18 @@
       "checksums": {
         "sha1": "99b26039cfa38ee375f5eb469eec15d842c4fac6"
       }
+    },
+    "nimclipboard": {
+      "version": "0.1.2",
+      "vcsRevision": "666f37ce461d6914a7c1818bc31e1ec97593e7bb",
+      "url": "https://github.com/genotrance/nimclipboard",
+      "downloadMethod": "git",
+      "dependencies": [
+        "nimgen"
+      ],
+      "checksums": {
+        "sha1": "bf02a33b9ac528b92aec2088bb8b38d91eb23603"
+      }
     }
   },
   "tasks": {}
