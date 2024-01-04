@@ -86,23 +86,26 @@ jobs:
     steps:
       - name: Checkout the repo
         uses: actions/checkout@v3
-      - run: git clone https://github.com/nim-lang/Nim.git
-      - run: cd Nim
-      - run: "&./build_all.bat"
-      - run: cd ..
+      - uses: jiro4989/setup-nim-action@v1
+        with:
+          nim-version: '2.0.x'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: nimble setup
-        run: Nim/bin/nimble.exe setup
+        run: nimble setup
+        
+      - name: nimble setup
+        run: nimble setup
 
       # windows builds
       - if: always()
-        run: Nim/bin/nimble.exe buildDesktopWindows --app:gui -D:forceLogToFile
+        run: nimble buildDesktopWindows --app:gui -D:forceLogToFile
       - if: always()
-        run: Nim/bin/nimble.exe buildAbsytreeServerWindows
+        run: nimble buildAbsytreeServerWindows
       - if: always()
-        run: Nim/bin/nimble.exe buildNimsuggestWSWindows
+        run: nimble buildNimsuggestWSWindows
 
       # create release packages
-      - run: Nim/bin/nim.exe ./tools/package_release.nims
+      - run: nim ./tools/package_release.nims
       - run: ls -la release_windows
 
       # make zips
