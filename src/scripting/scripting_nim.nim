@@ -1,5 +1,5 @@
 when defined(js):
-  {.error: "scripting_nim.nim does not work in js backend. Use scripting_js.nim instead.".}
+  {.error: "scripting_nim.nim does not work in js backend.".}
 
 import std/[os, osproc, tables, strformat, json, strutils, macrocache, macros, genasts, sugar]
 from logging import nil
