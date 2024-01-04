@@ -198,7 +198,7 @@ proc createOrUpdateState(dfa: var CommandDFA, currentState: int, inputCode: int6
   linkState(dfa, currentState, nextState, inputCode, mods)
   return nextState
 
-proc parseNextInput(input: openArray[Rune], index: int, leader: (int64, Modifiers) = (0, {})): tuple[inputCode: int64, mods: Modifiers, nextIndex: int, persistent: bool] =
+proc parseNextInput(input: openArray[Rune], index: int, leader: (int64, Modifiers) = (0.int64, {})): tuple[inputCode: int64, mods: Modifiers, nextIndex: int, persistent: bool] =
   result.inputCode = 0
   result.mods = {}
   result.nextIndex = index
