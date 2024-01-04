@@ -91,6 +91,7 @@ jobs:
           nim-version: '2.0.x'
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: nimble setup
+        continue-on-error: true
         run: nimble setup
         
       - name: nimble setup
