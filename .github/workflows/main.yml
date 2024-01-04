@@ -92,6 +92,9 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: nimble setup
         run: nimble setup
+        
+      - name: nimble setup
+        run: nimble setup
 
       # windows builds
       - if: always()
