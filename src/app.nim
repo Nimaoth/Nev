@@ -7,7 +7,7 @@ import workspaces/[workspace]
 import ast/[model, project]
 import config_provider, app_interface
 import text/language/language_server_base, language_server_absytree_commands
-import input, events, document, document_editor, popup, dispatch_tables, theme
+import input, events, document, document_editor, popup, dispatch_tables, theme, clipboard
 
 when not defined(js):
   import scripting/scripting_nim
@@ -1894,11 +1894,17 @@ proc scriptSetCallback*(path: string, id: int) {.expose("editor").} =
 
 proc setRegisterText*(self: App, text: string, register: string = "") {.expose("editor").} =
   self.registers[register] = Register(kind: Text, text: text)
+  if register.len == 0:
+    setSystemClipboardText(text)
 
 proc getRegisterText*(self: App, text: var string, register: string = "") =
   # For some reason returning string causes a crash, the returned pointer is just different at the call site for some reason.
   # var string parameter seems to fix it
   text = ""
+  if register.len == 0 and getSystemClipboardText().getSome(t):
+    text = t
+    return
+
   if self.registers.contains(register):
     text = self.registers[register].getText()
 
