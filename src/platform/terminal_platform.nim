@@ -298,7 +298,7 @@ proc setForegroundColor(self: TerminalPlatform, color: chroma.Color) =
     self.buffer.setForegroundColor(color.toStdColor)
   else:
     let stdColor = color.toStdColor.extractRGB
-    let fgColor = getClosestColor[tui.ForegroundColor](stdColor.r, stdColor.g, stdColor.b, fgWhite)
+    let fgColor = getClosestColor[tui.ForegroundColor](stdColor.r, stdColor.g, stdColor.b, tui.fgWhite)
     self.buffer.setForegroundColor(fgColor)
 
 proc setBackgroundColor(self: TerminalPlatform, color: chroma.Color) =
@@ -306,7 +306,7 @@ proc setBackgroundColor(self: TerminalPlatform, color: chroma.Color) =
     self.buffer.setBackgroundColor(color.toStdColor, color.a)
   else:
     let stdColor = color.toStdColor.extractRGB
-    let bgColor = getClosestColor[tui.BackgroundColor](stdColor.r, stdColor.g, stdColor.b, bgBlack)
+    let bgColor = getClosestColor[tui.BackgroundColor](stdColor.r, stdColor.g, stdColor.b, tui.bgBlack)
     self.buffer.setBackgroundColor(bgColor)
 
 proc fillRect(self: TerminalPlatform, bounds: Rect, color: chroma.Color) =

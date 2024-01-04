@@ -16,6 +16,12 @@ import app
 
 import ui/node
 
+# Don't remove those imports, they are needed by createNimScriptContextConstructorAndGenerateBindings
+import std/[macrocache]
+import ast/model_document
+import text/text_editor
+import text/language/lsp_client
+import selector_popup
 createNimScriptContextConstructorAndGenerateBindings()
 
 # Initialize renderer
