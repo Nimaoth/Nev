@@ -90,7 +90,7 @@ jobs:
         run: git config --global --add safe.directory /__w/Absytree/Absytree
       - run: ls
       - name: nimble setup
-        run: PATH=/github/home/.nimble/bin:$PATH nimble setup
+        run: nimble setup
 
       # windows builds
       - if: always()
