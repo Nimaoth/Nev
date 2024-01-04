@@ -86,10 +86,7 @@ jobs:
     steps:
       - name: Checkout the repo
         uses: actions/checkout@v3
-      - run: git clone https://github.com/nim-lang/Nim.git
-      - run: cd Nim
-      - run: "&./build_all.bat"
-      - run: cd ..
+      - run: "&./tools/install_nim.ps1"
       - name: nimble setup
         run: Nim/bin/nimble.exe setup
 
