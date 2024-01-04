@@ -99,7 +99,7 @@ jobs:
 
       # windows builds
       - if: always()
-        run: nimble buildDesktopWindows --app:gui -D:forceLogToFile
+        run: nimble buildDesktop --app:gui -D:forceLogToFile
       - if: always()
         run: nimble buildAbsytreeServerWindows
       - if: always()
