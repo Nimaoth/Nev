@@ -68,44 +68,6 @@ template createJavascriptPrototype*(moduleName: static string) =
     {.emit: ["""var """, prototypeName, """_prototype = {}"""].}
     # """
 
-when defined(js):
-  proc jsonStringify[T](value: T): cstring {.importjs: "JSON.stringify(#)".}
-
-  proc createJavascriptWrapper(moduleName: string, def: NimNode, scriptFunctionSym: NimNode, jsFunctionName: string): NimNode =
-    let jsPrototypeName = moduleName.replace(".", "_") & "_prototype"
-
-    var paramsString = ""
-    var argsString = ""
-
-    if def[3].len > 1 and def.argName(0).repr == "self":
-      argsString = "this"
-
-    for i, arg in def[3][1..^1]:
-      let name = def.argName(i).repr & "_"
-      if name == "self_":
-        continue
-
-      if argsString.len > 0: argsString.add ", "
-      if paramsString.len > 0: paramsString.add ", "
-
-      paramsString.add name
-      paramsString.add " /* : "
-      paramsString.add arg[1].repr
-      paramsString.add " */"
-
-      if arg[1].repr == "string":
-        argsString.add fmt"{name} == undefined ? undefined : cstrToNimstr({name})"
-      else:
-        argsString.add name
-
-    var conversionFunction = ""
-    if def.returnType.getSome(t) and t.repr == "string":
-      conversionFunction = "toJSStr"
-
-    return quote do:
-      {.emit: [`jsPrototypeName`, """.""", `jsFunctionName`, """ = function(""", `paramsString`, """) { return """, `conversionFunction`, """(""", `scriptFunctionSym`, """(""", `argsString`, """));};"""].}
-      # """
-
 proc generateUniqueName*(moduleName: string, def: NimNode): string =
   result = moduleName
   result.add "_"
@@ -189,13 +151,6 @@ macro expose*(moduleName: static string, def: untyped): untyped =
   var scriptFunction = def.copy
   scriptFunction[0] = nnkPostfix.newTree(ident"*", scriptFunctionSym)
   var callImplFromScriptFunction = nnkCall.newTree(functionName)
-
-  # This function is a wrapper around def which just forwards all arguments
-  let defJsWrapperSym = nskProc.genSym(uniqueName & "_js")
-  var defJsWrapperFunction = def.copy
-  defJsWrapperFunction[0] = nnkPostfix.newTree(ident"*", defJsWrapperSym)
-  var callDefFromDefJsWrapper = nnkCall.newTree(functionName)
-  defJsWrapperFunction[6] = callDefFromDefJsWrapper
 
   # Wrapper function for the script function which is inserted into NimScript.
   # This has the same name as the original function and is used to get function overloading back
@@ -323,14 +278,6 @@ macro expose*(moduleName: static string, def: untyped): untyped =
 
     callImplFromScriptFunction.insert(1, callFromScriptArg)
 
-    let jsMappedArg = genAst(originalArgumentType, isVarargs, name=def.argName(i)):
-      when originalArgumentType is JsonNode:
-        ($jsonStringify(name)).parseJson()
-      else:
-        name
-
-    callDefFromDefJsWrapper.insert(1, jsMappedArg)
-
   scriptFunction[6] = quote do:
     `callImplFromScriptFunction`
 
@@ -352,7 +299,6 @@ macro expose*(moduleName: static string, def: untyped): untyped =
 
   jsonStringWrapperFunctionWasm[6] = callJsonStringWrapperFunctionWasm
 
-
   let jsonWrapperFunction = createJsonWrapper(scriptFunction, jsonWrapperFunctionName)
 
   removePragmas(def)
@@ -368,13 +314,6 @@ macro expose*(moduleName: static string, def: untyped): untyped =
     static:
         # This causes the function wrapper to be emitted in a file, so it can be imported in configs
         addScriptWrapper(`scriptFunctionWrapperRepr`, `moduleName`, `lineNumber`)
-
-  when defined(js):
-    result.add quote do:
-      `defJsWrapperFunction`
-
-    if jsPrototypes.contains moduleName:
-      result.add createJavascriptWrapper(moduleName, def, defJsWrapperSym, pureFunctionNameStr & suffix)
 
   when not defined(js):
     result.add quote do:
