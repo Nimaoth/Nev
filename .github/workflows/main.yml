@@ -37,10 +37,11 @@ jobs:
     steps:
       - name: Checkout the repo
         uses: actions/checkout@v3
-      - uses: jiro4989/setup-nim-action@v1
-        with:
-          nim-version: '2.0.x'
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      #- uses: jiro4989/setup-nim-action@v1
+      #  with:
+      #    nim-version: '2.0.x'
+      #    repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: add Absytree as git safe.directory so nimble can install stuff
         run: git config --global --add safe.directory /__w/Absytree/Absytree
