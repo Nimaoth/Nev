@@ -18,6 +18,14 @@ import std/[parseopt, options, macros]
 import misc/[custom_logger]
 import compilation_config, scripting_api
 
+when enableGui:
+  static:
+    echo "GUI backend enabled"
+
+when enableTerminal:
+  static:
+    echo "Terminal backend enabled"
+
 logCategory "main"
 
 var backend: Option[Backend] = if enableGui: Backend.Gui.some
@@ -158,7 +166,10 @@ proc runApp(): Future[void] {.async.} =
 
       rend.builder.frameTime = delta
 
-      let size = if rend of GuiPlatform and rend.GuiPlatform.showDrawnNodes: rend.size * vec2(0.5, 1) else: rend.size
+      when enableGui:
+        let size = if rend of GuiPlatform and rend.GuiPlatform.showDrawnNodes: rend.size * vec2(0.5, 1) else: rend.size
+      else:
+        let size = rend.size
 
       var rerender = false
       if size != rend.builder.root.boundsActual.wh or rend.requestedRender:

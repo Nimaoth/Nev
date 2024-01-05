@@ -97,7 +97,7 @@ method init*(self: GuiPlatform) =
   self.boxy.setTargetFramebuffer self.framebufferId
 
   # This sets the font size of self.ctx and recalculates the char width
-  self.fontSize = 20
+  self.fontSize = 16
 
   self.layoutOptions.getTextBounds = proc(text: string, fontSizeIncreasePercent: float = 0): Vec2 =
     let font = self.getFont(self.ctx.font, self.ctx.fontSize * (1 + fontSizeIncreasePercent))
