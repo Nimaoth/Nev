@@ -78,7 +78,7 @@ proc getMouseButton*(event: dom.MouseEvent): MouseButton =
   else: MouseButton.Unknown
 
 method init*(self: BrowserPlatform) =
-  self.mFontSize = 18
+  self.mFontSize = 16
   self.mLineHeight = 20
   self.mLineDistance = 2
   self.mCharWidth = 18

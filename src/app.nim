@@ -53,7 +53,7 @@ type
 
 type EditorState = object
   theme: string
-  fontSize: float32 = 20
+  fontSize: float32 = 16
   lineDistance: float32 = 4
   fontRegular: string
   fontBold: string
@@ -650,7 +650,7 @@ proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.}
 
   self.registers = initTable[string, Register]()
 
-  self.platform.fontSize = 20
+  self.platform.fontSize = 16
   self.platform.lineDistance = 4
 
   self.fontRegular = "./fonts/DejaVuSansMono.ttf"
