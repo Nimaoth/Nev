@@ -8,6 +8,7 @@ switch("tlsEmulation", "off")
 switch("d", "enableGui=true")
 switch("d", "enableTerminal=true")
 switch("d", "ssl")
+switch("d", "exposeScriptingApi")
 
 # uncomment to see logs in the console
 switch("d", "allowConsoleLogger")
