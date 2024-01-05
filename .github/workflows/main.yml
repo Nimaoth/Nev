@@ -28,7 +28,7 @@ jobs:
 
     strategy:
       matrix:
-        container: ["ubuntu:jammy", "archlinux:latest"]
+        container: ["nimlang/nim:2.0.0-regular"]
     
     container:
       image: ${{ matrix.container }}
