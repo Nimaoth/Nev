@@ -68,8 +68,8 @@ proc postProcess(filename: string, replacementFile: string) =
   # writeFile(fmt"{path}/{name}.post{ext}", result)
   writeFile(fmt"{path}/{name}{ext}", result)
 
-postProcess("scripting/htmldocs/editor_text_api.html", "src/text_document.nim")
-postProcess("scripting/htmldocs/editor_model_api.html", "src/model_document.nim")
-postProcess("scripting/htmldocs/editor_ast_api.html", "src/ast_document.nim")
-postProcess("scripting/htmldocs/editor_api.html", "src/editor.nim")
+postProcess("scripting/htmldocs/editor_text_api.html", "src/text/text_editor.nim")
+postProcess("scripting/htmldocs/editor_model_api.html", "src/ast/model_document.nim")
+postProcess("scripting/htmldocs/editor_api.html", "src/app.nim")
+postProcess("scripting/htmldocs/lsp_api.html", "src/text/language/lsp_client.nim")
 postProcess("scripting/htmldocs/popup_selector_api.html", "src/selector_popup.nim")

@@ -66,11 +66,13 @@ copySharedFilesTo releaseWeb
 
 if fileExists "ast.exe":
   cpFile2 "ast.exe", releaseWindows
+  cpFile2 "astt.exe", releaseWindows
   cpFile2 "tools/absytree-server.exe", releaseWindows
   cpFile2 "tools/nimsuggest-ws.exe", releaseWindows
 
 if fileExists "ast":
   cpFile2 "ast", releaseLinux
+  cpFile2 "astt", releaseLinux
   cpFile2 "tools/absytree-server", releaseLinux
   cpFile2 "tools/nimsuggest-ws", releaseLinux
 
