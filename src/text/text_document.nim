@@ -456,12 +456,12 @@ proc initTreesitter*(self: TextDocument): Future[void] {.async.} =
   var language = await loadLanguage(languageId, config)
 
   if language.isNone:
-    log(lvlWarn, fmt"Language is not available: '{languageId}'")
+    log(lvlWarn, fmt"Treesitter language is not available for '{languageId}'")
     return
 
   self.tsParser = createTSParser()
   if self.tsParser.isNil:
-    log(lvlWarn, fmt"Failed to create ts parser for: '{languageId}'")
+    log(lvlWarn, fmt"Failed to create treesitter parser for '{languageId}'")
     return
 
   self.tsParser.setLanguage(language.get)
