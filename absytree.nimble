@@ -34,7 +34,7 @@ import strformat, strutils
 task createScriptingDocs, "Build the documentation for the scripting API":
   exec "nim doc --project --index:on --git.url:https://github.com/Nimaoth/Absytree/ --git.commit:main ./scripting/absytree_runtime.nim"
   exec "nim buildIndex -o:./scripting/htmldocs/theindex.html ./scripting/htmldocs"
-  exec "nim ./postprocess_docs.nims"
+  exec "nim ./tools/postprocess_docs.nims"
 
 const exe = when defined(windows):
     ".exe"
