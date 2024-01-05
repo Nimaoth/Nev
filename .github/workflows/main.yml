@@ -91,6 +91,7 @@ jobs:
           nim-version: '2.0.x'
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: nimble setup
+        continue-on-error: true
         run: nimble setup
         
       - name: nimble setup
@@ -98,7 +99,7 @@ jobs:
 
       # windows builds
       - if: always()
-        run: nimble buildDesktopWindows --app:gui -D:forceLogToFile
+        run: nimble buildDesktop --app:gui -D:forceLogToFile
       - if: always()
         run: nimble buildAbsytreeServerWindows
       - if: always()
@@ -106,7 +107,6 @@ jobs:
 
       # create release packages
       - run: nim ./tools/package_release.nims
-      - run: ls -la release_windows
 
       # make zips
       - name: Zip release_windows
