@@ -1040,8 +1040,8 @@ proc quit*(self: App) {.expose("editor").} =
   self.closeRequested = true
 
 proc help*(self: App, about: string = "") {.expose("editor").} =
-  const introductionMd = staticRead"../docs/introduction.md"
-  let docsPath = "docs/introduction.md"
+  const introductionMd = staticRead"../docs/getting_started.md"
+  let docsPath = "docs/getting_started.md"
   let textDocument = newTextDocument(self.asConfigProvider, docsPath, introductionMd, app=true, load=true)
   textDocument.load()
   discard self.createAndAddView(textDocument)
@@ -1131,6 +1131,7 @@ proc setLayout*(self: App, layout: string) {.expose("editor").} =
 proc commandLine*(self: App, initialValue: string = "") {.expose("editor").} =
   self.getCommandLineTextEditor.document.content = @[initialValue]
   self.commandLineMode = true
+  self.commandLineTextEditor.TextDocumentEditor.setMode("insert")
   self.platform.requestRender()
 
 proc exitCommandLine*(self: App) {.expose("editor").} =
@@ -1938,7 +1939,7 @@ proc handleAction(self: App, action: string, arg: string): bool =
     log(lvlError, getCurrentException().getStackTrace())
 
   try:
-    withScriptContext self, self.scriptContext:
+    withScriptContext self, self.wasmScriptContext:
       if self.wasmScriptContext.handleGlobalAction(action, args):
         return true
   except CatchableError:

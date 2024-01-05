@@ -16,13 +16,6 @@ proc handleAction*(action: string, args: JsonNode): bool {.wasmexport.} =
     setOption("ast.max-loop-iterations", args[0].getInt)
     return true
 
-  of "command-line":
-    let str = if args.len > 0: args[0].getStr else: ""
-    commandLine(str)
-    if getActiveEditor().isTextEditor(editor):
-      editor.setMode "insert"
-    return true
-
   of "set-search-query":
     if getActiveEditor().isTextEditor(editor):
       editor.setSearchQuery args[0].getStr
