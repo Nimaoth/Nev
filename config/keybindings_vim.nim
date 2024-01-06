@@ -191,16 +191,30 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     editor.setCursorScrollOffset (editor.screenLineCount.float - getVimLineMargin()) * platformTotalLineHeight()
 
   # Mode switches
-  addTextCommand "", "i", "set-mode", "insert"
-  addTextCommandBlock "", "I":
-    editor.moveFirst("line-no-indent")
-    editor.setMode("insert")
   addTextCommandBlock "", "a":
     editor.selections = editor.selections.mapIt(editor.doMoveCursorColumn(it.last, 1).toSelection)
-    editor.setMode("insert")
+    editor.setMode "insert"
   addTextCommandBlock "", "A":
-    editor.moveLast("line")
-    editor.setMode("insert")
+    editor.moveLast "line"
+    editor.setMode "insert"
+  addTextCommand "", "i", "set-mode", "insert"
+  addTextCommandBlock "", "I":
+    editor.moveFirst "line-no-indent"
+    editor.setMode "insert"
+  addTextCommandBlock "", "gI":
+    editor.moveFirst "line"
+    editor.setMode "insert"
+
+  addTextCommandBlock "", "o":
+    editor.moveLast "line"
+    editor.insertText "\n"
+    editor.setMode "insert"
+
+  addTextCommandBlock "", "O":
+    editor.moveFirst "line"
+    editor.insertText "\n"
+    editor.moveCursorLine -1
+    editor.setMode "insert"
 
   # Insert mode
   setHandleInputs "editor.text.insert", true
