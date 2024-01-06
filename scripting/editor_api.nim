@@ -56,6 +56,12 @@ proc help*(about: string = "") =
   editor_help_void_App_string_impl(about)
 proc changeFontSize*(amount: float32) =
   editor_changeFontSize_void_App_float32_impl(amount)
+proc platformTotalLineHeight*(): float32 =
+  editor_platformTotalLineHeight_float32_App_impl()
+proc platformLineHeight*(): float32 =
+  editor_platformLineHeight_float32_App_impl()
+proc platformLineDistance*(): float32 =
+  editor_platformLineDistance_float32_App_impl()
 proc changeLayoutProp*(prop: string; change: float32) =
   editor_changeLayoutProp_void_App_string_float32_impl(prop, change)
 proc toggleStatusBarLocation*() =

@@ -1050,6 +1050,15 @@ proc changeFontSize*(self: App, amount: float32) {.expose("editor").} =
   self.platform.fontSize = self.platform.fontSize + amount.float
   self.platform.requestRender(true)
 
+proc platformTotalLineHeight*(self: App): float32 {.expose("editor").} =
+  return self.platform.totalLineHeight
+
+proc platformLineHeight*(self: App): float32 {.expose("editor").} =
+  return self.platform.lineHeight
+
+proc platformLineDistance*(self: App): float32 {.expose("editor").} =
+  return self.platform.lineDistance
+
 proc changeLayoutProp*(self: App, prop: string, change: float32) {.expose("editor").} =
   self.layout_props.props.mgetOrPut(prop, 0) += change
   self.platform.requestRender(true)

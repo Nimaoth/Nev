@@ -14,49 +14,20 @@
 
 :1234: - command accepts numeric prefix
 
-## Roadmap
-These are the big Vim features, put generally in the order in which we plan to implement them.
-
-| Status             | Command                |
-| ------------------ | ---------------------- |
-| :running:          | Normal Mode            |
-| :running:          | Insert Mode            |
-| :running:          | Visual Mode            |
-| :running:          | Visual Line Mode       |
-| :running:          | Number Prefixes        |
-| :running:          | . Operator             |
-| :running:          | Searching with / and ? |
-| :running:          | Correct Undo/Redo      |
-| :running:          | Command Remapping      |
-| :running:          | Marks                  |
-| :running:          | Text Objects           |
-| :running:          | Visual Block Mode      |
-| :running:          | Replace Mode           |
-| :running:          | Multiple Select Mode   |
-| :running:          | Macros                 |
-| :running:          | Buffer/Window/Tab      |
-
-Now follows an exhaustive list of every known Vim command that we could find.
-
-## Custom commands
-
-- `gh` - show the hover tooltip.
-- `gb` - add an additional cursor at the next place that matches `*`.
-
 ## Left-right motions
 
-| Status             | Command        | Description                                                                    |
-| ------------------ | -------------- | ------------------------------------------------------------------------------ |
-| :running:          | :1234: h       | left (also: CTRL-H, BS, or Left key)                                           |
-| :running:          | :1234: l       | right (also: Space or Right key)                                               |
-| :running:          | 0              | to first character in the line (also: Home key)                                |
-| :running:          | ^              | to first non-blank character in the line                                       |
-| :running:          | :1234: \$      | to the last character in the line (N-1 lines lower) (also: End key)            |
-| :running:          | g0             | to first character in screen line (differs from "0" when lines wrap)           |
-| :running:          | g^             | to first non-blank character in screen line (differs from "^" when lines wrap) |
-| :running:          | :1234: g\$     | to last character in screen line (differs from "\$" when lines wrap)           |
-| :running:          | gm             | to middle of the screen line                                                   |
-| :running:          | :1234: \|      | to column N (default: 1)                                                       |
+| Status             | Command        | Description                                                                    | Notes   |
+| ------------------ | -------------- | ------------------------------------------------------------------------------ | ------- |
+| :white_check_mark: | :1234: h       | left (also: BS, or Left key)                                                   |
+| :white_check_mark: | :1234: l       | right (also: Space or Right key)                                               |
+| :white_check_mark: | 0              | to first character in the line (also: Home key)                                |
+| :white_check_mark: | ^              | to first non-blank character in the line                                       |
+| :white_check_mark: | :1234: \$      | to the last character in the line (N-1 lines lower) (also: End key)            |
+| :white_check_mark: :star: | g0             | to first character in screen line (differs from "0" when lines wrap)           | Same as 0 |
+| :white_check_mark: :star: | g^             | to first non-blank character in screen line (differs from "^" when lines wrap) | Same as ^ |
+| :white_check_mark: :star: | :1234: g\$     | to last character in screen line (differs from "\$" when lines wrap)           | Same as $ |
+| :white_check_mark: | gm             | to middle of the screen line                                                   |
+| :white_check_mark: | :1234: \|      | to column N (default: 1)                                                       |
 | :running:          | :1234: f{char} | to the Nth occurrence of {char} to the right                                   |
 | :running:          | :1234: F{char} | to the Nth occurrence of {char} to the left                                    |
 | :running:          | :1234: t{char} | till before the Nth occurrence of {char} to the right                          |
@@ -66,18 +37,18 @@ Now follows an exhaustive list of every known Vim command that we could find.
 
 ## Up-down motions
 
-| Status             | Command   | Description                                                                               |
-| ------------------ | --------- | ----------------------------------------------------------------------------------------- |
-| :running:          | :1234: k  | up N lines (also: CTRL-P and Up)                                                          |
-| :running:          | :1234: j  | down N lines (also: CTRL-J, CTRL-N, NL, and Down)                                         |
-| :running:          | :1234: -  | up N lines, on the first non-blank character                                              |
-| :running:          | :1234: +  | down N lines, on the first non-blank character (also: CTRL-M and CR)                      |
-| :running:          | :1234: \_ | down N-1 lines, on the first non-blank character                                          |
-| :running:          | :1234: G  | goto line N (default: last line), on the first non-blank character                        |
-| :running:          | :1234: gg | goto line N (default: first line), on the first non-blank character                       |
-| :running:          | :1234: %  | goto line N percentage down in the file; N must be given, otherwise it is the `%` command |
-| :running:          | :1234: gk | up N screen lines (differs from "k" when line wraps)                                      |
-| :running:          | :1234: gj | down N screen lines (differs from "j" when line wraps)                                    |
+| Status             | Command   | Description                                                                               | Notes |
+| ------------------ | --------- | ----------------------------------------------------------------------------------------- | ----- |
+| :white_check_mark: | :1234: k  | up N lines (also: CTRL-P and Up)                                                          |
+| :white_check_mark: | :1234: j  | down N lines (also: CTRL-J, CTRL-N, NL, and Down)                                         |
+| :white_check_mark: | :1234: -  | up N lines, on the first non-blank character                                              |
+| :white_check_mark: | :1234: +  | down N lines, on the first non-blank character (also: CTRL-M and CR)                      |
+| :white_check_mark: | :1234: \_ | down N-1 lines, on the first non-blank character                                          |
+| :white_check_mark: | :1234: G  | goto line N (default: last line), on the first non-blank character                        |
+| :white_check_mark: | :1234: gg | goto line N (default: first line), on the first non-blank character                       |
+| :white_check_mark: | :1234: %  | goto line N percentage down in the file; N must be given, otherwise it is the `%` command |
+| :white_check_mark: :star: | :1234: gk | up N screen lines (differs from "k" when line wraps)                                      | Same as k |
+| :white_check_mark: :star: | :1234: gj | down N screen lines (differs from "j" when line wraps)                                    | Same as j |
 
 ## Text object motions
 
@@ -192,15 +163,15 @@ Now follows an exhaustive list of every known Vim command that we could find.
 
 | Status             | Command       | Description                                    |
 | ------------------ | ------------- | ---------------------------------------------- |
-| :running:          | :1234: CTRL-E | window N lines downwards (default: 1)          |
-| :running:          | :1234: CTRL-D | window N lines Downwards (default: 1/2 window) |
-| :running:          | :1234: CTRL-F | window N pages Forwards (downwards)            |
-| :running:          | :1234: CTRL-Y | window N lines upwards (default: 1)            |
-| :running:          | :1234: CTRL-U | window N lines Upwards (default: 1/2 window)   |
-| :running:          | :1234: CTRL-B | window N pages Backwards (upwards)             |
-| :running:          | z CR or zt    | redraw, current line at top of window          |
-| :running:          | z. or zz      | redraw, current line at center of window       |
-| :running:          | z- or zb      | redraw, current line at bottom of window       |
+| :white_check_mark: | :1234: CTRL-E | window N lines downwards (default: 1)          |
+| :white_check_mark: | :1234: CTRL-D | window N lines Downwards (default: 1/2 window) |
+| :white_check_mark: | :1234: CTRL-F | window N pages Forwards (downwards)            |
+| :white_check_mark: | :1234: CTRL-Y | window N lines upwards (default: 1)            |
+| :white_check_mark: | :1234: CTRL-U | window N lines Upwards (default: 1/2 window)   |
+| :white_check_mark: | :1234: CTRL-B | window N pages Backwards (upwards)             |
+| :white_check_mark: | z CR or zt    | redraw, current line at top of window          |
+| :white_check_mark: | z. or zz      | redraw, current line at center of window       |
+| :white_check_mark: | z- or zb      | redraw, current line at bottom of window       |
 
 These only work when 'wrap' is off:
 

@@ -329,6 +329,35 @@ proc changeFontSize*(amount: float32) =
       argsJsonString.cstring)
 
 
+proc editor_platformTotalLineHeight_float32_App_wasm(arg: cstring): cstring {.
+    importc.}
+proc platformTotalLineHeight*(): float32 =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_platformTotalLineHeight_float32_App_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_platformLineHeight_float32_App_wasm(arg: cstring): cstring {.importc.}
+proc platformLineHeight*(): float32 =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_platformLineHeight_float32_App_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_platformLineDistance_float32_App_wasm(arg: cstring): cstring {.
+    importc.}
+proc platformLineDistance*(): float32 =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_platformLineDistance_float32_App_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
 proc editor_changeLayoutProp_void_App_string_float32_wasm(arg: cstring): cstring {.
     importc.}
 proc changeLayoutProp*(prop: string; change: float32) =
