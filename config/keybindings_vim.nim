@@ -53,6 +53,28 @@ proc vimMotionWordBig*(editor: TextDocumentEditor, cursor: Cursor, count: int): 
     let (startColumn, endColumn) = line.getEnclosing(cursor.column, (c) => c notin Whitespace)
     return ((cursor.line, startColumn), (cursor.line, endColumn))
 
+proc vimMotionParagraphInner*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection =
+  if editor.lineLength(cursor.line) == 0:
+    return cursor.toSelection
+
+  result = ((cursor.line, 0), cursor)
+  while result.first.line - 1 >= 0 and editor.lineLength(result.first.line - 1) > 0:
+    dec result.first.line
+  while result.last.line + 1 < editor.lineCount and editor.lineLength(result.last.line + 1) > 0:
+    inc result.last.line
+    result.last.column = editor.lineLength(result.last.line)
+
+proc vimMotionParagraphOuter*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection =
+  if editor.lineLength(cursor.line) == 0:
+    return cursor.toSelection
+
+  result = ((cursor.line, 0), cursor)
+  while result.first.line - 1 >= 0 and editor.lineLength(result.first.line - 1) > 0:
+    dec result.first.line
+  while result.last.line + 1 < editor.lineCount and editor.lineLength(result.last.line) > 0:
+    inc result.last.line
+    result.last.column = editor.lineLength(result.last.line)
+
 iterator iterateTextObjects(editor: TextDocumentEditor, cursor: Cursor, move: string, backwards: bool = false): Selection =
   var selection = editor.getSelectionForMove(cursor, move, 0)
   yield selection
@@ -83,6 +105,46 @@ iterator enumerateTextObjects(editor: TextDocumentEditor, cursor: Cursor, move: 
   for selection in iterateTextObjects(editor, cursor, move, backwards):
     yield (i, selection)
     inc i
+
+proc moveSelectionNext(editor: TextDocumentEditor, move: string, backwards: bool = false, allowEmpty: bool = false) =
+  editor.selections = editor.selections.mapIt(block:
+      var res = it.last
+      for i, selection in enumerateTextObjects(editor, res, move, backwards):
+        if i == 0: continue
+        let cursor = if backwards: selection.last else: selection.first
+        if cursor == it.last:
+          continue
+        if editor.lineLength(selection.first.line) == 0:
+          if allowEmpty:
+            res = cursor
+            break
+          else:
+            continue
+
+        if editor.getLine(selection.first.line)[selection.first.column] notin Whitespace:
+          res = cursor
+          break
+      res.toSelection
+    )
+
+proc moveSelectionEnd(editor: TextDocumentEditor, move: string, backwards: bool = false, allowEmpty: bool = false) =
+  editor.selections = editor.selections.mapIt(block:
+      var res = it.last
+      for i, selection in enumerateTextObjects(editor, res, move, backwards):
+        let cursor = if backwards: selection.first else: selection.last
+        if cursor == it.last:
+          continue
+        if editor.lineLength(selection.last.line) == 0:
+          if allowEmpty:
+            res = cursor
+            break
+          else:
+            continue
+        if editor.getLine(selection.last.line)[selection.last.column - 1] notin Whitespace:
+          res = cursor
+          break
+      res.toSelection
+    )
 
 proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   let t = startTimer()
@@ -305,46 +367,21 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   # todo
   addCustomTextMove "vim-word", vimMotionWord
   addCustomTextMove "vim-WORD", vimMotionWordBig
-
-  proc moveSelectionNext(editor: TextDocumentEditor, move: string, backwards: bool = false) =
-    editor.selections = editor.selections.mapIt(block:
-        var res = it.last
-        for i, selection in enumerateTextObjects(editor, res, move, backwards):
-          if i == 0: continue
-          let cursor = if backwards: selection.last else: selection.first
-          if cursor == it.last:
-            continue
-          if editor.lineLength(selection.first.line) == 0 or editor.getLine(selection.first.line)[selection.first.column] notin Whitespace:
-            res = cursor
-            break
-        res.toSelection
-      )
-
-  proc moveSelectionEnd(editor: TextDocumentEditor, move: string, backwards: bool = false) =
-    editor.selections = editor.selections.mapIt(block:
-        var res = it.last
-        for i, selection in enumerateTextObjects(editor, res, move, backwards):
-          let cursor = if backwards: selection.first else: selection.last
-          if cursor == it.last:
-            continue
-          if backwards and editor.lineLength(selection.last.line) == 0:
-            res = cursor
-            break
-          if editor.lineLength(selection.last.line) > 0 and editor.getLine(selection.last.line)[selection.last.column - 1] notin Whitespace:
-            res = cursor
-            break
-        res.toSelection
-      )
+  addCustomTextMove "vim-paragraph-inner", vimMotionParagraphInner
+  addCustomTextMove "vim-paragraph-outer", vimMotionParagraphOuter
 
   # Text object motions
-  addTextCommandBlock "", "w": editor.moveSelectionNext("vim-word")
-  addTextCommandBlock "", "W": editor.moveSelectionNext("vim-WORD")
+  addTextCommandBlock "", "w": editor.moveSelectionNext("vim-word", allowEmpty=true)
+  addTextCommandBlock "", "W": editor.moveSelectionNext("vim-WORD", allowEmpty=true)
   addTextCommandBlock "", "e": editor.moveSelectionEnd("vim-word")
   addTextCommandBlock "", "E": editor.moveSelectionEnd("vim-WORD")
-  addTextCommandBlock "", "b": editor.moveSelectionEnd("vim-word", backwards=true)
-  addTextCommandBlock "", "B": editor.moveSelectionEnd("vim-WORD", backwards=true)
+  addTextCommandBlock "", "b": editor.moveSelectionEnd("vim-word", backwards=true, allowEmpty=true)
+  addTextCommandBlock "", "B": editor.moveSelectionEnd("vim-WORD", backwards=true, allowEmpty=true)
   addTextCommandBlock "", "ge": editor.moveSelectionNext("vim-word", backwards=true)
   addTextCommandBlock "", "gE": editor.moveSelectionNext("vim-WORD", backwards=true)
+
+  addTextCommandBlock "", "}": editor.moveSelectionEnd("vim-paragraph-outer", allowEmpty=true)
+  addTextCommandBlock "", "{": editor.moveSelectionNext("vim-paragraph-outer", backwards=true)
 
   # Insert mode
   setHandleInputs "editor.text.insert", true

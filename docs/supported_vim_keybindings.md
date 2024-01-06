@@ -64,8 +64,8 @@
 | :white_check_mark: | :1234: gE  | N words backward to the end of the Nth blank-separated WORD |
 | :running:          | :1234: )   | N sentences forward                                         |
 | :running:          | :1234: (   | N sentences backward                                        |
-| :running:          | :1234: }   | N paragraphs forward                                        |
-| :running:          | :1234: {   | N paragraphs backward                                       |
+| :white_check_mark: | :1234: }   | N paragraphs forward                                        |
+| :white_check_mark: | :1234: {   | N paragraphs backward                                       |
 | :running:          | :1234: ]]  | N sections forward, at start of section                     |
 | :running:          | :1234: [[  | N sections backward, at start of section                    |
 | :running:          | :1234: ][  | N sections forward, at end of section                       |
