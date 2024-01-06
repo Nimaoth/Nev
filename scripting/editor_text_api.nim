@@ -74,10 +74,10 @@ proc undo*(self: TextDocumentEditor) =
   editor_text_undo_void_TextDocumentEditor_impl(self)
 proc redo*(self: TextDocumentEditor) =
   editor_text_redo_void_TextDocumentEditor_impl(self)
-proc copy*(self: TextDocumentEditor) =
-  editor_text_copy_void_TextDocumentEditor_impl(self)
-proc paste*(self: TextDocumentEditor) =
-  editor_text_paste_void_TextDocumentEditor_impl(self)
+proc copy*(self: TextDocumentEditor; register: string = "") =
+  editor_text_copy_void_TextDocumentEditor_string_impl(self, register)
+proc paste*(self: TextDocumentEditor; register: string = "") =
+  editor_text_paste_void_TextDocumentEditor_string_impl(self, register)
 proc scrollText*(self: TextDocumentEditor; amount: float32) =
   editor_text_scrollText_void_TextDocumentEditor_float32_impl(self, amount)
 proc scrollLines*(self: TextDocumentEditor; amount: int) =
@@ -208,6 +208,9 @@ proc applyMove*(self: TextDocumentEditor; args {.varargs.}: JsonNode) =
 proc deleteMove*(self: TextDocumentEditor; move: string; inside: bool = false;
                  which: SelectionCursor = SelectionCursor.Config;
                  all: bool = true) =
+  ## Deletes text based on the current selections.
+  ## 
+  ## `move` specifies which move should be applied to each selection.
   editor_text_deleteMove_void_TextDocumentEditor_string_bool_SelectionCursor_bool_impl(
       self, move, inside, which, all)
 proc selectMove*(self: TextDocumentEditor; move: string; inside: bool = false;

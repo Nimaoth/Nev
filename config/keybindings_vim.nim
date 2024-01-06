@@ -2,6 +2,12 @@ import absytree_runtime, keybindings_normal
 import misc/[timer]
 
 proc getVimLineMargin*(): float = getOption[float]("editor.text.vim.line-margin", 5)
+proc getVimClipboard*(): string = getOption[string]("editor.text.vim.clipboard", "")
+proc getVimDefaultRegister*(): string =
+  case getVimClipboard():
+  of "unnamed": return "*"
+  of "unnamedplus": return "+"
+  else: return "\""
 
 proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   let t = startTimer()
@@ -216,13 +222,47 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     editor.moveCursorLine -1
     editor.setMode "insert"
 
+  addTextCommand "", "<ESCAPE>", "set-mode", ""
+  addTextCommand "", "<C-c>", "set-mode", ""
+
   # Insert mode
   setHandleInputs "editor.text.insert", true
   setOption "editor.text.cursor.wide.insert", false
   addTextCommand "insert", "<ENTER>", "insert-text", "\n"
+  addTextCommand "insert", "<C-m>", "insert-text", "\n"
+  addTextCommand "insert", "<C-j>", "insert-text", "\n"
+
+  addTextCommand "insert", "<C-r>", "set-mode", "insert-register"
+  setHandleInputs "editor.text.insert-register", true
+  setTextInputHandler "insert-register", proc(editor: TextDocumentEditor, input: string): bool =
+    editor.paste input
+    editor.setMode "insert"
+    return true
+  addTextCommandBlock "insert-register", "<SPACE>":
+    editor.paste getVimDefaultRegister()
+    editor.setMode "insert"
+  addTextCommand "insert-register", "<ESCAPE>", "set-mode", "insert"
+
   addTextCommand "insert", "<SPACE>", "insert-text", " "
-  addTextCommand "", "<BACKSPACE>", "delete-left"
-  addTextCommand "", "<DELETE>", "delete-right"
+  addTextCommand "insert", "<BACKSPACE>", "delete-left"
+  addTextCommand "insert", "<DELETE>", "delete-right"
+  addTextCommandBlock "insert", "<C-w>":
+    editor.deleteMove("word-line", inside=false, which=SelectionCursor.First)
+  addTextCommandBlock "insert", "<C-u>":
+    editor.deleteMove("line-back", inside=false, which=SelectionCursor.First)
+
+  addTextCommand "", "<C-t>", "indent"
+  addTextCommand "", "<C-d>", "unindent"
+
+  # Visual mode
+  addTextCommand "", "v", "set-mode", "visual"
+  setHandleInputs "editor.text.visual", false
+  setOption "editor.text.cursor.wide.visual", true
+  setOption "editor.text.cursor.movement.visual", "last"
+  addTextCommandBlock "visual", "y":
+    editor.copy getVimDefaultRegister()
+    editor.setMode ""
+    editor.selections = editor.selections.mapIt(it.first.toSelection)
 
 proc loadVimLikeKeybindings*() {.scriptActionWasmNims("load-vim-like-keybindings").} =
   loadNormalKeybindings()

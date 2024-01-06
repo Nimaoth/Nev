@@ -435,31 +435,41 @@ proc redo*(self: TextDocumentEditor) =
       argsJsonString.cstring)
 
 
-proc editor_text_copy_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+proc editor_text_copy_void_TextDocumentEditor_string_wasm(arg: cstring): cstring {.
     importc.}
-proc copy*(self: TextDocumentEditor) =
+proc copy*(self: TextDocumentEditor; register: string = "") =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:
       self
     else:
       self.toJson()
+  argsJson.add block:
+    when string is JsonNode:
+      register
+    else:
+      register.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_copy_void_TextDocumentEditor_wasm(
+  let res {.used.} = editor_text_copy_void_TextDocumentEditor_string_wasm(
       argsJsonString.cstring)
 
 
-proc editor_text_paste_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+proc editor_text_paste_void_TextDocumentEditor_string_wasm(arg: cstring): cstring {.
     importc.}
-proc paste*(self: TextDocumentEditor) =
+proc paste*(self: TextDocumentEditor; register: string = "") =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:
       self
     else:
       self.toJson()
+  argsJson.add block:
+    when string is JsonNode:
+      register
+    else:
+      register.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_paste_void_TextDocumentEditor_wasm(
+  let res {.used.} = editor_text_paste_void_TextDocumentEditor_string_wasm(
       argsJsonString.cstring)
 
 
