@@ -43,7 +43,7 @@ You can try the browser version [here](https://nimaoth.github.io/AbsytreeBrowser
 - Run `nimble setup`
 
 ### Desktop version
-- Use `nimble buildDesktop` to compile the desktop version of the editor.
+- Use `nimble buildDesktop` or `nimble build` to compile the desktop version of the editor.
 - The release builds are built with:
   - For the gui version: `nimble buildDesktop --app:gui -D:forceLogToFile -D:enableGui=true -D:enableTerminal=false`
   - For the terminal version: `nimble buildDesktop --app:console -D:forceLogToFile -D:enableGui=false -D:enableTerminal=true`
