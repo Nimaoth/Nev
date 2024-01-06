@@ -107,6 +107,7 @@ iterator enumerateTextObjects(editor: TextDocumentEditor, cursor: Cursor, move: 
     inc i
 
 proc moveSelectionNext(editor: TextDocumentEditor, move: string, backwards: bool = false, allowEmpty: bool = false) =
+  let which = getOption[SelectionCursor](editor.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
   editor.selections = editor.selections.mapIt(block:
       var res = it.last
       for i, selection in enumerateTextObjects(editor, res, move, backwards):
@@ -124,10 +125,13 @@ proc moveSelectionNext(editor: TextDocumentEditor, move: string, backwards: bool
         if editor.getLine(selection.first.line)[selection.first.column] notin Whitespace:
           res = cursor
           break
-      res.toSelection
+      res.toSelection(it, which)
     )
 
+  editor.scrollToCursor(Last)
+
 proc moveSelectionEnd(editor: TextDocumentEditor, move: string, backwards: bool = false, allowEmpty: bool = false) =
+  let which = getOption[SelectionCursor](editor.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
   editor.selections = editor.selections.mapIt(block:
       var res = it.last
       for i, selection in enumerateTextObjects(editor, res, move, backwards):
@@ -143,8 +147,10 @@ proc moveSelectionEnd(editor: TextDocumentEditor, move: string, backwards: bool 
         if editor.getLine(selection.last.line)[selection.last.column - 1] notin Whitespace:
           res = cursor
           break
-      res.toSelection
+      res.toSelection(it, which)
     )
+
+  editor.scrollToCursor(Last)
 
 proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   let t = startTimer()
@@ -178,10 +184,12 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
       addTextCommand "", $i, updateCommandCountHelper
 
-  # Normal mode
   setHandleInputs "editor.text", false
   setOption "editor.text.cursor.movement.", "both"
   setOption "editor.text.cursor.wide.", true
+
+  # Normal mode
+  addCommand "editor", ":", "command-line"
 
   addTextCommandBlock "", "<C-e>":
     editor.setMode("")
