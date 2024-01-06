@@ -3,6 +3,10 @@
 For a list of all keybindings look at `default_config.nim` and `keybindings_normal.nim`/`keybindings_vim.nim`
 To open this document at any time run the command `help`
 
+By default the vim-like keybindings are enabled. They are inspired by vim but are not exactly the same.
+
+The actual vim keybindings are not very complete yet (see [here](supported_vim_keybindings.md)), but those are supposed to be as close to vim as possible.
+
 # Useful keybindings (C: Control, A: Alt, S: Shift)
 - For `<LEADER>` you can either press `<SPACE>` or `<C-b>`
 - `<ESCAPE>`: cancel or close e.g. popups
@@ -27,7 +31,8 @@ To open this document at any time run the command `help`
 
 # Useful commands
 - `load-normal-keybindings`: load "normal" keybindings (like vs code)
-- `load-vim-keybindings`: load vim like keybindings (WIP)
+- `load-vim-keybindings`: load vim keybindings (WIP). As close to vim as possible.
+- `load-vim-like-keybindings`: load vim like keybindings (WIP). Inspired by vim, but with a lot of small differences.
 - `logs`: show the log file
 
 # Settings
