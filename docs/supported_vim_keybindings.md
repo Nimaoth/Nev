@@ -195,55 +195,48 @@ These only work when 'wrap' is off:
 | :white_check_mark: | o       | open a new line below the current line, append text          |
 | :white_check_mark: | O       | open a new line above the current line, append text          |
 
-in Visual block mode:
-
-| Status    | Command | Description                                             |
-| --------- | ------- | ------------------------------------------------------- |
-| :running: | I       | insert the same text in front of all the selected lines |
-| :running: | A       | append the same text after all the selected lines       |
-
 ## Insert mode keys
 
 leaving Insert mode:
 
-| Status    | Command          | Description                                 |
-| --------- | ---------------- | ------------------------------------------- |
-| :running: | Esc              | end Insert mode, back to Normal mode        |
-| :running: | CTRL-C           | like Esc, but do not use an abbreviation    |
-| :running: | CTRL-O {command} | execute {command} and return to Insert mode |
+| Status             | Command          | Description                                 |
+| ------------------ | ---------------- | ------------------------------------------- |
+| :white_check_mark: | Esc              | end Insert mode, back to Normal mode        |
+| :white_check_mark: | CTRL-C           | like Esc, but do not use an abbreviation    |
+| :running:          | CTRL-O {command} | execute {command} and return to Insert mode |
 
 moving around:
 
-| Status    | Command          | Description                             |
-| --------- | ---------------- | --------------------------------------- |
-| :running: | cursor keys      | move cursor left/right/up/down          |
-| :running: | shift-left/right | one word left/right                     |
-| :running: | shift-up/down    | one screenful backward/forward          |
-| :running: | End              | cursor after last character in the line |
-| :running: | Home             | cursor to first character in the line   |
+| Status             | Command          | Description                             |
+| ------------------ | ---------------- | --------------------------------------- |
+| :white_check_mark: | cursor keys      | move cursor left/right/up/down          |
+| :running:          | shift-left/right | one word left/right                     |
+| :running:          | shift-up/down    | one screenful backward/forward          |
+| :white_check_mark: | End              | cursor after last character in the line |
+| :white_check_mark: | Home             | cursor to first character in the line   |
 
 ## Special keys in Insert mode
 
-| Status                    | Command                      | Description                                                        | Note |
-| ------------------------- | ---------------------------- | ------------------------------------------------------------------ | ---- |
-| :arrow_down:              | CTRL-V {char}..              | insert character literally, or enter decimal byte value            |      |
-| :running:                 | NL or CR or CTRL-M or CTRL-J | begin new line                                                     |      |
-| :running:                 | CTRL-E                       | insert the character from below the cursor                         |      |
-| :running:                 | CTRL-Y                       | insert the character from above the cursor                         |      |
-| :running:          :star: | CTRL-A                       | insert previously inserted text                                    |      |
-| :running:          :star: | CTRL-@                       | insert previously inserted text and stop Insert mode               |      |
-| :running:                 | CTRL-R {0-9a-z%#:.-="}       | insert the contents of a register                                  |      |
-| :running:                 | CTRL-N                       | insert next match of identifier before the cursor                  |      |
-| :running:                 | CTRL-P                       | insert previous match of identifier before the cursor              |      |
-| :arrow_down:              | CTRL-X ...                   | complete the word before the cursor in various ways                |      |
-| :running:                 | BS or CTRL-H                 | delete the character before the cursor                             |      |
-| :running:                 | Del                          | delete the character under the cursor                              |      |
-| :running:                 | CTRL-W                       | delete word before the cursor                                      |      |
-| :running:                 | CTRL-U                       | delete all entered characters in the current line                  |      |
-| :running:                 | CTRL-T                       | insert one shiftwidth of indent in front of the current line       |      |
-| :running:                 | CTRL-D                       | delete one shiftwidth of indent in front of the current line       |      |
-| :arrow_down:              | 0 CTRL-D                     | delete all indent in the current line                              |      |
-| :arrow_down:              | ^ CTRL-D                     | delete all indent in the current line, restore indent in next line |      |
+| Status             | Command                      | Description                                                        | Note |
+| ------------------ | ---------------------------- | ------------------------------------------------------------------ | ---- |
+| :arrow_down:       | CTRL-V {char}..              | insert character literally, or enter decimal byte value            |      |
+| :white_check_mark: | NL or CR or CTRL-M or CTRL-J | begin new line                                                     |      |
+| :arrow_down:       | CTRL-E                       | insert the character from below the cursor                         |      |
+| :arrow_down:       | CTRL-Y                       | insert the character from above the cursor                         |      |
+| :arrow_down:       | CTRL-A                       | insert previously inserted text                                    |      |
+| :arrow_down:       | CTRL-@                       | insert previously inserted text and stop Insert mode               |      |
+| :white_check_mark: | CTRL-R {0-9a-z%#:.-="}       | insert the contents of a register                                  |      |
+| :arrow_down:       | CTRL-N                       | insert next match of identifier before the cursor                  |      |
+| :arrow_down:       | CTRL-P                       | insert previous match of identifier before the cursor              |      |
+| :arrow_down:       | CTRL-X ...                   | complete the word before the cursor in various ways                |      |
+| :white_check_mark: | BS or CTRL-H                 | delete the character before the cursor                             |      |
+| :white_check_mark: | Del                          | delete the character under the cursor                              |      |
+| :white_check_mark: | CTRL-W                       | delete word before the cursor                                      |      |
+| :white_check_mark: | CTRL-U                       | delete all entered characters in the current line                  |      |
+| :white_check_mark: | CTRL-T                       | insert one shiftwidth of indent in front of the current line       |      |
+| :white_check_mark: | CTRL-D                       | delete one shiftwidth of indent in front of the current line       |      |
+| :arrow_down:       | 0 CTRL-D                     | delete all indent in the current line                              |      |
+| :arrow_down:       | ^ CTRL-D                     | delete all indent in the current line, restore indent in next line |      |
 
 ## Digraphs
 

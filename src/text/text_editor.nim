@@ -288,15 +288,18 @@ proc isThickCursor*(self: TextDocumentEditor): bool =
     return true
   return self.configProvider.getValue(self.getContextWithMode("editor.text.cursor.wide"), false)
 
-proc getCursor(self: TextDocumentEditor, cursor: SelectionCursor): Cursor =
-  case cursor
+proc getCursor(self: TextDocumentEditor, selection: Selection, which: SelectionCursor): Cursor =
+  case which
   of Config:
     let configCursor = self.configProvider.getValue(self.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
-    return self.getCursor(configCursor)
+    return self.getCursor(selection, configCursor)
   of Both, Last, LastToFirst:
-    return self.selection.last
+    return selection.last
   of First:
-    return self.selection.first
+    return selection.first
+
+proc getCursor(self: TextDocumentEditor, which: SelectionCursor): Cursor =
+  return self.getCursor(self.selection, which)
 
 proc moveCursor(self: TextDocumentEditor, cursor: SelectionCursor, movement: proc(doc: TextDocumentEditor, c: Cursor, off: int): Cursor, offset: int, all: bool) =
   case cursor
@@ -655,20 +658,20 @@ proc redo*(self: TextDocumentEditor) {.expose("editor.text").} =
     self.selections = selections
     self.scrollToCursor(Last)
 
-proc copyAsync*(self: TextDocumentEditor): Future[void] {.async.} =
+proc copyAsync*(self: TextDocumentEditor, register: string): Future[void] {.async.} =
   var text = ""
   for i, selection in self.selections:
     if i > 0:
       text.add "\n"
     text.add self.document.contentString(selection)
 
-  self.app.setRegisterText(text, "").await
+  self.app.setRegisterText(text, register).await
 
-proc copy*(self: TextDocumentEditor) {.expose("editor.text").} =
-  asyncCheck self.copyAsync()
+proc copy*(self: TextDocumentEditor, register: string = "") {.expose("editor.text").} =
+  asyncCheck self.copyAsync(register)
 
-proc pasteAsync*(self: TextDocumentEditor): Future[void] {.async.} =
-  let text = self.app.getRegisterText("").await
+proc pasteAsync*(self: TextDocumentEditor, register: string): Future[void] {.async.} =
+  let text = self.app.getRegisterText(register).await
 
   let numLines = text.count('\n') + 1
 
@@ -688,8 +691,8 @@ proc pasteAsync*(self: TextDocumentEditor): Future[void] {.async.} =
   self.selections = newSelections
   self.scrollToCursor(Last)
 
-proc paste*(self: TextDocumentEditor) {.expose("editor.text").} =
-  asyncCheck self.pasteAsync()
+proc paste*(self: TextDocumentEditor, register: string = "") {.expose("editor.text").} =
+  asyncCheck self.pasteAsync(register)
 
 proc scrollText(self: TextDocumentEditor, amount: float32) {.expose("editor.text").} =
   if self.disableScrolling:
@@ -925,7 +928,7 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
     let line = self.document.getLine cursor.line
     result = self.findWordBoundary(cursor)
     if cursor.column == 0 and cursor.line > 0:
-      result.first = (cursor.line - 1, self.document.getLine(cursor.line - 1).len)
+      result.first = (cursor.line - 1, self.document.lineLength(cursor.line - 1))
     if cursor.column == line.len and cursor.line < self.document.lines.len - 1:
       result.last = (cursor.line + 1, 0)
 
@@ -933,7 +936,7 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
       result = result or self.findWordBoundary(result.last) or self.findWordBoundary(result.first)
       let line = self.document.getLine result.last.line
       if result.first.column == 0 and result.first.line > 0:
-        result.first = (result.first.line - 1, self.document.getLine(result.first.line - 1).len)
+        result.first = (result.first.line - 1, self.document.lineLength(result.first.line - 1))
       if result.last.column == line.len and result.last.line < self.document.lines.len - 1:
         result.last = (result.last.line + 1, 0)
 
@@ -943,26 +946,33 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
   of "word-line-back":
     return self.getSelectionForMove((cursor.line, max(0, cursor.column - 1)), "word-line", count).reverse
 
+  of "line-back":
+    let first = if cursor.line > 0 and cursor.column == 0:
+      (cursor.line - 1, self.document.lineLength(cursor.line - 1))
+    else:
+      (cursor.line, 0)
+    result = (first, (cursor.line, self.document.lineLength(cursor.line)))
+
   of "line":
-    result = ((cursor.line, 0), (cursor.line, self.document.getLine(cursor.line).len))
+    result = ((cursor.line, 0), (cursor.line, self.document.lineLength(cursor.line)))
 
   of "line-next":
-    result = ((cursor.line, 0), (cursor.line, self.document.getLine(cursor.line).len))
+    result = ((cursor.line, 0), (cursor.line, self.document.lineLength(cursor.line)))
     if result.last.line + 1 < self.document.lines.len:
       result.last = (result.last.line + 1, 0)
     for _ in 1..<count:
-      result = result or ((result.last.line, 0), (result.last.line, self.document.getLine(result.last.line).len))
+      result = result or ((result.last.line, 0), (result.last.line, self.document.lineLength(result.last.line)))
       if result.last.line + 1 < self.document.lines.len:
         result.last = (result.last.line + 1, 0)
 
   of "line-no-indent":
     let indent = self.document.getIndentForLine(cursor.line)
-    result = ((cursor.line, indent), (cursor.line, self.document.getLine(cursor.line).len))
+    result = ((cursor.line, indent), (cursor.line, self.document.lineLength(cursor.line)))
 
   of "file":
     result.first = (0, 0)
     let line = self.document.lines.len - 1
-    result.last = (line, self.document.getLine(line).len)
+    result.last = (line, self.document.lineLength(line))
 
   of "prev-find-result":
     result = self.getPrevFindResult(cursor, count)
@@ -1040,6 +1050,9 @@ proc applyMove*(self: TextDocumentEditor, args {.varargs.}: JsonNode) {.expose("
   self.configProvider.setValue("text.move-action", "")
 
 proc deleteMove*(self: TextDocumentEditor, move: string, inside: bool = false, which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
+  ## Deletes text based on the current selections.
+  ##
+  ## `move` specifies which move should be applied to each selection.
   let count = self.configProvider.getValue("text.move-count", 0)
 
   # echo fmt"delete-move {move}, {which}, {count}, {inside}"
@@ -1047,7 +1060,10 @@ proc deleteMove*(self: TextDocumentEditor, move: string, inside: bool = false, w
   let selections = if inside:
     self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(s.last, move, count))
   else:
-    self.selections.mapAllOrLast(all, (s) => (s.last, self.getSelectionForMove(s.last, move, count).last))
+    self.selections.mapAllOrLast(all, (s) => (
+      self.getCursor(s, which),
+      self.getCursor(self.getSelectionForMove(s.last, move, count), which)
+    ))
 
   self.selections = self.document.delete(selections, self.selections)
   self.scrollToCursor(Last)
@@ -1059,7 +1075,10 @@ proc selectMove*(self: TextDocumentEditor, move: string, inside: bool = false, w
   self.selections = if inside:
     self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(s.last, move, count))
   else:
-    self.selections.mapAllOrLast(all, (s) => (s.last, self.getSelectionForMove(s.last, move, count).last))
+    self.selections.mapAllOrLast(all, (s) => (
+      self.getCursor(s, which),
+      self.getCursor(self.getSelectionForMove(s.last, move, count), which)
+    ))
 
   self.scrollToCursor(Last)
   self.updateTargetColumn(Last)
@@ -1075,7 +1094,10 @@ proc changeMove*(self: TextDocumentEditor, move: string, inside: bool = false, w
   let selections = if inside:
     self.selections.mapAllOrLast(all, (s) => self.getSelectionForMove(s.last, move, count))
   else:
-    self.selections.mapAllOrLast(all, (s) => (s.last, self.getSelectionForMove(s.last, move, count).last))
+    self.selections.mapAllOrLast(all, (s) => (
+      self.getCursor(s, which),
+      self.getCursor(self.getSelectionForMove(s.last, move, count), which)
+    ))
 
   self.selections = self.document.delete(selections, self.selections)
   self.scrollToCursor(Last)

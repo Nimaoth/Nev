@@ -1,7 +1,13 @@
 import std/[algorithm, sequtils, sugar]
 
-import vmath
-export vmath
+when defined(nimscript):
+  type
+    GVec2*[T] = object
+      arr: array[2, T]
+    Vec2* = GVec2[float]
+else:
+  import vmath
+  export vmath
 
 type
   EditorId* = int
