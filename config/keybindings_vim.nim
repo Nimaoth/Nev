@@ -227,6 +227,16 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommand "", "<ESCAPE>", "set-mode", ""
   addTextCommand "", "<C-c>", "set-mode", ""
 
+  # todo
+  addCustomTextMove "vim-word", proc(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection =
+    return (cursor.line+1, cursor.column+1).toSelection
+
+  # Text object motions
+  addTextCommand "", "w", "move-last", "word-line"
+  addTextCommand "", "W", "move-last", "vim-word"
+  addTextCommand "", "b", "move-last", "word-line-back"
+  addTextCommand "", "e", "move-last", "word-line"
+
   # Insert mode
   setHandleInputs "editor.text.insert", true
   setOption "editor.text.cursor.wide.insert", false

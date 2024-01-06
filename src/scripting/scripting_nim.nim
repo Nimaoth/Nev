@@ -334,5 +334,8 @@ method postInitialize*(self: ScriptContextNim): bool =
 method handleCallback*(self: ScriptContextNim, id: int, arg: JsonNode): bool =
   return self.invoke(handleCallback, id, arg, returnType = bool)
 
+method handleAnyCallback*(self: ScriptContextNim, id: int, arg: JsonNode): JsonNode =
+  return self.invoke(handleAnyCallback, id, arg, returnType = JsonNode)
+
 method handleScriptAction*(self: ScriptContextNim, name: string, args: JsonNode): JsonNode =
   return self.invoke(handleScriptAction, name, args, returnType = JsonNode)

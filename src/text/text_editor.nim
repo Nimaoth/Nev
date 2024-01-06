@@ -1021,7 +1021,18 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
           result.last = (result.last.line, index)
     else:
       result = cursor.toSelection
-      log(lvlError, fmt"Unknown move '{move}'")
+
+      let cursorJson = self.app.invokeAnyCallback("editor.text.custom-move", %*{
+        "move": move,
+        "cursor": cursor.toJson,
+        "count": count,
+      })
+
+      result = cursorJson.jsonTo(Selection).catch:
+        log(lvlError, fmt"Failed to parse selection from custom move '{move}': {cursorJson}")
+        return cursor.toSelection
+
+      return result
 
 proc mapAllOrLast[T](self: seq[T], all: bool, p: proc(v: T): T): seq[T] =
   if all:

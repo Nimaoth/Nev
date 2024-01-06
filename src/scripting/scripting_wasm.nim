@@ -21,6 +21,7 @@ type ScriptContextWasm* = ref object of ScriptContext
   editorModeChangedCallbacks: seq[tuple[module: WasmModule, callback: proc(editor: int32, oldMode: cstring, newMode: cstring): void]]
   postInitializeCallbacks: seq[tuple[module: WasmModule, callback: proc(): bool]]
   handleCallbackCallbacks: seq[tuple[module: WasmModule, callback: proc(id: int32, args: cstring): bool]]
+  handleAnyCallbackCallbacks: seq[tuple[module: WasmModule, callback: proc(id: int32, args: cstring): cstring]]
   handleScriptActionCallbacks: seq[tuple[module: WasmModule, callback: proc(name: cstring, args: cstring): cstring]]
 
 var createEditorWasmImports: proc(): WasmImports
@@ -67,6 +68,9 @@ method init*(self: ScriptContextWasm, path: string): Future[void] {.async.} =
 
         if findFunction(module, "handleCallbackWasm", bool, proc(id: int32, arg: cstring): bool).getSome(f):
           self.handleCallbackCallbacks.add (module, f)
+
+        if findFunction(module, "handleAnyCallbackWasm", cstring, proc(id: int32, arg: cstring): cstring).getSome(f):
+          self.handleAnyCallbackCallbacks.add (module, f)
 
         if findFunction(module, "handleScriptActionWasm", cstring, proc(name: cstring, arg: cstring): cstring).getSome(f):
           self.handleScriptActionCallbacks.add (module, f)
@@ -122,6 +126,17 @@ method handleCallback*(self: ScriptContextWasm, id: int, arg: JsonNode): bool =
   for (m, f) in self.handleCallbackCallbacks:
     if f(id.int32, argStr.cstring):
       return true
+
+method handleAnyCallback*(self: ScriptContextWasm, id: int, arg: JsonNode): JsonNode =
+  result = nil
+  let argStr = $arg
+  for (m, f) in self.handleAnyCallbackCallbacks:
+    let str = $f(id.int32, argStr.cstring)
+    try:
+      return str.parseJson
+    except:
+      log lvlError, &"Failed to parse json from callback {id}({arg}): '{str}' is not valid json.\n{getCurrentExceptionMsg()}"
+      continue
 
 method handleScriptAction*(self: ScriptContextWasm, name: string, args: JsonNode): JsonNode =
   let argStr = $args

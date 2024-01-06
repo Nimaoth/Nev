@@ -18,6 +18,7 @@ traitRef AppInterface:
   method handleUnknownPopupAction*(self: AppInterface, popup: Popup, action: string, args: string): EventResponse
   method handleModeChanged*(self: AppInterface, editor: DocumentEditor, oldMode: string, newMode: string)
   method invokeCallback*(self: AppInterface, context: string, args: JsonNode): bool
+  method invokeAnyCallback*(self: AppInterface, context: string, args: JsonNode): JsonNode
   method registerEditor*(self: AppInterface, editor: DocumentEditor): void
   method unregisterEditor*(self: AppInterface, editor: DocumentEditor): void
   method tryActivateEditor*(self: AppInterface, editor: DocumentEditor)
