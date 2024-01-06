@@ -153,6 +153,8 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   addTextCommand "", "k", "move-cursor-line", -1
   addTextCommand "", "j", "move-cursor-line", 1
+  addTextCommand "", "gk", "move-cursor-line", -1
+  addTextCommand "", "gj", "move-cursor-line", 1
 
   # Scrolling
   addTextCommand "", "<C-e>", "scroll-lines", 1
@@ -245,14 +247,15 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   addTextCommand "insert", "<SPACE>", "insert-text", " "
   addTextCommand "insert", "<BACKSPACE>", "delete-left"
+  addTextCommand "insert", "<C-h>", "delete-left"
   addTextCommand "insert", "<DELETE>", "delete-right"
   addTextCommandBlock "insert", "<C-w>":
     editor.deleteMove("word-line", inside=false, which=SelectionCursor.First)
   addTextCommandBlock "insert", "<C-u>":
     editor.deleteMove("line-back", inside=false, which=SelectionCursor.First)
 
-  addTextCommand "", "<C-t>", "indent"
-  addTextCommand "", "<C-d>", "unindent"
+  addTextCommand "insert", "<C-t>", "indent"
+  addTextCommand "insert", "<C-d>", "unindent"
 
   # Visual mode
   addTextCommand "", "v", "set-mode", "visual"
