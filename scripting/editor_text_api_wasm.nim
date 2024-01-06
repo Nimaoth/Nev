@@ -4,6 +4,56 @@ import scripting_api, misc/myjsonutils
 ## This file is auto generated, don't modify.
 
 
+proc editor_text_lineCount_int_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc lineCount*(self: TextDocumentEditor): int =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_lineCount_int_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_text_lineLength_int_TextDocumentEditor_int_wasm(arg: cstring): cstring {.
+    importc.}
+proc lineLength*(self: TextDocumentEditor; line: int): int =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when int is JsonNode:
+      line
+    else:
+      line.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_lineLength_int_TextDocumentEditor_int_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_text_screenLineCount_int_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc screenLineCount*(self: TextDocumentEditor): int =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_screenLineCount_int_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
 proc editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_wasm(
     arg: cstring): cstring {.importc.}
 proc doMoveCursorColumn*(self: TextDocumentEditor; cursor: Cursor; offset: int): Cursor =
@@ -432,6 +482,25 @@ proc scrollText*(self: TextDocumentEditor; amount: float32) =
       argsJsonString.cstring)
 
 
+proc editor_text_scrollLines_void_TextDocumentEditor_int_wasm(arg: cstring): cstring {.
+    importc.}
+proc scrollLines*(self: TextDocumentEditor; amount: int) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when int is JsonNode:
+      amount
+    else:
+      amount.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_scrollLines_void_TextDocumentEditor_int_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_duplicateLastSelection_void_TextDocumentEditor_wasm(
     arg: cstring): cstring {.importc.}
 proc duplicateLastSelection*(self: TextDocumentEditor) =
@@ -808,6 +877,58 @@ proc moveCursorPrevFindResult*(self: TextDocumentEditor; cursor: SelectionCursor
       argsJsonString.cstring)
 
 
+proc editor_text_moveCursorLineCenter_void_TextDocumentEditor_SelectionCursor_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc moveCursorLineCenter*(self: TextDocumentEditor;
+                           cursor: SelectionCursor = SelectionCursor.Config;
+                           all: bool = true) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when SelectionCursor is JsonNode:
+      cursor
+    else:
+      cursor.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      all
+    else:
+      all.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_moveCursorLineCenter_void_TextDocumentEditor_SelectionCursor_bool_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_moveCursorCenter_void_TextDocumentEditor_SelectionCursor_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc moveCursorCenter*(self: TextDocumentEditor;
+                       cursor: SelectionCursor = SelectionCursor.Config;
+                       all: bool = true) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when SelectionCursor is JsonNode:
+      cursor
+    else:
+      cursor.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      all
+    else:
+      all.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_moveCursorCenter_void_TextDocumentEditor_SelectionCursor_bool_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_scrollToCursor_void_TextDocumentEditor_SelectionCursor_wasm(
     arg: cstring): cstring {.importc.}
 proc scrollToCursor*(self: TextDocumentEditor;
@@ -826,6 +947,46 @@ proc scrollToCursor*(self: TextDocumentEditor;
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_scrollToCursor_void_TextDocumentEditor_SelectionCursor_wasm(
       argsJsonString.cstring)
+
+
+proc editor_text_setCursorScrollOffset_void_TextDocumentEditor_float_SelectionCursor_wasm(
+    arg: cstring): cstring {.importc.}
+proc setCursorScrollOffset*(self: TextDocumentEditor; offset: float;
+                            cursor: SelectionCursor = SelectionCursor.Config) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when float is JsonNode:
+      offset
+    else:
+      offset.toJson()
+  argsJson.add block:
+    when SelectionCursor is JsonNode:
+      cursor
+    else:
+      cursor.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_setCursorScrollOffset_void_TextDocumentEditor_float_SelectionCursor_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_getContentBounds_Vec2_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc getContentBounds*(self: TextDocumentEditor): Vec2 =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_getContentBounds_Vec2_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
 
 
 proc editor_text_centerCursor_void_TextDocumentEditor_SelectionCursor_wasm(

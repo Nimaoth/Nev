@@ -1,14 +1,223 @@
 import absytree_runtime, keybindings_normal
 import misc/[timer]
 
-proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
-  loadNormalKeybindings()
+proc getVimLineMargin*(): float = getOption[float]("editor.text.vim.line-margin", 5)
 
+proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   let t = startTimer()
   defer:
     infof"loadVimKeybindings: {t.elapsed.ms} ms"
 
   info "Applying Vim keybindings"
+
+  clearCommands("editor.text")
+  # for id in getAllEditors():
+  #   if id.isTextEditor(editor):
+  #     editor.setMode("")
+
+  setModeChangedHandler proc(editor, oldMode, newMode: auto) =
+    if oldMode == "" and newMode != "":
+      editor.clearCurrentCommandHistory(retainLast=true)
+    elif oldMode != "" and newMode == "":
+      editor.saveCurrentCommandHistory()
+
+  for i in 0..9:
+    capture i:
+      proc updateCommandCountHelper(editor: TextDocumentEditor) =
+        if i == 0 and editor.getCommandCount == 0:
+          editor.moveFirst "line"
+          editor.scrollToCursor Last
+        else:
+          editor.updateCommandCount i
+          # echo "updateCommandCount ", editor.getCommandCount
+          editor.setCommandCountRestore editor.getCommandCount
+          editor.setCommandCount 0
+
+      addTextCommand "", $i, updateCommandCountHelper
+
+  # Normal mode
+  setHandleInputs "editor.text", false
+  setOption "editor.text.cursor.movement.", "both"
+  setOption "editor.text.cursor.wide.", true
+
+  addTextCommandBlock "", "<C-e>":
+    editor.setMode("")
+    editor.selection = editor.selection.last.toSelection
+  addTextCommandBlock "", "<ESCAPE>":
+    editor.setMode("")
+    editor.selection = editor.selection.last.toSelection
+
+  # navigation (horizontal)
+  addTextCommand "", "h", "move-cursor-column", -1
+  addTextCommand "", "<LEFT>", "move-cursor-column", -1
+  addTextCommand "", "<BACKSPACE>", "move-cursor-column", -1
+
+  addTextCommand "", "l", "move-cursor-column", 1
+  addTextCommand "", "<RIGHT>", "move-cursor-column", 1
+  addTextCommand "", "<SPACE>", "move-cursor-column", 1
+
+  # addTextCommand "", "0", "move-first", "line" # implemented above in number handling
+  addTextCommand "", "<HOME>", "move-first", "line"
+  addTextCommand "", "^", "move-first", "line-no-indent"
+
+  proc moveToEndOfLine(editor: TextDocumentEditor) =
+    let count = editor.getCommandCount
+    if count > 1:
+      editor.moveCursorLine(count - 1)
+    editor.moveLast("line")
+    editor.setCommandCount 0
+    editor.scrollToCursor Last
+
+  addTextCommand "", "$", moveToEndOfLine
+  addTextCommand "", "<S-$>", moveToEndOfLine
+  addTextCommand "", "<END>", moveToEndOfLine
+
+  addTextCommand "", "g0", "move-first", "line"
+  addTextCommand "", "g^", "move-first", "line-no-indent"
+
+  addTextCommand "", "g$", moveToEndOfLine
+  addTextCommand "", "gm", "move-cursor-line-center"
+  addTextCommand "", "gM", "move-cursor-center"
+
+  addTextCommand "", "", "move-last", "line"
+  addTextCommand "", "<UP>", "move-cursor-line", -1
+  addTextCommand "", "<DOWN>", "move-cursor-line", 1
+
+  addTextCommandBlock "", "|":
+    let count = editor.getCommandCount
+    editor.selections = editor.selections.mapIt((it.last.line, count).toSelection)
+    editor.setCommandCount 0
+    editor.scrollToCursor Last
+
+  # navigation (vertical)
+  addTextCommand "", "k", "move-cursor-line", -1
+  addTextCommand "", "<UP>", "move-cursor-line", -1
+  addTextCommand "", "<C-p>", "move-cursor-line", -1
+
+  addTextCommand "", "j", "move-cursor-line", 1
+  addTextCommand "", "<DOWN>", "move-cursor-line", 1
+  addTextCommand "", "<ENTER>", "move-cursor-line", 1
+  addTextCommand "", "<C-n>", "move-cursor-line", 1
+  addTextCommand "", "<C-j>", "move-cursor-line", 1
+
+  proc moveCursorLineFirstChar(editor: TextDocumentEditor, direction: int) =
+    editor.moveCursorLine(direction)
+    editor.moveFirst "line-no-indent"
+
+  addTextCommandBlock "", "-": moveCursorLineFirstChar(editor, -1)
+  addTextCommandBlock "", "+": moveCursorLineFirstChar(editor, 1)
+
+  proc moveToStartOfLine(editor: TextDocumentEditor) =
+    let count = editor.getCommandCount
+    if count > 1:
+      editor.moveCursorLine(count - 1)
+    editor.moveFirst "line-no-indent"
+    editor.setCommandCount 0
+    editor.scrollToCursor Last
+
+  addTextCommand "", "_", moveToStartOfLine
+  addTextCommand "", "G", "move-last", "file"
+
+  addTextCommandBlock "", "gg":
+    let count = editor.getCommandCount
+    editor.selection = (count, 0).toSelection
+    editor.moveFirst "line-no-indent"
+    editor.setCommandCount 0
+    editor.scrollToCursor Last
+
+  addTextCommandBlock "", "G":
+    let count = editor.getCommandCount
+    let line = if count == 0: editor.lineCount - 1 else: count
+    editor.selection = (line, 0).toSelection
+    editor.moveFirst "line-no-indent"
+    editor.setCommandCount 0
+    editor.scrollToCursor Last
+
+  addTextCommandBlock "", "%":
+    let count = editor.getCommandCount
+    if count == 0:
+      # todo: find matching bracket
+      discard
+    else:
+      let line = clamp((count * editor.lineCount) div 100, 0, editor.lineCount - 1)
+      editor.selection = (line, 0).toSelection
+      editor.moveFirst "line-no-indent"
+      editor.setCommandCount 0
+      editor.scrollToCursor Last
+
+  addTextCommand "", "k", "move-cursor-line", -1
+  addTextCommand "", "j", "move-cursor-line", 1
+
+  # Scrolling
+  addTextCommand "", "<C-e>", "scroll-lines", 1
+  addTextCommandBlock "", "<C-d>": editor.moveCursorLine(editor.screenLineCount div 2)
+  addTextCommandBlock "", "<C-f>": editor.moveCursorLine(editor.screenLineCount)
+
+  addTextCommand "", "<C-y>", "scroll-lines", -1
+  addTextCommandBlock "", "<C-u>": editor.moveCursorLine(-editor.screenLineCount div 2)
+  addTextCommandBlock "", "<C-b>": editor.moveCursorLine(-editor.screenLineCount)
+
+  addTextCommandBlock "", "z<ENTER>":
+    if editor.getCommandCount != 0:
+      editor.selection = (editor.getCommandCount, 0).toSelection
+    editor.moveFirst "line-no-indent"
+    editor.setCursorScrollOffset getVimLineMargin() * platformTotalLineHeight()
+
+  addTextCommandBlock "", "zt":
+    if editor.getCommandCount != 0:
+      editor.selection = (editor.getCommandCount, editor.selection.last.column).toSelection
+    editor.setCursorScrollOffset getVimLineMargin() * platformTotalLineHeight()
+
+  addTextCommandBlock "", "z.":
+    if editor.getCommandCount != 0:
+      editor.selection = (editor.getCommandCount, 0).toSelection
+    editor.moveFirst "line-no-indent"
+    editor.centerCursor()
+
+  addTextCommandBlock "", "zz":
+    if editor.getCommandCount != 0:
+      editor.selection = (editor.getCommandCount, editor.selection.last.column).toSelection
+    editor.centerCursor()
+
+  addTextCommandBlock "", "z-":
+    if editor.getCommandCount != 0:
+      editor.selection = (editor.getCommandCount, 0).toSelection
+    editor.moveFirst "line-no-indent"
+    editor.setCursorScrollOffset (editor.screenLineCount.float - getVimLineMargin()) * platformTotalLineHeight()
+
+  addTextCommandBlock "", "zb":
+    if editor.getCommandCount != 0:
+      editor.selection = (editor.getCommandCount, editor.selection.last.column).toSelection
+    editor.setCursorScrollOffset (editor.screenLineCount.float - getVimLineMargin()) * platformTotalLineHeight()
+
+  # Mode switches
+  addTextCommand "", "i", "set-mode", "insert"
+  addTextCommandBlock "", "I":
+    editor.moveFirst("line-no-indent")
+    editor.setMode("insert")
+  addTextCommandBlock "", "a":
+    editor.selections = editor.selections.mapIt(editor.doMoveCursorColumn(it.last, 1).toSelection)
+    editor.setMode("insert")
+  addTextCommandBlock "", "A":
+    editor.moveLast("line")
+    editor.setMode("insert")
+
+  # Insert mode
+  setHandleInputs "editor.text.insert", true
+  setOption "editor.text.cursor.wide.insert", false
+  addTextCommand "insert", "<ENTER>", "insert-text", "\n"
+  addTextCommand "insert", "<SPACE>", "insert-text", " "
+  addTextCommand "", "<BACKSPACE>", "delete-left"
+  addTextCommand "", "<DELETE>", "delete-right"
+
+proc loadVimLikeKeybindings*() {.scriptActionWasmNims("load-vim-like-keybindings").} =
+  loadNormalKeybindings()
+
+  let t = startTimer()
+  defer:
+    infof"loadVimLikeKeybindings: {t.elapsed.ms} ms"
+
+  info "Applying Vim-like keybindings"
 
   # clearCommands("editor.text")
   # for id in getAllEditors():
@@ -262,7 +471,6 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     editor.setMode("insert")
     editor.scrollToCursor(Last)
     editor.updateTargetColumn(Last)
-
 
   block: # model
     setHandleInputs "editor.model", false

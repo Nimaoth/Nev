@@ -10,6 +10,14 @@ else:
 
 ## This file is auto generated, don't modify.
 
+proc lineCount*(self: TextDocumentEditor): int =
+  editor_text_lineCount_int_TextDocumentEditor_impl(self)
+proc lineLength*(self: TextDocumentEditor; line: int): int =
+  editor_text_lineLength_int_TextDocumentEditor_int_impl(self, line)
+proc screenLineCount*(self: TextDocumentEditor): int =
+  ## Returns the number of lines that can be shown on the screen
+  ## This value depends on the size of the view this editor is in and the font size
+  editor_text_screenLineCount_int_TextDocumentEditor_impl(self)
 proc doMoveCursorColumn*(self: TextDocumentEditor; cursor: Cursor; offset: int): Cursor =
   editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_impl(self,
       cursor, offset)
@@ -72,6 +80,8 @@ proc paste*(self: TextDocumentEditor) =
   editor_text_paste_void_TextDocumentEditor_impl(self)
 proc scrollText*(self: TextDocumentEditor; amount: float32) =
   editor_text_scrollText_void_TextDocumentEditor_float32_impl(self, amount)
+proc scrollLines*(self: TextDocumentEditor; amount: int) =
+  editor_text_scrollLines_void_TextDocumentEditor_int_impl(self, amount)
 proc duplicateLastSelection*(self: TextDocumentEditor) =
   editor_text_duplicateLastSelection_void_TextDocumentEditor_impl(self)
 proc addCursorBelow*(self: TextDocumentEditor) =
@@ -132,10 +142,26 @@ proc moveCursorPrevFindResult*(self: TextDocumentEditor; cursor: SelectionCursor
                                all: bool = true) =
   editor_text_moveCursorPrevFindResult_void_TextDocumentEditor_SelectionCursor_bool_impl(
       self, cursor, all)
+proc moveCursorLineCenter*(self: TextDocumentEditor;
+                           cursor: SelectionCursor = SelectionCursor.Config;
+                           all: bool = true) =
+  editor_text_moveCursorLineCenter_void_TextDocumentEditor_SelectionCursor_bool_impl(
+      self, cursor, all)
+proc moveCursorCenter*(self: TextDocumentEditor;
+                       cursor: SelectionCursor = SelectionCursor.Config;
+                       all: bool = true) =
+  editor_text_moveCursorCenter_void_TextDocumentEditor_SelectionCursor_bool_impl(
+      self, cursor, all)
 proc scrollToCursor*(self: TextDocumentEditor;
                      cursor: SelectionCursor = SelectionCursor.Config) =
   editor_text_scrollToCursor_void_TextDocumentEditor_SelectionCursor_impl(self,
       cursor)
+proc setCursorScrollOffset*(self: TextDocumentEditor; offset: float;
+                            cursor: SelectionCursor = SelectionCursor.Config) =
+  editor_text_setCursorScrollOffset_void_TextDocumentEditor_float_SelectionCursor_impl(
+      self, offset, cursor)
+proc getContentBounds*(self: TextDocumentEditor): Vec2 =
+  editor_text_getContentBounds_Vec2_TextDocumentEditor_impl(self)
 proc centerCursor*(self: TextDocumentEditor;
                    cursor: SelectionCursor = SelectionCursor.Config) =
   editor_text_centerCursor_void_TextDocumentEditor_SelectionCursor_impl(self,

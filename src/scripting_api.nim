@@ -1,5 +1,8 @@
 import std/[algorithm, sequtils, sugar]
 
+import vmath
+export vmath
+
 type
   EditorId* = int
   EditorType* = enum Text, Ast, Model, Other

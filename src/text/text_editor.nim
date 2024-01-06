@@ -231,6 +231,16 @@ proc doMoveCursorPrevFindResult(self: TextDocumentEditor, cursor: Cursor, offset
 proc doMoveCursorNextFindResult(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor =
   return self.getNextFindResult(cursor, offset).first
 
+proc doMoveCursorLineCenter(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor =
+  return (cursor.line, self.document.lineLength(cursor.line) div 2)
+
+proc doMoveCursorCenter(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor =
+  if self.lastRenderedLines.len == 0:
+    return cursor
+
+  let line = clamp(self.lastRenderedLines[self.lastRenderedLines.high div 2].index + offset, 0, self.document.lines.high)
+  return (line, self.targetColumn)
+
 proc centerCursor*(self: TextDocumentEditor, cursor: Cursor) =
   if self.disableScrolling:
     return
@@ -372,6 +382,17 @@ proc toJson*(self: api.TextDocumentEditor, opt = initToJsonOptions()): JsonNode 
 
 proc fromJsonHook*(t: var api.TextDocumentEditor, jsonNode: JsonNode) =
   t.id = api.EditorId(jsonNode["id"].jsonTo(int))
+
+proc lineCount(self: TextDocumentEditor): int {.expose: "editor.text".} =
+  return self.document.lines.len
+
+proc lineLength(self: TextDocumentEditor, line: int): int {.expose: "editor.text".} =
+  return self.document.lineLength(line)
+
+proc screenLineCount(self: TextDocumentEditor): int {.expose: "editor.text".} =
+  ## Returns the number of lines that can be shown on the screen
+  ## This value depends on the size of the view this editor is in and the font size
+  return (self.lastContentBounds.h / self.platform.totalLineHeight).int
 
 proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor {.expose: "editor.text".} =
   var cursor = cursor
@@ -676,6 +697,18 @@ proc scrollText(self: TextDocumentEditor, amount: float32) {.expose("editor.text
   self.scrollOffset += amount
   self.markDirty()
 
+proc scrollLines(self: TextDocumentEditor, amount: int) {.expose("editor.text").} =
+  if self.disableScrolling:
+    return
+  self.previousBaseIndex += amount
+  while self.previousBaseIndex <= 0:
+    self.previousBaseIndex.inc
+    self.scrollOffset += self.platform.totalLineHeight
+  while self.previousBaseIndex >= self.screenLineCount - 1:
+    self.previousBaseIndex.dec
+    self.scrollOffset -= self.platform.totalLineHeight
+  self.markDirty()
+
 proc duplicateLastSelection*(self: TextDocumentEditor) {.expose("editor.text").} =
   let newSelection = self.doMoveCursorColumn(self.selections[self.selections.high].last, 1).toSelection
   self.selections = self.selections & @[newSelection]
@@ -776,8 +809,24 @@ proc moveCursorPrevFindResult*(self: TextDocumentEditor, cursor: SelectionCursor
   self.moveCursor(cursor, doMoveCursorPrevFindResult, 0, all)
   self.updateTargetColumn(cursor)
 
+proc moveCursorLineCenter*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
+  self.moveCursor(cursor, doMoveCursorLineCenter, 0, all)
+  self.updateTargetColumn(cursor)
+
+proc moveCursorCenter*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
+  self.moveCursor(cursor, doMoveCursorCenter, 0, all)
+
 proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
   self.scrollToCursor(self.getCursor(cursor))
+
+proc setCursorScrollOffset*(self: TextDocumentEditor, offset: float, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
+  let line = self.getCursor(cursor).line
+  self.previousBaseIndex = line
+  self.scrollOffset = offset
+  self.markDirty()
+
+proc getContentBounds*(self: TextDocumentEditor): Vec2 {.expose("editor.text").} =
+  return self.lastContentBounds.wh
 
 proc centerCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
   self.centerCursor(self.getCursor(cursor))

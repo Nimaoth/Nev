@@ -3,6 +3,11 @@ import "../src/scripting_api"
 
 ## This file is auto generated, don't modify.
 
+proc editor_text_lineCount_int_TextDocumentEditor_impl(self: TextDocumentEditor): int  {.importc.}
+proc editor_text_lineLength_int_TextDocumentEditor_int_impl(
+    self: TextDocumentEditor; line: int): int  {.importc.}
+proc editor_text_screenLineCount_int_TextDocumentEditor_impl(
+    self: TextDocumentEditor): int  {.importc.}
 proc editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_impl(
     self: TextDocumentEditor; cursor: Cursor; offset: int): Cursor  {.importc.}
 proc editor_text_setMode_void_TextDocumentEditor_string_impl(
@@ -46,6 +51,8 @@ proc editor_text_copy_void_TextDocumentEditor_impl(self: TextDocumentEditor)  {.
 proc editor_text_paste_void_TextDocumentEditor_impl(self: TextDocumentEditor)  {.importc.}
 proc editor_text_scrollText_void_TextDocumentEditor_float32_impl(
     self: TextDocumentEditor; amount: float32)  {.importc.}
+proc editor_text_scrollLines_void_TextDocumentEditor_int_impl(
+    self: TextDocumentEditor; amount: int)  {.importc.}
 proc editor_text_duplicateLastSelection_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}
 proc editor_text_addCursorBelow_void_TextDocumentEditor_impl(
@@ -88,8 +95,19 @@ proc editor_text_moveCursorNextFindResult_void_TextDocumentEditor_SelectionCurso
 proc editor_text_moveCursorPrevFindResult_void_TextDocumentEditor_SelectionCursor_bool_impl(
     self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config;
     all: bool = true)  {.importc.}
+proc editor_text_moveCursorLineCenter_void_TextDocumentEditor_SelectionCursor_bool_impl(
+    self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config;
+    all: bool = true)  {.importc.}
+proc editor_text_moveCursorCenter_void_TextDocumentEditor_SelectionCursor_bool_impl(
+    self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config;
+    all: bool = true)  {.importc.}
 proc editor_text_scrollToCursor_void_TextDocumentEditor_SelectionCursor_impl(
     self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config)  {.importc.}
+proc editor_text_setCursorScrollOffset_void_TextDocumentEditor_float_SelectionCursor_impl(
+    self: TextDocumentEditor; offset: float;
+    cursor: SelectionCursor = SelectionCursor.Config)  {.importc.}
+proc editor_text_getContentBounds_Vec2_TextDocumentEditor_impl(
+    self: TextDocumentEditor): Vec2  {.importc.}
 proc editor_text_centerCursor_void_TextDocumentEditor_SelectionCursor_impl(
     self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config)  {.importc.}
 proc editor_text_reloadTreesitter_void_TextDocumentEditor_impl(
@@ -332,6 +350,9 @@ proc editor_setOption_void_App_string_JsonNode_impl(option: string;
 proc editor_quit_void_App_impl()  {.importc.}
 proc editor_help_void_App_string_impl(about: string = "")  {.importc.}
 proc editor_changeFontSize_void_App_float32_impl(amount: float32)  {.importc.}
+proc editor_platformTotalLineHeight_float32_App_impl(): float32  {.importc.}
+proc editor_platformLineHeight_float32_App_impl(): float32  {.importc.}
+proc editor_platformLineDistance_float32_App_impl(): float32  {.importc.}
 proc editor_changeLayoutProp_void_App_string_float32_impl(prop: string;
     change: float32)  {.importc.}
 proc editor_toggleStatusBarLocation_void_App_impl()  {.importc.}
