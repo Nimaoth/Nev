@@ -79,4 +79,4 @@ import default_config
 when defined(wasm):
   loadDefaultOptions()
   loadDefaultKeybindings()
-  loadVimKeybindings()
+  loadVimLikeKeybindings()
