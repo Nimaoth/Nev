@@ -1,3 +1,4 @@
+import std/[strutils, setutils]
 import absytree_runtime, keybindings_normal
 import misc/[timer]
 
@@ -8,6 +9,80 @@ proc getVimDefaultRegister*(): string =
   of "unnamed": return "*"
   of "unnamedplus": return "+"
   else: return "\""
+
+proc getEnclosing(line: string, column: int, predicate: proc(c: char): bool): (int, int) =
+  var startColumn = column
+  var endColumn = column
+  while endColumn < line.len and predicate(line[endColumn]):
+    inc endColumn
+  while startColumn > 0 and predicate(line[startColumn - 1]):
+    dec startColumn
+  return (startColumn, endColumn)
+
+proc vimMotionWord*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection =
+  const AlphaNumeric = {'A'..'Z', 'a'..'z', '0'..'9', '_'}
+
+  var line = editor.getLine(cursor.line)
+  if line.len == 0:
+    return (cursor.line, 0).toSelection
+
+  var c = line[cursor.column.clamp(0, line.high)]
+  if c in Whitespace:
+    let (startColumn, endColumn) = line.getEnclosing(cursor.column, (c) => c in Whitespace)
+    return ((cursor.line, startColumn), (cursor.line, endColumn))
+
+  elif c in AlphaNumeric:
+    let (startColumn, endColumn) = line.getEnclosing(cursor.column, (c) => c in AlphaNumeric)
+    return ((cursor.line, startColumn), (cursor.line, endColumn))
+
+  else:
+    let (startColumn, endColumn) = line.getEnclosing(cursor.column, (c) => c notin Whitespace and c notin AlphaNumeric)
+    return ((cursor.line, startColumn), (cursor.line, endColumn))
+
+proc vimMotionWordBig*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection =
+  var line = editor.getLine(cursor.line)
+  if line.len == 0:
+    return (cursor.line, 0).toSelection
+
+  var c = line[cursor.column.clamp(0, line.high)]
+  if c in Whitespace:
+    let (startColumn, endColumn) = line.getEnclosing(cursor.column, (c) => c in Whitespace)
+    return ((cursor.line, startColumn), (cursor.line, endColumn))
+
+  else:
+    let (startColumn, endColumn) = line.getEnclosing(cursor.column, (c) => c notin Whitespace)
+    return ((cursor.line, startColumn), (cursor.line, endColumn))
+
+iterator iterateTextObjects(editor: TextDocumentEditor, cursor: Cursor, move: string, backwards: bool = false): Selection =
+  var selection = editor.getSelectionForMove(cursor, move, 0)
+  yield selection
+  while true:
+    let lastSelection = selection
+    if not backwards and selection.last.column == editor.lineLength(selection.last.line):
+      if selection.last.line == editor.lineCount - 1:
+        break
+      selection = (selection.last.line + 1, 0).toSelection
+    elif backwards and selection.first.column == 0:
+      if selection.first.line == 0:
+        break
+      selection = (selection.first.line - 1, editor.lineLength(selection.first.line - 1)).toSelection
+      if selection.first.column == 0:
+        yield selection
+        continue
+
+    let nextCursor = if backwards: (selection.first.line, selection.first.column - 1) else: selection.last
+    let newSelection = editor.getSelectionForMove(nextCursor, move, 0)
+    if newSelection == lastSelection:
+      break
+
+    selection = newSelection
+    yield selection
+
+iterator enumerateTextObjects(editor: TextDocumentEditor, cursor: Cursor, move: string, backwards: bool = false): (int, Selection) =
+  var i = 0
+  for selection in iterateTextObjects(editor, cursor, move, backwards):
+    yield (i, selection)
+    inc i
 
 proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   let t = startTimer()
@@ -228,14 +303,48 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommand "", "<C-c>", "set-mode", ""
 
   # todo
-  addCustomTextMove "vim-word", proc(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection =
-    return (cursor.line+1, cursor.column+1).toSelection
+  addCustomTextMove "vim-word", vimMotionWord
+  addCustomTextMove "vim-WORD", vimMotionWordBig
+
+  proc moveSelectionNext(editor: TextDocumentEditor, move: string, backwards: bool = false) =
+    editor.selections = editor.selections.mapIt(block:
+        var res = it.last
+        for i, selection in enumerateTextObjects(editor, res, move, backwards):
+          if i == 0: continue
+          let cursor = if backwards: selection.last else: selection.first
+          if cursor == it.last:
+            continue
+          if editor.lineLength(selection.first.line) == 0 or editor.getLine(selection.first.line)[selection.first.column] notin Whitespace:
+            res = cursor
+            break
+        res.toSelection
+      )
+
+  proc moveSelectionEnd(editor: TextDocumentEditor, move: string, backwards: bool = false) =
+    editor.selections = editor.selections.mapIt(block:
+        var res = it.last
+        for i, selection in enumerateTextObjects(editor, res, move, backwards):
+          let cursor = if backwards: selection.first else: selection.last
+          if cursor == it.last:
+            continue
+          if backwards and editor.lineLength(selection.last.line) == 0:
+            res = cursor
+            break
+          if editor.lineLength(selection.last.line) > 0 and editor.getLine(selection.last.line)[selection.last.column - 1] notin Whitespace:
+            res = cursor
+            break
+        res.toSelection
+      )
 
   # Text object motions
-  addTextCommand "", "w", "move-last", "word-line"
-  addTextCommand "", "W", "move-last", "vim-word"
-  addTextCommand "", "b", "move-last", "word-line-back"
-  addTextCommand "", "e", "move-last", "word-line"
+  addTextCommandBlock "", "w": editor.moveSelectionNext("vim-word")
+  addTextCommandBlock "", "W": editor.moveSelectionNext("vim-WORD")
+  addTextCommandBlock "", "e": editor.moveSelectionEnd("vim-word")
+  addTextCommandBlock "", "E": editor.moveSelectionEnd("vim-WORD")
+  addTextCommandBlock "", "b": editor.moveSelectionEnd("vim-word", backwards=true)
+  addTextCommandBlock "", "B": editor.moveSelectionEnd("vim-WORD", backwards=true)
+  addTextCommandBlock "", "ge": editor.moveSelectionNext("vim-word", backwards=true)
+  addTextCommandBlock "", "gE": editor.moveSelectionNext("vim-WORD", backwards=true)
 
   # Insert mode
   setHandleInputs "editor.text.insert", true

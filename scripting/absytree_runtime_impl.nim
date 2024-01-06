@@ -45,13 +45,25 @@ when defined(wasm):
     return handleUnknownPopupAction(id.EditorId, $action, ($args).parseJson)
 
   proc handleCallbackWasm(id: int32, args: cstring): bool {.wasmexport.} =
-    return handleCallback(id.int, ($args).parseJson)
+    try:
+      return handleCallback(id.int, ($args).parseJson)
+    except:
+      infof "handleCallbackWasm failed: {id} {args}: {getCurrentExceptionMsg()}\n{getStackTrace()}"
+      return false
 
   proc handleAnyCallbackWasm(id: int32, args: cstring): cstring {.wasmexport.} =
-    let res = handleAnyCallback(id.int, ($args).parseJson)
-    if res.isNil:
+    try:
+      let res = handleAnyCallback(id.int, ($args).parseJson)
+      if res.isNil:
+        return ""
+      return cstring $res
+    except:
+      infof "handleAnyCallbackWasm failed: {id.int} {args}: {getCurrentExceptionMsg()}\n{getStackTrace()}"
       return ""
-    return cstring $res
 
   proc handleScriptActionWasm(name: cstring, args: cstring): cstring {.wasmexport.} =
-    return cstring $handleScriptAction($name, ($args).parseJson)
+    try:
+      return cstring $handleScriptAction($name, ($args).parseJson)
+    except:
+      infof "handleScriptActionWasm failed: {args}: {getCurrentExceptionMsg()}\n{getStackTrace()}"
+      return ""
