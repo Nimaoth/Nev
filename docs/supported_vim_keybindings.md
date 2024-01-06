@@ -52,36 +52,36 @@
 
 ## Text object motions
 
-| Status       | Command    | Description                                                 |
-| ------------ | ---------- | ----------------------------------------------------------- |
-| :running:    | :1234: w   | N words forward                                             |
-| :running:    | :1234: W   | N blank-separated WORDs forward                             |
-| :running:    | :1234: e   | N words forward to the end of the Nth word                  |
-| :running:    | :1234: E   | N words forward to the end of the Nth blank-separated WORD  |
-| :running:    | :1234: b   | N words backward                                            |
-| :running:    | :1234: B   | N blank-separated WORDs backward                            |
-| :running:    | :1234: ge  | N words backward to the end of the Nth word                 |
-| :running:    | :1234: gE  | N words backward to the end of the Nth blank-separated WORD |
-| :running:    | :1234: )   | N sentences forward                                         |
-| :running:    | :1234: (   | N sentences backward                                        |
-| :running:    | :1234: }   | N paragraphs forward                                        |
-| :running:    | :1234: {   | N paragraphs backward                                       |
-| :running:    | :1234: ]]  | N sections forward, at start of section                     |
-| :running:    | :1234: [[  | N sections backward, at start of section                    |
-| :running:    | :1234: ][  | N sections forward, at end of section                       |
-| :running:    | :1234: []  | N sections backward, at end of section                      |
-| :running:    | :1234: [(  | N times back to unclosed '('                                |
-| :running:    | :1234: [{  | N times back to unclosed '{'                                |
-| :arrow_down: | :1234: [m  | N times back to start of method (for Java)                  |
-| :arrow_down: | :1234: [M  | N times back to end of method (for Java)                    |
-| :running:    | :1234: ])  | N times forward to unclosed ')'                             |
-| :running:    | :1234: ]}  | N times forward to unclosed '}'                             |
-| :arrow_down: | :1234: ]m  | N times forward to start of method (for Java)               |
-| :arrow_down: | :1234: ]M  | N times forward to end of method (for Java)                 |
-| :arrow_down: | :1234: [#  | N times back to unclosed "#if" or "#else"                   |
-| :arrow_down: | :1234: ]#  | N times forward to unclosed "#else" or "#endif"             |
-| :arrow_down: | :1234: [\* | N times back to start of a C comment "/\*"                  |
-| :arrow_down: | :1234: ]\* | N times forward to end of a C comment "\*/"                 |
+| Status             | Command    | Description                                                 |
+| ------------------ | ---------- | ----------------------------------------------------------- |
+| :white_check_mark: | :1234: w   | N words forward                                             |
+| :white_check_mark: | :1234: W   | N blank-separated WORDs forward                             |
+| :white_check_mark: | :1234: e   | N words forward to the end of the Nth word                  |
+| :white_check_mark: | :1234: E   | N words forward to the end of the Nth blank-separated WORD  |
+| :white_check_mark: | :1234: b   | N words backward                                            |
+| :white_check_mark: | :1234: B   | N blank-separated WORDs backward                            |
+| :white_check_mark: | :1234: ge  | N words backward to the end of the Nth word                 |
+| :white_check_mark: | :1234: gE  | N words backward to the end of the Nth blank-separated WORD |
+| :running:          | :1234: )   | N sentences forward                                         |
+| :running:          | :1234: (   | N sentences backward                                        |
+| :running:          | :1234: }   | N paragraphs forward                                        |
+| :running:          | :1234: {   | N paragraphs backward                                       |
+| :running:          | :1234: ]]  | N sections forward, at start of section                     |
+| :running:          | :1234: [[  | N sections backward, at start of section                    |
+| :running:          | :1234: ][  | N sections forward, at end of section                       |
+| :running:          | :1234: []  | N sections backward, at end of section                      |
+| :running:          | :1234: [(  | N times back to unclosed '('                                |
+| :running:          | :1234: [{  | N times back to unclosed '{'                                |
+| :arrow_down:       | :1234: [m  | N times back to start of method (for Java)                  |
+| :arrow_down:       | :1234: [M  | N times back to end of method (for Java)                    |
+| :running:          | :1234: ])  | N times forward to unclosed ')'                             |
+| :running:          | :1234: ]}  | N times forward to unclosed '}'                             |
+| :arrow_down:       | :1234: ]m  | N times forward to start of method (for Java)               |
+| :arrow_down:       | :1234: ]M  | N times forward to end of method (for Java)                 |
+| :arrow_down:       | :1234: [#  | N times back to unclosed "#if" or "#else"                   |
+| :arrow_down:       | :1234: ]#  | N times forward to unclosed "#else" or "#endif"             |
+| :arrow_down:       | :1234: [\* | N times back to start of a C comment "/\*"                  |
+| :arrow_down:       | :1234: ]\* | N times forward to end of a C comment "\*/"                 |
 
 ## Pattern searches
 
