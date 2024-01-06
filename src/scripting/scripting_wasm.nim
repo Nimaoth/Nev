@@ -132,6 +132,9 @@ method handleAnyCallback*(self: ScriptContextWasm, id: int, arg: JsonNode): Json
   let argStr = $arg
   for (m, f) in self.handleAnyCallbackCallbacks:
     let str = $f(id.int32, argStr.cstring)
+    if str.len == 0:
+      continue
+
     try:
       return str.parseJson
     except:

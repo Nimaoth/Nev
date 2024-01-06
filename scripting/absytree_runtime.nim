@@ -267,13 +267,18 @@ proc handleCustomTextMove*(editor: TextDocumentEditor, move: string, cursor: Cur
 when defined(wasm):
   let id = addCallback proc(args: JsonNode): JsonNode =
     type Payload = object
+      editor: EditorId
       move: string
       cursor: Cursor
       count: int
 
     let input = args.jsonTo(Payload)
-    let selection = handleCustomTextMove(TextDocumentEditor(id: getActiveEditor()), input.move, input.cursor, input.count)
-    return selection.toJson
+    if input.editor.isTextEditor editor:
+      let selection = handleCustomTextMove(editor, input.move, input.cursor, input.count)
+      return selection.toJson
+    else:
+      infof"Custom move: editor {input.editor} is not a text editor"
+      return nil
 
   scriptSetCallback("editor.text.custom-move", id)
 

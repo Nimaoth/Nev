@@ -1023,6 +1023,7 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
       result = cursor.toSelection
 
       let cursorJson = self.app.invokeAnyCallback("editor.text.custom-move", %*{
+        "editor": self.id,
         "move": move,
         "cursor": cursor.toJson,
         "count": count,
