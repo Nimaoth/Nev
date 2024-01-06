@@ -1,6 +1,6 @@
 ## Key
 
-:white-white_check_mark-mark: - command done
+:white_check_mark: - command done
 
 :white_check_mark: :star: - command done with specific customization
 
