@@ -10,6 +10,8 @@ when defined(uiNodeDebugData):
 
 export platform
 
+logCategory "browser-platform"
+
 type
   WheelEvent* {.importc.} = ref object of MouseEvent ## see `docs<https://developer.mozilla.org/en-US/docs/Web/API/WheelEvent>`_
     deltaX: float

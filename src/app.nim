@@ -179,6 +179,7 @@ proc handleUnknownDocumentEditorAction*(self: App, editor: DocumentEditor, actio
 proc handleUnknownPopupAction*(self: App, popup: Popup, action: string, arg: string): EventResponse
 proc handleModeChanged*(self: App, editor: DocumentEditor, oldMode: string, newMode: string)
 proc invokeCallback*(self: App, context: string, args: JsonNode): bool
+proc invokeAnyCallback*(self: App, context: string, args: JsonNode): JsonNode
 proc registerEditor*(self: App, editor: DocumentEditor): void
 proc unregisterEditor*(self: App, editor: DocumentEditor): void
 proc tryActivateEditor*(self: App, editor: DocumentEditor): void
@@ -207,6 +208,7 @@ implTrait AppInterface, App:
   handleUnknownPopupAction(EventResponse, App, Popup, string, string)
   handleModeChanged(void, App, DocumentEditor, string, string)
   invokeCallback(bool, App, string, JsonNode)
+  invokeAnyCallback(JsonNode, App, string, JsonNode)
   registerEditor(void, App, DocumentEditor)
   tryActivateEditor(void, App, DocumentEditor)
   unregisterEditor(void, App, DocumentEditor)
@@ -274,6 +276,26 @@ proc invokeCallback*(self: App, context: string, args: JsonNode): bool =
     log(lvlError, fmt"Failed to run script handleCallback {id}: {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
     return false
+
+proc invokeAnyCallback*(self: App, context: string, args: JsonNode): JsonNode =
+  if not self.callbacks.contains(context):
+    return newJNull()
+  let id = self.callbacks[context]
+  try:
+    withScriptContext self, self.scriptContext:
+      let res = self.scriptContext.handleAnyCallback(id, args)
+      if res.isNotNil:
+        return res
+
+    withScriptContext self, self.wasmScriptContext:
+      let res = self.wasmScriptContext.handleAnyCallback(id, args)
+      if res.isNotNil:
+        return res
+    return newJNull()
+  except CatchableError:
+    log(lvlError, fmt"Failed to run script handleAnyCallback {id}: {getCurrentExceptionMsg()}")
+    log(lvlError, getCurrentException().getStackTrace())
+    return newJNull()
 
 proc handleAction(action: string, arg: string): EventResponse =
   log(lvlInfo, "event: " & action & " - " & arg)

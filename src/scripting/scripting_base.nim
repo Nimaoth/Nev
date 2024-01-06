@@ -14,6 +14,7 @@ method handleGlobalAction*(self: ScriptContext, action: string, arg: JsonNode): 
 method handleEditorModeChanged*(self: ScriptContext, editor: DocumentEditor, oldMode: string, newMode: string) {.base.} = discard
 method postInitialize*(self: ScriptContext): bool {.base.} = discard
 method handleCallback*(self: ScriptContext, id: int, arg: JsonNode): bool {.base.} = discard
+method handleAnyCallback*(self: ScriptContext, id: int, arg: JsonNode): JsonNode {.base.} = discard
 method handleScriptAction*(self: ScriptContext, name: string, args: JsonNode): JsonNode {.base.} = discard
 
 proc generateScriptingApiPerModule*() {.compileTime.} =

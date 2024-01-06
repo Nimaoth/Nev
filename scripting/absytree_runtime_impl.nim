@@ -25,6 +25,7 @@ proc handleEditorModeChanged*(editor: EditorId, oldMode: string, newMode: string
   onEditorModeChanged.invoke (editor, oldMode, newMode)
 
 proc handleCallback*(id: int, args: JsonNode): bool = handleCallbackImpl(id, args)
+proc handleAnyCallback*(id: int, args: JsonNode): JsonNode = handleAnyCallbackImpl(id, args)
 proc handleScriptAction*(name: string, args: JsonNode): JsonNode = handleScriptActionImpl(name, args)
 
 when defined(wasm):
@@ -46,6 +47,11 @@ when defined(wasm):
   proc handleCallbackWasm(id: int32, args: cstring): bool {.wasmexport.} =
     return handleCallback(id.int, ($args).parseJson)
 
+  proc handleAnyCallbackWasm(id: int32, args: cstring): cstring {.wasmexport.} =
+    let res = handleAnyCallback(id.int, ($args).parseJson)
+    if res.isNil:
+      return ""
+    return cstring $res
+
   proc handleScriptActionWasm(name: cstring, args: cstring): cstring {.wasmexport.} =
-    let res = $handleScriptAction($name, ($args).parseJson)
-    return res.cstring
+    return cstring $handleScriptAction($name, ($args).parseJson)

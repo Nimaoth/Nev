@@ -1,5 +1,5 @@
 import std/[strformat, tables, macros, json, strutils, sugar, sequtils, genasts]
-import misc/[event, util, wrap]
+import misc/[event, util, wrap, myjsonutils]
 import absytree_api
 
 export absytree_api, util, strformat, tables, json, strutils, sugar, sequtils, scripting_api
@@ -9,6 +9,7 @@ type AnyDocumentEditor = TextDocumentEditor | ModelDocumentEditor
 var lambdaActions = initTable[string, proc(): void]()
 var voidCallbacks = initTable[int, proc(args: JsonNode): void]()
 var boolCallbacks = initTable[int, proc(args: JsonNode): bool]()
+var anyCallbacks = initTable[int, proc(args: JsonNode): JsonNode]()
 var onEditorModeChanged*: Event[tuple[editor: EditorId, oldMode: string, newMode: string]]
 var callbackId = 0
 var scriptActions = initTable[string, proc(args: JsonNode): JsonNode]()
@@ -42,6 +43,11 @@ proc addCallback*(action: proc(args: JsonNode): void): int =
 proc addCallback*(action: proc(args: JsonNode): bool): int =
   result = callbackId
   boolCallbacks[result] = action
+  callbackId += 1
+
+proc addCallback*(action: proc(args: JsonNode): JsonNode): int =
+  result = callbackId
+  anyCallbacks[result] = action
   callbackId += 1
 
 func toJsonString[T: string](value: T): string = escapeJson(value)
@@ -84,7 +90,19 @@ proc handleCallbackImpl*(id: int, args: JsonNode): bool =
     return true
   elif boolCallbacks.contains(id):
     return boolCallbacks[id](args)
+  elif anyCallbacks.contains(id):
+    return anyCallbacks[id](args).isNotNil
   return false
+
+proc handleAnyCallbackImpl*(id: int, args: JsonNode): JsonNode =
+  if voidCallbacks.contains(id):
+    voidCallbacks[id](args)
+    return nil
+  elif boolCallbacks.contains(id):
+    return newJBool(boolCallbacks[id](args))
+  elif anyCallbacks.contains(id):
+    return anyCallbacks[id](args)
+  return nil
 
 proc handleScriptActionImpl*(name: string, args: JsonNode): JsonNode =
   if scriptActions.contains(name):
@@ -239,6 +257,28 @@ proc setTextInputHandler*(context: string, action: proc(editor: TextDocumentEdit
     action(TextDocumentEditor(id: getActiveEditor()), input)
   scriptSetCallback("editor.text.input-handler." & context, id)
   setHandleInputs("editor.text." & context, true)
+
+var customMoves = initTable[string, proc(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection]()
+proc handleCustomTextMove*(editor: TextDocumentEditor, move: string, cursor: Cursor, count: int): Selection =
+  if customMoves.contains(move):
+    return customMoves[move](editor, cursor, count)
+  return cursor.toSelection
+
+when defined(wasm):
+  let id = addCallback proc(args: JsonNode): JsonNode =
+    type Payload = object
+      move: string
+      cursor: Cursor
+      count: int
+
+    let input = args.jsonTo(Payload)
+    let selection = handleCustomTextMove(TextDocumentEditor(id: getActiveEditor()), input.move, input.cursor, input.count)
+    return selection.toJson
+
+  scriptSetCallback("editor.text.custom-move", id)
+
+proc addCustomTextMove*(name: string, action: proc(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection) =
+  customMoves[name] = action
 
 # Model commands
 template addModelCommandBlock*(mode: static[string], keys: string, body: untyped): untyped =
