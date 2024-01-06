@@ -228,13 +228,23 @@ macro addEditorCommand*(mode: static[string], keys: string, action: string, args
 template addTextCommandBlock*(mode: static[string], keys: string, body: untyped): untyped =
   let context = if mode.len == 0: "editor.text" else: "editor.text." & mode
   addCommand context, keys, proc() =
-    let editor {.inject.} = TextDocumentEditor(id: getActiveEditor())
-    body
+    try:
+      let editor {.inject, used.} = TextDocumentEditor(id: getActiveEditor())
+      body
+    except:
+      let m {.inject.} = mode
+      let k {.inject.} = keys
+      infof "TextCommandBlock {m} {k}: {getCurrentExceptionMsg()}\n{getStackTrace()}"
 
 proc addTextCommand*(mode: string, keys: string, action: proc(editor: TextDocumentEditor): void) =
   let context = if mode.len == 0: "editor.text" else: "editor.text." & mode
   addCommand context, keys, proc() =
-    action(TextDocumentEditor(id: getActiveEditor()))
+    try:
+      action(TextDocumentEditor(id: getActiveEditor()))
+    except:
+      let m {.inject.} = mode
+      let k {.inject.} = keys
+      infof "TextCommand {m} {k}: {getCurrentExceptionMsg()}\n{getStackTrace()}"
 
 macro addTextCommand*(mode: static[string], keys: string, action: string, args: varargs[untyped]): untyped =
   let context = if mode.len == 0: "editor.text" else: "editor.text." & mode
@@ -253,8 +263,12 @@ macro addTextCommand*(mode: static[string], keys: string, action: string, args: 
 
 proc setTextInputHandler*(context: string, action: proc(editor: TextDocumentEditor, input: string): bool) =
   let id = addCallback proc(args: JsonNode): bool =
-    let input = args.str
-    action(TextDocumentEditor(id: getActiveEditor()), input)
+    try:
+      let input = args.str
+      return action(TextDocumentEditor(id: getActiveEditor()), input)
+    except:
+      infof "TextInputHandler {context}: {getCurrentExceptionMsg()}\n{getStackTrace()}"
+
   scriptSetCallback("editor.text.input-handler." & context, id)
   setHandleInputs("editor.text." & context, true)
 
@@ -289,8 +303,13 @@ proc addCustomTextMove*(name: string, action: proc(editor: TextDocumentEditor, c
 template addModelCommandBlock*(mode: static[string], keys: string, body: untyped): untyped =
   let context = if mode.len == 0: "editor.model" else: "editor.model." & mode
   addCommand context, keys, proc() =
-    let editor {.inject.} = ModelDocumentEditor(id: getActiveEditor())
-    body
+    try:
+      let editor {.inject, used.} = ModelDocumentEditor(id: getActiveEditor())
+      body
+    except:
+      let m {.inject.} = mode
+      let k {.inject.} = keys
+      infof "modelCommandBlock {m} {k}: {getCurrentExceptionMsg()}\n{getStackTrace()}"
 
 proc addModelCommand*(mode: string, keys: string, action: proc(editor: ModelDocumentEditor): void) =
   let context = if mode.len == 0: "editor.model" else: "editor.model." & mode
