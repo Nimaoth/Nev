@@ -43,6 +43,22 @@ You can get the current value of a setting with `proc getOption*[T](path: string
     setOption "editor.text.lsp.zig.path", "zls"
     echo getOption[string]("editor.text.lsp.zig.path") # zls
 
+# Mouse settings
+To change the behaviour of single/double/triple clicking you can specify which command should be executed after clicking:
+
+    # To make triple click select the entire line (this is the default behaviour), use e.g. the command 'extend-select-move "line" true':
+    # extend-select-move applies the given move to the beginning and end of the current selection and then combines the results
+    # into a new selection.
+    setOption "editor.text.triple-click-command", "extend-select-move"
+    setOption "editor.text.triple-click-command-args", %[%"line", %true]
+
+    # To make triple click select a paragraph (as defined by vim), use e.g. the command 'extend-select-move "vim-paragraph-inner" true':
+    setOption "editor.text.triple-click-command", "extend-select-move"
+    setOption "editor.text.triple-click-command-args", %[%"vim-paragraph-inner", %true]
+
+    # Single and double click can also be overriden using "single-click-command"/"single-click-command-args"
+    # and "double-click-command"/"double-click-command-args"
+
 # Key bindings
 You can bind different key combinations to __commands__. Each function exposed by the editor (see `absytree_api.nim`) has a corresponding command,
 which has two names. If the function is called `myCommand`, then the command can be executed using either `myCommand` or `my-command`.
