@@ -7,6 +7,8 @@ import input, monitors, lrucache, theme
 
 export platform
 
+logCategory "gui-platform"
+
 type
   GuiPlatform* = ref object of Platform
     window: Window
@@ -38,7 +40,7 @@ type
 
     cachedImages: LruCache[string, string]
 
-    lastEvent: Option[(int64, Modifiers)]
+    lastEvent: Option[(int64, Modifiers, Button)]
 
     drawnNodes: seq[UINode]
 
@@ -54,6 +56,13 @@ method init*(self: GuiPlatform) =
   self.window = newWindow("Absytree", ivec2(2000, 1000), vsync=false)
   self.window.runeInputEnabled = true
   self.supportsThinCursor = true
+
+  # Use virtual key codes so that we can take into account the keyboard language
+  # and the behaviour is more consistent with the browser/terminal.
+  # todo: is this necessary on linux?
+  when defined(windows):
+    log lvlInfo, "Using virtual key codes instead of scan codes"
+    self.window.useVirtualKeyCodes = true
 
   self.builder = newNodeBuilder()
   self.builder.useInvalidation = true
@@ -124,7 +133,7 @@ method init*(self: GuiPlatform) =
 
     # debugf"rune {rune.int} '{rune}' {inputToString(rune.toInput, self.currentModifiers)}"
     if self.lastEvent.isSome:
-      self.lastEvent = (int64, Modifiers).none
+      self.lastEvent = (int64, Modifiers, Button).none
 
     self.onRune.invoke (rune.toInput, self.currentModifiers)
 
@@ -151,12 +160,13 @@ method init*(self: GuiPlatform) =
   self.window.onButtonPress = proc(button: Button) =
     inc self.eventCounter
 
-    # debugf"button {button} {inputToString(button.toInput, self.currentModifiers)}"
-
     if self.lastEvent.getSome(event):
+      # debugf"button last event k: {event[2]}, input: {inputToString(event[0], event[1])}"
       if not self.builder.handleKeyPressed(event[0], event[1]):
-        self.onKeyPress.invoke event
-      self.lastEvent = (int64, Modifiers).none
+        self.onKeyPress.invoke (event[0], event[1])
+      self.lastEvent = (int64, Modifiers, Button).none
+
+    # debugf"button k: {button}, input: {inputToString(button.toInput, self.currentModifiers)}"
 
     case button
     of  MouseLeft, MouseRight, MouseMiddle, MouseButton4, MouseButton5, DoubleClick, TripleClick, QuadrupleClick:
@@ -168,15 +178,17 @@ method init*(self: GuiPlatform) =
     of KeyLeftAlt, KeyRightAlt: self.currentModifiers = self.currentModifiers + {Alt}
     # of KeyLeftSuper, KeyRightSuper: currentModifiers = currentModifiers + {Super}
     else:
-      self.lastEvent = (button.toInput, self.currentModifiers).some
+      # debugf"last event k: {button}, input: {inputToString(button.toInput, self.currentModifiers)}"
+      self.lastEvent = (button.toInput, self.currentModifiers, button).some
 
   self.window.onButtonRelease = proc(button: Button) =
     inc self.eventCounter
 
     if self.lastEvent.getSome(event):
+      # debugf"button release last event k: {event[2]}, input: {inputToString(event[0], event[1])}"
       if not self.builder.handleKeyPressed(event[0], event[1]):
-        self.onKeyPress.invoke event
-      self.lastEvent = (int64, Modifiers).none
+        self.onKeyPress.invoke (event[0], event[1])
+      self.lastEvent = (int64, Modifiers, Button).none
 
     case button
     of  MouseLeft, MouseRight, MouseMiddle, MouseButton4, MouseButton5, DoubleClick, TripleClick, QuadrupleClick:
@@ -266,9 +278,10 @@ method processEvents*(self: GuiPlatform): int =
   pollEvents()
 
   if self.lastEvent.getSome(event):
+    # debugf"process last event k: {event[2]}, input: {inputToString(event[0], event[1])}"
     if not self.builder.handleKeyPressed(event[0], event[1]):
-      self.onKeyPress.invoke event
-    self.lastEvent = (int64, Modifiers).none
+      self.onKeyPress.invoke (event[0], event[1])
+    self.lastEvent = (int64, Modifiers, Button).none
 
   if self.window.closeRequested:
     inc self.eventCounter
