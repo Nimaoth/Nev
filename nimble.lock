@@ -117,32 +117,6 @@
         "sha1": "12e761e18ccc0a1b0e931c74dd02bb4b74544d56"
       }
     },
-    "nimgen": {
-      "version": "0.5.4",
-      "vcsRevision": "e6697aabbe36e42e4dd261cfd0b8a8be16f6f342",
-      "url": "https://github.com/Nimaoth/nimgen",
-      "downloadMethod": "git",
-      "dependencies": [
-        "c2nim",
-        "regex",
-        "unicodedb"
-      ],
-      "checksums": {
-        "sha1": "d563cc29937e4d2d66ebeb3eaacef95c6284fb4c"
-      }
-    },
-    "treesitter": {
-      "version": "0.1.4",
-      "vcsRevision": "c7ea7381cf9fc8791c722dbbe1f37371df6af8dd",
-      "url": "https://github.com/Nimaoth/nimtreesitter-api",
-      "downloadMethod": "git",
-      "dependencies": [
-        "nimgen"
-      ],
-      "checksums": {
-        "sha1": "45ba77770a2b65ac78575f64dff7985dcfcefdf3"
-      }
-    },
     "chroma": {
       "version": "0.2.7",
       "vcsRevision": "b2e71179174e040884ebf6a16cbac711c84620b9",
@@ -226,8 +200,8 @@
       }
     },
     "windy": {
-      "version": "0.0.1",
-      "vcsRevision": "c044fd9846c264831ac2659a92d929b3fdbaab7e",
+      "version": "0.0.2",
+      "vcsRevision": "88c236aa063566e8cdf51ffca65d1baaa1b9a64e",
       "url": "https://github.com/Nimaoth/windy",
       "downloadMethod": "git",
       "dependencies": [
@@ -237,7 +211,33 @@
         "ws"
       ],
       "checksums": {
-        "sha1": "ce37320ad38c9d49fed435803e0c9a3d7308f419"
+        "sha1": "24e28d958500ba8a55574faad4e111028f64aade"
+      }
+    },
+    "nimgen": {
+      "version": "0.5.4",
+      "vcsRevision": "e6697aabbe36e42e4dd261cfd0b8a8be16f6f342",
+      "url": "https://github.com/Nimaoth/nimgen",
+      "downloadMethod": "git",
+      "dependencies": [
+        "c2nim",
+        "regex",
+        "unicodedb"
+      ],
+      "checksums": {
+        "sha1": "d563cc29937e4d2d66ebeb3eaacef95c6284fb4c"
+      }
+    },
+    "treesitter": {
+      "version": "0.1.4",
+      "vcsRevision": "c7ea7381cf9fc8791c722dbbe1f37371df6af8dd",
+      "url": "https://github.com/Nimaoth/nimtreesitter-api",
+      "downloadMethod": "git",
+      "dependencies": [
+        "nimgen"
+      ],
+      "checksums": {
+        "sha1": "45ba77770a2b65ac78575f64dff7985dcfcefdf3"
       }
     },
     "micros": {
@@ -310,6 +310,18 @@
         "sha1": "408bde8679bce63dfb6f424e107eb37c5eb31510"
       }
     },
+    "nimclipboard": {
+      "version": "0.1.2",
+      "vcsRevision": "666f37ce461d6914a7c1818bc31e1ec97593e7bb",
+      "url": "https://github.com/genotrance/nimclipboard",
+      "downloadMethod": "git",
+      "dependencies": [
+        "nimgen"
+      ],
+      "checksums": {
+        "sha1": "bf02a33b9ac528b92aec2088bb8b38d91eb23603"
+      }
+    },
     "patty": {
       "version": "0.3.5",
       "vcsRevision": "31bb61b990b8b3bae1cba2f353fb978448942318",
@@ -348,18 +360,6 @@
       "dependencies": [],
       "checksums": {
         "sha1": "99b26039cfa38ee375f5eb469eec15d842c4fac6"
-      }
-    },
-    "nimclipboard": {
-      "version": "0.1.2",
-      "vcsRevision": "666f37ce461d6914a7c1818bc31e1ec97593e7bb",
-      "url": "https://github.com/genotrance/nimclipboard",
-      "downloadMethod": "git",
-      "dependencies": [
-        "nimgen"
-      ],
-      "checksums": {
-        "sha1": "bf02a33b9ac528b92aec2088bb8b38d91eb23603"
       }
     }
   },
