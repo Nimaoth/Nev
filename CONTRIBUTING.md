@@ -17,7 +17,7 @@ Please include the log file (`messages.log` in the root folder where you install
 
 #### Solve an issue
 
-Scan through our [existing issues](https://github.com/github/docs/issues) to find one that interests you. You can narrow down the search using `labels` as filters.
+Scan through our [existing issues](https://github.com/Nimaoth/Absytree/issues) to find one that interests you. You can narrow down the search using `labels` as filters.
 
 ### Make Changes
 
