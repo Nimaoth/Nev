@@ -8,7 +8,7 @@ import platform
 
 export platform
 
-logCategory "terminal"
+logCategory "terminal-platform"
 
 type
   TerminalPlatform* = ref object of Platform
@@ -262,6 +262,7 @@ method processEvents*(self: TerminalPlatform): int =
     else:
       var modifiers: Modifiers = {}
       let button = key.toInput(modifiers)
+      # debugf"key press k: {key}, input: {inputToString(button, modifiers)}"
       if not self.builder.handleKeyPressed(button, modifiers):
         self.onKeyPress.invoke (button, modifiers)
 

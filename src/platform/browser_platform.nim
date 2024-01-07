@@ -113,10 +113,9 @@ method init*(self: BrowserPlatform) =
 
     let ke = e.KeyboardEvent
     let modifiers = ke.getModifiers
-    # debugf"keyevent {ke.key}, {ke.code}, {ke.keyCode}"
 
     var input = toInput(ke.key, ke.code, ke.keyCode)
-    # debugf"{inputToString(input)}, {modifiers}"
+    # debugf"keyevent k: {ke.key}, c: {ke.code}, kc: {ke.keyCode}, input: {inputToString(input, modifiers)}"
     if not self.builder.handleKeyPressed(input, modifiers):
       self.onKeyPress.invoke (input, modifiers)
   )
