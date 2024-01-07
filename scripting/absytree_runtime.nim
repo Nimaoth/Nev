@@ -4,6 +4,13 @@ import absytree_api
 
 export absytree_api, util, strformat, tables, json, strutils, sugar, sequtils, scripting_api
 
+when defined(nimscript):
+  proc getCurrentExceptionMsg*(): string =
+    ## Retrieves the error message that was attached to the current
+    ## exception; if there is none, `""` is returned.
+    let currException = getCurrentException()
+    return if currException == nil: "" else: currException.msg
+
 type AnyDocumentEditor = TextDocumentEditor | ModelDocumentEditor
 
 var lambdaActions = initTable[string, proc(): void]()
@@ -234,7 +241,7 @@ template addTextCommandBlock*(mode: static[string], keys: string, body: untyped)
     except:
       let m {.inject.} = mode
       let k {.inject.} = keys
-      infof "TextCommandBlock {m} {k}: {getCurrentExceptionMsg()}\n{getStackTrace()}"
+      infof "TextCommandBlock {m} {k}: {getCurrentExceptionMsg()}"
 
 proc addTextCommand*(mode: string, keys: string, action: proc(editor: TextDocumentEditor): void) =
   let context = if mode.len == 0: "editor.text" else: "editor.text." & mode
@@ -244,7 +251,7 @@ proc addTextCommand*(mode: string, keys: string, action: proc(editor: TextDocume
     except:
       let m {.inject.} = mode
       let k {.inject.} = keys
-      infof "TextCommand {m} {k}: {getCurrentExceptionMsg()}\n{getStackTrace()}"
+      infof "TextCommand {m} {k}: {getCurrentExceptionMsg()}"
 
 macro addTextCommand*(mode: static[string], keys: string, action: string, args: varargs[untyped]): untyped =
   let context = if mode.len == 0: "editor.text" else: "editor.text." & mode
@@ -267,7 +274,7 @@ proc setTextInputHandler*(context: string, action: proc(editor: TextDocumentEdit
       let input = args.str
       return action(TextDocumentEditor(id: getActiveEditor()), input)
     except:
-      infof "TextInputHandler {context}: {getCurrentExceptionMsg()}\n{getStackTrace()}"
+      infof "TextInputHandler {context}: {getCurrentExceptionMsg()}"
 
   scriptSetCallback("editor.text.input-handler." & context, id)
   setHandleInputs("editor.text." & context, true)
@@ -309,7 +316,7 @@ template addModelCommandBlock*(mode: static[string], keys: string, body: untyped
     except:
       let m {.inject.} = mode
       let k {.inject.} = keys
-      infof "modelCommandBlock {m} {k}: {getCurrentExceptionMsg()}\n{getStackTrace()}"
+      infof "modelCommandBlock {m} {k}: {getCurrentExceptionMsg()}"
 
 proc addModelCommand*(mode: string, keys: string, action: proc(editor: ModelDocumentEditor): void) =
   let context = if mode.len == 0: "editor.model" else: "editor.model." & mode

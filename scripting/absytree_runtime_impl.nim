@@ -48,7 +48,7 @@ when defined(wasm):
     try:
       return handleCallback(id.int, ($args).parseJson)
     except:
-      infof "handleCallbackWasm failed: {id} {args}: {getCurrentExceptionMsg()}\n{getStackTrace()}"
+      infof "handleCallbackWasm failed: {id} {args}: {getCurrentExceptionMsg()}"
       return false
 
   proc handleAnyCallbackWasm(id: int32, args: cstring): cstring {.wasmexport.} =
@@ -58,12 +58,12 @@ when defined(wasm):
         return ""
       return cstring $res
     except:
-      infof "handleAnyCallbackWasm failed: {id.int} {args}: {getCurrentExceptionMsg()}\n{getStackTrace()}"
+      infof "handleAnyCallbackWasm failed: {id.int} {args}: {getCurrentExceptionMsg()}"
       return ""
 
   proc handleScriptActionWasm(name: cstring, args: cstring): cstring {.wasmexport.} =
     try:
       return cstring $handleScriptAction($name, ($args).parseJson)
     except:
-      infof "handleScriptActionWasm failed: {args}: {getCurrentExceptionMsg()}\n{getStackTrace()}"
+      infof "handleScriptActionWasm failed: {args}: {getCurrentExceptionMsg()}"
       return ""
