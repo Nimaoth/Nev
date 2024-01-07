@@ -244,8 +244,8 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
   addCommand("editor.model", "<SA-HOME>", "move-cursor-line-start-inline", true)
   addCommand("editor.model", "<SA-END>", "move-cursor-line-end-inline", true)
 
-  addCommand("editor.model", "<C-y>", "undo")
-  addCommand("editor.model", "<C-z>", "redo")
+  addCommand("editor.model", "<C-z>", "undo")
+  addCommand("editor.model", "<C-y>", "redo")
   addCommand("editor.model", "<BACKSPACE>", "replace-left")
   addCommand("editor.model", "<DELETE>", "replace-right")
   addCommand("editor.model", "<SPACE>", "insert-text-at-cursor", " ")
