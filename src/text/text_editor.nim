@@ -96,7 +96,7 @@ proc showCompletionWindow(self: TextDocumentEditor)
 proc refilterCompletions(self: TextDocumentEditor)
 proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string, count: int = 0): Selection
 proc extendSelectionWithMove*(self: TextDocumentEditor, selection: Selection, move: string, count: int = 0): Selection
-proc updateTargetColumn(self: TextDocumentEditor, cursor: SelectionCursor)
+proc updateTargetColumn*(self: TextDocumentEditor, cursor: SelectionCursor)
 
 proc clampCursor*(self: TextDocumentEditor, cursor: Cursor): Cursor = self.document.clampCursor(cursor)
 
@@ -474,7 +474,7 @@ proc getContextWithMode(self: TextDocumentEditor, context: string): string {.exp
   ## Appends the current mode to context
   return context & "." & $self.currentMode
 
-proc updateTargetColumn(self: TextDocumentEditor, cursor: SelectionCursor) {.expose("editor.text").} =
+proc updateTargetColumn*(self: TextDocumentEditor, cursor: SelectionCursor) {.expose("editor.text").} =
   self.targetColumn = self.getCursor(cursor).column
 
 proc invertSelection(self: TextDocumentEditor) {.expose("editor.text").} =

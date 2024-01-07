@@ -147,6 +147,7 @@ proc renderLine*(
                   self.selection = (line.index, offset).toSelection
                   self.dragStartSelection = self.selection
                   self.runSingleClickCommand()
+                  self.updateTargetColumn(Last)
                   self.app.tryActivateEditor(self)
                   self.markDirty()
                 elif btn == DoubleClick:
@@ -154,6 +155,7 @@ proc renderLine*(
                   self.selection = (line.index, offset).toSelection
                   self.dragStartSelection = self.selection
                   self.runDoubleClickCommand()
+                  self.updateTargetColumn(Last)
                   self.app.tryActivateEditor(self)
                   self.markDirty()
                 elif btn == TripleClick:
@@ -161,6 +163,7 @@ proc renderLine*(
                   self.selection = (line.index, offset).toSelection
                   self.dragStartSelection = self.selection
                   self.runTripleClickCommand()
+                  self.updateTargetColumn(Last)
                   self.app.tryActivateEditor(self)
                   self.markDirty()
 
@@ -175,6 +178,7 @@ proc renderLine*(
                     currentSelection.last
                   self.selection = (first, newCursor)
                   self.runDragCommand()
+                  self.updateTargetColumn(Last)
                   self.app.tryActivateEditor(self)
                   self.markDirty()
 
@@ -215,17 +219,20 @@ proc renderLine*(
                 self.dragStartSelection = self.selection
                 self.app.tryActivateEditor(self)
                 self.runSingleClickCommand()
+                self.updateTargetColumn(Last)
                 self.markDirty()
               elif btn == DoubleClick:
                 self.selection = (line.index, self.document.lineLength(line.index)).toSelection
                 self.dragStartSelection = self.selection
                 self.runDoubleClickCommand()
+                self.updateTargetColumn(Last)
                 self.app.tryActivateEditor(self)
                 self.markDirty()
               elif btn == TripleClick:
                 self.selection = (line.index, self.document.lineLength(line.index)).toSelection
                 self.dragStartSelection = self.selection
                 self.runTripleClickCommand()
+                self.updateTargetColumn(Last)
                 self.app.tryActivateEditor(self)
                 self.markDirty()
 
@@ -239,6 +246,7 @@ proc renderLine*(
                   currentSelection.last
                 self.selection = (first, newCursor)
                 self.runDragCommand()
+                self.updateTargetColumn(Last)
                 self.app.tryActivateEditor(self)
                 self.markDirty()
 
