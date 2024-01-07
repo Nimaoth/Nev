@@ -1279,6 +1279,37 @@ proc getSelectionInPairNested*(self: TextDocumentEditor; cursor: Cursor;
   result = parseJson($res).jsonTo(typeof(result))
 
 
+proc editor_text_extendSelectionWithMove_Selection_TextDocumentEditor_Selection_string_int_wasm(
+    arg: cstring): cstring {.importc.}
+proc extendSelectionWithMove*(self: TextDocumentEditor; selection: Selection;
+                              move: string; count: int = 0): Selection =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when Selection is JsonNode:
+      selection
+    else:
+      selection.toJson()
+  argsJson.add block:
+    when string is JsonNode:
+      move
+    else:
+      move.toJson()
+  argsJson.add block:
+    when int is JsonNode:
+      count
+    else:
+      count.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_extendSelectionWithMove_Selection_TextDocumentEditor_Selection_string_int_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
 proc editor_text_getSelectionForMove_Selection_TextDocumentEditor_Cursor_string_int_wasm(
     arg: cstring): cstring {.importc.}
 proc getSelectionForMove*(self: TextDocumentEditor; cursor: Cursor;
@@ -1398,6 +1429,43 @@ proc selectMove*(self: TextDocumentEditor; move: string; inside: bool = false;
       all.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_selectMove_void_TextDocumentEditor_string_bool_SelectionCursor_bool_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_extendSelectMove_void_TextDocumentEditor_string_bool_SelectionCursor_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc extendSelectMove*(self: TextDocumentEditor; move: string;
+                       inside: bool = false;
+                       which: SelectionCursor = SelectionCursor.Config;
+                       all: bool = true) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when string is JsonNode:
+      move
+    else:
+      move.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      inside
+    else:
+      inside.toJson()
+  argsJson.add block:
+    when SelectionCursor is JsonNode:
+      which
+    else:
+      which.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      all
+    else:
+      all.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_extendSelectMove_void_TextDocumentEditor_string_bool_SelectionCursor_bool_wasm(
       argsJsonString.cstring)
 
 
@@ -1803,5 +1871,61 @@ proc enterChooseCursorMode*(self: TextDocumentEditor; action: string) =
       action.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_enterChooseCursorMode_void_TextDocumentEditor_string_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_runSingleClickCommand_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc runSingleClickCommand*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_runSingleClickCommand_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_runDoubleClickCommand_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc runDoubleClickCommand*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_runDoubleClickCommand_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_runTripleClickCommand_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc runTripleClickCommand*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_runTripleClickCommand_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_runDragCommand_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc runDragCommand*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_runDragCommand_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
 

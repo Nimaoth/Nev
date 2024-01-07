@@ -66,6 +66,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   lastRenderedLines*: seq[StyledLine]
   lastTextAreaBounds*: Rect
+  lastPressedMouseButton*: MouseButton
+  dragStartSelection*: Selection
 
   completionWidgetId*: Id
   disableCompletions*: bool
@@ -93,6 +95,7 @@ proc handleInput(self: TextDocumentEditor, input: string): EventResponse
 proc showCompletionWindow(self: TextDocumentEditor)
 proc refilterCompletions(self: TextDocumentEditor)
 proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string, count: int = 0): Selection
+proc extendSelectionWithMove*(self: TextDocumentEditor, selection: Selection, move: string, count: int = 0): Selection
 proc updateTargetColumn(self: TextDocumentEditor, cursor: SelectionCursor)
 
 proc clampCursor*(self: TextDocumentEditor, cursor: Cursor): Cursor = self.document.clampCursor(cursor)
@@ -504,7 +507,7 @@ proc selectNext(self: TextDocumentEditor) {.expose("editor.text").} =
       self.blinkCursorTask.reschedule()
   self.scrollToCursor(self.selection.last)
 
-proc selectInside(self: TextDocumentEditor, cursor: Cursor) {.expose("editor.text").} =
+proc selectInside*(self: TextDocumentEditor, cursor: Cursor) {.expose("editor.text").} =
   self.selection = self.getSelectionForMove(cursor, "word")
   # todo
   # let regex = re("[a-zA-Z0-9_]")
@@ -518,13 +521,18 @@ proc selectInside(self: TextDocumentEditor, cursor: Cursor) {.expose("editor.tex
   # self.selection = ((cursor.line, first), (cursor.line, last))
 
 proc selectInsideCurrent(self: TextDocumentEditor) {.expose("editor.text").} =
-  self.selectInside(self.selection.last)
+  self.selection = self.extendSelectionWithMove(self.selection, "word")
 
-proc selectLine(self: TextDocumentEditor, line: int) {.expose("editor.text").} =
+proc selectLine*(self: TextDocumentEditor, line: int) {.expose("editor.text").} =
   self.selection = ((line, 0), (line, self.document.lastValidIndex(line)))
 
 proc selectLineCurrent(self: TextDocumentEditor) {.expose("editor.text").} =
-  self.selectLine(self.selection.last.line)
+  let first = ((self.selection.first.line, 0), (self.selection.first.line, self.document.lastValidIndex(self.selection.first.line)))
+  let last = ((self.selection.last.line, 0), (self.selection.last.line, self.document.lastValidIndex(self.selection.last.line)))
+  let wasBackwards = self.selection.isBackwards
+  self.selection = first or last
+  if wasBackwards:
+    self.selection = self.selection.reverse
 
 proc selectParentTs(self: TextDocumentEditor, selection: Selection) {.expose("editor.text").} =
   if self.document.tsTree.isNil:
@@ -881,7 +889,7 @@ proc runAction*(self: TextDocumentEditor, action: string, args: JsonNode): bool 
 
 func charCategory(c: char): int =
   if c.isAlphaNumeric or c == '_': return 0
-  if c == ' ' or c == '\t': return 1
+  if c in Whitespace: return 1
   return 2
 
 proc findWordBoundary*(self: TextDocumentEditor, cursor: Cursor): Selection {.expose("editor.text").} =
@@ -916,6 +924,11 @@ proc getSelectionInPair*(self: TextDocumentEditor, cursor: Cursor, delimiter: ch
 proc getSelectionInPairNested*(self: TextDocumentEditor, cursor: Cursor, open: char, close: char): Selection {.expose("editor.text").} =
   result = cursor.toSelection
   # todo
+
+proc extendSelectionWithMove*(self: TextDocumentEditor, selection: Selection, move: string, count: int = 0): Selection {.expose("editor.text").} =
+  result = self.getSelectionForMove(selection.first, move, count) or self.getSelectionForMove(selection.last, move, count)
+  if selection.isBackwards:
+    result = result.reverse
 
 proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string, count: int = 0): Selection {.expose("editor.text").} =
   case move
@@ -1090,6 +1103,20 @@ proc selectMove*(self: TextDocumentEditor, move: string, inside: bool = false, w
     self.selections.mapAllOrLast(all, (s) => (
       self.getCursor(s, which),
       self.getCursor(self.getSelectionForMove(s.last, move, count), which)
+    ))
+
+  self.scrollToCursor(Last)
+  self.updateTargetColumn(Last)
+
+proc extendSelectMove*(self: TextDocumentEditor, move: string, inside: bool = false, which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
+  let count = self.configProvider.getValue("text.move-count", 0)
+
+  self.selections = if inside:
+    self.selections.mapAllOrLast(all, (s) => self.extendSelectionWithMove(s, move, count))
+  else:
+    self.selections.mapAllOrLast(all, (s) => (
+      self.getCursor(s, which),
+      self.getCursor(self.extendSelectionWithMove(s, move, count), which)
     ))
 
   self.scrollToCursor(Last)
@@ -1630,6 +1657,35 @@ proc handleInput(self: TextDocumentEditor, input: string): EventResponse =
   self.insertText(input)
   return Handled
 
+proc runSingleClickCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
+  let commandName = self.configProvider.getValue("editor.text.single-click-command", "")
+  let args = self.configProvider.getValue("editor.text.single-click-command-args", newJArray())
+  if commandName.len == 0:
+    return
+  discard self.runAction(commandName, args)
+
+proc runDoubleClickCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
+  let commandName = self.configProvider.getValue("editor.text.double-click-command", "extend-select-move")
+  let args = self.configProvider.getValue("editor.text.double-click-command-args", %[newJString("word"), newJBool(true)])
+  if commandName.len == 0:
+    return
+  discard self.runAction(commandName, args)
+
+proc runTripleClickCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
+  let commandName = self.configProvider.getValue("editor.text.triple-click-command", "extend-select-move")
+  let args = self.configProvider.getValue("editor.text.triple-click-command-args", %[newJString("line"), newJBool(true)])
+  if commandName.len == 0:
+    return
+  discard self.runAction(commandName, args)
+
+proc runDragCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
+  if self.lastPressedMouseButton == Left:
+    self.runSingleClickCommand()
+  elif self.lastPressedMouseButton == DoubleClick:
+    self.runDoubleClickCommand()
+  elif self.lastPressedMouseButton == TripleClick:
+    self.runTripleClickCommand()
+
 method injectDependencies*(self: TextDocumentEditor, app: AppInterface) =
   self.app = app
   self.platform = app.platform
@@ -1727,55 +1783,6 @@ proc getCursorAtPixelPos(self: TextDocumentEditor, mousePosWindow: Vec2): Option
         return (line.index, byteIndex).some
       startOffset += part.text.runeLen
   return Cursor.none
-
-method handleMousePress*(self: TextDocumentEditor, button: MouseButton, mousePosWindow: Vec2, modifiers: Modifiers) =
-  # todo
-  # if self.showCompletions and self.lastCompletionsWidget.isNotNil and self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
-  #   if button == MouseButton.Left or button == MouseButton.Middle:
-  #     self.selectedCompletion = self.getHoveredCompletion(mousePosWindow)
-  #     self.markDirty()
-  #   return
-
-  if button == MouseButton.Left and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
-    if Alt in modifiers:
-      self.selections = self.selections & cursor.toSelection
-    else:
-      self.selection = cursor.toSelection
-
-    if Control in modifiers:
-      self.gotoDefinition()
-
-  if button == MouseButton.DoubleClick and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
-    self.selectInside(cursor)
-
-  if button == MouseButton.TripleClick and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
-    self.selectLine(cursor.line)
-
-method handleMouseRelease*(self: TextDocumentEditor, button: MouseButton, mousePosWindow: Vec2) =
-  # todo
-  # if button == MouseButton.Left and self.showCompletions and self.lastCompletionsWidget.isNotNil and self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
-  #   let oldSelectedCompletion = self.selectedCompletion
-  #   self.selectedCompletion = self.getHoveredCompletion(mousePosWindow)
-  #   if self.selectedCompletion == oldSelectedCompletion:
-  #     self.applySelectedCompletion()
-  #     self.markDirty()
-
-  # if self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
-  #   self.selection = cursor.toSelection(self.selection, Last)
-  discard
-
-method handleMouseMove*(self: TextDocumentEditor, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) =
-  # todo
-  # if self.showCompletions and self.lastCompletionsWidget.isNotNil and self.lastCompletionsWidget.lastBounds.contains(mousePosWindow):
-  #   if MouseButton.Middle in buttons:
-  #     self.selectedCompletion = self.getHoveredCompletion(mousePosWindow)
-  #     self.markDirty()
-  #   return
-
-  if MouseButton.Left in buttons and self.getCursorAtPixelPos(mousePosWindow).getSome(cursor):
-    self.selection = cursor.toSelection(self.selection, Last)
-    self.scrollToCursor(self.selection.last, margin=(2*self.platform.lineHeight).some, allowCenter=false)
-
 
 method unregister*(self: TextDocumentEditor) =
   self.app.unregisterEditor(self)

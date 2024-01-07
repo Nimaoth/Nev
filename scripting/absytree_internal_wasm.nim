@@ -138,6 +138,8 @@ proc editor_text_getSelectionInPair_Selection_TextDocumentEditor_Cursor_char_imp
     self: TextDocumentEditor; cursor: Cursor; delimiter: char): Selection  {.importc.}
 proc editor_text_getSelectionInPairNested_Selection_TextDocumentEditor_Cursor_char_char_impl(
     self: TextDocumentEditor; cursor: Cursor; open: char; close: char): Selection  {.importc.}
+proc editor_text_extendSelectionWithMove_Selection_TextDocumentEditor_Selection_string_int_impl(
+    self: TextDocumentEditor; selection: Selection; move: string; count: int = 0): Selection  {.importc.}
 proc editor_text_getSelectionForMove_Selection_TextDocumentEditor_Cursor_string_int_impl(
     self: TextDocumentEditor; cursor: Cursor; move: string; count: int = 0): Selection  {.importc.}
 proc editor_text_applyMove_void_TextDocumentEditor_JsonNode_impl(
@@ -146,6 +148,9 @@ proc editor_text_deleteMove_void_TextDocumentEditor_string_bool_SelectionCursor_
     self: TextDocumentEditor; move: string; inside: bool = false;
     which: SelectionCursor = SelectionCursor.Config; all: bool = true)  {.importc.}
 proc editor_text_selectMove_void_TextDocumentEditor_string_bool_SelectionCursor_bool_impl(
+    self: TextDocumentEditor; move: string; inside: bool = false;
+    which: SelectionCursor = SelectionCursor.Config; all: bool = true)  {.importc.}
+proc editor_text_extendSelectMove_void_TextDocumentEditor_string_bool_SelectionCursor_bool_impl(
     self: TextDocumentEditor; move: string; inside: bool = false;
     which: SelectionCursor = SelectionCursor.Config; all: bool = true)  {.importc.}
 proc editor_text_copyMove_void_TextDocumentEditor_string_bool_SelectionCursor_bool_impl(
@@ -194,6 +199,14 @@ proc editor_text_setSelection_void_TextDocumentEditor_Cursor_string_impl(
     self: TextDocumentEditor; cursor: Cursor; nextMode: string)  {.importc.}
 proc editor_text_enterChooseCursorMode_void_TextDocumentEditor_string_impl(
     self: TextDocumentEditor; action: string)  {.importc.}
+proc editor_text_runSingleClickCommand_void_TextDocumentEditor_impl(
+    self: TextDocumentEditor)  {.importc.}
+proc editor_text_runDoubleClickCommand_void_TextDocumentEditor_impl(
+    self: TextDocumentEditor)  {.importc.}
+proc editor_text_runTripleClickCommand_void_TextDocumentEditor_impl(
+    self: TextDocumentEditor)  {.importc.}
+proc editor_text_runDragCommand_void_TextDocumentEditor_impl(
+    self: TextDocumentEditor)  {.importc.}
 proc popup_selector_accept_void_SelectorPopup_impl(self: SelectorPopup)  {.importc.}
 proc popup_selector_cancel_void_SelectorPopup_impl(self: SelectorPopup)  {.importc.}
 proc popup_selector_prev_void_SelectorPopup_impl(self: SelectorPopup)  {.importc.}
