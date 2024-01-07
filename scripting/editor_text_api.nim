@@ -199,6 +199,10 @@ proc getSelectionInPairNested*(self: TextDocumentEditor; cursor: Cursor;
                                open: char; close: char): Selection =
   editor_text_getSelectionInPairNested_Selection_TextDocumentEditor_Cursor_char_char_impl(
       self, cursor, open, close)
+proc extendSelectionWithMove*(self: TextDocumentEditor; selection: Selection;
+                              move: string; count: int = 0): Selection =
+  editor_text_extendSelectionWithMove_Selection_TextDocumentEditor_Selection_string_int_impl(
+      self, selection, move, count)
 proc getSelectionForMove*(self: TextDocumentEditor; cursor: Cursor;
                           move: string; count: int = 0): Selection =
   editor_text_getSelectionForMove_Selection_TextDocumentEditor_Cursor_string_int_impl(
@@ -217,6 +221,12 @@ proc selectMove*(self: TextDocumentEditor; move: string; inside: bool = false;
                  which: SelectionCursor = SelectionCursor.Config;
                  all: bool = true) =
   editor_text_selectMove_void_TextDocumentEditor_string_bool_SelectionCursor_bool_impl(
+      self, move, inside, which, all)
+proc extendSelectMove*(self: TextDocumentEditor; move: string;
+                       inside: bool = false;
+                       which: SelectionCursor = SelectionCursor.Config;
+                       all: bool = true) =
+  editor_text_extendSelectMove_void_TextDocumentEditor_string_bool_SelectionCursor_bool_impl(
       self, move, inside, which, all)
 proc copyMove*(self: TextDocumentEditor; move: string; inside: bool = false;
                which: SelectionCursor = SelectionCursor.Config; all: bool = true) =
@@ -275,3 +285,11 @@ proc setSelection*(self: TextDocumentEditor; cursor: Cursor; nextMode: string) =
 proc enterChooseCursorMode*(self: TextDocumentEditor; action: string) =
   editor_text_enterChooseCursorMode_void_TextDocumentEditor_string_impl(self,
       action)
+proc runSingleClickCommand*(self: TextDocumentEditor) =
+  editor_text_runSingleClickCommand_void_TextDocumentEditor_impl(self)
+proc runDoubleClickCommand*(self: TextDocumentEditor) =
+  editor_text_runDoubleClickCommand_void_TextDocumentEditor_impl(self)
+proc runTripleClickCommand*(self: TextDocumentEditor) =
+  editor_text_runTripleClickCommand_void_TextDocumentEditor_impl(self)
+proc runDragCommand*(self: TextDocumentEditor) =
+  editor_text_runDragCommand_void_TextDocumentEditor_impl(self)

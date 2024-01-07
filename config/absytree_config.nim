@@ -80,3 +80,11 @@ when defined(wasm):
   loadDefaultOptions()
   loadDefaultKeybindings()
   loadVimLikeKeybindings()
+
+  # Triple click to selects a line
+  setOption("editor.text.triple-click-command", "extend-select-move")
+  setOption("editor.text.triple-click-command-args", %[%"line", %true])
+
+  # Triple click selects a vim paragraph
+  # setOption("editor.text.triple-click-command", "extend-select-move")
+  # setOption("editor.text.triple-click-command-args", %[%"vim-paragraph-inner", %true])

@@ -62,7 +62,8 @@ proc vimMotionParagraphInner*(editor: TextDocumentEditor, cursor: Cursor, count:
     dec result.first.line
   while result.last.line + 1 < editor.lineCount and editor.lineLength(result.last.line + 1) > 0:
     inc result.last.line
-    result.last.column = editor.lineLength(result.last.line)
+
+  result.last.column = editor.lineLength(result.last.line)
 
 proc vimMotionParagraphOuter*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection =
   if editor.lineLength(cursor.line) == 0:
@@ -73,7 +74,8 @@ proc vimMotionParagraphOuter*(editor: TextDocumentEditor, cursor: Cursor, count:
     dec result.first.line
   while result.last.line + 1 < editor.lineCount and editor.lineLength(result.last.line) > 0:
     inc result.last.line
-    result.last.column = editor.lineLength(result.last.line)
+
+  result.last.column = editor.lineLength(result.last.line)
 
 iterator iterateTextObjects(editor: TextDocumentEditor, cursor: Cursor, move: string, backwards: bool = false): Selection =
   var selection = editor.getSelectionForMove(cursor, move, 0)
@@ -151,6 +153,12 @@ proc moveSelectionEnd(editor: TextDocumentEditor, move: string, backwards: bool 
     )
 
   editor.scrollToCursor(Last)
+
+# todo
+addCustomTextMove "vim-word", vimMotionWord
+addCustomTextMove "vim-WORD", vimMotionWordBig
+addCustomTextMove "vim-paragraph-inner", vimMotionParagraphInner
+addCustomTextMove "vim-paragraph-outer", vimMotionParagraphOuter
 
 proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   let t = startTimer()
@@ -371,12 +379,6 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   addTextCommand "", "<ESCAPE>", "set-mode", ""
   addTextCommand "", "<C-c>", "set-mode", ""
-
-  # todo
-  addCustomTextMove "vim-word", vimMotionWord
-  addCustomTextMove "vim-WORD", vimMotionWordBig
-  addCustomTextMove "vim-paragraph-inner", vimMotionParagraphInner
-  addCustomTextMove "vim-paragraph-outer", vimMotionParagraphOuter
 
   # Text object motions
   addTextCommandBlock "", "w": editor.moveSelectionNext("vim-word", allowEmpty=true)

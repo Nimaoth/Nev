@@ -141,21 +141,40 @@ proc renderLine*(
 
             capture line, partNode, startRune, textRuneLen:
               onClickAny btn:
+                self.lastPressedMouseButton = btn
                 if btn == Left:
                   let offset = self.getCursorPos(textRuneLen, line.index, startRune.RuneIndex, pos)
                   self.selection = (line.index, offset).toSelection
+                  self.dragStartSelection = self.selection
+                  self.runSingleClickCommand()
+                  self.app.tryActivateEditor(self)
+                  self.markDirty()
+                elif btn == DoubleClick:
+                  let offset = self.getCursorPos(textRuneLen, line.index, startRune.RuneIndex, pos)
+                  self.selection = (line.index, offset).toSelection
+                  self.dragStartSelection = self.selection
+                  self.runDoubleClickCommand()
                   self.app.tryActivateEditor(self)
                   self.markDirty()
                 elif btn == TripleClick:
-                  self.selection = ((line.index, 0), (line.index, self.document.lineLength(line.index)))
+                  let offset = self.getCursorPos(textRuneLen, line.index, startRune.RuneIndex, pos)
+                  self.selection = (line.index, offset).toSelection
+                  self.dragStartSelection = self.selection
+                  self.runTripleClickCommand()
                   self.app.tryActivateEditor(self)
                   self.markDirty()
 
               onDrag Left:
                 if self.active:
                   let offset = self.getCursorPos(textRuneLen, line.index, startRune.RuneIndex, pos)
-                  let currentSelection = self.selection
-                  self.selection = (currentSelection.first, (line.index, offset))
+                  let currentSelection = self.dragStartSelection
+                  let newCursor = (line.index, offset)
+                  let first = if (currentSelection.isBackwards and newCursor <= currentSelection.first) or (not currentSelection.isBackwards and newCursor >= currentSelection.first):
+                    currentSelection.first
+                  else:
+                    currentSelection.last
+                  self.selection = (first, newCursor)
+                  self.runDragCommand()
                   self.app.tryActivateEditor(self)
                   self.markDirty()
 
@@ -190,19 +209,36 @@ proc renderLine*(
         builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = backgroundColor):
           capture line, currentNode:
             onClickAny btn:
+              self.lastPressedMouseButton = btn
               if btn == Left:
                 self.selection = (line.index, self.document.lineLength(line.index)).toSelection
+                self.dragStartSelection = self.selection
+                self.app.tryActivateEditor(self)
+                self.runSingleClickCommand()
+                self.markDirty()
+              elif btn == DoubleClick:
+                self.selection = (line.index, self.document.lineLength(line.index)).toSelection
+                self.dragStartSelection = self.selection
+                self.runDoubleClickCommand()
                 self.app.tryActivateEditor(self)
                 self.markDirty()
               elif btn == TripleClick:
-                self.selection = ((line.index, 0), (line.index, self.document.lineLength(line.index)))
+                self.selection = (line.index, self.document.lineLength(line.index)).toSelection
+                self.dragStartSelection = self.selection
+                self.runTripleClickCommand()
                 self.app.tryActivateEditor(self)
                 self.markDirty()
 
             onDrag Left:
               if self.active:
-                let currentSelection = self.selection
-                self.selection = (currentSelection.first, (line.index, self.document.lineLength(line.index)))
+                let currentSelection = self.dragStartSelection
+                let newCursor = (line.index, self.document.lineLength(line.index))
+                let first = if (currentSelection.isBackwards and newCursor < currentSelection.first) or (not currentSelection.isBackwards and newCursor >= currentSelection.first):
+                  currentSelection.first
+                else:
+                  currentSelection.last
+                self.selection = (first, newCursor)
+                self.runDragCommand()
                 self.app.tryActivateEditor(self)
                 self.markDirty()
 
