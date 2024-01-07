@@ -204,37 +204,45 @@ proc mySafeLoadScriptWithState*(self: ScriptContextNim, modules: seq[string]) {.
     if state.getSome(state):
       inter.loadState(state)
 
-proc myFindNimStdLib(): string =
+proc myFindNimStdLib(): Option[string] =
   ## Tries to find a path to a valid "system.nim" file.
   ## Returns "" on failure.
 
   let customNimStdLib = getAppDir() / "scripting" / "nim" / "lib"
   if dirExists(customNimStdLib):
     log lvlInfo, fmt"Using custom nim std lib '{customNimStdLib}'"
-    return customNimStdLib
+    return customNimStdLib.some
 
   try:
     log lvlInfo, "Searching for nim std lib directory using 'nim --verbosity:0 dump --dump.format:json .'"
     let nimdump = execProcess("nim", ".", ["--verbosity:0", "dump", "--dump.format:json", "."], options={poUsePath, poDaemon})
-    let nimdumpJson = nimdump.parseJson()
-    return nimdumpJson["libpath"].getStr ""
+    let nimdumpJson = try:
+      nimdump.parseJson()
+    except:
+      log lvlError, &"Failed to parse output of nim dump: {getCurrentExceptionMsg()}\n{nimdump}"
+      return string.none
+
+    return nimdumpJson["libpath"].getStr("").some
   except OSError, ValueError:
-    log lvlError, fmt"Failed to find nim std path using nim dump: {getCurrentExceptionMsg()}"
-    return ""
+    log lvlError, &"Failed to find nim std path using nim dump: {getCurrentExceptionMsg()}"
+    return string.none
 
-proc newScriptContext*(path: string, apiModule: string, addins: VMAddins, postCodeAdditions: string, searchPaths: seq[string]): Future[ScriptContextNim] {.async.} =
-  new result
-  result.script = NimScriptPath(path)
-  result.apiModule = apiModule
-  result.addins = addins
-  result.postCodeAdditions = postCodeAdditions
-  result.searchPaths = searchPaths
-
-  result.stdPath = myFindNimStdLib()
-  if result.stdPath == "":
+proc newScriptContext*(path: string, apiModule: string, addins: VMAddins, postCodeAdditions: string, searchPaths: seq[string]): Future[Option[ScriptContext]] {.async.} =
+  let stdPath = myFindNimStdLib().getOr:
     log lvlError, "Failed to find nim std path"
+    return ScriptContext.none
 
-  log lvlInfo, fmt"Creating new script context (search paths: {searchPaths}, std path: {result.stdPath})"
+  let res = ScriptContextNim()
+  res.script = NimScriptPath(path)
+  res.apiModule = apiModule
+  res.addins = addins
+  res.postCodeAdditions = postCodeAdditions
+  res.searchPaths = searchPaths
+  res.stdPath = stdPath
+
+  log lvlInfo, fmt"Creating new script context (search paths: {searchPaths}, std path: {res.stdPath})"
+
+  return res.ScriptContext.some
 
 method init*(self: ScriptContextNim, path: string): Future[void] {.async.} =
   self.state = Initializing
@@ -294,7 +302,7 @@ proc generateScriptingApi*(addins: VMAddins) {.compileTime.} =
     generateScriptingApiPerModule()
 
 template createScriptContextConstructor*(addins: untyped): untyped =
-  proc createScriptContextNim(filepath: string, searchPaths: seq[string]): Future[ScriptContext] {.async.} =
+  proc createScriptContextNim(filepath: string, searchPaths: seq[string]): Future[Option[ScriptContext]] {.async.} =
     return await newScriptContext(filepath, "absytree_internal", addins, "include absytree_runtime_impl", searchPaths)
 
 macro invoke*(self: ScriptContext; pName: untyped;

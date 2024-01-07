@@ -591,7 +591,7 @@ proc setTheme*(self: App, path: string) =
   self.platform.requestRender()
 
 when not defined(js):
-  var createScriptContext: proc(filepath: string, searchPaths: seq[string]): Future[ScriptContext] = nil
+  var createScriptContext: proc(filepath: string, searchPaths: seq[string]): Future[Option[ScriptContext]] = nil
 
 proc getCommandLineTextEditor*(self: App): TextDocumentEditor = self.commandLineTextEditor.TextDocumentEditor
 
@@ -625,7 +625,10 @@ proc initScripting(self: App) {.async.} =
         path = fs.getApplicationFilePath(rest)
 
     when not defined(js):
-      self.scriptContext = await createScriptContext("./config/absytree_config.nim", searchPaths)
+      if createScriptContext("./config/absytree_config.nim", searchPaths).await.getSome(scriptContext):
+        self.scriptContext = scriptContext
+      else:
+        log lvlError, "Failed to create nim script context"
 
     withScriptContext self, self.scriptContext:
       log(lvlInfo, fmt"init nim script config")
@@ -2022,7 +2025,7 @@ template createNimScriptContextConstructorAndGenerateBindings*(): untyped =
 
     createScriptContextConstructor(addins)
 
-    proc createScriptContextImpl(filepath: string, searchPaths: seq[string]): Future[ScriptContext] = createScriptContextNim(filepath, searchPaths)
+    proc createScriptContextImpl(filepath: string, searchPaths: seq[string]): Future[Option[ScriptContext]] = createScriptContextNim(filepath, searchPaths)
     createScriptContext = createScriptContextImpl
 
   createEditorWasmImportConstructor()
