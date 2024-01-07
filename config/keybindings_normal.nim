@@ -60,8 +60,8 @@ proc loadNormalKeybindings*() {.scriptActionWasmNims("load-normal-keybindings").
   addTextCommand "", "<C-m>", "select-next"
   addTextCommand "", "<C-t>", "select-next"
   addTextCommand "", "<C-n>", "invert-selection"
-  addTextCommand "", "<C-y>", "undo"
-  addTextCommand "", "<C-z>", "redo"
+  addTextCommand "", "<C-z>", "undo"
+  addTextCommand "", "<C-y>", "redo"
   addTextCommand "", "<C-c>", "copy"
   addTextCommand "", "<C-v>", "paste"
   addTextCommand "", "<TAB>", "indent"
@@ -144,8 +144,8 @@ proc loadNormalKeybindings*() {.scriptActionWasmNims("load-normal-keybindings").
     addCommand("editor.model", "<SA-HOME>", "move-cursor-line-start-inline", true)
     addCommand("editor.model", "<SA-END>", "move-cursor-line-end-inline", true)
 
-    addCommand("editor.model", "<C-y>", "undo")
-    addCommand("editor.model", "<C-z>", "redo")
+    addCommand("editor.model", "<C-z>", "undo")
+    addCommand("editor.model", "<C-y>", "redo")
 
     addCommand("editor.model", "<C-c>", "copy-node")
     addCommand("editor.model", "<C-v>", "paste-node")
