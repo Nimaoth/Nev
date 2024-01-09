@@ -24,14 +24,13 @@ proc createJsonWrapper*(def: NimNode, newName: NimNode): NimNode =
     let originalArgumentType = def.argType i
     var mappedArgumentType = originalArgumentType
     let index = newLit(i)
-    let isVarargs = newLit(def.isVarargs(i))
 
     let tempArg = if def.isVarargs(i):
       genAst(jsonArg, index): jsonArg[index..^1]
     else:
       genAst(jsonArg, index): jsonArg[index]
 
-    let tempArg2 = genAst(jsonArg, index, mappedArgumentType): jsonArg[index].jsonTo(mappedArgumentType)
+    let tempArg2 = genAst(jsonArg, index, mappedArgumentType): jsonArg[index].jsonTo(mappedArgumentType, JOptions(allowExtraKeys: true))
 
     # The argument for the call to scriptFunction in the wrapper
     let resWrapper = if def.argDefaultValue(i).getSome(default):

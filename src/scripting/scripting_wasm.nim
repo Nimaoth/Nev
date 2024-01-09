@@ -142,12 +142,18 @@ method handleAnyCallback*(self: ScriptContextWasm, id: int, arg: JsonNode): Json
       continue
 
 method handleScriptAction*(self: ScriptContextWasm, name: string, args: JsonNode): JsonNode =
+  result = nil
   let argStr = $args
   for (m, f) in self.handleScriptActionCallbacks:
-    let res = f(name.cstring, argStr.cstring)
-    if res.isNotNil:
-      return ($res).parseJson
-  return newJNull()
+    let res = $f(name.cstring, argStr.cstring)
+    if res.len == 0:
+      continue
+
+    try:
+      return res.parseJson
+    except:
+      log lvlError, &"Failed to parse json from script action {name}({args}): '{res}' is not valid json.\n{getCurrentExceptionMsg()}"
+      continue
 
 # Sets the implementation of createEditorWasmImports. This needs to happen late during compilation after any expose pragmas have been executed,
 # because this goes through all exposed functions at compile time to create the wasm import data.

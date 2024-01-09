@@ -3612,14 +3612,14 @@ method handleAction*(self: ModelDocumentEditor, action: string, arg: string): Ev
 
   var args = newJArray()
   try:
+    args.add api.ModelDocumentEditor(id: self.id).toJson
+
     for a in newStringStream(arg).parseJsonFragments():
       args.add a
 
     if self.app.handleUnknownDocumentEditorAction(self, action, args) == Handled:
       self.markDirty()
       return Handled
-
-    args.elems.insert api.ModelDocumentEditor(id: self.id).toJson, 0
 
     if dispatch(action, args).isSome:
       self.markDirty()

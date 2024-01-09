@@ -278,8 +278,7 @@ proc invokeCallback*(self: App, context: string, args: JsonNode): bool =
     return false
 
 proc invokeAnyCallback*(self: App, context: string, args: JsonNode): JsonNode =
-  if not self.callbacks.contains(context):
-    return newJNull()
+  if self.callbacks.contains(context):
   let id = self.callbacks[context]
   try:
     withScriptContext self, self.scriptContext:
@@ -291,11 +290,28 @@ proc invokeAnyCallback*(self: App, context: string, args: JsonNode): JsonNode =
       let res = self.wasmScriptContext.handleAnyCallback(id, args)
       if res.isNotNil:
         return res
-    return newJNull()
+      return nil
   except CatchableError:
     log(lvlError, fmt"Failed to run script handleAnyCallback {id}: {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
-    return newJNull()
+      return nil
+
+  else:
+    try:
+      withScriptContext self, self.scriptContext:
+        let res = self.scriptContext.handleScriptAction(context, args)
+        if res.isNotNil:
+          return res
+
+      withScriptContext self, self.wasmScriptContext:
+        let res = self.wasmScriptContext.handleScriptAction(context, args)
+        if res.isNotNil:
+          return res
+      return nil
+    except CatchableError:
+      log(lvlError, fmt"Failed to run script handleScriptAction {context}: {getCurrentExceptionMsg()}")
+      log(lvlError, getCurrentException().getStackTrace())
+      return nil
 
 proc handleAction(action: string, arg: string): EventResponse =
   log(lvlInfo, "event: " & action & " - " & arg)
