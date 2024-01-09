@@ -85,20 +85,20 @@
 
 ## Pattern searches
 
-| Status                    | Command                            | Description                                            | Note |
-| ------------------------- | ---------------------------------- | ------------------------------------------------------ | ---- |
-| :running:          :star: | :1234: `/{pattern}[/[offset]]<CR>` | search forward for the Nth occurrence of {pattern}     |      |
-| :running:          :star: | :1234: `?{pattern}[?[offset]]<CR>` | search backward for the Nth occurrence of {pattern}    |      |
-| :running:                 | :1234: `/<CR>`                     | repeat last search, in the forward direction           |      |
-| :running:                 | :1234: `?<CR>`                     | repeat last search, in the backward direction          |      |
-| :running:                 | :1234: n                           | repeat last search                                     |      |
-| :running:                 | :1234: N                           | repeat last search, in opposite direction              |      |
-| :running:                 | :1234: \*                          | search forward for the identifier under the cursor     |      |
-| :running:                 | :1234: #                           | search backward for the identifier under the cursor    |      |
-| :running:                 | :1234: g\*                         | like "\*", but also find partial matches               |      |
-| :running:                 | :1234: g#                          | like "#", but also find partial matches                |      |
-| :running:                 | gd                                 | goto local declaration of identifier under the cursor  |      |
-| :arrow_down:              | gD                                 | goto global declaration of identifier under the cursor |      |
+| Status       | Command                            | Description                                            | Note |
+| ------------ | ---------------------------------- | ------------------------------------------------------ | ---- |
+| :running:    | :1234: `/{pattern}[/[offset]]<CR>` | search forward for the Nth occurrence of {pattern}     |      |
+| :running:    | :1234: `?{pattern}[?[offset]]<CR>` | search backward for the Nth occurrence of {pattern}    |      |
+| :running:    | :1234: `/<CR>`                     | repeat last search, in the forward direction           |      |
+| :running:    | :1234: `?<CR>`                     | repeat last search, in the backward direction          |      |
+| :running:    | :1234: n                           | repeat last search                                     |      |
+| :running:    | :1234: N                           | repeat last search, in opposite direction              |      |
+| :running:    | :1234: \*                          | search forward for the identifier under the cursor     |      |
+| :running:    | :1234: #                           | search backward for the identifier under the cursor    |      |
+| :running:    | :1234: g\*                         | like "\*", but also find partial matches               |      |
+| :running:    | :1234: g#                          | like "#", but also find partial matches                |      |
+| :running:    | gd                                 | goto local declaration of identifier under the cursor  |      |
+| :arrow_down: | gD                                 | goto global declaration of identifier under the cursor |      |
 
 ## Marks and motions
 
@@ -175,12 +175,12 @@
 
 These only work when 'wrap' is off:
 
-| Status                    | Command   | Description                                   | Note |
-| ------------------------- | --------- | --------------------------------------------- | ---- |
-| :running:          :star: | :1234: zh | scroll screen N characters to the right       |      |
-| :running:          :star: | :1234: zl | scroll screen N characters to the left        |      |
-| :running:          :star: | :1234: zH | scroll screen half a screenwidth to the right |      |
-| :running:          :star: | :1234: zL | scroll screen half a screenwidth to the left  |      |
+| Status    | Command   | Description                                   | Note |
+| --------- | --------- | --------------------------------------------- | ---- |
+| :running: | :1234: zh | scroll screen N characters to the right       |      |
+| :running: | :1234: zl | scroll screen N characters to the left        |      |
+| :running: | :1234: zH | scroll screen half a screenwidth to the right |      |
+| :running: | :1234: zL | scroll screen half a screenwidth to the left  |      |
 
 ## Inserting text
 
@@ -210,8 +210,8 @@ moving around:
 | Status             | Command          | Description                             |
 | ------------------ | ---------------- | --------------------------------------- |
 | :white_check_mark: | cursor keys      | move cursor left/right/up/down          |
-| :running:          | shift-left/right | one word left/right                     |
-| :running:          | shift-up/down    | one screenful backward/forward          |
+| :white_check_mark: | shift-left/right | one word left/right                     |
+| :white_check_mark: | shift-up/down    | one screenful backward/forward          |
 | :white_check_mark: | End              | cursor after last character in the line |
 | :white_check_mark: | Home             | cursor to first character in the line   |
 
@@ -242,32 +242,32 @@ moving around:
 
 | Status       | Command                                 | Description                   |
 | ------------ | --------------------------------------- | ----------------------------- |
-| :running:    | :dig[raphs]                             | show current list of digraphs |
+| :arrow_down: | :dig[raphs]                             | show current list of digraphs |
 | :arrow_down: | :dig[raphs] {char1}{char2} {number} ... | add digraph(s) to the list    |
 
 ## Special inserts
 
-| Status    | Command       | Description                                              |
-| --------- | ------------- | -------------------------------------------------------- |
-| :running: | :r [file]     | insert the contents of [file] below the cursor           |
-| :running: | :r! {command} | insert the standard output of {command} below the cursor |
+| Status       | Command       | Description                                              |
+| ------------ | ------------- | -------------------------------------------------------- |
+| :arrow_down: | :r [file]     | insert the contents of [file] below the cursor           |
+| :arrow_down: | :r! {command} | insert the standard output of {command} below the cursor |
 
 ## Deleting text
 
-| Status    | Command          | Description                                        |
-| --------- | ---------------- | -------------------------------------------------- |
-| :running: | :1234: x         | delete N characters under and after the cursor     |
-| :running: | :1234: Del       | delete N characters under and after the cursor     |
-| :running: | :1234: X         | delete N characters before the cursor              |
-| :running: | :1234: d{motion} | delete the text that is moved over with {motion}   |
-| :running: | {visual}d        | delete the highlighted text                        |
-| :running: | :1234: dd        | delete N lines                                     |
-| :running: | :1234: D         | delete to the end of the line (and N-1 more lines) |
-| :running: | :1234: J         | join N-1 lines (delete EOLs)                       |
-| :running: | {visual}J        | join the highlighted lines                         |
-| :running: | :1234: gJ        | like "J", but without inserting spaces             |
-| :running: | {visual}gJ       | like "{visual}J", but without inserting spaces     |
-| :running: | :[range]d [x]    | delete [range] lines [into register x]             |
+| Status             | Command          | Description                                        |
+| ------------------ | ---------------- | -------------------------------------------------- |
+| :white_check_mark: | :1234: x         | delete N characters under and after the cursor     |
+| :white_check_mark: | :1234: Del       | delete N characters under and after the cursor     |
+| :white_check_mark: | :1234: X         | delete N characters before the cursor              |
+| :running:          | :1234: d{motion} | delete the text that is moved over with {motion}   |
+| :running:          | {visual}d        | delete the highlighted text                        |
+| :running:          | :1234: dd        | delete N lines                                     |
+| :running:          | :1234: D         | delete to the end of the line (and N-1 more lines) |
+| :running:          | :1234: J         | join N-1 lines (delete EOLs)                       |
+| :running:          | {visual}J        | join the highlighted lines                         |
+| :running:          | :1234: gJ        | like "J", but without inserting spaces             |
+| :running:          | {visual}gJ       | like "{visual}J", but without inserting spaces     |
+| :running:          | :[range]d [x]    | delete [range] lines [into register x]             |
 
 ## Copying and moving text
 
@@ -290,13 +290,13 @@ moving around:
 
 ## Changing text
 
-| Status                    | Command         | Description                                                                                       | Note |
-| ------------------------- | --------------- | ------------------------------------------------------------------------------------------------- | ---- |
-| :running:                 | :1234: r{char}  | replace N characters with {char}                                                                  |      |
-| :arrow_down:              | :1234: gr{char} | replace N characters without affecting layout                                                     |      |
-| :running:          :star: | :1234: R        | enter Replace mode (repeat the entered text N times)                                              |      |
-| :arrow_down:              | :1234: gR       | enter virtual Replace mode: Like Replace mode but without affecting layout                        |      |
-| :running:                 | {visual}r{char} | in Visual block, visual, or visual line modes: Replace each char of the selected text with {char} |      |
+| Status       | Command         | Description                                                                                       | Note |
+| ------------ | --------------- | ------------------------------------------------------------------------------------------------- | ---- |
+| :running:    | :1234: r{char}  | replace N characters with {char}                                                                  |      |
+| :arrow_down: | :1234: gr{char} | replace N characters without affecting layout                                                     |      |
+| :running:    | :1234: R        | enter Replace mode (repeat the entered text N times)                                              |      |
+| :arrow_down: | :1234: gR       | enter virtual Replace mode: Like Replace mode but without affecting layout                        |      |
+| :running:    | {visual}r{char} | in Visual block, visual, or visual line modes: Replace each char of the selected text with {char} |      |
 
 (change = delete text and enter Insert mode)
 
@@ -331,19 +331,19 @@ moving around:
 
 ## Complex changes
 
-| Status                              | Command                                        | Description                                                                                                                           | Note |
-| ----------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ---- |
-| :arrow_down:                        | :1234: `!{motion}{command}<CR>`                | filter the lines that are moved over through {command}                                                                                |      |
-| :arrow_down:                        | :1234: `!!{command}<CR>`                       | filter N lines through {command}                                                                                                      |      |
-| :arrow_down:                        | `{visual}!{command}<CR>`                       | filter the highlighted lines through {command}                                                                                        |      |
-| :arrow_down:                        | `:[range]! {command}<CR>`                      | filter [range] lines through {command}                                                                                                |      |
-| :running:                           | :1234: ={motion}                               | filter the lines that are moved over through 'equalprg'                                                                               |      |
-| :running:                           | :1234: ==                                      | filter N lines through 'equalprg'                                                                                                     |      |
-| :running:                           | {visual}=                                      | filter the highlighted lines through 'equalprg'                                                                                       |      |
-| :running:          :star: :running: | :[range]s[ubstitute]/{pattern}/{string}/[g][c] | substitute {pattern} by {string} in [range] lines; with [g], replace all occurrences of {pattern}; with [c], confirm each replacement |      |
-| :arrow_down:                        | :[range]s[ubstitute][g][c]                     | repeat previous ":s" with new range and options                                                                                       |      |
-| :arrow_down:                        | &                                              | Repeat previous ":s" on current line without options                                                                                  |      |
-| :arrow_down:                        | :[range]ret[ab][!] [tabstop]                   | set 'tabstop' to new value and adjust white space accordingly                                                                         |      |
+| Status       | Command                                        | Description                                                                                                                           | Note |
+| ------------ | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| :arrow_down: | :1234: `!{motion}{command}<CR>`                | filter the lines that are moved over through {command}                                                                                |      |
+| :arrow_down: | :1234: `!!{command}<CR>`                       | filter N lines through {command}                                                                                                      |      |
+| :arrow_down: | `{visual}!{command}<CR>`                       | filter the highlighted lines through {command}                                                                                        |      |
+| :arrow_down: | `:[range]! {command}<CR>`                      | filter [range] lines through {command}                                                                                                |      |
+| :running:    | :1234: ={motion}                               | filter the lines that are moved over through 'equalprg'                                                                               |      |
+| :running:    | :1234: ==                                      | filter N lines through 'equalprg'                                                                                                     |      |
+| :running:    | {visual}=                                      | filter the highlighted lines through 'equalprg'                                                                                       |      |
+| :running:    | :[range]s[ubstitute]/{pattern}/{string}/[g][c] | substitute {pattern} by {string} in [range] lines; with [g], replace all occurrences of {pattern}; with [c], confirm each replacement |      |
+| :arrow_down: | :[range]s[ubstitute][g][c]                     | repeat previous ":s" with new range and options                                                                                       |      |
+| :arrow_down: | &                                              | Repeat previous ":s" on current line without options                                                                                  |      |
+| :arrow_down: | :[range]ret[ab][!] [tabstop]                   | set 'tabstop' to new value and adjust white space accordingly                                                                         |      |
 
 ## Visual mode
 
@@ -388,22 +388,22 @@ moving around:
 
 ## Repeating commands
 
-| Status                    | Command                           | Description                                                                                        | Note |
-| ------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------- | ---- |
-| :running:          :star: | :1234: .                          | repeat last change (with count replaced with N)                                                    |      |
-| :running:                 | q{a-z}                            | record typed characters into register {a-z}                                                        |      |
-| :arrow_down:              | q{A-Z}                            | record typed characters, appended to register {a-z}                                                |      |
-| :running:                 | q                                 | stop recording                                                                                     |      |
-| :running:                 | :1234: @{a-z}                     | execute the contents of register {a-z} (N times)                                                   |      |
-| :running:                 | :1234: @@                         | repeat previous @{a-z} (N times)                                                                   |      |
-| :arrow_down:              | :@{a-z}                           | execute the contents of register {a-z} as an Ex command                                            |      |
-| :arrow_down:              | :@@                               | repeat previous :@{a-z}                                                                            |      |
-| :arrow_down:              | :[range]g[lobal]/{pattern}/[cmd]  | execute Ex command [cmd](default: ':p') on the lines within [range] where {pattern} matches        |      |
-| :arrow_down:              | :[range]g[lobal]!/{pattern}/[cmd] | execute Ex command [cmd](default: ':p') on the lines within [range] where {pattern} does NOT match |      |
-| :arrow_down:              | :so[urce] {file}                  | read Ex commands from {file}                                                                       |      |
-| :arrow_down:              | :so[urce]! {file}                 | read Vim commands from {file}                                                                      |      |
-| :arrow_down:              | :sl[eep][sec]                     | don't do anything for [sec] seconds                                                                |      |
-| :arrow_down:              | :1234: gs                         | goto Sleep for N seconds                                                                           |      |
+| Status       | Command                           | Description                                                                                        | Note |
+| ------------ | --------------------------------- | -------------------------------------------------------------------------------------------------- | ---- |
+| :running:    | :1234: .                          | repeat last change (with count replaced with N)                                                    |      |
+| :running:    | q{a-z}                            | record typed characters into register {a-z}                                                        |      |
+| :arrow_down: | q{A-Z}                            | record typed characters, appended to register {a-z}                                                |      |
+| :running:    | q                                 | stop recording                                                                                     |      |
+| :running:    | :1234: @{a-z}                     | execute the contents of register {a-z} (N times)                                                   |      |
+| :running:    | :1234: @@                         | repeat previous @{a-z} (N times)                                                                   |      |
+| :arrow_down: | :@{a-z}                           | execute the contents of register {a-z} as an Ex command                                            |      |
+| :arrow_down: | :@@                               | repeat previous :@{a-z}                                                                            |      |
+| :arrow_down: | :[range]g[lobal]/{pattern}/[cmd]  | execute Ex command [cmd](default: ':p') on the lines within [range] where {pattern} matches        |      |
+| :arrow_down: | :[range]g[lobal]!/{pattern}/[cmd] | execute Ex command [cmd](default: ':p') on the lines within [range] where {pattern} does NOT match |      |
+| :arrow_down: | :so[urce] {file}                  | read Ex commands from {file}                                                                       |      |
+| :arrow_down: | :so[urce]! {file}                 | read Vim commands from {file}                                                                      |      |
+| :arrow_down: | :sl[eep][sec]                     | don't do anything for [sec] seconds                                                                |      |
+| :arrow_down: | :1234: gs                         | goto Sleep for N seconds                                                                           |      |
 
 ## Undo/Redo commands
 
@@ -423,58 +423,58 @@ moving around:
 
 ## Ex ranges
 
-| Status                    | Command       | Description                                                                  | Note |
-| ------------------------- | ------------- | ---------------------------------------------------------------------------- | ---- |
-| :running:                 | ,             | separates two line numbers                                                   |      |
-| :running:          :star: | ;             | idem, set cursor to the first line number before interpreting the second one |      |
-| :running:                 | {number}      | an absolute line number                                                      |      |
-| :running:                 | .             | the current line                                                             |      |
-| :running:                 | \$            | the last line in the file                                                    |      |
-| :running:                 | %             | equal to 1,\$ (the entire file)                                              |      |
-| :running:                 | \*            | equal to '<,'> (visual area)                                                 |      |
-| :running:                 | 't            | position of mark t                                                           |      |
-| :arrow_down:              | /{pattern}[/] | the next line where {pattern} matches                                        |      |
-| :arrow_down:              | ?{pattern}[?] | the previous line where {pattern} matches                                    |      |
-| :running:                 | +[num]        | add [num] to the preceding line number (default: 1)                          |      |
-| :running:                 | -[num]        | subtract [num] from the preceding line number (default: 1)                   |      |
+| Status       | Command       | Description                                                                  | Note |
+| ------------ | ------------- | ---------------------------------------------------------------------------- | ---- |
+| :running:    | ,             | separates two line numbers                                                   |      |
+| :running:    | ;             | idem, set cursor to the first line number before interpreting the second one |      |
+| :running:    | {number}      | an absolute line number                                                      |      |
+| :running:    | .             | the current line                                                             |      |
+| :running:    | \$            | the last line in the file                                                    |      |
+| :running:    | %             | equal to 1,\$ (the entire file)                                              |      |
+| :running:    | \*            | equal to '<,'> (visual area)                                                 |      |
+| :running:    | 't            | position of mark t                                                           |      |
+| :arrow_down: | /{pattern}[/] | the next line where {pattern} matches                                        |      |
+| :arrow_down: | ?{pattern}[?] | the previous line where {pattern} matches                                    |      |
+| :running:    | +[num]        | add [num] to the preceding line number (default: 1)                          |      |
+| :running:    | -[num]        | subtract [num] from the preceding line number (default: 1)                   |      |
 
 ## Editing a file
 
-| Status                    | Command        | Description  | Note |
-| ------------------------- | -------------- | ------------ | ---- |
-| :running:          :star: | :e[dit] {file} | Edit {file}. |      |
+| Status    | Command        | Description  | Note |
+| --------- | -------------- | ------------ | ---- |
+| :running: | :e[dit] {file} | Edit {file}. |      |
 
 ## Multi-window commands
 
-| Status                    | Command           | Description                                                             | Note |
-| ------------------------- | ----------------- | ----------------------------------------------------------------------- | ---- |
-| :running:          :star: | :e[dit] {file}    | Edit {file}.                                                            |      |
-| :running:          :star: | &lt;ctrl-w&gt; hl | Switching between windows.                                              |      |
-| :running:                 | :sp {file}        | Split current window in two.                                            |      |
-| :running:          :star: | :vsp {file}       | Split vertically current window in two.                                 |      |
-| :running:                 | &lt;ctrl-w&gt; s  | Split current window in two.                                            |      |
-| :running:          :star: | &lt;ctrl-w&gt; v  | Split vertically current window in two.                                 |      |
-| :running:          :star: | &lt;ctrl-w&gt; o  | Close other editor groups.                                              |      |
-| :running:                 | :new              | Create a new window horizontally and start editing an empty file in it. |      |
-| :running:          :star: | :vne[w]           | Create a new window vertically and start editing an empty file in it.   |      |
+| Status    | Command           | Description                                                             | Note |
+| --------- | ----------------- | ----------------------------------------------------------------------- | ---- |
+| :running: | :e[dit] {file}    | Edit {file}.                                                            |      |
+| :running: | &lt;ctrl-w&gt; hl | Switching between windows.                                              |      |
+| :running: | :sp {file}        | Split current window in two.                                            |      |
+| :running: | :vsp {file}       | Split vertically current window in two.                                 |      |
+| :running: | &lt;ctrl-w&gt; s  | Split current window in two.                                            |      |
+| :running: | &lt;ctrl-w&gt; v  | Split vertically current window in two.                                 |      |
+| :running: | &lt;ctrl-w&gt; o  | Close other editor groups.                                              |      |
+| :running: | :new              | Create a new window horizontally and start editing an empty file in it. |      |
+| :running: | :vne[w]           | Create a new window vertically and start editing an empty file in it.   |      |
 
 ## Tabs
 
-| Status                    | Command                              | Description                                                                   | Note |
-| ------------------------- | ------------------------------------ | ----------------------------------------------------------------------------- | ---- |
-| :running:                 | :tabn[ext] :1234:                    | Go to next tab page or tab page {count}. The first tab page has number one.   |      |
-| :running:                 | {count}&lt;C-PageDown&gt;, {count}gt | Same as above                                                                 |      |
-| :running:                 | :tabp[revious] :1234:                | Go to the previous tab page. Wraps around from the first one to the last one. |      |
-| :running:                 | :tabN[ext] :1234:                    | Same as above                                                                 |      |
-| :running:                 | {count}&lt;C-PageUp&gt;, {count}gT   | Same as above                                                                 |      |
-| :running:                 | :tabfir[st]                          | Go to the first tab page.                                                     |      |
-| :running:                 | :tabl[ast]                           | Go to the last tab page.                                                      |      |
-| :running:                 | :tabe[dit] {file}                    | Open a new tab page with an empty window, after the current tab page          |      |
-| :arrow_down:              | :[count]tabe[dit], :[count]tabnew    | Same as above                                                                 |      |
-| :running:                 | :tabnew {file}                       | Open a new tab page with an empty window, after the current tab page          |      |
-| :arrow_down:              | :[count]tab {cmd}                    | Execute {cmd} and when it opens a new window open a new tab page instead.     |      |
-| :running:          :star: | :tabc[lose][!] :1234:                | Close current tab page or close tab page {count}.                             |      |
-| :running:          :star: | :tabo[nly][!]                        | Close all other tab pages.                                                    |      |
-| :running:                 | :tabm[ove][n]                        | Move the current tab page to after tab page N.                                |      |
-| :arrow_down:              | :tabs                                | List the tab pages and the windows they contain.                              |      |
-| :arrow_down:              | :tabd[o] {cmd}                       | Execute {cmd} in each tab page.                                               |      |
+| Status       | Command                              | Description                                                                   | Note |
+| ------------ | ------------------------------------ | ----------------------------------------------------------------------------- | ---- |
+| :running:    | :tabn[ext] :1234:                    | Go to next tab page or tab page {count}. The first tab page has number one.   |      |
+| :running:    | {count}&lt;C-PageDown&gt;, {count}gt | Same as above                                                                 |      |
+| :running:    | :tabp[revious] :1234:                | Go to the previous tab page. Wraps around from the first one to the last one. |      |
+| :running:    | :tabN[ext] :1234:                    | Same as above                                                                 |      |
+| :running:    | {count}&lt;C-PageUp&gt;, {count}gT   | Same as above                                                                 |      |
+| :running:    | :tabfir[st]                          | Go to the first tab page.                                                     |      |
+| :running:    | :tabl[ast]                           | Go to the last tab page.                                                      |      |
+| :running:    | :tabe[dit] {file}                    | Open a new tab page with an empty window, after the current tab page          |      |
+| :arrow_down: | :[count]tabe[dit], :[count]tabnew    | Same as above                                                                 |      |
+| :running:    | :tabnew {file}                       | Open a new tab page with an empty window, after the current tab page          |      |
+| :arrow_down: | :[count]tab {cmd}                    | Execute {cmd} and when it opens a new window open a new tab page instead.     |      |
+| :running:    | :tabc[lose][!] :1234:                | Close current tab page or close tab page {count}.                             |      |
+| :running:    | :tabo[nly][!]                        | Close all other tab pages.                                                    |      |
+| :running:    | :tabm[ove][n]                        | Move the current tab page to after tab page N.                                |      |
+| :arrow_down: | :tabs                                | List the tab pages and the windows they contain.                              |      |
+| :arrow_down: | :tabd[o] {cmd}                       | Execute {cmd} in each tab page.                                               |      |
