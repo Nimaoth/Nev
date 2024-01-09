@@ -279,21 +279,21 @@ proc invokeCallback*(self: App, context: string, args: JsonNode): bool =
 
 proc invokeAnyCallback*(self: App, context: string, args: JsonNode): JsonNode =
   if self.callbacks.contains(context):
-  let id = self.callbacks[context]
-  try:
-    withScriptContext self, self.scriptContext:
-      let res = self.scriptContext.handleAnyCallback(id, args)
-      if res.isNotNil:
-        return res
+    let id = self.callbacks[context]
+    try:
+      withScriptContext self, self.scriptContext:
+        let res = self.scriptContext.handleAnyCallback(id, args)
+        if res.isNotNil:
+          return res
 
-    withScriptContext self, self.wasmScriptContext:
-      let res = self.wasmScriptContext.handleAnyCallback(id, args)
-      if res.isNotNil:
-        return res
+      withScriptContext self, self.wasmScriptContext:
+        let res = self.wasmScriptContext.handleAnyCallback(id, args)
+        if res.isNotNil:
+          return res
       return nil
-  except CatchableError:
-    log(lvlError, fmt"Failed to run script handleAnyCallback {id}: {getCurrentExceptionMsg()}")
-    log(lvlError, getCurrentException().getStackTrace())
+    except CatchableError:
+      log(lvlError, fmt"Failed to run script handleAnyCallback {id}: {getCurrentExceptionMsg()}")
+      log(lvlError, getCurrentException().getStackTrace())
       return nil
 
   else:
