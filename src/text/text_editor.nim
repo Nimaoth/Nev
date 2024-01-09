@@ -978,6 +978,15 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
       if result.last.line + 1 < self.document.lines.len:
         result.last = (result.last.line + 1, 0)
 
+  of "line-prev":
+    result = ((cursor.line, 0), (cursor.line, self.document.lineLength(cursor.line)))
+    if result.first.line > 0:
+      result.first = (result.first.line - 1, self.document.lineLength(result.first.line - 1))
+    for _ in 1..<count:
+      result = result or ((result.first.line, 0), result.first)
+      if result.first.line > 0:
+        result.first = (result.first.line - 1, self.document.lineLength(result.first.line - 1))
+
   of "line-no-indent":
     let indent = self.document.getIndentForLine(cursor.line)
     result = ((cursor.line, indent), (cursor.line, self.document.lineLength(cursor.line)))
@@ -1071,7 +1080,8 @@ proc applyMove*(self: TextDocumentEditor, args {.varargs.}: JsonNode) {.expose("
   self.configProvider.setValue("text.move-count", self.getCommandCount)
   self.setMode self.configProvider.getValue("text.move-next-mode", "")
   self.setCommandCount self.configProvider.getValue("text.move-command-count", 0)
-  discard self.runAction(self.configProvider.getValue("text.move-action", ""), args)
+  let command = self.configProvider.getValue("text.move-action", "")
+  discard self.runAction(command, args)
   self.configProvider.setValue("text.move-action", "")
 
 proc deleteMove*(self: TextDocumentEditor, move: string, inside: bool = false, which: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
