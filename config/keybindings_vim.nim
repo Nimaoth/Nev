@@ -272,13 +272,19 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   setOption "editor.text.cursor.wide.", true
 
   setModeChangedHandler proc(editor, oldMode, newMode: auto) =
-    if oldMode == "normal" and newMode != "normal":
+    if newMode != "normal":
       editor.clearCurrentCommandHistory(retainLast=true)
-    elif oldMode != "normal" and newMode == "normal":
+
+    case newMode
+    of "normal":
       setOption "editor.text.vim-motion-action", "vim-select-last-cursor"
       setOption[string]("editor.text.vim-motion-next-mode", "normal")
       editor.selections = editor.selections.mapIt(it.last.toSelection)
       editor.saveCurrentCommandHistory()
+
+    of "insert":
+      setOption[string]("editor.text.vim-motion-action", "")
+      setOption[string]("editor.text.vim-motion-next-mode", "insert")
 
   for i in 0..9:
     capture i:
@@ -610,6 +616,6 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     editor.vimDeleteSelection()
     editor.setMode("normal")
 
-  addTextCommandBlock "visual", "d":
+  addTextCommandBlock "visual", "c":
     editor.vimDeleteSelection()
     editor.setMode("insert")
