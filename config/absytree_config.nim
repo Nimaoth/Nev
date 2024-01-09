@@ -2,6 +2,7 @@ import absytree_runtime
 import std/[strutils, sugar, sequtils, macros]
 
 import keybindings_vim
+import keybindings_vim_like
 import keybindings_helix
 import keybindings_normal
 
