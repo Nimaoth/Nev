@@ -5,6 +5,8 @@ import misc/[timer]
 
 infof"import vim keybindings"
 
+var vimMotionNextMode = initTable[EditorId, string]()
+
 proc getVimLineMargin*(): float = getOption[float]("editor.text.vim.line-margin", 5)
 proc getVimClipboard*(): string = getOption[string]("editor.text.vim.clipboard", "")
 proc getVimDefaultRegister*(): string =
@@ -51,7 +53,8 @@ proc vimFinishMotion(editor: TextDocumentEditor) =
   if command.len > 0:
     discard editor.runAction(command, newJArray())
 
-  editor.setMode getOption[string]("editor.text.vim-motion-next-mode", "normal")
+  let nextMode = vimMotionNextMode.getOrDefault(editor.id, "normal")
+  editor.setMode nextMode
 
 proc vimMotionWord*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection =
   const AlphaNumeric = {'A'..'Z', 'a'..'z', '0'..'9', '_'}
@@ -273,6 +276,7 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   setOption "editor.text.vim-motion-action", "vim-select-last-cursor"
   setOption "editor.text.cursor.movement.", "last"
   setOption "editor.text.cursor.wide.", true
+  setOption "editor.text.default-mode", "normal"
 
   setModeChangedHandler proc(editor, oldMode, newMode: auto) =
     # infof"vim: handle mode change {oldMode} -> {newMode}"
@@ -282,13 +286,13 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     case newMode
     of "normal":
       setOption "editor.text.vim-motion-action", "vim-select-last-cursor"
-      setOption[string]("editor.text.vim-motion-next-mode", "normal")
+      vimMotionNextMode[editor.id] = "normal"
       editor.selections = editor.selections.mapIt(it.last.toSelection)
       editor.saveCurrentCommandHistory()
 
     of "insert":
-      setOption[string]("editor.text.vim-motion-action", "")
-      setOption[string]("editor.text.vim-motion-next-mode", "insert")
+      setOption "editor.text.vim-motion-action", ""
+      vimMotionNextMode[editor.id] = "insert"
 
   for i in 0..9:
     capture i:
@@ -307,12 +311,8 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   # Normal mode
   addCommand "editor", ":", "command-line"
 
-  addTextCommandBlock "", "<C-e>":
-    editor.setMode("normal")
-    editor.selection = editor.selection.last.toSelection
-  addTextCommandBlock "", "<ESCAPE>":
-    editor.setMode("normal")
-    editor.selection = editor.selection.last.toSelection
+  addTextCommandBlock "", "<C-e>": editor.setMode("normal")
+  addTextCommandBlock "", "<ESCAPE>": editor.setMode("normal")
 
   # windowing
   addCommand "editor", "<C-w><RIGHT>", "prev-view"
@@ -325,13 +325,28 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addCommand "editor", "<C-w><C-w>", "next-view"
   addCommand "editor", "<C-w>p", "open-previous-editor"
   addCommand "editor", "<C-w><C-p>", "open-previous-editor"
-  addCommand "editor", "<C-w>p", "open-previous-editor"
-  addCommand "editor", "<C-w><C-p>", "open-previous-editor"
+  addCommand "editor", "<C-w>q", "close-current-editor", true
+  addCommand "editor", "<C-w>Q", "close-current-editor", false
+  addCommand "editor", "<C-w><C-q>", "close-current-view"
+  addCommand "editor", "<C-w>c", "close-current-view"
+  addCommand "editor", "<C-w>o", "close-other-views"
+  addCommand "editor", "<C-w><C-o>", "close-other-views"
 
   # not very vim like, but the windowing system works quite differently
   addCommand "editor", "<C-w>H", "move-current-view-prev"
   addCommand "editor", "<C-w>L", "move-current-view-next"
   addCommand "editor", "<C-w>W", "move-current-view-to-top"
+
+  # completion
+  addTextCommand "insert", "<C-p>", "get-completions"
+  addTextCommand "insert", "<C-n>", "get-completions"
+  addTextCommand "completion", "<ESCAPE>", "hide-completions"
+  addTextCommand "completion", "<UP>", "select-prev-completion"
+  addTextCommand "completion", "<C-p>", "select-prev-completion"
+  addTextCommand "completion", "<DOWN>", "select-next-completion"
+  addTextCommand "completion", "<C-n>", "select-next-completion"
+  addTextCommand "completion", "<TAB>", "apply-selected-completion"
+  addTextCommand "completion", "<ENTER>", "apply-selected-completion"
 
   # navigation (horizontal)
 
@@ -525,18 +540,18 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommand "", "X", vimDeleteLeft
   addTextCommandBlock "", "d":
     editor.setMode "delete-move"
-    setOption[string]("editor.text.vim-motion-action", "vim-delete-selection")
-    setOption[string]("editor.text.vim-motion-next-mode", "normal")
+    setOption "editor.text.vim-motion-action", "vim-delete-selection"
+    vimMotionNextMode[editor.id] = "normal"
 
   addTextCommandBlock "", "c":
     editor.setMode "change-move"
-    setOption[string]("editor.text.vim-motion-action", "vim-change-selection")
-    setOption[string]("editor.text.vim-motion-next-mode", "insert")
+    setOption "editor.text.vim-motion-action", "vim-change-selection"
+    vimMotionNextMode[editor.id] = "insert"
 
   addTextCommandBlock "", "y":
     editor.setMode "yank-move"
-    setOption[string]("editor.text.vim-motion-action", "vim-yank-selection")
-    setOption[string]("editor.text.vim-motion-next-mode", "normal")
+    setOption "editor.text.vim-motion-action", "vim-yank-selection"
+    vimMotionNextMode[editor.id] = "normal"
 
   # move mode
   setHandleInputs "editor.text.delete-move", false
@@ -623,8 +638,8 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   # Visual mode
   addTextCommandBlock "", "v":
     editor.setMode "visual"
-    setOption[string]("editor.text.vim-motion-action", "")
-    setOption[string]("editor.text.vim-motion-next-mode", "visual")
+    setOption "editor.text.vim-motion-action", ""
+    vimMotionNextMode[editor.id] = "visual"
 
   setHandleInputs "editor.text.visual", false
   setOption "editor.text.cursor.wide.visual", true
