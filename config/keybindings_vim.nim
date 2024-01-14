@@ -315,27 +315,35 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommandBlock "", "<ESCAPE>": editor.setMode("normal")
 
   # windowing
-  addCommand "editor", "<C-w><RIGHT>", "prev-view"
-  addCommand "editor", "<C-w>h", "prev-view"
-  addCommand "editor", "<C-w><C-h>", "prev-view"
-  addCommand "editor", "<C-w><LEFT>", "next-view"
-  addCommand "editor", "<C-w>l", "next-view"
-  addCommand "editor", "<C-w><C-l>", "next-view"
-  addCommand "editor", "<C-w>w", "next-view"
-  addCommand "editor", "<C-w><C-w>", "next-view"
-  addCommand "editor", "<C-w>p", "open-previous-editor"
-  addCommand "editor", "<C-w><C-p>", "open-previous-editor"
-  addCommand "editor", "<C-w>q", "close-current-editor", true
-  addCommand "editor", "<C-w>Q", "close-current-editor", false
-  addCommand "editor", "<C-w><C-q>", "close-current-view"
-  addCommand "editor", "<C-w>c", "close-current-view"
-  addCommand "editor", "<C-w>o", "close-other-views"
-  addCommand "editor", "<C-w><C-o>", "close-other-views"
+  proc defineWindowingCommands(prefix: string) =
+    withKeys prefix:
+      addCommand "editor", "h", "prev-view"
+      addCommand "editor", "<C-h>", "prev-view"
+      addCommand "editor", "<LEFT>", "prev-view"
+      addCommand "editor", "l", "next-view"
+      addCommand "editor", "<C-l>", "next-view"
+      addCommand "editor", "<RIGHT>", "next-view"
+      addCommand "editor", "w", "next-view"
+      addCommand "editor", prefix, "next-view"
+      addCommand "editor", "p", "open-previous-editor"
+      addCommand "editor", "<C-p>", "open-previous-editor"
+      addCommand "editor", "q", "close-current-editor", true
+      addCommand "editor", "Q", "close-current-editor", false
+      addCommand "editor", "<C-q>", "close-current-view"
+      addCommand "editor", "c", "close-current-view"
+      addCommand "editor", "o", "close-other-views"
+      addCommand "editor", "<C-o>", "close-other-views"
 
-  # not very vim like, but the windowing system works quite differently
-  addCommand "editor", "<C-w>H", "move-current-view-prev"
-  addCommand "editor", "<C-w>L", "move-current-view-next"
-  addCommand "editor", "<C-w>W", "move-current-view-to-top"
+      # not very vim like, but the windowing system works quite differently
+      addCommand "editor", "H", "move-current-view-prev"
+      addCommand "editor", "L", "move-current-view-next"
+      addCommand "editor", "W", "move-current-view-to-top"
+
+  # In the browser C-w closes the tab, so we use A-w instead
+  if getBackend() == Browser:
+    defineWindowingCommands "<A-w>"
+  else:
+    defineWindowingCommands "<C-w>"
 
   # completion
   addTextCommand "insert", "<C-p>", "get-completions"

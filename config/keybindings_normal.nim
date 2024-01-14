@@ -101,7 +101,6 @@ proc loadNormalKeybindings*() {.scriptActionWasmNims("load-normal-keybindings").
   addCommand "editor.text.completion", "<DOWN>", "select-next-completion"
   addCommand "editor.text.completion", "<TAB>", "apply-selected-completion"
 
-
   # lsp
   addTextCommand "", "gd", "goto-definition"
   addTextCommand "", "gs", "goto-symbol"
