@@ -40,7 +40,7 @@ block: ## Parse command line options
   for kind, key, val in optParser.getopt():
     case kind
     of cmdArgument:
-      opts.fileToOpen = val.some
+      opts.fileToOpen = key.some
 
     of cmdLongOption, cmdShortOption:
       case key
