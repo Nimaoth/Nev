@@ -24,7 +24,7 @@ template createHeader*(builder: UINodeBuilder, inRenderHeader: bool, inMode: str
 
         let workspaceName = inDocument.workspace.map(wf => " - " & wf.name).get("")
 
-        let mode = if inMode.len == 0: "normal" else: inMode
+        let mode = if inMode.len == 0: "-" else: inMode
         builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = inTextColor, text = " $# - $# $# " % [mode, inDocument.filename, workspaceName])
 
         if leftFunc.isNotNil:
