@@ -409,11 +409,29 @@ proc toggleConsoleLogger*() =
       argsJsonString.cstring)
 
 
-proc editor_closeCurrentView_void_App_wasm(arg: cstring): cstring {.importc.}
-proc closeCurrentView*() =
+proc editor_closeCurrentView_void_App_bool_wasm(arg: cstring): cstring {.importc.}
+proc closeCurrentView*(keepHidden: bool = true) =
   var argsJson = newJArray()
+  argsJson.add block:
+    when bool is JsonNode:
+      keepHidden
+    else:
+      keepHidden.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_closeCurrentView_void_App_wasm(
+  let res {.used.} = editor_closeCurrentView_void_App_bool_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_closeOtherViews_void_App_bool_wasm(arg: cstring): cstring {.importc.}
+proc closeOtherViews*(keepHidden: bool = true) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when bool is JsonNode:
+      keepHidden
+    else:
+      keepHidden.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_closeOtherViews_void_App_bool_wasm(
       argsJsonString.cstring)
 
 
