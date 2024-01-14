@@ -7,7 +7,7 @@ import workspaces/[workspace]
 import ast/[model, project]
 import config_provider, app_interface
 import text/language/language_server_base, language_server_absytree_commands
-import input, events, document, document_editor, popup, dispatch_tables, theme, clipboard
+import input, events, document, document_editor, popup, dispatch_tables, theme, clipboard, app_options
 
 when not defined(js):
   import scripting/scripting_nim
@@ -191,6 +191,7 @@ proc popPopup*(self: App, popup: Popup)
 proc openSymbolsPopup*(self: App, symbols: seq[Symbol], handleItemSelected: proc(symbol: Symbol), handleItemConfirmed: proc(symbol: Symbol), handleCanceled: proc())
 proc help*(self: App, about: string = "")
 proc getAllDocuments*(self: App): seq[Document]
+proc setHandleInputs*(self: App, context: string, value: bool)
 
 implTrait AppInterface, App:
   proc platform*(self: App): Platform = self.platform
@@ -611,53 +612,123 @@ when not defined(js):
 
 proc getCommandLineTextEditor*(self: App): TextDocumentEditor = self.commandLineTextEditor.TextDocumentEditor
 
-proc initScripting(self: App) {.async.} =
-  try:
-    log(lvlInfo, fmt"load wasm configs")
-    self.wasmScriptContext = new ScriptContextWasm
+proc initScripting(self: App, options: AppOptions) {.async.} =
+  if not options.disableWasmPlugins:
+    try:
+      log(lvlInfo, fmt"load wasm configs")
+      self.wasmScriptContext = new ScriptContextWasm
 
-    withScriptContext self, self.wasmScriptContext:
-      let t1 = startTimer()
-      await self.wasmScriptContext.init("./config")
-      log(lvlInfo, fmt"init wasm configs ({t1.elapsed.ms}ms)")
+      withScriptContext self, self.wasmScriptContext:
+        let t1 = startTimer()
+        await self.wasmScriptContext.init("./config")
+        log(lvlInfo, fmt"init wasm configs ({t1.elapsed.ms}ms)")
 
-      let t2 = startTimer()
-      discard self.wasmScriptContext.postInitialize()
-      log(lvlInfo, fmt"post init wasm configs ({t2.elapsed.ms}ms)")
-  except CatchableError:
-    log(lvlError, fmt"Failed to load wasm configs: {(getCurrentExceptionMsg())}{'\n'}{(getCurrentException().getStackTrace())}")
+        let t2 = startTimer()
+        discard self.wasmScriptContext.postInitialize()
+        log(lvlInfo, fmt"post init wasm configs ({t2.elapsed.ms}ms)")
+    except CatchableError:
+      log(lvlError, fmt"Failed to load wasm configs: {(getCurrentExceptionMsg())}{'\n'}{(getCurrentException().getStackTrace())}")
 
   await sleepAsync(1)
 
-  try:
-    var searchPaths = @["app://src", "app://scripting"]
-    let searchPathsJson = self.options{@["scripting", "search-paths"]}
-    if not searchPathsJson.isNil:
-      for sp in searchPathsJson:
-        searchPaths.add sp.getStr
+  if not options.disableNimScriptPlugins:
+    try:
+      var searchPaths = @["app://src", "app://scripting"]
+      let searchPathsJson = self.options{@["scripting", "search-paths"]}
+      if not searchPathsJson.isNil:
+        for sp in searchPathsJson:
+          searchPaths.add sp.getStr
 
-    for path in searchPaths.mitems:
-      if path.hasPrefix("app://", rest):
-        path = fs.getApplicationFilePath(rest)
+      for path in searchPaths.mitems:
+        if path.hasPrefix("app://", rest):
+          path = fs.getApplicationFilePath(rest)
 
-    when not defined(js):
-      if createScriptContext("./config/absytree_config.nim", searchPaths).await.getSome(scriptContext):
-        self.scriptContext = scriptContext
-      else:
-        log lvlError, "Failed to create nim script context"
+      when not defined(js):
+        if createScriptContext("./config/absytree_config.nim", searchPaths).await.getSome(scriptContext):
+          self.scriptContext = scriptContext
+        else:
+          log lvlError, "Failed to create nim script context"
 
-    withScriptContext self, self.scriptContext:
-      log(lvlInfo, fmt"init nim script config")
-      await self.scriptContext.init("./config")
-      log(lvlInfo, fmt"post init nim script config")
-      discard self.scriptContext.postInitialize()
+      withScriptContext self, self.scriptContext:
+        log(lvlInfo, fmt"init nim script config")
+        await self.scriptContext.init("./config")
+        log(lvlInfo, fmt"post init nim script config")
+        discard self.scriptContext.postInitialize()
 
-    log(lvlInfo, fmt"finished configs")
-    self.initializeCalled = true
-  except CatchableError:
-    log(lvlError, fmt"Failed to load config: {(getCurrentExceptionMsg())}{'\n'}{(getCurrentException().getStackTrace())}")
+      log(lvlInfo, fmt"finished configs")
+      self.initializeCalled = true
+    except CatchableError:
+      log(lvlError, fmt"Failed to load config: {(getCurrentExceptionMsg())}{'\n'}{(getCurrentException().getStackTrace())}")
 
-proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.} =
+proc setupDefaultKeybindings(self: App) =
+  log lvlInfo, fmt"Applying default builtin keybindings"
+
+  let editorConfig = self.getEventHandlerConfig("editor")
+  let textConfig = self.getEventHandlerConfig("editor.text")
+  let textCompletionConfig = self.getEventHandlerConfig("editor.text.completion")
+  let commandLineConfig = self.getEventHandlerConfig("commandLine")
+  let selectorPopupConfig = self.getEventHandlerConfig("popup.selector")
+
+  self.setHandleInputs("editor.text", true)
+  setOption[string](self, "editor.text.cursor.movement.", "both")
+  setOption[bool](self, "editor.text.cursor.wide.", false)
+
+  editorConfig.addCommand("<C-x><C-x>", "quit")
+  editorConfig.addCommand("<CAS-r>", "reload-config")
+  editorConfig.addCommand("<CAS-r>", "reload-config")
+  editorConfig.addCommand("<C-w><LEFT>", "prev-view")
+  editorConfig.addCommand("<C-w><RIGHT>", "next-view")
+  editorConfig.addCommand("<C-w><C-x>", "close-current-view")
+  editorConfig.addCommand("<C-s>", "write-file")
+  editorConfig.addCommand("<C-w><C-w>", "command-line")
+  editorConfig.addCommand("<C-o>", "choose-file \"new\"")
+
+  textConfig.addCommand("<LEFT>", "move-cursor-column -1")
+  textConfig.addCommand("<RIGHT>", "move-cursor-column 1")
+  textConfig.addCommand("<HOME>", "move-first \"line\"")
+  textConfig.addCommand("<END>", "move-last \"line\"")
+  textConfig.addCommand("<UP>", "move-cursor-line -1")
+  textConfig.addCommand("<DOWN>", "move-cursor-line 1")
+  textConfig.addCommand("<S-LEFT>", "move-cursor-column -1 \"last\"")
+  textConfig.addCommand("<S-RIGHT>", "move-cursor-column 1 \"last\"")
+  textConfig.addCommand("<S-UP>", "move-cursor-line -1 \"last\"")
+  textConfig.addCommand("<S-DOWN>", "move-cursor-line 1 \"last\"")
+  textConfig.addCommand("<S-HOME>", "move-first \"line\" \"last\"")
+  textConfig.addCommand("<S-END>", "move-last \"line\" \"last\"")
+  textConfig.addCommand("<C-LEFT>", "move-cursor-column -1 \"last\"")
+  textConfig.addCommand("<C-RIGHT>", "move-cursor-column 1 \"last\"")
+  textConfig.addCommand("<C-UP>", "move-cursor-line -1 \"last\"")
+  textConfig.addCommand("<C-DOWN>", "move-cursor-line 1 \"last\"")
+  textConfig.addCommand("<C-HOME>", "move-first \"line\" \"last\"")
+  textConfig.addCommand("<C-END>", "move-last \"line\" \"last\"")
+  textConfig.addCommand("<BACKSPACE>", "delete-left")
+  textConfig.addCommand("<DELETE>", "delete-right")
+  textConfig.addCommand("<ENTER>", "insert-text \"\\n\"")
+  textConfig.addCommand("<SPACE>", "insert-text \" \"")
+  textConfig.addCommand("<C-k>", "get-completions")
+
+  textConfig.addCommand("<C-z>", "undo")
+  textConfig.addCommand("<C-y>", "redo")
+  textConfig.addCommand("<C-c>", "copy")
+  textConfig.addCommand("<C-v>", "paste")
+
+  textCompletionConfig.addCommand("<ESCAPE>", "hide-completions")
+  textCompletionConfig.addCommand("<UP>", "select-prev-completion")
+  textCompletionConfig.addCommand("<DOWN>", "select-next-completion")
+  textCompletionConfig.addCommand("<TAB>", "apply-selected-completion")
+
+  commandLineConfig.addCommand("<ESCAPE>", "exit-command-line")
+  commandLineConfig.addCommand("<ENTER>", "execute-command-line")
+
+  selectorPopupConfig.addCommand("<ENTER>", "accept")
+  selectorPopupConfig.addCommand("<TAB>", "accept")
+  selectorPopupConfig.addCommand("<ESCAPE>", "cancel")
+  selectorPopupConfig.addCommand("<UP>", "prev")
+  selectorPopupConfig.addCommand("<DOWN>", "next")
+  selectorPopupConfig.addCommand("<C-u>", "prev-x")
+  selectorPopupConfig.addCommand("<C-d>", "next-x")
+
+proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()): Future[App] {.async.} =
   var self = App()
 
   # Emit this to set the editor prototype to editor_prototype, which needs to be set up before calling this
@@ -708,10 +779,9 @@ proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.}
   self.theme = defaultTheme()
   self.currentView = 0
 
-  self.getEventHandlerConfig("editor").addCommand "<C-x><C-x>", "quit"
-  self.getEventHandlerConfig("editor").addCommand "<CAS-r>", "reload-config"
-
   self.options = newJObject()
+
+  self.setupDefaultKeybindings()
 
   self.eventHandler = eventHandler(self.getEventHandlerConfig("editor")):
     onAction:
@@ -742,30 +812,32 @@ proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.}
 
   var state = EditorState()
   try:
-    let stateJson = fs.loadApplicationFile("./config/config.json").parseJson
-    state = stateJson.jsonTo(EditorState, JOptions(allowMissingKeys: true, allowExtraKeys: true))
-    log(lvlInfo, fmt"Restoring state {stateJson.pretty}")
+    if not options.dontRestoreConfig:
+      let stateJson = fs.loadApplicationFile("./config/config.json").parseJson
+      state = stateJson.jsonTo(EditorState, JOptions(allowMissingKeys: true, allowExtraKeys: true))
+      log(lvlInfo, fmt"Restoring state {stateJson.pretty}")
 
-    if not state.theme.isEmptyOrWhitespace:
-      try:
-        self.setTheme(state.theme)
-      except CatchableError:
-        log(lvlError, fmt"Failed to load theme: {getCurrentExceptionMsg()}")
+      if not state.theme.isEmptyOrWhitespace:
+        try:
+          self.setTheme(state.theme)
+        except CatchableError:
+          log(lvlError, fmt"Failed to load theme: {getCurrentExceptionMsg()}")
 
-    if not state.layout.isEmptyOrWhitespace:
-      self.setLayout(state.layout)
+      if not state.layout.isEmptyOrWhitespace:
+        self.setLayout(state.layout)
 
-    self.loadedFontSize = state.fontSize.float
-    self.platform.fontSize = state.fontSize.float
-    self.loadedLineDistance = state.lineDistance.float
-    self.platform.lineDistance = state.lineDistance.float
-    if state.fontRegular.len > 0: self.fontRegular = state.fontRegular
-    if state.fontBold.len > 0: self.fontBold = state.fontBold
-    if state.fontItalic.len > 0: self.fontItalic = state.fontItalic
-    if state.fontBoldItalic.len > 0: self.fontBoldItalic = state.fontBoldItalic
+      self.loadedFontSize = state.fontSize.float
+      self.platform.fontSize = state.fontSize.float
+      self.loadedLineDistance = state.lineDistance.float
+      self.platform.lineDistance = state.lineDistance.float
+      if state.fontRegular.len > 0: self.fontRegular = state.fontRegular
+      if state.fontBold.len > 0: self.fontBold = state.fontBold
+      if state.fontItalic.len > 0: self.fontItalic = state.fontItalic
+      if state.fontBoldItalic.len > 0: self.fontBoldItalic = state.fontBoldItalic
 
-    self.options = fs.loadApplicationFile("./config/options.json").parseJson
-    log(lvlInfo, fmt"Restoring options: {self.options.pretty}")
+    if not options.dontRestoreOptions:
+      self.options = fs.loadApplicationFile("./config/options.json").parseJson
+      log(lvlInfo, fmt"Restoring options: {self.options.pretty}")
 
   except CatchableError:
     log(lvlError, fmt"Failed to load previous state from config file: {getCurrentExceptionMsg()}")
@@ -798,7 +870,10 @@ proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.}
     setProjectWorkspace(self.workspace.folders[0])
 
   # Restore open editors
-  if self.getFlag("editor.restore-open-editors", true):
+  if options.fileToOpen.getSome(filePath):
+    discard self.openFile(filePath)
+
+  elif self.getFlag("editor.restore-open-editors", true):
     for editorState in state.openEditors:
       let view = self.createView(editorState)
       if view.isNil:
@@ -820,7 +895,7 @@ proc newEditor*(backend: api.Backend, platform: Platform): Future[App] {.async.}
   if self.views.len == 0:
     self.help()
 
-  asyncCheck self.initScripting()
+  asyncCheck self.initScripting(options)
 
   return self
 

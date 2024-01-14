@@ -16,7 +16,7 @@ else:
 
 import std/[parseopt, options, macros]
 import misc/[custom_logger]
-import compilation_config, scripting_api
+import compilation_config, scripting_api, app_options
 
 when enableGui:
   static:
@@ -33,13 +33,14 @@ elif enableTerminal: Backend.Terminal.some
 else: Backend.none
 
 var logToFile = false
+var opts = AppOptions()
 
 block: ## Parse command line options
   var optParser = initOptParser("")
   for kind, key, val in optParser.getopt():
     case kind
     of cmdArgument:
-      discard
+      opts.fileToOpen = val.some
 
     of cmdLongOption, cmdShortOption:
       case key
@@ -59,6 +60,28 @@ block: ## Parse command line options
 
       of "log-to-file", "f":
         logToFile = true
+
+      of "no-nimscript", "n":
+        opts.disableNimScriptPlugins = true
+
+      of "no-wasm", "w":
+        opts.disableWasmPlugins = true
+
+      of "no-opts", "o":
+        opts.dontRestoreOptions = true
+
+      of "no-config", "c":
+        opts.dontRestoreConfig = true
+
+      of "no-config-opts":
+        opts.dontRestoreConfig = true
+        opts.dontRestoreOptions = true
+
+      of "clean":
+        opts.dontRestoreConfig = true
+        opts.dontRestoreOptions = true
+        opts.disableNimScriptPlugins = true
+        opts.disableWasmPlugins = true
 
     of cmdEnd: assert(false) # cannot happen
 
@@ -135,7 +158,7 @@ import ui/node
 var renderedLastFrame = false
 
 proc runApp(): Future[void] {.async.} =
-  var ed = await newEditor(backend.get, rend)
+  var ed = await newEditor(backend.get, rend, opts)
 
   addTimer 2, false, proc(fd: AsyncFD): bool =
     return false
