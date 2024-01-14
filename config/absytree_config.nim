@@ -1,11 +1,6 @@
 import absytree_runtime
 import std/[strutils, sugar, sequtils, macros]
 
-import keybindings_vim
-import keybindings_vim_like
-import keybindings_helix
-import keybindings_normal
-
 proc handleAction*(action: string, args: JsonNode): bool {.wasmexport.} =
   when not defined(wasm):
     return false
@@ -78,9 +73,14 @@ proc postInitialize*(): bool {.wasmexport.} =
 import default_config
 
 when defined(wasm):
+  import keybindings_vim
+  import keybindings_vim_like
+  import keybindings_helix
+  import keybindings_normal
+
   loadDefaultOptions()
   loadDefaultKeybindings()
-  loadVimLikeKeybindings()
+  loadVimKeybindings()
 
   # Triple click to selects a line
   setOption "editor.text.triple-click-command", "extend-select-move"

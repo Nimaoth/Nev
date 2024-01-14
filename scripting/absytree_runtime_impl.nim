@@ -27,6 +27,7 @@ proc handleUnknownPopupAction*(id: EditorId, action: string, args: JsonNode): bo
   return handlePopupAction(id, action, args)
 
 proc handleEditorModeChanged*(editor: EditorId, oldMode: string, newMode: string) =
+  # infof"handleEditorModeChanged {editor} {oldMode} {newMode}"
   onEditorModeChanged.invoke (editor, oldMode, newMode)
 
 when defined(wasm):
@@ -53,6 +54,7 @@ when defined(wasm):
       return false
 
   proc handleEditorModeChangedWasm(id: int32, oldMode: cstring, newMode: cstring) {.wasmexport.} =
+    # infof"handleEditorModeChangedWasm {id} {oldMode} {newMode}"
     try:
       handleEditorModeChanged(id.EditorId, $oldMode, $newMode)
     except:

@@ -84,11 +84,11 @@ proc createInterpreterAsync(args: (ptr Interpreter, string, seq[string], seq[(st
     var intr = createInterpreter(args[1], args[2], flags = {allowInfiniteLoops}, defines = args[3])
 
     for uProc in args[4].procs:
-      intr.implementRoutine("Absytree", args[6], uProc.name, uProc.vmProc)
+      intr.implementRoutine("absytree", args[6], uProc.name, uProc.vmProc)
 
     for (module, addins) in args[5]:
       for uProc in addins.procs:
-        intr.implementRoutine("Absytree", module, uProc.name, uProc.vmProc)
+        intr.implementRoutine("absytree", module, uProc.name, uProc.vmProc)
 
     setUseIc(true)
 
@@ -98,12 +98,6 @@ import std/[strformat, sequtils, macros, tables, options, sugar, strutils, genas
 import scripting_api
 import misc/[util, myjsonutils]
 import absytree_runtime
-
-import keybindings_vim
-import keybindings_helix
-import keybindings_normal
-
-import languages
     """
     intr.evalString(initCode)
 
@@ -315,13 +309,14 @@ macro invoke*(self: ScriptContext; pName: untyped;
     call.add x
   call.add nnkExprEqExpr.newTree(ident"returnType", returnType)
 
-  return genAst(self, call):
+  return genAst(self, call, name = pName.repr.newLit):
     if self.state != Initialized:
-      log lvlError, fmt"ScriptContext not initialized yet. State is {self.state}"
+      log lvlWarn, fmt"ScriptContext not initialized yet. State is {self.state} (trying to invoke" & name & ")"
       return
     if self.inter.isNone:
-      log(lvlError, fmt"Interpreter is none. State is {self.state}")
+      log lvlError, fmt"Interpreter is none. State is {self.state}"
       return
+
     call
 
 method handleUnknownPopupAction*(self: ScriptContextNim, popup: Popup, action: string, arg: JsonNode): bool =

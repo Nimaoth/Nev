@@ -228,7 +228,9 @@ proc runApp(): Future[void] {.async.} =
 
     logger.flush()
 
+  log lvlInfo, "Shutting down editor"
   ed.shutdown()
+  log lvlInfo, "Shutting down platform"
   rend.deinit()
 
 waitFor runApp()

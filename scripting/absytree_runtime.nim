@@ -92,6 +92,7 @@ template isModelEditor*(editorId: EditorId, injected: untyped): bool =
   (scriptIsModelEditor(editorId) and ((let injected {.inject.} = ModelDocumentEditor(id: editorId); true)))
 
 proc handleCallbackImpl*(id: int, args: JsonNode): bool =
+  # infof"handleCallbackImpl {id}, {args}"
   if voidCallbacks.contains(id):
     voidCallbacks[id](args)
     return true
@@ -102,9 +103,10 @@ proc handleCallbackImpl*(id: int, args: JsonNode): bool =
   return false
 
 proc handleAnyCallbackImpl*(id: int, args: JsonNode): JsonNode =
+  # infof"handleAnyCallbackImpl {id}, {args}"
   if voidCallbacks.contains(id):
     voidCallbacks[id](args)
-    return nil
+    return newJNull()
   elif boolCallbacks.contains(id):
     return newJBool(boolCallbacks[id](args))
   elif anyCallbacks.contains(id):
@@ -112,7 +114,7 @@ proc handleAnyCallbackImpl*(id: int, args: JsonNode): JsonNode =
   return nil
 
 proc handleScriptActionImpl*(name: string, args: JsonNode): JsonNode =
-  # echo "handleScriptActionImpl ", name, ", ", args
+  # infof"handleScriptActionImpl {name}, {args}"
   if scriptActions.contains(name):
     return scriptActions[name](args)
   return nil
@@ -202,9 +204,14 @@ macro addCommand*(context: string, keys: string, action: string, args: varargs[u
     addCommandScript(context, keysPrefix & keys, action, str)
 
 proc addCommand*(context: string, keys: string, action: proc(): void) =
-  let key = context & keys
-  lambdaActions[key] = action
-  addCommandScript(context, keysPrefix & keys, "lambda-action", key.toJsonString)
+  let key = "$" & context & keys
+  # lambdaActions[key] = action
+  scriptActions[key] = proc(args: JsonNode): JsonNode =
+    action()
+    return newJNull()
+
+  # addCommandScript(context, keysPrefix & keys, "lambda-action", key.toJsonString)
+  addCommandScript(context, keysPrefix & keys, key, "")
 
 template addCommandBlock*(context: static[string], keys: string, body: untyped): untyped =
   addCommand context, keys, proc() =
@@ -246,7 +253,7 @@ template addTextCommandBlock*(mode: static[string], keys: string, body: untyped)
     except:
       let m {.inject.} = mode
       let k {.inject.} = keys
-      infof "TextCommandBlock {m} {k}: {getCurrentExceptionMsg()}"
+      infof"TextCommandBlock {m} {k}: {getCurrentExceptionMsg()}"
 
 proc addTextCommand*(mode: string, keys: string, action: proc(editor: TextDocumentEditor): void) =
   let context = if mode.len == 0: "editor.text" else: "editor.text." & mode
@@ -256,7 +263,7 @@ proc addTextCommand*(mode: string, keys: string, action: proc(editor: TextDocume
     except:
       let m {.inject.} = mode
       let k {.inject.} = keys
-      infof "TextCommand {m} {k}: {getCurrentExceptionMsg()}"
+      infof"TextCommand {m} {k}: {getCurrentExceptionMsg()}"
 
 macro addTextCommand*(mode: static[string], keys: string, action: string, args: varargs[untyped]): untyped =
   let context = if mode.len == 0: "editor.text" else: "editor.text." & mode
@@ -271,18 +278,18 @@ proc setTextInputHandler*(context: string, action: proc(editor: TextDocumentEdit
       let input = args.str
       return action(TextDocumentEditor(id: getActiveEditor()), input)
     except:
-      infof "TextInputHandler {context}: {getCurrentExceptionMsg()}"
+      infof"TextInputHandler {context}: {getCurrentExceptionMsg()}"
 
   scriptSetCallback("editor.text.input-handler." & context, id)
   setHandleInputs("editor.text." & context, true)
 
 var customMoves = initTable[string, proc(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection]()
-proc handleCustomTextMove*(editor: TextDocumentEditor, move: string, cursor: Cursor, count: int): Selection =
+proc handleCustomTextMove*(editor: TextDocumentEditor, move: string, cursor: Cursor, count: int): Option[Selection] =
   if customMoves.contains(move):
-    return customMoves[move](editor, cursor, count)
-  return cursor.toSelection
+    return customMoves[move](editor, cursor, count).some
+  return Selection.none
 
-when defined(wasm):
+block: # Custom moves
   let id = addCallback proc(args: JsonNode): JsonNode =
     type Payload = object
       editor: EditorId
@@ -293,7 +300,9 @@ when defined(wasm):
     let input = args.jsonTo(Payload)
     if input.editor.isTextEditor editor:
       let selection = handleCustomTextMove(editor, input.move, input.cursor, input.count)
-      return selection.toJson
+      if selection.isSome:
+        return selection.toJson
+      return nil
     else:
       infof"Custom move: editor {input.editor} is not a text editor"
       return nil
@@ -313,7 +322,7 @@ template addModelCommandBlock*(mode: static[string], keys: string, body: untyped
     except:
       let m {.inject.} = mode
       let k {.inject.} = keys
-      infof "modelCommandBlock {m} {k}: {getCurrentExceptionMsg()}"
+      infof"ModelCommandBlock {m} {k}: {getCurrentExceptionMsg()}"
 
 proc addModelCommand*(mode: string, keys: string, action: proc(editor: ModelDocumentEditor): void) =
   let context = if mode.len == 0: "editor.model" else: "editor.model." & mode
