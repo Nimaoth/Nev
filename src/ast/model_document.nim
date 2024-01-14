@@ -3645,7 +3645,6 @@ method restoreStateJson*(self: ModelDocumentEditor, state: JsonNode) =
   if state.hasKey("cursor"):
     try:
       let cursorState = state["cursor"]
-      debug cursorState.pretty
       let index = cursorState["index"].jsonTo int
       let path = cursorState["path"].jsonTo seq[int]
       let nodeId = cursorState["nodeId"].jsonTo(NodeId)
