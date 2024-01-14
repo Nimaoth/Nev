@@ -22,7 +22,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
     builder.panel(&{FillX, FillY, LayoutVerticalReverse}): # main panel
       builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse, FillBackground}, backgroundColor = headerColor, pivot = vec2(0, 1)): # status bar
         let textColor = self.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-        let text = if self.currentMode.len == 0: "normal" else: self.currentMode
+        let text = if self.currentMode.len == 0: "-" else: self.currentMode
 
         builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = text, textColor = textColor, pivot = vec2(1, 0)):
           discard
