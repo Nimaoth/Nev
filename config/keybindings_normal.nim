@@ -6,6 +6,7 @@ proc setModeChangedHandler*(handler: proc(editor: TextDocumentEditor, oldMode: s
   if modeChangedHandler != "":
     onEditorModeChanged.unsubscribe(parseId(modeChangedHandler))
   let id = onEditorModeChanged.subscribe proc(arg: auto) =
+    # infof"onEditorModeChanged: {arg.editor}, {arg.oldMode}, {arg.newMode}"
     if arg.editor.isTextEditor(editor) and not editor.isRunningSavedCommands:
       handler(editor, arg.oldMode, arg.newMode)
   setOption("editor.text.mode-changed-handler", $id)

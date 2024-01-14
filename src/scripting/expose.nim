@@ -1,6 +1,7 @@
 
 
 import std/[json, strutils, sequtils, tables, options, macros, genasts, macrocache, typetraits, sugar]
+from std/logging import nil
 import fusion/matching
 import misc/[util, custom_logger, macro_utils, wrap]
 import compilation_config, dispatch_tables
@@ -293,7 +294,7 @@ macro expose*(moduleName: static string, def: untyped): untyped =
   let lineNumber = def.lineInfoObj.line
 
   if returnType.isSome:
-    let uiae = genAst(res=callJsonStringWrapperFunctionWasmRes, resStr="resStr".ident):
+    let uiae = genAst(res=callJsonStringWrapperFunctionWasmRes):
       result = parseJson($res).jsonTo(typeof(result))
     callJsonStringWrapperFunctionWasm.add uiae
 
@@ -330,14 +331,17 @@ macro expose*(moduleName: static string, def: untyped): untyped =
     result.add quote do:
       var `jsonStringWrapperFunctionReturnValue`: string = ""
       proc `jsonStringWrapperFunctionName`*(arg: cstring): cstring {.exportc, used.} =
-        # try:
-        let argJson = parseJson($arg)
-        `jsonStringWrapperFunctionReturnValue` = $`jsonWrapperFunctionName`(argJson)
-        return `jsonStringWrapperFunctionReturnValue`.cstring
-        # except CatchableError:
-        #   let name = `pureFunctionNameStr`
-        #   echo "[editor] Failed to run function " & name & fmt": Invalid arguments: {getCurrentExceptionMsg()}"
-        #   echo getCurrentException().getStackTrace
+        try:
+          let argJson = parseJson($arg)
+          let res = `jsonWrapperFunctionName`(argJson)
+          if res.isNil:
+            `jsonStringWrapperFunctionReturnValue` = ""
+          else:
+            `jsonStringWrapperFunctionReturnValue` = $res
+          return `jsonStringWrapperFunctionReturnValue`.cstring
+        except:
+          let name = `pureFunctionNameStr`
+          logging.log lvlError, "Failed to run function " & name & &": Invalid arguments: {getCurrentExceptionMsg()}\n{getStackTrace()}"
 
       static:
         addWasmImportedFunction(`moduleName`, `jsonStringWrapperFunctionName`, `jsonStringWrapperFunctionWasm`):
@@ -417,10 +421,16 @@ macro genDispatcher*(moduleName: static string): untyped =
           else:
             alternative.add c
 
+        let call = genAst(target, arg):
+          let res = target(arg)
+          if res.isNil:
+            return JsonNode.none
+          return res.some
+
         if name == alternative:
-          switch.add nnkOfBranch.newTree(newLit(name), quote do: `target`(`arg`).some)
+          switch.add nnkOfBranch.newTree(newLit(name), call)
         else:
-          switch.add nnkOfBranch.newTree(newLit(name), newLit(alternative), quote do: `target`(`arg`).some)
+          switch.add nnkOfBranch.newTree(newLit(name), newLit(alternative), call)
 
   switch.add nnkElse.newTree(quote do: JsonNode.none)
 

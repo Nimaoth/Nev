@@ -76,7 +76,9 @@ method init*(self: ScriptContextWasm, path: string): Future[void] {.async.} =
           self.handleScriptActionCallbacks.add (module, f)
 
         if findFunction(module, "absytree_main", void, proc(): void).getSome(f):
+          log lvlInfo, "Run absytree_main"
           f()
+          log lvlInfo, "Finished absytree_main"
 
         self.modules.add module
 

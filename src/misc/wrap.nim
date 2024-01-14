@@ -68,12 +68,7 @@ proc createJsonWrapper*(def: NimNode, newName: NimNode): NimNode =
 
   result = genAst(functionName = newName, call, argName = jsonArg):
     proc functionName*(argName: JsonNode): JsonNode {.nimcall, used.} =
-      # try:
       call
-      # except CatchableError:
-      #   let name = `pureFunctionNameStr`
-      #   echo "[editor] Failed to run function " & name & fmt": Invalid arguments: {getCurrentExceptionMsg()}"
-      #   echo getCurrentException().getStackTrace
 
 proc serializeArgumentsToJson*(def: NimNode, targetUiae: NimNode): (NimNode, NimNode) =
   let argsName = genSym(nskVar)
