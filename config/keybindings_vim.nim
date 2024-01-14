@@ -2,6 +2,9 @@ import std/[strutils, setutils]
 import absytree_runtime, keybindings_normal
 import misc/[timer]
 
+
+infof"import vim keybindings"
+
 proc getVimLineMargin*(): float = getOption[float]("editor.text.vim.line-margin", 5)
 proc getVimClipboard*(): string = getOption[string]("editor.text.vim.clipboard", "")
 proc getVimDefaultRegister*(): string =
@@ -272,6 +275,7 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   setOption "editor.text.cursor.wide.", true
 
   setModeChangedHandler proc(editor, oldMode, newMode: auto) =
+    # infof"vim: handle mode change {oldMode} -> {newMode}"
     if newMode != "normal":
       editor.clearCurrentCommandHistory(retainLast=true)
 
@@ -309,6 +313,25 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommandBlock "", "<ESCAPE>":
     editor.setMode("normal")
     editor.selection = editor.selection.last.toSelection
+
+  # windowing
+  addCommand "editor", "<C-w><RIGHT>", "prev-view"
+  addCommand "editor", "<C-w>h", "prev-view"
+  addCommand "editor", "<C-w><C-h>", "prev-view"
+  addCommand "editor", "<C-w><LEFT>", "next-view"
+  addCommand "editor", "<C-w>l", "next-view"
+  addCommand "editor", "<C-w><C-l>", "next-view"
+  addCommand "editor", "<C-w>w", "next-view"
+  addCommand "editor", "<C-w><C-w>", "next-view"
+  addCommand "editor", "<C-w>p", "open-previous-editor"
+  addCommand "editor", "<C-w><C-p>", "open-previous-editor"
+  addCommand "editor", "<C-w>p", "open-previous-editor"
+  addCommand "editor", "<C-w><C-p>", "open-previous-editor"
+
+  # not very vim like, but the windowing system works quite differently
+  addCommand "editor", "<C-w>H", "move-current-view-prev"
+  addCommand "editor", "<C-w>L", "move-current-view-next"
+  addCommand "editor", "<C-w>W", "move-current-view-to-top"
 
   # navigation (horizontal)
 
