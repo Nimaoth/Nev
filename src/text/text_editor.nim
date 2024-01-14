@@ -1392,7 +1392,7 @@ proc hideCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
 
 proc selectPrevCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.completions.len > 0:
-    self.selectedCompletion = (self.selectedCompletion - 1).clamp(0, self.completions.len - 1)
+    self.selectedCompletion = (self.selectedCompletion - 1 + self.completions.len) mod self.completions.len
   else:
     self.selectedCompletion = 0
   self.scrollToCompletion = self.selectedCompletion.some
@@ -1400,7 +1400,7 @@ proc selectPrevCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
 
 proc selectNextCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.completions.len > 0:
-    self.selectedCompletion = (self.selectedCompletion + 1).clamp(0, self.completions.len - 1)
+    self.selectedCompletion = (self.selectedCompletion + 1) mod self.completions.len
   else:
     self.selectedCompletion = 0
   self.scrollToCompletion = self.selectedCompletion.some
