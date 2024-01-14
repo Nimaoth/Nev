@@ -49,9 +49,15 @@ proc vimYankMove*(editor: TextDocumentEditor) {.expose("vim-yank-selection").} =
 
 proc vimFinishMotion(editor: TextDocumentEditor) =
   let command = getOption[string]("editor.text.vim-motion-action")
+  let commandCount = editor.getCommandCount
+  # let commandCount = getOption[int]("text.command-count", 1)
+  # infof"finish motion {moveCommandCount}, {commandCount} {command}"
+  if commandCount > 1:
+    return
+
   # infof"vimFinishMotion '{command}'"
   if command.len > 0:
-    discard editor.runAction(command, newJArray())
+    setOption("editor.text.vim-motion-action", "")
 
   let nextMode = vimMotionNextMode.getOrDefault(editor.id, "normal")
   editor.setMode nextMode
@@ -542,24 +548,41 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommandBlock "", "}": editor.moveSelectionEnd("vim-paragraph-outer", allowEmpty=true)
   addTextCommandBlock "", "{": editor.moveSelectionNext("vim-paragraph-outer", backwards=true)
 
+  addTextCommandBlock "", "f":
+    editor.setMode "move-to"
+    setOption "text.move-command-count", editor.getCommandCount()
+    editor.setCommandCount 0
+
+  addTextCommandBlock "", "t":
+    editor.setMode "move-before"
+    setOption "text.move-command-count", editor.getCommandCount()
+    editor.setCommandCount 0
+
   # Deleting text
   addTextCommand "", "x", vimDeleteRight
   addTextCommand "", "<DELETE>", vimDeleteRight
   addTextCommand "", "X", vimDeleteLeft
+
   addTextCommandBlock "", "d":
     editor.setMode "delete-move"
     setOption "editor.text.vim-motion-action", "vim-delete-selection"
     vimMotionNextMode[editor.id] = "normal"
+    setOption "text.command-count", editor.getCommandCount()
+    editor.setCommandCount 0
 
   addTextCommandBlock "", "c":
     editor.setMode "change-move"
     setOption "editor.text.vim-motion-action", "vim-change-selection"
     vimMotionNextMode[editor.id] = "insert"
+    setOption "text.command-count", editor.getCommandCount()
+    editor.setCommandCount 0
 
   addTextCommandBlock "", "y":
     editor.setMode "yank-move"
     setOption "editor.text.vim-motion-action", "vim-yank-selection"
     vimMotionNextMode[editor.id] = "normal"
+    setOption "text.command-count", editor.getCommandCount()
+    editor.setCommandCount 0
 
   # move mode
   setHandleInputs "editor.text.delete-move", false
@@ -588,6 +611,16 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
       editor.selectMove("vim-paragraph-outer", true, SelectionCursor.Last)
       editor.vimFinishMotion()
 
+    addTextCommandBlock mode, "f":
+      editor.setMode "move-to"
+      setOption "text.move-command-count", editor.getCommandCount()
+      editor.setCommandCount 0
+
+    addTextCommandBlock mode, "t":
+      editor.setMode "move-before"
+      setOption "text.move-command-count", editor.getCommandCount()
+      editor.setCommandCount 0
+
   addTextExtraMotionCommands "delete-move"
   addTextExtraMotionCommands "change-move"
   addTextExtraMotionCommands "yank-move"
@@ -612,6 +645,41 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommand "", "U", "redo"
   addTextCommand "", "<C-r>", "redo"
   addTextCommand "", "p", "vim-paste"
+
+  # move-to mode
+  # setHandleActions "editor.text.move-to", false
+  setTextInputHandler "move-to", proc(editor: TextDocumentEditor, input: string): bool =
+    let moveCommandCount = getOption[int]("text.move-command-count", 0)
+    for _ in 0..<max(1, moveCommandCount):
+      editor.moveCursorTo(input)
+    editor.moveCursorColumn(1)
+    editor.vimFinishMotion()
+    return true
+
+  setOption "editor.text.cursor.wide.move-to", true
+  setOption "editor.text.cursor.movement.move-to", "last"
+  addTextCommandBlock "move-to", "<SPACE>":
+    let moveCommandCount = getOption[int]("text.move-command-count", 0)
+    for _ in 0..<max(1, moveCommandCount):
+      editor.moveCursorTo(" ")
+    editor.moveCursorColumn(1)
+    editor.vimFinishMotion()
+
+  # move-before mode
+  setTextInputHandler "move-before", proc(editor: TextDocumentEditor, input: string): bool =
+    let moveCommandCount = getOption[int]("text.move-command-count", 0)
+    for _ in 0..<max(1, moveCommandCount):
+      editor.moveCursorTo(input)
+    editor.vimFinishMotion()
+    return true
+
+  setOption "editor.text.cursor.wide.move-before", true
+  setOption "editor.text.cursor.movement.move-before", "last"
+  addTextCommandBlock "move-before", "<SPACE>":
+    let moveCommandCount = getOption[int]("text.move-command-count", 0)
+    for _ in 0..<max(1, moveCommandCount):
+      editor.moveCursorTo(" ")
+    editor.vimFinishMotion()
 
   # Insert mode
   setHandleInputs "editor.text.insert", true
