@@ -8,6 +8,20 @@ By default the vim-like keybindings are enabled. They are inspired by vim but ar
 The actual vim keybindings are not very complete yet (see [here](supported_vim_keybindings.md)), but those are supposed to be as close to vim as possible.
 
 # Useful keybindings (C: Control, A: Alt, S: Shift)
+
+## Vim (active by default, see keybindings_vim.nim)
+Note that in the browser any keybinding with `<C-w>` is replaced by `<A-w>` because `<C-w>` closes the tab instead.
+
+- `<ESCAPE>`: cancel or close e.g. popups
+- `<C-x><C-x>`: quit
+- `:`: enter the command line to run commands by name. (Aftwards press `<C-p>` to see the list of available commands)
+- `<C-o>`: open the file chooser
+- `<C-h>`: open the file chooser (only shows files open in background)
+- `<C-w><C-q>`: close the current view
+- `<C-w><LEFT>`, `<C-w><RIGHT>`, `<C-w>h`, `<C-w>l`, `<C-w><C-w>`: switch between views
+- `:write-file`: save the current file
+
+## Vim-Like (see keybindings_vim_like.nim)
 - For `<LEADER>` you can either press `<SPACE>` or `<C-b>`
 - `<ESCAPE>`: cancel or close e.g. popups
 - `<C-x><C-x>`: quit
@@ -16,7 +30,7 @@ The actual vim keybindings are not very complete yet (see [here](supported_vim_k
 - `<LEADER>ge`: open the file chooser (only shows files open in background)
 - `<CA-x>`: close the current view
 - `<CA-n>` and `<CA-t>`: switch between views
-- `<C-s>`: save file
+- `<C-s>`: save the current file
 
 ## Text Editor
 - `<C-SPACE>`: show completion window
