@@ -13,7 +13,6 @@ when defined(nimscript):
 
 type AnyDocumentEditor = TextDocumentEditor | ModelDocumentEditor
 
-var lambdaActions = initTable[string, proc(): void]()
 var voidCallbacks = initTable[int, proc(args: JsonNode): void]()
 var boolCallbacks = initTable[int, proc(args: JsonNode): bool]()
 var anyCallbacks = initTable[int, proc(args: JsonNode): JsonNode]()
@@ -59,14 +58,6 @@ proc addCallback*(action: proc(args: JsonNode): JsonNode): int =
 func toJsonString[T: string](value: T): string = escapeJson(value)
 func toJsonString[T: char](value: T): string = escapeJson($value)
 func toJsonString[T](value: T): string = $value
-
-proc handleLambdaAction*(args: JsonNode): bool =
-  # let editorId = args[0].jsonTo(TextDocumentEditor, opt=JOptions(allowExtraKeys: true))
-  let key = args[1].str
-  if lambdaActions.contains(key):
-    lambdaActions[key]()
-    return true
-  return false
 
 proc removeCommand*(context: string, keys: string) =
   removeCommand(context, keys)
@@ -205,7 +196,6 @@ macro addCommand*(context: string, keys: string, action: string, args: varargs[u
 
 proc addCommand*(context: string, keys: string, action: proc(): void) =
   let key = "$" & context & keys
-  # lambdaActions[key] = action
   scriptActions[key] = proc(args: JsonNode): JsonNode =
     action()
     return newJNull()

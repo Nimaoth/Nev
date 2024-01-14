@@ -72,8 +72,12 @@ proc logs*() =
   editor_logs_void_App_impl()
 proc toggleConsoleLogger*() =
   editor_toggleConsoleLogger_void_App_impl()
-proc closeCurrentView*() =
-  editor_closeCurrentView_void_App_impl()
+proc closeCurrentView*(keepHidden: bool = true) =
+  ## Closes the current view. If `keepHidden` is true the view is not closed but hidden instead.
+  editor_closeCurrentView_void_App_bool_impl(keepHidden)
+proc closeOtherViews*(keepHidden: bool = true) =
+  ## Closes all views except for the current one. If `keepHidden` is true the views are not closed but hidden instead.
+  editor_closeOtherViews_void_App_bool_impl(keepHidden)
 proc moveCurrentViewToTop*() =
   editor_moveCurrentViewToTop_void_App_impl()
 proc nextView*() =

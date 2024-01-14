@@ -566,7 +566,9 @@ proc editor_logs_void_App_impl*() =
   discard
 proc editor_toggleConsoleLogger_void_App_impl*() =
   discard
-proc editor_closeCurrentView_void_App_impl*() =
+proc editor_closeCurrentView_void_App_bool_impl*(keepHidden: bool = true) =
+  discard
+proc editor_closeOtherViews_void_App_bool_impl*(keepHidden: bool = true) =
   discard
 proc editor_moveCurrentViewToTop_void_App_impl*() =
   discard

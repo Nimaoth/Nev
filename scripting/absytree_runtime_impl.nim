@@ -4,17 +4,10 @@ import misc/[event]
 proc handleCallback*(id: int, args: JsonNode): bool = handleCallbackImpl(id, args)
 proc handleAnyCallback*(id: int, args: JsonNode): JsonNode = handleAnyCallbackImpl(id, args)
 proc handleScriptAction*(name: string, args: JsonNode): JsonNode = handleScriptActionImpl(name, args)
-
-proc handleGlobalAction*(action: string, args: JsonNode): bool =
-  if action == "lambda-action":
-    return handleLambdaAction(args)
-  return handleAction(action, args)
+proc handleGlobalAction*(action: string, args: JsonNode): bool = handleAction(action, args)
 
 proc handleEditorAction*(id: EditorId, action: string, args: JsonNode): bool =
   # infof"handleEditorAction {id} {action} {args}"
-  if action == "lambda-action":
-    return handleLambdaAction(args)
-
   if id.isTextEditor(editor):
     return handleTextEditorAction(editor, action, args)
 
