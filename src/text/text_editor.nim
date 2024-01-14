@@ -1770,6 +1770,8 @@ proc newTextEditor*(document: TextDocument, app: AppInterface, configProvider: C
 
   self.startBlinkCursorTask()
 
+  self.setMode(configProvider.getValue("editor.text.default-mode", ""))
+
   return self
 
 method getDocument*(self: TextDocumentEditor): Document = self.document
