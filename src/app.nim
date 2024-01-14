@@ -678,10 +678,12 @@ proc setupDefaultKeybindings(self: App) =
   editorConfig.addCommand("<CAS-r>", "reload-config")
   editorConfig.addCommand("<C-w><LEFT>", "prev-view")
   editorConfig.addCommand("<C-w><RIGHT>", "next-view")
-  editorConfig.addCommand("<C-w><C-x>", "close-current-view")
+  editorConfig.addCommand("<C-w><C-x>", "close-current-view true")
+  editorConfig.addCommand("<C-w><C-X>", "close-current-view false")
   editorConfig.addCommand("<C-s>", "write-file")
   editorConfig.addCommand("<C-w><C-w>", "command-line")
   editorConfig.addCommand("<C-o>", "choose-file \"new\"")
+  editorConfig.addCommand("<C-h>", "choose-open \"new\"")
 
   textConfig.addCommand("<LEFT>", "move-cursor-column -1")
   textConfig.addCommand("<RIGHT>", "move-cursor-column 1")
@@ -1195,7 +1197,8 @@ proc toggleConsoleLogger*(self: App) {.expose("editor").} =
 # proc createKeybindAutocompleteView*(self: App) {.expose("editor").} =
 #   self.createAndAddView(newKeybindAutocompletion())
 
-proc closeCurrentView*(self: App) {.expose("editor").} =
+proc closeCurrentView*(self: App, keepHidden: bool = true) {.expose("editor").} =
+  ## Closes the current view. If `keepHidden` is true the view is not closed but hidden instead.
   let view = self.views[self.currentView]
   self.views.delete self.currentView
 
@@ -1206,9 +1209,31 @@ proc closeCurrentView*(self: App) {.expose("editor").} =
     else:
       self.help()
 
-  self.hiddenViews.add view
+  if keepHidden:
+    self.hiddenViews.add view
+  else:
+    # TODO: close document
+    discard
 
   self.currentView = self.currentView.clamp(0, self.views.len - 1)
+  self.platform.requestRender()
+
+proc closeOtherViews*(self: App, keepHidden: bool = true) {.expose("editor").} =
+  ## Closes all views except for the current one. If `keepHidden` is true the views are not closed but hidden instead.
+
+  let view = self.views[self.currentView]
+
+  for i, view in self.views:
+    if i != self.currentView:
+      if keepHidden:
+        self.hiddenViews.add view
+      else:
+        # TODO: close document
+        discard
+
+  self.views.setLen 1
+  self.views[0] = view
+  self.currentView = 0
   self.platform.requestRender()
 
 proc moveCurrentViewToTop*(self: App) {.expose("editor").} =
@@ -1350,6 +1375,8 @@ proc openFile*(self: App, path: string, app: bool = false): Option[DocumentEdito
 
   if self.tryOpenExisting(path, WorkspaceFolder.none).getSome(ed):
     return ed.some
+
+  log lvlInfo, fmt"Open file '{path}'"
 
   try:
     if path.endsWith(".am") or path.endsWith(".ast-model"):
