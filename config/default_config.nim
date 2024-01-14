@@ -129,7 +129,8 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
     addCommand "editor", "<*-l>t", "change-layout-prop", "main-split", 0.05
     addCommand "editor", "v", "create-view"
     addCommand "editor", "a", "create-keybind-autocomplete-view"
-    addCommand "editor", "x", "close-current-view"
+    addCommand "editor", "x", "close-current-view", true
+    addCommand "editor", "X", "close-current-view", false
     addCommand "editor", "n", "prev-view"
     addCommand "editor", "t", "next-view"
     addCommand "editor", "N", "move-current-view-prev"
@@ -141,7 +142,8 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
   if getBackend() != Terminal:
     addCommand "editor", "<CA-v>", "create-view"
     addCommand "editor", "<CA-a>", "create-keybind-autocomplete-view"
-    addCommand "editor", "<CA-x>", "close-current-view"
+    addCommand "editor", "<CA-x>", "close-current-view", true
+    addCommand "editor", "<CA-X>", "close-current-view", false
     addCommand "editor", "<CA-n>", "prev-view"
     addCommand "editor", "<CA-t>", "next-view"
     addCommand "editor", "<CS-n>", "move-current-view-prev"
