@@ -7,3 +7,7 @@ func excl*[T](xs: var seq[T], x: T) =
   let i = xs.find(x)
   if i != -1:
     xs.del(i)
+
+func incl*[T](xs: var seq[T], x: openArray[T]) =
+  for y in x:
+    xs.incl y
