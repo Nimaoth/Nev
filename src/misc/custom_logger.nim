@@ -1,4 +1,4 @@
-import std/[strformat, options, macros, genasts]
+import std/[strformat, options, macros, genasts, strutils]
 from logging import nil
 import util, timer
 export strformat
