@@ -89,3 +89,55 @@ proc serializeArgumentsToJson*(def: NimNode, targetUiae: NimNode): (NimNode, Nim
     stmts.add s
 
   result = (stmts, argsName)
+
+proc createJsonWrapper*(fun: NimNode, typ: NimNode, newName: NimNode): NimNode =
+  ## Create a wrapper function with name `newName` for `fun` with the function type `typ`.
+  ## The wrapper function takes a JsonNode as argument and calls `fun`,
+  ## converting the arguments from JsonNode to parameter types of `fun`.
+  ## The return value is converted to JsonNode.
+
+  assert typ.kind == nnkBracketExpr
+  assert typ[0].repr == "proc"
+
+  var callScriptFuncFromJson = nnkCall.newTree(fun)
+
+  # Argument of the JSON wrapper which calls the script function. Defined here so we can use it in the loop.
+  let jsonArg = nskParam.genSym
+
+  # Go through each parameter in reverse, fill out the args in `callImplFromScriptFunction`, `callScriptFuncFromScriptFuncWrapper`
+  # and `callScriptFuncFromJson`
+  for i in countdown(typ.len - 1, 2):
+    let originalArgumentType = typ[i]
+    var mappedArgumentType = originalArgumentType.repr.parseExpr
+    let index = newLit(i - 2)
+
+    let tempArg = if false: # def.isVarargs(i): # todo
+      genAst(jsonArg, index): jsonArg[index..^1]
+    else:
+      genAst(jsonArg, index): jsonArg[index]
+
+    let tempArg2 = genAst(jsonArg, index, mappedArgumentType): jsonArg[index].jsonTo(mappedArgumentType, JOptions(allowExtraKeys: true))
+
+    # The argument for the call to scriptFunction in the wrapper
+    let resWrapper = quote do:
+      block:
+        when `originalArgumentType` is JsonNode:
+          `tempArg`
+        else:
+          `tempArg2`
+
+    callScriptFuncFromJson.insert(1, resWrapper)
+
+  let returnType = typ[1]
+
+  let call = if returnType.repr == "void":
+    genAst(callScriptFuncFromJson):
+      callScriptFuncFromJson
+      return newJNull()
+  else:
+    quote do:
+      return `callScriptFuncFromJson`.toJson
+
+  result = genAst(functionName = newName, call, argName = jsonArg):
+    proc functionName(argName: JsonNode): JsonNode {.nimcall, used.} =
+      call
