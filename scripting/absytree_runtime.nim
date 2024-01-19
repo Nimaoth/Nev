@@ -62,6 +62,13 @@ func toJsonString[T](value: T): string = $value
 proc removeCommand*(context: string, keys: string) =
   removeCommand(context, keys)
 
+proc parseAction*(action: string): tuple[action: string, arg: string] =
+  let spaceIndex = action.find(' ')
+  if spaceIndex == -1:
+    return (action, "")
+  else:
+    return (action[0..<spaceIndex], action[spaceIndex + 1..^1])
+
 macro runAction*(action: string, args: varargs[untyped]): untyped =
   var stmts = nnkStmtList.newTree()
   let str = nskVar.genSym "str"
@@ -166,7 +173,7 @@ proc setOption*[T](path: string, value: T) =
   else:
     {.fatal: ("Can't set option with type " & $T).}
 
-proc bindArgs(args: NimNode): tuple[stmts: NimNode, arg: NimNode] =
+proc bindArgs*(args: NimNode): tuple[stmts: NimNode, arg: NimNode] =
   var stmts = nnkStmtList.newTree()
   let str = nskVar.genSym "str"
   stmts.add quote do:
@@ -178,7 +185,7 @@ proc bindArgs(args: NimNode): tuple[stmts: NimNode, arg: NimNode] =
 
   return (stmts, str)
 
-var keysPrefix: string = ""
+var keysPrefix*: string = ""
 
 template withKeys*(keys: varargs[string], body: untyped): untyped =
   for key in keys:
@@ -192,7 +199,7 @@ macro addCommand*(context: string, keys: string, action: string, args: varargs[u
   let (stmts, str) = bindArgs(args)
   return genAst(stmts, context, keys, action, str):
     stmts
-    addCommandScript(context, keysPrefix & keys, action, str)
+    addCommandScript(context, "", keysPrefix & keys, action, str)
 
 proc addCommand*(context: string, keys: string, action: proc(): void) =
   let key = "$" & context & keys
@@ -200,26 +207,36 @@ proc addCommand*(context: string, keys: string, action: proc(): void) =
     action()
     return newJNull()
 
-  # addCommandScript(context, keysPrefix & keys, "lambda-action", key.toJsonString)
-  addCommandScript(context, keysPrefix & keys, key, "")
+  # addCommandScript(context, "", keysPrefix & keys, "lambda-action", key.toJsonString)
+  addCommandScript(context, "", keysPrefix & keys, key, "")
 
-template addCommandBlock*(context: static[string], keys: string, body: untyped): untyped =
+proc addCommand*[T: proc](context: string, keys: string, args: string, action: T) =
+  let key = "$" & context & keys
+  scriptActions[key] = proc(args: JsonNode): JsonNode =
+    return callJson(action, args)
+
+  addCommandScript(context, "", keysPrefix & keys, key, args)
+
+template addCommandBlock*(context: string, keys: string, body: untyped): untyped =
   addCommand context, keys, proc() =
     body
 
+func getContextWithMode*(context: string, mode: string): string =
+  if mode.len == 0 or mode[0] == '#':
+    return context & mode
+  else:
+    return context & "." & mode
+
 # App commands
-template addEditorCommandBlock*(mode: static[string], keys: string, body: untyped): untyped =
-  let context = if mode.len == 0: "editor" else: "editor." & mode
-  addCommand context, keys, proc() =
+template addEditorCommandBlock*(mode: string, keys: string, body: untyped): untyped =
+  addCommand getContextWithMode("editor", mode), keys, proc() =
     body
 
 proc addEditorCommand*(mode: string, keys: string, action: proc(): void) =
-  let context = if mode.len == 0: "editor" else: "editor." & mode
-  addCommand context, keys, proc() =
+  addCommand getContextWithMode("editor", mode), keys, proc() =
     action()
 
-macro addEditorCommand*(mode: static[string], keys: string, action: string, args: varargs[untyped]): untyped =
-  let context = if mode.len == 0: "editor" else: "editor." & mode
+macro addEditorCommand*(mode: string, keys: string, action: string, args: varargs[untyped]): untyped =
   var stmts = nnkStmtList.newTree()
   let str = nskVar.genSym "str"
   stmts.add quote do:
@@ -229,14 +246,13 @@ macro addEditorCommand*(mode: static[string], keys: string, action: string, args
       `str`.add " "
       `str`.add `arg`.toJsonString
 
-  return genAst(stmts, context, keys, action, str):
+  return genAst(stmts, mode, keys, action, str):
     stmts
-    addCommandScript(context, keysPrefix & keys, action, str)
+    addCommandScript(getContextWithMode("editor", mode), "", keysPrefix & keys, action, str)
 
 # Text commands
-template addTextCommandBlock*(mode: static[string], keys: string, body: untyped): untyped =
-  let context = if mode.len == 0: "editor.text" else: "editor.text." & mode
-  addCommand context, keys, proc() =
+template addTextCommandBlock*(mode: string, keys: string, body: untyped): untyped =
+  addCommand getContextWithMode("editor.text", mode), keys, proc() =
     try:
       let editor {.inject, used.} = TextDocumentEditor(id: getActiveEditor())
       body
@@ -246,7 +262,7 @@ template addTextCommandBlock*(mode: static[string], keys: string, body: untyped)
       infof"TextCommandBlock {m} {k}: {getCurrentExceptionMsg()}"
 
 proc addTextCommand*(mode: string, keys: string, action: proc(editor: TextDocumentEditor): void) =
-  let context = if mode.len == 0: "editor.text" else: "editor.text." & mode
+  let context = getContextWithMode("editor.text", mode)
   addCommand context, keys, proc() =
     try:
       action(TextDocumentEditor(id: getActiveEditor()))
@@ -255,12 +271,11 @@ proc addTextCommand*(mode: string, keys: string, action: proc(editor: TextDocume
       let k {.inject.} = keys
       infof"TextCommand {m} {k}: {getCurrentExceptionMsg()}"
 
-macro addTextCommand*(mode: static[string], keys: string, action: string, args: varargs[untyped]): untyped =
-  let context = if mode.len == 0: "editor.text" else: "editor.text." & mode
+macro addTextCommand*(mode: string, keys: string, action: string, args: varargs[untyped]): untyped =
   let (stmts, str) = bindArgs(args)
-  return genAst(stmts, context, keys, action, str):
+  return genAst(stmts, mode, keys, action, str):
     stmts
-    addCommandScript(context, keysPrefix & keys, action, str)
+    addCommandScript(getContextWithMode("editor.text", mode), "", keysPrefix & keys, action, str)
 
 proc setTextInputHandler*(context: string, action: proc(editor: TextDocumentEditor, input: string): bool) =
   let id = addCallback proc(args: JsonNode): bool =
@@ -304,7 +319,7 @@ proc addCustomTextMove*(name: string, action: proc(editor: TextDocumentEditor, c
 
 # Model commands
 template addModelCommandBlock*(mode: static[string], keys: string, body: untyped): untyped =
-  let context = if mode.len == 0: "editor.model" else: "editor.model." & mode
+  let context = getContextWithMode("editor.model", mode)
   addCommand context, keys, proc() =
     try:
       let editor {.inject, used.} = ModelDocumentEditor(id: getActiveEditor())
@@ -315,12 +330,12 @@ template addModelCommandBlock*(mode: static[string], keys: string, body: untyped
       infof"ModelCommandBlock {m} {k}: {getCurrentExceptionMsg()}"
 
 proc addModelCommand*(mode: string, keys: string, action: proc(editor: ModelDocumentEditor): void) =
-  let context = if mode.len == 0: "editor.model" else: "editor.model." & mode
+  let context = getContextWithMode("editor.model", mode)
   addCommand context, keys, proc() =
     action(ModelDocumentEditor(id: getActiveEditor()))
 
 macro addModelCommand*(mode: static[string], keys: string, action: string, args: varargs[untyped]): untyped =
-  let context = if mode.len == 0: "editor.model" else: "editor.model." & mode
+  let context = getContextWithMode("editor.model", mode)
   var stmts = nnkStmtList.newTree()
   let str = nskVar.genSym "str"
   stmts.add quote do:
@@ -332,7 +347,7 @@ macro addModelCommand*(mode: static[string], keys: string, action: string, args:
 
   return genAst(stmts, context, keys, action, str):
     stmts
-    addCommandScript(context, keysPrefix & keys, action, str)
+    addCommandScript(context, "", keysPrefix & keys, action, str)
 
 proc setModelInputHandler*(context: string, action: proc(editor: ModelDocumentEditor, input: string): bool) =
   let id = addCallback proc(args: JsonNode): bool =

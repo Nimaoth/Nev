@@ -148,10 +148,10 @@ proc setLeaders*(leaders: seq[string]) =
   editor_setLeaders_void_App_seq_string_impl(leaders)
 proc addLeader*(leader: string) =
   editor_addLeader_void_App_string_impl(leader)
-proc addCommandScript*(context: string; keys: string; action: string;
-                       arg: string = "") =
-  editor_addCommandScript_void_App_string_string_string_string_impl(context,
-      keys, action, arg)
+proc addCommandScript*(context: string; subContext: string; keys: string;
+                       action: string; arg: string = "") =
+  editor_addCommandScript_void_App_string_string_string_string_string_impl(
+      context, subContext, keys, action, arg)
 proc removeCommand*(context: string; keys: string) =
   editor_removeCommand_void_App_string_string_impl(context, keys)
 proc getActivePopup*(): EditorId =

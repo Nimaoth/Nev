@@ -409,8 +409,9 @@ proc editor_changeAnimationSpeed_void_App_float_impl(factor: float)  {.importc.}
 proc editor_setLeader_void_App_string_impl(leader: string)  {.importc.}
 proc editor_setLeaders_void_App_seq_string_impl(leaders: seq[string])  {.importc.}
 proc editor_addLeader_void_App_string_impl(leader: string)  {.importc.}
-proc editor_addCommandScript_void_App_string_string_string_string_impl(
-    context: string; keys: string; action: string; arg: string = "")  {.importc.}
+proc editor_addCommandScript_void_App_string_string_string_string_string_impl(
+    context: string; subContext: string; keys: string; action: string;
+    arg: string = "")  {.importc.}
 proc editor_removeCommand_void_App_string_string_impl(context: string;
     keys: string)  {.importc.}
 proc editor_getActivePopup_EditorId_impl(): EditorId  {.importc.}

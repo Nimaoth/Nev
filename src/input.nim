@@ -1,5 +1,5 @@
-import std/[strformat, strutils, tables, algorithm, unicode, sequtils, sugar, json]
-import misc/[custom_logger, array_set]
+import std/[strformat, strutils, tables, algorithm, unicode, sequtils, sugar, json, options, parseutils]
+import misc/[custom_logger, array_set, util, regex]
 
 logCategory "input"
 
@@ -99,10 +99,38 @@ proc step*(dfa: CommandDFA, state: CommandState, currentInput: int64, mods: Modi
   else:
     result.persistent = state.persistent
 
+let capturePattern = re"<(.*?)>"
 proc getAction*(dfa: CommandDFA, state: CommandState): string =
-  result = dfa.states[state.current].function
-  for capture in state.captures.pairs:
-    result = result.replace("<" & capture[0] & ">", $newJString(capture[1]))
+  let command = dfa.states[state.current].function
+
+  var last = 0
+  for bounds in command.findAllBounds(capturePattern):
+    defer:
+      last = bounds.last + 1
+    if last < bounds.first:
+      result.add command[last..<bounds.first]
+
+    if command[bounds.first + 1] == '#':
+      let captureName = command[(bounds.first + 2)..<bounds.last]
+      if state.captures.contains(captureName):
+        result.add $state.captures[captureName].parseInt.catch(0)
+      else:
+        result.add "0"
+    elif command[bounds.first + 1] == '$':
+      let captureName = command[(bounds.first + 2)..<bounds.last]
+      if state.captures.contains(captureName):
+        result.add $state.captures[captureName].newJString
+      else:
+        result.add $newJString("")
+    else:
+      let captureName = command[(bounds.first + 1)..<bounds.last]
+      if state.captures.contains(captureName):
+        result.add $state.captures[captureName].newJString
+      else:
+        result.add command[bounds.first..bounds.last]
+
+  if last < command.len:
+    result.add command[last..^1]
 
 proc stepEmpty*(dfa: CommandDFA, state: CommandState): seq[CommandState] =
   for nextState in dfa.states[state.current].epsilonTransitions:
@@ -240,7 +268,7 @@ proc inputToString*(inputs: Slice[int64], modifiers: Modifiers = {}): string =
 
   if inputs.a == 1 and inputs.b == int32.high.int64:
     result.add "CHAR"
-  if inputs.a == -int32.low.int64 and inputs.b == int32.high.int64:
+  if inputs.a == int32.low.int64 and inputs.b == int32.high.int64:
     result.add "ANY"
   else:
     if inputs.a > 0 and inputs.a <= int32.high:
@@ -259,20 +287,19 @@ proc inputToString*(inputs: Slice[int64], modifiers: Modifiers = {}): string =
 
   if special: result.add ">"
 
-proc getInputCodeFromSpecialKey(specialKey: string, leader: (int64, Modifiers)): (Slice[int64], Modifiers) =
+proc getInputCodeFromSpecialKey(specialKey: string, leaders: seq[(int64, Modifiers)]): seq[tuple[inputCodes: Slice[int64], mods: Modifiers]] =
   let runes = specialKey.toRunes
   if runes.len == 1:
-    result = (runes[0].int64..runes[0].int64, {})
+    return @[(runes[0].int64..runes[0].int64, {})]
   else:
-    result[1] = {}
     let input = case specialKey:
       of "LEADER":
-        return (leader[0]..leader[0], leader[1])
+        return leaders.mapIt((it[0]..it[0], it[1]))
 
       of "CHAR":
-        return (1.int64..int32.high.int64, {})
+        return @[(1.int64..int32.high.int64, {})]
       of "ANY":
-        return (int32.low.int64..int32.high.int64, {})
+        return @[(int32.low.int64..int32.high.int64, {})]
 
       of "ENTER": INPUT_ENTER
       of "ESCAPE": INPUT_ESCAPE
@@ -303,10 +330,10 @@ proc getInputCodeFromSpecialKey(specialKey: string, leader: (int64, Modifiers)):
       of "F12": INPUT_F12
 
       else:
-        log(lvlError, fmt"Invalid key '{specialKey}'")
+        # log(lvlError, fmt"Invalid key '{specialKey}'") # todo: improve error handling
         0
 
-    result[0] = input.int64..input.int64
+    return @[(input.int64..input.int64, {})]
 
 proc linkStates(dfa: var CommandDFA, currentState: int, nextState: int, inputCodes: Slice[int64], mods: Modifiers) =
   if not (inputCodes in dfa.states[currentState].transitions):
@@ -333,8 +360,8 @@ proc createOrUpdateState(dfa: var CommandDFA, currentState: int, inputCodes: Sli
   linkStates(dfa, currentState, nextState, inputCodes, mods)
   return nextState
 
-proc parseNextInput(input: openArray[Rune], index: int, leader: (int64, Modifiers) = (0.int64, {})):
-    tuple[inputCode: Slice[int64], mods: Modifiers, nextIndex: int, persistent: bool, flags: set[InputFlag], input: string] =
+proc parseNextInput(input: openArray[Rune], index: int, leaders: seq[(int64, Modifiers)] = @[]):
+    tuple[inputs: seq[tuple[inputCodes: Slice[int64], mods: Modifiers]], persistent: bool, flags: set[InputFlag], nextIndex: int, text: string] =
 
   result.nextIndex = index
 
@@ -346,6 +373,8 @@ proc parseNextInput(input: openArray[Rune], index: int, leader: (int64, Modifier
 
   var state = State.Normal
   var specialKey = ""
+
+  var current: tuple[inputCodes: Slice[int64], mods: Modifiers]
 
   for i in index..<input.len:
     var rune = input[i]
@@ -363,17 +392,17 @@ proc parseNextInput(input: openArray[Rune], index: int, leader: (int64, Modifier
         state = State.Special
         continue
 
-      return (rune.int64..rune.int64, {}, i + 1, false, {}, "")
+      return (@[(rune.int64..rune.int64, {})], false, {}, i + 1, "")
 
     of Special:
       if not isEscaped and ascii == '-':
         # Parse stuff so far as mods
-        result.mods = {}
+        current.mods = {}
         for m in specialKey:
           case m:
-            of 'C': result.mods = result.mods + {Modifier.Control}
-            of 'S': result.mods = result.mods + {Modifier.Shift}
-            of 'A': result.mods = result.mods + {Modifier.Alt}
+            of 'C': current.mods = current.mods + {Modifier.Control}
+            of 'S': current.mods = current.mods + {Modifier.Shift}
+            of 'A': current.mods = current.mods + {Modifier.Alt}
             of '*': result.persistent = true
             of 'o': result.flags.incl Loop
             of '?': result.flags.incl Optional
@@ -386,10 +415,9 @@ proc parseNextInput(input: openArray[Rune], index: int, leader: (int64, Modifier
           log(lvlError, "Invalid input: expected key name or range before '>'")
           return
 
-        let (inputCodes, specialMods) = getInputCodeFromSpecialKey(specialKey, leader)
-        result.mods = result.mods + specialMods
-        result.inputCode = inputCodes
-        result.input = specialKey
+        for (inputCodes, specialMods) in getInputCodeFromSpecialKey(specialKey, leaders):
+          result.inputs.add (inputCodes, current.mods + specialMods)
+          result.text = specialKey
         return
 
       else:
@@ -401,9 +429,13 @@ proc parseNextInput(input: openArray[Rune], index: int, leader: (int64, Modifier
           log(lvlError, "Invalid input: expected start of range before '-'")
           return
 
-        let (inputCodes, specialMods) = getInputCodeFromSpecialKey(specialKey, leader)
-        result.mods = result.mods + specialMods
-        result.inputCode.a = inputCodes.a
+        let specialKeys = getInputCodeFromSpecialKey(specialKey, leaders)
+        if specialKeys.len != 1:
+          log(lvlError, "Invalid input: expected single key before '-'")
+          return
+
+        current.mods = current.mods + specialKeys[0].mods
+        current.inputCodes.a = specialKeys[0].inputCodes.a
         specialKey = ""
         state = State.SpecialKey2
       elif not isEscaped and ascii == '>':
@@ -411,10 +443,9 @@ proc parseNextInput(input: openArray[Rune], index: int, leader: (int64, Modifier
           log(lvlError, "Invalid input: expected key name or range before '>'")
           return
 
-        let (inputCodes, specialMods) = getInputCodeFromSpecialKey(specialKey, leader)
-        result.mods = result.mods + specialMods
-        result.inputCode = inputCodes
-        result.input = specialKey
+        for (inputCodes, specialMods) in getInputCodeFromSpecialKey(specialKey, leaders):
+          result.inputs.add (inputCodes, current.mods + specialMods)
+          result.text = specialKey
         return
       else:
         specialKey.add rune
@@ -425,26 +456,33 @@ proc parseNextInput(input: openArray[Rune], index: int, leader: (int64, Modifier
           log(lvlError, "Invalid input: expected end of range before '>'")
           return
 
-        let (inputCodes, specialMods) = getInputCodeFromSpecialKey(specialKey, leader)
-        result.mods = result.mods + specialMods
-        result.inputCode.b = inputCodes.a
-        result.input.add "-" & specialKey
+        let specialKeys = getInputCodeFromSpecialKey(specialKey, leaders)
+        if specialKeys.len != 1:
+          log(lvlError, "Invalid input: expected single key before '-'")
+          return
+
+        current.mods = current.mods + specialKeys[0].mods
+        current.inputCodes.b = specialKeys[0].inputCodes.a
+        result.inputs.add current
+        result.text.add "-" & specialKey
         return
       else:
         specialKey.add rune
-
-  result.inputCode.a = 0
-  result.inputCode.b = 0
 
 iterator parseInputs*(input: string): tuple[inputCode: Slice[int64], mods: Modifiers, text: string] =
   let runes = input.toRunes
   var index = 0
   while index < input.len:
-    let (inputCode, mods, nextIndex, _, _, text) = parseNextInput(runes, index)
+    let (keys, _, _, nextIndex, text) = parseNextInput(runes, index)
+    if keys.len != 1:
+      log(lvlError, fmt"Failed to parse input '{input}'")
+      break
+
+    let (inputCode, mods) = keys[0]
     yield (inputCode, mods, text)
     index = nextIndex
 
-proc handleNextInput(dfa: var CommandDFA, commands: Table[string, seq[(string, string)]], input: openArray[Rune], function: string, index: int, currentState: int, defaultState: int, leader: (int64, Modifiers), capture = "", depth = 0): seq[int] =
+proc handleNextInput(dfa: var CommandDFA, commands: Table[string, Table[string, string]], input: openArray[Rune], function: string, index: int, currentState: int, defaultState: int, leaders: seq[(int64, Modifiers)], capture = "", depth = 0): seq[int] =
   ##
   ## function: the action to be executed when reaching the final state
   ## index: index into input
@@ -459,9 +497,9 @@ proc handleNextInput(dfa: var CommandDFA, commands: Table[string, seq[(string, s
     # echo "set terminal ", currentState, " to ", function
     return @[currentState]
 
-  let (inputCodes, mods, nextIndex, persistent, flags, inputName) = parseNextInput(input, index, leader)
+  let (keys, persistent, flags, nextIndex, inputName) = parseNextInput(input, index, leaders)
 
-  # echo "| ".repeat(depth) & &"handleNextInput('{input}', '{function}', {index}, {currentState}, {defaultState}, {leader})"
+  # echo "| ".repeat(depth) & &"handleNextInput('{input}', '{function}', {index}, {currentState}, {defaultState}, {leaders})"
   # echo "| ".repeat(depth) & &"  inputCodes: {inputCodes}, mods: {mods}, nextIndex: {nextIndex}, persistent: {persistent}, flags: {flags}, inputName: {inputName}"
   if inputName.len > 0 and commands.contains(inputName):
     dfa.states.add DFAState()
@@ -469,10 +507,10 @@ proc handleNextInput(dfa: var CommandDFA, commands: Table[string, seq[(string, s
     let subCapture = if capture.len > 0: capture & "." & inputName else: inputName
 
     var endStates = newSeq[int]()
-    for command in commands[inputName]:
+    for command in commands[inputName].pairs:
       let (subInput, function) = command
       # echo "| ".repeat(depth) & &"  subInput: {subInput}, function: {function}"
-      let endState = handleNextInput(dfa, commands, subInput.toRunes, function, 0, subState, defaultState = defaultState, leader = leader, subCapture, depth + 1)
+      let endState = handleNextInput(dfa, commands, subInput.toRunes, function, 0, subState, defaultState = defaultState, leaders = leaders, subCapture, depth + 1)
       # echo "| ".repeat(depth) & &"   -> endState: {endState}"
       endStates.add endState
 
@@ -486,81 +524,79 @@ proc handleNextInput(dfa: var CommandDFA, commands: Table[string, seq[(string, s
       # debugf"add epsilon transition from end state {endState} to {epsilonState}: {inputCodes}, {inputName}"
       dfa.states[endState].epsilonTransitions.add epsilonState
       dfa.states[endState].isTerminal = false
-      result.add handleNextInput(dfa, commands, input, function, nextIndex, epsilonState, defaultState, leader, capture, depth + 1)
+      result.add handleNextInput(dfa, commands, input, function, nextIndex, epsilonState, defaultState, leaders, capture, depth + 1)
 
     if Optional in flags:
-      result.add handleNextInput(dfa, commands, input, function, nextIndex, currentState, defaultState, leader, capture, depth + 1)
+      result.add handleNextInput(dfa, commands, input, function, nextIndex, currentState, defaultState, leaders, capture, depth + 1)
     return
 
-  if inputCodes.a == 0:
+  if keys.len == 0:
     log(lvlError, fmt"Failed to parse input")
     return
 
-  let nextState = if inputName == "CHAR" or inputName == "ANY":
-    let subCapture = if capture.len > 0: capture & "." & inputName else: inputName
-    let nextState = createOrUpdateState(dfa, currentState, inputCodes, mods, persistent, Loop in flags, subCapture)
-    # echo "| ".repeat(depth) & &"  create next state {nextState}, {inputCodes}, {mods}, current state {currentState}"
-    if dfa.states[nextState].epsilonTransitions.len == 1:
-      dfa.states[nextState].epsilonTransitions[0]
+  for key in keys:
+    let nextState = if inputName == "CHAR" or inputName == "ANY":
+      let subCapture = if capture.len > 0: capture & "." & inputName else: inputName
+      let nextState = createOrUpdateState(dfa, currentState, key.inputCodes, key.mods, persistent, Loop in flags, subCapture)
+      # echo "| ".repeat(depth) & &"  create next state {nextState}, {key.inputCodes}, {key.mods}, current state {currentState}"
+      if dfa.states[nextState].epsilonTransitions.len == 1:
+        dfa.states[nextState].epsilonTransitions[0]
+      else:
+        dfa.states.add DFAState()
+        let epsilonState = dfa.states.len - 1
+        # debugf"add epsilon transition from next state {nextState} to {epsilonState}: {inputCodes}, {inputName}"
+        dfa.states[nextState].epsilonTransitions.add epsilonState
+        dfa.states[nextState].isTerminal = false
+        dfa.states[epsilonState].capture = capture
+        epsilonState
+
     else:
-      dfa.states.add DFAState()
-      let epsilonState = dfa.states.len - 1
-      # debugf"add epsilon transition from next state {nextState} to {epsilonState}: {inputCodes}, {inputName}"
-      dfa.states[nextState].epsilonTransitions.add epsilonState
-      dfa.states[nextState].isTerminal = false
-      dfa.states[epsilonState].capture = capture
-      epsilonState
+      let nextState = createOrUpdateState(dfa, currentState, key.inputCodes, key.mods, persistent, Loop in flags, capture)
 
-  else:
-    let nextState = createOrUpdateState(dfa, currentState, inputCodes, mods, persistent, Loop in flags, capture)
+      # echo "| ".repeat(depth) & &"  create next state {nextState}, {key.inputCodes}, {key.mods}, current state {currentState}"
 
-    # echo "| ".repeat(depth) & &"  create next state {nextState}, {inputCodes}, {mods}, current state {currentState}"
+      if key.inputCodes.a > 0 and (key.mods == {} or key.mods == {Shift}):
+        let rune = Rune(key.inputCodes.a)
+        let rune2 = Rune(key.inputCodes.b)
+        let bIsLower = rune.isLower
+        if not bIsLower and rune.isUpper:
+          # echo "| ".repeat(depth) & &"    link state {currentState} to {nextState} for {rune.toLower} and {rune.toUpper}"
+          linkStates(dfa, currentState, nextState, rune.toLower.int64..rune2.toLower.int64, key.mods + {Shift})
+          linkStates(dfa, currentState, nextState, key.inputCodes, key.mods + {Shift})
 
-    if inputCodes.a > 0 and (mods == {} or mods == {Shift}):
-      let rune = Rune(inputCodes.a)
-      let rune2 = Rune(inputCodes.b)
-      let bIsLower = rune.isLower
-      if not bIsLower and rune.isUpper:
-        # echo "| ".repeat(depth) & &"    link state {currentState} to {nextState} for {rune.toLower} and {rune.toUpper}"
-        linkStates(dfa, currentState, nextState, rune.toLower.int64..rune2.toLower.int64, mods + {Shift})
-        linkStates(dfa, currentState, nextState, inputCodes, mods + {Shift})
+        if bIsLower and Shift in key.mods:
+          # echo "| ".repeat(depth) & &"    link state {currentState} to {nextState} for {rune.toLower} and {rune.toUpper}"
+          linkStates(dfa, currentState, nextState, rune.toUpper.int64..rune2.toUpper.int64, key.mods - {Shift})
+          linkStates(dfa, currentState, nextState, rune.toUpper.int64..rune2.toUpper.int64, key.mods)
 
-      if bIsLower and Shift in mods:
-        # echo "| ".repeat(depth) & &"    link state {currentState} to {nextState} for {rune.toLower} and {rune.toUpper}"
-        linkStates(dfa, currentState, nextState, rune.toUpper.int64..rune2.toUpper.int64, mods - {Shift})
-        linkStates(dfa, currentState, nextState, rune.toUpper.int64..rune2.toUpper.int64, mods)
+      nextState
 
-    nextState
+    let nextDefaultState = if persistent: nextState else: defaultState
+    result.add handleNextInput(dfa, commands, input, function, nextIndex, nextState, nextDefaultState, leaders, capture, depth + 1)
 
-  let nextDefaultState = if persistent: nextState else: defaultState
-  return handleNextInput(dfa, commands, input, function, nextIndex, nextState, nextDefaultState, leader, capture, depth + 1)
-
-proc buildDFA*(commands: Table[string, seq[(string, string)]], leaders: seq[string] = @[]): CommandDFA =
+proc buildDFA*(commands: Table[string, Table[string, string]], leaders: seq[string] = @[]): CommandDFA =
   new(result)
 
+  # debugf"commands: {commands}"
   result.states.add DFAState()
 
-  for leader in leaders:
-    let (leaderInput, leaderMods, _, _, _, _) = parseNextInput(leader.toRunes, 0)
+  let leaders = collect(newSeq):
+    for leader in leaders:
+      let (keys, _, _, _, _) = parseNextInput(leader.toRunes, 0)
+      for key in keys:
+        (key.inputCodes.a, key.mods)
 
-    for command in commands[""]:
+  if commands.contains(""):
+    for command in commands[""].pairs:
       let input = command[0]
       let function = command[1]
 
       if input.len > 0:
         # debugf"handle input {input} with leader {leaderInput}"
-        discard handleNextInput(result, commands, input.toRunes, function, index = 0, currentState = 0, defaultState = 0, leader = (leaderInput.a, leaderMods))
-
-  if leaders.len == 0:
-    for command in commands[""]:
-      let input = command[0]
-      let function = command[1]
-
-      if input.len > 0:
-        discard handleNextInput(result, commands, input.toRunes, function, index = 0, currentState = 0, defaultState = 0, leader = (0.int64, {}))
+        discard handleNextInput(result, commands, input.toRunes, function, index = 0, currentState = 0, defaultState = 0, leaders = leaders)
 
 proc buildDFA*(commands: seq[(string, string)], leaders: seq[string] = @[]): CommandDFA =
-  return buildDFA({"": commands}.toTable, leaders)
+  return buildDFA({"": commands.toTable}.toTable, leaders)
 
 proc autoCompleteRec(dfa: CommandDFA, result: var seq[(string, string)], currentInputs: string, currentState: int) =
   let state = dfa.states[currentState]
