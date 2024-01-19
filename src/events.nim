@@ -67,7 +67,6 @@ proc addCommand*(config: EventHandlerConfig, context: string, keys: string, acti
   if not config.commands.contains(context):
     config.commands[context] = initTable[string, string]()
   config.commands[context][keys] = action
-  echo config.commands
   config.revision += 1
 
 proc removeCommand*(config: EventHandlerConfig, keys: string) =

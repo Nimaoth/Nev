@@ -81,6 +81,7 @@ when defined(wasm):
   loadDefaultOptions()
   loadDefaultKeybindings()
   loadVimKeybindings()
+  # loadVimLikeKeybindings()
 
   # Triple click to selects a line
   setOption "editor.text.triple-click-command", "extend-select-move"
