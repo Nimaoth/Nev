@@ -1,4 +1,4 @@
-import std/[strformat, strutils, tables, algorithm, unicode, sequtils, sugar]
+import std/[strformat, strutils, tables, algorithm, unicode, sequtils, sugar, json]
 import misc/[custom_logger, array_set]
 
 logCategory "input"
@@ -102,7 +102,7 @@ proc step*(dfa: CommandDFA, state: CommandState, currentInput: int64, mods: Modi
 proc getAction*(dfa: CommandDFA, state: CommandState): string =
   result = dfa.states[state.current].function
   for capture in state.captures.pairs:
-    result = result.replace("<" & capture[0] & ">", capture[1])
+    result = result.replace("<" & capture[0] & ">", $newJString(capture[1]))
 
 proc stepEmpty*(dfa: CommandDFA, state: CommandState): seq[CommandState] =
   for nextState in dfa.states[state.current].epsilonTransitions:
@@ -183,9 +183,6 @@ proc isTerminal*(dfa: CommandDFA, state: int): bool =
 proc getDefaultState*(dfa: CommandDFA, state: int): int =
   return dfa.states[state].nextState
 
-proc getAction*(dfa: CommandDFA, state: int): string =
-  return dfa.states[state].function
-
 proc inputAsString(input: int64): string =
   result = case input:
     of INPUT_ENTER: "ENTER"
@@ -243,6 +240,8 @@ proc inputToString*(inputs: Slice[int64], modifiers: Modifiers = {}): string =
 
   if inputs.a == 1 and inputs.b == int32.high.int64:
     result.add "CHAR"
+  if inputs.a == -int32.low.int64 and inputs.b == int32.high.int64:
+    result.add "ANY"
   else:
     if inputs.a > 0 and inputs.a <= int32.high:
       let ch = Rune(inputs.a)
@@ -272,6 +271,8 @@ proc getInputCodeFromSpecialKey(specialKey: string, leader: (int64, Modifiers)):
 
       of "CHAR":
         return (1.int64..int32.high.int64, {})
+      of "ANY":
+        return (int32.low.int64..int32.high.int64, {})
 
       of "ENTER": INPUT_ENTER
       of "ESCAPE": INPUT_ESCAPE
@@ -475,12 +476,14 @@ proc handleNextInput(dfa: var CommandDFA, commands: Table[string, seq[(string, s
       # echo "| ".repeat(depth) & &"   -> endState: {endState}"
       endStates.add endState
 
+    # debugf"add epsilon transition from {currentState} to {subState}: {inputCodes}, {inputName}"
     dfa.states[currentState].epsilonTransitions.add subState
     dfa.states[currentState].isTerminal = false
 
     for endState in endStates.mitems:
       dfa.states.add DFAState()
       let epsilonState = dfa.states.len - 1
+      # debugf"add epsilon transition from end state {endState} to {epsilonState}: {inputCodes}, {inputName}"
       dfa.states[endState].epsilonTransitions.add epsilonState
       dfa.states[endState].isTerminal = false
       result.add handleNextInput(dfa, commands, input, function, nextIndex, epsilonState, defaultState, leader, capture, depth + 1)
@@ -493,17 +496,20 @@ proc handleNextInput(dfa: var CommandDFA, commands: Table[string, seq[(string, s
     log(lvlError, fmt"Failed to parse input")
     return
 
-  let nextState = if inputName == "CHAR":
+  let nextState = if inputName == "CHAR" or inputName == "ANY":
     let subCapture = if capture.len > 0: capture & "." & inputName else: inputName
     let nextState = createOrUpdateState(dfa, currentState, inputCodes, mods, persistent, Loop in flags, subCapture)
     # echo "| ".repeat(depth) & &"  create next state {nextState}, {inputCodes}, {mods}, current state {currentState}"
-    dfa.states.add DFAState()
-    let epsilonState = dfa.states.len - 1
-    dfa.states[nextState].epsilonTransitions.add epsilonState
-    dfa.states[nextState].isTerminal = false
-    dfa.states[epsilonState].capture = capture
-    epsilonState
-    # nextState
+    if dfa.states[nextState].epsilonTransitions.len == 1:
+      dfa.states[nextState].epsilonTransitions[0]
+    else:
+      dfa.states.add DFAState()
+      let epsilonState = dfa.states.len - 1
+      # debugf"add epsilon transition from next state {nextState} to {epsilonState}: {inputCodes}, {inputName}"
+      dfa.states[nextState].epsilonTransitions.add epsilonState
+      dfa.states[nextState].isTerminal = false
+      dfa.states[epsilonState].capture = capture
+      epsilonState
 
   else:
     let nextState = createOrUpdateState(dfa, currentState, inputCodes, mods, persistent, Loop in flags, capture)
@@ -542,6 +548,7 @@ proc buildDFA*(commands: Table[string, seq[(string, string)]], leaders: seq[stri
       let function = command[1]
 
       if input.len > 0:
+        # debugf"handle input {input} with leader {leaderInput}"
         discard handleNextInput(result, commands, input.toRunes, function, index = 0, currentState = 0, defaultState = 0, leader = (leaderInput.a, leaderMods))
 
   if leaders.len == 0:
@@ -601,7 +608,7 @@ proc dump*(dfa: CommandDFA, currentState: int, currentInput: int64, currentMods:
     for key in dfa.states[state].transitions.keys:
       allUsedInputs.add key
 
-  allUsedInputs.sort((a, b) => a.a - b.a)
+  allUsedInputs.sort((a, b) => a.a.int - b.a.int)
   allUsedInputs = allUsedInputs.deduplicate(isSorted = true)
 
   # echo allUsedInputs
@@ -653,7 +660,8 @@ proc dumpGraphViz*(dfa: CommandDFA): string =
   result = "digraph DFA {\n"
 
   proc addState(res: var string, state: int) =
-    res.add &"\"{state}\\n{dfa.states[state].function}\\n{dfa.states[state].capture}\""
+    let escaped = replace(&"{state}\\n{dfa.states[state].function}\\n{dfa.states[state].capture}", "\"", "\\\"")
+    res.add &"\"{escaped}\""
 
   let colors = @["green", "blue", "yellow", "orange", "purple", "brown", "cyan", "magenta", "gray", "black", "white"]
   let shapes = @[""]
@@ -693,8 +701,6 @@ proc dumpGraphViz*(dfa: CommandDFA): string =
         result.add " -> "
         result.addState(next)
         result.add &" [color=black, label=\"{inputToString(transition[0], modifier)}\"]\n"
-
-    result.add "\n"
 
     for nextState in dfa.states[state].epsilonTransitions:
       result.add "  "
