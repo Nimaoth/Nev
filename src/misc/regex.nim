@@ -35,3 +35,12 @@ when defined(js):
 else:
   import std/re
   export re
+
+iterator findAllBounds*(buf: string, pattern: Regex): tuple[first: int, last: int] =
+  var start = 0
+  while start < buf.high:
+    let bounds = buf.findBounds(pattern, start)
+    if bounds.first == -1:
+      break
+    yield bounds
+    start = bounds.last + 1
