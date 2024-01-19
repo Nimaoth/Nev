@@ -39,6 +39,9 @@ count_loc.ps1
 todo.md
 a.html
 
+# GraphViz files
+*.dot
+
 # Added by cargo
 
 rust_test
