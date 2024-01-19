@@ -784,16 +784,21 @@ proc addLeader*(leader: string) =
       argsJsonString.cstring)
 
 
-proc editor_addCommandScript_void_App_string_string_string_string_wasm(
+proc editor_addCommandScript_void_App_string_string_string_string_string_wasm(
     arg: cstring): cstring {.importc.}
-proc addCommandScript*(context: string; keys: string; action: string;
-                       arg: string = "") =
+proc addCommandScript*(context: string; subContext: string; keys: string;
+                       action: string; arg: string = "") =
   var argsJson = newJArray()
   argsJson.add block:
     when string is JsonNode:
       context
     else:
       context.toJson()
+  argsJson.add block:
+    when string is JsonNode:
+      subContext
+    else:
+      subContext.toJson()
   argsJson.add block:
     when string is JsonNode:
       keys
@@ -810,7 +815,7 @@ proc addCommandScript*(context: string; keys: string; action: string;
     else:
       arg.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_addCommandScript_void_App_string_string_string_string_wasm(
+  let res {.used.} = editor_addCommandScript_void_App_string_string_string_string_string_wasm(
       argsJsonString.cstring)
 
 

@@ -1530,7 +1530,7 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
   var config = EventHandlerConfig(context: "editor.text.choose-cursor", handleActions: true, handleInputs: true, consumeAllActions: true, consumeAllInput: true)
 
   for i in 0..min(cursors.high, keys.high):
-    config.addCommand(keys[i] & "<SPACE>", action & " " & $cursors[i].toJson & " " & $oldMode.toJson)
+    config.addCommand("", keys[i] & "<SPACE>", action & " " & $cursors[i].toJson & " " & $oldMode.toJson)
 
   var progress = ""
 
@@ -1565,7 +1565,7 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
 
   updateStyledTextOverrides()
 
-  config.addCommand("<ESCAPE>", "setMode \"\"")
+  config.addCommand("", "<ESCAPE>", "setMode \"\"")
 
   self.modeEventHandler = eventHandler(config):
     onAction:
@@ -1655,7 +1655,7 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
   return Ignored
 
 method handleAction*(self: TextDocumentEditor, action: string, arg: string): EventResponse =
-  # debugf "handleAction {action}, {arg}"
+  # debugf "handleAction {action}, '{arg}'"
   var args = newJArray()
   try:
     for a in newStringStream(arg).parseJsonFragments():
