@@ -28,6 +28,9 @@ switch("d", "release")
 switch("d", "wasm")
 switch("nimcache", "./nimcache")
 
+switch("stackTrace", "on")
+switch("lineTrace", "on")
+
 let outputName = projectName() & ".wasm"
 # Pass this to Emscripten linker to generate html file scaffold for us.
 # No need for main, it's standalone wasm, and we dont need to error on undefined as we're probably importing
