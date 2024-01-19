@@ -42,6 +42,16 @@ macro expose*(name: string, fun: typed): untyped =
       scriptActions[name] = jsonWrapperName
       addScriptAction(name, documentationStr, params, returnType)
 
+macro callJson*(fun: typed, args: JsonNode): JsonNode =
+  ## Calls a function with a json object as argument, converting the json object to nim types
+  let jsonWrapperName = genSym(nskProc, "jsonWrapper")
+  let jsonWrapper = createJsonWrapper(fun, fun.getType, jsonWrapperName)
+  jsonWrapper.addPragma("closure".ident)
+  return genAst(jsonWrapper, jsonWrapperName, args):
+    block:
+      jsonWrapper
+      jsonWrapperName(args)
+
 proc exportImpl(name: string, implementNims: bool, def: NimNode): NimNode =
   # defer:
   #   echo result.repr
