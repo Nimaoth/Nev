@@ -28,14 +28,14 @@ when defined(wasm):
     try:
       return postInitialize()
     except:
-      infof "postInitializeWasm failed: {getCurrentExceptionMsg()}"
+      info &"postInitializeWasm failed: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
       return false
 
   proc handleGlobalActionWasm(action: cstring, args: cstring): bool {.wasmexport.} =
     try:
       return handleGlobalAction($action, ($args).parseJson)
     except:
-      infof "handleGlobalActionWasm failed: {action} {args}: {getCurrentExceptionMsg()}"
+      info &"handleGlobalActionWasm failed: {action} {args}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
       return false
 
   proc handleUnknownDocumentEditorActionWasm(id: int32, action: cstring, args: cstring): bool {.wasmexport.} =
@@ -43,7 +43,7 @@ when defined(wasm):
     try:
       return handleEditorAction(id.EditorId, $action, ($args).parseJson)
     except:
-      infof "handleUnknownDocumentEditorActionWasm failed: {id} {action} {args}: {getCurrentExceptionMsg()}"
+      info &"handleUnknownDocumentEditorActionWasm failed: {id} {action} {args}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
       return false
 
   proc handleEditorModeChangedWasm(id: int32, oldMode: cstring, newMode: cstring) {.wasmexport.} =
@@ -51,20 +51,20 @@ when defined(wasm):
     try:
       handleEditorModeChanged(id.EditorId, $oldMode, $newMode)
     except:
-      infof "handleEditorModeChangedWasm failed: {id} {oldMode} {newMode}: {getCurrentExceptionMsg()}"
+      info &"handleEditorModeChangedWasm failed: {id} {oldMode} {newMode}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
   proc handleUnknownPopupActionWasm(id: int32, action: cstring, args: cstring): bool {.wasmexport.} =
     try:
       return handleUnknownPopupAction(id.EditorId, $action, ($args).parseJson)
     except:
-      infof "handleUnknownPopupAction failed: {id} {action} {args}: {getCurrentExceptionMsg()}"
+      info &"handleUnknownPopupAction failed: {id} {action} {args}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
       return false
 
   proc handleCallbackWasm(id: int32, args: cstring): bool {.wasmexport.} =
     try:
       return handleCallback(id.int, ($args).parseJson)
     except:
-      infof "handleCallbackWasm failed: {id} {args}: {getCurrentExceptionMsg()}"
+      info &"handleCallbackWasm failed: {id} {args}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
       return false
 
   proc handleAnyCallbackWasm(id: int32, args: cstring): cstring {.wasmexport.} =
@@ -75,7 +75,7 @@ when defined(wasm):
         return ""
       return cstring $res
     except:
-      infof "handleAnyCallbackWasm failed: {id.int} {args}: {getCurrentExceptionMsg()}"
+      info &"handleAnyCallbackWasm failed: {id.int} {args}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
       return "error: " & getCurrentExceptionMsg()
 
   proc handleScriptActionWasm(name: cstring, args: cstring): cstring {.wasmexport.} =
@@ -86,6 +86,5 @@ when defined(wasm):
         return ""
       return cstring $res
     except CatchableError as e:
-      echo e.msg
-      infof "handleScriptActionWasm failed: {args}: {getCurrentExceptionMsg()}"
+      info &"handleScriptActionWasm failed: {args}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
       return "error: " & getCurrentExceptionMsg()
