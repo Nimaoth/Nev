@@ -1,5 +1,5 @@
 import std/[strformat, strutils, tables, algorithm, unicode, sequtils, sugar, json, options, parseutils]
-import misc/[custom_logger, array_set, util, regex]
+import misc/[custom_logger, array_set, util, regex, bitset]
 
 logCategory "input"
 
@@ -46,7 +46,7 @@ type
   Transition = object
     state: int
     capture: string
-    functionIndices: set[int16]
+    functionIndices: BitSet
     function: string
 
   DFAInput = object
@@ -64,7 +64,7 @@ type
     terminalStates: seq[int]
     capture: string
     suffix: string
-    functionIndices: set[int16]
+    functionIndices: BitSet
 
   CommandDFA* = ref object
     persistentState: int
@@ -79,7 +79,7 @@ type
     current*: int
     persistent: int
     captures*: Table[string, string]
-    functionIndices*: set[int16]
+    functionIndices*: BitSet
 
   MouseButton* {.pure.} = enum
     Left, Middle, Right, DoubleClick, TripleClick, Unknown
@@ -123,7 +123,7 @@ proc getAction*(dfa: CommandDFA, state: CommandState, command: string): string =
     result.add command[last..^1]
 
 proc getAction*(dfa: CommandDFA, state: CommandState): string =
-  assert state.functionIndices.len == 1
+  assert state.functionIndices.bitSetCard == 1
   for functionIndex in state.functionIndices:
     let function = dfa.functions[functionIndex]
     return dfa.getAction(state, function)
@@ -134,15 +134,14 @@ proc stepEmpty*(dfa: CommandDFA, state: CommandState): seq[CommandState] =
   for transition in dfa.states[state.current].epsilonTransitions:
     var newState = state
     newState.current = transition.state
-    newState.functionIndices = newState.functionIndices * transition.functionIndices
+    newState.functionIndices.bitSetIntersect transition.functionIndices
     if transition.function != "":
       if newState.captures.contains(transition.capture):
         # echo " 1> ", transition, ": ", transition.capture, " -> ", dfa.getAction(newState, transition.function), " | ", transition.function
         newState.captures[transition.capture] = dfa.getAction(newState, transition.function)
 
-    if dfa.states[transition.state].epsilonTransitions.len == 0:
+    if dfa.states[transition.state].transitions.len > 0 or dfa.states[transition.state].epsilonTransitions.len == 0:
       result.incl newState
-
 
     result.incl dfa.stepEmpty(newState)
 
@@ -158,7 +157,7 @@ proc stepAll*(dfa: CommandDFA, state: CommandState, currentInput: int64, mods: M
     if dfa.states[state.current].transitions.len > 0:
       states.add state
 
-    # echo states
+    # echo &"states after epsilon transitions: {states}"
     for state in states:
       for transition in dfa.states[state.current].transitions.pairs:
         # echo &"  check transition {state.current}: {transition}"
@@ -171,7 +170,7 @@ proc stepAll*(dfa: CommandDFA, state: CommandState, currentInput: int64, mods: M
           # echo &"  transition {state.current}: {transition}"
           var newState = state
           newState.current = transition.state
-          newState.functionIndices = newState.functionIndices * transition.functionIndices
+          newState.functionIndices.bitSetIntersect transition.functionIndices
           newState.captures.mgetOrPut(dfa.states[transition.state].capture, "").add(inputToString(currentInput, mods))
           # if dfa.states[transition.state].function != "":
           #   # echo " 2> ", nextState, ": ", dfa.states[transition.state].capture, " -> ", dfa.getAction(newState)
@@ -193,7 +192,7 @@ proc stepAll*(dfa: CommandDFA, state: CommandState, currentInput: int64, mods: M
 
         var newState = state
         newState.current = transition.state
-        newState.functionIndices = newState.functionIndices * transition.functionIndices
+        newState.functionIndices.bitSetIntersect transition.functionIndices
         newState.captures.mgetOrPut(dfa.states[transition.state].capture, "").add(inputToString(currentInput, mods))
         # echo newState
         # if dfa.states[transition.state].function != "":
@@ -208,15 +207,15 @@ proc stepAll*(dfa: CommandDFA, state: CommandState, currentInput: int64, mods: M
   return
 
 proc stepAll*(dfa: CommandDFA, states: seq[CommandState], currentInput: int64, mods: Modifiers): seq[CommandState] =
-  echo &"stepAll {inputToString(currentInput, mods)}, {states.len}, {states}"
-  defer:
-    echo &"stepAll -> {result}"
+  # echo &"stepAll {inputToString(currentInput, mods)}, {states.len}, {states}"
+  # defer:
+  #   echo &"stepAll -> {result}"
   let states = if states.len > 0:
     states
   else:
-    var functionIndices: set[int16]
+    var functionIndices: BitSet
     for i in 0..<dfa.functions.len:
-      functionIndices.incl i.int16
+      functionIndices.bitSetIncl i
     @[CommandState(current: 0, functionIndices: functionIndices)]
 
   for state in states:
@@ -364,11 +363,11 @@ proc linkStates(dfa: var CommandDFA, currentState: int, nextState: int, inputCod
 
     assert current.state == nextState
     assert current.capture == capture
-    dfa.states[currentState].transitions[inputCodes].next[mods].functionIndices.incl functionIndex.int16
+    dfa.states[currentState].transitions[inputCodes].next[mods].functionIndices.bitSetIncl functionIndex
     return true
   else:
     # echo &"link states {currentState} -> {nextState}, {inputToString(inputCodes, mods)}, {functionIndex}, {capture}"
-    dfa.states[currentState].transitions[inputCodes].next[mods] = Transition(state: nextState, functionIndices: {functionIndex.int16}, capture: capture)
+    dfa.states[currentState].transitions[inputCodes].next[mods] = Transition(state: nextState, functionIndices: [functionIndex].toBitSet, capture: capture)
     return true
 
 proc linkStates(dfa: var CommandDFA, currentState: int, nextState: int, functionIndex: int, capture: string, function: string) =
@@ -377,10 +376,10 @@ proc linkStates(dfa: var CommandDFA, currentState: int, nextState: int, function
       # echo &"link states {currentState} -> {nextState}, {functionIndex}, {capture}, {transition.function} -> {function}"
       assert transition.capture == capture
       # assert transition.function == function
-      transition.functionIndices.incl functionIndex.int16
+      transition.functionIndices.bitSetIncl functionIndex
       return
 
-  dfa.states[currentState].epsilonTransitions.add Transition(state: nextState, functionIndices: {functionIndex.int16}, capture: capture, function: function)
+  dfa.states[currentState].epsilonTransitions.add Transition(state: nextState, functionIndices: [functionIndex].toBitSet, capture: capture, function: function)
 
 proc createOrUpdateState(dfa: var CommandDFA, currentState: int, inputCodes: Slice[int64], mods: Modifiers, persistent: bool, loop: bool, capture: string, functionIndex: int): Option[int] =
   let nextState = if loop:
@@ -391,7 +390,7 @@ proc createOrUpdateState(dfa: var CommandDFA, currentState: int, inputCodes: Sli
     else:
       dfa.states.add DFAState()
       # echo &"init states {currentState} -> {dfa.states.len-1}, {inputToString(inputCodes, mods)}, {functionIndex}, {capture}"
-      dfa.states[currentState].transitions[inputCodes].next[mods] = Transition(state: dfa.states.len - 1, functionIndices: {functionIndex.int16}, capture: capture)
+      dfa.states[currentState].transitions[inputCodes].next[mods] = Transition(state: dfa.states.len - 1, functionIndices: [functionIndex].toBitSet, capture: capture)
       dfa.states.len - 1
   else:
     dfa.states.add DFAState()
@@ -526,19 +525,20 @@ iterator parseInputs*(input: string): tuple[inputCode: Slice[int64], mods: Modif
     yield (inputCode, mods, text)
     index = nextIndex
 
-proc fillTransitionFunctionIndicesRec(dfa: var CommandDFA, state: int, functionIndices: set[int16], endState: int) =
+proc fillTransitionFunctionIndicesRec(dfa: var CommandDFA, state: int, functionIndices: BitSet, endState: int) =
   # dfa.states[state].functionIndices.incl functionIndices
   # echo &"fillTransitionFunctionIndicesRec({state}, {endState}, {functionIndices})"
 
   for t in dfa.states[state].epsilonTransitions.mitems:
-    t.functionIndices.incl functionIndices
+  # for i in 0..dfa.states[state].epsilonTransitions.high:
+    t.functionIndices.bitSetUnion functionIndices
     if t.state == endState:
       continue
     fillTransitionFunctionIndicesRec(dfa, t.state, functionIndices, endState)
 
   for (_, dfaInput) in dfa.states[state].transitions.mpairs:
     for (_, t) in dfaInput.next.mpairs:
-      t.functionIndices.incl functionIndices
+      t.functionIndices.bitSetUnion functionIndices
       if t.state == endState or t.state == state:
         continue
       fillTransitionFunctionIndicesRec(dfa, t.state, functionIndices, endState)
@@ -597,7 +597,7 @@ proc handleNextInput(
       # echo "| ".repeat(depth) & &"sub graph {inputName} found -> {dfa.subGraphStates[subGraphKey]}"
       let (nextStartState, nextEndState) = dfa.subGraphStates[subGraphKey]
       dfa.linkStates(currentState, nextStartState, functionIndex, capture, "")
-      fillTransitionFunctionIndicesRec(dfa, nextStartState, {functionIndex.int16}, nextEndState)
+      fillTransitionFunctionIndicesRec(dfa, nextStartState, [functionIndex].toBitSet, nextEndState)
       result = handleNextInput(dfa, commands, input, function, nextIndex, nextEndState, defaultState, leaders, functionIndex, capture, depth + 1, subGraphCounts)
       if Optional in flags:
         dfa.linkStates(currentState, nextEndState, functionIndex, capture, "")
@@ -633,7 +633,7 @@ proc handleNextInput(
   #     assert key.inputCodes.a != 0 and key.inputCodes.a != 0
   #     if not linkStates(dfa, currentState, nextState, key.inputCodes, key.mods, functionIndex, dfa.states[nextState].capture):
   #       log lvlError, fmt"""Ambigious keybinding '{input.join("")}' at {index} ({inputToString(key.inputCodes, key.mods)})"""
-  #     fillTransitionFunctionIndicesRec(dfa, nextState, {functionIndex.int16}, 0)
+  #     fillTransitionFunctionIndicesRec(dfa, nextState, [functionIndex].toBitSet, 0)
   #   return @[nextState]
 
   if keys.len == 0:
@@ -680,8 +680,8 @@ proc handleNextInput(
     result.add handleNextInput(dfa, commands, input, function, nextIndex, nextState, nextDefaultState, leaders, functionIndex, capture, depth + 1, subGraphCounts)
 
 # proc fillTransitionFunctionIndices*(dfa: var CommandDFA) =
-#   proc fillTransitionFunctionIndicesRec(dfa: var CommandDFA, state: int, functionIndices: set[int16]) =
-#     dfa.states[state].functionIndices.incl functionIndices
+#   proc fillTransitionFunctionIndicesRec(dfa: var CommandDFA, state: int, functionIndices: BitSet) =
+#     dfa.states[state].functionIndices.bitSetIncl functionIndices
 #     for t in dfa.states[state].epsilonTransitions.mitems:
 #       fillTransitionFunctionIndicesRec(dfa, t.state, dfa.states[state].functionIndices + t.functionIndices)
 
@@ -862,8 +862,8 @@ proc dumpGraphViz*(dfa: CommandDFA): string =
         result.addState(state)
         result.add " -> "
         result.addState(next.state)
-        let uiae = $next.functionIndices
-        # result.add &" [color=black, label=\"{inputToString(transition[0], modifier)}\\n{next.function.escape}\\n{next.capture}\\n{uiae}\"]\n"
+        # let functionIndices = $next.functionIndices
+        # result.add &" [color=black, label=\"{inputToString(transition[0], modifier)}\\n{next.function.escape}\\n{next.capture}\\n{functionIndices}\"]\n"
         result.add &" [color=black, label=\"{inputToString(transition[0], modifier)}\\n{next.function.escape}\\n{next.capture}\"]\n"
 
     for nextState in dfa.states[state].epsilonTransitions:
@@ -871,8 +871,8 @@ proc dumpGraphViz*(dfa: CommandDFA): string =
       result.addState(state)
       result.add " -> "
       result.addState(nextState.state)
-      let uiae = $nextState.functionIndices
-      # result.add &" [color=red, label=\"ε\\n{nextState.function.escape}\\n{nextState.capture}\\n{uiae}\"]\n"
+      # let functionIndices = $nextState.functionIndices
+      # result.add &" [color=red, label=\"ε\\n{nextState.function.escape}\\n{nextState.capture}\\n{functionIndices}\"]\n"
       result.add &" [color=red, label=\"ε\\n{nextState.function.escape}\\n{nextState.capture}\"]\n"
 
   result.add "\n}"

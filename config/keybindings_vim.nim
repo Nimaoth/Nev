@@ -406,8 +406,8 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommand "#text_object", "<?-count>iw", "vim-select-text-object \"vim-word\" false true <#text_object.count> \"Inner\""
   addTextCommand "#text_object", "<?-count>aw", "vim-select-text-object \"vim-word\" false true <#text_object.count> \"Outer\""
 
-  # addTextCommand "visual#text_object", "<?-count>w", "vim-select-text-object \"vim-word\" false true <#text_object.count>"
-  # addTextCommand "visual#text_object", "<?-count>W", "vim-select-text-object \"vim-WORD\" false true <#text_object.count>"
+  addTextCommand "visual#text_object", "<?-count>iw", "vim-select-text-object \"vim-word\" false true <#text_object.count> \"Inner\""
+  addTextCommand "visual#text_object", "<?-count>aw", "vim-select-text-object \"vim-word\" false true <#text_object.count> \"Outer\""
 
   addTextCommand "visual", "<?-count><text_object>", """vim-select-move <text_object> <#count>"""
 
@@ -548,7 +548,7 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addMoveCommandWithCount "", "gk", "vim-move-cursor-line", -1
   addMoveCommandWithCount "", "gj", "vim-move-cursor-line", 1
 
-  # # Scrolling
+  # Scrolling
   addTextCommand "", "<C-e>", "scroll-lines", 1
   addMoveCommandWithCountBlock "", "<C-d>": editor.vimMoveCursorLine(editor.screenLineCount div 2, count)
   addMoveCommandWithCountBlock "", "<C-f>": editor.vimMoveCursorLine(editor.screenLineCount, count)
