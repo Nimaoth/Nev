@@ -79,7 +79,7 @@ when defined(wasm):
   import keybindings_normal
 
   loadDefaultOptions()
-  loadDefaultKeybindings()
+  loadDefaultKeybindings(true)
   loadVimKeybindings()
   # loadVimLikeKeybindings()
 

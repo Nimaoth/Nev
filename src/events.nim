@@ -92,7 +92,7 @@ proc setLeaders*(config: EventHandlerConfig, leaders: openArray[string]) =
 template eventHandler*(inConfig: EventHandlerConfig, handlerBody: untyped): untyped =
   block:
     var handler = EventHandler()
-    handler.states = @[default(CommandState)]
+    handler.states = @[]
     handler.config = inConfig
     handler.dfaInternal = inConfig.buildDFA()
     fs.saveApplicationFile(handler.config.context & ".dot", handler.dfaInternal.dumpGraphViz)
@@ -128,7 +128,7 @@ template eventHandler*(inConfig: EventHandlerConfig, handlerBody: untyped): unty
     handler
 
 proc reset*(handler: var EventHandler) =
-  handler.states = @[default(CommandState)]
+  handler.states = @[]
 
 proc parseAction*(action: string): tuple[action: string, arg: string] =
   let spaceIndex = action.find(' ')
