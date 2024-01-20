@@ -47,6 +47,7 @@ type
     state: int
     capture: string
     functionIndices: set[int16]
+    function: string
 
   DFAInput = object
     # length 16 because there are 4 modifiers and so 2^4 = 16 possible combinations
@@ -335,14 +336,16 @@ proc linkStates(dfa: var CommandDFA, currentState: int, nextState: int, inputCod
   else:
     dfa.states[currentState].transitions[inputCodes].next[mods] = Transition(state: nextState, functionIndices: {functionIndex.int16}, capture: capture)
 
-proc linkStates(dfa: var CommandDFA, currentState: int, nextState: int, functionIndex: int, capture: string) =
+proc linkStates(dfa: var CommandDFA, currentState: int, nextState: int, functionIndex: int, capture: string, function: string) =
   for transition in dfa.states[currentState].epsilonTransitions.mitems:
     if transition.state == nextState:
+      echo &"link states {currentState} -> {nextState}, {functionIndex}, {capture}, {transition.function} -> {function}"
       assert transition.capture == capture
+      # assert transition.function == function
       transition.functionIndices.incl functionIndex.int16
       return
 
-  dfa.states[currentState].epsilonTransitions.add Transition(state: nextState, functionIndices: {functionIndex.int16}, capture: capture)
+  dfa.states[currentState].epsilonTransitions.add Transition(state: nextState, functionIndices: {functionIndex.int16}, capture: capture, function: function)
 
 proc createOrUpdateState(dfa: var CommandDFA, currentState: int, inputCodes: Slice[int64], mods: Modifiers, persistent: bool, loop: bool, capture: string, functionIndex: int): int =
   let nextState = if loop:
@@ -556,18 +559,18 @@ proc handleNextInput(
     if dfa.subGraphStates.contains(subGraphKey):
       echo "| ".repeat(depth) & &"sub graph {inputName} found -> {dfa.subGraphStates[subGraphKey]}"
       let (nextStartState, nextEndState) = dfa.subGraphStates[subGraphKey]
-      dfa.linkStates(currentState, nextStartState, functionIndex, capture)
+      dfa.linkStates(currentState, nextStartState, functionIndex, capture, "")
       fillTransitionFunctionIndicesRec(dfa, nextStartState, {functionIndex.int16}, nextEndState)
       result = handleNextInput(dfa, commands, input, function, nextIndex, nextEndState, defaultState, leaders, functionIndex, capture, depth + 1, subGraphCounts)
       if Optional in flags:
-        dfa.linkStates(currentState, nextEndState, functionIndex, capture)
+        dfa.linkStates(currentState, nextEndState, functionIndex, capture, "")
       return
 
     dfa.states.add DFAState()
     let subState = dfa.states.len - 1
     dfa.states.add DFAState()
     let endState = dfa.states.len - 1
-    dfa.linkStates(currentState, subState, functionIndex, capture)
+    dfa.linkStates(currentState, subState, functionIndex, capture, "")
 
     for command in commands[inputName].pairs:
       let (subInput, function) = command
@@ -575,17 +578,17 @@ proc handleNextInput(
       let nextEndStates = handleNextInput(dfa, commands, subInput.toRunes, function, index = 0, currentState = subState, defaultState = defaultState, leaders = leaders, functionIndex, subCapture, depth + 1, subGraphCounts[].neww)
       echo "| ".repeat(depth) & &"-> endStates: {nextEndStates}"
       for es in nextEndStates:
-        dfa.linkStates(es, endState, functionIndex, capture)
+        dfa.linkStates(es, endState, functionIndex, subCapture, function)
 
     result = handleNextInput(dfa, commands, input, function, nextIndex, endState, defaultState, leaders, functionIndex, capture, depth + 1, subGraphCounts)
 
     if Optional in flags:
-      dfa.linkStates(currentState, endState, functionIndex, capture)
+      dfa.linkStates(currentState, endState, functionIndex, capture, "")
 
     dfa.subGraphStates[subGraphKey] = (subState, endState)
     return
 
-  if dfa.postfixStates.contains((suffix, capture)):
+  if capture == "" and dfa.postfixStates.contains((suffix, capture)):
     echo "| ".repeat(depth) & &"suffix found -> {dfa.postfixStates[(suffix, capture)]}, {suffix}, {capture}"
 
     let nextState = dfa.postfixStates[(suffix, capture)]
@@ -815,7 +818,7 @@ proc dumpGraphViz*(dfa: CommandDFA): string =
         result.add " -> "
         result.addState(next.state)
         let uiae = $next.functionIndices
-        result.add &" [color=black, label=\"{inputToString(transition[0], modifier)}\\n{next.capture}\\n{uiae}\"]\n"
+        result.add &" [color=black, label=\"{inputToString(transition[0], modifier)}\\n{next.function}\\n{next.capture}\\n{uiae}\"]\n"
 
     for nextState in dfa.states[state].epsilonTransitions:
       result.add "  "
@@ -823,6 +826,6 @@ proc dumpGraphViz*(dfa: CommandDFA): string =
       result.add " -> "
       result.addState(nextState.state)
       let uiae = $nextState.functionIndices
-      result.add &" [color=red, label=\"ε\\n{nextState.capture}\\n{uiae}\"]\n"
+      result.add &" [color=red, label=\"ε\\n{nextState.function}\\n{nextState.capture}\\n{uiae}\"]\n"
 
   result.add "\n}"
