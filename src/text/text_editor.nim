@@ -434,6 +434,61 @@ proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int): 
 
   return self.clampCursor cursor
 
+proc findSurroundStart*(editor: TextDocumentEditor, cursor: Cursor, count: int, c0: char, c1: char, depth: int = 1): Option[Cursor] {.expose: "editor.text".} =
+  var depth = depth
+  var res = cursor
+
+  while res.line >= 0:
+    let line = editor.document.getLine(res.line)
+    res.column = min(res.column, line.len - 1)
+    while line.len > 0 and res.column >= 0:
+      let c = line[res.column]
+      # echo &"findSurroundStart: {res} -> {depth}, '{c}'"
+      if c == c1 and (depth < 1 or c0 != c1):
+        inc depth
+        if depth == 0:
+          return res.some
+      elif c == c0:
+        dec depth
+        if depth == 0:
+          return res.some
+      dec res.column
+
+    if res.line == 0:
+      return Cursor.none
+
+    res = (res.line - 1, editor.lineLength(res.line - 1) - 1)
+
+  return Cursor.none
+
+proc findSurroundEnd*(editor: TextDocumentEditor, cursor: Cursor, count: int, c0: char, c1: char, depth: int = 1): Option[Cursor] {.expose: "editor.text".} =
+  let lineCount = editor.lineCount
+  var depth = depth
+  var res = cursor
+
+  while res.line < lineCount:
+    let line = editor.document.getLine(res.line)
+    res.column = min(res.column, line.len - 1)
+    while line.len > 0 and res.column < line.len:
+      let c = line[res.column]
+      # echo &"findSurroundEnd: {res} -> {depth}, '{c}'"
+      if c == c0 and (depth < 1 or c0 != c1):
+        inc depth
+        if depth == 0:
+          return res.some
+      elif c == c1:
+        dec depth
+        if depth == 0:
+          return res.some
+      inc res.column
+
+    if res.line == lineCount - 1:
+      return Cursor.none
+
+    res = (res.line + 1, 0)
+
+  return Cursor.none
+
 proc setMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} =
   ## Sets the current mode of the editor. If `mode` is "", then no additional scope will be pushed on the scope stac.k
   ## If mode is e.g. "insert", then the scope "editor.text.insert" will be pushed on the scope stack above "editor.text"

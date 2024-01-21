@@ -1,4 +1,4 @@
-import std/[json]
+import std/[json, options]
 import "../src/scripting_api"
 when defined(js):
   import absytree_internal_js
@@ -21,6 +21,14 @@ proc screenLineCount*(self: TextDocumentEditor): int =
 proc doMoveCursorColumn*(self: TextDocumentEditor; cursor: Cursor; offset: int): Cursor =
   editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_impl(self,
       cursor, offset)
+proc findSurroundStart*(editor: TextDocumentEditor; cursor: Cursor; count: int;
+                        c0: char; c1: char; depth: int = 1): Option[Cursor] =
+  editor_text_findSurroundStart_Option_Cursor_TextDocumentEditor_Cursor_int_char_char_int_impl(
+      editor, cursor, count, c0, c1, depth)
+proc findSurroundEnd*(editor: TextDocumentEditor; cursor: Cursor; count: int;
+                      c0: char; c1: char; depth: int = 1): Option[Cursor] =
+  editor_text_findSurroundEnd_Option_Cursor_TextDocumentEditor_Cursor_int_char_char_int_impl(
+      editor, cursor, count, c0, c1, depth)
 proc setMode*(self: TextDocumentEditor; mode: string) =
   ## Sets the current mode of the editor. If `mode` is "", then no additional scope will be pushed on the scope stac.k
   ## If mode is e.g. "insert", then the scope "editor.text.insert" will be pushed on the scope stack above "editor.text"

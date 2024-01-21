@@ -1,4 +1,4 @@
-import std/[json]
+import std/[json, options]
 import scripting_api, misc/myjsonutils
 
 ## This file is auto generated, don't modify.

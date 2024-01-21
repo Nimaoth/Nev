@@ -1,6 +1,6 @@
 ## This file is auto generated, don't modify.
 
-import std/[json]
+import std/[json, options]
 import scripting_api
 
 template varargs*() {.pragma.}
@@ -15,6 +15,14 @@ proc editor_text_screenLineCount_int_TextDocumentEditor_impl*(
   discard
 proc editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_impl*(
     self: TextDocumentEditor; cursor: Cursor; offset: int): Cursor =
+  discard
+proc editor_text_findSurroundStart_Option_Cursor_TextDocumentEditor_Cursor_int_char_char_int_impl*(
+    editor: TextDocumentEditor; cursor: Cursor; count: int; c0: char; c1: char;
+    depth: int = 1): Option[Cursor] =
+  discard
+proc editor_text_findSurroundEnd_Option_Cursor_TextDocumentEditor_Cursor_int_char_char_int_impl*(
+    editor: TextDocumentEditor; cursor: Cursor; count: int; c0: char; c1: char;
+    depth: int = 1): Option[Cursor] =
   discard
 proc editor_text_setMode_void_TextDocumentEditor_string_impl*(
     self: TextDocumentEditor; mode: string) =

@@ -22,7 +22,7 @@ proc generateScriptingApiPerModule*() {.compileTime.} =
 
   for moduleName, list in exposedFunctions:
     var script_api_content = """
-import std/[json]
+import std/[json, options]
 import "../src/scripting_api"
 when defined(js):
   import absytree_internal_js
@@ -47,7 +47,7 @@ else:
       lineNumber += code.countLines - 1
 
     var script_api_content_wasm = """
-import std/[json]
+import std/[json, options]
 import scripting_api, misc/myjsonutils
 
 ## This file is auto generated, don't modify.

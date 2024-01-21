@@ -86,5 +86,5 @@ when defined(wasm):
         return ""
       return cstring $res
     except CatchableError as e:
-      info &"handleScriptActionWasm failed: {args}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+      info &"handleScriptActionWasm failed: {name} '{args}': {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
       return "error: " & getCurrentExceptionMsg()

@@ -1,4 +1,4 @@
-import std/[json]
+import std/[json, options]
 import "../src/scripting_api"
 when defined(js):
   import absytree_internal_js
