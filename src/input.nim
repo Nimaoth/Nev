@@ -788,9 +788,9 @@ proc dump*(dfa: CommandDFA, currentState: int, currentInput: int64, currentMods:
 proc dumpGraphViz*(dfa: CommandDFA): string =
   result = "digraph DFA {\n"
 
-  func escape(a: string): string = replace(a, "\"", "\\\"")
+  func escape(a: string): string = multiReplace(a, ("\\", "\\\\"), ("\"", "\\\""), ("\n", "\\n"))
   proc addState(res: var string, state: int) =
-    let escaped = replace(&"{state}\\n{dfa.states[state].capture}", "\"", "\\\"")
+    let escaped = multiReplace(&"{state}\n{dfa.states[state].capture}", ("\\", "\\\\"), ("\"", "\\\""), ("\n", "\\n"))
     # let escaped = replace(&"{state}\\n{dfa.states[state].suffix}\\n{dfa.states[state].capture}", "\"", "\\\"")
     res.add &"\"{escaped}\""
 
@@ -821,7 +821,7 @@ proc dumpGraphViz*(dfa: CommandDFA): string =
         result.addState(next.state)
         # let functionIndices = $next.functionIndices
         # result.add &" [color=black, label=\"{inputToString(transition[0], modifier)}\\n{next.function.escape}\\n{next.capture}\\n{functionIndices}\"]\n"
-        result.add &" [color=black, label=\"{inputToString(transition[0], modifier)}\\n{next.function.escape}\\n{next.capture}\"]\n"
+        result.add &" [color=black, label=\"{inputToString(transition[0], modifier).escape}\\n{next.function.escape}\\n{next.capture}\"]\n"
 
     for nextState in dfa.states[state].epsilonTransitions:
       result.add "  "
