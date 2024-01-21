@@ -13,18 +13,19 @@
 when defined(nimPreviewSlimSystem):
   import std/assertions
 
+import std/bitops
+
 type
-  ElemType = byte
-  BitSet* = distinct seq[ElemType]    # we use byte here to avoid issues with
-                              # cross-compiling; uint would be more efficient
-                              # however
+  ElemType = uint32
+  BitSet* = distinct seq[ElemType]
+
 const
-  ElemSize* = 8
+  ElemSize* = 32
   One = ElemType(1)
   Zero = ElemType(0)
 
-template modElemSize(arg: untyped): untyped = arg and 7
-template divElemSize(arg: untyped): untyped = arg shr 3
+template modElemSize(arg: untyped): untyped = arg and 31
+template divElemSize(arg: untyped): untyped = arg shr 5
 
 proc len*(x: BitSet): int {.borrow.}
 proc setLen*(x: var BitSet, l: int) {.borrow.}
@@ -41,7 +42,7 @@ proc bitSetIn*(x: BitSet, e: int): bool =
 
 proc bitSetIncl*(x: var BitSet, elem: int) =
   assert(elem >= 0)
-  let index = int(elem shr 3)
+  let index = elem.divElemSize
   if index >= x.len:
     x.setLen index + 1
   x[int(elem.divElemSize)] = x[int(elem.divElemSize)] or
@@ -82,36 +83,10 @@ proc bitSetContains*(x, y: BitSet): bool =
       return false
   result = true
 
-# Number of set bits for all values of int8
-const populationCount: array[uint8, uint8] = block:
-    var arr: array[uint8, uint8]
-
-    proc countSetBits(x: uint8): uint8 =
-      return
-        ( x and 0b00000001'u8) +
-        ((x and 0b00000010'u8) shr 1) +
-        ((x and 0b00000100'u8) shr 2) +
-        ((x and 0b00001000'u8) shr 3) +
-        ((x and 0b00010000'u8) shr 4) +
-        ((x and 0b00100000'u8) shr 5) +
-        ((x and 0b01000000'u8) shr 6) +
-        ((x and 0b10000000'u8) shr 7)
-
-
-    for it in low(uint8)..high(uint8):
-      arr[it] = countSetBits(cast[uint8](it))
-
-    arr
-
 proc bitSetCard*(x: BitSet): int =
   result = 0
   for it in (seq[ElemType])(x):
-    result.inc int(populationCount[it])
-
-proc bitSetToWord*(s: BitSet; size: int): uint32 =
-  result = 0
-  for j in 0..<size:
-    if j < s.len: result = result or (uint32(s[j]) shl (j * 8))
+    result.inc it.countSetBits
 
 proc `==`*(x: BitSet, l: BitSet): bool = bitSetEquals(x, l)
 
