@@ -59,6 +59,12 @@ proc vimSelectLast(editor: TextDocumentEditor, move: string, count: int = 1) {.e
     editor.runAction(action, arg)
   editor.selections = editor.selections.mapIt(it.last.toSelection)
 
+proc vimSelect(editor: TextDocumentEditor, move: string, count: int = 1) {.expose("vim-select").} =
+  infof"vimSelect '{move}' {count}"
+  let (action, arg) = move.parseAction
+  for i in 0..<max(count, 1):
+    editor.runAction(action, arg)
+
 proc vimDeleteSelection(editor: TextDocumentEditor) {.expose("vim-delete-selection").} =
   editor.copy()
   let selections = editor.selections
@@ -241,7 +247,7 @@ proc vimSelectTextObject(editor: TextDocumentEditor, textObject: string, backwar
         resultSelection = resultSelection or selection
 
       infof"vimSelectTextObject({textObject}, {textObjectRange}, {backwards}, {allowEmpty}, {count}): {resultSelection}"
-      if backwards:
+      if it.isBackwards:
         resultSelection.reverse
       else:
         resultSelection
@@ -391,10 +397,9 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
       vimMotionNextMode[editor.id] = "insert"
 
   addTextCommand "#count", "<-1-9><o-0-9>", ""
-  addTextCommand "visual#count", "<-1-9><o-0-9>", ""
-  addTextCommand "normal#count", "<-1-9><o-0-9>", ""
 
-  addTextCommand "", "<move>", "vim-select-last <move>"
+  addTextCommand "normal", "<move>", "vim-select-last <move>"
+  addTextCommand "visual", "<move>", "vim-select <move>"
   addTextCommand "", "<?-count>d<move>", """vim-delete-move <move> <#count>"""
   addTextCommand "", "<?-count>c<move>", """vim-change-move <move> <#count>"""
   addTextCommand "", "<?-count>y<move>", """vim-yank-move <move> <#count>"""
@@ -405,9 +410,8 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   addTextCommand "#text_object", "<?-count>iw", "vim-select-text-object \"vim-word\" false true <#text_object.count> \"Inner\""
   addTextCommand "#text_object", "<?-count>aw", "vim-select-text-object \"vim-word\" false true <#text_object.count> \"Outer\""
-
-  addTextCommand "visual#text_object", "<?-count>iw", "vim-select-text-object \"vim-word\" false true <#text_object.count> \"Inner\""
-  addTextCommand "visual#text_object", "<?-count>aw", "vim-select-text-object \"vim-word\" false true <#text_object.count> \"Outer\""
+  addTextCommand "#text_object", "<?-count>iW", "vim-select-text-object \"vim-WORD\" false true <#text_object.count> \"Inner\""
+  addTextCommand "#text_object", "<?-count>aW", "vim-select-text-object \"vim-WORD\" false true <#text_object.count> \"Outer\""
 
   addTextCommand "visual", "<?-count><text_object>", """vim-select-move <text_object> <#count>"""
 
