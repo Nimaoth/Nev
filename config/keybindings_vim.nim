@@ -626,6 +626,19 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addSubCommandWithCount "", "move", "gk", "vim-move-cursor-line", -1
   addSubCommandWithCount "", "move", "gj", "vim-move-cursor-line", 1
 
+  # search
+  addTextCommandBlock "", "*": editor.setSearchQueryFromMove("word")
+  addTextCommand "", "n", "select-move", "next-find-result", true
+  addTextCommand "", "N", "select-move", "prev-find-result", true
+
+  addTextCommandBlock "", "/":
+    commandLine("set-search-query \\")
+    if getActiveEditor().isTextEditor(editor):
+      var arr = newJArray()
+      arr.add newJString("file")
+      discard editor.runAction("move-last", arr)
+      editor.setMode("insert")
+
   # Scrolling
   addTextCommand "", "<C-e>", "scroll-lines", 1
   addSubCommandWithCountBlock "", "move", "<C-d>": editor.vimMoveCursorLine(editor.screenLineCount div 2, count)
