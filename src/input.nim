@@ -58,7 +58,6 @@ type
     isTerminal: bool
     nextState: int # The state to go to next if we are in a terminal state
     persistent: bool # Whether we want to set the default state for when an action succeded to this state
-    function: string
     transitions: Table[Slice[InputKey], DFAInput]
     epsilonTransitions: seq[Transition]
     terminalStates: seq[int]
@@ -121,6 +120,9 @@ proc getAction*(dfa: CommandDFA, state: CommandState, command: string): string =
 
   if last < command.len:
     result.add command[last..^1]
+
+proc possibleFunctionIndices*(state: CommandState): int =
+  return state.functionIndices.bitSetCard
 
 proc getAction*(dfa: CommandDFA, state: CommandState): string =
   assert state.functionIndices.bitSetCard == 1
@@ -573,7 +575,6 @@ proc handleNextInput(
     # Mark last state as terminal state.
     if dfa.states[currentState].epsilonTransitions.len == 0:
       dfa.states[currentState].isTerminal = true
-    dfa.states[currentState].function = function
     dfa.states[currentState].nextState = defaultState
     # echo "set terminal ", currentState, " to ", function
     return @[currentState] # todo: end state
@@ -723,10 +724,6 @@ proc buildDFA*(commands: Table[string, Table[string, string]], leaders: seq[stri
 
         discard handleNextInput(result, commands, input.toRunes, function, index = 0, currentState = 0, defaultState = 0, leaders = leaders, functionIndex)
 
-  # echo result.functionIndices
-
-  # {"delete-line <#count>": 3, "change-move <move> <#count>": 1, "select-last <move>": 0, "delete-move <move> <#count>": 2}
-
 proc buildDFA*(commands: seq[(string, string)], leaders: seq[string] = @[]): CommandDFA =
   return buildDFA({"": commands.toTable}.toTable, leaders)
 
@@ -754,10 +751,7 @@ proc dump*(dfa: CommandDFA, currentState: int, currentInput: int64, currentMods:
 
   buff.add " ".repeat(columnWidth) & "|"
   for state in dfa.states:
-    if state.isTerminal:
-      buff.add " ".repeat(columnWidth - 12) & fmt"{state.function:^12.12}|"
-    else:
-      buff.add " ".repeat(columnWidth) & "|"
+    buff.add " ".repeat(columnWidth) & "|"
   buff.add "\n"
 
   buff.add " ".repeat(columnWidth) & "|"
@@ -829,16 +823,11 @@ proc dumpGraphViz*(dfa: CommandDFA): string =
     res.add &"\"{escaped}\""
 
   let colors = @["green", "blue", "orange", "purple", "yellow", "brown", "cyan", "magenta", "gray", "black", "white"]
-  let shapes = @[""]
   var colorMap = initTable[string, int]()
-  var shapeMap = initTable[string, int]()
   for state in 0..<dfa.states.len:
     let capture = dfa.states[state].capture
-    let function = dfa.states[state].function
     if capture != "" and colorMap.len < colors.len and capture notin colorMap:
       colorMap[capture] = colorMap.len
-    if function != "" and shapeMap.len < shapes.len and function notin shapeMap:
-      shapeMap[function] = shapeMap.len
 
   for key, value in colorMap.pairs:
     result.add &"  node [color={colors[value]}];"
@@ -847,14 +836,6 @@ proc dumpGraphViz*(dfa: CommandDFA): string =
         result.add " "
         result.addState i
     result.add ";\n"
-
-  # for key, value in shapeMap.pairs:
-  #   result.add &"  node [shape={shapes[value]}];"
-  #   for i, state in dfa.states:
-  #     if state.function == key:
-  #       result.add " "
-  #       result.addState i
-  #   result.add ";\n"
 
   result.add "  node [shape = circle, color = gray];\n\n"
 
