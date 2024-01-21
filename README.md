@@ -150,4 +150,13 @@ More details in [Getting Started](docs/getting_started.md)
 - finish/revise using string as parameter type for wasm functions (see createWasmWrapper, createHostWrapper)
 - fix potential issues because of loading order when loading test-language and test-language-playground
 
+## Vim Keybindings
+- Repeat f/t motions with ,/;
+- Repeat insert mode commands with .
+- Macros
+- Search/Replace
+- Visual line mode
+- More text objects
+
+
 [Test report](https://nimaoth.github.io/Absytree/testresults.html)
