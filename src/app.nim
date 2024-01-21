@@ -555,8 +555,18 @@ proc popPopup*(self: App, popup: Popup) =
 
 proc getEventHandlerConfig*(self: App, context: string): EventHandlerConfig =
   if not self.eventHandlerConfigs.contains(context):
-    self.eventHandlerConfigs[context] = newEventHandlerConfig(context)
+    let parentConfig = if context != "":
+      let index = context.rfind(".")
+      if index >= 0:
+        self.getEventHandlerConfig(context[0..<index])
+      else:
+        self.getEventHandlerConfig("")
+    else:
+      nil
+
+    self.eventHandlerConfigs[context] = newEventHandlerConfig(context, parentConfig)
     self.eventHandlerConfigs[context].setLeaders(self.leaders)
+
   return self.eventHandlerConfigs[context]
 
 proc getEditorForId*(self: App, id: EditorId): Option[DocumentEditor] =

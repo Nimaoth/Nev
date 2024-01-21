@@ -1,5 +1,5 @@
 import std/[tables, sequtils]
-import misc/custom_logger
+import misc/[custom_logger, util]
 import platform/[filesystem]
 import input
 
@@ -13,6 +13,7 @@ type EventResponse* = enum
   Progress,
 
 type EventHandlerConfig* = ref object
+  parent*: EventHandlerConfig
   context*: string
   commands: Table[string, Table[string, string]]
   handleActions*: bool
@@ -31,20 +32,43 @@ type EventHandler* = ref object
   handleInput*: proc(input: string): EventResponse
   handleProgress*: proc(input: int64)
 
-func newEventHandlerConfig*(context: string): EventHandlerConfig =
+func newEventHandlerConfig*(context: string, parent: EventHandlerConfig = nil): EventHandlerConfig =
   new result
+  result.parent = parent
   result.handleActions = true
   result.handleInputs = false
   result.context = context
 
+proc combineCommands(config: EventHandlerConfig, commands: var Table[string, Table[string, string]]) =
+  if config.parent.isNotNil:
+    config.parent.combineCommands(commands)
+
+  for (subGraphName, bindings) in config.commands.mpairs:
+    if subGraphName == "":
+      commands[subGraphName] = bindings
+    else:
+      if not commands.contains(subGraphName):
+        commands[subGraphName] = initTable[string, string]()
+
+      for (keys, command) in bindings.mpairs:
+        commands[subGraphName][keys] = command
+
 proc buildDFA*(config: EventHandlerConfig): CommandDFA =
-  return buildDFA(config.commands, config.leaders)
+  var commands = initTable[string, Table[string, string]]()
+  config.combineCommands(commands)
+  return buildDFA(commands, config.leaders)
+
+proc maxRevision*(config: EventHandlerConfig): int =
+  result = config.revision
+  if config.parent.isNotNil:
+    result = max(result, config.parent.maxRevision)
 
 proc dfa*(handler: EventHandler): CommandDFA =
-  if handler.revision < handler.config.revision:
+  let configRevision = handler.config.maxRevision
+  if handler.revision < configRevision:
     handler.dfaInternal = handler.config.buildDFA()
     fs.saveApplicationFile(handler.config.context & ".dot", handler.dfaInternal.dumpGraphViz)
-    handler.revision = handler.config.revision
+    handler.revision = configRevision
   return handler.dfaInternal
 
 proc setHandleInputs*(config: EventHandlerConfig, value: bool) =
