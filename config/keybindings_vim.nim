@@ -211,6 +211,60 @@ proc vimMotionWordBigOuter*(editor: TextDocumentEditor, cursor: Cursor, count: i
   if result.last.column < editor.lineLength(result.last.line) and editor.getLine(result.last.line)[result.last.column] in Whitespace:
     result.last = editor.vimMotionWordBig(result.last, 1).last
 
+proc charAt*(editor: TextDocumentEditor, cursor: Cursor): char =
+  let line = editor.getLine(cursor.line)
+  if cursor.column < line.high:
+    return line[cursor.column]
+  else:
+    return '\0'
+
+proc vimMotionSurround*(editor: TextDocumentEditor, cursor: Cursor, count: int, c0: char, c1: char, inside: bool): Selection =
+  result = cursor.toSelection
+  # infof"vimMotionSurround: {cursor}, {count}, {c0}, {c1}, {inside}"
+  while true:
+    let firstChar = editor.charAt(result.first)
+    let lastChar = editor.charAt(result.last)
+    let (startDepth, endDepth) = if lastChar == c0:
+      (1, 0)
+    elif lastChar == c1:
+      (0, 1)
+    else:
+      (1, 1)
+
+    # infof"vimMotionSurround: {cursor}, {count}, {c0}, {c1}, {inside}: try find around: {startDepth}, {endDepth}"
+    if editor.findSurroundStart(result.first, count, c0, c1, startDepth).getSome(opening) and editor.findSurroundEnd(result.last, count, c0, c1, endDepth).getSome(closing):
+      result = (opening, closing)
+      # infof"vimMotionSurround: found inside {result}"
+      if inside:
+        result.first = editor.doMoveCursorColumn(result.first, 1)
+        result.last = editor.doMoveCursorColumn(result.last, -1)
+      return
+
+    # infof"vimMotionSurround: {cursor}, {count}, {c0}, {c1}, {inside}: try find ahead: {startDepth}, {endDepth}"
+    if editor.findSurroundEnd(result.first, count, c0, c1, -1).getSome(opening) and editor.findSurroundEnd(opening, count, c0, c1, 0).getSome(closing):
+      result = (opening, closing)
+      # infof"vimMotionSurround: found ahead {result}"
+      if inside:
+        result.first = editor.doMoveCursorColumn(result.first, 1)
+        result.last = editor.doMoveCursorColumn(result.last, -1)
+      return
+    else:
+      # infof"vimMotionSurround: found nothing {result}"
+      return
+
+proc vimMotionSurroundBracesInner*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection = vimMotionSurround(editor, cursor, count, '{', '}', true)
+proc vimMotionSurroundBracesOuter*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection = vimMotionSurround(editor, cursor, count, '{', '}', false)
+proc vimMotionSurroundParensInner*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection = vimMotionSurround(editor, cursor, count, '(', ')', true)
+proc vimMotionSurroundParensOuter*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection = vimMotionSurround(editor, cursor, count, '(', ')', false)
+proc vimMotionSurroundBracketsInner*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection = vimMotionSurround(editor, cursor, count, '[', ']', true)
+proc vimMotionSurroundBracketsOuter*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection = vimMotionSurround(editor, cursor, count, '[', ']', false)
+proc vimMotionSurroundAngleInner*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection = vimMotionSurround(editor, cursor, count, '<', '>', true)
+proc vimMotionSurroundAngleOuter*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection = vimMotionSurround(editor, cursor, count, '<', '>', false)
+proc vimMotionSurroundDoubleQuotesInner*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection = vimMotionSurround(editor, cursor, count, '"', '"', true)
+proc vimMotionSurroundDoubleQuotesOuter*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection = vimMotionSurround(editor, cursor, count, '"', '"', false)
+proc vimMotionSurroundSingleQuotesInner*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection = vimMotionSurround(editor, cursor, count, '\'', '\'', true)
+proc vimMotionSurroundSingleQuotesOuter*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection = vimMotionSurround(editor, cursor, count, '\'', '\'', false)
+
 # todo
 addCustomTextMove "vim-word", vimMotionWord
 addCustomTextMove "vim-WORD", vimMotionWordBig
@@ -220,9 +274,22 @@ addCustomTextMove "vim-word-outer", vimMotionWordOuter
 addCustomTextMove "vim-WORD-outer", vimMotionWordBigOuter
 addCustomTextMove "vim-paragraph-inner", vimMotionParagraphInner
 addCustomTextMove "vim-paragraph-outer", vimMotionParagraphOuter
+addCustomTextMove "vim-surround-{-inner", vimMotionSurroundBracesInner
+addCustomTextMove "vim-surround-{-outer", vimMotionSurroundBracesOuter
+addCustomTextMove "vim-surround-(-inner", vimMotionSurroundParensInner
+addCustomTextMove "vim-surround-(-outer", vimMotionSurroundParensOuter
+addCustomTextMove "vim-surround-[-inner", vimMotionSurroundBracketsInner
+addCustomTextMove "vim-surround-[-outer", vimMotionSurroundBracketsOuter
+addCustomTextMove "vim-surround-<-inner", vimMotionSurroundAngleInner
+addCustomTextMove "vim-surround-<-outer", vimMotionSurroundAngleOuter
+addCustomTextMove "vim-surround-\"-inner", vimMotionSurroundDoubleQuotesInner
+addCustomTextMove "vim-surround-\"-outer", vimMotionSurroundDoubleQuotesOuter
+addCustomTextMove "vim-surround-'-inner", vimMotionSurroundSingleQuotesInner
+addCustomTextMove "vim-surround-'-outer", vimMotionSurroundSingleQuotesOuter
 
 iterator iterateTextObjects(editor: TextDocumentEditor, cursor: Cursor, move: string, backwards: bool = false): Selection =
   var selection = editor.getSelectionForMove(cursor, move, 0)
+  echo selection
   yield selection
   while true:
     let lastSelection = selection
@@ -239,6 +306,7 @@ iterator iterateTextObjects(editor: TextDocumentEditor, cursor: Cursor, move: st
         continue
 
     let nextCursor = if backwards: (selection.first.line, selection.first.column - 1) else: selection.last
+    # echo &"iterate text objects {move}, {cursor} get selection for move {nextCursor} {move}"
     let newSelection = editor.getSelectionForMove(nextCursor, move, 0)
     if newSelection == lastSelection:
       break
@@ -261,12 +329,26 @@ proc vimSelectTextObject(editor: TextDocumentEditor, textObject: string, backwar
       infof"-> {resultSelection}"
 
       for i, selection in enumerateTextObjects(editor, res, textObject, backwards):
-        if i == max(count, 1):
-          break
         infof"{i}: {res} -> {selection}"
         resultSelection = resultSelection or selection
+        if i == max(count, 1) - 1:
+          break
 
       infof"vimSelectTextObject({textObject}, {textObjectRange}, {backwards}, {allowEmpty}, {count}): {resultSelection}"
+      if it.isBackwards:
+        resultSelection.reverse
+      else:
+        resultSelection
+    )
+
+  editor.scrollToCursor(Last)
+
+proc vimSelectSurrounding(editor: TextDocumentEditor, textObject: string, backwards: bool = false, allowEmpty: bool = false, count: int = 1, textObjectRange: VimTextObjectRange = Inner) {.expose("vim-select-surrounding").} =
+  # infof"vimSelectSurrounding({textObject}, {textObjectRange}, {backwards}, {allowEmpty}, {count})"
+
+  editor.selections = editor.selections.mapIt(block:
+      let resultSelection = editor.getSelectionForMove(it.last, textObject, count)
+      # infof"vimSelectSurrounding({textObject}, {textObjectRange}, {backwards}, {allowEmpty}, {count}): {resultSelection}"
       if it.isBackwards:
         resultSelection.reverse
       else:
@@ -647,10 +729,18 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addSubCommandWithCount "", "text_object", "iW", "vim-select-text-object", "vim-WORD-inner", false, true
   addSubCommandWithCount "", "text_object", "aW", "vim-select-text-object", "vim-WORD-outer", false, true
 
-  addSubCommandWithCount "", "text_object", "i{", "vim-select-text-object", "vim-surround-{-inner", false, true
-  addSubCommandWithCount "", "text_object", "a{", "vim-select-text-object", "vim-surround-{-outer", false, true
-  addSubCommandWithCount "", "text_object", "i}", "vim-select-text-object", "vim-surround-{-inner", false, true
-  addSubCommandWithCount "", "text_object", "a}", "vim-select-text-object", "vim-surround-{-outer", false, true
+  proc addTextObjectCommand(context: string, keys: string, name: string) =
+    addSubCommandWithCount context, "text_object", "i" & keys, "vim-select-surrounding", name & "-inner", false, true
+    addSubCommandWithCount context, "text_object", "a" & keys, "vim-select-surrounding", name & "-outer", false, true
+
+  addTextObjectCommand "", "{", "vim-surround-{"
+  addTextObjectCommand "", "}", "vim-surround-{"
+  addTextObjectCommand "", "(", "vim-surround-("
+  addTextObjectCommand "", ")", "vim-surround-("
+  addTextObjectCommand "", "[", "vim-surround-["
+  addTextObjectCommand "", "]", "vim-surround-["
+  addTextObjectCommand "", "\"", "vim-surround-\""
+  addTextObjectCommand "", "'", "vim-surround-'"
 
   addTextCommandBlock "", "dd":
     yankedLines = true
