@@ -125,21 +125,20 @@ proc possibleFunctionIndices*(state: CommandState): int =
   return state.functionIndices.bitSetCard
 
 proc getAction*(dfa: CommandDFA, state: CommandState): string =
-  assert state.functionIndices.bitSetCard == 1
+  if state.functionIndices.bitSetCard != 1:
+    log(lvlError, fmt"Multiple possible functions found: {state}")
+
   for functionIndex in state.functionIndices:
     let function = dfa.functions[functionIndex]
     return dfa.getAction(state, function)
 
-proc stepEmpty*(dfa: CommandDFA, state: CommandState): seq[CommandState] =
-  # defer:
-  #   echo &"stepEmpty {state} -> {result}"
+proc stepEmpty(dfa: CommandDFA, state: CommandState): seq[CommandState] =
   for transition in dfa.states[state.current].epsilonTransitions:
     var newState = state
     newState.current = transition.state
     newState.functionIndices.bitSetIntersect transition.functionIndices
     if transition.function != "":
       if newState.captures.contains(transition.capture):
-        # echo " 1> ", transition, ": ", transition.capture, " -> ", dfa.getAction(newState, transition.function), " | ", transition.function
         newState.captures[transition.capture] = dfa.getAction(newState, transition.function)
 
     if dfa.states[transition.state].transitions.len > 0 or dfa.states[transition.state].epsilonTransitions.len == 0:
@@ -147,64 +146,37 @@ proc stepEmpty*(dfa: CommandDFA, state: CommandState): seq[CommandState] =
 
     result.incl dfa.stepEmpty(newState)
 
+proc stepInput(dfa: CommandDFA, state: CommandState, currentInput: int64, mods: Modifiers, result: var seq[CommandState]) =
+  for transition in dfa.states[state.current].transitions.pairs:
+    if currentInput in transition[0]:
+      if not transition[1].next.contains(mods):
+        continue
+
+      let transition = transition[1].next[mods]
+      var newState = state
+      newState.current = transition.state
+      newState.functionIndices.bitSetIntersect transition.functionIndices
+      newState.captures.mgetOrPut(transition.capture, "").add(inputToString(currentInput, mods))
+
+      if dfa.states[transition.state].transitions.len > 0 or dfa.states[transition.state].epsilonTransitions.len == 0:
+        result.add newState
+      result.add dfa.stepEmpty(newState)
+
 proc stepAll*(dfa: CommandDFA, state: CommandState, currentInput: int64, mods: Modifiers, beginEmpty: bool): seq[CommandState] =
   if currentInput == 0:
     log(lvlError, "Input 0 is invalid")
     return @[]
 
-  # echo &"stepAll ({currentInput}) {inputToString(currentInput, mods)}, empty {beginEmpty}: {state}"
   if beginEmpty:
-
     var states = dfa.stepEmpty(state)
     if dfa.states[state.current].transitions.len > 0:
       states.add state
 
-    # echo &"states after epsilon transitions: {states}"
     for state in states:
-      for transition in dfa.states[state.current].transitions.pairs:
-        # echo &"  check transition {state.current}: {transition}"
-        if currentInput in transition[0]:
-          if not transition[1].next.contains(mods):
-            continue
-
-          let transition = transition[1].next[mods]
-
-          # echo &"  transition {state.current}: {transition}"
-          var newState = state
-          newState.current = transition.state
-          newState.functionIndices.bitSetIntersect transition.functionIndices
-          newState.captures.mgetOrPut(dfa.states[transition.state].capture, "").add(inputToString(currentInput, mods))
-          # if dfa.states[transition.state].function != "":
-          #   # echo " 2> ", nextState, ": ", dfa.states[transition.state].capture, " -> ", dfa.getAction(newState)
-          #   newState.captures[dfa.states[transition.state].capture] = dfa.getAction(newState)
-
-          # if dfa.states[transition.state].transitions.len > 0 or dfa.states[transition.state].isTerminal:
-          #   result.add newState
-          if dfa.states[transition.state].transitions.len > 0 or dfa.states[transition.state].epsilonTransitions.len == 0:
-            result.add newState
-          result.add dfa.stepEmpty(newState)
+      dfa.stepInput(state, currentInput, mods, result)
 
   else:
-    for transition in dfa.states[state.current].transitions.pairs:
-      if currentInput in transition[0]:
-        if not transition[1].next.contains(mods):
-          continue
-
-        let transition = transition[1].next[mods]
-
-        var newState = state
-        newState.current = transition.state
-        newState.functionIndices.bitSetIntersect transition.functionIndices
-        newState.captures.mgetOrPut(dfa.states[transition.state].capture, "").add(inputToString(currentInput, mods))
-        # echo newState
-        # if dfa.states[transition.state].function != "":
-        #   # echo " 3> ", nextState, ": ", dfa.states[transition.state].capture, " -> ", dfa.getAction(newState)
-        #   newState.captures[dfa.states[transition.state].capture] = dfa.getAction(newState)
-
-        # if dfa.states[transition.state].transitions.len > 0 or dfa.states[transition.state].isTerminal:
-        if dfa.states[transition.state].transitions.len > 0 or dfa.states[transition.state].epsilonTransitions.len == 0:
-          result.add newState
-        result.add dfa.stepEmpty(newState)
+    dfa.stepInput(state, currentInput, mods, result)
 
   return
 
