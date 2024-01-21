@@ -56,8 +56,6 @@ suite "Input DFA":
     ].toTable
 
     var dfa = buildDFA(commands)
-    # dfa.dump(0, 0, {})
-    writeFile("dfa.dot", dfa.dumpGraphViz())
 
     check dfa.stepString("w") == "select-last \"word 0\""
     check dfa.stepString("dw") == "delete-move \"word 0\" 0"
@@ -118,5 +116,4 @@ suite "Input DFA":
     var commands: seq[(string, string)] = @[]
     commands.add ("<S-:>", "success")
     var dfa = buildDFA(commands, @[""])
-    writeFile("dfa2.dot", dfa.dumpGraphViz())
     check dfa.stepString("<S-:>") == "success"
