@@ -662,15 +662,19 @@ proc handleNextInput(
         let rune = Rune(key.inputCodes.a)
         let rune2 = Rune(key.inputCodes.b)
         let bIsLower = rune.isLower
-        if not bIsLower and rune.isUpper:
+        if not bIsLower:
           # echo "| ".repeat(depth) & &"    link state {currentState} to {nextState} for {rune.toLower} and {rune.toUpper}"
-          discard linkStates(dfa, currentState, nextState, rune.toLower.int64..rune2.toLower.int64, key.mods + {Shift}, functionIndex, capture)
-          discard linkStates(dfa, currentState, nextState, key.inputCodes, key.mods + {Shift}, functionIndex, capture)
+          if not linkStates(dfa, currentState, nextState, rune.toLower.int64..rune2.toLower.int64, key.mods + {Shift}, functionIndex, capture):
+            log lvlError, fmt"""Ambigious keybinding '{input.join("")}' at {index} ({inputToString(key.inputCodes, key.mods)})"""
+          if not linkStates(dfa, currentState, nextState, key.inputCodes, key.mods + {Shift}, functionIndex, capture):
+            log lvlError, fmt"""Ambigious keybinding '{input.join("")}' at {index} ({inputToString(key.inputCodes, key.mods)})"""
 
         if bIsLower and Shift in key.mods:
           # echo "| ".repeat(depth) & &"    link state {currentState} to {nextState} for {rune.toLower} and {rune.toUpper}"
-          discard linkStates(dfa, currentState, nextState, rune.toUpper.int64..rune2.toUpper.int64, key.mods - {Shift}, functionIndex, capture)
-          discard linkStates(dfa, currentState, nextState, rune.toUpper.int64..rune2.toUpper.int64, key.mods, functionIndex, capture)
+          if not linkStates(dfa, currentState, nextState, rune.toUpper.int64..rune2.toUpper.int64, key.mods - {Shift}, functionIndex, capture):
+            log lvlError, fmt"""Ambigious keybinding '{input.join("")}' at {index} ({inputToString(key.inputCodes, key.mods)})"""
+          if not linkStates(dfa, currentState, nextState, rune.toUpper.int64..rune2.toUpper.int64, key.mods, functionIndex, capture):
+            log lvlError, fmt"""Ambigious keybinding '{input.join("")}' at {index} ({inputToString(key.inputCodes, key.mods)})"""
 
       nextState
 

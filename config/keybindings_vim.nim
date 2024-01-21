@@ -485,7 +485,6 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addSubCommand "", "move", "^", "vim-move-first", "line-no-indent"
 
   addSubCommandWithCount "", "move", "$", vimMoveToEndOfLine
-  addSubCommandWithCount "", "move", "<S-$>", vimMoveToEndOfLine
   addSubCommandWithCount "", "move", "<END>", vimMoveToEndOfLine
 
   addSubCommand "", "move", "g0", "vim-move-first", "line"

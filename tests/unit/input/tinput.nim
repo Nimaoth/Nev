@@ -113,3 +113,10 @@ suite "Input DFA":
     commands.add ("aB<A-c><C-ENTER>", "success")
     var dfa = buildDFA(commands, @[""])
     check dfa.stepString("aB<A-c><C-ENTER>") == "success"
+
+  test "<S-:>":
+    var commands: seq[(string, string)] = @[]
+    commands.add ("<S-:>", "success")
+    var dfa = buildDFA(commands, @[""])
+    writeFile("dfa2.dot", dfa.dumpGraphViz())
+    check dfa.stepString("<S-:>") == "success"
