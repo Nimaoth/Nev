@@ -1,4 +1,4 @@
-import std/[json]
+import std/[json, options]
 import "../src/scripting_api"
 
 ## This file is auto generated, don't modify.
@@ -10,6 +10,12 @@ proc editor_text_screenLineCount_int_TextDocumentEditor_impl(
     self: TextDocumentEditor): int  {.importc.}
 proc editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_impl(
     self: TextDocumentEditor; cursor: Cursor; offset: int): Cursor  {.importc.}
+proc editor_text_findSurroundStart_Option_Cursor_TextDocumentEditor_Cursor_int_char_char_int_impl(
+    editor: TextDocumentEditor; cursor: Cursor; count: int; c0: char; c1: char;
+    depth: int = 1): Option[Cursor]  {.importc.}
+proc editor_text_findSurroundEnd_Option_Cursor_TextDocumentEditor_Cursor_int_char_char_int_impl(
+    editor: TextDocumentEditor; cursor: Cursor; count: int; c0: char; c1: char;
+    depth: int = 1): Option[Cursor]  {.importc.}
 proc editor_text_setMode_void_TextDocumentEditor_string_impl(
     self: TextDocumentEditor; mode: string)  {.importc.}
 proc editor_text_mode_string_TextDocumentEditor_impl(self: TextDocumentEditor): string  {.importc.}

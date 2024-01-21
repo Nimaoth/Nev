@@ -1,4 +1,4 @@
-import std/[json]
+import std/[json, options]
 import scripting_api, misc/myjsonutils
 
 ## This file is auto generated, don't modify.
@@ -75,6 +75,88 @@ proc doMoveCursorColumn*(self: TextDocumentEditor; cursor: Cursor; offset: int):
       offset.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_text_findSurroundStart_Option_Cursor_TextDocumentEditor_Cursor_int_char_char_int_wasm(
+    arg: cstring): cstring {.importc.}
+proc findSurroundStart*(editor: TextDocumentEditor; cursor: Cursor; count: int;
+                        c0: char; c1: char; depth: int = 1): Option[Cursor] =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      editor
+    else:
+      editor.toJson()
+  argsJson.add block:
+    when Cursor is JsonNode:
+      cursor
+    else:
+      cursor.toJson()
+  argsJson.add block:
+    when int is JsonNode:
+      count
+    else:
+      count.toJson()
+  argsJson.add block:
+    when char is JsonNode:
+      c0
+    else:
+      c0.toJson()
+  argsJson.add block:
+    when char is JsonNode:
+      c1
+    else:
+      c1.toJson()
+  argsJson.add block:
+    when int is JsonNode:
+      depth
+    else:
+      depth.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_findSurroundStart_Option_Cursor_TextDocumentEditor_Cursor_int_char_char_int_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_text_findSurroundEnd_Option_Cursor_TextDocumentEditor_Cursor_int_char_char_int_wasm(
+    arg: cstring): cstring {.importc.}
+proc findSurroundEnd*(editor: TextDocumentEditor; cursor: Cursor; count: int;
+                      c0: char; c1: char; depth: int = 1): Option[Cursor] =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      editor
+    else:
+      editor.toJson()
+  argsJson.add block:
+    when Cursor is JsonNode:
+      cursor
+    else:
+      cursor.toJson()
+  argsJson.add block:
+    when int is JsonNode:
+      count
+    else:
+      count.toJson()
+  argsJson.add block:
+    when char is JsonNode:
+      c0
+    else:
+      c0.toJson()
+  argsJson.add block:
+    when char is JsonNode:
+      c1
+    else:
+      c1.toJson()
+  argsJson.add block:
+    when int is JsonNode:
+      depth
+    else:
+      depth.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_findSurroundEnd_Option_Cursor_TextDocumentEditor_Cursor_int_char_char_int_wasm(
       argsJsonString.cstring)
   result = parseJson($res).jsonTo(typeof(result))
 
