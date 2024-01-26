@@ -951,7 +951,7 @@ method canEdit*(self: ModelDocumentEditor, document: Document): bool =
   if document of ModelDocument: return true
   else: return false
 
-method getEventHandlers*(self: ModelDocumentEditor): seq[EventHandler] =
+method getEventHandlers*(self: ModelDocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] =
   result.add self.eventHandler
 
   if not self.modeEventHandler.isNil:

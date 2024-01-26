@@ -1,4 +1,4 @@
-import std/[json]
+import std/[json, tables]
 import vmath, bumpy
 import misc/[event, custom_logger, id]
 import document, events, input, config_provider
@@ -69,7 +69,7 @@ method getDocument*(self: DocumentEditor): Document {.base.} = discard
 
 method handleAction*(self: DocumentEditor, action: string, arg: string): EventResponse {.base.} = discard
 
-method getEventHandlers*(self: DocumentEditor): seq[EventHandler] {.base.} =
+method getEventHandlers*(self: DocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] {.base.} =
   return @[]
 
 method handleDocumentChanged*(self: DocumentEditor) {.base.} =

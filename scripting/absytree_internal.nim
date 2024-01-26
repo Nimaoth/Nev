@@ -574,6 +574,10 @@ proc editor_logs_void_App_impl*() =
   discard
 proc editor_toggleConsoleLogger_void_App_impl*() =
   discard
+proc editor_getOpenEditors_seq_EditorId_App_impl*(): seq[EditorId] =
+  discard
+proc editor_getHiddenEditors_seq_EditorId_App_impl*(): seq[EditorId] =
+  discard
 proc editor_closeCurrentView_void_App_bool_impl*(keepHidden: bool = true) =
   discard
 proc editor_closeOtherViews_void_App_bool_impl*(keepHidden: bool = true) =
@@ -593,6 +597,10 @@ proc editor_setLayout_void_App_string_impl*(layout: string) =
 proc editor_commandLine_void_App_string_impl*(initialValue: string = "") =
   discard
 proc editor_exitCommandLine_void_App_impl*() =
+  discard
+proc editor_selectPreviousCommandInHistory_void_App_impl*() =
+  discard
+proc editor_selectNextCommandInHistory_void_App_impl*() =
   discard
 proc editor_executeCommandLine_bool_App_impl*(): bool =
   discard

@@ -409,6 +409,26 @@ proc toggleConsoleLogger*() =
       argsJsonString.cstring)
 
 
+proc editor_getOpenEditors_seq_EditorId_App_wasm(arg: cstring): cstring {.
+    importc.}
+proc getOpenEditors*(): seq[EditorId] =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_getOpenEditors_seq_EditorId_App_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_getHiddenEditors_seq_EditorId_App_wasm(arg: cstring): cstring {.
+    importc.}
+proc getHiddenEditors*(): seq[EditorId] =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_getHiddenEditors_seq_EditorId_App_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
 proc editor_closeCurrentView_void_App_bool_wasm(arg: cstring): cstring {.importc.}
 proc closeCurrentView*(keepHidden: bool = true) =
   var argsJson = newJArray()
@@ -504,6 +524,24 @@ proc exitCommandLine*() =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = editor_exitCommandLine_void_App_wasm(argsJsonString.cstring)
+
+
+proc editor_selectPreviousCommandInHistory_void_App_wasm(arg: cstring): cstring {.
+    importc.}
+proc selectPreviousCommandInHistory*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_selectPreviousCommandInHistory_void_App_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_selectNextCommandInHistory_void_App_wasm(arg: cstring): cstring {.
+    importc.}
+proc selectNextCommandInHistory*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_selectNextCommandInHistory_void_App_wasm(
+      argsJsonString.cstring)
 
 
 proc editor_executeCommandLine_bool_App_wasm(arg: cstring): cstring {.importc.}

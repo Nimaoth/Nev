@@ -1,4 +1,4 @@
-import std/[strutils, sugar, options, json, streams]
+import std/[strutils, sugar, options, json, streams, tables]
 import bumpy, vmath
 import misc/[util, rect_utils, comb_sort, timer, event, custom_async, custom_logger, cancellation_token, myjsonutils]
 import app_interface, text/text_editor, popup, events, scripting/expose, input
@@ -131,7 +131,7 @@ proc getItemAtPixelPosition(self: SelectorPopup, posWindow: Vec2): Option[Select
       return self.completions[self.completions.high - index].some
 
 method getEventHandlers*(self: SelectorPopup): seq[EventHandler] =
-  return self.textEditor.getEventHandlers() & @[self.eventHandler]
+  return self.textEditor.getEventHandlers(initTable[string, EventHandler]()) & @[self.eventHandler]
 
 proc getSelectorPopup(wrapper: api.SelectorPopup): Option[SelectorPopup] =
   if gAppInterface.isNil: return SelectorPopup.none

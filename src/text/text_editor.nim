@@ -172,12 +172,19 @@ method canEdit*(self: TextDocumentEditor, document: Document): bool =
   if document of TextDocument: return true
   else: return false
 
-method getEventHandlers*(self: TextDocumentEditor): seq[EventHandler] =
+method getEventHandlers*(self: TextDocumentEditor, inject: Table[string, EventHandler]): seq[EventHandler] =
   result = @[self.eventHandler]
   if not self.modeEventHandler.isNil:
     result.add self.modeEventHandler
+
+  if inject.contains("above-mode"):
+    result.add inject["above-mode"]
+
   if self.showCompletions:
     result.add self.completionEventHandler
+
+  if inject.contains("above-completion"):
+    result.add inject["above-completion"]
 
 proc updateSearchResults(self: TextDocumentEditor) =
   if self.searchRegex.isNone:

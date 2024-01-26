@@ -63,6 +63,7 @@ type EditorState = object
   workspaceFolders: seq[OpenWorkspace]
   openEditors: seq[OpenEditor]
   hiddenEditors: seq[OpenEditor]
+  commandHistory: seq[string]
 
   astProjectWorkspaceId: string
   astProjectPath: Option[string]
@@ -133,10 +134,13 @@ type App* = ref object
 
   logDocument: Document
 
+  commandHistory: seq[string]
+  currentHistoryEntry: int = 0
   absytreeCommandsServer: LanguageServer
   commandLineTextEditor: DocumentEditor
   eventHandler*: EventHandler
-  commandLineEventHandler*: EventHandler
+  commandLineEventHandlerHigh*: EventHandler
+  commandLineEventHandlerLow*: EventHandler
   commandLineMode*: bool
 
   modeEventHandler: EventHandler
@@ -676,7 +680,7 @@ proc setupDefaultKeybindings(self: App) =
   let editorConfig = self.getEventHandlerConfig("editor")
   let textConfig = self.getEventHandlerConfig("editor.text")
   let textCompletionConfig = self.getEventHandlerConfig("editor.text.completion")
-  let commandLineConfig = self.getEventHandlerConfig("commandLine")
+  let commandLineConfig = self.getEventHandlerConfig("command-line-high")
   let selectorPopupConfig = self.getEventHandlerConfig("popup.selector")
 
   self.setHandleInputs("editor.text", true)
@@ -803,7 +807,8 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
         Ignored
     onInput:
       Ignored
-  self.commandLineEventHandler = eventHandler(self.getEventHandlerConfig("commandLine")):
+
+  self.commandLineEventHandlerHigh = eventHandler(self.getEventHandlerConfig("command-line-high")):
     onAction:
       if self.handleAction(action, arg):
         Handled
@@ -811,6 +816,16 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
         Ignored
     onInput:
       Ignored
+
+  self.commandLineEventHandlerLow = eventHandler(self.getEventHandlerConfig("command-line-low")):
+    onAction:
+      if self.handleAction(action, arg):
+        Handled
+      else:
+        Ignored
+    onInput:
+      Ignored
+
   self.commandLineMode = false
 
   self.absytreeCommandsServer = newLanguageServerAbsytreeCommands()
@@ -853,6 +868,8 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   except CatchableError:
     log(lvlError, fmt"Failed to load previous state from config file: {getCurrentExceptionMsg()}")
+
+  self.commandHistory = state.commandHistory
 
   if self.getFlag("editor.restore-open-workspaces", true):
     for wf in state.workspaceFolders:
@@ -986,6 +1003,8 @@ proc saveAppState*(self: App) {.expose("editor").} =
   state.fontBold = self.fontBold
   state.fontItalic = self.fontItalic
   state.fontBoldItalic = self.fontBoldItalic
+
+  state.commandHistory = self.commandHistory
 
   if self.layout of HorizontalLayout:
     state.layout = "horizontal"
@@ -1204,8 +1223,13 @@ proc logs*(self: App) {.expose("editor").} =
 proc toggleConsoleLogger*(self: App) {.expose("editor").} =
   logger.toggleConsoleLogger()
 
-# proc createKeybindAutocompleteView*(self: App) {.expose("editor").} =
-#   self.createAndAddView(newKeybindAutocompletion())
+proc getOpenEditors*(self: App): seq[EditorId] {.expose("editor").} =
+  for view in self.views:
+    result.add view.editor.id
+
+proc getHiddenEditors*(self: App): seq[EditorId] {.expose("editor").} =
+  for view in self.hiddenViews:
+    result.add view.editor.id
 
 proc closeCurrentView*(self: App, keepHidden: bool = true) {.expose("editor").} =
   ## Closes the current view. If `keepHidden` is true the view is not closed but hidden instead.
@@ -1290,6 +1314,10 @@ proc setLayout*(self: App, layout: string) {.expose("editor").} =
 
 proc commandLine*(self: App, initialValue: string = "") {.expose("editor").} =
   self.getCommandLineTextEditor.document.content = @[initialValue]
+  if self.commandHistory.len == 0:
+    self.commandHistory.add ""
+  self.commandHistory[0] = ""
+  self.currentHistoryEntry = 0
   self.commandLineMode = true
   self.commandLineTextEditor.TextDocumentEditor.setMode("insert")
   self.platform.requestRender()
@@ -1300,11 +1328,59 @@ proc exitCommandLine*(self: App) {.expose("editor").} =
   self.commandLineMode = false
   self.platform.requestRender()
 
+proc selectPreviousCommandInHistory*(self: App) {.expose("editor").} =
+  if self.commandHistory.len == 0:
+    self.commandHistory.add ""
+
+  let command = self.getCommandLineTextEditor.document.contentString
+  if command != self.commandHistory[self.currentHistoryEntry]:
+    self.currentHistoryEntry = 0
+    self.commandHistory[0] = command
+
+  self.currentHistoryEntry += 1
+  if self.currentHistoryEntry >= self.commandHistory.len:
+    self.currentHistoryEntry = 0
+
+  self.getCommandLineTextEditor.document.content = self.commandHistory[self.currentHistoryEntry]
+  self.getCommandLineTextEditor.moveLast("file", Both)
+  self.platform.requestRender()
+
+proc selectNextCommandInHistory*(self: App) {.expose("editor").} =
+  if self.commandHistory.len == 0:
+    self.commandHistory.add ""
+
+  let command = self.getCommandLineTextEditor.document.contentString
+  if command != self.commandHistory[self.currentHistoryEntry]:
+    self.currentHistoryEntry = 0
+    self.commandHistory[0] = command
+
+  self.currentHistoryEntry -= 1
+  if self.currentHistoryEntry < 0:
+    self.currentHistoryEntry = self.commandHistory.high
+
+  self.getCommandLineTextEditor.document.content = self.commandHistory[self.currentHistoryEntry]
+  self.getCommandLineTextEditor.moveLast("file", Both)
+  self.platform.requestRender()
+
 proc executeCommandLine*(self: App): bool {.expose("editor").} =
   defer:
     self.platform.requestRender()
   self.commandLineMode = false
-  var (action, arg) = self.getCommandLineTextEditor.document.content.join("").parseAction
+  let command = self.getCommandLineTextEditor.document.content.join("")
+
+  if (let i = self.commandHistory.find(command); i >= 0):
+    self.commandHistory.delete i
+
+  if self.commandHistory.len == 0:
+    self.commandHistory.add ""
+
+  self.commandHistory.insert command, 1
+
+  let maxHistorySize = self.getOption("editor.command-line.history-size", 100)
+  if self.commandHistory.len > maxHistorySize:
+    self.commandHistory.setLen maxHistorySize
+
+  var (action, arg) = command.parseAction
   self.getCommandLineTextEditor.document.content = @[""]
 
   if arg.startsWith("\\"):
@@ -1704,12 +1780,12 @@ proc currentEventHandlers*(self: App): seq[EventHandler] =
     result.add self.modeEventHandler
 
   if self.commandLineMode:
-    result.add self.getCommandLineTextEditor.getEventHandlers()
-    result.add self.commandLineEventHandler
+    result.add self.getCommandLineTextEditor.getEventHandlers({"above-mode": self.commandLineEventHandlerLow}.toTable)
+    result.add self.commandLineEventHandlerHigh
   elif self.popups.len > 0:
     result.add self.popups[self.popups.high].getEventHandlers()
   elif self.currentView >= 0 and self.currentView < self.views.len:
-    result.add self.views[self.currentView].editor.getEventHandlers()
+    result.add self.views[self.currentView].editor.getEventHandlers(initTable[string, EventHandler]())
 
   if not self.modeEventHandler.isNil and modeOnTop:
     result.add self.modeEventHandler
@@ -2115,10 +2191,14 @@ proc handleAction(self: App, action: string, arg: string): bool =
     log(lvlError, getCurrentException().getStackTrace())
 
   try:
-    if self.scriptActions.contains(action):
-      let res = self.callScriptAction(action, args)
+    withScriptContext self, self.scriptContext:
+      let res = self.scriptContext.handleScriptAction(action, args)
       if res.isNotNil:
-        log lvlInfo, fmt"callScriptAction {action} returned {res}"
+        return true
+
+    withScriptContext self, self.wasmScriptContext:
+      let res = self.wasmScriptContext.handleScriptAction(action, args)
+      if res.isNotNil:
         return true
   except CatchableError:
     log(lvlError, fmt"Failed to dispatch action '{action} {arg}': {getCurrentExceptionMsg()}")
