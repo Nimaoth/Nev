@@ -72,6 +72,10 @@ proc logs*() =
   editor_logs_void_App_impl()
 proc toggleConsoleLogger*() =
   editor_toggleConsoleLogger_void_App_impl()
+proc getOpenEditors*(): seq[EditorId] =
+  editor_getOpenEditors_seq_EditorId_App_impl()
+proc getHiddenEditors*(): seq[EditorId] =
+  editor_getHiddenEditors_seq_EditorId_App_impl()
 proc closeCurrentView*(keepHidden: bool = true) =
   ## Closes the current view. If `keepHidden` is true the view is not closed but hidden instead.
   editor_closeCurrentView_void_App_bool_impl(keepHidden)
@@ -94,6 +98,10 @@ proc commandLine*(initialValue: string = "") =
   editor_commandLine_void_App_string_impl(initialValue)
 proc exitCommandLine*() =
   editor_exitCommandLine_void_App_impl()
+proc selectPreviousCommandInHistory*() =
+  editor_selectPreviousCommandInHistory_void_App_impl()
+proc selectNextCommandInHistory*() =
+  editor_selectNextCommandInHistory_void_App_impl()
 proc executeCommandLine*(): bool =
   editor_executeCommandLine_bool_App_impl()
 proc writeFile*(path: string = ""; app: bool = false) =
