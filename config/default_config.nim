@@ -63,7 +63,8 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
     clearCommands "editor.ast.goto"
     clearCommands "editor.model.completion"
     clearCommands "editor.model.goto"
-    clearCommands "commandLine"
+    clearCommands "command-line-low"
+    clearCommands "command-line-high"
     clearCommands "popup.selector"
 
   setLeaders @["<SPACE>", "<C-b>"]
@@ -188,8 +189,10 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
   addCommand "editor", "<LEADER>rCC", "clear-workspace-caches"
   addCommand "editor", "<LEADER>rCC", "clear-workspace-caches"
 
-  addCommand "commandLine", "<ESCAPE>", "exit-command-line"
-  addCommand "commandLine", "<ENTER>", "execute-command-line"
+  addCommand "command-line-low", "<ESCAPE>", "exit-command-line"
+  addCommand "command-line-low", "<ENTER>", "execute-command-line"
+  addCommand "command-line-low", "<UP>", "select-previous-command-in-history"
+  addCommand "command-line-low", "<DOWN>", "select-next-command-in-history"
 
   addCommand "popup.selector", "<ENTER>", "accept"
   addCommand "popup.selector", "<TAB>", "accept"

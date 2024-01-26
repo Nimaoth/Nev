@@ -457,6 +457,13 @@ proc vimPaste(editor: TextDocumentEditor, register: string = "") {.expose("vim-p
 
   editor.paste register
 
+proc vimCloseCurrentViewOrQuit() {.expose("vim-close-current-view-or-quit").} =
+  let openEditors = getOpenEditors().len + getHiddenEditors().len
+  if openEditors == 1:
+    absytree_runtime.quit()
+  else:
+    closeCurrentView(keepHidden=false)
+
 proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   let t = startTimer()
   defer:
@@ -513,10 +520,10 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
       addCommand "editor", prefix, "next-view"
       addCommand "editor", "p", "open-previous-editor"
       addCommand "editor", "<C-p>", "open-previous-editor"
-      addCommand "editor", "q", "close-current-editor", true
-      addCommand "editor", "Q", "close-current-editor", false
+      addCommand "editor", "q", "vim-close-current-view-or-quit"
       addCommand "editor", "<C-q>", "close-current-view"
-      addCommand "editor", "c", "close-current-view"
+      addCommand "editor", "c", "close-current-view", true
+      addCommand "editor", "C", "close-current-view", false
       addCommand "editor", "o", "close-other-views"
       addCommand "editor", "<C-o>", "close-other-views"
 
