@@ -42,7 +42,7 @@ proc getVimDefaultRegister*(): string =
 proc getEnclosing(line: string, column: int, predicate: proc(c: char): bool): (int, int) =
   var startColumn = column
   var endColumn = column
-  while endColumn < line.len and predicate(line[endColumn]):
+  while endColumn < line.high and predicate(line[endColumn + 1]):
     inc endColumn
   while startColumn > 0 and predicate(line[startColumn - 1]):
     dec startColumn
@@ -69,18 +69,18 @@ proc vimDeleteSelection(editor: TextDocumentEditor) {.expose("vim-delete-selecti
   editor.copy()
   let selections = editor.selections
   editor.selections = editor.selections.mapIt(it.normalized.first.toSelection)
-  discard editor.delete(selections)
+  discard editor.delete(selections, inclusiveEnd=true)
   editor.setMode "normal"
 
 proc vimChangeSelection*(editor: TextDocumentEditor) {.expose("vim-change-selection").} =
   editor.copy()
   let selections = editor.selections
   editor.selections = editor.selections.mapIt(it.normalized.first.toSelection)
-  discard editor.delete(selections)
+  discard editor.delete(selections, inclusiveEnd=true)
   editor.setMode "insert"
 
 proc vimYankSelection*(editor: TextDocumentEditor) {.expose("vim-yank-selection").} =
-  editor.copy()
+  editor.copy(inclusiveEnd=true)
   editor.selections = editor.selections.mapIt(it.normalized.first.toSelection)
   editor.setMode "normal"
 
@@ -140,8 +140,8 @@ proc vimMoveTo*(editor: TextDocumentEditor, target: string, before: bool, count:
 
   for _ in 0..<max(1, count):
     editor.moveCursorTo(target)
-  if not before:
-    editor.moveCursorColumn(1)
+  if before:
+    editor.moveCursorColumn(-1)
 
 proc vimMotionWord*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection =
   const AlphaNumeric = {'A'..'Z', 'a'..'z', '0'..'9', '_'}
@@ -178,28 +178,20 @@ proc vimMotionWordBig*(editor: TextDocumentEditor, cursor: Cursor, count: int): 
     return ((cursor.line, startColumn), (cursor.line, endColumn))
 
 proc vimMotionParagraphInner*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection =
-  if editor.lineLength(cursor.line) == 0:
-    return cursor.toSelection
+  let isEmpty = editor.lineLength(cursor.line) == 0
 
   result = ((cursor.line, 0), cursor)
-  while result.first.line - 1 >= 0 and editor.lineLength(result.first.line - 1) > 0:
+  while result.first.line - 1 >= 0 and (editor.lineLength(result.first.line - 1) == 0) == isEmpty:
     dec result.first.line
-  while result.last.line + 1 < editor.lineCount and editor.lineLength(result.last.line + 1) > 0:
+  while result.last.line + 1 < editor.lineCount and (editor.lineLength(result.last.line + 1) == 0) == isEmpty:
     inc result.last.line
 
   result.last.column = editor.lineLength(result.last.line)
 
 proc vimMotionParagraphOuter*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection =
-  if editor.lineLength(cursor.line) == 0:
-    return cursor.toSelection
-
-  result = ((cursor.line, 0), cursor)
-  while result.first.line - 1 >= 0 and editor.lineLength(result.first.line - 1) > 0:
-    dec result.first.line
-  while result.last.line + 1 < editor.lineCount and editor.lineLength(result.last.line) > 0:
-    inc result.last.line
-
-  result.last.column = editor.lineLength(result.last.line)
+  result = editor.vimMotionParagraphInner(cursor, count)
+  if result.last.line + 1 < editor.lineCount:
+    result = result or editor.vimMotionParagraphInner((result.last.line + 1, 0), 1)
 
 proc vimMotionWordOuter*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection =
   result = vimMotionWord(editor, cursor, count)
@@ -289,7 +281,7 @@ addCustomTextMove "vim-surround-'-outer", vimMotionSurroundSingleQuotesOuter
 
 iterator iterateTextObjects(editor: TextDocumentEditor, cursor: Cursor, move: string, backwards: bool = false): Selection =
   var selection = editor.getSelectionForMove(cursor, move, 0)
-  echo selection
+  # infof"iterateTextObjects({cursor}, {move}, {backwards}), selection: {selection}"
   yield selection
   while true:
     let lastSelection = selection
@@ -305,7 +297,7 @@ iterator iterateTextObjects(editor: TextDocumentEditor, cursor: Cursor, move: st
         yield selection
         continue
 
-    let nextCursor = if backwards: (selection.first.line, selection.first.column - 1) else: selection.last
+    let nextCursor = if backwards: (selection.first.line, selection.first.column - 1) else: (selection.last.line, selection.last.column + 1)
     # echo &"iterate text objects {move}, {cursor} get selection for move {nextCursor} {move}"
     let newSelection = editor.getSelectionForMove(nextCursor, move, 0)
     if newSelection == lastSelection:
@@ -358,7 +350,7 @@ proc vimSelectSurrounding(editor: TextDocumentEditor, textObject: string, backwa
   editor.scrollToCursor(Last)
 
 proc moveSelectionNext(editor: TextDocumentEditor, move: string, backwards: bool = false, allowEmpty: bool = false, count: int = 1) {.expose("move-selection-next").} =
-  infof"moveSelectionNext '{move}' {count} {backwards} {allowEmpty}"
+  # infof"moveSelectionNext '{move}' {count} {backwards} {allowEmpty}"
   let which = getOption[SelectionCursor](editor.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
   editor.selections = editor.selections.mapIt(block:
       var res = it.last
@@ -366,6 +358,7 @@ proc moveSelectionNext(editor: TextDocumentEditor, move: string, backwards: bool
         for i, selection in enumerateTextObjects(editor, res, move, backwards):
           if i == 0: continue
           let cursor = if backwards: selection.last else: selection.first
+          # echo i, ", ", selection, ", ", cursor, ", ", it
           if cursor == it.last:
             continue
           if editor.lineLength(selection.first.line) == 0:
@@ -385,7 +378,7 @@ proc moveSelectionNext(editor: TextDocumentEditor, move: string, backwards: bool
   editor.scrollToCursor(Last)
 
 proc moveSelectionEnd(editor: TextDocumentEditor, move: string, backwards: bool = false, allowEmpty: bool = false, count: int = 1) {.expose("move-selection-end").} =
-  infof"moveSelectionEnd '{move}' {count} {backwards} {allowEmpty}"
+  # infof"moveSelectionEnd '{move}' {count} {backwards} {allowEmpty}"
   let which = getOption[SelectionCursor](editor.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
   editor.selections = editor.selections.mapIt(block:
       var res = it.last
@@ -400,9 +393,26 @@ proc moveSelectionEnd(editor: TextDocumentEditor, move: string, backwards: bool 
               break
             else:
               continue
-          if editor.getLine(selection.last.line)[selection.last.column - 1] notin Whitespace:
+          if editor.getLine(selection.last.line)[selection.last.column] notin Whitespace:
             res = cursor
             break
+      res.toSelection(it, which)
+    )
+
+  editor.scrollToCursor(Last)
+
+proc moveParagraph(editor: TextDocumentEditor, backwards: bool, count: int = 1) {.expose("move-paragraph").} =
+  let which = getOption[SelectionCursor](editor.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
+  editor.selections = editor.selections.mapIt(block:
+      var res = it.last
+      for k in 0..<max(1, count):
+        for i, selection in enumerateTextObjects(editor, res, "vim-paragraph-inner", backwards):
+          if i == 0: continue
+          let cursor = if backwards: selection.last else: selection.first
+          if editor.lineLength(cursor.line) == 0:
+            res = cursor
+            break
+
       res.toSelection(it, which)
     )
 
@@ -482,6 +492,7 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   setOption "editor.text.cursor.movement.normal", "last"
   setOption "editor.text.cursor.wide.", true
   setOption "editor.text.default-mode", "normal"
+  setOption "editor.text.inclusive-selection", false
 
   setModeChangedHandler proc(editor, oldMode, newMode: auto) =
     # infof"vim: handle mode change {oldMode} -> {newMode}"
@@ -491,13 +502,21 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     case newMode
     of "normal":
       setOption "editor.text.vim-motion-action", "vim-select-last-cursor"
+      setOption "editor.text.inclusive-selection", false
       vimMotionNextMode[editor.id] = "normal"
       editor.selections = editor.selections.mapIt(it.last.toSelection)
       editor.saveCurrentCommandHistory()
 
     of "insert":
+      setOption "editor.text.inclusive-selection", false
       setOption "editor.text.vim-motion-action", ""
       vimMotionNextMode[editor.id] = "insert"
+
+    of "visual":
+      setOption "editor.text.inclusive-selection", true
+
+    else:
+      setOption "editor.text.inclusive-selection", false
 
   addTextCommand "#count", "<-1-9><o-0-9>", ""
 
@@ -739,8 +758,8 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addSubCommandWithCount "", "move", "<C-LEFT>", "move-selection-end", "vim-WORD", true, true
   addSubCommandWithCount "", "move", "ge", "move-selection-next", "vim-word", true, false
   addSubCommandWithCount "", "move", "gE", "move-selection-next", "vim-WORD", true, false
-  addSubCommandWithCount "", "move", "}", "move-selection-end", "vim-paragraph-outer", false, true
-  addSubCommandWithCount "", "move", "{", "move-selection-next", "vim-paragraph-outer", true, false
+  addSubCommandWithCount "", "move", "}", "move-paragraph", false
+  addSubCommandWithCount "", "move", "{", "move-paragraph", true
   addSubCommandWithCount "", "move", "f<ANY>", "vim-move-to <move.ANY>", false
   addSubCommandWithCount "", "move", "t<ANY>", "vim-move-to <move.ANY>", true
 
@@ -748,6 +767,8 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addSubCommandWithCount "", "text_object", "aw", "vim-select-text-object", "vim-word-outer", false, true
   addSubCommandWithCount "", "text_object", "iW", "vim-select-text-object", "vim-WORD-inner", false, true
   addSubCommandWithCount "", "text_object", "aW", "vim-select-text-object", "vim-WORD-outer", false, true
+  addSubCommandWithCount "", "text_object", "ip", "vim-select-text-object", "vim-paragraph-inner", false, true
+  addSubCommandWithCount "", "text_object", "ap", "vim-select-text-object", "vim-paragraph-outer", false, true
 
   proc addTextObjectCommand(context: string, keys: string, name: string) =
     addSubCommandWithCount context, "text_object", "i" & keys, "vim-select-surrounding", name & "-inner", false, true
@@ -839,5 +860,6 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommand "visual", "y", "vim-yank-selection"
   addTextCommand "visual", "d", "vim-delete-selection"
   addTextCommand "visual", "c", "vim-change-selection"
+  addTextCommand "visual", "s", "vim-change-selection"
 
   addTextCommand "visual", "<?-count><text_object>", """vim-select-move <text_object> <#count>"""
