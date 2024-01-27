@@ -215,18 +215,28 @@ func content*(self: TextDocument): seq[string] =
 func contentString*(self: TextDocument): string =
   return self.lines.join("\n")
 
-func contentString*(self: TextDocument, selection: Selection): string =
+func contentString*(self: TextDocument, selection: Selection, inclusiveEnd: bool = false): string =
   let (first, last) = selection.normalized
-  if first.line == last.line:
-    return self.lines[first.line][first.column..<last.column]
 
-  result = self.lines[first.line][first.column..^1]
+  let lastLineLen = self.lines[last.line].len
+  let lastColumn = if inclusiveEnd:
+    self.lines[last.line].nextRuneStart(min(last.column, lastLineLen - 1))
+  else:
+    last.column
+
+  let firstColumn = first.column.clamp(0, self.lines[first.line].len)
+
+  if first.line == last.line:
+    return self.lines[first.line][firstColumn..<lastColumn]
+
+  result = self.lines[first.line][firstColumn..^1]
   for i in (first.line + 1)..<last.line:
     result.add "\n"
     result.add self.lines[i]
 
   result.add "\n"
-  result.add self.lines[last.line][0..<last.column]
+
+  result.add self.lines[last.line][0..<lastColumn]
 
 func contentString*(self: TextDocument, selection: TSRange): string =
   return self.contentString selection.toSelection
@@ -637,16 +647,22 @@ proc byteOffset*(self: TextDocument, cursor: Cursor): int =
 proc tabWidth*(self: TextDocument): int =
   return self.languageConfig.map(c => c.tabWidth).get(4)
 
-proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], notify: bool = true, record: bool = true): seq[Selection] =
+proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] =
   result = self.clampAndMergeSelections selections
 
   var undoOp = UndoOp(kind: Nested, children: @[], oldSelection: @oldSelection)
 
-  for i, selection in result:
+  for i, selectionRaw in result:
+    let normalizedSelection = selectionRaw.normalized
+    let selection: Selection = if inclusiveEnd and self.lines[normalizedSelection.last.line].len > 0:
+      let nextColumn = self.lines[normalizedSelection.last.line].nextRuneStart(min(normalizedSelection.last.column, self.lines[normalizedSelection.last.line].high)).int
+      (normalizedSelection.first, (normalizedSelection.last.line, nextColumn))
+    else:
+      normalizedSelection
+
     if selection.isEmpty:
       continue
 
-    let selection = selection.normalized
     let (first, last) = selection
 
     let startByte = self.byteOffset(first)

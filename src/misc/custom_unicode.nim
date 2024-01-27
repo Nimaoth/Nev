@@ -93,6 +93,16 @@ proc runeIndex*(s: openArray[char], offset: Natural, returnLen: bool = true): Ru
       return
     inc result
 
+proc runeSize*(s: openArray[char], offset: Natural): Natural =
+  if s[offset] <= chr(127):
+    result = 1
+  else:
+    var L = 1
+    var R = 1
+    while offset - L >= 0 and uint(s[offset - L]) shr 6 == 0b10: inc(L)
+    while offset + L <= s.high and uint(s[offset + L]) shr 6 == 0b10: inc(L)
+    result = R - L
+
 proc runeStart*(s: openArray[char], offset: Natural): Natural =
   if s[offset] <= chr(127):
     result = offset
@@ -124,3 +134,6 @@ proc nextRuneStart*(s: string, offset: Natural): Natural =
     assert "aäb".nextRuneStart(2) == 3
     assert "aäb".nextRuneStart(3) == 4
   return s.toOA.nextRuneStart(offset)
+
+proc runeSize*(s: string, offset: Natural): Natural =
+  return s.toOA.runeSize(offset)
