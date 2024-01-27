@@ -284,10 +284,11 @@ proc insert*(self: TextDocumentEditor; selections: seq[Selection]; text: string;
   result = parseJson($res).jsonTo(typeof(result))
 
 
-proc editor_text_delete_seq_Selection_TextDocumentEditor_seq_Selection_bool_bool_wasm(
+proc editor_text_delete_seq_Selection_TextDocumentEditor_seq_Selection_bool_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc delete*(self: TextDocumentEditor; selections: seq[Selection];
-             notify: bool = true; record: bool = true): seq[Selection] =
+             notify: bool = true; record: bool = true;
+             inclusiveEnd: bool = false): seq[Selection] =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:
@@ -309,8 +310,13 @@ proc delete*(self: TextDocumentEditor; selections: seq[Selection];
       record
     else:
       record.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      inclusiveEnd
+    else:
+      inclusiveEnd.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_delete_seq_Selection_TextDocumentEditor_seq_Selection_bool_bool_wasm(
+  let res {.used.} = editor_text_delete_seq_Selection_TextDocumentEditor_seq_Selection_bool_bool_bool_wasm(
       argsJsonString.cstring)
   result = parseJson($res).jsonTo(typeof(result))
 
@@ -517,9 +523,10 @@ proc redo*(self: TextDocumentEditor) =
       argsJsonString.cstring)
 
 
-proc editor_text_copy_void_TextDocumentEditor_string_wasm(arg: cstring): cstring {.
+proc editor_text_copy_void_TextDocumentEditor_string_bool_wasm(arg: cstring): cstring {.
     importc.}
-proc copy*(self: TextDocumentEditor; register: string = "") =
+proc copy*(self: TextDocumentEditor; register: string = "";
+           inclusiveEnd: bool = false) =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:
@@ -531,8 +538,13 @@ proc copy*(self: TextDocumentEditor; register: string = "") =
       register
     else:
       register.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      inclusiveEnd
+    else:
+      inclusiveEnd.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_copy_void_TextDocumentEditor_string_wasm(
+  let res {.used.} = editor_text_copy_void_TextDocumentEditor_string_bool_wasm(
       argsJsonString.cstring)
 
 

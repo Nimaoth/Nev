@@ -52,9 +52,10 @@ proc insert*(self: TextDocumentEditor; selections: seq[Selection]; text: string;
   editor_text_insert_seq_Selection_TextDocumentEditor_seq_Selection_string_bool_bool_impl(
       self, selections, text, notify, record)
 proc delete*(self: TextDocumentEditor; selections: seq[Selection];
-             notify: bool = true; record: bool = true): seq[Selection] =
-  editor_text_delete_seq_Selection_TextDocumentEditor_seq_Selection_bool_bool_impl(
-      self, selections, notify, record)
+             notify: bool = true; record: bool = true;
+             inclusiveEnd: bool = false): seq[Selection] =
+  editor_text_delete_seq_Selection_TextDocumentEditor_seq_Selection_bool_bool_bool_impl(
+      self, selections, notify, record, inclusiveEnd)
 proc selectPrev*(self: TextDocumentEditor) =
   editor_text_selectPrev_void_TextDocumentEditor_impl(self)
 proc selectNext*(self: TextDocumentEditor) =
@@ -82,8 +83,10 @@ proc undo*(self: TextDocumentEditor) =
   editor_text_undo_void_TextDocumentEditor_impl(self)
 proc redo*(self: TextDocumentEditor) =
   editor_text_redo_void_TextDocumentEditor_impl(self)
-proc copy*(self: TextDocumentEditor; register: string = "") =
-  editor_text_copy_void_TextDocumentEditor_string_impl(self, register)
+proc copy*(self: TextDocumentEditor; register: string = "";
+           inclusiveEnd: bool = false) =
+  editor_text_copy_void_TextDocumentEditor_string_bool_impl(self, register,
+      inclusiveEnd)
 proc paste*(self: TextDocumentEditor; register: string = "") =
   editor_text_paste_void_TextDocumentEditor_string_impl(self, register)
 proc scrollText*(self: TextDocumentEditor; amount: float32) =

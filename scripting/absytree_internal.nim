@@ -42,9 +42,9 @@ proc editor_text_insert_seq_Selection_TextDocumentEditor_seq_Selection_string_bo
     self: TextDocumentEditor; selections: seq[Selection]; text: string;
     notify: bool = true; record: bool = true): seq[Selection] =
   discard
-proc editor_text_delete_seq_Selection_TextDocumentEditor_seq_Selection_bool_bool_impl*(
+proc editor_text_delete_seq_Selection_TextDocumentEditor_seq_Selection_bool_bool_bool_impl*(
     self: TextDocumentEditor; selections: seq[Selection]; notify: bool = true;
-    record: bool = true): seq[Selection] =
+    record: bool = true; inclusiveEnd: bool = false): seq[Selection] =
   discard
 proc editor_text_selectPrev_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
@@ -81,8 +81,8 @@ proc editor_text_undo_void_TextDocumentEditor_impl*(self: TextDocumentEditor) =
   discard
 proc editor_text_redo_void_TextDocumentEditor_impl*(self: TextDocumentEditor) =
   discard
-proc editor_text_copy_void_TextDocumentEditor_string_impl*(
-    self: TextDocumentEditor; register: string = "") =
+proc editor_text_copy_void_TextDocumentEditor_string_bool_impl*(
+    self: TextDocumentEditor; register: string = ""; inclusiveEnd: bool = false) =
   discard
 proc editor_text_paste_void_TextDocumentEditor_string_impl*(
     self: TextDocumentEditor; register: string = "") =

@@ -184,7 +184,7 @@ proc renderLine*(
 
             if addBackgroundAsChildren:
               # Add separate background colors for selections/highlights
-              while colorIndex < backgroundColors.high and backgroundColors[colorIndex].first < startRune.RuneIndex + partRuneLen:
+              while colorIndex <= backgroundColors.high and backgroundColors[colorIndex].first < startRune.RuneIndex + partRuneLen:
                 let x = max(0.0, backgroundColors[colorIndex].first.float - startRune.float) * builder.charWidth
                 let xw = min(partRuneLen.float, backgroundColors[colorIndex].last.float - startRune.float) * builder.charWidth
                 if backgroundColor != backgroundColors[colorIndex].color:
@@ -255,7 +255,8 @@ proc renderLine*(
       if curs == lineOriginal.len:
         result.add (subLine, "", rect(lastPartXW, 0, builder.charWidth, builder.textHeight), (line.index, curs))
 
-proc blendColorRanges(colors: var seq[tuple[first: RuneIndex, last: RuneIndex, color: Color]], ranges: var seq[tuple[first: RuneIndex, last: RuneIndex]], color: Color) =
+proc blendColorRanges(colors: var seq[tuple[first: RuneIndex, last: RuneIndex, color: Color]], ranges: var seq[tuple[first: RuneIndex, last: RuneIndex]], color: Color, inclusive: bool) =
+  let inclusiveOffset = if inclusive: 1.RuneCount else: 0.RuneCount
   for s in ranges.mitems:
     var colorIndex = 0
     for i in 0..colors.high:
@@ -263,17 +264,17 @@ proc blendColorRanges(colors: var seq[tuple[first: RuneIndex, last: RuneIndex, c
         colorIndex = i
         break
 
-    while colorIndex <= colors.high and colors[colorIndex].last > s.first and colors[colorIndex].first < s.last and s.first != s.last:
+    while colorIndex <= colors.high and colors[colorIndex].last > s.first and colors[colorIndex].first < s.last + inclusiveOffset and s.first != s.last + inclusiveOffset:
       let lastIndex = colors[colorIndex].last
       colors[colorIndex].last = s.first
 
-      if lastIndex < s.last:
+      if lastIndex < s.last + inclusiveOffset:
         colors.insert (s.first, lastIndex, colors[colorIndex].color.blendNormal(color)), colorIndex + 1
         s.first = lastIndex
         inc colorIndex
       else:
-        colors.insert (s.first, s.last, colors[colorIndex].color.blendNormal(color)), colorIndex + 1
-        colors.insert (s.last, lastIndex, colors[colorIndex].color), colorIndex + 2
+        colors.insert (s.first, s.last + inclusiveOffset, colors[colorIndex].color.blendNormal(color)), colorIndex + 1
+        colors.insert (s.last + inclusiveOffset, lastIndex, colors[colorIndex].color), colorIndex + 2
         break
 
       inc colorIndex
@@ -289,6 +290,8 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     flags.incl SizeToContentY
   else:
     flags.incl FillY
+
+  let inclusive = getOption[bool](app, "editor.text.inclusive-selection", false)
 
   let lineNumbers = self.lineNumbers.get getOption[LineNumbers](app, "editor.text.line-numbers", LineNumbers.Absolute)
   let charWidth = builder.charWidth
@@ -378,8 +381,8 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       highlightsClampedOnLine.sort((a, b) => cmp(a.first, b.first), Ascending)
 
       var colors: seq[tuple[first: RuneIndex, last: RuneIndex, color: Color]] = @[(0.RuneIndex, self.document.lines[i].runeLen.RuneIndex, backgroundColor.withAlpha(1))]
-      blendColorRanges(colors, highlightsClampedOnLine, highlightColor)
-      blendColorRanges(colors, selectionsClampedOnLine, selectionColor)
+      blendColorRanges(colors, highlightsClampedOnLine, highlightColor, inclusive)
+      blendColorRanges(colors, selectionsClampedOnLine, selectionColor, inclusive)
 
       var cursorsPerLine: seq[int]
       for s in self.selections:

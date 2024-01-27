@@ -145,6 +145,8 @@ proc clampSelection*(self: TextDocumentEditor) =
   self.selections = self.clampAndMergeSelections(self.selectionsInternal)
   self.markDirty()
 
+func useInclusiveSelections*(self: TextDocumentEditor): bool = self.configProvider.getValue("editor.text.inclusive-selection", false)
+
 proc startBlinkCursorTask(self: TextDocumentEditor) =
   if not self.blinkCursor:
     return
@@ -546,8 +548,8 @@ proc invertSelection(self: TextDocumentEditor) {.expose("editor.text").} =
 proc insert(self: TextDocumentEditor, selections: seq[Selection], text: string, notify: bool = true, record: bool = true): seq[Selection] {.expose("editor.text").} =
   return self.document.insert(selections, self.selections, [text], notify, record)
 
-proc delete(self: TextDocumentEditor, selections: seq[Selection], notify: bool = true, record: bool = true): seq[Selection] {.expose("editor.text").} =
-  return self.document.delete(selections, self.selections, notify, record)
+proc delete(self: TextDocumentEditor, selections: seq[Selection], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] {.expose("editor.text").} =
+  return self.document.delete(selections, self.selections, notify, record, inclusiveEnd=inclusiveEnd)
 
 proc selectPrev(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.selectionHistory.len > 0:
@@ -709,7 +711,7 @@ proc unindent*(self: TextDocumentEditor) {.expose("editor.text").} =
     indentSelections.add ((l, 0), (l, min(self.document.indentStyle.indentColumns, firstNonWhitespace)))
 
   var selections = self.selections
-  discard self.document.delete(indentSelections.normalized, self.selections)
+  discard self.document.delete(indentSelections.normalized, self.selections, inclusiveEnd=self.useInclusiveSelections)
 
   for s in selections.mitems:
     if s.first.line in linesToIndent:
@@ -728,17 +730,17 @@ proc redo*(self: TextDocumentEditor) {.expose("editor.text").} =
     self.selections = selections
     self.scrollToCursor(Last)
 
-proc copyAsync*(self: TextDocumentEditor, register: string): Future[void] {.async.} =
+proc copyAsync*(self: TextDocumentEditor, register: string, inclusiveEnd: bool): Future[void] {.async.} =
   var text = ""
   for i, selection in self.selections:
     if i > 0:
       text.add "\n"
-    text.add self.document.contentString(selection)
+    text.add self.document.contentString(selection, inclusiveEnd)
 
   self.app.setRegisterText(text, register).await
 
-proc copy*(self: TextDocumentEditor, register: string = "") {.expose("editor.text").} =
-  asyncCheck self.copyAsync(register)
+proc copy*(self: TextDocumentEditor, register: string = "", inclusiveEnd: bool = false) {.expose("editor.text").} =
+  asyncCheck self.copyAsync(register, inclusiveEnd)
 
 proc pasteAsync*(self: TextDocumentEditor, register: string): Future[void] {.async.} =
   let text = self.app.getRegisterText(register).await
@@ -915,7 +917,7 @@ proc deleteLeft*(self: TextDocumentEditor) {.expose("editor.text").} =
   for i, selection in selections:
     if selection.isEmpty:
       selections[i] = (self.doMoveCursorColumn(selection.first, -1), selection.first)
-  self.selections = self.document.delete(selections, self.selections)
+  self.selections = self.document.delete(selections, self.selections, inclusiveEnd=self.useInclusiveSelections)
   self.updateTargetColumn(Last)
 
 proc deleteRight*(self: TextDocumentEditor) {.expose("editor.text").} =
@@ -923,7 +925,7 @@ proc deleteRight*(self: TextDocumentEditor) {.expose("editor.text").} =
   for i, selection in selections:
     if selection.isEmpty:
       selections[i] = (selection.first, self.doMoveCursorColumn(selection.first, 1))
-  self.selections = self.document.delete(selections, self.selections)
+  self.selections = self.document.delete(selections, self.selections, inclusiveEnd=self.useInclusiveSelections)
   self.updateTargetColumn(Last)
 
 proc getCommandCount*(self: TextDocumentEditor): int {.expose("editor.text").} =
@@ -1162,7 +1164,7 @@ proc deleteMove*(self: TextDocumentEditor, move: string, inside: bool = false, w
       self.getCursor(self.getSelectionForMove(s.last, move, count), which)
     ))
 
-  self.selections = self.document.delete(selections, self.selections)
+  self.selections = self.document.delete(selections, self.selections, inclusiveEnd=self.useInclusiveSelections)
   self.scrollToCursor(Last)
   self.updateTargetColumn(Last)
 
@@ -1210,7 +1212,7 @@ proc changeMove*(self: TextDocumentEditor, move: string, inside: bool = false, w
       self.getCursor(self.getSelectionForMove(s.last, move, count), which)
     ))
 
-  self.selections = self.document.delete(selections, self.selections)
+  self.selections = self.document.delete(selections, self.selections, inclusiveEnd=self.useInclusiveSelections)
   self.scrollToCursor(Last)
   self.updateTargetColumn(Last)
 
