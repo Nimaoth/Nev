@@ -416,7 +416,8 @@ proc moveSelectionEnd(editor: TextDocumentEditor, move: string, backwards: bool 
               break
             else:
               continue
-          if editor.getLine(selection.last.line)[selection.last.column] notin Whitespace:
+          if selection.last.column < editor.lineLength(selection.last.line) and
+              editor.getLine(selection.last.line)[selection.last.column] notin Whitespace:
             res = cursor
             break
       res.toSelection(it, which)
@@ -532,7 +533,14 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   setModeChangedHandler proc(editor, oldMode, newMode: auto) =
     # infof"vim: handle mode change {oldMode} -> {newMode}"
-    if newMode != "normal":
+    if newMode == "normal":
+      if not isReplayingCommands():
+        stopRecordingCommands(".")
+    else:
+      if oldMode == "normal" and not isReplayingCommands():
+        editor.recordCurrentCommand()
+        setRegisterText("", ".")
+        startRecordingCommands(".")
       editor.clearCurrentCommandHistory(retainLast=true)
 
     if newMode == "visual-line":
@@ -566,6 +574,9 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   addTextCommandBlock "", "<C-e>": editor.setMode("normal")
   addTextCommandBlock "", "<ESCAPE>": editor.setMode("normal")
+
+  addTextCommandBlock "", "s": replayCommands(".")
+  addTextCommandBlock "", ".": replayCommands(".")
 
   # windowing
   proc defineWindowingCommands(prefix: string) =
@@ -623,11 +634,15 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   addSubCommandWithCount "", "move", "h", "vim-move-cursor-column", -1
   addSubCommandWithCount "", "move", "<LEFT>", "vim-move-cursor-column", -1
-  addSubCommandWithCount "", "move", "<BACKSPACE>", "vim-move-cursor-column", -1
+
+  # todo: this clashes with insert mode because it ises <move> and binds <BACKSPACE> directly
+  # addSubCommandWithCount "", "move", "<BACKSPACE>", "vim-move-cursor-column", -1
 
   addSubCommandWithCount "", "move", "l", "vim-move-cursor-column", 1
   addSubCommandWithCount "", "move", "<RIGHT>", "vim-move-cursor-column", 1
-  addSubCommandWithCount "", "move", "<SPACE>", "vim-move-cursor-column", 1
+
+  # todo: this clashes with insert mode because it ises <move> and binds <SPACE> directly
+  # addSubCommandWithCount "", "move", "<SPACE>", "vim-move-cursor-column", 1
 
   addSubCommand "", "move", "0", "vim-move-first", "line"
   addSubCommand "", "move", "<HOME>", "vim-move-first", "line"
@@ -654,7 +669,8 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   addSubCommandWithCount "", "move", "j", "vim-move-cursor-line", 1
   addSubCommandWithCount "", "move", "<DOWN>", "vim-move-cursor-line", 1
-  addSubCommandWithCount "", "move", "<ENTER>", "vim-move-cursor-line", 1
+  # todo: this clashes with insert mode because it ises <move> and binds <ENTER> directly
+  # addSubCommandWithCount "", "move", "<ENTER>", "vim-move-cursor-line", 1
   addSubCommandWithCount "", "move", "<C-n>", "vim-move-cursor-line", 1
   addSubCommandWithCount "", "move", "<C-j>", "vim-move-cursor-line", 1
 
@@ -759,26 +775,27 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   # Mode switches
   addTextCommandBlock "normal", "a":
-    editor.selections = editor.selections.mapIt(editor.doMoveCursorColumn(it.last, 1).toSelection)
+    editor.selections = editor.selections.mapIt(editor.doMoveCursorColumn(it.last, 1, wrap=false).toSelection)
     editor.setMode "insert"
   addTextCommandBlock "", "A":
-    editor.moveLast "line"
+    editor.moveLast "line", Both
     editor.setMode "insert"
-  addTextCommand "normal", "i", "set-mode", "insert"
+  addTextCommandBlock "normal", "i":
+    editor.setMode "insert"
   addTextCommandBlock "", "I":
-    editor.moveFirst "line-no-indent"
+    editor.moveFirst "line-no-indent", Both
     editor.setMode "insert"
   addTextCommandBlock "normal", "gI":
-    editor.moveFirst "line"
+    editor.moveFirst "line", Both
     editor.setMode "insert"
 
   addTextCommandBlock "normal", "o":
-    editor.moveLast "line"
+    editor.moveLast "line", Both
     editor.insertText "\n"
     editor.setMode "insert"
 
   addTextCommandBlock "normal", "O":
-    editor.moveFirst "line"
+    editor.moveFirst "line", Both
     editor.insertText "\n"
     editor.vimMoveCursorLine -1
     editor.setMode "insert"
@@ -879,6 +896,7 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   addTextCommand "insert", "<C-t>", "indent"
   addTextCommand "insert", "<C-d>", "unindent"
+  addTextCommand "insert", "<move>", "vim-select-last <move>"
 
   # Visual mode
   addTextCommandBlock "", "v":
