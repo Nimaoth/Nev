@@ -2233,7 +2233,7 @@ proc recordCommand*(self: App, command: string, args: string) =
     self.registers[register].text.add command & " " & args
 
 proc handleAction(self: App, action: string, arg: string, record: bool): bool =
-  log(lvlInfo, "Action '$1 $2'" % [action, arg])
+  # log(lvlInfo, "Action '$1 $2'" % [action, arg])
 
   if record:
     self.recordCommand(action, arg)

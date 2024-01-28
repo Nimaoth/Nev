@@ -219,7 +219,7 @@ func contentString*(self: TextDocument, selection: Selection, inclusiveEnd: bool
   let (first, last) = selection.normalized
 
   let lastLineLen = self.lines[last.line].len
-  let lastColumn = if inclusiveEnd:
+  let lastColumn = if inclusiveEnd and self.lines[last.line].len > 0:
     self.lines[last.line].nextRuneStart(min(last.column, lastLineLen - 1))
   else:
     last.column
