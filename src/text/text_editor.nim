@@ -1813,6 +1813,8 @@ method injectDependencies*(self: TextDocumentEditor, app: AppInterface) =
     onInput:
       self.handleInput input, record=true
 
+  self.setMode(self.configProvider.getValue("editor.text.default-mode", ""))
+
 proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
   self.clampSelection()
   self.updateSearchResults()
@@ -1851,13 +1853,11 @@ proc newTextEditor*(document: TextDocument, app: AppInterface, configProvider: C
   self.init()
   if self.document.lines.len == 0:
     self.document.lines = @[""]
+
+  self.startBlinkCursorTask()
   self.injectDependencies(app)
   discard document.textChanged.subscribe (_: TextDocument) => self.handleTextDocumentTextChanged()
   discard document.onLoaded.subscribe (_: TextDocument) => self.handleTextDocumentLoaded()
-
-  self.startBlinkCursorTask()
-
-  self.setMode(configProvider.getValue("editor.text.default-mode", ""))
 
   return self
 

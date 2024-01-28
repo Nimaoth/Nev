@@ -2163,23 +2163,32 @@ proc getRegisterText*(self: App, register: string): string {.expose("editor").} 
   return ""
 
 proc startRecordingKeys*(self: App, register: string) {.expose("editor").} =
+  log lvlInfo, &"Start recording keys into '{register}'"
   self.recordingKeys.incl register
 
 proc stopRecordingKeys*(self: App, register: string) {.expose("editor").} =
+  log lvlInfo, &"Stop recording keys into '{register}'"
   self.recordingKeys.excl register
 
 proc startRecordingCommands*(self: App, register: string) {.expose("editor").} =
+  log lvlInfo, &"Start recording commands into '{register}'"
   self.recordingCommands.incl register
 
 proc stopRecordingCommands*(self: App, register: string) {.expose("editor").} =
+  log lvlInfo, &"Stop recording commands into '{register}'"
   self.recordingCommands.excl register
 
 proc isReplayingCommands*(self: App): bool {.expose("editor").} = self.bIsReplayingCommands
 proc isReplayingKeys*(self: App): bool {.expose("editor").} = self.bIsReplayingKeys
+proc isRecordingCommands*(self: App, registry: string): bool {.expose("editor").} = self.recordingCommands.contains(registry)
 
 proc replayCommands*(self: App, register: string) {.expose("editor").} =
   if not self.registers.contains(register) or self.registers[register].kind != RegisterKind.Text:
     log lvlError, fmt"No commands recorded in register '{register}'"
+    return
+
+  if self.bIsReplayingCommands:
+    log lvlError, fmt"replayCommands '{register}': Already replaying commands"
     return
 
   log lvlInfo, &"replayCommands '{register}':\n{self.registers[register].text}"
@@ -2194,6 +2203,10 @@ proc replayCommands*(self: App, register: string) {.expose("editor").} =
 proc replayKeys*(self: App, register: string) {.expose("editor").} =
   if not self.registers.contains(register) or self.registers[register].kind != RegisterKind.Text:
     log lvlError, fmt"No commands recorded in register '{register}'"
+    return
+
+  if self.bIsReplayingKeys:
+    log lvlError, fmt"replayKeys '{register}': Already replaying keys"
     return
 
   log lvlInfo, &"replayKeys '{register}': {self.registers[register].text}"

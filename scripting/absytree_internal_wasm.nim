@@ -473,6 +473,7 @@ proc editor_startRecordingCommands_void_App_string_impl(register: string)  {.imp
 proc editor_stopRecordingCommands_void_App_string_impl(register: string)  {.importc.}
 proc editor_isReplayingCommands_bool_App_impl(): bool  {.importc.}
 proc editor_isReplayingKeys_bool_App_impl(): bool  {.importc.}
+proc editor_isRecordingCommands_bool_App_string_impl(registry: string): bool  {.importc.}
 proc editor_replayCommands_void_App_string_impl(register: string)  {.importc.}
 proc editor_replayKeys_void_App_string_impl(register: string)  {.importc.}
 proc editor_inputKeys_void_App_string_impl(input: string)  {.importc.}

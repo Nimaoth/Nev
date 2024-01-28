@@ -103,3 +103,17 @@ iterator items*(self: BitSet): int =
     for bitIndex in 0..<ElemSize:
       if (word and (1.ElemType shl bitIndex)) != 0:
         yield wordIndex * ElemSize + bitIndex
+
+iterator pairs*(self: BitSet): (int, int) =
+  var i = 0
+  for value in self:
+    yield (i, value)
+    inc i
+
+proc `$`*(x: BitSet): string =
+  result.add "{"
+  for i, value in x:
+    if i > 0:
+      result.add ", "
+    result.add $value
+  result.add "}"
