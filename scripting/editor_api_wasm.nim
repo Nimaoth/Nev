@@ -1303,3 +1303,149 @@ proc scriptSetCallback*(path: string; id: int) =
   let res {.used.} = editor_scriptSetCallback_void_string_int_wasm(
       argsJsonString.cstring)
 
+
+proc editor_setRegisterText_void_App_string_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc setRegisterText*(text: string; register: string = "") =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      text
+    else:
+      text.toJson()
+  argsJson.add block:
+    when string is JsonNode:
+      register
+    else:
+      register.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_setRegisterText_void_App_string_string_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_getRegisterText_string_App_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc getRegisterText*(register: string): string =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      register
+    else:
+      register.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_getRegisterText_string_App_string_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_startRecordingKeys_void_App_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc startRecordingKeys*(register: string) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      register
+    else:
+      register.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_startRecordingKeys_void_App_string_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_stopRecordingKeys_void_App_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc stopRecordingKeys*(register: string) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      register
+    else:
+      register.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_stopRecordingKeys_void_App_string_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_startRecordingCommands_void_App_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc startRecordingCommands*(register: string) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      register
+    else:
+      register.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_startRecordingCommands_void_App_string_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_stopRecordingCommands_void_App_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc stopRecordingCommands*(register: string) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      register
+    else:
+      register.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_stopRecordingCommands_void_App_string_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_isReplayingCommands_bool_App_wasm(arg: cstring): cstring {.importc.}
+proc isReplayingCommands*(): bool =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_isReplayingCommands_bool_App_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_isReplayingKeys_bool_App_wasm(arg: cstring): cstring {.importc.}
+proc isReplayingKeys*(): bool =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_isReplayingKeys_bool_App_wasm(argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_replayCommands_void_App_string_wasm(arg: cstring): cstring {.importc.}
+proc replayCommands*(register: string) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      register
+    else:
+      register.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_replayCommands_void_App_string_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_replayKeys_void_App_string_wasm(arg: cstring): cstring {.importc.}
+proc replayKeys*(register: string) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      register
+    else:
+      register.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_replayKeys_void_App_string_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_inputKeys_void_App_string_wasm(arg: cstring): cstring {.importc.}
+proc inputKeys*(input: string) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      input
+    else:
+      input.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_inputKeys_void_App_string_wasm(
+      argsJsonString.cstring)
+

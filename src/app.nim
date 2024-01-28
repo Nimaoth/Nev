@@ -94,7 +94,11 @@ type App* = ref object
   lastBounds*: Rect
   closeRequested*: bool
 
-  registers*: Table[string, Register]
+  registers: Table[string, Register]
+  recordingKeys: seq[string]
+  recordingCommands: seq[string]
+  bIsReplayingKeys: bool = false
+  bIsReplayingCommands: bool = false
 
   eventHandlerConfigs: Table[string, EventHandlerConfig]
 
@@ -175,8 +179,9 @@ implTrait ConfigProvider, App:
 
 proc handleLog(self: App, level: Level, args: openArray[string])
 proc getEventHandlerConfig*(self: App, context: string): EventHandlerConfig
-proc setRegisterText*(self: App, text: string, register: string = ""): Future[void] {.async.}
-proc getRegisterText*(self: App, register: string = ""): Future[string] {.async.}
+proc setRegisterTextAsync*(self: App, text: string, register: string = ""): Future[void] {.async.}
+proc getRegisterTextAsync*(self: App, register: string = ""): Future[string] {.async.}
+proc recordCommand*(self: App, command: string, args: string)
 proc openWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder): Option[DocumentEditor]
 proc openFile*(self: App, path: string, app: bool = false): Option[DocumentEditor]
 proc handleUnknownDocumentEditorAction*(self: App, editor: DocumentEditor, action: string, args: JsonNode): EventResponse
@@ -202,8 +207,9 @@ implTrait AppInterface, App:
 
   getEventHandlerConfig(EventHandlerConfig, App, string)
 
-  setRegisterText(Future[void], App, string, string)
-  getRegisterText(Future[string], App, string)
+  setRegisterTextAsync(Future[void], App, string, string)
+  getRegisterTextAsync(Future[string], App, string)
+  recordCommand(void, App, string, string)
 
   proc configProvider*(self: App): ConfigProvider = self.asConfigProvider
 
@@ -318,14 +324,6 @@ proc invokeAnyCallback*(self: App, context: string, args: JsonNode): JsonNode =
       log(lvlError, getCurrentException().getStackTrace())
       return nil
 
-proc handleAction(action: string, arg: string): EventResponse =
-  log(lvlInfo, "event: " & action & " - " & arg)
-  return Handled
-
-proc handleInput(input: string): EventResponse =
-  log(lvlInfo, "input: " & input)
-  return Handled
-
 proc getText(register: var Register): string =
   case register.kind
   of Text:
@@ -409,7 +407,7 @@ proc handleModeChanged*(self: App, editor: DocumentEditor, oldMode: string, newM
     log(lvlError, fmt"Failed to run script handleDocumentModeChanged '{oldMode} -> {newMode}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
 
-proc handleAction(self: App, action: string, arg: string): bool
+proc handleAction(self: App, action: string, arg: string, record: bool): bool
 proc getFlag*(self: App, flag: string, default: bool = false): bool
 
 proc createEditorForDocument(self: App, document: Document): DocumentEditor =
@@ -801,7 +799,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   self.eventHandler = eventHandler(self.getEventHandlerConfig("editor")):
     onAction:
-      if self.handleAction(action, arg):
+      if self.handleAction(action, arg, record=true):
         Handled
       else:
         Ignored
@@ -810,7 +808,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   self.commandLineEventHandlerHigh = eventHandler(self.getEventHandlerConfig("command-line-high")):
     onAction:
-      if self.handleAction(action, arg):
+      if self.handleAction(action, arg, record=true):
         Handled
       else:
         Ignored
@@ -819,7 +817,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   self.commandLineEventHandlerLow = eventHandler(self.getEventHandlerConfig("command-line-low")):
     onAction:
-      if self.handleAction(action, arg):
+      if self.handleAction(action, arg, record=true):
         Handled
       else:
         Ignored
@@ -1386,7 +1384,7 @@ proc executeCommandLine*(self: App): bool {.expose("editor").} =
   if arg.startsWith("\\"):
     arg = $newJString(arg[1..^1])
 
-  return self.handleAction(action, arg)
+  return self.handleAction(action, arg, record=true)
 
 proc writeFile*(self: App, path: string = "", app: bool = false) {.expose("editor").} =
   defer:
@@ -1757,7 +1755,7 @@ proc setMode*(self: App, mode: string) {.expose("editor").} =
     let config = self.getModeConfig(mode)
     self.modeEventHandler = eventHandler(config):
       onAction:
-        if self.handleAction(action, arg):
+        if self.handleAction(action, arg, record=true):
           Handled
         else:
           Ignored
@@ -1858,6 +1856,11 @@ proc handleScroll*(self: App, scroll: Vec2, mousePosWindow: Vec2, modifiers: Mod
 
 proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers) =
   # debugf"handleKeyPress {inputToString(input, modifiers)}"
+  for register in self.recordingKeys:
+    if not self.registers.contains(register) or self.registers[register].kind != RegisterKind.Text:
+      self.registers[register] = Register(kind: Text, text: "")
+    self.registers[register].text.add inputToString(input, modifiers)
+
   if self.currentEventHandlers.handleEvent(input, modifiers):
     self.platform.preventDefault()
 
@@ -1876,7 +1879,7 @@ proc handleDropFile*(self: App, path, content: string) =
 proc scriptRunAction*(action: string, arg: string) {.expose("editor").} =
   if gEditor.isNil:
     return
-  discard gEditor.handleAction(action, arg)
+  discard gEditor.handleAction(action, arg, record=false)
 
 proc scriptLog*(message: string) {.expose("editor").} =
   logNoCategory lvlInfo, fmt"[script] {message}"
@@ -2005,7 +2008,7 @@ proc scriptRunActionFor*(editorId: EditorId, action: string, arg: string) {.expo
   defer:
     gEditor.platform.requestRender()
   if gEditor.getEditorForId(editorId).getSome(editor):
-    discard editor.handleAction(action, arg)
+    discard editor.handleAction(action, arg, record=false)
   elif gEditor.getPopupForId(editorId).getSome(popup):
     discard popup.eventHandler.handleAction(action, arg)
 
@@ -2130,14 +2133,12 @@ proc scriptSetCallback*(path: string, id: int) {.expose("editor").} =
     return
   gEditor.callbacks[path] = id
 
-proc setRegisterText*(self: App, text: string, register: string = ""): Future[void] {.async.} =
+proc setRegisterTextAsync*(self: App, text: string, register: string = ""): Future[void] {.async.} =
   self.registers[register] = Register(kind: Text, text: text)
   if register.len == 0:
     setSystemClipboardText(text)
 
-proc getRegisterText*(self: App, register: string = ""): Future[string] {.async.} =
-  # For some reason returning string causes a crash, the returned pointer is just different at the call site for some reason.
-  # var string parameter seems to fix it
+proc getRegisterTextAsync*(self: App, register: string = ""): Future[string] {.async.} =
   if register.len == 0:
     let text = getSystemClipboardText().await
     if text.isSome:
@@ -2148,16 +2149,86 @@ proc getRegisterText*(self: App, register: string = ""): Future[string] {.async.
 
   return ""
 
+proc setRegisterText*(self: App, text: string, register: string = "") {.expose("editor").} =
+  self.registers[register] = Register(kind: Text, text: text)
+
+proc getRegisterText*(self: App, register: string): string {.expose("editor").} =
+  if register.len == 0:
+    log lvlError, fmt"getRegisterText: Register name must not be empty. Use getRegisterTextAsync() instead."
+    return ""
+
+  if self.registers.contains(register):
+    return self.registers[register].getText()
+
+  return ""
+
+proc startRecordingKeys*(self: App, register: string) {.expose("editor").} =
+  self.recordingKeys.incl register
+
+proc stopRecordingKeys*(self: App, register: string) {.expose("editor").} =
+  self.recordingKeys.excl register
+
+proc startRecordingCommands*(self: App, register: string) {.expose("editor").} =
+  self.recordingCommands.incl register
+
+proc stopRecordingCommands*(self: App, register: string) {.expose("editor").} =
+  self.recordingCommands.excl register
+
+proc isReplayingCommands*(self: App): bool {.expose("editor").} = self.bIsReplayingCommands
+proc isReplayingKeys*(self: App): bool {.expose("editor").} = self.bIsReplayingKeys
+
+proc replayCommands*(self: App, register: string) {.expose("editor").} =
+  if not self.registers.contains(register) or self.registers[register].kind != RegisterKind.Text:
+    log lvlError, fmt"No commands recorded in register '{register}'"
+    return
+
+  log lvlInfo, &"replayCommands '{register}':\n{self.registers[register].text}"
+  self.bIsReplayingCommands = true
+  defer:
+    self.bIsReplayingCommands = false
+
+  for command in self.registers[register].text.splitLines:
+    let (action, arg) = parseAction(command)
+    discard self.handleAction(action, arg, record=false)
+
+proc replayKeys*(self: App, register: string) {.expose("editor").} =
+  if not self.registers.contains(register) or self.registers[register].kind != RegisterKind.Text:
+    log lvlError, fmt"No commands recorded in register '{register}'"
+    return
+
+  log lvlInfo, &"replayKeys '{register}': {self.registers[register].text}"
+  self.bIsReplayingKeys = true
+  defer:
+    self.bIsReplayingKeys = false
+
+  for (inputCode, mods, _) in parseInputs(self.registers[register].text):
+    self.handleKeyPress(inputCode.a, mods)
+
+proc inputKeys*(self: App, input: string) {.expose("editor").} =
+  for (inputCode, mods, _) in parseInputs(input):
+    self.handleKeyPress(inputCode.a, mods)
+
 genDispatcher("editor")
 addGlobalDispatchTable "editor", genDispatchTable("editor")
 
-proc handleAction(self: App, action: string, arg: string): bool =
+proc recordCommand*(self: App, command: string, args: string) =
+  for register in self.recordingCommands:
+    if not self.registers.contains(register) or self.registers[register].kind != RegisterKind.Text:
+      self.registers[register] = Register(kind: Text, text: "")
+    if self.registers[register].text.len > 0:
+      self.registers[register].text.add "\n"
+    self.registers[register].text.add command & " " & args
+
+proc handleAction(self: App, action: string, arg: string, record: bool): bool =
   log(lvlInfo, "Action '$1 $2'" % [action, arg])
+
+  if record:
+    self.recordCommand(action, arg)
 
   if action.startsWith("."): # active action
     if self.currentView >= 0 and self.currentView < gEditor.views.len:
       let editor = self.views[gEditor.currentView].editor
-      return case editor.handleAction(action[1..^1], arg)
+      return case editor.handleAction(action[1..^1], arg, record=false)
       of Handled:
         true
       else:

@@ -225,3 +225,25 @@ proc scriptSetOptionString*(path: string; value: string) =
   editor_scriptSetOptionString_void_string_string_impl(path, value)
 proc scriptSetCallback*(path: string; id: int) =
   editor_scriptSetCallback_void_string_int_impl(path, id)
+proc setRegisterText*(text: string; register: string = "") =
+  editor_setRegisterText_void_App_string_string_impl(text, register)
+proc getRegisterText*(register: string): string =
+  editor_getRegisterText_string_App_string_impl(register)
+proc startRecordingKeys*(register: string) =
+  editor_startRecordingKeys_void_App_string_impl(register)
+proc stopRecordingKeys*(register: string) =
+  editor_stopRecordingKeys_void_App_string_impl(register)
+proc startRecordingCommands*(register: string) =
+  editor_startRecordingCommands_void_App_string_impl(register)
+proc stopRecordingCommands*(register: string) =
+  editor_stopRecordingCommands_void_App_string_impl(register)
+proc isReplayingCommands*(): bool =
+  editor_isReplayingCommands_bool_App_impl()
+proc isReplayingKeys*(): bool =
+  editor_isReplayingKeys_bool_App_impl()
+proc replayCommands*(register: string) =
+  editor_replayCommands_void_App_string_impl(register)
+proc replayKeys*(register: string) =
+  editor_replayKeys_void_App_string_impl(register)
+proc inputKeys*(input: string) =
+  editor_inputKeys_void_App_string_impl(input)

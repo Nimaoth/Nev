@@ -3154,13 +3154,13 @@ proc copyNodeAsync*(self: ModelDocumentEditor): Future[void] {.async.} =
     json = parentTargetCell.node.toJson
 
   if json.isNotNil:
-    self.app.setRegisterText($json, "").await
+    self.app.setRegisterTextAsync($json, "").await
 
 proc copyNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
   asyncCheck self.copyNodeAsync()
 
 proc getNodeFromRegister(self: ModelDocumentEditor, register: string): Future[seq[AstNode]] {.async.} =
-  let text = self.app.getRegisterText(register).await
+  let text = self.app.getRegisterTextAsync(register).await
   let json = text.parseJson
   var res = newSeq[AstNode]()
 
@@ -3603,7 +3603,7 @@ proc findDeclaration*(self: ModelDocumentEditor, global: bool) {.expose("editor.
 genDispatcher("editor.model")
 addActiveDispatchTable "editor.model", genDispatchTable("editor.model")
 
-method handleAction*(self: ModelDocumentEditor, action: string, arg: string): EventResponse =
+method handleAction*(self: ModelDocumentEditor, action: string, arg: string, record: bool): EventResponse =
   # log lvlInfo, fmt"[modeleditor]: Handle action {action}, '{arg}'"
   # defer:
   #   log lvlDebug, &"line: {self.cursor.targetCell.line}, cursor: {self.cursor},\ncell: {self.cursor.cell.dump()}\ntargetCell: {self.cursor.targetCell.dump()}"

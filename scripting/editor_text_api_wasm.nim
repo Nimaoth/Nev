@@ -54,9 +54,10 @@ proc screenLineCount*(self: TextDocumentEditor): int =
   result = parseJson($res).jsonTo(typeof(result))
 
 
-proc editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_wasm(
+proc editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_bool_wasm(
     arg: cstring): cstring {.importc.}
-proc doMoveCursorColumn*(self: TextDocumentEditor; cursor: Cursor; offset: int): Cursor =
+proc doMoveCursorColumn*(self: TextDocumentEditor; cursor: Cursor; offset: int;
+                         wrap: bool = true): Cursor =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:
@@ -73,8 +74,13 @@ proc doMoveCursorColumn*(self: TextDocumentEditor; cursor: Cursor; offset: int):
       offset
     else:
       offset.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      wrap
+    else:
+      wrap.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_wasm(
+  let res {.used.} = editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_bool_wasm(
       argsJsonString.cstring)
   result = parseJson($res).jsonTo(typeof(result))
 
@@ -1965,6 +1971,20 @@ proc enterChooseCursorMode*(self: TextDocumentEditor; action: string) =
       action.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_enterChooseCursorMode_void_TextDocumentEditor_string_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_recordCurrentCommand_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc recordCurrentCommand*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_recordCurrentCommand_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
 
 
