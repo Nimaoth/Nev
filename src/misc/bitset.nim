@@ -97,9 +97,9 @@ proc toBitSet*(values: openArray[int]): BitSet =
 
 iterator items*(self: BitSet): int =
   for wordIndex in 0..<self.len:
-    let word = self[wordIndex].int
+    let word = self[wordIndex]
     if word == 0:
       continue
     for bitIndex in 0..<ElemSize:
-      if (word and (1 shl bitIndex)) != 0:
+      if (word and (1.ElemType shl bitIndex)) != 0:
         yield wordIndex * ElemSize + bitIndex
