@@ -6,6 +6,8 @@ import misc/[timer, util, myjsonutils]
 infof"import vim keybindings"
 
 var vimMotionNextMode = initTable[EditorId, string]()
+var yankedLines: bool = false
+var selectLines: bool = false
 
 type VimTextObjectRange* = enum Inner, Outer, CurrentToEnd
 
@@ -48,6 +50,12 @@ proc getEnclosing(line: string, column: int, predicate: proc(c: char): bool): (i
     dec startColumn
   return (startColumn, endColumn)
 
+proc vimSelectLine(editor: TextDocumentEditor) {.expose("vim-select-line").} =
+  editor.selections = editor.selections.mapIt (if it.isBackwards:
+      ((it.first.line, editor.lineLength(it.first.line)), (it.last.line, 0))
+    else:
+      ((it.first.line, 0), (it.last.line, editor.lineLength(it.last.line))))
+
 proc vimSelectLastCursor(editor: TextDocumentEditor) {.expose("vim-select-last-cursor").} =
   # infof"vimSelectLastCursor"
   editor.selections = editor.selections.mapIt(it.last.toSelection)
@@ -65,23 +73,38 @@ proc vimSelect(editor: TextDocumentEditor, move: string, count: int = 1) {.expos
   for i in 0..<max(count, 1):
     editor.runAction(action, arg)
 
-proc vimDeleteSelection(editor: TextDocumentEditor) {.expose("vim-delete-selection").} =
-  editor.copy()
+proc extendSelectionToPreviousLine(editor: TextDocumentEditor) =
+  let old = editor.selections
+  editor.selections = editor.selections.mapIt (if it.isBackwards:
+      (it.first, editor.doMoveCursorColumn(it.last, -1))
+    else:
+      (editor.doMoveCursorColumn(it.first, -1), it.last))
+
+proc copySelection(editor: TextDocumentEditor): Selections =
+  yankedLines = selectLines
   let selections = editor.selections
-  editor.selections = editor.selections.mapIt(it.normalized.first.toSelection)
-  discard editor.delete(selections, inclusiveEnd=true)
+
+  if selectLines:
+    editor.extendSelectionToPreviousLine()
+
+  editor.copy(inclusiveEnd=true)
+  return selections
+
+proc vimDeleteSelection(editor: TextDocumentEditor) {.expose("vim-delete-selection").} =
+  let selections = editor.copySelection()
+  discard editor.delete(editor.selections, inclusiveEnd=true)
+  editor.selections = selections.mapIt(it.normalized.first.toSelection)
   editor.setMode "normal"
 
 proc vimChangeSelection*(editor: TextDocumentEditor) {.expose("vim-change-selection").} =
-  editor.copy()
-  let selections = editor.selections
-  editor.selections = editor.selections.mapIt(it.normalized.first.toSelection)
-  discard editor.delete(selections, inclusiveEnd=true)
+  let selections = editor.copySelection()
+  discard editor.delete(editor.selections, inclusiveEnd=true)
+  editor.selections = selections.mapIt(it.normalized.first.toSelection)
   editor.setMode "insert"
 
 proc vimYankSelection*(editor: TextDocumentEditor) {.expose("vim-yank-selection").} =
-  editor.copy(inclusiveEnd=true)
-  editor.selections = editor.selections.mapIt(it.normalized.first.toSelection)
+  let selections = editor.copySelection()
+  editor.selections = selections.mapIt(it.normalized.first.toSelection)
   editor.setMode "normal"
 
 proc vimSelectMove(editor: TextDocumentEditor, move: string, count: int = 1) {.expose("vim-select-move").} =
@@ -416,13 +439,18 @@ proc moveParagraph(editor: TextDocumentEditor, backwards: bool, count: int = 1) 
       res.toSelection(it, which)
     )
 
+  if selectLines:
+    editor.vimSelectLine()
+
   editor.scrollToCursor(Last)
 
 proc vimDeleteLeft*(editor: TextDocumentEditor) =
+  yankedLines = selectLines
   editor.copy()
   editor.deleteLeft()
 
 proc vimDeleteRight*(editor: TextDocumentEditor) =
+  yankedLines = selectLines
   editor.copy()
   editor.deleteRight()
 
@@ -430,15 +458,23 @@ expose "vim-delete-left", vimDeleteLeft
 
 proc vimMoveCursorColumn(editor: TextDocumentEditor, direction: int, count: int = 1) {.expose("vim-move-cursor-column").} =
   editor.moveCursorColumn(direction * max(count, 1))
+  if selectLines:
+    editor.vimSelectLine()
 
 proc vimMoveCursorLine(editor: TextDocumentEditor, direction: int, count: int = 1) {.expose("vim-move-cursor-line").} =
   editor.moveCursorLine(direction * max(count, 1))
+  if selectLines:
+    editor.vimSelectLine()
 
 proc vimMoveFirst(editor: TextDocumentEditor, move: string) {.expose("vim-move-first").} =
   editor.moveFirst(move)
+  if selectLines:
+    editor.vimSelectLine()
 
 proc vimMoveLast(editor: TextDocumentEditor, move: string) {.expose("vim-move-last").} =
   editor.moveLast(move)
+  if selectLines:
+    editor.vimSelectLine()
 
 proc vimMoveToEndOfLine(editor: TextDocumentEditor, count: int = 1) =
   infof"vimMoveToEndOfLine {count}"
@@ -460,10 +496,10 @@ proc vimMoveToStartOfLine(editor: TextDocumentEditor, count: int = 1) =
   editor.moveFirst "line-no-indent"
   editor.scrollToCursor Last
 
-var yankedLines: bool = false
 proc vimPaste(editor: TextDocumentEditor, register: string = "") {.expose("vim-paste").} =
+  infof"vimPaste {register}, lines: {yankedLines}"
   if yankedLines:
-    editor.moveLast "line"
+    editor.moveLast "line", Both
 
   editor.paste register
 
@@ -498,6 +534,11 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     # infof"vim: handle mode change {oldMode} -> {newMode}"
     if newMode != "normal":
       editor.clearCurrentCommandHistory(retainLast=true)
+
+    if newMode == "visual-line":
+      selectLines = true
+    else:
+      selectLines = false
 
     case newMode
     of "normal":
@@ -784,27 +825,20 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextObjectCommand "", "'", "vim-surround-'"
 
   addTextCommandBlock "", "dd":
-    yankedLines = true
-    editor.selectMove("line-next", true, SelectionCursor.Last)
-    editor.copy()
-    let selections = editor.selections
-    editor.selections = editor.selections.mapIt(it.first.toSelection)
-    discard editor.delete(selections)
+    selectLines = true
+    editor.vimSelectLine()
+    editor.vimDeleteSelection()
+    selectLines = false
 
   addTextCommandBlock "", "cc":
-    yankedLines = true
-    editor.selectMove("line-next", true, SelectionCursor.Last)
-    editor.copy()
-    let selections = editor.selections
-    editor.selections = editor.selections.mapIt(it.first.toSelection)
-    discard editor.delete(selections)
-    editor.setMode "insert"
+    editor.vimSelectLine()
+    editor.vimChangeSelection()
 
   addTextCommandBlock "", "yy":
-    yankedLines = true
-    editor.selectMove("line-next", true, SelectionCursor.Last)
-    editor.copy()
-    editor.selections = editor.selections.mapIt(it.first.toSelection)
+    selectLines = true
+    editor.vimSelectLine()
+    editor.vimYankSelection()
+    selectLines = false
 
   # # Deleting text
   addTextCommand "", "x", vimDeleteRight
@@ -863,3 +897,23 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommand "visual", "s", "vim-change-selection"
 
   addTextCommand "visual", "<?-count><text_object>", """vim-select-move <text_object> <#count>"""
+
+  # Visual line mode
+  addTextCommandBlock "", "V":
+    editor.setMode "visual-line"
+    editor.vimSelectLine()
+    # setOption "editor.text.vim-motion-action", ""
+    # vimMotionNextMode[editor.id] = "visual"
+    selectLines = true
+
+  setHandleInputs "editor.text.visual-line", false
+  setOption "editor.text.cursor.wide.visual-line", true
+  setOption "editor.text.cursor.movement.visual-line", "last"
+
+  addTextCommand "visual-line", "<move>", "vim-select <move>"
+  addTextCommand "visual-line", "y", "vim-yank-selection"
+  addTextCommand "visual-line", "d", "vim-delete-selection"
+  addTextCommand "visual-line", "c", "vim-change-selection"
+  addTextCommand "visual-line", "s", "vim-change-selection"
+
+  addTextCommand "visual-line", "<?-count><text_object>", """vim-select-move <text_object> <#count>"""
