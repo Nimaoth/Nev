@@ -41,6 +41,8 @@ proc getVimDefaultRegister*(): string =
   of "unnamedplus": return "+"
   else: return "\""
 
+proc getCurrentMacroRegister*(): string = getOption("editor.current-macro-register", "")
+
 proc getEnclosing(line: string, column: int, predicate: proc(c: char): bool): (int, int) =
   var startColumn = column
   var endColumn = column
@@ -61,74 +63,81 @@ proc vimSelectLastCursor(editor: TextDocumentEditor) {.expose("vim-select-last-c
   editor.selections = editor.selections.mapIt(it.last.toSelection)
 
 proc vimSelectLast(editor: TextDocumentEditor, move: string, count: int = 1) {.expose("vim-select-last").} =
-  infof"vimSelectLast '{move}' {count}"
+  # infof"vimSelectLast '{move}' {count}"
   let (action, arg) = move.parseAction
   for i in 0..<max(count, 1):
     editor.runAction(action, arg)
   editor.selections = editor.selections.mapIt(it.last.toSelection)
 
 proc vimSelect(editor: TextDocumentEditor, move: string, count: int = 1) {.expose("vim-select").} =
-  infof"vimSelect '{move}' {count}"
+  # infof"vimSelect '{move}' {count}"
   let (action, arg) = move.parseAction
   for i in 0..<max(count, 1):
     editor.runAction(action, arg)
 
-proc extendSelectionToPreviousLine(editor: TextDocumentEditor) =
-  let old = editor.selections
-  editor.selections = editor.selections.mapIt (if it.isBackwards:
-      (it.first, editor.doMoveCursorColumn(it.last, -1))
-    else:
-      (editor.doMoveCursorColumn(it.first, -1), it.last))
-
 proc copySelection(editor: TextDocumentEditor): Selections =
   yankedLines = selectLines
-  let selections = editor.selections
-
-  if selectLines:
-    editor.extendSelectionToPreviousLine()
-
   editor.copy(inclusiveEnd=true)
-  return selections
+  let selections = editor.selections
+  if selectLines:
+    editor.selections = editor.selections.mapIt (
+      if it.isBackwards:
+        if it.last.line > 0:
+          (it.first, editor.doMoveCursorColumn(it.last, -1))
+        elif it.first.line + 1 < editor.lineCount:
+          (editor.doMoveCursorColumn(it.first, 1), it.last)
+        else:
+          it
+      else:
+        if it.first.line > 0:
+          (editor.doMoveCursorColumn(it.first, -1), it.last)
+        elif it.last.line + 1 < editor.lineCount:
+          (it.first, editor.doMoveCursorColumn(it.last, 1))
+        else:
+          it
+    )
+
+  return selections.mapIt(it.normalized.first.toSelection)
 
 proc vimDeleteSelection(editor: TextDocumentEditor) {.expose("vim-delete-selection").} =
   let selections = editor.copySelection()
   discard editor.delete(editor.selections, inclusiveEnd=true)
-  editor.selections = selections.mapIt(it.normalized.first.toSelection)
+  editor.selections = selections
   editor.setMode "normal"
 
 proc vimChangeSelection*(editor: TextDocumentEditor) {.expose("vim-change-selection").} =
   let selections = editor.copySelection()
   discard editor.delete(editor.selections, inclusiveEnd=true)
-  editor.selections = selections.mapIt(it.normalized.first.toSelection)
+  editor.selections = selections
   editor.setMode "insert"
 
 proc vimYankSelection*(editor: TextDocumentEditor) {.expose("vim-yank-selection").} =
   let selections = editor.copySelection()
-  editor.selections = selections.mapIt(it.normalized.first.toSelection)
+  editor.selections = selections
   editor.setMode "normal"
 
 proc vimSelectMove(editor: TextDocumentEditor, move: string, count: int = 1) {.expose("vim-select-move").} =
-  infof"vimSelectMove '{move}' {count}"
+  # infof"vimSelectMove '{move}' {count}"
   let (action, arg) = move.parseAction
   for i in 0..<max(count, 1):
     editor.runAction(action, arg)
 
 proc vimDeleteMove(editor: TextDocumentEditor, move: string, count: int = 1) {.expose("vim-delete-move").} =
-  infof"vimDeleteMove '{move}' {count}"
+  # infof"vimDeleteMove '{move}' {count}"
   let (action, arg) = move.parseAction
   for i in 0..<max(count, 1):
     editor.runAction(action, arg)
   editor.vimDeleteSelection()
 
 proc vimChangeMove(editor: TextDocumentEditor, move: string, count: int = 1) {.expose("vim-change-move").} =
-  infof"vimChangeMove '{move}' {count}"
+  # infof"vimChangeMove '{move}' {count}"
   let (action, arg) = move.parseAction
   for i in 0..<max(count, 1):
     editor.runAction(action, arg)
   editor.vimChangeSelection()
 
 proc vimYankMove(editor: TextDocumentEditor, move: string, count: int = 1) {.expose("vim-yank-move").} =
-  infof"vimYankMove '{move}' {count}"
+  # infof"vimYankMove '{move}' {count}"
   let (action, arg) = move.parseAction
   for i in 0..<max(count, 1):
     editor.runAction(action, arg)
@@ -336,20 +345,20 @@ iterator enumerateTextObjects(editor: TextDocumentEditor, cursor: Cursor, move: 
     inc i
 
 proc vimSelectTextObject(editor: TextDocumentEditor, textObject: string, backwards: bool = false, allowEmpty: bool = false, count: int = 1, textObjectRange: VimTextObjectRange = Inner) {.expose("vim-select-text-object").} =
-  infof"vimSelectTextObject({textObject}, {textObjectRange}, {backwards}, {allowEmpty}, {count})"
+  # infof"vimSelectTextObject({textObject}, {textObjectRange}, {backwards}, {allowEmpty}, {count})"
 
   editor.selections = editor.selections.mapIt(block:
       var res = it.last
       var resultSelection = it
-      infof"-> {resultSelection}"
+      # infof"-> {resultSelection}"
 
       for i, selection in enumerateTextObjects(editor, res, textObject, backwards):
-        infof"{i}: {res} -> {selection}"
+        # infof"{i}: {res} -> {selection}"
         resultSelection = resultSelection or selection
         if i == max(count, 1) - 1:
           break
 
-      infof"vimSelectTextObject({textObject}, {textObjectRange}, {backwards}, {allowEmpty}, {count}): {resultSelection}"
+      # infof"vimSelectTextObject({textObject}, {textObjectRange}, {backwards}, {allowEmpty}, {count}): {resultSelection}"
       if it.isBackwards:
         resultSelection.reverse
       else:
@@ -478,7 +487,7 @@ proc vimMoveLast(editor: TextDocumentEditor, move: string) {.expose("vim-move-la
     editor.vimSelectLine()
 
 proc vimMoveToEndOfLine(editor: TextDocumentEditor, count: int = 1) =
-  infof"vimMoveToEndOfLine {count}"
+  # infof"vimMoveToEndOfLine {count}"
   let count = max(1, count)
   if count > 1:
     editor.moveCursorLine(count - 1)
@@ -490,7 +499,7 @@ proc vimMoveCursorLineFirstChar(editor: TextDocumentEditor, direction: int, coun
   editor.moveFirst "line-no-indent"
 
 proc vimMoveToStartOfLine(editor: TextDocumentEditor, count: int = 1) =
-  infof"vimMoveToStartOfLine {count}"
+  # infof"vimMoveToStartOfLine {count}"
   let count = max(1, count)
   if count > 1:
     editor.moveCursorLine(count - 1)
@@ -498,9 +507,10 @@ proc vimMoveToStartOfLine(editor: TextDocumentEditor, count: int = 1) =
   editor.scrollToCursor Last
 
 proc vimPaste(editor: TextDocumentEditor, register: string = "") {.expose("vim-paste").} =
-  infof"vimPaste {register}, lines: {yankedLines}"
+  # infof"vimPaste {register}, lines: {yankedLines}"
   if yankedLines:
     editor.moveLast "line", Both
+    editor.insertText "\n"
 
   editor.paste register
 
@@ -575,8 +585,26 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommandBlock "", "<C-e>": editor.setMode("normal")
   addTextCommandBlock "", "<ESCAPE>": editor.setMode("normal")
 
-  addTextCommandBlock "", "s": replayCommands(".")
   addTextCommandBlock "", ".": replayCommands(".")
+  addCommand "editor.text.normal", "@<CHAR>", "<CHAR>", proc(editor: TextDocumentEditor, c: string) =
+    let register = if c == "@":
+      getOption("editor.current-macro-register", "")
+    else:
+      c
+
+    replayCommands(register)
+
+  addCommand "editor.text.normal", "q<CHAR>", "<CHAR>", proc(editor: TextDocumentEditor, c: string) =
+    if isReplayingCommands() or isRecordingCommands(getCurrentMacroRegister()):
+      return
+    setOption("editor.current-macro-register", c)
+    setRegisterText("", c)
+    startRecordingCommands(c)
+
+  addTextCommandBlock "", "Q":
+    if isReplayingCommands() or not isRecordingCommands(getCurrentMacroRegister()):
+      return
+    stopRecordingCommands(getCurrentMacroRegister())
 
   # windowing
   proc defineWindowingCommands(prefix: string) =
@@ -665,13 +693,14 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   # navigation (vertical)
   addSubCommandWithCount "", "move", "k", "vim-move-cursor-line", -1
   addSubCommandWithCount "", "move", "<UP>", "vim-move-cursor-line", -1
-  addSubCommandWithCount "", "move", "<C-p>", "vim-move-cursor-line", -1
+  # todo: this clashes with insert mode because it ises <move> and binds <C-p> directly
+  # addSubCommandWithCount "", "move", "<C-p>", "vim-move-cursor-line", -1
 
   addSubCommandWithCount "", "move", "j", "vim-move-cursor-line", 1
   addSubCommandWithCount "", "move", "<DOWN>", "vim-move-cursor-line", 1
   # todo: this clashes with insert mode because it ises <move> and binds <ENTER> directly
   # addSubCommandWithCount "", "move", "<ENTER>", "vim-move-cursor-line", 1
-  addSubCommandWithCount "", "move", "<C-n>", "vim-move-cursor-line", 1
+  # addSubCommandWithCount "", "move", "<C-n>", "vim-move-cursor-line", 1
   addSubCommandWithCount "", "move", "<C-j>", "vim-move-cursor-line", 1
 
   addSubCommandWithCountBlock "", "move", "-": vimMoveCursorLineFirstChar(editor, -1, count)
@@ -693,7 +722,6 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     editor.scrollToCursor Last
 
   addSubCommandWithCountBlock "", "move", "<S-%>":
-    infof"{count} %"
     if count == 0:
       # todo: find matching bracket
       discard

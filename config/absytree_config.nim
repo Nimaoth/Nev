@@ -5,7 +5,7 @@ proc handleAction*(action: string, args: JsonNode): bool {.wasmexport.} =
   when not defined(wasm):
     return false
 
-  infof "handleAction: {action}, {args}"
+  # infof "handleAction: {action}, {args}"
 
   case action
   of "set-max-loop-iterations":
