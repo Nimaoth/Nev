@@ -10,8 +10,9 @@ traitRef AppInterface:
   method platform*(self: AppInterface): Platform
   method configProvider*(self: AppInterface): ConfigProvider
   method getEventHandlerConfig*(self: AppInterface, context: string): EventHandlerConfig
-  method setRegisterText*(self: AppInterface, text: string, register: string): Future[void]
-  method getRegisterText*(self: AppInterface, register: string): Future[string]
+  method setRegisterTextAsync*(self: AppInterface, text: string, register: string): Future[void]
+  method getRegisterTextAsync*(self: AppInterface, register: string): Future[string]
+  method recordCommand*(self: AppInterface, command: string, args: string)
   method openWorkspaceFile*(self: AppInterface, path: string, workspace: WorkspaceFolder): Option[DocumentEditor]
   method openFile*(self: AppInterface, path: string): Option[DocumentEditor]
   method handleUnknownDocumentEditorAction*(self: AppInterface, editor: DocumentEditor, action: string, args: JsonNode): EventResponse

@@ -18,9 +18,10 @@ proc screenLineCount*(self: TextDocumentEditor): int =
   ## Returns the number of lines that can be shown on the screen
   ## This value depends on the size of the view this editor is in and the font size
   editor_text_screenLineCount_int_TextDocumentEditor_impl(self)
-proc doMoveCursorColumn*(self: TextDocumentEditor; cursor: Cursor; offset: int): Cursor =
-  editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_impl(self,
-      cursor, offset)
+proc doMoveCursorColumn*(self: TextDocumentEditor; cursor: Cursor; offset: int;
+                         wrap: bool = true): Cursor =
+  editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_bool_impl(
+      self, cursor, offset, wrap)
 proc findSurroundStart*(editor: TextDocumentEditor; cursor: Cursor; count: int;
                         c0: char; c1: char; depth: int = 1): Option[Cursor] =
   editor_text_findSurroundStart_Option_Cursor_TextDocumentEditor_Cursor_int_char_char_int_impl(
@@ -296,6 +297,8 @@ proc setSelection*(self: TextDocumentEditor; cursor: Cursor; nextMode: string) =
 proc enterChooseCursorMode*(self: TextDocumentEditor; action: string) =
   editor_text_enterChooseCursorMode_void_TextDocumentEditor_string_impl(self,
       action)
+proc recordCurrentCommand*(self: TextDocumentEditor) =
+  editor_text_recordCurrentCommand_void_TextDocumentEditor_impl(self)
 proc runSingleClickCommand*(self: TextDocumentEditor) =
   editor_text_runSingleClickCommand_void_TextDocumentEditor_impl(self)
 proc runDoubleClickCommand*(self: TextDocumentEditor) =

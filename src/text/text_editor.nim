@@ -58,6 +58,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   currentCommandHistory: CommandHistory
   savedCommandHistory: CommandHistory
   bIsRunningSavedCommands: bool
+  bRecordCurrentCommand: bool = false
 
   disableScrolling*: bool
   scrollOffset*: float
@@ -91,7 +92,7 @@ template noSelectionHistory(self, body: untyped): untyped =
 
 proc newTextEditor*(document: TextDocument, app: AppInterface, configProvider: ConfigProvider): TextDocumentEditor
 proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): EventResponse
-proc handleInput(self: TextDocumentEditor, input: string): EventResponse
+proc handleInput(self: TextDocumentEditor, input: string, record: bool): EventResponse
 proc showCompletionWindow(self: TextDocumentEditor)
 proc refilterCompletions(self: TextDocumentEditor)
 proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string, count: int = 0): Selection
@@ -409,7 +410,7 @@ proc screenLineCount(self: TextDocumentEditor): int {.expose: "editor.text".} =
   ## This value depends on the size of the view this editor is in and the font size
   return (self.lastContentBounds.h / self.platform.totalLineHeight).int
 
-proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor {.expose: "editor.text".} =
+proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool = true): Cursor {.expose: "editor.text".} =
   var cursor = cursor
   var column = cursor.column
 
@@ -418,6 +419,8 @@ proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int): 
   if offset > 0:
     for i in 0..<offset:
       if column == currentLine.len:
+        if not wrap:
+          break
         if cursor.line < self.document.lines.high:
           cursor.line = cursor.line + 1
           cursor.column = 0
@@ -431,6 +434,8 @@ proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int): 
   elif offset < 0:
     for i in 0..<(-offset):
       if column == 0:
+        if not wrap:
+          break
         if cursor.line > 0:
           cursor.line = cursor.line - 1
           cursor.column = currentLine.len
@@ -515,9 +520,9 @@ proc setMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} 
     let config = self.getModeConfig(mode)
     self.modeEventHandler = eventHandler(config):
       onAction:
-        self.handleAction action, arg
+        self.handleAction action, arg, record=true
       onInput:
-        self.handleInput input
+        self.handleInput input, record=true
 
   self.cursorVisible = true
   if self.blinkCursorTask.isNotNil and self.active:
@@ -737,13 +742,13 @@ proc copyAsync*(self: TextDocumentEditor, register: string, inclusiveEnd: bool):
       text.add "\n"
     text.add self.document.contentString(selection, inclusiveEnd)
 
-  self.app.setRegisterText(text, register).await
+  self.app.setRegisterTextAsync(text, register).await
 
 proc copy*(self: TextDocumentEditor, register: string = "", inclusiveEnd: bool = false) {.expose("editor.text").} =
   asyncCheck self.copyAsync(register, inclusiveEnd)
 
 proc pasteAsync*(self: TextDocumentEditor, register: string): Future[void] {.async.} =
-  let text = self.app.getRegisterText(register).await
+  let text = self.app.getRegisterTextAsync(register).await
 
   let numLines = text.count('\n') + 1
 
@@ -841,7 +846,10 @@ proc clearSelections*(self: TextDocumentEditor) {.expose("editor.text").} =
     self.selection = self.selection.last.toSelection
 
 proc moveCursorColumn*(self: TextDocumentEditor, distance: int, cursor: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
-  self.moveCursor(cursor, doMoveCursorColumn, distance, all)
+  self.moveCursor(cursor, (
+    proc (self: TextDocumentEditor, cursor: Cursor, offset: int): Cursor =
+      self.doMoveCursorColumn(cursor, offset, true)
+    ), distance, all)
   self.updateTargetColumn(cursor)
 
 proc moveCursorLine*(self: TextDocumentEditor, distance: int, cursor: SelectionCursor = SelectionCursor.Config, all: bool = true) {.expose("editor.text").} =
@@ -1505,7 +1513,7 @@ proc runSavedCommands*(self: TextDocumentEditor) {.expose("editor.text").} =
       continue
 
     if command.isInput:
-      discard self.handleInput(command.command)
+      discard self.handleInput(command.command, record=false)
     else:
       discard self.handleActionInternal(command.command, command.args)
 
@@ -1622,7 +1630,7 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
       self.styledTextOverrides.clear()
       self.document.notifyTextChanged()
       self.markDirty()
-      discard self.handleAction(action, ($options[0].toJson & " " & $oldMode.toJson))
+      discard self.handleAction(action, ($options[0].toJson & " " & $oldMode.toJson), record=false)
 
     self.document.notifyTextChanged()
     self.markDirty()
@@ -1636,9 +1644,9 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
       self.styledTextOverrides.clear()
       self.document.notifyTextChanged()
       self.markDirty()
-      self.handleAction action, arg
+      self.handleAction action, arg, record=true
     onInput:
-      self.handleInput input
+      self.handleInput input, record=true
     onProgress:
       progress.add inputToString(input)
       updateStyledTextOverrides()
@@ -1652,6 +1660,9 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
   self.app.handleModeChanged(self, oldMode, self.currentMode)
 
   self.markDirty()
+
+proc recordCurrentCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
+  self.bRecordCurrentCommand = true
 
 genDispatcher("editor.text")
 # addGlobalDispatchTable "editor.text", genDispatchTable("editor.text")
@@ -1718,8 +1729,17 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
 
   return Ignored
 
-method handleAction*(self: TextDocumentEditor, action: string, arg: string): EventResponse =
+method handleAction*(self: TextDocumentEditor, action: string, arg: string, record: bool): EventResponse =
   # debugf "handleAction {action}, '{arg}'"
+
+  if record:
+    self.app.recordCommand("." & action, arg)
+
+  defer:
+    if record and self.bRecordCurrentCommand:
+      self.app.recordCommand("." & action, arg)
+    self.bRecordCurrentCommand = false
+
   var args = newJArray()
   try:
     for a in newStringStream(arg).parseJsonFragments():
@@ -1733,9 +1753,12 @@ method handleAction*(self: TextDocumentEditor, action: string, arg: string): Eve
     log(lvlError, fmt"handleAction: {action}, Failed to parse args: '{arg}'")
     return Failed
 
-proc handleInput(self: TextDocumentEditor, input: string): EventResponse =
+proc handleInput(self: TextDocumentEditor, input: string, record: bool): EventResponse =
   if not self.isRunningSavedCommands:
     self.currentCommandHistory.commands.add Command(isInput: true, command: input)
+
+  if record:
+    self.app.recordCommand(".insert-text", $input.newJString)
 
   # echo "handleInput '", input, "'"
   if self.app.invokeCallback(self.getContextWithMode("editor.text.input-handler"), input.newJString):
@@ -1780,15 +1803,15 @@ method injectDependencies*(self: TextDocumentEditor, app: AppInterface) =
   let config = app.getEventHandlerConfig("editor.text")
   self.eventHandler = eventHandler(config):
     onAction:
-      self.handleAction action, arg
+      self.handleAction action, arg, record=true
     onInput:
-      self.handleInput input
+      self.handleInput input, record=true
 
   self.completionEventHandler = eventHandler(app.getEventHandlerConfig("editor.text.completion")):
     onAction:
-      self.handleAction action, arg
+      self.handleAction action, arg, record=true
     onInput:
-      self.handleInput input
+      self.handleInput input, record=true
 
 proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
   self.clampSelection()

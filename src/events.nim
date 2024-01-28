@@ -177,6 +177,12 @@ proc anyInProgress*(handlers: openArray[EventHandler]): bool =
 
 proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers, handleUnknownAsInput: bool): EventResponse =
   if input != 0:
+    # only handle if no modifier or only shift is pressed, because if any other modifiers are pressed
+    # (ctrl, alt, win) then it doesn't produce input
+    if handleUnknownAsInput and input > 0 and modifiers + {Shift} == {Shift} and handler.handleInput != nil:
+      if handler.handleInput(inputToString(input, {})) == Handled:
+        return Handled
+
     let prevStates = handler.states
     handler.states = handler.dfa.stepAll(handler.states, input, modifiers)
     # debug &"{handler.config.context}: handleEvent {(inputToString(input, modifiers))}\n  {prevStates}\n  -> {handler.states}"
@@ -184,11 +190,6 @@ proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers,
     if not handler.inProgress:
       handler.reset()
       if not prevStates.inProgress:
-        # undefined input in state 0
-        # only handle if no modifier or only shift is pressed, because if any other modifiers are pressed
-        # (ctrl, alt, win) then it doesn't produce input
-        if handleUnknownAsInput and input > 0 and modifiers + {Shift} == {Shift} and handler.handleInput != nil:
-          return handler.handleInput(inputToString(input, {}))
         return Ignored
       else:
         # undefined input in state n

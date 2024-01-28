@@ -13,8 +13,8 @@ proc editor_text_lineLength_int_TextDocumentEditor_int_impl*(
 proc editor_text_screenLineCount_int_TextDocumentEditor_impl*(
     self: TextDocumentEditor): int =
   discard
-proc editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_impl*(
-    self: TextDocumentEditor; cursor: Cursor; offset: int): Cursor =
+proc editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_bool_impl*(
+    self: TextDocumentEditor; cursor: Cursor; offset: int; wrap: bool = true): Cursor =
   discard
 proc editor_text_findSurroundStart_Option_Cursor_TextDocumentEditor_Cursor_int_char_char_int_impl*(
     editor: TextDocumentEditor; cursor: Cursor; count: int; c0: char; c1: char;
@@ -298,6 +298,9 @@ proc editor_text_setSelection_void_TextDocumentEditor_Cursor_string_impl*(
   discard
 proc editor_text_enterChooseCursorMode_void_TextDocumentEditor_string_impl*(
     self: TextDocumentEditor; action: string) =
+  discard
+proc editor_text_recordCurrentCommand_void_TextDocumentEditor_impl*(
+    self: TextDocumentEditor) =
   discard
 proc editor_text_runSingleClickCommand_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
@@ -722,6 +725,29 @@ proc editor_scriptSetOptionString_void_string_string_impl*(path: string;
     value: string) =
   discard
 proc editor_scriptSetCallback_void_string_int_impl*(path: string; id: int) =
+  discard
+proc editor_setRegisterText_void_App_string_string_impl*(text: string;
+    register: string = "") =
+  discard
+proc editor_getRegisterText_string_App_string_impl*(register: string): string =
+  discard
+proc editor_startRecordingKeys_void_App_string_impl*(register: string) =
+  discard
+proc editor_stopRecordingKeys_void_App_string_impl*(register: string) =
+  discard
+proc editor_startRecordingCommands_void_App_string_impl*(register: string) =
+  discard
+proc editor_stopRecordingCommands_void_App_string_impl*(register: string) =
+  discard
+proc editor_isReplayingCommands_bool_App_impl*(): bool =
+  discard
+proc editor_isReplayingKeys_bool_App_impl*(): bool =
+  discard
+proc editor_replayCommands_void_App_string_impl*(register: string) =
+  discard
+proc editor_replayKeys_void_App_string_impl*(register: string) =
+  discard
+proc editor_inputKeys_void_App_string_impl*(input: string) =
   discard
 proc lsp_lspLogVerbose_void_bool_impl*(val: bool) =
   discard
