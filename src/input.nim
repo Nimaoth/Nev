@@ -68,7 +68,7 @@ type
   CommandDFA* = ref object
     persistentState: int
     states: seq[DFAState]
-    functions: seq[string]
+    functions: seq[(string, string)]
     functionIndices: Table[string, int]
     terminalStates: Table[int, string]
     postfixStates: Table[(string, string), int]
@@ -91,46 +91,47 @@ proc isAscii*(input: int64): bool =
   return false
 
 let capturePattern = re"<(.*?)>"
-proc getAction*(dfa: CommandDFA, state: CommandState, command: string): string =
+proc fillCaptures(dfa: CommandDFA, state: CommandState, args: string): string =
+  # debug &"fillCaptures {args}, {state}"
   var last = 0
-  for bounds in command.findAllBounds(capturePattern):
+  for bounds in args.findAllBounds(capturePattern):
     defer:
       last = bounds.last + 1
     if last < bounds.first:
-      result.add command[last..<bounds.first]
+      result.add args[last..<bounds.first]
 
-    if command[bounds.first + 1] == '#':
-      let captureName = command[(bounds.first + 2)..<bounds.last]
+    if args[bounds.first + 1] == '#':
+      let captureName = args[(bounds.first + 2)..<bounds.last]
       if state.captures.contains(captureName):
         result.add $state.captures[captureName].parseInt.catch(0)
       else:
         result.add "0"
-    elif command[bounds.first + 1] == '$':
-      let captureName = command[(bounds.first + 2)..<bounds.last]
+    elif args[bounds.first + 1] == '$':
+      let captureName = args[(bounds.first + 2)..<bounds.last]
       if state.captures.contains(captureName):
         result.add $state.captures[captureName].newJString
       else:
         result.add $newJString("")
     else:
-      let captureName = command[(bounds.first + 1)..<bounds.last]
+      let captureName = args[(bounds.first + 1)..<bounds.last]
       if state.captures.contains(captureName):
         result.add $state.captures[captureName].newJString
       else:
-        result.add command[bounds.first..bounds.last]
+        result.add args[bounds.first..bounds.last]
 
-  if last < command.len:
-    result.add command[last..^1]
+  if last < args.len:
+    result.add args[last..^1]
 
 proc possibleFunctionIndices*(state: CommandState): int =
   return state.functionIndices.bitSetCard
 
-proc getAction*(dfa: CommandDFA, state: CommandState): string =
+proc getAction*(dfa: CommandDFA, state: CommandState): (string, string) =
   if state.functionIndices.bitSetCard != 1:
     log(lvlError, fmt"Multiple possible functions found: {state}")
 
   for functionIndex in state.functionIndices:
-    let function = dfa.functions[functionIndex]
-    return dfa.getAction(state, function)
+    let (function, args) = dfa.functions[functionIndex]
+    return (function, dfa.fillCaptures(state, args))
 
 proc stepEmpty(dfa: CommandDFA, state: CommandState): seq[CommandState] =
   for transition in dfa.states[state.current].epsilonTransitions:
@@ -139,7 +140,7 @@ proc stepEmpty(dfa: CommandDFA, state: CommandState): seq[CommandState] =
     newState.functionIndices.bitSetIntersect transition.functionIndices
     if transition.function != "":
       if newState.captures.contains(transition.capture):
-        newState.captures[transition.capture] = dfa.getAction(newState, transition.function)
+        newState.captures[transition.capture] = dfa.fillCaptures(newState, transition.function)
 
     if dfa.states[transition.state].transitions.len > 0 or dfa.states[transition.state].epsilonTransitions.len == 0:
       result.incl newState
@@ -667,6 +668,13 @@ proc handleNextInput(
 
 #   dfa.fillTransitionFunctionIndicesRec(0, {})
 
+proc parseAction*(action: string): tuple[action: string, arg: string] =
+  let spaceIndex = action.find(' ')
+  if spaceIndex == -1:
+    return (action, "")
+  else:
+    return (action[0..<spaceIndex], action[spaceIndex + 1..^1])
+
 proc buildDFA*(commands: Table[string, Table[string, string]], leaders: seq[string] = @[]): CommandDFA =
   new(result)
 
@@ -690,7 +698,7 @@ proc buildDFA*(commands: Table[string, Table[string, string]], leaders: seq[stri
         let functionIndex = if result.functionIndices.contains(function):
           result.functionIndices[function]
         else:
-          result.functions.add function
+          result.functions.add function.parseAction
           result.functionIndices[function] = result.functions.len - 1
           result.functions.len - 1
 

@@ -743,6 +743,8 @@ proc editor_isReplayingCommands_bool_App_impl*(): bool =
   discard
 proc editor_isReplayingKeys_bool_App_impl*(): bool =
   discard
+proc editor_isRecordingCommands_bool_App_string_impl*(registry: string): bool =
+  discard
 proc editor_replayCommands_void_App_string_impl*(register: string) =
   discard
 proc editor_replayKeys_void_App_string_impl*(register: string) =

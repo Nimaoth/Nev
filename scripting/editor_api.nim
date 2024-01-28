@@ -241,6 +241,8 @@ proc isReplayingCommands*(): bool =
   editor_isReplayingCommands_bool_App_impl()
 proc isReplayingKeys*(): bool =
   editor_isReplayingKeys_bool_App_impl()
+proc isRecordingCommands*(registry: string): bool =
+  editor_isRecordingCommands_bool_App_string_impl(registry)
 proc replayCommands*(register: string) =
   editor_replayCommands_void_App_string_impl(register)
 proc replayKeys*(register: string) =

@@ -1411,6 +1411,21 @@ proc isReplayingKeys*(): bool =
   result = parseJson($res).jsonTo(typeof(result))
 
 
+proc editor_isRecordingCommands_bool_App_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc isRecordingCommands*(registry: string): bool =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      registry
+    else:
+      registry.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_isRecordingCommands_bool_App_string_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
 proc editor_replayCommands_void_App_string_wasm(arg: cstring): cstring {.importc.}
 proc replayCommands*(register: string) =
   var argsJson = newJArray()

@@ -22,7 +22,11 @@ suite "Input DFA":
       check false
       return $states
 
-    return dfa.getAction(states[0])
+    let (function, args) = dfa.getAction(states[0])
+    if args.len > 0:
+      return function & " " & args
+    else:
+      return function
 
   test "advanced":
     var commands = initTable[string, Table[string, string]]()

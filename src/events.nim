@@ -154,13 +154,6 @@ template eventHandler*(inConfig: EventHandlerConfig, handlerBody: untyped): unty
 proc reset*(handler: var EventHandler) =
   handler.states = @[]
 
-proc parseAction*(action: string): tuple[action: string, arg: string] =
-  let spaceIndex = action.find(' ')
-  if spaceIndex == -1:
-    return (action, "")
-  else:
-    return (action[0..<spaceIndex], action[spaceIndex + 1..^1])
-
 proc inProgress*(states: openArray[CommandState]): bool =
   for s in states:
     if s.current != 0:
@@ -198,7 +191,7 @@ proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers,
     elif handler.states.anyIt(handler.dfa.isTerminal(it.current)):
       if handler.states.len != 1:
         return Failed
-      let (action, arg) = handler.dfa.getAction(handler.states[0]).parseAction
+      let (action, arg) = handler.dfa.getAction(handler.states[0])
       handler.reset()
       # handler.state.current = handler.dfa.getDefaultState(handler.state.current) # todo
       return handler.handleAction(action, arg)
