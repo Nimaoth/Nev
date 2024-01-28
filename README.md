@@ -152,11 +152,6 @@ More details in [Getting Started](docs/getting_started.md)
 
 ## Vim Keybindings
 - Repeat f/t motions with ,/;
-- Repeat insert mode commands with .
-- Macros
 - Search/Replace
-- Visual line mode
-- More text objects
-
 
 [Test report](https://nimaoth.github.io/Absytree/testresults.html)
