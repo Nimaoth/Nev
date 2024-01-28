@@ -45,7 +45,7 @@ proc renderLine*(
   y: float, sizeToContentX: bool, lineNumberTotalWidth: float, lineNumberWidth: float, pivot: Vec2,
   backgroundColor: Color, textColor: Color,
   backgroundColors: openArray[tuple[first: RuneIndex, last: RuneIndex, color: Color]], cursors: openArray[int],
-  wrapLine: bool, wrapLineEndChar: string, wrapLineEndColor: Color): seq[CursorLocationInfo] =
+  wrapLine: bool, wrapLineEndChar: string, wrapLineEndColor: Color, lineEndColor: Option[Color]): seq[CursorLocationInfo] =
 
   var flagsInner = &{FillX, SizeToContentY}
   if sizeToContentX:
@@ -250,6 +250,9 @@ proc renderLine*(
                 self.app.tryActivateEditor(self)
                 self.markDirty()
 
+          if lineEndColor.getSome(color):
+            builder.panel(&{FillY, FillBackground}, w = builder.charWidth, backgroundColor = color)
+
     # cursor after latest char
     for curs in cursors:
       if curs == lineOriginal.len:
@@ -389,6 +392,10 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
         if s.last.line == i:
           cursorsPerLine.add s.last.column
 
+      var lineEndColor = Color.none
+      if self.document.lines[i].len == 0 and selectionsClampedOnLine.len > 0 and (cursorsPerLine.len == 0 or inclusive):
+        lineEndColor = selectionColor.some
+
       let pivot = if down:
         vec2(0, 0)
       else:
@@ -397,7 +404,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       cursors.add self.renderLine(builder, app.theme, styledLine, self.document.lines[i], self.document.lineIds[i],
         self.userId, cursorLine, i, lineNumbers, y, sizeToContentX, lineNumberWidth, lineNumberBounds.x, pivot,
         backgroundColor, textColor,
-        colors, cursorsPerLine, wrapLine, wrapLineEndChar, wrapLineEndColor,
+        colors, cursorsPerLine, wrapLine, wrapLineEndChar, wrapLineEndColor, lineEndColor
         )
 
     self.lastRenderedLines.setLen 0
@@ -424,7 +431,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
           cursors.add self.renderLine(builder, app.theme, styledLine, self.document.lines[contextLine], self.document.lineIds[contextLine],
             self.userId, cursorLine, contextLine, lineNumbers, y, sizeToContentX, lineNumberWidth, lineNumberBounds.x, vec2(0, 0),
             contextBackgroundColor, textColor,
-            colors, [], false, wrapLineEndChar, wrapLineEndColor,
+            colors, [], false, wrapLineEndChar, wrapLineEndColor, Color.none
             )
 
         # let fill = self.scrollOffset mod builder.textHeight
