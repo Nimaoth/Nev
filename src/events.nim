@@ -67,7 +67,7 @@ proc dfa*(handler: EventHandler): CommandDFA =
   let configRevision = handler.config.maxRevision
   if handler.revision < configRevision:
     handler.dfaInternal = handler.config.buildDFA()
-    fs.saveApplicationFile(handler.config.context & ".dot", handler.dfaInternal.dumpGraphViz)
+    # fs.saveApplicationFile(handler.config.context & ".dot", handler.dfaInternal.dumpGraphViz)
     handler.revision = configRevision
   return handler.dfaInternal
 
@@ -119,7 +119,7 @@ template eventHandler*(inConfig: EventHandlerConfig, handlerBody: untyped): unty
     handler.states = @[]
     handler.config = inConfig
     handler.dfaInternal = inConfig.buildDFA()
-    fs.saveApplicationFile(handler.config.context & ".dot", handler.dfaInternal.dumpGraphViz)
+    # fs.saveApplicationFile(handler.config.context & ".dot", handler.dfaInternal.dumpGraphViz)
 
     template onAction(actionBody: untyped): untyped {.used.} =
       handler.handleAction = proc(action: string, arg: string): EventResponse =
