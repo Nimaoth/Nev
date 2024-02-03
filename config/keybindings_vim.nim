@@ -547,6 +547,20 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   setOption "editor.text.default-mode", "normal"
   setOption "editor.text.inclusive-selection", false
 
+  setHandleInputs "editor.text.normal", false
+  setOption "editor.text.cursor.wide.normal", true
+
+  setHandleInputs "editor.text.insert", true
+  setOption "editor.text.cursor.wide.insert", false
+
+  setHandleInputs "editor.text.visual", false
+  setOption "editor.text.cursor.wide.visual", true
+  setOption "editor.text.cursor.movement.visual", "last"
+
+  setHandleInputs "editor.text.visual-line", false
+  setOption "editor.text.cursor.wide.visual-line", true
+  setOption "editor.text.cursor.movement.visual-line", "last"
+
   setModeChangedHandler proc(editor, oldMode, newMode: auto) =
     # infof"vim: handle mode change {oldMode} -> {newMode}"
     if newMode == "normal":
@@ -903,8 +917,6 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommand "", "p", "vim-paste"
 
   # Insert mode
-  setHandleInputs "editor.text.insert", true
-  setOption "editor.text.cursor.wide.insert", false
   addTextCommand "insert", "<ENTER>", "insert-text", "\n"
   addTextCommand "insert", "<C-m>", "insert-text", "\n"
   addTextCommand "insert", "<C-j>", "insert-text", "\n"
@@ -939,10 +951,6 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     setOption "editor.text.vim-motion-action", ""
     vimMotionNextMode[editor.id] = "visual"
 
-  setHandleInputs "editor.text.visual", false
-  setOption "editor.text.cursor.wide.visual", true
-  setOption "editor.text.cursor.movement.visual", "last"
-
   addTextCommand "visual", "<move>", "vim-select <move>"
   addTextCommand "visual", "y", "vim-yank-selection"
   addTextCommand "visual", "d", "vim-delete-selection"
@@ -958,10 +966,6 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     # setOption "editor.text.vim-motion-action", ""
     # vimMotionNextMode[editor.id] = "visual"
     selectLines = true
-
-  setHandleInputs "editor.text.visual-line", false
-  setOption "editor.text.cursor.wide.visual-line", true
-  setOption "editor.text.cursor.movement.visual-line", "last"
 
   addTextCommand "visual-line", "<move>", "vim-select <move>"
   addTextCommand "visual-line", "y", "vim-yank-selection"

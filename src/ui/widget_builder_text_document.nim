@@ -438,17 +438,24 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
         # if fill < builder.textHeight / 2:
         #   builder.panel(&{FillX, FillBackground}, y = contextLines.len.float * builder.textHeight, h = fill, backgroundColor = contextBackgroundColor)
 
+    let isThickCursor = self.isThickCursor
+
     for cursorIndex, cursorLocation in cursors: #cursor
       if cursorLocation.original == self.selection.last:
         result = cursorLocation.some
 
       var bounds = cursorLocation.bounds.transformRect(cursorLocation.node, linesPanel) - vec2(app.platform.charGap, 0)
       bounds.w += app.platform.charGap
+
+      if not isThickCursor:
+        bounds.w = 0.2 * app.platform.charWidth
+
       if not self.cursorVisible:
         bounds.w = 0
 
       builder.panel(&{UINodeFlag.FillBackground, AnimatePosition, MaskContent}, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h, backgroundColor = cursorForegroundColor, userId = newSecondaryId(self.cursorsId, cursorIndex.int32)):
-        builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, x = app.platform.charGap, y = 0, text = cursorLocation.text, textColor = cursorBackgroundColor)
+        if isThickCursor:
+          builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, x = app.platform.charGap, y = 0, text = cursorLocation.text, textColor = cursorBackgroundColor)
 
     defer:
       self.lastContentBounds = currentNode.bounds
