@@ -48,6 +48,7 @@ proc copySharedFilesTo(dir: string) =
   mkDir dir/"src"
   mkDir dir/"src/misc"
   cpFile2 "src/scripting_api.nim", dir/"src"
+  cpFile2 "src/input_api.nim", dir/"src"
   cpFile2 "src/misc/timer.nim", dir/"src/misc"
   cpFile2 "src/misc/id.nim", dir/"src/misc"
   cpFile2 "src/misc/myjsonutils.nim", dir/"src/misc"
