@@ -1,13 +1,14 @@
-import std/[strutils, setutils, parseutils, macros, genasts]
+import std/[strutils, macros, genasts, unicode]
 import absytree_runtime, keybindings_normal
 import misc/[timer, util, myjsonutils]
-
+import input_api
 
 infof"import vim keybindings"
 
 var vimMotionNextMode = initTable[EditorId, string]()
 var yankedLines: bool = false
 var selectLines: bool = false
+var deleteInclusiveEnd: bool = true
 
 type VimTextObjectRange* = enum Inner, Outer, CurrentToEnd
 
@@ -101,13 +102,15 @@ proc copySelection(editor: TextDocumentEditor): Selections =
 
 proc vimDeleteSelection(editor: TextDocumentEditor) {.expose("vim-delete-selection").} =
   let selections = editor.copySelection()
-  discard editor.delete(editor.selections, inclusiveEnd=true)
+  discard editor.delete(editor.selections, inclusiveEnd=deleteInclusiveEnd)
+  deleteInclusiveEnd = true
   editor.selections = selections
   editor.setMode "normal"
 
 proc vimChangeSelection*(editor: TextDocumentEditor) {.expose("vim-change-selection").} =
   let selections = editor.copySelection()
-  discard editor.delete(editor.selections, inclusiveEnd=true)
+  discard editor.delete(editor.selections, inclusiveEnd=deleteInclusiveEnd)
+  deleteInclusiveEnd = true
   editor.selections = selections
   editor.setMode "insert"
 
@@ -163,15 +166,18 @@ proc vimFinishMotion(editor: TextDocumentEditor) =
 
 proc vimMoveTo*(editor: TextDocumentEditor, target: string, before: bool, count: int = 1) {.expose("vim-move-to").} =
   # infof"vimMoveTo '{target}' {before}"
-  let target = if target.len == 1:
-    target
-  elif target == "<SPACE>":
-    " "
-  else:
-    return
+  var key = ""
+  for (inputCode, mods, text) in parseInputs(target):
+    if inputCode.a > 0:
+      key = $inputCode.a.Rune
+    elif inputCode.a == INPUT_SPACE:
+      key = " "
+    else:
+      return
+    break
 
   for _ in 0..<max(1, count):
-    editor.moveCursorTo(target)
+    editor.moveCursorTo(key)
   if before:
     editor.moveCursorColumn(-1)
 
@@ -246,7 +252,6 @@ proc vimMotionSurround*(editor: TextDocumentEditor, cursor: Cursor, count: int, 
   result = cursor.toSelection
   # infof"vimMotionSurround: {cursor}, {count}, {c0}, {c1}, {inside}"
   while true:
-    let firstChar = editor.charAt(result.first)
     let lastChar = editor.charAt(result.last)
     let (startDepth, endDepth) = if lastChar == c0:
       (1, 0)
@@ -383,6 +388,7 @@ proc vimSelectSurrounding(editor: TextDocumentEditor, textObject: string, backwa
 
 proc moveSelectionNext(editor: TextDocumentEditor, move: string, backwards: bool = false, allowEmpty: bool = false, count: int = 1) {.expose("move-selection-next").} =
   # infof"moveSelectionNext '{move}' {count} {backwards} {allowEmpty}"
+  deleteInclusiveEnd = false
   let which = getOption[SelectionCursor](editor.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
   editor.selections = editor.selections.mapIt(block:
       var res = it.last
@@ -739,6 +745,7 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   # search
   addTextCommandBlock "", "*": editor.setSearchQueryFromMove("word")
+  addTextCommandBlock "visual", "*": editor.setSearchQuery(editor.getText(editor.selection))
   addTextCommand "", "n", "select-move", "next-find-result", true
   addTextCommand "", "N", "select-move", "prev-find-result", true
 
