@@ -1,5 +1,5 @@
 import std/[strformat, tables, macros, json, strutils, sugar, sequtils, genasts]
-import misc/[event, util, wrap, myjsonutils]
+import misc/[event, util, myjsonutils]
 import absytree_api, script_expose
 
 export absytree_api, util, strformat, tables, json, strutils, sugar, sequtils, scripting_api, script_expose
@@ -61,13 +61,6 @@ func toJsonString[T](value: T): string = $value
 
 proc removeCommand*(context: string, keys: string) =
   removeCommand(context, keys)
-
-proc parseAction*(action: string): tuple[action: string, arg: string] =
-  let spaceIndex = action.find(' ')
-  if spaceIndex == -1:
-    return (action, "")
-  else:
-    return (action[0..<spaceIndex], action[spaceIndex + 1..^1])
 
 macro runAction*(action: string, args: varargs[untyped]): untyped =
   var stmts = nnkStmtList.newTree()
@@ -154,7 +147,7 @@ proc getOption*[T](path: string, default: T = T.default): T =
   elif T is float32 | float64:
     return scriptGetOptionFloat(path, default).T
   elif T is string:
-    return scriptGetOptionString(path, default).T
+    return scriptGetOptionString(path, default)
   else:
     {.fatal: ("Can't get option with type " & $T).}
 

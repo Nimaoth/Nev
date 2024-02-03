@@ -76,7 +76,7 @@ when defined(wasm):
       return cstring $res
     except:
       info &"handleAnyCallbackWasm failed: {id.int} {args}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
-      return "error: " & getCurrentExceptionMsg()
+      return cstring ("error: " & getCurrentExceptionMsg())
 
   proc handleScriptActionWasm(name: cstring, args: cstring): cstring {.wasmexport.} =
     # infof"handleScriptActionWasm {name} {args}"
@@ -85,6 +85,6 @@ when defined(wasm):
       if res.isNil:
         return ""
       return cstring $res
-    except CatchableError as e:
+    except:
       info &"handleScriptActionWasm failed: {name} '{args}': {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
-      return "error: " & getCurrentExceptionMsg()
+      return cstring("error: " & getCurrentExceptionMsg())

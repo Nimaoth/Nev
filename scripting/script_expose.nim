@@ -1,5 +1,5 @@
 import std/[strformat, tables, macros, json, strutils, sugar, sequtils, genasts]
-import misc/[event, util, wrap, myjsonutils]
+import misc/[util, wrap, myjsonutils]
 import absytree_api
 
 export absytree_api, util, strformat, tables, json, strutils, sugar, sequtils, scripting_api

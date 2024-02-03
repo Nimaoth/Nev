@@ -1,5 +1,5 @@
 import absytree_runtime
-import std/[strutils, sugar, sequtils, macros]
+import std/[strutils]
 
 proc handleAction*(action: string, args: JsonNode): bool {.wasmexport.} =
   when not defined(wasm):
