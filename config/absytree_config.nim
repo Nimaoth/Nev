@@ -80,6 +80,7 @@ when defined(wasm):
 
   loadDefaultOptions()
   loadDefaultKeybindings(true)
+  loadModelKeybindings()
   loadVimKeybindings()
   # loadVimLikeKeybindings()
 
