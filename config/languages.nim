@@ -1,5 +1,7 @@
 import absytree_runtime
 
+{.used.}
+
 setOption "editor.text.languages-server.url", "localhost"
 setOption "editor.text.languages-server.port", 3001
 setOption "editor.text.lsp.zig.path", "zls"
