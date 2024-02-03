@@ -550,6 +550,9 @@ proc invertSelection(self: TextDocumentEditor) {.expose("editor.text").} =
   ## Inverts the current selection. Discards all but the last cursor.
   self.selection = (self.selection.last, self.selection.first)
 
+proc getText(self: TextDocumentEditor, selection: Selection): string {.expose("editor.text").} =
+  return self.document.contentString(selection)
+
 proc insert(self: TextDocumentEditor, selections: seq[Selection], text: string, notify: bool = true, record: bool = true): seq[Selection] {.expose("editor.text").} =
   return self.document.insert(selections, self.selections, [text], notify, record)
 
@@ -1246,7 +1249,8 @@ proc moveFirst*(self: TextDocumentEditor, move: string, which: SelectionCursor =
   self.scrollToCursor(which)
   self.updateTargetColumn(which)
 
-proc setSearchQuery*(self: TextDocumentEditor, query: string) {.expose("editor.text").} =
+proc setSearchQuery*(self: TextDocumentEditor, query: string, escapeRegex: bool = false) {.expose("editor.text").} =
+  # todo: escape regex
   self.searchQuery = query
   self.searchRegex = re(query).some
   self.updateSearchResults()

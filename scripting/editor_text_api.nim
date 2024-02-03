@@ -48,6 +48,8 @@ proc updateTargetColumn*(self: TextDocumentEditor; cursor: SelectionCursor) =
 proc invertSelection*(self: TextDocumentEditor) =
   ## Inverts the current selection. Discards all but the last cursor.
   editor_text_invertSelection_void_TextDocumentEditor_impl(self)
+proc getText*(self: TextDocumentEditor; selection: Selection): string =
+  editor_text_getText_string_TextDocumentEditor_Selection_impl(self, selection)
 proc insert*(self: TextDocumentEditor; selections: seq[Selection]; text: string;
              notify: bool = true; record: bool = true): seq[Selection] =
   editor_text_insert_seq_Selection_TextDocumentEditor_seq_Selection_string_bool_bool_impl(
@@ -259,8 +261,10 @@ proc moveFirst*(self: TextDocumentEditor; move: string;
                 all: bool = true; count: int = 0) =
   editor_text_moveFirst_void_TextDocumentEditor_string_SelectionCursor_bool_int_impl(
       self, move, which, all, count)
-proc setSearchQuery*(self: TextDocumentEditor; query: string) =
-  editor_text_setSearchQuery_void_TextDocumentEditor_string_impl(self, query)
+proc setSearchQuery*(self: TextDocumentEditor; query: string;
+                     escapeRegex: bool = false) =
+  editor_text_setSearchQuery_void_TextDocumentEditor_string_bool_impl(self,
+      query, escapeRegex)
 proc setSearchQueryFromMove*(self: TextDocumentEditor; move: string;
                              count: int = 0) =
   editor_text_setSearchQueryFromMove_void_TextDocumentEditor_string_int_impl(
