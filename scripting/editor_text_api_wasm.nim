@@ -254,6 +254,26 @@ proc invertSelection*(self: TextDocumentEditor) =
       argsJsonString.cstring)
 
 
+proc editor_text_getText_string_TextDocumentEditor_Selection_wasm(arg: cstring): cstring {.
+    importc.}
+proc getText*(self: TextDocumentEditor; selection: Selection): string =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when Selection is JsonNode:
+      selection
+    else:
+      selection.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_getText_string_TextDocumentEditor_Selection_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
 proc editor_text_insert_seq_Selection_TextDocumentEditor_seq_Selection_string_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc insert*(self: TextDocumentEditor; selections: seq[Selection]; text: string;
@@ -1712,9 +1732,10 @@ proc moveFirst*(self: TextDocumentEditor; move: string;
       argsJsonString.cstring)
 
 
-proc editor_text_setSearchQuery_void_TextDocumentEditor_string_wasm(arg: cstring): cstring {.
-    importc.}
-proc setSearchQuery*(self: TextDocumentEditor; query: string) =
+proc editor_text_setSearchQuery_void_TextDocumentEditor_string_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc setSearchQuery*(self: TextDocumentEditor; query: string;
+                     escapeRegex: bool = false) =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:
@@ -1726,8 +1747,13 @@ proc setSearchQuery*(self: TextDocumentEditor; query: string) =
       query
     else:
       query.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      escapeRegex
+    else:
+      escapeRegex.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_setSearchQuery_void_TextDocumentEditor_string_wasm(
+  let res {.used.} = editor_text_setSearchQuery_void_TextDocumentEditor_string_bool_wasm(
       argsJsonString.cstring)
 
 

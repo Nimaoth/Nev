@@ -25,6 +25,8 @@ proc editor_text_updateTargetColumn_void_TextDocumentEditor_SelectionCursor_impl
     self: TextDocumentEditor; cursor: SelectionCursor)  {.importc.}
 proc editor_text_invertSelection_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}
+proc editor_text_getText_string_TextDocumentEditor_Selection_impl(
+    self: TextDocumentEditor; selection: Selection): string  {.importc.}
 proc editor_text_insert_seq_Selection_TextDocumentEditor_seq_Selection_string_bool_bool_impl(
     self: TextDocumentEditor; selections: seq[Selection]; text: string;
     notify: bool = true; record: bool = true): seq[Selection]  {.importc.}
@@ -173,8 +175,8 @@ proc editor_text_moveFirst_void_TextDocumentEditor_string_SelectionCursor_bool_i
     self: TextDocumentEditor; move: string;
     which: SelectionCursor = SelectionCursor.Config; all: bool = true;
     count: int = 0)  {.importc.}
-proc editor_text_setSearchQuery_void_TextDocumentEditor_string_impl(
-    self: TextDocumentEditor; query: string)  {.importc.}
+proc editor_text_setSearchQuery_void_TextDocumentEditor_string_bool_impl(
+    self: TextDocumentEditor; query: string; escapeRegex: bool = false)  {.importc.}
 proc editor_text_setSearchQueryFromMove_void_TextDocumentEditor_string_int_impl(
     self: TextDocumentEditor; move: string; count: int = 0)  {.importc.}
 proc editor_text_toggleLineComment_void_TextDocumentEditor_impl(
