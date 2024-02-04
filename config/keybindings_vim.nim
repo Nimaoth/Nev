@@ -100,16 +100,16 @@ proc copySelection(editor: TextDocumentEditor): Selections =
 
   return selections.mapIt(it.normalized.first.toSelection)
 
-proc vimDeleteSelection(editor: TextDocumentEditor) {.expose("vim-delete-selection").} =
+proc vimDeleteSelection(editor: TextDocumentEditor, forceInclusiveEnd: bool) {.expose("vim-delete-selection").} =
   let selections = editor.copySelection()
-  discard editor.delete(editor.selections, inclusiveEnd=deleteInclusiveEnd)
+  discard editor.delete(editor.selections, inclusiveEnd=deleteInclusiveEnd or forceInclusiveEnd)
   deleteInclusiveEnd = true
   editor.selections = selections
   editor.setMode "normal"
 
-proc vimChangeSelection*(editor: TextDocumentEditor) {.expose("vim-change-selection").} =
+proc vimChangeSelection*(editor: TextDocumentEditor, forceInclusiveEnd: bool) {.expose("vim-change-selection").} =
   let selections = editor.copySelection()
-  discard editor.delete(editor.selections, inclusiveEnd=deleteInclusiveEnd)
+  discard editor.delete(editor.selections, inclusiveEnd=deleteInclusiveEnd or forceInclusiveEnd)
   deleteInclusiveEnd = true
   editor.selections = selections
   editor.setMode "insert"
@@ -130,14 +130,14 @@ proc vimDeleteMove(editor: TextDocumentEditor, move: string, count: int = 1) {.e
   let (action, arg) = move.parseAction
   for i in 0..<max(count, 1):
     editor.runAction(action, arg)
-  editor.vimDeleteSelection()
+  editor.vimDeleteSelection(false)
 
 proc vimChangeMove(editor: TextDocumentEditor, move: string, count: int = 1) {.expose("vim-change-move").} =
   # infof"vimChangeMove '{move}' {count}"
   let (action, arg) = move.parseAction
   for i in 0..<max(count, 1):
     editor.runAction(action, arg)
-  editor.vimChangeSelection()
+  editor.vimChangeSelection(false)
 
 proc vimYankMove(editor: TextDocumentEditor, move: string, count: int = 1) {.expose("vim-yank-move").} =
   # infof"vimYankMove '{move}' {count}"
@@ -882,12 +882,12 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommandBlock "", "dd":
     selectLines = true
     editor.vimSelectLine()
-    editor.vimDeleteSelection()
+    editor.vimDeleteSelection(true)
     selectLines = false
 
   addTextCommandBlock "", "cc":
     editor.vimSelectLine()
-    editor.vimChangeSelection()
+    editor.vimChangeSelection(true)
 
   addTextCommandBlock "", "yy":
     selectLines = true
@@ -906,6 +906,13 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommand "", "p", "vim-paste"
 
   addTextCommand "", "<ENTER>", "insert-text", "\n"
+
+  addTextCommand "", "\\>\\>", "indent"
+  addTextCommand "", "\\<\\<", "unindent"
+
+  addTextCommandBlock "normal", "s":
+    editor.setMode "visual"
+    editor.vimChangeSelection(true)
 
   # Insert mode
   addTextCommand "insert", "<C-m>", "insert-text", "\n"
@@ -943,11 +950,18 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   addTextCommand "visual", "<move>", "vim-select <move>"
   addTextCommand "visual", "y", "vim-yank-selection"
-  addTextCommand "visual", "d", "vim-delete-selection"
-  addTextCommand "visual", "c", "vim-change-selection"
-  addTextCommand "visual", "s", "vim-change-selection"
+  addTextCommand "visual", "d", "vim-delete-selection", true
+  addTextCommand "visual", "c", "vim-change-selection", true
+  addTextCommand "visual", "s", "vim-change-selection", true
+
+  addTextCommand "visual", "x", vimDeleteRight
+  addTextCommand "visual", "<DELETE>", vimDeleteRight
+  addTextCommand "visual", "X", vimDeleteLeft
 
   addTextCommand "visual", "<?-count><text_object>", """vim-select-move <text_object> <#count>"""
+
+  addTextCommand "visual", "\\>", "indent"
+  addTextCommand "visual", "\\<", "unindent"
 
   # Visual line mode
   addTextCommandBlock "", "V":
@@ -959,8 +973,11 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   addTextCommand "visual-line", "<move>", "vim-select <move>"
   addTextCommand "visual-line", "y", "vim-yank-selection"
-  addTextCommand "visual-line", "d", "vim-delete-selection"
-  addTextCommand "visual-line", "c", "vim-change-selection"
-  addTextCommand "visual-line", "s", "vim-change-selection"
+  addTextCommand "visual-line", "d", "vim-delete-selection", true
+  addTextCommand "visual-line", "c", "vim-change-selection", true
+  addTextCommand "visual-line", "s", "vim-change-selection", true
 
   addTextCommand "visual-line", "<?-count><text_object>", """vim-select-move <text_object> <#count>"""
+
+  addTextCommand "visual-line", "\\>", "indent"
+  addTextCommand "visual-line", "\\<", "unindent"
