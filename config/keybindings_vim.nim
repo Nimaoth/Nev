@@ -516,7 +516,7 @@ proc vimPaste(editor: TextDocumentEditor, register: string = "") {.expose("vim-p
   # infof"vimPaste {register}, lines: {yankedLines}"
   if yankedLines:
     editor.moveLast "line", Both
-    editor.insertText "\n"
+    editor.insertText "\n", autoIndent=false
 
   editor.paste register
 
@@ -683,14 +683,8 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addSubCommandWithCount "", "move", "h", "vim-move-cursor-column", -1
   addSubCommandWithCount "", "move", "<LEFT>", "vim-move-cursor-column", -1
 
-  # todo: this clashes with insert mode because it ises <move> and binds <BACKSPACE> directly
-  # addSubCommandWithCount "", "move", "<BACKSPACE>", "vim-move-cursor-column", -1
-
   addSubCommandWithCount "", "move", "l", "vim-move-cursor-column", 1
   addSubCommandWithCount "", "move", "<RIGHT>", "vim-move-cursor-column", 1
-
-  # todo: this clashes with insert mode because it ises <move> and binds <SPACE> directly
-  # addSubCommandWithCount "", "move", "<SPACE>", "vim-move-cursor-column", 1
 
   addSubCommand "", "move", "0", "vim-move-first", "line"
   addSubCommand "", "move", "<HOME>", "vim-move-first", "line"
@@ -713,14 +707,9 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   # navigation (vertical)
   addSubCommandWithCount "", "move", "k", "vim-move-cursor-line", -1
   addSubCommandWithCount "", "move", "<UP>", "vim-move-cursor-line", -1
-  # todo: this clashes with insert mode because it ises <move> and binds <C-p> directly
-  # addSubCommandWithCount "", "move", "<C-p>", "vim-move-cursor-line", -1
 
   addSubCommandWithCount "", "move", "j", "vim-move-cursor-line", 1
   addSubCommandWithCount "", "move", "<DOWN>", "vim-move-cursor-line", 1
-  # todo: this clashes with insert mode because it ises <move> and binds <ENTER> directly
-  # addSubCommandWithCount "", "move", "<ENTER>", "vim-move-cursor-line", 1
-  # addSubCommandWithCount "", "move", "<C-n>", "vim-move-cursor-line", 1
   addSubCommandWithCount "", "move", "<C-j>", "vim-move-cursor-line", 1
 
   addSubCommandWithCountBlock "", "move", "-": vimMoveCursorLineFirstChar(editor, -1, count)
@@ -845,7 +834,7 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   addTextCommandBlock "normal", "O":
     editor.moveFirst "line", Both
-    editor.insertText "\n"
+    editor.insertText "\n", autoIndent=false
     editor.vimMoveCursorLine -1
     editor.setMode "insert"
 
@@ -906,7 +895,7 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     editor.vimYankSelection()
     selectLines = false
 
-  # # Deleting text
+  # Deleting text
   addTextCommand "", "x", vimDeleteRight
   addTextCommand "", "<DELETE>", vimDeleteRight
   addTextCommand "", "X", vimDeleteLeft
@@ -916,8 +905,9 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommand "", "<C-r>", "redo"
   addTextCommand "", "p", "vim-paste"
 
+  addTextCommand "", "<ENTER>", "insert-text", "\n"
+
   # Insert mode
-  addTextCommand "insert", "<ENTER>", "insert-text", "\n"
   addTextCommand "insert", "<C-m>", "insert-text", "\n"
   addTextCommand "insert", "<C-j>", "insert-text", "\n"
 
