@@ -474,9 +474,9 @@ proc selectParentCurrentTs*(self: TextDocumentEditor) =
       argsJsonString.cstring)
 
 
-proc editor_text_insertText_void_TextDocumentEditor_string_wasm(arg: cstring): cstring {.
-    importc.}
-proc insertText*(self: TextDocumentEditor; text: string) =
+proc editor_text_insertText_void_TextDocumentEditor_string_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc insertText*(self: TextDocumentEditor; text: string; autoIndent: bool = true) =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:
@@ -488,8 +488,13 @@ proc insertText*(self: TextDocumentEditor; text: string) =
       text
     else:
       text.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      autoIndent
+    else:
+      autoIndent.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_insertText_void_TextDocumentEditor_string_wasm(
+  let res {.used.} = editor_text_insertText_void_TextDocumentEditor_string_bool_wasm(
       argsJsonString.cstring)
 
 

@@ -624,7 +624,7 @@ proc selectParentCurrentTs(self: TextDocumentEditor) {.expose("editor.text").} =
 
 proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.}
 
-proc insertText*(self: TextDocumentEditor, text: string) {.expose("editor.text").} =
+proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true) {.expose("editor.text").} =
   if self.document.singleLine and text == "\n":
     return
 
@@ -652,7 +652,7 @@ proc insertText*(self: TextDocumentEditor, text: string) {.expose("editor.text")
         s.first.column = 0
         s.last = s.first
 
-    else:
+    elif autoIndent:
       texts.setLen(selections.len)
       for i, selection in selections:
         let line = self.document.lines[selection.last.line]
