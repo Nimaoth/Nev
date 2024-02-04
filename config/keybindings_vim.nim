@@ -666,7 +666,6 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommand "completion", "<DOWN>", "select-next-completion"
   addTextCommand "completion", "<C-n>", "select-next-completion"
   addTextCommand "completion", "<TAB>", "apply-selected-completion"
-  addTextCommand "completion", "<ENTER>", "apply-selected-completion"
 
   #
   addTextCommand "normal", "<move>", "vim-select-last <move>"
@@ -954,9 +953,15 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommand "visual", "c", "vim-change-selection", true
   addTextCommand "visual", "s", "vim-change-selection", true
 
-  addTextCommand "visual", "x", vimDeleteRight
-  addTextCommand "visual", "<DELETE>", vimDeleteRight
-  addTextCommand "visual", "X", vimDeleteLeft
+  addTextCommandBlock "visual", "x":
+    editor.vimDeleteRight()
+    editor.setMode "normal"
+  addTextCommandBlock "visual", "<DELETE>":
+    editor.vimDeleteRight()
+    editor.setMode "normal"
+  addTextCommandBlock "visual", "X":
+    editor.vimDeleteLeft()
+    editor.setMode "normal"
 
   addTextCommand "visual", "<?-count><text_object>", """vim-select-move <text_object> <#count>"""
 
