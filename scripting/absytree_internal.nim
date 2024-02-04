@@ -73,8 +73,8 @@ proc editor_text_selectParentTs_void_TextDocumentEditor_Selection_impl*(
 proc editor_text_selectParentCurrentTs_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
-proc editor_text_insertText_void_TextDocumentEditor_string_impl*(
-    self: TextDocumentEditor; text: string) =
+proc editor_text_insertText_void_TextDocumentEditor_string_bool_impl*(
+    self: TextDocumentEditor; text: string; autoIndent: bool = true) =
   discard
 proc editor_text_indent_void_TextDocumentEditor_impl*(self: TextDocumentEditor) =
   discard

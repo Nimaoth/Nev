@@ -76,8 +76,9 @@ proc selectParentTs*(self: TextDocumentEditor; selection: Selection) =
       selection)
 proc selectParentCurrentTs*(self: TextDocumentEditor) =
   editor_text_selectParentCurrentTs_void_TextDocumentEditor_impl(self)
-proc insertText*(self: TextDocumentEditor; text: string) =
-  editor_text_insertText_void_TextDocumentEditor_string_impl(self, text)
+proc insertText*(self: TextDocumentEditor; text: string; autoIndent: bool = true) =
+  editor_text_insertText_void_TextDocumentEditor_string_bool_impl(self, text,
+      autoIndent)
 proc indent*(self: TextDocumentEditor) =
   editor_text_indent_void_TextDocumentEditor_impl(self)
 proc unindent*(self: TextDocumentEditor) =
