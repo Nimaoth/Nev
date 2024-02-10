@@ -523,7 +523,7 @@ proc drawNode(builder: UINodeBuilder, platform: BrowserPlatform, element: var El
       childrenToRemove.add oldChildElement
     elif not childElement.isNil:
       if childElement.parentElement != element:
-        newChildren.add (childElement, insertRel, insertNeighbor)
+        newChildren.add (childElement, insertRel, insertNeighbor.Node)
 
   for i in k..<existingCount:
     childrenToRemove.add element.children[i].Element

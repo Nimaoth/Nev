@@ -766,7 +766,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
   discard platform.onMouseMove.subscribe proc(event: auto): void = self.handleMouseMove(event.pos, event.delta, event.modifiers, event.buttons)
   discard platform.onScroll.subscribe proc(event: auto): void = self.handleScroll(event.scroll, event.pos, event.modifiers)
   discard platform.onDropFile.subscribe proc(event: auto): void = self.handleDropFile(event.path, event.content)
-  discard platform.onCloseRequested.subscribe proc(_: auto) = self.closeRequested = true
+  discard platform.onCloseRequested.subscribe proc() = self.closeRequested = true
 
   self.timer = startTimer()
   self.frameTimer = startTimer()

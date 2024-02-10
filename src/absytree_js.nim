@@ -115,7 +115,7 @@ proc runApp(): Future[void] {.async.} =
   discard rend.onMouseRelease.subscribe proc(event: auto): void = requestRender()
   # discard rend.onMouseMove.subscribe proc(event: auto): void = requestRender()
   discard rend.onScroll.subscribe proc(event: auto): void = requestRender()
-  discard rend.onCloseRequested.subscribe proc(_: auto) = requestRender()
+  discard rend.onCloseRequested.subscribe proc() = requestRender()
   discard rend.onResized.subscribe proc(redrawEverything: bool) = requestRender(redrawEverything)
 
   initializedEditor = true
