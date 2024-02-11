@@ -21,6 +21,7 @@ requires "regex >= 0.20.2"
 requires "glob#64f71af" # "glob >= 0.11.2" # the newest version of glob doesn't have a version but is required for Nim 2.0
 requires "patty >= 0.3.5"
 requires "nimclipboard >= 0.1.2"
+# requires "results >= 0.4.0"
 requires "https://github.com/Nimaoth/ws >= 0.5.0"
 requires "https://github.com/Nimaoth/windy >= 0.0.2"
 requires "https://github.com/Nimaoth/wasm3 >= 0.1.13"
@@ -72,11 +73,11 @@ task buildAbsytreeServer, "Build the server for hosting workspaces and language 
 task buildAbsytreeServerWindows, "Build the server for hosting workspaces and language servers":
   selfExec fmt"c -o:./tools/absytree-server{exe} {crossCompileWinArgs} {getCommandLineParams()} ./src/servers/absytree_server.nim"
 
-task buildNimsuggestWS, "Build the server for hosting workspaces and language servers":
-  selfExec fmt"c -o:./tools/nimsuggest-ws{exe} {getCommandLineParams()} ./tools/nimsuggest_ws.nim"
+task buildLspWs, "Build the websocket proxy for language servers":
+  selfExec fmt"c -o:./tools/lsp-ws{exe} {getCommandLineParams()} ./tools/lsp_ws.nim"
 
-task buildNimsuggestWSWindows, "Build the server for hosting workspaces and language servers":
-  selfExec fmt"c -o:./tools/nimsuggest-ws{exe} {crossCompileWinArgs} {getCommandLineParams()} ./tools/nimsuggest_ws.nim"
+task buildLspWsWindows, "Build the websocket proxy for language servers":
+  selfExec fmt"c -o:./tools/lsp-ws{exe} {crossCompileWinArgs} {getCommandLineParams()} ./tools/lsp_ws.nim"
 
 task buildBrowser, "Build the browser version":
   selfExec fmt"js -o:./build/ast.js -d:exposeScriptingApi -d:vmathObjBased -d:enableTableIdCacheChecking {getCommandLineParams()} ./src/absytree_js.nim"
