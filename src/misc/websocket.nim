@@ -74,6 +74,10 @@ when defined(js):
     ws.recvBuffer.delete(0..0)
     return res
 
+  proc close*(ws: WebSocket) =
+    proc closeJs(ws: WebSocketJs) {.importjs: "#.close()".}
+    ws.socket.closeJs()
+
 else:
   import ws
   export ws

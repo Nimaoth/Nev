@@ -4,18 +4,18 @@ import custom_async, array_buffer
 when defined(js):
 
   proc jsGetAsync(url: cstring, authToken: cstring): Future[cstring] {.importc.}
-  proc jsPostAsync(url: cstring, content: cstring, authToken: cstring): Future[void] {.importc.}
-  proc jsPostBinaryAsync(url: cstring, content: ArrayBuffer, authToken: cstring): Future[void] {.importc.}
+  proc jsPostAsync(url: cstring, content: cstring, authToken: cstring): Future[cstring] {.importc.}
+  proc jsPostBinaryAsync(url: cstring, content: ArrayBuffer, authToken: cstring): Future[cstring] {.importc.}
 
   proc httpGet*(url: string, authToken: Option[string] = string.none): Future[string] {.async.} =
     let cstr = await jsGetAsync(url.cstring, authToken.get("").cstring)
     return $cstr
 
-  proc httpPost*(url: string, content: string, authToken: Option[string] = string.none): Future[void] {.async.} =
-    await jsPostAsync(url.cstring, content.cstring, authToken.get("").cstring)
+  proc httpPost*(url: string, content: string, authToken: Option[string] = string.none): Future[string] {.async.} =
+    return $jsPostAsync(url.cstring, content.cstring, authToken.get("").cstring).await
 
-  proc httpPost*(url: string, content: ArrayBuffer, authToken: Option[string] = string.none): Future[void] {.async.} =
-    await jsPostBinaryAsync(url.cstring, content, authToken.get("").cstring)
+  proc httpPost*(url: string, content: ArrayBuffer, authToken: Option[string] = string.none): Future[string] {.async.} =
+    return $jsPostBinaryAsync(url.cstring, content, authToken.get("").cstring).await
 
 else:
   import std/[httpclient]
@@ -49,7 +49,7 @@ else:
       let body = await response.body
       return body
 
-  proc httpPost*(url: string, content: string, authToken: Option[string] = string.none): Future[void] {.async.} =
+  proc httpPost*(url: string, content: string, authToken: Option[string] = string.none): Future[string] {.async.} =
     var headers = newHttpHeaders()
     if authToken.isSome:
       headers.add("Authorization", authToken.get)
@@ -57,9 +57,10 @@ else:
     headers.add("content-type", "text/plain")
 
     withClient client:
-      discard await client.request(url, HttpPost, body=content, headers=headers)
+      let response = client.request(url, HttpPost, body=content, headers=headers).await
+      return response.body.await
 
-  proc httpPost*(url: string, content: ArrayBuffer, authToken: Option[string] = string.none): Future[void] {.async.} =
+  proc httpPost*(url: string, content: ArrayBuffer, authToken: Option[string] = string.none): Future[string] {.async.} =
     var str = newStringOfCap(content.buffer.len)
     str.setLen(content.buffer.len)
     for i in 0..content.buffer.high:
@@ -72,4 +73,5 @@ else:
     headers.add("content-type", "application/octet-stream")
 
     withClient client:
-      discard await client.request(url, HttpPost, body=str, headers=headers)
+      let response = client.request(url, HttpPost, body=str, headers=headers).await
+      return response.body.await

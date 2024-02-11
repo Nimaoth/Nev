@@ -25,74 +25,86 @@ method disconnect*(self: LanguageServerLSP) =
   if self.connected == 0:
     self.stop()
 
-proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string]): Future[Option[LanguageServerLSP]] {.async.} =
-  if not languageServers.contains(languageId):
-    let config = gAppInterface.configProvider.getValue("editor.text.lsp." & languageId, newJObject())
-    if config.isNil:
-      return LanguageServerLSP.none
+proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string], languagesServer: Option[(string, int)] = (string, int).none): Future[Option[LanguageServerLSP]] {.async.} =
+  if languageServers.contains(languageId):
+    return languageServers[languageId].some
 
-    if not config.hasKey("path"):
-      return LanguageServerLSP.none
+  let config = gAppInterface.configProvider.getValue("editor.text.lsp." & languageId, newJObject())
+  if config.isNil:
+    return LanguageServerLSP.none
 
-    var client = LSPClient()
-    languageServers[languageId] = LanguageServerLSP(client: client)
-    await client.connect(config["path"].jsonTo(string), workspaces)
-    client.run()
+  log lvlInfo, fmt"Starting language server for {languageId} with config {config}"
 
-    discard gEditor.onEditorRegistered.subscribe proc(editor: auto) =
-      if not (editor of TextDocumentEditor):
-        return
+  if not config.hasKey("path"):
+    log lvlError, fmt"Missing path in config for language server {languageId}"
+    return LanguageServerLSP.none
 
-      let textDocumentEditor = TextDocumentEditor(editor)
-      # echo fmt"EDITOR REGISTERED {textDocumentEditor.document.fullPath}"
-
-      if textDocumentEditor.document.languageId != languageId:
-        return
-
-      asyncCheck client.notifyOpenedTextDocument(languageId, textDocumentEditor.document.fullPath, textDocumentEditor.document.contentString)
-      discard textDocumentEditor.document.textInserted.subscribe proc(args: auto) =
-        # echo fmt"TEXT INSERTED {args.document.fullPath}:{args.location}: {args.text}"
-        let changes = @[TextDocumentContentChangeEvent(`range`: args.location.toSelection.toRange, text: args.text)]
-        asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, changes)
-
-      discard textDocumentEditor.document.textDeleted.subscribe proc(args: auto) =
-        # echo fmt"TEXT DELETED {args.document.fullPath}: {args.selection}"
-        let changes = @[TextDocumentContentChangeEvent(`range`: args.selection.toRange)]
-        asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, changes)
+  let exePath = config["path"].jsonTo(string)
+  let args: seq[string] = if config.hasKey("args"):
+    config["args"].jsonTo(seq[string])
+  else:
+    @[]
 
 
-    discard gEditor.onEditorDeregistered.subscribe proc(editor: auto) =
-      if not (editor of TextDocumentEditor):
-        return
+  var client = LSPClient()
+  languageServers[languageId] = LanguageServerLSP(client: client)
+  await client.connect(exePath, workspaces, args, languagesServer)
+  client.run()
 
-      let textDocumentEditor = TextDocumentEditor(editor)
-      # echo fmt"EDITOR DEREGISTERED {textDocumentEditor.document.fullPath}"
-      if textDocumentEditor.document.languageId != languageId:
-        return
+  discard gEditor.onEditorRegistered.subscribe proc(editor: auto) =
+    if not (editor of TextDocumentEditor):
+      return
 
-      asyncCheck client.notifyClosedTextDocument(textDocumentEditor.document.fullPath)
+    let textDocumentEditor = TextDocumentEditor(editor)
+    # debugf"EDITOR REGISTERED {textDocumentEditor.document.fullPath}"
 
-    for editor in gEditor.editors.values:
-      if not (editor of TextDocumentEditor):
-        continue
+    if textDocumentEditor.document.languageId != languageId:
+      return
 
-      let textDocumentEditor = TextDocumentEditor(editor)
-      if textDocumentEditor.document.languageId != languageId:
-        continue
+    asyncCheck client.notifyOpenedTextDocument(languageId, textDocumentEditor.document.fullPath, textDocumentEditor.document.contentString)
+    discard textDocumentEditor.document.textInserted.subscribe proc(args: auto) =
+      # debugf"TEXT INSERTED {args.document.fullPath}:{args.location}: {args.text}"
+      let changes = @[TextDocumentContentChangeEvent(`range`: args.location.toSelection.toRange, text: args.text)]
+      asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, changes)
 
-      # echo "Register events for ", textDocumentEditor.document.fullPath
-      asyncCheck client.notifyOpenedTextDocument(languageId, textDocumentEditor.document.fullPath, textDocumentEditor.document.contentString)
+    discard textDocumentEditor.document.textDeleted.subscribe proc(args: auto) =
+      # debugf"TEXT DELETED {args.document.fullPath}: {args.selection}"
+      let changes = @[TextDocumentContentChangeEvent(`range`: args.selection.toRange)]
+      asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, changes)
 
-      discard textDocumentEditor.document.textInserted.subscribe proc(args: auto) =
-        # echo fmt"TEXT INSERTED {args.document.fullPath}:{args.location}: {args.text}"
-        let changes = @[TextDocumentContentChangeEvent(`range`: args.location.toSelection.toRange, text: args.text)]
-        asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, changes)
+  discard gEditor.onEditorDeregistered.subscribe proc(editor: auto) =
+    if not (editor of TextDocumentEditor):
+      return
 
-      discard textDocumentEditor.document.textDeleted.subscribe proc(args: auto) =
-        # echo fmt"TEXT DELETED {args.document.fullPath}: {args.selection}"
-        let changes = @[TextDocumentContentChangeEvent(`range`: args.selection.toRange)]
-        asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, changes)
+    let textDocumentEditor = TextDocumentEditor(editor)
+    # debugf"EDITOR DEREGISTERED {textDocumentEditor.document.fullPath}"
+    if textDocumentEditor.document.languageId != languageId:
+      return
 
+    asyncCheck client.notifyClosedTextDocument(textDocumentEditor.document.fullPath)
+
+  for editor in gEditor.editors.values:
+    if not (editor of TextDocumentEditor):
+      continue
+
+    let textDocumentEditor = TextDocumentEditor(editor)
+    if textDocumentEditor.document.languageId != languageId:
+      continue
+
+    # debugf"Register events for {textDocumentEditor.document.fullPath}"
+    asyncCheck client.notifyOpenedTextDocument(languageId, textDocumentEditor.document.fullPath, textDocumentEditor.document.contentString)
+
+    discard textDocumentEditor.document.textInserted.subscribe proc(args: auto) =
+      # debugf"TEXT INSERTED {args.document.fullPath}:{args.location}: {args.text}"
+      let changes = @[TextDocumentContentChangeEvent(`range`: args.location.toSelection.toRange, text: args.text)]
+      asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, changes)
+
+    discard textDocumentEditor.document.textDeleted.subscribe proc(args: auto) =
+      # debugf"TEXT DELETED {args.document.fullPath}: {args.selection}"
+      let changes = @[TextDocumentContentChangeEvent(`range`: args.selection.toRange)]
+      asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, changes)
+
+  log lvlInfo, fmt"Started language server for {languageId}"
   return languageServers[languageId].some
 
 
@@ -102,11 +114,13 @@ method stop*(self: LanguageServerLSP) =
   self.client.close()
 
 method getDefinition*(self: LanguageServerLSP, filename: string, location: Cursor): Future[Option[Definition]] {.async.} =
+  debugf"getDefinition {filename}:{location}"
   let response = await self.client.getDefinition(filename, location.line, location.column)
   if response.isError:
     log(lvlError, fmt"Error: {response.error}")
     return Definition.none
 
+  debugf"getDefinition -> {response}"
   let parsedResponse = response.result
 
   if parsedResponse.asLocation().getSome(location):
@@ -126,13 +140,14 @@ method getDefinition*(self: LanguageServerLSP, filename: string, location: Curso
   return Definition.none
 
 method getSymbols*(self: LanguageServerLSP, filename: string): Future[seq[Symbol]] {.async.} =
+  var completions: seq[Symbol]
+
   let response = await self.client.getSymbols(filename)
   if response.isError:
     log(lvlError, fmt"Error: {response.error}")
-    return @[]
+    return completions
 
   let parsedResponse = response.result
-  var completions: seq[Symbol]
 
   if parsedResponse.asDocumentSymbolSeq().getSome(symbols):
     for s in symbols:
@@ -178,16 +193,17 @@ method getSymbols*(self: LanguageServerLSP, filename: string): Future[seq[Symbol
 
   return completions
 
-
 method getCompletions*(self: LanguageServerLSP, languageId: string, filename: string, location: Cursor): Future[seq[TextCompletion]] {.async.} =
+  # debugf"getCompletions: {languageId}, {filename}, {location}"
+  var completionsResult: seq[TextCompletion]
+
   let response = await self.client.getCompletions(filename, location.line, location.column)
   if response.isError:
     log(lvlError, fmt"Error: {response.error}")
-    return @[]
+    return completionsResult
 
   let completions = response.result
   # debugf"getCompletions: {completions.items.len}"
-  var completionsResult: seq[TextCompletion]
   for c in completions.items:
     # echo c
     completionsResult.add(TextCompletion(
