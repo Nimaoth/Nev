@@ -23,16 +23,15 @@ for arg in commandLineParams():
     echo "Unexpected argument '", arg, "'"
     quit(1)
 
-echo fmt"Exposing '{executablePath} {forwardedArgs}' under ws://localhost:{port}"
+# echo fmt"Exposing '{executablePath} {forwardedArgs}' under ws://localhost:{port}"
 
 let process = startAsyncProcess(executablePath, forwardedArgs)
 
 proc sender(process: AsyncProcess, ws: WebSocket): Future[void] {.async.} =
   while ws.readyState == Open:
     let packet = await ws.receiveStrPacket()
-    echo "\n\n<<<<<<<<<<<<<<<<<<<<<<< ws to process begin\n", packet, "\n<<<<<<<<<<<<<<<<<<<<<<< ws to process end\n\n"
+    # echo "\n\n<<<<<<<<<<<<<<<<<<<<<<< ws to process begin\n", packet[0..min(packet.high, 300)], "\n<<<<<<<<<<<<<<<<<<<<<<< ws to process end\n\n"
     await process.send(packet)
-    # await process.send("\r\n")
 
 proc receiver(process: AsyncProcess, ws: WebSocket): Future[void] {.async.} =
   while ws.readyState == Open:
@@ -57,7 +56,7 @@ proc receiver(process: AsyncProcess, ws: WebSocket): Future[void] {.async.} =
     let data: string = await process.recv(contentLength)
     message.add data
 
-    echo "\n\n>>>>>>>>>>>>>>>>>>>>>>> process to ws start\n", message, "\n>>>>>>>>>>>>>>>>>>>>>>> process to ws end\n\n"
+    # echo "\n\n>>>>>>>>>>>>>>>>>>>>>>> process to ws start\n", message[0..min(message.high, 300)], "\n>>>>>>>>>>>>>>>>>>>>>>> process to ws end\n\n"
     await ws.send(message)
 
 proc logErrors(process: AsyncProcess): Future[void] {.async.} =
@@ -66,7 +65,7 @@ proc logErrors(process: AsyncProcess): Future[void] {.async.} =
     echo "--- ", line
 
 proc callback(req: Request): Future[void] {.async.} =
-  echo fmt"Connection requested from {req}"
+  # echo fmt"Connection requested from {req}"
   let process: AsyncProcess = ({.gcsafe.}: process)
 
   try:
@@ -74,7 +73,7 @@ proc callback(req: Request): Future[void] {.async.} =
 
     asyncCheck process.sender(ws)
     asyncCheck process.receiver(ws)
-    asyncCheck process.logErrors()
+    # asyncCheck process.logErrors()
 
     while ws.readyState == Open:
       await sleepAsync(5000)

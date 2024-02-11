@@ -278,7 +278,6 @@ proc initialize(client: LSPClient, workspaceFolders: seq[string]): Future[Respon
     await client.connection.send(header & req)
 
 proc tryGetPortFromLanguagesServer(url: string, port: int, exePath: string, args: seq[string]): Future[Option[int]] {.async.} =
-  # return 3333.some
   debugf"tryGetPortFromLanguagesServer {url}, {port}, {exePath}, {args}"
   try:
     let body = $ %*{
@@ -291,6 +290,7 @@ proc tryGetPortFromLanguagesServer(url: string, port: int, exePath: string, args
     if not json.hasKey("port") or json["port"].kind != JInt:
       return int.none
 
+    # return 3333.some
     return json["port"].num.int.some
   except CatchableError:
     log(lvlError, fmt"Failed to connect to languages server {url}:{port}: {getCurrentExceptionMsg()}")
