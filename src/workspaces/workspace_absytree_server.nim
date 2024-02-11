@@ -41,7 +41,7 @@ method saveFile*(self: WorkspaceFolderAbsytreeServer, relativePath: string, cont
   let url = self.baseUrl & "/contents/" & relativePath
   log(lvlInfo, fmt"saveFile '{url}'")
 
-  await httpPost(url, content)
+  discard httpPost(url, content).await
 
 method saveFile*(self: WorkspaceFolderAbsytreeServer, relativePath: string, content: ArrayBuffer): Future[void] {.async.} =
   let relativePath = relativePath.normalizePathUnix
@@ -49,7 +49,7 @@ method saveFile*(self: WorkspaceFolderAbsytreeServer, relativePath: string, cont
   let url = self.baseUrl & "/contents/" & relativePath
   log(lvlInfo, fmt"saveFileBinary '{url}'")
 
-  await httpPost(url, content)
+  discard httpPost(url, content).await
 
 proc parseDirectoryListing(self: WorkspaceFolderAbsytreeServer, basePath: string, jsn: JsonNode): DirectoryListing =
   if jsn.hasKey("files") and jsn["files"].kind == JArray:

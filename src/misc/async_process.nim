@@ -14,11 +14,17 @@ type AsyncProcess* = ref object
   process: Process
   input: AsyncChannel[char]
   output: AsyncChannel[Option[string]]
+  error: AsyncChannel[char]
   inputStreamChannel: ptr Channel[Stream]
   outputStreamChannel: ptr Channel[Stream]
+  errorStreamChannel: ptr Channel[Stream]
   serverDiedNotifications: ptr Channel[bool]
   readerFlowVar: FlowVarBase
+  errorReaderFlowVar: FlowVarBase
   writerFlowVar: FlowVarBase
+
+proc isAlive*(process: AsyncProcess): bool =
+  return process.process.running
 
 proc newAsyncChannel*[T](): AsyncChannel[T] =
   new result
@@ -36,16 +42,21 @@ proc destroy*(process: AsyncProcess) =
   process.process.terminate()
   process.inputStreamChannel[].send nil
   process.outputStreamChannel[].send nil
+  process.errorStreamChannel[].send nil
 
   blockUntil process.readerFlowVar[]
   blockUntil process.writerFlowVar[]
+  blockUntil process.errorReaderFlowVar[]
 
   process.inputStreamChannel[].close()
+  process.errorStreamChannel[].close()
   process.outputStreamChannel[].close()
   process.serverDiedNotifications[].close()
   process.input.destroy()
+  process.error.destroy()
   process.output.destroy()
   process.inputStreamChannel.deallocShared
+  process.errorStreamChannel.deallocShared
   process.outputStreamChannel.deallocShared
   process.serverDiedNotifications.deallocShared
 
@@ -107,104 +118,124 @@ proc recvLine*(process: AsyncProcess): Future[string] =
     return result
   return process.input.recvLine()
 
+proc recvErrorLine*(process: AsyncProcess): Future[string] =
+  if process.error.isNil or process.error.chan.isNil:
+    result = newFuture[string]("recvError")
+    result.fail(newException(IOError, "(recvLine) Error stream closed while reading"))
+    return result
+  return process.error.recvLine()
+
 proc send*(process: AsyncProcess, data: string): Future[void] =
   if process.output.isNil or process.output.chan.isNil:
     return
   return process.output.send(data)
 
-proc startAsyncProcess*(name: string, args: openArray[string] = [], autoRestart = true): AsyncProcess =
-  new result
-  result.name = name
-  result.args = @args
-  result.dontRestart = not autoRestart
-  result.input = newAsyncChannel[char]()
-  result.output = newAsyncChannel[Option[string]]()
+proc readInput(chan: ptr Channel[Stream], serverDiedNotifications: ptr Channel[bool], data: ptr Channel[char], data2: ptr Channel[Option[string]]): bool =
+  while true:
+    let stream = chan[].recv
 
-  result.inputStreamChannel = cast[ptr Channel[Stream]](allocShared0(sizeof(Channel[Stream])))
-  result.inputStreamChannel[].open()
+    if stream.isNil:
+      # Send none to writeOutput to make it abandon the current stream
+      # and recheck, causing it to also get a nil stream and stop
+      data2[].send string.none
+      break
 
-  result.outputStreamChannel = cast[ptr Channel[Stream]](allocShared0(sizeof(Channel[Stream])))
-  result.outputStreamChannel[].open()
-
-  result.serverDiedNotifications = cast[ptr Channel[bool]](allocShared0(sizeof(Channel[bool])))
-  result.serverDiedNotifications[].open()
-
-  proc readInput(chan: ptr Channel[Stream], serverDiedNotifications: ptr Channel[bool], data: ptr Channel[char], data2: ptr Channel[Option[string]]): bool =
     while true:
-      let stream = chan[].recv
+      let c = stream.readChar()
 
-      if stream.isNil:
-        # Send none to writeOutput to make it abandon the current stream
-        # and recheck, causing it to also get a nil stream and stop
+      data[].send c
+
+      if c == '\0':
+        # echo "server died"
         data2[].send string.none
+        serverDiedNotifications[].send true
         break
 
-      while true:
-        let c = stream.readChar()
+  return true
 
-        data[].send c
+proc writeOutput(chan: ptr Channel[Stream], data: ptr Channel[Option[string]]): bool =
+  var buffer: seq[string]
+  while true:
+    let stream = chan[].recv
 
-        if c == '\0':
-          # echo "server died"
-          data2[].send string.none
-          serverDiedNotifications[].send true
-          break
+    if stream.isNil:
+      break
 
-    return true
-
-  proc writeOutput(chan: ptr Channel[Stream], data: ptr Channel[Option[string]]): bool =
-    var buffer: seq[string]
     while true:
-      let stream = chan[].recv
-
-      if stream.isNil:
-        break
-
-      while true:
-        let d = data[].recv
-        if d.isNone:
-          # echo "data none"
-          buffer.setLen 0
-          break
-
-        # echo "> " & d.get
-        buffer.add d.get
-
-        for d in buffer:
-          stream.write(d)
+      let d = data[].recv
+      if d.isNone:
+        # echo "data none"
         buffer.setLen 0
+        break
 
-    return true
+      # echo "> " & d.get
+      buffer.add d.get
 
-  proc restartServer(process: AsyncProcess) {.async.} =
-    var startCounter = 0
+      for d in buffer:
+        stream.write(d)
+      buffer.setLen 0
 
-    while true:
-      while process.serverDiedNotifications[].peek == 0:
-        # echo "process active"
-        await sleepAsync(1)
+  return true
 
-      # echo "process dead"
-      while process.serverDiedNotifications[].peek > 0:
-        discard process.serverDiedNotifications[].recv
+proc restartServer(process: AsyncProcess) {.async.} =
+  var startCounter = 0
 
-      if startCounter > 0 and process.dontRestart:
-        log(lvlInfo, "Don't restart")
-        return
+  while true:
+    while process.serverDiedNotifications[].peek == 0:
+      # echo "process active"
+      await sleepAsync(1)
 
-      inc startCounter
+    # echo "process dead"
+    while process.serverDiedNotifications[].peek > 0:
+      discard process.serverDiedNotifications[].recv
 
-      log(lvlInfo, fmt"start {process.name} {process.args}")
+    if startCounter > 0 and process.dontRestart:
+      log(lvlInfo, "Don't restart")
+      return
+
+    inc startCounter
+
+    log(lvlInfo, fmt"start process {process.name} {process.args}")
+    try:
       process.process = startProcess(process.name, args=process.args, options={poUsePath, poDaemon})
+    except CatchableError as e:
+      log(lvlError, fmt"Failed to start {process.name}: {e.msg}")
+      break
 
-      process.readerFlowVar = spawn(readInput(process.inputStreamChannel, process.serverDiedNotifications, process.input.chan, process.output.chan))
-      process.inputStreamChannel[].send process.process.outputStream()
+    process.readerFlowVar = spawn(readInput(process.inputStreamChannel, process.serverDiedNotifications, process.input.chan, process.output.chan))
+    process.inputStreamChannel[].send process.process.outputStream()
 
-      process.writerFlowVar = spawn(writeOutput(process.outputStreamChannel, process.output.chan))
-      process.outputStreamChannel[].send process.process.inputStream()
+    process.errorReaderFlowVar = spawn(readInput(process.errorStreamChannel, process.serverDiedNotifications, process.error.chan, process.output.chan))
+    process.errorStreamChannel[].send process.process.errorStream()
 
-      if not process.onRestarted.isNil:
-        asyncCheck process.onRestarted()
+    process.writerFlowVar = spawn(writeOutput(process.outputStreamChannel, process.output.chan))
+    process.outputStreamChannel[].send process.process.inputStream()
 
-  asyncCheck restartServer(result)
-  result.serverDiedNotifications[].send true
+    if not process.onRestarted.isNil:
+      process.onRestarted().await
+
+proc startAsyncProcess*(name: string, args: seq[string] = @[], autoRestart = true): AsyncProcess =
+  let process = AsyncProcess()
+  process.name = name
+  process.args = @args
+  process.dontRestart = not autoRestart
+  process.input = newAsyncChannel[char]()
+  process.error = newAsyncChannel[char]()
+  process.output = newAsyncChannel[Option[string]]()
+
+  process.inputStreamChannel = cast[ptr Channel[Stream]](allocShared0(sizeof(Channel[Stream])))
+  process.inputStreamChannel[].open()
+
+  process.errorStreamChannel = cast[ptr Channel[Stream]](allocShared0(sizeof(Channel[Stream])))
+  process.errorStreamChannel[].open()
+
+  process.outputStreamChannel = cast[ptr Channel[Stream]](allocShared0(sizeof(Channel[Stream])))
+  process.outputStreamChannel[].open()
+
+  process.serverDiedNotifications = cast[ptr Channel[bool]](allocShared0(sizeof(Channel[bool])))
+  process.serverDiedNotifications[].open()
+
+  asyncCheck process.restartServer()
+  process.serverDiedNotifications[].send true
+
+  return process

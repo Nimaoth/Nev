@@ -1,5 +1,5 @@
 import std/[os, osproc, asynchttpserver, strutils, strformat, uri, asyncfile, json]
-import misc/[custom_async, util]
+import misc/[custom_async, util, myjsonutils]
 import router, server_utils
 
 var processes: seq[Process] = @[]
@@ -74,6 +74,29 @@ proc callback(req: Request): Future[void] {.async.} =
 
       except CatchableError:
         await req.respond(Http500, "failed to save: " & getCurrentExceptionMsg(), headers)
+
+    post "/lsp/start":
+      let port = getFreePort()
+
+      try:
+        let reqBody = parseJson(req.body)
+        let executablePath = reqBody["path"].str
+        let additionalArgs = reqBody["args"].jsonTo seq[string]
+        let nimsuggest = getCurrentDir() / "tools/lsp-ws.exe"
+        let args = @[fmt"--port:{port}", fmt"--exe:{executablePath}", "--"] & additionalArgs
+        let process = startProcess(nimsuggest, args=args, options={poUsePath, poDaemon})
+
+        {.gcsafe.}:
+          processes.add process
+
+        let response = %*{
+          "port": port.int
+        }
+
+        await req.respond(Http200, response.pretty, headers)
+
+      except CatchableError:
+        await req.respond(Http500, "failed to start nimsuggest: " & getCurrentExceptionMsg(), headers)
 
     fallback:
       await req.respond(Http404, "", headers)
