@@ -2,10 +2,19 @@ import absytree_runtime
 
 {.used.}
 
-setOption "editor.text.languages-server.url", "localhost"
-setOption "editor.text.languages-server.port", 3001
+let useLSPWebsocketProxy = getBackend() == Browser
+
+if useLSPWebsocketProxy:
+  setOption "editor.text.languages-server.url", "localhost"
+  setOption "editor.text.languages-server.port", 3001
+else:
+  setOption "editor.text.languages-server.url", ""
+  setOption "editor.text.languages-server.port", 0
+
 setOption "editor.text.lsp.zig.path", "zls"
-setOption "editor.text.lsp.rust.path", "rust-analyzer.exe"
+setOption "editor.text.lsp.rust.path", "rust-analyzer"
+setOption "editor.text.lsp.nim.path", "nimlangserver"
+setOption "editor.text.lsp.nim.args", %*["--stdio"]
 setOption "editor.text.treesitter.rust.dll", "D:/dev/Nim/nimtreesitter/treesitter_rust/treesitter_rust/rust.dll"
 setOption "editor.text.treesitter.zig.dll", "D:/dev/Nim/nimtreesitter/treesitter_zig/treesitter_zig/zig.dll"
 setOption "editor.text.treesitter.javascript.dll", "D:/dev/Nim/nimtreesitter/treesitter_javascript/treesitter_javascript/javascript.dll"

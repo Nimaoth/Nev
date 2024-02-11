@@ -29,7 +29,7 @@ jobs:
     strategy:
       matrix:
         container: ["nimlang/nim:2.0.0-regular"]
-    
+
     container:
       image: ${{ matrix.container }}
       volumes:
@@ -56,7 +56,7 @@ jobs:
       # linux builds
       - run: nimble buildAbsytreeServer
       - if: always()
-        run: nimble buildNimsuggestWS
+        run: nimble buildLspWs
       - if: always()
         run: nimble buildBrowser
       - if: always()
@@ -106,7 +106,7 @@ jobs:
       - name: nimble setup
         continue-on-error: true
         run: nimble setup
-        
+
       - name: nimble setup
         run: nimble setup
 
@@ -118,7 +118,7 @@ jobs:
       - if: always()
         run: nimble buildAbsytreeServerWindows
       - if: always()
-        run: nimble buildNimsuggestWSWindows
+        run: nimble buildLspWsWindows
 
       # create release packages
       - run: nim ./tools/package_release.nims
