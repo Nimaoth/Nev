@@ -526,31 +526,60 @@ proc unindent*(self: TextDocumentEditor) =
       argsJsonString.cstring)
 
 
-proc editor_text_undo_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+proc editor_text_undo_void_TextDocumentEditor_string_wasm(arg: cstring): cstring {.
     importc.}
-proc undo*(self: TextDocumentEditor) =
+proc undo*(self: TextDocumentEditor; checkpoint: string = "word") =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:
       self
     else:
       self.toJson()
+  argsJson.add block:
+    when string is JsonNode:
+      checkpoint
+    else:
+      checkpoint.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_undo_void_TextDocumentEditor_wasm(
+  let res {.used.} = editor_text_undo_void_TextDocumentEditor_string_wasm(
       argsJsonString.cstring)
 
 
-proc editor_text_redo_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+proc editor_text_redo_void_TextDocumentEditor_string_wasm(arg: cstring): cstring {.
     importc.}
-proc redo*(self: TextDocumentEditor) =
+proc redo*(self: TextDocumentEditor; checkpoint: string = "word") =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:
       self
     else:
       self.toJson()
+  argsJson.add block:
+    when string is JsonNode:
+      checkpoint
+    else:
+      checkpoint.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_redo_void_TextDocumentEditor_wasm(
+  let res {.used.} = editor_text_redo_void_TextDocumentEditor_string_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_addNextCheckpoint_void_TextDocumentEditor_string_wasm(
+    arg: cstring): cstring {.importc.}
+proc addNextCheckpoint*(self: TextDocumentEditor; checkpoint: string) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when string is JsonNode:
+      checkpoint
+    else:
+      checkpoint.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_addNextCheckpoint_void_TextDocumentEditor_string_wasm(
       argsJsonString.cstring)
 
 

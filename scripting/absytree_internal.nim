@@ -80,9 +80,14 @@ proc editor_text_indent_void_TextDocumentEditor_impl*(self: TextDocumentEditor) 
   discard
 proc editor_text_unindent_void_TextDocumentEditor_impl*(self: TextDocumentEditor) =
   discard
-proc editor_text_undo_void_TextDocumentEditor_impl*(self: TextDocumentEditor) =
+proc editor_text_undo_void_TextDocumentEditor_string_impl*(
+    self: TextDocumentEditor; checkpoint: string = "word") =
   discard
-proc editor_text_redo_void_TextDocumentEditor_impl*(self: TextDocumentEditor) =
+proc editor_text_redo_void_TextDocumentEditor_string_impl*(
+    self: TextDocumentEditor; checkpoint: string = "word") =
+  discard
+proc editor_text_addNextCheckpoint_void_TextDocumentEditor_string_impl*(
+    self: TextDocumentEditor; checkpoint: string) =
   discard
 proc editor_text_copy_void_TextDocumentEditor_string_bool_impl*(
     self: TextDocumentEditor; register: string = ""; inclusiveEnd: bool = false) =
