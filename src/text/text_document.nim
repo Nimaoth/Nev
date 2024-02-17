@@ -19,6 +19,7 @@ type
     Nested
   UndoOp = ref object
     oldSelection: seq[Selection]
+    checkpoints: seq[string]
     case kind: UndoOpKind
     of Delete:
       selection: Selection
@@ -73,6 +74,7 @@ type TextDocument* = ref object of Document
 
   undoOps*: seq[UndoOp]
   redoOps*: seq[UndoOp]
+  nextCheckpoints: seq[string]
 
   tsParser: TSParser
   tsLanguage: TSLanguage
@@ -247,6 +249,13 @@ func charAt*(self: TextDocument, cursor: Cursor): char =
   if cursor.column < 0 or cursor.column > self.lines[cursor.line].high:
     return 0.char
   return self.lines[cursor.line][cursor.column]
+
+func runeAt*(self: TextDocument, cursor: Cursor): Rune =
+  if cursor.line < 0 or cursor.line > self.lines.high:
+    return 0.Rune
+  if cursor.column < 0 or cursor.column > self.lines[cursor.line].high:
+    return 0.Rune
+  return self.lines[cursor.line].runeAt(cursor.column)
 
 func len*(line: StyledLine): int =
   result = 0
@@ -703,8 +712,11 @@ proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection:
     self.notifyTextChanged()
 
   if record and undoOp.children.len > 0:
+    undoOp.checkpoints.add self.nextCheckpoints
     self.undoOps.add undoOp
     self.redoOps = @[]
+
+  self.nextCheckpoints = @[]
 
 proc getNodeRange*(self: TextDocument, selection: Selection, parentIndex: int = 0, siblingIndex: int = 0): Option[Selection] =
   result = Selection.none
@@ -733,6 +745,44 @@ proc getNodeRange*(self: TextDocument, selection: Selection, parentIndex: int = 
       break
 
   result = node.getRange.toSelection.some
+
+proc moveCursorColumn(self: TextDocument, cursor: Cursor, offset: int, wrap: bool = true): Cursor =
+  var cursor = cursor
+  var column = cursor.column
+
+  template currentLine: openArray[char] = self.lines[cursor.line].toOpenArray
+
+  if offset > 0:
+    for i in 0..<offset:
+      if column == currentLine.len:
+        if not wrap:
+          break
+        if cursor.line < self.lines.high:
+          cursor.line = cursor.line + 1
+          cursor.column = 0
+          continue
+        else:
+          cursor.column = currentLine.len
+          break
+
+      cursor.column = currentLine.nextRuneStart(cursor.column)
+
+  elif offset < 0:
+    for i in 0..<(-offset):
+      if column == 0:
+        if not wrap:
+          break
+        if cursor.line > 0:
+          cursor.line = cursor.line - 1
+          cursor.column = currentLine.len
+          continue
+        else:
+          cursor.column = 0
+          break
+
+      cursor.column = currentLine.runeStart(cursor.column - 1)
+
+  return self.clampCursor cursor
 
 proc firstNonWhitespace*(str: string): int =
   result = 0
@@ -787,6 +837,18 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
   result = self.clampAndMergeSelections selections
 
   var undoOp = UndoOp(kind: Nested, children: @[], oldSelection: @oldSelection)
+
+  var startNewCheckpoint = false
+  var checkInsertedTextForCheckpoint = false
+
+  if self.undoOps.len == 0:
+    startNewCheckpoint = true
+  elif self.undoOps.last.kind == Insert:
+    startNewCheckpoint = true
+  elif self.undoOps.last.kind == Nested and self.undoOps.last.children.len != result.len:
+    startNewCheckpoint = true
+  elif self.undoOps.last.kind in {Nested, Delete}:
+    checkInsertedTextForCheckpoint = true
 
   for i, selection in result:
     let text = if texts.len == 1:
@@ -843,6 +905,21 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
     inc self.version
 
     if record:
+      if checkInsertedTextForCheckpoint:
+        # echo fmt"kind: {self.undoOps.last.kind}, len: {self.undoOps.last.children.len} == {result.len}, child kind: {self.undoOps.last.children[i].kind}, cursor {self.undoOps.last.children[i].selection.last} != {oldCursor}"
+        if text.len > 1:
+          startNewCheckpoint = true
+        elif self.undoOps.last.kind == Nested and self.undoOps.last.children.len == result.len and self.undoOps.last.children[i].kind == Delete:
+          if self.undoOps.last.children[i].selection.last != oldCursor:
+            startNewCheckpoint = true
+          else:
+            let lastInsertedChar = if oldCursor.column == 0: '\n' else: self.charAt(self.moveCursorColumn(oldCursor, -1))
+            let newInsertedChar = text[0]
+            # echo fmt"last: '{lastInsertedChar}', new: '{newInsertedChar}'"
+
+            if lastInsertedChar notin Whitespace and newInsertedChar in Whitespace or lastInsertedChar == '\n':
+              startNewCheckpoint = true
+
       undoOp.children.add UndoOp(kind: Delete, selection: (oldCursor, cursor))
 
     if notify:
@@ -852,8 +929,14 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
     self.notifyTextChanged()
 
   if record and undoOp.children.len > 0:
+    if startNewCheckpoint:
+      undoOp.checkpoints.add "word"
+    undoOp.checkpoints.add self.nextCheckpoints
+
     self.undoOps.add undoOp
     self.redoOps = @[]
+
+  self.nextCheckpoints = @[]
 
 proc edit*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true): seq[Selection] =
   let selections = selections.map (s) => s.normalized
@@ -865,17 +948,17 @@ proc doUndo(self: TextDocument, op: UndoOp, oldSelection: openArray[Selection], 
   of Delete:
     let text = self.contentString(op.selection)
     result = self.delete([op.selection], op.oldSelection, record=false)
-    redoOps.add UndoOp(kind: Insert, cursor: op.selection.first, text: text, oldSelection: @oldSelection)
+    redoOps.add UndoOp(kind: Insert, cursor: op.selection.first, text: text, oldSelection: @oldSelection, checkpoints: op.checkpoints)
 
   of Insert:
     let selections = self.insert([op.cursor.toSelection], op.oldSelection, [op.text], record=false)
     result = selections
-    redoOps.add UndoOp(kind: Delete, selection: (op.cursor, selections[0].last), oldSelection: @oldSelection)
+    redoOps.add UndoOp(kind: Delete, selection: (op.cursor, selections[0].last), oldSelection: @oldSelection, checkpoints: op.checkpoints)
 
   of Nested:
     result = op.oldSelection
 
-    var redoOp = UndoOp(kind: Nested, oldSelection: @oldSelection)
+    var redoOp = UndoOp(kind: Nested, oldSelection: @oldSelection, checkpoints: op.checkpoints)
     for i in countdown(op.children.high, 0):
       discard self.doUndo(op.children[i], oldSelection, useOldSelection, redoOp.children)
 
@@ -884,30 +967,33 @@ proc doUndo(self: TextDocument, op: UndoOp, oldSelection: openArray[Selection], 
   if useOldSelection:
     result = op.oldSelection
 
-proc undo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelection: bool): Option[seq[Selection]] =
+proc undo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelection: bool, untilCheckpoint: string = ""): Option[seq[Selection]] =
   result = seq[Selection].none
 
   if self.undoOps.len == 0:
     return
 
-  let op = self.undoOps.pop
-  return self.doUndo(op, oldSelection, useOldSelection, self.redoOps).some
+  while self.undoOps.len > 0:
+    let op = self.undoOps.pop
+    result = self.doUndo(op, oldSelection, useOldSelection, self.redoOps).some
+    if untilCheckpoint.len == 0 or untilCheckpoint in op.checkpoints:
+      break
 
 proc doRedo(self: TextDocument, op: UndoOp, oldSelection: openArray[Selection], useOldSelection: bool, undoOps: var seq[UndoOp]): seq[Selection] =
   case op.kind:
   of Delete:
     let text = self.contentString(op.selection)
     result = self.delete([op.selection], op.oldSelection, record=false)
-    undoOps.add UndoOp(kind: Insert, cursor: op.selection.first, text: text, oldSelection: @oldSelection)
+    undoOps.add UndoOp(kind: Insert, cursor: op.selection.first, text: text, oldSelection: @oldSelection, checkpoints: op.checkpoints)
 
   of Insert:
     result = self.insert([op.cursor.toSelection], [op.cursor.toSelection], [op.text], record=false)
-    undoOps.add UndoOp(kind: Delete, selection: (op.cursor, result[0].last), oldSelection: @oldSelection)
+    undoOps.add UndoOp(kind: Delete, selection: (op.cursor, result[0].last), oldSelection: @oldSelection, checkpoints: op.checkpoints)
 
   of Nested:
     result = op.oldSelection
 
-    var undoOp = UndoOp(kind: Nested, oldSelection: @oldSelection)
+    var undoOp = UndoOp(kind: Nested, oldSelection: @oldSelection, checkpoints: op.checkpoints)
     for i in countdown(op.children.high, 0):
       discard self.doRedo(op.children[i], oldSelection, useOldSelection, undoOp.children)
 
@@ -916,14 +1002,20 @@ proc doRedo(self: TextDocument, op: UndoOp, oldSelection: openArray[Selection], 
   if useOldSelection:
     result = op.oldSelection
 
-proc redo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelection: bool): Option[seq[Selection]] =
+proc redo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelection: bool, untilCheckpoint: string = ""): Option[seq[Selection]] =
   result = seq[Selection].none
 
   if self.redoOps.len == 0:
     return
 
-  let op = self.redoOps.pop
-  return self.doRedo(op, oldSelection, useOldSelection, self.undoOps).some
+  while self.redoOps.len > 0:
+    let op = self.redoOps.pop
+    result = self.doRedo(op, oldSelection, useOldSelection, self.undoOps).some
+    if untilCheckpoint.len == 0 or (self.redoOps.len > 0 and untilCheckpoint in self.redoOps.last.checkpoints):
+      break
+
+proc addNextCheckpoint*(self: TextDocument, checkpoint: string) =
+  self.nextCheckpoints.add checkpoint
 
 proc isLineEmptyOrWhitespace*(self: TextDocument, line: int): bool =
   if line > self.lines.high:

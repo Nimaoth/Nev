@@ -728,15 +728,18 @@ proc unindent*(self: TextDocumentEditor) {.expose("editor.text").} =
       s.last.column = max(0, s.last.column - self.document.indentStyle.indentColumns)
   self.selections = selections
 
-proc undo*(self: TextDocumentEditor) {.expose("editor.text").} =
-  if self.document.undo(self.selections, true).getSome(selections):
+proc undo*(self: TextDocumentEditor, checkpoint: string = "word") {.expose("editor.text").} =
+  if self.document.undo(self.selections, true, checkpoint).getSome(selections):
     self.selections = selections
     self.scrollToCursor(Last)
 
-proc redo*(self: TextDocumentEditor) {.expose("editor.text").} =
-  if self.document.redo(self.selections, true).getSome(selections):
+proc redo*(self: TextDocumentEditor, checkpoint: string = "word") {.expose("editor.text").} =
+  if self.document.redo(self.selections, true, checkpoint).getSome(selections):
     self.selections = selections
     self.scrollToCursor(Last)
+
+proc addNextCheckpoint*(self: TextDocumentEditor, checkpoint: string) {.expose("editor.text").} =
+  self.document.addNextCheckpoint checkpoint
 
 proc copyAsync*(self: TextDocumentEditor, register: string, inclusiveEnd: bool): Future[void] {.async.} =
   var text = ""

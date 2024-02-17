@@ -53,8 +53,12 @@ proc editor_text_insertText_void_TextDocumentEditor_string_bool_impl(
     self: TextDocumentEditor; text: string; autoIndent: bool = true)  {.importc.}
 proc editor_text_indent_void_TextDocumentEditor_impl(self: TextDocumentEditor)  {.importc.}
 proc editor_text_unindent_void_TextDocumentEditor_impl(self: TextDocumentEditor)  {.importc.}
-proc editor_text_undo_void_TextDocumentEditor_impl(self: TextDocumentEditor)  {.importc.}
-proc editor_text_redo_void_TextDocumentEditor_impl(self: TextDocumentEditor)  {.importc.}
+proc editor_text_undo_void_TextDocumentEditor_string_impl(
+    self: TextDocumentEditor; checkpoint: string = "word")  {.importc.}
+proc editor_text_redo_void_TextDocumentEditor_string_impl(
+    self: TextDocumentEditor; checkpoint: string = "word")  {.importc.}
+proc editor_text_addNextCheckpoint_void_TextDocumentEditor_string_impl(
+    self: TextDocumentEditor; checkpoint: string)  {.importc.}
 proc editor_text_copy_void_TextDocumentEditor_string_bool_impl(
     self: TextDocumentEditor; register: string = ""; inclusiveEnd: bool = false)  {.importc.}
 proc editor_text_paste_void_TextDocumentEditor_string_impl(
