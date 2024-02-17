@@ -27,7 +27,7 @@ jobs:
 
     strategy:
       matrix:
-        container: ["nimlang/nim:2.1.1-regular"]
+        container: ["nimlang/nim:2.0.2-regular"]
 
     container:
       image: ${{ matrix.container }}
@@ -100,7 +100,7 @@ jobs:
         uses: actions/checkout@v3
       - uses: jiro4989/setup-nim-action@v1
         with:
-          nim-version: '2.1.1'
+          nim-version: '2.1.x'
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: nimble setup
         continue-on-error: true
@@ -140,7 +140,7 @@ jobs:
     name: Run tests
     runs-on: ubuntu-latest
     container:
-      image: "nimlang/nim:2.1.1-regular"
+      image: "nimlang/nim:2.0.2-regular"
       volumes:
         - ${{ github.workspace }}:/app
     steps:
