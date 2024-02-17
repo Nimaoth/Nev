@@ -22,13 +22,13 @@ type
 
   LSPClient* = ref object
     connection: LSPConnection
-    onRestarted: proc(): Future[void]
     nextId: int
     activeRequests: Table[int, tuple[meth: string, future: ResolvableFuture[Response[JsonNode]]]]
     requestsPerMethod: Table[string, seq[int]]
     canceledRequests: HashSet[int]
     isInitialized: bool
     pendingRequests: seq[string]
+    workspaceFolders: seq[string]
 
 proc complete[T](future: ResolvableFuture[T], result: T) =
   when defined(js):
@@ -208,13 +208,13 @@ proc cancelAllOf*(client: LSPClient, meth: string) =
   for (id, future) in futures:
     future.complete error[JsonNode](-1, fmt"{meth}:{id} canceled")
 
-proc initialize(client: LSPClient, workspaceFolders: seq[string]): Future[Response[JsonNode]] {.async.} =
-  let workspacePath = if workspaceFolders.len > 0:
-    workspaceFolders[0].myNormalizedPath.some
+proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async.} =
+  let workspacePath = if client.workspaceFolders.len > 0:
+    client.workspaceFolders[0].myNormalizedPath.some
   else:
     string.none
 
-  let workspaces = workspaceFolders.mapIt(WorkspaceFolder(uri: $it.toUri, name: it.splitFile.name))
+  let workspaces = client.workspaceFolders.mapIt(WorkspaceFolder(uri: $it.toUri, name: it.splitFile.name))
 
   let processId = when defined(js):
     # todo
@@ -302,15 +302,17 @@ when not defined(js):
       let line = await process.recvErrorLine
       log(lvlDebug, fmt"[debug] {line}")
 
+proc sendInitializationRequest(client: LSPClient) {.async.} =
+  log(lvlInfo, "Initializing client...")
+  let response = await client.initialize()
+  if response.isError:
+    log(lvlError, fmt"[sendInitializationRequest] Got error response: {response}")
+    return
+  var serverCapabilities: ServerCapabilities = response.result["capabilities"].jsonTo(ServerCapabilities, Joptions(allowMissingKeys: true, allowExtraKeys: true))
+  log(lvlInfo, "Server capabilities: ", serverCapabilities)
+
 proc connect*(client: LSPClient, serverExecutablePath: string, workspaces: seq[string], args: seq[string], languagesServer: Option[(string, int)] = (string, int).none) {.async.} =
-  client.onRestarted = proc() {.async.} =
-    log(lvlInfo, "Initializing client...")
-    let response = await client.initialize(workspaces)
-    if response.isError:
-      log(lvlError, fmt"[onRestarted] Got error response: {response}")
-      return
-    var serverCapabilities: ServerCapabilities = response.result["capabilities"].jsonTo(ServerCapabilities, Joptions(allowMissingKeys: true, allowExtraKeys: true))
-    log(lvlInfo, "Server capabilities: ", serverCapabilities)
+  client.workSpaceFolders = workspaces
 
   if languagesServer.getSome(lsConfig):
     log lvlInfo, fmt"Using languages server at '{lsConfig[0]}:{lsConfig[1]}' to find LSP connection"
@@ -323,7 +325,7 @@ proc connect*(client: LSPClient, serverExecutablePath: string, workspaces: seq[s
     var socket = await newWebSocket(fmt"ws://localhost:{port.get}")
     let connection = LSPConnectionWebsocket(websocket: socket)
     client.connection = connection
-    asyncCheck client.onRestarted()
+    asyncCheck client.sendInitializationRequest()
 
   else:
     when not defined(js):
@@ -332,7 +334,7 @@ proc connect*(client: LSPClient, serverExecutablePath: string, workspaces: seq[s
       let connection = LSPConnectionAsyncProcess(process: process)
       connection.process.onRestarted = proc() {.async.} =
         asyncCheck logProcessDebugOutput(process)
-        client.onRestarted().await
+        await client.sendInitializationRequest()
       client.connection = connection
 
     else:
