@@ -27,7 +27,7 @@ jobs:
 
     strategy:
       matrix:
-        container: ["nimlang/nim:2.1.1-latest"]
+        container: ["nimlang/nim:2.1.1-regular"]
 
     container:
       image: ${{ matrix.container }}
@@ -140,7 +140,7 @@ jobs:
     name: Run tests
     runs-on: ubuntu-latest
     container:
-      image: "nimlang/nim:2.1.1-latest"
+      image: "nimlang/nim:2.1.1-regular"
       volumes:
         - ${{ github.workspace }}:/app
     steps:
