@@ -8,6 +8,7 @@ import ast/[model, project]
 import config_provider, app_interface
 import text/language/language_server_base, language_server_absytree_commands
 import input, events, document, document_editor, popup, dispatch_tables, theme, clipboard, app_options
+import text/custom_treesitter
 
 when not defined(js):
   import scripting/scripting_nim
@@ -81,79 +82,82 @@ type ScriptAction = object
   name: string
   scriptContext: ScriptContext
 
-type App* = ref object
-  backend: api.Backend
-  platform*: Platform
-  fontRegular*: string
-  fontBold*: string
-  fontItalic*: string
-  fontBoldItalic*: string
-  clearAtlasTimer*: Timer
-  timer*: Timer
-  frameTimer*: Timer
-  lastBounds*: Rect
-  closeRequested*: bool
+type
+  App* = ref AppObject
+  AppObject* = object
+    test: int32 = 123456789
+    backend: api.Backend
+    platform*: Platform
+    fontRegular*: string
+    fontBold*: string
+    fontItalic*: string
+    fontBoldItalic*: string
+    clearAtlasTimer*: Timer
+    timer*: Timer
+    frameTimer*: Timer
+    lastBounds*: Rect
+    closeRequested*: bool
 
-  registers: Table[string, Register]
-  recordingKeys: seq[string]
-  recordingCommands: seq[string]
-  bIsReplayingKeys: bool = false
-  bIsReplayingCommands: bool = false
+    registers: Table[string, Register]
+    recordingKeys: seq[string]
+    recordingCommands: seq[string]
+    bIsReplayingKeys: bool = false
+    bIsReplayingCommands: bool = false
 
-  eventHandlerConfigs: Table[string, EventHandlerConfig]
+    eventHandlerConfigs: Table[string, EventHandlerConfig]
 
-  options: JsonNode
-  callbacks: Table[string, int]
+    options: JsonNode
+    callbacks: Table[string, int]
 
-  logger: Logger
+    logger: Logger
 
-  workspace*: Workspace
+    workspace*: Workspace
 
-  scriptContext*: ScriptContext
-  wasmScriptContext*: ScriptContextWasm
-  initializeCalled: bool
+    scriptContext*: ScriptContext
+    wasmScriptContext*: ScriptContextWasm
+    initializeCalled: bool
 
-  currentScriptContext: Option[ScriptContext] = ScriptContext.none
+    currentScriptContext: Option[ScriptContext] = ScriptContext.none
 
-  statusBarOnTop*: bool
+    statusBarOnTop*: bool
 
-  currentViewInternal: int
-  views*: seq[View]
-  hiddenViews*: seq[View]
-  layout*: Layout
-  layout_props*: LayoutProperties
+    currentViewInternal: int
+    views*: seq[View]
+    hiddenViews*: seq[View]
+    layout*: Layout
+    layout_props*: LayoutProperties
 
-  activeEditorInternal: Option[EditorId]
-  editorHistory: Deque[EditorId]
+    activeEditorInternal: Option[EditorId]
+    editorHistory: Deque[EditorId]
 
-  theme*: Theme
-  loadedFontSize: float
-  loadedLineDistance: float
+    theme*: Theme
+    loadedFontSize: float
+    loadedLineDistance: float
 
-  editors*: Table[EditorId, DocumentEditor]
-  popups*: seq[Popup]
+    editors*: Table[EditorId, DocumentEditor]
+    popups*: seq[Popup]
 
-  onEditorRegistered*: Event[DocumentEditor]
-  onEditorDeregistered*: Event[DocumentEditor]
+    onEditorRegistered*: Event[DocumentEditor]
+    onEditorDeregistered*: Event[DocumentEditor]
 
-  logDocument: Document
+    logDocument: Document
 
-  commandHistory: seq[string]
-  currentHistoryEntry: int = 0
-  absytreeCommandsServer: LanguageServer
-  commandLineTextEditor: DocumentEditor
-  eventHandler*: EventHandler
-  commandLineEventHandlerHigh*: EventHandler
-  commandLineEventHandlerLow*: EventHandler
-  commandLineMode*: bool
+    commandHistory: seq[string]
+    currentHistoryEntry: int = 0
+    absytreeCommandsServer: LanguageServer
+    commandLineTextEditor: DocumentEditor
+    eventHandler*: EventHandler
+    commandLineEventHandlerHigh*: EventHandler
+    commandLineEventHandlerLow*: EventHandler
+    commandLineMode*: bool
 
-  modeEventHandler: EventHandler
-  currentMode*: string
-  leaders: seq[string]
+    modeEventHandler: EventHandler
+    currentMode*: string
+    leaders: seq[string]
 
-  editor_defaults: seq[DocumentEditor]
+    editor_defaults: seq[DocumentEditor]
 
-  scriptActions: Table[string, ScriptAction]
+    scriptActions: Table[string, ScriptAction]
 
 var gEditor* {.exportc.}: App = nil
 
@@ -934,6 +938,8 @@ proc shutdown*(self: App) =
   for editor in self.editors.values:
     editor.shutdown()
 
+  custom_treesitter.freeDynamicLibraries()
+
 var logBuffer = ""
 proc handleLog(self: App, level: Level, args: openArray[string]) =
   let str = substituteLog(defaultFmtStr, level, args) & "\n"
@@ -1518,11 +1524,12 @@ proc chooseTheme*(self: App) {.expose("editor").} =
 
   var popup = newSelectorPopup(self.asAppInterface)
   popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
-    for file in walkDirRec("./themes", relative=true):
+    let themesDir = fs.getApplicationFilePath("./themes")
+    for file in walkDirRec(themesDir, relative=true):
       if file.endsWith ".json":
         let name = file.splitFile.name
         let score = matchPath(file, text)
-        result.add ThemeSelectorItem(name: name, path: fmt"./themes/{file}", score: score)
+        result.add ThemeSelectorItem(name: name, path: fmt"{themesDir}/{file}", score: score)
 
     result.sort((a, b) => cmp(a.ThemeSelectorItem.score, b.ThemeSelectorItem.score), Descending)
 

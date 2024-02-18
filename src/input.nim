@@ -296,14 +296,14 @@ proc fillTransitionFunctionIndicesRec(dfa: var CommandDFA, state: int, functionI
   for t in dfa.states[state].epsilonTransitions.mitems:
   # for i in 0..dfa.states[state].epsilonTransitions.high:
     t.functionIndices.bitSetUnion functionIndices
-    if t.state == endState:
+    if t.state == endState or t.state == 0:
       continue
     fillTransitionFunctionIndicesRec(dfa, t.state, functionIndices, endState)
 
   for (_, dfaInput) in dfa.states[state].transitions.mpairs:
     for (_, t) in dfaInput.next.mpairs:
       t.functionIndices.bitSetUnion functionIndices
-      if t.state == endState or t.state == state:
+      if t.state == endState or t.state == state or t.state == 0:
         continue
       fillTransitionFunctionIndicesRec(dfa, t.state, functionIndices, endState)
 

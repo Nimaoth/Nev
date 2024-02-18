@@ -39,14 +39,19 @@ proc destroy*[T](channel: AsyncChannel[T]) =
 proc destroy*(process: AsyncProcess) =
   process.dontRestart = true
 
-  process.process.terminate()
+  if not process.process.isNil:
+    process.process.terminate()
+
   process.inputStreamChannel[].send nil
   process.outputStreamChannel[].send nil
   process.errorStreamChannel[].send nil
 
-  blockUntil process.readerFlowVar[]
-  blockUntil process.writerFlowVar[]
-  blockUntil process.errorReaderFlowVar[]
+  if not process.readerFlowVar.isNil:
+    blockUntil process.readerFlowVar[]
+  if not process.writerFlowVar.isNil:
+    blockUntil process.writerFlowVar[]
+  if not process.errorReaderFlowVar.isNil:
+    blockUntil process.errorReaderFlowVar[]
 
   process.inputStreamChannel[].close()
   process.errorStreamChannel[].close()
