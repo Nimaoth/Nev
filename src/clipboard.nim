@@ -1,5 +1,6 @@
 import std/[options]
 import misc/[util, custom_async, custom_logger]
+import compilation_config
 
 logCategory "clipboard"
 
@@ -27,7 +28,9 @@ when defined(js):
       return string.none
     return some $getClipboard().readText().await
 
-else:
+elif enableSystemClipboard:
+  static:
+    echo "Building with system clipboard"
   import nimclipboard/libclipboard
 
   var clipboard = clipboardNew(nil)
@@ -39,3 +42,18 @@ else:
   proc getSystemClipboardText*(): Future[Option[string]] {.async.} =
     return some $clipboard.clipboardText()
 
+  proc destroyClipboard*() =
+    if clipboard != nil:
+      clipboard.clipboardFree()
+
+else:
+  static:
+    echo "Building without system clipboard"
+  proc setSystemClipboardText*(str: string) =
+    discard
+
+  proc getSystemClipboardText*(): Future[Option[string]] {.async.} =
+    return string.none
+
+  proc destroyClipboard*() =
+    discard
