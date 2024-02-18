@@ -116,40 +116,41 @@ proc absytree_input_keys*(self: ptr AppObject, input: cstring) {.exportc, dynlib
     gApp.inputKeys($input)
   # self[].inputKeys($input)
 
-proc absytree_key_down*(input: int64, mods: int32): bool {.exportc, dynlib, cdecl.} =
+proc absytree_key_down*(input: int64, modBits: int32): bool {.exportc, dynlib, cdecl.} =
   if gApp.isNotNil:
-    let mods = cast[Modifiers](mods)
-    debugf"Key down: {input}, {mods}"
+    let mods = cast[Modifiers](modBits)
     gApp.handleKeyPress(input, mods)
     return true
 
-proc absytree_key_up*(input: int64, mods: int32): bool {.exportc, dynlib, cdecl.} =
+proc absytree_key_up*(input: int64, modBits: int32): bool {.exportc, dynlib, cdecl.} =
   if gApp.isNotNil:
-    let mods = cast[Modifiers](mods)
-    debugf"Key up: {input}, {mods}"
+    let mods = cast[Modifiers](modBits)
     gApp.handleKeyRelease(input, mods)
     return true
 
-proc absytree_mouse_down*(input: int64, mods: int32, x, y: float32): bool {.exportc, dynlib, cdecl.} =
+proc absytree_mouse_down*(input: int64, modBits: int32, x, y: float32): bool {.exportc, dynlib, cdecl.} =
   if gApp.isNotNil:
-    let mods = cast[Modifiers](mods)
-    debugf"mouse down: {input}, {mods}, {x}, {y}"
-    gApp.handleMousePress(input.MouseButton, mods, vec2(x, y))
-    return true
+    let mods = cast[Modifiers](modBits)
+    return rend.builder.handleMousePressed(input.MouseButton, mods, vec2(x, y))
+  return false
 
-proc absytree_mouse_up*(input: int64, mods: int32, x, y: float32): bool {.exportc, dynlib, cdecl.} =
+proc absytree_mouse_up*(input: int64, modBits: int32, x, y: float32): bool {.exportc, dynlib, cdecl.} =
   if gApp.isNotNil:
-    let mods = cast[Modifiers](mods)
-    debugf"mouse up: {input}, {mods}, {x}, {y}"
-    gApp.handleMouseRelease(input.MouseButton, mods, vec2(x, y))
-    return true
+    let mods = cast[Modifiers](modBits)
+    return rend.builder.handleMouseReleased(input.MouseButton, mods, vec2(x, y))
+  return false
 
-proc absytree_mouse_scroll*(input: int64, mods: int32, x, y: float32): bool {.exportc, dynlib, cdecl.} =
+proc absytree_mouse_moved*(input: int64, x, y: float32): bool {.exportc, dynlib, cdecl.} =
   if gApp.isNotNil:
-    let mods = cast[Modifiers](mods)
-    debugf"mouse scroll: {input}, {mods}, {x}, {y}"
-    gApp.handleScroll(vec2(0, input.float32), vec2(x, y), mods)
-    return true
+    let inputs: set[MouseButton] = if input < 0: {} else: {input.MouseButton}
+    return rend.builder.handleMouseMoved(vec2(x, y), inputs)
+  return false
+
+proc absytree_mouse_scroll*(input: int64, modBits: int32, x, y: float32): bool {.exportc, dynlib, cdecl.} =
+  if gApp.isNotNil:
+    let mods = cast[Modifiers](modBits)
+    return rend.builder.handleMouseScroll(vec2(x, y), vec2(0, input.float32), mods)
+  return false
 
 proc absytree_render*(width: float32, height: float32) {.exportc, dynlib, cdecl.} =
   if gApp.isNil:
