@@ -150,8 +150,11 @@ proc randomColor(node: UINode, a: float32): Color =
   result.b = (((h shr 16) and 0xff).float32 / 255.0).sqrt
   result.a = a
 
+# todo: pass these in as function pointers
 proc UnrealDrawRect*(x, y, width, height, r, g, b, a: float32) {.importc, dynlib: "UnrealEditor-AbsytreeUE-Win64-DebugGame.dll", cdecl.}
 proc UnrealDrawText*(x, y, r, g, b, a: float32, text: cstring) {.importc, dynlib: "UnrealEditor-AbsytreeUE-Win64-DebugGame.dll", cdecl.}
+proc UnrealPushClipRect*(x, y, width, height: float32) {.importc, dynlib: "UnrealEditor-AbsytreeUE-Win64-DebugGame.dll", cdecl.}
+proc UnrealPopClipRect*() {.importc, dynlib: "UnrealEditor-AbsytreeUE-Win64-DebugGame.dll", cdecl.}
 
 method render*(self: ExternCPlatform) =
   # Clear the screen and begin a new frame.
@@ -198,15 +201,12 @@ proc drawNode(builder: UINodeBuilder, platform: ExternCPlatform, node: UINode, o
   if FillBackground in node.flags:
     UnrealDrawRect(bounds.x, bounds.y, bounds.w, bounds.h, node.backgroundColor.r, node.backgroundColor.g, node.backgroundColor.b, node.backgroundColor.a)
 
-  # # Mask the rest of the rendering is this function to the contentBounds
-  # if MaskContent in node.flags:
-  #   platform.boxy.pushLayer()
-  # defer:
-  #   if MaskContent in node.flags:
-  #     platform.boxy.pushLayer()
-  #     platform.boxy.drawRect(bounds, color(1, 0, 0, 1))
-  #     platform.boxy.popLayer(blendMode = MaskBlend)
-  #     platform.boxy.popLayer()
+  # Mask the rest of the rendering is this function to the contentBounds
+  if MaskContent in node.flags:
+    UnrealPushClipRect(bounds.x, bounds.y, bounds.w, bounds.h)
+  defer:
+    if MaskContent in node.flags:
+      UnrealPopClipRect()
 
   if DrawText in node.flags:
     # todo: flags

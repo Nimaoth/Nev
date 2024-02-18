@@ -88,6 +88,9 @@ when defined(wasm):
   setOption "editor.text.triple-click-command", "extend-select-move"
   setOption "editor.text.triple-click-command-args", %[%"line", %true]
 
+  setOption "editor.text.whitespace.char", "·"
+  # setOption "editor.text.whitespace.char", " "
+
   # Triple click selects a vim paragraph
   # setOption "editor.text.triple-click-command", "extend-select-move"
   # setOption "editor.text.triple-click-command-args", %[%"vim-paragraph-inner", %true]
