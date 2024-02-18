@@ -15,6 +15,7 @@ for the backend (at the moment only WASM).
 
 The editor is available for the terminal, as a desktop GUI app and in the browser.
 You can try the browser version [here](https://nimaoth.github.io/AbsytreeBrowser/) ([old version](https://nimaoth.github.io/AbsytreeBrowser/old/absytree_browser.html)).
+There is also a very experimental [Unreal Engine Plugin](https://github.com/Nimaoth/AbsytreeUE).
 
 `ast` is the gui version, `astt` is the terminal version
 
@@ -153,5 +154,6 @@ More details in [Getting Started](docs/getting_started.md)
 ## Vim Keybindings
 - Repeat f/t motions with ,/;
 - Search/Replace
+- fix e.g. dw deleting one character to much because it's inclusive
 
 [Test report](https://nimaoth.github.io/Absytree/testresults.html)
