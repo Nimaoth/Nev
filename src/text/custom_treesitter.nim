@@ -1,5 +1,6 @@
-import std/[options, json]
+import std/[options, json, tables]
 import misc/[custom_logger, custom_async, util, custom_unicode]
+import platform/filesystem
 
 from scripting_api import Cursor, Selection
 
@@ -377,6 +378,9 @@ else:
 
 # Available on all targets
 
+when not defined(js):
+  var treesitterDllCache = initTable[string, LibHandle]()
+
 proc loadLanguageDynamically*(languageId: string, config: JsonNode): Future[Option[TSLanguage]] {.async.} =
   when defined(js):
     try:
@@ -411,22 +415,27 @@ proc loadLanguageDynamically*(languageId: string, config: JsonNode): Future[Opti
       else:
         fmt"./languages/{languageId}.{fileExtension}"
 
-      log(lvlInfo, fmt"Trying to load treesitter from '{dllPath}' using function '{ctorSymbolName}'")
+      let absolutePath = fs.getApplicationFilePath(dllPath)
 
-      # @todo: unload lib
-      let lib = loadLib(dllPath)
-      if lib.isNil:
-        log(lvlError, fmt"Failed to load treesitter dll for '{languageId}': '{dllPath}'")
-        return TSLanguage.none
+      log(lvlInfo, fmt"Trying to load treesitter from '{absolutePath}' using function '{ctorSymbolName}'")
+      let lib = if treesitterDllCache.contains(absolutePath):
+        treesitterDllCache[absolutePath]
+      else:
+        let lib = loadLib(absolutePath)
+        if lib.isNil:
+          log(lvlError, fmt"Failed to load treesitter dll for '{languageId}': '{absolutePath}'")
+          return TSLanguage.none
+        treesitterDllCache[absolutePath] = lib
+        lib
 
       let ctor = cast[TSLanguageCtor](lib.symAddr(ctorSymbolName.cstring))
       if ctor.isNil:
-        log(lvlError, fmt"Failed to load treesitter dll for '{languageId}': '{dllPath}'")
+        log(lvlError, fmt"Failed to load treesitter dll for '{languageId}': '{absolutePath}'")
         return TSLanguage.none
 
       let tsLanguage = ctor()
       if tsLanguage.isNil:
-        log(lvlError, fmt"Failed to create language from dll '{languageId}': '{dllPath}'")
+        log(lvlError, fmt"Failed to create language from dll '{languageId}': '{absolutePath}'")
         return TSLanguage.none
 
       return TSLanguage(impl: tsLanguage).some
@@ -497,3 +506,8 @@ proc tsRange*(selection: scripting_api.Selection): TSRange = TSRange(first: tsPo
 proc toCursor*(point: TSPoint): Cursor = (point.row, point.column)
 proc toSelection*(rang: TSRange): scripting_api.Selection = (rang.first.toCursor, rang.last.toCursor)
 
+proc freeDynamicLibraries*() =
+  when not defined(js):
+    for (path, lib) in treesitterDllCache.pairs:
+      lib.unloadLib()
+    treesitterDllCache.clear()

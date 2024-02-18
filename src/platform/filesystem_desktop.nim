@@ -5,7 +5,10 @@ import filesystem
 logCategory "fs-desktop"
 
 type FileSystemDesktop* = ref object of FileSystem
-  discard
+  appDir*: string
+
+method init*(self: FileSystemDesktop, appDir: string) =
+  self.appDir = appDir
 
 method loadFile*(self: FileSystemDesktop, path: string): string =
   return readFile(path)
@@ -17,7 +20,10 @@ method getApplicationFilePath*(self: FileSystemDesktop, name: string): string =
   when defined(js):
     return name
   else:
-    return getAppDir() / name
+    if isAbsolute(name):
+      return name
+    else:
+      return self.appDir / name
 
 method loadApplicationFile*(self: FileSystemDesktop, name: string): string =
   let path = self.getApplicationFilePath name

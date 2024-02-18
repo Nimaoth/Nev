@@ -61,6 +61,9 @@ task buildDesktop, "Build the desktop version":
 task buildDesktopWindows, "Build the desktop version for windows":
   selfExec fmt"c -o:ast{exe} {crossCompileWinArgs} -d:exposeScriptingApi {getCommandLineParams()} ./src/absytree.nim"
 
+task buildDll, "Build the dll version":
+  selfExec fmt"c -o:ast.dll -d:exposeScriptingApi --noMain --app:lib {getCommandLineParams()} ./src/absytree_dynlib.nim"
+
 task buildWorkspaceServer, "Build the server for hosting workspaces":
   selfExec fmt"c -o:./tools/workspace-server{exe} {getCommandLineParams()} ./src/servers/workspace_server.nim"
 

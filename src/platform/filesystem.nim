@@ -7,6 +7,8 @@ import misc/[custom_async, array_buffer]
 type FileSystem* = ref object of RootObj
   discard
 
+method init*(self: FileSystem, appDir: string) {.base.} = discard
+
 method loadFile*(self: FileSystem, path: string): string {.base.} = discard
 method loadFileAsync*(self: FileSystem, name: string): Future[string] {.base.} = discard
 method loadFileBinaryAsync*(self: FileSystem, name: string): Future[ArrayBuffer] {.base.} = discard
@@ -24,6 +26,7 @@ when defined(js):
 else:
   import filesystem_desktop
   let fs*: FileSystem = new FileSystemDesktop
+  fs.init getAppDir()
 
 proc normalizePathUnix*(path: string): string =
   return path.normalizedPath.replace('\\', '/').strip(chars={'/'})

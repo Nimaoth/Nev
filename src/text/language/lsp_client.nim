@@ -332,9 +332,9 @@ proc connect*(client: LSPClient, serverExecutablePath: string, workspaces: seq[s
       log lvlInfo, fmt"Using process '{serverExecutablePath} {args}' as LSP connection"
       let process = startAsyncProcess(serverExecutablePath, args)
       let connection = LSPConnectionAsyncProcess(process: process)
-      connection.process.onRestarted = proc() {.async.} =
+      connection.process.onRestarted = proc(): Future[void] =
         asyncCheck logProcessDebugOutput(process)
-        await client.sendInitializationRequest()
+        return client.sendInitializationRequest()
       client.connection = connection
 
     else:

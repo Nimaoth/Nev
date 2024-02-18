@@ -448,9 +448,9 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
 
     # override whitespace
     let opacity = self.configProvider.getValue("editor.text.whitespace.opacity", 0.4)
+    let ch = self.configProvider.getValue("editor.text.whitespace.char", "·")
     if opacity > 0:
       let pattern = re"[ ]+"
-      let ch = "·"
       let bounds = self.lines[i].findAllBounds(i, pattern)
       for s in bounds:
         result.splitAt(self.lines[i].toOpenArray.runeIndex(s.first.column, returnLen=true))

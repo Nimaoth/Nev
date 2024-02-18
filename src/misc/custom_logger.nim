@@ -16,7 +16,7 @@ else:
 
 type
   CustomLogger* = ref object of logging.Logger
-    consoleLogger: Option[logging.ConsoleLogger]
+    consoleLogger: Option[logging.Logger]
     fileLogger: Option[FileLogger]
 
 proc newCustomLogger*(levelThreshold = logging.lvlAll, fmtStr = logging.defaultFmtStr): CustomLogger =
@@ -31,11 +31,14 @@ proc enableFileLogger*(self: CustomLogger) =
     self.fileLogger = logging.newFileLogger(file, self.levelThreshold, self.fmtStr, flushThreshold=logging.lvlAll).some
 
 proc enableConsoleLogger*(self: CustomLogger) =
-  self.consoleLogger = logging.newConsoleLogger(self.levelThreshold, self.fmtStr, flushThreshold=logging.lvlAll).some
+  self.consoleLogger = logging.Logger(logging.newConsoleLogger(self.levelThreshold, self.fmtStr, flushThreshold=logging.lvlAll)).some
+
+proc setConsoleLogger*(self: CustomLogger, logger: logging.Logger) =
+  self.consoleLogger = logger.some
 
 proc toggleConsoleLogger*(self: CustomLogger) =
   if self.consoleLogger.isSome:
-    self.consoleLogger = logging.ConsoleLogger.none
+    self.consoleLogger = logging.Logger.none
   else:
     self.enableConsoleLogger()
 
