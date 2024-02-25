@@ -755,7 +755,7 @@ proc addMissingFieldsForClass*(self: AstNode, class: NodeClass) =
 
 proc newAstNode*(class: NodeClass, id: Option[NodeId] = NodeId.none): AstNode =
   let id = if id.isSome: id.get else: newId().NodeId
-  new result
+  result = AstNode()
   result.id = id
   result.class = class.id
   result.addMissingFieldsForClass(class)
@@ -1264,7 +1264,6 @@ proc jsonToAstNode*(json: JsonNode, model: Model, opt = Joptions()): Option[AstN
     return AstNode.none
 
   var node = newAstNode(class, id.some)
-  result = node.some
 
   if json.hasKey("properties"):
     for entry in json["properties"]:
@@ -1286,6 +1285,8 @@ proc jsonToAstNode*(json: JsonNode, model: Model, opt = Joptions()): Option[AstN
           node.forceAddChild(role, childNode)
         else:
           log(lvlError, fmt"Failed to parse node from json")
+
+  return node.some
 
 proc loadFromJson*(project: Project, json: JsonNode, opt = Joptions()): bool =
   if json.kind != JObject:

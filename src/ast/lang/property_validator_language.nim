@@ -37,7 +37,7 @@ proc resolveLanguage(project: Project, workspace: WorkspaceFolder, id: LanguageI
     assert lang_language.langLanguage.isNotNil
     return lang_language.langLanguage.some
   if id == IdCellLanguage:
-    let cellLanguage =  cell_language.cellLanguage.await
+    let cellLanguage =  cell_language.getCellLanguage().await
     assert cellLanguage.isNotNil
     return cellLanguage.some
   if id == IdBaseInterfaces:
@@ -72,7 +72,10 @@ proc createPropertyValidatorLanguage(): Future[Language] {.async.} =
   language.scopeComputers = scopeComputers
   return language
 
-propertyValidatorLanguage = createPropertyValidatorLanguage()
+proc getPropertyValidatorLanguage*(): Future[Language] =
+  if propertyValidatorLanguage.isNil:
+    propertyValidatorLanguage = createPropertyValidatorLanguage()
+  return propertyValidatorLanguage
 
 proc updatePropertyValidatorLanguage*(model: Model) {.async.} =
-  discard propertyValidatorLanguage.await.updateLanguageFromModel(model).await
+  discard getPropertyValidatorLanguage().await.updateLanguageFromModel(model).await

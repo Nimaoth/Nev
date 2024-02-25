@@ -9,14 +9,10 @@ type Document* = ref object of RootObj
   filename*: string
   workspace*: Option[WorkspaceFolder]   ## The workspace this document belongs to
 
-method `$`*(document: Document): string {.base.} =
-  return ""
-
-method save*(self: Document, filename: string = "", app: bool = false) {.base.} =
-  discard
-
-method load*(self: Document, filename: string = "") {.base.} =
-  discard
+method `$`*(document: Document): string {.base.} = return ""
+method save*(self: Document, filename: string = "", app: bool = false) {.base.} = discard
+method load*(self: Document, filename: string = "") {.base.} = discard
+method deinit*(self: Document) {.base.} = discard
 
 proc fullPath*(self: Document): string =
   if not self.isBackedByFile:

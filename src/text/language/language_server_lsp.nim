@@ -12,6 +12,12 @@ type LanguageServerLSP* = ref object of LanguageServer
 
 var languageServers = initTable[string, LanguageServerLSP]()
 
+proc deinitLanguageServers*() =
+  for languageServer in languageServers.values:
+    languageServer.stop()
+
+  languageServers.clear()
+
 proc toPosition*(cursor: Cursor): Position = Position(line: cursor.line, character: cursor.column)
 proc toRange*(selection: Selection): Range = Range(start: selection.first.toPosition, `end`: selection.last.toPosition)
 
@@ -24,6 +30,7 @@ method disconnect*(self: LanguageServerLSP) =
   self.connected.dec
   if self.connected == 0:
     self.stop()
+    # todo: remove from languageServers
 
 proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string], languagesServer: Option[(string, int)] = (string, int).none): Future[Option[LanguageServerLSP]] {.async.} =
   if languageServers.contains(languageId):
@@ -111,7 +118,7 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string], 
 method start*(self: LanguageServerLSP): Future[void] = discard
 method stop*(self: LanguageServerLSP) =
   log lvlInfo, fmt"Stopping language server"
-  self.client.close()
+  self.client.deinit()
 
 method getDefinition*(self: LanguageServerLSP, filename: string, location: Cursor): Future[Option[Definition]] {.async.} =
   debugf"getDefinition {filename}:{location}"

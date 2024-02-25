@@ -164,9 +164,11 @@ proc startBlinkCursorTask(self: TextDocumentEditor) =
   else:
     self.blinkCursorTask.reschedule()
 
-method shutdown*(self: TextDocumentEditor) =
+method deinit*(self: TextDocumentEditor) =
   log lvlInfo, fmt"shutting down {self.document.filename}"
-  self.document.destroy()
+  self.document.deinit()
+  self.blinkCursorTask.pause()
+  self[] = default(typeof(self[]))
 
 # proc `=destroy`[T: object](doc: var TextDocument) =
 #   doc.tsParser.tsParserDelete()

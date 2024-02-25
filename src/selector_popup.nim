@@ -54,6 +54,11 @@ method changed*(self: NamedSelectorItem, other: SelectorItem): bool =
   let other = other.NamedSelectorItem
   return self.name != other.name
 
+method deinit*(self: SelectorPopup) =
+  if self.cancellationToken.isNotNil:
+    self.cancellationToken.cancel()
+  self[] = default(typeof(self[]))
+
 proc autoSort(self: SelectorPopup) {.async.} =
   self.autoSortActive = true
   defer:

@@ -37,7 +37,7 @@ proc resolveLanguage(project: Project, workspace: WorkspaceFolder, id: LanguageI
     assert lang_language.langLanguage.isNotNil
     return lang_language.langLanguage.some
   if id == IdCellLanguage:
-    let cellLanguage =  cell_language.cellLanguage.await
+    let cellLanguage =  cell_language.getCellLanguage().await
     assert cellLanguage.isNotNil
     return cellLanguage.some
   if id == IdBaseInterfaces:
@@ -56,7 +56,7 @@ proc resolveModel(project: Project, workspace: WorkspaceFolder, id: ModelId): Fu
     return lang_builder.langLanguageModel.some
   log lvlError, fmt"createScopeLanguage::resolveModel: unknown model id: {id}"
 
-var scopeLanguage*: Future[Language] = nil
+var scopeLanguage: Future[Language] = nil
 proc createScopeLanguage(): Future[Language] {.async.} =
 
   let model = newModel(IdScopeLanguage.ModelId)
@@ -72,7 +72,10 @@ proc createScopeLanguage(): Future[Language] {.async.} =
   language.scopeComputers = scopeComputers
   return language
 
-scopeLanguage = createScopeLanguage()
+proc getScopeLanguage*(): Future[Language] =
+  if scopeLanguage.isNil:
+    scopeLanguage = createScopeLanguage()
+  return scopeLanguage
 
 proc updateScopeLanguage*(model: Model) {.async.} =
-  discard scopeLanguage.await.updateLanguageFromModel(model).await
+  discard getScopeLanguage().await.updateLanguageFromModel(model).await
