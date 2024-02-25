@@ -14,7 +14,7 @@ else:
   static:
     echo "Compiling for unknown"
 
-import std/[parseopt, options, macros]
+import std/[parseopt, options, macros, tables]
 import misc/[custom_logger]
 import compilation_config, scripting_api, app_options
 
@@ -85,10 +85,12 @@ proc shutdown() =
   if gApp.isNotNil:
     log lvlInfo, "Shutting down editor"
     gApp.shutdown()
+    gApp = nil
 
   if rend.isNotNil:
     log lvlInfo, "Shutting down platform"
     rend.deinit()
+    rend = nil
 
 proc NimMain() {.cdecl, importc.}
 
@@ -108,6 +110,18 @@ proc absytree_poll(timeoutMs: int32) {.exportc, dynlib, cdecl.} =
 proc absytree_shutdown() {.exportc, dynlib, cdecl.} =
   echo "Shutting down Absytree..."
   shutdown()
+
+  when isFutureLoggingEnabled:
+    while hasPendingOperations():
+      debugf"Futures in progress:"
+      debugf"----------------------------"
+      for (info, x) in getFuturesInProgress().pairs:
+        debugf"{info.fromProc}: {info.stackTrace}"
+      debugf"----------------------------"
+      drain(100)
+
+  else:
+    drain(10000)
   GC_FullCollect()
 
 proc absytree_input_keys*(self: ptr AppObject, input: cstring) {.exportc, dynlib, cdecl.} =

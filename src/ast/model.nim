@@ -60,7 +60,7 @@ type
     role*: string
     class*: ClassId
 
-  NodeClass* = ref object
+  NodeClass* {.acyclic.} = ref object
     id {.getter.}: ClassId
     name {.getter.}: string
     alias {.getter.}: string
@@ -78,13 +78,13 @@ type
     canBeRoot {.getter.}: bool
     registryIndex: int32 # Index in the global node registry (0 if not registered)
 
-  AstNode* = ref object
+  AstNode* {.acyclic.} = ref object
     id*: NodeId
     class*: ClassId
 
     registryIndex: int32 # Index in the global node registry (0 if not registered)
     model*: Model # gets set when inserted into a parent node which is in a model, or when inserted into a model
-    parent*: AstNode # gets set when inserted into a parent node
+    parent* {.cursor.}: AstNode # gets set when inserted into a parent node
     role*: RoleId # gets set when inserted into a parent node
 
     properties*: seq[tuple[role: RoleId, value: PropertyValue]]
@@ -111,7 +111,7 @@ type
 
   ModelComputationContextBase* = ref object of RootObj
 
-  Language* = ref object
+  Language* {.acyclic.} = ref object
     name* : string
     id {.getter.}: LanguageId
     version {.getter.}: int
