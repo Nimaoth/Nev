@@ -15,20 +15,35 @@ switch("d", "allowConsoleLogger")
 
 switch("d", "wasm3HasWasi")
 switch("d", "wasm3VerboseErrorMessages")
+
+# switches for debugging
 # switch("d", "wasm3EnableStrace2")
 # switch("d", "wasm3RecordBacktraces")
-
 # switch("d", "wasm3LogModule")
 # switch("d", "wasm3LogCompile")
 # switch("d", "wasm3LogParse")
 # switch("d", "wasm3LogRuntime")
 # switch("d", "uiNodeDebugData")
+# switch("d", "futureLogging")
+# switch("d", "nimBurnFree")
+# switch("d", "nimArcIds")
+# switch("d", "traceArc")
+# switch("d", "nimTypeNames")
+
+# checks
+# --objChecks:off
+# --fieldChecks:off
+# --rangeChecks:off
+# --boundChecks:off
+# --overflowChecks:off
+# --floatChecks:off
+# --nanChecks:off
+# --infChecks:off
 
 # switch("cc", "vcc")
 # switch("nimcache", "D:\\nc")
 
-let mode = 0
-case mode
+case 0
 of 0:
   switch("d", "release")
 of 1:
@@ -39,11 +54,11 @@ of 2:
   switch("cc", "vcc")
   switch("d", "debug")
   switch("debuginfo", "on")
-  switch("nimcache", "nimcache")
 of 3:
   switch("d", "release")
   switch("debuginfo", "on")
-  switch("cc", "vcc")
+  switch("stackTrace", "on")
+  switch("lineTrace", "on")
   switch("nimcache", "D:\\nc")
 else:
   discard

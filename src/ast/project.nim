@@ -52,7 +52,10 @@ proc loadModelAsync*(project: Project, path: string): Future[Option[Model]] {.as
 
   let ws = getProjectWorkspace().await
   let jsonText = ws.loadFile(path).await
-  let json = jsonText.parseJson
+
+  let json = jsonText.parseJson.catch:
+    log lvlError, &"project.loadModelAsync: Failed to parse json: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+    return Model.none
 
   var model = newModel()
   if not model.loadFromJsonAsync(project, ws, path, json, resolveLanguage, resolveModel).await:

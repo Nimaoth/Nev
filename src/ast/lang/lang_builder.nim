@@ -462,12 +462,12 @@ proc updateLanguageFromModel*(language: Language, model: Model, updateBuilder: b
 
   return true
 
-proc createLanguageFromModel*(model: Model, ctx = ModelComputationContextBase.none): Future[Language] {.async.} =
+proc createLanguageFromModel*(model: Model, ctx = ModelComputationContextBase.none, createBuilder: bool = true): Future[Language] {.async.} =
   log lvlInfo, fmt"createLanguageFromModel {model.path} ({model.id})"
 
   let name = model.path.splitFile.name
   let language = newLanguage(model.id.LanguageId, name)
-  if not language.updateLanguageFromModel(model, ctx = ctx).await:
+  if not language.updateLanguageFromModel(model, ctx = ctx, updateBuilder = createBuilder).await:
     return Language nil
   return language
 

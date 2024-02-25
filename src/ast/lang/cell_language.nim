@@ -217,7 +217,7 @@ proc createCellLanguage*(): Future[Language] {.async.} =
     log lvlError, "createCellLanguage: Failed to load cell builder model"
     return Language nil
 
-  var language = createLanguageFromModel(model).await
+  var language = createLanguageFromModel(model, createBuilder = false).await
   language.name = "Cells"
   language.scopeComputers = scopeComputers
   return language

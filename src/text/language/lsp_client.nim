@@ -110,7 +110,7 @@ proc parseResponse(client: LSPClient): Future[JsonNode] {.async.} =
 
   if client.connection.isNil:
     log(lvlError, "[parseResponse] Connection is nil")
-    return nil
+    return JsonNode(nil)
 
   var success = true
   var lines = @[line]
