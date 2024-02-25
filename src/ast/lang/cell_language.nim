@@ -206,6 +206,8 @@ proc resolveModel(project: Project, id: ModelId): Option[Model] =
     return lang_builder.langLanguageModel.some
   log lvlError, fmt"createCellLanguage: unknown model id: {id}"
 
+registerBuilder(IdCellLanguage, builder)
+
 proc createCellLanguage*(): Future[Language] {.async.} =
   let model = newModel(IdCellLanguage.ModelId)
   model.addLanguage(lang_language.langLanguage)
@@ -220,9 +222,12 @@ proc createCellLanguage*(): Future[Language] {.async.} =
   language.scopeComputers = scopeComputers
   return language
 
-var cellLanguage*: Future[Language] = createCellLanguage()
+var cellLanguage: Future[Language] = nil
 
-registerBuilder(IdCellLanguage, builder)
+proc getCellLanguage*(): Future[Language] =
+  if cellLanguage.isNil:
+    cellLanguage = createCellLanguage()
+  return cellLanguage
 
 proc updateCellLanguage*(model: Model) {.async.} =
-  discard cellLanguage.await.updateLanguageFromModel(model, updateBuilder=false).await
+  discard getCellLanguage().await.updateLanguageFromModel(model, updateBuilder=false).await

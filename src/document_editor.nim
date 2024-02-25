@@ -56,7 +56,7 @@ proc `active=`*(self: DocumentEditor, newActive: bool) =
 
 func active*(self: DocumentEditor): bool = self.active
 
-method shutdown*(self: DocumentEditor) {.base.} =
+method deinit*(self: DocumentEditor) {.base.} =
   discard
 
 method canEdit*(self: DocumentEditor, document: Document): bool {.base.} =

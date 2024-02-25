@@ -89,7 +89,7 @@ proc createHeader*(contentLength: int): string =
   let header = fmt"Content-Length: {contentLength}" & "\r\n\r\n"
   return header
 
-proc close*(client: LSPClient) =
+proc deinit*(client: LSPClient) =
   assert client.connection.isNotNil, "LSP Client process should not be nil"
 
   client.connection.close()
@@ -105,8 +105,12 @@ proc parseResponse(client: LSPClient): Future[JsonNode] {.async.} =
   # debugf"[parseResponse]"
   var headers = initTable[string, string]()
   var line = await client.connection.recvLine
-  while line == "":
+  while client.connection.isNotNil and line == "":
     line = await client.connection.recvLine
+
+  if client.connection.isNil:
+    log(lvlError, "[parseResponse] Connection is nil")
+    return nil
 
   var success = true
   var lines = @[line]
@@ -442,11 +446,11 @@ proc getCompletions*(client: LSPClient, filename: string, line: int, column: int
   return error[CompletionList](-1, fmt"[getCompletions] {filename}:{line}:{column}: no completions found")
 
 proc runAsync*(client: LSPClient) {.async.} =
-  while true:
+  while client.connection.isNotNil:
     # debugf"[run] Waiting for response {(client.activeRequests.len)}"
     let response = await client.parseResponse()
     if response.isNil or response.kind != JObject:
-      log(lvlError, fmt"[run] Bad response: {response}")
+      # log(lvlError, fmt"[run] Bad response: {response}")
       continue
 
     if not response.hasKey("id"):

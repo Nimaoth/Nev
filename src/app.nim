@@ -85,7 +85,6 @@ type ScriptAction = object
 type
   App* = ref AppObject
   AppObject* = object
-    test: int32 = 123456789
     backend: api.Backend
     platform*: Platform
     fontRegular*: string
@@ -108,8 +107,6 @@ type
 
     options: JsonNode
     callbacks: Table[string, int]
-
-    logger: Logger
 
     workspace*: Workspace
 
@@ -936,7 +933,23 @@ proc shutdown*(self: App) =
   self.saveAppState()
 
   for editor in self.editors.values:
-    editor.shutdown()
+    editor.deinit()
+
+  for popup in self.popups:
+    popup.deinit()
+
+  if self.scriptContext.isNotNil:
+    self.scriptContext.deinit()
+  if self.wasmScriptContext.isNotNil:
+    self.wasmScriptContext.deinit()
+
+  self.logDocument.deinit()
+  self.absytreeCommandsServer.stop()
+
+  # editor_defaults: seq[DocumentEditor]
+
+  gAppInterface = nil
+  self[] = AppObject()
 
   custom_treesitter.freeDynamicLibraries()
 

@@ -77,11 +77,11 @@ proc resolveLanguage*(project: Project, ws: WorkspaceFolder, id: LanguageId): Fu
   elif id == IdLangLanguage:
     return lang_language.langLanguage.some
   elif id == IdCellLanguage:
-    return cell_language.cellLanguage.await.some
+    return cell_language.getCellLanguage().await.some
   elif id == IdPropertyValidatorLanguage:
-    return property_validator_language.propertyValidatorLanguage.await.some
+    return property_validator_language.getPropertyValidatorLanguage().await.some
   elif id == IdScopeLanguage:
-    return scope_language.scopeLanguage.await.some
+    return scope_language.getScopeLanguage().await.some
   elif project.dynamicLanguages.contains(id):
     return project.dynamicLanguages[id].some
   elif project.modelPaths.contains(id.ModelId):

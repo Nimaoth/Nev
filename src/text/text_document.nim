@@ -553,16 +553,20 @@ proc newTextDocument*(
   if load:
     self.load()
 
-proc destroy*(self: TextDocument) =
+method deinit*(self: TextDocument) =
   log lvlInfo, fmt"Destroying text document {self.filename}"
+  if self.highlightQuery.isNotNil:
+    self.highlightQuery.deinit()
+
   if not self.tsParser.isNil:
     self.tsParser.deinit()
-    self.tsParser = nil
 
   if self.languageServer.getSome(ls):
     ls.removeOnRequestSaveHandler(self.onRequestSaveHandle)
     ls.disconnect()
     self.languageServer = LanguageServer.none
+
+  self[] = default(typeof(self[]))
 
 method `$`*(self: TextDocument): string =
   return self.filename

@@ -28,6 +28,8 @@ proc init*(self: Popup) =
   self.id = newEditorId()
   self.userId = newId()
 
+method deinit*(self: Popup) {.base.} = discard
+
 method getEventHandlers*(self: Popup): seq[EventHandler] {.base.} =
   return @[self.eventHandler]
 

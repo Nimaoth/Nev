@@ -84,8 +84,8 @@ proc recvLine*[T: char](achan: AsyncChannel[T]): Future[string] {.async.} =
   var buffer = ""
 
   var cr = false
-  while true:
-    while achan.chan[].peek > 0:
+  while not achan.chan.isNil:
+    while not achan.chan.isNil and achan.chan[].peek > 0:
       let c = achan.chan[].recv
       if c == '\0':
         # End of input

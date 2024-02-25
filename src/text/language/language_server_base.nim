@@ -35,6 +35,7 @@ var getOrCreateLanguageServer*: proc(languageId: string, filename: string, works
 
 method start*(self: LanguageServer): Future[void] {.base.} = discard
 method stop*(self: LanguageServer) {.base.} = discard
+method deinit*(self: LanguageServer) {.base.} = discard
 method connect*(self: LanguageServer) {.base.} = discard
 method disconnect*(self: LanguageServer) {.base.} = discard
 method getDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[Option[Definition]] {.base.} = discard
