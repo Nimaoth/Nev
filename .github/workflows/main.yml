@@ -58,18 +58,15 @@ jobs:
       - name: add Absytree as git safe.directory so nimble can install stuff
         run: git config --global --add safe.directory /__w/Absytree/Absytree
         continue-on-error: true
-      - run: echo "export PATH=/github/home/.nimble/bin:\$PATH" > ~/.profile
-      - run: cat ~/.profile
-        continue-on-error: true
-      - run: ls -la ~
+
+      # not working because "source" doesn't exist?
+      #- run: echo "export PATH=/github/home/.nimble/bin:\$PATH" > ~/.profile
       #- run: source ~/.profile
       #  continue-on-error: true
       - run: PATH=/github/home/.nimble/bin:$PATH nimble setup
 
       # linux builds
       - run: PATH=/github/home/.nimble/bin:$PATH nimble buildAbsytreeServer
-      - run: nimble buildAbsytreeServer
-        continue-on-error: true
       - if: always()
         run: PATH=/github/home/.nimble/bin:$PATH nimble buildLspWs
       - if: always()
@@ -108,6 +105,7 @@ jobs:
           name: release_web
           path: release_web.zip
 
+  # TreeSitter fails to build for some reason (it turns the return type of some functions from StackAction into forceStackAction, which doesn't exist)
   # build-absytree-windows:
   #   name: Build Absytree Windows
   #   runs-on: windows-2022
