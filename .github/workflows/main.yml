@@ -37,11 +37,16 @@ jobs:
       - name: Checkout the repo
         uses: actions/checkout@v3
 
-      - uses: jiro4989/setup-nim-action@v1
-        with:
-          nim-version: '2.1.1'
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          yes: true
+      # fails for some reason
+      #- uses: jiro4989/setup-nim-action@v1
+      #  with:
+      #    nim-version: '2.1.1'
+      #    repo-token: ${{ secrets.GITHUB_TOKEN }}
+      #    yes: true
+
+      # install choosenim and nim
+      - run: curl https://nim-lang.org/choosenim/init.sh > init-choosenim.sh
+      - run: CHOOSENIM_CHOOSE_VERSION="2.1.1" init-choosenim.sh
 
       - name: add Absytree as git safe.directory so nimble can install stuff
         run: git config --global --add safe.directory /__w/Absytree/Absytree
