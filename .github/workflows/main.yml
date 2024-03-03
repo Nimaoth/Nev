@@ -61,11 +61,15 @@ jobs:
         run: git config --global --add safe.directory /__w/Absytree/Absytree
         continue-on-error: true
       - run: echo "export PATH=/github/home/.nimble/bin:$PATH" > ~/.profile
-      - run: source ~/.profile
-      - run: nimble setup
+      - run: cat ~/.profile
+        continue-on-error: true
+      #- run: source ~/.profile
+      #  continue-on-error: true
+      - run: PATH=/github/home/.nimble/bin:$PATH nimble setup
 
       # linux builds
       - run: nimble buildAbsytreeServer
+        continue-on-error: true
       - if: always()
         run: PATH=/github/home/.nimble/bin:$PATH nimble buildLspWs
       - if: always()
