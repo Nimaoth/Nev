@@ -39,10 +39,8 @@ jobs:
 
       - run: apt-get update
         continue-on-error: true
-      - run: apt-get install gcc-mingw-w64 libx11-xcb-dev curl build-essential git -y
+      - run: apt-get install gcc-mingw-w64 libx11-xcb-dev wget build-essential git -y
         continue-on-error: true
-
-      - run: ls -la ~
 
       # fails for some reason
       #- uses: jiro4989/setup-nim-action@v1
@@ -52,7 +50,7 @@ jobs:
       #    yes: true
 
       # install choosenim and nim
-      - run: curl https://nim-lang.org/choosenim/init.sh > init-choosenim.sh
+      - run: wget https://nim-lang.org/choosenim/init.sh -O init-choosenim.sh
       - run: ls -la
       - run: chmod +x init-choosenim.sh
       - run: CHOOSENIM_CHOOSE_VERSION="devel" ./init-choosenim.sh -y
@@ -63,6 +61,7 @@ jobs:
       - run: echo "export PATH=/github/home/.nimble/bin:\$PATH" > ~/.profile
       - run: cat ~/.profile
         continue-on-error: true
+      - run: ls -la ~
       #- run: source ~/.profile
       #  continue-on-error: true
       - run: PATH=/github/home/.nimble/bin:$PATH nimble setup
