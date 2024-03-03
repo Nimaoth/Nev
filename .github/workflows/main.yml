@@ -42,7 +42,7 @@ jobs:
       - run: apt-get install gcc-mingw-w64 libx11-xcb-dev curl build-essential git -y
         continue-on-error: true
 
-      - run: ls -la
+      - run: ls -la ~
 
       # fails for some reason
       #- uses: jiro4989/setup-nim-action@v1
@@ -111,7 +111,7 @@ jobs:
         uses: actions/checkout@v3
       - uses: jiro4989/setup-nim-action@v1
         with:
-          nim-version: '2.1.x'
+          nim-version: 'devel'
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: nimble setup
         continue-on-error: true
