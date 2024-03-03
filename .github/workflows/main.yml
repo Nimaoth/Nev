@@ -61,21 +61,21 @@ jobs:
         run: git config --global --add safe.directory /__w/Absytree/Absytree
         continue-on-error: true
       - run: export PATH=/github/home/.nimble/bin:$PATH 
-      - run: nimble setup
+      - run: PATH=/github/home/.nimble/bin:$PATH nimble setup
 
       # linux builds
-      - run: nimble buildAbsytreeServer
+      - run: PATH=/github/home/.nimble/bin:$PATH nimble buildAbsytreeServer
       - if: always()
-        run: nimble buildLspWs
+        run: PATH=/github/home/.nimble/bin:$PATH nimble buildLspWs
       - if: always()
-        run: nimble buildBrowser
+        run: PATH=/github/home/.nimble/bin:$PATH nimble buildBrowser
       - if: always()
-        run: nimble buildDesktop --app:console -D:forceLogToFile -D:enableGui=false -D:enableTerminal=true --out:astt
+        run: PATH=/github/home/.nimble/bin:$PATH nimble buildDesktop --app:console -D:forceLogToFile -D:enableGui=false -D:enableTerminal=true --out:astt
       - if: always()
-        run: nimble buildDesktop --app:gui -D:forceLogToFile -D:enableGui=true -D:enableTerminal=false --out:ast
+        run: PATH=/github/home/.nimble/bin:$PATH nimble buildDesktop --app:gui -D:forceLogToFile -D:enableGui=true -D:enableTerminal=false --out:ast
 
       # create release packages
-      - run: nim ./tools/package_release.nims
+      - run: PATH=/github/home/.nimble/bin:$PATH nim ./tools/package_release.nims
       - run: ls -la release_linux
       - run: ls -la release_web
 
