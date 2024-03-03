@@ -63,7 +63,7 @@ template logc(node: untyped, msg: varargs[string, `$`]) =
     for c in msg:
       uiae.add $c
     let xvlc: string = dump(node, false)
-    debug "| ".repeat(stackSize), " (", cellPath, "): ", uiae, "    | ", xvlc, ""
+    debug "| ".repeat(stackSize), " (", $cellPath, "): ", uiae, "    | ", xvlc, ""
 
 proc newCellLayoutContext(builder: UINodeBuilder, updateContext: UpdateContext, requiredDirection: Direction, fillX: bool): CellLayoutContext =
   new result
