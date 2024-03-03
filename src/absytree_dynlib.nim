@@ -64,12 +64,12 @@ import clipboard
 
 createNimScriptContextConstructorAndGenerateBindings()
 
-type OnAppCreated = proc(app: ptr AppObject, userData: pointer) {.cdecl.}
+type OnAppCreated = proc(app: ptr AppObject) {.cdecl.}
 
 var rend: ExternCPlatform = nil
 var gApp: App = nil
 
-proc runApp(onAppCreated: OnAppCreated, userData: pointer): Future[void] {.async.} =
+proc runApp(onAppCreated: OnAppCreated): Future[void] {.async.} =
   echo "Creating platform..."
   rend = new ExternCPlatform
   rend.init()
@@ -77,7 +77,7 @@ proc runApp(onAppCreated: OnAppCreated, userData: pointer): Future[void] {.async
   echo "Creating app..."
   var opts = AppOptions(disableNimScriptPlugins: true)
   gApp = await newEditor(Backend.Gui, rend, opts)
-  onAppCreated(gApp[].addr, userData)
+  onAppCreated(gApp[].addr)
 
 proc shutdown() =
   destroyClipboard()
@@ -94,12 +94,12 @@ proc shutdown() =
 
 proc NimMain() {.cdecl, importc.}
 
-proc absytree_init(userData: pointer, onAppCreated: OnAppCreated, ueLog: UeLog) {.exportc, dynlib, cdecl.} =
+proc absytree_init(onAppCreated: OnAppCreated, ueLog: UeLog) {.exportc, dynlib, cdecl.} =
   NimMain()
   ueLogFn = ueLog
   echo "Initializing Absytree..."
   fs.init("D:/Absytree")
-  waitFor runApp(onAppCreated, userData)
+  waitFor runApp(onAppCreated)
 
 proc absytree_poll(timeoutMs: int32) {.exportc, dynlib, cdecl.} =
   try:
@@ -166,7 +166,7 @@ proc absytree_mouse_scroll*(input: int64, modBits: int32, x, y: float32): bool {
     return rend.builder.handleMouseScroll(vec2(x, y), vec2(0, input.float32), mods)
   return false
 
-proc absytree_render*(width: float32, height: float32) {.exportc, dynlib, cdecl.} =
+proc absytree_render*(width: float32, height: float32, drawRect: DrawRectFn, drawText: DrawTextFn, pushClipRect: PushClipRectFn, popClipRect: PopClipRectFn) {.exportc, dynlib, cdecl.} =
   if gApp.isNil:
     return
 
@@ -197,6 +197,7 @@ proc absytree_render*(width: float32, height: float32) {.exportc, dynlib, cdecl.
     updateTime = updateTimer.elapsed.ms
 
     let renderTimer = startTimer()
+    rend.setRenderFunctions(drawRect, drawText, pushClipRect, popClipRect)
     rend.render()
     renderTime = renderTimer.elapsed.ms
 

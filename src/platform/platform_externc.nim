@@ -35,6 +35,16 @@ type
 
     drawnNodes: seq[UINode]
 
+    drawRect: DrawRectFn
+    drawText: DrawTextFn
+    pushClipRect: PushClipRectFn
+    popClipRect: PopClipRectFn
+
+  DrawRectFn* = proc(x, y, width, height, r, g, b, a: float32) {.cdecl.}
+  DrawTextFn* = proc(x, y, r, g, b, a: float32, text: cstring) {.cdecl.}
+  PushClipRectFn* = proc(x, y, width, height: float32) {.cdecl.}
+  PopClipRectFn* = proc() {.cdecl.}
+
 proc getFont*(self: ExternCPlatform, font: string, fontSize: float32): Font
 proc getFont*(self: ExternCPlatform, fontSize: float32, style: set[FontStyle]): Font
 proc getFont*(self: ExternCPlatform, fontSize: float32, flags: UINodeFlags): Font
@@ -143,22 +153,18 @@ method processEvents*(self: ExternCPlatform): int =
 
 proc drawNode(builder: UINodeBuilder, platform: ExternCPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false)
 
-proc randomColor(node: UINode, a: float32): Color =
-  let h = node.id.hash
-  result.r = (((h shr 0) and 0xff).float32 / 255.0).sqrt
-  result.g = (((h shr 8) and 0xff).float32 / 255.0).sqrt
-  result.b = (((h shr 16) and 0xff).float32 / 255.0).sqrt
-  result.a = a
-
-# todo: pass these in as function pointers
-proc UnrealDrawRect*(x, y, width, height, r, g, b, a: float32) {.importc, dynlib: "UnrealEditor-AbsytreeUE-Win64-DebugGame.dll", cdecl.}
-proc UnrealDrawText*(x, y, r, g, b, a: float32, text: cstring) {.importc, dynlib: "UnrealEditor-AbsytreeUE-Win64-DebugGame.dll", cdecl.}
-proc UnrealPushClipRect*(x, y, width, height: float32) {.importc, dynlib: "UnrealEditor-AbsytreeUE-Win64-DebugGame.dll", cdecl.}
-proc UnrealPopClipRect*() {.importc, dynlib: "UnrealEditor-AbsytreeUE-Win64-DebugGame.dll", cdecl.}
+proc setRenderFunctions*(self: ExternCPlatform, drawRect: DrawRectFn, drawText: DrawTextFn, pushClipRect: PushClipRectFn, popClipRect: PopClipRectFn) =
+  self.drawRect = drawRect
+  self.drawText = drawText
+  self.pushClipRect = pushClipRect
+  self.popClipRect = popClipRect
 
 method render*(self: ExternCPlatform) =
   # Clear the screen and begin a new frame.
   # debugf"render: font size: {self.ctx.fontSize}, char width: {self.mCharWidth}, line height: {self.mLineHeight}, line distance: {self.mLineDistance}"
+
+  if self.drawRect.isNil:
+    return
 
   if self.ctx.fontSize != self.lastFontSize:
     self.lastFontSize = self.ctx.fontSize
@@ -199,18 +205,18 @@ proc drawNode(builder: UINodeBuilder, platform: ExternCPlatform, node: UINode, o
   let bounds = rect(nodePos.x, nodePos.y, node.boundsActual.w, node.boundsActual.h)
 
   if FillBackground in node.flags:
-    UnrealDrawRect(bounds.x, bounds.y, bounds.w, bounds.h, node.backgroundColor.r, node.backgroundColor.g, node.backgroundColor.b, node.backgroundColor.a)
+    platform.drawRect(bounds.x, bounds.y, bounds.w, bounds.h, node.backgroundColor.r, node.backgroundColor.g, node.backgroundColor.b, node.backgroundColor.a)
 
   # Mask the rest of the rendering is this function to the contentBounds
   if MaskContent in node.flags:
-    UnrealPushClipRect(bounds.x, bounds.y, bounds.w, bounds.h)
+    platform.pushClipRect(bounds.x, bounds.y, bounds.w, bounds.h)
   defer:
     if MaskContent in node.flags:
-      UnrealPopClipRect()
+      platform.popClipRect()
 
   if DrawText in node.flags:
     # todo: flags
-    UnrealDrawText(nodePos.x.floor, nodePos.y.floor, node.textColor.r, node.textColor.g, node.textColor.b, node.textColor.a, node.text.cstring)
+    platform.drawText(nodePos.x.floor, nodePos.y.floor, node.textColor.r, node.textColor.g, node.textColor.b, node.textColor.a, node.text.cstring)
 
   for _, c in node.children:
     builder.drawNode(platform, c, nodePos, force)
