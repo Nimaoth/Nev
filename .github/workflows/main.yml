@@ -60,7 +60,7 @@ jobs:
       - name: add Absytree as git safe.directory so nimble can install stuff
         run: git config --global --add safe.directory /__w/Absytree/Absytree
         continue-on-error: true
-      - run: echo "export PATH=/github/home/.nimble/bin:$PATH" > ~/.profile
+      - run: echo "export PATH=/github/home/.nimble/bin:\$PATH" > ~/.profile
       - run: cat ~/.profile
         continue-on-error: true
       #- run: source ~/.profile
@@ -68,6 +68,7 @@ jobs:
       - run: PATH=/github/home/.nimble/bin:$PATH nimble setup
 
       # linux builds
+      - run: PATH=/github/home/.nimble/bin:$PATH nimble buildAbsytreeServer
       - run: nimble buildAbsytreeServer
         continue-on-error: true
       - if: always()
@@ -108,49 +109,49 @@ jobs:
           name: release_web
           path: release_web.zip
 
-  build-absytree-windows:
-    name: Build Absytree Windows
-    runs-on: windows-2022
-    steps:
-      - name: Checkout the repo
-        uses: actions/checkout@v3
-      - uses: jiro4989/setup-nim-action@v1
-        with:
-          nim-version: 'devel'
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: nimble setup
-        continue-on-error: true
-        run: nimble setup
+  # build-absytree-windows:
+  #   name: Build Absytree Windows
+  #   runs-on: windows-2022
+  #   steps:
+  #     - name: Checkout the repo
+  #       uses: actions/checkout@v3
+  #     - uses: jiro4989/setup-nim-action@v1
+  #       with:
+  #         nim-version: 'devel'
+  #         repo-token: ${{ secrets.GITHUB_TOKEN }}
+  #     - name: nimble setup
+  #       continue-on-error: true
+  #       run: nimble setup
 
-      - name: nimble setup
-        run: nimble setup
+  #     - name: nimble setup
+  #       run: nimble setup
 
-      # windows builds
-      - if: always()
-        run: nimble buildDesktop --app:console -D:forceLogToFile -D:enableGui=false -D:enableTerminal=true --out:astt.exe
-      - if: always()
-        run: nimble buildDesktop --app:gui -D:forceLogToFile -D:enableGui=true -D:enableTerminal=false --out:ast.exe
-      - if: always()
-        run: nimble buildAbsytreeServerWindows
-      - if: always()
-        run: nimble buildLspWsWindows
+  #     # windows builds
+  #     - if: always()
+  #       run: nimble buildDesktop --app:console -D:forceLogToFile -D:enableGui=false -D:enableTerminal=true --out:astt.exe
+  #     - if: always()
+  #       run: nimble buildDesktop --app:gui -D:forceLogToFile -D:enableGui=true -D:enableTerminal=false --out:ast.exe
+  #     - if: always()
+  #       run: nimble buildAbsytreeServerWindows
+  #     - if: always()
+  #       run: nimble buildLspWsWindows
 
-      # create release packages
-      - run: nim ./tools/package_release.nims
+  #     # create release packages
+  #     - run: nim ./tools/package_release.nims
 
-      # make zips
-      - name: Zip release_windows
-        uses: vimtor/action-zip@v1
-        with:
-          files: release_windows
-          dest: release_windows.zip
+  #     # make zips
+  #     - name: Zip release_windows
+  #       uses: vimtor/action-zip@v1
+  #       with:
+  #         files: release_windows
+  #         dest: release_windows.zip
 
-      # upload artifacts
-      - name: Upload release_windows
-        uses: actions/upload-artifact@v3
-        with:
-          name: release_windows
-          path: release_windows.zip
+  #     # upload artifacts
+  #     - name: Upload release_windows
+  #       uses: actions/upload-artifact@v3
+  #       with:
+  #         name: release_windows
+  #         path: release_windows.zip
 
   run-tests:
     name: Run tests
