@@ -83,7 +83,7 @@ type
     class*: ClassId
 
     registryIndex: int32 # Index in the global node registry (0 if not registered)
-    model*: Model # gets set when inserted into a parent node which is in a model, or when inserted into a model
+    model* {.cursor.}: Model # gets set when inserted into a parent node which is in a model, or when inserted into a model
     parent* {.cursor.}: AstNode # gets set when inserted into a parent node
     role*: RoleId # gets set when inserted into a parent node
 
