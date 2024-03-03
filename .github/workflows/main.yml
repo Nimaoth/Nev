@@ -54,6 +54,7 @@ jobs:
       # install choosenim and nim
       - run: curl https://nim-lang.org/choosenim/init.sh > init-choosenim.sh
       - run: ls -la
+      - run: chmod +x init-choosenim.sh
       - run: CHOOSENIM_CHOOSE_VERSION="2.1.1" ./init-choosenim.sh
 
       - name: add Absytree as git safe.directory so nimble can install stuff
