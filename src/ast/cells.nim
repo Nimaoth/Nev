@@ -25,11 +25,11 @@ type
     noSpaceLeft*: bool
     noSpaceRight*: bool
 
-  Cell* = ref object of RootObj
+  Cell* {.acyclic.} = ref object of RootObj
     when defined(js):
       aDebug*: cstring
     id*: CellId
-    parent*: Cell
+    parent* {.cursor.}: Cell
     flags*: CellFlags
     node*: AstNode
     referenceNode*: AstNode
@@ -67,7 +67,7 @@ type
     cells*: Table[CellId, Cell]
     builder*: CellBuilder
 
-  CollectionCell* = ref object of Cell
+  CollectionCell* {.acyclic.} = ref object of Cell
     uiFlags*: UINodeFlags
     inline*: bool
     children*: seq[Cell]
