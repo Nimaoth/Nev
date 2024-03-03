@@ -27,7 +27,7 @@ jobs:
 
     strategy:
       matrix:
-        container: ["nimlang/nim:2.0.2-regular"]
+        container: ["ubuntu:22.04"]
 
     container:
       image: ${{ matrix.container }}
@@ -37,34 +37,50 @@ jobs:
       - name: Checkout the repo
         uses: actions/checkout@v3
 
+      - run: apt-get update
+        continue-on-error: true
+      - run: apt-get install gcc-mingw-w64 libx11-xcb-dev curl build-essential git -y
+        continue-on-error: true
+
+      - run: ls -la ~
+
+      # fails for some reason
       #- uses: jiro4989/setup-nim-action@v1
       #  with:
-      #    nim-version: '2.0.x'
+      #    nim-version: '2.1.1'
       #    repo-token: ${{ secrets.GITHUB_TOKEN }}
+      #    yes: true
+
+      # install choosenim and nim
+      - run: curl https://nim-lang.org/choosenim/init.sh > init-choosenim.sh
+      - run: ls -la
+      - run: chmod +x init-choosenim.sh
+      - run: CHOOSENIM_CHOOSE_VERSION="devel" ./init-choosenim.sh -y
 
       - name: add Absytree as git safe.directory so nimble can install stuff
         run: git config --global --add safe.directory /__w/Absytree/Absytree
-      - name: nimble setup
-        run: PATH=/github/home/.nimble/bin:$PATH nimble setup
-
-      - run: apt-get update
         continue-on-error: true
-      - run: apt-get install gcc-mingw-w64 libx11-xcb-dev -y
+      - run: echo "export PATH=/github/home/.nimble/bin:$PATH" > ~/.profile
+      - run: cat ~/.profile
         continue-on-error: true
+      #- run: source ~/.profile
+      #  continue-on-error: true
+      - run: PATH=/github/home/.nimble/bin:$PATH nimble setup
 
       # linux builds
       - run: nimble buildAbsytreeServer
+        continue-on-error: true
       - if: always()
-        run: nimble buildLspWs
+        run: PATH=/github/home/.nimble/bin:$PATH nimble buildLspWs
       - if: always()
-        run: nimble buildBrowser
+        run: PATH=/github/home/.nimble/bin:$PATH nimble buildBrowser
       - if: always()
-        run: nimble buildDesktop --app:console -D:forceLogToFile -D:enableGui=false -D:enableTerminal=true --out:astt
+        run: PATH=/github/home/.nimble/bin:$PATH nimble buildDesktop --app:console -D:forceLogToFile -D:enableGui=false -D:enableTerminal=true --out:astt
       - if: always()
-        run: nimble buildDesktop --app:gui -D:forceLogToFile -D:enableGui=true -D:enableTerminal=false --out:ast
+        run: PATH=/github/home/.nimble/bin:$PATH nimble buildDesktop --app:gui -D:forceLogToFile -D:enableGui=true -D:enableTerminal=false --out:ast
 
       # create release packages
-      - run: nim ./tools/package_release.nims
+      - run: PATH=/github/home/.nimble/bin:$PATH nim ./tools/package_release.nims
       - run: ls -la release_linux
       - run: ls -la release_web
 
@@ -100,7 +116,7 @@ jobs:
         uses: actions/checkout@v3
       - uses: jiro4989/setup-nim-action@v1
         with:
-          nim-version: '2.1.x'
+          nim-version: 'devel'
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: nimble setup
         continue-on-error: true
