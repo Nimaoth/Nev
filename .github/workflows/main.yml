@@ -41,6 +41,7 @@ jobs:
         with:
           nim-version: '2.1.1'
           repo-token: ${{ secrets.GITHUB_TOKEN }}
+          yes: true
 
       - name: add Absytree as git safe.directory so nimble can install stuff
         run: git config --global --add safe.directory /__w/Absytree/Absytree
