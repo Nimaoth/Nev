@@ -60,11 +60,12 @@ jobs:
       - name: add Absytree as git safe.directory so nimble can install stuff
         run: git config --global --add safe.directory /__w/Absytree/Absytree
         continue-on-error: true
-      - run: export PATH=/github/home/.nimble/bin:$PATH 
-      - run: PATH=/github/home/.nimble/bin:$PATH nimble setup
+      - run: echo "export PATH=/github/home/.nimble/bin:$PATH" > ~/.profile
+      - run: source ~/.profile
+      - run: nimble setup
 
       # linux builds
-      - run: PATH=/github/home/.nimble/bin:$PATH nimble buildAbsytreeServer
+      - run: nimble buildAbsytreeServer
       - if: always()
         run: PATH=/github/home/.nimble/bin:$PATH nimble buildLspWs
       - if: always()
