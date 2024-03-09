@@ -180,3 +180,18 @@ template softAssert*(condition: bool, message: string): untyped =
   if not condition:
     echo message
     raise newException(CatchableAssertion, message)
+
+when defined(js):
+  # on js the normal string.add function can cause stack overflows when the
+  # argument is too long, because it uses x.apply(push, y)
+  template append*(x: var string, y: string): untyped =
+    ## Concatenates `x` and `y` in place.
+    ##
+    ## See also `system.add`.
+    x = x & y
+else:
+  template append*(x: var string, y: string) =
+    ## Concatenates `x` and `y` in place.
+    ##
+    ## See also `system.add`.
+    x.add(y)

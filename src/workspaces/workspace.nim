@@ -2,11 +2,16 @@ import std/[json, options, os]
 import misc/[custom_async, id, array_buffer, cancellation_token]
 
 type
+  WorkspaceInfo* = object
+    name*: string
+    folders*: seq[tuple[path: string, name: Option[string]]]
+
   Workspace* = ref object
     folders*: seq[WorkspaceFolder]
 
   WorkspaceFolder* = ref object of RootObj
     name*: string
+    info*: Future[WorkspaceInfo]
     id*: Id
 
   DirectoryListing* = object

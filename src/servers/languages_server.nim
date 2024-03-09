@@ -1,4 +1,4 @@
-import std/[os, osproc, asynchttpserver, strutils, strformat, uri, asyncfile, json]
+import std/[os, osproc, asynchttpserver, strutils, strformat, uri, asyncfile, json, sequtils]
 import misc/[custom_async, util, myjsonutils]
 import router, server_utils
 
@@ -8,6 +8,10 @@ proc callback(req: Request): Future[void] {.async.} =
   echo "[LS] ", req.reqMethod, " ", req.url
 
   let headers = newHttpHeaders([("Access-Control-Allow-Origin", "*")])
+
+  let (workspaceName, hostedFolders) = block:
+    {.gcsafe.}:
+      (workspaceName, hostedFolders)
 
   withRequest req:
     options "/":
@@ -26,14 +30,17 @@ proc callback(req: Request): Future[void] {.async.} =
         let executablePath = reqBody["path"].str
         let additionalArgs = reqBody["args"].jsonTo seq[string]
         let proxyPath = getCurrentDir() / "tools/lsp-ws.exe"
-        let args = @[fmt"--port:{port}", fmt"--exe:{executablePath}", "--"] & additionalArgs
+
+        let directories = hostedFolders.mapIt(fmt"{it.path}").join(";")
+        let args = @[fmt"--port:{port}", fmt"--exe:{executablePath}", fmt"--log:lsp-ws-{port}.log", fmt"--workspace:{workspaceName}", fmt"--directories:{directories}", "--"] & additionalArgs
         let process = startProcess(proxyPath, args=args, options={poUsePath, poDaemon})
 
         {.gcsafe.}:
           processes.add process
 
         let response = %*{
-          "port": port.int
+          "port": port.int,
+          "processId": os.getCurrentProcessId()
         }
 
         await req.respond(Http200, response.pretty, headers)

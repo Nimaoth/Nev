@@ -107,6 +107,9 @@ method getDirectoryListing*(self: WorkspaceFolderGithub, relativePath: string): 
 
   return DirectoryListing()
 
+proc createInfo(): Future[WorkspaceInfo] {.async.} =
+  return WorkspaceInfo(name: "", folders: @[])
+
 proc newWorkspaceFolderGithub*(user, repository, branchOrHash: string): WorkspaceFolderGithub =
   new result
 
@@ -118,6 +121,7 @@ proc newWorkspaceFolderGithub*(user, repository, branchOrHash: string): Workspac
   result.cachedDirectoryListings = initTable[string, DirectoryListing]()
   result.pathToSha = initTable[string, string]()
   result.name = fmt"GitHub:{user}/{repository}/{branchOrHash}"
+  result.info = createInfo()
 
 proc newWorkspaceFolderGithub*(settings: JsonNode): WorkspaceFolderGithub =
   let user = settings["user"].getStr

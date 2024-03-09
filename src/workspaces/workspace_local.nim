@@ -1,4 +1,4 @@
-import std/[os, json]
+import std/[os, json, options]
 import misc/[custom_async, custom_logger]
 import workspace
 
@@ -37,10 +37,14 @@ method getDirectoryListing*(self: WorkspaceFolderLocal, relativePath: string): F
         log lvlError, fmt"getDirectoryListing: Unhandled file type {kind} for {file}"
     return res
 
+proc createInfo(path: string): Future[WorkspaceInfo] {.async.} =
+  return WorkspaceInfo(name: path, folders: @[(path.absolutePath, path.some)])
+
 proc newWorkspaceFolderLocal*(path: string): WorkspaceFolderLocal =
   new result
   result.path = path
   result.name = fmt"Local:{path.absolutePath}"
+  result.info = createInfo(path)
 
 proc newWorkspaceFolderLocal*(settings: JsonNode): WorkspaceFolderLocal =
   let path = settings["path"].getStr

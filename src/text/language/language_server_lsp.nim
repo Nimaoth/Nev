@@ -3,6 +3,7 @@ import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEdito
 import misc/[event, util, custom_logger, custom_async, myjsonutils]
 import text/text_editor
 import language_server_base, app, app_interface, config_provider, lsp_client
+import workspaces/workspace as ws
 
 logCategory "lsp"
 
@@ -32,7 +33,7 @@ method disconnect*(self: LanguageServerLSP) =
     self.stop()
     # todo: remove from languageServers
 
-proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string], languagesServer: Option[(string, int)] = (string, int).none): Future[Option[LanguageServerLSP]] {.async.} =
+proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string], languagesServer: Option[(string, int)] = (string, int).none, workspace = ws.WorkspaceFolder.none): Future[Option[LanguageServerLSP]] {.async.} =
   if languageServers.contains(languageId):
     return languageServers[languageId].some
 
@@ -52,8 +53,7 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string], 
   else:
     @[]
 
-
-  var client = LSPClient()
+  var client = LSPClient(workspace: workspace)
   languageServers[languageId] = LanguageServerLSP(client: client)
   await client.connect(exePath, workspaces, args, languagesServer)
   client.run()
@@ -68,16 +68,28 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string], 
     if textDocumentEditor.document.languageId != languageId:
       return
 
-    asyncCheck client.notifyOpenedTextDocument(languageId, textDocumentEditor.document.fullPath, textDocumentEditor.document.contentString)
+    if textDocumentEditor.document.isLoadingAsync:
+      discard textDocumentEditor.document.onLoaded.subscribe proc(document: TextDocument) =
+        asyncCheck client.notifyOpenedTextDocument(languageId, document.fullPath, document.contentString)
+    else:
+      asyncCheck client.notifyOpenedTextDocument(languageId, textDocumentEditor.document.fullPath, textDocumentEditor.document.contentString)
+
     discard textDocumentEditor.document.textInserted.subscribe proc(args: auto) =
       # debugf"TEXT INSERTED {args.document.fullPath}:{args.location}: {args.text}"
-      let changes = @[TextDocumentContentChangeEvent(`range`: args.location.toSelection.toRange, text: args.text)]
-      asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, changes)
+
+      if client.fullDocumentSync:
+        asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, args.document.contentString)
+      else:
+        let changes = @[TextDocumentContentChangeEvent(`range`: args.location.toSelection.toRange, text: args.text)]
+        asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, changes)
 
     discard textDocumentEditor.document.textDeleted.subscribe proc(args: auto) =
       # debugf"TEXT DELETED {args.document.fullPath}: {args.selection}"
-      let changes = @[TextDocumentContentChangeEvent(`range`: args.selection.toRange)]
-      asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, changes)
+      if client.fullDocumentSync:
+        asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, args.document.contentString)
+      else:
+        let changes = @[TextDocumentContentChangeEvent(`range`: args.selection.toRange)]
+        asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, changes)
 
   discard gEditor.onEditorDeregistered.subscribe proc(editor: auto) =
     if not (editor of TextDocumentEditor):
@@ -99,17 +111,27 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string], 
       continue
 
     # debugf"Register events for {textDocumentEditor.document.fullPath}"
-    asyncCheck client.notifyOpenedTextDocument(languageId, textDocumentEditor.document.fullPath, textDocumentEditor.document.contentString)
+    if textDocumentEditor.document.isLoadingAsync:
+      discard textDocumentEditor.document.onLoaded.subscribe proc(document: TextDocument) =
+        asyncCheck client.notifyOpenedTextDocument(languageId, document.fullPath, document.contentString)
+    else:
+      asyncCheck client.notifyOpenedTextDocument(languageId, textDocumentEditor.document.fullPath, textDocumentEditor.document.contentString)
 
     discard textDocumentEditor.document.textInserted.subscribe proc(args: auto) =
       # debugf"TEXT INSERTED {args.document.fullPath}:{args.location}: {args.text}"
-      let changes = @[TextDocumentContentChangeEvent(`range`: args.location.toSelection.toRange, text: args.text)]
-      asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, changes)
+      if client.fullDocumentSync:
+        asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, args.document.contentString)
+      else:
+        let changes = @[TextDocumentContentChangeEvent(`range`: args.location.toSelection.toRange, text: args.text)]
+        asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, changes)
 
     discard textDocumentEditor.document.textDeleted.subscribe proc(args: auto) =
       # debugf"TEXT DELETED {args.document.fullPath}: {args.selection}"
-      let changes = @[TextDocumentContentChangeEvent(`range`: args.selection.toRange)]
-      asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, changes)
+      if client.fullDocumentSync:
+        asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, args.document.contentString)
+      else:
+        let changes = @[TextDocumentContentChangeEvent(`range`: args.selection.toRange)]
+        asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, changes)
 
   log lvlInfo, fmt"Started language server for {languageId}"
   return languageServers[languageId].some
@@ -131,16 +153,16 @@ method getDefinition*(self: LanguageServerLSP, filename: string, location: Curso
   let parsedResponse = response.result
 
   if parsedResponse.asLocation().getSome(location):
-    return Definition(filename: location.uri.parseUri.path.myNormalizedPath, location: (line: location.`range`.start.line, column: location.`range`.start.character)).some
+    return Definition(filename: location.uri.decodeUrl.parseUri.path.myNormalizedPath, location: (line: location.`range`.start.line, column: location.`range`.start.character)).some
 
   if parsedResponse.asLocationSeq().getSome(locations) and locations.len > 0:
     let location = locations[0]
-    return Definition(filename: location.uri.parseUri.path.myNormalizedPath, location: (line: location.`range`.start.line, column: location.`range`.start.character)).some
+    return Definition(filename: location.uri.decodeUrl.parseUri.path.myNormalizedPath, location: (line: location.`range`.start.line, column: location.`range`.start.character)).some
 
   if parsedResponse.asLocationLinkSeq().getSome(locations) and locations.len > 0:
     let location = locations[0]
     return Definition(
-      filename: location.targetUri.parseUri.path.myNormalizedPath,
+      filename: location.targetUri.decodeUrl.parseUri.path.myNormalizedPath,
       location: (line: location.targetSelectionRange.start.line, column: location.targetSelectionRange.start.character)).some
 
   log(lvlError, "No definition found")
@@ -195,7 +217,7 @@ method getSymbols*(self: LanguageServerLSP, filename: string): Future[seq[Symbol
         location: (line: r.location.range.start.line, column: r.location.range.start.character),
         name: r.name,
         symbolType: symbolKind,
-        filename: r.location.uri.parseUri.path.myNormalizedPath,
+        filename: r.location.uri.decodeUrl.parseUri.path.myNormalizedPath,
       )
 
   return completions
@@ -206,7 +228,7 @@ method getCompletions*(self: LanguageServerLSP, languageId: string, filename: st
 
   let response = await self.client.getCompletions(filename, location.line, location.column)
   if response.isError:
-    log(lvlError, fmt"Error: {response.error}")
+    log(lvlError, &"Error: {response.error.code}\n{response.error.message}")
     return completionsResult
 
   let completions = response.result

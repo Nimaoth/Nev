@@ -7,7 +7,6 @@ type DirInfo = object
   files: seq[string]
   folders: seq[string]
 
-var workspaceName: string
 var ignoredPatterns: seq[Glob]
 
 proc shouldIgnore(path: string): bool =
@@ -49,7 +48,15 @@ proc callback(req: Request): Future[void] {.async.} =
     get "/info/name":
       await req.respond(Http200, workspaceName, headers)
 
+    get "/info/workspace-folders":
+      let message = %hostedFolders.mapIt(%*{
+        "path": it.path,
+        "name": it.name,
+      })
+      await req.respond(Http200, $message, headers)
+
     get "/relative-path/":
+      ##
       var relativePath = ""
 
       let (name, actualPath) = path.splitWorkspacePath
@@ -83,7 +90,9 @@ proc callback(req: Request): Future[void] {.async.} =
       else:
         var folders: seq[string]
         for i, f in hostedFolders:
-          folders.add "@" & f.name.get($i)
+          # todo
+          # folders.add "@" & f.name.get($i)
+          folders.add f.path
         DirInfo(folders: folders)
 
       let response = result.toJson

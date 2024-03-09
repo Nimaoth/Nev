@@ -4,6 +4,7 @@ import misc/[custom_async]
 proc `$`*(p: Port): string {.borrow.}
 
 var hostedFolders*: seq[tuple[path: string, name: Option[string]]]
+var workspaceName*: string
 
 proc getFreePort*(): Port =
   var server = newAsyncHttpServer()
