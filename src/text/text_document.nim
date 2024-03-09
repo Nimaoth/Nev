@@ -60,6 +60,8 @@ type TextDocument* = ref object of Document
 
   nextLineIdCounter: int32 = 0
 
+  isLoadingAsync*: bool = false
+
   onLoaded*: Event[TextDocument]
   textChanged*: Event[TextDocument]
   textInserted*: Event[tuple[document: TextDocument, location: Cursor, text: string]]
@@ -590,9 +592,11 @@ method save*(self: TextDocument, filename: string = "", app: bool = false) =
 proc loadAsync(self: TextDocument, ws: WorkspaceFolder): Future[void] {.async.} =
   # self.content = await ws.loadFile(self.filename)
   self.isBackedByFile = true
+  self.isLoadingAsync = true
   self.content = catch ws.loadFile(self.filename).await:
     log lvlError, fmt"Failed to load workspace file {self.filename}"
     ""
+  self.isLoadingAsync = false
   self.onLoaded.invoke self
 
 method load*(self: TextDocument, filename: string = "") =
@@ -642,7 +646,7 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
     else:
       @[]
 
-  self.languageServer = await getOrCreateLanguageServer(languageId, self.filename, workspaces, config)
+  self.languageServer = await getOrCreateLanguageServer(languageId, self.filename, workspaces, config, self.workspace)
   if self.languageServer.getSome(ls):
     ls.connect()
     let callback = proc (targetFilename: string): Future[void] {.async.} =

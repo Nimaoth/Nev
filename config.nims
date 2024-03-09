@@ -3,7 +3,7 @@ switch("path", "scripting")
 switch("path", "src")
 
 switch("d", "mingw")
-switch("mm", "refc")
+switch("mm", "orc")
 switch("tlsEmulation", "off")
 switch("d", "enableGui=true")
 switch("d", "enableTerminal=true")

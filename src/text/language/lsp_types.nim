@@ -126,9 +126,15 @@ type
     name*: string
     version*: string
 
+  TextDocumentSyncOptionsSave* = object
+    includeText*: Option[bool]
+
   TextDocumentSyncOptions* = object
     openClose*: bool
     change*: TextDocumentSyncKind
+    willSave*: Option[bool]
+    willSaveWaitUntil*: Option[bool]
+    save*: Option[TextDocumentSyncOptionsSave]
 
   CompletionItemOptions* = object
     labelDetailsSupport*: bool
@@ -332,7 +338,7 @@ type
     resolveProvider*: bool
 
   WorkspaceFoldersServerCapabilities* = object
-    supported*: bool
+    supported*: Option[bool]
     changeNotifications*: Option[JsonNode]
 
   FileOperationPatternOptions* = object
@@ -432,8 +438,8 @@ type
     tags*: seq[CompletionItemTag]
     detail*: Option[string]
     documentation*: Option[CompletionItemDocumentationVariant]
-    deprecated*: bool
-    preselect*: bool
+    deprecated*: Option[bool]
+    preselect*: Option[bool]
     sortText*: Option[string]
     filterText*: Option[string]
     insertText*: Option[string]

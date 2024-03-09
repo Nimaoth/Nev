@@ -1274,6 +1274,7 @@ proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
     return
 
   if languageServer.getSome(ls):
+    # todo: absolute paths
     let definition = await ls.getDefinition(self.document.fullPath, self.selection.last)
     if definition.getSome(d):
       let (relativePath, isInSameWorkspace) = if self.document.workspace.getSome(workspace):

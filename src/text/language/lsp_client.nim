@@ -1,6 +1,7 @@
-import std/[json, strutils, strformat, macros]
-import misc/[custom_logger, async_http_client, websocket]
+import std/[json, strutils, strformat, macros, options]
+import misc/[custom_logger, async_http_client, websocket, util]
 import scripting/expose
+from workspaces/workspace as ws import nil
 
 logCategory "lsp"
 
@@ -29,6 +30,9 @@ type
     isInitialized: bool
     pendingRequests: seq[string]
     workspaceFolders: seq[string]
+    workspace*: Option[ws.WorkspaceFolder]
+    serverCapabilities: ServerCapabilities
+    fullDocumentSync*: bool = false
 
 proc complete[T](future: ResolvableFuture[T], result: T) =
   when defined(js):
@@ -54,12 +58,14 @@ when not defined(js):
 type LSPConnectionWebsocket = ref object of LSPConnection
   websocket: WebSocket
   buffer: string
+  processId: int
 
 method close(connection: LSPConnectionWebsocket) = connection.websocket.close()
 method recvLine(connection: LSPConnectionWebsocket): Future[string] {.async.} =
   var newLineIndex = connection.buffer.find("\r\n")
   while newLineIndex == -1:
-    connection.buffer.add connection.websocket.receiveStrPacket().await
+    let next = connection.websocket.receiveStrPacket().await
+    connection.buffer.append next
     newLineIndex = connection.buffer.find("\r\n")
 
   let line = connection.buffer[0..<newLineIndex]
@@ -213,16 +219,30 @@ proc cancelAllOf*(client: LSPClient, meth: string) =
     future.complete error[JsonNode](-1, fmt"{meth}:{id} canceled")
 
 proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async.} =
-  let workspacePath = if client.workspaceFolders.len > 0:
+  var workspacePath = if client.workspaceFolders.len > 0:
     client.workspaceFolders[0].myNormalizedPath.some
   else:
     string.none
 
-  let workspaces = client.workspaceFolders.mapIt(WorkspaceFolder(uri: $it.toUri, name: it.splitFile.name))
+  var workspaces = client.workspaceFolders.mapIt(WorkspaceFolder(uri: $it.toUri, name: it.splitFile.name))
+
+  if client.workspace.getSome workspace:
+    while workspace.info.isNil:
+      debugf"workspace await info is nil"
+      await sleepAsync(100)
+
+    let info = workspace.info.await
+
+    if info.folders.len > 0:
+      log lvlInfo, "Using workspace info ({info}) as lsp workspace"
+      workspacePath = info.folders[0].path.some
+      workspaces = info.folders.mapIt(WorkspaceFolder(uri: $it.path.toUri, name: it.name.get("???")))
 
   let processId = when defined(js):
-    # todo
-    0
+    if client.connection of LSPConnectionWebsocket:
+      client.connection.LSPConnectionWebsocket.processId
+    else:
+      0
   else:
     os.getCurrentProcessId()
 
@@ -270,7 +290,7 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async.} =
 
   log(lvlInfo, fmt"[initialize] {params.pretty}")
 
-  result = await client.sendRequest("initialize", params)
+  let res = await client.sendRequest("initialize", params)
   client.isInitialized = true
 
   await client.sendNotification("initialized", newJObject())
@@ -281,7 +301,9 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async.} =
     let header = createHeader(req.len)
     await client.connection.send(header & req)
 
-proc tryGetPortFromLanguagesServer(url: string, port: int, exePath: string, args: seq[string]): Future[Option[int]] {.async.} =
+  return res
+
+proc tryGetPortFromLanguagesServer(url: string, port: int, exePath: string, args: seq[string]): Future[Option[tuple[port, processId: int]]] {.async.} =
   debugf"tryGetPortFromLanguagesServer {url}, {port}, {exePath}, {args}"
   try:
     let body = $ %*{
@@ -292,13 +314,17 @@ proc tryGetPortFromLanguagesServer(url: string, port: int, exePath: string, args
     let response = await httpPost(fmt"http://{url}:{port}/lsp/start", body)
     let json = response.parseJson
     if not json.hasKey("port") or json["port"].kind != JInt:
-      return int.none
+      return (int, int).none
+    if not json.hasKey("processId") or json["processId"].kind != JInt:
+      return (int, int).none
 
-    # return 3333.some
-    return json["port"].num.int.some
+    # return (3333, 0).some
+    let port = json["port"].num.int
+    let processId = json["processId"].num.int
+    return (port, processId).some
   except CatchableError:
-    log(lvlError, fmt"Failed to connect to languages server {url}:{port}: {getCurrentExceptionMsg()}")
-    return int.none
+    log lvlError, &"Failed to connect to languages server {url}:{port}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+    return (int, int).none
 
 when not defined(js):
   proc logProcessDebugOutput(process: AsyncProcess) {.async.} =
@@ -312,22 +338,31 @@ proc sendInitializationRequest(client: LSPClient) {.async.} =
   if response.isError:
     log(lvlError, fmt"[sendInitializationRequest] Got error response: {response}")
     return
-  var serverCapabilities: ServerCapabilities = response.result["capabilities"].jsonTo(ServerCapabilities, Joptions(allowMissingKeys: true, allowExtraKeys: true))
-  log(lvlInfo, "Server capabilities: ", serverCapabilities)
+
+  client.serverCapabilities = response.result["capabilities"].jsonTo(ServerCapabilities, Joptions(allowMissingKeys: true, allowExtraKeys: true))
+  log(lvlInfo, "Server capabilities: ", client.serverCapabilities)
+
+  if client.serverCapabilities.textDocumentSync.asTextDocumentSyncKind().getSome(syncKind):
+    if syncKind == TextDocumentSyncKind.Full:
+      client.fullDocumentSync = true
+
+  elif client.serverCapabilities.textDocumentSync.asTextDocumentSyncOptions().getSome(syncOptions):
+    if syncOptions.change == TextDocumentSyncKind.Full:
+      client.fullDocumentSync = true
 
 proc connect*(client: LSPClient, serverExecutablePath: string, workspaces: seq[string], args: seq[string], languagesServer: Option[(string, int)] = (string, int).none) {.async.} =
   client.workSpaceFolders = workspaces
 
   if languagesServer.getSome(lsConfig):
     log lvlInfo, fmt"Using languages server at '{lsConfig[0]}:{lsConfig[1]}' to find LSP connection"
-    let port = await tryGetPortFromLanguagesServer(lsConfig[0], lsConfig[1], serverExecutablePath, args)
-    if port.isNone:
+    let serverConfig = await tryGetPortFromLanguagesServer(lsConfig[0], lsConfig[1], serverExecutablePath, args)
+    if serverConfig.isNone:
       log(lvlError, "Failed to connect to languages server: no port found")
       return
 
-    log lvlInfo, fmt"Using websocket connection on port {port.get} as LSP connection"
-    var socket = await newWebSocket(fmt"ws://localhost:{port.get}")
-    let connection = LSPConnectionWebsocket(websocket: socket)
+    log lvlInfo, fmt"Using websocket connection on port {serverConfig.get.port} as LSP connection"
+    var socket = await newWebSocket(fmt"ws://localhost:{serverConfig.get.port}")
+    let connection = LSPConnectionWebsocket(websocket: socket, processId: serverConfig.get.processId)
     client.connection = connection
     asyncCheck client.sendInitializationRequest()
 
@@ -345,7 +380,21 @@ proc connect*(client: LSPClient, serverExecutablePath: string, workspaces: seq[s
       log lvlError, "LSP connection not implemented for JS"
       return
 
+proc translatePath(client: LSPClient, path: string): Future[string] {.async.} =
+  if path.startsWith("@") and client.workspace.getSome workspace:
+    try:
+      let endOffset = path.find("/")
+      let index = path[1..<endOffset].parseInt
+      let info = workspace.info.await
+      if index < info.folders.len:
+        return info.folders[index].path / path[endOffset + 1..^1]
+    except:
+      log lvlError, &"Failed to translate path '{path}': {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+
+  return path
+
 proc notifyOpenedTextDocument*(client: LSPClient, languageId: string, path: string, content: string) {.async.} =
+  let path = client.translatePath(path).await
   let params = %*{
     "textDocument": %*{
       "uri": $path.toUri,
@@ -358,6 +407,7 @@ proc notifyOpenedTextDocument*(client: LSPClient, languageId: string, path: stri
   await client.sendNotification("textDocument/didOpen", params)
 
 proc notifyClosedTextDocument*(client: LSPClient, path: string) {.async.} =
+  let path = client.translatePath(path).await
   let params = %*{
     "textDocument": %*{
       "uri": $path.toUri,
@@ -367,6 +417,7 @@ proc notifyClosedTextDocument*(client: LSPClient, path: string) {.async.} =
   await client.sendNotification("textDocument/didClose", params)
 
 proc notifyTextDocumentChanged*(client: LSPClient, path: string, version: int, changes: seq[TextDocumentContentChangeEvent]) {.async.} =
+  let path = client.translatePath(path).await
   let params = %*{
     "textDocument": %*{
       "uri": $path.toUri,
@@ -377,13 +428,31 @@ proc notifyTextDocumentChanged*(client: LSPClient, path: string, version: int, c
 
   await client.sendNotification("textDocument/didChange", params)
 
+proc notifyTextDocumentChanged*(client: LSPClient, path: string, version: int, content: string) {.async.} =
+  let path = client.translatePath(path).await
+  let params = %*{
+    "textDocument": %*{
+      "uri": $path.toUri,
+      "version": version,
+    },
+    "contentChanges": %*[
+      %*{
+        "range": %Range(),
+        "text": content,
+      },
+    ],
+  }
+
+  await client.sendNotification("textDocument/didChange", params)
+
 proc getDefinition*(client: LSPClient, filename: string, line: int, column: int): Future[Response[DefinitionResponse]] {.async.} =
   # debugf"[getDefinition] {filename.absolutePath}:{line}:{column}"
+  let path = client.translatePath(filename).await
 
   client.cancelAllOf("textDocument/definition")
 
   let params = DefinitionParams(
-    textDocument: TextDocumentIdentifier(uri: $filename.toUri),
+    textDocument: TextDocumentIdentifier(uri: $path.toUri),
     position: Position(
       line: line,
       character: column
@@ -394,11 +463,12 @@ proc getDefinition*(client: LSPClient, filename: string, line: int, column: int)
 
 proc getDeclaration*(client: LSPClient, filename: string, line: int, column: int): Future[Response[DeclarationResponse]] {.async.} =
   # debugf"[getDeclaration] {filename.absolutePath}:{line}:{column}"
+  let path = client.translatePath(filename).await
 
   client.cancelAllOf("textDocument/declaration")
 
   let params = DeclarationParams(
-    textDocument: TextDocumentIdentifier(uri: $filename.toUri),
+    textDocument: TextDocumentIdentifier(uri: $path.toUri),
     position: Position(
       line: line,
       character: column
@@ -408,23 +478,25 @@ proc getDeclaration*(client: LSPClient, filename: string, line: int, column: int
   return (await client.sendRequest("textDocument/declaration", params)).to DeclarationResponse
 
 proc getSymbols*(client: LSPClient, filename: string): Future[Response[DocumentSymbolResponse]] {.async.} =
-  # debugf"[getCompletions] {filename.absolutePath}:{line}:{column}"
+  # debugf"[getSymbols] {filename.absolutePath}:{line}:{column}"
+  let path = client.translatePath(filename).await
 
   client.cancelAllOf("textDocument/documentSymbol")
 
   let params = DocumentSymbolParams(
-    textDocument: TextDocumentIdentifier(uri: $filename.toUri),
+    textDocument: TextDocumentIdentifier(uri: $path.toUri),
   ).toJson
 
   return (await client.sendRequest("textDocument/documentSymbol", params)).to DocumentSymbolResponse
 
 proc getCompletions*(client: LSPClient, filename: string, line: int, column: int): Future[Response[CompletionList]] {.async.} =
   # debugf"[getCompletions] {filename.absolutePath}:{line}:{column}"
+  let path = client.translatePath(filename).await
 
   client.cancelAllOf("textDocument/completion")
 
   let params = CompletionParams(
-    textDocument: TextDocumentIdentifier(uri: $filename.toUri),
+    textDocument: TextDocumentIdentifier(uri: $path.toUri),
     position: Position(
       line: line,
       character: column

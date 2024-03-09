@@ -1,5 +1,5 @@
 import std/[tables, json, options]
-import misc/[custom_async, custom_logger, async_http_client, array_buffer]
+import misc/[custom_async, custom_logger, async_http_client, array_buffer, myjsonutils]
 import workspace, platform/filesystem
 
 logCategory "ws-absytree-server"
@@ -22,10 +22,26 @@ method settings*(self: WorkspaceFolderAbsytreeServer): JsonNode =
 method clearDirectoryCache*(self: WorkspaceFolderAbsytreeServer) =
   self.cachedDirectoryListings.clear()
 
+proc getWorkspaceInfo(self: WorkspaceFolderAbsytreeServer): Future[WorkspaceInfo] {.async.} =
+  let localFolderFut = httpGet(self.baseUrl & "/info/name")
+  let workspaceFoldersFut = httpGet(self.baseUrl & "/info/workspace-folders")
+
+  let localFolder = localFolderFut.await
+  let name = fmt"AbsytreeServer:{self.baseUrl}/{localFolder}"
+
+  let workspaceFolders = workspaceFoldersFut.await.parseJson
+  let folders = workspaceFolders.jsonTo(typeof(WorkspaceInfo().folders))
+
+  return WorkspaceInfo(name: name, folders: folders)
+
 proc updateWorkspaceName(self: WorkspaceFolderAbsytreeServer): Future[void] {.async.} =
-  let url = self.baseUrl & "/info/name"
-  let localFolder = await httpGet(url)
-  self.name = fmt"AbsytreeServer:{self.baseUrl}/{localFolder}"
+  try:
+    self.info = self.getWorkspaceInfo()
+    self.info.thenIt:
+      self.name = it.name
+      log lvlInfo, fmt"AbsytreeServer workspace updated. Name: '{it.name}', Folders: {it.folders}"
+  except:
+    log lvlError, &"Failed to update workspace info: {getCurrentExceptionMsg()}:\n{getCurrentException().getStackTrace()}"
 
 method loadFile*(self: WorkspaceFolderAbsytreeServer, relativePath: string): Future[string] {.async.} =
   let relativePath = relativePath.normalizePathUnix

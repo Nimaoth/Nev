@@ -25,9 +25,9 @@ proc newCustomLogger*(levelThreshold = logging.lvlAll, fmtStr = logging.defaultF
   result.levelThreshold = levelThreshold
   logging.addHandler(result)
 
-proc enableFileLogger*(self: CustomLogger) =
+proc enableFileLogger*(self: CustomLogger, filename = "messages.log") =
   when not defined(js):
-    var file = open("messages.log", fmWrite)
+    var file = open(filename, fmWrite)
     self.fileLogger = logging.newFileLogger(file, self.levelThreshold, self.fmtStr, flushThreshold=logging.lvlAll).some
 
 proc enableConsoleLogger*(self: CustomLogger) =

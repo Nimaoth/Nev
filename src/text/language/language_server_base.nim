@@ -1,6 +1,7 @@
 import std/[options, tables]
 import misc/[custom_async, custom_logger]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
+import workspaces/workspace
 
 type OnRequestSaveHandle* = distinct int
 
@@ -31,7 +32,7 @@ type TextCompletion* = object
   typ*: string
   doc*: string
 
-var getOrCreateLanguageServer*: proc(languageId: string, filename: string, workspaces: seq[string], languagesServer: Option[(string, int)] = (string, int).none): Future[Option[LanguageServer]] = nil
+var getOrCreateLanguageServer*: proc(languageId: string, filename: string, workspaces: seq[string], languagesServer: Option[(string, int)] = (string, int).none, workspace = WorkspaceFolder.none): Future[Option[LanguageServer]] = nil
 
 method start*(self: LanguageServer): Future[void] {.base.} = discard
 method stop*(self: LanguageServer) {.base.} = discard
