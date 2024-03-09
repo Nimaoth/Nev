@@ -54,7 +54,7 @@ proc getCommandLineParams(): string =
   return commandLineParams[3..^1].join(" ")
 
 task buildDesktop, "Build the desktop version":
-  selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi {getCommandLineParams()} ./src/absytree.nim"
+  selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi --passC:-std=gnu11 {getCommandLineParams()} ./src/absytree.nim"
   # selfExec fmt"c --passL:advapi32.lib -o:ast{exe} -d:exposeScriptingApi {getCommandLineParams()} ./src/absytree.nim"
   # selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi --objChecks:off --fieldChecks:off --rangeChecks:off --boundChecks:off --overflowChecks:off --floatChecks:off --nanChecks:off --infChecks:off {getCommandLineParams()} ./src/absytree.nim"
 
