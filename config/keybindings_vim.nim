@@ -900,7 +900,6 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommand "", "X", vimDeleteLeft
 
   addTextCommand "", "u", "undo"
-  addTextCommand "", "U", "redo"
   addTextCommand "", "<C-r>", "redo"
   addTextCommand "", "p", "vim-paste"
 
@@ -914,9 +913,6 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     editor.vimChangeSelection(true)
 
   # Insert mode
-  addTextCommand "insert", "<C-m>", "insert-text", "\n"
-  addTextCommand "insert", "<C-j>", "insert-text", "\n"
-
   addTextCommand "insert", "<C-r>", "set-mode", "insert-register"
   setHandleInputs "editor.text.insert-register", true
   setTextInputHandler "insert-register", proc(editor: TextDocumentEditor, input: string): bool =
@@ -986,3 +982,12 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   addTextCommand "visual-line", "\\>", "indent"
   addTextCommand "visual-line", "\\<", "unindent"
+
+  # todo: not really vim keybindings
+  addTextCommand "", "gd", "goto-definition"
+  addTextCommand "", "gs", "goto-symbol"
+  addTextCommand "", "<C-SPACE>", "get-completions"
+  addTextCommand "", "<C-k>", "show-hover-for-current"
+  addTextCommand "", "<C-r>", "select-prev"
+  addTextCommand "", "<C-m>", "select-next"
+  addTextCommand "", "U", "redo"

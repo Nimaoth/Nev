@@ -54,6 +54,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   # hover
   showHoverTask: DelayedTask    # for showing hover info after a delay
+  hideHoverTask: DelayedTask    # for hiding hover info after a delay
   currentHoverLocation: Cursor  # the location of the mouse hover
   showHover*: bool              # whether to show hover info in ui
   hoverText*: string            # the text to show in the hover info
@@ -1518,6 +1519,9 @@ proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").
   self.hideCompletions()
 
 proc showHoverForAsync(self: TextDocumentEditor, cursor: Cursor): Future[void] {.async.} =
+  if self.hideHoverTask.isNotNil:
+    self.hideHoverTask.pause()
+
   let languageServer = await self.document.getLanguageServer()
 
   if languageServer.getSome(ls):
@@ -1547,12 +1551,31 @@ proc hideHover*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.showHover = false
   self.markDirty()
 
+proc cancelDelayedHideHover*(self: TextDocumentEditor) {.expose("editor.text").} =
+  if self.hideHoverTask.isNotNil:
+    self.hideHoverTask.pause()
+
+proc hideHoverDelayed*(self: TextDocumentEditor) {.expose("editor.text").} =
+  ## Hides the hover information after a delay.
+  if self.showHoverTask.isNotNil:
+    self.showHoverTask.pause()
+
+  let hoverDelayMs = self.configProvider.getValue("text.hover-delay", 200)
+  if self.hideHoverTask.isNil:
+    self.hideHoverTask = startDelayed(hoverDelayMs, repeat=false):
+      self.hideHover()
+  else:
+    self.hideHoverTask.interval = hoverDelayMs
+    self.hideHoverTask.reschedule()
+
 proc showHoverForDelayed*(self: TextDocumentEditor, cursor: Cursor) =
   ## Show hover information for the given cursor after a delay.
   self.currentHoverLocation = cursor
 
-  let hoverDelayMs = self.configProvider.getValue("text.hover-delay", 200)
+  if self.hideHoverTask.isNotNil:
+    self.hideHoverTask.pause()
 
+  let hoverDelayMs = self.configProvider.getValue("text.hover-delay", 200)
   if self.showHoverTask.isNil:
     self.showHoverTask = startDelayed(hoverDelayMs, repeat=false):
       self.showHoverFor(self.currentHoverLocation)

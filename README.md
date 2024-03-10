@@ -156,4 +156,7 @@ More details in [Getting Started](docs/getting_started.md)
 - Search/Replace
 - fix e.g. dw deleting one character to much because it's inclusive
 
+## LSP
+- Handle rust lsp paths with lowercase letter like d:/path/to/file
+
 [Test report](https://nimaoth.github.io/Absytree/testresults.html)

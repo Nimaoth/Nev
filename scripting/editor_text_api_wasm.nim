@@ -1975,6 +1975,34 @@ proc hideHover*(self: TextDocumentEditor) =
       argsJsonString.cstring)
 
 
+proc editor_text_cancelDelayedHideHover_void_TextDocumentEditor_wasm(
+    arg: cstring): cstring {.importc.}
+proc cancelDelayedHideHover*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_cancelDelayedHideHover_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_hideHoverDelayed_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc hideHoverDelayed*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_hideHoverDelayed_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_isRunningSavedCommands_bool_TextDocumentEditor_wasm(
     arg: cstring): cstring {.importc.}
 proc isRunningSavedCommands*(self: TextDocumentEditor): bool =

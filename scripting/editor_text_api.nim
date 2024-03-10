@@ -300,6 +300,11 @@ proc showHoverForCurrent*(self: TextDocumentEditor) =
 proc hideHover*(self: TextDocumentEditor) =
   ## Hides the hover information.
   editor_text_hideHover_void_TextDocumentEditor_impl(self)
+proc cancelDelayedHideHover*(self: TextDocumentEditor) =
+  editor_text_cancelDelayedHideHover_void_TextDocumentEditor_impl(self)
+proc hideHoverDelayed*(self: TextDocumentEditor) =
+  ## Hides the hover information after a delay.
+  editor_text_hideHoverDelayed_void_TextDocumentEditor_impl(self)
 proc isRunningSavedCommands*(self: TextDocumentEditor): bool =
   editor_text_isRunningSavedCommands_bool_TextDocumentEditor_impl(self)
 proc runSavedCommands*(self: TextDocumentEditor) =
