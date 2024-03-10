@@ -1,6 +1,8 @@
 import std/[os, osproc, asynchttpserver, strutils, strformat, uri, asyncfile, json, sequtils]
-import misc/[custom_async, util, myjsonutils]
+import misc/[custom_async, util, myjsonutils, custom_logger]
 import router, server_utils
+
+logCategory "languages-server"
 
 var processes: seq[Process] = @[]
 
@@ -29,10 +31,11 @@ proc callback(req: Request): Future[void] {.async.} =
         let reqBody = parseJson(req.body)
         let executablePath = reqBody["path"].str
         let additionalArgs = reqBody["args"].jsonTo seq[string]
-        let proxyPath = getCurrentDir() / "tools/lsp-ws.exe"
+        let proxyPath = getAppDir() / "lsp-ws.exe"
 
         let directories = hostedFolders.mapIt(fmt"{it.path}").join(";")
         let args = @[fmt"--port:{port}", fmt"--exe:{executablePath}", fmt"--log:lsp-ws-{port}.log", fmt"--workspace:{workspaceName}", fmt"--directories:{directories}", "--"] & additionalArgs
+        log lvlInfo, fmt"Starting language server process {proxyPath} with args '{args}'"
         let process = startProcess(proxyPath, args=args, options={poUsePath, poDaemon})
 
         {.gcsafe.}:
