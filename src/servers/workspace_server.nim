@@ -1,19 +1,31 @@
 import std/[os, asynchttpserver, strutils, strformat, uri, asyncfile, json, sugar, sequtils]
 import glob
-import misc/[custom_async, util, myjsonutils]
+import misc/[custom_async, util, myjsonutils, custom_logger]
 import router, server_utils
+
+logCategory "workspace"
 
 type DirInfo = object
   files: seq[string]
   folders: seq[string]
 
 var ignoredPatterns: seq[Glob]
+var allowedPatterns: seq[Glob]
 
 proc shouldIgnore(path: string): bool =
   {.gcsafe.}:
     for pattern in ignoredPatterns:
       if path.matches(pattern):
-        echo pattern.pattern, " matches ", path
+        debugf "ignore pattern '{pattern.pattern}' matches {path}"
+        return true
+
+  return false
+
+proc isAllowed(path: string): bool =
+  {.gcsafe.}:
+    for pattern in allowedPatterns:
+      if path.matches(pattern):
+        debugf "allow pattern '{pattern.pattern}' matches {path}"
         return true
 
   return false
@@ -28,8 +40,17 @@ proc readDir(path: string): Future[DirInfo] {.async.} =
 
   return info
 
+proc translatePath(path: string): Option[string] =
+  if path.isAbsolute or path.contains(".."):
+    let absolutePath = path.absolutePath.normalizedPath
+    if not isAllowed(absolutePath):
+      return string.none
+    return absolutePath.some
+
+  return path.absolutePath.normalizedPath.some
+
 proc callback(req: Request): Future[void] {.async.} =
-  echo "[WS] ", req.reqMethod, " ", req.url
+  debug req.reqMethod, " ", req.url
 
   let (workspaceName, hostedFolders) = block:
     {.gcsafe.}:
@@ -63,28 +84,29 @@ proc callback(req: Request): Future[void] {.async.} =
       let absolutePath = actualPath.normalizedPath
       for i, folder in hostedFolders:
         if absolutePath.startsWith(folder.path):
+          # todo
           let name = folder.name.get($i)
           relativePath = "@" & name & "/" & absolutePath[folder.path.len..^1].strip(chars={'/', '\\'}).replace('\\', '/')
 
-      echo "get relative path ", absolutePath, " -> ", relativePath
+      debug "get relative path ", absolutePath, " -> ", relativePath
 
       await req.respond(Http200, relativePath, headers)
 
     get "/list/":
-      if path.isAbsolute or path.contains(".."):
+      let absolutePath = translatePath(path).getOr:
+        log lvlError, fmt"list '{path}' -> illegal"
         await req.respond(Http403, "illegal path", headers)
         break
 
-      let fullPath = path.getActualPathAbs
-      echo "list files in ", fullPath
+      debug "list files in ", absolutePath
 
-      let result = await readDir(fullPath)
+      let result = await readDir(absolutePath)
       let response = result.toJson
 
       await req.respond(Http200, $response, headers)
 
     get "/list":
-      echo "list files in ."
+      debug "list files in ."
       let result = if hostedFolders.len == 0:
         await readDir(".")
       else:
@@ -99,15 +121,15 @@ proc callback(req: Request): Future[void] {.async.} =
       await req.respond(Http200, $response, headers)
 
     get "/contents/":
-      if path.isAbsolute or path.contains(".."):
+      let absolutePath = translatePath(path).getOr:
+        log lvlError, fmt"get content of '{path}' -> illegal"
         await req.respond(Http403, "illegal path", headers)
         break
 
-      let fullPath = path.getActualPathAbs
-      echo fmt"get content of '{fullPath}'"
+      log lvlInfo, fmt"get content of '{path}' -> '{absolutePath}'"
 
       try:
-        var file = openAsync(fullPath, FileMode.fmRead)
+        var file = openAsync(absolutePath, FileMode.fmRead)
         let content = await file.readAll()
         file.close()
 
@@ -117,17 +139,17 @@ proc callback(req: Request): Future[void] {.async.} =
         await req.respond(Http500, "failed to save: " & getCurrentExceptionMsg(), headers)
 
     post "/contents/":
-      if path.isAbsolute or path.contains(".."):
+      let absolutePath = translatePath(path).getOr:
+        log lvlError, fmt"set content of '{path}' -> illegal"
         await req.respond(Http403, "illegal path", headers)
         break
 
-      let fullPath = path.getActualPathAbs
-      echo fmt"set content of '{fullPath}'"
+      log lvlInfo, fmt"set content of '{path}' -> {absolutePath}"
 
       try:
-        createDir(fullPath.splitFile.dir)
+        createDir(absolutePath.splitFile.dir)
 
-        var file = openAsync(fullPath, FileMode.fmWrite)
+        var file = openAsync(absolutePath, FileMode.fmWrite)
         await file.write(req.body)
         file.close()
 
@@ -139,16 +161,24 @@ proc callback(req: Request): Future[void] {.async.} =
     fallback:
       await req.respond(Http404, "", headers)
 
-proc runWorkspaceServer*(port: Port) {.async.} =
+proc readGlobFile(path: string): seq[Glob] =
   try:
-    for line in readFile(".absytreeignore").splitLines():
+    for line in readFile(path).splitLines():
       if line.isEmptyOrWhitespace:
         continue
-      echo "Ignoring ", line
 
-      ignoredPatterns.add glob(line)
+      result.add glob(line)
   except CatchableError:
-    echo "[WS] no ignore file"
+    log lvlInfo, fmt"no '{path}' file"
+
+proc runWorkspaceServer*(port: Port) {.async.} =
+  ignoredPatterns = readGlobFile(".absytree-ignore")
+  allowedPatterns = readGlobFile(".absytree-allow")
+
+  for g in ignoredPatterns:
+    debugf "ignoring: {g.pattern}"
+  for g in allowedPatterns:
+    debugf "allowing: {g.pattern}"
 
   try:
     if fileExists(".absytree-workspace"):
@@ -163,11 +193,10 @@ proc runWorkspaceServer*(port: Port) {.async.} =
         else:
 
           hostedFolders.add (line.absolutePath.normalizedPath, string.none)
-
   except CatchableError:
-    echo "[WS] no ignore file"
+    log lvlInfo, "no ignore file"
 
-  echo "[WS] hosting as ", workspaceName, ": ", hostedFolders
+  log lvlInfo, fmt"hosting as {workspaceName}: {hostedFolders}"
 
   var server = newAsyncHttpServer()
   await server.serve(port, callback)
@@ -179,7 +208,7 @@ when isMainModule:
     if arg.startsWith(portArg):
       port = arg[portArg.len..^1].parseInt
     else:
-      echo "Unexpected argument '", arg, "'"
+      log lvlError, fmt"Unexpected argument '{arg}'"
       quit(1)
 
   workspaceName = getCurrentDir().splitFile.name
