@@ -1400,7 +1400,9 @@ proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.} =
   if languageServer.getSome(ls):
     if self.completions.len == 0:
       self.completions = self.getCompletionsFromContent()
-    self.completions = await ls.getCompletions(self.document.languageId, self.document.fullPath, self.selection.last)
+    let lspCompletions = await ls.getCompletions(self.document.languageId, self.document.fullPath, self.selection.last)
+    if lspCompletions.len > 0:
+      self.completions = lspCompletions
 
   if self.completions.len == 0:
     self.completions = self.getCompletionsFromContent()
