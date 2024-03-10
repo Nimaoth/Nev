@@ -43,6 +43,7 @@ type StyledText* = object
   bounds*: Rect
   opacity*: Option[float]
   joinNext*: bool
+  textRange*: Option[tuple[startOffset: int, endOffset: int, startIndex: RuneIndex, endIndex: RuneIndex]]
 
 type StyledLine* = ref object
   index*: int
@@ -282,6 +283,14 @@ proc splitPartAt*(line: var StyledLine, partIndex: int, index: RuneIndex) =
     var copy = line.parts[partIndex]
     let byteIndex = line.parts[partIndex].text.toOpenArray.runeOffset(index)
     line.parts[partIndex].text = line.parts[partIndex].text[0..<byteIndex]
+    if line.parts[partIndex].textRange.isSome:
+      let byteIndexGlobal = line.parts[partIndex].textRange.get.startOffset + byteIndex
+      let indexGlobal = line.parts[partIndex].textRange.get.startIndex + index.RuneCount
+      line.parts[partIndex].textRange.get.endOffset = byteIndexGlobal
+      line.parts[partIndex].textRange.get.endIndex = indexGlobal
+      copy.textRange.get.startOffset = byteIndexGlobal
+      copy.textRange.get.startIndex = indexGlobal
+
     copy.text = copy.text[byteIndex..^1]
     line.parts.insert(copy, partIndex + 1)
 
@@ -335,12 +344,21 @@ proc overrideStyle*(self: TextDocument, line: var StyledLine, first: int, last: 
 proc overrideStyleAndText*(self: TextDocument, line: var StyledLine, first: int, text: string, scope: string, priority: int, opacity: Option[float] = float.none, joinNext: bool = false) =
   line.overrideStyleAndText(self.lines[line.index].toOpenArray.runeIndex(first, returnLen=true), text, scope, priority, opacity, joinNext)
 
+proc insertText*(self: TextDocument, line: var StyledLine, offset: RuneIndex, text: string, scope: string) =
+  line.splitAt(offset)
+  var index = 0.RuneIndex
+  for i in 0..line.parts.high:
+    if offset == index + line.parts[i].text.runeLen:
+      line.parts.insert(StyledText(text: text, scope: scope, scopeC: scope.cstring, priority: 1000000000), i + 1)
+      return
+    index += line.parts[i].text.runeLen
+
 proc getStyledText*(self: TextDocument, i: int): StyledLine =
   if self.styledTextCache.contains(i):
     result = self.styledTextCache[i]
   else:
     var line = self.lines[i]
-    result = StyledLine(index: i, parts: @[StyledText(text: line, scope: "", priority: 1000000000)])
+    result = StyledLine(index: i, parts: @[StyledText(text: line, scope: "", scopeC: "", priority: 1000000000, textRange: (0, line.len, 0.RuneIndex, line.runeLen.RuneIndex).some)])
     self.styledTextCache[i] = result
 
     var regexes = initTable[string, Regex]()

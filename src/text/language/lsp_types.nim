@@ -124,6 +124,10 @@ type
     AsIs = 1
     AdjustIndentation = 2
 
+  InlayHintKind* {.pure.} = enum
+    Type = 1
+    Parameter = 2
+
   ServerInfo* = object
     name*: string
     version*: string
@@ -548,6 +552,21 @@ type
     contents*: HoverContentVariant
     range*: Option[Range]
 
+  InlayHintParams* = object
+    workDoneProgress*: bool
+    textDocument*: TextDocumentIdentifier
+    range*: Range
+
+  InlayHint* = object
+    position*: Position
+    label*: string # | InlayHintLabelPart[] # todo
+    kind*: Option[InlayHintKind]
+    textEdits*: seq[TextEdit]
+    tooltip*: Option[string] # | MarkupContent # todo
+    paddingLeft*: Option[bool]
+    paddingRight*: Option[bool]
+    data*: Option[JsonNode]
+
 variant(CompletionResponseVariant, seq[CompletionItem], CompletionList)
 variant(DefinitionResponseVariant, Location, seq[Location], seq[LocationLink])
 variant(DeclarationResponseVariant, Location, seq[Location], seq[LocationLink])
@@ -558,6 +577,7 @@ type CompletionResponse* = CompletionResponseVariant
 type DefinitionResponse* = DefinitionResponseVariant
 type DeclarationResponse* = DeclarationResponseVariant
 type DocumentSymbolResponse* = DocumentSymbolResponseVariant
+type InlayHintResponse* = Option[seq[InlayHint]]
 
 variant(TextDocumentSyncVariant, TextDocumentSyncOptions, TextDocumentSyncKind)
 variant(HoverProviderVariant, bool, HoverOptions)

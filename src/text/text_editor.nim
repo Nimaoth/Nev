@@ -61,6 +61,10 @@ type TextDocumentEditor* = ref object of DocumentEditor
   hoverLocation*: Cursor        # where to show the hover info
   hoverScrollOffset*: float     # the scroll offset inside the hover window
 
+  # inline hints
+  inlayHints: seq[InlayHint]
+  inlayHintsTask: DelayedTask
+
   completionEventHandler: EventHandler
   modeEventHandler: EventHandler
   currentMode*: string
@@ -108,6 +112,7 @@ proc refilterCompletions(self: TextDocumentEditor)
 proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string, count: int = 0): Selection
 proc extendSelectionWithMove*(self: TextDocumentEditor, selection: Selection, move: string, count: int = 0): Selection
 proc updateTargetColumn*(self: TextDocumentEditor, cursor: SelectionCursor)
+proc updateInlayHints*(self: TextDocumentEditor)
 
 proc clampCursor*(self: TextDocumentEditor, cursor: Cursor): Cursor = self.document.clampCursor(cursor)
 
@@ -274,6 +279,7 @@ proc centerCursor*(self: TextDocumentEditor, cursor: Cursor) =
 
   self.previousBaseIndex = cursor.line
   self.scrollOffset = self.lastContentBounds.h * 0.5 - self.platform.totalLineHeight * 0.5
+  self.updateInlayHints()
 
   self.markDirty()
 
@@ -306,6 +312,7 @@ proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[fl
     self.scrollOffset = self.lastContentBounds.h - margin - totalLineHeight
     self.previousBaseIndex = targetLine
 
+  self.updateInlayHints()
   self.markDirty()
 
 proc getContextWithMode*(self: TextDocumentEditor, context: string): string
@@ -423,6 +430,11 @@ proc screenLineCount(self: TextDocumentEditor): int {.expose: "editor.text".} =
   ## Returns the number of lines that can be shown on the screen
   ## This value depends on the size of the view this editor is in and the font size
   return (self.lastContentBounds.h / self.platform.totalLineHeight).int
+
+proc visibleTextRange*(self: TextDocumentEditor, buffer: int = 0): Selection =
+  result.first.line = max(0, self.previousBaseIndex - int(self.scrollOffset / self.platform.totalLineHeight) - buffer)
+  result.last.line = min(self.lineCount - 1, self.previousBaseIndex - int(self.scrollOffset / self.platform.totalLineHeight) + self.screenLineCount + buffer)
+  result.last.column = self.document.lastValidIndex(result.last.line)
 
 proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool = true): Cursor {.expose: "editor.text".} =
   var cursor = cursor
@@ -791,10 +803,11 @@ proc pasteAsync*(self: TextDocumentEditor, register: string): Future[void] {.asy
 proc paste*(self: TextDocumentEditor, register: string = "") {.expose("editor.text").} =
   asyncCheck self.pasteAsync(register)
 
-proc scrollText(self: TextDocumentEditor, amount: float32) {.expose("editor.text").} =
+proc scrollText*(self: TextDocumentEditor, amount: float32) {.expose("editor.text").} =
   if self.disableScrolling:
     return
   self.scrollOffset += amount
+  self.updateInlayHints()
   self.markDirty()
 
 proc scrollLines(self: TextDocumentEditor, amount: int) {.expose("editor.text").} =
@@ -807,6 +820,7 @@ proc scrollLines(self: TextDocumentEditor, amount: int) {.expose("editor.text").
   while self.previousBaseIndex >= self.screenLineCount - 1:
     self.previousBaseIndex.dec
     self.scrollOffset -= self.platform.totalLineHeight
+  self.updateInlayHints()
   self.markDirty()
 
 proc duplicateLastSelection*(self: TextDocumentEditor) {.expose("editor.text").} =
@@ -926,6 +940,7 @@ proc setCursorScrollOffset*(self: TextDocumentEditor, offset: float, cursor: Sel
   let line = self.getCursor(cursor).line
   self.previousBaseIndex = line
   self.scrollOffset = offset
+  self.updateInlayHints()
   self.markDirty()
 
 proc getContentBounds*(self: TextDocumentEditor): Vec2 {.expose("editor.text").} =
@@ -1585,6 +1600,23 @@ proc showHoverForDelayed*(self: TextDocumentEditor, cursor: Cursor) =
 
   self.markDirty()
 
+proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
+  let languageServer = await self.document.getLanguageServer()
+  if languageServer.getSome(ls):
+    let inlayHints = await ls.getInlayHints(self.document.fullPath, self.visibleTextRange(buffer = 10))
+    # todo: detect if canceled instead
+    if inlayHints.len > 0:
+      log lvlInfo, fmt"Updating inlay hints: {inlayHints}"
+      self.inlayHints = inlayHints
+      self.markDirty()
+
+proc updateInlayHints*(self: TextDocumentEditor) =
+  if self.inlayHintsTask.isNil:
+    self.inlayHintsTask = startDelayed(200, repeat=false):
+      asyncCheck self.updateInlayHintsAsync()
+  else:
+    self.inlayHintsTask.reschedule()
+
 proc isRunningSavedCommands*(self: TextDocumentEditor): bool {.expose("editor.text").} = self.bIsRunningSavedCommands
 
 proc runSavedCommands*(self: TextDocumentEditor) {.expose("editor.text").} =
@@ -1756,7 +1788,7 @@ genDispatcher("editor.text")
 # addGlobalDispatchTable "editor.text", genDispatchTable("editor.text")
 
 proc getStyledText*(self: TextDocumentEditor, i: int): StyledLine =
-  result = self.document.getStyledText(i)
+  result = StyledLine(index: i, parts: self.document.getStyledText(i).parts)
 
   let chars = (self.lastTextAreaBounds.w / self.platform.charWidth - 2).RuneCount
   if chars > 0.RuneCount:
@@ -1773,6 +1805,14 @@ proc getStyledText*(self: TextDocumentEditor, i: int): StyledLine =
       self.document.splitAt(result, override.cursor.column)
       self.document.splitAt(result, override.cursor.column + override.text.len)
       self.document.overrideStyleAndText(result, override.cursor.column, override.text, override.scope, -2, joinNext = true)
+
+  var offset = 0.RuneCount
+  for inlayHint in self.inlayHints:
+    if inlayHint.location.line != i:
+      continue
+
+    self.document.insertText(result, inlayHint.location.column.RuneIndex + offset, inlayHint.label, "comment")
+    offset += inlayHint.label.runeLen
 
 proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): EventResponse =
   # debugf"[textedit] handleAction {action}, '{args}'"
@@ -1913,6 +1953,8 @@ proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
   if self.showCompletions:
     self.refilterCompletions()
 
+  self.updateInlayHints()
+
   self.markDirty()
 
 proc handleTextDocumentLoaded(self: TextDocumentEditor) =
@@ -1931,6 +1973,7 @@ proc createTextEditorInstance(): TextDocumentEditor =
   editor.cursorsId = newId()
   editor.completionsId = newId()
   editor.hoverId = newId()
+  editor.inlayHints = @[]
   return editor
 
 proc newTextEditor*(document: TextDocument, app: AppInterface, configProvider: ConfigProvider): TextDocumentEditor =
