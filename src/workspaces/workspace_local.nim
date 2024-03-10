@@ -12,7 +12,11 @@ method settings*(self: WorkspaceFolderLocal): JsonNode =
   result = newJObject()
   result["path"] = newJString(self.path.absolutePath)
 
-proc getAbsolutePath(self: WorkspaceFolderLocal, relativePath: string): string = self.path.absolutePath / relativePath
+proc getAbsolutePath(self: WorkspaceFolderLocal, relativePath: string): string =
+  if relativePath.isAbsolute:
+    relativePath
+  else:
+    self.path.absolutePath / relativePath
 
 method isReadOnly*(self: WorkspaceFolderLocal): bool = false
 
