@@ -50,7 +50,7 @@ proc translatePath(path: string): Option[string] =
   return path.absolutePath.normalizedPath.some
 
 proc callback(req: Request): Future[void] {.async.} =
-  debug req.reqMethod, " ", req.url
+  debugf"{req.reqMethod} {req.url}"
 
   let (workspaceName, hostedFolders) = block:
     {.gcsafe.}:

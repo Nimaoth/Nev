@@ -176,6 +176,7 @@ method getHover*(self: LanguageServerLSP, filename: string, location: Cursor): F
 
   let parsedResponse = response.result
 
+  # important: the order of these checks is important
   if parsedResponse.contents.asMarkedStringVariantSeq().getSome(markedStrings):
     for markedString in markedStrings:
       if markedString.asString().getSome(str):
@@ -186,20 +187,20 @@ method getHover*(self: LanguageServerLSP, filename: string, location: Cursor): F
 
     return string.none
 
+  if parsedResponse.contents.asMarkupContent().getSome(markupContent):
+    return markupContent.value.some
+
   if parsedResponse.contents.asMarkedStringVariant().getSome(markedString):
     debugf"marked string variant: {markedString}"
-    if markedString.asString().getSome(str):
-      debugf"string: {str}"
-      return str.some
     if markedString.asMarkedStringObject().getSome(str):
       debugf"string object lang: {str.language}, value: {str.value}"
       return str.value.some
 
-    return string.none
+    if markedString.asString().getSome(str):
+      debugf"string: {str}"
+      return str.some
 
-  if parsedResponse.contents.asMarkupContent().getSome(markupContent):
-    debugf"markup content: {markupContent}"
-    return markupContent.value.some
+    return string.none
 
   return string.none
 
