@@ -15,6 +15,9 @@ import ui/node
 logCategory "widget_builder_text"
 
 type CursorLocationInfo* = tuple[node: UINode, text: string, bounds: Rect, original: Cursor]
+type LocationInfos = object
+  cursor: Option[CursorLocationInfo]
+  hover: Option[CursorLocationInfo]
 
 when defined(js):
   template tokenColor*(theme: Theme, part: StyledText, default: untyped): Color =
@@ -45,7 +48,8 @@ proc renderLine*(
   y: float, sizeToContentX: bool, lineNumberTotalWidth: float, lineNumberWidth: float, pivot: Vec2,
   backgroundColor: Color, textColor: Color,
   backgroundColors: openArray[tuple[first: RuneIndex, last: RuneIndex, color: Color]], cursors: openArray[int],
-  wrapLine: bool, wrapLineEndChar: string, wrapLineEndColor: Color, lineEndColor: Option[Color]): seq[CursorLocationInfo] =
+  wrapLine: bool, wrapLineEndChar: string, wrapLineEndColor: Color, lineEndColor: Option[Color]):
+    tuple[cursors: seq[CursorLocationInfo], hover: Option[CursorLocationInfo]] =
 
   var flagsInner = &{FillX, SizeToContentY}
   if sizeToContentX:
@@ -122,7 +126,7 @@ proc renderLine*(
             backgroundColor = backgroundColors[colorIndex].color
             addBackgroundAsChildren = false
 
-          var partFlags = &{UINodeFlag.FillBackground, SizeToContentX, SizeToContentY}
+          var partFlags = &{UINodeFlag.FillBackground, SizeToContentX, SizeToContentY, MouseHover}
 
           # if the entire part is the same background color we can just fill the background and render the text on the part itself
           # otherwise we need to render the background as a separate node and render the text on top of it, as children of the main part node,
@@ -182,6 +186,14 @@ proc renderLine*(
                   self.app.tryActivateEditor(self)
                   self.markDirty()
 
+              onHover:
+                let offset = self.getCursorPos(textRuneLen, line.index, startRune.RuneIndex, pos)
+                self.lastHoverLocationBounds = partNode.boundsAbsolute.some
+                self.showHoverForDelayed (line.index, offset)
+
+              onEndHover:
+                self.hideHover()
+
             if addBackgroundAsChildren:
               # Add separate background colors for selections/highlights
               while colorIndex <= backgroundColors.high and backgroundColors[colorIndex].first < startRune.RuneIndex + partRuneLen:
@@ -201,7 +213,13 @@ proc renderLine*(
 
               if selectionLastRune >= startRune.RuneIndex and selectionLastRune < startRune.RuneIndex + partRuneLen:
                 let cursorX = builder.textWidth(int(selectionLastRune - startRune)).round
-                result.add (currentNode, $part.text[selectionLastRune - startRune], rect(cursorX, 0, builder.charWidth, builder.textHeight), (line.index, curs))
+                result.cursors.add (currentNode, $part.text[selectionLastRune - startRune], rect(cursorX, 0, builder.charWidth, builder.textHeight), (line.index, curs))
+
+            # Set hover info if the hover location is within this part
+            if line.index == self.hoverLocation.line:
+              let hoverRune = lineOriginal.runeIndex(self.hoverLocation.column)
+              if hoverRune >= startRune.RuneIndex and hoverRune < startRune.RuneIndex + partRuneLen:
+                result.hover = (currentNode, "", rect(0, 0, builder.charWidth, builder.textHeight), self.hoverLocation).some
 
           lastPartXW = partNode.bounds.xw
           start += part.text.len
@@ -256,7 +274,11 @@ proc renderLine*(
     # cursor after latest char
     for curs in cursors:
       if curs == lineOriginal.len:
-        result.add (subLine, "", rect(lastPartXW, 0, builder.charWidth, builder.textHeight), (line.index, curs))
+        result.cursors.add (subLine, "", rect(lastPartXW, 0, builder.charWidth, builder.textHeight), (line.index, curs))
+
+    # set hover info if the hover location is at the end of this line
+    if line.index == self.hoverLocation.line and self.hoverLocation.column == lineOriginal.len:
+      result.hover = (subLine, "", rect(lastPartXW, 0, builder.charWidth, builder.textHeight), self.hoverLocation).some
 
 proc blendColorRanges(colors: var seq[tuple[first: RuneIndex, last: RuneIndex, color: Color]], ranges: var seq[tuple[first: RuneIndex, last: RuneIndex]], color: Color, inclusive: bool) =
   let inclusiveOffset = if inclusive: 1.RuneCount else: 0.RuneCount
@@ -282,7 +304,7 @@ proc blendColorRanges(colors: var seq[tuple[first: RuneIndex, last: RuneIndex, c
 
       inc colorIndex
 
-proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, backgroundColor: Color, textColor: Color, sizeToContentX: bool, sizeToContentY: bool): Option[CursorLocationInfo] =
+proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, backgroundColor: Color, textColor: Color, sizeToContentX: bool, sizeToContentY: bool): LocationInfos =
   var flags = 0.UINodeFlags
   if sizeToContentX:
     flags.incl SizeToContentX
@@ -347,6 +369,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     var cursors: seq[CursorLocationInfo]
     var contextLines: seq[int]
     var contextLineTarget: int = -1
+    var hoverInfo = CursorLocationInfo.none
 
     proc handleScroll(delta: float) =
       if self.disableScrolling:
@@ -401,11 +424,14 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       else:
         vec2(0, 1)
 
-      cursors.add self.renderLine(builder, app.theme, styledLine, self.document.lines[i], self.document.lineIds[i],
+      let infos = self.renderLine(builder, app.theme, styledLine, self.document.lines[i], self.document.lineIds[i],
         self.userId, cursorLine, i, lineNumbers, y, sizeToContentX, lineNumberWidth, lineNumberBounds.x, pivot,
         backgroundColor, textColor,
         colors, cursorsPerLine, wrapLine, wrapLineEndChar, wrapLineEndColor, lineEndColor
         )
+      cursors.add infos.cursors
+      if infos.hover.isSome:
+        hoverInfo = infos.hover
 
     self.lastRenderedLines.setLen 0
     builder.createLines(self.previousBaseIndex, self.scrollOffset, self.document.lines.high, sizeToContentX, sizeToContentY, backgroundColor, handleScroll, handleLine)
@@ -428,11 +454,14 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
           let y = indexFromTop.float * builder.textHeight
           let colors = [(first: 0.RuneIndex, last: self.document.lines[contextLine].runeLen.RuneIndex, color: contextBackgroundColor)]
 
-          cursors.add self.renderLine(builder, app.theme, styledLine, self.document.lines[contextLine], self.document.lineIds[contextLine],
+          let infos = self.renderLine(builder, app.theme, styledLine, self.document.lines[contextLine], self.document.lineIds[contextLine],
             self.userId, cursorLine, contextLine, lineNumbers, y, sizeToContentX, lineNumberWidth, lineNumberBounds.x, vec2(0, 0),
             contextBackgroundColor, textColor,
             colors, [], false, wrapLineEndChar, wrapLineEndColor, Color.none
             )
+          cursors.add infos.cursors
+          if infos.hover.isSome:
+            result.hover = infos.hover
 
         # let fill = self.scrollOffset mod builder.textHeight
         # if fill < builder.textHeight / 2:
@@ -440,9 +469,12 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
     let isThickCursor = self.isThickCursor
 
+    if hoverInfo.isSome:
+      result.hover = hoverInfo
+
     for cursorIndex, cursorLocation in cursors: #cursor
       if cursorLocation.original == self.selection.last:
-        result = cursorLocation.some
+        result.cursor = cursorLocation.some
 
       var bounds = cursorLocation.bounds.transformRect(cursorLocation.node, linesPanel) - vec2(app.platform.charGap, 0)
       bounds.w += app.platform.charGap
@@ -459,6 +491,35 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
     defer:
       self.lastContentBounds = currentNode.bounds
+
+proc createHover(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cursorBounds: Rect) =
+  let totalLineHeight = app.platform.totalLineHeight
+  let charWidth = app.platform.charWidth
+
+  let backgroundColor = app.theme.color("panel.background", color(30/255, 30/255, 30/255))
+  let docsColor = app.theme.color("editor.foreground", color(1, 1, 1))
+  let scopeColor = app.theme.color("string", color(175/255, 1, 175/255))
+
+  const numLinesToShow = 1
+  let (top, bottom) = (cursorBounds.yh.float, cursorBounds.yh.float + totalLineHeight * numLinesToShow)
+
+  const docsWidth = 50.0
+  let totalWidth = charWidth * docsWidth
+  var clampedX = cursorBounds.x
+  if clampedX + totalWidth > builder.root.w:
+    clampedX = max(builder.root.w - totalWidth, 0)
+
+  var hoverPanel: UINode = nil
+  builder.panel(&{SizeToContentX, SizeToContentY, MaskContent}, x = clampedX, y = top, w = totalWidth, h = bottom - top, pivot = vec2(0, 0), userId = self.hoverId.newPrimaryId):
+    hoverPanel = currentNode
+    var textNode: UINode = nil
+    builder.panel(&{DrawText, FillBackground, DrawBorder, SizeToContentX, SizeToContentY}, x = 1, y = 1, text = self.hoverText, textColor = docsColor, backgroundColor = backgroundColor, borderColor = scopeColor)
+    textNode = currentNode
+    currentNode.boundsRaw.w = textNode.bounds.w + 2
+    currentNode.boundsRaw.h = textNode.bounds.h + 2
+
+  hoverPanel.rawY = cursorBounds.y
+  hoverPanel.pivot = vec2(0, 1)
 
 proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cursorBounds: Rect) =
   let totalLineHeight = app.platform.totalLineHeight
@@ -564,12 +625,19 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
           onRight:
             proc cursorString(cursor: Cursor): string = $cursor.line & ":" & $cursor.column & ":" & $self.document.lines[cursor.line].toOpenArray.runeIndex(cursor.column)
             builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = fmt" {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} ")
-        if self.createTextLines(builder, app, backgroundColor, textColor, sizeToContentX, sizeToContentY).getSome(info):
+        let infos = self.createTextLines(builder, app, backgroundColor, textColor, sizeToContentX, sizeToContentY)
+        if infos.cursor.getSome(info):
           self.lastCursorLocationBounds = info.bounds.transformRect(info.node, builder.root).some
+        if infos.hover.getSome(info):
+          self.lastHoverLocationBounds = info.bounds.transformRect(info.node, builder.root).some
 
   if self.showCompletions and self.active:
     result.add proc() =
       self.createCompletions(builder, app, self.lastCursorLocationBounds.get(rect(100, 100, 10, 10)))
+
+  if self.showHover:
+    result.add proc() =
+      self.createHover(builder, app, self.lastHoverLocationBounds.get(rect(100, 100, 10, 10)))
 
 proc shouldIgnoreAsContextLine(self: TextDocument, line: int): bool =
   let indent = self.getIndentLevelForLine(line)

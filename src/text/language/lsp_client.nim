@@ -277,8 +277,9 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async.} =
         "declaration": %*{
           "linkSupport": true,
         },
-        "documentSymbol": %*{
-        },
+        "documentSymbol": %*{},
+        "inlayHint": %*{},
+        "hover": %*{},
       },
       "window": %*{
         "showDocument": %*{
@@ -476,6 +477,21 @@ proc getDeclaration*(client: LSPClient, filename: string, line: int, column: int
   ).toJson
 
   return (await client.sendRequest("textDocument/declaration", params)).to DeclarationResponse
+
+proc getHover*(client: LSPClient, filename: string, line: int, column: int): Future[Response[DocumentHoverResponse]] {.async.} =
+  let path = client.translatePath(filename).await
+
+  client.cancelAllOf("textDocument/hover")
+
+  let params = DocumentHoverParams(
+    textDocument: TextDocumentIdentifier(uri: $path.toUri),
+    position: Position(
+      line: line,
+      character: column
+    )
+  ).toJson
+
+  return (await client.sendRequest("textDocument/hover", params)).to DocumentHoverResponse
 
 proc getSymbols*(client: LSPClient, filename: string): Future[Response[DocumentSymbolResponse]] {.async.} =
   # debugf"[getSymbols] {filename.absolutePath}:{line}:{column}"

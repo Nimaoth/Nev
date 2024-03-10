@@ -289,6 +289,17 @@ proc selectNextCompletion*(self: TextDocumentEditor) =
   editor_text_selectNextCompletion_void_TextDocumentEditor_impl(self)
 proc applySelectedCompletion*(self: TextDocumentEditor) =
   editor_text_applySelectedCompletion_void_TextDocumentEditor_impl(self)
+proc showHoverFor*(self: TextDocumentEditor; cursor: Cursor) =
+  ## Shows lsp hover information for the given cursor.
+  ## Does nothing if no language server is available or the language server doesn't return any info.
+  editor_text_showHoverFor_void_TextDocumentEditor_Cursor_impl(self, cursor)
+proc showHoverForCurrent*(self: TextDocumentEditor) =
+  ## Shows lsp hover information for the current selection.
+  ## Does nothing if no language server is available or the language server doesn't return any info.
+  editor_text_showHoverForCurrent_void_TextDocumentEditor_impl(self)
+proc hideHover*(self: TextDocumentEditor) =
+  ## Hides the hover information.
+  editor_text_hideHover_void_TextDocumentEditor_impl(self)
 proc isRunningSavedCommands*(self: TextDocumentEditor): bool =
   editor_text_isRunningSavedCommands_bool_TextDocumentEditor_impl(self)
 proc runSavedCommands*(self: TextDocumentEditor) =

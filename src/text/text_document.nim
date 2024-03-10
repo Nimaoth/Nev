@@ -10,7 +10,7 @@ import document, document_editor, custom_treesitter, indent, text_language_confi
 
 export document, document_editor, id
 
-logCategory "text"
+logCategory "text-document"
 
 type
   UndoOpKind = enum
@@ -594,7 +594,7 @@ proc loadAsync(self: TextDocument, ws: WorkspaceFolder): Future[void] {.async.} 
   self.isBackedByFile = true
   self.isLoadingAsync = true
   self.content = catch ws.loadFile(self.filename).await:
-    log lvlError, fmt"Failed to load workspace file {self.filename}"
+    log lvlError, &"[loadAsync] Failed to load workspace file {self.filename}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
     ""
   self.isLoadingAsync = false
   self.onLoaded.invoke self

@@ -1928,6 +1928,53 @@ proc applySelectedCompletion*(self: TextDocumentEditor) =
       argsJsonString.cstring)
 
 
+proc editor_text_showHoverFor_void_TextDocumentEditor_Cursor_wasm(arg: cstring): cstring {.
+    importc.}
+proc showHoverFor*(self: TextDocumentEditor; cursor: Cursor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when Cursor is JsonNode:
+      cursor
+    else:
+      cursor.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_showHoverFor_void_TextDocumentEditor_Cursor_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_showHoverForCurrent_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc showHoverForCurrent*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_showHoverForCurrent_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_hideHover_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc hideHover*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_hideHover_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_isRunningSavedCommands_bool_TextDocumentEditor_wasm(
     arg: cstring): cstring {.importc.}
 proc isRunningSavedCommands*(self: TextDocumentEditor): bool =

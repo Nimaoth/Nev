@@ -168,6 +168,41 @@ method getDefinition*(self: LanguageServerLSP, filename: string, location: Curso
   log(lvlError, "No definition found")
   return Definition.none
 
+method getHover*(self: LanguageServerLSP, filename: string, location: Cursor): Future[Option[string]] {.async.} =
+  let response = await self.client.getHover(filename, location.line, location.column)
+  if response.isError:
+    log(lvlError, fmt"Error: {response.error}")
+    return string.none
+
+  let parsedResponse = response.result
+
+  if parsedResponse.contents.asMarkedStringVariantSeq().getSome(markedStrings):
+    for markedString in markedStrings:
+      if markedString.asString().getSome(str):
+        return str.some
+      if markedString.asMarkedStringObject().getSome(str):
+        # todo: language
+        return str.value.some
+
+    return string.none
+
+  if parsedResponse.contents.asMarkedStringVariant().getSome(markedString):
+    debugf"marked string variant: {markedString}"
+    if markedString.asString().getSome(str):
+      debugf"string: {str}"
+      return str.some
+    if markedString.asMarkedStringObject().getSome(str):
+      debugf"string object lang: {str.language}, value: {str.value}"
+      return str.value.some
+
+    return string.none
+
+  if parsedResponse.contents.asMarkupContent().getSome(markupContent):
+    debugf"markup content: {markupContent}"
+    return markupContent.value.some
+
+  return string.none
+
 method getSymbols*(self: LanguageServerLSP, filename: string): Future[seq[Symbol]] {.async.} =
   var completions: seq[Symbol]
 
