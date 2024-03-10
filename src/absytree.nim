@@ -83,6 +83,9 @@ block: ## Parse command line options
         opts.disableNimScriptPlugins = true
         opts.disableWasmPlugins = true
 
+      of "session", "s":
+        opts.sessionOverride = val.some
+
     of cmdEnd: assert(false) # cannot happen
 
 if backend.isNone:

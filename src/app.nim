@@ -156,6 +156,8 @@ type
 
     scriptActions: Table[string, ScriptAction]
 
+    sessionFile: string
+
 var gEditor* {.exportc.}: App = nil
 
 implTrait ConfigProvider, App:
@@ -753,6 +755,8 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   addHandler AppLogger(app: self)
 
+  log lvlInfo, fmt"Creating App with backend {backend} and options {options}"
+
   gEditor = self
   gAppInterface = self.asAppInterface
   self.platform = platform
@@ -838,8 +842,11 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   var state = EditorState()
   try:
+    self.sessionFile = "./config/config.json"
+
     if not options.dontRestoreConfig:
-      let stateJson = fs.loadApplicationFile("./config/config.json").parseJson
+      self.sessionFile = options.sessionOverride.get("./config/config.json")
+      let stateJson = fs.loadApplicationFile(self.sessionFile).parseJson
       state = stateJson.jsonTo(EditorState, JOptions(allowMissingKeys: true, allowExtraKeys: true))
       log(lvlInfo, fmt"Restoring state {stateJson.pretty}")
 
@@ -1082,7 +1089,7 @@ proc saveAppState*(self: App) {.expose("editor").} =
       state.hiddenEditors.add editorState
 
   let serialized = state.toJson
-  fs.saveApplicationFile("./config/config.json", serialized.pretty)
+  fs.saveApplicationFile(self.sessionFile, serialized.pretty)
   fs.saveApplicationFile("./config/options.json", self.options.pretty)
 
 proc requestRender*(self: App, redrawEverything: bool = false) {.expose("editor").} =

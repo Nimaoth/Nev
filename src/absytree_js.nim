@@ -5,14 +5,14 @@ logCategory "main-js"
 
 logger.enableConsoleLogger()
 
-import std/[strformat, dom, macros]
+import std/[strformat, dom, macros, jsffi]
 import misc/[util, timer, event, custom_async]
 import platform/[platform, browser_platform]
 import ui/[widget_builders]
 import text/text_document
 import text/language/language_server
 from scripting_api import Backend
-import app
+import app, app_options
 
 import ui/node
 
@@ -105,8 +105,45 @@ proc requestRender(redrawEverything = false) =
 
   discard window.requestAnimationFrame doRender
 
+proc getAppOptions(): AppOptions =
+  type URLSearchParams = ref object of JsObject
+  proc getUrlSearchParams(): URLSearchParams {.importjs: "new URLSearchParams(window.location.search)".}
+  proc forEachEntry(self: URLSearchParams, callback: proc(args: openArray[cstring])) {.importjs: "#.entries().forEach(#)".}
+
+  let params = getUrlSearchParams()
+  params.forEachEntry proc(args: openArray[cstring]) =
+    debugf"args: {args}"
+    let key = $args[0]
+    let val = $args[1]
+    case key
+    of "no-nimscript", "n":
+      result.disableNimScriptPlugins = true
+
+    of "no-wasm", "w":
+      result.disableWasmPlugins = true
+
+    of "no-opts", "o":
+      result.dontRestoreOptions = true
+
+    of "no-config", "c":
+      result.dontRestoreConfig = true
+
+    of "no-config-opts":
+      result.dontRestoreConfig = true
+      result.dontRestoreOptions = true
+
+    of "clean":
+      result.dontRestoreConfig = true
+      result.dontRestoreOptions = true
+      result.disableNimScriptPlugins = true
+      result.disableWasmPlugins = true
+
+    of "session", "s":
+      result.sessionOverride = val.some
+
 proc runApp(): Future[void] {.async.} =
-  discard await newEditor(Backend.Browser, rend)
+  let options = getAppOptions()
+  discard await newEditor(Backend.Browser, rend, options)
 
   discard rend.onKeyPress.subscribe proc(event: auto): void = requestRender()
   discard rend.onKeyRelease.subscribe proc(event: auto): void = requestRender()
