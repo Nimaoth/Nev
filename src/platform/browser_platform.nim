@@ -466,11 +466,11 @@ proc drawNode(builder: UINodeBuilder, platform: BrowserPlatform, element: var El
     element.setAttribute("style", css)
 
     if updateText:
-      element.innerText = text
+      element.textContent = text
       element.setAttribute("data-text", text)
     elif removeText:
       element.removeAttribute("data-text")
-      element.innerText = ""
+      element.textContent = ""
 
     element.setAttribute("id", ($node.id).cstring)
     when defined(uiNodeDebugData):
