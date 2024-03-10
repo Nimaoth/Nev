@@ -1476,7 +1476,9 @@ proc openFile*(self: App, path: string, app: bool = false): Option[DocumentEdito
   defer:
     self.platform.requestRender()
 
+  log lvlInfo, fmt"[openFile] Open file '{path}' (app = {app})"
   if self.tryOpenExisting(path, WorkspaceFolder.none).getSome(ed):
+    log lvlInfo, fmt"[openFile] found existing editor"
     return ed.some
 
   log lvlInfo, fmt"Open file '{path}'"
@@ -1487,7 +1489,7 @@ proc openFile*(self: App, path: string, app: bool = false): Option[DocumentEdito
     else:
       return self.createAndAddView(newTextDocument(self.asConfigProvider, path, "", app, load=true)).some
   except CatchableError:
-    log(lvlError, fmt"Failed to load file '{path}': {getCurrentExceptionMsg()}")
+    log(lvlError, fmt"[openFile] Failed to load file '{path}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
     return DocumentEditor.none
 
@@ -1495,7 +1497,9 @@ proc openWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder): Optio
   defer:
     self.platform.requestRender()
 
+  log lvlInfo, fmt"[openWorkspaceFile] Open file '{path}' in workspace {folder.name} ({folder.id})"
   if self.tryOpenExisting(path, folder.some).getSome(editor):
+    log lvlInfo, fmt"[openWorkspaceFile] found existing editor"
     return editor.some
 
   try:
@@ -1505,7 +1509,7 @@ proc openWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder): Optio
       return self.createAndAddView(newTextDocument(self.asConfigProvider, path, "", false, folder.some, load=true)).some
 
   except CatchableError:
-    log(lvlError, fmt"Failed to load file '{path}': {getCurrentExceptionMsg()}")
+    log(lvlError, fmt"[openWorkspaceFile] Failed to load file '{path}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
     return DocumentEditor.none
 
