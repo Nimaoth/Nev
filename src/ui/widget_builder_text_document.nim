@@ -192,6 +192,7 @@ proc renderLine*(
                 self.showHoverForDelayed (line.index, offset)
 
               onEndHover:
+                # todo: hide after delay so the user has time to hover over the hover window for e.g. scrolling
                 self.hideHover()
 
             if addBackgroundAsChildren:
@@ -500,8 +501,9 @@ proc createHover(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
   let docsColor = app.theme.color("editor.foreground", color(1, 1, 1))
   let scopeColor = app.theme.color("string", color(175/255, 1, 175/255))
 
-  const numLinesToShow = 1
-  let (top, bottom) = (cursorBounds.yh.float, cursorBounds.yh.float + totalLineHeight * numLinesToShow)
+  let numLinesToShow = min(10, self.hoverText.countLines)
+  let (top, bottom) = (cursorBounds.yh.float, cursorBounds.yh.float + totalLineHeight * numLinesToShow.float)
+  let height = bottom - top
 
   const docsWidth = 50.0
   let totalWidth = charWidth * docsWidth
@@ -510,13 +512,18 @@ proc createHover(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
     clampedX = max(builder.root.w - totalWidth, 0)
 
   var hoverPanel: UINode = nil
-  builder.panel(&{SizeToContentX, SizeToContentY, MaskContent}, x = clampedX, y = top, w = totalWidth, h = bottom - top, pivot = vec2(0, 0), userId = self.hoverId.newPrimaryId):
+  builder.panel(&{SizeToContentX, MaskContent, FillBackground, DrawBorder, MouseHover}, x = clampedX, y = top, h = height, pivot = vec2(0, 0), backgroundColor = backgroundColor, borderColor = scopeColor, userId = self.hoverId.newPrimaryId):
     hoverPanel = currentNode
     var textNode: UINode = nil
-    builder.panel(&{DrawText, FillBackground, DrawBorder, SizeToContentX, SizeToContentY}, x = 1, y = 1, text = self.hoverText, textColor = docsColor, backgroundColor = backgroundColor, borderColor = scopeColor)
-    textNode = currentNode
-    currentNode.boundsRaw.w = textNode.bounds.w + 2
-    currentNode.boundsRaw.h = textNode.bounds.h + 2
+    # todo: height
+    builder.panel(&{DrawText, SizeToContentX}, x = 0, y = self.hoverScrollOffset, h = 1000, text = self.hoverText, textColor = docsColor):
+      textNode = currentNode
+
+    onScroll:
+      let scrollSpeed = app.asConfigProvider.getValue("text.hover-scroll-speed", 20.0)
+      # todo: clamp bottom
+      self.hoverScrollOffset = clamp(self.hoverScrollOffset + delta.y * scrollSpeed, -1000, 0)
+      self.markDirty()
 
   hoverPanel.rawY = cursorBounds.y
   hoverPanel.pivot = vec2(0, 1)

@@ -58,6 +58,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   showHover*: bool              # whether to show hover info in ui
   hoverText*: string            # the text to show in the hover info
   hoverLocation*: Cursor        # where to show the hover info
+  hoverScrollOffset*: float     # the scroll offset inside the hover window
 
   completionEventHandler: EventHandler
   modeEventHandler: EventHandler
@@ -1523,6 +1524,7 @@ proc showHoverForAsync(self: TextDocumentEditor, cursor: Cursor): Future[void] {
     let hoverInfo = await ls.getHover(self.document.fullPath, cursor)
     if hoverInfo.getSome(hoverInfo):
       self.showHover = true
+      self.hoverScrollOffset = 0
       self.hoverText = hoverInfo
       self.hoverLocation = cursor
     else:

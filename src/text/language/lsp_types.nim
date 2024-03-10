@@ -21,6 +21,7 @@ macro variant(name: untyped, types: varargs[untyped]): untyped =
 
     let procName = ident("as" & typeName.capitalizeAscii)
     let ast = genAst(procName, name, t, isSeqLit):
+
       proc procName*(arg: name): Option[t] =
         try:
           when isSeqLit:
@@ -29,6 +30,7 @@ macro variant(name: untyped, types: varargs[untyped]): untyped =
           return arg.node.jsonTo(t, Joptions(allowMissingKeys: true, allowExtraKeys: false)).some
         except CatchableError:
           return t.none
+
       proc procName*(arg: Option[name]): Option[t] =
         if arg.isSome:
           return procName(arg.get)
