@@ -493,6 +493,27 @@ proc getHover*(client: LSPClient, filename: string, line: int, column: int): Fut
 
   return (await client.sendRequest("textDocument/hover", params)).to DocumentHoverResponse
 
+proc getInlayHints*(client: LSPClient, filename: string, selection: ((int, int), (int, int))): Future[Response[InlayHintResponse]] {.async.} =
+  let path = client.translatePath(filename).await
+
+  client.cancelAllOf("textDocument/inlayHint")
+
+  let params = InlayHintParams(
+    textDocument: TextDocumentIdentifier(uri: $path.toUri),
+    `range`: Range(
+      start: Position(
+        line: selection[0][0],
+        character: selection[0][1],
+      ),
+      `end`: Position(
+        line: selection[1][0],
+        character: selection[1][1],
+      ),
+    )
+  ).toJson
+
+  return (await client.sendRequest("textDocument/inlayHint", params)).to InlayHintResponse
+
 proc getSymbols*(client: LSPClient, filename: string): Future[Response[DocumentSymbolResponse]] {.async.} =
   # debugf"[getSymbols] {filename.absolutePath}:{line}:{column}"
   let path = client.translatePath(filename).await

@@ -73,12 +73,11 @@ proc renderLine*(
     var subLine: UINode = nil
 
     var start = 0
-    var startRune = 0.RuneCount
     var lastPartXW: float32 = 0
     var partIndex = 0
     var subLineIndex = 0
     var subLinePartIndex = 0
-    while partIndex < line.parts.len:
+    while partIndex < line.parts.len: # outer loop for wrapped lines within this line
 
       builder.panel(flagsInner + LayoutHorizontal):
         subLine = currentNode
@@ -89,7 +88,7 @@ proc renderLine*(
               builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = lineNumberText, x = lineNumberX, textColor = textColor)
           lastPartXW = lineNumberTotalWidth
 
-        while partIndex < line.parts.len:
+        while partIndex < line.parts.len: # inner loop for parts within a wrapped line part
           template part: StyledText = line.parts[partIndex]
 
           let partRuneLen = part.text.runeLen
@@ -115,14 +114,39 @@ proc renderLine*(
 
           let textColor = if part.scope.len == 0: textColor else: theme.tokenColor(part, textColor)
 
+          var startRune = 0.RuneIndex
+          if part.textRange.isSome:
+            startRune = part.textRange.get.startIndex
+          else:
+            # Inlay text, find start rune of neighbor, prefer left side
+            var found = false
+            for i in countdown(partIndex - 1, 0):
+              if line.parts[i].textRange.isSome:
+                startRune = line.parts[i].textRange.get.endIndex
+                found = true
+                break
+
+            if not found:
+              for i in countup(partIndex + 1, line.parts.high):
+                if line.parts[i].textRange.isSome:
+                  startRune = line.parts[i].textRange.get.startIndex
+                  break
+
           # Find background color
           var colorIndex = 0
-          while colorIndex < backgroundColors.high and (backgroundColors[colorIndex].first == backgroundColors[colorIndex].last or backgroundColors[colorIndex].last <= startRune):
-            inc colorIndex
+          if part.textRange.isNone:
+            # prefer color of left neighbor for inlay text
+            while colorIndex < backgroundColors.high and (backgroundColors[colorIndex].first == backgroundColors[colorIndex].last or backgroundColors[colorIndex].last <= startRune - 1.RuneCount):
+              inc colorIndex
+          else:
+            while colorIndex < backgroundColors.high and (backgroundColors[colorIndex].first == backgroundColors[colorIndex].last or backgroundColors[colorIndex].last <= startRune):
+              inc colorIndex
 
           var backgroundColor = backgroundColor
           var addBackgroundAsChildren = true
-          if backgroundColors[colorIndex].last >= startRune.RuneIndex + partRuneLen:
+
+          # check if fully covered by background color (inlay text is always fully covered by background color)
+          if part.textRange.isNone or backgroundColors[colorIndex].last >= startRune + partRuneLen:
             backgroundColor = backgroundColors[colorIndex].color
             addBackgroundAsChildren = false
 
@@ -139,15 +163,17 @@ proc renderLine*(
           let text = if addBackgroundAsChildren: "" else: part.text
           let textRuneLen = part.text.runeLen.int
 
+          let isInlay = part.textRange.isNone
+
           var partNode: UINode
           builder.panel(partFlags, text = text, backgroundColor = backgroundColor, textColor = textColor):
             partNode = currentNode
 
-            capture line, partNode, startRune, textRuneLen:
+            capture line, partNode, startRune, textRuneLen, isInlay:
               onClickAny btn:
                 self.lastPressedMouseButton = btn
                 if btn == Left:
-                  let offset = self.getCursorPos(textRuneLen, line.index, startRune.RuneIndex, pos)
+                  let offset = self.getCursorPos(textRuneLen, line.index, startRune, if isInlay: vec2() else: pos)
                   self.selection = (line.index, offset).toSelection
                   self.dragStartSelection = self.selection
                   self.runSingleClickCommand()
@@ -155,7 +181,7 @@ proc renderLine*(
                   self.app.tryActivateEditor(self)
                   self.markDirty()
                 elif btn == DoubleClick:
-                  let offset = self.getCursorPos(textRuneLen, line.index, startRune.RuneIndex, pos)
+                  let offset = self.getCursorPos(textRuneLen, line.index, startRune, if isInlay: vec2() else: pos)
                   self.selection = (line.index, offset).toSelection
                   self.dragStartSelection = self.selection
                   self.runDoubleClickCommand()
@@ -163,7 +189,7 @@ proc renderLine*(
                   self.app.tryActivateEditor(self)
                   self.markDirty()
                 elif btn == TripleClick:
-                  let offset = self.getCursorPos(textRuneLen, line.index, startRune.RuneIndex, pos)
+                  let offset = self.getCursorPos(textRuneLen, line.index, startRune, if isInlay: vec2() else: pos)
                   self.selection = (line.index, offset).toSelection
                   self.dragStartSelection = self.selection
                   self.runTripleClickCommand()
@@ -173,7 +199,7 @@ proc renderLine*(
 
               onDrag Left:
                 if self.active:
-                  let offset = self.getCursorPos(textRuneLen, line.index, startRune.RuneIndex, pos)
+                  let offset = self.getCursorPos(textRuneLen, line.index, startRune, if isInlay: vec2() else: pos)
                   let currentSelection = self.dragStartSelection
                   let newCursor = (line.index, offset)
                   let first = if (currentSelection.isBackwards and newCursor <= currentSelection.first) or (not currentSelection.isBackwards and newCursor >= currentSelection.first):
@@ -187,12 +213,12 @@ proc renderLine*(
                   self.markDirty()
 
               onBeginHover:
-                let offset = self.getCursorPos(textRuneLen, line.index, startRune.RuneIndex, pos)
+                let offset = self.getCursorPos(textRuneLen, line.index, startRune, pos)
                 self.lastHoverLocationBounds = partNode.boundsAbsolute.some
                 self.showHoverForDelayed (line.index, offset)
 
               onHover:
-                let offset = self.getCursorPos(textRuneLen, line.index, startRune.RuneIndex, pos)
+                let offset = self.getCursorPos(textRuneLen, line.index, startRune, pos)
                 self.lastHoverLocationBounds = partNode.boundsAbsolute.some
                 self.showHoverForDelayed (line.index, offset)
 
@@ -201,7 +227,7 @@ proc renderLine*(
 
             if addBackgroundAsChildren:
               # Add separate background colors for selections/highlights
-              while colorIndex <= backgroundColors.high and backgroundColors[colorIndex].first < startRune.RuneIndex + partRuneLen:
+              while colorIndex <= backgroundColors.high and backgroundColors[colorIndex].first < startRune + partRuneLen:
                 let x = max(0.0, backgroundColors[colorIndex].first.float - startRune.float) * builder.charWidth
                 let xw = min(partRuneLen.float, backgroundColors[colorIndex].last.float - startRune.float) * builder.charWidth
                 if backgroundColor != backgroundColors[colorIndex].color:
@@ -216,19 +242,21 @@ proc renderLine*(
             for curs in cursors:
               let selectionLastRune = lineOriginal.runeIndex(curs)
 
-              if selectionLastRune >= startRune.RuneIndex and selectionLastRune < startRune.RuneIndex + partRuneLen:
-                let cursorX = builder.textWidth(int(selectionLastRune - startRune)).round
-                result.cursors.add (currentNode, $part.text[selectionLastRune - startRune], rect(cursorX, 0, builder.charWidth, builder.textHeight), (line.index, curs))
+              if part.textRange.isSome:
+                if selectionLastRune >= part.textRange.get.startIndex and selectionLastRune < part.textRange.get.endIndex:
+                  let cursorX = builder.textWidth(int(selectionLastRune - part.textRange.get.startIndex.RuneCount)).round
+                  result.cursors.add (currentNode, $part.text[selectionLastRune - part.textRange.get.startIndex.RuneCount], rect(cursorX, 0, builder.charWidth, builder.textHeight), (line.index, curs))
 
             # Set hover info if the hover location is within this part
-            if line.index == self.hoverLocation.line:
+            if line.index == self.hoverLocation.line and part.textRange.isSome:
+              let startRune = part.textRange.get.startIndex
+              let endRune = part.textRange.get.endIndex
               let hoverRune = lineOriginal.runeIndex(self.hoverLocation.column)
-              if hoverRune >= startRune.RuneIndex and hoverRune < startRune.RuneIndex + partRuneLen:
+              if hoverRune >= startRune and hoverRune < endRune:
                 result.hover = (currentNode, "", rect(0, 0, builder.charWidth, builder.textHeight), self.hoverLocation).some
 
           lastPartXW = partNode.bounds.xw
           start += part.text.len
-          startRune += partRuneLen
           partIndex += 1
           subLinePartIndex += 1
 
@@ -377,11 +405,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     var hoverInfo = CursorLocationInfo.none
 
     proc handleScroll(delta: float) =
-      if self.disableScrolling:
-        return
-      let scrollAmount = delta * app.asConfigProvider.getValue("text.scroll-speed", 40.0)
-      self.scrollOffset += scrollAmount
-      self.markDirty()
+      self.scrollText(delta * app.asConfigProvider.getValue("text.scroll-speed", 40.0))
 
     proc handleLine(i: int, y: float, down: bool) =
       let styledLine = self.getStyledText i

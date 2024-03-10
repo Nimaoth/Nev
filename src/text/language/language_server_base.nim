@@ -1,4 +1,4 @@
-import std/[options, tables]
+import std/[options, tables, json]
 import misc/[custom_async, custom_logger]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import workspaces/workspace
@@ -12,6 +12,12 @@ type LanguageServer* = ref object of RootObj
   onRequestSaveIndex: Table[string, seq[OnRequestSaveHandle]]
 
 type SymbolType* = enum Unknown, Procedure, Function, MutableVariable, ImmutableVariable, Constant, Parameter, Type
+type InlayHintKind* = enum Type, Parameter
+
+type TextEdit* = object
+  selection*: Selection
+  newText*: string
+
 
 type Definition* = object
   location*: Cursor
@@ -32,6 +38,16 @@ type TextCompletion* = object
   typ*: string
   doc*: string
 
+type InlayHint* = object
+  location*: Cursor
+  label*: string # | InlayHintLabelPart[] # todo
+  kind*: Option[InlayHintKind]
+  textEdits*: seq[TextEdit]
+  tooltip*: Option[string] # | MarkupContent # todo
+  paddingLeft*: bool
+  paddingRight*: bool
+  data*: Option[JsonNode]
+
 var getOrCreateLanguageServer*: proc(languageId: string, filename: string, workspaces: seq[string], languagesServer: Option[(string, int)] = (string, int).none, workspace = WorkspaceFolder.none): Future[Option[LanguageServer]] = nil
 
 method start*(self: LanguageServer): Future[void] {.base.} = discard
@@ -44,6 +60,7 @@ method getCompletions*(self: LanguageServer, languageId: string, filename: strin
 method saveTempFile*(self: LanguageServer, filename: string, content: string): Future[void] {.base.} = discard
 method getSymbols*(self: LanguageServer, filename: string): Future[seq[Symbol]] {.base.} = discard
 method getHover*(self: LanguageServer, filename: string, location: Cursor): Future[Option[string]] {.base.} = discard
+method getInlayHints*(self: LanguageServer, filename: string, selection: Selection): Future[seq[InlayHint]] {.base.} = discard
 
 var handleIdCounter = 1
 

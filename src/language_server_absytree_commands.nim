@@ -56,3 +56,9 @@ method getCompletions*(self: LanguageServerAbsytreeCommands, languageId: string,
 method getSymbols*(self: LanguageServerAbsytreeCommands, filename: string): Future[seq[Symbol]] {.async.} =
   var completions: seq[Symbol]
   return completions
+
+method getHover*(self: LanguageServerAbsytreeCommands, filename: string, location: Cursor): Future[Option[string]] {.async.} =
+  return string.none
+
+method getInlayHints*(self: LanguageServerAbsytreeCommands, filename: string, selection: Selection): Future[seq[InlayHint]] {.async.} =
+  return newSeq[InlayHint]()

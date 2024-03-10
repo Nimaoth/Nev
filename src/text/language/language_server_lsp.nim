@@ -1,4 +1,4 @@
-import std/[strutils, options, json, tables, uri, strformat]
+import std/[strutils, options, json, tables, uri, strformat, sugar, sequtils]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import misc/[event, util, custom_logger, custom_async, myjsonutils]
 import text/text_editor
@@ -21,6 +21,8 @@ proc deinitLanguageServers*() =
 
 proc toPosition*(cursor: Cursor): Position = Position(line: cursor.line, character: cursor.column)
 proc toRange*(selection: Selection): Range = Range(start: selection.first.toPosition, `end`: selection.last.toPosition)
+proc toCursor*(position: Position): Cursor = (position.line, position.character)
+proc toSelection*(`range`: Range): Selection = (`range`.start.toCursor, `range`.`end`.toCursor)
 
 method connect*(self: LanguageServerLSP) =
   log lvlInfo, fmt"Connecting document"
@@ -203,6 +205,35 @@ method getHover*(self: LanguageServerLSP, filename: string, location: Cursor): F
     return string.none
 
   return string.none
+
+method getInlayHints*(self: LanguageServerLSP, filename: string, selection: Selection): Future[seq[language_server_base.InlayHint]] {.async.} =
+  let response = await self.client.getInlayHints(filename, selection)
+  if response.isError:
+    log(lvlError, fmt"Error: {response.error}")
+    return newSeq[language_server_base.InlayHint]()
+
+  let parsedResponse = response.result
+
+  if parsedResponse.getSome(inlayHints):
+    var hints: seq[language_server_base.InlayHint]
+    for hint in inlayHints:
+      hints.add language_server_base.InlayHint(
+        location: (hint.position.line, hint.position.character),
+        label: hint.label,
+        kind: hint.kind.mapIt(case it
+          of lsp_types.InlayHintKind.Type: language_server_base.InlayHintKind.Type
+          of lsp_types.InlayHintKind.Parameter: language_server_base.InlayHintKind.Parameter
+        ),
+        textEdits: hint.textEdits.mapIt(language_server_base.TextEdit(selection: it.`range`.toSelection, newText: it.newText)),
+        # tooltip*: Option[string] # | MarkupContent # todo
+        paddingLeft: hint.paddingLeft.get(false),
+        paddingRight: hint.paddingRight.get(false),
+        data: hint.data
+      )
+
+    return hints
+
+  return newSeq[language_server_base.InlayHint]()
 
 method getSymbols*(self: LanguageServerLSP, filename: string): Future[seq[Symbol]] {.async.} =
   var completions: seq[Symbol]
