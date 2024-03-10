@@ -1277,32 +1277,29 @@ proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
     # todo: absolute paths
     let definition = await ls.getDefinition(self.document.fullPath, self.selection.last)
     if definition.getSome(d):
-      let (relativePath, isInSameWorkspace) = if self.document.workspace.getSome(workspace):
-        if workspace.getRelativePath(d.filename).await.getSome(filePath):
-          (filePath.some, true)
-        else:
-          (d.filename.some, false)
+      let editor = if self.document.workspace.getSome(workspace):
+        self.app.openWorkspaceFile(d.filename, workspace)
       else:
-        (d.filename.some, false)
+        self.app.openFile(d.filename)
 
-      debugf"{self.document.filename} found definition in {relativePath}: {d}"
-      let path = relativePath.get(self.document.filename)
+      if editor.getSome(editor):
+        if editor == self:
+          debugf"Found symbol in current editor: {d}"
+          self.selection = d.location.toSelection
+          self.updateTargetColumn(Last)
+          self.scrollToCursor()
 
-      if path != self.document.filename:
-        let editor: Option[DocumentEditor] = if isInSameWorkspace and self.document.workspace.getSome(workspace):
-          self.app.openWorkspaceFile(path, workspace)
-        else:
-          self.app.openFile(path)
-
-        if editor.getSome(editor) and editor of TextDocumentEditor:
+        elif editor of TextDocumentEditor:
+          debugf"Found symbol in different text editor: {d}"
           let textEditor = editor.TextDocumentEditor
           textEditor.targetSelection = d.location.toSelection
           textEditor.scrollToCursor()
 
+        else:
+          debugf"Found symbol in different editor: {d}"
+
       else:
-        self.selection = d.location.toSelection
-        self.updateTargetColumn(Last)
-        self.scrollToCursor()
+        log lvlError, fmt"Failed to open location of definition: {d}"
 
 proc getCompletionSelectionAt(self: TextDocumentEditor, cursor: Cursor): Selection =
   let line = self.document.getLine cursor.line
