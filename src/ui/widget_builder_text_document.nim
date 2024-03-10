@@ -186,14 +186,18 @@ proc renderLine*(
                   self.app.tryActivateEditor(self)
                   self.markDirty()
 
+              onBeginHover:
+                let offset = self.getCursorPos(textRuneLen, line.index, startRune.RuneIndex, pos)
+                self.lastHoverLocationBounds = partNode.boundsAbsolute.some
+                self.showHoverForDelayed (line.index, offset)
+
               onHover:
                 let offset = self.getCursorPos(textRuneLen, line.index, startRune.RuneIndex, pos)
                 self.lastHoverLocationBounds = partNode.boundsAbsolute.some
                 self.showHoverForDelayed (line.index, offset)
 
               onEndHover:
-                # todo: hide after delay so the user has time to hover over the hover window for e.g. scrolling
-                self.hideHover()
+                self.hideHoverDelayed()
 
             if addBackgroundAsChildren:
               # Add separate background colors for selections/highlights
@@ -512,7 +516,7 @@ proc createHover(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
     clampedX = max(builder.root.w - totalWidth, 0)
 
   var hoverPanel: UINode = nil
-  builder.panel(&{SizeToContentX, MaskContent, FillBackground, DrawBorder, MouseHover}, x = clampedX, y = top, h = height, pivot = vec2(0, 0), backgroundColor = backgroundColor, borderColor = scopeColor, userId = self.hoverId.newPrimaryId):
+  builder.panel(&{SizeToContentX, MaskContent, FillBackground, DrawBorder, MouseHover, SnapInitialBounds, AnimateBounds}, x = clampedX, y = top, h = height, pivot = vec2(0, 0), backgroundColor = backgroundColor, borderColor = scopeColor, userId = self.hoverId.newPrimaryId):
     hoverPanel = currentNode
     var textNode: UINode = nil
     # todo: height
@@ -524,6 +528,12 @@ proc createHover(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
       # todo: clamp bottom
       self.hoverScrollOffset = clamp(self.hoverScrollOffset + delta.y * scrollSpeed, -1000, 0)
       self.markDirty()
+
+    onBeginHover:
+      self.cancelDelayedHideHover()
+
+    onEndHover:
+      self.hideHoverDelayed()
 
   hoverPanel.rawY = cursorBounds.y
   hoverPanel.pivot = vec2(0, 1)

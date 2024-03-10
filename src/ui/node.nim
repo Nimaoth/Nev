@@ -110,8 +110,8 @@ type
     mHandlePressed: proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool
     mHandleReleased: proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool
     mHandleDrag: proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2, delta: Vec2): bool
-    mHandleBeginHover: proc(node: UINode): bool
-    mHandleEndHover: proc(node: UINode): bool
+    mHandleBeginHover: proc(node: UINode, pos: Vec2): bool
+    mHandleEndHover: proc(node: UINode, pos: Vec2): bool
     mHandleHover: proc(node: UINode, pos: Vec2): bool
     mHandleScroll: proc(node: UINode, pos: Vec2, delta: Vec2, modifiers: set[Modifier]): bool
 
@@ -200,16 +200,16 @@ proc `textColor=`*(node: UINode, value: Color)       {.inline.} = (let changed =
 func handlePressed*   (node: UINode): (proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool)              {.inline.} = node.mHandlePressed
 func handleReleased*  (node: UINode): (proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool)              {.inline.} = node.mHandleReleased
 func handleDrag*      (node: UINode): (proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2, delta: Vec2): bool) {.inline.} = node.mHandleDrag
-func handleBeginHover*(node: UINode): (proc(node: UINode): bool)                                                                        {.inline.} = node.mHandleBeginHover
-func handleEndHover*  (node: UINode): (proc(node: UINode): bool)                                                                        {.inline.} = node.mHandleEndHover
+func handleBeginHover*(node: UINode): (proc(node: UINode, pos: Vec2): bool)                                                             {.inline.} = node.mHandleBeginHover
+func handleEndHover*  (node: UINode): (proc(node: UINode, pos: Vec2): bool)                                                             {.inline.} = node.mHandleEndHover
 func handleHover*     (node: UINode): (proc(node: UINode, pos: Vec2): bool)                                                             {.inline.} = node.mHandleHover
 func handleScroll*    (node: UINode): (proc(node: UINode, pos: Vec2, delta: Vec2, modifiers: set[Modifier]): bool)                      {.inline.} = node.mHandleScroll
 
 func `handlePressed=`*   (node: UINode, value: proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool)              {.inline.} = node.mHandlePressed = value
 func `handleReleased=`*  (node: UINode, value: proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool)              {.inline.} = node.mHandleReleased = value
 func `handleDrag=`*      (node: UINode, value: proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2, delta: Vec2): bool) {.inline.} = node.mHandleDrag = value
-func `handleBeginHover=`*(node: UINode, value: proc(node: UINode): bool)                                                                        {.inline.} = node.mHandleBeginHover = value
-func `handleEndHover=`*  (node: UINode, value: proc(node: UINode): bool)                                                                        {.inline.} = node.mHandleEndHover = value
+func `handleBeginHover=`*(node: UINode, value: proc(node: UINode, pos: Vec2): bool)                                                             {.inline.} = node.mHandleBeginHover = value
+func `handleEndHover=`*  (node: UINode, value: proc(node: UINode, pos: Vec2): bool)                                                             {.inline.} = node.mHandleEndHover = value
 func `handleHover=`*     (node: UINode, value: proc(node: UINode, pos: Vec2): bool)                                                             {.inline.} = node.mHandleHover = value
 func `handleScroll=`*    (node: UINode, value: proc(node: UINode, pos: Vec2, delta: Vec2, modifiers: set[Modifier]): bool)                      {.inline.} = node.mHandleScroll = value
 
@@ -326,18 +326,18 @@ proc handleMouseMoved*(builder: UINodeBuilder, pos: Vec2, buttons: set[MouseButt
         result = a.handleHover()(a, pos - a.boundsAbsolute.xy) or result
     else:
       if a.handleEndHover.isNotNil:
-        result = a.handleEndHover()(a) or result
+        result = a.handleEndHover()(a, pos - a.boundsAbsolute.xy) or result
       if b.handleBeginHover.isNotNil:
-        result = b.handleBeginHover()(b) or result
+        result = b.handleBeginHover()(b, pos - b.boundsAbsolute.xy) or result
       result = true
 
   of (None(), Some(@b)):
     if b.handleBeginHover.isNotNil:
-      result = b.handleBeginHover()(b) or result
+      result = b.handleBeginHover()(b, pos - b.boundsAbsolute.xy) or result
     result = true
   of (Some(@a), None()):
     if a.handleEndHover.isNotNil:
-      result = a.handleEndHover()(a) or result
+      result = a.handleEndHover()(a, pos - a.boundsAbsolute.xy) or result
     result = true
   of (None(), None()):
     discard
@@ -1288,11 +1288,11 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
             onDragBody
 
       template onBeginHover(onBody: untyped) {.used.} =
-        currentNode.handleBeginHover = proc(node: UINode): bool =
+        currentNode.handleBeginHover = proc(node: UINode, pos {.inject.}: Vec2): bool =
           onBody
 
       template onEndHover(onBody: untyped) {.used.} =
-        currentNode.handleEndHover = proc(node: UINode): bool =
+        currentNode.handleEndHover = proc(node: UINode, pos {.inject.}: Vec2): bool =
           onBody
 
       template onHover(onBody: untyped) {.used.} =
