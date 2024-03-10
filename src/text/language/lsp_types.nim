@@ -311,11 +311,11 @@ type
     documentSelector*: DocumentSelector
     id*: Option[string]
 
-  InlineHintOptions* = object
+  InlayHintOptions* = object
     workDoneProgress*: bool
     resolveProvider*: bool
 
-  InlineHintRegistrationOptions* = object
+  InlayHintRegistrationOptions* = object
     workDoneProgress*: bool
     resolveProvider*: bool
     documentSelector*: DocumentSelector
@@ -582,7 +582,7 @@ variant(SemanticTokensProviderVariant, SemanticTokensOptions, SemanticTokensRegi
 variant(MonikerProviderVariant, bool, MonikerOptions, MonikerRegistrationOptions)
 variant(TypeHierarchyProviderVariant, bool, TypeHierarchyOptions, TypeHierarchyRegistrationOptions)
 variant(InlineValueProviderVariant, bool, InlineValueOptions, InlineValueRegistrationOptions)
-variant(InlineHintProviderVariant, bool, InlineHintOptions, InlineHintRegistrationOptions)
+variant(InlayHintProviderVariant, bool, InlayHintOptions, InlayHintRegistrationOptions)
 variant(DiagnosticProviderVariant, DiagnosticOptions, DiagnosticRegistrationOptions)
 variant(WorkspaceSymbolProviderVariant, bool, WorkspaceSymbolOptions)
 
@@ -618,7 +618,7 @@ type
     monikerProvider*: Option[MonikerProviderVariant]
     typeHierarchyProvider*: Option[TypeHierarchyProviderVariant]
     inlineValueProvider*: Option[InlineValueProviderVariant]
-    inlineHintProvider*: Option[InlineHintProviderVariant]
+    inlayHintProvider*: Option[InlayHintProviderVariant]
     diagnosticProvider*: Option[DiagnosticProviderVariant]
     workspaceSymbolProvider*: Option[WorkspaceSymbolProviderVariant]
     workspace*: Option[WorkspaceOptions]
