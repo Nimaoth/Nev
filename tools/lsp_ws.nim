@@ -52,49 +52,71 @@ logger.flush()
 
 let process = startAsyncProcess(executablePath, forwardedArgs)
 
-proc sender(process: AsyncProcess, ws: WebSocket): Future[void] {.async.} =
-  while ws.readyState == Open:
-    let packet = await ws.receiveStrPacket()
-    debug "\n\n<<<<<<<<<<<<<<<<<<<<<<< ws to process begin\n", packet[0..min(packet.high, messageLengthLimit)], "\n<<<<<<<<<<<<<<<<<<<<<<< ws to process end\n\n"
-    await process.send(packet)
+proc sender(process: AsyncProcess, socket: WebSocket): Future[void] {.async.} =
+  try:
+    while socket.readyState == Open:
+      let packet = await socket.receiveStrPacket()
+      debug "\n\n<<<<<<<<<<<<<<<<<<<<<<< socket to process begin\n", packet[0..min(packet.high, messageLengthLimit)], "\n<<<<<<<<<<<<<<<<<<<<<<< socket to process end\n\n"
+      await process.send(packet)
 
-proc receiver(process: AsyncProcess, ws: WebSocket): Future[void] {.async.} =
-  while ws.readyState == Open:
-    var message = ""
-    var contentLength = 0
+  except WebSocketClosedError:
+    log lvlError, "[sender] Socket closed. "
+  except WebSocketProtocolMismatchError:
+    log lvlError, fmt"[sender] Socket tried to use an unknown protocol: {getCurrentExceptionMsg()}"
+  except WebSocketError:
+    log lvlError, fmt"[sender] Unexpected socket error: {getCurrentExceptionMsg()}"
 
-    var line = await process.recvLine
-    while line.len == 0:
-      line = await process.recvLine
+proc receiver(process: AsyncProcess, socket: WebSocket): Future[void] {.async.} =
+  try:
 
-    while line != "" and line != "\r\n":
-      message.add line
+    while socket.readyState == Open:
+      var message = ""
+      var contentLength = 0
+
+      var line = await process.recvLine
+      while line.len == 0:
+        line = await process.recvLine
+
+      while line != "" and line != "\r\n":
+        message.add line
+        message.add "\r\n"
+
+        if line.startsWith("Content-Length: "):
+          contentLength = line[16..^1].strip.parseInt
+
+        line = await process.recvLine
+
       message.add "\r\n"
 
-      if line.startsWith("Content-Length: "):
-        contentLength = line[16..^1].strip.parseInt
+      let data: string = await process.recv(contentLength)
+      message.add data
 
-      line = await process.recvLine
+      debug "\n\n>>>>>>>>>>>>>>>>>>>>>>> process to socket start\n", message[0..min(message.high, messageLengthLimit)], "\n>>>>>>>>>>>>>>>>>>>>>>> process to socket end\n\n"
+      await socket.send(message)
 
-    message.add "\r\n"
-
-    let data: string = await process.recv(contentLength)
-    message.add data
-
-    debug "\n\n>>>>>>>>>>>>>>>>>>>>>>> process to ws start\n", message[0..min(message.high, messageLengthLimit)], "\n>>>>>>>>>>>>>>>>>>>>>>> process to ws end\n\n"
-    await ws.send(message)
+  except WebSocketClosedError:
+    log lvlError, "[receiver] Socket closed. "
+  except WebSocketProtocolMismatchError:
+    log lvlError, fmt"[receiver] Socket tried to use an unknown protocol: {getCurrentExceptionMsg()}"
+  except WebSocketError:
+    log lvlError, fmt"[receiver] Unexpected socket error: {getCurrentExceptionMsg()}"
 
 proc logErrors(process: AsyncProcess): Future[void] {.async.} =
   while true:
     let line = await process.recvErrorLine()
     log lvlError, "[stderr] ", line
 
+var socket: WebSocket = nil
+
 proc callback(req: Request): Future[void] {.async.} =
   log lvlInfo, fmt"Connection requested from {req}"
   let process: AsyncProcess = ({.gcsafe.}: process)
 
   try:
-    var ws = await newWebSocket(req)
+    let ws = await newWebSocket(req)
+
+    {.gcsafe.}:
+      socket = ws
 
     asyncCheck process.sender(ws)
     asyncCheck process.receiver(ws)
@@ -110,8 +132,11 @@ proc callback(req: Request): Future[void] {.async.} =
   except WebSocketError:
     log lvlError, fmt"Unexpected socket error: {getCurrentExceptionMsg()}"
 
+  log lvlInfo, "Destroying process"
   process.destroy()
 
+  {.gcsafe.}:
+    logger.flush()
   quit(0)
 
 proc checkProcessStatus(): Future[void] {.async.} =
