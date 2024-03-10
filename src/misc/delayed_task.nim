@@ -5,7 +5,7 @@ type
   DelayedTask* = ref object
     restartCounter: int
     active: bool
-    interval: int64
+    interval*: int64
     nextTick: Time
     repeat: bool
     callback: proc()

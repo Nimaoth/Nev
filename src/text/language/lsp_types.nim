@@ -404,6 +404,10 @@ type
     kind*: MarkupKind
     value*: string
 
+  MarkedStringObject* = object
+    language*: string
+    value*: string
+
   TextEdit* = object
     `range`*: Range
     newText*: string
@@ -429,6 +433,8 @@ type
 
 variant(CompletionItemDocumentationVariant, string, MarkupContent)
 variant(CompletionItemTextEditVariant, TextEdit, InsertReplaceEdit)
+variant(MarkedStringVariant, string, MarkedStringObject)
+variant(HoverContentVariant, MarkedStringVariant, seq[MarkedStringVariant], MarkupContent)
 
 type
   CompletionItem* = object
@@ -531,10 +537,20 @@ type
     textDocument*: TextDocumentIdentifier
     partialResultToken*: Option[ProgressToken]
 
+  DocumentHoverParams* = object
+    workDoneProgress*: bool
+    textDocument*: TextDocumentIdentifier
+    position*: Position
+
+  DocumentHoverResponse* = object
+    contents*: HoverContentVariant
+    range*: Option[Range]
+
 variant(CompletionResponseVariant, seq[CompletionItem], CompletionList)
 variant(DefinitionResponseVariant, Location, seq[Location], seq[LocationLink])
 variant(DeclarationResponseVariant, Location, seq[Location], seq[LocationLink])
 variant(DocumentSymbolResponseVariant, seq[DocumentSymbol], seq[SymbolInformation])
+variant(DocumentHoverResponseVariant, seq[DocumentSymbol], seq[SymbolInformation])
 
 type CompletionResponse* = CompletionResponseVariant
 type DefinitionResponse* = DefinitionResponseVariant
@@ -632,7 +648,11 @@ proc to*(a: Response[JsonNode], T: typedesc): Response[T] =
     of ResponseKind.Error:
       return Response[T](id: a.id, kind: ResponseKind.Error, error: a.error)
     of ResponseKind.Success:
-      return Response[T](id: a.id, kind: ResponseKind.Success, result: a.result.jsonTo(T, Joptions(allowMissingKeys: true, allowExtraKeys: true)))
+      try:
+        return Response[T](id: a.id, kind: ResponseKind.Success, result: a.result.jsonTo(T, Joptions(allowMissingKeys: true, allowExtraKeys: true)))
+      except:
+        let error = ResponseError(code: -2, message: "Failed to convert result to " & $T, data: a.result)
+        return Response[T](id: a.id, kind: ResponseKind.Error, error: error)
 
 proc to*[K](a: Response[K], T: typedesc): Response[T] =
   when T is JsonNode:

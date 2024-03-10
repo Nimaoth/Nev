@@ -29,7 +29,9 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   cursorsId*: Id
   completionsId*: Id
+  hoverId*: Id
   lastCursorLocationBounds*: Option[Rect]
+  lastHoverLocationBounds*: Option[Rect]
 
   configProvider: ConfigProvider
 
@@ -49,6 +51,13 @@ type TextDocumentEditor* = ref object of DocumentEditor
   cursorVisible*: bool = true
   blinkCursor: bool = true
   blinkCursorTask: DelayedTask
+
+  # hover
+  showHoverTask: DelayedTask    # for showing hover info after a delay
+  currentHoverLocation: Cursor  # the location of the mouse hover
+  showHover*: bool              # whether to show hover info in ui
+  hoverText*: string            # the text to show in the hover info
+  hoverLocation*: Cursor        # where to show the hover info
 
   completionEventHandler: EventHandler
   modeEventHandler: EventHandler
@@ -70,7 +79,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   lastPressedMouseButton*: MouseButton
   dragStartSelection*: Selection
 
-  completionWidgetId*: Id
   disableCompletions*: bool
   completions*: seq[TextCompletion]
   selectedCompletion*: int
@@ -121,6 +129,7 @@ proc `selections=`*(self: TextDocumentEditor, selections: Selections) =
   self.cursorVisible = true
   if self.blinkCursorTask.isNotNil and self.active:
     self.blinkCursorTask.reschedule()
+  self.showHover = false
   self.markDirty()
 
 proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
@@ -135,6 +144,7 @@ proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
   self.cursorVisible = true
   if self.blinkCursorTask.isNotNil and self.active:
     self.blinkCursorTask.reschedule()
+  self.showHover = false
   self.markDirty()
 
 proc `targetSelection=`*(self: TextDocumentEditor, selection: Selection) =
@@ -1506,6 +1516,50 @@ proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").
 
   self.hideCompletions()
 
+proc showHoverForAsync(self: TextDocumentEditor, cursor: Cursor): Future[void] {.async.} =
+  let languageServer = await self.document.getLanguageServer()
+
+  if languageServer.getSome(ls):
+    let hoverInfo = await ls.getHover(self.document.fullPath, cursor)
+    if hoverInfo.getSome(hoverInfo):
+      self.showHover = true
+      self.hoverText = hoverInfo
+      self.hoverLocation = cursor
+    else:
+      self.showHover = false
+
+  self.markDirty()
+
+proc showHoverFor*(self: TextDocumentEditor, cursor: Cursor) {.expose("editor.text").} =
+  ## Shows lsp hover information for the given cursor.
+  ## Does nothing if no language server is available or the language server doesn't return any info.
+  asyncCheck self.showHoverForAsync(cursor)
+
+proc showHoverForCurrent*(self: TextDocumentEditor) {.expose("editor.text").} =
+  ## Shows lsp hover information for the current selection.
+  ## Does nothing if no language server is available or the language server doesn't return any info.
+  asyncCheck self.showHoverForAsync(self.selection.last)
+
+proc hideHover*(self: TextDocumentEditor) {.expose("editor.text").} =
+  ## Hides the hover information.
+  self.showHover = false
+  self.markDirty()
+
+proc showHoverForDelayed*(self: TextDocumentEditor, cursor: Cursor) =
+  ## Show hover information for the given cursor after a delay.
+  self.currentHoverLocation = cursor
+
+  let hoverDelayMs = self.configProvider.getValue("text.hover-delay", 200)
+
+  if self.showHoverTask.isNil:
+    self.showHoverTask = startDelayed(hoverDelayMs, repeat=false):
+      self.showHoverFor(self.currentHoverLocation)
+  else:
+    self.showHoverTask.interval = hoverDelayMs
+    self.showHoverTask.reschedule()
+
+  self.markDirty()
+
 proc isRunningSavedCommands*(self: TextDocumentEditor): bool {.expose("editor.text").} = self.bIsRunningSavedCommands
 
 proc runSavedCommands*(self: TextDocumentEditor) {.expose("editor.text").} =
@@ -1851,13 +1905,13 @@ proc createTextEditorInstance(): TextDocumentEditor =
     # This " is here to fix syntax highlighting
   editor.cursorsId = newId()
   editor.completionsId = newId()
+  editor.hoverId = newId()
   return editor
 
 proc newTextEditor*(document: TextDocument, app: AppInterface, configProvider: ConfigProvider): TextDocumentEditor =
   var self = createTextEditorInstance()
   self.configProvider = configProvider
   self.document = document
-  self.completionWidgetId = newId()
 
   self.init()
   if self.document.lines.len == 0:

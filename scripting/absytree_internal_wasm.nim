@@ -199,6 +199,11 @@ proc editor_text_selectNextCompletion_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}
 proc editor_text_applySelectedCompletion_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}
+proc editor_text_showHoverFor_void_TextDocumentEditor_Cursor_impl(
+    self: TextDocumentEditor; cursor: Cursor)  {.importc.}
+proc editor_text_showHoverForCurrent_void_TextDocumentEditor_impl(
+    self: TextDocumentEditor)  {.importc.}
+proc editor_text_hideHover_void_TextDocumentEditor_impl(self: TextDocumentEditor)  {.importc.}
 proc editor_text_isRunningSavedCommands_bool_TextDocumentEditor_impl(
     self: TextDocumentEditor): bool  {.importc.}
 proc editor_text_runSavedCommands_void_TextDocumentEditor_impl(
