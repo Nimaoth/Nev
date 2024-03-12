@@ -532,6 +532,9 @@ proc editor_model_findDeclaration_void_ModelDocumentEditor_bool_impl*(
   discard
 proc editor_getBackend_Backend_App_impl*(): Backend =
   discard
+proc editor_loadApplicationFile_Option_string_App_string_impl*(path: string): Option[
+    string] =
+  discard
 proc editor_toggleShowDrawnNodes_void_App_impl*() =
   discard
 proc editor_saveAppState_void_App_impl*() =

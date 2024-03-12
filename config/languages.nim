@@ -11,6 +11,15 @@ else:
   setOption "editor.text.languages-server.url", ""
   setOption "editor.text.languages-server.port", 0
 
+proc loadLspConfigFromFile*(file: string) =
+  try:
+    let str = loadApplicationFile(file).get
+    let json = str.parseJson()
+    infof"Loaded lsp config from file: {json}"
+    setOption "editor.text.lsp", json
+  except:
+    info &"Failed to load lsp config from file: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+
 setOption "editor.text.lsp.zig.path", "zls"
 setOption "editor.text.lsp.rust.path", "rust-analyzer"
 setOption "editor.text.lsp.nim.path", "nimlangserver"

@@ -12,6 +12,21 @@ proc getBackend*(): Backend =
   result = parseJson($res).jsonTo(typeof(result))
 
 
+proc editor_loadApplicationFile_Option_string_App_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc loadApplicationFile*(path: string): Option[string] =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      path
+    else:
+      path.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_loadApplicationFile_Option_string_App_string_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
 proc editor_toggleShowDrawnNodes_void_App_wasm(arg: cstring): cstring {.importc.}
 proc toggleShowDrawnNodes*() =
   var argsJson = newJArray()
