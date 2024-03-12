@@ -987,6 +987,10 @@ static:
 proc getBackend*(self: App): Backend {.expose("editor").} =
   return self.backend
 
+proc loadApplicationFile*(self: App, path: string): Option[string] {.expose("editor").} =
+  ## Load a file from the application directory (path is relative to the executable)
+  return fs.loadApplicationFile(path).some
+
 proc toggleShowDrawnNodes*(self: App) {.expose("editor").} =
   self.platform.showDrawnNodes = not self.platform.showDrawnNodes
 

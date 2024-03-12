@@ -358,6 +358,8 @@ proc editor_model_loadLanguageModel_void_ModelDocumentEditor_impl(
 proc editor_model_findDeclaration_void_ModelDocumentEditor_bool_impl(
     self: ModelDocumentEditor; global: bool)  {.importc.}
 proc editor_getBackend_Backend_App_impl(): Backend  {.importc.}
+proc editor_loadApplicationFile_Option_string_App_string_impl(path: string): Option[
+    string]  {.importc.}
 proc editor_toggleShowDrawnNodes_void_App_impl()  {.importc.}
 proc editor_saveAppState_void_App_impl()  {.importc.}
 proc editor_requestRender_void_App_bool_impl(redrawEverything: bool = false)  {.importc.}
