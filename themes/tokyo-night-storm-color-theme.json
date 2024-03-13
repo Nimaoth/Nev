@@ -172,7 +172,7 @@
 
         "editorMarkerNavigation.background": "#1f2335",
         "editorHoverWidget.background": "#1f2335",
-        "editorHoverWidget.border": "#1b1e2e",
+        "editorHoverWidget.border": "#243b5e",
 
         "editorBracketMatch.background": "#1f2335",
         "editorBracketMatch.border": "#545c7e",
