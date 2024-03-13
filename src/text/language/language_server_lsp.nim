@@ -194,13 +194,14 @@ method getHover*(self: LanguageServerLSP, filename: string, location: Cursor): F
 
   if parsedResponse.contents.asMarkedStringVariant().getSome(markedString):
     debugf"marked string variant: {markedString}"
-    if markedString.asMarkedStringObject().getSome(str):
-      debugf"string object lang: {str.language}, value: {str.value}"
-      return str.value.some
 
     if markedString.asString().getSome(str):
       debugf"string: {str}"
       return str.some
+
+    if markedString.asMarkedStringObject().getSome(str):
+      debugf"string object lang: {str.language}, value: {str.value}"
+      return str.value.some
 
     return string.none
 
@@ -257,14 +258,14 @@ method getSymbols*(self: LanguageServerLSP, filename: string): Future[seq[Symbol
       # of Namespace: 3
       # of Package: 4
       # of Class: 5
-      of Method: SymbolType.Procedure
+      of Method: SymbolType.Method
       # of Property: 7
       # of Field: 8
       # of Constructor: 9
       # of Enum: 10
       # of Interface: 11
-      of Function: Procedure
-      of Variable: MutableVariable
+      of Function: Function
+      of Variable: Variable
       # of Constant: 14
       # of String: 15
       # of Number: 16
@@ -302,14 +303,21 @@ method getCompletions*(self: LanguageServerLSP, languageId: string, filename: st
   # debugf"getCompletions: {completions.items.len}"
   for c in completions.items:
     # echo c
+    let docs = if c.documentation.asString().getSome(doc):
+        doc
+      elif c.documentation.asMarkupContent().getSome(doc):
+        doc.value
+      else:
+        ""
+
     completionsResult.add(TextCompletion(
       name: c.label,
       scope: "lsp",
       location: location,
       filename: "",
-      kind: SymbolType.Function,
-      typ: "",
-      doc: ""
+      kind: SymbolType(c.kind.ord),
+      typ: c.detail.get(""),
+      doc: docs,
     ))
 
     # if completionsResult.len == 10:
