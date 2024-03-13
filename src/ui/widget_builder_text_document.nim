@@ -535,9 +535,9 @@ proc createHover(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
   let totalLineHeight = app.platform.totalLineHeight
   let charWidth = app.platform.charWidth
 
-  let backgroundColor = app.theme.color("panel.background", color(30/255, 30/255, 30/255))
+  let backgroundColor = app.theme.color(@["editorHoverWidget.background", "panel.background"], color(30/255, 30/255, 30/255))
+  let borderColor = app.theme.color(@["editorHoverWidget.border", "focusBorder"], color(30/255, 30/255, 30/255))
   let docsColor = app.theme.color("editor.foreground", color(1, 1, 1))
-  let scopeColor = app.theme.color("string", color(175/255, 1, 175/255))
 
   let numLinesToShow = min(10, self.hoverText.countLines)
   let (top, bottom) = (cursorBounds.yh.float, cursorBounds.yh.float + totalLineHeight * numLinesToShow.float)
@@ -550,7 +550,7 @@ proc createHover(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
     clampedX = max(builder.root.w - totalWidth, 0)
 
   var hoverPanel: UINode = nil
-  builder.panel(&{SizeToContentX, MaskContent, FillBackground, DrawBorder, MouseHover, SnapInitialBounds, AnimateBounds}, x = clampedX, y = top, h = height, pivot = vec2(0, 0), backgroundColor = backgroundColor, borderColor = scopeColor, userId = self.hoverId.newPrimaryId):
+  builder.panel(&{SizeToContentX, MaskContent, FillBackground, DrawBorder, MouseHover, SnapInitialBounds, AnimateBounds}, x = clampedX, y = top, h = height, pivot = vec2(0, 0), backgroundColor = backgroundColor, borderColor = borderColor, userId = self.hoverId.newPrimaryId):
     hoverPanel = currentNode
     var textNode: UINode = nil
     # todo: height
@@ -576,17 +576,20 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
   let totalLineHeight = app.platform.totalLineHeight
   let charWidth = app.platform.charWidth
 
-  let backgroundColor = app.theme.color("panel.background", color(30/255, 30/255, 30/255))
-  let selectedBackgroundColor = app.theme.color("list.activeSelectionBackground", color(200/255, 200/255, 200/255))
-  let docsColor = app.theme.color("editor.foreground", color(1, 1, 1))
-  let nameColor = app.theme.tokenColor(@["entity.name.label", "entity.name"], color(1, 1, 1))
-  let scopeColor = app.theme.color("string", color(175/255, 1, 175/255))
+  let backgroundColor = app.theme.color(@["editorSuggestWidget.background", "panel.background"], color(30/255, 30/255, 30/255))
+  let borderColor = app.theme.color(@["editorSuggestWidget.border", "panel.background"], color(30/255, 30/255, 30/255))
+  let selectedBackgroundColor = app.theme.color(@["editorSuggestWidget.selectedBackground", "list.activeSelectionBackground"], color(200/255, 200/255, 200/255))
+  let docsColor = app.theme.color(@["editorSuggestWidget.foreground", "editor.foreground"], color(1, 1, 1))
+  let nameColor = app.theme.color(@["editorSuggestWidget.foreground", "editor.foreground"], color(1, 1, 1))
+  let nameSelectedColor = app.theme.color(@["editorSuggestWidget.highlightForeground", "editor.foreground"], color(1, 1, 1))
+  let scopeColor = app.theme.color(@["descriptionForeground", "editor.foreground"], color(175/255, 1, 175/255))
 
   const numLinesToShow = 20
   let (top, bottom) = (cursorBounds.yh.float, cursorBounds.yh.float + totalLineHeight * numLinesToShow)
 
   const listWidth = 120.0
   const docsWidth = 50.0
+  const maxTypeLen = 50
   let totalWidth = charWidth * listWidth + charWidth * docsWidth
   var clampedX = cursorBounds.x
   if clampedX + totalWidth > builder.root.w:
@@ -619,18 +622,24 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
       builder.panel(&{FillX, SizeToContentY, FillBackground}, y = y, pivot = pivot, backgroundColor = backgroundColor):
         let completion = self.completions[i]
 
-        builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = completion.name, textColor = nameColor)
+        let color = if i == self.selectedCompletion: nameSelectedColor else: nameColor
+        builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = completion.name, textColor = color)
 
-        let scopeText = completion.typ & " : " & completion.scope
+        let typ = if completion.typ.len < maxTypeLen:
+          completion.typ & " ".repeat(maxTypeLen - completion.typ.len)
+        else:
+          completion.typ[0..<(maxTypeLen - 3)] & "..."
+        let scopeText = typ & " : " & completion.scope & " "
         builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, x = currentNode.w, pivot = vec2(1, 0), text = scopeText, textColor = scopeColor)
 
-    builder.panel(&{UINodeFlag.MaskContent}, w = listWidth * charWidth, h = bottom - top):
+    builder.panel(&{UINodeFlag.MaskContent, DrawBorder}, w = listWidth * charWidth, h = bottom - top, borderColor = borderColor):
       builder.createLines(self.completionsBaseIndex, self.completionsScrollOffset, self.completions.high, false, false, backgroundColor, handleScroll, handleLine)
 
     if self.selectedCompletion < self.completions.len:
+      let docText = self.completions[self.selectedCompletion].typ & "\n\n" & self.completions[self.selectedCompletion].doc
       builder.panel(&{UINodeFlag.FillBackground, DrawText, MaskContent, TextWrap},
         x = listWidth * charWidth, w = docsWidth * charWidth, h = bottom - top,
-        backgroundColor = backgroundColor, textColor = docsColor, text = self.completions[self.selectedCompletion].doc)
+        backgroundColor = backgroundColor, textColor = docsColor, text = docText)
 
   if completionsPanel.bounds.yh > completionsPanel.parent.bounds.h:
     completionsPanel.rawY = cursorBounds.y
