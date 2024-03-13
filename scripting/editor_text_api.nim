@@ -19,9 +19,9 @@ proc screenLineCount*(self: TextDocumentEditor): int =
   ## This value depends on the size of the view this editor is in and the font size
   editor_text_screenLineCount_int_TextDocumentEditor_impl(self)
 proc doMoveCursorColumn*(self: TextDocumentEditor; cursor: Cursor; offset: int;
-                         wrap: bool = true): Cursor =
-  editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_bool_impl(
-      self, cursor, offset, wrap)
+                         wrap: bool = true; includeAfter: bool = true): Cursor =
+  editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_bool_bool_impl(
+      self, cursor, offset, wrap, includeAfter)
 proc findSurroundStart*(editor: TextDocumentEditor; cursor: Cursor; count: int;
                         c0: char; c1: char; depth: int = 1): Option[Cursor] =
   editor_text_findSurroundStart_Option_Cursor_TextDocumentEditor_Cursor_int_char_char_int_impl(
@@ -124,14 +124,16 @@ proc clearSelections*(self: TextDocumentEditor) =
   editor_text_clearSelections_void_TextDocumentEditor_impl(self)
 proc moveCursorColumn*(self: TextDocumentEditor; distance: int;
                        cursor: SelectionCursor = SelectionCursor.Config;
-                       all: bool = true) =
-  editor_text_moveCursorColumn_void_TextDocumentEditor_int_SelectionCursor_bool_impl(
-      self, distance, cursor, all)
+                       all: bool = true; wrap: bool = true;
+                       includeAfter: bool = true) =
+  editor_text_moveCursorColumn_void_TextDocumentEditor_int_SelectionCursor_bool_bool_bool_impl(
+      self, distance, cursor, all, wrap, includeAfter)
 proc moveCursorLine*(self: TextDocumentEditor; distance: int;
                      cursor: SelectionCursor = SelectionCursor.Config;
-                     all: bool = true) =
-  editor_text_moveCursorLine_void_TextDocumentEditor_int_SelectionCursor_bool_impl(
-      self, distance, cursor, all)
+                     all: bool = true; wrap: bool = true;
+                     includeAfter: bool = true) =
+  editor_text_moveCursorLine_void_TextDocumentEditor_int_SelectionCursor_bool_bool_bool_impl(
+      self, distance, cursor, all, wrap, includeAfter)
 proc moveCursorHome*(self: TextDocumentEditor;
                      cursor: SelectionCursor = SelectionCursor.Config;
                      all: bool = true) =
@@ -139,9 +141,9 @@ proc moveCursorHome*(self: TextDocumentEditor;
       self, cursor, all)
 proc moveCursorEnd*(self: TextDocumentEditor;
                     cursor: SelectionCursor = SelectionCursor.Config;
-                    all: bool = true) =
-  editor_text_moveCursorEnd_void_TextDocumentEditor_SelectionCursor_bool_impl(
-      self, cursor, all)
+                    all: bool = true; includeAfter: bool = true) =
+  editor_text_moveCursorEnd_void_TextDocumentEditor_SelectionCursor_bool_bool_impl(
+      self, cursor, all, includeAfter)
 proc moveCursorTo*(self: TextDocumentEditor; str: string;
                    cursor: SelectionCursor = SelectionCursor.Config;
                    all: bool = true) =
@@ -153,13 +155,13 @@ proc moveCursorBefore*(self: TextDocumentEditor; str: string;
   editor_text_moveCursorBefore_void_TextDocumentEditor_string_SelectionCursor_bool_impl(
       self, str, cursor, all)
 proc moveCursorNextFindResult*(self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config;
-                               all: bool = true) =
-  editor_text_moveCursorNextFindResult_void_TextDocumentEditor_SelectionCursor_bool_impl(
-      self, cursor, all)
+                               all: bool = true; wrap: bool = true) =
+  editor_text_moveCursorNextFindResult_void_TextDocumentEditor_SelectionCursor_bool_bool_impl(
+      self, cursor, all, wrap)
 proc moveCursorPrevFindResult*(self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config;
-                               all: bool = true) =
-  editor_text_moveCursorPrevFindResult_void_TextDocumentEditor_SelectionCursor_bool_impl(
-      self, cursor, all)
+                               all: bool = true; wrap: bool = true) =
+  editor_text_moveCursorPrevFindResult_void_TextDocumentEditor_SelectionCursor_bool_bool_impl(
+      self, cursor, all, wrap)
 proc moveCursorLineCenter*(self: TextDocumentEditor;
                            cursor: SelectionCursor = SelectionCursor.Config;
                            all: bool = true) =
