@@ -77,12 +77,15 @@ when defined(wasm):
   import keybindings_vim_like
   import keybindings_helix
   import keybindings_normal
+  import languages
 
   loadDefaultOptions()
   loadDefaultKeybindings(true)
   loadModelKeybindings()
   loadVimKeybindings()
   # loadVimLikeKeybindings()
+
+  loadLspConfigFromFile("config/lsp.json")
 
   # Triple click to selects a line
   setOption "editor.text.triple-click-command", "extend-select-move"
