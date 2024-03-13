@@ -13,6 +13,7 @@ else:
 proc getBackend*(): Backend =
   editor_getBackend_Backend_App_impl()
 proc loadApplicationFile*(path: string): Option[string] =
+  ## Load a file from the application directory (path is relative to the executable)
   editor_loadApplicationFile_Option_string_App_string_impl(path)
 proc toggleShowDrawnNodes*() =
   editor_toggleShowDrawnNodes_void_App_impl()

@@ -77,6 +77,7 @@ proc renderLine*(
     var partIndex = 0
     var subLineIndex = 0
     var subLinePartIndex = 0
+    var previousInlayNode: UINode = nil
     while partIndex < line.parts.len: # outer loop for wrapped lines within this line
 
       builder.panel(flagsInner + LayoutHorizontal):
@@ -115,8 +116,10 @@ proc renderLine*(
           let textColor = if part.scope.len == 0: textColor else: theme.tokenColor(part, textColor)
 
           var startRune = 0.RuneIndex
+          var endRune = 0.RuneIndex
           if part.textRange.isSome:
             startRune = part.textRange.get.startIndex
+            endRune = part.textRange.get.endIndex
           else:
             # Inlay text, find start rune of neighbor, prefer left side
             var found = false
@@ -132,15 +135,12 @@ proc renderLine*(
                   startRune = line.parts[i].textRange.get.startIndex
                   break
 
+            endRune = startRune
+
           # Find background color
           var colorIndex = 0
-          if part.textRange.isNone:
-            # prefer color of left neighbor for inlay text
-            while colorIndex < backgroundColors.high and (backgroundColors[colorIndex].first == backgroundColors[colorIndex].last or backgroundColors[colorIndex].last <= startRune - 1.RuneCount):
-              inc colorIndex
-          else:
-            while colorIndex < backgroundColors.high and (backgroundColors[colorIndex].first == backgroundColors[colorIndex].last or backgroundColors[colorIndex].last <= startRune):
-              inc colorIndex
+          while colorIndex < backgroundColors.high and (backgroundColors[colorIndex].first == backgroundColors[colorIndex].last or backgroundColors[colorIndex].last <= startRune):
+            inc colorIndex
 
           var backgroundColor = backgroundColor
           var addBackgroundAsChildren = true
@@ -244,8 +244,13 @@ proc renderLine*(
 
               if part.textRange.isSome:
                 if selectionLastRune >= part.textRange.get.startIndex and selectionLastRune < part.textRange.get.endIndex:
+                  let node = if selectionLastRune == startRune and previousInlayNode.isNotNil:
+                    # show cursor on first position of previous inlay
+                    previousInlayNode
+                  else:
+                    partNode
                   let cursorX = builder.textWidth(int(selectionLastRune - part.textRange.get.startIndex.RuneCount)).round
-                  result.cursors.add (currentNode, $part.text[selectionLastRune - part.textRange.get.startIndex.RuneCount], rect(cursorX, 0, builder.charWidth, builder.textHeight), (line.index, curs))
+                  result.cursors.add (node, $part.text[selectionLastRune - part.textRange.get.startIndex.RuneCount], rect(cursorX, 0, builder.charWidth, builder.textHeight), (line.index, curs))
 
             # Set hover info if the hover location is within this part
             if line.index == self.hoverLocation.line and part.textRange.isSome:
@@ -254,6 +259,11 @@ proc renderLine*(
               let hoverRune = lineOriginal.runeIndex(self.hoverLocation.column)
               if hoverRune >= startRune and hoverRune < endRune:
                 result.hover = (currentNode, "", rect(0, 0, builder.charWidth, builder.textHeight), self.hoverLocation).some
+
+          if part.textRange.isNone:
+            previousInlayNode = partNode
+          else:
+            previousInlayNode = nil
 
           lastPartXW = partNode.bounds.xw
           start += part.text.len

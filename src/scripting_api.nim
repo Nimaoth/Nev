@@ -36,6 +36,13 @@ proc normalize*(self: var Selections) =
 proc normalized*(self: Selections): Selections =
   return self.sorted
 
+proc lastLineLen*(self: Selection): int =
+  ## Returns the length of the selection on the last line covered by the selection
+  if self.first.line == self.last.line:
+    result = self.last.column - self.first.column
+  else:
+    result = self.last.column
+
 var nextEditorId = 0
 proc newEditorId*(): EditorId =
   ## Returns a new unique id for an editor

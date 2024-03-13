@@ -331,7 +331,7 @@ when not defined(js):
   proc logProcessDebugOutput(process: AsyncProcess) {.async.} =
     while process.isAlive:
       let line = await process.recvErrorLine
-      log(lvlDebug, fmt"[debug] {line}")
+      # log(lvlDebug, fmt"[debug] {line}")
 
 proc sendInitializationRequest(client: LSPClient) {.async.} =
   log(lvlInfo, "Initializing client...")
