@@ -65,8 +65,8 @@ type TextDocument* = ref object of Document
 
   onLoaded*: Event[TextDocument]
   textChanged*: Event[TextDocument]
-  textInserted*: Event[tuple[document: TextDocument, location: Cursor, text: string]]
-  textDeleted*: Event[tuple[document: TextDocument, selection: Selection]]
+  textInserted*: Event[tuple[document: TextDocument, location: Selection, text: string]]
+  textDeleted*: Event[tuple[document: TextDocument, location: Selection]]
   singleLine*: bool
 
   changes: seq[TextDocumentChange]
@@ -949,7 +949,7 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
       undoOp.children.add UndoOp(kind: Delete, selection: (oldCursor, cursor))
 
     if notify:
-      self.textInserted.invoke((self, oldCursor, text))
+      self.textInserted.invoke((self, (oldCursor, cursor), text))
 
   if notify:
     self.notifyTextChanged()

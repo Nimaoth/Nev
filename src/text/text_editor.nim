@@ -1606,7 +1606,7 @@ proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
     let inlayHints = await ls.getInlayHints(self.document.fullPath, self.visibleTextRange(buffer = 10))
     # todo: detect if canceled instead
     if inlayHints.len > 0:
-      log lvlInfo, fmt"Updating inlay hints: {inlayHints}"
+      # log lvlInfo, fmt"Updating inlay hints: {inlayHints}"
       self.inlayHints = inlayHints
       self.markDirty()
 
@@ -1943,6 +1943,58 @@ method injectDependencies*(self: TextDocumentEditor, app: AppInterface) =
 
   self.setMode(self.configProvider.getValue("editor.text.default-mode", ""))
 
+proc updateInlayHintPositionsAfterInsert(self: TextDocumentEditor, location: Selection) =
+  # todo: correctly handle unicode
+  for inlayHint in self.inlayHints.mitems:
+    if inlayHint.location.line == location.first.line and inlayHint.location.column > location.first.column:
+      # inserted text on same line before inlayHint
+      inlayHint.location.column += location.last.column - location.first.column
+      inlayHint.location.line += location.last.line - location.first.line
+    elif inlayHint.location.line == location.first.line and inlayHint.location.column == location.first.column:
+      # Inserted text at inlayHint location
+      # Usually the inlay hint will be on a word boundary, so if it's not anymore then move the inlay hint
+      # (this happens if you e.g. change the name of the variable by appending some text)
+      # If it's still on a word boundary, then the new inlay hint will probably be at the same location so don't move it now
+      let wordBoundary = self.findWordBoundary(inlayHint.location)
+      if inlayHint.location != wordBoundary.first and inlayHint.location != wordBoundary.last:
+        inlayHint.location.column += location.last.column - location.first.column
+        inlayHint.location.line += location.last.line - location.first.line
+    elif inlayHint.location.line > location.first.line:
+      # inserted text on line before inlay hint
+      inlayHint.location.line += location.last.line - location.first.line
+
+proc updateInlayHintPositionsAfterDelete(self: TextDocumentEditor, selection: Selection) =
+  # todo: correctly handle unicode (inlay hint location comes from lsp, so probably a RuneIndex)
+  let selection = selection.normalized
+  for i in countdown(self.inlayHints.high, 0):
+    template inlayHint: InlayHint = self.inlayHints[i]
+
+    if selection.first.line == selection.last.line:
+      if inlayHint.location.line == selection.first.line and inlayHint.location.column >= selection.last.column:
+        inlayHint.location.column -= selection.last.column - selection.first.column
+      elif inlayHint.location.line == selection.first.line and inlayHint.location.column > selection.first.column and inlayHint.location.column < selection.last.column:
+        self.inlayHints.removeSwap(i)
+    else:
+      var remove = false
+      if inlayHint.location.line == selection.first.line and inlayHint.location.column >= selection.first.column:
+        remove = true
+      elif inlayHint.location.line > selection.first.line and inlayHint.location.line < selection.last.line:
+        remove = true
+      elif inlayHint.location.line == selection.last.line and inlayHint.location.column <= selection.last.column:
+        remove = true
+      elif inlayHint.location.line == selection.last.line and inlayHint.location.column >= selection.last.column:
+        inlayHint.location.column -= selection.last.column - selection.first.column
+      if inlayHint.location.line >= selection.last.line:
+        inlayHint.location.line -= selection.last.line - selection.first.line
+      if remove:
+        self.inlayHints.removeSwap(i)
+
+proc handleTextInserted(self: TextDocumentEditor, document: TextDocument, location: Selection, text: string) =
+  self.updateInlayHintPositionsAfterInsert(location)
+
+proc handleTextDeleted(self: TextDocumentEditor, document: TextDocument, selection: Selection) =
+  self.updateInlayHintPositionsAfterDelete(selection)
+
 proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
   self.clampSelection()
   self.updateSearchResults()
@@ -1989,6 +2041,8 @@ proc newTextEditor*(document: TextDocument, app: AppInterface, configProvider: C
   self.injectDependencies(app)
   discard document.textChanged.subscribe (_: TextDocument) => self.handleTextDocumentTextChanged()
   discard document.onLoaded.subscribe (_: TextDocument) => self.handleTextDocumentLoaded()
+  discard document.textInserted.subscribe (arg: tuple[document: TextDocument, location: Selection, text: string]) => self.handleTextInserted(arg.document, arg.location, arg.text)
+  discard document.textDeleted.subscribe (arg: tuple[document: TextDocument, location: Selection]) => self.handleTextDeleted(arg.document, arg.location)
 
   return self
 
@@ -2004,6 +2058,8 @@ method createWithDocument*(_: TextDocumentEditor, document: Document, configProv
     self.document.lines = @[""]
   discard self.document.textChanged.subscribe (_: TextDocument) => self.handleTextDocumentTextChanged()
   discard self.document.onLoaded.subscribe (_: TextDocument) => self.handleTextDocumentLoaded()
+  discard self.document.textInserted.subscribe (arg: tuple[document: TextDocument, location: Selection, text: string]) => self.handleTextInserted(arg.document, arg.location, arg.text)
+  discard self.document.textDeleted.subscribe (arg: tuple[document: TextDocument, location: Selection]) => self.handleTextDeleted(arg.document, arg.location)
 
   self.startBlinkCursorTask()
 

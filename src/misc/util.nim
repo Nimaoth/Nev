@@ -195,3 +195,6 @@ else:
     ##
     ## See also `system.add`.
     x.add(y)
+
+func removeSwap*[T](s: var seq[T]; index: int) = s.del(index)
+func removeShift*[T](s: var seq[T]; index: int) = s.delete(index)

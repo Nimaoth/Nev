@@ -82,7 +82,7 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string], 
       if client.fullDocumentSync:
         asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, args.document.contentString)
       else:
-        let changes = @[TextDocumentContentChangeEvent(`range`: args.location.toSelection.toRange, text: args.text)]
+        let changes = @[TextDocumentContentChangeEvent(`range`: args.location.first.toSelection.toRange, text: args.text)]
         asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, changes)
 
     discard textDocumentEditor.document.textDeleted.subscribe proc(args: auto) =
@@ -90,7 +90,7 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string], 
       if client.fullDocumentSync:
         asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, args.document.contentString)
       else:
-        let changes = @[TextDocumentContentChangeEvent(`range`: args.selection.toRange)]
+        let changes = @[TextDocumentContentChangeEvent(`range`: args.location.toRange)]
         asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, changes)
 
   discard gEditor.onEditorDeregistered.subscribe proc(editor: auto) =
@@ -124,7 +124,7 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string], 
       if client.fullDocumentSync:
         asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, args.document.contentString)
       else:
-        let changes = @[TextDocumentContentChangeEvent(`range`: args.location.toSelection.toRange, text: args.text)]
+        let changes = @[TextDocumentContentChangeEvent(`range`: args.location.first.toSelection.toRange, text: args.text)]
         asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, changes)
 
     discard textDocumentEditor.document.textDeleted.subscribe proc(args: auto) =
@@ -132,7 +132,7 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string], 
       if client.fullDocumentSync:
         asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, args.document.contentString)
       else:
-        let changes = @[TextDocumentContentChangeEvent(`range`: args.selection.toRange)]
+        let changes = @[TextDocumentContentChangeEvent(`range`: args.location.toRange)]
         asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, changes)
 
   log lvlInfo, fmt"Started language server for {languageId}"
