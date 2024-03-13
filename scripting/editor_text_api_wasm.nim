@@ -54,10 +54,10 @@ proc screenLineCount*(self: TextDocumentEditor): int =
   result = parseJson($res).jsonTo(typeof(result))
 
 
-proc editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_bool_wasm(
+proc editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc doMoveCursorColumn*(self: TextDocumentEditor; cursor: Cursor; offset: int;
-                         wrap: bool = true): Cursor =
+                         wrap: bool = true; includeAfter: bool = true): Cursor =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:
@@ -79,8 +79,13 @@ proc doMoveCursorColumn*(self: TextDocumentEditor; cursor: Cursor; offset: int;
       wrap
     else:
       wrap.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      includeAfter
+    else:
+      includeAfter.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_bool_wasm(
+  let res {.used.} = editor_text_doMoveCursorColumn_Cursor_TextDocumentEditor_Cursor_int_bool_bool_wasm(
       argsJsonString.cstring)
   result = parseJson($res).jsonTo(typeof(result))
 
@@ -815,11 +820,12 @@ proc clearSelections*(self: TextDocumentEditor) =
       argsJsonString.cstring)
 
 
-proc editor_text_moveCursorColumn_void_TextDocumentEditor_int_SelectionCursor_bool_wasm(
+proc editor_text_moveCursorColumn_void_TextDocumentEditor_int_SelectionCursor_bool_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc moveCursorColumn*(self: TextDocumentEditor; distance: int;
                        cursor: SelectionCursor = SelectionCursor.Config;
-                       all: bool = true) =
+                       all: bool = true; wrap: bool = true;
+                       includeAfter: bool = true) =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:
@@ -841,16 +847,27 @@ proc moveCursorColumn*(self: TextDocumentEditor; distance: int;
       all
     else:
       all.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      wrap
+    else:
+      wrap.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      includeAfter
+    else:
+      includeAfter.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_moveCursorColumn_void_TextDocumentEditor_int_SelectionCursor_bool_wasm(
+  let res {.used.} = editor_text_moveCursorColumn_void_TextDocumentEditor_int_SelectionCursor_bool_bool_bool_wasm(
       argsJsonString.cstring)
 
 
-proc editor_text_moveCursorLine_void_TextDocumentEditor_int_SelectionCursor_bool_wasm(
+proc editor_text_moveCursorLine_void_TextDocumentEditor_int_SelectionCursor_bool_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc moveCursorLine*(self: TextDocumentEditor; distance: int;
                      cursor: SelectionCursor = SelectionCursor.Config;
-                     all: bool = true) =
+                     all: bool = true; wrap: bool = true;
+                     includeAfter: bool = true) =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:
@@ -872,8 +889,18 @@ proc moveCursorLine*(self: TextDocumentEditor; distance: int;
       all
     else:
       all.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      wrap
+    else:
+      wrap.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      includeAfter
+    else:
+      includeAfter.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_moveCursorLine_void_TextDocumentEditor_int_SelectionCursor_bool_wasm(
+  let res {.used.} = editor_text_moveCursorLine_void_TextDocumentEditor_int_SelectionCursor_bool_bool_bool_wasm(
       argsJsonString.cstring)
 
 
@@ -903,11 +930,11 @@ proc moveCursorHome*(self: TextDocumentEditor;
       argsJsonString.cstring)
 
 
-proc editor_text_moveCursorEnd_void_TextDocumentEditor_SelectionCursor_bool_wasm(
+proc editor_text_moveCursorEnd_void_TextDocumentEditor_SelectionCursor_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc moveCursorEnd*(self: TextDocumentEditor;
                     cursor: SelectionCursor = SelectionCursor.Config;
-                    all: bool = true) =
+                    all: bool = true; includeAfter: bool = true) =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:
@@ -924,8 +951,13 @@ proc moveCursorEnd*(self: TextDocumentEditor;
       all
     else:
       all.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      includeAfter
+    else:
+      includeAfter.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_moveCursorEnd_void_TextDocumentEditor_SelectionCursor_bool_wasm(
+  let res {.used.} = editor_text_moveCursorEnd_void_TextDocumentEditor_SelectionCursor_bool_bool_wasm(
       argsJsonString.cstring)
 
 
@@ -991,10 +1023,10 @@ proc moveCursorBefore*(self: TextDocumentEditor; str: string;
       argsJsonString.cstring)
 
 
-proc editor_text_moveCursorNextFindResult_void_TextDocumentEditor_SelectionCursor_bool_wasm(
+proc editor_text_moveCursorNextFindResult_void_TextDocumentEditor_SelectionCursor_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc moveCursorNextFindResult*(self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config;
-                               all: bool = true) =
+                               all: bool = true; wrap: bool = true) =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:
@@ -1011,15 +1043,20 @@ proc moveCursorNextFindResult*(self: TextDocumentEditor; cursor: SelectionCursor
       all
     else:
       all.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      wrap
+    else:
+      wrap.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_moveCursorNextFindResult_void_TextDocumentEditor_SelectionCursor_bool_wasm(
+  let res {.used.} = editor_text_moveCursorNextFindResult_void_TextDocumentEditor_SelectionCursor_bool_bool_wasm(
       argsJsonString.cstring)
 
 
-proc editor_text_moveCursorPrevFindResult_void_TextDocumentEditor_SelectionCursor_bool_wasm(
+proc editor_text_moveCursorPrevFindResult_void_TextDocumentEditor_SelectionCursor_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc moveCursorPrevFindResult*(self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config;
-                               all: bool = true) =
+                               all: bool = true; wrap: bool = true) =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:
@@ -1036,8 +1073,13 @@ proc moveCursorPrevFindResult*(self: TextDocumentEditor; cursor: SelectionCursor
       all
     else:
       all.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      wrap
+    else:
+      wrap.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_moveCursorPrevFindResult_void_TextDocumentEditor_SelectionCursor_bool_wasm(
+  let res {.used.} = editor_text_moveCursorPrevFindResult_void_TextDocumentEditor_SelectionCursor_bool_bool_wasm(
       argsJsonString.cstring)
 
 

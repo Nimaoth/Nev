@@ -181,6 +181,16 @@ proc vimMoveTo*(editor: TextDocumentEditor, target: string, before: bool, count:
   if before:
     editor.moveCursorColumn(-1)
 
+proc vimClamp*(self: TextDocumentEditor, cursor: Cursor): Cursor =
+  let lineLen = self.lineLength(cursor.line)
+  if cursor.column > 0 and cursor.column >= lineLen:
+    return (cursor.line, lineLen - 1)
+  return cursor
+
+proc vimMotionLine*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection =
+  let lineLen = editor.lineLength(cursor.line)
+  result = ((cursor.line, 0), (cursor.line, max(0, lineLen - 1)))
+
 proc vimMotionWord*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection =
   const AlphaNumeric = {'A'..'Z', 'a'..'z', '0'..'9', '_'}
 
@@ -295,6 +305,7 @@ proc vimMotionSurroundSingleQuotesInner*(editor: TextDocumentEditor, cursor: Cur
 proc vimMotionSurroundSingleQuotesOuter*(editor: TextDocumentEditor, cursor: Cursor, count: int): Selection = vimMotionSurround(editor, cursor, count, '\'', '\'', false)
 
 # todo
+addCustomTextMove "vim-line", vimMotionLine
 addCustomTextMove "vim-word", vimMotionWord
 addCustomTextMove "vim-WORD", vimMotionWordBig
 addCustomTextMove "vim-word-inner", vimMotionWord
@@ -335,8 +346,8 @@ iterator iterateTextObjects(editor: TextDocumentEditor, cursor: Cursor, move: st
         continue
 
     let nextCursor = if backwards: (selection.first.line, selection.first.column - 1) else: (selection.last.line, selection.last.column + 1)
-    # echo &"iterate text objects {move}, {cursor} get selection for move {nextCursor} {move}"
     let newSelection = editor.getSelectionForMove(nextCursor, move, 0)
+    # infof"iterateTextObjects({cursor}, {move}, {backwards}) nextCursor: {nextCursor}, newSelection: {newSelection}"
     if newSelection == lastSelection:
       break
 
@@ -435,6 +446,9 @@ proc moveSelectionEnd(editor: TextDocumentEditor, move: string, backwards: bool 
               editor.getLine(selection.last.line)[selection.last.column] notin Whitespace:
             res = cursor
             break
+          if backwards and selection.last.column == editor.lineLength(selection.last.line):
+            res = cursor
+            break
       res.toSelection(it, which)
     )
 
@@ -473,12 +487,12 @@ proc vimDeleteRight*(editor: TextDocumentEditor) =
 expose "vim-delete-left", vimDeleteLeft
 
 proc vimMoveCursorColumn(editor: TextDocumentEditor, direction: int, count: int = 1) {.expose("vim-move-cursor-column").} =
-  editor.moveCursorColumn(direction * max(count, 1))
+  editor.moveCursorColumn(direction * max(count, 1), wrap=false, includeAfter=false)
   if selectLines:
     editor.vimSelectLine()
 
 proc vimMoveCursorLine(editor: TextDocumentEditor, direction: int, count: int = 1) {.expose("vim-move-cursor-line").} =
-  editor.moveCursorLine(direction * max(count, 1))
+  editor.moveCursorLine(direction * max(count, 1), includeAfter=false)
   if selectLines:
     editor.vimSelectLine()
 
@@ -497,7 +511,7 @@ proc vimMoveToEndOfLine(editor: TextDocumentEditor, count: int = 1) =
   let count = max(1, count)
   if count > 1:
     editor.moveCursorLine(count - 1)
-  editor.moveLast("line")
+  editor.moveLast("vim-line")
   editor.scrollToCursor Last
 
 proc vimMoveCursorLineFirstChar(editor: TextDocumentEditor, direction: int, count: int = 1) =
@@ -926,7 +940,6 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   addTextCommand "insert", "<SPACE>", "insert-text", " "
   addTextCommand "insert", "<BACKSPACE>", "delete-left"
-  addTextCommand "insert", "<C-h>", "delete-left"
   addTextCommand "insert", "<DELETE>", "delete-right"
   addTextCommandBlock "insert", "<C-w>":
     editor.deleteMove("word-line", inside=false, which=SelectionCursor.First)
@@ -987,7 +1000,8 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommand "", "gd", "goto-definition"
   addTextCommand "", "gs", "goto-symbol"
   addTextCommand "", "<C-SPACE>", "get-completions"
-  addTextCommand "", "<C-k>", "show-hover-for-current"
+  addTextCommand "", "<C-h>", "show-hover-for-current"
   addTextCommand "", "<C-r>", "select-prev"
   addTextCommand "", "<C-m>", "select-next"
   addTextCommand "", "U", "redo"
+  addTextCommand "", "<C-k><C-c>", "toggle-line-comment"

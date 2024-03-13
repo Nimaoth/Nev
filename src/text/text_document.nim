@@ -103,9 +103,12 @@ proc lineLength*(self: TextDocument, line: int): int =
     return self.lines[line].len
   return 0
 
-proc lastValidIndex*(self: TextDocument, line: int): int =
+proc lastValidIndex*(self: TextDocument, line: int, includeAfter: bool = true): int =
   if line < self.lines.len:
-    return self.lines[line].len
+    if includeAfter or self.lines[line].len == 0:
+      return self.lines[line].len
+    else:
+      return self.lines[line].runeStart(self.lines[line].len - 1)
   return 0
 
 proc lastCursor*(self: TextDocument): Cursor =
@@ -113,12 +116,12 @@ proc lastCursor*(self: TextDocument): Cursor =
     return (self.lines.high, self.lastValidIndex(self.lines.high))
   return (0, 0)
 
-proc clampCursor*(self: TextDocument, cursor: Cursor): Cursor =
+proc clampCursor*(self: TextDocument, cursor: Cursor, includeAfter: bool = true): Cursor =
   var cursor = cursor
   if self.lines.len == 0:
     return (0, 0)
   cursor.line = clamp(cursor.line, 0, self.lines.len - 1)
-  cursor.column = clamp(cursor.column, 0, self.lastValidIndex cursor.line)
+  cursor.column = clamp(cursor.column, 0, self.lastValidIndex(cursor.line, includeAfter))
   return cursor
 
 proc clampSelection*(self: TextDocument, selection: Selection): Selection = (self.clampCursor(selection.first), self.clampCursor(selection.last))
@@ -1062,7 +1065,11 @@ proc getLineCommentRange*(self: TextDocument, line: int): Selection =
   if index == -1:
     return (line, 0).toSelection
 
-  return ((line, index), (line, index + prefix.len))
+  var endIndex = index + prefix.len
+  if endIndex < self.lineLength(line) and self.lines[line][endIndex] in Whitespace:
+    endIndex += 1
+
+  return ((line, index), (line, endIndex))
 
 proc toggleLineComment*(self: TextDocument, selections: Selections): seq[Selection] =
   result = selections
@@ -1098,7 +1105,7 @@ proc toggleLineComment*(self: TextDocument, selections: Selections): seq[Selecti
           insertSelections.add self.getLineCommentRange(l)
 
   if comment:
-    let prefix = self.languageConfig.get.lineComment.get
+    let prefix = self.languageConfig.get.lineComment.get & " "
     discard self.insert(insertSelections, selections, [prefix])
   else:
     discard self.delete(insertSelections, selections)
