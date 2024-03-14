@@ -971,9 +971,9 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
 
     self.nextCheckpoints = @[]
 
-proc edit*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true): seq[Selection] =
+proc edit*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] =
   let selections = selections.map (s) => s.normalized
-  result = self.delete(selections, oldSelection, false, record=record)
+  result = self.delete(selections, oldSelection, record=record, inclusiveEnd=inclusiveEnd)
   result = self.insert(result, oldSelection, texts, record=record)
 
 proc doUndo(self: TextDocument, op: UndoOp, oldSelection: openArray[Selection], useOldSelection: bool, redoOps: var seq[UndoOp]): seq[Selection] =

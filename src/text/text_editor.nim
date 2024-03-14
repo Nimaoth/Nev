@@ -111,7 +111,7 @@ proc showCompletionWindow(self: TextDocumentEditor)
 proc refilterCompletions(self: TextDocumentEditor)
 proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string, count: int = 0): Selection
 proc extendSelectionWithMove*(self: TextDocumentEditor, selection: Selection, move: string, count: int = 0): Selection
-proc updateTargetColumn*(self: TextDocumentEditor, cursor: SelectionCursor)
+proc updateTargetColumn*(self: TextDocumentEditor, cursor: SelectionCursor = Last)
 proc updateInlayHints*(self: TextDocumentEditor)
 
 proc clampCursor*(self: TextDocumentEditor, cursor: Cursor, includeAfter: bool = true): Cursor = self.document.clampCursor(cursor, includeAfter)
@@ -581,21 +581,24 @@ proc getContextWithMode(self: TextDocumentEditor, context: string): string {.exp
   ## Appends the current mode to context
   return context & "." & $self.currentMode
 
-proc updateTargetColumn*(self: TextDocumentEditor, cursor: SelectionCursor) {.expose("editor.text").} =
+proc updateTargetColumn*(self: TextDocumentEditor, cursor: SelectionCursor = Last) {.expose("editor.text").} =
   self.targetColumn = self.getCursor(cursor).column
 
 proc invertSelection(self: TextDocumentEditor) {.expose("editor.text").} =
   ## Inverts the current selection. Discards all but the last cursor.
   self.selection = (self.selection.last, self.selection.first)
 
-proc getText(self: TextDocumentEditor, selection: Selection): string {.expose("editor.text").} =
-  return self.document.contentString(selection)
+proc getText*(self: TextDocumentEditor, selection: Selection, inclusiveEnd: bool = false): string {.expose("editor.text").} =
+  return self.document.contentString(selection, inclusiveEnd)
 
-proc insert(self: TextDocumentEditor, selections: seq[Selection], text: string, notify: bool = true, record: bool = true): seq[Selection] {.expose("editor.text").} =
+proc insert*(self: TextDocumentEditor, selections: seq[Selection], text: string, notify: bool = true, record: bool = true): seq[Selection] {.expose("editor.text").} =
   return self.document.insert(selections, self.selections, [text], notify, record)
 
-proc delete(self: TextDocumentEditor, selections: seq[Selection], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] {.expose("editor.text").} =
+proc delete*(self: TextDocumentEditor, selections: seq[Selection], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] {.expose("editor.text").} =
   return self.document.delete(selections, self.selections, notify, record, inclusiveEnd=inclusiveEnd)
+
+proc edit*(self: TextDocumentEditor, selections: seq[Selection], texts: seq[string], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] {.expose("editor.text").} =
+  return self.document.edit(selections, self.selections, texts, notify, record, inclusiveEnd=inclusiveEnd)
 
 proc selectPrev(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.selectionHistory.len > 0:

@@ -42,14 +42,17 @@ proc getContextWithMode*(self: TextDocumentEditor; context: string): string =
   ## Appends the current mode to context
   editor_text_getContextWithMode_string_TextDocumentEditor_string_impl(self,
       context)
-proc updateTargetColumn*(self: TextDocumentEditor; cursor: SelectionCursor) =
+proc updateTargetColumn*(self: TextDocumentEditor;
+                         cursor: SelectionCursor = Last) =
   editor_text_updateTargetColumn_void_TextDocumentEditor_SelectionCursor_impl(
       self, cursor)
 proc invertSelection*(self: TextDocumentEditor) =
   ## Inverts the current selection. Discards all but the last cursor.
   editor_text_invertSelection_void_TextDocumentEditor_impl(self)
-proc getText*(self: TextDocumentEditor; selection: Selection): string =
-  editor_text_getText_string_TextDocumentEditor_Selection_impl(self, selection)
+proc getText*(self: TextDocumentEditor; selection: Selection;
+              inclusiveEnd: bool = false): string =
+  editor_text_getText_string_TextDocumentEditor_Selection_bool_impl(self,
+      selection, inclusiveEnd)
 proc insert*(self: TextDocumentEditor; selections: seq[Selection]; text: string;
              notify: bool = true; record: bool = true): seq[Selection] =
   editor_text_insert_seq_Selection_TextDocumentEditor_seq_Selection_string_bool_bool_impl(
@@ -59,6 +62,11 @@ proc delete*(self: TextDocumentEditor; selections: seq[Selection];
              inclusiveEnd: bool = false): seq[Selection] =
   editor_text_delete_seq_Selection_TextDocumentEditor_seq_Selection_bool_bool_bool_impl(
       self, selections, notify, record, inclusiveEnd)
+proc edit*(self: TextDocumentEditor; selections: seq[Selection];
+           texts: seq[string]; notify: bool = true; record: bool = true;
+           inclusiveEnd: bool = false): seq[Selection] =
+  editor_text_edit_seq_Selection_TextDocumentEditor_seq_Selection_seq_string_bool_bool_bool_impl(
+      self, selections, texts, notify, record, inclusiveEnd)
 proc selectPrev*(self: TextDocumentEditor) =
   editor_text_selectPrev_void_TextDocumentEditor_impl(self)
 proc selectNext*(self: TextDocumentEditor) =
