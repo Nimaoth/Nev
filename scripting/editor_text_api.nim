@@ -83,9 +83,9 @@ proc indent*(self: TextDocumentEditor) =
   editor_text_indent_void_TextDocumentEditor_impl(self)
 proc unindent*(self: TextDocumentEditor) =
   editor_text_unindent_void_TextDocumentEditor_impl(self)
-proc undo*(self: TextDocumentEditor; checkpoint: string = "move") =
+proc undo*(self: TextDocumentEditor; checkpoint: string = "word") =
   editor_text_undo_void_TextDocumentEditor_string_impl(self, checkpoint)
-proc redo*(self: TextDocumentEditor; checkpoint: string = "move") =
+proc redo*(self: TextDocumentEditor; checkpoint: string = "word") =
   editor_text_redo_void_TextDocumentEditor_string_impl(self, checkpoint)
 proc addNextCheckpoint*(self: TextDocumentEditor; checkpoint: string) =
   editor_text_addNextCheckpoint_void_TextDocumentEditor_string_impl(self,

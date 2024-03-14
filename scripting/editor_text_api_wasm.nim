@@ -533,7 +533,7 @@ proc unindent*(self: TextDocumentEditor) =
 
 proc editor_text_undo_void_TextDocumentEditor_string_wasm(arg: cstring): cstring {.
     importc.}
-proc undo*(self: TextDocumentEditor; checkpoint: string = "move") =
+proc undo*(self: TextDocumentEditor; checkpoint: string = "word") =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:
@@ -552,7 +552,7 @@ proc undo*(self: TextDocumentEditor; checkpoint: string = "move") =
 
 proc editor_text_redo_void_TextDocumentEditor_string_wasm(arg: cstring): cstring {.
     importc.}
-proc redo*(self: TextDocumentEditor; checkpoint: string = "move") =
+proc redo*(self: TextDocumentEditor; checkpoint: string = "word") =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:
