@@ -1006,9 +1006,11 @@ proc undo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
   if self.undoOps.len == 0:
     return
 
+  result = some @oldSelection
+
   while self.undoOps.len > 0:
     let op = self.undoOps.pop
-    result = self.doUndo(op, oldSelection, useOldSelection, self.redoOps).some
+    result = self.doUndo(op, result.get, useOldSelection, self.redoOps).some
     if untilCheckpoint.len == 0 or untilCheckpoint in op.checkpoints:
       break
 
@@ -1041,9 +1043,11 @@ proc redo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
   if self.redoOps.len == 0:
     return
 
+  result = some @oldSelection
+
   while self.redoOps.len > 0:
     let op = self.redoOps.pop
-    result = self.doRedo(op, oldSelection, useOldSelection, self.undoOps).some
+    result = self.doRedo(op, result.get, useOldSelection, self.undoOps).some
     if untilCheckpoint.len == 0 or (self.redoOps.len > 0 and untilCheckpoint in self.redoOps.last.checkpoints):
       break
 
