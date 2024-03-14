@@ -1001,6 +1001,7 @@ proc doUndo(self: TextDocument, op: UndoOp, oldSelection: openArray[Selection], 
     result = op.oldSelection
 
 proc undo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelection: bool, untilCheckpoint: string = ""): Option[seq[Selection]] =
+  # debugf"undo {untilCheckpoint}"
   result = seq[Selection].none
 
   if self.undoOps.len == 0:
@@ -1038,6 +1039,7 @@ proc doRedo(self: TextDocument, op: UndoOp, oldSelection: openArray[Selection], 
     result = op.oldSelection
 
 proc redo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelection: bool, untilCheckpoint: string = ""): Option[seq[Selection]] =
+  # debugf"redo {untilCheckpoint}"
   result = seq[Selection].none
 
   if self.redoOps.len == 0:

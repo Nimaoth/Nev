@@ -71,6 +71,7 @@ proc vimSelectLast(editor: TextDocumentEditor, move: string, count: int = 1) {.e
   for i in 0..<max(count, 1):
     editor.runAction(action, arg)
   editor.selections = editor.selections.mapIt(it.last.toSelection)
+  deleteInclusiveEnd = true
 
 proc vimSelect(editor: TextDocumentEditor, move: string, count: int = 1) {.expose("vim-select").} =
   # infof"vimSelect '{move}' {count}"
@@ -85,6 +86,8 @@ proc vimRedo(editor: TextDocumentEditor) {.expose("vim-redo").} =
   editor.redo(vimCurrentUndoCheckpoint)
 
 proc copySelection(editor: TextDocumentEditor): Selections =
+  ## Copies the selected text
+  ## If line selection mode is enabled then it also extends the selection so that deleting it will also delete the line itself
   yankedLines = selectLines
   editor.copy(inclusiveEnd=true)
   let selections = editor.selections
@@ -108,18 +111,26 @@ proc copySelection(editor: TextDocumentEditor): Selections =
 
   return selections.mapIt(it.normalized.first.toSelection)
 
-proc vimDeleteSelection(editor: TextDocumentEditor, forceInclusiveEnd: bool) {.expose("vim-delete-selection").} =
-  let selections = editor.copySelection()
-  discard editor.delete(editor.selections, inclusiveEnd=deleteInclusiveEnd or forceInclusiveEnd)
+proc vimDeleteSelection(editor: TextDocumentEditor, forceInclusiveEnd: bool, oldSelections: Option[Selections] = Selections.none) {.expose("vim-delete-selection").} =
+  let newSelections = editor.copySelection()
+  let selectionsToDelete = editor.selections
+  if oldSelections.isSome:
+    editor.selections = oldSelections.get
+  editor.addNextCheckpoint("insert")
+  discard editor.delete(selectionsToDelete, inclusiveEnd=deleteInclusiveEnd or forceInclusiveEnd)
   deleteInclusiveEnd = true
-  editor.selections = selections
+  editor.selections = newSelections
   editor.setMode "normal"
 
-proc vimChangeSelection*(editor: TextDocumentEditor, forceInclusiveEnd: bool) {.expose("vim-change-selection").} =
-  let selections = editor.copySelection()
-  discard editor.delete(editor.selections, inclusiveEnd=deleteInclusiveEnd or forceInclusiveEnd)
+proc vimChangeSelection*(editor: TextDocumentEditor, forceInclusiveEnd: bool, oldSelections: Option[Selections] = Selections.none) {.expose("vim-change-selection").} =
+  let newSelections = editor.copySelection()
+  let selectionsToDelete = editor.selections
+  if oldSelections.isSome:
+    editor.selections = oldSelections.get
+  editor.addNextCheckpoint("insert")
+  discard editor.delete(selectionsToDelete, inclusiveEnd=deleteInclusiveEnd or forceInclusiveEnd)
   deleteInclusiveEnd = true
-  editor.selections = selections
+  editor.selections = newSelections
   editor.setMode "insert"
 
 proc vimYankSelection*(editor: TextDocumentEditor) {.expose("vim-yank-selection").} =
@@ -135,17 +146,19 @@ proc vimSelectMove(editor: TextDocumentEditor, move: string, count: int = 1) {.e
 
 proc vimDeleteMove(editor: TextDocumentEditor, move: string, count: int = 1) {.expose("vim-delete-move").} =
   # infof"vimDeleteMove '{move}' {count}"
+  let oldSelections = editor.selections
   let (action, arg) = move.parseAction
   for i in 0..<max(count, 1):
     editor.runAction(action, arg)
-  editor.vimDeleteSelection(false)
+  editor.vimDeleteSelection(false, oldSelections=oldSelections.some)
 
 proc vimChangeMove(editor: TextDocumentEditor, move: string, count: int = 1) {.expose("vim-change-move").} =
   # infof"vimChangeMove '{move}' {count}"
+  let oldSelections = editor.selections
   let (action, arg) = move.parseAction
   for i in 0..<max(count, 1):
     editor.runAction(action, arg)
-  editor.vimChangeSelection(false)
+  editor.vimChangeSelection(false, oldSelections=oldSelections.some)
 
 proc vimYankMove(editor: TextDocumentEditor, move: string, count: int = 1) {.expose("vim-yank-move").} =
   # infof"vimYankMove '{move}' {count}"
@@ -536,6 +549,7 @@ proc vimMoveToStartOfLine(editor: TextDocumentEditor, count: int = 1) =
 
 proc vimPaste(editor: TextDocumentEditor, register: string = "") {.expose("vim-paste").} =
   # infof"vimPaste {register}, lines: {yankedLines}"
+  editor.addNextCheckpoint "insert"
   if yankedLines:
     editor.moveLast "line", Both
     editor.insertText "\n", autoIndent=false
@@ -612,7 +626,6 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
       setOption "editor.text.inclusive-selection", false
       setOption "editor.text.vim-motion-action", ""
       vimMotionNextMode[editor.id] = "insert"
-      editor.addNextCheckpoint("insert")
 
     of "visual":
       setOption "editor.text.inclusive-selection", true
@@ -690,7 +703,6 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommand "completion", "<C-n>", "select-next-completion"
   addTextCommand "completion", "<TAB>", "apply-selected-completion"
 
-  #
   addTextCommand "normal", "<move>", "vim-select-last <move>"
   addTextCommand "", "<?-count>d<move>", """vim-delete-move <move> <#count>"""
   addTextCommand "", "<?-count>c<move>", """vim-change-move <move> <#count>"""
@@ -837,28 +849,35 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommandBlock "normal", "a":
     editor.selections = editor.selections.mapIt(editor.doMoveCursorColumn(it.last, 1, wrap=false).toSelection)
     editor.setMode "insert"
+    editor.addNextCheckpoint "insert"
   addTextCommandBlock "", "A":
     editor.moveLast "line", Both
     editor.setMode "insert"
+    editor.addNextCheckpoint "insert"
   addTextCommandBlock "normal", "i":
     editor.setMode "insert"
+    editor.addNextCheckpoint "insert"
   addTextCommandBlock "", "I":
     editor.moveFirst "line-no-indent", Both
     editor.setMode "insert"
+    editor.addNextCheckpoint "insert"
   addTextCommandBlock "normal", "gI":
     editor.moveFirst "line", Both
     editor.setMode "insert"
+    editor.addNextCheckpoint "insert"
 
   addTextCommandBlock "normal", "o":
     editor.moveLast "line", Both
     editor.insertText "\n"
     editor.setMode "insert"
+    editor.addNextCheckpoint "insert"
 
   addTextCommandBlock "normal", "O":
     editor.moveFirst "line", Both
     editor.insertText "\n", autoIndent=false
     editor.vimMoveCursorLine -1
     editor.setMode "insert"
+    editor.addNextCheckpoint "insert"
 
   addTextCommand "", "<ESCAPE>", "set-mode", "normal"
   addTextCommand "", "<C-c>", "set-mode", "normal"
@@ -903,13 +922,15 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   addTextCommandBlock "", "dd":
     selectLines = true
+    let oldSelections = editor.selections
     editor.vimSelectLine()
-    editor.vimDeleteSelection(true)
+    editor.vimDeleteSelection(true, oldSelections=oldSelections.some)
     selectLines = false
 
   addTextCommandBlock "", "cc":
+    let oldSelections = editor.selections
     editor.vimSelectLine()
-    editor.vimChangeSelection(true)
+    editor.vimChangeSelection(true, oldSelections=oldSelections.some)
 
   addTextCommandBlock "", "yy":
     selectLines = true
@@ -918,13 +939,15 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     selectLines = false
 
   addTextCommandBlock "", "D":
+    let oldSelections = editor.selections
     editor.selections = editor.selections.mapIt (it.last, editor.vimMotionLine(it.last, 0).last)
-    editor.vimDeleteSelection(true)
+    editor.vimDeleteSelection(true, oldSelections=oldSelections.some)
     selectLines = false
 
   addTextCommandBlock "", "C":
+    let oldSelections = editor.selections
     editor.selections = editor.selections.mapIt (it.last, editor.vimMotionLine(it.last, 0).last)
-    editor.vimChangeSelection(true)
+    editor.vimChangeSelection(true, oldSelections=oldSelections.some)
     selectLines = false
 
   addTextCommandBlock "", "Y":
@@ -1027,7 +1050,7 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommand "", "<C-h>", "show-hover-for-current"
   addTextCommand "", "<C-r>", "select-prev"
   addTextCommand "", "<C-m>", "select-next"
-  addTextCommand "", "U", "redo"
+  addTextCommand "", "U", "vim-redo"
   addTextCommand "", "<C-z>", "vim-undo"
   addTextCommand "", "<C-y>", "vim-redo"
   addTextCommand "", "<C-k><C-c>", "toggle-line-comment"
