@@ -23,17 +23,21 @@ proc editor_text_mode_string_TextDocumentEditor_impl(self: TextDocumentEditor): 
 proc editor_text_getContextWithMode_string_TextDocumentEditor_string_impl(
     self: TextDocumentEditor; context: string): string  {.importc.}
 proc editor_text_updateTargetColumn_void_TextDocumentEditor_SelectionCursor_impl(
-    self: TextDocumentEditor; cursor: SelectionCursor)  {.importc.}
+    self: TextDocumentEditor; cursor: SelectionCursor = Last)  {.importc.}
 proc editor_text_invertSelection_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}
-proc editor_text_getText_string_TextDocumentEditor_Selection_impl(
-    self: TextDocumentEditor; selection: Selection): string  {.importc.}
+proc editor_text_getText_string_TextDocumentEditor_Selection_bool_impl(
+    self: TextDocumentEditor; selection: Selection; inclusiveEnd: bool = false): string  {.importc.}
 proc editor_text_insert_seq_Selection_TextDocumentEditor_seq_Selection_string_bool_bool_impl(
     self: TextDocumentEditor; selections: seq[Selection]; text: string;
     notify: bool = true; record: bool = true): seq[Selection]  {.importc.}
 proc editor_text_delete_seq_Selection_TextDocumentEditor_seq_Selection_bool_bool_bool_impl(
     self: TextDocumentEditor; selections: seq[Selection]; notify: bool = true;
     record: bool = true; inclusiveEnd: bool = false): seq[Selection]  {.importc.}
+proc editor_text_edit_seq_Selection_TextDocumentEditor_seq_Selection_seq_string_bool_bool_bool_impl(
+    self: TextDocumentEditor; selections: seq[Selection]; texts: seq[string];
+    notify: bool = true; record: bool = true; inclusiveEnd: bool = false): seq[
+    Selection]  {.importc.}
 proc editor_text_selectPrev_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}
 proc editor_text_selectNext_void_TextDocumentEditor_impl(

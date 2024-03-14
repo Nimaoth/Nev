@@ -228,7 +228,8 @@ proc getContextWithMode*(self: TextDocumentEditor; context: string): string =
 
 proc editor_text_updateTargetColumn_void_TextDocumentEditor_SelectionCursor_wasm(
     arg: cstring): cstring {.importc.}
-proc updateTargetColumn*(self: TextDocumentEditor; cursor: SelectionCursor) =
+proc updateTargetColumn*(self: TextDocumentEditor;
+                         cursor: SelectionCursor = Last) =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:
@@ -259,9 +260,10 @@ proc invertSelection*(self: TextDocumentEditor) =
       argsJsonString.cstring)
 
 
-proc editor_text_getText_string_TextDocumentEditor_Selection_wasm(arg: cstring): cstring {.
-    importc.}
-proc getText*(self: TextDocumentEditor; selection: Selection): string =
+proc editor_text_getText_string_TextDocumentEditor_Selection_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc getText*(self: TextDocumentEditor; selection: Selection;
+              inclusiveEnd: bool = false): string =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:
@@ -273,8 +275,13 @@ proc getText*(self: TextDocumentEditor; selection: Selection): string =
       selection
     else:
       selection.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      inclusiveEnd
+    else:
+      inclusiveEnd.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_getText_string_TextDocumentEditor_Selection_wasm(
+  let res {.used.} = editor_text_getText_string_TextDocumentEditor_Selection_bool_wasm(
       argsJsonString.cstring)
   result = parseJson($res).jsonTo(typeof(result))
 
@@ -348,6 +355,48 @@ proc delete*(self: TextDocumentEditor; selections: seq[Selection];
       inclusiveEnd.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_delete_seq_Selection_TextDocumentEditor_seq_Selection_bool_bool_bool_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_text_edit_seq_Selection_TextDocumentEditor_seq_Selection_seq_string_bool_bool_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc edit*(self: TextDocumentEditor; selections: seq[Selection];
+           texts: seq[string]; notify: bool = true; record: bool = true;
+           inclusiveEnd: bool = false): seq[Selection] =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when seq[Selection] is JsonNode:
+      selections
+    else:
+      selections.toJson()
+  argsJson.add block:
+    when seq[string] is JsonNode:
+      texts
+    else:
+      texts.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      notify
+    else:
+      notify.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      record
+    else:
+      record.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      inclusiveEnd
+    else:
+      inclusiveEnd.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_edit_seq_Selection_TextDocumentEditor_seq_Selection_seq_string_bool_bool_bool_wasm(
       argsJsonString.cstring)
   result = parseJson($res).jsonTo(typeof(result))
 
