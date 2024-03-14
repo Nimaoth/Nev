@@ -780,6 +780,9 @@ proc addNextCheckpoint*(self: TextDocumentEditor, checkpoint: string) {.expose("
   self.document.addNextCheckpoint checkpoint
 
 proc printUndoHistory*(self: TextDocumentEditor, max: int = 50) {.expose("editor.text").} =
+  for i in countup(0, self.document.redoOps.high):
+    debugf"redo: {self.document.redoOps[i]}"
+  debugf"-----"
   for i in countdown(self.document.undoOps.high, 0):
     debugf"undo: {self.document.undoOps[i]}"
 
