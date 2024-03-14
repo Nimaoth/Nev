@@ -533,7 +533,7 @@ proc unindent*(self: TextDocumentEditor) =
 
 proc editor_text_undo_void_TextDocumentEditor_string_wasm(arg: cstring): cstring {.
     importc.}
-proc undo*(self: TextDocumentEditor; checkpoint: string = "word") =
+proc undo*(self: TextDocumentEditor; checkpoint: string = "move") =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:
@@ -552,7 +552,7 @@ proc undo*(self: TextDocumentEditor; checkpoint: string = "word") =
 
 proc editor_text_redo_void_TextDocumentEditor_string_wasm(arg: cstring): cstring {.
     importc.}
-proc redo*(self: TextDocumentEditor; checkpoint: string = "word") =
+proc redo*(self: TextDocumentEditor; checkpoint: string = "move") =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:
@@ -585,6 +585,25 @@ proc addNextCheckpoint*(self: TextDocumentEditor; checkpoint: string) =
       checkpoint.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_addNextCheckpoint_void_TextDocumentEditor_string_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_printUndoHistory_void_TextDocumentEditor_int_wasm(arg: cstring): cstring {.
+    importc.}
+proc printUndoHistory*(self: TextDocumentEditor; max: int = 50) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when int is JsonNode:
+      max
+    else:
+      max.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_printUndoHistory_void_TextDocumentEditor_int_wasm(
       argsJsonString.cstring)
 
 

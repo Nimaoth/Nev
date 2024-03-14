@@ -2,7 +2,7 @@ import std/[os, strutils, sequtils, sugar, options, json, strformat, tables]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import patty, bumpy
-import misc/[id, util, event, custom_logger, custom_async, custom_unicode, myjsonutils, regex]
+import misc/[id, util, event, custom_logger, custom_async, custom_unicode, myjsonutils, regex, array_set]
 import platform/[filesystem]
 import language/[languages, language_server_base]
 import workspaces/[workspace]
@@ -30,7 +30,7 @@ type
       children: seq[UndoOp]
 
 proc `$`*(op: UndoOp): string =
-  result = fmt"{{{op.kind} ({op.oldSelection})"
+  result = fmt"{{{op.kind} (old: {op.oldSelection}, checkpoints: {op.checkpoints})"
   if op.kind == Delete: result.add fmt", selections = {op.selection}}}"
   if op.kind == Insert: result.add fmt", selections = {op.cursor}, text: '{op.text}'}}"
   if op.kind == Nested: result.add fmt", {op.children}}}"
@@ -745,7 +745,7 @@ proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection:
     self.undoOps.add undoOp
     self.redoOps = @[]
 
-  self.nextCheckpoints = @[]
+    self.nextCheckpoints = @[]
 
 proc getNodeRange*(self: TextDocument, selection: Selection, parentIndex: int = 0, siblingIndex: int = 0): Option[Selection] =
   result = Selection.none
@@ -863,6 +863,10 @@ proc traverse*(line, column: int, text: openArray[char]): (int, int) =
   return (line, column)
 
 proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true): seq[Selection] =
+  # be careful with logging inside this function, because the logs are written to another document using this function to insert, which can cause infinite recursion
+  # when inserting a log line logs something.
+  # Use echo for debugging instead
+
   result = self.clampAndMergeSelections selections
 
   var undoOp = UndoOp(kind: Nested, children: @[], oldSelection: @oldSelection)
@@ -965,7 +969,7 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
     self.undoOps.add undoOp
     self.redoOps = @[]
 
-  self.nextCheckpoints = @[]
+    self.nextCheckpoints = @[]
 
 proc edit*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true): seq[Selection] =
   let selections = selections.map (s) => s.normalized
@@ -1044,7 +1048,7 @@ proc redo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
       break
 
 proc addNextCheckpoint*(self: TextDocument, checkpoint: string) =
-  self.nextCheckpoints.add checkpoint
+  self.nextCheckpoints.incl checkpoint
 
 proc isLineEmptyOrWhitespace*(self: TextDocument, line: int): bool =
   if line > self.lines.high:

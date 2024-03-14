@@ -132,11 +132,15 @@ proc `selections=`*(self: TextDocumentEditor, selections: Selections) =
     self.selectionHistory.addLast self.selectionsInternal
     if self.selectionHistory.len > 100:
       discard self.selectionHistory.popFirst
+
   self.selectionsInternal = selections
   self.cursorVisible = true
+
   if self.blinkCursorTask.isNotNil and self.active:
     self.blinkCursorTask.reschedule()
+
   self.showHover = false
+  # self.document.addNextCheckpoint("move")
   self.markDirty()
 
 proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
@@ -147,11 +151,15 @@ proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
     self.selectionHistory.addLast self.selectionsInternal
     if self.selectionHistory.len > 100:
       discard self.selectionHistory.popFirst
+
   self.selectionsInternal = @[self.clampSelection selection]
   self.cursorVisible = true
+
   if self.blinkCursorTask.isNotNil and self.active:
     self.blinkCursorTask.reschedule()
+
   self.showHover = false
+  # self.document.addNextCheckpoint("move")
   self.markDirty()
 
 proc `targetSelection=`*(self: TextDocumentEditor, selection: Selection) =
@@ -442,7 +450,7 @@ proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int, w
 
   template currentLine: openArray[char] = self.document.lines[cursor.line].toOpenArray
 
-  let lastIndex = self.document.lastValidIndex(cursor.line, includeAfter)
+  var lastIndex = self.document.lastValidIndex(cursor.line, includeAfter)
 
   if offset > 0:
     for i in 0..<offset:
@@ -452,6 +460,7 @@ proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int, w
         if cursor.line < self.document.lines.high:
           cursor.line = cursor.line + 1
           cursor.column = 0
+          lastIndex = self.document.lastValidIndex(cursor.line, includeAfter)
           continue
         else:
           cursor.column = lastIndex
@@ -466,6 +475,7 @@ proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int, w
           break
         if cursor.line > 0:
           cursor.line = cursor.line - 1
+          lastIndex = self.document.lastValidIndex(cursor.line, includeAfter)
           cursor.column = lastIndex
           continue
         else:
@@ -768,6 +778,10 @@ proc redo*(self: TextDocumentEditor, checkpoint: string = "word") {.expose("edit
 
 proc addNextCheckpoint*(self: TextDocumentEditor, checkpoint: string) {.expose("editor.text").} =
   self.document.addNextCheckpoint checkpoint
+
+proc printUndoHistory*(self: TextDocumentEditor, max: int = 50) {.expose("editor.text").} =
+  for i in countdown(self.document.undoOps.high, 0):
+    debugf"undo: {self.document.undoOps[i]}"
 
 proc copyAsync*(self: TextDocumentEditor, register: string, inclusiveEnd: bool): Future[void] {.async.} =
   var text = ""
