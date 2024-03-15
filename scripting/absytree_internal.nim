@@ -314,6 +314,9 @@ proc editor_text_cancelDelayedHideHover_void_TextDocumentEditor_impl*(
 proc editor_text_hideHoverDelayed_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
+proc editor_text_showDiagnosticsForCurrent_void_TextDocumentEditor_impl*(
+    self: TextDocumentEditor) =
+  discard
 proc editor_text_isRunningSavedCommands_bool_TextDocumentEditor_impl*(
     self: TextDocumentEditor): bool =
   discard

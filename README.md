@@ -158,5 +158,6 @@ More details in [Getting Started](docs/getting_started.md)
 
 ## LSP
 - Handle rust lsp paths with lowercase letter like d:/path/to/file
+- command for inserting the inlay hint under the cursor
 
 [Test report](https://nimaoth.github.io/Absytree/testresults.html)

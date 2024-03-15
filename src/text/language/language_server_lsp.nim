@@ -19,11 +19,6 @@ proc deinitLanguageServers*() =
 
   languageServers.clear()
 
-proc toPosition*(cursor: Cursor): Position = Position(line: cursor.line, character: cursor.column)
-proc toRange*(selection: Selection): Range = Range(start: selection.first.toPosition, `end`: selection.last.toPosition)
-proc toCursor*(position: Position): Cursor = (position.line, position.character)
-proc toSelection*(`range`: Range): Selection = (`range`.start.toCursor, `range`.`end`.toCursor)
-
 method connect*(self: LanguageServerLSP) =
   log lvlInfo, fmt"Connecting document"
   self.connected.inc
