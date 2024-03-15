@@ -31,6 +31,13 @@ else:
 proc shouldIgnoreAsContextLine(self: TextDocument, line: int): bool
 proc clampToLine(document: TextDocument, selection: Selection, line: StyledLine): tuple[first: RuneIndex, last: RuneIndex]
 
+proc `*`(c: Color, v: Color): Color {.inline.} =
+  ## Multiply color by a value.
+  result.r = c.r * v.r
+  result.g = c.g * v.g
+  result.b = c.b * v.b
+  result.a = c.a * v.a
+
 proc getCursorPos(self: TextDocumentEditor, textRuneLen: int, line: int, startOffset: RuneIndex, pos: Vec2): int =
   var offsetFromLeft = pos.x / self.platform.charWidth
   if self.isThickCursor():
@@ -59,19 +66,27 @@ proc renderLine*(
 
   let hasDiagnostic = self.diagnosticsPerLine.contains(lineNumber)
   let diagnosticIndices = if hasDiagnostic: self.diagnosticsPerLine[lineNumber] else: @[]
-  let diagnosticMessage = if hasDiagnostic:
+  var diagnosticColorName = "editorHint.foreground"
+  var diagnosticMessage: string = ""
+  if hasDiagnostic:
     let diagnostic {.cursor.} = self.document.currentDiagnostics[diagnosticIndices[0]]
-    if diagnostic.code.getSome(code):
+    if diagnostic.message.len < 100:
+      diagnosticMessage = diagnostic.message
+    elif diagnostic.code.getSome(code):
       if code.kind == JInt:
-        $code.getInt
+        diagnosticMessage = $code.getInt
       elif code.kind == JString:
-        code.getStr
-      else:
-        "???"
+        diagnosticMessage = code.getStr
     else:
-      diagnostic.message
-  else:
-    ""
+      diagnosticMessage = diagnostic.message
+
+    if diagnostic.severity.getSome(severity):
+      diagnosticColorName = case severity
+      of Error: "editorError.foreground"
+      of Warning: "editorWarning.foreground"
+      of Information: "editorInfo.foreground"
+      of Hint: "editorHint.foreground"
+
   let diagnosticMessageLen = diagnosticMessage.runeLen
   let diagnosticMessageWidth = diagnosticMessageLen.float * builder.charWidth
 
@@ -291,21 +306,6 @@ proc renderLine*(
           partIndex += 1
           subLinePartIndex += 1
 
-        if hasDiagnostic and partIndex >= line.parts.len:
-          for _ in 0..0:
-            insertDiagnostic = false
-            if diagnosticMessageWidth > lineWidth - lastPartXW:
-              if subLinePartIndex > 0:
-                subLineIndex += 1
-                subLinePartIndex = 0
-                insertDiagnostic = true
-                break
-
-            # todo: align right
-            builder.panel(&{DrawText, FillBackground, SizeToContentX, SizeToContentY}, text = diagnosticMessage, textColor = color(1, 0, 0), backgroundColor = backgroundColor):
-              defer:
-                lastPartXW = currentNode.xw
-
         # Fill rest of line with background
         builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = backgroundColor):
           capture line, currentNode:
@@ -346,6 +346,22 @@ proc renderLine*(
                 self.updateTargetColumn(Last)
                 self.app.tryActivateEditor(self)
                 self.markDirty()
+
+          if hasDiagnostic and partIndex >= line.parts.len:
+            for _ in 0..0:
+              insertDiagnostic = false
+              if diagnosticMessageWidth > lineWidth - lastPartXW:
+                if subLinePartIndex > 0:
+                  subLineIndex += 1
+                  subLinePartIndex = 0
+                  insertDiagnostic = true
+                  break
+
+              let diagnosticColor = theme.color(@[diagnosticColorName, "editor.foreground"], color(1, 1, 1))
+              var diagnosticPanel: UINode = nil
+              builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = diagnosticMessage, textColor = diagnosticColor, backgroundColor = backgroundColor):
+                diagnosticPanel = currentNode
+              diagnosticPanel.rawX = diagnosticPanel.parent.bounds.w - diagnosticPanel.bounds.w
 
           if lineEndColor.getSome(color):
             builder.panel(&{FillY, FillBackground}, w = builder.charWidth, backgroundColor = color)
@@ -508,7 +524,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       # selections and highlights
       var selectionsClampedOnLine = selectionsPerLine.getOrDefault(i, @[]).map (s) => self.document.clampToLine(s.normalized, styledLine)
       var highlightsClampedOnLine: seq[tuple[first: RuneIndex, last: RuneIndex, color: Color]] =
-        self.customHighlights.getOrDefault(i, @[]).map (s) => (let x = self.document.clampToLine(s.selection.normalized, styledLine); (x[0], x[1], parseColor(s.color)))
+        self.customHighlights.getOrDefault(i, @[]).map (s) => (let x = self.document.clampToLine(s.selection.normalized, styledLine); (x[0], x[1], parseColor(s.color) * s.tint))
 
       selectionsClampedOnLine.sort((a, b) => cmp(a.first, b.first), Ascending)
       highlightsClampedOnLine.sort((a, b) => cmp(a.first, b.first), Ascending)
@@ -644,13 +660,20 @@ proc createHover(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
   hoverPanel.rawY = cursorBounds.y
   hoverPanel.pivot = vec2(0, 1)
 
-proc createDiagnostics(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cursorBounds: Rect) =
+proc createDiagnostics(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cursorBounds: Rect, backgroundColor: Color) =
   let totalLineHeight = app.platform.totalLineHeight
   let charWidth = app.platform.charWidth
 
-  let backgroundColor = app.theme.color(@["editorHoverWidget.background", "panel.background"], color(30/255, 30/255, 30/255))
-  let borderColor = app.theme.color(@["editorHoverWidget.border", "focusBorder"], color(30/255, 30/255, 30/255))
-  let docsColor = app.theme.color("editor.foreground", color(1, 1, 1))
+  let docsColorName = if self.currentDiagnostic.severity.getSome(severity):
+    case severity
+    of Error: "editorError.foreground"
+    of Warning: "editorWarning.foreground"
+    of Information: "editorInfo.foreground"
+    of Hint: "editorHint.foreground"
+  else:
+    "editorHint.foreground"
+
+  let docsColor = app.theme.color(@[docsColorName, "editor.foreground"], color(1, 1, 1))
 
   let numLinesToShow = min(10, self.currentDiagnostic.message.countLines)
   let (top, bottom) = (cursorBounds.yh.float, cursorBounds.yh.float + totalLineHeight * numLinesToShow.float)
@@ -663,27 +686,15 @@ proc createDiagnostics(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
     clampedX = max(builder.root.w - totalWidth, 0)
 
   var hoverPanel: UINode = nil
-  builder.panel(&{SizeToContentX, MaskContent, FillBackground, DrawBorder, MouseHover, SnapInitialBounds, AnimateBounds}, x = clampedX, y = top, h = height, pivot = vec2(0, 0), backgroundColor = backgroundColor, borderColor = borderColor, userId = self.hoverId.newPrimaryId):
+  builder.panel(&{SizeToContentX, MaskContent, FillBackground, MouseHover}, x = clampedX, y = top, h = height, backgroundColor = backgroundColor, userId = self.diagnosticsId.newPrimaryId):
     hoverPanel = currentNode
     var textNode: UINode = nil
-    # todo: height
-    builder.panel(&{DrawText, SizeToContentX}, x = 0, y = self.hoverScrollOffset, h = 1000, text = self.currentDiagnostic.message, textColor = docsColor):
+    builder.panel(&{DrawText, SizeToContentX}, x = 0, h = 1000, text = self.currentDiagnostic.message, textColor = docsColor):
       textNode = currentNode
 
-    onScroll:
-      let scrollSpeed = app.asConfigProvider.getValue("text.hover-scroll-speed", 20.0)
-      # todo: clamp bottom
-      self.hoverScrollOffset = clamp(self.hoverScrollOffset + delta.y * scrollSpeed, -1000, 0)
-      self.markDirty()
-
-    onBeginHover:
-      self.cancelDelayedHideHover()
-
-    onEndHover:
-      self.hideHoverDelayed()
-
+  hoverPanel.rawX = hoverPanel.parent.bounds.w - hoverPanel.bounds.w
   hoverPanel.rawY = cursorBounds.y
-  hoverPanel.pivot = vec2(1, 0)
+  hoverPanel.pivot = vec2(0, 0)
 
 proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cursorBounds: Rect) =
   let totalLineHeight = app.platform.totalLineHeight
@@ -814,9 +825,9 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
     result.add proc() =
       self.createHover(builder, app, self.lastHoverLocationBounds.get(rect(100, 100, 10, 10)))
 
-  if self.showDiagnostic:
+  if self.showDiagnostic and self.currentDiagnosticLine != -1:
     result.add proc() =
-      self.createDiagnostics(builder, app, self.lastDiagnosticLocationBounds.get(rect(100, 100, 10, 10)))
+      self.createDiagnostics(builder, app, self.lastDiagnosticLocationBounds.get(rect(100, 100, 10, 10)), backgroundColor)
 
 proc shouldIgnoreAsContextLine(self: TextDocument, line: int): bool =
   let indent = self.getIndentLevelForLine(line)

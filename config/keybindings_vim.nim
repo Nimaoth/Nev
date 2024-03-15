@@ -565,11 +565,13 @@ proc vimDeleteLeft*(editor: TextDocumentEditor) =
   yankedLines = selectLines
   editor.copy()
   editor.deleteLeft()
+  editor.addNextCheckpoint "insert"
 
 proc vimDeleteRight*(editor: TextDocumentEditor) =
   yankedLines = selectLines
   editor.copy()
   editor.deleteRight()
+  editor.addNextCheckpoint "insert"
 
 expose "vim-delete-left", vimDeleteLeft
 
