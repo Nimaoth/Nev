@@ -1,4 +1,5 @@
 import std/[strutils, sequtils, sugar, options, json, streams, strformat, tables, deques, sets, algorithm]
+import chroma
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_matching, custom_unicode, delayed_task, myjsonutils, regex]
@@ -17,7 +18,7 @@ logCategory "texted"
 createJavascriptPrototype("editor.text")
 
 let searchResultsId = newId()
-let diagnosticsId = newId()
+let diagnosticsHighlightId = newId()
 
 type
   Command = object
@@ -35,6 +36,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   cursorsId*: Id
   completionsId*: Id
   hoverId*: Id
+  diagnosticsId*: Id
   lastCursorLocationBounds*: Option[Rect]
   lastHoverLocationBounds*: Option[Rect]
   lastDiagnosticLocationBounds*: Option[Rect]
@@ -52,7 +54,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   styledTextOverrides: Table[int, seq[tuple[cursor: Cursor, text: string, scope: string]]]
 
-  customHighlights*: Table[int, seq[tuple[id: Id, selection: Selection, color: string]]]
+  customHighlights*: Table[int, seq[tuple[id: Id, selection: Selection, color: string, tint: Color]]]
 
   targetColumn: int
   hideCursorWhenInactive*: bool
@@ -75,7 +77,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   # line index to sequence of indices into document.currentDiagnostics
   diagnosticsPerLine*: Table[int, seq[int]]
-  showDiagnostic*: bool
+  showDiagnostic*: bool = false
   currentDiagnosticLine*: int
   currentDiagnostic*: lsp_types.Diagnostic
 
@@ -127,6 +129,7 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
 proc extendSelectionWithMove*(self: TextDocumentEditor, selection: Selection, move: string, count: int = 0): Selection
 proc updateTargetColumn*(self: TextDocumentEditor, cursor: SelectionCursor = Last)
 proc updateInlayHints*(self: TextDocumentEditor)
+proc updateDiagnosticsForCurrent*(self: TextDocumentEditor)
 
 proc clampCursor*(self: TextDocumentEditor, cursor: Cursor, includeAfter: bool = true): Cursor = self.document.clampCursor(cursor, includeAfter)
 
@@ -155,6 +158,9 @@ proc `selections=`*(self: TextDocumentEditor, selections: Selections) =
 
   self.showHover = false
   # self.document.addNextCheckpoint("move")
+
+  self.updateDiagnosticsForCurrent()
+
   self.markDirty()
 
 proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
@@ -174,6 +180,9 @@ proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
 
   self.showHover = false
   # self.document.addNextCheckpoint("move")
+
+  self.updateDiagnosticsForCurrent()
+
   self.markDirty()
 
 proc `targetSelection=`*(self: TextDocumentEditor, selection: Selection) =
@@ -253,14 +262,14 @@ proc clearCustomHighlights(self: TextDocumentEditor, id: Id) =
       if highlights[i].id == id:
         highlights.removeSwap(i)
 
-proc addCustomHighlight(self: TextDocumentEditor, id: Id, selection: Selection, color: string) =
+proc addCustomHighlight(self: TextDocumentEditor, id: Id, selection: Selection, color: string, tint: Color = color(1, 1, 1)) =
   # customHighlights*: Table[int, seq[(Id, Selection, Color)]]
   for lineSelection in self.splitSelectionIntoLines(selection):
     assert lineSelection.first.line == lineSelection.last.line
     if self.customHighlights.contains(selection.first.line):
-      self.customHighlights[selection.first.line].add (id, selection, color)
+      self.customHighlights[selection.first.line].add (id, selection, color, tint)
     else:
-      self.customHighlights[selection.first.line] = @[(id, selection, color)]
+      self.customHighlights[selection.first.line] = @[(id, selection, color, tint)]
 
 proc updateSearchResults(self: TextDocumentEditor) =
   if self.searchRegex.isNone:
@@ -1694,6 +1703,22 @@ proc updateInlayHints*(self: TextDocumentEditor) =
   else:
     self.inlayHintsTask.reschedule()
 
+proc updateDiagnosticsForCurrent*(self: TextDocumentEditor) {.expose("editor.text").} =
+  let line = self.selection.last.line
+  if self.diagnosticsPerLine.contains(line):
+    let diagnostics {.cursor.} = self.diagnosticsPerLine[line]
+    let index = diagnostics[0]
+    if index >= self.document.currentDiagnostics.len:
+      self.currentDiagnosticLine = -1
+    else:
+      self.currentDiagnosticLine = line
+      self.currentDiagnostic = self.document.currentDiagnostics[index]
+      self.showDiagnostic = true
+  else:
+    self.currentDiagnosticLine = -1
+
+  self.markDirty()
+
 proc showDiagnosticsForCurrent*(self: TextDocumentEditor) {.expose("editor.text").} =
   let line = self.selection.last.line
   if self.showDiagnostic and self.currentDiagnostic.`range`.start.line == line:
@@ -2111,14 +2136,26 @@ proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
 
 proc handleDiagnosticsUpdated(self: TextDocumentEditor) =
   log lvlInfo, fmt"Got diagnostics for {self.document.filename}: {self.document.currentDiagnostics}"
-  self.clearCustomHighlights(diagnosticsId)
+  self.clearCustomHighlights(diagnosticsHighlightId)
 
   self.diagnosticsPerLine.clear()
 
   for i, d in self.document.currentDiagnostics:
     let selection = d.`range`.toSelection
-    self.addCustomHighlight(diagnosticsId, selection, "editorWarning.foreground")
+
+    let colorName = if d.severity.getSome(severity):
+      case severity
+      of Error: "editorError.foreground"
+      of Warning: "editorWarning.foreground"
+      of Information: "editorInfo.foreground"
+      of Hint: "editorHint.foreground"
+    else:
+      "editorHint.foreground"
+
+    self.addCustomHighlight(diagnosticsHighlightId, selection, colorName, color(1, 1, 1, 0.3))
     self.diagnosticsPerLine.mgetOrPut(selection.first.line, @[]).add i
+
+  self.updateDiagnosticsForCurrent()
 
 proc scrollToCursorAfterDelayAsync(self: TextDocumentEditor) {.async.} =
   await sleepAsync(32)
