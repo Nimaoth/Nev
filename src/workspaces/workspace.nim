@@ -1,5 +1,6 @@
-import std/[json, options, os]
-import misc/[custom_async, id, array_buffer, cancellation_token]
+import std/[json, options, os, strutils]
+import misc/[custom_async, id, array_buffer, cancellation_token, util]
+import platform/filesystem
 
 type
   WorkspaceInfo* = object
@@ -27,6 +28,11 @@ method loadFile*(self: WorkspaceFolder, relativePath: string): Future[string] {.
 method saveFile*(self: WorkspaceFolder, relativePath: string, content: string): Future[void] {.base.} = discard
 method saveFile*(self: WorkspaceFolder, relativePath: string, content: ArrayBuffer): Future[void] {.base.} = discard
 method getWorkspacePath*(self: WorkspaceFolder): string {.base.} = discard
+proc getAbsolutePath*(self: WorkspaceFolder, path: string): string =
+  if path.isAbsolute:
+    return path.normalizePathUnix
+  else:
+    (self.getWorkspacePath() / path).normalizePathUnix
 
 method getDirectoryListing*(self: WorkspaceFolder, relativePath: string): Future[DirectoryListing] {.base.} = discard
 

@@ -1,5 +1,5 @@
 import std/[json, strutils, strformat, macros, options]
-import misc/[custom_logger, async_http_client, websocket, util]
+import misc/[custom_logger, async_http_client, websocket, util, event]
 import scripting/expose
 from workspaces/workspace as ws import nil
 
@@ -33,6 +33,8 @@ type
     workspace*: Option[ws.WorkspaceFolder]
     serverCapabilities: ServerCapabilities
     fullDocumentSync*: bool = false
+    onMessage*: Event[tuple[verbosity: MessageType, message: string]]
+    onDiagnostics*: Event[PublicDiagnosticsParams]
 
 proc complete[T](future: ResolvableFuture[T], result: T) =
   when defined(js):
@@ -280,6 +282,16 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async.} =
         "documentSymbol": %*{},
         "inlayHint": %*{},
         "hover": %*{},
+        "publishDiagnostics": %*{
+          "relatedInformation": true,
+          "versionSupport": false,
+          "tagSupport": %*{
+              "valueSet": %*[1, 2]
+          },
+          "codeDescriptionSupport": true,
+          "dataSupport": true
+        },
+        "diagnostic": %*{},
       },
       "window": %*{
         "showDocument": %*{
@@ -331,7 +343,7 @@ when not defined(js):
   proc logProcessDebugOutput(process: AsyncProcess) {.async.} =
     while process.isAlive:
       let line = await process.recvErrorLine
-      # log(lvlDebug, fmt"[debug] {line}")
+      log(lvlDebug, fmt"[debug] {line}")
 
 proc sendInitializationRequest(client: LSPClient) {.async.} =
   log(lvlInfo, "Initializing client...")
@@ -526,6 +538,18 @@ proc getSymbols*(client: LSPClient, filename: string): Future[Response[DocumentS
 
   return (await client.sendRequest("textDocument/documentSymbol", params)).to DocumentSymbolResponse
 
+proc getDiagnostics*(client: LSPClient, filename: string): Future[Response[DocumentDiagnosticResponse]] {.async.} =
+  # debugf"[getSymbols] {filename.absolutePath}:{line}:{column}"
+  let path = client.translatePath(filename).await
+
+  client.cancelAllOf("textDocument/diagnostic")
+
+  let params = DocumentSymbolParams(
+    textDocument: TextDocumentIdentifier(uri: $path.toUri),
+  ).toJson
+
+  return (await client.sendRequest("textDocument/diagnostic", params)).to DocumentDiagnosticResponse
+
 proc getCompletions*(client: LSPClient, filename: string, line: int, column: int): Future[Response[CompletionList]] {.async.} =
   # debugf"[getCompletions] {filename.absolutePath}:{line}:{column}"
   let path = client.translatePath(filename).await
@@ -559,47 +583,47 @@ proc runAsync*(client: LSPClient) {.async.} =
     # debugf"[run] Waiting for response {(client.activeRequests.len)}"
     let response = await client.parseResponse()
     if response.isNil or response.kind != JObject:
-      # log(lvlError, fmt"[run] Bad response: {response}")
+      log(lvlError, fmt"[run] Bad response: {response}")
       continue
 
-    if not response.hasKey("id"):
-      # Response has no id, it's a notification
-      let meth = response["method"].getStr
-      case meth
-      of "window/logMessage", "window/showMessage":
-        let messageType =  response["params"]["type"].jsonTo MessageType
-        let level = case messageType
-        of Error: lvlError
-        of Warning: lvlWarn
-        of Info: lvlInfo
-        of Log: lvlDebug
-        let message = response["params"]["message"].jsonTo string
-        log(level, fmt"[{meth}] {message}")
-      of "textDocument/publishDiagnostics":
-        # todo
-        # debugf"textDocument/publishDiagnostics"
-        discard
-      else:
-        log(lvlInfo, fmt"[run] {response}")
+    try:
 
-    else:
-      # debugf"[LSP.run] {response}"
-      let id = response["id"].getInt
-      if client.activeRequests.contains(id):
-        # debugf"[LSP.run] Complete request {id}"
-        let parsedResponse = response.toResponse JsonNode
-        let (meth, future) = client.activeRequests[id]
-        future.complete parsedResponse
-        client.activeRequests.del(id)
-        let index = client.requestsPerMethod[meth].find(id)
-        assert index != -1
-        client.requestsPerMethod[meth].delete index
-      elif client.canceledRequests.contains(id):
-        # Request was canceled
-        # debugf"[LSP.run] Received response for canceled request {id}"
-        client.canceledRequests.excl id
+      if not response.hasKey("id"):
+        # Response has no id, it's a notification
+        let meth = response["method"].getStr
+        case meth
+        of "window/logMessage", "window/showMessage":
+          let messageType =  response["params"]["type"].jsonTo MessageType
+          let message = response["params"]["message"].jsonTo string
+          client.onMessage.invoke (messageType, message)
+
+        of "textDocument/publishDiagnostics":
+          let params = response["params"].jsonTo(PublicDiagnosticsParams, JOptions(allowMissingKeys: true, allowExtraKeys: true))
+          client.onDiagnostics.invoke params
+
+        else:
+          log(lvlInfo, fmt"[run] {response}")
+
       else:
-        log(lvlError, fmt"[run] error: received response with id {id} but got no active request for that id: {response}")
+        # debugf"[LSP.run] {response}"
+        let id = response["id"].getInt
+        if client.activeRequests.contains(id):
+          # debugf"[LSP.run] Complete request {id}"
+          let parsedResponse = response.toResponse JsonNode
+          let (meth, future) = client.activeRequests[id]
+          future.complete parsedResponse
+          client.activeRequests.del(id)
+          let index = client.requestsPerMethod[meth].find(id)
+          assert index != -1
+          client.requestsPerMethod[meth].delete index
+        elif client.canceledRequests.contains(id):
+          # Request was canceled
+          # debugf"[LSP.run] Received response for canceled request {id}"
+          client.canceledRequests.excl id
+        else:
+          log(lvlError, fmt"[run] error: received response with id {id} but got no active request for that id: {response}")
+    except:
+      log lvlError, &"[run] error: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
 proc run*(client: LSPClient) =
   asyncCheck client.runAsync()
