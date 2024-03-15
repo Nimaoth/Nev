@@ -1508,6 +1508,8 @@ proc openWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder): Optio
   defer:
     self.platform.requestRender()
 
+  let path = folder.getAbsolutePath(path)
+
   log lvlInfo, fmt"[openWorkspaceFile] Open file '{path}' in workspace {folder.name} ({folder.id})"
   if self.tryOpenExisting(path, folder.some).getSome(editor):
     log lvlInfo, fmt"[openWorkspaceFile] found existing editor"

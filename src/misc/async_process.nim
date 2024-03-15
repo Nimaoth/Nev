@@ -146,14 +146,18 @@ proc readInput(chan: ptr Channel[Stream], serverDiedNotifications: ptr Channel[b
       break
 
     while true:
-      let c = stream.readChar()
+      try:
+        let c = stream.readChar()
 
-      data[].send c
+        data[].send c
 
-      if c == '\0':
-        # echo "server died"
-        data2[].send string.none
-        serverDiedNotifications[].send true
+        if c == '\0':
+          # echo "server died"
+          data2[].send string.none
+          serverDiedNotifications[].send true
+          break
+      except:
+        echo &"readInput: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
         break
 
   return true
@@ -167,18 +171,25 @@ proc writeOutput(chan: ptr Channel[Stream], data: ptr Channel[Option[string]]): 
       break
 
     while true:
-      let d = data[].recv
-      if d.isNone:
-        # echo "data none"
+      try:
+
+        let d = data[].recv
+        if d.isNone:
+          # echo "data none"
+          buffer.setLen 0
+          break
+
+        # echo "> " & d.get
+        buffer.add d.get
+
+        for d in buffer:
+          stream.write(d)
         buffer.setLen 0
+
+      except:
+        # echo "ioerror"
+        echo &"writeOutput: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
         break
-
-      # echo "> " & d.get
-      buffer.add d.get
-
-      for d in buffer:
-        stream.write(d)
-      buffer.setLen 0
 
   return true
 

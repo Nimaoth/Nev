@@ -9,10 +9,15 @@ import workspaces/[workspace]
 import document, document_editor, events, vmath, bumpy, input, custom_treesitter, indent, text_document
 import config_provider, app_interface
 
+from language/lsp_types as lsp_types import nil
+
 export text_document, document_editor, id
 
 logCategory "texted"
 createJavascriptPrototype("editor.text")
+
+let searchResultsId = newId()
+let diagnosticsId = newId()
 
 type
   Command = object
@@ -32,6 +37,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   hoverId*: Id
   lastCursorLocationBounds*: Option[Rect]
   lastHoverLocationBounds*: Option[Rect]
+  lastDiagnosticLocationBounds*: Option[Rect]
 
   configProvider: ConfigProvider
 
@@ -45,6 +51,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
   searchResults*: Table[int, seq[Selection]]
 
   styledTextOverrides: Table[int, seq[tuple[cursor: Cursor, text: string, scope: string]]]
+
+  customHighlights*: Table[int, seq[tuple[id: Id, selection: Selection, color: string]]]
 
   targetColumn: int
   hideCursorWhenInactive*: bool
@@ -64,6 +72,12 @@ type TextDocumentEditor* = ref object of DocumentEditor
   # inline hints
   inlayHints: seq[InlayHint]
   inlayHintsTask: DelayedTask
+
+  # line index to sequence of indices into document.currentDiagnostics
+  diagnosticsPerLine*: Table[int, seq[int]]
+  showDiagnostic*: bool
+  currentDiagnosticLine*: int
+  currentDiagnostic*: lsp_types.Diagnostic
 
   completionEventHandler: EventHandler
   modeEventHandler: EventHandler
@@ -216,14 +230,49 @@ method getEventHandlers*(self: TextDocumentEditor, inject: Table[string, EventHa
   if inject.contains("above-completion"):
     result.add inject["above-completion"]
 
+iterator splitSelectionIntoLines(self: TextDocumentEditor, selection: Selection, includeAfter: bool = true): Selection =
+  ## Yields a selection for each line covered by the input selection, covering the same range as the input
+  ## If includeAfter is true then the selections will go until line.len, otherwise line.high
+
+  let selection = selection.normalized
+  if selection.first.line == selection.last.line:
+    yield selection
+  else:
+    yield (selection.first, (selection.first.line, self.document.lastValidIndex(selection.first.line, includeAfter)))
+
+    for i in (selection.first.line + 1)..<selection.last.line:
+      yield ((i, 0), (i, self.document.lastValidIndex(i, includeAfter)))
+
+    yield ((selection.last.line, 0), selection.last)
+
+proc clearCustomHighlights(self: TextDocumentEditor, id: Id) =
+  ## Removes all custom highlights associated with the given id
+
+  for highlights in self.customHighlights.mvalues:
+    for i in countdown(highlights.high, 0):
+      if highlights[i].id == id:
+        highlights.removeSwap(i)
+
+proc addCustomHighlight(self: TextDocumentEditor, id: Id, selection: Selection, color: string) =
+  # customHighlights*: Table[int, seq[(Id, Selection, Color)]]
+  for lineSelection in self.splitSelectionIntoLines(selection):
+    assert lineSelection.first.line == lineSelection.last.line
+    if self.customHighlights.contains(selection.first.line):
+      self.customHighlights[selection.first.line].add (id, selection, color)
+    else:
+      self.customHighlights[selection.first.line] = @[(id, selection, color)]
+
 proc updateSearchResults(self: TextDocumentEditor) =
   if self.searchRegex.isNone:
+    self.clearCustomHighlights(searchResultsId)
     self.searchResults.clear()
     self.markDirty()
     return
 
   for i, line in self.document.lines:
     let selections = self.document.lines[i].findAllBounds(i, self.searchRegex.get)
+    for s in selections:
+      self.addCustomHighlight(searchResultsId, s, "editor.findMatchBackground")
 
     if selections.len > 0:
       self.searchResults[i] = selections
@@ -1631,12 +1680,42 @@ proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
       self.inlayHints = inlayHints
       self.markDirty()
 
+proc updateDiagnosticsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
+  let languageServer = await self.document.getLanguageServer()
+  if languageServer.getSome(ls):
+    let diagnostics = await ls.getDiagnostics(self.document.fullPath)
+    debugf"diagnostics: {diagnostics}"
+
 proc updateInlayHints*(self: TextDocumentEditor) =
   if self.inlayHintsTask.isNil:
     self.inlayHintsTask = startDelayed(200, repeat=false):
       asyncCheck self.updateInlayHintsAsync()
+      # asyncCheck self.updateDiagnosticsAsync()
   else:
     self.inlayHintsTask.reschedule()
+
+proc showDiagnosticsForCurrent*(self: TextDocumentEditor) {.expose("editor.text").} =
+  let line = self.selection.last.line
+  if self.showDiagnostic and self.currentDiagnostic.`range`.start.line == line:
+    self.showDiagnostic = false
+    self.markDirty()
+    return
+
+  if self.diagnosticsPerLine.contains(line):
+    let diagnostics {.cursor.} = self.diagnosticsPerLine[line]
+    self.currentDiagnosticLine = line
+    let index = diagnostics[0]
+    if index >= self.document.currentDiagnostics.len:
+      self.showDiagnostic = false
+      self.markDirty()
+      return
+
+    self.currentDiagnostic = self.document.currentDiagnostics[index]
+    self.showDiagnostic = true
+  else:
+    self.showDiagnostic = false
+
+  self.markDirty()
 
 proc isRunningSavedCommands*(self: TextDocumentEditor): bool {.expose("editor.text").} = self.bIsRunningSavedCommands
 
@@ -2030,10 +2109,27 @@ proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
 
   self.markDirty()
 
+proc handleDiagnosticsUpdated(self: TextDocumentEditor) =
+  log lvlInfo, fmt"Got diagnostics for {self.document.filename}: {self.document.currentDiagnostics}"
+  self.clearCustomHighlights(diagnosticsId)
+
+  self.diagnosticsPerLine.clear()
+
+  for i, d in self.document.currentDiagnostics:
+    let selection = d.`range`.toSelection
+    self.addCustomHighlight(diagnosticsId, selection, "editorWarning.foreground")
+    self.diagnosticsPerLine.mgetOrPut(selection.first.line, @[]).add i
+
+proc scrollToCursorAfterDelayAsync(self: TextDocumentEditor) {.async.} =
+  await sleepAsync(32)
+  self.scrollToCursor(self.selection.last)
+  self.markDirty()
+
 proc handleTextDocumentLoaded(self: TextDocumentEditor) =
   if self.targetSelectionsInternal.getSome(s):
     self.selections = s
     self.scrollToCursor()
+    asyncCheck self.scrollToCursorAfterDelayAsync()
   self.targetSelectionsInternal = Selections.none
   self.updateTargetColumn(Last)
 
@@ -2064,6 +2160,7 @@ proc newTextEditor*(document: TextDocument, app: AppInterface, configProvider: C
   discard document.onLoaded.subscribe (_: TextDocument) => self.handleTextDocumentLoaded()
   discard document.textInserted.subscribe (arg: tuple[document: TextDocument, location: Selection, text: string]) => self.handleTextInserted(arg.document, arg.location, arg.text)
   discard document.textDeleted.subscribe (arg: tuple[document: TextDocument, location: Selection]) => self.handleTextDeleted(arg.document, arg.location)
+  discard document.onDiagnosticsUpdated.subscribe () => self.handleDiagnosticsUpdated()
 
   return self
 
@@ -2081,6 +2178,7 @@ method createWithDocument*(_: TextDocumentEditor, document: Document, configProv
   discard self.document.onLoaded.subscribe (_: TextDocument) => self.handleTextDocumentLoaded()
   discard self.document.textInserted.subscribe (arg: tuple[document: TextDocument, location: Selection, text: string]) => self.handleTextInserted(arg.document, arg.location, arg.text)
   discard self.document.textDeleted.subscribe (arg: tuple[document: TextDocument, location: Selection]) => self.handleTextDeleted(arg.document, arg.location)
+  discard self.document.onDiagnosticsUpdated.subscribe () => self.handleDiagnosticsUpdated()
 
   self.startBlinkCursorTask()
 

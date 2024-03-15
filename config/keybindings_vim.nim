@@ -1133,6 +1133,7 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommand "", "gs", "goto-symbol"
   addTextCommand "", "<C-SPACE>", "get-completions"
   addTextCommand "", "<C-h>", "show-hover-for-current"
+  addTextCommand "", "<C-g>", "show-diagnostics-for-current"
   addTextCommand "", "<C-r>", "select-prev"
   addTextCommand "", "<C-m>", "select-next"
   addTextCommand "", "U", "vim-redo"

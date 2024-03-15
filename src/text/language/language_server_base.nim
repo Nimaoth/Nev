@@ -119,3 +119,8 @@ proc removeOnRequestSaveHandler*(self: LanguageServer, handle: OnRequestSaveHand
       let index = list.find(handle)
       if index >= 0:
         list.delete index
+
+proc toPosition*(cursor: Cursor): lsp_types.Position = lsp_types.Position(line: cursor.line, character: cursor.column)
+proc toRange*(selection: Selection): lsp_types.Range = lsp_types.Range(start: selection.first.toPosition, `end`: selection.last.toPosition)
+proc toCursor*(position: lsp_types.Position): Cursor = (position.line, position.character)
+proc toSelection*(`range`: lsp_types.Range): Selection = (`range`.start.toCursor, `range`.`end`.toCursor)

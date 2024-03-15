@@ -2113,6 +2113,20 @@ proc hideHoverDelayed*(self: TextDocumentEditor) =
       argsJsonString.cstring)
 
 
+proc editor_text_showDiagnosticsForCurrent_void_TextDocumentEditor_wasm(
+    arg: cstring): cstring {.importc.}
+proc showDiagnosticsForCurrent*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_showDiagnosticsForCurrent_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_isRunningSavedCommands_bool_TextDocumentEditor_wasm(
     arg: cstring): cstring {.importc.}
 proc isRunningSavedCommands*(self: TextDocumentEditor): bool =

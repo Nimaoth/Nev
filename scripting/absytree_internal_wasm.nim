@@ -217,6 +217,8 @@ proc editor_text_cancelDelayedHideHover_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}
 proc editor_text_hideHoverDelayed_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}
+proc editor_text_showDiagnosticsForCurrent_void_TextDocumentEditor_impl(
+    self: TextDocumentEditor)  {.importc.}
 proc editor_text_isRunningSavedCommands_bool_TextDocumentEditor_impl(
     self: TextDocumentEditor): bool  {.importc.}
 proc editor_text_runSavedCommands_void_TextDocumentEditor_impl(

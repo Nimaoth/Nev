@@ -1,4 +1,4 @@
-import std/[os, strutils, sequtils, sugar, options, json, strformat, tables]
+import std/[os, strutils, sequtils, sugar, options, json, strformat, tables, uri]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import patty, bumpy
@@ -7,6 +7,8 @@ import platform/[filesystem]
 import language/[languages, language_server_base]
 import workspaces/[workspace]
 import document, document_editor, custom_treesitter, indent, text_language_config, config_provider
+
+from language/lsp_types as lsp_types import nil
 
 export document, document_editor, id
 
@@ -88,6 +90,9 @@ type TextDocument* = ref object of Document
   onRequestSaveHandle*: OnRequestSaveHandle
 
   styledTextCache: Table[int, StyledLine]
+
+  currentDiagnostics*: seq[lsp_types.Diagnostic]
+  onDiagnosticsUpdated*: Event[void]
 
 proc nextLineId*(self: TextDocument): int32 =
   result = self.nextLineIdCounter
@@ -675,6 +680,14 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
         await ls.saveTempFile(targetFilename, self.contentString)
 
     self.onRequestSaveHandle = ls.addOnRequestSaveHandler(self.filename, callback)
+    # todo
+    let diagnosticsHandle = ls.onDiagnostics.subscribe proc(diagnostics: lsp_types.PublicDiagnosticsParams) =
+      let uri = diagnostics.uri.decodeUrl.parseUri
+      echo uri, ", ", uri.path.normalizePathUnix
+      if uri.path.normalizePathUnix == self.filename:
+        self.currentDiagnostics = diagnostics.diagnostics
+        self.onDiagnosticsUpdated.invoke()
+
   return self.languageServer
 
 proc byteOffset*(self: TextDocument, cursor: Cursor): int =
