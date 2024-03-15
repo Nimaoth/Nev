@@ -567,11 +567,58 @@ type
     paddingRight*: Option[bool]
     data*: Option[JsonNode]
 
+  DocumentDiagnosticReportKind* {.pure.} = enum
+    Full = "full"
+    Unchanged = "unchanged"
+
+  DiagnosticSeverity* {.pure.} = enum
+    Error = 1
+    Warning = 2
+    Information = 3
+    Hint = 4
+
+  CodeDescription* = object
+    href*: string
+
+  DiagnosticTag* {.pure.} = enum
+    Unnessessary = 1
+    Deprecated = 2
+
+  DiagnosticRelatedInformation* = object
+    location*: Location
+    message*: string
+
+  Diagnostic* = object
+    `range`*: Range
+    severity*: Option[DiagnosticSeverity]
+    code*: Option[JsonNode]
+    codeDescription*: CodeDescription
+    source*: Option[string]
+    message*: string
+    tags*: seq[DiagnosticTag]
+    relatedInformation*: Option[seq[DiagnosticRelatedInformation]]
+    data*: Option[JsonNode]
+
+  RelatedFullDocumentDiagnosticReport* = object
+    kind*: DocumentDiagnosticReportKind
+    resultId*: Option[string]
+    items*: seq[Diagnostic]
+
+  RelatedUnchangedDocumentDiagnosticReport* = object
+    kind*: DocumentDiagnosticReportKind
+    resultId*: string
+
+  PublicDiagnosticsParams* = object
+    uri*: string
+    version*: Option[int] = int.none
+    diagnostics*: seq[Diagnostic]
+
 variant(CompletionResponseVariant, seq[CompletionItem], CompletionList)
 variant(DefinitionResponseVariant, Location, seq[Location], seq[LocationLink])
 variant(DeclarationResponseVariant, Location, seq[Location], seq[LocationLink])
 variant(DocumentSymbolResponseVariant, seq[DocumentSymbol], seq[SymbolInformation])
 variant(DocumentHoverResponseVariant, seq[DocumentSymbol], seq[SymbolInformation])
+variant(DocumentDiagnosticResponse, RelatedFullDocumentDiagnosticReport, RelatedUnchangedDocumentDiagnosticReport)
 
 type CompletionResponse* = CompletionResponseVariant
 type DefinitionResponse* = DefinitionResponseVariant

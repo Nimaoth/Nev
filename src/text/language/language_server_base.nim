@@ -1,7 +1,9 @@
 import std/[options, tables, json]
-import misc/[custom_async, custom_logger]
+import misc/[custom_async, custom_logger, event]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import workspaces/workspace
+
+from lsp_types as lsp_types import nil
 
 type OnRequestSaveHandle* = distinct int
 
@@ -10,6 +12,8 @@ proc `==`(x, y: OnRequestSaveHandle): bool {.borrow.}
 type LanguageServer* = ref object of RootObj
   onRequestSave: Table[OnRequestSaveHandle, proc(targetFilename: string): Future[void]]
   onRequestSaveIndex: Table[string, seq[OnRequestSaveHandle]]
+  onMessage*: Event[tuple[verbosity: lsp_types.MessageType, message: string]]
+  onDiagnostics*: Event[lsp_types.PublicDiagnosticsParams]
 
 type SymbolType* {.pure.} = enum
   Unknown = 0
@@ -88,6 +92,7 @@ method saveTempFile*(self: LanguageServer, filename: string, content: string): F
 method getSymbols*(self: LanguageServer, filename: string): Future[seq[Symbol]] {.base.} = discard
 method getHover*(self: LanguageServer, filename: string, location: Cursor): Future[Option[string]] {.base.} = discard
 method getInlayHints*(self: LanguageServer, filename: string, selection: Selection): Future[seq[InlayHint]] {.base.} = discard
+method getDiagnostics*(self: LanguageServer, filename: string): Future[lsp_types.Response[seq[lsp_types.Diagnostic]]] {.base.} = discard
 
 var handleIdCounter = 1
 

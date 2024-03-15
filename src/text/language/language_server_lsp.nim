@@ -56,9 +56,24 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string], 
     @[]
 
   var client = LSPClient(workspace: workspace)
-  languageServers[languageId] = LanguageServerLSP(client: client)
+  var lsp = LanguageServerLSP(client: client)
+  languageServers[languageId] = lsp
   await client.connect(exePath, workspaces, args, languagesServer)
   client.run()
+
+  discard client.onMessage.subscribe proc(message: tuple[verbosity: lsp_types.MessageType, message: string]) =
+    let level = case message.verbosity
+    of Error: lvlError
+    of Warning: lvlWarn
+    of Info: lvlInfo
+    of Log: lvlDebug
+    log(level, fmt"{message} -----------------------------------------")
+
+    lsp.onMessage.invoke message
+
+  discard client.onDiagnostics.subscribe proc(diagnostics: lsp_types.PublicDiagnosticsParams) =
+    # debugf"textDocument/publishDiagnostics: {diagnostics}"
+    lsp.onDiagnostics.invoke diagnostics
 
   discard gEditor.onEditorRegistered.subscribe proc(editor: auto) =
     if not (editor of TextDocumentEditor):
@@ -290,8 +305,28 @@ method getSymbols*(self: LanguageServerLSP, filename: string): Future[seq[Symbol
 
   return completions
 
+method getDiagnostics*(self: LanguageServerLSP, filename: string): Future[Response[seq[Diagnostic]]] {.async.} =
+  debugf"getDiagnostics: {filename}"
+
+  let response = await self.client.getDiagnostics(filename)
+  if response.isError:
+    log(lvlError, &"Error: {response.error.code}\n{response.error.message}")
+    return response.to(seq[Diagnostic])
+
+  let report = response.result
+  debugf"getDiagnostics: {report}"
+
+  var res: seq[Diagnostic]
+
+  if report.asRelatedFullDocumentDiagnosticReport().getSome(report):
+    res = report.items
+    debugf"items: {res.len}: {res}"
+
+  return res.success
+
+# todo: romve languageId
 method getCompletions*(self: LanguageServerLSP, languageId: string, filename: string, location: Cursor): Future[seq[TextCompletion]] {.async.} =
-  # debugf"getCompletions: {languageId}, {filename}, {location}"
+  # debugf"getCompletions: {filename}, {location}"
   var completionsResult: seq[TextCompletion]
 
   let response = await self.client.getCompletions(filename, location.line, location.column)

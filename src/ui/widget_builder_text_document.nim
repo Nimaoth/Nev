@@ -347,6 +347,30 @@ proc blendColorRanges(colors: var seq[tuple[first: RuneIndex, last: RuneIndex, c
 
       inc colorIndex
 
+proc blendColorRanges(colors: var seq[tuple[first: RuneIndex, last: RuneIndex, color: Color]], ranges: var seq[tuple[first: RuneIndex, last: RuneIndex, color: Color]], inclusive: bool) =
+  let inclusiveOffset = if inclusive: 1.RuneCount else: 0.RuneCount
+  for s in ranges.mitems:
+    var colorIndex = 0
+    for i in 0..colors.high:
+      if colors[i].last > s.first:
+        colorIndex = i
+        break
+
+    while colorIndex <= colors.high and colors[colorIndex].last > s.first and colors[colorIndex].first < s.last + inclusiveOffset and s.first != s.last + inclusiveOffset:
+      let lastIndex = colors[colorIndex].last
+      colors[colorIndex].last = s.first
+
+      if lastIndex < s.last + inclusiveOffset:
+        colors.insert (s.first, lastIndex, colors[colorIndex].color.blendNormal(s.color)), colorIndex + 1
+        s.first = lastIndex
+        inc colorIndex
+      else:
+        colors.insert (s.first, s.last + inclusiveOffset, colors[colorIndex].color.blendNormal(s.color)), colorIndex + 1
+        colors.insert (s.last + inclusiveOffset, lastIndex, colors[colorIndex].color), colorIndex + 2
+        break
+
+      inc colorIndex
+
 proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, backgroundColor: Color, textColor: Color, sizeToContentX: bool, sizeToContentY: bool): LocationInfos =
   var flags = 0.UINodeFlags
   if sizeToContentX:
@@ -382,7 +406,8 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     for line in sn.first.line..sn.last.line:
       selectionsPerLine.mgetOrPut(line, @[]).add s
 
-  var highlightsPerLine = self.searchResults
+  # var highlightsPerLine = self.searchResults
+  # var highlightsPerLine = self.searchResults
 
   # builder.panel(&{FillX, LayoutVertical}, flags += (if sizeToContentY: &{SizeToContentY} else: &{FillY})):
   builder.panel(flags + MaskContent + OverlappingChildren):
@@ -438,15 +463,18 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       if showContextLines and (indexFromTop <= indentLevel and not self.document.shouldIgnoreAsContextLine(i)):
         contextLineTarget = max(contextLineTarget, i)
 
+      proc parseColor(str: string): Color = app.theme.color(str, color(200/255, 200/255, 200/255))
+
       # selections and highlights
       var selectionsClampedOnLine = selectionsPerLine.getOrDefault(i, @[]).map (s) => self.document.clampToLine(s.normalized, styledLine)
-      var highlightsClampedOnLine = highlightsPerLine.getOrDefault(i, @[]).map (s) => self.document.clampToLine(s.normalized, styledLine)
+      var highlightsClampedOnLine: seq[tuple[first: RuneIndex, last: RuneIndex, color: Color]] =
+        self.customHighlights.getOrDefault(i, @[]).map (s) => (let x = self.document.clampToLine(s.selection.normalized, styledLine); (x[0], x[1], parseColor(s.color)))
 
       selectionsClampedOnLine.sort((a, b) => cmp(a.first, b.first), Ascending)
       highlightsClampedOnLine.sort((a, b) => cmp(a.first, b.first), Ascending)
 
       var colors: seq[tuple[first: RuneIndex, last: RuneIndex, color: Color]] = @[(0.RuneIndex, self.document.lines[i].runeLen.RuneIndex, backgroundColor.withAlpha(1))]
-      blendColorRanges(colors, highlightsClampedOnLine, highlightColor, inclusive)
+      blendColorRanges(colors, highlightsClampedOnLine, inclusive)
       blendColorRanges(colors, selectionsClampedOnLine, selectionColor, inclusive)
 
       var cursorsPerLine: seq[int]
