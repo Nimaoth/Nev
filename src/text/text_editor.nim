@@ -912,15 +912,21 @@ proc scrollText*(self: TextDocumentEditor, amount: float32) {.expose("editor.tex
   self.markDirty()
 
 proc scrollLines(self: TextDocumentEditor, amount: int) {.expose("editor.text").} =
+  ## Scroll the text up (positive) or down (negative) by the given number of lines
+
   if self.disableScrolling:
     return
+
   self.previousBaseIndex += amount
+
   while self.previousBaseIndex <= 0:
     self.previousBaseIndex.inc
     self.scrollOffset += self.platform.totalLineHeight
-  while self.previousBaseIndex >= self.screenLineCount - 1:
+
+  while self.previousBaseIndex >= self.document.lines.len - 1:
     self.previousBaseIndex.dec
     self.scrollOffset -= self.platform.totalLineHeight
+
   self.updateInlayHints()
   self.markDirty()
 
