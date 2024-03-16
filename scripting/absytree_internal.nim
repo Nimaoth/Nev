@@ -798,5 +798,7 @@ proc editor_inputKeys_void_App_string_impl*(input: string) =
   discard
 proc lsp_lspLogVerbose_void_bool_impl*(val: bool) =
   discard
+proc lsp_lspToggleLogServerDebug_void_impl*() =
+  discard
 proc lsp_lspLogServerDebug_void_bool_impl*(val: bool) =
   discard

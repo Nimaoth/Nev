@@ -16,6 +16,14 @@ proc lspLogVerbose*(val: bool) =
   let res {.used.} = lsp_lspLogVerbose_void_bool_wasm(argsJsonString.cstring)
 
 
+proc lsp_lspToggleLogServerDebug_void_wasm(arg: cstring): cstring {.importc.}
+proc lspToggleLogServerDebug*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = lsp_lspToggleLogServerDebug_void_wasm(
+      argsJsonString.cstring)
+
+
 proc lsp_lspLogServerDebug_void_bool_wasm(arg: cstring): cstring {.importc.}
 proc lspLogServerDebug*(val: bool) =
   var argsJson = newJArray()
