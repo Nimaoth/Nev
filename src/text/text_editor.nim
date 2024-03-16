@@ -272,8 +272,9 @@ proc addCustomHighlight(self: TextDocumentEditor, id: Id, selection: Selection, 
       self.customHighlights[selection.first.line] = @[(id, selection, color, tint)]
 
 proc updateSearchResults(self: TextDocumentEditor) =
+  self.clearCustomHighlights(searchResultsId)
+
   if self.searchRegex.isNone:
-    self.clearCustomHighlights(searchResultsId)
     self.searchResults.clear()
     self.markDirty()
     return
@@ -2141,7 +2142,7 @@ proc handleDiagnosticsUpdated(self: TextDocumentEditor) =
   self.diagnosticsPerLine.clear()
 
   for i, d in self.document.currentDiagnostics:
-    let selection = d.`range`.toSelection
+    let selection = self.document.lspRangeToSelection(d.`range`)
 
     let colorName = if d.severity.getSome(severity):
       case severity

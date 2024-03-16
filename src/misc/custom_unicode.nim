@@ -44,11 +44,13 @@ proc runeLen*(s: openArray[char]): RuneCount = unicode.runeLen(s).RuneCount
 proc runeLen*(s: string): RuneCount = unicode.runeLen(s).RuneCount
 
 proc runeOffset*(s: openArray[char], pos: RuneIndex, start: Natural = 0): int {.inline.} =
+  ## Returns the byte offset of the rune at pos
   result = unicode.runeOffset(s, pos.int, start)
   if result == -1:
     result = s.len
 
 proc runeOffset*(s: string, pos: RuneIndex, start: Natural = 0): int {.inline.} =
+  ## Returns the byte offset of the rune at pos
   result = unicode.runeOffset(s, pos.int, start)
   if result == -1:
     result = s.len
