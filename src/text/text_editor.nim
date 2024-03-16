@@ -244,8 +244,8 @@ method getEventHandlers*(self: TextDocumentEditor, inject: Table[string, EventHa
     result.add inject["above-completion"]
 
 proc preRender*(self: TextDocumentEditor) =
+  self.clearCustomHighlights(errorNodesHighlightId)
   if self.configProvider.getValue("editor.text.highlight-treesitter-errors", true):
-    self.clearCustomHighlights(errorNodesHighlightId)
     let errorNodes = self.document.getErrorNodesInRange(self.visibleTextRange(buffer = 10))
     for node in errorNodes:
       self.addCustomHighlight(errorNodesHighlightId, node, "editorError.foreground", color(1, 1, 1, 0.3))
