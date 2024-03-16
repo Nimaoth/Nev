@@ -2,7 +2,7 @@ import std/[options, json, tables]
 import misc/[custom_logger, custom_async, util, custom_unicode]
 import platform/filesystem
 
-from scripting_api import Cursor, Selection
+from scripting_api import Cursor, Selection, byteIndexToCursor
 
 logCategory "treesitter"
 
@@ -186,12 +186,12 @@ else:
       ts.tsTreeDelete(self.impl)
     self = nil
 
-  func query*(self: TSLanguage, source: string): TSQuery =
+  proc query*(self: TSLanguage, source: string): TSQuery =
     var errorOffset: uint32 = 0
     var queryError: ts.TSQueryError = ts.TSQueryErrorNone
     result = TSQuery(impl: self.impl.tsQueryNew(source.cstring, source.len.uint32, addr errorOffset, addr queryError))
     if queryError != ts.TSQueryErrorNone:
-      # log(lvlError, fmt"Failed to load highlights query for {languageId}:{errorOffset}: {queryError}: {source}")
+      log(lvlError, fmt"Failed to load highlights query: {errorOffset} {source.byteIndexToCursor(errorOffset.int)}: {queryError}: {source}")
       return nil
 
   proc parseString*(self: TSParser, text: string, oldTree: Option[TSTree] = TSTree.none): TSTree =

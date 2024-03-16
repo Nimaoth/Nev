@@ -43,6 +43,18 @@ proc lastLineLen*(self: Selection): int =
   else:
     result = self.last.column
 
+proc byteIndexToCursor*(text: string, index: int): Cursor =
+  ## Converts a byte index to a cursor
+  var line = 0
+  var column = 0
+  for i in 0..<index:
+    if text[i] == '\n':
+      line += 1
+      column = 0
+    else:
+      column += 1
+  return (line, column)
+
 var nextEditorId = 0
 proc newEditorId*(): EditorId =
   ## Returns a new unique id for an editor
