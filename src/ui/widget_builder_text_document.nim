@@ -767,7 +767,7 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
     builder.panel(&{UINodeFlag.MaskContent, DrawBorder}, w = listWidth * charWidth, h = bottom - top, borderColor = borderColor):
       builder.createLines(self.completionsBaseIndex, self.completionsScrollOffset, self.completions.high, false, false, backgroundColor, handleScroll, handleLine)
 
-    if self.selectedCompletion < self.completions.len:
+    if self.selectedCompletion >= 0 and self.selectedCompletion < self.completions.len:
       let docText = self.completions[self.selectedCompletion].typ & "\n\n" & self.completions[self.selectedCompletion].doc
       builder.panel(&{UINodeFlag.FillBackground, DrawText, MaskContent, TextWrap},
         x = listWidth * charWidth, w = docsWidth * charWidth, h = bottom - top,
