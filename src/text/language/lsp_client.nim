@@ -6,6 +6,7 @@ from workspaces/workspace as ws import nil
 logCategory "lsp"
 
 var logVerbose = false
+var logServerDebug = false
 
 import std/[tables, sets, options, uri, sequtils, sugar, os]
 import misc/[myjsonutils, util, custom_async]
@@ -343,7 +344,8 @@ when not defined(js):
   proc logProcessDebugOutput(process: AsyncProcess) {.async.} =
     while process.isAlive:
       let line = await process.recvErrorLine
-      log(lvlDebug, fmt"[debug] {line}")
+      if logServerDebug:
+        log(lvlDebug, fmt"[debug] {line}")
 
 proc sendInitializationRequest(client: LSPClient) {.async.} =
   log(lvlInfo, "Initializing client...")
@@ -633,3 +635,7 @@ proc run*(client: LSPClient) =
 proc lspLogVerbose*(val: bool) {.expose("lsp").} =
   debugf"lspLogVerbose {val}"
   logVerbose = val
+
+proc lspLogServerDebug*(val: bool) {.expose("lsp").} =
+  debugf"lspLogServerDebug {val}"
+  logServerDebug = val
