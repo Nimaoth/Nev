@@ -111,6 +111,7 @@ proc paste*(self: TextDocumentEditor; register: string = "") =
 proc scrollText*(self: TextDocumentEditor; amount: float32) =
   editor_text_scrollText_void_TextDocumentEditor_float32_impl(self, amount)
 proc scrollLines*(self: TextDocumentEditor; amount: int) =
+  ## Scroll the text up (positive) or down (negative) by the given number of lines
   editor_text_scrollLines_void_TextDocumentEditor_int_impl(self, amount)
 proc duplicateLastSelection*(self: TextDocumentEditor) =
   editor_text_duplicateLastSelection_void_TextDocumentEditor_impl(self)
