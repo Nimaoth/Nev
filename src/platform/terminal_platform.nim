@@ -344,13 +344,16 @@ proc writeLine(self: TerminalPlatform, pos: Vec2, text: string) =
   if pos.y < mask.y or pos.y >= mask.yh:
     return
 
-  let cutoffLeft = max(mask.x - pos.x, 0).int
-  let cutoffRight = max(pos.x + text.len.float * self.charWidth - mask.xw, 0).int
+  let runeLen = text.runeLen
 
-  if cutoffLeft >= text.len or cutoffRight >= text.len or text.len - cutoffLeft - cutoffRight <= 0:
+  let cutoffLeft = max(mask.x - pos.x, 0).RuneCount
+  let cutoffRight = max(pos.x + runeLen.float * self.charWidth - mask.xw, 0).RuneCount
+
+  if cutoffLeft >= runeLen or cutoffRight >= runeLen or runeLen - cutoffLeft - cutoffRight <= 0.RuneCount:
     return
 
-  self.buffer.write(pos.x.int + cutoffLeft.int, pos.y.int, text[cutoffLeft..^(cutoffRight + 1)])
+  let maskedText = text[cutoffLeft.RuneIndex..<(runeLen - cutoffRight).RuneIndex]
+  self.buffer.write(pos.x.int + cutoffLeft.int, pos.y.int, maskedText)
 
 proc nextWrapBoundary(str: openArray[char], start: int, maxLen: RuneCount): (int, RuneCount) =
   var len = 0.RuneCount
