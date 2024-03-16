@@ -76,6 +76,9 @@ proc editor_text_selectLineCurrent_void_TextDocumentEditor_impl*(
 proc editor_text_selectParentTs_void_TextDocumentEditor_Selection_impl*(
     self: TextDocumentEditor; selection: Selection) =
   discard
+proc editor_text_printTreesitterTree_void_TextDocumentEditor_impl*(
+    self: TextDocumentEditor) =
+  discard
 proc editor_text_selectParentCurrentTs_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
@@ -794,4 +797,6 @@ proc editor_replayKeys_void_App_string_impl*(register: string) =
 proc editor_inputKeys_void_App_string_impl*(input: string) =
   discard
 proc lsp_lspLogVerbose_void_bool_impl*(val: bool) =
+  discard
+proc lsp_lspLogServerDebug_void_bool_impl*(val: bool) =
   discard

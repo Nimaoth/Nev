@@ -82,6 +82,8 @@ proc selectLineCurrent*(self: TextDocumentEditor) =
 proc selectParentTs*(self: TextDocumentEditor; selection: Selection) =
   editor_text_selectParentTs_void_TextDocumentEditor_Selection_impl(self,
       selection)
+proc printTreesitterTree*(self: TextDocumentEditor) =
+  editor_text_printTreesitterTree_void_TextDocumentEditor_impl(self)
 proc selectParentCurrentTs*(self: TextDocumentEditor) =
   editor_text_selectParentCurrentTs_void_TextDocumentEditor_impl(self)
 proc insertText*(self: TextDocumentEditor; text: string; autoIndent: bool = true) =

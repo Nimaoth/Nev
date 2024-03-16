@@ -778,6 +778,8 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
     completionsPanel.pivot = vec2(0, 1)
 
 method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
+  self.preRender()
+
   let dirty = self.dirty
   self.resetDirty()
 
