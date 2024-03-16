@@ -1,6 +1,6 @@
 import std/[strutils, options, json, tables, uri, strformat, sugar, sequtils]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-import misc/[event, util, custom_logger, custom_async, myjsonutils]
+import misc/[event, util, custom_logger, custom_async, myjsonutils, custom_unicode]
 import text/text_editor
 import language_server_base, app, app_interface, config_provider, lsp_client
 import workspaces/workspace as ws
@@ -314,21 +314,33 @@ method getSymbols*(self: LanguageServerLSP, filename: string): Future[seq[Symbol
 
   return completions
 
-method getDiagnostics*(self: LanguageServerLSP, filename: string): Future[Response[seq[Diagnostic]]] {.async.} =
+method getDiagnostics*(self: LanguageServerLSP, filename: string): Future[Response[seq[language_server_base.Diagnostic]]] {.async.} =
   debugf"getDiagnostics: {filename}"
 
   let response = await self.client.getDiagnostics(filename)
   if response.isError:
     log(lvlError, &"Error: {response.error.code}\n{response.error.message}")
-    return response.to(seq[Diagnostic])
+    return response.to(seq[language_server_base.Diagnostic])
 
   let report = response.result
   debugf"getDiagnostics: {report}"
 
-  var res: seq[Diagnostic]
+  var res: seq[language_server_base.Diagnostic]
 
   if report.asRelatedFullDocumentDiagnosticReport().getSome(report):
-    res = report.items
+    # todo: selection from rune index to byte index
+    for d in report.items:
+      res.add language_server_base.Diagnostic(
+        # selection: ((d.`range`.start.line, d.`range`.start.character.RuneIndex), (d.`range`.`end`.line, d.`range`.`end`.character.RuneIndex)),
+        severity: d.severity,
+        code: d.code,
+        codeDescription: d.codeDescription,
+        source: d.source,
+        message: d.message,
+        tags: d.tags,
+        relatedInformation: d.relatedInformation,
+        data: d.data,
+      )
     debugf"items: {res.len}: {res}"
 
   return res.success

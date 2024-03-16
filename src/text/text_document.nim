@@ -92,7 +92,7 @@ type TextDocument* = ref object of Document
 
   styledTextCache: Table[int, StyledLine]
 
-  currentDiagnostics*: seq[lsp_types.Diagnostic]
+  currentDiagnostics*: seq[Diagnostic]
   onDiagnosticsUpdated*: Event[void]
 
 proc nextLineId*(self: TextDocument): int32 =
@@ -276,6 +276,15 @@ proc lspRangeToSelection*(self: TextDocument, `range`: lsp_types.Range): Selecti
   let firstColumn = self.lines[`range`.start.line].runeOffset(`range`.start.character.RuneIndex)
   let lastColumn = self.lines[`range`.`end`.line].runeOffset(`range`.`end`.character.RuneIndex)
   return ((`range`.start.line, firstColumn), (`range`.`end`.line, lastColumn))
+
+proc runeCursorToCursor*(self: TextDocument, cursor: CursorT[RuneIndex]): Cursor =
+  if cursor.line > self.lines.high or cursor.line > self.lines.high:
+    return (0, 0)
+
+  return (cursor.line, self.lines[cursor.line].runeOffset(cursor.column))
+
+proc runeSelectionToSelection*(self: TextDocument, cursor: SelectionT[RuneIndex]): Selection =
+  return (self.runeCursorToCursor(cursor.first), self.runeCursorToCursor(cursor.last))
 
 func len*(line: StyledLine): int =
   result = 0
@@ -716,7 +725,20 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
     let diagnosticsHandle = ls.onDiagnostics.subscribe proc(diagnostics: lsp_types.PublicDiagnosticsParams) =
       let uri = diagnostics.uri.decodeUrl.parseUri
       if uri.path.normalizePathUnix == self.filename:
-        self.currentDiagnostics = diagnostics.diagnostics
+        self.currentDiagnostics.setLen diagnostics.diagnostics.len
+        for i, d in diagnostics.diagnostics:
+          self.currentDiagnostics[i] = language_server_base.Diagnostic(
+            selection: self.runeSelectionToSelection(((d.`range`.start.line, d.`range`.start.character.RuneIndex), (d.`range`.`end`.line, d.`range`.`end`.character.RuneIndex))),
+            severity: d.severity,
+            code: d.code,
+            codeDescription: d.codeDescription,
+            source: d.source,
+            message: d.message,
+            tags: d.tags,
+            relatedInformation: d.relatedInformation,
+            data: d.data,
+          )
+
         self.onDiagnosticsUpdated.invoke()
 
   return self.languageServer
@@ -728,68 +750,6 @@ proc byteOffset*(self: TextDocument, cursor: Cursor): int =
 
 proc tabWidth*(self: TextDocument): int =
   return self.languageConfig.map(c => c.tabWidth).get(4)
-
-proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] =
-  result = self.clampAndMergeSelections selections
-
-  var undoOp = UndoOp(kind: Nested, children: @[], oldSelection: @oldSelection)
-
-  for i, selectionRaw in result:
-    let normalizedSelection = selectionRaw.normalized
-    let selection: Selection = if inclusiveEnd and self.lines[normalizedSelection.last.line].len > 0:
-      let nextColumn = self.lines[normalizedSelection.last.line].nextRuneStart(min(normalizedSelection.last.column, self.lines[normalizedSelection.last.line].high)).int
-      (normalizedSelection.first, (normalizedSelection.last.line, nextColumn))
-    else:
-      normalizedSelection
-
-    if selection.isEmpty:
-      continue
-
-    let (first, last) = selection
-
-    let startByte = self.byteOffset(first)
-    let endByte = self.byteOffset(last)
-
-    let deletedText = self.contentString(selection)
-
-    if first.line == last.line:
-      # Single line selection
-      self.lines[last.line].delete first.column..<last.column
-    else:
-      # Multi line selection
-      # Delete from first cursor to end of first line and add last line
-      if first.column < self.lastValidIndex first.line:
-        self.lines[first.line].delete(first.column..<(self.lineLength first.line))
-      self.lines[first.line].add self.lines[last.line][last.column..^1]
-      # Delete all lines in between
-      assert self.lines.len == self.lineIds.len
-      self.lines.delete (first.line + 1)..last.line
-      self.lineIds.delete (first.line + 1)..last.line
-
-    result[i] = selection.first.toSelection
-    for k in (i+1)..result.high:
-      result[k] = result[k].subtract(selection)
-
-    if not self.tsParser.isNil:
-      self.changes.add(Delete(startByte, endByte, first.column, last.column, selection.first.line, selection.last.line))
-
-    inc self.version
-
-    if record:
-      undoOp.children.add UndoOp(kind: Insert, cursor: selection.first, text: deletedText)
-
-    if notify:
-      self.textDeleted.invoke((self, selection))
-
-  if notify:
-    self.notifyTextChanged()
-
-  if record and undoOp.children.len > 0:
-    undoOp.checkpoints.add self.nextCheckpoints
-    self.undoOps.add undoOp
-    self.redoOps = @[]
-
-    self.nextCheckpoints = @[]
 
 proc getNodeRange*(self: TextDocument, selection: Selection, parentIndex: int = 0, siblingIndex: int = 0): Option[Selection] =
   result = Selection.none
@@ -906,6 +866,93 @@ proc traverse*(line, column: int, text: openArray[char]): (int, int) =
 
   return (line, column)
 
+func charCategory(c: char): int =
+  if c.isAlphaNumeric or c == '_': return 0
+  if c in Whitespace: return 1
+  return 2
+
+proc findWordBoundary*(self: TextDocument, cursor: Cursor): Selection =
+  let line = self.getLine cursor.line
+  result = cursor.toSelection
+  if result.first.column == line.len:
+    dec result.first.column
+    dec result.last.column
+
+  # Search to the left
+  while result.first.column > 0 and result.first.column < line.len:
+    let leftCategory = line[result.first.column - 1].charCategory
+    let rightCategory = line[result.first.column].charCategory
+    if leftCategory != rightCategory:
+      break
+    result.first.column -= 1
+
+  # Search to the right
+  if result.last.column < line.len:
+    result.last.column += 1
+  while result.last.column >= 0 and result.last.column < line.len:
+    let leftCategory = line[result.last.column - 1].charCategory
+    let rightCategory = line[result.last.column].charCategory
+    if leftCategory != rightCategory:
+      break
+    result.last.column += 1
+
+proc updateCursorAfterInsert*(self: TextDocument, location: Cursor, inserted: Selection): Cursor =
+  result = location
+  if result.line == inserted.first.line and result.column > inserted.first.column:
+    # inserted text on same line before inlayHint
+    result.column += inserted.last.column - inserted.first.column
+    result.line += inserted.last.line - inserted.first.line
+  elif result.line == inserted.first.line and result.column == inserted.first.column:
+    # Inserted text at inlayHint location
+    # Usually the inlay hint will be on a word boundary, so if it's not anymore then move the inlay hint
+    # (this happens if you e.g. change the name of the variable by appending some text)
+    # If it's still on a word boundary, then the new inlay hint will probably be at the same location so don't move it now
+    let wordBoundary = self.findWordBoundary(result)
+    if result != wordBoundary.first and result != wordBoundary.last:
+      result.column += inserted.last.column - inserted.first.column
+      result.line += inserted.last.line - inserted.first.line
+  elif result.line > inserted.first.line:
+    # inserted text on line before inlay hint
+    result.line += inserted.last.line - inserted.first.line
+
+proc updateCursorAfterDelete*(self: TextDocument, location: Cursor, deleted: Selection): Option[Cursor] =
+  var res = location
+  if deleted.first.line == deleted.last.line:
+    if res.line == deleted.first.line and res.column >= deleted.last.column:
+      res.column -= deleted.last.column - deleted.first.column
+    elif res.line == deleted.first.line and res.column > deleted.first.column and res.column < deleted.last.column:
+      return Cursor.none
+
+  else:
+    if res.line == deleted.first.line and res.column >= deleted.first.column:
+      return Cursor.none
+    if res.line > deleted.first.line and res.line < deleted.last.line:
+      return Cursor.none
+    if res.line == deleted.last.line and res.column <= deleted.last.column:
+      return Cursor.none
+
+    if res.line == deleted.last.line and res.column >= deleted.last.column:
+      res.column -= deleted.last.column - deleted.first.column
+
+    if res.line >= deleted.last.line:
+      res.line -= deleted.last.line - deleted.first.line
+
+  return res.some
+
+proc updateDiagnosticPositionsAfterInsert(self: TextDocument, inserted: Selection) =
+  for d in self.currentDiagnostics.mitems:
+    d.selection.first = self.updateCursorAfterInsert(d.selection.first, inserted)
+    d.selection.last = self.updateCursorAfterInsert(d.selection.last, inserted)
+
+proc updateDiagnosticPositionsAfterDelete(self: TextDocument, selection: Selection) =
+  let selection = selection.normalized
+  for i in countdown(self.currentDiagnostics.high, 0):
+    if self.updateCursorAfterDelete(self.currentDiagnostics[i].selection.first, selection).getSome(first) and
+        self.updateCursorAfterDelete(self.currentDiagnostics[i].selection.last, selection).getSome(last):
+      self.currentDiagnostics[i].selection = (first, last)
+    else:
+      self.currentDiagnostics.removeSwap(i)
+
 proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true): seq[Selection] =
   # be careful with logging inside this function, because the logs are written to another document using this function to insert, which can cause infinite recursion
   # when inserting a log line logs something.
@@ -999,6 +1046,7 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
 
       undoOp.children.add UndoOp(kind: Delete, selection: (oldCursor, cursor))
 
+    self.updateDiagnosticPositionsAfterInsert (oldCursor, cursor)
     if notify:
       self.textInserted.invoke((self, (oldCursor, cursor), text))
 
@@ -1010,6 +1058,69 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
       undoOp.checkpoints.add "word"
     undoOp.checkpoints.add self.nextCheckpoints
 
+    self.undoOps.add undoOp
+    self.redoOps = @[]
+
+    self.nextCheckpoints = @[]
+
+proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] =
+  result = self.clampAndMergeSelections selections
+
+  var undoOp = UndoOp(kind: Nested, children: @[], oldSelection: @oldSelection)
+
+  for i, selectionRaw in result:
+    let normalizedSelection = selectionRaw.normalized
+    let selection: Selection = if inclusiveEnd and self.lines[normalizedSelection.last.line].len > 0:
+      let nextColumn = self.lines[normalizedSelection.last.line].nextRuneStart(min(normalizedSelection.last.column, self.lines[normalizedSelection.last.line].high)).int
+      (normalizedSelection.first, (normalizedSelection.last.line, nextColumn))
+    else:
+      normalizedSelection
+
+    if selection.isEmpty:
+      continue
+
+    let (first, last) = selection
+
+    let startByte = self.byteOffset(first)
+    let endByte = self.byteOffset(last)
+
+    let deletedText = self.contentString(selection)
+
+    if first.line == last.line:
+      # Single line selection
+      self.lines[last.line].delete first.column..<last.column
+    else:
+      # Multi line selection
+      # Delete from first cursor to end of first line and add last line
+      if first.column < self.lastValidIndex first.line:
+        self.lines[first.line].delete(first.column..<(self.lineLength first.line))
+      self.lines[first.line].add self.lines[last.line][last.column..^1]
+      # Delete all lines in between
+      assert self.lines.len == self.lineIds.len
+      self.lines.delete (first.line + 1)..last.line
+      self.lineIds.delete (first.line + 1)..last.line
+
+    result[i] = selection.first.toSelection
+    for k in (i+1)..result.high:
+      result[k] = result[k].subtract(selection)
+
+    if not self.tsParser.isNil:
+      self.changes.add(Delete(startByte, endByte, first.column, last.column, selection.first.line, selection.last.line))
+
+    inc self.version
+
+    if record:
+      undoOp.children.add UndoOp(kind: Insert, cursor: selection.first, text: deletedText)
+
+    self.updateDiagnosticPositionsAfterDelete selection
+    if notify:
+      self.textDeleted.invoke((self, selection))
+
+  if notify:
+    self.notifyTextChanged()
+
+  if record and undoOp.children.len > 0:
+    undoOp.checkpoints.add self.nextCheckpoints
     self.undoOps.add undoOp
     self.redoOps = @[]
 

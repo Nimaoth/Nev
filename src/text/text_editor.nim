@@ -10,8 +10,6 @@ import workspaces/[workspace]
 import document, document_editor, events, vmath, bumpy, input, custom_treesitter, indent, text_document
 import config_provider, app_interface
 
-from language/lsp_types as lsp_types import nil
-
 export text_document, document_editor, id
 
 logCategory "texted"
@@ -80,7 +78,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   diagnosticsPerLine*: Table[int, seq[int]]
   showDiagnostic*: bool = false
   currentDiagnosticLine*: int
-  currentDiagnostic*: lsp_types.Diagnostic
+  currentDiagnostic*: Diagnostic
 
   completionEventHandler: EventHandler
   modeEventHandler: EventHandler
@@ -1098,35 +1096,8 @@ proc runAction*(self: TextDocumentEditor, action: string, args: JsonNode): bool 
   # echo "runAction ", action, ", ", $args
   return self.handleActionInternal(action, args) == Handled
 
-func charCategory(c: char): int =
-  if c.isAlphaNumeric or c == '_': return 0
-  if c in Whitespace: return 1
-  return 2
-
 proc findWordBoundary*(self: TextDocumentEditor, cursor: Cursor): Selection {.expose("editor.text").} =
-  let line = self.document.getLine cursor.line
-  result = cursor.toSelection
-  if result.first.column == line.len:
-    dec result.first.column
-    dec result.last.column
-
-  # Search to the left
-  while result.first.column > 0 and result.first.column < line.len:
-    let leftCategory = line[result.first.column - 1].charCategory
-    let rightCategory = line[result.first.column].charCategory
-    if leftCategory != rightCategory:
-      break
-    result.first.column -= 1
-
-  # Search to the right
-  if result.last.column < line.len:
-    result.last.column += 1
-  while result.last.column >= 0 and result.last.column < line.len:
-    let leftCategory = line[result.last.column - 1].charCategory
-    let rightCategory = line[result.last.column].charCategory
-    if leftCategory != rightCategory:
-      break
-    result.last.column += 1
+  self.document.findWordBoundary(cursor)
 
 proc getSelectionInPair*(self: TextDocumentEditor, cursor: Cursor, delimiter: char): Selection {.expose("editor.text").} =
   result = cursor.toSelection
@@ -1194,7 +1165,7 @@ proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string
     if result.first.line > 0:
       result.first = (result.first.line - 1, self.document.lineLength(result.first.line - 1))
     for _ in 1..<count:
-      result = result or ((result.first.line, 0), result.first)
+      result = result or (Cursor (result.first.line, 0), result.first)
       if result.first.line > 0:
         result.first = (result.first.line - 1, self.document.lineLength(result.first.line - 1))
 
@@ -1748,7 +1719,7 @@ proc updateDiagnosticsForCurrent*(self: TextDocumentEditor) {.expose("editor.tex
 
 proc showDiagnosticsForCurrent*(self: TextDocumentEditor) {.expose("editor.text").} =
   let line = self.selection.last.line
-  if self.showDiagnostic and self.currentDiagnostic.`range`.start.line == line:
+  if self.showDiagnostic and self.currentDiagnostic.selection.first.line == line:
     self.showDiagnostic = false
     self.markDirty()
     return
@@ -2095,71 +2066,26 @@ method injectDependencies*(self: TextDocumentEditor, app: AppInterface) =
 
   self.setMode(self.configProvider.getValue("editor.text.default-mode", ""))
 
-proc updateInlayHintPositionsAfterInsert(self: TextDocumentEditor, location: Selection) =
-  # todo: correctly handle unicode
+proc updateInlayHintPositionsAfterInsert(self: TextDocumentEditor, inserted: Selection) =
   for inlayHint in self.inlayHints.mitems:
-    if inlayHint.location.line == location.first.line and inlayHint.location.column > location.first.column:
-      # inserted text on same line before inlayHint
-      inlayHint.location.column += location.last.column - location.first.column
-      inlayHint.location.line += location.last.line - location.first.line
-    elif inlayHint.location.line == location.first.line and inlayHint.location.column == location.first.column:
-      # Inserted text at inlayHint location
-      # Usually the inlay hint will be on a word boundary, so if it's not anymore then move the inlay hint
-      # (this happens if you e.g. change the name of the variable by appending some text)
-      # If it's still on a word boundary, then the new inlay hint will probably be at the same location so don't move it now
-      let wordBoundary = self.findWordBoundary(inlayHint.location)
-      if inlayHint.location != wordBoundary.first and inlayHint.location != wordBoundary.last:
-        inlayHint.location.column += location.last.column - location.first.column
-        inlayHint.location.line += location.last.line - location.first.line
-    elif inlayHint.location.line > location.first.line:
-      # inserted text on line before inlay hint
-      inlayHint.location.line += location.last.line - location.first.line
+    # todo: correctly handle unicode (inlay hint location comes from lsp, so probably a RuneIndex)
+    inlayHint.location = self.document.updateCursorAfterInsert(inlayHint.location, inserted)
 
 proc updateInlayHintPositionsAfterDelete(self: TextDocumentEditor, selection: Selection) =
-  # todo: correctly handle unicode (inlay hint location comes from lsp, so probably a RuneIndex)
   let selection = selection.normalized
   for i in countdown(self.inlayHints.high, 0):
+    # todo: correctly handle unicode (inlay hint location comes from lsp, so probably a RuneIndex)
     template inlayHint: InlayHint = self.inlayHints[i]
-
-    if selection.first.line == selection.last.line:
-      if inlayHint.location.line == selection.first.line and inlayHint.location.column >= selection.last.column:
-        inlayHint.location.column -= selection.last.column - selection.first.column
-      elif inlayHint.location.line == selection.first.line and inlayHint.location.column > selection.first.column and inlayHint.location.column < selection.last.column:
-        self.inlayHints.removeSwap(i)
+    if self.document.updateCursorAfterDelete(inlayHint.location, selection).getSome(location):
+      self.inlayHints[i].location = location
     else:
-      var remove = false
-      if inlayHint.location.line == selection.first.line and inlayHint.location.column >= selection.first.column:
-        remove = true
-      elif inlayHint.location.line > selection.first.line and inlayHint.location.line < selection.last.line:
-        remove = true
-      elif inlayHint.location.line == selection.last.line and inlayHint.location.column <= selection.last.column:
-        remove = true
-      elif inlayHint.location.line == selection.last.line and inlayHint.location.column >= selection.last.column:
-        inlayHint.location.column -= selection.last.column - selection.first.column
-      if inlayHint.location.line >= selection.last.line:
-        inlayHint.location.line -= selection.last.line - selection.first.line
-      if remove:
-        self.inlayHints.removeSwap(i)
+      self.inlayHints.removeSwap(i)
 
 proc handleTextInserted(self: TextDocumentEditor, document: TextDocument, location: Selection, text: string) =
   self.updateInlayHintPositionsAfterInsert(location)
 
 proc handleTextDeleted(self: TextDocumentEditor, document: TextDocument, selection: Selection) =
   self.updateInlayHintPositionsAfterDelete(selection)
-
-proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
-  self.clampSelection()
-  self.updateSearchResults()
-
-  if self.showCompletions and self.updateCompletionsTask.isNotNil:
-    self.updateCompletionsTask.reschedule()
-
-  if self.showCompletions:
-    self.refilterCompletions()
-
-  self.updateInlayHints()
-
-  self.markDirty()
 
 proc handleDiagnosticsUpdated(self: TextDocumentEditor) =
   log lvlInfo, fmt"Got diagnostics for {self.document.filename}: {self.document.currentDiagnostics}"
@@ -2168,7 +2094,7 @@ proc handleDiagnosticsUpdated(self: TextDocumentEditor) =
   self.diagnosticsPerLine.clear()
 
   for i, d in self.document.currentDiagnostics:
-    let selection = self.document.lspRangeToSelection(d.`range`)
+    let selection = d.selection
 
     let colorName = if d.severity.getSome(severity):
       case severity
@@ -2183,6 +2109,21 @@ proc handleDiagnosticsUpdated(self: TextDocumentEditor) =
     self.diagnosticsPerLine.mgetOrPut(selection.first.line, @[]).add i
 
   self.updateDiagnosticsForCurrent()
+
+proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
+  self.clampSelection()
+  self.updateSearchResults()
+
+  if self.showCompletions and self.updateCompletionsTask.isNotNil:
+    self.updateCompletionsTask.reschedule()
+
+  if self.showCompletions:
+    self.refilterCompletions()
+
+  self.updateInlayHints()
+  self.handleDiagnosticsUpdated()
+
+  self.markDirty()
 
 proc scrollToCursorAfterDelayAsync(self: TextDocumentEditor) {.async.} =
   await sleepAsync(32)
