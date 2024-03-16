@@ -1190,7 +1190,9 @@ proc setFlag*(self: App, flag: string, value: bool) {.expose("editor").} =
   setOption[bool](self, flag, value)
 
 proc toggleFlag*(self: App, flag: string) {.expose("editor").} =
-  self.setFlag(flag, not self.getFlag(flag))
+  let newValue = not self.getFlag(flag)
+  log lvlInfo, fmt"toggleFlag '{flag}' -> {newValue}"
+  self.setFlag(flag, newValue)
   self.platform.requestRender(true)
 
 proc setOption*(self: App, option: string, value: JsonNode) {.expose("editor").} =
