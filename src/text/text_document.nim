@@ -85,6 +85,7 @@ type TextDocument* = ref object of Document
   tsLanguage: TSLanguage
   currentTree: TSTree
   highlightQuery: TSQuery
+  errorQuery: TSQuery
 
   languageServer*: Option[LanguageServer]
   onRequestSaveHandle*: OnRequestSaveHandle
@@ -369,6 +370,14 @@ proc insertText*(self: TextDocument, line: var StyledLine, offset: RuneIndex, te
       return
     index += line.parts[i].text.runeLen
 
+proc getErrorNodesInRange*(self: TextDocument, selection: Selection): seq[Selection] =
+  if self.tsParser.isNil or self.errorQuery.isNil or self.tsTree.isNil:
+    return
+
+  for match in self.errorQuery.matches(self.tsTree.root, tsRange(tsPoint(selection.first.line, 0), tsPoint(selection.last.line, 0))):
+    for capture in match.captures:
+      result.add capture.node.getRange.toSelection
+
 proc getStyledText*(self: TextDocument, i: int): StyledLine =
   if self.styledTextCache.contains(i):
     result = self.styledTextCache[i]
@@ -501,6 +510,9 @@ proc initTreesitter*(self: TextDocument): Future[void] {.async.} =
   if not self.highlightQuery.isNil:
     self.highlightQuery.deinit()
     self.highlightQuery = nil
+  if not self.errorQuery.isNil:
+    self.errorQuery.deinit()
+    self.errorQuery = nil
 
   let languageId = if getLanguageForFile(self.filename).getSome(languageId):
     languageId
@@ -529,6 +541,12 @@ proc initTreesitter*(self: TextDocument): Future[void] {.async.} =
     self.highlightQuery = language.get.query(queryString)
   except CatchableError:
     log(lvlError, fmt"No highlight queries found for '{languageId}'")
+
+  try:
+    let errorQueryString = fs.loadApplicationFile(fmt"./languages/{languageId}/queries/errors.scm")
+    self.errorQuery = language.get.query(errorQueryString)
+  except CatchableError:
+    log(lvlError, fmt"No error queries found for '{languageId}'")
 
   # We now have a treesitter grammar + highlight query, so retrigger rendering
   self.notifyTextChanged()

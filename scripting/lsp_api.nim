@@ -12,3 +12,5 @@ else:
 
 proc lspLogVerbose*(val: bool) =
   lsp_lspLogVerbose_void_bool_impl(val)
+proc lspLogServerDebug*(val: bool) =
+  lsp_lspLogServerDebug_void_bool_impl(val)

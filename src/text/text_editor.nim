@@ -19,6 +19,7 @@ createJavascriptPrototype("editor.text")
 
 let searchResultsId = newId()
 let diagnosticsHighlightId = newId()
+let errorNodesHighlightId = newId()
 
 type
   Command = object
@@ -130,6 +131,9 @@ proc extendSelectionWithMove*(self: TextDocumentEditor, selection: Selection, mo
 proc updateTargetColumn*(self: TextDocumentEditor, cursor: SelectionCursor = Last)
 proc updateInlayHints*(self: TextDocumentEditor)
 proc updateDiagnosticsForCurrent*(self: TextDocumentEditor)
+proc visibleTextRange*(self: TextDocumentEditor, buffer: int = 0): Selection
+proc addCustomHighlight(self: TextDocumentEditor, id: Id, selection: Selection, color: string, tint: Color = color(1, 1, 1))
+proc clearCustomHighlights(self: TextDocumentEditor, id: Id)
 
 proc clampCursor*(self: TextDocumentEditor, cursor: Cursor, includeAfter: bool = true): Cursor = self.document.clampCursor(cursor, includeAfter)
 
@@ -238,6 +242,13 @@ method getEventHandlers*(self: TextDocumentEditor, inject: Table[string, EventHa
 
   if inject.contains("above-completion"):
     result.add inject["above-completion"]
+
+proc preRender*(self: TextDocumentEditor) =
+  if self.configProvider.getValue("editor.text.highlight-treesitter-errors", true):
+    self.clearCustomHighlights(errorNodesHighlightId)
+    let errorNodes = self.document.getErrorNodesInRange(self.visibleTextRange(buffer = 10))
+    for node in errorNodes:
+      self.addCustomHighlight(errorNodesHighlightId, node, "editorError.foreground", color(1, 1, 1, 0.3))
 
 iterator splitSelectionIntoLines(self: TextDocumentEditor, selection: Selection, includeAfter: bool = true): Selection =
   ## Yields a selection for each line covered by the input selection, covering the same range as the input
@@ -718,6 +729,15 @@ proc selectParentTs(self: TextDocumentEditor, selection: Selection) {.expose("ed
     node = node.parent
 
   self.selection = node.getRange.toSelection
+
+proc printTreesitterTree(self: TextDocumentEditor) {.expose("editor.text").} =
+  if self.document.tsTree.isNil:
+    log lvlInfo, "No tree available."
+    return
+
+  let tree = self.document.tsTree
+
+  debugf"{tree.root}"
 
 proc selectParentCurrentTs(self: TextDocumentEditor) {.expose("editor.text").} =
   self.selectParentTs(self.selection)
