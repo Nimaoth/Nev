@@ -65,7 +65,10 @@ proc renderLine*(
     flagsInner.incl SizeToContentX
 
   let hasDiagnostic = self.diagnosticsPerLine.contains(lineNumber)
-  let diagnosticIndices = if hasDiagnostic: self.diagnosticsPerLine[lineNumber] else: @[]
+  let diagnosticIndices = if hasDiagnostic:
+    self.diagnosticsPerLine[lineNumber]
+  else:
+    @[]
   var diagnosticColorName = "editorHint.foreground"
   var diagnosticMessage: string = "■ "
   if hasDiagnostic:
@@ -99,7 +102,7 @@ proc renderLine*(
     lineNumberText = $lineNumber
     lineNumberX = max(0.0, lineNumberWidth - lineNumberText.len.float * builder.charWidth)
   elif lineNumbers == LineNumbers.Relative:
-    lineNumberText = $(lineNumber - cursorLine).abs
+    lineNumberText = $abs(lineNumber - cursorLine)
     lineNumberX = max(0.0, lineNumberWidth - lineNumberText.len.float * builder.charWidth)
 
   builder.panel(flagsInner + LayoutVertical, y = y, pivot = pivot, userId = newSecondaryId(parentId, lineId)):
@@ -351,7 +354,7 @@ proc renderLine*(
 
           if hasDiagnostic and partIndex >= line.parts.len:
             let diagnosticXOffset = 7 * builder.charWidth
-            for _ in 0..0:
+            for i in 0..0:
               insertDiagnostic = false
               if diagnosticXOffset + diagnosticMessageWidth > lineWidth - lastPartXW:
                 if subLinePartIndex > 0:
