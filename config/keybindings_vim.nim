@@ -1141,12 +1141,14 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommand "", "U", "vim-redo"
   addTextCommand "", "<C-z>", "vim-undo"
   addTextCommand "", "<C-y>", "vim-redo"
-  addTextCommand "", "<C-k><C-c>", "toggle-line-comment"
-  addTextCommand "", "<C-k><C-u>", "print-undo-history"
-  addTextCommand "", "<C-k><C-t>", "print-treesitter-tree"
-  addTextCommand "", "<C-k><C-l>", "lsp-log-server-debug"
   addTextCommand "", "<AS-UP>", "add-cursor-above"
   addTextCommand "", "<AS-DOWN>", "add-cursor-below"
   addTextCommand "", "<C-k><C-u>", "print-undo-history"
   addTextCommand "", "<C-UP>", "scroll-lines", -1
   addTextCommand "", "<C-DOWN>", "scroll-lines", 1
+
+  addTextCommand "", "<C-k><C-c>", "toggle-line-comment"
+  addTextCommand "", "<C-k><C-u>", "print-undo-history"
+  addTextCommand "", "<C-k><C-t>", "print-treesitter-tree"
+  addTextCommandBlock "", "<C-k><C-l>": lspToggleLogServerDebug()
+  addCommand "editor", "<C-k><C-e>", "toggle-flag", "editor.text.highlight-treesitter-errors"
