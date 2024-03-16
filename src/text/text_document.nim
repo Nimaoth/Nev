@@ -683,7 +683,6 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
     # todo
     let diagnosticsHandle = ls.onDiagnostics.subscribe proc(diagnostics: lsp_types.PublicDiagnosticsParams) =
       let uri = diagnostics.uri.decodeUrl.parseUri
-      echo uri, ", ", uri.path.normalizePathUnix
       if uri.path.normalizePathUnix == self.filename:
         self.currentDiagnostics = diagnostics.diagnostics
         self.onDiagnosticsUpdated.invoke()
