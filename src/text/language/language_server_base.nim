@@ -1,5 +1,5 @@
 import std/[options, tables, json]
-import misc/[custom_async, custom_logger, event]
+import misc/[custom_async, custom_logger, event, custom_unicode]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import workspaces/workspace
 
@@ -79,6 +79,17 @@ type InlayHint* = object
   paddingRight*: bool
   data*: Option[JsonNode]
 
+type Diagnostic* = object
+  selection*: Selection
+  severity*: Option[lsp_types.DiagnosticSeverity]
+  code*: Option[JsonNode]
+  codeDescription*: lsp_types.CodeDescription
+  source*: Option[string]
+  message*: string
+  tags*: seq[lsp_types.DiagnosticTag]
+  relatedInformation*: Option[seq[lsp_types.DiagnosticRelatedInformation]]
+  data*: Option[JsonNode]
+
 var getOrCreateLanguageServer*: proc(languageId: string, filename: string, workspaces: seq[string], languagesServer: Option[(string, int)] = (string, int).none, workspace = WorkspaceFolder.none): Future[Option[LanguageServer]] = nil
 
 method start*(self: LanguageServer): Future[void] {.base.} = discard
@@ -92,7 +103,7 @@ method saveTempFile*(self: LanguageServer, filename: string, content: string): F
 method getSymbols*(self: LanguageServer, filename: string): Future[seq[Symbol]] {.base.} = discard
 method getHover*(self: LanguageServer, filename: string, location: Cursor): Future[Option[string]] {.base.} = discard
 method getInlayHints*(self: LanguageServer, filename: string, selection: Selection): Future[seq[InlayHint]] {.base.} = discard
-method getDiagnostics*(self: LanguageServer, filename: string): Future[lsp_types.Response[seq[lsp_types.Diagnostic]]] {.base.} = discard
+method getDiagnostics*(self: LanguageServer, filename: string): Future[lsp_types.Response[seq[Diagnostic]]] {.base.} = discard
 
 var handleIdCounter = 1
 

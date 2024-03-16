@@ -22,8 +22,10 @@ type
   SelectorPopup* = object
     id*: EditorId
 
-type Cursor* = tuple[line, column: int]
-type Selection* = tuple[first, last: Cursor]
+type CursorT*[T] = tuple[line: int, column: T]
+type SelectionT*[T] = tuple[first, last: CursorT[T]]
+type Cursor* = CursorT[int]
+type Selection* = SelectionT[int]
 type SelectionCursor* = enum Config = "config", Both = "both", First = "first", Last = "last", LastToFirst = "last-to-first"
 type LineNumbers* = enum None = "none", Absolute = "Absolute", Relative = "relative"
 type Backend* = enum Gui = "gui", Terminal = "terminal", Browser = "browser"
