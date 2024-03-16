@@ -286,7 +286,8 @@ proc renderLine*(
                   else:
                     partNode
                   let cursorX = builder.textWidth(int(selectionLastRune - part.textRange.get.startIndex.RuneCount)).round
-                  result.cursors.add (node, $part.text[selectionLastRune - part.textRange.get.startIndex.RuneCount], rect(cursorX, 0, builder.charWidth, builder.textHeight), (line.index, curs))
+                  let rune = part.text[selectionLastRune - part.textRange.get.startIndex.RuneCount]
+                  result.cursors.add (node, $rune, rect(cursorX, 0, builder.charWidth, builder.textHeight), (line.index, curs))
 
             # Set hover info if the hover location is within this part
             if line.index == self.hoverLocation.line and part.textRange.isSome:
@@ -359,9 +360,8 @@ proc renderLine*(
 
               let diagnosticColor = theme.color(@[diagnosticColorName, "editor.foreground"], color(1, 1, 1))
               var diagnosticPanel: UINode = nil
-              builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = diagnosticMessage, textColor = diagnosticColor, backgroundColor = backgroundColor):
+              builder.panel(&{DrawText, FillBackground, SizeToContentX, SizeToContentY}, x = 10 * builder.charWidth, text = diagnosticMessage, textColor = diagnosticColor, backgroundColor = backgroundColor.lighten(0.07)):
                 diagnosticPanel = currentNode
-              diagnosticPanel.rawX = diagnosticPanel.parent.bounds.w - diagnosticPanel.bounds.w
 
           if lineEndColor.getSome(color):
             builder.panel(&{FillY, FillBackground}, w = builder.charWidth, backgroundColor = color)
@@ -675,26 +675,32 @@ proc createDiagnostics(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
 
   let docsColor = app.theme.color(@[docsColorName, "editor.foreground"], color(1, 1, 1))
 
-  let numLinesToShow = min(10, self.currentDiagnostic.message.countLines)
-  let (top, bottom) = (cursorBounds.yh.float, cursorBounds.yh.float + totalLineHeight * numLinesToShow.float)
-  let height = bottom - top
+  # todo
+  return
 
-  const docsWidth = 50.0
-  let totalWidth = charWidth * docsWidth
-  var clampedX = cursorBounds.x
-  if clampedX + totalWidth > builder.root.w:
-    clampedX = max(builder.root.w - totalWidth, 0)
+  # var text = ""
+  # # self.currentDiagnostic.message
 
-  var hoverPanel: UINode = nil
-  builder.panel(&{SizeToContentX, MaskContent, FillBackground, MouseHover}, x = clampedX, y = top, h = height, backgroundColor = backgroundColor, userId = self.diagnosticsId.newPrimaryId):
-    hoverPanel = currentNode
-    var textNode: UINode = nil
-    builder.panel(&{DrawText, SizeToContentX}, x = 0, h = 1000, text = self.currentDiagnostic.message, textColor = docsColor):
-      textNode = currentNode
+  # let numLinesToShow = min(10, text.countLines)
+  # let (top, bottom) = (cursorBounds.yh.float, cursorBounds.yh.float + totalLineHeight * numLinesToShow.float)
+  # let height = bottom - top
 
-  hoverPanel.rawX = hoverPanel.parent.bounds.w - hoverPanel.bounds.w
-  hoverPanel.rawY = cursorBounds.y
-  hoverPanel.pivot = vec2(0, 0)
+  # const docsWidth = 50.0
+  # let totalWidth = charWidth * docsWidth
+  # var clampedX = cursorBounds.x
+  # if clampedX + totalWidth > builder.root.w:
+  #   clampedX = max(builder.root.w - totalWidth, 0)
+
+  # var hoverPanel: UINode = nil
+  # builder.panel(&{SizeToContentX, MaskContent, FillBackground, MouseHover, DrawBorder}, x = clampedX, y = top, h = height, backgroundColor = backgroundColor, userId = self.diagnosticsId.newPrimaryId):
+  #   hoverPanel = currentNode
+  #   var textNode: UINode = nil
+  #   builder.panel(&{DrawText, SizeToContentX}, x = 0, h = 1000, text = text, textColor = docsColor):
+  #     textNode = currentNode
+
+  # # hoverPanel.rawX = hoverPanel.parent.bounds.w - hoverPanel.bounds.w
+  # hoverPanel.rawY = cursorBounds.y
+  # hoverPanel.pivot = vec2(0, 1)
 
 proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cursorBounds: Rect) =
   let totalLineHeight = app.platform.totalLineHeight

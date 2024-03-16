@@ -564,14 +564,14 @@ proc moveParagraph(editor: TextDocumentEditor, backwards: bool, count: int = 1) 
 proc vimDeleteLeft*(editor: TextDocumentEditor) =
   yankedLines = selectLines
   editor.copy()
-  editor.deleteLeft()
   editor.addNextCheckpoint "insert"
+  editor.deleteLeft()
 
 proc vimDeleteRight*(editor: TextDocumentEditor) =
   yankedLines = selectLines
   editor.copy()
-  editor.deleteRight()
   editor.addNextCheckpoint "insert"
+  editor.deleteRight()
 
 expose "vim-delete-left", vimDeleteLeft
 
