@@ -37,6 +37,8 @@ type
     onMessage*: Event[tuple[verbosity: MessageType, message: string]]
     onDiagnostics*: Event[PublicDiagnosticsParams]
 
+    onWorkspaceConfiguration*: proc(params: ConfigurationParams): Future[seq[JsonNode]]
+
 proc complete[T](future: ResolvableFuture[T], result: T) =
   when defined(js):
     future.resolve(result)
@@ -167,7 +169,7 @@ proc sendRPC(client: LSPClient, meth: string, params: JsonNode, id: Option[int])
 
   if logVerbose:
     let str = $params
-    debug "[send] ", meth, ": ", str[0..min(str.high, 500)]
+    debug "[sendRPC] ", meth, ": ", str[0..min(str.high, 500)]
 
   if not client.isInitialized and meth != "initialize":
     log(lvlInfo, fmt"[sendRPC] client not initialized, add to pending ({meth})")
@@ -182,6 +184,29 @@ proc sendRPC(client: LSPClient, meth: string, params: JsonNode, id: Option[int])
 
 proc sendNotification(client: LSPClient, meth: string, params: JsonNode) {.async.} =
   await client.sendRPC(meth, params, int.none)
+
+proc sendResult(client: LSPClient, meth: string, id: int, res: JsonNode) {.async.} =
+  var request = %*{
+    "jsonrpc": "2.0",
+    "id": id,
+    "method": meth,
+    "result": res,
+  }
+
+  if logVerbose:
+    let str = $res
+    debug "[sendResult] ", meth, ": ", str[0..min(str.high, 500)]
+
+  if not client.isInitialized and meth != "initialize":
+    log(lvlInfo, fmt"[sendResult] client not initialized, add to pending ({meth})")
+    client.pendingRequests.add $request
+    return
+
+  let data = $request
+  let header = createHeader(data.len)
+  let msg = header & data
+
+  await client.connection.send(msg)
 
 proc sendRequest(client: LSPClient, meth: string, params: JsonNode): Future[Response[JsonNode]] {.async.} =
   let id = client.nextId
@@ -264,6 +289,8 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async.} =
           "didClose": true,
           "didChange": true,
         },
+        "configuration": true,
+        "didChangeConfiguration": {},
       },
       "general": %*{
         "positionEncodings": %*["utf-8"],
@@ -581,6 +608,15 @@ proc getCompletions*(client: LSPClient, filename: string, line: int, column: int
   # debugf"[getCompletions] {filename}:{line}:{column}: no completions found"
   return error[CompletionList](-1, fmt"[getCompletions] {filename}:{line}:{column}: no completions found")
 
+proc handleWorkspaceConfigurationRequest(client: LSPClient, id: int, params: ConfigurationParams) {.async.} =
+  if client.onWorkspaceConfiguration.isNil:
+    log lvlWarn, fmt"No workspace configuration handler set"
+    await client.sendResult("workspace/configuration", id, newJArray())
+    return
+
+  let res = client.onWorkspaceConfiguration(params).await
+  await client.sendResult("workspace/configuration", id, %res)
+
 proc runAsync*(client: LSPClient) {.async.} =
   while client.connection.isNotNil:
     # debugf"[run] Waiting for response {(client.activeRequests.len)}"
@@ -606,6 +642,18 @@ proc runAsync*(client: LSPClient) {.async.} =
 
         else:
           log(lvlInfo, fmt"[run] {response}")
+
+      elif response.hasKey("method"):
+        # Not a response, but a server request
+        let id = response["id"].getInt
+
+        let meth = response["method"].getStr
+        case meth
+        of "workspace/configuration":
+          let params = response["params"].jsonTo(ConfigurationParams, JOptions(allowMissingKeys: true, allowExtraKeys: true))
+          asyncCheck client.handleWorkspaceConfigurationRequest(id, params)
+        else:
+          log lvlWarn, fmt"[run] Received request with id {id} and method {meth} but don't know how to handle it"
 
       else:
         # debugf"[LSP.run] {response}"

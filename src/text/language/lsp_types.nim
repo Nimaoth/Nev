@@ -613,6 +613,13 @@ type
     version*: Option[int] = int.none
     diagnostics*: seq[Diagnostic]
 
+  ConfigurationItem* = object
+    scopeUri*: Option[string] = string.none
+    section*: Option[string] = string.none
+
+  ConfigurationParams* = object
+    items*: seq[ConfigurationItem]
+
 variant(CompletionResponseVariant, seq[CompletionItem], CompletionList)
 variant(DefinitionResponseVariant, Location, seq[Location], seq[LocationLink])
 variant(DeclarationResponseVariant, Location, seq[Location], seq[LocationLink])
