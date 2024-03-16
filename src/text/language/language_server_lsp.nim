@@ -30,6 +30,17 @@ method disconnect*(self: LanguageServerLSP) =
     self.stop()
     # todo: remove from languageServers
 
+proc handleWorkspaceConfigurationRequest*(self: LanguageServerLSP, params: lsp_types.ConfigurationParams): Future[seq[JsonNode]] {.async.} =
+  var res = newSeq[JsonNode]()
+
+  for item in params.items:
+    if item.section.isNone:
+      continue
+
+    res.add gAppInterface.configProvider.getValue("editor.text.lsp." & item.section.get & ".workspace", newJNull())
+
+  return res
+
 proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string], languagesServer: Option[(string, int)] = (string, int).none, workspace = ws.WorkspaceFolder.none): Future[Option[LanguageServerLSP]] {.async.} =
   if languageServers.contains(languageId):
     return languageServers[languageId].some
@@ -65,6 +76,9 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string], 
     log(level, fmt"{message} -----------------------------------------")
 
     lsp.onMessage.invoke message
+
+  client.onWorkspaceConfiguration = proc(params: lsp_types.ConfigurationParams): Future[seq[JsonNode]] =
+    return lsp.handleWorkspaceConfigurationRequest(params)
 
   discard client.onDiagnostics.subscribe proc(diagnostics: lsp_types.PublicDiagnosticsParams) =
     # debugf"textDocument/publishDiagnostics: {diagnostics}"
