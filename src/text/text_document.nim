@@ -545,7 +545,9 @@ proc initTreesitter*(self: TextDocument): Future[void] {.async.} =
     log(lvlError, fmt"No highlight queries found for '{languageId}'")
 
   try:
-    let errorQueryString = fs.loadApplicationFile(fmt"./languages/{languageId}/queries/errors.scm")
+    var errorQueryString = fs.loadApplicationFile(fmt"./languages/{languageId}/queries/errors.scm")
+    if errorQueryString.len == 0:
+      errorQueryString = "(ERROR) @error"
     self.errorQuery = language.get.query(errorQueryString)
     if self.errorQuery.isNil:
       log(lvlError, fmt"Failed to create error query for '{languageId}'")
