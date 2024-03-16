@@ -67,18 +67,18 @@ proc renderLine*(
   let hasDiagnostic = self.diagnosticsPerLine.contains(lineNumber)
   let diagnosticIndices = if hasDiagnostic: self.diagnosticsPerLine[lineNumber] else: @[]
   var diagnosticColorName = "editorHint.foreground"
-  var diagnosticMessage: string = ""
+  var diagnosticMessage: string = "■ "
   if hasDiagnostic:
     let diagnostic {.cursor.} = self.document.currentDiagnostics[diagnosticIndices[0]]
     if diagnostic.message.len < 100:
-      diagnosticMessage = diagnostic.message
+      diagnosticMessage.add diagnostic.message
     elif diagnostic.code.getSome(code):
       if code.kind == JInt:
-        diagnosticMessage = $code.getInt
+        diagnosticMessage.add $code.getInt
       elif code.kind == JString:
-        diagnosticMessage = code.getStr
+        diagnosticMessage.add code.getStr
     else:
-      diagnosticMessage = diagnostic.message
+      diagnosticMessage.add diagnostic.message
 
     if diagnostic.severity.getSome(severity):
       diagnosticColorName = case severity
@@ -308,7 +308,8 @@ proc renderLine*(
           subLinePartIndex += 1
 
         # Fill rest of line with background
-        builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = backgroundColor):
+        let lineEndYFlags = if insertDiagnostic: &{SizeToContentY} else: &{FillY}
+        builder.panel(&{FillX, FillBackground} + lineEndYFlags, backgroundColor = backgroundColor):
           capture line, currentNode:
             onClickAny btn:
               self.lastPressedMouseButton = btn
@@ -349,9 +350,10 @@ proc renderLine*(
                 self.markDirty()
 
           if hasDiagnostic and partIndex >= line.parts.len:
+            let diagnosticXOffset = 7 * builder.charWidth
             for _ in 0..0:
               insertDiagnostic = false
-              if diagnosticMessageWidth > lineWidth - lastPartXW:
+              if diagnosticXOffset + diagnosticMessageWidth > lineWidth - lastPartXW:
                 if subLinePartIndex > 0:
                   subLineIndex += 1
                   subLinePartIndex = 0
@@ -360,7 +362,7 @@ proc renderLine*(
 
               let diagnosticColor = theme.color(@[diagnosticColorName, "editor.foreground"], color(1, 1, 1))
               var diagnosticPanel: UINode = nil
-              builder.panel(&{DrawText, FillBackground, SizeToContentX, SizeToContentY}, x = 10 * builder.charWidth, text = diagnosticMessage, textColor = diagnosticColor, backgroundColor = backgroundColor.lighten(0.07)):
+              builder.panel(&{DrawText, FillBackground, SizeToContentX, SizeToContentY}, x = diagnosticXOffset, text = diagnosticMessage, textColor = diagnosticColor, backgroundColor = backgroundColor.lighten(0.07)):
                 diagnosticPanel = currentNode
 
           if lineEndColor.getSome(color):

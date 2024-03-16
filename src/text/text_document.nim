@@ -268,6 +268,14 @@ func runeAt*(self: TextDocument, cursor: Cursor): Rune =
     return 0.Rune
   return self.lines[cursor.line].runeAt(cursor.column)
 
+proc lspRangeToSelection*(self: TextDocument, `range`: lsp_types.Range): Selection =
+  if `range`.start.line > self.lines.high or `range`.end.line > self.lines.high:
+    return (0, 0).toSelection
+
+  let firstColumn = self.lines[`range`.start.line].runeOffset(`range`.start.character.RuneIndex)
+  let lastColumn = self.lines[`range`.`end`.line].runeOffset(`range`.`end`.character.RuneIndex)
+  return ((`range`.start.line, firstColumn), (`range`.`end`.line, lastColumn))
+
 func len*(line: StyledLine): int =
   result = 0
   for p in line.parts:
