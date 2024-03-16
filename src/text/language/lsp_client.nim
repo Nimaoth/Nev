@@ -101,6 +101,7 @@ proc createHeader*(contentLength: int): string =
 proc deinit*(client: LSPClient) =
   assert client.connection.isNotNil, "LSP Client process should not be nil"
 
+  log lvlInfo, "Deinitializing LSP client"
   client.connection.close()
   client.connection = nil
   client.nextId = 0
@@ -635,6 +636,10 @@ proc run*(client: LSPClient) =
 proc lspLogVerbose*(val: bool) {.expose("lsp").} =
   debugf"lspLogVerbose {val}"
   logVerbose = val
+
+proc lspToggleLogServerDebug*() {.expose("lsp").} =
+  logServerDebug = not logServerDebug
+  debugf"lspToggleLogServerDebug {logServerDebug}"
 
 proc lspLogServerDebug*(val: bool) {.expose("lsp").} =
   debugf"lspLogServerDebug {val}"
