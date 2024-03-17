@@ -70,8 +70,8 @@ proc editor_text_printUndoHistory_void_TextDocumentEditor_int_impl(
     self: TextDocumentEditor; max: int = 50)  {.importc.}
 proc editor_text_copy_void_TextDocumentEditor_string_bool_impl(
     self: TextDocumentEditor; register: string = ""; inclusiveEnd: bool = false)  {.importc.}
-proc editor_text_paste_void_TextDocumentEditor_string_impl(
-    self: TextDocumentEditor; register: string = "")  {.importc.}
+proc editor_text_paste_void_TextDocumentEditor_string_bool_impl(
+    self: TextDocumentEditor; register: string = ""; inclusiveEnd: bool = false)  {.importc.}
 proc editor_text_scrollText_void_TextDocumentEditor_float32_impl(
     self: TextDocumentEditor; amount: float32)  {.importc.}
 proc editor_text_scrollLines_void_TextDocumentEditor_int_impl(

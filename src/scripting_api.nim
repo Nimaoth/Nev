@@ -111,6 +111,7 @@ func normalized*(selection: Selection): Selection =
 func reverse*(selection: Selection): Selection = (selection.last, selection.first)
 
 func isEmpty*(selection: Selection): bool = selection.first == selection.last
+func allEmpty*(selections: Selections): bool = selections.allIt(it.isEmpty)
 
 func contains*(selection: Selection, cursor: Cursor): bool = (cursor >= selection.first and cursor <= selection.last)
 func contains*(selection: Selection, other: Selection): bool = (other.first >= selection.first and other.last <= selection.last)
