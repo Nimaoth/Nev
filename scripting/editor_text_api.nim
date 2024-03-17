@@ -120,17 +120,23 @@ proc addCursorBelow*(self: TextDocumentEditor) =
 proc addCursorAbove*(self: TextDocumentEditor) =
   editor_text_addCursorAbove_void_TextDocumentEditor_impl(self)
 proc getPrevFindResult*(self: TextDocumentEditor; cursor: Cursor;
-                        offset: int = 0): Selection =
-  editor_text_getPrevFindResult_Selection_TextDocumentEditor_Cursor_int_impl(
-      self, cursor, offset)
+                        offset: int = 0; includeAfter: bool = true;
+                        wrap: bool = true): Selection =
+  editor_text_getPrevFindResult_Selection_TextDocumentEditor_Cursor_int_bool_bool_impl(
+      self, cursor, offset, includeAfter, wrap)
 proc getNextFindResult*(self: TextDocumentEditor; cursor: Cursor;
-                        offset: int = 0): Selection =
-  editor_text_getNextFindResult_Selection_TextDocumentEditor_Cursor_int_impl(
-      self, cursor, offset)
-proc addNextFindResultToSelection*(self: TextDocumentEditor) =
-  editor_text_addNextFindResultToSelection_void_TextDocumentEditor_impl(self)
-proc addPrevFindResultToSelection*(self: TextDocumentEditor) =
-  editor_text_addPrevFindResultToSelection_void_TextDocumentEditor_impl(self)
+                        offset: int = 0; includeAfter: bool = true;
+                        wrap: bool = true): Selection =
+  editor_text_getNextFindResult_Selection_TextDocumentEditor_Cursor_int_bool_bool_impl(
+      self, cursor, offset, includeAfter, wrap)
+proc addNextFindResultToSelection*(self: TextDocumentEditor;
+                                   includeAfter: bool = true; wrap: bool = true) =
+  editor_text_addNextFindResultToSelection_void_TextDocumentEditor_bool_bool_impl(
+      self, includeAfter, wrap)
+proc addPrevFindResultToSelection*(self: TextDocumentEditor;
+                                   includeAfter: bool = true; wrap: bool = true) =
+  editor_text_addPrevFindResultToSelection_void_TextDocumentEditor_bool_bool_impl(
+      self, includeAfter, wrap)
 proc setAllFindResultToSelection*(self: TextDocumentEditor) =
   editor_text_setAllFindResultToSelection_void_TextDocumentEditor_impl(self)
 proc clearSelections*(self: TextDocumentEditor) =
@@ -285,9 +291,10 @@ proc setSearchQuery*(self: TextDocumentEditor; query: string;
   editor_text_setSearchQuery_void_TextDocumentEditor_string_bool_impl(self,
       query, escapeRegex)
 proc setSearchQueryFromMove*(self: TextDocumentEditor; move: string;
-                             count: int = 0) =
-  editor_text_setSearchQueryFromMove_void_TextDocumentEditor_string_int_impl(
-      self, move, count)
+                             count: int = 0; prefix: string = "";
+                             suffix: string = ""): Selection =
+  editor_text_setSearchQueryFromMove_Selection_TextDocumentEditor_string_int_string_string_impl(
+      self, move, count, prefix, suffix)
 proc toggleLineComment*(self: TextDocumentEditor) =
   editor_text_toggleLineComment_void_TextDocumentEditor_impl(self)
 proc gotoDefinition*(self: TextDocumentEditor) =

@@ -82,14 +82,16 @@ proc editor_text_addCursorBelow_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}
 proc editor_text_addCursorAbove_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}
-proc editor_text_getPrevFindResult_Selection_TextDocumentEditor_Cursor_int_impl(
-    self: TextDocumentEditor; cursor: Cursor; offset: int = 0): Selection  {.importc.}
-proc editor_text_getNextFindResult_Selection_TextDocumentEditor_Cursor_int_impl(
-    self: TextDocumentEditor; cursor: Cursor; offset: int = 0): Selection  {.importc.}
-proc editor_text_addNextFindResultToSelection_void_TextDocumentEditor_impl(
-    self: TextDocumentEditor)  {.importc.}
-proc editor_text_addPrevFindResultToSelection_void_TextDocumentEditor_impl(
-    self: TextDocumentEditor)  {.importc.}
+proc editor_text_getPrevFindResult_Selection_TextDocumentEditor_Cursor_int_bool_bool_impl(
+    self: TextDocumentEditor; cursor: Cursor; offset: int = 0;
+    includeAfter: bool = true; wrap: bool = true): Selection  {.importc.}
+proc editor_text_getNextFindResult_Selection_TextDocumentEditor_Cursor_int_bool_bool_impl(
+    self: TextDocumentEditor; cursor: Cursor; offset: int = 0;
+    includeAfter: bool = true; wrap: bool = true): Selection  {.importc.}
+proc editor_text_addNextFindResultToSelection_void_TextDocumentEditor_bool_bool_impl(
+    self: TextDocumentEditor; includeAfter: bool = true; wrap: bool = true)  {.importc.}
+proc editor_text_addPrevFindResultToSelection_void_TextDocumentEditor_bool_bool_impl(
+    self: TextDocumentEditor; includeAfter: bool = true; wrap: bool = true)  {.importc.}
 proc editor_text_setAllFindResultToSelection_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}
 proc editor_text_clearSelections_void_TextDocumentEditor_impl(
@@ -192,8 +194,9 @@ proc editor_text_moveFirst_void_TextDocumentEditor_string_SelectionCursor_bool_i
     count: int = 0)  {.importc.}
 proc editor_text_setSearchQuery_void_TextDocumentEditor_string_bool_impl(
     self: TextDocumentEditor; query: string; escapeRegex: bool = false)  {.importc.}
-proc editor_text_setSearchQueryFromMove_void_TextDocumentEditor_string_int_impl(
-    self: TextDocumentEditor; move: string; count: int = 0)  {.importc.}
+proc editor_text_setSearchQueryFromMove_Selection_TextDocumentEditor_string_int_string_string_impl(
+    self: TextDocumentEditor; move: string; count: int = 0; prefix: string = "";
+    suffix: string = ""): Selection  {.importc.}
 proc editor_text_toggleLineComment_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}
 proc editor_text_gotoDefinition_void_TextDocumentEditor_impl(

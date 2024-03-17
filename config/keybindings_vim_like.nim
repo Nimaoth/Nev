@@ -41,7 +41,7 @@ proc loadVimLikeKeybindings*() {.scriptActionWasmNims("load-vim-like-keybindings
   addTextCommand "", "n", "select-move", "next-find-result", true
   addTextCommand "", "N", "select-move", "prev-find-result", true
 
-  addTextCommandBlock "", "*": editor.setSearchQueryFromMove("word")
+  addTextCommandBlock "", "*": editor.selection = editor.setSearchQueryFromMove("word")
 
   # editing
   addTextCommand "", "x", "delete-right"

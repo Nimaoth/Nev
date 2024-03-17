@@ -330,14 +330,14 @@ proc doMoveCursorHome(self: TextDocumentEditor, cursor: Cursor, offset: int, wra
 proc doMoveCursorEnd(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool, includeAfter: bool): Cursor =
   return (cursor.line, self.document.lastValidIndex cursor.line)
 
-proc getPrevFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0): Selection
-proc getNextFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0): Selection
+proc getPrevFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0, includeAfter: bool = true, wrap: bool = true): Selection
+proc getNextFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0, includeAfter: bool = true, wrap: bool = true): Selection
 
 proc doMoveCursorPrevFindResult(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool, includeAfter: bool): Cursor =
-  return self.getPrevFindResult(cursor, offset).first
+  return self.getPrevFindResult(cursor, offset, includeAfter=includeAfter).first
 
 proc doMoveCursorNextFindResult(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool, includeAfter: bool): Cursor =
-  return self.getNextFindResult(cursor, offset).first
+  return self.getNextFindResult(cursor, offset, includeAfter=includeAfter).first
 
 proc doMoveCursorLineCenter(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool, includeAfter: bool): Cursor =
   return (cursor.line, self.document.lineLength(cursor.line) div 2)
@@ -942,7 +942,7 @@ proc addCursorAbove*(self: TextDocumentEditor) {.expose("editor.text").} =
   if not self.selections.contains(newCursor):
     self.selections = self.selections & @[newCursor]
 
-proc getPrevFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0): Selection {.expose("editor.text").} =
+proc getPrevFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0, includeAfter: bool = true, wrap: bool = true): Selection {.expose("editor.text").} =
   var i = 0
   for line in countdown(cursor.line, 0):
     if self.searchResults.contains(line):
@@ -950,26 +950,43 @@ proc getPrevFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 
       for k in countdown(selections.high, 0):
         if selections[k].last < cursor:
           if i == offset:
-            return selections[k]
+            if includeAfter:
+              return selections[k]
+            else:
+              return (selections[k].first, self.doMoveCursorColumn(selections[k].last, -1, wrap = false))
           inc i
+
+  let nextSearchStart = (self.lineCount, 0)
+  if cursor != nextSearchStart:
+    let wrapped = self.getPrevFindResult(nextSearchStart, offset - i, includeAfter=includeAfter, wrap=wrap)
+    if not wrapped.isEmpty:
+      return wrapped
   return cursor.toSelection
 
-proc getNextFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0): Selection {.expose("editor.text").} =
+proc getNextFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0, includeAfter: bool = true, wrap: bool = true): Selection {.expose("editor.text").} =
   var i = 0
   for line in cursor.line..self.document.lines.high:
     if self.searchResults.contains(line):
       for selection in self.searchResults[line]:
         if cursor < selection.first:
           if i == offset:
-            return selection
+            if includeAfter:
+              return selection
+            else:
+              return (selection.first, self.doMoveCursorColumn(selection.last, -1, wrap = false))
           inc i
+
+  if cursor != (0, 0):
+    let wrapped = self.getNextFindResult((0, 0), offset - i, includeAfter=includeAfter, wrap=wrap)
+    if not wrapped.isEmpty:
+      return wrapped
   return cursor.toSelection
 
-proc addNextFindResultToSelection*(self: TextDocumentEditor) {.expose("editor.text").} =
-  self.selections = self.selections & @[self.getNextFindResult(self.selection.last)]
+proc addNextFindResultToSelection*(self: TextDocumentEditor, includeAfter: bool = true, wrap: bool = true) {.expose("editor.text").} =
+  self.selections = self.selections & @[self.getNextFindResult(self.selection.last, includeAfter=includeAfter)]
 
-proc addPrevFindResultToSelection*(self: TextDocumentEditor) {.expose("editor.text").} =
-  self.selections = self.selections & @[self.getPrevFindResult(self.selection.first)]
+proc addPrevFindResultToSelection*(self: TextDocumentEditor, includeAfter: bool = true, wrap: bool = true) {.expose("editor.text").} =
+  self.selections = self.selections & @[self.getPrevFindResult(self.selection.first, includeAfter=includeAfter)]
 
 proc setAllFindResultToSelection*(self: TextDocumentEditor) {.expose("editor.text").} =
   var selections: seq[Selection] = @[]
@@ -1362,10 +1379,11 @@ proc setSearchQuery*(self: TextDocumentEditor, query: string, escapeRegex: bool 
   self.searchRegex = re(query).some
   self.updateSearchResults()
 
-proc setSearchQueryFromMove*(self: TextDocumentEditor, move: string, count: int = 0) {.expose("editor.text").} =
+proc setSearchQueryFromMove*(self: TextDocumentEditor, move: string, count: int = 0, prefix: string = "", suffix: string = ""): Selection {.expose("editor.text").} =
   let selection = self.getSelectionForMove(self.selection.last, move, count)
-  self.selection = selection
-  self.setSearchQuery(self.document.contentString(selection))
+  let searchText = self.document.contentString(selection)
+  self.setSearchQuery(prefix & searchText & suffix)
+  return selection
 
 proc toggleLineComment*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.selections = self.document.toggleLineComment(self.selections)
