@@ -82,9 +82,17 @@ proc vimSelect(editor: TextDocumentEditor, move: string, count: int = 1) {.expos
 
 proc vimUndo(editor: TextDocumentEditor) {.expose("vim-undo").} =
   editor.undo(vimCurrentUndoCheckpoint)
+  if not editor.selections.allEmpty:
+    editor.setMode "visual"
+  else:
+    editor.setMode "normal"
 
 proc vimRedo(editor: TextDocumentEditor) {.expose("vim-redo").} =
   editor.redo(vimCurrentUndoCheckpoint)
+  if not editor.selections.allEmpty:
+    editor.setMode "visual"
+  else:
+    editor.setMode "normal"
 
 proc copySelection(editor: TextDocumentEditor): Selections =
   ## Copies the selected text
