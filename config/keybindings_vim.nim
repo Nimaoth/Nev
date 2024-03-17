@@ -858,10 +858,20 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addSubCommandWithCount "", "move", "gj", "vim-move-cursor-line", 1
 
   # search
-  addTextCommandBlock "", "*": editor.setSearchQueryFromMove("word")
-  addTextCommandBlock "visual", "*": editor.setSearchQuery(editor.getText(editor.selection))
-  addTextCommand "", "n", "select-move", "next-find-result", true
-  addTextCommand "", "N", "select-move", "prev-find-result", true
+  addTextCommandBlock "", "*":
+    editor.selection = editor.setSearchQueryFromMove("word", prefix=r"\b", suffix=r"\b").first.toSelection
+  addTextCommandBlock "visual", "*":
+    editor.setSearchQuery(editor.getText(editor.selection, inclusiveEnd=true))
+    editor.selection = editor.selection.first.toSelection
+    editor.setMode("normal")
+  addTextCommandBlock "", "n":
+    editor.selection = editor.getNextFindResult(editor.selection.last).first.toSelection
+    editor.scrollToCursor Last
+    editor.updateTargetColumn()
+  addTextCommandBlock "", "N":
+    editor.selection = editor.getPrevFindResult(editor.selection.last).first.toSelection
+    editor.scrollToCursor Last
+    editor.updateTargetColumn()
 
   addTextCommandBlock "", "/":
     commandLine("set-search-query \\")
@@ -1146,7 +1156,10 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommand "", "<C-UP>", "scroll-lines", -1
   addTextCommand "", "<C-DOWN>", "scroll-lines", 1
 
-  addTextCommand "", "<C-k><C-c>", "toggle-line-comment"
+  addTextCommandBlock "", "<C-k><C-c>":
+    editor.addNextCheckpoint "insert"
+    editor.toggleLineComment()
+
   addTextCommand "", "<C-k><C-u>", "print-undo-history"
   addTextCommand "", "<C-k><C-t>", "print-treesitter-tree"
   addTextCommandBlock "", "<C-k><C-l>": lspToggleLogServerDebug()
