@@ -1325,17 +1325,22 @@ proc deleteLeft*(self: TextDocumentEditor) =
       argsJsonString.cstring)
 
 
-proc editor_text_deleteRight_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+proc editor_text_deleteRight_void_TextDocumentEditor_bool_wasm(arg: cstring): cstring {.
     importc.}
-proc deleteRight*(self: TextDocumentEditor) =
+proc deleteRight*(self: TextDocumentEditor; includeAfter: bool = true) =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:
       self
     else:
       self.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      includeAfter
+    else:
+      includeAfter.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_deleteRight_void_TextDocumentEditor_wasm(
+  let res {.used.} = editor_text_deleteRight_void_TextDocumentEditor_bool_wasm(
       argsJsonString.cstring)
 
 

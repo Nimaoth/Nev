@@ -203,8 +203,8 @@ proc reloadTreesitter*(self: TextDocumentEditor) =
   editor_text_reloadTreesitter_void_TextDocumentEditor_impl(self)
 proc deleteLeft*(self: TextDocumentEditor) =
   editor_text_deleteLeft_void_TextDocumentEditor_impl(self)
-proc deleteRight*(self: TextDocumentEditor) =
-  editor_text_deleteRight_void_TextDocumentEditor_impl(self)
+proc deleteRight*(self: TextDocumentEditor; includeAfter: bool = true) =
+  editor_text_deleteRight_void_TextDocumentEditor_bool_impl(self, includeAfter)
 proc getCommandCount*(self: TextDocumentEditor): int =
   editor_text_getCommandCount_int_TextDocumentEditor_impl(self)
 proc setCommandCount*(self: TextDocumentEditor; count: int) =

@@ -130,7 +130,7 @@ proc clampCursor*(self: TextDocument, cursor: Cursor, includeAfter: bool = true)
   cursor.column = clamp(cursor.column, 0, self.lastValidIndex(cursor.line, includeAfter))
   return cursor
 
-proc clampSelection*(self: TextDocument, selection: Selection): Selection = (self.clampCursor(selection.first), self.clampCursor(selection.last))
+proc clampSelection*(self: TextDocument, selection: Selection, includeAfter: bool = true): Selection = (self.clampCursor(selection.first, includeAfter), self.clampCursor(selection.last, includeAfter))
 proc clampAndMergeSelections*(self: TextDocument, selections: openArray[Selection]): Selections = selections.map((s) => self.clampSelection(s)).deduplicate
 proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.async.}
 proc trimTrailingWhitespace*(self: TextDocument)
@@ -1018,7 +1018,7 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
           cursor.column += line.len
           cursorColumnRune += line.runeLen
 
-    result[i] = cursor.toSelection
+    result[i] = (oldCursor, cursor)
     for k in (i+1)..result.high:
       result[k] = result[k].add((oldCursor, cursor))
 

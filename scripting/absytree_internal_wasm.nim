@@ -139,8 +139,8 @@ proc editor_text_reloadTreesitter_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}
 proc editor_text_deleteLeft_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}
-proc editor_text_deleteRight_void_TextDocumentEditor_impl(
-    self: TextDocumentEditor)  {.importc.}
+proc editor_text_deleteRight_void_TextDocumentEditor_bool_impl(
+    self: TextDocumentEditor; includeAfter: bool = true)  {.importc.}
 proc editor_text_getCommandCount_int_TextDocumentEditor_impl(
     self: TextDocumentEditor): int  {.importc.}
 proc editor_text_setCommandCount_void_TextDocumentEditor_int_impl(

@@ -123,7 +123,7 @@ func `or`*(a: Selection, b: Selection): Selection =
   let bn = b.normalized
   return (min(an.first, bn.first), max(an.last, bn.last))
 
-func toSelection*(cursor: Cursor): Selection =
+func toSelection*[T](cursor: CursorT[T]): SelectionT[T] =
   (cursor, cursor)
 
 func toSelection*(cursor: Cursor, default: Selection, which: SelectionCursor): Selection =
