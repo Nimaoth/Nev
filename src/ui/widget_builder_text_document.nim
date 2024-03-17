@@ -64,7 +64,7 @@ proc renderLine*(
   if sizeToContentX:
     flagsInner.incl SizeToContentX
 
-  let hasDiagnostic = self.diagnosticsPerLine.contains(lineNumber)
+  let hasDiagnostic = self.diagnosticsPerLine.contains(lineNumber) and self.diagnosticsPerLine[lineNumber][0] < self.document.currentDiagnostics.len
   let diagnosticIndices = if hasDiagnostic:
     self.diagnosticsPerLine[lineNumber]
   else:
