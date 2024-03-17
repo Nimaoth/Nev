@@ -201,8 +201,8 @@ proc editor_text_reloadTreesitter_void_TextDocumentEditor_impl*(
 proc editor_text_deleteLeft_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
-proc editor_text_deleteRight_void_TextDocumentEditor_impl*(
-    self: TextDocumentEditor) =
+proc editor_text_deleteRight_void_TextDocumentEditor_bool_impl*(
+    self: TextDocumentEditor; includeAfter: bool = true) =
   discard
 proc editor_text_getCommandCount_int_TextDocumentEditor_impl*(
     self: TextDocumentEditor): int =

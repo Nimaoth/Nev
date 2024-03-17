@@ -72,7 +72,6 @@ proc vimSelectLast(editor: TextDocumentEditor, move: string, count: int = 1) {.e
   for i in 0..<max(count, 1):
     editor.runAction(action, arg)
   editor.selections = editor.selections.mapIt(it.last.toSelection)
-  editor.updateTargetColumn()
   deleteInclusiveEnd = true
 
 proc vimSelect(editor: TextDocumentEditor, move: string, count: int = 1) {.expose("vim-select").} =
@@ -166,7 +165,7 @@ proc vimReplace(editor: TextDocumentEditor, input: string) {.expose("vim-replace
   # infof"replace {editor.selections} with '{input}' -> {texts}"
 
   editor.addNextCheckpoint "insert"
-  editor.selections = editor.edit(editor.selections, texts, inclusiveEnd=true)
+  editor.selections = editor.edit(editor.selections, texts, inclusiveEnd=true).mapIt(it.first.toSelection)
   editor.setMode "normal"
 
 proc vimSelectMove(editor: TextDocumentEditor, move: string, count: int = 1) {.expose("vim-select-move").} =
@@ -571,7 +570,7 @@ proc vimDeleteRight*(editor: TextDocumentEditor) =
   yankedLines = selectLines
   editor.copy()
   editor.addNextCheckpoint "insert"
-  editor.deleteRight()
+  editor.deleteRight(includeAfter=vimCursorIncludeEol)
 
 expose "vim-delete-left", vimDeleteLeft
 

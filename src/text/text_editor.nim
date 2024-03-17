@@ -135,7 +135,7 @@ proc clearCustomHighlights(self: TextDocumentEditor, id: Id)
 
 proc clampCursor*(self: TextDocumentEditor, cursor: Cursor, includeAfter: bool = true): Cursor = self.document.clampCursor(cursor, includeAfter)
 
-proc clampSelection*(self: TextDocumentEditor, selection: Selection): Selection = self.document.clampSelection(selection)
+proc clampSelection*(self: TextDocumentEditor, selection: Selection, includeAfter: bool = true): Selection = self.document.clampSelection(selection, includeAfter)
 
 proc clampAndMergeSelections*(self: TextDocumentEditor, selections: openArray[Selection]): Selections = self.document.clampAndMergeSelections(selections)
 
@@ -777,7 +777,7 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
         let indent = indentForNewLine(self.document.languageConfig, line, self.document.indentStyle, self.document.tabWidth, selection.last.column)
         texts[i] = "\n" & indent
 
-  selections = self.document.edit(selections, selections, texts)
+  selections = self.document.edit(selections, selections, texts).mapIt(it.last.toSelection)
 
   if allWhitespace:
     for i in 0..min(self.selections.high, originalSelections.high):
@@ -885,9 +885,9 @@ proc pasteAsync*(self: TextDocumentEditor, register: string): Future[void] {.asy
 
   let newSelections = if numLines == self.selections.len:
     let lines = text.splitLines()
-    self.document.edit(self.selections, self.selections, lines, notify=true, record=true)
+    self.document.edit(self.selections, self.selections, lines, notify=true, record=true).mapIt(it.last.toSelection)
   else:
-    self.document.edit(self.selections, self.selections, [text], notify=true, record=true)
+    self.document.edit(self.selections, self.selections, [text], notify=true, record=true).mapIt(it.last.toSelection)
 
   # add list of selections for what was just pasted to history
   if newSelections.len == self.selections.len:
@@ -1065,12 +1065,12 @@ proc deleteLeft*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.selections = self.document.delete(selections, self.selections, inclusiveEnd=self.useInclusiveSelections)
   self.updateTargetColumn(Last)
 
-proc deleteRight*(self: TextDocumentEditor) {.expose("editor.text").} =
+proc deleteRight*(self: TextDocumentEditor, includeAfter: bool = true) {.expose("editor.text").} =
   var selections = self.selections
   for i, selection in selections:
     if selection.isEmpty:
       selections[i] = (selection.first, self.doMoveCursorColumn(selection.first, 1))
-  self.selections = self.document.delete(selections, self.selections, inclusiveEnd=self.useInclusiveSelections)
+  self.selections = self.document.delete(selections, self.selections, inclusiveEnd=self.useInclusiveSelections).mapIt(self.clampSelection(it, includeAfter))
   self.updateTargetColumn(Last)
 
 proc getCommandCount*(self: TextDocumentEditor): int {.expose("editor.text").} =
@@ -1603,10 +1603,10 @@ proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").
 
   let cursor = self.selection.last
   if cursor.column == 0:
-    self.selections = self.document.insert([cursor.toSelection], self.selections, [com.name], true, true)
+    self.selections = self.document.insert([cursor.toSelection], self.selections, [com.name], true, true).mapIt(it.last.toSelection)
   else:
     let selection = self.getCompletionSelectionAt(cursor)
-    self.selections = self.document.edit([selection], self.selections, [com.name])
+    self.selections = self.document.edit([selection], self.selections, [com.name]).mapIt(it.last.toSelection)
 
   self.hideCompletions()
 
@@ -2088,7 +2088,7 @@ proc handleTextDeleted(self: TextDocumentEditor, document: TextDocument, selecti
   self.updateInlayHintPositionsAfterDelete(selection)
 
 proc handleDiagnosticsUpdated(self: TextDocumentEditor) =
-  log lvlInfo, fmt"Got diagnostics for {self.document.filename}: {self.document.currentDiagnostics}"
+  # log lvlInfo, fmt"Got diagnostics for {self.document.filename}: {self.document.currentDiagnostics.len}"
   self.clearCustomHighlights(diagnosticsHighlightId)
 
   self.diagnosticsPerLine.clear()
