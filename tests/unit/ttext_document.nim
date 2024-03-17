@@ -1,3 +1,4 @@
+
 discard """
   action: "run"
   cmd: "nim $target --nimblePath:./nimbleDir/simplePkgs $options $file"
@@ -33,7 +34,7 @@ suite "Text Document":
     let selection = (0, 3).toSelection
     let newSelections = document.insert([selection], [selection], ["def"], false, false)
 
-    check newSelections == [(0, 6).toSelection]
+    check newSelections == [(0, 3), (0, 6)]
     check document.contentString == "abcdef"
 
   test "delete text":
