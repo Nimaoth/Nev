@@ -695,9 +695,10 @@ proc copy*(self: TextDocumentEditor; register: string = "";
       argsJsonString.cstring)
 
 
-proc editor_text_paste_void_TextDocumentEditor_string_wasm(arg: cstring): cstring {.
+proc editor_text_paste_void_TextDocumentEditor_string_bool_wasm(arg: cstring): cstring {.
     importc.}
-proc paste*(self: TextDocumentEditor; register: string = "") =
+proc paste*(self: TextDocumentEditor; register: string = "";
+            inclusiveEnd: bool = false) =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:
@@ -709,8 +710,13 @@ proc paste*(self: TextDocumentEditor; register: string = "") =
       register
     else:
       register.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      inclusiveEnd
+    else:
+      inclusiveEnd.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_paste_void_TextDocumentEditor_string_wasm(
+  let res {.used.} = editor_text_paste_void_TextDocumentEditor_string_bool_wasm(
       argsJsonString.cstring)
 
 

@@ -106,8 +106,10 @@ proc copy*(self: TextDocumentEditor; register: string = "";
            inclusiveEnd: bool = false) =
   editor_text_copy_void_TextDocumentEditor_string_bool_impl(self, register,
       inclusiveEnd)
-proc paste*(self: TextDocumentEditor; register: string = "") =
-  editor_text_paste_void_TextDocumentEditor_string_impl(self, register)
+proc paste*(self: TextDocumentEditor; register: string = "";
+            inclusiveEnd: bool = false) =
+  editor_text_paste_void_TextDocumentEditor_string_bool_impl(self, register,
+      inclusiveEnd)
 proc scrollText*(self: TextDocumentEditor; amount: float32) =
   editor_text_scrollText_void_TextDocumentEditor_float32_impl(self, amount)
 proc scrollLines*(self: TextDocumentEditor; amount: int) =

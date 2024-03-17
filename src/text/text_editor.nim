@@ -878,16 +878,16 @@ proc copyAsync*(self: TextDocumentEditor, register: string, inclusiveEnd: bool):
 proc copy*(self: TextDocumentEditor, register: string = "", inclusiveEnd: bool = false) {.expose("editor.text").} =
   asyncCheck self.copyAsync(register, inclusiveEnd)
 
-proc pasteAsync*(self: TextDocumentEditor, register: string): Future[void] {.async.} =
+proc pasteAsync*(self: TextDocumentEditor, register: string, inclusiveEnd: bool = false): Future[void] {.async.} =
   let text = self.app.getRegisterTextAsync(register).await
 
   let numLines = text.count('\n') + 1
 
   let newSelections = if numLines == self.selections.len:
     let lines = text.splitLines()
-    self.document.edit(self.selections, self.selections, lines, notify=true, record=true).mapIt(it.last.toSelection)
+    self.document.edit(self.selections, self.selections, lines, notify=true, record=true, inclusiveEnd=inclusiveEnd).mapIt(it.last.toSelection)
   else:
-    self.document.edit(self.selections, self.selections, [text], notify=true, record=true).mapIt(it.last.toSelection)
+    self.document.edit(self.selections, self.selections, [text], notify=true, record=true, inclusiveEnd=inclusiveEnd).mapIt(it.last.toSelection)
 
   # add list of selections for what was just pasted to history
   if newSelections.len == self.selections.len:
@@ -899,8 +899,8 @@ proc pasteAsync*(self: TextDocumentEditor, register: string): Future[void] {.asy
   self.selections = newSelections
   self.scrollToCursor(Last)
 
-proc paste*(self: TextDocumentEditor, register: string = "") {.expose("editor.text").} =
-  asyncCheck self.pasteAsync(register)
+proc paste*(self: TextDocumentEditor, register: string = "", inclusiveEnd: bool = false) {.expose("editor.text").} =
+  asyncCheck self.pasteAsync(register, inclusiveEnd)
 
 proc scrollText*(self: TextDocumentEditor, amount: float32) {.expose("editor.text").} =
   if self.disableScrolling:
