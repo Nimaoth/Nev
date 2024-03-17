@@ -632,16 +632,16 @@ proc vimPaste(editor: TextDocumentEditor, register: string = "") {.expose("vim-p
   # infof"vimPaste {register}, lines: {yankedLines}"
   editor.addNextCheckpoint "insert"
 
-  if yankedLines:
-    let selectionsToDelete = editor.selections
-    editor.selections = editor.delete(selectionsToDelete, inclusiveEnd=false)
+  let selectionsToDelete = editor.selections
+  editor.selections = editor.delete(selectionsToDelete, inclusiveEnd=false)
 
+  if yankedLines:
     if editor.mode != "visual-line":
       editor.moveLast "line", Both
       editor.insertText "\n", autoIndent=false
 
-  editor.paste register, inclusiveEnd=true
   editor.setMode "normal"
+  editor.paste register, inclusiveEnd=true
 
 proc vimCloseCurrentViewOrQuit() {.expose("vim-close-current-view-or-quit").} =
   let openEditors = getOpenEditors().len + getHiddenEditors().len

@@ -1,4 +1,3 @@
-
 discard """
   action: "run"
   cmd: "nim $target --nimblePath:./nimbleDir/simplePkgs $options $file"
