@@ -73,15 +73,7 @@ proc renderLine*(
   var diagnosticMessage: string = "■ "
   if hasDiagnostic:
     let diagnostic {.cursor.} = self.document.currentDiagnostics[diagnosticIndices[0]]
-    if diagnostic.message.len < 100:
-      diagnosticMessage.add diagnostic.message
-    elif diagnostic.code.getSome(code):
-      if code.kind == JInt:
-        diagnosticMessage.add $code.getInt
-      elif code.kind == JString:
-        diagnosticMessage.add code.getStr
-    else:
-      diagnosticMessage.add diagnostic.message
+    diagnosticMessage.add diagnostic.message[0..min(diagnostic.message.high, 100)]
 
     if diagnostic.severity.getSome(severity):
       diagnosticColorName = case severity
