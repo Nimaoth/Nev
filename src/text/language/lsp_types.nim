@@ -559,10 +559,10 @@ type
 
   InlayHint* = object
     position*: Position
-    label*: string # | InlayHintLabelPart[] # todo
+    label*: JsonNode # string # | InlayHintLabelPart[] # todo
     kind*: Option[InlayHintKind]
     textEdits*: seq[TextEdit]
-    tooltip*: Option[string] # | MarkupContent # todo
+    tooltip*: JsonNode # Option[string] # | MarkupContent # todo
     paddingLeft*: Option[bool]
     paddingRight*: Option[bool]
     data*: Option[JsonNode]
