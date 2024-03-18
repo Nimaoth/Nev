@@ -1,4 +1,5 @@
-import std/[os, strformat]
+import std/[os, strformat, options]
+import misc/timer
 
 ## This module provides a sequence type that can store a small number of elements inline,
 ## requiring no heap allocation.
@@ -10,7 +11,8 @@ type
     when sizeof(T) == 1 and Count <= MAX_COUNT8:
       # Store the length in one byte, so we can use the other 7 bytes for the array.
       inline8: tuple[len: uint8, arr: array[max(Count, 23), T]]
-    inline: tuple[len: uint64, arr: array[Count, T]]
+    else:
+      inline: tuple[len: uint64, arr: array[Count, T]]
     heap: tuple[len: uint64, arr: ptr UncheckedArray[T], capacity: int]
 
   SmallSeq*[T; Count: static int] = object
@@ -29,19 +31,26 @@ static:
   assert sizeof(Data[uint8, MAX_COUNT8 + 1]) == 8 + MAX_COUNT8 + 1 # 8 bytes for the length, and the rest for the array
   assert sizeof(Data[uint16, 16]) == 8 + 32 # 8 bytes for the length, and the rest for the array
 
-proc getInlineData[T; Count: static int](s: ptr SmallSeq[T, Count]): ptr UncheckedArray[T] =
+proc `=dup`*[T; Count: static int](s: SmallSeq[T, Count]): SmallSeq[T, Count] {.error.}
+proc `=copy`*[T; Count: static int](s: var SmallSeq[T, Count], x: SmallSeq[T, Count]) {.error.}
+
+proc `=destroy`*[T; Count: static int](s: SmallSeq[T, Count]) =
+  if not s.isInline:
+    dealloc(s.data.heap.arr)
+
+func getInlineData[T; Count: static int](s: ptr SmallSeq[T, Count]): ptr UncheckedArray[T] {.inline, raises: [].} =
   ## Returns a pointer to the inline data array
   when sizeof(T) == 1 and Count <= MAX_COUNT8:
     return cast[ptr UncheckedArray[T]](s.data.inline8.arr.addr)
   else:
     return cast[ptr UncheckedArray[T]](s.data.inline.arr.addr)
 
-proc isInline[T; Count: static int](s: SmallSeq[T, Count]): bool =
+func isInline[T; Count: static int](s: SmallSeq[T, Count]): bool {.inline, raises: [].} =
   ## Returns true if the sequence is stored inline
   let tag = cast[ptr uint8](s.addr)[]
   return (tag and 1) == 0
 
-proc setInline[T; Count: static int](s: var SmallSeq[T, Count], inline: bool) =
+func setInline[T; Count: static int](s: var SmallSeq[T, Count], inline: bool) {.inline, raises: [].} =
   ## CHanges the flag that indicates if the sequence is stored inline
   let tag = cast[ptr uint8](s.addr)
   if inline:
@@ -49,13 +58,13 @@ proc setInline[T; Count: static int](s: var SmallSeq[T, Count], inline: bool) =
   else:
     tag[] = tag[] or 1
 
-proc getData*[T; Count: static int](s: ptr SmallSeq[T, Count]): ptr UncheckedArray[T] =
+func getData*[T; Count: static int](s: ptr SmallSeq[T, Count]): ptr UncheckedArray[T] {.inline, raises: [].} =
   if s[].isInline:
     return s.getInlineData()
   else:
     return s.data.heap.arr
 
-func len*[T; Count: static int](s: SmallSeq[T, Count]): int =
+func len*[T; Count: static int](s: SmallSeq[T, Count]): int {.inline, raises: [].} =
   ## Returns the current length of the seq
   if s.isInline:
     when sizeof(T) == 1 and Count <= MAX_COUNT8:
@@ -65,11 +74,11 @@ func len*[T; Count: static int](s: SmallSeq[T, Count]): int =
   else:
     return int(s.data.heap.len shr 1)
 
-func `high`*[T; Count: static int](s: SmallSeq[T, Count]): int =
+func `high`*[T; Count: static int](s: SmallSeq[T, Count]): int {.inline, raises: [].} =
   ## Returns the highest valid index of the sequence, or -1 if the sequence is empty
   s.len - 1
 
-func `len=`[T; Count: static int](s: var SmallSeq[T, Count], len: int) =
+func `len=`[T; Count: static int](s: var SmallSeq[T, Count], len: int) {.inline, raises: [].} =
   ## Internal: set the length of the sequence
   if s.isInline:
     when sizeof(T) == 1 and Count <= MAX_COUNT8:
@@ -83,31 +92,31 @@ template `[]`*[T; Count: static int; I: Ordinal](s: SmallSeq[T, Count], slice: S
   ## Converts the SmallSeq to an openArray
   s.addr.getData().toOpenArray(slice.a, slice.b)
 
-func `[]`*[T; Count: static int; I: Ordinal](s: SmallSeq[T, Count], index: I): lent T =
+func `[]`*[T; Count: static int; I: Ordinal](s: SmallSeq[T, Count], index: I): lent T {.inline, raises: [].} =
   ## Returns the element at the given index
   assert index >= 0
   assert index < s.len
   return s.addr.getData()[index]
 
-func inlineCapacity*(T: typedesc, Count: static int): int =
+func inlineCapacity*(T: typedesc, Count: static int): int {.inline, raises: [].} =
   ## Returns the capacity of the inline storage for the given type and count
   when sizeof(T) == 1 and Count <= MAX_COUNT8:
     return max(Count, 23)
   else:
     return Count
 
-func capacity*[T; Count: static int](s: SmallSeq[T, Count]): int =
+func capacity*[T; Count: static int](s: SmallSeq[T, Count]): int {.inline, raises: [].} =
   ## Returns the current capacity of the sequence
   if s.isInline:
     return inlineCapacity(T, Count)
   else:
     return s.data.heap.capacity
 
-proc initSmallSeq*(T: typedesc, count: static int): SmallSeq[T, count] =
+func initSmallSeq*(T: typedesc, count: static int): SmallSeq[T, count] {.inline, raises: [].} =
   ## Initializes a new SmallSeq
-  result.data.inline.len = 0
+  discard
 
-iterator items*[T; Count: static int](s: SmallSeq[T, Count]): lent T =
+iterator items*[T; Count: static int](s: SmallSeq[T, Count]): lent T {.raises: [].} =
   if s.isInline:
     let arr = s.addr.getInlineData
     for i in 0..<s.len:
@@ -139,7 +148,7 @@ iterator mpairs*[T; Count: static int](s: var SmallSeq[T, Count]): tuple[key: in
     yield (i, v)
     inc i
 
-proc `$`*[T; Count: static int](s: SmallSeq[T, Count]): string =
+func `$`*[T; Count: static int](s: SmallSeq[T, Count]): string =
   result = "s["
   if s.isInline:
     result.add "inline "
@@ -155,20 +164,19 @@ proc `$`*[T; Count: static int](s: SmallSeq[T, Count]): string =
   result.add $(s.capacity - s.len)
   result.add " ]"
 
-proc moveToHeap[T; Count: static int](s: var SmallSeq[T, Count], slack: int) =
+proc moveToHeap[T; Count: static int](s: var SmallSeq[T, Count], slack: int) {.raises: [].} =
   ## Move the data from the inline storage to the heap
   assert s.isInline
   let len = s.len
   let inlineArr = s.addr.getInlineData
   let capacity = inlineCapacity(T, Count) + slack
-  var heapArr = cast[ptr UncheckedArray[T]](alloc0(sizeof(T) * capacity))
-  for i in 0..<len:
-    heapArr[i] = inlineArr[i]
+  var heapArr = cast[ptr UncheckedArray[T]](alloc(sizeof(T) * capacity))
+  copyMem(heapArr, inlineArr, sizeof(T) * len)
   s.data.heap.len = (len.uint64 shl 1) or 1
   s.data.heap.arr = heapArr
   s.data.heap.capacity = capacity
 
-proc shrink[T; Count: static int](s: var SmallSeq[T, Count], slack: int = 0) =
+proc shrink[T; Count: static int](s: var SmallSeq[T, Count], slack: int = 0) {.raises: [].} =
   ## Try to shrink the capacity of the sequence to fit the current length + `slack`
   if s.isInline:
     return
@@ -194,11 +202,12 @@ proc shrink[T; Count: static int](s: var SmallSeq[T, Count], slack: int = 0) =
 
   elif newCapacity < capacity:
     let heapArr = s.data.heap.arr
-    let newHeapArr = cast[ptr UncheckedArray[T]](realloc0(heapArr.pointer, sizeof(T) * capacity, sizeof(T) * newCapacity))
+    # let newHeapArr = cast[ptr UncheckedArray[T]](realloc0(heapArr.pointer, sizeof(T) * capacity, sizeof(T) * newCapacity))
+    let newHeapArr = cast[ptr UncheckedArray[T]](realloc(heapArr.pointer, sizeof(T) * newCapacity))
     s.data.heap.arr = newHeapArr
     s.data.heap.capacity = newCapacity
 
-proc grow[T; Count: static int](s: var SmallSeq[T, Count], newSize: int) =
+proc grow[T; Count: static int](s: var SmallSeq[T, Count], newSize: int) {.raises: [].} =
   ## Grow the capacity of the sequence to `newSize`
   assert not s.isInline
   assert newSize > s.data.heap.capacity
@@ -208,11 +217,11 @@ proc grow[T; Count: static int](s: var SmallSeq[T, Count], newSize: int) =
   s.data.heap.arr = newHeapArr
   s.data.heap.capacity = newSize
 
-proc add*[T; Count: static int](s: var SmallSeq[T, Count], value: sink T) =
+proc add*[T; Count: static int](s: var SmallSeq[T, Count], value: sink T) {.raises: [].} =
   ## Add a new element to the end of the sequence
 
   let len = s.len
-  if s.isInline and len < inlineCapacity(T, Count):
+  if len < inlineCapacity(T, Count):
     when sizeof(T) == 1 and Count <= MAX_COUNT8:
       s.data.inline8.arr[len] = value
       s.data.inline8.len += 2
@@ -221,7 +230,7 @@ proc add*[T; Count: static int](s: var SmallSeq[T, Count], value: sink T) =
       s.data.inline.len += 2
   else:
     if s.isInline:
-      s.moveToHeap(5)
+      s.moveToHeap(inlineCapacity(T, Count))
 
     if len == s.data.heap.capacity:
       s.grow(s.data.heap.capacity * 2)
@@ -229,7 +238,7 @@ proc add*[T; Count: static int](s: var SmallSeq[T, Count], value: sink T) =
     s.data.heap.arr[len] = value
     s.data.heap.len += 2
 
-proc shift[T; Count: static int](s: var SmallSeq[T, Count], index: int, offset: int) =
+proc shift[T; Count: static int](s: var SmallSeq[T, Count], index: int, offset: int) {.raises: [].} =
   ## Shift the elements of the sequence starting at `index` by `offset` positions
 
   let len = s.len
@@ -237,7 +246,7 @@ proc shift[T; Count: static int](s: var SmallSeq[T, Count], index: int, offset: 
   for i in countdown(len - 1, index):
     arr[i + offset] = arr[i]
 
-proc insert*[T; Count: static int](s: var SmallSeq[T, Count], index: int, values: openArray[T]) =
+proc insert*[T; Count: static int](s: var SmallSeq[T, Count], index: int, values: openArray[T]) {.raises: [].} =
   ## Insert the given values at the given index
 
   let len = s.len
@@ -251,7 +260,8 @@ proc insert*[T; Count: static int](s: var SmallSeq[T, Count], index: int, values
   else:
     # todo: this could be optimized by shiftingand moving to the heap in one operation instead of splitting it up
     if s.isInline:
-      s.moveToHeap(5)
+      assert s.len == inlineCapacity(T, Count)
+      s.moveToHeap(values.len)
 
     if len == s.data.heap.capacity:
       s.resize(s.data.heap.capacity * 2)
@@ -263,7 +273,7 @@ proc insert*[T; Count: static int](s: var SmallSeq[T, Count], index: int, values
 
     s.len = s.len + values.len
 
-proc insert*[T; Count: static int](s: var SmallSeq[T, Count], index: int, value: sink T) =
+proc insert*[T; Count: static int](s: var SmallSeq[T, Count], index: int, value: sink T) {.raises: [].} =
   ## Insert the given value at the given index
 
   let len = s.len
@@ -274,9 +284,8 @@ proc insert*[T; Count: static int](s: var SmallSeq[T, Count], index: int, value:
     s.len = s.len + 1
 
   else:
-    # todo: this could be optimized by shiftingand moving to the heap in one operation instead of splitting it up
     if s.isInline:
-      s.moveToHeap(5)
+      s.moveToHeap(inlineCapacity(T, Count))
 
     if len == s.data.heap.capacity:
       s.grow(s.data.heap.capacity * 2)
@@ -287,8 +296,8 @@ proc insert*[T; Count: static int](s: var SmallSeq[T, Count], index: int, value:
 
     s.len = s.len + 1
 
-when isMainModule:
-  var s = initSmallSeq(int8, 10)
+proc test() =
+  var s = initSmallSeq(int32, 15)
   echo $s
 
   s.add 1
@@ -322,3 +331,47 @@ when isMainModule:
   s.shrink(0)
 
   echo s
+
+when isMainModule:
+  proc benchmark[SmallSeqSize: static int, T](iterations: int, adds: int) =
+    var seqMs: float = 0
+    var start = startTimer()
+    for i in 0..<iterations:
+      # var x = newSeqOfCap[uint8](adds)
+      var x = newSeq[T]()
+      start = startTimer()
+      for i in 0..<adds:
+        x.add i.T
+      seqMs += start.elapsed.ms
+
+    var smallSeqMs: float = 0
+    # var x = initSmallSeq(T, SmallSeqSize)
+    start = startTimer()
+    for i in 0..<iterations:
+      var x = initSmallSeq(T, SmallSeqSize)
+      # x.addr.zeroMem(sizeof(typeof(x)))
+      start = startTimer()
+      for i in 0..<adds:
+        x.add i.T
+      # echo x
+      smallSeqMs += start.elapsed.ms
+
+    echo fmt"benchmark {SmallSeqSize}, {sizeof(SmallSeq[T, SmallSeqSize])}, iterations: {iterations}, {adds}: {seqMs}ms, {smallSeqMs}ms"
+
+  proc bench() =
+    const iterations = 100000
+    const adds = 256
+    # const iterations = 5
+    type T = uint8
+    benchmark[4, T](iterations, adds)
+    benchmark[8, T](iterations, adds)
+    benchmark[16, T](iterations, adds)
+    benchmark[32, T](iterations, adds)
+    benchmark[64, T](iterations, adds)
+    benchmark[128, T](iterations, adds)
+    benchmark[256, T](iterations, adds)
+    benchmark[512, T](iterations, adds)
+    benchmark[1024, T](iterations, adds)
+
+  test()
+  bench()
