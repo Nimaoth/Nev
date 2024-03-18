@@ -278,10 +278,10 @@ proc lspRangeToSelection*(self: TextDocument, `range`: lsp_types.Range): Selecti
   return ((`range`.start.line, firstColumn), (`range`.`end`.line, lastColumn))
 
 proc runeCursorToCursor*(self: TextDocument, cursor: CursorT[RuneIndex]): Cursor =
-  if cursor.line > self.lines.high or cursor.line > self.lines.high:
+  if cursor.line < 0 or cursor.line > self.lines.high:
     return (0, 0)
 
-  return (cursor.line, self.lines[cursor.line].runeOffset(cursor.column))
+  return (cursor.line, self.lines[cursor.line].runeOffset(max(0.RuneIndex, cursor.column)))
 
 proc runeSelectionToSelection*(self: TextDocument, cursor: SelectionT[RuneIndex]): Selection =
   return (self.runeCursorToCursor(cursor.first), self.runeCursorToCursor(cursor.last))
