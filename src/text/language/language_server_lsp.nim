@@ -242,9 +242,19 @@ method getInlayHints*(self: LanguageServerLSP, filename: string, selection: Sele
   if parsedResponse.getSome(inlayHints):
     var hints: seq[language_server_base.InlayHint]
     for hint in inlayHints:
+      let label = case hint.label.kind:
+        of JString: hint.label.getStr
+        of JArray:
+          if hint.label.elems.len == 0:
+            ""
+          else:
+            hint.label.elems[0]["value"].getStr
+        else:
+          ""
+
       hints.add language_server_base.InlayHint(
         location: (hint.position.line, hint.position.character),
-        label: hint.label,
+        label: label,
         kind: hint.kind.mapIt(case it
           of lsp_types.InlayHintKind.Type: language_server_base.InlayHintKind.Type
           of lsp_types.InlayHintKind.Parameter: language_server_base.InlayHintKind.Parameter

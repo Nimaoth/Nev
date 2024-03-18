@@ -320,7 +320,7 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async.} =
           "codeDescriptionSupport": true,
           "dataSupport": true
         },
-        "diagnostic": %*{},
+        # "diagnostic": %*{},
       },
       "window": %*{
         "showDocument": %*{
