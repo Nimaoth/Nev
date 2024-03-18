@@ -1,5 +1,3 @@
-import std/[os, strformat, options]
-import misc/timer
 
 ## This module provides a sequence type that can store a small number of elements inline,
 ## requiring no heap allocation.
@@ -238,20 +236,32 @@ proc add*[T; Count: static int](s: var SmallSeq[T, Count], value: sink T) {.rais
     s.data.heap.arr[len] = value
     s.data.heap.len += 2
 
-proc shift[T; Count: static int](s: var SmallSeq[T, Count], index: int, offset: int) {.raises: [].} =
+proc shiftRight[T; Count: static int](s: var SmallSeq[T, Count], index: int, offset: int) {.raises: [].} =
   ## Shift the elements of the sequence starting at `index` by `offset` positions
 
   let len = s.len
+  if index >= len:
+    return
+
   let arr = s.addr.getData()
-  for i in countdown(len - 1, index):
-    arr[i + offset] = arr[i]
+  moveMem(arr[index + offset].addr, arr[index].addr, sizeof(T) * (len - index))
+
+proc shiftLeft[T; Count: static int](s: var SmallSeq[T, Count], index: int, offset: int) {.raises: [].} =
+  ## Shift the elements of the sequence starting at `index` by `offset` positions to the left
+
+  let len = s.len
+  if index >= len:
+    return
+
+  let arr = s.addr.getData()
+  moveMem(arr[index - offset].addr, arr[index].addr, sizeof(T) * (len - index))
 
 proc insert*[T; Count: static int](s: var SmallSeq[T, Count], index: int, values: openArray[T]) {.raises: [].} =
   ## Insert the given values at the given index
 
   let len = s.len
   if s.isInline and len + values.len <= inlineCapacity(T, Count):
-    s.shift(index, values.len)
+    s.shiftRight(index, values.len)
     let arr = s.addr.getInlineData()
     for i in 0..<values.len:
       arr[index + i] = values[i]
@@ -266,7 +276,7 @@ proc insert*[T; Count: static int](s: var SmallSeq[T, Count], index: int, values
     if len == s.data.heap.capacity:
       s.resize(s.data.heap.capacity * 2)
 
-    s.shift(index, values.len)
+    s.shiftRight(index, values.len)
 
     for i in 0..<values.len:
       s.data.heap.arr[index + i] = values[i]
@@ -278,7 +288,7 @@ proc insert*[T; Count: static int](s: var SmallSeq[T, Count], index: int, value:
 
   let len = s.len
   if s.isInline and len + 1 <= inlineCapacity(T, Count):
-    s.shift(index, 1)
+    s.shiftRight(index, 1)
     let arr = s.addr.getInlineData()
     arr[index] = value
     s.len = s.len + 1
@@ -290,11 +300,44 @@ proc insert*[T; Count: static int](s: var SmallSeq[T, Count], index: int, value:
     if len == s.data.heap.capacity:
       s.grow(s.data.heap.capacity * 2)
 
-    s.shift(index, 1)
+    s.shiftRight(index, 1)
 
     s.data.heap.arr[index] = value
 
     s.len = s.len + 1
+
+proc delete*[T; Count: static int](s: var SmallSeq[T, Count], slice: Slice[int], shrink: bool = true) {.raises: [].} =
+  ## Deletes the entries in the range defined by `slice`, shifting the entries afterwards to the left.
+  ## If `shrink` is true then the allocation will be adjusted to the new size, and moved to inline storage if possible.
+
+  assert slice.a in 0..<s.len
+  assert slice.b in 0..<s.len
+  assert slice.a <= slice.b
+
+  let len = s.len
+  let reduction = slice.b - slice.a + 1
+  let newLen = len - reduction
+  assert newLen >= 0
+
+  if s.isInline:
+    s.shiftLeft(slice.a, reduction)
+    s.len = newLen
+
+  elif shrink and newLen <= inlineCapacity(T, Count):
+    let heapArr = s.data.heap.arr
+    let inlineArr = s.addr.getInlineData()
+    s.setInline true
+    copyMem(inlineArr, heapArr, sizeof(T) * slice.a)
+    copyMem(inlineArr[slice.a].addr, heapArr[slice.b + 1].addr, sizeof(T) * (len - slice.b - 1))
+    dealloc(heapArr)
+    s.len = newLen
+
+  else:
+    s.shiftLeft(slice.a, reduction)
+    s.len = newLen
+    if shrink:
+      s.shrink()
+
 
 proc test() =
   var s = initSmallSeq(int32, 15)
@@ -331,8 +374,17 @@ proc test() =
   s.shrink(0)
 
   echo s
+  echo "----------------"
+  s.delete 15..16
+  echo s
+  s.delete 5..10
+  echo s
+  echo "----------------"
 
 when isMainModule:
+  import std/[os, strformat]
+  import misc/timer
+
   proc benchmark[SmallSeqSize: static int, T](iterations: int, adds: int) =
     var seqMs: float = 0
     var start = startTimer()
