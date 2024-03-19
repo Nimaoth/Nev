@@ -1,5 +1,5 @@
 import std/[sequtils, strformat, strutils, tables, unicode, options, os, algorithm, json, macros, macrocache, sugar, streams, deques]
-import misc/[id, util, timer, event, cancellation_token, myjsonutils, traits, rect_utils, custom_logger, custom_async, fuzzy_matching, array_set]
+import misc/[id, util, timer, event, cancellation_token, myjsonutils, traits, rect_utils, custom_logger, custom_async, fuzzy_matching, array_set, delayed_task]
 import ui/node
 import scripting/[expose, scripting_base]
 import platform/[platform, filesystem]
@@ -117,6 +117,8 @@ type
     currentScriptContext: Option[ScriptContext] = ScriptContext.none
 
     statusBarOnTop*: bool
+    inputHistory*: string
+    clearInputHistoryTask: DelayedTask
 
     currentViewInternal: int
     views*: seq[View]
@@ -1893,6 +1895,26 @@ proc handleScroll*(self: App, scroll: Vec2, mousePosWindow: Vec2, modifiers: Mod
       view.editor.handleScroll(scroll, mousePosWindow)
       return
 
+proc clearInputHistoryDelayed*(self: App) =
+  let clearInputHistoryDelay = getOption[int](self, "editor.clear-input-history-delay", 3000)
+  if self.clearInputHistoryTask.isNil:
+    self.clearInputHistoryTask = startDelayed(clearInputHistoryDelay, repeat=false):
+      self.inputHistory.setLen 0
+      self.platform.requestRender()
+  else:
+    self.clearInputHistoryTask.interval = clearInputHistoryDelay
+    self.clearInputHistoryTask.reschedule()
+
+proc recordInputToHistory*(self: App, input: string) =
+  let recordInput = getOption[bool](self, "editor.record-input-history", true)
+  if not recordInput:
+    return
+
+  self.inputHistory.add input
+  const maxLen = 50
+  if self.inputHistory.len > maxLen:
+    self.inputHistory = self.inputHistory[(self.inputHistory.len - maxLen)..^1]
+
 proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers) =
   # debugf"handleKeyPress {inputToString(input, modifiers)}"
   for register in self.recordingKeys:
@@ -1900,8 +1922,18 @@ proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers) =
       self.registers[register] = Register(kind: Text, text: "")
     self.registers[register].text.add inputToString(input, modifiers)
 
-  if self.currentEventHandlers.handleEvent(input, modifiers):
+  case self.currentEventHandlers.handleEvent(input, modifiers)
+  of Progress:
+    self.recordInputToHistory(inputToString(input, modifiers))
     self.platform.preventDefault()
+    self.platform.requestRender()
+  of Failed, Canceled, Handled:
+    self.recordInputToHistory(inputToString(input, modifiers) & " ")
+    self.clearInputHistoryDelayed()
+    self.platform.preventDefault()
+    self.platform.requestRender()
+  of Ignored:
+    discard
 
 proc handleKeyRelease*(self: App, input: int64, modifiers: Modifiers) =
   discard
@@ -1909,7 +1941,18 @@ proc handleKeyRelease*(self: App, input: int64, modifiers: Modifiers) =
 proc handleRune*(self: App, input: int64, modifiers: Modifiers) =
   # debugf"handleRune {inputToString(input, modifiers)}"
   let modifiers = if input.isAscii and input.char.isAlphaNumeric: modifiers else: {}
-  if self.currentEventHandlers.handleEvent(input, modifiers):
+  case self.currentEventHandlers.handleEvent(input, modifiers):
+  of Progress:
+    self.recordInputToHistory(inputToString(input, modifiers))
+    self.platform.preventDefault()
+    self.platform.requestRender()
+  of Failed, Canceled, Handled:
+    self.recordInputToHistory(inputToString(input, modifiers) & " ")
+    self.clearInputHistoryDelayed()
+    self.platform.preventDefault()
+    self.platform.requestRender()
+  of Ignored:
+    discard
     self.platform.preventDefault()
 
 proc handleDropFile*(self: App, path, content: string) =

@@ -24,8 +24,9 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
         let textColor = self.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
         let text = if self.currentMode.len == 0: "-" else: self.currentMode
 
-        builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = text, textColor = textColor, pivot = vec2(1, 0)):
-          discard
+        builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = text, textColor = textColor, pivot = vec2(1, 0))
+        builder.panel(&{}, w = builder.charWidth)
+        builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = self.inputHistory, textColor = textColor, pivot = vec2(1, 0))
 
         builder.panel(&{FillX, SizeToContentY}, pivot = vec2(1, 0)):
           let wasActive = self.getCommandLineTextEditor.active

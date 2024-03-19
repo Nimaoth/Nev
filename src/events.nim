@@ -202,9 +202,11 @@ proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers,
   else:
     return Failed
 
-proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifiers): bool =
+proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifiers): EventResponse =
   let anyInProgress = handlers.anyInProgress
 
+  var anyProgressed = false
+  var anyFailed = false
   var allowHandlingUnknownAsInput = true
   # Go through handlers in reverse
   for i in 0..<handlers.len:
@@ -215,9 +217,6 @@ proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifier
     else:
       Ignored
 
-    if response != Ignored:
-      result = true
-
     case response
     of Handled:
       allowHandlingUnknownAsInput = false
@@ -227,13 +226,27 @@ proc handleEvent*(handlers: seq[EventHandler], input: int64, modifiers: Modifier
           var h = h
           h.reset()
 
-      break
+      return Handled
     of Progress:
       allowHandlingUnknownAsInput = false
-    of Failed, Canceled, Ignored:
+      anyProgressed = true
+
+    of Failed, Canceled:
+      # Process remaining handlers
+      anyFailed = true
+      discard
+
+    of Ignored:
       # Process remaining handlers
       discard
 
     if handler.config.consumeAllInput:
       # Don't process remaining handlers
       break
+
+  if anyProgressed:
+    result = Progress
+  elif anyFailed:
+    result = Failed
+  else:
+    result = Ignored
