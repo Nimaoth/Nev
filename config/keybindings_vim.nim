@@ -126,7 +126,8 @@ proc vimDeleteSelection(editor: TextDocumentEditor, forceInclusiveEnd: bool, old
   if oldSelections.isSome:
     editor.selections = oldSelections.get
   editor.addNextCheckpoint("insert")
-  discard editor.delete(selectionsToDelete, inclusiveEnd=deleteInclusiveEnd or forceInclusiveEnd)
+  let inclusiveEnd = ((not selectLines) and (deleteInclusiveEnd or forceInclusiveEnd))
+  discard editor.delete(selectionsToDelete, inclusiveEnd=inclusiveEnd)
   deleteInclusiveEnd = true
   editor.selections = newSelections
   editor.setMode "normal"
@@ -1024,6 +1025,7 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     selectLines = true
     let oldSelections = editor.selections
     editor.vimSelectLine()
+    infof"{editor.selections}"
     editor.vimDeleteSelection(true, oldSelections=oldSelections.some)
     selectLines = false
 
