@@ -43,7 +43,7 @@ func getInlineData[T; Count: static int](s: ptr SmallSeq[T, Count]): ptr Uncheck
   else:
     return cast[ptr UncheckedArray[T]](s.data.inline.arr.addr)
 
-func isInline[T; Count: static int](s: SmallSeq[T, Count]): bool {.inline, raises: [].} =
+func isInline*[T; Count: static int](s: SmallSeq[T, Count]): bool {.inline, raises: [].} =
   ## Returns true if the sequence is stored inline
   let tag = cast[ptr uint8](s.addr)[]
   return (tag and 1) == 0
@@ -76,7 +76,7 @@ func `high`*[T; Count: static int](s: SmallSeq[T, Count]): int {.inline, raises:
   ## Returns the highest valid index of the sequence, or -1 if the sequence is empty
   s.len - 1
 
-func `len=`[T; Count: static int](s: var SmallSeq[T, Count], len: int) {.inline, raises: [].} =
+func `len=`*[T; Count: static int](s: var SmallSeq[T, Count], len: int) {.inline, raises: [].} =
   ## Internal: set the length of the sequence
   if s.isInline:
     when sizeof(T) == 1 and Count <= MAX_COUNT8:
@@ -174,13 +174,13 @@ proc moveToHeap[T; Count: static int](s: var SmallSeq[T, Count], slack: int) {.r
   s.data.heap.arr = heapArr
   s.data.heap.capacity = capacity
 
-proc shrink[T; Count: static int](s: var SmallSeq[T, Count], slack: int = 0) {.raises: [].} =
+proc shrink*[T; Count: static int](s: var SmallSeq[T, Count], slack: int = 0) {.raises: [].} =
   ## Try to shrink the capacity of the sequence to fit the current length + `slack`
   if s.isInline:
     return
 
-  let len = s.len
-  let newCapacity = len + slack
+  let oldLen = s.len
+  let newCapacity = oldLen + slack
   let capacity = s.data.heap.capacity
 
   if newCapacity <= inlineCapacity(T, Count):
@@ -188,15 +188,15 @@ proc shrink[T; Count: static int](s: var SmallSeq[T, Count], slack: int = 0) {.r
     let arr = s.data.heap.arr
 
     s.setInline true
-    s.len = len
+    s.len = oldLen
     let inlineArr = s.addr.getInlineData
 
-    for i in 0..<len:
+    for i in 0..<oldLen:
       inlineArr[i] = arr[i]
 
     dealloc(arr)
     assert s.isInline
-    assert s.len == len
+    assert s.len == oldLen
 
   elif newCapacity < capacity:
     let heapArr = s.data.heap.arr
@@ -320,7 +320,7 @@ proc delete*[T; Count: static int](s: var SmallSeq[T, Count], slice: Slice[int],
   assert newLen >= 0
 
   if s.isInline:
-    s.shiftLeft(slice.a, reduction)
+    s.shiftLeft(slice.b + 1, reduction)
     s.len = newLen
 
   elif shrink and newLen <= inlineCapacity(T, Count):
@@ -333,7 +333,7 @@ proc delete*[T; Count: static int](s: var SmallSeq[T, Count], slice: Slice[int],
     s.len = newLen
 
   else:
-    s.shiftLeft(slice.a, reduction)
+    s.shiftLeft(slice.b + 1, reduction)
     s.len = newLen
     if shrink:
       s.shrink()
