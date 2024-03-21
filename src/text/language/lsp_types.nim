@@ -4,7 +4,7 @@ import misc/[myjsonutils]
 macro variant(name: untyped, types: varargs[untyped]): untyped =
   var variantType = quote do:
     type `name`* = object
-      node: JsonNode
+      node*: JsonNode
 
   var procs = nnkStmtList.newTree
   for t in types:
@@ -462,11 +462,12 @@ type
     additionalTextEdits*: seq[TextEdit]
     commitCharacters*: seq[string]
     command*: seq[Command]
+    score*: Option[float]
     data*: Option[JsonNode]
 
   CompletionList* = object
     isIncomplete*: bool
-    itemDefaults*: bool # todo
+    itemDefaults*: Option[JsonNode] = JsonNode.none
     items*: seq[CompletionItem]
 
   SymbolKind* = enum
@@ -524,7 +525,7 @@ type
     textDocument*: TextDocumentIdentifier
     position*: Position
     partialResultToken*: Option[ProgressToken]
-    context: Option[CompletionContext]
+    context*: Option[CompletionContext]
 
   DefinitionParams* = object
     workDoneProgress*: bool
@@ -757,3 +758,9 @@ proc error*[T](code: int, message: string, data: JsonNode = newJNull()): Respons
 
 proc isSuccess*[T](response: Response[T]): bool = response.kind == ResponseKind.Success
 proc isError*[T](response: Response[T]): bool = response.kind == ResponseKind.Error
+
+proc `$`*(error: ResponseError): string =
+  result = "error(" & $error.code & ", " & $error.message
+  if error.data != nil:
+    result.add ", " & $error.data
+  result.add ")"

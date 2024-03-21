@@ -591,7 +591,10 @@ proc getCompletions*(client: LSPClient, filename: string, line: int, column: int
     position: Position(
       line: line,
       character: column
-    )
+    ),
+    context: CompletionContext(
+      triggerKind: CompletionTriggerKind.Invoked
+    ).some
   ).toJson
 
   let response = (await client.sendRequest("textDocument/completion", params)).to CompletionResponse

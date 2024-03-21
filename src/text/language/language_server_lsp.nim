@@ -52,7 +52,7 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string], 
   log lvlInfo, fmt"Starting language server for {languageId} with config {config}"
 
   if not config.hasKey("path"):
-    log lvlError, fmt"Missing path in config for language server {languageId}"
+    log lvlError, &"Missing path in config for language server {languageId}"
     return LanguageServerLSP.none
 
   let exePath = config["path"].jsonTo(string)
@@ -172,7 +172,7 @@ method getDefinition*(self: LanguageServerLSP, filename: string, location: Curso
   debugf"getDefinition {filename}:{location}"
   let response = await self.client.getDefinition(filename, location.line, location.column)
   if response.isError:
-    log(lvlError, fmt"Error: {response.error}")
+    log(lvlError, &"Error: {response.error}")
     return Definition.none
 
   debugf"getDefinition -> {response}"
@@ -197,7 +197,7 @@ method getDefinition*(self: LanguageServerLSP, filename: string, location: Curso
 method getHover*(self: LanguageServerLSP, filename: string, location: Cursor): Future[Option[string]] {.async.} =
   let response = await self.client.getHover(filename, location.line, location.column)
   if response.isError:
-    log(lvlError, fmt"Error: {response.error}")
+    log(lvlError, &"Error: {response.error}")
     return string.none
 
   let parsedResponse = response.result
@@ -234,7 +234,7 @@ method getHover*(self: LanguageServerLSP, filename: string, location: Cursor): F
 method getInlayHints*(self: LanguageServerLSP, filename: string, selection: Selection): Future[seq[language_server_base.InlayHint]] {.async.} =
   let response = await self.client.getInlayHints(filename, selection)
   if response.isError:
-    log(lvlError, fmt"Error: {response.error}")
+    log(lvlError, &"Error: {response.error}")
     return newSeq[language_server_base.InlayHint]()
 
   let parsedResponse = response.result
@@ -275,7 +275,7 @@ method getSymbols*(self: LanguageServerLSP, filename: string): Future[seq[Symbol
 
   let response = await self.client.getSymbols(filename)
   if response.isError:
-    log(lvlError, fmt"Error: {response.error}")
+    log(lvlError, &"Error: {response.error}")
     return completions
 
   let parsedResponse = response.result
@@ -329,7 +329,7 @@ method getDiagnostics*(self: LanguageServerLSP, filename: string): Future[Respon
 
   let response = await self.client.getDiagnostics(filename)
   if response.isError:
-    log(lvlError, &"Error: {response.error.code}\n{response.error.message}")
+    log(lvlError, &"Error: {response.error}")
     return response.to(seq[language_server_base.Diagnostic])
 
   let report = response.result
@@ -362,7 +362,7 @@ method getCompletions*(self: LanguageServerLSP, languageId: string, filename: st
 
   let response = await self.client.getCompletions(filename, location.line, location.column)
   if response.isError:
-    log(lvlError, &"Error: {response.error.code}\n{response.error.message}")
+    log(lvlError, &"Error: {response.error}")
     return completionsResult
 
   let completions = response.result
