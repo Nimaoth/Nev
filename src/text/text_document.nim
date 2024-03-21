@@ -281,7 +281,7 @@ proc runeCursorToCursor*(self: TextDocument, cursor: CursorT[RuneIndex]): Cursor
   if cursor.line < 0 or cursor.line > self.lines.high:
     return (0, 0)
 
-  return (cursor.line, self.lines[cursor.line].runeOffset(max(0.RuneIndex, cursor.column)))
+  return (cursor.line, self.lines[cursor.line].runeOffset(min(self.lines[cursor.line].runeLen.RuneIndex, max(0.RuneIndex, cursor.column))))
 
 proc runeSelectionToSelection*(self: TextDocument, cursor: SelectionT[RuneIndex]): Selection =
   return (self.runeCursorToCursor(cursor.first), self.runeCursorToCursor(cursor.last))
