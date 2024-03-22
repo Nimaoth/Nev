@@ -36,15 +36,9 @@ proc destroy*[T](channel: AsyncChannel[T]) =
   channel.chan.deallocShared
   channel.chan = nil
 
-proc destroy*(process: AsyncProcess) =
-  process.dontRestart = true
-
-  if not process.process.isNil:
-    process.process.terminate()
-
-  process.inputStreamChannel[].send nil
-  process.outputStreamChannel[].send nil
-  process.errorStreamChannel[].send nil
+proc destroyProcess2(process: ptr AsyncProcess) =
+  # todo: probably needs a lock for the process RC
+  let process = process[]
 
   if not process.readerFlowVar.isNil:
     blockUntil process.readerFlowVar[]
@@ -64,6 +58,44 @@ proc destroy*(process: AsyncProcess) =
   process.errorStreamChannel.deallocShared
   process.outputStreamChannel.deallocShared
   process.serverDiedNotifications.deallocShared
+
+proc destroy*(process: AsyncProcess) =
+  log lvlInfo, fmt"Destroying process {process.name}"
+  process.dontRestart = true
+
+  if not process.process.isNil:
+    process.process.terminate()
+
+  process.inputStreamChannel[].send nil
+  process.outputStreamChannel[].send nil
+  process.errorStreamChannel[].send nil
+
+  spawn destroyProcess2(process.addr)
+  # todo: should probably wait for the other thread to increment the process RC
+
+  # if not process.readerFlowVar.isNil:
+  #   debugf"wait for reader"
+  #   blockUntil process.readerFlowVar[]
+  # if not process.writerFlowVar.isNil:
+  #   debugf"wait for writer"
+  #   blockUntil process.writerFlowVar[]
+  # if not process.errorReaderFlowVar.isNil:
+  #   debugf"wait for error reader"
+  #   blockUntil process.errorReaderFlowVar[]
+
+  # debugf"close channels"
+  # process.inputStreamChannel[].close()
+  # process.errorStreamChannel[].close()
+  # process.outputStreamChannel[].close()
+  # process.serverDiedNotifications[].close()
+  # debugf"destroy channels"
+  # process.input.destroy()
+  # process.error.destroy()
+  # process.output.destroy()
+  # process.inputStreamChannel.deallocShared
+  # process.errorStreamChannel.deallocShared
+  # process.outputStreamChannel.deallocShared
+  # process.serverDiedNotifications.deallocShared
 
 proc recv*[T: char](achan: AsyncChannel[T], amount: int): Future[string] {.async.} =
   var buffer = ""
@@ -157,7 +189,7 @@ proc readInput(chan: ptr Channel[Stream], serverDiedNotifications: ptr Channel[b
           serverDiedNotifications[].send true
           break
       except:
-        echo &"readInput: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+        # echo &"readInput: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
         break
 
   return true
@@ -188,7 +220,7 @@ proc writeOutput(chan: ptr Channel[Stream], data: ptr Channel[Option[string]]): 
 
       except:
         # echo "ioerror"
-        echo &"writeOutput: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+        # echo &"writeOutput: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
         break
 
   return true
