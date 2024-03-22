@@ -401,6 +401,31 @@ proc edit*(self: TextDocumentEditor; selections: seq[Selection];
   result = parseJson($res).jsonTo(typeof(result))
 
 
+proc editor_text_deleteLines_void_TextDocumentEditor_Slice_int_Selections_wasm(
+    arg: cstring): cstring {.importc.}
+proc deleteLines*(self: TextDocumentEditor; slice: Slice[int];
+                  oldSelections: Selections) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when Slice[int] is JsonNode:
+      slice
+    else:
+      slice.toJson()
+  argsJson.add block:
+    when Selections is JsonNode:
+      oldSelections
+    else:
+      oldSelections.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_deleteLines_void_TextDocumentEditor_Slice_int_Selections_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_selectPrev_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
 proc selectPrev*(self: TextDocumentEditor) =
@@ -870,6 +895,90 @@ proc getNextFindResult*(self: TextDocumentEditor; cursor: Cursor;
       wrap.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_getNextFindResult_Selection_TextDocumentEditor_Cursor_int_bool_bool_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_text_getPrevDiagnostic_Selection_TextDocumentEditor_Cursor_int_int_bool_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc getPrevDiagnostic*(self: TextDocumentEditor; cursor: Cursor;
+                        severity: int = 0; offset: int = 0;
+                        includeAfter: bool = true; wrap: bool = true): Selection =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when Cursor is JsonNode:
+      cursor
+    else:
+      cursor.toJson()
+  argsJson.add block:
+    when int is JsonNode:
+      severity
+    else:
+      severity.toJson()
+  argsJson.add block:
+    when int is JsonNode:
+      offset
+    else:
+      offset.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      includeAfter
+    else:
+      includeAfter.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      wrap
+    else:
+      wrap.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_getPrevDiagnostic_Selection_TextDocumentEditor_Cursor_int_int_bool_bool_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_text_getNextDiagnostic_Selection_TextDocumentEditor_Cursor_int_int_bool_bool_wasm(
+    arg: cstring): cstring {.importc.}
+proc getNextDiagnostic*(self: TextDocumentEditor; cursor: Cursor;
+                        severity: int = 0; offset: int = 0;
+                        includeAfter: bool = true; wrap: bool = true): Selection =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when Cursor is JsonNode:
+      cursor
+    else:
+      cursor.toJson()
+  argsJson.add block:
+    when int is JsonNode:
+      severity
+    else:
+      severity.toJson()
+  argsJson.add block:
+    when int is JsonNode:
+      offset
+    else:
+      offset.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      includeAfter
+    else:
+      includeAfter.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      wrap
+    else:
+      wrap.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_getNextDiagnostic_Selection_TextDocumentEditor_Cursor_int_int_bool_bool_wasm(
       argsJsonString.cstring)
   result = parseJson($res).jsonTo(typeof(result))
 

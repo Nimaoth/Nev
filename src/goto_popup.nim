@@ -1,6 +1,7 @@
 import std/[strutils, tables, sugar, algorithm, options]
-import fuzzy, bumpy, vmath
+import bumpy, vmath
 import app_interface, ast_document, text/text_editor, popup, events, compiler, compiler_types, id, util, rect_utils, event, input
+import misc/fuzzy_matching
 from scripting_api import LineNumbers
 
 type AstGotoDefinitionPopup* = ref object of Popup

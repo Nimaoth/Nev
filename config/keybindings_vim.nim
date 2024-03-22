@@ -1025,7 +1025,6 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     selectLines = true
     let oldSelections = editor.selections
     editor.vimSelectLine()
-    infof"{editor.selections}"
     editor.vimDeleteSelection(true, oldSelections=oldSelections.some)
     selectLines = false
 
@@ -1180,3 +1179,12 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommand "", "<C-k><C-t>", "print-treesitter-tree"
   addTextCommandBlock "", "<C-k><C-l>": lspToggleLogServerDebug()
   addCommand "editor", "<C-k><C-e>", "toggle-flag", "editor.text.highlight-treesitter-errors"
+
+  addTextCommandBlock "", "<F12>":
+    editor.selection = editor.getNextDiagnostic(editor.selection.last, 1).first.toSelection
+    editor.scrollToCursor Last
+    editor.updateTargetColumn()
+  addTextCommandBlock "", "<S-F12>":
+    editor.selection = editor.getPrevDiagnostic(editor.selection.last, 1).first.toSelection
+    editor.scrollToCursor Last
+    editor.updateTargetColumn()

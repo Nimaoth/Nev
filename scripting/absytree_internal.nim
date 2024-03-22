@@ -55,6 +55,9 @@ proc editor_text_edit_seq_Selection_TextDocumentEditor_seq_Selection_seq_string_
     notify: bool = true; record: bool = true; inclusiveEnd: bool = false): seq[
     Selection] =
   discard
+proc editor_text_deleteLines_void_TextDocumentEditor_Slice_int_Selections_impl*(
+    self: TextDocumentEditor; slice: Slice[int]; oldSelections: Selections) =
+  discard
 proc editor_text_selectPrev_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
@@ -129,6 +132,14 @@ proc editor_text_getPrevFindResult_Selection_TextDocumentEditor_Cursor_int_bool_
 proc editor_text_getNextFindResult_Selection_TextDocumentEditor_Cursor_int_bool_bool_impl*(
     self: TextDocumentEditor; cursor: Cursor; offset: int = 0;
     includeAfter: bool = true; wrap: bool = true): Selection =
+  discard
+proc editor_text_getPrevDiagnostic_Selection_TextDocumentEditor_Cursor_int_int_bool_bool_impl*(
+    self: TextDocumentEditor; cursor: Cursor; severity: int = 0;
+    offset: int = 0; includeAfter: bool = true; wrap: bool = true): Selection =
+  discard
+proc editor_text_getNextDiagnostic_Selection_TextDocumentEditor_Cursor_int_int_bool_bool_impl*(
+    self: TextDocumentEditor; cursor: Cursor; severity: int = 0;
+    offset: int = 0; includeAfter: bool = true; wrap: bool = true): Selection =
   discard
 proc editor_text_addNextFindResultToSelection_void_TextDocumentEditor_bool_bool_impl*(
     self: TextDocumentEditor; includeAfter: bool = true; wrap: bool = true) =

@@ -38,6 +38,8 @@ proc editor_text_edit_seq_Selection_TextDocumentEditor_seq_Selection_seq_string_
     self: TextDocumentEditor; selections: seq[Selection]; texts: seq[string];
     notify: bool = true; record: bool = true; inclusiveEnd: bool = false): seq[
     Selection]  {.importc.}
+proc editor_text_deleteLines_void_TextDocumentEditor_Slice_int_Selections_impl(
+    self: TextDocumentEditor; slice: Slice[int]; oldSelections: Selections)  {.importc.}
 proc editor_text_selectPrev_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}
 proc editor_text_selectNext_void_TextDocumentEditor_impl(
@@ -88,6 +90,12 @@ proc editor_text_getPrevFindResult_Selection_TextDocumentEditor_Cursor_int_bool_
 proc editor_text_getNextFindResult_Selection_TextDocumentEditor_Cursor_int_bool_bool_impl(
     self: TextDocumentEditor; cursor: Cursor; offset: int = 0;
     includeAfter: bool = true; wrap: bool = true): Selection  {.importc.}
+proc editor_text_getPrevDiagnostic_Selection_TextDocumentEditor_Cursor_int_int_bool_bool_impl(
+    self: TextDocumentEditor; cursor: Cursor; severity: int = 0;
+    offset: int = 0; includeAfter: bool = true; wrap: bool = true): Selection  {.importc.}
+proc editor_text_getNextDiagnostic_Selection_TextDocumentEditor_Cursor_int_int_bool_bool_impl(
+    self: TextDocumentEditor; cursor: Cursor; severity: int = 0;
+    offset: int = 0; includeAfter: bool = true; wrap: bool = true): Selection  {.importc.}
 proc editor_text_addNextFindResultToSelection_void_TextDocumentEditor_bool_bool_impl(
     self: TextDocumentEditor; includeAfter: bool = true; wrap: bool = true)  {.importc.}
 proc editor_text_addPrevFindResultToSelection_void_TextDocumentEditor_bool_bool_impl(

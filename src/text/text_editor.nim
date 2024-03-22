@@ -10,6 +10,8 @@ import workspaces/[workspace]
 import document, document_editor, events, vmath, bumpy, input, custom_treesitter, indent, text_document
 import config_provider, app_interface
 
+from language/lsp_types import Response, CompletionList, CompletionItem, isSuccess, asTextEdit, asInsertReplaceEdit
+
 export text_document, document_editor, id
 
 logCategory "texted"
@@ -100,8 +102,9 @@ type TextDocumentEditor* = ref object of DocumentEditor
   lastPressedMouseButton*: MouseButton
   dragStartSelection*: Selection
 
+  completionMatches*: seq[tuple[index: int, score: float]]
   disableCompletions*: bool
-  completions*: seq[TextCompletion]
+  completions*: CompletionList
   selectedCompletion*: int
   completionsBaseIndex*: int
   completionsScrollOffset*: float
@@ -508,8 +511,9 @@ proc screenLineCount(self: TextDocumentEditor): int {.expose: "editor.text".} =
   return (self.lastContentBounds.h / self.platform.totalLineHeight).int
 
 proc visibleTextRange*(self: TextDocumentEditor, buffer: int = 0): Selection =
-  result.first.line = max(0, self.previousBaseIndex - int(self.scrollOffset / self.platform.totalLineHeight) - buffer)
-  result.last.line = min(self.lineCount - 1, self.previousBaseIndex - int(self.scrollOffset / self.platform.totalLineHeight) + self.screenLineCount + buffer)
+  assert self.lineCount > 0
+  result.first.line = clamp(self.previousBaseIndex - int(self.scrollOffset / self.platform.totalLineHeight) - buffer, 0, self.lineCount - 1)
+  result.last.line = clamp(self.previousBaseIndex - int(self.scrollOffset / self.platform.totalLineHeight) + self.screenLineCount + buffer, 0, self.lineCount - 1)
   result.last.column = self.document.lastValidIndex(result.last.line)
 
 proc doMoveCursorColumn(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool = true, includeAfter: bool = true): Cursor {.expose: "editor.text".} =
@@ -667,6 +671,15 @@ proc delete*(self: TextDocumentEditor, selections: seq[Selection], notify: bool 
 
 proc edit*(self: TextDocumentEditor, selections: seq[Selection], texts: seq[string], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] {.expose("editor.text").} =
   return self.document.edit(selections, self.selections, texts, notify, record, inclusiveEnd=inclusiveEnd)
+
+proc deleteLines(self: TextDocumentEditor, slice: Slice[int], oldSelections: Selections) {.expose("editor.text").} =
+  var selection: Selection = ((slice.a.clamp(0, self.lineCount - 1), 0), (slice.b.clamp(0, self.lineCount - 1), 0)).normalized
+  selection.last.column = self.document.lastValidIndex(selection.last.line)
+  if selection.last.line < self.document.lines.high:
+    selection.last = (selection.last.line + 1, 0)
+  elif selection.first.line > 0:
+    selection.first = (selection.first.line - 1, self.document.lastValidIndex(selection.first.line - 1))
+  discard self.document.delete([selection], oldSelections)
 
 proc selectPrev(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.selectionHistory.len > 0:
@@ -978,6 +991,65 @@ proc getNextFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 
 
   if cursor != (0, 0):
     let wrapped = self.getNextFindResult((0, 0), offset - i, includeAfter=includeAfter, wrap=wrap)
+    if not wrapped.isEmpty:
+      return wrapped
+  return cursor.toSelection
+
+proc getPrevDiagnostic*(self: TextDocumentEditor, cursor: Cursor, severity: int = 0, offset: int = 0, includeAfter: bool = true, wrap: bool = true): Selection {.expose("editor.text").} =
+  var i = 0
+  for line in countdown(cursor.line, 0):
+    if self.diagnosticsPerLine.contains(line):
+      let diagnosticsOnCurrentLine {.cursor.} = self.diagnosticsPerLine[line]
+      for k in countdown(diagnosticsOnCurrentLine.high, 0):
+        let diagnosticIndex = diagnosticsOnCurrentLine[k]
+        if diagnosticIndex > self.document.currentDiagnostics.high:
+          continue
+
+        let diagnostic {.cursor.} = self.document.currentDiagnostics[diagnosticIndex]
+        if severity != 0 and diagnostic.severity.getSome(s) and s.ord != severity:
+          continue
+
+        let selection = diagnostic.selection
+
+        if selection.last < cursor:
+          if i == offset:
+            if includeAfter:
+              return selection
+            else:
+              return (selection.first, self.doMoveCursorColumn(selection.last, -1, wrap = false))
+          inc i
+
+  let nextSearchStart = (self.lineCount, 0)
+  if cursor != nextSearchStart:
+    let wrapped = self.getPrevDiagnostic(nextSearchStart, severity, offset - i, includeAfter=includeAfter, wrap=wrap)
+    if not wrapped.isEmpty:
+      return wrapped
+  return cursor.toSelection
+
+proc getNextDiagnostic*(self: TextDocumentEditor, cursor: Cursor, severity: int = 0, offset: int = 0, includeAfter: bool = true, wrap: bool = true): Selection {.expose("editor.text").} =
+  var i = 0
+  for line in cursor.line..self.document.lines.high:
+    if self.diagnosticsPerLine.contains(line):
+      for diagnosticIndex in self.diagnosticsPerLine[line]:
+        if diagnosticIndex > self.document.currentDiagnostics.high:
+          continue
+
+        let diagnostic {.cursor.} = self.document.currentDiagnostics[diagnosticIndex]
+        if severity != 0 and diagnostic.severity.getSome(s) and s.ord != severity:
+          continue
+
+        let selection = diagnostic.selection
+
+        if cursor < selection.first:
+          if i == offset:
+            if includeAfter:
+              return selection
+            else:
+              return (selection.first, self.doMoveCursorColumn(selection.last, -1, wrap = false))
+          inc i
+
+  if cursor != (0, 0):
+    let wrapped = self.getNextDiagnostic((0, 0), severity, offset - i, includeAfter=includeAfter, wrap=wrap)
     if not wrapped.isEmpty:
       return wrapped
   return cursor.toSelection
@@ -1434,11 +1506,11 @@ proc getCompletionSelectionAt(self: TextDocumentEditor, cursor: Cursor): Selecti
 
   return ((cursor.line, column), cursor)
 
-proc getCompletionsFromContent(self: TextDocumentEditor): seq[TextCompletion] =
+proc getCompletionsFromContent(self: TextDocumentEditor): CompletionList =
   var s = initHashSet[string]()
   for li, line in self.lastRenderedLines:
     for i, part in line.parts:
-      if part.text.len > 50 or part.text.isEmptyOrWhitespace:
+      if part.text.len > 50 or part.text.isEmptyOrWhitespace or part.text.contains(" "):
         continue
       var use = false
       for c in part.text:
@@ -1450,10 +1522,11 @@ proc getCompletionsFromContent(self: TextDocumentEditor): seq[TextCompletion] =
       s.incl part.text
 
   for text in s.items:
-    result.add(TextCompletion(name: text, scope: "document"))
+    result.items.add(CompletionItem(label: text))
 
 proc splitIdentifier(str: string): seq[string] =
   var buffer = ""
+  var previousUppercase = false
   for i, c in str:
     if c == '_':
       if buffer.len > 0:
@@ -1461,52 +1534,71 @@ proc splitIdentifier(str: string): seq[string] =
         buffer.setLen 0
       continue
 
-    if c.isUpperAscii:
+    let isUpper = c.isUpperAscii
+
+    if not previousUppercase and isUpper:
       if buffer.len > 0:
         result.add buffer.toLowerAscii
         buffer.setLen 0
 
-    buffer.add c
+    previousUppercase = isUpper
+
+    buffer.add c.toLowerAscii
 
   if buffer.len > 0:
     result.add buffer
 
   if result.len == 0:
-    result.add str
+    result.add str.toLowerAscii
 
 proc refilterCompletions(self: TextDocumentEditor) =
-  var matches: seq[(TextCompletion, float)]
-  var noMatches: seq[(TextCompletion, float)]
+  var matches: seq[(int, float)]
+  var noMatches: seq[(int, float)]
 
   let selection = self.getCompletionSelectionAt(self.selection.last)
   let currentText = self.document.contentString(selection)
 
+  proc cmp(a, b: CompletionItem): int =
+    let preselectA = a.preselect.get(false)
+    let preselectB = a.preselect.get(false)
+    if preselectA and not preselectB:
+      return -1
+    if not preselectA and preselectB:
+      return 1
+
+    let sortTextA = a.sortText.get(a.label)
+    let sortTextB = b.sortText.get(b.label)
+    cmp(sortTextA, sortTextB)
+
+  self.completions.items.sort(cmp, Ascending)
+
   if currentText.len == 0:
-    self.completions.sort((a, b) => cmp(a.name, b.name), Ascending)
+    for i, _ in self.completions.items:
+      matches.add (i, 0.0)
+    self.completionMatches = matches
+    self.selectedCompletion = 0
+    self.scrollToCompletion = self.selectedCompletion.some
     return
 
   let parts = currentText.splitIdentifier
   assert parts.len > 0
 
-  for c in self.completions:
+  for i, c in self.completions.items:
+    let filterText = c.filterText.get(c.label)
+
     var score = 0.0
     for i in 0..parts.high:
-      score += matchFuzzySimple(c.name, parts[i])
+      score += matchFuzzySimple(filterText, parts[i])
 
-    if c.name.toLower.startsWith(parts[0]):
-      matches.add (c, score)
-    else:
-      noMatches.add (c, score)
+    matches.add (i, score)
 
   matches.sort((a, b) => cmp(a[1], b[1]), Descending)
   noMatches.sort((a, b) => cmp(a[1], b[1]), Descending)
 
-  for i in 0..matches.high:
-    self.completions[i] = matches[i][0]
-  for i in 0..noMatches.high:
-    self.completions[i + matches.len] = noMatches[i][0]
+  self.completionMatches = matches
 
   self.selectedCompletion = 0
+  self.scrollToCompletion = self.selectedCompletion.some
 
 proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.} =
   if self.disableCompletions:
@@ -1520,18 +1612,19 @@ proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = await self.document.getLanguageServer()
 
   if languageServer.getSome(ls):
-    if self.completions.len == 0:
+    if self.completions.items.len == 0:
       self.completions = self.getCompletionsFromContent()
     let lspCompletions = await ls.getCompletions(self.document.languageId, self.document.fullPath, self.selection.last)
-    if lspCompletions.len > 0:
-      self.completions = lspCompletions
+    if lspCompletions.isSuccess and lspCompletions.result.items.len > 0:
+      self.completions = lspCompletions.result
 
-  if self.completions.len == 0:
+  if self.completions.items.len == 0:
     self.completions = self.getCompletionsFromContent()
 
   self.refilterCompletions()
 
-  self.selectedCompletion = self.selectedCompletion.clamp(0, self.completions.high)
+  self.selectedCompletion = self.selectedCompletion.clamp(0, self.completionMatches.high)
+  self.scrollToCompletion = self.selectedCompletion.some
   self.markDirty()
 
 proc showCompletionWindow(self: TextDocumentEditor) =
@@ -1594,16 +1687,16 @@ proc hideCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.markDirty()
 
 proc selectPrevCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
-  if self.completions.len > 0:
-    self.selectedCompletion = (self.selectedCompletion - 1 + self.completions.len) mod self.completions.len
+  if self.completionMatches.len > 0:
+    self.selectedCompletion = (self.selectedCompletion - 1 + self.completionMatches.len) mod self.completionMatches.len
   else:
     self.selectedCompletion = 0
   self.scrollToCompletion = self.selectedCompletion.some
   self.markDirty()
 
 proc selectNextCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
-  if self.completions.len > 0:
-    self.selectedCompletion = (self.selectedCompletion + 1) mod self.completions.len
+  if self.completionMatches.len > 0:
+    self.selectedCompletion = (self.selectedCompletion + 1) mod self.completionMatches.len
   else:
     self.selectedCompletion = 0
   self.scrollToCompletion = self.selectedCompletion.some
@@ -1613,18 +1706,38 @@ proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").
   if not self.showCompletions:
     return
 
-  if self.selectedCompletion > self.completions.high:
+  if self.selectedCompletion > self.completionMatches.high:
     return
 
-  let com = self.completions[self.selectedCompletion]
+  let com = self.completions.items[self.completionMatches[self.selectedCompletion].index]
   log(lvlInfo, fmt"Applying completion {com}")
 
+  self.addNextCheckpoint("insert")
+
   let cursor = self.selection.last
-  if cursor.column == 0:
-    self.selections = self.document.insert([cursor.toSelection], self.selections, [com.name], true, true).mapIt(it.last.toSelection)
+  if com.textEdit.getSome(edit):
+    if edit.asTextEdit().getSome(edit):
+      let runeSelection = ((edit.`range`.start.line, edit.`range`.start.character.RuneIndex), (edit.`range`.`end`.line, edit.`range`.`end`.character.RuneIndex))
+      let selection = self.document.runeSelectionToSelection(runeSelection)
+      debugf"text edit: {selection} -> '{edit.newText}'"
+      self.selections = self.document.edit([selection], self.selections, [edit.newText]).mapIt(it.last.toSelection)
+    if edit.asInsertReplaceEdit().getSome(edit):
+      debugf"text edit: {edit.insert}, {edit.replace} -> '{edit.newText}'"
+      discard
   else:
-    let selection = self.getCompletionSelectionAt(cursor)
-    self.selections = self.document.edit([selection], self.selections, [com.name]).mapIt(it.last.toSelection)
+    let insertText = com.insertText.get(com.label)
+    if cursor.column == 0:
+      self.selections = self.document.insert([cursor.toSelection], self.selections, [insertText], true, true).mapIt(it.last.toSelection)
+    else:
+      let selection = self.getCompletionSelectionAt(cursor)
+      self.selections = self.document.edit([selection], self.selections, [insertText]).mapIt(it.last.toSelection)
+
+  self.addNextCheckpoint("insert")
+  for edit in com.additionalTextEdits:
+    let runeSelection = ((edit.`range`.start.line, edit.`range`.start.character.RuneIndex), (edit.`range`.`end`.line, edit.`range`.`end`.character.RuneIndex))
+    let selection = self.document.runeSelectionToSelection(runeSelection)
+    debugf"additional text edit: {selection} -> '{edit.newText}'"
+    discard self.document.edit([selection], self.selections, [edit.newText]).mapIt(it.last.toSelection)
 
   self.hideCompletions()
 
