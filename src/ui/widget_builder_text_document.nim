@@ -1,6 +1,6 @@
 import std/[strformat, tables, sugar, sequtils, strutils, algorithm, math, options, json]
 import vmath, bumpy, chroma
-import misc/[util, custom_logger, custom_unicode]
+import misc/[util, custom_logger, custom_unicode, myjsonutils]
 import text/text_editor
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import platform/platform
@@ -73,7 +73,7 @@ proc renderLine*(
   var diagnosticMessage: string = "■ "
   if hasDiagnostic:
     let diagnostic {.cursor.} = self.document.currentDiagnostics[diagnosticIndices[0]]
-    diagnosticMessage.add diagnostic.message[0..min(diagnostic.message.high, 100)]
+    diagnosticMessage.add diagnostic.message[0..min(diagnostic.message.high, 300)]
 
     if diagnostic.severity.getSome(severity):
       diagnosticColorName = case severity
@@ -722,7 +722,7 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
   if clampedX + totalWidth > builder.root.w:
     clampedX = max(builder.root.w - totalWidth, 0)
 
-  updateBaseIndexAndScrollOffset(bottom - top, self.completionsBaseIndex, self.completionsScrollOffset, self.completions.len, totalLineHeight, self.scrollToCompletion)
+  updateBaseIndexAndScrollOffset(bottom - top, self.completionsBaseIndex, self.completionsScrollOffset, self.completionMatches.len, totalLineHeight, self.scrollToCompletion)
   self.scrollToCompletion = int.none
 
   var completionsPanel: UINode = nil
@@ -747,29 +747,51 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
         vec2(0, 1)
 
       builder.panel(&{FillX, SizeToContentY, FillBackground}, y = y, pivot = pivot, backgroundColor = backgroundColor):
-        let completion = self.completions[i]
+        let completion = self.completions.items[self.completionMatches[i].index]
 
         let color = if i == self.selectedCompletion: nameSelectedColor else: nameColor
-        builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = completion.name, textColor = color)
+        builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = completion.label, textColor = color)
 
-        let typ = if completion.typ.len < maxTypeLen:
-          completion.typ & " ".repeat(maxTypeLen - completion.typ.len)
+        let detail = if completion.detail.getSome(detail):
+          if detail.len < maxTypeLen:
+            detail & " ".repeat(maxTypeLen - detail.len)
+          else:
+            detail[0..<(maxTypeLen - 3)] & "..."
         else:
-          completion.typ[0..<(maxTypeLen - 3)] & "..."
-        let scopeText = typ & " : " & completion.scope & " "
+          ""
+        let scopeText = detail & " " & $self.completionMatches[i].score
         builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, x = currentNode.w, pivot = vec2(1, 0), text = scopeText, textColor = scopeColor)
 
     builder.panel(&{UINodeFlag.MaskContent, DrawBorder}, w = listWidth * charWidth, h = bottom - top, borderColor = borderColor):
-      builder.createLines(self.completionsBaseIndex, self.completionsScrollOffset, self.completions.high, false, false, backgroundColor, handleScroll, handleLine)
+      builder.createLines(self.completionsBaseIndex, self.completionsScrollOffset, self.completionMatches.high, false, false, backgroundColor, handleScroll, handleLine)
 
-    if self.selectedCompletion >= 0 and self.selectedCompletion < self.completions.len:
-      let docText = self.completions[self.selectedCompletion].typ & "\n\n" & self.completions[self.selectedCompletion].doc
+    if self.selectedCompletion >= 0 and self.selectedCompletion < self.completionMatches.len:
+      var docText = ""
+      if self.completions.items[self.completionMatches[self.selectedCompletion].index].detail.getSome(detail):
+        docText = detail
+
+      if self.completions.items[self.completionMatches[self.selectedCompletion].index].documentation.getSome(doc):
+        if docText.len > 0:
+          docText.add "\n\n"
+        if doc.asString().getSome(doc):
+          docText.add doc
+        elif doc.asMarkupContent().getSome(markup):
+          docText.add markup.value
+
+      # if docText.len > 0:
+      #   docText.add "\n\n"
+
+      # block:
+      #   var uiae = self.completions.items[self.completionMatches[self.selectedCompletion].index]
+      #   uiae.documentation = CompletionItemDocumentationVariant.none
+      #   docText.add uiae.toJson.pretty
+
       builder.panel(&{UINodeFlag.FillBackground, DrawText, MaskContent, TextWrap},
-        x = listWidth * charWidth, w = docsWidth * charWidth, h = bottom - top,
+        x = listWidth * charWidth, w = docsWidth * charWidth, h = (bottom - top) * 2,
         backgroundColor = backgroundColor, textColor = docsColor, text = docText)
 
   if completionsPanel.bounds.yh > completionsPanel.parent.bounds.h:
-    completionsPanel.rawY = cursorBounds.y
+    completionsPanel.rawY = cursorBounds.y + (bottom - top)
     completionsPanel.pivot = vec2(0, 1)
 
 method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =

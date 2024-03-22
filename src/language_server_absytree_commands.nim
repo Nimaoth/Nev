@@ -1,7 +1,7 @@
 import std/[options, tables, strutils]
 import misc/[custom_logger, custom_async, util]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
-import text/language/language_server_base
+import text/language/[language_server_base, lsp_types]
 import platform/filesystem
 import dispatch_tables
 
@@ -21,7 +21,7 @@ method saveTempFile*(self: LanguageServerAbsytreeCommands, filename: string, con
   # debugf"LanguageServerAbsytreeCommands.saveTempFile '{filename}' '{content}'"
   self.files[filename] = content
 
-method getCompletions*(self: LanguageServerAbsytreeCommands, languageId: string, filename: string, location: Cursor): Future[seq[TextCompletion]] {.async.} =
+method getCompletions*(self: LanguageServerAbsytreeCommands, languageId: string, filename: string, location: Cursor): Future[Response[CompletionList]] {.async.} =
   await self.requestSave(filename, filename)
 
   var useActive = false
@@ -29,29 +29,29 @@ method getCompletions*(self: LanguageServerAbsytreeCommands, languageId: string,
     if self.files[filename].startsWith("."):
       useActive = true
 
-  var completions: seq[TextCompletion]
+  var completions: seq[CompletionItem]
   if useActive:
     for table in activeDispatchTables.mitems:
       for value in table.functions.values:
-        completions.add TextCompletion(
-          name: value.name,
-          scope: table.scope,
-          kind: SymbolType.Function,
-          typ: value.signature,
-          doc: value.docs,
+        completions.add CompletionItem(
+          label: value.name,
+          # scope: table.scope,
+          kind: CompletionKind.Function,
+          detail: value.signature.some,
+          documentation: CompletionItemDocumentationVariant.init(value.docs).some,
         )
   else:
     for table in globalDispatchTables.mitems:
       for value in table.functions.values:
-        completions.add TextCompletion(
-          name: value.name,
-          scope: table.scope,
-          kind: SymbolType.Function,
-          typ: value.signature,
-          doc: value.docs,
+        completions.add CompletionItem(
+          label: value.name,
+          # scope: table.scope,
+          kind: CompletionKind.Function,
+          detail: value.signature.some,
+          documentation: CompletionItemDocumentationVariant.init(value.docs).some,
         )
 
-  return completions
+  return CompletionList(items: completions).success
 
 method getSymbols*(self: LanguageServerAbsytreeCommands, filename: string): Future[seq[Symbol]] {.async.} =
   var completions: seq[Symbol]
@@ -60,5 +60,5 @@ method getSymbols*(self: LanguageServerAbsytreeCommands, filename: string): Futu
 method getHover*(self: LanguageServerAbsytreeCommands, filename: string, location: Cursor): Future[Option[string]] {.async.} =
   return string.none
 
-method getInlayHints*(self: LanguageServerAbsytreeCommands, filename: string, selection: Selection): Future[seq[InlayHint]] {.async.} =
-  return newSeq[InlayHint]()
+method getInlayHints*(self: LanguageServerAbsytreeCommands, filename: string, selection: Selection): Future[seq[language_server_base.InlayHint]] {.async.} =
+  return newSeq[language_server_base.InlayHint]()

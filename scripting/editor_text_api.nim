@@ -67,6 +67,10 @@ proc edit*(self: TextDocumentEditor; selections: seq[Selection];
            inclusiveEnd: bool = false): seq[Selection] =
   editor_text_edit_seq_Selection_TextDocumentEditor_seq_Selection_seq_string_bool_bool_bool_impl(
       self, selections, texts, notify, record, inclusiveEnd)
+proc deleteLines*(self: TextDocumentEditor; slice: Slice[int];
+                  oldSelections: Selections) =
+  editor_text_deleteLines_void_TextDocumentEditor_Slice_int_Selections_impl(
+      self, slice, oldSelections)
 proc selectPrev*(self: TextDocumentEditor) =
   editor_text_selectPrev_void_TextDocumentEditor_impl(self)
 proc selectNext*(self: TextDocumentEditor) =
@@ -131,6 +135,16 @@ proc getNextFindResult*(self: TextDocumentEditor; cursor: Cursor;
                         wrap: bool = true): Selection =
   editor_text_getNextFindResult_Selection_TextDocumentEditor_Cursor_int_bool_bool_impl(
       self, cursor, offset, includeAfter, wrap)
+proc getPrevDiagnostic*(self: TextDocumentEditor; cursor: Cursor;
+                        severity: int = 0; offset: int = 0;
+                        includeAfter: bool = true; wrap: bool = true): Selection =
+  editor_text_getPrevDiagnostic_Selection_TextDocumentEditor_Cursor_int_int_bool_bool_impl(
+      self, cursor, severity, offset, includeAfter, wrap)
+proc getNextDiagnostic*(self: TextDocumentEditor; cursor: Cursor;
+                        severity: int = 0; offset: int = 0;
+                        includeAfter: bool = true; wrap: bool = true): Selection =
+  editor_text_getNextDiagnostic_Selection_TextDocumentEditor_Cursor_int_int_bool_bool_impl(
+      self, cursor, severity, offset, includeAfter, wrap)
 proc addNextFindResultToSelection*(self: TextDocumentEditor;
                                    includeAfter: bool = true; wrap: bool = true) =
   editor_text_addNextFindResultToSelection_void_TextDocumentEditor_bool_bool_impl(

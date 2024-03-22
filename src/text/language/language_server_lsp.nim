@@ -356,37 +356,5 @@ method getDiagnostics*(self: LanguageServerLSP, filename: string): Future[Respon
   return res.success
 
 # todo: romve languageId
-method getCompletions*(self: LanguageServerLSP, languageId: string, filename: string, location: Cursor): Future[seq[TextCompletion]] {.async.} =
-  # debugf"getCompletions: {filename}, {location}"
-  var completionsResult: seq[TextCompletion]
-
-  let response = await self.client.getCompletions(filename, location.line, location.column)
-  if response.isError:
-    log(lvlError, &"Error: {response.error}")
-    return completionsResult
-
-  let completions = response.result
-  # debugf"getCompletions: {completions.items.len}"
-  for c in completions.items:
-    # echo c
-    let docs = if c.documentation.asString().getSome(doc):
-        doc
-      elif c.documentation.asMarkupContent().getSome(doc):
-        doc.value
-      else:
-        ""
-
-    completionsResult.add(TextCompletion(
-      name: c.label,
-      scope: "lsp",
-      location: location,
-      filename: "",
-      kind: SymbolType(c.kind.ord),
-      typ: c.detail.get(""),
-      doc: docs,
-    ))
-
-    # if completionsResult.len == 10:
-    #   break
-
-  return completionsResult
+method getCompletions*(self: LanguageServerLSP, languageId: string, filename: string, location: Cursor): Future[Response[CompletionList]] {.async.} =
+  return await self.client.getCompletions(filename, location.line, location.column)

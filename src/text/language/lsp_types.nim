@@ -37,6 +37,9 @@ macro variant(name: untyped, types: varargs[untyped]): untyped =
         else:
           return t.none
 
+      proc init*(_: typedesc[name], arg: t): name =
+        return name(node: arg.toJson)
+
     procs.add ast
 
   return quote do:

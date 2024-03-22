@@ -3,7 +3,7 @@ import misc/[custom_async, custom_logger, event, custom_unicode]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import workspaces/workspace
 
-from lsp_types as lsp_types import nil
+from lsp_types as lsp_types import CompletionItem
 
 type OnRequestSaveHandle* = distinct int
 
@@ -60,15 +60,6 @@ type Symbol* = object
   symbolType*: SymbolType
   filename*: string
 
-type TextCompletion* = object
-  name*: string
-  scope*: string
-  location*: Cursor
-  filename*: string
-  kind*: SymbolType
-  typ*: string
-  doc*: string
-
 type InlayHint* = object
   location*: Cursor
   label*: string # | InlayHintLabelPart[] # todo
@@ -98,7 +89,7 @@ method deinit*(self: LanguageServer) {.base.} = discard
 method connect*(self: LanguageServer) {.base.} = discard
 method disconnect*(self: LanguageServer) {.base.} = discard
 method getDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[Option[Definition]] {.base.} = discard
-method getCompletions*(self: LanguageServer, languageId: string, filename: string, location: Cursor): Future[seq[TextCompletion]] {.base.} = discard
+method getCompletions*(self: LanguageServer, languageId: string, filename: string, location: Cursor): Future[lsp_types.Response[lsp_types.CompletionList]] {.base.} = discard
 method saveTempFile*(self: LanguageServer, filename: string, content: string): Future[void] {.base.} = discard
 method getSymbols*(self: LanguageServer, filename: string): Future[seq[Symbol]] {.base.} = discard
 method getHover*(self: LanguageServer, filename: string, location: Cursor): Future[Option[string]] {.base.} = discard
