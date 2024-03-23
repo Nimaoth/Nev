@@ -22,7 +22,7 @@ OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ]#
 
-import std/[os, strutils]
+import std/[os, strutils, strformat]
 from algorithm import sorted
 # from std/editdistance import editDistanceAscii  # stdlib one yields correct distance BUT for ratio cost should be higher because yields better results (Python does that too)
 
@@ -140,3 +140,174 @@ proc matchFuzzy*(a: string, b: string): float =
 
 proc matchFuzzySimple*(a: string, b: string): float =
   return fuzzyMatch(a, b, caseInsensitive = true)
+
+import math
+
+const
+  MaxUnmatchedLeadingChar = 3
+  ## Maximum number of times the penalty for unmatched leading chars is applied.
+
+type
+  ScoreCard* = enum
+    StartMatch          ## Start matching.
+    LeadingCharDiff     ## An unmatched, leading character was found.
+    CharDiff            ## An unmatched character was found.
+    CharMatch           ## A matched character was found.
+    ConsecutiveMatch    ## A consecutive match was found.
+    LeadingCharMatch    ## The character matches the beginning of the
+                        ## string or the first character of a word
+                        ## or camel case boundary.
+    WordBoundryMatch    ## The last ConsecutiveCharMatch that
+                        ## immediately precedes the end of the string,
+                        ## end of the pattern, or a LeadingCharMatch.
+
+    PatternOversize     ## The pattern is longer than the string.
+
+  FuzzyMatchConfig* = object
+    stateScores: array[ScoreCard, int] = [
+      StartMatch:       -100,
+      LeadingCharDiff:  -3,
+      CharDiff:         -1,
+      CharMatch:        0,
+      ConsecutiveMatch: 5,
+      LeadingCharMatch: 10,
+      WordBoundryMatch: 20,
+      PatternOversize:  -3,
+    ]
+    ignoredChars: set[char] = {'_', ' ', '.'}
+    maxRecursionLevel: int = 4
+
+const defaultPathMatchingConfig* = FuzzyMatchConfig()
+const defaultCompletionMatchingConfig* = FuzzyMatchConfig(ignoredChars: {' '})
+
+proc matchFuzzySublime*(pattern, str: openArray[char], matches: var seq[int], recordMatches: bool, config: FuzzyMatchConfig = FuzzyMatchConfig(), recursionLevel: int = 0, baseIndex: int = 0): tuple[score: int, matched: bool]
+proc matchFuzzySublime*(pattern, str: string, config: FuzzyMatchConfig = FuzzyMatchConfig()): tuple[score: int, matched: bool] =
+  var matches: seq[int]
+  matchFuzzySublime(pattern.toOpenArray(0, pattern.high), str.toOpenArray(0, str.high), matches, false, config)
+
+proc matchFuzzySublime*(pattern, str: openArray[char], matches: var seq[int], recordMatches: bool, config: FuzzyMatchConfig = FuzzyMatchConfig(), recursionLevel: int = 0, baseIndex: int = 0): tuple[score: int, matched: bool] =
+  var
+    scoreState = StartMatch
+    unmatchedLeadingCharCount = 0
+    consecutiveMatchCount = 0
+    strIndex = 0
+    patIndex = 0
+    score = 0
+
+  if recursionLevel > config.maxRecursionLevel:
+    return (score: int.low, matched: false)
+
+  if pattern.len > str.len:
+    score += config.stateScores[PatternOversize] * (pattern.len - str.len)
+
+  template transition(nextState) =
+    scoreState = nextState
+    score += config.stateScores[scoreState]
+
+  var bestRecursionMatches: seq[int]
+  var bestRecursionScore = int.low
+
+  while (strIndex < str.len) and (patIndex < pattern.len):
+    var
+      patternChar = pattern[patIndex].toLowerAscii
+      strChar     = str[strIndex].toLowerAscii
+
+    # Ignore certain characters
+    if patternChar in config.ignoredChars:
+      patIndex += 1
+      continue
+    if strChar in config.ignoredChars:
+      strIndex += 1
+      continue
+
+    if strChar == patternChar:
+      if recordMatches:
+        matches.add(strIndex + baseIndex)
+
+      if recursionLevel < config.maxRecursionLevel and strIndex + 1 < str.len:
+        var tempMatches: seq[int]
+        let tempScore = matchFuzzySublime(pattern[patIndex..^1], str[(strIndex + 1)..^1], tempMatches, recordMatches, config, recursionLevel + 1, baseIndex + strIndex + 1).score
+        if tempScore > bestRecursionScore:
+          bestRecursionScore = tempScore
+          if recordMatches:
+            bestRecursionMatches = move tempMatches
+
+      case scoreState
+      of StartMatch, WordBoundryMatch:
+        scoreState = LeadingCharMatch
+
+      of CharMatch:
+        transition(ConsecutiveMatch)
+
+      of LeadingCharMatch, ConsecutiveMatch:
+        consecutiveMatchCount += 1
+        scoreState = ConsecutiveMatch
+        score += config.stateScores[ConsecutiveMatch] * consecutiveMatchCount
+
+        if scoreState == LeadingCharMatch:
+          score += config.stateScores[LeadingCharMatch]
+
+        var onBoundary = (patIndex == high(pattern))
+        if not onBoundary and strIndex < high(str):
+          let
+            nextPatternChar = toLowerAscii(pattern[patIndex + 1])
+            nextStrChar     = toLowerAscii(str[strIndex + 1])
+
+          onBoundary = (
+            nextStrChar notin {'a'..'z'} and
+            nextStrChar != nextPatternChar
+          )
+
+        if onBoundary:
+          transition(WordBoundryMatch)
+
+      of CharDiff, LeadingCharDiff:
+        var isLeadingChar = (
+          str[strIndex - 1] notin Letters or
+          str[strIndex - 1] in {'a'..'z'} and
+          str[strIndex] in {'A'..'Z'}
+        )
+
+        if isLeadingChar:
+          scoreState = LeadingCharMatch
+          #a non alpha or a camel case transition counts as a leading char.
+          # Transition the state, but don't give the bonus yet; wait until we verify a consecutive match.
+        else:
+          transition(CharMatch)
+
+      else:
+        discard
+
+      patIndex += 1
+
+    else:
+      case scoreState
+      of StartMatch:
+        transition(LeadingCharDiff)
+
+      of ConsecutiveMatch:
+        transition(CharDiff)
+        consecutiveMatchCount = 0
+
+      of LeadingCharDiff:
+        if unmatchedLeadingCharCount < MaxUnmatchedLeadingChar:
+          transition(LeadingCharDiff)
+        unmatchedLeadingCharCount += 1
+
+      else:
+        transition(CharDiff)
+
+    strIndex += 1
+
+  if patIndex == pattern.len and (strIndex == str.len or str[strIndex] notin Letters):
+    score += 10
+
+  if bestRecursionScore > score:
+    if recordMatches:
+      matches = bestRecursionMatches
+    return (bestRecursionScore, bestRecursionScore > 0)
+
+  result = (
+    score:   score,
+    matched: (score > 0),
+  )

@@ -102,6 +102,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
   lastPressedMouseButton*: MouseButton
   dragStartSelection*: Selection
 
+  lastCompletionMatchText*: string
+  completionMatchPositions*: Table[int, seq[int]]
   completionMatches*: seq[tuple[index: int, score: float]]
   disableCompletions*: bool
   completions*: CompletionList
@@ -1551,54 +1553,79 @@ proc splitIdentifier(str: string): seq[string] =
   if result.len == 0:
     result.add str.toLowerAscii
 
+proc getCompletionMatches*(self: TextDocumentEditor, completionMatchIndex: int): seq[int] =
+  if completionMatchIndex in self.completionMatchPositions:
+    return self.completionMatchPositions[completionMatchIndex]
+
+  if completionMatchIndex < self.completionMatches.len:
+    let completionIndex = self.completionMatches[completionMatchIndex].index
+    let filterText = self.completions.items[completionIndex].label
+
+    var matches = newSeqOfCap[int](self.lastCompletionMatchText.len)
+    discard matchFuzzySublime(self.lastCompletionMatchText, filterText, matches, true, defaultCompletionMatchingConfig)
+
+    self.completionMatchPositions[completionMatchIndex] = matches
+    return matches
+
+  return @[]
+
 proc refilterCompletions(self: TextDocumentEditor) =
-  var matches: seq[(int, float)]
-  var noMatches: seq[(int, float)]
+  measureBlock "refilterCompletions":
+    var matches: seq[(int, float)]
+    var noMatches: seq[(int, float)]
 
-  let selection = self.getCompletionSelectionAt(self.selection.last)
-  let currentText = self.document.contentString(selection)
+    let selection = self.getCompletionSelectionAt(self.selection.last)
+    let currentText = self.document.contentString(selection)
 
-  proc cmp(a, b: CompletionItem): int =
-    let preselectA = a.preselect.get(false)
-    let preselectB = a.preselect.get(false)
-    if preselectA and not preselectB:
-      return -1
-    if not preselectA and preselectB:
-      return 1
+    proc cmp(a, b: CompletionItem): int =
+      let preselectA = a.preselect.get(false)
+      let preselectB = a.preselect.get(false)
+      if preselectA and not preselectB:
+        return -1
+      if not preselectA and preselectB:
+        return 1
 
-    let sortTextA = a.sortText.get(a.label)
-    let sortTextB = b.sortText.get(b.label)
-    cmp(sortTextA, sortTextB)
+      let sortTextA = a.sortText.get(a.label)
+      let sortTextB = b.sortText.get(b.label)
+      cmp(sortTextA, sortTextB)
 
-  self.completions.items.sort(cmp, Ascending)
+    self.completions.items.sort(cmp, Ascending)
+    self.completionMatchPositions.clear()
 
-  if currentText.len == 0:
-    for i, _ in self.completions.items:
-      matches.add (i, 0.0)
+    if currentText.len == 0:
+      for i, _ in self.completions.items:
+        matches.add (i, 0.0)
+      self.completionMatches = matches
+      self.selectedCompletion = 0
+      self.scrollToCompletion = self.selectedCompletion.some
+      self.lastCompletionMatchText = currentText
+      return
+
+    let parts = currentText.splitIdentifier
+    assert parts.len > 0
+
+    let fuzzyMatchSublime = self.configProvider.getFlag("editor.fuzzy-match-sublime", true)
+
+    for i, c in self.completions.items:
+      let filterText = c.filterText.get(c.label)
+
+      var score = 0.0
+      if fuzzyMatchSublime:
+        score = matchFuzzySublime(currentText, filterText, defaultCompletionMatchingConfig).score.float
+      else:
+        for i in 0..parts.high:
+          score += matchFuzzySimple(filterText, parts[i])
+
+      matches.add (i, score)
+
+    matches.sort((a, b) => cmp(a[1], b[1]), Descending)
+    noMatches.sort((a, b) => cmp(a[1], b[1]), Descending)
+
     self.completionMatches = matches
+
     self.selectedCompletion = 0
     self.scrollToCompletion = self.selectedCompletion.some
-    return
-
-  let parts = currentText.splitIdentifier
-  assert parts.len > 0
-
-  for i, c in self.completions.items:
-    let filterText = c.filterText.get(c.label)
-
-    var score = 0.0
-    for i in 0..parts.high:
-      score += matchFuzzySimple(filterText, parts[i])
-
-    matches.add (i, score)
-
-  matches.sort((a, b) => cmp(a[1], b[1]), Descending)
-  noMatches.sort((a, b) => cmp(a[1], b[1]), Descending)
-
-  self.completionMatches = matches
-
-  self.selectedCompletion = 0
-  self.scrollToCompletion = self.selectedCompletion.some
+    self.lastCompletionMatchText = currentText
 
 proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.} =
   if self.disableCompletions:
@@ -1811,7 +1838,7 @@ proc showHoverForDelayed*(self: TextDocumentEditor, cursor: Cursor) =
 proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = await self.document.getLanguageServer()
   if languageServer.getSome(ls):
-    let inlayHints = await ls.getInlayHints(self.document.fullPath, self.visibleTextRange(buffer = 10))
+    let inlayHints = await ls.getInlayHints(self.document.fullPath, self.visibleTextRange(self.screenLineCount))
     # todo: detect if canceled instead
     if inlayHints.len > 0:
       # log lvlInfo, fmt"Updating inlay hints: {inlayHints}"

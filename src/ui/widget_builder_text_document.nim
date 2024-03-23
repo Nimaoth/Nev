@@ -748,9 +748,10 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
 
       builder.panel(&{FillX, SizeToContentY, FillBackground}, y = y, pivot = pivot, backgroundColor = backgroundColor):
         let completion = self.completions.items[self.completionMatches[i].index]
-
         let color = if i == self.selectedCompletion: nameSelectedColor else: nameColor
-        builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = completion.label, textColor = color)
+
+        let matchIndices = self.getCompletionMatches(i)
+        builder.highlightedText(completion.label, matchIndices, color, color.lighten(0.15))
 
         let detail = if completion.detail.getSome(detail):
           if detail.len < maxTypeLen:
@@ -759,7 +760,8 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
             detail[0..<(maxTypeLen - 3)] & "..."
         else:
           ""
-        let scopeText = detail & " " & $self.completionMatches[i].score
+        let filterText = completion.filterText.get("")
+        let scopeText = detail
         builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, x = currentNode.w, pivot = vec2(1, 0), text = scopeText, textColor = scopeColor)
 
     builder.panel(&{UINodeFlag.MaskContent, DrawBorder}, w = listWidth * charWidth, h = bottom - top, borderColor = borderColor):
