@@ -83,9 +83,9 @@ func `$`*(t: Token): string =
   of Choice:
     return "$" & $t.tabStopIndex & "(" & t.tokens.join(" | ") & ")"
 
+# LSP snippet parser
+# See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#snippet_syntax
 let snippetParser = peg("snippet", state: Snippet):
-  ## LSP snippet parser
-  ## See https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#snippet_syntax
 
   snippet <- *(escaped | (unescaped - '$') | pattern) * snippetEnd
 
