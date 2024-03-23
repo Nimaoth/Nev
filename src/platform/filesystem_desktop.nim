@@ -28,9 +28,16 @@ method getApplicationFilePath*(self: FileSystemDesktop, name: string): string =
 method loadApplicationFile*(self: FileSystemDesktop, name: string): string =
   let path = self.getApplicationFilePath name
   log lvlInfo, fmt"loadApplicationFile {name} -> {path}"
-  return readFile(path)
+  try:
+    return readFile(path)
+  except:
+    log lvlError, fmt"Failed to load application file {path}: {getCurrentExceptionMsg()}"
+    return ""
 
 method saveApplicationFile*(self: FileSystemDesktop, name: string, content: string) =
   let path = self.getApplicationFilePath name
   log lvlInfo, fmt"saveApplicationFile {name} -> {path}"
-  writeFile(path, content)
+  try:
+    writeFile(path, content)
+  except:
+    log lvlError, fmt"Failed to save application file {path}: {getCurrentExceptionMsg()}"
