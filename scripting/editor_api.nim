@@ -18,6 +18,8 @@ proc loadApplicationFile*(path: string): Option[string] =
 proc toggleShowDrawnNodes*() =
   editor_toggleShowDrawnNodes_void_App_impl()
 proc setMaxViews*(maxViews: int) =
+  ## Set the maximum number of views that can be open at the same time
+  ## Closes any views that exceed the new limit
   editor_setMaxViews_void_App_int_impl(maxViews)
 proc saveAppState*() =
   editor_saveAppState_void_App_impl()

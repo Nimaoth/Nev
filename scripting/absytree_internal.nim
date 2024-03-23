@@ -314,6 +314,18 @@ proc editor_text_selectPrevCompletion_void_TextDocumentEditor_impl*(
 proc editor_text_selectNextCompletion_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
+proc editor_text_hasTabStops_bool_TextDocumentEditor_impl*(
+    self: TextDocumentEditor): bool =
+  discard
+proc editor_text_clearTabStops_void_TextDocumentEditor_impl*(
+    self: TextDocumentEditor) =
+  discard
+proc editor_text_selectNextTabStop_void_TextDocumentEditor_impl*(
+    self: TextDocumentEditor) =
+  discard
+proc editor_text_selectPrevTabStop_void_TextDocumentEditor_impl*(
+    self: TextDocumentEditor) =
+  discard
 proc editor_text_applySelectedCompletion_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard

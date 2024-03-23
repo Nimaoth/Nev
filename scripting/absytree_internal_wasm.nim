@@ -219,6 +219,14 @@ proc editor_text_selectPrevCompletion_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}
 proc editor_text_selectNextCompletion_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}
+proc editor_text_hasTabStops_bool_TextDocumentEditor_impl(
+    self: TextDocumentEditor): bool  {.importc.}
+proc editor_text_clearTabStops_void_TextDocumentEditor_impl(
+    self: TextDocumentEditor)  {.importc.}
+proc editor_text_selectNextTabStop_void_TextDocumentEditor_impl(
+    self: TextDocumentEditor)  {.importc.}
+proc editor_text_selectPrevTabStop_void_TextDocumentEditor_impl(
+    self: TextDocumentEditor)  {.importc.}
 proc editor_text_applySelectedCompletion_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}
 proc editor_text_showHoverFor_void_TextDocumentEditor_Cursor_impl(
