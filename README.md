@@ -150,14 +150,26 @@ More details in [Getting Started](docs/getting_started.md)
 - invalidate models using language X when X gets rebuilt
 - finish/revise using string as parameter type for wasm functions (see createWasmWrapper, createHostWrapper)
 - fix potential issues because of loading order when loading test-language and test-language-playground
+- fix rendering of _
 
 ## Vim Keybindings
 - Repeat f/t motions with ,/;
 - Search/Replace
+- toggle case
 - fix e.g. dw deleting one character to much because it's inclusive
+
+- in visual mode highlights are incorrect
+- pasting text replaces the current char even if not in insert mode
 
 ## LSP
 - Handle rust lsp paths with lowercase letter like d:/path/to/file
 - command for inserting the inlay hint under the cursor
+- snippets
+- workspace symbols
+- rename
+
+## text editor
+- includeAfter names should be named includeLineLen or something like that
+
 
 [Test report](https://nimaoth.github.io/Absytree/testresults.html)

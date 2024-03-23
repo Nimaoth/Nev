@@ -732,6 +732,7 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     editor.setMode("normal")
   addTextCommandBlock "", "<ESCAPE>":
     editor.selection = editor.selection
+    editor.clearTabStops()
     editor.setMode("normal")
 
   addTextCommandBlock "", ".": replayCommands(".")
@@ -1173,6 +1174,18 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommand "", "<C-k><C-u>", "print-undo-history"
   addTextCommand "", "<C-UP>", "scroll-lines", -1
   addTextCommand "", "<C-DOWN>", "scroll-lines", 1
+
+  addTextCommandBlock "insert", "<TAB>":
+    if editor.hasTabStops():
+      editor.selectNextTabStop()
+    else:
+      editor.indent()
+
+  addTextCommandBlock "insert", "<S-TAB>":
+    if editor.hasTabStops():
+      editor.selectPrevTabStop()
+    else:
+      editor.unindent()
 
   addTextCommandBlock "", "<C-k><C-c>":
     editor.addNextCheckpoint "insert"

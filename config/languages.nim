@@ -20,6 +20,16 @@ proc loadLspConfigFromFile*(file: string) =
   except:
     info &"Failed to load lsp config from file: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
+proc loadSnippetsFromFile*(file: string, language: string) =
+  try:
+    let str = loadApplicationFile(file).get
+    let json = str.parseJson()
+    infof"Loaded snippet config for {language} from {file}: {json}"
+    # todo: better deal with languages
+    setOption "editor.text.snippets." & language, json
+  except:
+    info &"Failed to load lsp config from file: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+
 setOption "editor.text.lsp.c.path", "clangd"
 setOption "editor.text.lsp.cpp.path", "clangd"
 setOption "editor.text.lsp.zig.path", "zls"
