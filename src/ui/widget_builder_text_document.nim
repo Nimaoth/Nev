@@ -83,6 +83,7 @@ proc renderLine*(
       of Hint: "editorHint.foreground"
 
   let diagnosticMessageLen = diagnosticMessage.runeLen
+  let diagnosticLines = diagnosticMessage.countLines
   let diagnosticMessageWidth = diagnosticMessageLen.float * builder.charWidth
 
   # line numbers
@@ -357,7 +358,9 @@ proc renderLine*(
 
               let diagnosticColor = theme.color(@[diagnosticColorName, "editor.foreground"], color(1, 1, 1))
               var diagnosticPanel: UINode = nil
-              builder.panel(&{DrawText, FillBackground, SizeToContentX, SizeToContentY}, x = diagnosticXOffset, text = diagnosticMessage, textColor = diagnosticColor, backgroundColor = backgroundColor.lighten(0.07)):
+              let diagnosticHeight = diagnosticLines.float * builder.textHeight
+              builder.panel(&{DrawText, FillBackground, SizeToContentX, MaskContent},
+                x = diagnosticXOffset, h = diagnosticHeight, text = diagnosticMessage, textColor = diagnosticColor, backgroundColor = backgroundColor.lighten(0.07)):
                 diagnosticPanel = currentNode
 
           if lineEndColor.getSome(color):
@@ -789,11 +792,11 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
       #   docText.add uiae.toJson.pretty
 
       builder.panel(&{UINodeFlag.FillBackground, DrawText, MaskContent, TextWrap},
-        x = listWidth * charWidth, w = docsWidth * charWidth, h = (bottom - top) * 2,
+        x = listWidth * charWidth, w = docsWidth * charWidth, h = bottom - top,
         backgroundColor = backgroundColor, textColor = docsColor, text = docText)
 
   if completionsPanel.bounds.yh > completionsPanel.parent.bounds.h:
-    completionsPanel.rawY = cursorBounds.y + (bottom - top)
+    completionsPanel.rawY = cursorBounds.y
     completionsPanel.pivot = vec2(0, 1)
 
 method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
