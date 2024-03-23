@@ -17,6 +17,8 @@ proc loadApplicationFile*(path: string): Option[string] =
   editor_loadApplicationFile_Option_string_App_string_impl(path)
 proc toggleShowDrawnNodes*() =
   editor_toggleShowDrawnNodes_void_App_impl()
+proc setMaxViews*(maxViews: int) =
+  editor_setMaxViews_void_App_int_impl(maxViews)
 proc saveAppState*() =
   editor_saveAppState_void_App_impl()
 proc requestRender*(redrawEverything: bool = false) =

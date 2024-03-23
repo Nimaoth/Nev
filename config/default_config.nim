@@ -53,7 +53,7 @@ proc loadDefaultOptions*() =
     setOption "model.scroll-speed", 50
     addCommand "editor", "<C-r>", "do-nothing"
 
-  loadTheme "synthwave-color-theme"
+  loadTheme "tokyo-night-color-theme"
 
 proc loadDefaultKeybindings*(clearExisting: bool = false) =
   if clearExisting:

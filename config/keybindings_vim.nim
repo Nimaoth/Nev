@@ -722,6 +722,7 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
       setOption "editor.text.inclusive-selection", false
 
   addTextCommand "#count", "<-1-9><o-0-9>", ""
+  addCommand "#count", "<-1-9><o-0-9>", ""
 
   # Normal mode
   addCommand "editor", ":", "command-line"
@@ -782,8 +783,10 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   # In the browser C-w closes the tab, so we use A-w instead
   if getBackend() == Browser:
     defineWindowingCommands "<A-w>"
+    addCommand "editor", "<count><A-w>m", "set-max-views <#count>"
   else:
     defineWindowingCommands "<C-w>"
+    addCommand "editor", "<count><C-w>m", "set-max-views <#count>"
 
   # completion
   addTextCommand "insert", "<C-p>", "get-completions"

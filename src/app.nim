@@ -1012,6 +1012,21 @@ proc createView(self: App, editorState: OpenEditor): View =
       return
   return self.createView(document)
 
+proc setMaxViews*(self: App, maxViews: int) {.expose("editor").} =
+  ## Set the maximum number of views that can be open at the same time
+  ## Closes any views that exceed the new limit
+
+  log lvlInfo, fmt"[setMaxViews] {maxViews}"
+  setOption[int](self, "editor.maxViews", maxViews)
+  while maxViews > 0 and self.views.len > maxViews:
+    self.views[self.views.high].editor.active = false
+    self.hiddenViews.add self.views.pop()
+
+  self.currentView = self.currentView.clamp(0, self.views.high)
+
+  self.updateActiveEditor(false)
+  self.platform.requestRender()
+
 proc saveAppState*(self: App) {.expose("editor").} =
   # Save some state
   var state = EditorState()

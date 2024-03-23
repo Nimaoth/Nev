@@ -387,6 +387,7 @@ proc editor_getBackend_Backend_App_impl(): Backend  {.importc.}
 proc editor_loadApplicationFile_Option_string_App_string_impl(path: string): Option[
     string]  {.importc.}
 proc editor_toggleShowDrawnNodes_void_App_impl()  {.importc.}
+proc editor_setMaxViews_void_App_int_impl(maxViews: int)  {.importc.}
 proc editor_saveAppState_void_App_impl()  {.importc.}
 proc editor_requestRender_void_App_bool_impl(redrawEverything: bool = false)  {.importc.}
 proc editor_setHandleInputs_void_App_string_bool_impl(context: string;
