@@ -177,7 +177,7 @@ type
     ignoredChars: set[char] = {'_', ' ', '.'}
     maxRecursionLevel: int = 4
 
-const defaultPathMatchingConfig* = FuzzyMatchConfig()
+const defaultPathMatchingConfig* = FuzzyMatchConfig(ignoredChars: {' '})
 const defaultCompletionMatchingConfig* = FuzzyMatchConfig(ignoredChars: {' '})
 
 proc matchFuzzySublime*(pattern, str: openArray[char], matches: var seq[int], recordMatches: bool, config: FuzzyMatchConfig = FuzzyMatchConfig(), recursionLevel: int = 0, baseIndex: int = 0): tuple[score: int, matched: bool]
@@ -221,16 +221,16 @@ proc matchFuzzySublime*(pattern, str: openArray[char], matches: var seq[int], re
       continue
 
     if strChar == patternChar:
-      if recordMatches:
-        matches.add(strIndex + baseIndex)
-
       if recursionLevel < config.maxRecursionLevel and strIndex + 1 < str.len:
-        var tempMatches: seq[int]
+        var tempMatches: seq[int] = matches
         let tempScore = matchFuzzySublime(pattern[patIndex..^1], str[(strIndex + 1)..^1], tempMatches, recordMatches, config, recursionLevel + 1, baseIndex + strIndex + 1).score
         if tempScore > bestRecursionScore:
           bestRecursionScore = tempScore
           if recordMatches:
             bestRecursionMatches = move tempMatches
+
+      if recordMatches:
+        matches.add(strIndex + baseIndex)
 
       case scoreState
       of StartMatch, WordBoundryMatch:
