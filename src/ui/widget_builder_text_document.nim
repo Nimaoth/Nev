@@ -98,7 +98,7 @@ proc renderLine*(
     lineNumberText = $abs(lineNumber - cursorLine)
     lineNumberX = max(0.0, lineNumberWidth - lineNumberText.len.float * builder.charWidth)
 
-  builder.panel(flagsInner + LayoutVertical, y = y, pivot = pivot, userId = newSecondaryId(parentId, lineId)):
+  builder.panel(flagsInner + LayoutVertical + FillBackground, y = y, pivot = pivot, backgroundColor = backgroundColor, userId = newSecondaryId(parentId, lineId)):
     let lineWidth = currentNode.bounds.w
 
     var subLine: UINode = nil
@@ -109,8 +109,8 @@ proc renderLine*(
     var subLineIndex = 0
     var subLinePartIndex = 0
     var previousInlayNode: UINode = nil
-    var insertDiagnostic: bool = false
-    while partIndex < line.parts.len or insertDiagnostic: # outer loop for wrapped lines within this line
+    var insertDiagnosticLater: bool = false
+    while partIndex < line.parts.len or insertDiagnosticLater: # outer loop for wrapped lines within this line
 
       builder.panel(flagsInner + LayoutHorizontal):
         subLine = currentNode
@@ -303,8 +303,22 @@ proc renderLine*(
           partIndex += 1
           subLinePartIndex += 1
 
+        var insertDiagnosticNow = false
+        if hasDiagnostic and partIndex >= line.parts.len:
+          insertDiagnosticNow = true
+          let diagnosticXOffset = 7 * builder.charWidth
+          for i in 0..0:
+            insertDiagnosticLater = false
+            if diagnosticXOffset + diagnosticMessageWidth > lineWidth - lastPartXW:
+              if subLinePartIndex > 0:
+                subLineIndex += 1
+                subLinePartIndex = 0
+                insertDiagnosticLater = true
+                insertDiagnosticNow = false
+                break
+
         # Fill rest of line with background
-        let lineEndYFlags = if insertDiagnostic: &{SizeToContentY} else: &{FillY}
+        let lineEndYFlags = if insertDiagnosticNow: &{SizeToContentY} else: &{FillY}
         builder.panel(&{FillX, FillBackground} + lineEndYFlags, backgroundColor = backgroundColor):
           capture line, currentNode:
             onClickAny btn:
@@ -345,23 +359,14 @@ proc renderLine*(
                 self.app.tryActivateEditor(self)
                 self.markDirty()
 
-          if hasDiagnostic and partIndex >= line.parts.len:
+          if insertDiagnosticNow:
             let diagnosticXOffset = 7 * builder.charWidth
-            for i in 0..0:
-              insertDiagnostic = false
-              if diagnosticXOffset + diagnosticMessageWidth > lineWidth - lastPartXW:
-                if subLinePartIndex > 0:
-                  subLineIndex += 1
-                  subLinePartIndex = 0
-                  insertDiagnostic = true
-                  break
-
-              let diagnosticColor = theme.color(@[diagnosticColorName, "editor.foreground"], color(1, 1, 1))
-              var diagnosticPanel: UINode = nil
-              let diagnosticHeight = diagnosticLines.float * builder.textHeight
-              builder.panel(&{DrawText, FillBackground, SizeToContentX, MaskContent},
-                x = diagnosticXOffset, h = diagnosticHeight, text = diagnosticMessage, textColor = diagnosticColor, backgroundColor = backgroundColor.lighten(0.07)):
-                diagnosticPanel = currentNode
+            let diagnosticColor = theme.color(@[diagnosticColorName, "editor.foreground"], color(1, 1, 1))
+            var diagnosticPanel: UINode = nil
+            let diagnosticHeight = diagnosticLines.float * builder.textHeight
+            builder.panel(&{DrawText, FillBackground, SizeToContentX, MaskContent},
+              x = diagnosticXOffset, h = diagnosticHeight, text = diagnosticMessage, textColor = diagnosticColor, backgroundColor = backgroundColor.lighten(0.07)):
+              diagnosticPanel = currentNode
 
           if lineEndColor.getSome(color):
             builder.panel(&{FillY, FillBackground}, w = builder.charWidth, backgroundColor = color)
