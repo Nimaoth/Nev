@@ -1,3 +1,17 @@
+import std/[strutils]
+
+proc escapeRegex*(s: string): string =
+  ## escapes `s` so that it is matched verbatim when used as a regular
+  ## expression.
+  result = ""
+  for c in items(s):
+    case c
+    of 'a'..'z', 'A'..'Z', '0'..'9', '_':
+      result.add(c)
+    else:
+      result.add("\\x")
+      result.add(toHex(ord(c), 2))
+
 when defined(js):
   import std/jsre
   export jsre

@@ -1450,12 +1450,18 @@ proc moveFirst*(self: TextDocumentEditor, move: string, which: SelectionCursor =
 proc setSearchQuery*(self: TextDocumentEditor, query: string, escapeRegex: bool = false) {.expose("editor.text").} =
   # todo: escape regex
   self.searchQuery = query
-  self.searchRegex = re(query).some
+  try:
+    if escapeRegex:
+      self.searchRegex = re(query.escapeRegex).some
+    else:
+      self.searchRegex = re(query).some
+  except:
+    log lvlError, fmt"[setSearchQuery] Invalid regex query: '{query}' ({getCurrentExceptionMsg()})"
   self.updateSearchResults()
 
 proc setSearchQueryFromMove*(self: TextDocumentEditor, move: string, count: int = 0, prefix: string = "", suffix: string = ""): Selection {.expose("editor.text").} =
   let selection = self.getSelectionForMove(self.selection.last, move, count)
-  let searchText = self.document.contentString(selection)
+  let searchText = self.document.contentString(selection).escapeRegex
   self.setSearchQuery(prefix & searchText & suffix)
   return selection
 
