@@ -15,8 +15,11 @@ switch("d", "allowConsoleLogger")
 
 switch("d", "wasm3HasWasi")
 switch("d", "wasm3VerboseErrorMessages")
+switch("panics", "on")
+
 
 # switches for debugging
+
 # switch("d", "wasm3EnableStrace2")
 # switch("d", "wasm3RecordBacktraces")
 # switch("d", "wasm3LogModule")
@@ -30,18 +33,23 @@ switch("d", "wasm3VerboseErrorMessages")
 # switch("d", "traceArc")
 # switch("d", "nimTypeNames")
 
+
 # checks
+
 # --objChecks:off
 # --fieldChecks:off
-# --rangeChecks:off
 # --boundChecks:off
 # --overflowChecks:off
 # --floatChecks:off
 # --nanChecks:off
 # --infChecks:off
 
+# --rangeChecks:off # this causes issues on js backend with some prng initialization
+
 # switch("cc", "vcc")
-# switch("nimcache", "D:\\nc")
+# switch("nimcache", "D:/nc")
+# switch("nimcache", "nimcache")
+# switch("nimcache", "C:/nimcache")
 
 case 0
 of 0:
@@ -50,16 +58,7 @@ of 1:
   switch("d", "release")
   switch("stackTrace", "on")
   switch("lineTrace", "on")
-of 2:
-  switch("cc", "vcc")
-  switch("d", "debug")
   switch("debuginfo", "on")
-of 3:
-  switch("d", "release")
-  switch("debuginfo", "on")
-  switch("stackTrace", "on")
-  switch("lineTrace", "on")
-  switch("nimcache", "D:\\nc")
 else:
   discard
 
