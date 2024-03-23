@@ -1843,9 +1843,7 @@ proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").
   if insertTextFormat == InsertTextFormat.Snippet:
     let snippet = parseSnippet(insertText)
     if snippet.isSome:
-      debug "snippet: ", snippet.get.tokens.join(" ")
       var data = snippet.get.createSnippetData(editSelection.first)
-      debug "data: ", data
       insertText = data.text
       snippetData = data.some
 
