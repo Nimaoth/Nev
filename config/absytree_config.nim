@@ -86,6 +86,7 @@ when defined(wasm):
   # loadVimLikeKeybindings()
 
   loadLspConfigFromFile("config/lsp.json")
+  loadSnippetsFromFile(".vscode/nim-snippets.code-snippets", "nim")
 
   # Triple click to selects a line
   setOption "editor.text.triple-click-command", "extend-select-move"
