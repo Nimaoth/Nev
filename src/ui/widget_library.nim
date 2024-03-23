@@ -1,4 +1,5 @@
 import std/[strformat, strutils]
+import misc/[custom_unicode]
 import document, ui/node
 import chroma
 
@@ -112,3 +113,21 @@ proc updateBaseIndexAndScrollOffset*(height: float, previousBaseIndex: var int, 
       break
     previousBaseIndex -= 1
     scrollOffset -= totalLineHeight
+
+proc highlightedText*(builder: UINodeBuilder, text: string, highlightedIndices: openArray[int], color: Color, highlightColor: Color) =
+  ## Create a text panel wher the characters at the indices in `highlightedIndices` are highlighted with `highlightColor`.
+  if highlightedIndices.len > 0:
+    builder.panel(&{FillX, SizeToContentY, LayoutHorizontal}):
+      var start = 0
+      for matchIndex in highlightedIndices:
+        if matchIndex > start:
+          builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = text[start..<matchIndex], textColor = color)
+
+        builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = $text.runeAt(matchIndex), textColor = highlightColor)
+        start = text.nextRuneStart(matchIndex)
+        # builder.panel(&{FillBackground}, x = matchIndex.float * charWidth, w = charWidth, h = totalLineHeight, backgroundColor = selectedBackgroundColor.lighten(0.1))
+      if start < text.len:
+        builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = text[start..^1], textColor = color)
+
+  else:
+    builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = text, textColor = color)

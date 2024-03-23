@@ -1,6 +1,6 @@
 import std/[strutils, sugar, options, json, streams, tables]
 import bumpy, vmath
-import misc/[util, rect_utils, comb_sort, timer, event, custom_async, custom_logger, cancellation_token, myjsonutils]
+import misc/[util, rect_utils, comb_sort, timer, event, custom_async, custom_logger, cancellation_token, myjsonutils, fuzzy_matching]
 import app_interface, text/text_editor, popup, events, scripting/expose, input
 from scripting_api as api import nil
 
@@ -12,6 +12,8 @@ createJavascriptPrototype("popup.selector")
 type
   SelectorItem* = ref object of RootObj
     score*: float32
+    hasCompletionMatchPositions*: bool = false
+    completionMatchPositions*: seq[int]
 
   CompletionProviderSync* = proc(popup: SelectorPopup, text: string): seq[SelectorItem]
   CompletionProviderAsync* = proc(popup: SelectorPopup, text: string): Future[seq[SelectorItem]]
@@ -48,6 +50,14 @@ type
   NamedSelectorItem* = ref object of SelectorItem
     name*: string
 
+proc getCompletionMatches*(self: SelectorItem, pattern: string, text: string, config: FuzzyMatchConfig): seq[int] =
+  if not self.hasCompletionMatchPositions:
+    self.completionMatchPositions.setLen 0
+    discard matchFuzzySublime(pattern, text, self.completionMatchPositions, true, config)
+    self.hasCompletionMatchPositions = true
+
+  return self.completionMatchPositions
+
 method changed*(self: SelectorItem, other: SelectorItem): bool {.base.} = discard
 
 method changed*(self: NamedSelectorItem, other: SelectorItem): bool =
@@ -58,6 +68,9 @@ method deinit*(self: SelectorPopup) =
   if self.cancellationToken.isNotNil:
     self.cancellationToken.cancel()
   self[] = default(typeof(self[]))
+
+proc getSearchString*(self: SelectorPopup): string =
+  return self.textEditor.document.contentString
 
 proc autoSort(self: SelectorPopup) {.async.} =
   self.autoSortActive = true

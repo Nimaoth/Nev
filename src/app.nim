@@ -1565,7 +1565,7 @@ proc chooseTheme*(self: App) {.expose("editor").} =
         let score = matchPath(file, text)
         result.add ThemeSelectorItem(name: name, path: fmt"{themesDir}/{file}", score: score)
 
-    result.sort((a, b) => cmp(a.ThemeSelectorItem.score, b.ThemeSelectorItem.score), Descending)
+    result.sort((a, b) => cmp(a.ThemeSelectorItem.score, b.ThemeSelectorItem.score), Ascending)
 
   popup.handleItemSelected = proc(item: SelectorItem) =
     if theme.loadFromFile(item.ThemeSelectorItem.path).getSome(theme):
@@ -1597,6 +1597,8 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
   var popup = newSelectorPopup(self.asAppInterface)
   var sortCancellationToken = newCancellationToken()
 
+  let fuzzyMatchSublime = self.configProvider.getFlag("editor.fuzzy-match-sublime", true)
+
   popup.getCompletionsAsyncIter = proc(popup: SelectorPopup, text: string): Future[void] {.async.} =
     if not popup.cancellationToken.isNil:
       sortCancellationToken.cancel()
@@ -1606,17 +1608,24 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
       var timer = startTimer()
 
       var i = 0
+      var startIndex = 0
       while i < popup.completions.len:
         defer: inc i
 
         if cancellationToken.canceled:
           return
 
-        let score = matchPath(popup.completions[i].FileSelectorItem.path, text)
-        popup.completions[i].score = score
+        let score = if fuzzyMatchSublime:
+          matchFuzzySublime(text, popup.completions[i].FileSelectorItem.path, defaultPathMatchingConfig).score.float
+        else:
+          matchPath(popup.completions[i].FileSelectorItem.path, text)
 
-        if timer.elapsed.ms > 10:
+        popup.completions[i].score = score
+        popup.completions[i].hasCompletionMatchPositions = false
+
+        if timer.elapsed.ms > 7:
           await sleepAsync(1)
+          startIndex = i + 1
           timer = startTimer()
 
       popup.enableAutoSort()
@@ -1627,19 +1636,28 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
     popup.cancellationToken = cancellationToken
 
     var timer = startTimer()
+    var i = 0
+    var startIndex = 0
     for folder in self.workspace.folders:
       var folder = folder
       await iterateDirectoryRec(folder, "", cancellationToken, proc(files: seq[string]) {.async.} =
         let folder = folder
         for file in files:
-          let score = matchPath(file, text)
-          popup.completions.add FileSelectorItem(path: fmt"{file}", score: score, workspaceFolder: folder.some)
+          defer:
+            inc i
 
-          if timer.elapsed.ms > 5:
+          let score = if fuzzyMatchSublime:
+            matchFuzzySublime(text, file, defaultPathMatchingConfig).score.float
+          else:
+            matchPath(file, text)
+          popup.completions.add FileSelectorItem(path: file, score: score, workspaceFolder: folder.some)
+
+          if timer.elapsed.ms > 7:
             await sleepAsync(1)
+            startIndex = i + 1
             timer = startTimer()
 
-        # popup.completions.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Descending)
+        # popup.completions.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Ascending)
         popup.enableAutoSort()
         popup.markDirty()
       )
@@ -1678,7 +1696,7 @@ proc chooseOpen*(self: App, view: string = "new") {.expose("editor").} =
       let score = matchPath(name, text)
       result.add FileSelectorItem(path: name, score: score, workspaceFolder: document.workspace)
 
-    result.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Descending)
+    result.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Ascending)
 
   popup.handleItemConfirmed = proc(item: SelectorItem) =
     case view
@@ -1710,13 +1728,20 @@ proc openSymbolsPopup*(self: App, symbols: seq[Symbol], handleItemSelected: proc
   defer:
     self.platform.requestRender()
 
+  let fuzzyMatchSublime = self.configProvider.getFlag("editor.fuzzy-match-sublime", true)
+
   var popup = newSelectorPopup(self.asAppInterface)
   popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
-    for s in symbols:
-      let score = matchFuzzy(text, s.name)
-      result.add TextSymbolSelectorItem(symbol: s, score: score)
+    for i in countdown(symbols.high, 0):
+      let score = if fuzzyMatchSublime:
+        matchFuzzySublime(text, symbols[i].name, defaultPathMatchingConfig).score.float
+      else:
+        matchFuzzy(symbols[i].name, text)
 
-    result.sort((a, b) => cmp(a.TextSymbolSelectorItem.score, b.TextSymbolSelectorItem.score), Descending)
+      result.add TextSymbolSelectorItem(symbol: symbols[i], score: score)
+
+    if text.len > 0:
+      result.sort((a, b) => cmp(a.TextSymbolSelectorItem.score, b.TextSymbolSelectorItem.score), Ascending)
 
   popup.handleItemSelected = proc(item: SelectorItem) =
     let symbol = item.TextSymbolSelectorItem.symbol

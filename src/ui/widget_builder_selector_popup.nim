@@ -1,33 +1,38 @@
 import vmath, bumpy, chroma
-import misc/[util, custom_logger]
+import misc/[util, custom_logger, fuzzy_matching]
 import ui/node
 import platform/platform
-import ui/[widget_builders_base]
+import ui/[widget_builders_base, widget_library]
 import app, selector_popup, theme
+
+logCategory "selector-popup-ui"
 
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
 {.used.}
 
-method createUI*(self: FileSelectorItem, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
+method createUI*(self: FileSelectorItem, popup: SelectorPopup, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
   let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
-  builder.panel(&{FillX, SizeToContentY, DrawText}, text = self.path, textColor = textColor)
+  let matchIndices = self.getCompletionMatches(popup.getSearchString(), self.path, defaultPathMatchingConfig)
+  builder.highlightedText(self.path, matchIndices, textColor, textColor.lighten(0.15))
 
-method createUI*(self: TextSymbolSelectorItem, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
+method createUI*(self: TextSymbolSelectorItem, popup: SelectorPopup, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
   let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
   let scopeColor = app.theme.tokenColor("string", color(175/255, 255/255, 175/255))
 
   builder.panel(&{FillX, SizeToContentY}):
-    builder.panel(&{FillX, SizeToContentY, DrawText}, text = self.symbol.name, textColor = textColor)
-    builder.panel(&{FillX, SizeToContentY, DrawText}, text = $self.symbol.symbolType, textColor = scopeColor)
-    # typeText.right = -($self.symbol.symbolType).len.float * charWidth
+    let matchIndices = self.getCompletionMatches(popup.getSearchString(), self.symbol.name, defaultCompletionMatchingConfig)
+    builder.highlightedText(self.symbol.name, matchIndices, textColor, textColor.lighten(0.15))
+    builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, x = currentNode.w, text = $self.symbol.symbolType, pivot = vec2(1, 0), textColor = scopeColor)
 
-method createUI*(self: ThemeSelectorItem, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
+method createUI*(self: ThemeSelectorItem, popup: SelectorPopup, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
   let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
-  builder.panel(&{FillX, SizeToContentY, DrawText}, text = self.path, textColor = textColor)
+  let matchIndices = self.getCompletionMatches(popup.getSearchString(), self.path, defaultPathMatchingConfig)
+  builder.highlightedText(self.path, matchIndices, textColor, textColor.lighten(0.15))
 
-method createUI*(self: NamedSelectorItem, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
+method createUI*(self: NamedSelectorItem, popup: SelectorPopup, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
   let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
-  builder.panel(&{FillX, SizeToContentY, DrawText}, text = self.name, textColor = textColor)
+  let matchIndices = self.getCompletionMatches(popup.getSearchString(), self.name, defaultPathMatchingConfig)
+  builder.highlightedText(self.name, matchIndices, textColor, textColor.lighten(0.15))
 
 method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
   # let dirty = self.dirty
@@ -90,6 +95,6 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[pro
               backgroundColor
 
             builder.panel(&{FillX, SizeToContentY, FillBackground}, backgroundColor = backgroundColor):
-              result.add self.completions[self.completions.high - completionIndex].createUI(builder, app)
+              result.add self.completions[self.completions.high - completionIndex].createUI(self, builder, app)
 
           # builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = backgroundColor)
