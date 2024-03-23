@@ -1180,11 +1180,11 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommandBlock "", "<C-k><C-l>": lspToggleLogServerDebug()
   addCommand "editor", "<C-k><C-e>", "toggle-flag", "editor.text.highlight-treesitter-errors"
 
-  addTextCommandBlock "", "<F12>":
+  addTextCommandBlock "", "gt":
     editor.selection = editor.getNextDiagnostic(editor.selection.last, 1).first.toSelection
     editor.scrollToCursor Last
     editor.updateTargetColumn()
-  addTextCommandBlock "", "<S-F12>":
+  addTextCommandBlock "", "gn":
     editor.selection = editor.getPrevDiagnostic(editor.selection.last, 1).first.toSelection
     editor.scrollToCursor Last
     editor.updateTargetColumn()
