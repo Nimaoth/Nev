@@ -36,6 +36,7 @@
 
 [
   (str_lit)
+  (char_lit)
   (rstr_lit)
   (triplestr_lit)
   (generalized_str_lit)
