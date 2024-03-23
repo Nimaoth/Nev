@@ -2214,6 +2214,63 @@ proc selectNextCompletion*(self: TextDocumentEditor) =
       argsJsonString.cstring)
 
 
+proc editor_text_hasTabStops_bool_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc hasTabStops*(self: TextDocumentEditor): bool =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_hasTabStops_bool_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_text_clearTabStops_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc clearTabStops*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_clearTabStops_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_selectNextTabStop_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc selectNextTabStop*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_selectNextTabStop_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_selectPrevTabStop_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc selectPrevTabStop*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_selectPrevTabStop_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_applySelectedCompletion_void_TextDocumentEditor_wasm(
     arg: cstring): cstring {.importc.}
 proc applySelectedCompletion*(self: TextDocumentEditor) =

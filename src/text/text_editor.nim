@@ -7,10 +7,10 @@ import scripting/[expose]
 import platform/[platform, filesystem]
 import language/[language_server_base]
 import workspaces/[workspace]
-import document, document_editor, events, vmath, bumpy, input, custom_treesitter, indent, text_document
+import document, document_editor, events, vmath, bumpy, input, custom_treesitter, indent, text_document, snippet
 import config_provider, app_interface
 
-from language/lsp_types import Response, CompletionList, CompletionItem, isSuccess, asTextEdit, asInsertReplaceEdit
+from language/lsp_types import Response, CompletionList, CompletionItem, InsertTextFormat, TextEdit, Range, Position, isSuccess, asTextEdit, asInsertReplaceEdit
 
 export text_document, document_editor, id
 
@@ -115,6 +115,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
   scrollToCompletion*: Option[int]
 
   updateCompletionsTask: DelayedTask
+
+  currentSnippetData*: Option[SnippetData]
 
 template noSelectionHistory(self, body: untyped): untyped =
   block:
@@ -1532,6 +1534,25 @@ proc getCompletionsFromContent(self: TextDocumentEditor): CompletionList =
   for text in s.items:
     result.items.add(CompletionItem(label: text))
 
+proc addSnippetCompletions(self: TextDocumentEditor) =
+  try:
+    let snippets = self.configProvider.getValue("editor.text.snippets." & self.document.languageId, newJObject())
+    for (name, definition) in snippets.fields.pairs:
+      let scopes = definition["scope"].getStr.split(",")
+      let prefix = definition["prefix"].getStr
+      let body = definition["body"].elems
+      var text = ""
+      for i, line in body:
+        if text.len > 0:
+          text.add "\n"
+        text.add line.getStr
+
+      let edit = lsp_types.TextEdit(`range`: Range(start: Position(line: -1, character: -1), `end`: Position(line: -1, character: -1)), newText: text)
+      self.completions.items.add(CompletionItem(label: prefix, detail: name.some, insertTextFormat: InsertTextFormat.Snippet.some, textEdit: lsp_types.init(lsp_types.CompletionItemTextEditVariant, edit).some))
+
+  except:
+    log lvlError, fmt"Failed to get snippets for language {self.document.languageId}"
+
 proc splitIdentifier(str: string): seq[string] =
   var buffer = ""
   var previousUppercase = false
@@ -1637,7 +1658,15 @@ proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.} =
   if self.disableCompletions:
     return
 
-  self.showCompletionWindow()
+  if self.completions.items.len == 0:
+    self.completions = self.getCompletionsFromContent()
+    self.addSnippetCompletions()
+
+  if self.completions.items.len > 0:
+    self.refilterCompletions()
+    self.selectedCompletion = self.selectedCompletion.clamp(0, self.completionMatches.high)
+    self.scrollToCompletion = self.selectedCompletion.some
+    self.showCompletionWindow()
 
   if self.updateCompletionsTask.isNotNil:
     self.updateCompletionsTask.pause()
@@ -1645,16 +1674,12 @@ proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = await self.document.getLanguageServer()
 
   if languageServer.getSome(ls):
-    if self.completions.items.len == 0:
-      self.completions = self.getCompletionsFromContent()
+
     let lspCompletions = await ls.getCompletions(self.document.languageId, self.document.fullPath, self.selection.last)
     if lspCompletions.isSuccess and lspCompletions.result.items.len > 0:
       self.completions = lspCompletions.result
-
-  if self.completions.items.len == 0:
-    self.completions = self.getCompletionsFromContent()
-
-  self.refilterCompletions()
+      self.addSnippetCompletions()
+      self.refilterCompletions()
 
   self.selectedCompletion = self.selectedCompletion.clamp(0, self.completionMatches.high)
   self.scrollToCompletion = self.selectedCompletion.some
@@ -1735,6 +1760,41 @@ proc selectNextCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.scrollToCompletion = self.selectedCompletion.some
   self.markDirty()
 
+proc hasTabStops*(self: TextDocumentEditor): bool {.expose("editor.text").} =
+  return self.currentSnippetData.isSome
+
+proc clearTabStops*(self: TextDocumentEditor) {.expose("editor.text").} =
+  self.currentSnippetData = SnippetData.none
+
+proc selectNextTabStop*(self: TextDocumentEditor) {.expose("editor.text").} =
+  if self.currentSnippetData.isNone:
+    return
+
+  var foundTabStop = false
+  while self.currentSnippetData.get.currentTabStop < self.currentSnippetData.get.highestTabStop:
+    self.currentSnippetData.get.currentTabStop.inc
+    if self.currentSnippetData.get.currentTabStop in self.currentSnippetData.get.tabStops:
+      self.selections = self.currentSnippetData.get.tabStops[self.currentSnippetData.get.currentTabStop]
+      foundTabStop = true
+      break
+
+  if not foundTabStop:
+    self.selections = self.currentSnippetData.get.tabStops[0]
+    self.currentSnippetData = SnippetData.none
+
+proc selectPrevTabStop*(self: TextDocumentEditor) {.expose("editor.text").} =
+  if self.currentSnippetData.isNone:
+    return
+
+  if self.currentSnippetData.get.currentTabStop == 0:
+    return
+
+  while self.currentSnippetData.get.currentTabStop > 1:
+    self.currentSnippetData.get.currentTabStop.dec
+    if self.currentSnippetData.get.currentTabStop in self.currentSnippetData.get.tabStops:
+      self.selections = self.currentSnippetData.get.tabStops[self.currentSnippetData.get.currentTabStop]
+      break
+
 proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
   if not self.showCompletions:
     return
@@ -1747,23 +1807,52 @@ proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").
 
   self.addNextCheckpoint("insert")
 
+  let insertTextFormat = com.insertTextFormat.get(InsertTextFormat.PlainText)
+
+  var editSelection: Selection
+  var insertText = ""
+
   let cursor = self.selection.last
   if com.textEdit.getSome(edit):
     if edit.asTextEdit().getSome(edit):
-      let runeSelection = ((edit.`range`.start.line, edit.`range`.start.character.RuneIndex), (edit.`range`.`end`.line, edit.`range`.`end`.character.RuneIndex))
-      let selection = self.document.runeSelectionToSelection(runeSelection)
-      debugf"text edit: {selection} -> '{edit.newText}'"
-      self.selections = self.document.edit([selection], self.selections, [edit.newText]).mapIt(it.last.toSelection)
+      if edit.`range`.start.line < 0:
+        if cursor.column == 0:
+          editSelection = cursor.toSelection
+        else:
+          editSelection = self.getCompletionSelectionAt(cursor)
+      else:
+        let runeSelection = ((edit.`range`.start.line, edit.`range`.start.character.RuneIndex), (edit.`range`.`end`.line, edit.`range`.`end`.character.RuneIndex))
+        let selection = self.document.runeSelectionToSelection(runeSelection)
+
+        editSelection = selection
+
+      insertText = edit.newText
+
     if edit.asInsertReplaceEdit().getSome(edit):
       debugf"text edit: {edit.insert}, {edit.replace} -> '{edit.newText}'"
-      discard
+      return
+
   else:
-    let insertText = com.insertText.get(com.label)
+    insertText = com.insertText.get(com.label)
     if cursor.column == 0:
-      self.selections = self.document.insert([cursor.toSelection], self.selections, [insertText], true, true).mapIt(it.last.toSelection)
+      editSelection = cursor.toSelection
     else:
-      let selection = self.getCompletionSelectionAt(cursor)
-      self.selections = self.document.edit([selection], self.selections, [insertText]).mapIt(it.last.toSelection)
+      editSelection = self.getCompletionSelectionAt(cursor)
+
+  var snippetData = SnippetData.none
+  if insertTextFormat == InsertTextFormat.Snippet:
+    let snippet = parseSnippet(insertText)
+    if snippet.isSome:
+      debug "snippet: ", snippet.get.tokens.join(" ")
+      var data = snippet.get.createSnippetData(editSelection.first)
+      debug "data: ", data
+      insertText = data.text
+      snippetData = data.some
+
+  self.selections = self.document.edit([editSelection], self.selections, [insertText]).mapIt(it.last.toSelection)
+
+  self.currentSnippetData = snippetData
+  self.selectNextTabStop()
 
   self.addNextCheckpoint("insert")
   for edit in com.additionalTextEdits:
@@ -2235,6 +2324,12 @@ proc updateInlayHintPositionsAfterInsert(self: TextDocumentEditor, inserted: Sel
     # todo: correctly handle unicode (inlay hint location comes from lsp, so probably a RuneIndex)
     inlayHint.location = self.document.updateCursorAfterInsert(inlayHint.location, inserted)
 
+  if self.currentSnippetData.isSome:
+    for (key, tabStops) in self.currentSnippetData.get.tabStops.mpairs:
+      for selection in tabStops.mitems:
+        selection.first = self.document.updateCursorAfterInsert(selection.first, inserted)
+        selection.last = self.document.updateCursorAfterInsert(selection.last, inserted)
+
 proc updateInlayHintPositionsAfterDelete(self: TextDocumentEditor, selection: Selection) =
   let selection = selection.normalized
   for i in countdown(self.inlayHints.high, 0):
@@ -2244,6 +2339,20 @@ proc updateInlayHintPositionsAfterDelete(self: TextDocumentEditor, selection: Se
       self.inlayHints[i].location = location
     else:
       self.inlayHints.removeSwap(i)
+
+  if self.currentSnippetData.isSome:
+    for (key, tabStops) in self.currentSnippetData.get.tabStops.mpairs:
+      for tabStopSelection in tabStops.mitems:
+
+        if self.document.updateCursorAfterDelete(tabStopSelection.first, selection).getSome(first):
+          tabStopSelection.first = first
+        else:
+          tabStopSelection.first = selection.first
+
+        if self.document.updateCursorAfterDelete(tabStopSelection.last, selection).getSome(last):
+          tabStopSelection.last = last
+        else:
+          tabStopSelection.last = selection.first
 
 proc handleTextInserted(self: TextDocumentEditor, document: TextDocument, location: Selection, text: string) =
   self.updateInlayHintPositionsAfterInsert(location)

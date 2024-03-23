@@ -325,6 +325,14 @@ proc selectPrevCompletion*(self: TextDocumentEditor) =
   editor_text_selectPrevCompletion_void_TextDocumentEditor_impl(self)
 proc selectNextCompletion*(self: TextDocumentEditor) =
   editor_text_selectNextCompletion_void_TextDocumentEditor_impl(self)
+proc hasTabStops*(self: TextDocumentEditor): bool =
+  editor_text_hasTabStops_bool_TextDocumentEditor_impl(self)
+proc clearTabStops*(self: TextDocumentEditor) =
+  editor_text_clearTabStops_void_TextDocumentEditor_impl(self)
+proc selectNextTabStop*(self: TextDocumentEditor) =
+  editor_text_selectNextTabStop_void_TextDocumentEditor_impl(self)
+proc selectPrevTabStop*(self: TextDocumentEditor) =
+  editor_text_selectPrevTabStop_void_TextDocumentEditor_impl(self)
 proc applySelectedCompletion*(self: TextDocumentEditor) =
   editor_text_applySelectedCompletion_void_TextDocumentEditor_impl(self)
 proc showHoverFor*(self: TextDocumentEditor; cursor: Cursor) =
