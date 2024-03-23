@@ -35,6 +35,18 @@ proc toggleShowDrawnNodes*() =
       argsJsonString.cstring)
 
 
+proc editor_setMaxViews_void_App_int_wasm(arg: cstring): cstring {.importc.}
+proc setMaxViews*(maxViews: int) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when int is JsonNode:
+      maxViews
+    else:
+      maxViews.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_setMaxViews_void_App_int_wasm(argsJsonString.cstring)
+
+
 proc editor_saveAppState_void_App_wasm(arg: cstring): cstring {.importc.}
 proc saveAppState*() =
   var argsJson = newJArray()

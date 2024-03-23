@@ -571,6 +571,8 @@ proc editor_loadApplicationFile_Option_string_App_string_impl*(path: string): Op
   discard
 proc editor_toggleShowDrawnNodes_void_App_impl*() =
   discard
+proc editor_setMaxViews_void_App_int_impl*(maxViews: int) =
+  discard
 proc editor_saveAppState_void_App_impl*() =
   discard
 proc editor_requestRender_void_App_bool_impl*(redrawEverything: bool = false) =
