@@ -21,6 +21,7 @@ requires "regex >= 0.20.2"
 requires "glob#64f71af" # "glob >= 0.11.2" # the newest version of glob doesn't have a version but is required for Nim 2.0
 requires "patty >= 0.3.5"
 requires "nimclipboard >= 0.1.2"
+requires "npeg >= 0.12.0"
 # requires "results >= 0.4.0"
 requires "https://github.com/Nimaoth/ws >= 0.5.0"
 requires "https://github.com/Nimaoth/windy >= 0.0.2"
