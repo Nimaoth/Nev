@@ -88,6 +88,9 @@ when defined(wasm):
   loadLspConfigFromFile("config/lsp.json")
   loadSnippetsFromFile(".vscode/nim-snippets.code-snippets", "nim")
 
+  addTextCommandBlock "", "<C-k><C-s>":
+    loadSnippetsFromFile(".vscode/nim-snippets.code-snippets", "nim")
+
   # Triple click to selects a line
   setOption "editor.text.triple-click-command", "extend-select-move"
   setOption "editor.text.triple-click-command-args", %[%"line", %true]
