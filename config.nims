@@ -5,21 +5,42 @@ switch("path", "src")
 switch("d", "mingw")
 switch("mm", "orc")
 switch("tlsEmulation", "off")
+switch("d", "ssl")
+
+
+# performance
+switch("panics", "on")
+switch("d", "release")
+
+
+# checks
+# --objChecks:off
+# --fieldChecks:off
+# --boundChecks:off
+# --overflowChecks:off
+# --floatChecks:off
+# --nanChecks:off
+# --infChecks:off
+
+# --rangeChecks:off # this causes issues on js backend with some prng initialization
+
+
+# required for actual builds, but for lsp this should be off to improve performance because it doesn't need to generate as many functions
+# switch("d", "exposeScriptingApi")
+
 switch("d", "enableGui=true")
 switch("d", "enableTerminal=true")
-switch("d", "ssl")
-switch("d", "exposeScriptingApi")
+
 
 # uncomment to see logs in the console
 switch("d", "allowConsoleLogger")
 
+
 switch("d", "wasm3HasWasi")
 switch("d", "wasm3VerboseErrorMessages")
-switch("panics", "on")
 
 
 # switches for debugging
-
 # switch("d", "wasm3EnableStrace2")
 # switch("d", "wasm3RecordBacktraces")
 # switch("d", "wasm3LogModule")
@@ -34,33 +55,8 @@ switch("panics", "on")
 # switch("d", "nimTypeNames")
 
 
-# checks
+switch("nimcache", "nimcache")
 
-# --objChecks:off
-# --fieldChecks:off
-# --boundChecks:off
-# --overflowChecks:off
-# --floatChecks:off
-# --nanChecks:off
-# --infChecks:off
-
-# --rangeChecks:off # this causes issues on js backend with some prng initialization
-
-# switch("cc", "vcc")
-# switch("nimcache", "D:/nc")
-# switch("nimcache", "nimcache")
-# switch("nimcache", "C:/nimcache")
-
-case 0
-of 0:
-  switch("d", "release")
-of 1:
-  switch("d", "release")
-  switch("stackTrace", "on")
-  switch("lineTrace", "on")
-  switch("debuginfo", "on")
-else:
-  discard
 
 # begin Nimble config (version 2)
 --noNimblePath
