@@ -108,6 +108,11 @@ func normalized*(selection: Selection): Selection =
   else:
     return selection
 
+func `in`*(a: Cursor, b: Selection): bool =
+  ## Returns true if the cursor is contained within the selection
+  let b = b.normalized
+  return a >= b.first and a <= b.last
+
 func reverse*(selection: Selection): Selection = (selection.last, selection.first)
 
 func isEmpty*(selection: Selection): bool = selection.first == selection.last
