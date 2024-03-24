@@ -2318,9 +2318,13 @@ method injectDependencies*(self: TextDocumentEditor, app: AppInterface) =
   self.setMode(self.configProvider.getValue("editor.text.default-mode", ""))
 
 proc updateInlayHintPositionsAfterInsert(self: TextDocumentEditor, inserted: Selection) =
-  for inlayHint in self.inlayHints.mitems:
+  for i in countdown(self.inlayHints.high, 0):
     # todo: correctly handle unicode (inlay hint location comes from lsp, so probably a RuneIndex)
-    inlayHint.location = self.document.updateCursorAfterInsert(inlayHint.location, inserted)
+    template inlayHint: InlayHint = self.inlayHints[i]
+    if inlayHint.location == inserted.first:
+      self.inlayHints.removeSwap(i)
+    else:
+      inlayHint.location = self.document.updateCursorAfterInsert(inlayHint.location, inserted)
 
   if self.currentSnippetData.isSome:
     for (key, tabStops) in self.currentSnippetData.get.tabStops.mpairs:
