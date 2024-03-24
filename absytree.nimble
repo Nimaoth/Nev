@@ -59,6 +59,11 @@ task buildDesktop, "Build the desktop version":
   # selfExec fmt"c --passL:advapi32.lib -o:ast{exe} -d:exposeScriptingApi {getCommandLineParams()} ./src/absytree.nim"
   # selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi --objChecks:off --fieldChecks:off --rangeChecks:off --boundChecks:off --overflowChecks:off --floatChecks:off --nanChecks:off --infChecks:off {getCommandLineParams()} ./src/absytree.nim"
 
+task buildDesktopDebug, "Build the desktop version (debug)":
+  selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi --stackTrace:on --lineTrace:on --debuginfo --passC:-std=gnu11 {getCommandLineParams()} ./src/absytree.nim"
+  # selfExec fmt"c --passL:advapi32.lib -o:ast{exe} -d:exposeScriptingApi {getCommandLineParams()} ./src/absytree.nim"
+  # selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi --objChecks:off --fieldChecks:off --rangeChecks:off --boundChecks:off --overflowChecks:off --floatChecks:off --nanChecks:off --infChecks:off {getCommandLineParams()} ./src/absytree.nim"
+
 task buildDesktopWindows, "Build the desktop version for windows":
   selfExec fmt"c -o:ast{exe} {crossCompileWinArgs} -d:exposeScriptingApi {getCommandLineParams()} ./src/absytree.nim"
 
