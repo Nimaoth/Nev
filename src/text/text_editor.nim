@@ -1,4 +1,4 @@
-import std/[strutils, sequtils, sugar, options, json, streams, strformat, tables, deques, sets, algorithm]
+import std/[strutils, sequtils, sugar, options, json, streams, strformat, tables, deques, sets, algorithm, os]
 import chroma
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
@@ -1843,7 +1843,20 @@ proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").
   if insertTextFormat == InsertTextFormat.Snippet:
     let snippet = parseSnippet(insertText)
     if snippet.isSome:
-      var data = snippet.get.createSnippetData(editSelection.first)
+      let filenameParts = self.document.filename.splitFile
+      debugf"parts: {filenameParts}"
+      let variables = toTable {
+        "TM_FILENAME": filenameParts.name & filenameParts.ext,
+        "TM_FILENAME_BASE": filenameParts.name,
+        "TM_FILETPATH": self.document.filename,
+        "TM_DIRECTORY": filenameParts.dir,
+        "TM_LINE_INDEX": $editSelection.last.line,
+        "TM_LINE_NUMBER": $(editSelection.last.line + 1),
+        "TM_CURRENT_LINE": self.document.lines[editSelection.last.line],
+        "TM_CURRENT_WORD": "todo",
+        "TM_SELECTED_TEXT": self.document.contentString(self.selection),
+      }
+      var data = snippet.get.createSnippetData(editSelection.first, variables)
       insertText = data.text
       snippetData = data.some
 

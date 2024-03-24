@@ -1,7 +1,8 @@
-import std/[strutils, sequtils, strformat, os, tables, options]
+import std/[strutils, sequtils, strformat, os, tables, options, unicode]
 import npeg
 import npeg/codegen
 import scripting_api
+import regex
 
 type
   TokenKind* = enum Text, Nested, Variable, Choice, Format
@@ -38,7 +39,7 @@ type SnippetData* = object
   indent: int
   location: Cursor
 
-proc updateSnippetData(data: var SnippetData, tokens: openArray[Token]) =
+proc updateSnippetData(data: var SnippetData, tokens: openArray[Token], variables: Table[string, string]) =
   for token in tokens:
     case token.kind:
     of Text:
@@ -48,14 +49,92 @@ proc updateSnippetData(data: var SnippetData, tokens: openArray[Token]) =
     of Nested:
       data.highestTabStop = max(data.highestTabStop, token.tabStopIndex)
       let first = data.location
-      data.updateSnippetData(token.tokens)
+      data.updateSnippetData(token.tokens, variables)
       let last = data.location
       data.tabStops.mgetOrPut(token.tabStopIndex, @[]).add (first, last)
 
     of Variable:
-      data.text.add token.name
-      data.location.column += token.name.len
-      data.updateSnippetData(token.tokens)
+      if token.regex.isSome:
+        let value = variables.getOrDefault(token.name, "")
+        let regex = re2 token.regex.get
+        var match: RegexMatch2
+
+        let matched = value.find(regex, match)
+
+        for format in token.tokens:
+
+          case format.kind
+          of Text:
+            data.text.add format.text
+            data.location.column += format.text.len
+
+          of Format:
+            let capturedBounds = if format.tabStopIndex == 0:
+              match.boundaries
+            elif format.tabStopIndex <= match.captures.len:
+              match.captures[format.tabStopIndex - 1]
+            else:
+              0..<0
+
+            let capturedValue = case format.transformation
+            of "":
+              if matched:
+                value[capturedBounds]
+              else:
+                value
+            of "/":
+              assert format.tokens.len == 1 and format.tokens[0].kind == Text
+              if matched:
+                case format.tokens[0].text
+                of "upcase":
+                  value[capturedBounds].toUpper
+                of "downcase":
+                  value[capturedBounds].toLower
+                of "capitalize":
+                  value[capturedBounds].capitalize
+                else:
+                  assert false
+                  value
+              else:
+                value
+
+            of "+":
+              assert format.tokens.len == 1 and format.tokens[0].kind == Text
+              if matched:
+                format.tokens[0].text
+              else:
+                value
+
+            of "-":
+              assert format.tokens.len == 1 and format.tokens[0].kind == Text
+              if matched:
+                value
+              else:
+                format.tokens[0].text
+
+            of "?":
+              assert format.tokens.len == 2 and format.tokens[0].kind == Text and format.tokens[1].kind == Text
+              if matched:
+                format.tokens[0].text
+              else:
+                format.tokens[1].text
+
+            else:
+              assert false
+              value
+
+            data.text.add capturedValue
+            data.location.column += capturedValue.len
+          else:
+            assert false
+
+      elif token.name in variables:
+        let value = variables[token.name]
+        data.text.add value
+        data.location.column += value.len
+
+      else:
+        data.updateSnippetData(token.tokens, variables)
 
     of Choice:
       data.text.add token.tokens[0].text
@@ -64,9 +143,9 @@ proc updateSnippetData(data: var SnippetData, tokens: openArray[Token]) =
     of Format:
       discard
 
-proc createSnippetData*(snippet: Snippet, location: Cursor, indent = int.none): SnippetData =
+proc createSnippetData*(snippet: Snippet, location: Cursor, variables: Table[string, string], indent = int.none): SnippetData =
   result = SnippetData(location: location, indent: indent.get(0))
-  result.updateSnippetData(snippet.tokens)
+  result.updateSnippetData(snippet.tokens, variables)
   if 0 notin result.tabStops:
     result.tabStops[0] = @[result.location.toSelection]
 
@@ -129,13 +208,9 @@ const snippetParser = peg("snippet", state: Snippet):
     state.stack.add state.tokens
     state.tokens.setLen 0
 
-  prePattern <- 0:
-    state.stack.add state.tokens
-    state.tokens.setLen 0
-
   pattern <- tabstop | variable
 
-  nestedPattern <- prePattern * *(escaped | (unescaped - {'}', '$'}) | pattern)
+  nestedPattern <- pushStack * *(escaped | (unescaped - {'}', '$'}) | pattern)
 
   variable <- variable1 | variable2 | variable3
   variable1 <- '$' * varName | "${" * varName * '}':
@@ -187,11 +262,7 @@ const snippetParser = peg("snippet", state: Snippet):
   comma <- ',':
     state.tokens.add Token(kind: Text)
 
-  preChoice <- 0:
-    state.stack.add state.tokens
-    state.tokens.setLen 0
-
-  choice <- "${" * >number * '|' * preChoice * choiceText * *(comma * choiceText) * "|}":
+  choice <- "${" * >number * '|' * (pushStack * choiceText) * *(comma * choiceText) * "|}":
     var token = Token(kind: Choice, tabStopIndex: parseInt($1), tokens: state.tokens)
     state.tokens.setLen 0
     state.tokens = state.stack.pop
@@ -205,46 +276,170 @@ proc parseSnippet*(input: string): Option[Snippet] =
   return Snippet.none
 
 when isMainModule:
-  proc testString(str: string, expected: string, print = false) =
+  proc testString(str: string, expected: string, expectedData: string = "", print = false) =
+    let variables = toTable {
+      "TM_FILENAME": "test.TXT",
+      "TM_FILENAME_BASE": "test",
+      "TM_FILETPATH": "foo/bar/test.TXT",
+      "TM_DIRECTORY": "foo/bar",
+      "TM_LINE_INDEX": "5",
+      "TM_LINE_NUMBER": "6",
+      "TM_CURRENT_LINE": "hello world!",
+      "TM_CURRENT_WORD": "world",
+      "TM_SELECTED_TEXT": "orl",
+    }
+
     if print:
       echo "test: ", str, "   ->   ", expected
     var state = Snippet()
     let res = snippetParser.match(str, state)
     if print: echo fmt"ok: {res.ok}, len: {res.matchLen}, max: {res.matchMax}"
+    let snippetData = state.createSnippetData((0, 0), variables)
     let finalResult = state.tokens.join(" ")
     if print:
       echo finalResult
-      echo state.createSnippetData((0, 0))
 
     if finalResult != expected:
       echo "-------- FAILED: ", str
       echo "expected: ", expected
       echo "     got: ", finalResult
 
+    if $snippetData.text != expectedData:
+      echo "-------- FAILED: ", str
+      echo "expected: ", expectedData
+      echo "     got: ", $snippetData.text
+
     if print: echo "---------------------"
 
   proc testAll() =
-    testString r"abc", "'abc'"
-    testString r"a\$c", "'a$c'"
-    testString r"$a", "@a()"
-    testString r"${a}", "@a()"
-    testString r"${a:abc\$\\\}def}", r"@a('abc$\}def')"
-    testString r"$0abc($1)", "$0() 'abc(' $1() ')'"
-    testString r"abc(${1:xyz})", "'abc(' $1('xyz') ')'"
-    testString r"${1:abc\$\\\}def}", r"$1('abc$\}def')"
-    testString r"foo ${a:abc$1def} bar", "'foo ' @a('abc' $1() 'def') ' bar'"
-    testString r"${1|abc,def|}", "$1('abc' | 'def')"
-    testString r"${1|abc\,\$,\|def|}", r"$1('abc,$' | '|def')"
-    testString r"${TM_FILENAME/.*/$1/}", r"@TM_FILENAME[ .* / &1() /  ]"
-    testString r"${TM_FILENAME/.*/${1}/}", r"@TM_FILENAME[ .* / &1() /  ]"
-    testString r"${TM_FILENAME/.*/${1:/upcase}/}", r"@TM_FILENAME[ .* / &1(/'upcase') /  ]"
-    testString r"${TM_FILENAME/.*/${1:+yes}/}", r"@TM_FILENAME[ .* / &1(+'yes') /  ]"
-    testString r"${TM_FILENAME/.*/${1:-no}/}", r"@TM_FILENAME[ .* / &1(-'no') /  ]"
-    testString r"${TM_FILENAME/.*/${1:?yes:no}/}", r"@TM_FILENAME[ .* / &1(?'yes' | 'no') /  ]"
-    testString r"${TM_FILENAME/.*/${1:no}/}", r"@TM_FILENAME[ .* / &1(-'no') /  ]"
-    testString r"${TM_FILENAME/(.*)\..+$/$1/gI}", r"@TM_FILENAME[ (.*)\..+$ / &1() / gI ]"
-    testString r"${TM_SELECTED_TEXT/(.*)\/(.*)/$2\\$1/}", r"@TM_SELECTED_TEXT[ (.*)\/(.*) / &2() '\' &1() /  ]"
-    testString r"${TM_SELECTED_TEXT/(.*)\/(.*)/+-${1:/upcase}-+/gI}", r"@TM_SELECTED_TEXT[ (.*)\/(.*) / '+-' &1(/'upcase') '-+' / gI ]"
+    echo "test all snippets"
+    defer:
+      echo "test all snippets done"
+
+    testString(
+      r"abc",
+      r"'abc'",
+      r"abc")
+    testString(
+      r"a\$c",
+      r"'a$c'",
+      r"a$c")
+    testString(
+      r"$a",
+      r"@a()",
+      r"")
+    testString(
+      r"${a}",
+      r"@a()",
+      r"")
+    testString(
+      r"${x:abc\$\\\}def}",
+      r"@x('abc$\}def')",
+      r"abc$\}def")
+    testString(
+      r"$0abc($1)",
+      r"$0() 'abc(' $1() ')'",
+      r"abc()")
+    testString(
+      r"abc(${1:xyz})",
+      r"'abc(' $1('xyz') ')'",
+      r"abc(xyz)")
+    testString(
+      r"${1:abc\$\\\}def}",
+      r"$1('abc$\}def')",
+      r"abc$\}def")
+    testString(
+      r"foo ${a:abc$1def} bar",
+      r"'foo ' @a('abc' $1() 'def') ' bar'",
+      r"foo abcdef bar")
+    testString(
+      r"${1|abc,def|}",
+      r"$1('abc' | 'def')",
+      r"abc")
+    testString(
+      r"${1|abc\,\$,\|def|}",
+      r"$1('abc,$' | '|def')",
+      r"abc,$")
+    testString(
+      r"${TM_FILENAME/(.*)/$1/}",
+      r"@TM_FILENAME[ (.*) / &1() /  ]",
+      r"test.TXT")
+    testString(
+      r"${TM_FILENAME/(.*)/${1}/}",
+      r"@TM_FILENAME[ (.*) / &1() /  ]",
+      r"test.TXT")
+    testString(
+      r"${TM_FILENAME/(.*)/${1:/upcase}/}",
+      r"@TM_FILENAME[ (.*) / &1(/'upcase') /  ]",
+      r"TEST.TXT")
+    testString(
+      r"${TM_FILENAME/(.*)/${1:/downcase}/}",
+      r"@TM_FILENAME[ (.*) / &1(/'downcase') /  ]",
+      r"test.txt")
+    testString(
+      r"${TM_FILENAME/(.*)/${1:/capitalize}/}",
+      r"@TM_FILENAME[ (.*) / &1(/'capitalize') /  ]",
+      r"Test.TXT")
+    testString(
+      r"${TM_FILENAME/(.*)/${1:+yes}/}",
+      r"@TM_FILENAME[ (.*) / &1(+'yes') /  ]",
+      r"yes")
+    testString(
+      r"${TM_FILENAME/abc/${1:+yes}/}",
+      r"@TM_FILENAME[ abc / &1(+'yes') /  ]",
+      r"test.TXT")
+    testString(
+      r"${TM_FILENAME/(.*)/${1:-no}/}",
+      r"@TM_FILENAME[ (.*) / &1(-'no') /  ]",
+      r"test.TXT")
+    testString(
+      r"${TM_FILENAME/abc/${1:-no}/}",
+      r"@TM_FILENAME[ abc / &1(-'no') /  ]",
+      r"no")
+    testString(
+      r"${TM_FILENAME/(.*)/${1:?yes:no}/}",
+      r"@TM_FILENAME[ (.*) / &1(?'yes' | 'no') /  ]",
+      r"yes")
+    testString(
+      r"${TM_FILENAME/abc/${1:?yes:no}/}",
+      r"@TM_FILENAME[ abc / &1(?'yes' | 'no') /  ]",
+      r"no")
+    testString(
+      r"${TM_FILENAME/(.*)/${1:no}/}",
+      r"@TM_FILENAME[ (.*) / &1(-'no') /  ]",
+      r"test.TXT")
+    testString(
+      r"${TM_FILENAME/abc/${1:no}/}",
+      r"@TM_FILENAME[ abc / &1(-'no') /  ]",
+      r"no")
+    testString(
+      r"${TM_FILENAME/(.*)\..+$/$1/}",
+      r"@TM_FILENAME[ (.*)\..+$ / &1() /  ]",
+      r"test")
+    testString(
+      r"${a/(.*)\/(.*)/$2\\$1/}",
+      r"@a[ (.*)\/(.*) / &2() '\' &1() /  ]",
+      r"\")
+    testString(
+      r"${a/(.*)\/(.*)/+-${1:/upcase}-+/gI}",
+      r"@a[ (.*)\/(.*) / '+-' &1(/'upcase') '-+' / gI ]",
+      r"+--+")
+    testString(
+      r"${TM_DIRECTORY/(.*)\/(.*)/${1:/capitalize}\\${2:/upcase}/}",
+      r"@TM_DIRECTORY[ (.*)\/(.*) / &1(/'capitalize') '\' &2(/'upcase') /  ]",
+      r"Foo\BAR")
+    testString(
+      r"${TM_DIRECTORY/(.*)\/(.*)/${1:/capitalize}\\${3:/upcase}/}",
+      r"@TM_DIRECTORY[ (.*)\/(.*) / &1(/'capitalize') '\' &3(/'upcase') /  ]",
+      r"Foo\")
+    testString(
+      r"${TM_DIRECTORY/(.*)\\(.*)/${1:/capitalize}\\${2:/upcase}/}",
+      r"@TM_DIRECTORY[ (.*)\\(.*) / &1(/'capitalize') '\' &2(/'upcase') /  ]",
+      r"foo/bar\foo/bar")
+    testString(
+      r"""log lvl${1:Info} &"[${TM_FILENAME/(.*)/${1:/upcase}/}] $2" """,
+      r"@TM_DIRECTORY[ (.*)\\(.*) / &1(/'capitalize') '\' &2(/'upcase') /  ]",
+      r"""log lvlInfo &"[TEST.TXT] " """)
 
   static:
     testAll()
