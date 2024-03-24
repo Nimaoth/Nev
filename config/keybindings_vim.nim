@@ -731,7 +731,8 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     editor.selection = editor.selection
     editor.setMode("normal")
   addTextCommandBlock "", "<ESCAPE>":
-    editor.selection = editor.selection
+    if editor.mode == "normal":
+      editor.selection = editor.selection
     editor.clearTabStops()
     editor.setMode("normal")
 
@@ -850,12 +851,12 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   addSubCommandWithCountBlock "", "move", "gg":
     let which = getOption[SelectionCursor](editor.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
-    editor.selection = (count, 0).toSelection(editor.selection, which)
+    editor.selection = (count - 1, 0).toSelection(editor.selection, which)
     editor.moveFirst "line-no-indent"
     editor.scrollToCursor Last
 
   addSubCommandWithCountBlock "", "move", "G":
-    let line = if count == 0: editor.lineCount - 1 else: count
+    let line = if count == 0: editor.lineCount - 1 else: count - 1
     let which = getOption[SelectionCursor](editor.getContextWithMode("editor.text.cursor.movement"), SelectionCursor.Both)
     editor.selection = (line, 0).toSelection(editor.selection, which)
     editor.moveFirst "line-no-indent"

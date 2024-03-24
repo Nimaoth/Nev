@@ -10,9 +10,7 @@
 		"scope": "nim",
 		"prefix": "log",
 		"body": [
-			// "log ${1|abc\\,,def\\||}"
-			// "log ${abc:${1:foo}} ${cde:xy${2:bar}}zw"
-			"echo \"${2:test ${3:${TM_FILENAME}}}\""
+			"log lvl${1:Info} &\"[${TM_FILENAME/(.*)\\..*$/${1:/capitalize}/}] $2\""
 		]
 	},
 	"Snippet test 1": {
@@ -33,9 +31,25 @@
 	},
 	"Snippet test 4": {
 		"scope": "nim",
-		"prefix": "snip3",
+		"prefix": "snip4",
 		"body": [ "echo \"hello $1, goodbye $1\""]
+	},
+	"Snippet test 5": {
+		"scope": "nim",
+		"prefix": "snip5",
+		"body": [ "${TM_SELECTED_TEXT/(.*)\\/(.*)/$2\\\\$1/}"]
 
+	},
+	"Snippet test 6": {
+		"scope": "nim",
+		"prefix": "snip6",
+		"body": [ "${TM_FILENAME/snippet.nim/-${0:+yes}/}"]
+
+	},
+	"Snippet test 7": {
+		"scope": "nim",
+		"prefix": "snip7",
+		"body": [ "${TM_FILENAME/(snippet).nim/-${1:/upcase}/}"]
 	},
 	"procedure": {
 		"scope": "nim",

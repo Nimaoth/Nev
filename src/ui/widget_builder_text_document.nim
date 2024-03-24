@@ -90,12 +90,12 @@ proc renderLine*(
   var lineNumberText = ""
   var lineNumberX = 0.float
   if lineNumbers != LineNumbers.None and cursorLine == lineNumber:
-    lineNumberText = $lineNumber
+    lineNumberText = $(lineNumber + 1)
   elif lineNumbers == LineNumbers.Absolute:
-    lineNumberText = $lineNumber
+    lineNumberText = $(lineNumber + 1)
     lineNumberX = max(0.0, lineNumberWidth - lineNumberText.len.float * builder.charWidth)
   elif lineNumbers == LineNumbers.Relative:
-    lineNumberText = $abs(lineNumber - cursorLine)
+    lineNumberText = $abs((lineNumber + 1) - cursorLine)
     lineNumberX = max(0.0, lineNumberWidth - lineNumberText.len.float * builder.charWidth)
 
   builder.panel(flagsInner + LayoutVertical + FillBackground, y = y, pivot = pivot, backgroundColor = backgroundColor, userId = newSecondaryId(parentId, lineId)):
