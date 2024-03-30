@@ -523,6 +523,8 @@ proc initTreesitter*(self: TextDocument): Future[void] {.async.} =
     self.errorQuery.deinit()
     self.errorQuery = nil
 
+  self.styledTextCache.clear()
+
   let languageId = if getLanguageForFile(self.filename).getSome(languageId):
     languageId
   else:
