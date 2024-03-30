@@ -42,9 +42,15 @@
   (generalized_str_lit)
 ] @string
 
-(int_lit) @constant.numeric
+[
+  (int_lit)
+  (float_lit)
+] @constant.numeric
 
-(comment) @comment
+[
+  (comment)
+  (docComment)
+] @comment
 
 (operator) @keyword.operator
 
