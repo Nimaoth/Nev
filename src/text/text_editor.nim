@@ -728,16 +728,26 @@ proc selectParentTs(self: TextDocumentEditor, selection: Selection) {.expose("ed
 
   self.selection = node.getRange.toSelection
 
-proc printTreesitterTree(self: TextDocumentEditor) {.expose("editor.text").} =
+proc printTreesitterTree*(self: TextDocumentEditor) {.expose("editor.text").} =
   if self.document.tsTree.isNil:
-    log lvlInfo, "No tree available."
+    log lvlError, "No tree available."
     return
 
   let tree = self.document.tsTree
 
-  debugf"{tree.root}"
+  log lvlInfo, $tree.root
 
-proc selectParentCurrentTs(self: TextDocumentEditor) {.expose("editor.text").} =
+proc printTreesitterTreeUnderCursor*(self: TextDocumentEditor) {.expose("editor.text").} =
+  if self.document.tsTree.isNil:
+    log lvlError, "No tree available."
+    return
+
+  let selectionRange = self.selection.tsRange
+  let node = self.document.tsTree.root.descendantForRange(selectionRange)
+
+  log lvlInfo, $node
+
+proc selectParentCurrentTs*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.selectParentTs(self.selection)
 
 proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.}
