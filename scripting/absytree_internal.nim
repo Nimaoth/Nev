@@ -82,6 +82,9 @@ proc editor_text_selectParentTs_void_TextDocumentEditor_Selection_impl*(
 proc editor_text_printTreesitterTree_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
+proc editor_text_printTreesitterTreeUnderCursor_void_TextDocumentEditor_impl*(
+    self: TextDocumentEditor) =
+  discard
 proc editor_text_selectParentCurrentTs_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
@@ -197,6 +200,9 @@ proc editor_text_moveCursorCenter_void_TextDocumentEditor_SelectionCursor_bool_i
   discard
 proc editor_text_scrollToCursor_void_TextDocumentEditor_SelectionCursor_impl*(
     self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config) =
+  discard
+proc editor_text_setNextScrollBehaviour_void_TextDocumentEditor_ScrollBehaviour_impl*(
+    self: TextDocumentEditor; scrollBehaviour: ScrollBehaviour) =
   discard
 proc editor_text_setCursorScrollOffset_void_TextDocumentEditor_float_SelectionCursor_impl*(
     self: TextDocumentEditor; offset: float;
@@ -341,6 +347,9 @@ proc editor_text_cancelDelayedHideHover_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
 proc editor_text_hideHoverDelayed_void_TextDocumentEditor_impl*(
+    self: TextDocumentEditor) =
+  discard
+proc editor_text_clearDiagnostics_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
 proc editor_text_updateDiagnosticsForCurrent_void_TextDocumentEditor_impl*(

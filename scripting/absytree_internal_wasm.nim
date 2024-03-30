@@ -56,6 +56,8 @@ proc editor_text_selectParentTs_void_TextDocumentEditor_Selection_impl(
     self: TextDocumentEditor; selection: Selection)  {.importc.}
 proc editor_text_printTreesitterTree_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}
+proc editor_text_printTreesitterTreeUnderCursor_void_TextDocumentEditor_impl(
+    self: TextDocumentEditor)  {.importc.}
 proc editor_text_selectParentCurrentTs_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}
 proc editor_text_insertText_void_TextDocumentEditor_string_bool_impl(
@@ -138,6 +140,8 @@ proc editor_text_moveCursorCenter_void_TextDocumentEditor_SelectionCursor_bool_i
     all: bool = true)  {.importc.}
 proc editor_text_scrollToCursor_void_TextDocumentEditor_SelectionCursor_impl(
     self: TextDocumentEditor; cursor: SelectionCursor = SelectionCursor.Config)  {.importc.}
+proc editor_text_setNextScrollBehaviour_void_TextDocumentEditor_ScrollBehaviour_impl(
+    self: TextDocumentEditor; scrollBehaviour: ScrollBehaviour)  {.importc.}
 proc editor_text_setCursorScrollOffset_void_TextDocumentEditor_float_SelectionCursor_impl(
     self: TextDocumentEditor; offset: float;
     cursor: SelectionCursor = SelectionCursor.Config)  {.importc.}
@@ -237,6 +241,8 @@ proc editor_text_hideHover_void_TextDocumentEditor_impl(self: TextDocumentEditor
 proc editor_text_cancelDelayedHideHover_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}
 proc editor_text_hideHoverDelayed_void_TextDocumentEditor_impl(
+    self: TextDocumentEditor)  {.importc.}
+proc editor_text_clearDiagnostics_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}
 proc editor_text_updateDiagnosticsForCurrent_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}

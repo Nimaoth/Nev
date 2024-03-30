@@ -73,7 +73,16 @@ proc renderLine*(
   var diagnosticMessage: string = "■ "
   if hasDiagnostic:
     let diagnostic {.cursor.} = self.document.currentDiagnostics[diagnosticIndices[0]]
-    diagnosticMessage.add diagnostic.message[0..min(diagnostic.message.high, 300)]
+    if cursorLine == lineNumber:
+      diagnosticMessage.add diagnostic.message[0..min(diagnostic.message.high, 300)]
+    else:
+      let newLineIndex = diagnostic.message.find("\n")
+      let maxIndex = if newLineIndex != -1:
+        min(newLineIndex - 1, 50)
+      else:
+        50
+
+      diagnosticMessage.add diagnostic.message[0..min(diagnostic.message.high, maxIndex)]
 
     if diagnostic.severity.getSome(severity):
       diagnosticColorName = case severity
