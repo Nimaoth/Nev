@@ -57,6 +57,10 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   customHighlights*: Table[int, seq[tuple[id: Id, selection: Selection, color: string, tint: Color]]]
 
+  defaultScrollBehaviour*: ScrollBehaviour = CenterOffscreen
+  nextScrollBehaviour*: Option[ScrollBehaviour]
+  targetLineMargin*: Option[float]
+  targetLine*: Option[int]
   targetColumn: int
   hideCursorWhenInactive*: bool
   cursorVisible*: bool = true
@@ -366,34 +370,13 @@ proc centerCursor*(self: TextDocumentEditor, cursor: Cursor) =
 
   self.markDirty()
 
-proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[float] = float.none, allowCenter = true) =
+proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[float] = float.none, scrollBehaviour = ScrollBehaviour.none) =
   if self.disableScrolling:
     return
 
-  let targetLine = cursor.line
-  let totalLineHeight = self.platform.totalLineHeight
-
-  let targetLineY = (targetLine - self.previousBaseIndex).float32 * totalLineHeight + self.scrollOffset
-
-  let configMarginRelative = self.configProvider.getValue("text.cursor-margin-relative", true)
-  let configMargin = self.configProvider.getValue("text.cursor-margin", 0.2)
-  let margin = if margin.getSome(margin):
-    clamp(margin, 0.0, self.lastContentBounds.h * 0.5 - totalLineHeight * 0.5)
-  elif configMarginRelative:
-    clamp(configMargin, 0.0, 1.0) * 0.5 * self.lastContentBounds.h
-  else:
-    clamp(configMargin, 0.0, self.lastContentBounds.h * 0.5 - totalLineHeight * 0.5)
-
-  if allowCenter and targetLineY < 0:
-    self.centerCursor(cursor)
-  elif targetLineY < margin:
-    self.scrollOffset = margin
-    self.previousBaseIndex = targetLine
-  elif allowCenter and targetLineY + totalLineHeight > self.lastContentBounds.h:
-    self.centerCursor(cursor)
-  elif targetLineY + totalLineHeight > self.lastContentBounds.h - margin:
-    self.scrollOffset = self.lastContentBounds.h - margin - totalLineHeight
-    self.previousBaseIndex = targetLine
+  self.targetLine = cursor.line.some
+  self.nextScrollBehaviour = scrollBehaviour
+  self.targetLineMargin = margin
 
   self.updateInlayHints()
   self.markDirty()
@@ -1130,6 +1113,9 @@ proc moveCursorCenter*(self: TextDocumentEditor, cursor: SelectionCursor = Selec
 
 proc scrollToCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
   self.scrollToCursor(self.getCursor(cursor))
+
+proc setNextScrollBehaviour*(self: TextDocumentEditor, scrollBehaviour: ScrollBehaviour) {.expose("editor.text").} =
+  self.nextScrollBehaviour = scrollBehaviour.some
 
 proc setCursorScrollOffset*(self: TextDocumentEditor, offset: float, cursor: SelectionCursor = SelectionCursor.Config) {.expose("editor.text").} =
   let line = self.getCursor(cursor).line
@@ -2413,16 +2399,10 @@ proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
 
   self.markDirty()
 
-proc scrollToCursorAfterDelayAsync(self: TextDocumentEditor) {.async.} =
-  await sleepAsync(32)
-  self.scrollToCursor(self.selection.last)
-  self.markDirty()
-
 proc handleTextDocumentLoaded(self: TextDocumentEditor) =
   if self.targetSelectionsInternal.getSome(s):
     self.selections = s
     self.scrollToCursor()
-    asyncCheck self.scrollToCursorAfterDelayAsync()
   self.targetSelectionsInternal = Selections.none
   self.updateTargetColumn(Last)
 
@@ -2511,4 +2491,3 @@ method restoreStateJson*(self: TextDocumentEditor, state: JsonNode) =
     self.targetSelection = selection
     self.scrollToCursor()
     self.markDirty()
-    asyncCheck self.scrollToCursorAfterDelayAsync()
