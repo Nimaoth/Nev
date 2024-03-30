@@ -33,6 +33,7 @@ elif enableTerminal: Backend.Terminal.some
 else: Backend.none
 
 var logToFile = false
+var disableLogging = false
 var opts = AppOptions()
 
 block: ## Parse command line options
@@ -60,6 +61,9 @@ block: ## Parse command line options
 
       of "log-to-file", "f":
         logToFile = true
+
+      of "no-log", "l":
+        disableLogging = true
 
       of "no-nimscript", "n":
         opts.disableNimScriptPlugins = true
@@ -94,7 +98,7 @@ if backend.isNone:
 
 assert backend.isSome
 
-block: ## Enable loggers
+if not disableLogging: ## Enable loggers
   if backend.get == Terminal or logToFile or defined(forceLogToFile):
     logger.enableFileLogger()
 
