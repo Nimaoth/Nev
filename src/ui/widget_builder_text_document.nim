@@ -835,9 +835,6 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
     onClickAny btn:
       self.app.tryActivateEditor(self)
 
-    if not self.disableScrolling and not sizeToContentY:
-      updateBaseIndexAndScrollOffset(currentNode.bounds.h, self.previousBaseIndex, self.scrollOffset, self.document.lines.len, builder.textHeight, int.none)
-
     if dirty or app.platform.redrawEverything or not builder.retain():
       var header: UINode
 
@@ -846,13 +843,47 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
           onRight:
             proc cursorString(cursor: Cursor): string = $cursor.line & ":" & $cursor.column & ":" & $self.document.lines[cursor.line].toOpenArray.runeIndex(cursor.column)
             builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = fmt" {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} ")
-        let infos = self.createTextLines(builder, app, backgroundColor, textColor, sizeToContentX, sizeToContentY)
-        if infos.cursor.getSome(info):
-          self.lastCursorLocationBounds = info.bounds.transformRect(info.node, builder.root).some
-        if infos.hover.getSome(info):
-          self.lastHoverLocationBounds = info.bounds.transformRect(info.node, builder.root).some
-        if infos.diagnostic.getSome(info):
-          self.lastDiagnosticLocationBounds = info.bounds.transformRect(info.node, builder.root).some
+
+        builder.panel(sizeFlags):
+          if not self.disableScrolling and not sizeToContentY:
+            let bounds = currentNode.bounds
+
+            if self.targetLine.getSome(targetLine):
+              let targetLineY = (targetLine - self.previousBaseIndex).float32 * builder.textHeight + self.scrollOffset
+
+              let center = case self.nextScrollBehaviour.get(self.defaultScrollBehaviour):
+                of CenterAlways: true
+                of CenterOffscreen: targetLineY < 0 or targetLineY + builder.textHeight > self.lastContentBounds.h
+                of ScrollToMargin: false
+
+              if center:
+                self.previousBaseIndex = targetLine
+                self.scrollOffset = bounds.h * 0.5 - builder.textHeight - 0.5
+
+              else:
+                let configMarginRelative = getOption[bool](app, "text.cursor-margin-relative", true)
+                let configMargin = getOption[float](app, "text.cursor-margin", 0.2)
+                let margin = if self.targetLineMargin.getSome(margin):
+                  clamp(margin, 0.0, bounds.h * 0.5 - builder.textHeight * 0.5)
+                elif configMarginRelative:
+                  clamp(configMargin, 0.0, 1.0) * 0.5 * bounds.h
+                else:
+                  clamp(configMargin, 0.0, bounds.h * 0.5 - builder.textHeight * 0.5)
+                updateBaseIndexAndScrollOffset(currentNode.bounds.h, self.previousBaseIndex, self.scrollOffset, self.document.lines.len, builder.textHeight, targetLine=targetLine.some, margin=margin)
+
+            else:
+              updateBaseIndexAndScrollOffset(currentNode.bounds.h, self.previousBaseIndex, self.scrollOffset, self.document.lines.len, builder.textHeight, targetLine=int.none)
+
+            self.targetLine = int.none
+            self.nextScrollBehaviour = ScrollBehaviour.none
+
+          let infos = self.createTextLines(builder, app, backgroundColor, textColor, sizeToContentX, sizeToContentY)
+          if infos.cursor.getSome(info):
+            self.lastCursorLocationBounds = info.bounds.transformRect(info.node, builder.root).some
+          if infos.hover.getSome(info):
+            self.lastHoverLocationBounds = info.bounds.transformRect(info.node, builder.root).some
+          if infos.diagnostic.getSome(info):
+            self.lastDiagnosticLocationBounds = info.bounds.transformRect(info.node, builder.root).some
 
   if self.showCompletions and self.active:
     result.add proc() =

@@ -84,13 +84,11 @@ proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: 
     if not sizeToContentY and y > 0: # fill remaining space with background color
       builder.panel(&{FillX, FillBackground}, h = y, backgroundColor = backgroundColor)
 
-proc updateBaseIndexAndScrollOffset*(height: float, previousBaseIndex: var int, scrollOffset: var float, lines: int, totalLineHeight: float, targetLine: Option[int]) =
+proc updateBaseIndexAndScrollOffset*(height: float, previousBaseIndex: var int, scrollOffset: var float, lines: int, totalLineHeight: float, targetLine: Option[int], margin: float = 0.0) =
 
   if targetLine.getSome(targetLine):
     let targetLineY = (targetLine - previousBaseIndex).float32 * totalLineHeight + scrollOffset
 
-    # let margin = clamp(getOption[float32](self.editor, "text.cursor-margin", 25.0), 0.0, self.lastContentBounds.h * 0.5 - totalLineHeight * 0.5)
-    let margin = 0.0
     if targetLineY < margin:
       scrollOffset = margin
       previousBaseIndex = targetLine

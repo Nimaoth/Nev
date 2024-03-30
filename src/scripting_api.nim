@@ -30,6 +30,9 @@ type SelectionCursor* = enum Config = "config", Both = "both", First = "first", 
 type LineNumbers* = enum None = "none", Absolute = "Absolute", Relative = "relative"
 type Backend* = enum Gui = "gui", Terminal = "terminal", Browser = "browser"
 
+type ScrollBehaviour* = enum
+  CenterAlways = "CenterAlways", CenterOffscreen = "CenterOffscreen", ScrollToMargin = "ScrollToMargin"
+
 type Selections* = seq[Selection]
 
 proc normalize*(self: var Selections) =
