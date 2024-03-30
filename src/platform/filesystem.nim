@@ -30,3 +30,5 @@ else:
 
 proc normalizePathUnix*(path: string): string =
   return path.normalizedPath.replace('\\', '/').strip(chars={'/'})
+
+proc `//`*(a: string, b: string): string =  (a / b).normalizePathUnix

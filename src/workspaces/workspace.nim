@@ -89,13 +89,13 @@ proc iterateDirectoryRec*(folder: WorkspaceFolder, path: string, cancellationTok
     return
 
   for file in items.files:
-    let fullPath = path / file
+    let fullPath = path // file
     if shouldIgnore(file) or shouldIgnore(fullPath):
       continue
     resultItems.add(fullPath)
 
   for dir in items.folders:
-    let fullPath = path / dir
+    let fullPath = path // dir
     if shouldIgnore(dir) or shouldIgnore(fullPath):
       continue
     folders.add(fullPath)
