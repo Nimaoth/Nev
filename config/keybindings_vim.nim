@@ -641,8 +641,12 @@ proc vimPaste(editor: TextDocumentEditor, register: string = "") {.expose("vim-p
       editor.moveLast "line", Both
       editor.insertText "\n", autoIndent=false
 
+  let isVisualMode = editor.mode == "visual" or editor.mode == "visual-line"
+  if not isVisualMode:
+    editor.selections = editor.selections.mapIt(editor.doMoveCursorColumn(it.last, 1, wrap=false).toSelection)
+
   editor.setMode "normal"
-  editor.paste register, inclusiveEnd=true
+  editor.paste register, inclusiveEnd=isVisualMode
 
 proc vimCloseCurrentViewOrQuit() {.expose("vim-close-current-view-or-quit").} =
   let openEditors = getOpenEditors().len + getHiddenEditors().len
