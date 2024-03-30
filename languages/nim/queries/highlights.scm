@@ -4,7 +4,7 @@
 ((ident) @storage.type
  (#match? @storage.type "^(int|int8|int16|int32|int64|uint|uint8|uint16|uint32|uint64|float|float32|float64|bool|string|char|typed|untyped|openArray|seq|array|set)$"))
 ((ident) @keyword
- (#match? @keyword "^(echo|declared|low|high|ord|async|await)$"))
+ (#match? @keyword "^(echo|declared|low|high|ord|async|await|if|else)$"))
 
 (routine (keyw) (symbol (ident) @variable.function))
 
@@ -40,6 +40,7 @@
   (rstr_lit)
   (triplestr_lit)
   (generalized_str_lit)
+  (interpolated_str_lit)
 ] @string
 
 [
@@ -60,5 +61,6 @@
   "nil"
   "true"
   "false"
+  "else"
 ] @keyword
 
