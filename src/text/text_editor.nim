@@ -227,7 +227,6 @@ proc startBlinkCursorTask(self: TextDocumentEditor) =
 
 method deinit*(self: TextDocumentEditor) =
   log lvlInfo, fmt"shutting down {self.document.filename}"
-  self.document.deinit()
   self.blinkCursorTask.pause()
   self[] = default(typeof(self[]))
 

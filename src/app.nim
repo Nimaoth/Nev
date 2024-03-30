@@ -1,5 +1,5 @@
 import std/[sequtils, strformat, strutils, tables, unicode, options, os, algorithm, json, macros, macrocache, sugar, streams, deques]
-import misc/[id, util, timer, event, cancellation_token, myjsonutils, traits, rect_utils, custom_logger, custom_async, fuzzy_matching, array_set, delayed_task]
+import misc/[id, util, timer, event, cancellation_token, myjsonutils, traits, rect_utils, custom_logger, custom_async, fuzzy_matching, array_set, delayed_task, regex]
 import ui/node
 import scripting/[expose, scripting_base]
 import platform/[platform, filesystem]
@@ -133,6 +133,7 @@ type
     loadedFontSize: float
     loadedLineDistance: float
 
+    documents*: seq[Document]
     editors*: Table[EditorId, DocumentEditor]
     popups*: seq[Popup]
 
@@ -159,6 +160,8 @@ type
     scriptActions: Table[string, ScriptAction]
 
     sessionFile: string
+
+    gitIgnorePatterns: seq[Regex]
 
 var gEditor* {.exportc.}: App = nil
 
@@ -796,6 +799,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
   self.workspace.new()
 
   self.logDocument = newTextDocument(self.asConfigProvider)
+  self.documents.add self.logDocument
 
   self.theme = defaultTheme()
   self.currentView = 0
@@ -803,6 +807,12 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
   self.options = newJObject()
 
   self.setupDefaultKeybindings()
+
+  let gitIgnorePatternsString = fs.loadApplicationFile(".gitignore")
+  for line in gitIgnorePatternsString.splitLines():
+    if line.isEmptyOrWhitespace:
+      continue
+    self.gitIgnorePatterns.add glob(line)
 
   self.eventHandler = eventHandler(self.getEventHandlerConfig("editor")):
     onAction:
@@ -835,6 +845,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   self.absytreeCommandsServer = newLanguageServerAbsytreeCommands()
   let commandLineTextDocument = newTextDocument(self.asConfigProvider, language="absytree-commands".some, languageServer=self.absytreeCommandsServer.some)
+  self.documents.add commandLineTextDocument
   self.commandLineTextEditor = newTextEditor(commandLineTextDocument, self.asAppInterface, self.asConfigProvider)
   self.commandLineTextEditor.renderHeader = false
   self.commandLineTextEditor.TextDocumentEditor.disableScrolling = true
@@ -939,6 +950,16 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 proc saveAppState*(self: App)
 
 proc shutdown*(self: App) =
+  for editor in self.editors.values:
+    if editor.getDocument() == self.logDocument:
+      editor.deinit()
+      self.editors.del editor.id
+      break
+
+  self.documents.del(self.documents.find(self.logDocument))
+  self.logDocument.deinit()
+  self.logDocument = nil
+
   self.saveAppState()
 
   for editor in self.editors.values:
@@ -947,12 +968,14 @@ proc shutdown*(self: App) =
   for popup in self.popups:
     popup.deinit()
 
+  for document in self.documents:
+    document.deinit()
+
   if self.scriptContext.isNotNil:
     self.scriptContext.deinit()
   if self.wasmScriptContext.isNotNil:
     self.wasmScriptContext.deinit()
 
-  self.logDocument.deinit()
   self.absytreeCommandsServer.stop()
 
   # editor_defaults: seq[DocumentEditor]
@@ -1010,6 +1033,7 @@ proc createView(self: App, editorState: OpenEditor): View =
     except CatchableError:
       log(lvlError, fmt"Failed to restore file {editorState.filename} from previous session: {getCurrentExceptionMsg()}")
       return
+  self.documents.add document
   return self.createView(document)
 
 proc setMaxViews*(self: App, maxViews: int) {.expose("editor").} =
@@ -1237,6 +1261,7 @@ proc help*(self: App, about: string = "") {.expose("editor").} =
   const introductionMd = staticRead"../docs/getting_started.md"
   let docsPath = "docs/getting_started.md"
   let textDocument = newTextDocument(self.asConfigProvider, docsPath, introductionMd, app=true, load=true)
+  self.documents.add textDocument
   textDocument.load()
   discard self.createAndAddView(textDocument)
 
@@ -1262,7 +1287,9 @@ proc toggleStatusBarLocation*(self: App) {.expose("editor").} =
   self.platform.requestRender(true)
 
 proc createAndAddView*(self: App) {.expose("editor").} =
-  discard self.createAndAddView(newTextDocument(self.asConfigProvider))
+  let document = newTextDocument(self.asConfigProvider)
+  self.documents.add document
+  discard self.createAndAddView(document)
 
 proc logs*(self: App) {.expose("editor").} =
   discard self.createAndAddView(self.logDocument)
@@ -1514,10 +1541,13 @@ proc openFile*(self: App, path: string, app: bool = false): Option[DocumentEdito
   log lvlInfo, fmt"Open file '{path}'"
 
   try:
-    if path.endsWith(".am") or path.endsWith(".ast-model"):
-      return self.createAndAddView(newModelDocument(path, app, WorkspaceFolder.none)).some
+    let document = if path.endsWith(".am") or path.endsWith(".ast-model"):
+      newModelDocument(path, app, WorkspaceFolder.none)
     else:
-      return self.createAndAddView(newTextDocument(self.asConfigProvider, path, "", app, load=true)).some
+      newTextDocument(self.asConfigProvider, path, "", app, load=true)
+
+    self.documents.add document
+    return self.createAndAddView(document).some
   except CatchableError:
     log(lvlError, fmt"[openFile] Failed to load file '{path}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
@@ -1535,10 +1565,12 @@ proc openWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder): Optio
     return editor.some
 
   try:
-    if path.endsWith(".am") or path.endsWith(".ast-model"):
-      return self.createAndAddView(newModelDocument(path, false, folder.some)).some
+    let document = if path.endsWith(".am") or path.endsWith(".ast-model"):
+      newModelDocument(path, false, folder.some)
     else:
-      return self.createAndAddView(newTextDocument(self.asConfigProvider, path, "", false, folder.some, load=true)).some
+      newTextDocument(self.asConfigProvider, path, "", false, folder.some, load=true)
+    self.documents.add document
+    return self.createAndAddView(document).some
 
   except CatchableError:
     log(lvlError, fmt"[openWorkspaceFile] Failed to load file '{path}': {getCurrentExceptionMsg()}")
@@ -1614,6 +1646,21 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
 
   let fuzzyMatchSublime = self.configProvider.getFlag("editor.fuzzy-match-sublime", true)
 
+  var ignorePatterns = self.gitIgnorePatterns
+  if ignorePatterns.len == 0:
+    # todo
+    ignorePatterns.add glob("**/nimcache")
+    ignorePatterns.add glob("**/rust_test/target")
+    ignorePatterns.add glob("int")
+    ignorePatterns.add glob(".git")
+    ignorePatterns.add glob(".vs")
+    ignorePatterns.add glob("*.dll")
+    ignorePatterns.add glob("*.exe")
+    ignorePatterns.add glob("*.pdb")
+    ignorePatterns.add glob("*.ilk")
+    ignorePatterns.add glob("*.wasm")
+    ignorePatterns.add glob("*.ttf")
+
   popup.getCompletionsAsyncIter = proc(popup: SelectorPopup, text: string): Future[void] {.async.} =
     if not popup.cancellationToken.isNil:
       sortCancellationToken.cancel()
@@ -1655,7 +1702,7 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
     var startIndex = 0
     for folder in self.workspace.folders:
       var folder = folder
-      await iterateDirectoryRec(folder, "", cancellationToken, proc(files: seq[string]) {.async.} =
+      await iterateDirectoryRec(folder, "", cancellationToken, ignorePatterns, proc(files: seq[string]) {.async.} =
         let folder = folder
         for file in files:
           defer:
@@ -1996,7 +2043,9 @@ proc handleRune*(self: App, input: int64, modifiers: Modifiers) =
     self.platform.preventDefault()
 
 proc handleDropFile*(self: App, path, content: string) =
-  discard self.createAndAddView(newTextDocument(self.asConfigProvider, path, content))
+  let document = newTextDocument(self.asConfigProvider, path, content)
+  self.documents.add document
+  discard self.createAndAddView(document)
 
 proc scriptRunAction*(action: string, arg: string) {.expose("editor").} =
   if gEditor.isNil:
@@ -2075,7 +2124,9 @@ else:
 
 proc loadCurrentConfig*(self: App) {.expose("editor").} =
   ## Opens the default config file in a new view.
-  discard self.createAndAddView(newTextDocument(self.asConfigProvider, "./config/absytree_config.nim", fs.loadApplicationFile("./config/absytree_config.nim"), true))
+  let document = newTextDocument(self.asConfigProvider, "./config/absytree_config.nim", fs.loadApplicationFile("./config/absytree_config.nim"), true)
+  self.documents.add document
+  discard self.createAndAddView(document)
 
 proc logRootNode*(self: App) {.expose("editor").} =
   let str = self.platform.builder.root.dump(true)
