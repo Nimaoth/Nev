@@ -8,6 +8,7 @@
 *.wasm
 *.wat
 *.dll
+.git
 src/input_tests
 nimcache
 _temp
