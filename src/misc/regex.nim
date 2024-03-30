@@ -1,4 +1,5 @@
 import std/[strutils]
+from glob/regexer import globToRegexString
 
 proc escapeRegex*(s: string): string =
   ## escapes `s` so that it is matched verbatim when used as a regular
@@ -46,6 +47,10 @@ when defined(js):
   proc re*(text: string): Regex =
     return Regex(impl: newRegExp(text.cstring, "dg"))
 
+  proc contains*(text: string, regex: Regex): bool =
+    let bounds = text.findBounds(regex, 0)
+    return bounds[0] != -1
+
 else:
   import std/re
   export re
@@ -58,3 +63,7 @@ iterator findAllBounds*(buf: string, pattern: Regex): tuple[first: int, last: in
       break
     yield bounds
     start = bounds.last + 1
+
+proc glob*(pattern: string): Regex =
+  let regexString = globToRegexString(pattern, isDos=false, ignoreCase=true)
+  return re(regexString)

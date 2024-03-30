@@ -69,6 +69,10 @@ method deinit*(self: SelectorPopup) =
     self.cancellationToken.cancel()
   self[] = default(typeof(self[]))
 
+  let document = self.textEditor.document
+  self.textEditor.deinit()
+  document.deinit()
+
 proc getSearchString*(self: SelectorPopup): string =
   return self.textEditor.document.contentString
 

@@ -1,5 +1,5 @@
 import std/[json, options, os, strutils]
-import misc/[custom_async, id, array_buffer, cancellation_token, util]
+import misc/[custom_async, id, array_buffer, cancellation_token, util, regex]
 import platform/filesystem
 
 type
@@ -69,7 +69,13 @@ proc getDirectoryListingRec*(folder: WorkspaceFolder, path: string): Future[seq[
 
   return resultItems
 
-proc iterateDirectoryRec*(folder: WorkspaceFolder, path: string, cancellationToken: CancellationToken, callback: proc(files: seq[string]): Future[void]): Future[void] {.async.} =
+proc iterateDirectoryRec*(folder: WorkspaceFolder, path: string, cancellationToken: CancellationToken, ignore: seq[Regex], callback: proc(files: seq[string]): Future[void]): Future[void] {.async.} =
+
+  proc shouldIgnore(path: string): bool =
+    for pattern in ignore:
+      if path.contains(pattern):
+        return true
+
   let path = path
   var resultItems: seq[string]
   var folders: seq[string]
@@ -83,10 +89,16 @@ proc iterateDirectoryRec*(folder: WorkspaceFolder, path: string, cancellationTok
     return
 
   for file in items.files:
-    resultItems.add(path / file)
+    let fullPath = path / file
+    if shouldIgnore(file) or shouldIgnore(fullPath):
+      continue
+    resultItems.add(fullPath)
 
   for dir in items.folders:
-    folders.add(path / dir)
+    let fullPath = path / dir
+    if shouldIgnore(dir) or shouldIgnore(fullPath):
+      continue
+    folders.add(fullPath)
 
   await sleepAsync(1)
 
@@ -98,7 +110,7 @@ proc iterateDirectoryRec*(folder: WorkspaceFolder, path: string, cancellationTok
   var futs: seq[Future[void]]
 
   for dir in folders:
-    futs.add iterateDirectoryRec(folder, dir, cancellationToken, callback)
+    futs.add iterateDirectoryRec(folder, dir, cancellationToken, ignore, callback)
 
   for fut in futs:
     await fut
