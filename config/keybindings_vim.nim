@@ -589,8 +589,10 @@ proc vimMoveCursorColumn(editor: TextDocumentEditor, direction: int, count: int 
     editor.vimSelectLine()
   editor.updateTargetColumn()
 
-proc vimMoveCursorLine(editor: TextDocumentEditor, direction: int, count: int = 1) {.expose("vim-move-cursor-line").} =
+proc vimMoveCursorLine(editor: TextDocumentEditor, direction: int, count: int = 1, center: bool = false) {.expose("vim-move-cursor-line").} =
   editor.moveCursorLine(direction * max(count, 1), includeAfter=vimCursorIncludeEol)
+  if center:
+    editor.setNextScrollBehaviour(CenterAlways)
   if selectLines:
     editor.vimSelectLine()
 
@@ -908,16 +910,16 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   # Scrolling
   addTextCommand "", "<C-e>", "scroll-lines", 1
-  addSubCommandWithCountBlock "", "move", "<C-d>": editor.vimMoveCursorLine(editor.screenLineCount div 2, count)
-  addSubCommandWithCountBlock "", "move", "<C-f>": editor.vimMoveCursorLine(editor.screenLineCount, count)
-  addSubCommandWithCountBlock "", "move", "<S-DOWN>": editor.vimMoveCursorLine(editor.screenLineCount, count)
-  addSubCommandWithCountBlock "", "move", "<PAGE_DOWN>": editor.vimMoveCursorLine(editor.screenLineCount, count)
+  addSubCommandWithCountBlock "", "move", "<C-d>": editor.vimMoveCursorLine(editor.screenLineCount div 2, count, center=true)
+  addSubCommandWithCountBlock "", "move", "<C-f>": editor.vimMoveCursorLine(editor.screenLineCount, count, center=true)
+  addSubCommandWithCountBlock "", "move", "<S-DOWN>": editor.vimMoveCursorLine(editor.screenLineCount, count, center=true)
+  addSubCommandWithCountBlock "", "move", "<PAGE_DOWN>": editor.vimMoveCursorLine(editor.screenLineCount, count, center=true)
 
   addTextCommand "", "<C-y>", "scroll-lines", -1
-  addSubCommandWithCountBlock "", "move", "<C-u>": editor.vimMoveCursorLine(-editor.screenLineCount div 2, count)
-  addSubCommandWithCountBlock "", "move", "<C-b>": editor.vimMoveCursorLine(-editor.screenLineCount, count)
-  addSubCommandWithCountBlock "", "move", "<S-UP>": editor.vimMoveCursorLine(-editor.screenLineCount, count)
-  addSubCommandWithCountBlock "", "move", "<PAGE_UP>": editor.vimMoveCursorLine(-editor.screenLineCount, count)
+  addSubCommandWithCountBlock "", "move", "<C-u>": editor.vimMoveCursorLine(-editor.screenLineCount div 2, count, center=true)
+  addSubCommandWithCountBlock "", "move", "<C-b>": editor.vimMoveCursorLine(-editor.screenLineCount, count, center=true)
+  addSubCommandWithCountBlock "", "move", "<S-UP>": editor.vimMoveCursorLine(-editor.screenLineCount, count, center=true)
+  addSubCommandWithCountBlock "", "move", "<PAGE_UP>": editor.vimMoveCursorLine(-editor.screenLineCount, count, center=true)
 
   addTextCommandBlock "", "z<ENTER>":
     if editor.getCommandCount != 0:
@@ -1196,8 +1198,11 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     editor.addNextCheckpoint "insert"
     editor.toggleLineComment()
 
+  addTextCommand "", "<C-k><C-a>", "clear-diagnostics"
   addTextCommand "", "<C-k><C-u>", "print-undo-history"
   addTextCommand "", "<C-k><C-t>", "print-treesitter-tree"
+  addTextCommand "", "<C-k><C-d>", "print-treesitter-tree-under-cursor"
+  addTextCommand "", "<C-k><C-r>", "reload-treesitter"
   addTextCommandBlock "", "<C-k><C-l>": lspToggleLogServerDebug()
   addCommand "editor", "<C-k><C-e>", "toggle-flag", "editor.text.highlight-treesitter-errors"
 
