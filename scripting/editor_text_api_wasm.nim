@@ -553,6 +553,20 @@ proc printTreesitterTree*(self: TextDocumentEditor) =
       argsJsonString.cstring)
 
 
+proc editor_text_printTreesitterTreeUnderCursor_void_TextDocumentEditor_wasm(
+    arg: cstring): cstring {.importc.}
+proc printTreesitterTreeUnderCursor*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_printTreesitterTreeUnderCursor_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_selectParentCurrentTs_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
 proc selectParentCurrentTs*(self: TextDocumentEditor) =
@@ -1393,6 +1407,26 @@ proc scrollToCursor*(self: TextDocumentEditor;
       cursor.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_scrollToCursor_void_TextDocumentEditor_SelectionCursor_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_setNextScrollBehaviour_void_TextDocumentEditor_ScrollBehaviour_wasm(
+    arg: cstring): cstring {.importc.}
+proc setNextScrollBehaviour*(self: TextDocumentEditor;
+                             scrollBehaviour: ScrollBehaviour) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when ScrollBehaviour is JsonNode:
+      scrollBehaviour
+    else:
+      scrollBehaviour.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_setNextScrollBehaviour_void_TextDocumentEditor_ScrollBehaviour_wasm(
       argsJsonString.cstring)
 
 
@@ -2357,6 +2391,20 @@ proc hideHoverDelayed*(self: TextDocumentEditor) =
       self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_hideHoverDelayed_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_clearDiagnostics_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc clearDiagnostics*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_clearDiagnostics_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
 
 

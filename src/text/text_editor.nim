@@ -1947,6 +1947,12 @@ proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
       self.inlayHints = inlayHints
       self.markDirty()
 
+proc clearDiagnostics*(self: TextDocumentEditor) {.expose("editor.text").} =
+  self.clearCustomHighlights(diagnosticsHighlightId)
+  self.diagnosticsPerLine.clear()
+  self.currentDiagnosticLine = -1
+  self.markDirty()
+
 proc updateDiagnosticsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = await self.document.getLanguageServer()
   if languageServer.getSome(ls):

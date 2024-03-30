@@ -88,6 +88,8 @@ proc selectParentTs*(self: TextDocumentEditor; selection: Selection) =
       selection)
 proc printTreesitterTree*(self: TextDocumentEditor) =
   editor_text_printTreesitterTree_void_TextDocumentEditor_impl(self)
+proc printTreesitterTreeUnderCursor*(self: TextDocumentEditor) =
+  editor_text_printTreesitterTreeUnderCursor_void_TextDocumentEditor_impl(self)
 proc selectParentCurrentTs*(self: TextDocumentEditor) =
   editor_text_selectParentCurrentTs_void_TextDocumentEditor_impl(self)
 proc insertText*(self: TextDocumentEditor; text: string; autoIndent: bool = true) =
@@ -211,6 +213,10 @@ proc scrollToCursor*(self: TextDocumentEditor;
                      cursor: SelectionCursor = SelectionCursor.Config) =
   editor_text_scrollToCursor_void_TextDocumentEditor_SelectionCursor_impl(self,
       cursor)
+proc setNextScrollBehaviour*(self: TextDocumentEditor;
+                             scrollBehaviour: ScrollBehaviour) =
+  editor_text_setNextScrollBehaviour_void_TextDocumentEditor_ScrollBehaviour_impl(
+      self, scrollBehaviour)
 proc setCursorScrollOffset*(self: TextDocumentEditor; offset: float;
                             cursor: SelectionCursor = SelectionCursor.Config) =
   editor_text_setCursorScrollOffset_void_TextDocumentEditor_float_SelectionCursor_impl(
@@ -351,6 +357,8 @@ proc cancelDelayedHideHover*(self: TextDocumentEditor) =
 proc hideHoverDelayed*(self: TextDocumentEditor) =
   ## Hides the hover information after a delay.
   editor_text_hideHoverDelayed_void_TextDocumentEditor_impl(self)
+proc clearDiagnostics*(self: TextDocumentEditor) =
+  editor_text_clearDiagnostics_void_TextDocumentEditor_impl(self)
 proc updateDiagnosticsForCurrent*(self: TextDocumentEditor) =
   editor_text_updateDiagnosticsForCurrent_void_TextDocumentEditor_impl(self)
 proc showDiagnosticsForCurrent*(self: TextDocumentEditor) =
