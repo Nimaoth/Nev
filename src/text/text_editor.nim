@@ -2511,3 +2511,4 @@ method restoreStateJson*(self: TextDocumentEditor, state: JsonNode) =
     self.targetSelection = selection
     self.scrollToCursor()
     self.markDirty()
+    asyncCheck self.scrollToCursorAfterDelayAsync()
