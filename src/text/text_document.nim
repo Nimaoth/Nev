@@ -625,7 +625,7 @@ proc newTextDocument*(
     self.load()
 
 method deinit*(self: TextDocument) =
-  log lvlInfo, fmt"Destroying text document {self.filename}"
+  log lvlInfo, fmt"Destroying text document '{self.filename}'"
   if self.highlightQuery.isNotNil:
     self.highlightQuery.deinit()
 
