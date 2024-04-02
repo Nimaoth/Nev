@@ -950,14 +950,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 proc saveAppState*(self: App)
 
 proc shutdown*(self: App) =
-  for editor in self.editors.values:
-    if editor.getDocument() == self.logDocument:
-      editor.deinit()
-      self.editors.del editor.id
-      break
-
-  self.documents.del(self.documents.find(self.logDocument))
-  self.logDocument.deinit()
+  # Clear log document so we don't log to it as it will be destroyed.
   self.logDocument = nil
 
   self.saveAppState()

@@ -226,7 +226,8 @@ proc startBlinkCursorTask(self: TextDocumentEditor) =
     self.blinkCursorTask.reschedule()
 
 method deinit*(self: TextDocumentEditor) =
-  log lvlInfo, fmt"shutting down {self.document.filename}"
+  let filename = if self.document.isNotNil: self.document.filename else: ""
+  log lvlInfo, fmt"shutting down '{filename}'"
   self.blinkCursorTask.pause()
   self[] = default(typeof(self[]))
 
