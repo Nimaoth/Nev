@@ -639,6 +639,19 @@ proc chooseTheme*() =
   let res {.used.} = editor_chooseTheme_void_App_wasm(argsJsonString.cstring)
 
 
+proc editor_createFile_void_App_string_wasm(arg: cstring): cstring {.importc.}
+proc createFile*(path: string) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      path
+    else:
+      path.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_createFile_void_App_string_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_chooseFile_void_App_string_wasm(arg: cstring): cstring {.importc.}
 proc chooseFile*(view: string = "new") =
   var argsJson = newJArray()
