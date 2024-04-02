@@ -700,6 +700,8 @@ proc editor_loadTheme_void_App_string_impl*(name: string) =
   discard
 proc editor_chooseTheme_void_App_impl*() =
   discard
+proc editor_createFile_void_App_string_impl*(path: string) =
+  discard
 proc editor_chooseFile_void_App_string_impl*(view: string = "new") =
   discard
 proc editor_chooseOpen_void_App_string_impl*(view: string = "new") =

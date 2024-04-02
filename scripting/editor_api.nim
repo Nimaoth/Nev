@@ -123,6 +123,8 @@ proc loadTheme*(name: string) =
   editor_loadTheme_void_App_string_impl(name)
 proc chooseTheme*() =
   editor_chooseTheme_void_App_impl()
+proc createFile*(path: string) =
+  editor_createFile_void_App_string_impl(path)
 proc chooseFile*(view: string = "new") =
   ## Opens a file dialog which shows all files in the currently open workspaces
   ## Press <ENTER> to select a file

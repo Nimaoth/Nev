@@ -461,6 +461,7 @@ proc editor_loadFile_void_App_string_impl(path: string = "")  {.importc.}
 proc editor_removeFromLocalStorage_void_App_impl()  {.importc.}
 proc editor_loadTheme_void_App_string_impl(name: string)  {.importc.}
 proc editor_chooseTheme_void_App_impl()  {.importc.}
+proc editor_createFile_void_App_string_impl(path: string)  {.importc.}
 proc editor_chooseFile_void_App_string_impl(view: string = "new")  {.importc.}
 proc editor_chooseOpen_void_App_string_impl(view: string = "new")  {.importc.}
 proc editor_openPreviousEditor_void_App_impl()  {.importc.}
