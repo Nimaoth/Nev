@@ -658,6 +658,8 @@ method save*(self: TextDocument, filename: string = "", app: bool = false) =
   else:
     fs.saveFile(self.filename, self.contentString)
 
+  self.isBackedByFile = true
+
 proc loadAsync(self: TextDocument, ws: WorkspaceFolder): Future[void] {.async.} =
   # self.content = await ws.loadFile(self.filename)
   self.isBackedByFile = true

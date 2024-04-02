@@ -1626,6 +1626,28 @@ proc chooseTheme*(self: App) {.expose("editor").} =
 
   self.pushPopup popup
 
+proc createFile*(self: App, path: string) {.expose("editor").} =
+  let fullPath = if path.isAbsolute:
+    path
+  else:
+    path.absolutePath
+
+  log lvlInfo, fmt"createFile: '{path}'"
+
+  # todo: handle workspace better
+  let workspace = if self.workspace.folders.len > 0:
+    self.workspace.folders[0].some
+  else:
+    WorkspaceFolder.none
+
+  let document: Document = if path.endsWith(".am") or path.endsWith(".ast-model"):
+    newModelDocument(fullPath, false, workspace)
+  else:
+    newTextDocument(self.asConfigProvider, fullPath, "", false, workspace, load=false)
+
+  self.documents.add document
+  discard self.createAndAddView(document)
+
 proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
   ## Opens a file dialog which shows all files in the currently open workspaces
   ## Press <ENTER> to select a file
