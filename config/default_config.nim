@@ -1,5 +1,6 @@
 import absytree_runtime
 import std/[json]
+import misc/[timer]
 
 import languages
 
@@ -56,6 +57,12 @@ proc loadDefaultOptions*() =
   loadTheme "tokyo-night-color-theme"
 
 proc loadDefaultKeybindings*(clearExisting: bool = false) =
+  let t = startTimer()
+  defer:
+    infof"loadDefaultKeybindings: {t.elapsed.ms} ms"
+
+  info "Applying default keybindings"
+
   if clearExisting:
     clearCommands "editor"
     clearCommands "editor.ast"

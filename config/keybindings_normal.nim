@@ -1,5 +1,5 @@
 import absytree_runtime
-import misc/[event, id]
+import misc/[event, id, timer]
 
 proc setModeChangedHandler*(handler: proc(editor: TextDocumentEditor, oldMode: string, newMode: string)) =
   let modeChangedHandler = getOption("editor.text.mode-changed-handler", "")
@@ -12,6 +12,10 @@ proc setModeChangedHandler*(handler: proc(editor: TextDocumentEditor, oldMode: s
   setOption("editor.text.mode-changed-handler", $id)
 
 proc loadNormalKeybindings*() {.scriptActionWasmNims("load-normal-keybindings").} =
+  let t = startTimer()
+  defer:
+    infof"loadNormalKeybindings: {t.elapsed.ms} ms"
+
   info "Applying normal keybindings"
 
   clearCommands("editor.text")
@@ -107,6 +111,12 @@ proc loadNormalKeybindings*() {.scriptActionWasmNims("load-normal-keybindings").
   addTextCommand "", "<C-SPACE>", "get-completions"
 
 proc loadModelKeybindings*() {.scriptActionWasmNims("load-model-keybindings").} =
+  let t = startTimer()
+  defer:
+    infof"loadModelKeybindings: {t.elapsed.ms} ms"
+
+  info "Applying model keybindings"
+
   setHandleInputs "editor.model", true
   setOption "editor.model.cursor.wide.", false
 
