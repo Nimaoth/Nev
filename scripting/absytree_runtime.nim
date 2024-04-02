@@ -11,6 +11,10 @@ when defined(nimscript):
     let currException = getCurrentException()
     return if currException == nil: "" else: currException.msg
 
+  proc getStackTrace*(e: ref Exception): string =
+    ## Stacktrace not available in nimscript
+    return ""
+
 type AnyDocumentEditor = TextDocumentEditor | ModelDocumentEditor
 
 var voidCallbacks = initTable[int, proc(args: JsonNode): void]()
