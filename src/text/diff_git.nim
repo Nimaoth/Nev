@@ -115,7 +115,7 @@ proc getFileChanges*(path: string, staged: bool = false): Future[Option[seq[Line
 
     let deletedRaw = parts[1]
     let addedRaw = parts[2]
-    debug deletedRaw, " -> ", addedRaw
+    # debug deletedRaw, " -> ", addedRaw
 
     assert deletedRaw[0] == '-'
     assert addedRaw[0] == '+'
@@ -123,7 +123,7 @@ proc getFileChanges*(path: string, staged: bool = false): Future[Option[seq[Line
     let deletedRange = parseGitRange(deletedRaw)
     let addedRange = parseGitRange(addedRaw)
 
-    debug deletedRange, " -> ", addedRange
+    # debug deletedRange, " -> ", addedRange
     current = LineMapping(
       source: deletedRange,
       target: addedRange,
