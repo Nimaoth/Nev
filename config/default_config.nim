@@ -166,6 +166,7 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
   addCommand "editor", "<LEADER>gt", "choose-theme"
   addCommand "editor", "<LEADER>gf", "choose-file", "new"
   addCommand "editor", "<LEADER>ge", "choose-open", "new"
+  addCommand "editor", "<LEADER>gg", "choose-git-active-files", "new"
   addCommandBlock "editor", "<LEADER>gl":
     runAction "logs"
     if getActiveEditor().isTextEditor(ed):
