@@ -44,7 +44,10 @@ a.html
 # GraphViz files
 *.dot
 
-# Added by cargo
-
 rust_test
 /target
+
+vscode-lsp-log.json
+config/rust.session.json
+config/ue.session.json
+config/lsp.json
