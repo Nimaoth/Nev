@@ -1,18 +1,20 @@
 import std/[strutils, sequtils, strformat, os, tables, options, enumutils]
-import misc/[async_process, custom_async, util]
+import misc/[async_process, custom_async, util, custom_logger]
 import scripting_api
 
-type
-  FileStatus = enum None, Modified, Added, Deleted, Untracked
-  FileInfo = object
-    stagedStatus: FileStatus
-    unstagedStatus: FileStatus
-    path: string
+logCategory "diff-git"
 
-  LineMapping = object
-    source: tuple[first: int, last: int]
-    target: tuple[first: int, last: int]
-    lines: seq[string]
+type
+  FileStatus* = enum None = " ", Modified = "M", Added = "A", Deleted = "D", Untracked = "?"
+  FileInfo* = object
+    stagedStatus*: FileStatus
+    unstagedStatus*: FileStatus
+    path*: string
+
+  LineMapping* = object
+    source*: tuple[first: int, last: int]
+    target*: tuple[first: int, last: int]
+    lines*: seq[string]
 
 proc parseFileStatusGit(status: char): FileStatus =
   result = case status
@@ -22,42 +24,18 @@ proc parseFileStatusGit(status: char): FileStatus =
   of '?': Untracked
   else: None
 
-proc getCommitedFileContent(path: string): Future[seq[string]] {.async.} =
+proc getCommitedFileContent*(path: string): Future[seq[string]] {.async.} =
   let args = @["show", "HEAD:" & path]
-  echo fmt"getCommitedFileContent: '{path}' -- {args}"
-  let p = startAsyncProcess("git", args, autoRestart = false, autoStart = false)
-  discard p.start()
+  log lvlInfo, fmt"getCommitedFileContent: '{path}' -- {args}"
+  return runProcessAsync("git", args).await
 
-  var lines = newSeq[string]()
-  while true:
-    let line = p.tryRecvLine().await
-    if line.isNone:
-      break
-    lines.add line.get
-
-  p.destroy()
-
-  return lines
-
-proc getStagedFileContent(path: string): Future[seq[string]] {.async.} =
+proc getStagedFileContent*(path: string): Future[seq[string]] {.async.} =
   let args = @["show", ":" & path]
-  echo fmt"getStagedFileContent: '{path}' -- {args}"
-  let p = startAsyncProcess("git", args, autoRestart = false, autoStart = false)
-  discard p.start()
-
-  var lines = newSeq[string]()
-  while true:
-    let line = p.tryRecvLine().await
-    if line.isNone:
-      break
-    lines.add line.get
-
-  p.destroy()
-
-  return lines
+  log lvlInfo, fmt"getStagedFileContent: '{path}' -- {args}"
+  return runProcessAsync("git", args).await
 
 proc getWorkingFileContent(path: string): Future[seq[string]] {.async.} =
-  echo fmt"getWorkingFileContent '{path}'"
+  log lvlInfo, fmt"getWorkingFileContent '{path}'"
   var lines = newSeq[string]()
   for line in lines(path):
     lines.add line
@@ -79,68 +57,65 @@ proc parseGitRange(s: string): (int, int) =
 
 proc applyChanges(lines: openArray[string], changes: openArray[LineMapping], expected: openArray[string]): seq[string] =
   var currentLineSource = 0
-  var currentLineTarget = 0
 
   for map in changes:
     # add unchanged lines before change
     for i in currentLineSource..map.source.first:
-      # echo "take ", i + 1, ": ", lines[i]
+      # debug "take ", i + 1, ": ", lines[i]
       result.add lines[i]
 
     currentLineSource = map.source.last + 1
 
     for line in map.lines:
-      # echo "insert ", line
+      # debug "insert ", line
       result.add line
 
   # add unchanged lines after last change
   for i in currentLineSource..lines.high:
-    # echo "take ", i + 1, ": ", lines[i]
+    # debug "take ", i + 1, ": ", lines[i]
     result.add lines[i]
 
-proc getFileChanges(path: string, staged: bool = false): Future[seq[LineMapping]] {.async.} =
+proc getFileChanges*(path: string, staged: bool = false): Future[Option[seq[LineMapping]]] {.async.} =
   var args = @["diff", "-U0"]
   if staged:
     args.add "--staged"
   args.add path
 
-  echo fmt"getFileChanges: '{path}' -- {args}"
-  let p = startAsyncProcess("git", args, autoRestart = false, autoStart = false)
-  discard p.start()
+  log lvlInfo, fmt"getFileChanges: '{path}' -- {args}"
+
+  let lines = runProcessAsync("git", args).await
 
   var mappings = newSeq[LineMapping]()
 
   var current = LineMapping.none
 
-  while true:
-    let line = p.tryRecvLine().await
-    if line.isNone:
-      break
+  for line in lines:
+    if line.startsWith("Binary files"):
+      # binary file, no line diffs
+      return seq[LineMapping].none
 
-    let lineRaw = line.get
-
-    if lineRaw.startsWith("+"):
+    if line.startsWith("+"):
       if current.isNone:
         continue
 
-      current.get.lines.add lineRaw[1..^1]
+      current.get.lines.add line[1..^1]
       continue
 
-    if not lineRaw.startsWith("@@"):
+    if not line.startsWith("@@"):
       continue
 
     if current.isSome:
       mappings.add current.get.move
       current = LineMapping.none
 
-    let parts = lineRaw.split " "
+    let parts = line.split " "
 
     if parts.len < 4:
       continue
 
     let deletedRaw = parts[1]
     let addedRaw = parts[2]
-    echo deletedRaw, " -> ", addedRaw
+    debug deletedRaw, " -> ", addedRaw
 
     assert deletedRaw[0] == '-'
     assert addedRaw[0] == '+'
@@ -148,7 +123,7 @@ proc getFileChanges(path: string, staged: bool = false): Future[seq[LineMapping]
     let deletedRange = parseGitRange(deletedRaw)
     let addedRange = parseGitRange(addedRaw)
 
-    echo deletedRange, " -> ", addedRange
+    debug deletedRange, " -> ", addedRange
     current = LineMapping(
       source: deletedRange,
       target: addedRange,
@@ -158,70 +133,75 @@ proc getFileChanges(path: string, staged: bool = false): Future[seq[LineMapping]
     mappings.add current.get.move
     current = LineMapping.none
 
-  p.destroy()
+  return mappings.some
 
-  echo mappings.mapIt($it).join("\n")
-  return mappings
+proc getChangedFiles*(): Future[seq[FileInfo]] {.async.} =
+  log lvlInfo, "getChangedFiles"
 
-proc getChangedFiles(): Future[seq[FileInfo]] {.async.} =
-  echo "getChangedFiles"
-  let p = startAsyncProcess("git", @["status", "-s"], autoRestart = false, autoStart = false)
-  discard p.start()
+  let lines = runProcessAsync("git", @["status", "-s"]).await
 
-  var lines = newSeq[FileInfo]()
-  while true:
-    let line = p.tryRecvLine().await
-    if line.isNone:
-      break
-
-    if line.get.len < 3:
+  var files = newSeq[FileInfo]()
+  for line in lines:
+    if line.len < 3:
       continue
 
-    let fileInfoRaw = line.get
-    let status = fileInfoRaw[0..1]
+    let stagedStatus = parseFileStatusGit(line[0])
+    let unstagedStatus = parseFileStatusGit(line[1])
 
-    let stagedStatus = parseFileStatusGit(fileInfoRaw[0])
-    let unstagedStatus = parseFileStatusGit(fileInfoRaw[1])
+    let filePath = line[3..^1]
 
-    let filePath = fileInfoRaw[3..^1]
-
-    lines.add FileInfo(
+    files.add FileInfo(
       stagedStatus: stagedStatus,
       unstagedStatus: unstagedStatus,
       path: filePath
     )
 
-  p.destroy()
+  return files
 
-  echo lines.mapIt($it).join("\n")
 
-  for file in lines:
-    echo "---------------------------------------------------------------------------------------------------------------------------------------------------------"
-    let mappings = await getFileChanges(file.path, staged=false)
-    let mappings2 = await getFileChanges(file.path, staged=true)
+when isMainModule:
+  logger.enableConsoleLogger()
+  proc test() {.async.} =
+    let files = getChangedFiles().await
+    debug files.mapIt($it).join("\n")
 
-    let committed = getCommitedFileContent(file.path).await
-    let staged = getStagedFileContent(file.path).await
-    let working = getWorkingFileContent(file.path).await
+    for i, file in files:
+      if i > 100:
+        break
 
-    let test1 = staged.applyChanges(mappings, working)
-    let test2 = committed.applyChanges(mappings2, staged)
+      debug "---------------------------------------------------------------------------------------------------------------------------------------------------------"
+      let mappings = await getFileChanges(file.path, staged=false)
+      let mappings2 = await getFileChanges(file.path, staged=true)
 
-    echo fmt"commited: {committed.len}, staged: {staged.len}, working: {working.len}, test1: {test1.len}, test2: {test2.len}"
+      if mappings.isNone or mappings2.isNone:
+        # probably binary file
+        debugf"Binary file {file.path}"
+        continue
 
-    for i in 0..min(test1.high, working.high):
-      if test1[i] != working[i]:
-        echo "different: ", i
-    echo test1 == working
+      let committed = getCommitedFileContent(file.path).await
+      let staged = getStagedFileContent(file.path).await
+      let working = getWorkingFileContent(file.path).await
 
-    for i in 0..min(test2.high, staged.high):
-      if test2[i] != staged[i]:
-        echo "different: ", i
-    echo test2 == staged
+      let test1 = staged.applyChanges(mappings.get, working)
+      let test2 = committed.applyChanges(mappings2.get, staged)
 
-  return lines
+      # debug committed
+      # debug staged
+      # debug working
 
-asyncCheck getChangedFiles()
+      debug fmt"commited: {committed.len}, staged: {staged.len}, working: {working.len}, test1: {test1.len}, test2: {test2.len}"
 
-while hasPendingOperations():
-  poll(1000)
+      for i in 0..min(test1.high, working.high):
+        if test1[i] != working[i]:
+          debug "different: ", i
+      debug test1 == working
+
+      for i in 0..min(test2.high, staged.high):
+        if test2[i] != staged[i]:
+          debug "different: ", i
+      debug test2 == staged
+
+  asyncCheck test()
+
+  while hasPendingOperations():
+    poll(1000)
