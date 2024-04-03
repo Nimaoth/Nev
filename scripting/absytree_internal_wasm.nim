@@ -470,6 +470,7 @@ proc editor_chooseTheme_void_App_impl()  {.importc.}
 proc editor_createFile_void_App_string_impl(path: string)  {.importc.}
 proc editor_chooseFile_void_App_string_impl(view: string = "new")  {.importc.}
 proc editor_chooseOpen_void_App_string_impl(view: string = "new")  {.importc.}
+proc editor_chooseGitActiveFiles_void_App_string_impl(view: string = "new")  {.importc.}
 proc editor_openPreviousEditor_void_App_impl()  {.importc.}
 proc editor_openNextEditor_void_App_impl()  {.importc.}
 proc editor_setGithubAccessToken_void_App_string_impl(token: string)  {.importc.}

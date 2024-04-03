@@ -38,6 +38,9 @@ type
 
     cancellationToken*: CancellationToken
 
+    updateInProgress*: bool = false
+    updated*: bool = false
+
     # sort stuff
     useAutoSort: bool = false
     sortSteps: int = 5
@@ -129,11 +132,13 @@ proc updateCompletionsAsync(self: SelectorPopup): Future[void] {.async.} =
   let text = self.textEditor.document.content.join
   let newCompletions = await self.getCompletionsAsync(self, text)
   self.setCompletions(newCompletions)
+  self.updated = true
 
 proc updateCompletionsAsyncIter(self: SelectorPopup): Future[void] {.async.} =
   let text = self.textEditor.document.content.join
   # self.setCompletions @[]
   await self.getCompletionsAsyncIter(self, text)
+  self.updated = true
 
 proc getItemAtPixelPosition(self: SelectorPopup, posWindow: Vec2): Option[SelectorItem] =
   result = SelectorItem.none
@@ -167,6 +172,7 @@ proc updateCompletions*(self: SelectorPopup) {.expose("popup.selector").} =
   if not self.getCompletions.isNil:
     let newCompletions = self.getCompletions(self, text)
     self.setCompletions(newCompletions)
+    self.updated = true
   elif not self.getCompletionsAsync.isNil:
     asyncCheck self.updateCompletionsAsync()
   elif not self.getCompletionsAsyncIter.isNil:

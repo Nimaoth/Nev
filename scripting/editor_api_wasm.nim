@@ -709,6 +709,20 @@ proc chooseOpen*(view: string = "new") =
       argsJsonString.cstring)
 
 
+proc editor_chooseGitActiveFiles_void_App_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc chooseGitActiveFiles*(view: string = "new") =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      view
+    else:
+      view.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_chooseGitActiveFiles_void_App_string_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_openPreviousEditor_void_App_wasm(arg: cstring): cstring {.importc.}
 proc openPreviousEditor*() =
   var argsJson = newJArray()

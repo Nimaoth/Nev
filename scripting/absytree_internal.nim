@@ -716,6 +716,8 @@ proc editor_chooseFile_void_App_string_impl*(view: string = "new") =
   discard
 proc editor_chooseOpen_void_App_string_impl*(view: string = "new") =
   discard
+proc editor_chooseGitActiveFiles_void_App_string_impl*(view: string = "new") =
+  discard
 proc editor_openPreviousEditor_void_App_impl*() =
   discard
 proc editor_openNextEditor_void_App_impl*() =

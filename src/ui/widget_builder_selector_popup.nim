@@ -12,8 +12,9 @@ logCategory "selector-popup-ui"
 
 method createUI*(self: FileSelectorItem, popup: SelectorPopup, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
   let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
-  let matchIndices = self.getCompletionMatches(popup.getSearchString(), self.path, defaultPathMatchingConfig)
-  builder.highlightedText(self.path, matchIndices, textColor, textColor.lighten(0.15))
+  let name = if self.name.len > 0: self.name else: self.path
+  let matchIndices = self.getCompletionMatches(popup.getSearchString(), name, defaultPathMatchingConfig)
+  builder.highlightedText(name, matchIndices, textColor, textColor.lighten(0.15))
 
 method createUI*(self: TextSymbolSelectorItem, popup: SelectorPopup, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
   let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
