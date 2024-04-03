@@ -904,6 +904,8 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
   except CatchableError:
     log(lvlError, fmt"Failed to load previous state from config file: {getCurrentExceptionMsg()}")
 
+  self.platform.setFont(self.fontRegular, self.fontBold, self.fontItalic, self.fontBoldItalic)
+
   self.commandHistory = state.commandHistory
 
   if self.getFlag("editor.restore-open-workspaces", true):
