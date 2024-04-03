@@ -6,7 +6,7 @@ logCategory "diff-git"
 
 type
   FileStatus* = enum None = " ", Modified = "M", Added = "A", Deleted = "D", Untracked = "?"
-  FileInfo* = object
+  GitFileInfo* = object
     stagedStatus*: FileStatus
     unstagedStatus*: FileStatus
     path*: string
@@ -135,12 +135,12 @@ proc getFileChanges*(path: string, staged: bool = false): Future[Option[seq[Line
 
   return mappings.some
 
-proc getChangedFiles*(): Future[seq[FileInfo]] {.async.} =
+proc getChangedFiles*(): Future[seq[GitFileInfo]] {.async.} =
   log lvlInfo, "getChangedFiles"
 
   let lines = runProcessAsync("git", @["status", "-s"]).await
 
-  var files = newSeq[FileInfo]()
+  var files = newSeq[GitFileInfo]()
   for line in lines:
     if line.len < 3:
       continue
@@ -150,7 +150,7 @@ proc getChangedFiles*(): Future[seq[FileInfo]] {.async.} =
 
     let filePath = line[3..^1]
 
-    files.add FileInfo(
+    files.add GitFileInfo(
       stagedStatus: stagedStatus,
       unstagedStatus: unstagedStatus,
       path: filePath

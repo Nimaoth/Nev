@@ -63,6 +63,8 @@ proc help*(about: string = "") =
   editor_help_void_App_string_impl(about)
 proc changeFontSize*(amount: float32) =
   editor_changeFontSize_void_App_float32_impl(amount)
+proc changeLineDistance*(amount: float32) =
+  editor_changeLineDistance_void_App_float32_impl(amount)
 proc platformTotalLineHeight*(): float32 =
   editor_platformTotalLineHeight_float32_App_impl()
 proc platformLineHeight*(): float32 =
@@ -136,8 +138,8 @@ proc chooseFile*(view: string = "new") =
   editor_chooseFile_void_App_string_impl(view)
 proc chooseOpen*(view: string = "new") =
   editor_chooseOpen_void_App_string_impl(view)
-proc chooseGitActiveFiles*(view: string = "new") =
-  editor_chooseGitActiveFiles_void_App_string_impl(view)
+proc chooseGitActiveFiles*() =
+  editor_chooseGitActiveFiles_void_App_impl()
 proc openPreviousEditor*() =
   editor_openPreviousEditor_void_App_impl()
 proc openNextEditor*() =

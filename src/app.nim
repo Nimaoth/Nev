@@ -1862,60 +1862,82 @@ proc chooseOpen*(self: App, view: string = "new") {.expose("editor").} =
 
   self.pushPopup popup
 
-proc getChangedFilesFromGitAsync(popup: SelectorPopup, text: string, workspace: Option[WorkspaceFolder]): Future[seq[SelectorItem]] {.async.} =
-  if popup.updateInProgress:
-    return popup.completions
+when not defined(js):
+  type GitFileSelectorItem* = ref object of FileSelectorItem
+    info: GitFileInfo
 
-  popup.updateInProgress = true
-  defer:
-    popup.updateInProgress = false
+  proc getChangedFilesFromGitAsync(popup: SelectorPopup, text: string, workspace: Option[WorkspaceFolder]): Future[seq[SelectorItem]] {.async.} =
+    if popup.updateInProgress:
+      return popup.completions
 
-  if not popup.updated:
-    let fileInfos = getChangedFiles().await
-    for info in fileInfos:
-      let name = $info.stagedStatus & $info.unstagedStatus & " " & info.path
-      let score = matchPath(name, text)
-      result.add FileSelectorItem(name: name, path: info.path, score: score, workspaceFolder: workspace)
-  else:
-    for item in popup.completions.mitems:
-      item.hasCompletionMatchPositions = false
-      item.score = matchPath(item.FileSelectorItem.name, text)
+    popup.updateInProgress = true
+    defer:
+      popup.updateInProgress = false
 
-    result = popup.completions
-
-  result.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Ascending)
-
-proc chooseGitActiveFiles*(self: App, view: string = "new") {.expose("editor").} =
-  defer:
-    self.platform.requestRender()
-
-  let workspace = if self.workspace.folders.len > 0:
-    self.workspace.folders[0].some
-  else:
-    WorkspaceFolder.none
-
-  var popup = newSelectorPopup(self.asAppInterface)
-  popup.getCompletionsAsync = proc(popup: SelectorPopup, text: string): Future[seq[SelectorItem]] =
-    return getChangedFilesFromGitAsync(popup, text, workspace)
-
-  popup.handleItemConfirmed = proc(item: SelectorItem) =
-    case view
-    of "current":
-      if item.FileSelectorItem.workspaceFolder.isSome:
-        self.loadWorkspaceFile(item.FileSelectorItem.path, item.FileSelectorItem.workspaceFolder.get)
-      else:
-        self.loadFile(item.FileSelectorItem.path)
-    of "new":
-      if item.FileSelectorItem.workspaceFolder.isSome:
-        discard self.openWorkspaceFile(item.FileSelectorItem.path, item.FileSelectorItem.workspaceFolder.get)
-      else:
-        discard self.openFile(item.FileSelectorItem.path)
+    if not popup.updated:
+      let fileInfos = getChangedFiles().await
+      for info in fileInfos:
+        let name = $info.stagedStatus & $info.unstagedStatus & " " & info.path
+        let score = matchPath(name, text)
+        result.add GitFileSelectorItem(name: name, path: info.path, score: score, workspaceFolder: workspace, info: info)
     else:
-      log(lvlError, fmt"Unknown argument {view}")
+      for item in popup.completions.mitems:
+        item.hasCompletionMatchPositions = false
+        item.score = matchPath(item.GitFileSelectorItem.name, text)
 
-  popup.updateCompletions()
+      result = popup.completions
 
-  self.pushPopup popup
+    result.sort((a, b) => cmp(a.GitFileSelectorItem.score, b.GitFileSelectorItem.score), Ascending)
+
+  proc openDiffForEditor(self: App, editorWorking: DocumentEditor, fileInfo: GitFileInfo) {.async.} =
+    let document = editorWorking.getDocument()
+
+    log lvlInfo, fmt"openDiffForEditor '{document.filename}', {fileInfo}"
+
+    if document of TextDocument:
+      let document = document.TextDocument
+      if fileInfo.unstagedStatus != None:
+        let stagedFileContent = getStagedFileContent(fileInfo.path).await
+
+        self.closeOtherViews()
+
+        var document = newTextDocument(self.asConfigProvider, language=document.languageId.some)
+        document.createLanguageServer = false
+        document.content = stagedFileContent
+        var editorStaged = self.createAndAddView(document)
+
+    else:
+      log lvlError, fmt"Unsupported document type"
+
+proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
+  when defined(js):
+    log lvlError, fmt"chooseGitActiveFiles not implemented yet for js backend"
+  else:
+    defer:
+      self.platform.requestRender()
+
+    let workspace = if self.workspace.folders.len > 0:
+      self.workspace.folders[0].some
+    else:
+      WorkspaceFolder.none
+
+    var popup = newSelectorPopup(self.asAppInterface)
+    popup.getCompletionsAsync = proc(popup: SelectorPopup, text: string): Future[seq[SelectorItem]] =
+      return getChangedFilesFromGitAsync(popup, text, workspace)
+
+    popup.handleItemConfirmed = proc(item: SelectorItem) =
+      let item = item.GitFileSelectorItem
+      let currentVersionEditor = if item.workspaceFolder.isSome:
+        self.openWorkspaceFile(item.path, item.workspaceFolder.get)
+      else:
+        self.openFile(item.path)
+
+      if currentVersionEditor.getSome(editor):
+        asyncCheck self.openDiffForEditor(editor, item.info)
+
+    popup.updateCompletions()
+
+    self.pushPopup popup
 
 type TextSymbolSelectorItem* = ref object of SelectorItem
   symbol*: Symbol

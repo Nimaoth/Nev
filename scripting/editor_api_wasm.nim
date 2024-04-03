@@ -356,6 +356,20 @@ proc changeFontSize*(amount: float32) =
       argsJsonString.cstring)
 
 
+proc editor_changeLineDistance_void_App_float32_wasm(arg: cstring): cstring {.
+    importc.}
+proc changeLineDistance*(amount: float32) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when float32 is JsonNode:
+      amount
+    else:
+      amount.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_changeLineDistance_void_App_float32_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_platformTotalLineHeight_float32_App_wasm(arg: cstring): cstring {.
     importc.}
 proc platformTotalLineHeight*(): float32 =
@@ -709,17 +723,11 @@ proc chooseOpen*(view: string = "new") =
       argsJsonString.cstring)
 
 
-proc editor_chooseGitActiveFiles_void_App_string_wasm(arg: cstring): cstring {.
-    importc.}
-proc chooseGitActiveFiles*(view: string = "new") =
+proc editor_chooseGitActiveFiles_void_App_wasm(arg: cstring): cstring {.importc.}
+proc chooseGitActiveFiles*() =
   var argsJson = newJArray()
-  argsJson.add block:
-    when string is JsonNode:
-      view
-    else:
-      view.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_chooseGitActiveFiles_void_App_string_wasm(
+  let res {.used.} = editor_chooseGitActiveFiles_void_App_wasm(
       argsJsonString.cstring)
 
 
