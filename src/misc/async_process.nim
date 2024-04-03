@@ -1,5 +1,5 @@
-import std/[asyncdispatch, asyncnet, json, strutils, tables, os, osproc, streams, threadpool, options, macros]
-import custom_logger
+import std/[asyncnet, json, strutils, tables, os, osproc, streams, threadpool, options, macros]
+import custom_logger, custom_async
 
 logCategory "asyncprocess"
 
@@ -337,3 +337,14 @@ proc startAsyncProcess*(name: string, args: seq[string] = @[], autoRestart = tru
     process.serverDiedNotifications[].send true
 
   return process
+
+proc readProcessOutputThread(args: (string, seq[string])): seq[string] {.gcsafe.} =
+  try:
+    let process = startProcess(args[0], args=args[1], options={poUsePath, poDaemon})
+    let (lines, _) = process.readLines()
+    return lines
+  except CatchableError:
+    return @[]
+
+proc runProcessAsync*(name: string, args: seq[string] = @[]): Future[seq[string]] =
+  return spawnAsync(readProcessOutputThread, (name, args))
