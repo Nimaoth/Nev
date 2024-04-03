@@ -648,6 +648,8 @@ proc editor_help_void_App_string_impl*(about: string = "") =
   discard
 proc editor_changeFontSize_void_App_float32_impl*(amount: float32) =
   discard
+proc editor_changeLineDistance_void_App_float32_impl*(amount: float32) =
+  discard
 proc editor_platformTotalLineHeight_float32_App_impl*(): float32 =
   discard
 proc editor_platformLineHeight_float32_App_impl*(): float32 =
@@ -716,7 +718,7 @@ proc editor_chooseFile_void_App_string_impl*(view: string = "new") =
   discard
 proc editor_chooseOpen_void_App_string_impl*(view: string = "new") =
   discard
-proc editor_chooseGitActiveFiles_void_App_string_impl*(view: string = "new") =
+proc editor_chooseGitActiveFiles_void_App_impl*() =
   discard
 proc editor_openPreviousEditor_void_App_impl*() =
   discard

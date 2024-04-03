@@ -435,6 +435,7 @@ proc editor_setOption_void_App_string_JsonNode_impl(option: string;
 proc editor_quit_void_App_impl()  {.importc.}
 proc editor_help_void_App_string_impl(about: string = "")  {.importc.}
 proc editor_changeFontSize_void_App_float32_impl(amount: float32)  {.importc.}
+proc editor_changeLineDistance_void_App_float32_impl(amount: float32)  {.importc.}
 proc editor_platformTotalLineHeight_float32_App_impl(): float32  {.importc.}
 proc editor_platformLineHeight_float32_App_impl(): float32  {.importc.}
 proc editor_platformLineDistance_float32_App_impl(): float32  {.importc.}
@@ -470,7 +471,7 @@ proc editor_chooseTheme_void_App_impl()  {.importc.}
 proc editor_createFile_void_App_string_impl(path: string)  {.importc.}
 proc editor_chooseFile_void_App_string_impl(view: string = "new")  {.importc.}
 proc editor_chooseOpen_void_App_string_impl(view: string = "new")  {.importc.}
-proc editor_chooseGitActiveFiles_void_App_string_impl(view: string = "new")  {.importc.}
+proc editor_chooseGitActiveFiles_void_App_impl()  {.importc.}
 proc editor_openPreviousEditor_void_App_impl()  {.importc.}
 proc editor_openNextEditor_void_App_impl()  {.importc.}
 proc editor_setGithubAccessToken_void_App_string_impl(token: string)  {.importc.}
