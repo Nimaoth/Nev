@@ -8,7 +8,7 @@ import ast/[model, project]
 import config_provider, app_interface
 import text/language/language_server_base, language_server_absytree_commands
 import input, events, document, document_editor, popup, dispatch_tables, theme, clipboard, app_options
-import text/custom_treesitter
+import text/[custom_treesitter, diff_git]
 
 when not defined(js):
   import scripting/scripting_nim
@@ -609,6 +609,7 @@ type ThemeSelectorItem* = ref object of SelectorItem
   path*: string
 
 type FileSelectorItem* = ref object of SelectorItem
+  name*: string
   path*: string
   workspaceFolder*: Option[WorkspaceFolder]
 
@@ -1830,6 +1831,61 @@ proc chooseOpen*(self: App, view: string = "new") {.expose("editor").} =
       result.add FileSelectorItem(path: name, score: score, workspaceFolder: document.workspace)
 
     result.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Ascending)
+
+  popup.handleItemConfirmed = proc(item: SelectorItem) =
+    case view
+    of "current":
+      if item.FileSelectorItem.workspaceFolder.isSome:
+        self.loadWorkspaceFile(item.FileSelectorItem.path, item.FileSelectorItem.workspaceFolder.get)
+      else:
+        self.loadFile(item.FileSelectorItem.path)
+    of "new":
+      if item.FileSelectorItem.workspaceFolder.isSome:
+        discard self.openWorkspaceFile(item.FileSelectorItem.path, item.FileSelectorItem.workspaceFolder.get)
+      else:
+        discard self.openFile(item.FileSelectorItem.path)
+    else:
+      log(lvlError, fmt"Unknown argument {view}")
+
+  popup.updateCompletions()
+
+  self.pushPopup popup
+
+proc getChangedFilesFromGitAsync(popup: SelectorPopup, text: string, workspace: Option[WorkspaceFolder]): Future[seq[SelectorItem]] {.async.} =
+  if popup.updateInProgress:
+    return popup.completions
+
+  popup.updateInProgress = true
+  defer:
+    popup.updateInProgress = false
+
+  if not popup.updated:
+    let fileInfos = getChangedFiles().await
+    for info in fileInfos:
+      let name = $info.stagedStatus & $info.unstagedStatus & " " & info.path
+      let score = matchPath(name, text)
+      result.add FileSelectorItem(name: name, path: info.path, score: score, workspaceFolder: workspace)
+  else:
+    for item in popup.completions.mitems:
+      item.hasCompletionMatchPositions = false
+      item.score = matchPath(item.FileSelectorItem.name, text)
+
+    result = popup.completions
+
+  result.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Ascending)
+
+proc chooseGitActiveFiles*(self: App, view: string = "new") {.expose("editor").} =
+  defer:
+    self.platform.requestRender()
+
+  let workspace = if self.workspace.folders.len > 0:
+    self.workspace.folders[0].some
+  else:
+    WorkspaceFolder.none
+
+  var popup = newSelectorPopup(self.asAppInterface)
+  popup.getCompletionsAsync = proc(popup: SelectorPopup, text: string): Future[seq[SelectorItem]] =
+    return getChangedFilesFromGitAsync(popup, text, workspace)
 
   popup.handleItemConfirmed = proc(item: SelectorItem) =
     case view
