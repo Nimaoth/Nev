@@ -1675,6 +1675,8 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
     ignorePatterns.add glob("*.ilk")
     ignorePatterns.add glob("*.wasm")
     ignorePatterns.add glob("*.ttf")
+    ignorePatterns.add glob("*.bin")
+    ignorePatterns.add glob("*.o")
 
   popup.getCompletionsAsyncIter = proc(popup: SelectorPopup, text: string): Future[void] {.async.} =
     if not popup.cancellationToken.isNil:
