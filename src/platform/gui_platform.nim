@@ -239,7 +239,6 @@ proc getFont*(self: GuiPlatform, fontSize: float32, flags: UINodeFlags): Font =
     return self.getFont(self.fontBold, fontSize)
   return self.getFont(self.fontRegular, fontSize)
 
-
 method size*(self: GuiPlatform): Vec2 =
   let size = self.window.size
   return vec2(size.x.float, size.y.float)
@@ -260,11 +259,33 @@ proc updateCharWidth*(self: GuiPlatform) =
   self.builder.lineHeight = self.mLineHeight
   self.builder.lineGap = self.mLineDistance
 
+method setFont*(self: GuiPlatform, fontRegular: string, fontBold: string, fontItalic: string, fontBoldItalic: string) =
+  log lvlInfo, fmt"Update font: {fontRegular}, {fontBold}, {fontItalic}, {fontBoldItalic}"
+  self.ctx.font = fontRegular
+  self.fontRegular = fontRegular
+  self.fontBold = fontBold
+  self.fontItalic = fontItalic
+  self.fontBoldItalic = fontBoldItalic
+  self.typefaces.clear()
+  self.updateCharWidth()
+
+  for image in self.cachedImages.removedKeys:
+    self.boxy.removeImage(image)
+
+  for kv in self.cachedImages.pairs:
+    self.boxy.removeImage(kv[0])
+
+  self.cachedImages.clearRemovedKeys()
+  self.cachedImages.clear()
+
 method `fontSize=`*(self: GuiPlatform, fontSize: float) =
   self.ctx.fontSize = fontSize
   self.updateCharWidth()
 
-method `lineDistance=`*(self: GuiPlatform, lineDistance: float) = self.mLineDistance = lineDistance
+method `lineDistance=`*(self: GuiPlatform, lineDistance: float) =
+  self.mLineDistance = lineDistance
+  self.updateCharWidth()
+
 method fontSize*(self: GuiPlatform): float = self.ctx.fontSize
 method lineDistance*(self: GuiPlatform): float = self.mLineDistance
 method lineHeight*(self: GuiPlatform): float = self.mLineHeight
