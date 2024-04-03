@@ -284,6 +284,11 @@ method `fontSize=`*(self: BrowserPlatform, fontSize: float) =
     self.redrawEverything = true
     self.updateFontSettings()
 
+method `lineDistance=`*(self: BrowserPlatform, lineDistance: float) =
+  self.mLineDistance = lineDistance
+  self.redrawEverything = true
+  self.updateFontSettings()
+
 method fontSize*(self: BrowserPlatform): float =
   result = self.mFontSize
 
