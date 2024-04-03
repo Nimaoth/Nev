@@ -47,6 +47,11 @@ type
 
     currentEvent: dom.Event
 
+    touches: seq[tuple[identifier: int, clientX: float, clientY: float]]
+    touchDragging: bool = false
+
+proc console[T](t: T) {.importjs: "console.log(#);".}
+
 proc toInput(key: cstring, code: cstring, keyCode: int): int64
 proc updateFontSettings*(self: BrowserPlatform)
 
@@ -170,6 +175,7 @@ method init*(self: BrowserPlatform) =
       if not self.builder.handleMousePressed(event, modifiers, vec2(x.float, y.float)):
         self.onMousePress.invoke (event, modifiers, vec2(x.float, y.float))
 
+    self.content.focus()
   )
 
   self.content.addEventListener("mouseup", proc(e: dom.Event) =
@@ -203,7 +209,101 @@ method init*(self: BrowserPlatform) =
       self.onMouseMove.invoke (vec2(me.clientX.float, me.clientY.float), vec2(me.movementX.float, me.movementY.float), modifiers, me.getMouseButtons) # @todo: buttons
   )
 
-  proc console[T](t: T) {.importjs: "console.log(#);".}
+  proc getTouchWithId(self: BrowserPlatform, identifier: int): int =
+    for i, touch in self.touches:
+      if touch.identifier == identifier:
+        return i
+    return -1
+
+  self.content.addEventListener("touchstart", proc(e: dom.Event) =
+    let me = e.TouchEvent
+    let touches = self.touches
+    for touch in me.changedTouches:
+      let i = self.getTouchWithId(touch.identifier)
+      if i != -1:
+        self.touches.removeShift(i)
+        if self.touches.len == 0:
+          self.touchDragging = false
+
+      self.touches.add (touch.identifier, touch.clientX.float, touch.clientY.float)
+
+    if self.touches.len == 2:
+      self.touchDragging = true
+    else:
+      self.touchDragging = false
+  )
+
+  self.content.addEventListener("touchend", proc(e: dom.Event) =
+    let me = e.TouchEvent
+    let touches = self.touches
+    for touch in me.changedTouches:
+      let i = self.getTouchWithId(touch.identifier)
+      self.touches.removeShift(i)
+
+    if self.touches.len == 0:
+      self.touchDragging = false
+  )
+
+  self.content.addEventListener("touchcancel", proc(e: dom.Event) =
+    let me = e.TouchEvent
+    let touches = self.touches
+    for touch in me.changedTouches:
+      let i = self.getTouchWithId(touch.identifier)
+      self.touches.removeShift(i)
+
+    if self.touches.len == 0:
+      self.touchDragging = false
+  )
+
+  self.content.addEventListener("touchmove", proc(e: dom.Event) =
+    let oldEvent = self.currentEvent
+    self.currentEvent = e
+    defer: self.currentEvent = oldEvent
+
+    e.preventDefault()
+    let touches = self.touches
+
+    let me = e.TouchEvent
+
+    if self.touchDragging:
+      var posSum = vec2()
+      var deltaSum = vec2()
+      var count = 0.0
+
+      for touch in me.changedTouches:
+        var k = self.getTouchWithId(touch.identifier)
+        if k == -1:
+          continue
+
+        let oldTouch = self.touches[k]
+        deltaSum.x = touch.clientX.float - oldTouch.clientX
+        deltaSum.y = touch.clientY.float - oldTouch.clientY
+        posSum.x += touch.clientX.float
+        posSum.y += touch.clientY.float
+        count += 1
+
+      if count > 0:
+        let delta = (deltaSum / count) * vec2(1, 3)
+        let pos = posSum / count
+
+        if not self.builder.handleMouseScroll(pos, delta * 0.01, {}):
+          self.onScroll.invoke (pos, delta * 0.01, {})
+
+    elif me.touches.len == 1 and self.touches.len == 1:
+      let oldTouch = self.touches[0]
+      let touch = me.touches[0]
+      let movementX = touch.clientX.float - oldTouch.clientX
+      let movementY = touch.clientY.float - oldTouch.clientY
+      # debugf"touchmove {touch.clientX}, {touch.clientY}, {movementX}, {movementY}"
+      if not self.builder.handleMouseMoved(vec2(touch.clientX.float, touch.clientY.float), {MouseButton.Left}):
+        self.onMouseMove.invoke (vec2(touch.clientX.float, touch.clientY.float), vec2(movementX, movementY), {}, {MouseButton.Left})
+
+    for touch in me.changedTouches:
+      let i = self.getTouchWithId(touch.identifier)
+      if i != -1:
+        self.touches.removeShift(i)
+      self.touches.add (touch.identifier, touch.clientX.float, touch.clientY.float)
+  )
 
   self.content.addEventListener("dragover", proc(e: dom.Event) =
     let oldEvent = self.currentEvent
