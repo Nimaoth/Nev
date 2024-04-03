@@ -856,7 +856,8 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
         header = builder.createHeader(self.renderHeader, self.currentMode, self.document, headerColor, textColor):
           onRight:
             proc cursorString(cursor: Cursor): string = $cursor.line & ":" & $cursor.column & ":" & $self.document.lines[cursor.line].toOpenArray.runeIndex(cursor.column)
-            builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = fmt" {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} ")
+            let text = fmt"{self.document.undoableRevision}/{self.document.revision}   {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} "
+            builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = text)
 
         builder.panel(sizeFlags):
           if not self.disableScrolling and not sizeToContentY:

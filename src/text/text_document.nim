@@ -22,6 +22,7 @@ type
   UndoOp = ref object
     oldSelection: seq[Selection]
     checkpoints: seq[string]
+    revision: int
     case kind: UndoOpKind
     of Delete:
       selection: Selection
@@ -183,6 +184,9 @@ proc tsTree*(self: TextDocument): TsTree =
   return self.currentTree
 
 proc `content=`*(self: TextDocument, value: string) =
+  self.revision.inc
+  self.undoableRevision.inc
+
   if self.singleLine:
     self.lines = @[value.replace("\n", "")]
     if self.lines.len == 0:
@@ -204,6 +208,9 @@ proc `content=`*(self: TextDocument, value: string) =
   self.notifyTextChanged()
 
 proc `content=`*(self: TextDocument, value: seq[string]) =
+  self.revision.inc
+  self.undoableRevision.inc
+
   if self.singleLine:
     self.lines = @[value.join("")]
   else:
@@ -659,6 +666,7 @@ method save*(self: TextDocument, filename: string = "", app: bool = false) =
     fs.saveFile(self.filename, self.contentString)
 
   self.isBackedByFile = true
+  self.lastSavedRevision = self.undoableRevision
 
 proc loadAsync(self: TextDocument, ws: WorkspaceFolder): Future[void] {.async.} =
   # self.content = await ws.loadFile(self.filename)
@@ -667,6 +675,7 @@ proc loadAsync(self: TextDocument, ws: WorkspaceFolder): Future[void] {.async.} 
   self.content = catch ws.loadFile(self.filename).await:
     log lvlError, &"[loadAsync] Failed to load workspace file {self.filename}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
     ""
+  self.lastSavedRevision = self.undoableRevision
   self.isLoadingAsync = false
   self.onLoaded.invoke self
 
@@ -684,11 +693,13 @@ method load*(self: TextDocument, filename: string = "") =
     self.content = catch fs.loadApplicationFile(self.filename):
       log lvlError, fmt"Failed to load application file {filename}"
       ""
+    self.lastSavedRevision = self.undoableRevision
     self.onLoaded.invoke self
   else:
     self.content = catch fs.loadFile(self.filename):
       log lvlError, fmt"Failed to load file {filename}"
       ""
+    self.lastSavedRevision = self.undoableRevision
     self.onLoaded.invoke self
 
 proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.async.} =
@@ -964,6 +975,9 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
 
   result = self.clampAndMergeSelections selections
 
+  self.revision.inc
+  self.undoableRevision.inc
+
   var undoOp = UndoOp(kind: Nested, children: @[], oldSelection: @oldSelection)
 
   var startNewCheckpoint = false
@@ -1037,7 +1051,7 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
         # echo fmt"kind: {self.undoOps.last.kind}, len: {self.undoOps.last.children.len} == {result.len}, child kind: {self.undoOps.last.children[i].kind}, cursor {self.undoOps.last.children[i].selection.last} != {oldCursor}"
         if text.len > 1:
           startNewCheckpoint = true
-        elif self.undoOps.last.kind == Nested and self.undoOps.last.children.len == result.len and self.undoOps.last.children[i].kind == Delete:
+        elif self.undoOps.len > 0 and self.undoOps.last.kind == Nested and self.undoOps.last.children.len == result.len and result.len > i and self.undoOps.last.children[i].kind == Delete:
           if self.undoOps.last.children[i].selection.last != oldCursor:
             startNewCheckpoint = true
           else:
@@ -1069,6 +1083,9 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
 
 proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] =
   result = self.clampAndMergeSelections selections
+
+  self.revision.inc
+  self.undoableRevision.inc
 
   var undoOp = UndoOp(kind: Nested, children: @[], oldSelection: @oldSelection)
 
@@ -1140,17 +1157,17 @@ proc doUndo(self: TextDocument, op: UndoOp, oldSelection: openArray[Selection], 
   of Delete:
     let text = self.contentString(op.selection)
     result = self.delete([op.selection], op.oldSelection, record=false)
-    redoOps.add UndoOp(kind: Insert, cursor: op.selection.first, text: text, oldSelection: @oldSelection, checkpoints: op.checkpoints)
+    redoOps.add UndoOp(kind: Insert, revision: self.undoableRevision, cursor: op.selection.first, text: text, oldSelection: @oldSelection, checkpoints: op.checkpoints)
 
   of Insert:
     let selections = self.insert([op.cursor.toSelection], op.oldSelection, [op.text], record=false)
     result = selections
-    redoOps.add UndoOp(kind: Delete, selection: (op.cursor, selections[0].last), oldSelection: @oldSelection, checkpoints: op.checkpoints)
+    redoOps.add UndoOp(kind: Delete, revision: self.undoableRevision, selection: (op.cursor, selections[0].last), oldSelection: @oldSelection, checkpoints: op.checkpoints)
 
   of Nested:
     result = op.oldSelection
 
-    var redoOp = UndoOp(kind: Nested, oldSelection: @oldSelection, checkpoints: op.checkpoints)
+    var redoOp = UndoOp(kind: Nested, revision: self.undoableRevision, oldSelection: @oldSelection, checkpoints: op.checkpoints)
     for i in countdown(op.children.high, 0):
       discard self.doUndo(op.children[i], oldSelection, useOldSelection, redoOp.children)
 
@@ -1171,6 +1188,7 @@ proc undo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
   while self.undoOps.len > 0:
     let op = self.undoOps.pop
     result = self.doUndo(op, result.get, useOldSelection, self.redoOps).some
+    # self.undoableRevision = op.revision # todo
     if untilCheckpoint.len == 0 or untilCheckpoint in op.checkpoints:
       break
 
@@ -1179,16 +1197,16 @@ proc doRedo(self: TextDocument, op: UndoOp, oldSelection: openArray[Selection], 
   of Delete:
     let text = self.contentString(op.selection)
     result = self.delete([op.selection], op.oldSelection, record=false)
-    undoOps.add UndoOp(kind: Insert, cursor: op.selection.first, text: text, oldSelection: @oldSelection, checkpoints: op.checkpoints)
+    undoOps.add UndoOp(kind: Insert, revision: self.undoableRevision, cursor: op.selection.first, text: text, oldSelection: @oldSelection, checkpoints: op.checkpoints)
 
   of Insert:
     result = self.insert([op.cursor.toSelection], [op.cursor.toSelection], [op.text], record=false)
-    undoOps.add UndoOp(kind: Delete, selection: (op.cursor, result[0].last), oldSelection: @oldSelection, checkpoints: op.checkpoints)
+    undoOps.add UndoOp(kind: Delete, revision: self.undoableRevision, selection: (op.cursor, result[0].last), oldSelection: @oldSelection, checkpoints: op.checkpoints)
 
   of Nested:
     result = op.oldSelection
 
-    var undoOp = UndoOp(kind: Nested, oldSelection: @oldSelection, checkpoints: op.checkpoints)
+    var undoOp = UndoOp(kind: Nested, revision: self.undoableRevision, oldSelection: @oldSelection, checkpoints: op.checkpoints)
     for i in countdown(op.children.high, 0):
       discard self.doRedo(op.children[i], oldSelection, useOldSelection, undoOp.children)
 
@@ -1209,6 +1227,7 @@ proc redo*(self: TextDocument, oldSelection: openArray[Selection], useOldSelecti
   while self.redoOps.len > 0:
     let op = self.redoOps.pop
     result = self.doRedo(op, result.get, useOldSelection, self.undoOps).some
+    # self.undoableRevision = op.revision # todo
     if untilCheckpoint.len == 0 or (self.redoOps.len > 0 and untilCheckpoint in self.redoOps.last.checkpoints):
       break
 

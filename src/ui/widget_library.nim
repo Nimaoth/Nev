@@ -23,10 +23,13 @@ template createHeader*(builder: UINodeBuilder, inRenderHeader: bool, inMode: str
       builder.panel(&{FillX, SizeToContentY, FillBackground, LayoutHorizontal}, backgroundColor = inHeaderColor):
         bar = currentNode
 
-        let workspaceName = inDocument.workspace.map(wf => " - " & wf.name).get("")
+        let isDirty = inDocument.lastSavedRevision != inDocument.revision
+        let dirtyMarker = if isDirty: "*" else: ""
 
-        let mode = if inMode.len == 0: "-" else: inMode
-        builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = inTextColor, text = " $# - $# $# " % [mode, inDocument.filename, workspaceName])
+        let workspaceName = inDocument.workspace.map(wf => " - " & wf.name).get("")
+        let modeText = if inMode.len == 0: "-" else: inMode
+        let text = " $# - $#$# $# " % [modeText, dirtyMarker, inDocument.filename, workspaceName]
+        builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = inTextColor, text = text)
 
         if leftFunc.isNotNil:
           leftFunc()
