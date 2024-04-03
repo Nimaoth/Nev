@@ -44,8 +44,11 @@ when defined(js):
   proc match*(text: string, regex: Regex, start: int): bool =
     return text.matchLen(regex, start) != -1
 
-  proc re*(text: string): Regex =
-    return Regex(impl: newRegExp(text.cstring, "dg"))
+  proc re*(text: string, ignoreCase: bool = false): Regex =
+    var flags = "dg"
+    if ignoreCase:
+      flags.add "i"
+    return Regex(impl: newRegExp(text.cstring, flags))
 
   proc contains*(text: string, regex: Regex): bool =
     let bounds = text.findBounds(regex, 0)
@@ -65,5 +68,11 @@ iterator findAllBounds*(buf: string, pattern: Regex): tuple[first: int, last: in
     start = bounds.last + 1
 
 proc glob*(pattern: string): Regex =
-  let regexString = globToRegexString(pattern, isDos=false, ignoreCase=true)
-  return re(regexString)
+  when defined(js):
+    # js doesn't support (?s) syntax in the regex, but we can pass a flag
+    # to the regex itself to make it case insensitive
+    let regexString = globToRegexString(pattern, isDos=false, ignoreCase=false)
+    return re(regexString, ignoreCase=true)
+  else:
+    let regexString = globToRegexString(pattern, isDos=false, ignoreCase=true)
+    return re(regexString)
