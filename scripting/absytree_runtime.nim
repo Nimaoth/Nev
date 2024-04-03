@@ -86,6 +86,9 @@ template isTextEditor*(editorId: EditorId, injected: untyped): bool =
 template isModelEditor*(editorId: EditorId, injected: untyped): bool =
   (scriptIsModelEditor(editorId) and ((let injected {.inject.} = ModelDocumentEditor(id: editorId); true)))
 
+template isSelectorPopup*(editorId: EditorId, injected: untyped): bool =
+  (scriptIsSelectorPopup(editorId) and ((let injected {.inject.} = SelectorPopup(id: editorId); true)))
+
 proc handleCallbackImpl*(id: int, args: JsonNode): bool =
   # infof"handleCallbackImpl {id}, {args}"
   if voidCallbacks.contains(id):

@@ -208,6 +208,11 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
   addCommand "popup.selector", "<DOWN>", "next"
   addCommand "popup.selector", "<C-u>", "prev-x"
   addCommand "popup.selector", "<C-d>", "next-x"
+  addCommandBlock "popup.selector", "<C-x>":
+    if getActivePopup().isSelectorPopup(popup):
+      let item = popup.getSelectedItem()
+      closeEditor(item["path"].getStr)
+      popup.updateCompletions()
 
   # addCommand "editor.text", "<C-SPACE>ts", "reload-treesitter"
 
