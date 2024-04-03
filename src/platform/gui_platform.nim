@@ -29,7 +29,7 @@ type
 
     lastFontSize: float
     mLineHeight: float
-    mLineDistance: float = 2
+    mLineDistance: float = 1
     mCharWidth: float
     mCharGap: float
 
@@ -68,7 +68,7 @@ method init*(self: GuiPlatform) =
   self.builder.useInvalidation = true
 
   # self.window.centerWindowOnMonitor(1)
-  # self.window.maximized = true
+  self.window.maximized = true
   makeContextCurrent(self.window)
   loadExtensions()
 
@@ -250,14 +250,14 @@ method sizeChanged*(self: GuiPlatform): bool =
 
 proc updateCharWidth*(self: GuiPlatform) =
   let font = self.getFont(self.ctx.font, self.ctx.fontSize)
-  let bounds = font.typeset(repeat("#", 100)).layoutBounds()
-  let boundsSingle = font.typeset("#").layoutBounds()
+  let bounds = font.typeset(repeat("#_", 50)).layoutBounds()
+  let boundsSingle = font.typeset("#_").layoutBounds()
   self.mCharWidth = bounds.x / 100
-  self.mCharGap = (bounds.x / 100) - boundsSingle.x
+  self.mCharGap = (bounds.x / 100) - boundsSingle.x / 2
   self.mLineHeight = bounds.y
 
-  self.builder.charWidth = bounds.x / 100.0
-  self.builder.lineHeight = bounds.y - 3
+  self.builder.charWidth = self.mCharWidth
+  self.builder.lineHeight = self.mLineHeight
   self.builder.lineGap = self.mLineDistance
 
 method `fontSize=`*(self: GuiPlatform, fontSize: float) =
@@ -494,7 +494,7 @@ proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offse
       if bounds.y == 0:
         bounds.y = builder.textHeight
 
-      var image = newImage(bounds.x.int, bounds.y.int)
+      var image = newImage(bounds.x.ceil.int, bounds.y.ceil.int + 1)
       image.fillText(arrangement)
       platform.boxy.addImage(imageId, image, false)
 
