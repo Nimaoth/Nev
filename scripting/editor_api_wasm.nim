@@ -456,6 +456,24 @@ proc getHiddenEditors*(): seq[EditorId] =
   result = parseJson($res).jsonTo(typeof(result))
 
 
+proc editor_closeView_void_App_int_bool_wasm(arg: cstring): cstring {.importc.}
+proc closeView*(index: int; keepHidden: bool = true) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when int is JsonNode:
+      index
+    else:
+      index.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      keepHidden
+    else:
+      keepHidden.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_closeView_void_App_int_bool_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_closeCurrentView_void_App_bool_wasm(arg: cstring): cstring {.importc.}
 proc closeCurrentView*(keepHidden: bool = true) =
   var argsJson = newJArray()
@@ -479,6 +497,19 @@ proc closeOtherViews*(keepHidden: bool = true) =
       keepHidden.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_closeOtherViews_void_App_bool_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_closeEditor_void_App_string_wasm(arg: cstring): cstring {.importc.}
+proc closeEditor*(path: string) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      path
+    else:
+      path.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_closeEditor_void_App_string_wasm(
       argsJsonString.cstring)
 
 
@@ -974,6 +1005,21 @@ proc getEditor*(index: int): EditorId =
       index.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_getEditor_EditorId_int_wasm(argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_scriptIsSelectorPopup_bool_EditorId_wasm(arg: cstring): cstring {.
+    importc.}
+proc scriptIsSelectorPopup*(editorId: EditorId): bool =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when EditorId is JsonNode:
+      editorId
+    else:
+      editorId.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_scriptIsSelectorPopup_bool_EditorId_wasm(
+      argsJsonString.cstring)
   result = parseJson($res).jsonTo(typeof(result))
 
 
