@@ -529,7 +529,12 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
       var wrapLine = wrapLines
       var i = i
-      var backgroundColor = backgroundColor
+
+      let backgroundColor = if cursorLine == i:
+        backgroundColor.lighten(0.05)
+      else:
+        backgroundColor
+
       if showContextLines and (indexFromTop <= indentLevel and not self.document.shouldIgnoreAsContextLine(i)):
         contextLineTarget = max(contextLineTarget, i)
 
