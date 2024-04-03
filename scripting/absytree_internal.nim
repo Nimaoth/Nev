@@ -391,6 +391,12 @@ proc editor_text_runTripleClickCommand_void_TextDocumentEditor_impl*(
 proc editor_text_runDragCommand_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
+proc popup_selector_updateCompletions_void_SelectorPopup_impl*(
+    self: SelectorPopup) =
+  discard
+proc popup_selector_getSelectedItem_JsonNode_SelectorPopup_impl*(
+    self: SelectorPopup): JsonNode =
+  discard
 proc popup_selector_accept_void_SelectorPopup_impl*(self: SelectorPopup) =
   discard
 proc popup_selector_cancel_void_SelectorPopup_impl*(self: SelectorPopup) =
@@ -663,9 +669,13 @@ proc editor_getOpenEditors_seq_EditorId_App_impl*(): seq[EditorId] =
   discard
 proc editor_getHiddenEditors_seq_EditorId_App_impl*(): seq[EditorId] =
   discard
+proc editor_closeView_void_App_int_bool_impl*(index: int; keepHidden: bool = true) =
+  discard
 proc editor_closeCurrentView_void_App_bool_impl*(keepHidden: bool = true) =
   discard
 proc editor_closeOtherViews_void_App_bool_impl*(keepHidden: bool = true) =
+  discard
+proc editor_closeEditor_void_App_string_impl*(path: string) =
   discard
 proc editor_moveCurrentViewToTop_void_App_impl*() =
   discard
@@ -758,6 +768,8 @@ proc editor_logRootNode_void_App_impl*() =
 proc editor_sourceCurrentDocument_void_App_impl*() =
   discard
 proc editor_getEditor_EditorId_int_impl*(index: int): EditorId =
+  discard
+proc editor_scriptIsSelectorPopup_bool_EditorId_impl*(editorId: EditorId): bool =
   discard
 proc editor_scriptIsTextEditor_bool_EditorId_impl*(editorId: EditorId): bool =
   discard

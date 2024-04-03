@@ -10,6 +10,10 @@ else:
 
 ## This file is auto generated, don't modify.
 
+proc updateCompletions*(self: SelectorPopup) =
+  popup_selector_updateCompletions_void_SelectorPopup_impl(self)
+proc getSelectedItem*(self: SelectorPopup): JsonNode =
+  popup_selector_getSelectedItem_JsonNode_SelectorPopup_impl(self)
 proc accept*(self: SelectorPopup) =
   popup_selector_accept_void_SelectorPopup_impl(self)
 proc cancel*(self: SelectorPopup) =

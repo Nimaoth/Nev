@@ -297,6 +297,7 @@ proc invokeCallback*(self: App, context: string, args: JsonNode): bool =
     return false
 
 proc invokeAnyCallback*(self: App, context: string, args: JsonNode): JsonNode =
+  # debugf"invokeAnyCallback {context}: {args}"
   if self.callbacks.contains(context):
     let id = self.callbacks[context]
     try:
@@ -614,6 +615,17 @@ type FileSelectorItem* = ref object of SelectorItem
 method changed*(self: FileSelectorItem, other: SelectorItem): bool =
   let other = other.FileSelectorItem
   return self.path != other.path
+
+method itemToJson*(self: FileSelectorItem): JsonNode = %*{
+    "score": self.score,
+    "path": self.path,
+    "workspace": if self.workspaceFolder.getSome(workspace):
+        workspace.id.toJson
+      else:
+        newJNull()
+  }
+
+method itemToJson*(self: ThemeSelectorItem): JsonNode = self[].toJson
 
 method changed*(self: ThemeSelectorItem, other: SelectorItem): bool =
   let other = other.ThemeSelectorItem
@@ -1298,10 +1310,32 @@ proc getHiddenEditors*(self: App): seq[EditorId] {.expose("editor").} =
   for view in self.hiddenViews:
     result.add view.editor.id
 
-proc closeCurrentView*(self: App, keepHidden: bool = true) {.expose("editor").} =
+proc closeEditor*(self: App, editor: DocumentEditor) =
+  let document = editor.getDocument()
+
+  self.editors.del(editor.id)
+  editor.deinit()
+
+  for i, view in self.hiddenViews:
+    if view.editor == editor:
+      self.hiddenViews.removeShift(i)
+      break
+
+  var hasAnotherEditor = false
+  for id, editor in self.editors.pairs:
+    if editor.getDocument() == document:
+      hasAnotherEditor = true
+      break
+
+  if not hasAnotherEditor:
+    log lvlInfo, fmt"Document has no other editors, closing it."
+    document.deinit()
+    self.documents.del(document)
+
+proc closeView*(self: App, index: int, keepHidden: bool = true) {.expose("editor").} =
   ## Closes the current view. If `keepHidden` is true the view is not closed but hidden instead.
-  let view = self.views[self.currentView]
-  self.views.delete self.currentView
+  let view = self.views[index]
+  self.views.delete index
 
   if self.views.len == 0:
     if self.hiddenViews.len > 0:
@@ -1313,11 +1347,13 @@ proc closeCurrentView*(self: App, keepHidden: bool = true) {.expose("editor").} 
   if keepHidden:
     self.hiddenViews.add view
   else:
-    # TODO: close document
-    discard
+    self.closeEditor(view.editor)
 
-  self.currentView = self.currentView.clamp(0, self.views.len - 1)
   self.platform.requestRender()
+
+proc closeCurrentView*(self: App, keepHidden: bool = true) {.expose("editor").} =
+  self.closeView(self.currentView, keepHidden)
+  self.currentView = self.currentView.clamp(0, self.views.len - 1)
 
 proc closeOtherViews*(self: App, keepHidden: bool = true) {.expose("editor").} =
   ## Closes all views except for the current one. If `keepHidden` is true the views are not closed but hidden instead.
@@ -1329,13 +1365,31 @@ proc closeOtherViews*(self: App, keepHidden: bool = true) {.expose("editor").} =
       if keepHidden:
         self.hiddenViews.add view
       else:
-        # TODO: close document
-        discard
+        self.closeEditor(view.editor)
 
   self.views.setLen 1
   self.views[0] = view
   self.currentView = 0
   self.platform.requestRender()
+
+proc closeEditor*(self: App, path: string) {.expose("editor").} =
+  let fullPath = if path.isAbsolute:
+    path.normalizePathUnix
+  else:
+    path.absolutePath.normalizePathUnix
+
+  for i, view in self.views:
+    let document = view.editor.getDocument()
+    if document.isNil:
+      continue
+    if document.filename == fullPath:
+      self.closeView(i, keepHidden=false)
+      return
+
+  for editor in self.editors.values:
+    if editor.getDocument().filename == fullPath:
+      self.closeEditor(editor)
+      break
 
 proc moveCurrentViewToTop*(self: App) {.expose("editor").} =
   if self.views.len > 0:
@@ -1803,6 +1857,8 @@ method changed*(self: TextSymbolSelectorItem, other: SelectorItem): bool =
   let other = other.TextSymbolSelectorItem
   return self.symbol != other.symbol
 
+method itemToJson*(self: TextSymbolSelectorItem): JsonNode = self[].toJson
+
 proc openSymbolsPopup*(self: App, symbols: seq[Symbol], handleItemSelected: proc(symbol: Symbol), handleItemConfirmed: proc(symbol: Symbol), handleCanceled: proc()) =
   defer:
     self.platform.requestRender()
@@ -2174,6 +2230,13 @@ proc getEditor*(index: int): EditorId {.expose("editor").} =
     return gEditor.views[index].editor.id
 
   return EditorId(-1)
+
+proc scriptIsSelectorPopup*(editorId: EditorId): bool {.expose("editor").} =
+  if gEditor.isNil:
+    return false
+  if gEditor.getPopupForId(editorId).getSome(popup):
+    return popup of SelectorPopup
+  return false
 
 proc scriptIsTextEditor*(editorId: EditorId): bool {.expose("editor").} =
   if gEditor.isNil:

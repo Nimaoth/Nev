@@ -83,12 +83,16 @@ proc getOpenEditors*(): seq[EditorId] =
   editor_getOpenEditors_seq_EditorId_App_impl()
 proc getHiddenEditors*(): seq[EditorId] =
   editor_getHiddenEditors_seq_EditorId_App_impl()
-proc closeCurrentView*(keepHidden: bool = true) =
+proc closeView*(index: int; keepHidden: bool = true) =
   ## Closes the current view. If `keepHidden` is true the view is not closed but hidden instead.
+  editor_closeView_void_App_int_bool_impl(index, keepHidden)
+proc closeCurrentView*(keepHidden: bool = true) =
   editor_closeCurrentView_void_App_bool_impl(keepHidden)
 proc closeOtherViews*(keepHidden: bool = true) =
   ## Closes all views except for the current one. If `keepHidden` is true the views are not closed but hidden instead.
   editor_closeOtherViews_void_App_bool_impl(keepHidden)
+proc closeEditor*(path: string) =
+  editor_closeEditor_void_App_string_impl(path)
 proc moveCurrentViewToTop*() =
   editor_moveCurrentViewToTop_void_App_impl()
 proc nextView*() =
@@ -190,6 +194,8 @@ proc sourceCurrentDocument*() =
   editor_sourceCurrentDocument_void_App_impl()
 proc getEditor*(index: int): EditorId =
   editor_getEditor_EditorId_int_impl(index)
+proc scriptIsSelectorPopup*(editorId: EditorId): bool =
+  editor_scriptIsSelectorPopup_bool_EditorId_impl(editorId)
 proc scriptIsTextEditor*(editorId: EditorId): bool =
   editor_scriptIsTextEditor_bool_EditorId_impl(editorId)
 proc scriptIsAstEditor*(editorId: EditorId): bool =
