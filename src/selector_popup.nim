@@ -59,6 +59,7 @@ proc getCompletionMatches*(self: SelectorItem, pattern: string, text: string, co
   return self.completionMatchPositions
 
 method changed*(self: SelectorItem, other: SelectorItem): bool {.base.} = discard
+method itemToJson*(self: SelectorItem): JsonNode {.base.} = self.toJson
 
 method changed*(self: NamedSelectorItem, other: SelectorItem): bool =
   let other = other.NamedSelectorItem
@@ -134,18 +135,6 @@ proc updateCompletionsAsyncIter(self: SelectorPopup): Future[void] {.async.} =
   # self.setCompletions @[]
   await self.getCompletionsAsyncIter(self, text)
 
-proc updateCompletions*(self: SelectorPopup) =
-  let text = self.textEditor.document.content.join
-  if not self.getCompletions.isNil:
-    let newCompletions = self.getCompletions(self, text)
-    self.setCompletions(newCompletions)
-  elif not self.getCompletionsAsync.isNil:
-    asyncCheck self.updateCompletionsAsync()
-  elif not self.getCompletionsAsyncIter.isNil:
-    asyncCheck self.updateCompletionsAsyncIter()
-  else:
-    log(lvlError, fmt"No completion provider set on popup {self.id}")
-
 proc getItemAtPixelPosition(self: SelectorPopup, posWindow: Vec2): Option[SelectorItem] =
   result = SelectorItem.none
   for (index, rect) in self.lastItems:
@@ -172,6 +161,24 @@ proc toJson*(self: api.SelectorPopup, opt = initToJsonOptions()): JsonNode =
 
 proc fromJsonHook*(t: var api.SelectorPopup, jsonNode: JsonNode) =
   t.id = api.EditorId(jsonNode["id"].jsonTo(int))
+
+proc updateCompletions*(self: SelectorPopup) {.expose("popup.selector").} =
+  let text = self.textEditor.document.content.join
+  if not self.getCompletions.isNil:
+    let newCompletions = self.getCompletions(self, text)
+    self.setCompletions(newCompletions)
+  elif not self.getCompletionsAsync.isNil:
+    asyncCheck self.updateCompletionsAsync()
+  elif not self.getCompletionsAsyncIter.isNil:
+    asyncCheck self.updateCompletionsAsyncIter()
+  else:
+    log(lvlError, fmt"No completion provider set on popup {self.id}")
+
+proc getSelectedItem*(self: SelectorPopup): JsonNode {.expose("popup.selector").} =
+  if self.selected < self.completions.len:
+    let selected = self.completions[self.completions.high - self.selected]
+    return selected.itemToJson
+  return newJNull()
 
 proc accept*(self: SelectorPopup) {.expose("popup.selector").} =
   if not self.handleItemConfirmed.isNil and self.selected < self.completions.len:
@@ -221,6 +228,10 @@ proc handleAction*(self: SelectorPopup, action: string, arg: string): EventRespo
   args.add api.SelectorPopup(id: self.id).toJson
   for a in newStringStream(arg).parseJsonFragments():
     args.add a
+
+  if self.app.invokeAnyCallback(action, args).isNotNil:
+    return Handled
+
   if dispatch(action, args).isSome:
     return Handled
 
