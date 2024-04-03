@@ -8,6 +8,9 @@ type Document* = ref object of RootObj
   isBackedByFile*: bool = false
   filename*: string
   workspace*: Option[WorkspaceFolder]   ## The workspace this document belongs to
+  revision*: int
+  undoableRevision*: int
+  lastSavedRevision*: int               ## Undobale revision at the time we saved the last time
 
 method `$`*(document: Document): string {.base.} = return ""
 method save*(self: Document, filename: string = "", app: bool = false) {.base.} = discard
