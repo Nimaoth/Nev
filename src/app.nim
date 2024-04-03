@@ -8,7 +8,10 @@ import ast/[model, project]
 import config_provider, app_interface
 import text/language/language_server_base, language_server_absytree_commands
 import input, events, document, document_editor, popup, dispatch_tables, theme, clipboard, app_options
-import text/[custom_treesitter, diff_git]
+import text/[custom_treesitter]
+
+when not defined(js):
+  import text/diff_git
 
 when not defined(js):
   import scripting/scripting_nim
@@ -1273,6 +1276,12 @@ proc help*(self: App, about: string = "") {.expose("editor").} =
 
 proc changeFontSize*(self: App, amount: float32) {.expose("editor").} =
   self.platform.fontSize = self.platform.fontSize + amount.float
+  log lvlInfo, fmt"current font size: {self.platform.fontSize}"
+  self.platform.requestRender(true)
+
+proc changeLineDistance*(self: App, amount: float32) {.expose("editor").} =
+  self.platform.lineDistance = self.platform.lineDistance + amount.float
+  log lvlInfo, fmt"current line distance: {self.platform.lineDistance}"
   self.platform.requestRender(true)
 
 proc platformTotalLineHeight*(self: App): float32 {.expose("editor").} =
