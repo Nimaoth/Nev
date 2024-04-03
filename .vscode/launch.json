@@ -9,7 +9,7 @@
             "request": "launch",
             "name": "Debug Nim Project",
             "program": "${workspaceRoot}/ast.exe",
-            "args": [],
+            "args": ["-n"],
             "cwd": "${workspaceRoot}",
             "terminal": "console"
         },
