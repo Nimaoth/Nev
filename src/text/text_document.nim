@@ -77,6 +77,7 @@ type TextDocument* = ref object of Document
   configProvider: ConfigProvider
   languageConfig*: Option[TextLanguageConfig]
   indentStyle*: IndentStyle
+  createLanguageServer*: bool = true
 
   undoOps*: seq[UndoOp]
   redoOps*: seq[UndoOp]
@@ -532,10 +533,7 @@ proc initTreesitter*(self: TextDocument): Future[void] {.async.} =
 
   self.styledTextCache.clear()
 
-  let languageId = if getLanguageForFile(self.filename).getSome(languageId):
-    languageId
-  else:
-    return
+  let languageId = self.languageId
 
   let config = self.configProvider.getValue("editor.text.treesitter." & languageId, newJObject())
   var language = await loadLanguage(languageId, config)
@@ -595,12 +593,12 @@ proc newTextDocument*(
 
   self.indentStyle = IndentStyle(kind: Spaces, spaces: 2)
 
-  asyncCheck self.initTreesitter()
-
   if language.getSome(language):
     self.languageId = language
   elif getLanguageForFile(filename).getSome(language):
     self.languageId = language
+
+  asyncCheck self.initTreesitter()
 
   self.languageServer = languageServer
   if self.languageServer.getSome(ls):
@@ -712,6 +710,9 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
 
   if self.languageServer.isSome:
     return self.languageServer
+
+  if not self.createLanguageServer:
+    return LanguageServer.none
 
   let url = self.configProvider.getValue("editor.text.languages-server.url", "")
   let port = self.configProvider.getValue("editor.text.languages-server.port", 0)
