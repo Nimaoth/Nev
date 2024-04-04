@@ -1,4 +1,4 @@
-import std/[macros, genasts]
+import std/[macros, genasts, strformat]
 import util
 
 {.experimental: "caseStmtMacros".}
@@ -90,31 +90,39 @@ proc getDocumentation*(def: NimNode): Option[NimNode] =
   else:
     NimNode.none
 
-macro defineBitFlag*(body: untyped): untyped =
+macro defineBitFlagSized*(typ: typed, body: untyped): untyped =
   let flagName = body[0][0].typeName
   let flagsName = (flagName.repr & "s").ident
 
-  result = genAst(body, flagName, flagsName):
-    body
-    type flagsName* = distinct uint32
+  let values = body[0][0][2]
 
-    func contains*(flags: flagsName, flag: flagName): bool {.inline.} = (flags.uint32 and (1.uint32 shl flag.uint32)) != 0
-    func all*(flags: flagsName, expected: flagsName): bool {.inline.} = (flags.uint32 and expected.uint32) == expected.uint32
-    func any*(flags: flagsName, expected: flagsName): bool {.inline.} = (flags.uint32 and expected.uint32) != 0
+  let flagsMax = typ.getSize * 8
+  let flagsCount = values.len - 1
+
+  if flagsCount > flagsMax:
+    error(fmt"Too many flags ({flagsCount}), max is {flagsMax}, use bigger underlying type", body)
+
+  result = genAst(body, flagName, flagsName, typ):
+    body
+    type flagsName* = distinct typ
+
+    func contains*(flags: flagsName, flag: flagName): bool {.inline.} = (flags.typ and (1.typ shl flag.typ)) != 0
+    func all*(flags: flagsName, expected: flagsName): bool {.inline.} = (flags.typ and expected.typ) == expected.typ
+    func any*(flags: flagsName, expected: flagsName): bool {.inline.} = (flags.typ and expected.typ) != 0
     func incl*(flags: var flagsName, flag: flagName) {.inline.} =
-      flags = (flags.uint32 or (1.uint32 shl flag.uint32)).flagsName
+      flags = (flags.typ or (1.typ shl flag.typ)).flagsName
     func excl*(flags: var flagsName, flag: flagName) {.inline.} =
-      flags = (flags.uint32 and not (1.uint32 shl flag.uint32)).flagsName
-    func `-`*(a: flagsName, b: flagsName): flagsName {.inline.} = (a.uint32 and not b.uint32).flagsName
-    func `-`*(a: flagsName, b: flagName): flagsName {.inline.} = (a.uint32 and not (1.uint32 shl b.uint32)).flagsName
-    func `+`*(a: flagsName, b: flagsName): flagsName {.inline.} = (a.uint32 or b.uint32).flagsName
-    func `+`*(a: flagsName, b: flagName): flagsName {.inline.} = (a.uint32 or (1.uint32 shl b.uint32)).flagsName
+      flags = (flags.typ and not (1.typ shl flag.typ)).flagsName
+    func `-`*(a: flagsName, b: flagsName): flagsName {.inline.} = (a.typ and not b.typ).flagsName
+    func `-`*(a: flagsName, b: flagName): flagsName {.inline.} = (a.typ and not (1.typ shl b.typ)).flagsName
+    func `+`*(a: flagsName, b: flagsName): flagsName {.inline.} = (a.typ or b.typ).flagsName
+    func `+`*(a: flagsName, b: flagName): flagsName {.inline.} = (a.typ or (1.typ shl b.typ)).flagsName
 
     func `==`*(a, b: flagsName): bool {.borrow.}
 
     func `??`*(a: bool, b: flagName): flagsName {.inline.} =
       if a:
-        (1.uint32 shl b.uint32).flagsName
+        (1.typ shl b.typ).flagsName
       else:
         0.flagsName
 
@@ -123,12 +131,12 @@ macro defineBitFlag*(body: untyped): untyped =
       for i in low(flagName)..high(flagName):
         if i in flags:
           res.incl i
-      return genAst(res2 = res.uint32):
+      return genAst(res2 = res.typ):
         res2.flagsName
 
     iterator flags*(self: flagsName): flagName =
       for v in flagName.low..flagName.high:
-        if (self.uint32 and (1.uint32 shl v.uint32)) != 0:
+        if (self.typ and (1.typ shl v.typ)) != 0:
           yield v
 
     proc `$`*(self: flagsName): string =
@@ -139,3 +147,6 @@ macro defineBitFlag*(body: untyped): untyped =
         res2.add $flag
       res2.add "}"
       return res2
+
+template defineBitFlag*(body: untyped): untyped =
+  defineBitFlagSized(uint32, body)
