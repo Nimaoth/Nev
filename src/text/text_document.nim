@@ -6,7 +6,8 @@ import misc/[id, util, event, custom_logger, custom_async, custom_unicode, myjso
 import platform/[filesystem]
 import language/[languages, language_server_base]
 import workspaces/[workspace]
-import document, document_editor, custom_treesitter, indent, text_language_config, config_provider
+import document, document_editor, custom_treesitter, indent, text_language_config, config_provider, theme
+import pkg/chroma
 
 from language/lsp_types as lsp_types import nil
 
@@ -47,6 +48,8 @@ type StyledText* = object
   opacity*: Option[float]
   joinNext*: bool
   textRange*: Option[tuple[startOffset: int, endOffset: int, startIndex: RuneIndex, endIndex: RuneIndex]]
+  underline*: bool
+  underlineColor*: Color
 
 type StyledLine* = ref object
   index*: int
@@ -94,6 +97,7 @@ type TextDocument* = ref object of Document
 
   styledTextCache: Table[int, StyledLine]
 
+  diagnosticsPerLine*: Table[int, seq[int]]
   currentDiagnostics*: seq[Diagnostic]
   onDiagnosticsUpdated*: Event[void]
 
@@ -357,6 +361,14 @@ proc overrideStyle*(line: var StyledLine, first: RuneIndex, last: RuneIndex, sco
       line.parts[i].priority = priority
     index += line.parts[i].text.runeLen
 
+proc overrideUnderline*(line: var StyledLine, first: RuneIndex, last: RuneIndex, underline: bool, color: Color) =
+  var index = 0.RuneIndex
+  for i in 0..line.parts.high:
+    if index >= first and index + line.parts[i].text.runeLen <= last:
+      line.parts[i].underline = underline
+      line.parts[i].underlineColor = color
+    index += line.parts[i].text.runeLen
+
 proc overrideStyleAndText*(line: var StyledLine, first: RuneIndex, text: string, scope: string, priority: int, opacity: Option[float] = float.none, joinNext: bool = false) =
   var index = 0.RuneIndex
   for i in 0..line.parts.high:
@@ -374,6 +386,9 @@ proc overrideStyleAndText*(line: var StyledLine, first: RuneIndex, text: string,
 
 proc overrideStyle*(self: TextDocument, line: var StyledLine, first: int, last: int, scope: string, priority: int) =
   line.overrideStyle(self.lines[line.index].toOpenArray.runeIndex(first, returnLen=true), self.lines[line.index].toOpenArray.runeIndex(last, returnLen=true), scope, priority)
+
+proc overrideUnderline*(self: TextDocument, line: var StyledLine, first: int, last: int, underline: bool, color: Color) =
+  line.overrideUnderline(self.lines[line.index].toOpenArray.runeIndex(first, returnLen=true), self.lines[line.index].toOpenArray.runeIndex(last, returnLen=true), underline, color)
 
 proc overrideStyleAndText*(self: TextDocument, line: var StyledLine, first: int, text: string, scope: string, priority: int, opacity: Option[float] = float.none, joinNext: bool = false) =
   line.overrideStyleAndText(self.lines[line.index].toOpenArray.runeIndex(first, returnLen=true), text, scope, priority, opacity, joinNext)
@@ -519,6 +534,37 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
         result.splitAt(self.lines[i].toOpenArray.runeIndex(s.last.column, returnLen=true))
       for s in bounds:
         result.overrideStyleAndText(self.lines[i].toOpenArray.runeIndex(s.first.column, returnLen=true), ch.repeat(s.last.column - s.first.column), "comment", 0, opacity=opacity.some)
+
+    # diagnostics
+    if self.diagnosticsPerLine.contains(i):
+      let indices {.cursor.} = self.diagnosticsPerLine[i]
+      for diagnosticIndex in indices:
+        let diagnostic {.cursor.} = self.currentDiagnostics[diagnosticIndex]
+
+        let color = if gTheme.isNotNil:
+          let colorName = if diagnostic.severity.getSome(severity):
+            case severity
+            of Error: "editorError.foreground"
+            of Warning: "editorWarning.foreground"
+            of Information: "editorInfo.foreground"
+            of Hint: "editorHint.foreground"
+          else:
+            "editorHint.foreground"
+
+          gTheme.color(colorName, color(1, 1, 1))
+
+        elif diagnostic.severity.getSome(severity):
+          case severity
+          of Error: color(1, 0, 0)
+          of Warning: color(1, 0.8, 0.2)
+          of Information: color(1, 1, 1)
+          of Hint: color(0.7, 0.7, 0.7)
+        else:
+          color(0.7, 0.7, 0.7)
+
+        result.splitAt(self.lines[i].toOpenArray.runeIndex(diagnostic.selection.first.column, returnLen=true))
+        result.splitAt(self.lines[i].toOpenArray.runeIndex(diagnostic.selection.last.column, returnLen=true))
+        self.overrideUnderline(result, diagnostic.selection.first.column, diagnostic.selection.last.column, true, color)
 
 proc initTreesitter*(self: TextDocument): Future[void] {.async.} =
   if not self.tsParser.isNil:
@@ -742,9 +788,12 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
       let uri = diagnostics.uri.decodeUrl.parseUri
       if uri.path.normalizePathUnix == self.filename:
         self.currentDiagnostics.setLen diagnostics.diagnostics.len
+        self.diagnosticsPerLine.clear()
+
         for i, d in diagnostics.diagnostics:
+          let selection = self.runeSelectionToSelection(((d.`range`.start.line, d.`range`.start.character.RuneIndex), (d.`range`.`end`.line, d.`range`.`end`.character.RuneIndex)))
           self.currentDiagnostics[i] = language_server_base.Diagnostic(
-            selection: self.runeSelectionToSelection(((d.`range`.start.line, d.`range`.start.character.RuneIndex), (d.`range`.`end`.line, d.`range`.`end`.character.RuneIndex))),
+            selection: selection,
             severity: d.severity,
             code: d.code,
             codeDescription: d.codeDescription,
@@ -754,10 +803,17 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
             relatedInformation: d.relatedInformation,
             data: d.data,
           )
+          self.diagnosticsPerLine.mgetOrPut(selection.first.line, @[]).add i
 
+        self.styledTextCache.clear()
         self.onDiagnosticsUpdated.invoke()
 
   return self.languageServer
+
+proc clearDiagnostics*(self: TextDocument) =
+  self.diagnosticsPerLine.clear()
+  self.currentDiagnostics.setLen 0
+  self.styledTextCache.clear()
 
 proc byteOffset*(self: TextDocument, cursor: Cursor): int =
   result = cursor.column

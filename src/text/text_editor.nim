@@ -18,7 +18,6 @@ logCategory "texted"
 createJavascriptPrototype("editor.text")
 
 let searchResultsId = newId()
-let diagnosticsHighlightId = newId()
 let errorNodesHighlightId = newId()
 
 type
@@ -81,7 +80,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   inlayHintsTask: DelayedTask
 
   # line index to sequence of indices into document.currentDiagnostics
-  diagnosticsPerLine*: Table[int, seq[int]]
   showDiagnostic*: bool = false
   currentDiagnosticLine*: int
   currentDiagnostic*: Diagnostic
@@ -995,8 +993,8 @@ proc getNextFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 
 proc getPrevDiagnostic*(self: TextDocumentEditor, cursor: Cursor, severity: int = 0, offset: int = 0, includeAfter: bool = true, wrap: bool = true): Selection {.expose("editor.text").} =
   var i = 0
   for line in countdown(cursor.line, 0):
-    if self.diagnosticsPerLine.contains(line):
-      let diagnosticsOnCurrentLine {.cursor.} = self.diagnosticsPerLine[line]
+    if self.document.diagnosticsPerLine.contains(line):
+      let diagnosticsOnCurrentLine {.cursor.} = self.document.diagnosticsPerLine[line]
       for k in countdown(diagnosticsOnCurrentLine.high, 0):
         let diagnosticIndex = diagnosticsOnCurrentLine[k]
         if diagnosticIndex > self.document.currentDiagnostics.high:
@@ -1026,8 +1024,8 @@ proc getPrevDiagnostic*(self: TextDocumentEditor, cursor: Cursor, severity: int 
 proc getNextDiagnostic*(self: TextDocumentEditor, cursor: Cursor, severity: int = 0, offset: int = 0, includeAfter: bool = true, wrap: bool = true): Selection {.expose("editor.text").} =
   var i = 0
   for line in cursor.line..self.document.lines.high:
-    if self.diagnosticsPerLine.contains(line):
-      for diagnosticIndex in self.diagnosticsPerLine[line]:
+    if self.document.diagnosticsPerLine.contains(line):
+      for diagnosticIndex in self.document.diagnosticsPerLine[line]:
         if diagnosticIndex > self.document.currentDiagnostics.high:
           continue
 
@@ -1948,8 +1946,7 @@ proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
       self.markDirty()
 
 proc clearDiagnostics*(self: TextDocumentEditor) {.expose("editor.text").} =
-  self.clearCustomHighlights(diagnosticsHighlightId)
-  self.diagnosticsPerLine.clear()
+  self.document.clearDiagnostics()
   self.currentDiagnosticLine = -1
   self.markDirty()
 
@@ -1969,8 +1966,8 @@ proc updateInlayHints*(self: TextDocumentEditor) =
 
 proc updateDiagnosticsForCurrent*(self: TextDocumentEditor) {.expose("editor.text").} =
   let line = self.selection.last.line
-  if self.diagnosticsPerLine.contains(line):
-    let diagnostics {.cursor.} = self.diagnosticsPerLine[line]
+  if self.document.diagnosticsPerLine.contains(line):
+    let diagnostics {.cursor.} = self.document.diagnosticsPerLine[line]
     let index = diagnostics[0]
     if index >= self.document.currentDiagnostics.len:
       self.currentDiagnosticLine = -1
@@ -1990,8 +1987,8 @@ proc showDiagnosticsForCurrent*(self: TextDocumentEditor) {.expose("editor.text"
     self.markDirty()
     return
 
-  if self.diagnosticsPerLine.contains(line):
-    let diagnostics {.cursor.} = self.diagnosticsPerLine[line]
+  if self.document.diagnosticsPerLine.contains(line):
+    let diagnostics {.cursor.} = self.document.diagnosticsPerLine[line]
     self.currentDiagnosticLine = line
     let index = diagnostics[0]
     if index >= self.document.currentDiagnostics.len:
@@ -2379,25 +2376,6 @@ proc handleTextDeleted(self: TextDocumentEditor, document: TextDocument, selecti
 
 proc handleDiagnosticsUpdated(self: TextDocumentEditor) =
   # log lvlInfo, fmt"Got diagnostics for {self.document.filename}: {self.document.currentDiagnostics.len}"
-  self.clearCustomHighlights(diagnosticsHighlightId)
-
-  self.diagnosticsPerLine.clear()
-
-  for i, d in self.document.currentDiagnostics:
-    let selection = d.selection
-
-    let colorName = if d.severity.getSome(severity):
-      case severity
-      of Error: "editorError.foreground"
-      of Warning: "editorWarning.foreground"
-      of Information: "editorInfo.foreground"
-      of Hint: "editorHint.foreground"
-    else:
-      "editorHint.foreground"
-
-    self.addCustomHighlight(diagnosticsHighlightId, selection, colorName, color(1, 1, 1, 0.3))
-    self.diagnosticsPerLine.mgetOrPut(selection.first.line, @[]).add i
-
   self.updateDiagnosticsForCurrent()
 
 proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
