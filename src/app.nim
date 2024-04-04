@@ -639,6 +639,7 @@ proc setTheme*(self: App, path: string) =
   log(lvlInfo, fmt"Loading theme {path}")
   if theme.loadFromFile(path).getSome(theme):
     self.theme = theme
+    gTheme = theme
   else:
     log(lvlError, fmt"Failed to load theme {path}")
   self.platform.requestRender()
@@ -818,6 +819,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
   self.documents.add self.logDocument
 
   self.theme = defaultTheme()
+  gTheme = self.theme
   self.currentView = 0
 
   self.options = newJObject()
@@ -1676,16 +1678,19 @@ proc chooseTheme*(self: App) {.expose("editor").} =
   popup.handleItemSelected = proc(item: SelectorItem) =
     if theme.loadFromFile(item.ThemeSelectorItem.path).getSome(theme):
       self.theme = theme
+      gTheme = theme
       self.platform.requestRender(true)
 
   popup.handleItemConfirmed = proc(item: SelectorItem) =
     if theme.loadFromFile(item.ThemeSelectorItem.path).getSome(theme):
       self.theme = theme
+      gTheme = theme
       self.platform.requestRender(true)
 
   popup.handleCanceled = proc() =
     if theme.loadFromFile(originalTheme).getSome(theme):
       self.theme = theme
+      gTheme = theme
       self.platform.requestRender(true)
 
   popup.updateCompletions()
