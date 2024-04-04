@@ -11,7 +11,7 @@ logCategory "ui-node"
 var logInvalidationRects* = false
 var logPanel* = false
 
-defineBitFlag:
+defineBitFlagSized(uint64):
   type UINodeFlag* = enum
     SizeToContentX = 0
     SizeToContentY
@@ -26,6 +26,7 @@ defineBitFlag:
     TextItalic
     TextBold
     TextWrap
+    TextUndercurl
     TextAlignHorizontalLeft
     TextAlignHorizontalCenter
     TextAlignHorizontalRight
@@ -94,6 +95,7 @@ type
     mBackgroundColor: Color
     mBorderColor: Color
     mTextColor: Color
+    mUnderlineColor: Color
 
     pivot*: Vec2
     boundsRaw: Rect       # The target bounds, used for layouting.
@@ -171,6 +173,7 @@ when defined(js):
   func backgroundColor*(node: UINode): Color {.importjs: "#.mBackgroundColor".}
   func borderColor*(node: UINode): Color {.importjs: "#.mBorderColor".}
   func textColor*(node: UINode): Color {.importjs: "#.mTextColor".}
+  func underlineColor*(node: UINode): Color {.importjs: "#.mUnderlineColor".}
   func flags*(node: UINode): UINodeFlags {.importjs: "#.flags".}
 else:
   func id*(node: UINode): lent Id {.inline.} = node.mId
@@ -178,6 +181,7 @@ else:
   func backgroundColor*(node: UINode): Color {.inline.} = node.mBackgroundColor
   func borderColor*(node: UINode): Color {.inline.} = node.mBorderColor
   func textColor*(node: UINode): Color {.inline.} = node.mTextColor
+  func underlineColor*(node: UINode): Color {.inline.} = node.mUnderlineColor
 
   func flags*(node: UINode): UINodeFlags {.inline.} = node.flags
 
@@ -196,6 +200,7 @@ proc textRuneLen*(node: UINode): int = node.mTextRuneLen
 proc `backgroundColor=`*(node: UINode, value: Color) {.inline.} = (let changed = (value != node.mBackgroundColor); node.contentDirty = node.contentDirty or changed; if changed: node.mBackgroundColor = value else: discard)
 proc `borderColor=`*(node: UINode, value: Color)     {.inline.} = (let changed = (value != node.mBorderColor);     node.contentDirty = node.contentDirty or changed; if changed: node.mBorderColor     = value else: discard)
 proc `textColor=`*(node: UINode, value: Color)       {.inline.} = (let changed = (value != node.mTextColor);       node.contentDirty = node.contentDirty or changed; if changed: node.mTextColor       = value else: discard)
+proc `underlineColor=`*(node: UINode, value: Color)  {.inline.} = (let changed = (value != node.mUnderlineColor);  node.contentDirty = node.contentDirty or changed; if changed: node.mUnderlineColor  = value else: discard)
 
 func handlePressed*   (node: UINode): (proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool)              {.inline.} = node.mHandlePressed
 func handleReleased*  (node: UINode): (proc(node: UINode, button: MouseButton, modifiers: set[Modifier], pos: Vec2): bool)              {.inline.} = node.mHandleReleased
@@ -368,6 +373,14 @@ proc setTextColor*(node: UINode, r, g, b: float32, a: float32 = 1) =
   node.mTextColor.b = b
   node.mTextColor.a = a
 
+proc setUnderlineColor*(node: UINode, r, g, b: float32, a: float32 = 1) =
+  if r != node.mUnderlineColor.r or g != node.mUnderlineColor.g or b != node.mUnderlineColor.b or node.mUnderlineColor.a != a:
+    node.contentDirty = true
+  node.mUnderlineColor.r = r
+  node.mUnderlineColor.g = g
+  node.mUnderlineColor.b = b
+  node.mUnderlineColor.a = a
+
 iterator nextSiblings*(node: UINode): (int, UINode) =
   var i = 0
   var current = node.next
@@ -512,6 +525,11 @@ proc returnNode*(builder: UINodeBuilder, node: UINode) =
   node.mTextColor.g = 1
   node.mTextColor.b = 1
   node.mTextColor.a = 1
+
+  node.mUnderlineColor.r = 1
+  node.mUnderlineColor.g = 1
+  node.mUnderlineColor.b = 1
+  node.mUnderlineColor.a = 1
 
   node.mBorderColor.r = 0.5
   node.mBorderColor.g = 0.5
@@ -1218,6 +1236,7 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
   var inBackgroundColor = genAst(): Color.none
   var inBorderColor = genAst(): Color.none
   var inTextColor = genAst(): Color.none
+  var inUnderlineColor = genAst(): Color.none
   var inAdditionalFlags = genAst(): UINodeFlags.none
 
   for i, arg in args:
@@ -1235,6 +1254,8 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
         inBorderColor = genAst(value): some(value)
       of "textColor":
         inTextColor = genAst(value): some(value)
+      of "underlineColor":
+        inUnderlineColor = genAst(value): some(value)
       of "x":
         inX = genAst(value): some(value).maybeFlatten.mapIt(it.float32)
       of "y":
@@ -1258,13 +1279,14 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
       # echo arg.treeRepr
       error("Only <name> = <value> is allowed here.", arg)
 
-  return genAst(builder, inFlags, inText, inX, inY, inW, inH, inPivot, body, inBackgroundColor, inBorderColor, inTextColor, inUserId, inAdditionalFlags):
+  return genAst(builder, inFlags, inText, inX, inY, inW, inH, inPivot, body, inBackgroundColor, inBorderColor, inTextColor, inUnderlineColor, inUserId, inAdditionalFlags):
     var userId = inUserId
     var node = builder.prepareNode(inFlags, inText, inX, inY, inW, inH, inPivot, userId, inAdditionalFlags)
 
     if inBackgroundColor.isSome: node.backgroundColor = inBackgroundColor.get
     if inBorderColor.isSome:     node.borderColor     = inBorderColor.get
     if inTextColor.isSome:       node.textColor       = inTextColor.get
+    if inUnderlineColor.isSome:  node.underlineColor  = inUnderlineColor.get
 
     block:
       let currentNode {.used, inject.} = node
