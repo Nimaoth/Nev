@@ -41,6 +41,7 @@ proc readDir(path: string): Future[DirInfo] {.async.} =
   return info
 
 proc translatePath(path: string): Option[string] =
+  let path = path.decodeUrl
   if path.isAbsolute or path.contains(".."):
     let absolutePath = path.absolutePath.normalizedPath
     if not isAllowed(absolutePath):
