@@ -522,6 +522,9 @@ proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offse
     let pos = vec2(nodePos.x.floor, nodePos.y.floor)
     platform.boxy.drawImage(imageId, pos, node.textColor)
 
+    if TextUndercurl in node.flags:
+      platform.boxy.drawRect(rect(bounds.x, bounds.yh - 2, bounds.w, 2), node.underlineColor)
+
   for _, c in node.children:
     builder.drawNode(platform, c, nodePos, force)
 
