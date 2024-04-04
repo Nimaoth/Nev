@@ -330,7 +330,7 @@ proc doMoveCursorLine(self: TextDocumentEditor, cursor: Cursor, offset: int, wra
     cursor = (self.document.lines.len - 1, cursor.column)
   else:
     cursor.line = line
-    cursor.column = self.targetColumn
+    cursor.column = self.document.visualColumnToCursorColumn(line, self.targetColumn)
   return self.clampCursor(cursor, includeAfter)
 
 proc doMoveCursorHome(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool, includeAfter: bool): Cursor =
@@ -355,8 +355,10 @@ proc doMoveCursorCenter(self: TextDocumentEditor, cursor: Cursor, offset: int, w
   if self.lastRenderedLines.len == 0:
     return cursor
 
-  let line = clamp(self.lastRenderedLines[self.lastRenderedLines.high div 2].index + offset, 0, self.document.lines.high)
-  return (line, self.targetColumn)
+  let r = self.visibleTextRange()
+  let line = clamp((r.first.line + r.last.line) div 2, 0, self.document.lines.len - 1)
+  let column = self.document.visualColumnToCursorColumn(line, self.targetColumn)
+  return (line, column)
 
 proc centerCursor*(self: TextDocumentEditor, cursor: Cursor) =
   if self.disableScrolling:
@@ -639,7 +641,8 @@ proc getContextWithMode(self: TextDocumentEditor, context: string): string {.exp
   return context & "." & $self.currentMode
 
 proc updateTargetColumn*(self: TextDocumentEditor, cursor: SelectionCursor = Last) {.expose("editor.text").} =
-  self.targetColumn = self.getCursor(cursor).column
+  let cursor = self.getCursor(cursor)
+  self.targetColumn = self.document.cursorToVisualColumn(cursor)
 
 proc invertSelection(self: TextDocumentEditor) {.expose("editor.text").} =
   ## Inverts the current selection. Discards all but the last cursor.
@@ -2197,7 +2200,7 @@ proc getStyledText*(self: TextDocumentEditor, i: int): StyledLine =
     if inlayHint.location.line != i:
       continue
 
-    self.document.insertText(result, inlayHint.location.column.RuneIndex + offset, inlayHint.label, "comment")
+    self.document.insertText(result, inlayHint.location.column.RuneIndex + offset, inlayHint.label, "comment", containCursor=true)
     offset += inlayHint.label.runeLen
 
 proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): EventResponse =
