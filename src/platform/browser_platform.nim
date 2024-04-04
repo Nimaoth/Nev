@@ -553,6 +553,13 @@ proc drawNode(builder: UINodeBuilder, platform: BrowserPlatform, element: var El
     elif TextAlignHorizontalRight in node.flags:
       css += "text-align: right;".cstring
 
+    if TextUndercurl in node.flags:
+      # css += "border-bottom: 2px solid ".cstring
+      css += "text-decoration: underline; text-decoration-thickness: 2px; text-decoration-color: ".cstring
+      # css += "text-decoration: underline wavy; text-decoration-color: ".cstring
+      css += node.underlineColor.myToHtmlHex
+      css += ";".cstring
+
     text = node.text.cstring
     updateText = element.getAttribute("data-text") != text
   elif element.hasAttribute("data-text"):
