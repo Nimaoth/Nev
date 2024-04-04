@@ -174,6 +174,10 @@ proc renderLine*(
             for i in countdown(partIndex - 1, 0):
               if line.parts[i].textRange.isSome:
                 startRune = line.parts[i].textRange.get.endIndex
+                if not line.parts[partIndex].inlayContainCursor:
+                  # choose background color of right neighbor
+                  startRune -= 1.RuneCount
+
                 found = true
                 break
 
@@ -299,7 +303,7 @@ proc renderLine*(
 
               if part.textRange.isSome:
                 if selectionLastRune >= part.textRange.get.startIndex and selectionLastRune < part.textRange.get.endIndex:
-                  let node = if selectionLastRune == startRune and previousInlayNode.isNotNil:
+                  let node = if selectionLastRune == startRune and previousInlayNode.isNotNil and line.parts[partIndex - 1].inlayContainCursor:
                     # show cursor on first position of previous inlay
                     previousInlayNode
                   else:

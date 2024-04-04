@@ -50,6 +50,7 @@ type StyledText* = object
   textRange*: Option[tuple[startOffset: int, endOffset: int, startIndex: RuneIndex, endIndex: RuneIndex]]
   underline*: bool
   underlineColor*: Color
+  inlayContainCursor*: bool
 
 type StyledLine* = ref object
   index*: int
@@ -100,6 +101,8 @@ type TextDocument* = ref object of Document
   diagnosticsPerLine*: Table[int, seq[int]]
   currentDiagnostics*: seq[Diagnostic]
   onDiagnosticsUpdated*: Event[void]
+
+proc tabWidth*(self: TextDocument): int
 
 proc nextLineId*(self: TextDocument): int32 =
   result = self.nextLineIdCounter
@@ -316,6 +319,34 @@ proc runeLen*(line: StyledLine): RuneCount =
   for part in line.parts.mitems:
     result += part.text.toOpenArray.runeLen
 
+proc visualColumnToCursorColumn*(self: TextDocument, line: int, visualColumn: int): int =
+  let line {.cursor.} = self.getLine(line)
+  var column = 0
+  let tabWidth = self.tabWidth
+
+  for i, c in line:
+    result = i
+
+    if c == '\t':
+      column = align(column + 1, tabWidth)
+    else:
+      column += 1
+
+    if column > visualColumn:
+      return
+
+  return line.len
+
+proc cursorToVisualColumn*(self: TextDocument, cursor: Cursor): int =
+  let line {.cursor.} = self.getLine(cursor.line)
+  let tabWidth = self.tabWidth
+
+  for i in 0..<min(cursor.column, line.len):
+    if line[i] == '\t':
+      result = align(result + 1, tabWidth)
+    else:
+      result += 1
+
 proc splitPartAt*(line: var StyledLine, partIndex: int, index: RuneIndex) =
   if partIndex < line.parts.len and index != 0.RuneIndex and index != line.parts[partIndex].text.runeLen.RuneIndex:
     var copy = line.parts[partIndex]
@@ -333,12 +364,10 @@ proc splitPartAt*(line: var StyledLine, partIndex: int, index: RuneIndex) =
     line.parts.insert(copy, partIndex + 1)
 
 proc splitAt*(line: var StyledLine, index: RuneIndex) =
-  var index = index
-  var i = 0
-  while i < line.parts.len and index >= line.parts[i].text.runeLen.RuneIndex:
-    index -= line.parts[i].text.runeLen
-    i += 1
-  splitPartAt(line, i, index)
+  for i in 0..line.parts.high:
+    if line.parts[i].textRange.getSome(r) and index > r.startIndex and index < r.endIndex:
+      splitPartAt(line, i, RuneIndex(index - r.startIndex))
+      break
 
 proc splitAt*(self: TextDocument, line: var StyledLine, index: int) =
   line.splitAt(self.lines[line.index].toOpenArray.runeIndex(index, returnLen=true))
@@ -370,19 +399,24 @@ proc overrideUnderline*(line: var StyledLine, first: RuneIndex, last: RuneIndex,
     index += line.parts[i].text.runeLen
 
 proc overrideStyleAndText*(line: var StyledLine, first: RuneIndex, text: string, scope: string, priority: int, opacity: Option[float] = float.none, joinNext: bool = false) =
-  var index = 0.RuneIndex
-  for i in 0..line.parts.high:
-    if index >= first and index + line.parts[i].text.runeLen <= first + text.runeLen and priority < line.parts[i].priority:
-      line.parts[i].scope = scope
-      line.parts[i].scopeC = line.parts[i].scope.cstring
-      line.parts[i].priority = priority
-      line.parts[i].opacity = opacity
+  let textRuneLen = text.runeLen
 
-      let textOverrideFirst: RuneIndex = index - first.RuneCount
-      let textOverrideLast: RuneIndex = index + (line.parts[i].text.runeLen.RuneIndex - first)
-      line.parts[i].text = text[textOverrideFirst..<textOverrideLast]
-      line.parts[i].joinNext = joinNext or line.parts[i].joinNext
-    index += line.parts[i].text.runeLen
+  for i in 0..line.parts.high:
+    if line.parts[i].textRange.getSome(r):
+      let firstInRange = r.startIndex >= first
+      let lastInRange = r.endIndex <= first + textRuneLen
+      let higherPriority = priority < line.parts[i].priority
+
+      if firstInRange and lastInRange and higherPriority:
+        line.parts[i].scope = scope
+        line.parts[i].scopeC = line.parts[i].scope.cstring
+        line.parts[i].priority = priority
+        line.parts[i].opacity = opacity
+
+        let textOverrideFirst: RuneIndex = r.startIndex - first.RuneCount
+        let textOverrideLast: RuneIndex = r.startIndex + (line.parts[i].text.runeLen.RuneIndex - first)
+        line.parts[i].text = text[textOverrideFirst..<textOverrideLast]
+        line.parts[i].joinNext = joinNext or line.parts[i].joinNext
 
 proc overrideStyle*(self: TextDocument, line: var StyledLine, first: int, last: int, scope: string, priority: int) =
   line.overrideStyle(self.lines[line.index].toOpenArray.runeIndex(first, returnLen=true), self.lines[line.index].toOpenArray.runeIndex(last, returnLen=true), scope, priority)
@@ -393,12 +427,20 @@ proc overrideUnderline*(self: TextDocument, line: var StyledLine, first: int, la
 proc overrideStyleAndText*(self: TextDocument, line: var StyledLine, first: int, text: string, scope: string, priority: int, opacity: Option[float] = float.none, joinNext: bool = false) =
   line.overrideStyleAndText(self.lines[line.index].toOpenArray.runeIndex(first, returnLen=true), text, scope, priority, opacity, joinNext)
 
-proc insertText*(self: TextDocument, line: var StyledLine, offset: RuneIndex, text: string, scope: string) =
+proc insertText*(self: TextDocument, line: var StyledLine, offset: RuneIndex, text: string, scope: string, containCursor: bool) =
+  line.splitAt(offset)
+  for i in 0..line.parts.high:
+    if line.parts[i].textRange.getSome(r):
+      if offset == r.endIndex:
+        line.parts.insert(StyledText(text: text, scope: scope, scopeC: scope.cstring, priority: 1000000000, inlayContainCursor: containCursor), i + 1)
+        return
+
+proc insertTextBefore*(self: TextDocument, line: var StyledLine, offset: RuneIndex, text: string, scope: string) =
   line.splitAt(offset)
   var index = 0.RuneIndex
   for i in 0..line.parts.high:
-    if offset == index + line.parts[i].text.runeLen:
-      line.parts.insert(StyledText(text: text, scope: scope, scopeC: scope.cstring, priority: 1000000000), i + 1)
+    if offset == index:
+      line.parts.insert(StyledText(text: text, scope: scope, scopeC: scope.cstring, priority: 1000000000), i)
       return
     index += line.parts[i].text.runeLen
 
@@ -409,6 +451,85 @@ proc getErrorNodesInRange*(self: TextDocument, selection: Selection): seq[Select
   for match in self.errorQuery.matches(self.tsTree.root, tsRange(tsPoint(selection.first.line, 0), tsPoint(selection.last.line, 0))):
     for capture in match.captures:
       result.add capture.node.getRange.toSelection
+
+proc replaceSpaces(self: TextDocument, line: var StyledLine) =
+  # override whitespace
+  let opacity = self.configProvider.getValue("editor.text.whitespace.opacity", 0.4)
+  let ch = self.configProvider.getValue("editor.text.whitespace.char", "·")
+  if opacity <= 0:
+    return
+
+  let pattern = re"[ ]+"
+  let bounds = self.lines[line.index].findAllBounds(line.index, pattern)
+  for s in bounds:
+    line.splitAt(self.lines[line.index].toOpenArray.runeIndex(s.first.column, returnLen=true))
+    line.splitAt(self.lines[line.index].toOpenArray.runeIndex(s.last.column, returnLen=true))
+
+  for s in bounds:
+    let start = self.lines[line.index].toOpenArray.runeIndex(s.first.column, returnLen=true)
+    let text = ch.repeat(s.last.column - s.first.column)
+    line.overrideStyleAndText(start, text, "comment", 0, opacity=opacity.some)
+
+proc replaceTabs(self: TextDocument, line: var StyledLine) =
+  let opacity = self.configProvider.getValue("editor.text.whitespace.opacity", 0.4)
+  let pattern = re"\t"
+  let bounds = self.lines[line.index].findAllBounds(line.index, pattern)
+  for s in bounds:
+    line.splitAt(self.lines[line.index].toOpenArray.runeIndex(s.first.column, returnLen=true))
+    line.splitAt(self.lines[line.index].toOpenArray.runeIndex(s.last.column, returnLen=true))
+
+  if bounds.len == 0:
+    return
+
+  let tabWidth = self.tabWidth
+  var currentOffset = 0
+  var previousEnd = 0
+
+  for s in bounds:
+    currentOffset += s.first.column - previousEnd
+
+    let alignCorrection = currentOffset mod tabWidth
+    let currentTabWidth = tabWidth - alignCorrection
+    let t = "|"
+    let runeIndex = self.lines[line.index].toOpenArray.runeIndex(s.first.column, returnLen=true)
+    line.overrideStyleAndText(runeIndex, t, "comment", 0, opacity=opacity.some)
+    if currentTabWidth > 1:
+      self.insertText(line, runeIndex + 1.RuneCount, " ".repeat(currentTabWidth - 1), "comment", containCursor=false)
+
+    currentOffset += currentTabWidth
+    previousEnd = s.last.column
+
+proc addDiagnosticsUnderline(self: TextDocument, line: var StyledLine) =
+  # diagnostics
+  if self.diagnosticsPerLine.contains(line.index):
+    let indices {.cursor.} = self.diagnosticsPerLine[line.index]
+    for diagnosticIndex in indices:
+      let diagnostic {.cursor.} = self.currentDiagnostics[diagnosticIndex]
+
+      let color = if gTheme.isNotNil:
+        let colorName = if diagnostic.severity.getSome(severity):
+          case severity
+          of Error: "editorError.foreground"
+          of Warning: "editorWarning.foreground"
+          of Information: "editorInfo.foreground"
+          of Hint: "editorHint.foreground"
+        else:
+          "editorHint.foreground"
+
+        gTheme.color(colorName, color(1, 1, 1))
+
+      elif diagnostic.severity.getSome(severity):
+        case severity
+        of Error: color(1, 0, 0)
+        of Warning: color(1, 0.8, 0.2)
+        of Information: color(1, 1, 1)
+        of Hint: color(0.7, 0.7, 0.7)
+      else:
+        color(0.7, 0.7, 0.7)
+
+      line.splitAt(self.lines[line.index].toOpenArray.runeIndex(diagnostic.selection.first.column, returnLen=true))
+      line.splitAt(self.lines[line.index].toOpenArray.runeIndex(diagnostic.selection.last.column, returnLen=true))
+      self.overrideUnderline(line, diagnostic.selection.first.column, diagnostic.selection.last.column, true, color)
 
 proc getStyledText*(self: TextDocument, i: int): StyledLine =
   if self.styledTextCache.contains(i):
@@ -523,48 +644,9 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
 
         overrideStyle(self, result, first, last, $scope, match.pattern)
 
-    # override whitespace
-    let opacity = self.configProvider.getValue("editor.text.whitespace.opacity", 0.4)
-    let ch = self.configProvider.getValue("editor.text.whitespace.char", "·")
-    if opacity > 0:
-      let pattern = re"[ ]+"
-      let bounds = self.lines[i].findAllBounds(i, pattern)
-      for s in bounds:
-        result.splitAt(self.lines[i].toOpenArray.runeIndex(s.first.column, returnLen=true))
-        result.splitAt(self.lines[i].toOpenArray.runeIndex(s.last.column, returnLen=true))
-      for s in bounds:
-        result.overrideStyleAndText(self.lines[i].toOpenArray.runeIndex(s.first.column, returnLen=true), ch.repeat(s.last.column - s.first.column), "comment", 0, opacity=opacity.some)
-
-    # diagnostics
-    if self.diagnosticsPerLine.contains(i):
-      let indices {.cursor.} = self.diagnosticsPerLine[i]
-      for diagnosticIndex in indices:
-        let diagnostic {.cursor.} = self.currentDiagnostics[diagnosticIndex]
-
-        let color = if gTheme.isNotNil:
-          let colorName = if diagnostic.severity.getSome(severity):
-            case severity
-            of Error: "editorError.foreground"
-            of Warning: "editorWarning.foreground"
-            of Information: "editorInfo.foreground"
-            of Hint: "editorHint.foreground"
-          else:
-            "editorHint.foreground"
-
-          gTheme.color(colorName, color(1, 1, 1))
-
-        elif diagnostic.severity.getSome(severity):
-          case severity
-          of Error: color(1, 0, 0)
-          of Warning: color(1, 0.8, 0.2)
-          of Information: color(1, 1, 1)
-          of Hint: color(0.7, 0.7, 0.7)
-        else:
-          color(0.7, 0.7, 0.7)
-
-        result.splitAt(self.lines[i].toOpenArray.runeIndex(diagnostic.selection.first.column, returnLen=true))
-        result.splitAt(self.lines[i].toOpenArray.runeIndex(diagnostic.selection.last.column, returnLen=true))
-        self.overrideUnderline(result, diagnostic.selection.first.column, diagnostic.selection.last.column, true, color)
+    self.replaceSpaces(result)
+    self.replaceTabs(result)
+    self.addDiagnosticsUnderline(result)
 
 proc initTreesitter*(self: TextDocument): Future[void] {.async.} =
   if not self.tsParser.isNil:
