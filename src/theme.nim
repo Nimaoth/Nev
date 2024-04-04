@@ -28,6 +28,8 @@ type
     tokenColors*: Table[string, Style]
     tokenStyleCache: StyleCache
 
+var gTheme*: Theme = nil
+
 proc parseHexVar*(text: string): Color =
   let offset = if text.startsWith "#": 1 else: 0
   if text.len == 6 + offset:
