@@ -64,25 +64,22 @@ proc renderLine*(
   if sizeToContentX:
     flagsInner.incl SizeToContentX
 
-  let hasDiagnostic = self.diagnosticsPerLine.contains(lineNumber) and self.diagnosticsPerLine[lineNumber][0] < self.document.currentDiagnostics.len
+  let hasDiagnostic = self.document.diagnosticsPerLine.contains(lineNumber) and self.document.diagnosticsPerLine[lineNumber][0] < self.document.currentDiagnostics.len
   let diagnosticIndices = if hasDiagnostic:
-    self.diagnosticsPerLine[lineNumber]
+    self.document.diagnosticsPerLine[lineNumber]
   else:
     @[]
   var diagnosticColorName = "editorHint.foreground"
   var diagnosticMessage: string = "■ "
   if hasDiagnostic:
     let diagnostic {.cursor.} = self.document.currentDiagnostics[diagnosticIndices[0]]
-    if cursorLine == lineNumber:
-      diagnosticMessage.add diagnostic.message[0..min(diagnostic.message.high, 300)]
+    let newLineIndex = diagnostic.message.find("\n")
+    let maxIndex = if newLineIndex != -1:
+      newLineIndex
     else:
-      let newLineIndex = diagnostic.message.find("\n")
-      let maxIndex = if newLineIndex != -1:
-        min(newLineIndex - 1, 50)
-      else:
-        50
+      diagnostic.message.len
 
-      diagnosticMessage.add diagnostic.message[0..min(diagnostic.message.high, maxIndex)]
+    diagnosticMessage.add diagnostic.message[0..<maxIndex]
 
     if diagnostic.severity.getSome(severity):
       diagnosticColorName = case severity
@@ -110,6 +107,9 @@ proc renderLine*(
   builder.panel(flagsInner + LayoutVertical + FillBackground, y = y, pivot = pivot, backgroundColor = backgroundColor, userId = newSecondaryId(parentId, lineId)):
     let lineWidth = currentNode.bounds.w
 
+    var lastTextSubLine: UINode = nil
+    var lastTextPartXW: float32 = 0
+
     var subLine: UINode = nil
 
     var start = 0
@@ -123,18 +123,24 @@ proc renderLine*(
 
       builder.panel(flagsInner + LayoutHorizontal):
         subLine = currentNode
+        if lastTextSubLine.isNil or partIndex < line.parts.len:
+          lastTextSubLine = subLine
 
         if lineNumberText.len > 0:
           builder.panel(&{UINodeFlag.FillBackground, FillY}, w = lineNumberTotalWidth, backgroundColor = backgroundColor):
             if subLineIndex == 0:
               builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = lineNumberText, x = lineNumberX, textColor = textColor)
           lastPartXW = lineNumberTotalWidth
+          if partIndex < line.parts.len:
+            lastTextPartXW = lastPartXW
 
         while partIndex < line.parts.len: # inner loop for parts within a wrapped line part
           template part: StyledText = line.parts[partIndex]
 
           let partRuneLen = part.text.runeLen
           let width = (partRuneLen.float * builder.charWidth).ceil
+
+          let underlineColor = part.underlineColor
 
           if wrapLine and not sizeToContentX and subLinePartIndex > 0:
             var wrapWidth = width
@@ -150,6 +156,7 @@ proc renderLine*(
               builder.panel(&{DrawText, FillBackground, SizeToContentX, SizeToContentY}, text = wrapLineEndChar, backgroundColor = backgroundColor, textColor = wrapLineEndColor):
                 defer:
                   lastPartXW = currentNode.xw
+                  lastTextPartXW = lastPartXW
               subLineIndex += 1
               subLinePartIndex = 0
               break
@@ -192,6 +199,7 @@ proc renderLine*(
             addBackgroundAsChildren = false
 
           var partFlags = &{UINodeFlag.FillBackground, SizeToContentX, SizeToContentY, MouseHover}
+          var textFlags = 0.UINodeFlags
 
           # if the entire part is the same background color we can just fill the background and render the text on the part itself
           # otherwise we need to render the background as a separate node and render the text on top of it, as children of the main part node,
@@ -201,13 +209,19 @@ proc renderLine*(
           else:
             partFlags.incl OverlappingChildren
 
+          if part.underline:
+            if addBackgroundAsChildren:
+              textFlags.incl TextUndercurl
+            else:
+              partFlags.incl TextUndercurl
+
           let text = if addBackgroundAsChildren: "" else: part.text
           let textRuneLen = part.text.runeLen.int
 
           let isInlay = part.textRange.isNone
 
           var partNode: UINode
-          builder.panel(partFlags, text = text, backgroundColor = partBackgroundColor, textColor = textColor):
+          builder.panel(partFlags, text = text, backgroundColor = partBackgroundColor, textColor = textColor, underlineColor = underlineColor):
             partNode = currentNode
 
             capture line, partNode, startRune, textRuneLen, isInlay:
@@ -277,7 +291,7 @@ proc renderLine*(
                 inc colorIndex
 
               # Add text on top of background colors
-              builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = part.text, textColor = textColor)
+              builder.panel(&{DrawText, SizeToContentX, SizeToContentY} + textFlags, text = part.text, textColor = textColor, underlineColor = underlineColor)
 
             # cursor
             for curs in cursors:
@@ -308,9 +322,12 @@ proc renderLine*(
             previousInlayNode = nil
 
           lastPartXW = partNode.bounds.xw
+          lastTextPartXW = lastPartXW
           start += part.text.len
           partIndex += 1
           subLinePartIndex += 1
+
+        # endwhile partIndex < line.parts.len:
 
         var insertDiagnosticNow = false
         if hasDiagnostic and partIndex >= line.parts.len:
@@ -318,7 +335,7 @@ proc renderLine*(
           let diagnosticXOffset = 7 * builder.charWidth
           for i in 0..0:
             insertDiagnosticLater = false
-            if diagnosticXOffset + diagnosticMessageWidth > lineWidth - lastPartXW:
+            if cursorLine == lineNumber and diagnosticXOffset + diagnosticMessageWidth > lineWidth - lastPartXW:
               if subLinePartIndex > 0:
                 subLineIndex += 1
                 subLinePartIndex = 0
@@ -386,11 +403,11 @@ proc renderLine*(
     # cursor after latest char
     for curs in cursors:
       if curs == lineOriginal.len:
-        result.cursors.add (subLine, "", rect(lastPartXW, 0, builder.charWidth, builder.textHeight), (line.index, curs))
+        result.cursors.add (lastTextSubLine, "", rect(lastTextPartXW, 0, builder.charWidth, builder.textHeight), (line.index, curs))
 
     # set hover info if the hover location is at the end of this line
     if line.index == self.hoverLocation.line and self.hoverLocation.column == lineOriginal.len:
-      result.hover = (subLine, "", rect(lastPartXW, 0, builder.charWidth, builder.textHeight), self.hoverLocation).some
+      result.hover = (lastTextSubLine, "", rect(lastTextPartXW, 0, builder.charWidth, builder.textHeight), self.hoverLocation).some
 
 proc blendColorRanges(colors: var seq[tuple[first: RuneIndex, last: RuneIndex, color: Color]], ranges: var seq[tuple[first: RuneIndex, last: RuneIndex]], color: Color, inclusive: bool) =
   let inclusiveOffset = if inclusive: 1.RuneCount else: 0.RuneCount
