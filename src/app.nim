@@ -277,10 +277,14 @@ template withScriptContext(self: App, scriptContext: untyped, body: untyped): un
     body
 
 proc registerEditor*(self: App, editor: DocumentEditor): void =
+  let filename = if editor.getDocument().isNotNil: editor.getDocument().filename else: ""
+  log lvlInfo, fmt"registerEditor {editor.id} '{filename}'"
   self.editors[editor.id] = editor
   self.onEditorRegistered.invoke editor
 
 proc unregisterEditor*(self: App, editor: DocumentEditor): void =
+  let filename = if editor.getDocument().isNotNil: editor.getDocument().filename else: ""
+  log lvlInfo, fmt"unregisterEditor {editor.id} '{filename}'"
   self.editors.del(editor.id)
   self.onEditorDeregistered.invoke editor
 
@@ -978,7 +982,8 @@ proc shutdown*(self: App) =
 
   self.saveAppState()
 
-  for editor in self.editors.values:
+  let editors = collect(for e in self.editors.values: e)
+  for editor in editors:
     editor.deinit()
 
   for popup in self.popups:
@@ -1329,8 +1334,8 @@ proc getHiddenEditors*(self: App): seq[EditorId] {.expose("editor").} =
 
 proc closeEditor*(self: App, editor: DocumentEditor) =
   let document = editor.getDocument()
+  log lvlInfo, fmt"closeEditor: '{editor.getDocument().filename}'"
 
-  self.editors.del(editor.id)
   editor.deinit()
 
   for i, view in self.hiddenViews:
@@ -1390,6 +1395,7 @@ proc closeOtherViews*(self: App, keepHidden: bool = true) {.expose("editor").} =
   self.platform.requestRender()
 
 proc closeEditor*(self: App, path: string) {.expose("editor").} =
+  log lvlInfo, fmt"close editor with path: '{path}'"
   let fullPath = if path.isAbsolute:
     path.normalizePathUnix
   else:
@@ -1404,6 +1410,9 @@ proc closeEditor*(self: App, path: string) {.expose("editor").} =
       return
 
   for editor in self.editors.values:
+    echo editor.getDocument().isNil
+    if editor.getDocument().isNil:
+      continue
     if editor.getDocument().filename == fullPath:
       self.closeEditor(editor)
       break
@@ -1924,10 +1933,6 @@ when not defined(js):
 
         let stagedFileContent = getStagedFileContent(fileInfo.path).await
         let changes = getFileChanges(fileInfo.path).await
-        # echo "@["
-        # for c in changes.get:
-        #   echo fmt"  LineMapping(source: ({c.source.first}, {c.source.last}), target: ({c.target.first}, {c.target.last})),"
-        # echo "]"
 
         var document = newTextDocument(self.asConfigProvider, language=document.languageId.some, createLanguageServer = false)
         document.createLanguageServer = false
@@ -1952,21 +1957,19 @@ proc diffActiveEditorAsync*(self: App) {.async.} =
     when defined(js):
       let stagedFileContent = fs.loadApplicationFile("diff.txt")
       let changes = some @[
-        LineMapping(source: (120, 124), target: (120, 120)),
-        LineMapping(source: (132, 137), target: (128, 130)),
-        LineMapping(source: (152, 153), target: (145, 146)),
-        LineMapping(source: (162, 162), target: (155, 157)),
-        LineMapping(source: (169, 169), target: (164, 165)),
-        LineMapping(source: (172, 173), target: (168, 177)),
-      ]
+          LineMapping(source: (0, 1), target: (0, 0)),
+          LineMapping(source: (6, 8), target: (5, 5)),
+          LineMapping(source: (120, 124), target: (117, 117)),
+          LineMapping(source: (132, 137), target: (125, 127)),
+          LineMapping(source: (152, 153), target: (142, 143)),
+          LineMapping(source: (162, 162), target: (152, 154)),
+          LineMapping(source: (180, 184), target: (172, 173)),
+        ]
+
     else:
       let relPath = document.workspace.mapIt(it.getRelativePath(document.filename).await).flatten.get(document.filename)
       let stagedFileContent = getStagedFileContent(relPath).await
       let changes = getFileChanges(relPath).await
-      # echo "@["
-      # for c in changes.get:
-      #   echo fmt"  LineMapping(source: ({c.source.first}, {c.source.last}), target: ({c.target.first}, {c.target.last})),"
-      # echo "]"
 
     var oldDocument = newTextDocument(self.asConfigProvider, language=document.languageId.some, createLanguageServer = false)
     oldDocument.content = stagedFileContent
