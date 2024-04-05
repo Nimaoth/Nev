@@ -880,8 +880,6 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   addSubCommandWithCount "", "move", "k", "vim-move-cursor-line", -1
   addSubCommandWithCount "", "move", "j", "vim-move-cursor-line", 1
-  addSubCommandWithCount "", "move", "gk", "vim-move-cursor-line", -1
-  addSubCommandWithCount "", "move", "gj", "vim-move-cursor-line", 1
 
   # search
   addTextCommandBlock "", "*":
@@ -1214,3 +1212,15 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     editor.selection = editor.getPrevDiagnostic(editor.selection.last, 1).first.toSelection
     editor.scrollToCursor Last
     editor.updateTargetColumn()
+
+  addTextCommandBlock "", "gq":
+    editor.selection = editor.getNextChange(editor.selection.last).first.toSelection
+    editor.scrollToCursor Last
+    editor.updateTargetColumn()
+  addTextCommandBlock "", "gk":
+    editor.selection = editor.getPrevChange(editor.selection.last).first.toSelection
+    editor.scrollToCursor Last
+    editor.updateTargetColumn()
+  addTextCommand "", "gx", "close-diff"
+  addTextCommandBlock "", "<LEADER>ga":
+    diffActiveEditor()
