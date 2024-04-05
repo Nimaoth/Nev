@@ -80,6 +80,7 @@ type Diagnostic* = object
   tags*: seq[lsp_types.DiagnosticTag]
   relatedInformation*: Option[seq[lsp_types.DiagnosticRelatedInformation]]
   data*: Option[JsonNode]
+  removed*: bool = false
 
 var getOrCreateLanguageServer*: proc(languageId: string, filename: string, workspaces: seq[string], languagesServer: Option[(string, int)] = (string, int).none, workspace = WorkspaceFolder.none): Future[Option[LanguageServer]] = nil
 

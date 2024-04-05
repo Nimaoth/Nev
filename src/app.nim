@@ -566,6 +566,7 @@ proc pushPopup*(self: App, popup: Popup) =
 
 proc popPopup*(self: App, popup: Popup) =
   if self.popups.len > 0 and self.popups[self.popups.high] == popup:
+    popup.deinit()
     discard self.popups.pop
   self.platform.requestRender()
 
@@ -1764,7 +1765,7 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
       while i < popup.completions.len:
         defer: inc i
 
-        if cancellationToken.canceled:
+        if cancellationToken.canceled or popup.textEditor.isNil:
           return
 
         let score = if fuzzyMatchSublime:
@@ -1883,6 +1884,9 @@ when not defined(js):
 
     if not popup.updated:
       let fileInfos = getChangedFiles().await
+      if popup.textEditor.isNil:
+        return
+
       for info in fileInfos:
         let name = $info.stagedStatus & $info.unstagedStatus & " " & info.path
         let score = matchPath(name, text)
@@ -1906,12 +1910,10 @@ when not defined(js):
       if fileInfo.unstagedStatus != None:
         let stagedFileContent = getStagedFileContent(fileInfo.path).await
 
-        self.closeOtherViews()
-
         var document = newTextDocument(self.asConfigProvider, language=document.languageId.some)
         document.createLanguageServer = false
         document.content = stagedFileContent
-        var editorStaged = self.createAndAddView(document)
+        editorWorking.TextDocumentEditor.diffDocument = document
 
     else:
       log lvlError, fmt"Unsupported document type"

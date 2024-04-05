@@ -1,4 +1,4 @@
-import std/[strutils, sequtils, strformat, os, tables, options, enumutils]
+import std/[strutils, sequtils, strformat, options]
 import misc/[async_process, custom_async, util, custom_logger]
 import scripting_api
 
@@ -160,6 +160,8 @@ proc getChangedFiles*(): Future[seq[GitFileInfo]] {.async.} =
 
 
 when isMainModule:
+  import std/[os, tables, enumutils]
+
   logger.enableConsoleLogger()
   proc test() {.async.} =
     let files = getChangedFiles().await

@@ -69,13 +69,15 @@ method changed*(self: NamedSelectorItem, other: SelectorItem): bool =
   return self.name != other.name
 
 method deinit*(self: SelectorPopup) =
+  log lvlInfo, "Destroy selector popup"
   if self.cancellationToken.isNotNil:
     self.cancellationToken.cancel()
-  self[] = default(typeof(self[]))
 
   let document = self.textEditor.document
   self.textEditor.deinit()
   document.deinit()
+
+  self[] = default(typeof(self[]))
 
 proc getSearchString*(self: SelectorPopup): string =
   return self.textEditor.document.contentString
@@ -131,6 +133,9 @@ proc setCompletions(self: SelectorPopup, newCompletions: seq[SelectorItem]) =
 proc updateCompletionsAsync(self: SelectorPopup): Future[void] {.async.} =
   let text = self.textEditor.document.content.join
   let newCompletions = await self.getCompletionsAsync(self, text)
+  if self.textEditor.isNil:
+    return
+
   self.setCompletions(newCompletions)
   self.updated = true
 
@@ -191,14 +196,10 @@ proc accept*(self: SelectorPopup) {.expose("popup.selector").} =
     self.handleItemConfirmed self.completions[self.completions.high - self.selected]
   self.app.popPopup(self)
 
-  self.markDirty()
-
 proc cancel*(self: SelectorPopup) {.expose("popup.selector").} =
   if self.handleCanceled != nil:
     self.handleCanceled()
   self.app.popPopup(self)
-
-  self.markDirty()
 
 proc prev*(self: SelectorPopup) {.expose("popup.selector").} =
   self.selected = if self.completions.len == 0:
