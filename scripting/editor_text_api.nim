@@ -397,3 +397,5 @@ proc runTripleClickCommand*(self: TextDocumentEditor) =
   editor_text_runTripleClickCommand_void_TextDocumentEditor_impl(self)
 proc runDragCommand*(self: TextDocumentEditor) =
   editor_text_runDragCommand_void_TextDocumentEditor_impl(self)
+proc updateDiff*(self: TextDocumentEditor) =
+  editor_text_updateDiff_void_TextDocumentEditor_impl(self)
