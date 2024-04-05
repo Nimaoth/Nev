@@ -46,7 +46,11 @@
 [
   (int_lit)
   (float_lit)
+  (float_suffix)
+  (int_suffix)
 ] @constant.numeric
+
+(customNumericLitSuffix) @support.type
 
 [
   "true"
