@@ -80,9 +80,14 @@ method deinit*(self: SelectorPopup) =
   self[] = default(typeof(self[]))
 
 proc getSearchString*(self: SelectorPopup): string =
+  if self.textEditor.isNil:
+    return ""
   return self.textEditor.document.contentString
 
 proc autoSort(self: SelectorPopup) {.async.} =
+  if self.textEditor.isNil:
+    return
+
   self.autoSortActive = true
   defer:
     self.autoSortActive = false
@@ -116,6 +121,9 @@ proc enableAutoSort*(self: SelectorPopup) =
   asyncCheck self.autoSort()
 
 proc setCompletions(self: SelectorPopup, newCompletions: seq[SelectorItem]) =
+  if self.textEditor.isNil:
+    return
+
   self.markDirty()
 
   self.completions = newCompletions
@@ -154,6 +162,8 @@ proc getItemAtPixelPosition(self: SelectorPopup, posWindow: Vec2): Option[Select
       return self.completions[self.completions.high - index].some
 
 method getEventHandlers*(self: SelectorPopup): seq[EventHandler] =
+  if self.textEditor.isNil:
+    return @[]
   return self.textEditor.getEventHandlers(initTable[string, EventHandler]()) & @[self.eventHandler]
 
 proc getSelectorPopup(wrapper: api.SelectorPopup): Option[SelectorPopup] =
@@ -175,6 +185,9 @@ proc fromJsonHook*(t: var api.SelectorPopup, jsonNode: JsonNode) =
   t.id = api.EditorId(jsonNode["id"].jsonTo(int))
 
 proc updateCompletions*(self: SelectorPopup) {.expose("popup.selector").} =
+  if self.textEditor.isNil:
+    return
+
   let text = self.textEditor.document.content.join
   if not self.getCompletions.isNil:
     let newCompletions = self.getCompletions(self, text)
@@ -188,22 +201,34 @@ proc updateCompletions*(self: SelectorPopup) {.expose("popup.selector").} =
     log(lvlError, fmt"No completion provider set on popup {self.id}")
 
 proc getSelectedItem*(self: SelectorPopup): JsonNode {.expose("popup.selector").} =
+  if self.textEditor.isNil:
+    return newJNull()
+
   if self.selected < self.completions.len:
     let selected = self.completions[self.completions.high - self.selected]
     return selected.itemToJson
   return newJNull()
 
 proc accept*(self: SelectorPopup) {.expose("popup.selector").} =
+  if self.textEditor.isNil:
+    return
+
   if not self.handleItemConfirmed.isNil and self.selected < self.completions.len:
     self.handleItemConfirmed self.completions[self.completions.high - self.selected]
   self.app.popPopup(self)
 
 proc cancel*(self: SelectorPopup) {.expose("popup.selector").} =
+  if self.textEditor.isNil:
+    return
+
   if self.handleCanceled != nil:
     self.handleCanceled()
   self.app.popPopup(self)
 
 proc prev*(self: SelectorPopup) {.expose("popup.selector").} =
+  if self.textEditor.isNil:
+    return
+
   self.selected = if self.completions.len == 0:
     0
   else:
@@ -215,6 +240,9 @@ proc prev*(self: SelectorPopup) {.expose("popup.selector").} =
   self.markDirty()
 
 proc next*(self: SelectorPopup) {.expose("popup.selector").} =
+  if self.textEditor.isNil:
+    return
+
   self.selected = if self.completions.len == 0:
     0
   else:
@@ -229,6 +257,9 @@ genDispatcher("popup.selector")
 
 proc handleAction*(self: SelectorPopup, action: string, arg: string): EventResponse =
   # debugf"SelectorPopup.handleAction {action} '{arg}'"
+  if self.textEditor.isNil:
+    return
+
 
   if self.app.handleUnknownPopupAction(self, action, arg) == Handled:
     return Handled
@@ -247,6 +278,9 @@ proc handleAction*(self: SelectorPopup, action: string, arg: string): EventRespo
   return Ignored
 
 proc handleTextChanged*(self: SelectorPopup) =
+  if self.textEditor.isNil:
+    return
+
   self.updateCompletions()
   self.selected = 0
 
@@ -256,9 +290,15 @@ proc handleTextChanged*(self: SelectorPopup) =
   self.markDirty()
 
 method handleScroll*(self: SelectorPopup, scroll: Vec2, mousePosWindow: Vec2) =
+  if self.textEditor.isNil:
+    return
+
   self.selected = clamp(self.selected - scroll.y.int, 0, self.completions.len - 1)
 
 method handleMousePress*(self: SelectorPopup, button: MouseButton, mousePosWindow: Vec2) =
+  if self.textEditor.isNil:
+    return
+
   if button == MouseButton.Left:
     if self.getItemAtPixelPosition(mousePosWindow).getSome(item):
       if not self.handleItemConfirmed.isNil:
@@ -274,7 +314,7 @@ method handleMouseMove*(self: SelectorPopup, mousePosWindow: Vec2, mousePosDelta
 
 proc newSelectorPopup*(app: AppInterface): SelectorPopup =
   var popup = SelectorPopup(app: app)
-  popup.textEditor = newTextEditor(newTextDocument(app.configProvider), app, app.configProvider)
+  popup.textEditor = newTextEditor(newTextDocument(app.configProvider, createLanguageServer=false), app, app.configProvider)
   popup.textEditor.setMode("insert")
   popup.textEditor.renderHeader = false
   popup.textEditor.lineNumbers = api.LineNumbers.None.some

@@ -150,7 +150,8 @@ More details in [Getting Started](docs/getting_started.md)
 - invalidate models using language X when X gets rebuilt
 - finish/revise using string as parameter type for wasm functions (see createWasmWrapper, createHostWrapper)
 - fix potential issues because of loading order when loading test-language and test-language-playground
-- fix rendering of _
+- git: use workspace directory instead of working directory
+- make sure that after every await in text editor/model editor we check if the editor has beeen deinitialized
 
 ## Vim Keybindings
 - Repeat f/t motions with ,/;
@@ -160,6 +161,8 @@ More details in [Getting Started](docs/getting_started.md)
 
 - in visual mode highlights are incorrect
 - pasting text replaces the current char even if not in insert mode
+- j to join lines
+- fix % doesn't update selection correctly
 
 ## LSP
 - Handle rust lsp paths with lowercase letter like d:/path/to/file
@@ -167,9 +170,14 @@ More details in [Getting Started](docs/getting_started.md)
 - snippets
 - workspace symbols
 - rename
+- inlay hints: space left/right
 
 ## text editor
 - includeAfter names should be named includeLineLen or something like that
-
+- don't render multi line diagnostics inline but in a popup which can be opened/closed
+- don't show completion window when no completions available
+- close completion windows when cursor moves
+- discard bom
+- tabs: unindent not working
 
 [Test report](https://nimaoth.github.io/Absytree/testresults.html)

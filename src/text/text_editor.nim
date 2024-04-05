@@ -230,13 +230,21 @@ proc startBlinkCursorTask(self: TextDocumentEditor) =
     self.blinkCursorTask.reschedule()
 
 method deinit*(self: TextDocumentEditor) =
+  let filename = if self.document.isNotNil: self.document.filename else: ""
+  log lvlInfo, "Deinit text editor for '{filename}'"
+
+  self.unregister()
+
   if self.diffDocument.isNotNil:
     self.diffDocument.deinit()
     self.diffDocument = nil
 
-  let filename = if self.document.isNotNil: self.document.filename else: ""
-  log lvlInfo, fmt"shutting down '{filename}'"
-  self.blinkCursorTask.pause()
+  if self.blinkCursorTask.isNotNil: self.blinkCursorTask.pause()
+  if self.updateCompletionsTask.isNotNil: self.updateCompletionsTask.pause()
+  if self.inlayHintsTask.isNotNil: self.inlayHintsTask.pause()
+  if self.showHoverTask.isNotNil: self.showHoverTask.pause()
+  if self.hideHoverTask.isNotNil: self.hideHoverTask.pause()
+
   self[] = default(typeof(self[]))
 
 # proc `=destroy`[T: object](doc: var TextDocument) =
@@ -2453,10 +2461,6 @@ proc updateGitDiffAsync(self: TextDocumentEditor) {.async.} =
     let relPath = self.document.workspace.mapIt(it.getRelativePath(self.document.filename).await).flatten.get(self.document.filename)
     let stagedFileContent = getStagedFileContent(relPath).await
     let changes = getFileChanges(relPath).await
-    echo "@["
-    for c in changes.get:
-      echo fmt"  LineMapping(source: ({c.source.first}, {c.source.last}), target: ({c.target.first}, {c.target.last})),"
-    echo "]"
 
     if self.diffDocument.isNil:
       return
@@ -2471,8 +2475,7 @@ proc handleTextDocumentSaved(self: TextDocumentEditor) =
   if self.isGitDiffInProgress:
     return
 
-  # todo
-  # asyncCheck self.updateGitDiffAsync()
+  asyncCheck self.updateGitDiffAsync()
 
 ## Only use this to create TextDocumentEditorInstances
 proc createTextEditorInstance(): TextDocumentEditor =
