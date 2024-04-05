@@ -259,7 +259,7 @@ proc renderLine*(
           let partRuneLen = part.text.runeLen
           let width = (partRuneLen.float * builder.charWidth).ceil
 
-          if options.wrapLine and not options.sizeToContentX and subLinePartIndex > 0:
+          if options.wrapLine and part.canWrap and not options.sizeToContentX and subLinePartIndex > 0:
             var wrapWidth = width
             for partIndex2 in partIndex..<line.parts.high:
               if line.parts[partIndex2].joinNext:
