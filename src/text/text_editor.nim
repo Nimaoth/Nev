@@ -33,6 +33,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
   platform*: Platform
   document*: TextDocument
 
+  diffDocument*: TextDocument
+
   cursorsId*: Id
   completionsId*: Id
   hoverId*: Id
@@ -227,6 +229,8 @@ method deinit*(self: TextDocumentEditor) =
   let filename = if self.document.isNotNil: self.document.filename else: ""
   log lvlInfo, fmt"shutting down '{filename}'"
   self.blinkCursorTask.pause()
+  if self.diffDocument.isNotNil:
+    self.diffDocument.deinit()
   self[] = default(typeof(self[]))
 
 # proc `=destroy`[T: object](doc: var TextDocument) =
