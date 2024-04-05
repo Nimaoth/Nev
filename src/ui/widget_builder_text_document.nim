@@ -45,8 +45,6 @@ type LineRenderOptions = object
 
   hoverLocation: Cursor
 
-  document: TextDocument
-
   theme: Theme
 
   lineId: int32
@@ -55,10 +53,16 @@ type LineRenderOptions = object
 
 when defined(js):
   template tokenColor*(theme: Theme, part: StyledText, default: untyped): Color =
-    theme.tokenColor(part.scopeC, default)
+    if part.scopeIsToken:
+      theme.tokenColor(part.scopeC, default)
+    else:
+      theme.color(part.scope, default)
 else:
   template tokenColor*(theme: Theme, part: StyledText, default: untyped): Color =
-    theme.tokenColor(part.scope, default)
+    if part.scopeIsToken:
+      theme.tokenColor(part.scope, default)
+    else:
+      theme.color(part.scope, default)
 
 proc shouldIgnoreAsContextLine(self: TextDocument, line: int): bool
 proc clampToLine(document: TextDocument, selection: Selection, line: StyledLine): tuple[first: RuneIndex, last: RuneIndex]
@@ -451,7 +455,6 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       let offset = self.getCursorPos(part.text.runeLen.int, line, startRune, if isInlay: vec2() else: pos)
       (line, offset)
     else:
-      let currentSelection = self.dragStartSelection
       (line, self.document.lineLength(line))
 
     let first = if (currentSelection.isBackwards and newCursor < currentSelection.first) or (not currentSelection.isBackwards and newCursor >= currentSelection.first):
@@ -484,7 +487,6 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     self.hideHoverDelayed()
 
   var options = LineRenderOptions(
-    document: self.document,
     handleClick: handleClick,
     handleDrag: handleDrag,
     handleBeginHover: handleBeginHover,
