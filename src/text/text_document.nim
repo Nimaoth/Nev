@@ -742,7 +742,7 @@ proc newTextDocument*(
 
   new(result)
   var self = result
-  self.filename = filename
+  self.filename = filename.normalizePathUnix
   self.currentTree = nil
   self.appFile = app
   self.workspace = workspaceFolder
@@ -805,7 +805,7 @@ method `$`*(self: TextDocument): string =
   return self.filename
 
 method save*(self: TextDocument, filename: string = "", app: bool = false) =
-  self.filename = if filename.len > 0: filename else: self.filename
+  self.filename = if filename.len > 0: filename.normalizePathUnix else: self.filename
   if self.filename.len == 0:
     raise newException(IOError, "Missing filename")
 
@@ -835,7 +835,7 @@ proc loadAsync(self: TextDocument, ws: WorkspaceFolder): Future[void] {.async.} 
   self.onLoaded.invoke self
 
 method load*(self: TextDocument, filename: string = "") =
-  let filename = if filename.len > 0: filename else: self.filename
+  let filename = if filename.len > 0: filename.normalizePathUnix else: self.filename
   if filename.len == 0:
     raise newException(IOError, "Missing filename")
 

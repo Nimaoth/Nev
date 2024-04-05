@@ -104,6 +104,8 @@ proc autoSort(self: SelectorPopup) {.async.} =
     # echo iterations, " iterations, ", t.elapsed.ms, "ms"
 
     await sleepAsync(1)
+    if self.textEditor.isNil:
+      return
 
 proc enableAutoSort*(self: SelectorPopup) =
   self.useAutoSort = true

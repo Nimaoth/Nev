@@ -1702,9 +1702,9 @@ proc chooseTheme*(self: App) {.expose("editor").} =
 
 proc createFile*(self: App, path: string) {.expose("editor").} =
   let fullPath = if path.isAbsolute:
-    path
+    path.normalizePathUnix
   else:
-    path.absolutePath
+    path.absolutePath.normalizePathUnix
 
   log lvlInfo, fmt"createFile: '{path}'"
 
@@ -1778,6 +1778,9 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
 
         if timer.elapsed.ms > 7:
           await sleepAsync(1)
+          if cancellationToken.canceled or popup.textEditor.isNil:
+            return
+
           startIndex = i + 1
           timer = startTimer()
 
@@ -1794,6 +1797,9 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
     for folder in self.workspace.folders:
       var folder = folder
       await iterateDirectoryRec(folder, "", cancellationToken, ignorePatterns, proc(files: seq[string]) {.async.} =
+        if cancellationToken.canceled or popup.textEditor.isNil:
+          return
+
         let folder = folder
         for file in files:
           defer:
@@ -1807,6 +1813,10 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
 
           if timer.elapsed.ms > 7:
             await sleepAsync(1)
+
+            if cancellationToken.canceled or popup.textEditor.isNil:
+              return
+
             startIndex = i + 1
             timer = startTimer()
 
@@ -1814,6 +1824,9 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
         popup.enableAutoSort()
         popup.markDirty()
       )
+
+      if cancellationToken.canceled or popup.textEditor.isNil:
+        return
 
   popup.handleItemConfirmed = proc(item: SelectorItem) =
     case view
@@ -1909,11 +1922,15 @@ when not defined(js):
       let document = document.TextDocument
       if fileInfo.unstagedStatus != None:
         let stagedFileContent = getStagedFileContent(fileInfo.path).await
+        let changes = getFileChanges(fileInfo.path).await
 
         var document = newTextDocument(self.asConfigProvider, language=document.languageId.some)
         document.createLanguageServer = false
         document.content = stagedFileContent
         editorWorking.TextDocumentEditor.diffDocument = document
+        editorWorking.TextDocumentEditor.diffChanges = changes
+
+        editorWorking.markDirty()
 
     else:
       log lvlError, fmt"Unsupported document type"
