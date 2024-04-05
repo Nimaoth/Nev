@@ -1,6 +1,7 @@
 import std/[strutils, sequtils, strformat, options]
 import misc/[async_process, custom_async, util, custom_logger]
 import scripting_api
+import text/diff
 
 logCategory "diff-git"
 
@@ -10,11 +11,6 @@ type
     stagedStatus*: FileStatus
     unstagedStatus*: FileStatus
     path*: string
-
-  LineMapping* = object
-    source*: tuple[first: int, last: int]
-    target*: tuple[first: int, last: int]
-    lines*: seq[string]
 
 proc parseFileStatusGit(status: char): FileStatus =
   result = case status

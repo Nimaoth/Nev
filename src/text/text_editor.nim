@@ -9,6 +9,7 @@ import language/[language_server_base]
 import workspaces/[workspace]
 import document, document_editor, events, vmath, bumpy, input, custom_treesitter, indent, text_document, snippet
 import config_provider, app_interface
+import diff
 
 from language/lsp_types import Response, CompletionList, CompletionItem, InsertTextFormat, TextEdit, Range, Position, isSuccess, asTextEdit, asInsertReplaceEdit
 
@@ -34,6 +35,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   document*: TextDocument
 
   diffDocument*: TextDocument
+  diffChanges*: Option[seq[LineMapping]]
 
   cursorsId*: Id
   completionsId*: Id
