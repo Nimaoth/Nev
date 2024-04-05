@@ -228,11 +228,13 @@ proc startBlinkCursorTask(self: TextDocumentEditor) =
     self.blinkCursorTask.reschedule()
 
 method deinit*(self: TextDocumentEditor) =
+  if self.diffDocument.isNotNil:
+    self.diffDocument.deinit()
+    self.diffDocument = nil
+
   let filename = if self.document.isNotNil: self.document.filename else: ""
   log lvlInfo, fmt"shutting down '{filename}'"
   self.blinkCursorTask.pause()
-  if self.diffDocument.isNotNil:
-    self.diffDocument.deinit()
   self[] = default(typeof(self[]))
 
 # proc `=destroy`[T: object](doc: var TextDocument) =
@@ -1056,6 +1058,33 @@ proc getNextDiagnostic*(self: TextDocumentEditor, cursor: Cursor, severity: int 
     let wrapped = self.getNextDiagnostic((0, 0), severity, offset - i, includeAfter=includeAfter, wrap=wrap)
     if not wrapped.isEmpty:
       return wrapped
+  return cursor.toSelection
+
+proc closeDiff*(self: TextDocumentEditor) {.expose("editor.text").} =
+  if self.diffDocument.isNil:
+    return
+  self.diffDocument.deinit()
+  self.diffDocument = nil
+  self.markDirty()
+
+proc getPrevChange*(self: TextDocumentEditor, cursor: Cursor): Selection {.expose("editor.text").} =
+  if self.diffChanges.isNone:
+    return cursor.toSelection
+
+  for i in countdown(self.diffChanges.get.high, 0):
+    if self.diffChanges.get[i].target.first < cursor.line:
+      return (self.diffChanges.get[i].target.first, 0).toSelection
+
+  return cursor.toSelection
+
+proc getNextChange*(self: TextDocumentEditor, cursor: Cursor): Selection {.expose("editor.text").} =
+  if self.diffChanges.isNone:
+    return cursor.toSelection
+
+  for mapping in self.diffChanges.get:
+    if mapping.target.first > cursor.line:
+      return (mapping.target.first, 0).toSelection
+
   return cursor.toSelection
 
 proc addNextFindResultToSelection*(self: TextDocumentEditor, includeAfter: bool = true, wrap: bool = true) {.expose("editor.text").} =

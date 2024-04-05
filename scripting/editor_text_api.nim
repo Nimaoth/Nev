@@ -147,6 +147,14 @@ proc getNextDiagnostic*(self: TextDocumentEditor; cursor: Cursor;
                         includeAfter: bool = true; wrap: bool = true): Selection =
   editor_text_getNextDiagnostic_Selection_TextDocumentEditor_Cursor_int_int_bool_bool_impl(
       self, cursor, severity, offset, includeAfter, wrap)
+proc closeDiff*(self: TextDocumentEditor) =
+  editor_text_closeDiff_void_TextDocumentEditor_impl(self)
+proc getPrevChange*(self: TextDocumentEditor; cursor: Cursor): Selection =
+  editor_text_getPrevChange_Selection_TextDocumentEditor_Cursor_impl(self,
+      cursor)
+proc getNextChange*(self: TextDocumentEditor; cursor: Cursor): Selection =
+  editor_text_getNextChange_Selection_TextDocumentEditor_Cursor_impl(self,
+      cursor)
 proc addNextFindResultToSelection*(self: TextDocumentEditor;
                                    includeAfter: bool = true; wrap: bool = true) =
   editor_text_addNextFindResultToSelection_void_TextDocumentEditor_bool_bool_impl(

@@ -43,13 +43,15 @@ proc parseGitRange(s: string): (int, int) =
     let first = parts[0].parseInt - 1
     let count = parts[1].parseInt
     if count == 0:
-      return (first, first)
+      return (first + 1, first + 1)
     # todo: -1 should maybe be done in a different place
-    return (first - 1, first - 1 + count)
+    # return (first - 1, first - 1 + count)
+    return (first, first + count)
   else:
     let first = s[1..^1].parseInt - 1
     # todo: -1 should maybe be done in a different place
-    return (first - 1, first + 1 - 1)
+    # return (first - 1, first + 1 - 1)
+    return (first, first + 1)
 
 proc applyChanges(lines: openArray[string], changes: openArray[LineMapping], expected: openArray[string]): seq[string] =
   var currentLineSource = 0
