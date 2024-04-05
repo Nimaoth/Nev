@@ -21,6 +21,9 @@ type LocationInfos = object
   hover: Option[CursorLocationInfo]
   diagnostic: Option[CursorLocationInfo]
 
+type LineRenderOptions = object
+  handleClick: proc(btn: MouseButton, pos: Vec2, line: int, partIndex: Option[int])
+
 when defined(js):
   template tokenColor*(theme: Theme, part: StyledText, default: untyped): Color =
     theme.tokenColor(part.scopeC, default)
@@ -30,6 +33,35 @@ else:
 
 proc shouldIgnoreAsContextLine(self: TextDocument, line: int): bool
 proc clampToLine(document: TextDocument, selection: Selection, line: StyledLine): tuple[first: RuneIndex, last: RuneIndex]
+
+proc getTextRange(line: StyledLine, partIndex: int): (RuneIndex, RuneIndex) =
+  var startRune = 0.RuneIndex
+  var endRune = 0.RuneIndex
+  if line.parts[partIndex].textRange.isSome:
+    startRune = line.parts[partIndex].textRange.get.startIndex
+    endRune = line.parts[partIndex].textRange.get.endIndex
+  else:
+    # Inlay text, find start rune of neighbor, prefer left side
+    var found = false
+    for i in countdown(partIndex - 1, 0):
+      if line.parts[i].textRange.isSome:
+        startRune = line.parts[i].textRange.get.endIndex
+        if not line.parts[partIndex].inlayContainCursor:
+          # choose background color of right neighbor
+          startRune -= 1.RuneCount
+
+        found = true
+        break
+
+    if not found:
+      for i in countup(partIndex + 1, line.parts.high):
+        if line.parts[i].textRange.isSome:
+          startRune = line.parts[i].textRange.get.startIndex
+          break
+
+    endRune = startRune
+
+  return (startRune, endRune)
 
 proc `*`(c: Color, v: Color): Color {.inline.} =
   ## Multiply color by a value.
@@ -57,22 +89,26 @@ proc renderLine*(
   y: float, sizeToContentX: bool, lineNumberTotalWidth: float, lineNumberWidth: float, pivot: Vec2,
   backgroundColor: Color, textColor: Color,
   backgroundColors: openArray[tuple[first: RuneIndex, last: RuneIndex, color: Color]], cursors: openArray[int],
-  wrapLine: bool, wrapLineEndChar: string, wrapLineEndColor: Color, lineEndColor: Option[Color]):
+  wrapLine: bool, wrapLineEndChar: string, wrapLineEndColor: Color, lineEndColor: Option[Color],
+  options: LineRenderOptions):
     tuple[cursors: seq[CursorLocationInfo], hover: Option[CursorLocationInfo], diagnostic: Option[CursorLocationInfo]] =
+
+  let document = self.document
+  let hoverLocation = self.hoverLocation
 
   var flagsInner = &{FillX, SizeToContentY}
   if sizeToContentX:
     flagsInner.incl SizeToContentX
 
-  let hasDiagnostic = self.document.diagnosticsPerLine.contains(lineNumber) and self.document.diagnosticsPerLine[lineNumber][0] < self.document.currentDiagnostics.len
+  let hasDiagnostic = document.diagnosticsPerLine.contains(lineNumber) and document.diagnosticsPerLine[lineNumber][0] < document.currentDiagnostics.len
   let diagnosticIndices = if hasDiagnostic:
-    self.document.diagnosticsPerLine[lineNumber]
+    document.diagnosticsPerLine[lineNumber]
   else:
     @[]
   var diagnosticColorName = "editorHint.foreground"
   var diagnosticMessage: string = "■ "
   if hasDiagnostic:
-    let diagnostic {.cursor.} = self.document.currentDiagnostics[diagnosticIndices[0]]
+    let diagnostic {.cursor.} = document.currentDiagnostics[diagnosticIndices[0]]
     let newLineIndex = diagnostic.message.find("\n")
     let maxIndex = if newLineIndex != -1:
       newLineIndex
@@ -163,31 +199,7 @@ proc renderLine*(
 
           let textColor = if part.scope.len == 0: textColor else: theme.tokenColor(part, textColor)
 
-          var startRune = 0.RuneIndex
-          var endRune = 0.RuneIndex
-          if part.textRange.isSome:
-            startRune = part.textRange.get.startIndex
-            endRune = part.textRange.get.endIndex
-          else:
-            # Inlay text, find start rune of neighbor, prefer left side
-            var found = false
-            for i in countdown(partIndex - 1, 0):
-              if line.parts[i].textRange.isSome:
-                startRune = line.parts[i].textRange.get.endIndex
-                if not line.parts[partIndex].inlayContainCursor:
-                  # choose background color of right neighbor
-                  startRune -= 1.RuneCount
-
-                found = true
-                break
-
-            if not found:
-              for i in countup(partIndex + 1, line.parts.high):
-                if line.parts[i].textRange.isSome:
-                  startRune = line.parts[i].textRange.get.startIndex
-                  break
-
-            endRune = startRune
+          let (startRune, endRune) = line.getTextRange(partIndex)
 
           # Find background color
           var colorIndex = 0
@@ -228,33 +240,9 @@ proc renderLine*(
           builder.panel(partFlags, text = text, backgroundColor = partBackgroundColor, textColor = textColor, underlineColor = underlineColor):
             partNode = currentNode
 
-            capture line, partNode, startRune, textRuneLen, isInlay:
+            capture line, partNode, startRune, textRuneLen, isInlay, partIndex:
               onClickAny btn:
-                self.lastPressedMouseButton = btn
-                if btn == Left:
-                  let offset = self.getCursorPos(textRuneLen, line.index, startRune, if isInlay: vec2() else: pos)
-                  self.selection = (line.index, offset).toSelection
-                  self.dragStartSelection = self.selection
-                  self.runSingleClickCommand()
-                  self.updateTargetColumn(Last)
-                  self.app.tryActivateEditor(self)
-                  self.markDirty()
-                elif btn == DoubleClick:
-                  let offset = self.getCursorPos(textRuneLen, line.index, startRune, if isInlay: vec2() else: pos)
-                  self.selection = (line.index, offset).toSelection
-                  self.dragStartSelection = self.selection
-                  self.runDoubleClickCommand()
-                  self.updateTargetColumn(Last)
-                  self.app.tryActivateEditor(self)
-                  self.markDirty()
-                elif btn == TripleClick:
-                  let offset = self.getCursorPos(textRuneLen, line.index, startRune, if isInlay: vec2() else: pos)
-                  self.selection = (line.index, offset).toSelection
-                  self.dragStartSelection = self.selection
-                  self.runTripleClickCommand()
-                  self.updateTargetColumn(Last)
-                  self.app.tryActivateEditor(self)
-                  self.markDirty()
+                options.handleClick(btn, pos, line.index, partIndex.some)
 
               onDrag Left:
                 if self.active:
@@ -313,12 +301,12 @@ proc renderLine*(
                   result.cursors.add (node, $rune, rect(cursorX, 0, builder.charWidth, builder.textHeight), (line.index, curs))
 
             # Set hover info if the hover location is within this part
-            if line.index == self.hoverLocation.line and part.textRange.isSome:
+            if line.index == hoverLocation.line and part.textRange.isSome:
               let startRune = part.textRange.get.startIndex
               let endRune = part.textRange.get.endIndex
-              let hoverRune = lineOriginal.runeIndex(self.hoverLocation.column)
+              let hoverRune = lineOriginal.runeIndex(hoverLocation.column)
               if hoverRune >= startRune and hoverRune < endRune:
-                result.hover = (currentNode, "", rect(0, 0, builder.charWidth, builder.textHeight), self.hoverLocation).some
+                result.hover = (currentNode, "", rect(0, 0, builder.charWidth, builder.textHeight), hoverLocation).some
 
           if part.textRange.isNone:
             previousInlayNode = partNode
@@ -352,33 +340,12 @@ proc renderLine*(
         builder.panel(&{FillX, FillBackground} + lineEndYFlags, backgroundColor = backgroundColor):
           capture line, currentNode:
             onClickAny btn:
-              self.lastPressedMouseButton = btn
-              if btn == Left:
-                self.selection = (line.index, self.document.lineLength(line.index)).toSelection
-                self.dragStartSelection = self.selection
-                self.app.tryActivateEditor(self)
-                self.runSingleClickCommand()
-                self.updateTargetColumn(Last)
-                self.markDirty()
-              elif btn == DoubleClick:
-                self.selection = (line.index, self.document.lineLength(line.index)).toSelection
-                self.dragStartSelection = self.selection
-                self.runDoubleClickCommand()
-                self.updateTargetColumn(Last)
-                self.app.tryActivateEditor(self)
-                self.markDirty()
-              elif btn == TripleClick:
-                self.selection = (line.index, self.document.lineLength(line.index)).toSelection
-                self.dragStartSelection = self.selection
-                self.runTripleClickCommand()
-                self.updateTargetColumn(Last)
-                self.app.tryActivateEditor(self)
-                self.markDirty()
+              options.handleClick(btn, pos, line.index, int.none)
 
             onDrag Left:
               if self.active:
                 let currentSelection = self.dragStartSelection
-                let newCursor = (line.index, self.document.lineLength(line.index))
+                let newCursor = (line.index, document.lineLength(line.index))
                 let first = if (currentSelection.isBackwards and newCursor < currentSelection.first) or (not currentSelection.isBackwards and newCursor >= currentSelection.first):
                   currentSelection.first
                 else:
@@ -410,8 +377,8 @@ proc renderLine*(
         result.cursors.add (lastTextSubLine, "", rect(lastTextPartXW, 0, builder.charWidth, builder.textHeight), (line.index, curs))
 
     # set hover info if the hover location is at the end of this line
-    if line.index == self.hoverLocation.line and self.hoverLocation.column == lineOriginal.len:
-      result.hover = (lastTextSubLine, "", rect(lastTextPartXW, 0, builder.charWidth, builder.textHeight), self.hoverLocation).some
+    if line.index == hoverLocation.line and hoverLocation.column == lineOriginal.len:
+      result.hover = (lastTextSubLine, "", rect(lastTextPartXW, 0, builder.charWidth, builder.textHeight), hoverLocation).some
 
 proc blendColorRanges(colors: var seq[tuple[first: RuneIndex, last: RuneIndex, color: Color]], ranges: var seq[tuple[first: RuneIndex, last: RuneIndex]], color: Color, inclusive: bool) =
   let inclusiveOffset = if inclusive: 1.RuneCount else: 0.RuneCount
@@ -489,6 +456,37 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   let cursorBackgroundColor = app.theme.color(@["editorCursor.background", "background"], color(50/255, 50/255, 50/255))
   let contextBackgroundColor = app.theme.color(@["breadcrumbPicker.background", "background"], color(50/255, 70/255, 70/255))
   let wrapLineEndColor = app.theme.tokenColor(@["comment"], color(100/255, 100/255, 100/255))
+
+  var options = LineRenderOptions(
+    handleClick: proc(btn: MouseButton, pos: Vec2, line: int, partIndex: Option[int]) =
+      self.lastPressedMouseButton = btn
+
+      if btn notin {MouseButton.Left, DoubleClick, TripleClick}:
+        return
+
+      if partIndex.getSome(partIndex):
+        let styledLine = self.getStyledText(line)
+        let (startRune, _) = styledLine.getTextRange(partIndex)
+        let part = styledLine.parts[partIndex]
+        let isInlay = part.textRange.isNone
+        let offset = self.getCursorPos(part.text.runeLen.int, line, startRune, if isInlay: vec2() else: pos)
+        self.selection = (line, offset).toSelection
+      else:
+        self.selection = (line, self.document.lineLength(line)).toSelection
+
+      self.dragStartSelection = self.selection
+
+      if btn == Left:
+        self.runSingleClickCommand()
+      elif btn == DoubleClick:
+        self.runDoubleClickCommand()
+      elif btn == TripleClick:
+        self.runTripleClickCommand()
+
+      self.updateTargetColumn(Last)
+      self.app.tryActivateEditor(self)
+      self.markDirty()
+  )
 
   var selectionsPerLine = initTable[int, seq[Selection]]()
   for s in self.selections:
@@ -590,7 +588,8 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       let infos = self.renderLine(builder, app.theme, styledLine, self.document.lines[i], self.document.lineIds[i],
         self.userId, cursorLine, i, lineNumbers, y, sizeToContentX, lineNumberWidth, lineNumberBounds.x, pivot,
         backgroundColor, textColor,
-        colors, cursorsPerLine, wrapLine, wrapLineEndChar, wrapLineEndColor, lineEndColor
+        colors, cursorsPerLine, wrapLine, wrapLineEndChar, wrapLineEndColor, lineEndColor,
+        options
         )
       cursors.add infos.cursors
       if infos.hover.isSome:
@@ -622,7 +621,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
           let infos = self.renderLine(builder, app.theme, styledLine, self.document.lines[contextLine], self.document.lineIds[contextLine],
             self.userId, cursorLine, contextLine, lineNumbers, y, sizeToContentX, lineNumberWidth, lineNumberBounds.x, vec2(0, 0),
             contextBackgroundColor, textColor,
-            colors, [], false, wrapLineEndChar, wrapLineEndColor, Color.none
+            colors, [], false, wrapLineEndChar, wrapLineEndColor, Color.none, options
             )
           cursors.add infos.cursors
           if infos.hover.isSome:
