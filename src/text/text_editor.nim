@@ -70,6 +70,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
   blinkCursor: bool = true
   blinkCursorTask: DelayedTask
 
+  isGitDiffInProgress: bool = false
+
   # hover
   showHoverTask: DelayedTask    # for showing hover info after a delay
   hideHoverTask: DelayedTask    # for hiding hover info after a delay
@@ -2436,6 +2438,42 @@ proc handleTextDocumentLoaded(self: TextDocumentEditor) =
   self.targetSelectionsInternal = Selections.none
   self.updateTargetColumn(Last)
 
+when not defined(js):
+  import diff_git
+
+proc updateGitDiffAsync(self: TextDocumentEditor) {.async.} =
+  when not defined(js):
+    if self.diffDocument.isNil:
+      return
+
+    self.isGitDiffInProgress = true
+    defer:
+      self.isGitDiffInProgress = false
+
+    let relPath = self.document.workspace.mapIt(it.getRelativePath(self.document.filename).await).flatten.get(self.document.filename)
+    let stagedFileContent = getStagedFileContent(relPath).await
+    let changes = getFileChanges(relPath).await
+    echo "@["
+    for c in changes.get:
+      echo fmt"  LineMapping(source: ({c.source.first}, {c.source.last}), target: ({c.target.first}, {c.target.last})),"
+    echo "]"
+
+    if self.diffDocument.isNil:
+      return
+
+    self.diffDocument.content = stagedFileContent
+    self.diffChanges = changes
+
+    self.markDirty()
+
+proc handleTextDocumentSaved(self: TextDocumentEditor) =
+  log lvlInfo, fmt"handleTextDocumentSaved '{self.document.filename}'"
+  if self.isGitDiffInProgress:
+    return
+
+  # todo
+  # asyncCheck self.updateGitDiffAsync()
+
 ## Only use this to create TextDocumentEditorInstances
 proc createTextEditorInstance(): TextDocumentEditor =
   let editor = TextDocumentEditor(eventHandler: nil, selectionsInternal: @[(0, 0).toSelection])
@@ -2461,6 +2499,7 @@ proc newTextEditor*(document: TextDocument, app: AppInterface, configProvider: C
   self.injectDependencies(app)
   discard document.textChanged.subscribe (_: TextDocument) => self.handleTextDocumentTextChanged()
   discard document.onLoaded.subscribe (_: TextDocument) => self.handleTextDocumentLoaded()
+  discard document.onSaved.subscribe () => self.handleTextDocumentSaved()
   discard document.textInserted.subscribe (arg: tuple[document: TextDocument, location: Selection, text: string]) => self.handleTextInserted(arg.document, arg.location, arg.text)
   discard document.textDeleted.subscribe (arg: tuple[document: TextDocument, location: Selection]) => self.handleTextDeleted(arg.document, arg.location)
   discard document.onDiagnosticsUpdated.subscribe () => self.handleDiagnosticsUpdated()
@@ -2479,6 +2518,7 @@ method createWithDocument*(_: TextDocumentEditor, document: Document, configProv
     self.document.lines = @[""]
   discard self.document.textChanged.subscribe (_: TextDocument) => self.handleTextDocumentTextChanged()
   discard self.document.onLoaded.subscribe (_: TextDocument) => self.handleTextDocumentLoaded()
+  discard self.document.onSaved.subscribe () => self.handleTextDocumentSaved()
   discard self.document.textInserted.subscribe (arg: tuple[document: TextDocument, location: Selection, text: string]) => self.handleTextInserted(arg.document, arg.location, arg.text)
   discard self.document.textDeleted.subscribe (arg: tuple[document: TextDocument, location: Selection]) => self.handleTextDeleted(arg.document, arg.location)
   discard self.document.onDiagnosticsUpdated.subscribe () => self.handleDiagnosticsUpdated()
