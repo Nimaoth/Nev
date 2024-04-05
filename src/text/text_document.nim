@@ -51,6 +51,7 @@ type StyledText* = object
   underline*: bool
   underlineColor*: Color
   inlayContainCursor*: bool
+  textColor*: Color
 
 type StyledLine* = ref object
   index*: int
@@ -506,18 +507,17 @@ proc addDiagnosticsUnderline(self: TextDocument, line: var StyledLine) =
     for diagnosticIndex in indices:
       let diagnostic {.cursor.} = self.currentDiagnostics[diagnosticIndex]
 
+      let colorName = if diagnostic.severity.getSome(severity):
+        case severity
+        of Error: "editorError.foreground"
+        of Warning: "editorWarning.foreground"
+        of Information: "editorInfo.foreground"
+        of Hint: "editorHint.foreground"
+      else:
+        "editorHint.foreground"
+
       let color = if gTheme.isNotNil:
-        let colorName = if diagnostic.severity.getSome(severity):
-          case severity
-          of Error: "editorError.foreground"
-          of Warning: "editorWarning.foreground"
-          of Information: "editorInfo.foreground"
-          of Hint: "editorHint.foreground"
-        else:
-          "editorHint.foreground"
-
         gTheme.color(colorName, color(1, 1, 1))
-
       elif diagnostic.severity.getSome(severity):
         case severity
         of Error: color(1, 0, 0)
@@ -530,6 +530,15 @@ proc addDiagnosticsUnderline(self: TextDocument, line: var StyledLine) =
       line.splitAt(self.lines[line.index].toOpenArray.runeIndex(diagnostic.selection.first.column, returnLen=true))
       line.splitAt(self.lines[line.index].toOpenArray.runeIndex(diagnostic.selection.last.column, returnLen=true))
       self.overrideUnderline(line, diagnostic.selection.first.column, diagnostic.selection.last.column, true, color)
+
+      let newLineIndex = diagnostic.message.find("\n")
+      let maxIndex = if newLineIndex != -1:
+        newLineIndex
+      else:
+        diagnostic.message.len
+
+      let diagnosticMessage: string = "     ■ " & diagnostic.message[0..<maxIndex]
+      line.parts.add StyledText(text: diagnosticMessage, scope: colorName, scopeC: colorName.cstring, inlayContainCursor: true, priority: 1000000000)
 
 proc getStyledText*(self: TextDocument, i: int): StyledLine =
   if self.styledTextCache.contains(i):
