@@ -71,6 +71,10 @@ proc clampToLine(document: TextDocument, selection: Selection, line: StyledLine)
 proc getTextRange(line: StyledLine, partIndex: int): (RuneIndex, RuneIndex) =
   var startRune = 0.RuneIndex
   var endRune = 0.RuneIndex
+
+  if partIndex >= line.parts.len:
+    return
+
   if line.parts[partIndex].textRange.isSome:
     startRune = line.parts[partIndex].textRange.get.startIndex
     endRune = line.parts[partIndex].textRange.get.endIndex
@@ -322,10 +326,12 @@ proc renderLine*(
         builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = options.backgroundColor):
           capture line, currentNode:
             onClickAny btn:
-              options.handleClick(btn, pos, line.index, int.none)
+              if options.handleClick.isNotNil:
+                options.handleClick(btn, pos, line.index, int.none)
 
             onDrag Left:
-              options.handleDrag(Left, pos, line.index, int.none)
+              if options.handleDrag.isNotNil:
+                options.handleDrag(Left, pos, line.index, int.none)
 
           if options.lineEndColor.getSome(color):
             builder.panel(&{FillY, FillBackground}, w = builder.charWidth, backgroundColor = color)
@@ -540,16 +546,17 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     self.hideHoverDelayed()
 
   var options = LineRenderOptions(
-    handleClick: handleClick,
-    handleDrag: handleDrag,
-    handleBeginHover: handleBeginHover,
-    handleHover: handleHover,
-    handleEndHover: handleEndHover,
     backgroundColor: backgroundColor,
     textColor: textColor,
     hoverLocation: self.hoverLocation,
     theme: app.theme,
   )
+
+  options.handleClick = handleClick
+  options.handleDrag = handleDrag
+  options.handleBeginHover = handleBeginHover
+  options.handleHover = handleHover
+  options.handleEndHover = handleEndHover
 
   options.wrapLineEndChar = getOption[string](app, "editor.text.wrap-line-end-char", "↲")
   options.wrapLine = getOption[bool](app, "editor.text.wrap-lines", true)
@@ -621,11 +628,12 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       else:
         backgroundColor
 
+      let nextLineDiff = self.diffChanges.mapIt(mapLineTargetToSource(it, i + 1)).flatten
+
+      let lineRuneLen = self.document.lines[i].runeLen.RuneIndex
       let otherLine = self.diffChanges.mapIt(mapLineTargetToSource(it, i)).flatten
       if renderDiff and (otherLine.isNone or otherLine.get.changed):
-        backgroundColor = (insertedTextBackgroundColor * insertedTextBackgroundColor.a).withAlpha(1)
-
-      let nextLineDiff = self.diffChanges.mapIt(mapLineTargetToSource(it, i + 1)).flatten
+        backgroundColor = backgroundColor.blendNormal(insertedTextBackgroundColor)
 
       options.backgroundColor = backgroundColor
 
@@ -641,8 +649,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
       selectionsClampedOnLine.sort((a, b) => cmp(a.first, b.first), Ascending)
       highlightsClampedOnLine.sort((a, b) => cmp(a.first, b.first), Ascending)
-
-      var colors: seq[tuple[first: RuneIndex, last: RuneIndex, color: Color]] = @[(0.RuneIndex, self.document.lines[i].runeLen.RuneIndex, backgroundColor.withAlpha(1))]
+      var colors: seq[tuple[first: RuneIndex, last: RuneIndex, color: Color]] = @[(0.RuneIndex, lineRuneLen, backgroundColor.withAlpha(1))]
       blendColorRanges(colors, highlightsClampedOnLine, inclusive)
       blendColorRanges(colors, selectionsClampedOnLine, selectionColor, inclusive)
 
@@ -676,6 +683,13 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
           let width = currentNode.bounds.w
           var leftOffsetY = 0'f32
           if otherLine.getSome(otherLine) and otherLine.line < self.diffDocument.lines.len:
+
+            options.handleClick = nil
+            options.handleDrag = nil
+            options.handleBeginHover = nil
+            options.handleHover = nil
+            options.handleEndHover = nil
+
             let otherCursorLine = self.diffChanges.mapIt(mapLineTargetToSource(it, cursorLine))
             builder.panel(&{SizeToContentY, LayoutVertical}, w = width / 2):
               if i == 0 and otherLine.line > 0:
@@ -715,6 +729,12 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
             options.lineNumber = i
             options.cursorLine = cursorLine
             options.backgroundColor = backgroundColor
+
+            options.handleClick = handleClick
+            options.handleDrag = handleDrag
+            options.handleBeginHover = handleBeginHover
+            options.handleHover = handleHover
+            options.handleEndHover = handleEndHover
 
             let infos = renderLine(builder, styledLine, self.document.lines[i], colors, cursorsPerLine, options)
             cursors.add infos.cursors
