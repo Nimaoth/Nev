@@ -24,6 +24,9 @@ type LocationInfos = object
 type LineRenderOptions = object
   handleClick: proc(btn: MouseButton, pos: Vec2, line: int, partIndex: Option[int])
   handleDrag: proc(btn: MouseButton, pos: Vec2, line: int, partIndex: Option[int])
+  handleBeginHover: proc(node: UINode, pos: Vec2, line: int, partIndex: int)
+  handleHover: proc(node: UINode, pos: Vec2, line: int, partIndex: int)
+  handleEndHover: proc(node: UINode, pos: Vec2, line: int, partIndex: int)
 
 when defined(js):
   template tokenColor*(theme: Theme, part: StyledText, default: untyped): Color =
@@ -243,23 +246,24 @@ proc renderLine*(
 
             capture line, partNode, startRune, textRuneLen, isInlay, partIndex:
               onClickAny btn:
-                options.handleClick(btn, pos, line.index, partIndex.some)
+                if options.handleClick.isNotNil:
+                  options.handleClick(btn, pos, line.index, partIndex.some)
 
               onDrag Left:
-                options.handleDrag(Left, pos, line.index, partIndex.some)
+                if options.handleDrag.isNotNil:
+                  options.handleDrag(Left, pos, line.index, partIndex.some)
 
               onBeginHover:
-                let offset = self.getCursorPos(textRuneLen, line.index, startRune, pos)
-                self.lastHoverLocationBounds = partNode.boundsAbsolute.some
-                self.showHoverForDelayed (line.index, offset)
+                if options.handleBeginHover.isNotNil:
+                  options.handleBeginHover(partNode, pos, line.index, partIndex)
 
               onHover:
-                let offset = self.getCursorPos(textRuneLen, line.index, startRune, pos)
-                self.lastHoverLocationBounds = partNode.boundsAbsolute.some
-                self.showHoverForDelayed (line.index, offset)
+                if options.handleHover.isNotNil:
+                  options.handleHover(partNode, pos, line.index, partIndex)
 
               onEndHover:
-                self.hideHoverDelayed()
+                if options.handleEndHover.isNotNil:
+                  options.handleEndHover(partNode, pos, line.index, partIndex)
 
             if addBackgroundAsChildren:
               # Add separate background colors for selections/highlights
@@ -491,9 +495,31 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     self.app.tryActivateEditor(self)
     self.markDirty()
 
+  proc handleBeginHover(node: UINode, pos: Vec2, line: int, partIndex: int) =
+    let styledLine = self.getStyledText(line)
+    let (startRune, _) = styledLine.getTextRange(partIndex)
+    let part = styledLine.parts[partIndex]
+    let offset = self.getCursorPos(part.text.runeLen.int, line, startRune, pos)
+    self.lastHoverLocationBounds = node.boundsAbsolute.some
+    self.showHoverForDelayed (line, offset)
+
+  proc handleHover(node: UINode, pos: Vec2, line: int, partIndex: int) =
+    let styledLine = self.getStyledText(line)
+    let (startRune, _) = styledLine.getTextRange(partIndex)
+    let part = styledLine.parts[partIndex]
+    let offset = self.getCursorPos(part.text.runeLen.int, line, startRune, pos)
+    self.lastHoverLocationBounds = node.boundsAbsolute.some
+    self.showHoverForDelayed (line, offset)
+
+  proc handleEndHover(node: UINode, pos: Vec2, line: int, partIndex: int) =
+    self.hideHoverDelayed()
+
   var options = LineRenderOptions(
     handleClick: handleClick,
     handleDrag: handleDrag,
+    handleBeginHover: handleBeginHover,
+    handleHover: handleHover,
+    handleEndHover: handleEndHover,
   )
 
   var selectionsPerLine = initTable[int, seq[Selection]]()
