@@ -48,6 +48,3 @@ rust_test
 /target
 
 vscode-lsp-log.json
-config/rust.session.json
-config/ue.session.json
-config/lsp.json
