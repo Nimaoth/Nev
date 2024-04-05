@@ -203,39 +203,9 @@ proc renderLine*(
   options: LineRenderOptions):
     tuple[cursors: seq[CursorLocationInfo], hover: Option[CursorLocationInfo], diagnostic: Option[CursorLocationInfo]] =
 
-  let document = options.document
-
   var flagsInner = &{FillX, SizeToContentY}
   if options.sizeToContentX:
     flagsInner.incl SizeToContentX
-
-  let hasDiagnostic = false # document.diagnosticsPerLine.contains(options.lineNumber) and document.diagnosticsPerLine[options.lineNumber][0] < document.currentDiagnostics.len
-  let diagnosticIndices = if hasDiagnostic:
-    document.diagnosticsPerLine[options.lineNumber]
-  else:
-    @[]
-  var diagnosticColorName = "editorHint.foreground"
-  var diagnosticMessage: string = "■ "
-  if hasDiagnostic:
-    let diagnostic {.cursor.} = document.currentDiagnostics[diagnosticIndices[0]]
-    let newLineIndex = diagnostic.message.find("\n")
-    let maxIndex = if newLineIndex != -1:
-      newLineIndex
-    else:
-      diagnostic.message.len
-
-    diagnosticMessage.add diagnostic.message[0..<maxIndex]
-
-    if diagnostic.severity.getSome(severity):
-      diagnosticColorName = case severity
-      of Error: "editorError.foreground"
-      of Warning: "editorWarning.foreground"
-      of Information: "editorInfo.foreground"
-      of Hint: "editorHint.foreground"
-
-  let diagnosticMessageLen = diagnosticMessage.runeLen
-  let diagnosticLines = diagnosticMessage.countLines
-  let diagnosticMessageWidth = diagnosticMessageLen.float * builder.charWidth
 
   # line numbers
   var lineNumberText = ""
@@ -343,38 +313,14 @@ proc renderLine*(
 
         # endwhile partIndex < line.parts.len:
 
-        var insertDiagnosticNow = false
-        if hasDiagnostic and partIndex >= line.parts.len:
-          insertDiagnosticNow = true
-          let diagnosticXOffset = 7 * builder.charWidth
-          for i in 0..0:
-            insertDiagnosticLater = false
-            if options.cursorLine == options.lineNumber and diagnosticXOffset + diagnosticMessageWidth > lineWidth - lastPartXW:
-              if subLinePartIndex > 0:
-                subLineIndex += 1
-                subLinePartIndex = 0
-                insertDiagnosticLater = true
-                insertDiagnosticNow = false
-                break
-
         # Fill rest of line with background
-        let lineEndYFlags = if insertDiagnosticNow: &{SizeToContentY} else: &{FillY}
-        builder.panel(&{FillX, FillBackground} + lineEndYFlags, backgroundColor = options.backgroundColor):
+        builder.panel(&{FillX, FillY, FillBackground}, backgroundColor = options.backgroundColor):
           capture line, currentNode:
             onClickAny btn:
               options.handleClick(btn, pos, line.index, int.none)
 
             onDrag Left:
               options.handleDrag(Left, pos, line.index, int.none)
-
-          if insertDiagnosticNow:
-            let diagnosticXOffset = 7 * builder.charWidth
-            let diagnosticColor = options.theme.color(@[diagnosticColorName, "editor.foreground"], color(1, 1, 1))
-            var diagnosticPanel: UINode = nil
-            let diagnosticHeight = diagnosticLines.float * builder.textHeight
-            builder.panel(&{DrawText, FillBackground, SizeToContentX, MaskContent},
-              x = diagnosticXOffset, h = diagnosticHeight, text = diagnosticMessage, textColor = diagnosticColor, backgroundColor = options.backgroundColor.lighten(0.07)):
-              diagnosticPanel = currentNode
 
           if options.lineEndColor.getSome(color):
             builder.panel(&{FillY, FillBackground}, w = builder.charWidth, backgroundColor = color)
