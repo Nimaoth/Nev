@@ -23,6 +23,7 @@ type LocationInfos = object
 
 type LineRenderOptions = object
   handleClick: proc(btn: MouseButton, pos: Vec2, line: int, partIndex: Option[int])
+  handleDrag: proc(btn: MouseButton, pos: Vec2, line: int, partIndex: Option[int])
 
 when defined(js):
   template tokenColor*(theme: Theme, part: StyledText, default: untyped): Color =
@@ -245,19 +246,7 @@ proc renderLine*(
                 options.handleClick(btn, pos, line.index, partIndex.some)
 
               onDrag Left:
-                if self.active:
-                  let offset = self.getCursorPos(textRuneLen, line.index, startRune, if isInlay: vec2() else: pos)
-                  let currentSelection = self.dragStartSelection
-                  let newCursor = (line.index, offset)
-                  let first = if (currentSelection.isBackwards and newCursor <= currentSelection.first) or (not currentSelection.isBackwards and newCursor >= currentSelection.first):
-                    currentSelection.first
-                  else:
-                    currentSelection.last
-                  self.selection = (first, newCursor)
-                  self.runDragCommand()
-                  self.updateTargetColumn(Last)
-                  self.app.tryActivateEditor(self)
-                  self.markDirty()
+                options.handleDrag(Left, pos, line.index, partIndex.some)
 
               onBeginHover:
                 let offset = self.getCursorPos(textRuneLen, line.index, startRune, pos)
@@ -343,18 +332,7 @@ proc renderLine*(
               options.handleClick(btn, pos, line.index, int.none)
 
             onDrag Left:
-              if self.active:
-                let currentSelection = self.dragStartSelection
-                let newCursor = (line.index, document.lineLength(line.index))
-                let first = if (currentSelection.isBackwards and newCursor < currentSelection.first) or (not currentSelection.isBackwards and newCursor >= currentSelection.first):
-                  currentSelection.first
-                else:
-                  currentSelection.last
-                self.selection = (first, newCursor)
-                self.runDragCommand()
-                self.updateTargetColumn(Last)
-                self.app.tryActivateEditor(self)
-                self.markDirty()
+              options.handleDrag(Left, pos, line.index, int.none)
 
           if insertDiagnosticNow:
             let diagnosticXOffset = 7 * builder.charWidth
@@ -457,35 +435,65 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   let contextBackgroundColor = app.theme.color(@["breadcrumbPicker.background", "background"], color(50/255, 70/255, 70/255))
   let wrapLineEndColor = app.theme.tokenColor(@["comment"], color(100/255, 100/255, 100/255))
 
+  proc handleClick(btn: MouseButton, pos: Vec2, line: int, partIndex: Option[int]) =
+    self.lastPressedMouseButton = btn
+
+    if btn notin {MouseButton.Left, DoubleClick, TripleClick}:
+      return
+
+    if partIndex.getSome(partIndex):
+      let styledLine = self.getStyledText(line)
+      let (startRune, _) = styledLine.getTextRange(partIndex)
+      let part = styledLine.parts[partIndex]
+      let isInlay = part.textRange.isNone
+      let offset = self.getCursorPos(part.text.runeLen.int, line, startRune, if isInlay: vec2() else: pos)
+      self.selection = (line, offset).toSelection
+    else:
+      self.selection = (line, self.document.lineLength(line)).toSelection
+
+    self.dragStartSelection = self.selection
+
+    if btn == Left:
+      self.runSingleClickCommand()
+    elif btn == DoubleClick:
+      self.runDoubleClickCommand()
+    elif btn == TripleClick:
+      self.runTripleClickCommand()
+
+    self.updateTargetColumn(Last)
+    self.app.tryActivateEditor(self)
+    self.markDirty()
+
+  proc handleDrag(btn: MouseButton, pos: Vec2, line: int, partIndex: Option[int]) =
+    if not self.active:
+      return
+
+    let currentSelection = self.dragStartSelection
+
+    let newCursor = if partIndex.getSome(partIndex):
+      let styledLine = self.getStyledText(line)
+      let (startRune, _) = styledLine.getTextRange(partIndex)
+      let part = styledLine.parts[partIndex]
+      let isInlay = part.textRange.isNone
+      let offset = self.getCursorPos(part.text.runeLen.int, line, startRune, if isInlay: vec2() else: pos)
+      (line, offset)
+    else:
+      let currentSelection = self.dragStartSelection
+      (line, self.document.lineLength(line))
+
+    let first = if (currentSelection.isBackwards and newCursor < currentSelection.first) or (not currentSelection.isBackwards and newCursor >= currentSelection.first):
+      currentSelection.first
+    else:
+      currentSelection.last
+    self.selection = (first, newCursor)
+    self.runDragCommand()
+    self.updateTargetColumn(Last)
+    self.app.tryActivateEditor(self)
+    self.markDirty()
+
   var options = LineRenderOptions(
-    handleClick: proc(btn: MouseButton, pos: Vec2, line: int, partIndex: Option[int]) =
-      self.lastPressedMouseButton = btn
-
-      if btn notin {MouseButton.Left, DoubleClick, TripleClick}:
-        return
-
-      if partIndex.getSome(partIndex):
-        let styledLine = self.getStyledText(line)
-        let (startRune, _) = styledLine.getTextRange(partIndex)
-        let part = styledLine.parts[partIndex]
-        let isInlay = part.textRange.isNone
-        let offset = self.getCursorPos(part.text.runeLen.int, line, startRune, if isInlay: vec2() else: pos)
-        self.selection = (line, offset).toSelection
-      else:
-        self.selection = (line, self.document.lineLength(line)).toSelection
-
-      self.dragStartSelection = self.selection
-
-      if btn == Left:
-        self.runSingleClickCommand()
-      elif btn == DoubleClick:
-        self.runDoubleClickCommand()
-      elif btn == TripleClick:
-        self.runTripleClickCommand()
-
-      self.updateTargetColumn(Last)
-      self.app.tryActivateEditor(self)
-      self.markDirty()
+    handleClick: handleClick,
+    handleDrag: handleDrag,
   )
 
   var selectionsPerLine = initTable[int, seq[Selection]]()
