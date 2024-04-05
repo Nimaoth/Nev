@@ -648,7 +648,8 @@ proc preLayout*(builder: UINodeBuilder, node: UINode) =
     else:
       node.boundsRaw.h = (parent.h - node.y).roundPositive
 
-  assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
+  when not defined(js):
+    assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
 
 proc relayout*(builder: UINodeBuilder, node: UINode) =
   builder.preLayout node
@@ -664,7 +665,8 @@ proc postLayoutChild*(builder: UINodeBuilder, node: UINode, child: UINode) =
   if SizeToContentY in node.flags and child.yh > node.h:
     node.boundsRaw.h = child.yh.roundPositive
 
-  assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
+  when not defined(js):
+    assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
 
 proc updateSizeToContent*(builder: UINodeBuilder, node: UINode) =
   if SizeToContentX in node.flags:
@@ -718,7 +720,8 @@ proc updateSizeToContent*(builder: UINodeBuilder, node: UINode) =
 
     node.boundsRaw.h = max(node.h, max(childrenHeight, strHeight)).roundPositive
 
-  assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
+  when not defined(js):
+    assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
 
 proc postLayout*(builder: UINodeBuilder, node: UINode) =
   # node.logp "postLayout"
@@ -754,7 +757,8 @@ proc postLayout*(builder: UINodeBuilder, node: UINode) =
     else:
       node.boundsRaw.h = (node.parent.h - node.y).roundPositive
 
-  assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
+  when not defined(js):
+    assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
 
   if node.parent.isNotNil:
     builder.postLayoutChild(node.parent, node)
@@ -1005,7 +1009,8 @@ proc prepareNode*(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[s
   if inH.isSome: node.boundsRaw.h = inH.get.roundPositive
   if inPivot.isSome: node.pivot = inPivot.get
 
-  assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
+  when not defined(js):
+    assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
 
   node.logp fmt"panel begin {builder.currentParent.id}, {builder.currentChild.?id} {node.id}"
 
@@ -1109,7 +1114,8 @@ proc postProcessNodeBackwards(builder: UINodeBuilder, node: UINode, offsetX: flo
     node.boundsActual.h = node.h
     builder.animatingNodes.excl node.id
 
-  assert not node.boundsActual.isNan, fmt"node {node.dump}: boundsActual contains Nan"
+  when not defined(js):
+    assert not node.boundsActual.isNan, fmt"node {node.dump}: boundsActual contains Nan"
 
   let newPosAbsoluteX = node.boundsActual.x + offsetX
   let newPosAbsoluteY = node.boundsActual.y + offsetY
@@ -1146,14 +1152,16 @@ proc postProcessNodeBackwards(builder: UINodeBuilder, node: UINode, offsetX: flo
   node.lw = node.boundsActual.w
   node.lh = node.boundsActual.h
 
-  assert not node.boundsAbsolute.isNan, fmt"node {node.dump}: boundsAbsolute contains Nan"
+  when not defined(js):
+    assert not node.boundsAbsolute.isNan, fmt"node {node.dump}: boundsAbsolute contains Nan"
 
   node.boundsOld.x = node.boundsActual.x
   node.boundsOld.y = node.boundsActual.y
   node.boundsOld.w = node.boundsActual.w
   node.boundsOld.h = node.boundsActual.h
 
-  assert not node.boundsOld.isNan, fmt"node {node.dump}: boundsOld contains Nan"
+  when not defined(js):
+    assert not node.boundsOld.isNan, fmt"node {node.dump}: boundsOld contains Nan"
 
   node.mFlagsOld = node.flags
 
@@ -1405,7 +1413,8 @@ proc retain*(builder: UINodeBuilder): bool =
 
   node.boundsRaw.w = w
   node.boundsRaw.h = h
-  assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
+  when not defined(js):
+    assert not node.boundsRaw.isNan, fmt"node {node.dump}: boundsRaw contains Nan"
 
   builder.currentChild = builder.currentParent.last
 
