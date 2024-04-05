@@ -52,6 +52,7 @@ type StyledText* = object
   underlineColor*: Color
   inlayContainCursor*: bool
   scopeIsToken*: bool = true
+  canWrap*: bool = true
 
 type StyledLine* = ref object
   index*: int
@@ -504,8 +505,27 @@ proc addDiagnosticsUnderline(self: TextDocument, line: var StyledLine) =
   # diagnostics
   if self.diagnosticsPerLine.contains(line.index):
     let indices {.cursor.} = self.diagnosticsPerLine[line.index]
+
+    const maxNonErrors = 2
+    const maxErrors = 4
+
+    var nonErrorDiagnostics = 0
+    var errorDiagnostics = 0
+
     for diagnosticIndex in indices:
       let diagnostic {.cursor.} = self.currentDiagnostics[diagnosticIndex]
+      if diagnostic.removed:
+        continue
+
+      let isError = diagnostic.severity.isSome and diagnostic.severity.get == lsp_types.DiagnosticSeverity.Error
+      if isError:
+        if errorDiagnostics >= maxErrors:
+          continue
+        errorDiagnostics.inc
+      else:
+        if nonErrorDiagnostics >= maxNonErrors:
+          continue
+        nonErrorDiagnostics.inc
 
       let colorName = if diagnostic.severity.getSome(severity):
         case severity
@@ -538,7 +558,7 @@ proc addDiagnosticsUnderline(self: TextDocument, line: var StyledLine) =
         diagnostic.message.len
 
       let diagnosticMessage: string = "     ■ " & diagnostic.message[0..<maxIndex]
-      line.parts.add StyledText(text: diagnosticMessage, scope: colorName, scopeC: colorName.cstring, inlayContainCursor: true, scopeIsToken: false, priority: 1000000000)
+      line.parts.add StyledText(text: diagnosticMessage, scope: colorName, scopeC: colorName.cstring, inlayContainCursor: true, scopeIsToken: false, canWrap: false, priority: 1000000000)
 
 proc getStyledText*(self: TextDocument, i: int): StyledLine =
   if self.styledTextCache.contains(i):
@@ -1114,7 +1134,7 @@ proc updateDiagnosticPositionsAfterDelete(self: TextDocument, selection: Selecti
         self.updateCursorAfterDelete(self.currentDiagnostics[i].selection.last, selection).getSome(last):
       self.currentDiagnostics[i].selection = (first, last)
     else:
-      self.currentDiagnostics.removeSwap(i)
+      self.currentDiagnostics[i].removed = true
 
 proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], texts: openArray[string], notify: bool = true, record: bool = true): seq[Selection] =
   # be careful with logging inside this function, because the logs are written to another document using this function to insert, which can cause infinite recursion
