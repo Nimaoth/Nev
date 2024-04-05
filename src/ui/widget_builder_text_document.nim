@@ -459,6 +459,8 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
     if btn notin {MouseButton.Left, DoubleClick, TripleClick}:
       return
+    if line >= self.document.lines.len:
+      return
 
     if partIndex.getSome(partIndex):
       let styledLine = self.getStyledText(line)
@@ -484,6 +486,9 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     self.markDirty()
 
   proc handleDrag(btn: MouseButton, pos: Vec2, line: int, partIndex: Option[int]) =
+    if line >= self.document.lines.len:
+      return
+
     if not self.active:
       return
 
@@ -510,6 +515,9 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     self.markDirty()
 
   proc handleBeginHover(node: UINode, pos: Vec2, line: int, partIndex: int) =
+    if line >= self.document.lines.len:
+      return
+
     let styledLine = self.getStyledText(line)
     let (startRune, _) = styledLine.getTextRange(partIndex)
     let part = styledLine.parts[partIndex]
@@ -518,6 +526,9 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     self.showHoverForDelayed (line, offset)
 
   proc handleHover(node: UINode, pos: Vec2, line: int, partIndex: int) =
+    if line >= self.document.lines.len:
+      return
+
     let styledLine = self.getStyledText(line)
     let (startRune, _) = styledLine.getTextRange(partIndex)
     let part = styledLine.parts[partIndex]
@@ -663,10 +674,24 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
         builder.panel(&{FillX, SizeToContentY}, y = y, pivot = pivot):
           let width = currentNode.bounds.w
+          var leftOffsetY = 0'f32
           if otherLine.getSome(otherLine) and otherLine.line < self.diffDocument.lines.len:
             let otherCursorLine = self.diffChanges.mapIt(mapLineTargetToSource(it, cursorLine))
             builder.panel(&{SizeToContentY, LayoutVertical}, w = width / 2):
+              if i == 0 and otherLine.line > 0:
+                for k in 0..<otherLine.line:
+                  let styledLine = self.diffDocument.getStyledText k
+                  let colors = [(0.RuneIndex, self.diffDocument.lines[k].runeLen.RuneIndex, deletedTextBackgroundColor)]
+                  options.backgroundColor = deletedTextBackgroundColor
+                  options.lineNumber = k
+                  options.lineId = self.diffDocument.lineIds[k]
+                  options.cursorLine = -1
+                  discard renderLine(builder, styledLine, self.diffDocument.lines[k], colors, [], options)
+                  let lastLine = builder.currentChild
+                  leftOffsetY = lastLine.bounds.yh
+
               let styledLine = self.diffDocument.getStyledText otherLine.line
+              options.backgroundColor = backgroundColor
               options.lineNumber = otherLine.line
               options.lineId = self.diffDocument.lineIds[otherLine.line]
               options.cursorLine = otherCursorLine.flatten.get((-1, false)).line
@@ -685,7 +710,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
           else:
             builder.panel(&{FillY, FillBackground}, w = width / 2, backgroundColor = backgroundColor)
 
-          builder.panel(&{SizeToContentY}, x = width / 2, w = width / 2):
+          builder.panel(&{SizeToContentY, FillY}, y = leftOffsetY, x = width / 2, w = width / 2):
             options.lineId = self.document.lineIds[i]
             options.lineNumber = i
             options.cursorLine = cursorLine

@@ -565,6 +565,10 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
   if self.styledTextCache.contains(i):
     result = self.styledTextCache[i]
   else:
+    if i >= self.lines.len:
+      log lvlError, fmt"getStyledText({i}) out of range {self.lines.len}"
+      return StyledLine()
+
     var line = self.lines[i]
     result = StyledLine(index: i, parts: @[StyledText(text: line, scope: "", scopeC: "", priority: 1000000000, textRange: (0, line.len, 0.RuneIndex, line.runeLen.RuneIndex).some)])
     self.styledTextCache[i] = result
