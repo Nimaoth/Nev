@@ -997,6 +997,60 @@ proc getNextDiagnostic*(self: TextDocumentEditor; cursor: Cursor;
   result = parseJson($res).jsonTo(typeof(result))
 
 
+proc editor_text_closeDiff_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc closeDiff*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_closeDiff_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_getPrevChange_Selection_TextDocumentEditor_Cursor_wasm(
+    arg: cstring): cstring {.importc.}
+proc getPrevChange*(self: TextDocumentEditor; cursor: Cursor): Selection =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when Cursor is JsonNode:
+      cursor
+    else:
+      cursor.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_getPrevChange_Selection_TextDocumentEditor_Cursor_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_text_getNextChange_Selection_TextDocumentEditor_Cursor_wasm(
+    arg: cstring): cstring {.importc.}
+proc getNextChange*(self: TextDocumentEditor; cursor: Cursor): Selection =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when Cursor is JsonNode:
+      cursor
+    else:
+      cursor.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_getNextChange_Selection_TextDocumentEditor_Cursor_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
 proc editor_text_addNextFindResultToSelection_void_TextDocumentEditor_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc addNextFindResultToSelection*(self: TextDocumentEditor;

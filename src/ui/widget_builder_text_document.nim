@@ -7,6 +7,7 @@ import platform/platform
 import ui/[widget_builders_base, widget_library]
 import app, document_editor, theme, config_provider, app_interface
 import text/language/[lsp_types]
+import text/diff
 
 import ui/node
 
@@ -204,7 +205,7 @@ proc renderLinePart(
 proc renderLine*(
   builder: UINodeBuilder, line: StyledLine, lineOriginal: openArray[char],
   backgroundColors: openArray[tuple[first: RuneIndex, last: RuneIndex, color: Color]], cursors: openArray[int],
-  options: LineRenderOptions):
+  options: LineRenderOptions, useUserId: bool = true):
     tuple[cursors: seq[CursorLocationInfo], hover: Option[CursorLocationInfo], diagnostic: Option[CursorLocationInfo]] =
 
   var flagsInner = &{FillX, SizeToContentY}
@@ -386,6 +387,43 @@ proc blendColorRanges(colors: var seq[tuple[first: RuneIndex, last: RuneIndex, c
 
       inc colorIndex
 
+proc createDoubleLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: float, maxLine: int, sizeToContentX: bool, sizeToContentY: bool, backgroundColor: Color, handleScroll: proc(delta: float), handleLine: proc(line: int, y: float, down: bool)) =
+  var flags = 0.UINodeFlags
+  if sizeToContentX:
+    flags.incl SizeToContentX
+  else:
+    flags.incl FillX
+
+  if sizeToContentY:
+    flags.incl SizeToContentY
+  else:
+    flags.incl FillY
+
+  builder.panel(flags):
+    onScroll:
+      handleScroll(delta.y)
+
+    let height = currentNode.bounds.h
+    var y = scrollOffset
+
+    # draw lines downwards
+    for i in previousBaseIndex..maxLine:
+      handleLine(i, y, true)
+
+      y = builder.currentChild.yh
+      if not sizeToContentY and builder.currentChild.bounds.y > height:
+        break
+
+    y = scrollOffset
+
+    # draw lines upwards
+    for i in countdown(previousBaseIndex - 1, 0):
+      handleLine(i, y, false)
+
+      y = builder.currentChild.y
+      if not sizeToContentY and builder.currentChild.bounds.yh < 0:
+        break
+
 proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App, backgroundColor: Color, textColor: Color, sizeToContentX: bool, sizeToContentY: bool): LocationInfos =
   var flags = 0.UINodeFlags
   if sizeToContentX:
@@ -403,14 +441,18 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   let lineNumbers = self.lineNumbers.get getOption[LineNumbers](app, "editor.text.line-numbers", LineNumbers.Absolute)
   let charWidth = builder.charWidth
 
+  let renderDiff = self.diffDocument.isNotNil and self.diffChanges.isSome
+
   # ↲ ↩ ⤦ ⤶ ⤸ ⮠
-  let showContextLines = getOption[bool](app, "editor.text.context-lines", true)
+  let showContextLines = not renderDiff and getOption[bool](app, "editor.text.context-lines", true)
 
   let selectionColor = app.theme.color("selection.background", color(200/255, 200/255, 200/255))
   let highlightColor = app.theme.color(@["editor.findMatchBackground", "editor.rangeHighlightBackground"], color(200/255, 200/255, 200/255))
   let cursorForegroundColor = app.theme.color(@["editorCursor.foreground", "foreground"], color(200/255, 200/255, 200/255))
   let cursorBackgroundColor = app.theme.color(@["editorCursor.background", "background"], color(50/255, 50/255, 50/255))
   let contextBackgroundColor = app.theme.color(@["breadcrumbPicker.background", "background"], color(50/255, 70/255, 70/255))
+  let insertedTextBackgroundColor = app.theme.color(@["diffEditor.insertedTextBackground", "diffEditor.insertedLineBackground"], color(0.1, 0.2, 0.1))
+  let deletedTextBackgroundColor = app.theme.color(@["diffEditor.deletedTextBackground", "diffEditor.deletedLineBackground"], color(0.1, 0.2, 0.1))
 
   proc handleClick(btn: MouseButton, pos: Vec2, line: int, partIndex: Option[int]) =
     self.lastPressedMouseButton = btn
@@ -556,21 +598,22 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
       self.lastRenderedLines.add styledLine
 
-      var indexFromTop = if down:
-        (y / totalLineHeight + 0.5).ceil.int
+      let indexFromTop = if down:
+        (y / totalLineHeight + 0.5).ceil.int - 1
       else:
-        (y / totalLineHeight - 0.5).ceil.int
-
-      indexFromTop -= 1
+        (y / totalLineHeight - 0.5).ceil.int - 1
 
       let indentLevel = self.document.getIndentLevelForClosestLine(i)
 
-      var i = i
-
-      let backgroundColor = if cursorLine == i:
+      var backgroundColor = if cursorLine == i:
         backgroundColor.lighten(0.05)
       else:
         backgroundColor
+
+      let otherLine = self.diffChanges.mapIt(mapLineTargetToSource(it, i)).flatten
+      if renderDiff and (otherLine.isNone or otherLine.get.changed):
+        backgroundColor = (insertedTextBackgroundColor * insertedTextBackgroundColor.a).withAlpha(1)
+
       options.backgroundColor = backgroundColor
 
       if showContextLines and (indexFromTop <= indentLevel and not self.document.shouldIgnoreAsContextLine(i)):
@@ -611,15 +654,52 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       options.parentId = self.userId
       options.cursorLine = cursorLine
 
-      let infos = renderLine(builder, styledLine, self.document.lines[i], colors, cursorsPerLine, options)
-      cursors.add infos.cursors
-      if infos.hover.isSome:
-        hoverInfo = infos.hover
-      if infos.diagnostic.isSome:
-        diagnosticInfo = infos.diagnostic
+      if renderDiff:
+        let otherLine = self.diffChanges.get.mapLineTargetToSource(i)
+        options.y = 0
+        options.pivot = vec2(0, 0)
+
+        builder.panel(&{FillX, SizeToContentY}, y = y, pivot = pivot):
+          let width = currentNode.bounds.w
+          if otherLine.getSome(otherLine) and otherLine.line < self.diffDocument.lines.len:
+            let otherCursorLine = self.diffChanges.mapIt(mapLineTargetToSource(it, cursorLine))
+            builder.panel(&{SizeToContentY}, w = width / 2):
+              let styledLine = self.diffDocument.getStyledText otherLine.line
+              options.lineNumber = otherLine.line
+              options.lineId = self.document.lineIds[i] + 10000
+              options.cursorLine = otherCursorLine.flatten.get((-1, false)).line
+              let colors: seq[tuple[first: RuneIndex, last: RuneIndex, color: Color]] = @[(0.RuneIndex, self.diffDocument.lines[otherLine.line].runeLen.RuneIndex, backgroundColor)]
+              discard renderLine(builder, styledLine, self.diffDocument.lines[otherLine.line], colors, [], options)
+          else:
+            builder.panel(&{FillY, FillBackground}, w = width / 2, backgroundColor = backgroundColor)
+
+          builder.panel(&{SizeToContentY}, x = width / 2, w = width / 2):
+            options.lineId = self.document.lineIds[i]
+            options.lineNumber = i
+            options.cursorLine = cursorLine
+
+            let infos = renderLine(builder, styledLine, self.document.lines[i], colors, cursorsPerLine, options)
+            cursors.add infos.cursors
+            if infos.hover.isSome:
+              hoverInfo = infos.hover
+            if infos.diagnostic.isSome:
+              diagnosticInfo = infos.diagnostic
+
+      else:
+
+        let infos = renderLine(builder, styledLine, self.document.lines[i], colors, cursorsPerLine, options)
+        cursors.add infos.cursors
+        if infos.hover.isSome:
+          hoverInfo = infos.hover
+        if infos.diagnostic.isSome:
+          diagnosticInfo = infos.diagnostic
 
     self.lastRenderedLines.setLen 0
-    builder.createLines(self.previousBaseIndex, self.scrollOffset, self.document.lines.high, sizeToContentX, sizeToContentY, backgroundColor, handleScroll, handleLine)
+
+    if renderDiff:
+      builder.createDoubleLines(self.previousBaseIndex, self.scrollOffset, self.document.lines.high, sizeToContentX, sizeToContentY, backgroundColor, handleScroll, handleLine)
+    else:
+      builder.createLines(self.previousBaseIndex, self.scrollOffset, self.document.lines.high, sizeToContentX, sizeToContentY, backgroundColor, handleScroll, handleLine)
 
     # context lines
     if contextLineTarget >= 0:
@@ -893,6 +973,8 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
   else:
     sizeFlags.incl FillY
 
+  let renderDiff = self.diffDocument.isNotNil and self.diffChanges.isSome
+
   builder.panel(&{UINodeFlag.MaskContent, OverlappingChildren} + sizeFlags, userId = self.userId.newPrimaryId):
     onClickAny btn:
       self.app.tryActivateEditor(self)
@@ -904,10 +986,11 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
         header = builder.createHeader(self.renderHeader, self.currentMode, self.document, headerColor, textColor):
           onRight:
             proc cursorString(cursor: Cursor): string = $cursor.line & ":" & $cursor.column & ":" & $self.document.lines[cursor.line].toOpenArray.runeIndex(cursor.column)
-            let text = fmt"{self.document.undoableRevision}/{self.document.revision}   {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} "
+            let diffText = if renderDiff: "diff    " else: ""
+            let text = fmt"| {diffText}{self.document.undoableRevision}/{self.document.revision}   {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} "
             builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = text)
 
-        builder.panel(sizeFlags):
+        builder.panel(sizeFlags + &{FillBackground}, backgroundColor = backgroundColor):
           if not self.disableScrolling and not sizeToContentY:
             let bounds = currentNode.bounds
 

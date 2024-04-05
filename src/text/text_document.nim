@@ -738,7 +738,8 @@ proc newTextDocument*(
     workspaceFolder: Option[WorkspaceFolder] = WorkspaceFolder.none,
     language: Option[string] = string.none,
     languageServer: Option[LanguageServer] = LanguageServer.none,
-    load: bool = false): TextDocument =
+    load: bool = false,
+    createLanguageServer: bool = true): TextDocument =
 
   new(result)
   var self = result
@@ -747,6 +748,7 @@ proc newTextDocument*(
   self.appFile = app
   self.workspace = workspaceFolder
   self.configProvider = configProvider
+  self.createLanguageServer = createLanguageServer
 
   self.indentStyle = IndentStyle(kind: Spaces, spaces: 2)
 
@@ -754,6 +756,16 @@ proc newTextDocument*(
     self.languageId = language
   elif getLanguageForFile(filename).getSome(language):
     self.languageId = language
+
+  if self.languageId != "":
+    if (let value = self.configProvider.getValue("editor.text.language." & self.languageId, newJNull()); value.kind == JObject):
+      self.languageConfig = value.jsonTo(TextLanguageConfig, Joptions(allowExtraKeys: true, allowMissingKeys: true)).some
+      if value.hasKey("indent"):
+        case value["indent"].str:
+        of "spaces":
+          self.indentStyle = IndentStyle(kind: Spaces, spaces: self.languageConfig.map((c) => c.tabWidth).get(4))
+        of "tabs":
+          self.indentStyle = IndentStyle(kind: Tabs)
 
   asyncCheck self.initTreesitter()
 
@@ -766,20 +778,10 @@ proc newTextDocument*(
         await ls.saveTempFile(targetFilename, self.contentString)
     self.onRequestSaveHandle = ls.addOnRequestSaveHandler(self.filename, callback)
 
-  elif self.languageId != "":
-    if (let value = self.configProvider.getValue("editor.text.language." & self.languageId, newJNull()); value.kind == JObject):
-      self.languageConfig = value.jsonTo(TextLanguageConfig, Joptions(allowExtraKeys: true, allowMissingKeys: true)).some
-      if value.hasKey("indent"):
-        case value["indent"].str:
-        of "spaces":
-          self.indentStyle = IndentStyle(kind: Spaces, spaces: self.languageConfig.map((c) => c.tabWidth).get(4))
-        of "tabs":
-          self.indentStyle = IndentStyle(kind: Tabs)
+  elif createLanguageServer and self.configProvider.getValue("editor.text.auto-start-language-server", false) and self.languageServer.isNone:
+      asyncCheck self.getLanguageServer()
 
       # debugf"using language for {filename}: {value}, {self.indentStyle}"
-
-    if self.configProvider.getValue("editor.text.auto-start-language-server", false) and self.languageServer.isNone:
-      asyncCheck self.getLanguageServer()
 
   self.content = content
 

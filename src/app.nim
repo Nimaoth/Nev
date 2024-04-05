@@ -8,7 +8,7 @@ import ast/[model, project]
 import config_provider, app_interface
 import text/language/language_server_base, language_server_absytree_commands
 import input, events, document, document_editor, popup, dispatch_tables, theme, clipboard, app_options
-import text/[custom_treesitter]
+import text/[custom_treesitter, diff]
 
 when not defined(js):
   import text/diff_git
@@ -1921,10 +1921,15 @@ when not defined(js):
     if document of TextDocument:
       let document = document.TextDocument
       if fileInfo.unstagedStatus != None:
+
         let stagedFileContent = getStagedFileContent(fileInfo.path).await
         let changes = getFileChanges(fileInfo.path).await
+        # echo "@["
+        # for c in changes.get:
+        #   echo fmt"  LineMapping(source: ({c.source.first}, {c.source.last}), target: ({c.target.first}, {c.target.last})),"
+        # echo "]"
 
-        var document = newTextDocument(self.asConfigProvider, language=document.languageId.some)
+        var document = newTextDocument(self.asConfigProvider, language=document.languageId.some, createLanguageServer = false)
         document.createLanguageServer = false
         document.content = stagedFileContent
         editorWorking.TextDocumentEditor.diffDocument = document
@@ -1935,9 +1940,49 @@ when not defined(js):
     else:
       log lvlError, fmt"Unsupported document type"
 
+proc diffActiveEditorAsync*(self: App) {.async.} =
+  let editorWorking = self.views[self.currentView].editor
+  let document = editorWorking.getDocument()
+
+  log lvlInfo, fmt"Diff document '{document.filename}'"
+
+  if document of TextDocument:
+    let document = document.TextDocument
+
+    when defined(js):
+      let stagedFileContent = fs.loadApplicationFile("diff.txt")
+      let changes = some @[
+        LineMapping(source: (120, 124), target: (120, 120)),
+        LineMapping(source: (132, 137), target: (128, 130)),
+        LineMapping(source: (152, 153), target: (145, 146)),
+        LineMapping(source: (162, 162), target: (155, 157)),
+        LineMapping(source: (169, 169), target: (164, 165)),
+        LineMapping(source: (172, 173), target: (168, 177)),
+      ]
+    else:
+      let relPath = document.workspace.mapIt(it.getRelativePath(document.filename).await).flatten.get(document.filename)
+      let stagedFileContent = getStagedFileContent(relPath).await
+      let changes = getFileChanges(relPath).await
+      # echo "@["
+      # for c in changes.get:
+      #   echo fmt"  LineMapping(source: ({c.source.first}, {c.source.last}), target: ({c.target.first}, {c.target.last})),"
+      # echo "]"
+
+    var oldDocument = newTextDocument(self.asConfigProvider, language=document.languageId.some, createLanguageServer = false)
+    oldDocument.content = stagedFileContent
+    editorWorking.TextDocumentEditor.diffDocument = oldDocument
+    editorWorking.TextDocumentEditor.diffChanges = changes
+
+    editorWorking.markDirty()
+
+proc diffActiveEditor*(self: App) {.expose("editor").} =
+  asyncCheck self.diffActiveEditorAsync()
+
 proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
   when defined(js):
     log lvlError, fmt"chooseGitActiveFiles not implemented yet for js backend"
+    self.diffActiveEditor()
+
   else:
     defer:
       self.platform.requestRender()
