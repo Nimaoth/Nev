@@ -250,9 +250,10 @@ proc runApp(): Future[void] {.async.} =
     #   sleep(timeToSleep.int)
 
     let totalTime = totalTimer.elapsed.ms
-    if (eventCounter > 0 and totalTime > 15) or totalTime > 20:
+    if (eventCounter > 0 and totalTime > 15) or totalTime > 20 or ed.logFrameTime:
       log(lvlDebug, fmt"Total: {totalTime:>5.2f}, Poll: {pollTime:>5.2f}ms, Event: {eventTime:>5.2f}ms, Frame: {frameTime:>5.2f}ms (u: {updateTime:>5.2f}ms, r: {renderTime:>5.2f}ms)")
       discard
+    ed.logFrameTime = false
 
     # log(lvlDebug, fmt"Total: {totalTime:>5.2}, Frame: {frameTime:>5.2}ms ({layoutTime:>5.2}ms, {updateTime:>5.2}ms, {renderTime:>5.2}ms), Poll: {pollTime:>5.2}ms, Event: {eventTime:>5.2}ms")
 

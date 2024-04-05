@@ -100,6 +100,8 @@ type
     lastBounds*: Rect
     closeRequested*: bool
 
+    logFrameTime*: bool = false
+
     registers: Table[string, Register]
     recordingKeys: seq[string]
     recordingCommands: seq[string]
@@ -2171,6 +2173,8 @@ proc recordInputToHistory*(self: App, input: string) =
 
 proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers) =
   # debugf"handleKeyPress {inputToString(input, modifiers)}"
+  self.logFrameTime = true
+
   for register in self.recordingKeys:
     if not self.registers.contains(register) or self.registers[register].kind != RegisterKind.Text:
       self.registers[register] = Register(kind: Text, text: "")
@@ -2194,6 +2198,8 @@ proc handleKeyRelease*(self: App, input: int64, modifiers: Modifiers) =
 
 proc handleRune*(self: App, input: int64, modifiers: Modifiers) =
   # debugf"handleRune {inputToString(input, modifiers)}"
+  self.logFrameTime = true
+
   let modifiers = if input.isAscii and input.char.isAlphaNumeric: modifiers else: {}
   case self.currentEventHandlers.handleEvent(input, modifiers):
   of Progress:
