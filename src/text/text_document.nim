@@ -73,6 +73,7 @@ type TextDocument* = ref object of Document
   isLoadingAsync*: bool = false
 
   onLoaded*: Event[TextDocument]
+  onSaved*: Event[void]
   textChanged*: Event[TextDocument]
   textInserted*: Event[tuple[document: TextDocument, location: Selection, text: string]]
   textDeleted*: Event[tuple[document: TextDocument, location: Selection]]
@@ -812,6 +813,8 @@ method save*(self: TextDocument, filename: string = "", app: bool = false) =
     raise newException(IOError, "Missing filename")
 
   self.appFile = app
+
+  self.onSaved.invoke()
 
   self.trimTrailingWhitespace()
 
