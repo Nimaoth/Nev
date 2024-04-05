@@ -28,6 +28,31 @@ type LineRenderOptions = object
   handleHover: proc(node: UINode, pos: Vec2, line: int, partIndex: int)
   handleEndHover: proc(node: UINode, pos: Vec2, line: int, partIndex: int)
 
+  wrapLine: bool
+  wrapLineEndChar: string
+  wrapLineEndColor: Color
+  lineEndColor: Option[Color]
+  backgroundColor: Color
+  textColor: Color
+
+  lineNumber: int
+  lineNumbers: LineNumbers
+  y: float
+  sizeToContentX: bool
+  lineNumberTotalWidth: float
+  lineNumberWidth: float
+  pivot: Vec2
+
+  hoverLocation: Cursor
+
+  document: TextDocument
+
+  theme: Theme
+
+  lineId: int
+  parentId: Id
+  cursorLine: int
+
 when defined(js):
   template tokenColor*(theme: Theme, part: StyledText, default: untyped): Color =
     theme.tokenColor(part.scopeC, default)
@@ -86,19 +111,26 @@ proc getCursorPos(self: TextDocumentEditor, textRuneLen: int, line: int, startOf
   return byteIndex
 
 proc renderLine*(
-  self: TextDocumentEditor, builder: UINodeBuilder, theme: Theme,
-  line: StyledLine, lineOriginal: openArray[char],
-  lineId: int32, parentId: Id, cursorLine: int,
-  lineNumber: int, lineNumbers: LineNumbers,
-  y: float, sizeToContentX: bool, lineNumberTotalWidth: float, lineNumberWidth: float, pivot: Vec2,
-  backgroundColor: Color, textColor: Color,
+  builder: UINodeBuilder, line: StyledLine, lineOriginal: openArray[char],
   backgroundColors: openArray[tuple[first: RuneIndex, last: RuneIndex, color: Color]], cursors: openArray[int],
-  wrapLine: bool, wrapLineEndChar: string, wrapLineEndColor: Color, lineEndColor: Option[Color],
   options: LineRenderOptions):
     tuple[cursors: seq[CursorLocationInfo], hover: Option[CursorLocationInfo], diagnostic: Option[CursorLocationInfo]] =
 
-  let document = self.document
-  let hoverLocation = self.hoverLocation
+  let document = options.document
+  let hoverLocation = options.hoverLocation
+
+  let lineNumber = options.lineNumber
+  let lineNumbers = options.lineNumbers
+  let y = options.y
+  let sizeToContentX = options.sizeToContentX
+  let lineNumberTotalWidth = options.lineNumberTotalWidth
+  let lineNumberWidth = options.lineNumberWidth
+  let pivot = options.pivot
+
+  let theme = options.theme
+  let lineId = options.lineId
+  let parentId = options.parentId
+  let cursorLine = options.cursorLine
 
   var flagsInner = &{FillX, SizeToContentY}
   if sizeToContentX:
@@ -144,7 +176,7 @@ proc renderLine*(
     lineNumberText = $abs((lineNumber + 1) - cursorLine)
     lineNumberX = max(0.0, lineNumberWidth - lineNumberText.len.float * builder.charWidth)
 
-  builder.panel(flagsInner + LayoutVertical + FillBackground, y = y, pivot = pivot, backgroundColor = backgroundColor, userId = newSecondaryId(parentId, lineId)):
+  builder.panel(flagsInner + LayoutVertical + FillBackground, y = y, pivot = pivot, backgroundColor = options.backgroundColor, userId = newSecondaryId(parentId, lineId)):
     let lineWidth = currentNode.bounds.w
 
     var lastTextSubLine: UINode = nil
@@ -167,9 +199,9 @@ proc renderLine*(
           lastTextSubLine = subLine
 
         if lineNumberText.len > 0:
-          builder.panel(&{UINodeFlag.FillBackground, FillY}, w = lineNumberTotalWidth, backgroundColor = backgroundColor):
+          builder.panel(&{UINodeFlag.FillBackground, FillY}, w = lineNumberTotalWidth, backgroundColor = options.backgroundColor):
             if subLineIndex == 0:
-              builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = lineNumberText, x = lineNumberX, textColor = textColor)
+              builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = lineNumberText, x = lineNumberX, textColor = options.textColor)
           lastPartXW = lineNumberTotalWidth
           if partIndex < line.parts.len:
             lastTextPartXW = lastPartXW
@@ -182,7 +214,7 @@ proc renderLine*(
 
           let underlineColor = part.underlineColor
 
-          if wrapLine and not sizeToContentX and subLinePartIndex > 0:
+          if options.wrapLine and not sizeToContentX and subLinePartIndex > 0:
             var wrapWidth = width
             for partIndex2 in partIndex..<line.parts.high:
               if line.parts[partIndex2].joinNext:
@@ -193,7 +225,7 @@ proc renderLine*(
               break
 
             if lastPartXW + wrapWidth + builder.charWidth >= lineWidth:
-              builder.panel(&{DrawText, FillBackground, SizeToContentX, SizeToContentY}, text = wrapLineEndChar, backgroundColor = backgroundColor, textColor = wrapLineEndColor):
+              builder.panel(&{DrawText, FillBackground, SizeToContentX, SizeToContentY}, text = options.wrapLineEndChar, backgroundColor = options.backgroundColor, textColor = options.wrapLineEndColor):
                 defer:
                   lastPartXW = currentNode.xw
                   lastTextPartXW = lastPartXW
@@ -201,7 +233,7 @@ proc renderLine*(
               subLinePartIndex = 0
               break
 
-          let textColor = if part.scope.len == 0: textColor else: theme.tokenColor(part, textColor)
+          let textColor = if part.scope.len == 0: options.textColor else: theme.tokenColor(part, options.textColor)
 
           let (startRune, endRune) = line.getTextRange(partIndex)
 
@@ -210,7 +242,7 @@ proc renderLine*(
           while colorIndex < backgroundColors.high and (backgroundColors[colorIndex].first == backgroundColors[colorIndex].last or backgroundColors[colorIndex].last <= startRune):
             inc colorIndex
 
-          var partBackgroundColor = backgroundColor
+          var partBackgroundColor = options.backgroundColor
           var addBackgroundAsChildren = true
 
           # check if fully covered by background color (inlay text is always fully covered by background color)
@@ -330,7 +362,7 @@ proc renderLine*(
 
         # Fill rest of line with background
         let lineEndYFlags = if insertDiagnosticNow: &{SizeToContentY} else: &{FillY}
-        builder.panel(&{FillX, FillBackground} + lineEndYFlags, backgroundColor = backgroundColor):
+        builder.panel(&{FillX, FillBackground} + lineEndYFlags, backgroundColor = options.backgroundColor):
           capture line, currentNode:
             onClickAny btn:
               options.handleClick(btn, pos, line.index, int.none)
@@ -344,14 +376,11 @@ proc renderLine*(
             var diagnosticPanel: UINode = nil
             let diagnosticHeight = diagnosticLines.float * builder.textHeight
             builder.panel(&{DrawText, FillBackground, SizeToContentX, MaskContent},
-              x = diagnosticXOffset, h = diagnosticHeight, text = diagnosticMessage, textColor = diagnosticColor, backgroundColor = backgroundColor.lighten(0.07)):
+              x = diagnosticXOffset, h = diagnosticHeight, text = diagnosticMessage, textColor = diagnosticColor, backgroundColor = options.backgroundColor.lighten(0.07)):
               diagnosticPanel = currentNode
 
-          if lineEndColor.getSome(color):
+          if options.lineEndColor.getSome(color):
             builder.panel(&{FillY, FillBackground}, w = builder.charWidth, backgroundColor = color)
-
-        if self.showDiagnostic and self.currentDiagnosticLine == lineNumber:
-          result.diagnostic = (currentNode, "", rect(0, 0, builder.charWidth, builder.textHeight), (0, 0)).some
 
     # cursor after latest char
     for curs in cursors:
@@ -428,8 +457,6 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   let charWidth = builder.charWidth
 
   # ↲ ↩ ⤦ ⤶ ⤸ ⮠
-  let wrapLineEndChar = getOption[string](app, "editor.text.wrap-line-end-char", "↲")
-  let wrapLines = getOption[bool](app, "editor.text.wrap-lines", true)
   let showContextLines = getOption[bool](app, "editor.text.context-lines", true)
 
   let selectionColor = app.theme.color("selection.background", color(200/255, 200/255, 200/255))
@@ -437,7 +464,6 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   let cursorForegroundColor = app.theme.color(@["editorCursor.foreground", "foreground"], color(200/255, 200/255, 200/255))
   let cursorBackgroundColor = app.theme.color(@["editorCursor.background", "background"], color(50/255, 50/255, 50/255))
   let contextBackgroundColor = app.theme.color(@["breadcrumbPicker.background", "background"], color(50/255, 70/255, 70/255))
-  let wrapLineEndColor = app.theme.tokenColor(@["comment"], color(100/255, 100/255, 100/255))
 
   proc handleClick(btn: MouseButton, pos: Vec2, line: int, partIndex: Option[int]) =
     self.lastPressedMouseButton = btn
@@ -515,12 +541,21 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     self.hideHoverDelayed()
 
   var options = LineRenderOptions(
+    document: self.document,
     handleClick: handleClick,
     handleDrag: handleDrag,
     handleBeginHover: handleBeginHover,
     handleHover: handleHover,
     handleEndHover: handleEndHover,
+    backgroundColor: backgroundColor,
+    textColor: textColor,
+    hoverLocation: self.hoverLocation,
+    theme: app.theme,
   )
+
+  options.wrapLineEndChar = getOption[string](app, "editor.text.wrap-line-end-char", "↲")
+  options.wrapLine = getOption[bool](app, "editor.text.wrap-lines", true)
+  options.wrapLineEndColor = app.theme.tokenColor(@["comment"], color(100/255, 100/255, 100/255))
 
   var selectionsPerLine = initTable[int, seq[Selection]]()
   for s in self.selections:
@@ -556,6 +591,11 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     else:
       0.0
 
+    options.lineNumbers = lineNumbers
+    options.sizeToContentX = sizeToContentX
+    options.lineNumberTotalWidth = lineNumberWidth
+    options.lineNumberWidth = lineNumberBounds.x
+
     var cursors: seq[CursorLocationInfo]
     var contextLines: seq[int]
     var contextLineTarget: int = -1
@@ -580,13 +620,13 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
       let indentLevel = self.document.getIndentLevelForClosestLine(i)
 
-      var wrapLine = wrapLines
       var i = i
 
       let backgroundColor = if cursorLine == i:
         backgroundColor.lighten(0.05)
       else:
         backgroundColor
+      options.backgroundColor = backgroundColor
 
       if showContextLines and (indexFromTop <= indentLevel and not self.document.shouldIgnoreAsContextLine(i)):
         contextLineTarget = max(contextLineTarget, i)
@@ -610,21 +650,23 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
         if s.last.line == i:
           cursorsPerLine.add s.last.column
 
-      var lineEndColor = Color.none
+      options.lineEndColor = Color.none
       if self.document.lines[i].len == 0 and selectionsClampedOnLine.len > 0 and (cursorsPerLine.len == 0 or inclusive):
-        lineEndColor = selectionColor.some
+        options.lineEndColor = selectionColor.some
 
       let pivot = if down:
         vec2(0, 0)
       else:
         vec2(0, 1)
 
-      let infos = self.renderLine(builder, app.theme, styledLine, self.document.lines[i], self.document.lineIds[i],
-        self.userId, cursorLine, i, lineNumbers, y, sizeToContentX, lineNumberWidth, lineNumberBounds.x, pivot,
-        backgroundColor, textColor,
-        colors, cursorsPerLine, wrapLine, wrapLineEndChar, wrapLineEndColor, lineEndColor,
-        options
-        )
+      options.lineNumber = i
+      options.y = y
+      options.pivot = pivot
+      options.lineId = self.document.lineIds[i]
+      options.parentId = self.userId
+      options.cursorLine = cursorLine
+
+      let infos = renderLine(builder, styledLine, self.document.lines[i], colors, cursorsPerLine, options)
       cursors.add infos.cursors
       if infos.hover.isSome:
         hoverInfo = infos.hover
@@ -647,16 +689,23 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       contextLines.sort(Ascending)
 
       if contextLines.len > 0:
+        options.lineEndColor = Color.none
+        options.wrapLine = false
+        options.backgroundColor = contextBackgroundColor
+        options.pivot = vec2(0, 0)
+
         for indexFromTop, contextLine in contextLines:
           let styledLine = self.getStyledText contextLine
           let y = indexFromTop.float * builder.textHeight
           let colors = [(first: 0.RuneIndex, last: self.document.lines[contextLine].runeLen.RuneIndex, color: contextBackgroundColor)]
 
-          let infos = self.renderLine(builder, app.theme, styledLine, self.document.lines[contextLine], self.document.lineIds[contextLine],
-            self.userId, cursorLine, contextLine, lineNumbers, y, sizeToContentX, lineNumberWidth, lineNumberBounds.x, vec2(0, 0),
-            contextBackgroundColor, textColor,
-            colors, [], false, wrapLineEndChar, wrapLineEndColor, Color.none, options
-            )
+          options.lineNumber = contextLine
+          options.y = y
+          options.lineId = self.document.lineIds[contextLine]
+          options.parentId = self.userId
+          options.cursorLine = cursorLine
+
+          let infos = renderLine(builder, styledLine, self.document.lines[contextLine], colors, [], options)
           cursors.add infos.cursors
           if infos.hover.isSome:
             result.hover = infos.hover
