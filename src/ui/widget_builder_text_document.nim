@@ -49,7 +49,7 @@ type LineRenderOptions = object
 
   theme: Theme
 
-  lineId: int
+  lineId: int32
   parentId: Id
   cursorLine: int
 
@@ -110,6 +110,93 @@ proc getCursorPos(self: TextDocumentEditor, textRuneLen: int, line: int, startOf
   let byteIndex = self.document.lines[line].toOpenArray.runeOffset(startOffset + index.RuneCount)
   return byteIndex
 
+proc renderLinePart(
+  builder: UINodeBuilder, line: StyledLine,
+  backgroundColors: openArray[tuple[first: RuneIndex, last: RuneIndex, color: Color]],
+  options: LineRenderOptions, partIndex: int, startRune: RuneIndex, partRuneLen: RuneCount): UINode =
+
+  let part = line.parts[partIndex].addr
+
+  let textColor = if part.scope.len == 0: options.textColor else: options.theme.tokenColor(part[], options.textColor)
+
+  # Find background color
+  var colorIndex = 0
+  while colorIndex < backgroundColors.high and (backgroundColors[colorIndex].first == backgroundColors[colorIndex].last or backgroundColors[colorIndex].last <= startRune):
+    inc colorIndex
+
+  var partBackgroundColor = options.backgroundColor
+  var addBackgroundAsChildren = true
+
+  # check if fully covered by background color (inlay text is always fully covered by background color)
+  if part[].textRange.isNone or backgroundColors[colorIndex].last >= startRune + partRuneLen:
+    partBackgroundColor = backgroundColors[colorIndex].color
+    addBackgroundAsChildren = false
+
+  var partFlags = &{UINodeFlag.FillBackground, SizeToContentX, SizeToContentY, MouseHover}
+  var textFlags = 0.UINodeFlags
+
+  # if the entire part is the same background color we can just fill the background and render the text on the part itself
+  # otherwise we need to render the background as a separate node and render the text on top of it, as children of the main part node,
+  # which still has a background color though
+  if not addBackgroundAsChildren:
+    partFlags.incl DrawText
+  else:
+    partFlags.incl OverlappingChildren
+
+  if part[].underline:
+    if addBackgroundAsChildren:
+      textFlags.incl TextUndercurl
+    else:
+      partFlags.incl TextUndercurl
+
+  let text = if addBackgroundAsChildren: "" else: part[].text
+  let textRuneLen = part[].text.runeLen.int
+
+  let handleClick = options.handleClick
+  let handleDrag = options.handleDrag
+  let handleBeginHover = options.handleBeginHover
+  let handleHover = options.handleHover
+  let handleEndHover = options.handleEndHover
+
+  let isInlay = part[].textRange.isNone
+  builder.panel(partFlags, text = text, backgroundColor = partBackgroundColor, textColor = textColor, underlineColor = part[].underlineColor):
+    result = currentNode
+    let partNode = currentNode
+
+    capture line, partNode, startRune, textRuneLen, isInlay, partIndex:
+      onClickAny btn:
+        if handleClick.isNotNil:
+          handleClick(btn, pos, line.index, partIndex.some)
+
+      onDrag Left:
+        if handleDrag.isNotNil:
+          handleDrag(Left, pos, line.index, partIndex.some)
+
+      onBeginHover:
+        if handleBeginHover.isNotNil:
+          handleBeginHover(partNode, pos, line.index, partIndex)
+
+      onHover:
+        if handleHover.isNotNil:
+          handleHover(partNode, pos, line.index, partIndex)
+
+      onEndHover:
+        if handleEndHover.isNotNil:
+          handleEndHover(partNode, pos, line.index, partIndex)
+
+    if addBackgroundAsChildren:
+      # Add separate background colors for selections/highlights
+      while colorIndex <= backgroundColors.high and backgroundColors[colorIndex].first < startRune + partRuneLen:
+        let x = max(0.0, backgroundColors[colorIndex].first.float - startRune.float) * builder.charWidth
+        let xw = min(partRuneLen.float, backgroundColors[colorIndex].last.float - startRune.float) * builder.charWidth
+        if partBackgroundColor != backgroundColors[colorIndex].color:
+          builder.panel(&{UINodeFlag.FillBackground, FillY}, x = x, w = xw - x, backgroundColor = backgroundColors[colorIndex].color)
+
+        inc colorIndex
+
+      # Add text on top of background colors
+      builder.panel(&{DrawText, SizeToContentX, SizeToContentY} + textFlags, text = part[].text, textColor = textColor, underlineColor = part[].underlineColor)
+
 proc renderLine*(
   builder: UINodeBuilder, line: StyledLine, lineOriginal: openArray[char],
   backgroundColors: openArray[tuple[first: RuneIndex, last: RuneIndex, color: Color]], cursors: openArray[int],
@@ -117,28 +204,14 @@ proc renderLine*(
     tuple[cursors: seq[CursorLocationInfo], hover: Option[CursorLocationInfo], diagnostic: Option[CursorLocationInfo]] =
 
   let document = options.document
-  let hoverLocation = options.hoverLocation
-
-  let lineNumber = options.lineNumber
-  let lineNumbers = options.lineNumbers
-  let y = options.y
-  let sizeToContentX = options.sizeToContentX
-  let lineNumberTotalWidth = options.lineNumberTotalWidth
-  let lineNumberWidth = options.lineNumberWidth
-  let pivot = options.pivot
-
-  let theme = options.theme
-  let lineId = options.lineId
-  let parentId = options.parentId
-  let cursorLine = options.cursorLine
 
   var flagsInner = &{FillX, SizeToContentY}
-  if sizeToContentX:
+  if options.sizeToContentX:
     flagsInner.incl SizeToContentX
 
-  let hasDiagnostic = document.diagnosticsPerLine.contains(lineNumber) and document.diagnosticsPerLine[lineNumber][0] < document.currentDiagnostics.len
+  let hasDiagnostic = false # document.diagnosticsPerLine.contains(options.lineNumber) and document.diagnosticsPerLine[options.lineNumber][0] < document.currentDiagnostics.len
   let diagnosticIndices = if hasDiagnostic:
-    document.diagnosticsPerLine[lineNumber]
+    document.diagnosticsPerLine[options.lineNumber]
   else:
     @[]
   var diagnosticColorName = "editorHint.foreground"
@@ -167,16 +240,16 @@ proc renderLine*(
   # line numbers
   var lineNumberText = ""
   var lineNumberX = 0.float
-  if lineNumbers != LineNumbers.None and cursorLine == lineNumber:
-    lineNumberText = $(lineNumber + 1)
-  elif lineNumbers == LineNumbers.Absolute:
-    lineNumberText = $(lineNumber + 1)
-    lineNumberX = max(0.0, lineNumberWidth - lineNumberText.len.float * builder.charWidth)
-  elif lineNumbers == LineNumbers.Relative:
-    lineNumberText = $abs((lineNumber + 1) - cursorLine)
-    lineNumberX = max(0.0, lineNumberWidth - lineNumberText.len.float * builder.charWidth)
+  if options.lineNumbers != LineNumbers.None and options.cursorLine == options.lineNumber:
+    lineNumberText = $(options.lineNumber + 1)
+  elif options.lineNumbers == LineNumbers.Absolute:
+    lineNumberText = $(options.lineNumber + 1)
+    lineNumberX = max(0.0, options.lineNumberWidth - lineNumberText.len.float * builder.charWidth)
+  elif options.lineNumbers == LineNumbers.Relative:
+    lineNumberText = $abs((options.lineNumber + 1) - options.cursorLine)
+    lineNumberX = max(0.0, options.lineNumberWidth - lineNumberText.len.float * builder.charWidth)
 
-  builder.panel(flagsInner + LayoutVertical + FillBackground, y = y, pivot = pivot, backgroundColor = options.backgroundColor, userId = newSecondaryId(parentId, lineId)):
+  builder.panel(flagsInner + LayoutVertical + FillBackground, y = options.y, pivot = options.pivot, backgroundColor = options.backgroundColor, userId = newSecondaryId(options.parentId, options.lineId)):
     let lineWidth = currentNode.bounds.w
 
     var lastTextSubLine: UINode = nil
@@ -199,10 +272,10 @@ proc renderLine*(
           lastTextSubLine = subLine
 
         if lineNumberText.len > 0:
-          builder.panel(&{UINodeFlag.FillBackground, FillY}, w = lineNumberTotalWidth, backgroundColor = options.backgroundColor):
+          builder.panel(&{UINodeFlag.FillBackground, FillY}, w = options.lineNumberTotalWidth, backgroundColor = options.backgroundColor):
             if subLineIndex == 0:
               builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = lineNumberText, x = lineNumberX, textColor = options.textColor)
-          lastPartXW = lineNumberTotalWidth
+          lastPartXW = options.lineNumberTotalWidth
           if partIndex < line.parts.len:
             lastTextPartXW = lastPartXW
 
@@ -212,14 +285,12 @@ proc renderLine*(
           let partRuneLen = part.text.runeLen
           let width = (partRuneLen.float * builder.charWidth).ceil
 
-          let underlineColor = part.underlineColor
-
-          if options.wrapLine and not sizeToContentX and subLinePartIndex > 0:
+          if options.wrapLine and not options.sizeToContentX and subLinePartIndex > 0:
             var wrapWidth = width
             for partIndex2 in partIndex..<line.parts.high:
               if line.parts[partIndex2].joinNext:
                 let nextWidth = (line.parts[partIndex2 + 1].text.runeLen.float * builder.charWidth).ceil
-                if lineNumberTotalWidth + wrapWidth + nextWidth + builder.charWidth <= lineWidth:
+                if options.lineNumberTotalWidth + wrapWidth + nextWidth + builder.charWidth <= lineWidth:
                   wrapWidth += nextWidth
                   continue
               break
@@ -233,105 +304,31 @@ proc renderLine*(
               subLinePartIndex = 0
               break
 
-          let textColor = if part.scope.len == 0: options.textColor else: theme.tokenColor(part, options.textColor)
+          let (startRune, _) = line.getTextRange(partIndex)
+          let partNode = renderLinePart(builder, line, backgroundColors, options, partIndex, startRune, partRuneLen)
 
-          let (startRune, endRune) = line.getTextRange(partIndex)
+          # cursor
+          for curs in cursors:
+            let selectionLastRune = lineOriginal.runeIndex(curs)
 
-          # Find background color
-          var colorIndex = 0
-          while colorIndex < backgroundColors.high and (backgroundColors[colorIndex].first == backgroundColors[colorIndex].last or backgroundColors[colorIndex].last <= startRune):
-            inc colorIndex
-
-          var partBackgroundColor = options.backgroundColor
-          var addBackgroundAsChildren = true
-
-          # check if fully covered by background color (inlay text is always fully covered by background color)
-          if part.textRange.isNone or backgroundColors[colorIndex].last >= startRune + partRuneLen:
-            partBackgroundColor = backgroundColors[colorIndex].color
-            addBackgroundAsChildren = false
-
-          var partFlags = &{UINodeFlag.FillBackground, SizeToContentX, SizeToContentY, MouseHover}
-          var textFlags = 0.UINodeFlags
-
-          # if the entire part is the same background color we can just fill the background and render the text on the part itself
-          # otherwise we need to render the background as a separate node and render the text on top of it, as children of the main part node,
-          # which still has a background color though
-          if not addBackgroundAsChildren:
-            partFlags.incl DrawText
-          else:
-            partFlags.incl OverlappingChildren
-
-          if part.underline:
-            if addBackgroundAsChildren:
-              textFlags.incl TextUndercurl
-            else:
-              partFlags.incl TextUndercurl
-
-          let text = if addBackgroundAsChildren: "" else: part.text
-          let textRuneLen = part.text.runeLen.int
-
-          let isInlay = part.textRange.isNone
-
-          var partNode: UINode
-          builder.panel(partFlags, text = text, backgroundColor = partBackgroundColor, textColor = textColor, underlineColor = underlineColor):
-            partNode = currentNode
-
-            capture line, partNode, startRune, textRuneLen, isInlay, partIndex:
-              onClickAny btn:
-                if options.handleClick.isNotNil:
-                  options.handleClick(btn, pos, line.index, partIndex.some)
-
-              onDrag Left:
-                if options.handleDrag.isNotNil:
-                  options.handleDrag(Left, pos, line.index, partIndex.some)
-
-              onBeginHover:
-                if options.handleBeginHover.isNotNil:
-                  options.handleBeginHover(partNode, pos, line.index, partIndex)
-
-              onHover:
-                if options.handleHover.isNotNil:
-                  options.handleHover(partNode, pos, line.index, partIndex)
-
-              onEndHover:
-                if options.handleEndHover.isNotNil:
-                  options.handleEndHover(partNode, pos, line.index, partIndex)
-
-            if addBackgroundAsChildren:
-              # Add separate background colors for selections/highlights
-              while colorIndex <= backgroundColors.high and backgroundColors[colorIndex].first < startRune + partRuneLen:
-                let x = max(0.0, backgroundColors[colorIndex].first.float - startRune.float) * builder.charWidth
-                let xw = min(partRuneLen.float, backgroundColors[colorIndex].last.float - startRune.float) * builder.charWidth
-                if partBackgroundColor != backgroundColors[colorIndex].color:
-                  builder.panel(&{UINodeFlag.FillBackground, FillY}, x = x, w = xw - x, backgroundColor = backgroundColors[colorIndex].color)
-
-                inc colorIndex
-
-              # Add text on top of background colors
-              builder.panel(&{DrawText, SizeToContentX, SizeToContentY} + textFlags, text = part.text, textColor = textColor, underlineColor = underlineColor)
-
-            # cursor
-            for curs in cursors:
-              let selectionLastRune = lineOriginal.runeIndex(curs)
-
-              if part.textRange.isSome:
-                if selectionLastRune >= part.textRange.get.startIndex and selectionLastRune < part.textRange.get.endIndex:
-                  let node = if selectionLastRune == startRune and previousInlayNode.isNotNil and line.parts[partIndex - 1].inlayContainCursor:
-                    # show cursor on first position of previous inlay
-                    previousInlayNode
-                  else:
-                    partNode
-                  let cursorX = builder.textWidth(int(selectionLastRune - part.textRange.get.startIndex.RuneCount)).round
-                  let rune = part.text[selectionLastRune - part.textRange.get.startIndex.RuneCount]
-                  result.cursors.add (node, $rune, rect(cursorX, 0, builder.charWidth, builder.textHeight), (line.index, curs))
+            if part.textRange.isSome:
+              if selectionLastRune >= part.textRange.get.startIndex and selectionLastRune < part.textRange.get.endIndex:
+                let node = if selectionLastRune == startRune and previousInlayNode.isNotNil and line.parts[partIndex - 1].inlayContainCursor:
+                  # show cursor on first position of previous inlay
+                  previousInlayNode
+                else:
+                  partNode
+                let cursorX = builder.textWidth(int(selectionLastRune - part.textRange.get.startIndex.RuneCount)).round
+                let rune = part.text[selectionLastRune - part.textRange.get.startIndex.RuneCount]
+                result.cursors.add (node, $rune, rect(cursorX, 0, builder.charWidth, builder.textHeight), (line.index, curs))
 
             # Set hover info if the hover location is within this part
-            if line.index == hoverLocation.line and part.textRange.isSome:
+            if line.index == options.hoverLocation.line and part.textRange.isSome:
               let startRune = part.textRange.get.startIndex
               let endRune = part.textRange.get.endIndex
-              let hoverRune = lineOriginal.runeIndex(hoverLocation.column)
+              let hoverRune = lineOriginal.runeIndex(options.hoverLocation.column)
               if hoverRune >= startRune and hoverRune < endRune:
-                result.hover = (currentNode, "", rect(0, 0, builder.charWidth, builder.textHeight), hoverLocation).some
+                result.hover = (partNode, "", rect(0, 0, builder.charWidth, builder.textHeight), options.hoverLocation).some
 
           if part.textRange.isNone:
             previousInlayNode = partNode
@@ -352,7 +349,7 @@ proc renderLine*(
           let diagnosticXOffset = 7 * builder.charWidth
           for i in 0..0:
             insertDiagnosticLater = false
-            if cursorLine == lineNumber and diagnosticXOffset + diagnosticMessageWidth > lineWidth - lastPartXW:
+            if options.cursorLine == options.lineNumber and diagnosticXOffset + diagnosticMessageWidth > lineWidth - lastPartXW:
               if subLinePartIndex > 0:
                 subLineIndex += 1
                 subLinePartIndex = 0
@@ -372,7 +369,7 @@ proc renderLine*(
 
           if insertDiagnosticNow:
             let diagnosticXOffset = 7 * builder.charWidth
-            let diagnosticColor = theme.color(@[diagnosticColorName, "editor.foreground"], color(1, 1, 1))
+            let diagnosticColor = options.theme.color(@[diagnosticColorName, "editor.foreground"], color(1, 1, 1))
             var diagnosticPanel: UINode = nil
             let diagnosticHeight = diagnosticLines.float * builder.textHeight
             builder.panel(&{DrawText, FillBackground, SizeToContentX, MaskContent},
@@ -388,8 +385,8 @@ proc renderLine*(
         result.cursors.add (lastTextSubLine, "", rect(lastTextPartXW, 0, builder.charWidth, builder.textHeight), (line.index, curs))
 
     # set hover info if the hover location is at the end of this line
-    if line.index == hoverLocation.line and hoverLocation.column == lineOriginal.len:
-      result.hover = (lastTextSubLine, "", rect(lastTextPartXW, 0, builder.charWidth, builder.textHeight), hoverLocation).some
+    if line.index == options.hoverLocation.line and options.hoverLocation.column == lineOriginal.len:
+      result.hover = (lastTextSubLine, "", rect(lastTextPartXW, 0, builder.charWidth, builder.textHeight), options.hoverLocation).some
 
 proc blendColorRanges(colors: var seq[tuple[first: RuneIndex, last: RuneIndex, color: Color]], ranges: var seq[tuple[first: RuneIndex, last: RuneIndex]], color: Color, inclusive: bool) =
   let inclusiveOffset = if inclusive: 1.RuneCount else: 0.RuneCount
