@@ -18,6 +18,9 @@ proc getAbsolutePath(self: WorkspaceFolderLocal, relativePath: string): string =
   else:
     self.path.absolutePath / relativePath
 
+method getRelativePath*(self: WorkspaceFolderLocal, absolutePath: string): Future[Option[string]] {.async.} =
+  return absolutePath.relativePath(self.path, '/').some
+
 method isReadOnly*(self: WorkspaceFolderLocal): bool = false
 
 method getWorkspacePath*(self: WorkspaceFolderLocal): string = self.path.absolutePath
