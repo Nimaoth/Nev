@@ -2195,13 +2195,11 @@ proc getStyledText*(self: TextDocumentEditor, i: int): StyledLine =
       self.document.splitAt(result, override.cursor.column + override.text.len)
       self.document.overrideStyleAndText(result, override.cursor.column, override.text, override.scope, -2, joinNext = true)
 
-  var offset = 0.RuneCount
   for inlayHint in self.inlayHints:
     if inlayHint.location.line != i:
       continue
 
-    self.document.insertText(result, inlayHint.location.column.RuneIndex + offset, inlayHint.label, "comment", containCursor=true)
-    offset += inlayHint.label.runeLen
+    self.document.insertText(result, inlayHint.location.column.RuneIndex, inlayHint.label, "comment", containCursor=true)
 
 proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNode): EventResponse =
   # debugf"[textedit] handleAction {action}, '{args}'"
