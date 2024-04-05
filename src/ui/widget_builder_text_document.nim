@@ -452,7 +452,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   let cursorBackgroundColor = app.theme.color(@["editorCursor.background", "background"], color(50/255, 50/255, 50/255))
   let contextBackgroundColor = app.theme.color(@["breadcrumbPicker.background", "background"], color(50/255, 70/255, 70/255))
   let insertedTextBackgroundColor = app.theme.color(@["diffEditor.insertedTextBackground", "diffEditor.insertedLineBackground"], color(0.1, 0.2, 0.1))
-  let deletedTextBackgroundColor = app.theme.color(@["diffEditor.deletedTextBackground", "diffEditor.deletedLineBackground"], color(0.1, 0.2, 0.1))
+  let deletedTextBackgroundColor = app.theme.color(@["diffEditor.removedTextBackground", "diffEditor.removedLineBackground"], color(0.2, 0.1, 0.1))
 
   proc handleClick(btn: MouseButton, pos: Vec2, line: int, partIndex: Option[int]) =
     self.lastPressedMouseButton = btn
@@ -614,6 +614,8 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       if renderDiff and (otherLine.isNone or otherLine.get.changed):
         backgroundColor = (insertedTextBackgroundColor * insertedTextBackgroundColor.a).withAlpha(1)
 
+      let nextLineDiff = self.diffChanges.mapIt(mapLineTargetToSource(it, i + 1)).flatten
+
       options.backgroundColor = backgroundColor
 
       if showContextLines and (indexFromTop <= indentLevel and not self.document.shouldIgnoreAsContextLine(i)):
@@ -663,13 +665,23 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
           let width = currentNode.bounds.w
           if otherLine.getSome(otherLine) and otherLine.line < self.diffDocument.lines.len:
             let otherCursorLine = self.diffChanges.mapIt(mapLineTargetToSource(it, cursorLine))
-            builder.panel(&{SizeToContentY}, w = width / 2):
+            builder.panel(&{SizeToContentY, LayoutVertical}, w = width / 2):
               let styledLine = self.diffDocument.getStyledText otherLine.line
               options.lineNumber = otherLine.line
-              options.lineId = self.document.lineIds[i] + 10000
+              options.lineId = self.diffDocument.lineIds[otherLine.line]
               options.cursorLine = otherCursorLine.flatten.get((-1, false)).line
-              let colors: seq[tuple[first: RuneIndex, last: RuneIndex, color: Color]] = @[(0.RuneIndex, self.diffDocument.lines[otherLine.line].runeLen.RuneIndex, backgroundColor)]
+              let colors = [(0.RuneIndex, self.diffDocument.lines[otherLine.line].runeLen.RuneIndex, backgroundColor)]
               discard renderLine(builder, styledLine, self.diffDocument.lines[otherLine.line], colors, [], options)
+
+              if nextLineDiff.getSome(nextLineDiff) and nextLineDiff.line > otherLine.line + 1:
+                for k in (otherLine.line + 1)..<nextLineDiff.line:
+                  let styledLine = self.diffDocument.getStyledText k
+                  let colors = [(0.RuneIndex, self.diffDocument.lines[k].runeLen.RuneIndex, deletedTextBackgroundColor)]
+                  options.backgroundColor = deletedTextBackgroundColor
+                  options.lineNumber = k
+                  options.lineId = self.diffDocument.lineIds[k]
+                  discard renderLine(builder, styledLine, self.diffDocument.lines[k], colors, [], options)
+
           else:
             builder.panel(&{FillY, FillBackground}, w = width / 2, backgroundColor = backgroundColor)
 
@@ -677,6 +689,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
             options.lineId = self.document.lineIds[i]
             options.lineNumber = i
             options.cursorLine = cursorLine
+            options.backgroundColor = backgroundColor
 
             let infos = renderLine(builder, styledLine, self.document.lines[i], colors, cursorsPerLine, options)
             cursors.add infos.cursors
