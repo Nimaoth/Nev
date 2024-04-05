@@ -2665,3 +2665,17 @@ proc runDragCommand*(self: TextDocumentEditor) =
   let res {.used.} = editor_text_runDragCommand_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
 
+
+proc editor_text_updateDiff_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc updateDiff*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_updateDiff_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+

@@ -1922,61 +1922,11 @@ when not defined(js):
 
     result.sort((a, b) => cmp(a.GitFileSelectorItem.score, b.GitFileSelectorItem.score), Ascending)
 
-  proc openDiffForEditor(self: App, editorWorking: DocumentEditor, fileInfo: GitFileInfo) {.async.} =
-    let document = editorWorking.getDocument()
-
-    log lvlInfo, fmt"openDiffForEditor '{document.filename}', {fileInfo}"
-
-    if document of TextDocument:
-      let document = document.TextDocument
-      if fileInfo.unstagedStatus != None:
-
-        let stagedFileContent = getStagedFileContent(fileInfo.path).await
-        let changes = getFileChanges(fileInfo.path).await
-
-        var document = newTextDocument(self.asConfigProvider, language=document.languageId.some, createLanguageServer = false)
-        document.createLanguageServer = false
-        document.content = stagedFileContent
-        editorWorking.TextDocumentEditor.diffDocument = document
-        editorWorking.TextDocumentEditor.diffChanges = changes
-
-        editorWorking.markDirty()
-
-    else:
-      log lvlError, fmt"Unsupported document type"
-
 proc diffActiveEditorAsync*(self: App) {.async.} =
   let editorWorking = self.views[self.currentView].editor
-  let document = editorWorking.getDocument()
 
-  log lvlInfo, fmt"Diff document '{document.filename}'"
-
-  if document of TextDocument:
-    let document = document.TextDocument
-
-    when defined(js):
-      let stagedFileContent = fs.loadApplicationFile("diff.txt")
-      let changes = some @[
-          LineMapping(source: (0, 1), target: (0, 0)),
-          LineMapping(source: (6, 8), target: (5, 5)),
-          LineMapping(source: (120, 124), target: (117, 117)),
-          LineMapping(source: (132, 137), target: (125, 127)),
-          LineMapping(source: (152, 153), target: (142, 143)),
-          LineMapping(source: (162, 162), target: (152, 154)),
-          LineMapping(source: (180, 184), target: (172, 173)),
-        ]
-
-    else:
-      let relPath = document.workspace.mapIt(it.getRelativePath(document.filename).await).flatten.get(document.filename)
-      let stagedFileContent = getStagedFileContent(relPath).await
-      let changes = getFileChanges(relPath).await
-
-    var oldDocument = newTextDocument(self.asConfigProvider, language=document.languageId.some, createLanguageServer = false)
-    oldDocument.content = stagedFileContent
-    editorWorking.TextDocumentEditor.diffDocument = oldDocument
-    editorWorking.TextDocumentEditor.diffChanges = changes
-
-    editorWorking.markDirty()
+  if editorWorking of TextDocumentEditor:
+    editorWorking.TextDocumentEditor.updateDiff()
 
 proc diffActiveEditor*(self: App) {.expose("editor").} =
   asyncCheck self.diffActiveEditorAsync()
@@ -2007,7 +1957,8 @@ proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
         self.openFile(item.path)
 
       if currentVersionEditor.getSome(editor):
-        asyncCheck self.openDiffForEditor(editor, item.info)
+        if editor of TextDocumentEditor:
+          editor.TextDocumentEditor.updateDiff()
 
     popup.updateCompletions()
 

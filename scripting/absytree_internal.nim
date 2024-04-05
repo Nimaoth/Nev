@@ -399,6 +399,9 @@ proc editor_text_runTripleClickCommand_void_TextDocumentEditor_impl*(
 proc editor_text_runDragCommand_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
+proc editor_text_updateDiff_void_TextDocumentEditor_impl*(
+    self: TextDocumentEditor) =
+  discard
 proc popup_selector_updateCompletions_void_SelectorPopup_impl*(
     self: SelectorPopup) =
   discard

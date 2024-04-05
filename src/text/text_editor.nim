@@ -2449,33 +2449,50 @@ proc handleTextDocumentLoaded(self: TextDocumentEditor) =
 when not defined(js):
   import diff_git
 
-proc updateGitDiffAsync(self: TextDocumentEditor) {.async.} =
-  when not defined(js):
-    if self.diffDocument.isNil:
-      return
+proc updateDiffAsync*(self: TextDocumentEditor) {.async.} =
+  if self.document.isNil:
+    return
+  if self.isGitDiffInProgress:
+    return
 
-    self.isGitDiffInProgress = true
-    defer:
-      self.isGitDiffInProgress = false
+  self.isGitDiffInProgress = true
+  defer:
+    self.isGitDiffInProgress = false
 
+  log lvlInfo, fmt"Diff document '{self.document.filename}'"
+
+  when defined(js):
+    # todo
+    let stagedFileContent = fs.loadApplicationFile("diff.txt")
+    let changes = some @[
+        LineMapping(source: (0, 1), target: (0, 0)),
+        LineMapping(source: (6, 8), target: (5, 5)),
+        LineMapping(source: (120, 124), target: (117, 117)),
+        LineMapping(source: (132, 137), target: (125, 127)),
+        LineMapping(source: (152, 153), target: (142, 143)),
+        LineMapping(source: (162, 162), target: (152, 154)),
+        LineMapping(source: (180, 184), target: (172, 173)),
+      ]
+
+  else:
     let relPath = self.document.workspace.mapIt(it.getRelativePath(self.document.filename).await).flatten.get(self.document.filename)
     let stagedFileContent = getStagedFileContent(relPath).await
     let changes = getFileChanges(relPath).await
 
-    if self.diffDocument.isNil:
-      return
+  if self.diffDocument.isNil:
+    self.diffDocument = newTextDocument(self.configProvider, language=self.document.languageId.some, createLanguageServer = false)
 
-    self.diffDocument.content = stagedFileContent
-    self.diffChanges = changes
+  self.diffDocument.content = stagedFileContent
+  self.diffChanges = changes
 
-    self.markDirty()
+  self.markDirty()
+
+proc updateDiff*(self: TextDocumentEditor) {.expose("editor.text").} =
+  asyncCheck self.updateDiffAsync()
 
 proc handleTextDocumentSaved(self: TextDocumentEditor) =
   log lvlInfo, fmt"handleTextDocumentSaved '{self.document.filename}'"
-  if self.isGitDiffInProgress:
-    return
-
-  asyncCheck self.updateGitDiffAsync()
+  asyncCheck self.updateDiffAsync()
 
 ## Only use this to create TextDocumentEditorInstances
 proc createTextEditorInstance(): TextDocumentEditor =

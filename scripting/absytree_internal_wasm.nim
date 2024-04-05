@@ -275,6 +275,8 @@ proc editor_text_runTripleClickCommand_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}
 proc editor_text_runDragCommand_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}
+proc editor_text_updateDiff_void_TextDocumentEditor_impl(
+    self: TextDocumentEditor)  {.importc.}
 proc popup_selector_updateCompletions_void_SelectorPopup_impl(
     self: SelectorPopup)  {.importc.}
 proc popup_selector_getSelectedItem_JsonNode_SelectorPopup_impl(
