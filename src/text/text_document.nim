@@ -51,7 +51,7 @@ type StyledText* = object
   underline*: bool
   underlineColor*: Color
   inlayContainCursor*: bool
-  textColor*: Color
+  scopeIsToken*: bool = true
 
 type StyledLine* = ref object
   index*: int
@@ -538,7 +538,7 @@ proc addDiagnosticsUnderline(self: TextDocument, line: var StyledLine) =
         diagnostic.message.len
 
       let diagnosticMessage: string = "     ■ " & diagnostic.message[0..<maxIndex]
-      line.parts.add StyledText(text: diagnosticMessage, scope: colorName, scopeC: colorName.cstring, inlayContainCursor: true, priority: 1000000000)
+      line.parts.add StyledText(text: diagnosticMessage, scope: colorName, scopeC: colorName.cstring, inlayContainCursor: true, scopeIsToken: false, priority: 1000000000)
 
 proc getStyledText*(self: TextDocument, i: int): StyledLine =
   if self.styledTextCache.contains(i):
