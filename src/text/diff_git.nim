@@ -20,9 +20,9 @@ proc parseFileStatusGit(status: char): FileStatus =
   of '?': Untracked
   else: None
 
-proc getCommitedFileContent*(path: string): Future[seq[string]] {.async.} =
+proc getCommittedFileContent*(path: string): Future[seq[string]] {.async.} =
   let args = @["show", "HEAD:" & path]
-  log lvlInfo, fmt"getCommitedFileContent: '{path}' -- {args}"
+  log lvlInfo, fmt"getCommittedFileContent: '{path}' -- {args}"
   return runProcessAsync("git", args).await
 
 proc getStagedFileContent*(path: string): Future[seq[string]] {.async.} =
@@ -193,7 +193,7 @@ when isMainModule:
         debugf"Binary file {file.path}"
         continue
 
-      let committed = getCommitedFileContent(file.path).await
+      let committed = getCommittedFileContent(file.path).await
       let staged = getStagedFileContent(file.path).await
       let working = getWorkingFileContent(file.path).await
 
