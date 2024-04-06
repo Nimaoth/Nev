@@ -975,9 +975,12 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
   return self
 
 proc saveAppState*(self: App)
+proc printStatistics*(self: App)
 
 proc shutdown*(self: App) =
   # Clear log document so we don't log to it as it will be destroyed.
+  self.printStatistics()
+
   self.logDocument = nil
 
   self.saveAppState()
@@ -2675,6 +2678,69 @@ proc replayKeys*(self: App, register: string) {.expose("editor").} =
 proc inputKeys*(self: App, input: string) {.expose("editor").} =
   for (inputCode, mods, _) in parseInputs(input):
     self.handleKeyPress(inputCode.a, mods)
+
+proc collectGarbage*(self: App) {.expose("editor").} =
+  log lvlInfo, "collectGarbage"
+  GC_FullCollect()
+
+proc printStatistics*(self: App) {.expose("editor").} =
+  var result = "\n"
+  result.add &"Backend: {self.backend}\n"
+
+  result.add &"Registers:\n"
+  for (key, value) in self.registers.pairs:
+    result.add &"    {key}: {value}\n"
+
+  result.add &"RecordingKeys:\n"
+  for key in self.recordingKeys:
+    result.add &"    {key}"
+
+  result.add &"RecordingCommands:\n"
+  for key in self.recordingKeys:
+    result.add &"    {key}"
+
+  result.add &"Event Handlers: {self.eventHandlerConfigs.len}\n"
+    # eventHandlerConfigs: Table[string, EventHandlerConfig]
+
+  result.add &"Options: {self.options.pretty.len}\n"
+  result.add &"Callbacks: {self.callbacks.len}\n"
+  result.add &"Script Actions: {self.scriptActions.len}\n"
+
+  result.add &"Input History: {self.inputHistory}\n"
+  result.add &"Editor History: {self.editorHistory}\n"
+
+  result.add &"Command History: {self.commandHistory.len}\n"
+  # for command in self.commandHistory:
+  #   result.add &"    {command}\n"
+
+  result.add &"Text documents: {allTextDocuments.len}\n"
+  for document in allTextDocuments:
+    result.add document.getStatisticsString().indent(4)
+    result.add "\n"
+
+  result.add &"Text editors: {allTextEditors.len}\n"
+  for editor in allTextEditors:
+    result.add editor.getStatisticsString().indent(4)
+    result.add "\n"
+
+  # todo
+    # absytreeCommandsServer: LanguageServer
+    # commandLineTextEditor: DocumentEditor
+
+    # logDocument: Document
+    # documents*: seq[Document]
+    # editors*: Table[EditorId, DocumentEditor]
+    # popups*: seq[Popup]
+
+    # theme*: Theme
+    # scriptContext*: ScriptContext
+    # wasmScriptContext*: ScriptContextWasm
+
+    # workspace*: Workspace
+  result.add &"Platform:\n{self.platform.getStatisticsString().indent(4)}\n"
+  result.add &"UI:\n{self.platform.builder.getStatisticsString().indent(4)}\n"
+
+  log lvlInfo, result
 
 genDispatcher("editor")
 addGlobalDispatchTable "editor", genDispatchTable("editor")

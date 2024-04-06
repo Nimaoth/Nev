@@ -1572,3 +1572,17 @@ proc inputKeys*(input: string) =
   let res {.used.} = editor_inputKeys_void_App_string_wasm(
       argsJsonString.cstring)
 
+
+proc editor_collectGarbage_void_App_wasm(arg: cstring): cstring {.importc.}
+proc collectGarbage*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_collectGarbage_void_App_wasm(argsJsonString.cstring)
+
+
+proc editor_printStatistics_void_App_wasm(arg: cstring): cstring {.importc.}
+proc printStatistics*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_printStatistics_void_App_wasm(argsJsonString.cstring)
+

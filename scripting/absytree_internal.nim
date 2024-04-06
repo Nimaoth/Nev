@@ -862,6 +862,10 @@ proc editor_replayKeys_void_App_string_impl*(register: string) =
   discard
 proc editor_inputKeys_void_App_string_impl*(input: string) =
   discard
+proc editor_collectGarbage_void_App_impl*() =
+  discard
+proc editor_printStatistics_void_App_impl*() =
+  discard
 proc lsp_lspLogVerbose_void_bool_impl*(val: bool) =
   discard
 proc lsp_lspToggleLogServerDebug_void_impl*() =

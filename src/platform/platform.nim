@@ -42,5 +42,6 @@ method charWidth*(self: Platform): float {.base.} = discard
 method charGap*(self: Platform): float {.base.} = discard
 method measureText*(self: Platform, text: string): Vec2 {.base.} = discard
 method preventDefault*(self: Platform) {.base.} = discard
+method getStatisticsString*(self: Platform): string {.base.} = discard
 
 func totalLineHeight*(self: Platform): float = self.lineHeight + self.lineDistance

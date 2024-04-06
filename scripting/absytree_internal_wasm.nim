@@ -552,6 +552,8 @@ proc editor_isRecordingCommands_bool_App_string_impl(registry: string): bool  {.
 proc editor_replayCommands_void_App_string_impl(register: string)  {.importc.}
 proc editor_replayKeys_void_App_string_impl(register: string)  {.importc.}
 proc editor_inputKeys_void_App_string_impl(input: string)  {.importc.}
+proc editor_collectGarbage_void_App_impl()  {.importc.}
+proc editor_printStatistics_void_App_impl()  {.importc.}
 proc lsp_lspLogVerbose_void_bool_impl(val: bool)  {.importc.}
 proc lsp_lspToggleLogServerDebug_void_impl()  {.importc.}
 proc lsp_lspLogServerDebug_void_bool_impl(val: bool)  {.importc.}

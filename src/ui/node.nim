@@ -10,6 +10,7 @@ logCategory "ui-node"
 
 var logInvalidationRects* = false
 var logPanel* = false
+var totalNodes = 0
 
 defineBitFlagSized(uint64):
   type UINodeFlag* = enum
@@ -66,7 +67,8 @@ type
       subId*: int32
     else: discard
 
-  UINode* = ref object
+  UINode* = ref UINodeObject
+  UINodeObject* = object
     aDebugData*: UINodeDebugData
 
     parent: UINode
@@ -779,6 +781,8 @@ proc unpoolNode*(builder: UINodeBuilder, userId: var UIUserId): UINode =
 
     return
 
+  totalNodes.inc
+
   result = UINode(mId: newId(), userId: userId)
   when defined(uiNodeDebugData):
     result.aDebugData.id = ($result.mId).cstring
@@ -1433,3 +1437,22 @@ proc dump*(node: UINode, recurse = false): string =
       result.add "\n"
       for c in c.dump(recurse=recurse).indent(1, "  "):
         result.add c
+
+proc nodeSizeBytes*(self: UINode): int =
+  result += sizeof(UINodeObject)
+  result += self.mText.len
+  for _, c in self.children:
+    result += c.nodeSizeBytes
+
+proc getStatisticsString*(self: UINodeBuilder): string =
+  var allNodeSize = 0
+  for n in self.nodes:
+    allNodeSize += n.nodeSizeBytes()
+
+  var namedNodeSize = 0
+  for n in self.namedNodes.values:
+    namedNodeSize += n.nodeSizeBytes()
+
+  result.add &"Nodes: {self.nodes.len}/{totalNodes}, {allNodeSize} bytes\n"
+  result.add &"Named Nodes: {self.namedNodes.len}, {namedNodeSize} bytes\n"
+  result.add &"Root size: {self.root.nodeSizeBytes} bytes\n"
