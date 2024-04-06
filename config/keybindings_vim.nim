@@ -1222,8 +1222,7 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     editor.scrollToCursor Last
     editor.updateTargetColumn()
   addTextCommand "", "gx", "close-diff"
-  addTextCommandBlock "", "<LEADER>ga":
-    diffActiveEditor()
+  addTextCommand "", "gc", "update-diff"
 
   addCommand "popup.selector", "<C-a>", "stage-selected"
   addCommand "popup.selector", "<C-u>", "unstage-selected"

@@ -179,5 +179,6 @@ More details in [Getting Started](docs/getting_started.md)
 - close completion windows when cursor moves
 - discard bom
 - tabs: unindent not working
+- read file when on disk changes, e.g. after revert
 
 [Test report](https://nimaoth.github.io/Absytree/testresults.html)

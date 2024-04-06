@@ -152,6 +152,9 @@ proc editor_text_getPrevChange_Selection_TextDocumentEditor_Cursor_impl*(
 proc editor_text_getNextChange_Selection_TextDocumentEditor_Cursor_impl*(
     self: TextDocumentEditor; cursor: Cursor): Selection =
   discard
+proc editor_text_updateDiff_void_TextDocumentEditor_impl*(
+    self: TextDocumentEditor) =
+  discard
 proc editor_text_addNextFindResultToSelection_void_TextDocumentEditor_bool_bool_impl*(
     self: TextDocumentEditor; includeAfter: bool = true; wrap: bool = true) =
   discard
@@ -397,9 +400,6 @@ proc editor_text_runTripleClickCommand_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
 proc editor_text_runDragCommand_void_TextDocumentEditor_impl*(
-    self: TextDocumentEditor) =
-  discard
-proc editor_text_updateDiff_void_TextDocumentEditor_impl*(
     self: TextDocumentEditor) =
   discard
 proc popup_selector_updateCompletions_void_SelectorPopup_impl*(
@@ -728,8 +728,6 @@ proc editor_createFile_void_App_string_impl*(path: string) =
 proc editor_chooseFile_void_App_string_impl*(view: string = "new") =
   discard
 proc editor_chooseOpen_void_App_string_impl*(view: string = "new") =
-  discard
-proc editor_diffActiveEditor_void_App_impl*() =
   discard
 proc editor_chooseGitActiveFiles_void_App_impl*() =
   discard
