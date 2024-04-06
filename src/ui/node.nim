@@ -542,6 +542,7 @@ proc returnNode*(builder: UINodeBuilder, node: UINode) =
   node.mHandleBeginHover = nil
   node.mHandleEndHover = nil
   node.mHandleHover = nil
+  node.mHandleScroll = nil
 
   node.clearRect.resetOption()
 
@@ -979,6 +980,7 @@ proc prepareNode*(builder: UINodeBuilder, inFlags: UINodeFlags, inText: Option[s
   node.mHandleBeginHover = nil
   node.mHandleEndHover = nil
   node.mHandleHover = nil
+  node.mHandleScroll = nil
 
   node.userData = nil
 

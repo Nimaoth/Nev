@@ -799,6 +799,9 @@ method deinit*(self: TextDocument) =
   log lvlInfo, fmt"Destroying text document '{self.filename}'"
   if self.highlightQuery.isNotNil:
     self.highlightQuery.deinit()
+  if not self.errorQuery.isNil:
+    self.errorQuery.deinit()
+    self.errorQuery = nil
 
   if not self.tsParser.isNil:
     self.tsParser.deinit()
@@ -1493,4 +1496,6 @@ proc trimTrailingWhitespace*(self: TextDocument) =
     if index == self.lines[i].high:
       continue
     selections.add ((i, index + 1), (i, self.lines[i].len))
-  discard self.delete(selections, selections)
+
+  if selections.len > 0:
+    discard self.delete(selections, selections)

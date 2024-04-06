@@ -822,7 +822,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   self.workspace.new()
 
-  self.logDocument = newTextDocument(self.asConfigProvider)
+  self.logDocument = newTextDocument(self.asConfigProvider, "log", load=false)
   self.documents.add self.logDocument
 
   self.theme = defaultTheme()
@@ -1345,6 +1345,9 @@ proc closeEditor*(self: App, editor: DocumentEditor) =
       self.hiddenViews.removeShift(i)
       break
 
+  if document == self.logDocument:
+    return
+
   var hasAnotherEditor = false
   for id, editor in self.editors.pairs:
     if editor.getDocument() == document:
@@ -1865,7 +1868,9 @@ proc chooseOpen*(self: App, view: string = "new") {.expose("editor").} =
       let document = view.editor.getDocument
       let name = view.document.filename
       let score = matchFuzzySublime(text, name, defaultPathMatchingConfig).score.float
-      result.add FileSelectorItem(path: name, score: score, workspaceFolder: document.workspace)
+      let isDirty = view.document.lastSavedRevision != view.document.revision
+      let dirtyMarker = if isDirty: "*" else: " "
+      result.add FileSelectorItem(name: dirtyMarker & name, path: name, score: score, workspaceFolder: document.workspace)
 
     result.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Ascending)
 
