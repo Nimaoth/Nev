@@ -2492,7 +2492,8 @@ proc updateDiff*(self: TextDocumentEditor) {.expose("editor.text").} =
 
 proc handleTextDocumentSaved(self: TextDocumentEditor) =
   log lvlInfo, fmt"handleTextDocumentSaved '{self.document.filename}'"
-  asyncCheck self.updateDiffAsync()
+  if self.diffDocument.isNotNil:
+    asyncCheck self.updateDiffAsync()
 
 ## Only use this to create TextDocumentEditorInstances
 proc createTextEditorInstance(): TextDocumentEditor =
