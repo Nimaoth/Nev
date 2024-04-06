@@ -1022,6 +1022,9 @@ proc getPrevDiagnostic*(self: TextDocumentEditor, cursor: Cursor, severity: int 
           continue
 
         let diagnostic {.cursor.} = self.document.currentDiagnostics[diagnosticIndex]
+        if diagnostic.removed:
+          continue
+
         if severity != 0 and diagnostic.severity.getSome(s) and s.ord != severity:
           continue
 
@@ -1051,6 +1054,9 @@ proc getNextDiagnostic*(self: TextDocumentEditor, cursor: Cursor, severity: int 
           continue
 
         let diagnostic {.cursor.} = self.document.currentDiagnostics[diagnosticIndex]
+        if diagnostic.removed:
+          continue
+
         if severity != 0 and diagnostic.severity.getSome(s) and s.ord != severity:
           continue
 
@@ -1125,16 +1131,39 @@ proc updateDiffAsync*(self: TextDocumentEditor) {.async.} =
         LineMapping(source: (180, 184), target: (172, 173)),
       ]
 
+    if self.diffDocument.isNil:
+      self.diffDocument = newTextDocument(self.configProvider, language=self.document.languageId.some, createLanguageServer = false)
+      self.diffDocument.isReadOnly = true
+
+    self.diffDocument.content = stagedFileContent
+    self.diffChanges = changes
+
   else:
     let relPath = self.document.workspace.mapIt(it.getRelativePath(self.document.filename).await).flatten.get(self.document.filename)
-    let stagedFileContent = getStagedFileContent(relPath).await
-    let changes = getFileChanges(relPath).await
 
-  if self.diffDocument.isNil:
-    self.diffDocument = newTextDocument(self.configProvider, language=self.document.languageId.some, createLanguageServer = false)
+    if self.document.staged:
+      let committedFileContent = getCommittedFileContent(relPath).await
+      let stagedFileContent = getStagedFileContent(relPath).await
+      let changes = getFileChanges(relPath, staged = true).await
 
-  self.diffDocument.content = stagedFileContent
-  self.diffChanges = changes
+      if self.diffDocument.isNil:
+        self.diffDocument = newTextDocument(self.configProvider, language=self.document.languageId.some, createLanguageServer = false)
+        self.diffDocument.readOnly = true
+
+      self.document.content = stagedFileContent
+      self.diffChanges = changes
+      self.diffDocument.content = committedFileContent
+
+    else:
+      let stagedFileContent = getStagedFileContent(relPath).await
+      let changes = getFileChanges(relPath, staged = false).await
+
+      if self.diffDocument.isNil:
+        self.diffDocument = newTextDocument(self.configProvider, language=self.document.languageId.some, createLanguageServer = false)
+        self.diffDocument.readOnly = true
+
+      self.diffChanges = changes
+      self.diffDocument.content = stagedFileContent
 
   self.markDirty()
 

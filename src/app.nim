@@ -1125,6 +1125,8 @@ proc saveAppState*(self: App) {.expose("editor").} =
   proc getEditorState(view: View): Option[OpenEditor] =
     if view.document.filename == "":
       return OpenEditor.none
+    if view.document of TextDocument and view.document.TextDocument.staged:
+      return OpenEditor.none
 
     try:
       let customOptions = view.editor.getStateJson()
@@ -1954,6 +1956,16 @@ when not defined(js):
     popup.updated = false
     popup.updateCompletions()
 
+  proc diffStagedFileAsync(self: App, path: string): Future[void] {.async.} =
+    log lvlInfo, fmt"Diff staged '({path})'"
+
+    let stagedDocument = newTextDocument(self.asConfigProvider, path, load = false, createLanguageServer = false)
+    stagedDocument.staged = true
+    stagedDocument.readOnly = true
+
+    let editor = self.createAndAddView(stagedDocument).TextDocumentEditor
+    editor.updateDiff()
+
 proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
   when defined(js):
     log lvlError, fmt"chooseGitActiveFiles not implemented yet for js backend"
@@ -1976,14 +1988,19 @@ proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
 
     popup.handleItemConfirmed = proc(item: SelectorItem) =
       let item = item.GitFileSelectorItem
-      let currentVersionEditor = if item.workspaceFolder.isSome:
-        self.openWorkspaceFile(item.path, item.workspaceFolder.get)
-      else:
-        self.openFile(item.path)
 
-      if currentVersionEditor.getSome(editor):
-        if editor of TextDocumentEditor:
-          editor.TextDocumentEditor.updateDiff()
+      if item.info.stagedStatus != None:
+        asyncCheck self.diffStagedFileAsync(item.info.path)
+
+      else:
+        let currentVersionEditor = if item.workspaceFolder.isSome:
+          self.openWorkspaceFile(item.path, item.workspaceFolder.get)
+        else:
+          self.openFile(item.path)
+
+        if currentVersionEditor.getSome(editor):
+          if editor of TextDocumentEditor:
+            editor.TextDocumentEditor.updateDiff()
 
     popup.addCustomCommand "stage-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
       if popup.textEditor.isNil:
@@ -2010,6 +2027,16 @@ proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
         return false
 
       asyncCheck popup.revertSelectedFileAsync()
+      return true
+
+    popup.addCustomCommand "diff-staged", proc(popup: SelectorPopup, args: JsonNode): bool =
+      if popup.textEditor.isNil:
+        return false
+      if popup.completions.len == 0:
+        return false
+
+      let item = popup.completions[popup.completions.high - popup.selected].GitFileSelectorItem
+      asyncCheck self.diffStagedFileAsync(item.info.path)
       return true
 
     popup.updateCompletions()

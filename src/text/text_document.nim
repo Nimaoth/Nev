@@ -77,7 +77,9 @@ type TextDocument* = ref object of Document
   textChanged*: Event[TextDocument]
   textInserted*: Event[tuple[document: TextDocument, location: Selection, text: string]]
   textDeleted*: Event[tuple[document: TextDocument, location: Selection]]
-  singleLine*: bool
+  singleLine*: bool = false
+  readOnly*: bool = false
+  staged*: bool = false
 
   changes: seq[TextDocumentChange]
 
@@ -816,6 +818,9 @@ method save*(self: TextDocument, filename: string = "", app: bool = false) =
   if self.filename.len == 0:
     raise newException(IOError, "Missing filename")
 
+  if self.staged:
+    return
+
   self.appFile = app
 
   self.onSaved.invoke()
@@ -1152,6 +1157,9 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
 
   result = self.clampAndMergeSelections selections
 
+  if self.readOnly:
+    return
+
   self.revision.inc
   self.undoableRevision.inc
 
@@ -1260,6 +1268,9 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
 
 proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection: openArray[Selection], notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] =
   result = self.clampAndMergeSelections selections
+
+  if self.readOnly:
+    return
 
   self.revision.inc
   self.undoableRevision.inc
