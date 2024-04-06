@@ -158,7 +158,7 @@ method getStatisticsString*(self: TextDocumentEditor): string =
   result.add &"Completion Matches: {self.completionMatches.len}\n"
 
   result.add &"Completions: {self.completions.items.len}\n"
-  result.add &"LastItems: {self.lastItems.len}\n"
+  result.add &"LastItems: {self.lastItems.len}"
 
 template noSelectionHistory(self, body: untyped): untyped =
   block:
@@ -396,6 +396,10 @@ method handleDeactivate*(self: TextDocumentEditor) =
     self.blinkCursorTask.pause()
     self.cursorVisible = true
     self.markDirty()
+
+  self.document.clearStyledTextCache()
+  if self.diffDocument.isNotNil:
+    self.diffDocument.clearStyledTextCache()
 
 proc doMoveCursorLine(self: TextDocumentEditor, cursor: Cursor, offset: int, wrap: bool = false, includeAfter: bool = false): Cursor =
   var cursor = cursor

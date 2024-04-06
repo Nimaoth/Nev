@@ -58,6 +58,13 @@ type StyledLine* = ref object
   index*: int
   parts*: seq[StyledText]
 
+proc getSizeBytes(line: StyledLine): int =
+  result = sizeof(StyledLine)
+  for part in line.parts:
+    result += sizeof(StyledText)
+    result += part.text.len
+    result += part.scope.len
+
 variantp TextDocumentChange:
   Insert(insertStartByte: int, insertEndByte: int, insertStartColumn: int, insertEndColumn: int, insertStartLine: int, insertEndLine: int)
   Delete(deleteStartByte: int, deleteEndByte: int, deleteStartColumn: int, deleteEndColumn: int, deleteStartLine: int, deleteEndLine: int)
@@ -138,9 +145,13 @@ method getStatisticsString*(self: TextDocument): string =
     undoOpsSize += c.getTotalTextSize()
   result.add &"Undo Ops: {self.undoOps.len}, {undoOpsSize} bytes\n"
 
-  result.add &"Styled line cache: {self.styledTextCache.len}\n"
+  var styledTextCacheBytes = 0
+  for c in self.styledTextCache.values:
+    styledTextCacheBytes += c.getSizeBytes()
+  result.add &"Styled line cache: {self.styledTextCache.len}, {styledTextCacheBytes} bytes\n"
+
   result.add &"Diagnostics per line: {self.diagnosticsPerLine.len}\n"
-  result.add &"Diagnostics: {self.currentDiagnostics.len}\n"
+  result.add &"Diagnostics: {self.currentDiagnostics.len}"
 
 proc tabWidth*(self: TextDocument): int
 
@@ -981,6 +992,9 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
 proc clearDiagnostics*(self: TextDocument) =
   self.diagnosticsPerLine.clear()
   self.currentDiagnostics.setLen 0
+  self.styledTextCache.clear()
+
+proc clearStyledTextCache*(self: TextDocument) =
   self.styledTextCache.clear()
 
 proc byteOffset*(self: TextDocument, cursor: Cursor): int =
