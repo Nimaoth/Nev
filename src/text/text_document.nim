@@ -107,6 +107,41 @@ type TextDocument* = ref object of Document
   currentDiagnostics*: seq[Diagnostic]
   onDiagnosticsUpdated*: Event[void]
 
+var allTextDocuments*: seq[TextDocument] = @[]
+
+proc getTotalTextSize*(self: UndoOp): int =
+  for c in self.checkpoints:
+    result += c.len
+  case self.kind:
+  of Delete:
+    discard
+  of Insert:
+    result += self.text.len
+  of Nested:
+    for c in self.children:
+      result += c.getTotalTextSize()
+
+method getStatisticsString*(self: TextDocument): string =
+  var textSizeBytes = 0
+  for l in self.lines:
+    textSizeBytes += l.len
+
+  result.add &"Filename: {self.filename}\n"
+  result.add &"Lines: {self.lines.len}\n"
+  result.add &"Line Ids: {self.lineIds.len}\n"
+  result.add &"Text: {textSizeBytes} bytes\n"
+  result.add &"Changes: {self.changes.len}\n"
+  result.add &"Redo Ops: {self.redoOps.len}\n"
+
+  var undoOpsSize = 0
+  for c in self.undoOps:
+    undoOpsSize += c.getTotalTextSize()
+  result.add &"Undo Ops: {self.undoOps.len}, {undoOpsSize} bytes\n"
+
+  result.add &"Styled line cache: {self.styledTextCache.len}\n"
+  result.add &"Diagnostics per line: {self.diagnosticsPerLine.len}\n"
+  result.add &"Diagnostics: {self.currentDiagnostics.len}\n"
+
 proc tabWidth*(self: TextDocument): int
 
 proc nextLineId*(self: TextDocument): int32 =
@@ -749,6 +784,8 @@ proc newTextDocument*(
     createLanguageServer: bool = true): TextDocument =
 
   new(result)
+  allTextDocuments.add result
+
   var self = result
   self.filename = filename.normalizePathUnix
   self.currentTree = nil
@@ -810,6 +847,9 @@ method deinit*(self: TextDocument) =
     ls.removeOnRequestSaveHandler(self.onRequestSaveHandle)
     ls.disconnect()
     self.languageServer = LanguageServer.none
+
+  let i = allTextDocuments.find(self)
+  allTextDocuments.removeSwap(i)
 
   self[] = default(typeof(self[]))
 

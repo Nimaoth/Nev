@@ -126,6 +126,30 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   currentSnippetData*: Option[SnippetData]
 
+var allTextEditors*: seq[TextDocumentEditor] = @[]
+
+method getStatisticsString*(self: TextDocumentEditor): string =
+  result.add &"Filename: {self.document.filename}\n"
+  result.add &"Selection History: {self.selectionHistory.len}\n"
+  result.add &"Search Query: {self.searchQuery}\n"
+  result.add &"Search Results: {self.searchResults.len}\n"
+  result.add &"Styled Text Overrides: {self.styledTextOverrides.len}\n"
+  result.add &"Custom Highlights: {self.customHighlights.len}\n"
+  result.add &"Inlay Hints: {self.inlayHints.len}\n"
+  result.add &"Current Command History: {self.currentCommandHistory.commands.len}\n"
+  result.add &"Saved Command History: {self.savedCommandHistory.commands.len}\n"
+  result.add &"Last Rendered Lines: {self.lastRenderedLines.len}\n"
+  result.add &"Last Completion Match Text: {self.lastCompletionMatchText.len}\n"
+
+  var temp = 0
+  for s in self.completionMatchPositions.values:
+    temp += s.len
+  result.add &"Completion Match Positions: {self.completionMatchPositions.len}, {temp}\n"
+  result.add &"Completion Matches: {self.completionMatches.len}\n"
+
+  result.add &"Completions: {self.completions.items.len}\n"
+  result.add &"LastItems: {self.lastItems.len}\n"
+
 template noSelectionHistory(self, body: untyped): untyped =
   block:
     let temp = self.dontRecordSelectionHistory
@@ -231,7 +255,7 @@ proc startBlinkCursorTask(self: TextDocumentEditor) =
 
 method deinit*(self: TextDocumentEditor) =
   let filename = if self.document.isNotNil: self.document.filename else: ""
-  log lvlInfo, "Deinit text editor for '{filename}'"
+  log lvlInfo, fmt"Deinit text editor for '{filename}'"
 
   self.unregister()
 
@@ -244,6 +268,9 @@ method deinit*(self: TextDocumentEditor) =
   if self.inlayHintsTask.isNotNil: self.inlayHintsTask.pause()
   if self.showHoverTask.isNotNil: self.showHoverTask.pause()
   if self.hideHoverTask.isNotNil: self.hideHoverTask.pause()
+
+  let i = allTextEditors.find(self)
+  allTextEditors.removeSwap(i)
 
   self[] = default(typeof(self[]))
 
@@ -334,6 +361,7 @@ method handleActivate*(self: TextDocumentEditor) =
   self.startBlinkCursorTask()
 
 method handleDeactivate*(self: TextDocumentEditor) =
+  log lvlInfo, fmt"Deactivate '{self.document.filename}'"
   if self.blinkCursorTask.isNotNil:
     self.blinkCursorTask.pause()
     self.cursorVisible = true
@@ -2534,6 +2562,7 @@ proc createTextEditorInstance(): TextDocumentEditor =
   editor.completionsId = newId()
   editor.hoverId = newId()
   editor.inlayHints = @[]
+  allTextEditors.add editor
   return editor
 
 proc newTextEditor*(document: TextDocument, app: AppInterface, configProvider: ConfigProvider): TextDocumentEditor =

@@ -268,3 +268,7 @@ proc replayKeys*(register: string) =
   editor_replayKeys_void_App_string_impl(register)
 proc inputKeys*(input: string) =
   editor_inputKeys_void_App_string_impl(input)
+proc collectGarbage*() =
+  editor_collectGarbage_void_App_impl()
+proc printStatistics*() =
+  editor_printStatistics_void_App_impl()

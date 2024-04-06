@@ -1203,6 +1203,8 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommand "", "<C-k><C-r>", "reload-treesitter"
   addTextCommandBlock "", "<C-k><C-l>": lspToggleLogServerDebug()
   addCommand "editor", "<C-k><C-e>", "toggle-flag", "editor.text.highlight-treesitter-errors"
+  addTextCommandBlock "", "<C-k><C-k>": printStatistics()
+  addTextCommandBlock "", "<C-k><C-z>": collectGarbage()
 
   addTextCommandBlock "", "gt":
     editor.selection = editor.getNextDiagnostic(editor.selection.last, 1).first.toSelection

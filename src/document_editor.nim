@@ -96,6 +96,8 @@ method getStateJson*(self: DocumentEditor): JsonNode {.base.} =
 method restoreStateJson*(self: DocumentEditor, state: JsonNode) {.base.} =
   discard
 
+method getStatisticsString*(self: DocumentEditor): string {.base.} = discard
+
 import app_interface
 method injectDependencies*(self: DocumentEditor, ed: AppInterface) {.base.} =
   discard
