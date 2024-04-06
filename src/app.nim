@@ -968,7 +968,10 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
         view.editor.restoreStateJson(editorState.customOptions)
 
   if self.views.len == 0:
-    self.help()
+    if self.hiddenViews.len > 0:
+      self.addView self.hiddenViews.pop
+    else:
+      self.help()
 
   asyncCheck self.initScripting(options)
 
@@ -981,9 +984,9 @@ proc shutdown*(self: App) =
   # Clear log document so we don't log to it as it will be destroyed.
   self.printStatistics()
 
-  self.logDocument = nil
-
   self.saveAppState()
+
+  self.logDocument = nil
 
   let editors = collect(for e in self.editors.values: e)
   for editor in editors:
@@ -1129,6 +1132,8 @@ proc saveAppState*(self: App) {.expose("editor").} =
     if view.document.filename == "":
       return OpenEditor.none
     if view.document of TextDocument and view.document.TextDocument.staged:
+      return OpenEditor.none
+    if view.document == self.logDocument:
       return OpenEditor.none
 
     try:
@@ -1418,7 +1423,6 @@ proc closeEditor*(self: App, path: string) {.expose("editor").} =
       return
 
   for editor in self.editors.values:
-    echo editor.getDocument().isNil
     if editor.getDocument().isNil:
       continue
     if editor.getDocument().filename == fullPath:
