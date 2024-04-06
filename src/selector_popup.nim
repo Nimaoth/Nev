@@ -34,6 +34,8 @@ type
     lastContentBounds*: Rect
     lastItems*: seq[tuple[index: int, bounds: Rect]]
 
+    customCommands: Table[string, proc(popup: SelectorPopup, args: JsonNode): bool]
+
     maxItemsToShow: int = 50
 
     cancellationToken*: CancellationToken
@@ -78,6 +80,9 @@ method deinit*(self: SelectorPopup) =
   document.deinit()
 
   self[] = default(typeof(self[]))
+
+proc addCustomCommand*(self: SelectorPopup, name: string, command: proc(popup: SelectorPopup, args: JsonNode): bool) =
+  self.customCommands[name] = command
 
 proc getSearchString*(self: SelectorPopup): string =
   if self.textEditor.isNil:
@@ -260,6 +265,12 @@ proc handleAction*(self: SelectorPopup, action: string, arg: string): EventRespo
   if self.textEditor.isNil:
     return
 
+  if self.customCommands.contains(action):
+    var args = newJArray()
+    for a in newStringStream(arg).parseJsonFragments():
+      args.add a
+    if self.customCommands[action](self, args):
+      return Handled
 
   if self.app.handleUnknownPopupAction(self, action, arg) == Handled:
     return Handled
