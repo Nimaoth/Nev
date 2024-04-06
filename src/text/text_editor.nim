@@ -126,6 +126,16 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   currentSnippetData*: Option[SnippetData]
 
+  textChangedHandle: Id
+  loadedHandle: Id
+  savedHandle: Id
+  textInsertedHandle: Id
+  textDeletedHandle: Id
+  diagnosticsUpdatedHandle: Id
+
+  completionsDirty: bool
+  searchResultsDirty: bool
+
 var allTextEditors*: seq[TextDocumentEditor] = @[]
 
 method getStatisticsString*(self: TextDocumentEditor): string =
@@ -171,6 +181,7 @@ proc updateDiagnosticsForCurrent*(self: TextDocumentEditor)
 proc visibleTextRange*(self: TextDocumentEditor, buffer: int = 0): Selection
 proc addCustomHighlight(self: TextDocumentEditor, id: Id, selection: Selection, color: string, tint: Color = color(1, 1, 1))
 proc clearCustomHighlights(self: TextDocumentEditor, id: Id)
+proc updateSearchResults(self: TextDocumentEditor)
 
 proc clampCursor*(self: TextDocumentEditor, cursor: Cursor, includeAfter: bool = true): Cursor = self.document.clampCursor(cursor, includeAfter)
 
@@ -269,6 +280,14 @@ method deinit*(self: TextDocumentEditor) =
   if self.showHoverTask.isNotNil: self.showHoverTask.pause()
   if self.hideHoverTask.isNotNil: self.hideHoverTask.pause()
 
+  if self.document.isNotNil:
+    self.document.textChanged.unsubscribe(self.textChangedHandle)
+    self.document.onLoaded.unsubscribe(self.loadedHandle)
+    self.document.onSaved.unsubscribe(self.savedHandle)
+    self.document.textInserted.unsubscribe(self.textInsertedHandle)
+    self.document.textDeleted.unsubscribe(self.textDeletedHandle)
+    self.document.onDiagnosticsUpdated.unsubscribe(self.diagnosticsUpdatedHandle)
+
   let i = allTextEditors.find(self)
   allTextEditors.removeSwap(i)
 
@@ -301,6 +320,12 @@ proc preRender*(self: TextDocumentEditor) =
     let errorNodes = self.document.getErrorNodesInRange(self.visibleTextRange(buffer = 10))
     for node in errorNodes:
       self.addCustomHighlight(errorNodesHighlightId, node, "editorError.foreground", color(1, 1, 1, 0.3))
+
+  if self.searchResultsDirty:
+    self.updateSearchResults()
+
+  if self.showCompletions and self.completionsDirty:
+    self.refilterCompletions()
 
 iterator splitSelectionIntoLines(self: TextDocumentEditor, selection: Selection, includeAfter: bool = true): Selection =
   ## Yields a selection for each line covered by the input selection, covering the same range as the input
@@ -335,6 +360,11 @@ proc addCustomHighlight(self: TextDocumentEditor, id: Id, selection: Selection, 
       self.customHighlights[selection.first.line] = @[(id, selection, color, tint)]
 
 proc updateSearchResults(self: TextDocumentEditor) =
+  if not self.searchResultsDirty:
+    return
+
+  self.searchResultsDirty = false
+
   self.clearCustomHighlights(searchResultsId)
 
   if self.searchRegex.isNone:
@@ -355,7 +385,7 @@ proc updateSearchResults(self: TextDocumentEditor) =
 
 method handleDocumentChanged*(self: TextDocumentEditor) =
   self.selection = (self.clampCursor self.selection.first, self.clampCursor self.selection.last)
-  self.updateSearchResults()
+  self.searchResultsDirty = true
 
 method handleActivate*(self: TextDocumentEditor) =
   self.startBlinkCursorTask()
@@ -1000,6 +1030,8 @@ proc addCursorAbove*(self: TextDocumentEditor) {.expose("editor.text").} =
     self.selections = self.selections & @[newCursor]
 
 proc getPrevFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0, includeAfter: bool = true, wrap: bool = true): Selection {.expose("editor.text").} =
+  self.updateSearchResults()
+
   var i = 0
   for line in countdown(cursor.line, 0):
     if self.searchResults.contains(line):
@@ -1021,6 +1053,8 @@ proc getPrevFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 
   return cursor.toSelection
 
 proc getNextFindResult*(self: TextDocumentEditor, cursor: Cursor, offset: int = 0, includeAfter: bool = true, wrap: bool = true): Selection {.expose("editor.text").} =
+  self.updateSearchResults()
+
   var i = 0
   for line in cursor.line..self.document.lines.high:
     if self.searchResults.contains(line):
@@ -1205,6 +1239,8 @@ proc addPrevFindResultToSelection*(self: TextDocumentEditor, includeAfter: bool 
   self.selections = self.selections & @[self.getPrevFindResult(self.selection.first, includeAfter=includeAfter)]
 
 proc setAllFindResultToSelection*(self: TextDocumentEditor) {.expose("editor.text").} =
+  self.updateSearchResults()
+
   var selections: seq[Selection] = @[]
   for searchResults in self.searchResults.values:
     for s in searchResults:
@@ -1594,6 +1630,7 @@ proc moveFirst*(self: TextDocumentEditor, move: string, which: SelectionCursor =
 
 proc setSearchQuery*(self: TextDocumentEditor, query: string, escapeRegex: bool = false) {.expose("editor.text").} =
   # todo: escape regex
+  self.searchResultsDirty = true
   self.searchQuery = query
   try:
     if escapeRegex:
@@ -1602,7 +1639,6 @@ proc setSearchQuery*(self: TextDocumentEditor, query: string, escapeRegex: bool 
       self.searchRegex = re(query).some
   except:
     log lvlError, fmt"[setSearchQuery] Invalid regex query: '{query}' ({getCurrentExceptionMsg()})"
-  self.updateSearchResults()
 
 proc setSearchQueryFromMove*(self: TextDocumentEditor, move: string, count: int = 0, prefix: string = "", suffix: string = ""): Selection {.expose("editor.text").} =
   let selection = self.getSelectionForMove(self.selection.last, move, count)
@@ -1692,6 +1728,7 @@ proc addSnippetCompletions(self: TextDocumentEditor) =
 
       let edit = lsp_types.TextEdit(`range`: Range(start: Position(line: -1, character: -1), `end`: Position(line: -1, character: -1)), newText: text)
       self.completions.items.add(CompletionItem(label: prefix, detail: name.some, insertTextFormat: InsertTextFormat.Snippet.some, textEdit: lsp_types.init(lsp_types.CompletionItemTextEditVariant, edit).some))
+      self.completionsDirty = true
 
   except:
     log lvlError, fmt"Failed to get snippets for language {self.document.languageId}"
@@ -1724,6 +1761,8 @@ proc splitIdentifier(str: string): seq[string] =
     result.add str.toLowerAscii
 
 proc getCompletionMatches*(self: TextDocumentEditor, completionMatchIndex: int): seq[int] =
+  self.refilterCompletions()
+
   if completionMatchIndex in self.completionMatchPositions:
     return self.completionMatchPositions[completionMatchIndex]
 
@@ -1740,6 +1779,10 @@ proc getCompletionMatches*(self: TextDocumentEditor, completionMatchIndex: int):
   return @[]
 
 proc refilterCompletions(self: TextDocumentEditor) =
+  if not self.completionsDirty:
+    return
+
+  self.completionsDirty = false
   measureBlock "refilterCompletions":
     var matches: seq[(int, float)]
     var noMatches: seq[(int, float)]
@@ -1806,6 +1849,7 @@ proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.} =
     self.addSnippetCompletions()
 
   if self.completions.items.len > 0:
+    self.completionsDirty = true
     self.refilterCompletions()
     self.selectedCompletion = self.selectedCompletion.clamp(0, self.completionMatches.high)
     self.scrollToCompletion = self.selectedCompletion.some
@@ -1821,6 +1865,7 @@ proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.} =
     let lspCompletions = await ls.getCompletions(self.document.languageId, self.document.fullPath, self.selection.last)
     if lspCompletions.isSuccess and lspCompletions.result.items.len > 0:
       self.completions = lspCompletions.result
+      self.completionsDirty = true
       self.addSnippetCompletions()
       self.refilterCompletions()
 
@@ -2527,16 +2572,14 @@ proc handleDiagnosticsUpdated(self: TextDocumentEditor) =
 
 proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
   self.clampSelection()
-  self.updateSearchResults()
+  self.searchResultsDirty = true
+  self.completionsDirty = true
 
   if self.showCompletions and self.updateCompletionsTask.isNotNil:
     self.updateCompletionsTask.reschedule()
 
-  if self.showCompletions:
-    self.refilterCompletions()
-
   self.updateInlayHints()
-  self.handleDiagnosticsUpdated()
+  self.updateDiagnosticsForCurrent()
 
   self.markDirty()
 
@@ -2576,12 +2619,12 @@ proc newTextEditor*(document: TextDocument, app: AppInterface, configProvider: C
 
   self.startBlinkCursorTask()
   self.injectDependencies(app)
-  discard document.textChanged.subscribe (_: TextDocument) => self.handleTextDocumentTextChanged()
-  discard document.onLoaded.subscribe (_: TextDocument) => self.handleTextDocumentLoaded()
-  discard document.onSaved.subscribe () => self.handleTextDocumentSaved()
-  discard document.textInserted.subscribe (arg: tuple[document: TextDocument, location: Selection, text: string]) => self.handleTextInserted(arg.document, arg.location, arg.text)
-  discard document.textDeleted.subscribe (arg: tuple[document: TextDocument, location: Selection]) => self.handleTextDeleted(arg.document, arg.location)
-  discard document.onDiagnosticsUpdated.subscribe () => self.handleDiagnosticsUpdated()
+  self.textChangedHandle = document.textChanged.subscribe (_: TextDocument) => self.handleTextDocumentTextChanged()
+  self.loadedHandle = document.onLoaded.subscribe (_: TextDocument) => self.handleTextDocumentLoaded()
+  self.savedHandle = document.onSaved.subscribe () => self.handleTextDocumentSaved()
+  self.textInsertedHandle = document.textInserted.subscribe (arg: tuple[document: TextDocument, location: Selection, text: string]) => self.handleTextInserted(arg.document, arg.location, arg.text)
+  self.textDeletedHandle = document.textDeleted.subscribe (arg: tuple[document: TextDocument, location: Selection]) => self.handleTextDeleted(arg.document, arg.location)
+  self.diagnosticsUpdatedHandle = document.onDiagnosticsUpdated.subscribe () => self.handleDiagnosticsUpdated()
 
   return self
 
@@ -2595,12 +2638,12 @@ method createWithDocument*(_: TextDocumentEditor, document: Document, configProv
   self.init()
   if self.document.lines.len == 0:
     self.document.lines = @[""]
-  discard self.document.textChanged.subscribe (_: TextDocument) => self.handleTextDocumentTextChanged()
-  discard self.document.onLoaded.subscribe (_: TextDocument) => self.handleTextDocumentLoaded()
-  discard self.document.onSaved.subscribe () => self.handleTextDocumentSaved()
-  discard self.document.textInserted.subscribe (arg: tuple[document: TextDocument, location: Selection, text: string]) => self.handleTextInserted(arg.document, arg.location, arg.text)
-  discard self.document.textDeleted.subscribe (arg: tuple[document: TextDocument, location: Selection]) => self.handleTextDeleted(arg.document, arg.location)
-  discard self.document.onDiagnosticsUpdated.subscribe () => self.handleDiagnosticsUpdated()
+  self.textChangedHandle = self.document.textChanged.subscribe (_: TextDocument) => self.handleTextDocumentTextChanged()
+  self.loadedHandle = self.document.onLoaded.subscribe (_: TextDocument) => self.handleTextDocumentLoaded()
+  self.savedHandle = self.document.onSaved.subscribe () => self.handleTextDocumentSaved()
+  self.textInsertedHandle = self.document.textInserted.subscribe (arg: tuple[document: TextDocument, location: Selection, text: string]) => self.handleTextInserted(arg.document, arg.location, arg.text)
+  self.textDeletedHandle = self.document.textDeleted.subscribe (arg: tuple[document: TextDocument, location: Selection]) => self.handleTextDeleted(arg.document, arg.location)
+  self.diagnosticsUpdatedHandle = self.document.onDiagnosticsUpdated.subscribe () => self.handleDiagnosticsUpdated()
 
   self.startBlinkCursorTask()
 
