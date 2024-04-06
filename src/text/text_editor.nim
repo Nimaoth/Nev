@@ -1133,7 +1133,7 @@ proc updateDiffAsync*(self: TextDocumentEditor) {.async.} =
 
     if self.diffDocument.isNil:
       self.diffDocument = newTextDocument(self.configProvider, language=self.document.languageId.some, createLanguageServer = false)
-      self.diffDocument.isReadOnly = true
+      self.diffDocument.readOnly = true
 
     self.diffDocument.content = stagedFileContent
     self.diffChanges = changes
