@@ -1215,14 +1215,14 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     editor.scrollToCursor Last
     editor.updateTargetColumn()
 
-  addTextCommandBlock "", "gq":
+  addTextCommandBlock "", "<C-2>":
     editor.selection = editor.getNextChange(editor.selection.last).first.toSelection
     editor.scrollToCursor Last
-    editor.updateTargetColumn()
-  addTextCommandBlock "", "gk":
+    editor.centerCursor()
+  addTextCommandBlock "", "<C-1>":
     editor.selection = editor.getPrevChange(editor.selection.last).first.toSelection
     editor.scrollToCursor Last
-    editor.updateTargetColumn()
+    editor.centerCursor()
   addTextCommand "", "gx", "close-diff"
   addTextCommand "", "gc", "update-diff"
 
