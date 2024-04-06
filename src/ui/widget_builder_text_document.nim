@@ -459,6 +459,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   let contextBackgroundColor = app.theme.color(@["breadcrumbPicker.background", "background"], color(50/255, 70/255, 70/255))
   let insertedTextBackgroundColor = app.theme.color(@["diffEditor.insertedTextBackground", "diffEditor.insertedLineBackground"], color(0.1, 0.2, 0.1))
   let deletedTextBackgroundColor = app.theme.color(@["diffEditor.removedTextBackground", "diffEditor.removedLineBackground"], color(0.2, 0.1, 0.1))
+  let changedTextBackgroundColor = app.theme.color(@["diffEditor.changedTextBackground", "diffEditor.changedLineBackground"], color(0.2, 0.2, 0.1))
 
   proc handleClick(btn: MouseButton, pos: Vec2, line: int, partIndex: Option[int]) =
     self.lastPressedMouseButton = btn
@@ -623,6 +624,8 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
       let indentLevel = self.document.getIndentLevelForClosestLine(i)
 
+      let diffEmptyBackgroundColor = backgroundColor.darken(0.03)
+
       var backgroundColor = if cursorLine == i:
         backgroundColor.lighten(0.05)
       else:
@@ -632,8 +635,11 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
       let lineRuneLen = self.document.lines[i].runeLen.RuneIndex
       let otherLine = self.diffChanges.mapIt(mapLineTargetToSource(it, i)).flatten
-      if renderDiff and (otherLine.isNone or otherLine.get.changed):
-        backgroundColor = backgroundColor.blendNormal(insertedTextBackgroundColor)
+      if renderDiff:
+        if otherLine.getSome(otherLine) and otherLine.changed:
+          backgroundColor = backgroundColor.blendNormal(changedTextBackgroundColor)
+        elif otherLine.isNone:
+          backgroundColor = backgroundColor.blendNormal(insertedTextBackgroundColor)
 
       options.backgroundColor = backgroundColor
 
@@ -722,9 +728,9 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
                   discard renderLine(builder, styledLine, self.diffDocument.lines[k], colors, [], options)
 
           else:
-            builder.panel(&{FillY, FillBackground}, w = width / 2, backgroundColor = backgroundColor)
+            builder.panel(&{FillY, FillBackground}, w = width / 2, backgroundColor = diffEmptyBackgroundColor)
 
-          builder.panel(&{SizeToContentY, FillY}, y = leftOffsetY, x = width / 2, w = width / 2):
+          builder.panel(&{SizeToContentY, FillY, FillBackground}, y = leftOffsetY, x = width / 2, w = width / 2, backgroundColor = diffEmptyBackgroundColor):
             options.lineId = self.document.lineIds[i]
             options.lineNumber = i
             options.cursorLine = cursorLine
