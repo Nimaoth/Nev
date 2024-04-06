@@ -34,6 +34,8 @@ There is also a very experimental [Unreal Engine Plugin](https://github.com/Nima
 ## Inspirations
 - [JetBrains MPS](https://github.com/JetBrains/MPS)
 - [Dion Systems Editor](https://dion.systems/gallery.html)
+- [NeoVim](https://github.com/neovim/neovim)
+- [Helix](https://github.com/helix-editor/helix)
 
 ## Building
 
@@ -118,67 +120,32 @@ More details in [Getting Started](docs/getting_started.md)
 
 ## Screenshots
 
+### LSP completions
+![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/lsp_completions.png)
+
+---
+
+### Diagnostics, inlay hints and hover information
+![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/lsp_diagnostics_inlay_hints_hover.png)
+
+---
+
+### Fuzzy search for document symbols
+![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/lsp_document_symbols.png)
+
+---
+
+### View changed/added files in git, and open the diff for files directly, or stage/unstage/revert them
+![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/git_changed_files.png)
+
+---
+
+### View the git diff in the editor
+![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/git_diff.png)
+
+---
+
+### Here are some older screenshots with a different theme
 ![alt](screenshots/screenshot1.png)
 ![alt](screenshots/screenshot2.png)
 ![alt](screenshots/screenshot3.png)
-
-# Todo
-- get [https://github.com/treeform/vmath/pull/67] merged and change vmath back to original repo
-- finish [https://github.com/tree-sitter/tree-sitter/pull/2091]
-
-- add nicer way to write:
-  - StringGetPointer, StringGetLength
-  - <, <=, etc
-- add bool type
-- make [] work with strings
-- add char literal
-- add string escape and/or allow entering \n
-- auto open completion window?
-- auto accept completion exact match even if other/longer completions exist
-- render actual types in type placeholders
-- add text based search (fuzzy?)
-- add validation for all ast node types
-- allow deleting selection in e.g. property cells
-- make node reference not editable
-- don't allow node substitution keys on empty expressions
-- improve auto parenthesis for cells
-- add struct scoped functions
-- support copying multiple nodes
-- fix deleting e.g struct member type bug
-- negative number literal, float literal
-- render cell indentation guides
-- invalidate models using language X when X gets rebuilt
-- finish/revise using string as parameter type for wasm functions (see createWasmWrapper, createHostWrapper)
-- fix potential issues because of loading order when loading test-language and test-language-playground
-- git: use workspace directory instead of working directory
-- make sure that after every await in text editor/model editor we check if the editor has beeen deinitialized
-
-## Vim Keybindings
-- Repeat f/t motions with ,/;
-- Search/Replace
-- toggle case
-- fix e.g. dw deleting one character to much because it's inclusive
-
-- in visual mode highlights are incorrect
-- pasting text replaces the current char even if not in insert mode
-- j to join lines
-- fix % doesn't update selection correctly
-
-## LSP
-- Handle rust lsp paths with lowercase letter like d:/path/to/file
-- command for inserting the inlay hint under the cursor
-- snippets
-- workspace symbols
-- rename
-- inlay hints: space left/right
-
-## text editor
-- includeAfter names should be named includeLineLen or something like that
-- don't render multi line diagnostics inline but in a popup which can be opened/closed
-- don't show completion window when no completions available
-- close completion windows when cursor moves
-- discard bom
-- tabs: unindent not working
-- read file when on disk changes, e.g. after revert
-
-[Test report](https://nimaoth.github.io/Absytree/testresults.html)
