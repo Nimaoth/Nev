@@ -1909,9 +1909,11 @@ when not defined(js):
       if popup.textEditor.isNil:
         return
 
+      let searchText = popup.getSearchString
+
       for info in fileInfos:
         let name = $info.stagedStatus & $info.unstagedStatus & " " & info.path
-        let score = matchPath(name, text)
+        let score = matchPath(name, searchText)
         result.add GitFileSelectorItem(name: name, path: info.path, score: score, workspaceFolder: workspace, info: info)
     else:
       for item in popup.completions.mitems:
@@ -1921,6 +1923,42 @@ when not defined(js):
       result = popup.completions
 
     result.sort((a, b) => cmp(a.GitFileSelectorItem.score, b.GitFileSelectorItem.score), Ascending)
+
+  proc stageSelectedFileAsync(popup: SelectorPopup): Future[void] {.async.} =
+    log lvlInfo, fmt"Stage selected entry ({popup.selected})"
+
+    let item = popup.completions[popup.completions.high - popup.selected].GitFileSelectorItem
+    let res = stageFile(item.info.path).await
+    debugf"git add finished: {res}"
+    if popup.textEditor.isNil:
+      return
+
+    popup.updated = false
+    popup.updateCompletions()
+
+  proc unstageSelectedFileAsync(popup: SelectorPopup): Future[void] {.async.} =
+    log lvlInfo, fmt"Unstage selected entry ({popup.selected})"
+
+    let item = popup.completions[popup.completions.high - popup.selected].GitFileSelectorItem
+    let res = unstageFile(item.info.path).await
+    debugf"git unstage finished: {res}"
+    if popup.textEditor.isNil:
+      return
+
+    popup.updated = false
+    popup.updateCompletions()
+
+  proc revertSelectedFileAsync(popup: SelectorPopup): Future[void] {.async.} =
+    log lvlInfo, fmt"Revert selected entry ({popup.selected})"
+
+    let item = popup.completions[popup.completions.high - popup.selected].GitFileSelectorItem
+    let res = revertFile(item.info.path).await
+    debugf"git revert finished: {res}"
+    if popup.textEditor.isNil:
+      return
+
+    popup.updated = false
+    popup.updateCompletions()
 
 proc diffActiveEditorAsync*(self: App) {.async.} =
   let editorWorking = self.views[self.currentView].editor
@@ -1959,6 +1997,33 @@ proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
       if currentVersionEditor.getSome(editor):
         if editor of TextDocumentEditor:
           editor.TextDocumentEditor.updateDiff()
+
+    popup.addCustomCommand "stage-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
+      if popup.textEditor.isNil:
+        return false
+      if popup.completions.len == 0:
+        return false
+
+      asyncCheck popup.stageSelectedFileAsync()
+      return true
+
+    popup.addCustomCommand "unstage-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
+      if popup.textEditor.isNil:
+        return false
+      if popup.completions.len == 0:
+        return false
+
+      asyncCheck popup.unstageSelectedFileAsync()
+      return true
+
+    popup.addCustomCommand "revert-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
+      if popup.textEditor.isNil:
+        return false
+      if popup.completions.len == 0:
+        return false
+
+      asyncCheck popup.revertSelectedFileAsync()
+      return true
 
     popup.updateCompletions()
 

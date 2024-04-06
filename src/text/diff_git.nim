@@ -6,7 +6,7 @@ import text/diff
 logCategory "diff-git"
 
 type
-  FileStatus* = enum None = " ", Modified = "M", Added = "A", Deleted = "D", Untracked = "?"
+  FileStatus* = enum None = ".", Modified = "M", Added = "A", Deleted = "D", Untracked = "?"
   GitFileInfo* = object
     stagedStatus*: FileStatus
     unstagedStatus*: FileStatus
@@ -36,6 +36,21 @@ proc getWorkingFileContent(path: string): Future[seq[string]] {.async.} =
   for line in lines(path):
     lines.add line
   return lines
+
+proc stageFile*(path: string): Future[string] {.async.} =
+  let args = @["add", path]
+  log lvlInfo, fmt"stage file: '{path}' -- {args}"
+  return runProcessAsync("git", args).await.join(" ")
+
+proc unstageFile*(path: string): Future[string] {.async.} =
+  let args = @["reset", path]
+  log lvlInfo, fmt"unstage file: '{path}' -- {args}"
+  return runProcessAsync("git", args).await.join(" ")
+
+proc revertFile*(path: string): Future[string] {.async.} =
+  let args = @["checkout", path]
+  log lvlInfo, fmt"revert file: '{path}' -- {args}"
+  return runProcessAsync("git", args).await.join(" ")
 
 proc parseGitRange(s: string): (int, int) =
   if s.contains(','):
