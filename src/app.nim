@@ -1682,7 +1682,7 @@ proc chooseTheme*(self: App) {.expose("editor").} =
     for file in walkDirRec(themesDir, relative=true):
       if file.endsWith ".json":
         let name = file.splitFile.name
-        let score = matchPath(file, text)
+        let score = matchFuzzySublime(text, file, defaultPathMatchingConfig).score.float
         result.add ThemeSelectorItem(name: name, path: fmt"{themesDir}/{file}", score: score)
 
     result.sort((a, b) => cmp(a.ThemeSelectorItem.score, b.ThemeSelectorItem.score), Ascending)
@@ -1777,10 +1777,7 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
         if cancellationToken.canceled or popup.textEditor.isNil:
           return
 
-        let score = if fuzzyMatchSublime:
-          matchFuzzySublime(text, popup.completions[i].FileSelectorItem.path, defaultPathMatchingConfig).score.float
-        else:
-          matchPath(popup.completions[i].FileSelectorItem.path, text)
+        let score = matchFuzzySublime(text, popup.completions[i].FileSelectorItem.path, defaultPathMatchingConfig).score.float
 
         popup.completions[i].score = score
         popup.completions[i].hasCompletionMatchPositions = false
@@ -1814,10 +1811,7 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
           defer:
             inc i
 
-          let score = if fuzzyMatchSublime:
-            matchFuzzySublime(text, file, defaultPathMatchingConfig).score.float
-          else:
-            matchPath(file, text)
+          let score = matchFuzzySublime(text, file, defaultPathMatchingConfig).score.float
           popup.completions.add FileSelectorItem(path: file, score: score, workspaceFolder: folder.some)
 
           if timer.elapsed.ms > 7:
@@ -1868,7 +1862,7 @@ proc chooseOpen*(self: App, view: string = "new") {.expose("editor").} =
     for view in allViews:
       let document = view.editor.getDocument
       let name = view.document.filename
-      let score = matchPath(name, text)
+      let score = matchFuzzySublime(text, name, defaultPathMatchingConfig).score.float
       result.add FileSelectorItem(path: name, score: score, workspaceFolder: document.workspace)
 
     result.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Ascending)
@@ -1913,12 +1907,12 @@ when not defined(js):
 
       for info in fileInfos:
         let name = $info.stagedStatus & $info.unstagedStatus & " " & info.path
-        let score = matchPath(name, searchText)
+        let score = matchFuzzySublime(searchText, name, defaultPathMatchingConfig).score.float
         result.add GitFileSelectorItem(name: name, path: info.path, score: score, workspaceFolder: workspace, info: info)
     else:
       for item in popup.completions.mitems:
         item.hasCompletionMatchPositions = false
-        item.score = matchPath(item.GitFileSelectorItem.name, text)
+        item.score = matchFuzzySublime(text, item.GitFileSelectorItem.name, defaultPathMatchingConfig).score.float
 
       result = popup.completions
 
