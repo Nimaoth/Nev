@@ -723,14 +723,6 @@ proc chooseOpen*(view: string = "new") =
       argsJsonString.cstring)
 
 
-proc editor_diffActiveEditor_void_App_wasm(arg: cstring): cstring {.importc.}
-proc diffActiveEditor*() =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_diffActiveEditor_void_App_wasm(
-      argsJsonString.cstring)
-
-
 proc editor_chooseGitActiveFiles_void_App_wasm(arg: cstring): cstring {.importc.}
 proc chooseGitActiveFiles*() =
   var argsJson = newJArray()

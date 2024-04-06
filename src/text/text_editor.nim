@@ -1097,6 +1097,50 @@ proc getNextChange*(self: TextDocumentEditor, cursor: Cursor): Selection {.expos
 
   return cursor.toSelection
 
+when not defined(js):
+  import diff_git
+
+proc updateDiffAsync*(self: TextDocumentEditor) {.async.} =
+  if self.document.isNil:
+    return
+  if self.isGitDiffInProgress:
+    return
+
+  self.isGitDiffInProgress = true
+  defer:
+    self.isGitDiffInProgress = false
+
+  log lvlInfo, fmt"Diff document '{self.document.filename}'"
+
+  when defined(js):
+    # todo
+    let stagedFileContent = fs.loadApplicationFile("diff.txt")
+    let changes = some @[
+        LineMapping(source: (0, 1), target: (0, 0)),
+        LineMapping(source: (6, 8), target: (5, 5)),
+        LineMapping(source: (120, 124), target: (117, 117)),
+        LineMapping(source: (132, 137), target: (125, 127)),
+        LineMapping(source: (152, 153), target: (142, 143)),
+        LineMapping(source: (162, 162), target: (152, 154)),
+        LineMapping(source: (180, 184), target: (172, 173)),
+      ]
+
+  else:
+    let relPath = self.document.workspace.mapIt(it.getRelativePath(self.document.filename).await).flatten.get(self.document.filename)
+    let stagedFileContent = getStagedFileContent(relPath).await
+    let changes = getFileChanges(relPath).await
+
+  if self.diffDocument.isNil:
+    self.diffDocument = newTextDocument(self.configProvider, language=self.document.languageId.some, createLanguageServer = false)
+
+  self.diffDocument.content = stagedFileContent
+  self.diffChanges = changes
+
+  self.markDirty()
+
+proc updateDiff*(self: TextDocumentEditor) {.expose("editor.text").} =
+  asyncCheck self.updateDiffAsync()
+
 proc addNextFindResultToSelection*(self: TextDocumentEditor, includeAfter: bool = true, wrap: bool = true) {.expose("editor.text").} =
   self.selections = self.selections & @[self.getNextFindResult(self.selection.last, includeAfter=includeAfter)]
 
@@ -2218,6 +2262,35 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
 proc recordCurrentCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.bRecordCurrentCommand = true
 
+proc runSingleClickCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
+  let commandName = self.configProvider.getValue("editor.text.single-click-command", "")
+  let args = self.configProvider.getValue("editor.text.single-click-command-args", newJArray())
+  if commandName.len == 0:
+    return
+  discard self.runAction(commandName, args)
+
+proc runDoubleClickCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
+  let commandName = self.configProvider.getValue("editor.text.double-click-command", "extend-select-move")
+  let args = self.configProvider.getValue("editor.text.double-click-command-args", %[newJString("word"), newJBool(true)])
+  if commandName.len == 0:
+    return
+  discard self.runAction(commandName, args)
+
+proc runTripleClickCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
+  let commandName = self.configProvider.getValue("editor.text.triple-click-command", "extend-select-move")
+  let args = self.configProvider.getValue("editor.text.triple-click-command-args", %[newJString("line"), newJBool(true)])
+  if commandName.len == 0:
+    return
+  discard self.runAction(commandName, args)
+
+proc runDragCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
+  if self.lastPressedMouseButton == Left:
+    self.runSingleClickCommand()
+  elif self.lastPressedMouseButton == DoubleClick:
+    self.runDoubleClickCommand()
+  elif self.lastPressedMouseButton == TripleClick:
+    self.runTripleClickCommand()
+
 genDispatcher("editor.text")
 # addGlobalDispatchTable "editor.text", genDispatchTable("editor.text")
 
@@ -2327,35 +2400,6 @@ proc handleInput(self: TextDocumentEditor, input: string, record: bool): EventRe
   self.insertText(input)
   return Handled
 
-proc runSingleClickCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
-  let commandName = self.configProvider.getValue("editor.text.single-click-command", "")
-  let args = self.configProvider.getValue("editor.text.single-click-command-args", newJArray())
-  if commandName.len == 0:
-    return
-  discard self.runAction(commandName, args)
-
-proc runDoubleClickCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
-  let commandName = self.configProvider.getValue("editor.text.double-click-command", "extend-select-move")
-  let args = self.configProvider.getValue("editor.text.double-click-command-args", %[newJString("word"), newJBool(true)])
-  if commandName.len == 0:
-    return
-  discard self.runAction(commandName, args)
-
-proc runTripleClickCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
-  let commandName = self.configProvider.getValue("editor.text.triple-click-command", "extend-select-move")
-  let args = self.configProvider.getValue("editor.text.triple-click-command-args", %[newJString("line"), newJBool(true)])
-  if commandName.len == 0:
-    return
-  discard self.runAction(commandName, args)
-
-proc runDragCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
-  if self.lastPressedMouseButton == Left:
-    self.runSingleClickCommand()
-  elif self.lastPressedMouseButton == DoubleClick:
-    self.runDoubleClickCommand()
-  elif self.lastPressedMouseButton == TripleClick:
-    self.runTripleClickCommand()
-
 method injectDependencies*(self: TextDocumentEditor, app: AppInterface) =
   self.app = app
   self.platform = app.platform
@@ -2445,50 +2489,6 @@ proc handleTextDocumentLoaded(self: TextDocumentEditor) =
     self.scrollToCursor()
   self.targetSelectionsInternal = Selections.none
   self.updateTargetColumn(Last)
-
-when not defined(js):
-  import diff_git
-
-proc updateDiffAsync*(self: TextDocumentEditor) {.async.} =
-  if self.document.isNil:
-    return
-  if self.isGitDiffInProgress:
-    return
-
-  self.isGitDiffInProgress = true
-  defer:
-    self.isGitDiffInProgress = false
-
-  log lvlInfo, fmt"Diff document '{self.document.filename}'"
-
-  when defined(js):
-    # todo
-    let stagedFileContent = fs.loadApplicationFile("diff.txt")
-    let changes = some @[
-        LineMapping(source: (0, 1), target: (0, 0)),
-        LineMapping(source: (6, 8), target: (5, 5)),
-        LineMapping(source: (120, 124), target: (117, 117)),
-        LineMapping(source: (132, 137), target: (125, 127)),
-        LineMapping(source: (152, 153), target: (142, 143)),
-        LineMapping(source: (162, 162), target: (152, 154)),
-        LineMapping(source: (180, 184), target: (172, 173)),
-      ]
-
-  else:
-    let relPath = self.document.workspace.mapIt(it.getRelativePath(self.document.filename).await).flatten.get(self.document.filename)
-    let stagedFileContent = getStagedFileContent(relPath).await
-    let changes = getFileChanges(relPath).await
-
-  if self.diffDocument.isNil:
-    self.diffDocument = newTextDocument(self.configProvider, language=self.document.languageId.some, createLanguageServer = false)
-
-  self.diffDocument.content = stagedFileContent
-  self.diffChanges = changes
-
-  self.markDirty()
-
-proc updateDiff*(self: TextDocumentEditor) {.expose("editor.text").} =
-  asyncCheck self.updateDiffAsync()
 
 proc handleTextDocumentSaved(self: TextDocumentEditor) =
   log lvlInfo, fmt"handleTextDocumentSaved '{self.document.filename}'"

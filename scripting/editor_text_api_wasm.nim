@@ -1051,6 +1051,20 @@ proc getNextChange*(self: TextDocumentEditor; cursor: Cursor): Selection =
   result = parseJson($res).jsonTo(typeof(result))
 
 
+proc editor_text_updateDiff_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc updateDiff*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_updateDiff_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_addNextFindResultToSelection_void_TextDocumentEditor_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc addNextFindResultToSelection*(self: TextDocumentEditor;
@@ -2663,19 +2677,5 @@ proc runDragCommand*(self: TextDocumentEditor) =
       self.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_text_runDragCommand_void_TextDocumentEditor_wasm(
-      argsJsonString.cstring)
-
-
-proc editor_text_updateDiff_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
-    importc.}
-proc updateDiff*(self: TextDocumentEditor) =
-  var argsJson = newJArray()
-  argsJson.add block:
-    when TextDocumentEditor is JsonNode:
-      self
-    else:
-      self.toJson()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_text_updateDiff_void_TextDocumentEditor_wasm(
       argsJsonString.cstring)
 

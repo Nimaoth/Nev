@@ -103,6 +103,8 @@ proc editor_text_getPrevChange_Selection_TextDocumentEditor_Cursor_impl(
     self: TextDocumentEditor; cursor: Cursor): Selection  {.importc.}
 proc editor_text_getNextChange_Selection_TextDocumentEditor_Cursor_impl(
     self: TextDocumentEditor; cursor: Cursor): Selection  {.importc.}
+proc editor_text_updateDiff_void_TextDocumentEditor_impl(
+    self: TextDocumentEditor)  {.importc.}
 proc editor_text_addNextFindResultToSelection_void_TextDocumentEditor_bool_bool_impl(
     self: TextDocumentEditor; includeAfter: bool = true; wrap: bool = true)  {.importc.}
 proc editor_text_addPrevFindResultToSelection_void_TextDocumentEditor_bool_bool_impl(
@@ -274,8 +276,6 @@ proc editor_text_runDoubleClickCommand_void_TextDocumentEditor_impl(
 proc editor_text_runTripleClickCommand_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}
 proc editor_text_runDragCommand_void_TextDocumentEditor_impl(
-    self: TextDocumentEditor)  {.importc.}
-proc editor_text_updateDiff_void_TextDocumentEditor_impl(
     self: TextDocumentEditor)  {.importc.}
 proc popup_selector_updateCompletions_void_SelectorPopup_impl(
     self: SelectorPopup)  {.importc.}
@@ -478,7 +478,6 @@ proc editor_chooseTheme_void_App_impl()  {.importc.}
 proc editor_createFile_void_App_string_impl(path: string)  {.importc.}
 proc editor_chooseFile_void_App_string_impl(view: string = "new")  {.importc.}
 proc editor_chooseOpen_void_App_string_impl(view: string = "new")  {.importc.}
-proc editor_diffActiveEditor_void_App_impl()  {.importc.}
 proc editor_chooseGitActiveFiles_void_App_impl()  {.importc.}
 proc editor_openPreviousEditor_void_App_impl()  {.importc.}
 proc editor_openNextEditor_void_App_impl()  {.importc.}

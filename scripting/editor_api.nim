@@ -138,8 +138,6 @@ proc chooseFile*(view: string = "new") =
   editor_chooseFile_void_App_string_impl(view)
 proc chooseOpen*(view: string = "new") =
   editor_chooseOpen_void_App_string_impl(view)
-proc diffActiveEditor*() =
-  editor_diffActiveEditor_void_App_impl()
 proc chooseGitActiveFiles*() =
   editor_chooseGitActiveFiles_void_App_impl()
 proc openPreviousEditor*() =

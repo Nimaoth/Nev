@@ -1954,19 +1954,12 @@ when not defined(js):
     popup.updated = false
     popup.updateCompletions()
 
-proc diffActiveEditorAsync*(self: App) {.async.} =
-  let editorWorking = self.views[self.currentView].editor
-
-  if editorWorking of TextDocumentEditor:
-    editorWorking.TextDocumentEditor.updateDiff()
-
-proc diffActiveEditor*(self: App) {.expose("editor").} =
-  asyncCheck self.diffActiveEditorAsync()
-
 proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
   when defined(js):
     log lvlError, fmt"chooseGitActiveFiles not implemented yet for js backend"
-    self.diffActiveEditor()
+    let editorWorking = self.views[self.currentView].editor
+    if editorWorking of TextDocumentEditor:
+      editorWorking.TextDocumentEditor.updateDiff()
 
   else:
     defer:

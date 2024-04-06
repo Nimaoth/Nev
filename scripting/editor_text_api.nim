@@ -155,6 +155,8 @@ proc getPrevChange*(self: TextDocumentEditor; cursor: Cursor): Selection =
 proc getNextChange*(self: TextDocumentEditor; cursor: Cursor): Selection =
   editor_text_getNextChange_Selection_TextDocumentEditor_Cursor_impl(self,
       cursor)
+proc updateDiff*(self: TextDocumentEditor) =
+  editor_text_updateDiff_void_TextDocumentEditor_impl(self)
 proc addNextFindResultToSelection*(self: TextDocumentEditor;
                                    includeAfter: bool = true; wrap: bool = true) =
   editor_text_addNextFindResultToSelection_void_TextDocumentEditor_bool_bool_impl(
@@ -397,5 +399,3 @@ proc runTripleClickCommand*(self: TextDocumentEditor) =
   editor_text_runTripleClickCommand_void_TextDocumentEditor_impl(self)
 proc runDragCommand*(self: TextDocumentEditor) =
   editor_text_runDragCommand_void_TextDocumentEditor_impl(self)
-proc updateDiff*(self: TextDocumentEditor) =
-  editor_text_updateDiff_void_TextDocumentEditor_impl(self)
