@@ -14,7 +14,6 @@ type
     window: Window
     ctx*: Context
     boxy: Boxy
-    boxy2: Boxy
     currentModifiers: Modifiers
     currentMouseButtons: set[MouseButton]
     eventCounter: int
@@ -37,8 +36,7 @@ type
     framebuffer: Texture
 
     typefaces: Table[string, Typeface]
-
-    cachedImages: LruCache[string, string]
+    glyphCache: LruCache[Rune, string]
 
     lastEvent: Option[(int64, Modifiers, Button)]
 
@@ -51,8 +49,13 @@ proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font
 proc getFont*(self: GuiPlatform, fontSize: float32, style: set[FontStyle]): Font
 proc getFont*(self: GuiPlatform, fontSize: float32, flags: UINodeFlags): Font
 
+method getStatisticsString*(self: GuiPlatform): string =
+  result.add &"Typefaces: {self.typefaces.len}\n"
+  result.add &"Glyph Cache: {self.glyphCache.len}\n"
+  result.add &"Drawn Nodes: {self.drawnNodes.len}\n"
+
 method init*(self: GuiPlatform) =
-  self.cachedImages = newLruCache[string, string](1000, true)
+  self.glyphCache = newLruCache[Rune, string](1000, true)
   self.window = newWindow("Absytree", ivec2(2000, 1000), vsync=false)
   self.window.runeInputEnabled = true
   self.supportsThinCursor = true
@@ -91,7 +94,6 @@ method init*(self: GuiPlatform) =
   glBindFramebuffer(GL_FRAMEBUFFER, 0)
 
   self.boxy = newBoxy()
-  self.boxy2 = newBoxy()
   self.ctx = newContext(1, 1)
   self.ctx.fillStyle = rgb(255, 255, 255)
   self.ctx.strokeStyle = rgb(255, 255, 255)
@@ -269,14 +271,14 @@ method setFont*(self: GuiPlatform, fontRegular: string, fontBold: string, fontIt
   self.typefaces.clear()
   self.updateCharWidth()
 
-  for image in self.cachedImages.removedKeys:
+  for image in self.glyphCache.removedKeys:
+    self.boxy.removeImage($image)
+
+  for (_, image) in self.glyphCache.pairs:
     self.boxy.removeImage(image)
 
-  for kv in self.cachedImages.pairs:
-    self.boxy.removeImage(kv[0])
-
-  self.cachedImages.clearRemovedKeys()
-  self.cachedImages.clear()
+  self.glyphCache.clearRemovedKeys()
+  self.glyphCache.clear()
 
 method `fontSize=`*(self: GuiPlatform, fontSize: float) =
   self.ctx.fontSize = fontSize
@@ -380,20 +382,22 @@ method render*(self: GuiPlatform) =
   # Clear the screen and begin a new frame.
   self.boxy.beginFrame(self.window.size, clearFrame=false)
 
-  for image in self.cachedImages.removedKeys:
-    self.boxy.removeImage(image)
-  self.cachedImages.clearRemovedKeys()
+  for image in self.glyphCache.removedKeys:
+    self.boxy.removeImage($image)
+  self.glyphCache.clearRemovedKeys()
 
   if self.ctx.fontSize != self.lastFontSize:
     self.lastFontSize = self.ctx.fontSize
-    for kv in self.cachedImages.pairs:
-      self.boxy.removeImage(kv[0])
-    self.cachedImages.clear()
+    for (_, image) in self.glyphCache.pairs:
+      self.boxy.removeImage(image)
+    self.glyphCache.clear()
 
   if self.builder.root.lastSizeChange == self.builder.frameIndex:
     self.redrawEverything = true
 
   self.drawnNodes.setLen 0
+  defer:
+    self.drawnNodes.setLen 0
 
   var renderedSomething = true
   self.builder.drawNode(self, self.builder.root, force = self.redrawEverything)
@@ -472,55 +476,46 @@ proc drawNode(builder: UINodeBuilder, platform: GuiPlatform, node: UINode, offse
       platform.boxy.popLayer()
 
   if DrawText in node.flags:
-    let key = node.text
-    var imageId: string
-    if platform.cachedImages.contains(key):
-      imageId = platform.cachedImages[key]
+    let font = platform.getFont(platform.ctx.fontSize, node.flags)
+
+    let wrap = TextWrap in node.flags
+    let wrapBounds = if node.flags.any(&{TextWrap, TextAlignHorizontalLeft, TextAlignHorizontalCenter, TextAlignHorizontalRight, TextAlignVerticalTop, TextAlignVerticalCenter, TextAlignVerticalBottom}):
+      vec2(node.w, node.h)
     else:
-      imageId = $newId()
-      platform.cachedImages[key] = imageId
+      vec2(0, 0)
 
-      # todo: font size scaling
-      # let font = renderer.getFont(renderer.ctx.fontSize * (1 + self.fontSizeIncreasePercent), self.style.fontStyle)
-      let font = platform.getFont(platform.ctx.fontSize, node.flags)
+    let hAlign = if TextAlignHorizontalLeft in node.flags:
+      HorizontalAlignment.LeftAlign
+    elif TextAlignHorizontalCenter in node.flags:
+      HorizontalAlignment.CenterAlign
+    elif TextAlignHorizontalRight in node.flags:
+      HorizontalAlignment.RightAlign
+    else:
+      HorizontalAlignment.LeftAlign
 
-      let wrap = TextWrap in node.flags
-      let wrapBounds = if node.flags.any(&{TextWrap, TextAlignHorizontalLeft, TextAlignHorizontalCenter, TextAlignHorizontalRight, TextAlignVerticalTop, TextAlignVerticalCenter, TextAlignVerticalBottom}):
-        vec2(node.w, node.h)
-      else:
-        vec2(0, 0)
+    let vAlign = if TextAlignVerticalTop in node.flags:
+      VerticalAlignment.TopAlign
+    elif TextAlignVerticalCenter in node.flags:
+      VerticalAlignment.MiddleAlign
+    elif TextAlignVerticalBottom in node.flags:
+      VerticalAlignment.BottomAlign
+    else:
+      VerticalAlignment.TopAlign
 
-      let hAlign = if TextAlignHorizontalLeft in node.flags:
-        HorizontalAlignment.LeftAlign
-      elif TextAlignHorizontalCenter in node.flags:
-        HorizontalAlignment.CenterAlign
-      elif TextAlignHorizontalRight in node.flags:
-        HorizontalAlignment.RightAlign
-      else:
-        HorizontalAlignment.LeftAlign
+    let arrangement = font.typeset(node.text, bounds=wrapBounds, hAlign=hAlign, vAlign=vAlign, wrap=wrap)
+    for i, rune in arrangement.runes:
+      if not platform.glyphCache.contains(rune):
+        var path = font.typeface.getGlyphPath(rune)
+        let rect = arrangement.selectionRects[i]
+        path.transform(translate(arrangement.positions[i] - rect.xy) * scale(vec2(font.scale)))
+        var image = newImage(rect.w.ceil.int, rect.h.ceil.int)
+        for paint in font.paints:
+          image.fillPath(path, paint)
+        platform.boxy.addImage($rune, image, genMipmaps=false)
+        platform.glyphCache[rune] = $rune
 
-      let vAlign = if TextAlignVerticalTop in node.flags:
-        VerticalAlignment.TopAlign
-      elif TextAlignVerticalCenter in node.flags:
-        VerticalAlignment.MiddleAlign
-      elif TextAlignVerticalBottom in node.flags:
-        VerticalAlignment.BottomAlign
-      else:
-        VerticalAlignment.TopAlign
-
-      let arrangement = font.typeset(node.text, bounds=wrapBounds, hAlign=hAlign, vAlign=vAlign, wrap=wrap)
-      var bounds = arrangement.layoutBounds()
-      if bounds.x == 0:
-        bounds.x = 1
-      if bounds.y == 0:
-        bounds.y = builder.textHeight
-
-      var image = newImage(bounds.x.ceil.int, bounds.y.ceil.int + 1)
-      image.fillText(arrangement)
-      platform.boxy.addImage(imageId, image, false)
-
-    let pos = vec2(nodePos.x.floor, nodePos.y.floor)
-    platform.boxy.drawImage(imageId, pos, node.textColor)
+      let pos = vec2(nodePos.x.floor, nodePos.y.floor) + arrangement.selectionRects[i].xy
+      platform.boxy.drawImage($rune, pos, node.textColor)
 
     if TextUndercurl in node.flags:
       platform.boxy.drawRect(rect(bounds.x, bounds.yh - 2, bounds.w, 2), node.underlineColor)
