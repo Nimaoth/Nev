@@ -173,6 +173,7 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
 proc handleInput(self: TextDocumentEditor, input: string, record: bool): EventResponse
 proc showCompletionWindow(self: TextDocumentEditor)
 proc refilterCompletions(self: TextDocumentEditor)
+proc hideCompletions*(self: TextDocumentEditor)
 proc getSelectionForMove*(self: TextDocumentEditor, cursor: Cursor, move: string, count: int = 0): Selection
 proc extendSelectionWithMove*(self: TextDocumentEditor, selection: Selection, move: string, count: int = 0): Selection
 proc updateTargetColumn*(self: TextDocumentEditor, cursor: SelectionCursor = Last)
@@ -209,6 +210,7 @@ proc `selections=`*(self: TextDocumentEditor, selections: Selections) =
     self.blinkCursorTask.reschedule()
 
   self.showHover = false
+  self.hideCompletions()
   # self.document.addNextCheckpoint("move")
 
   self.updateDiagnosticsForCurrent()
@@ -231,6 +233,7 @@ proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
     self.blinkCursorTask.reschedule()
 
   self.showHover = false
+  self.hideCompletions()
   # self.document.addNextCheckpoint("move")
 
   self.updateDiagnosticsForCurrent()
