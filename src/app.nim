@@ -4,16 +4,19 @@ import ui/node
 import scripting/[expose, scripting_base]
 import platform/[platform, filesystem]
 import workspaces/[workspace]
-import ast/[model, project]
 import config_provider, app_interface
 import text/language/language_server_base, language_server_absytree_commands
 import input, events, document, document_editor, popup, dispatch_tables, theme, clipboard, app_options
 import text/[custom_treesitter, diff]
+import compilation_config
+
+when enableAst:
+  import ast/[model, project]
 
 when not defined(js):
   import text/diff_git
 
-when not defined(js):
+when enableNimscript and not defined(js):
   import scripting/scripting_nim
 
 import scripting/scripting_wasm
@@ -79,7 +82,8 @@ type
     of Text:
       text*: string
     of AstNode:
-      node*: AstNode
+      when enableAst:
+        node*: AstNode
 
 type ScriptAction = object
   name: string
@@ -160,7 +164,7 @@ type
     currentMode*: string
     leaders: seq[string]
 
-    editor_defaults: seq[DocumentEditor]
+    editorDefaults: seq[DocumentEditor]
 
     scriptActions: Table[string, ScriptAction]
 
@@ -429,7 +433,7 @@ proc handleAction(self: App, action: string, arg: string, record: bool): bool
 proc getFlag*(self: App, flag: string, default: bool = false): bool
 
 proc createEditorForDocument(self: App, document: Document): DocumentEditor =
-  for editor in self.editor_defaults:
+  for editor in self.editorDefaults:
     if editor.canEdit document:
       return editor.createWithDocument(document, self.asConfigProvider)
 
@@ -611,7 +615,8 @@ proc getAllDocuments*(self: App): seq[Document] =
     result.incl it.getDocument
 
 import text/[text_editor, text_document]
-import ast/[model_document]
+when enableAst:
+  import ast/[model_document]
 import selector_popup
 
 type ThemeSelectorItem* = ref object of SelectorItem
@@ -651,7 +656,7 @@ proc setTheme*(self: App, path: string) =
     log(lvlError, fmt"Failed to load theme {path}")
   self.platform.requestRender()
 
-when not defined(js):
+when enableNimscript and not defined(js):
   var createScriptContext: proc(filepath: string, searchPaths: seq[string]): Future[Option[ScriptContext]] = nil
 
 proc getCommandLineTextEditor*(self: App): TextDocumentEditor = self.commandLineTextEditor.TextDocumentEditor
@@ -673,36 +678,36 @@ proc initScripting(self: App, options: AppOptions) {.async.} =
     except CatchableError:
       log(lvlError, fmt"Failed to load wasm configs: {(getCurrentExceptionMsg())}{'\n'}{(getCurrentException().getStackTrace())}")
 
-  await sleepAsync(1)
+  when enableNimscript and not defined(js):
+    await sleepAsync(1)
 
-  if not options.disableNimScriptPlugins:
-    try:
-      var searchPaths = @["app://src", "app://scripting"]
-      let searchPathsJson = self.options{@["scripting", "search-paths"]}
-      if not searchPathsJson.isNil:
-        for sp in searchPathsJson:
-          searchPaths.add sp.getStr
+    if not options.disableNimScriptPlugins:
+      try:
+        var searchPaths = @["app://src", "app://scripting"]
+        let searchPathsJson = self.options{@["scripting", "search-paths"]}
+        if not searchPathsJson.isNil:
+          for sp in searchPathsJson:
+            searchPaths.add sp.getStr
 
-      for path in searchPaths.mitems:
-        if path.hasPrefix("app://", rest):
-          path = fs.getApplicationFilePath(rest)
+        for path in searchPaths.mitems:
+          if path.hasPrefix("app://", rest):
+            path = fs.getApplicationFilePath(rest)
 
-      when not defined(js):
         if createScriptContext("./config/absytree_config.nim", searchPaths).await.getSome(scriptContext):
           self.scriptContext = scriptContext
         else:
           log lvlError, "Failed to create nim script context"
 
-      withScriptContext self, self.scriptContext:
-        log(lvlInfo, fmt"init nim script config")
-        await self.scriptContext.init("./config")
-        log(lvlInfo, fmt"post init nim script config")
-        discard self.scriptContext.postInitialize()
+        withScriptContext self, self.scriptContext:
+          log(lvlInfo, fmt"init nim script config")
+          await self.scriptContext.init("./config")
+          log(lvlInfo, fmt"post init nim script config")
+          discard self.scriptContext.postInitialize()
 
-      log(lvlInfo, fmt"finished configs")
-      self.initializeCalled = true
-    except CatchableError:
-      log(lvlError, fmt"Failed to load config: {(getCurrentExceptionMsg())}{'\n'}{(getCurrentException().getStackTrace())}")
+        log(lvlInfo, fmt"finished configs")
+        self.initializeCalled = true
+      except CatchableError:
+        log(lvlError, fmt"Failed to load config: {(getCurrentExceptionMsg())}{'\n'}{(getCurrentException().getStackTrace())}")
 
 proc setupDefaultKeybindings(self: App) =
   log lvlInfo, fmt"Applying default builtin keybindings"
@@ -818,7 +823,9 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
   self.fontItalic = "./fonts/DejaVuSansMono-Oblique.ttf"
   self.fontBoldItalic = "./fonts/DejaVuSansMono-BoldOblique.ttf"
 
-  self.editor_defaults = @[TextDocumentEditor(), ModelDocumentEditor()]
+  self.editorDefaults.add TextDocumentEditor()
+  when enableAst:
+    self.editorDefaults.add ModelDocumentEditor()
 
   self.workspace.new()
 
@@ -934,15 +941,16 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
     log lvlInfo, "No workspace open yet, opening current working directory as local workspace"
     discard self.addWorkspaceFolder newWorkspaceFolderLocal(".")
 
-  if state.astProjectWorkspaceId != "":
-    if self.getWorkspaceFolder(state.astProjectWorkspaceId.parseId).getSome(ws):
-      setProjectWorkspace(ws)
-    else:
-      log lvlError, fmt"Failed to restore project workspace {state.astProjectWorkspaceId}"
+  when enableAst:
+    if state.astProjectWorkspaceId != "":
+      if self.getWorkspaceFolder(state.astProjectWorkspaceId.parseId).getSome(ws):
+        setProjectWorkspace(ws)
+      else:
+        log lvlError, fmt"Failed to restore project workspace {state.astProjectWorkspaceId}"
 
-  if gProjectWorkspace.isNil and self.workspace.folders.len > 0:
-    log lvlWarn, fmt"Use first workspace as project workspace"
-    setProjectWorkspace(self.workspace.folders[0])
+    if gProjectWorkspace.isNil and self.workspace.folders.len > 0:
+      log lvlWarn, fmt"Use first workspace as project workspace"
+      setProjectWorkspace(self.workspace.folders[0])
 
   # Restore open editors
   if options.fileToOpen.getSome(filePath):
@@ -1005,8 +1013,6 @@ proc shutdown*(self: App) =
 
   self.absytreeCommandsServer.stop()
 
-  # editor_defaults: seq[DocumentEditor]
-
   gAppInterface = nil
   self[] = AppObject()
 
@@ -1048,18 +1054,18 @@ proc toggleShowDrawnNodes*(self: App) {.expose("editor").} =
 
 proc createView(self: App, editorState: OpenEditor): View =
   let workspaceFolder = self.getWorkspaceFolder(editorState.workspaceId.parseId)
-  let document = if editorState.filename.endsWith(".am") or editorState.filename.endsWith(".ast-model"):
-    try:
-      newModelDocument(editorState.filename, editorState.appFile, workspaceFolder)
-    except CatchableError:
-      log(lvlError, fmt"Failed to restore file {editorState.filename} from previous session: {getCurrentExceptionMsg()}")
-      return
-  else:
-    try:
+  let document = try:
+    when enableAst:
+      if editorState.filename.endsWith(".am") or editorState.filename.endsWith(".ast-model"):
+        newModelDocument(editorState.filename, editorState.appFile, workspaceFolder)
+      else:
+        newTextDocument(self.asConfigProvider, editorState.filename, "", editorState.appFile, workspaceFolder, load=true)
+    else:
       newTextDocument(self.asConfigProvider, editorState.filename, "", editorState.appFile, workspaceFolder, load=true)
-    except CatchableError:
-      log(lvlError, fmt"Failed to restore file {editorState.filename} from previous session: {getCurrentExceptionMsg()}")
-      return
+  except CatchableError:
+    log(lvlError, fmt"Failed to restore file {editorState.filename} from previous session: {getCurrentExceptionMsg()}")
+    return
+
   self.documents.add document
   return self.createView(document)
 
@@ -1083,10 +1089,11 @@ proc saveAppState*(self: App) {.expose("editor").} =
   var state = EditorState()
   state.theme = self.theme.path
 
-  if gProjectWorkspace.isNotNil:
-    state.astProjectWorkspaceId = $gProjectWorkspace.id
-  if gProject.isNotNil:
-    state.astProjectPath = gProject.path.some
+  when enableAst:
+    if gProjectWorkspace.isNotNil:
+      state.astProjectWorkspaceId = $gProjectWorkspace.id
+    if gProject.isNotNil:
+      state.astProjectPath = gProject.path.some
 
   if self.backend == api.Backend.Terminal:
     state.fontSize = self.loadedFontSize
@@ -1145,13 +1152,15 @@ proc saveAppState*(self: App) {.expose("editor").} =
           workspaceId: document.workspace.map(wf => $wf.id).get(""),
           customOptions: customOptions ?? newJObject()
           ).some
-      elif view.document of ModelDocument:
-        let document = ModelDocument(view.document)
-        return OpenEditor(
-          filename: document.filename, languageId: "am", appFile: document.appFile,
-          workspaceId: document.workspace.map(wf => $wf.id).get(""),
-          customOptions: customOptions ?? newJObject()
-          ).some
+      else:
+        when enableAst:
+          if view.document of ModelDocument:
+            let document = ModelDocument(view.document)
+            return OpenEditor(
+              filename: document.filename, languageId: "am", appFile: document.appFile,
+              workspaceId: document.workspace.map(wf => $wf.id).get(""),
+              customOptions: customOptions ?? newJObject()
+              ).some
     except CatchableError:
       log lvlError, fmt"Failed to get editor state for {view.document.filename}: {getCurrentExceptionMsg()}"
       return OpenEditor.none
@@ -1625,18 +1634,21 @@ proc openFile*(self: App, path: string, app: bool = false): Option[DocumentEdito
 
   log lvlInfo, fmt"Open file '{path}'"
 
-  try:
-    let document = if path.endsWith(".am") or path.endsWith(".ast-model"):
-      newModelDocument(path, app, WorkspaceFolder.none)
+  let document = try:
+    when enableAst:
+      if path.endsWith(".am") or path.endsWith(".ast-model"):
+        newModelDocument(path, app, WorkspaceFolder.none)
+      else:
+        newTextDocument(self.asConfigProvider, path, "", app, load=true)
     else:
       newTextDocument(self.asConfigProvider, path, "", app, load=true)
-
-    self.documents.add document
-    return self.createAndAddView(document).some
   except CatchableError:
     log(lvlError, fmt"[openFile] Failed to load file '{path}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
     return DocumentEditor.none
+
+  self.documents.add document
+  return self.createAndAddView(document).some
 
 proc openWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder): Option[DocumentEditor] =
   defer:
@@ -1649,18 +1661,21 @@ proc openWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder): Optio
     log lvlInfo, fmt"[openWorkspaceFile] found existing editor"
     return editor.some
 
-  try:
-    let document = if path.endsWith(".am") or path.endsWith(".ast-model"):
-      newModelDocument(path, false, folder.some)
+  let document = try:
+    when enableAst:
+      if path.endsWith(".am") or path.endsWith(".ast-model"):
+        newModelDocument(path, false, folder.some)
+      else:
+        newTextDocument(self.asConfigProvider, path, "", false, folder.some, load=true)
     else:
       newTextDocument(self.asConfigProvider, path, "", false, folder.some, load=true)
-    self.documents.add document
-    return self.createAndAddView(document).some
-
   except CatchableError:
     log(lvlError, fmt"[openWorkspaceFile] Failed to load file '{path}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
     return DocumentEditor.none
+
+  self.documents.add document
+  return self.createAndAddView(document).some
 
 proc removeFromLocalStorage*(self: App) {.expose("editor").} =
   ## Browser only
@@ -1668,14 +1683,16 @@ proc removeFromLocalStorage*(self: App) {.expose("editor").} =
   when defined(js):
     proc clearStorage(path: cstring) {.importjs: "window.localStorage.removeItem(#);".}
     if self.currentView >= 0 and self.currentView < self.views.len and self.views[self.currentView].document != nil:
-      let filename = if self.views[self.currentView].document of TextDocument:
-        self.views[self.currentView].document.TextDocument.filename
-      elif self.views[self.currentView].document of ModelDocument:
-        self.views[self.currentView].document.ModelDocument.filename
-      else:
-        log lvlError, fmt"removeFromLocalStorage: Unknown document type"
+      if self.views[self.currentView].document of TextDocument:
+        clearStorage(self.views[self.currentView].document.TextDocument.filename.cstring)
         return
-      clearStorage(filename.cstring)
+
+      when enableAst:
+        if self.views[self.currentView].document of ModelDocument:
+          clearStorage(self.views[self.currentView].document.ModelDocument.filename.cstring)
+          return
+
+      log lvlError, fmt"removeFromLocalStorage: Unknown document type"
 
 proc createSelectorPopup*(self: App): Popup =
   return newSelectorPopup(self.asAppInterface)
@@ -1735,10 +1752,18 @@ proc createFile*(self: App, path: string) {.expose("editor").} =
   else:
     WorkspaceFolder.none
 
-  let document: Document = if path.endsWith(".am") or path.endsWith(".ast-model"):
-    newModelDocument(fullPath, false, workspace)
-  else:
-    newTextDocument(self.asConfigProvider, fullPath, "", false, workspace, load=false)
+  let document = try:
+    when enableAst:
+      if path.endsWith(".am") or path.endsWith(".ast-model"):
+        newModelDocument(fullPath, false, workspace)
+      else:
+        newTextDocument(self.asConfigProvider, fullPath, "", false, workspace, load=false)
+    else:
+      newTextDocument(self.asConfigProvider, fullPath, "", false, workspace, load=false)
+  except CatchableError:
+    log(lvlError, fmt"[createFile] Failed to create file '{path}': {getCurrentExceptionMsg()}")
+    log(lvlError, getCurrentException().getStackTrace())
+    return
 
   self.documents.add document
   discard self.createAndAddView(document)
@@ -2460,8 +2485,9 @@ proc scriptIsAstEditor*(editorId: EditorId): bool {.expose("editor").} =
 proc scriptIsModelEditor*(editorId: EditorId): bool {.expose("editor").} =
   if gEditor.isNil:
     return false
-  if gEditor.getEditorForId(editorId).getSome(editor):
-    return editor of ModelDocumentEditor
+  when enableAst:
+    if gEditor.getEditorForId(editorId).getSome(editor):
+      return editor of ModelDocumentEditor
   return false
 
 proc scriptRunActionFor*(editorId: EditorId, action: string, arg: string) {.expose("editor").} =
@@ -2822,7 +2848,7 @@ proc handleAction(self: App, action: string, arg: string, record: bool): bool =
   return true
 
 template createNimScriptContextConstructorAndGenerateBindings*(): untyped =
-  when not defined(js):
+  when enableNimscript and not defined(js):
     proc createAddins(): VmAddins =
       addCallable(myImpl):
         proc postInitialize(): bool

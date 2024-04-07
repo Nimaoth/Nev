@@ -262,7 +262,7 @@ proc loadVimLikeKeybindings*() {.scriptActionWasmNims("load-vim-like-keybindings
     editor.scrollToCursor(Last)
     editor.updateTargetColumn(Last)
 
-  block: # model
+  when enableAst:
     setHandleInputs "editor.model", false
     setOption "editor.model.cursor.wide.", true
 
