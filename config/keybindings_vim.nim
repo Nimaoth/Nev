@@ -665,6 +665,7 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   info "Applying Vim keybindings"
 
   clearCommands("editor.text")
+  clearCommands("editor.text.completion")
   for id in getAllEditors():
     if id.isTextEditor(editor):
       editor.setMode("normal")
@@ -800,11 +801,9 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommand "insert", "<C-p>", "get-completions"
   addTextCommand "insert", "<C-n>", "get-completions"
   addTextCommand "completion", "<ESCAPE>", "hide-completions"
-  addTextCommand "completion", "<UP>", "select-prev-completion"
   addTextCommand "completion", "<C-p>", "select-prev-completion"
-  addTextCommand "completion", "<DOWN>", "select-next-completion"
   addTextCommand "completion", "<C-n>", "select-next-completion"
-  addTextCommand "completion", "<TAB>", "apply-selected-completion"
+  addTextCommand "completion", "<C-y>", "apply-selected-completion"
 
   addTextCommand "normal", "<move>", "vim-select-last <move>"
   addTextCommand "", "<?-count>d<move>", """vim-delete-move <move> <#count>"""
