@@ -723,6 +723,19 @@ proc chooseOpen*(view: string = "new") =
       argsJsonString.cstring)
 
 
+proc editor_searchGlobal_void_App_string_wasm(arg: cstring): cstring {.importc.}
+proc searchGlobal*(query: string) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      query
+    else:
+      query.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_searchGlobal_void_App_string_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_chooseGitActiveFiles_void_App_wasm(arg: cstring): cstring {.importc.}
 proc chooseGitActiveFiles*() =
   var argsJson = newJArray()
