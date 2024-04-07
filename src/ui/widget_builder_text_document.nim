@@ -453,7 +453,6 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
   let showContextLines = not renderDiff and getOption[bool](app, "editor.text.context-lines", true)
 
   let selectionColor = app.theme.color("selection.background", color(200/255, 200/255, 200/255))
-  let highlightColor = app.theme.color(@["editor.findMatchBackground", "editor.rangeHighlightBackground"], color(200/255, 200/255, 200/255))
   let cursorForegroundColor = app.theme.color(@["editorCursor.foreground", "foreground"], color(200/255, 200/255, 200/255))
   let cursorBackgroundColor = app.theme.color(@["editorCursor.background", "background"], color(50/255, 50/255, 50/255))
   let contextBackgroundColor = app.theme.color(@["breadcrumbPicker.background", "background"], color(50/255, 70/255, 70/255))
@@ -872,46 +871,8 @@ proc createHover(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cur
   hoverPanel.pivot = vec2(0, 1)
 
 proc createDiagnostics(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cursorBounds: Rect, backgroundColor: Color) =
-  let totalLineHeight = app.platform.totalLineHeight
-  let charWidth = app.platform.charWidth
-
-  let docsColorName = if self.currentDiagnostic.severity.getSome(severity):
-    case severity
-    of Error: "editorError.foreground"
-    of Warning: "editorWarning.foreground"
-    of Information: "editorInfo.foreground"
-    of Hint: "editorHint.foreground"
-  else:
-    "editorHint.foreground"
-
-  let docsColor = app.theme.color(@[docsColorName, "editor.foreground"], color(1, 1, 1))
-
   # todo
-  return
-
-  # var text = ""
-  # # self.currentDiagnostic.message
-
-  # let numLinesToShow = min(10, text.countLines)
-  # let (top, bottom) = (cursorBounds.yh.float, cursorBounds.yh.float + totalLineHeight * numLinesToShow.float)
-  # let height = bottom - top
-
-  # const docsWidth = 50.0
-  # let totalWidth = charWidth * docsWidth
-  # var clampedX = cursorBounds.x
-  # if clampedX + totalWidth > builder.root.w:
-  #   clampedX = max(builder.root.w - totalWidth, 0)
-
-  # var hoverPanel: UINode = nil
-  # builder.panel(&{SizeToContentX, MaskContent, FillBackground, MouseHover, DrawBorder}, x = clampedX, y = top, h = height, backgroundColor = backgroundColor, userId = self.diagnosticsId.newPrimaryId):
-  #   hoverPanel = currentNode
-  #   var textNode: UINode = nil
-  #   builder.panel(&{DrawText, SizeToContentX}, x = 0, h = 1000, text = text, textColor = docsColor):
-  #     textNode = currentNode
-
-  # # hoverPanel.rawX = hoverPanel.parent.bounds.w - hoverPanel.bounds.w
-  # hoverPanel.rawY = cursorBounds.y
-  # hoverPanel.pivot = vec2(0, 1)
+  discard
 
 proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: App, cursorBounds: Rect) =
   let totalLineHeight = app.platform.totalLineHeight
@@ -974,7 +935,6 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
             detail[0..<(maxTypeLen - 3)] & "..."
         else:
           ""
-        let filterText = completion.filterText.get("")
         let scopeText = detail
         builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, x = currentNode.w, pivot = vec2(1, 0), text = scopeText, textColor = scopeColor)
 

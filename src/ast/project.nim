@@ -1,4 +1,4 @@
-import std/[strformat, strutils, sugar, tables, options, json]
+import std/[strformat, sugar, tables, options, json]
 import fusion/matching
 import misc/[util, custom_logger, custom_async, myjsonutils, custom_unicode]
 import workspaces/[workspace]

@@ -7,7 +7,7 @@ import workspaces/[workspace]
 import config_provider, app_interface
 import text/language/language_server_base, language_server_absytree_commands
 import input, events, document, document_editor, popup, dispatch_tables, theme, clipboard, app_options
-import text/[custom_treesitter, diff]
+import text/[custom_treesitter]
 import compilation_config
 
 when enableAst:
@@ -1779,8 +1779,6 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
   var popup = newSelectorPopup(self.asAppInterface)
   var sortCancellationToken = newCancellationToken()
 
-  let fuzzyMatchSublime = self.configProvider.getFlag("editor.fuzzy-match-sublime", true)
-
   var ignorePatterns = self.gitIgnorePatterns
   if ignorePatterns.len == 0:
     # todo
@@ -2710,8 +2708,9 @@ proc inputKeys*(self: App, input: string) {.expose("editor").} =
     self.handleKeyPress(inputCode.a, mods)
 
 proc collectGarbage*(self: App) {.expose("editor").} =
-  log lvlInfo, "collectGarbage"
-  GC_FullCollect()
+  when not defined(js):
+    log lvlInfo, "collectGarbage"
+    GC_FullCollect()
 
 proc printStatistics*(self: App) {.expose("editor").} =
   var result = "\n"

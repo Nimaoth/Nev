@@ -8,23 +8,6 @@ type
 
 proc contains(r: (int, int), line: int): bool = line >= r[0] and line < r[1]
 
-proc mapLineSourceToTarget(mappings: openArray[LineMapping], line: int): int =
-  # todo: binary search
-  if mappings.len == 0:
-    return line
-
-  if line < mappings[0].source.first:
-    return line
-
-  var last = 0
-  for i in 0..mappings.high:
-    if mappings[i].source.contains(line):
-      return mappings[i].target.first + (line - mappings[i].source.first)
-    if line < mappings[i].source.first:
-      return mappings[i].target.first + (line - mappings[i].source.first)
-
-    last = mappings[i].target.last
-
 proc mapLineTargetToSource*(mappings: openArray[LineMapping], line: int): Option[tuple[line: int, changed: bool]] =
   # todo: binary search
   if mappings.len == 0:

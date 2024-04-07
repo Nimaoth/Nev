@@ -1,4 +1,4 @@
-import std/[strutils, sequtils, strformat, options]
+import std/[strutils, strformat, options]
 import misc/[async_process, custom_async, util, custom_logger]
 import scripting_api
 import text/diff
@@ -30,7 +30,7 @@ proc getStagedFileContent*(path: string): Future[seq[string]] {.async.} =
   log lvlInfo, fmt"getStagedFileContent: '{path}' -- {args}"
   return runProcessAsync("git", args).await
 
-proc getWorkingFileContent(path: string): Future[seq[string]] {.async.} =
+proc getWorkingFileContent*(path: string): Future[seq[string]] {.async.} =
   log lvlInfo, fmt"getWorkingFileContent '{path}'"
   var lines = newSeq[string]()
   for line in lines(path):
@@ -68,7 +68,7 @@ proc parseGitRange(s: string): (int, int) =
     # return (first - 1, first + 1 - 1)
     return (first, first + 1)
 
-proc applyChanges(lines: openArray[string], changes: openArray[LineMapping], expected: openArray[string]): seq[string] =
+proc applyChanges*(lines: openArray[string], changes: openArray[LineMapping], expected: openArray[string]): seq[string] =
   var currentLineSource = 0
 
   for map in changes:

@@ -1,4 +1,4 @@
-import std/[strutils, options, json, tables, uri, strformat, sugar, sequtils]
+import std/[strutils, options, json, tables, uri, strformat, sequtils]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import misc/[event, util, custom_logger, custom_async, myjsonutils, custom_unicode]
 import text/text_editor

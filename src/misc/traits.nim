@@ -227,11 +227,9 @@ macro implTrait*(trait: typed, target: typed, body: untyped): untyped =
 
       else:
         error("No matching trait function found: " & $item.kind & ". Only procs/proc names are allowed", item)
-        continue
 
     else:
       error("This kind of node is not allowed here: " & $item.kind & ". Only procs/proc names are allowed", item)
-      continue
 
     proc mapParam(index: int, param: NimNode): Option[NimNode] =
       if index == 1:

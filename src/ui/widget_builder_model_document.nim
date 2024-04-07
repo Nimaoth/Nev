@@ -6,7 +6,7 @@ import text/text_document
 import ast/[model_document, model, cells, model_state]
 import platform/platform
 import ui/[widget_builders_base, widget_library]
-import app, document_editor, theme, config_provider, input, app_interface
+import app, document_editor, theme, config_provider, input, app_interface, selector_popup
 
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
 {.used.}
@@ -115,6 +115,7 @@ proc currentDirectionData(self: CellLayoutContext): var DirectionData =
     return self.backwardData
   else:
     assert false
+    return self.forwardData
 
 proc isCurrentLineEmpty(self: CellLayoutContext): bool =
   return (self.currentDirectionData.lines.len == 0 or self.currentDirectionData.lines.last.len == 0) and self.tempNode.first.isNil
@@ -1209,10 +1210,10 @@ method createUI*(self: ModelDocumentEditor, builder: UINodeBuilder, app: App): s
     result.add proc() =
       self.createCompletions(builder, app, self.lastCursorLocationBounds.get(rect(100, 100, 10, 10)))
 
-method createUI*(self: ModelLanguageSelectorItem, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
+method createUI*(self: ModelLanguageSelectorItem, popup: SelectorPopup, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
   let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
   builder.panel(&{FillX, SizeToContentY, DrawText}, text = self.name, textColor = textColor)
 
-method createUI*(self: ModelImportSelectorItem, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
+method createUI*(self: ModelImportSelectorItem, popup: SelectorPopup, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
   let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
   builder.panel(&{FillX, SizeToContentY, DrawText}, text = self.name, textColor = textColor)

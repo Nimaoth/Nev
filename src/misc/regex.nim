@@ -48,7 +48,7 @@ when defined(js):
     var flags = "dg"
     if ignoreCase:
       flags.add "i"
-    return Regex(impl: newRegExp(text.cstring, flags))
+    return Regex(impl: newRegExp(text.cstring, flags.cstring))
 
   proc contains*(text: string, regex: Regex): bool =
     let bounds = text.findBounds(regex, 0)

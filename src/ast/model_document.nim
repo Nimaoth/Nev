@@ -2727,19 +2727,19 @@ proc insertTextAtCursor*(self: ModelDocumentEditor, input: string): bool {.expos
       self.updateScrollOffset()
 
   # todo: get these transformations from the language itself
-  let selectionTransformations = toTable {
-    IdExpression: {
-      "+": NodeTransformation(kind: Wrap, wrapClass: IdAdd, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
-      "-": NodeTransformation(kind: Wrap, wrapClass: IdSub, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
-      "*": NodeTransformation(kind: Wrap, wrapClass: IdMul, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
-      "/": NodeTransformation(kind: Wrap, wrapClass: IdDiv, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
-      "%": NodeTransformation(kind: Wrap, wrapClass: IdMod, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
-      "=": NodeTransformation(kind: Wrap, wrapClass: IdAssignment, wrapRole: IdAssignmentTarget, wrapCursorTargetRole: IdAssignmentValue, selectNextPlaceholder: true, wrapChildIndex: 0),
-      ".": NodeTransformation(kind: Wrap, wrapClass: IdStructMemberAccess, wrapRole: IdStructMemberAccessValue, wrapCursorTargetRole: IdStructMemberAccessMember, selectNextPlaceholder: true, wrapChildIndex: 0),
-      "(": NodeTransformation(kind: Wrap, wrapClass: IdCall, wrapRole: IdCallFunction, wrapCursorTargetRole: IdCallArguments, selectNextPlaceholder: true, wrapChildIndex: 0),
-      "[": NodeTransformation(kind: Wrap, wrapClass: IdArrayAccess, wrapRole: IdArrayAccessValue, wrapCursorTargetRole: IdArrayAccessIndex, selectNextPlaceholder: true, wrapChildIndex: 0),
-    }.toTable
-  }
+  # let selectionTransformations = toTable {
+  #   IdExpression: {
+  #     "+": NodeTransformation(kind: Wrap, wrapClass: IdAdd, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
+  #     "-": NodeTransformation(kind: Wrap, wrapClass: IdSub, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
+  #     "*": NodeTransformation(kind: Wrap, wrapClass: IdMul, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
+  #     "/": NodeTransformation(kind: Wrap, wrapClass: IdDiv, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
+  #     "%": NodeTransformation(kind: Wrap, wrapClass: IdMod, wrapRole: IdBinaryExpressionLeft, wrapCursorTargetRole: IdBinaryExpressionRight, selectNextPlaceholder: true, wrapChildIndex: 0),
+  #     "=": NodeTransformation(kind: Wrap, wrapClass: IdAssignment, wrapRole: IdAssignmentTarget, wrapCursorTargetRole: IdAssignmentValue, selectNextPlaceholder: true, wrapChildIndex: 0),
+  #     ".": NodeTransformation(kind: Wrap, wrapClass: IdStructMemberAccess, wrapRole: IdStructMemberAccessValue, wrapCursorTargetRole: IdStructMemberAccessMember, selectNextPlaceholder: true, wrapChildIndex: 0),
+  #     "(": NodeTransformation(kind: Wrap, wrapClass: IdCall, wrapRole: IdCallFunction, wrapCursorTargetRole: IdCallArguments, selectNextPlaceholder: true, wrapChildIndex: 0),
+  #     "[": NodeTransformation(kind: Wrap, wrapClass: IdArrayAccess, wrapRole: IdArrayAccessValue, wrapCursorTargetRole: IdArrayAccessIndex, selectNextPlaceholder: true, wrapChildIndex: 0),
+  #   }.toTable
+  # }
 
   let postfixTransformations = toTable {
     IdExpression: {

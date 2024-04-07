@@ -6,10 +6,10 @@ import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_mat
 import scripting/[expose]
 import platform/[platform, filesystem]
 import language/[language_server_base]
-import workspaces/[workspace]
 import document, document_editor, events, vmath, bumpy, input, custom_treesitter, indent, text_document, snippet
 import config_provider, app_interface
 import diff
+import workspaces/workspace
 
 from language/lsp_types import Response, CompletionList, CompletionItem, InsertTextFormat, TextEdit, Range, Position, isSuccess, asTextEdit, asInsertReplaceEdit
 
@@ -1721,7 +1721,8 @@ proc addSnippetCompletions(self: TextDocumentEditor) =
   try:
     let snippets = self.configProvider.getValue("editor.text.snippets." & self.document.languageId, newJObject())
     for (name, definition) in snippets.fields.pairs:
-      let scopes = definition["scope"].getStr.split(",")
+      # todo: handle language scope
+      # let scopes = definition["scope"].getStr.split(",")
       let prefix = definition["prefix"].getStr
       let body = definition["body"].elems
       var text = ""
@@ -2652,24 +2653,6 @@ method createWithDocument*(_: TextDocumentEditor, document: Document, configProv
   self.startBlinkCursorTask()
 
   return self
-
-proc getCursorAtPixelPos(self: TextDocumentEditor, mousePosWindow: Vec2): Option[Cursor] =
-  let mousePosContent = mousePosWindow - self.lastContentBounds.xy
-  for li, line in self.lastRenderedLines:
-    var startOffset = 0.RuneIndex
-    for i, part in line.parts:
-      if part.bounds.contains(mousePosContent) or (i == line.parts.high and mousePosContent.y >= part.bounds.y and mousePosContent.y <= part.bounds.yh and mousePosContent.x >= part.bounds.x):
-        var offsetFromLeft = (mousePosContent.x - part.bounds.x) / self.platform.charWidth
-        if self.isThickCursor():
-          offsetFromLeft -= 0.0
-        else:
-          offsetFromLeft += 0.5
-
-        let index = clamp(offsetFromLeft.int, 0, part.text.runeLen.int)
-        let byteIndex = self.document.lines[line.index].toOpenArray.runeOffset(startOffset + index.RuneCount)
-        return (line.index, byteIndex).some
-      startOffset += part.text.runeLen
-  return Cursor.none
 
 method unregister*(self: TextDocumentEditor) =
   self.app.unregisterEditor(self)

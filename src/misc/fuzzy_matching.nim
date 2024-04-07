@@ -22,7 +22,7 @@ OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ]#
 
-import std/[os, strutils, strformat]
+import std/[os, strutils]
 from algorithm import sorted
 # from std/editdistance import editDistanceAscii  # stdlib one yields correct distance BUT for ratio cost should be higher because yields better results (Python does that too)
 
@@ -140,8 +140,6 @@ proc matchFuzzy*(a: string, b: string): float =
 
 proc matchFuzzySimple*(a: string, b: string): float =
   return fuzzyMatch(a, b, caseInsensitive = true)
-
-import math
 
 const
   MaxUnmatchedLeadingChar = 3

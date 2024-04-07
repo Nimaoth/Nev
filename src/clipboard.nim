@@ -1,11 +1,10 @@
 import std/[options]
 import misc/[util, custom_async, custom_logger]
-import compilation_config
 
 logCategory "clipboard"
 
 when defined(js):
-  import std/[jsffi, dom]
+  import std/[jsffi]
 
   type Clipboard = ref object of JsObject
 
@@ -28,32 +27,35 @@ when defined(js):
       return string.none
     return some $getClipboard().readText().await
 
-elif enableSystemClipboard:
-  static:
-    echo "Building with system clipboard"
-  import nimclipboard/libclipboard
-
-  var clipboard = clipboardNew(nil)
-
-  proc setSystemClipboardText*(str: string) =
-    clipboard.clipboardClear(LCB_CLIPBOARD)
-    discard clipboard.clipboardSetText(str.cstring)
-
-  proc getSystemClipboardText*(): Future[Option[string]] {.async.} =
-    return some $clipboard.clipboardText()
-
-  proc destroyClipboard*() =
-    if clipboard != nil:
-      clipboard.clipboardFree()
-
 else:
-  static:
-    echo "Building without system clipboard"
-  proc setSystemClipboardText*(str: string) =
-    discard
+  import compilation_config
 
-  proc getSystemClipboardText*(): Future[Option[string]] {.async.} =
-    return string.none
+  when enableSystemClipboard:
+    static:
+      echo "Building with system clipboard"
+    import nimclipboard/libclipboard
 
-  proc destroyClipboard*() =
-    discard
+    var clipboard = clipboardNew(nil)
+
+    proc setSystemClipboardText*(str: string) =
+      clipboard.clipboardClear(LCB_CLIPBOARD)
+      discard clipboard.clipboardSetText(str.cstring)
+
+    proc getSystemClipboardText*(): Future[Option[string]] {.async.} =
+      return some $clipboard.clipboardText()
+
+    proc destroyClipboard*() =
+      if clipboard != nil:
+        clipboard.clipboardFree()
+
+  else:
+    static:
+      echo "Building without system clipboard"
+    proc setSystemClipboardText*(str: string) =
+      discard
+
+    proc getSystemClipboardText*(): Future[Option[string]] {.async.} =
+      return string.none
+
+    proc destroyClipboard*() =
+      discard
