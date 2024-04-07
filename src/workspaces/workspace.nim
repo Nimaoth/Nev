@@ -89,14 +89,20 @@ proc iterateDirectoryRec*(folder: WorkspaceFolder, path: string, cancellationTok
     return
 
   for file in items.files:
-    let fullPath = path // file
-    if shouldIgnore(file) or shouldIgnore(fullPath):
+    let fullPath = if file.isAbsolute:
+      file
+    else:
+      path // file
+    if shouldIgnore(fullPath) or shouldIgnore(fullPath.extractFilename):
       continue
     resultItems.add(fullPath)
 
   for dir in items.folders:
-    let fullPath = path // dir
-    if shouldIgnore(dir) or shouldIgnore(fullPath):
+    let fullPath = if dir.isAbsolute:
+      dir
+    else:
+      path // dir
+    if shouldIgnore(fullPath) or shouldIgnore(fullPath.extractFilename):
       continue
     folders.add(fullPath)
 

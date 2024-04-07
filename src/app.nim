@@ -1837,6 +1837,7 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
     var startIndex = 0
     for folder in self.workspace.folders:
       var folder = folder
+      log lvlInfo, fmt"Start iterateDirectoryRec"
       await iterateDirectoryRec(folder, "", cancellationToken, ignorePatterns, proc(files: seq[string]) {.async.} =
         if cancellationToken.canceled or popup.textEditor.isNil:
           return
@@ -1862,6 +1863,8 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
         popup.enableAutoSort()
         popup.markDirty()
       )
+
+      log lvlInfo, fmt"Finished iterateDirectoryRec"
 
       if cancellationToken.canceled or popup.textEditor.isNil:
         return
