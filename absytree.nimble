@@ -60,7 +60,7 @@ task buildDesktop, "Build the desktop version":
   # selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi --objChecks:off --fieldChecks:off --rangeChecks:off --boundChecks:off --overflowChecks:off --floatChecks:off --nanChecks:off --infChecks:off {getCommandLineParams()} ./src/absytree.nim"
 
 task buildDesktopDebug, "Build the desktop version (debug)":
-  selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi --stackTrace:on --lineTrace:on --debuginfo --passC:-std=gnu11 {getCommandLineParams()} ./src/absytree.nim"
+  selfExec fmt"c -o:astd{exe} -d:exposeScriptingApi --stackTrace:on --lineTrace:on --debuginfo -g -D:debug --nilChecks:on --passC:-std=gnu11 {getCommandLineParams()} ./src/absytree.nim"
   # selfExec fmt"c --passL:advapi32.lib -o:ast{exe} -d:exposeScriptingApi {getCommandLineParams()} ./src/absytree.nim"
   # selfExec fmt"c -o:ast{exe} -d:exposeScriptingApi --objChecks:off --fieldChecks:off --rangeChecks:off --boundChecks:off --overflowChecks:off --floatChecks:off --nanChecks:off --infChecks:off {getCommandLineParams()} ./src/absytree.nim"
 
@@ -90,7 +90,7 @@ task buildLspWsWindows, "Build the websocket proxy for language servers":
   selfExec fmt"c -o:./tools/lsp-ws{exe} {crossCompileWinArgs} {getCommandLineParams()} ./tools/lsp_ws.nim"
 
 task buildBrowser, "Build the browser version":
-  selfExec fmt"js -o:./build/ast.js -d:exposeScriptingApi -d:vmathObjBased -d:enableTableIdCacheChecking {getCommandLineParams()} ./src/absytree_js.nim"
+  selfExec fmt"js -o:./build/ast.js -d:exposeScriptingApi -d:vmathObjBased -d:enableTableIdCacheChecking -d:enableAst=true {getCommandLineParams()} ./src/absytree_js.nim"
   # selfExec fmt"js -o:./build/ast.js -d:exposeScriptingApi -d:vmathObjBased -d:enableTableIdCacheChecking --objChecks:off --fieldChecks:off --rangeChecks:off --boundChecks:off --overflowChecks:off --floatChecks:off --nanChecks:off --infChecks:off --jsbigint64:off {getCommandLineParams()} ./src/absytree_js.nim"
 
 task buildNimConfigWasm, "Compile the nim script config file to wasm":
