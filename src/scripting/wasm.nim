@@ -1,4 +1,4 @@
-import std/[macros, macrocache, strutils, json, options, tables, genasts]
+import std/[macros, macrocache, json, options, tables, genasts]
 import misc/[custom_logger, custom_async, util, array_buffer]
 import platform/filesystem
 
@@ -304,7 +304,6 @@ else:
     of "string": return "I"
     else:
       error(fmt"getWasmType: Invalid type {typ.repr}", typ)
-      return ""
 
   macro getWasmSignature(function: typed): string =
     # echo "getWasmSignature"

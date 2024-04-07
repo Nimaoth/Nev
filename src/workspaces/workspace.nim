@@ -1,4 +1,4 @@
-import std/[json, options, os, strutils]
+import std/[json, options, os]
 import misc/[custom_async, id, array_buffer, cancellation_token, util, regex]
 import platform/filesystem
 

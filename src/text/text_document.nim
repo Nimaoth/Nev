@@ -113,6 +113,7 @@ type TextDocument* = ref object of Document
   diagnosticsPerLine*: Table[int, seq[int]]
   currentDiagnostics*: seq[Diagnostic]
   onDiagnosticsUpdated*: Event[void]
+  onDiagnosticsHandle: Id
 
 var allTextDocuments*: seq[TextDocument] = @[]
 
@@ -855,6 +856,7 @@ method deinit*(self: TextDocument) =
     self.tsParser.deinit()
 
   if self.languageServer.getSome(ls):
+    ls.onDiagnostics.unsubscribe(self.onDiagnosticsHandle)
     ls.removeOnRequestSaveHandler(self.onRequestSaveHandle)
     ls.disconnect()
     self.languageServer = LanguageServer.none
@@ -962,8 +964,8 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
         await ls.saveTempFile(targetFilename, self.contentString)
 
     self.onRequestSaveHandle = ls.addOnRequestSaveHandler(self.filename, callback)
-    # todo
-    let diagnosticsHandle = ls.onDiagnostics.subscribe proc(diagnostics: lsp_types.PublicDiagnosticsParams) =
+
+    self.onDiagnosticsHandle = ls.onDiagnostics.subscribe proc(diagnostics: lsp_types.PublicDiagnosticsParams) =
       let uri = diagnostics.uri.decodeUrl.parseUri
       if uri.path.normalizePathUnix == self.filename:
         self.currentDiagnostics.setLen diagnostics.diagnostics.len

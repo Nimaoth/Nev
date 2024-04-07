@@ -217,7 +217,6 @@ method init*(self: BrowserPlatform) =
 
   self.content.addEventListener("touchstart", proc(e: dom.Event) =
     let me = e.TouchEvent
-    let touches = self.touches
     for touch in me.changedTouches:
       let i = self.getTouchWithId(touch.identifier)
       if i != -1:
@@ -235,7 +234,6 @@ method init*(self: BrowserPlatform) =
 
   self.content.addEventListener("touchend", proc(e: dom.Event) =
     let me = e.TouchEvent
-    let touches = self.touches
     for touch in me.changedTouches:
       let i = self.getTouchWithId(touch.identifier)
       self.touches.removeShift(i)
@@ -246,7 +244,6 @@ method init*(self: BrowserPlatform) =
 
   self.content.addEventListener("touchcancel", proc(e: dom.Event) =
     let me = e.TouchEvent
-    let touches = self.touches
     for touch in me.changedTouches:
       let i = self.getTouchWithId(touch.identifier)
       self.touches.removeShift(i)
@@ -261,7 +258,6 @@ method init*(self: BrowserPlatform) =
     defer: self.currentEvent = oldEvent
 
     e.preventDefault()
-    let touches = self.touches
 
     let me = e.TouchEvent
 

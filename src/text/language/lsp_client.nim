@@ -1,18 +1,15 @@
-import std/[json, strutils, strformat, macros, options]
-import misc/[custom_logger, async_http_client, websocket, util, event]
+import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequtils, sugar, os]
+import misc/[custom_logger, async_http_client, websocket, util, event, myjsonutils, custom_async]
 import scripting/expose
 from workspaces/workspace as ws import nil
+import lsp_types
+
+export lsp_types
 
 logCategory "lsp"
 
 var logVerbose = false
 var logServerDebug = false
-
-import std/[tables, sets, options, uri, sequtils, sugar, os]
-import misc/[myjsonutils, util, custom_async]
-import lsp_types
-
-export lsp_types
 
 type
   LSPConnection = ref object of RootObj

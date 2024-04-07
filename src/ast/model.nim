@@ -102,7 +102,7 @@ type
   PropertyValidator* = ref object
     case kind*: PropertyValidatorKind
     of Regex:
-      pattern*: Regex
+      pattern*: Regex2
     of Custom:
       impl*: proc(node: Option[AstNode], property: string): bool
 
@@ -587,8 +587,8 @@ proc propertyDescription*(self: NodeClass, id: RoleId): Option[PropertyDescripti
     if inter.isNotNil and inter.propertyDescription(id).getSome(pd):
       return pd.some
 
-let defaultNumberPattern = re"[0-9]+"
-let defaultBoolPattern = re"true|false"
+let defaultNumberPattern = re2"[0-9]+"
+let defaultBoolPattern = re2"true|false"
 
 proc isValidPropertyValue*(language: Language, class: NodeClass, role: RoleId, value: string, node: Option[AstNode] = AstNode.none): bool =
   # debugf"isValidPropertyValue {class.name} ({class.id}) {role} '{value}'"

@@ -1,4 +1,4 @@
-import std/[options, json, tables]
+import std/[options, json]
 import misc/[custom_logger, custom_async, util, custom_unicode]
 import platform/filesystem
 
@@ -379,6 +379,7 @@ else:
 # Available on all targets
 
 when not defined(js):
+  import std/[tables]
   var treesitterDllCache = initTable[string, LibHandle]()
 
 proc loadLanguageDynamically*(languageId: string, config: JsonNode): Future[Option[TSLanguage]] {.async.} =
