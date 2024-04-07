@@ -610,6 +610,113 @@ proc addDiagnosticsUnderline(self: TextDocument, line: var StyledLine) =
       let diagnosticMessage: string = "     ■ " & diagnostic.message[0..<maxIndex]
       line.parts.add StyledText(text: diagnosticMessage, scope: colorName, scopeC: colorName.cstring, inlayContainCursor: true, scopeIsToken: false, canWrap: false, priority: 1000000000)
 
+
+proc applyTreesitterHighlighting(self: TextDocument, line: var StyledLine) =
+  var regexes = initTable[string, Regex]()
+
+  if self.tsParser.isNil or self.highlightQuery.isNil or self.tsTree.isNil:
+    return
+
+  let lineLen = self.lines[line.index].len
+
+  for match in self.highlightQuery.matches(self.tsTree.root, tsRange(tsPoint(line.index, 0), tsPoint(line.index, lineLen))):
+    let predicates = self.highlightQuery.predicatesForPattern(match.pattern)
+
+    for capture in match.captures:
+      let scope = capture.name
+
+      let node = capture.node
+
+      var matches = true
+      for predicate in predicates:
+
+        if not matches:
+          break
+
+        for operand in predicate.operands:
+          let value = $operand.`type`
+
+          if operand.name != scope:
+            matches = false
+            break
+
+          case $predicate.operator
+          of "match?":
+            let regex = if regexes.contains(value):
+              regexes[value]
+            else:
+              let regex = re(value)
+              regexes[value] = regex
+              regex
+
+            let nodeText = self.contentString(node.getRange)
+            if nodeText.matchLen(regex, 0) != nodeText.len:
+              matches = false
+              break
+
+          of "not-match?":
+            let regex = if regexes.contains(value):
+              regexes[value]
+            else:
+              let regex = re(value)
+              regexes[value] = regex
+              regex
+
+            let nodeText = self.contentString(node.getRange)
+            if nodeText.matchLen(regex, 0) == nodeText.len:
+              matches = false
+              break
+
+          of "eq?":
+            # @todo: second arg can be capture aswell
+            let nodeText = self.contentString(node.getRange)
+            if nodeText != value:
+              matches = false
+              break
+
+          of "not-eq?":
+            # @todo: second arg can be capture aswell
+            let nodeText = self.contentString(node.getRange)
+            if nodeText == value:
+              matches = false
+              break
+
+          # of "any-of?":
+          #   log(lvlError, fmt"Unknown predicate '{predicate.name}'")
+
+          else:
+            log(lvlError, fmt"Unknown predicate '{predicate.operator}'")
+
+        if self.configProvider.getFlag("text.print-matches", false):
+          let nodeText = self.contentString(node.getRange)
+          log(lvlInfo, fmt"{match.pattern}: '{nodeText}' {node} (matches: {matches})")
+
+      if not matches:
+        continue
+
+      let nodeRange = node.getRange
+
+      if nodeRange.first.row == line.index:
+        splitAt(self, line, nodeRange.first.column)
+      if nodeRange.last.row == line.index:
+        splitAt(self, line, nodeRange.last.column)
+
+      let first = if nodeRange.first.row < line.index:
+        0
+      elif nodeRange.first.row == line.index:
+        nodeRange.first.column
+      else:
+        lineLen
+
+      let last = if nodeRange.last.row < line.index:
+        0
+      elif nodeRange.last.row == line.index:
+        nodeRange.last.column
+      else:
+        lineLen
+
+      overrideStyle(self, line, first, last, $scope, match.pattern)
+
 proc getStyledText*(self: TextDocument, i: int): StyledLine =
   if self.styledTextCache.contains(i):
     result = self.styledTextCache[i]
@@ -622,111 +729,7 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
     result = StyledLine(index: i, parts: @[StyledText(text: line, scope: "", scopeC: "", priority: 1000000000, textRange: (0, line.len, 0.RuneIndex, line.runeLen.RuneIndex).some)])
     self.styledTextCache[i] = result
 
-    var regexes = initTable[string, Regex]()
-
-    if self.tsParser.isNil or self.highlightQuery.isNil or self.tsTree.isNil:
-      return
-
-    for match in self.highlightQuery.matches(self.tsTree.root, tsRange(tsPoint(i, 0), tsPoint(i, line.len))):
-      let predicates = self.highlightQuery.predicatesForPattern(match.pattern)
-
-      for capture in match.captures:
-        let scope = capture.name
-
-        let node = capture.node
-
-        var matches = true
-        for predicate in predicates:
-
-          if not matches:
-            break
-
-          for operand in predicate.operands:
-            let value = $operand.`type`
-
-            if operand.name != scope:
-              matches = false
-              break
-
-            case $predicate.operator
-            of "match?":
-              let regex = if regexes.contains(value):
-                regexes[value]
-              else:
-                let regex = re(value)
-                regexes[value] = regex
-                regex
-
-              let nodeText = self.contentString(node.getRange)
-              if nodeText.matchLen(regex, 0) != nodeText.len:
-                matches = false
-                break
-
-            of "not-match?":
-              let regex = if regexes.contains(value):
-                regexes[value]
-              else:
-                let regex = re(value)
-                regexes[value] = regex
-                regex
-
-              let nodeText = self.contentString(node.getRange)
-              if nodeText.matchLen(regex, 0) == nodeText.len:
-                matches = false
-                break
-
-            of "eq?":
-              # @todo: second arg can be capture aswell
-              let nodeText = self.contentString(node.getRange)
-              if nodeText != value:
-                matches = false
-                break
-
-            of "not-eq?":
-              # @todo: second arg can be capture aswell
-              let nodeText = self.contentString(node.getRange)
-              if nodeText == value:
-                matches = false
-                break
-
-            # of "any-of?":
-            #   log(lvlError, fmt"Unknown predicate '{predicate.name}'")
-
-            else:
-              log(lvlError, fmt"Unknown predicate '{predicate.operator}'")
-
-          if self.configProvider.getFlag("text.print-matches", false):
-            let nodeText = self.contentString(node.getRange)
-            log(lvlInfo, fmt"{match.pattern}: '{nodeText}' {node} (matches: {matches})")
-
-        if not matches:
-          continue
-
-        let nodeRange = node.getRange
-
-        if nodeRange.first.row == i:
-          # result.splitAt(nodeRange.first.column.RuneIndex)
-          splitAt(self, result, nodeRange.first.column)
-        if nodeRange.last.row == i:
-          # result.splitAt(nodeRange.last.column)
-          splitAt(self, result, nodeRange.last.column)
-
-        let first = if nodeRange.first.row < i:
-          0
-        elif nodeRange.first.row == i:
-          nodeRange.first.column
-        else:
-          line.len
-
-        let last = if nodeRange.last.row < i:
-          0
-        elif nodeRange.last.row == i:
-          nodeRange.last.column
-        else:
-          line.len
-
-        overrideStyle(self, result, first, last, $scope, match.pattern)
-
+    self.applyTreesitterHighlighting(result)
     self.replaceSpaces(result)
     self.replaceTabs(result)
     self.addDiagnosticsUnderline(result)
@@ -893,6 +896,20 @@ method save*(self: TextDocument, filename: string = "", app: bool = false) =
   self.isBackedByFile = true
   self.lastSavedRevision = self.undoableRevision
 
+proc autoDetectIndentStyle(self: TextDocument) =
+  var containsTab = false
+  for line in self.lines:
+    if line.find('\t') != -1:
+      containsTab = true
+      break
+
+  if containsTab:
+    self.indentStyle = IndentStyle(kind: Tabs)
+  else:
+    self.indentStyle = IndentStyle(kind: Spaces, spaces: self.tabWidth)
+
+  log lvlInfo, &"[Text_document] Detected indent: {self.indentStyle}, {self.languageConfig.get(TextLanguageConfig())[]}"
+
 proc loadAsync(self: TextDocument, ws: WorkspaceFolder): Future[void] {.async.} =
   # self.content = await ws.loadFile(self.filename)
   self.isBackedByFile = true
@@ -900,6 +917,9 @@ proc loadAsync(self: TextDocument, ws: WorkspaceFolder): Future[void] {.async.} 
   self.content = catch ws.loadFile(self.filename).await:
     log lvlError, &"[loadAsync] Failed to load workspace file {self.filename}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
     ""
+
+  self.autoDetectIndentStyle()
+
   self.lastSavedRevision = self.undoableRevision
   self.isLoadingAsync = false
   self.onLoaded.invoke self
@@ -919,12 +939,14 @@ method load*(self: TextDocument, filename: string = "") =
       log lvlError, fmt"Failed to load application file {filename}"
       ""
     self.lastSavedRevision = self.undoableRevision
+    self.autoDetectIndentStyle()
     self.onLoaded.invoke self
   else:
     self.content = catch fs.loadFile(self.filename):
       log lvlError, fmt"Failed to load file {filename}"
       ""
     self.lastSavedRevision = self.undoableRevision
+    self.autoDetectIndentStyle()
     self.onLoaded.invoke self
 
 proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.async.} =
