@@ -46,6 +46,9 @@ There is also a very experimental [Unreal Engine Plugin](https://github.com/Nima
 - Clone the repository
 - Run `nimble setup`
 
+By default builds will not include the nimscript plugin api and the ast language framework.
+To enable these features pass `-D:enableNimscript=true` and `-D:enableAst=true` respectively.
+
 ### Desktop version
 - Use `nimble buildDesktop` or `nimble build` to compile the desktop version of the editor.
 - The release builds are built with:
