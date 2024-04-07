@@ -49,8 +49,9 @@ proc getRelativePathEmpty(): Future[Option[string]] {.async.} =
 method getRelativePath*(self: WorkspaceFolder, absolutePath: string): Future[Option[string]] {.base.} =
   return getRelativePathEmpty()
 
-import workspace_local
-export workspace_local
+when not defined(js):
+  import workspace_local
+  export workspace_local
 
 import workspace_github
 export workspace_github
