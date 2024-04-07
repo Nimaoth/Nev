@@ -1896,6 +1896,8 @@ proc chooseOpen*(self: App, view: string = "new") {.expose("editor").} =
     self.platform.requestRender()
 
   var popup = newSelectorPopup(self.asAppInterface)
+  popup.scale.x = 0.3
+
   popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
     let allViews = self.views & self.hiddenViews
     for view in allViews:
@@ -1928,8 +1930,9 @@ proc chooseOpen*(self: App, view: string = "new") {.expose("editor").} =
   self.pushPopup popup
 
 type SearchFileSelectorItem* = ref object of FileSelectorItem
-  line: int
-  column: int
+  searchResult*: string
+  line*: int
+  column*: int
 
 proc searchWorkspace(popup: SelectorPopup, workspace: WorkspaceFolder, query: string, text: string): Future[seq[SelectorItem]] {.async.} =
   if popup.updateInProgress:
@@ -1950,9 +1953,9 @@ proc searchWorkspace(popup: SelectorPopup, workspace: WorkspaceFolder, query: st
     log lvlInfo, fmt"Found {searchResults.len} results"
 
     for info in searchResults:
-      let name = $info.line & ":" & $info.column & ": " & info.text & "         | " & info.path
+      let name = info.text & " |" & info.path.extractFilename & ":" & $info.line
       let score = matchFuzzySublime(searchText, name, defaultPathMatchingConfig).score.float
-      res.add SearchFileSelectorItem(name: name, path: info.path, score: score, workspaceFolder: workspace.some, line: info.line)
+      res.add SearchFileSelectorItem(name: name, searchResult: info.text, path: info.path, score: score, workspaceFolder: workspace.some, line: info.line)
   else:
     for item in popup.completions.mitems:
       item.hasCompletionMatchPositions = false
@@ -1968,6 +1971,7 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
     self.platform.requestRender()
 
   var popup = newSelectorPopup(self.asAppInterface)
+  popup.scale.x = 0.75
 
   popup.getCompletionsAsync = proc(popup: SelectorPopup, text: string): Future[seq[SelectorItem]] =
     return popup.searchWorkspace(self.workspace.folders[0], query, text)
@@ -2083,6 +2087,8 @@ proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
       WorkspaceFolder.none
 
     var popup = newSelectorPopup(self.asAppInterface)
+    popup.scale.x = 0.3
+
     popup.getCompletionsAsync = proc(popup: SelectorPopup, text: string): Future[seq[SelectorItem]] =
       return getChangedFilesFromGitAsync(popup, text, workspace)
 

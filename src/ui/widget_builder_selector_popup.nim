@@ -16,6 +16,15 @@ method createUI*(self: FileSelectorItem, popup: SelectorPopup, builder: UINodeBu
   let matchIndices = self.getCompletionMatches(popup.getSearchString(), name, defaultPathMatchingConfig)
   builder.highlightedText(name, matchIndices, textColor, textColor.lighten(0.15))
 
+method createUI*(self: SearchFileSelectorItem, popup: SelectorPopup, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
+  let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
+  let name = self.searchResult
+  let matchIndices = self.getCompletionMatches(popup.getSearchString(), name, defaultPathMatchingConfig)
+  builder.panel(&{LayoutHorizontalReverse, FillX, SizeToContentY}):
+    builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = fmt"| {self.path}:{self.line}", pivot = vec2(1, 0), textColor = textColor)
+    builder.panel(&{FillX, SizeToContentY, MaskContent}, pivot = vec2(1, 0)):
+      builder.highlightedText(name, matchIndices, textColor, textColor.lighten(0.15))
+
 method createUI*(self: TextSymbolSelectorItem, popup: SelectorPopup, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
   let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
   let scopeColor = app.theme.tokenColor("string", color(175/255, 255/255, 175/255))
@@ -58,7 +67,9 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[pro
     flags.incl FillY
     flagsInner.incl FillY
 
-  let bounds = builder.currentParent.boundsActual.shrink(absolute(0.25 * builder.currentParent.boundsActual.w), absolute(0.25 * builder.currentParent.boundsActual.h))
+  let scale = (vec2(1, 1) - self.scale) * 0.5
+
+  let bounds = builder.currentParent.boundsActual.shrink(absolute(scale.x * builder.currentParent.boundsActual.w), absolute(scale.y * builder.currentParent.boundsActual.h))
   builder.panel(&{SizeToContentY}, x = bounds.x, y = bounds.y, w = bounds.w, userId = self.userId.newPrimaryId):
     builder.panel(flags): #, userId = id):
       let totalLineHeight = app.platform.totalLineHeight
