@@ -3,7 +3,7 @@ import misc/[myjsonutils]
 
 type
   TextLanguageConfig* = ref object
-    tabWidth*: int
+    tabWidth*: int = 4
     indentAfter*: seq[string]
     lineComment*: Option[string]
     blockComment*: Option[(string, string)]
