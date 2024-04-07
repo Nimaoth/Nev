@@ -879,6 +879,7 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
       selections[i].first.column = originalSelections[i].first.column
       selections[i].last.column = originalSelections[i].last.column
 
+  let wasShowingCompletions = self.showCompletions
   self.selections = selections
 
   self.updateTargetColumn(Last)
@@ -886,6 +887,8 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
   if not self.disableCompletions and (text == "." or text == "," or text == " "):
     self.showCompletionWindow()
     asyncCheck self.getCompletionsAsync()
+  elif wasShowingCompletions:
+    self.showCompletionWindow()
 
 proc indent*(self: TextDocumentEditor) {.expose("editor.text").} =
   var linesToIndent = initHashSet[int]()
@@ -1342,16 +1345,28 @@ proc deleteLeft*(self: TextDocumentEditor) {.expose("editor.text").} =
   for i, selection in selections:
     if selection.isEmpty:
       selections[i] = (self.doMoveCursorColumn(selection.first, -1), selection.first)
+
+  let wasShowingCompletions = self.showCompletions
+
   self.selections = self.document.delete(selections, self.selections, inclusiveEnd=self.useInclusiveSelections)
+
   self.updateTargetColumn(Last)
+  if wasShowingCompletions:
+    self.showCompletionWindow()
 
 proc deleteRight*(self: TextDocumentEditor, includeAfter: bool = true) {.expose("editor.text").} =
   var selections = self.selections
   for i, selection in selections:
     if selection.isEmpty:
       selections[i] = (selection.first, self.doMoveCursorColumn(selection.first, 1))
+
+  let wasShowingCompletions = self.showCompletions
+
   self.selections = self.document.delete(selections, self.selections, inclusiveEnd=self.useInclusiveSelections).mapIt(self.clampSelection(it, includeAfter))
+
   self.updateTargetColumn(Last)
+  if wasShowingCompletions:
+    self.showCompletionWindow()
 
 proc getCommandCount*(self: TextDocumentEditor): int {.expose("editor.text").} =
   return self.commandCount
