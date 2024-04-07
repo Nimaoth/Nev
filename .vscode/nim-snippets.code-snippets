@@ -10,7 +10,7 @@
 		"scope": "nim",
 		"prefix": "log",
 		"body": [
-			"log lvl${1:Info} &\"[${TM_FILENAME/(.*)\\..*$/${1:/capitalize}/}] $2\""
+			"log lvl${1:Info}, &\"[${TM_FILENAME/(.*)\\..*$/${1:/capitalize}/}] $2\""
 		]
 	},
 	"Snippet test 1": {
