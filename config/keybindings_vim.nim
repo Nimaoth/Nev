@@ -906,6 +906,15 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
       editor.setMode("insert")
       editor.updateTargetColumn()
 
+  addTextCommandBlock "", "<CS-f>":
+    commandLine("search-global \\")
+    if getActiveEditor().isTextEditor(editor):
+      var arr = newJArray()
+      arr.add newJString("file")
+      discard editor.runAction("move-last", arr)
+      editor.setMode("insert")
+      editor.updateTargetColumn()
+
   # Scrolling
   addTextCommand "", "<C-e>", "scroll-lines", 1
   addSubCommandWithCountBlock "", "move", "<C-d>": editor.vimMoveCursorLine(editor.screenLineCount div 2, count, center=true)

@@ -1,5 +1,5 @@
-import std/[os, json, options, sequtils]
-import misc/[custom_async, custom_logger]
+import std/[os, json, options, sequtils, strutils]
+import misc/[custom_async, custom_logger, async_process, util]
 import platform/filesystem
 import workspace
 
@@ -54,6 +54,51 @@ method getDirectoryListing*(self: WorkspaceFolderLocal, relativePath: string): F
         res.fillDirectoryListing(path)
 
     return res
+
+proc searchWorkspaceFolder(self: WorkspaceFolderLocal, query: string, root: string): Future[seq[SearchResult]] {.async.} =
+  let output = runProcessAsync("rg", @["--line-number", "--column", "--heading", query, root]).await
+  var res: seq[SearchResult]
+
+  var currentFile = ""
+  for line in output:
+    if currentFile == "":
+      if line.isAbsolute:
+        currentFile = line.normalizePathUnix
+      else:
+        currentFile = root // line
+      continue
+
+    if line == "":
+      currentFile = ""
+      continue
+
+    var separatorIndex1 = line.find(':')
+    if separatorIndex1 == -1:
+      continue
+
+    let lineNumber = line[0..<separatorIndex1].parseInt.catch(0)
+
+    let separatorIndex2 = line.find(':', separatorIndex1 + 1)
+    if separatorIndex2 == -1:
+      continue
+
+    let column = line[(separatorIndex1 + 1)..<separatorIndex2].parseInt.catch(0)
+    let text = line[(separatorIndex2 + 1)..^1]
+    res.add SearchResult(path: currentFile, line: lineNumber, column: column, text: text)
+
+  return res
+
+method searchWorkspace*(self: WorkspaceFolderLocal, query: string): Future[seq[SearchResult]] {.async.} =
+  var futs: seq[Future[seq[SearchResult]]]
+  futs.add self.searchWorkspaceFolder(query, self.path)
+  for path in self.additionalPaths:
+    futs.add self.searchWorkspaceFolder(query, path)
+
+  var res: seq[SearchResult]
+  for fut in futs:
+    res.add fut.await
+
+  return res
 
 proc createInfo(path: string, additionalPaths: seq[string]): Future[WorkspaceInfo] {.async.} =
   let additionalPaths = additionalPaths.mapIt((it.absolutePath, it.some))

@@ -19,6 +19,12 @@ type
     files*: seq[string]
     folders*: seq[string]
 
+  SearchResult* = object
+    path*: string
+    line*: int
+    column*: int
+    text*: string
+
 method isReadOnly*(self: WorkspaceFolder): bool {.base.} = true
 method settings*(self: WorkspaceFolder): JsonNode {.base.} = discard
 
@@ -35,6 +41,7 @@ proc getAbsolutePath*(self: WorkspaceFolder, path: string): string =
     (self.getWorkspacePath() / path).normalizePathUnix
 
 method getDirectoryListing*(self: WorkspaceFolder, relativePath: string): Future[DirectoryListing] {.base.} = discard
+method searchWorkspace*(self: WorkspaceFolder, query: string): Future[seq[SearchResult]] {.base.} = discard
 
 proc getRelativePathEmpty(): Future[Option[string]] {.async.} =
   return string.none

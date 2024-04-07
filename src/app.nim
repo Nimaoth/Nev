@@ -1926,6 +1926,64 @@ proc chooseOpen*(self: App, view: string = "new") {.expose("editor").} =
 
   self.pushPopup popup
 
+type SearchFileSelectorItem* = ref object of FileSelectorItem
+  line: int
+  column: int
+
+proc searchWorkspace(popup: SelectorPopup, workspace: WorkspaceFolder, query: string, text: string): Future[seq[SelectorItem]] {.async.} =
+  if popup.updateInProgress:
+    return popup.completions
+
+  popup.updateInProgress = true
+  defer:
+    popup.updateInProgress = false
+
+  if not popup.updated:
+    let searchResults = workspace.searchWorkspace(query).await
+    if popup.textEditor.isNil:
+      return
+
+    let searchText = popup.getSearchString
+    log lvlInfo, fmt"Found {searchResults.len} results"
+
+    for info in searchResults:
+      let name = $info.line & ":" & $info.column & ": " & info.text & "         | " & info.path
+      let score = matchFuzzySublime(searchText, name, defaultPathMatchingConfig).score.float
+      result.add SearchFileSelectorItem(name: name, path: info.path, score: score, workspaceFolder: workspace.some, line: info.line)
+  else:
+    for item in popup.completions.mitems:
+      item.hasCompletionMatchPositions = false
+      item.score = matchFuzzySublime(text, item.SearchFileSelectorItem.name, defaultPathMatchingConfig).score.float
+
+    result = popup.completions
+
+  result.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Ascending)
+
+proc searchGlobal*(self: App, query: string) {.expose("editor").} =
+  defer:
+    self.platform.requestRender()
+
+  var popup = newSelectorPopup(self.asAppInterface)
+
+  popup.getCompletionsAsync = proc(popup: SelectorPopup, text: string): Future[seq[SelectorItem]] =
+    return popup.searchWorkspace(self.workspace.folders[0], query, text)
+
+  popup.handleItemConfirmed = proc(item: SelectorItem) =
+    let editor = if item.FileSelectorItem.workspaceFolder.isSome:
+      self.openWorkspaceFile(item.FileSelectorItem.path, item.FileSelectorItem.workspaceFolder.get)
+    else:
+      self.openFile(item.FileSelectorItem.path)
+
+    if editor.getSome(editor) and editor of TextDocumentEditor:
+      editor.TextDocumentEditor.targetSelection = (item.SearchFileSelectorItem.line - 1, item.SearchFileSelectorItem.column - 1).toSelection
+      editor.TextDocumentEditor.centerCursor()
+
+  popup.updateCompletions()
+  popup.sortFunction = proc(a, b: SelectorItem): int = cmp(a.FileSelectorItem.score, b.FileSelectorItem.score)
+  popup.enableAutoSort()
+
+  self.pushPopup popup
+
 when not defined(js):
   type GitFileSelectorItem* = ref object of FileSelectorItem
     info: GitFileInfo
