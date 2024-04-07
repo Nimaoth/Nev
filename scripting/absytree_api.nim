@@ -10,12 +10,6 @@ else:
   import editor_api
   export editor_api
 when defined(wasm):
-  import editor_model_api_wasm
-  export editor_model_api_wasm
-else:
-  import editor_model_api
-  export editor_model_api
-when defined(wasm):
   import editor_text_api_wasm
   export editor_text_api_wasm
 else:
@@ -34,4 +28,4 @@ else:
   import popup_selector_api
   export popup_selector_api
 
-const enableAst* = true
+const enableAst* = false

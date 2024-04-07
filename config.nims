@@ -24,12 +24,15 @@ switch("d", "release")
 
 # --rangeChecks:off # this causes issues on js backend with some prng initialization
 
+# --nilChecks:on
 
 # required for actual builds, but for lsp this should be off to improve performance because it doesn't need to generate as many functions
 # switch("d", "exposeScriptingApi")
 
 switch("d", "enableGui=true")
-switch("d", "enableTerminal=true")
+# switch("d", "enableTerminal=true")
+# switch("d", "enableNimscript=true")
+# switch("d", "enableAst=true")
 
 
 # uncomment to see logs in the console
