@@ -54,15 +54,19 @@ import platform/[platform_externc, filesystem]
 # Do this after every import
 # Don't remove those imports, they are needed by createNimScriptContextConstructorAndGenerateBindings
 import std/[macrocache]
-import ast/model_document
+when enableAst:
+  import ast/model_document
 import text/text_editor
 import text/language/lsp_client
 import selector_popup
 import wasm3, wasm3/[wasm3c, wasmconversions]
 import ui/node
 import clipboard
+import scripting/scripting_base
 
 createNimScriptContextConstructorAndGenerateBindings()
+static:
+  generateScriptingApiPerModule()
 
 type OnAppCreated = proc(app: ptr AppObject) {.cdecl.}
 
@@ -98,7 +102,8 @@ proc absytree_init(onAppCreated: OnAppCreated, ueLog: UeLog) {.exportc, dynlib, 
   NimMain()
   ueLogFn = ueLog
   echo "Initializing Absytree..."
-  fs.init("D:/Absytree")
+  # todo: pass the path in?
+  fs.init("C:/Absytree")
   waitFor runApp(onAppCreated)
 
 proc absytree_poll(timeoutMs: int32) {.exportc, dynlib, cdecl.} =

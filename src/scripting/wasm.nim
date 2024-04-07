@@ -442,7 +442,11 @@ proc newWasmModule*(wasmData: ArrayBuffer, importsOld: seq[WasmImports]): Future
 
       let res = WasmModule()
 
-      res.env = loadWasmEnv(wasmData.buffer, hostProcs=allFunctions, loadAlloc=true, allocName="my_alloc", deallocName="my_dealloc", userdata=cast[pointer](res))
+      try:
+        res.env = loadWasmEnv(wasmData.buffer, hostProcs=allFunctions, loadAlloc=true, allocName="my_alloc", deallocName="my_dealloc", userdata=cast[pointer](res))
+      except CatchableError:
+        log lvlError, &"Failed to create wasm env: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+        return WasmModule.none
 
       var imports = @importsOld
       for imp in imports.mitems:
@@ -450,7 +454,7 @@ proc newWasmModule*(wasmData: ArrayBuffer, importsOld: seq[WasmImports]): Future
       return res.some
 
   except CatchableError:
-    log lvlError, fmt"Failed to load wasm binary from array buffer: {getCurrentExceptionMsg()}"
+    log lvlError, &"Failed to load wasm binary from array buffer: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
     return WasmModule.none
 
 proc newWasmModule*(path: string, importsOld: seq[WasmImports]): Future[Option[WasmModule]] {.async.} =
@@ -523,6 +527,7 @@ proc newWasmModule*(path: string, importsOld: seq[WasmImports]): Future[Option[W
       try:
         res.env = loadWasmEnv(fs.loadApplicationFile(path), hostProcs=allFunctions, loadAlloc=true, allocName="my_alloc", deallocName="my_dealloc", userdata=cast[pointer](res))
       except CatchableError:
+        log lvlError, &"Failed to create wasm env for {path}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
         return WasmModule.none
 
       var imports = @importsOld
@@ -531,7 +536,7 @@ proc newWasmModule*(path: string, importsOld: seq[WasmImports]): Future[Option[W
       return res.some
 
   except CatchableError:
-    log lvlError, fmt"Failed to load wasm binary from file {path}: {getCurrentExceptionMsg()}"
+    log lvlError, &"Failed to load wasm binary from file {path}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
     return WasmModule.none
 
 macro createWasmWrapper(module: WasmModule, returnType: typedesc, typ: typedesc, body: untyped): untyped =

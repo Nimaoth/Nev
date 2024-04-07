@@ -33,3 +33,5 @@ when defined(wasm):
 else:
   import popup_selector_api
   export popup_selector_api
+
+const enableAst* = true
