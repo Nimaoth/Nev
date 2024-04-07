@@ -764,9 +764,9 @@ proc setupDefaultKeybindings(self: App) =
   textConfig.addCommand("", "<C-v>", "paste")
 
   textCompletionConfig.addCommand("", "<ESCAPE>", "hide-completions")
-  textCompletionConfig.addCommand("", "<UP>", "select-prev-completion")
-  textCompletionConfig.addCommand("", "<DOWN>", "select-next-completion")
-  textCompletionConfig.addCommand("", "<TAB>", "apply-selected-completion")
+  textCompletionConfig.addCommand("", "<C-p>", "select-prev-completion")
+  textCompletionConfig.addCommand("", "<C-n>", "select-next-completion")
+  textCompletionConfig.addCommand("", "<C-y>", "apply-selected-completion")
 
   commandLineConfig.addCommand("", "<ESCAPE>", "exit-command-line")
   commandLineConfig.addCommand("", "<ENTER>", "execute-command-line")
@@ -927,7 +927,13 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
   if self.getFlag("editor.restore-open-workspaces", true):
     for wf in state.workspaceFolders:
       var folder: WorkspaceFolder = case wf.kind
-      of OpenWorkspaceKind.Local: newWorkspaceFolderLocal(wf.settings)
+      of OpenWorkspaceKind.Local:
+        when not defined(js):
+          newWorkspaceFolderLocal(wf.settings)
+        else:
+          log lvlError, fmt"Failed to restore local workspace, local workspaces not available in js. Workspace: {wf}"
+          continue
+
       of OpenWorkspaceKind.AbsytreeServer: newWorkspaceFolderAbsytreeServer(wf.settings)
       of OpenWorkspaceKind.Github: newWorkspaceFolderGithub(wf.settings)
 
@@ -938,8 +944,9 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   # Open current working dir as local workspace if no workspace exists yet
   if self.workspace.folders.len == 0:
-    log lvlInfo, "No workspace open yet, opening current working directory as local workspace"
-    discard self.addWorkspaceFolder newWorkspaceFolderLocal(".")
+    when not defined(js):
+      log lvlInfo, "No workspace open yet, opening current working directory as local workspace"
+      discard self.addWorkspaceFolder newWorkspaceFolderLocal(".")
 
   when enableAst:
     if state.astProjectWorkspaceId != "":
@@ -1084,6 +1091,16 @@ proc setMaxViews*(self: App, maxViews: int) {.expose("editor").} =
   self.updateActiveEditor(false)
   self.platform.requestRender()
 
+proc openWorkspaceKind(workspaceFolder: WorkspaceFolder): OpenWorkspaceKind =
+  when not defined(js):
+    if workspaceFolder of WorkspaceFolderLocal:
+      return OpenWorkspaceKind.Local
+  if workspaceFolder of WorkspaceFolderAbsytreeServer:
+    return OpenWorkspaceKind.AbsytreeServer
+  if workspaceFolder of WorkspaceFolderGithub:
+    return OpenWorkspaceKind.Github
+  assert false
+
 proc saveAppState*(self: App) {.expose("editor").} =
   # Save some state
   var state = EditorState()
@@ -1118,14 +1135,7 @@ proc saveAppState*(self: App) {.expose("editor").} =
 
   # Save open workspace folders
   for workspaceFolder in self.workspace.folders:
-    let kind = if workspaceFolder of WorkspaceFolderLocal:
-      OpenWorkspaceKind.Local
-    elif workspaceFolder of WorkspaceFolderAbsytreeServer:
-      OpenWorkspaceKind.AbsytreeServer
-    elif workspaceFolder of WorkspaceFolderGithub:
-      OpenWorkspaceKind.Github
-    else:
-      continue
+    let kind = workspaceFolder.openWorkspaceKind()
 
     state.workspaceFolders.add OpenWorkspace(
       kind: kind,
@@ -1191,15 +1201,6 @@ proc setConsumeAllActions*(self: App, context: string, value: bool) {.expose("ed
 
 proc setConsumeAllInput*(self: App, context: string, value: bool) {.expose("editor").} =
   self.getEventHandlerConfig(context).setConsumeAllInput(value)
-
-proc openWorkspaceKind(workspaceFolder: WorkspaceFolder): OpenWorkspaceKind =
-  if workspaceFolder of WorkspaceFolderLocal:
-    return OpenWorkspaceKind.Local
-  if workspaceFolder of WorkspaceFolderAbsytreeServer:
-    return OpenWorkspaceKind.AbsytreeServer
-  if workspaceFolder of WorkspaceFolderGithub:
-    return OpenWorkspaceKind.Github
-  assert false
 
 proc addWorkspaceFolder(self: App, workspaceFolder: WorkspaceFolder): bool =
   for wf in self.workspace.folders:
@@ -1938,10 +1939,12 @@ proc searchWorkspace(popup: SelectorPopup, workspace: WorkspaceFolder, query: st
   defer:
     popup.updateInProgress = false
 
+  var res: seq[SelectorItem]
+
   if not popup.updated:
     let searchResults = workspace.searchWorkspace(query).await
     if popup.textEditor.isNil:
-      return
+      return res
 
     let searchText = popup.getSearchString
     log lvlInfo, fmt"Found {searchResults.len} results"
@@ -1949,15 +1952,16 @@ proc searchWorkspace(popup: SelectorPopup, workspace: WorkspaceFolder, query: st
     for info in searchResults:
       let name = $info.line & ":" & $info.column & ": " & info.text & "         | " & info.path
       let score = matchFuzzySublime(searchText, name, defaultPathMatchingConfig).score.float
-      result.add SearchFileSelectorItem(name: name, path: info.path, score: score, workspaceFolder: workspace.some, line: info.line)
+      res.add SearchFileSelectorItem(name: name, path: info.path, score: score, workspaceFolder: workspace.some, line: info.line)
   else:
     for item in popup.completions.mitems:
       item.hasCompletionMatchPositions = false
       item.score = matchFuzzySublime(text, item.SearchFileSelectorItem.name, defaultPathMatchingConfig).score.float
 
-    result = popup.completions
+    res = popup.completions
 
-  result.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Ascending)
+  res.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Ascending)
+  return res
 
 proc searchGlobal*(self: App, query: string) {.expose("editor").} =
   defer:
