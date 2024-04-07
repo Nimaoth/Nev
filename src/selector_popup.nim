@@ -34,6 +34,8 @@ type
     lastContentBounds*: Rect
     lastItems*: seq[tuple[index: int, bounds: Rect]]
 
+    scale*: Vec2
+
     customCommands: Table[string, proc(popup: SelectorPopup, args: JsonNode): bool]
 
     maxItemsToShow: int = 50
@@ -325,6 +327,7 @@ method handleMouseMove*(self: SelectorPopup, mousePosWindow: Vec2, mousePosDelta
 
 proc newSelectorPopup*(app: AppInterface): SelectorPopup =
   var popup = SelectorPopup(app: app)
+  popup.scale = vec2(0.5, 0.5)
   popup.textEditor = newTextEditor(newTextDocument(app.configProvider, createLanguageServer=false), app, app.configProvider)
   popup.textEditor.setMode("insert")
   popup.textEditor.renderHeader = false
