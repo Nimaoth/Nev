@@ -195,35 +195,34 @@ macro implTrait*(trait: typed, target: typed, body: untyped): untyped =
   result.add asFunction
 
   for item in body:
-    let (procName, signature) = case item.kind:
+    var procName: NimNode = nil
+    var signature: NimNode = nil
+    case item.kind:
     of nnkProcDef:
-      let procName = item.name
+      procName = item.name
+      signature = item[3]
       result.add(item)
-      let signature = item[3]
-      (procName, signature)
 
     of nnkCall:
-      var signature = nnkFormalParams.newTree(item[1])
+      procName = item[0]
+      signature = nnkFormalParams.newTree(item[1])
       for i in 2..<item.len:
         signature.add nnkIdentDefs.newTree(ident("a" & $i), item[i], newEmptyNode())
-      (item[0], signature)
 
     of nnkIdent:
       if getTraitFunction(trait, item).getSome(function):
         let impl = function.getImpl
-        let name = ident item.repr
+        procName = ident item.repr
 
         # We need to copy the signature and replace the param names with identifiers (they are symbols right now),
         # otherwise Nim will think that the function we generate is an overload for an existing function, even though
         # it isn't. Changing the parameters is not enough.
-        var signature = nnkFormalParams.newTree()
+        signature = nnkFormalParams.newTree()
         for i in 0..<impl[3].len:
           if i > 0:
             signature.add nnkIdentDefs.newTree(ident impl[3][i][0].repr, impl[3][i][1], newEmptyNode())
           else:
             signature.add impl[3][i]
-
-        (name, signature)
 
       else:
         error("No matching trait function found: " & $item.kind & ". Only procs/proc names are allowed", item)
