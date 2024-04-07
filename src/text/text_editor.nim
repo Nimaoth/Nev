@@ -444,10 +444,11 @@ proc centerCursor*(self: TextDocumentEditor, cursor: Cursor) =
   if self.disableScrolling:
     return
 
-  self.previousBaseIndex = cursor.line
-  self.scrollOffset = self.lastContentBounds.h * 0.5 - self.platform.totalLineHeight * 0.5
-  self.updateInlayHints()
+  self.targetLine = cursor.line.some
+  self.nextScrollBehaviour = CenterAlways.some
+  self.targetLineMargin = float.none
 
+  self.updateInlayHints()
   self.markDirty()
 
 proc scrollToCursor*(self: TextDocumentEditor, cursor: Cursor, margin: Option[float] = float.none, scrollBehaviour = ScrollBehaviour.none) =
@@ -2591,7 +2592,7 @@ proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
 proc handleTextDocumentLoaded(self: TextDocumentEditor) =
   if self.targetSelectionsInternal.getSome(s):
     self.selections = s
-    self.scrollToCursor()
+    self.centerCursor()
   self.targetSelectionsInternal = Selections.none
   self.updateTargetColumn(Last)
 
