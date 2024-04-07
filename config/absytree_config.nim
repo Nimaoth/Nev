@@ -72,32 +72,31 @@ proc postInitialize*(): bool {.wasmexport.} =
 
 import default_config
 
-when defined(wasm):
-  import keybindings_vim
-  import keybindings_vim_like
-  import keybindings_helix
-  import keybindings_normal
-  import languages
+import keybindings_vim
+import keybindings_vim_like
+import keybindings_helix
+import keybindings_normal
+import languages
 
-  loadDefaultOptions()
-  loadDefaultKeybindings(true)
-  loadModelKeybindings()
-  loadVimKeybindings()
-  # loadVimLikeKeybindings()
+loadDefaultOptions()
+loadDefaultKeybindings(true)
+loadModelKeybindings()
+loadVimKeybindings()
+# loadVimLikeKeybindings()
 
-  loadLspConfigFromFile("config/lsp.json")
+loadLspConfigFromFile("config/lsp.json")
+loadSnippetsFromFile(".vscode/nim-snippets.code-snippets", "nim")
+
+addTextCommandBlock "", "<C-k><C-s>":
   loadSnippetsFromFile(".vscode/nim-snippets.code-snippets", "nim")
 
-  addTextCommandBlock "", "<C-k><C-s>":
-    loadSnippetsFromFile(".vscode/nim-snippets.code-snippets", "nim")
+# Triple click to selects a line
+setOption "editor.text.triple-click-command", "extend-select-move"
+setOption "editor.text.triple-click-command-args", %[%"line", %true]
 
-  # Triple click to selects a line
-  setOption "editor.text.triple-click-command", "extend-select-move"
-  setOption "editor.text.triple-click-command-args", %[%"line", %true]
+setOption "editor.text.whitespace.char", "·"
+# setOption "editor.text.whitespace.char", " "
 
-  setOption "editor.text.whitespace.char", "·"
-  # setOption "editor.text.whitespace.char", " "
-
-  # Triple click selects a vim paragraph
-  # setOption "editor.text.triple-click-command", "extend-select-move"
-  # setOption "editor.text.triple-click-command-args", %[%"vim-paragraph-inner", %true]
+# Triple click selects a vim paragraph
+# setOption "editor.text.triple-click-command", "extend-select-move"
+# setOption "editor.text.triple-click-command-args", %[%"vim-paragraph-inner", %true]
