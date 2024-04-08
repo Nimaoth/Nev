@@ -1101,6 +1101,16 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     editor.setMode "visual"
     editor.vimChangeSelection(true)
 
+  addTextCommandBlock "normal", "J":
+    # todo: fix crash when using on last line
+    editor.addNextCheckpoint "insert"
+    let selectionsToDelete = editor.selections.mapIt(block:
+      var lineLen = editor.lineLength(it.last.line)
+      var nextLineIndent = editor.getSelectionForMove((it.last.line + 1, 0), "line-no-indent", 0)
+      ((it.last.line, lineLen), (it.last.line + 1, nextLineIndent.first.column))
+    )
+    editor.selections = editor.delete(selectionsToDelete)
+
   # Insert mode
   addTextCommand "insert", "<C-r>", "set-mode", "insert-register"
   setHandleInputs "editor.text.insert-register", true
