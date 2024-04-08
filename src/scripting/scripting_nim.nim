@@ -250,7 +250,7 @@ method init*(self: ScriptContextNim, path: string): Future[void] {.async.} =
   if self.inter.isNone:
     log(lvlError, fmt"Failed to create script context")
 
-method reload*(ctx: ScriptContextNim) =
+method reload*(ctx: ScriptContextNim): Future[void] {.async.} =
   log(lvlInfo, fmt"Reloading script context (search paths: {ctx.searchPaths})")
   asyncCheck ctx.mySafeLoadScriptWithState(@["scripting_api", "std/json"])
 

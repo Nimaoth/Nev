@@ -724,7 +724,6 @@ proc setupDefaultKeybindings(self: App) =
 
   editorConfig.addCommand("", "<C-x><C-x>", "quit")
   editorConfig.addCommand("", "<CAS-r>", "reload-config")
-  editorConfig.addCommand("", "<CAS-r>", "reload-config")
   editorConfig.addCommand("", "<C-w><LEFT>", "prev-view")
   editorConfig.addCommand("", "<C-w><RIGHT>", "next-view")
   editorConfig.addCommand("", "<C-w><C-x>", "close-current-view true")
@@ -2219,18 +2218,49 @@ proc setGithubAccessToken*(self: App, token: string) {.expose("editor").} =
   ## Stores the give token in local storage as 'GithubAccessToken', which will be used in requests to the github api
   fs.saveApplicationFile("GithubAccessToken", token)
 
-proc reloadConfig*(self: App) {.expose("editor").} =
-  defer:
-    self.platform.requestRender()
+proc clearScriptActionsFor(self: App, scriptContext: ScriptContext) =
+  var keysToRemove: seq[string]
+  for (key, value) in self.scriptActions.pairs:
+    if value.scriptContext == scriptContext:
+      keysToRemove.add key
+
+  for key in keysToRemove:
+    self.scriptActions.del key
+
+proc reloadConfigAsync*(self: App) {.async.} =
+  if self.wasmScriptContext.isNotNil:
+    log lvlInfo, "Reload wasm plugins"
+    try:
+      self.clearScriptActionsFor(self.wasmScriptContext)
+
+      let t1 = startTimer()
+      withScriptContext self, self.wasmScriptContext:
+        await self.wasmScriptContext.reload()
+      log(lvlInfo, fmt"Reload wasm plugins ({t1.elapsed.ms}ms)")
+
+      withScriptContext self, self.wasmScriptContext:
+        let t2 = startTimer()
+        discard self.wasmScriptContext.postInitialize()
+        log(lvlInfo, fmt"Post init wasm plugins ({t2.elapsed.ms}ms)")
+
+      log lvlInfo, &"Successfully reloaded wasm plugins"
+    except CatchableError:
+      log lvlError, &"Failed to reload wasm plugins: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+
   if self.scriptContext.isNotNil:
     try:
-      self.scriptContext.reload()
+      self.clearScriptActionsFor(self.scriptContext)
+      withScriptContext self, self.scriptContext:
+        await self.scriptContext.reload()
       if not self.initializeCalled:
         withScriptContext self, self.scriptContext:
           discard self.scriptContext.postInitialize()
         self.initializeCalled = true
     except CatchableError:
-      log(lvlError, fmt"Failed to reload config")
+      log lvlError, &"Failed to reload nimscript config: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+
+proc reloadConfig*(self: App) {.expose("editor").} =
+  asyncCheck self.reloadConfigAsync()
 
 proc logOptions*(self: App) {.expose("editor").} =
   log(lvlInfo, self.options.pretty)
