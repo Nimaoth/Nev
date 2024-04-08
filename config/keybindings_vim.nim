@@ -228,15 +228,10 @@ proc vimFinishMotion(editor: TextDocumentEditor) =
 
 proc vimMoveTo*(editor: TextDocumentEditor, target: string, before: bool, count: int = 1) {.expose("vim-move-to").} =
   # infof"vimMoveTo '{target}' {before}"
-  var key = ""
-  for (inputCode, mods, text) in parseInputs(target):
-    if inputCode.a > 0:
-      key = $inputCode.a.Rune
-    elif inputCode.a == INPUT_SPACE:
-      key = " "
-    else:
-      return
-    break
+  var key = if target == "<SPACE>":
+    " "
+  else:
+    target
 
   for _ in 0..<max(1, count):
     editor.moveCursorTo(key)
@@ -355,28 +350,33 @@ proc vimMotionSurround*(editor: TextDocumentEditor, cursor: Cursor, count: int, 
       return
 
 proc vimMoveToMatching(editor: TextDocumentEditor) {.expose("vim-move-to-matching").} =
-  let c = editor.getText(editor.selection.last.toSelection, inclusiveEnd=true)
-  if c.len == 0:
-    return
-
-  let (open, close, last) = case c[0]
-    of '(': ('(', ')', true)
-    of '{': ('{', '}', true)
-    of '[': ('[', ']', true)
-    of '<': ('<', '>', true)
-    of ')': ('(', ')', false)
-    of '}': ('{', '}', false)
-    of ']': ('[', ']', false)
-    of '>': ('<', '>', false)
-    of '"': ('"', '"', true)
-    of '\'': ('\'', '\'', true)
-    else: return
-
-  let selection = editor.vimMotionSurround(editor.selection.last, 0, open, close, false)
-  if last:
-    editor.selection = selection.last.toSelection
+  let which = if editor.mode == "visual" or editor.mode == "visual-line":
+    SelectionCursor.Last
   else:
-    editor.selection = selection.first.toSelection
+    SelectionCursor.Both
+
+  editor.selections = editor.selections.mapIt(block:
+    let c = editor.charAt(it.last)
+    let (open, close, last) = case c
+      of '(': ('(', ')', true)
+      of '{': ('{', '}', true)
+      of '[': ('[', ']', true)
+      of '<': ('<', '>', true)
+      of ')': ('(', ')', false)
+      of '}': ('{', '}', false)
+      of ']': ('[', ']', false)
+      of '>': ('<', '>', false)
+      of '"': ('"', '"', true)
+      of '\'': ('\'', '\'', true)
+      else: return
+
+    let selection = editor.vimMotionSurround(it.last, 0, open, close, false)
+
+    if last:
+      selection.last.toSelection(it, which)
+    else:
+      selection.first.toSelection(it, which)
+  )
 
   editor.scrollToCursor Last
   editor.updateTargetColumn()
@@ -410,8 +410,8 @@ addCustomTextMove "vim-surround-(-inner", vimMotionSurroundParensInner
 addCustomTextMove "vim-surround-(-outer", vimMotionSurroundParensOuter
 addCustomTextMove "vim-surround-[-inner", vimMotionSurroundBracketsInner
 addCustomTextMove "vim-surround-[-outer", vimMotionSurroundBracketsOuter
-addCustomTextMove "vim-surround-<-inner", vimMotionSurroundAngleInner
-addCustomTextMove "vim-surround-<-outer", vimMotionSurroundAngleOuter
+addCustomTextMove "vim-surround-angle-inner", vimMotionSurroundAngleInner
+addCustomTextMove "vim-surround-angle-outer", vimMotionSurroundAngleOuter
 addCustomTextMove "vim-surround-\"-inner", vimMotionSurroundDoubleQuotesInner
 addCustomTextMove "vim-surround-\"-outer", vimMotionSurroundDoubleQuotesOuter
 addCustomTextMove "vim-surround-'-inner", vimMotionSurroundSingleQuotesInner
@@ -705,7 +705,6 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
       editor.clearCurrentCommandHistory(retainLast=true)
 
     selectLines = newMode == "visual-line"
-
     vimCursorIncludeEol = newMode == "insert"
     vimCurrentUndoCheckpoint = if newMode == "insert": "word" else: "insert"
 
@@ -1035,6 +1034,8 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextObjectCommand "", ")", "vim-surround-("
   addTextObjectCommand "", "[", "vim-surround-["
   addTextObjectCommand "", "]", "vim-surround-["
+  addTextObjectCommand "", r"\<", "vim-surround-angle"
+  addTextObjectCommand "", r"\>", "vim-surround-angle"
   addTextObjectCommand "", "\"", "vim-surround-\""
   addTextObjectCommand "", "'", "vim-surround-'"
 
@@ -1094,8 +1095,8 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   addTextCommand "", "<ENTER>", "insert-text", "\n"
 
-  addTextCommand "", "\\>\\>", "indent"
-  addTextCommand "", "\\<\\<", "unindent"
+  addTextCommand "", r"\>\>", "indent"
+  addTextCommand "", r"\<\<", "unindent"
 
   addTextCommandBlock "normal", "s":
     editor.setMode "visual"
@@ -1171,8 +1172,8 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   addTextCommand "visual", "<?-count><text_object>", """vim-select-move <text_object> <#count>"""
 
-  addTextCommand "visual", "\\>", "indent"
-  addTextCommand "visual", "\\<", "unindent"
+  addTextCommand "visual", r"\>", "indent"
+  addTextCommand "visual", r"\<", "unindent"
 
   # Visual line mode
   addTextCommandBlock "", "V":
@@ -1190,8 +1191,8 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   addTextCommand "visual-line", "<?-count><text_object>", """vim-select-move <text_object> <#count>"""
 
-  addTextCommand "visual-line", "\\>", "indent"
-  addTextCommand "visual-line", "\\<", "unindent"
+  addTextCommand "visual-line", r"\>", "indent"
+  addTextCommand "visual-line", r"\<", "unindent"
 
   # todo: not really vim keybindings
   addTextCommand "", "gd", "goto-definition"
@@ -1228,12 +1229,11 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   addTextCommand "", "<C-k><C-a>", "clear-diagnostics"
   addTextCommand "", "<C-k><C-u>", "print-undo-history"
-  addTextCommand "", "<C-k><C-t>", "print-treesitter-tree"
   addTextCommand "", "<C-k><C-d>", "print-treesitter-tree-under-cursor"
-  addTextCommand "", "<C-k><C-r>", "reload-treesitter"
+  addTextCommand "", "<C-k><C-t>", "reload-treesitter"
   addTextCommandBlock "", "<C-k><C-l>": lspToggleLogServerDebug()
   addCommand "editor", "<C-k><C-e>", "toggle-flag", "editor.text.highlight-treesitter-errors"
-  addTextCommandBlock "", "<C-k><C-k>": printStatistics()
+  addCommand "editor", "<C-k><C-r>", "reload-config"
   addTextCommandBlock "", "<C-k><C-z>": collectGarbage()
 
   addTextCommandBlock "", "gt":
