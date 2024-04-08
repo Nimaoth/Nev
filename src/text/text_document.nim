@@ -166,7 +166,7 @@ proc getLine*(self: TextDocument, line: int): string =
   return ""
 
 proc lineLength*(self: TextDocument, line: int): int =
-  if line < self.lines.len:
+  if line >= 0 and line < self.lines.len:
     return self.lines[line].len
   return 0
 
@@ -1117,9 +1117,13 @@ proc lastNonWhitespace*(str: string): int =
     result -= 1
 
 proc getIndentForLine*(self: TextDocument, line: int): int =
+  if line < 0 or line >= self.lines.len:
+    return 0
   return self.lines[line].firstNonWhitespace
 
 proc getIndentLevelForLine*(self: TextDocument, line: int): int =
+  if line < 0 or line >= self.lines.len:
+    return 0
   let indentWidth = self.indentStyle.indentWidth(self.tabWidth)
   return indentLevelForLine(self.lines[line], self.tabWidth, indentWidth)
 
