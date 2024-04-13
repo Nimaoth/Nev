@@ -5,6 +5,10 @@ import util
 
 template getter*() {.pragma.}
 
+template addAst*(node: NimNode, args: varargs[untyped]): untyped =
+  let temp = genAst(args)
+  node.add temp
+
 proc getPragmaNode*(node: NimNode): Option[NimNode] =
   result = NimNode.none
   if node.kind == nnkIdentDefs and node[0].kind == nnkPragmaExpr:

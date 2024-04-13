@@ -42,7 +42,7 @@ proc getVimDefaultRegister*(): string =
   case getVimClipboard():
   of "unnamed": return "*"
   of "unnamedplus": return "+"
-  else: return "\""
+  else: return ""
 
 proc getCurrentMacroRegister*(): string = getOption("editor.current-macro-register", "")
 
@@ -94,11 +94,11 @@ proc vimRedo(editor: TextDocumentEditor) {.expose("vim-redo").} =
   else:
     editor.setMode "normal"
 
-proc copySelection(editor: TextDocumentEditor): Selections =
+proc copySelection(editor: TextDocumentEditor, register: string = ""): Selections =
   ## Copies the selected text
   ## If line selection mode is enabled then it also extends the selection so that deleting it will also delete the line itself
   yankedLines = selectLines
-  editor.copy(inclusiveEnd=true)
+  editor.copy(register, inclusiveEnd=true)
   let selections = editor.selections
   if selectLines:
     editor.selections = editor.selections.mapIt (
@@ -144,7 +144,7 @@ proc vimChangeSelection*(editor: TextDocumentEditor, forceInclusiveEnd: bool, ol
   editor.setMode "insert"
 
 proc vimYankSelection*(editor: TextDocumentEditor) {.expose("vim-yank-selection").} =
-  let selections = editor.copySelection()
+  let selections = editor.copySelection(getVimDefaultRegister())
   editor.selections = selections
   editor.setMode "normal"
 
@@ -631,7 +631,7 @@ proc vimMoveToStartOfLine(editor: TextDocumentEditor, count: int = 1) =
   editor.scrollToCursor Last
   editor.updateTargetColumn()
 
-proc vimPaste(editor: TextDocumentEditor, register: string = "") {.expose("vim-paste").} =
+proc vimPaste(editor: TextDocumentEditor, pasteRight: bool = false, inclusiveEnd: bool = false, register: string = "") {.expose("vim-paste").} =
   # infof"vimPaste {register}, lines: {yankedLines}"
   editor.addNextCheckpoint "insert"
 
@@ -643,12 +643,11 @@ proc vimPaste(editor: TextDocumentEditor, register: string = "") {.expose("vim-p
       editor.moveLast "line", Both
       editor.insertText "\n", autoIndent=false
 
-  let isVisualMode = editor.mode == "visual" or editor.mode == "visual-line"
-  if not isVisualMode:
+  if pasteRight:
     editor.selections = editor.selections.mapIt(editor.doMoveCursorColumn(it.last, 1, wrap=false).toSelection)
 
   editor.setMode "normal"
-  editor.paste register, inclusiveEnd=isVisualMode
+  editor.paste register, inclusiveEnd=inclusiveEnd
 
 proc vimCloseCurrentViewOrQuit() {.expose("vim-close-current-view-or-quit").} =
   let openEditors = getOpenEditors().len + getHiddenEditors().len
@@ -1091,7 +1090,9 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   addTextCommand "", "u", "vim-undo"
   addTextCommand "", "<C-r>", "vim-redo"
-  addTextCommand "", "p", "vim-paste"
+  addTextCommand "", "p", "vim-paste", pasteRight=true, inclusiveEnd=false
+  addTextCommand "visual", "p", "vim-paste", pasteRight=false, inclusiveEnd=true
+  addTextCommand "visual-line", "p", "vim-paste", pasteRight=false, inclusiveEnd=true
 
   addTextCommand "", "<ENTER>", "insert-text", "\n"
 
@@ -1128,11 +1129,11 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommand "insert", "<C-r>", "set-mode", "insert-register"
   setHandleInputs "editor.text.insert-register", true
   setTextInputHandler "insert-register", proc(editor: TextDocumentEditor, input: string): bool =
-    editor.vimPaste input
+    editor.vimPaste register=input, inclusiveEnd=true
     editor.setMode "insert"
     return true
   addTextCommandBlock "insert-register", "<SPACE>":
-    editor.vimPaste getVimDefaultRegister()
+    editor.vimPaste register=getVimDefaultRegister(), inclusiveEnd=true
     editor.setMode "insert"
   addTextCommand "insert-register", "<ESCAPE>", "set-mode", "insert"
 

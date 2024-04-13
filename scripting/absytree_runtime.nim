@@ -1,5 +1,5 @@
 import std/[strformat, tables, macros, json, strutils, sugar, sequtils, genasts]
-import misc/[event, util, myjsonutils]
+import misc/[event, util, myjsonutils, macro_utils]
 import absytree_api, script_expose
 
 export absytree_api, util, strformat, tables, json, strutils, sugar, sequtils, scripting_api, script_expose
@@ -176,12 +176,18 @@ proc setOption*[T](path: string, value: T) =
 proc bindArgs*(args: NimNode): tuple[stmts: NimNode, arg: NimNode] =
   var stmts = nnkStmtList.newTree()
   let str = nskVar.genSym "str"
-  stmts.add quote do:
-    var `str` = ""
+  stmts.addAst(str):
+    var str = ""
   for arg in args:
-    stmts.add quote do:
-      `str`.add " "
-      `str`.add `arg`.toJsonString
+    if arg.kind == nnkExprEqExpr:
+      # todo: check name
+      stmts.addAst(str, arg = arg[1]):
+        str.add " "
+        str.add arg.toJsonString
+    else:
+      stmts.addAst(str, arg):
+        str.add " "
+        str.add arg.toJsonString
 
   return (stmts, str)
 
