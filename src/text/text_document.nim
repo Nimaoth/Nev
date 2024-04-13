@@ -1318,10 +1318,13 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
 
     if record:
       if checkInsertedTextForCheckpoint:
-        # echo fmt"kind: {self.undoOps.last.kind}, len: {self.undoOps.last.children.len} == {result.len}, child kind: {self.undoOps.last.children[i].kind}, cursor {self.undoOps.last.children[i].selection.last} != {oldCursor}"
+        # echo fmt"'{text}', undo ops: {self.undoOps.len}, i: {i}"
+        # if self.undoOps.len > 0:
+        #   echo fmt"result.len: {result.len}, oldCursor: {oldCursor}, {self.undoOps.last}"
+
         if text.len > 1:
           startNewCheckpoint = true
-        elif self.undoOps.len > 0 and self.undoOps.last.kind == Nested and self.undoOps.last.children.len == result.len and result.len > i and self.undoOps.last.children[i].kind == Delete:
+        elif text.len > 0 and self.undoOps.len > 0 and self.undoOps.last.kind == Nested and self.undoOps.last.children.len == result.len and result.len > i and self.undoOps.last.children[i].kind == Delete:
           if self.undoOps.last.children[i].selection.last != oldCursor:
             startNewCheckpoint = true
           else:

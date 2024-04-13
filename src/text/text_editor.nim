@@ -965,6 +965,7 @@ proc printUndoHistory*(self: TextDocumentEditor, max: int = 50) {.expose("editor
     debugf"undo: {self.document.undoOps[i]}"
 
 proc copyAsync*(self: TextDocumentEditor, register: string, inclusiveEnd: bool): Future[void] {.async.} =
+  log lvlInfo, fmt"copy register into '{register}', inclusiveEnd: {inclusiveEnd}"
   var text = ""
   for i, selection in self.selections:
     if i > 0:
@@ -977,6 +978,7 @@ proc copy*(self: TextDocumentEditor, register: string = "", inclusiveEnd: bool =
   asyncCheck self.copyAsync(register, inclusiveEnd)
 
 proc pasteAsync*(self: TextDocumentEditor, register: string, inclusiveEnd: bool = false): Future[void] {.async.} =
+  log lvlInfo, fmt"paste register from '{register}', inclusiveEnd: {inclusiveEnd}"
   let text = self.app.getRegisterTextAsync(register).await
 
   let numLines = text.count('\n') + 1
@@ -1905,7 +1907,7 @@ proc showCompletionWindow(self: TextDocumentEditor) =
   if not self.updateCompletionsTask.isActive:
     self.updateCompletionsTask.reschedule()
 
-  log lvlInfo, fmt"showCompletions {self.document.filename}"
+  # log lvlInfo, fmt"showCompletions {self.document.filename}"
   self.showCompletions = true
   self.markDirty()
 
@@ -1949,7 +1951,7 @@ proc gotoSymbol*(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncCheck self.gotoSymbolAsync()
 
 proc hideCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
-  log lvlInfo, fmt"hideCompletions {self.document.filename}"
+  # log lvlInfo, fmt"hideCompletions {self.document.filename}"
   self.showCompletions = false
   if self.updateCompletionsTask.isNotNil:
     self.updateCompletionsTask.pause()
