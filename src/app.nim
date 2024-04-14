@@ -1705,7 +1705,7 @@ proc chooseTheme*(self: App) {.expose("editor").} =
     self.platform.requestRender()
   let originalTheme = self.theme.path
 
-  var popup = newSelectorPopup(self.asAppInterface)
+  var popup = newSelectorPopup(self.asAppInterface, "theme".some)
   popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
     let themesDir = fs.getApplicationFilePath("./themes")
     for file in walkDirRec(themesDir, relative=true):
@@ -1722,11 +1722,12 @@ proc chooseTheme*(self: App) {.expose("editor").} =
       gTheme = theme
       self.platform.requestRender(true)
 
-  popup.handleItemConfirmed = proc(item: SelectorItem) =
+  popup.handleItemConfirmed = proc(item: SelectorItem): bool =
     if theme.loadFromFile(item.ThemeSelectorItem.path).getSome(theme):
       self.theme = theme
       gTheme = theme
       self.platform.requestRender(true)
+    return true
 
   popup.handleCanceled = proc() =
     if theme.loadFromFile(originalTheme).getSome(theme):
@@ -1776,7 +1777,7 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
-  var popup = newSelectorPopup(self.asAppInterface)
+  var popup = newSelectorPopup(self.asAppInterface, "file".some)
   var sortCancellationToken = newCancellationToken()
 
   var ignorePatterns = self.gitIgnorePatterns
@@ -1869,7 +1870,7 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
       if cancellationToken.canceled or popup.textEditor.isNil:
         return
 
-  popup.handleItemConfirmed = proc(item: SelectorItem) =
+  popup.handleItemConfirmed = proc(item: SelectorItem): bool =
     case view
     of "current":
       if item.FileSelectorItem.workspaceFolder.isSome:
@@ -1883,6 +1884,7 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
         discard self.openFile(item.FileSelectorItem.path)
     else:
       log(lvlError, fmt"Unknown argument {view}")
+    return true
 
   popup.updateCompletions()
   popup.sortFunction = proc(a, b: SelectorItem): int = cmp(a.FileSelectorItem.score, b.FileSelectorItem.score)
@@ -1894,7 +1896,7 @@ proc chooseOpen*(self: App, view: string = "new") {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
-  var popup = newSelectorPopup(self.asAppInterface)
+  var popup = newSelectorPopup(self.asAppInterface, "open".some)
   popup.scale.x = 0.3
 
   popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
@@ -1909,7 +1911,7 @@ proc chooseOpen*(self: App, view: string = "new") {.expose("editor").} =
 
     result.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Ascending)
 
-  popup.handleItemConfirmed = proc(item: SelectorItem) =
+  popup.handleItemConfirmed = proc(item: SelectorItem): bool =
     case view
     of "current":
       if item.FileSelectorItem.workspaceFolder.isSome:
@@ -1923,6 +1925,7 @@ proc chooseOpen*(self: App, view: string = "new") {.expose("editor").} =
         discard self.openFile(item.FileSelectorItem.path)
     else:
       log(lvlError, fmt"Unknown argument {view}")
+    return true
 
   popup.updateCompletions()
 
@@ -1969,13 +1972,13 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
-  var popup = newSelectorPopup(self.asAppInterface)
+  var popup = newSelectorPopup(self.asAppInterface, "search".some)
   popup.scale.x = 0.75
 
   popup.getCompletionsAsync = proc(popup: SelectorPopup, text: string): Future[seq[SelectorItem]] =
     return popup.searchWorkspace(self.workspace.folders[0], query, text)
 
-  popup.handleItemConfirmed = proc(item: SelectorItem) =
+  popup.handleItemConfirmed = proc(item: SelectorItem): bool =
     let editor = if item.FileSelectorItem.workspaceFolder.isSome:
       self.openWorkspaceFile(item.FileSelectorItem.path, item.FileSelectorItem.workspaceFolder.get)
     else:
@@ -1984,6 +1987,7 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
     if editor.getSome(editor) and editor of TextDocumentEditor:
       editor.TextDocumentEditor.targetSelection = (item.SearchFileSelectorItem.line - 1, item.SearchFileSelectorItem.column - 1).toSelection
       editor.TextDocumentEditor.centerCursor()
+    return true
 
   popup.updateCompletions()
   popup.sortFunction = proc(a, b: SelectorItem): int = cmp(a.FileSelectorItem.score, b.FileSelectorItem.score)
@@ -2085,13 +2089,13 @@ proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
     else:
       WorkspaceFolder.none
 
-    var popup = newSelectorPopup(self.asAppInterface)
+    var popup = newSelectorPopup(self.asAppInterface, "git".some)
     popup.scale.x = 0.3
 
     popup.getCompletionsAsync = proc(popup: SelectorPopup, text: string): Future[seq[SelectorItem]] =
       return getChangedFilesFromGitAsync(popup, text, workspace)
 
-    popup.handleItemConfirmed = proc(item: SelectorItem) =
+    popup.handleItemConfirmed = proc(item: SelectorItem): bool =
       let item = item.GitFileSelectorItem
 
       if item.info.stagedStatus != None:
@@ -2106,6 +2110,7 @@ proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
         if currentVersionEditor.getSome(editor):
           if editor of TextDocumentEditor:
             editor.TextDocumentEditor.updateDiff()
+      return true
 
     popup.addCustomCommand "stage-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
       if popup.textEditor.isNil:
@@ -2148,6 +2153,91 @@ proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
 
     self.pushPopup popup
 
+type ExplorerFileSelectorItem* = ref object of FileSelectorItem
+  isFile*: bool = false
+
+proc exploreFiles*(self: App) {.expose("editor").} =
+  when defined(js):
+    log lvlError, fmt"exploreFiles not implemented yet for js backend"
+    return
+  else:
+    defer:
+      self.platform.requestRender()
+
+    if self.workspace.folders.len == 0:
+      log lvlError, &"Failed to open file explorer, no workspace"
+      return
+
+    let workspace = self.workspace.folders[0]
+
+    var popup = newSelectorPopup(self.asAppInterface, "file-explorer".some)
+    popup.scale.x = 0.4
+
+    let currentDirectory = new string
+    currentDirectory[] = ""
+
+    popup.getCompletionsAsync = proc(popup: SelectorPopup, text: string): Future[seq[SelectorItem]] {.async.} =
+      if popup.updateInProgress:
+        return popup.completions
+
+      popup.updateInProgress = true
+      defer:
+        popup.updateInProgress = false
+
+      if not popup.updated:
+        let listing = await workspace.getDirectoryListing(currentDirectory[])
+        if popup.textEditor.isNil:
+          return
+
+        var completions = newSeq[SelectorItem]()
+
+        for file in listing.files:
+          let score = matchFuzzySublime(text, file, defaultPathMatchingConfig).score.float
+          completions.add ExplorerFileSelectorItem(path: file, name: "F🗎 " & file, isFile: true, score: score, workspaceFolder: workspace.some)
+
+        for dir in listing.folders:
+          let score = matchFuzzySublime(text, dir, defaultPathMatchingConfig).score.float
+          completions.add ExplorerFileSelectorItem(path: dir, name: "D🗁 " & dir, isFile: false, score: score, workspaceFolder: workspace.some)
+
+        return completions
+      else:
+        for item in popup.completions.mitems:
+          item.hasCompletionMatchPositions = false
+          item.score = matchFuzzySublime(text, item.ExplorerFileSelectorItem.path, defaultPathMatchingConfig).score.float
+        return popup.completions
+
+    popup.handleItemConfirmed = proc(item: SelectorItem): bool =
+      let item = item.ExplorerFileSelectorItem
+      if item.isFile:
+        if item.workspaceFolder.isSome:
+          discard self.openWorkspaceFile(item.path, item.workspaceFolder.get)
+        else:
+          discard self.openFile(item.path)
+        return true
+      else:
+        currentDirectory[] = item.path
+        popup.textEditor.document.content = ""
+        popup.updated = false
+        popup.updateCompletions()
+        return false
+
+    popup.addCustomCommand "go-up", proc(popup: SelectorPopup, args: JsonNode): bool =
+      let parent = currentDirectory[].parentDir
+      log lvlInfo, fmt"go up: {currentDirectory[]} -> {parent}"
+      currentDirectory[] = parent
+
+      popup.textEditor.document.content = ""
+
+      popup.updated = false
+      popup.updateCompletions()
+      return false
+
+    popup.sortFunction = proc(a, b: SelectorItem): int = cmp(a.FileSelectorItem.score, b.FileSelectorItem.score)
+    popup.updateCompletions()
+    popup.enableAutoSort()
+
+    self.pushPopup popup
+
 type TextSymbolSelectorItem* = ref object of SelectorItem
   symbol*: Symbol
 
@@ -2180,9 +2270,10 @@ proc openSymbolsPopup*(self: App, symbols: seq[Symbol], handleItemSelected: proc
     let symbol = item.TextSymbolSelectorItem.symbol
     handleItemSelected(symbol)
 
-  popup.handleItemConfirmed = proc(item: SelectorItem) =
+  popup.handleItemConfirmed = proc(item: SelectorItem): bool =
     let symbol = item.TextSymbolSelectorItem.symbol
     handleItemConfirmed(symbol)
+    return true
 
   popup.handleCanceled = handleCanceled
 

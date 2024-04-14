@@ -25,7 +25,7 @@ type
     selected*: int
     scrollOffset*: int
     completions*: seq[SelectorItem]
-    handleItemConfirmed*: proc(item: SelectorItem)
+    handleItemConfirmed*: proc(item: SelectorItem): bool
     handleItemSelected*: proc(item: SelectorItem)
     handleCanceled*: proc()
     getCompletions*: CompletionProviderSync
@@ -33,6 +33,8 @@ type
     getCompletionsAsyncIter*: CompletionProviderAsyncIter
     lastContentBounds*: Rect
     lastItems*: seq[tuple[index: int, bounds: Rect]]
+
+    customEventHandler: EventHandler
 
     scale*: Vec2
 
@@ -93,6 +95,10 @@ proc getSearchString*(self: SelectorPopup): string =
 
 proc autoSort(self: SelectorPopup) {.async.} =
   if self.textEditor.isNil:
+    return
+
+  if self.sortFunction.isNil:
+    log lvlError, &"No sort function specified for popup"
     return
 
   self.autoSortActive = true
@@ -171,7 +177,9 @@ proc getItemAtPixelPosition(self: SelectorPopup, posWindow: Vec2): Option[Select
 method getEventHandlers*(self: SelectorPopup): seq[EventHandler] =
   if self.textEditor.isNil:
     return @[]
-  return self.textEditor.getEventHandlers(initTable[string, EventHandler]()) & @[self.eventHandler]
+  result = self.textEditor.getEventHandlers(initTable[string, EventHandler]()) & @[self.eventHandler]
+  if self.customEventHandler.isNotNil:
+    result.add self.customEventHandler
 
 proc getSelectorPopup(wrapper: api.SelectorPopup): Option[SelectorPopup] =
   if gAppInterface.isNil: return SelectorPopup.none
@@ -221,7 +229,10 @@ proc accept*(self: SelectorPopup) {.expose("popup.selector").} =
     return
 
   if not self.handleItemConfirmed.isNil and self.selected < self.completions.len:
-    self.handleItemConfirmed self.completions[self.completions.high - self.selected]
+    let handled = self.handleItemConfirmed self.completions[self.completions.high - self.selected]
+    if not handled:
+      return
+
   self.app.popPopup(self)
 
 proc cancel*(self: SelectorPopup) {.expose("popup.selector").} =
@@ -315,7 +326,8 @@ method handleMousePress*(self: SelectorPopup, button: MouseButton, mousePosWindo
   if button == MouseButton.Left:
     if self.getItemAtPixelPosition(mousePosWindow).getSome(item):
       if not self.handleItemConfirmed.isNil:
-        self.handleItemConfirmed(item)
+        if not self.handleItemConfirmed(item):
+          return
 
       self.app.popPopup(self)
 
@@ -325,7 +337,7 @@ method handleMouseRelease*(self: SelectorPopup, button: MouseButton, mousePosWin
 method handleMouseMove*(self: SelectorPopup, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) =
   discard
 
-proc newSelectorPopup*(app: AppInterface): SelectorPopup =
+proc newSelectorPopup*(app: AppInterface, scopeName: Option[string] = string.none): SelectorPopup =
   var popup = SelectorPopup(app: app)
   popup.scale = vec2(0.5, 0.5)
   popup.textEditor = newTextEditor(newTextDocument(app.configProvider, createLanguageServer=false), app, app.configProvider)
@@ -344,5 +356,12 @@ proc newSelectorPopup*(app: AppInterface): SelectorPopup =
       popup.handleAction action, arg
     onInput:
       Ignored
+
+  if scopeName.isSome:
+    popup.customEventHandler = eventHandler(app.getEventHandlerConfig("popup.selector." & scopeName.get)):
+      onAction:
+        popup.handleAction action, arg
+      onInput:
+        Ignored
 
   return popup

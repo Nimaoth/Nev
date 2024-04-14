@@ -165,8 +165,9 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
   addCommand "editor", "<LEADER><LEADER>", "command-line"
   addCommand "editor", "<LEADER>gt", "choose-theme"
   addCommand "editor", "<LEADER>gf", "choose-file", "new"
-  addCommand "editor", "<LEADER>ge", "choose-open", "new"
+  addCommand "editor", "<LEADER>go", "choose-open", "new"
   addCommand "editor", "<LEADER>gg", "choose-git-active-files", "new"
+  addCommand "editor", "<LEADER>ge", "explore-files"
   addCommandBlock "editor", "<LEADER>gl":
     runAction "logs"
     if getActiveEditor().isTextEditor(ed):
@@ -209,11 +210,17 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
   addCommand "popup.selector", "<DOWN>", "next"
   addCommand "popup.selector", "<C-u>", "prev-x"
   addCommand "popup.selector", "<C-d>", "next-x"
-  addCommandBlock "popup.selector", "<C-x>":
+
+  addCommandBlock "popup.selector.open", "<C-x>":
     if getActivePopup().isSelectorPopup(popup):
       let item = popup.getSelectedItem()
       closeEditor(item["path"].getStr)
       popup.updateCompletions()
+
+  addCommand "popup.selector.git", "<C-a>", "stage-selected"
+  addCommand "popup.selector.git", "<C-u>", "unstage-selected"
+  addCommand "popup.selector.git", "<C-r>", "revert-selected"
+  addCommand "popup.selector.file-explorer", "<C-UP>", "go-up"
 
   # addCommand "editor.text", "<C-SPACE>ts", "reload-treesitter"
 
