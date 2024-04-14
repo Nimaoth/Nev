@@ -230,7 +230,7 @@ proc getTypeface*(self: GuiPlatform, font: string): Typeface =
     self.typefaces[font] = typeface
 
     # todo: make path configurable
-    const emojiFont = "fonts/NotoEmoji.otf"
+    const emojiFont = "fonts/NotoEmoji/NotoEmoji.otf"
     if font != emojiFont:
       typeface.fallbacks.add self.getTypeface(emojiFont)
 
