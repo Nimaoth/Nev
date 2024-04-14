@@ -2174,8 +2174,8 @@ proc getItemsFromDirectory(popup: SelectorPopup, workspace: WorkspaceFolder, dir
     var completions = newSeq[SelectorItem]()
 
     # todo: use unicode icons on all targets once rendering is fixed
-    const fileIcon = when defined(js): "🗎" else: "F"
-    const folderIcon = when defined(js): "🗀" else: "D"
+    const fileIcon = when defined(js): "🗎" else: "🗒"
+    const folderIcon = when defined(js): "🗀" else: "🧰"
 
     for file in listing.files:
       let score = matchFuzzySublime(text, file, defaultPathMatchingConfig).score.float
