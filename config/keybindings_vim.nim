@@ -1256,7 +1256,3 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     editor.centerCursor()
   addTextCommand "", "gx", "close-diff"
   addTextCommand "", "gc", "update-diff"
-
-  addCommand "popup.selector", "<C-a>", "stage-selected"
-  addCommand "popup.selector", "<C-u>", "unstage-selected"
-  addCommand "popup.selector", "<C-r>", "revert-selected"

@@ -744,6 +744,13 @@ proc chooseGitActiveFiles*() =
       argsJsonString.cstring)
 
 
+proc editor_exploreFiles_void_App_wasm(arg: cstring): cstring {.importc.}
+proc exploreFiles*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_exploreFiles_void_App_wasm(argsJsonString.cstring)
+
+
 proc editor_openPreviousEditor_void_App_wasm(arg: cstring): cstring {.importc.}
 proc openPreviousEditor*() =
   var argsJson = newJArray()
