@@ -377,7 +377,7 @@ proc visualColumnToCursorColumn*(self: TextDocument, line: int, visualColumn: in
   let tabWidth = self.tabWidth
 
   for i, c in line:
-    result = i
+    result = line.runeStart(i)
 
     if c == '\t':
       column = align(column + 1, tabWidth)
