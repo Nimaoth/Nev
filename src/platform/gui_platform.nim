@@ -9,6 +9,8 @@ export platform
 
 logCategory "gui-platform"
 
+const logDeletedImageCount = false
+
 type
   GuiPlatform* = ref object of Platform
     window: Window
@@ -402,8 +404,14 @@ method render*(self: GuiPlatform) =
   # Clear the screen and begin a new frame.
   self.boxy.beginFrame(self.window.size, clearFrame=false)
 
+  var count = 0
   for image in self.glyphCache.removedKeys:
     self.boxy.removeImage($image)
+    inc count
+
+  if logDeletedImageCount and count > 0:
+    log lvlInfo, fmt"Cleared {count} images from cache"
+
   self.glyphCache.clearRemovedKeys()
 
   if self.ctx.fontSize != self.lastFontSize:
