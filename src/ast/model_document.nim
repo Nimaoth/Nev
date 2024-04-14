@@ -3263,9 +3263,10 @@ proc chooseLanguageFromUser*(self: ModelDocumentEditor, languages: openArray[Lan
     items.sort((a, b) => cmp(a.score, b.score), Descending)
     return items
 
-  popup.handleItemConfirmed = proc(item: SelectorItem) =
+  popup.handleItemConfirmed = proc(item: SelectorItem): bool =
     let language = item.ModelLanguageSelectorItem.language
     handleConfirmed(language)
+    return true
 
   popup.updateCompletions()
 
@@ -3335,10 +3336,11 @@ proc addModelToProject*(self: ModelDocumentEditor) {.expose("editor.model").} =
 
     # result.sort((a, b) => cmp(a.score, b.score), Descending)
 
-  popup.handleItemConfirmed = proc(item: SelectorItem) =
+  popup.handleItemConfirmed = proc(item: SelectorItem): bool =
     log lvlInfo, fmt"Import model {item.ModelImportSelectorItem.name} ({item.ModelImportSelectorItem.model}) to model {self.document.model.id}"
     let path = item.ModelImportSelectorItem.name
     asyncCheck self.document.project.loadModelAsync(path)
+    return true
 
   popup.updateCompletions()
   popup.sortFunction = proc(a, b: SelectorItem): int = cmp(a.score, b.score)
@@ -3379,7 +3381,7 @@ proc importModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
 
     # result.sort((a, b) => cmp(a.score, b.score), Descending)
 
-  popup.handleItemConfirmed = proc(item: SelectorItem) =
+  popup.handleItemConfirmed = proc(item: SelectorItem): bool =
     log lvlInfo, fmt"Import model {item.ModelImportSelectorItem.name} ({item.ModelImportSelectorItem.model}) to model {self.document.model.id}"
     let modelId = item.ModelImportSelectorItem.model
     if modelId == baseInterfacesModel.id:
@@ -3400,6 +3402,7 @@ proc importModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
     if self.document.project.getModel(modelId).getSome(model):
       log lvlInfo, fmt"Add imported model {model.path} ({model.id})"
       self.document.model.addImport(model)
+    return true
 
   popup.updateCompletions()
   popup.sortFunction = proc(a, b: SelectorItem): int = cmp(a.score, b.score)
@@ -3460,7 +3463,7 @@ proc addRootNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
         let score = matchPath(name, text)
         result.add ModelNodeClassSelectorItem(name: name, class: rootNodeClass, score: score)
 
-  popup.handleItemConfirmed = proc(item: SelectorItem) =
+  popup.handleItemConfirmed = proc(item: SelectorItem): bool =
     log lvlInfo, fmt"Add root node of class {item.ModelNodeClassSelectorItem.name} to model {self.document.model.id}"
     let class = item.ModelNodeClassSelectorItem.class
 
@@ -3472,6 +3475,7 @@ proc addRootNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
     self.cursor = self.getFirstEditableCellOfNode(self.document.model.rootNodes.last).get
     self.updateScrollOffset(true)
     self.markDirty()
+    return true
 
   popup.updateCompletions()
   popup.sortFunction = proc(a, b: SelectorItem): int = cmp(a.score, b.score)
@@ -3575,7 +3579,7 @@ proc findDeclaration*(self: ModelDocumentEditor, global: bool) {.expose("editor.
         editor.markDirty()
         self.app.tryActivateEditor(editor)
 
-  popup.handleItemConfirmed = proc(item: SelectorItem) =
+  popup.handleItemConfirmed = proc(item: SelectorItem): bool =
     log lvlInfo, fmt"Select node {item.AstNodeSelectorItem.name}"
     let node = item.AstNodeSelectorItem.node
 
@@ -3593,6 +3597,7 @@ proc findDeclaration*(self: ModelDocumentEditor, global: bool) {.expose("editor.
         editor.updateScrollOffset(true)
         editor.markDirty()
         self.app.tryActivateEditor(editor)
+    return true
 
   popup.updateCompletions()
   popup.sortFunction = proc(a, b: SelectorItem): int = cmp(a.score, b.score)
