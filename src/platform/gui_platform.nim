@@ -55,7 +55,7 @@ method getStatisticsString*(self: GuiPlatform): string =
   result.add &"Drawn Nodes: {self.drawnNodes.len}\n"
 
 method init*(self: GuiPlatform) =
-  self.glyphCache = newLruCache[Rune, string](1000, true)
+  self.glyphCache = newLruCache[Rune, string](5000, true)
   self.window = newWindow("Absytree", ivec2(2000, 1000), vsync=false)
   self.window.runeInputEnabled = true
   self.supportsThinCursor = true
@@ -118,6 +118,16 @@ method init*(self: GuiPlatform) =
     else:
       let arrangement = font.typeset(text)
       result = arrangement.layoutBounds()
+
+  self.builder.textWidthImpl = proc(node: UINode): float32 =
+    let font = self.getFont(self.ctx.fontSize, node.flags)
+    let arrangement = font.typeset(node.text)
+    result = arrangement.layoutBounds().x
+
+  self.builder.textWidthStringImpl = proc(text: string): float32 =
+    let font = self.getFont(self.ctx.fontSize, 0.UINodeFlags)
+    let arrangement = font.typeset(text)
+    result = arrangement.layoutBounds().x
 
   self.window.onFocusChange = proc() =
     inc self.eventCounter
@@ -212,14 +222,24 @@ method requestRender*(self: GuiPlatform, redrawEverything = false) =
   self.requestedRender = true
   self.redrawEverything = self.redrawEverything or redrawEverything
 
+proc getTypeface*(self: GuiPlatform, font: string): Typeface =
+  if font notin self.typefaces:
+    var typeface = readTypeface(fs.getApplicationFilePath(font))
+    self.typefaces[font] = typeface
+
+    # todo: make path configurable
+    const emojiFont = "fonts/NotoEmoji.otf"
+    if font != emojiFont:
+      typeface.fallbacks.add self.getTypeface(emojiFont)
+
+  result = self.typefaces[font]
+
 proc getFont*(self: GuiPlatform, font: string, fontSize: float32): Font =
   if font == "":
     raise newException(PixieError, "No font has been set on this Context")
 
-  if font notin self.typefaces:
-    self.typefaces[font] = readTypeface(fs.getApplicationFilePath(font))
-
-  result = newFont(self.typefaces.getOrDefault(font, nil))
+  let typeface = self.getTypeface(font)
+  result = newFont(typeface)
   result.paint.color = color(1, 1, 1)
   result.size = fontSize
 

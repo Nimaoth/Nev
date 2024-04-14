@@ -11,6 +11,7 @@ bin           = @["ast"]
 
 requires "nim >= 2.0.0"
 requires "https://github.com/Nimaoth/vmath#661bdaa"
+requires "https://github.com/Nimaoth/pixie >= 5.0.7"
 requires "chroma >= 0.2.7"
 requires "winim >= 3.8.1"
 requires "fusion >= 1.2"
@@ -22,7 +23,8 @@ requires "glob#64f71af" # "glob >= 0.11.2" # the newest version of glob doesn't 
 requires "patty >= 0.3.5"
 requires "nimclipboard >= 0.1.2"
 requires "npeg >= 0.12.0"
-# requires "results >= 0.4.0"
+# requires "results >= 0.4.0" # todo: use that at some point?
+# requires "chronos >= 4.0.2" # todo: switch to this at some point
 requires "https://github.com/Nimaoth/ws >= 0.5.0"
 requires "https://github.com/Nimaoth/windy >= 0.0.2"
 requires "https://github.com/Nimaoth/wasm3 >= 0.1.13"

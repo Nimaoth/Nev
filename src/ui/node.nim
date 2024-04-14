@@ -93,6 +93,7 @@ type
 
     mText: string
     mTextRuneLen: int
+    mTextNarrow: bool
 
     mBackgroundColor: Color
     mBorderColor: Color
@@ -123,6 +124,8 @@ type
     nodes: seq[UINode]
     namedNodes: Table[Id, UINode]
 
+    textWidthImpl*: proc(node: UINode): float32
+    textWidthStringImpl*: proc(text: string): float32
     useInvalidation*: bool = false
 
     currentChild*: UINode = nil
@@ -190,12 +193,19 @@ else:
 func lastChange*(node: UINode): int {.inline.} = max(node.mLastContentChange, max(node.mLastPositionChange, max(node.mLastSizeChange, max(node.mLastClearInvalidation, node.mLastDrawInvalidation))))
 func lastSizeChange*(node: UINode): int {.inline.} = node.mLastSizeChange
 
+func isNarrow(text: string): bool =
+  result = true
+  for r in text.runes:
+    if r.int32 > 0xff:
+      return false
+
 proc `text=`*(node: UINode, value: string)           {.inline.} =
   let changed = (value != node.mText)
   node.contentDirty = node.contentDirty or changed
   if changed:
     node.mText = value
     node.mTextRuneLen = value.runeLen.int
+    node.mTextNarrow = node.mText.isNarrow
 
 proc textRuneLen*(node: UINode): int = node.mTextRuneLen
 
@@ -251,6 +261,19 @@ func `lh=`*(node: UINode, value: float32) {.inline.} = node.boundsAbsolute.h = v
 func `pivot=`*(node: UINode, value: Vec2) {.inline.} = node.pivot = value
 
 proc textWidth*(builder: UINodeBuilder, textLen: int): float32 {.inline.} = textLen.float32 * builder.charWidth
+
+proc textWidth*(builder: UINodeBuilder, node: UINode): float32 {.inline.} =
+  if builder.textWidthImpl.isNotNil and not node.mTextNarrow:
+    builder.textWidthImpl(node)
+  else:
+    builder.textWidth(node.mTextRuneLen)
+
+proc textWidth*(builder: UINodeBuilder, text: string): float32 {.inline.} =
+  if builder.textWidthStringImpl.isNotNil and not text.isNarrow:
+    builder.textWidthStringImpl(text)
+  else:
+    builder.textWidth(text.runeLen.int)
+
 proc textHeight*(builder: UINodeBuilder): float32 {.inline.} = roundPositive(builder.lineHeight + builder.lineGap)
 
 proc unpoolNode*(builder: UINodeBuilder, userId: var UIUserId): UINode
@@ -625,12 +648,12 @@ proc preLayout*(builder: UINodeBuilder, node: UINode) =
 
   if node.flags.all &{SizeToContentX, FillX}:
     if DrawText in node.flags:
-      node.boundsRaw.w = max(parent.w - node.x, builder.textWidth(node.mTextRuneLen)).roundPositive
+      node.boundsRaw.w = max(parent.w - node.x, builder.textWidth(node)).roundPositive
     else:
       node.boundsRaw.w = (parent.w - node.x).roundPositive
   elif SizeToContentX in node.flags:
     if DrawText in node.flags:
-      node.boundsRaw.w = builder.textWidth(node.mTextRuneLen).roundPositive
+      node.boundsRaw.w = builder.textWidth(node).roundPositive
   elif FillX in node.flags:
     if LayoutHorizontalReverse in parent.flags:
       node.boundsRaw.w = node.boundsRaw.x.roundPositive
@@ -693,7 +716,7 @@ proc updateSizeToContent*(builder: UINodeBuilder, node: UINode) =
     else: 0
 
     let strWidth = if DrawText in node.flags:
-      builder.textWidth(node.mTextRuneLen)
+      builder.textWidth(node)
     else: 0
 
     node.boundsRaw.w = max(node.w, max(childrenWidth, strWidth)).roundPositive
