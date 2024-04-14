@@ -297,9 +297,12 @@ proc renderLine*(
                   previousInlayNode
                 else:
                   partNode
-                let cursorX = builder.textWidth(int(selectionLastRune - part.textRange.get.startIndex.RuneCount)).round
-                let rune = part.text[selectionLastRune - part.textRange.get.startIndex.RuneCount]
-                result.cursors.add (node, $rune, rect(cursorX, 0, builder.charWidth, builder.textHeight), (line.index, curs))
+
+                let indexInString = curs - part.textRange.get.startOffset
+                let rune = part.text.runeAt(indexInString)
+                let cursorX = builder.textWidth(part.text[0..<indexInString]).round
+                let cursorW = builder.textWidth($rune).round
+                result.cursors.add (node, $rune, rect(cursorX, 0, max(builder.charWidth, cursorW), builder.textHeight), (line.index, curs))
 
             # Set hover info if the hover location is within this part
             if line.index == options.hoverLocation.line and part.textRange.isSome:
