@@ -66,6 +66,7 @@ type EditorState = object
   fontBold: string
   fontItalic: string
   fontBoldItalic: string
+  fallbackFonts: seq[string]
   layout: string
   workspaceFolders: seq[OpenWorkspace]
   openEditors: seq[OpenEditor]
@@ -98,6 +99,7 @@ type
     fontBold*: string
     fontItalic*: string
     fontBoldItalic*: string
+    fallbackFonts: seq[string]
     clearAtlasTimer*: Timer
     timer*: Timer
     frameTimer*: Timer
@@ -821,6 +823,8 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
   self.fontBold = "./fonts/DejaVuSansMono-Bold.ttf"
   self.fontItalic = "./fonts/DejaVuSansMono-Oblique.ttf"
   self.fontBoldItalic = "./fonts/DejaVuSansMono-BoldOblique.ttf"
+  self.fallbackFonts.add "fonts/Noto_Sans_Symbols_2/NotoSansSymbols2-Regular.ttf"
+  self.fallbackFonts.add "fonts/NotoEmoji/NotoEmoji.otf"
 
   self.editorDefaults.add TextDocumentEditor()
   when enableAst:
@@ -911,6 +915,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
       if state.fontBold.len > 0: self.fontBold = state.fontBold
       if state.fontItalic.len > 0: self.fontItalic = state.fontItalic
       if state.fontBoldItalic.len > 0: self.fontBoldItalic = state.fontBoldItalic
+      if state.fallbackFonts.len > 0: self.fallbackFonts = state.fallbackFonts
 
     if not options.dontRestoreOptions:
       self.options = fs.loadApplicationFile("./config/options.json").parseJson
@@ -919,7 +924,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
   except CatchableError:
     log(lvlError, fmt"Failed to load previous state from config file: {getCurrentExceptionMsg()}")
 
-  self.platform.setFont(self.fontRegular, self.fontBold, self.fontItalic, self.fontBoldItalic)
+  self.platform.setFont(self.fontRegular, self.fontBold, self.fontItalic, self.fontBoldItalic, self.fallbackFonts)
 
   self.commandHistory = state.commandHistory
 
@@ -1125,6 +1130,7 @@ proc saveAppState*(self: App) {.expose("editor").} =
   state.fontBold = self.fontBold
   state.fontItalic = self.fontItalic
   state.fontBoldItalic = self.fontBoldItalic
+  state.fallbackFonts = self.fallbackFonts
 
   state.commandHistory = self.commandHistory
 

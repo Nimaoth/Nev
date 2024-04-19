@@ -25,6 +25,8 @@ type
     fontItalic*: string
     fontBoldItalic*: string
 
+    fallbackFonts*: seq[string]
+
     lastSize: Vec2
     renderedSomethingLastFrame: bool
 
@@ -106,6 +108,9 @@ method init*(self: GuiPlatform) =
   self.fontBold = "fonts/DejaVuSansMono-Bold.ttf"
   self.fontItalic = "fonts/DejaVuSansMono-Oblique.ttf"
   self.fontBoldItalic = "fonts/DejaVuSansMono-BoldOblique.ttf"
+
+  self.fallbackFonts.add "fonts/Noto_Sans_Symbols_2/NotoSansSymbols2-Regular.ttf"
+  self.fallbackFonts.add "fonts/NotoEmoji/NotoEmoji.otf"
 
   self.boxy.setTargetFramebuffer self.framebufferId
 
@@ -226,13 +231,24 @@ method requestRender*(self: GuiPlatform, redrawEverything = false) =
 
 proc getTypeface*(self: GuiPlatform, font: string): Typeface =
   if font notin self.typefaces:
-    var typeface = readTypeface(fs.getApplicationFilePath(font))
-    self.typefaces[font] = typeface
+    var typeface: Typeface = nil
+    try:
+      log lvlInfo, &"Reading font '{font}'"
+      typeface = readTypeface(fs.getApplicationFilePath(font))
+      self.typefaces[font] = typeface
 
-    # todo: make path configurable
-    const emojiFont = "fonts/NotoEmoji/NotoEmoji.otf"
-    if font != emojiFont:
-      typeface.fallbacks.add self.getTypeface(emojiFont)
+      for fallbackFont in self.fallbackFonts:
+        try:
+          log lvlInfo, &"Reading fallback font '{fallbackFont}'"
+          let fallback = readTypeface(fs.getApplicationFilePath(fallbackFont))
+          if fallback.isNotNil:
+            typeface.fallbacks.add fallback
+        except:
+          log lvlError, &"Failed to load fallback font '{fallbackFont}'"
+
+    except:
+      log lvlError, &"Failed to load font '{font}'"
+      return nil
 
   result = self.typefaces[font]
 
@@ -283,13 +299,14 @@ proc updateCharWidth*(self: GuiPlatform) =
   self.builder.lineHeight = self.mLineHeight
   self.builder.lineGap = self.mLineDistance
 
-method setFont*(self: GuiPlatform, fontRegular: string, fontBold: string, fontItalic: string, fontBoldItalic: string) =
-  log lvlInfo, fmt"Update font: {fontRegular}, {fontBold}, {fontItalic}, {fontBoldItalic}"
+method setFont*(self: GuiPlatform, fontRegular: string, fontBold: string, fontItalic: string, fontBoldItalic: string, fallbackFonts: seq[string]) =
+  log lvlInfo, fmt"Update font: {fontRegular}, {fontBold}, {fontItalic}, {fontBoldItalic}, fallbacks: {fallbackFonts}"
   self.ctx.font = fontRegular
   self.fontRegular = fontRegular
   self.fontBold = fontBold
   self.fontItalic = fontItalic
   self.fontBoldItalic = fontBoldItalic
+  self.fallbackFonts = fallbackFonts
   self.typefaces.clear()
   self.updateCharWidth()
 
