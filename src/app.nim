@@ -1075,7 +1075,7 @@ proc createView(self: App, editorState: OpenEditor): View =
   self.documents.add document
   return self.createView(document)
 
-proc setMaxViews*(self: App, maxViews: int) {.expose("editor").} =
+proc setMaxViews*(self: App, maxViews: int, openExisting: bool = false) {.expose("editor").} =
   ## Set the maximum number of views that can be open at the same time
   ## Closes any views that exceed the new limit
 
@@ -1084,6 +1084,9 @@ proc setMaxViews*(self: App, maxViews: int) {.expose("editor").} =
   while maxViews > 0 and self.views.len > maxViews:
     self.views[self.views.high].editor.active = false
     self.hiddenViews.add self.views.pop()
+
+  while openExisting and self.views.len < maxViews and self.hiddenViews.len > 0:
+    self.views.add self.hiddenViews.pop()
 
   self.currentView = self.currentView.clamp(0, self.views.high)
 
@@ -2174,8 +2177,8 @@ proc getItemsFromDirectory(popup: SelectorPopup, workspace: WorkspaceFolder, dir
     var completions = newSeq[SelectorItem]()
 
     # todo: use unicode icons on all targets once rendering is fixed
-    const fileIcon = when defined(js): "🗎" else: "🗒"
-    const folderIcon = when defined(js): "🗀" else: "🧰"
+    const fileIcon = "🗎"
+    const folderIcon = "🗀"
 
     for file in listing.files:
       let score = matchFuzzySublime(text, file, defaultPathMatchingConfig).score.float
