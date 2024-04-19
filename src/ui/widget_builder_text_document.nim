@@ -298,9 +298,9 @@ proc renderLine*(
                 else:
                   partNode
 
-                let indexInString = curs - part.textRange.get.startOffset
-                let rune = part.text.runeAt(indexInString)
-                let cursorX = builder.textWidth(part.text[0..<indexInString]).round
+                let indexInString = RuneIndex(selectionLastRune - part.textRange.get.startIndex)
+                let rune = part.text[indexInString]
+                let cursorX = builder.textWidth(part.text[0.RuneIndex..<indexInString]).round
                 let cursorW = builder.textWidth($rune).round
                 result.cursors.add (node, $rune, rect(cursorX, 0, max(builder.charWidth, cursorW), builder.textHeight), (line.index, curs))
 
