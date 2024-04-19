@@ -1240,6 +1240,7 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommandBlock "", "<C-k><C-l>": lspToggleLogServerDebug()
   addCommand "editor", "<C-k><C-e>", "toggle-flag", "editor.text.highlight-treesitter-errors"
   addCommand "editor", "<C-k><C-r>", "reload-config"
+  addCommand "editor", "<C-k><CS-r>", "reload-state"
   addTextCommandBlock "", "<C-k><C-z>": collectGarbage()
 
   addTextCommandBlock "", "gt":

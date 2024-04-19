@@ -793,6 +793,13 @@ proc reloadConfig*() =
   let res {.used.} = editor_reloadConfig_void_App_wasm(argsJsonString.cstring)
 
 
+proc editor_reloadState_void_App_wasm(arg: cstring): cstring {.importc.}
+proc reloadState*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_reloadState_void_App_wasm(argsJsonString.cstring)
+
+
 proc editor_logOptions_void_App_wasm(arg: cstring): cstring {.importc.}
 proc logOptions*() =
   var argsJson = newJArray()
