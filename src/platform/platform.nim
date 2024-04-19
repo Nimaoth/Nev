@@ -34,7 +34,7 @@ method deinit*(self: Platform) {.base.} = discard
 method processEvents*(self: Platform): int {.base.} = discard
 method `fontSize=`*(self: Platform, fontSize: float) {.base.} = discard
 method `lineDistance=`*(self: Platform, lineDistance: float) {.base.} = discard
-method setFont*(self: Platform, fontRegular: string, fontBold: string, fontItalic: string, fontBoldItalic: string) {.base.} = discard
+method setFont*(self: Platform, fontRegular: string, fontBold: string, fontItalic: string, fontBoldItalic: string, fallbackFonts: seq[string]) {.base.} = discard
 method fontSize*(self: Platform): float {.base.} = discard
 method lineDistance*(self: Platform): float {.base.} = discard
 method lineHeight*(self: Platform): float {.base.} = discard
