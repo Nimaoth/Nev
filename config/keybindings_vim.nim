@@ -790,10 +790,15 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   # In the browser C-w closes the tab, so we use A-w instead
   if getBackend() == Browser:
     defineWindowingCommands "<A-w>"
-    addCommand "editor", "<count><A-w>m", "set-max-views <#count>"
+    addCommand "editor", "<count><A-w>m", "set-max-views <#count> true"
   else:
     defineWindowingCommands "<C-w>"
-    addCommand "editor", "<count><C-w>m", "set-max-views <#count>"
+    addCommand "editor", "<count><C-w>m", "set-max-views <#count> true"
+
+  addCommandBlock "editor", "<LEADER>m":
+    let maxViews = getOption[int]("editor.maxViews")
+    let newMaxViews = if maxViews != 1: 1 else: 2
+    setMaxViews(newMaxViews, openExisting=true)
 
   # completion
   addTextCommand "insert", "<C-p>", "get-completions"
