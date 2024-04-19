@@ -780,6 +780,35 @@ proc setupDefaultKeybindings(self: App) =
   selectorPopupConfig.addCommand("", "<C-u>", "prev-x")
   selectorPopupConfig.addCommand("", "<C-d>", "next-x")
 
+proc restoreStateFromConfig*(self: App, state: var EditorState) =
+  try:
+    let stateJson = fs.loadApplicationFile(self.sessionFile).parseJson
+    state = stateJson.jsonTo(EditorState, JOptions(allowMissingKeys: true, allowExtraKeys: true))
+    log(lvlInfo, fmt"Restoring state {stateJson.pretty}")
+
+    if not state.theme.isEmptyOrWhitespace:
+      try:
+        self.setTheme(state.theme)
+      except CatchableError:
+        log(lvlError, fmt"Failed to load theme: {getCurrentExceptionMsg()}")
+
+    if not state.layout.isEmptyOrWhitespace:
+      self.setLayout(state.layout)
+
+    self.loadedFontSize = state.fontSize.float
+    self.platform.fontSize = state.fontSize.float
+    self.loadedLineDistance = state.lineDistance.float
+    self.platform.lineDistance = state.lineDistance.float
+    if state.fontRegular.len > 0: self.fontRegular = state.fontRegular
+    if state.fontBold.len > 0: self.fontBold = state.fontBold
+    if state.fontItalic.len > 0: self.fontItalic = state.fontItalic
+    if state.fontBoldItalic.len > 0: self.fontBoldItalic = state.fontBoldItalic
+    if state.fallbackFonts.len > 0: self.fallbackFonts = state.fallbackFonts
+
+    self.platform.setFont(self.fontRegular, self.fontBold, self.fontItalic, self.fontBoldItalic, self.fallbackFonts)
+  except CatchableError:
+    log(lvlError, fmt"Failed to load previous state from config file: {getCurrentExceptionMsg()}")
+
 proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()): Future[App] {.async.} =
   var self = App()
 
@@ -888,43 +917,20 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
   self.getCommandLineTextEditor.hideCursorWhenInactive = true
   discard self.commandLineTextEditor.onMarkedDirty.subscribe () => self.platform.requestRender()
 
+  self.sessionFile = "./config/config.json"
+
   var state = EditorState()
+  if not options.dontRestoreConfig:
+    self.sessionFile = options.sessionOverride.get("./config/config.json")
+    self.restoreStateFromConfig(state)
+
   try:
-    self.sessionFile = "./config/config.json"
-
-    if not options.dontRestoreConfig:
-      self.sessionFile = options.sessionOverride.get("./config/config.json")
-      let stateJson = fs.loadApplicationFile(self.sessionFile).parseJson
-      state = stateJson.jsonTo(EditorState, JOptions(allowMissingKeys: true, allowExtraKeys: true))
-      log(lvlInfo, fmt"Restoring state {stateJson.pretty}")
-
-      if not state.theme.isEmptyOrWhitespace:
-        try:
-          self.setTheme(state.theme)
-        except CatchableError:
-          log(lvlError, fmt"Failed to load theme: {getCurrentExceptionMsg()}")
-
-      if not state.layout.isEmptyOrWhitespace:
-        self.setLayout(state.layout)
-
-      self.loadedFontSize = state.fontSize.float
-      self.platform.fontSize = state.fontSize.float
-      self.loadedLineDistance = state.lineDistance.float
-      self.platform.lineDistance = state.lineDistance.float
-      if state.fontRegular.len > 0: self.fontRegular = state.fontRegular
-      if state.fontBold.len > 0: self.fontBold = state.fontBold
-      if state.fontItalic.len > 0: self.fontItalic = state.fontItalic
-      if state.fontBoldItalic.len > 0: self.fontBoldItalic = state.fontBoldItalic
-      if state.fallbackFonts.len > 0: self.fallbackFonts = state.fallbackFonts
-
     if not options.dontRestoreOptions:
       self.options = fs.loadApplicationFile("./config/options.json").parseJson
       log(lvlInfo, fmt"Restoring options: {self.options.pretty}")
 
   except CatchableError:
-    log(lvlError, fmt"Failed to load previous state from config file: {getCurrentExceptionMsg()}")
-
-  self.platform.setFont(self.fontRegular, self.fontBold, self.fontItalic, self.fontBoldItalic, self.fallbackFonts)
+    log(lvlError, fmt"Failed to load previous options from options file: {getCurrentExceptionMsg()}")
 
   self.commandHistory = state.commandHistory
 
@@ -1574,8 +1580,6 @@ proc writeFile*(self: App, path: string = "", app: bool = false) {.expose("edito
     except CatchableError:
       log(lvlError, fmt"Failed to write file '{path}': {getCurrentExceptionMsg()}")
       log(lvlError, getCurrentException().getStackTrace())
-
-    self.saveAppState()
 
 proc loadFile*(self: App, path: string = "") {.expose("editor").} =
   defer:
@@ -2367,6 +2371,12 @@ proc reloadConfigAsync*(self: App) {.async.} =
 
 proc reloadConfig*(self: App) {.expose("editor").} =
   asyncCheck self.reloadConfigAsync()
+
+proc reloadState*(self: App) {.expose("editor").} =
+  ## Reloads some of the state stored in the session file (default: config/config.json)
+  var state = EditorState()
+  self.restoreStateFromConfig(state)
+  self.requestRender()
 
 proc logOptions*(self: App) {.expose("editor").} =
   log(lvlInfo, self.options.pretty)
