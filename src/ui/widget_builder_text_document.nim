@@ -108,15 +108,23 @@ proc `*`(c: Color, v: Color): Color {.inline.} =
   result.b = c.b * v.b
   result.a = c.a * v.a
 
-proc getCursorPos(self: TextDocumentEditor, textRuneLen: int, line: int, startOffset: RuneIndex, pos: Vec2): int =
-  var offsetFromLeft = pos.x / self.platform.charWidth
-  if self.isThickCursor():
-    offsetFromLeft -= 0.0
-  else:
-    offsetFromLeft += 0.5
+proc getCursorPos(self: TextDocumentEditor, builder: UINodeBuilder, text: string, line: int, startOffset: RuneIndex, pos: Vec2): int =
+  ## Calculates the byte index in the original line at the given pos (relative to the parts top left corner)
 
-  let index = clamp(offsetFromLeft.int, 0, textRuneLen)
-  let byteIndex = self.document.lines[line].toOpenArray.runeOffset(startOffset + index.RuneCount)
+  var offset = 0.0
+  var i = 0
+  for r in text.runes:
+    let w = builder.textWidth($r).round
+    let posX = if self.isThickCursor(): pos.x else: pos.x + w * 0.5
+
+    if posX < offset + w:
+      let byteIndex = self.document.lines[line].toOpenArray.runeOffset(startOffset + i.RuneCount)
+      return byteIndex
+
+    offset += w
+    inc i
+
+  let byteIndex = self.document.lines[line].toOpenArray.runeOffset(startOffset + text.runeLen)
   return byteIndex
 
 proc renderLinePart(
@@ -196,10 +204,14 @@ proc renderLinePart(
     if addBackgroundAsChildren:
       # Add separate background colors for selections/highlights
       while colorIndex <= backgroundColors.high and backgroundColors[colorIndex].first < startRune + partRuneLen:
-        let x = max(0.0, backgroundColors[colorIndex].first.float - startRune.float) * builder.charWidth
-        let xw = min(partRuneLen.float, backgroundColors[colorIndex].last.float - startRune.float) * builder.charWidth
+        let startIndex = backgroundColors[colorIndex].first
+        let endIndex = backgroundColors[colorIndex].last
+        let startIndexInPart = RuneIndex(startIndex - startRune).max(0.RuneIndex)
+        let endIndexInPart = RuneIndex(endIndex - startRune).min(partRuneLen.RuneIndex)
+        let x = builder.textWidth(part[].text[0.RuneIndex..<startIndexInPart]).round
+        let w = builder.textWidth(part[].text[startIndexInPart..<endIndexInPart]).round
         if partBackgroundColor != backgroundColors[colorIndex].color:
-          builder.panel(&{UINodeFlag.FillBackground, FillY}, x = x, w = xw - x, backgroundColor = backgroundColors[colorIndex].color)
+          builder.panel(&{UINodeFlag.FillBackground, FillY}, x = x, w = w, backgroundColor = backgroundColors[colorIndex].color)
 
         inc colorIndex
 
@@ -476,7 +488,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       let (startRune, _) = styledLine.getTextRange(partIndex)
       let part = styledLine.parts[partIndex]
       let isInlay = part.textRange.isNone
-      let offset = self.getCursorPos(part.text.runeLen.int, line, startRune, if isInlay: vec2() else: pos)
+      let offset = self.getCursorPos(builder, part.text, line, startRune, if isInlay: vec2() else: pos)
       self.selection = (line, offset).toSelection
     else:
       self.selection = (line, self.document.lineLength(line)).toSelection
@@ -508,7 +520,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       let (startRune, _) = styledLine.getTextRange(partIndex)
       let part = styledLine.parts[partIndex]
       let isInlay = part.textRange.isNone
-      let offset = self.getCursorPos(part.text.runeLen.int, line, startRune, if isInlay: vec2() else: pos)
+      let offset = self.getCursorPos(builder, part.text, line, startRune, if isInlay: vec2() else: pos)
       (line, offset)
     else:
       (line, self.document.lineLength(line))
@@ -530,7 +542,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     let styledLine = self.getStyledText(line)
     let (startRune, _) = styledLine.getTextRange(partIndex)
     let part = styledLine.parts[partIndex]
-    let offset = self.getCursorPos(part.text.runeLen.int, line, startRune, pos)
+    let offset = self.getCursorPos(builder, part.text, line, startRune, pos)
     self.lastHoverLocationBounds = node.boundsAbsolute.some
     self.showHoverForDelayed (line, offset)
 
@@ -541,7 +553,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     let styledLine = self.getStyledText(line)
     let (startRune, _) = styledLine.getTextRange(partIndex)
     let part = styledLine.parts[partIndex]
-    let offset = self.getCursorPos(part.text.runeLen.int, line, startRune, pos)
+    let offset = self.getCursorPos(builder, part.text, line, startRune, pos)
     self.lastHoverLocationBounds = node.boundsAbsolute.some
     self.showHoverForDelayed (line, offset)
 
