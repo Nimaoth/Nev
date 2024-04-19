@@ -162,6 +162,7 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
 
   addCommand "editor", "<C-s>", "write-file"
   addCommand "editor", "<CS-r>", "load-file"
+  addCommand "editor", "<CS-s>", "save-app-state"
   addCommand "editor", "<LEADER><LEADER>", "command-line"
   addCommand "editor", "<LEADER>gt", "choose-theme"
   addCommand "editor", "<LEADER>gf", "choose-file", "new"
@@ -204,10 +205,13 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
   addCommand "command-line-low", "<DOWN>", "select-next-command-in-history"
 
   addCommand "popup.selector", "<ENTER>", "accept"
+  addCommand "popup.selector", "<C-y>", "accept"
   addCommand "popup.selector", "<TAB>", "accept"
   addCommand "popup.selector", "<ESCAPE>", "cancel"
   addCommand "popup.selector", "<UP>", "prev"
+  addCommand "popup.selector", "<C-p>", "prev"
   addCommand "popup.selector", "<DOWN>", "next"
+  addCommand "popup.selector", "<C-n>", "next"
   addCommand "popup.selector", "<C-u>", "prev-x"
   addCommand "popup.selector", "<C-d>", "next-x"
 

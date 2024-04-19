@@ -73,8 +73,8 @@ proc postInitialize*(): bool {.wasmexport.} =
 import default_config
 
 import keybindings_vim
-import keybindings_vim_like
-import keybindings_helix
+# import keybindings_vim_like
+# import keybindings_helix
 import keybindings_normal
 import languages
 
@@ -82,13 +82,17 @@ loadDefaultOptions()
 loadDefaultKeybindings(true)
 loadModelKeybindings()
 loadVimKeybindings()
-# loadVimLikeKeybindings()
 
 loadLspConfigFromFile("config/lsp.json")
 loadSnippetsFromFile(".vscode/nim-snippets.code-snippets", "nim")
 
 addTextCommandBlock "", "<C-k><C-s>":
   loadSnippetsFromFile(".vscode/nim-snippets.code-snippets", "nim")
+
+addCommand "popup.selector.file-explorer", "<C-g>", "prev"
+addCommand "popup.selector.file-explorer", "<C-r>", "next"
+addCommand "popup.selector.file-explorer", "<C-t>", "accept"
+addCommand "popup.selector.file-explorer", "<C-n>", "go-up"
 
 # Triple click to selects a line
 setOption "editor.text.triple-click-command", "extend-select-move"
