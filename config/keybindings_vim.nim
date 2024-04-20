@@ -228,10 +228,20 @@ proc vimFinishMotion(editor: TextDocumentEditor) =
 
 proc vimMoveTo*(editor: TextDocumentEditor, target: string, before: bool, count: int = 1) {.expose("vim-move-to").} =
   # infof"vimMoveTo '{target}' {before}"
-  var key = if target == "<SPACE>":
-    " "
-  else:
-    target
+
+  proc parseTarget(target: string): string =
+    if target.len == 1:
+      return target
+
+    if target.parseFirstInput().getSome(res):
+      if res.inputCode.a == INPUT_SPACE:
+        return " "
+      elif res.inputCode.a <= int32.high:
+        return $Rune(res.inputCode.a)
+    else:
+      infof" -> failed to parse key: {target}"
+
+  let key = parseTarget(target)
 
   for _ in 0..<max(1, count):
     editor.moveCursorTo(key)

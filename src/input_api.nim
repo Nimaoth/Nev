@@ -203,6 +203,16 @@ proc parseNextInput*(input: openArray[Rune], index: int, leaders: seq[(int64, Mo
       else:
         specialKey.add rune
 
+proc parseFirstInput*(input: string): Option[tuple[inputCode: Slice[int64], mods: Modifiers, text: string]] =
+  let runes = input.toRunes
+  var index = 0
+  let (keys, _, _, nextIndex, text) = parseNextInput(runes, index)
+  if keys.len == 0:
+    return
+
+  let (inputCode, mods) = keys[0]
+  return (inputCode, mods, text).some
+
 iterator parseInputs*(input: string): tuple[inputCode: Slice[int64], mods: Modifiers, text: string] =
   let runes = input.toRunes
   var index = 0
