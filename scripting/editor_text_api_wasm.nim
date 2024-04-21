@@ -2156,10 +2156,11 @@ proc moveFirst*(self: TextDocumentEditor; move: string;
       argsJsonString.cstring)
 
 
-proc editor_text_setSearchQuery_void_TextDocumentEditor_string_bool_wasm(
+proc editor_text_setSearchQuery_void_TextDocumentEditor_string_bool_string_string_wasm(
     arg: cstring): cstring {.importc.}
 proc setSearchQuery*(self: TextDocumentEditor; query: string;
-                     escapeRegex: bool = false) =
+                     escapeRegex: bool = false; prefix: string = "";
+                     suffix: string = "") =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:
@@ -2176,8 +2177,18 @@ proc setSearchQuery*(self: TextDocumentEditor; query: string;
       escapeRegex
     else:
       escapeRegex.toJson()
+  argsJson.add block:
+    when string is JsonNode:
+      prefix
+    else:
+      prefix.toJson()
+  argsJson.add block:
+    when string is JsonNode:
+      suffix
+    else:
+      suffix.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_setSearchQuery_void_TextDocumentEditor_string_bool_wasm(
+  let res {.used.} = editor_text_setSearchQuery_void_TextDocumentEditor_string_bool_string_string_wasm(
       argsJsonString.cstring)
 
 

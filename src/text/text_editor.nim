@@ -1653,22 +1653,31 @@ proc moveFirst*(self: TextDocumentEditor, move: string, which: SelectionCursor =
   self.scrollToCursor(which)
   self.updateTargetColumn(which)
 
-proc setSearchQuery*(self: TextDocumentEditor, query: string, escapeRegex: bool = false) {.expose("editor.text").} =
-  # todo: escape regex
+proc setSearchQuery*(self: TextDocumentEditor, query: string, escapeRegex: bool = false, prefix: string = "", suffix: string = "") {.expose("editor.text").} =
+  if self.searchQuery == query:
+    return
+
   self.searchResultsDirty = true
   self.searchQuery = query
+
+  if query.len == 0:
+    self.searchRegex = Regex.none
+    return
+
   try:
-    if escapeRegex:
-      self.searchRegex = re(query.escapeRegex).some
+    let query = if escapeRegex:
+      query.escapeRegex
     else:
-      self.searchRegex = re(query).some
+      query
+
+    self.searchRegex = re(prefix & query & suffix).some
   except:
     log lvlError, fmt"[setSearchQuery] Invalid regex query: '{query}' ({getCurrentExceptionMsg()})"
 
 proc setSearchQueryFromMove*(self: TextDocumentEditor, move: string, count: int = 0, prefix: string = "", suffix: string = ""): Selection {.expose("editor.text").} =
   let selection = self.getSelectionForMove(self.selection.last, move, count)
-  let searchText = self.document.contentString(selection).escapeRegex
-  self.setSearchQuery(prefix & searchText & suffix)
+  let searchText = self.document.contentString(selection)
+  self.setSearchQuery(searchText, escapeRegex=true, prefix, suffix)
   return selection
 
 proc toggleLineComment*(self: TextDocumentEditor) {.expose("editor.text").} =
@@ -2348,7 +2357,7 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
 
       let cursor = (cursors[i].line, cursors[i].column + progress.len)
       let text = keys[i][progress.len..^1]
-      self.styledTextOverrides[cursors[i].line].add (cursor, text, "variable")
+      self.styledTextOverrides[cursors[i].line].add (cursor, text, "constant.numeric")
 
       options.add cursors[i]
 
@@ -2371,8 +2380,10 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
       self.document.notifyTextChanged()
       self.markDirty()
       self.handleAction action, arg, record=true
+
     onInput:
-      self.handleInput input, record=true
+      Ignored
+
     onProgress:
       progress.add inputToString(input)
       updateStyledTextOverrides()
@@ -2434,7 +2445,7 @@ proc getStyledText*(self: TextDocumentEditor, i: int): StyledLine =
       inc i
 
   if self.styledTextOverrides.contains(i):
-    result.overrideStyle(0.RuneIndex, result.runeLen.RuneIndex, "", -1)
+    result.overrideStyle(0.RuneIndex, result.runeLen.RuneIndex, "comment", -1)
 
     for override in self.styledTextOverrides[i]:
       self.document.splitAt(result, override.cursor.column)
