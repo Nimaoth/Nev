@@ -42,7 +42,7 @@ proc getVimDefaultRegister*(): string =
   case getVimClipboard():
   of "unnamed": return "*"
   of "unnamedplus": return "+"
-  else: return ""
+  else: return "\""
 
 proc getCurrentMacroRegister*(): string = getOption("editor.current-macro-register", "")
 
@@ -122,7 +122,7 @@ proc copySelection(editor: TextDocumentEditor, register: string = ""): Selection
   return selections.mapIt(it.normalized.first.toSelection)
 
 proc vimDeleteSelection(editor: TextDocumentEditor, forceInclusiveEnd: bool, oldSelections: Option[Selections] = Selections.none) {.expose("vim-delete-selection").} =
-  let newSelections = editor.copySelection()
+  let newSelections = editor.copySelection(getVimDefaultRegister())
   let selectionsToDelete = editor.selections
   if oldSelections.isSome:
     editor.selections = oldSelections.get
@@ -134,7 +134,7 @@ proc vimDeleteSelection(editor: TextDocumentEditor, forceInclusiveEnd: bool, old
   editor.setMode "normal"
 
 proc vimChangeSelection*(editor: TextDocumentEditor, forceInclusiveEnd: bool, oldSelections: Option[Selections] = Selections.none) {.expose("vim-change-selection").} =
-  let newSelections = editor.copySelection()
+  let newSelections = editor.copySelection(getVimDefaultRegister())
   let selectionsToDelete = editor.selections
   if oldSelections.isSome:
     editor.selections = oldSelections.get
@@ -146,6 +146,11 @@ proc vimChangeSelection*(editor: TextDocumentEditor, forceInclusiveEnd: bool, ol
 
 proc vimYankSelection*(editor: TextDocumentEditor) {.expose("vim-yank-selection").} =
   let selections = editor.copySelection(getVimDefaultRegister())
+  editor.selections = selections
+  editor.setMode "normal"
+
+proc vimYankSelectionClipboard*(editor: TextDocumentEditor) {.expose("vim-yank-selection-clipboard").} =
+  let selections = editor.copySelection()
   editor.selections = selections
   editor.setMode "normal"
 
@@ -1106,9 +1111,12 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   addTextCommand "", "u", "vim-undo"
   addTextCommand "", "<C-r>", "vim-redo"
-  addTextCommand "", "p", "vim-paste", pasteRight=true, inclusiveEnd=false
-  addTextCommand "visual", "p", "vim-paste", pasteRight=false, inclusiveEnd=true
-  addTextCommand "visual-line", "p", "vim-paste", pasteRight=false, inclusiveEnd=true
+  addTextCommand "", "p", "vim-paste", pasteRight=true, inclusiveEnd=false, getVimDefaultRegister()
+  addTextCommand "visual", "p", "vim-paste", pasteRight=false, inclusiveEnd=true, getVimDefaultRegister()
+  addTextCommand "visual-line", "p", "vim-paste", pasteRight=false, inclusiveEnd=true, getVimDefaultRegister()
+  addTextCommand "", "P", "vim-paste", pasteRight=true, inclusiveEnd=false
+  addTextCommand "visual", "P", "vim-paste", pasteRight=false, inclusiveEnd=true
+  addTextCommand "visual-line", "P", "vim-paste", pasteRight=false, inclusiveEnd=true
 
   addTextCommand "", "<ENTER>", "insert-text", "\n"
 
@@ -1173,6 +1181,7 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   addTextCommand "visual", "<move>", "vim-select <move>"
   addTextCommand "visual", "y", "vim-yank-selection"
+  addTextCommand "visual", "gy", "vim-yank-selection-clipboard"
   addTextCommand "visual", "d", "vim-delete-selection", true
   addTextCommand "visual", "c", "vim-change-selection", true
   addTextCommand "visual", "s", "vim-change-selection", true
@@ -1202,6 +1211,7 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   addTextCommand "visual-line", "<move>", "vim-select <move>"
   addTextCommand "visual-line", "y", "vim-yank-selection"
+  addTextCommand "visual-line", "gy", "vim-yank-selection-clipboard"
   addTextCommand "visual-line", "d", "vim-delete-selection", true
   addTextCommand "visual-line", "c", "vim-change-selection", true
   addTextCommand "visual-line", "s", "vim-change-selection", true
