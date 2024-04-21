@@ -998,6 +998,7 @@ proc pasteAsync*(self: TextDocumentEditor, register: string, inclusiveEnd: bool 
 
   self.selections = newSelections
   self.scrollToCursor(Last)
+  self.markDirty()
 
 proc paste*(self: TextDocumentEditor, register: string = "", inclusiveEnd: bool = false) {.expose("editor.text").} =
   asyncCheck self.pasteAsync(register, inclusiveEnd)
