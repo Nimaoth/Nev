@@ -48,8 +48,10 @@
 ## * `Style <https://nim-lang.org/docs/terminal.html#Style>`_
 ##
 
-import macros, os, terminal, unicode, bitops, colors
-import misc/[custom_logger, timer]
+import macros, terminal, unicode, bitops, colors
+import misc/[custom_logger]
+
+logCategory "tui"
 
 export terminal.terminalWidth
 export terminal.terminalHeight
@@ -901,6 +903,7 @@ type
     bgColor*: Color
     style*: set[Style]
     forceWrite*: bool
+    previousWideGlyph: bool
 
   TerminalBuffer* = ref object
     ## A virtual terminal buffer of a fixed width and height. It remembers the
@@ -1006,13 +1009,27 @@ proc fillBackground*(tb: var TerminalBuffer, x1, y1, x2, y2: int) =
       ye = clamp(y2, 0, tb.height-1)
 
     for y in ys..ye:
+      if xs > 0 and tb[xs, y].previousWideGlyph:
+        # Current cell is after a wide unicode char, so also override the prev cell with space
+        var prevCell = tb[xs - 1, y]
+        prevCell.ch = ' '.Rune
+        tb[xs - 1, y] = prevCell
+
       for x in xs..xe:
         var c = tb[x, y]
-        if tb.currBgAlpha == 1:
-          c.ch = " ".runeAt 0
+        if tb.currBgAlpha == 1 or c.ch.int == 0:
+          c.ch = ' '.Rune
         c.bg = tb.currBg
         c.bgColor = blend(tb.currBgColor, c.bgColor, tb.currBgAlpha)
+        c.previousWideGlyph = false
         tb[x, y] = c
+
+      if xe + 1 < tb.width and tb[xe + 1, y].previousWideGlyph:
+        # Current cell is a wide unicode char, so also override the next cell with space
+        var nextCell = tb[xe + 1, y]
+        nextCell.ch = ' '.Rune
+        nextCell.previousWideGlyph = false
+        tb[xe + 1, y] = nextCell
 
 proc clear*(tb: var TerminalBuffer, ch: string = " ") =
   ## Clears the contents of the terminal buffer with the `ch` character using
@@ -1208,6 +1225,61 @@ proc write*(tb: var TerminalBuffer, x, y: int, s: string) =
   tb.currX = clamp(currX, 0, tb.width-1)
   tb.currY = y
 
+proc writeRune*(tb: var TerminalBuffer, x, y: int, ch: Rune, width: int, additionalWidth: int) =
+  ## Writes `ch` into the terminal buffer at the specified position using
+  ## the current text attributes.
+  ## `width` is the amount of cells `ch` occupies, `additionalWidth` is the number of spaces that should be
+  ## inserted after `ch`.
+  ## Lines do not wrap and attempting to write
+  ## outside the extents of the buffer will not raise an error; the output
+  ## will be just cropped to the extents of the buffer.
+  if y < 0 or y >= tb.height:
+    return
+
+  var c = TerminalChar(ch: ch, fg: tb.currFg, bg: tb.currBg, fgColor: tb.currFgColor, bgColor: tb.currBgColor, style: tb.currStyle)
+  if x >= 0 and x < tb.width:
+    if x > 0 and tb[x, y].previousWideGlyph:
+      # Current cell is after a wide unicode char, so also override the prev cell with space
+      var prevCell = tb[x - 1, y]
+      prevCell.ch = ' '.Rune
+      tb[x - 1, y] = prevCell
+
+    if c.fg == fgNone:
+      c.fg = tb[x, y].fg
+      c.fgColor = tb[x, y].fgColor
+    if c.bg == bgNone:
+      c.bg = tb[x, y].bg
+      c.bgColor = tb[x, y].bgColor
+    tb[x, y] = c
+
+    var xEnd = x
+
+    # Set (`width` - 1) cells after the current one to space
+    for x2 in (x + 1)..<min(tb.width, x + width):
+      var c = c
+      c.ch = 0.Rune
+      c.previousWideGlyph = true
+      tb[x2, y] = c
+      xEnd = max(x2, xEnd)
+
+    # Set `additionalWidth` cells after the current one to space
+    for x2 in (x + 1)..<min(tb.width, x + additionalWidth + 1):
+      var c = c
+      c.ch = ' '.Rune
+      c.previousWideGlyph = true
+      tb[x2, y] = c
+      xEnd = max(x2, xEnd)
+
+    if xEnd + 1 < tb.width and tb[xEnd + 1, y].previousWideGlyph:
+      # Current cell is a wide unicode char, so also override the next cell with space
+      var nextCell = tb[xEnd + 1, y]
+      nextCell.ch = ' '.Rune
+      nextCell.previousWideGlyph = false
+      tb[xEnd + 1, y] = nextCell
+
+  tb.currX = clamp(x + 2, 0, tb.width-1)
+  tb.currY = y
+
 proc write*(tb: var TerminalBuffer, s: string) =
   ## Writes `s` into the terminal buffer at the current cursor position using
   ## the current text attributes.
@@ -1220,6 +1292,55 @@ var
   gCurrFg {.threadvar.}: ForegroundColor
   gCurrFgColor {.threadvar.}: Color
   gCurrStyle {.threadvar.}: set[Style]
+
+proc setAttribs(buffer: var string, c: TerminalChar) =
+  const
+    fgPrefix = "\e[38;2;"
+    bgPrefix = "\e[48;2;"
+    getPos = "\e[6n"
+    stylePrefix = "\e["
+
+  if c.bg != gCurrBg or c.bgColor != gCurrBgColor:
+    gCurrBg = c.bg
+    gCurrBgColor = c.bgColor
+
+    case gCurrBg
+    of bgNone: discard
+    of bgRGB:
+      let rgb = c.bgColor.extractRGB
+      buffer.add bgPrefix
+      buffer.add $rgb.r
+      buffer.add ";"
+      buffer.add $rgb.g
+      buffer.add ";"
+      buffer.add $rgb.b
+      buffer.add "m"
+
+    else: discard
+
+  if c.fg != gCurrFg or c.fgColor != gCurrFgColor:
+    gCurrFg = c.fg
+    gCurrFgColor = c.fgColor
+    case gCurrFg
+    of fgNone: discard
+    of fgRGB:
+      let rgb = c.fgColor.extractRGB
+      buffer.add fgPrefix
+      buffer.add $rgb.r
+      buffer.add ";"
+      buffer.add $rgb.g
+      buffer.add ";"
+      buffer.add $rgb.b
+      buffer.add "m"
+
+    else: discard
+
+  if c.style != gCurrStyle:
+    gCurrStyle = c.style
+    for s in gCurrStyle:
+      buffer.add stylePrefix
+      buffer.add $s
+      buffer.add "m"
 
 proc setAttribs(c: TerminalChar) =
   if c.bg == bgNone or c.fg == fgNone or c.style == {}:
@@ -1269,117 +1390,97 @@ proc setPos(x, y: Natural) =
 proc setXPos(x: Natural) =
   terminal.setCursorXPos(x)
 
+var displayBuffer = ""
+
+proc flushDisplayBuffer() =
+  if displayBuffer.len > 0:
+    put displayBuffer
+    displayBuffer.setLen 0
+
+proc setPos(buffer: var string, x: int, y: int) =
+  buffer.add "\e["
+  buffer.add $(y + 1)
+  buffer.add ";"
+  buffer.add $(x + 1)
+  buffer.add "f"
+
 proc displayFull(tb: TerminalBuffer) =
-  var buf = ""
-
-  proc flushBuf() =
-    if buf.len > 0:
-      put buf
-      buf = ""
-
   for y in 0..<tb.height:
-    setPos(0, y)
-    for x in 0..<tb.width:
-      let c = tb[x,y]
-      if c.bg != gCurrBg or c.fg != gCurrFg or c.bgColor != gCurrBgColor or c.fgColor != gCurrFgColor or c.style != gCurrStyle:
-        flushBuf()
-        setAttribs(c)
-      buf &= $c.ch
-    flushBuf()
+    displayBuffer.setPos(0, y)
 
+    var additionalSpaces = 0
+    for x in 0..<tb.width:
+      let c {.cursor.} = tb[x,y]
+      if c.ch == 0.Rune:
+        inc additionalSpaces
+        continue
+
+      if c.bg != gCurrBg or c.fg != gCurrFg or c.bgColor != gCurrBgColor or c.fgColor != gCurrFgColor or c.style != gCurrStyle:
+        displayBuffer.setAttribs(c)
+
+      displayBuffer.add $c.ch
+
+    # For some reason windows terminal doesn't update the cells at the end if there's a bunch of unicode in the line
+    # Adding a bunch of whitespace at the end fixes it.
+    # I don't know if this also happens in other terminals.
+    displayBuffer.add "                                                                   "
+    displayBuffer.add ' '.Rune.repeat(additionalSpaces)
+
+    flushDisplayBuffer()
+
+  flushDisplayBuffer()
 
 proc displayDiff(tb: TerminalBuffer) =
-  var
-    buf = ""
-    bufXPos, bufYPos: Natural
+  var bufXPos, bufYPos: int
 
-  proc flushBuf() =
-    if buf.len > 0:
-      put buf
-      buf = ""
-
-  let maxColorTime = 2.0
-  var colorTime = 0.0
-  var updateColors = true
+  bufXPos = -1
+  bufYPos = -1
 
   for y in 0..<tb.height:
-    setPos(0, y)
-    bufXPos = 0
-    bufYPos = y
-    var x = 0
-    while x < tb.width:
-      defer: inc x
-      let c = tb[x,y]
-      let cPrev = gPrevTerminalBuffer[x, y]
-      let changed = if updateColors: c != cPrev else: c.ch != cPrev.ch
-      if changed or c.forceWrite:
-        if x != bufXPos:
-          flushBuf()
-          setXPos(x)
-          bufXPos = x + 1
+    var additionalSpaces = 0
+    var force = false
 
-        if updateColors:
-          let timer = startTimer()
-          defer:
-            colorTime += timer.elapsed.ms
+    var actualX = 0
+    for x in 0..<tb.width:
+      let c {.cursor.} = tb[x, y]
+      defer:
+        gPrevTerminalBuffer[x, y] = c
 
-          if c.bg != gCurrBg or c.bgColor != gCurrBgColor:
-            gCurrBg = c.bg
-            gCurrBgColor = c.bgColor
-            case gCurrBg
-            of bgNone: discard
-            of bgRGB: buf.add ansiBackgroundColorCode(c.bgColor)
-            else:
-              flushBuf()
-              setBackgroundColor(cast[terminal.BackgroundColor](gCurrBg))
+      if c.previousWideGlyph:
+        force = true
 
-          if c.fg != gCurrFg or c.fgColor != gCurrFgColor:
-            gCurrFg = c.fg
-            gCurrFgColor = c.fgColor
-            case gCurrFg
-              of fgNone: discard
-              of fgRGB: buf.add ansiForegroundColorCode(c.fgColor)
-              else:
-                flushBuf()
-                setForegroundColor(cast[terminal.ForegroundColor](gCurrFg))
+      if c.ch == 0.Rune:
+        inc additionalSpaces
+        continue
 
-          if c.style != gCurrStyle:
-            gCurrStyle = c.style
-            flushBuf()
-            setStyle(gCurrStyle)
+      defer:
+        inc actualX
 
-        for x2 in x..<tb.width:
-          let c2 = tb[x2, y]
-          if updateColors:
-            if not (c.fg == c2.fg and c.fgColor == c2.fgColor and c.bg == c2.bg and c.bgColor == c2.bgColor and c.style == c2.style):
-              break
-          else:
-            if c2.ch == gPrevTerminalBuffer[x2, y].ch:
-              break
+      if not force and c == gPrevTerminalBuffer[x, y]:
+        continue
 
-          x = x2
-          bufXPos = x + 1
+      if y != bufYPos or x != bufXPos:
+        bufXPos = x
+        bufYPos = y
+        displayBuffer.setPos(x, y)
+        displayBuffer.setAttribs(c)
 
-          buf.add c2.ch
-          if updateColors:
-            gPrevTerminalBuffer[x, y] = c2
-          else:
-            var old = cPrev
-            old.ch = c2.ch
-            gPrevTerminalBuffer[x, y] = old
+      if c.bg != gCurrBg or c.fg != gCurrFg or c.bgColor != gCurrBgColor or c.fgColor != gCurrFgColor or c.style != gCurrStyle:
+        displayBuffer.setAttribs(c)
 
-      else:
-        if updateColors:
-          gPrevTerminalBuffer[x, y] = c
-        else:
-          var old = cPrev
-          old.ch = c.ch
-          gPrevTerminalBuffer[x, y] = old
+      displayBuffer.add $c.ch
+      inc bufXPos
 
-    if updateColors and colorTime > maxColorTime:
-      updateColors = false
+    if force:
+      # # For some reason windows terminal doesn't update the cells at the end if there's a bunch of unicode in the line
+      # # Adding a bunch of whitespace at the end fixes it.
+      # # I don't know if this also happens in other terminals.
+      displayBuffer.add "                                                                   "
+      displayBuffer.add ' '.Rune.repeat(additionalSpaces)
 
-    flushBuf()
+    flushDisplayBuffer()
+
+  flushDisplayBuffer()
 
 var gDoubleBufferingEnabled = true
 
