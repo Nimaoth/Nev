@@ -63,8 +63,6 @@ template hasPrefix*(exp: untyped, prefix: string, v: untyped): untyped =
 
   matches
 
-func myNormalizedPath*(path: string): string = path.replace('\\', '/').strip(chars={'/'})
-
 # type ArrayLike*[T] {.explain.} = concept x, var v
 #   x.low is int
 #   x.high is int
