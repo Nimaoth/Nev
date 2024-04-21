@@ -260,6 +260,10 @@ proc writeOutput(chan: ptr Channel[Stream], data: ptr Channel[Option[string]]): 
           stream.write(d)
         buffer.setLen 0
 
+        # flush is required on linux
+        # todo: Only flush when \n was written? Don't flush on
+        stream.flush()
+
       except:
         # echo "ioerror"
         # echo &"writeOutput: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
