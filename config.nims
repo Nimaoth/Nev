@@ -30,7 +30,7 @@ switch("d", "release")
 # switch("d", "exposeScriptingApi")
 
 switch("d", "enableGui=true")
-# switch("d", "enableTerminal=true")
+switch("d", "enableTerminal=true")
 # switch("d", "enableNimscript=true")
 # switch("d", "enableAst=true")
 

@@ -51,6 +51,9 @@
 import macros, terminal, unicode, bitops, colors
 import misc/[custom_logger]
 
+when defined(posix):
+  import os
+
 logCategory "tui"
 
 export terminal.terminalWidth
