@@ -34,6 +34,7 @@ else:
     static:
       echo "Building with system clipboard"
     import nimclipboard/libclipboard
+    import system/ansi_c
 
     var clipboard = clipboardNew(nil)
 
@@ -41,8 +42,18 @@ else:
       clipboard.clipboardClear(LCB_CLIPBOARD)
       discard clipboard.clipboardSetText(str.cstring)
 
+    proc getClipboardThread(): Option[string] {.gcsafe.} =
+      try:
+        var len: cint = 0
+        let resRaw = clipboard.clipboardTextEx(len.addr, LCB_CLIPBOARD)
+        let res = $resRaw
+        c_free(resRaw)
+        return res.some
+      except CatchableError:
+        return string.none
+
     proc getSystemClipboardText*(): Future[Option[string]] {.async.} =
-      return some $clipboard.clipboardText()
+      return spawnAsync(getClipboardThread).await
 
     proc destroyClipboard*() =
       if clipboard != nil:
