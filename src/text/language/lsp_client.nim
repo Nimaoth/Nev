@@ -1,5 +1,6 @@
 import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequtils, sugar, os]
 import misc/[custom_logger, async_http_client, websocket, util, event, myjsonutils, custom_async]
+import platform/filesystem
 import scripting/expose
 from workspaces/workspace as ws import nil
 import lsp_types
@@ -84,7 +85,7 @@ method recv(connection: LSPConnectionWebsocket, length: int): Future[string] {.a
 
 method send(connection: LSPConnectionWebsocket, data: string): Future[void] = connection.websocket.send(data)
 
-proc encodePathUri(path: string): string = path.myNormalizedPath.split("/").mapIt(it.encodeUrl(false)).join("/")
+proc encodePathUri(path: string): string = path.normalizePathUnix.split("/").mapIt(it.encodeUrl(false)).join("/")
 
 when defined(js):
   # todo
@@ -246,7 +247,7 @@ proc cancelAllOf*(client: LSPClient, meth: string) =
 
 proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async.} =
   var workspacePath = if client.workspaceFolders.len > 0:
-    client.workspaceFolders[0].myNormalizedPath.some
+    client.workspaceFolders[0].normalizePathUnix.some
   else:
     string.none
 

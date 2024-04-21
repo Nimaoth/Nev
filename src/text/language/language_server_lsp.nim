@@ -1,6 +1,7 @@
 import std/[strutils, options, json, tables, uri, strformat, sequtils]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import misc/[event, util, custom_logger, custom_async, myjsonutils, custom_unicode]
+import platform/filesystem
 import text/text_editor
 import language_server_base, app, app_interface, config_provider, lsp_client
 import workspaces/workspace as ws
@@ -179,16 +180,16 @@ method getDefinition*(self: LanguageServerLSP, filename: string, location: Curso
   let parsedResponse = response.result
 
   if parsedResponse.asLocation().getSome(location):
-    return Definition(filename: location.uri.decodeUrl.parseUri.path.myNormalizedPath, location: (line: location.`range`.start.line, column: location.`range`.start.character)).some
+    return Definition(filename: location.uri.decodeUrl.parseUri.path.normalizePathUnix, location: (line: location.`range`.start.line, column: location.`range`.start.character)).some
 
   if parsedResponse.asLocationSeq().getSome(locations) and locations.len > 0:
     let location = locations[0]
-    return Definition(filename: location.uri.decodeUrl.parseUri.path.myNormalizedPath, location: (line: location.`range`.start.line, column: location.`range`.start.character)).some
+    return Definition(filename: location.uri.decodeUrl.parseUri.path.normalizePathUnix, location: (line: location.`range`.start.line, column: location.`range`.start.character)).some
 
   if parsedResponse.asLocationLinkSeq().getSome(locations) and locations.len > 0:
     let location = locations[0]
     return Definition(
-      filename: location.targetUri.decodeUrl.parseUri.path.myNormalizedPath,
+      filename: location.targetUri.decodeUrl.parseUri.path.normalizePathUnix,
       location: (line: location.targetSelectionRange.start.line, column: location.targetSelectionRange.start.character)).some
 
   log(lvlError, "No definition found")
@@ -319,7 +320,7 @@ method getSymbols*(self: LanguageServerLSP, filename: string): Future[seq[Symbol
         location: (line: r.location.range.start.line, column: r.location.range.start.character),
         name: r.name,
         symbolType: symbolKind,
-        filename: r.location.uri.decodeUrl.parseUri.path.myNormalizedPath,
+        filename: r.location.uri.decodeUrl.parseUri.path.normalizePathUnix,
       )
 
   return completions
