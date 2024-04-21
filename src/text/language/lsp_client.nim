@@ -620,10 +620,14 @@ proc handleWorkspaceConfigurationRequest(client: LSPClient, id: int, params: Con
 proc runAsync*(client: LSPClient) {.async.} =
   while client.connection.isNotNil:
     # debugf"[run] Waiting for response {(client.activeRequests.len)}"
+
     let response = await client.parseResponse()
     if response.isNil or response.kind != JObject:
       log(lvlError, fmt"[run] Bad response: {response}")
       continue
+
+    if logVerbose:
+      log(lvlError, fmt"[run] Got response: {response}")
 
     try:
 
