@@ -65,6 +65,7 @@ proc vimSelectLastCursor(editor: TextDocumentEditor) {.expose("vim-select-last-c
   # infof"vimSelectLastCursor"
   editor.selections = editor.selections.mapIt(it.last.toSelection)
   editor.updateTargetColumn()
+  editor.setNextScrollBehaviour(ScrollToMargin)
 
 proc vimSelectLast(editor: TextDocumentEditor, move: string, count: int = 1) {.expose("vim-select-last").} =
   # infof"vimSelectLast '{move}' {count}"
@@ -1239,7 +1240,7 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     else:
       editor.unindent()
 
-  addTextCommandBlock "", "<C-k><C-c>":
+  addTextCommandBlock "", "gc":
     editor.addNextCheckpoint "insert"
     editor.toggleLineComment()
 
@@ -1262,13 +1263,13 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     editor.scrollToCursor Last
     editor.updateTargetColumn()
 
-  addTextCommandBlock "", "<C-2>":
+  addTextCommandBlock "", "gf":
     editor.selection = editor.getNextChange(editor.selection.last).first.toSelection
     editor.scrollToCursor Last
     editor.centerCursor()
-  addTextCommandBlock "", "<C-1>":
+  addTextCommandBlock "", "gh":
     editor.selection = editor.getPrevChange(editor.selection.last).first.toSelection
     editor.scrollToCursor Last
     editor.centerCursor()
-  addTextCommand "", "gx", "close-diff"
-  addTextCommand "", "gc", "update-diff"
+  addTextCommand "", "<LEADER>gx", "close-diff"
+  addTextCommand "", "<LEADER>gc", "update-diff"
