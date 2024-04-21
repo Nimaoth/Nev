@@ -703,6 +703,10 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   setOption "editor.text.cursor.movement.visual-line", "last"
 
   setModeChangedHandler proc(editor, oldMode, newMode: auto) =
+    if newMode == "":
+      editor.setMode "normal"
+      return
+
     # infof"vim: handle mode change {oldMode} -> {newMode}"
     if newMode == "normal":
       if not isReplayingCommands():
@@ -919,7 +923,7 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
       editor.setMode("insert")
       editor.updateTargetColumn()
 
-  addTextCommandBlock "", "<CS-f>":
+  addTextCommandBlock "", "\\\\":
     commandLine("search-global \\")
     if getActiveEditor().isTextEditor(editor):
       var arr = newJArray()
@@ -931,14 +935,10 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   # Scrolling
   addTextCommand "", "<C-e>", "scroll-lines", 1
   addSubCommandWithCountBlock "", "move", "<C-d>": editor.vimMoveCursorLine(editor.screenLineCount div 2, count, center=true)
-  addSubCommandWithCountBlock "", "move", "<C-f>": editor.vimMoveCursorLine(editor.screenLineCount, count, center=true)
-  addSubCommandWithCountBlock "", "move", "<S-DOWN>": editor.vimMoveCursorLine(editor.screenLineCount, count, center=true)
   addSubCommandWithCountBlock "", "move", "<PAGE_DOWN>": editor.vimMoveCursorLine(editor.screenLineCount, count, center=true)
 
   addTextCommand "", "<C-y>", "scroll-lines", -1
   addSubCommandWithCountBlock "", "move", "<C-u>": editor.vimMoveCursorLine(-editor.screenLineCount div 2, count, center=true)
-  addSubCommandWithCountBlock "", "move", "<C-b>": editor.vimMoveCursorLine(-editor.screenLineCount, count, center=true)
-  addSubCommandWithCountBlock "", "move", "<S-UP>": editor.vimMoveCursorLine(-editor.screenLineCount, count, center=true)
   addSubCommandWithCountBlock "", "move", "<PAGE_UP>": editor.vimMoveCursorLine(-editor.screenLineCount, count, center=true)
 
   addTextCommandBlock "", "z<ENTER>":
@@ -1214,16 +1214,41 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   # todo: not really vim keybindings
   addTextCommand "", "gd", "goto-definition"
   addTextCommand "", "gs", "goto-symbol"
-  addTextCommand "", "<C-SPACE>", "get-completions"
-  addTextCommand "", "<C-h>", "show-hover-for-current"
-  addTextCommand "", "<C-g>", "show-diagnostics-for-current"
+  addTextCommand "", "K", "show-hover-for-current"
+  addTextCommand "", "H", "show-diagnostics-for-current"
   addTextCommand "", "<C-r>", "select-prev"
   addTextCommand "", "<C-m>", "select-next"
   addTextCommand "", "U", "vim-redo"
-  addTextCommand "", "<C-z>", "vim-undo"
-  addTextCommand "", "<C-y>", "vim-redo"
-  addTextCommand "", "<AS-UP>", "add-cursor-above"
-  addTextCommand "", "<AS-DOWN>", "add-cursor-below"
+  addTextCommand "insert", "<C-z>", "vim-undo"
+  addTextCommand "insert", "<C-r>", "vim-redo"
+
+  addTextCommand "", "<CA-UP>", "add-cursor-above"
+  addTextCommand "", "<CA-DOWN>", "add-cursor-below"
+  addTextCommand "", "<C-g>", "add-cursor-above"
+  addTextCommand "", "<C-f>", "add-cursor-below"
+
+  addTextCommandBlock "", "L":
+    if editor.selections.len == 1:
+      var selection = editor.setSearchQueryFromMove("word", prefix=r"\b", suffix=r"\b")
+      selection.last.column -= 1
+      editor.selection = selection
+    else:
+      let next = editor.getNextFindResult(editor.selection.last, includeAfter=false)
+      editor.selections = editor.selections & next
+      editor.scrollToCursor Last
+      editor.updateTargetColumn()
+
+    editor.setMode("visual")
+
+  addTextCommandBlock "visual", "L":
+    if editor.selections.len == 1:
+      editor.setSearchQuery(editor.getText(editor.selection, inclusiveEnd=true))
+
+    let next = editor.getNextFindResult(editor.selection.last, includeAfter=false)
+    editor.selections = editor.selections & next
+    editor.scrollToCursor Last
+    editor.updateTargetColumn()
+
   addTextCommand "", "<C-k><C-u>", "print-undo-history"
   addTextCommand "", "<C-UP>", "scroll-lines", -1
   addTextCommand "", "<C-DOWN>", "scroll-lines", 1
@@ -1253,6 +1278,8 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addCommand "editor", "<C-k><C-r>", "reload-config"
   addCommand "editor", "<C-k><CS-r>", "reload-state"
   addTextCommandBlock "", "<C-k><C-z>": collectGarbage()
+
+  addTextCommand "", "M", "enter-choose-cursor-mode", "set-selection"
 
   addTextCommandBlock "", "gt":
     editor.selection = editor.getNextDiagnostic(editor.selection.last, 1).first.toSelection
