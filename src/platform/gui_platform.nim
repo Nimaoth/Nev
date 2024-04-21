@@ -147,6 +147,8 @@ method init*(self: GuiPlatform) =
       case rune.char
       of ' ': return
       of 8.char: return # backspace
+      of 9.char: return # tab
+      of 13.char: return # enter
       of 127.char: return # delete
       else: discard
 

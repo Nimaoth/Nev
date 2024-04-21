@@ -29,6 +29,6 @@ else:
   fs.init getAppDir()
 
 proc normalizePathUnix*(path: string): string =
-  return path.normalizedPath.replace('\\', '/').strip(chars={'/'})
+  return path.normalizedPath.replace('\\', '/').strip(leading=false, chars={'/'})
 
-proc `//`*(a: string, b: string): string =  (a / b).normalizePathUnix
+proc `//`*(a: string, b: string): string = (a / b).normalizePathUnix

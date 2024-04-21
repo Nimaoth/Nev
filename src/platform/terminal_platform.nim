@@ -148,6 +148,12 @@ method init*(self: TerminalPlatform) =
   if myEnableTrueColors():
     log(lvlInfo, "Enable true color support")
     self.trueColorSupport = true
+  else:
+    when not defined(posix):
+      log(lvlError, "Failed to enable true color support")
+    else:
+      log(lvlInfo, "Enable true color support")
+      self.trueColorSupport = true
 
   self.layoutOptions.getTextBounds = proc(text: string, fontSizeIncreasePercent: float = 0): Vec2 =
     result.x = text.len.float
