@@ -1423,11 +1423,12 @@ proc displayFull(tb: TerminalBuffer) =
 
       displayBuffer.add $c.ch
 
-    # For some reason windows terminal doesn't update the cells at the end if there's a bunch of unicode in the line
-    # Adding a bunch of whitespace at the end fixes it.
-    # I don't know if this also happens in other terminals.
-    displayBuffer.add "                                                                   "
-    displayBuffer.add ' '.Rune.repeat(additionalSpaces)
+    when defined(windows):
+      # For some reason windows terminal doesn't update the cells at the end if there's a bunch of unicode in the line
+      # Adding a bunch of whitespace at the end fixes it.
+      # I don't know if this also happens in other terminals.
+      displayBuffer.add "                                                                   "
+      displayBuffer.add ' '.Rune.repeat(additionalSpaces)
 
     flushDisplayBuffer()
 
@@ -1474,12 +1475,13 @@ proc displayDiff(tb: TerminalBuffer) =
       displayBuffer.add $c.ch
       inc bufXPos
 
-    if force:
-      # # For some reason windows terminal doesn't update the cells at the end if there's a bunch of unicode in the line
-      # # Adding a bunch of whitespace at the end fixes it.
-      # # I don't know if this also happens in other terminals.
-      displayBuffer.add "                                                                   "
-      displayBuffer.add ' '.Rune.repeat(additionalSpaces)
+    when defined(windows):
+      if force:
+        # # For some reason windows terminal doesn't update the cells at the end if there's a bunch of unicode in the line
+        # # Adding a bunch of whitespace at the end fixes it.
+        # # I don't know if this also happens in other terminals.
+        displayBuffer.add "                                                                   "
+        displayBuffer.add ' '.Rune.repeat(additionalSpaces)
 
     flushDisplayBuffer()
 
