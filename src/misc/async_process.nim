@@ -65,7 +65,7 @@ proc destroy*(process: AsyncProcess) =
   process.dontRestart = true
 
   if not process.process.isNil:
-    process.process.terminate()
+    process.process.kill()
 
   process.inputStreamChannel[].send nil
   process.outputStreamChannel[].send nil
@@ -73,30 +73,6 @@ proc destroy*(process: AsyncProcess) =
 
   spawn destroyProcess2(process.addr)
   # todo: should probably wait for the other thread to increment the process RC
-
-  # if not process.readerFlowVar.isNil:
-  #   debugf"wait for reader"
-  #   blockUntil process.readerFlowVar[]
-  # if not process.writerFlowVar.isNil:
-  #   debugf"wait for writer"
-  #   blockUntil process.writerFlowVar[]
-  # if not process.errorReaderFlowVar.isNil:
-  #   debugf"wait for error reader"
-  #   blockUntil process.errorReaderFlowVar[]
-
-  # debugf"close channels"
-  # process.inputStreamChannel[].close()
-  # process.errorStreamChannel[].close()
-  # process.outputStreamChannel[].close()
-  # process.serverDiedNotifications[].close()
-  # debugf"destroy channels"
-  # process.input.destroy()
-  # process.error.destroy()
-  # process.output.destroy()
-  # process.inputStreamChannel.deallocShared
-  # process.errorStreamChannel.deallocShared
-  # process.outputStreamChannel.deallocShared
-  # process.serverDiedNotifications.deallocShared
 
 proc recv*[T: char](achan: AsyncChannel[T], amount: int): Future[string] {.async.} =
   var buffer = ""
