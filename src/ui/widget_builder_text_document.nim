@@ -594,7 +594,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
     # line numbers
     let maxLineNumber = case lineNumbers
-      of LineNumbers.Absolute: self.previousBaseIndex + ((height - self.scrollOffset) / builder.textHeight).int
+      of LineNumbers.Absolute: self.document.lines.len
       of LineNumbers.Relative: 99
       else: 0
     let maxLineNumberLen = ($maxLineNumber).len + 1
@@ -1028,7 +1028,20 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
             let readOnlyText = if self.document.readOnly: "-readonly- " else: ""
             let stagedText = if self.document.staged: "-staged- " else: ""
             let diffText = if renderDiff: "-diff- " else: ""
-            let text = fmt"| {readOnlyText}{stagedText}{diffText}{self.document.undoableRevision}/{self.document.revision}   {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} "
+
+            let currentRune = self.document.runeAt(self.selection.last)
+            let currentRuneText = if currentRune == 0.Rune:
+              "\\0"
+            elif currentRune == '\t'.Rune:
+              "\\t"
+            else:
+              $currentRune
+
+            var currentRuneHexText = currentRune.int.toHex.strip(trailing=false, chars={'0'})
+            if currentRuneHexText.len == 0:
+              currentRuneHexText = "0"
+
+            let text = fmt"| {readOnlyText}{stagedText}{diffText}{self.document.undoableRevision}/{self.document.revision}  '{currentRuneText}' (U+{currentRuneHexText}) {(cursorString(self.selection.first))}-{(cursorString(self.selection.last))} - {self.id} "
             builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, pivot = vec2(1, 0), textColor = textColor, text = text)
 
         builder.panel(sizeFlags + &{FillBackground}, backgroundColor = backgroundColor):

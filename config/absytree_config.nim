@@ -1,5 +1,5 @@
 import absytree_runtime
-import std/[strutils]
+import std/[strutils, unicode]
 
 proc handleAction*(action: string, args: JsonNode): bool {.wasmexport.} =
   when not defined(wasm):
@@ -93,6 +93,10 @@ addCommand "popup.selector.file-explorer", "<C-g>", "prev"
 addCommand "popup.selector.file-explorer", "<C-r>", "next"
 addCommand "popup.selector.file-explorer", "<C-t>", "accept"
 addCommand "popup.selector.file-explorer", "<C-n>", "go-up"
+
+if getBackend() == Terminal:
+  # Disable animations in terminal because they don't look great
+  changeAnimationSpeed 100000
 
 # Triple click to selects a line
 setOption "editor.text.triple-click-command", "extend-select-move"

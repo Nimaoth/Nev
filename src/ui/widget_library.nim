@@ -1,4 +1,4 @@
-import std/[strformat, strutils]
+import std/[strformat, strutils, os]
 import misc/[custom_unicode]
 import document, ui/node
 import chroma
@@ -28,7 +28,8 @@ template createHeader*(builder: UINodeBuilder, inRenderHeader: bool, inMode: str
 
         let workspaceName = inDocument.workspace.map(wf => " - " & wf.name).get("")
         let modeText = if inMode.len == 0: "-" else: inMode
-        let text = " $# - $#$# $# " % [modeText, dirtyMarker, inDocument.filename, workspaceName]
+        let (directory, filename) = inDocument.filename.splitPath
+        let text = " $# - $#$# - $#$# " % [modeText, dirtyMarker, filename, directory, workspaceName]
         builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = inTextColor, text = text)
 
         if leftFunc.isNotNil:
