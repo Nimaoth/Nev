@@ -1,4 +1,4 @@
-import std/[strformat, terminal, typetraits, enumutils, strutils]
+import std/[strformat, terminal, typetraits, enumutils, strutils, sets]
 import std/colors as stdcolors
 import vmath
 import chroma as chroma
@@ -63,6 +63,74 @@ proc getClosestColor[T: HoleyEnum](r, g, b: int, default: T): T =
       result = fg
   {.pop.}
 
+# Characters which are displayed two cells wide in the terminal but only take up one character in the terminals grid
+# For those we take up two cells internally, but don't write the second cell to the terminal
+const narrowWide = """
+⌚⌛⏩⏪⏫⏬⏰⏳◽◾☔☕♈♉♊♋♌♍♎♏♐♑♒♓♿⚓⚡⚪⚫⚽⚾⛄⛅⛎⛔⛪⛲⛳⛵⛺⛽✅✊✋✨❌❎❓❔❕
+❗➕➖➗➰➿⬛⬜⭐⭕〰〽㊗㊙🀄🃏🆎🆑🆒🆓🆔🆕🆖🆗🆘🆙🆚🇦🇧🇨🇩🇪🇫🇬🇭🇮🇯🇰🇱🇲🇳🇴🇵🇶🇷🇸🇹🇺🇻🇼
+🇽🇾🇿🈁🈂🈚🈯🈲🈳🈴🈵🈶🈷🈸🈹🈺🉐🉑🌀🌁🌂🌃🌄🌅🌆🌇🌈🌈🌉🌊🌋🌌🌍🌎🌏🌐🌑🌒🌓🌔🌕🌖🌗🌘🌙🌚🌛🌜🌝🌞
+🌟🌠🌭🌮🌯🌰🌱🌲🌳🌴🌵🌷🌸🌹🌺🌻🌼🌽🌾🌿🍀🍁🍂🍃🍄🍅🍆🍇🍈🍉🍊🍋🍌🍍🍎🍏🍐🍑🍒🍓🍔🍕🍖🍗🍘🍙🍚🍛🍜🍝
+🍞🍟🍠🍡🍢🍣🍤🍤🍥🍦🍧🍨🍩🍪🍫🍬🍭🍮🍯🍰🍱🍲🍳🍴🍵🍶🍷🍸🍹🍺🍻🍼🍾🍿🎀🎁🎂🎃🎄🎅🎆🎇🎈🎉🎊🎋🎌🎍🎎🎏
+🎐🎑🎒🎓🎠🎡🎢🎣🎤🎥🎦🎧🎨🎩🎪🎫🎬🎭🎮🎯🎰🎱🎲🎳🎴🎵🎶🎷🎸🎹🎺🎻🎼🎽🎾🎿🏀🏁🏂🏃🏄🏅🏆🏇🏈🏉🏊🏏🏐🏑
+🏒🏓🏠🏡🏢🏣🏤🏥🏦🏧🏨🏩🏪🏫🏬🏭🏮🏯🏰🏴🏸🏸🏹🏺🏻🏼🏽🏾🏿🐀🐁🐂🐃🐄🐅🐆🐇🐈🐉🐊🐋🐌🐍🐎🐏🐐🐑🐒🐓🐔
+🐕🐖🐗🐘🐙🐚🐛🐜🐝🐞🐟🐠🐡🐢🐣🐤🐥🐦🐧🐨🐩🐪🐫🐬🐭🐮🐯🐰🐱🐲🐳🐴🐵🐶🐷🐸🐹🐺🐻🐼🐽🐾👀👂👃👄👅👆👇👈
+👉👊👋👌👍👎👏👐👑👒👓👔👕👖👗👘👙👚👛👜👝👞👟👠👡👢👣👤👥👦👧👨👩👪👫👬👭👮👯👰👱👲👳👴👵👶👷👸👹👺
+👻👼👽👾👿💀💁💂💃💄💅💆💇💈💉💊💋💌💍💎💏💐💑💒💓💔💕💖💗💘💙💚💛💜💝💞💟💠💡💢💣💤💥💦💧💨💩💪💫💬
+💭💮💯💰💱💲💳💴💵💶💷💸💹💺💻💼💽💾💿📀📁📂📃📄📅📆📇📈📉📊📋📌📍📎📏📐📑📒📓📔📕📖📖📗📘📙📚📛📜📝
+📞📟📠📡📢📣📤📥📦📧📨📩📪📫📬📭📮📯📰📱📲📳📴📵📶📷📸📹📺📻📼📿🔀🔁🔂🔂🔃🔄🔅🔆🔇🔈🔉🔊🔊🔋🔌🔍🔎🔏
+🔐🔑🔒🔓🔔🔕🔖🔗🔘🔙🔚🔛🔜🔝🔞🔟🔠🔡🔢🔣🔤🔥🔦🔧🔨🔩🔪🔫🔫🔬🔭🔮🔯🔰🔱🔲🔳🔴🔵🔶🔷🔸🔹🔺🔻🔼🔽🕋🕌🕍
+🕎🕐🕑🕒🕓🕔🕕🕖🕗🕘🕙🕚🕛🕜🕝🕞🕟🕠🕡🕢🕣🕤🕥🕦🕧🕺🖕🖖🖤🗻🗼🗽🗾🗿😀😁😂😃😄😅😆😇😈😉😊😋😌😍😎😏
+😐😑😒😓😔😕😖😗😘😙😚😛😜😝😞😟😠😡😢😣😤😥😦😧😨😩😪😫😬😭😮😯😰😱😲😳😴😵😶😷😸😹😺😻😼😽😾😿🙀🙁
+🙂🙃🙄🙄🙅🙆🙇🙈🙉🙊🙋🙌🙍🙎🙏🚀🚁🚁🚂🚃🚄🚅🚆🚇🚈🚉🚊🚋🚌🚍🚎🚏🚐🚑🚒🚓🚔🚕🚖🚗🚘🚙🚚🚛🚜🚝🚞🚟🚠🚡
+🚢🚣🚤🚥🚦🚧🚨🚩🚪🚫🚬🚭🚮🚯🚰🚱🚲🚳🚳🚴🚵🚶🚷🚸🚹🚺🚻🚼🚽🚾🚿🛀🛁🛂🛃🛄🛅🛌🛐🛑🛒🛕🛖🛗🛝🛞🛟🛫🛬🛴
+🛵🛶🛷🛸🛹🛺🛻🛼🟠🟡🟢🟣🟤🟥🟦🟧🟨🟩🟪🟫🟰🤌🤍🤎🤏🤐🤑🤒🤓🤔🤕🤖🤗🤘🤙🤚🤛🤜🤝🤞🤟🤠🤡🤢🤣🤤🤥🤦🤧🤨
+🤩🤪🤫🤬🤭🤮🤯🤰🤱🤲🤳🤴🤵🤶🤷🤸🤹🤺🤼🤽🤾🤿🥀🥁🥂🥃🥄🥅🥇🥈🥉🥊🥋🥌🥍🥎🥏🥐🥑🥒🥓🥔🥕🥖🥗🥘🥙🥚🥛🥜
+🥝🥞🥟🥠🥡🥢🥣🥤🥥🥦🥧🥨🥩🥪🥫🥬🥭🥮🥯🥰🥰🥱🥲🥳🥴🥵🥶🥷🥸🥹🥺🥻🥼🥽🥾🥿🦀🦁🦂🦃🦄🦅🦅🦆🦇🦈🦉🦊🦋🦌
+🦍🦎🦏🦐🦑🦒🦒🦓🦔🦕🦖🦗🦘🦙🦚🦛🦜🦝🦞🦟🦠🦡🦢🦣🦤🦥🦦🦧🦨🦩🦪🦫🦬🦬🦭🦮🦯🦰🦱🦲🦳🦴🦵🦶🦶🦷🦸🦹🦺🦻
+🦼🦽🦾🦿🧀🧁🧂🧃🧄🧅🧆🧇🧈🧉🧊🧋🧌🧍🧎🧏🧐🧑🧒🧓🧔🧕🧖🧗🧘🧙🧚🧚🧛🧜🧝🧞🧟🧠🧡🧢🧣🧤🧤🧥🧦🧧🧨🧩🧪🧫
+🧬🧭🧮🧯🧰🧱🧲🧳🧴🧵🧶🧷🧸🧹🧺🧻🧼🧽🧾🧿🩰🩱🩲🩳🩴🩸🩹🩺🩻🩼🪀🪁🪂🪃🪄🪅🪆🪐🪑🪒🪓🪔🪕🪖🪗🪘🪙🪚🪛🪜
+🪝🪞🪟🪠🪡🪢🪣🪤🪥🪦🪧🪨🪩🪪🪫🪬🪰🪱🪲🪳🪴🪵🪶🪷🪸🪹🪺🫀🫁🫂🫃🫄🫅🫐🫑🫒🫓🫔🫕🫖🫗🫘🫙🫠🫡🫢🫣🫤🫥🫦
+🫧🫰🫱🫲🫳🫴🫵🫶
+""".strip().replace("\n", "")
+
+# Characters which only take up one cell
+const narrowNarrow = "*123456789©®‼⁉™↔↕↖↗↘↙↪▪▫▶◀◻◼☺♀♂♠♣♥♦⤴⤵⬅⬆⬇󾠫"
+
+# Characters which take up one cell in the terminal but are rendered as two cells, therefor overlapping
+# with the cell on the right.
+# For these we take up two cells in the internal buffer, the second just being a space with the same attributes
+# as the actual char. Therefore when rendered in the terminal the emoji overlaps with the space on the right
+# and looks nice.
+const wideNarrow = """
+ℹ⌨⏏⏭⏮⏯⏱⏲⏸⏹⏺☀☁☂☃☄☎☑☘☝☠☢☣☦☪☮☯☸☹♟♨♻♾⚒⚔⚕⚖⚗⚙⚛⚜⚠⚧⚰⚱⛈⛏⛑⛓⛩
+⛰⛱⛴⛷⛸⛹✂✈✉✌✍✏✒✔✖✝✡✳✴❄❇❣❤➡🅰🅱🅾🅿🌡🌤🌥🌦🌧🌨🌩🌪🌫🌬🌶🍽🎖🎗🎗🎙🎚🎛🎞🎟🏋🏌
+🏍🏎🏔🏕🏖🏗🏘🏙🏚🏛🏜🏝🏞🏟🏳🏵🏷🐿👁👁📽🕉🕊🕯🕰🕳🕴🕵🕶🕷🕸🕹🖇🖊🖋🖌🖍🖐🖥🖨🖱🖲🖼🗂🗃🗄🗑🗒🗓🗜
+🗝🗞🗡🗣🗨🗯🗳🗺🛋🛍🛎🛏🛠🛡🛢🛣🛤🛥🛩🛰🛳
+""".strip().replace("\n", "").replace(" ", "")
+
+var narrowWideSet = initHashSet[Rune]()
+for r in narrowWide.runes:
+  narrowWideSet.incl r
+
+var narrowNarrowSet = initHashSet[Rune]()
+for r in narrowNarrow.runes:
+  narrowNarrowSet.incl r
+
+var wideNarrowSet = initHashSet[Rune]()
+for r in wideNarrow.runes:
+  wideNarrowSet.incl r
+
+proc runeProps(r: Rune): tuple[selectionWidth: int, displayWidth: int] =
+  if r.int <= 127:
+    return (1, 1)
+
+  if r in narrowWideSet:
+    return (2, 2)
+  if r in wideNarrowSet:
+    return (1, 2)
+
+  return (1, 1)
+
 method init*(self: TerminalPlatform) =
   illwillInit(fullscreen=true, mouse=true)
   setControlCHook(exitProc)
@@ -88,6 +156,14 @@ method init*(self: TerminalPlatform) =
   self.buffer = newTerminalBuffer(terminalWidth(), terminalHeight())
   self.redrawEverything = true
 
+  self.builder.textWidthImpl = proc(node: UINode): float32 =
+    for r in node.text.runes:
+      result += r.runeProps.displayWidth.float32
+
+  self.builder.textWidthStringImpl = proc(text: string): float32 =
+    for r in text.runes:
+      result += r.runeProps.displayWidth.float32
+
 method deinit*(self: TerminalPlatform) =
   resetAttributes()
   myDisableTrueColors()
@@ -112,7 +188,11 @@ method charGap*(self: TerminalPlatform): float = 0
 method measureText*(self: TerminalPlatform, text: string): Vec2 = vec2(text.len.float, 1)
 
 proc pushMask(self: TerminalPlatform, mask: Rect) =
-  self.masks.add mask
+  let maskedMask = if self.masks.len > 0:
+    self.masks[self.masks.high] and mask
+  else:
+    mask
+  self.masks.add maskedMask
 
 proc popMask(self: TerminalPlatform) =
   assert self.masks.len > 0
@@ -344,16 +424,14 @@ proc writeLine(self: TerminalPlatform, pos: Vec2, text: string) =
   if pos.y < mask.y or pos.y >= mask.yh:
     return
 
-  let runeLen = text.runeLen
-
-  let cutoffLeft = max(mask.x - pos.x, 0).RuneCount
-  let cutoffRight = max(pos.x + runeLen.float * self.charWidth - mask.xw, 0).RuneCount
-
-  if cutoffLeft >= runeLen or cutoffRight >= runeLen or runeLen - cutoffLeft - cutoffRight <= 0.RuneCount:
-    return
-
-  let maskedText = text[cutoffLeft.RuneIndex..<(runeLen - cutoffRight).RuneIndex]
-  self.buffer.write(pos.x.int + cutoffLeft.int, pos.y.int, maskedText)
+  var x = pos.x.int
+  for r in text.runes:
+    let props = r.runeProps
+    if x >= mask.x.int and x + props.displayWidth <= mask.xw.int:
+      self.buffer.writeRune(x, pos.y.int, r, props.selectionWidth, props.displayWidth - props.selectionWidth)
+    x += props.displayWidth
+    if x >= mask.xw.int:
+      break
 
 proc nextWrapBoundary(str: openArray[char], start: int, maxLen: RuneCount): (int, RuneCount) =
   var len = 0.RuneCount
