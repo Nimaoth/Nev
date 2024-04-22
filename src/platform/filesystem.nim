@@ -28,7 +28,9 @@ else:
   let fs*: FileSystem = new FileSystemDesktop
   fs.init getAppDir()
 
+const stripLeading = defined(windows)
+
 proc normalizePathUnix*(path: string): string =
-  return path.normalizedPath.replace('\\', '/').strip(leading=false, chars={'/'})
+  return path.normalizedPath.replace('\\', '/').strip(leading=stripLeading, chars={'/'})
 
 proc `//`*(a: string, b: string): string = (a / b).normalizePathUnix
