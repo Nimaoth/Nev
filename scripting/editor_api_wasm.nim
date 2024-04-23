@@ -12,6 +12,14 @@ proc getBackend*(): Backend =
   result = parseJson($res).jsonTo(typeof(result))
 
 
+proc editor_getHostOs_string_App_wasm(arg: cstring): cstring {.importc.}
+proc getHostOs*(): string =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_getHostOs_string_App_wasm(argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
 proc editor_loadApplicationFile_Option_string_App_string_wasm(arg: cstring): cstring {.
     importc.}
 proc loadApplicationFile*(path: string): Option[string] =

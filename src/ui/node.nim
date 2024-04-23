@@ -1372,10 +1372,10 @@ macro panel*(builder: UINodeBuilder, inFlags: UINodeFlags, args: varargs[untyped
 
 proc findNodeContaining*(node: UINode, pos: Vec2, predicate: proc(node: UINode): bool): Option[UINode] =
   result = UINode.none
-  if pos.x < node.lx or pos.x > node.lx + node.lw or pos.y < node.ly or pos.y > node.ly + node.lh:
+  if pos.x < node.lx or pos.x >= node.lx + node.lw or pos.y < node.ly or pos.y >= node.ly + node.lh:
     return
 
-  # echo "findNodeContaining ", node.dump, " at " ,pos, " with ", (node.lx, node.ly, node.lw, node.lh)
+  # debugf"findNodeContaining at {pos} with {(node.lx, node.ly, node.lw, node.lh)}: {node.dump}"
 
   if node.first.isNil: # has no children
     if predicate.isNotNil and not predicate(node):

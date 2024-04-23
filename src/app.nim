@@ -1089,6 +1089,16 @@ static:
 proc getBackend*(self: App): Backend {.expose("editor").} =
   return self.backend
 
+proc getHostOs*(self: App): string {.expose("editor").} =
+  when defined(linux):
+    return "linux"
+  elif defined(windows):
+    return "windows"
+  elif defined(js):
+    return "browser"
+  else:
+    return "unknown"
+
 proc loadApplicationFile*(self: App, path: string): Option[string] {.expose("editor").} =
   ## Load a file from the application directory (path is relative to the executable)
   return fs.loadApplicationFile(path).some
