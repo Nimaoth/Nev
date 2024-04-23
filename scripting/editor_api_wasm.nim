@@ -800,6 +800,19 @@ proc reloadState*() =
   let res {.used.} = editor_reloadState_void_App_wasm(argsJsonString.cstring)
 
 
+proc editor_saveSession_void_App_string_wasm(arg: cstring): cstring {.importc.}
+proc saveSession*(sessionFile: string = "") =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      sessionFile
+    else:
+      sessionFile.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_saveSession_void_App_string_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_logOptions_void_App_wasm(arg: cstring): cstring {.importc.}
 proc logOptions*() =
   var argsJson = newJArray()
