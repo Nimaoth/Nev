@@ -170,7 +170,7 @@ type
 
     scriptActions: Table[string, ScriptAction]
 
-    sessionFile: string
+    sessionFile*: string
 
     gitIgnorePatterns: seq[Regex]
 
@@ -780,11 +780,23 @@ proc setupDefaultKeybindings(self: App) =
   selectorPopupConfig.addCommand("", "<C-u>", "prev-x")
   selectorPopupConfig.addCommand("", "<C-d>", "next-x")
 
+proc testApplicationPath*(path: string): (bool, string) =
+  ## Returns true as the first value if the path starts with 'app:'
+  ## The second return value is the path without the 'app:'.
+  result = (false, path)
+  if path.startsWith "app:":
+    return (true, path[4..^1])
+
 proc restoreStateFromConfig*(self: App, state: var EditorState) =
   try:
-    let stateJson = fs.loadApplicationFile(self.sessionFile).parseJson
+    let (isAppFile, path) = self.sessionFile.testApplicationPath()
+    let stateJson = if isAppFile:
+      fs.loadApplicationFile(path).parseJson
+    else:
+      fs.loadFile(path).parseJson
+
     state = stateJson.jsonTo(EditorState, JOptions(allowMissingKeys: true, allowExtraKeys: true))
-    log(lvlInfo, fmt"Restoring state {stateJson.pretty}")
+    log(lvlInfo, fmt"Restoring session {self.sessionFile}")
 
     if not state.theme.isEmptyOrWhitespace:
       try:
@@ -917,17 +929,32 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
   self.getCommandLineTextEditor.hideCursorWhenInactive = true
   discard self.commandLineTextEditor.onMarkedDirty.subscribe () => self.platform.requestRender()
 
-  self.sessionFile = "./config/config.json"
 
   var state = EditorState()
   if not options.dontRestoreConfig:
-    self.sessionFile = options.sessionOverride.get("./config/config.json")
-    self.restoreStateFromConfig(state)
+    if options.sessionOverride.getSome(session):
+      self.sessionFile = session
+    elif options.fileToOpen.isSome:
+      # Don't restore a session when opening a specific file.
+      discard
+    else:
+      when not defined(js):
+        # In the browser we don't have access to the local file system.
+        # Outside the browser we look for a session file in the current directory.
+        if fileExists(".absytree-session"):
+          self.sessionFile = ".absytree-session"
+      else:
+        self.sessionFile = "app:config/config.json"
+
+    if self.sessionFile != "":
+      self.restoreStateFromConfig(state)
+    else:
+      log lvlInfo, &"Don't restore session file."
 
   try:
     if not options.dontRestoreOptions:
       self.options = fs.loadApplicationFile("./config/options.json").parseJson
-      log(lvlInfo, fmt"Restoring options: {self.options.pretty}")
+      log(lvlInfo, fmt"Restoring options")
 
   except CatchableError:
     log(lvlError, fmt"Failed to load previous options from options file: {getCurrentExceptionMsg()}")
@@ -1197,8 +1224,14 @@ proc saveAppState*(self: App) {.expose("editor").} =
     if view.getEditorState().getSome(editorState):
       state.hiddenEditors.add editorState
 
-  let serialized = state.toJson
-  fs.saveApplicationFile(self.sessionFile, serialized.pretty)
+  if self.sessionFile != "":
+    let serialized = state.toJson
+    let (isAppFile, path) = self.sessionFile.testApplicationPath()
+    if isAppFile:
+      fs.saveApplicationFile(path, serialized.pretty)
+    else:
+      fs.saveFile(path, serialized.pretty)
+
   fs.saveApplicationFile("./config/options.json", self.options.pretty)
 
 proc requestRender*(self: App, redrawEverything: bool = false) {.expose("editor").} =
@@ -2377,7 +2410,15 @@ proc reloadConfig*(self: App) {.expose("editor").} =
 proc reloadState*(self: App) {.expose("editor").} =
   ## Reloads some of the state stored in the session file (default: config/config.json)
   var state = EditorState()
-  self.restoreStateFromConfig(state)
+  if self.sessionFile != "":
+    self.restoreStateFromConfig(state)
+  self.requestRender()
+
+proc saveSession*(self: App, sessionFile: string = "") {.expose("editor").} =
+  ## Reloads some of the state stored in the session file (default: config/config.json)
+  self.sessionFile = sessionFile
+  if self.sessionFile != "":
+    self.saveAppState()
   self.requestRender()
 
 proc logOptions*(self: App) {.expose("editor").} =

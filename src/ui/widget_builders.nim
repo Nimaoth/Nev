@@ -25,7 +25,10 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
     builder.panel(&{FillX, FillY, LayoutVerticalReverse}): # main panel
       builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse, FillBackground}, backgroundColor = headerColor, pivot = vec2(0, 1)): # status bar
         let textColor = self.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-        let text = if self.currentMode.len == 0: "-" else: self.currentMode
+
+        let modeText = if self.currentMode.len == 0: "[No Mode]" else: self.currentMode
+        let sessionText = if self.sessionFile.len == 0: "[No Session]" else: fmt"[Session: {self.sessionFile}]"
+        let text = fmt"{modeText} | {sessionText}"
 
         builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = text, textColor = textColor, pivot = vec2(1, 0))
         builder.panel(&{}, w = builder.charWidth)
