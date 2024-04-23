@@ -53,7 +53,7 @@ jobs:
       - run: wget https://nim-lang.org/choosenim/init.sh -O init-choosenim.sh
       - run: ls -la
       - run: chmod +x init-choosenim.sh
-      - run: CHOOSENIM_CHOOSE_VERSION="devel" ./init-choosenim.sh -y
+      - run: CHOOSENIM_CHOOSE_VERSION="stable" ./init-choosenim.sh -y
 
       - name: add Absytree as git safe.directory so nimble can install stuff
         run: git config --global --add safe.directory /__w/Absytree/Absytree
