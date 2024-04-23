@@ -747,18 +747,19 @@ proc initTreesitter*(self: TextDocument): Future[void] {.async.} =
 
   self.styledTextCache.clear()
 
-  let languageId = self.languageId
+  if self.languageId == "":
+    return
 
-  let config = self.configProvider.getValue("editor.text.treesitter." & languageId, newJObject())
-  var language = await loadLanguage(languageId, config)
+  let config = self.configProvider.getValue("editor.text.treesitter." & self.languageId, newJObject())
+  var language = await loadLanguage(self.languageId, config)
 
   if language.isNone:
-    log(lvlWarn, fmt"Treesitter language is not available for '{languageId}'")
+    log(lvlWarn, fmt"Treesitter language is not available for '{self.languageId}'")
     return
 
   self.tsParser = createTSParser()
   if self.tsParser.isNil:
-    log(lvlWarn, fmt"Failed to create treesitter parser for '{languageId}'")
+    log(lvlWarn, fmt"Failed to create treesitter parser for '{self.languageId}'")
     return
 
   self.tsParser.setLanguage(language.get)
@@ -767,22 +768,22 @@ proc initTreesitter*(self: TextDocument): Future[void] {.async.} =
   self.reparseTreesitter()
 
   try:
-    let queryString = fs.loadApplicationFile(fmt"./languages/{languageId}/queries/highlights.scm")
+    let queryString = fs.loadApplicationFile(fmt"./languages/{self.languageId}/queries/highlights.scm")
     self.highlightQuery = language.get.query(queryString)
     if self.highlightQuery.isNil:
-      log(lvlError, fmt"Failed to create highlight query for '{languageId}'")
+      log(lvlError, fmt"Failed to create highlight query for '{self.languageId}'")
   except CatchableError:
-    log(lvlError, fmt"No highlight queries found for '{languageId}'")
+    log(lvlError, fmt"No highlight queries found for '{self.languageId}'")
 
   try:
-    var errorQueryString = fs.loadApplicationFile(fmt"./languages/{languageId}/queries/errors.scm")
+    var errorQueryString = fs.loadApplicationFile(fmt"./languages/{self.languageId}/queries/errors.scm")
     if errorQueryString.len == 0:
       errorQueryString = "(ERROR) @error"
     self.errorQuery = language.get.query(errorQueryString)
     if self.errorQuery.isNil:
-      log(lvlError, fmt"Failed to create error query for '{languageId}'")
+      log(lvlError, fmt"Failed to create error query for '{self.languageId}'")
   except CatchableError:
-    log(lvlError, fmt"No error queries found for '{languageId}'")
+    log(lvlError, fmt"No error queries found for '{self.languageId}'")
 
   # We now have a treesitter grammar + highlight query, so retrigger rendering
   self.notifyTextChanged()
