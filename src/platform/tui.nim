@@ -1441,47 +1441,72 @@ proc displayDiff(tb: TerminalBuffer) =
   bufYPos = -1
 
   for y in 0..<tb.height:
-    var additionalSpaces = 0
-    var force = false
+    var containsWideGlyph = false
+    var anyChanged = false
 
-    var actualX = 0
+    # Force redraw the entire line if the line contains or used to contain wide glyphs,
+    # and anything in the line changed.
+    # This is because terminals/terminal multiplexers can't deal or deal differently with wide glyphs
+    # in the case of partial updates.
     for x in 0..<tb.width:
-      let c {.cursor.} = tb[x, y]
-      defer:
-        gPrevTerminalBuffer[x, y] = c
+      if x + 1 < tb.width:
+        if tb[x + 1, y].previousWideGlyph or gPrevTerminalBuffer[x + 1, y].previousWideGlyph:
+          containsWideGlyph = true
+      if tb[x, y] != gPrevTerminalBuffer[x, y]:
+        anyChanged = true
+      if containsWideGlyph and anyChanged:
+        break
 
-      if c.previousWideGlyph:
-        force = true
+    let force = containsWideGlyph and anyChanged
 
-      if c.ch == 0.Rune:
-        inc additionalSpaces
-        continue
+    var additionalSpaces = 0
+    if force:
+      displayBuffer.setPos(0, y)
+      for x in 0..<tb.width:
+        let c {.cursor.} = tb[x,y]
+        defer:
+          gPrevTerminalBuffer[x, y] = c
 
-      defer:
-        inc actualX
+        if c.ch == 0.Rune:
+          inc additionalSpaces
+          continue
 
-      if not force and c == gPrevTerminalBuffer[x, y]:
-        continue
+        if c.bg != gCurrBg or c.fg != gCurrFg or c.bgColor != gCurrBgColor or c.fgColor != gCurrFgColor or c.style != gCurrStyle:
+          displayBuffer.setAttribs(c)
 
-      if y != bufYPos or x != bufXPos:
-        bufXPos = x
-        bufYPos = y
-        displayBuffer.setPos(x, y)
-        displayBuffer.setAttribs(c)
+        displayBuffer.add $c.ch
 
-      if c.bg != gCurrBg or c.fg != gCurrFg or c.bgColor != gCurrBgColor or c.fgColor != gCurrFgColor or c.style != gCurrStyle:
-        displayBuffer.setAttribs(c)
-
-      displayBuffer.add $c.ch
-      inc bufXPos
-
-    when defined(windows):
-      if force:
-        # # For some reason windows terminal doesn't update the cells at the end if there's a bunch of unicode in the line
-        # # Adding a bunch of whitespace at the end fixes it.
-        # # I don't know if this also happens in other terminals.
+      when defined(windows):
+        # For some reason windows terminal doesn't update the cells at the end if there's a bunch of unicode in the line
+        # Adding a bunch of whitespace at the end fixes it.
+        # I don't know if this also happens in other terminals.
         displayBuffer.add "                                                                   "
         displayBuffer.add ' '.Rune.repeat(additionalSpaces)
+
+    else:
+      for x in 0..<tb.width:
+        let c {.cursor.} = tb[x, y]
+        defer:
+          gPrevTerminalBuffer[x, y] = c
+
+        if c.ch == 0.Rune:
+          inc additionalSpaces
+          continue
+
+        if c == gPrevTerminalBuffer[x, y]:
+          continue
+
+        if y != bufYPos or x != bufXPos:
+          bufXPos = x
+          bufYPos = y
+          displayBuffer.setPos(x, y)
+          displayBuffer.setAttribs(c)
+
+        if c.bg != gCurrBg or c.fg != gCurrFg or c.bgColor != gCurrBgColor or c.fgColor != gCurrFgColor or c.style != gCurrStyle:
+          displayBuffer.setAttribs(c)
+
+        displayBuffer.add $c.ch
+        inc bufXPos
 
     flushDisplayBuffer()
 
