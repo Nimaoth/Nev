@@ -11,6 +11,7 @@ logCategory "lsp"
 type LanguageServerLSP* = ref object of LanguageServer
   client: LSPClient
   connected: int = 0
+  languageId: string
 
 var languageServers = initTable[string, LanguageServerLSP]()
 
@@ -42,7 +43,53 @@ proc handleWorkspaceConfigurationRequest*(self: LanguageServerLSP, params: lsp_t
 
   return res
 
-proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string], languagesServer: Option[(string, int)] = (string, int).none, workspace = ws.WorkspaceFolder.none): Future[Option[LanguageServerLSP]] {.async.} =
+proc handleEditorRegistered(lsp: LanguageServerLSP, editor: DocumentEditor) =
+  if not (editor of TextDocumentEditor):
+    return
+
+  let textDocumentEditor = TextDocumentEditor(editor)
+  # debugf"EDITOR REGISTERED {textDocumentEditor.document.fullPath}"
+
+  if textDocumentEditor.document.languageId != lsp.languageId:
+    return
+
+  if textDocumentEditor.document.isLoadingAsync:
+    discard textDocumentEditor.document.onLoaded.subscribe proc(document: TextDocument): void =
+      asyncCheck lsp.client.notifyOpenedTextDocument(lsp.languageId, document.fullPath, document.contentString)
+  else:
+    asyncCheck lsp.client.notifyOpenedTextDocument(lsp.languageId, textDocumentEditor.document.fullPath, textDocumentEditor.document.contentString)
+
+  discard textDocumentEditor.document.textInserted.subscribe proc(args: auto): void =
+    # debugf"TEXT INSERTED {args.document.fullPath}:{args.location}: {args.text}"
+
+    if lsp.client.fullDocumentSync:
+      asyncCheck lsp.client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, args.document.contentString)
+    else:
+      let changes = @[TextDocumentContentChangeEvent(`range`: args.location.first.toSelection.toRange, text: args.text)]
+      asyncCheck lsp.client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, changes)
+
+  discard textDocumentEditor.document.textDeleted.subscribe proc(args: auto): void =
+    # debugf"TEXT DELETED {args.document.fullPath}: {args.selection}"
+    if lsp.client.fullDocumentSync:
+      asyncCheck lsp.client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, args.document.contentString)
+    else:
+      let changes = @[TextDocumentContentChangeEvent(`range`: args.location.toRange)]
+      asyncCheck lsp.client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, changes)
+
+proc handleEditorDeregistered(lsp: LanguageServerLSP, editor: DocumentEditor) =
+  if not (editor of TextDocumentEditor):
+    return
+
+  let textDocumentEditor = TextDocumentEditor(editor)
+  # debugf"EDITOR DEREGISTERED {textDocumentEditor.document.fullPath}"
+  if textDocumentEditor.document.languageId != lsp.languageId:
+    return
+
+  asyncCheck lsp.client.notifyClosedTextDocument(textDocumentEditor.document.fullPath)
+
+proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string], languagesServer: Option[(string, int)] = (string, int).none, workspace = ws.WorkspaceFolder.none):
+  Future[Option[LanguageServerLSP]] {.async.} =
+
   if languageServers.contains(languageId):
     return languageServers[languageId].some
 
@@ -63,12 +110,12 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string], 
     @[]
 
   var client = LSPClient(workspace: workspace)
-  var lsp = LanguageServerLSP(client: client)
+  var lsp = LanguageServerLSP(client: client, languageId: languageId)
   languageServers[languageId] = lsp
   await client.connect(exePath, workspaces, args, languagesServer)
   client.run()
 
-  discard client.onMessage.subscribe proc(message: tuple[verbosity: lsp_types.MessageType, message: string]) =
+  discard client.onMessage.subscribe proc(message: tuple[verbosity: lsp_types.MessageType, message: string]): void =
     let level = case message.verbosity
     of Error: lvlError
     of Warning: lvlWarn
@@ -78,87 +125,21 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string], 
 
     lsp.onMessage.invoke message
 
-  client.onWorkspaceConfiguration = proc(params: lsp_types.ConfigurationParams): Future[seq[JsonNode]] =
-    return lsp.handleWorkspaceConfigurationRequest(params)
+  client.onWorkspaceConfiguration = proc(params: lsp_types.ConfigurationParams): Future[seq[JsonNode]] {.async.} =
+    return lsp.handleWorkspaceConfigurationRequest(params).await
 
-  discard client.onDiagnostics.subscribe proc(diagnostics: lsp_types.PublicDiagnosticsParams) =
+  discard client.onDiagnostics.subscribe proc(diagnostics: lsp_types.PublicDiagnosticsParams): void =
     # debugf"textDocument/publishDiagnostics: {diagnostics}"
     lsp.onDiagnostics.invoke diagnostics
 
-  discard gEditor.onEditorRegistered.subscribe proc(editor: auto) =
-    if not (editor of TextDocumentEditor):
-      return
+  discard gEditor.onEditorRegistered.subscribe proc(editor: DocumentEditor): void =
+    lsp.handleEditorRegistered(editor)
 
-    let textDocumentEditor = TextDocumentEditor(editor)
-    # debugf"EDITOR REGISTERED {textDocumentEditor.document.fullPath}"
-
-    if textDocumentEditor.document.languageId != languageId:
-      return
-
-    if textDocumentEditor.document.isLoadingAsync:
-      discard textDocumentEditor.document.onLoaded.subscribe proc(document: TextDocument) =
-        asyncCheck client.notifyOpenedTextDocument(languageId, document.fullPath, document.contentString)
-    else:
-      asyncCheck client.notifyOpenedTextDocument(languageId, textDocumentEditor.document.fullPath, textDocumentEditor.document.contentString)
-
-    discard textDocumentEditor.document.textInserted.subscribe proc(args: auto) =
-      # debugf"TEXT INSERTED {args.document.fullPath}:{args.location}: {args.text}"
-
-      if client.fullDocumentSync:
-        asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, args.document.contentString)
-      else:
-        let changes = @[TextDocumentContentChangeEvent(`range`: args.location.first.toSelection.toRange, text: args.text)]
-        asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, changes)
-
-    discard textDocumentEditor.document.textDeleted.subscribe proc(args: auto) =
-      # debugf"TEXT DELETED {args.document.fullPath}: {args.selection}"
-      if client.fullDocumentSync:
-        asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, args.document.contentString)
-      else:
-        let changes = @[TextDocumentContentChangeEvent(`range`: args.location.toRange)]
-        asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, changes)
-
-  discard gEditor.onEditorDeregistered.subscribe proc(editor: auto) =
-    if not (editor of TextDocumentEditor):
-      return
-
-    let textDocumentEditor = TextDocumentEditor(editor)
-    # debugf"EDITOR DEREGISTERED {textDocumentEditor.document.fullPath}"
-    if textDocumentEditor.document.languageId != languageId:
-      return
-
-    asyncCheck client.notifyClosedTextDocument(textDocumentEditor.document.fullPath)
+  discard gEditor.onEditorDeregistered.subscribe proc(editor: DocumentEditor): void =
+    lsp.handleEditorDeregistered(editor)
 
   for editor in gEditor.editors.values:
-    if not (editor of TextDocumentEditor):
-      continue
-
-    let textDocumentEditor = TextDocumentEditor(editor)
-    if textDocumentEditor.document.languageId != languageId:
-      continue
-
-    # debugf"Register events for {textDocumentEditor.document.fullPath}"
-    if textDocumentEditor.document.isLoadingAsync:
-      discard textDocumentEditor.document.onLoaded.subscribe proc(document: TextDocument) =
-        asyncCheck client.notifyOpenedTextDocument(languageId, document.fullPath, document.contentString)
-    else:
-      asyncCheck client.notifyOpenedTextDocument(languageId, textDocumentEditor.document.fullPath, textDocumentEditor.document.contentString)
-
-    discard textDocumentEditor.document.textInserted.subscribe proc(args: auto) =
-      # debugf"TEXT INSERTED {args.document.fullPath}:{args.location}: {args.text}"
-      if client.fullDocumentSync:
-        asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, args.document.contentString)
-      else:
-        let changes = @[TextDocumentContentChangeEvent(`range`: args.location.first.toSelection.toRange, text: args.text)]
-        asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, changes)
-
-    discard textDocumentEditor.document.textDeleted.subscribe proc(args: auto) =
-      # debugf"TEXT DELETED {args.document.fullPath}: {args.selection}"
-      if client.fullDocumentSync:
-        asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, args.document.contentString)
-      else:
-        let changes = @[TextDocumentContentChangeEvent(`range`: args.location.toRange)]
-        asyncCheck client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, changes)
+    lsp.handleEditorRegistered(editor)
 
   log lvlInfo, fmt"Started language server for {languageId}"
   return languageServers[languageId].some

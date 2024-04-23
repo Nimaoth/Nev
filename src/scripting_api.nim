@@ -1,4 +1,5 @@
 import std/[algorithm, sequtils, sugar]
+import misc/custom_unicode
 
 when defined(nimscript):
   type
@@ -22,10 +23,10 @@ type
   SelectorPopup* = object
     id*: EditorId
 
-type CursorT*[T] = tuple[line: int, column: T]
-type SelectionT*[T] = tuple[first, last: CursorT[T]]
-type Cursor* = CursorT[int]
-type Selection* = SelectionT[int]
+type Cursor* = tuple[line: int, column: int]
+type Selection* = tuple[first, last: Cursor]
+type RuneCursor* = tuple[line: int, column: RuneIndex]
+type RuneSelection* = tuple[first, last: RuneCursor]
 type SelectionCursor* = enum Config = "config", Both = "both", First = "first", Last = "last", LastToFirst = "last-to-first"
 type LineNumbers* = enum None = "none", Absolute = "Absolute", Relative = "relative"
 type Backend* = enum Gui = "gui", Terminal = "terminal", Browser = "browser"
@@ -132,8 +133,8 @@ func `or`*(a: Selection, b: Selection): Selection =
   let bn = b.normalized
   return (min(an.first, bn.first), max(an.last, bn.last))
 
-func toSelection*[T](cursor: CursorT[T]): SelectionT[T] =
-  (cursor, cursor)
+func toSelection*(cursor: Cursor): Selection = (cursor, cursor)
+func toSelection*(cursor: RuneCursor): RuneSelection = (cursor, cursor)
 
 func toSelection*(cursor: Cursor, default: Selection, which: SelectionCursor): Selection =
   case which
