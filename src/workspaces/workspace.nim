@@ -77,13 +77,14 @@ proc getDirectoryListingRec*(folder: WorkspaceFolder, path: string): Future[seq[
 
   return resultItems
 
+
+proc shouldIgnore(ignore: seq[Regex], path: string): bool =
+  for pattern in ignore:
+    if path.contains(pattern):
+      return true
+  return false
+
 proc iterateDirectoryRec*(folder: WorkspaceFolder, path: string, cancellationToken: CancellationToken, ignore: seq[Regex], callback: proc(files: seq[string]): Future[void]): Future[void] {.async.} =
-
-  proc shouldIgnore(path: string): bool =
-    for pattern in ignore:
-      if path.contains(pattern):
-        return true
-
   let path = path
   var resultItems: seq[string]
   var folders: seq[string]
@@ -101,7 +102,7 @@ proc iterateDirectoryRec*(folder: WorkspaceFolder, path: string, cancellationTok
       file
     else:
       path // file
-    if shouldIgnore(fullPath) or shouldIgnore(fullPath.extractFilename):
+    if ignore.shouldIgnore(fullPath) or ignore.shouldIgnore(fullPath.extractFilename):
       continue
     resultItems.add(fullPath)
 
@@ -110,7 +111,7 @@ proc iterateDirectoryRec*(folder: WorkspaceFolder, path: string, cancellationTok
       dir
     else:
       path // dir
-    if shouldIgnore(fullPath) or shouldIgnore(fullPath.extractFilename):
+    if ignore.shouldIgnore(fullPath) or ignore.shouldIgnore(fullPath.extractFilename):
       continue
     folders.add(fullPath)
 
@@ -128,3 +129,5 @@ proc iterateDirectoryRec*(folder: WorkspaceFolder, path: string, cancellationTok
 
   for fut in futs:
     await fut
+
+  return

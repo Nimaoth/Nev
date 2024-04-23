@@ -1843,6 +1843,28 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
     ignorePatterns.add glob("*.bin")
     ignorePatterns.add glob("*.o")
 
+  proc handleDirectory(folder: WorkspaceFolder, cancellationToken: CancellationToken, files: seq[string]): Future[void] {.async.} =
+    if cancellationToken.canceled or popup.textEditor.isNil:
+      return
+
+    var timer = startTimer()
+    let folder = folder
+    for file in files:
+      let score = matchFuzzySublime(popup.getSearchString, file, defaultPathMatchingConfig).score.float
+      popup.completions.add FileSelectorItem(path: file, score: score, workspaceFolder: folder.some)
+
+      if timer.elapsed.ms > 7:
+        await sleepAsync(1)
+
+        if cancellationToken.canceled or popup.textEditor.isNil:
+          return
+
+        timer = startTimer()
+
+    # popup.completions.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Ascending)
+    popup.enableAutoSort()
+    popup.markDirty()
+
   popup.getCompletionsAsyncIter = proc(popup: SelectorPopup, text: string): Future[void] {.async.} =
     if not popup.cancellationToken.isNil:
       sortCancellationToken.cancel()
@@ -1881,34 +1903,11 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
 
     var timer = startTimer()
     var i = 0
-    var startIndex = 0
     for folder in self.workspace.folders:
       var folder = folder
       log lvlInfo, fmt"Start iterateDirectoryRec"
-      await iterateDirectoryRec(folder, "", cancellationToken, ignorePatterns, proc(files: seq[string]) {.async.} =
-        if cancellationToken.canceled or popup.textEditor.isNil:
-          return
-
-        let folder = folder
-        for file in files:
-          defer:
-            inc i
-
-          let score = matchFuzzySublime(text, file, defaultPathMatchingConfig).score.float
-          popup.completions.add FileSelectorItem(path: file, score: score, workspaceFolder: folder.some)
-
-          if timer.elapsed.ms > 7:
-            await sleepAsync(1)
-
-            if cancellationToken.canceled or popup.textEditor.isNil:
-              return
-
-            startIndex = i + 1
-            timer = startTimer()
-
-        # popup.completions.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Ascending)
-        popup.enableAutoSort()
-        popup.markDirty()
+      await iterateDirectoryRec(folder, "", cancellationToken, ignorePatterns, proc(files: seq[string]): Future[void] {.async.} =
+          handleDirectory(folder, cancellationToken, files).await
       )
 
       log lvlInfo, fmt"Finished iterateDirectoryRec"

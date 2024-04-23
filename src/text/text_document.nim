@@ -344,13 +344,13 @@ proc lspRangeToSelection*(self: TextDocument, `range`: lsp_types.Range): Selecti
   let lastColumn = self.lines[`range`.`end`.line].runeOffset(`range`.`end`.character.RuneIndex)
   return ((`range`.start.line, firstColumn), (`range`.`end`.line, lastColumn))
 
-proc runeCursorToCursor*(self: TextDocument, cursor: CursorT[RuneIndex]): Cursor =
+proc runeCursorToCursor*(self: TextDocument, cursor: RuneCursor): Cursor =
   if cursor.line < 0 or cursor.line > self.lines.high:
     return (0, 0)
 
   return (cursor.line, self.lines[cursor.line].runeOffset(min(self.lines[cursor.line].runeLen.RuneIndex, max(0.RuneIndex, cursor.column))))
 
-proc runeSelectionToSelection*(self: TextDocument, cursor: SelectionT[RuneIndex]): Selection =
+proc runeSelectionToSelection*(self: TextDocument, cursor: RuneSelection): Selection =
   return (self.runeCursorToCursor(cursor.first), self.runeCursorToCursor(cursor.last))
 
 func len*(line: StyledLine): int =
