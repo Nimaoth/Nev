@@ -621,14 +621,14 @@ when enableAst:
   import ast/[model_document]
 import selector_popup
 
-type ThemeSelectorItem* = ref object of SelectorItem
-  name*: string
-  path*: string
-
 type FileSelectorItem* = ref object of SelectorItem
   name*: string
+  directory*: string
   path*: string
   workspaceFolder*: Option[WorkspaceFolder]
+
+type ThemeSelectorItem* = ref object of FileSelectorItem
+  discard
 
 method changed*(self: FileSelectorItem, other: SelectorItem): bool =
   let other = other.FileSelectorItem
@@ -637,13 +637,13 @@ method changed*(self: FileSelectorItem, other: SelectorItem): bool =
 method itemToJson*(self: FileSelectorItem): JsonNode = %*{
     "score": self.score,
     "path": self.path,
+    "name": self.name,
+    "directory": self.directory,
     "workspace": if self.workspaceFolder.getSome(workspace):
         workspace.id.toJson
       else:
         newJNull()
   }
-
-method itemToJson*(self: ThemeSelectorItem): JsonNode = self[].toJson
 
 method changed*(self: ThemeSelectorItem, other: SelectorItem): bool =
   let other = other.ThemeSelectorItem
@@ -1763,12 +1763,13 @@ proc chooseTheme*(self: App) {.expose("editor").} =
 
   var popup = newSelectorPopup(self.asAppInterface, "theme".some)
   popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
+    let appRootDir = fs.getApplicationFilePath("")
     let themesDir = fs.getApplicationFilePath("./themes")
     for file in walkDirRec(themesDir, relative=true):
       if file.endsWith ".json":
-        let name = file.splitFile.name
+        let (relativeDirectory, name, _) = file.splitFile
         let score = matchFuzzySublime(text, file, defaultPathMatchingConfig).score.float
-        result.add ThemeSelectorItem(name: name, path: fmt"{themesDir}/{file}", score: score)
+        result.add ThemeSelectorItem(name: name, directory: "themes" / relativeDirectory, path: fmt"{themesDir}/{file}", score: score)
 
     result.sort((a, b) => cmp(a.ThemeSelectorItem.score, b.ThemeSelectorItem.score), Ascending)
 
@@ -1834,6 +1835,7 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
     self.platform.requestRender()
 
   var popup = newSelectorPopup(self.asAppInterface, "file".some)
+  popup.scale.x = 0.5
   var sortCancellationToken = newCancellationToken()
 
   var ignorePatterns = self.gitIgnorePatterns
@@ -1861,7 +1863,11 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
     let folder = folder
     for file in files:
       let score = matchFuzzySublime(popup.getSearchString, file, defaultPathMatchingConfig).score.float
-      popup.completions.add FileSelectorItem(path: file, score: score, workspaceFolder: folder.some)
+      let (directory, name) = file.splitPath
+      var relativeDirectory = folder.getRelativePath(directory).await
+      if relativeDirectory.isSome and relativeDirectory.get == ".":
+        relativeDirectory = "".some
+      popup.completions.add FileSelectorItem(path: file, name: name, directory: relativeDirectory.get(directory), score: score, workspaceFolder: folder.some)
 
       if timer.elapsed.ms > 7:
         await sleepAsync(1)
@@ -1891,7 +1897,7 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
         if cancellationToken.canceled or popup.textEditor.isNil:
           return
 
-        let score = matchFuzzySublime(text, popup.completions[i].FileSelectorItem.path, defaultPathMatchingConfig).score.float
+        let score = matchFuzzySublime(popup.getSearchString(), popup.completions[i].FileSelectorItem.path, defaultPathMatchingConfig).score.float
 
         popup.completions[i].score = score
         popup.completions[i].hasCompletionMatchPositions = false
@@ -1958,11 +1964,21 @@ proc chooseOpen*(self: App, view: string = "new") {.expose("editor").} =
     let allViews = self.views & self.hiddenViews
     for view in allViews:
       let document = view.editor.getDocument
-      let name = view.document.filename
-      let score = matchFuzzySublime(text, name, defaultPathMatchingConfig).score.float
+      let path = view.document.filename
+      let score = matchFuzzySublime(text, path, defaultPathMatchingConfig).score.float
       let isDirty = view.document.lastSavedRevision != view.document.revision
       let dirtyMarker = if isDirty: "*" else: " "
-      result.add FileSelectorItem(name: dirtyMarker & name, path: name, score: score, workspaceFolder: document.workspace)
+
+      let (directory, name) = path.splitPath
+      var relativeDirectory = if document.workspace.getSome(workspace):
+        workspace.getRelativePathSync(directory)
+      else:
+        string.none
+
+      if relativeDirectory.isSome and relativeDirectory.get == ".":
+        relativeDirectory = "".some
+
+      result.add FileSelectorItem(name: dirtyMarker & name, path: path, directory: relativeDirectory.get(directory), score: score, workspaceFolder: document.workspace)
 
     result.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Ascending)
 

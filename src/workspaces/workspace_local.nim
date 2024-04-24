@@ -19,10 +19,20 @@ proc getAbsolutePath(self: WorkspaceFolderLocal, relativePath: string): string =
   if relativePath.isAbsolute:
     relativePath
   else:
-    self.path.absolutePath / relativePath
+    self.path.absolutePath // relativePath
+
+method getRelativePathSync*(self: WorkspaceFolderLocal, absolutePath: string): Option[string] =
+  if absolutePath.startsWith(self.path):
+    return absolutePath.relativePath(self.path, '/').normalizePathUnix.some
+
+  for path in self.additionalPaths:
+    if absolutePath.startsWith(path):
+      return absolutePath.relativePath(path, '/').normalizePathUnix.some
+
+  return string.none
 
 method getRelativePath*(self: WorkspaceFolderLocal, absolutePath: string): Future[Option[string]] {.async.} =
-  return absolutePath.relativePath(self.path, '/').some
+  return self.getRelativePathSync(absolutePath)
 
 method isReadOnly*(self: WorkspaceFolderLocal): bool = false
 
@@ -47,11 +57,14 @@ proc fillDirectoryListing(directoryListing: var DirectoryListing, path: string) 
 method getDirectoryListing*(self: WorkspaceFolderLocal, relativePath: string): Future[DirectoryListing] {.async.} =
   when not defined(js):
     var res = DirectoryListing()
-    res.fillDirectoryListing(self.getAbsolutePath(relativePath))
 
     if relativePath == "":
+      res.fillDirectoryListing(self.path)
       for path in self.additionalPaths:
         res.fillDirectoryListing(path)
+
+    else:
+      res.fillDirectoryListing(self.getAbsolutePath(relativePath))
 
     return res
 

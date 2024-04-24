@@ -14,7 +14,13 @@ method createUI*(self: FileSelectorItem, popup: SelectorPopup, builder: UINodeBu
   let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
   let name = if self.name.len > 0: self.name else: self.path
   let matchIndices = self.getCompletionMatches(popup.getSearchString(), name, defaultPathMatchingConfig)
-  builder.highlightedText(name, matchIndices, textColor, textColor.lighten(0.15))
+  builder.panel(&{LayoutHorizontal, FillX, SizeToContentY}):
+    builder.highlightedText(name, matchIndices, textColor, textColor.lighten(0.15))
+
+    if self.directory.len > 0:
+      builder.panel(&{FillY}, w = builder.charWidth * 4)
+      builder.panel(&{DrawText, SizeToContentX, SizeToContentY, TextItalic}, text = self.directory, textColor = textColor.darken(0.2))
+
 
 method createUI*(self: SearchFileSelectorItem, popup: SelectorPopup, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
   let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
@@ -33,11 +39,6 @@ method createUI*(self: TextSymbolSelectorItem, popup: SelectorPopup, builder: UI
     let matchIndices = self.getCompletionMatches(popup.getSearchString(), self.symbol.name, defaultCompletionMatchingConfig)
     builder.highlightedText(self.symbol.name, matchIndices, textColor, textColor.lighten(0.15))
     builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, x = currentNode.w, text = $self.symbol.symbolType, pivot = vec2(1, 0), textColor = scopeColor)
-
-method createUI*(self: ThemeSelectorItem, popup: SelectorPopup, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
-  let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
-  let matchIndices = self.getCompletionMatches(popup.getSearchString(), self.path, defaultPathMatchingConfig)
-  builder.highlightedText(self.path, matchIndices, textColor, textColor.lighten(0.15))
 
 method createUI*(self: NamedSelectorItem, popup: SelectorPopup, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
   let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))

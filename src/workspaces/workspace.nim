@@ -1,6 +1,8 @@
 import std/[json, options, os]
-import misc/[custom_async, id, array_buffer, cancellation_token, util, regex]
+import misc/[custom_async, id, array_buffer, cancellation_token, util, regex, custom_logger]
 import platform/filesystem
+
+logCategory "workspace"
 
 type
   WorkspaceInfo* = object
@@ -48,6 +50,9 @@ proc getRelativePathEmpty(): Future[Option[string]] {.async.} =
 
 method getRelativePath*(self: WorkspaceFolder, absolutePath: string): Future[Option[string]] {.base.} =
   return getRelativePathEmpty()
+
+method getRelativePathSync*(self: WorkspaceFolder, absolutePath: string): Option[string] {.base.} =
+  return string.none
 
 when not defined(js):
   import workspace_local
