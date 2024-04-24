@@ -63,6 +63,12 @@ export terminal.hideCursor
 export terminal.showCursor
 export terminal.Style
 
+const
+  fgPrefix = "\e[38;2;"
+  bgPrefix = "\e[48;2;"
+  stylePrefix = "\e["
+  ansiResetCode* = "\e[0m"
+
 type
   ForegroundColor* = enum   ## Foreground colors
     fgNone = 0,             ## default
@@ -1228,7 +1234,7 @@ proc write*(tb: var TerminalBuffer, x, y: int, s: string) =
   tb.currX = clamp(currX, 0, tb.width-1)
   tb.currY = y
 
-proc writeRune*(tb: var TerminalBuffer, x, y: int, ch: Rune, width: int, additionalWidth: int) =
+proc writeRune*(tb: var TerminalBuffer, x, y: int, ch: Rune, width: int, additionalWidth: int, italic: bool) =
   ## Writes `ch` into the terminal buffer at the specified position using
   ## the current text attributes.
   ## `width` is the amount of cells `ch` occupies, `additionalWidth` is the number of spaces that should be
@@ -1240,6 +1246,8 @@ proc writeRune*(tb: var TerminalBuffer, x, y: int, ch: Rune, width: int, additio
     return
 
   var c = TerminalChar(ch: ch, fg: tb.currFg, bg: tb.currBg, fgColor: tb.currFgColor, bgColor: tb.currBgColor, style: tb.currStyle)
+  if italic:
+    c.style.incl styleItalic
   if x >= 0 and x < tb.width:
     if x > 0 and tb[x, y].previousWideGlyph:
       # Current cell is after a wide unicode char, so also override the prev cell with space
@@ -1297,11 +1305,11 @@ var
   gCurrStyle {.threadvar.}: set[Style]
 
 proc setAttribs(buffer: var string, c: TerminalChar) =
-  const
-    fgPrefix = "\e[38;2;"
-    bgPrefix = "\e[48;2;"
-    getPos = "\e[6n"
-    stylePrefix = "\e["
+  if c.bg == bgNone or c.fg == fgNone or c.style == {}:
+    buffer.add ansiResetCode
+    gCurrBg = bgNone
+    gCurrFg = fgNone
+    gCurrStyle = {}
 
   if c.bg != gCurrBg or c.bgColor != gCurrBgColor:
     gCurrBg = c.bg
@@ -1342,7 +1350,7 @@ proc setAttribs(buffer: var string, c: TerminalChar) =
     gCurrStyle = c.style
     for s in gCurrStyle:
       buffer.add stylePrefix
-      buffer.add $s
+      buffer.add $s.int
       buffer.add "m"
 
 proc setAttribs(c: TerminalChar) =

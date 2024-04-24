@@ -420,7 +420,7 @@ proc fillRect(self: TerminalPlatform, bounds: Rect, color: chroma.Color) =
 #   self.buffer.drawRect(bounds.x.int, bounds.y.int, bounds.xw.int - 1, bounds.yh.int - 1)
 #   self.buffer.setBackgroundColor(bgNone)
 
-proc writeLine(self: TerminalPlatform, pos: Vec2, text: string) =
+proc writeLine(self: TerminalPlatform, pos: Vec2, text: string, italic: bool) =
   let mask = if self.masks.len > 0:
     self.masks[self.masks.high]
   else:
@@ -434,7 +434,7 @@ proc writeLine(self: TerminalPlatform, pos: Vec2, text: string) =
   for r in text.runes:
     let props = r.runeProps
     if x >= mask.x.int and x + props.displayWidth <= mask.xw.int:
-      self.buffer.writeRune(x, pos.y.int, r, props.selectionWidth, props.displayWidth - props.selectionWidth)
+      self.buffer.writeRune(x, pos.y.int, r, props.selectionWidth, props.displayWidth - props.selectionWidth, italic)
     x += props.displayWidth
     if x >= mask.xw.int:
       break
@@ -451,7 +451,7 @@ proc nextWrapBoundary(str: openArray[char], start: int, maxLen: RuneCount): (int
 
   return (bytes, len)
 
-proc writeText(self: TerminalPlatform, pos: Vec2, text: string, wrap: bool, lineLen: RuneCount) =
+proc writeText(self: TerminalPlatform, pos: Vec2, text: string, wrap: bool, lineLen: RuneCount, italic: bool) =
   var yOffset = 0.0
 
   for line in text.splitLines:
@@ -478,7 +478,7 @@ proc writeText(self: TerminalPlatform, pos: Vec2, text: string, wrap: bool, line
         if startByte >= line.len or endByte > line.len:
           break
 
-        self.writeLine(pos + vec2(0, yOffset), line[startByte..<endByte])
+        self.writeLine(pos + vec2(0, yOffset), line[startByte..<endByte], italic)
 
         yOffset += 1
 
@@ -489,7 +489,7 @@ proc writeText(self: TerminalPlatform, pos: Vec2, text: string, wrap: bool, line
         startRune = endRune
 
     else:
-      self.writeLine(pos + vec2(0, yOffset), line)
+      self.writeLine(pos + vec2(0, yOffset), line, italic)
       yOffset += 1
 
 proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, offset: Vec2 = vec2(0, 0), force: bool = false) =
@@ -526,7 +526,7 @@ proc drawNode(builder: UINodeBuilder, platform: TerminalPlatform, node: UINode, 
   if DrawText in node.flags:
     platform.buffer.setBackgroundColor(bgNone)
     platform.setForegroundColor(node.textColor)
-    platform.writeText(bounds.xy, node.text, TextWrap in node.flags, round(bounds.w).RuneCount)
+    platform.writeText(bounds.xy, node.text, TextWrap in node.flags, round(bounds.w).RuneCount, TextItalic in node.flags)
 
   for _, c in node.children:
     builder.drawNode(platform, c, nodePos, force)
