@@ -119,7 +119,7 @@ proc updateBaseIndexAndScrollOffset*(height: float, previousBaseIndex: var int, 
 proc highlightedText*(builder: UINodeBuilder, text: string, highlightedIndices: openArray[int], color: Color, highlightColor: Color) =
   ## Create a text panel wher the characters at the indices in `highlightedIndices` are highlighted with `highlightColor`.
   if highlightedIndices.len > 0:
-    builder.panel(&{FillX, SizeToContentY, LayoutHorizontal}):
+    builder.panel(&{SizeToContentX, SizeToContentY, LayoutHorizontal}):
       var start = 0
       for matchIndex in highlightedIndices:
         if matchIndex > start:
