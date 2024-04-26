@@ -633,6 +633,20 @@ proc unindent*(self: TextDocumentEditor) =
       argsJsonString.cstring)
 
 
+proc editor_text_insertIndent_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc insertIndent*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_insertIndent_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_undo_void_TextDocumentEditor_string_wasm(arg: cstring): cstring {.
     importc.}
 proc undo*(self: TextDocumentEditor; checkpoint: string = "word") =

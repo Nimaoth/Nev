@@ -931,11 +931,15 @@ proc unindent*(self: TextDocumentEditor) {.expose("editor.text").} =
 
   var indentSelections: Selections = @[]
   for l in linesToIndent:
-    let firstNonWhitespace = self.document.lines[l].firstNonWhitespace
-    indentSelections.add ((l, 0), (l, min(self.document.indentStyle.indentColumns, firstNonWhitespace)))
+    case self.document.indentStyle.kind
+    of Spaces:
+      let firstNonWhitespace = self.document.lines[l].firstNonWhitespace
+      indentSelections.add ((l, 0), (l, min(self.document.indentStyle.indentColumns, firstNonWhitespace)))
+    of Tabs:
+      indentSelections.add ((l, 0), (l, 1))
 
   var selections = self.selections
-  discard self.document.delete(indentSelections.normalized, self.selections, inclusiveEnd=self.useInclusiveSelections)
+  discard self.document.delete(indentSelections.normalized, self.selections)
 
   for s in selections.mitems:
     if s.first.line in linesToIndent:
@@ -943,6 +947,16 @@ proc unindent*(self: TextDocumentEditor) {.expose("editor.text").} =
     if s.last.line in linesToIndent:
       s.last.column = max(0, s.last.column - self.document.indentStyle.indentColumns)
   self.selections = selections
+
+proc insertIndent*(self: TextDocumentEditor) {.expose("editor.text").} =
+  var insertTexts = newSeq[string]()
+
+  # todo: for spaces, calculate alignment
+  let indent = self.document.indentStyle.getString()
+  for selection in self.selections:
+    insertTexts.add indent
+
+  self.selections = self.document.edit(self.selections, self.selections, insertTexts).mapIt(it.last.toSelection)
 
 proc undo*(self: TextDocumentEditor, checkpoint: string = "word") {.expose("editor.text").} =
   if self.document.undo(self.selections, true, checkpoint).getSome(selections):
@@ -2103,7 +2117,7 @@ proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").
 
   self.addNextCheckpoint("insert")
   let newSelections = self.document.edit(editSelections, self.selections, insertTexts)
-  self.selection = newSelections[newSelections.high]
+  self.selection = newSelections[newSelections.high].last.toSelection
 
   self.currentSnippetData = snippetData
   self.selectNextTabStop()
