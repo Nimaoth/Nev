@@ -53,6 +53,8 @@ type StyledText* = object
   inlayContainCursor*: bool
   scopeIsToken*: bool = true
   canWrap*: bool = true
+  modifyCursorAtEndOfLine*: bool = false ## If true and the cursor is at the end of the line
+                                         ## then the cursor will be behind the part.
 
 type StyledLine* = ref object
   index*: int
@@ -479,12 +481,12 @@ proc overrideUnderline*(self: TextDocument, line: var StyledLine, first: int, la
 proc overrideStyleAndText*(self: TextDocument, line: var StyledLine, first: int, text: string, scope: string, priority: int, opacity: Option[float] = float.none, joinNext: bool = false) =
   line.overrideStyleAndText(self.lines[line.index].toOpenArray.runeIndex(first, returnLen=true), text, scope, priority, opacity, joinNext)
 
-proc insertText*(self: TextDocument, line: var StyledLine, offset: RuneIndex, text: string, scope: string, containCursor: bool) =
+proc insertText*(self: TextDocument, line: var StyledLine, offset: RuneIndex, text: string, scope: string, containCursor: bool, modifyCursorAtEndOfLine: bool = false) =
   line.splitAt(offset)
   for i in 0..line.parts.high:
     if line.parts[i].textRange.getSome(r):
       if offset == r.endIndex:
-        line.parts.insert(StyledText(text: text, scope: scope, scopeC: scope.cstring, priority: 1000000000, inlayContainCursor: containCursor), i + 1)
+        line.parts.insert(StyledText(text: text, scope: scope, scopeC: scope.cstring, priority: 1000000000, inlayContainCursor: containCursor, modifyCursorAtEndOfLine: modifyCursorAtEndOfLine), i + 1)
         return
 
 proc insertTextBefore*(self: TextDocument, line: var StyledLine, offset: RuneIndex, text: string, scope: string) =
@@ -546,7 +548,7 @@ proc replaceTabs(self: TextDocument, line: var StyledLine) =
     let runeIndex = self.lines[line.index].toOpenArray.runeIndex(s.first.column, returnLen=true)
     line.overrideStyleAndText(runeIndex, t, "comment", 0, opacity=opacity.some)
     if currentTabWidth > 1:
-      self.insertText(line, runeIndex + 1.RuneCount, " ".repeat(currentTabWidth - 1), "comment", containCursor=false)
+      self.insertText(line, runeIndex + 1.RuneCount, " ".repeat(currentTabWidth - 1), "comment", containCursor=false, modifyCursorAtEndOfLine=true)
 
     currentOffset += currentTabWidth
     previousEnd = s.last.column
@@ -1099,7 +1101,7 @@ proc moveCursorColumn(self: TextDocument, cursor: Cursor, offset: int, wrap: boo
 proc firstNonWhitespace*(str: string): int =
   result = 0
   for c in str:
-    if c != ' ':
+    if c != ' ' and c != '\t':
       break
     result += 1
 

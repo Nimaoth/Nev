@@ -243,8 +243,8 @@ proc renderLine*(
   builder.panel(flagsInner + LayoutVertical + FillBackground, y = options.y, pivot = options.pivot, backgroundColor = options.backgroundColor, userId = newSecondaryId(options.parentId, options.lineId)):
     let lineWidth = currentNode.bounds.w
 
-    var lastNonInlaySubLine: UINode = nil
-    var lastNonInlayPartXW: float32 = 0
+    var cursorBaseNode: UINode = nil
+    var cursorBaseXW: float32 = 0
 
     var lastTextSubLine: UINode = nil
     var lastTextPartXW: float32 = 0
@@ -301,9 +301,9 @@ proc renderLine*(
           let (startRune, _) = line.getTextRange(partIndex)
           let partNode = renderLinePart(builder, line, backgroundColors, options, partIndex, startRune, partRuneLen)
 
-          if part.textRange.isSome:
-            lastNonInlaySubLine = subLine
-            lastNonInlayPartXW = partNode.bounds.xw
+          if part.textRange.isSome or part.modifyCursorAtEndOfLine:
+            cursorBaseNode = subLine
+            cursorBaseXW = partNode.bounds.xw
 
           # cursor
           for curs in cursors:
@@ -361,11 +361,11 @@ proc renderLine*(
     # cursor after latest char
     for curs in cursors:
       if curs == lineOriginal.len:
-        result.cursors.add (lastNonInlaySubLine, "", rect(lastNonInlayPartXW, 0, builder.charWidth, builder.textHeight), (line.index, curs))
+        result.cursors.add (cursorBaseNode, "", rect(cursorBaseXW, 0, builder.charWidth, builder.textHeight), (line.index, curs))
 
     # set hover info if the hover location is at the end of this line
     if line.index == options.hoverLocation.line and options.hoverLocation.column == lineOriginal.len:
-      result.hover = (lastNonInlaySubLine, "", rect(lastNonInlayPartXW, 0, builder.charWidth, builder.textHeight), options.hoverLocation).some
+      result.hover = (cursorBaseNode, "", rect(cursorBaseXW, 0, builder.charWidth, builder.textHeight), options.hoverLocation).some
 
 proc blendColorRanges(colors: var seq[tuple[first: RuneIndex, last: RuneIndex, color: Color]], ranges: var seq[tuple[first: RuneIndex, last: RuneIndex]], color: Color, inclusive: bool) =
   let inclusiveOffset = if inclusive: 1.RuneCount else: 0.RuneCount
