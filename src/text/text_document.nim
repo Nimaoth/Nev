@@ -249,14 +249,29 @@ proc `content=`*(self: TextDocument, value: string) =
   self.revision.inc
   self.undoableRevision.inc
 
-  if self.singleLine:
-    self.lines = @[value.replace("\n", "")]
-    if self.lines.len == 0:
-      self.lines = @[""]
-  else:
-    self.lines = value.splitLines
-    if self.lines.len == 0:
-      self.lines = @[""]
+  var index = 0
+  const utf8_bom = "\xEF\xBB\xBF"
+  if value.len >= 3 and value.startsWith(utf8_bom):
+    log lvlInfo, &"[content=] Skipping utf8 bom"
+    index = 3
+
+  var newLine = value.find('\n', start=index)
+  self.lines = @[""]
+  while newLine != -1:
+    if self.singleLine:
+      self.lines[0].add value[index..<newLine]
+    else:
+      self.lines[self.lines.high] = value[index..<newLine]
+      self.lines.add ""
+
+    index = newLine + 1
+    newLine = value.find('\n', start=index)
+
+  if index < value.len:
+    if self.singleLine:
+      self.lines[0].add value[index..^1]
+    else:
+      self.lines[self.lines.high] = value[index..^1]
 
   self.lineIds.setLen self.lines.len
   for id in self.lineIds.mitems:
