@@ -3,6 +3,9 @@ import npeg
 import npeg/codegen
 import scripting_api
 import regex
+import misc/custom_logger
+
+logCategory "snippet"
 
 type
   TokenKind* = enum Text, Nested, Variable, Choice, Format
@@ -38,6 +41,13 @@ type SnippetData* = object
   text*: string
   indent: int
   location: Cursor
+
+proc offset*(data: var SnippetData, selection: Selection) =
+  for tabStops in data.tabStops.mvalues:
+    for tabStop in tabStops.mitems:
+      let uiae = tabStop
+      tabStop.first = tabStop.first.add(selection)
+      tabStop.last = tabStop.last.add(selection)
 
 proc updateSnippetData(data: var SnippetData, tokens: openArray[Token], variables: Table[string, string]) =
   for token in tokens:

@@ -36,13 +36,6 @@ setOption "editor.text.lsp.zig.path", "zls"
 setOption "editor.text.lsp.rust.path", "rust-analyzer"
 setOption "editor.text.lsp.nim.path", "nimlangserver"
 setOption "editor.text.lsp.nim.args", %*["--stdio"]
-setOption "editor.text.treesitter.rust.dll", "D:/dev/Nim/nimtreesitter/treesitter_rust/treesitter_rust/rust.dll"
-setOption "editor.text.treesitter.zig.dll", "D:/dev/Nim/nimtreesitter/treesitter_zig/treesitter_zig/zig.dll"
-setOption "editor.text.treesitter.javascript.dll", "D:/dev/Nim/nimtreesitter/treesitter_javascript/treesitter_javascript/javascript.dll"
-setOption "editor.text.treesitter.nim.dll", "D:/dev/Nim/nimtreesitter/treesitter_nim/treesitter_nim/nim.dll"
-setOption "editor.text.treesitter.python.dll", "D:/dev/Nim/nimtreesitter/treesitter_python/treesitter_python/python.dll"
-setOption "editor.text.treesitter.cpp.dll", "D:/dev/Nim/nimtreesitter/treesitter_cpp/treesitter_cpp/cpp.dll"
-setOption "editor.text.treesitter.c.dll", "D:/dev/Nim/nimtreesitter/treesitter_c/treesitter_c/c.dll"
 
 setOption "editor.text.language.nim", %*{
   "tabWidth": 2,

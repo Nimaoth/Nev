@@ -2063,6 +2063,9 @@ proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").
     else:
       editSelection = self.getCompletionSelectionAt(cursor)
 
+  var editSelections: seq[Selection] = @[]
+  var insertTexts: seq[string] = @[]
+
   var snippetData = SnippetData.none
   if insertTextFormat == InsertTextFormat.Snippet:
     let snippet = parseSnippet(insertText)
@@ -2084,17 +2087,26 @@ proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").
       insertText = data.text
       snippetData = data.some
 
-  self.selections = self.document.edit([editSelection], self.selections, [insertText]).mapIt(it.last.toSelection)
-
-  self.currentSnippetData = snippetData
-  self.selectNextTabStop()
-
-  self.addNextCheckpoint("insert")
   for edit in com.additionalTextEdits:
     let runeSelection = ((edit.`range`.start.line, edit.`range`.start.character.RuneIndex), (edit.`range`.`end`.line, edit.`range`.`end`.character.RuneIndex))
     let selection = self.document.runeSelectionToSelection(runeSelection)
-    debugf"additional text edit: {selection} -> '{edit.newText}'"
-    discard self.document.edit([selection], self.selections, [edit.newText]).mapIt(it.last.toSelection)
+    editSelections.add selection
+    insertTexts.add edit.newText
+
+    let changedSelection = selection.getChangedSelection(edit.newText)
+
+    if snippetData.isSome:
+      snippetData.get.offset(changedSelection)
+
+  editSelections.add editSelection
+  insertTexts.add insertText
+
+  self.addNextCheckpoint("insert")
+  let newSelections = self.document.edit(editSelections, self.selections, insertTexts)
+  self.selection = newSelections[newSelections.high]
+
+  self.currentSnippetData = snippetData
+  self.selectNextTabStop()
 
   self.hideCompletions()
 
