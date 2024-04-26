@@ -1,4 +1,4 @@
-import std/[algorithm, sequtils, sugar]
+import std/[algorithm, sequtils, sugar, strutils]
 import misc/custom_unicode
 
 when defined(nimscript):
@@ -189,3 +189,15 @@ func mergeLines*(selections: Selections): Selections =
       result.add sn
     else:
       result[result.high].last.line = sn.last.line
+
+proc getChangedSelection*(selection: Selection, text: string): Selection =
+  let lastNewLine = text.rfind('\n')
+  let lastLineLen = text.high - lastNewLine
+  let lines = text.countLines
+
+  let newLast = if lines == 1:
+    (selection.first.line, selection.first.column + text.len)
+  else:
+    (selection.first.line + lines - 1, lastLineLen)
+
+  return (selection.last, newLast).normalized
