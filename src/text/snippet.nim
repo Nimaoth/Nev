@@ -45,7 +45,6 @@ type SnippetData* = object
 proc offset*(data: var SnippetData, selection: Selection) =
   for tabStops in data.tabStops.mvalues:
     for tabStop in tabStops.mitems:
-      let uiae = tabStop
       tabStop.first = tabStop.first.add(selection)
       tabStop.last = tabStop.last.add(selection)
 
