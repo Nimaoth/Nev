@@ -683,6 +683,14 @@ proc vimCloseCurrentViewOrQuit() {.expose("vim-close-current-view-or-quit").} =
   else:
     closeCurrentView(keepHidden=false)
 
+proc vimIndent(editor: TextDocumentEditor) {.expose("vim-indent").} =
+  editor.addNextCheckpoint "insert"
+  editor.indent()
+
+proc vimUnindent(editor: TextDocumentEditor) {.expose("vim-unindent").} =
+  editor.addNextCheckpoint "insert"
+  editor.unindent()
+
 proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   let t = startTimer()
   defer:
@@ -1131,8 +1139,8 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   addTextCommand "", "<ENTER>", "insert-text", "\n"
 
-  addTextCommand "", r"\>\>", "indent"
-  addTextCommand "", r"\<\<", "unindent"
+  addTextCommand "", r"\>\>", "vim-indent"
+  addTextCommand "", r"\<\<", "vim-unindent"
 
   addTextCommandBlock "normal", "s":
     editor.setMode "visual"
@@ -1180,8 +1188,8 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommandBlock "insert", "<C-u>":
     editor.deleteMove("line-back", inside=false, which=SelectionCursor.First)
 
-  addTextCommand "insert", "<C-t>", "indent"
-  addTextCommand "insert", "<C-d>", "unindent"
+  addTextCommand "insert", "<C-t>", "vim-indent"
+  addTextCommand "insert", "<C-d>", "vim-unindent"
   addTextCommand "insert", "<move>", "vim-select-last <move>"
 
   # Visual mode
@@ -1209,8 +1217,8 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   addTextCommand "visual", "<?-count><text_object>", """vim-select-move <text_object> <#count>"""
 
-  addTextCommand "visual", r"\>", "indent"
-  addTextCommand "visual", r"\<", "unindent"
+  addTextCommand "visual", r"\>", "vim-indent"
+  addTextCommand "visual", r"\<", "vim-unindent"
 
   # Visual line mode
   addTextCommandBlock "", "V":
@@ -1228,8 +1236,8 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   addTextCommand "visual-line", "<?-count><text_object>", """vim-select-move <text_object> <#count>"""
 
-  addTextCommand "visual-line", r"\>", "indent"
-  addTextCommand "visual-line", r"\<", "unindent"
+  addTextCommand "visual-line", r"\>", "vim-indent"
+  addTextCommand "visual-line", r"\<", "vim-unindent"
 
   # todo: not really vim keybindings
   addTextCommand "", "gd", "goto-definition"
@@ -1273,17 +1281,7 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommand "", "<C-UP>", "scroll-lines", -1
   addTextCommand "", "<C-DOWN>", "scroll-lines", 1
 
-  addTextCommandBlock "insert", "<TAB>":
-    if editor.hasTabStops():
-      editor.selectNextTabStop()
-    else:
-      editor.indent()
-
-  addTextCommandBlock "insert", "<S-TAB>":
-    if editor.hasTabStops():
-      editor.selectPrevTabStop()
-    else:
-      editor.unindent()
+  addTextCommand "insert", "<TAB>", "insert-indent"
 
   addTextCommandBlock "", "gc":
     editor.addNextCheckpoint "insert"
