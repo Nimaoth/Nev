@@ -162,19 +162,21 @@ type
     PatternOversize     ## The pattern is longer than the string.
     MatchPercentage     ## Increase score when the amount the matched chars is closer to the length of the input.
     CaseMismatch        ## Penalty if the case matches
+    UpperCaseMatch      ## Score if the pattern and input are both upper case
 
   FuzzyMatchConfig* = object
     stateScores: array[ScoreCard, int] = [
-      StartMatch:       -100,
-      LeadingCharDiff:  -3,
-      CharDiff:         -1,
+      StartMatch:       -1000,
+      LeadingCharDiff:  -30,
+      CharDiff:         -10,
       CharMatch:        0,
-      ConsecutiveMatch: 5,
-      LeadingCharMatch: 10,
-      WordBoundryMatch: 20,
-      PatternOversize:  -3,
-      MatchPercentage:  10,
-      CaseMismatch:     -1,
+      ConsecutiveMatch: 50,
+      LeadingCharMatch: 100,
+      WordBoundryMatch: 200,
+      PatternOversize:  -30,
+      MatchPercentage:  100,
+      CaseMismatch:     -10,
+      UpperCaseMatch:   100,
     ]
     ignoredChars: set[char] = {'_', ' ', '.'}
     maxRecursionLevel: int = 4
@@ -241,6 +243,8 @@ proc matchFuzzySublime*(pattern, str: openArray[char], matches: var seq[int], re
       let caseMismatch = pattern[patIndex].isLowerAscii != str[strIndex].isLowerAscii
       if caseMismatch:
         score += config.stateScores[CaseMismatch]
+      elif pattern[patIndex].isUpperAscii and str[strIndex].isUpperAscii:
+        score += config.stateScores[UpperCaseMatch]
 
       case scoreState
       of StartMatch, WordBoundryMatch:
@@ -250,12 +254,12 @@ proc matchFuzzySublime*(pattern, str: openArray[char], matches: var seq[int], re
         transition(ConsecutiveMatch)
 
       of LeadingCharMatch, ConsecutiveMatch:
+        if scoreState == LeadingCharMatch:
+          score += config.stateScores[LeadingCharMatch]
+
         consecutiveMatchCount += 1
         scoreState = ConsecutiveMatch
         score += config.stateScores[ConsecutiveMatch] * consecutiveMatchCount
-
-        if scoreState == LeadingCharMatch:
-          score += config.stateScores[LeadingCharMatch]
 
         var onBoundary = (patIndex == high(pattern))
         if not onBoundary and strIndex < high(str):
