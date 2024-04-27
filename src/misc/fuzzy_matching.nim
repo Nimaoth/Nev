@@ -160,6 +160,8 @@ type
                         ## end of the pattern, or a LeadingCharMatch.
 
     PatternOversize     ## The pattern is longer than the string.
+    MatchPercentage     ## Increase score when the amount the matched chars is closer to the length of the input.
+    CaseMismatch        ## Penalty if the case matches
 
   FuzzyMatchConfig* = object
     stateScores: array[ScoreCard, int] = [
@@ -171,6 +173,8 @@ type
       LeadingCharMatch: 10,
       WordBoundryMatch: 20,
       PatternOversize:  -3,
+      MatchPercentage:  10,
+      CaseMismatch:     -1,
     ]
     ignoredChars: set[char] = {'_', ' ', '.'}
     maxRecursionLevel: int = 4
@@ -205,8 +209,10 @@ proc matchFuzzySublime*(pattern, str: openArray[char], matches: var seq[int], re
   var bestRecursionMatches: seq[int]
   var bestRecursionScore = int.low
 
+  var matchCount = 0
+
   while (strIndex < str.len) and (patIndex < pattern.len):
-    var
+    let
       patternChar = pattern[patIndex].toLowerAscii
       strChar     = str[strIndex].toLowerAscii
 
@@ -227,8 +233,14 @@ proc matchFuzzySublime*(pattern, str: openArray[char], matches: var seq[int], re
           if recordMatches:
             bestRecursionMatches = move tempMatches
 
+      inc matchCount
+
       if recordMatches:
         matches.add(strIndex + baseIndex)
+
+      let caseMismatch = pattern[patIndex].isLowerAscii != str[strIndex].isLowerAscii
+      if caseMismatch:
+        score += config.stateScores[CaseMismatch]
 
       case scoreState
       of StartMatch, WordBoundryMatch:
@@ -299,6 +311,9 @@ proc matchFuzzySublime*(pattern, str: openArray[char], matches: var seq[int], re
 
   if patIndex == pattern.len and (strIndex == str.len or str[strIndex] notin Letters):
     score += 10
+
+  let matchPercentage = matchCount.float / str.len.float
+  score += (matchPercentage * config.stateScores[MatchPercentage].float).int
 
   if bestRecursionScore > score:
     if recordMatches:
