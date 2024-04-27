@@ -15,7 +15,7 @@ method createUI*(self: FileSelectorItem, popup: SelectorPopup, builder: UINodeBu
   let name = if self.name.len > 0: self.name else: self.path
   let matchIndices = self.getCompletionMatches(popup.getSearchString(), name, defaultPathMatchingConfig)
   builder.panel(&{LayoutHorizontal, FillX, SizeToContentY}):
-    builder.highlightedText(name, matchIndices, textColor, textColor.lighten(0.15))
+    discard builder.highlightedText(name, matchIndices, textColor, textColor.lighten(0.15))
 
     if self.directory.len > 0:
       builder.panel(&{FillY}, w = builder.charWidth * 4)
@@ -29,7 +29,7 @@ method createUI*(self: SearchFileSelectorItem, popup: SelectorPopup, builder: UI
   builder.panel(&{LayoutHorizontalReverse, FillX, SizeToContentY}):
     builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = fmt"| {self.path}:{self.line}", pivot = vec2(1, 0), textColor = textColor)
     builder.panel(&{FillX, SizeToContentY, MaskContent}, pivot = vec2(1, 0)):
-      builder.highlightedText(name, matchIndices, textColor, textColor.lighten(0.15))
+      discard builder.highlightedText(name, matchIndices, textColor, textColor.lighten(0.15))
 
 method createUI*(self: TextSymbolSelectorItem, popup: SelectorPopup, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
   let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
@@ -37,13 +37,13 @@ method createUI*(self: TextSymbolSelectorItem, popup: SelectorPopup, builder: UI
 
   builder.panel(&{FillX, SizeToContentY}):
     let matchIndices = self.getCompletionMatches(popup.getSearchString(), self.symbol.name, defaultCompletionMatchingConfig)
-    builder.highlightedText(self.symbol.name, matchIndices, textColor, textColor.lighten(0.15))
+    discard builder.highlightedText(self.symbol.name, matchIndices, textColor, textColor.lighten(0.15))
     builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, x = currentNode.w, text = $self.symbol.symbolType, pivot = vec2(1, 0), textColor = scopeColor)
 
 method createUI*(self: NamedSelectorItem, popup: SelectorPopup, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
   let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
   let matchIndices = self.getCompletionMatches(popup.getSearchString(), self.name, defaultPathMatchingConfig)
-  builder.highlightedText(self.name, matchIndices, textColor, textColor.lighten(0.15))
+  discard builder.highlightedText(self.name, matchIndices, textColor, textColor.lighten(0.15))
 
 method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
   # let dirty = self.dirty

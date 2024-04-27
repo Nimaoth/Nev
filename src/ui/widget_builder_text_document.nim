@@ -908,28 +908,26 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
   let nameSelectedColor = app.theme.color(@["editorSuggestWidget.highlightForeground", "editor.foreground"], color(1, 1, 1))
   let scopeColor = app.theme.color(@["descriptionForeground", "editor.foreground"], color(175/255, 1, 175/255))
 
-  const numLinesToShow = 20
+  const numLinesToShow = 30
   let (top, bottom) = (cursorBounds.yh.float, cursorBounds.yh.float + totalLineHeight * numLinesToShow)
 
-  const listWidth = 120.0
   const docsWidth = 50.0
-  const maxTypeLen = 50
-  let totalWidth = charWidth * listWidth + charWidth * docsWidth
-  var clampedX = cursorBounds.x
-  if clampedX + totalWidth > builder.root.w:
-    clampedX = max(builder.root.w - totalWidth, 0)
-
+  const maxTypeLen = 30
   updateBaseIndexAndScrollOffset(bottom - top, self.completionsBaseIndex, self.completionsScrollOffset, self.completionMatches.len, totalLineHeight, self.scrollToCompletion)
   self.scrollToCompletion = int.none
 
   var completionsPanel: UINode = nil
-  builder.panel(&{SizeToContentX, SizeToContentY, AnimateBounds, MaskContent}, x = clampedX, y = top, w = totalWidth, h = bottom - top, pivot = vec2(0, 0), userId = self.completionsId.newPrimaryId):
+  builder.panel(&{SizeToContentX, SizeToContentY, AnimateBounds, MaskContent}, x = cursorBounds.x, y = top, pivot = vec2(0, 0), userId = self.completionsId.newPrimaryId):
     completionsPanel = currentNode
 
     proc handleScroll(delta: float) =
       let scrollAmount = delta * app.asConfigProvider.getValue("text.scroll-speed", 40.0)
       self.scrollOffset += scrollAmount
       self.markDirty()
+
+    var maxLabelWidth = 5 * builder.charWidth
+    var maxDetailWidth = 5 * builder.charWidth
+    var detailColumn: seq[UINode] = @[]
 
     proc handleLine(i: int, y: float, down: bool) =
       var backgroundColor = backgroundColor
@@ -943,12 +941,14 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
       else:
         vec2(0, 1)
 
-      builder.panel(&{FillX, SizeToContentY, FillBackground}, y = y, pivot = pivot, backgroundColor = backgroundColor):
+      builder.panel(&{SizeToContentY, FillBackground}, y = y, pivot = pivot, backgroundColor = backgroundColor):
         let completion = self.completions.items[self.completionMatches[i].index]
         let color = if i == self.selectedCompletion: nameSelectedColor else: nameColor
 
         let matchIndices = self.getCompletionMatches(i)
-        builder.highlightedText(completion.label, matchIndices, color, color.lighten(0.15))
+        let labelNode = builder.highlightedText(completion.label, matchIndices, color, color.lighten(0.15))
+
+        maxLabelWidth = max(maxLabelWidth, labelNode.w)
 
         let detail = if completion.detail.getSome(detail):
           if detail.len < maxTypeLen:
@@ -958,10 +958,25 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
         else:
           ""
         let scopeText = detail
-        builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, x = currentNode.w, pivot = vec2(1, 0), text = scopeText, textColor = scopeColor)
+        builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, x = currentNode.w, pivot = vec2(0, 0), text = scopeText, textColor = scopeColor):
+          detailColumn.add currentNode
+          maxDetailWidth = max(maxDetailWidth, currentNode.w)
 
-    builder.panel(&{UINodeFlag.MaskContent, DrawBorder}, w = listWidth * charWidth, h = bottom - top, borderColor = borderColor):
-      builder.createLines(self.completionsBaseIndex, self.completionsScrollOffset, self.completionMatches.high, false, false, backgroundColor, handleScroll, handleLine)
+    var listNode: UINode
+    builder.panel(&{UINodeFlag.MaskContent, DrawBorder, SizeToContentX, SizeToContentY}, borderColor = borderColor):
+      listNode = currentNode
+      let lineFlags = &{SizeToContentX, SizeToContentY}
+      let maxHeight = bottom - top
+      let linesNode = builder.createLines(self.completionsBaseIndex, self.completionsScrollOffset, self.completionMatches.high, maxHeight.some, lineFlags, backgroundColor, handleScroll, handleLine)
+
+      let totalWidth = maxLabelWidth + maxDetailWidth + builder.charWidth
+      linesNode.w = totalWidth
+
+      # Adjust offset and width of detail nodes to align them
+      for detailNode in detailColumn:
+        detailNode.rawX = maxLabelWidth + builder.charWidth
+        detailNode.w = maxDetailWidth
+        detailNode.parent.w = totalWidth # parent is line node
 
     if self.selectedCompletion >= 0 and self.selectedCompletion < self.completionMatches.len:
       var docText = ""
@@ -976,21 +991,17 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
         elif doc.asMarkupContent().getSome(markup):
           docText.add markup.value
 
-      # if docText.len > 0:
-      #   docText.add "\n\n"
-
-      # block:
-      #   var uiae = self.completions.items[self.completionMatches[self.selectedCompletion].index]
-      #   uiae.documentation = CompletionItemDocumentationVariant.none
-      #   docText.add uiae.toJson.pretty
-
-      builder.panel(&{UINodeFlag.FillBackground, DrawText, MaskContent, TextWrap},
-        x = listWidth * charWidth, w = docsWidth * charWidth, h = bottom - top,
-        backgroundColor = backgroundColor, textColor = docsColor, text = docText)
+      if docText.len > 0:
+        builder.panel(&{UINodeFlag.FillBackground, DrawText, MaskContent, TextWrap},
+          x = listNode.xw, w = docsWidth * charWidth, h = listNode.h,
+          backgroundColor = backgroundColor, textColor = docsColor, text = docText)
 
   if completionsPanel.bounds.yh > completionsPanel.parent.bounds.h:
     completionsPanel.rawY = cursorBounds.y
     completionsPanel.pivot = vec2(0, 1)
+
+  if completionsPanel.bounds.xw > completionsPanel.parent.bounds.w:
+    completionsPanel.rawX = max(completionsPanel.parent.bounds.w - completionsPanel.bounds.w, 0)
 
 method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
   self.preRender()
