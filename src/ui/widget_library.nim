@@ -45,19 +45,11 @@ template createHeader*(builder: UINodeBuilder, inRenderHeader: bool, inMode: str
 
     bar
 
-proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: float, maxLine: int, sizeToContentX: bool, sizeToContentY: bool, backgroundColor: Color, handleScroll: proc(delta: float), handleLine: proc(line: int, y: float, down: bool)) =
-  var flags = 0.UINodeFlags
-  if sizeToContentX:
-    flags.incl SizeToContentX
-  else:
-    flags.incl FillX
-
-  if sizeToContentY:
-    flags.incl SizeToContentY
-  else:
-    flags.incl FillY
-
+proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: float, maxLine: int, maxHeight: Option[float], flags: UINodeFlags, backgroundColor: Color, handleScroll: proc(delta: float), handleLine: proc(line: int, y: float, down: bool)): UINode =
+  let sizeToContentY = SizeToContentY in flags
   builder.panel(flags):
+    result = currentNode
+
     onScroll:
       handleScroll(delta.y)
 
@@ -70,6 +62,9 @@ proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: 
 
       y = builder.currentChild.yh
       if not sizeToContentY and builder.currentChild.bounds.y > height:
+        break
+
+      if maxHeight.getSome(maxHeight) and builder.currentChild.bounds.y > maxHeight:
         break
 
     if y < height: # fill remaining space with background color
@@ -85,8 +80,25 @@ proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: 
       if not sizeToContentY and builder.currentChild.bounds.yh < 0:
         break
 
+      if maxHeight.isSome and builder.currentChild.bounds.yh < 0:
+        break
+
     if not sizeToContentY and y > 0: # fill remaining space with background color
       builder.panel(&{FillX, FillBackground}, h = y, backgroundColor = backgroundColor)
+
+proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: float, maxLine: int, sizeToContentX: bool, sizeToContentY: bool, backgroundColor: Color, handleScroll: proc(delta: float), handleLine: proc(line: int, y: float, down: bool)) =
+  var flags = 0.UINodeFlags
+  if sizeToContentX:
+    flags.incl SizeToContentX
+  else:
+    flags.incl FillX
+
+  if sizeToContentY:
+    flags.incl SizeToContentY
+  else:
+    flags.incl FillY
+
+  discard builder.createLines(previousBaseIndex, scrollOffset, maxLine, float.none, flags, backgroundColor, handleScroll, handleLine)
 
 proc updateBaseIndexAndScrollOffset*(height: float, previousBaseIndex: var int, scrollOffset: var float, lines: int, totalLineHeight: float, targetLine: Option[int], margin: float = 0.0) =
 
@@ -116,10 +128,11 @@ proc updateBaseIndexAndScrollOffset*(height: float, previousBaseIndex: var int, 
     previousBaseIndex -= 1
     scrollOffset -= totalLineHeight
 
-proc highlightedText*(builder: UINodeBuilder, text: string, highlightedIndices: openArray[int], color: Color, highlightColor: Color) =
+proc highlightedText*(builder: UINodeBuilder, text: string, highlightedIndices: openArray[int], color: Color, highlightColor: Color): UINode =
   ## Create a text panel wher the characters at the indices in `highlightedIndices` are highlighted with `highlightColor`.
   if highlightedIndices.len > 0:
     builder.panel(&{SizeToContentX, SizeToContentY, LayoutHorizontal}):
+      result = currentNode
       var start = 0
       for matchIndex in highlightedIndices:
         if matchIndex > start:
@@ -132,4 +145,5 @@ proc highlightedText*(builder: UINodeBuilder, text: string, highlightedIndices: 
         builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = text[start..^1], textColor = color)
 
   else:
-    builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = text, textColor = color)
+    builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = text, textColor = color):
+      result = currentNode
