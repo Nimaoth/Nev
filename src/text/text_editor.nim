@@ -6,7 +6,7 @@ import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_mat
 import scripting/[expose]
 import platform/[platform, filesystem]
 import language/[language_server_base]
-import document, document_editor, events, vmath, bumpy, input, custom_treesitter, indent, text_document, snippet
+import document, document_editor, events, vmath, bumpy, input, custom_treesitter, indent, text_document, snippet, completion
 import config_provider, app_interface
 import diff
 import workspaces/workspace
@@ -121,6 +121,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
   lastItems*: seq[tuple[index: int, bounds: Rect]]
   showCompletions*: bool
   scrollToCompletion*: Option[int]
+
+  completionEngine: CompletionEngine
 
   updateCompletionsTask: DelayedTask
 
@@ -837,6 +839,28 @@ proc selectParentCurrentTs*(self: TextDocumentEditor) {.expose("editor.text").} 
 
 proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.}
 
+proc shouldShowCompletionsAt*(self: TextDocumentEditor, cursor: Cursor): bool {.expose("editor.text").} =
+  ## Returns true if the completion window should automatically open at the given position
+  let line = self.document.getLine(cursor.line)
+  if cursor.column <= 0 or cursor.column > line.len:
+    return false
+
+  let previousRune = line.runeAt(line.runeStart(cursor.column - 1))
+  let triggerChars = IdentChars + {'.'}
+  if previousRune.char in triggerChars:
+    return true
+
+  if previousRune.isAlpha:
+    return true
+
+  return false
+
+proc autoShowCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
+  if self.shouldShowCompletionsAt(self.selection.last):
+    self.showCompletionWindow()
+  else:
+    self.hideCompletions()
+
 proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true) {.expose("editor.text").} =
   if self.document.singleLine and text == "\n":
     return
@@ -884,11 +908,8 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
 
   self.updateTargetColumn(Last)
 
-  if not self.disableCompletions and (text == "." or text == "," or text == " "):
-    self.showCompletionWindow()
-    asyncCheck self.getCompletionsAsync()
-  elif wasShowingCompletions:
-    self.showCompletionWindow()
+  if not self.disableCompletions:
+    self.autoShowCompletions()
 
 proc indent*(self: TextDocumentEditor) {.expose("editor.text").} =
   var linesToIndent = initHashSet[int]()
@@ -1367,9 +1388,8 @@ proc deleteLeft*(self: TextDocumentEditor) {.expose("editor.text").} =
 
   self.selections = self.document.delete(selections, self.selections, inclusiveEnd=self.useInclusiveSelections)
 
-  self.updateTargetColumn(Last)
-  if wasShowingCompletions:
-    self.showCompletionWindow()
+  if not self.disableCompletions:
+    self.autoShowCompletions()
 
 proc deleteRight*(self: TextDocumentEditor, includeAfter: bool = true) {.expose("editor.text").} =
   var selections = self.selections
@@ -1381,9 +1401,8 @@ proc deleteRight*(self: TextDocumentEditor, includeAfter: bool = true) {.expose(
 
   self.selections = self.document.delete(selections, self.selections, inclusiveEnd=self.useInclusiveSelections).mapIt(self.clampSelection(it, includeAfter))
 
-  self.updateTargetColumn(Last)
-  if wasShowingCompletions:
-    self.showCompletionWindow()
+  if not self.disableCompletions:
+    self.autoShowCompletions()
 
 proc getCommandCount*(self: TextDocumentEditor): int {.expose("editor.text").} =
   return self.commandCount
