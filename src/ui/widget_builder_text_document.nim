@@ -590,14 +590,8 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     for line in sn.first.line..sn.last.line:
       selectionsPerLine.mgetOrPut(line, @[]).add s
 
-  # var highlightsPerLine = self.searchResults
-  # var highlightsPerLine = self.searchResults
-
-  # builder.panel(&{FillX, LayoutVertical}, flags += (if sizeToContentY: &{SizeToContentY} else: &{FillY})):
   builder.panel(flags + MaskContent + OverlappingChildren):
     let linesPanel = currentNode
-
-    let height = currentNode.bounds.h
 
     # line numbers
     let maxLineNumber = case lineNumbers

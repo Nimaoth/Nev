@@ -1353,54 +1353,6 @@ proc setAttribs(buffer: var string, c: TerminalChar) =
       buffer.add $s.int
       buffer.add "m"
 
-proc setAttribs(c: TerminalChar) =
-  if c.bg == bgNone or c.fg == fgNone or c.style == {}:
-    resetAttributes()
-    gCurrBg = c.bg
-    gCurrBgColor = c.bgColor
-    gCurrFg = c.fg
-    gCurrFgColor = c.fgColor
-    gCurrStyle = c.style
-
-    case gCurrBg
-      of bgNone: discard
-      of bgRGB:
-        setTrueBackgroundColor(c.bgColor)
-      else: setBackgroundColor(cast[terminal.BackgroundColor](gCurrBg))
-
-    case gCurrFg
-      of fgNone: discard
-      of fgRGB: setTrueForegroundColor(c.fgColor)
-      else: setForegroundColor(cast[terminal.ForegroundColor](gCurrFg))
-
-    if gCurrStyle != {}:
-      setStyle(gCurrStyle)
-  else:
-    if c.bg != gCurrBg or c.bgColor != gCurrBgColor:
-      gCurrBg = c.bg
-      gCurrBgColor = c.bgColor
-      case gCurrBg
-      of bgNone: discard
-      of bgRGB: setTrueBackgroundColor(c.bgColor)
-      else: setBackgroundColor(cast[terminal.BackgroundColor](gCurrBg))
-    if c.fg != gCurrFg or c.fgColor != gCurrFgColor:
-      gCurrFg = c.fg
-      gCurrFgColor = c.fgColor
-      case gCurrFg
-        of fgNone: discard
-        of fgRGB: setTrueForegroundColor(c.fgColor)
-        else: setForegroundColor(cast[terminal.ForegroundColor](gCurrFg))
-
-    if c.style != gCurrStyle:
-      gCurrStyle = c.style
-      setStyle(gCurrStyle)
-
-proc setPos(x, y: Natural) =
-  terminal.setCursorPos(x, y)
-
-proc setXPos(x: Natural) =
-  terminal.setCursorXPos(x)
-
 var displayBuffer = ""
 
 proc flushDisplayBuffer() =

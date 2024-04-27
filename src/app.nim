@@ -1763,7 +1763,6 @@ proc chooseTheme*(self: App) {.expose("editor").} =
 
   var popup = newSelectorPopup(self.asAppInterface, "theme".some)
   popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
-    let appRootDir = fs.getApplicationFilePath("")
     let themesDir = fs.getApplicationFilePath("./themes")
     for file in walkDirRec(themesDir, relative=true):
       if file.endsWith ".json":
@@ -1917,8 +1916,6 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
     var cancellationToken = newCancellationToken()
     popup.cancellationToken = cancellationToken
 
-    var timer = startTimer()
-    var i = 0
     for folder in self.workspace.folders:
       var folder = folder
       log lvlInfo, fmt"Start iterateDirectoryRec"
