@@ -111,10 +111,10 @@ type TextDocumentEditor* = ref object of DocumentEditor
   dragStartSelection*: Selection
 
   lastCompletionMatchText*: string
-  completionMatchPositions*: Table[int, seq[int]]
+  completionMatchPositions*: Table[int, seq[int]] # Maps from completion index to char indices of matching chars
   completionMatches*: seq[tuple[index: int, score: float]]
   disableCompletions*: bool
-  completions*: CompletionList
+  completions*: seq[Completion]
   selectedCompletion*: int
   completionsBaseIndex*: int
   completionsScrollOffset*: float
@@ -134,6 +134,8 @@ type TextDocumentEditor* = ref object of DocumentEditor
   textInsertedHandle: Id
   textDeletedHandle: Id
   diagnosticsUpdatedHandle: Id
+  languageServerAttachedHandle: Id
+  onCompletionsUpdatedHandle: Id
 
   completionsDirty: bool
   searchResultsDirty: bool
@@ -159,7 +161,7 @@ method getStatisticsString*(self: TextDocumentEditor): string =
   result.add &"Completion Match Positions: {self.completionMatchPositions.len}, {temp}\n"
   result.add &"Completion Matches: {self.completionMatches.len}\n"
 
-  result.add &"Completions: {self.completions.items.len}\n"
+  result.add &"Completions: {self.completions.len}\n"
   result.add &"LastItems: {self.lastItems.len}"
 
 template noSelectionHistory(self, body: untyped): untyped =
@@ -212,6 +214,7 @@ proc `selections=`*(self: TextDocumentEditor, selections: Selections) =
     self.blinkCursorTask.reschedule()
 
   self.showHover = false
+  self.completionsDirty = true
   self.hideCompletions()
   # self.document.addNextCheckpoint("move")
 
@@ -235,6 +238,7 @@ proc `selection=`*(self: TextDocumentEditor, selection: Selection) =
     self.blinkCursorTask.reschedule()
 
   self.showHover = false
+  self.completionsDirty = true
   self.hideCompletions()
   # self.document.addNextCheckpoint("move")
 
@@ -292,6 +296,10 @@ method deinit*(self: TextDocumentEditor) =
     self.document.textInserted.unsubscribe(self.textInsertedHandle)
     self.document.textDeleted.unsubscribe(self.textDeletedHandle)
     self.document.onDiagnosticsUpdated.unsubscribe(self.diagnosticsUpdatedHandle)
+    self.document.onLanguageServerAttached.unsubscribe(self.languageServerAttachedHandle)
+
+  if self.completionEngine.isNotNil:
+    self.completionEngine.onCompletionsUpdated.unsubscribe(self.onCompletionsUpdatedHandle)
 
   let i = allTextEditors.find(self)
   allTextEditors.removeSwap(i)
@@ -330,7 +338,8 @@ proc preRender*(self: TextDocumentEditor) =
     self.updateSearchResults()
 
   if self.showCompletions and self.completionsDirty:
-    self.refilterCompletions()
+    measureBlock "refilter completions":
+      self.refilterCompletions()
 
 iterator splitSelectionIntoLines(self: TextDocumentEditor, selection: Selection, includeAfter: bool = true): Selection =
   ## Yields a selection for each line covered by the input selection, covering the same range as the input
@@ -836,8 +845,6 @@ proc printTreesitterTreeUnderCursor*(self: TextDocumentEditor) {.expose("editor.
 
 proc selectParentCurrentTs*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.selectParentTs(self.selection)
-
-proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.}
 
 proc shouldShowCompletionsAt*(self: TextDocumentEditor, cursor: Cursor): bool {.expose("editor.text").} =
   ## Returns true if the completion window should automatically open at the given position
@@ -1750,19 +1757,6 @@ proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
       else:
         log lvlError, fmt"Failed to open location of definition: {d}"
 
-proc getCompletionSelectionAt(self: TextDocumentEditor, cursor: Cursor): Selection =
-  let line = self.document.getLine cursor.line
-
-  var column = cursor.column
-  while column > 0:
-    case line[column - 1]
-    of ' ', '\t', '.', ',', '(', ')', '[', ']', '{', '}', ':', ';':
-      break
-    else:
-      column -= 1
-
-  return ((cursor.line, column), cursor)
-
 proc getCompletionsFromContent(self: TextDocumentEditor): CompletionList =
   var s = initHashSet[string]()
   for li, line in self.lastRenderedLines:
@@ -1781,68 +1775,21 @@ proc getCompletionsFromContent(self: TextDocumentEditor): CompletionList =
   for text in s.items:
     result.items.add(CompletionItem(label: text))
 
-proc addSnippetCompletions(self: TextDocumentEditor) =
-  try:
-    let snippets = self.configProvider.getValue("editor.text.snippets." & self.document.languageId, newJObject())
-    for (name, definition) in snippets.fields.pairs:
-      # todo: handle language scope
-      # let scopes = definition["scope"].getStr.split(",")
-      let prefix = definition["prefix"].getStr
-      let body = definition["body"].elems
-      var text = ""
-      for i, line in body:
-        if text.len > 0:
-          text.add "\n"
-        text.add line.getStr
-
-      let edit = lsp_types.TextEdit(`range`: Range(start: Position(line: -1, character: -1), `end`: Position(line: -1, character: -1)), newText: text)
-      self.completions.items.add(CompletionItem(label: prefix, detail: name.some, insertTextFormat: InsertTextFormat.Snippet.some, textEdit: lsp_types.init(lsp_types.CompletionItemTextEditVariant, edit).some))
-      self.completionsDirty = true
-
-  except:
-    log lvlError, fmt"Failed to get snippets for language {self.document.languageId}"
-
-proc splitIdentifier(str: string): seq[string] =
-  var buffer = ""
-  var previousUppercase = false
-  for i, c in str:
-    if c == '_':
-      if buffer.len > 0:
-        result.add buffer.toLowerAscii
-        buffer.setLen 0
-      continue
-
-    let isUpper = c.isUpperAscii
-
-    if not previousUppercase and isUpper:
-      if buffer.len > 0:
-        result.add buffer.toLowerAscii
-        buffer.setLen 0
-
-    previousUppercase = isUpper
-
-    buffer.add c.toLowerAscii
-
-  if buffer.len > 0:
-    result.add buffer
-
-  if result.len == 0:
-    result.add str.toLowerAscii
-
-proc getCompletionMatches*(self: TextDocumentEditor, completionMatchIndex: int): seq[int] =
+proc getCompletionMatches*(self: TextDocumentEditor, completionIndex: int): seq[int] =
   self.refilterCompletions()
 
-  if completionMatchIndex in self.completionMatchPositions:
-    return self.completionMatchPositions[completionMatchIndex]
+  if completionIndex in self.completionMatchPositions:
+    return self.completionMatchPositions[completionIndex]
 
-  if completionMatchIndex < self.completionMatches.len:
-    let completionIndex = self.completionMatches[completionMatchIndex].index
-    let filterText = self.completions.items[completionIndex].label
+  if completionIndex < self.completionMatches.len:
+    let completionIndex = self.completionMatches[completionIndex].index
+    let filterText = self.completions[completionIndex].filterText
+    let label = self.completions[completionIndex].item.label
 
-    var matches = newSeqOfCap[int](self.lastCompletionMatchText.len)
-    discard matchFuzzySublime(self.lastCompletionMatchText, filterText, matches, true, defaultCompletionMatchingConfig)
+    var matches = newSeqOfCap[int](filterText.len)
+    discard matchFuzzySublime(filterText, label, matches, true, defaultCompletionMatchingConfig)
 
-    self.completionMatchPositions[completionMatchIndex] = matches
+    self.completionMatchPositions[completionIndex] = matches
     return matches
 
   return @[]
@@ -1851,106 +1798,17 @@ proc refilterCompletions(self: TextDocumentEditor) =
   if not self.completionsDirty:
     return
 
-  self.completionsDirty = false
-  measureBlock "refilterCompletions":
-    var matches: seq[(int, float)]
-    var noMatches: seq[(int, float)]
+  self.completions = self.completionEngine.getCompletions()
+  self.completionMatches.setLen self.completions.len
+  for i in 0..<self.completionMatches.len:
+    self.completionMatches[i] = (i, 0)
+  self.completionMatchPositions.clear()
 
-    let selection = self.getCompletionSelectionAt(self.selection.last)
-    let currentText = self.document.contentString(selection)
-
-    proc cmp(a, b: CompletionItem): int =
-      let preselectA = a.preselect.get(false)
-      let preselectB = a.preselect.get(false)
-      if preselectA and not preselectB:
-        return -1
-      if not preselectA and preselectB:
-        return 1
-
-      let sortTextA = a.sortText.get(a.label)
-      let sortTextB = b.sortText.get(b.label)
-      cmp(sortTextA, sortTextB)
-
-    self.completions.items.sort(cmp, Ascending)
-    self.completionMatchPositions.clear()
-
-    if currentText.len == 0:
-      for i, _ in self.completions.items:
-        matches.add (i, 0.0)
-      self.completionMatches = matches
-      self.selectedCompletion = 0
-      self.scrollToCompletion = self.selectedCompletion.some
-      self.lastCompletionMatchText = currentText
-      return
-
-    let parts = currentText.splitIdentifier
-    assert parts.len > 0
-
-    let fuzzyMatchSublime = self.configProvider.getFlag("editor.fuzzy-match-sublime", true)
-
-    for i, c in self.completions.items:
-      let filterText = c.filterText.get(c.label)
-
-      var score = 0.0
-      if fuzzyMatchSublime:
-        score = matchFuzzySublime(currentText, filterText, defaultCompletionMatchingConfig).score.float
-      else:
-        for i in 0..parts.high:
-          score += matchFuzzySimple(filterText, parts[i])
-
-      matches.add (i, score)
-
-    matches.sort((a, b) => cmp(a[1], b[1]), Descending)
-    noMatches.sort((a, b) => cmp(a[1], b[1]), Descending)
-
-    self.completionMatches = matches
-
-    self.selectedCompletion = 0
-    self.scrollToCompletion = self.selectedCompletion.some
-    self.lastCompletionMatchText = currentText
-
-proc getCompletionsAsync(self: TextDocumentEditor): Future[void] {.async.} =
-  if self.disableCompletions:
-    return
-
-  if self.completions.items.len == 0:
-    self.completions = self.getCompletionsFromContent()
-    self.addSnippetCompletions()
-
-  if self.completions.items.len > 0:
-    self.completionsDirty = true
-    self.refilterCompletions()
-    self.selectedCompletion = self.selectedCompletion.clamp(0, self.completionMatches.high)
-    self.scrollToCompletion = self.selectedCompletion.some
-    self.showCompletionWindow()
-
-  if self.updateCompletionsTask.isNotNil:
-    self.updateCompletionsTask.pause()
-
-  let languageServer = await self.document.getLanguageServer()
-
-  if languageServer.getSome(ls):
-
-    let lspCompletions = await ls.getCompletions(self.document.languageId, self.document.fullPath, self.selection.last)
-    if lspCompletions.isSuccess and lspCompletions.result.items.len > 0:
-      self.completions = lspCompletions.result
-      self.completionsDirty = true
-      self.addSnippetCompletions()
-      self.refilterCompletions()
-
-  self.selectedCompletion = self.selectedCompletion.clamp(0, self.completionMatches.high)
+  self.selectedCompletion = 0
   self.scrollToCompletion = self.selectedCompletion.some
-  self.markDirty()
+  self.completionsDirty = false
 
 proc showCompletionWindow(self: TextDocumentEditor) =
-  if self.updateCompletionsTask.isNil:
-    self.updateCompletionsTask = startDelayed(200, repeat=false):
-      asyncCheck self.getCompletionsAsync()
-
-  if not self.updateCompletionsTask.isActive:
-    self.updateCompletionsTask.reschedule()
-
-  # log lvlInfo, fmt"showCompletions {self.document.filename}"
   self.showCompletions = true
   self.markDirty()
 
@@ -1988,7 +1846,10 @@ proc gotoDefinition*(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncCheck self.gotoDefinitionAsync()
 
 proc getCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
-  asyncCheck self.getCompletionsAsync()
+  self.completionsDirty = true
+  if self.completionEngine.isNotNil:
+    self.completionEngine.updateCompletionsAt(self.selection.last)
+  self.showCompletionWindow()
 
 proc gotoSymbol*(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncCheck self.gotoSymbolAsync()
@@ -2059,24 +1920,24 @@ proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").
   if self.selectedCompletion > self.completionMatches.high:
     return
 
-  let com = self.completions.items[self.completionMatches[self.selectedCompletion].index]
+  let com = self.completions[self.completionMatches[self.selectedCompletion].index]
   log(lvlInfo, fmt"Applying completion {com}")
 
   self.addNextCheckpoint("insert")
 
-  let insertTextFormat = com.insertTextFormat.get(InsertTextFormat.PlainText)
+  let insertTextFormat = com.item.insertTextFormat.get(InsertTextFormat.PlainText)
 
   var editSelection: Selection
   var insertText = ""
 
   let cursor = self.selection.last
-  if com.textEdit.getSome(edit):
+  if com.item.textEdit.getSome(edit):
     if edit.asTextEdit().getSome(edit):
       if edit.`range`.start.line < 0:
         if cursor.column == 0:
           editSelection = cursor.toSelection
         else:
-          editSelection = self.getCompletionSelectionAt(cursor)
+          editSelection = self.document.getCompletionSelectionAt(cursor)
       else:
         let runeSelection = ((edit.`range`.start.line, edit.`range`.start.character.RuneIndex), (edit.`range`.`end`.line, edit.`range`.`end`.character.RuneIndex))
         let selection = self.document.runeSelectionToSelection(runeSelection)
@@ -2090,11 +1951,11 @@ proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").
       return
 
   else:
-    insertText = com.insertText.get(com.label)
+    insertText = com.item.insertText.get(com.item.label)
     if cursor.column == 0:
       editSelection = cursor.toSelection
     else:
-      editSelection = self.getCompletionSelectionAt(cursor)
+      editSelection = self.document.getCompletionSelectionAt(cursor)
 
   var editSelections: seq[Selection] = @[]
   var insertTexts: seq[string] = @[]
@@ -2120,7 +1981,7 @@ proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").
       insertText = data.text
       snippetData = data.some
 
-  for edit in com.additionalTextEdits:
+  for edit in com.item.additionalTextEdits:
     let runeSelection = ((edit.`range`.start.line, edit.`range`.start.character.RuneIndex), (edit.`range`.`end`.line, edit.`range`.`end`.character.RuneIndex))
     let selection = self.document.runeSelectionToSelection(runeSelection)
     editSelections.add selection
@@ -2645,13 +2506,20 @@ proc updateInlayHintPositionsAfterDelete(self: TextDocumentEditor, selection: Se
 
 proc handleTextInserted(self: TextDocumentEditor, document: TextDocument, location: Selection, text: string) =
   self.updateInlayHintPositionsAfterInsert(location)
+  self.completionsDirty = true
 
 proc handleTextDeleted(self: TextDocumentEditor, document: TextDocument, selection: Selection) =
   self.updateInlayHintPositionsAfterDelete(selection)
+  self.completionsDirty = true
 
 proc handleDiagnosticsUpdated(self: TextDocumentEditor) =
   # log lvlInfo, fmt"Got diagnostics for {self.document.filename}: {self.document.currentDiagnostics.len}"
   self.updateDiagnosticsForCurrent()
+
+proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocument, languageServer: LanguageServer) =
+  # log lvlInfo, fmt"[handleLanguageServerAttached] {self.document.filename}"
+  self.completionEngine.addProvider newCompletionProviderLsp(document, languageServer)
+  self.completionsDirty = true
 
 proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
   self.clampSelection()
@@ -2677,6 +2545,10 @@ proc handleTextDocumentSaved(self: TextDocumentEditor) =
   log lvlInfo, fmt"handleTextDocumentSaved '{self.document.filename}'"
   if self.diffDocument.isNotNil:
     asyncCheck self.updateDiffAsync()
+
+proc handleCompletionsUpdated(self: TextDocumentEditor) =
+  self.completionsDirty = true
+  self.markDirty()
 
 ## Only use this to create TextDocumentEditorInstances
 proc createTextEditorInstance(): TextDocumentEditor =
@@ -2708,6 +2580,17 @@ proc newTextEditor*(document: TextDocument, app: AppInterface, configProvider: C
   self.textInsertedHandle = document.textInserted.subscribe (arg: tuple[document: TextDocument, location: Selection, text: string]) => self.handleTextInserted(arg.document, arg.location, arg.text)
   self.textDeletedHandle = document.textDeleted.subscribe (arg: tuple[document: TextDocument, location: Selection]) => self.handleTextDeleted(arg.document, arg.location)
   self.diagnosticsUpdatedHandle = document.onDiagnosticsUpdated.subscribe () => self.handleDiagnosticsUpdated()
+  self.languageServerAttachedHandle = document.onLanguageServerAttached.subscribe (arg: tuple[document: TextDocument, languageServer: LanguageServer]) => self.handleLanguageServerAttached(arg.document, arg.languageServer)
+
+  self.completionEngine = CompletionEngine()
+  self.onCompletionsUpdatedHandle = self.completionEngine.onCompletionsUpdated.subscribe () => self.handleCompletionsUpdated()
+
+  if self.document.languageServer.getSome(ls):
+    self.handleLanguageServerAttached(self.document, ls)
+
+  if self.document.createLanguageServer:
+    self.completionEngine.addProvider newCompletionProviderSnippet(self.configProvider, self.document)
+    self.completionEngine.addProvider newCompletionProviderDocument(self.document)
 
   return self
 
@@ -2727,6 +2610,17 @@ method createWithDocument*(_: TextDocumentEditor, document: Document, configProv
   self.textInsertedHandle = self.document.textInserted.subscribe (arg: tuple[document: TextDocument, location: Selection, text: string]) => self.handleTextInserted(arg.document, arg.location, arg.text)
   self.textDeletedHandle = self.document.textDeleted.subscribe (arg: tuple[document: TextDocument, location: Selection]) => self.handleTextDeleted(arg.document, arg.location)
   self.diagnosticsUpdatedHandle = self.document.onDiagnosticsUpdated.subscribe () => self.handleDiagnosticsUpdated()
+  self.languageServerAttachedHandle = self.document.onLanguageServerAttached.subscribe (arg: tuple[document: TextDocument, languageServer: LanguageServer]) => self.handleLanguageServerAttached(arg.document, arg.languageServer)
+
+  self.completionEngine = CompletionEngine()
+  self.onCompletionsUpdatedHandle = self.completionEngine.onCompletionsUpdated.subscribe () => self.handleCompletionsUpdated()
+
+  if self.document.languageServer.getSome(ls):
+    self.handleLanguageServerAttached(self.document, ls)
+
+  if self.document.createLanguageServer:
+    self.completionEngine.addProvider newCompletionProviderSnippet(self.configProvider, self.document)
+    self.completionEngine.addProvider newCompletionProviderDocument(self.document)
 
   self.startBlinkCursorTask()
 

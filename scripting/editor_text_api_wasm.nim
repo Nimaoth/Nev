@@ -581,6 +581,40 @@ proc selectParentCurrentTs*(self: TextDocumentEditor) =
       argsJsonString.cstring)
 
 
+proc editor_text_shouldShowCompletionsAt_bool_TextDocumentEditor_Cursor_wasm(
+    arg: cstring): cstring {.importc.}
+proc shouldShowCompletionsAt*(self: TextDocumentEditor; cursor: Cursor): bool =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when Cursor is JsonNode:
+      cursor
+    else:
+      cursor.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_shouldShowCompletionsAt_bool_TextDocumentEditor_Cursor_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_text_autoShowCompletions_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc autoShowCompletions*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_autoShowCompletions_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_insertText_void_TextDocumentEditor_string_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc insertText*(self: TextDocumentEditor; text: string; autoIndent: bool = true) =

@@ -135,6 +135,9 @@ proc highlightedText*(builder: UINodeBuilder, text: string, highlightedIndices: 
       result = currentNode
       var start = 0
       for matchIndex in highlightedIndices:
+        if matchIndex >= text.len:
+          break
+
         if matchIndex > start:
           builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = text[start..<matchIndex], textColor = color)
 

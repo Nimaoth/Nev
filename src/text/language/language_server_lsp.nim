@@ -69,7 +69,7 @@ proc handleEditorRegistered(lsp: LanguageServerLSP, editor: DocumentEditor) =
       asyncCheck lsp.client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, changes)
 
   discard textDocumentEditor.document.textDeleted.subscribe proc(args: auto): void =
-    # debugf"TEXT DELETED {args.document.fullPath}: {args.selection}"
+    # debugf"TEXT DELETED {args.document.fullPath}: {args.location}"
     if lsp.client.fullDocumentSync:
       asyncCheck lsp.client.notifyTextDocumentChanged(args.document.fullPath, args.document.version, args.document.contentString)
     else:

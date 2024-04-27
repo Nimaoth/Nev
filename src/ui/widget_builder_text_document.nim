@@ -908,10 +908,11 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
   let nameSelectedColor = app.theme.color(@["editorSuggestWidget.highlightForeground", "editor.foreground"], color(1, 1, 1))
   let scopeColor = app.theme.color(@["descriptionForeground", "editor.foreground"], color(175/255, 1, 175/255))
 
-  const numLinesToShow = 30
+  const numLinesToShow = 25
   let (top, bottom) = (cursorBounds.yh.float, cursorBounds.yh.float + totalLineHeight * numLinesToShow)
 
   const docsWidth = 50.0
+  const maxLabelLen = 30
   const maxTypeLen = 30
   updateBaseIndexAndScrollOffset(bottom - top, self.completionsBaseIndex, self.completionsScrollOffset, self.completionMatches.len, totalLineHeight, self.scrollToCompletion)
   self.scrollToCompletion = int.none
@@ -925,8 +926,8 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
       self.scrollOffset += scrollAmount
       self.markDirty()
 
-    var maxLabelWidth = 5 * builder.charWidth
-    var maxDetailWidth = 5 * builder.charWidth
+    var maxLabelWidth = 4 * builder.charWidth
+    var maxDetailWidth = 1 * builder.charWidth
     var detailColumn: seq[UINode] = @[]
 
     proc handleLine(i: int, y: float, down: bool) =
@@ -942,17 +943,22 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
         vec2(0, 1)
 
       builder.panel(&{SizeToContentY, FillBackground}, y = y, pivot = pivot, backgroundColor = backgroundColor):
-        let completion = self.completions.items[self.completionMatches[i].index]
+        let completion {.cursor.} = self.completions[self.completionMatches[i].index]
         let color = if i == self.selectedCompletion: nameSelectedColor else: nameColor
 
         let matchIndices = self.getCompletionMatches(i)
-        let labelNode = builder.highlightedText(completion.label, matchIndices, color, color.lighten(0.15))
+        let label = if completion.item.label.len < maxLabelLen:
+            completion.item.label
+          else:
+            completion.item.label[0..<(maxLabelLen - 3)] & "..."
+
+        let labelNode = builder.highlightedText(label, matchIndices, color, color.lighten(0.15))
 
         maxLabelWidth = max(maxLabelWidth, labelNode.w)
 
-        let detail = if completion.detail.getSome(detail):
+        let detail = if completion.item.detail.getSome(detail):
           if detail.len < maxTypeLen:
-            detail & " ".repeat(maxTypeLen - detail.len)
+            detail
           else:
             detail[0..<(maxTypeLen - 3)] & "..."
         else:
@@ -979,11 +985,17 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
         detailNode.parent.w = totalWidth # parent is line node
 
     if self.selectedCompletion >= 0 and self.selectedCompletion < self.completionMatches.len:
-      var docText = ""
-      if self.completions.items[self.completionMatches[self.selectedCompletion].index].detail.getSome(detail):
-        docText = detail
+      template selectedCompletion: untyped = self.completions[self.completionMatches[self.selectedCompletion].index]
 
-      if self.completions.items[self.completionMatches[self.selectedCompletion].index].documentation.getSome(doc):
+      var docText = ""
+      if selectedCompletion.item.label.len >= maxLabelLen:
+        docText.add selectedCompletion.item.label
+        docText.add "\n"
+
+      if selectedCompletion.item.detail.getSome(detail):
+        docText.add detail
+
+      if selectedCompletion.item.documentation.getSome(doc):
         if docText.len > 0:
           docText.add "\n\n"
         if doc.asString().getSome(doc):
