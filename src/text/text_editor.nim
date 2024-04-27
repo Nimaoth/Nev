@@ -6,7 +6,8 @@ import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_mat
 import scripting/[expose]
 import platform/[platform, filesystem]
 import language/[language_server_base]
-import document, document_editor, events, vmath, bumpy, input, custom_treesitter, indent, text_document, snippet, completion
+import document, document_editor, events, vmath, bumpy, input, custom_treesitter, indent, text_document, snippet
+import completion, completion_provider_document, completion_provider_lsp, completion_provider_snippet
 import config_provider, app_interface
 import diff
 import workspaces/workspace
@@ -910,7 +911,6 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
       selections[i].first.column = originalSelections[i].first.column
       selections[i].last.column = originalSelections[i].last.column
 
-  let wasShowingCompletions = self.showCompletions
   self.selections = selections
 
   self.updateTargetColumn(Last)
@@ -1391,8 +1391,6 @@ proc deleteLeft*(self: TextDocumentEditor) {.expose("editor.text").} =
     if selection.isEmpty:
       selections[i] = (self.doMoveCursorColumn(selection.first, -1), selection.first)
 
-  let wasShowingCompletions = self.showCompletions
-
   self.selections = self.document.delete(selections, self.selections, inclusiveEnd=self.useInclusiveSelections)
 
   if not self.disableCompletions:
@@ -1403,8 +1401,6 @@ proc deleteRight*(self: TextDocumentEditor, includeAfter: bool = true) {.expose(
   for i, selection in selections:
     if selection.isEmpty:
       selections[i] = (selection.first, self.doMoveCursorColumn(selection.first, 1))
-
-  let wasShowingCompletions = self.showCompletions
 
   self.selections = self.document.delete(selections, self.selections, inclusiveEnd=self.useInclusiveSelections).mapIt(self.clampSelection(it, includeAfter))
 
@@ -1756,24 +1752,6 @@ proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
 
       else:
         log lvlError, fmt"Failed to open location of definition: {d}"
-
-proc getCompletionsFromContent(self: TextDocumentEditor): CompletionList =
-  var s = initHashSet[string]()
-  for li, line in self.lastRenderedLines:
-    for i, part in line.parts:
-      if part.text.len > 50 or part.text.isEmptyOrWhitespace or part.text.contains(" "):
-        continue
-      var use = false
-      for c in part.text:
-        if c.isAlphaAscii or c == '_' or c == '@' or c == '$' or c == '#':
-          use = true
-          break
-      if not use:
-        continue
-      s.incl part.text
-
-  for text in s.items:
-    result.items.add(CompletionItem(label: text))
 
 proc getCompletionMatches*(self: TextDocumentEditor, completionIndex: int): seq[int] =
   self.refilterCompletions()
