@@ -753,6 +753,7 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
       vimMotionNextMode[editor.id] = "normal"
       editor.selections = editor.selections.mapIt(editor.vimClamp(it.last).toSelection)
       editor.saveCurrentCommandHistory()
+      editor.hideCompletions()
 
     of "insert":
       setOption "editor.text.inclusive-selection", false
@@ -842,7 +843,6 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   # completion
   addTextCommand "insert", "<C-p>", "get-completions"
   addTextCommand "insert", "<C-n>", "get-completions"
-  addTextCommand "completion", "<ESCAPE>", "hide-completions"
   addTextCommand "completion", "<C-p>", "select-prev-completion"
   addTextCommand "completion", "<C-n>", "select-next-completion"
   addTextCommand "completion", "<C-y>", "apply-selected-completion"
