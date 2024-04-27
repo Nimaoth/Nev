@@ -1047,6 +1047,19 @@ proc byteOffset*(self: TextDocument, cursor: Cursor): int =
 proc tabWidth*(self: TextDocument): int =
   return self.languageConfig.map(c => c.tabWidth).get(4)
 
+proc getCompletionSelectionAt*(self: TextDocument, cursor: Cursor): Selection =
+  let line = self.getLine cursor.line
+
+  var column = cursor.column
+  while column > 0:
+    case line[column - 1]
+    of ' ', '\t', '.', ',', '(', ')', '[', ']', '{', '}', ':', ';':
+      break
+    else:
+      column -= 1
+
+  return ((cursor.line, column), cursor)
+
 proc getNodeRange*(self: TextDocument, selection: Selection, parentIndex: int = 0, siblingIndex: int = 0): Option[Selection] =
   result = Selection.none
   let tree = self.tsTree
