@@ -1283,6 +1283,13 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
   addTextCommand "insert", "<TAB>", "insert-indent"
 
+  addTextCommandBlock "insert", "<C-l>":
+    if editor.hasTabStops():
+      editor.selectNextTabStop()
+  addTextCommandBlock "insert", "<C-h>":
+    if editor.hasTabStops():
+      editor.selectPrevTabStop()
+
   addTextCommandBlock "", "gc":
     editor.addNextCheckpoint "insert"
     editor.toggleLineComment()
