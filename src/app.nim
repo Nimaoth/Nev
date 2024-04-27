@@ -873,7 +873,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   self.workspace.new()
 
-  self.logDocument = newTextDocument(self.asConfigProvider, "log", load=false)
+  self.logDocument = newTextDocument(self.asConfigProvider, "log", load=false, createLanguageServer=false)
   self.documents.add self.logDocument
 
   self.theme = defaultTheme()
@@ -2246,7 +2246,7 @@ when not defined(js):
       var completions = newSeq[SelectorItem]()
 
       # todo: use unicode icons on all targets once rendering is fixed
-      const fileIcon = "🗎"
+      const fileIcon = "🗎 "
       const folderIcon = "🗀"
 
       for file in listing.files:
