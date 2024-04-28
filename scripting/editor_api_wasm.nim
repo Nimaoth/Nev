@@ -757,6 +757,35 @@ proc chooseOpen*(view: string = "new") =
       argsJsonString.cstring)
 
 
+proc editor_gotoNextLocation_void_App_wasm(arg: cstring): cstring {.importc.}
+proc gotoNextLocation*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_gotoNextLocation_void_App_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_gotoPrevLocation_void_App_wasm(arg: cstring): cstring {.importc.}
+proc gotoPrevLocation*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_gotoPrevLocation_void_App_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_chooseLocation_void_App_string_wasm(arg: cstring): cstring {.importc.}
+proc chooseLocation*(view: string = "new") =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      view
+    else:
+      view.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_chooseLocation_void_App_string_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_searchGlobal_void_App_string_wasm(arg: cstring): cstring {.importc.}
 proc searchGlobal*(query: string) =
   var argsJson = newJArray()
