@@ -129,6 +129,49 @@ else:
   import std/dynlib
   import treesitter/api as ts
 
+  import compilation_config
+
+  when useBuiltinTreesitterLanguage("nim"):
+    import treesitter_nim/treesitter_nim/nim
+  when useBuiltinTreesitterLanguage("cpp"):
+    import treesitter_cpp/treesitter_cpp/cpp
+  when useBuiltinTreesitterLanguage("zig"):
+    import treesitter_zig/treesitter_zig/zig
+  when useBuiltinTreesitterLanguage("agda"):
+    import treesitter_agda/treesitter_agda/agda
+  when useBuiltinTreesitterLanguage("bash"):
+    import treesitter_bash/treesitter_bash/bash
+  when useBuiltinTreesitterLanguage("c"):
+    import treesitter_c/treesitter_c/c
+  when useBuiltinTreesitterLanguage("csharp"):
+    import treesitter_c_sharp/treesitter_c_sharp/c_sharp
+  when useBuiltinTreesitterLanguage("css"):
+    import treesitter_css/treesitter_css/css
+  when useBuiltinTreesitterLanguage("go"):
+    import treesitter_go/treesitter_go/go
+  when useBuiltinTreesitterLanguage("haskell"):
+    import treesitter_haskell/treesitter_haskell/haskell
+  when useBuiltinTreesitterLanguage("html"):
+    import treesitter_html/treesitter_html/html
+  when useBuiltinTreesitterLanguage("java"):
+    import treesitter_java/treesitter_java/java
+  when useBuiltinTreesitterLanguage("javascript"):
+    import treesitter_javascript/treesitter_javascript/javascript
+  when useBuiltinTreesitterLanguage("ocaml"):
+    import treesitter_ocaml/treesitter_ocaml/ocaml
+  when useBuiltinTreesitterLanguage("php"):
+    import treesitter_php/treesitter_php/php
+  when useBuiltinTreesitterLanguage("python"):
+    import treesitter_python/treesitter_python/python
+  when useBuiltinTreesitterLanguage("ruby"):
+    import treesitter_ruby/treesitter_ruby/ruby
+  when useBuiltinTreesitterLanguage("rust"):
+    import treesitter_rust/treesitter_rust/rust
+  when useBuiltinTreesitterLanguage("scala"):
+    import treesitter_scala/treesitter_scala/scala
+  when useBuiltinTreesitterLanguage("typescript"):
+    import treesitter_typescript/treesitter_typescript/typescript
+
   type TSLanguage* = ref object
     impl: ptr ts.TSLanguage
 
@@ -382,6 +425,8 @@ when not defined(js):
   import std/[tables]
   var treesitterDllCache = initTable[string, LibHandle]()
 
+  import std/macros
+
 proc loadLanguageDynamically*(languageId: string, config: JsonNode): Future[Option[TSLanguage]] {.async.} =
   when defined(js):
     try:
@@ -454,17 +499,25 @@ proc loadLanguage*(languageId: string, config: JsonNode): Future[Option[TSLangua
   else:
     log(lvlInfo, fmt"No dll language for {languageId}, try builtin")
 
+
+    macro nameof(t: untyped): untyped =
+      return t.repr.newLit
+
     template tryGetLanguage(constructor: untyped): untyped =
       block:
         var l: Option[TSLanguage] = TSLanguage.none
         when compiles(constructor()):
-          l = constructor().some
+          static:
+            echo "Including builtin treesitter language '", nameof(constructor), "'"
+          log lvlInfo, fmt"Loading builtin language"
+          l = TSLanguage(impl: constructor()).some
         l
 
     return case languageId
+    of "agda": tryGetLanguage(treeSitterAgda)
     of "c": tryGetLanguage(treeSitterC)
     of "bash": tryGetLanguage(treeSitterBash)
-    of "csharp": tryGetLanguage(treeSitterCShap)
+    of "csharp": tryGetLanguage(treeSitterCSharp)
     of "cpp": tryGetLanguage(treeSitterCpp)
     of "css": tryGetLanguage(treeSitterCss)
     of "go": tryGetLanguage(treeSitterGo)

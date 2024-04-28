@@ -1,3 +1,4 @@
+import std/strutils
 
 const exposeScriptingApi* {.booldefine.}: bool = false
 const enableGui* {.booldefine.}: bool = false
@@ -6,6 +7,14 @@ const enableTableIdCacheChecking* {.booldefine.}: bool = false
 const enableSystemClipboard* {.booldefine.}: bool = true
 const enableNimscript* {.booldefine.}: bool = false
 const enableAst* {.booldefine.}: bool = false
+
+const treesitterBuiltins {.strdefine.}: string = ""
+const builtinTreesitterLanguages: seq[string] = treesitterBuiltins.split(",")
+
+func useBuiltinTreesitterLanguage*(name: string): bool = builtinTreesitterLanguages.contains(name)
+
+static:
+  echo "Builtin treesitter languages: ", builtinTreesitterLanguages
 
 when enableNimscript:
   static:

@@ -42,6 +42,9 @@ switch("d", "allowConsoleLogger")
 switch("d", "wasm3HasWasi")
 switch("d", "wasm3VerboseErrorMessages")
 
+# Configure which treesitter languages are compiled into the editor (ignored on js backend)
+switch("d", "treesitterBuiltins=cpp,nim,agda,bash,c,css,go,html,java,javascript,python,ruby,rust,scala,csharp,zig,haskell")
+
 
 # switches for debugging
 # switch("d", "wasm3EnableStrace2")

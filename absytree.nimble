@@ -10,8 +10,9 @@ bin           = @["ast"]
 # Dependencies
 
 requires "nim >= 2.0.0"
+requires "nimgen >= 0.5.4"
 requires "https://github.com/Nimaoth/vmath#661bdaa"
-requires "https://github.com/Nimaoth/pixie >= 5.0.7"
+# requires "https://github.com/Nimaoth/pixie >= 5.0.7"
 requires "chroma >= 0.2.7"
 requires "winim >= 3.8.1"
 requires "fusion >= 1.2"
@@ -32,6 +33,34 @@ requires "https://github.com/Nimaoth/lrucache.nim >= 1.1.4"
 requires "https://github.com/Nimaoth/boxy >= 0.4.2"
 requires "https://github.com/Nimaoth/nimscripter >= 1.0.19"
 requires "https://github.com/Nimaoth/nimtreesitter-api >= 0.1.5"
+
+# Use this to include all treesitter languages (takes longer to download)
+requires "https://github.com/Nimaoth/nimtreesitter >= 0.1.3"
+
+# Use these to only install specific treesitter languages. These don't work with the lock file
+# requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_nim >= 0.1.3"
+# requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_cpp >= 0.1.3"
+# requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_agda >= 0.1.2"
+# requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_bash >= 0.1.2"
+# requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_c >= 0.1.2"
+# requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_css >= 0.1.2"
+# requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_go >= 0.1.2"
+# requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_html >= 0.1.2"
+# requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_java >= 0.1.2"
+# requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_javascript >= 0.1.2"
+# requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_python >= 0.1.2"
+# requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_ruby >= 0.1.2"
+# requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_rust >= 0.1.2"
+# requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_scala >= 0.1.2"
+# requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_c_sharp >= 0.1.2"
+# requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_haskell >= 0.1.2"
+# requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_zig >= 0.1.4"
+
+# typescript doesn't build on linux
+# requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_typescript >= 0.1.2"
+
+# php doesn't build
+# requires "https://github.com/Nimaoth/nimtreesitter?subdir=treesitter_php >= 0.1.2"
 
 import strformat, strutils
 
