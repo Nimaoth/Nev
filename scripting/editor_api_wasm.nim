@@ -484,8 +484,9 @@ proc getHiddenEditors*(): seq[EditorId] =
   result = parseJson($res).jsonTo(typeof(result))
 
 
-proc editor_closeView_void_App_int_bool_wasm(arg: cstring): cstring {.importc.}
-proc closeView*(index: int; keepHidden: bool = true) =
+proc editor_closeView_void_App_int_bool_bool_wasm(arg: cstring): cstring {.
+    importc.}
+proc closeView*(index: int; keepHidden: bool = true; restoreHidden: bool = true) =
   var argsJson = newJArray()
   argsJson.add block:
     when int is JsonNode:
@@ -497,21 +498,32 @@ proc closeView*(index: int; keepHidden: bool = true) =
       keepHidden
     else:
       keepHidden.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      restoreHidden
+    else:
+      restoreHidden.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_closeView_void_App_int_bool_wasm(
+  let res {.used.} = editor_closeView_void_App_int_bool_bool_wasm(
       argsJsonString.cstring)
 
 
-proc editor_closeCurrentView_void_App_bool_wasm(arg: cstring): cstring {.importc.}
-proc closeCurrentView*(keepHidden: bool = true) =
+proc editor_closeCurrentView_void_App_bool_bool_wasm(arg: cstring): cstring {.
+    importc.}
+proc closeCurrentView*(keepHidden: bool = true; restoreHidden: bool = true) =
   var argsJson = newJArray()
   argsJson.add block:
     when bool is JsonNode:
       keepHidden
     else:
       keepHidden.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      restoreHidden
+    else:
+      restoreHidden.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_closeCurrentView_void_App_bool_wasm(
+  let res {.used.} = editor_closeCurrentView_void_App_bool_bool_wasm(
       argsJsonString.cstring)
 
 
@@ -561,6 +573,14 @@ proc prevView*() =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = editor_prevView_void_App_wasm(argsJsonString.cstring)
+
+
+proc editor_toggleMaximizeView_void_App_wasm(arg: cstring): cstring {.importc.}
+proc toggleMaximizeView*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_toggleMaximizeView_void_App_wasm(
+      argsJsonString.cstring)
 
 
 proc editor_moveCurrentViewPrev_void_App_wasm(arg: cstring): cstring {.importc.}

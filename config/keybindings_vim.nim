@@ -681,7 +681,7 @@ proc vimCloseCurrentViewOrQuit() {.expose("vim-close-current-view-or-quit").} =
   if openEditors == 1:
     absytree_runtime.quit()
   else:
-    closeCurrentView(keepHidden=false)
+    closeCurrentView(keepHidden=false, restoreHidden=true)
 
 proc vimIndent(editor: TextDocumentEditor) {.expose("vim-indent").} =
   editor.addNextCheckpoint "insert"
@@ -836,9 +836,7 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     addCommand "editor", "<count><C-w>m", "set-max-views <#count> true"
 
   addCommandBlock "editor", "<LEADER>m":
-    let maxViews = getOption[int]("editor.maxViews")
-    let newMaxViews = if maxViews != 1: 1 else: 2
-    setMaxViews(newMaxViews, openExisting=true)
+    toggleMaximizeView()
 
   # completion
   addTextCommand "insert", "<C-p>", "get-completions"

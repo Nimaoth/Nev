@@ -137,8 +137,8 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
     addCommand "editor", "<*-l>t", "change-layout-prop", "main-split", 0.05
     addCommand "editor", "v", "create-view"
     addCommand "editor", "a", "create-keybind-autocomplete-view"
-    addCommand "editor", "x", "close-current-view", true
-    addCommand "editor", "X", "close-current-view", false
+    addCommand "editor", "x", "close-current-view", keepHidden=true, restoreHidden=false
+    addCommand "editor", "X", "close-current-view", keepHidden=false, restoreHidden=true
     addCommand "editor", "n", "prev-view"
     addCommand "editor", "t", "next-view"
     addCommand "editor", "N", "move-current-view-prev"
@@ -191,8 +191,8 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
     addCommandBlock "editor", "dl": lspLogVerbose(true)
     addCommandBlock "editor", "dL": lspLogVerbose(false)
 
-  addCommand "editor", "<LEADER>rlf", "load-file"
-  addCommand "editor", "<LEADER>rwf", "write-file"
+  addCommand "editor", "<LEADER>lf", "load-file"
+  addCommand "editor", "<LEADER>sf", "write-file"
   addCommand "editor", "<LEADER>rSS", "write-file", "", true
   addCommand "editor", "<LEADER>rSA", "save-app-state"
   addCommand "editor", "<LEADER>rSC", "remove-from-local-storage"
