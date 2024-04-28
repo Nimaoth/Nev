@@ -136,6 +136,7 @@ type
     hiddenViews*: seq[View]
     layout*: Layout
     layout_props*: LayoutProperties
+    maximizeView*: bool
 
     activeEditorInternal: Option[EditorId]
     editorHistory: Deque[EditorId]
@@ -1434,10 +1435,14 @@ proc closeEditor*(self: App, editor: DocumentEditor) =
     document.deinit()
     self.documents.del(document)
 
-proc closeView*(self: App, index: int, keepHidden: bool = true) {.expose("editor").} =
+proc closeView*(self: App, index: int, keepHidden: bool = true, restoreHidden: bool = true) {.expose("editor").} =
   ## Closes the current view. If `keepHidden` is true the view is not closed but hidden instead.
   let view = self.views[index]
   self.views.delete index
+
+  if restoreHidden and self.hiddenViews.len > 0:
+    let viewToRestore = self.hiddenViews.pop
+    self.views.insert(viewToRestore, index)
 
   if self.views.len == 0:
     if self.hiddenViews.len > 0:
@@ -1453,8 +1458,8 @@ proc closeView*(self: App, index: int, keepHidden: bool = true) {.expose("editor
 
   self.platform.requestRender()
 
-proc closeCurrentView*(self: App, keepHidden: bool = true) {.expose("editor").} =
-  self.closeView(self.currentView, keepHidden)
+proc closeCurrentView*(self: App, keepHidden: bool = true, restoreHidden: bool = true) {.expose("editor").} =
+  self.closeView(self.currentView, keepHidden, restoreHidden)
   self.currentView = self.currentView.clamp(0, self.views.len - 1)
 
 proc closeOtherViews*(self: App, keepHidden: bool = true) {.expose("editor").} =
@@ -1510,6 +1515,10 @@ proc nextView*(self: App) {.expose("editor").} =
 
 proc prevView*(self: App) {.expose("editor").} =
   self.currentView = if self.views.len == 0: 0 else: (self.currentView + self.views.len - 1) mod self.views.len
+  self.platform.requestRender()
+
+proc toggleMaximizeView*(self: App) {.expose("editor").} =
+  self.maximizeView = not self.maximizeView
   self.platform.requestRender()
 
 proc moveCurrentViewPrev*(self: App) {.expose("editor").} =

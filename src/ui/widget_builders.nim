@@ -26,9 +26,17 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
       builder.panel(&{FillX, SizeToContentY, LayoutHorizontalReverse, FillBackground}, backgroundColor = headerColor, pivot = vec2(0, 1)): # status bar
         let textColor = self.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
 
+        let maxViews = getOption[int](self, "editor.maxViews", int.high)
+        let maximizedText = if self.maximizeView:
+          "[Fullscreen]"
+        elif maxViews == int.high:
+          fmt"[Max: ∞]"
+        else:
+          fmt"[Max: {maxViews}]"
+
         let modeText = if self.currentMode.len == 0: "[No Mode]" else: self.currentMode
         let sessionText = if self.sessionFile.len == 0: "[No Session]" else: fmt"[Session: {self.sessionFile}]"
-        let text = fmt"{modeText} | {sessionText}"
+        let text = fmt"{maximizedText} | {modeText} | {sessionText}"
 
         builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, text = text, textColor = textColor, pivot = vec2(1, 0))
         builder.panel(&{}, w = builder.charWidth)
@@ -44,19 +52,31 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
       builder.panel(&{FillX, FillY}, pivot = vec2(0, 1)): # main panel
         let overlay = currentNode
 
-        let rects = self.layout.layoutViews(self.layout_props, rect(0, 0, 1, 1), self.views.len)
-        for i, view in self.views:
-          let xy = rects[i].xy * overlay.bounds.wh
-          let xwyh = rects[i].xwyh * overlay.bounds.wh
-          let bounds = rect(xy, xwyh - xy)
-
+        if self.maximizeView:
+          let view {.cursor.} = self.views[self.currentView]
           let wasActive = view.editor.active
-          view.editor.active = (self.currentView == i) and not self.commandLineMode
+          view.editor.active = not self.commandLineMode
           if view.editor.active != wasActive:
             view.editor.markDirty(notify=false)
 
+          let bounds = overlay.bounds
           builder.panel(0.UINodeFlags, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h):
             overlays.add view.editor.createUI(builder, self)
+
+        else:
+          let rects = self.layout.layoutViews(self.layout_props, rect(0, 0, 1, 1), self.views.len)
+          for i, view in self.views:
+            let xy = rects[i].xy * overlay.bounds.wh
+            let xwyh = rects[i].xwyh * overlay.bounds.wh
+            let bounds = rect(xy, xwyh - xy)
+
+            let wasActive = view.editor.active
+            view.editor.active = (self.currentView == i) and not self.commandLineMode
+            if view.editor.active != wasActive:
+              view.editor.markDirty(notify=false)
+
+            builder.panel(0.UINodeFlags, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h):
+              overlays.add view.editor.createUI(builder, self)
 
     # popups
     for i, popup in self.popups:
