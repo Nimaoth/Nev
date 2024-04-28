@@ -7,6 +7,7 @@ proc getLanguageForFile*(filename: string): Option[string] =
     extension = extension[1..^1]
 
   let languageId = case extension
+  of "agda", "lagda": "agda"
   of "c", "cc", "inc": "c"
   of "sh": "bash"
   of "cs": "csharp"
