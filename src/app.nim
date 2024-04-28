@@ -90,6 +90,13 @@ type ScriptAction = object
   name: string
   scriptContext: ScriptContext
 
+type FileLocationItem = object
+  name: string
+  directory: string
+  path: string
+  location: Option[Cursor]
+  workspaceFolder: Option[WorkspaceFolder]
+
 type
   App* = ref AppObject
   AppObject* = object
@@ -174,6 +181,9 @@ type
     sessionFile*: string
 
     gitIgnorePatterns: seq[Regex]
+
+    fileLocationList: seq[FileLocationItem]
+    currentLocationListIndex: int
 
 var gEditor* {.exportc.}: App = nil
 
@@ -626,7 +636,21 @@ type FileSelectorItem* = ref object of SelectorItem
   name*: string
   directory*: string
   path*: string
+  location*: Option[Cursor]
   workspaceFolder*: Option[WorkspaceFolder]
+
+proc toFileLocationItem(self: FileSelectorItem): FileLocationItem =
+  FileLocationItem(name: self.name, directory: self.directory, path: self.path, location: self.location, workspaceFolder: self.workspaceFolder)
+
+proc toFileSelectorItem(self: FileLocationItem): FileSelectorItem =
+  FileSelectorItem(name: self.name, directory: self.directory, path: self.path, location: self.location, workspaceFolder: self.workspaceFolder)
+
+proc saveSelectorItemsToFileLocationList(self: App, items: seq[SelectorItem]) =
+  self.currentLocationListIndex = 0
+  self.fileLocationList.setLen 0
+  for item in items:
+    if item of FileSelectorItem:
+      self.fileLocationList.add item.FileSelectorItem.toFileLocationItem
 
 type ThemeSelectorItem* = ref object of FileSelectorItem
   discard
@@ -1953,6 +1977,12 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
       log(lvlError, fmt"Unknown argument {view}")
     return true
 
+  popup.addCustomCommand "send-to-location-list", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil or popup.completions.len == 0:
+      return false
+    self.saveSelectorItemsToFileLocationList(popup.completions)
+    return true
+
   popup.updateCompletions()
   popup.sortFunction = proc(a, b: SelectorItem): int = cmp(a.FileSelectorItem.score, b.FileSelectorItem.score)
   popup.enableAutoSort()
@@ -2004,6 +2034,85 @@ proc chooseOpen*(self: App, view: string = "new") {.expose("editor").} =
       log(lvlError, fmt"Unknown argument {view}")
     return true
 
+  popup.addCustomCommand "send-to-location-list", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil or popup.completions.len == 0:
+      return false
+    self.saveSelectorItemsToFileLocationList(popup.completions)
+    return true
+
+  popup.updateCompletions()
+
+  self.pushPopup popup
+
+proc gotoNextLocation*(self: App) {.expose("editor").} =
+  if self.fileLocationList.len == 0:
+    return
+
+  self.currentLocationListIndex = (self.currentLocationListIndex + 1) mod self.fileLocationList.len
+  let item = self.fileLocationList[self.currentLocationListIndex]
+  log lvlInfo, &"[gotoNextLocation] Found {item.path}:{item.location}"
+  let editor = if item.workspaceFolder.isSome:
+    self.openWorkspaceFile(item.path, item.workspaceFolder.get)
+  else:
+    self.openFile(item.path)
+
+  if item.location.getSome(location) and editor.getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.targetSelection = location.toSelection
+    editor.TextDocumentEditor.centerCursor()
+
+proc gotoPrevLocation*(self: App) {.expose("editor").} =
+  if self.fileLocationList.len == 0:
+    return
+
+  self.currentLocationListIndex = (self.currentLocationListIndex - 1 + self.fileLocationList.len) mod self.fileLocationList.len
+  let item = self.fileLocationList[self.currentLocationListIndex]
+  log lvlInfo, &"[gotoPrevLocation] Found {item.path}:{item.location}"
+  let editor = if item.workspaceFolder.isSome:
+    self.openWorkspaceFile(item.path, item.workspaceFolder.get)
+  else:
+    self.openFile(item.path)
+
+  if item.location.getSome(location) and editor.getSome(editor) and editor of TextDocumentEditor:
+    editor.TextDocumentEditor.targetSelection = location.toSelection
+    editor.TextDocumentEditor.centerCursor()
+
+proc chooseLocation*(self: App, view: string = "new") {.expose("editor").} =
+  defer:
+    self.platform.requestRender()
+
+  var popup = newSelectorPopup(self.asAppInterface, "open".some)
+  popup.scale.x = 0.3
+
+  popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
+    for item in self.fileLocationList:
+      var selectorItem = item.toFileSelectorItem
+      selectorItem.score = matchFuzzySublime(text, selectorItem.path, defaultPathMatchingConfig).score.float
+      result.add selectorItem
+
+    result.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Ascending)
+
+  popup.handleItemConfirmed = proc(item: SelectorItem): bool =
+    case view
+    of "current":
+      if item.FileSelectorItem.workspaceFolder.isSome:
+        self.loadWorkspaceFile(item.FileSelectorItem.path, item.FileSelectorItem.workspaceFolder.get)
+      else:
+        self.loadFile(item.FileSelectorItem.path)
+    of "new":
+      if item.FileSelectorItem.workspaceFolder.isSome:
+        discard self.openWorkspaceFile(item.FileSelectorItem.path, item.FileSelectorItem.workspaceFolder.get)
+      else:
+        discard self.openFile(item.FileSelectorItem.path)
+    else:
+      log(lvlError, fmt"Unknown argument {view}")
+    return true
+
+  popup.addCustomCommand "send-to-location-list", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil or popup.completions.len == 0:
+      return false
+    self.saveSelectorItemsToFileLocationList(popup.completions)
+    return true
+
   popup.updateCompletions()
 
   self.pushPopup popup
@@ -2034,7 +2143,7 @@ proc searchWorkspace(popup: SelectorPopup, workspace: WorkspaceFolder, query: st
     for info in searchResults:
       let name = info.text & " |" & info.path.extractFilename & ":" & $info.line
       let score = matchFuzzySublime(searchText, name, defaultPathMatchingConfig).score.float
-      res.add SearchFileSelectorItem(name: name, searchResult: info.text, path: info.path, score: score, workspaceFolder: workspace.some, line: info.line)
+      res.add SearchFileSelectorItem(name: name, searchResult: info.text, path: info.path, score: score, workspaceFolder: workspace.some, line: info.line, location: (info.line - 1, info.column - 1).some)
   else:
     for item in popup.completions.mitems:
       item.hasCompletionMatchPositions = false
@@ -2064,6 +2173,12 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
     if editor.getSome(editor) and editor of TextDocumentEditor:
       editor.TextDocumentEditor.targetSelection = (item.SearchFileSelectorItem.line - 1, item.SearchFileSelectorItem.column - 1).toSelection
       editor.TextDocumentEditor.centerCursor()
+    return true
+
+  popup.addCustomCommand "send-to-location-list", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil or popup.completions.len == 0:
+      return false
+    self.saveSelectorItemsToFileLocationList(popup.completions)
     return true
 
   popup.updateCompletions()
@@ -2226,6 +2341,12 @@ proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
       asyncCheck self.diffStagedFileAsync(item.info.path)
       return true
 
+    popup.addCustomCommand "send-to-location-list", proc(popup: SelectorPopup, args: JsonNode): bool =
+      if popup.textEditor.isNil or popup.completions.len == 0:
+        return false
+      self.saveSelectorItemsToFileLocationList(popup.completions)
+      return true
+
     popup.updateCompletions()
 
     self.pushPopup popup
@@ -2316,6 +2437,12 @@ proc exploreFiles*(self: App) {.expose("editor").} =
       popup.updated = false
       popup.updateCompletions()
       return false
+
+    popup.addCustomCommand "send-to-location-list", proc(popup: SelectorPopup, args: JsonNode): bool =
+      if popup.textEditor.isNil or popup.completions.len == 0:
+        return false
+      self.saveSelectorItemsToFileLocationList(popup.completions)
+      return true
 
     popup.sortFunction = proc(a, b: SelectorItem): int = cmp(a.FileSelectorItem.score, b.FileSelectorItem.score)
     popup.updateCompletions()

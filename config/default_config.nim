@@ -167,9 +167,10 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
   addCommand "editor", "<LEADER>gt", "choose-theme"
   addCommand "editor", "<LEADER>gf", "choose-file", "new"
   addCommand "editor", "<LEADER>go", "choose-open", "new"
+  addCommand "editor", "<LEADER>gl", "choose-location", "new"
   addCommand "editor", "<LEADER>gg", "choose-git-active-files", "new"
   addCommand "editor", "<LEADER>ge", "explore-files"
-  addCommandBlock "editor", "<LEADER>gl":
+  addCommandBlock "editor", "<LEADER>log":
     runAction "logs"
     if getActiveEditor().isTextEditor(ed):
       ed.moveLast("file")
@@ -214,6 +215,10 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
   addCommand "popup.selector", "<C-n>", "next"
   addCommand "popup.selector", "<C-u>", "prev-x"
   addCommand "popup.selector", "<C-d>", "next-x"
+  addCommand "popup.selector", "<C-l>", "send-to-location-list"
+
+  addCommand "editor", "<C-n>", "goto-prev-location"
+  addCommand "editor", "<C-t>", "goto-next-location"
 
   addCommandBlock "popup.selector.open", "<C-x>":
     if getActivePopup().isSelectorPopup(popup):
