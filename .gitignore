@@ -8,6 +8,11 @@
 *.wasm
 *.wat
 *.dll
+*.so
+*.ttc
+*.otf
+*.png
+*.paths
 .git
 src/input_tests
 nimcache
@@ -36,6 +41,9 @@ release_linux
 release_web
 scripting/nim/lib
 
+ast
+ast2
+
 loc.csv
 count_loc.ps1
 a.html
@@ -47,3 +55,13 @@ rust_test
 /target
 
 vscode-lsp-log.json
+
+myNimCache
+csources
+csources_v2
+**/treesitter/lib
+C:/Users/nimao/.nimble/pkgs2/nim-2.1.1-06a4866c223f9a92169362ebc9ee247df1bcbd21
+C:/Users/nimao/.nimble/pkgs2/nim-2.1.1-176b5408d81c16446680d7ce56d1b7b0d23f9a6d
+C:/Users/nimao/.nimble/pkgs2/nim-2.1.1-ee369ca2ef4fd48e55732c09c5f8b67a4a22daa4
+
+fonts/openmoji-svg-color
