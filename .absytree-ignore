@@ -8,15 +8,25 @@
 *.wasm
 *.bin
 *.o
+*.so
+*.obj
+*.in
+*.png
+*.jpg
+*.res
 
 .git
 .vs
-**/nimcache
-node_modules
-cpp_test
-int
-**/htmldocs
-**/target
-_temp
 
+**/nimcache
+**/node_modules
+**/target
+**/htmldocs
+
+_temp
+fonts
+int
+
+ast
+ast2
 absytree

@@ -180,7 +180,7 @@ type
 
     sessionFile*: string
 
-    gitIgnorePatterns: seq[Regex]
+    gitIgnore: Globs
 
     fileLocationList: seq[FileLocationItem]
     currentLocationListIndex: int
@@ -909,11 +909,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   self.setupDefaultKeybindings()
 
-  let gitIgnorePatternsString = fs.loadApplicationFile(".gitignore")
-  for line in gitIgnorePatternsString.splitLines():
-    if line.isEmptyOrWhitespace:
-      continue
-    self.gitIgnorePatterns.add glob(line)
+  self.gitIgnore = parseGlobs(fs.loadApplicationFile(".gitignore"))
 
   self.eventHandler = eventHandler(self.getEventHandlerConfig("editor")):
     onAction:
@@ -1870,23 +1866,6 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
   popup.scale.x = 0.5
   var sortCancellationToken = newCancellationToken()
 
-  var ignorePatterns = self.gitIgnorePatterns
-  if ignorePatterns.len == 0:
-    # todo
-    ignorePatterns.add glob("**/nimcache")
-    ignorePatterns.add glob("**/rust_test/target")
-    ignorePatterns.add glob("int")
-    ignorePatterns.add glob(".git")
-    ignorePatterns.add glob(".vs")
-    ignorePatterns.add glob("*.dll")
-    ignorePatterns.add glob("*.exe")
-    ignorePatterns.add glob("*.pdb")
-    ignorePatterns.add glob("*.ilk")
-    ignorePatterns.add glob("*.wasm")
-    ignorePatterns.add glob("*.ttf")
-    ignorePatterns.add glob("*.bin")
-    ignorePatterns.add glob("*.o")
-
   proc handleDirectory(folder: WorkspaceFolder, cancellationToken: CancellationToken, files: seq[string]): Future[void] {.async.} =
     if cancellationToken.canceled or popup.textEditor.isNil:
       return
@@ -1952,7 +1931,7 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
     for folder in self.workspace.folders:
       var folder = folder
       log lvlInfo, fmt"Start iterateDirectoryRec"
-      await iterateDirectoryRec(folder, "", cancellationToken, ignorePatterns, proc(files: seq[string]): Future[void] {.async.} =
+      await iterateDirectoryRec(folder, "", cancellationToken, proc(files: seq[string]): Future[void] {.async.} =
           handleDirectory(folder, cancellationToken, files).await
       )
 
@@ -2495,17 +2474,6 @@ proc openSymbolsPopup*(self: App, symbols: seq[Symbol], handleItemSelected: proc
 
     self.currentLocationListIndex = 0
     self.fileLocationList.setLen 0
-    for item in popup.completions:
-  # location*: Cursor
-  # name*: string
-  # symbolType*: SymbolType
-  # filename*: string
-      self.fileLocationList.add FileLocationItem(
-        name: item.name,
-        path: item.filename,
-        location: item.location.some
-        workspaceFolder:
-      )
 
     return true
 

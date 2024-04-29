@@ -76,3 +76,121 @@ proc glob*(pattern: string): Regex =
   else:
     let regexString = globToRegexString(pattern, isDos=false, ignoreCase=true)
     return re(regexString)
+
+type Globs* = object
+  patterns: seq[Regex]
+
+proc parseGlobs*(globs: string): Globs =
+  result = Globs()
+  for line in globs.splitLines():
+    # todo: support trailing spaces when escaped with \
+    # todo: support negating pattern with !
+    let lineStriped = line.strip
+    if lineStriped.isEmptyOrWhitespace or lineStriped.startsWith("#"):
+      continue
+    result.patterns.add glob(lineStriped)
+
+proc matches*(globs: Globs, path: string): bool =
+  for pattern in globs.patterns:
+    if path.contains(pattern):
+      return true
+  return false
+
+when isMainModule:
+  import std/[strformat]
+
+  proc testGlob(globLines: string, matches: string, notMatches: string) =
+    echo &"testing\n{globLines.indent(2)}"
+    let globs = globLines.parseGlobs
+    let matches = matches.splitLines
+    let notMatches = notMatches.splitLines
+
+    for input in matches:
+      if input.strip.len == 0:
+        continue
+      if not globs.matches(input.strip):
+        echo &"FAIL '{input.strip}' failed to match on\n{globLines.indent(2)}"
+
+    for input in notMatches:
+      if input.strip.len == 0:
+        continue
+      if globs.matches(input.strip):
+        echo &"FAIL '{input.strip}' matched on\n{globLines.indent(2)}"
+
+  testGlob("*", """
+    .git
+    abc
+    a.b
+    """, """
+    a/b
+    a/b/c
+    a/b/c/d
+    """)
+
+  testGlob("*.git", """
+    .git
+    """, """
+    abc
+    a.b
+    a/b
+    a/b/c
+    a/b/c/d
+    """)
+
+  testGlob("abc", """
+    abc
+    """, """
+    .git
+    a.b
+    a/b
+    a/b/c
+    a/b/c/d
+    """)
+
+  testGlob("b", """
+    b
+    """, """
+    a/b
+    .git
+    a.b
+    abc
+    a/b/c
+    a/b/c/d
+    """)
+
+  testGlob("**/b", """
+    b
+    a/b
+    """, """
+    .git
+    a.b
+    abc
+    a/b/c
+    a/b/c/d
+    """)
+
+  testGlob("**/b/**", """
+    b
+    a/b
+    a/b/c
+    a/b/c/d
+    """, """
+    .git
+    a.b
+    abc
+    """)
+
+  testGlob("**/*.exe", """
+    .exe
+    a.exe
+    a/a.exe
+    a/b/a.exe
+    a/b/c/a.exe
+    a/b/c/d/a.exe
+    """, """
+    .git
+    a.b
+    abc
+    """)
+
+  echo "ok"
