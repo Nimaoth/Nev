@@ -1,5 +1,5 @@
 import std/[os, json, options, sequtils, strutils]
-import misc/[custom_async, custom_logger, async_process, util]
+import misc/[custom_async, custom_logger, async_process, util, regex]
 import platform/filesystem
 import workspace
 
@@ -123,6 +123,13 @@ proc newWorkspaceFolderLocal*(path: string, additionalPaths: seq[string] = @[]):
   result.name = fmt"Local:{path.absolutePath}"
   result.info = createInfo(path, additionalPaths)
   result.additionalPaths = additionalPaths
+
+  try:
+    let globLines = readFile(result.getAbsolutePath(".absytree-ignore"))
+    result.ignore = globLines.parseGlobs
+    log lvlInfo, &"Using ignore file for workpace {result.name}"
+  except:
+    log lvlInfo, &"No ignore file for workpace {result.name}"
 
 proc newWorkspaceFolderLocal*(settings: JsonNode): WorkspaceFolderLocal =
   let path = settings["path"].getStr

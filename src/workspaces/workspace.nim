@@ -16,6 +16,7 @@ type
     name*: string
     info*: Future[WorkspaceInfo]
     id*: Id
+    ignore*: Globs
 
   DirectoryListing* = object
     files*: seq[string]
@@ -82,14 +83,7 @@ proc getDirectoryListingRec*(folder: WorkspaceFolder, path: string): Future[seq[
 
   return resultItems
 
-
-proc shouldIgnore(ignore: seq[Regex], path: string): bool =
-  for pattern in ignore:
-    if path.contains(pattern):
-      return true
-  return false
-
-proc iterateDirectoryRec*(folder: WorkspaceFolder, path: string, cancellationToken: CancellationToken, ignore: seq[Regex], callback: proc(files: seq[string]): Future[void]): Future[void] {.async.} =
+proc iterateDirectoryRec*(folder: WorkspaceFolder, path: string, cancellationToken: CancellationToken, callback: proc(files: seq[string]): Future[void]): Future[void] {.async.} =
   let path = path
   var resultItems: seq[string]
   var folders: seq[string]
@@ -102,12 +96,17 @@ proc iterateDirectoryRec*(folder: WorkspaceFolder, path: string, cancellationTok
   if cancellationToken.canceled:
     return
 
+  proc shouldIgnore(folder: WorkspaceFolder, path: string): bool =
+    if folder.ignore.matches(path) or folder.ignore.matches(path.extractFilename):
+      return true
+    return false
+
   for file in items.files:
     let fullPath = if file.isAbsolute:
       file
     else:
       path // file
-    if ignore.shouldIgnore(fullPath) or ignore.shouldIgnore(fullPath.extractFilename):
+    if folder.shouldIgnore(fullPath):
       continue
     resultItems.add(fullPath)
 
@@ -116,7 +115,7 @@ proc iterateDirectoryRec*(folder: WorkspaceFolder, path: string, cancellationTok
       dir
     else:
       path // dir
-    if ignore.shouldIgnore(fullPath) or ignore.shouldIgnore(fullPath.extractFilename):
+    if folder.shouldIgnore(fullPath):
       continue
     folders.add(fullPath)
 
@@ -130,7 +129,7 @@ proc iterateDirectoryRec*(folder: WorkspaceFolder, path: string, cancellationTok
   var futs: seq[Future[void]]
 
   for dir in folders:
-    futs.add iterateDirectoryRec(folder, dir, cancellationToken, ignore, callback)
+    futs.add iterateDirectoryRec(folder, dir, cancellationToken, callback)
 
   for fut in futs:
     await fut
