@@ -645,10 +645,10 @@ proc toFileLocationItem(self: FileSelectorItem): FileLocationItem =
 proc toFileSelectorItem(self: FileLocationItem): FileSelectorItem =
   FileSelectorItem(name: self.name, directory: self.directory, path: self.path, location: self.location, workspaceFolder: self.workspaceFolder)
 
-proc saveSelectorItemsToFileLocationList(self: App, items: seq[SelectorItem]) =
+proc setLocationList(self: App, list: seq[SelectorItem]) =
   self.currentLocationListIndex = 0
   self.fileLocationList.setLen 0
-  for item in items:
+  for item in list:
     if item of FileSelectorItem:
       self.fileLocationList.add item.FileSelectorItem.toFileLocationItem
 
@@ -1980,7 +1980,7 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
   popup.addCustomCommand "send-to-location-list", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.textEditor.isNil or popup.completions.len == 0:
       return false
-    self.saveSelectorItemsToFileLocationList(popup.completions)
+    self.setLocationList(popup.completions)
     return true
 
   popup.updateCompletions()
@@ -2037,7 +2037,7 @@ proc chooseOpen*(self: App, view: string = "new") {.expose("editor").} =
   popup.addCustomCommand "send-to-location-list", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.textEditor.isNil or popup.completions.len == 0:
       return false
-    self.saveSelectorItemsToFileLocationList(popup.completions)
+    self.setLocationList(popup.completions)
     return true
 
   popup.updateCompletions()
@@ -2110,7 +2110,7 @@ proc chooseLocation*(self: App, view: string = "new") {.expose("editor").} =
   popup.addCustomCommand "send-to-location-list", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.textEditor.isNil or popup.completions.len == 0:
       return false
-    self.saveSelectorItemsToFileLocationList(popup.completions)
+    self.setLocationList(popup.completions)
     return true
 
   popup.updateCompletions()
@@ -2178,7 +2178,7 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
   popup.addCustomCommand "send-to-location-list", proc(popup: SelectorPopup, args: JsonNode): bool =
     if popup.textEditor.isNil or popup.completions.len == 0:
       return false
-    self.saveSelectorItemsToFileLocationList(popup.completions)
+    self.setLocationList(popup.completions)
     return true
 
   popup.updateCompletions()
@@ -2344,7 +2344,7 @@ proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
     popup.addCustomCommand "send-to-location-list", proc(popup: SelectorPopup, args: JsonNode): bool =
       if popup.textEditor.isNil or popup.completions.len == 0:
         return false
-      self.saveSelectorItemsToFileLocationList(popup.completions)
+      self.setLocationList(popup.completions)
       return true
 
     popup.updateCompletions()
@@ -2441,7 +2441,7 @@ proc exploreFiles*(self: App) {.expose("editor").} =
     popup.addCustomCommand "send-to-location-list", proc(popup: SelectorPopup, args: JsonNode): bool =
       if popup.textEditor.isNil or popup.completions.len == 0:
         return false
-      self.saveSelectorItemsToFileLocationList(popup.completions)
+      self.setLocationList(popup.completions)
       return true
 
     popup.sortFunction = proc(a, b: SelectorItem): int = cmp(a.FileSelectorItem.score, b.FileSelectorItem.score)
@@ -2488,6 +2488,26 @@ proc openSymbolsPopup*(self: App, symbols: seq[Symbol], handleItemSelected: proc
     return true
 
   popup.handleCanceled = handleCanceled
+
+  popup.addCustomCommand "send-to-location-list", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil or popup.completions.len == 0:
+      return false
+
+    self.currentLocationListIndex = 0
+    self.fileLocationList.setLen 0
+    for item in popup.completions:
+  # location*: Cursor
+  # name*: string
+  # symbolType*: SymbolType
+  # filename*: string
+      self.fileLocationList.add FileLocationItem(
+        name: item.name,
+        path: item.filename,
+        location: item.location.some
+        workspaceFolder:
+      )
+
+    return true
 
   popup.updateCompletions()
 
