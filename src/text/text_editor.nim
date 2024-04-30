@@ -1748,8 +1748,6 @@ proc gotoLocationAsync(self: TextDocumentEditor, locations: seq[Definition]): Fu
     # todo: create popup if more than one
     discard
 
-  return
-
 proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = await self.document.getLanguageServer()
   if languageServer.isNone:
@@ -1760,8 +1758,6 @@ proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
     let locations = await ls.getDefinition(self.document.fullPath, self.selection.last)
     await self.gotoLocationAsync(locations)
 
-  return
-
 proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = await self.document.getLanguageServer()
   if languageServer.isNone:
@@ -1770,8 +1766,6 @@ proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
   if languageServer.getSome(ls):
     let locations = await ls.getDeclaration(self.document.fullPath, self.selection.last)
     await self.gotoLocationAsync(locations)
-
-  return
 
 proc gotoTypeDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = await self.document.getLanguageServer()
@@ -1782,8 +1776,6 @@ proc gotoTypeDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
     let locations = await ls.getTypeDefinition(self.document.fullPath, self.selection.last)
     await self.gotoLocationAsync(locations)
 
-  return
-
 proc gotoImplementationAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = await self.document.getLanguageServer()
   if languageServer.isNone:
@@ -1792,8 +1784,6 @@ proc gotoImplementationAsync(self: TextDocumentEditor): Future[void] {.async.} =
   if languageServer.getSome(ls):
     let locations = await ls.getImplementation(self.document.fullPath, self.selection.last)
     await self.gotoLocationAsync(locations)
-
-  return
 
 proc gotoReferencesAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = await self.document.getLanguageServer()
@@ -1804,7 +1794,18 @@ proc gotoReferencesAsync(self: TextDocumentEditor): Future[void] {.async.} =
     let locations = await ls.getReferences(self.document.fullPath, self.selection.last)
     await self.gotoLocationAsync(locations)
 
-  return
+proc switchSourceHeaderAsync(self: TextDocumentEditor): Future[void] {.async.} =
+  let languageServer = await self.document.getLanguageServer()
+  if languageServer.isNone:
+    return
+
+  if languageServer.getSome(ls):
+    let filename = await ls.switchSourceHeader(self.document.fullPath)
+    if filename.getSome(filename):
+      let editor = if self.document.workspace.getSome(workspace):
+        self.app.openWorkspaceFile(filename, workspace)
+      else:
+        self.app.openFile(filename)
 
 proc getCompletionMatches*(self: TextDocumentEditor, completionIndex: int): seq[int] =
   self.refilterCompletions()
@@ -1887,6 +1888,9 @@ proc gotoImplementation*(self: TextDocumentEditor) {.expose("editor.text").} =
 
 proc gotoReferences*(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncCheck self.gotoReferencesAsync()
+
+proc switchSourceHeader*(self: TextDocumentEditor) {.expose("editor.text").} =
+  asyncCheck self.switchSourceHeaderAsync()
 
 proc getCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.completionsDirty = true

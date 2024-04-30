@@ -583,6 +583,15 @@ proc getReferences*(client: LSPClient, filename: string, line: int, column: int)
 
   return (await client.sendRequest("textDocument/references", params)).to ReferenceResponse
 
+proc switchSourceHeader*(client: LSPClient, filename: string): Future[Response[string]] {.async.} =
+  let path = client.translatePath(filename).await
+
+  client.cancelAllOf("textDocument/switchSourceHeader")
+
+  let params = TextDocumentIdentifier(uri: $path.toUri).toJson
+
+  return (await client.sendRequest("textDocument/switchSourceHeader", params)).to string
+
 proc getHover*(client: LSPClient, filename: string, line: int, column: int): Future[Response[DocumentHoverResponse]] {.async.} =
   let path = client.translatePath(filename).await
 

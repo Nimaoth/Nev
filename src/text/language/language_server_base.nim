@@ -94,6 +94,7 @@ method getDeclaration*(self: LanguageServer, filename: string, location: Cursor)
 method getImplementation*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base.} = discard
 method getTypeDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base.} = discard
 method getReferences*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base.} = discard
+method switchSourceHeader*(self: LanguageServer, filename: string): Future[Option[string]] {.base.} = discard
 method getCompletions*(self: LanguageServer, languageId: string, filename: string, location: Cursor): Future[lsp_types.Response[lsp_types.CompletionList]] {.base.} = discard
 method saveTempFile*(self: LanguageServer, filename: string, content: string): Future[void] {.base.} = discard
 method getSymbols*(self: LanguageServer, filename: string): Future[seq[Symbol]] {.base.} = discard

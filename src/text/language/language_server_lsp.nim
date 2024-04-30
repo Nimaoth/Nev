@@ -241,6 +241,17 @@ method getReferences*(self: LanguageServerLSP, filename: string, location: Curso
   log(lvlError, "No references found")
   return newSeq[Definition]()
 
+method switchSourceHeader*(self: LanguageServerLSP, filename: string): Future[Option[string]] {.async.} =
+  let response = await self.client.switchSourceHeader(filename)
+  if response.isError:
+    log(lvlError, &"Error: {response.error}")
+    return string.none
+
+  if response.result.len == 0:
+    return string.none
+
+  return response.result.decodeUrl.parseUri.path.normalizePathUnix.some
+
 method getHover*(self: LanguageServerLSP, filename: string, location: Cursor): Future[Option[string]] {.async.} =
   let response = await self.client.getHover(filename, location.line, location.column)
   if response.isError:
