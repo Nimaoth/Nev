@@ -85,7 +85,7 @@ proc parseGlobs*(globs: string): Globs =
   for line in globs.splitLines():
     # todo: support trailing spaces when escaped with \
     # todo: support negating pattern with !
-    let lineStriped = line.strip
+    let lineStriped = strutils.strip(line)
     if lineStriped.isEmptyOrWhitespace or lineStriped.startsWith("#"):
       continue
     result.patterns.add glob(lineStriped)
@@ -106,16 +106,18 @@ when isMainModule:
     let notMatches = notMatches.splitLines
 
     for input in matches:
-      if input.strip.len == 0:
+      let inputStripped = strutils.strip(input)
+      if inputStripped.len == 0:
         continue
-      if not globs.matches(input.strip):
-        echo &"FAIL '{input.strip}' failed to match on\n{globLines.indent(2)}"
+      if not globs.matches(inputStripped):
+        echo &"FAIL '{inputStripped}' failed to match on\n{globLines.indent(2)}"
 
     for input in notMatches:
-      if input.strip.len == 0:
+      let inputStripped = strutils.strip(input)
+      if inputStripped.len == 0:
         continue
-      if globs.matches(input.strip):
-        echo &"FAIL '{input.strip}' matched on\n{globLines.indent(2)}"
+      if globs.matches(inputStripped):
+        echo &"FAIL '{inputStripped}' matched on\n{globLines.indent(2)}"
 
   testGlob("*", """
     .git
@@ -187,6 +189,18 @@ when isMainModule:
     a/b/a.exe
     a/b/c/a.exe
     a/b/c/d/a.exe
+    """, """
+    .git
+    a.b
+    abc
+    """)
+
+  testGlob("**/RiderLink/**", """
+    Plugins/Developer/RiderLink
+    Plugins/Developer/RiderLink/Source
+    Plugins/Developer/RiderLink/Source/RD
+    Plugins/Developer/RiderLink/Source/RD/thirdparty
+    Plugins/Developer/RiderLink/Source/RD/thirdparty/a.b
     """, """
     .git
     a.b
