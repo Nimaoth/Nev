@@ -1771,12 +1771,12 @@ proc gotoLocationAsync(self: TextDocumentEditor, locations: seq[Definition]): Fu
           location: location.location.some
         )
 
-      return res
+      res
 
     builder.handleItemConfirmed = proc(popup: ISelectorPopup, item: SelectorItem): bool =
       let item = item.FileSelectorItem
       self.openFileAt(item.path, item.location.mapIt(it.toSelection))
-      return true
+      true
 
     builder.handleItemSelected = proc(popup: ISelectorPopup, item: SelectorItem) =
       let item = item.FileSelectorItem
