@@ -1753,6 +1753,33 @@ proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
       else:
         log lvlError, fmt"Failed to open location of definition: {d}"
 
+proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
+  let languageServer = await self.document.getLanguageServer()
+  if languageServer.isNone:
+    return
+
+  if languageServer.getSome(ls):
+    let definition = await ls.getDeclaration(self.document.fullPath, self.selection.last)
+    if definition.getSome(d):
+      let editor = if self.document.workspace.getSome(workspace):
+        self.app.openWorkspaceFile(d.filename, workspace)
+      else:
+        self.app.openFile(d.filename)
+
+      if editor.getSome(editor):
+        if editor == self:
+          self.selection = d.location.toSelection
+          self.updateTargetColumn(Last)
+          self.scrollToCursor()
+
+        elif editor of TextDocumentEditor:
+          let textEditor = editor.TextDocumentEditor
+          textEditor.targetSelection = d.location.toSelection
+          textEditor.scrollToCursor()
+
+      else:
+        log lvlError, fmt"Failed to open location of definition: {d}"
+
 proc getCompletionMatches*(self: TextDocumentEditor, completionIndex: int): seq[int] =
   self.refilterCompletions()
 
@@ -1822,6 +1849,9 @@ proc gotoSymbolAsync(self: TextDocumentEditor): Future[void] {.async.} =
 
 proc gotoDefinition*(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncCheck self.gotoDefinitionAsync()
+
+proc gotoDeclaration*(self: TextDocumentEditor) {.expose("editor.text").} =
+  asyncCheck self.gotoDeclarationAsync()
 
 proc getCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.completionsDirty = true
