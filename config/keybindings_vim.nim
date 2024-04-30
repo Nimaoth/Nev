@@ -1240,7 +1240,10 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   # todo: not really vim keybindings
   addTextCommand "", "gd", "goto-definition"
   addTextCommand "", "gD", "goto-declaration"
+  addTextCommand "", "gi", "goto-implementation"
+  addTextCommand "", "gT", "goto-type-definition"
   addTextCommand "", "gs", "goto-symbol"
+  addTextCommand "", "gr", "goto-references"
   addTextCommand "", "K", "show-hover-for-current"
   addTextCommand "", "H", "show-diagnostics-for-current"
   addTextCommand "", "<C-r>", "select-prev"
