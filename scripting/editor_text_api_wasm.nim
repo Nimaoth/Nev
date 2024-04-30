@@ -2319,6 +2319,48 @@ proc gotoDeclaration*(self: TextDocumentEditor) =
       argsJsonString.cstring)
 
 
+proc editor_text_gotoTypeDefinition_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc gotoTypeDefinition*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_gotoTypeDefinition_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_gotoImplementation_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc gotoImplementation*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_gotoImplementation_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_gotoReferences_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc gotoReferences*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_gotoReferences_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_getCompletions_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
 proc getCompletions*(self: TextDocumentEditor) =

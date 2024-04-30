@@ -542,6 +542,28 @@ type
     position*: Position
     partialResultToken*: Option[ProgressToken]
 
+  TypeDefinitionParams* = object
+    workDoneProgress*: bool
+    textDocument*: TextDocumentIdentifier
+    position*: Position
+    partialResultToken*: Option[ProgressToken]
+
+  ImplementationParams* = object
+    workDoneProgress*: bool
+    textDocument*: TextDocumentIdentifier
+    position*: Position
+    partialResultToken*: Option[ProgressToken]
+
+  ReferenceContext* = object
+    includeDeclaration*: bool
+
+  ReferenceParams* = object
+    workDoneProgress*: bool
+    textDocument*: TextDocumentIdentifier
+    position*: Position
+    context*: ReferenceContext
+    partialResultToken*: Option[ProgressToken]
+
   DocumentSymbolParams* = object
     workDoneProgress*: bool
     textDocument*: TextDocumentIdentifier
@@ -627,6 +649,9 @@ type
 variant(CompletionResponseVariant, seq[CompletionItem], CompletionList)
 variant(DefinitionResponseVariant, Location, seq[Location], seq[LocationLink])
 variant(DeclarationResponseVariant, Location, seq[Location], seq[LocationLink])
+variant(TypeDefinitionResponseVariant, Location, seq[Location], seq[LocationLink])
+variant(ImplementationResponseVariant, Location, seq[Location], seq[LocationLink])
+variant(ReferenceResponseVariant, seq[Location])
 variant(DocumentSymbolResponseVariant, seq[DocumentSymbol], seq[SymbolInformation])
 variant(DocumentHoverResponseVariant, seq[DocumentSymbol], seq[SymbolInformation])
 variant(DocumentDiagnosticResponse, RelatedFullDocumentDiagnosticReport, RelatedUnchangedDocumentDiagnosticReport)
@@ -634,6 +659,9 @@ variant(DocumentDiagnosticResponse, RelatedFullDocumentDiagnosticReport, Related
 type CompletionResponse* = CompletionResponseVariant
 type DefinitionResponse* = DefinitionResponseVariant
 type DeclarationResponse* = DeclarationResponseVariant
+type TypeDefinitionResponse* = TypeDefinitionResponseVariant
+type ImplementationResponse* = ImplementationResponseVariant
+type ReferenceResponse* = ReferenceResponseVariant
 type DocumentSymbolResponse* = DocumentSymbolResponseVariant
 type InlayHintResponse* = Option[seq[InlayHint]]
 

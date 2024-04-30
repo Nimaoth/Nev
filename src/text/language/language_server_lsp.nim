@@ -150,55 +150,96 @@ method stop*(self: LanguageServerLSP) =
   log lvlInfo, fmt"Stopping language server"
   self.client.deinit()
 
-method getDefinition*(self: LanguageServerLSP, filename: string, location: Cursor): Future[Option[Definition]] {.async.} =
-  debugf"getDefinition {filename}:{location}"
+template locationsResponseToDefinitions(parsedResponse: untyped): untyped =
+  block:
+    if parsedResponse.asLocation().getSome(location):
+      @[Definition(filename: location.uri.decodeUrl.parseUri.path.normalizePathUnix, location: (line: location.`range`.start.line, column: location.`range`.start.character))]
+
+    elif parsedResponse.asLocationSeq().getSome(locations) and locations.len > 0:
+      var res = newSeq[Definition]()
+      for location in locations:
+        res.add Definition(filename: location.uri.decodeUrl.parseUri.path.normalizePathUnix, location: (line: location.`range`.start.line, column: location.`range`.start.character))
+      res
+
+    elif parsedResponse.asLocationLinkSeq().getSome(locations) and locations.len > 0:
+      var res = newSeq[Definition]()
+      for location in locations:
+        res.add Definition(
+          filename: location.targetUri.decodeUrl.parseUri.path.normalizePathUnix,
+          location: (line: location.targetSelectionRange.start.line, column: location.targetSelectionRange.start.character))
+      res
+
+    else:
+      newSeq[Definition]()
+
+method getDefinition*(self: LanguageServerLSP, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
   let response = await self.client.getDefinition(filename, location.line, location.column)
   if response.isError:
     log(lvlError, &"Error: {response.error}")
-    return Definition.none
+    return newSeq[Definition]()
 
-  debugf"getDefinition -> {response}"
   let parsedResponse = response.result
 
-  if parsedResponse.asLocation().getSome(location):
-    return Definition(filename: location.uri.decodeUrl.parseUri.path.normalizePathUnix, location: (line: location.`range`.start.line, column: location.`range`.start.character)).some
+  let res = parsedResponse.locationsResponseToDefinitions()
+  if res.len == 0:
+    log(lvlError, "No definitions found")
+  return res
 
-  if parsedResponse.asLocationSeq().getSome(locations) and locations.len > 0:
-    let location = locations[0]
-    return Definition(filename: location.uri.decodeUrl.parseUri.path.normalizePathUnix, location: (line: location.`range`.start.line, column: location.`range`.start.character)).some
-
-  if parsedResponse.asLocationLinkSeq().getSome(locations) and locations.len > 0:
-    let location = locations[0]
-    return Definition(
-      filename: location.targetUri.decodeUrl.parseUri.path.normalizePathUnix,
-      location: (line: location.targetSelectionRange.start.line, column: location.targetSelectionRange.start.character)).some
-
-  log(lvlError, "No definition found")
-  return Definition.none
-
-method getDeclaration*(self: LanguageServerLSP, filename: string, location: Cursor): Future[Option[Definition]] {.async.} =
+method getDeclaration*(self: LanguageServerLSP, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
   let response = await self.client.getDeclaration(filename, location.line, location.column)
   if response.isError:
     log(lvlError, &"Error: {response.error}")
-    return Definition.none
+    return newSeq[Definition]()
 
   let parsedResponse = response.result
 
-  if parsedResponse.asLocation().getSome(location):
-    return Definition(filename: location.uri.decodeUrl.parseUri.path.normalizePathUnix, location: (line: location.`range`.start.line, column: location.`range`.start.character)).some
+  let res = parsedResponse.locationsResponseToDefinitions()
+  if res.len == 0:
+    log(lvlError, "No declaration found")
+  return res
+
+method getTypeDefinition*(self: LanguageServerLSP, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+  let response = await self.client.getTypeDefinitions(filename, location.line, location.column)
+  if response.isError:
+    log(lvlError, &"Error: {response.error}")
+    return newSeq[Definition]()
+
+  let parsedResponse = response.result
+
+  let res = parsedResponse.locationsResponseToDefinitions()
+  if res.len == 0:
+    log(lvlError, "No type definitions found")
+  return res
+
+method getImplementation*(self: LanguageServerLSP, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+  let response = await self.client.getImplementation(filename, location.line, location.column)
+  if response.isError:
+    log(lvlError, &"Error: {response.error}")
+    return newSeq[Definition]()
+
+  let parsedResponse = response.result
+
+  let res = parsedResponse.locationsResponseToDefinitions()
+  if res.len == 0:
+    log(lvlError, "No implementations found")
+  return res
+
+method getReferences*(self: LanguageServerLSP, filename: string, location: Cursor): Future[seq[Definition]] {.async.} =
+  let response = await self.client.getReferences(filename, location.line, location.column)
+  if response.isError:
+    log(lvlError, &"Error: {response.error}")
+    return newSeq[Definition]()
+
+  let parsedResponse = response.result
 
   if parsedResponse.asLocationSeq().getSome(locations) and locations.len > 0:
-    let location = locations[0]
-    return Definition(filename: location.uri.decodeUrl.parseUri.path.normalizePathUnix, location: (line: location.`range`.start.line, column: location.`range`.start.character)).some
+    var res = newSeq[Definition]()
+    for location in locations:
+      res.add Definition(filename: location.uri.decodeUrl.parseUri.path.normalizePathUnix, location: (line: location.`range`.start.line, column: location.`range`.start.character))
+    return res
 
-  if parsedResponse.asLocationLinkSeq().getSome(locations) and locations.len > 0:
-    let location = locations[0]
-    return Definition(
-      filename: location.targetUri.decodeUrl.parseUri.path.normalizePathUnix,
-      location: (line: location.targetSelectionRange.start.line, column: location.targetSelectionRange.start.character)).some
-
-  log(lvlError, "No declaration found")
-  return Definition.none
+  log(lvlError, "No references found")
+  return newSeq[Definition]()
 
 method getHover*(self: LanguageServerLSP, filename: string, location: Cursor): Future[Option[string]] {.async.} =
   let response = await self.client.getHover(filename, location.line, location.column)

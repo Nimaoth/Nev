@@ -1720,6 +1720,36 @@ proc setSearchQueryFromMove*(self: TextDocumentEditor, move: string, count: int 
 proc toggleLineComment*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.selections = self.document.toggleLineComment(self.selections)
 
+proc gotoLocationAsync(self: TextDocumentEditor, locations: seq[Definition]): Future[void] {.async.} =
+  debugf"gotoLocationAsync: {locations}"
+
+  if locations.len == 1:
+    let d = locations[0]
+    let editor = if self.document.workspace.getSome(workspace):
+      self.app.openWorkspaceFile(d.filename, workspace)
+    else:
+      self.app.openFile(d.filename)
+
+    if editor.getSome(editor):
+      if editor == self:
+        self.selection = d.location.toSelection
+        self.updateTargetColumn(Last)
+        self.scrollToCursor()
+
+      elif editor of TextDocumentEditor:
+        let textEditor = editor.TextDocumentEditor
+        textEditor.targetSelection = d.location.toSelection
+        textEditor.scrollToCursor()
+
+    else:
+      log lvlError, fmt"Failed to open location of definition: {d}"
+
+  else:
+    # todo: create popup if more than one
+    discard
+
+  return
+
 proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = await self.document.getLanguageServer()
   if languageServer.isNone:
@@ -1727,31 +1757,10 @@ proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
 
   if languageServer.getSome(ls):
     # todo: absolute paths
-    let definition = await ls.getDefinition(self.document.fullPath, self.selection.last)
-    if definition.getSome(d):
-      let editor = if self.document.workspace.getSome(workspace):
-        self.app.openWorkspaceFile(d.filename, workspace)
-      else:
-        self.app.openFile(d.filename)
+    let locations = await ls.getDefinition(self.document.fullPath, self.selection.last)
+    await self.gotoLocationAsync(locations)
 
-      if editor.getSome(editor):
-        if editor == self:
-          debugf"Found symbol in current editor: {d}"
-          self.selection = d.location.toSelection
-          self.updateTargetColumn(Last)
-          self.scrollToCursor()
-
-        elif editor of TextDocumentEditor:
-          debugf"Found symbol in different text editor: {d}"
-          let textEditor = editor.TextDocumentEditor
-          textEditor.targetSelection = d.location.toSelection
-          textEditor.scrollToCursor()
-
-        else:
-          debugf"Found symbol in different editor: {d}"
-
-      else:
-        log lvlError, fmt"Failed to open location of definition: {d}"
+  return
 
 proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = await self.document.getLanguageServer()
@@ -1759,26 +1768,43 @@ proc gotoDeclarationAsync(self: TextDocumentEditor): Future[void] {.async.} =
     return
 
   if languageServer.getSome(ls):
-    let definition = await ls.getDeclaration(self.document.fullPath, self.selection.last)
-    if definition.getSome(d):
-      let editor = if self.document.workspace.getSome(workspace):
-        self.app.openWorkspaceFile(d.filename, workspace)
-      else:
-        self.app.openFile(d.filename)
+    let locations = await ls.getDeclaration(self.document.fullPath, self.selection.last)
+    await self.gotoLocationAsync(locations)
 
-      if editor.getSome(editor):
-        if editor == self:
-          self.selection = d.location.toSelection
-          self.updateTargetColumn(Last)
-          self.scrollToCursor()
+  return
 
-        elif editor of TextDocumentEditor:
-          let textEditor = editor.TextDocumentEditor
-          textEditor.targetSelection = d.location.toSelection
-          textEditor.scrollToCursor()
+proc gotoTypeDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
+  let languageServer = await self.document.getLanguageServer()
+  if languageServer.isNone:
+    return
 
-      else:
-        log lvlError, fmt"Failed to open location of definition: {d}"
+  if languageServer.getSome(ls):
+    let locations = await ls.getTypeDefinition(self.document.fullPath, self.selection.last)
+    await self.gotoLocationAsync(locations)
+
+  return
+
+proc gotoImplementationAsync(self: TextDocumentEditor): Future[void] {.async.} =
+  let languageServer = await self.document.getLanguageServer()
+  if languageServer.isNone:
+    return
+
+  if languageServer.getSome(ls):
+    let locations = await ls.getImplementation(self.document.fullPath, self.selection.last)
+    await self.gotoLocationAsync(locations)
+
+  return
+
+proc gotoReferencesAsync(self: TextDocumentEditor): Future[void] {.async.} =
+  let languageServer = await self.document.getLanguageServer()
+  if languageServer.isNone:
+    return
+
+  if languageServer.getSome(ls):
+    let locations = await ls.getReferences(self.document.fullPath, self.selection.last)
+    await self.gotoLocationAsync(locations)
+
+  return
 
 proc getCompletionMatches*(self: TextDocumentEditor, completionIndex: int): seq[int] =
   self.refilterCompletions()
@@ -1852,6 +1878,15 @@ proc gotoDefinition*(self: TextDocumentEditor) {.expose("editor.text").} =
 
 proc gotoDeclaration*(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncCheck self.gotoDeclarationAsync()
+
+proc gotoTypeDefinition*(self: TextDocumentEditor) {.expose("editor.text").} =
+  asyncCheck self.gotoTypeDefinitionAsync()
+
+proc gotoImplementation*(self: TextDocumentEditor) {.expose("editor.text").} =
+  asyncCheck self.gotoImplementationAsync()
+
+proc gotoReferences*(self: TextDocumentEditor) {.expose("editor.text").} =
+  asyncCheck self.gotoReferencesAsync()
 
 proc getCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.completionsDirty = true

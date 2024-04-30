@@ -288,7 +288,10 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async.} =
           "didChange": true,
         },
         "configuration": true,
-        "didChangeConfiguration": {},
+        "didChangeConfiguration": %*{},
+        "symbol": %*{
+          # "symbolKind": %*{}
+        },
       },
       "general": %*{
         "positionEncodings": %*["utf-8"],
@@ -304,6 +307,19 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async.} =
           "linkSupport": true,
         },
         "declaration": %*{
+          "linkSupport": true,
+        },
+        "typeDefinition": %*{
+          "linkSupport": true,
+        },
+        "implementation": %*{
+          "linkSupport": true,
+        },
+        "references": %*{},
+        "codeAction": %*{
+          "linkSupport": true,
+        },
+        "rename": %*{
           "linkSupport": true,
         },
         "documentSymbol": %*{},
@@ -517,6 +533,55 @@ proc getDeclaration*(client: LSPClient, filename: string, line: int, column: int
   ).toJson
 
   return (await client.sendRequest("textDocument/declaration", params)).to DeclarationResponse
+
+proc getTypeDefinitions*(client: LSPClient, filename: string, line: int, column: int): Future[Response[TypeDefinitionResponse]] {.async.} =
+  # debugf"[getDeclaration] {filename.absolutePath}:{line}:{column}"
+  let path = client.translatePath(filename).await
+
+  client.cancelAllOf("textDocument/typeDefinition")
+
+  let params = TypeDefinitionParams(
+    textDocument: TextDocumentIdentifier(uri: $path.toUri),
+    position: Position(
+      line: line,
+      character: column
+    )
+  ).toJson
+
+  return (await client.sendRequest("textDocument/typeDefinition", params)).to TypeDefinitionResponse
+
+proc getImplementation*(client: LSPClient, filename: string, line: int, column: int): Future[Response[ImplementationResponse]] {.async.} =
+  # debugf"[getDeclaration] {filename.absolutePath}:{line}:{column}"
+  let path = client.translatePath(filename).await
+
+  client.cancelAllOf("textDocument/implementation")
+
+  let params = ImplementationParams(
+    textDocument: TextDocumentIdentifier(uri: $path.toUri),
+    position: Position(
+      line: line,
+      character: column
+    )
+  ).toJson
+
+  return (await client.sendRequest("textDocument/implementation", params)).to ImplementationResponse
+
+proc getReferences*(client: LSPClient, filename: string, line: int, column: int): Future[Response[ReferenceResponse]] {.async.} =
+  # debugf"[getDeclaration] {filename.absolutePath}:{line}:{column}"
+  let path = client.translatePath(filename).await
+
+  client.cancelAllOf("textDocument/references")
+
+  let params = ReferenceParams(
+    textDocument: TextDocumentIdentifier(uri: $path.toUri),
+    position: Position(
+      line: line,
+      character: column
+    ),
+    context: ReferenceContext(includeDeclaration: true)
+  ).toJson
+
+  return (await client.sendRequest("textDocument/references", params)).to ReferenceResponse
 
 proc getHover*(client: LSPClient, filename: string, line: int, column: int): Future[Response[DocumentHoverResponse]] {.async.} =
   let path = client.translatePath(filename).await
