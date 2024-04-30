@@ -1,20 +1,15 @@
 import std/[strutils, sugar, options, json, streams, tables]
 import bumpy, vmath
-import misc/[util, rect_utils, comb_sort, timer, event, custom_async, custom_logger, cancellation_token, myjsonutils, fuzzy_matching]
-import app_interface, text/text_editor, popup, events, scripting/expose, input
+import misc/[util, rect_utils, comb_sort, timer, event, custom_async, custom_logger, cancellation_token, myjsonutils, fuzzy_matching, traits]
+import app_interface, text/text_editor, popup, events, scripting/expose, input, selector_popup_builder
 from scripting_api as api import nil
 
-export popup
+export popup, selector_popup_builder
 
 logCategory "selector"
 createJavascriptPrototype("popup.selector")
 
 type
-  SelectorItem* = ref object of RootObj
-    score*: float32
-    hasCompletionMatchPositions*: bool = false
-    completionMatchPositions*: seq[int]
-
   CompletionProviderSync* = proc(popup: SelectorPopup, text: string): seq[SelectorItem]
   CompletionProviderAsync* = proc(popup: SelectorPopup, text: string): Future[seq[SelectorItem]]
   CompletionProviderAsyncIter* = proc(popup: SelectorPopup, text: string): Future[void]
@@ -59,6 +54,20 @@ type
   NamedSelectorItem* = ref object of SelectorItem
     name*: string
 
+proc getSearchString*(self: SelectorPopup): string
+proc updateCompletions*(self: SelectorPopup)
+proc enableAutoSort*(self: SelectorPopup)
+proc closed*(self: SelectorPopup): bool
+
+implTrait ISelectorPopup, SelectorPopup:
+  getSearchString(string, SelectorPopup)
+  updateCompletions(void, SelectorPopup)
+  enableAutoSort(void, SelectorPopup)
+  closed(bool, SelectorPopup)
+
+proc closed*(self: SelectorPopup): bool =
+  return self.textEditor.isNil
+
 proc getCompletionMatches*(self: SelectorItem, pattern: string, text: string, config: FuzzyMatchConfig): seq[int] =
   if not self.hasCompletionMatchPositions:
     self.completionMatchPositions.setLen 0
@@ -66,9 +75,6 @@ proc getCompletionMatches*(self: SelectorItem, pattern: string, text: string, co
     self.hasCompletionMatchPositions = true
 
   return self.completionMatchPositions
-
-method changed*(self: SelectorItem, other: SelectorItem): bool {.base.} = discard
-method itemToJson*(self: SelectorItem): JsonNode {.base.} = self.toJson
 
 method changed*(self: NamedSelectorItem, other: SelectorItem): bool =
   let other = other.NamedSelectorItem
