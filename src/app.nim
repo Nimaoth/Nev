@@ -232,6 +232,7 @@ proc openSymbolsPopup*(self: App, symbols: seq[Symbol], handleItemSelected: proc
 proc help*(self: App, about: string = "")
 proc getAllDocuments*(self: App): seq[Document]
 proc setHandleInputs*(self: App, context: string, value: bool)
+proc setLocationList*(self: App, list: seq[SelectorItem])
 
 implTrait AppInterface, App:
   proc platform*(self: App): Platform = self.platform
@@ -262,6 +263,7 @@ implTrait AppInterface, App:
   popPopup(void, App, Popup)
   openSymbolsPopup(void, App, seq[Symbol], proc(symbol: Symbol), proc(symbol: Symbol), proc())
   getAllDocuments(seq[Document], App)
+  setLocationList(void, App, seq[SelectorItem])
 
 type
   AppLogger* = ref object of Logger
@@ -1086,6 +1088,22 @@ proc getEditor(): Option[App] =
 
 static:
   addInjector(App, getEditor)
+
+proc setLocationListFromCurrentPopup*(self: App) {.expose("editor").} =
+  if self.popups.len == 0:
+    return
+
+  let popup = block:
+    let popup = self.popups[self.popups.high]
+    if not (popup of SelectorPopup):
+      log lvlError, &"Not a selector popup"
+      return
+    popup.SelectorPopup
+
+  if popup.textEditor.isNil or popup.completions.len == 0:
+    return
+
+  self.setLocationList(popup.completions)
 
 proc getBackend*(self: App): Backend {.expose("editor").} =
   return self.backend
