@@ -260,10 +260,15 @@ proc `content=`*(self: TextDocument, value: string) =
   var newLine = value.find('\n', start=index)
   self.lines = @[""]
   while newLine != -1:
-    if self.singleLine:
-      self.lines[0].add value[index..<newLine]
+    let newLineStart = if newLine > 0 and value[newLine - 1] == '\r':
+      newLine - 1
     else:
-      self.lines[self.lines.high] = value[index..<newLine]
+      newLine
+
+    if self.singleLine:
+      self.lines[0].add value[index..<newLineStart]
+    else:
+      self.lines[self.lines.high] = value[index..<newLineStart]
       self.lines.add ""
 
     index = newLine + 1
