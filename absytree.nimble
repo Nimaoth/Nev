@@ -12,7 +12,7 @@ bin           = @["ast"]
 requires "nim >= 2.0.0"
 requires "nimgen >= 0.5.4"
 requires "https://github.com/Nimaoth/vmath#661bdaa"
-# requires "https://github.com/Nimaoth/pixie >= 5.0.7"
+requires "pixie >= 5.0.7"
 requires "chroma >= 0.2.7"
 requires "winim >= 3.8.1"
 requires "fusion >= 1.2"
