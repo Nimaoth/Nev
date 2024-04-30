@@ -215,7 +215,8 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
   addCommand "popup.selector", "<C-n>", "next"
   addCommand "popup.selector", "<C-u>", "prev-x"
   addCommand "popup.selector", "<C-d>", "next-x"
-  addCommand "popup.selector", "<C-l>", "send-to-location-list"
+  addCommandBlock "popup.selector", "<C-l>":
+    setLocationListFromCurrentPopup()
 
   addCommand "editor", "<C-n>", "goto-prev-location"
   addCommand "editor", "<C-t>", "goto-next-location"

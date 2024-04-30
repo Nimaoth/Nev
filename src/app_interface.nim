@@ -26,6 +26,7 @@ traitRef AppInterface:
   method getEditorForId*(self: AppInterface, id: EditorId): Option[DocumentEditor]
   method getPopupForId*(self: AppInterface, id: EditorId): Option[Popup]
   method createSelectorPopup*(self: AppInterface): Popup
+  method setLocationList*(self: AppInterface, list: seq[SelectorItem])
   method pushSelectorPopup*(self: AppInterface, popup: SelectorPopupBuilder): ISelectorPopup
   method pushPopup*(self: AppInterface, popup: Popup)
   method popPopup*(self: AppInterface, popup: Popup)
