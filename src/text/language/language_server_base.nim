@@ -90,6 +90,7 @@ method deinit*(self: LanguageServer) {.base.} = discard
 method connect*(self: LanguageServer) {.base.} = discard
 method disconnect*(self: LanguageServer) {.base.} = discard
 method getDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[Option[Definition]] {.base.} = discard
+method getDeclaration*(self: LanguageServer, filename: string, location: Cursor): Future[Option[Definition]] {.base.} = discard
 method getCompletions*(self: LanguageServer, languageId: string, filename: string, location: Cursor): Future[lsp_types.Response[lsp_types.CompletionList]] {.base.} = discard
 method saveTempFile*(self: LanguageServer, filename: string, content: string): Future[void] {.base.} = discard
 method getSymbols*(self: LanguageServer, filename: string): Future[seq[Symbol]] {.base.} = discard

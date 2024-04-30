@@ -2305,6 +2305,20 @@ proc gotoDefinition*(self: TextDocumentEditor) =
       argsJsonString.cstring)
 
 
+proc editor_text_gotoDeclaration_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc gotoDeclaration*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_gotoDeclaration_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_getCompletions_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
 proc getCompletions*(self: TextDocumentEditor) =

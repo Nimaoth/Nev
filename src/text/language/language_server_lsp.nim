@@ -176,6 +176,30 @@ method getDefinition*(self: LanguageServerLSP, filename: string, location: Curso
   log(lvlError, "No definition found")
   return Definition.none
 
+method getDeclaration*(self: LanguageServerLSP, filename: string, location: Cursor): Future[Option[Definition]] {.async.} =
+  let response = await self.client.getDeclaration(filename, location.line, location.column)
+  if response.isError:
+    log(lvlError, &"Error: {response.error}")
+    return Definition.none
+
+  let parsedResponse = response.result
+
+  if parsedResponse.asLocation().getSome(location):
+    return Definition(filename: location.uri.decodeUrl.parseUri.path.normalizePathUnix, location: (line: location.`range`.start.line, column: location.`range`.start.character)).some
+
+  if parsedResponse.asLocationSeq().getSome(locations) and locations.len > 0:
+    let location = locations[0]
+    return Definition(filename: location.uri.decodeUrl.parseUri.path.normalizePathUnix, location: (line: location.`range`.start.line, column: location.`range`.start.character)).some
+
+  if parsedResponse.asLocationLinkSeq().getSome(locations) and locations.len > 0:
+    let location = locations[0]
+    return Definition(
+      filename: location.targetUri.decodeUrl.parseUri.path.normalizePathUnix,
+      location: (line: location.targetSelectionRange.start.line, column: location.targetSelectionRange.start.character)).some
+
+  log(lvlError, "No declaration found")
+  return Definition.none
+
 method getHover*(self: LanguageServerLSP, filename: string, location: Cursor): Future[Option[string]] {.async.} =
   let response = await self.client.getHover(filename, location.line, location.column)
   if response.isError:
