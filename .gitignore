@@ -41,6 +41,8 @@ release_linux
 release_web
 scripting/nim/lib
 
+*.absytree-session
+
 ast
 ast2
 
