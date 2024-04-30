@@ -7,7 +7,7 @@ import scripting/[expose]
 import platform/[platform, filesystem]
 import language/[language_server_base]
 import document, document_editor, events, vmath, bumpy, input, custom_treesitter, indent, text_document, snippet
-import completion, completion_provider_document, completion_provider_lsp, completion_provider_snippet
+import completion, completion_provider_document, completion_provider_lsp, completion_provider_snippet, file_selector_item, selector_popup_builder
 import config_provider, app_interface
 import diff
 import workspaces/workspace
@@ -1720,33 +1720,72 @@ proc setSearchQueryFromMove*(self: TextDocumentEditor, move: string, count: int 
 proc toggleLineComment*(self: TextDocumentEditor) {.expose("editor.text").} =
   self.selections = self.document.toggleLineComment(self.selections)
 
-proc gotoLocationAsync(self: TextDocumentEditor, locations: seq[Definition]): Future[void] {.async.} =
-  debugf"gotoLocationAsync: {locations}"
+proc openFileAt(self: TextDocumentEditor, filename: string, location: Option[Selection]) =
+  let editor = if self.document.workspace.getSome(workspace):
+    self.app.openWorkspaceFile(filename, workspace)
+  else:
+    self.app.openFile(filename)
 
-  if locations.len == 1:
-    let d = locations[0]
-    let editor = if self.document.workspace.getSome(workspace):
-      self.app.openWorkspaceFile(d.filename, workspace)
-    else:
-      self.app.openFile(d.filename)
-
-    if editor.getSome(editor):
+  if editor.getSome(editor):
+    if location.getSome(location):
       if editor == self:
-        self.selection = d.location.toSelection
+        self.selection = location
         self.updateTargetColumn(Last)
-        self.scrollToCursor()
+        self.centerCursor()
 
       elif editor of TextDocumentEditor:
         let textEditor = editor.TextDocumentEditor
-        textEditor.targetSelection = d.location.toSelection
-        textEditor.scrollToCursor()
-
-    else:
-      log lvlError, fmt"Failed to open location of definition: {d}"
+        textEditor.targetSelection = location
+        textEditor.centerCursor()
 
   else:
-    # todo: create popup if more than one
-    discard
+    log lvlError, fmt"Failed to open file '{filename}' at {location}"
+
+proc gotoLocationAsync(self: TextDocumentEditor, locations: seq[Definition]): Future[void] {.async.} =
+  if locations.len == 1:
+    let d = locations[0]
+    self.openFileAt(d.filename, d.location.toSelection.some)
+
+  else:
+    let lastSelection = self.selection
+    var builder = SelectorPopupBuilder()
+    builder.scope = "text-lsp-locations".some
+    builder.scaleX = 0.3
+    builder.enableAutoSort = true
+
+    builder.getCompletions = proc(popup: ISelectorPopup, text: string): seq[SelectorItem] =
+      var res = newSeq[SelectorItem]()
+      for i, location in locations:
+        let score = if text.len == 0:
+          locations.len - i
+        else:
+          matchFuzzySublime(text, location.filename, defaultPathMatchingConfig).score
+
+        let (dir, name) = location.filename.splitPath
+        res.add FileSelectorItem(
+          name: &"{name}:{location.location.line}:{location.location.column}",
+          directory: dir,
+          path: location.filename,
+          score: score.float,
+          workspaceFolder: self.document.workspace,
+          location: location.location.some
+        )
+
+      return res
+
+    builder.handleItemConfirmed = proc(popup: ISelectorPopup, item: SelectorItem): bool =
+      let item = item.FileSelectorItem
+      self.openFileAt(item.path, item.location.mapIt(it.toSelection))
+      return true
+
+    builder.handleItemSelected = proc(popup: ISelectorPopup, item: SelectorItem) =
+      let item = item.FileSelectorItem
+      self.openFileAt(item.path, item.location.mapIt(it.toSelection))
+
+    builder.handleCanceled = proc(popup: ISelectorPopup) =
+      self.openFileAt(self.document.filename, lastSelection.some)
+
+    let popup = self.app.pushSelectorPopup(builder)
 
 proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = await self.document.getLanguageServer()

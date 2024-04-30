@@ -3,7 +3,7 @@ import misc/[traits, custom_async]
 import platform/platform
 import workspaces/workspace
 import text/language/language_server_base
-import events, document_editor, document, popup, config_provider
+import events, document_editor, document, popup, config_provider, selector_popup_builder
 from scripting_api import EditorId
 
 traitRef AppInterface:
@@ -26,8 +26,10 @@ traitRef AppInterface:
   method getEditorForId*(self: AppInterface, id: EditorId): Option[DocumentEditor]
   method getPopupForId*(self: AppInterface, id: EditorId): Option[Popup]
   method createSelectorPopup*(self: AppInterface): Popup
+  method pushSelectorPopup*(self: AppInterface, popup: SelectorPopupBuilder): ISelectorPopup
   method pushPopup*(self: AppInterface, popup: Popup)
   method popPopup*(self: AppInterface, popup: Popup)
+  method popPopup*(self: AppInterface, popup: EditorId)
   method openSymbolsPopup*(self: AppInterface, symbols: seq[Symbol], handleItemSelected: proc(symbol: Symbol), handleItemConfirmed: proc(symbol: Symbol), handleCanceled: proc())
   method getAllDocuments*(self: AppInterface): seq[Document]
 

@@ -6,7 +6,7 @@ import platform/[platform, filesystem]
 import workspaces/[workspace]
 import config_provider, app_interface
 import text/language/language_server_base, language_server_absytree_commands
-import input, events, document, document_editor, popup, dispatch_tables, theme, clipboard, app_options
+import input, events, document, document_editor, popup, dispatch_tables, theme, clipboard, app_options, selector_popup_builder, file_selector_item
 import text/[custom_treesitter]
 import compilation_config
 
@@ -225,6 +225,7 @@ proc tryActivateEditor*(self: App, editor: DocumentEditor): void
 proc getEditorForId*(self: App, id: EditorId): Option[DocumentEditor]
 proc getPopupForId*(self: App, id: EditorId): Option[Popup]
 proc createSelectorPopup*(self: App): Popup
+proc pushSelectorPopup*(self: App, builder: SelectorPopupBuilder): ISelectorPopup
 proc pushPopup*(self: App, popup: Popup)
 proc popPopup*(self: App, popup: Popup)
 proc openSymbolsPopup*(self: App, symbols: seq[Symbol], handleItemSelected: proc(symbol: Symbol), handleItemConfirmed: proc(symbol: Symbol), handleCanceled: proc())
@@ -256,6 +257,7 @@ implTrait AppInterface, App:
   getEditorForId(Option[DocumentEditor], App, EditorId)
   getPopupForId(Option[Popup], App, EditorId)
   createSelectorPopup(Popup, App)
+  pushSelectorPopup(ISelectorPopup, App, SelectorPopupBuilder)
   pushPopup(void, App, Popup)
   popPopup(void, App, Popup)
   openSymbolsPopup(void, App, seq[Symbol], proc(symbol: Symbol), proc(symbol: Symbol), proc())
@@ -632,13 +634,6 @@ when enableAst:
   import ast/[model_document]
 import selector_popup
 
-type FileSelectorItem* = ref object of SelectorItem
-  name*: string
-  directory*: string
-  path*: string
-  location*: Option[Cursor]
-  workspaceFolder*: Option[WorkspaceFolder]
-
 proc toFileLocationItem(self: FileSelectorItem): FileLocationItem =
   FileLocationItem(name: self.name, directory: self.directory, path: self.path, location: self.location, workspaceFolder: self.workspaceFolder)
 
@@ -654,21 +649,6 @@ proc setLocationList(self: App, list: seq[SelectorItem]) =
 
 type ThemeSelectorItem* = ref object of FileSelectorItem
   discard
-
-method changed*(self: FileSelectorItem, other: SelectorItem): bool =
-  let other = other.FileSelectorItem
-  return self.path != other.path
-
-method itemToJson*(self: FileSelectorItem): JsonNode = %*{
-    "score": self.score,
-    "path": self.path,
-    "name": self.name,
-    "directory": self.directory,
-    "workspace": if self.workspaceFolder.getSome(workspace):
-        workspace.id.toJson
-      else:
-        newJNull()
-  }
 
 method changed*(self: ThemeSelectorItem, other: SelectorItem): bool =
   let other = other.ThemeSelectorItem
@@ -1853,6 +1833,45 @@ proc createFile*(self: App, path: string) {.expose("editor").} =
 
   self.documents.add document
   discard self.createAndAddView(document)
+
+proc pushSelectorPopup*(self: App, builder: SelectorPopupBuilder): ISelectorPopup =
+  var popup = newSelectorPopup(self.asAppInterface, builder.scope)
+  popup.scale.x = builder.scaleX
+  popup.scale.y = builder.scaleY
+
+  if builder.getCompletions.isNotNil:
+    popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
+      return builder.getCompletions(popup.asISelectorPopup, text)
+
+  if builder.getCompletionsAsync.isNotNil:
+    popup.getCompletionsAsync = proc(popup: SelectorPopup, text: string): Future[seq[SelectorItem]] =
+      return builder.getCompletionsAsync(popup.asISelectorPopup, text)
+
+  if builder.getCompletionsAsyncIter.isNotNil:
+    popup.getCompletionsAsyncIter = proc(popup: SelectorPopup, text: string): Future[void]  =
+      return builder.getCompletionsAsyncIter(popup.asISelectorPopup, text)
+
+  popup.handleItemSelected = proc(item: SelectorItem) =
+    builder.handleItemSelected(popup.asISelectorPopup, item)
+
+  popup.handleItemConfirmed = proc(item: SelectorItem): bool =
+    return builder.handleItemConfirmed(popup.asISelectorPopup, item)
+
+  popup.handleCanceled = proc() =
+    builder.handleCanceled(popup.asISelectorPopup)
+
+  for command, handler in builder.customActions.pairs:
+    capture handler:
+      popup.addCustomCommand command, proc(popup: SelectorPopup, args: JsonNode): bool =
+        return handler(popup.asISelectorPopup, args)
+
+  popup.sortFunction = builder.sortFunction
+  popup.updateCompletions()
+
+  if builder.enableAutoSort:
+    popup.enableAutoSort()
+
+  self.pushPopup popup
 
 proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
   ## Opens a file dialog which shows all files in the currently open workspaces

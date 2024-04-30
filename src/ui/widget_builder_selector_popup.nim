@@ -3,7 +3,7 @@ import misc/[util, custom_logger, fuzzy_matching]
 import ui/node
 import platform/platform
 import ui/[widget_builders_base, widget_library]
-import app, selector_popup, theme
+import app, selector_popup, theme, file_selector_item
 
 logCategory "selector-popup-ui"
 
