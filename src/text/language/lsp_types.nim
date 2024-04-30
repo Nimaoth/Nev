@@ -757,7 +757,14 @@ proc to*(a: Response[JsonNode], T: typedesc): Response[T] =
       return Response[T](id: a.id, kind: ResponseKind.Error, error: a.error)
     of ResponseKind.Success:
       try:
-        return Response[T](id: a.id, kind: ResponseKind.Success, result: a.result.jsonTo(T, Joptions(allowMissingKeys: true, allowExtraKeys: true)))
+        when T is string:
+          if a.result.kind == JString:
+            return Response[T](id: a.id, kind: ResponseKind.Success, result: a.result.str)
+          else:
+            let error = ResponseError(code: -2, message: "Failed to convert result to " & $T, data: a.result)
+            return Response[T](id: a.id, kind: ResponseKind.Error, error: error)
+        else:
+          return Response[T](id: a.id, kind: ResponseKind.Success, result: a.result.jsonTo(T, Joptions(allowMissingKeys: true, allowExtraKeys: true)))
       except:
         let error = ResponseError(code: -2, message: "Failed to convert result to " & $T, data: a.result)
         return Response[T](id: a.id, kind: ResponseKind.Error, error: error)
