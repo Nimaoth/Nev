@@ -44,6 +44,23 @@ method loadFile*(self: WorkspaceFolderLocal, relativePath: string): Future[strin
 method saveFile*(self: WorkspaceFolderLocal, relativePath: string, content: string): Future[void] {.async.} =
   writeFile(self.getAbsolutePath(relativePath), content)
 
+proc loadIgnoreFile(self: WorkspaceFolderLocal, path: string): Option[Globs] =
+  try:
+    let globLines = readFile(self.getAbsolutePath(path))
+    return globLines.parseGlobs.some
+  except:
+    return Globs.none
+
+proc loadDefaultIgnoreFile(self: WorkspaceFolderLocal) =
+  if self.loadIgnoreFile(".absytree-ignore").getSome(ignore):
+    self.ignore = ignore
+    log lvlInfo, &"Using ignore file '.absytree-ignore' for workpace {self.name}"
+  elif self.loadIgnoreFile(".gitignore").getSome(ignore):
+    self.ignore = ignore
+    log lvlInfo, &"Using ignore file '.gitignore' for workpace {self.name}"
+  else:
+    log lvlInfo, &"No ignore file for workpace {self.name}"
+
 proc fillDirectoryListing(directoryListing: var DirectoryListing, path: string) =
   for (kind, file) in walkDir(path, relative=false):
     case kind
@@ -59,6 +76,7 @@ method getDirectoryListing*(self: WorkspaceFolderLocal, relativePath: string): F
     var res = DirectoryListing()
 
     if relativePath == "":
+      self.loadDefaultIgnoreFile()
       res.fillDirectoryListing(self.path)
       for path in self.additionalPaths:
         res.fillDirectoryListing(path)
@@ -117,13 +135,6 @@ proc createInfo(path: string, additionalPaths: seq[string]): Future[WorkspaceInf
   let additionalPaths = additionalPaths.mapIt((it.absolutePath, it.some))
   return WorkspaceInfo(name: path, folders: @[(path.absolutePath, path.some)] & additionalPaths)
 
-proc loadIgnoreFile(self: WorkspaceFolderLocal, path: string): Option[Globs] =
-  try:
-    let globLines = readFile(self.getAbsolutePath(path))
-    return globLines.parseGlobs.some
-  except:
-    return Globs.none
-
 proc newWorkspaceFolderLocal*(path: string, additionalPaths: seq[string] = @[]): WorkspaceFolderLocal =
   new result
   result.path = path
@@ -131,14 +142,7 @@ proc newWorkspaceFolderLocal*(path: string, additionalPaths: seq[string] = @[]):
   result.info = createInfo(path, additionalPaths)
   result.additionalPaths = additionalPaths
 
-  if result.loadIgnoreFile(".absytree-ignore").getSome(ignore):
-    result.ignore = ignore
-    log lvlInfo, &"Using ignore file '.absytree-ignore' for workpace {result.name}"
-  elif result.loadIgnoreFile(".gitignore").getSome(ignore):
-    result.ignore = ignore
-    log lvlInfo, &"Using ignore file '.gitignore' for workpace {result.name}"
-  else:
-    log lvlInfo, &"No ignore file for workpace {result.name}"
+  result.loadDefaultIgnoreFile()
 
 proc newWorkspaceFolderLocal*(settings: JsonNode): WorkspaceFolderLocal =
   let path = settings["path"].getStr
