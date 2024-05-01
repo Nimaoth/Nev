@@ -22,6 +22,13 @@ createJavascriptPrototype("editor.text")
 let searchResultsId = newId()
 let errorNodesHighlightId = newId()
 
+type TextSymbolSelectorItem* = ref object of FileSelectorItem
+  symbol*: Symbol
+
+method changed*(self: TextSymbolSelectorItem, other: SelectorItem): bool =
+  let other = other.TextSymbolSelectorItem
+  return self.symbol != other.symbol
+
 type
   Command = object
     isInput: bool
@@ -1771,6 +1778,7 @@ proc gotoLocationAsync(self: TextDocumentEditor, locations: seq[Definition]): Fu
           location: location.location.some
         )
 
+      res.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Ascending)
       res
 
     builder.handleItemConfirmed = proc(popup: ISelectorPopup, item: SelectorItem): bool =
@@ -1883,8 +1891,54 @@ proc showCompletionWindow(self: TextDocumentEditor) =
   self.showCompletions = true
   self.markDirty()
 
+proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], navigateOnSelect: bool) =
+  let lastSelection = self.selection
+  var builder = SelectorPopupBuilder()
+  builder.scope = "text-lsp-symbols".some
+  builder.scaleX = 0.3
+  builder.enableAutoSort = true
+  builder.sortFunction = proc(a, b: SelectorItem): int = cmp(a.FileSelectorItem.score, b.FileSelectorItem.score)
+
+  builder.getCompletions = proc(popup: ISelectorPopup, text: string): seq[SelectorItem] =
+    var res = newSeq[SelectorItem]()
+    for i, symbol in symbols:
+      let score = if text.len == 0:
+        symbols.len - i
+      else:
+        matchFuzzySublime(text, symbol.name, defaultPathMatchingConfig).score
+
+      let (dir, name) = symbol.filename.splitPath
+      res.add TextSymbolSelectorItem(
+        name: symbol.name,
+        directory: dir,
+        path: symbol.filename,
+        score: score.float,
+        workspaceFolder: self.document.workspace,
+        location: symbol.location.some,
+        symbol: symbol,
+      )
+
+    res.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Ascending)
+    res
+
+  builder.handleItemConfirmed = proc(popup: ISelectorPopup, item: SelectorItem): bool =
+    let item = item.FileSelectorItem
+    self.openFileAt(item.path, item.location.mapIt(it.toSelection))
+    true
+
+  builder.handleItemSelected = proc(popup: ISelectorPopup, item: SelectorItem) =
+    if navigateOnSelect:
+      let item = item.FileSelectorItem
+      self.openFileAt(item.path, item.location.mapIt(it.toSelection))
+
+  builder.handleCanceled = proc(popup: ISelectorPopup) =
+    self.openFileAt(self.document.filename, lastSelection.some)
+
+  let popup = self.app.pushSelectorPopup(builder)
+
 proc openSymbolsPopup(self: TextDocumentEditor, symbols: seq[Symbol]) =
   let selections = self.selections
+
   self.app.openSymbolsPopup(symbols,
     handleItemSelected=(proc(symbol: Symbol) =
       self.noSelectionHistory:
@@ -1909,9 +1963,16 @@ proc gotoSymbolAsync(self: TextDocumentEditor): Future[void] {.async.} =
     if symbols.len == 0:
       return
 
-    self.openSymbolsPopup(symbols)
+    self.openSymbolSelectorPopup(symbols, navigateOnSelect=true)
 
-  self.markDirty()
+proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Future[void] {.async.} =
+  let languageServer = await self.document.getLanguageServer()
+  if languageServer.getSome(ls):
+    let symbols = await ls.getWorkspaceSymbols(query)
+    if symbols.len == 0:
+      return
+
+    self.openSymbolSelectorPopup(symbols, navigateOnSelect=false)
 
 proc gotoDefinition*(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncCheck self.gotoDefinitionAsync()
@@ -1939,6 +2000,9 @@ proc getCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
 
 proc gotoSymbol*(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncCheck self.gotoSymbolAsync()
+
+proc gotoWorkspaceSymbol*(self: TextDocumentEditor, query: string = "") {.expose("editor.text").} =
+  asyncCheck self.gotoWorkspaceSymbolAsync(query)
 
 proc hideCompletions*(self: TextDocumentEditor) {.expose("editor.text").} =
   # log lvlInfo, fmt"hideCompletions {self.document.filename}"
