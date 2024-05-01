@@ -59,6 +59,7 @@ type Symbol* = object
   name*: string
   symbolType*: SymbolType
   filename*: string
+  score*: Option[float]
 
 type InlayHint* = object
   location*: Cursor
@@ -98,6 +99,7 @@ method switchSourceHeader*(self: LanguageServer, filename: string): Future[Optio
 method getCompletions*(self: LanguageServer, languageId: string, filename: string, location: Cursor): Future[lsp_types.Response[lsp_types.CompletionList]] {.base.} = discard
 method saveTempFile*(self: LanguageServer, filename: string, content: string): Future[void] {.base.} = discard
 method getSymbols*(self: LanguageServer, filename: string): Future[seq[Symbol]] {.base.} = discard
+method getWorkspaceSymbols*(self: LanguageServer, query: string): Future[seq[Symbol]] {.base.} = discard
 method getHover*(self: LanguageServer, filename: string, location: Cursor): Future[Option[string]] {.base.} = discard
 method getInlayHints*(self: LanguageServer, filename: string, selection: Selection): Future[seq[InlayHint]] {.base.} = discard
 method getDiagnostics*(self: LanguageServer, filename: string): Future[lsp_types.Response[seq[Diagnostic]]] {.base.} = discard

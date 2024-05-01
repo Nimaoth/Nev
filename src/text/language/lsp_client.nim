@@ -640,6 +640,16 @@ proc getSymbols*(client: LSPClient, filename: string): Future[Response[DocumentS
 
   return (await client.sendRequest("textDocument/documentSymbol", params)).to DocumentSymbolResponse
 
+proc getWorkspaceSymbols*(client: LSPClient, query: string): Future[Response[WorkspaceSymbolResponse]] {.async.} =
+  debugf"[getWorkspaceSymbols]"
+  client.cancelAllOf("workspace/symbol")
+
+  let params = WorkspaceSymbolParams(
+    query: query
+  ).toJson
+
+  return (await client.sendRequest("workspace/symbol", params)).to WorkspaceSymbolResponse
+
 proc getDiagnostics*(client: LSPClient, filename: string): Future[Response[DocumentDiagnosticResponse]] {.async.} =
   # debugf"[getSymbols] {filename.absolutePath}:{line}:{column}"
   let path = client.translatePath(filename).await

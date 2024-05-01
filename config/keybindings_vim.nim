@@ -1243,6 +1243,7 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommand "", "gi", "goto-implementation"
   addTextCommand "", "gT", "goto-type-definition"
   addTextCommand "", "gs", "goto-symbol"
+  addTextCommand "", "gw", "goto-workspace-symbol"
   addTextCommand "", "gr", "goto-references"
   addTextCommand "", "go", "switch-source-header"
   addTextCommand "", "K", "show-hover-for-current"

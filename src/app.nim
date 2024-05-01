@@ -1869,14 +1869,17 @@ proc pushSelectorPopup*(self: App, builder: SelectorPopupBuilder): ISelectorPopu
     popup.getCompletionsAsyncIter = proc(popup: SelectorPopup, text: string): Future[void]  =
       return builder.getCompletionsAsyncIter(popup.asISelectorPopup, text)
 
-  popup.handleItemSelected = proc(item: SelectorItem) =
-    builder.handleItemSelected(popup.asISelectorPopup, item)
+  if builder.handleItemSelected.isNotNil:
+    popup.handleItemSelected = proc(item: SelectorItem) =
+      builder.handleItemSelected(popup.asISelectorPopup, item)
 
-  popup.handleItemConfirmed = proc(item: SelectorItem): bool =
-    return builder.handleItemConfirmed(popup.asISelectorPopup, item)
+  if builder.handleItemConfirmed.isNotNil:
+    popup.handleItemConfirmed = proc(item: SelectorItem): bool =
+      return builder.handleItemConfirmed(popup.asISelectorPopup, item)
 
-  popup.handleCanceled = proc() =
-    builder.handleCanceled(popup.asISelectorPopup)
+  if builder.handleCanceled.isNotNil:
+    popup.handleCanceled = proc() =
+      builder.handleCanceled(popup.asISelectorPopup)
 
   for command, handler in builder.customActions.pairs:
     capture handler:
@@ -2465,15 +2468,6 @@ proc exploreFiles*(self: App) {.expose("editor").} =
     popup.enableAutoSort()
 
     self.pushPopup popup
-
-type TextSymbolSelectorItem* = ref object of SelectorItem
-  symbol*: Symbol
-
-method changed*(self: TextSymbolSelectorItem, other: SelectorItem): bool =
-  let other = other.TextSymbolSelectorItem
-  return self.symbol != other.symbol
-
-method itemToJson*(self: TextSymbolSelectorItem): JsonNode = self[].toJson
 
 proc openSymbolsPopup*(self: App, symbols: seq[Symbol], handleItemSelected: proc(symbol: Symbol), handleItemConfirmed: proc(symbol: Symbol), handleCanceled: proc()) =
   defer:

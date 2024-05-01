@@ -328,6 +328,36 @@ method getInlayHints*(self: LanguageServerLSP, filename: string, selection: Sele
 
   return newSeq[language_server_base.InlayHint]()
 
+proc toInternalSymbolKind(symbolKind: SymbolKind): SymbolType =
+  case symbolKind
+  # of File: 1
+  # of Module: 2
+  # of Namespace: 3
+  # of Package: 4
+  # of Class: 5
+  of Method: SymbolType.Method
+  # of Property: 7
+  # of Field: 8
+  # of Constructor: 9
+  # of Enum: 10
+  # of Interface: 11
+  of Function: Function
+  of Variable: Variable
+  # of Constant: 14
+  # of String: 15
+  # of Number: 16
+  # of Boolean: 17
+  # of Array: 18
+  # of Object: 19
+  # of Key: 20
+  # of Null: 21
+  # of EnumMember: 22
+  # of Struct: 23
+  # of Event: 24
+  # of Operator: 25
+  # of TypeParameter: 26
+  else: Unknown
+
 method getSymbols*(self: LanguageServerLSP, filename: string): Future[seq[Symbol]] {.async.} =
   var completions: seq[Symbol]
 
@@ -344,34 +374,7 @@ method getSymbols*(self: LanguageServerLSP, filename: string): Future[seq[Symbol
 
   elif parsedResponse.asSymbolInformationSeq().getSome(symbols):
     for r in symbols:
-      let symbolKind: SymbolType = case r.kind
-      # of File: 1
-      # of Module: 2
-      # of Namespace: 3
-      # of Package: 4
-      # of Class: 5
-      of Method: SymbolType.Method
-      # of Property: 7
-      # of Field: 8
-      # of Constructor: 9
-      # of Enum: 10
-      # of Interface: 11
-      of Function: Function
-      of Variable: Variable
-      # of Constant: 14
-      # of String: 15
-      # of Number: 16
-      # of Boolean: 17
-      # of Array: 18
-      # of Object: 19
-      # of Key: 20
-      # of Null: 21
-      # of EnumMember: 22
-      # of Struct: 23
-      # of Event: 24
-      # of Operator: 25
-      # of TypeParameter: 26
-      else: Unknown
+      let symbolKind = r.kind.toInternalSymbolKind
 
       completions.add Symbol(
         location: (line: r.location.range.start.line, column: r.location.range.start.character),
@@ -379,6 +382,36 @@ method getSymbols*(self: LanguageServerLSP, filename: string): Future[seq[Symbol
         symbolType: symbolKind,
         filename: r.location.uri.decodeUrl.parseUri.path.normalizePathUnix,
       )
+
+  return completions
+
+method getWorkspaceSymbols*(self: LanguageServerLSP, query: string): Future[seq[Symbol]] {.async.} =
+  var completions: seq[Symbol]
+
+  let response = await self.client.getWorkspaceSymbols(query)
+  if response.isError:
+    log(lvlError, &"Error: {response.error}")
+    return completions
+
+  let parsedResponse = response.result
+
+  if parsedResponse.asWorkspaceSymbolSeq().getSome(symbols):
+    for s in symbols:
+      debug s
+
+  elif parsedResponse.asSymbolInformationSeq().getSome(symbols):
+    for r in symbols:
+      let symbolKind = r.kind.toInternalSymbolKind
+
+      completions.add Symbol(
+        location: (line: r.location.range.start.line, column: r.location.range.start.character),
+        name: r.name,
+        symbolType: symbolKind,
+        filename: r.location.uri.decodeUrl.parseUri.path.normalizePathUnix,
+      )
+
+  else:
+    log lvlError, &"Failed to parse getWorkspaceSymbols response"
 
   return completions
 

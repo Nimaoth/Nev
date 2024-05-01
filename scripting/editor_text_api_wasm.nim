@@ -2403,6 +2403,25 @@ proc gotoSymbol*(self: TextDocumentEditor) =
       argsJsonString.cstring)
 
 
+proc editor_text_gotoWorkspaceSymbol_void_TextDocumentEditor_string_wasm(
+    arg: cstring): cstring {.importc.}
+proc gotoWorkspaceSymbol*(self: TextDocumentEditor; query: string = "") =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when string is JsonNode:
+      query
+    else:
+      query.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_gotoWorkspaceSymbol_void_TextDocumentEditor_string_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_hideCompletions_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
     importc.}
 proc hideCompletions*(self: TextDocumentEditor) =

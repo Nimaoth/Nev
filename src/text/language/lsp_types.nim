@@ -508,9 +508,18 @@ type
     name*: string
     kind*: SymbolKind
     tags*: seq[SymbolTag]
-    deprecated*: Option[bool]
-    location*: Location
     containerName*: Option[string]
+    location*: Location
+    score*: Option[float]
+    deprecated*: Option[bool]
+
+  WorkspaceSymbol* = object
+    name*: string
+    kind*: SymbolKind
+    tags*: seq[SymbolTag]
+    containerName*: Option[string]
+    location*: JsonNode
+    data*: Option[JsonNode]
 
   DocumentSymbol* = object
     name*: string
@@ -577,6 +586,11 @@ type
   DocumentHoverResponse* = object
     contents*: HoverContentVariant
     range*: Option[Range]
+
+  WorkspaceSymbolParams* = object
+    workDoneProgress*: bool
+    partialResultToken*: Option[ProgressToken]
+    query*: string
 
   InlayHintParams* = object
     workDoneProgress*: bool
@@ -655,6 +669,7 @@ variant(ReferenceResponseVariant, seq[Location])
 variant(DocumentSymbolResponseVariant, seq[DocumentSymbol], seq[SymbolInformation])
 variant(DocumentHoverResponseVariant, seq[DocumentSymbol], seq[SymbolInformation])
 variant(DocumentDiagnosticResponse, RelatedFullDocumentDiagnosticReport, RelatedUnchangedDocumentDiagnosticReport)
+variant(WorkspaceSymbolResponseVariant, seq[WorkspaceSymbol], seq[SymbolInformation])
 
 type CompletionResponse* = CompletionResponseVariant
 type DefinitionResponse* = DefinitionResponseVariant
@@ -664,6 +679,7 @@ type ImplementationResponse* = ImplementationResponseVariant
 type ReferenceResponse* = ReferenceResponseVariant
 type DocumentSymbolResponse* = DocumentSymbolResponseVariant
 type InlayHintResponse* = Option[seq[InlayHint]]
+type WorkspaceSymbolResponse* = WorkspaceSymbolResponseVariant
 
 variant(TextDocumentSyncVariant, TextDocumentSyncOptions, TextDocumentSyncKind)
 variant(HoverProviderVariant, bool, HoverOptions)
