@@ -84,7 +84,10 @@ proc getDirectoryListingRec*(folder: WorkspaceFolder, path: string): Future[seq[
   return resultItems
 
 proc shouldIgnore(folder: WorkspaceFolder, path: string): bool =
-  if folder.ignore.matches(path) or folder.ignore.matches(path.extractFilename):
+  if folder.ignore.excludePath(path) or folder.ignore.excludePath(path.extractFilename):
+    if folder.ignore.includePath(path) or folder.ignore.includePath(path.extractFilename):
+      return false
+
     return true
   return false
 
