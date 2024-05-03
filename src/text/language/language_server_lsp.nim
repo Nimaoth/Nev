@@ -329,34 +329,10 @@ method getInlayHints*(self: LanguageServerLSP, filename: string, selection: Sele
   return newSeq[language_server_base.InlayHint]()
 
 proc toInternalSymbolKind(symbolKind: SymbolKind): SymbolType =
-  case symbolKind
-  # of File: 1
-  # of Module: 2
-  # of Namespace: 3
-  # of Package: 4
-  # of Class: 5
-  of Method: SymbolType.Method
-  # of Property: 7
-  # of Field: 8
-  # of Constructor: 9
-  # of Enum: 10
-  # of Interface: 11
-  of Function: Function
-  of Variable: Variable
-  # of Constant: 14
-  # of String: 15
-  # of Number: 16
-  # of Boolean: 17
-  # of Array: 18
-  # of Object: 19
-  # of Key: 20
-  # of Null: 21
-  # of EnumMember: 22
-  # of Struct: 23
-  # of Event: 24
-  # of Operator: 25
-  # of TypeParameter: 26
-  else: Unknown
+  try:
+    return SymbolType(symbolKind.ord)
+  except:
+    return SymbolType.Unknown
 
 method getSymbols*(self: LanguageServerLSP, filename: string): Future[seq[Symbol]] {.async.} =
   var completions: seq[Symbol]
