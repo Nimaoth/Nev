@@ -222,6 +222,7 @@ proc invokeAnyCallback*(self: App, context: string, args: JsonNode): JsonNode
 proc registerEditor*(self: App, editor: DocumentEditor): void
 proc unregisterEditor*(self: App, editor: DocumentEditor): void
 proc tryActivateEditor*(self: App, editor: DocumentEditor): void
+proc getActiveEditor*(self: App): Option[DocumentEditor]
 proc getEditorForId*(self: App, id: EditorId): Option[DocumentEditor]
 proc getPopupForId*(self: App, id: EditorId): Option[Popup]
 proc createSelectorPopup*(self: App): Popup
@@ -254,6 +255,7 @@ implTrait AppInterface, App:
   invokeAnyCallback(JsonNode, App, string, JsonNode)
   registerEditor(void, App, DocumentEditor)
   tryActivateEditor(void, App, DocumentEditor)
+  getActiveEditor(Option[DocumentEditor], App)
   unregisterEditor(void, App, DocumentEditor)
   getEditorForId(Option[DocumentEditor], App, EditorId)
   getPopupForId(Option[Popup], App, EditorId)
@@ -922,7 +924,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   self.commandLineMode = false
 
-  self.absytreeCommandsServer = newLanguageServerAbsytreeCommands()
+  self.absytreeCommandsServer = newLanguageServerAbsytreeCommands(self.asAppInterface)
   let commandLineTextDocument = newTextDocument(self.asConfigProvider, language="absytree-commands".some, languageServer=self.absytreeCommandsServer.some)
   self.documents.add commandLineTextDocument
   self.commandLineTextEditor = newTextEditor(commandLineTextDocument, self.asAppInterface, self.asConfigProvider)
@@ -2863,6 +2865,12 @@ else:
   proc getActiveEditor2*(self: App): EditorId {.expose("editor").} =
     ## Returns the active editor instance
     return getActiveEditor()
+
+proc getActiveEditor*(self: App): Option[DocumentEditor] =
+  if self.currentView >= 0 and self.currentView < self.views.len:
+    return self.views[self.currentView].editor.some
+
+  return DocumentEditor.none
 
 proc loadCurrentConfig*(self: App) {.expose("editor").} =
   ## Opens the default config file in a new view.

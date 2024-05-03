@@ -3,15 +3,17 @@ import misc/[custom_logger, custom_async, util]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import text/language/[language_server_base, lsp_types]
 import platform/filesystem
-import dispatch_tables
+import dispatch_tables, app_interface, document_editor
 
 logCategory "language_server_absytree_commands"
 
 type LanguageServerAbsytreeCommands* = ref object of LanguageServer
+  app: AppInterface
   files: Table[string, string]
 
-proc newLanguageServerAbsytreeCommands*(): LanguageServer =
+proc newLanguageServerAbsytreeCommands*(app: AppInterface): LanguageServer =
   var server = new LanguageServerAbsytreeCommands
+  server.app = app
   return server
 
 method getDefinition*(self: LanguageServerAbsytreeCommands, filename: string, location: Cursor): Future[Option[Definition]] {.async.} =
@@ -31,7 +33,11 @@ method getCompletions*(self: LanguageServerAbsytreeCommands, languageId: string,
 
   var completions: seq[CompletionItem]
   if useActive:
+    let currentNamespace = self.app.getActiveEditor().mapIt(it.getNamespace)
     for table in activeDispatchTables.mitems:
+      if not table.global and table.namespace.some != currentNamespace:
+        continue
+
       for value in table.functions.values:
         completions.add CompletionItem(
           label: value.name,

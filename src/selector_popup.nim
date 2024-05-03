@@ -1,7 +1,7 @@
 import std/[strutils, sugar, options, json, streams, tables]
 import bumpy, vmath
 import misc/[util, rect_utils, comb_sort, timer, event, custom_async, custom_logger, cancellation_token, myjsonutils, fuzzy_matching, traits]
-import app_interface, text/text_editor, popup, events, scripting/expose, input, selector_popup_builder
+import app_interface, text/text_editor, popup, events, scripting/expose, input, selector_popup_builder, dispatch_tables
 from scripting_api as api import nil
 
 export popup, selector_popup_builder
@@ -278,6 +278,7 @@ proc next*(self: SelectorPopup) {.expose("popup.selector").} =
   self.markDirty()
 
 genDispatcher("popup.selector")
+addActiveDispatchTable "popup.selector", genDispatchTable("popup.selector")
 
 proc handleAction*(self: SelectorPopup, action: string, arg: string): EventResponse =
   # debugf"SelectorPopup.handleAction {action} '{arg}'"

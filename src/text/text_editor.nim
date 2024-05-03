@@ -7,7 +7,7 @@ import scripting/[expose]
 import platform/[platform, filesystem]
 import language/[language_server_base]
 import document, document_editor, events, vmath, bumpy, input, custom_treesitter, indent, text_document, snippet
-import completion, completion_provider_document, completion_provider_lsp, completion_provider_snippet, file_selector_item, selector_popup_builder
+import completion, completion_provider_document, completion_provider_lsp, completion_provider_snippet, file_selector_item, selector_popup_builder, dispatch_tables
 import config_provider, app_interface
 import diff
 import workspaces/workspace
@@ -316,6 +316,8 @@ method deinit*(self: TextDocumentEditor) =
 
 # proc `=destroy`[T: object](doc: var TextDocument) =
 #   doc.tsParser.tsParserDelete()
+
+method getNamespace*(self: TextDocumentEditor): string = "editor.text"
 
 method canEdit*(self: TextDocumentEditor, document: Document): bool =
   if document of TextDocument: return true
@@ -2488,7 +2490,7 @@ proc runDragCommand*(self: TextDocumentEditor) {.expose("editor.text").} =
     self.runTripleClickCommand()
 
 genDispatcher("editor.text")
-# addGlobalDispatchTable "editor.text", genDispatchTable("editor.text")
+addActiveDispatchTable "editor.text", genDispatchTable("editor.text")
 
 proc getStyledText*(self: TextDocumentEditor, i: int): StyledLine =
   result = StyledLine(index: i, parts: self.document.getStyledText(i).parts)

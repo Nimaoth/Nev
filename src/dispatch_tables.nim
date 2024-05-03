@@ -10,36 +10,37 @@ type
     signature*: string
 
   DispatchTable* = object
-    scope*: string
+    namespace*: string
     functions*: Table[string, ExposedFunction]
+    global*: bool
 
 var globalDispatchTables*: seq[DispatchTable] = @[]
 var activeDispatchTables*: seq[DispatchTable] = @[]
 
-proc addGlobalDispatchTable*(scope: string, functions: openArray[ExposedFunction]) =
-  var table = DispatchTable(scope: scope)
+proc addGlobalDispatchTable*(namespace: string, functions: openArray[ExposedFunction]) =
+  var table = DispatchTable(namespace: namespace)
   table.functions = initTable[string, ExposedFunction]()
   for function in functions:
     table.functions[function.name] = function
   globalDispatchTables.add table
 
-proc extendGlobalDispatchTable*(scope: string, function: ExposedFunction) =
+proc extendGlobalDispatchTable*(namespace: string, function: ExposedFunction) =
   for table in globalDispatchTables.mitems:
-    if table.scope == scope:
+    if table.namespace == namespace:
       table.functions[function.name] = function
       return
-  addGlobalDispatchTable(scope, [function])
+  addGlobalDispatchTable(namespace, [function])
 
-proc addActiveDispatchTable*(scope: string, functions: openArray[ExposedFunction]) =
-  var table = DispatchTable(scope: scope)
+proc addActiveDispatchTable*(namespace: string, functions: openArray[ExposedFunction], global: bool = false) =
+  var table = DispatchTable(namespace: namespace, global: global)
   table.functions = initTable[string, ExposedFunction]()
   for function in functions:
     table.functions[function.name] = function
   activeDispatchTables.add table
 
-proc extendActiveDispatchTable*(scope: string, function: ExposedFunction) =
+proc extendActiveDispatchTable*(namespace: string, function: ExposedFunction) =
   for table in activeDispatchTables.mitems:
-    if table.scope == scope:
+    if table.namespace == namespace:
       table.functions[function.name] = function
       return
-  addActiveDispatchTable(scope, [function])
+  addActiveDispatchTable(namespace, [function])
