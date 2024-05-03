@@ -3,7 +3,7 @@ import misc/[custom_logger, async_http_client, websocket, util, event, myjsonuti
 import platform/filesystem
 import scripting/expose
 from workspaces/workspace as ws import nil
-import lsp_types
+import lsp_types, dispatch_tables
 
 export lsp_types
 
@@ -781,3 +781,5 @@ proc lspToggleLogServerDebug*() {.expose("lsp").} =
 proc lspLogServerDebug*(val: bool) {.expose("lsp").} =
   debugf"lspLogServerDebug {val}"
   logServerDebug = val
+
+addActiveDispatchTable "lsp", genDispatchTable("lsp"), global=true

@@ -23,6 +23,7 @@ traitRef AppInterface:
   method registerEditor*(self: AppInterface, editor: DocumentEditor): void
   method unregisterEditor*(self: AppInterface, editor: DocumentEditor): void
   method tryActivateEditor*(self: AppInterface, editor: DocumentEditor)
+  method getActiveEditor*(self: AppInterface): Option[DocumentEditor]
   method getEditorForId*(self: AppInterface, id: EditorId): Option[DocumentEditor]
   method getPopupForId*(self: AppInterface, id: EditorId): Option[Popup]
   method createSelectorPopup*(self: AppInterface): Popup

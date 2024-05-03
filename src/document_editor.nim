@@ -40,6 +40,8 @@ proc resetDirty*(self: DocumentEditor) =
 method handleActivate*(self: DocumentEditor) {.base.} = discard
 method handleDeactivate*(self: DocumentEditor) {.base.} = discard
 
+method getNamespace*(self: DocumentEditor): string {.base.} = discard
+
 proc `active=`*(self: DocumentEditor, newActive: bool) =
   let changed = if newActive != self.active:
     self.markDirty()

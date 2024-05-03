@@ -825,6 +825,8 @@ proc handleFinishedRedoTransaction*(self: ModelDocumentEditor, document: ModelDo
   self.transactionCursors[transaction.id] = self.mCursorBeforeTransaction
   self.mCursorBeforeTransaction = self.selection
 
+method getNamespace*(self: ModelDocumentEditor): string = "editor.model"
+
 method handleDocumentChanged*(self: ModelDocumentEditor) =
   log lvlInfo, fmt"Document changed"
   # self.selectionHistory.clear
