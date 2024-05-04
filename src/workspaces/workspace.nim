@@ -1,5 +1,5 @@
 import std/[json, options, os]
-import misc/[custom_async, id, array_buffer, cancellation_token, util, regex, custom_logger]
+import misc/[custom_async, id, array_buffer, cancellation_token, util, regex, custom_logger, event]
 import platform/filesystem
 
 logCategory "workspace"
@@ -17,6 +17,8 @@ type
     info*: Future[WorkspaceInfo]
     id*: Id
     ignore*: Globs
+    cachedFiles*: seq[string]
+    onCachedFilesUpdated*: Event[void]
 
   DirectoryListing* = object
     files*: seq[string]
@@ -32,6 +34,7 @@ method isReadOnly*(self: WorkspaceFolder): bool {.base.} = true
 method settings*(self: WorkspaceFolder): JsonNode {.base.} = discard
 
 method clearDirectoryCache*(self: WorkspaceFolder) {.base.} = discard
+method recomputeFileCache*(self: WorkspaceFolder) {.base.} = discard
 
 method loadFile*(self: WorkspaceFolder, relativePath: string): Future[string] {.base.} = discard
 method saveFile*(self: WorkspaceFolder, relativePath: string, content: string): Future[void] {.base.} = discard

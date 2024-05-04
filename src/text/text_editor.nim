@@ -2,7 +2,7 @@ import std/[strutils, sequtils, sugar, options, json, streams, strformat, tables
 import chroma
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
-import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_matching, custom_unicode, delayed_task, myjsonutils, regex]
+import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_matching, custom_unicode, delayed_task, myjsonutils, regex, timer]
 import scripting/[expose]
 import platform/[platform, filesystem]
 import language/[language_server_base]
@@ -11,6 +11,7 @@ import completion, completion_provider_document, completion_provider_lsp, comple
 import config_provider, app_interface
 import diff
 import workspaces/workspace
+import finder/finder
 
 from language/lsp_types import Response, CompletionList, CompletionItem, InsertTextFormat, TextEdit, Range, Position, isSuccess, asTextEdit, asInsertReplaceEdit
 
@@ -1967,14 +1968,57 @@ proc gotoSymbolAsync(self: TextDocumentEditor): Future[void] {.async.} =
 
     self.openSymbolSelectorPopup(symbols, navigateOnSelect=true)
 
+type
+  LspWorkspaceSymbolsDataSource* = ref object of DataSource
+    languageServer: LanguageServer
+    query: string
+    delayedTask: DelayedTask
+
+proc getWorkspaceSymbols(self: LspWorkspaceSymbolsDataSource): Future[void] {.async.} =
+  let query = self.query
+  debugf"[getWorkspaceSymbols] '{self.query}'"
+  let symbols = self.languageServer.getWorkspaceSymbols(self.query).await
+  debugf"[getWorkspaceSymbols] '{query}' -> {symbols.len}"
+
+  let t = startTimer()
+  var items = newSeq[FinderItem]()
+  for i, symbol in symbols:
+    items.add FinderItem(displayName: symbol.name, filterText: symbol.name)
+  debugf"[getWorkspaceSymbols] {t.elapsed.ms}ms"
+
+  self.onItemsChanged.invoke items
+
+proc newLspWorkspaceSymbolsDataSource(languageServer: LanguageServer): LspWorkspaceSymbolsDataSource =
+  new result
+  result.languageServer = languageServer
+
+method setQuery*(self: LspWorkspaceSymbolsDataSource, query: string) =
+  debugf"[setQuery] '{query}'"
+  self.query = query
+
+  if self.delayedTask.isNil:
+    self.delayedTask = startDelayed(200, repeat=false):
+      asyncCheck self.getWorkspaceSymbols()
+  else:
+    self.delayedTask.reschedule()
+
 proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Future[void] {.async.} =
   let languageServer = await self.document.getLanguageServer()
   if languageServer.getSome(ls):
-    let symbols = await ls.getWorkspaceSymbols(query)
-    if symbols.len == 0:
-      return
+    let lastSelection = self.selection
+    var builder = SelectorPopupBuilder()
+    builder.scope = "text-lsp-symbols".some
+    builder.scaleX = 0.3
 
-    self.openSymbolSelectorPopup(symbols, navigateOnSelect=false)
+    let finder = newFinder(newLspWorkspaceSymbolsDataSource(ls), filterAndSort=true)
+    builder.finder = finder.some
+
+    builder.handleItemConfirmed = proc(popup: ISelectorPopup, item: SelectorItem): bool =
+      let item = item.FileSelectorItem
+      self.openFileAt(item.path, item.location.mapIt(it.toSelection))
+      true
+
+    let popup = self.app.pushSelectorPopup(builder)
 
 proc gotoDefinition*(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncCheck self.gotoDefinitionAsync()

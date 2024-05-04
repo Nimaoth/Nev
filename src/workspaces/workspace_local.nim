@@ -1,5 +1,5 @@
 import std/[os, json, options, sequtils, strutils]
-import misc/[custom_async, custom_logger, async_process, util, regex]
+import misc/[custom_async, custom_logger, async_process, util, regex, timer, event]
 import platform/filesystem
 import workspace
 
@@ -14,6 +14,54 @@ method settings*(self: WorkspaceFolderLocal): JsonNode =
   result = newJObject()
   result["path"] = newJString(self.path.absolutePath)
   result["additionalPaths"] = %self.additionalPaths
+
+proc ignorePath*(ignore: Globs, path: string): bool =
+  let path = path.normalizePathUnix
+  if ignore.excludePath(path) or ignore.excludePath(path.extractFilename):
+    if ignore.includePath(path) or ignore.includePath(path.extractFilename):
+      return false
+
+    return true
+  return false
+
+proc collectFiles(dir: string, ignore: Globs, files: var seq[string]) =
+  if ignore.ignorePath(dir):
+    return
+
+  for (kind, path) in walkDir(dir, relative=false):
+    case kind
+    of pcFile:
+      if ignore.ignorePath(path):
+        continue
+
+      files.add path
+    of pcDir:
+      collectFiles(path, ignore, files)
+    else:
+      discard
+
+proc collectFilesThread(args: tuple[roots: seq[string], ignore: Globs]): tuple[files: seq[string], time: float] {.gcsafe.} =
+  try:
+    let t = startTimer()
+
+    for path in args.roots:
+      collectFiles(path, args.ignore, result.files)
+
+    result.time = t.elapsed.ms
+  except:
+    discard
+
+proc recomputeFileCacheAsync(self: WorkspaceFolderLocal): Future[void] {.async.} =
+  debugf"[recomputeFileCacheAsync] Start"
+
+  let res = spawnAsync(collectFilesThread, (@[self.path] & self.additionalPaths, self.ignore)).await
+  debugf"[recomputeFileCacheAsync] Finished in {res.time}ms"
+
+  self.cachedFiles = res.files
+  self.onCachedFilesUpdated.invoke()
+
+method recomputeFileCache*(self: WorkspaceFolderLocal) =
+  asyncCheck self.recomputeFileCacheAsync()
 
 proc getAbsolutePath(self: WorkspaceFolderLocal, relativePath: string): string =
   if relativePath.isAbsolute:
