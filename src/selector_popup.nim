@@ -1,8 +1,9 @@
 import std/[strutils, sugar, options, json, streams, tables]
 import bumpy, vmath
 import misc/[util, rect_utils, comb_sort, timer, event, custom_async, custom_logger, cancellation_token, myjsonutils, fuzzy_matching, traits]
-import app_interface, text/text_editor, popup, events, scripting/expose, input, selector_popup_builder, dispatch_tables
+import app_interface, text/text_editor, popup, events, scripting/expose, input, selector_popup_builder, file_selector_item, dispatch_tables
 from scripting_api as api import nil
+import finder/finder
 
 export popup, selector_popup_builder
 
@@ -50,6 +51,8 @@ type
     lastSortGap: int = 1
     autoSortActive: bool = false
     sortFunction*: proc(a, b: SelectorItem): int
+
+    finder: Finder
 
   NamedSelectorItem* = ref object of SelectorItem
     name*: string
@@ -312,12 +315,26 @@ proc handleTextChanged*(self: SelectorPopup) =
   if self.textEditor.isNil:
     return
 
+  if self.finder.isNotNil:
+    self.finder.setQuery(self.getSearchString())
+
   self.updateCompletions()
   self.selected = 0
 
   if not self.handleItemSelected.isNil and self.selected < self.completions.len:
     self.handleItemSelected self.completions[self.completions.high - self.selected]
 
+  self.markDirty()
+
+proc handleItemsUpdated*(self: SelectorPopup) =
+  if self.textEditor.isNil or self.finder.isNil:
+    return
+
+  self.completions.setLen 0
+  for item in self.finder.filteredItems:
+    self.completions.add FileSelectorItem(name: item.displayName, path: item.path, score: item.score)
+
+  self.selected = self.selected.clamp(0, self.completions.len - 1)
   self.markDirty()
 
 method handleScroll*(self: SelectorPopup, scroll: Vec2, mousePosWindow: Vec2) =
@@ -344,7 +361,7 @@ method handleMouseRelease*(self: SelectorPopup, button: MouseButton, mousePosWin
 method handleMouseMove*(self: SelectorPopup, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) =
   discard
 
-proc newSelectorPopup*(app: AppInterface, scopeName: Option[string] = string.none): SelectorPopup =
+proc newSelectorPopup*(app: AppInterface, scopeName: Option[string] = string.none, finder: Option[Finder] = Finder.none): SelectorPopup =
   var popup = SelectorPopup(app: app)
   popup.scale = vec2(0.5, 0.5)
   popup.textEditor = newTextEditor(newTextDocument(app.configProvider, createLanguageServer=false), app, app.configProvider)
@@ -357,6 +374,11 @@ proc newSelectorPopup*(app: AppInterface, scopeName: Option[string] = string.non
   popup.textEditor.active = true
   discard popup.textEditor.document.textChanged.subscribe (doc: TextDocument) => popup.handleTextChanged()
   discard popup.textEditor.onMarkedDirty.subscribe () => popup.markDirty()
+
+  if finder.getSome(finder):
+    popup.finder = finder
+    discard popup.finder.onItemsChanged.subscribe () => popup.handleItemsUpdated()
+    popup.finder.setQuery("")
 
   popup.eventHandler = eventHandler(app.getEventHandlerConfig("popup.selector")):
     onAction:

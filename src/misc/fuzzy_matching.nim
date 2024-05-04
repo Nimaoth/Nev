@@ -184,7 +184,7 @@ type
 const defaultPathMatchingConfig* = FuzzyMatchConfig(ignoredChars: {' '})
 const defaultCompletionMatchingConfig* = FuzzyMatchConfig(ignoredChars: {' '})
 
-proc matchFuzzySublime*(pattern, str: openArray[char], matches: var seq[int], recordMatches: bool, config: FuzzyMatchConfig = FuzzyMatchConfig(), recursionLevel: int = 0, baseIndex: int = 0): tuple[score: int, matched: bool]
+proc matchFuzzySublime*(pattern, str: openArray[char], matches: var seq[int], recordMatches: bool, config: FuzzyMatchConfig = FuzzyMatchConfig(), recursionLevel: int = 0, baseIndex: int = 0): tuple[score: int, matched: bool] {.gcsafe.}
 proc matchFuzzySublime*(pattern, str: string, config: FuzzyMatchConfig = FuzzyMatchConfig()): tuple[score: int, matched: bool] =
   var matches: seq[int]
   matchFuzzySublime(pattern.toOpenArray(0, pattern.high), str.toOpenArray(0, str.high), matches, false, config)

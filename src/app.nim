@@ -8,6 +8,7 @@ import config_provider, app_interface
 import text/language/language_server_base, language_server_absytree_commands
 import input, events, document, document_editor, popup, dispatch_tables, theme, clipboard, app_options, selector_popup_builder, file_selector_item
 import text/[custom_treesitter]
+import finder/finder
 import compilation_config
 
 when enableAst:
@@ -1855,7 +1856,7 @@ proc createFile*(self: App, path: string) {.expose("editor").} =
   discard self.createAndAddView(document)
 
 proc pushSelectorPopup*(self: App, builder: SelectorPopupBuilder): ISelectorPopup =
-  var popup = newSelectorPopup(self.asAppInterface, builder.scope)
+  var popup = newSelectorPopup(self.asAppInterface, builder.scope, builder.finder)
   popup.scale.x = builder.scaleX
   popup.scale.y = builder.scaleY
 
@@ -1896,6 +1897,40 @@ proc pushSelectorPopup*(self: App, builder: SelectorPopupBuilder): ISelectorPopu
 
   self.pushPopup popup
 
+type
+  WorkspaceFilesDataSource* = ref object of DataSource
+    workspace: WorkspaceFolder
+    onWorkspaceFileCacheUpdatedHandle: Option[Id]
+
+proc newWorkspaceFilesDataSource(workspace: WorkspaceFolder): WorkspaceFilesDataSource =
+  new result
+  result.workspace = workspace
+
+proc handleCachedFilesUpdated(self: WorkspaceFilesDataSource) =
+  debugf"[handleCachedFilesUpdated]"
+  var items = newSeq[FinderItem]()
+
+  var pathSize = 0
+  for file in self.workspace.cachedFiles:
+    let name = file.extractFilename
+    items.add FinderItem(displayName: name, filterText: name, path: file)
+    pathSize += file.len
+
+  debugf"[handleCachedFilesUpdated] {pathSize} bytes"
+
+  self.onItemsChanged.invoke items
+
+method setQuery*(self: WorkspaceFilesDataSource, query: string) =
+  debugf"[setQuery] '{query}'"
+  if self.onWorkspaceFileCacheUpdatedHandle.isSome:
+    return
+
+  self.handleCachedFilesUpdated()
+  self.workspace.recomputeFileCache()
+
+  # todo: unsubscribe
+  self.onWorkspaceFileCacheUpdatedHandle = some(self.workspace.onCachedFilesUpdated.subscribe () => self.handleCachedFilesUpdated())
+
 proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
   ## Opens a file dialog which shows all files in the currently open workspaces
   ## Press <ENTER> to select a file
@@ -1904,83 +1939,15 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
-  var popup = newSelectorPopup(self.asAppInterface, "file".some)
+
+  if self.workspace.folders.len == 0:
+    return
+
+  let workspace = self.workspace.folders[0]
+
+  let finder = newFinder(newWorkspaceFilesDataSource(workspace), filterAndSort=true)
+  var popup = newSelectorPopup(self.asAppInterface, "file".some, finder.some)
   popup.scale.x = 0.5
-  var sortCancellationToken = newCancellationToken()
-
-  proc handleDirectory(folder: WorkspaceFolder, cancellationToken: CancellationToken, files: seq[string]): Future[void] {.async.} =
-    if cancellationToken.canceled or popup.textEditor.isNil:
-      return
-
-    var timer = startTimer()
-    let folder = folder
-    for file in files:
-      let score = matchFuzzySublime(popup.getSearchString, file, defaultPathMatchingConfig).score.float
-      let (directory, name) = file.splitPath
-      var relativeDirectory = folder.getRelativePath(directory).await
-      if relativeDirectory.isSome and relativeDirectory.get == ".":
-        relativeDirectory = "".some
-      popup.completions.add FileSelectorItem(path: file, name: name, directory: relativeDirectory.get(directory), score: score, workspaceFolder: folder.some)
-
-      if timer.elapsed.ms > 7:
-        await sleepAsync(1)
-
-        if cancellationToken.canceled or popup.textEditor.isNil:
-          return
-
-        timer = startTimer()
-
-    # popup.completions.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Ascending)
-    popup.enableAutoSort()
-    popup.markDirty()
-
-  popup.getCompletionsAsyncIter = proc(popup: SelectorPopup, text: string): Future[void] {.async.} =
-    if not popup.cancellationToken.isNil:
-      sortCancellationToken.cancel()
-      let cancellationToken = newCancellationToken()
-      sortCancellationToken = cancellationToken
-
-      var timer = startTimer()
-
-      var i = 0
-      var startIndex = 0
-      while i < popup.completions.len:
-        defer: inc i
-
-        if cancellationToken.canceled or popup.textEditor.isNil:
-          return
-
-        let score = matchFuzzySublime(popup.getSearchString(), popup.completions[i].FileSelectorItem.path, defaultPathMatchingConfig).score.float
-
-        popup.completions[i].score = score
-        popup.completions[i].hasCompletionMatchPositions = false
-
-        if timer.elapsed.ms > 7:
-          await sleepAsync(1)
-          if cancellationToken.canceled or popup.textEditor.isNil:
-            return
-
-          startIndex = i + 1
-          timer = startTimer()
-
-      popup.enableAutoSort()
-
-      return
-
-    var cancellationToken = newCancellationToken()
-    popup.cancellationToken = cancellationToken
-
-    for folder in self.workspace.folders:
-      var folder = folder
-      log lvlInfo, fmt"Start iterateDirectoryRec"
-      await iterateDirectoryRec(folder, "", cancellationToken, proc(files: seq[string]): Future[void] {.async.} =
-          handleDirectory(folder, cancellationToken, files).await
-      )
-
-      log lvlInfo, fmt"Finished iterateDirectoryRec"
-
-      if cancellationToken.canceled or popup.textEditor.isNil:
-        return
 
   popup.handleItemConfirmed = proc(item: SelectorItem): bool =
     case view
@@ -2003,10 +1970,6 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
       return false
     self.setLocationList(popup.completions)
     return true
-
-  popup.updateCompletions()
-  popup.sortFunction = proc(a, b: SelectorItem): int = cmp(a.FileSelectorItem.score, b.FileSelectorItem.score)
-  popup.enableAutoSort()
 
   self.pushPopup popup
 
