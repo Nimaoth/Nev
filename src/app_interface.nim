@@ -32,7 +32,6 @@ traitRef AppInterface:
   method pushPopup*(self: AppInterface, popup: Popup)
   method popPopup*(self: AppInterface, popup: Popup)
   method popPopup*(self: AppInterface, popup: EditorId)
-  method openSymbolsPopup*(self: AppInterface, symbols: seq[Symbol], handleItemSelected: proc(symbol: Symbol), handleItemConfirmed: proc(symbol: Symbol), handleCanceled: proc())
   method getAllDocuments*(self: AppInterface): seq[Document]
 
 var gAppInterface*: AppInterface = nil

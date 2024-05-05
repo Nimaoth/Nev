@@ -230,7 +230,6 @@ proc createSelectorPopup*(self: App): Popup
 proc pushSelectorPopup*(self: App, builder: SelectorPopupBuilder): ISelectorPopup
 proc pushPopup*(self: App, popup: Popup)
 proc popPopup*(self: App, popup: Popup)
-proc openSymbolsPopup*(self: App, symbols: seq[Symbol], handleItemSelected: proc(symbol: Symbol), handleItemConfirmed: proc(symbol: Symbol), handleCanceled: proc())
 proc help*(self: App, about: string = "")
 proc getAllDocuments*(self: App): seq[Document]
 proc setHandleInputs*(self: App, context: string, value: bool)
@@ -264,7 +263,6 @@ implTrait AppInterface, App:
   pushSelectorPopup(ISelectorPopup, App, SelectorPopupBuilder)
   pushPopup(void, App, Popup)
   popPopup(void, App, Popup)
-  openSymbolsPopup(void, App, seq[Symbol], proc(symbol: Symbol), proc(symbol: Symbol), proc())
   getAllDocuments(seq[Document], App)
   setLocationList(void, App, seq[SelectorItem])
 
@@ -2176,69 +2174,78 @@ when not defined(js):
   type GitFileSelectorItem* = ref object of FileSelectorItem
     info: GitFileInfo
 
-  proc getChangedFilesFromGitAsync(popup: SelectorPopup, text: string, workspace: Option[WorkspaceFolder]): Future[seq[SelectorItem]] {.async.} =
-    if popup.updateInProgress:
-      return popup.completions
+  proc getChangedFilesFromGitAsync(workspace: WorkspaceFolder): Future[ItemList] {.async.} =
+    let fileInfos = getChangedFiles().await
 
-    popup.updateInProgress = true
-    defer:
-      popup.updateInProgress = false
+    var list = newItemList(fileInfos.len)
+    for i, info in fileInfos:
+      let (directory, name) = info.path.splitPath
+      var relativeDirectory = workspace.getRelativePathSync(directory).get(directory)
 
-    if not popup.updated:
-      let fileInfos = getChangedFiles().await
-      if popup.textEditor.isNil:
-        return
+      if relativeDirectory == ".":
+        relativeDirectory = ""
 
-      let searchText = popup.getSearchString
+      list[i] = FinderItem(
+        displayName: $info.stagedStatus & $info.unstagedStatus & " " & name,
+        data: $ %info,
+        detail: relativeDirectory,
+      )
 
-      for info in fileInfos:
-        let name = $info.stagedStatus & $info.unstagedStatus & " " & info.path
-        let score = matchFuzzySublime(searchText, name, defaultPathMatchingConfig).score.float
-        result.add GitFileSelectorItem(name: name, path: info.path, score: score, workspaceFolder: workspace, info: info)
-    else:
-      for item in popup.completions.mitems:
-        item.hasCompletionMatchPositions = false
-        item.score = matchFuzzySublime(text, item.GitFileSelectorItem.name, defaultPathMatchingConfig).score.float
+    return list
 
-      result = popup.completions
-
-    result.sort((a, b) => cmp(a.GitFileSelectorItem.score, b.GitFileSelectorItem.score), Ascending)
-
-  proc stageSelectedFileAsync(popup: SelectorPopup): Future[void] {.async.} =
+  proc stageSelectedFileAsync(popup: SelectorPopup, source: AsyncCallbackDataSource): Future[void] {.async.} =
     log lvlInfo, fmt"Stage selected entry ({popup.selected})"
 
-    let item = popup.completions[popup.completions.high - popup.selected].GitFileSelectorItem
-    let res = stageFile(item.info.path).await
+    let item = popup.getSelectedItem().getOr:
+      return
+
+    let fileInfo = item.data.parseJson.jsonTo(GitFileInfo).catch:
+      log lvlError, fmt"Failed to parse git file info from item: {item}"
+      return
+    debugf"staged selected {fileInfo}"
+
+    let res = stageFile(fileInfo.path).await
     debugf"git add finished: {res}"
     if popup.textEditor.isNil:
       return
 
-    popup.updated = false
-    popup.updateCompletions()
+    source.retrigger()
 
-  proc unstageSelectedFileAsync(popup: SelectorPopup): Future[void] {.async.} =
+  proc unstageSelectedFileAsync(popup: SelectorPopup, source: AsyncCallbackDataSource): Future[void] {.async.} =
     log lvlInfo, fmt"Unstage selected entry ({popup.selected})"
 
-    let item = popup.completions[popup.completions.high - popup.selected].GitFileSelectorItem
-    let res = unstageFile(item.info.path).await
+    let item = popup.getSelectedItem().getOr:
+      return
+
+    let fileInfo = item.data.parseJson.jsonTo(GitFileInfo).catch:
+      log lvlError, fmt"Failed to parse git file info from item: {item}"
+      return
+    debugf"unstaged selected {fileInfo}"
+
+    let res = unstageFile(fileInfo.path).await
     debugf"git unstage finished: {res}"
     if popup.textEditor.isNil:
       return
 
-    popup.updated = false
-    popup.updateCompletions()
+    source.retrigger()
 
-  proc revertSelectedFileAsync(popup: SelectorPopup): Future[void] {.async.} =
+  proc revertSelectedFileAsync(popup: SelectorPopup, source: AsyncCallbackDataSource): Future[void] {.async.} =
     log lvlInfo, fmt"Revert selected entry ({popup.selected})"
 
-    let item = popup.completions[popup.completions.high - popup.selected].GitFileSelectorItem
-    let res = revertFile(item.info.path).await
+    let item = popup.getSelectedItem().getOr:
+      return
+
+    let fileInfo = item.data.parseJson.jsonTo(GitFileInfo).catch:
+      log lvlError, fmt"Failed to parse git file info from item: {item}"
+      return
+    debugf"revert-selected {fileInfo}"
+
+    let res = revertFile(fileInfo.path).await
     debugf"git revert finished: {res}"
     if popup.textEditor.isNil:
       return
 
-    popup.updated = false
-    popup.updateCompletions()
+    source.retrigger()
 
   proc diffStagedFileAsync(self: App, path: string): Future[void] {.async.} =
     log lvlInfo, fmt"Diff staged '({path})'"
@@ -2261,32 +2268,36 @@ proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
     defer:
       self.platform.requestRender()
 
-    let workspace = if self.workspace.folders.len > 0:
-      self.workspace.folders[0].some
-    else:
-      WorkspaceFolder.none
+    if self.workspace.folders.len == 0:
+      return
 
-    var popup = newSelectorPopup(self.asAppInterface, "git".some)
+    let workspace = self.workspace.folders[0]
+
+
+    let source = newAsyncCallbackDataSource () => workspace.getChangedFilesFromGitAsync()
+    var finder = newFinder(source, filterAndSort=true)
+    finder.filterThreshold = float.low
+
+    var popup = newSelectorPopup(self.asAppInterface, "git".some, finder.some)
     popup.scale.x = 0.3
 
-    popup.getCompletionsAsync = proc(popup: SelectorPopup, text: string): Future[seq[SelectorItem]] =
-      return getChangedFilesFromGitAsync(popup, text, workspace)
+    popup.handleItemConfirmed2 = proc(item: FinderItem): bool =
+      let fileInfo = item.data.parseJson.jsonTo(GitFileInfo).catch:
+        log lvlError, fmt"Failed to parse get file info from item: {item}"
+        return true
 
-    popup.handleItemConfirmed = proc(item: SelectorItem): bool =
-      let item = item.GitFileSelectorItem
-
-      if item.info.stagedStatus != None:
-        asyncCheck self.diffStagedFileAsync(item.info.path)
+      if fileInfo.stagedStatus != None:
+        asyncCheck self.diffStagedFileAsync(fileInfo.path)
 
       else:
-        let currentVersionEditor = if item.workspaceFolder.isSome:
-          self.openWorkspaceFile(item.path, item.workspaceFolder.get)
-        else:
-          self.openFile(item.path)
-
+        let currentVersionEditor = self.openWorkspaceFile(fileInfo.path, workspace)
         if currentVersionEditor.getSome(editor):
           if editor of TextDocumentEditor:
             editor.TextDocumentEditor.updateDiff()
+
+      return true
+
+    popup.handleItemConfirmed = proc(item: SelectorItem): bool =
       return true
 
     popup.addCustomCommand "stage-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
@@ -2295,7 +2306,7 @@ proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
       if popup.completions.len == 0:
         return false
 
-      asyncCheck popup.stageSelectedFileAsync()
+      asyncCheck popup.stageSelectedFileAsync(source)
       return true
 
     popup.addCustomCommand "unstage-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
@@ -2304,7 +2315,7 @@ proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
       if popup.completions.len == 0:
         return false
 
-      asyncCheck popup.unstageSelectedFileAsync()
+      asyncCheck popup.unstageSelectedFileAsync(source)
       return true
 
     popup.addCustomCommand "revert-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
@@ -2313,17 +2324,22 @@ proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
       if popup.completions.len == 0:
         return false
 
-      asyncCheck popup.revertSelectedFileAsync()
+      asyncCheck popup.revertSelectedFileAsync(source)
       return true
 
     popup.addCustomCommand "diff-staged", proc(popup: SelectorPopup, args: JsonNode): bool =
       if popup.textEditor.isNil:
         return false
-      if popup.completions.len == 0:
-        return false
 
-      let item = popup.completions[popup.completions.high - popup.selected].GitFileSelectorItem
-      asyncCheck self.diffStagedFileAsync(item.info.path)
+      let item = popup.getSelectedItem().getOr:
+        return
+
+      let fileInfo = item.data.parseJson.jsonTo(GitFileInfo).catch:
+        log lvlError, fmt"Failed to parse get file info from item: {item}"
+        return true
+      debugf"diff-staged {fileInfo}"
+
+      asyncCheck self.diffStagedFileAsync(fileInfo.path)
       return true
 
     popup.addCustomCommand "send-to-location-list", proc(popup: SelectorPopup, args: JsonNode): bool =
@@ -2434,49 +2450,6 @@ proc exploreFiles*(self: App) {.expose("editor").} =
     popup.enableAutoSort()
 
     self.pushPopup popup
-
-proc openSymbolsPopup*(self: App, symbols: seq[Symbol], handleItemSelected: proc(symbol: Symbol), handleItemConfirmed: proc(symbol: Symbol), handleCanceled: proc()) =
-  defer:
-    self.platform.requestRender()
-
-  let fuzzyMatchSublime = self.configProvider.getFlag("editor.fuzzy-match-sublime", true)
-
-  var popup = newSelectorPopup(self.asAppInterface)
-  popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
-    for i in countdown(symbols.high, 0):
-      let score = if fuzzyMatchSublime:
-        matchFuzzySublime(text, symbols[i].name, defaultPathMatchingConfig).score.float
-      else:
-        matchFuzzy(symbols[i].name, text)
-
-      result.add TextSymbolSelectorItem(symbol: symbols[i], score: score)
-
-    if text.len > 0:
-      result.sort((a, b) => cmp(a.TextSymbolSelectorItem.score, b.TextSymbolSelectorItem.score), Ascending)
-
-  popup.handleItemSelected = proc(item: SelectorItem) =
-    let symbol = item.TextSymbolSelectorItem.symbol
-    handleItemSelected(symbol)
-
-  popup.handleItemConfirmed = proc(item: SelectorItem): bool =
-    let symbol = item.TextSymbolSelectorItem.symbol
-    handleItemConfirmed(symbol)
-    return true
-
-  popup.handleCanceled = handleCanceled
-
-  popup.addCustomCommand "send-to-location-list", proc(popup: SelectorPopup, args: JsonNode): bool =
-    if popup.textEditor.isNil or popup.completions.len == 0:
-      return false
-
-    self.currentLocationListIndex = 0
-    self.fileLocationList.setLen 0
-
-    return true
-
-  popup.updateCompletions()
-
-  self.pushPopup popup
 
 proc openPreviousEditor*(self: App) {.expose("editor").} =
   if self.editorHistory.len == 0:
