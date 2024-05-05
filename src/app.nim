@@ -1959,7 +1959,7 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
 
   let finder = newFinder(newWorkspaceFilesDataSource(workspace), filterAndSort=true)
   var popup = newSelectorPopup(self.asAppInterface, "file".some, finder.some)
-  popup.scale.x = 0.5
+  popup.scale.x = 0.35
 
   popup.handleItemConfirmed2 = proc(item: FinderItem): bool =
     case view
