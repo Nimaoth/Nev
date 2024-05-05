@@ -55,6 +55,10 @@ proc pause*(task: DelayedTask) =
   task.restartCounter.inc
   task.active = false
 
+proc deinit*(task: DelayedTask) =
+  task.pause()
+  task.callback = nil
+
 template startDelayed*(interval: int, repeat: bool = false, body: untyped): untyped =
   newDelayedTask(interval, repeat, true, proc() =
     body

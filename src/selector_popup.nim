@@ -2,7 +2,7 @@ import std/[strutils, sugar, options, json, streams, tables]
 import bumpy, vmath
 import misc/[util, rect_utils, comb_sort, timer, event, custom_async, custom_logger, cancellation_token, myjsonutils, fuzzy_matching, traits]
 import app_interface, text/text_editor, popup, events, scripting/expose, input, selector_popup_builder, file_selector_item, dispatch_tables
-from scripting_api as api import nil
+from scripting_api as api import Selection
 import finder/finder
 
 export popup, selector_popup_builder
@@ -87,6 +87,10 @@ method deinit*(self: SelectorPopup) =
   log lvlInfo, "Destroy selector popup"
   if self.cancellationToken.isNotNil:
     self.cancellationToken.cancel()
+
+  if self.finder.isNotNil:
+    self.finder.deinit()
+    self.finder = nil
 
   let document = self.textEditor.document
   self.textEditor.deinit()
@@ -331,8 +335,12 @@ proc handleItemsUpdated*(self: SelectorPopup) =
     return
 
   self.completions.setLen 0
-  for item in self.finder.filteredItems:
-    self.completions.add FileSelectorItem(name: item.displayName, path: item.path, score: item.score)
+
+  if self.finder.filteredItems.getSome(list) and list.len > 0:
+    for item in list.items:
+      if item.score < 0:
+        continue
+      self.completions.add FileSelectorItem(name: item.displayName, path: item.path, score: item.score)
 
   self.selected = self.selected.clamp(0, self.completions.len - 1)
   self.markDirty()
@@ -372,7 +380,8 @@ proc newSelectorPopup*(app: AppInterface, scopeName: Option[string] = string.non
   popup.textEditor.disableScrolling = true
   popup.textEditor.disableCompletions = true
   popup.textEditor.active = true
-  discard popup.textEditor.document.textChanged.subscribe (doc: TextDocument) => popup.handleTextChanged()
+  discard popup.textEditor.document.textInserted.subscribe (arg: tuple[document: TextDocument, location: Selection, text: string]) => popup.handleTextChanged()
+  discard popup.textEditor.document.textDeleted.subscribe (arg: tuple[document: TextDocument, location: Selection]) => popup.handleTextChanged()
   discard popup.textEditor.onMarkedDirty.subscribe () => popup.markDirty()
 
   if finder.getSome(finder):

@@ -1907,28 +1907,26 @@ proc newWorkspaceFilesDataSource(workspace: WorkspaceFolder): WorkspaceFilesData
   result.workspace = workspace
 
 proc handleCachedFilesUpdated(self: WorkspaceFilesDataSource) =
-  debugf"[handleCachedFilesUpdated]"
-  var items = newSeq[FinderItem]()
+  var list = newItemList(self.workspace.cachedFiles.len)
 
-  var pathSize = 0
-  for file in self.workspace.cachedFiles:
-    let name = file.extractFilename
-    items.add FinderItem(displayName: name, filterText: name, path: file)
-    pathSize += file.len
+  for i in 0..self.workspace.cachedFiles.high:
+    let name = self.workspace.cachedFiles[i].extractFilename
+    list[i] = FinderItem(displayName: name, filterText: name, path: self.workspace.cachedFiles[i])
 
-  debugf"[handleCachedFilesUpdated] {pathSize} bytes"
+  self.onItemsChanged.invoke list
 
-  self.onItemsChanged.invoke items
+method close*(self: WorkspaceFilesDataSource) =
+  if self.onWorkspaceFileCacheUpdatedHandle.getSome(handle):
+    self.workspace.onCachedFilesUpdated.unsubscribe(handle)
+  self.onWorkspaceFileCacheUpdatedHandle = Id.none
 
 method setQuery*(self: WorkspaceFilesDataSource, query: string) =
-  debugf"[setQuery] '{query}'"
   if self.onWorkspaceFileCacheUpdatedHandle.isSome:
     return
 
   self.handleCachedFilesUpdated()
   self.workspace.recomputeFileCache()
 
-  # todo: unsubscribe
   self.onWorkspaceFileCacheUpdatedHandle = some(self.workspace.onCachedFilesUpdated.subscribe () => self.handleCachedFilesUpdated())
 
 proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =

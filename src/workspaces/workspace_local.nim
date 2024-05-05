@@ -9,6 +9,7 @@ type
   WorkspaceFolderLocal* = ref object of WorkspaceFolder
     path*: string
     additionalPaths: seq[string]
+    isCacheUpdateInProgress: bool = false
 
 method settings*(self: WorkspaceFolderLocal): JsonNode =
   result = newJObject()
@@ -52,10 +53,16 @@ proc collectFilesThread(args: tuple[roots: seq[string], ignore: Globs]): tuple[f
     discard
 
 proc recomputeFileCacheAsync(self: WorkspaceFolderLocal): Future[void] {.async.} =
-  debugf"[recomputeFileCacheAsync] Start"
+  if self.isCacheUpdateInProgress:
+    return
+  self.isCacheUpdateInProgress = true
+  defer:
+    self.isCacheUpdateInProgress = false
+
+  log lvlInfo, "[recomputeFileCacheAsync] Start"
 
   let res = spawnAsync(collectFilesThread, (@[self.path] & self.additionalPaths, self.ignore)).await
-  debugf"[recomputeFileCacheAsync] Finished in {res.time}ms"
+  log lvlInfo, fmt"[recomputeFileCacheAsync] Finished in {res.time}ms"
 
   self.cachedFiles = res.files
   self.onCachedFilesUpdated.invoke()
@@ -191,6 +198,8 @@ proc newWorkspaceFolderLocal*(path: string, additionalPaths: seq[string] = @[]):
   result.additionalPaths = additionalPaths
 
   result.loadDefaultIgnoreFile()
+
+  result.recomputeFileCache()
 
 proc newWorkspaceFolderLocal*(settings: JsonNode): WorkspaceFolderLocal =
   let path = settings["path"].getStr
