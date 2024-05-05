@@ -2091,25 +2091,6 @@ proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], nav
 
   let popup = self.app.pushSelectorPopup(builder)
 
-proc openSymbolsPopup(self: TextDocumentEditor, symbols: seq[Symbol]) =
-  let selections = self.selections
-
-  self.app.openSymbolsPopup(symbols,
-    handleItemSelected=(proc(symbol: Symbol) =
-      self.noSelectionHistory:
-        self.targetSelection = symbol.location.toSelection
-        self.scrollToCursor()
-    ),
-    handleItemConfirmed=(proc(symbol: Symbol) =
-      self.targetSelection = symbol.location.toSelection
-      self.scrollToCursor()
-    ),
-    handleCanceled=(proc() =
-      self.selections = selections
-      self.scrollToCursor()
-    ),
-  )
-
 proc gotoSymbolAsync(self: TextDocumentEditor): Future[void] {.async.} =
   if self.document.getLanguageServer().await.getSome(ls):
     let symbols = await ls.getSymbols(self.document.fullPath)
@@ -2126,7 +2107,6 @@ type
     delayedTask: DelayedTask
 
 proc getWorkspaceSymbols(self: LspWorkspaceSymbolsDataSource): Future[void] {.async.} =
-  let query = self.query
   let symbols = self.languageServer.getWorkspaceSymbols(self.query).await
 
   let t = startTimer()

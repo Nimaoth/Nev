@@ -18,9 +18,9 @@ proc updateCompletions*(self: SelectorPopup) =
       argsJsonString.cstring)
 
 
-proc popup_selector_getSelectedItem_JsonNode_SelectorPopup_wasm(arg: cstring): cstring {.
+proc popup_selector_getSelectedItemJson_JsonNode_SelectorPopup_wasm(arg: cstring): cstring {.
     importc.}
-proc getSelectedItem*(self: SelectorPopup): JsonNode =
+proc getSelectedItemJson*(self: SelectorPopup): JsonNode =
   var argsJson = newJArray()
   argsJson.add block:
     when SelectorPopup is JsonNode:
@@ -28,7 +28,7 @@ proc getSelectedItem*(self: SelectorPopup): JsonNode =
     else:
       self.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = popup_selector_getSelectedItem_JsonNode_SelectorPopup_wasm(
+  let res {.used.} = popup_selector_getSelectedItemJson_JsonNode_SelectorPopup_wasm(
       argsJsonString.cstring)
   result = parseJson($res).jsonTo(typeof(result))
 

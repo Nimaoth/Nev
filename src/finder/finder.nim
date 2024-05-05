@@ -270,3 +270,42 @@ method setQuery*(self: StaticDataSource, query: string) =
     list[i] = item
 
   self.onItemsChanged.invoke list
+
+type
+  AsyncFutureDataSource* = ref object of DataSource
+    wasQueried: bool = false
+    future: Future[ItemList]
+
+  AsyncCallbackDataSource* = ref object of DataSource
+    wasQueried: bool = false
+    callback: proc(): Future[ItemList]
+
+proc getDataAsync(self: AsyncFutureDataSource): Future[void] {.async.} =
+  let list = self.future.await
+  self.onItemsChanged.invoke list
+
+proc getDataAsync(self: AsyncCallbackDataSource): Future[void] {.async.} =
+  let list = self.callback().await
+  self.onItemsChanged.invoke list
+
+proc newAsyncFutureDataSource*(future: Future[ItemList]): AsyncFutureDataSource =
+  new result
+  result.future = future
+
+proc newAsyncCallbackDataSource*(callback: proc(): Future[ItemList]): AsyncCallbackDataSource =
+  new result
+  result.callback = callback
+
+method setQuery*(self: AsyncFutureDataSource, query: string) =
+  if not self.wasQueried:
+    self.wasQueried = true
+    asyncCheck self.getDataAsync()
+
+method setQuery*(self: AsyncCallbackDataSource, query: string) =
+  if not self.wasQueried:
+    self.wasQueried = true
+    asyncCheck self.getDataAsync()
+
+proc retrigger*(self: AsyncCallbackDataSource) =
+  self.wasQueried = false
+  self.setQuery("")

@@ -246,7 +246,7 @@ proc updateCompletions*(self: SelectorPopup) {.expose("popup.selector").} =
   else:
     log(lvlError, fmt"No completion provider set on popup {self.id}")
 
-proc getSelectedItem*(self: SelectorPopup): JsonNode {.expose("popup.selector").} =
+proc getSelectedItemJson*(self: SelectorPopup): JsonNode {.expose("popup.selector").} =
   if self.textEditor.isNil:
     return newJNull()
 
@@ -254,6 +254,15 @@ proc getSelectedItem*(self: SelectorPopup): JsonNode {.expose("popup.selector").
     let selected = self.completions[self.completions.high - self.selected]
     return selected.itemToJson
   return newJNull()
+
+proc getSelectedItem*(self: SelectorPopup): Option[FinderItem] =
+  assert self.selected < self.completions.len
+  assert self.finder.isNotNil
+
+  if self.finder.filteredItems.getSome(items) and self.selected < self.completions.len:
+    let finderItemIndex = self.completions[self.completions.high - self.selected].finderItemIndex
+    if finderItemIndex >= 0 and finderItemIndex < items.len:
+      result = items[finderItemIndex].some
 
 proc accept*(self: SelectorPopup) {.expose("popup.selector").} =
   if self.textEditor.isNil:
