@@ -1910,47 +1910,55 @@ proc openFileAt(self: TextDocumentEditor, filename: string, location: Option[Sel
   else:
     log lvlError, fmt"Failed to open file '{filename}' at {location}"
 
-proc gotoLocationAsync(self: TextDocumentEditor, locations: seq[Definition]): Future[void] {.async.} =
-  if locations.len == 1:
-    let d = locations[0]
+proc openLocationFromFinderItem(self: TextDocumentEditor, item: FinderItem) =
+  try:
+    let parts = item.data.splitLines
+    let path = parts[0]
+    let location = if parts.len > 1:
+      let lineColumn = parts[1].split(":")
+      (lineColumn[0].parseInt, lineColumn[1].parseInt).some
+    else:
+      Cursor.none
+
+    self.openFileAt(path, location.mapIt(it.toSelection))
+  except:
+    log lvlError, fmt"Failed to parse data from item {item}"
+
+proc encodeFileLocationForFinderItem(path: string, location: Option[Cursor]): string =
+  result = path
+  if location.getSome(location):
+    result.add "\n" & $location.line & ":" & $location.column
+
+proc gotoLocationAsync(self: TextDocumentEditor, definitions: seq[Definition]): Future[void] {.async.} =
+  if definitions.len == 1:
+    let d = definitions[0]
     self.openFileAt(d.filename, d.location.toSelection.some)
 
-  else:
+  elif self.document.workspace.getSome(workspace):
     let lastSelection = self.selection
     var builder = SelectorPopupBuilder()
     builder.scope = "text-lsp-locations".some
-    builder.scaleX = 0.3
-    builder.enableAutoSort = true
+    builder.scaleX = 0.4
 
-    builder.getCompletions = proc(popup: ISelectorPopup, text: string): seq[SelectorItem] =
-      var res = newSeq[SelectorItem]()
-      for i, location in locations:
-        let score = if text.len == 0:
-          locations.len - i
-        else:
-          matchFuzzySublime(text, location.filename, defaultPathMatchingConfig).score
+    var res = newSeq[FinderItem]()
+    for i, definition in definitions:
+      let relPath = workspace.getRelativePathSync(definition.filename).get(definition.filename)
+      let (dir, name) = definition.filename.splitPath
+      res.add FinderItem(
+        displayName: name,
+        detail: relPath.splitPath[0],
+        data: encodeFileLocationForFinderItem(definition.filename, definition.location.some),
+      )
 
-        let (dir, name) = location.filename.splitPath
-        res.add FileSelectorItem(
-          name: &"{name}:{location.location.line}:{location.location.column}",
-          directory: dir,
-          path: location.filename,
-          score: score.float,
-          workspaceFolder: self.document.workspace,
-          location: location.location.some
-        )
+    let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
+    builder.finder = finder.some
 
-      res.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Ascending)
-      res
-
-    builder.handleItemConfirmed = proc(popup: ISelectorPopup, item: SelectorItem): bool =
-      let item = item.FileSelectorItem
-      self.openFileAt(item.path, item.location.mapIt(it.toSelection))
+    builder.handleItemConfirmed2 = proc(popup: ISelectorPopup, item: FinderItem): bool =
+      self.openLocationFromFinderItem(item)
       true
 
-    builder.handleItemSelected = proc(popup: ISelectorPopup, item: SelectorItem) =
-      let item = item.FileSelectorItem
-      self.openFileAt(item.path, item.location.mapIt(it.toSelection))
+    builder.handleItemSelected2 = proc(popup: ISelectorPopup, item: FinderItem) =
+      self.openLocationFromFinderItem(item)
 
     builder.handleCanceled = proc(popup: ISelectorPopup) =
       self.openFileAt(self.document.filename, lastSelection.some)
@@ -2056,43 +2064,27 @@ proc showCompletionWindow(self: TextDocumentEditor) =
 proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], navigateOnSelect: bool) =
   let lastSelection = self.selection
   var builder = SelectorPopupBuilder()
-  builder.scope = "text-lsp-symbols".some
+  builder.scope = "text-lsp-locations".some
   builder.scaleX = 0.3
-  builder.enableAutoSort = true
-  builder.sortFunction = proc(a, b: SelectorItem): int =
-    cmp(a.FileSelectorItem.score, b.FileSelectorItem.score)
 
-  builder.getCompletions = proc(popup: ISelectorPopup, text: string): seq[SelectorItem] =
-    var res = newSeq[SelectorItem]()
-    for i, symbol in symbols:
-      let score = if text.len == 0:
-        symbols.len - i
-      else:
-        matchFuzzySublime(text, symbol.name, defaultPathMatchingConfig).score
+  var res = newSeq[FinderItem]()
+  for i, symbol in symbols:
+    let (dir, name) = symbol.filename.splitPath
+    res.add FinderItem(
+      displayName: symbol.name,
+      detail: $symbol.symbolType,
+      data: encodeFileLocationForFinderItem(symbol.filename, symbol.location.some),
+    )
 
-      let (dir, name) = symbol.filename.splitPath
-      res.add TextSymbolSelectorItem(
-        name: symbol.name,
-        directory: dir,
-        path: symbol.filename,
-        score: score.float,
-        workspaceFolder: self.document.workspace,
-        location: symbol.location.some,
-        symbol: symbol,
-      )
+  let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
+  builder.finder = finder.some
 
-    res.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Ascending)
-    res
-
-  builder.handleItemConfirmed = proc(popup: ISelectorPopup, item: SelectorItem): bool =
-    let item = item.FileSelectorItem
-    self.openFileAt(item.path, item.location.mapIt(it.toSelection))
+  builder.handleItemConfirmed2 = proc(popup: ISelectorPopup, item: FinderItem): bool =
+    self.openLocationFromFinderItem(item)
     true
 
-  builder.handleItemSelected = proc(popup: ISelectorPopup, item: SelectorItem) =
-    if navigateOnSelect:
-      let item = item.FileSelectorItem
-      self.openFileAt(item.path, item.location.mapIt(it.toSelection))
+  builder.handleItemSelected2 = proc(popup: ISelectorPopup, item: FinderItem) =
+    self.openLocationFromFinderItem(item)
 
   builder.handleCanceled = proc(popup: ISelectorPopup) =
     self.openFileAt(self.document.filename, lastSelection.some)
@@ -2149,7 +2141,7 @@ proc getWorkspaceSymbols(self: LspWorkspaceSymbolsDataSource): Future[void] {.as
     items[index] = FinderItem(
       displayName: symbol.name,
       detail: $symbol.symbolType & "\t" & relPath.splitPath[0],
-      data: symbol.filename & "\n" & $symbol.location.line & ":" & $symbol.location.column,
+      data: encodeFileLocationForFinderItem(symbol.filename, symbol.location.some),
     )
     inc index
 
@@ -2158,7 +2150,9 @@ proc getWorkspaceSymbols(self: LspWorkspaceSymbolsDataSource): Future[void] {.as
   items.setLen(index)
   self.onItemsChanged.invoke items
 
-proc newLspWorkspaceSymbolsDataSource(languageServer: LanguageServer, workspace: WorkspaceFolder): LspWorkspaceSymbolsDataSource =
+proc newLspWorkspaceSymbolsDataSource(languageServer: LanguageServer, workspace: WorkspaceFolder):
+    LspWorkspaceSymbolsDataSource =
+
   new result
   result.languageServer = languageServer
   result.workspace = workspace
@@ -2182,7 +2176,7 @@ proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Fut
 
     let lastSelection = self.selection
     var builder = SelectorPopupBuilder()
-    builder.scope = "text-lsp-symbols".some
+    builder.scope = "text-lsp-locations".some
     builder.scaleX = 0.5
 
     let finder = newFinder(newLspWorkspaceSymbolsDataSource(ls, workspace), filterAndSort=true)

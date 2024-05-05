@@ -110,6 +110,11 @@ proc `[]`*(list: ItemList, i: int): lent FinderItem =
   assert i < list.len
   list.data[i]
 
+proc `[]`*(list: var ItemList, i: int): var FinderItem =
+  assert i >= 0
+  assert i < list.len
+  list.data[i]
+
 template items*(list: ItemList): openArray[FinderItem] =
   assert not list.data.isNil
   toOpenArray(list.data, 0, list.len - 1)
@@ -235,9 +240,32 @@ proc setQuery*(self: Finder, query: string) =
 
   # todo: add optional delay so we don't spawn tasks on every keystroke, but only after stopping for a bit.
   if self.filterAndSort and self.filteredItems.getSome(list):
+    var mlist = list
     if self.query.len == 0:
-      list.sort((a, b) => cmp(a.originalScore, b.originalScore), Ascending)
+      for i in 0..<mlist.len:
+        mlist[i].score = mlist[i].originalScore
+      mlist.sort((a, b) => cmp(a.originalScore, b.originalScore), Ascending)
       self.onItemsChanged.invoke()
 
     else:
       asyncCheck self.filterAndSortItems(list.clone())
+
+type
+  StaticDataSource* = ref object of DataSource
+    wasQueried: bool = false
+    items: seq[FinderItem]
+
+proc newStaticDataSource*(items: sink seq[FinderItem]): StaticDataSource =
+  new result
+  result.items = items
+
+method setQuery*(self: StaticDataSource, query: string) =
+  if self.wasQueried:
+    return
+  self.wasQueried = true
+
+  var list = newItemList(self.items.len)
+  for i, item in self.items:
+    list[i] = item
+
+  self.onItemsChanged.invoke list

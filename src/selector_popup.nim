@@ -316,6 +316,13 @@ proc next*(self: SelectorPopup) {.expose("popup.selector").} =
   if self.completions.len > 0 and self.handleItemSelected != nil:
     self.handleItemSelected self.completions[self.completions.high - self.selected]
 
+  if self.finder.isNotNil and
+      self.finder.filteredItems.getSome(items) and
+      not self.handleItemSelected2.isNil and self.selected < self.completions.len:
+    let finderItemIndex = self.completions[self.completions.high - self.selected].finderItemIndex
+    if finderItemIndex >= 0 and finderItemIndex < items.len:
+      self.handleItemSelected2 items[finderItemIndex]
+
   self.markDirty()
 
 genDispatcher("popup.selector")
