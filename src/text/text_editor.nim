@@ -2139,16 +2139,23 @@ proc getWorkspaceSymbols(self: LspWorkspaceSymbolsDataSource): Future[void] {.as
 
   let t = startTimer()
   var items = newItemList(symbols.len)
-  for i, symbol  in symbols:
+  var index = 0
+  for symbol in symbols:
+    if self.workspace.ignorePath(symbol.filename):
+      continue
+
     let relPath = self.workspace.getRelativePathSync(symbol.filename).get(symbol.filename)
 
-    items[i] = FinderItem(
+    items[index] = FinderItem(
       displayName: symbol.name,
       detail: $symbol.symbolType & "\t" & relPath.splitPath[0],
       data: symbol.filename & "\n" & $symbol.location.line & ":" & $symbol.location.column,
     )
+    inc index
+
   debugf"[getWorkspaceSymbols] {t.elapsed.ms}ms"
 
+  items.setLen(index)
   self.onItemsChanged.invoke items
 
 proc newLspWorkspaceSymbolsDataSource(languageServer: LanguageServer, workspace: WorkspaceFolder): LspWorkspaceSymbolsDataSource =

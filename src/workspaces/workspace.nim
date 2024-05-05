@@ -30,6 +30,14 @@ type
     column*: int
     text*: string
 
+proc ignorePath*(workspace: WorkspaceFolder, path: string): bool =
+  if workspace.ignore.excludePath(path) or workspace.ignore.excludePath(path.extractFilename):
+    if workspace.ignore.includePath(path) or workspace.ignore.includePath(path.extractFilename):
+      return false
+
+    return true
+  return false
+
 method isReadOnly*(self: WorkspaceFolder): bool {.base.} = true
 method settings*(self: WorkspaceFolder): JsonNode {.base.} = discard
 

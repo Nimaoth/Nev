@@ -90,6 +90,11 @@ proc pool*(list: ItemList) =
     list.len = 0
     itemListPool.add list
 
+proc setLen*(list: var ItemList, newLen: int) =
+  assert newLen >= 0
+  assert newLen <= list.len
+  list.len = newLen
+
 proc clone*(list: ItemList): ItemList =
   result = newItemList(list.len)
   for i in 0..<list.len:
