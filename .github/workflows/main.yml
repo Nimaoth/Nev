@@ -69,8 +69,8 @@ jobs:
       - run: PATH=/github/home/.nimble/bin:$PATH nimble buildAbsytreeServer
       - if: always()
         run: PATH=/github/home/.nimble/bin:$PATH nimble buildLspWs
-      - if: always()
-        run: PATH=/github/home/.nimble/bin:$PATH nimble buildBrowser
+      #- if: always()
+      #  run: PATH=/github/home/.nimble/bin:$PATH nimble buildBrowser
       - if: always()
         run: PATH=/github/home/.nimble/bin:$PATH nimble buildDesktop --app:console -D:forceLogToFile -D:enableGui=false -D:enableTerminal=true --out:astt
       - if: always()
