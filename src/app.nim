@@ -1880,6 +1880,14 @@ proc pushSelectorPopup*(self: App, builder: SelectorPopupBuilder): ISelectorPopu
     popup.handleItemConfirmed = proc(item: SelectorItem): bool =
       return builder.handleItemConfirmed(popup.asISelectorPopup, item)
 
+  if builder.handleItemSelected2.isNotNil:
+    popup.handleItemSelected2 = proc(item: FinderItem) =
+      builder.handleItemSelected2(popup.asISelectorPopup, item)
+
+  if builder.handleItemConfirmed2.isNotNil:
+    popup.handleItemConfirmed2 = proc(item: FinderItem): bool =
+      return builder.handleItemConfirmed2(popup.asISelectorPopup, item)
+
   if builder.handleCanceled.isNotNil:
     popup.handleCanceled = proc() =
       builder.handleCanceled(popup.asISelectorPopup)
@@ -1910,8 +1918,14 @@ proc handleCachedFilesUpdated(self: WorkspaceFilesDataSource) =
   var list = newItemList(self.workspace.cachedFiles.len)
 
   for i in 0..self.workspace.cachedFiles.high:
-    let name = self.workspace.cachedFiles[i].extractFilename
-    list[i] = FinderItem(displayName: name, filterText: name, path: self.workspace.cachedFiles[i])
+    let path = self.workspace.cachedFiles[i]
+    let relPath = self.workspace.getRelativePathSync(path).get(path)
+    let (dir, name) = relPath.splitPath
+    list[i] = FinderItem(
+      displayName: name,
+      detail: dir,
+      data: path,
+    )
 
   self.onItemsChanged.invoke list
 
@@ -1947,18 +1961,12 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
   var popup = newSelectorPopup(self.asAppInterface, "file".some, finder.some)
   popup.scale.x = 0.5
 
-  popup.handleItemConfirmed = proc(item: SelectorItem): bool =
+  popup.handleItemConfirmed2 = proc(item: FinderItem): bool =
     case view
     of "current":
-      if item.FileSelectorItem.workspaceFolder.isSome:
-        self.loadWorkspaceFile(item.FileSelectorItem.path, item.FileSelectorItem.workspaceFolder.get)
-      else:
-        self.loadFile(item.FileSelectorItem.path)
+      self.loadWorkspaceFile(item.data, workspace)
     of "new":
-      if item.FileSelectorItem.workspaceFolder.isSome:
-        discard self.openWorkspaceFile(item.FileSelectorItem.path, item.FileSelectorItem.workspaceFolder.get)
-      else:
-        discard self.openFile(item.FileSelectorItem.path)
+      discard self.openWorkspaceFile(item.data, workspace)
     else:
       log(lvlError, fmt"Unknown argument {view}")
     return true

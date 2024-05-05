@@ -1,9 +1,13 @@
 import std/[strformat, strutils, os]
-import misc/[custom_unicode]
+import misc/[custom_unicode, custom_logger]
 import document, ui/node
 import chroma
 
-template createHeader*(builder: UINodeBuilder, inRenderHeader: bool, inMode: string, inDocument: Document, inHeaderColor: Color, inTextColor: Color, body: untyped): UINode =
+logCategory "wigdet-library"
+
+template createHeader*(builder: UINodeBuilder, inRenderHeader: bool, inMode: string,
+    inDocument: Document, inHeaderColor: Color, inTextColor: Color, body: untyped): UINode =
+
   block:
     var leftFunc: proc()
     var rightFunc: proc()
@@ -20,7 +24,9 @@ template createHeader*(builder: UINodeBuilder, inRenderHeader: bool, inMode: str
 
     var bar: UINode
     if inRenderHeader:
-      builder.panel(&{FillX, SizeToContentY, FillBackground, LayoutHorizontal}, backgroundColor = inHeaderColor):
+      builder.panel(&{FillX, SizeToContentY, FillBackground, LayoutHorizontal},
+          backgroundColor = inHeaderColor):
+
         bar = currentNode
 
         let isDirty = inDocument.lastSavedRevision != inDocument.revision
@@ -45,7 +51,10 @@ template createHeader*(builder: UINodeBuilder, inRenderHeader: bool, inMode: str
 
     bar
 
-proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: float, maxLine: int, maxHeight: Option[float], flags: UINodeFlags, backgroundColor: Color, handleScroll: proc(delta: float), handleLine: proc(line: int, y: float, down: bool)): UINode =
+proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: float,
+    maxLine: int, maxHeight: Option[float], flags: UINodeFlags, backgroundColor: Color,
+    handleScroll: proc(delta: float), handleLine: proc(line: int, y: float, down: bool)): UINode =
+
   let sizeToContentY = SizeToContentY in flags
   builder.panel(flags):
     result = currentNode
@@ -86,7 +95,9 @@ proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: 
     if not sizeToContentY and y > 0: # fill remaining space with background color
       builder.panel(&{FillX, FillBackground}, h = y, backgroundColor = backgroundColor)
 
-proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: float, maxLine: int, sizeToContentX: bool, sizeToContentY: bool, backgroundColor: Color, handleScroll: proc(delta: float), handleLine: proc(line: int, y: float, down: bool)) =
+proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: float,
+    maxLine: int, sizeToContentX: bool, sizeToContentY: bool, backgroundColor: Color,
+    handleScroll: proc(delta: float), handleLine: proc(line: int, y: float, down: bool)) =
   var flags = 0.UINodeFlags
   if sizeToContentX:
     flags.incl SizeToContentX
@@ -98,9 +109,11 @@ proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: 
   else:
     flags.incl FillY
 
-  discard builder.createLines(previousBaseIndex, scrollOffset, maxLine, float.none, flags, backgroundColor, handleScroll, handleLine)
+  discard builder.createLines(previousBaseIndex, scrollOffset, maxLine, float.none, flags,
+    backgroundColor, handleScroll, handleLine)
 
-proc updateBaseIndexAndScrollOffset*(height: float, previousBaseIndex: var int, scrollOffset: var float, lines: int, totalLineHeight: float, targetLine: Option[int], margin: float = 0.0) =
+proc updateBaseIndexAndScrollOffset*(height: float, previousBaseIndex: var int, scrollOffset: var float,
+    lines: int, totalLineHeight: float, targetLine: Option[int], margin: float = 0.0) =
 
   if targetLine.getSome(targetLine):
     let targetLineY = (targetLine - previousBaseIndex).float32 * totalLineHeight + scrollOffset
@@ -128,8 +141,50 @@ proc updateBaseIndexAndScrollOffset*(height: float, previousBaseIndex: var int, 
     previousBaseIndex -= 1
     scrollOffset -= totalLineHeight
 
-proc highlightedText*(builder: UINodeBuilder, text: string, highlightedIndices: openArray[int], color: Color, highlightColor: Color): UINode =
-  ## Create a text panel wher the characters at the indices in `highlightedIndices` are highlighted with `highlightColor`.
+proc createAbbreviatedText*(builder: UINodeBuilder, text: string, oversize: int, ellipsis: string,
+    color: Color, flags: UINodeFlags = 0.UINodeFlags) =
+
+  let textFlags = &{DrawText, SizeToContentX, SizeToContentY} + flags
+  let partRuneLen = text.runeLen.int
+  let cutoutStartRune = max(0, ((partRuneLen - oversize) div 2) - (ellipsis.len div 2) + 1)
+  let cutoutStart = text.runeOffset cutoutStartRune.RuneIndex
+  let cutoutEnd = text.runeOffset (cutoutStart + oversize + ellipsis.len).RuneIndex
+
+  if cutoutStart > 0:
+    builder.panel(textFlags, text = text[0..<cutoutStart], textColor = color)
+
+  builder.panel(textFlags, text = ellipsis, textColor = color.darken(0.2))
+
+  if cutoutEnd < text.len:
+    builder.panel(textFlags, text = text[cutoutEnd..^1], textColor = color)
+
+proc createTextWithMaxWidth*(builder: UINodeBuilder, text: string, maxWidth: int, ellipsis: string,
+    color: Color, flags: UINodeFlags = 0.UINodeFlags): UINode =
+
+  let oversize = text.runeLen.int - maxWidth
+  if oversize > 0:
+    builder.panel(&{LayoutHorizontal, SizeToContentX, SizeToContentY}):
+      result = currentNode
+      builder.createAbbreviatedText(text, oversize, ellipsis, color, flags)
+  else:
+    let textFlags = &{DrawText, SizeToContentX, SizeToContentY} + flags
+    builder.panel(textFlags + flags, text = text, textColor = color):
+      result = currentNode
+
+proc highlightedText*(builder: UINodeBuilder, text: string, highlightedIndices: openArray[int],
+    color: Color, highlightColor: Color, maxWidth: int = int.high): UINode =
+  ## Create a text panel wher the characters at the indices in `highlightedIndices` are highlighted
+  ## with `highlightColor`.
+
+  const ellipsis = "..."
+
+  let runeLen = text.runeLen.int
+
+  # How much we're over the limit, gets reduced as we replace text with ...
+  var oversize = runeLen - maxWidth
+
+  let textFlags = &{DrawText, SizeToContentX, SizeToContentY}
+
   if highlightedIndices.len > 0:
     builder.panel(&{SizeToContentX, SizeToContentY, LayoutHorizontal}):
       result = currentNode
@@ -138,15 +193,41 @@ proc highlightedText*(builder: UINodeBuilder, text: string, highlightedIndices: 
         if matchIndex >= text.len:
           break
 
+        # Add non highlighted text between last highlight and before next
         if matchIndex > start:
-          builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = text[start..<matchIndex], textColor = color)
+          let partText = text[start..<matchIndex]
+          let partOversizeMax = partText.runeLen.int - ellipsis.len
+          if oversize > 0 and partOversizeMax > 0:
+            let partOversize = min(oversize, partOversizeMax)
+            builder.createAbbreviatedText(partText, partOversize, ellipsis, color)
+            oversize -= partOversize
 
-        builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = $text.runeAt(matchIndex), textColor = highlightColor)
+          else:
+            builder.panel(textFlags, text = partText, textColor = color)
+
+        # Add highlighted text
+        builder.panel(textFlags, text = $text.runeAt(matchIndex),
+          textColor = highlightColor)
+
         start = text.nextRuneStart(matchIndex)
-        # builder.panel(&{FillBackground}, x = matchIndex.float * charWidth, w = charWidth, h = totalLineHeight, backgroundColor = selectedBackgroundColor.lighten(0.1))
+
+      # Add non highlighted part at end of text
       if start < text.len:
-        builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = text[start..^1], textColor = color)
+        let partText = text[start..^1]
+        let partOversizeMax = partText.runeLen.int - ellipsis.len
+        if oversize > 0 and partOversizeMax > 0:
+          let partOversize = min(oversize, partOversizeMax)
+          builder.createAbbreviatedText(partText, partOversize, ellipsis, color)
+
+        else:
+          builder.panel(textFlags, text = partText, textColor = color)
 
   else:
-    builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = text, textColor = color):
-      result = currentNode
+    if oversize > 0:
+      builder.panel(&{LayoutHorizontal, SizeToContentX, SizeToContentY}):
+        result = currentNode
+        builder.createAbbreviatedText(text, oversize, ellipsis, color)
+
+    else:
+      builder.panel(textFlags, text = text, textColor = color):
+        result = currentNode
