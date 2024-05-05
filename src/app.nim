@@ -1962,13 +1962,7 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
   popup.scale.x = 0.35
 
   popup.handleItemConfirmed2 = proc(item: FinderItem): bool =
-    case view
-    of "current":
-      self.loadWorkspaceFile(item.data, workspace)
-    of "new":
-      discard self.openWorkspaceFile(item.data, workspace)
-    else:
-      log(lvlError, fmt"Unknown argument {view}")
+    discard self.openWorkspaceFile(item.data, workspace)
     return true
 
   popup.addCustomCommand "send-to-location-list", proc(popup: SelectorPopup, args: JsonNode): bool =
@@ -1983,45 +1977,46 @@ proc chooseOpen*(self: App, view: string = "new") {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
-  var popup = newSelectorPopup(self.asAppInterface, "open".some)
+  var items = newSeq[FinderItem]()
+  let allViews = self.views & self.hiddenViews
+  for view in allViews:
+    let document = view.editor.getDocument
+    let path = view.document.filename
+    let isDirty = view.document.lastSavedRevision != view.document.revision
+    let dirtyMarker = if isDirty: "*" else: " "
+
+    let (directory, name) = path.splitPath
+    var relativeDirectory = directory
+    var data = path
+    if document.workspace.getSome(workspace):
+      relativeDirectory = workspace.getRelativePathSync(directory).get(directory)
+      data = workspace.encodePath(path).string
+
+    if relativeDirectory == ".":
+      relativeDirectory = ""
+
+    items.add FinderItem(
+      displayName: dirtyMarker & name,
+      filterText: name,
+      data: data,
+      detail: relativeDirectory,
+    )
+
+  var finder = newFinder(newStaticDataSource(items), filterAndSort=true)
+  finder.filterThreshold = float.low
+
+  var popup = newSelectorPopup(self.asAppInterface, "open".some, finder.some)
   popup.scale.x = 0.3
 
-  popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
-    let allViews = self.views & self.hiddenViews
-    for view in allViews:
-      let document = view.editor.getDocument
-      let path = view.document.filename
-      let score = matchFuzzySublime(text, path, defaultPathMatchingConfig).score.float
-      let isDirty = view.document.lastSavedRevision != view.document.revision
-      let dirtyMarker = if isDirty: "*" else: " "
-
-      let (directory, name) = path.splitPath
-      var relativeDirectory = if document.workspace.getSome(workspace):
-        workspace.getRelativePathSync(directory)
+  popup.handleItemConfirmed2 = proc(item: FinderItem): bool =
+    if item.data.WorkspacePath.decodePath().getSome(path):
+      if self.getWorkspaceFolder(path.id).getSome(workspace):
+        discard self.openWorkspaceFile(path.path, workspace)
       else:
-        string.none
-
-      if relativeDirectory.isSome and relativeDirectory.get == ".":
-        relativeDirectory = "".some
-
-      result.add FileSelectorItem(name: dirtyMarker & name, path: path, directory: relativeDirectory.get(directory), score: score, workspaceFolder: document.workspace)
-
-    result.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Ascending)
-
-  popup.handleItemConfirmed = proc(item: SelectorItem): bool =
-    case view
-    of "current":
-      if item.FileSelectorItem.workspaceFolder.isSome:
-        self.loadWorkspaceFile(item.FileSelectorItem.path, item.FileSelectorItem.workspaceFolder.get)
-      else:
-        self.loadFile(item.FileSelectorItem.path)
-    of "new":
-      if item.FileSelectorItem.workspaceFolder.isSome:
-        discard self.openWorkspaceFile(item.FileSelectorItem.path, item.FileSelectorItem.workspaceFolder.get)
-      else:
-        discard self.openFile(item.FileSelectorItem.path)
+        log lvlError, fmt"Failed to open location {path.path} in non-existent workspace {path.id}"
     else:
-      log(lvlError, fmt"Unknown argument {view}")
+      discard self.openFile(item.data)
+      log lvlError, fmt"Failed to open location {item}"
     return true
 
   popup.addCustomCommand "send-to-location-list", proc(popup: SelectorPopup, args: JsonNode): bool =

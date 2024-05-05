@@ -1,4 +1,4 @@
-import std/[json, options, os]
+import std/[json, options, os, strutils]
 import misc/[custom_async, id, array_buffer, cancellation_token, util, regex, custom_logger, event]
 import platform/filesystem
 
@@ -29,6 +29,22 @@ type
     line*: int
     column*: int
     text*: string
+
+type WorkspacePath* = distinct string
+
+proc encodePath*(workspace: WorkspaceFolder, path: string): WorkspacePath =
+  return WorkspacePath(fmt"ws://{workspace.id}/{path}")
+
+proc decodePath*(path: WorkspacePath): Option[tuple[id: Id, path: string]] =
+  let path = path.string
+  if not path.startsWith("ws://"):
+    return
+
+  let slashIndex = path.find('/', 5)
+  assert slashIndex > 0
+
+  let id = path[5..<slashIndex].parseId
+  return (id, path[(slashIndex + 1)..^1]).some
 
 proc ignorePath*(workspace: WorkspaceFolder, path: string): bool =
   if workspace.ignore.excludePath(path) or workspace.ignore.excludePath(path.extractFilename):
