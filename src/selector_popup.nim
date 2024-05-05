@@ -1,7 +1,9 @@
 import std/[strutils, sugar, options, json, streams, tables]
 import bumpy, vmath
-import misc/[util, rect_utils, comb_sort, timer, event, custom_async, custom_logger, cancellation_token, myjsonutils, fuzzy_matching, traits]
-import app_interface, text/text_editor, popup, events, scripting/expose, input, selector_popup_builder, file_selector_item, dispatch_tables
+import misc/[util, rect_utils, comb_sort, timer, event, custom_async, custom_logger,
+  cancellation_token, myjsonutils, fuzzy_matching, traits]
+import app_interface, text/text_editor, popup, events, scripting/expose, input,
+  selector_popup_builder, file_selector_item, dispatch_tables
 from scripting_api as api import Selection
 import finder/finder
 
@@ -71,7 +73,8 @@ implTrait ISelectorPopup, SelectorPopup:
 proc closed*(self: SelectorPopup): bool =
   return self.textEditor.isNil
 
-proc getCompletionMatches*(self: SelectorItem, pattern: string, text: string, config: FuzzyMatchConfig): seq[int] =
+proc getCompletionMatches*(self: SelectorItem, pattern: string, text: string,
+    config: FuzzyMatchConfig): seq[int] =
   if not self.hasCompletionMatchPositions:
     self.completionMatchPositions.setLen 0
     discard matchFuzzySublime(pattern, text, self.completionMatchPositions, true, config)
@@ -98,7 +101,8 @@ method deinit*(self: SelectorPopup) =
 
   self[] = default(typeof(self[]))
 
-proc addCustomCommand*(self: SelectorPopup, name: string, command: proc(popup: SelectorPopup, args: JsonNode): bool) =
+proc addCustomCommand*(self: SelectorPopup, name: string,
+    command: proc(popup: SelectorPopup, args: JsonNode): bool) =
   self.customCommands[name] = command
 
 proc getSearchString*(self: SelectorPopup): string =
@@ -125,7 +129,8 @@ proc autoSort(self: SelectorPopup) {.async.} =
     var t = startTimer()
     var iterations = 0
     while t.elapsed.ms < self.sortTimeboxMs:
-      if self.completions.combSort(self.sortFunction, Ascending, steps = self.sortSteps, gap = self.lastSortGap):
+      if self.completions.combSort(
+          self.sortFunction, Ascending, steps = self.sortSteps, gap = self.lastSortGap):
         return
 
       if self.lastSortGap > 1:
@@ -366,13 +371,16 @@ method handleMousePress*(self: SelectorPopup, button: MouseButton, mousePosWindo
 method handleMouseRelease*(self: SelectorPopup, button: MouseButton, mousePosWindow: Vec2) =
   discard
 
-method handleMouseMove*(self: SelectorPopup, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) =
+method handleMouseMove*(self: SelectorPopup, mousePosWindow: Vec2, mousePosDelta: Vec2,
+    modifiers: Modifiers, buttons: set[MouseButton]) =
   discard
 
-proc newSelectorPopup*(app: AppInterface, scopeName: Option[string] = string.none, finder: Option[Finder] = Finder.none): SelectorPopup =
+proc newSelectorPopup*(app: AppInterface, scopeName: Option[string] = string.none,
+    finder: Option[Finder] = Finder.none): SelectorPopup =
   var popup = SelectorPopup(app: app)
   popup.scale = vec2(0.5, 0.5)
-  popup.textEditor = newTextEditor(newTextDocument(app.configProvider, createLanguageServer=false), app, app.configProvider)
+  let document = newTextDocument(app.configProvider, createLanguageServer=false)
+  popup.textEditor = newTextEditor(document, app, app.configProvider)
   popup.textEditor.setMode("insert")
   popup.textEditor.renderHeader = false
   popup.textEditor.lineNumbers = api.LineNumbers.None.some
@@ -380,9 +388,17 @@ proc newSelectorPopup*(app: AppInterface, scopeName: Option[string] = string.non
   popup.textEditor.disableScrolling = true
   popup.textEditor.disableCompletions = true
   popup.textEditor.active = true
-  discard popup.textEditor.document.textInserted.subscribe (arg: tuple[document: TextDocument, location: Selection, text: string]) => popup.handleTextChanged()
-  discard popup.textEditor.document.textDeleted.subscribe (arg: tuple[document: TextDocument, location: Selection]) => popup.handleTextChanged()
-  discard popup.textEditor.onMarkedDirty.subscribe () => popup.markDirty()
+
+  discard popup.textEditor.document.textInserted.subscribe (
+      arg: tuple[document: TextDocument, location: Selection, text: string]) =>
+    popup.handleTextChanged()
+
+  discard popup.textEditor.document.textDeleted.subscribe (
+      arg: tuple[document: TextDocument, location: Selection]) =>
+    popup.handleTextChanged()
+
+  discard popup.textEditor.onMarkedDirty.subscribe () =>
+    popup.markDirty()
 
   if finder.getSome(finder):
     popup.finder = finder
