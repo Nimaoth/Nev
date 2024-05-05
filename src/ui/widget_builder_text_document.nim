@@ -716,7 +716,12 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
               if i == 0 and otherLine.line > 0:
                 for k in 0..<otherLine.line:
                   let styledLine = self.diffDocument.getStyledText k
-                  let colors = [(0.RuneIndex, self.diffDocument.lines[k].runeLen.RuneIndex, deletedTextBackgroundColor)]
+                  let colors = [(
+                    0.RuneIndex,
+                    self.diffDocument.lines[k].runeLen.RuneIndex,
+                    deletedTextBackgroundColor
+                  )]
+
                   options.backgroundColor = deletedTextBackgroundColor
                   options.lineNumber = k
                   options.lineId = self.diffDocument.lineIds[k]

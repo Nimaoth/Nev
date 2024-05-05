@@ -361,7 +361,8 @@ method getEventHandlers*(self: TextDocumentEditor, inject: Table[string, EventHa
 proc preRender*(self: TextDocumentEditor) =
   self.clearCustomHighlights(errorNodesHighlightId)
   if self.configProvider.getValue("editor.text.highlight-treesitter-errors", true):
-    let errorNodes = self.document.getErrorNodesInRange(self.visibleTextRange(buffer = 10))
+    let errorNodes = self.document.getErrorNodesInRange(
+      self.visibleTextRange(buffer = 10))
     for node in errorNodes:
       self.addCustomHighlight(errorNodesHighlightId, node, "editorError.foreground", color(1, 1, 1, 0.3))
 
@@ -831,7 +832,8 @@ proc delete*(self: TextDocumentEditor, selections: seq[Selection], notify: bool 
 proc edit*(self: TextDocumentEditor, selections: seq[Selection], texts: seq[string],
     notify: bool = true, record: bool = true, inclusiveEnd: bool = false): seq[Selection] {.
     expose("editor.text").} =
-  return self.document.edit(selections, self.selections, texts, notify, record, inclusiveEnd=inclusiveEnd)
+  return self.document.edit(selections, self.selections, texts, notify, record,
+    inclusiveEnd=inclusiveEnd)
 
 proc deleteLines(self: TextDocumentEditor, slice: Slice[int], oldSelections: Selections) {.
     expose("editor.text").} =
@@ -2126,6 +2128,7 @@ proc gotoSymbolAsync(self: TextDocumentEditor): Future[void] {.async.} =
 
 type
   LspWorkspaceSymbolsDataSource* = ref object of DataSource
+    workspace: WorkspaceFolder
     languageServer: LanguageServer
     query: string
     delayedTask: DelayedTask
@@ -2136,15 +2139,22 @@ proc getWorkspaceSymbols(self: LspWorkspaceSymbolsDataSource): Future[void] {.as
 
   let t = startTimer()
   var items = newItemList(symbols.len)
-  for i  in 0..symbols.high:
-    items[i] = FinderItem(displayName: symbols[i].name, filterText: symbols[i].name)
+  for i, symbol  in symbols:
+    let relPath = self.workspace.getRelativePathSync(symbol.filename).get(symbol.filename)
+
+    items[i] = FinderItem(
+      displayName: symbol.name,
+      detail: $symbol.symbolType & "\t" & relPath.splitPath[0],
+      data: symbol.filename & "\n" & $symbol.location.line & ":" & $symbol.location.column,
+    )
   debugf"[getWorkspaceSymbols] {t.elapsed.ms}ms"
 
   self.onItemsChanged.invoke items
 
-proc newLspWorkspaceSymbolsDataSource(languageServer: LanguageServer): LspWorkspaceSymbolsDataSource =
+proc newLspWorkspaceSymbolsDataSource(languageServer: LanguageServer, workspace: WorkspaceFolder): LspWorkspaceSymbolsDataSource =
   new result
   result.languageServer = languageServer
+  result.workspace = workspace
 
 method close*(self: LspWorkspaceSymbolsDataSource) =
   self.delayedTask.deinit()
@@ -2160,19 +2170,32 @@ method setQuery*(self: LspWorkspaceSymbolsDataSource, query: string) =
     self.delayedTask.reschedule()
 
 proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Future[void] {.async.} =
-  if self.document.getLanguageServer().await.getSome(ls):
+  if self.document.workspace.getSome(workspace) and
+      self.document.getLanguageServer().await.getSome(ls):
+
     let lastSelection = self.selection
     var builder = SelectorPopupBuilder()
     builder.scope = "text-lsp-symbols".some
-    builder.scaleX = 0.3
+    builder.scaleX = 0.5
 
-    let finder = newFinder(newLspWorkspaceSymbolsDataSource(ls), filterAndSort=true)
+    let finder = newFinder(newLspWorkspaceSymbolsDataSource(ls, workspace), filterAndSort=true)
     builder.finder = finder.some
 
-    builder.handleItemConfirmed = proc(popup: ISelectorPopup, item: SelectorItem): bool =
-      let item = item.FileSelectorItem
-      self.openFileAt(item.path, item.location.mapIt(it.toSelection))
-      true
+    builder.handleItemConfirmed2 = proc(popup: ISelectorPopup, item: FinderItem): bool =
+      try:
+        let parts = item.data.splitLines
+        let path = parts[0]
+        let location = if parts.len > 1:
+          let lineColumn = parts[1].split(":")
+          (lineColumn[0].parseInt, lineColumn[1].parseInt).some
+        else:
+          Cursor.none
+
+        self.openFileAt(path, location.mapIt(it.toSelection))
+        true
+      except:
+        log lvlError, fmt"Failed to parse data from item {item}"
+        return
 
     let popup = self.app.pushSelectorPopup(builder)
 
@@ -2723,6 +2746,16 @@ proc getStyledText*(self: TextDocumentEditor, i: int): StyledLine =
       if result.parts[i].text.runeLen > chars:
         splitPartAt(result, i, chars.RuneIndex)
       inc i
+
+  # Highlight the indentation of the cursor line
+  let cursorIndentLevel = self.document.getIndentForLine(self.selection.last.line)
+  let currentIndentLevel = self.document.getIndentForLine(i)
+  if currentIndentLevel > cursorIndentLevel:
+    let opacity = self.configProvider.getValue("editor.text.whitespace.opacity", 0.4)
+    let start = self.document.lines[i].toOpenArray.runeIndex(cursorIndentLevel, returnLen=true)
+    result.splitAt(start)
+    result.splitAt(start + 1.RuneCount)
+    result.overrideStyleAndText(start, "|", "comment", -1, opacity=opacity.some)
 
   if self.styledTextOverrides.contains(i):
     result.overrideStyle(0.RuneIndex, result.runeLen.RuneIndex, "comment", -1)

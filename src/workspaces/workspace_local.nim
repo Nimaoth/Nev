@@ -17,7 +17,6 @@ method settings*(self: WorkspaceFolderLocal): JsonNode =
   result["additionalPaths"] = %self.additionalPaths
 
 proc ignorePath*(ignore: Globs, path: string): bool =
-  let path = path.normalizePathUnix
   if ignore.excludePath(path) or ignore.excludePath(path.extractFilename):
     if ignore.includePath(path) or ignore.includePath(path.extractFilename):
       return false
@@ -30,14 +29,15 @@ proc collectFiles(dir: string, ignore: Globs, files: var seq[string]) =
     return
 
   for (kind, path) in walkDir(dir, relative=false):
+    let pathNorm = path.normalizePathUnix
     case kind
     of pcFile:
-      if ignore.ignorePath(path):
+      if ignore.ignorePath(pathNorm):
         continue
 
-      files.add path
+      files.add pathNorm
     of pcDir:
-      collectFiles(path, ignore, files)
+      collectFiles(pathNorm, ignore, files)
     else:
       discard
 
@@ -47,7 +47,7 @@ proc collectFilesThread(args: tuple[roots: seq[string], ignore: Globs]):
     let t = startTimer()
 
     for path in args.roots:
-      collectFiles(path, args.ignore, result.files)
+      collectFiles(path.normalizePathUnix, args.ignore, result.files)
 
     result.time = t.elapsed.ms
   except:

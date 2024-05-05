@@ -8,8 +8,9 @@ type
 
   FinderItem* = object
     displayName*: string
+    detail*: string
     filterText*: string
-    path*: string
+    data*: string
     score*: float
     originalScore: float
 
@@ -99,7 +100,7 @@ proc `[]=`*(list: var ItemList, i: int, item: sink FinderItem) =
   assert i < list.len
   list.data[i] = item
 
-proc `[]`*(list: var ItemList, i: int): lent FinderItem =
+proc `[]`*(list: ItemList, i: int): lent FinderItem =
   assert i >= 0
   assert i < list.len
   list.data[i]
@@ -163,7 +164,11 @@ proc filterAndSortItemsThread(args: (string, ItemList)): FilterAndSortResult {.g
     let scoreTimer = startTimer()
     if list.len > 0:
       for item in list.items.mitems:
-        item.score = matchFuzzySublime(query, item.filterText, defaultCompletionMatchingConfig).score.float
+        let filterText = if item.filterText.len > 0:
+          item.filterText
+        else:
+          item.displayName
+        item.score = matchFuzzySublime(query, filterText, defaultCompletionMatchingConfig).score.float
 
     result.scoreTime = scoreTimer.elapsed.ms
 

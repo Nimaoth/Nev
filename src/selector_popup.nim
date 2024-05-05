@@ -25,6 +25,8 @@ type
     completions*: seq[SelectorItem]
     handleItemConfirmed*: proc(item: SelectorItem): bool
     handleItemSelected*: proc(item: SelectorItem)
+    handleItemConfirmed2*: proc(finderItem: FinderItem): bool
+    handleItemSelected2*: proc(finderItem: FinderItem)
     handleCanceled*: proc()
     getCompletions*: CompletionProviderSync
     getCompletionsAsync*: CompletionProviderAsync
@@ -54,7 +56,8 @@ type
     autoSortActive: bool = false
     sortFunction*: proc(a, b: SelectorItem): int
 
-    finder: Finder
+    completionMatchPositions: Table[int, seq[int]]
+    finder*: Finder
 
   NamedSelectorItem* = ref object of SelectorItem
     name*: string
@@ -73,8 +76,18 @@ implTrait ISelectorPopup, SelectorPopup:
 proc closed*(self: SelectorPopup): bool =
   return self.textEditor.isNil
 
+proc getCompletionMatches*(self: SelectorPopup, i: int, pattern: string, text: string,
+    config: FuzzyMatchConfig): seq[int] =
+
+  if self.completionMatchPositions.contains(i):
+    return self.completionMatchPositions[i]
+
+  discard matchFuzzySublime(pattern, text, result, true, config)
+  self.completionMatchPositions[i] = result
+
 proc getCompletionMatches*(self: SelectorItem, pattern: string, text: string,
     config: FuzzyMatchConfig): seq[int] =
+
   if not self.hasCompletionMatchPositions:
     self.completionMatchPositions.setLen 0
     discard matchFuzzySublime(pattern, text, self.completionMatchPositions, true, config)
@@ -251,6 +264,15 @@ proc accept*(self: SelectorPopup) {.expose("popup.selector").} =
     if not handled:
       return
 
+  if self.finder.isNotNil and
+      self.finder.filteredItems.getSome(items) and
+      not self.handleItemConfirmed2.isNil and self.selected < self.completions.len:
+    let finderItemIndex = self.completions[self.completions.high - self.selected].finderItemIndex
+    if finderItemIndex >= 0 and finderItemIndex < items.len:
+      let handled = self.handleItemConfirmed2 items[finderItemIndex]
+      if not handled:
+        return
+
   self.app.popPopup(self)
 
 proc cancel*(self: SelectorPopup) {.expose("popup.selector").} =
@@ -272,6 +294,13 @@ proc prev*(self: SelectorPopup) {.expose("popup.selector").} =
 
   if self.completions.len > 0 and self.handleItemSelected != nil:
     self.handleItemSelected self.completions[self.completions.high - self.selected]
+
+  if self.finder.isNotNil and
+      self.finder.filteredItems.getSome(items) and
+      not self.handleItemSelected2.isNil and self.selected < self.completions.len:
+    let finderItemIndex = self.completions[self.completions.high - self.selected].finderItemIndex
+    if finderItemIndex >= 0 and finderItemIndex < items.len:
+      self.handleItemSelected2 items[finderItemIndex]
 
   self.markDirty()
 
@@ -340,12 +369,19 @@ proc handleItemsUpdated*(self: SelectorPopup) =
     return
 
   self.completions.setLen 0
+  self.completionMatchPositions.clear()
 
   if self.finder.filteredItems.getSome(list) and list.len > 0:
-    for item in list.items:
+    for i, item in list.items:
       if item.score < 0:
         continue
-      self.completions.add FileSelectorItem(name: item.displayName, path: item.path, score: item.score)
+      self.completions.add FileSelectorItem(
+        finderItemIndex: i,
+        name: item.displayName,
+        directory: item.detail,
+        path: item.data,
+        score: item.score
+      )
 
   self.selected = self.selected.clamp(0, self.completions.len - 1)
   self.markDirty()
