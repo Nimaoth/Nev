@@ -29,6 +29,7 @@ type
     filteredItems*: Option[ItemList]
 
     filterAndSort: bool
+    filterThreshold*: float = 0
 
     queryVersion: int
     itemsVersion: int

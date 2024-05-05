@@ -380,7 +380,7 @@ proc handleItemsUpdated*(self: SelectorPopup) =
 
   if self.finder.filteredItems.getSome(list) and list.len > 0:
     for i, item in list.items:
-      if item.score < 0:
+      if item.score < self.finder.filterThreshold:
         continue
       self.completions.add FileSelectorItem(
         finderItemIndex: i,

@@ -249,6 +249,8 @@ proc matchFuzzySublime*(pattern, str: openArray[char], matches: var seq[int], re
       case scoreState
       of StartMatch, WordBoundryMatch:
         scoreState = LeadingCharMatch
+        if strIndex == 0:
+          score += config.stateScores[LeadingCharMatch]
 
       of CharMatch:
         transition(ConsecutiveMatch)
