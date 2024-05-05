@@ -1976,14 +1976,12 @@ type
 
 proc getWorkspaceSymbols(self: LspWorkspaceSymbolsDataSource): Future[void] {.async.} =
   let query = self.query
-  debugf"[getWorkspaceSymbols] '{self.query}'"
   let symbols = self.languageServer.getWorkspaceSymbols(self.query).await
-  debugf"[getWorkspaceSymbols] '{query}' -> {symbols.len}"
 
   let t = startTimer()
-  var items = newSeq[FinderItem]()
-  for i, symbol in symbols:
-    items.add FinderItem(displayName: symbol.name, filterText: symbol.name)
+  var items = newItemList(symbols.len)
+  for i  in 0..symbols.high:
+    items[i] = FinderItem(displayName: symbols[i].name, filterText: symbols[i].name)
   debugf"[getWorkspaceSymbols] {t.elapsed.ms}ms"
 
   self.onItemsChanged.invoke items
@@ -1992,8 +1990,11 @@ proc newLspWorkspaceSymbolsDataSource(languageServer: LanguageServer): LspWorksp
   new result
   result.languageServer = languageServer
 
+method close*(self: LspWorkspaceSymbolsDataSource) =
+  self.delayedTask.deinit()
+  self.delayedTask = nil
+
 method setQuery*(self: LspWorkspaceSymbolsDataSource, query: string) =
-  debugf"[setQuery] '{query}'"
   self.query = query
 
   if self.delayedTask.isNil:
