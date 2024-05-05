@@ -54,7 +54,8 @@ proc newItemList*(len: int): ItemList =
 
     result = itemListPool.pop
     if result.cap < len:
-      result.data = cast[ptr UncheckedArray[FinderItem]](realloc0(result.data.pointer, sizeof(FinderItem) * result.cap, sizeof(FinderItem) * len))
+      result.data = cast[ptr UncheckedArray[FinderItem]](
+        realloc0(result.data.pointer, sizeof(FinderItem) * result.cap, sizeof(FinderItem) * len))
       result.cap = len
     result.len = len
     return
@@ -115,7 +116,8 @@ proc reverse*(list: ItemList) =
     dec(y)
     inc(x)
 
-func sort*(list: ItemList, cmp: proc (x, y: FinderItem): int {.closure.}, order = SortOrder.Ascending) {.effectsOf: cmp.} =
+func sort*(list: ItemList, cmp: proc (x, y: FinderItem): int {.closure.},
+           order = SortOrder.Ascending) {.effectsOf: cmp.} =
   var list = list
   toOpenArray(list.data, 0, list.len - 1).sort(cmp, order)
 
@@ -145,7 +147,8 @@ proc newFinder*(source: DataSource, filterAndSort: bool = true): Finder =
   var self = result
   result.source = source
   result.filterAndSort = filterAndSort
-  result.onItemsChangedHandle = source.onItemsChanged.subscribe proc(items: ItemList) = self.handleItemsChanged(items)
+  result.onItemsChangedHandle = source.onItemsChanged.subscribe proc(items: ItemList) =
+    self.handleItemsChanged(items)
 
 type FilterAndSortResult = object
   scoreTime: float

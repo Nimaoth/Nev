@@ -41,7 +41,8 @@ proc collectFiles(dir: string, ignore: Globs, files: var seq[string]) =
     else:
       discard
 
-proc collectFilesThread(args: tuple[roots: seq[string], ignore: Globs]): tuple[files: seq[string], time: float] {.gcsafe.} =
+proc collectFilesThread(args: tuple[roots: seq[string], ignore: Globs]):
+    tuple[files: seq[string], time: float] {.gcsafe.} =
   try:
     let t = startTimer()
 
@@ -60,8 +61,8 @@ proc recomputeFileCacheAsync(self: WorkspaceFolderLocal): Future[void] {.async.}
     self.isCacheUpdateInProgress = false
 
   log lvlInfo, "[recomputeFileCacheAsync] Start"
-
-  let res = spawnAsync(collectFilesThread, (@[self.path] & self.additionalPaths, self.ignore)).await
+  let args = (@[self.path] & self.additionalPaths, self.ignore)
+  let res = spawnAsync(collectFilesThread, args).await
   log lvlInfo, fmt"[recomputeFileCacheAsync] Finished in {res.time}ms"
 
   self.cachedFiles = res.files
@@ -86,7 +87,8 @@ method getRelativePathSync*(self: WorkspaceFolderLocal, absolutePath: string): O
 
   return string.none
 
-method getRelativePath*(self: WorkspaceFolderLocal, absolutePath: string): Future[Option[string]] {.async.} =
+method getRelativePath*(self: WorkspaceFolderLocal, absolutePath: string):
+    Future[Option[string]] {.async.} =
   return self.getRelativePathSync(absolutePath)
 
 method isReadOnly*(self: WorkspaceFolderLocal): bool = false
@@ -96,7 +98,8 @@ method getWorkspacePath*(self: WorkspaceFolderLocal): string = self.path.absolut
 method loadFile*(self: WorkspaceFolderLocal, relativePath: string): Future[string] {.async.} =
   return readFile(self.getAbsolutePath(relativePath))
 
-method saveFile*(self: WorkspaceFolderLocal, relativePath: string, content: string): Future[void] {.async.} =
+method saveFile*(self: WorkspaceFolderLocal, relativePath: string, content: string):
+    Future[void] {.async.} =
   writeFile(self.getAbsolutePath(relativePath), content)
 
 proc loadIgnoreFile(self: WorkspaceFolderLocal, path: string): Option[Globs] =
@@ -126,7 +129,8 @@ proc fillDirectoryListing(directoryListing: var DirectoryListing, path: string) 
     else:
       log lvlError, fmt"getDirectoryListing: Unhandled file type {kind} for {file}"
 
-method getDirectoryListing*(self: WorkspaceFolderLocal, relativePath: string): Future[DirectoryListing] {.async.} =
+method getDirectoryListing*(self: WorkspaceFolderLocal, relativePath: string):
+    Future[DirectoryListing] {.async.} =
   when not defined(js):
     var res = DirectoryListing()
 
@@ -141,7 +145,8 @@ method getDirectoryListing*(self: WorkspaceFolderLocal, relativePath: string): F
 
     return res
 
-proc searchWorkspaceFolder(self: WorkspaceFolderLocal, query: string, root: string): Future[seq[SearchResult]] {.async.} =
+proc searchWorkspaceFolder(self: WorkspaceFolderLocal, query: string, root: string):
+    Future[seq[SearchResult]] {.async.} =
   let output = runProcessAsync("rg", @["--line-number", "--column", "--heading", query, root]).await
   var res: seq[SearchResult]
 
