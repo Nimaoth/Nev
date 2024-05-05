@@ -911,6 +911,8 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
   updateBaseIndexAndScrollOffset(bottom - top, self.completionsBaseIndex, self.completionsScrollOffset, self.completionMatches.len, totalLineHeight, self.scrollToCompletion)
   self.scrollToCompletion = int.none
 
+  var rows: seq[UINode] = @[]
+
   var completionsPanel: UINode = nil
   builder.panel(&{SizeToContentX, SizeToContentY, AnimateBounds, MaskContent}, x = cursorBounds.x, y = top, pivot = vec2(0, 0), userId = self.completionsId.newPrimaryId):
     completionsPanel = currentNode
@@ -937,6 +939,8 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
         vec2(0, 1)
 
       builder.panel(&{SizeToContentY, FillBackground}, y = y, pivot = pivot, backgroundColor = backgroundColor):
+        rows.add currentNode
+
         let completion {.cursor.} = self.completions[self.completionMatches[i].index]
         let color = if i == self.selectedCompletion: nameSelectedColor else: nameColor
 
@@ -1005,6 +1009,13 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
   if completionsPanel.bounds.yh > completionsPanel.parent.bounds.h:
     completionsPanel.rawY = cursorBounds.y
     completionsPanel.pivot = vec2(0, 1)
+
+    # Reverse order of rows
+    for i in 0..<(rows.len div 2):
+      let y1 = rows[i].bounds.y
+      let y2 = rows[rows.high - i].bounds.y
+      rows[i].rawY = y2
+      rows[rows.high - i].rawY = y1
 
   if completionsPanel.bounds.xw > completionsPanel.parent.bounds.w:
     completionsPanel.rawX = max(completionsPanel.parent.bounds.w - completionsPanel.bounds.w, 0)
