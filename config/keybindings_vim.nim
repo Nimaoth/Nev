@@ -827,6 +827,8 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
       addCommand "editor", "L", "move-current-view-next"
       addCommand "editor", "W", "move-current-view-to-top"
 
+  addCommand "editor", "<C-o>", "open-previous-editor"
+
   # In the browser C-w closes the tab, so we use A-w instead
   if getBackend() == Browser:
     defineWindowingCommands "<A-w>"

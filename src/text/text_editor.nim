@@ -15,7 +15,7 @@ import completion, completion_provider_document, completion_provider_lsp,
 import config_provider, app_interface
 import diff
 import workspaces/workspace
-import finder/finder
+import finder/[previewer, finder]
 
 from language/lsp_types import Response, CompletionList, CompletionItem, InsertTextFormat,
   TextEdit, Range, Position, isSuccess, asTextEdit, asInsertReplaceEdit
@@ -499,6 +499,17 @@ proc doMoveCursorCenter(self: TextDocumentEditor, cursor: Cursor, offset: int, w
   let line = clamp((r.first.line + r.last.line) div 2, 0, self.document.lines.len - 1)
   let column = self.document.visualColumnToCursorColumn(line, self.targetColumn)
   return (line, column)
+
+proc scrollToTop*(self: TextDocumentEditor) =
+  if self.disableScrolling:
+    return
+
+  self.targetLine = 0.some
+  self.nextScrollBehaviour = TopOfScreen.some
+  self.targetLineMargin = float.none
+
+  self.updateInlayHints()
+  self.markDirty()
 
 proc centerCursor*(self: TextDocumentEditor, cursor: Cursor) =
   if self.disableScrolling:
@@ -1910,24 +1921,25 @@ proc openFileAt(self: TextDocumentEditor, filename: string, location: Option[Sel
   else:
     log lvlError, fmt"Failed to open file '{filename}' at {location}"
 
+import finder/[workspace_file_previewer]
+
 proc openLocationFromFinderItem(self: TextDocumentEditor, item: FinderItem) =
   try:
-    let parts = item.data.splitLines
-    let path = parts[0]
-    let location = if parts.len > 1:
-      let lineColumn = parts[1].split(":")
-      (lineColumn[0].parseInt, lineColumn[1].parseInt).some
-    else:
-      Cursor.none
+    let (path, location) = item.parsePathAndLocationFromItemData().getOr:
+      log lvlError, fmt"Failed to open location from finder item because of invalid data format. " &
+        fmt"Expected path or json object with path property {item}"
+      return
 
     self.openFileAt(path, location.mapIt(it.toSelection))
   except:
     log lvlError, fmt"Failed to parse data from item {item}"
 
 proc encodeFileLocationForFinderItem(path: string, location: Option[Cursor]): string =
-  result = path
-  if location.getSome(location):
-    result.add "\n" & $location.line & ":" & $location.column
+  result = $ %*{
+    "path": path,
+    "line": location.get((0, 0)).line,
+    "column": location.get((0, 0)).column,
+  }
 
 proc gotoLocationAsync(self: TextDocumentEditor, definitions: seq[Definition]): Future[void] {.async.} =
   if definitions.len == 1:
@@ -1935,7 +1947,6 @@ proc gotoLocationAsync(self: TextDocumentEditor, definitions: seq[Definition]): 
     self.openFileAt(d.filename, d.location.toSelection.some)
 
   elif self.document.workspace.getSome(workspace):
-    let lastSelection = self.selection
     var builder = SelectorPopupBuilder()
     builder.scope = "text-lsp-locations".some
     builder.scaleX = 0.4
@@ -1950,18 +1961,14 @@ proc gotoLocationAsync(self: TextDocumentEditor, definitions: seq[Definition]): 
         data: encodeFileLocationForFinderItem(definition.filename, definition.location.some),
       )
 
+    builder.previewer = newWorkspaceFilePreviewer(workspace).Previewer.some
+
     let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
     builder.finder = finder.some
 
     builder.handleItemConfirmed2 = proc(popup: ISelectorPopup, item: FinderItem): bool =
       self.openLocationFromFinderItem(item)
       true
-
-    builder.handleItemSelected2 = proc(popup: ISelectorPopup, item: FinderItem) =
-      self.openLocationFromFinderItem(item)
-
-    builder.handleCanceled = proc(popup: ISelectorPopup) =
-      self.openFileAt(self.document.filename, lastSelection.some)
 
     let popup = self.app.pushSelectorPopup(builder)
 
@@ -2065,7 +2072,7 @@ proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], nav
   let lastSelection = self.selection
   var builder = SelectorPopupBuilder()
   builder.scope = "text-lsp-locations".some
-  builder.scaleX = 0.3
+  builder.scaleX = 0.6
 
   var res = newSeq[FinderItem]()
   for i, symbol in symbols:
@@ -2076,18 +2083,14 @@ proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], nav
       data: encodeFileLocationForFinderItem(symbol.filename, symbol.location.some),
     )
 
+  if self.document.workspace.getSome(workspace):
+    builder.previewer = newWorkspaceFilePreviewer(workspace).Previewer.some
   let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
   builder.finder = finder.some
 
   builder.handleItemConfirmed2 = proc(popup: ISelectorPopup, item: FinderItem): bool =
     self.openLocationFromFinderItem(item)
     true
-
-  builder.handleItemSelected2 = proc(popup: ISelectorPopup, item: FinderItem) =
-    self.openLocationFromFinderItem(item)
-
-  builder.handleCanceled = proc(popup: ISelectorPopup) =
-    self.openFileAt(self.document.filename, lastSelection.some)
 
   let popup = self.app.pushSelectorPopup(builder)
 
@@ -2159,24 +2162,13 @@ proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Fut
     builder.scope = "text-lsp-locations".some
     builder.scaleX = 0.5
 
+    builder.previewer = newWorkspaceFilePreviewer(workspace).Previewer.some
     let finder = newFinder(newLspWorkspaceSymbolsDataSource(ls, workspace), filterAndSort=true)
     builder.finder = finder.some
 
     builder.handleItemConfirmed2 = proc(popup: ISelectorPopup, item: FinderItem): bool =
-      try:
-        let parts = item.data.splitLines
-        let path = parts[0]
-        let location = if parts.len > 1:
-          let lineColumn = parts[1].split(":")
-          (lineColumn[0].parseInt, lineColumn[1].parseInt).some
-        else:
-          Cursor.none
-
-        self.openFileAt(path, location.mapIt(it.toSelection))
-        true
-      except:
-        log lvlError, fmt"Failed to parse data from item {item}"
-        return
+      self.openLocationFromFinderItem(item)
+      true
 
     let popup = self.app.pushSelectorPopup(builder)
 
