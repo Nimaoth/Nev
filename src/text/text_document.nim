@@ -935,7 +935,7 @@ proc autoDetectIndentStyle(self: TextDocument) =
 
   log lvlInfo, &"[Text_document] Detected indent: {self.indentStyle}, {self.languageConfig.get(TextLanguageConfig())[]}"
 
-proc loadAsync(self: TextDocument, ws: WorkspaceFolder): Future[void] {.async.} =
+proc loadAsync(self: TextDocument, ws: WorkspaceFolder, reloadTreesitter: bool = false): Future[void] {.async.} =
   # self.content = await ws.loadFile(self.filename)
   self.isBackedByFile = true
   self.isLoadingAsync = true
@@ -948,6 +948,81 @@ proc loadAsync(self: TextDocument, ws: WorkspaceFolder): Future[void] {.async.} 
   self.lastSavedRevision = self.undoableRevision
   self.isLoadingAsync = false
   self.onLoaded.invoke self
+
+  await self.initTreesitter()
+
+proc setFileAndContent*(self: TextDocument, filename: string, content: string) =
+  let filename = if filename.len > 0: filename.normalizePathUnix else: self.filename
+  if filename.len == 0:
+    raise newException(IOError, "Missing filename")
+
+  self.filename = filename
+  self.isBackedByFile = false
+
+  if getLanguageForFile(filename).getSome(language):
+    self.languageId = language
+  else:
+    self.languageId = ""
+
+  if not self.tsParser.isNil:
+    self.tsParser.deinit()
+    self.tsParser = nil
+  if not self.highlightQuery.isNil:
+    self.highlightQuery.deinit()
+    self.highlightQuery = nil
+  if not self.errorQuery.isNil:
+    self.errorQuery.deinit()
+    self.errorQuery = nil
+
+  self.content = content
+
+  asyncCheck self.initTreesitter()
+
+  self.styledTextCache.clear()
+  self.autoDetectIndentStyle()
+  self.onLoaded.invoke self
+
+proc setFileAndReload*(self: TextDocument, filename: string, workspace: Option[WorkspaceFolder]) =
+  let filename = if filename.len > 0: filename.normalizePathUnix else: self.filename
+  if filename.len == 0:
+    raise newException(IOError, "Missing filename")
+
+  self.workspace = workspace
+  self.filename = filename
+  self.isBackedByFile = true
+  if getLanguageForFile(filename).getSome(language):
+    self.languageId = language
+  else:
+    self.languageId = ""
+
+  if not self.tsParser.isNil:
+    self.tsParser.deinit()
+    self.tsParser = nil
+  if not self.highlightQuery.isNil:
+    self.highlightQuery.deinit()
+    self.highlightQuery = nil
+  if not self.errorQuery.isNil:
+    self.errorQuery.deinit()
+    self.errorQuery = nil
+
+  self.styledTextCache.clear()
+
+  if self.workspace.getSome(ws):
+    asyncCheck self.loadAsync(ws, true)
+  elif self.appFile:
+    self.content = catch fs.loadApplicationFile(self.filename):
+      log lvlError, fmt"Failed to load application file {filename}"
+      ""
+    self.lastSavedRevision = self.undoableRevision
+    self.autoDetectIndentStyle()
+    self.onLoaded.invoke self
+  else:
+    self.content = catch fs.loadFile(self.filename):
+      log lvlError, fmt"Failed to load file {filename}"
+      ""
+    self.lastSavedRevision = self.undoableRevision
+    self.autoDetectIndentStyle()
+    self.onLoaded.invoke self
 
 method load*(self: TextDocument, filename: string = "") =
   let filename = if filename.len > 0: filename.normalizePathUnix else: self.filename

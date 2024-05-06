@@ -280,6 +280,11 @@ type
     wasQueried: bool = false
     callback: proc(): Future[ItemList]
 
+  SyncDataSource* = ref object of DataSource
+    wasQueried: bool = false
+    callbackSeq: proc(): seq[FinderItem]
+    callbackList: proc(): ItemList
+
 proc getDataAsync(self: AsyncFutureDataSource): Future[void] {.async.} =
   let list = self.future.await
   self.onItemsChanged.invoke list
@@ -296,6 +301,14 @@ proc newAsyncCallbackDataSource*(callback: proc(): Future[ItemList]): AsyncCallb
   new result
   result.callback = callback
 
+proc newSyncDataSource*(callback: proc(): seq[FinderItem]): SyncDataSource =
+  new result
+  result.callbackSeq = callback
+
+proc newSyncDataSource*(callback: proc(): ItemList): SyncDataSource =
+  new result
+  result.callbackList = callback
+
 method setQuery*(self: AsyncFutureDataSource, query: string) =
   if not self.wasQueried:
     self.wasQueried = true
@@ -306,6 +319,25 @@ method setQuery*(self: AsyncCallbackDataSource, query: string) =
     self.wasQueried = true
     asyncCheck self.getDataAsync()
 
+method setQuery*(self: SyncDataSource, query: string) =
+  if not self.wasQueried:
+    self.wasQueried = true
+
+    let list = if self.callbackList.isNotNil:
+      self.callbackList()
+    else:
+      let items = self.callbackSeq()
+      var list = newItemList(items.len)
+      for i, item in items:
+        list[i] = item
+      list
+
+    self.onItemsChanged.invoke list
+
 proc retrigger*(self: AsyncCallbackDataSource) =
+  self.wasQueried = false
+  self.setQuery("")
+
+proc retrigger*(self: SyncDataSource) =
   self.wasQueried = false
   self.setQuery("")
