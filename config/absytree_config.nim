@@ -83,16 +83,16 @@ loadDefaultKeybindings(true)
 loadModelKeybindings()
 loadVimKeybindings()
 
+# if getHostOs() == "linux":
+#   loadLspConfigFromFile("config/lsp-linux.json")
+# else:
+#   loadLspConfigFromFile("config/lsp.json")
+
 loadLspConfigFromFile("config/lsp.json")
 loadSnippetsFromFile(".vscode/nim-snippets.code-snippets", "nim")
 
 addTextCommandBlock "", "<C-k><C-s>":
   loadSnippetsFromFile(".vscode/nim-snippets.code-snippets", "nim")
-
-addCommand "popup.selector.file-explorer", "<C-g>", "prev"
-addCommand "popup.selector.file-explorer", "<C-r>", "next"
-addCommand "popup.selector.file-explorer", "<C-t>", "accept"
-addCommand "popup.selector.file-explorer", "<C-n>", "go-up"
 
 if getBackend() == Terminal:
   # Disable animations in terminal because they don't look great
