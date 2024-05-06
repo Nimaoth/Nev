@@ -795,6 +795,15 @@ proc chooseLocation*(view: string = "new") =
       argsJsonString.cstring)
 
 
+proc editor_searchGlobalInteractive_void_App_wasm(arg: cstring): cstring {.
+    importc.}
+proc searchGlobalInteractive*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_searchGlobalInteractive_void_App_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_searchGlobal_void_App_string_wasm(arg: cstring): cstring {.importc.}
 proc searchGlobal*(query: string) =
   var argsJson = newJArray()

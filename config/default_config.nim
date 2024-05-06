@@ -170,6 +170,7 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
   addCommand "editor", "<LEADER>gl", "choose-location", "new"
   addCommand "editor", "<LEADER>gg", "choose-git-active-files", "new"
   addCommand "editor", "<LEADER>ge", "explore-files"
+  addCommand "editor", "<LEADER>gs", "search-global-interactive"
   addCommandBlock "editor", "<LEADER>log":
     runAction "logs"
     if getActiveEditor().isTextEditor(ed):

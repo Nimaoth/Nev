@@ -939,7 +939,7 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     editor.updateTargetColumn()
 
   addTextCommandBlock "", "/":
-    commandLine("set-search-query \\")
+    commandLine(r"set-search-query \")
     if getActiveEditor().isTextEditor(editor):
       var arr = newJArray()
       arr.add newJString("file")
@@ -947,8 +947,8 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
       editor.setMode("insert")
       editor.updateTargetColumn()
 
-  addTextCommandBlock "", "\\\\":
-    commandLine("search-global \\")
+  addTextCommandBlock "", r"\\":
+    commandLine(r"search-global \")
     if getActiveEditor().isTextEditor(editor):
       var arr = newJArray()
       arr.add newJString("file")

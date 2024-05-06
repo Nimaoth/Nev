@@ -318,13 +318,18 @@ proc startAsyncProcess*(name: string, args: seq[string] = @[], autoRestart = tru
 
   return process
 
-proc readProcessOutputThread(args: (string, seq[string])): seq[string] {.gcsafe.} =
+proc readProcessOutputThread(args: (string, seq[string], int)): seq[string] {.gcsafe.} =
   try:
     let process = startProcess(args[0], args=args[1], options={poUsePath, poDaemon})
-    let (lines, _) = process.readLines()
-    return lines
+
+    for line in process.lines:
+      result.add(line)
+      if result.len >= args[2]:
+        break
+
+    process.kill()
   except CatchableError:
     return @[]
 
-proc runProcessAsync*(name: string, args: seq[string] = @[]): Future[seq[string]] =
-  return spawnAsync(readProcessOutputThread, (name, args))
+proc runProcessAsync*(name: string, args: seq[string] = @[], maxLines: int = int.high): Future[seq[string]] =
+  return spawnAsync(readProcessOutputThread, (name, args, maxLines))
