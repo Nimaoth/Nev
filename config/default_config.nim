@@ -223,7 +223,7 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
 
   addCommandBlock "popup.selector.open", "<C-x>":
     if getActivePopup().isSelectorPopup(popup):
-      let item = popup.getSelectedItem()
+      let item = popup.getSelectedItemJson()
       closeEditor(item["path"].getStr)
       popup.updateCompletions()
 
@@ -231,6 +231,7 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
   addCommand "popup.selector.git", "<C-u>", "unstage-selected"
   addCommand "popup.selector.git", "<C-r>", "revert-selected"
   addCommand "popup.selector.file-explorer", "<C-UP>", "go-up"
+  addCommand "popup.selector.file-explorer", "<C-r>", "go-up"
 
   # addCommand "editor.text", "<C-SPACE>ts", "reload-treesitter"
 
