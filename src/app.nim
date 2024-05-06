@@ -2301,13 +2301,12 @@ proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
     var finder = newFinder(source, filterAndSort=true)
     finder.filterThreshold = float.low
 
-    var popup = newSelectorPopup(self.asAppInterface, "git".some, finder.some,
-      newWorkspaceFilePreviewer(workspace).Previewer.some)
-    popup.scale.x = 0.6
+    var popup = newSelectorPopup(self.asAppInterface, "git".some, finder.some)
+    popup.scale.x = 0.35
 
     popup.handleItemConfirmed2 = proc(item: FinderItem): bool =
       let fileInfo = item.data.parseJson.jsonTo(GitFileInfo).catch:
-        log lvlError, fmt"Failed to parse get file info from item: {item}"
+        log lvlError, fmt"Failed to parse git file info from item: {item}"
         return true
 
       if fileInfo.stagedStatus != None:
@@ -2377,42 +2376,42 @@ type ExplorerFileSelectorItem* = ref object of FileSelectorItem
   isFile*: bool = false
 
 when not defined(js):
-  proc getItemsFromDirectory(popup: SelectorPopup, workspace: WorkspaceFolder, directory: string): Future[seq[SelectorItem]] {.async.} =
-    if popup.updateInProgress:
-      return popup.completions
+  proc getItemsFromDirectory(workspace: WorkspaceFolder, directory: string): Future[ItemList] {.async.} =
 
-    popup.updateInProgress = true
-    defer:
-      popup.updateInProgress = false
+    let listing = await workspace.getDirectoryListing(directory)
 
-    if not popup.updated:
-      let listing = await workspace.getDirectoryListing(directory)
-      if popup.textEditor.isNil:
-        return popup.completions
+    var list = newItemList(listing.files.len + listing.folders.len)
 
-      let text = popup.getSearchString()
+    # todo: use unicode icons on all targets once rendering is fixed
+    const fileIcon = "🗎 "
+    const folderIcon = "🗀"
 
-      var completions = newSeq[SelectorItem]()
+    var i = 0
+    proc addItem(path: string, isFile: bool) =
+      let (directory, name) = path.splitPath
+      var relativeDirectory = workspace.getRelativePathSync(directory).get(directory)
 
-      # todo: use unicode icons on all targets once rendering is fixed
-      const fileIcon = "🗎 "
-      const folderIcon = "🗀"
+      if relativeDirectory == ".":
+        relativeDirectory = ""
 
-      for file in listing.files:
-        let score = matchFuzzySublime(text, file, defaultPathMatchingConfig).score.float
-        completions.add ExplorerFileSelectorItem(path: file, name: fileIcon & " " & file, isFile: true, score: score, workspaceFolder: workspace.some)
+      let icon = if isFile: fileIcon else: folderIcon
+      list[i] = FinderItem(
+        displayName: icon & " " & name,
+        data: $ %*{
+          "path": path,
+          "isFile": isFile,
+        },
+        detail: path,
+      )
+      inc i
 
-      for dir in listing.folders:
-        let score = matchFuzzySublime(text, dir, defaultPathMatchingConfig).score.float
-        completions.add ExplorerFileSelectorItem(path: dir, name: folderIcon & " " & dir, isFile: false, score: score, workspaceFolder: workspace.some)
+    for file in listing.files:
+      addItem(file, true)
 
-      return completions
-    else:
-      let text = popup.getSearchString()
-      for item in popup.completions.mitems:
-        item.hasCompletionMatchPositions = false
-        item.score = matchFuzzySublime(text, item.ExplorerFileSelectorItem.path, defaultPathMatchingConfig).score.float
-      return popup.completions
+    for dir in listing.folders:
+      addItem(dir, false)
+
+    return list
 
 proc exploreFiles*(self: App) {.expose("editor").} =
   when not defined(js):
@@ -2425,29 +2424,30 @@ proc exploreFiles*(self: App) {.expose("editor").} =
 
     let workspace = self.workspace.folders[0]
 
-    var popup = newSelectorPopup(self.asAppInterface, "file-explorer".some, Finder.none, Previewer.none)
-      # newWorkspaceFilePreviewer(workspace).Previewer.some)
-    popup.scale.x = 0.4
-
     let currentDirectory = new string
     currentDirectory[] = ""
 
-    popup.getCompletionsAsync = proc(popup: SelectorPopup, text: string): Future[seq[SelectorItem]] =
-      return popup.getItemsFromDirectory(workspace, currentDirectory[])
+    let source = newAsyncCallbackDataSource () => workspace.getItemsFromDirectory(currentDirectory[])
+    var finder = newFinder(source, filterAndSort=true)
+    finder.filterThreshold = float.low
 
-    popup.handleItemConfirmed = proc(item: SelectorItem): bool =
-      let item = item.ExplorerFileSelectorItem
-      if item.isFile:
-        if item.workspaceFolder.isSome:
-          discard self.openWorkspaceFile(item.path, item.workspaceFolder.get)
-        else:
-          discard self.openFile(item.path)
+    var popup = newSelectorPopup(self.asAppInterface, "file-explorer".some, finder.some,
+      newWorkspaceFilePreviewer(workspace).Previewer.some)
+
+    popup.scale.x = 0.8
+
+    popup.handleItemConfirmed2 = proc(item: FinderItem): bool =
+      let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
+        log lvlError, fmt"Failed to parse file info from item: {item}"
+        return true
+
+      if fileInfo.isFile:
+        discard self.openWorkspaceFile(fileInfo.path, workspace)
         return true
       else:
-        currentDirectory[] = item.path
+        currentDirectory[] = fileInfo.path
         popup.textEditor.document.content = ""
-        popup.updated = false
-        popup.updateCompletions()
+        source.retrigger()
         return false
 
     popup.addCustomCommand "go-up", proc(popup: SelectorPopup, args: JsonNode): bool =
@@ -2456,20 +2456,8 @@ proc exploreFiles*(self: App) {.expose("editor").} =
       currentDirectory[] = parent
 
       popup.textEditor.document.content = ""
-
-      popup.updated = false
-      popup.updateCompletions()
-      return false
-
-    popup.addCustomCommand "send-to-location-list", proc(popup: SelectorPopup, args: JsonNode): bool =
-      if popup.textEditor.isNil or popup.completions.len == 0:
-        return false
-      self.setLocationList(popup.completions)
+      source.retrigger()
       return true
-
-    popup.sortFunction = proc(a, b: SelectorItem): int = cmp(a.FileSelectorItem.score, b.FileSelectorItem.score)
-    popup.updateCompletions()
-    popup.enableAutoSort()
 
     self.pushPopup popup
 
