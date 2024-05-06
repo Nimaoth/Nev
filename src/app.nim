@@ -2117,42 +2117,93 @@ proc chooseLocation*(self: App, view: string = "new") {.expose("editor").} =
 
   self.pushPopup popup
 
-type SearchFileSelectorItem* = ref object of FileSelectorItem
-  searchResult*: string
-  line*: int
-  column*: int
+proc searchWorkspaceItemList(workspace: WorkspaceFolder, query: string, maxResults: int): Future[ItemList] {.async.} =
+  let searchResults = workspace.searchWorkspace(query, maxResults).await
+  log lvlInfo, fmt"Found {searchResults.len} results"
 
-proc searchWorkspace(popup: SelectorPopup, workspace: WorkspaceFolder, query: string, text: string): Future[seq[SelectorItem]] {.async.} =
-  if popup.updateInProgress:
-    return popup.completions
+  var list = newItemList(searchResults.len)
+  for i, info in searchResults:
+    var relativePath = workspace.getRelativePathSync(info.path).get(info.path)
+    if relativePath == ".":
+      relativePath = ""
 
-  popup.updateInProgress = true
-  defer:
-    popup.updateInProgress = false
+    list[i] = FinderItem(
+      displayName: info.text,
+      data: $ %*{
+        "path": info.path,
+        "line": info.line - 1,
+        "column": info.column,
+      },
+      detail: fmt"{relativePath}:{info.line}"
+    )
 
-  var res: seq[SelectorItem]
+  return list
 
-  if not popup.updated:
-    let searchResults = workspace.searchWorkspace(query).await
-    if popup.textEditor.isNil:
-      return res
+type
+  WorkspaceSearchDataSource* = ref object of DataSource
+    workspace: WorkspaceFolder
+    query: string
+    delayedTask: DelayedTask
+    minQueryLen: int = 2
+    maxResults: int = 1000
 
-    let searchText = popup.getSearchString
-    log lvlInfo, fmt"Found {searchResults.len} results"
+proc getWorkspaceSearchResults(self: WorkspaceSearchDataSource): Future[void] {.async.} =
+  if self.query.len < self.minQueryLen:
+    return
 
-    for info in searchResults:
-      let name = info.text & " |" & info.path.extractFilename & ":" & $info.line
-      let score = matchFuzzySublime(searchText, name, defaultPathMatchingConfig).score.float
-      res.add SearchFileSelectorItem(name: name, searchResult: info.text, path: info.path, score: score, workspaceFolder: workspace.some, line: info.line, location: (info.line - 1, info.column - 1).some)
+  let t = startTimer()
+  let list = self.workspace.searchWorkspaceItemList(self.query, self.maxResults).await
+  debugf"[searchWorkspace] {t.elapsed.ms}ms"
+  self.onItemsChanged.invoke list
+
+proc newWorkspaceSearchDataSource(workspace: WorkspaceFolder, maxResults: int): WorkspaceSearchDataSource =
+  new result
+  result.workspace = workspace
+  result.maxResults = maxResults
+
+method close*(self: WorkspaceSearchDataSource) =
+  self.delayedTask.deinit()
+  self.delayedTask = nil
+
+method setQuery*(self: WorkspaceSearchDataSource, query: string) =
+  self.query = query
+
+  if self.delayedTask.isNil:
+    self.delayedTask = startDelayed(500, repeat=false):
+      asyncCheck self.getWorkspaceSearchResults()
   else:
-    for item in popup.completions.mitems:
-      item.hasCompletionMatchPositions = false
-      item.score = matchFuzzySublime(text, item.SearchFileSelectorItem.name, defaultPathMatchingConfig).score.float
+    self.delayedTask.reschedule()
 
-    res = popup.completions
+proc searchGlobalInteractive*(self: App) {.expose("editor").} =
+  defer:
+    self.platform.requestRender()
 
-  res.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Ascending)
-  return res
+  if self.workspace.folders.len == 0:
+    return
+
+  let workspace = self.workspace.folders[0]
+
+  let maxResults = getOption[int](self, "editor.max-search-results", 1000)
+  let source = newWorkspaceSearchDataSource(workspace, maxResults)
+  var finder = newFinder(source, filterAndSort=true)
+
+  var popup = newSelectorPopup(self.asAppInterface, "search".some, finder.some,
+    newWorkspaceFilePreviewer(workspace).Previewer.some)
+  popup.scale.x = 0.75
+
+  popup.handleItemConfirmed2 = proc(item: FinderItem): bool =
+    let (path, location) = item.parsePathAndLocationFromItemData().getOr:
+      log lvlError, fmt"Failed to open location from finder item because of invalid data format. " &
+        fmt"Expected path or json object with path property {item}"
+      return
+
+    let editor = self.openWorkspaceFile(path, workspace)
+    if editor.getSome(editor) and editor of TextDocumentEditor and location.isSome:
+      editor.TextDocumentEditor.targetSelection = location.get.toSelection
+      editor.TextDocumentEditor.centerCursor()
+    return true
+
+  self.pushPopup popup
 
 proc searchGlobal*(self: App, query: string) {.expose("editor").} =
   defer:
@@ -2163,40 +2214,29 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
 
   let workspace = self.workspace.folders[0]
 
-  var popup = newSelectorPopup(self.asAppInterface, "search".some, Finder.none,
+  let maxResults = getOption[int](self, "editor.max-search-results", 1000)
+  let source = newAsyncCallbackDataSource () => workspace.searchWorkspaceItemList(query, maxResults)
+  var finder = newFinder(source, filterAndSort=true)
+
+  var popup = newSelectorPopup(self.asAppInterface, "search".some, finder.some,
     newWorkspaceFilePreviewer(workspace).Previewer.some)
   popup.scale.x = 0.75
 
-  popup.getCompletionsAsync = proc(popup: SelectorPopup, text: string): Future[seq[SelectorItem]] =
-    return popup.searchWorkspace(workspace, query, text)
+  popup.handleItemConfirmed2 = proc(item: FinderItem): bool =
+    let (path, location) = item.parsePathAndLocationFromItemData().getOr:
+      log lvlError, fmt"Failed to open location from finder item because of invalid data format. " &
+        fmt"Expected path or json object with path property {item}"
+      return
 
-  popup.handleItemConfirmed = proc(item: SelectorItem): bool =
-    let editor = if item.FileSelectorItem.workspaceFolder.isSome:
-      self.openWorkspaceFile(item.FileSelectorItem.path, item.FileSelectorItem.workspaceFolder.get)
-    else:
-      self.openFile(item.FileSelectorItem.path)
-
-    if editor.getSome(editor) and editor of TextDocumentEditor:
-      editor.TextDocumentEditor.targetSelection = (item.SearchFileSelectorItem.line - 1, item.SearchFileSelectorItem.column - 1).toSelection
+    let editor = self.openWorkspaceFile(path, workspace)
+    if editor.getSome(editor) and editor of TextDocumentEditor and location.isSome:
+      editor.TextDocumentEditor.targetSelection = location.get.toSelection
       editor.TextDocumentEditor.centerCursor()
     return true
-
-  popup.addCustomCommand "send-to-location-list", proc(popup: SelectorPopup, args: JsonNode): bool =
-    if popup.textEditor.isNil or popup.completions.len == 0:
-      return false
-    self.setLocationList(popup.completions)
-    return true
-
-  popup.updateCompletions()
-  popup.sortFunction = proc(a, b: SelectorItem): int = cmp(a.FileSelectorItem.score, b.FileSelectorItem.score)
-  popup.enableAutoSort()
 
   self.pushPopup popup
 
 when not defined(js):
-  type GitFileSelectorItem* = ref object of FileSelectorItem
-    info: GitFileInfo
-
   proc getChangedFilesFromGitAsync(workspace: WorkspaceFolder): Future[ItemList] {.async.} =
     let fileInfos = getChangedFiles().await
 
@@ -2299,7 +2339,6 @@ proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
 
     let source = newAsyncCallbackDataSource () => workspace.getChangedFilesFromGitAsync()
     var finder = newFinder(source, filterAndSort=true)
-    finder.filterThreshold = float.low
 
     var popup = newSelectorPopup(self.asAppInterface, "git".some, finder.some)
     popup.scale.x = 0.35

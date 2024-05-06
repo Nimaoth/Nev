@@ -13,49 +13,6 @@ logCategory "selector-popup-ui"
 # Mark this entire file as used, otherwise we get warnings when importing it but only calling a method
 {.used.}
 
-method createUI*(self: FileSelectorItem, popup: SelectorPopup, builder: UINodeBuilder, app: App):
-    seq[proc() {.closure.}] =
-  let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
-  let name = if self.name.len > 0: self.name else: self.path
-  let matchIndices = self.getCompletionMatches(popup.getSearchString(), name, defaultPathMatchingConfig)
-  builder.panel(&{LayoutHorizontal, FillX, SizeToContentY}):
-    discard builder.highlightedText(name, matchIndices, textColor, textColor.lighten(0.15))
-
-    if self.directory.len > 0:
-      builder.panel(&{FillY}, w = builder.charWidth * 4)
-      builder.panel(&{DrawText, SizeToContentX, SizeToContentY, TextItalic},
-        text = self.directory, textColor = textColor.darken(0.2))
-
-method createUI*(self: SearchFileSelectorItem, popup: SelectorPopup, builder: UINodeBuilder, app: App):
-    seq[proc() {.closure.}] =
-  let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
-  let name = self.searchResult
-  let matchIndices = self.getCompletionMatches(popup.getSearchString(), name, defaultPathMatchingConfig)
-  builder.panel(&{LayoutHorizontalReverse, FillX, SizeToContentY}):
-    builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = fmt"| {self.path}:{self.line}",
-      pivot = vec2(1, 0), textColor = textColor)
-    builder.panel(&{FillX, SizeToContentY, MaskContent}, pivot = vec2(1, 0)):
-      discard builder.highlightedText(name, matchIndices, textColor, textColor.lighten(0.15))
-
-method createUI*(self: TextSymbolSelectorItem, popup: SelectorPopup, builder: UINodeBuilder, app: App):
-    seq[proc() {.closure.}] =
-  let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
-  let scopeColor = app.theme.tokenColor("string", color(175/255, 255/255, 175/255))
-
-  builder.panel(&{FillX, SizeToContentY}):
-    let matchIndices = self.getCompletionMatches(popup.getSearchString(), self.symbol.name,
-      defaultCompletionMatchingConfig)
-    discard builder.highlightedText(self.symbol.name, matchIndices, textColor, textColor.lighten(0.15))
-    builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, x = currentNode.w,
-      text = $self.symbol.symbolType, pivot = vec2(1, 0), textColor = scopeColor)
-
-method createUI*(self: NamedSelectorItem, popup: SelectorPopup, builder: UINodeBuilder, app: App):
-    seq[proc() {.closure.}] =
-  let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
-  let matchIndices = self.getCompletionMatches(popup.getSearchString(), self.name,
-    defaultPathMatchingConfig)
-  discard builder.highlightedText(self.name, matchIndices, textColor, textColor.lighten(0.15))
-
 proc createUI*(self: SelectorPopup, i: int, item: FinderItem, builder: UINodeBuilder, app: App):
     seq[proc() {.closure.}] =
 
@@ -187,21 +144,6 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[pro
                 for col, node in nodes:
                   node.rawX = x
                   x += maxWidths[col] + gap
-
-
-          else:
-            var widgetIndex = 0
-            for completionIndex in self.scrollOffset..lastRenderedIndex:
-              defer: inc widgetIndex
-
-              let backgroundColor = if completionIndex == self.selected:
-                selectionColor
-              else:
-                backgroundColor
-
-              builder.panel(&{FillX, SizeToContentY, FillBackground}, backgroundColor = backgroundColor):
-                let completion {.cursor.} = self.completions[self.completions.high - completionIndex]
-                result.add completion.createUI(self, builder, app)
 
         if self.previewEditor.isNotNil:
           builder.panel(0.UINodeFlags, x = bounds.w * (1 - previewSize), w = bounds.w * previewSize, h = bounds.h):

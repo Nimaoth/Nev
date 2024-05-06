@@ -145,9 +145,10 @@ method getDirectoryListing*(self: WorkspaceFolderLocal, relativePath: string):
 
     return res
 
-proc searchWorkspaceFolder(self: WorkspaceFolderLocal, query: string, root: string):
+proc searchWorkspaceFolder(self: WorkspaceFolderLocal, query: string, root: string, maxResults: int):
     Future[seq[SearchResult]] {.async.} =
-  let output = runProcessAsync("rg", @["--line-number", "--column", "--heading", query, root]).await
+  let output = runProcessAsync("rg", @["--line-number", "--column", "--heading", query, root],
+    maxResults).await
   var res: seq[SearchResult]
 
   var currentFile = ""
@@ -177,17 +178,23 @@ proc searchWorkspaceFolder(self: WorkspaceFolderLocal, query: string, root: stri
     let text = line[(separatorIndex2 + 1)..^1]
     res.add SearchResult(path: currentFile, line: lineNumber, column: column, text: text)
 
+    if res.len == maxResults:
+      break
+
   return res
 
-method searchWorkspace*(self: WorkspaceFolderLocal, query: string): Future[seq[SearchResult]] {.async.} =
+method searchWorkspace*(self: WorkspaceFolderLocal, query: string, maxResults: int): Future[seq[SearchResult]] {.async.} =
   var futs: seq[Future[seq[SearchResult]]]
-  futs.add self.searchWorkspaceFolder(query, self.path)
+  futs.add self.searchWorkspaceFolder(query, self.path, maxResults)
   for path in self.additionalPaths:
-    futs.add self.searchWorkspaceFolder(query, path)
+    futs.add self.searchWorkspaceFolder(query, path, maxResults)
 
   var res: seq[SearchResult]
   for fut in futs:
     res.add fut.await
+
+    if res.len >= maxResults:
+      break
 
   return res
 

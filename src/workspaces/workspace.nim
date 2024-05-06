@@ -71,7 +71,7 @@ proc getAbsolutePath*(self: WorkspaceFolder, path: string): string =
     (self.getWorkspacePath() / path).normalizePathUnix
 
 method getDirectoryListing*(self: WorkspaceFolder, relativePath: string): Future[DirectoryListing] {.base.} = discard
-method searchWorkspace*(self: WorkspaceFolder, query: string): Future[seq[SearchResult]] {.base.} = discard
+method searchWorkspace*(self: WorkspaceFolder, query: string, maxResults: int): Future[seq[SearchResult]] {.base.} = discard
 
 proc getRelativePathEmpty(): Future[Option[string]] {.async.} =
   return string.none
