@@ -221,11 +221,7 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
   addCommand "editor", "<C-n>", "goto-prev-location"
   addCommand "editor", "<C-t>", "goto-next-location"
 
-  addCommandBlock "popup.selector.open", "<C-x>":
-    if getActivePopup().isSelectorPopup(popup):
-      let item = popup.getSelectedItemJson()
-      closeEditor(item["path"].getStr)
-      popup.updateCompletions()
+  addCommand "popup.selector.open", "<C-x>", "close-selected"
 
   addCommand "popup.selector.git", "<C-a>", "stage-selected"
   addCommand "popup.selector.git", "<C-u>", "unstage-selected"
