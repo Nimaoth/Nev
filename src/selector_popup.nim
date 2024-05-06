@@ -5,7 +5,7 @@ import misc/[util, rect_utils, comb_sort, timer, event, custom_async, custom_log
 import app_interface, text/text_editor, popup, events, scripting/expose, input,
   selector_popup_builder, file_selector_item, dispatch_tables
 from scripting_api as api import Selection
-import finder/finder
+import finder/[finder, previewer]
 
 export popup, selector_popup_builder
 
@@ -20,6 +20,7 @@ type
   SelectorPopup* = ref object of Popup
     app*: AppInterface
     textEditor*: TextDocumentEditor
+    previewEditor*: TextDocumentEditor
     selected*: int
     scrollOffset*: int
     completions*: seq[SelectorItem]
@@ -58,6 +59,7 @@ type
 
     completionMatchPositions: Table[int, seq[int]]
     finder*: Finder
+    previewer: Option[Previewer]
 
   NamedSelectorItem* = ref object of SelectorItem
     name*: string
@@ -306,10 +308,17 @@ proc prev*(self: SelectorPopup) {.expose("popup.selector").} =
 
   if self.finder.isNotNil and
       self.finder.filteredItems.getSome(items) and
-      not self.handleItemSelected2.isNil and self.selected < self.completions.len:
+      self.selected >= 0 and
+      self.selected < self.completions.len:
+
     let finderItemIndex = self.completions[self.completions.high - self.selected].finderItemIndex
     if finderItemIndex >= 0 and finderItemIndex < items.len:
-      self.handleItemSelected2 items[finderItemIndex]
+      if not self.handleItemSelected2.isNil:
+        self.handleItemSelected2 items[finderItemIndex]
+
+      if self.previewer.getSome(previewer):
+        assert self.previewEditor.isNotNil
+        previewer.previewItem(items[finderItemIndex], self.previewEditor)
 
   self.markDirty()
 
@@ -327,10 +336,17 @@ proc next*(self: SelectorPopup) {.expose("popup.selector").} =
 
   if self.finder.isNotNil and
       self.finder.filteredItems.getSome(items) and
-      not self.handleItemSelected2.isNil and self.selected < self.completions.len:
+      self.selected >= 0 and
+      self.selected < self.completions.len:
+
     let finderItemIndex = self.completions[self.completions.high - self.selected].finderItemIndex
     if finderItemIndex >= 0 and finderItemIndex < items.len:
-      self.handleItemSelected2 items[finderItemIndex]
+      if not self.handleItemSelected2.isNil:
+        self.handleItemSelected2 items[finderItemIndex]
+
+      if self.previewer.getSome(previewer):
+        assert self.previewEditor.isNotNil
+        previewer.previewItem(items[finderItemIndex], self.previewEditor)
 
   self.markDirty()
 
@@ -372,6 +388,9 @@ proc handleTextChanged*(self: SelectorPopup) =
   if self.finder.isNotNil:
     self.finder.setQuery(self.getSearchString())
 
+  if self.previewer.getSome(previewer):
+    previewer.delayPreview()
+
   self.updateCompletions()
   self.selected = 0
 
@@ -400,6 +419,19 @@ proc handleItemsUpdated*(self: SelectorPopup) =
       )
 
   self.selected = self.selected.clamp(0, self.completions.len - 1)
+
+  if self.finder.filteredItems.getSome(items) and self.selected >= 0 and
+      self.selected < self.completions.len:
+
+    let finderItemIndex = self.completions[self.completions.high - self.selected].finderItemIndex
+    if finderItemIndex >= 0 and finderItemIndex < items.len:
+      if not self.handleItemSelected2.isNil:
+        self.handleItemSelected2 items[finderItemIndex]
+
+      if self.previewer.getSome(previewer):
+        assert self.previewEditor.isNotNil
+        previewer.previewItem(items[finderItemIndex], self.previewEditor)
+
   self.markDirty()
 
 method handleScroll*(self: SelectorPopup, scroll: Vec2, mousePosWindow: Vec2) =
@@ -427,8 +459,9 @@ method handleMouseMove*(self: SelectorPopup, mousePosWindow: Vec2, mousePosDelta
     modifiers: Modifiers, buttons: set[MouseButton]) =
   discard
 
-proc newSelectorPopup*(app: AppInterface, scopeName: Option[string] = string.none,
-    finder: Option[Finder] = Finder.none): SelectorPopup =
+proc newSelectorPopup*(app: AppInterface, scopeName = string.none,
+    finder = Finder.none, previewer = Previewer.none): SelectorPopup =
+
   var popup = SelectorPopup(app: app)
   popup.scale = vec2(0.5, 0.5)
   let document = newTextDocument(app.configProvider, createLanguageServer=false)
@@ -451,6 +484,17 @@ proc newSelectorPopup*(app: AppInterface, scopeName: Option[string] = string.non
 
   discard popup.textEditor.onMarkedDirty.subscribe () =>
     popup.markDirty()
+
+  popup.previewer = previewer
+  if popup.previewer.isSome:
+    let previewDocument = newTextDocument(app.configProvider, createLanguageServer=false)
+    popup.previewEditor = newTextEditor(previewDocument, app, app.configProvider)
+    popup.previewEditor.renderHeader = false
+    popup.previewEditor.lineNumbers = api.LineNumbers.None.some
+    popup.previewEditor.disableCompletions = true
+
+    discard popup.previewEditor.onMarkedDirty.subscribe () =>
+      popup.markDirty()
 
   if finder.getSome(finder):
     popup.finder = finder

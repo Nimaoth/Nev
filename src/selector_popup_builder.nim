@@ -1,6 +1,6 @@
 import std/[json, tables, options]
 import misc/[traits, custom_async, myjsonutils]
-import finder/finder
+import finder/[finder, previewer]
 
 traitRef ISelectorPopup:
   method getSearchString*(self: ISelectorPopup): string
@@ -31,6 +31,7 @@ type
     sortFunction*: proc(a, b: SelectorItem): int
     enableAutoSort*: bool
     finder*: Option[Finder]
+    previewer*: Option[Previewer]
 
 method changed*(self: SelectorItem, other: SelectorItem): bool {.base.} = discard
 method itemToJson*(self: SelectorItem): JsonNode {.base.} = self.toJson

@@ -1095,21 +1095,27 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
                 of CenterAlways: true
                 of CenterOffscreen: targetLineY < 0 or targetLineY + builder.textHeight > self.lastContentBounds.h
                 of ScrollToMargin: false
+                of TopOfScreen: false
 
               if center:
                 self.previousBaseIndex = targetLine
                 self.scrollOffset = bounds.h * 0.5 - builder.textHeight - 0.5
 
               else:
-                let configMarginRelative = getOption[bool](app, "text.cursor-margin-relative", true)
-                let configMargin = getOption[float](app, "text.cursor-margin", 0.2)
-                let margin = if self.targetLineMargin.getSome(margin):
-                  clamp(margin, 0.0, bounds.h * 0.5 - builder.textHeight * 0.5)
-                elif configMarginRelative:
-                  clamp(configMargin, 0.0, 1.0) * 0.5 * bounds.h
+                case self.nextScrollBehaviour.get(self.defaultScrollBehaviour)
+                of TopOfScreen:
+                  self.previousBaseIndex = targetLine
+                  self.scrollOffset = 0
                 else:
-                  clamp(configMargin, 0.0, bounds.h * 0.5 - builder.textHeight * 0.5)
-                updateBaseIndexAndScrollOffset(currentNode.bounds.h, self.previousBaseIndex, self.scrollOffset, self.document.lines.len, builder.textHeight, targetLine=targetLine.some, margin=margin)
+                  let configMarginRelative = getOption[bool](app, "text.cursor-margin-relative", true)
+                  let configMargin = getOption[float](app, "text.cursor-margin", 0.2)
+                  let margin = if self.targetLineMargin.getSome(margin):
+                    clamp(margin, 0.0, bounds.h * 0.5 - builder.textHeight * 0.5)
+                  elif configMarginRelative:
+                    clamp(configMargin, 0.0, 1.0) * 0.5 * bounds.h
+                  else:
+                    clamp(configMargin, 0.0, bounds.h * 0.5 - builder.textHeight * 0.5)
+                  updateBaseIndexAndScrollOffset(currentNode.bounds.h, self.previousBaseIndex, self.scrollOffset, self.document.lines.len, builder.textHeight, targetLine=targetLine.some, margin=margin)
 
             else:
               updateBaseIndexAndScrollOffset(currentNode.bounds.h, self.previousBaseIndex, self.scrollOffset, self.document.lines.len, builder.textHeight, targetLine=int.none)

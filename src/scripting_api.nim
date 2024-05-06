@@ -32,7 +32,10 @@ type LineNumbers* = enum None = "none", Absolute = "Absolute", Relative = "relat
 type Backend* = enum Gui = "gui", Terminal = "terminal", Browser = "browser"
 
 type ScrollBehaviour* = enum
-  CenterAlways = "CenterAlways", CenterOffscreen = "CenterOffscreen", ScrollToMargin = "ScrollToMargin"
+  CenterAlways = "CenterAlways"
+  CenterOffscreen = "CenterOffscreen"
+  ScrollToMargin = "ScrollToMargin"
+  TopOfScreen = "TopOfScreen"
 
 type Selections* = seq[Selection]
 

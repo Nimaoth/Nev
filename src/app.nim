@@ -8,7 +8,7 @@ import config_provider, app_interface
 import text/language/language_server_base, language_server_absytree_commands
 import input, events, document, document_editor, popup, dispatch_tables, theme, clipboard, app_options, selector_popup_builder, file_selector_item
 import text/[custom_treesitter]
-import finder/finder
+import finder/[finder, previewer]
 import compilation_config
 
 when enableAst:
@@ -636,6 +636,7 @@ import text/[text_editor, text_document]
 when enableAst:
   import ast/[model_document]
 import selector_popup
+import finder/[workspace_file_previewer]
 
 proc toFileLocationItem(self: FileSelectorItem): FileLocationItem =
   FileLocationItem(name: self.name, directory: self.directory, path: self.path, location: self.location, workspaceFolder: self.workspaceFolder)
@@ -1854,7 +1855,7 @@ proc createFile*(self: App, path: string) {.expose("editor").} =
   discard self.createAndAddView(document)
 
 proc pushSelectorPopup*(self: App, builder: SelectorPopupBuilder): ISelectorPopup =
-  var popup = newSelectorPopup(self.asAppInterface, builder.scope, builder.finder)
+  var popup = newSelectorPopup(self.asAppInterface, builder.scope, builder.finder, builder.previewer)
   popup.scale.x = builder.scaleX
   popup.scale.y = builder.scaleY
 
@@ -1975,36 +1976,41 @@ proc chooseOpen*(self: App, view: string = "new") {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
-  var items = newSeq[FinderItem]()
-  let allViews = self.views & self.hiddenViews
-  for view in allViews:
-    let document = view.editor.getDocument
-    let path = view.document.filename
-    let isDirty = view.document.lastSavedRevision != view.document.revision
-    let dirtyMarker = if isDirty: "*" else: " "
+  proc getItems(): seq[FinderItem] =
+    var items = newSeq[FinderItem]()
+    let allViews = self.views & self.hiddenViews
+    for view in allViews:
+      let document = view.editor.getDocument
+      let path = view.document.filename
+      let isDirty = view.document.lastSavedRevision != view.document.revision
+      let dirtyMarker = if isDirty: "*" else: " "
 
-    let (directory, name) = path.splitPath
-    var relativeDirectory = directory
-    var data = path
-    if document.workspace.getSome(workspace):
-      relativeDirectory = workspace.getRelativePathSync(directory).get(directory)
-      data = workspace.encodePath(path).string
+      let (directory, name) = path.splitPath
+      var relativeDirectory = directory
+      var data = path
+      if document.workspace.getSome(workspace):
+        relativeDirectory = workspace.getRelativePathSync(directory).get(directory)
+        data = workspace.encodePath(path).string
 
-    if relativeDirectory == ".":
-      relativeDirectory = ""
+      if relativeDirectory == ".":
+        relativeDirectory = ""
 
-    items.add FinderItem(
-      displayName: dirtyMarker & name,
-      filterText: name,
-      data: data,
-      detail: relativeDirectory,
-    )
+      items.add FinderItem(
+        displayName: dirtyMarker & name,
+        filterText: name,
+        data: data,
+        detail: relativeDirectory,
+      )
 
-  var finder = newFinder(newStaticDataSource(items), filterAndSort=true)
+    return items
+
+  let source = newSyncDataSource(getItems)
+  var finder = newFinder(source, filterAndSort=true)
   finder.filterThreshold = float.low
 
   var popup = newSelectorPopup(self.asAppInterface, "open".some, finder.some)
-  popup.scale.x = 0.3
+
+  popup.scale.x = 0.35
 
   popup.handleItemConfirmed2 = proc(item: FinderItem): bool =
     if item.data.WorkspacePath.decodePath().getSome(path):
@@ -2015,6 +2021,17 @@ proc chooseOpen*(self: App, view: string = "new") {.expose("editor").} =
     else:
       discard self.openFile(item.data)
       log lvlError, fmt"Failed to open location {item}"
+    return true
+
+  popup.addCustomCommand "close-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil or popup.completions.len == 0:
+      return false
+
+    if popup.getSelectedItem().getSome(item):
+      if item.data.WorkspacePath.decodePath().getSome(path):
+        self.closeEditor(path.path)
+        source.retrigger()
+
     return true
 
   popup.addCustomCommand "send-to-location-list", proc(popup: SelectorPopup, args: JsonNode): bool =
@@ -2141,11 +2158,17 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
-  var popup = newSelectorPopup(self.asAppInterface, "search".some)
+  if self.workspace.folders.len == 0:
+    return
+
+  let workspace = self.workspace.folders[0]
+
+  var popup = newSelectorPopup(self.asAppInterface, "search".some, Finder.none,
+    newWorkspaceFilePreviewer(workspace).Previewer.some)
   popup.scale.x = 0.75
 
   popup.getCompletionsAsync = proc(popup: SelectorPopup, text: string): Future[seq[SelectorItem]] =
-    return popup.searchWorkspace(self.workspace.folders[0], query, text)
+    return popup.searchWorkspace(workspace, query, text)
 
   popup.handleItemConfirmed = proc(item: SelectorItem): bool =
     let editor = if item.FileSelectorItem.workspaceFolder.isSome:
@@ -2278,8 +2301,9 @@ proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
     var finder = newFinder(source, filterAndSort=true)
     finder.filterThreshold = float.low
 
-    var popup = newSelectorPopup(self.asAppInterface, "git".some, finder.some)
-    popup.scale.x = 0.3
+    var popup = newSelectorPopup(self.asAppInterface, "git".some, finder.some,
+      newWorkspaceFilePreviewer(workspace).Previewer.some)
+    popup.scale.x = 0.6
 
     popup.handleItemConfirmed2 = proc(item: FinderItem): bool =
       let fileInfo = item.data.parseJson.jsonTo(GitFileInfo).catch:
@@ -2295,9 +2319,6 @@ proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
           if editor of TextDocumentEditor:
             editor.TextDocumentEditor.updateDiff()
 
-      return true
-
-    popup.handleItemConfirmed = proc(item: SelectorItem): bool =
       return true
 
     popup.addCustomCommand "stage-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
@@ -2404,7 +2425,8 @@ proc exploreFiles*(self: App) {.expose("editor").} =
 
     let workspace = self.workspace.folders[0]
 
-    var popup = newSelectorPopup(self.asAppInterface, "file-explorer".some)
+    var popup = newSelectorPopup(self.asAppInterface, "file-explorer".some, Finder.none, Previewer.none)
+      # newWorkspaceFilePreviewer(workspace).Previewer.some)
     popup.scale.x = 0.4
 
     let currentDirectory = new string

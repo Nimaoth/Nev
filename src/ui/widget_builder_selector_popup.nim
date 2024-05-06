@@ -78,14 +78,9 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[pro
   var flags = &{UINodeFlag.MaskContent, OverlappingChildren}
   var flagsInner = &{LayoutVertical}
 
-  let sizeToContentX = false
   let sizeToContentY = true
-  if sizeToContentX:
-    flags.incl SizeToContentX
-    flagsInner.incl SizeToContentX
-  else:
-    flags.incl FillX
-    flagsInner.incl FillX
+  flags.incl FillX
+  flagsInner.incl FillX
 
   if sizeToContentY:
     flags.incl SizeToContentY
@@ -125,8 +120,10 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[pro
       let selectionColor = app.theme.color("list.activeSelectionBackground",
         color(0.8, 0.8, 0.8)).withAlpha(1)
 
+      const previewSize = 0.4
+
       block:
-        builder.panel(flagsInner):
+        builder.panel(flagsInner, w = bounds.w * (1 - previewSize)):
           builder.panel(&{FillX, SizeToContentY}):
             result.add self.textEditor.createUI(builder, app)
 
@@ -205,3 +202,7 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[pro
               builder.panel(&{FillX, SizeToContentY, FillBackground}, backgroundColor = backgroundColor):
                 let completion {.cursor.} = self.completions[self.completions.high - completionIndex]
                 result.add completion.createUI(self, builder, app)
+
+        if self.previewEditor.isNotNil:
+          builder.panel(0.UINodeFlags, x = bounds.w * (1 - previewSize), w = bounds.w * previewSize, h = bounds.h):
+            result.add self.previewEditor.createUI(builder, app)
