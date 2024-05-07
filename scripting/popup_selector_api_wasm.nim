@@ -88,3 +88,36 @@ proc next*(self: SelectorPopup) =
   let res {.used.} = popup_selector_next_void_SelectorPopup_wasm(
       argsJsonString.cstring)
 
+
+proc popup_selector_toggleFocusPreview_void_SelectorPopup_wasm(arg: cstring): cstring {.
+    importc.}
+proc toggleFocusPreview*(self: SelectorPopup) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when SelectorPopup is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = popup_selector_toggleFocusPreview_void_SelectorPopup_wasm(
+      argsJsonString.cstring)
+
+
+proc popup_selector_setFocusPreview_void_SelectorPopup_bool_wasm(arg: cstring): cstring {.
+    importc.}
+proc setFocusPreview*(self: SelectorPopup; focus: bool) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when SelectorPopup is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      focus
+    else:
+      focus.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = popup_selector_setFocusPreview_void_SelectorPopup_bool_wasm(
+      argsJsonString.cstring)
+

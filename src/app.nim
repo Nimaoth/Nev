@@ -2833,6 +2833,12 @@ proc getActiveEditor*(): EditorId {.expose("editor").} =
     return EditorId(-1)
   if gEditor.commandLineMode:
     return gEditor.commandLineTextEditor.id
+
+  if gEditor.popups.len > 0 and gEditor.popups[gEditor.popups.high] of SelectorPopup:
+    let popup = gEditor.popups[gEditor.popups.high].SelectorPopup
+    if popup.focusPreview and popup.previewEditor.isNotNil:
+      return popup.previewEditor.id
+
   if gEditor.currentView >= 0 and gEditor.currentView < gEditor.views.len:
     return gEditor.views[gEditor.currentView].editor.id
 
