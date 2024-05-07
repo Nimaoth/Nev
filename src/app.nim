@@ -2337,7 +2337,6 @@ proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
 
     let workspace = self.workspace.folders[0]
 
-
     let source = newAsyncCallbackDataSource () => workspace.getChangedFilesFromGitAsync()
     var finder = newFinder(source, filterAndSort=true)
 
