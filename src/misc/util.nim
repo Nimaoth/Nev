@@ -69,10 +69,12 @@ template hasPrefix*(exp: untyped, prefix: string, v: untyped): untyped =
   # x[int] is T
   # v[int] = T
 
-template first*(x: untyped): untyped = x[x.low]
-template last*(x: untyped): untyped = x[x.high]
-proc `first=`*[S, T](x: var S, value: T) = x[x.low] = value
-proc `last=`*[S, T](x: var S, value: T) = x[x.high] = value
+func first*[T](x: var seq[T]): var T = x[x.low]
+func last*[T](x: var seq[T]): var T = x[x.high]
+func first*[T](x: openArray[T]): lent T = x[x.low]
+func last*[T](x: openArray[T]): lent T = x[x.high]
+func `first=`*[S, T](x: var S, value: T) = x[x.low] = value
+func `last=`*[S, T](x: var S, value: T) = x[x.high] = value
 
 proc `or`*[T, U](a: Option[T], b: Option[U]): Option[T] =
   if a.isSome and b.isSome:
