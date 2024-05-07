@@ -1,5 +1,5 @@
 import std/[asyncnet, json, strutils, tables, os, osproc, streams, threadpool, options, macros]
-import custom_logger, custom_async
+import custom_logger, custom_async, util
 
 logCategory "asyncprocess"
 
@@ -318,18 +318,45 @@ proc startAsyncProcess*(name: string, args: seq[string] = @[], autoRestart = tru
 
   return process
 
+const debugAsyncProcess = false
+
+when debugAsyncProcess:
+  var asyncProcessDebugOutput: Channel[string]
+  asyncProcessDebugOutput.open()
+
+  proc readAsyncProcessDebugOutput() {.async.} =
+    while true:
+      while asyncProcessDebugOutput.peek > 0:
+         let line = asyncProcessDebugOutput.recv
+         debugf"> {line}"
+      await sleepAsync 1
+
+  asyncCheck readAsyncProcessDebugOutput()
+
 proc readProcessOutputThread(args: (string, seq[string], int)): seq[string] {.gcsafe.} =
   try:
+    when debugAsyncProcess:
+      asyncProcessDebugOutput.send(fmt"Start process {args}")
+
     let process = startProcess(args[0], args=args[1], options={poUsePath, poDaemon})
 
     for line in process.lines:
       result.add(line)
       if result.len >= args[2]:
+        when debugAsyncProcess:
+          asyncProcessDebugOutput.send("{args}: Stop, max lines reached")
         break
 
-    process.kill()
+    try:
+      process.kill()
+    except:
+      discard
+
   except CatchableError:
+    when debugAsyncProcess:
+      asyncProcessDebugOutput.send fmt"Failed to run {args}: {getCurrentExceptionMsg()}"
     return @[]
 
 proc runProcessAsync*(name: string, args: seq[string] = @[], maxLines: int = int.high): Future[seq[string]] =
+  log lvlInfo, fmt"[runProcessAsync] {name}, {args}, {maxLines}"
   return spawnAsync(readProcessOutputThread, (name, args, maxLines))
