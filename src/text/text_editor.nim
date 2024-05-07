@@ -1988,7 +1988,8 @@ proc gotoLocationAsync(self: TextDocumentEditor, definitions: seq[Definition]): 
   elif self.document.workspace.getSome(workspace):
     var builder = SelectorPopupBuilder()
     builder.scope = "text-lsp-locations".some
-    builder.scaleX = 0.4
+    builder.scaleX = 0.85
+    builder.scaleY = 0.8
 
     var res = newSeq[FinderItem]()
     for i, definition in definitions:
@@ -2111,7 +2112,8 @@ proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], nav
   let lastSelection = self.selection
   var builder = SelectorPopupBuilder()
   builder.scope = "text-lsp-locations".some
-  builder.scaleX = 0.6
+  builder.scaleX = 0.85
+  builder.scaleY = 0.8
 
   var res = newSeq[FinderItem]()
   for i, symbol in symbols:
@@ -2199,7 +2201,8 @@ proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Fut
     let lastSelection = self.selection
     var builder = SelectorPopupBuilder()
     builder.scope = "text-lsp-locations".some
-    builder.scaleX = 0.5
+    builder.scaleX = 0.85
+    builder.scaleY = 0.8
 
     builder.previewer = newWorkspaceFilePreviewer(workspace).Previewer.some
     let finder = newFinder(newLspWorkspaceSymbolsDataSource(ls, workspace), filterAndSort=true)

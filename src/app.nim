@@ -2010,7 +2010,6 @@ proc chooseOpen*(self: App, view: string = "new") {.expose("editor").} =
   finder.filterThreshold = float.low
 
   var popup = newSelectorPopup(self.asAppInterface, "open".some, finder.some)
-
   popup.scale.x = 0.35
 
   popup.handleItemConfirmed2 = proc(item: FinderItem): bool =
@@ -2190,7 +2189,8 @@ proc searchGlobalInteractive*(self: App) {.expose("editor").} =
 
   var popup = newSelectorPopup(self.asAppInterface, "search".some, finder.some,
     newWorkspaceFilePreviewer(workspace).Previewer.some)
-  popup.scale.x = 0.75
+  popup.scale.x = 0.85
+  popup.scale.y = 0.85
 
   popup.handleItemConfirmed2 = proc(item: FinderItem): bool =
     let (path, location) = item.parsePathAndLocationFromItemData().getOr:
@@ -2221,7 +2221,8 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
 
   var popup = newSelectorPopup(self.asAppInterface, "search".some, finder.some,
     newWorkspaceFilePreviewer(workspace).Previewer.some)
-  popup.scale.x = 0.75
+  popup.scale.x = 0.85
+  popup.scale.y = 0.85
 
   popup.handleItemConfirmed2 = proc(item: FinderItem): bool =
     let (path, location) = item.parsePathAndLocationFromItemData().getOr:
@@ -2472,8 +2473,8 @@ proc exploreFiles*(self: App) {.expose("editor").} =
 
     var popup = newSelectorPopup(self.asAppInterface, "file-explorer".some, finder.some,
       newWorkspaceFilePreviewer(workspace).Previewer.some)
-
-    popup.scale.x = 0.8
+    popup.scale.x = 0.85
+    popup.scale.y = 0.85
 
     popup.handleItemConfirmed2 = proc(item: FinderItem): bool =
       let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
