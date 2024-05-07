@@ -730,7 +730,7 @@ proc findSurroundStart*(editor: TextDocumentEditor, cursor: Cursor, count: int, 
     res.column = min(res.column, line.len - 1)
     while line.len > 0 and res.column >= 0:
       let c = line[res.column]
-      # echo &"findSurroundStart: {res} -> {depth}, '{c}'"
+      # debugf"findSurroundStart: {res} -> {depth}, '{c}'"
       if c == c1 and (depth < 1 or c0 != c1):
         inc depth
         if depth == 0:
@@ -1007,6 +1007,43 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
         let indent = indentForNewLine(self.document.languageConfig, line, self.document.indentStyle,
           self.document.tabWidth, selection.last.column)
         texts[i] = "\n" & indent
+
+  elif autoIndent and (text == "}" or text == ")" or text == "]"):
+    # Adjust indent of closing paren by searching for the matching opening paren
+    let (open, close) = case text[0]
+      of ')': ('(', ')')
+      of '}': ('{', '}')
+      of ']': ('[', ']')
+      else: assert false
+
+    texts.setLen(0)
+    for s in selections.mitems:
+      let openLocation = self.findSurroundStart((s.first.line, s.first.column - 1),
+          0, open, close, 1).getOr:
+        texts.add text
+        continue
+
+      if openLocation.line == s.first.line:
+        # Closing paren is on same line as opening paren, don't apply auto indent
+        texts.add text
+        continue
+
+      let closeIndent = self.document.lines[s.first.line].firstNonWhitespace
+      if closeIndent != s.first.column:
+        # Closing paren is not at beginning of line, don't apply auto indent
+        texts.add text
+        continue
+
+      let openIndent = self.document.lines[openLocation.line].firstNonWhitespace
+      if openIndent == closeIndent:
+        # Indent is already correct, just insert the paren
+        texts.add text
+        continue
+
+      # Copy indent of opening parens line
+      let indent = self.document.lines[openLocation.line][0..<openIndent]
+      texts.add indent & text
+      s.first.column = 0
 
   selections = self.document.edit(selections, selections, texts).mapIt(it.last.toSelection)
 
