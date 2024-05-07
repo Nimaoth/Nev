@@ -35,6 +35,7 @@ type
     lastContentBounds*: Rect
     lastItems*: seq[tuple[index: int, bounds: Rect]]
 
+    previewEventHandler: EventHandler
     customEventHandler: EventHandler
 
     scale*: Vec2
@@ -60,6 +61,8 @@ type
     completionMatchPositions: Table[int, seq[int]]
     finder*: Finder
     previewer: Option[Previewer]
+
+    focusPreview*: bool
 
   NamedSelectorItem* = ref object of SelectorItem
     name*: string
@@ -210,9 +213,14 @@ proc getItemAtPixelPosition(self: SelectorPopup, posWindow: Vec2): Option[Select
 method getEventHandlers*(self: SelectorPopup): seq[EventHandler] =
   if self.textEditor.isNil:
     return @[]
-  result = self.textEditor.getEventHandlers(initTable[string, EventHandler]()) & @[self.eventHandler]
-  if self.customEventHandler.isNotNil:
-    result.add self.customEventHandler
+
+  if self.focusPreview and self.previewEditor.isNotNil:
+    result = self.previewEditor.getEventHandlers(initTable[string, EventHandler]()) & @[self.previewEventHandler]
+  else:
+    result = self.textEditor.getEventHandlers(initTable[string, EventHandler]()) & @[self.eventHandler]
+
+    if self.customEventHandler.isNotNil:
+      result.add self.customEventHandler
 
 proc getSelectorPopup(wrapper: api.SelectorPopup): Option[SelectorPopup] =
   if gAppInterface.isNil: return SelectorPopup.none
@@ -349,6 +357,22 @@ proc next*(self: SelectorPopup) {.expose("popup.selector").} =
         previewer.previewItem(items[finderItemIndex], self.previewEditor)
 
   self.markDirty()
+
+proc toggleFocusPreview*(self: SelectorPopup) {.expose("popup.selector").} =
+  if self.previewEditor.isNil:
+    return
+
+  self.focusPreview = not self.focusPreview
+  self.markDirty()
+  self.previewEditor.markDirty()
+
+proc setFocusPreview*(self: SelectorPopup, focus: bool) {.expose("popup.selector").} =
+  if self.previewEditor.isNil:
+    return
+
+  self.focusPreview = focus
+  self.markDirty()
+  self.previewEditor.markDirty()
 
 genDispatcher("popup.selector")
 addActiveDispatchTable "popup.selector", genDispatchTable("popup.selector")
@@ -488,8 +512,10 @@ proc newSelectorPopup*(app: AppInterface, scopeName = string.none,
   popup.previewer = previewer
   if popup.previewer.isSome:
     let previewDocument = newTextDocument(app.configProvider, createLanguageServer=false)
+    previewDocument.readOnly = true
+
     popup.previewEditor = newTextEditor(previewDocument, app, app.configProvider)
-    popup.previewEditor.renderHeader = false
+    popup.previewEditor.renderHeader = true
     popup.previewEditor.lineNumbers = api.LineNumbers.None.some
     popup.previewEditor.disableCompletions = true
 
@@ -502,6 +528,12 @@ proc newSelectorPopup*(app: AppInterface, scopeName = string.none,
     popup.finder.setQuery("")
 
   popup.eventHandler = eventHandler(app.getEventHandlerConfig("popup.selector")):
+    onAction:
+      popup.handleAction action, arg
+    onInput:
+      Ignored
+
+  popup.previewEventHandler = eventHandler(app.getEventHandlerConfig("popup.selector.preview")):
     onAction:
       popup.handleAction action, arg
     onInput:

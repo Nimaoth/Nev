@@ -149,4 +149,5 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[pro
 
         if self.previewEditor.isNotNil:
           builder.panel(0.UINodeFlags, x = bounds.w * (1 - previewSize), w = bounds.w * previewSize, h = bounds.h):
+            self.previewEditor.active = self.focusPreview
             result.add self.previewEditor.createUI(builder, app)
