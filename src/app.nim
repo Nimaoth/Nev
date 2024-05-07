@@ -816,8 +816,9 @@ proc restoreStateFromConfig*(self: App, state: var EditorState) =
     if not state.layout.isEmptyOrWhitespace:
       self.setLayout(state.layout)
 
-    self.loadedFontSize = state.fontSize.float
-    self.platform.fontSize = state.fontSize.float
+    let fontSize = max(state.fontSize.float, 10.0)
+    self.loadedFontSize = fontSize
+    self.platform.fontSize = fontSize
     self.loadedLineDistance = state.lineDistance.float
     self.platform.lineDistance = state.lineDistance.float
     if state.fontRegular.len > 0: self.fontRegular = state.fontRegular
