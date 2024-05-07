@@ -19,7 +19,7 @@ type
     case kind*: DestinationStorage
     of Stack: discard
     of Memory:
-      offset: uint32 # todo: remove?
+      offset*: uint32 # todo: remove?
       align*: uint32
     of Discard: discard
     of LValue: discard
@@ -34,10 +34,10 @@ type
 
     wasmFuncs: Table[NodeId, WasmFuncIdx]
 
-    functionsToCompile: seq[(AstNode, WasmFuncIdx)]
-    localIndices: Table[NodeId, LocalVariable]
-    globalIndices: Table[NodeId, WasmGlobalIdx]
-    labelIndices: Table[NodeId, int] # Not the actual index
+    functionsToCompile*: seq[(AstNode, WasmFuncIdx)]
+    localIndices*: Table[NodeId, LocalVariable]
+    globalIndices*: Table[NodeId, WasmGlobalIdx]
+    labelIndices*: Table[NodeId, int] # Not the actual index
     wasmValueTypes*: Table[ClassId, WasmTypeAttributes]
     typeAttributes*: Table[ClassId, TypeAttributes]
     typeAttributeComputers*: Table[ClassId, proc(typ: AstNode): TypeAttributes]
@@ -51,13 +51,13 @@ type
 
     exprStack*: seq[WasmExpr]
     currentExpr*: WasmExpr
-    currentLocals: seq[tuple[typ: WasmValueType, id: string]]
-    currentParamCount: int32
-    currentStackLocals: seq[int32]
-    currentStackLocalsSize: int32
+    currentLocals*: seq[tuple[typ: WasmValueType, id: string]]
+    currentParamCount*: int32
+    currentStackLocals*: seq[int32]
+    currentStackLocalsSize*: int32
 
-    returnValueDestination: Destination
-    passReturnAsOutParam: bool
+    returnValueDestination*: Destination
+    passReturnAsOutParam*: bool
 
     genDebugCode: bool
 
@@ -88,7 +88,7 @@ type
     stackEnd: WasmGlobalIdx
     stackPointer: WasmGlobalIdx
 
-    currentBasePointer: WasmLocalIdx
+    currentBasePointer*: WasmLocalIdx
 
     memoryBase: WasmGlobalIdx
     tableBase: WasmGlobalIdx
