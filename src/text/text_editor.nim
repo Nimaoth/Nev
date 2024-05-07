@@ -1014,7 +1014,9 @@ proc insertText*(self: TextDocumentEditor, text: string, autoIndent: bool = true
       of ')': ('(', ')')
       of '}': ('{', '}')
       of ']': ('[', ']')
-      else: assert false
+      else:
+        assert false
+        return
 
     texts.setLen(0)
     for s in selections.mitems:

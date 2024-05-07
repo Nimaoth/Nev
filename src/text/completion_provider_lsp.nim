@@ -37,7 +37,8 @@ proc refilterCompletions(self: CompletionProviderLsp) =
       score: score,
     )
 
-  log lvlInfo, &"[Comp-Lsp] Filtering completions took {timer.elapsed.ms}ms ({self.filteredCompletions.len}/{self.unfilteredCompletions.len})"
+  if timer.elapsed.ms > 2:
+    log lvlInfo, &"[Comp-Lsp] Filtering completions took {timer.elapsed.ms}ms ({self.filteredCompletions.len}/{self.unfilteredCompletions.len})"
   self.onCompletionsUpdated.invoke (self)
 
 proc getLspCompletionsAsync(self: CompletionProviderLsp) {.async.} =

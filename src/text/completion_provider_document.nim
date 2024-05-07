@@ -76,7 +76,8 @@ proc refilterCompletions(self: CompletionProviderDocument) =
       score: score,
     )
 
-  log lvlInfo, &"[Comp-Doc] Filtering completions took {timer.elapsed.ms}ms ({self.filteredCompletions.len}/{self.wordCache.len})"
+  if timer.elapsed.ms > 2:
+    log lvlInfo, &"[Comp-Doc] Filtering completions took {timer.elapsed.ms}ms ({self.filteredCompletions.len}/{self.wordCache.len})"
   self.onCompletionsUpdated.invoke (self)
 
 proc handleTextInserted(self: CompletionProviderDocument, document: TextDocument, location: Selection, text: string) =
