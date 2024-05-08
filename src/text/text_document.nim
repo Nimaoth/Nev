@@ -251,34 +251,41 @@ proc `content=`*(self: TextDocument, value: string) =
   self.revision.inc
   self.undoableRevision.inc
 
-  var index = 0
-  const utf8_bom = "\xEF\xBB\xBF"
-  if value.len >= 3 and value.startsWith(utf8_bom):
-    log lvlInfo, &"[content=] Skipping utf8 bom"
-    index = 3
+  let invalidUtf8Index = value.validateUtf8
+  if invalidUtf8Index >= 0:
+    log lvlWarn,
+      &"[content=] Trying to set content with invalid utf-8 string (invalid byte at {invalidUtf8Index})"
+    self.lines = @[&"Invalid utf-8 byte at {invalidUtf8Index}"]
 
-  var newLine = value.find('\n', start=index)
-  self.lines = @[""]
-  while newLine != -1:
-    let newLineStart = if newLine > 0 and value[newLine - 1] == '\r':
-      newLine - 1
-    else:
-      newLine
+  else:
+    var index = 0
+    const utf8_bom = "\xEF\xBB\xBF"
+    if value.len >= 3 and value.startsWith(utf8_bom):
+      log lvlInfo, &"[content=] Skipping utf8 bom"
+      index = 3
 
-    if self.singleLine:
-      self.lines[0].add value[index..<newLineStart]
-    else:
-      self.lines[self.lines.high] = value[index..<newLineStart]
-      self.lines.add ""
+    var newLine = value.find('\n', start=index)
+    self.lines = @[""]
+    while newLine != -1:
+      let newLineStart = if newLine > 0 and value[newLine - 1] == '\r':
+        newLine - 1
+      else:
+        newLine
 
-    index = newLine + 1
-    newLine = value.find('\n', start=index)
+      if self.singleLine:
+        self.lines[0].add value[index..<newLineStart]
+      else:
+        self.lines[self.lines.high] = value[index..<newLineStart]
+        self.lines.add ""
 
-  if index < value.len:
-    if self.singleLine:
-      self.lines[0].add value[index..^1]
-    else:
-      self.lines[self.lines.high] = value[index..^1]
+      index = newLine + 1
+      newLine = value.find('\n', start=index)
+
+    if index < value.len:
+      if self.singleLine:
+        self.lines[0].add value[index..^1]
+      else:
+        self.lines[self.lines.high] = value[index..^1]
 
   self.lineIds.setLen self.lines.len
   for id in self.lineIds.mitems:
