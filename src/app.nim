@@ -6,7 +6,7 @@ import platform/[platform, filesystem]
 import workspaces/[workspace]
 import config_provider, app_interface
 import text/language/language_server_base, language_server_absytree_commands
-import input, events, document, document_editor, popup, dispatch_tables, theme, clipboard, app_options, selector_popup_builder, file_selector_item
+import input, events, document, document_editor, popup, dispatch_tables, theme, clipboard, app_options, selector_popup_builder
 import text/[custom_treesitter]
 import finder/[finder, previewer]
 import compilation_config
@@ -640,23 +640,10 @@ when enableAst:
 import selector_popup
 import finder/[workspace_file_previewer]
 
-proc toFileLocationItem(self: FileSelectorItem): FileLocationItem =
-  FileLocationItem(name: self.name, directory: self.directory, path: self.path, location: self.location, workspaceFolder: self.workspaceFolder)
-
-proc toFileSelectorItem(self: FileLocationItem): FileSelectorItem =
-  FileSelectorItem(name: self.name, directory: self.directory, path: self.path, location: self.location, workspaceFolder: self.workspaceFolder)
-
 proc setLocationList(self: App, list: seq[FinderItem], previewer: Option[Previewer] = Previewer.none) =
   self.currentLocationListIndex = 0
   self.finderItems = list
   self.previewer = previewer
-
-type ThemeSelectorItem* = ref object of FileSelectorItem
-  discard
-
-method changed*(self: ThemeSelectorItem, other: SelectorItem): bool =
-  let other = other.ThemeSelectorItem
-  return self.name != other.name or self.path != other.path
 
 proc setTheme*(self: App, path: string) =
   log(lvlInfo, fmt"Loading theme {path}")
@@ -1836,8 +1823,6 @@ proc chooseTheme*(self: App) {.expose("editor").} =
       gTheme = theme
       self.platform.requestRender(true)
 
-  popup.updateCompletions()
-
   self.pushPopup popup
 
 proc createFile*(self: App, path: string) {.expose("editor").} =
@@ -1875,26 +1860,6 @@ proc pushSelectorPopup*(self: App, builder: SelectorPopupBuilder): ISelectorPopu
   popup.scale.x = builder.scaleX
   popup.scale.y = builder.scaleY
 
-  if builder.getCompletions.isNotNil:
-    popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
-      return builder.getCompletions(popup.asISelectorPopup, text)
-
-  if builder.getCompletionsAsync.isNotNil:
-    popup.getCompletionsAsync = proc(popup: SelectorPopup, text: string): Future[seq[SelectorItem]] =
-      return builder.getCompletionsAsync(popup.asISelectorPopup, text)
-
-  if builder.getCompletionsAsyncIter.isNotNil:
-    popup.getCompletionsAsyncIter = proc(popup: SelectorPopup, text: string): Future[void]  =
-      return builder.getCompletionsAsyncIter(popup.asISelectorPopup, text)
-
-  if builder.handleItemSelected.isNotNil:
-    popup.handleItemSelected = proc(item: SelectorItem) =
-      builder.handleItemSelected(popup.asISelectorPopup, item)
-
-  if builder.handleItemConfirmed.isNotNil:
-    popup.handleItemConfirmed = proc(item: SelectorItem): bool =
-      return builder.handleItemConfirmed(popup.asISelectorPopup, item)
-
   if builder.handleItemSelected2.isNotNil:
     popup.handleItemSelected2 = proc(item: FinderItem) =
       builder.handleItemSelected2(popup.asISelectorPopup, item)
@@ -1911,12 +1876,6 @@ proc pushSelectorPopup*(self: App, builder: SelectorPopupBuilder): ISelectorPopu
     capture handler:
       popup.addCustomCommand command, proc(popup: SelectorPopup, args: JsonNode): bool =
         return handler(popup.asISelectorPopup, args)
-
-  popup.sortFunction = builder.sortFunction
-  popup.updateCompletions()
-
-  if builder.enableAutoSort:
-    popup.enableAutoSort()
 
   self.pushPopup popup
 
@@ -2033,7 +1992,7 @@ proc chooseOpen*(self: App, view: string = "new") {.expose("editor").} =
     return true
 
   popup.addCustomCommand "close-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
-    if popup.textEditor.isNil or popup.completions.len == 0:
+    if popup.textEditor.isNil:
       return false
 
     if popup.getSelectedItem().getSome(item):
@@ -2042,8 +2001,6 @@ proc chooseOpen*(self: App, view: string = "new") {.expose("editor").} =
         source.retrigger()
 
     return true
-
-  popup.updateCompletions()
 
   self.pushPopup popup
 
@@ -2373,8 +2330,6 @@ proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
     popup.addCustomCommand "stage-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
       if popup.textEditor.isNil:
         return false
-      if popup.completions.len == 0:
-        return false
 
       asyncCheck popup.stageSelectedFileAsync(source)
       return true
@@ -2382,16 +2337,12 @@ proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
     popup.addCustomCommand "unstage-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
       if popup.textEditor.isNil:
         return false
-      if popup.completions.len == 0:
-        return false
 
       asyncCheck popup.unstageSelectedFileAsync(source)
       return true
 
     popup.addCustomCommand "revert-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
       if popup.textEditor.isNil:
-        return false
-      if popup.completions.len == 0:
         return false
 
       asyncCheck popup.revertSelectedFileAsync(source)
@@ -2412,12 +2363,7 @@ proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
       asyncCheck self.diffStagedFileAsync(fileInfo.path)
       return true
 
-    popup.updateCompletions()
-
     self.pushPopup popup
-
-type ExplorerFileSelectorItem* = ref object of FileSelectorItem
-  isFile*: bool = false
 
 when not defined(js):
   proc getItemsFromDirectory(workspace: WorkspaceFolder, directory: string): Future[ItemList] {.async.} =

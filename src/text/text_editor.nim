@@ -11,7 +11,7 @@ import language/[language_server_base]
 import document, document_editor, events, vmath, bumpy, input, custom_treesitter, indent,
   text_document, snippet
 import completion, completion_provider_document, completion_provider_lsp,
-  completion_provider_snippet, file_selector_item, selector_popup_builder, dispatch_tables
+  completion_provider_snippet, selector_popup_builder, dispatch_tables
 import config_provider, app_interface
 import diff
 import workspaces/workspace
@@ -27,13 +27,6 @@ createJavascriptPrototype("editor.text")
 
 let searchResultsId = newId()
 let errorNodesHighlightId = newId()
-
-type TextSymbolSelectorItem* = ref object of FileSelectorItem
-  symbol*: Symbol
-
-method changed*(self: TextSymbolSelectorItem, other: SelectorItem): bool =
-  let other = other.TextSymbolSelectorItem
-  return self.symbol != other.symbol
 
 type
   Command = object
