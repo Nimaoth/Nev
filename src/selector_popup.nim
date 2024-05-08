@@ -60,7 +60,7 @@ type
 
     completionMatchPositions: Table[int, seq[int]]
     finder*: Finder
-    previewer: Option[Previewer]
+    previewer*: Option[Previewer]
 
     focusPreview*: bool
 

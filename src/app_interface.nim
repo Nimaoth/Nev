@@ -3,6 +3,7 @@ import misc/[traits, custom_async]
 import platform/platform
 import workspaces/workspace
 import text/language/language_server_base
+import finder/[finder, previewer]
 import events, document_editor, document, popup, config_provider, selector_popup_builder
 from scripting_api import EditorId
 
@@ -27,7 +28,8 @@ traitRef AppInterface:
   method getEditorForId*(self: AppInterface, id: EditorId): Option[DocumentEditor]
   method getPopupForId*(self: AppInterface, id: EditorId): Option[Popup]
   method createSelectorPopup*(self: AppInterface): Popup
-  method setLocationList*(self: AppInterface, list: seq[SelectorItem])
+  method setLocationList*(self: AppInterface, list: seq[FinderItem],
+    previewer: Option[Previewer] = Previewer.none)
   method pushSelectorPopup*(self: AppInterface, popup: SelectorPopupBuilder): ISelectorPopup
   method pushPopup*(self: AppInterface, popup: Popup)
   method popPopup*(self: AppInterface, popup: Popup)
