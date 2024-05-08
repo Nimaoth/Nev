@@ -183,8 +183,9 @@ type
 
     gitIgnore: Globs
 
-    fileLocationList: seq[FileLocationItem]
     currentLocationListIndex: int
+    finderItems: seq[FinderItem]
+    previewer: Option[Previewer]
 
 var gEditor* {.exportc.}: App = nil
 
@@ -233,7 +234,7 @@ proc popPopup*(self: App, popup: Popup)
 proc help*(self: App, about: string = "")
 proc getAllDocuments*(self: App): seq[Document]
 proc setHandleInputs*(self: App, context: string, value: bool)
-proc setLocationList*(self: App, list: seq[SelectorItem])
+proc setLocationList*(self: App, list: seq[FinderItem], previewer: Option[Previewer] = Previewer.none)
 
 implTrait AppInterface, App:
   proc platform*(self: App): Platform = self.platform
@@ -264,7 +265,7 @@ implTrait AppInterface, App:
   pushPopup(void, App, Popup)
   popPopup(void, App, Popup)
   getAllDocuments(seq[Document], App)
-  setLocationList(void, App, seq[SelectorItem])
+  setLocationList(void, App, seq[FinderItem], Option[Previewer])
 
 type
   AppLogger* = ref object of Logger
@@ -279,7 +280,8 @@ proc handleKeyRelease*(self: App, input: int64, modifiers: Modifiers)
 proc handleRune*(self: App, input: int64, modifiers: Modifiers)
 proc handleMousePress*(self: App, button: MouseButton, modifiers: Modifiers, mousePosWindow: Vec2)
 proc handleMouseRelease*(self: App, button: MouseButton, modifiers: Modifiers, mousePosWindow: Vec2)
-proc handleMouseMove*(self: App, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton])
+proc handleMouseMove*(self: App, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers,
+  buttons: set[MouseButton])
 proc handleScroll*(self: App, scroll: Vec2, mousePosWindow: Vec2, modifiers: Modifiers)
 proc handleDropFile*(self: App, path, content: string)
 
@@ -644,12 +646,10 @@ proc toFileLocationItem(self: FileSelectorItem): FileLocationItem =
 proc toFileSelectorItem(self: FileLocationItem): FileSelectorItem =
   FileSelectorItem(name: self.name, directory: self.directory, path: self.path, location: self.location, workspaceFolder: self.workspaceFolder)
 
-proc setLocationList(self: App, list: seq[SelectorItem]) =
+proc setLocationList(self: App, list: seq[FinderItem], previewer: Option[Previewer] = Previewer.none) =
   self.currentLocationListIndex = 0
-  self.fileLocationList.setLen 0
-  for item in list:
-    if item of FileSelectorItem:
-      self.fileLocationList.add item.FileSelectorItem.toFileLocationItem
+  self.finderItems = list
+  self.previewer = previewer
 
 type ThemeSelectorItem* = ref object of FileSelectorItem
   discard
@@ -1103,10 +1103,15 @@ proc setLocationListFromCurrentPopup*(self: App) {.expose("editor").} =
       return
     popup.SelectorPopup
 
-  if popup.textEditor.isNil or popup.completions.len == 0:
+  if popup.textEditor.isNil or popup.finder.isNil or popup.finder.filteredItems.isNone:
     return
 
-  self.setLocationList(popup.completions)
+  let list = popup.finder.filteredItems.get
+  var items = newSeqOfCap[FinderItem](list.len)
+  for i in 0..<list.len:
+    items.add list[i]
+
+  self.setLocationList(items, popup.previewer)
 
 proc getBackend*(self: App): Backend {.expose("editor").} =
   return self.backend
@@ -1789,31 +1794,41 @@ proc loadTheme*(self: App, name: string) {.expose("editor").} =
 proc chooseTheme*(self: App) {.expose("editor").} =
   defer:
     self.platform.requestRender()
+
   let originalTheme = self.theme.path
 
-  var popup = newSelectorPopup(self.asAppInterface, "theme".some)
-  popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
+  proc getItems(): seq[FinderItem] =
+    var items = newSeq[FinderItem]()
     let themesDir = fs.getApplicationFilePath("./themes")
     for file in walkDirRec(themesDir, relative=true):
       if file.endsWith ".json":
         let (relativeDirectory, name, _) = file.splitFile
-        let score = matchFuzzySublime(text, file, defaultPathMatchingConfig).score.float
-        result.add ThemeSelectorItem(name: name, directory: "themes" / relativeDirectory, path: fmt"{themesDir}/{file}", score: score)
+        items.add FinderItem(
+          displayName: name,
+          data: fmt"{themesDir}/{file}",
+          detail: "themes" / relativeDirectory,
+        )
 
-    result.sort((a, b) => cmp(a.ThemeSelectorItem.score, b.ThemeSelectorItem.score), Ascending)
+    return items
 
-  popup.handleItemSelected = proc(item: SelectorItem) =
-    if theme.loadFromFile(item.ThemeSelectorItem.path).getSome(theme):
+  let source = newSyncDataSource(getItems)
+  var finder = newFinder(source, filterAndSort=true)
+  finder.filterThreshold = float.low
+
+  var popup = newSelectorPopup(self.asAppInterface, "theme".some, finder.some)
+  popup.scale.x = 0.35
+
+  popup.handleItemConfirmed2 = proc(item: FinderItem): bool =
+    if theme.loadFromFile(item.data).getSome(theme):
       self.theme = theme
       gTheme = theme
       self.platform.requestRender(true)
 
-  popup.handleItemConfirmed = proc(item: SelectorItem): bool =
-    if theme.loadFromFile(item.ThemeSelectorItem.path).getSome(theme):
+  popup.handleItemSelected2 = proc(item: FinderItem) =
+    if theme.loadFromFile(item.data).getSome(theme):
       self.theme = theme
       gTheme = theme
       self.platform.requestRender(true)
-    return true
 
   popup.handleCanceled = proc() =
     if theme.loadFromFile(originalTheme).getSome(theme):
@@ -1965,12 +1980,6 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
     discard self.openWorkspaceFile(item.data, workspace)
     return true
 
-  popup.addCustomCommand "send-to-location-list", proc(popup: SelectorPopup, args: JsonNode): bool =
-    if popup.textEditor.isNil or popup.completions.len == 0:
-      return false
-    self.setLocationList(popup.completions)
-    return true
-
   self.pushPopup popup
 
 proc chooseOpen*(self: App, view: string = "new") {.expose("editor").} =
@@ -2034,86 +2043,87 @@ proc chooseOpen*(self: App, view: string = "new") {.expose("editor").} =
 
     return true
 
-  popup.addCustomCommand "send-to-location-list", proc(popup: SelectorPopup, args: JsonNode): bool =
-    if popup.textEditor.isNil or popup.completions.len == 0:
-      return false
-    self.setLocationList(popup.completions)
-    return true
-
   popup.updateCompletions()
 
   self.pushPopup popup
 
 proc gotoNextLocation*(self: App) {.expose("editor").} =
-  if self.fileLocationList.len == 0:
+  if self.finderItems.len == 0:
     return
 
-  self.currentLocationListIndex = (self.currentLocationListIndex + 1) mod self.fileLocationList.len
-  let item = self.fileLocationList[self.currentLocationListIndex]
-  log lvlInfo, &"[gotoNextLocation] Found {item.path}:{item.location}"
-  let editor = if item.workspaceFolder.isSome:
-    self.openWorkspaceFile(item.path, item.workspaceFolder.get)
-  else:
-    self.openFile(item.path)
+  if self.workspace.folders.len == 0:
+    return
 
-  if item.location.getSome(location) and editor.getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.targetSelection = location.toSelection
+  self.currentLocationListIndex = (self.currentLocationListIndex + 1) mod self.finderItems.len
+  let item = self.finderItems[self.currentLocationListIndex]
+
+  let (path, location) = item.parsePathAndLocationFromItemData().getOr:
+    log lvlError, fmt"Failed to open location from finder item because of invalid data format. " &
+      fmt"Expected path or json object with path property {item}"
+    return
+
+  log lvlInfo, &"[gotoNextLocation] Found {path}:{location}"
+
+  let workspace = self.workspace.folders[0]
+  let editor = self.openWorkspaceFile(path, workspace)
+  if editor.getSome(editor) and editor of TextDocumentEditor and location.isSome:
+    editor.TextDocumentEditor.targetSelection = location.get.toSelection
     editor.TextDocumentEditor.centerCursor()
 
 proc gotoPrevLocation*(self: App) {.expose("editor").} =
-  if self.fileLocationList.len == 0:
+  if self.finderItems.len == 0:
     return
 
-  self.currentLocationListIndex = (self.currentLocationListIndex - 1 + self.fileLocationList.len) mod self.fileLocationList.len
-  let item = self.fileLocationList[self.currentLocationListIndex]
-  log lvlInfo, &"[gotoPrevLocation] Found {item.path}:{item.location}"
-  let editor = if item.workspaceFolder.isSome:
-    self.openWorkspaceFile(item.path, item.workspaceFolder.get)
-  else:
-    self.openFile(item.path)
+  if self.workspace.folders.len == 0:
+    return
 
-  if item.location.getSome(location) and editor.getSome(editor) and editor of TextDocumentEditor:
-    editor.TextDocumentEditor.targetSelection = location.toSelection
+  self.currentLocationListIndex = (self.currentLocationListIndex - 1 + self.finderItems.len) mod self.finderItems.len
+  let item = self.finderItems[self.currentLocationListIndex]
+
+  let (path, location) = item.parsePathAndLocationFromItemData().getOr:
+    log lvlError, fmt"Failed to open location from finder item because of invalid data format. " &
+      fmt"Expected path or json object with path property {item}"
+    return
+
+  log lvlInfo, &"[gotoPrevLocation] Found {path}:{location}"
+
+  let workspace = self.workspace.folders[0]
+  let editor = self.openWorkspaceFile(path, workspace)
+  if editor.getSome(editor) and editor of TextDocumentEditor and location.isSome:
+    editor.TextDocumentEditor.targetSelection = location.get.toSelection
     editor.TextDocumentEditor.centerCursor()
 
 proc chooseLocation*(self: App, view: string = "new") {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
-  var popup = newSelectorPopup(self.asAppInterface, "open".some)
-  popup.scale.x = 0.3
+  if self.workspace.folders.len == 0:
+    return
 
-  popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
-    for item in self.fileLocationList:
-      var selectorItem = item.toFileSelectorItem
-      selectorItem.score = matchFuzzySublime(text, selectorItem.path, defaultPathMatchingConfig).score.float
-      result.add selectorItem
+  let workspace = self.workspace.folders[0]
 
-    result.sort((a, b) => cmp(a.FileSelectorItem.score, b.FileSelectorItem.score), Ascending)
+  proc getItems(): seq[FinderItem] =
+    return self.finderItems
 
-  popup.handleItemConfirmed = proc(item: SelectorItem): bool =
-    case view
-    of "current":
-      if item.FileSelectorItem.workspaceFolder.isSome:
-        self.loadWorkspaceFile(item.FileSelectorItem.path, item.FileSelectorItem.workspaceFolder.get)
-      else:
-        self.loadFile(item.FileSelectorItem.path)
-    of "new":
-      if item.FileSelectorItem.workspaceFolder.isSome:
-        discard self.openWorkspaceFile(item.FileSelectorItem.path, item.FileSelectorItem.workspaceFolder.get)
-      else:
-        discard self.openFile(item.FileSelectorItem.path)
-    else:
-      log(lvlError, fmt"Unknown argument {view}")
+  let source = newSyncDataSource(getItems)
+  var finder = newFinder(source, filterAndSort=true)
+
+  var popup = newSelectorPopup(self.asAppInterface, "open".some, finder.some, self.previewer)
+
+  popup.scale.x = if self.previewer.isSome: 0.8 else: 0.4
+
+  popup.handleItemConfirmed2 = proc(item: FinderItem): bool =
+    let (path, location) = item.parsePathAndLocationFromItemData().getOr:
+      log lvlError, fmt"Failed to open location from finder item because of invalid data format. " &
+        fmt"Expected path or json object with path property {item}"
+      return
+
+    let editor = self.openWorkspaceFile(path, workspace)
+    if editor.getSome(editor) and editor of TextDocumentEditor and location.isSome:
+      editor.TextDocumentEditor.targetSelection = location.get.toSelection
+      editor.TextDocumentEditor.centerCursor()
+
     return true
-
-  popup.addCustomCommand "send-to-location-list", proc(popup: SelectorPopup, args: JsonNode): bool =
-    if popup.textEditor.isNil or popup.completions.len == 0:
-      return false
-    self.setLocationList(popup.completions)
-    return true
-
-  popup.updateCompletions()
 
   self.pushPopup popup
 
@@ -2400,12 +2410,6 @@ proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
       debugf"diff-staged {fileInfo}"
 
       asyncCheck self.diffStagedFileAsync(fileInfo.path)
-      return true
-
-    popup.addCustomCommand "send-to-location-list", proc(popup: SelectorPopup, args: JsonNode): bool =
-      if popup.textEditor.isNil or popup.completions.len == 0:
-        return false
-      self.setLocationList(popup.completions)
       return true
 
     popup.updateCompletions()

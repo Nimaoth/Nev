@@ -55,21 +55,26 @@ proc loadAsync(self: WorkspaceFilePreviewer): Future[void] {.async.} =
   let revision = self.revision
   let path = self.currentPath
   let location = self.currentLocation
+  let editor = self.editor
 
   let content = self.workspace.loadFile(path).await
-  if self.revision > revision:
+  if editor.document.isNil:
+    log lvlInfo, fmt"Discard file load of 'path' because preview editor was destroyed"
+    return
+
+  if self.revision > revision or editor.document.isNil:
     log lvlInfo, fmt"Discard file load of 'path' because a newer one was requested"
     return
 
-  self.editor.document.setFileAndContent(path, content)
+  editor.document.setFileAndContent(path, content)
   if location.getSome(location):
-    self.editor.selection = location.toSelection
-    self.editor.centerCursor()
+    editor.selection = location.toSelection
+    editor.centerCursor()
   else:
-    self.editor.selection = (0, 0).toSelection
-    self.editor.scrollToTop()
+    editor.selection = (0, 0).toSelection
+    editor.scrollToTop()
 
-  self.editor.markDirty()
+  editor.markDirty()
 
 method delayPreview*(self: WorkspaceFilePreviewer) =
   if self.triggerLoadTask.isNotNil:
