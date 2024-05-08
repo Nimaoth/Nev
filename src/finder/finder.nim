@@ -69,6 +69,7 @@ proc newItemList*(len: int): ItemList =
   allocated += len
   # debugf"---[newItemList] #{result.counter}, len = {len}, allocated = {allocated}"
 
+func high*(list: ItemList): int = list.len - 1
 func len*(list: ItemList): int = list.len
 
 proc free*(list: ItemList) =
@@ -129,11 +130,11 @@ proc reverse*(list: ItemList) =
     inc(x)
 
 func sort*(list: ItemList, cmp: proc (x, y: FinderItem): int {.closure.},
-           order = SortOrder.Ascending) {.effectsOf: cmp.} =
+           order = SortOrder.Descending) {.effectsOf: cmp.} =
   var list = list
   toOpenArray(list.data, 0, list.len - 1).sort(cmp, order)
 
-proc sort*(list: ItemList, order = SortOrder.Ascending) =
+proc sort*(list: ItemList, order = SortOrder.Descending) =
   var list = list
   toOpenArray(list.data, 0, list.len - 1).sort(order)
 
@@ -184,7 +185,7 @@ proc filterAndSortItemsThread(args: (string, ItemList)): FilterAndSortResult {.g
     result.scoreTime = scoreTimer.elapsed.ms
 
     let sortTimer = startTimer()
-    list.sort(Ascending)
+    list.sort(Descending)
     result.sortTime = sortTimer.elapsed.ms
 
     result.totalTime = result.scoreTime + result.sortTime
@@ -245,7 +246,7 @@ proc setQuery*(self: Finder, query: string) =
     if self.query.len == 0:
       for i in 0..<mlist.len:
         mlist[i].score = mlist[i].originalScore
-      mlist.sort((a, b) => cmp(a.originalScore, b.originalScore), Ascending)
+      mlist.sort((a, b) => cmp(a.originalScore, b.originalScore), Descending)
       self.onItemsChanged.invoke()
 
     else:

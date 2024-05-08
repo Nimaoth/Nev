@@ -5,7 +5,7 @@ import ui/node
 import platform/platform
 import ui/[widget_builders_base, widget_library]
 import text/text_editor
-import app, selector_popup, theme, file_selector_item
+import app, selector_popup, theme
 import finder/finder
 
 logCategory "selector-popup-ui"
@@ -32,20 +32,11 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[pro
   # let dirty = self.dirty
   self.resetDirty()
 
-  var flags = &{UINodeFlag.MaskContent, OverlappingChildren}
-  var flagsInner = &{LayoutVertical}
-
   let sizeToContentY = self.previewEditor.isNil
   var yFlag = if sizeToContentY:
     &{SizeToContentY}
   else:
     &{FillY}
-
-  flags.incl FillX
-  flagsInner.incl FillX
-
-  flags = flags + yFlag
-  flagsInner = flagsInner + yFlag
 
   let scale = (vec2(1, 1) - self.scale) * 0.5
 
@@ -53,39 +44,25 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[pro
     absolute(scale.x * builder.currentParent.boundsActual.w),
     absolute(scale.y * builder.currentParent.boundsActual.h))
 
-  builder.panel(&{}, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h,
-      userId = self.userId.newPrimaryId):
+  let backgroundColor = app.theme.color("panel.background", color(0.1, 0.1, 0.1)).withAlpha(1)
+  let selectionColor = app.theme.color("list.activeSelectionBackground",
+    color(0.8, 0.8, 0.8)).withAlpha(1)
 
-    builder.panel(flags): #, userId = id):
+  builder.panel(&{FillBackground}, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h,
+      backgroundColor = backgroundColor, userId = self.userId.newPrimaryId):
+
+    builder.panel(&{FillX, MaskContent, OverlappingChildren} + yFlag): #, userId = id):
       let totalLineHeight = app.platform.totalLineHeight
-      let maxLineCount = if sizeToContentY:
-        30
-      else:
-        floor(currentNode.boundsActual.h / totalLineHeight).int
-
-      let targetNumRenderedItems = min(maxLineCount, self.completions.len)
-      var lastRenderedIndex = min(self.scrollOffset + targetNumRenderedItems - 1, self.completions.high)
-
-      if self.selected < self.scrollOffset:
-        self.scrollOffset = self.selected
-        lastRenderedIndex = min(self.scrollOffset + targetNumRenderedItems - 1, self.completions.high)
-
-      if self.selected > lastRenderedIndex:
-        self.scrollOffset = max(self.selected - targetNumRenderedItems + 1, 0)
-        lastRenderedIndex = min(self.scrollOffset + targetNumRenderedItems - 1, self.completions.high)
-
-      let backgroundColor = app.theme.color("panel.background", color(0.1, 0.1, 0.1)).withAlpha(1)
-      let selectionColor = app.theme.color("list.activeSelectionBackground",
-        color(0.8, 0.8, 0.8)).withAlpha(1)
 
       const previewSize = 0.5
 
       block:
-        builder.panel(flagsInner, w = bounds.w * (1 - previewSize)):
+        builder.panel(&{FillX, LayoutVertical} + yFlag, w = bounds.w * (1 - previewSize)):
+
           builder.panel(&{FillX, SizeToContentY}):
             result.add self.textEditor.createUI(builder, app)
 
-          if self.finder.isNotNil and self.finder.filteredItems.getSome(items):
+          if self.finder.isNotNil and self.finder.filteredItems.getSome(items) and items.len > 0:
 
             let textColor = app.theme.color("editor.foreground", color(0.9, 0.8, 0.8))
             let highlightColor = textColor.lighten(0.15)
@@ -93,43 +70,64 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[pro
 
             var rows: seq[seq[UINode]] = @[]
 
-            builder.panel(&{FillX, FillBackground, LayoutVertical} + yFlag, backgroundColor = backgroundColor):
+            builder.panel(&{FillX, LayoutVertical} + yFlag):
+
+              let maxLineCount = if sizeToContentY:
+                30
+              else:
+                floor(currentNode.bounds.h / totalLineHeight).int
+
+              let targetNumRenderedItems = min(maxLineCount, items.len)
+              var lastRenderedIndex = min(self.scrollOffset + targetNumRenderedItems - 1, items.high)
+
+              if self.selected < self.scrollOffset:
+                self.scrollOffset = self.selected
+                lastRenderedIndex = min(self.scrollOffset + targetNumRenderedItems - 1, items.high)
+
+              if self.selected > lastRenderedIndex:
+                self.scrollOffset = max(self.selected - targetNumRenderedItems + 1, 0)
+                lastRenderedIndex = min(self.scrollOffset + targetNumRenderedItems - 1, items.high)
+
+              assert self.scrollOffset >= 0
+              assert self.scrollOffset < items.len
+
+              assert lastRenderedIndex >= 0
+              assert lastRenderedIndex < items.len
+
               var widgetIndex = 0
               for completionIndex in self.scrollOffset..lastRenderedIndex:
                 defer: inc widgetIndex
 
-                let backgroundColor = if completionIndex == self.selected:
-                  selectionColor
+                let fillBackgroundFlag = if completionIndex == self.selected:
+                  &{FillBackground}
                 else:
-                  backgroundColor
+                  0.UINodeFlags
 
                 const maxDisplayNameWidth = 50
                 const maxColumnWidth = 60
 
-                builder.panel(&{FillX, SizeToContentY, FillBackground}, backgroundColor = backgroundColor):
-                  let rawCompletionIndex = self.completions.high - completionIndex
-                  let completion {.cursor.} = self.completions[rawCompletionIndex]
-                  assert completion.finderItemIndex < items.len
-                  if completion.finderItemIndex < items.len:
-                    let item {.cursor.} = items[completion.finderItemIndex]
+                builder.panel(&{FillX, SizeToContentY} + fillBackgroundFlag,
+                    backgroundColor = selectionColor):
 
-                    let name = item.displayName
-                    let matchIndices = self.getCompletionMatches(
-                      completionIndex, self.getSearchString(), name, defaultPathMatchingConfig)
+                  let item {.cursor.} = items[completionIndex]
 
-                    var row: seq[UINode] = @[]
+                  let name = item.displayName
+                  let matchIndices = self.getCompletionMatches(
+                    completionIndex, self.getSearchString(), name, defaultPathMatchingConfig)
 
-                    builder.panel(&{FillX, SizeToContentY}):
-                      row.add builder.highlightedText(name, matchIndices, textColor,
-                        highlightColor, maxDisplayNameWidth)
+                  var row: seq[UINode] = @[]
 
-                      if item.detail.len > 0:
-                        let details = item.detail.split('\t')
-                        for detail in details:
-                          row.add builder.createTextWithMaxWidth(detail, maxColumnWidth, "...",
-                            detailColor, &{TextItalic})
+                  builder.panel(&{FillX, SizeToContentY}):
+                    row.add builder.highlightedText(name, matchIndices, textColor,
+                      highlightColor, maxDisplayNameWidth)
 
-                    rows.add row
+                    if item.detail.len > 0:
+                      let details = item.detail.split('\t')
+                      for detail in details:
+                        row.add builder.createTextWithMaxWidth(detail, maxColumnWidth, "...",
+                          detailColor, &{TextItalic})
+
+                  rows.add row
 
             # Align grid
             var maxWidths: seq[float] = @[]
@@ -148,6 +146,11 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[pro
                 x += maxWidths[col] + gap
 
         if self.previewEditor.isNotNil:
-          builder.panel(0.UINodeFlags, x = bounds.w * (1 - previewSize), w = bounds.w * previewSize, h = bounds.h):
+          builder.panel(0.UINodeFlags, x = bounds.w * (1 - previewSize),
+              w = bounds.w * previewSize, h = bounds.h):
+
             self.previewEditor.active = self.focusPreview
             result.add self.previewEditor.createUI(builder, app)
+
+    if sizeToContentY:
+      currentNode.h = currentNode.last.h

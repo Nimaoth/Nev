@@ -3,7 +3,7 @@ import bumpy, vmath
 import misc/[util, rect_utils, comb_sort, timer, event, custom_async, custom_logger,
   cancellation_token, myjsonutils, fuzzy_matching, traits]
 import app_interface, text/text_editor, popup, events, scripting/expose, input,
-  selector_popup_builder, file_selector_item, dispatch_tables
+  selector_popup_builder, dispatch_tables
 from scripting_api as api import Selection
 import finder/[finder, previewer]
 
@@ -13,25 +13,15 @@ logCategory "selector"
 createJavascriptPrototype("popup.selector")
 
 type
-  CompletionProviderSync* = proc(popup: SelectorPopup, text: string): seq[SelectorItem]
-  CompletionProviderAsync* = proc(popup: SelectorPopup, text: string): Future[seq[SelectorItem]]
-  CompletionProviderAsyncIter* = proc(popup: SelectorPopup, text: string): Future[void]
-
   SelectorPopup* = ref object of Popup
     app*: AppInterface
     textEditor*: TextDocumentEditor
     previewEditor*: TextDocumentEditor
     selected*: int
     scrollOffset*: int
-    completions*: seq[SelectorItem]
-    handleItemConfirmed*: proc(item: SelectorItem): bool
-    handleItemSelected*: proc(item: SelectorItem)
     handleItemConfirmed2*: proc(finderItem: FinderItem): bool
     handleItemSelected2*: proc(finderItem: FinderItem)
     handleCanceled*: proc()
-    getCompletions*: CompletionProviderSync
-    getCompletionsAsync*: CompletionProviderAsync
-    getCompletionsAsyncIter*: CompletionProviderAsyncIter
     lastContentBounds*: Rect
     lastItems*: seq[tuple[index: int, bounds: Rect]]
 
@@ -44,19 +34,7 @@ type
 
     maxItemsToShow: int = 50
 
-    cancellationToken*: CancellationToken
-
-    updateInProgress*: bool = false
-    updated*: bool = false
-
-    # sort stuff
-    useAutoSort: bool = false
-    sortSteps: int = 5
-    sortTimeboxMs: float = 5
-    startSortGap: int = 1
-    lastSortGap: int = 1
-    autoSortActive: bool = false
-    sortFunction*: proc(a, b: SelectorItem): int
+    itemList: ItemList
 
     completionMatchPositions: Table[int, seq[int]]
     finder*: Finder
@@ -64,18 +42,11 @@ type
 
     focusPreview*: bool
 
-  NamedSelectorItem* = ref object of SelectorItem
-    name*: string
-
 proc getSearchString*(self: SelectorPopup): string
-proc updateCompletions*(self: SelectorPopup)
-proc enableAutoSort*(self: SelectorPopup)
 proc closed*(self: SelectorPopup): bool
 
 implTrait ISelectorPopup, SelectorPopup:
   getSearchString(string, SelectorPopup)
-  updateCompletions(void, SelectorPopup)
-  enableAutoSort(void, SelectorPopup)
   closed(bool, SelectorPopup)
 
 proc closed*(self: SelectorPopup): bool =
@@ -90,24 +61,8 @@ proc getCompletionMatches*(self: SelectorPopup, i: int, pattern: string, text: s
   discard matchFuzzySublime(pattern, text, result, true, config)
   self.completionMatchPositions[i] = result
 
-proc getCompletionMatches*(self: SelectorItem, pattern: string, text: string,
-    config: FuzzyMatchConfig): seq[int] =
-
-  if not self.hasCompletionMatchPositions:
-    self.completionMatchPositions.setLen 0
-    discard matchFuzzySublime(pattern, text, self.completionMatchPositions, true, config)
-    self.hasCompletionMatchPositions = true
-
-  return self.completionMatchPositions
-
-method changed*(self: NamedSelectorItem, other: SelectorItem): bool =
-  let other = other.NamedSelectorItem
-  return self.name != other.name
-
 method deinit*(self: SelectorPopup) =
   log lvlInfo, "Destroy selector popup"
-  if self.cancellationToken.isNotNil:
-    self.cancellationToken.cancel()
 
   if self.finder.isNotNil:
     self.finder.deinit()
@@ -116,6 +71,11 @@ method deinit*(self: SelectorPopup) =
   let document = self.textEditor.document
   self.textEditor.deinit()
   document.deinit()
+
+  if self.previewEditor.isNotNil:
+    let document = self.previewEditor.document
+    self.previewEditor.deinit()
+    document.deinit()
 
   self[] = default(typeof(self[]))
 
@@ -127,88 +87,6 @@ proc getSearchString*(self: SelectorPopup): string =
   if self.textEditor.isNil:
     return ""
   return self.textEditor.document.contentString
-
-proc autoSort(self: SelectorPopup) {.async.} =
-  if self.textEditor.isNil:
-    return
-
-  if self.sortFunction.isNil:
-    log lvlError, &"No sort function specified for popup"
-    return
-
-  self.autoSortActive = true
-  defer:
-    self.autoSortActive = false
-
-  while true:
-    self.markDirty()
-
-    # echo "sort ", self.lastSortGap
-    var t = startTimer()
-    var iterations = 0
-    while t.elapsed.ms < self.sortTimeboxMs:
-      if self.completions.combSort(
-          self.sortFunction, Ascending, steps = self.sortSteps, gap = self.lastSortGap):
-        return
-
-      if self.lastSortGap > 1:
-        self.lastSortGap = int(self.lastSortGap.float / 1.3)
-      iterations += 1
-
-    # echo iterations, " iterations, ", t.elapsed.ms, "ms"
-
-    await sleepAsync(1)
-    if self.textEditor.isNil:
-      return
-
-proc enableAutoSort*(self: SelectorPopup) =
-  self.useAutoSort = true
-  self.lastSortGap = self.startSortGap
-  # self.completions.shuffle()
-  if self.autoSortActive:
-    return
-  asyncCheck self.autoSort()
-
-proc setCompletions(self: SelectorPopup, newCompletions: seq[SelectorItem]) =
-  if self.textEditor.isNil:
-    return
-
-  self.markDirty()
-
-  self.completions = newCompletions
-  self.lastSortGap = self.startSortGap
-
-  if self.useAutoSort and not self.autoSortActive:
-    self.enableAutoSort()
-
-  if self.completions.len > 0:
-    self.selected = self.selected.clamp(0, self.completions.len - 1)
-
-    if not self.handleItemSelected.isNil:
-      self.handleItemSelected self.completions[self.completions.high - self.selected]
-  else:
-    self.selected = 0
-
-proc updateCompletionsAsync(self: SelectorPopup): Future[void] {.async.} =
-  let text = self.textEditor.document.content.join
-  let newCompletions = await self.getCompletionsAsync(self, text)
-  if self.textEditor.isNil:
-    return
-
-  self.setCompletions(newCompletions)
-  self.updated = true
-
-proc updateCompletionsAsyncIter(self: SelectorPopup): Future[void] {.async.} =
-  let text = self.textEditor.document.content.join
-  # self.setCompletions @[]
-  await self.getCompletionsAsyncIter(self, text)
-  self.updated = true
-
-proc getItemAtPixelPosition(self: SelectorPopup, posWindow: Vec2): Option[SelectorItem] =
-  result = SelectorItem.none
-  for (index, rect) in self.lastItems:
-    if rect.contains(posWindow) and index >= 0 and index <= self.completions.high:
-      return self.completions[self.completions.high - index].some
 
 method getEventHandlers*(self: SelectorPopup): seq[EventHandler] =
   if self.textEditor.isNil:
@@ -240,59 +118,39 @@ proc toJson*(self: api.SelectorPopup, opt = initToJsonOptions()): JsonNode =
 proc fromJsonHook*(t: var api.SelectorPopup, jsonNode: JsonNode) =
   t.id = api.EditorId(jsonNode["id"].jsonTo(int))
 
-proc updateCompletions*(self: SelectorPopup) {.expose("popup.selector").} =
-  if self.textEditor.isNil:
-    return
-
-  let text = self.textEditor.document.content.join
-  if not self.getCompletions.isNil:
-    let newCompletions = self.getCompletions(self, text)
-    self.setCompletions(newCompletions)
-    self.updated = true
-  elif not self.getCompletionsAsync.isNil:
-    asyncCheck self.updateCompletionsAsync()
-  elif not self.getCompletionsAsyncIter.isNil:
-    asyncCheck self.updateCompletionsAsyncIter()
-  else:
-    log(lvlError, fmt"No completion provider set on popup {self.id}")
-
 proc getSelectedItemJson*(self: SelectorPopup): JsonNode {.expose("popup.selector").} =
   if self.textEditor.isNil:
     return newJNull()
 
-  if self.selected < self.completions.len:
-    let selected = self.completions[self.completions.high - self.selected]
-    return selected.itemToJson
+  # todo
+  # if self.selected < self.completions.len:
+  #   let selected = self.completions[self.completions.high - self.selected]
+  #   return selected.itemToJson
   return newJNull()
 
 proc getSelectedItem*(self: SelectorPopup): Option[FinderItem] =
-  assert self.selected < self.completions.len
   assert self.finder.isNotNil
 
-  if self.finder.filteredItems.getSome(items) and self.selected < self.completions.len:
-    let finderItemIndex = self.completions[self.completions.high - self.selected].finderItemIndex
-    if finderItemIndex >= 0 and finderItemIndex < items.len:
-      result = items[finderItemIndex].some
+  if self.finder.filteredItems.getSome(list) and list.len > 0:
+    assert self.selected >= 0
+    assert self.selected < list.len
+    result = list[self.selected].some
 
 proc accept*(self: SelectorPopup) {.expose("popup.selector").} =
   if self.textEditor.isNil:
     return
 
-  if not self.handleItemConfirmed.isNil and self.selected < self.completions.len:
-    let handled = self.handleItemConfirmed self.completions[self.completions.high - self.selected]
-    if not handled:
-      return
+  if self.handleItemConfirmed2.isNil:
+    return
 
-  if self.finder.isNotNil and
-      self.finder.filteredItems.getSome(items) and
-      not self.handleItemConfirmed2.isNil and self.selected < self.completions.len:
-    let finderItemIndex = self.completions[self.completions.high - self.selected].finderItemIndex
-    if finderItemIndex >= 0 and finderItemIndex < items.len:
-      let handled = self.handleItemConfirmed2 items[finderItemIndex]
-      if not handled:
-        return
+  assert self.finder.isNotNil
 
-  self.app.popPopup(self)
+  if self.finder.filteredItems.getSome(list) and list.len > 0:
+    assert self.selected >= 0
+    assert self.selected < list.len
+    let handled = self.handleItemConfirmed2 list[self.selected]
+    if handled:
+      self.app.popPopup(self)
 
 proc cancel*(self: SelectorPopup) {.expose("popup.selector").} =
   if self.textEditor.isNil:
@@ -306,27 +164,17 @@ proc prev*(self: SelectorPopup) {.expose("popup.selector").} =
   if self.textEditor.isNil:
     return
 
-  self.selected = if self.completions.len == 0:
-    0
-  else:
-    (self.selected + self.completions.len - 1) mod self.completions.len
+  assert self.finder.isNotNil
 
-  if self.completions.len > 0 and self.handleItemSelected != nil:
-    self.handleItemSelected self.completions[self.completions.high - self.selected]
+  if self.finder.filteredItems.getSome(list) and list.len > 0:
+    self.selected = (self.selected + list.len - 1) mod list.len
 
-  if self.finder.isNotNil and
-      self.finder.filteredItems.getSome(items) and
-      self.selected >= 0 and
-      self.selected < self.completions.len:
+    if not self.handleItemSelected2.isNil:
+      self.handleItemSelected2 list[self.selected]
 
-    let finderItemIndex = self.completions[self.completions.high - self.selected].finderItemIndex
-    if finderItemIndex >= 0 and finderItemIndex < items.len:
-      if not self.handleItemSelected2.isNil:
-        self.handleItemSelected2 items[finderItemIndex]
-
-      if self.previewer.getSome(previewer):
-        assert self.previewEditor.isNotNil
-        previewer.previewItem(items[finderItemIndex], self.previewEditor)
+    if self.previewer.getSome(previewer):
+      assert self.previewEditor.isNotNil
+      previewer.previewItem(list[self.selected], self.previewEditor)
 
   self.markDirty()
 
@@ -334,27 +182,17 @@ proc next*(self: SelectorPopup) {.expose("popup.selector").} =
   if self.textEditor.isNil:
     return
 
-  self.selected = if self.completions.len == 0:
-    0
-  else:
-    (self.selected + 1) mod self.completions.len
+  assert self.finder.isNotNil
 
-  if self.completions.len > 0 and self.handleItemSelected != nil:
-    self.handleItemSelected self.completions[self.completions.high - self.selected]
+  if self.finder.filteredItems.getSome(list) and list.len > 0:
+    self.selected = (self.selected + 1) mod list.len
 
-  if self.finder.isNotNil and
-      self.finder.filteredItems.getSome(items) and
-      self.selected >= 0 and
-      self.selected < self.completions.len:
+    if not self.handleItemSelected2.isNil:
+      self.handleItemSelected2 list[self.selected]
 
-    let finderItemIndex = self.completions[self.completions.high - self.selected].finderItemIndex
-    if finderItemIndex >= 0 and finderItemIndex < items.len:
-      if not self.handleItemSelected2.isNil:
-        self.handleItemSelected2 items[finderItemIndex]
-
-      if self.previewer.getSome(previewer):
-        assert self.previewEditor.isNotNil
-        previewer.previewItem(items[finderItemIndex], self.previewEditor)
+    if self.previewer.getSome(previewer):
+      assert self.previewEditor.isNotNil
+      previewer.previewItem(list[self.selected], self.previewEditor)
 
   self.markDirty()
 
@@ -409,17 +247,19 @@ proc handleTextChanged*(self: SelectorPopup) =
   if self.textEditor.isNil:
     return
 
-  if self.finder.isNotNil:
-    self.finder.setQuery(self.getSearchString())
+  assert self.finder.isNotNil
+
+  self.selected = 0
+
+  self.finder.setQuery(self.getSearchString())
 
   if self.previewer.getSome(previewer):
     previewer.delayPreview()
 
-  self.updateCompletions()
-  self.selected = 0
+  if self.handleItemSelected2.isNotNil and
+      self.finder.filteredItems.getSome(list) and list.len > 0:
 
-  if not self.handleItemSelected.isNil and self.selected < self.completions.len:
-    self.handleItemSelected self.completions[self.completions.high - self.selected]
+    self.handleItemSelected2 list[0]
 
   self.markDirty()
 
@@ -427,64 +267,29 @@ proc handleItemsUpdated*(self: SelectorPopup) =
   if self.textEditor.isNil or self.finder.isNil:
     return
 
-  self.completions.setLen 0
   self.completionMatchPositions.clear()
 
   if self.finder.filteredItems.getSome(list) and list.len > 0:
-    for i, item in list.items:
-      if item.score < self.finder.filterThreshold:
-        continue
-      self.completions.add FileSelectorItem(
-        finderItemIndex: i,
-        name: item.displayName,
-        directory: item.detail,
-        path: item.data,
-        score: item.score
-      )
+    self.selected = self.selected.clamp(0, list.len - 1)
 
-  self.selected = self.selected.clamp(0, self.completions.len - 1)
+    if not self.handleItemSelected2.isNil:
+      self.handleItemSelected2 list[self.selected]
 
-  if self.finder.filteredItems.getSome(items) and self.selected >= 0 and
-      self.selected < self.completions.len:
+    if self.previewer.getSome(previewer):
+      assert self.previewEditor.isNotNil
+      previewer.previewItem(list[self.selected], self.previewEditor)
 
-    let finderItemIndex = self.completions[self.completions.high - self.selected].finderItemIndex
-    if finderItemIndex >= 0 and finderItemIndex < items.len:
-      if not self.handleItemSelected2.isNil:
-        self.handleItemSelected2 items[finderItemIndex]
-
-      if self.previewer.getSome(previewer):
-        assert self.previewEditor.isNotNil
-        previewer.previewItem(items[finderItemIndex], self.previewEditor)
+  else:
+    self.selected = 0
 
   self.markDirty()
 
-method handleScroll*(self: SelectorPopup, scroll: Vec2, mousePosWindow: Vec2) =
-  if self.textEditor.isNil:
-    return
-
-  self.selected = clamp(self.selected - scroll.y.int, 0, self.completions.len - 1)
-
-method handleMousePress*(self: SelectorPopup, button: MouseButton, mousePosWindow: Vec2) =
-  if self.textEditor.isNil:
-    return
-
-  if button == MouseButton.Left:
-    if self.getItemAtPixelPosition(mousePosWindow).getSome(item):
-      if not self.handleItemConfirmed.isNil:
-        if not self.handleItemConfirmed(item):
-          return
-
-      self.app.popPopup(self)
-
-method handleMouseRelease*(self: SelectorPopup, button: MouseButton, mousePosWindow: Vec2) =
-  discard
-
-method handleMouseMove*(self: SelectorPopup, mousePosWindow: Vec2, mousePosDelta: Vec2,
-    modifiers: Modifiers, buttons: set[MouseButton]) =
-  discard
-
 proc newSelectorPopup*(app: AppInterface, scopeName = string.none,
     finder = Finder.none, previewer = Previewer.none): SelectorPopup =
+
+  # todo: make finder not Option
+  assert finder.isSome
+  assert finder.get.isNotNil
 
   var popup = SelectorPopup(app: app)
   popup.scale = vec2(0.5, 0.5)
