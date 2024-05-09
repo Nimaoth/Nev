@@ -2718,6 +2718,10 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
       progress.add inputToString(input)
       updateStyledTextOverrides()
 
+    onCanceled:
+      self.styledTextOverrides.clear()
+      self.setMode(oldMode)
+
   self.cursorVisible = true
   if self.blinkCursorTask.isNotNil and self.active:
     self.blinkCursorTask.reschedule()
