@@ -1,4 +1,4 @@
-import std/[strutils, macros, genasts, sequtils]
+import std/[strutils, macros, genasts, sequtils, sets]
 import absytree_runtime, keybindings_normal
 import misc/[timer, util, myjsonutils, custom_unicode]
 import input_api
@@ -731,12 +731,18 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
       editor.setMode "normal"
       return
 
+    let recordModes = [
+      "visual",
+      "visual-line",
+      "insert",
+    ].toHashSet
+
     # infof"vim: handle mode change {oldMode} -> {newMode}"
     if newMode == "normal":
       if not isReplayingCommands():
         stopRecordingCommands(".")
     else:
-      if oldMode == "normal" and not isReplayingCommands():
+      if oldMode == "normal" and not isReplayingCommands() and newMode in recordModes:
         editor.recordCurrentCommand()
         setRegisterText("", ".")
         startRecordingCommands(".")
