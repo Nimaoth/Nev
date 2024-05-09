@@ -1,6 +1,7 @@
 import std/[json, options, os, strutils]
 import misc/[custom_async, id, array_buffer, cancellation_token, util, regex, custom_logger, event]
 import platform/filesystem
+import vcs/vcs
 
 logCategory "workspace"
 
@@ -54,6 +55,9 @@ proc ignorePath*(workspace: WorkspaceFolder, path: string): bool =
     return true
   return false
 
+method getVcsForFile*(self: WorkspaceFolder, file: string): Option[VersionControlSystem] {.base.} = discard
+method getAllVersionControlSystems*(self: WorkspaceFolder): seq[VersionControlSystem] {.base.} = discard
+
 method isReadOnly*(self: WorkspaceFolder): bool {.base.} = true
 method settings*(self: WorkspaceFolder): JsonNode {.base.} = discard
 
@@ -61,17 +65,24 @@ method clearDirectoryCache*(self: WorkspaceFolder) {.base.} = discard
 method recomputeFileCache*(self: WorkspaceFolder) {.base.} = discard
 
 method loadFile*(self: WorkspaceFolder, relativePath: string): Future[string] {.base.} = discard
-method saveFile*(self: WorkspaceFolder, relativePath: string, content: string): Future[void] {.base.} = discard
-method saveFile*(self: WorkspaceFolder, relativePath: string, content: ArrayBuffer): Future[void] {.base.} = discard
+
+method saveFile*(self: WorkspaceFolder, relativePath: string, content: string): Future[void] {.base.} =
+  discard
+
+method saveFile*(self: WorkspaceFolder, relativePath: string, content: ArrayBuffer):
+    Future[void] {.base.} =
+  discard
+
 method getWorkspacePath*(self: WorkspaceFolder): string {.base.} = discard
+
+method getDirectoryListing*(self: WorkspaceFolder, relativePath: string): Future[DirectoryListing] {.base.} = discard
+method searchWorkspace*(self: WorkspaceFolder, query: string, maxResults: int): Future[seq[SearchResult]] {.base.} = discard
+
 proc getAbsolutePath*(self: WorkspaceFolder, path: string): string =
   if path.isAbsolute:
     return path.normalizePathUnix
   else:
     (self.getWorkspacePath() / path).normalizePathUnix
-
-method getDirectoryListing*(self: WorkspaceFolder, relativePath: string): Future[DirectoryListing] {.base.} = discard
-method searchWorkspace*(self: WorkspaceFolder, query: string, maxResults: int): Future[seq[SearchResult]] {.base.} = discard
 
 proc getRelativePathEmpty(): Future[Option[string]] {.async.} =
   return string.none
