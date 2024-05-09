@@ -251,6 +251,11 @@ proc detectVersionControlSystemIn(path: string): Option[VersionControlSystem] =
     let vcs = newVersionControlSystemGit(path)
     return vcs.VersionControlSystem.some
 
+  if fileExists(path // ".p4ignore"):
+    log lvlInfo, fmt"Found perforce repository in {path}"
+    let vcs = newVersionControlSystemPerforce(path)
+    return vcs.VersionControlSystem.some
+
 proc newWorkspaceFolderLocal*(path: string, additionalPaths: seq[string] = @[]): WorkspaceFolderLocal =
   new result
   result.path = path

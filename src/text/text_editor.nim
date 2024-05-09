@@ -1425,6 +1425,29 @@ proc updateDiffAsync*(self: TextDocumentEditor) {.async.} =
 proc updateDiff*(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncCheck self.updateDiffAsync()
 
+proc checkoutFileAsync*(self: TextDocumentEditor) {.async.} =
+  if self.document.isNil:
+    return
+
+  if self.document.workspace.isNone:
+    return
+
+  let ws = self.document.workspace.get
+  let path = self.document.filename
+  let vcs = ws.getVcsForFile(path).getOr:
+    log lvlError, fmt"No vcs assigned to document '{path}'"
+    return
+
+  let res = await vcs.checkoutFile(path)
+  debugf"checkout res: {res}"
+
+  self.document.setReadOnly(ws.isFileReadOnly(path).await)
+
+  self.markDirty()
+
+proc checkoutFile*(self: TextDocumentEditor) {.expose("editor.text").} =
+  asyncCheck self.checkoutFileAsync()
+
 proc addNextFindResultToSelection*(self: TextDocumentEditor, includeAfter: bool = true,
     wrap: bool = true) {.expose("editor.text").} =
   self.selections = self.selections &

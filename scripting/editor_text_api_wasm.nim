@@ -1113,6 +1113,20 @@ proc updateDiff*(self: TextDocumentEditor) =
       argsJsonString.cstring)
 
 
+proc editor_text_checkoutFile_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc checkoutFile*(self: TextDocumentEditor) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_checkoutFile_void_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_addNextFindResultToSelection_void_TextDocumentEditor_bool_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc addNextFindResultToSelection*(self: TextDocumentEditor;

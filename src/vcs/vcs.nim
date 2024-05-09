@@ -32,3 +32,5 @@ method getWorkingFileContent*(self: VersionControlSystem, path: string): Future[
 method getFileChanges*(self: VersionControlSystem, path: string, staged: bool = false):
     Future[Option[seq[LineMapping]]] {.base.} =
   seq[LineMapping].none.toFuture
+
+method checkoutFile*(self: VersionControlSystem, path: string): Future[string] {.base.} = "".toFuture
