@@ -47,6 +47,8 @@ macro variant(name: untyped, types: varargs[untyped]): untyped =
     `procs`
     proc fromJsonHook*(a: var `name`, b: JsonNode, opt = Joptions()) =
       a.node = b
+    proc toJsonHook*(a: `name`): JsonNode =
+      return a.node
 
 type
   PositionEncodingKind* {.pure.} = enum

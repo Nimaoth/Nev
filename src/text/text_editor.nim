@@ -19,7 +19,7 @@ import finder/[previewer, finder]
 import vcs/vcs
 
 from language/lsp_types import Response, CompletionList, CompletionItem, InsertTextFormat,
-  TextEdit, Range, Position, isSuccess, asTextEdit, asInsertReplaceEdit
+  TextEdit, Range, Position, isSuccess, asTextEdit, asInsertReplaceEdit, toJsonHook
 
 export text_document, document_editor, id
 
@@ -108,6 +108,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   savedCommandHistory: CommandHistory
   bIsRunningSavedCommands: bool
   bRecordCurrentCommand: bool = false
+  bIsRecordingCurrentCommand: bool = false
 
   disableScrolling*: bool
   scrollOffset*: float
@@ -2302,25 +2303,23 @@ proc selectPrevTabStop*(self: TextDocumentEditor) {.expose("editor.text").} =
       self.selections = self.currentSnippetData.get.tabStops[self.currentSnippetData.get.currentTabStop]
       break
 
-proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
-  if not self.showCompletions:
-    return
+proc applyCompletion*(self: TextDocumentEditor, completion: Completion) =
+  let completion = completion
+  log(lvlInfo, fmt"Applying completion {completion}")
 
-  if self.selectedCompletion > self.completionMatches.high:
-    return
-
-  let com = self.completions[self.completionMatches[self.selectedCompletion].index]
-  log(lvlInfo, fmt"Applying completion {com}")
-
-  self.addNextCheckpoint("insert")
-
-  let insertTextFormat = com.item.insertTextFormat.get(InsertTextFormat.PlainText)
+  let insertTextFormat = completion.item.insertTextFormat.get(InsertTextFormat.PlainText)
 
   var editSelection: Selection
   var insertText = ""
 
   let cursor = self.selection.last
-  if com.item.textEdit.getSome(edit):
+  let cursorColumnIndex = self.document.getLine(cursor.line).runeIndex(cursor.column, returnLen=true)
+  let offset: tuple[lines: int, columns: RuneCount] = if completion.origin.getSome(origin):
+    (cursor.line - origin.line, cursorColumnIndex - origin.column)
+  else:
+    (0, 0.RuneCount)
+
+  if completion.item.textEdit.getSome(edit):
     if edit.asTextEdit().getSome(edit):
       if edit.`range`.start.line < 0:
         if cursor.column == 0:
@@ -2328,9 +2327,10 @@ proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").
         else:
           editSelection = self.document.getCompletionSelectionAt(cursor)
       else:
+        let r = edit.`range`
         let runeSelection = (
-          (edit.`range`.start.line, edit.`range`.start.character.RuneIndex),
-          (edit.`range`.`end`.line, edit.`range`.`end`.character.RuneIndex),
+          (r.start.line + offset.lines, r.start.character.RuneIndex + offset.columns),
+          (r.`end`.line + offset.lines, r.`end`.character.RuneIndex + offset.columns),
         )
         let selection = self.document.runeSelectionToSelection(runeSelection)
 
@@ -2343,7 +2343,7 @@ proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").
       return
 
   else:
-    insertText = com.item.insertText.get(com.item.label)
+    insertText = completion.item.insertText.get(completion.item.label)
     if cursor.column == 0:
       editSelection = cursor.toSelection
     else:
@@ -2373,7 +2373,7 @@ proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").
       insertText = data.text
       snippetData = data.some
 
-  for edit in com.item.additionalTextEdits:
+  for edit in completion.item.additionalTextEdits:
     let runeSelection = (
       (edit.`range`.start.line, edit.`range`.start.character.RuneIndex),
       (edit.`range`.`end`.line, edit.`range`.`end`.character.RuneIndex),
@@ -2390,7 +2390,6 @@ proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").
   editSelections.add editSelection
   insertTexts.add insertText
 
-  self.addNextCheckpoint("insert")
   let newSelections = self.document.edit(editSelections, self.selections, insertTexts)
   self.selection = newSelections[newSelections.high].last.toSelection
 
@@ -2398,6 +2397,31 @@ proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").
   self.selectNextTabStop()
 
   self.hideCompletions()
+
+proc applyCompletion*(self: TextDocumentEditor, completion: JsonNode) {.expose("editor.text").} =
+  try:
+    let completion = completion.jsonTo(Completion)
+    self.applyCompletion(completion)
+  except:
+    log lvlError, &"[applyCompletion] Failed to parse completion {completion}"
+
+proc applySelectedCompletion*(self: TextDocumentEditor) {.expose("editor.text").} =
+  if not self.showCompletions:
+    return
+
+  if self.selectedCompletion > self.completionMatches.high:
+    return
+
+  let cursor = self.selection.last
+  let runeCursor = (cursor.line, self.document.getLine(cursor.line).runeIndex(cursor.column))
+  var completion = self.completions[self.completionMatches[self.selectedCompletion].index]
+
+  self.addNextCheckpoint("insert")
+  self.applyCompletion(completion)
+
+  if self.bIsRecordingCurrentCommand:
+    completion.origin = runeCursor.some
+    self.app.recordCommand("." & "apply-completion", $completion.toJson)
 
 proc showHoverForAsync(self: TextDocumentEditor, cursor: Cursor): Future[void] {.async.} =
   if self.hideHoverTask.isNotNil:
@@ -2852,7 +2876,18 @@ proc handleActionInternal(self: TextDocumentEditor, action: string, args: JsonNo
 method handleAction*(self: TextDocumentEditor, action: string, arg: string, record: bool): EventResponse =
   # debugf "handleAction {action}, '{arg}'"
 
-  if record:
+  let oldIsRecordingCurrentCommand = self.bIsRecordingCurrentCommand
+  defer:
+    self.bIsRecordingCurrentCommand = oldIsRecordingCurrentCommand
+
+  self.bIsRecordingCurrentCommand = record
+
+  let noRecordActions = [
+    "apply-selected-completion",
+    "applySelectedCompletion",
+  ].toHashSet
+
+  if record and action notin noRecordActions:
     self.app.recordCommand("." & action, arg)
 
   defer:

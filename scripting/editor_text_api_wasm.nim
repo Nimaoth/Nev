@@ -2535,6 +2535,25 @@ proc selectPrevTabStop*(self: TextDocumentEditor) =
       argsJsonString.cstring)
 
 
+proc editor_text_applyCompletion_void_TextDocumentEditor_JsonNode_wasm(
+    arg: cstring): cstring {.importc.}
+proc applyCompletion*(self: TextDocumentEditor; completion: JsonNode) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when JsonNode is JsonNode:
+      completion
+    else:
+      completion.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_applyCompletion_void_TextDocumentEditor_JsonNode_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_applySelectedCompletion_void_TextDocumentEditor_wasm(
     arg: cstring): cstring {.importc.}
 proc applySelectedCompletion*(self: TextDocumentEditor) =
