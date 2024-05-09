@@ -19,8 +19,8 @@ type
     previewEditor*: TextDocumentEditor
     selected*: int
     scrollOffset*: int
-    handleItemConfirmed2*: proc(finderItem: FinderItem): bool
-    handleItemSelected2*: proc(finderItem: FinderItem)
+    handleItemConfirmed*: proc(finderItem: FinderItem): bool
+    handleItemSelected*: proc(finderItem: FinderItem)
     handleCanceled*: proc()
     lastContentBounds*: Rect
     lastItems*: seq[tuple[index: int, bounds: Rect]]
@@ -140,7 +140,7 @@ proc accept*(self: SelectorPopup) {.expose("popup.selector").} =
   if self.textEditor.isNil:
     return
 
-  if self.handleItemConfirmed2.isNil:
+  if self.handleItemConfirmed.isNil:
     return
 
   assert self.finder.isNotNil
@@ -148,7 +148,7 @@ proc accept*(self: SelectorPopup) {.expose("popup.selector").} =
   if self.finder.filteredItems.getSome(list) and list.len > 0:
     assert self.selected >= 0
     assert self.selected < list.len
-    let handled = self.handleItemConfirmed2 list[self.selected]
+    let handled = self.handleItemConfirmed list[self.selected]
     if handled:
       self.app.popPopup(self)
 
@@ -169,8 +169,8 @@ proc prev*(self: SelectorPopup) {.expose("popup.selector").} =
   if self.finder.filteredItems.getSome(list) and list.len > 0:
     self.selected = (self.selected + list.len - 1) mod list.len
 
-    if not self.handleItemSelected2.isNil:
-      self.handleItemSelected2 list[self.selected]
+    if not self.handleItemSelected.isNil:
+      self.handleItemSelected list[self.selected]
 
     if self.previewer.getSome(previewer):
       assert self.previewEditor.isNotNil
@@ -187,8 +187,8 @@ proc next*(self: SelectorPopup) {.expose("popup.selector").} =
   if self.finder.filteredItems.getSome(list) and list.len > 0:
     self.selected = (self.selected + 1) mod list.len
 
-    if not self.handleItemSelected2.isNil:
-      self.handleItemSelected2 list[self.selected]
+    if not self.handleItemSelected.isNil:
+      self.handleItemSelected list[self.selected]
 
     if self.previewer.getSome(previewer):
       assert self.previewEditor.isNotNil
@@ -256,10 +256,10 @@ proc handleTextChanged*(self: SelectorPopup) =
   if self.previewer.getSome(previewer):
     previewer.delayPreview()
 
-  if self.handleItemSelected2.isNotNil and
+  if self.handleItemSelected.isNotNil and
       self.finder.filteredItems.getSome(list) and list.len > 0:
 
-    self.handleItemSelected2 list[0]
+    self.handleItemSelected list[0]
 
   self.markDirty()
 
@@ -272,8 +272,8 @@ proc handleItemsUpdated*(self: SelectorPopup) =
   if self.finder.filteredItems.getSome(list) and list.len > 0:
     self.selected = self.selected.clamp(0, list.len - 1)
 
-    if not self.handleItemSelected2.isNil:
-      self.handleItemSelected2 list[self.selected]
+    if not self.handleItemSelected.isNil:
+      self.handleItemSelected list[self.selected]
 
     if self.previewer.getSome(previewer):
       assert self.previewEditor.isNotNil

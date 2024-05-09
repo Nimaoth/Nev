@@ -138,6 +138,11 @@ proc sort*(list: ItemList, order = SortOrder.Descending) =
   var list = list
   toOpenArray(list.data, 0, list.len - 1).sort(order)
 
+proc newItemList*(items: seq[FinderItem]): ItemList =
+  result = newItemList(items.len)
+  for i, item in items:
+    result[i] = item
+
 proc deinit*(finder: Finder) =
   if finder.source.isNotNil:
     finder.source.close()

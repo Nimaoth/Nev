@@ -11,8 +11,8 @@ type
     scope*: Option[string]
     scaleX*: float = 0.5
     scaleY*: float = 0.5
-    handleItemSelected2*: proc(popup: ISelectorPopup, item: FinderItem)
-    handleItemConfirmed2*: proc(popup: ISelectorPopup, item: FinderItem): bool
+    handleItemSelected*: proc(popup: ISelectorPopup, item: FinderItem)
+    handleItemConfirmed*: proc(popup: ISelectorPopup, item: FinderItem): bool
     handleCanceled*: proc(popup: ISelectorPopup)
     customActions*: Table[string, proc(popup: ISelectorPopup, args: JsonNode): bool]
     finder*: Option[Finder]
