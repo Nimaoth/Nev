@@ -3273,7 +3273,7 @@ proc chooseLanguageFromUser*(self: ModelDocumentEditor, languageIds: openArray[L
   let finder = newFinder(newAsyncCallbackDataSource(getLanguagesAsync), filterAndSort=true)
   builder.finder = finder.some
 
-  builder.handleItemConfirmed2 = proc(popup: ISelectorPopup, item: FinderItem): bool =
+  builder.handleItemConfirmed = proc(popup: ISelectorPopup, item: FinderItem): bool =
     let id = item.data.parseId.LanguageId
     if not languages.contains(id):
       log lvlError, &"[chooseLanguageFromUser] Selected invalid language item: {item}"
@@ -3356,7 +3356,7 @@ proc addModelToProject*(self: ModelDocumentEditor) {.expose("editor.model").} =
   let finder = newFinder(newAsyncCallbackDataSource(getModelsAsync), filterAndSort=true)
   builder.finder = finder.some
 
-  builder.handleItemConfirmed2 = proc(popup: ISelectorPopup, item: FinderItem): bool =
+  builder.handleItemConfirmed = proc(popup: ISelectorPopup, item: FinderItem): bool =
     log lvlInfo, fmt"Add model {item.displayName} to project"
     asyncCheck self.document.project.loadModelAsync(item.data)
     true
@@ -3414,7 +3414,7 @@ proc importModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
   let finder = newFinder(source, filterAndSort=true)
   builder.finder = finder.some
 
-  builder.handleItemConfirmed2 = proc(popup: ISelectorPopup, item: FinderItem): bool =
+  builder.handleItemConfirmed = proc(popup: ISelectorPopup, item: FinderItem): bool =
     let modelId = item.data.parseId.ModelId
     log lvlInfo, fmt"Import model {item.displayName} ({modelId}) to model {self.document.model.id}"
 
@@ -3512,7 +3512,7 @@ proc addRootNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
   builder.scope = "model-add-root-node".some
   builder.scaleX = 0.4
   builder.scaleY = 0.5
-  builder.handleItemConfirmed2 = handleConfirmed
+  builder.handleItemConfirmed = handleConfirmed
 
   let source = newSyncDataSource(getClasses)
   let finder = newFinder(source, filterAndSort=true)
@@ -3648,8 +3648,8 @@ proc findDeclaration*(self: ModelDocumentEditor, global: bool) {.expose("editor.
   builder.scope = "model-find-declaration".some
   builder.scaleX = 0.4
   builder.scaleY = 0.5
-  builder.handleItemConfirmed2 = handleConfirmed
-  builder.handleItemSelected2 = handleSelected
+  builder.handleItemConfirmed = handleConfirmed
+  builder.handleItemSelected = handleSelected
 
   let source = newSyncDataSource(getNodes)
   let finder = newFinder(source, filterAndSort=true)

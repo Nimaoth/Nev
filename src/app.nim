@@ -1805,13 +1805,13 @@ proc chooseTheme*(self: App) {.expose("editor").} =
   var popup = newSelectorPopup(self.asAppInterface, "theme".some, finder.some)
   popup.scale.x = 0.35
 
-  popup.handleItemConfirmed2 = proc(item: FinderItem): bool =
+  popup.handleItemConfirmed = proc(item: FinderItem): bool =
     if theme.loadFromFile(item.data).getSome(theme):
       self.theme = theme
       gTheme = theme
       self.platform.requestRender(true)
 
-  popup.handleItemSelected2 = proc(item: FinderItem) =
+  popup.handleItemSelected = proc(item: FinderItem) =
     if theme.loadFromFile(item.data).getSome(theme):
       self.theme = theme
       gTheme = theme
@@ -1860,13 +1860,13 @@ proc pushSelectorPopup*(self: App, builder: SelectorPopupBuilder): ISelectorPopu
   popup.scale.x = builder.scaleX
   popup.scale.y = builder.scaleY
 
-  if builder.handleItemSelected2.isNotNil:
-    popup.handleItemSelected2 = proc(item: FinderItem) =
-      builder.handleItemSelected2(popup.asISelectorPopup, item)
+  if builder.handleItemSelected.isNotNil:
+    popup.handleItemSelected = proc(item: FinderItem) =
+      builder.handleItemSelected(popup.asISelectorPopup, item)
 
-  if builder.handleItemConfirmed2.isNotNil:
-    popup.handleItemConfirmed2 = proc(item: FinderItem): bool =
-      return builder.handleItemConfirmed2(popup.asISelectorPopup, item)
+  if builder.handleItemConfirmed.isNotNil:
+    popup.handleItemConfirmed = proc(item: FinderItem): bool =
+      return builder.handleItemConfirmed(popup.asISelectorPopup, item)
 
   if builder.handleCanceled.isNotNil:
     popup.handleCanceled = proc() =
@@ -1935,7 +1935,7 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
   var popup = newSelectorPopup(self.asAppInterface, "file".some, finder.some)
   popup.scale.x = 0.35
 
-  popup.handleItemConfirmed2 = proc(item: FinderItem): bool =
+  popup.handleItemConfirmed = proc(item: FinderItem): bool =
     discard self.openWorkspaceFile(item.data, workspace)
     return true
 
@@ -1980,7 +1980,7 @@ proc chooseOpen*(self: App, view: string = "new") {.expose("editor").} =
   var popup = newSelectorPopup(self.asAppInterface, "open".some, finder.some)
   popup.scale.x = 0.35
 
-  popup.handleItemConfirmed2 = proc(item: FinderItem): bool =
+  popup.handleItemConfirmed = proc(item: FinderItem): bool =
     if item.data.WorkspacePath.decodePath().getSome(path):
       if self.getWorkspaceFolder(path.id).getSome(workspace):
         discard self.openWorkspaceFile(path.path, workspace)
@@ -2069,7 +2069,7 @@ proc chooseLocation*(self: App, view: string = "new") {.expose("editor").} =
 
   popup.scale.x = if self.previewer.isSome: 0.8 else: 0.4
 
-  popup.handleItemConfirmed2 = proc(item: FinderItem): bool =
+  popup.handleItemConfirmed = proc(item: FinderItem): bool =
     let (path, location) = item.parsePathAndLocationFromItemData().getOr:
       log lvlError, fmt"Failed to open location from finder item because of invalid data format. " &
         fmt"Expected path or json object with path property {item}"
@@ -2159,7 +2159,7 @@ proc searchGlobalInteractive*(self: App) {.expose("editor").} =
   popup.scale.x = 0.85
   popup.scale.y = 0.85
 
-  popup.handleItemConfirmed2 = proc(item: FinderItem): bool =
+  popup.handleItemConfirmed = proc(item: FinderItem): bool =
     let (path, location) = item.parsePathAndLocationFromItemData().getOr:
       log lvlError, fmt"Failed to open location from finder item because of invalid data format. " &
         fmt"Expected path or json object with path property {item}"
@@ -2191,7 +2191,7 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
   popup.scale.x = 0.85
   popup.scale.y = 0.85
 
-  popup.handleItemConfirmed2 = proc(item: FinderItem): bool =
+  popup.handleItemConfirmed = proc(item: FinderItem): bool =
     let (path, location) = item.parsePathAndLocationFromItemData().getOr:
       log lvlError, fmt"Failed to open location from finder item because of invalid data format. " &
         fmt"Expected path or json object with path property {item}"
@@ -2311,7 +2311,7 @@ proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
     var popup = newSelectorPopup(self.asAppInterface, "git".some, finder.some)
     popup.scale.x = 0.35
 
-    popup.handleItemConfirmed2 = proc(item: FinderItem): bool =
+    popup.handleItemConfirmed = proc(item: FinderItem): bool =
       let fileInfo = item.data.parseJson.jsonTo(GitFileInfo).catch:
         log lvlError, fmt"Failed to parse git file info from item: {item}"
         return true
@@ -2426,7 +2426,7 @@ proc exploreFiles*(self: App) {.expose("editor").} =
     popup.scale.x = 0.85
     popup.scale.y = 0.85
 
-    popup.handleItemConfirmed2 = proc(item: FinderItem): bool =
+    popup.handleItemConfirmed = proc(item: FinderItem): bool =
       let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
         log lvlError, fmt"Failed to parse file info from item: {item}"
         return true

@@ -1999,7 +1999,7 @@ proc gotoLocationAsync(self: TextDocumentEditor, definitions: seq[Definition]): 
     let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
     builder.finder = finder.some
 
-    builder.handleItemConfirmed2 = proc(popup: ISelectorPopup, item: FinderItem): bool =
+    builder.handleItemConfirmed = proc(popup: ISelectorPopup, item: FinderItem): bool =
       self.openLocationFromFinderItem(item)
       true
 
@@ -2122,7 +2122,7 @@ proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], nav
   let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
   builder.finder = finder.some
 
-  builder.handleItemConfirmed2 = proc(popup: ISelectorPopup, item: FinderItem): bool =
+  builder.handleItemConfirmed = proc(popup: ISelectorPopup, item: FinderItem): bool =
     self.openLocationFromFinderItem(item)
     true
 
@@ -2201,7 +2201,7 @@ proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Fut
     let finder = newFinder(newLspWorkspaceSymbolsDataSource(ls, workspace), filterAndSort=true)
     builder.finder = finder.some
 
-    builder.handleItemConfirmed2 = proc(popup: ISelectorPopup, item: FinderItem): bool =
+    builder.handleItemConfirmed = proc(popup: ISelectorPopup, item: FinderItem): bool =
       self.openLocationFromFinderItem(item)
       true
 
