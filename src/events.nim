@@ -31,6 +31,7 @@ type EventHandler* = ref object
   handleAction*: proc(action: string, arg: string): EventResponse
   handleInput*: proc(input: string): EventResponse
   handleProgress*: proc(input: int64)
+  handleCanceled*: proc(input: int64)
 
 func newEventHandlerConfig*(context: string, parent: EventHandlerConfig = nil): EventHandlerConfig =
   new result
@@ -148,6 +149,11 @@ template eventHandler*(inConfig: EventHandlerConfig, handlerBody: untyped): unty
         let input {.inject, used.} = i
         progressBody
 
+    template onCanceled(canceledBody: untyped): untyped {.used.} =
+      handler.handleCanceled = proc(i: int64) =
+        let input {.inject, used.} = i
+        canceledBody
+
     handlerBody
     handler
 
@@ -186,6 +192,8 @@ proc handleEvent*(handler: var EventHandler, input: int64, modifiers: Modifiers,
         return Ignored
       else:
         # undefined input in state n
+        if not handler.handleCanceled.isNil:
+          handler.handleCanceled(input)
         return Canceled
 
     elif handler.states.anyIt(handler.dfa.isTerminal(it.current)):
