@@ -16,6 +16,7 @@
 .git
 src/input_tests
 nimcache
+nimcache-linux
 _temp
 /ast
 absytree
@@ -43,7 +44,6 @@ scripting/nim/lib
 
 *.absytree-session
 
-ast
 ast2
 
 loc.csv

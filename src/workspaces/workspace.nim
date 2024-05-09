@@ -64,6 +64,12 @@ method settings*(self: WorkspaceFolder): JsonNode {.base.} = discard
 method clearDirectoryCache*(self: WorkspaceFolder) {.base.} = discard
 method recomputeFileCache*(self: WorkspaceFolder) {.base.} = discard
 
+method setFileReadOnly*(self: WorkspaceFolder, relativePath: string, readOnly: bool): Future[bool] {.
+  base.} = false.toFuture
+
+method isFileReadOnly*(self: WorkspaceFolder, relativePath: string): Future[bool] {.base.} =
+  false.toFuture
+
 method loadFile*(self: WorkspaceFolder, relativePath: string): Future[string] {.base.} = discard
 
 method saveFile*(self: WorkspaceFolder, relativePath: string, content: string): Future[void] {.base.} =

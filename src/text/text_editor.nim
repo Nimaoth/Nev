@@ -2512,6 +2512,22 @@ proc showDiagnosticsForCurrent*(self: TextDocumentEditor) {.expose("editor.text"
 
   self.markDirty()
 
+proc setReadOnly*(self: TextDocumentEditor, readOnly: bool) {.expose("editor.text").} =
+  ## Sets the interal readOnly flag, but doesn't not change permissions of the underlying file
+  self.document.setReadOnly(readOnly)
+  self.markDirty()
+
+proc setFileReadOnlyAsync*(self: TextDocumentEditor, readOnly: bool) {.async.} =
+  ## Tries to set the underlying files write permissions
+  if not self.document.setFileReadOnlyAsync(readOnly).await:
+    log lvlError, fmt"Failed to change readOnly status of '{self.document.filename}'"
+    return
+
+  self.markDirty()
+
+proc setFileReadOnly*(self: TextDocumentEditor, readOnly: bool) {.expose("editor.text").} =
+  asyncCheck self.setFileReadOnlyAsync(readOnly)
+
 proc isRunningSavedCommands*(self: TextDocumentEditor): bool {.expose("editor.text").} =
   self.bIsRunningSavedCommands
 
