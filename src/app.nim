@@ -10,12 +10,10 @@ import input, events, document, document_editor, popup, dispatch_tables, theme, 
 import text/[custom_treesitter]
 import finder/[finder, previewer]
 import compilation_config
+import vcs/vcs
 
 when enableAst:
   import ast/[model, project]
-
-when not defined(js):
-  import text/diff_git
 
 when enableNimscript and not defined(js):
   import scripting/scripting_nim
@@ -2205,91 +2203,106 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
 
   self.pushPopup popup
 
-when not defined(js):
-  proc getChangedFilesFromGitAsync(workspace: WorkspaceFolder): Future[ItemList] {.async.} =
-    let fileInfos = getChangedFiles().await
+proc getChangedFilesFromGitAsync(workspace: WorkspaceFolder, all: bool): Future[ItemList] {.async.} =
+  let vcsList = workspace.getAllVersionControlSystems()
+  var items = newSeq[FinderItem]()
 
-    var list = newItemList(fileInfos.len)
-    for i, info in fileInfos:
+  for vcs in vcsList:
+    let fileInfos = await vcs.getChangedFiles()
+
+    for info in fileInfos:
       let (directory, name) = info.path.splitPath
       var relativeDirectory = workspace.getRelativePathSync(directory).get(directory)
 
       if relativeDirectory == ".":
         relativeDirectory = ""
 
-      list[i] = FinderItem(
+      items.add FinderItem(
         displayName: $info.stagedStatus & $info.unstagedStatus & " " & name,
         data: $ %info,
-        detail: relativeDirectory,
+        detail: relativeDirectory & "\t" & vcs.root,
       )
 
-    return list
+    if not all:
+      break
 
-  proc stageSelectedFileAsync(popup: SelectorPopup, source: AsyncCallbackDataSource): Future[void] {.async.} =
-    log lvlInfo, fmt"Stage selected entry ({popup.selected})"
+  return newItemList(items)
 
-    let item = popup.getSelectedItem().getOr:
-      return
+proc stageSelectedFileAsync(popup: SelectorPopup, workspace: WorkspaceFolder,
+    source: AsyncCallbackDataSource): Future[void] {.async.} =
 
-    let fileInfo = item.data.parseJson.jsonTo(GitFileInfo).catch:
-      log lvlError, fmt"Failed to parse git file info from item: {item}"
-      return
-    debugf"staged selected {fileInfo}"
+  log lvlInfo, fmt"Stage selected entry ({popup.selected})"
 
-    let res = stageFile(fileInfo.path).await
-    debugf"git add finished: {res}"
+  let item = popup.getSelectedItem().getOr:
+    return
+
+  let fileInfo = item.data.parseJson.jsonTo(VCSFileInfo).catch:
+    log lvlError, fmt"Failed to parse file info from item: {item}"
+    return
+  debugf"staged selected {fileInfo}"
+
+  if workspace.getVcsForFile(fileInfo.path).getSome(vcs):
+    let res = await vcs.stageFile(fileInfo.path)
+    debugf"add finished: {res}"
     if popup.textEditor.isNil:
       return
 
     source.retrigger()
 
-  proc unstageSelectedFileAsync(popup: SelectorPopup, source: AsyncCallbackDataSource): Future[void] {.async.} =
-    log lvlInfo, fmt"Unstage selected entry ({popup.selected})"
+proc unstageSelectedFileAsync(popup: SelectorPopup, workspace: WorkspaceFolder,
+    source: AsyncCallbackDataSource): Future[void] {.async.} =
 
-    let item = popup.getSelectedItem().getOr:
-      return
+  log lvlInfo, fmt"Unstage selected entry ({popup.selected})"
 
-    let fileInfo = item.data.parseJson.jsonTo(GitFileInfo).catch:
-      log lvlError, fmt"Failed to parse git file info from item: {item}"
-      return
-    debugf"unstaged selected {fileInfo}"
+  let item = popup.getSelectedItem().getOr:
+    return
 
-    let res = unstageFile(fileInfo.path).await
-    debugf"git unstage finished: {res}"
+  let fileInfo = item.data.parseJson.jsonTo(VCSFileInfo).catch:
+    log lvlError, fmt"Failed to parse file info from item: {item}"
+    return
+  debugf"unstaged selected {fileInfo}"
+
+  if workspace.getVcsForFile(fileInfo.path).getSome(vcs):
+    let res = await vcs.unstageFile(fileInfo.path)
+    debugf"unstage finished: {res}"
     if popup.textEditor.isNil:
       return
 
     source.retrigger()
 
-  proc revertSelectedFileAsync(popup: SelectorPopup, source: AsyncCallbackDataSource): Future[void] {.async.} =
-    log lvlInfo, fmt"Revert selected entry ({popup.selected})"
+proc revertSelectedFileAsync(popup: SelectorPopup, workspace: WorkspaceFolder,
+    source: AsyncCallbackDataSource): Future[void] {.async.} =
 
-    let item = popup.getSelectedItem().getOr:
-      return
+  log lvlInfo, fmt"Revert selected entry ({popup.selected})"
 
-    let fileInfo = item.data.parseJson.jsonTo(GitFileInfo).catch:
-      log lvlError, fmt"Failed to parse git file info from item: {item}"
-      return
-    debugf"revert-selected {fileInfo}"
+  let item = popup.getSelectedItem().getOr:
+    return
 
-    let res = revertFile(fileInfo.path).await
-    debugf"git revert finished: {res}"
+  let fileInfo = item.data.parseJson.jsonTo(VCSFileInfo).catch:
+    log lvlError, fmt"Failed to parse file info from item: {item}"
+    return
+  debugf"revert-selected {fileInfo}"
+
+  if workspace.getVcsForFile(fileInfo.path).getSome(vcs):
+    let res = await vcs.revertFile(fileInfo.path)
+    debugf"revert finished: {res}"
     if popup.textEditor.isNil:
       return
 
     source.retrigger()
 
-  proc diffStagedFileAsync(self: App, path: string): Future[void] {.async.} =
-    log lvlInfo, fmt"Diff staged '({path})'"
+proc diffStagedFileAsync(self: App, workspace: WorkspaceFolder, path: string): Future[void] {.async.} =
+  log lvlInfo, fmt"Diff staged '({path})'"
 
-    let stagedDocument = newTextDocument(self.asConfigProvider, path, load = false, createLanguageServer = false)
-    stagedDocument.staged = true
-    stagedDocument.readOnly = true
+  let stagedDocument = newTextDocument(self.asConfigProvider, path, load = false,
+    workspaceFolder = workspace.some, createLanguageServer = false)
+  stagedDocument.staged = true
+  stagedDocument.readOnly = true
 
-    let editor = self.createAndAddView(stagedDocument).TextDocumentEditor
-    editor.updateDiff()
+  let editor = self.createAndAddView(stagedDocument).TextDocumentEditor
+  editor.updateDiff()
 
-proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
+proc chooseGitActiveFiles*(self: App, all: bool = false) {.expose("editor").} =
   when defined(js):
     log lvlError, fmt"chooseGitActiveFiles not implemented yet for js backend"
     let editorWorking = self.views[self.currentView].editor
@@ -2305,19 +2318,19 @@ proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
 
     let workspace = self.workspace.folders[0]
 
-    let source = newAsyncCallbackDataSource () => workspace.getChangedFilesFromGitAsync()
+    let source = newAsyncCallbackDataSource () => workspace.getChangedFilesFromGitAsync(all)
     var finder = newFinder(source, filterAndSort=true)
 
     var popup = newSelectorPopup(self.asAppInterface, "git".some, finder.some)
     popup.scale.x = 0.35
 
     popup.handleItemConfirmed = proc(item: FinderItem): bool =
-      let fileInfo = item.data.parseJson.jsonTo(GitFileInfo).catch:
+      let fileInfo = item.data.parseJson.jsonTo(VCSFileInfo).catch:
         log lvlError, fmt"Failed to parse git file info from item: {item}"
         return true
 
       if fileInfo.stagedStatus != None:
-        asyncCheck self.diffStagedFileAsync(fileInfo.path)
+        asyncCheck self.diffStagedFileAsync(workspace, fileInfo.path)
 
       else:
         let currentVersionEditor = self.openWorkspaceFile(fileInfo.path, workspace)
@@ -2331,21 +2344,21 @@ proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
       if popup.textEditor.isNil:
         return false
 
-      asyncCheck popup.stageSelectedFileAsync(source)
+      asyncCheck popup.stageSelectedFileAsync(workspace, source)
       return true
 
     popup.addCustomCommand "unstage-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
       if popup.textEditor.isNil:
         return false
 
-      asyncCheck popup.unstageSelectedFileAsync(source)
+      asyncCheck popup.unstageSelectedFileAsync(workspace, source)
       return true
 
     popup.addCustomCommand "revert-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
       if popup.textEditor.isNil:
         return false
 
-      asyncCheck popup.revertSelectedFileAsync(source)
+      asyncCheck popup.revertSelectedFileAsync(workspace, source)
       return true
 
     popup.addCustomCommand "diff-staged", proc(popup: SelectorPopup, args: JsonNode): bool =
@@ -2355,12 +2368,12 @@ proc chooseGitActiveFiles*(self: App) {.expose("editor").} =
       let item = popup.getSelectedItem().getOr:
         return
 
-      let fileInfo = item.data.parseJson.jsonTo(GitFileInfo).catch:
+      let fileInfo = item.data.parseJson.jsonTo(VCSFileInfo).catch:
         log lvlError, fmt"Failed to parse get file info from item: {item}"
         return true
       debugf"diff-staged {fileInfo}"
 
-      asyncCheck self.diffStagedFileAsync(fileInfo.path)
+      asyncCheck self.diffStagedFileAsync(workspace, fileInfo.path)
       return true
 
     self.pushPopup popup

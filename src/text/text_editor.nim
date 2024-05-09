@@ -16,6 +16,7 @@ import config_provider, app_interface
 import diff
 import workspaces/workspace
 import finder/[previewer, finder]
+import vcs/vcs
 
 from language/lsp_types import Response, CompletionList, CompletionItem, InsertTextFormat,
   TextEdit, Range, Position, isSuccess, asTextEdit, asInsertReplaceEdit
@@ -1370,9 +1371,6 @@ proc getNextChange*(self: TextDocumentEditor, cursor: Cursor): Selection {.expos
 
   return cursor.toSelection
 
-when not defined(js):
-  import diff_git
-
 proc updateDiffAsync*(self: TextDocumentEditor) {.async.} =
   if self.document.isNil:
     return
@@ -1383,59 +1381,44 @@ proc updateDiffAsync*(self: TextDocumentEditor) {.async.} =
   defer:
     self.isGitDiffInProgress = false
 
+  if self.document.workspace.isNone:
+    return
+
+  let vcs = self.document.workspace.get.getVcsForFile(self.document.filename).getOr:
+    log lvlWarn, fmt"[updateDiffAsync] File is not part of any vcs: '{self.document.filename}'"
+    return
+
   log lvlInfo, fmt"Diff document '{self.document.filename}'"
 
-  when defined(js):
-    # todo
-    let stagedFileContent = fs.loadApplicationFile("diff.txt")
-    let changes = some @[
-        LineMapping(source: (0, 1), target: (0, 0)),
-        LineMapping(source: (6, 8), target: (5, 5)),
-        LineMapping(source: (120, 124), target: (117, 117)),
-        LineMapping(source: (132, 137), target: (125, 127)),
-        LineMapping(source: (152, 153), target: (142, 143)),
-        LineMapping(source: (162, 162), target: (152, 154)),
-        LineMapping(source: (180, 184), target: (172, 173)),
-      ]
+  let relPath = self.document.workspace.mapIt(
+    it.getRelativePath(self.document.filename).await
+  ).flatten.get(self.document.filename)
+
+  if self.document.staged:
+    let committedFileContent = vcs.getCommittedFileContent(relPath).await
+    let stagedFileContent = vcs.getStagedFileContent(relPath).await
+    let changes = vcs.getFileChanges(relPath, staged = true).await
 
     if self.diffDocument.isNil:
       self.diffDocument = newTextDocument(self.configProvider,
         language=self.document.languageId.some, createLanguageServer = false)
       self.diffDocument.readOnly = true
 
-    self.diffDocument.content = stagedFileContent
+    self.document.content = stagedFileContent
     self.diffChanges = changes
+    self.diffDocument.content = committedFileContent
 
   else:
-    let relPath = self.document.workspace.mapIt(
-      it.getRelativePath(self.document.filename).await
-    ).flatten.get(self.document.filename)
+    let stagedFileContent = vcs.getStagedFileContent(relPath).await
+    let changes = vcs.getFileChanges(relPath, staged = false).await
 
-    if self.document.staged:
-      let committedFileContent = getCommittedFileContent(relPath).await
-      let stagedFileContent = getStagedFileContent(relPath).await
-      let changes = getFileChanges(relPath, staged = true).await
+    if self.diffDocument.isNil:
+      self.diffDocument = newTextDocument(self.configProvider,
+        language=self.document.languageId.some, createLanguageServer = false)
+      self.diffDocument.readOnly = true
 
-      if self.diffDocument.isNil:
-        self.diffDocument = newTextDocument(self.configProvider,
-          language=self.document.languageId.some, createLanguageServer = false)
-        self.diffDocument.readOnly = true
-
-      self.document.content = stagedFileContent
-      self.diffChanges = changes
-      self.diffDocument.content = committedFileContent
-
-    else:
-      let stagedFileContent = getStagedFileContent(relPath).await
-      let changes = getFileChanges(relPath, staged = false).await
-
-      if self.diffDocument.isNil:
-        self.diffDocument = newTextDocument(self.configProvider,
-          language=self.document.languageId.some, createLanguageServer = false)
-        self.diffDocument.readOnly = true
-
-      self.diffChanges = changes
-      self.diffDocument.content = stagedFileContent
+    self.diffChanges = changes
+    self.diffDocument.content = stagedFileContent
 
   self.markDirty()
 

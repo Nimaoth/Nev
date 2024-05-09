@@ -58,3 +58,7 @@ template thenIt*[T](f: Future[T], body: untyped): untyped =
       let it {.inject.} = a.read
       body
     )
+
+proc toFuture*[T](value: sink T): Future[T] =
+  result = newFuture[T]()
+  result.complete(value)

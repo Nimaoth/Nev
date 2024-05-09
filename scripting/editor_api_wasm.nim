@@ -817,11 +817,17 @@ proc searchGlobal*(query: string) =
       argsJsonString.cstring)
 
 
-proc editor_chooseGitActiveFiles_void_App_wasm(arg: cstring): cstring {.importc.}
-proc chooseGitActiveFiles*() =
+proc editor_chooseGitActiveFiles_void_App_bool_wasm(arg: cstring): cstring {.
+    importc.}
+proc chooseGitActiveFiles*(all: bool = false) =
   var argsJson = newJArray()
+  argsJson.add block:
+    when bool is JsonNode:
+      all
+    else:
+      all.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_chooseGitActiveFiles_void_App_wasm(
+  let res {.used.} = editor_chooseGitActiveFiles_void_App_bool_wasm(
       argsJsonString.cstring)
 
 
