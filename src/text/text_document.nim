@@ -946,9 +946,13 @@ proc loadAsync(self: TextDocument, ws: WorkspaceFolder, reloadTreesitter: bool =
   # self.content = await ws.loadFile(self.filename)
   self.isBackedByFile = true
   self.isLoadingAsync = true
+  self.readOnly = true
   self.content = catch ws.loadFile(self.filename).await:
     log lvlError, &"[loadAsync] Failed to load workspace file {self.filename}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
     ""
+
+  if not ws.isFileReadOnly(self.filename).await:
+    self.readOnly = false
 
   self.autoDetectIndentStyle()
 
@@ -957,6 +961,19 @@ proc loadAsync(self: TextDocument, ws: WorkspaceFolder, reloadTreesitter: bool =
   self.onLoaded.invoke self
 
   await self.initTreesitter()
+
+proc setReadOnly*(self: TextDocument, readOnly: bool) =
+  ## Sets the interal readOnly flag, but doesn't not changed permission of the underlying file
+  self.readOnly = readOnly
+
+proc setFileReadOnlyAsync*(self: TextDocument, readOnly: bool): Future[bool] {.async.} =
+  ## Tries to set the underlying file permissions
+  if self.workspace.getSome(workspace):
+    if workspace.setFileReadOnly(self.filename, readOnly).await:
+      self.readOnly = readOnly
+      return true
+
+  return false
 
 proc setFileAndContent*(self: TextDocument, filename: string, content: string) =
   let filename = if filename.len > 0: filename.normalizePathUnix else: self.filename

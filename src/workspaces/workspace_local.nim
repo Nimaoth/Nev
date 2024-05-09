@@ -97,6 +97,38 @@ method isReadOnly*(self: WorkspaceFolderLocal): bool = false
 
 method getWorkspacePath*(self: WorkspaceFolderLocal): string = self.path.absolutePath
 
+method setFileReadOnly*(self: WorkspaceFolderLocal, relativePath: string, readOnly: bool): Future[bool] {.
+    async.} =
+
+  let path = self.getAbsolutePath(relativePath)
+  try:
+    var permissions = path.getFilePermissions()
+
+    if readOnly:
+      permissions.excl {fpUserWrite, fpGroupWrite, fpOthersWrite}
+    else:
+      permissions.incl {fpUserWrite, fpGroupWrite, fpOthersWrite}
+
+    log lvlInfo, fmt"Try to change file permissions of '{path}' to {permissions}"
+    path.setFilePermissions(permissions)
+    return true
+
+  except:
+    log lvlError, fmt"Failed to change file permissions of '{path}'"
+    return false
+
+method isFileReadOnly*(self: WorkspaceFolderLocal, relativePath: string): Future[bool] {.async.} =
+  let path = self.getAbsolutePath(relativePath)
+  try:
+    let permissions = path.getFilePermissions()
+    log lvlInfo, &"[isFileReadOnly] Permissions for '{path}': {permissions}"
+    # todo: how to handle other write permissions on unix
+    return fpUserWrite notin permissions
+
+  except:
+    log lvlError, fmt"Failed to get file permissions of '{path}'"
+    return false
+
 method loadFile*(self: WorkspaceFolderLocal, relativePath: string): Future[string] {.async.} =
   return readFile(self.getAbsolutePath(relativePath))
 

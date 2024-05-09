@@ -2652,6 +2652,44 @@ proc showDiagnosticsForCurrent*(self: TextDocumentEditor) =
       argsJsonString.cstring)
 
 
+proc editor_text_setReadOnly_void_TextDocumentEditor_bool_wasm(arg: cstring): cstring {.
+    importc.}
+proc setReadOnly*(self: TextDocumentEditor; readOnly: bool) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      readOnly
+    else:
+      readOnly.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_setReadOnly_void_TextDocumentEditor_bool_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_text_setFileReadOnly_void_TextDocumentEditor_bool_wasm(arg: cstring): cstring {.
+    importc.}
+proc setFileReadOnly*(self: TextDocumentEditor; readOnly: bool) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      readOnly
+    else:
+      readOnly.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_setFileReadOnly_void_TextDocumentEditor_bool_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_text_isRunningSavedCommands_bool_TextDocumentEditor_wasm(
     arg: cstring): cstring {.importc.}
 proc isRunningSavedCommands*(self: TextDocumentEditor): bool =
