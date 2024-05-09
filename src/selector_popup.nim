@@ -88,6 +88,14 @@ proc getSearchString*(self: SelectorPopup): string =
     return ""
   return self.textEditor.document.contentString
 
+method getActiveEditor*(self: SelectorPopup): Option[DocumentEditor] =
+  if self.focusPreview and self.previewEditor.isNotNil:
+    return self.previewEditor.DocumentEditor.some
+  if not self.focusPreview and self.textEditor.isNotNil:
+    return self.textEditor.DocumentEditor.some
+
+  return DocumentEditor.none
+
 method getEventHandlers*(self: SelectorPopup): seq[EventHandler] =
   if self.textEditor.isNil:
     return @[]

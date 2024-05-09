@@ -4,7 +4,7 @@ import platform/platform
 import workspaces/workspace
 import text/language/language_server_base
 import finder/[finder, previewer]
-import events, document_editor, document, popup, config_provider, selector_popup_builder
+import events, popup, document_editor, document, config_provider, selector_popup_builder
 from scripting_api import EditorId
 
 traitRef AppInterface:

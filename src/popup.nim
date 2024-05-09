@@ -1,3 +1,4 @@
+import std/[options]
 import vmath, bumpy
 import misc/[event, id]
 import events, input
@@ -43,4 +44,9 @@ method handleMouseRelease*(self: Popup, button: MouseButton, mousePosWindow: Vec
   discard
 
 method handleMouseMove*(self: Popup, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) {.base.} =
+  discard
+
+import document_editor
+
+method getActiveEditor*(self: Popup): Option[DocumentEditor] {.base.} =
   discard
