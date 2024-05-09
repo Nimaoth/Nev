@@ -1,4 +1,4 @@
-import std/[strformat, sugar, tables, options, json]
+import std/[strformat, sugar, tables, options, json, os]
 import fusion/matching
 import misc/[util, custom_logger, custom_async, myjsonutils, custom_unicode]
 import workspaces/[workspace]
@@ -21,18 +21,23 @@ proc setProjectWorkspace*(ws: WorkspaceFolder) =
 
 proc getProjectWorkspace*(): Future[WorkspaceFolder] {.async.} =
   while gProjectWorkspace.isNil:
-    sleepAsync(10).await
+    log lvlInfo, fmt"[getProjectWorkspace] Waiting for project workspace to load..."
+    sleepAsync(100).await
   return gProjectWorkspace
 
 proc getGlobalProject*(): Future[Project] {.async.} =
   if gProject.isNil:
-    log lvlInfo, fmt"Loading project source file '{projectPath}'"
+
+    let ws = getProjectWorkspace().await
+
+    let projectPath = ws.getAbsolutePath(projectPath)
+    log lvlInfo, fmt"[getGlobalProject] Loading project source file '{projectPath}'"
 
     gProject = newProject()
+    gProject.rootDirectory = projectPath.splitPath[0]
     gProject.path = projectPath
     gProject.computationContext = newModelComputationContext(gProject)
 
-    let ws = getProjectWorkspace().await
     let jsonText = ws.loadFile(gProject.path).await
     let json = jsonText.parseJson
     if gProject.loadFromJson(json):

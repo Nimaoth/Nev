@@ -1,8 +1,9 @@
-import std/[options, strutils, hashes, tables, strformat, sequtils, sets]
+import std/[options, strutils, hashes, tables, strformat, sequtils, sets, os]
 import fusion/matching
 import chroma, regex
 import misc/[util, array_table, myjsonutils, id, macro_utils, custom_logger, event, custom_async]
 import workspaces/[workspace]
+import platform/filesystem
 
 export id
 
@@ -156,6 +157,7 @@ type
     onNodeReferenceChanged*: Event[tuple[self: Model, node: AstNode, role: RoleId, oldRef: NodeId, newRef: NodeId]]
 
   Project* = ref object
+    rootDirectory*: string
     path*: string
     modelPaths*: Table[ModelId, string]
     models*: Table[ModelId, Model]
@@ -401,6 +403,14 @@ proc hasLanguage*(self: Model, language: LanguageId): bool =
     if l.id == language:
       return true
   return false
+
+proc hasImport*(self: Model, modelId: ModelId): bool =
+  for model in self.models:
+    if model.id == modelId:
+      result = true
+      break
+
+  assert result == self.importedModels.contains(modelId)
 
 proc addImport*(self: Model, model: Model) =
   # log lvlWarn, fmt"addImport to {self.path} ({self.id}): {model.path} ({model.id})"
@@ -1295,9 +1305,14 @@ proc loadFromJson*(project: Project, json: JsonNode, opt = Joptions()): bool =
 
   if json.hasKey("models"):
     for modelPath, modelIdJson in json["models"]:
+      let absolutePath = if modelPath.isAbsolute:
+        modelPath
+      else:
+        project.rootDirectory // modelPath
+
       let id = modelIdJson.jsonTo ModelId
-      project.modelPaths[id] = modelPath
-      # echo "modelPath: ", modelPath, " id: ", id
+      project.modelPaths[id] = absolutePath
+      log lvlInfo, fmt"[Project.loadFromJson] Contains model ({id}): '{absolutePath}'"
 
   return true
 

@@ -1,4 +1,4 @@
-import std/[strformat, strutils, sugar, tables, options, json, streams, algorithm, sets, sequtils]
+import std/[strformat, strutils, sugar, tables, options, json, streams, algorithm, sets, sequtils, os]
 import fusion/matching, bumpy, vmath
 import misc/[util, custom_logger, timer, array_buffer, id, event, custom_async, myjsonutils, custom_unicode, delayed_task, fuzzy_matching, rect_utils]
 from scripting_api as api import nil
@@ -6,6 +6,7 @@ import platform/[filesystem, platform]
 import workspaces/[workspace]
 import ui/node
 import lang/[lang_language, lang_builder, cell_language, property_validator_language, scope_language]
+import finder/[finder]
 
 import ast/[generator_wasm, base_language_wasm, editor_language_wasm, model_state, cell_builder_database]
 import document, document_editor, text/text_document, events, scripting/expose, input
@@ -3240,39 +3241,48 @@ proc pasteNodeAsync*(self: ModelDocumentEditor): Future[void] {.async.} =
 proc pasteNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
   asyncCheck self.pasteNodeAsync()
 
-type ModelLanguageSelectorItem* = ref object of SelectorItem
-  language*: Language
-  name*: string
+proc chooseLanguageFromUser*(self: ModelDocumentEditor, languageIds: openArray[LanguageId],
+    handleConfirmed: proc(language: Language)) =
 
-method changed*(self: ModelLanguageSelectorItem, other: SelectorItem): bool =
-  let other = other.ModelLanguageSelectorItem
-  return self.language.id != other.language.id
-
-proc chooseLanguageFromUser*(self: ModelDocumentEditor, languages: openArray[LanguageId], handleConfirmed: proc(language: Language)) =
   if self.document.project.isNil:
     log lvlError, fmt"No project set for model document '{self.document.filename}'"
     return
 
-  let languages = @languages
-  var popup = self.app.createSelectorPopup().SelectorPopup
-  popup.getCompletionsAsync = proc(popup: SelectorPopup, text: string): Future[seq[SelectorItem]] {.async.} =
-    var items = newSeq[SelectorItem]()
-    for id in languages:
-      if resolveLanguage(self.document.model.project, self.document.workspace.get, id).await.getSome(language):
-        let score = fuzzyMatchSmart(text, language.name)
-        items.add ModelLanguageSelectorItem(language: language, name: language.name, score: score)
+  let languageIds = @languageIds
+  var languages = initTable[LanguageId, Language]()
 
-    items.sort((a, b) => cmp(a.score, b.score), Descending)
+  proc getLanguagesAsync(): Future[ItemList] {.async.} =
+    var items = newItemList(languageIds.len)
+    for i, id in languageIds:
+      let language = await resolveLanguage(self.document.model.project, self.document.workspace.get, id)
+      if language.getSome(language):
+        languages[id] = language
+        items[i] = FinderItem(
+          displayName: language.name,
+          detail: $id,
+          data: $id
+        )
+
     return items
 
-  popup.handleItemConfirmed = proc(item: SelectorItem): bool =
-    let language = item.ModelLanguageSelectorItem.language
-    handleConfirmed(language)
-    return true
+  var builder = SelectorPopupBuilder()
+  builder.scope = "model-choose-language".some
+  builder.scaleX = 0.4
+  builder.scaleY = 0.5
 
-  popup.updateCompletions()
+  let finder = newFinder(newAsyncCallbackDataSource(getLanguagesAsync), filterAndSort=true)
+  builder.finder = finder.some
 
-  self.app.pushPopup popup
+  builder.handleItemConfirmed2 = proc(popup: ISelectorPopup, item: FinderItem): bool =
+    let id = item.data.parseId.LanguageId
+    if not languages.contains(id):
+      log lvlError, &"[chooseLanguageFromUser] Selected invalid language item: {item}"
+      return
+
+    handleConfirmed(languages[id])
+    true
+
+  discard self.app.pushSelectorPopup(builder)
 
 proc addLanguage*(self: ModelDocumentEditor) {.expose("editor.model").} =
   if self.document.project.isNil:
@@ -3284,14 +3294,6 @@ proc addLanguage*(self: ModelDocumentEditor) {.expose("editor.model").} =
     self.document.model.addLanguage(language)
     self.document.builder.addBuilder(getBuilder(language.id))
   )
-
-type ModelImportSelectorItem* = ref object of SelectorItem
-  model*: ModelId
-  name*: string
-
-method changed*(self: ModelImportSelectorItem, other: SelectorItem): bool =
-  let other = other.ModelImportSelectorItem
-  return self.model != other.model
 
 proc createNewModelAsync*(self: ModelDocumentEditor, name: string) {.async.} =
   if self.document.project.isNil:
@@ -3317,114 +3319,133 @@ proc addModelToProject*(self: ModelDocumentEditor) {.expose("editor.model").} =
     log lvlError, fmt"No project set for model document '{self.document.filename}'"
     return
 
-  var popup = self.app.createSelectorPopup().SelectorPopup
+  let workspace: WorkspaceFolder = self.document.workspace.get
 
-  popup.getCompletionsAsync = proc(popup: SelectorPopup, text: string): Future[seq[SelectorItem]] {.async.} =
-    # Find everything matching text
-
-    let workspace: WorkspaceFolder = self.document.workspace.get
+  proc getModelsAsync(): Future[ItemList] {.async.} =
     let files = await workspace.getDirectoryListingRec("")
 
-    var items = newSeq[SelectorItem]()
+    var items = newItemList(files.len)
+    var index = 0
+
     for file in files:
       if not file.endsWith(".ast-model"):
         continue
+
       if self.document.project.findModelByPath(file).isSome:
         continue
-      let score = matchPath(file, text)
-      items.add ModelImportSelectorItem(name: file, score: score)
+
+      let (directory, name) = file.splitPath
+      var relativeDirectory = workspace.getRelativePathSync(directory).get(directory)
+
+      items[index] = FinderItem(
+        displayName: name,
+        detail: relativeDirectory,
+        data: file,
+      )
+      inc index
+
+    items.setLen(index)
 
     return items
 
-    # result.sort((a, b) => cmp(a.score, b.score), Descending)
+  var builder = SelectorPopupBuilder()
+  builder.scope = "model-add-model-to-project".some
+  builder.scaleX = 0.4
+  builder.scaleY = 0.5
 
-  popup.handleItemConfirmed = proc(item: SelectorItem): bool =
-    log lvlInfo, fmt"Import model {item.ModelImportSelectorItem.name} ({item.ModelImportSelectorItem.model}) to model {self.document.model.id}"
-    let path = item.ModelImportSelectorItem.name
-    asyncCheck self.document.project.loadModelAsync(path)
-    return true
+  let finder = newFinder(newAsyncCallbackDataSource(getModelsAsync), filterAndSort=true)
+  builder.finder = finder.some
 
-  popup.updateCompletions()
-  popup.sortFunction = proc(a, b: SelectorItem): int = cmp(a.score, b.score)
-  popup.enableAutoSort()
+  builder.handleItemConfirmed2 = proc(popup: ISelectorPopup, item: FinderItem): bool =
+    log lvlInfo, fmt"Add model {item.displayName} to project"
+    asyncCheck self.document.project.loadModelAsync(item.data)
+    true
 
-  self.app.pushPopup popup
+  discard self.app.pushSelectorPopup(builder)
 
 proc importModel*(self: ModelDocumentEditor) {.expose("editor.model").} =
   if self.document.project.isNil:
     log lvlError, fmt"No project set for model document '{self.document.filename}'"
     return
 
-  var popup = self.app.createSelectorPopup().SelectorPopup
+  let workspace = self.document.workspace.get
 
-  popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
-    # Find everything matching text
-
+  proc getModels(): seq[FinderItem] =
     for model in self.document.project.models.values:
-      let name = if model.path.len > 0:
-        model.path
-      else:
-        $model.id
+      if self.document.model.hasImport(model.id):
+        continue
 
-      let score = matchPath(name, text)
-      result.add ModelImportSelectorItem(name: name, model: model.id, score: score)
+      let (directory, name) = model.path.splitPath
+      let relativeDirectory = workspace.getRelativePathSync(directory).get(directory)
 
-    block:
-      let score = matchPath("BaseInterfacesModel", text)
-      result.add ModelImportSelectorItem(name: "BaseInterfacesModel", model: lang_builder.baseInterfacesModel.id, score: score)
+      result.add FinderItem(
+        displayName: name,
+        detail: &"{model.id}\t./{relativeDirectory}",
+        data: $model.id,
+      )
 
-    block:
-      let score = matchPath("BaseLanguageModel", text)
-      result.add ModelImportSelectorItem(name: "BaseLanguageModel", model: lang_builder.baseLanguageModel.id, score: score)
+    if not self.document.model.hasImport(lang_builder.baseInterfacesModel.id):
+      result.add FinderItem(
+        displayName: "BaseInterfacesModel",
+        detail: $lang_builder.baseInterfacesModel.id & "\tBuiltin",
+        data: $lang_builder.baseInterfacesModel.id,
+      )
 
-    block:
-      let score = matchPath("LangLanguageModel", text)
-      result.add ModelImportSelectorItem(name: "LangLanguageModel", model: lang_builder.langLanguageModel.id, score: score)
+    if not self.document.model.hasImport(lang_builder.baseLanguageModel.id):
+      result.add FinderItem(
+        displayName: "BaseLanguageModel",
+        detail: $lang_builder.baseLanguageModel.id & "\tBuiltin",
+        data: $lang_builder.baseLanguageModel.id,
+      )
 
-    # result.sort((a, b) => cmp(a.score, b.score), Descending)
+    if not self.document.model.hasImport(lang_builder.langLanguageModel.id):
+      result.add FinderItem(
+        displayName: "LangLanguageModel",
+        detail: $lang_builder.langLanguageModel.id & "\tBuiltin",
+        data: $lang_builder.langLanguageModel.id,
+      )
 
-  popup.handleItemConfirmed = proc(item: SelectorItem): bool =
-    log lvlInfo, fmt"Import model {item.ModelImportSelectorItem.name} ({item.ModelImportSelectorItem.model}) to model {self.document.model.id}"
-    let modelId = item.ModelImportSelectorItem.model
+  var builder = SelectorPopupBuilder()
+  builder.scope = "model-import-model".some
+  builder.scaleX = 0.4
+  builder.scaleY = 0.5
+
+  let source = newSyncDataSource(getModels)
+  let finder = newFinder(source, filterAndSort=true)
+  builder.finder = finder.some
+
+  builder.handleItemConfirmed2 = proc(popup: ISelectorPopup, item: FinderItem): bool =
+    let modelId = item.data.parseId.ModelId
+    log lvlInfo, fmt"Import model {item.displayName} ({modelId}) to model {self.document.model.id}"
+
+    defer:
+      source.retrigger()
+
     if modelId == baseInterfacesModel.id:
       log lvlInfo, fmt"Add imported model {lang_builder.baseInterfacesModel.path} ({lang_builder.baseInterfacesModel.id})"
       self.document.model.addImport(lang_builder.baseInterfacesModel)
-      return
+      return false
 
     if modelId == baseLanguageModel.id:
       log lvlInfo, fmt"Add imported model {lang_builder.baseLanguageModel.path} ({lang_builder.baseLanguageModel.id})"
       self.document.model.addImport(lang_builder.baseLanguageModel)
-      return
+      return false
 
     if modelId == langLanguageModel.id:
       log lvlInfo, fmt"Add imported model {lang_builder.langLanguageModel.path} ({lang_builder.langLanguageModel.id})"
       self.document.model.addImport(lang_builder.langLanguageModel)
-      return
+      return false
 
     if self.document.project.getModel(modelId).getSome(model):
       log lvlInfo, fmt"Add imported model {model.path} ({model.id})"
       self.document.model.addImport(model)
-    return true
+      return false
 
-  popup.updateCompletions()
-  popup.sortFunction = proc(a, b: SelectorItem): int = cmp(a.score, b.score)
-  popup.enableAutoSort()
+    log lvlError, fmt"[importModel] Failed to find model {modelId} in project"
 
-  self.app.pushPopup popup
+    false
 
-type ModelNodeClassSelectorItem* = ref object of NamedSelectorItem
-  class*: NodeClass
-
-type AstNodeSelectorItem* = ref object of NamedSelectorItem
-  node*: AstNode
-
-method changed*(self: ModelNodeClassSelectorItem, other: SelectorItem): bool =
-  let other = other.ModelNodeClassSelectorItem
-  return self.class != other.class
-
-method changed*(self: AstNodeSelectorItem, other: SelectorItem): bool =
-  let other = other.AstNodeSelectorItem
-  return self.node != other.node
+  discard self.app.pushSelectorPopup(builder)
 
 proc compileLanguageAsync*(self: ModelDocumentEditor) {.async.} =
   while self.document.project.isNil or self.document.model.isNil:
@@ -3456,18 +3477,25 @@ proc compileLanguage*(self: ModelDocumentEditor) {.expose("editor.model").} =
   asyncCheck self.compileLanguageAsync()
 
 proc addRootNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
-  var popup = self.app.createSelectorPopup().SelectorPopup
+  var classes = initTable[ClassId, NodeClass]()
 
-  popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
+  proc getClasses(): seq[FinderItem] =
     for language in self.document.model.languages:
       for rootNodeClass in language.rootNodeClasses:
-        let name = rootNodeClass.name
-        let score = matchPath(name, text)
-        result.add ModelNodeClassSelectorItem(name: name, class: rootNodeClass, score: score)
+        classes[rootNodeClass.id] = rootNodeClass
 
-  popup.handleItemConfirmed = proc(item: SelectorItem): bool =
-    log lvlInfo, fmt"Add root node of class {item.ModelNodeClassSelectorItem.name} to model {self.document.model.id}"
-    let class = item.ModelNodeClassSelectorItem.class
+        let name = rootNodeClass.name
+        result.add FinderItem(
+          displayName: name,
+          detail: $rootNodeClass.id,
+          data: $rootNodeClass.id,
+        )
+
+  proc handleConfirmed(popup: ISelectorPopup, item: FinderItem): bool =
+    let classId = item.data.parseId.ClassId
+    log lvlInfo, fmt"Add root node of class {item.displayName} to model {self.document.model.id}"
+
+    let class = classes[classId]
 
     defer:
       self.document.finishTransaction()
@@ -3477,13 +3505,20 @@ proc addRootNode*(self: ModelDocumentEditor) {.expose("editor.model").} =
     self.cursor = self.getFirstEditableCellOfNode(self.document.model.rootNodes.last).get
     self.updateScrollOffset(true)
     self.markDirty()
-    return true
 
-  popup.updateCompletions()
-  popup.sortFunction = proc(a, b: SelectorItem): int = cmp(a.score, b.score)
-  popup.enableAutoSort()
+    true
 
-  self.app.pushPopup popup
+  var builder = SelectorPopupBuilder()
+  builder.scope = "model-add-root-node".some
+  builder.scaleX = 0.4
+  builder.scaleY = 0.5
+  builder.handleItemConfirmed2 = handleConfirmed
+
+  let source = newSyncDataSource(getClasses)
+  let finder = newFinder(source, filterAndSort=true)
+  builder.finder = finder.some
+
+  discard self.app.pushSelectorPopup(builder)
 
 proc saveProject*(self: ModelDocumentEditor) {.expose("editor.model").} =
   if self.document.project.isNil:
@@ -3541,9 +3576,9 @@ proc findDeclaration*(self: ModelDocumentEditor, global: bool) {.expose("editor.
     log lvlError, fmt"No project set for model document '{self.document.filename}'"
     return
 
-  var popup = self.app.createSelectorPopup().SelectorPopup
+  var nodes = initTable[NodeId, AstNode]()
 
-  popup.getCompletions = proc(popup: SelectorPopup, text: string): seq[SelectorItem] =
+  proc getNodes(): seq[FinderItem] =
     var models = newSeq[Model]()
     if global:
       for model in self.document.project.models.values:
@@ -3553,18 +3588,44 @@ proc findDeclaration*(self: ModelDocumentEditor, global: bool) {.expose("editor.
 
     for model in models:
       for rootNode in model.rootNodes:
-        debugf"collect children of root {rootNode}"
         for children in rootNode.childLists.mitems:
           for child in children.nodes:
             let class = child.nodeClass
             if class.isNotNil and class.isSubclassOf(IdINamed):
               let name = child.property(IdINamedName).get.stringValue
-              let score = matchPath(name, text)
-              result.add AstNodeSelectorItem(name: name, score: score, node: child)
+              nodes[child.id] = child
+              result.add FinderItem(
+                displayName: name,
+                detail: $child.id,
+                data: $child.id,
+              )
 
-  popup.handleItemSelected = proc(item: SelectorItem) =
-    log lvlInfo, fmt"Select node {item.AstNodeSelectorItem.name}"
-    let node = item.AstNodeSelectorItem.node
+  proc handleSelected(popup: ISelectorPopup, item: FinderItem) =
+    log lvlInfo, fmt"Select node {item.displayName}"
+
+    let nodeId = item.data.parseId.NodeId
+    let node = nodes[nodeId]
+
+    if node.model.isNil:
+      log lvlError, fmt"Node is no longer part of a model"
+      return
+
+    if node.model == self.document.model and self.getFirstEditableCellOfNode(node).getSome(cursor):
+      self.cursor = cursor
+      self.updateScrollOffset(true)
+      self.markDirty()
+    elif node.model != self.document.model:
+      if self.requestEditorForModel(node.model).getSome(editor):
+        editor.cursor = editor.getFirstEditableCellOfNode(node).get
+        editor.updateScrollOffset(true)
+        editor.markDirty()
+        self.app.tryActivateEditor(editor)
+
+  proc handleConfirmed(popup: ISelectorPopup, item: FinderItem): bool =
+    log lvlInfo, fmt"Select node {item.displayName}"
+
+    let nodeId = item.data.parseId.NodeId
+    let node = nodes[nodeId]
 
     if node.model.isNil:
       log lvlError, fmt"Node is no longer part of a model"
@@ -3581,31 +3642,20 @@ proc findDeclaration*(self: ModelDocumentEditor, global: bool) {.expose("editor.
         editor.markDirty()
         self.app.tryActivateEditor(editor)
 
-  popup.handleItemConfirmed = proc(item: SelectorItem): bool =
-    log lvlInfo, fmt"Select node {item.AstNodeSelectorItem.name}"
-    let node = item.AstNodeSelectorItem.node
-
-    if node.model.isNil:
-      log lvlError, fmt"Node is no longer part of a model"
-      return
-
-    if node.model == self.document.model and self.getFirstEditableCellOfNode(node).getSome(cursor):
-      self.cursor = cursor
-      self.updateScrollOffset(true)
-      self.markDirty()
-    elif node.model != self.document.model:
-      if self.requestEditorForModel(node.model).getSome(editor):
-        editor.cursor = editor.getFirstEditableCellOfNode(node).get
-        editor.updateScrollOffset(true)
-        editor.markDirty()
-        self.app.tryActivateEditor(editor)
     return true
 
-  popup.updateCompletions()
-  popup.sortFunction = proc(a, b: SelectorItem): int = cmp(a.score, b.score)
-  popup.enableAutoSort()
+  var builder = SelectorPopupBuilder()
+  builder.scope = "model-find-declaration".some
+  builder.scaleX = 0.4
+  builder.scaleY = 0.5
+  builder.handleItemConfirmed2 = handleConfirmed
+  builder.handleItemSelected2 = handleSelected
 
-  self.app.pushPopup popup
+  let source = newSyncDataSource(getNodes)
+  let finder = newFinder(source, filterAndSort=true)
+  builder.finder = finder.some
+
+  discard self.app.pushSelectorPopup(builder)
 
 genDispatcher("editor.model")
 addActiveDispatchTable "editor.model", genDispatchTable("editor.model")

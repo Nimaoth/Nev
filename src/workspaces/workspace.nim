@@ -92,24 +92,6 @@ export workspace_github
 import workspace_absytree_server
 export workspace_absytree_server
 
-proc getDirectoryListingRec*(folder: WorkspaceFolder, path: string): Future[seq[string]] {.async.} =
-  var resultItems: seq[string]
-
-  let items = await folder.getDirectoryListing(path)
-  for file in items.files:
-    resultItems.add(path / file)
-
-  var futs: seq[Future[seq[string]]]
-
-  for dir in items.folders:
-    futs.add getDirectoryListingRec(folder, path / dir)
-
-  for fut in futs:
-    let children = await fut
-    resultItems.add children
-
-  return resultItems
-
 proc shouldIgnore(folder: WorkspaceFolder, path: string): bool =
   if folder.ignore.excludePath(path) or folder.ignore.excludePath(path.extractFilename):
     if folder.ignore.includePath(path) or folder.ignore.includePath(path.extractFilename):
@@ -117,6 +99,40 @@ proc shouldIgnore(folder: WorkspaceFolder, path: string): bool =
 
     return true
   return false
+
+proc getDirectoryListingRec*(folder: WorkspaceFolder, path: string): Future[seq[string]] {.async.} =
+  var resultItems: seq[string]
+
+  let items = await folder.getDirectoryListing(path)
+  for file in items.files:
+    let fullPath = if file.isAbsolute:
+      file
+    else:
+      path // file
+
+    if folder.shouldIgnore(fullPath):
+      continue
+
+    resultItems.add(file)
+
+  var futs: seq[Future[seq[string]]]
+
+  for dir in items.folders:
+    let fullPath = if dir.isAbsolute:
+      dir
+    else:
+      path // dir
+
+    if folder.shouldIgnore(fullPath):
+      continue
+
+    futs.add getDirectoryListingRec(folder, fullPath)
+
+  for fut in futs:
+    let children = await fut
+    resultItems.add children
+
+  return resultItems
 
 proc iterateDirectoryRec*(folder: WorkspaceFolder, path: string, cancellationToken: CancellationToken, callback: proc(files: seq[string]): Future[void]): Future[void] {.async.} =
   let path = path
