@@ -28,7 +28,7 @@ iterator tokens(s: string, seps: set[char] = Whitespace): tuple[i: int, strIndex
     strIndex = endIndex
 
 proc detectClientAsync(self: VersionControlSystemPerforce) {.async.} =
-  # let stats = await runProcessAsync("p4", @["info"])
+  let stats = await runProcessAsync("p4", @["info"])
 
   var host = ""
 
