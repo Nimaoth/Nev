@@ -8,6 +8,7 @@ logCategory "completion"
 type
   Completion* = object
     item*: CompletionItem
+    origin*: Option[tuple[line: int, column: RuneIndex]]
     filterText*: string
     providerIndex: int
     score*: float
