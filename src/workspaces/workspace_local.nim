@@ -258,10 +258,10 @@ proc detectVersionControlSystemIn(path: string): Option[VersionControlSystem] =
 
 proc newWorkspaceFolderLocal*(path: string, additionalPaths: seq[string] = @[]): WorkspaceFolderLocal =
   new result
-  result.path = path
-  result.name = fmt"Local:{path.absolutePath}"
-  result.info = createInfo(path, additionalPaths)
-  result.additionalPaths = additionalPaths
+  result.path = path.absolutePath.normalizePathUnix
+  result.name = fmt"Local:{result.path}"
+  result.additionalPaths = additionalPaths.mapIt(it.absolutePath.normalizePathUnix)
+  result.info = createInfo(path, result.additionalPaths)
 
   result.loadDefaultIgnoreFile()
 

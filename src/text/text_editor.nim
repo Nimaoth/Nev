@@ -1439,10 +1439,9 @@ proc checkoutFileAsync*(self: TextDocumentEditor) {.async.} =
     return
 
   let res = await vcs.checkoutFile(path)
-  debugf"checkout res: {res}"
+  log lvlInfo, "Checkout result: {res}"
 
   self.document.setReadOnly(ws.isFileReadOnly(path).await)
-
   self.markDirty()
 
 proc checkoutFile*(self: TextDocumentEditor) {.expose("editor.text").} =

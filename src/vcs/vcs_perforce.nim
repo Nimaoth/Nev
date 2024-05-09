@@ -48,8 +48,6 @@ proc detectClientAsync(self: VersionControlSystemPerforce) {.async.} =
     if not client.contains(host):
       continue
 
-    debugf"Checking client {client}"
-
     let createdByIndex = client.find(" 'Created by")
     if createdByIndex < 0:
       continue
