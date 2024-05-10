@@ -108,6 +108,7 @@ type TextDocument* = ref object of Document
   errorQuery: TSQuery
 
   languageServer*: Option[LanguageServer]
+  languageServerFuture*: Option[Future[Option[LanguageServer]]]
   onRequestSaveHandle*: OnRequestSaveHandle
 
   styledTextCache: Table[int, StyledLine]
@@ -854,13 +855,18 @@ proc newTextDocument*(
       if value.hasKey("indent"):
         case value["indent"].str:
         of "spaces":
-          self.indentStyle = IndentStyle(kind: Spaces, spaces: self.languageConfig.map((c) => c.tabWidth).get(4))
+          self.indentStyle = IndentStyle(
+            kind: Spaces,
+            spaces: self.languageConfig.map((c) => c.tabWidth).get(4)
+          )
         of "tabs":
           self.indentStyle = IndentStyle(kind: Tabs)
 
   asyncCheck self.initTreesitter()
 
-  self.languageServer = languageServer
+  let autoStartServer = self.configProvider.getValue("editor.text.auto-start-language-server", false)
+
+  self.languageServer = languageServer.mapIt(it)
   if self.languageServer.getSome(ls):
     # debugf"register save handler '{self.filename}'"
     let callback = proc (targetFilename: string): Future[void] {.async.} =
@@ -869,10 +875,10 @@ proc newTextDocument*(
         await ls.saveTempFile(targetFilename, self.contentString)
     self.onRequestSaveHandle = ls.addOnRequestSaveHandler(self.filename, callback)
 
-  elif createLanguageServer and self.configProvider.getValue("editor.text.auto-start-language-server", false) and self.languageServer.isNone:
-      asyncCheck self.getLanguageServer()
+  elif createLanguageServer and autoStartServer:
+    asyncCheck self.getLanguageServer()
 
-      # debugf"using language for {filename}: {value}, {self.indentStyle}"
+    # debugf"using language for {filename}: {value}, {self.indentStyle}"
 
   self.content = content
 
@@ -893,7 +899,7 @@ method deinit*(self: TextDocument) =
   if self.languageServer.getSome(ls):
     ls.onDiagnostics.unsubscribe(self.onDiagnosticsHandle)
     ls.removeOnRequestSaveHandler(self.onRequestSaveHandle)
-    ls.disconnect()
+    ls.disconnect(self)
     self.languageServer = LanguageServer.none
 
   let i = allTextDocuments.find(self)
@@ -1084,6 +1090,9 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
   if self.languageServer.isSome:
     return self.languageServer
 
+  if self.languageServerFuture.getSome(fut):
+    return fut.await
+
   if not self.createLanguageServer:
     return LanguageServer.none
 
@@ -1102,9 +1111,14 @@ proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.as
     else:
       @[]
 
-  self.languageServer = await getOrCreateLanguageServer(languageId, self.filename, workspaces, config, self.workspace)
+  let languageServerFuture = getOrCreateLanguageServer(languageId, self.filename, workspaces,
+    config, self.workspace)
+
+  self.languageServerFuture = languageServerFuture.some
+  self.languageServer = await languageServerFuture
+
   if self.languageServer.getSome(ls):
-    ls.connect()
+    ls.connect(self)
     let callback = proc (targetFilename: string): Future[void] {.async.} =
       if self.languageServer.getSome(ls):
         await ls.saveTempFile(targetFilename, self.contentString)

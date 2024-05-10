@@ -51,12 +51,16 @@ proc getLspCompletionsAsync(self: CompletionProviderLsp) {.async.} =
 
   # debugf"[getLspCompletionsAsync] start"
   let completions = await self.languageServer.getCompletions(self.document.languageId, self.document.fullPath, location)
-  if completions.isSuccess and completions.result.items.len > 0:
-    # debugf"[getLspCompletionsAsync] at {location} got {completions.result.items.len} completions"
+  if completions.isSuccess:
+    log lvlInfo, fmt"[getLspCompletionsAsync] at {location}: got {completions.result.items.len} completions"
     self.unfilteredCompletions = completions.result.items
     self.refilterCompletions()
+  elif completions.isCanceled:
+    discard
   else:
-    log lvlError, fmt"Failed to get completions"
+    log lvlError, fmt"Failed to get completions: {completions.error}"
+    self.unfilteredCompletions = @[]
+    self.refilterCompletions()
 
 proc handleTextInserted(self: CompletionProviderLsp, document: TextDocument, location: Selection, text: string) =
   self.location = location.getChangedSelection(text).last

@@ -1,5 +1,6 @@
 # abc ä cde .
 import std/unicode
+from std/strutils import Digits
 
 export Rune
 export runeLenAt, runeAt, strip, validateUtf8, graphemeLen, lastRune, `$`, runes, `==`, isWhiteSpace, isAlpha
@@ -7,6 +8,8 @@ export runeLenAt, runeAt, strip, validateUtf8, graphemeLen, lastRune, `$`, runes
 type
   RuneIndex* = distinct int
   RuneCount* = distinct int
+
+func isDigit*(r: Rune): bool = r.int <= char.high.int and r.char in Digits
 
 template toOa(s: string): auto = s.toOpenArray(0, s.high)
 
