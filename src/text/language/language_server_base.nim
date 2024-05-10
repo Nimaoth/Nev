@@ -2,6 +2,7 @@ import std/[options, tables, json]
 import misc/[custom_async, custom_logger, event, custom_unicode]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import workspaces/workspace
+import document
 
 from lsp_types as lsp_types import CompletionItem
 
@@ -89,8 +90,8 @@ var getOrCreateLanguageServer*: proc(languageId: string, filename: string, works
 method start*(self: LanguageServer): Future[void] {.base.} = discard
 method stop*(self: LanguageServer) {.base.} = discard
 method deinit*(self: LanguageServer) {.base.} = discard
-method connect*(self: LanguageServer) {.base.} = discard
-method disconnect*(self: LanguageServer) {.base.} = discard
+method connect*(self: LanguageServer, document: Document) {.base.} = discard
+method disconnect*(self: LanguageServer, document: Document) {.base.} = discard
 method getDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base.} = discard
 method getDeclaration*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base.} = discard
 method getImplementation*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base.} = discard

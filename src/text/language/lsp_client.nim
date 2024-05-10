@@ -35,7 +35,11 @@ type
     onMessage*: Event[tuple[verbosity: MessageType, message: string]]
     onDiagnostics*: Event[PublicDiagnosticsParams]
 
+    initializedFuture: Future[bool]
+
     onWorkspaceConfiguration*: proc(params: ConfigurationParams): Future[seq[JsonNode]]
+
+proc waitInitialized*(client: LSPCLient): Future[bool] = client.initializedFuture
 
 proc complete[T](future: ResolvableFuture[T], result: T) =
   when defined(js):
@@ -243,7 +247,7 @@ proc cancelAllOf*(client: LSPClient, meth: string) =
   client.requestsPerMethod[meth].setLen 0
 
   for (id, future) in futures:
-    future.complete error[JsonNode](-1, fmt"{meth}:{id} canceled")
+    future.complete canceled[JsonNode]()
 
 proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async.} =
   var workspacePath = if client.workspaceFolders.len > 0:
@@ -261,7 +265,7 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async.} =
     let info = workspace.info.await
 
     if info.folders.len > 0:
-      log lvlInfo, "Using workspace info ({info}) as lsp workspace"
+      log lvlInfo, &"Using workspace info ({info}) as lsp workspace"
       workspacePath = info.folders[0].path.some
       workspaces = info.folders.mapIt(WorkspaceFolder(uri: $it.path.toUri, name: it.name.get("???")))
 
@@ -347,9 +351,18 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async.} =
   log(lvlInfo, fmt"[initialize] {params.pretty}")
 
   let res = await client.sendRequest("initialize", params)
+  if res.isError:
+    log lvlError, &"Failed to initialize lsp: {res.error}"
+    client.initializedFuture.complete(false)
+    return
+
+  assert not res.isCanceled
+
   client.isInitialized = true
 
   await client.sendNotification("initialized", newJObject())
+
+  client.initializedFuture.complete(true)
 
   for req in client.pendingRequests:
     if logVerbose:
@@ -396,6 +409,8 @@ proc sendInitializationRequest(client: LSPClient) {.async.} =
     log(lvlError, fmt"[sendInitializationRequest] Got error response: {response}")
     return
 
+  assert not response.isCanceled
+
   client.serverCapabilities = response.result["capabilities"].jsonTo(ServerCapabilities, Joptions(allowMissingKeys: true, allowExtraKeys: true))
   log(lvlInfo, "Server capabilities: ", client.serverCapabilities)
 
@@ -409,6 +424,7 @@ proc sendInitializationRequest(client: LSPClient) {.async.} =
 
 proc connect*(client: LSPClient, serverExecutablePath: string, workspaces: seq[string], args: seq[string], languagesServer: Option[(string, int)] = (string, int).none) {.async.} =
   client.workSpaceFolders = workspaces
+  client.initializedFuture = newFuture[bool]("client.initializedFuture")
 
   if languagesServer.getSome(lsConfig):
     log lvlInfo, fmt"Using languages server at '{lsConfig[0]}:{lsConfig[1]}' to find LSP connection"
@@ -473,7 +489,8 @@ proc notifyClosedTextDocument*(client: LSPClient, path: string) {.async.} =
 
   await client.sendNotification("textDocument/didClose", params)
 
-proc notifyTextDocumentChanged*(client: LSPClient, path: string, version: int, changes: seq[TextDocumentContentChangeEvent]) {.async.} =
+proc notifyTextDocumentChanged*(client: LSPClient, path: string, version: int,
+    changes: seq[TextDocumentContentChangeEvent]) {.async.} =
   let path = client.translatePath(path).await
   let params = %*{
     "textDocument": %*{
@@ -681,7 +698,7 @@ proc getCompletions*(client: LSPClient, filename: string, line: int, column: int
 
   let response = (await client.sendRequest("textDocument/completion", params)).to CompletionResponse
 
-  if response.isError:
+  if response.isError or response.isCanceled:
     return response.to CompletionList
 
   let parsedResponse = response.result
