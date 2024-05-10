@@ -24,7 +24,7 @@ proc cacheLine(self: CompletionProviderDocument, line: int) =
     let isWord = r.char in IdentChars or r.isAlpha
     if not isWord:
       let len = i - wordStart
-      if len > 1.RuneCount:
+      if len > 1.RuneCount and not line[wordStart].isDigit:
         self.wordCache.incl line[wordStart..<i]
       wordStart = i + 1.RuneCount
 

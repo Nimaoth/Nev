@@ -2997,6 +2997,8 @@ proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocume
     languageServer: LanguageServer) =
   # log lvlInfo, fmt"[handleLanguageServerAttached] {self.document.filename}"
   self.completionEngine.addProvider newCompletionProviderLsp(document, languageServer)
+    .withMergeStrategy(MergeStrategy(kind: TakeAll))
+    .withPriority(2)
   self.completionsDirty = true
 
 proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
@@ -3087,7 +3089,11 @@ proc newTextEditor*(document: TextDocument, app: AppInterface, configProvider: C
 
   if self.document.createLanguageServer:
     self.completionEngine.addProvider newCompletionProviderSnippet(self.configProvider, self.document)
+      .withMergeStrategy(MergeStrategy(kind: TakeAll))
+      .withPriority(1)
     self.completionEngine.addProvider newCompletionProviderDocument(self.document)
+      .withMergeStrategy(MergeStrategy(kind: FillN, max: 20))
+      .withPriority(0)
 
   return self
 
@@ -3137,7 +3143,11 @@ method createWithDocument*(_: TextDocumentEditor, document: Document, configProv
 
   if self.document.createLanguageServer:
     self.completionEngine.addProvider newCompletionProviderSnippet(self.configProvider, self.document)
+      .withMergeStrategy(MergeStrategy(kind: TakeAll))
+      .withPriority(1)
     self.completionEngine.addProvider newCompletionProviderDocument(self.document)
+      .withMergeStrategy(MergeStrategy(kind: FillN, max: 20))
+      .withPriority(0)
 
   self.startBlinkCursorTask()
 

@@ -6,6 +6,16 @@ import scripting_api
 logCategory "completion"
 
 type
+  MergeStrategyKind* = enum
+    TakeAll
+    FillN
+
+  MergeStrategy* = object
+    case kind*: MergeStrategyKind
+    of TakeAll: discard
+    of FillN:
+      max*: int
+
   Completion* = object
     item*: CompletionItem
     origin*: Option[tuple[line: int, column: RuneIndex]]
@@ -18,20 +28,30 @@ type
     location*: Cursor
     filteredCompletions*: seq[Completion]
     currentFilterText*: string
+    priority*: Option[int]
+    mergeStrategy*: MergeStrategy = MergeStrategy(kind: TakeAll)
 
   CompletionEngine* = ref object
     providers: seq[tuple[provider: CompletionProvider, onCompletionsUpdatedHandle: Id]]
+    providersByPriority: seq[CompletionProvider]
     combinedCompletions: seq[Completion]
-    combinedProviderIndices: seq[int]
     onCompletionsUpdated*: Event[void]
     combinedDirty: bool
 
 method forceUpdateCompletions*(provider: CompletionProvider) {.base.} = discard
 
+proc withMergeStrategy*(provider: CompletionProvider, mergeStrategy: MergeStrategy): CompletionProvider =
+  provider.mergeStrategy = mergeStrategy
+  provider
+
+proc withPriority*(provider: CompletionProvider, priority: int): CompletionProvider =
+  provider.priority = priority.some
+  provider
+
 proc updateCompletionsAt*(self: CompletionEngine, location: Cursor) =
-  for provider in self.providers:
-    provider.provider.location = location
-    provider.provider.forceUpdateCompletions()
+  for provider in self.providersByPriority:
+    provider.location = location
+    provider.forceUpdateCompletions()
 
 proc cmp(a, b: Completion): int =
   let preselectA = a.item.preselect.get(false)
@@ -46,12 +66,19 @@ proc cmp(a, b: Completion): int =
 proc updateCombinedCompletions(self: CompletionEngine) =
   let timer = startTimer()
   self.combinedCompletions.setLen 0
-  self.combinedProviderIndices.setLen 0
 
-  for i, provider in self.providers:
-    for c in provider.provider.filteredCompletions:
-      self.combinedCompletions.add c
-      self.combinedProviderIndices.add i
+  for i, provider in self.providersByPriority:
+    case provider.mergeStrategy.kind
+    of TakeAll:
+      for c in provider.filteredCompletions:
+        self.combinedCompletions.add c
+
+    of FillN:
+      provider.filteredCompletions.sort(cmp, Descending)
+      for c in provider.filteredCompletions:
+        if self.combinedCompletions.len >= provider.mergeStrategy.max:
+          break
+        self.combinedCompletions.add c
 
   self.combinedCompletions.sort(cmp, Descending)
   self.combinedDirty = false
@@ -71,22 +98,36 @@ proc getCompletions*(self: CompletionEngine): lent seq[Completion] =
     self.updateCombinedCompletions()
   self.combinedCompletions
 
+proc updateProvidersByPriority*(self: CompletionEngine) =
+  var providersWithPriority = newSeq[tuple[provider: CompletionProvider, priority: int]]()
+  var providersWithoutPriority = newSeq[CompletionProvider]()
+  for (provider, _) in self.providers:
+    if provider.priority.getSome(priority):
+      providersWithPriority.add (provider, priority)
+    else:
+      providersWithoutPriority.add provider
+
+  providersWithPriority.sort((a, b) => cmp(a.priority, b.priority), Descending)
+
+  self.providersByPriority.setLen 0
+  for (provider, _) in providersWithPriority:
+    self.providersByPriority.add provider
+
+  for provider in providersWithoutPriority:
+    self.providersByPriority.add provider
+
 proc addProvider*(self: CompletionEngine, provider: CompletionProvider) =
-  let handle = provider.onCompletionsUpdated.subscribe (provider: CompletionProvider) => self.handleProviderCompletionsUpdated(provider)
+  let handle = provider.onCompletionsUpdated.subscribe (provider: CompletionProvider) =>
+    self.handleProviderCompletionsUpdated(provider)
   self.providers.add (provider, handle)
+  self.updateProvidersByPriority()
 
 proc removeProvider*(self: CompletionEngine, provider: CompletionProvider) =
+  defer:
+    self.updateProvidersByPriority()
+
   for i in 0..self.providers.high:
     if self.providers[i].provider == provider:
       provider.onCompletionsUpdated.unsubscribe self.providers[i].onCompletionsUpdatedHandle
       self.providers.removeShift(i)
-
-      # Remove completions of the removed provider and update provider indices
-      for k in countdown(self.combinedCompletions.high, 0):
-        if self.combinedProviderIndices[k] > i:
-          dec self.combinedProviderIndices[k]
-        elif self.combinedProviderIndices[k] == i:
-          self.combinedCompletions.removeShift(k)
-          self.combinedProviderIndices.removeShift(k)
-
-      return
+      break
