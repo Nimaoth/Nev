@@ -45,6 +45,9 @@ type TextDocumentEditor* = ref object of DocumentEditor
   diffDocument*: TextDocument
   diffChanges*: Option[seq[LineMapping]]
 
+  usage*: string # Unique string identifying what the editor is used for,
+                 # e.g. command-line/preview/search-bar
+
   cursorsId*: Id
   completionsId*: Id
   hoverId*: Id
@@ -822,6 +825,12 @@ proc updateTargetColumn*(self: TextDocumentEditor, cursor: SelectionCursor = Las
 proc invertSelection(self: TextDocumentEditor) {.expose("editor.text").} =
   ## Inverts the current selection. Discards all but the last cursor.
   self.selection = (self.selection.last, self.selection.first)
+
+proc getRevision*(self: TextDocumentEditor): int {.expose("editor.text").} =
+  return self.document.revision
+
+proc getUsage*(self: TextDocumentEditor): string {.expose("editor.text").} =
+  return self.usage
 
 proc getText*(self: TextDocumentEditor, selection: Selection, inclusiveEnd: bool = false):
     string {.expose("editor.text").} =
