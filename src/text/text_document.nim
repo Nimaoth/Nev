@@ -101,6 +101,7 @@ type TextDocument* = ref object of Document
   redoOps*: seq[UndoOp]
   nextCheckpoints: seq[string]
 
+  currentContentFailedToParse: bool
   tsParser: TSParser
   tsLanguage: TSLanguage
   currentTree: TSTree
@@ -236,12 +237,23 @@ proc applyTreesitterChanges(self: TextDocument) =
 
 proc reparseTreesitter*(self: TextDocument) =
   self.applyTreesitterChanges()
+
+  if self.currentContentFailedToParse:
+    # We already tried to parse the current content and it failed, don't try again
+    return
+
   if self.tsParser.isNotNil:
     let strValue = self.lines.join("\n")
-    if self.currentTree.isNotNil:
-      self.currentTree = self.tsParser.parseString(strValue, self.currentTree.some)
-    else:
-      self.currentTree = self.tsParser.parseString(strValue)
+
+    try:
+      if self.currentTree.isNotNil:
+        self.currentTree = self.tsParser.parseString(strValue, self.currentTree.some)
+      else:
+        self.currentTree = self.tsParser.parseString(strValue)
+      self.currentContentFailedToParse = false
+    except:
+      log lvlError, &"Failed to parse treesitter tree for '{self.filename}': {getCurrentExceptionMsg()}"
+      self.currentContentFailedToParse = true
 
 proc tsTree*(self: TextDocument): TsTree =
   if self.changes.len > 0 or self.currentTree.isNil:
@@ -292,6 +304,8 @@ proc `content=`*(self: TextDocument, value: string) =
   for id in self.lineIds.mitems:
     id = self.nextLineId
 
+  self.currentContentFailedToParse = false
+
   self.currentTree.delete()
   self.reparseTreesitter()
 
@@ -314,6 +328,8 @@ proc `content=`*(self: TextDocument, value: seq[string]) =
   self.lineIds.setLen self.lines.len
   for id in self.lineIds.mitems:
     id = self.nextLineId
+
+  self.currentContentFailedToParse = false
 
   self.currentTree.delete()
   self.reparseTreesitter()
@@ -1495,6 +1511,8 @@ proc insert*(self: TextDocument, selections: openArray[Selection], oldSelection:
     if notify:
       self.textInserted.invoke((self, (oldCursor, cursor), text))
 
+  self.currentContentFailedToParse = false
+
   if notify:
     self.notifyTextChanged()
 
@@ -1566,6 +1584,8 @@ proc delete*(self: TextDocument, selections: openArray[Selection], oldSelection:
     self.updateDiagnosticPositionsAfterDelete selection
     if notify:
       self.textDeleted.invoke((self, selection))
+
+  self.currentContentFailedToParse = false
 
   if notify:
     self.notifyTextChanged()

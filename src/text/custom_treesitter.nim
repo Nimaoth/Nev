@@ -59,7 +59,8 @@ when defined(js):
 
   proc isTreesitterInitialized*(): bool = treeSitterInitialized
 
-  proc newTSParser*(): TSParser {.importcpp: "new Parser()".}
+  proc newTsParser*(): TSParser {.importcpp: "new Parser()".}
+  proc setTimeoutMicros*(parser: TSParser, micros: int) {.importcpp: "#.setTimeoutMicros(#)".}
   proc setLanguage*(self: TSParser, language: TSLanguage) {.importcpp("#.setLanguage(#)").}
   proc query*(self: TSLanguage, source: string): TSQuery =
     proc queryJs(self: TSLanguage, source: cstring): TSQuery {.importcpp("#.query(#)").}
@@ -540,7 +541,8 @@ proc loadLanguage*(languageId: string, config: JsonNode): Future[Option[TSLangua
 
 proc createTsParser*(): TSParser =
   when defined(js):
-    return newTsParser()
+    result = newTsParser()
+    result.setTimeoutMicros(1_000_000)
   else:
     return TSParser(impl: ts.tsParserNew())
 
