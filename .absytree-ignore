@@ -19,6 +19,7 @@
 .vs
 
 **/nimcache
+**/nimcache-linux
 **/node_modules
 **/target
 **/htmldocs
@@ -26,7 +27,3 @@
 _temp
 fonts
 int
-
-ast
-ast2
-absytree
