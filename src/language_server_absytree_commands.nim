@@ -16,8 +16,9 @@ proc newLanguageServerAbsytreeCommands*(app: AppInterface): LanguageServer =
   server.app = app
   return server
 
-method getDefinition*(self: LanguageServerAbsytreeCommands, filename: string, location: Cursor): Future[Option[Definition]] {.async.} =
-  return Definition.none
+method getDefinition*(self: LanguageServerAbsytreeCommands, filename: string, location: Cursor):
+    Future[seq[Definition]] {.async.} =
+  return @[]
 
 method saveTempFile*(self: LanguageServerAbsytreeCommands, filename: string, content: string): Future[void] {.async.} =
   # debugf"LanguageServerAbsytreeCommands.saveTempFile '{filename}' '{content}'"

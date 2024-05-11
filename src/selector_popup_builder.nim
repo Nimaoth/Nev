@@ -1,5 +1,5 @@
 import std/[json, tables, options]
-import misc/[traits, custom_async, myjsonutils]
+import misc/[traits, myjsonutils]
 import finder/[finder, previewer]
 
 traitRef ISelectorPopup:

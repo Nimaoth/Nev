@@ -1,7 +1,5 @@
-import std/[strutils, strformat]
+import std/[strutils]
 from glob/regexer import globToRegexString
-
-import strutils
 
 #[
   Globby from https://github.com/treeform/globby

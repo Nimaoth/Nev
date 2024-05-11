@@ -1,4 +1,3 @@
-import std/[tables, json, options, strformat]
 import misc/[util, custom_logger]
 import document_editor
 import finder

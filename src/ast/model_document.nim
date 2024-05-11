@@ -1,6 +1,6 @@
 import std/[strformat, strutils, sugar, tables, options, json, streams, algorithm, sets, sequtils, os]
 import fusion/matching, bumpy, vmath
-import misc/[util, custom_logger, timer, array_buffer, id, event, custom_async, myjsonutils, custom_unicode, delayed_task, fuzzy_matching, rect_utils]
+import misc/[util, custom_logger, timer, array_buffer, id, event, custom_async, myjsonutils, custom_unicode, delayed_task, rect_utils]
 from scripting_api as api import nil
 import platform/[filesystem, platform]
 import workspaces/[workspace]

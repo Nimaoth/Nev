@@ -235,7 +235,7 @@ method searchWorkspace*(self: WorkspaceFolderLocal, query: string, maxResults: i
 method getVcsForFile*(self: WorkspaceFolderLocal, file: string): Option[VersionControlSystem] =
   let absolutePath = self.getAbsolutePath(file)
   for vcs in self.versionControlSystems:
-    if file.startsWith(vcs.root):
+    if absolutePath.startsWith(vcs.root):
       return vcs.some
 
 method getAllVersionControlSystems*(self: WorkspaceFolderLocal): seq[VersionControlSystem] =

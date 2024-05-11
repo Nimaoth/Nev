@@ -1,4 +1,4 @@
-import std/[strformat, terminal, typetraits, enumutils, strutils, unicode, algorithm, sequtils, os, sugar]
+import std/[strformat, typetraits, strutils, algorithm, sugar]
 import misc/[regex, timer, fuzzy_matching, util, custom_async, event, id, custom_logger]
 import platform/[filesystem]
 
@@ -39,7 +39,7 @@ type
     onItemsChangedHandle: Id
     onItemsChanged*: Event[void]
 
-method close*(self: DataSource) {.base.} = discard
+method close*(self: DataSource) {.base, raises: [].} = discard
 method setQuery*(self: DataSource, query: string) {.base.} = discard
 
 var copyCounter = 0
