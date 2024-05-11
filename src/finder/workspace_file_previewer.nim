@@ -57,6 +57,7 @@ proc loadAsync(self: WorkspaceFilePreviewer): Future[void] {.async.} =
   let location = self.currentLocation
   let editor = self.editor
 
+  log lvlInfo, &"[loadAsync] Load preview for '{path}'"
   let content = self.workspace.loadFile(path).await
   if editor.document.isNil:
     log lvlInfo, fmt"Discard file load of 'path' because preview editor was destroyed"
@@ -92,6 +93,7 @@ method previewItem*(self: WorkspaceFilePreviewer, item: FinderItem, editor: Docu
   inc self.revision
   self.editor = editor.TextDocumentEditor
 
+  log lvlInfo, &"[previewItem] Request preview for '{path}' at {location}"
   if self.editor.document.filename == path:
     if location.getSome(location):
       self.editor.selection = location.toSelection
