@@ -2,6 +2,7 @@ import std/[os, asynchttpserver, strutils, strformat, uri, asyncfile, json, suga
 import glob
 import misc/[custom_async, util, myjsonutils, custom_logger]
 import router, server_utils
+import platform/filesystem
 
 logCategory "workspace"
 
@@ -34,9 +35,9 @@ proc readDir(path: string): Future[DirInfo] {.async.} =
   var info = DirInfo()
   for (kind, item) in walkDir(path, relative=true, skipSpecial=true):
     if kind == pcFile and not shouldIgnore(item):
-      info.files.add item
+      info.files.add item.normalizePathUnix
     elif kind == pcDir and not shouldIgnore(item):
-      info.folders.add item
+      info.folders.add item.normalizePathUnix
 
   return info
 
@@ -48,7 +49,7 @@ proc translatePath(path: string): Option[string] =
       return string.none
     return absolutePath.some
 
-  return path.absolutePath.normalizedPath.some
+  return path.absolutePath.normalizePathUnix.some
 
 proc callback(req: Request): Future[void] {.async.} =
   debugf"{req.reqMethod} {req.url}"
@@ -72,7 +73,7 @@ proc callback(req: Request): Future[void] {.async.} =
 
     get "/info/workspace-folders":
       let message = %hostedFolders.mapIt(%*{
-        "path": it.path,
+        "path": it.path.normalizePathUnix,
         "name": it.name,
       })
       await req.respond(Http200, $message, headers)
@@ -91,7 +92,7 @@ proc callback(req: Request): Future[void] {.async.} =
 
       debug "get relative path ", absolutePath, " -> ", relativePath
 
-      await req.respond(Http200, relativePath, headers)
+      await req.respond(Http200, relativePath.normalizePathUnix, headers)
 
     get "/list/":
       let absolutePath = translatePath(path).getOr:
