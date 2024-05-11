@@ -1,5 +1,5 @@
-import std/[sequtils, strformat, strutils, tables, unicode, options, os, algorithm, json, macros, macrocache, sugar, streams, deques]
-import misc/[id, util, timer, event, cancellation_token, myjsonutils, traits, rect_utils, custom_logger, custom_async, fuzzy_matching, array_set, delayed_task, regex]
+import std/[sequtils, strformat, strutils, tables, unicode, options, os, json, macros, macrocache, sugar, streams, deques]
+import misc/[id, util, timer, event, myjsonutils, traits, rect_utils, custom_logger, custom_async, array_set, delayed_task, regex]
 import ui/node
 import scripting/[expose, scripting_base]
 import platform/[platform, filesystem]
@@ -88,13 +88,6 @@ type
 type ScriptAction = object
   name: string
   scriptContext: ScriptContext
-
-type FileLocationItem = object
-  name: string
-  directory: string
-  path: string
-  location: Option[Cursor]
-  workspaceFolder: Option[WorkspaceFolder]
 
 type
   App* = ref AppObject

@@ -1449,7 +1449,7 @@ proc checkoutFileAsync*(self: TextDocumentEditor) {.async.} =
     return
 
   let res = await vcs.checkoutFile(path)
-  log lvlInfo, "Checkout result: {res}"
+  log lvlInfo, &"Checkout result: {res}"
 
   self.document.setReadOnly(ws.isFileReadOnly(path).await)
   self.markDirty()
@@ -2002,7 +2002,7 @@ proc gotoLocationAsync(self: TextDocumentEditor, definitions: seq[Definition]): 
     var res = newSeq[FinderItem]()
     for i, definition in definitions:
       let relPath = workspace.getRelativePathSync(definition.filename).get(definition.filename)
-      let (dir, name) = definition.filename.splitPath
+      let (_, name) = definition.filename.splitPath
       res.add FinderItem(
         displayName: name,
         detail: relPath.splitPath[0],
@@ -2018,7 +2018,7 @@ proc gotoLocationAsync(self: TextDocumentEditor, definitions: seq[Definition]): 
       self.openLocationFromFinderItem(item)
       true
 
-    let popup = self.app.pushSelectorPopup(builder)
+    discard self.app.pushSelectorPopup(builder)
 
 proc gotoDefinitionAsync(self: TextDocumentEditor): Future[void] {.async.} =
   let languageServer = await self.document.getLanguageServer()
@@ -2074,10 +2074,10 @@ proc switchSourceHeaderAsync(self: TextDocumentEditor): Future[void] {.async.} =
   if languageServer.getSome(ls):
     let filename = await ls.switchSourceHeader(self.document.fullPath)
     if filename.getSome(filename):
-      let editor = if self.document.workspace.getSome(workspace):
-        self.app.openWorkspaceFile(filename, workspace)
+      if self.document.workspace.getSome(workspace):
+        discard self.app.openWorkspaceFile(filename, workspace)
       else:
-        self.app.openFile(filename)
+        discard self.app.openFile(filename)
 
 proc getCompletionMatches*(self: TextDocumentEditor, completionIndex: int): seq[int] =
   self.refilterCompletions()
@@ -2117,7 +2117,6 @@ proc showCompletionWindow(self: TextDocumentEditor) =
   self.markDirty()
 
 proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], navigateOnSelect: bool) =
-  let lastSelection = self.selection
   var builder = SelectorPopupBuilder()
   builder.scope = "text-lsp-locations".some
   builder.scaleX = 0.85
@@ -2125,7 +2124,6 @@ proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], nav
 
   var res = newSeq[FinderItem]()
   for i, symbol in symbols:
-    let (dir, name) = symbol.filename.splitPath
     res.add FinderItem(
       displayName: symbol.name,
       detail: $symbol.symbolType,
@@ -2141,7 +2139,7 @@ proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], nav
     self.openLocationFromFinderItem(item)
     true
 
-  let popup = self.app.pushSelectorPopup(builder)
+  discard self.app.pushSelectorPopup(builder)
 
 proc gotoSymbolAsync(self: TextDocumentEditor): Future[void] {.async.} =
   if self.document.getLanguageServer().await.getSome(ls):
@@ -2206,7 +2204,6 @@ proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Fut
   if self.document.workspace.getSome(workspace) and
       self.document.getLanguageServer().await.getSome(ls):
 
-    let lastSelection = self.selection
     var builder = SelectorPopupBuilder()
     builder.scope = "text-lsp-locations".some
     builder.scaleX = 0.85
@@ -2220,7 +2217,7 @@ proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Fut
       self.openLocationFromFinderItem(item)
       true
 
-    let popup = self.app.pushSelectorPopup(builder)
+    discard self.app.pushSelectorPopup(builder)
 
 proc gotoDefinition*(self: TextDocumentEditor) {.expose("editor.text").} =
   asyncCheck self.gotoDefinitionAsync()

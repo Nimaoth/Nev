@@ -1,7 +1,5 @@
-import std/[strutils, strformat, options]
+import std/[strutils, strformat]
 import misc/[async_process, custom_async, util, custom_logger]
-import scripting_api
-import text/diff
 import platform/filesystem
 import vcs
 

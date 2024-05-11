@@ -2,7 +2,7 @@ import std/[strutils, options, json, tables, uri, strformat, sequtils]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import misc/[event, util, custom_logger, custom_async, myjsonutils, custom_unicode, id]
 import platform/filesystem
-import language_server_base, app, app_interface, config_provider, lsp_client, document
+import language_server_base, app_interface, config_provider, lsp_client, document
 import workspaces/workspace as ws
 
 logCategory "lsp"

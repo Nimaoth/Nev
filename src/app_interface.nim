@@ -2,7 +2,6 @@ import std/[json, options]
 import misc/[traits, custom_async]
 import platform/platform
 import workspaces/workspace
-import text/language/language_server_base
 import finder/[finder, previewer]
 import events, popup, document_editor, document, config_provider, selector_popup_builder
 from scripting_api import EditorId

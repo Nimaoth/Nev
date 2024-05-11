@@ -1,8 +1,7 @@
-import std/[strutils, sugar, options, json, streams, tables]
+import std/[sugar, options, json, streams, tables]
 import bumpy, vmath
-import misc/[util, rect_utils, comb_sort, timer, event, custom_async, custom_logger,
-  cancellation_token, myjsonutils, fuzzy_matching, traits]
-import app_interface, text/text_editor, popup, events, scripting/expose, input,
+import misc/[util, rect_utils, event, myjsonutils, fuzzy_matching, traits, custom_logger]
+import app_interface, text/text_editor, popup, events, scripting/expose,
   selector_popup_builder, dispatch_tables
 from scripting_api as api import Selection
 import finder/[finder, previewer]

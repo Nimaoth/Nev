@@ -5,6 +5,9 @@ when defined(js):
 
   template asyncCheck*(body: untyped): untyped = discard body
   proc sleepAsync*(ms: int): Future[void] {.importjs: "(new Promise(resolve => setTimeout(resolve, #)))".}
+
+  proc toFuture*[T](value: sink T): Future[T] {.importjs: "(Promise.resolve(#))".}
+
 else:
   import std/[asyncdispatch, asyncfile, asyncfutures, threadpool]
   export asyncdispatch, asyncfile, asyncfutures
@@ -47,6 +50,10 @@ else:
 
     return ^flowVar
 
+  proc toFuture*[T](value: sink T): Future[T] =
+    result = newFuture[T]()
+    result.complete(value)
+
 template thenIt*[T](f: Future[T], body: untyped): untyped =
   when defined(js):
     discard f.then(proc(a: T) =
@@ -58,7 +65,3 @@ template thenIt*[T](f: Future[T], body: untyped): untyped =
       let it {.inject.} = a.read
       body
     )
-
-proc toFuture*[T](value: sink T): Future[T] =
-  result = newFuture[T]()
-  result.complete(value)
