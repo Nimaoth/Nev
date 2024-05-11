@@ -15,11 +15,6 @@ var logServerDebug = false
 type
   LSPConnection = ref object of RootObj
 
-  ResolvableFuture[T] = object
-    future: Future[T]
-    when defined(js):
-      resolve: proc(result: T)
-
   LSPClient* = ref object
     connection: LSPConnection
     nextId: int
@@ -35,17 +30,11 @@ type
     onMessage*: Event[tuple[verbosity: MessageType, message: string]]
     onDiagnostics*: Event[PublicDiagnosticsParams]
 
-    initializedFuture: Future[bool]
+    initializedFuture: ResolvableFuture[bool]
 
     onWorkspaceConfiguration*: proc(params: ConfigurationParams): Future[seq[JsonNode]]
 
-proc waitInitialized*(client: LSPCLient): Future[bool] = client.initializedFuture
-
-proc complete[T](future: ResolvableFuture[T], result: T) =
-  when defined(js):
-    future.resolve(result)
-  else:
-    future.future.complete(result)
+proc waitInitialized*(client: LSPCLient): Future[bool] = client.initializedFuture.future
 
 method close(connection: LSPConnection) {.base.} = discard
 method recvLine(connection: LSPConnection): Future[string] {.base.} = discard
@@ -215,23 +204,14 @@ proc sendRequest(client: LSPClient, meth: string, params: JsonNode): Future[Resp
   inc client.nextId
   await client.sendRPC(meth, params, id.some)
 
-  when defined(js):
-    var resolveFunc: proc(response: Response[JsonNode]) = nil
-    var requestFuture = newPromise[Response[JsonNode]](proc(resolve: proc(response: Response[JsonNode])) =
-      resolveFunc = resolve
-    )
-    let resolvableFuture = ResolvableFuture[Response[JsonNode]](future: requestFuture, resolve: resolveFunc)
+  let requestFuture = newResolvableFuture[Response[JsonNode]]("LSPCLient.initialize")
 
-  else:
-    var requestFuture = newFuture[Response[JsonNode]]("LSPCLient.initialize")
-    let resolvableFuture = ResolvableFuture[Response[JsonNode]](future: requestFuture)
-
-  client.activeRequests[id] = (meth, resolvableFuture)
+  client.activeRequests[id] = (meth, requestFuture)
   if not client.requestsPerMethod.contains(meth):
     client.requestsPerMethod[meth] = @[]
   client.requestsPerMethod[meth].add id
 
-  return await requestFuture
+  return await requestFuture.future
 
 proc cancelAllOf*(client: LSPClient, meth: string) =
   if not client.requestsPerMethod.contains(meth):
@@ -354,7 +334,7 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async.} =
   if res.isError:
     log lvlError, &"Failed to initialize lsp: {res.error}"
     client.initializedFuture.complete(false)
-    return
+    return res
 
   assert not res.isCanceled
 
@@ -424,7 +404,7 @@ proc sendInitializationRequest(client: LSPClient) {.async.} =
 
 proc connect*(client: LSPClient, serverExecutablePath: string, workspaces: seq[string], args: seq[string], languagesServer: Option[(string, int)] = (string, int).none) {.async.} =
   client.workSpaceFolders = workspaces
-  client.initializedFuture = newFuture[bool]("client.initializedFuture")
+  client.initializedFuture = newResolvableFuture[bool]("client.initializedFuture")
 
   if languagesServer.getSome(lsConfig):
     log lvlInfo, fmt"Using languages server at '{lsConfig[0]}:{lsConfig[1]}' to find LSP connection"
