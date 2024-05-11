@@ -13,8 +13,8 @@ the abstract syntac tree (AST) is edited directly (or rather through _projection
 Languages will be extendable with custom AST node types, by either translating those to nodes of other languages or by implementing code generation
 for the backend (at the moment only WASM).
 
-The editor is available for the terminal, as a desktop GUI app and in the browser.
-You can try the browser version [here](https://nimaoth.github.io/AbsytreeBrowser/) ([old version](https://nimaoth.github.io/AbsytreeBrowser/old/absytree_browser.html)).
+The editor is available for the terminal, as a desktop GUI app and in the browser (without some features).
+You can try the browser version [here](https://nimaoth.github.io/AbsytreeBrowser/absytree_browser.html?s=default.absytree-session).
 There is also a very experimental [Unreal Engine Plugin](https://github.com/Nimaoth/AbsytreeUE).
 
 `ast` is the gui version, `astt` is the terminal version

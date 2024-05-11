@@ -8,7 +8,7 @@
             "type": "lldb",
             "request": "launch",
             "name": "Debug Nim Project",
-            "program": "${workspaceRoot}/ast.exe",
+            "program": "${workspaceRoot}/astd.exe",
             "args": ["-n"],
             "cwd": "${workspaceRoot}",
             "terminal": "console"
