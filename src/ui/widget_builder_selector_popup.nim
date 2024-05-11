@@ -54,10 +54,8 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[pro
     builder.panel(&{FillX, MaskContent, OverlappingChildren} + yFlag): #, userId = id):
       let totalLineHeight = app.platform.totalLineHeight
 
-      const previewSize = 0.5
-
       block:
-        builder.panel(&{FillX, LayoutVertical} + yFlag, w = bounds.w * (1 - previewSize)):
+        builder.panel(&{FillX, LayoutVertical} + yFlag, w = bounds.w * (1 - self.previewScale)):
 
           builder.panel(&{FillX, SizeToContentY}):
             result.add self.textEditor.createUI(builder, app)
@@ -146,8 +144,8 @@ method createUI*(self: SelectorPopup, builder: UINodeBuilder, app: App): seq[pro
                 x += maxWidths[col] + gap
 
         if self.previewEditor.isNotNil:
-          builder.panel(0.UINodeFlags, x = bounds.w * (1 - previewSize),
-              w = bounds.w * previewSize, h = bounds.h):
+          builder.panel(0.UINodeFlags, x = bounds.w * (1 - self.previewScale),
+              w = bounds.w * self.previewScale, h = bounds.h):
 
             self.previewEditor.active = self.focusPreview
             result.add self.previewEditor.createUI(builder, app)

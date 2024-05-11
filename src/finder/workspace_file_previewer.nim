@@ -1,9 +1,10 @@
 import std/[tables, json, options, strformat, strutils]
-import misc/[util, custom_logger, delayed_task, custom_async]
+import misc/[util, custom_logger, delayed_task, custom_async, myjsonutils]
 import workspaces/workspace
 import text/[text_editor, text_document]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import finder, previewer
+import vcs/vcs
 
 logCategory "workspace-file-previewer"
 
@@ -15,6 +16,8 @@ type
     triggerLoadTask: DelayedTask
     currentPath: string
     currentLocation: Option[Cursor]
+    currentStaged: bool
+    currentDiff: bool
 
 proc newWorkspaceFilePreviewer*(workspace: WorkspaceFolder): WorkspaceFilePreviewer =
   new result
@@ -67,6 +70,7 @@ proc loadAsync(self: WorkspaceFilePreviewer): Future[void] {.async.} =
     log lvlInfo, fmt"Discard file load of 'path' because a newer one was requested"
     return
 
+  editor.document.workspace = self.workspace.some
   editor.document.setFileAndContent(path, content)
   if location.getSome(location):
     editor.selection = location.toSelection
@@ -74,6 +78,13 @@ proc loadAsync(self: WorkspaceFilePreviewer): Future[void] {.async.} =
   else:
     editor.selection = (0, 0).toSelection
     editor.scrollToTop()
+
+  if self.currentDiff:
+    self.editor.document.staged = self.currentStaged
+    self.editor.updateDiff(gotoFirstDiff=true)
+  else:
+    self.editor.document.staged = false
+    self.editor.closeDiff()
 
   editor.markDirty()
 
@@ -85,13 +96,32 @@ method previewItem*(self: WorkspaceFilePreviewer, item: FinderItem, editor: Docu
   if not (editor of TextDocumentEditor):
     return
 
-  let (path, location) = item.parsePathAndLocationFromItemData.getOr:
-    log lvlError, fmt"Failed to preview item because of invalid data format. " &
-      fmt"Expected path or json object with path property {item}"
-    return
-
   inc self.revision
   self.editor = editor.TextDocumentEditor
+
+  var path: string
+  var location: Option[Cursor]
+
+  let fileInfo = item.data.parseJson.jsonTo(VCSFileInfo).some.catch: VCSFileInfo.none
+  if fileInfo.isSome:
+    path = fileInfo.get.path
+  else:
+    let pathAndLocation = item.parsePathAndLocationFromItemData.getOr:
+      log lvlError, fmt"Failed to preview item because of invalid data format. " &
+        fmt"Expected path or json object with path property {item}"
+      return
+    path = pathAndLocation[0]
+    location = pathAndLocation[1]
+
+  if fileInfo.getSome(fileInfo) and not fileInfo.isUntracked:
+    self.currentDiff = true
+    if fileInfo.stagedStatus != None:
+      self.currentStaged = true
+    else:
+      self.currentStaged = false
+  else:
+    self.currentDiff = false
+    self.currentStaged = false
 
   log lvlInfo, &"[previewItem] Request preview for '{path}' at {location}"
   if self.editor.document.filename == path:
@@ -101,6 +131,13 @@ method previewItem*(self: WorkspaceFilePreviewer, item: FinderItem, editor: Docu
     else:
       self.editor.selection = (0, 0).toSelection
       self.editor.scrollToTop()
+
+    if self.currentDiff:
+      self.editor.document.staged = self.currentStaged
+      self.editor.updateDiff(gotoFirstDiff=true)
+    else:
+      self.editor.document.staged = false
+      self.editor.closeDiff()
 
   else:
     self.currentPath = path

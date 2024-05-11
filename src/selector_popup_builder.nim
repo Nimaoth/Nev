@@ -11,6 +11,7 @@ type
     scope*: Option[string]
     scaleX*: float = 0.5
     scaleY*: float = 0.5
+    previewScale*: float = 0.5
     handleItemSelected*: proc(popup: ISelectorPopup, item: FinderItem)
     handleItemConfirmed*: proc(popup: ISelectorPopup, item: FinderItem): bool
     handleCanceled*: proc(popup: ISelectorPopup)
