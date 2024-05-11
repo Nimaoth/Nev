@@ -31,8 +31,9 @@ type
     onDiagnostics*: Event[PublicDiagnosticsParams]
 
     initializedFuture: ResolvableFuture[bool]
-
     onWorkspaceConfiguration*: proc(params: ConfigurationParams): Future[seq[JsonNode]]
+
+    userInitializationOptions*: JsonNode
 
 proc waitInitialized*(client: LSPCLient): Future[bool] = client.initializedFuture.future
 
@@ -263,6 +264,7 @@ proc initialize(client: LSPClient): Future[Response[JsonNode]] {.async.} =
     "rootUri": workspacePath.map((p) => p.toUri.toJson).get(newJNull()),
     "workspaceFolders": workspaces,
     "trace": "verbose",
+    "initializationOptions": client.userInitializationOptions,
     "capabilities": %*{
       "workspace": %*{
         "workspaceFolders": true,

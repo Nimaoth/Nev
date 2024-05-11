@@ -62,7 +62,9 @@ proc getOrCreateLanguageServerLSP*(languageId: string, workspaces: seq[string],
   else:
     @[]
 
-  var client = LSPClient(workspace: workspace)
+  let userOptions = config.fields.getOrDefault("config", newJNull())
+
+  var client = LSPClient(workspace: workspace, userInitializationOptions: userOptions)
   var lsp = LanguageServerLSP(client: client, languageId: languageId)
   languageServers[languageId] = lsp
   await client.connect(exePath, workspaces, args, languagesServer)
