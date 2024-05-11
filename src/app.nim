@@ -2371,91 +2371,89 @@ proc chooseGitActiveFiles*(self: App, all: bool = false) {.expose("editor").} =
 
     self.pushPopup popup
 
-when not defined(js):
-  proc getItemsFromDirectory(workspace: WorkspaceFolder, directory: string): Future[ItemList] {.async.} =
+proc getItemsFromDirectory(workspace: WorkspaceFolder, directory: string): Future[ItemList] {.async.} =
 
-    let listing = await workspace.getDirectoryListing(directory)
+  let listing = await workspace.getDirectoryListing(directory)
 
-    var list = newItemList(listing.files.len + listing.folders.len)
+  var list = newItemList(listing.files.len + listing.folders.len)
 
-    # todo: use unicode icons on all targets once rendering is fixed
-    const fileIcon = "🗎 "
-    const folderIcon = "🗀"
+  # todo: use unicode icons on all targets once rendering is fixed
+  const fileIcon = "🗎 "
+  const folderIcon = "🗀"
 
-    var i = 0
-    proc addItem(path: string, isFile: bool) =
-      let (directory, name) = path.splitPath
-      var relativeDirectory = workspace.getRelativePathSync(directory).get(directory)
+  var i = 0
+  proc addItem(path: string, isFile: bool) =
+    let (directory, name) = path.splitPath
+    var relativeDirectory = workspace.getRelativePathSync(directory).get(directory)
 
-      if relativeDirectory == ".":
-        relativeDirectory = ""
+    if relativeDirectory == ".":
+      relativeDirectory = ""
 
-      let icon = if isFile: fileIcon else: folderIcon
-      list[i] = FinderItem(
-        displayName: icon & " " & name,
-        data: $ %*{
-          "path": path,
-          "isFile": isFile,
-        },
-        detail: path,
-      )
-      inc i
+    let icon = if isFile: fileIcon else: folderIcon
+    list[i] = FinderItem(
+      displayName: icon & " " & name,
+      data: $ %*{
+        "path": path,
+        "isFile": isFile,
+      },
+      detail: path,
+    )
+    inc i
 
-    for file in listing.files:
-      addItem(file, true)
+  for file in listing.files:
+    addItem(file, true)
 
-    for dir in listing.folders:
-      addItem(dir, false)
+  for dir in listing.folders:
+    addItem(dir, false)
 
-    return list
+  return list
 
 proc exploreFiles*(self: App) {.expose("editor").} =
-  when not defined(js):
-    defer:
-      self.platform.requestRender()
+  defer:
+    self.platform.requestRender()
 
-    if self.workspace.folders.len == 0:
-      log lvlError, &"Failed to open file explorer, no workspace"
-      return
+  if self.workspace.folders.len == 0:
+    log lvlError, &"Failed to open file explorer, no workspace"
+    return
 
-    let workspace = self.workspace.folders[0]
+  let workspace = self.workspace.folders[0]
 
-    let currentDirectory = new string
-    currentDirectory[] = ""
+  let currentDirectory = new string
+  currentDirectory[] = ""
 
-    let source = newAsyncCallbackDataSource () => workspace.getItemsFromDirectory(currentDirectory[])
-    var finder = newFinder(source, filterAndSort=true)
-    finder.filterThreshold = float.low
+  let source = newAsyncCallbackDataSource () => workspace.getItemsFromDirectory(currentDirectory[])
+  var finder = newFinder(source, filterAndSort=true)
+  finder.filterThreshold = float.low
 
-    var popup = newSelectorPopup(self.asAppInterface, "file-explorer".some, finder.some,
-      newWorkspaceFilePreviewer(workspace).Previewer.some)
-    popup.scale.x = 0.85
-    popup.scale.y = 0.85
+  var popup = newSelectorPopup(self.asAppInterface, "file-explorer".some, finder.some,
+    newWorkspaceFilePreviewer(workspace).Previewer.some)
+  popup.scale.x = 0.85
+  popup.scale.y = 0.85
 
-    popup.handleItemConfirmed = proc(item: FinderItem): bool =
-      let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
-        log lvlError, fmt"Failed to parse file info from item: {item}"
-        return true
-
-      if fileInfo.isFile:
-        discard self.openWorkspaceFile(fileInfo.path, workspace)
-        return true
-      else:
-        currentDirectory[] = fileInfo.path
-        popup.textEditor.document.content = ""
-        source.retrigger()
-        return false
-
-    popup.addCustomCommand "go-up", proc(popup: SelectorPopup, args: JsonNode): bool =
-      let parent = currentDirectory[].parentDir
-      log lvlInfo, fmt"go up: {currentDirectory[]} -> {parent}"
-      currentDirectory[] = parent
-
-      popup.textEditor.document.content = ""
-      source.retrigger()
+  popup.handleItemConfirmed = proc(item: FinderItem): bool =
+    let fileInfo = item.data.parseJson.jsonTo(tuple[path: string, isFile: bool]).catch:
+      log lvlError, fmt"Failed to parse file info from item: {item}"
       return true
 
-    self.pushPopup popup
+    if fileInfo.isFile:
+      discard self.openWorkspaceFile(fileInfo.path, workspace)
+      return true
+    else:
+      currentDirectory[] = fileInfo.path
+      popup.textEditor.document.content = ""
+      source.retrigger()
+      return false
+
+  popup.addCustomCommand "go-up", proc(popup: SelectorPopup, args: JsonNode): bool =
+    let parent = currentDirectory[].parentDir
+    log lvlInfo, fmt"go up: {currentDirectory[]} -> {parent}"
+    currentDirectory[] = parent
+
+    popup.textEditor.document.content = ""
+    source.retrigger()
+    return true
+
+  self.pushPopup popup
 
 proc openPreviousEditor*(self: App) {.expose("editor").} =
   if self.editorHistory.len == 0:
