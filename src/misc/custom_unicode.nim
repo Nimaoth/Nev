@@ -3,7 +3,8 @@ import std/unicode
 from std/strutils import Digits
 
 export Rune
-export runeLenAt, runeAt, strip, validateUtf8, graphemeLen, lastRune, `$`, runes, `==`, isWhiteSpace, isAlpha
+export runeLenAt, runeAt, strip, validateUtf8, graphemeLen, lastRune, `$`, runes, `==`,
+  isWhiteSpace, isAlpha, isLower, isUpper, toLower, toUpper
 
 type
   RuneIndex* = distinct int

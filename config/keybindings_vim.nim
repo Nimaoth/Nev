@@ -611,7 +611,8 @@ proc vimDeleteRight*(editor: TextDocumentEditor) =
 expose "vim-delete-left", vimDeleteLeft
 
 proc vimMoveCursorColumn(editor: TextDocumentEditor, direction: int, count: int = 1) {.expose("vim-move-cursor-column").} =
-  editor.moveCursorColumn(direction * max(count, 1), wrap=false, includeAfter=editor.vimState.cursorIncludeEol)
+  editor.moveCursorColumn(direction * max(count, 1), wrap=false,
+    includeAfter=editor.vimState.cursorIncludeEol)
   if editor.vimState.selectLines:
     editor.vimSelectLine()
   editor.updateTargetColumn()
@@ -675,6 +676,31 @@ proc vimPaste(editor: TextDocumentEditor, pasteRight: bool = false, inclusiveEnd
 
   editor.setMode "normal"
   editor.paste register, inclusiveEnd=inclusiveEnd
+
+proc vimToggleCase(editor: TextDocumentEditor, moveCursorRight: bool) {.expose("vim-toggle-case").} =
+  var editTexts: seq[string]
+
+  for s in editor.selections:
+    let text = editor.getText(s, inclusiveEnd=true)
+    var newText = ""
+    for r in text.runes:
+      if r.isLower:
+        newText.add $r.toUpper
+      else:
+        newText.add $r.toLower
+    editTexts.add newText
+
+  editor.addNextCheckpoint "insert"
+  let oldSelections = editor.selections
+  discard editor.edit(editor.selections, editTexts, inclusiveEnd=true)
+  editor.selections = oldSelections.mapIt(it.first.toSelection)
+
+  editor.setMode "normal"
+
+  if moveCursorRight:
+    editor.moveCursorColumn(1, Both, wrap=false,
+      includeAfter=editor.vimState.cursorIncludeEol)
+    editor.updateTargetColumn()
 
 proc vimCloseCurrentViewOrQuit() {.expose("vim-close-current-view-or-quit").} =
   let openEditors = getOpenEditors().len + getHiddenEditors().len
@@ -1118,6 +1144,10 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
     editor.selections = editor.selections.mapIt (it.last, editor.vimMotionLine(it.last, 0).last)
     editor.vimYankSelection()
     editor.vimState.selectLines = false
+
+  addTextCommand "", "~", "vim-toggle-case", true
+  addTextCommand "visual", "~", "vim-toggle-case", false
+  addTextCommand "visual-line", "~", "vim-toggle-case", false
 
   # replace
   addTextCommand "", "r", "set-mode", "replace"
