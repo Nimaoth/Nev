@@ -396,7 +396,7 @@ method getWorkspaceSymbols*(self: LanguageServerLSP, query: string): Future[seq[
         location: (line: r.location.range.start.line, column: r.location.range.start.character),
         name: r.name,
         symbolType: symbolKind,
-        filename: r.location.uri.decodeUrl.parseUri.path.normalizePathUnix,
+        filename: r.location.uri.parseUri.path.decodeUrl.normalizePathUnix,
       )
 
   else:
