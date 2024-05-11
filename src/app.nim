@@ -929,7 +929,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
         if fileExists(".absytree-session"):
           self.sessionFile = ".absytree-session"
       else:
-        self.sessionFile = "app:config/config.json"
+        self.sessionFile = "app:.absytree-session"
 
     if self.sessionFile != "":
       self.restoreStateFromConfig(state)

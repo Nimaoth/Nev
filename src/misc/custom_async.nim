@@ -65,3 +65,27 @@ template thenIt*[T](f: Future[T], body: untyped): untyped =
       let it {.inject.} = a.read
       body
     )
+
+type
+  ResolvableFuture*[T] = object
+    future*: Future[T]
+    when defined(js):
+      resolve: proc(result: T)
+
+proc complete*[T](future: ResolvableFuture[T], result: sink T) =
+  when defined(js):
+    future.resolve(result)
+  else:
+    future.future.complete(result)
+
+proc newResolvableFuture*[T](name: string): ResolvableFuture[T] =
+  when defined(js):
+    var resolveFunc: proc(value: T) = nil
+    var requestFuture = newPromise[T](proc(resolve: proc(value: T)) =
+      resolveFunc = resolve
+    )
+    result = ResolvableFuture[T](future: requestFuture, resolve: resolveFunc)
+
+  else:
+    var requestFuture = newFuture[T](name)
+    result = ResolvableFuture[T](future: requestFuture)
