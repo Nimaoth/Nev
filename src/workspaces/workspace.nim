@@ -99,16 +99,6 @@ method getRelativePath*(self: WorkspaceFolder, absolutePath: string): Future[Opt
 method getRelativePathSync*(self: WorkspaceFolder, absolutePath: string): Option[string] {.base.} =
   return string.none
 
-when not defined(js):
-  import workspace_local
-  export workspace_local
-
-import workspace_github
-export workspace_github
-
-import workspace_absytree_server
-export workspace_absytree_server
-
 proc shouldIgnore(folder: WorkspaceFolder, path: string): bool =
   if folder.ignore.excludePath(path) or folder.ignore.excludePath(path.extractFilename):
     if folder.ignore.includePath(path) or folder.ignore.includePath(path.extractFilename):
@@ -130,7 +120,7 @@ proc getDirectoryListingRec*(folder: WorkspaceFolder, path: string): Future[seq[
     if folder.shouldIgnore(fullPath):
       continue
 
-    resultItems.add(file)
+    resultItems.add(fullPath)
 
   var futs: seq[Future[seq[string]]]
 
@@ -198,3 +188,13 @@ proc iterateDirectoryRec*(folder: WorkspaceFolder, path: string, cancellationTok
     await fut
 
   return
+
+when not defined(js):
+  import workspace_local
+  export workspace_local
+
+import workspace_github
+export workspace_github
+
+import workspace_absytree_server
+export workspace_absytree_server

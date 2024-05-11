@@ -1917,7 +1917,6 @@ proc chooseFile*(self: App, view: string = "new") {.expose("editor").} =
   defer:
     self.platform.requestRender()
 
-
   if self.workspace.folders.len == 0:
     return
 

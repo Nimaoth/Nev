@@ -1,5 +1,5 @@
-import std/[tables, json, options]
-import misc/[custom_async, custom_logger, async_http_client, array_buffer, myjsonutils]
+import std/[tables, json, options, strutils, os]
+import misc/[custom_async, custom_logger, async_http_client, array_buffer, myjsonutils, timer, event]
 import workspace, platform/filesystem
 
 logCategory "ws-absytree-server"
@@ -13,6 +13,26 @@ type
     baseUrl*: string
     cachedDirectoryListings: Table[string, DirectoryListingWrapper]
     cachedRelativePaths: Table[string, Option[string]]
+    isCacheUpdateInProgress: bool = false
+    cachedInfo: Option[WorkspaceInfo]
+
+proc recomputeFileCacheAsync(self: WorkspaceFolderAbsytreeServer): Future[void] {.async.} =
+  if self.isCacheUpdateInProgress:
+    return
+  self.isCacheUpdateInProgress = true
+  defer:
+    self.isCacheUpdateInProgress = false
+
+  log lvlInfo, "[recomputeFileCacheAsync] Start"
+  let t = startTimer()
+  let res = await self.getDirectoryListingRec("")
+  log lvlInfo, fmt"[recomputeFileCacheAsync] Finished in {t.elapsed.ms}ms"
+
+  self.cachedFiles = res
+  self.onCachedFilesUpdated.invoke()
+
+method recomputeFileCache*(self: WorkspaceFolderAbsytreeServer) =
+  asyncCheck self.recomputeFileCacheAsync()
 
 method isReadOnly*(self: WorkspaceFolderAbsytreeServer): bool = false
 method settings*(self: WorkspaceFolderAbsytreeServer): JsonNode =
@@ -39,6 +59,7 @@ proc updateWorkspaceName(self: WorkspaceFolderAbsytreeServer): Future[void] {.as
     self.info = self.getWorkspaceInfo()
     self.info.thenIt:
       self.name = it.name
+      self.cachedInfo = it.some
       log lvlInfo, fmt"AbsytreeServer workspace updated. Name: '{it.name}', Folders: {it.folders}"
   except:
     log lvlError, &"Failed to update workspace info: {getCurrentExceptionMsg()}:\n{getCurrentException().getStackTrace()}"
@@ -117,6 +138,16 @@ method getRelativePath*(self: WorkspaceFolderAbsytreeServer, absolutePath: strin
       self.cachedRelativePaths[absolutePath] = response.some
 
   return self.cachedRelativePaths[absolutePath]
+
+method getRelativePathSync*(self: WorkspaceFolderAbsytreeServer, absolutePath: string): Option[string] =
+  if not self.cachedInfo.isSome:
+    return string.none
+
+  for (path, _) in self.cachedInfo.get.folders:
+    if absolutePath.startsWith(path):
+      return absolutePath.relativePath(path, '/').normalizePathUnix.some
+
+  return string.none
 
 proc newWorkspaceFolderAbsytreeServer*(url: string): WorkspaceFolderAbsytreeServer =
   new result
