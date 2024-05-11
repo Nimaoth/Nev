@@ -4,6 +4,9 @@ import util, macro_utils, myjsonutils
 
 export macro_utils
 
+type
+  JsonCallError* = object of CatchableError
+
 proc createJsonWrapper*(def: NimNode, newName: NimNode): NimNode =
   # defer:
   #   echo "======================================================================= createJsonWrapper for "
@@ -13,11 +16,12 @@ proc createJsonWrapper*(def: NimNode, newName: NimNode): NimNode =
 
   var callScriptFuncFromJson = nnkCall.newTree(def.name)
 
-  # Argument of the JSON wrapper which calls the script function. Defined here so we can use it in the loop.
+  # Argument of the JSON wrapper which calls the script function.
+  # Defined here so we can use it in the loop.
   let jsonArg = nskParam.genSym
 
-  # Go through each parameter in reverse, fill out the args in `callImplFromScriptFunction`, `callScriptFuncFromScriptFuncWrapper`
-  # and `callScriptFuncFromJson`
+  # Go through each parameter in reverse, fill out the args in `callImplFromScriptFunction`,
+  # `callScriptFuncFromScriptFuncWrapper` and `callScriptFuncFromJson`
   let argCount = def[3].len - 1
   for k in 1..argCount:
     let i = argCount - k
@@ -30,7 +34,11 @@ proc createJsonWrapper*(def: NimNode, newName: NimNode): NimNode =
     else:
       genAst(jsonArg, index): jsonArg[index]
 
-    let tempArg2 = genAst(jsonArg, index, mappedArgumentType): jsonArg[index].jsonTo(mappedArgumentType, JOptions(allowExtraKeys: true))
+    let tempArg2 = genAst(jsonArg, index, mappedArgumentType, newName = def.name.repr.newLit):
+      if index < jsonArg.elems.len:
+        jsonArg[index].jsonTo(mappedArgumentType, JOptions(allowExtraKeys: true))
+      else:
+        raise newException(JsonCallError, "Missing argument " & $(index + 1) & " for call to " & newName)
 
     # The argument for the call to scriptFunction in the wrapper
     let resWrapper = if def.argDefaultValue(i).getSome(default):
@@ -101,11 +109,12 @@ proc createJsonWrapper*(fun: NimNode, typ: NimNode, newName: NimNode): NimNode =
 
   var callScriptFuncFromJson = nnkCall.newTree(fun)
 
-  # Argument of the JSON wrapper which calls the script function. Defined here so we can use it in the loop.
+  # Argument of the JSON wrapper which calls the script function.
+  # Defined here so we can use it in the loop.
   let jsonArg = nskParam.genSym
 
-  # Go through each parameter in reverse, fill out the args in `callImplFromScriptFunction`, `callScriptFuncFromScriptFuncWrapper`
-  # and `callScriptFuncFromJson`
+  # Go through each parameter in reverse, fill out the args in `callImplFromScriptFunction`,
+  # `callScriptFuncFromScriptFuncWrapper` and `callScriptFuncFromJson`
   for i in countdown(typ.len - 1, 2):
     let originalArgumentType = typ[i]
     var mappedArgumentType = originalArgumentType.repr.parseExpr
@@ -116,7 +125,11 @@ proc createJsonWrapper*(fun: NimNode, typ: NimNode, newName: NimNode): NimNode =
     else:
       genAst(jsonArg, index): jsonArg[index]
 
-    let tempArg2 = genAst(jsonArg, index, mappedArgumentType): jsonArg[index].jsonTo(mappedArgumentType, JOptions(allowExtraKeys: true))
+    let tempArg2 = genAst(jsonArg, index, mappedArgumentType, name = typ.repr.newLit):
+      if index < jsonArg.elems.len:
+        jsonArg[index].jsonTo(mappedArgumentType, JOptions(allowExtraKeys: true))
+      else:
+        raise newException(JsonCallError, "Missing argument " & $(index + 1) & " for call to " & name)
 
     # The argument for the call to scriptFunction in the wrapper
     let resWrapper = quote do:

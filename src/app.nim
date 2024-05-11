@@ -915,6 +915,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
   self.documents.add commandLineTextDocument
   self.commandLineTextEditor = newTextEditor(commandLineTextDocument, self.asAppInterface, self.asConfigProvider)
   self.commandLineTextEditor.renderHeader = false
+  self.commandLineTextEditor.TextDocumentEditor.usage = "command-line"
   self.commandLineTextEditor.TextDocumentEditor.disableScrolling = true
   self.commandLineTextEditor.TextDocumentEditor.lineNumbers = api.LineNumbers.None.some
   self.getCommandLineTextEditor.hideCursorWhenInactive = true

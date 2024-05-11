@@ -13,9 +13,17 @@ type EditorVimState = object
   deleteInclusiveEnd: bool = true ## Whether the next time we delete some the selection end should be inclusive
   cursorIncludeEol: bool = false ## Whether the cursor can be after the last character in a line (e.g. in insert mode)
   currentUndoCheckpoint: string = "insert" ## Which checkpoint to undo to (depends on mode)
+  revisionBeforeImplicitInsertMacro: int
 
 var editorStates: Table[EditorId, EditorVimState]
 var vimMotionNextMode = initTable[EditorId, string]()
+
+proc shouldRecortImplicitPeriodMacro(editor: TextDocumentEditor): bool =
+  case editor.getUsage()
+  of "command-line", "search-bar":
+    return false
+  else:
+    return true
 
 proc vimState(editor: TextDocumentEditor): var EditorVimState =
   if not editorStates.contains(editor.id):
@@ -91,14 +99,20 @@ proc vimSelect(editor: TextDocumentEditor, move: string, count: int = 1) {.expos
   for i in 0..<max(count, 1):
     editor.runAction(action, arg)
 
-proc vimUndo(editor: TextDocumentEditor) {.expose("vim-undo").} =
+proc vimUndo(editor: TextDocumentEditor, enterNormalModeBefore: bool) {.expose("vim-undo").} =
+  if enterNormalModeBefore:
+    editor.setMode "normal"
+
   editor.undo(editor.vimState.currentUndoCheckpoint)
   if not editor.selections.allEmpty:
     editor.setMode "visual"
   else:
     editor.setMode "normal"
 
-proc vimRedo(editor: TextDocumentEditor) {.expose("vim-redo").} =
+proc vimRedo(editor: TextDocumentEditor, enterNormalModeBefore: bool) {.expose("vim-redo").} =
+  if enterNormalModeBefore:
+    editor.setMode "normal"
+
   editor.redo(editor.vimState.currentUndoCheckpoint)
   if not editor.selections.allEmpty:
     editor.setMode "visual"
@@ -765,13 +779,26 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
 
     # infof"vim: handle mode change {oldMode} -> {newMode}"
     if newMode == "normal":
-      if not isReplayingCommands():
-        stopRecordingCommands(".")
+      if not isReplayingCommands() and isRecordingCommands(".-temp"):
+        stopRecordingCommands(".-temp")
+
+        if editor.getRevision > editor.vimState.revisionBeforeImplicitInsertMacro:
+          infof"Record implicit macro because document was modified"
+          let text = getRegisterText(".-temp")
+          setRegisterText(text, ".")
+        else:
+          infof"Don't record implicit macro because nothing was modified"
     else:
-      if oldMode == "normal" and not isReplayingCommands() and newMode in recordModes:
+      if oldMode == "normal" and
+          not isReplayingCommands() and
+          newMode in recordModes and
+          editor.shouldRecortImplicitPeriodMacro():
+
         editor.recordCurrentCommand()
-        setRegisterText("", ".")
-        startRecordingCommands(".")
+        setRegisterText("", ".-temp")
+        startRecordingCommands(".-temp")
+        editor.vimState.revisionBeforeImplicitInsertMacro = editor.getRevision
+
       editor.clearCurrentCommandHistory(retainLast=true)
 
     editor.vimState.selectLines = newMode == "visual-line"
@@ -1164,8 +1191,8 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommand "", "<DELETE>", vimDeleteRight
   addTextCommand "", "X", vimDeleteLeft
 
-  addTextCommand "", "u", "vim-undo"
-  addTextCommand "", "<C-r>", "vim-redo"
+  addTextCommand "", "u", "vim-undo", enterNormalModeBefore=true
+  addTextCommand "", "<C-r>", "vim-redo", enterNormalModeBefore=true
   addTextCommand "", "p", "vim-paste", pasteRight=true, inclusiveEnd=false, getVimDefaultRegister()
   addTextCommand "visual", "p", "vim-paste", pasteRight=false, inclusiveEnd=true, getVimDefaultRegister()
   addTextCommand "visual-line", "p", "vim-paste", pasteRight=false, inclusiveEnd=true, getVimDefaultRegister()
@@ -1288,9 +1315,9 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommand "", "H", "show-diagnostics-for-current"
   addTextCommand "", "<C-r>", "select-prev"
   addTextCommand "", "<C-m>", "select-next"
-  addTextCommand "", "U", "vim-redo"
-  addTextCommand "insert", "<C-z>", "vim-undo"
-  addTextCommand "insert", "<C-r>", "vim-redo"
+  addTextCommand "", "U", "vim-redo", enterNormalModeBefore=false
+  addTextCommand "insert", "<C-z>", "vim-undo", enterNormalModeBefore=false
+  addTextCommand "insert", "<C-r>", "vim-redo", enterNormalModeBefore=false
 
   addTextCommand "", "<CA-UP>", "add-cursor-above"
   addTextCommand "", "<CA-DOWN>", "add-cursor-below"

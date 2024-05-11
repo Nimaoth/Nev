@@ -303,6 +303,7 @@ proc newSelectorPopup*(app: AppInterface, scopeName = string.none,
   popup.scale = vec2(0.5, 0.5)
   let document = newTextDocument(app.configProvider, createLanguageServer=false)
   popup.textEditor = newTextEditor(document, app, app.configProvider)
+  popup.textEditor.usage = "search-bar"
   popup.textEditor.setMode("insert")
   popup.textEditor.renderHeader = false
   popup.textEditor.lineNumbers = api.LineNumbers.None.some
@@ -328,6 +329,7 @@ proc newSelectorPopup*(app: AppInterface, scopeName = string.none,
     previewDocument.readOnly = true
 
     popup.previewEditor = newTextEditor(previewDocument, app, app.configProvider)
+    popup.previewEditor.usage = "preview"
     popup.previewEditor.renderHeader = true
     popup.previewEditor.lineNumbers = api.LineNumbers.None.some
     popup.previewEditor.disableCompletions = true

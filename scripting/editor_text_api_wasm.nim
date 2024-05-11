@@ -260,6 +260,36 @@ proc invertSelection*(self: TextDocumentEditor) =
       argsJsonString.cstring)
 
 
+proc editor_text_getRevision_int_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc getRevision*(self: TextDocumentEditor): int =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_getRevision_int_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
+proc editor_text_getUsage_string_TextDocumentEditor_wasm(arg: cstring): cstring {.
+    importc.}
+proc getUsage*(self: TextDocumentEditor): string =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when TextDocumentEditor is JsonNode:
+      self
+    else:
+      self.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_text_getUsage_string_TextDocumentEditor_wasm(
+      argsJsonString.cstring)
+  result = parseJson($res).jsonTo(typeof(result))
+
+
 proc editor_text_getText_string_TextDocumentEditor_Selection_bool_wasm(
     arg: cstring): cstring {.importc.}
 proc getText*(self: TextDocumentEditor; selection: Selection;
