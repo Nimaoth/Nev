@@ -13,6 +13,8 @@ type
   VersionControlSystem* = ref object of RootObj
     root*: string
 
+func isUntracked*(fileInfo: VCSFileInfo): bool = fileInfo.unstagedStatus == Untracked
+
 method getChangedFiles*(self: VersionControlSystem): Future[seq[VCSFileInfo]] {.base.} =
   newSeq[VCSFileInfo]().toFuture
 

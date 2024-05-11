@@ -44,6 +44,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
 
   diffDocument*: TextDocument
   diffChanges*: Option[seq[LineMapping]]
+  diffRevision: int = 0
 
   usage*: string # Unique string identifying what the editor is used for,
                  # e.g. command-line/preview/search-bar
@@ -81,8 +82,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   cursorVisible*: bool = true
   blinkCursor: bool = true
   blinkCursorTask: DelayedTask
-
-  isGitDiffInProgress: bool = false
 
   # hover
   showHoverTask: DelayedTask    # for showing hover info after a delay
@@ -205,6 +204,8 @@ proc addCustomHighlight(self: TextDocumentEditor, id: Id, selection: Selection, 
   tint: Color = color(1, 1, 1))
 proc clearCustomHighlights(self: TextDocumentEditor, id: Id)
 proc updateSearchResults(self: TextDocumentEditor)
+proc centerCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config)
+proc centerCursor*(self: TextDocumentEditor, cursor: Cursor)
 
 proc clampCursor*(self: TextDocumentEditor, cursor: Cursor, includeAfter: bool = true): Cursor =
   self.document.clampCursor(cursor, includeAfter)
@@ -1381,18 +1382,16 @@ proc getNextChange*(self: TextDocumentEditor, cursor: Cursor): Selection {.expos
 
   return cursor.toSelection
 
-proc updateDiffAsync*(self: TextDocumentEditor) {.async.} =
+proc updateDiffAsync*(self: TextDocumentEditor, gotoFirstDiff: bool, force: bool = false) {.async.} =
   if self.document.isNil:
     return
-  if self.isGitDiffInProgress:
-    return
-
-  self.isGitDiffInProgress = true
-  defer:
-    self.isGitDiffInProgress = false
 
   if self.document.workspace.isNone:
+    log lvlWarn, &"Can't diff file '{self.document.filename}' without workspace."
     return
+
+  inc self.diffRevision
+  let revision = self.diffRevision
 
   let vcs = self.document.workspace.get.getVcsForFile(self.document.filename).getOr:
     log lvlWarn, fmt"[updateDiffAsync] File is not part of any vcs: '{self.document.filename}'"
@@ -1403,11 +1402,21 @@ proc updateDiffAsync*(self: TextDocumentEditor) {.async.} =
   let relPath = self.document.workspace.mapIt(
     it.getRelativePath(self.document.filename).await
   ).flatten.get(self.document.filename)
+  if self.diffRevision > revision:
+    return
 
   if self.document.staged:
     let committedFileContent = vcs.getCommittedFileContent(relPath).await
+    if self.diffRevision > revision:
+      return
+
     let stagedFileContent = vcs.getStagedFileContent(relPath).await
+    if self.diffRevision > revision:
+      return
+
     let changes = vcs.getFileChanges(relPath, staged = true).await
+    if self.diffRevision > revision:
+      return
 
     if self.diffDocument.isNil:
       self.diffDocument = newTextDocument(self.configProvider,
@@ -1420,7 +1429,12 @@ proc updateDiffAsync*(self: TextDocumentEditor) {.async.} =
 
   else:
     let stagedFileContent = vcs.getStagedFileContent(relPath).await
+    if self.diffRevision > revision:
+      return
+
     let changes = vcs.getFileChanges(relPath, staged = false).await
+    if self.diffRevision > revision:
+      return
 
     if self.diffDocument.isNil:
       self.diffDocument = newTextDocument(self.configProvider,
@@ -1430,10 +1444,15 @@ proc updateDiffAsync*(self: TextDocumentEditor) {.async.} =
     self.diffChanges = changes
     self.diffDocument.content = stagedFileContent
 
+  if gotoFirstDiff and self.diffChanges.getSome(changes) and changes.len > 0:
+    self.selection = (changes[0].target.first, 0).toSelection
+    self.updateTargetColumn(Last)
+    self.centerCursor(self.selection.last)
+
   self.markDirty()
 
-proc updateDiff*(self: TextDocumentEditor) {.expose("editor.text").} =
-  asyncCheck self.updateDiffAsync()
+proc updateDiff*(self: TextDocumentEditor, gotoFirstDiff: bool = false) {.expose("editor.text").} =
+  asyncCheck self.updateDiffAsync(gotoFirstDiff)
 
 proc checkoutFileAsync*(self: TextDocumentEditor) {.async.} =
   if self.document.isNil:
@@ -3030,7 +3049,7 @@ proc handleTextDocumentLoaded(self: TextDocumentEditor) =
 proc handleTextDocumentSaved(self: TextDocumentEditor) =
   log lvlInfo, fmt"handleTextDocumentSaved '{self.document.filename}'"
   if self.diffDocument.isNotNil:
-    asyncCheck self.updateDiffAsync()
+    asyncCheck self.updateDiffAsync(gotoFirstDiff=false)
 
 proc handleCompletionsUpdated(self: TextDocumentEditor) =
   self.completionsDirty = true

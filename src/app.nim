@@ -1851,6 +1851,7 @@ proc pushSelectorPopup*(self: App, builder: SelectorPopupBuilder): ISelectorPopu
   var popup = newSelectorPopup(self.asAppInterface, builder.scope, builder.finder, builder.previewer)
   popup.scale.x = builder.scaleX
   popup.scale.y = builder.scaleY
+  popup.previewScale = builder.previewScale
 
   if builder.handleItemSelected.isNotNil:
     popup.handleItemSelected = proc(item: FinderItem) =
@@ -2066,9 +2067,13 @@ proc chooseLocation*(self: App, view: string = "new") {.expose("editor").} =
         fmt"Expected path or json object with path property {item}"
       return
 
+    var targetSelection = location.mapIt(it.toSelection)
+    if popup.getPreviewSelection().getSome(selection):
+      targetSelection = selection.some
+
     let editor = self.openWorkspaceFile(path, workspace)
-    if editor.getSome(editor) and editor of TextDocumentEditor and location.isSome:
-      editor.TextDocumentEditor.targetSelection = location.get.toSelection
+    if editor.getSome(editor) and editor of TextDocumentEditor and targetSelection.isSome:
+      editor.TextDocumentEditor.targetSelection = targetSelection.get
       editor.TextDocumentEditor.centerCursor()
 
     return true
@@ -2156,9 +2161,13 @@ proc searchGlobalInteractive*(self: App) {.expose("editor").} =
         fmt"Expected path or json object with path property {item}"
       return
 
+    var targetSelection = location.mapIt(it.toSelection)
+    if popup.getPreviewSelection().getSome(selection):
+      targetSelection = selection.some
+
     let editor = self.openWorkspaceFile(path, workspace)
-    if editor.getSome(editor) and editor of TextDocumentEditor and location.isSome:
-      editor.TextDocumentEditor.targetSelection = location.get.toSelection
+    if editor.getSome(editor) and editor of TextDocumentEditor and targetSelection.isSome:
+      editor.TextDocumentEditor.targetSelection = targetSelection.get
       editor.TextDocumentEditor.centerCursor()
     return true
 
@@ -2188,9 +2197,13 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
         fmt"Expected path or json object with path property {item}"
       return
 
+    var targetSelection = location.mapIt(it.toSelection)
+    if popup.getPreviewSelection().getSome(selection):
+      targetSelection = selection.some
+
     let editor = self.openWorkspaceFile(path, workspace)
-    if editor.getSome(editor) and editor of TextDocumentEditor and location.isSome:
-      editor.TextDocumentEditor.targetSelection = location.get.toSelection
+    if editor.getSome(editor) and editor of TextDocumentEditor and targetSelection.isSome:
+      editor.TextDocumentEditor.targetSelection = targetSelection.get
       editor.TextDocumentEditor.centerCursor()
     return true
 
@@ -2314,8 +2327,11 @@ proc chooseGitActiveFiles*(self: App, all: bool = false) {.expose("editor").} =
     let source = newAsyncCallbackDataSource () => workspace.getChangedFilesFromGitAsync(all)
     var finder = newFinder(source, filterAndSort=true)
 
-    var popup = newSelectorPopup(self.asAppInterface, "git".some, finder.some)
-    popup.scale.x = 0.35
+    var popup = newSelectorPopup(self.asAppInterface, "git".some, finder.some,
+      newWorkspaceFilePreviewer(workspace).Previewer.some)
+    popup.scale.x = 1
+    popup.scale.y = 0.9
+    popup.previewScale = 0.75
 
     popup.handleItemConfirmed = proc(item: FinderItem): bool =
       let fileInfo = item.data.parseJson.jsonTo(VCSFileInfo).catch:
@@ -2330,6 +2346,9 @@ proc chooseGitActiveFiles*(self: App, all: bool = false) {.expose("editor").} =
         if currentVersionEditor.getSome(editor):
           if editor of TextDocumentEditor:
             editor.TextDocumentEditor.updateDiff()
+            if popup.getPreviewSelection().getSome(selection):
+              editor.TextDocumentEditor.selection = selection
+              editor.TextDocumentEditor.centerCursor()
 
       return true
 
@@ -2436,7 +2455,10 @@ proc exploreFiles*(self: App) {.expose("editor").} =
       return true
 
     if fileInfo.isFile:
-      discard self.openWorkspaceFile(fileInfo.path, workspace)
+      if self.openWorkspaceFile(fileInfo.path, workspace).getSome(editor):
+        if editor of TextDocumentEditor and popup.getPreviewSelection().getSome(selection):
+          editor.TextDocumentEditor.selection = selection
+          editor.TextDocumentEditor.centerCursor()
       return true
     else:
       currentDirectory[] = fileInfo.path

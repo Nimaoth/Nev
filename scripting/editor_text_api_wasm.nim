@@ -1129,17 +1129,22 @@ proc getNextChange*(self: TextDocumentEditor; cursor: Cursor): Selection =
   result = parseJson($res).jsonTo(typeof(result))
 
 
-proc editor_text_updateDiff_void_TextDocumentEditor_wasm(arg: cstring): cstring {.
+proc editor_text_updateDiff_void_TextDocumentEditor_bool_wasm(arg: cstring): cstring {.
     importc.}
-proc updateDiff*(self: TextDocumentEditor) =
+proc updateDiff*(self: TextDocumentEditor; gotoFirstDiff: bool = false) =
   var argsJson = newJArray()
   argsJson.add block:
     when TextDocumentEditor is JsonNode:
       self
     else:
       self.toJson()
+  argsJson.add block:
+    when bool is JsonNode:
+      gotoFirstDiff
+    else:
+      gotoFirstDiff.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = editor_text_updateDiff_void_TextDocumentEditor_wasm(
+  let res {.used.} = editor_text_updateDiff_void_TextDocumentEditor_bool_wasm(
       argsJsonString.cstring)
 
 

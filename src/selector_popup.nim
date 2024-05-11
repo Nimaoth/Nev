@@ -28,6 +28,7 @@ type
     customEventHandler: EventHandler
 
     scale*: Vec2
+    previewScale*: float = 0.5
 
     customCommands: Table[string, proc(popup: SelectorPopup, args: JsonNode): bool]
 
@@ -86,6 +87,11 @@ proc getSearchString*(self: SelectorPopup): string =
   if self.textEditor.isNil:
     return ""
   return self.textEditor.document.contentString
+
+proc getPreviewSelection*(self: SelectorPopup): Option[Selection] =
+  if self.previewEditor.isNil:
+    return Selection.none
+  return self.previewEditor.selection.some
 
 method getActiveEditor*(self: SelectorPopup): Option[DocumentEditor] =
   if self.focusPreview and self.previewEditor.isNotNil:
