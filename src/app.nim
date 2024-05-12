@@ -1,5 +1,6 @@
 import std/[sequtils, strformat, strutils, tables, unicode, options, os, json, macros, macrocache, sugar, streams, deques]
-import misc/[id, util, timer, event, myjsonutils, traits, rect_utils, custom_logger, custom_async, array_set, delayed_task, regex]
+import misc/[id, util, timer, event, myjsonutils, traits, rect_utils, custom_logger, custom_async,
+  array_set, delayed_task, regex, disposable_ref]
 import ui/node
 import scripting/[expose, scripting_base]
 import platform/[platform, filesystem]
@@ -176,7 +177,9 @@ type
 
     currentLocationListIndex: int
     finderItems: seq[FinderItem]
-    previewer: Option[Previewer]
+    previewer: Option[DisposableRef[Previewer]]
+
+    closeUnusedDocumentsTask: DelayedTask
 
 var gEditor* {.exportc.}: App = nil
 
@@ -206,7 +209,7 @@ proc setRegisterTextAsync*(self: App, text: string, register: string = ""): Futu
 proc getRegisterTextAsync*(self: App, register: string = ""): Future[string] {.async.}
 proc recordCommand*(self: App, command: string, args: string)
 proc openWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder): Option[DocumentEditor]
-proc openFile*(self: App, path: string, app: bool = false): Option[DocumentEditor]
+proc openFile*(self: App, path: string, appFile: bool = false): Option[DocumentEditor]
 proc handleUnknownDocumentEditorAction*(self: App, editor: DocumentEditor, action: string, args: JsonNode): EventResponse
 proc handleUnknownPopupAction*(self: App, popup: Popup, action: string, arg: string): EventResponse
 proc handleModeChanged*(self: App, editor: DocumentEditor, oldMode: string, newMode: string)
@@ -226,6 +229,12 @@ proc help*(self: App, about: string = "")
 proc getAllDocuments*(self: App): seq[Document]
 proc setHandleInputs*(self: App, context: string, value: bool)
 proc setLocationList*(self: App, list: seq[FinderItem], previewer: Option[Previewer] = Previewer.none)
+proc getDocument*(self: App, path: string, workspace = WorkspaceFolder.none, appFile = false):
+    Option[Document]
+proc getOrOpenDocument*(self: App, path: string, workspace = WorkspaceFolder.none, appFile = false,
+    load = true): Option[Document]
+proc tryCloseDocument*(self: App, document: Document, force: bool): bool
+proc closeUnusedDocuments*(self: App)
 
 implTrait AppInterface, App:
   proc platform*(self: App): Platform = self.platform
@@ -257,6 +266,9 @@ implTrait AppInterface, App:
   popPopup(void, App, Popup)
   getAllDocuments(seq[Document], App)
   setLocationList(void, App, seq[FinderItem], Option[Previewer])
+  getDocument(Option[Document], App, string, Option[WorkspaceFolder], bool)
+  getOrOpenDocument(Option[Document], App, string, Option[WorkspaceFolder], bool, bool)
+  tryCloseDocument(bool, App, Document, bool)
 
 type
   AppLogger* = ref object of Logger
@@ -631,10 +643,17 @@ when enableAst:
 import selector_popup
 import finder/[workspace_file_previewer]
 
+# todo: remove this function
 proc setLocationList(self: App, list: seq[FinderItem], previewer: Option[Previewer] = Previewer.none) =
   self.currentLocationListIndex = 0
   self.finderItems = list
-  self.previewer = previewer
+  self.previewer = previewer.toDisposableRef
+
+proc setLocationList(self: App, list: seq[FinderItem],
+    previewer: sink Option[DisposableRef[Previewer]] = DisposableRef[Previewer].none) =
+  self.currentLocationListIndex = 0
+  self.finderItems = list
+  self.previewer = previewer.move
 
 proc setTheme*(self: App, path: string) =
   log(lvlInfo, fmt"Loading theme {path}")
@@ -1012,6 +1031,9 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   asyncCheck self.initScripting(options)
 
+  self.closeUnusedDocumentsTask = startDelayed(2000, repeat=true):
+    self.closeUnusedDocuments()
+
   return self
 
 proc saveAppState*(self: App)
@@ -1025,12 +1047,12 @@ proc shutdown*(self: App) =
 
   self.logDocument = nil
 
+  for popup in self.popups:
+    popup.deinit()
+
   let editors = collect(for e in self.editors.values: e)
   for editor in editors:
     editor.deinit()
-
-  for popup in self.popups:
-    popup.deinit()
 
   for document in self.documents:
     document.deinit()
@@ -1075,22 +1097,21 @@ proc setLocationListFromCurrentPopup*(self: App) {.expose("editor").} =
   if self.popups.len == 0:
     return
 
-  let popup = block:
-    let popup = self.popups[self.popups.high]
-    if not (popup of SelectorPopup):
-      log lvlError, &"Not a selector popup"
-      return
-    popup.SelectorPopup
-
-  if popup.textEditor.isNil or popup.finder.isNil or popup.finder.filteredItems.isNone:
+  let popup = self.popups[self.popups.high]
+  if not (popup of SelectorPopup):
+    log lvlError, &"Not a selector popup"
     return
 
-  let list = popup.finder.filteredItems.get
+  let selector = popup.SelectorPopup
+  if selector.textEditor.isNil or selector.finder.isNil or selector.finder.filteredItems.isNone:
+    return
+
+  let list = selector.finder.filteredItems.get
   var items = newSeqOfCap[FinderItem](list.len)
   for i in 0..<list.len:
     items.add list[i]
 
-  self.setLocationList(items, popup.previewer)
+  self.setLocationList(items, selector.previewer.clone())
 
 proc getBackend*(self: App): Backend {.expose("editor").} =
   return self.backend
@@ -1112,21 +1133,55 @@ proc loadApplicationFile*(self: App, path: string): Option[string] {.expose("edi
 proc toggleShowDrawnNodes*(self: App) {.expose("editor").} =
   self.platform.showDrawnNodes = not self.platform.showDrawnNodes
 
-proc createView(self: App, editorState: OpenEditor): View =
-  let workspaceFolder = self.getWorkspaceFolder(editorState.workspaceId.parseId)
-  let document = try:
-    when enableAst:
-      if editorState.filename.endsWith(".am") or editorState.filename.endsWith(".ast-model"):
-        newModelDocument(editorState.filename, editorState.appFile, workspaceFolder)
+proc openDocument*(self: App, path: string, workspace = WorkspaceFolder.none, appFile = false,
+    load = true): Option[Document] =
+
+  try:
+    log lvlInfo, &"Open new document '{path}'"
+    let document = when enableAst:
+      if path.endsWith(".ast-model"):
+        newModelDocument(path, app=appFile, workspaceFolder=workspace)
       else:
-        newTextDocument(self.asConfigProvider, editorState.filename, "", editorState.appFile, workspaceFolder, load=true)
+        newTextDocument(self.asConfigProvider, path, app=appFile, workspaceFolder=workspace, load=load)
     else:
-      newTextDocument(self.asConfigProvider, editorState.filename, "", editorState.appFile, workspaceFolder, load=true)
+      newTextDocument(self.asConfigProvider, path, app=appFile, workspaceFolder=workspace, load=load)
+
+    log lvlInfo, &"Opened new document '{path}'"
+    self.documents.add document
+    return document.some
+
   except CatchableError:
-    log(lvlError, fmt"Failed to restore file {editorState.filename} from previous session: {getCurrentExceptionMsg()}")
+    log(lvlError, fmt"[getOrOpenDocument] Failed to load file '{path}': {getCurrentExceptionMsg()}")
+    log(lvlError, getCurrentException().getStackTrace())
+    return Document.none
+
+proc getDocument*(self: App, path: string, workspace = WorkspaceFolder.none, appFile = false):
+    Option[Document] =
+
+  for document in self.documents:
+    if document.workspace == workspace and document.appFile == appFile and document.filename == path:
+      log lvlInfo, &"Get existing document '{path}'"
+      return document.some
+
+  return Document.none
+
+proc getOrOpenDocument*(self: App, path: string, workspace = WorkspaceFolder.none, appFile = false,
+    load = true): Option[Document] =
+
+  result = self.getDocument(path, workspace, appFile)
+  if result.isSome:
     return
 
-  self.documents.add document
+  return self.openDocument(path, workspace, appFile, load)
+
+# todo: change return type to Option[View]
+proc createView(self: App, editorState: OpenEditor): View =
+  let workspaceFolder = self.getWorkspaceFolder(editorState.workspaceId.parseId)
+
+  let document = self.getOrOpenDocument(editorState.filename, workspaceFolder, editorState.appFile).getOr:
+    log(lvlError, fmt"Failed to restore file {editorState.filename} from previous session")
+    return
+
   return self.createView(document)
 
 proc setMaxViews*(self: App, maxViews: int, openExisting: bool = false) {.expose("editor").} =
@@ -1396,11 +1451,6 @@ proc toggleStatusBarLocation*(self: App) {.expose("editor").} =
   self.statusBarOnTop = not self.statusBarOnTop
   self.platform.requestRender(true)
 
-proc createAndAddView*(self: App) {.expose("editor").} =
-  let document = newTextDocument(self.asConfigProvider)
-  self.documents.add document
-  discard self.createAndAddView(document)
-
 proc logs*(self: App) {.expose("editor").} =
   discard self.createAndAddView(self.logDocument)
 
@@ -1414,6 +1464,20 @@ proc getOpenEditors*(self: App): seq[EditorId] {.expose("editor").} =
 proc getHiddenEditors*(self: App): seq[EditorId] {.expose("editor").} =
   for view in self.hiddenViews:
     result.add view.editor.id
+
+proc getViewForEditor*(self: App, editor: DocumentEditor): Option[int] =
+  for i, view in self.views:
+    if view.editor == editor:
+      return i.some
+
+  return int.none
+
+proc getHiddenViewForEditor*(self: App, editor: DocumentEditor): Option[int] =
+  for i, view in self.hiddenViews:
+    if view.editor == editor:
+      return i.some
+
+  return int.none
 
 proc closeEditor*(self: App, editor: DocumentEditor) =
   let document = editor.getDocument()
@@ -1505,6 +1569,58 @@ proc closeEditor*(self: App, path: string) {.expose("editor").} =
     if editor.getDocument().filename == fullPath:
       self.closeEditor(editor)
       break
+
+proc getEditorsForDocument(self: App, document: Document): seq[DocumentEditor] =
+  for id, editor in self.editors.pairs:
+    if editor.getDocument() == document:
+      result.add editor
+
+proc closeUnusedDocuments*(self: App) =
+  debugf"closeUnusedDocuments start"
+  defer:
+    debugf"closeUnusedDocuments done"
+
+  let documents = self.documents
+  for document in documents:
+    if document == self.logDocument:
+      continue
+
+    let editors = self.getEditorsForDocument(document)
+    if editors.len > 0:
+      continue
+
+    discard self.tryCloseDocument(document, true)
+
+    # Only close one document on each iteration so we don't create spikes
+    break
+
+proc tryCloseDocument*(self: App, document: Document, force: bool): bool =
+  if document == self.logDocument:
+    return false
+
+  let msg = &"tryCloseDocument: '{document.filename}', force: {force}"
+  logScope lvlInfo, msg
+
+  let editorsToClose = self.getEditorsForDocument(document)
+
+  if editorsToClose.len > 0 and not force:
+    log lvlInfo, &"Don't close document because there are still {editorsToClose.len} editors using it"
+    return false
+
+  for editor in editorsToClose:
+    log lvlInfo, &"Force close editor for '{document.filename}'"
+    if self.getViewForEditor(editor).getSome(index):
+      self.closeView(index, keepHidden = false, restoreHidden = true)
+    elif self.getHiddenViewForEditor(editor).getSome(index):
+      self.hiddenViews.removeShift(index)
+    else:
+      editor.deinit()
+
+  self.documents.del(document)
+
+  document.deinit()
+
+  return true
 
 proc moveCurrentViewToTop*(self: App) {.expose("editor").} =
   if self.views.len > 0:
@@ -1628,12 +1744,13 @@ proc executeCommandLine*(self: App): bool {.expose("editor").} =
 
   return self.handleAction(action, arg, record=true)
 
-proc writeFile*(self: App, path: string = "", app: bool = false) {.expose("editor").} =
+proc writeFile*(self: App, path: string = "", appFile: bool = false) {.expose("editor").} =
   defer:
     self.platform.requestRender()
-  if self.currentView >= 0 and self.currentView < self.views.len and self.views[self.currentView].document != nil:
+
+  if self.getActiveEditor().getSome(editor) and editor.getDocument().isNotNil:
     try:
-      self.views[self.currentView].document.save(path, app)
+      editor.getDocument().save(path, appFile)
     except CatchableError:
       log(lvlError, fmt"Failed to write file '{path}': {getCurrentExceptionMsg()}")
       log(lvlError, getCurrentException().getStackTrace())
@@ -1641,10 +1758,11 @@ proc writeFile*(self: App, path: string = "", app: bool = false) {.expose("edito
 proc loadFile*(self: App, path: string = "") {.expose("editor").} =
   defer:
     self.platform.requestRender()
-  if self.currentView >= 0 and self.currentView < self.views.len and self.views[self.currentView].document != nil:
+
+  if self.getActiveEditor().getSome(editor) and editor.getDocument().isNotNil:
     try:
-      self.views[self.currentView].document.load(path)
-      self.views[self.currentView].editor.handleDocumentChanged()
+      editor.getDocument().load(path)
+      editor.handleDocumentChanged()
     except CatchableError:
       log(lvlError, fmt"Failed to load file '{path}': {getCurrentExceptionMsg()}")
       log(lvlError, getCurrentException().getStackTrace())
@@ -1693,31 +1811,21 @@ proc tryOpenExisting*(self: App, editor: EditorId, addToHistory = true): Option[
 
   return DocumentEditor.none
 
-proc openFile*(self: App, path: string, app: bool = false): Option[DocumentEditor] =
+proc openFile*(self: App, path: string, appFile: bool = false): Option[DocumentEditor] =
   defer:
     self.platform.requestRender()
 
-  log lvlInfo, fmt"[openFile] Open file '{path}' (app = {app})"
+  log lvlInfo, fmt"[openFile] Open file '{path}' (appFile = {appFile})"
   if self.tryOpenExisting(path, WorkspaceFolder.none).getSome(ed):
     log lvlInfo, fmt"[openFile] found existing editor"
     return ed.some
 
   log lvlInfo, fmt"Open file '{path}'"
 
-  let document = try:
-    when enableAst:
-      if path.endsWith(".am") or path.endsWith(".ast-model"):
-        newModelDocument(path, app, WorkspaceFolder.none)
-      else:
-        newTextDocument(self.asConfigProvider, path, "", app, load=true)
-    else:
-      newTextDocument(self.asConfigProvider, path, "", app, load=true)
-  except CatchableError:
-    log(lvlError, fmt"[openFile] Failed to load file '{path}': {getCurrentExceptionMsg()}")
-    log(lvlError, getCurrentException().getStackTrace())
+  let document = self.getOrOpenDocument(path, appFile=appFile).getOr:
+    log(lvlError, fmt"Failed to load file {path}")
     return DocumentEditor.none
 
-  self.documents.add document
   return self.createAndAddView(document).some
 
 proc openWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder): Option[DocumentEditor] =
@@ -1731,20 +1839,10 @@ proc openWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder): Optio
     log lvlInfo, fmt"[openWorkspaceFile] found existing editor"
     return editor.some
 
-  let document = try:
-    when enableAst:
-      if path.endsWith(".am") or path.endsWith(".ast-model"):
-        newModelDocument(path, false, folder.some)
-      else:
-        newTextDocument(self.asConfigProvider, path, "", false, folder.some, load=true)
-    else:
-      newTextDocument(self.asConfigProvider, path, "", false, folder.some, load=true)
-  except CatchableError:
-    log(lvlError, fmt"[openWorkspaceFile] Failed to load file '{path}': {getCurrentExceptionMsg()}")
-    log(lvlError, getCurrentException().getStackTrace())
+  let document = self.getOrOpenDocument(path, folder.some).getOr:
+    log(lvlError, fmt"Failed to load file {path}")
     return DocumentEditor.none
 
-  self.documents.add document
   return self.createAndAddView(document).some
 
 proc removeFromLocalStorage*(self: App) {.expose("editor").} =
@@ -1765,7 +1863,8 @@ proc removeFromLocalStorage*(self: App) {.expose("editor").} =
       log lvlError, fmt"removeFromLocalStorage: Unknown document type"
 
 proc createSelectorPopup*(self: App): Popup =
-  return newSelectorPopup(self.asAppInterface)
+  # todo: delete this function
+  discard
 
 proc loadTheme*(self: App, name: string) {.expose("editor").} =
   self.setTheme(fmt"themes/{name}.json")
@@ -1831,24 +1930,14 @@ proc createFile*(self: App, path: string) {.expose("editor").} =
   else:
     WorkspaceFolder.none
 
-  let document = try:
-    when enableAst:
-      if path.endsWith(".am") or path.endsWith(".ast-model"):
-        newModelDocument(fullPath, false, workspace)
-      else:
-        newTextDocument(self.asConfigProvider, fullPath, "", false, workspace, load=false)
-    else:
-      newTextDocument(self.asConfigProvider, fullPath, "", false, workspace, load=false)
-  except CatchableError:
-    log(lvlError, fmt"[createFile] Failed to create file '{path}': {getCurrentExceptionMsg()}")
-    log(lvlError, getCurrentException().getStackTrace())
+  let document = self.openDocument(fullPath, workspace, load=false).getOr:
+    log(lvlError, fmt"Failed to create file {path}")
     return
 
-  self.documents.add document
   discard self.createAndAddView(document)
 
 proc pushSelectorPopup*(self: App, builder: SelectorPopupBuilder): ISelectorPopup =
-  var popup = newSelectorPopup(self.asAppInterface, builder.scope, builder.finder, builder.previewer)
+  var popup = newSelectorPopup(self.asAppInterface, builder.scope, builder.finder, builder.previewer.toDisposableRef)
   popup.scale.x = builder.scaleX
   popup.scale.y = builder.scaleY
   popup.previewScale = builder.previewScale
@@ -1996,6 +2085,87 @@ proc chooseOpen*(self: App, view: string = "new") {.expose("editor").} =
 
   self.pushPopup popup
 
+proc chooseOpenDocument*(self: App) {.expose("editor").} =
+  defer:
+    self.platform.requestRender()
+
+  proc getItems(): seq[FinderItem] =
+    var items = newSeq[FinderItem]()
+    for document in self.documents:
+      if document == self.logDocument or document == self.commandLineTextEditor.getDocument():
+        continue
+
+      let path = document.filename
+      let isDirty = document.lastSavedRevision != document.revision
+      let dirtyMarker = if isDirty: "*" else: " "
+
+      let (directory, name) = path.splitPath
+      var relativeDirectory = directory
+      var data = path
+      if document.workspace.getSome(workspace):
+        relativeDirectory = workspace.getRelativePathSync(directory).get(directory)
+        data = workspace.encodePath(path).string
+
+      if relativeDirectory == ".":
+        relativeDirectory = ""
+
+      let infoText = if document.appFile:
+        "app"
+      elif document.workspace.isSome:
+        "workspace"
+      else:
+        "unknown"
+
+      items.add FinderItem(
+        displayName: dirtyMarker & name,
+        filterText: name,
+        data: data,
+        detail: &"{relativeDirectory}\t{infoText}",
+      )
+
+    return items
+
+  let source = newSyncDataSource(getItems)
+  var finder = newFinder(source, filterAndSort=true)
+  finder.filterThreshold = float.low
+
+  var popup = newSelectorPopup(self.asAppInterface, "open".some, finder.some)
+  popup.scale.x = 0.35
+
+  popup.handleItemConfirmed = proc(item: FinderItem): bool =
+    if item.data.WorkspacePath.decodePath().getSome(path):
+      if self.getWorkspaceFolder(path.id).getSome(workspace):
+        if self.getDocument(path.path, workspace.some).getSome(document):
+          discard self.createAndAddView(document)
+      else:
+        log lvlError, fmt"Failed to open location {path.path} in non-existent workspace {path.id}"
+    else:
+      if self.getDocument(item.data).getSome(document):
+        discard self.createAndAddView(document)
+      else:
+        log lvlError, fmt"Failed to open location {item}"
+
+    return true
+
+  popup.addCustomCommand "close-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+
+    if popup.getSelectedItem().getSome(item):
+      if item.data.WorkspacePath.decodePath().getSome(path):
+        if self.getWorkspaceFolder(path.id).getSome(workspace):
+          if self.getDocument(path.path, workspace.some).getSome(document):
+            discard self.tryCloseDocument(document, force=true)
+            source.retrigger()
+      else:
+        if self.getDocument(item.data).getSome(document):
+          discard self.tryCloseDocument(document, force=true)
+          source.retrigger()
+
+    return true
+
+  self.pushPopup popup
+
 proc gotoNextLocation*(self: App) {.expose("editor").} =
   if self.finderItems.len == 0:
     return
@@ -2057,7 +2227,7 @@ proc chooseLocation*(self: App, view: string = "new") {.expose("editor").} =
   let source = newSyncDataSource(getItems)
   var finder = newFinder(source, filterAndSort=true)
 
-  var popup = newSelectorPopup(self.asAppInterface, "open".some, finder.some, self.previewer)
+  var popup = newSelectorPopup(self.asAppInterface, "open".some, finder.some, self.previewer.clone())
 
   popup.scale.x = if self.previewer.isSome: 0.8 else: 0.4
 
@@ -2151,7 +2321,7 @@ proc searchGlobalInteractive*(self: App) {.expose("editor").} =
   var finder = newFinder(source, filterAndSort=true)
 
   var popup = newSelectorPopup(self.asAppInterface, "search".some, finder.some,
-    newWorkspaceFilePreviewer(workspace).Previewer.some)
+    newWorkspaceFilePreviewer(workspace, self.asConfigProvider).Previewer.toDisposableRef.some)
   popup.scale.x = 0.85
   popup.scale.y = 0.85
 
@@ -2187,7 +2357,7 @@ proc searchGlobal*(self: App, query: string) {.expose("editor").} =
   var finder = newFinder(source, filterAndSort=true)
 
   var popup = newSelectorPopup(self.asAppInterface, "search".some, finder.some,
-    newWorkspaceFilePreviewer(workspace).Previewer.some)
+    newWorkspaceFilePreviewer(workspace, self.asConfigProvider).Previewer.toDisposableRef.some)
   popup.scale.x = 0.85
   popup.scale.y = 0.85
 
@@ -2223,11 +2393,29 @@ proc getChangedFilesFromGitAsync(workspace: WorkspaceFolder, all: bool): Future[
       if relativeDirectory == ".":
         relativeDirectory = ""
 
-      items.add FinderItem(
-        displayName: $info.stagedStatus & $info.unstagedStatus & " " & name,
-        data: $ %info,
-        detail: relativeDirectory & "\t" & vcs.root,
-      )
+      if info.stagedStatus != None and info.stagedStatus != Untracked:
+        var info1 = info
+        info1.unstagedStatus = None
+
+        var info2 = info
+        info2.stagedStatus = None
+
+        items.add FinderItem(
+          displayName: $info1.stagedStatus & $info1.unstagedStatus & " " & name,
+          data: $ %info1,
+          detail: relativeDirectory & "\t" & vcs.root,
+        )
+        items.add FinderItem(
+          displayName: $info2.stagedStatus & $info2.unstagedStatus & " " & name,
+          data: $ %info2,
+          detail: relativeDirectory & "\t" & vcs.root,
+        )
+      else:
+        items.add FinderItem(
+          displayName: $info.stagedStatus & $info.unstagedStatus & " " & name,
+          data: $ %info,
+          detail: relativeDirectory & "\t" & vcs.root,
+        )
 
     if not all:
       break
@@ -2324,11 +2512,16 @@ proc chooseGitActiveFiles*(self: App, all: bool = false) {.expose("editor").} =
 
     let workspace = self.workspace.folders[0]
 
-    let source = newAsyncCallbackDataSource () => workspace.getChangedFilesFromGitAsync(all)
+    let source = newAsyncCallbackDataSource () =>
+      workspace.getChangedFilesFromGitAsync(all)
     var finder = newFinder(source, filterAndSort=true)
 
+    let previewer = newWorkspaceFilePreviewer(workspace, self.asConfigProvider,
+      openNewDocuments=true)
+
     var popup = newSelectorPopup(self.asAppInterface, "git".some, finder.some,
-      newWorkspaceFilePreviewer(workspace).Previewer.some)
+      previewer.Previewer.toDisposableRef.some)
+
     popup.scale.x = 1
     popup.scale.y = 0.9
     popup.previewScale = 0.75
@@ -2445,7 +2638,7 @@ proc exploreFiles*(self: App) {.expose("editor").} =
   finder.filterThreshold = float.low
 
   var popup = newSelectorPopup(self.asAppInterface, "file-explorer".some, finder.some,
-    newWorkspaceFilePreviewer(workspace).Previewer.some)
+    newWorkspaceFilePreviewer(workspace, self.asConfigProvider).Previewer.toDisposableRef.some)
   popup.scale.x = 0.85
   popup.scale.y = 0.85
 
@@ -2834,6 +3027,12 @@ else:
     return getActiveEditor()
 
 proc getActiveEditor*(self: App): Option[DocumentEditor] =
+  if self.commandLineMode:
+    return self.commandLineTextEditor.some
+
+  if self.popups.len > 0 and self.popups[self.popups.high].getActiveEditor().getSome(editor):
+    return editor.some
+
   if self.currentView >= 0 and self.currentView < self.views.len:
     return self.views[self.currentView].editor.some
 

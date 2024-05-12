@@ -12,6 +12,13 @@ proc subscribe*[T](event: var Event[T], callback: (T) -> void): Id =
   result = newId()
   event.handlers.add (result, callback)
 
+proc unsubscribe*[T](event: var Event[T], id: var Id) =
+  for i, h in event.handlers:
+    if h.id == id:
+      event.handlers.del(i)
+      id = idNone()
+      break
+
 proc unsubscribe*[T](event: var Event[T], id: Id) =
   for i, h in event.handlers:
     if h.id == id:
