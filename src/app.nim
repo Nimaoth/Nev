@@ -1138,7 +1138,7 @@ proc openDocument*(self: App, path: string, workspace = WorkspaceFolder.none, ap
 
   try:
     log lvlInfo, &"Open new document '{path}'"
-    let document = when enableAst:
+    let document: Document = when enableAst:
       if path.endsWith(".ast-model"):
         newModelDocument(path, app=appFile, workspaceFolder=workspace)
       else:
