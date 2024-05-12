@@ -5,13 +5,17 @@ import text/[text_editor, text_document]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import finder, previewer
 import vcs/vcs
+import app_interface, config_provider
 
 logCategory "workspace-file-previewer"
 
 type
   WorkspaceFilePreviewer* = ref object of Previewer
     workspace: WorkspaceFolder
+    configProvider: ConfigProvider
     editor: TextDocumentEditor
+    tempDocument: TextDocument
+    openNewDocuments: bool
     revision: int
     triggerLoadTask: DelayedTask
     currentPath: string
@@ -19,9 +23,23 @@ type
     currentStaged: bool
     currentDiff: bool
 
-proc newWorkspaceFilePreviewer*(workspace: WorkspaceFolder): WorkspaceFilePreviewer =
+proc newWorkspaceFilePreviewer*(workspace: WorkspaceFolder, configProvider: ConfigProvider,
+    openNewDocuments: bool = false): WorkspaceFilePreviewer =
   new result
   result.workspace = workspace
+
+  result.openNewDocuments = openNewDocuments
+  result.tempDocument = newTextDocument(configProvider, workspaceFolder=workspace.some,
+    createLanguageServer=false)
+  result.tempDocument.readOnly = true
+
+method deinit*(self: WorkspaceFilePreviewer) =
+  logScope lvlInfo, &"[deinit] Destroying workspace file previewer"
+  self.triggerLoadTask.deinit()
+  if self.tempDocument.isNotNil:
+    self.tempDocument.deinit()
+
+  self[] = default(typeof(self[]))
 
 proc parsePathAndLocationFromItemData*(item: FinderItem): Option[(string, Option[Cursor])] =
   if item.data.WorkspacePath.decodePath().getSome(ws):
@@ -60,23 +78,43 @@ proc loadAsync(self: WorkspaceFilePreviewer): Future[void] {.async.} =
   let location = self.currentLocation
   let editor = self.editor
 
-  log lvlInfo, &"[loadAsync] Load preview for '{path}'"
-  let content = self.workspace.loadFile(path).await
-  if editor.document.isNil:
-    log lvlInfo, fmt"Discard file load of 'path' because preview editor was destroyed"
-    return
+  let app = editor.app
 
-  if self.revision > revision or editor.document.isNil:
-    log lvlInfo, fmt"Discard file load of 'path' because a newer one was requested"
-    return
+  let document = if self.currentStaged:
+    Document.none
+  elif self.openNewDocuments:
+    app.getOrOpenDocument(path, self.workspace.some, app=false)
+  else:
+    app.getDocument(path, self.workspace.some, app=false)
 
-  editor.document.workspace = self.workspace.some
-  editor.document.setFileAndContent(path, content)
+  if document.getSome(document):
+    if not (document of TextDocument):
+      log lvlError, &"No support for non text documents yet."
+      return
+
+    log lvlInfo, &"[loadAsync] Show preview using existing document for '{path}'"
+    editor.setDocument(document.TextDocument)
+
+  elif self.tempDocument.isNotNil:
+    log lvlInfo, &"[loadAsync] Show preview using temp document for '{path}'"
+    let content = self.workspace.loadFile(path).await
+    if editor.document.isNil:
+      log lvlInfo, fmt"Discard file load of '{path}' because preview editor was destroyed"
+      return
+
+    if self.revision > revision or editor.document.isNil:
+      log lvlInfo, fmt"Discard file load of '{path}' because a newer one was requested"
+      return
+
+    self.tempDocument.workspace = self.workspace.some
+    self.tempDocument.setFileAndContent(path, content)
+    editor.setDocument(self.tempDocument)
+
   if location.getSome(location):
-    editor.selection = location.toSelection
+    editor.targetSelection = location.toSelection
     editor.centerCursor()
   else:
-    editor.selection = (0, 0).toSelection
+    editor.targetSelection = (0, 0).toSelection
     editor.scrollToTop()
 
   if self.currentDiff:
@@ -124,7 +162,7 @@ method previewItem*(self: WorkspaceFilePreviewer, item: FinderItem, editor: Docu
     self.currentStaged = false
 
   log lvlInfo, &"[previewItem] Request preview for '{path}' at {location}"
-  if self.editor.document.filename == path:
+  if self.editor.document.filename == path and self.editor.document.staged == self.currentStaged:
     if location.getSome(location):
       self.editor.selection = location.toSelection
       self.editor.centerCursor()

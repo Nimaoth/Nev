@@ -122,7 +122,6 @@ type TextDocumentEditor* = ref object of DocumentEditor
   lastPressedMouseButton*: MouseButton
   dragStartSelection*: Selection
 
-  lastCompletionMatchText*: string
   completionMatchPositions*: Table[int, seq[int]] # Maps from completion index to char indices
                                                   # of matching chars
   completionMatches*: seq[tuple[index: int, score: float]]
@@ -166,7 +165,6 @@ method getStatisticsString*(self: TextDocumentEditor): string =
   result.add &"Current Command History: {self.currentCommandHistory.commands.len}\n"
   result.add &"Saved Command History: {self.savedCommandHistory.commands.len}\n"
   result.add &"Last Rendered Lines: {self.lastRenderedLines.len}\n"
-  result.add &"Last Completion Match Text: {self.lastCompletionMatchText.len}\n"
 
   var temp = 0
   for s in self.completionMatchPositions.values:
@@ -206,6 +204,17 @@ proc clearCustomHighlights(self: TextDocumentEditor, id: Id)
 proc updateSearchResults(self: TextDocumentEditor)
 proc centerCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config)
 proc centerCursor*(self: TextDocumentEditor, cursor: Cursor)
+
+proc handleTextInserted(self: TextDocumentEditor, document: TextDocument, location: Selection,
+    text: string)
+proc handleTextDeleted(self: TextDocumentEditor, document: TextDocument, selection: Selection)
+proc handleDiagnosticsUpdated(self: TextDocumentEditor)
+proc handleLanguageServerAttached(self: TextDocumentEditor, document: TextDocument,
+    languageServer: LanguageServer)
+proc handleTextDocumentTextChanged(self: TextDocumentEditor)
+proc handleTextDocumentLoaded(self: TextDocumentEditor)
+proc handleTextDocumentSaved(self: TextDocumentEditor)
+proc handleCompletionsUpdated(self: TextDocumentEditor)
 
 proc clampCursor*(self: TextDocumentEditor, cursor: Cursor, includeAfter: bool = true): Cursor =
   self.document.clampCursor(cursor, includeAfter)
@@ -300,9 +309,91 @@ proc startBlinkCursorTask(self: TextDocumentEditor) =
   else:
     self.blinkCursorTask.reschedule()
 
+proc clearDocument*(self: TextDocumentEditor) =
+  if self.document.isNotNil:
+    log lvlInfo, &"[clearDocument] ({self.id}): '{self.document.filename}'"
+    self.document.textChanged.unsubscribe(self.textChangedHandle)
+    self.document.onLoaded.unsubscribe(self.loadedHandle)
+    self.document.onSaved.unsubscribe(self.savedHandle)
+    self.document.textInserted.unsubscribe(self.textInsertedHandle)
+    self.document.textDeleted.unsubscribe(self.textDeletedHandle)
+    self.document.onDiagnosticsUpdated.unsubscribe(self.diagnosticsUpdatedHandle)
+    self.document.onLanguageServerAttached.unsubscribe(self.languageServerAttachedHandle)
+
+    self.selectionHistory.clear()
+    self.styledTextOverrides.clear()
+    self.customHighlights.clear()
+    self.showHover = false
+    self.inlayHints.setLen 0
+    self.showDiagnostic = false
+    self.scrollOffset = 0
+    self.previousBaseIndex = 0
+    self.lastRenderedLines.setLen 0
+    self.currentSnippetData = SnippetData.none
+
+  self.document = nil
+
+proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
+  assert document.isNotNil
+
+  if document == self.document:
+    return
+
+  logScope lvlInfo, &"[setDocument] ({self.id}): '{document.filename}'"
+
+  if self.completionEngine.isNotNil:
+    self.completionEngine.onCompletionsUpdated.unsubscribe(self.onCompletionsUpdatedHandle)
+
+  self.clearDocument()
+  self.document = document
+
+  if self.document.lines.len == 0:
+    self.document.lines = @[""]
+
+  self.textChangedHandle = document.textChanged.subscribe (_: TextDocument) =>
+    self.handleTextDocumentTextChanged()
+
+  self.loadedHandle = document.onLoaded.subscribe (_: TextDocument) =>
+    self.handleTextDocumentLoaded()
+
+  self.savedHandle = document.onSaved.subscribe () =>
+    self.handleTextDocumentSaved()
+
+  self.textInsertedHandle = document.textInserted.subscribe (
+      arg: tuple[document: TextDocument, location: Selection, text: string]) =>
+    self.handleTextInserted(arg.document, arg.location, arg.text)
+
+  self.textDeletedHandle = document.textDeleted.subscribe (
+      arg: tuple[document: TextDocument, location: Selection]) =>
+    self.handleTextDeleted(arg.document, arg.location)
+
+  self.diagnosticsUpdatedHandle = document.onDiagnosticsUpdated.subscribe () =>
+    self.handleDiagnosticsUpdated()
+
+  self.languageServerAttachedHandle = document.onLanguageServerAttached.subscribe (
+      arg: tuple[document: TextDocument, languageServer: LanguageServer]) =>
+    self.handleLanguageServerAttached(arg.document, arg.languageServer)
+
+  self.completionEngine = CompletionEngine()
+  self.onCompletionsUpdatedHandle = self.completionEngine.onCompletionsUpdated.subscribe () =>
+    self.handleCompletionsUpdated()
+
+  if self.document.languageServer.getSome(ls):
+    self.handleLanguageServerAttached(self.document, ls)
+
+  if self.document.createLanguageServer:
+    self.completionEngine.addProvider newCompletionProviderSnippet(self.configProvider, self.document)
+      .withMergeStrategy(MergeStrategy(kind: TakeAll))
+      .withPriority(1)
+    self.completionEngine.addProvider newCompletionProviderDocument(self.document)
+      .withMergeStrategy(MergeStrategy(kind: FillN, max: 20))
+      .withPriority(0)
+
+  self.handleDocumentChanged()
+
 method deinit*(self: TextDocumentEditor) =
   let filename = if self.document.isNotNil: self.document.filename else: ""
-  log lvlInfo, fmt"Deinit text editor for '{filename}'"
+  logScope lvlInfo, fmt"[deinit] Destroying text editor ({self.id}) for '{filename}'"
 
   self.unregister()
 
@@ -316,14 +407,7 @@ method deinit*(self: TextDocumentEditor) =
   if self.showHoverTask.isNotNil: self.showHoverTask.pause()
   if self.hideHoverTask.isNotNil: self.hideHoverTask.pause()
 
-  if self.document.isNotNil:
-    self.document.textChanged.unsubscribe(self.textChangedHandle)
-    self.document.onLoaded.unsubscribe(self.loadedHandle)
-    self.document.onSaved.unsubscribe(self.savedHandle)
-    self.document.textInserted.unsubscribe(self.textInsertedHandle)
-    self.document.textDeleted.unsubscribe(self.textDeletedHandle)
-    self.document.onDiagnosticsUpdated.unsubscribe(self.diagnosticsUpdatedHandle)
-    self.document.onLanguageServerAttached.unsubscribe(self.languageServerAttachedHandle)
+  self.clearDocument()
 
   if self.completionEngine.isNotNil:
     self.completionEngine.onCompletionsUpdated.unsubscribe(self.onCompletionsUpdatedHandle)
@@ -358,6 +442,9 @@ method getEventHandlers*(self: TextDocumentEditor, inject: Table[string, EventHa
     result.add inject["above-completion"]
 
 proc preRender*(self: TextDocumentEditor) =
+  if self.configProvider.isNil or self.document.isNil:
+    return
+
   self.clearCustomHighlights(errorNodesHighlightId)
   if self.configProvider.getValue("editor.text.highlight-treesitter-errors", true):
     let errorNodes = self.document.getErrorNodesInRange(
@@ -2028,7 +2115,7 @@ proc gotoLocationAsync(self: TextDocumentEditor, definitions: seq[Definition]): 
         data: encodeFileLocationForFinderItem(definition.filename, definition.location.some),
       )
 
-    builder.previewer = newWorkspaceFilePreviewer(workspace).Previewer.some
+    builder.previewer = newWorkspaceFilePreviewer(workspace, self.configProvider).Previewer.some
 
     let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
     builder.finder = finder.some
@@ -2150,7 +2237,7 @@ proc openSymbolSelectorPopup(self: TextDocumentEditor, symbols: seq[Symbol], nav
     )
 
   if self.document.workspace.getSome(workspace):
-    builder.previewer = newWorkspaceFilePreviewer(workspace).Previewer.some
+    builder.previewer = newWorkspaceFilePreviewer(workspace, self.configProvider).Previewer.some
   let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
   builder.finder = finder.some
 
@@ -2228,7 +2315,7 @@ proc gotoWorkspaceSymbolAsync(self: TextDocumentEditor, query: string = ""): Fut
     builder.scaleX = 0.85
     builder.scaleY = 0.8
 
-    builder.previewer = newWorkspaceFilePreviewer(workspace).Previewer.some
+    builder.previewer = newWorkspaceFilePreviewer(workspace, self.configProvider).Previewer.some
     let finder = newFinder(newLspWorkspaceSymbolsDataSource(ls, workspace), filterAndSort=true)
     builder.finder = finder.some
 
@@ -3070,55 +3157,19 @@ proc createTextEditorInstance(): TextDocumentEditor =
 
 proc newTextEditor*(document: TextDocument, app: AppInterface, configProvider: ConfigProvider):
     TextDocumentEditor =
+
+  assert app.isNotNil
+
   var self = createTextEditorInstance()
   self.configProvider = configProvider
-  self.document = document
+  self.setDocument(document)
 
   self.init()
-  if self.document.lines.len == 0:
-    self.document.lines = @[""]
-
   self.startBlinkCursorTask()
   self.injectDependencies(app)
 
-  self.textChangedHandle = document.textChanged.subscribe (_: TextDocument) =>
-    self.handleTextDocumentTextChanged()
-
-  self.loadedHandle = document.onLoaded.subscribe (_: TextDocument) =>
-    self.handleTextDocumentLoaded()
-
-  self.savedHandle = document.onSaved.subscribe () =>
-    self.handleTextDocumentSaved()
-
-  self.textInsertedHandle = document.textInserted.subscribe (
-      arg: tuple[document: TextDocument, location: Selection, text: string]) =>
-    self.handleTextInserted(arg.document, arg.location, arg.text)
-
-  self.textDeletedHandle = document.textDeleted.subscribe (
-      arg: tuple[document: TextDocument, location: Selection]) =>
-    self.handleTextDeleted(arg.document, arg.location)
-
-  self.diagnosticsUpdatedHandle = document.onDiagnosticsUpdated.subscribe () =>
-    self.handleDiagnosticsUpdated()
-
-  self.languageServerAttachedHandle = document.onLanguageServerAttached.subscribe (
-      arg: tuple[document: TextDocument, languageServer: LanguageServer]) =>
-    self.handleLanguageServerAttached(arg.document, arg.languageServer)
-
-  self.completionEngine = CompletionEngine()
-  self.onCompletionsUpdatedHandle = self.completionEngine.onCompletionsUpdated.subscribe () =>
-    self.handleCompletionsUpdated()
-
-  if self.document.languageServer.getSome(ls):
-    self.handleLanguageServerAttached(self.document, ls)
-
-  if self.document.createLanguageServer:
-    self.completionEngine.addProvider newCompletionProviderSnippet(self.configProvider, self.document)
-      .withMergeStrategy(MergeStrategy(kind: TakeAll))
-      .withPriority(1)
-    self.completionEngine.addProvider newCompletionProviderDocument(self.document)
-      .withMergeStrategy(MergeStrategy(kind: FillN, max: 20))
-      .withPriority(0)
+  if self.document.lines.len == 0:
+    self.document.lines = @[""]
 
   return self
 
@@ -3126,59 +3177,24 @@ method getDocument*(self: TextDocumentEditor): Document = self.document
 
 method createWithDocument*(_: TextDocumentEditor, document: Document, configProvider: ConfigProvider):
     DocumentEditor =
+
   var self = createTextEditorInstance()
-  self.document = document.TextDocument
   self.configProvider = configProvider
 
+  self.setDocument(document.TextDocument)
   self.init()
+  self.startBlinkCursorTask()
+
   if self.document.lines.len == 0:
     self.document.lines = @[""]
-
-  self.textChangedHandle = self.document.textChanged.subscribe (_: TextDocument) =>
-    self.handleTextDocumentTextChanged()
-
-  self.loadedHandle = self.document.onLoaded.subscribe (_: TextDocument) =>
-    self.handleTextDocumentLoaded()
-
-  self.savedHandle = self.document.onSaved.subscribe () =>
-    self.handleTextDocumentSaved()
-
-  self.textInsertedHandle = self.document.textInserted.subscribe (
-      arg: tuple[document: TextDocument, location: Selection, text: string]) =>
-    self.handleTextInserted(arg.document, arg.location, arg.text)
-
-  self.textDeletedHandle = self.document.textDeleted.subscribe (
-      arg: tuple[document: TextDocument, location: Selection]) =>
-    self.handleTextDeleted(arg.document, arg.location)
-
-  self.diagnosticsUpdatedHandle = self.document.onDiagnosticsUpdated.subscribe () =>
-    self.handleDiagnosticsUpdated()
-
-  self.languageServerAttachedHandle = self.document.onLanguageServerAttached.subscribe (
-      arg: tuple[document: TextDocument, languageServer: LanguageServer]) =>
-    self.handleLanguageServerAttached(arg.document, arg.languageServer)
-
-
-  self.completionEngine = CompletionEngine()
-  self.onCompletionsUpdatedHandle = self.completionEngine.onCompletionsUpdated.subscribe () =>
-    self.handleCompletionsUpdated()
-
-  if self.document.languageServer.getSome(ls):
-    self.handleLanguageServerAttached(self.document, ls)
-
-  if self.document.createLanguageServer:
-    self.completionEngine.addProvider newCompletionProviderSnippet(self.configProvider, self.document)
-      .withMergeStrategy(MergeStrategy(kind: TakeAll))
-      .withPriority(1)
-    self.completionEngine.addProvider newCompletionProviderDocument(self.document)
-      .withMergeStrategy(MergeStrategy(kind: FillN, max: 20))
-      .withPriority(0)
-
-  self.startBlinkCursorTask()
 
   return self
 
 method unregister*(self: TextDocumentEditor) =
+  if self.app.isNil:
+    log lvlError, &"[unregister] app is nil, probably called twice"
+    return
+
   self.app.unregisterEditor(self)
 
 method getStateJson*(self: TextDocumentEditor): JsonNode =

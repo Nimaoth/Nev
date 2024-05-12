@@ -16,8 +16,12 @@ else:
 
 type
   CustomLogger* = ref object of logging.Logger
+    indentLevel*: int
     consoleLogger: Option[logging.Logger]
     fileLogger: Option[FileLogger]
+
+# proc indentString*(logger: CustomLogger): string =
+#   "  ".repeat(logger.indentLevel)
 
 proc newCustomLogger*(levelThreshold = logging.lvlAll, fmtStr = logging.defaultFmtStr): CustomLogger =
   new result
@@ -45,7 +49,9 @@ proc toggleConsoleLogger*(self: CustomLogger) =
 let isTerminal {.used.} = when declared(isatty): isatty(stdout) else: false
 
 method log(self: CustomLogger, level: logging.Level, args: varargs[string, `$`]) =
+  # let msg = self.indentString & substituteLog("", level, args)
   if self.fileLogger.getSome(l):
+    # logging.log(l, level, msg)
     logging.log(l, level, args)
 
   if self.consoleLogger.getSome(l):
@@ -61,6 +67,7 @@ method log(self: CustomLogger, level: logging.Level, args: varargs[string, `$`])
         else: rgb(255, 255, 255)
         stdout.write(ansiForegroundColorCode(color))
 
+    # logging.log(l, level, msg)
     logging.log(l, level, args)
 
     when not defined(js):
@@ -104,6 +111,14 @@ template logCategory*(category: static string, noDebug = false): untyped =
     block:
       let descriptionString = description
       logging.log(lvlInfo, "[" & category & "] " & descriptionString & " took " & $timer.elapsed.ms & " ms")
+
+  template logScope(level: logging.Level, text: string): untyped {.used.} =
+    let timer = startTimer()
+    logging.log(level, "[" & category & "] " & text)
+    inc logger.indentLevel
+    defer:
+      dec logger.indentLevel
+      logging.log(level, "[" & category & "] " & text & " finished. (" & $timer.elapsed.ms & " ms)")
 
   when noDebug:
     macro debug(x: varargs[typed, `$`]): untyped {.used.} =

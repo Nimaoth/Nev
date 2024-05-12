@@ -11,3 +11,4 @@ type
 
 method previewItem*(self: Previewer, item: FinderItem, editor: DocumentEditor) {.base.} = discard
 method delayPreview*(self: Previewer) {.base.} = discard
+method deinit*(self: Previewer) {.base.} = discard

@@ -450,14 +450,6 @@ proc toggleStatusBarLocation*() =
       argsJsonString.cstring)
 
 
-proc editor_createAndAddView_void_App_wasm(arg: cstring): cstring {.importc.}
-proc createAndAddView*() =
-  var argsJson = newJArray()
-  let argsJsonString = $argsJson
-  let res {.used.} = editor_createAndAddView_void_App_wasm(
-      argsJsonString.cstring)
-
-
 proc editor_logs_void_App_wasm(arg: cstring): cstring {.importc.}
 proc logs*() =
   var argsJson = newJArray()
@@ -669,7 +661,7 @@ proc executeCommandLine*(): bool =
 
 
 proc editor_writeFile_void_App_string_bool_wasm(arg: cstring): cstring {.importc.}
-proc writeFile*(path: string = ""; app: bool = false) =
+proc writeFile*(path: string = ""; appFile: bool = false) =
   var argsJson = newJArray()
   argsJson.add block:
     when string is JsonNode:
@@ -678,9 +670,9 @@ proc writeFile*(path: string = ""; app: bool = false) =
       path.toJson()
   argsJson.add block:
     when bool is JsonNode:
-      app
+      appFile
     else:
-      app.toJson()
+      appFile.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_writeFile_void_App_string_bool_wasm(
       argsJsonString.cstring)
@@ -763,6 +755,14 @@ proc chooseOpen*(view: string = "new") =
       view.toJson()
   let argsJsonString = $argsJson
   let res {.used.} = editor_chooseOpen_void_App_string_wasm(
+      argsJsonString.cstring)
+
+
+proc editor_chooseOpenDocument_void_App_wasm(arg: cstring): cstring {.importc.}
+proc chooseOpenDocument*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_chooseOpenDocument_void_App_wasm(
       argsJsonString.cstring)
 
 

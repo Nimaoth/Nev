@@ -847,6 +847,7 @@ proc newTextDocument*(
     load: bool = false,
     createLanguageServer: bool = true): TextDocument =
 
+  log lvlInfo, &"Creating new text document '{filename}', (lang: {language}, app: {app}, ls: {createLanguageServer})"
   new(result)
   allTextDocuments.add result
 
@@ -902,12 +903,11 @@ proc newTextDocument*(
     self.load()
 
 method deinit*(self: TextDocument) =
-  log lvlInfo, fmt"Destroying text document '{self.filename}'"
+  logScope lvlInfo, fmt"[deinit] Destroying text document '{self.filename}'"
   if self.highlightQuery.isNotNil:
     self.highlightQuery.deinit()
   if not self.errorQuery.isNil:
     self.errorQuery.deinit()
-    self.errorQuery = nil
 
   if not self.tsParser.isNil:
     self.tsParser.deinit()
@@ -919,7 +919,8 @@ method deinit*(self: TextDocument) =
     self.languageServer = LanguageServer.none
 
   let i = allTextDocuments.find(self)
-  allTextDocuments.removeSwap(i)
+  if i >= 0:
+    allTextDocuments.removeSwap(i)
 
   self[] = default(typeof(self[]))
 
@@ -928,6 +929,8 @@ method `$`*(self: TextDocument): string =
 
 method save*(self: TextDocument, filename: string = "", app: bool = false) =
   self.filename = if filename.len > 0: filename.normalizePathUnix else: self.filename
+  logScope lvlInfo, &"[save] '{self.filename}'"
+
   if self.filename.len == 0:
     raise newException(IOError, "Missing filename")
 

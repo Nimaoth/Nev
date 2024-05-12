@@ -112,7 +112,7 @@ proc someOption*[T: Option](self: T): T = self
 template mapIt*[T](self: Option[T], op: untyped): untyped =
   type OutType = typeof((
     block:
-      var it{.inject.}: typeof(self.get, typeOfProc);
+      var it {.inject.}: typeof(self.get, typeOfProc);
       op), typeOfProc)
   if self.isSome:
     let it {.inject.} = self.get

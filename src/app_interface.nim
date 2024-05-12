@@ -34,5 +34,11 @@ traitRef AppInterface:
   method popPopup*(self: AppInterface, popup: Popup)
   method popPopup*(self: AppInterface, popup: EditorId)
   method getAllDocuments*(self: AppInterface): seq[Document]
+  method getDocument*(self: AppInterface, path: string,
+    workspace: Option[WorkspaceFolder] = WorkspaceFolder.none, app: bool = false): Option[Document]
+  method getOrOpenDocument*(self: AppInterface, path: string,
+    workspace: Option[WorkspaceFolder] = WorkspaceFolder.none, app: bool = false, load: bool = true
+    ): Option[Document]
+  method tryCloseDocument*(self: AppInterface, document: Document, force: bool): bool
 
 var gAppInterface*: AppInterface = nil

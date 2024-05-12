@@ -1,6 +1,6 @@
 import std/[sugar, options, json, streams, tables]
 import bumpy, vmath
-import misc/[util, rect_utils, event, myjsonutils, fuzzy_matching, traits, custom_logger]
+import misc/[util, rect_utils, event, myjsonutils, fuzzy_matching, traits, custom_logger, disposable_ref]
 import app_interface, text/text_editor, popup, events, scripting/expose,
   selector_popup_builder, dispatch_tables
 from scripting_api as api import Selection
@@ -38,7 +38,7 @@ type
 
     completionMatchPositions: Table[int, seq[int]]
     finder*: Finder
-    previewer*: Option[Previewer]
+    previewer*: Option[DisposableRef[Previewer]]
 
     focusPreview*: bool
 
@@ -62,20 +62,17 @@ proc getCompletionMatches*(self: SelectorPopup, i: int, pattern: string, text: s
   self.completionMatchPositions[i] = result
 
 method deinit*(self: SelectorPopup) =
-  log lvlInfo, "Destroy selector popup"
+  logScope lvlInfo, &"[deinit] Destroying selector popup"
 
   if self.finder.isNotNil:
     self.finder.deinit()
-    self.finder = nil
 
   let document = self.textEditor.document
   self.textEditor.deinit()
   document.deinit()
 
   if self.previewEditor.isNotNil:
-    let document = self.previewEditor.document
     self.previewEditor.deinit()
-    document.deinit()
 
   self[] = default(typeof(self[]))
 
@@ -185,9 +182,9 @@ proc prev*(self: SelectorPopup) {.expose("popup.selector").} =
     if not self.handleItemSelected.isNil:
       self.handleItemSelected list[self.selected]
 
-    if self.previewer.getSome(previewer):
+    if self.previewer.isSome:
       assert self.previewEditor.isNotNil
-      previewer.previewItem(list[self.selected], self.previewEditor)
+      self.previewer.get.get.previewItem(list[self.selected], self.previewEditor)
 
   self.markDirty()
 
@@ -203,9 +200,9 @@ proc next*(self: SelectorPopup) {.expose("popup.selector").} =
     if not self.handleItemSelected.isNil:
       self.handleItemSelected list[self.selected]
 
-    if self.previewer.getSome(previewer):
+    if self.previewer.isSome:
       assert self.previewEditor.isNotNil
-      previewer.previewItem(list[self.selected], self.previewEditor)
+      self.previewer.get.get.previewItem(list[self.selected], self.previewEditor)
 
   self.markDirty()
 
@@ -266,8 +263,8 @@ proc handleTextChanged*(self: SelectorPopup) =
 
   self.finder.setQuery(self.getSearchString())
 
-  if self.previewer.getSome(previewer):
-    previewer.delayPreview()
+  if self.previewer.isSome:
+    self.previewer.get.get.delayPreview()
 
   if self.handleItemSelected.isNotNil and
       self.finder.filteredItems.getSome(list) and list.len > 0:
@@ -288,17 +285,19 @@ proc handleItemsUpdated*(self: SelectorPopup) =
     if not self.handleItemSelected.isNil:
       self.handleItemSelected list[self.selected]
 
-    if self.previewer.getSome(previewer):
+    if self.previewer.isSome:
       assert self.previewEditor.isNotNil
-      previewer.previewItem(list[self.selected], self.previewEditor)
+      self.previewer.get.get.previewItem(list[self.selected], self.previewEditor)
 
   else:
     self.selected = 0
 
   self.markDirty()
 
-proc newSelectorPopup*(app: AppInterface, scopeName = string.none,
-    finder = Finder.none, previewer = Previewer.none): SelectorPopup =
+proc newSelectorPopup*(app: AppInterface, scopeName = string.none, finder = Finder.none,
+    previewer: sink Option[DisposableRef[Previewer]] = DisposableRef[Previewer].none): SelectorPopup =
+
+  log lvlInfo, "[newSelectorPopup] " & $scopeName
 
   # todo: make finder not Option
   assert finder.isSome
@@ -328,8 +327,11 @@ proc newSelectorPopup*(app: AppInterface, scopeName = string.none,
   discard popup.textEditor.onMarkedDirty.subscribe () =>
     popup.markDirty()
 
-  popup.previewer = previewer
+  popup.previewer = previewer.move
   if popup.previewer.isSome:
+
+    # todo: make sure this previewDocument is destroyed, we're overriding it right now
+    # in the previewer with a temp document or an existing one
     let previewDocument = newTextDocument(app.configProvider, createLanguageServer=false)
     previewDocument.readOnly = true
 
