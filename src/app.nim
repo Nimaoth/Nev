@@ -1576,10 +1576,6 @@ proc getEditorsForDocument(self: App, document: Document): seq[DocumentEditor] =
       result.add editor
 
 proc closeUnusedDocuments*(self: App) =
-  debugf"closeUnusedDocuments start"
-  defer:
-    debugf"closeUnusedDocuments done"
-
   let documents = self.documents
   for document in documents:
     if document == self.logDocument:

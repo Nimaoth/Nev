@@ -401,13 +401,13 @@ method deinit*(self: TextDocumentEditor) =
     self.diffDocument.deinit()
     self.diffDocument = nil
 
+  self.clearDocument()
+
   if self.blinkCursorTask.isNotNil: self.blinkCursorTask.pause()
   if self.updateCompletionsTask.isNotNil: self.updateCompletionsTask.pause()
   if self.inlayHintsTask.isNotNil: self.inlayHintsTask.pause()
   if self.showHoverTask.isNotNil: self.showHoverTask.pause()
   if self.hideHoverTask.isNotNil: self.hideHoverTask.pause()
-
-  self.clearDocument()
 
   if self.completionEngine.isNotNil:
     self.completionEngine.onCompletionsUpdated.unsubscribe(self.onCompletionsUpdatedHandle)
@@ -2603,7 +2603,13 @@ proc showHoverForDelayed*(self: TextDocumentEditor, cursor: Cursor) =
   self.markDirty()
 
 proc updateInlayHintsAsync*(self: TextDocumentEditor): Future[void] {.async.} =
+  if self.document.isNil:
+    return
+
   if self.document.getLanguageServer().await.getSome(ls):
+    if self.document.isNil:
+      return
+
     let visibleRange = self.visibleTextRange(self.screenLineCount)
     let inlayHints = await ls.getInlayHints(self.document.fullPath, visibleRange)
     # todo: detect if canceled instead
