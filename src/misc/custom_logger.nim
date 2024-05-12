@@ -20,8 +20,8 @@ type
     consoleLogger: Option[logging.Logger]
     fileLogger: Option[FileLogger]
 
-# proc indentString*(logger: CustomLogger): string =
-#   "  ".repeat(logger.indentLevel)
+proc indentString*(logger: CustomLogger): string =
+  "  ".repeat(logger.indentLevel)
 
 proc newCustomLogger*(levelThreshold = logging.lvlAll, fmtStr = logging.defaultFmtStr): CustomLogger =
   new result
@@ -49,10 +49,9 @@ proc toggleConsoleLogger*(self: CustomLogger) =
 let isTerminal {.used.} = when declared(isatty): isatty(stdout) else: false
 
 method log(self: CustomLogger, level: logging.Level, args: varargs[string, `$`]) =
-  # let msg = self.indentString & substituteLog("", level, args)
+  let msg = self.indentString & logging.substituteLog("", level, args)
   if self.fileLogger.getSome(l):
-    # logging.log(l, level, msg)
-    logging.log(l, level, args)
+    logging.log(l, level, msg)
 
   if self.consoleLogger.getSome(l):
     when not defined(js):
@@ -67,8 +66,7 @@ method log(self: CustomLogger, level: logging.Level, args: varargs[string, `$`])
         else: rgb(255, 255, 255)
         stdout.write(ansiForegroundColorCode(color))
 
-    # logging.log(l, level, msg)
-    logging.log(l, level, args)
+    logging.log(l, level, msg)
 
     when not defined(js):
       if isTerminal:
