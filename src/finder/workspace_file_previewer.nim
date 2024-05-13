@@ -35,7 +35,8 @@ proc newWorkspaceFilePreviewer*(workspace: WorkspaceFolder, configProvider: Conf
 
 method deinit*(self: WorkspaceFilePreviewer) =
   logScope lvlInfo, &"[deinit] Destroying workspace file previewer"
-  self.triggerLoadTask.deinit()
+  if self.triggerLoadTask.isNotNil:
+    self.triggerLoadTask.deinit()
   if self.tempDocument.isNotNil:
     self.tempDocument.deinit()
 
