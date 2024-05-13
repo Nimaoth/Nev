@@ -52,6 +52,8 @@ type LineRenderOptions = object
   parentId: Id
   cursorLine: int
 
+  indentInSpaces: int
+
 when defined(js):
   template tokenColor*(theme: Theme, part: StyledText, default: untyped): Color =
     if part.scopeIsToken:
@@ -272,6 +274,10 @@ proc renderLine*(
           lastPartXW = options.lineNumberTotalWidth
           if partIndex < line.parts.len:
             lastTextPartXW = lastPartXW
+
+        if subLineIndex > 0:
+          builder.panel(&{}, w = options.indentInSpaces.float * builder.charWidth):
+            lastPartXW = currentNode.bounds.xw
 
         while partIndex < line.parts.len: # inner loop for parts within a wrapped line part
           template part: StyledText = line.parts[partIndex]
@@ -726,6 +732,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
                   options.lineNumber = k
                   options.lineId = self.diffDocument.lineIds[k]
                   options.cursorLine = -1
+                  options.indentInSpaces = self.diffDocument.getIndentLevelForLineInSpaces(k, 2)
                   discard renderLine(builder, styledLine, self.diffDocument.lines[k], colors, [], options)
                   let lastLine = builder.currentChild
                   leftOffsetY = lastLine.bounds.yh
@@ -735,6 +742,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
               options.lineNumber = otherLine.line
               options.lineId = self.diffDocument.lineIds[otherLine.line]
               options.cursorLine = otherCursorLine.flatten.get((-1, false)).line
+              options.indentInSpaces = self.diffDocument.getIndentLevelForLineInSpaces(otherLine.line, 2)
               let colors = [(0.RuneIndex, self.diffDocument.lines[otherLine.line].runeLen.RuneIndex, backgroundColor)]
               discard renderLine(builder, styledLine, self.diffDocument.lines[otherLine.line], colors, [], options)
 
@@ -745,6 +753,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
                   options.backgroundColor = deletedTextBackgroundColor
                   options.lineNumber = k
                   options.lineId = self.diffDocument.lineIds[k]
+                  options.indentInSpaces = self.diffDocument.getIndentLevelForLineInSpaces(k, 2)
                   discard renderLine(builder, styledLine, self.diffDocument.lines[k], colors, [], options)
 
           else:
@@ -753,6 +762,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
           builder.panel(&{SizeToContentY, FillY, FillBackground}, y = leftOffsetY, x = width / 2, w = width / 2, backgroundColor = diffEmptyBackgroundColor):
             options.lineId = self.document.lineIds[i]
             options.lineNumber = i
+            options.indentInSpaces = self.document.getIndentLevelForLineInSpaces(i, 2)
             options.cursorLine = cursorLine
             options.backgroundColor = backgroundColor
 
@@ -771,6 +781,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
       else:
 
+        options.indentInSpaces = self.document.getIndentLevelForLineInSpaces(i, 2)
         let infos = renderLine(builder, styledLine, self.document.lines[i], colors, cursorsPerLine, options)
         cursors.add infos.cursors
         if infos.hover.isSome:
@@ -813,6 +824,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
           options.lineId = self.document.lineIds[contextLine]
           options.parentId = self.userId
           options.cursorLine = cursorLine
+          options.indentInSpaces = self.document.getIndentLevelForLineInSpaces(contextLine, 2)
 
           let infos = renderLine(builder, styledLine, self.document.lines[contextLine], colors, [], options)
           cursors.add infos.cursors
