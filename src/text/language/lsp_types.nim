@@ -442,10 +442,14 @@ type
     rangeLength*: Option[int]
     text*: string
 
+  UriObject* = object
+    uri*: string
+
 variant(CompletionItemDocumentationVariant, string, MarkupContent)
 variant(CompletionItemTextEditVariant, TextEdit, InsertReplaceEdit)
 variant(MarkedStringVariant, string, MarkedStringObject)
 variant(HoverContentVariant, MarkedStringVariant, seq[MarkedStringVariant], MarkupContent)
+variant(WorkspaceLocationVariant, Location, UriObject)
 
 type
   CompletionItem* = object
@@ -520,7 +524,7 @@ type
     kind*: SymbolKind
     tags*: seq[SymbolTag]
     containerName*: Option[string]
-    location*: JsonNode
+    location*: WorkspaceLocationVariant
     data*: Option[JsonNode]
 
   DocumentSymbol* = object

@@ -385,8 +385,24 @@ method getWorkspaceSymbols*(self: LanguageServerLSP, query: string): Future[seq[
   let parsedResponse = response.result
 
   if parsedResponse.asWorkspaceSymbolSeq().getSome(symbols):
-    for s in symbols:
-      debug s
+    for r in symbols:
+      let (path, location) = if r.location.asLocation().getSome(location):
+        let cursor = (line: location.range.start.line, column: location.range.start.character)
+        (location.uri.parseUri.path.decodeUrl.normalizePathUnix, cursor.some)
+      elif r.location.asUriObject().getSome(uri):
+        (uri.uri.parseUri.path.decodeUrl.normalizePathUnix, Cursor.none)
+      else:
+        log lvlError, fmt"Failed to parse workspace symbol location: {r.location}"
+        continue
+
+      let symbolKind = r.kind.toInternalSymbolKind
+
+      completions.add Symbol(
+        location: location.get((0, 0)),
+        name: r.name,
+        symbolType: symbolKind,
+        filename: path,
+      )
 
   elif parsedResponse.asSymbolInformationSeq().getSome(symbols):
     for r in symbols:
