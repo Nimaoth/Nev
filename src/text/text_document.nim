@@ -1300,6 +1300,12 @@ proc getIndentLevelForLine*(self: TextDocument, line: int): int =
   let indentWidth = self.indentStyle.indentWidth(self.tabWidth)
   return indentLevelForLine(self.lines[line], self.tabWidth, indentWidth)
 
+proc getIndentLevelForLineInSpaces*(self: TextDocument, line: int, offset: int = 0): int =
+  if line < 0 or line >= self.lines.len:
+    return 0
+  let indentWidth = self.indentStyle.indentWidth(self.tabWidth)
+  return max(0, indentLevelForLine(self.lines[line], self.tabWidth, indentWidth) + offset) * indentWidth
+
 proc getIndentLevelForClosestLine*(self: TextDocument, line: int): int =
   for i in line..self.lines.high:
     if self.lineLength(i) > 0:
