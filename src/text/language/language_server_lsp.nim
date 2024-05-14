@@ -472,7 +472,7 @@ method connect*(self: LanguageServerLSP, document: Document) =
 
   let document = document.TextDocument
 
-  log lvlInfo, fmt"Connecting document '{document.filename}'"
+  log lvlInfo, fmt"Connecting document (loadingAsync: {document.isLoadingAsync}) '{document.filename}'"
 
   if document.isLoadingAsync:
     var handle = new Id

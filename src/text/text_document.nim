@@ -883,7 +883,12 @@ proc newTextDocument*(
 
   let autoStartServer = self.configProvider.getValue("editor.text.auto-start-language-server", false)
 
+  self.content = content
   self.languageServer = languageServer.mapIt(it)
+
+  if load:
+    self.load()
+
   if self.languageServer.getSome(ls):
     # debugf"register save handler '{self.filename}'"
     let callback = proc (targetFilename: string): Future[void] {.async.} =
@@ -894,13 +899,6 @@ proc newTextDocument*(
 
   elif createLanguageServer and autoStartServer:
     asyncCheck self.getLanguageServer()
-
-    # debugf"using language for {filename}: {value}, {self.indentStyle}"
-
-  self.content = content
-
-  if load:
-    self.load()
 
 method deinit*(self: TextDocument) =
   logScope lvlInfo, fmt"[deinit] Destroying text document '{self.filename}'"
@@ -975,7 +973,6 @@ proc loadAsync(self: TextDocument, ws: WorkspaceFolder, reloadTreesitter: bool =
   self.content = catch ws.loadFile(self.filename).await:
     log lvlError, &"[loadAsync] Failed to load workspace file {self.filename}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
     ""
-
   if not ws.isFileReadOnly(self.filename).await:
     self.readOnly = false
 
