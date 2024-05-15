@@ -836,7 +836,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
     {.emit: [self, " = jsCreateWithPrototype(editor_prototype, ", self, ");"].}
     # This " is here to fix syntax highlighting
 
-  addHandler AppLogger(app: self)
+  logger.addLogger AppLogger(app: self, fmtStr: "")
 
   log lvlInfo, fmt"Creating App with backend {backend} and options {options}"
 
@@ -3390,7 +3390,7 @@ proc recordCommand*(self: App, command: string, args: string) =
     self.registers[register].text.add command & " " & args
 
 proc handleAction(self: App, action: string, arg: string, record: bool): bool =
-  # log(lvlInfo, "Action '$1 $2'" % [action, arg])
+  logScope lvlInfo, "Action '$1 $2'" % [action, arg]
 
   if record:
     self.recordCommand(action, arg)
