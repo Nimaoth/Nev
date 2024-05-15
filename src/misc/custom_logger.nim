@@ -1,4 +1,4 @@
-import std/[strformat, options, macros, genasts, strutils]
+import std/[strformat, options, macros, genasts, strutils, math]
 from logging import nil
 import util, timer
 export strformat
@@ -19,26 +19,35 @@ type
     indentLevel*: int
     consoleLogger: Option[logging.Logger]
     fileLogger: Option[FileLogger]
+    timer: Timer
+
+    otherLoggers: seq[logging.Logger]
 
 proc indentString*(logger: CustomLogger): string =
   "  ".repeat(logger.indentLevel)
 
 proc newCustomLogger*(levelThreshold = logging.lvlAll, fmtStr = logging.defaultFmtStr): CustomLogger =
   new result
+
   result.fmtStr = fmtStr
   result.levelThreshold = levelThreshold
   logging.addHandler(result)
 
+  result.timer = startTimer()
+
 proc enableFileLogger*(self: CustomLogger, filename = "messages.log") =
   when not defined(js):
     var file = open(filename, fmWrite)
-    self.fileLogger = logging.newFileLogger(file, self.levelThreshold, self.fmtStr, flushThreshold=logging.lvlAll).some
+    self.fileLogger = logging.newFileLogger(file, self.levelThreshold, "", flushThreshold=logging.lvlAll).some
 
 proc enableConsoleLogger*(self: CustomLogger) =
-  self.consoleLogger = logging.Logger(logging.newConsoleLogger(self.levelThreshold, self.fmtStr, flushThreshold=logging.lvlAll)).some
+  self.consoleLogger = logging.Logger(logging.newConsoleLogger(self.levelThreshold, "", flushThreshold=logging.lvlAll)).some
 
 proc setConsoleLogger*(self: CustomLogger, logger: logging.Logger) =
   self.consoleLogger = logger.some
+
+proc addLogger*(self: CustomLogger, logger: logging.Logger) =
+  self.otherLoggers.add logger
 
 proc toggleConsoleLogger*(self: CustomLogger) =
   if self.consoleLogger.isSome:
@@ -48,8 +57,20 @@ proc toggleConsoleLogger*(self: CustomLogger) =
 
 let isTerminal {.used.} = when declared(isatty): isatty(stdout) else: false
 
+func formatTime(t: float64): string =
+  if t >= 1000:
+    return &"{int(t / 1000)}s {(t mod 1000.0):>6.2f}ms"
+  return &"{t:6.3f}ms"
+
 method log(self: CustomLogger, level: logging.Level, args: varargs[string, `$`]) =
-  let msg = self.indentString & logging.substituteLog("", level, args)
+  let time = self.timer.elapsed.ms
+  let msgIndented = self.indentString & logging.substituteLog("", level, args)
+  let fmtStr = &"[{formatTime(time)}] " & self.fmtStr
+  let msg = logging.substituteLog(fmtStr, level, msgIndented)
+
+  for l in self.otherLoggers:
+    logging.log(l, level, msg)
+
   if self.fileLogger.getSome(l):
     logging.log(l, level, msg)
 
