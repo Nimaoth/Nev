@@ -2029,11 +2029,7 @@ proc setSearchQuery*(self: TextDocumentEditor, query: string, escapeRegex: bool 
   if self.searchQuery == query:
     return
 
-  self.searchResultsDirty = true
-  self.searchQuery = query
-
   if query.len == 0:
-    self.searchRegex = Regex.none
     return
 
   try:
@@ -2043,8 +2039,15 @@ proc setSearchQuery*(self: TextDocumentEditor, query: string, escapeRegex: bool 
       query
 
     self.searchRegex = re(prefix & query & suffix).some
-  except:
-    log lvlError, fmt"[setSearchQuery] Invalid regex query: '{query}' ({getCurrentExceptionMsg()})"
+    self.searchResultsDirty = true
+    self.searchQuery = query
+
+  except RegexError:
+    discard
+    # todo: can't log here because the auto generated popCurrentException() raises
+    # because currException is nil at the end of this scope when we add some code here
+    # Maybe log raises an exception internally?
+    # log lvlError, &"[setSearchQuery] Invalid regex query: '{query}', escape: {escapeRegex}"
 
 proc setSearchQueryFromMove*(self: TextDocumentEditor, move: string,
     count: int = 0, prefix: string = "", suffix: string = ""): Selection {.expose("editor.text").} =
