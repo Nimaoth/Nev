@@ -1594,8 +1594,7 @@ proc tryCloseDocument*(self: App, document: Document, force: bool): bool =
   if document == self.logDocument:
     return false
 
-  let msg = &"tryCloseDocument: '{document.filename}', force: {force}"
-  logScope lvlInfo, msg
+  logScope lvlInfo, &"tryCloseDocument: '{document.filename}', force: {force}"
 
   let editorsToClose = self.getEditorsForDocument(document)
 
@@ -2895,7 +2894,7 @@ proc recordInputToHistory*(self: App, input: string) =
     self.inputHistory = self.inputHistory[(self.inputHistory.len - maxLen)..^1]
 
 proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers) =
-  # debugf"handleKeyPress {inputToString(input, modifiers)}"
+  # logScope lvlDebug, &"handleKeyPress {inputToString(input, modifiers)}"
   self.logFrameTime = true
 
   for register in self.recordingKeys:
@@ -3390,7 +3389,7 @@ proc recordCommand*(self: App, command: string, args: string) =
     self.registers[register].text.add command & " " & args
 
 proc handleAction(self: App, action: string, arg: string, record: bool): bool =
-  logScope lvlInfo, "Action '$1 $2'" % [action, arg]
+  logScope lvlInfo, &"[handleAction] '{action} {arg}'"
 
   if record:
     self.recordCommand(action, arg)

@@ -71,6 +71,7 @@ method isFileReadOnly*(self: WorkspaceFolder, relativePath: string): Future[bool
   false.toFuture
 
 method loadFile*(self: WorkspaceFolder, relativePath: string): Future[string] {.base.} = discard
+method loadFile*(self: WorkspaceFolder, relativePath: string, data: ptr string): Future[void] {.base.} = discard
 
 method saveFile*(self: WorkspaceFolder, relativePath: string, content: string): Future[void] {.base.} =
   discard

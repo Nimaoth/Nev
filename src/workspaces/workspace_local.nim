@@ -1,4 +1,4 @@
-import std/[os, json, options, sequtils, strutils]
+import std/[os, json, options, sequtils, strutils, asyncfile]
 import misc/[custom_async, custom_logger, async_process, util, regex, timer, event]
 import platform/filesystem
 import workspace
@@ -129,12 +129,57 @@ method isFileReadOnly*(self: WorkspaceFolderLocal, relativePath: string): Future
     log lvlError, fmt"Failed to get file permissions of '{path}'"
     return false
 
+proc loadFileThread(args: tuple[path: string, data: ptr string]):
+    tuple[ok: bool, time: float] {.gcsafe.} =
+
+  let t = startTimer()
+  defer:
+    result.time = t.elapsed.ms
+
+  try:
+    args.data[] = readFile(args.path)
+    result.ok = true
+  except:
+    result.ok = false
+
 method loadFile*(self: WorkspaceFolderLocal, relativePath: string): Future[string] {.async.} =
-  return readFile(self.getAbsolutePath(relativePath))
+  let path = self.getAbsolutePath(relativePath)
+  logScope lvlInfo, &"[loadFile] '{path}'"
+  try:
+    var data = ""
+    let res = await spawnAsync(loadFileThread, (path, data.addr))
+    if not res.ok:
+      log lvlError, &"Failed to load file '{path}'"
+      return ""
+
+    return data.move
+  except:
+    log lvlError, &"Failed to load file '{path}'"
+    return ""
+
+method loadFile*(self: WorkspaceFolderLocal, relativePath: string, data: ptr string): Future[void] {.async.} =
+  let path = self.getAbsolutePath(relativePath)
+  logScope lvlInfo, &"[loadFile] '{path}'"
+  try:
+    let res = await spawnAsync(loadFileThread, (path, data))
+    if not res.ok:
+      log lvlError, &"Failed to load file '{path}'"
+      return
+
+  except:
+    log lvlError, &"Failed to load file '{path}'"
 
 method saveFile*(self: WorkspaceFolderLocal, relativePath: string, content: string):
     Future[void] {.async.} =
-  writeFile(self.getAbsolutePath(relativePath), content)
+  let path = self.getAbsolutePath(relativePath)
+  logScope lvlInfo, &"[saveFile] '{path}'"
+  try:
+    var file = openAsync(path, fmWrite)
+    let t = startTimer()
+    await file.write(content)
+    file.close()
+  except:
+    log lvlError, &"Failed to write file '{path}'"
 
 proc loadIgnoreFile(self: WorkspaceFolderLocal, path: string): Option[Globs] =
   try:

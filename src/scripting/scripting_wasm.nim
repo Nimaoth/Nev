@@ -125,15 +125,21 @@ method handleEditorModeChanged*(self: ScriptContextWasm, editor: DocumentEditor,
 
 method postInitialize*(self: ScriptContextWasm): bool =
   result = false
-  for (m, f) in self.postInitializeCallbacks:
-    result = f() or result
+  try:
+    for (m, f) in self.postInitializeCallbacks:
+      result = f() or result
+  except:
+    log lvlError, &"Failed to run post initialize: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
 method handleCallback*(self: ScriptContextWasm, id: int, arg: JsonNode): bool =
   result = false
-  let argStr = $arg
-  for (m, f) in self.handleCallbackCallbacks:
-    if f(id.int32, argStr.cstring):
-      return true
+  try:
+    let argStr = $arg
+    for (m, f) in self.handleCallbackCallbacks:
+      if f(id.int32, argStr.cstring):
+        return true
+  except:
+    log lvlError, &"Failed to run callback: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
 method handleAnyCallback*(self: ScriptContextWasm, id: int, arg: JsonNode): JsonNode =
   result = nil
