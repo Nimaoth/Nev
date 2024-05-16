@@ -81,6 +81,8 @@ proc loadAsync(self: WorkspaceFilePreviewer): Future[void] {.async.} =
 
   let app = editor.app
 
+  logScope lvlDebug, &"loadAsync {path}"
+
   let document = if self.currentStaged:
     Document.none
   elif self.openNewDocuments:
@@ -97,8 +99,9 @@ proc loadAsync(self: WorkspaceFilePreviewer): Future[void] {.async.} =
     editor.setDocument(document.TextDocument)
 
   elif self.tempDocument.isNotNil:
-    log lvlInfo, &"[loadAsync] Show preview using temp document for '{path}'"
-    let content = self.workspace.loadFile(path).await
+    logScope lvlInfo, &"[loadAsync] Show preview using temp document for '{path}'"
+    var content = ""
+    self.workspace.loadFile(path, content.addr).await
     if editor.document.isNil:
       log lvlInfo, fmt"Discard file load of '{path}' because preview editor was destroyed"
       return
@@ -108,7 +111,7 @@ proc loadAsync(self: WorkspaceFilePreviewer): Future[void] {.async.} =
       return
 
     self.tempDocument.workspace = self.workspace.some
-    self.tempDocument.setFileAndContent(path, content)
+    self.tempDocument.setFileAndContent(path, content.move)
     editor.setDocument(self.tempDocument)
 
   if location.getSome(location):
@@ -134,6 +137,8 @@ method delayPreview*(self: WorkspaceFilePreviewer) =
 method previewItem*(self: WorkspaceFilePreviewer, item: FinderItem, editor: DocumentEditor) =
   if not (editor of TextDocumentEditor):
     return
+
+  logScope lvlDebug, &"previewItem {item}"
 
   inc self.revision
   self.editor = editor.TextDocumentEditor

@@ -2,7 +2,7 @@ import std/[os, strutils, sequtils, sugar, options, json, strformat, tables, uri
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import patty, bumpy
-import misc/[id, util, event, custom_logger, custom_async, custom_unicode, myjsonutils, regex, array_set]
+import misc/[id, util, event, custom_logger, custom_async, custom_unicode, myjsonutils, regex, array_set, timer]
 import platform/[filesystem]
 import language/[languages, language_server_base]
 import workspaces/[workspace]
@@ -260,7 +260,7 @@ proc tsTree*(self: TextDocument): TsTree =
     self.reparseTreesitter()
   return self.currentTree
 
-proc `content=`*(self: TextDocument, value: string) =
+proc `content=`*(self: TextDocument, value: sink string) =
   self.revision.inc
   self.undoableRevision.inc
 
@@ -783,6 +783,7 @@ proc getStyledText*(self: TextDocument, i: int): StyledLine =
     self.addDiagnosticsUnderline(result)
 
 proc initTreesitter*(self: TextDocument): Future[void] {.async.} =
+  logScope lvlInfo, &"initTreesitter {self.filename}"
   if not self.tsParser.isNil:
     self.tsParser.deinit()
     self.tsParser = nil
@@ -966,13 +967,19 @@ proc autoDetectIndentStyle(self: TextDocument) =
   log lvlInfo, &"[Text_document] Detected indent: {self.indentStyle}, {self.languageConfig.get(TextLanguageConfig())[]}"
 
 proc loadAsync(self: TextDocument, ws: WorkspaceFolder, reloadTreesitter: bool = false): Future[void] {.async.} =
+
+  logScope lvlInfo, &"loadAsync '{self.filename}'"
   # self.content = await ws.loadFile(self.filename)
   self.isBackedByFile = true
   self.isLoadingAsync = true
   self.readOnly = true
-  self.content = catch ws.loadFile(self.filename).await:
+
+  var data = ""
+  catch ws.loadFile(self.filename, data.addr).await:
     log lvlError, &"[loadAsync] Failed to load workspace file {self.filename}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
-    ""
+
+  self.content = data.move
+
   if not ws.isFileReadOnly(self.filename).await:
     self.readOnly = false
 
@@ -997,10 +1004,12 @@ proc setFileReadOnlyAsync*(self: TextDocument, readOnly: bool): Future[bool] {.a
 
   return false
 
-proc setFileAndContent*(self: TextDocument, filename: string, content: string) =
+proc setFileAndContent*(self: TextDocument, filename: string, content: sink string) =
   let filename = if filename.len > 0: filename.normalizePathUnix else: self.filename
   if filename.len == 0:
     raise newException(IOError, "Missing filename")
+
+  logScope lvlInfo, &"[setFileAndContent] '{filename}'"
 
   self.filename = filename
   self.isBackedByFile = false
@@ -1020,7 +1029,9 @@ proc setFileAndContent*(self: TextDocument, filename: string, content: string) =
     self.errorQuery.deinit()
     self.errorQuery = nil
 
-  self.content = content
+  self.undoOps.setLen 0
+  self.redoOps.setLen 0
+  self.content = content.move
 
   asyncCheck self.initTreesitter()
 

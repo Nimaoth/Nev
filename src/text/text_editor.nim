@@ -353,8 +353,11 @@ proc setDocument*(self: TextDocumentEditor, document: TextDocument) =
   self.textChangedHandle = document.textChanged.subscribe (_: TextDocument) =>
     self.handleTextDocumentTextChanged()
 
-  self.loadedHandle = document.onLoaded.subscribe (_: TextDocument) =>
-    self.handleTextDocumentLoaded()
+  self.loadedHandle = document.onLoaded.subscribe (_: TextDocument) => (block:
+      if self.isNil or self.document.isNil:
+        return
+      self.handleTextDocumentLoaded()
+  )
 
   self.savedHandle = document.onSaved.subscribe () =>
     self.handleTextDocumentSaved()
@@ -3133,6 +3136,9 @@ proc handleTextDocumentTextChanged(self: TextDocumentEditor) =
   self.markDirty()
 
 proc handleTextDocumentLoaded(self: TextDocumentEditor) =
+  if self.document.isNil:
+    return
+
   if self.targetSelectionsInternal.getSome(s):
     self.selections = s
     self.centerCursor()
