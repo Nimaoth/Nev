@@ -985,7 +985,7 @@ proc loadVimKeybindings*() {.scriptActionWasmNims("load-vim-keybindings").} =
   addTextCommandBlock "", "*":
     editor.selection = editor.setSearchQueryFromMove("word", prefix=r"\b", suffix=r"\b").first.toSelection
   addTextCommandBlock "visual", "*":
-    editor.setSearchQuery(editor.getText(editor.selection, inclusiveEnd=true))
+    editor.setSearchQuery(editor.getText(editor.selection, inclusiveEnd=true), escapeRegex=true)
     editor.selection = editor.selection.first.toSelection
     editor.setMode("normal")
   addTextCommandBlock "", "n":
