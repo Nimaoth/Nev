@@ -2042,7 +2042,7 @@ proc setSearchQuery*(self: TextDocumentEditor, query: string, escapeRegex: bool 
     self.searchResultsDirty = true
     self.searchQuery = query
 
-  except RegexError:
+  except:
     discard
     # todo: can't log here because the auto generated popCurrentException() raises
     # because currException is nil at the end of this scope when we add some code here
