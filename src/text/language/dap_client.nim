@@ -46,6 +46,13 @@ type
     algorithm*: ChecksumAlgorithm
     checksum*: string
 
+  Thread* = object
+    id*: int
+    name*: string
+
+  Threads* = object
+    threads*: seq[Thread]
+
   Source* = object
     name*: Option[string]
     path*: Option[string]
@@ -55,6 +62,14 @@ type
     sources*: seq[Source]
     adapterData*: Option[JsonNode]
     checksums*: seq[Checksum]
+
+  SourceBreakpoint* = object
+    line*: int
+    column*: Option[int]
+    condition*: Option[string]
+    hitCondition*: Option[string]
+    logMessage*: Option[string]
+    mode*: Option[string]
 
   Breakpoint* = object
     id*: Option[int]
@@ -329,7 +344,6 @@ proc deinit*(client: DAPClient) =
   client.isInitialized = false
 
 proc parseResponse(client: DAPClient): Future[JsonNode] {.async.} =
-  debugf"[parseResponse]"
   var headers = initTable[string, string]()
   var line = await client.connection.recvLine
   while client.connection.isNotNil and line == "":
@@ -477,6 +491,56 @@ proc disconnect(client: DAPClient, restart: bool,
   if res.isError:
     log lvlError, &"Failed to disconnect: {res}"
 
+proc setBreakpoints(client: DAPClient, source: Source, breakpoints: seq[SourceBreakpoint], sourceModified = bool.none) {.async.} =
+  log lvlInfo, &"setBreakpoints"
+
+  var args = %*{
+    "source": source,
+    "breakpoints": breakpoints,
+  }
+
+  let res = await client.sendRequest("setBreakpoints", args.some)
+  if res.isError:
+    echo res
+    log lvlError, &"Failed to set breakpoints: {res}"
+    return
+
+  echo res.result.pretty
+
+proc configurationDone(client: DAPClient) {.async.} =
+  log lvlInfo, &"configurationDone"
+  let res = await client.sendRequest("configurationDone", JsonNode.none)
+  if res.isError:
+    log lvlError, &"Failed to finish configuration: {res}"
+    return
+
+
+proc continueExecution(client: DAPClient, threadId: int, singleThreaded = bool.none) {.async.} =
+  log lvlInfo, &"continueExecution (threadId={threadId}, singleThreaded={singleThreaded})"
+
+  var args = %*{
+    "threadId": threadId,
+  }
+  if singleThreaded.getSome(singleThreaded):
+    args["singleThreaded"] = singleThreaded.toJson
+
+  let res = await client.sendRequest("continueExecution", args.some)
+  if res.isError:
+    echo res
+    log lvlError, &"Failed to continue execution: {res}"
+    return
+
+  echo res.result.pretty
+
+proc getThreads(client: DAPClient): Future[Response[Threads]] {.async.} =
+  log lvlInfo, &"getThreads"
+  let res = await client.sendRequest("threads", JsonNode.none)
+  if res.isError:
+    log lvlError, &"Failed get threads: {res}"
+    return res.to(Threads)
+  echo res.result.pretty
+  return res.to(Threads)
+
 proc initialize(client: DAPClient) {.async.} =
   log(lvlInfo, "Initialized client")
 
@@ -543,7 +607,7 @@ proc dispatchEvent*(client: DAPClient, event: string, body: JsonNode) =
 
 proc runAsync*(client: DAPClient) {.async.} =
   while client.connection.isNotNil:
-    debugf"[run] Waiting for response {(client.activeRequests.len)}"
+    # debugf"[run] Waiting for response {(client.activeRequests.len)}"
 
     let response = await client.parseResponse()
     if response.isNil or response.kind != JObject:
@@ -557,14 +621,14 @@ proc runAsync*(client: DAPClient) {.async.} =
       of "event":
         let event = response["event"].getStr
         let body = response.fields.getOrDefault("body", newJNull())
-        echo response.pretty
+        # echo response.pretty
         client.dispatchEvent(event, body)
 
       of "response":
         let id = response["request_seq"].getInt
-        debugf"[DAP.run] {response}"
+        # debugf"[DAP.run] {response}"
         if client.activeRequests.contains(id):
-          debugf"[DAP.run] Complete request {id}"
+          # debugf"[DAP.run] Complete request {id}"
           let parsedResponse = response.toResponse JsonNode
           let (command, future) = client.activeRequests[id]
           future.complete parsedResponse
@@ -620,7 +684,7 @@ when isMainModule:
     discard client.onExited.subscribe (data: OnExitedData) => echo &"onExited {data}"
     discard client.onTerminated.subscribe (data: Option[OnTerminatedData]) => echo &"onTerminated {data}"
     discard client.onThread.subscribe (data: OnThreadData) => echo &"onThread {data}"
-    discard client.onOutput.subscribe (data: OnOutputData) => echo &"onOutput {data}"
+    discard client.onOutput.subscribe (data: OnOutputData) => echo &"[dap-{data.category}] {data.output}"
     discard client.onBreakpoint.subscribe (data: OnBreakpointData) => echo &"onBreakpoint {data}"
     discard client.onModule.subscribe (data: OnModuleData) => echo &"onModule {data}"
     discard client.onLoadedSource.subscribe (data: OnLoadedSourceData) => echo &"onLoadedSource {data}"
@@ -637,11 +701,35 @@ when isMainModule:
     if client.waitInitialized.await:
       debugf"launch"
       await client.launch %*{
-        "program": "/mnt/c/Absytree/test_dbg",
+        "program": "/mnt/c/Absytree/temp/test_dbg",
       }
+      let threads = await client.getThreads
+      if threads.isError:
+        return
+
 
       debugf"waiting for initialized event"
       await client.waitInitializedEventReceived
+      debugf"setBreakpoints"
+
+      await client.setBreakpoints(
+        Source(path: some "/mnt/c/Absytree/temp/test.cpp"),
+        @[
+          # SourceBreakpoint(line: 31),
+          # SourceBreakpoint(line: 35),
+          SourceBreakpoint(line: 43),
+        ]
+      )
+
+      await client.configurationDone()
+
+      await sleepAsync(5000)
+      debugf"continue"
+      await client.continueExecution(threads.result.threads[0].id)
+
+      await sleepAsync(5000)
+      debugf"continue"
+      await client.continueExecution(threads.result.threads[0].id)
 
       debugf"sleep"
       await sleepAsync(5000)
