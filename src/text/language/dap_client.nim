@@ -6,7 +6,7 @@ import dispatch_tables
 
 logCategory "dap"
 
-var logVerbose = true
+var logVerbose = false
 var logServerDebug = true
 
 proc fromJsonHook*[T](a: var Response[T], b: JsonNode, opt = Joptions()) =
@@ -122,17 +122,26 @@ type
     supportsSingleThreadExecutionRequests*: Option[bool]
     breakpointModes*: seq[BreakpointMode]
 
-  InvalidatedAreas* = object
-    name*: Option[string]
-
   ExceptionBreakpointsFilter* = object
-    name*: Option[string]
+    filter*: string
+    label*: string
+    description*: Option[string]
+    default*: Option[bool]
+    supportsCondition*: Option[bool]
+    conditionDescription*: Option[string]
 
   ColumnDescriptor* = object
-    name*: Option[string]
+    attributeName*: string
+    label*: string
+    format*: Option[string]
+    `type`*: Option[string]
+    width*: Option[int]
 
   BreakpointMode* = object
-    name*: Option[string]
+    mode*: string
+    label*: string
+    description*: Option[string]
+    appliesTo*: seq[string]
 
   OnInitializedData* = void
 
@@ -209,7 +218,7 @@ type
     message*: Option[string]
 
   OnInvalidatedData* = object
-    areas*: seq[InvalidatedAreas]
+    areas*: seq[string]
     threadId*: Option[int]
     stackFrameId*: Option[int]
 
@@ -229,12 +238,13 @@ type
     canceledRequests: HashSet[int]
     isInitialized: bool
     initializedFuture: ResolvableFuture[bool]
+    initializedEventFuture: ResolvableFuture[void]
 
     onInitialized*: Event[OnInitializedData]
     onStopped*: Event[OnStoppedData]
     onContinued*: Event[OnContinuedData]
     onExited*: Event[OnExitedData]
-    onTerminated*: Event[OnTerminatedData]
+    onTerminated*: Event[Option[OnTerminatedData]]
     onThread*: Event[OnThreadData]
     onOutput*: Event[OnOutputData]
     onBreakpoint*: Event[OnBreakpointData]
@@ -249,6 +259,7 @@ type
     onMemory*: Event[OnMemoryData]
 
 proc waitInitialized*(client: DAPCLient): Future[bool] = client.initializedFuture.future
+proc waitInitializedEventReceived*(client: DAPCLient): Future[void] = client.initializedEventFuture.future
 
 method close(connection: DAPConnection) {.base.} = discard
 method recvLine(connection: DAPConnection): Future[string] {.base.} = discard
@@ -444,10 +455,27 @@ when not defined(js):
         log(lvlDebug, fmt"[debug] {line}")
 
 proc launch(client: DAPClient, args: JsonNode) {.async.} =
-  log(lvlInfo, &"Launch '{args}'")
+  log lvlInfo, &"Launch '{args}'"
   let res = await client.sendRequest("launch", args.some)
   if res.isError:
     log lvlError, &"Failed to launch: {res}"
+
+proc disconnect(client: DAPClient, restart: bool,
+    terminateDebuggee = bool.none, suspendDebuggee = bool.none) {.async.} =
+
+  log lvlInfo, &"disconnect (restart={restart}, terminateDebuggee={terminateDebuggee}, suspendDebuggee={suspendDebuggee})"
+
+  var args = %*{
+    "restart": restart,
+  }
+  if terminateDebuggee.getSome(terminateDebuggee):
+    args["terminateDebuggee"] = terminateDebuggee.toJson
+  if suspendDebuggee.getSome(suspendDebuggee):
+    args["suspendDebuggee"] = suspendDebuggee.toJson
+
+  let res = await client.sendRequest("disconnect", args.some)
+  if res.isError:
+    log lvlError, &"Failed to disconnect: {res}"
 
 proc initialize(client: DAPClient) {.async.} =
   log(lvlInfo, "Initialized client")
@@ -458,17 +486,19 @@ proc initialize(client: DAPClient) {.async.} =
   }
 
   let res = await client.sendRequest("initialize", args)
-  debugf"initialized: {res}"
   if res.isError:
+    debugf"initialized: {res}"
     client.initializedFuture.complete(false)
     log lvlError, &"Failed to initialized dap client: {res}"
     return
 
+  debugf"initialized: {res.result.pretty}"
   client.isInitialized = true
   client.initializedFuture.complete(true)
 
 proc connect*(client: DAPClient, serverExecutablePath: string, args: seq[string]) {.async.} =
   client.initializedFuture = newResolvableFuture[bool]("client.initializedFuture")
+  client.initializedEventFuture = newResolvableFuture[void]("client.initializedEventFuture")
 
   when not defined(js):
     log lvlInfo, fmt"Using process '{serverExecutablePath} {args}' as DAP connection"
@@ -486,11 +516,16 @@ proc connect*(client: DAPClient, serverExecutablePath: string, args: seq[string]
 proc dispatchEvent*(client: DAPClient, event: string, body: JsonNode) =
   let opts = JOptions(allowMissingKeys: true, allowExtraKeys: true)
   case event
-  of "initialized": client.onInitialized.invoke
+  of "initialized":
+    client.initializedEventFuture.complete()
+    client.onInitialized.invoke
   of "stopped": client.onStopped.invoke body.jsonTo(OnStoppedData, opts)
   of "continued": client.onContinued.invoke body.jsonTo(OnContinuedData, opts)
   of "exited": client.onExited.invoke body.jsonTo(OnExitedData, opts)
-  of "terminated": client.onTerminated.invoke body.jsonTo(OnTerminatedData, opts)
+  of "terminated": client.onTerminated.invoke if body.kind == JObject:
+      body.jsonTo(OnTerminatedData, opts).some
+    else:
+      OnTerminatedData.none
   of "thread": client.onThread.invoke body.jsonTo(OnThreadData, opts)
   of "output": client.onOutput.invoke body.jsonTo(OnOutputData, opts)
   of "breakpoint": client.onBreakpoint.invoke body.jsonTo(OnBreakpointData, opts)
@@ -522,6 +557,7 @@ proc runAsync*(client: DAPClient) {.async.} =
       of "event":
         let event = response["event"].getStr
         let body = response.fields.getOrDefault("body", newJNull())
+        echo response.pretty
         client.dispatchEvent(event, body)
 
       of "response":
@@ -582,7 +618,7 @@ when isMainModule:
     discard client.onStopped.subscribe (data: OnStoppedData) => echo &"onStopped {data}"
     discard client.onContinued.subscribe (data: OnContinuedData) => echo &"onContinued {data}"
     discard client.onExited.subscribe (data: OnExitedData) => echo &"onExited {data}"
-    discard client.onTerminated.subscribe (data: OnTerminatedData) => echo &"onTerminated {data}"
+    discard client.onTerminated.subscribe (data: Option[OnTerminatedData]) => echo &"onTerminated {data}"
     discard client.onThread.subscribe (data: OnThreadData) => echo &"onThread {data}"
     discard client.onOutput.subscribe (data: OnOutputData) => echo &"onOutput {data}"
     discard client.onBreakpoint.subscribe (data: OnBreakpointData) => echo &"onBreakpoint {data}"
@@ -599,11 +635,22 @@ when isMainModule:
     client.run()
 
     if client.waitInitialized.await:
+      debugf"launch"
       await client.launch %*{
         "program": "/mnt/c/Absytree/test_dbg",
       }
 
+      debugf"waiting for initialized event"
+      await client.waitInitializedEventReceived
+
+      debugf"sleep"
+      await sleepAsync(5000)
+      debugf"disconnect"
+      await client.disconnect(restart=false)
+      debugf"sleep"
+      await sleepAsync(2000)
+
   waitFor test()
 
-  while true:
-    poll(10)
+  # while true:
+  #   poll(10)
