@@ -627,10 +627,10 @@ proc addDiagnosticsUnderline(self: TextDocument, line: var StyledLine) =
 
       let colorName = if diagnostic.severity.getSome(severity):
         case severity
-        of Error: "editorError.foreground"
-        of Warning: "editorWarning.foreground"
-        of Information: "editorInfo.foreground"
-        of Hint: "editorHint.foreground"
+        of lsp_types.DiagnosticSeverity.Error: "editorError.foreground"
+        of lsp_types.DiagnosticSeverity.Warning: "editorWarning.foreground"
+        of lsp_types.DiagnosticSeverity.Information: "editorInfo.foreground"
+        of lsp_types.DiagnosticSeverity.Hint: "editorHint.foreground"
       else:
         "editorHint.foreground"
 
@@ -638,10 +638,10 @@ proc addDiagnosticsUnderline(self: TextDocument, line: var StyledLine) =
         gTheme.color(colorName, color(1, 1, 1))
       elif diagnostic.severity.getSome(severity):
         case severity
-        of Error: color(1, 0, 0)
-        of Warning: color(1, 0.8, 0.2)
-        of Information: color(1, 1, 1)
-        of Hint: color(0.7, 0.7, 0.7)
+        of lsp_types.DiagnosticSeverity.Error: color(1, 0, 0)
+        of lsp_types.DiagnosticSeverity.Warning: color(1, 0.8, 0.2)
+        of lsp_types.DiagnosticSeverity.Information: color(1, 1, 1)
+        of lsp_types.DiagnosticSeverity.Hint: color(0.7, 0.7, 0.7)
       else:
         color(0.7, 0.7, 0.7)
 

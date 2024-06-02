@@ -78,6 +78,12 @@ proc complete*[T](future: ResolvableFuture[T], result: sink T) =
   else:
     future.future.complete(result)
 
+proc complete*(future: ResolvableFuture[void]) =
+  when defined(js):
+    future.resolve()
+  else:
+    future.future.complete()
+
 proc newResolvableFuture*[T](name: string): ResolvableFuture[T] =
   when defined(js):
     var resolveFunc: proc(value: T) = nil
