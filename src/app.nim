@@ -80,9 +80,9 @@ type
   RegisterKind* {.pure.} = enum Text, AstNode
   Register* = object
     case kind*: RegisterKind
-    of Text:
+    of RegisterKind.Text:
       text*: string
-    of AstNode:
+    of RegisterKind.AstNode:
       when enableAst:
         node*: AstNode
 
@@ -371,9 +371,9 @@ proc invokeAnyCallback*(self: App, context: string, args: JsonNode): JsonNode =
 
 proc getText(register: var Register): string =
   case register.kind
-  of Text:
+  of RegisterKind.Text:
     return register.text
-  of AstNode:
+  of RegisterKind.AstNode:
     assert false
     return ""
 
@@ -2899,7 +2899,7 @@ proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers) =
 
   for register in self.recordingKeys:
     if not self.registers.contains(register) or self.registers[register].kind != RegisterKind.Text:
-      self.registers[register] = Register(kind: Text, text: "")
+      self.registers[register] = Register(kind: RegisterKind.Text, text: "")
     self.registers[register].text.add inputToString(input, modifiers)
 
   case self.currentEventHandlers.handleEvent(input, modifiers)
@@ -3226,7 +3226,7 @@ proc scriptSetCallback*(path: string, id: int) {.expose("editor").} =
   gEditor.callbacks[path] = id
 
 proc setRegisterTextAsync*(self: App, text: string, register: string = ""): Future[void] {.async.} =
-  self.registers[register] = Register(kind: Text, text: text)
+  self.registers[register] = Register(kind: RegisterKind.Text, text: text)
   if register.len == 0:
     setSystemClipboardText(text)
 
@@ -3242,7 +3242,7 @@ proc getRegisterTextAsync*(self: App, register: string = ""): Future[string] {.a
   return ""
 
 proc setRegisterText*(self: App, text: string, register: string = "") {.expose("editor").} =
-  self.registers[register] = Register(kind: Text, text: text)
+  self.registers[register] = Register(kind: RegisterKind.Text, text: text)
 
 proc getRegisterText*(self: App, register: string): string {.expose("editor").} =
   if register.len == 0:
@@ -3383,7 +3383,7 @@ addGlobalDispatchTable "editor", genDispatchTable("editor")
 proc recordCommand*(self: App, command: string, args: string) =
   for register in self.recordingCommands:
     if not self.registers.contains(register) or self.registers[register].kind != RegisterKind.Text:
-      self.registers[register] = Register(kind: Text, text: "")
+      self.registers[register] = Register(kind: RegisterKind.Text, text: "")
     if self.registers[register].text.len > 0:
       self.registers[register].text.add "\n"
     self.registers[register].text.add command & " " & args

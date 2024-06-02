@@ -78,12 +78,12 @@ method log(self: CustomLogger, level: logging.Level, args: varargs[string, `$`])
     when not defined(js):
       if isTerminal:
         let color = case level
-        of lvlDebug: rgb(100, 100, 200)
-        of lvlInfo: rgb(200, 200, 200)
-        of lvlNotice: rgb(200, 255, 255)
-        of lvlWarn: rgb(200, 200, 100)
-        of lvlError: rgb(255, 150, 150)
-        of lvlFatal: rgb(255, 0, 0)
+        of logging.lvlDebug: rgb(100, 100, 200)
+        of logging.lvlInfo: rgb(200, 200, 200)
+        of logging.lvlNotice: rgb(200, 255, 255)
+        of logging.lvlWarn: rgb(200, 200, 100)
+        of logging.lvlError: rgb(255, 150, 150)
+        of logging.lvlFatal: rgb(255, 0, 0)
         else: rgb(255, 255, 255)
         stdout.write(ansiForegroundColorCode(color))
 
