@@ -1,4 +1,4 @@
-import std/[json, strutils, tables, options, macros, genasts]
+import std/[json, tables, options, macros]
 import misc/[myjsonutils]
 
 type
