@@ -416,7 +416,7 @@ proc sendRequest(client: DAPClient, command: string, args: Option[JsonNode]): Fu
   inc client.nextId
   await client.sendRPC("request", command, args, id)
 
-  let requestFuture = newResolvableFuture[Response[JsonNode]]("DAPCLient.initialize")
+  let requestFuture = newResolvableFuture[Response[JsonNode]]("DAPCLient.sendRequest " & command)
 
   client.activeRequests[id] = (command, requestFuture)
   if not client.requestsPerMethod.contains(command):
@@ -600,12 +600,12 @@ proc getThreads*(client: DAPClient): Future[Response[Threads]] {.async.} =
   return res.to(Threads)
 
 proc initialize*(client: DAPClient) {.async.} =
-  log(lvlInfo, "Initialize client")
+  log lvlInfo, "Initialize client"
   client.run()
 
   let args = some %*{
     "adapterID": "test-adapterID",
-    # "pathFormat": "uri",
+    # "pathFormat": "uri", # todo
   }
 
   let res = await client.sendRequest("initialize", args)
@@ -614,7 +614,7 @@ proc initialize*(client: DAPClient) {.async.} =
     log lvlError, &"Failed to initialized dap client: {res}"
     return
 
-  debugf"initialize: Finished {res.result.pretty}"
+  log lvlInfo, &"[initialize]: Server capabilities: {res.result.pretty}"
   client.isInitialized = true
   client.initializedFuture.complete(true)
 
@@ -655,6 +655,30 @@ proc dispatchEvent(client: DAPClient, event: string, body: JsonNode) =
   else:
     log lvlError, &"Unhandled event {event} ({body})"
 
+proc handleResponse(client: DAPClient, response: JsonNode) =
+  if logVerbose:
+    debugf"[handleResponse] {response}"
+
+  let id = response["request_seq"].getInt
+  if client.activeRequests.contains(id):
+    # debugf"[DAP.run] Complete request {id}"
+    let parsedResponse = response.toResponse JsonNode
+    let (command, future) = client.activeRequests[id]
+    future.complete parsedResponse
+    client.activeRequests.del(id)
+    let index = client.requestsPerMethod[command].find(id)
+    assert index != -1
+    client.requestsPerMethod[command].delete index
+
+  elif client.canceledRequests.contains(id):
+    # Request was canceled
+    if logVerbose:
+      debugf"[handleResponse] Received response for canceled request {id}"
+    client.canceledRequests.excl id
+
+  else:
+    log lvlError, &"[handleResponse] error: received response ({id}) without active request: {response}"
+
 proc runAsync*(client: DAPClient) {.async.} =
   while client.connection.isNotNil:
     if logVerbose:
@@ -662,41 +686,21 @@ proc runAsync*(client: DAPClient) {.async.} =
 
     let response = await client.parseResponse()
     if response.isNil or response.kind != JObject:
-      log(lvlError, fmt"[run] Bad response: {response}")
+      log lvlError, fmt"[run] Bad response: {response}"
       continue
 
     try:
-      let meth = response["type"].getStr
-
-      case meth
+      case response["type"].getStr
       of "event":
         let event = response["event"].getStr
         let body = response.fields.getOrDefault("body", newJNull())
         client.dispatchEvent(event, body)
 
       of "response":
-        if logVerbose:
-          debugf"[DAP.run] {response}"
+        client.handleResponse(response)
 
-        let id = response["request_seq"].getInt
-        if client.activeRequests.contains(id):
-          # debugf"[DAP.run] Complete request {id}"
-          let parsedResponse = response.toResponse JsonNode
-          let (command, future) = client.activeRequests[id]
-          future.complete parsedResponse
-          client.activeRequests.del(id)
-          let index = client.requestsPerMethod[command].find(id)
-          assert index != -1
-          client.requestsPerMethod[command].delete index
-        elif client.canceledRequests.contains(id):
-          # Request was canceled
-          if logVerbose:
-            debugf"[DAP.run] Received response for canceled request {id}"
-          client.canceledRequests.excl id
-        else:
-          log(lvlError, fmt"[run] error: received response with id {id} but got no active request for that id: {response}")
       else:
-        log lvlWarn, &"Unhandled: {response}"
+        log lvlWarn, &"Invalid DAP message, expected 'event' or 'response': {response}"
 
     except:
       log lvlError, &"[run] error: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
@@ -754,23 +758,40 @@ when isMainModule:
 
     var client = newDAPClient(connection)
 
-    discard client.onInitialized.subscribe (data: OnInitializedData) => debugf"onInitialized"
-    discard client.onStopped.subscribe (data: OnStoppedData) => debugf"onStopped {data}"
-    discard client.onContinued.subscribe (data: OnContinuedData) => debugf"onContinued {data}"
-    discard client.onExited.subscribe (data: OnExitedData) => debugf"onExited {data}"
-    discard client.onTerminated.subscribe (data: Option[OnTerminatedData]) => debugf"onTerminated {data}"
-    discard client.onThread.subscribe (data: OnThreadData) => debugf"onThread {data}"
-    discard client.onOutput.subscribe (data: OnOutputData) => debugf"[dap-{data.category}] {data.output}"
-    discard client.onBreakpoint.subscribe (data: OnBreakpointData) => debugf"onBreakpoint {data}"
-    discard client.onModule.subscribe (data: OnModuleData) => debugf"onModule {data}"
-    discard client.onLoadedSource.subscribe (data: OnLoadedSourceData) => debugf"onLoadedSource {data}"
-    discard client.onProcess.subscribe (data: OnProcessData) => debugf"onProcess {data}"
-    discard client.onCapabilities.subscribe (data: OnCapabilitiesData) => debugf"onCapabilities {data}"
-    discard client.onProgressStart.subscribe (data: OnProgressStartData) => debugf"onProgressStart {data}"
-    discard client.onProgressUpdate.subscribe (data: OnProgressUpdateData) => debugf"onProgressUpdate {data}"
-    discard client.onProgressEnd.subscribe (data: OnProgressEndData) => debugf"onProgressEnd {data}"
-    discard client.onInvalidated.subscribe (data: OnInvalidatedData) => debugf"onInvalidated {data}"
-    discard client.onMemory.subscribe (data: OnMemoryData) => debugf"onMemory {data}"
+    discard client.onInitialized.subscribe (data: OnInitializedData) =>
+      log(lvlInfo, &"onInitialized")
+    discard client.onStopped.subscribe (data: OnStoppedData) =>
+      log(lvlInfo, &"onStopped {data}")
+    discard client.onContinued.subscribe (data: OnContinuedData) =>
+      log(lvlInfo, &"onContinued {data}")
+    discard client.onExited.subscribe (data: OnExitedData) =>
+      log(lvlInfo, &"onExited {data}")
+    discard client.onTerminated.subscribe (data: Option[OnTerminatedData]) =>
+      log(lvlInfo, &"onTerminated {data}")
+    discard client.onThread.subscribe (data: OnThreadData) =>
+      log(lvlInfo, &"onThread {data}")
+    discard client.onOutput.subscribe (data: OnOutputData) =>
+      log(lvlInfo, &"[dap-{data.category}] {data.output}")
+    discard client.onBreakpoint.subscribe (data: OnBreakpointData) =>
+      log(lvlInfo, &"onBreakpoint {data}")
+    discard client.onModule.subscribe (data: OnModuleData) =>
+      log(lvlInfo, &"onModule {data}")
+    discard client.onLoadedSource.subscribe (data: OnLoadedSourceData) =>
+      log(lvlInfo, &"onLoadedSource {data}")
+    discard client.onProcess.subscribe (data: OnProcessData) =>
+      log(lvlInfo, &"onProcess {data}")
+    discard client.onCapabilities.subscribe (data: OnCapabilitiesData) =>
+      log(lvlInfo, &"onCapabilities {data}")
+    discard client.onProgressStart.subscribe (data: OnProgressStartData) =>
+      log(lvlInfo, &"onProgressStart {data}")
+    discard client.onProgressUpdate.subscribe (data: OnProgressUpdateData) =>
+      log(lvlInfo, &"onProgressUpdate {data}")
+    discard client.onProgressEnd.subscribe (data: OnProgressEndData) =>
+      log(lvlInfo, &"onProgressEnd {data}")
+    discard client.onInvalidated.subscribe (data: OnInvalidatedData) =>
+      log(lvlInfo, &"onInvalidated {data}")
+    discard client.onMemory.subscribe (data: OnMemoryData) =>
+      log(lvlInfo, &"onMemory {data}")
 
     await client.initialize()
 
