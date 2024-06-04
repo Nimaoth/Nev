@@ -1,5 +1,5 @@
 import std/[options, tables, json]
-import misc/[custom_async, custom_logger, event, custom_unicode]
+import misc/[custom_async, custom_logger, event, custom_unicode, response]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import workspaces/workspace
 import document
@@ -98,13 +98,13 @@ method getImplementation*(self: LanguageServer, filename: string, location: Curs
 method getTypeDefinition*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base.} = discard
 method getReferences*(self: LanguageServer, filename: string, location: Cursor): Future[seq[Definition]] {.base.} = discard
 method switchSourceHeader*(self: LanguageServer, filename: string): Future[Option[string]] {.base.} = discard
-method getCompletions*(self: LanguageServer, languageId: string, filename: string, location: Cursor): Future[lsp_types.Response[lsp_types.CompletionList]] {.base.} = discard
+method getCompletions*(self: LanguageServer, languageId: string, filename: string, location: Cursor): Future[Response[lsp_types.CompletionList]] {.base.} = discard
 method saveTempFile*(self: LanguageServer, filename: string, content: string): Future[void] {.base.} = discard
 method getSymbols*(self: LanguageServer, filename: string): Future[seq[Symbol]] {.base.} = discard
 method getWorkspaceSymbols*(self: LanguageServer, query: string): Future[seq[Symbol]] {.base.} = discard
 method getHover*(self: LanguageServer, filename: string, location: Cursor): Future[Option[string]] {.base.} = discard
 method getInlayHints*(self: LanguageServer, filename: string, selection: Selection): Future[seq[InlayHint]] {.base.} = discard
-method getDiagnostics*(self: LanguageServer, filename: string): Future[lsp_types.Response[seq[Diagnostic]]] {.base.} = discard
+method getDiagnostics*(self: LanguageServer, filename: string): Future[Response[seq[Diagnostic]]] {.base.} = discard
 
 var handleIdCounter = 1
 

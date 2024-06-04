@@ -1,5 +1,5 @@
 import std/[options, tables, strutils]
-import misc/[custom_logger, custom_async, util]
+import misc/[custom_logger, custom_async, util, response]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import text/language/[language_server_base, lsp_types]
 import platform/filesystem
