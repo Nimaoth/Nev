@@ -4,7 +4,7 @@ import chroma
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
 import misc/[id, util, rect_utils, event, custom_logger, custom_async, fuzzy_matching,
-  custom_unicode, delayed_task, myjsonutils, regex, timer]
+  custom_unicode, delayed_task, myjsonutils, regex, timer, response]
 import scripting/[expose]
 import platform/[platform, filesystem]
 import language/[language_server_base]
@@ -18,8 +18,8 @@ import workspaces/workspace
 import finder/[previewer, finder]
 import vcs/vcs
 
-from language/lsp_types import Response, CompletionList, CompletionItem, InsertTextFormat,
-  TextEdit, Range, Position, isSuccess, asTextEdit, asInsertReplaceEdit, toJsonHook
+from language/lsp_types import CompletionList, CompletionItem, InsertTextFormat,
+  TextEdit, Range, Position, asTextEdit, asInsertReplaceEdit, toJsonHook
 
 export text_document, document_editor, id
 
