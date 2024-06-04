@@ -1,9 +1,8 @@
-import custom_async
-
 when not defined(js):
   import std/[asyncnet]
   export asyncnet
 else:
+  import misc/custom_async
   type
     Port* = distinct uint16 ## port type
     AsyncSocket* = ref object
@@ -28,4 +27,4 @@ else:
 
   proc recvLine*(socket: AsyncSocket): owned Future[string] {.async.} =
     echo "recvLine"
-    return "lol"
+    return ""

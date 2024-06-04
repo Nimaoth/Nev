@@ -1,10 +1,11 @@
 import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequtils, sugar, os, parseopt]
-import misc/[custom_logger, async_http_client, websocket, util, event, myjsonutils, custom_async, response]
+import misc/[custom_logger, util, event, myjsonutils, custom_async, response, connection]
 import platform/filesystem
 import scripting/expose
 import dispatch_tables
 
-import misc/custom_asyncnet
+when not defined(js):
+  import misc/[async_process]
 
 logCategory "dap"
 
@@ -22,7 +23,10 @@ proc fromJsonHook*[T](a: var Response[T], b: JsonNode, opt = Joptions()) =
       )
     )
   else:
-    a = Response[JsonNode](id: b["request_seq"].getInt, kind: ResponseKind.Success, result: b.getOrDefault("body")).to T
+    a = Response[JsonNode](
+      id: b["request_seq"].getInt,
+      kind: ResponseKind.Success, result: b.getOrDefault("body")
+    ).to T
 
 proc toResponse*(node: JsonNode, T: typedesc): Response[T] =
   fromJsonHook[T](result, node)
@@ -245,10 +249,8 @@ type
     count*: int
 
 type
-  DAPConnection = ref object of RootObj
-
   DAPClient* = ref object
-    connection: DAPConnection
+    connection: Connection
     nextId: int = 1
     activeRequests: Table[int, tuple[command: string, future: ResolvableFuture[Response[JsonNode]]]]
     requestsPerMethod: Table[string, seq[int]]
@@ -279,60 +281,6 @@ proc run*(client: DAPClient)
 
 proc waitInitialized*(client: DAPCLient): Future[bool] = client.initializedFuture.future
 proc waitInitializedEventReceived*(client: DAPCLient): Future[void] = client.initializedEventFuture.future
-
-method close(connection: DAPConnection) {.base.} = discard
-method recvLine(connection: DAPConnection): Future[string] {.base.} = discard
-method recv(connection: DAPConnection, length: int): Future[string] {.base.} = discard
-method send(connection: DAPConnection, data: string): Future[void] {.base.} = discard
-
-when not defined(js):
-  import misc/[async_process]
-  type DAPConnectionAsyncProcess = ref object of DAPConnection
-    process: AsyncProcess
-
-  method close(connection: DAPConnectionAsyncProcess) = connection.process.destroy
-  method recvLine(connection: DAPConnectionAsyncProcess): Future[string] = connection.process.recvLine
-  method recv(connection: DAPConnectionAsyncProcess, length: int): Future[string] = connection.process.recv(length)
-  method send(connection: DAPConnectionAsyncProcess, data: string): Future[void] = connection.process.send(data)
-
-type DAPConnectionAsyncSocket = ref object of DAPConnection
-  socket: AsyncSocket
-
-method close(connection: DAPConnectionAsyncSocket) =
-  connection.socket.close()
-method recvLine(connection: DAPConnectionAsyncSocket): Future[string] =
-  connection.socket.recvLine()
-method recv(connection: DAPConnectionAsyncSocket, length: int): Future[string] =
-  connection.socket.recv(length)
-method send(connection: DAPConnectionAsyncSocket, data: string): Future[void] =
-  connection.socket.send(data)
-
-type DAPConnectionWebsocket = ref object of DAPConnection
-  websocket: WebSocket
-  buffer: string
-  processId: int
-
-method close(connection: DAPConnectionWebsocket) = connection.websocket.close()
-method recvLine(connection: DAPConnectionWebsocket): Future[string] {.async.} =
-  var newLineIndex = connection.buffer.find("\r\n")
-  while newLineIndex == -1:
-    let next = connection.websocket.receiveStrPacket().await
-    connection.buffer.append next
-    newLineIndex = connection.buffer.find("\r\n")
-
-  let line = connection.buffer[0..<newLineIndex]
-  connection.buffer = connection.buffer[newLineIndex + 2..^1]
-  return line
-
-method recv(connection: DAPConnectionWebsocket, length: int): Future[string] {.async.} =
-  while connection.buffer.len < length:
-    connection.buffer.add connection.websocket.receiveStrPacket().await
-
-  let res = connection.buffer[0..<length]
-  connection.buffer = connection.buffer[length..^1]
-  return res
-
-method send(connection: DAPConnectionWebsocket, data: string): Future[void] = connection.websocket.send(data)
 
 proc encodePathUri(path: string): string = path.normalizePathUnix.split("/").mapIt(it.encodeUrl(false)).join("/")
 
@@ -454,29 +402,6 @@ proc cancelAllOf*(client: DAPClient, command: string) =
   for (id, future) in futures:
     future.complete canceled[JsonNode]()
 
-proc tryGetPortFromLanguagesServer(url: string, port: int, exePath: string, args: seq[string]): Future[Option[tuple[port, processId: int]]] {.async.} =
-  debugf"tryGetPortFromLanguagesServer {url}, {port}, {exePath}, {args}"
-  try:
-    let body = $ %*{
-      "path": exePath,
-      "args": args,
-    }
-
-    let response = await httpPost(fmt"http://{url}:{port}/dap/start", body)
-    let json = response.parseJson
-    if not json.hasKey("port") or json["port"].kind != JInt:
-      return (int, int).none
-    if not json.hasKey("processId") or json["processId"].kind != JInt:
-      return (int, int).none
-
-    # return (3333, 0).some
-    let port = json["port"].num.int
-    let processId = json["processId"].num.int
-    return (port, processId).some
-  except CatchableError:
-    log lvlError, &"Failed to connect to languages server {url}:{port}: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
-    return (int, int).none
-
 when not defined(js):
   proc logProcessDebugOutput(process: AsyncProcess) {.async.} =
     while process.isAlive:
@@ -484,19 +409,19 @@ when not defined(js):
       if logServerDebug:
         log(lvlDebug, fmt"[debug] {line}")
 
-proc launch(client: DAPClient, args: JsonNode) {.async.} =
+proc launch*(client: DAPClient, args: JsonNode) {.async.} =
   log lvlInfo, &"Launch '{args}'"
   let res = await client.sendRequest("launch", args.some)
   if res.isError:
     log lvlError, &"Failed to launch: {res}"
 
-proc attach(client: DAPClient, args: JsonNode) {.async.} =
+proc attach*(client: DAPClient, args: JsonNode) {.async.} =
   log lvlInfo, &"Attach '{args}'"
   let res = await client.sendRequest("attach", args.some)
   if res.isError:
     log lvlError, &"Failed to attach: {res}"
 
-proc disconnect(client: DAPClient, restart: bool,
+proc disconnect*(client: DAPClient, restart: bool,
     terminateDebuggee = bool.none, suspendDebuggee = bool.none) {.async.} =
 
   log lvlInfo, &"disconnect (restart={restart}, terminateDebuggee={terminateDebuggee}, suspendDebuggee={suspendDebuggee})"
@@ -513,7 +438,7 @@ proc disconnect(client: DAPClient, restart: bool,
   if res.isError:
     log lvlError, &"Failed to disconnect: {res}"
 
-proc setBreakpoints(client: DAPClient, source: Source, breakpoints: seq[SourceBreakpoint], sourceModified = bool.none) {.async.} =
+proc setBreakpoints*(client: DAPClient, source: Source, breakpoints: seq[SourceBreakpoint], sourceModified = bool.none) {.async.} =
   log lvlInfo, &"setBreakpoints"
 
   var args = %*{
@@ -528,14 +453,14 @@ proc setBreakpoints(client: DAPClient, source: Source, breakpoints: seq[SourceBr
 
   # debugf"{res.result.pretty}"
 
-proc configurationDone(client: DAPClient) {.async.} =
+proc configurationDone*(client: DAPClient) {.async.} =
   log lvlInfo, &"configurationDone"
   let res = await client.sendRequest("configurationDone", JsonNode.none)
   if res.isError:
     log lvlError, &"Failed to finish configuration: {res}"
     return
 
-proc continueExecution(client: DAPClient, threadId: int, singleThreaded = bool.none) {.async.} =
+proc continueExecution*(client: DAPClient, threadId: int, singleThreaded = bool.none) {.async.} =
   log lvlInfo, &"continueExecution (threadId={threadId}, singleThreaded={singleThreaded})"
 
   var args = %*{
@@ -551,7 +476,7 @@ proc continueExecution(client: DAPClient, threadId: int, singleThreaded = bool.n
 
   # debugf"{res.result.pretty}"
 
-proc getThreads(client: DAPClient): Future[Response[Threads]] {.async.} =
+proc getThreads*(client: DAPClient): Future[Response[Threads]] {.async.} =
   log lvlInfo, &"getThreads"
   let res = await client.sendRequest("threads", JsonNode.none)
   if res.isError:
@@ -559,7 +484,7 @@ proc getThreads(client: DAPClient): Future[Response[Threads]] {.async.} =
     return res.to(Threads)
   return res.to(Threads)
 
-proc initialize(client: DAPClient) {.async.} =
+proc initialize*(client: DAPClient) {.async.} =
   log(lvlInfo, "Initialize client")
   client.run()
 
@@ -578,32 +503,7 @@ proc initialize(client: DAPClient) {.async.} =
   client.isInitialized = true
   client.initializedFuture.complete(true)
 
-proc newAsyncSocketConnection*(host: string, port: Port): Future[DAPConnectionAsyncSocket] {.async.} =
-  log lvlInfo, fmt"Creating async socket connection at {host}:{port.int}"
-  let socket = newAsyncSocket()
-  await socket.connect(host, port)
-  return DAPConnectionAsyncSocket(socket: socket)
-
-proc asyncVoid() {.async.} =
-  discard
-
-proc newAsyncProcessConnection*(path: string, args: seq[string]):
-    Future[DAPConnectionAsyncProcess] {.async.} =
-
-  log lvlInfo, fmt"Creating async process connection at {path} {args}"
-
-  let process = startAsyncProcess(path, args, autoRestart=false)
-
-  var fut = newResolvableFuture[void]("newAsyncProcessConnection")
-  process.onRestarted = proc(): Future[void] =
-    asyncCheck logProcessDebugOutput(process)
-    fut.complete()
-    return asyncVoid()
-
-  await fut.future
-  return DAPConnectionAsyncProcess(process: process)
-
-proc newDAPClient*(connection: DAPConnection): DAPCLient =
+proc newDAPClient*(connection: Connection): DAPCLient =
   var client = DAPCLient(
     initializedFuture: newResolvableFuture[bool]("client.initializedFuture"),
     initializedEventFuture: newResolvableFuture[void]("client.initializedEventFuture"),
@@ -612,7 +512,7 @@ proc newDAPClient*(connection: DAPConnection): DAPCLient =
   client.connection = connection
   client
 
-proc dispatchEvent*(client: DAPClient, event: string, body: JsonNode) =
+proc dispatchEvent(client: DAPClient, event: string, body: JsonNode) =
   let opts = JOptions(allowMissingKeys: true, allowExtraKeys: true)
   case event
   of "initialized":
@@ -731,7 +631,7 @@ when isMainModule:
       const lldpDapPath = "/bin/lldb-dap-18"
       # const lldpDapPath = "/home/nimaoth/dev/llvm-project/build_lldb/bin/lldb-dap"
 
-    var connection: DAPConnection
+    var connection: Connection
     if port >= 0:
       connection = await newAsyncSocketConnection("127.0.0.1", port.Port)
     else:
