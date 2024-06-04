@@ -1,8 +1,10 @@
-import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequtils, sugar, os]
+import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequtils, sugar, os, parseopt]
 import misc/[custom_logger, async_http_client, websocket, util, event, myjsonutils, custom_async, response]
 import platform/filesystem
 import scripting/expose
 import dispatch_tables
+
+import misc/custom_asyncnet
 
 logCategory "dap"
 
@@ -15,7 +17,7 @@ proc fromJsonHook*[T](a: var Response[T], b: JsonNode, opt = Joptions()) =
       id: b["request_seq"].getInt,
       kind: ResponseKind.Error,
       error: ResponseError(
-        message:  b["message"].getStr,
+        message:  b.fields.getOrDefault("message", newJString("")).getStr,
         data: b.getOrDefault("body"),
       )
     )
@@ -273,6 +275,8 @@ type
     onInvalidated*: Event[OnInvalidatedData]
     onMemory*: Event[OnMemoryData]
 
+proc run*(client: DAPClient)
+
 proc waitInitialized*(client: DAPCLient): Future[bool] = client.initializedFuture.future
 proc waitInitializedEventReceived*(client: DAPCLient): Future[void] = client.initializedEventFuture.future
 
@@ -290,6 +294,18 @@ when not defined(js):
   method recvLine(connection: DAPConnectionAsyncProcess): Future[string] = connection.process.recvLine
   method recv(connection: DAPConnectionAsyncProcess, length: int): Future[string] = connection.process.recv(length)
   method send(connection: DAPConnectionAsyncProcess, data: string): Future[void] = connection.process.send(data)
+
+type DAPConnectionAsyncSocket = ref object of DAPConnection
+  socket: AsyncSocket
+
+method close(connection: DAPConnectionAsyncSocket) =
+  connection.socket.close()
+method recvLine(connection: DAPConnectionAsyncSocket): Future[string] =
+  connection.socket.recvLine()
+method recv(connection: DAPConnectionAsyncSocket, length: int): Future[string] =
+  connection.socket.recv(length)
+method send(connection: DAPConnectionAsyncSocket, data: string): Future[void] =
+  connection.socket.send(data)
 
 type DAPConnectionWebsocket = ref object of DAPConnection
   websocket: WebSocket
@@ -474,6 +490,12 @@ proc launch(client: DAPClient, args: JsonNode) {.async.} =
   if res.isError:
     log lvlError, &"Failed to launch: {res}"
 
+proc attach(client: DAPClient, args: JsonNode) {.async.} =
+  log lvlInfo, &"Attach '{args}'"
+  let res = await client.sendRequest("attach", args.some)
+  if res.isError:
+    log lvlError, &"Failed to attach: {res}"
+
 proc disconnect(client: DAPClient, restart: bool,
     terminateDebuggee = bool.none, suspendDebuggee = bool.none) {.async.} =
 
@@ -501,11 +523,10 @@ proc setBreakpoints(client: DAPClient, source: Source, breakpoints: seq[SourceBr
 
   let res = await client.sendRequest("setBreakpoints", args.some)
   if res.isError:
-    echo res
     log lvlError, &"Failed to set breakpoints: {res}"
     return
 
-  echo res.result.pretty
+  # debugf"{res.result.pretty}"
 
 proc configurationDone(client: DAPClient) {.async.} =
   log lvlInfo, &"configurationDone"
@@ -513,7 +534,6 @@ proc configurationDone(client: DAPClient) {.async.} =
   if res.isError:
     log lvlError, &"Failed to finish configuration: {res}"
     return
-
 
 proc continueExecution(client: DAPClient, threadId: int, singleThreaded = bool.none) {.async.} =
   log lvlInfo, &"continueExecution (threadId={threadId}, singleThreaded={singleThreaded})"
@@ -524,13 +544,12 @@ proc continueExecution(client: DAPClient, threadId: int, singleThreaded = bool.n
   if singleThreaded.getSome(singleThreaded):
     args["singleThreaded"] = singleThreaded.toJson
 
-  let res = await client.sendRequest("continueExecution", args.some)
+  let res = await client.sendRequest("continue", args.some)
   if res.isError:
-    echo res
     log lvlError, &"Failed to continue execution: {res}"
     return
 
-  echo res.result.pretty
+  # debugf"{res.result.pretty}"
 
 proc getThreads(client: DAPClient): Future[Response[Threads]] {.async.} =
   log lvlInfo, &"getThreads"
@@ -538,11 +557,11 @@ proc getThreads(client: DAPClient): Future[Response[Threads]] {.async.} =
   if res.isError:
     log lvlError, &"Failed get threads: {res}"
     return res.to(Threads)
-  echo res.result.pretty
   return res.to(Threads)
 
 proc initialize(client: DAPClient) {.async.} =
-  log(lvlInfo, "Initialized client")
+  log(lvlInfo, "Initialize client")
+  client.run()
 
   let args = some %*{
     "adapterID": "test-adapterID",
@@ -551,31 +570,47 @@ proc initialize(client: DAPClient) {.async.} =
 
   let res = await client.sendRequest("initialize", args)
   if res.isError:
-    debugf"initialized: {res}"
     client.initializedFuture.complete(false)
     log lvlError, &"Failed to initialized dap client: {res}"
     return
 
-  debugf"initialized: {res.result.pretty}"
+  debugf"initialize: Finished {res.result.pretty}"
   client.isInitialized = true
   client.initializedFuture.complete(true)
 
-proc connect*(client: DAPClient, serverExecutablePath: string, args: seq[string]) {.async.} =
-  client.initializedFuture = newResolvableFuture[bool]("client.initializedFuture")
-  client.initializedEventFuture = newResolvableFuture[void]("client.initializedEventFuture")
+proc newAsyncSocketConnection*(host: string, port: Port): Future[DAPConnectionAsyncSocket] {.async.} =
+  log lvlInfo, fmt"Creating async socket connection at {host}:{port.int}"
+  let socket = newAsyncSocket()
+  await socket.connect(host, port)
+  return DAPConnectionAsyncSocket(socket: socket)
 
-  when not defined(js):
-    log lvlInfo, fmt"Using process '{serverExecutablePath} {args}' as DAP connection"
-    let process = startAsyncProcess(serverExecutablePath, args)
-    let connection = DAPConnectionAsyncProcess(process: process)
-    connection.process.onRestarted = proc(): Future[void] =
-      asyncCheck logProcessDebugOutput(process)
-      return client.initialize()
-    client.connection = connection
+proc asyncVoid() {.async.} =
+  discard
 
-  else:
-    log lvlError, "DAP connection not implemented for JS"
-    return
+proc newAsyncProcessConnection*(path: string, args: seq[string]):
+    Future[DAPConnectionAsyncProcess] {.async.} =
+
+  log lvlInfo, fmt"Creating async process connection at {path} {args}"
+
+  let process = startAsyncProcess(path, args, autoRestart=false)
+
+  var fut = newResolvableFuture[void]("newAsyncProcessConnection")
+  process.onRestarted = proc(): Future[void] =
+    asyncCheck logProcessDebugOutput(process)
+    fut.complete()
+    return asyncVoid()
+
+  await fut.future
+  return DAPConnectionAsyncProcess(process: process)
+
+proc newDAPClient*(connection: DAPConnection): DAPCLient =
+  var client = DAPCLient(
+    initializedFuture: newResolvableFuture[bool]("client.initializedFuture"),
+    initializedEventFuture: newResolvableFuture[void]("client.initializedEventFuture"),
+  )
+
+  client.connection = connection
+  client
 
 proc dispatchEvent*(client: DAPClient, event: string, body: JsonNode) =
   let opts = JOptions(allowMissingKeys: true, allowExtraKeys: true)
@@ -607,7 +642,8 @@ proc dispatchEvent*(client: DAPClient, event: string, body: JsonNode) =
 
 proc runAsync*(client: DAPClient) {.async.} =
   while client.connection.isNotNil:
-    # debugf"[run] Waiting for response {(client.activeRequests.len)}"
+    if logVerbose:
+      debugf"[run] Waiting for response {(client.activeRequests.len)}"
 
     let response = await client.parseResponse()
     if response.isNil or response.kind != JObject:
@@ -621,12 +657,13 @@ proc runAsync*(client: DAPClient) {.async.} =
       of "event":
         let event = response["event"].getStr
         let body = response.fields.getOrDefault("body", newJNull())
-        # echo response.pretty
         client.dispatchEvent(event, body)
 
       of "response":
+        if logVerbose:
+          debugf"[DAP.run] {response}"
+
         let id = response["request_seq"].getInt
-        # debugf"[DAP.run] {response}"
         if client.activeRequests.contains(id):
           # debugf"[DAP.run] Complete request {id}"
           let parsedResponse = response.toResponse JsonNode
@@ -638,7 +675,8 @@ proc runAsync*(client: DAPClient) {.async.} =
           client.requestsPerMethod[command].delete index
         elif client.canceledRequests.contains(id):
           # Request was canceled
-          debugf"[DAP.run] Received response for canceled request {id}"
+          if logVerbose:
+            debugf"[DAP.run] Received response for canceled request {id}"
           client.canceledRequests.excl id
         else:
           log(lvlError, fmt"[run] error: received response with id {id} but got no active request for that id: {response}")
@@ -651,18 +689,16 @@ proc runAsync*(client: DAPClient) {.async.} =
 proc run*(client: DAPClient) =
   asyncCheck client.runAsync()
 
-# exposed api
-
-proc lspLogVerbose*(val: bool) {.expose("dap").} =
-  debugf"lspLogVerbose {val}"
+proc dapLogVerbose*(val: bool) {.expose("dap").} =
+  debugf"dapLogVerbose {val}"
   logVerbose = val
 
-proc lspToggleLogServerDebug*() {.expose("dap").} =
+proc dapToggleLogServerDebug*() {.expose("dap").} =
   logServerDebug = not logServerDebug
-  debugf"lspToggleLogServerDebug {logServerDebug}"
+  debugf"dapToggleLogServerDebug {logServerDebug}"
 
-proc lspLogServerDebug*(val: bool) {.expose("dap").} =
-  debugf"lspLogServerDebug {val}"
+proc dapLogServerDebug*(val: bool) {.expose("dap").} =
+  debugf"dapLogServerDebug {val}"
   logServerDebug = val
 
 addActiveDispatchTable "dap", genDispatchTable("dap"), global=true
@@ -670,75 +706,102 @@ addActiveDispatchTable "dap", genDispatchTable("dap"), global=true
 when isMainModule:
   logger.enableConsoleLogger()
 
+  var port = -1
+
+  var optParser = initOptParser("")
+  for kind, key, val in optParser.getopt():
+    case kind
+    of cmdArgument:
+      discard
+
+    of cmdLongOption, cmdShortOption:
+      case key
+      of "port", "p":
+        port = val.parseInt
+
+    else:
+      discard
+
   proc test() {.async.} =
-    var client = DAPClient()
 
     when defined(windows):
-      await client.connect("D:/llvm/bin/lldb-dap.exe", @[])
+      const lldpDapPath = "D:/llvm/bin/lldb-dap.exe"
+      # const lldpDapPath = "lldb-dap.exe"
     else:
-      await client.connect("/bin/lldb-dap-18", @[])
+      const lldpDapPath = "/bin/lldb-dap-18"
+      # const lldpDapPath = "/home/nimaoth/dev/llvm-project/build_lldb/bin/lldb-dap"
 
-    discard client.onInitialized.subscribe (data: OnInitializedData) => echo &"onInitialized"
-    discard client.onStopped.subscribe (data: OnStoppedData) => echo &"onStopped {data}"
-    discard client.onContinued.subscribe (data: OnContinuedData) => echo &"onContinued {data}"
-    discard client.onExited.subscribe (data: OnExitedData) => echo &"onExited {data}"
-    discard client.onTerminated.subscribe (data: Option[OnTerminatedData]) => echo &"onTerminated {data}"
-    discard client.onThread.subscribe (data: OnThreadData) => echo &"onThread {data}"
-    discard client.onOutput.subscribe (data: OnOutputData) => echo &"[dap-{data.category}] {data.output}"
-    discard client.onBreakpoint.subscribe (data: OnBreakpointData) => echo &"onBreakpoint {data}"
-    discard client.onModule.subscribe (data: OnModuleData) => echo &"onModule {data}"
-    discard client.onLoadedSource.subscribe (data: OnLoadedSourceData) => echo &"onLoadedSource {data}"
-    discard client.onProcess.subscribe (data: OnProcessData) => echo &"onProcess {data}"
-    discard client.onCapabilities.subscribe (data: OnCapabilitiesData) => echo &"onCapabilities {data}"
-    discard client.onProgressStart.subscribe (data: OnProgressStartData) => echo &"onProgressStart {data}"
-    discard client.onProgressUpdate.subscribe (data: OnProgressUpdateData) => echo &"onProgressUpdate {data}"
-    discard client.onProgressEnd.subscribe (data: OnProgressEndData) => echo &"onProgressEnd {data}"
-    discard client.onInvalidated.subscribe (data: OnInvalidatedData) => echo &"onInvalidated {data}"
-    discard client.onMemory.subscribe (data: OnMemoryData) => echo &"onMemory {data}"
+    var connection: DAPConnection
+    if port >= 0:
+      connection = await newAsyncSocketConnection("127.0.0.1", port.Port)
+    else:
+      connection = await newAsyncProcessConnection(lldpDapPath, @[])
 
-    client.run()
+    var client = newDAPClient(connection)
+
+    discard client.onInitialized.subscribe (data: OnInitializedData) => debugf"onInitialized"
+    discard client.onStopped.subscribe (data: OnStoppedData) => debugf"onStopped {data}"
+    discard client.onContinued.subscribe (data: OnContinuedData) => debugf"onContinued {data}"
+    discard client.onExited.subscribe (data: OnExitedData) => debugf"onExited {data}"
+    discard client.onTerminated.subscribe (data: Option[OnTerminatedData]) => debugf"onTerminated {data}"
+    discard client.onThread.subscribe (data: OnThreadData) => debugf"onThread {data}"
+    discard client.onOutput.subscribe (data: OnOutputData) => debugf"[dap-{data.category}] {data.output}"
+    discard client.onBreakpoint.subscribe (data: OnBreakpointData) => debugf"onBreakpoint {data}"
+    discard client.onModule.subscribe (data: OnModuleData) => debugf"onModule {data}"
+    discard client.onLoadedSource.subscribe (data: OnLoadedSourceData) => debugf"onLoadedSource {data}"
+    discard client.onProcess.subscribe (data: OnProcessData) => debugf"onProcess {data}"
+    discard client.onCapabilities.subscribe (data: OnCapabilitiesData) => debugf"onCapabilities {data}"
+    discard client.onProgressStart.subscribe (data: OnProgressStartData) => debugf"onProgressStart {data}"
+    discard client.onProgressUpdate.subscribe (data: OnProgressUpdateData) => debugf"onProgressUpdate {data}"
+    discard client.onProgressEnd.subscribe (data: OnProgressEndData) => debugf"onProgressEnd {data}"
+    discard client.onInvalidated.subscribe (data: OnInvalidatedData) => debugf"onInvalidated {data}"
+    discard client.onMemory.subscribe (data: OnMemoryData) => debugf"onMemory {data}"
+
+    await client.initialize()
+
+    when defined(linux):
+      let sourcePath = "/mnt/c/Absytree/temp/test.cpp"
+      let exePath = "/mnt/c/Absytree/temp/test_dbg"
+      # let sourcePath = "/mnt/c/Absytree/temp/test.py"
+      # let exePath = "/mnt/c/Absytree/temp/test.py"
+    else:
+      let sourcePath = "C:\\Absytree\\temp\\test.cpp"
+      let exePath = "C:\\Absytree\\temp\\test_dbg.exe"
 
     if client.waitInitialized.await:
-      debugf"launch"
+      # await client.attach %*{
+      #   "program": exePath,
+      # }
+
       await client.launch %*{
-        "program": "/mnt/c/Absytree/temp/test_dbg",
+        "program": exePath,
       }
+
       let threads = await client.getThreads
       if threads.isError:
+        log lvlError, &"Failed to get threads: {threads}"
         return
-
 
       debugf"waiting for initialized event"
       await client.waitInitializedEventReceived
-      debugf"setBreakpoints"
 
       await client.setBreakpoints(
-        Source(path: some "/mnt/c/Absytree/temp/test.cpp"),
+        Source(path: sourcePath.some),
         @[
-          # SourceBreakpoint(line: 31),
-          # SourceBreakpoint(line: 35),
-          SourceBreakpoint(line: 43),
+          SourceBreakpoint(line: 42),
+          SourceBreakpoint(line: 52),
         ]
       )
 
       await client.configurationDone()
 
       await sleepAsync(5000)
-      debugf"continue"
       await client.continueExecution(threads.result.threads[0].id)
 
       await sleepAsync(5000)
-      debugf"continue"
-      await client.continueExecution(threads.result.threads[0].id)
-
-      debugf"sleep"
-      await sleepAsync(5000)
-      debugf"disconnect"
       await client.disconnect(restart=false)
-      debugf"sleep"
-      await sleepAsync(2000)
 
-  waitFor test()
-
-  # while true:
-  #   poll(10)
+  try:
+    waitFor test()
+  except ValueError:
+    discard
