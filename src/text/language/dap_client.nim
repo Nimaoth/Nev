@@ -48,6 +48,16 @@ type
     SHA256 = "SHA256"
     Timestamp = "timestamp"
 
+  SteppingGranularity* = enum
+    Statement = "statement"
+    Line = "line"
+    Instruction = "instruction"
+
+  PresentationHint* = enum
+    Normal = "normal"
+    Label = "label"
+    Subtle = "subtle"
+
   Checksum* = object
     algorithm*: ChecksumAlgorithm
     checksum*: string
@@ -163,6 +173,35 @@ type
     label*: string
     description*: Option[string]
     appliesTo*: seq[string]
+
+  ValueFormat* {.inheritable.} = object
+    hex*: Option[bool]
+
+  StackFrameFormat* = object of ValueFormat
+    parameters*: Option[bool]
+    parameterTypes*: Option[bool]
+    parameterNames*: Option[bool]
+    parameterValues*: Option[bool]
+    line*: Option[bool]
+    module*: Option[bool]
+    includeAll*: Option[bool]
+
+  StackFrame* = object
+    id*: int
+    name*: string
+    source*: Option[Source]
+    line*: int
+    column*: int
+    endLine*: Option[int]
+    endColumn*: Option[int]
+    canRestart*: Option[bool]
+    instructionPointerReference*: Option[string]
+    moduleId*: Option[JsonNode]
+    presentationHint*: PresentationHint
+
+  StackTraceResponse* = object
+    stackFrames*: seq[StackFrame]
+    totalFrames*: Option[int]
 
   OnInitializedData* = void
 
@@ -474,7 +513,83 @@ proc continueExecution*(client: DAPClient, threadId: int, singleThreaded = bool.
     log lvlError, &"Failed to continue execution: {res}"
     return
 
-  # debugf"{res.result.pretty}"
+proc next*(client: DAPClient, threadId: int, singleThreaded = bool.none,
+    granularity = SteppingGranularity.none) {.async.} =
+
+  log lvlInfo, &"next (threadId={threadId}, singleThreaded={singleThreaded}, granularity={granularity})"
+
+  var args = %*{
+    "threadId": threadId,
+  }
+  if singleThreaded.getSome(singleThreaded):
+    args["singleThreaded"] = singleThreaded.toJson
+  if granularity.getSome(granularity):
+    args["granularity"] = granularity.toJson
+
+  let res = await client.sendRequest("next", args.some)
+  if res.isError:
+    log lvlError, &"'next' failed: {res}"
+    return
+
+proc stepIn*(client: DAPClient, threadId: int, singleThreaded = bool.none, targetId = int.none,
+    granularity = SteppingGranularity.none) {.async.} =
+
+  log lvlInfo, &"stepIn (threadId={threadId}, singleThreaded={singleThreaded}, targetId={targetId}, granularity={granularity})"
+
+  var args = %*{
+    "threadId": threadId,
+  }
+  if singleThreaded.getSome(singleThreaded):
+    args["singleThreaded"] = singleThreaded.toJson
+  if targetId.getSome(targetId):
+    args["targetId"] = targetId.toJson
+  if granularity.getSome(granularity):
+    args["granularity"] = granularity.toJson
+
+  let res = await client.sendRequest("stepIn", args.some)
+  if res.isError:
+    log lvlError, &"'stepIn' failed: {res}"
+    return
+
+proc stepOut*(client: DAPClient, threadId: int, singleThreaded = bool.none,
+    granularity = SteppingGranularity.none) {.async.} =
+
+  log lvlInfo, &"stepOut (threadId={threadId}, singleThreaded={singleThreaded}, granularity={granularity})"
+
+  var args = %*{
+    "threadId": threadId,
+  }
+  if singleThreaded.getSome(singleThreaded):
+    args["singleThreaded"] = singleThreaded.toJson
+  if granularity.getSome(granularity):
+    args["granularity"] = granularity.toJson
+
+  let res = await client.sendRequest("stepOut", args.some)
+  if res.isError:
+    log lvlError, &"'stepOut' failed: {res}"
+    return
+
+proc stackTrace*(client: DAPClient, threadId: int, startFrame = int.none, levels = int.none,
+    format = StackFrameFormat.none): Future[Response[StackTraceResponse]] {.async.} =
+
+  log lvlInfo, &"stackTrace (threadId={threadId}, startFrame={startFrame}, levels={levels}, format={format})"
+
+  var args = %*{
+    "threadId": threadId,
+  }
+  if startFrame.getSome(startFrame):
+    args["startFrame"] = startFrame.toJson
+  if levels.getSome(levels):
+    args["levels"] = levels.toJson
+  if format.getSome(format):
+    args["format"] = format.toJson
+
+  let res = await client.sendRequest("stackTrace", args.some)
+  if res.isError:
+    log lvlError, &"'stackTrace' failed: {res}"
+    return res.to(StackTraceResponse)
+
+  return res.to(StackTraceResponse)
 
 proc getThreads*(client: DAPClient): Future[Response[Threads]] {.async.} =
   log lvlInfo, &"getThreads"
@@ -695,10 +810,16 @@ when isMainModule:
 
       await client.configurationDone()
 
-      await sleepAsync(5000)
-      await client.continueExecution(threads.result.threads[0].id)
+      await sleepAsync(2000)
 
-      await sleepAsync(5000)
+      let stackTrace = await client.stackTrace(threads.result.threads[0].id)
+      debugf"stacktrace: {stackTrace}"
+
+      await client.continueExecution(threads.result.threads[0].id)
+      await sleepAsync(1000)
+      await client.next(threads.result.threads[0].id)
+
+      await sleepAsync(2000)
       await client.disconnect(restart=false)
 
   try:
