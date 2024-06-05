@@ -45,3 +45,33 @@ proc addBreakpoint*(file: string; line: int) =
   let res {.used.} = debugger_addBreakpoint_void_Debugger_string_int_wasm(
       argsJsonString.cstring)
 
+
+proc debugger_continueExecution_void_Debugger_wasm(arg: cstring): cstring {.
+    importc.}
+proc continueExecution*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = debugger_continueExecution_void_Debugger_wasm(
+      argsJsonString.cstring)
+
+
+proc debugger_stepOver_void_Debugger_wasm(arg: cstring): cstring {.importc.}
+proc stepOver*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = debugger_stepOver_void_Debugger_wasm(argsJsonString.cstring)
+
+
+proc debugger_stepIn_void_Debugger_wasm(arg: cstring): cstring {.importc.}
+proc stepIn*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = debugger_stepIn_void_Debugger_wasm(argsJsonString.cstring)
+
+
+proc debugger_stepOut_void_Debugger_wasm(arg: cstring): cstring {.importc.}
+proc stepOut*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = debugger_stepOut_void_Debugger_wasm(argsJsonString.cstring)
+

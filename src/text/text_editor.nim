@@ -198,9 +198,9 @@ proc updateTargetColumn*(self: TextDocumentEditor, cursor: SelectionCursor = Las
 proc updateInlayHints*(self: TextDocumentEditor)
 proc updateDiagnosticsForCurrent*(self: TextDocumentEditor)
 proc visibleTextRange*(self: TextDocumentEditor, buffer: int = 0): Selection
-proc addCustomHighlight(self: TextDocumentEditor, id: Id, selection: Selection, color: string,
+proc addCustomHighlight*(self: TextDocumentEditor, id: Id, selection: Selection, color: string,
   tint: Color = color(1, 1, 1))
-proc clearCustomHighlights(self: TextDocumentEditor, id: Id)
+proc clearCustomHighlights*(self: TextDocumentEditor, id: Id)
 proc updateSearchResults(self: TextDocumentEditor)
 proc centerCursor*(self: TextDocumentEditor, cursor: SelectionCursor = SelectionCursor.Config)
 proc centerCursor*(self: TextDocumentEditor, cursor: Cursor)
@@ -481,7 +481,7 @@ iterator splitSelectionIntoLines(self: TextDocumentEditor, selection: Selection,
 
     yield ((selection.last.line, 0), selection.last)
 
-proc clearCustomHighlights(self: TextDocumentEditor, id: Id) =
+proc clearCustomHighlights*(self: TextDocumentEditor, id: Id) =
   ## Removes all custom highlights associated with the given id
 
   for highlights in self.customHighlights.mvalues:
@@ -489,7 +489,7 @@ proc clearCustomHighlights(self: TextDocumentEditor, id: Id) =
       if highlights[i].id == id:
         highlights.removeSwap(i)
 
-proc addCustomHighlight(self: TextDocumentEditor, id: Id, selection: Selection, color: string,
+proc addCustomHighlight*(self: TextDocumentEditor, id: Id, selection: Selection, color: string,
     tint: Color = color(1, 1, 1)) =
   # customHighlights*: Table[int, seq[(Id, Selection, Color)]]
   for lineSelection in self.splitSelectionIntoLines(selection):
@@ -750,7 +750,7 @@ proc fromJsonHook*(t: var api.TextDocumentEditor, jsonNode: JsonNode) =
 proc lineCount(self: TextDocumentEditor): int {.expose: "editor.text".} =
   return self.document.lines.len
 
-proc lineLength(self: TextDocumentEditor, line: int): int {.expose: "editor.text".} =
+proc lineLength*(self: TextDocumentEditor, line: int): int {.expose: "editor.text".} =
   return self.document.lineLength(line)
 
 proc screenLineCount(self: TextDocumentEditor): int {.expose: "editor.text".} =

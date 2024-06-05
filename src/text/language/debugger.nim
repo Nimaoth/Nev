@@ -1,18 +1,36 @@
 import std/[strutils, options, json, asynchttpserver, tables, sugar]
-import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, event]
+import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, event, response]
 import scripting/expose
 import dap_client, dispatch_tables, app_interface, config_provider
+import text/text_editor
+
+import chroma
+
+import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
+from scripting_api as api import nil
 
 logCategory "debugger"
+
+let debuggerCurrentLineId = newId()
 
 type
   DebuggerConnectionKind = enum Tcp = "tcp", Stdio = "stdio", Websocket = "websocket"
 
   Debugger* = ref object
     app: AppInterface
+    client: Option[DapClient]
+
+    # Data setup in the editor and sent to the server
     breakpoints: seq[SourceBreakpoint]
 
-    client: Option[DapClient]
+    # Cached data from server
+    threads: seq[ThreadInfo]
+    stackTraces: Table[int, StackTraceResponse]
+
+    # Other stuff
+    currentThreadIndex: int
+
+    lastEditor: Option[TextDocumentEditor]
 
 var gDebugger: Debugger = nil
 
@@ -25,6 +43,11 @@ static:
 
 proc createDebugger*(app: AppInterface) =
   gDebugger = Debugger(app: app)
+
+proc currentThread*(self: Debugger): Option[ThreadInfo] =
+  if self.currentThreadIndex >= 0 and self.currentThreadIndex < self.threads.len:
+    return self.threads[self.currentThreadIndex].some
+  return ThreadInfo.none
 
 proc stopDebugSession*(self: Debugger) {.expose("debugger").} =
   debugf"[stopDebugSession] Stopping session"
@@ -89,20 +112,73 @@ proc createConnectionWithType(self: Debugger, name: string): Future[Option[Conne
 
   return Connection.none
 
+proc updateStackTrace(self: Debugger, threadId: Option[int]): Future[Option[int]] {.async.} =
+  let threadId = if threadId.getSome(id):
+    id
+  elif self.currentThread.getSome(thread):
+    thread.id
+  else:
+    return int.none
+
+  if self.client.getSome(client):
+    let stackTrace = await client.stackTrace(threadId)
+    if stackTrace.isError:
+      return int.none
+    self.stackTraces[threadId] = stackTrace.result
+
+  return threadId.some
+
+proc handleStoppedAsync(self: Debugger, data: OnStoppedData) {.async.} =
+  log(lvlInfo, &"onStopped {data}")
+
+  if self.lastEditor.isSome:
+    self.lastEditor.get.clearCustomHighlights(debuggerCurrentLineId)
+    self.lastEditor = TextDocumentEditor.none
+
+  if self.currentThread.getSome(thread) and self.client.getSome(client):
+    let threadId = await self.updateStackTrace(data.threadId)
+
+    if threadId.getSome(threadId) and self.stackTraces.contains(threadId):
+      let stack {.cursor.} = self.stackTraces[threadId]
+
+      if stack.stackFrames.len == 0:
+        return
+
+      let frame {.cursor.} = stack.stackFrames[0]
+
+      if frame.source.isSome and frame.source.get.path.getSome(path):
+        let editor = self.app.openWorkspaceFile(path, nil)
+
+        if editor.getSome(editor) and editor of TextDocumentEditor:
+          let textEditor = editor.TextDocumentEditor
+          let location: Cursor = (frame.line - 1, frame.column - 1)
+          textEditor.targetSelection = location.toSelection
+
+          let lineSelection = ((location.line, 0), (location.line, textEditor.lineLength(location.line)))
+          textEditor.addCustomHighlight(debuggerCurrentLineId, lineSelection, "editorError.foreground", color(1, 1, 1, 0.3))
+          self.lastEditor = textEditor.some
+
+proc handleStopped(self: Debugger, data: OnStoppedData) =
+  asyncCheck self.handleStoppedAsync(data)
+
+proc handleTerminated(self: Debugger, data: Option[OnTerminatedData]) =
+  log(lvlInfo, &"onTerminated {data}")
+  if self.lastEditor.isSome:
+    self.lastEditor.get.clearCustomHighlights(debuggerCurrentLineId)
+    self.lastEditor = TextDocumentEditor.none
+
 proc setClient(self: Debugger, client: DAPClient) =
   assert self.client.isNone
   self.client = client.some
 
   discard client.onInitialized.subscribe (data: OnInitializedData) =>
     log(lvlInfo, &"onInitialized")
-  discard client.onStopped.subscribe (data: OnStoppedData) =>
-    log(lvlInfo, &"onStopped {data}")
+  discard client.onStopped.subscribe (data: OnStoppedData) => self.handleStopped(data)
   discard client.onContinued.subscribe (data: OnContinuedData) =>
     log(lvlInfo, &"onContinued {data}")
   discard client.onExited.subscribe (data: OnExitedData) =>
     log(lvlInfo, &"onExited {data}")
-  discard client.onTerminated.subscribe (data: Option[OnTerminatedData]) =>
-    log(lvlInfo, &"onTerminated {data}")
+  discard client.onTerminated.subscribe (data: Option[OnTerminatedData]) => self.handleTerminated(data)
   discard client.onThread.subscribe (data: OnThreadData) =>
     log(lvlInfo, &"onThread {data}")
   discard client.onOutput.subscribe (data: OnOutputData) =>
@@ -184,6 +260,13 @@ proc runConfigurationAsync(self: Debugger, name: string) {.async.} =
     ]
   )
 
+  let threads = await client.getThreads
+  if threads.isError:
+    log lvlError, &"Failed to get threads: {threads}"
+    return
+
+  self.threads = threads.result.threads
+
   await client.configurationDone()
 
 proc runConfiguration*(self: Debugger, name: string) {.expose("debugger").} =
@@ -191,6 +274,22 @@ proc runConfiguration*(self: Debugger, name: string) {.expose("debugger").} =
 
 proc addBreakpoint*(self: Debugger, file: string, line: int) {.expose("debugger").} =
   debugf"[addBreakpoint] '{file}' in line {line}"
+
+proc continueExecution*(self: Debugger) {.expose("debugger").} =
+  if self.currentThread.getSome(thread) and self.client.getSome(client):
+    asyncCheck client.continueExecution(thread.id)
+
+proc stepOver*(self: Debugger) {.expose("debugger").} =
+  if self.currentThread.getSome(thread) and self.client.getSome(client):
+    asyncCheck client.next(thread.id)
+
+proc stepIn*(self: Debugger) {.expose("debugger").} =
+  if self.currentThread.getSome(thread) and self.client.getSome(client):
+    asyncCheck client.stepIn(thread.id)
+
+proc stepOut*(self: Debugger) {.expose("debugger").} =
+  if self.currentThread.getSome(thread) and self.client.getSome(client):
+    asyncCheck client.stepOut(thread.id)
 
 genDispatcher("debugger")
 addGlobalDispatchTable "debugger", genDispatchTable("debugger")
