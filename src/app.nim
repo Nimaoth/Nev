@@ -638,6 +638,7 @@ proc getAllDocuments*(self: App): seq[Document] =
     result.incl it.getDocument
 
 import text/[text_editor, text_document]
+import text/language/debugger
 when enableAst:
   import ast/[model_document]
 import selector_popup
@@ -1033,6 +1034,8 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   self.closeUnusedDocumentsTask = startDelayed(2000, repeat=true):
     self.closeUnusedDocuments()
+
+  createDebugger(self.asAppInterface)
 
   return self
 
@@ -3413,6 +3416,9 @@ proc handleAction(self: App, action: string, arg: string, record: bool): bool =
   except CatchableError:
     log(lvlError, fmt"Failed to parse arguments '{arg}': {getCurrentExceptionMsg()}")
     log(lvlError, getCurrentException().getStackTrace())
+
+  if debugger.dispatchEvent(action, args):
+    return true
 
   try:
     withScriptContext self, self.scriptContext:

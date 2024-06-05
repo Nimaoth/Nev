@@ -130,6 +130,7 @@ when enableAst:
   import ast/model_document
 import text/text_editor
 import text/language/lsp_client
+import text/language/debugger
 import selector_popup
 import scripting/scripting_base
 when not defined(js):

@@ -708,19 +708,19 @@ proc runAsync*(client: DAPClient) {.async.} =
 proc run*(client: DAPClient) =
   asyncCheck client.runAsync()
 
-proc dapLogVerbose*(val: bool) {.expose("dap").} =
-  debugf"dapLogVerbose {val}"
-  logVerbose = val
+# proc dapLogVerbose*(val: bool) {.expose("dap").} =
+#   debugf"dapLogVerbose {val}"
+#   logVerbose = val
 
-proc dapToggleLogServerDebug*() {.expose("dap").} =
-  logServerDebug = not logServerDebug
-  debugf"dapToggleLogServerDebug {logServerDebug}"
+# proc dapToggleLogServerDebug*() {.expose("dap").} =
+#   logServerDebug = not logServerDebug
+#   debugf"dapToggleLogServerDebug {logServerDebug}"
 
-proc dapLogServerDebug*(val: bool) {.expose("dap").} =
-  debugf"dapLogServerDebug {val}"
-  logServerDebug = val
+# proc dapLogServerDebug*(val: bool) {.expose("dap").} =
+#   debugf"dapLogServerDebug {val}"
+#   logServerDebug = val
 
-addActiveDispatchTable "dap", genDispatchTable("dap"), global=true
+# addActiveDispatchTable "dap", genDispatchTable("dap"), global=true
 
 when isMainModule:
   logger.enableConsoleLogger()

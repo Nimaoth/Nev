@@ -4,6 +4,12 @@ export scripting_api
 ## This file is auto generated, don't modify.
 
 when defined(wasm):
+  import debugger_api_wasm
+  export debugger_api_wasm
+else:
+  import debugger_api
+  export debugger_api
+when defined(wasm):
   import editor_api_wasm
   export editor_api_wasm
 else:
