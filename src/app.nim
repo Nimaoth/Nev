@@ -1830,6 +1830,13 @@ proc openWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder): Optio
   defer:
     self.platform.requestRender()
 
+  let folder = if folder.isNotNil:
+    folder
+  elif self.workspace.folders.len > 0:
+    self.workspace.folders[0]
+  else:
+    return DocumentEditor.none
+
   let path = folder.getAbsolutePath(path)
 
   log lvlInfo, fmt"[openWorkspaceFile] Open file '{path}' in workspace {folder.name} ({folder.id})"

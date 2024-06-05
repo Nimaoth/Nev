@@ -62,12 +62,12 @@ type
     algorithm*: ChecksumAlgorithm
     checksum*: string
 
-  Thread* = object
+  ThreadInfo* = object
     id*: int
     name*: string
 
   Threads* = object
-    threads*: seq[Thread]
+    threads*: seq[ThreadInfo]
 
   Source* = object
     name*: Option[string]
