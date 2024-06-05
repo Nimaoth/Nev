@@ -106,3 +106,23 @@ setOption "editor.text.language.zig", %*{
   "indentAfter": [":", "=", "(", "{", "["],
   "lineComment": "//",
 }
+
+setOption "debugger.type.lldb-dap", %*{
+  "connection": "stdio",
+  "path": "/bin/lldb-dap-18",
+  "args": [],
+}
+
+setOption "debugger.type.lldb-dap2", %*{}
+
+setOption "debugger.configuration.test1", %*{
+  "type": "lldb-dap",
+  "request": "launch",
+  "program": "/mnt/c/Absytree/temp/test_dbg",
+  "args": [],
+  "cwd": "/mnt/c/Absytree",
+}
+
+setOption "debugger.configuration.test2", %*{
+  "type": "lldb-dap2",
+}
