@@ -234,7 +234,10 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
   addCommand "popup.selector.file-explorer", "<C-UP>", "go-up"
   addCommand "popup.selector.file-explorer", "<C-r>", "go-up"
 
-  addCommand "editor", "<LEADER>al", "run-configuration", "test1"
+  addCommandBlock "editor", "<LEADER>al":
+    runConfiguration "test1"
+    showDebuggerView()
+
   addCommand "editor", "<LEADER>ac", "continue-execution"
   addCommand "editor", "<LEADER>ar", "step-over"
   addCommand "editor", "<LEADER>at", "step-in"

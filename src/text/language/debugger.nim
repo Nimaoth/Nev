@@ -3,6 +3,7 @@ import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, eve
 import scripting/expose
 import dap_client, dispatch_tables, app_interface, config_provider
 import text/text_editor
+import platform/platform
 
 import chroma
 
@@ -32,9 +33,11 @@ type
 
     lastEditor: Option[TextDocumentEditor]
 
+    outputEditor*: TextDocumentEditor
+
 var gDebugger: Debugger = nil
 
-proc getDebugger(): Option[Debugger] =
+proc getDebugger*(): Option[Debugger] =
   if gDebugger.isNil: return Debugger.none
   return gDebugger.some
 
@@ -44,10 +47,27 @@ static:
 proc createDebugger*(app: AppInterface) =
   gDebugger = Debugger(app: app)
 
+  let document = newTextDocument(app.configProvider, createLanguageServer=false)
+  gDebugger.outputEditor = newTextEditor(document, app, app.configProvider)
+  gDebugger.outputEditor.usage = "debugger-output"
+  gDebugger.outputEditor.renderHeader = false
+  gDebugger.outputEditor.disableCompletions = true
+
+  discard gDebugger.outputEditor.onMarkedDirty.subscribe () =>
+    gDebugger.app.platform.requestRender()
+
 proc currentThread*(self: Debugger): Option[ThreadInfo] =
   if self.currentThreadIndex >= 0 and self.currentThreadIndex < self.threads.len:
     return self.threads[self.currentThreadIndex].some
   return ThreadInfo.none
+
+proc getThreads*(self: Debugger): lent seq[ThreadInfo] =
+  return self.threads
+
+proc getStackTrace*(self: Debugger, threadId: int): Option[StackTraceResponse] =
+  if self.stackTraces.contains(threadId):
+    return self.stackTraces[threadId].some
+  return StackTraceResponse.none
 
 proc stopDebugSession*(self: Debugger) {.expose("debugger").} =
   debugf"[stopDebugSession] Stopping session"
@@ -161,11 +181,29 @@ proc handleStoppedAsync(self: Debugger, data: OnStoppedData) {.async.} =
 proc handleStopped(self: Debugger, data: OnStoppedData) =
   asyncCheck self.handleStoppedAsync(data)
 
+proc handleContinued(self: Debugger, data: OnContinuedData) =
+  log(lvlInfo, &"onContinued {data}")
+
 proc handleTerminated(self: Debugger, data: Option[OnTerminatedData]) =
   log(lvlInfo, &"onTerminated {data}")
   if self.lastEditor.isSome:
     self.lastEditor.get.clearCustomHighlights(debuggerCurrentLineId)
     self.lastEditor = TextDocumentEditor.none
+
+proc handleOutput(self: Debugger, data: OnOutputData) =
+  log(lvlInfo, &"[dap-{data.category}] {data.output}")
+  if self.outputEditor.isNil:
+    return
+
+  if data.category == "stdout".some:
+    let document = self.outputEditor.document
+
+    let selection = document.lastCursor.toSelection
+    discard document.insert([selection], [selection], [data.output.replace("\r\n", "\n")])
+
+    if self.outputEditor.selection == selection:
+      self.outputEditor.selection = document.lastCursor.toSelection
+      self.outputEditor.scrollToCursor()
 
 proc setClient(self: Debugger, client: DAPClient) =
   assert self.client.isNone
@@ -174,15 +212,13 @@ proc setClient(self: Debugger, client: DAPClient) =
   discard client.onInitialized.subscribe (data: OnInitializedData) =>
     log(lvlInfo, &"onInitialized")
   discard client.onStopped.subscribe (data: OnStoppedData) => self.handleStopped(data)
-  discard client.onContinued.subscribe (data: OnContinuedData) =>
-    log(lvlInfo, &"onContinued {data}")
+  discard client.onContinued.subscribe (data: OnContinuedData) => self.handleContinued(data)
   discard client.onExited.subscribe (data: OnExitedData) =>
     log(lvlInfo, &"onExited {data}")
   discard client.onTerminated.subscribe (data: Option[OnTerminatedData]) => self.handleTerminated(data)
   discard client.onThread.subscribe (data: OnThreadData) =>
     log(lvlInfo, &"onThread {data}")
-  discard client.onOutput.subscribe (data: OnOutputData) =>
-    log(lvlInfo, &"[dap-{data.category}] {data.output}")
+  discard client.onOutput.subscribe (data: OnOutputData) => self.handleOutput(data)
   discard client.onBreakpoint.subscribe (data: OnBreakpointData) =>
     log(lvlInfo, &"onBreakpoint {data}")
   discard client.onModule.subscribe (data: OnModuleData) =>
@@ -255,6 +291,7 @@ proc runConfigurationAsync(self: Debugger, name: string) {.async.} =
   await client.setBreakpoints(
     Source(path: sourcePath.some),
     @[
+      SourceBreakpoint(line: 31),
       SourceBreakpoint(line: 42),
       SourceBreakpoint(line: 52),
     ]

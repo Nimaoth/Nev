@@ -4,6 +4,14 @@ import scripting_api, misc/myjsonutils
 ## This file is auto generated, don't modify.
 
 
+proc editor_showDebuggerView_void_App_wasm(arg: cstring): cstring {.importc.}
+proc showDebuggerView*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = editor_showDebuggerView_void_App_wasm(
+      argsJsonString.cstring)
+
+
 proc editor_setLocationListFromCurrentPopup_void_App_wasm(arg: cstring): cstring {.
     importc.}
 proc setLocationListFromCurrentPopup*() =
