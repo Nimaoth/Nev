@@ -414,7 +414,6 @@ proc sendRPC(client: DAPClient, meth: string, command: string, args: Option[Json
 proc sendRequest(client: DAPClient, command: string, args: Option[JsonNode]): Future[Response[JsonNode]] {.async.} =
   let id = client.nextId
   inc client.nextId
-  await client.sendRPC("request", command, args, id)
 
   let requestFuture = newResolvableFuture[Response[JsonNode]]("DAPCLient.sendRequest " & command)
 
@@ -423,6 +422,7 @@ proc sendRequest(client: DAPClient, command: string, args: Option[JsonNode]): Fu
     client.requestsPerMethod[command] = @[]
   client.requestsPerMethod[command].add id
 
+  asyncCheck client.sendRPC("request", command, args, id)
   return await requestFuture.future
 
 proc cancelAllOf*(client: DAPClient, command: string) =
@@ -431,6 +431,7 @@ proc cancelAllOf*(client: DAPClient, command: string) =
 
   var futures: seq[(int, ResolvableFuture[Response[JsonNode]])]
   for id in client.requestsPerMethod[command]:
+    # log lvlError, &"Cancel request {command}:{id}"
     let (_, future) = client.activeRequests[id]
     futures.add (id, future)
     client.activeRequests.del id
@@ -688,6 +689,9 @@ proc runAsync*(client: DAPClient) {.async.} =
     if response.isNil or response.kind != JObject:
       log lvlError, fmt"[run] Bad response: {response}"
       continue
+
+    if logVerbose:
+      debugf"[run] Response: {response.pretty}"
 
     try:
       case response["type"].getStr

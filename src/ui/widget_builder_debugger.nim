@@ -170,8 +170,6 @@ proc createOutput*(self: DebuggerView, builder: UINodeBuilder, app: App, debugge
     debugger.outputEditor.createUI(builder, app)
 
 method createUI*(self: DebuggerView, builder: UINodeBuilder, app: App): seq[proc() {.closure.}] =
-  debugf"createUI debugger"
-
   let dirty = self.dirty
   self.dirty = false
 

@@ -1,4 +1,4 @@
-import std/[strutils, options, json, asynchttpserver, tables, sugar]
+import std/[strutils, options, json, asynchttpserver, tables, sugar, osproc]
 import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, event, response]
 import scripting/expose
 import dap_client, dispatch_tables, app_interface, config_provider
@@ -99,22 +99,36 @@ proc createConnectionWithType(self: Debugger, name: string): Future[Option[Conne
     log lvlError, &"No/invalid debugger type configuration with name '{name}' found: {config}"
     return Connection.none
 
-  debugf"config: {config}"
-
   let connectionType = config.tryGet("connection", DebuggerConnectionKind, "stdio".newJString):
     log lvlError, &"No/invalid debugger connection type in {config.pretty}"
     return Connection.none
 
-  debugf"{connectionType}"
-
   case connectionType
   of Tcp:
     when not defined(js):
-      let host = config.tryGet("host", string, "127.0.0.1".newJString):
-        log lvlError, &"No/invalid debugger connection type in {config.pretty}"
-        return Connection.none
-      let port = getFreePort()
-      return newAsyncSocketConnection(host, port).await.Connection.some
+
+      if config.hasKey("path"):
+        let path = config.tryGet("path", string, newJNull()):
+          log lvlError, &"No/invalid debugger executable path in {config.pretty}"
+          return Connection.none
+
+        let port = getFreePort().int
+        log lvlInfo, &"Start process {path} with port {port}"
+        let process = startProcess(path, args = @["-p", $port], options = {poUsePath, poDaemon})
+
+        # todo: need to wait for process to open port?
+        await sleepAsync(500)
+
+        return newAsyncSocketConnection("127.0.0.1", port.Port).await.Connection.some
+
+      else:
+        let host = config.tryGet("host", string, "127.0.0.1".newJString):
+          log lvlError, &"No/invalid debugger host in {config.pretty}"
+          return Connection.none
+        let port = config.tryGet("port", int, 5678.newJInt):
+          log lvlError, &"No/invalid debugger port in {config.pretty}"
+          return Connection.none
+        return newAsyncSocketConnection(host, port.Port).await.Connection.some
 
   of Stdio:
     when not defined(js):
@@ -287,7 +301,10 @@ proc runConfigurationAsync(self: Debugger, name: string) {.async.} =
     client.deinit()
     return
 
-  let sourcePath = "/mnt/c/Absytree/temp/test.cpp" # todo
+  when defined(linux):
+    let sourcePath = "/mnt/c/Absytree/temp/test.cpp" # todo
+  else:
+    let sourcePath = "C:/Absytree/temp/test.cpp" # todo
   await client.setBreakpoints(
     Source(path: sourcePath.some),
     @[
