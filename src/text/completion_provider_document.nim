@@ -1,5 +1,5 @@
 import std/[strutils, sugar, sets]
-import misc/[custom_unicode, util, id, event, timer, custom_logger, fuzzy_matching]
+import misc/[custom_unicode, util, id, event, timer, custom_logger, fuzzy_matching, delayed_task]
 import language/[lsp_types]
 import completion, text_document
 import scripting_api
@@ -12,6 +12,7 @@ type
     textInsertedHandle: Id
     textDeletedHandle: Id
     wordCache: HashSet[string]
+    updateTask: DelayedTask
 
 proc cacheLine(self: CompletionProviderDocument, line: int) =
   let line = self.document.getLine(line)
@@ -83,22 +84,26 @@ proc refilterCompletions(self: CompletionProviderDocument) =
 proc handleTextInserted(self: CompletionProviderDocument, document: TextDocument, location: Selection, text: string) =
   self.location = location.getChangedSelection(text).last
   self.updateFilterText()
-  self.updateWordCache()
-  self.refilterCompletions()
+  self.updateTask.reschedule()
 
 proc handleTextDeleted(self: CompletionProviderDocument, document: TextDocument, selection: Selection) =
   self.location = selection.first
   self.updateFilterText()
-  self.updateWordCache()
-  self.refilterCompletions()
+  self.updateTask.reschedule()
 
 method forceUpdateCompletions*(provider: CompletionProviderDocument) =
   provider.updateFilterText()
-  provider.updateWordCache()
-  provider.refilterCompletions()
+  provider.updateTask.reschedule()
 
 proc newCompletionProviderDocument*(document: TextDocument): CompletionProviderDocument =
   let self = CompletionProviderDocument(document: document)
   self.textInsertedHandle = self.document.textInserted.subscribe (arg: tuple[document: TextDocument, location: Selection, text: string]) => self.handleTextInserted(arg.document, arg.location, arg.text)
   self.textDeletedHandle = self.document.textDeleted.subscribe (arg: tuple[document: TextDocument, location: Selection]) => self.handleTextDeleted(arg.document, arg.location)
+
+  self.updateTask = startDelayed(50, repeat=false):
+    self.updateWordCache()
+    self.refilterCompletions()
+
+  self.updateTask.pause()
+
   self

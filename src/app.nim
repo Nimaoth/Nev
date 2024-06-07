@@ -27,9 +27,43 @@ from scripting_api import Backend
 logCategory "app"
 createJavascriptPrototype("editor")
 
-type View* = ref object
-  document*: Document
-  editor*: DocumentEditor
+type
+  View* = ref object of RootObj
+    dirty*: bool
+    active*: bool
+
+  EditorView* = ref object of View
+    document*: Document
+    editor*: DocumentEditor
+
+  DebuggerView* = ref object of View
+
+method activate*(view: View) {.base.} =
+  view.active = true
+
+method deactivate*(view: View) {.base.} =
+  view.active = false
+
+method markDirty*(view: View, notify: bool = true) {.base.} =
+  view.dirty = true
+
+method getEventHandlers*(self: View, inject: Table[string, EventHandler]): seq[EventHandler] {.base.} =
+  discard
+
+method activate*(view: EditorView) =
+  view.active = true
+  view.editor.active = true
+
+method deactivate*(view: EditorView) =
+  view.active = true
+  view.editor.active = false
+
+method markDirty*(view: EditorView, notify: bool = true) =
+  view.dirty = true
+  view.editor.markDirty(notify)
+
+method getEventHandlers*(view: EditorView, inject: Table[string, EventHandler]): seq[EventHandler] =
+  view.editor.getEventHandlers(inject)
 
 type
   Layout* = ref object of RootObj
@@ -281,11 +315,6 @@ method log*(self: AppLogger, level: Level, args: varargs[string, `$`]) {.gcsafe.
 proc handleKeyPress*(self: App, input: int64, modifiers: Modifiers)
 proc handleKeyRelease*(self: App, input: int64, modifiers: Modifiers)
 proc handleRune*(self: App, input: int64, modifiers: Modifiers)
-proc handleMousePress*(self: App, button: MouseButton, modifiers: Modifiers, mousePosWindow: Vec2)
-proc handleMouseRelease*(self: App, button: MouseButton, modifiers: Modifiers, mousePosWindow: Vec2)
-proc handleMouseMove*(self: App, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers,
-  buttons: set[MouseButton])
-proc handleScroll*(self: App, scroll: Vec2, mousePosWindow: Vec2, modifiers: Modifiers)
 proc handleDropFile*(self: App, path, content: string)
 
 proc openWorkspaceKind(workspaceFolder: WorkspaceFolder): OpenWorkspaceKind
@@ -526,13 +555,26 @@ proc setOption*[T](editor: App, path: string, value: T) =
 proc setFlag*(self: App, flag: string, value: bool)
 proc toggleFlag*(self: App, flag: string)
 
-proc updateActiveEditor*(self: App, addToHistory = true) =
-  if self.currentViewInternal >= 0 and self.currentViewInternal < self.views.len:
-    if addToHistory and self.activeEditorInternal.getSome(id) and id != self.views[self.currentViewInternal].editor.id:
-      self.editorHistory.addLast id
-    self.activeEditorInternal = self.views[self.currentViewInternal].editor.id.some
-
 proc currentView*(self: App): int = self.currentViewInternal
+
+proc tryGetCurrentView(self: App): Option[View] =
+  if self.currentView >= 0 and self.currentView < self.views.len:
+    self.views[self.currentView].some
+  else:
+    View.none
+
+proc tryGetCurrentEditorView(self: App): Option[EditorView] =
+  if self.tryGetCurrentView().getSome(view) and view of EditorView:
+    view.EditorView.some
+  else:
+    EditorView.none
+
+proc updateActiveEditor*(self: App, addToHistory = true) =
+  if self.tryGetCurrentEditorView().getSome(view):
+    if addToHistory and self.activeEditorInternal.getSome(id) and id != view.editor.id:
+      self.editorHistory.addLast id
+    self.activeEditorInternal = view.editor.id.some
+
 proc `currentView=`(self: App, newIndex: int, addToHistory = true) =
   self.currentViewInternal = newIndex
   self.updateActiveEditor(addToHistory)
@@ -541,14 +583,14 @@ proc addView*(self: App, view: View, addToHistory = true, append = false) =
   let maxViews = getOption[int](self, "editor.maxViews", int.high)
 
   while maxViews > 0 and self.views.len > maxViews:
-    self.views[self.views.high].editor.active = false
+    self.views[self.views.high].deactivate()
     self.hiddenViews.add self.views.pop()
 
   if append:
     self.currentView = self.views.high
 
   if self.views.len == maxViews:
-    self.views[self.currentView].editor.active = false
+    self.views[self.currentView].deactivate()
     self.hiddenViews.add self.views[self.currentView]
     self.views[self.currentView] = view
   elif append:
@@ -561,7 +603,7 @@ proc addView*(self: App, view: View, addToHistory = true, append = false) =
   if self.currentView < 0:
     self.currentView = 0
 
-  view.editor.markDirty()
+  view.markDirty()
 
   self.updateActiveEditor(addToHistory)
   self.platform.requestRender()
@@ -570,7 +612,7 @@ proc createView*(self: App, document: Document): View =
   var editor = self.createEditorForDocument document
   editor.injectDependencies self.asAppInterface
   discard editor.onMarkedDirty.subscribe () => self.platform.requestRender()
-  return View(document: document, editor: editor)
+  return EditorView(document: document, editor: editor)
 
 proc createView(self: App, editorState: OpenEditor): View
 
@@ -578,7 +620,7 @@ proc createAndAddView*(self: App, document: Document, append = false): DocumentE
   var editor = self.createEditorForDocument document
   editor.injectDependencies self.asAppInterface
   discard editor.onMarkedDirty.subscribe () => self.platform.requestRender()
-  var view = View(document: document, editor: editor)
+  var view = EditorView(document: document, editor: editor)
   self.addView(view, append=append)
   return editor
 
@@ -586,7 +628,7 @@ proc tryActivateEditor*(self: App, editor: DocumentEditor): void =
   if self.popups.len > 0:
     return
   for i, view in self.views:
-    if view.editor == editor:
+    if view of EditorView and view.EditorView.editor == editor:
       self.currentView = i
 
 proc pushPopup*(self: App, popup: Popup) =
@@ -850,10 +892,6 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
   discard platform.onKeyPress.subscribe proc(event: auto): void = self.handleKeyPress(event.input, event.modifiers)
   discard platform.onKeyRelease.subscribe proc(event: auto): void = self.handleKeyRelease(event.input, event.modifiers)
   discard platform.onRune.subscribe proc(event: auto): void = self.handleRune(event.input, event.modifiers)
-  discard platform.onMousePress.subscribe proc(event: auto): void = self.handleMousePress(event.button, event.modifiers, event.pos)
-  discard platform.onMouseRelease.subscribe proc(event: auto): void = self.handleMouseRelease(event.button, event.modifiers, event.pos)
-  discard platform.onMouseMove.subscribe proc(event: auto): void = self.handleMouseMove(event.pos, event.delta, event.modifiers, event.buttons)
-  discard platform.onScroll.subscribe proc(event: auto): void = self.handleScroll(event.scroll, event.pos, event.modifiers)
   discard platform.onDropFile.subscribe proc(event: auto): void = self.handleDropFile(event.path, event.content)
   discard platform.onCloseRequested.subscribe proc() = self.closeRequested = true
 
@@ -1012,8 +1050,8 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
         continue
 
       self.addView(view, append=true)
-      if editorState.customOptions.isNotNil:
-        view.editor.restoreStateJson(editorState.customOptions)
+      if editorState.customOptions.isNotNil and view of EditorView:
+        view.EditorView.editor.restoreStateJson(editorState.customOptions)
 
     for editorState in state.hiddenEditors:
       let view = self.createView(editorState)
@@ -1021,8 +1059,8 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
         continue
 
       self.hiddenViews.add view
-      if editorState.customOptions.isNotNil:
-        view.editor.restoreStateJson(editorState.customOptions)
+      if editorState.customOptions.isNotNil and view of EditorView:
+        view.EditorView.editor.restoreStateJson(editorState.customOptions)
 
   if self.views.len == 0:
     if self.hiddenViews.len > 0:
@@ -1081,8 +1119,8 @@ proc handleLog(self: App, level: Level, args: openArray[string]) =
     logBuffer = ""
 
     for view in self.views:
-      if view.document == self.logDocument:
-        let editor = view.editor.TextDocumentEditor
+      if view of EditorView and view.EditorView.document == self.logDocument:
+        let editor = view.EditorView.editor.TextDocumentEditor
         if editor.selection == selection:
           editor.selection = editor.document.lastCursor.toSelection
           editor.scrollToCursor()
@@ -1095,6 +1133,19 @@ proc getEditor(): Option[App] =
 
 static:
   addInjector(App, getEditor)
+
+proc showDebuggerView*(self: App) {.expose("editor").} =
+  for view in self.views:
+    if view of DebuggerView:
+      return
+
+  for i, view in self.hiddenViews:
+    if view of DebuggerView:
+      self.hiddenViews.delete i
+      self.addView(view, false)
+      return
+
+  self.addView(DebuggerView(), false)
 
 proc setLocationListFromCurrentPopup*(self: App) {.expose("editor").} =
   if self.popups.len == 0:
@@ -1194,7 +1245,7 @@ proc setMaxViews*(self: App, maxViews: int, openExisting: bool = false) {.expose
   log lvlInfo, fmt"[setMaxViews] {maxViews}"
   setOption[int](self, "editor.maxViews", maxViews)
   while maxViews > 0 and self.views.len > maxViews:
-    self.views[self.views.high].editor.active = false
+    self.views[self.views.high].deactivate()
     self.hiddenViews.add self.views.pop()
 
   while openExisting and self.views.len < maxViews and self.hiddenViews.len > 0:
@@ -1260,7 +1311,7 @@ proc saveAppState*(self: App) {.expose("editor").} =
     )
 
   # Save open editors
-  proc getEditorState(view: View): Option[OpenEditor] =
+  proc getEditorState(view: EditorView): Option[OpenEditor] =
     if view.document.filename == "":
       return OpenEditor.none
     if view.document of TextDocument and view.document.TextDocument.staged:
@@ -1291,11 +1342,11 @@ proc saveAppState*(self: App) {.expose("editor").} =
       return OpenEditor.none
 
   for view in self.views:
-    if view.getEditorState().getSome(editorState):
+    if view of EditorView and view.EditorView.getEditorState().getSome(editorState):
       state.openEditors.add editorState
 
   for view in self.hiddenViews:
-    if view.getEditorState().getSome(editorState):
+    if view of EditorView and view.EditorView.getEditorState().getSome(editorState):
       state.hiddenEditors.add editorState
 
   if self.sessionFile != "":
@@ -1462,22 +1513,24 @@ proc toggleConsoleLogger*(self: App) {.expose("editor").} =
 
 proc getOpenEditors*(self: App): seq[EditorId] {.expose("editor").} =
   for view in self.views:
-    result.add view.editor.id
+    if view of EditorView:
+      result.add view.EditorView.editor.id
 
 proc getHiddenEditors*(self: App): seq[EditorId] {.expose("editor").} =
   for view in self.hiddenViews:
-    result.add view.editor.id
+    if view of EditorView:
+      result.add view.EditorView.editor.id
 
 proc getViewForEditor*(self: App, editor: DocumentEditor): Option[int] =
   for i, view in self.views:
-    if view.editor == editor:
+    if view of EditorView and view.EditorView.editor == editor:
       return i.some
 
   return int.none
 
 proc getHiddenViewForEditor*(self: App, editor: DocumentEditor): Option[int] =
   for i, view in self.hiddenViews:
-    if view.editor == editor:
+    if view of EditorView and view.EditorView.editor == editor:
       return i.some
 
   return int.none
@@ -1489,7 +1542,7 @@ proc closeEditor*(self: App, editor: DocumentEditor) =
   editor.deinit()
 
   for i, view in self.hiddenViews:
-    if view.editor == editor:
+    if view of EditorView and view.EditorView.editor == editor:
       self.hiddenViews.removeShift(i)
       break
 
@@ -1526,7 +1579,8 @@ proc closeView*(self: App, index: int, keepHidden: bool = true, restoreHidden: b
   if keepHidden:
     self.hiddenViews.add view
   else:
-    self.closeEditor(view.editor)
+    if view of EditorView:
+      self.closeEditor(view.EditorView.editor)
 
   self.platform.requestRender()
 
@@ -1544,7 +1598,8 @@ proc closeOtherViews*(self: App, keepHidden: bool = true) {.expose("editor").} =
       if keepHidden:
         self.hiddenViews.add view
       else:
-        self.closeEditor(view.editor)
+        if view of EditorView:
+          self.closeEditor(view.EditorView.editor)
 
   self.views.setLen 1
   self.views[0] = view
@@ -1559,7 +1614,9 @@ proc closeEditor*(self: App, path: string) {.expose("editor").} =
     path.absolutePath.normalizePathUnix
 
   for i, view in self.views:
-    let document = view.editor.getDocument()
+    if not (view of EditorView):
+      continue
+    let document = view.EditorView.editor.getDocument()
     if document.isNil:
       continue
     if document.filename == fullPath:
@@ -1766,46 +1823,48 @@ proc loadFile*(self: App, path: string = "") {.expose("editor").} =
       log(lvlError, getCurrentException().getStackTrace())
 
 proc loadWorkspaceFile*(self: App, path: string, folder: WorkspaceFolder) =
-  defer:
-    self.platform.requestRender()
-  if self.currentView >= 0 and self.currentView < self.views.len and self.views[self.currentView].document != nil:
+  if self.tryGetCurrentEditorView().getSome(view) and view.document.isNotNil:
+    defer:
+      self.platform.requestRender()
     try:
-      self.views[self.currentView].document.workspace = folder.some
-      self.views[self.currentView].document.load(path)
-      self.views[self.currentView].editor.handleDocumentChanged()
+      view.document.workspace = folder.some
+      view.document.load(path)
+      view.editor.handleDocumentChanged()
     except CatchableError:
       log(lvlError, fmt"Failed to load file '{path}': {getCurrentExceptionMsg()}")
       log(lvlError, getCurrentException().getStackTrace())
 
 proc tryOpenExisting*(self: App, path: string, folder: Option[WorkspaceFolder]): Option[DocumentEditor] =
   for i, view in self.views:
-    if view.document.filename == path and view.document.workspace == folder:
+    if view of EditorView and view.EditorView.document.filename == path and
+        view.EditorView.document.workspace == folder:
       log(lvlInfo, fmt"Reusing open editor in view {i}")
       self.currentView = i
-      return view.editor.some
+      return view.EditorView.editor.some
 
   for i, view in self.hiddenViews:
-    if view.document.filename == path and view.document.workspace == folder:
+    if view of EditorView and view.EditorView.document.filename == path and
+        view.EditorView.document.workspace == folder:
       log(lvlInfo, fmt"Reusing hidden view")
       self.hiddenViews.delete i
       self.addView(view)
-      return view.editor.some
+      return view.EditorView.editor.some
 
   return DocumentEditor.none
 
 proc tryOpenExisting*(self: App, editor: EditorId, addToHistory = true): Option[DocumentEditor] =
   for i, view in self.views:
-    if view.editor.id == editor:
+    if view of EditorView and view.EditorView.editor.id == editor:
       log(lvlInfo, fmt"Reusing open editor in view {i}")
       `currentView=`(self, i, addToHistory)
-      return view.editor.some
+      return view.EditorView.editor.some
 
   for i, view in self.hiddenViews:
-    if view.editor.id == editor:
+    if view of EditorView and view.EditorView.editor.id == editor:
       log(lvlInfo, fmt"Reusing hidden view")
       self.hiddenViews.delete i
       self.addView(view, addToHistory)
-      return view.editor.some
+      return view.EditorView.editor.some
 
   return DocumentEditor.none
 
@@ -2035,9 +2094,12 @@ proc chooseOpen*(self: App, view: string = "new") {.expose("editor").} =
     var items = newSeq[FinderItem]()
     let allViews = self.views & self.hiddenViews
     for view in allViews:
-      let document = view.editor.getDocument
-      let path = view.document.filename
-      let isDirty = view.document.lastSavedRevision != view.document.revision
+      if not (view of EditorView):
+        continue
+
+      let document = view.EditorView.editor.getDocument
+      let path = view.EditorView.document.filename
+      let isDirty = view.EditorView.document.lastSavedRevision != view.EditorView.document.revision
       let dirtyMarker = if isDirty: "*" else: " "
 
       let (directory, name) = path.splitPath
@@ -2681,8 +2743,8 @@ proc openPreviousEditor*(self: App) {.expose("editor").} =
 
   let editor = self.editorHistory.popLast
 
-  if self.currentView >= 0 and self.currentView < self.views.len:
-    self.editorHistory.addFirst self.views[self.currentView].editor.id
+  if self.tryGetCurrentEditorView().getSome(view):
+    self.editorHistory.addFirst view.editor.id
 
   discard self.tryOpenExisting(editor, addToHistory=false)
   self.platform.requestRender()
@@ -2693,8 +2755,8 @@ proc openNextEditor*(self: App) {.expose("editor").} =
 
   let editor = self.editorHistory.popFirst
 
-  if self.currentView >= 0 and self.currentView < self.views.len:
-    self.editorHistory.addLast self.views[self.currentView].editor.id
+  if self.tryGetCurrentEditorView().getSome(view):
+    self.editorHistory.addLast view.editor.id
 
   discard self.tryOpenExisting(editor, addToHistory=false)
   self.platform.requestRender()
@@ -2811,77 +2873,11 @@ proc currentEventHandlers*(self: App): seq[EventHandler] =
     result.add self.commandLineEventHandlerHigh
   elif self.popups.len > 0:
     result.add self.popups[self.popups.high].getEventHandlers()
-  elif self.currentView >= 0 and self.currentView < self.views.len:
-    result.add self.views[self.currentView].editor.getEventHandlers(initTable[string, EventHandler]())
+  elif self.tryGetCurrentView().getSome(view):
+      result.add view.getEventHandlers(initTable[string, EventHandler]())
 
   if not self.modeEventHandler.isNil and modeOnTop:
     result.add self.modeEventHandler
-
-proc handleMousePress*(self: App, button: MouseButton, modifiers: Modifiers, mousePosWindow: Vec2) =
-  # Check popups
-  for i in 0..self.popups.high:
-    let popup = self.popups[self.popups.high - i]
-    if popup.lastBounds.contains(mousePosWindow):
-      popup.handleMousePress(button, mousePosWindow)
-      return
-
-  # Check views
-  let rects = self.layout.layoutViews(self.layout_props, self.lastBounds, self.views.len)
-  for i, view in self.views:
-    if i >= rects.len:
-      return
-    if rects[i].contains(mousePosWindow):
-      self.currentView = i
-      view.editor.handleMousePress(button, mousePosWindow, modifiers)
-      return
-
-proc handleMouseRelease*(self: App, button: MouseButton, modifiers: Modifiers, mousePosWindow: Vec2) =
-  # Check popups
-  for i in 0..self.popups.high:
-    let popup = self.popups[self.popups.high - i]
-    if popup.lastBounds.contains(mousePosWindow):
-      popup.handleMouseRelease(button, mousePosWindow)
-      return
-
-  # Check views
-  let rects = self.layout.layoutViews(self.layout_props, self.lastBounds, self.views.len)
-  for i, view in self.views:
-    if i >= rects.len:
-      return
-    if self.currentView == i and rects[i].contains(mousePosWindow):
-      view.editor.handleMouseRelease(button, mousePosWindow)
-      return
-
-proc handleMouseMove*(self: App, mousePosWindow: Vec2, mousePosDelta: Vec2, modifiers: Modifiers, buttons: set[MouseButton]) =
-  # Check popups
-  for i in 0..self.popups.high:
-    let popup = self.popups[self.popups.high - i]
-    if popup.lastBounds.contains(mousePosWindow):
-      popup.handleMouseMove(mousePosWindow, mousePosDelta, modifiers, buttons)
-      return
-
-  # Check views
-  let rects = self.layout.layoutViews(self.layout_props, self.lastBounds, self.views.len)
-  for i, view in self.views:
-    if i >= rects.len:
-      return
-    if self.currentView == i and rects[i].contains(mousePosWindow):
-      view.editor.handleMouseMove(mousePosWindow, mousePosDelta, modifiers, buttons)
-      return
-
-proc handleScroll*(self: App, scroll: Vec2, mousePosWindow: Vec2, modifiers: Modifiers) =
-  # Check popups
-  for i in 0..self.popups.high:
-    let popup = self.popups[self.popups.high - i]
-    if popup.lastBounds.contains(mousePosWindow):
-      popup.handleScroll(scroll, mousePosWindow)
-      return
-
-  # Check views
-  for i, view in self.views:
-    if view.editor.lastContentBounds.contains(mousePosWindow):
-      view.editor.handleScroll(scroll, mousePosWindow)
-      return
 
 proc clearInputHistoryDelayed*(self: App) =
   let clearInputHistoryDelay = getOption[int](self, "editor.clear-input-history-delay", 3000)
@@ -3011,8 +3007,8 @@ proc getActiveEditor*(): EditorId {.expose("editor").} =
   if gEditor.popups.len > 0 and gEditor.popups[gEditor.popups.high].getActiveEditor().getSome(editor):
     return editor.id
 
-  if gEditor.currentView >= 0 and gEditor.currentView < gEditor.views.len:
-    return gEditor.views[gEditor.currentView].editor.id
+  if gEditor.tryGetCurrentEditorView().getSome(view):
+    return view.editor.id
 
   return EditorId(-1)
 
@@ -3038,8 +3034,8 @@ proc getActiveEditor*(self: App): Option[DocumentEditor] =
   if self.popups.len > 0 and self.popups[self.popups.high].getActiveEditor().getSome(editor):
     return editor.some
 
-  if self.currentView >= 0 and self.currentView < self.views.len:
-    return self.views[self.currentView].editor.some
+  if self.tryGetCurrentEditorView().getSome(view):
+    return view.editor.some
 
   return DocumentEditor.none
 
@@ -3074,8 +3070,8 @@ proc sourceCurrentDocument*(self: App) {.expose("editor").} =
 proc getEditor*(index: int): EditorId {.expose("editor").} =
   if gEditor.isNil:
     return EditorId(-1)
-  if index >= 0 and index < gEditor.views.len:
-    return gEditor.views[index].editor.id
+  if index >= 0 and index < gEditor.views.len and gEditor.views[index] of EditorView:
+    return gEditor.views[index].EditorView.editor.id
 
   return EditorId(-1)
 
@@ -3405,9 +3401,8 @@ proc handleAction(self: App, action: string, arg: string, record: bool): bool =
     self.recordCommand(action, arg)
 
   if action.startsWith("."): # active action
-    if self.currentView >= 0 and self.currentView < gEditor.views.len:
-      let editor = self.views[gEditor.currentView].editor
-      return case editor.handleAction(action[1..^1], arg, record=false)
+    if self.tryGetCurrentEditorView().getSome(view):
+      return case view.editor.handleAction(action[1..^1], arg, record=false)
       of Handled:
         true
       else:

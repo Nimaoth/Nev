@@ -2,7 +2,8 @@ import vmath, bumpy, chroma
 import misc/[custom_logger, rect_utils]
 import ui/node
 import platform/platform
-import ui/[widget_builders_base, widget_builder_text_document, widget_builder_selector_popup]
+import ui/[widget_builders_base, widget_builder_text_document, widget_builder_selector_popup,
+  widget_builder_debugger]
 import app, document_editor, theme, compilation_config
 
 when enableAst:
@@ -54,14 +55,17 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
 
         if self.maximizeView:
           let view {.cursor.} = self.views[self.currentView]
-          let wasActive = view.editor.active
-          view.editor.active = not self.commandLineMode
-          if view.editor.active != wasActive:
-            view.editor.markDirty(notify=false)
+          let wasActive = view.active
+          if not self.commandLineMode:
+            view.activate()
+          else:
+            view.deactivate()
+          if view.active != wasActive:
+            view.markDirty(notify=false)
 
           let bounds = overlay.bounds
           builder.panel(0.UINodeFlags, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h):
-            overlays.add view.editor.createUI(builder, self)
+            overlays.add view.createUI(builder, self)
 
         else:
           let rects = self.layout.layoutViews(self.layout_props, rect(0, 0, 1, 1), self.views.len)
@@ -70,13 +74,17 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
             let xwyh = rects[i].xwyh * overlay.bounds.wh
             let bounds = rect(xy, xwyh - xy)
 
-            let wasActive = view.editor.active
-            view.editor.active = (self.currentView == i) and not self.commandLineMode
-            if view.editor.active != wasActive:
-              view.editor.markDirty(notify=false)
+            let wasActive = view.active
+            if (self.currentView == i) and not self.commandLineMode:
+              view.activate()
+            else:
+              view.deactivate()
+
+            if view.active != wasActive:
+              view.markDirty(notify=false)
 
             builder.panel(0.UINodeFlags, x = bounds.x, y = bounds.y, w = bounds.w, h = bounds.h):
-              overlays.add view.editor.createUI(builder, self)
+              overlays.add view.createUI(builder, self)
 
     # popups
     for i, popup in self.popups:
