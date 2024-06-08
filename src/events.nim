@@ -157,6 +157,49 @@ template eventHandler*(inConfig: EventHandlerConfig, handlerBody: untyped): unty
     handlerBody
     handler
 
+template assignEventHandler*(target: untyped, inConfig: EventHandlerConfig, handlerBody: untyped): untyped =
+  block:
+    var handler = EventHandler()
+    handler.states = @[]
+    handler.config = inConfig
+    handler.dfaInternal = inConfig.buildDFA()
+    # fs.saveApplicationFile(handler.config.context & ".dot", handler.dfaInternal.dumpGraphViz)
+
+    template onAction(actionBody: untyped): untyped {.used.} =
+      handler.handleAction = proc(action: string, arg: string): EventResponse =
+        if handler.config.handleActions:
+          let action {.inject, used.} = action
+          let arg {.inject, used.} = arg
+          let response = actionBody
+          if handler.config.consumeAllActions:
+            return Handled
+          return response
+        elif handler.config.consumeAllActions:
+          return Handled
+        else:
+          return Ignored
+
+    template onInput(inputBody: untyped): untyped {.used.} =
+      handler.handleInput = proc(input: string): EventResponse =
+        if handler.config.handleInputs:
+          let input {.inject, used.} = input
+          return inputBody
+        else:
+          return Ignored
+
+    template onProgress(progressBody: untyped): untyped {.used.} =
+      handler.handleProgress = proc(i: int64) =
+        let input {.inject, used.} = i
+        progressBody
+
+    template onCanceled(canceledBody: untyped): untyped {.used.} =
+      handler.handleCanceled = proc(i: int64) =
+        let input {.inject, used.} = i
+        canceledBody
+
+    handlerBody
+    target = handler
+
 proc reset*(handler: var EventHandler) =
   handler.states = @[]
 

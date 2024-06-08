@@ -881,7 +881,8 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   logger.addLogger AppLogger(app: self, fmtStr: "")
 
-  log lvlInfo, fmt"Creating App with backend {backend} and options {options}"
+  when not defined(js):
+    log lvlInfo, fmt"Creating App with backend {backend} and options {options}"
 
   gEditor = self
   gAppInterface = self.asAppInterface
@@ -932,7 +933,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   self.gitIgnore = parseGlobs(fs.loadApplicationFile(".gitignore"))
 
-  self.eventHandler = eventHandler(self.getEventHandlerConfig("editor")):
+  assignEventHandler(self.eventHandler, self.getEventHandlerConfig("editor")):
     onAction:
       if self.handleAction(action, arg, record=true):
         Handled
@@ -941,7 +942,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
     onInput:
       Ignored
 
-  self.commandLineEventHandlerHigh = eventHandler(self.getEventHandlerConfig("command-line-high")):
+  assignEventHandler(self.commandLineEventHandlerHigh, self.getEventHandlerConfig("command-line-high")):
     onAction:
       if self.handleAction(action, arg, record=true):
         Handled
@@ -950,7 +951,7 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
     onInput:
       Ignored
 
-  self.commandLineEventHandlerLow = eventHandler(self.getEventHandlerConfig("command-line-low")):
+  assignEventHandler(self.commandLineEventHandlerLow, self.getEventHandlerConfig("command-line-low")):
     onAction:
       if self.handleAction(action, arg, record=true):
         Handled
@@ -1000,27 +1001,33 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
       log(lvlInfo, fmt"Restoring options")
 
   except CatchableError:
-    log(lvlError, fmt"Failed to load previous options from options file: {getCurrentExceptionMsg()}")
+    when not defined(js):
+      log(lvlError, fmt"Failed to load previous options from options file: {getCurrentExceptionMsg()}")
 
   self.commandHistory = state.commandHistory
 
   if self.getFlag("editor.restore-open-workspaces", true):
     for wf in state.workspaceFolders:
-      var folder: WorkspaceFolder = case wf.kind
+      var folder: WorkspaceFolder = nil
+      case wf.kind
       of OpenWorkspaceKind.Local:
         when not defined(js):
-          newWorkspaceFolderLocal(wf.settings)
+          folder = newWorkspaceFolderLocal(wf.settings)
         else:
-          log lvlError, fmt"Failed to restore local workspace, local workspaces not available in js. Workspace: {wf}"
+          when not defined(js):
+            log lvlError, fmt"Failed to restore local workspace, local workspaces not available in js. Workspace: {wf}"
           continue
 
-      of OpenWorkspaceKind.AbsytreeServer: newWorkspaceFolderAbsytreeServer(wf.settings)
-      of OpenWorkspaceKind.Github: newWorkspaceFolderGithub(wf.settings)
+      of OpenWorkspaceKind.AbsytreeServer:
+        folder = newWorkspaceFolderAbsytreeServer(wf.settings)
+      of OpenWorkspaceKind.Github:
+        folder = newWorkspaceFolderGithub(wf.settings)
 
       folder.id = wf.id.parseId
       folder.name = wf.name
       if self.addWorkspaceFolder(folder):
-        log(lvlInfo, fmt"Restoring workspace {folder.name} ({folder.id})")
+        when not defined(js):
+          log(lvlInfo, fmt"Restoring workspace {folder.name} ({folder.id})")
 
   # Open current working dir as local workspace if no workspace exists yet
   if self.workspace.folders.len == 0:
@@ -1033,7 +1040,8 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
       if self.getWorkspaceFolder(state.astProjectWorkspaceId.parseId).getSome(ws):
         setProjectWorkspace(ws)
       else:
-        log lvlError, fmt"Failed to restore project workspace {state.astProjectWorkspaceId}"
+        when not defined(js):
+          log lvlError, fmt"Failed to restore project workspace {state.astProjectWorkspaceId}"
 
     if gProjectWorkspace.isNil and self.workspace.folders.len > 0:
       log lvlWarn, fmt"Use first workspace as project workspace"
@@ -1914,14 +1922,14 @@ proc removeFromLocalStorage*(self: App) {.expose("editor").} =
   ## Clears the content of the current document in local storage
   when defined(js):
     proc clearStorage(path: cstring) {.importjs: "window.localStorage.removeItem(#);".}
-    if self.currentView >= 0 and self.currentView < self.views.len and self.views[self.currentView].document != nil:
-      if self.views[self.currentView].document of TextDocument:
-        clearStorage(self.views[self.currentView].document.TextDocument.filename.cstring)
+    if self.tryGetCurrentEditorView().getSome(view) and view.document.isNotNil:
+      if view.document of TextDocument:
+        clearStorage(view.document.TextDocument.filename.cstring)
         return
 
       when enableAst:
-        if self.views[self.currentView].document of ModelDocument:
-          clearStorage(self.views[self.currentView].document.ModelDocument.filename.cstring)
+        if view.document of ModelDocument:
+          clearStorage(view.document.ModelDocument.filename.cstring)
           return
 
       log lvlError, fmt"removeFromLocalStorage: Unknown document type"
@@ -2564,91 +2572,84 @@ proc diffStagedFileAsync(self: App, workspace: WorkspaceFolder, path: string): F
   editor.updateDiff()
 
 proc chooseGitActiveFiles*(self: App, all: bool = false) {.expose("editor").} =
-  when defined(js):
-    log lvlError, fmt"chooseGitActiveFiles not implemented yet for js backend"
-    let editorWorking = self.views[self.currentView].editor
-    if editorWorking of TextDocumentEditor:
-      editorWorking.TextDocumentEditor.updateDiff()
+  defer:
+    self.platform.requestRender()
 
-  else:
-    defer:
-      self.platform.requestRender()
+  if self.workspace.folders.len == 0:
+    return
 
-    if self.workspace.folders.len == 0:
+  let workspace = self.workspace.folders[0]
+
+  let source = newAsyncCallbackDataSource () =>
+    workspace.getChangedFilesFromGitAsync(all)
+  var finder = newFinder(source, filterAndSort=true)
+
+  let previewer = newWorkspaceFilePreviewer(workspace, self.asConfigProvider,
+    openNewDocuments=true)
+
+  var popup = newSelectorPopup(self.asAppInterface, "git".some, finder.some,
+    previewer.Previewer.toDisposableRef.some)
+
+  popup.scale.x = 1
+  popup.scale.y = 0.9
+  popup.previewScale = 0.75
+
+  popup.handleItemConfirmed = proc(item: FinderItem): bool =
+    let fileInfo = item.data.parseJson.jsonTo(VCSFileInfo).catch:
+      log lvlError, fmt"Failed to parse git file info from item: {item}"
+      return true
+
+    if fileInfo.stagedStatus != None:
+      asyncCheck self.diffStagedFileAsync(workspace, fileInfo.path)
+
+    else:
+      let currentVersionEditor = self.openWorkspaceFile(fileInfo.path, workspace)
+      if currentVersionEditor.getSome(editor):
+        if editor of TextDocumentEditor:
+          editor.TextDocumentEditor.updateDiff()
+          if popup.getPreviewSelection().getSome(selection):
+            editor.TextDocumentEditor.selection = selection
+            editor.TextDocumentEditor.centerCursor()
+
+    return true
+
+  popup.addCustomCommand "stage-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+
+    asyncCheck popup.stageSelectedFileAsync(workspace, source)
+    return true
+
+  popup.addCustomCommand "unstage-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+
+    asyncCheck popup.unstageSelectedFileAsync(workspace, source)
+    return true
+
+  popup.addCustomCommand "revert-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+
+    asyncCheck popup.revertSelectedFileAsync(workspace, source)
+    return true
+
+  popup.addCustomCommand "diff-staged", proc(popup: SelectorPopup, args: JsonNode): bool =
+    if popup.textEditor.isNil:
+      return false
+
+    let item = popup.getSelectedItem().getOr:
       return
 
-    let workspace = self.workspace.folders[0]
-
-    let source = newAsyncCallbackDataSource () =>
-      workspace.getChangedFilesFromGitAsync(all)
-    var finder = newFinder(source, filterAndSort=true)
-
-    let previewer = newWorkspaceFilePreviewer(workspace, self.asConfigProvider,
-      openNewDocuments=true)
-
-    var popup = newSelectorPopup(self.asAppInterface, "git".some, finder.some,
-      previewer.Previewer.toDisposableRef.some)
-
-    popup.scale.x = 1
-    popup.scale.y = 0.9
-    popup.previewScale = 0.75
-
-    popup.handleItemConfirmed = proc(item: FinderItem): bool =
-      let fileInfo = item.data.parseJson.jsonTo(VCSFileInfo).catch:
-        log lvlError, fmt"Failed to parse git file info from item: {item}"
-        return true
-
-      if fileInfo.stagedStatus != None:
-        asyncCheck self.diffStagedFileAsync(workspace, fileInfo.path)
-
-      else:
-        let currentVersionEditor = self.openWorkspaceFile(fileInfo.path, workspace)
-        if currentVersionEditor.getSome(editor):
-          if editor of TextDocumentEditor:
-            editor.TextDocumentEditor.updateDiff()
-            if popup.getPreviewSelection().getSome(selection):
-              editor.TextDocumentEditor.selection = selection
-              editor.TextDocumentEditor.centerCursor()
-
+    let fileInfo = item.data.parseJson.jsonTo(VCSFileInfo).catch:
+      log lvlError, fmt"Failed to parse get file info from item: {item}"
       return true
+    debugf"diff-staged {fileInfo}"
 
-    popup.addCustomCommand "stage-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
-      if popup.textEditor.isNil:
-        return false
+    asyncCheck self.diffStagedFileAsync(workspace, fileInfo.path)
+    return true
 
-      asyncCheck popup.stageSelectedFileAsync(workspace, source)
-      return true
-
-    popup.addCustomCommand "unstage-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
-      if popup.textEditor.isNil:
-        return false
-
-      asyncCheck popup.unstageSelectedFileAsync(workspace, source)
-      return true
-
-    popup.addCustomCommand "revert-selected", proc(popup: SelectorPopup, args: JsonNode): bool =
-      if popup.textEditor.isNil:
-        return false
-
-      asyncCheck popup.revertSelectedFileAsync(workspace, source)
-      return true
-
-    popup.addCustomCommand "diff-staged", proc(popup: SelectorPopup, args: JsonNode): bool =
-      if popup.textEditor.isNil:
-        return false
-
-      let item = popup.getSelectedItem().getOr:
-        return
-
-      let fileInfo = item.data.parseJson.jsonTo(VCSFileInfo).catch:
-        log lvlError, fmt"Failed to parse get file info from item: {item}"
-        return true
-      debugf"diff-staged {fileInfo}"
-
-      asyncCheck self.diffStagedFileAsync(workspace, fileInfo.path)
-      return true
-
-    self.pushPopup popup
+  self.pushPopup popup
 
 proc getItemsFromDirectory(workspace: WorkspaceFolder, directory: string): Future[ItemList] {.async.} =
 
@@ -2844,7 +2845,7 @@ proc setMode*(self: App, mode: string) {.expose("editor").} =
     self.modeEventHandler = nil
   else:
     let config = self.getModeConfig(mode)
-    self.modeEventHandler = eventHandler(config):
+    assignEventHandler(self.modeEventHandler, config):
       onAction:
         if self.handleAction(action, arg, record=true):
           Handled
@@ -3018,8 +3019,9 @@ when defined(js):
       return nil
     if gEditor.commandLineMode:
       return gEditor.commandLineTextEditor
-    if gEditor.currentView >= 0 and gEditor.currentView < gEditor.views.len:
-      return gEditor.views[gEditor.currentView].editor
+
+    if gEditor.tryGetCurrentEditorView().getSome(view):
+      return view.editor
 
     return nil
 else:

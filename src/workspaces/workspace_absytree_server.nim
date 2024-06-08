@@ -72,6 +72,9 @@ method loadFile*(self: WorkspaceFolderAbsytreeServer, relativePath: string): Fut
 
   return await httpGet(url)
 
+method loadFile*(self: WorkspaceFolderAbsytreeServer, relativePath: string, data: ptr string): Future[void] {.async.} =
+  data[] = await self.loadFile(relativePath)
+
 method saveFile*(self: WorkspaceFolderAbsytreeServer, relativePath: string, content: string): Future[void] {.async.} =
   let relativePath = relativePath.normalizePathUnix
 

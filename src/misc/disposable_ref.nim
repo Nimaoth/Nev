@@ -14,12 +14,19 @@ type
 proc `=copy`*[T: Disposable](a: var DisposableRef[T], b: DisposableRef[T]) {.error.}
 proc `=dup`*[T: Disposable](a: DisposableRef[T]): DisposableRef[T] {.error.}
 proc `=destroy`*[T: Disposable](a: DisposableRef[T]) =
+  when defined(js):
+    {.emit: ["if (", a, " === undefined) return;"].}
   if not a.count.isNil:
     a.count[].dec
     # debugf"=destroy DisposableRef {$a.count[]} {a.obj.isNil}"
     if a.count[] == 0 and not a.obj.isNil:
       # debugf"count == 0, deinit"
       a.obj.deinit()
+
+proc `=wasMoved`*[T](a: var DisposableRef[T]) =
+  a.count = nil
+  when T is ref:
+    a.obj = T.default
 
 proc get*[T: Disposable](a: DisposableRef[T]): T =
   a.obj

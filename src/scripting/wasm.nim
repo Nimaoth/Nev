@@ -365,6 +365,9 @@ when defined(js):
       proc js_clock_time_get(context: JsObject, clk_id: int32, ignored_precision: int64, ptime: WasmPtr): int32 {.importc.}
       return js_clock_time_get(context, clk_id, ignored_precision, ptime)
 
+    result.addFunction "fd_fdstat_get", proc(clk_id: int32, ignored_precision: int32): int32 =
+      return 0
+
     result.addFunction "fd_write", proc(fd: int32, iovs: WasmPtr, len: int64, ret: WasmPtr): int32 =
       let memory = context["memory"]
       # debugf"fd_write {fd}, {len}"

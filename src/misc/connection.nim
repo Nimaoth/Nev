@@ -1,5 +1,5 @@
 import std/[strutils]
-import misc/[websocket, util, custom_async, custom_asyncnet, custom_logger]
+import misc/[websocket, util, custom_async, custom_logger]
 
 logCategory "connections"
 
@@ -11,7 +11,7 @@ method recv*(connection: Connection, length: int): Future[string] {.base.} = dis
 method send*(connection: Connection, data: string): Future[void] {.base.} = discard
 
 when not defined(js):
-  import misc/[async_process]
+  import misc/[async_process, custom_asyncnet]
   type ConnectionAsyncProcess = ref object of Connection
     process: AsyncProcess
 
@@ -45,53 +45,53 @@ when not defined(js):
     await fut.future
     return ConnectionAsyncProcess(process: process)
 
-type ConnectionAsyncSocket* = ref object of Connection
-  socket: AsyncSocket
-  activeRequests: int = 0 # Required because AsyncSocket asserts that we don't close the socket while
-                          # recvLine is in progress
-  closeRequested: bool = false
+  type ConnectionAsyncSocket* = ref object of Connection
+    socket: AsyncSocket
+    activeRequests: int = 0 # Required because AsyncSocket asserts that we don't close the socket while
+                            # recvLine is in progress
+    closeRequested: bool = false
 
-method close*(connection: ConnectionAsyncSocket) =
-  if connection.activeRequests > 0:
-    connection.closeRequested = true
-  else:
-    connection.socket.close()
-    connection.socket = nil
+  method close*(connection: ConnectionAsyncSocket) =
+    if connection.activeRequests > 0:
+      connection.closeRequested = true
+    else:
+      connection.socket.close()
+      connection.socket = nil
 
-template handleClose(connection: Connection): untyped =
-  inc connection.activeRequests
-  defer:
-    dec connection.activeRequests
-    if connection.closeRequested and connection.activeRequests == 0:
-      connection.closeRequested = false
-      connection.close()
+  template handleClose(connection: Connection): untyped =
+    inc connection.activeRequests
+    defer:
+      dec connection.activeRequests
+      if connection.closeRequested and connection.activeRequests == 0:
+        connection.closeRequested = false
+        connection.close()
 
-method recvLine*(connection: ConnectionAsyncSocket): Future[string] {.async.} =
-  if connection.socket.isNil or connection.socket.isClosed:
-    return ""
+  method recvLine*(connection: ConnectionAsyncSocket): Future[string] {.async.} =
+    if connection.socket.isNil or connection.socket.isClosed:
+      return ""
 
-  connection.handleClose()
-  return await connection.socket.recvLine()
+    connection.handleClose()
+    return await connection.socket.recvLine()
 
-method recv*(connection: ConnectionAsyncSocket, length: int): Future[string] {.async.} =
-  if connection.socket.isNil or connection.socket.isClosed:
-    return ""
+  method recv*(connection: ConnectionAsyncSocket, length: int): Future[string] {.async.} =
+    if connection.socket.isNil or connection.socket.isClosed:
+      return ""
 
-  connection.handleClose()
-  return await connection.socket.recv(length)
+    connection.handleClose()
+    return await connection.socket.recv(length)
 
-method send*(connection: ConnectionAsyncSocket, data: string): Future[void] {.async.} =
-  if connection.socket.isNil or connection.socket.isClosed:
-    return
+  method send*(connection: ConnectionAsyncSocket, data: string): Future[void] {.async.} =
+    if connection.socket.isNil or connection.socket.isClosed:
+      return
 
-  connection.handleClose()
-  await connection.socket.send(data)
+    connection.handleClose()
+    await connection.socket.send(data)
 
-proc newAsyncSocketConnection*(host: string, port: Port): Future[ConnectionAsyncSocket] {.async.} =
-  log lvlInfo, fmt"Creating async socket connection at {host}:{port.int}"
-  let socket = newAsyncSocket()
-  await socket.connect(host, port)
-  return ConnectionAsyncSocket(socket: socket)
+  proc newAsyncSocketConnection*(host: string, port: Port): Future[ConnectionAsyncSocket] {.async.} =
+    log lvlInfo, fmt"Creating async socket connection at {host}:{port.int}"
+    let socket = newAsyncSocket()
+    await socket.connect(host, port)
+    return ConnectionAsyncSocket(socket: socket)
 
 type ConnectionWebsocket* = ref object of Connection
   websocket: WebSocket

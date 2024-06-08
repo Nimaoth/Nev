@@ -13,6 +13,15 @@ proc stopDebugSession*() =
       argsJsonString.cstring)
 
 
+proc debugger_stopDebugSessionDelayed_void_Debugger_wasm(arg: cstring): cstring {.
+    importc.}
+proc stopDebugSessionDelayed*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = debugger_stopDebugSessionDelayed_void_Debugger_wasm(
+      argsJsonString.cstring)
+
+
 proc debugger_runConfiguration_void_Debugger_string_wasm(arg: cstring): cstring {.
     importc.}
 proc runConfiguration*(name: string) =
