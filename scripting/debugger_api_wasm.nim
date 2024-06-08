@@ -27,6 +27,24 @@ proc runConfiguration*(name: string) =
       argsJsonString.cstring)
 
 
+proc debugger_chooseRunConfiguration_void_Debugger_wasm(arg: cstring): cstring {.
+    importc.}
+proc chooseRunConfiguration*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = debugger_chooseRunConfiguration_void_Debugger_wasm(
+      argsJsonString.cstring)
+
+
+proc debugger_runLastConfiguration_void_Debugger_wasm(arg: cstring): cstring {.
+    importc.}
+proc runLastConfiguration*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = debugger_runLastConfiguration_void_Debugger_wasm(
+      argsJsonString.cstring)
+
+
 proc debugger_addBreakpoint_void_Debugger_string_int_wasm(arg: cstring): cstring {.
     importc.}
 proc addBreakpoint*(file: string; line: int) =
