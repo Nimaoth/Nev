@@ -44,6 +44,9 @@ type LineRenderOptions = object
   lineNumberWidth: float
   pivot: Vec2
 
+  signWidth: float
+  signs: seq[string]
+
   hoverLocation: Cursor
 
   theme: Theme
@@ -267,10 +270,21 @@ proc renderLine*(
         if lastTextSubLine.isNil or partIndex < line.parts.len:
           lastTextSubLine = subLine
 
+        if options.signWidth > 0:
+          builder.panel(&{UINodeFlag.FillBackground, FillY}, w = options.lineNumberTotalWidth,
+              backgroundColor = options.backgroundColor):
+            if subLineIndex == 0 and options.signs.len > 0:
+              builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = options.signs[0],
+                textColor = options.textColor)
+          lastPartXW = options.lineNumberTotalWidth
+          if partIndex < line.parts.len:
+            lastTextPartXW = lastPartXW
+
         if lineNumberText.len > 0:
           builder.panel(&{UINodeFlag.FillBackground, FillY}, w = options.lineNumberTotalWidth, backgroundColor = options.backgroundColor):
             if subLineIndex == 0:
-              builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = lineNumberText, x = lineNumberX, textColor = options.textColor)
+              builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = lineNumberText,
+                x = lineNumberX, textColor = options.textColor)
           lastPartXW = options.lineNumberTotalWidth
           if partIndex < line.parts.len:
             lastTextPartXW = lastPartXW
@@ -623,6 +637,9 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
     options.lineNumberTotalWidth = lineNumberWidth
     options.lineNumberWidth = lineNumberBounds.x
 
+    if self.signs.len > 0:
+      options.signWidth = 2 * charWidth
+
     var cursors: seq[CursorLocationInfo]
     var contextLines: seq[int]
     var contextLineTarget: int = -1
@@ -780,6 +797,12 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
               diagnosticInfo = infos.diagnostic
 
       else:
+
+        options.signs.setLen 0
+
+        if self.signs.contains(i):
+          for sign in self.signs[i]:
+            options.signs.add sign.text
 
         options.indentInSpaces = self.document.getIndentLevelForLineInSpaces(i, 2)
         let infos = renderLine(builder, styledLine, self.document.lines[i], colors, cursorsPerLine, options)

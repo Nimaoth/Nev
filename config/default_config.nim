@@ -242,6 +242,10 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
     chooseRunConfiguration()
     showDebuggerView()
 
+  addCommandBlock "editor", "<LEADER>ab":
+    if getActiveEditor().isTextEditor editor:
+      addBreakpoint(editor.id, editor.selection.last.line)
+
   addCommand "editor", "<LEADER>ac", "continue-execution"
   addCommand "editor", "<LEADER>ar", "step-over"
   addCommand "editor", "<LEADER>at", "step-in"

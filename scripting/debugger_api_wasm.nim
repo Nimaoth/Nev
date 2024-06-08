@@ -54,22 +54,22 @@ proc runLastConfiguration*() =
       argsJsonString.cstring)
 
 
-proc debugger_addBreakpoint_void_Debugger_string_int_wasm(arg: cstring): cstring {.
+proc debugger_addBreakpoint_void_Debugger_EditorId_int_wasm(arg: cstring): cstring {.
     importc.}
-proc addBreakpoint*(file: string; line: int) =
+proc addBreakpoint*(editorId: EditorId; line: int) =
   var argsJson = newJArray()
   argsJson.add block:
-    when string is JsonNode:
-      file
+    when EditorId is JsonNode:
+      editorId
     else:
-      file.toJson()
+      editorId.toJson()
   argsJson.add block:
     when int is JsonNode:
       line
     else:
       line.toJson()
   let argsJsonString = $argsJson
-  let res {.used.} = debugger_addBreakpoint_void_Debugger_string_int_wasm(
+  let res {.used.} = debugger_addBreakpoint_void_Debugger_EditorId_int_wasm(
       argsJsonString.cstring)
 
 
