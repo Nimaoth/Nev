@@ -30,6 +30,26 @@ proc loadSnippetsFromFile*(file: string, language: string) =
   except:
     info &"Failed to load lsp config from file: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
 
+proc loadDebuggerConfig*(file: string) =
+  try:
+    let str = loadApplicationFile(file).get
+    let json = str.parseJson()
+    infof"Loaded debugger config from {file}"
+    for key, value in json.fields.pairs:
+      setOption "debugger.configuration." & key, value
+  except:
+    info &"Failed to load debugger config from file: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+
+proc loadVSCodeDebuggerConfig*(file: string) =
+  try:
+    let str = loadApplicationFile(file).get
+    let json = str.parseJson()
+    infof"Loaded debugger config from {file}"
+    for value in json["configurations"].elems:
+      setOption "debugger.configuration." & value["name"].getStr, value
+  except:
+    info &"Failed to load debugger config from file: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+
 setOption "editor.text.lsp.c.path", "clangd"
 setOption "editor.text.lsp.cpp.path", "clangd"
 setOption "editor.text.lsp.zig.path", "zls"
@@ -113,6 +133,27 @@ setOption "debugger.type.lldb-dap", %*{
   "args": [],
 }
 
+setOption "debugger.type.lldb-dap.exe", %*{
+  "connection": "stdio",
+  "path": "D:/llvm/bin/lldb-dap.exe",
+  "args": [],
+}
+
+setOption "debugger.type.lldb-dap-tcp", %*{
+  "connection": "tcp",
+  "port": 5678,
+}
+
+setOption "debugger.type.lldb-dap-tcp-launch", %*{
+  "connection": "tcp",
+  "path": "D:/llvm/bin/lldb-dap.exe",
+}
+
+setOption "debugger.type.lldb", %*{
+  "connection": "tcp",
+  "path": "D:/llvm/bin/lldb-dap.exe",
+}
+
 setOption "debugger.type.lldb-dap2", %*{}
 
 setOption "debugger.configuration.test1", %*{
@@ -125,4 +166,12 @@ setOption "debugger.configuration.test1", %*{
 
 setOption "debugger.configuration.test2", %*{
   "type": "lldb-dap2",
+}
+
+setOption "debugger.configuration.test3", %*{
+  "type": "lldb-dap-tcp-launch",
+  "request": "launch",
+  "program": "C:/Absytree/temp/test_dbg.exe",
+  "args": [],
+  "cwd": "C:/Absytree",
 }
