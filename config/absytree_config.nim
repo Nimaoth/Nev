@@ -90,6 +90,8 @@ loadVimKeybindings()
 
 loadLspConfigFromFile("config/lsp.json")
 loadSnippetsFromFile(".vscode/nim-snippets.code-snippets", "nim")
+loadDebuggerConfig("config/launch.json")
+loadVSCodeDebuggerConfig(".vscode/launch.json")
 
 addTextCommandBlock "", "<C-k><C-s>":
   loadSnippetsFromFile(".vscode/nim-snippets.code-snippets", "nim")
