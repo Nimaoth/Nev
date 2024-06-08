@@ -175,7 +175,6 @@ method saveFile*(self: WorkspaceFolderLocal, relativePath: string, content: stri
   logScope lvlInfo, &"[saveFile] '{path}'"
   try:
     var file = openAsync(path, fmWrite)
-    let t = startTimer()
     await file.write(content)
     file.close()
   except:

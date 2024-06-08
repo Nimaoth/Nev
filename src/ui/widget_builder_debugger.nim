@@ -1,10 +1,10 @@
-import std/[strformat, tables, sugar, sequtils, strutils, algorithm, math, options, json]
+import std/[strformat, math, options]
 import vmath, bumpy, chroma
-import misc/[util, custom_logger, custom_unicode, myjsonutils]
+import misc/[util, custom_logger]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import platform/platform
 import ui/[widget_builders_base, widget_library]
-import app, theme, config_provider, app_interface
+import app, theme
 import text/language/debugger
 
 import ui/node
@@ -142,15 +142,6 @@ proc createOutput*(self: DebuggerView, builder: UINodeBuilder, app: App, debugge
   let sizeToContentX = SizeToContentX in builder.currentParent.flags
   let sizeToContentY = SizeToContentY in builder.currentParent.flags
 
-  let threads {.cursor.} = debugger.getThreads()
-
-  proc handleScroll(delta: float) = discard
-
-  proc handleLine(line: int, y: float, down: bool) =
-    let thread {.cursor.} = threads[line]
-    let text = &"{thread.id} - {thread.name}"
-    builder.panel(&{SizeToContentY, FillX, DrawText}, y = y, text = text, textColor = textColor)
-
   var sizeFlags = 0.UINodeFlags
   if sizeToContentX:
     sizeFlags.incl SizeToContentX
@@ -201,8 +192,6 @@ method createUI*(self: DebuggerView, builder: UINodeBuilder, app: App): seq[proc
     #   self.app.tryActivateEditor(self)
 
     if true or dirty or app.platform.redrawEverything or not builder.retain():
-      var header: UINode
-
       builder.panel(&{LayoutVertical} + sizeFlags):
         # Header
         builder.panel(&{FillX, SizeToContentY, FillBackground, LayoutHorizontal},
