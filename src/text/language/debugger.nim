@@ -1,9 +1,10 @@
 import std/[strutils, options, json, asynchttpserver, tables, sugar, osproc]
 import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, event, response]
 import scripting/expose
-import dap_client, dispatch_tables, app_interface, config_provider
+import dap_client, dispatch_tables, app_interface, config_provider, selector_popup_builder
 import text/text_editor
 import platform/platform
+import finder/[previewer, finder, data_previewer]
 
 import chroma
 
@@ -20,6 +21,7 @@ type
   Debugger* = ref object
     app: AppInterface
     client: Option[DapClient]
+    lastConfiguration: Option[string]
 
     # Data setup in the editor and sent to the server
     breakpoints: seq[SourceBreakpoint]
@@ -95,7 +97,7 @@ proc getFreePort*(): Port =
 proc createConnectionWithType(self: Debugger, name: string): Future[Option[Connection]] {.async.} =
   log lvlInfo, &"Try create debugger connection '{name}'"
 
-  let config = self.app.configProvider.getValue[:JsonNode]("debugger.type." & name, nil)
+  let config = self.app.configProvider.getValue[:JsonNode]("debugger.type." & name, newJNull())
   if config.isNil or config.kind != JObject:
     log lvlError, &"No/invalid debugger type configuration with name '{name}' found: {config}"
     return Connection.none
@@ -115,7 +117,7 @@ proc createConnectionWithType(self: Debugger, name: string): Future[Option[Conne
 
         let port = getFreePort().int
         log lvlInfo, &"Start process {path} with port {port}"
-        let process = startProcess(path, args = @["-p", $port], options = {poUsePath, poDaemon})
+        discard startProcess(path, args = @["-p", $port], options = {poUsePath, poDaemon})
 
         # todo: need to wait for process to open port?
         await sleepAsync(500)
@@ -170,28 +172,27 @@ proc handleStoppedAsync(self: Debugger, data: OnStoppedData) {.async.} =
     self.lastEditor.get.clearCustomHighlights(debuggerCurrentLineId)
     self.lastEditor = TextDocumentEditor.none
 
-  if self.currentThread.getSome(thread) and self.client.getSome(client):
-    let threadId = await self.updateStackTrace(data.threadId)
+  let threadId = await self.updateStackTrace(data.threadId)
 
-    if threadId.getSome(threadId) and self.stackTraces.contains(threadId):
-      let stack {.cursor.} = self.stackTraces[threadId]
+  if threadId.getSome(threadId) and self.stackTraces.contains(threadId):
+    let stack {.cursor.} = self.stackTraces[threadId]
 
-      if stack.stackFrames.len == 0:
-        return
+    if stack.stackFrames.len == 0:
+      return
 
-      let frame {.cursor.} = stack.stackFrames[0]
+    let frame {.cursor.} = stack.stackFrames[0]
 
-      if frame.source.isSome and frame.source.get.path.getSome(path):
-        let editor = self.app.openWorkspaceFile(path, nil)
+    if frame.source.isSome and frame.source.get.path.getSome(path):
+      let editor = self.app.openWorkspaceFile(path, nil)
 
-        if editor.getSome(editor) and editor of TextDocumentEditor:
-          let textEditor = editor.TextDocumentEditor
-          let location: Cursor = (frame.line - 1, frame.column - 1)
-          textEditor.targetSelection = location.toSelection
+      if editor.getSome(editor) and editor of TextDocumentEditor:
+        let textEditor = editor.TextDocumentEditor
+        let location: Cursor = (frame.line - 1, frame.column - 1)
+        textEditor.targetSelection = location.toSelection
 
-          let lineSelection = ((location.line, 0), (location.line, textEditor.lineLength(location.line)))
-          textEditor.addCustomHighlight(debuggerCurrentLineId, lineSelection, "editorError.foreground", color(1, 1, 1, 0.3))
-          self.lastEditor = textEditor.some
+        let lineSelection = ((location.line, 0), (location.line, textEditor.lineLength(location.line)))
+        textEditor.addCustomHighlight(debuggerCurrentLineId, lineSelection, "editorError.foreground", color(1, 1, 1, 0.3))
+        self.lastEditor = textEditor.some
 
 proc handleStopped(self: Debugger, data: OnStoppedData) =
   asyncCheck self.handleStoppedAsync(data)
@@ -206,8 +207,8 @@ proc handleTerminated(self: Debugger, data: Option[OnTerminatedData]) =
     self.lastEditor = TextDocumentEditor.none
 
 proc handleOutput(self: Debugger, data: OnOutputData) =
-  log(lvlInfo, &"[dap-{data.category}] {data.output}")
   if self.outputEditor.isNil:
+    log(lvlInfo, &"[dap-{data.category}] {data.output}")
     return
 
   if data.category == "stdout".some:
@@ -219,6 +220,9 @@ proc handleOutput(self: Debugger, data: OnOutputData) =
     if self.outputEditor.selection == selection:
       self.outputEditor.selection = document.lastCursor.toSelection
       self.outputEditor.scrollToCursor()
+
+  else:
+    log(lvlInfo, &"[dap-{data.category}] {data.output}")
 
 proc setClient(self: Debugger, client: DAPClient) =
   assert self.client.isNone
@@ -262,7 +266,7 @@ proc runConfigurationAsync(self: Debugger, name: string) {.async.} =
   assert self.client.isNone
   debugf"[runConfigurationAsync] Launch '{name}'"
 
-  let config = self.app.configProvider.getValue[:JsonNode]("debugger.configuration." & name, nil)
+  let config = self.app.configProvider.getValue[:JsonNode]("debugger.configuration." & name, newJNull())
   if config.isNil or config.kind != JObject:
     log lvlError, &"No/invalid configuration with name '{name}' found: {config}"
     return
@@ -279,6 +283,8 @@ proc runConfigurationAsync(self: Debugger, name: string) {.async.} =
   if connection.isNone:
     log lvlError, &"Failed to create connection for typ '{typ}'"
     return
+
+  self.lastConfiguration = name.some
 
   let client = newDAPClient(connection.get)
   self.setClient(client)
@@ -326,6 +332,42 @@ proc runConfigurationAsync(self: Debugger, name: string) {.async.} =
 
 proc runConfiguration*(self: Debugger, name: string) {.expose("debugger").} =
   asyncCheck self.runConfigurationAsync(name)
+
+proc chooseRunConfiguration(self: Debugger) {.expose("debugger").} =
+  var builder = SelectorPopupBuilder()
+  builder.scope = "choose-run-configuration".some
+  builder.previewScale = 0.7
+  builder.scaleX = 0.5
+  builder.scaleY = 0.5
+
+  let config = self.app.configProvider.getValue[:JsonNode]("debugger.configuration", newJObject())
+  if config.kind != JObject:
+    log lvlError, &"No/invalid debugger configuration: {config}"
+    return
+
+  var res = newSeq[FinderItem]()
+  for (name, config) in config.fields.pairs:
+    res.add FinderItem(
+      displayName: name,
+      data: config.pretty,
+    )
+
+  builder.previewer = newDataPreviewer(self.app.configProvider, language="javascript".some).Previewer.some
+
+  let finder = newFinder(newStaticDataSource(res), filterAndSort=true)
+  builder.finder = finder.some
+
+  builder.handleItemConfirmed = proc(popup: ISelectorPopup, item: FinderItem): bool =
+    self.runConfiguration(item.displayName)
+    true
+
+  discard self.app.pushSelectorPopup(builder)
+
+proc runLastConfiguration*(self: Debugger) {.expose("debugger").} =
+  if self.lastConfiguration.getSome(name):
+    asyncCheck self.runConfigurationAsync(name)
+  else:
+    self.chooseRunConfiguration()
 
 proc addBreakpoint*(self: Debugger, file: string, line: int) {.expose("debugger").} =
   debugf"[addBreakpoint] '{file}' in line {line}"
