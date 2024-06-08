@@ -356,23 +356,12 @@ proc runConfigurationAsync(self: Debugger, name: string) {.async.} =
     client.deinit()
     return
 
-  when defined(linux):
-    let sourcePath = "/mnt/c/Absytree/temp/test.cpp" # todo
-  else:
-    let sourcePath = "C:/Absytree/temp/test.cpp" # todo
+  let setBreakpointFutures = collect:
+    for file, breakpoints in self.breakpoints.pairs:
+      client.setBreakpoints(Source(path: file.some), breakpoints)
 
-  var allBreakpoints: seq[SourceBreakpoint]
-  for breakpoints in self.breakpoints.values:
-    allBreakpoints.add breakpoints
-
-  # Offset line because DAP is 1-based
-  for breakpoint in allBreakpoints.mitems:
-    breakpoint.line += 1
-
-  await client.setBreakpoints(
-    Source(path: sourcePath.some),
-    allBreakpoints
-  )
+  for fut in setBreakpointFutures:
+    await fut
 
   let threads = await client.getThreads
   if threads.isError:
@@ -431,8 +420,8 @@ proc applyBreakpointSignsToEditor(self: Debugger, editor: TextDocumentEditor) =
   if not self.breakpoints.contains(editor.document.filename):
     return
 
-  for  breakpoint in self.breakpoints[editor.document.filename]:
-    discard editor.TextDocumentEditor.addSign(idNone(), breakpoint.line, "🛑", group = "breakpoints")
+  for breakpoint in self.breakpoints[editor.document.filename]:
+    discard editor.TextDocumentEditor.addSign(idNone(), breakpoint.line - 1, "🛑", group = "breakpoints")
 
 proc addBreakpoint*(self: Debugger, editorId: EditorId, line: int) {.expose("debugger").} =
   if self.app.getEditorForId(editorId).getSome(editor) and editor of TextDocumentEditor:
@@ -441,14 +430,18 @@ proc addBreakpoint*(self: Debugger, editorId: EditorId, line: int) {.expose("deb
       self.breakpoints[path] = @[]
 
     for i, breakpoint in self.breakpoints[path]:
-      if breakpoint.line == line:
+      if breakpoint.line == line + 1:
         # Breakpoint already exists, remove
         self.breakpoints[path].removeSwap(i)
         self.applyBreakpointSignsToEditor(editor.TextDocumentEditor)
+        if self.client.getSome(client):
+          asyncCheck client.setBreakpoints(Source(path: path.some), self.breakpoints[path])
         return
 
-    self.breakpoints[path].add SourceBreakpoint(line: line)
+    self.breakpoints[path].add SourceBreakpoint(line: line + 1)
     self.applyBreakpointSignsToEditor(editor.TextDocumentEditor)
+    if self.client.getSome(client):
+      asyncCheck client.setBreakpoints(Source(path: path.some), self.breakpoints[path])
 
 proc continueExecution*(self: Debugger) {.expose("debugger").} =
   if self.currentThread.getSome(thread) and self.client.getSome(client):
