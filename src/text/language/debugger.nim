@@ -235,6 +235,7 @@ proc handleStoppedAsync(self: Debugger, data: OnStoppedData) {.async.} =
         let textEditor = editor.TextDocumentEditor
         let location: Cursor = (frame.line - 1, frame.column - 1)
         textEditor.targetSelection = location.toSelection
+        textEditor.scrollToCursor(location, scrollBehaviour = CenterOffscreen.some)
 
         let lineSelection = ((location.line, 0), (location.line, textEditor.lineLength(location.line)))
         textEditor.addCustomHighlight(debuggerCurrentLineId, lineSelection, "editorError.foreground", color(1, 1, 1, 0.3))
@@ -359,13 +360,18 @@ proc runConfigurationAsync(self: Debugger, name: string) {.async.} =
     let sourcePath = "/mnt/c/Absytree/temp/test.cpp" # todo
   else:
     let sourcePath = "C:/Absytree/temp/test.cpp" # todo
+
+  var allBreakpoints: seq[SourceBreakpoint]
+  for breakpoints in self.breakpoints.values:
+    allBreakpoints.add breakpoints
+
+  # Offset line because DAP is 1-based
+  for breakpoint in allBreakpoints.mitems:
+    breakpoint.line += 1
+
   await client.setBreakpoints(
     Source(path: sourcePath.some),
-    @[
-      SourceBreakpoint(line: 31),
-      SourceBreakpoint(line: 42),
-      SourceBreakpoint(line: 52),
-    ]
+    allBreakpoints
   )
 
   let threads = await client.getThreads
