@@ -27,7 +27,7 @@ type
     lastConfiguration: Option[string]
 
     # Data setup in the editor and sent to the server
-    breakpoints: seq[SourceBreakpoint]
+    breakpoints: Table[string, seq[SourceBreakpoint]]
 
     # Cached data from server
     threads: seq[ThreadInfo]
@@ -40,6 +40,8 @@ type
 
     outputEditor*: TextDocumentEditor
 
+proc applyBreakpointSignsToEditor(self: Debugger, editor: TextDocumentEditor)
+
 var gDebugger: Debugger = nil
 
 proc getDebugger*(): Option[Debugger] =
@@ -49,7 +51,27 @@ proc getDebugger*(): Option[Debugger] =
 static:
   addInjector(Debugger, getDebugger)
 
-proc createDebugger*(app: AppInterface) =
+proc getStateJson*(self: Debugger): JsonNode =
+  return %*{
+    "breakpoints": self.breakpoints,
+  }
+
+proc handleEditorRegistered*(self: Debugger, editor: DocumentEditor) =
+  if not (editor of TextDocumentEditor):
+    return
+  let editor = editor.TextDocumentEditor
+  if editor.document.isNil:
+    return
+
+  if editor.document.isLoadingAsync:
+    var id = new Id
+    id[] = editor.document.onLoaded.subscribe proc(document: TextDocument) =
+      document.onLoaded.unsubscribe(id[])
+      self.applyBreakpointSignsToEditor(editor)
+  else:
+    self.applyBreakpointSignsToEditor(editor)
+
+proc createDebugger*(app: AppInterface, state: JsonNode) =
   gDebugger = Debugger(app: app)
 
   let document = newTextDocument(app.configProvider, createLanguageServer=false)
@@ -57,6 +79,13 @@ proc createDebugger*(app: AppInterface) =
   gDebugger.outputEditor.usage = "debugger-output"
   gDebugger.outputEditor.renderHeader = false
   gDebugger.outputEditor.disableCompletions = true
+
+  discard app.onEditorRegisteredEvent.subscribe (e: DocumentEditor) => gDebugger.handleEditorRegistered(e)
+
+  try:
+    gDebugger.breakpoints = state["breakpoints"].jsonTo(Table[string, seq[SourceBreakpoint]])
+  except:
+    discard
 
   discard gDebugger.outputEditor.onMarkedDirty.subscribe () =>
     gDebugger.app.platform.requestRender()
@@ -387,8 +416,33 @@ proc runLastConfiguration*(self: Debugger) {.expose("debugger").} =
   else:
     self.chooseRunConfiguration()
 
-proc addBreakpoint*(self: Debugger, file: string, line: int) {.expose("debugger").} =
-  debugf"[addBreakpoint] '{file}' in line {line}"
+proc applyBreakpointSignsToEditor(self: Debugger, editor: TextDocumentEditor) =
+  editor.clearSigns("breakpoints")
+
+  if editor.document.isNil:
+    return
+
+  if not self.breakpoints.contains(editor.document.filename):
+    return
+
+  for  breakpoint in self.breakpoints[editor.document.filename]:
+    discard editor.TextDocumentEditor.addSign(idNone(), breakpoint.line, "🛑", group = "breakpoints")
+
+proc addBreakpoint*(self: Debugger, editorId: EditorId, line: int) {.expose("debugger").} =
+  if self.app.getEditorForId(editorId).getSome(editor) and editor of TextDocumentEditor:
+    let path = editor.TextDocumentEditor.document.filename
+    if not self.breakpoints.contains(path):
+      self.breakpoints[path] = @[]
+
+    for i, breakpoint in self.breakpoints[path]:
+      if breakpoint.line == line:
+        # Breakpoint already exists, remove
+        self.breakpoints[path].removeSwap(i)
+        self.applyBreakpointSignsToEditor(editor.TextDocumentEditor)
+        return
+
+    self.breakpoints[path].add SourceBreakpoint(line: line)
+    self.applyBreakpointSignsToEditor(editor.TextDocumentEditor)
 
 proc continueExecution*(self: Debugger) {.expose("debugger").} =
   if self.currentThread.getSome(thread) and self.client.getSome(client):

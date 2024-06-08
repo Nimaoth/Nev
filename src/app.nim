@@ -110,6 +110,8 @@ type EditorState = object
   astProjectWorkspaceId: string
   astProjectPath: Option[string]
 
+  debuggerState: Option[JsonNode]
+
 type
   RegisterKind* {.pure.} = enum Text, AstNode
   Register* = object
@@ -280,6 +282,8 @@ implTrait AppInterface, App:
   recordCommand(void, App, string, string)
 
   proc configProvider*(self: App): ConfigProvider = self.asConfigProvider
+  proc onEditorRegisteredEvent*(self: App): var Event[DocumentEditor] = self.onEditorRegistered
+  proc onEditorDeregisteredEvent*(self: App): var Event[DocumentEditor] = self.onEditorDeregistered
 
   openWorkspaceFile(Option[DocumentEditor], App, string, WorkspaceFolder)
   openFile(Option[DocumentEditor], App, string)
@@ -1006,6 +1010,8 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   self.commandHistory = state.commandHistory
 
+  createDebugger(self.asAppInterface, state.debuggerState.get(newJObject()))
+
   if self.getFlag("editor.restore-open-workspaces", true):
     for wf in state.workspaceFolders:
       var folder: WorkspaceFolder = nil
@@ -1080,8 +1086,6 @@ proc newEditor*(backend: api.Backend, platform: Platform, options = AppOptions()
 
   self.closeUnusedDocumentsTask = startDelayed(2000, repeat=true):
     self.closeUnusedDocuments()
-
-  createDebugger(self.asAppInterface)
 
   return self
 
@@ -1299,6 +1303,9 @@ proc saveAppState*(self: App) {.expose("editor").} =
   state.fallbackFonts = self.fallbackFonts
 
   state.commandHistory = self.commandHistory
+
+  if getDebugger().getSome(debugger):
+    state.debuggerState = debugger.getStateJson().some
 
   if self.layout of HorizontalLayout:
     state.layout = "horizontal"

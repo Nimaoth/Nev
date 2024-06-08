@@ -271,12 +271,12 @@ proc renderLine*(
           lastTextSubLine = subLine
 
         if options.signWidth > 0:
-          builder.panel(&{UINodeFlag.FillBackground, FillY}, w = options.lineNumberTotalWidth,
+          builder.panel(&{UINodeFlag.FillBackground, FillY}, w = options.signWidth,
               backgroundColor = options.backgroundColor):
             if subLineIndex == 0 and options.signs.len > 0:
               builder.panel(&{DrawText, SizeToContentX, SizeToContentY}, text = options.signs[0],
                 textColor = options.textColor)
-          lastPartXW = options.lineNumberTotalWidth
+          lastPartXW = options.signWidth
           if partIndex < line.parts.len:
             lastTextPartXW = lastPartXW
 
