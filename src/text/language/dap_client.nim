@@ -353,13 +353,15 @@ proc parseResponse(client: DAPClient): Future[JsonNode] {.async.} =
     line = await client.connection.recvLine
 
   if client.connection.isNil:
-    log(lvlError, "[parseResponse] Connection is nil")
     return newJNull()
 
   var success = true
   var lines = @[line]
 
   while line != "" and line != "\r\n":
+    if client.connection.isNil:
+      return newJNull()
+
     let parts = line.split(":")
     if parts.len != 2:
       success = false
@@ -376,6 +378,9 @@ proc parseResponse(client: DAPClient): Future[JsonNode] {.async.} =
     headers[name] = value.strip
     line = await client.connection.recvLine
     lines.add line
+
+  if client.connection.isNil:
+    return newJNull()
 
   if not success or not headers.contains("Content-Length"):
     log(lvlError, "[parseResponse] Failed to parse response:")
@@ -685,7 +690,12 @@ proc runAsync*(client: DAPClient) {.async.} =
     if logVerbose:
       debugf"[run] Waiting for response {(client.activeRequests.len)}"
 
-    let response = await client.parseResponse()
+    let response = try:
+      await client.parseResponse()
+    except:
+      log lvlError, &"Failed to parse response: {getCurrentExceptionMsg()}\n{getCurrentException().getStackTrace()}"
+      continue
+
     if response.isNil or response.kind != JObject:
       log lvlError, fmt"[run] Bad response: {response}"
       continue

@@ -76,6 +76,7 @@ proc stopDebugSession*(self: Debugger) {.expose("debugger").} =
     return
 
   asyncCheck self.client.get.disconnect(restart=false)
+  self.client.get.deinit()
   self.client = DapClient.none
 
 template tryGet(json: untyped, field: untyped, T: untyped, default: untyped, els: untyped): untyped =
