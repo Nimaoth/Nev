@@ -40,5 +40,7 @@ traitRef AppInterface:
     workspace: Option[WorkspaceFolder] = WorkspaceFolder.none, app: bool = false, load: bool = true
     ): Option[Document]
   method tryCloseDocument*(self: AppInterface, document: Document, force: bool): bool
+  method onEditorRegisteredEvent*(self: AppInterface): var Event[DocumentEditor]
+  method onEditorDeregisteredEvent*(self: AppInterface): var Event[DocumentEditor]
 
 var gAppInterface*: AppInterface = nil
