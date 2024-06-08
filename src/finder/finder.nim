@@ -48,7 +48,6 @@ type
 method close*(self: DataSource) {.base, raises: [].} = discard
 method setQuery*(self: DataSource, query: string) {.base.} = discard
 
-var copyCounter = 0
 var allocated = 0
 
 proc cmp*(a, b: FinderItem): int = cmp(a.score, b.score)

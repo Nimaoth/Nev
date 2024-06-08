@@ -1,9 +1,6 @@
-import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequtils, sugar, os, parseopt]
+import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequtils, os]
 import misc/[custom_logger, util, event, myjsonutils, custom_async, response, connection]
 import platform/filesystem
-import scripting/expose
-import dispatch_tables
-
 when not defined(js):
   import misc/[async_process]
 
@@ -737,6 +734,7 @@ proc run*(client: DAPClient) =
 # addActiveDispatchTable "dap", genDispatchTable("dap"), global=true
 
 when isMainModule:
+  import std/[sugar, parseopt]
   logger.enableConsoleLogger()
 
   var port = -1
