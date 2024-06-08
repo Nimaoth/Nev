@@ -72,6 +72,7 @@ type TextDocumentEditor* = ref object of DocumentEditor
   styledTextOverrides: Table[int, seq[tuple[cursor: Cursor, text: string, scope: string]]]
 
   customHighlights*: Table[int, seq[tuple[id: Id, selection: Selection, color: string, tint: Color]]]
+  signs*: Table[int, seq[tuple[id: Id, group: string, text: string, tint: Color]]]
 
   defaultScrollBehaviour*: ScrollBehaviour = CenterOffscreen
   nextScrollBehaviour*: Option[ScrollBehaviour]
@@ -323,6 +324,7 @@ proc clearDocument*(self: TextDocumentEditor) =
     self.selectionHistory.clear()
     self.styledTextOverrides.clear()
     self.customHighlights.clear()
+    self.signs.clear()
     self.showHover = false
     self.inlayHints.setLen 0
     self.showDiagnostic = false
@@ -488,6 +490,7 @@ proc clearCustomHighlights*(self: TextDocumentEditor, id: Id) =
     for i in countdown(highlights.high, 0):
       if highlights[i].id == id:
         highlights.removeSwap(i)
+  self.markDirty()
 
 proc addCustomHighlight*(self: TextDocumentEditor, id: Id, selection: Selection, color: string,
     tint: Color = color(1, 1, 1)) =
@@ -498,6 +501,29 @@ proc addCustomHighlight*(self: TextDocumentEditor, id: Id, selection: Selection,
       self.customHighlights[selection.first.line].add (id, selection, color, tint)
     else:
       self.customHighlights[selection.first.line] = @[(id, selection, color, tint)]
+  self.markDirty()
+
+proc clearSigns*(self: TextDocumentEditor, group: string = "") =
+  var linesToRemove: seq[int] = @[]
+  for line, signs in self.signs.mpairs:
+    for i in countdown(signs.high, 0):
+      if signs[i].group == group:
+        signs.removeSwap(i)
+    if signs.len == 0:
+      linesToRemove.add line
+
+  for line in linesToRemove:
+    self.signs.del line
+
+  self.markDirty()
+
+proc addSign*(self: TextDocumentEditor, id: Id, line: int, text: string, group: string = "",
+    tint: Color = color(1, 1, 1)): Id =
+  if self.signs.contains(line):
+    self.signs[line].add (id, group, text, tint)
+  else:
+    self.signs[line] = @[(id, group, text, tint)]
+  self.markDirty()
 
 proc updateSearchResults(self: TextDocumentEditor) =
   if not self.searchResultsDirty:

@@ -23,11 +23,6 @@ proc `=destroy`*[T: Disposable](a: DisposableRef[T]) =
       # debugf"count == 0, deinit"
       a.obj.deinit()
 
-proc `=wasMoved`*[T](a: var DisposableRef[T]) =
-  a.count = nil
-  when T is ref:
-    a.obj = T.default
-
 proc get*[T: Disposable](a: DisposableRef[T]): T =
   a.obj
 
