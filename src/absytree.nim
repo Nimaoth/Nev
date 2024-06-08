@@ -133,8 +133,7 @@ import text/language/lsp_client
 import text/language/debugger
 import selector_popup
 import scripting/scripting_base
-when not defined(js):
-  import wasm3, wasm3/[wasm3c, wasmconversions]
+import wasm3, wasm3/[wasm3c, wasmconversions]
 
 createNimScriptContextConstructorAndGenerateBindings()
 static:

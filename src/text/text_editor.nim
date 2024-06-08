@@ -883,7 +883,7 @@ proc setMode*(self: TextDocumentEditor, mode: string) {.expose("editor.text").} 
     self.modeEventHandler = nil
   else:
     let config = self.getModeConfig(mode)
-    self.modeEventHandler = eventHandler(config):
+    assignEventHandler(self.modeEventHandler, config):
       onAction:
         self.handleAction action, arg, record=true
       onInput:
@@ -2852,7 +2852,7 @@ proc enterChooseCursorMode*(self: TextDocumentEditor, action: string) {.expose("
 
   config.addCommand("", "<ESCAPE>", "setMode \"\"")
 
-  self.modeEventHandler = eventHandler(config):
+  assignEventHandler(self.modeEventHandler, config):
     onAction:
       self.styledTextOverrides.clear()
       self.document.notifyTextChanged()
@@ -3051,13 +3051,13 @@ method injectDependencies*(self: TextDocumentEditor, app: AppInterface) =
   self.platform = app.platform
   self.app.registerEditor(self)
   let config = app.getEventHandlerConfig("editor.text")
-  self.eventHandler = eventHandler(config):
+  assignEventHandler(self.eventHandler, config):
     onAction:
       self.handleAction action, arg, record=true
     onInput:
       self.handleInput input, record=true
 
-  self.completionEventHandler = eventHandler(app.getEventHandlerConfig("editor.text.completion")):
+  assignEventHandler(self.completionEventHandler, app.getEventHandlerConfig("editor.text.completion")):
     onAction:
       self.handleAction action, arg, record=true
     onInput:

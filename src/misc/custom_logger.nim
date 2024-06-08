@@ -55,7 +55,7 @@ proc toggleConsoleLogger*(self: CustomLogger) =
   else:
     self.enableConsoleLogger()
 
-let isTerminal {.used.} = when declared(isatty): isatty(stdout) else: false
+let isTerminal {.used.} = when not defined(js) and declared(isatty): isatty(stdout) else: false
 
 func formatTime(t: float64): string =
   if t >= 1000:

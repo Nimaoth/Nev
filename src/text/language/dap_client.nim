@@ -1,8 +1,9 @@
 import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequtils, os]
 import misc/[custom_logger, util, event, myjsonutils, custom_async, response, connection]
 import platform/filesystem
+
 when not defined(js):
-  import misc/[async_process]
+  import misc/async_process
 
 logCategory "dap"
 
@@ -346,7 +347,15 @@ proc deinit*(client: DAPClient) =
 proc parseResponse(client: DAPClient): Future[JsonNode] {.async.} =
   var headers = initTable[string, string]()
   var line = await client.connection.recvLine
+
+  var sleepCounter = 0
   while client.connection.isNotNil and line == "":
+    inc sleepCounter
+    if sleepCounter > 3:
+      await sleepAsync(30)
+      sleepCounter = 0
+      continue
+
     line = await client.connection.recvLine
 
   if client.connection.isNil:

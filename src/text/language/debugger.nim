@@ -1,4 +1,4 @@
-import std/[strutils, options, json, asynchttpserver, tables, sugar, osproc]
+import std/[strutils, options, json, tables, sugar]
 import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, event, response]
 import scripting/expose
 import dap_client, dispatch_tables, app_interface, config_provider, selector_popup_builder
@@ -10,6 +10,9 @@ import chroma
 
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 from scripting_api as api import nil
+
+when not defined(js):
+  import std/[asynchttpserver, osproc]
 
 logCategory "debugger"
 
@@ -81,18 +84,32 @@ proc stopDebugSession*(self: Debugger) {.expose("debugger").} =
   self.client.get.deinit()
   self.client = DapClient.none
 
+proc stopDebugSessionDelayedAsync*(self: Debugger) {.async.} =
+  let oldClient = self.client.getOr:
+    return
+
+  await sleepAsync(500)
+
+  # Make sure to not stop the debug session if the client changed since this was triggered
+  if self.client.getSome(client) and client == oldClient:
+    self.stopDebugSession()
+
+proc stopDebugSessionDelayed*(self: Debugger) {.expose("debugger").} =
+  asyncCheck self.stopDebugSessionDelayedAsync()
+
 template tryGet(json: untyped, field: untyped, T: untyped, default: untyped, els: untyped): untyped =
   block:
     let val = json.fields.getOrDefault(field, default)
     val.jsonTo(T).catch:
       els
 
-proc getFreePort*(): Port =
-  var server = newAsyncHttpServer()
-  server.listen(Port(0))
-  let port = server.getPort()
-  server.close()
-  return port
+when not defined(js):
+  proc getFreePort*(): Port =
+    var server = newAsyncHttpServer()
+    server.listen(Port(0))
+    let port = server.getPort()
+    server.close()
+    return port
 
 proc createConnectionWithType(self: Debugger, name: string): Future[Option[Connection]] {.async.} =
   log lvlInfo, &"Try create debugger connection '{name}'"
@@ -205,6 +222,7 @@ proc handleTerminated(self: Debugger, data: Option[OnTerminatedData]) =
   if self.lastEditor.isSome:
     self.lastEditor.get.clearCustomHighlights(debuggerCurrentLineId)
     self.lastEditor = TextDocumentEditor.none
+  self.stopDebugSessionDelayed()
 
 proc handleOutput(self: Debugger, data: OnOutputData) =
   if self.outputEditor.isNil:

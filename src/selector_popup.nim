@@ -349,20 +349,20 @@ proc newSelectorPopup*(app: AppInterface, scopeName = string.none, finder = Find
     discard popup.finder.onItemsChanged.subscribe () => popup.handleItemsUpdated()
     popup.finder.setQuery("")
 
-  popup.eventHandler = eventHandler(app.getEventHandlerConfig("popup.selector")):
+  assignEventHandler(popup.eventHandler, app.getEventHandlerConfig("popup.selector")):
     onAction:
       popup.handleAction action, arg
     onInput:
       Ignored
 
-  popup.previewEventHandler = eventHandler(app.getEventHandlerConfig("popup.selector.preview")):
+  assignEventHandler(popup.previewEventHandler, app.getEventHandlerConfig("popup.selector.preview")):
     onAction:
       popup.handleAction action, arg
     onInput:
       Ignored
 
   if scopeName.isSome:
-    popup.customEventHandler = eventHandler(app.getEventHandlerConfig("popup.selector." & scopeName.get)):
+     assignEventHandler(popup.customEventHandler, app.getEventHandlerConfig("popup.selector." & scopeName.get)):
       onAction:
         popup.handleAction action, arg
       onInput:
