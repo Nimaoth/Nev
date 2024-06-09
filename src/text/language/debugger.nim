@@ -21,24 +21,28 @@ let debuggerCurrentLineId = newId()
 type
   DebuggerConnectionKind = enum Tcp = "tcp", Stdio = "stdio", Websocket = "websocket"
 
+  ActiveView {.pure.} = enum Threads, StackTrace, Variables, Output
+
   Debugger* = ref object
     app: AppInterface
     client: Option[DapClient]
     lastConfiguration: Option[string]
+    activeView: ActiveView = Variables
+    currentThreadIndex: int
+    currentFrameIndex: int
+    variablesCursor: seq[VariablesReference]
+
+    lastEditor: Option[TextDocumentEditor]
+    outputEditor*: TextDocumentEditor
 
     # Data setup in the editor and sent to the server
     breakpoints: Table[string, seq[SourceBreakpoint]]
 
     # Cached data from server
     threads: seq[ThreadInfo]
-    stackTraces: Table[int, StackTraceResponse]
-
-    # Other stuff
-    currentThreadIndex: int
-
-    lastEditor: Option[TextDocumentEditor]
-
-    outputEditor*: TextDocumentEditor
+    stackTraces: Table[ThreadId, StackTraceResponse]
+    scopes*: Scopes
+    variables*: Table[VariablesReference, Variables]
 
 proc applyBreakpointSignsToEditor(self: Debugger, editor: TextDocumentEditor)
 
@@ -98,7 +102,7 @@ proc currentThread*(self: Debugger): Option[ThreadInfo] =
 proc getThreads*(self: Debugger): lent seq[ThreadInfo] =
   return self.threads
 
-proc getStackTrace*(self: Debugger, threadId: int): Option[StackTraceResponse] =
+proc getStackTrace*(self: Debugger, threadId: ThreadId): Option[StackTraceResponse] =
   if self.stackTraces.contains(threadId):
     return self.stackTraces[threadId].some
   return StackTraceResponse.none
@@ -195,21 +199,51 @@ proc createConnectionWithType(self: Debugger, name: string): Future[Option[Conne
 
   return Connection.none
 
-proc updateStackTrace(self: Debugger, threadId: Option[int]): Future[Option[int]] {.async.} =
+proc updateStackTrace(self: Debugger, threadId: Option[ThreadId]): Future[Option[ThreadId]] {.async.} =
   let threadId = if threadId.getSome(id):
     id
   elif self.currentThread.getSome(thread):
     thread.id
   else:
-    return int.none
+    return ThreadId.none
 
   if self.client.getSome(client):
     let stackTrace = await client.stackTrace(threadId)
     if stackTrace.isError:
-      return int.none
+      return ThreadId.none
     self.stackTraces[threadId] = stackTrace.result
 
   return threadId.some
+
+proc updateVariables(self: Debugger, variablesReference: VariablesReference) {.async.} =
+  if self.client.getSome(client):
+    let variables = await client.variables(variablesReference)
+    if variables.isError:
+      return
+
+    self.variables[variablesReference] = variables.result
+
+    let futures = collect:
+      for variable in variables.result.variables:
+        if variable.variablesReference != 0.VariablesReference:
+          self.updateVariables(variable.variablesReference)
+
+    await futures.all
+
+proc updateScopes(self: Debugger, threadId: ThreadId) {.async.} =
+  if self.client.getSome(client) and self.stackTraces.contains(threadId):
+    let stack {.cursor.} = self.stackTraces[threadId]
+    let frame {.cursor.} = stack.stackFrames[0]
+    let scopes = await client.scopes(frame.id)
+    if scopes.isError:
+      return
+
+    self.scopes = scopes.result
+    let futures = collect:
+      for scope in self.scopes.scopes:
+        self.updateVariables(scope.variablesReference)
+
+    await futures.all
 
 proc handleStoppedAsync(self: Debugger, data: OnStoppedData) {.async.} =
   log(lvlInfo, &"onStopped {data}")
@@ -221,6 +255,7 @@ proc handleStoppedAsync(self: Debugger, data: OnStoppedData) {.async.} =
   let threadId = await self.updateStackTrace(data.threadId)
 
   if threadId.getSome(threadId) and self.stackTraces.contains(threadId):
+    asyncCheck self.updateScopes(threadId)
     let stack {.cursor.} = self.stackTraces[threadId]
 
     if stack.stackFrames.len == 0:
@@ -246,6 +281,8 @@ proc handleStopped(self: Debugger, data: OnStoppedData) =
 
 proc handleContinued(self: Debugger, data: OnContinuedData) =
   log(lvlInfo, &"onContinued {data}")
+  self.scopes = Scopes()
+  self.variables.clear()
 
 proc handleTerminated(self: Debugger, data: Option[OnTerminatedData]) =
   log(lvlInfo, &"onTerminated {data}")

@@ -1,4 +1,4 @@
-import std/[strformat, math, options]
+import std/[strformat, math, options, tables]
 import vmath, bumpy, chroma
 import misc/[util, custom_logger]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
@@ -6,6 +6,7 @@ import platform/platform
 import ui/[widget_builders_base, widget_library]
 import app, theme
 import text/language/debugger
+import text/language/dap_client
 
 import ui/node
 
@@ -99,21 +100,45 @@ proc createThreads*(self: DebuggerView, builder: UINodeBuilder, app: App, debugg
       builder.createLines(0, 0, threads.high, sizeToContentX, sizeToContentY,
         backgroundColor, handleScroll, handleLine)
 
+proc createVariables*(self: DebuggerView, builder: UINodeBuilder, app: App, debugger: Debugger,
+    variablesReference: VariablesReference, backgroundColor: Color, textColor: Color) =
+
+  let variables {.cursor.} = debugger.variables[variablesReference]
+  for variable in variables.variables:
+    builder.panel(&{SizeToContentY, FillX, LayoutHorizontal}):
+      let typeText = variable.`type`.mapIt(": " & it).get("")
+      let text = fmt"{variable.name}{typeText} = {variable.value}"
+      builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = text, textColor = textColor)
+      # builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = variable.name, textColor = textColor)
+      # builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = " = ", textColor = textColor)
+      # builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = variable.value, textColor = textColor)
+    if variable.variablesReference != 0.VariablesReference and
+        debugger.variables.contains(variable.variablesReference):
+      builder.panel(&{SizeToContentY, FillX, LayoutVertical}, x = 2 * builder.charWidth):
+        self.createVariables(builder, app, debugger, variable.variablesReference, backgroundColor, textColor)
+
+proc createScope*(self: DebuggerView, builder: UINodeBuilder, app: App, debugger: Debugger, scopeId: int,
+      backgroundColor: Color, headerColor: Color, textColor: Color): seq[proc() {.closure.}] =
+
+  let scope {.cursor.} = debugger.scopes.scopes[scopeId]
+  builder.panel(&{SizeToContentY, FillX, LayoutVertical}):
+    builder.panel(&{SizeToContentY, FillX, DrawText}, text = scope.name, textColor = textColor)
+    if debugger.variables.contains(scope.variablesReference):
+      builder.panel(&{SizeToContentY, FillX, LayoutVertical}, x = 2 * builder.charWidth):
+        self.createVariables(builder, app, debugger, scope.variablesReference, backgroundColor, textColor)
+
 proc createLocals*(self: DebuggerView, builder: UINodeBuilder, app: App, debugger: Debugger,
-      backgroundColor: Color, headerColor: Color, textColor: Color):
-    seq[proc() {.closure.}] =
+    backgroundColor: Color, headerColor: Color, textColor: Color): seq[proc() {.closure.}] =
 
   let sizeToContentX = SizeToContentX in builder.currentParent.flags
   let sizeToContentY = SizeToContentY in builder.currentParent.flags
 
-  let threads {.cursor.} = debugger.getThreads()
-
   proc handleScroll(delta: float) = discard
 
+  var res: seq[proc() {.closure.}]
   proc handleLine(line: int, y: float, down: bool) =
-    let thread {.cursor.} = threads[line]
-    let text = &"{thread.id} - {thread.name}"
-    builder.panel(&{SizeToContentY, FillX, DrawText}, y = y, text = text, textColor = textColor)
+    builder.panel(&{SizeToContentY, FillX}, y = y):
+      res.add self.createScope(builder, app, debugger, line, backgroundColor, headerColor, textColor)
 
   var sizeFlags = 0.UINodeFlags
   if sizeToContentX:
@@ -129,11 +154,13 @@ proc createLocals*(self: DebuggerView, builder: UINodeBuilder, app: App, debugge
   builder.panel(sizeFlags + LayoutVertical):
     builder.panel(&{FillX, SizeToContentY, FillBackground, LayoutHorizontal},
         backgroundColor = headerColor):
-      builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = "Threads")
+      builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = "Variables")
 
     builder.panel(sizeFlags):
-      builder.createLines(0, 0, threads.high, sizeToContentX, sizeToContentY,
+      builder.createLines(0, 0, debugger.scopes.scopes.high, sizeToContentX, sizeToContentY,
         backgroundColor, handleScroll, handleLine)
+
+  res
 
 proc createOutput*(self: DebuggerView, builder: UINodeBuilder, app: App, debugger: Debugger,
       backgroundColor: Color, headerColor: Color, textColor: Color):
@@ -204,7 +231,7 @@ method createUI*(self: DebuggerView, builder: UINodeBuilder, app: App): seq[proc
         builder.panel(sizeFlags + &{FillBackground}, backgroundColor = backgroundColor):
           let bounds = currentNode.bounds
 
-          let (stackAndThreadsBounds, rest) = bounds.splitH(0.5.percent)
+          let (stackAndThreadsBounds, rest) = bounds.splitH(0.25.percent)
           let (threadsBounds, stackBounds) = stackAndThreadsBounds.splitV(0.3.percent)
           let (localsBounds, outputBounds) = rest.splitH(0.5.percent)
 
