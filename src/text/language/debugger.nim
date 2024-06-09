@@ -1,4 +1,4 @@
-import std/[strutils, options, json, tables, sugar]
+import std/[strutils, options, json, tables, sugar, strtabs]
 import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, event, response]
 import scripting/expose
 import dap_client, dispatch_tables, app_interface, config_provider, selector_popup_builder
@@ -215,18 +215,20 @@ proc updateStackTrace(self: Debugger, threadId: Option[ThreadId]): Future[Option
 
   return threadId.some
 
-proc updateVariables(self: Debugger, variablesReference: VariablesReference) {.async.} =
+proc updateVariables(self: Debugger, variablesReference: VariablesReference, maxDepth: int) {.async.} =
   if self.client.getSome(client):
     let variables = await client.variables(variablesReference)
     if variables.isError:
       return
 
     self.variables[variablesReference] = variables.result
+    if maxDepth == 0:
+      return
 
     let futures = collect:
       for variable in variables.result.variables:
         if variable.variablesReference != 0.VariablesReference:
-          self.updateVariables(variable.variablesReference)
+          self.updateVariables(variable.variablesReference, maxDepth - 1)
 
     await futures.all
 
@@ -241,7 +243,7 @@ proc updateScopes(self: Debugger, threadId: ThreadId) {.async.} =
     self.scopes = scopes.result
     let futures = collect:
       for scope in self.scopes.scopes:
-        self.updateVariables(scope.variablesReference)
+        self.updateVariables(scope.variablesReference, 2)
 
     await futures.all
 
