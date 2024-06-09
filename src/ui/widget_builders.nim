@@ -4,7 +4,7 @@ import ui/node
 import platform/platform
 import ui/[widget_builders_base, widget_builder_text_document, widget_builder_selector_popup,
   widget_builder_debugger]
-import app, document_editor, theme, compilation_config
+import app, document_editor, theme, compilation_config, view
 
 when enableAst:
   import ui/[widget_builder_model_document]

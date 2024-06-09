@@ -7,7 +7,7 @@ import platform/[platform, filesystem]
 import workspaces/[workspace]
 import config_provider, app_interface
 import text/language/language_server_base, language_server_absytree_commands
-import input, events, document, document_editor, popup, dispatch_tables, theme, clipboard, app_options, selector_popup_builder
+import input, events, document, document_editor, popup, dispatch_tables, theme, clipboard, app_options, selector_popup_builder, view
 import text/[custom_treesitter]
 import finder/[finder, previewer]
 import compilation_config
@@ -28,27 +28,9 @@ logCategory "app"
 createJavascriptPrototype("editor")
 
 type
-  View* = ref object of RootObj
-    dirty*: bool
-    active*: bool
-
   EditorView* = ref object of View
     document*: Document
     editor*: DocumentEditor
-
-  DebuggerView* = ref object of View
-
-method activate*(view: View) {.base.} =
-  view.active = true
-
-method deactivate*(view: View) {.base.} =
-  view.active = false
-
-method markDirty*(view: View, notify: bool = true) {.base.} =
-  view.dirty = true
-
-method getEventHandlers*(self: View, inject: Table[string, EventHandler]): seq[EventHandler] {.base.} =
-  discard
 
 method activate*(view: EditorView) =
   view.active = true

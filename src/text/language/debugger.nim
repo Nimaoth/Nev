@@ -1,7 +1,7 @@
-import std/[strutils, options, json, tables, sugar, strtabs]
+import std/[strutils, options, json, tables, sugar, strtabs, streams]
 import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, event, response]
 import scripting/expose
-import dap_client, dispatch_tables, app_interface, config_provider, selector_popup_builder
+import dap_client, dispatch_tables, app_interface, config_provider, selector_popup_builder, events, view
 import text/text_editor
 import platform/platform
 import finder/[previewer, finder, data_previewer]
@@ -21,16 +21,21 @@ let debuggerCurrentLineId = newId()
 type
   DebuggerConnectionKind = enum Tcp = "tcp", Stdio = "stdio", Websocket = "websocket"
 
-  ActiveView {.pure.} = enum Threads, StackTrace, Variables, Output
+  ActiveView* {.pure.} = enum Threads, StackTrace, Variables, Output
 
   Debugger* = ref object
     app: AppInterface
     client: Option[DapClient]
     lastConfiguration: Option[string]
-    activeView: ActiveView = Variables
+    activeView*: ActiveView = Variables
     currentThreadIndex: int
     currentFrameIndex: int
     variablesCursor: seq[VariablesReference]
+    eventHandler: EventHandler
+    threadsEventHandler: EventHandler
+    stackTraceEventHandler: EventHandler
+    variablesEventHandler: EventHandler
+    outputEventHandler: EventHandler
 
     lastEditor: Option[TextDocumentEditor]
     outputEditor*: TextDocumentEditor
@@ -45,6 +50,7 @@ type
     variables*: Table[VariablesReference, Variables]
 
 proc applyBreakpointSignsToEditor(self: Debugger, editor: TextDocumentEditor)
+proc handleAction(self: Debugger, action: string, arg: string): EventResponse
 
 var gDebugger: Debugger = nil
 
@@ -54,6 +60,16 @@ proc getDebugger*(): Option[Debugger] =
 
 static:
   addInjector(Debugger, getDebugger)
+
+proc getEventHandlers*(inject: Table[string, EventHandler]): seq[EventHandler] =
+  result.add gDebugger.eventHandler
+  case gDebugger.activeView
+  of Threads: discard # gDebugger.threadsEventHandler
+  of StackTrace: discard # gDebugger.stackTraceEventHandler
+  of Variables: discard # gDebugger.variablesEventHandler
+  of Output:
+    if gDebugger.outputEditor.isNotNil:
+      result.add gDebugger.outputEditor.getEventHandlers(inject)
 
 proc getStateJson*(self: Debugger): JsonNode =
   return %*{
@@ -94,6 +110,17 @@ proc createDebugger*(app: AppInterface, state: JsonNode) =
   discard gDebugger.outputEditor.onMarkedDirty.subscribe () =>
     gDebugger.app.platform.requestRender()
 
+  assignEventHandler(gDebugger.eventHandler, app.getEventHandlerConfig("debugger")):
+    onAction:
+      gDebugger.handleAction action, arg
+    # onInput:
+    #   gDebugger.handleInput input
+
+# threadsEventHandler
+# stackTraceEventHandler
+# variablesEventHandler
+# outputEventHandler
+
 proc currentThread*(self: Debugger): Option[ThreadInfo] =
   if self.currentThreadIndex >= 0 and self.currentThreadIndex < self.threads.len:
     return self.threads[self.currentThreadIndex].some
@@ -106,6 +133,20 @@ proc getStackTrace*(self: Debugger, threadId: ThreadId): Option[StackTraceRespon
   if self.stackTraces.contains(threadId):
     return self.stackTraces[threadId].some
   return StackTraceResponse.none
+
+proc prevDebuggerView*(self: Debugger) {.expose("debugger").} =
+  self.activeView = case self.activeView
+  of Threads: ActiveView.Output
+  of StackTrace: ActiveView.Threads
+  of Variables: ActiveView.StackTrace
+  of Output: ActiveView.Variables
+
+proc nextDebuggerView*(self: Debugger) {.expose("debugger").} =
+  self.activeView = case self.activeView
+  of Threads: ActiveView.StackTrace
+  of StackTrace: ActiveView.Variables
+  of Variables: ActiveView.Output
+  of Output: ActiveView.Threads
 
 proc stopDebugSession*(self: Debugger) {.expose("debugger").} =
   debugf"[stopDebugSession] Stopping session"
@@ -503,3 +544,26 @@ addGlobalDispatchTable "debugger", genDispatchTable("debugger")
 
 proc dispatchEvent*(action: string, args: JsonNode): bool =
   dispatch(action, args).isSome
+
+proc handleAction(self: Debugger, action: string, arg: string): EventResponse =
+  # debugf"[textedit] handleAction {action}, '{args}'"
+
+  var args = newJArray()
+  for a in newStringStream(arg).parseJsonFragments():
+    args.add a
+
+  if self.app.invokeAnyCallback(action, args).isNotNil:
+    return Handled
+
+  try:
+    # debugf"dispatch {action}, {args}"
+    if dispatch(action, args).isSome:
+      return Handled
+  except CatchableError:
+    log(lvlError, fmt"Failed to dispatch action '{action} {args}': {getCurrentExceptionMsg()}")
+    log(lvlError, getCurrentException().getStackTrace())
+
+  return Ignored
+
+method getEventHandlers*(view: DebuggerView, inject: Table[string, EventHandler]): seq[EventHandler] =
+  debugger.getEventHandlers(inject)
