@@ -1,4 +1,4 @@
-import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequtils, os]
+import std/[json, strutils, strformat, macros, options, tables, sets, uri, sequtils, os, hashes]
 import misc/[custom_logger, util, event, myjsonutils, custom_async, response, connection]
 import platform/filesystem
 
@@ -30,6 +30,10 @@ proc toResponse*(node: JsonNode, T: typedesc): Response[T] =
   fromJsonHook[T](result, node)
 
 type
+  ThreadId* = distinct int
+  VariablesReference* = distinct int
+  FrameId* = distinct int
+
   StartMethod* = enum
     Launch = "launch"
     Attach = "attach"
@@ -61,7 +65,7 @@ type
     checksum*: string
 
   ThreadInfo* = object
-    id*: int
+    id*: ThreadId
     name*: string
 
   Threads* = object
@@ -185,7 +189,7 @@ type
     includeAll*: Option[bool]
 
   StackFrame* = object
-    id*: int
+    id*: FrameId
     name*: string
     source*: Option[Source]
     line*: int
@@ -201,19 +205,49 @@ type
     stackFrames*: seq[StackFrame]
     totalFrames*: Option[int]
 
+  Scope* = object
+    name*: string
+    presentationHint*: Option[string]
+    variablesReference*: VariablesReference
+    namedVariables*: Option[int]
+    indexedVariables*: Option[int]
+    expensive*: bool
+    source*: Option[Source]
+    line*: Option[int]
+    column*: Option[int]
+    endLine*: Option[int]
+    endColumn*: Option[int]
+
+  Scopes* = object
+    scopes*: seq[Scope]
+
+  Variable* = object
+    name*: string
+    value*: string
+    `type`*: Option[string]
+    presentationHint*: Option[string]
+    evaluateName*: Option[string]
+    variablesReference*: VariablesReference
+    namedVariables*: Option[int]
+    indexedVariables*: Option[int]
+    memoryReference*: Option[string]
+
+  Variables* = object
+    variables*: seq[Variable]
+
   OnInitializedData* = void
 
   OnStoppedData* = object
     reason*: string
     description*: Option[string]
-    threadId*: Option[int]
+    threadId*: Option[ThreadId]
     preserveFocusHint*: Option[bool]
     text*: Option[string]
     allThreadsStopped*: Option[bool]
     hitBreakpointIds*: seq[int]
 
   OnContinuedData* = object
-    threadId*: int
+    threadId*: ThreadId
     allThreadsContinued*: Option[bool]
 
   OnExitedData* = object
@@ -224,13 +258,13 @@ type
 
   OnThreadData* = object
     reason*: string
-    threadId*: int
+    threadId*: ThreadId
 
   OnOutputData* = object
     category*: Option[string]
     output*: string
     group*: Option[GroupKind]
-    variablesReference*: Option[int]
+    variablesReference*: Option[VariablesReference]
     source*: Option[Source]
     line*: Option[int]
     column*: Option[int]
@@ -277,7 +311,7 @@ type
 
   OnInvalidatedData* = object
     areas*: seq[string]
-    threadId*: Option[int]
+    threadId*: Option[ThreadId]
     stackFrameId*: Option[int]
 
   OnMemoryData* = object
@@ -320,6 +354,21 @@ proc waitInitialized*(client: DAPCLient): Future[bool] = client.initializedFutur
 proc waitInitializedEventReceived*(client: DAPCLient): Future[void] = client.initializedEventFuture.future
 
 proc encodePathUri(path: string): string = path.normalizePathUnix.split("/").mapIt(it.encodeUrl(false)).join("/")
+
+proc `==`*(a, b: VariablesReference): bool {.borrow.}
+proc hash*(vr: VariablesReference): Hash {.borrow.}
+proc `$`*(vr: VariablesReference): string {.borrow.}
+proc `%`*(vr: VariablesReference): JsonNode {.borrow.}
+
+proc `==`*(a, b: ThreadId): bool {.borrow.}
+proc hash*(vr: ThreadId): Hash {.borrow.}
+proc `$`*(vr: ThreadId): string {.borrow.}
+proc `%`*(vr: ThreadId): JsonNode {.borrow.}
+
+proc `==`*(a, b: FrameId): bool {.borrow.}
+proc hash*(vr: FrameId): Hash {.borrow.}
+proc `$`*(vr: FrameId): string {.borrow.}
+proc `%`*(vr: FrameId): JsonNode {.borrow.}
 
 when defined(js):
   # todo
@@ -511,7 +560,7 @@ proc configurationDone*(client: DAPClient) {.async.} =
     log lvlError, &"Failed to finish configuration: {res}"
     return
 
-proc continueExecution*(client: DAPClient, threadId: int, singleThreaded = bool.none) {.async.} =
+proc continueExecution*(client: DAPClient, threadId: ThreadId, singleThreaded = bool.none) {.async.} =
   log lvlInfo, &"continueExecution (threadId={threadId}, singleThreaded={singleThreaded})"
 
   var args = %*{
@@ -525,7 +574,7 @@ proc continueExecution*(client: DAPClient, threadId: int, singleThreaded = bool.
     log lvlError, &"Failed to continue execution: {res}"
     return
 
-proc next*(client: DAPClient, threadId: int, singleThreaded = bool.none,
+proc next*(client: DAPClient, threadId: ThreadId, singleThreaded = bool.none,
     granularity = SteppingGranularity.none) {.async.} =
 
   log lvlInfo, &"next (threadId={threadId}, singleThreaded={singleThreaded}, granularity={granularity})"
@@ -543,7 +592,7 @@ proc next*(client: DAPClient, threadId: int, singleThreaded = bool.none,
     log lvlError, &"'next' failed: {res}"
     return
 
-proc stepIn*(client: DAPClient, threadId: int, singleThreaded = bool.none, targetId = int.none,
+proc stepIn*(client: DAPClient, threadId: ThreadId, singleThreaded = bool.none, targetId = int.none,
     granularity = SteppingGranularity.none) {.async.} =
 
   log lvlInfo, &"stepIn (threadId={threadId}, singleThreaded={singleThreaded}, targetId={targetId}, granularity={granularity})"
@@ -563,7 +612,7 @@ proc stepIn*(client: DAPClient, threadId: int, singleThreaded = bool.none, targe
     log lvlError, &"'stepIn' failed: {res}"
     return
 
-proc stepOut*(client: DAPClient, threadId: int, singleThreaded = bool.none,
+proc stepOut*(client: DAPClient, threadId: ThreadId, singleThreaded = bool.none,
     granularity = SteppingGranularity.none) {.async.} =
 
   log lvlInfo, &"stepOut (threadId={threadId}, singleThreaded={singleThreaded}, granularity={granularity})"
@@ -581,7 +630,7 @@ proc stepOut*(client: DAPClient, threadId: int, singleThreaded = bool.none,
     log lvlError, &"'stepOut' failed: {res}"
     return
 
-proc stackTrace*(client: DAPClient, threadId: int, startFrame = int.none, levels = int.none,
+proc stackTrace*(client: DAPClient, threadId: ThreadId, startFrame = int.none, levels = int.none,
     format = StackFrameFormat.none): Future[Response[StackTraceResponse]] {.async.} =
 
   log lvlInfo, &"stackTrace (threadId={threadId}, startFrame={startFrame}, levels={levels}, format={format})"
@@ -610,6 +659,28 @@ proc getThreads*(client: DAPClient): Future[Response[Threads]] {.async.} =
     log lvlError, &"Failed get threads: {res}"
     return res.to(Threads)
   return res.to(Threads)
+
+proc scopes*(client: DAPClient, frameId: FrameId): Future[Response[Scopes]] {.async.} =
+  log lvlInfo, &"scopes"
+  var args = %*{
+    "frameId": frameId,
+  }
+  let res = await client.sendRequest("scopes", args.some)
+  if res.isError:
+    log lvlError, &"Failed get scopes: {res}"
+    return res.to(Scopes)
+  return res.to(Scopes)
+
+proc variables*(client: DAPClient, variablesReference: VariablesReference): Future[Response[Variables]] {.async.} =
+  log lvlInfo, &"variables"
+  var args = %*{
+    "variablesReference": variablesReference,
+  }
+  let res = await client.sendRequest("variables", args.some)
+  if res.isError:
+    log lvlError, &"Failed get variables: {res}"
+    return res.to(Variables)
+  return res.to(Variables)
 
 proc initialize*(client: DAPClient) {.async.} =
   log lvlInfo, "Initialize client"
