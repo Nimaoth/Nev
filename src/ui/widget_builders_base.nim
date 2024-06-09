@@ -1,4 +1,4 @@
-import app, document_editor, popup, ui/node
+import app, view, document_editor, popup, ui/node
 
 {.used.}
 

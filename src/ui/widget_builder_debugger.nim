@@ -4,7 +4,8 @@ import misc/[util, custom_logger]
 import scripting_api except DocumentEditor, TextDocumentEditor, AstDocumentEditor
 import platform/platform
 import ui/[widget_builders_base, widget_library]
-import app, theme
+import app, theme, view
+import text/text_editor
 import text/language/debugger
 import text/language/dap_client
 
@@ -18,7 +19,7 @@ logCategory "widget_builder_debugger"
 var uiUserId = newId()
 
 proc createStackTrace*(self: DebuggerView, builder: UINodeBuilder, app: App, debugger: Debugger,
-      backgroundColor: Color, headerColor: Color, textColor: Color):
+      backgroundColor: Color, activeBackgroundColor: Color, headerColor: Color, textColor: Color):
     seq[proc() {.closure.}] =
 
   let sizeToContentX = SizeToContentX in builder.currentParent.flags
@@ -54,6 +55,11 @@ proc createStackTrace*(self: DebuggerView, builder: UINodeBuilder, app: App, deb
   else:
     sizeFlags.incl FillY
 
+  let chosenBackgroundColor = if self.active and debugger.activeView == ActiveView.StackTrace:
+    activeBackgroundColor
+  else:
+    backgroundColor
+
   builder.panel(sizeFlags + LayoutVertical):
     builder.panel(&{FillX, SizeToContentY, FillBackground, LayoutHorizontal},
         backgroundColor = headerColor):
@@ -62,10 +68,10 @@ proc createStackTrace*(self: DebuggerView, builder: UINodeBuilder, app: App, deb
       builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = text)
 
     builder.panel(sizeFlags):
-      builder.createLines(0, 0, stackTrace.stackFrames.high, sizeToContentX, sizeToContentY, backgroundColor, handleScroll, handleLine)
+      builder.createLines(0, 0, stackTrace.stackFrames.high, sizeToContentX, sizeToContentY, chosenBackgroundColor, handleScroll, handleLine)
 
 proc createThreads*(self: DebuggerView, builder: UINodeBuilder, app: App, debugger: Debugger,
-      backgroundColor: Color, headerColor: Color, textColor: Color):
+      backgroundColor: Color, activeBackgroundColor: Color, headerColor: Color, textColor: Color):
     seq[proc() {.closure.}] =
 
   let sizeToContentX = SizeToContentX in builder.currentParent.flags
@@ -91,6 +97,11 @@ proc createThreads*(self: DebuggerView, builder: UINodeBuilder, app: App, debugg
   else:
     sizeFlags.incl FillY
 
+  let chosenBackgroundColor = if self.active and debugger.activeView == ActiveView.Threads:
+    activeBackgroundColor
+  else:
+    backgroundColor
+
   builder.panel(sizeFlags + LayoutVertical):
     builder.panel(&{FillX, SizeToContentY, FillBackground, LayoutHorizontal},
         backgroundColor = headerColor):
@@ -98,7 +109,7 @@ proc createThreads*(self: DebuggerView, builder: UINodeBuilder, app: App, debugg
 
     builder.panel(sizeFlags):
       builder.createLines(0, 0, threads.high, sizeToContentX, sizeToContentY,
-        backgroundColor, handleScroll, handleLine)
+        chosenBackgroundColor, handleScroll, handleLine)
 
 proc createVariables*(self: DebuggerView, builder: UINodeBuilder, app: App, debugger: Debugger,
     variablesReference: VariablesReference, backgroundColor: Color, textColor: Color) =
@@ -128,17 +139,23 @@ proc createScope*(self: DebuggerView, builder: UINodeBuilder, app: App, debugger
         self.createVariables(builder, app, debugger, scope.variablesReference, backgroundColor, textColor)
 
 proc createLocals*(self: DebuggerView, builder: UINodeBuilder, app: App, debugger: Debugger,
-    backgroundColor: Color, headerColor: Color, textColor: Color): seq[proc() {.closure.}] =
+    backgroundColor: Color, activeBackgroundColor: Color, headerColor: Color, textColor: Color):
+    seq[proc() {.closure.}] =
 
   let sizeToContentX = SizeToContentX in builder.currentParent.flags
   let sizeToContentY = SizeToContentY in builder.currentParent.flags
 
   proc handleScroll(delta: float) = discard
 
+  let chosenBackgroundColor = if self.active and debugger.activeView == ActiveView.Variables:
+    activeBackgroundColor
+  else:
+    backgroundColor
+
   var res: seq[proc() {.closure.}]
   proc handleLine(line: int, y: float, down: bool) =
     builder.panel(&{SizeToContentY, FillX}, y = y):
-      res.add self.createScope(builder, app, debugger, line, backgroundColor, headerColor, textColor)
+      res.add self.createScope(builder, app, debugger, line, chosenBackgroundColor, headerColor, textColor)
 
   var sizeFlags = 0.UINodeFlags
   if sizeToContentX:
@@ -156,14 +173,14 @@ proc createLocals*(self: DebuggerView, builder: UINodeBuilder, app: App, debugge
         backgroundColor = headerColor):
       builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = "Variables")
 
-    builder.panel(sizeFlags):
+    builder.panel(sizeFlags + FillBackground, backgroundColor = chosenBackgroundColor):
       builder.createLines(0, 0, debugger.scopes.scopes.high, sizeToContentX, sizeToContentY,
-        backgroundColor, handleScroll, handleLine)
+        chosenBackgroundColor, handleScroll, handleLine)
 
   res
 
 proc createOutput*(self: DebuggerView, builder: UINodeBuilder, app: App, debugger: Debugger,
-      backgroundColor: Color, headerColor: Color, textColor: Color):
+      backgroundColor: Color, activeBackgroundColor: Color, headerColor: Color, textColor: Color):
     seq[proc() {.closure.}] =
 
   let sizeToContentX = SizeToContentX in builder.currentParent.flags
@@ -180,6 +197,11 @@ proc createOutput*(self: DebuggerView, builder: UINodeBuilder, app: App, debugge
   else:
     sizeFlags.incl FillY
 
+  let wasActive = debugger.outputEditor.active
+  debugger.outputEditor.active = self.active and debugger.activeView == ActiveView.Output
+  if debugger.outputEditor.active != wasActive:
+    debugger.outputEditor.markDirty(notify=false)
+
   builder.panel(sizeFlags + LayoutVertical):
     builder.panel(&{FillX, SizeToContentY, FillBackground, LayoutHorizontal},
         backgroundColor = headerColor):
@@ -192,8 +214,10 @@ method createUI*(self: DebuggerView, builder: UINodeBuilder, app: App): seq[proc
   self.dirty = false
 
   let textColor = app.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-  var backgroundColor = if self.active: app.theme.color("editor.background", color(25/255, 25/255, 40/255)) else: app.theme.color("editor.background", color(25/255, 25/255, 25/255)) * 0.85
+  var backgroundColor = app.theme.color("editor.background", color(25/255, 25/255, 25/255)) * 0.85
   backgroundColor.a = 1
+  var activeBackgroundColor = app.theme.color("editor.background", color(25/255, 25/255, 40/255))
+  activeBackgroundColor.a = 1
 
   var headerColor = if self.active: app.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)) else: app.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
   headerColor.a = 1
@@ -239,19 +263,22 @@ method createUI*(self: DebuggerView, builder: UINodeBuilder, app: App): seq[proc
 
             builder.panel(sizeFlags, x = stackBounds.x, y = stackBounds.y, w = stackBounds.w,
                 h = stackBounds.h):
-              res.add self.createStackTrace(builder, app, debugger, backgroundColor, headerColor,
-                textColor)
+              res.add self.createStackTrace(builder, app, debugger, backgroundColor,
+                activeBackgroundColor, headerColor, textColor)
 
             builder.panel(sizeFlags, x = threadsBounds.x, y = threadsBounds.y, w = threadsBounds.w,
                 h = threadsBounds.h):
-              res.add self.createThreads(builder, app, debugger, backgroundColor, headerColor, textColor)
+              res.add self.createThreads(builder, app, debugger, backgroundColor,
+                activeBackgroundColor, headerColor, textColor)
 
             builder.panel(sizeFlags, x = localsBounds.x, y = localsBounds.y, w = localsBounds.w,
                 h = localsBounds.h):
-              res.add self.createLocals(builder, app, debugger, backgroundColor, headerColor, textColor)
+              res.add self.createLocals(builder, app, debugger, backgroundColor,
+                activeBackgroundColor, headerColor, textColor)
 
             builder.panel(sizeFlags, x = outputBounds.x, y = outputBounds.y, w = outputBounds.w,
                 h = outputBounds.h):
-              res.add self.createOutput(builder, app, debugger, backgroundColor, headerColor, textColor)
+              res.add self.createOutput(builder, app, debugger, backgroundColor,
+                activeBackgroundColor, headerColor, textColor)
 
   res

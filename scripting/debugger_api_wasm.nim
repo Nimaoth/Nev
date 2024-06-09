@@ -4,6 +4,24 @@ import scripting_api, misc/myjsonutils
 ## This file is auto generated, don't modify.
 
 
+proc debugger_prevDebuggerView_void_Debugger_wasm(arg: cstring): cstring {.
+    importc.}
+proc prevDebuggerView*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = debugger_prevDebuggerView_void_Debugger_wasm(
+      argsJsonString.cstring)
+
+
+proc debugger_nextDebuggerView_void_Debugger_wasm(arg: cstring): cstring {.
+    importc.}
+proc nextDebuggerView*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = debugger_nextDebuggerView_void_Debugger_wasm(
+      argsJsonString.cstring)
+
+
 proc debugger_stopDebugSession_void_Debugger_wasm(arg: cstring): cstring {.
     importc.}
 proc stopDebugSession*() =

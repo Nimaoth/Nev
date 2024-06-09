@@ -251,6 +251,9 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
   addCommand "editor", "<LEADER>at", "step-in"
   addCommand "editor", "<LEADER>an", "step-out"
 
+  addCommand "debugger", "<C-k>", "prev-debugger-view"
+  addCommand "debugger", "<C-h>", "next-debugger-view"
+
   # addCommand "editor.text", "<C-SPACE>ts", "reload-treesitter"
 
   # setHandleInputs("editor.model", true)
