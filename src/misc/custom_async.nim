@@ -8,6 +8,10 @@ when defined(js):
 
   proc toFuture*[T](value: sink T): Future[T] {.importjs: "(Promise.resolve(#))".}
 
+  # todo: untested
+  proc all*(futs: varargs[Future[void]]): Future[void] {.importjs: "Promise.all(#)".}
+  proc all*[T](futs: varargs[Future[T]]): Future[seq[T]] {.importjs: "Promise.all(#)".}
+
 else:
   import std/[asyncdispatch, asyncfile, asyncfutures, threadpool]
   export asyncdispatch, asyncfile, asyncfutures
