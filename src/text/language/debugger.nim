@@ -160,6 +160,50 @@ proc isSelected*(self: Debugger, r: VariablesReference, index: int): bool =
 proc isScopeSelected*(self: Debugger, index: int): bool =
   return self.variablesCursor.path.len == 0 and self.variablesCursor.scope == index
 
+proc reevaluateCursorRefs*(self: Debugger, cursor: VariableCursor): VariableCursor =
+  result.scope = cursor.scope.clamp(0, self.scopes.scopes.high)
+  if self.scopes.scopes.len == 0:
+    return
+
+  let scope {.cursor.} = self.scopes.scopes[result.scope]
+  if not self.variables.contains(scope.variablesReference) or self.variables[scope.variablesReference].variables.len == 0:
+    return
+
+  var varRef = scope.variablesReference
+  var variables = self.variables[varRef].addr
+  for i, item in cursor.path:
+    let index = item.index.clamp(0, variables[].variables.high)
+    if index < 0:
+      break
+
+    result.path.add (index, varRef)
+    varRef = variables[].variables[index].variablesReference
+    if not self.variables.contains(varRef) or self.variables[varRef].variables.len == 0:
+      break
+
+    variables = self.variables[varRef].addr
+
+proc reevaluateCurrentCursor*(self: Debugger) =
+  self.variablesCursor = self.reevaluateCursorRefs(self.variablesCursor)
+
+proc clampCursor*(self: Debugger, cursor: VariableCursor): VariableCursor =
+  result = cursor
+  if result.scope >= self.scopes.scopes.len:
+    result = VariableCursor()
+    return
+
+  while result.path.len > 0:
+    let (index, varRef) = result.path[result.path.high]
+    if not self.variables.contains(varRef) or self.variables[varRef].variables.len == 0:
+      discard result.path.pop()
+      continue
+
+    result.path[result.path.high].index = index.clamp(0, self.variables[varRef].variables.high)
+    return
+
+proc clampCurrentCursor*(self: Debugger) =
+  self.variablesCursor = self.clampCursor(self.variablesCursor)
+
 proc lastChild*(self: Debugger, cursor: VariableCursor): VariableCursor =
   result = cursor
   if result.path.len == 0:
@@ -188,6 +232,8 @@ proc lastChild*(self: Debugger, cursor: VariableCursor): VariableCursor =
 proc prevVariable*(self: Debugger) {.expose("debugger").} =
   if self.scopes.scopes.len == 0 or self.variables.len == 0:
     return
+
+  self.clampCurrentCursor()
 
   if self.variablesCursor.path.len == 0:
     let scope {.cursor.} = self.scopes.scopes[self.variablesCursor.scope]
@@ -219,6 +265,8 @@ proc prevVariable*(self: Debugger) {.expose("debugger").} =
 proc nextVariable*(self: Debugger) {.expose("debugger").} =
   if self.scopes.scopes.len == 0 or self.variables.len == 0:
     return
+
+  self.clampCurrentCursor()
 
   if self.variablesCursor.path.len == 0:
     let scope = self.scopes.scopes[self.variablesCursor.scope]
@@ -401,6 +449,8 @@ proc updateScopes(self: Debugger, threadId: ThreadId) {.async.} =
         self.updateVariables(scope.variablesReference, 2)
 
     await futures.all
+
+    self.reevaluateCurrentCursor()
 
 proc handleStoppedAsync(self: Debugger, data: OnStoppedData) {.async.} =
   log(lvlInfo, &"onStopped {data}")
