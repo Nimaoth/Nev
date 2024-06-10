@@ -22,6 +22,22 @@ proc nextDebuggerView*() =
       argsJsonString.cstring)
 
 
+proc debugger_prevVariable_void_Debugger_wasm(arg: cstring): cstring {.importc.}
+proc prevVariable*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = debugger_prevVariable_void_Debugger_wasm(
+      argsJsonString.cstring)
+
+
+proc debugger_nextVariable_void_Debugger_wasm(arg: cstring): cstring {.importc.}
+proc nextVariable*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = debugger_nextVariable_void_Debugger_wasm(
+      argsJsonString.cstring)
+
+
 proc debugger_stopDebugSession_void_Debugger_wasm(arg: cstring): cstring {.
     importc.}
 proc stopDebugSession*() =

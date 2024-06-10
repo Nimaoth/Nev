@@ -111,32 +111,52 @@ proc createThreads*(self: DebuggerView, builder: UINodeBuilder, app: App, debugg
       builder.createLines(0, 0, threads.high, sizeToContentX, sizeToContentY,
         chosenBackgroundColor, handleScroll, handleLine)
 
+type CreateVariablesOutput = object
+  selectedNode: UINode
+
 proc createVariables*(self: DebuggerView, builder: UINodeBuilder, app: App, debugger: Debugger,
-    variablesReference: VariablesReference, backgroundColor: Color, textColor: Color) =
+    variablesReference: VariablesReference, backgroundColor: Color, selectedBackgroundColor: Color,
+    textColor: Color, output: var CreateVariablesOutput) =
 
   let variables {.cursor.} = debugger.variables[variablesReference]
-  for variable in variables.variables:
+  for i, variable in variables.variables:
     builder.panel(&{SizeToContentY, FillX, LayoutHorizontal}):
       let typeText = variable.`type`.mapIt(": " & it).get("")
       let text = fmt"{variable.name}{typeText} = {variable.value}"
-      builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = text, textColor = textColor)
+
+      let isSelected = debugger.isSelected(variablesReference, i)
+
+      if isSelected:
+        builder.panel(&{SizeToContentY, FillX, FillBackground}, backgroundColor = color(0.6, 0.5, 0.2, 0.3)):
+          builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = text, textColor = textColor)
+      else:
+        builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = text, textColor = textColor)
       # builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = variable.name, textColor = textColor)
       # builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = " = ", textColor = textColor)
       # builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = variable.value, textColor = textColor)
     if variable.variablesReference != 0.VariablesReference and
         debugger.variables.contains(variable.variablesReference):
       builder.panel(&{SizeToContentY, FillX, LayoutVertical}, x = 2 * builder.charWidth):
-        self.createVariables(builder, app, debugger, variable.variablesReference, backgroundColor, textColor)
+        self.createVariables(builder, app, debugger, variable.variablesReference, backgroundColor,
+          selectedBackgroundColor, textColor, output)
 
 proc createScope*(self: DebuggerView, builder: UINodeBuilder, app: App, debugger: Debugger, scopeId: int,
-      backgroundColor: Color, headerColor: Color, textColor: Color): seq[proc() {.closure.}] =
+    backgroundColor: Color, headerColor: Color, textColor: Color, output: var CreateVariablesOutput):
+    seq[proc() {.closure.}] =
 
   let scope {.cursor.} = debugger.scopes.scopes[scopeId]
   builder.panel(&{SizeToContentY, FillX, LayoutVertical}):
-    builder.panel(&{SizeToContentY, FillX, DrawText}, text = scope.name, textColor = textColor)
+    let isSelected = debugger.isScopeSelected(scopeId)
+    if isSelected:
+      builder.panel(&{SizeToContentY, FillX, FillBackground}, backgroundColor = color(0.6, 0.5, 0.2, 0.3)):
+        builder.panel(&{SizeToContentY, FillX, DrawText}, text = scope.name, textColor = textColor)
+    else:
+      builder.panel(&{SizeToContentY, FillX, DrawText}, text = scope.name, textColor = textColor)
+
     if debugger.variables.contains(scope.variablesReference):
       builder.panel(&{SizeToContentY, FillX, LayoutVertical}, x = 2 * builder.charWidth):
-        self.createVariables(builder, app, debugger, scope.variablesReference, backgroundColor, textColor)
+        self.createVariables(builder, app, debugger, scope.variablesReference, backgroundColor,
+          headerColor, textColor, output)
 
 proc createLocals*(self: DebuggerView, builder: UINodeBuilder, app: App, debugger: Debugger,
     backgroundColor: Color, activeBackgroundColor: Color, headerColor: Color, textColor: Color):
@@ -152,10 +172,12 @@ proc createLocals*(self: DebuggerView, builder: UINodeBuilder, app: App, debugge
   else:
     backgroundColor
 
+  var createVariablesOutput = CreateVariablesOutput()
+
   var res: seq[proc() {.closure.}]
   proc handleLine(line: int, y: float, down: bool) =
     builder.panel(&{SizeToContentY, FillX}, y = y):
-      res.add self.createScope(builder, app, debugger, line, chosenBackgroundColor, headerColor, textColor)
+      res.add self.createScope(builder, app, debugger, line, chosenBackgroundColor, headerColor, textColor, createVariablesOutput)
 
   var sizeFlags = 0.UINodeFlags
   if sizeToContentX:

@@ -253,6 +253,8 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
 
   addCommand "debugger", "<C-k>", "prev-debugger-view"
   addCommand "debugger", "<C-h>", "next-debugger-view"
+  addCommand "debugger", "<UP>", "prev-variable"
+  addCommand "debugger", "<DOWN>", "next-variable"
 
   # addCommand "editor.text", "<C-SPACE>ts", "reload-treesitter"
 
