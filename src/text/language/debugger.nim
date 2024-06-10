@@ -23,6 +23,10 @@ type
 
   ActiveView* {.pure.} = enum Threads, StackTrace, Variables, Output
 
+  VariableCursor* = object
+    scope: int
+    path: seq[tuple[index: int, varRef: VariablesReference]]
+
   Debugger* = ref object
     app: AppInterface
     client: Option[DapClient]
@@ -30,7 +34,8 @@ type
     activeView*: ActiveView = Variables
     currentThreadIndex: int
     currentFrameIndex: int
-    variablesCursor: seq[VariablesReference]
+    variablesCursor: VariableCursor
+    variablesScrollOffset*: float
     eventHandler: EventHandler
     threadsEventHandler: EventHandler
     stackTraceEventHandler: EventHandler
@@ -147,6 +152,115 @@ proc nextDebuggerView*(self: Debugger) {.expose("debugger").} =
   of StackTrace: ActiveView.Variables
   of Variables: ActiveView.Output
   of Output: ActiveView.Threads
+
+proc isSelected*(self: Debugger, r: VariablesReference, index: int): bool =
+  return self.variablesCursor.path.len > 0 and
+    self.variablesCursor.path[self.variablesCursor.path.high] == (index, r)
+
+proc isScopeSelected*(self: Debugger, index: int): bool =
+  return self.variablesCursor.path.len == 0 and self.variablesCursor.scope == index
+
+proc lastChild*(self: Debugger, cursor: VariableCursor): VariableCursor =
+  result = cursor
+  if result.path.len == 0:
+    let scope = self.scopes.scopes[result.scope]
+    if not self.variables.contains(scope.variablesReference):
+      return
+
+    let variables {.cursor.} = self.variables[scope.variablesReference]
+    if variables.variables.len == 0:
+      return
+
+    result.path.add (variables.variables.high, scope.variablesReference)
+
+  while true:
+    let (index, r) = result.path[result.path.high]
+    let variables {.cursor.} = self.variables[r]
+    result.path[result.path.high].index = result.path[result.path.high].index.clamp(0, variables.variables.high)
+    if variables.variables.len == 0:
+      return
+    let childRef = variables.variables[index.clamp(0, variables.variables.high)].variablesReference
+    if not self.variables.contains(childRef) or self.variables[childRef].variables.len == 0:
+      return
+
+    result.path.add (self.variables[childRef].variables.high, childRef)
+
+proc prevVariable*(self: Debugger) {.expose("debugger").} =
+  if self.scopes.scopes.len == 0 or self.variables.len == 0:
+    return
+
+  if self.variablesCursor.path.len == 0:
+    let scope {.cursor.} = self.scopes.scopes[self.variablesCursor.scope]
+    if self.variablesCursor.scope > 0:
+      self.variablesCursor = self.lastChild(VariableCursor(scope: self.variablesCursor.scope - 1))
+      return
+
+  else:
+    if self.variablesCursor.path.len == 0 and self.variablesCursor.scope > 0:
+      self.variablesCursor = self.lastChild(VariableCursor(
+        scope: self.variablesCursor.scope - 1,
+        path: @[(int.high, self.scopes.scopes[self.variablesCursor.scope - 1].variablesReference)],
+      ))
+      return
+
+    let (index, currentRef) = self.variablesCursor.path[self.variablesCursor.path.high]
+    if not self.variables.contains(currentRef):
+      return
+
+    let variables {.cursor.} = self.variables[currentRef]
+
+    if index > 0:
+      dec self.variablesCursor.path[self.variablesCursor.path.high].index
+      self.variablesCursor = self.lastChild(self.variablesCursor)
+      return
+
+    discard self.variablesCursor.path.pop
+
+proc nextVariable*(self: Debugger) {.expose("debugger").} =
+  if self.scopes.scopes.len == 0 or self.variables.len == 0:
+    return
+
+  if self.variablesCursor.path.len == 0:
+    let scope = self.scopes.scopes[self.variablesCursor.scope]
+    if self.variables.contains(scope.variablesReference) and self.variables[scope.variablesReference].variables.len > 0:
+      self.variablesCursor.path.add (0, scope.variablesReference)
+      return
+
+    if self.variablesCursor.scope + 1 < self.scopes.scopes.len:
+      self.variablesCursor = VariableCursor(scope: self.variablesCursor.scope + 1)
+      return
+
+  else:
+    var descending = true
+    while self.variablesCursor.path.len > 0:
+      let (index, currentRef) = self.variablesCursor.path[self.variablesCursor.path.high]
+      if not self.variables.contains(currentRef):
+        return
+
+      let variables {.cursor.} = self.variables[currentRef]
+
+      if index < variables.variables.len:
+        let childrenRef = variables.variables[index].variablesReference
+        if descending and childrenRef != 0.VariablesReference and self.variables.contains(childrenRef) and
+            self.variables[childrenRef].variables.len > 0:
+          self.variablesCursor.path.add (0, childrenRef)
+          return
+
+        if index < variables.variables.high:
+          inc self.variablesCursor.path[self.variablesCursor.path.high].index
+          return
+
+      descending = false
+      discard self.variablesCursor.path.pop
+
+    if self.variablesCursor.scope + 1 < self.scopes.scopes.len:
+      self.variablesCursor = VariableCursor(scope: self.variablesCursor.scope + 1)
+      return
+
+    self.variablesCursor = self.lastChild(VariableCursor(
+      scope: self.scopes.scopes.high,
+      path: @[(int.high, self.scopes.scopes[self.scopes.scopes.high].variablesReference)],
+    ))
 
 proc stopDebugSession*(self: Debugger) {.expose("debugger").} =
   debugf"[stopDebugSession] Stopping session"
