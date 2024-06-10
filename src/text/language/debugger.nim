@@ -36,6 +36,7 @@ type
     currentFrameIndex: int
     variablesCursor: VariableCursor
     variablesScrollOffset*: float
+    maxVariablesScrollOffset*: float
     eventHandler: EventHandler
     threadsEventHandler: EventHandler
     stackTraceEventHandler: EventHandler
@@ -239,6 +240,8 @@ proc prevVariable*(self: Debugger) {.expose("debugger").} =
     let scope {.cursor.} = self.scopes.scopes[self.variablesCursor.scope]
     if self.variablesCursor.scope > 0:
       self.variablesCursor = self.lastChild(VariableCursor(scope: self.variablesCursor.scope - 1))
+      if self.variablesScrollOffset > 0:
+        self.variablesScrollOffset -= self.app.platform.totalLineHeight
       return
 
   else:
@@ -247,6 +250,8 @@ proc prevVariable*(self: Debugger) {.expose("debugger").} =
         scope: self.variablesCursor.scope - 1,
         path: @[(int.high, self.scopes.scopes[self.variablesCursor.scope - 1].variablesReference)],
       ))
+      if self.variablesScrollOffset > 0:
+        self.variablesScrollOffset -= self.app.platform.totalLineHeight
       return
 
     let (index, currentRef) = self.variablesCursor.path[self.variablesCursor.path.high]
@@ -258,9 +263,13 @@ proc prevVariable*(self: Debugger) {.expose("debugger").} =
     if index > 0:
       dec self.variablesCursor.path[self.variablesCursor.path.high].index
       self.variablesCursor = self.lastChild(self.variablesCursor)
+      if self.variablesScrollOffset > 0:
+        self.variablesScrollOffset -= self.app.platform.totalLineHeight
       return
 
     discard self.variablesCursor.path.pop
+    if self.variablesScrollOffset > 0:
+      self.variablesScrollOffset -= self.app.platform.totalLineHeight
 
 proc nextVariable*(self: Debugger) {.expose("debugger").} =
   if self.scopes.scopes.len == 0 or self.variables.len == 0:
@@ -272,10 +281,14 @@ proc nextVariable*(self: Debugger) {.expose("debugger").} =
     let scope = self.scopes.scopes[self.variablesCursor.scope]
     if self.variables.contains(scope.variablesReference) and self.variables[scope.variablesReference].variables.len > 0:
       self.variablesCursor.path.add (0, scope.variablesReference)
+      if self.variablesScrollOffset < self.maxVariablesScrollOffset:
+        self.variablesScrollOffset += self.app.platform.totalLineHeight
       return
 
     if self.variablesCursor.scope + 1 < self.scopes.scopes.len:
       self.variablesCursor = VariableCursor(scope: self.variablesCursor.scope + 1)
+      if self.variablesScrollOffset < self.maxVariablesScrollOffset:
+        self.variablesScrollOffset += self.app.platform.totalLineHeight
       return
 
   else:
@@ -292,10 +305,14 @@ proc nextVariable*(self: Debugger) {.expose("debugger").} =
         if descending and childrenRef != 0.VariablesReference and self.variables.contains(childrenRef) and
             self.variables[childrenRef].variables.len > 0:
           self.variablesCursor.path.add (0, childrenRef)
+          if self.variablesScrollOffset < self.maxVariablesScrollOffset:
+            self.variablesScrollOffset += self.app.platform.totalLineHeight
           return
 
         if index < variables.variables.high:
           inc self.variablesCursor.path[self.variablesCursor.path.high].index
+          if self.variablesScrollOffset < self.maxVariablesScrollOffset:
+            self.variablesScrollOffset += self.app.platform.totalLineHeight
           return
 
       descending = false
@@ -303,6 +320,8 @@ proc nextVariable*(self: Debugger) {.expose("debugger").} =
 
     if self.variablesCursor.scope + 1 < self.scopes.scopes.len:
       self.variablesCursor = VariableCursor(scope: self.variablesCursor.scope + 1)
+      if self.variablesScrollOffset < self.maxVariablesScrollOffset:
+        self.variablesScrollOffset += self.app.platform.totalLineHeight
       return
 
     self.variablesCursor = self.lastChild(VariableCursor(

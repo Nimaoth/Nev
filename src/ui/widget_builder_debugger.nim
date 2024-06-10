@@ -129,6 +129,7 @@ proc createVariables*(self: DebuggerView, builder: UINodeBuilder, app: App, debu
       if isSelected:
         builder.panel(&{SizeToContentY, FillX, FillBackground}, backgroundColor = color(0.6, 0.5, 0.2, 0.3)):
           builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = text, textColor = textColor)
+          output.selectedNode = currentNode
       else:
         builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = text, textColor = textColor)
       # builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = variable.name, textColor = textColor)
@@ -150,6 +151,7 @@ proc createScope*(self: DebuggerView, builder: UINodeBuilder, app: App, debugger
     if isSelected:
       builder.panel(&{SizeToContentY, FillX, FillBackground}, backgroundColor = color(0.6, 0.5, 0.2, 0.3)):
         builder.panel(&{SizeToContentY, FillX, DrawText}, text = scope.name, textColor = textColor)
+        output.selectedNode = currentNode
     else:
       builder.panel(&{SizeToContentY, FillX, DrawText}, text = scope.name, textColor = textColor)
 
@@ -190,14 +192,25 @@ proc createLocals*(self: DebuggerView, builder: UINodeBuilder, app: App, debugge
   else:
     sizeFlags.incl FillY
 
-  builder.panel(sizeFlags + LayoutVertical):
-    builder.panel(&{FillX, SizeToContentY, FillBackground, LayoutHorizontal},
-        backgroundColor = headerColor):
-      builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = "Variables")
+  builder.panel(sizeFlags):
+    builder.panel(sizeFlags + LayoutVertical):
+      builder.panel(&{FillX, SizeToContentY, FillBackground, LayoutHorizontal},
+          backgroundColor = headerColor):
+        builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = "Variables")
 
-    builder.panel(sizeFlags + FillBackground, backgroundColor = chosenBackgroundColor):
-      builder.createLines(0, 0, debugger.scopes.scopes.high, sizeToContentX, sizeToContentY,
-        chosenBackgroundColor, handleScroll, handleLine)
+      builder.panel(sizeFlags + FillBackground + MaskContent, backgroundColor = chosenBackgroundColor):
+        var scrolledNode: UINode
+        builder.panel(sizeFlags):
+          scrolledNode = currentNode
+          builder.createLines(0, 0, debugger.scopes.scopes.high, sizeToContentX, sizeToContentY,
+            chosenBackgroundColor, handleScroll, handleLine)
+
+        debugger.maxVariablesScrollOffset = currentNode.bounds.h - builder.lineHeight
+
+        if createVariablesOutput.selectedNode.isNotNil:
+          let bounds = createVariablesOutput.selectedNode.transformBounds(currentNode)
+          let scrollOffset = debugger.variablesScrollOffset - bounds.y
+          scrolledNode.boundsRaw.y += scrollOffset
 
   res
 
