@@ -22,6 +22,24 @@ proc nextDebuggerView*() =
       argsJsonString.cstring)
 
 
+proc debugger_selectFirstVariable_void_Debugger_wasm(arg: cstring): cstring {.
+    importc.}
+proc selectFirstVariable*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = debugger_selectFirstVariable_void_Debugger_wasm(
+      argsJsonString.cstring)
+
+
+proc debugger_selectLastVariable_void_Debugger_wasm(arg: cstring): cstring {.
+    importc.}
+proc selectLastVariable*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = debugger_selectLastVariable_void_Debugger_wasm(
+      argsJsonString.cstring)
+
+
 proc debugger_prevVariable_void_Debugger_wasm(arg: cstring): cstring {.importc.}
 proc prevVariable*() =
   var argsJson = newJArray()
@@ -35,6 +53,23 @@ proc nextVariable*() =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_nextVariable_void_Debugger_wasm(
+      argsJsonString.cstring)
+
+
+proc debugger_expandVariable_void_Debugger_wasm(arg: cstring): cstring {.importc.}
+proc expandVariable*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = debugger_expandVariable_void_Debugger_wasm(
+      argsJsonString.cstring)
+
+
+proc debugger_collapseVariable_void_Debugger_wasm(arg: cstring): cstring {.
+    importc.}
+proc collapseVariable*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = debugger_collapseVariable_void_Debugger_wasm(
       argsJsonString.cstring)
 
 
