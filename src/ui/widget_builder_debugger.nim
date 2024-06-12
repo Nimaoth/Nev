@@ -120,9 +120,21 @@ proc createVariables*(self: DebuggerView, builder: UINodeBuilder, app: App, debu
 
   let variables {.cursor.} = debugger.variables[variablesReference]
   for i, variable in variables.variables:
+    let collapsed = debugger.isCollapsed(variable.variablesReference)
+    let hasChildren = variable.variablesReference != 0.VariablesReference
+    let childrenCached = debugger.variables.contains(variable.variablesReference)
+    let showChildren = hasChildren and childrenCached and not collapsed
+
     builder.panel(&{SizeToContentY, FillX, LayoutHorizontal}):
       let typeText = variable.`type`.mapIt(": " & it).get("")
-      let text = fmt"{variable.name}{typeText} = {variable.value}"
+      let collapsedText = if hasChildren and showChildren:
+        "-"
+      elif hasChildren and not showChildren:
+        "+"
+      else:
+        " "
+
+      let text = fmt"{collapsedText} {variable.name}{typeText} = {variable.value}"
 
       let isSelected = debugger.isSelected(variablesReference, i)
 
@@ -132,11 +144,11 @@ proc createVariables*(self: DebuggerView, builder: UINodeBuilder, app: App, debu
           output.selectedNode = currentNode
       else:
         builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = text, textColor = textColor)
-      # builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = variable.name, textColor = textColor)
-      # builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = " = ", textColor = textColor)
-      # builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = variable.value, textColor = textColor)
-    if variable.variablesReference != 0.VariablesReference and
-        debugger.variables.contains(variable.variablesReference):
+
+      if collapsed:
+        builder.panel(&{SizeToContentY, SizeToContentX, DrawText}, text = "...", textColor = textColor)
+
+    if showChildren:
       builder.panel(&{SizeToContentY, FillX, LayoutVertical}, x = 2 * builder.charWidth):
         self.createVariables(builder, app, debugger, variable.variablesReference, backgroundColor,
           selectedBackgroundColor, textColor, output)
@@ -147,15 +159,29 @@ proc createScope*(self: DebuggerView, builder: UINodeBuilder, app: App, debugger
 
   let scope {.cursor.} = debugger.scopes.scopes[scopeId]
   builder.panel(&{SizeToContentY, FillX, LayoutVertical}):
+    let collapsed = debugger.isCollapsed(scope.variablesReference)
+    let hasChildren = scope.variablesReference != 0.VariablesReference
+    let childrenCached = debugger.variables.contains(scope.variablesReference)
+    let showChildren = hasChildren and childrenCached and not collapsed
+
+    let collapsedText = if hasChildren and showChildren:
+      "-"
+    elif hasChildren and not showChildren:
+      "+"
+    else:
+      " "
+
+    let text = &"{collapsedText} {scope.name}"
+
     let isSelected = debugger.isScopeSelected(scopeId)
     if isSelected:
       builder.panel(&{SizeToContentY, FillX, FillBackground}, backgroundColor = color(0.6, 0.5, 0.2, 0.3)):
-        builder.panel(&{SizeToContentY, FillX, DrawText}, text = scope.name, textColor = textColor)
+        builder.panel(&{SizeToContentY, FillX, DrawText}, text = text, textColor = textColor)
         output.selectedNode = currentNode
     else:
-      builder.panel(&{SizeToContentY, FillX, DrawText}, text = scope.name, textColor = textColor)
+      builder.panel(&{SizeToContentY, FillX, DrawText}, text = text, textColor = textColor)
 
-    if debugger.variables.contains(scope.variablesReference):
+    if showChildren:
       builder.panel(&{SizeToContentY, FillX, LayoutVertical}, x = 2 * builder.charWidth):
         self.createVariables(builder, app, debugger, scope.variablesReference, backgroundColor,
           headerColor, textColor, output)

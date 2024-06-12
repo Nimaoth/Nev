@@ -253,8 +253,21 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
 
   addCommand "debugger", "<C-k>", "prev-debugger-view"
   addCommand "debugger", "<C-h>", "next-debugger-view"
+
   addCommand "debugger", "<UP>", "prev-variable"
   addCommand "debugger", "<DOWN>", "next-variable"
+  addCommand "debugger", "<RIGHT>", "expand-variable"
+  addCommand "debugger", "<LEFT>", "collapse-variable"
+  addCommand "debugger", "<HOME>", "select-first-variable"
+  addCommand "debugger", "<END>", "select-last-variable"
+
+  addCommandBlock "debugger", "<C-u>":
+    for i in 0..10:
+      prevVariable()
+
+  addCommandBlock "debugger", "<C-d>":
+    for i in 0..10:
+      nextVariable()
 
   # addCommand "editor.text", "<C-SPACE>ts", "reload-treesitter"
 
