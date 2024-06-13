@@ -123,6 +123,16 @@ More details in [Getting Started](docs/getting_started.md)
 
 ## Screenshots
 
+### Absytree running inside Windows Terminal -> WSL -> Zellij with transparent background
+![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/transparent_background.png)
+
+---
+
+### LSP integration
+![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/lsp.gif)
+
+---
+
 ### LSP completions
 ![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/lsp_completions.png)
 
@@ -147,8 +157,3 @@ More details in [Getting Started](docs/getting_started.md)
 ![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/git_diff.png)
 
 ---
-
-### Here are some older screenshots with a different theme
-![alt](screenshots/screenshot1.png)
-![alt](screenshots/screenshot2.png)
-![alt](screenshots/screenshot3.png)
