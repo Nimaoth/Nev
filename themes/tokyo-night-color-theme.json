@@ -144,7 +144,7 @@
         "editorBracketPairGuide.activeBackground6": "#c49a5a",
 
         "selection.background": "#5d6db36c",
-        "editor.background": "#1a1b26",
+        "editor.background": "#1a1b26ff",
         "editor.foreground": "#a9b1d6",
         "editor.foldBackground": "#1111174a",
         "editorLink.activeForeground": "#acb0d0",
@@ -219,7 +219,7 @@
         "editorWidget.background": "#16161e",
         "editorWidget.resizeBorder": "#545c7e33",
 
-        "editorSuggestWidget.background": "#16161e",
+        "editorSuggestWidget.background": "#16161eff",
         "editorSuggestWidget.border": "#101014",
         "editorSuggestWidget.selectedBackground": "#20222c",
         "editorSuggestWidget.highlightForeground": "#6183bb",
@@ -258,7 +258,7 @@
         "breadcrumb.focusForeground": "#a9b1d6",
         "breadcrumb.activeSelectionForeground": "#a9b1d6",
 
-        "tab.activeBackground": "#16161e",
+        "tab.activeBackground": "#26264e",
         "tab.inactiveBackground": "#16161e",
         "tab.activeForeground": "#a9b1d6",
         "tab.hoverForeground": "#a9b1d6",
@@ -439,17 +439,17 @@
                 "fontStyle": ""
             }
         },
-		{
-			"name": "Comment",
-			"scope": [
+        {
+            "name": "Comment",
+            "scope": [
                 "comment",
                 "comment.block.documentation",
-				"punctuation.definition.comment",
+                "punctuation.definition.comment",
                 "comment.block.documentation punctuation"
-			],
-			"settings": {
-				"foreground": "#444b6a"
-			}
+            ],
+            "settings": {
+                "foreground": "#746b7a"
+            }
         },
         {
             "name": "Comment Doc",
