@@ -1144,9 +1144,13 @@ proc setForegroundColor*(tb: var TerminalBuffer, fg: Color) =
 
 proc setBackgroundColor*(tb: var TerminalBuffer, bg: Color, alpha: float = 1) =
   ## Sets the current foreground color and the bright style flag.
-  tb.currBg = bgRGB
-  tb.currBgColor = bg
-  tb.currBgAlpha = alpha
+  if alpha == 0:
+    # debugf"setting background color to none"
+    tb.currBg = bgNone
+  else:
+    tb.currBg = bgRGB
+    tb.currBgColor = bg
+    tb.currBgAlpha = alpha
 
 proc setTrueForegroundColor*(color: Color) =
   ## Sets the terminal's foreground true color.
