@@ -667,16 +667,17 @@ proc getCompletions*(client: LSPClient, filename: string, line: int, column: int
 
   client.cancelAllOf("textDocument/completion")
 
-  let params = CompletionParams(
-    textDocument: TextDocumentIdentifier(uri: $path.toUri),
-    position: Position(
+  # todo
+  let params = %*{
+    "textDocument": TextDocumentIdentifier(uri: $path.toUri),
+    "position": Position(
       line: line,
       character: column
     ),
-    context: CompletionContext(
-      triggerKind: CompletionTriggerKind.Invoked
-    ).some
-  ).toJson
+    "context": %*{
+      "triggerKind": CompletionTriggerKind.Invoked.int
+    },
+  }
 
   let response = (await client.sendRequest("textDocument/completion", params)).to CompletionResponse
 
