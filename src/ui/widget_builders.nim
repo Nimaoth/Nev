@@ -19,7 +19,7 @@ proc updateWidgetTree*(self: App, frameIndex: int) =
 
   var rootFlags = &{FillX, FillY, OverlappingChildren, MaskContent}
   let builder = self.platform.builder
-  builder.panel(rootFlags, backgroundColor = color(0, 0, 0)): # fullscreen overlay
+  builder.panel(rootFlags): # fullscreen overlay
 
     var overlays: seq[proc() {.closure.}]
 

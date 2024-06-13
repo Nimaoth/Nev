@@ -274,14 +274,21 @@ method createUI*(self: DebuggerView, builder: UINodeBuilder, app: App): seq[proc
   let dirty = self.dirty
   self.dirty = false
 
+  let transparentBackground = getOption[bool](app, "ui.background.transparent", false)
   let textColor = app.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-  var backgroundColor = app.theme.color("editor.background", color(25/255, 25/255, 25/255)) * 0.85
-  backgroundColor.a = 1
+  var backgroundColor = app.theme.color("editor.background", color(25/255, 25/255, 25/255)).darken(0.025)
   var activeBackgroundColor = app.theme.color("editor.background", color(25/255, 25/255, 40/255))
   activeBackgroundColor.a = 1
 
-  var headerColor = if self.active: app.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)) else: app.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
-  headerColor.a = 1
+  if transparentBackground:
+    backgroundColor.a = 0
+    activeBackgroundColor.a = 0
+  else:
+    backgroundColor.a = 1
+    activeBackgroundColor.a = 1
+
+  let headerColor = app.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255)).withAlpha(1)
+  let activeHeaderColor = app.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)).withAlpha(1)
 
   let sizeToContentX = SizeToContentX in builder.currentParent.flags
   let sizeToContentY = SizeToContentY in builder.currentParent.flags
@@ -321,25 +328,36 @@ method createUI*(self: DebuggerView, builder: UINodeBuilder, app: App): seq[proc
           let (localsBounds, outputBounds) = rest.splitH(0.5.percent)
 
           if getDebugger().getSome(debugger):
+            proc chooseBg(view: ActiveView): Color =
+              if self.active and debugger.activeView == view:
+                activeBackgroundColor
+              else:
+                backgroundColor
+
+            proc chooseHeaderColor(view: ActiveView): Color =
+              if self.active and debugger.activeView == view:
+                activeHeaderColor
+              else:
+                headerColor
 
             builder.panel(sizeFlags, x = stackBounds.x, y = stackBounds.y, w = stackBounds.w,
                 h = stackBounds.h):
-              res.add self.createStackTrace(builder, app, debugger, backgroundColor,
-                activeBackgroundColor, headerColor, textColor)
+              res.add self.createStackTrace(builder, app, debugger, chooseBg(ActiveView.StackTrace),
+                chooseBg(ActiveView.StackTrace), chooseHeaderColor(ActiveView.StackTrace), textColor)
 
             builder.panel(sizeFlags, x = threadsBounds.x, y = threadsBounds.y, w = threadsBounds.w,
                 h = threadsBounds.h):
-              res.add self.createThreads(builder, app, debugger, backgroundColor,
-                activeBackgroundColor, headerColor, textColor)
+              res.add self.createThreads(builder, app, debugger, chooseBg(ActiveView.Threads),
+                chooseBg(ActiveView.Threads), chooseHeaderColor(ActiveView.Threads), textColor)
 
             builder.panel(sizeFlags, x = localsBounds.x, y = localsBounds.y, w = localsBounds.w,
                 h = localsBounds.h):
-              res.add self.createLocals(builder, app, debugger, backgroundColor,
-                activeBackgroundColor, headerColor, textColor)
+              res.add self.createLocals(builder, app, debugger, chooseBg(ActiveView.Variables),
+                chooseBg(ActiveView.Variables), chooseHeaderColor(ActiveView.Variables), textColor)
 
             builder.panel(sizeFlags, x = outputBounds.x, y = outputBounds.y, w = outputBounds.w,
                 h = outputBounds.h):
-              res.add self.createOutput(builder, app, debugger, backgroundColor,
-                activeBackgroundColor, headerColor, textColor)
+              res.add self.createOutput(builder, app, debugger, chooseBg(ActiveView.Output),
+                chooseBg(ActiveView.Output), chooseHeaderColor(ActiveView.Output), textColor)
 
   res
