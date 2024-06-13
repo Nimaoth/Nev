@@ -154,7 +154,7 @@ proc renderLinePart(
     partBackgroundColor = backgroundColors[colorIndex].color
     addBackgroundAsChildren = false
 
-  var partFlags = &{UINodeFlag.FillBackground, SizeToContentX, SizeToContentY, MouseHover}
+  var partFlags = &{SizeToContentX, SizeToContentY, MouseHover}
   var textFlags = 0.UINodeFlags
 
   # if the entire part is the same background color we can just fill the background and render the text on the part itself
@@ -162,12 +162,14 @@ proc renderLinePart(
   # which still has a background color though
   if not addBackgroundAsChildren:
     partFlags.incl DrawText
+    partFlags.incl FillBackground
   else:
     partFlags.incl OverlappingChildren
 
   if part[].underline:
     if addBackgroundAsChildren:
       textFlags.incl TextUndercurl
+      partFlags.incl FillBackground
     else:
       partFlags.incl TextUndercurl
 
@@ -401,11 +403,11 @@ proc blendColorRanges(colors: var seq[tuple[first: RuneIndex, last: RuneIndex, c
       colors[colorIndex].last = s.first
 
       if lastIndex < s.last + inclusiveOffset:
-        colors.insert (s.first, lastIndex, colors[colorIndex].color.blendNormal(color)), colorIndex + 1
+        colors.insert (s.first, lastIndex, colors[colorIndex].color.withAlpha(1).blendNormal(color)), colorIndex + 1
         s.first = lastIndex
         inc colorIndex
       else:
-        colors.insert (s.first, s.last + inclusiveOffset, colors[colorIndex].color.blendNormal(color)), colorIndex + 1
+        colors.insert (s.first, s.last + inclusiveOffset, colors[colorIndex].color.withAlpha(1).blendNormal(color)), colorIndex + 1
         colors.insert (s.last + inclusiveOffset, lastIndex, colors[colorIndex].color), colorIndex + 2
         break
 
@@ -425,11 +427,11 @@ proc blendColorRanges(colors: var seq[tuple[first: RuneIndex, last: RuneIndex, c
       colors[colorIndex].last = s.first
 
       if lastIndex < s.last + inclusiveOffset:
-        colors.insert (s.first, lastIndex, colors[colorIndex].color.blendNormal(s.color)), colorIndex + 1
+        colors.insert (s.first, lastIndex, colors[colorIndex].color.withAlpha(1).blendNormal(s.color)), colorIndex + 1
         s.first = lastIndex
         inc colorIndex
       else:
-        colors.insert (s.first, s.last + inclusiveOffset, colors[colorIndex].color.blendNormal(s.color)), colorIndex + 1
+        colors.insert (s.first, s.last + inclusiveOffset, colors[colorIndex].color.withAlpha(1).blendNormal(s.color)), colorIndex + 1
         colors.insert (s.last + inclusiveOffset, lastIndex, colors[colorIndex].color), colorIndex + 2
         break
 
@@ -675,9 +677,9 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       let otherLine = self.diffChanges.mapIt(mapLineTargetToSource(it, i)).flatten
       if renderDiff:
         if otherLine.getSome(otherLine) and otherLine.changed:
-          backgroundColor = backgroundColor.blendNormal(changedTextBackgroundColor)
+          backgroundColor = backgroundColor.withAlpha(1).blendNormal(changedTextBackgroundColor)
         elif otherLine.isNone:
-          backgroundColor = backgroundColor.blendNormal(insertedTextBackgroundColor)
+          backgroundColor = backgroundColor.withAlpha(1).blendNormal(insertedTextBackgroundColor)
 
       options.backgroundColor = backgroundColor
 
@@ -693,7 +695,7 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
 
       selectionsClampedOnLine.sort((a, b) => cmp(a.first, b.first), Ascending)
       highlightsClampedOnLine.sort((a, b) => cmp(a.first, b.first), Ascending)
-      var colors: seq[tuple[first: RuneIndex, last: RuneIndex, color: Color]] = @[(0.RuneIndex, lineRuneLen, backgroundColor.withAlpha(1))]
+      var colors: seq[tuple[first: RuneIndex, last: RuneIndex, color: Color]] = @[(0.RuneIndex, lineRuneLen, backgroundColor)]
       blendColorRanges(colors, highlightsClampedOnLine, inclusive)
       blendColorRanges(colors, selectionsClampedOnLine, selectionColor, inclusive)
 
@@ -739,13 +741,13 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
               if i == 0 and otherLine.line > 0:
                 for k in 0..<otherLine.line:
                   let styledLine = self.diffDocument.getStyledText k
+                  options.backgroundColor = backgroundColor.withAlpha(1).blendNormal(deletedTextBackgroundColor)
                   let colors = [(
                     0.RuneIndex,
                     self.diffDocument.lines[k].runeLen.RuneIndex,
-                    deletedTextBackgroundColor
+                    options.backgroundColor
                   )]
 
-                  options.backgroundColor = deletedTextBackgroundColor
                   options.lineNumber = k
                   options.lineId = self.diffDocument.lineIds[k]
                   options.cursorLine = -1
@@ -766,8 +768,8 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
               if nextLineDiff.getSome(nextLineDiff) and nextLineDiff.line > otherLine.line + 1:
                 for k in (otherLine.line + 1)..<nextLineDiff.line:
                   let styledLine = self.diffDocument.getStyledText k
-                  let colors = [(0.RuneIndex, self.diffDocument.lines[k].runeLen.RuneIndex, deletedTextBackgroundColor)]
-                  options.backgroundColor = deletedTextBackgroundColor
+                  options.backgroundColor = backgroundColor.withAlpha(1).blendNormal(deletedTextBackgroundColor)
+                  let colors = [(0.RuneIndex, self.diffDocument.lines[k].runeLen.RuneIndex, options.backgroundColor)]
                   options.lineNumber = k
                   options.lineId = self.diffDocument.lineIds[k]
                   options.indentInSpaces = self.diffDocument.getIndentLevelForLineInSpaces(k, 2)
@@ -934,13 +936,19 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
   let totalLineHeight = app.platform.totalLineHeight
   let charWidth = app.platform.charWidth
 
-  let backgroundColor = app.theme.color(@["editorSuggestWidget.background", "panel.background"], color(30/255, 30/255, 30/255))
+  let transparentBackground = getOption[bool](app, "ui.background.transparent", false)
+  var backgroundColor = app.theme.color(@["editorSuggestWidget.background", "panel.background"], color(30/255, 30/255, 30/255))
   let borderColor = app.theme.color(@["editorSuggestWidget.border", "panel.background"], color(30/255, 30/255, 30/255))
   let selectedBackgroundColor = app.theme.color(@["editorSuggestWidget.selectedBackground", "list.activeSelectionBackground"], color(200/255, 200/255, 200/255))
   let docsColor = app.theme.color(@["editorSuggestWidget.foreground", "editor.foreground"], color(1, 1, 1))
   let nameColor = app.theme.color(@["editorSuggestWidget.foreground", "editor.foreground"], color(1, 1, 1))
   let nameSelectedColor = app.theme.color(@["editorSuggestWidget.highlightForeground", "editor.foreground"], color(1, 1, 1))
   let scopeColor = app.theme.color(@["descriptionForeground", "editor.foreground"], color(175/255, 1, 175/255))
+
+  if transparentBackground:
+    backgroundColor.a = 0
+  else:
+    backgroundColor.a = 1
 
   const numLinesToShow = 25
   let (top, bottom) = (cursorBounds.yh.float, cursorBounds.yh.float + totalLineHeight * numLinesToShow)
@@ -968,10 +976,9 @@ proc createCompletions(self: TextDocumentEditor, builder: UINodeBuilder, app: Ap
 
     proc handleLine(i: int, y: float, down: bool) =
       var backgroundColor = backgroundColor
+
       if i == self.selectedCompletion:
         backgroundColor = selectedBackgroundColor
-
-      backgroundColor.a = 1
 
       let pivot = if down:
         vec2(0, 0)
@@ -1069,12 +1076,18 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
   let dirty = self.dirty
   self.resetDirty()
 
+  let transparentBackground = getOption[bool](app, "ui.background.transparent", false)
+  let darkenInactive = getOption[float](app, "text.background.inactive-darken", 0.025)
+
   let textColor = app.theme.color("editor.foreground", color(225/255, 200/255, 200/255))
-  var backgroundColor = if self.active: app.theme.color("editor.background", color(25/255, 25/255, 40/255)) else: app.theme.color("editor.background", color(25/255, 25/255, 25/255)) * 0.85
-  backgroundColor.a = 1
+  var backgroundColor = if self.active: app.theme.color("editor.background", color(25/255, 25/255, 40/255)) else: app.theme.color("editor.background", color(25/255, 25/255, 25/255)).darken(darkenInactive)
+
+  if transparentBackground:
+    backgroundColor.a = 0
+  else:
+    backgroundColor.a = 1
 
   var headerColor = if self.active: app.theme.color("tab.activeBackground", color(45/255, 45/255, 60/255)) else: app.theme.color("tab.inactiveBackground", color(45/255, 45/255, 45/255))
-  headerColor.a = 1
 
   let sizeToContentX = SizeToContentX in builder.currentParent.flags
   let sizeToContentY = SizeToContentY in builder.currentParent.flags
