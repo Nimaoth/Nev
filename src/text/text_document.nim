@@ -202,6 +202,12 @@ proc clampAndMergeSelections*(self: TextDocument, selections: openArray[Selectio
 proc getLanguageServer*(self: TextDocument): Future[Option[LanguageServer]] {.async.}
 proc trimTrailingWhitespace*(self: TextDocument)
 
+proc runeIndexInLine*(self: TextDocument, cursor: Cursor): RuneIndex =
+  if cursor.line notin 0..self.lines.high:
+    return 0.RuneIndex
+
+  return self.lines[cursor.line].toOpenArray.runeIndex(cursor.column)
+
 proc notifyTextChanged*(self: TextDocument) =
   self.textChanged.invoke self
   self.styledTextCache.clear()
