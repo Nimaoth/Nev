@@ -1382,6 +1382,10 @@ proc addWorkspaceFolder(self: App, workspaceFolder: WorkspaceFolder): bool =
     workspaceFolder.id = newId()
   log(lvlInfo, fmt"Opening workspace {workspaceFolder.name}")
   self.workspace.folders.add workspaceFolder
+
+  if gWorkspace.isNil:
+    setGlobalWorkspace(workspaceFolder)
+
   return true
 
 proc getWorkspaceFolder(self: App, id: Id): Option[WorkspaceFolder] =

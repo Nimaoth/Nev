@@ -5,6 +5,7 @@ import dap_client, dispatch_tables, app_interface, config_provider, selector_pop
 import text/text_editor
 import platform/platform
 import finder/[previewer, finder, data_previewer]
+import workspaces/workspace
 
 import chroma
 
@@ -731,6 +732,24 @@ proc updateScopes(self: Debugger, threadId: ThreadId, frameIndex: int, force: bo
 
     self.reevaluateCurrentCursor()
 
+proc tryOpenFileInWorkspace(self: Debugger, path: string, location: Cursor) {.async.} =
+  if gWorkspace.isNil or not gWorkspace.fileExists(path).await:
+    # todo: maybe we can remap some files to local file system?
+    log lvlError, &"Failed to find file '{path}'"
+    return
+
+  let editor = self.app.openWorkspaceFile(path, nil)
+
+  if editor.getSome(editor) and editor of TextDocumentEditor:
+    let textEditor = editor.TextDocumentEditor
+    textEditor.targetSelection = location.toSelection
+    textEditor.scrollToCursor(location, scrollBehaviour = CenterOffscreen.some)
+
+    let lineSelection = ((location.line, 0), (location.line, textEditor.lineLength(location.line)))
+    textEditor.addCustomHighlight(debuggerCurrentLineId, lineSelection, "editorError.foreground",
+      color(1, 1, 1, 0.3))
+    self.lastEditor = textEditor.some
+
 proc handleStoppedAsync(self: Debugger, data: OnStoppedData) {.async.} =
   log(lvlInfo, &"onStopped {data}")
 
@@ -769,18 +788,7 @@ proc handleStoppedAsync(self: Debugger, data: OnStoppedData) {.async.} =
     let frame {.cursor.} = stack.stackFrames[0]
 
     if frame.source.isSome and frame.source.get.path.getSome(path):
-      let editor = self.app.openWorkspaceFile(path, nil)
-
-      if editor.getSome(editor) and editor of TextDocumentEditor:
-        let textEditor = editor.TextDocumentEditor
-        let location: Cursor = (frame.line - 1, frame.column - 1)
-        textEditor.targetSelection = location.toSelection
-        textEditor.scrollToCursor(location, scrollBehaviour = CenterOffscreen.some)
-
-        let lineSelection = ((location.line, 0), (location.line, textEditor.lineLength(location.line)))
-        textEditor.addCustomHighlight(debuggerCurrentLineId, lineSelection, "editorError.foreground",
-          color(1, 1, 1, 0.3))
-        self.lastEditor = textEditor.some
+      await self.tryOpenFileInWorkspace(path, (frame.line - 1, frame.column - 1))
 
 proc handleStopped(self: Debugger, data: OnStoppedData) =
   self.state = DebuggerState.Paused
