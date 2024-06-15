@@ -22,6 +22,20 @@ proc nextDebuggerView*() =
       argsJsonString.cstring)
 
 
+proc debugger_setDebuggerView_void_Debugger_string_wasm(arg: cstring): cstring {.
+    importc.}
+proc setDebuggerView*(view: string) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      view
+    else:
+      view.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = debugger_setDebuggerView_void_Debugger_string_wasm(
+      argsJsonString.cstring)
+
+
 proc debugger_selectFirstVariable_void_Debugger_wasm(arg: cstring): cstring {.
     importc.}
 proc selectFirstVariable*() =
@@ -69,6 +83,15 @@ proc nextStackFrame*() =
   var argsJson = newJArray()
   let argsJsonString = $argsJson
   let res {.used.} = debugger_nextStackFrame_void_Debugger_wasm(
+      argsJsonString.cstring)
+
+
+proc debugger_openFileForCurrentFrame_void_Debugger_wasm(arg: cstring): cstring {.
+    importc.}
+proc openFileForCurrentFrame*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = debugger_openFileForCurrentFrame_void_Debugger_wasm(
       argsJsonString.cstring)
 
 

@@ -333,13 +333,13 @@ method createUI*(self: DebuggerView, builder: UINodeBuilder, app: App): seq[proc
 
           var text = &"Debugger"
           if getDebugger().getSome(debugger):
-            if debugger.lastConfiguration.getSome(config):
-              text.add " - " & config
-
             case debugger.state
             of DebuggerState.None: text.add " - Not started"
             of DebuggerState.Paused: text.add " - Paused"
             of DebuggerState.Running: text.add " - Running"
+
+            if debugger.lastConfiguration.getSome(config):
+              text.add " - " & config
 
           builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = text)
 
