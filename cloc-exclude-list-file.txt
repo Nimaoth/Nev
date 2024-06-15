@@ -29,6 +29,8 @@
 ./scripting/editor_text_api.nim
 ./scripting/editor_model_api_wasm.nim
 ./scripting/editor_model_api.nim
+./scripting/debugger_api_wasm.nim
+./scripting/debugger_api.nim
 ./scripting/lsp_api_wasm.nim
 ./scripting/lsp_api.nim
 ./scripting/popup_selector_api_wasm.nim
