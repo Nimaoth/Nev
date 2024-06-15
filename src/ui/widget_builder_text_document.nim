@@ -652,6 +652,8 @@ proc createTextLines(self: TextDocumentEditor, builder: UINodeBuilder, app: App,
       self.scrollText(delta * app.asConfigProvider.getValue("text.scroll-speed", 40.0))
 
     proc handleLine(i: int, y: float, down: bool) =
+      assert i in 0..self.document.lines.high
+
       let styledLine = self.getStyledText i
       let totalLineHeight = builder.textHeight
 
@@ -1115,7 +1117,7 @@ method createUI*(self: TextDocumentEditor, builder: UINodeBuilder, app: App): se
       builder.panel(&{LayoutVertical} + sizeFlags):
         header = builder.createHeader(self.renderHeader, self.currentMode, self.document, headerColor, textColor):
           onRight:
-            proc cursorString(cursor: Cursor): string = $cursor.line & ":" & $cursor.column & ":" & $self.document.lines[cursor.line].toOpenArray.runeIndex(cursor.column)
+            proc cursorString(cursor: Cursor): string = $cursor.line & ":" & $cursor.column & ":" & $self.document.runeIndexInLine(cursor)
             let readOnlyText = if self.document.readOnly: "-readonly- " else: ""
             let stagedText = if self.document.staged: "-staged- " else: ""
             let diffText = if renderDiff: "-diff- " else: ""

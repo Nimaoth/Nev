@@ -82,7 +82,7 @@ proc createLines*(builder: UINodeBuilder, previousBaseIndex: int, scrollOffset: 
     y = scrollOffset
 
     # draw lines upwards
-    for i in countdown(previousBaseIndex - 1, 0):
+    for i in countdown(min(previousBaseIndex - 1, maxLine), 0):
       handleLine(i, y, false)
 
       y = builder.currentChild.y

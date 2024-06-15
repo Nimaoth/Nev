@@ -254,12 +254,18 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
   addCommand "debugger", "<C-k>", "prev-debugger-view"
   addCommand "debugger", "<C-h>", "next-debugger-view"
 
-  addCommand "debugger", "<UP>", "prev-variable"
-  addCommand "debugger", "<DOWN>", "next-variable"
-  addCommand "debugger", "<RIGHT>", "expand-variable"
-  addCommand "debugger", "<LEFT>", "collapse-variable"
-  addCommand "debugger", "<HOME>", "select-first-variable"
-  addCommand "debugger", "<END>", "select-last-variable"
+  addCommand "debugger.variables", "<UP>", "prev-variable"
+  addCommand "debugger.variables", "<DOWN>", "next-variable"
+  addCommand "debugger.variables", "<RIGHT>", "expand-variable"
+  addCommand "debugger.variables", "<LEFT>", "collapse-variable"
+  addCommand "debugger.variables", "<HOME>", "select-first-variable"
+  addCommand "debugger.variables", "<END>", "select-last-variable"
+
+  addCommand "debugger.threads", "<UP>", "prev-thread"
+  addCommand "debugger.threads", "<DOWN>", "next-thread"
+
+  addCommand "debugger.stacktrace", "<UP>", "prev-stack-frame"
+  addCommand "debugger.stacktrace", "<DOWN>", "next-stack-frame"
 
   addCommandBlock "debugger", "<C-u>":
     for i in 0..10:

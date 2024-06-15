@@ -2944,6 +2944,7 @@ genDispatcher("editor.text")
 addActiveDispatchTable "editor.text", genDispatchTable("editor.text")
 
 proc getStyledText*(self: TextDocumentEditor, i: int): StyledLine =
+  assert i in 0..self.document.lines.high
   result = StyledLine(index: i, parts: self.document.getStyledText(i).parts)
 
   let chars = (self.lastTextAreaBounds.w / self.platform.charWidth - 2).RuneCount
