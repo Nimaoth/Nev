@@ -25,31 +25,6 @@ proc createStackTrace*(self: DebuggerView, builder: UINodeBuilder, app: App, deb
   let sizeToContentX = SizeToContentX in builder.currentParent.flags
   let sizeToContentY = SizeToContentY in builder.currentParent.flags
 
-  let currentThread = debugger.currentThread().getOr:
-    return
-
-  let stackTrace = debugger.getStackTrace(currentThread.id).getOr:
-    return
-
-  proc handleScroll(delta: float) = discard
-
-  proc handleLine(line: int, y: float, down: bool) =
-    let isSelected = line == debugger.currentFrameIndex
-    let frame {.cursor.} = stackTrace.stackFrames[line]
-    var text = &"{frame.name}:{frame.line}"
-    if frame.source.getSome(source):
-      if source.name.isSome:
-        text.add &" - {source.name.get}"
-      elif source.path.isSome:
-        text.add &" - {source.path.get}"
-
-    if isSelected:
-      builder.panel(&{SizeToContentY, FillX, FillBackground}, y = y,
-          backgroundColor = selectedBackgroundColor):
-        builder.panel(&{SizeToContentY, FillX, DrawText}, text = text, textColor = textColor)
-    else:
-      builder.panel(&{SizeToContentY, FillX, DrawText}, y = y, text = text, textColor = textColor)
-
   var sizeFlags = 0.UINodeFlags
   if sizeToContentX:
     sizeFlags.incl SizeToContentX
@@ -62,11 +37,38 @@ proc createStackTrace*(self: DebuggerView, builder: UINodeBuilder, app: App, deb
     sizeFlags.incl FillY
 
   builder.panel(sizeFlags + LayoutVertical):
+    # Header
     builder.panel(&{FillX, SizeToContentY, FillBackground, LayoutHorizontal},
         backgroundColor = headerColor):
 
-      let text = &"Stack - Thread {currentThread.id} {currentThread.name}"
+      let currentThreadText = debugger.currentThread().mapIt(&" - Thread {it.id} {it.name}").get("")
+      let text = &"Stack{currentThreadText}"
       builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = text)
+
+    let currentThread = debugger.currentThread().getOr:
+      return
+
+    let stackTrace = debugger.getStackTrace(currentThread.id).getOr:
+      return
+
+    proc handleScroll(delta: float) = discard
+
+    proc handleLine(line: int, y: float, down: bool) =
+      let isSelected = line == debugger.currentFrameIndex
+      let frame {.cursor.} = stackTrace.stackFrames[line]
+      var text = &"{frame.name}:{frame.line}"
+      if frame.source.getSome(source):
+        if source.name.isSome:
+          text.add &" - {source.name.get}"
+        elif source.path.isSome:
+          text.add &" - {source.path.get}"
+
+      if isSelected:
+        builder.panel(&{SizeToContentY, FillX, FillBackground}, y = y,
+            backgroundColor = selectedBackgroundColor):
+          builder.panel(&{SizeToContentY, FillX, DrawText}, text = text, textColor = textColor)
+      else:
+        builder.panel(&{SizeToContentY, FillX, DrawText}, y = y, text = text, textColor = textColor)
 
     builder.panel(sizeFlags):
       builder.createLines(0, 0, stackTrace.stackFrames.high, sizeToContentX, sizeToContentY,
@@ -198,12 +200,9 @@ proc createScope*(self: DebuggerView, builder: UINodeBuilder, app: App, debugger
         self.createVariables(builder, app, debugger, scope.variablesReference, backgroundColor,
           selectedBackgroundColor, textColor, output)
 
-proc createLocals*(self: DebuggerView, builder: UINodeBuilder, app: App, debugger: Debugger,
+proc createVariables*(self: DebuggerView, builder: UINodeBuilder, app: App, debugger: Debugger,
     backgroundColor: Color, selectedBackgroundColor: Color, headerColor: Color, textColor: Color):
     seq[proc() {.closure.}] =
-
-  let scopes = debugger.currentScopes().getOr:
-    return
 
   let sizeToContentX = SizeToContentX in builder.currentParent.flags
   let sizeToContentY = SizeToContentY in builder.currentParent.flags
@@ -234,6 +233,9 @@ proc createLocals*(self: DebuggerView, builder: UINodeBuilder, app: App, debugge
       builder.panel(&{FillX, SizeToContentY, FillBackground, LayoutHorizontal},
           backgroundColor = headerColor):
         builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = "Variables")
+
+      let scopes = debugger.currentScopes().getOr:
+        return
 
       builder.panel(sizeFlags + FillBackground + MaskContent, backgroundColor = backgroundColor):
         var scrolledNode: UINode
@@ -329,7 +331,16 @@ method createUI*(self: DebuggerView, builder: UINodeBuilder, app: App): seq[proc
         builder.panel(&{FillX, SizeToContentY, FillBackground, LayoutHorizontal},
             backgroundColor = headerColor):
 
-          let text = &"Debugger"
+          var text = &"Debugger"
+          if getDebugger().getSome(debugger):
+            if debugger.lastConfiguration.getSome(config):
+              text.add " - " & config
+
+            case debugger.state
+            of DebuggerState.None: text.add " - Not started"
+            of DebuggerState.Paused: text.add " - Paused"
+            of DebuggerState.Running: text.add " - Running"
+
           builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = text)
 
         # Body
@@ -365,7 +376,7 @@ method createUI*(self: DebuggerView, builder: UINodeBuilder, app: App): seq[proc
 
             builder.panel(sizeFlags, x = localsBounds.x, y = localsBounds.y, w = localsBounds.w,
                 h = localsBounds.h):
-              res.add self.createLocals(builder, app, debugger, chooseBg(ActiveView.Variables),
+              res.add self.createVariables(builder, app, debugger, chooseBg(ActiveView.Variables),
                 selectedBackgroundColor, chooseHeaderColor(ActiveView.Variables), textColor)
 
             builder.panel(sizeFlags, x = outputBounds.x, y = outputBounds.y, w = outputBounds.w,
