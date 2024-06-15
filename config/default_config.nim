@@ -251,21 +251,33 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
   addCommand "editor", "<LEADER>at", "step-in"
   addCommand "editor", "<LEADER>an", "step-out"
 
+  addCommand "editor", "<LEADER>gb", "show-debugger-view"
+
   addCommand "debugger", "<C-k>", "prev-debugger-view"
   addCommand "debugger", "<C-h>", "next-debugger-view"
 
   addCommand "debugger.variables", "<UP>", "prev-variable"
+  addCommand "debugger.variables", "<C-p>", "prev-variable"
   addCommand "debugger.variables", "<DOWN>", "next-variable"
+  addCommand "debugger.variables", "<C-n>", "next-variable"
   addCommand "debugger.variables", "<RIGHT>", "expand-variable"
+  addCommand "debugger.variables", "<C-y>", "expand-variable"
   addCommand "debugger.variables", "<LEFT>", "collapse-variable"
   addCommand "debugger.variables", "<HOME>", "select-first-variable"
   addCommand "debugger.variables", "<END>", "select-last-variable"
 
   addCommand "debugger.threads", "<UP>", "prev-thread"
+  addCommand "debugger.threads", "<C-p>", "prev-thread"
   addCommand "debugger.threads", "<DOWN>", "next-thread"
+  addCommand "debugger.threads", "<C-n>", "next-thread"
+  addCommand "debugger.threads", "<C-y>", "set-debugger-view", "StackTrace"
 
   addCommand "debugger.stacktrace", "<UP>", "prev-stack-frame"
+  addCommand "debugger.stacktrace", "<C-p>", "prev-stack-frame"
   addCommand "debugger.stacktrace", "<DOWN>", "next-stack-frame"
+  addCommand "debugger.stacktrace", "<C-n>", "next-stack-frame"
+  addCommand "debugger.stacktrace", "<ENTER>", "open-file-for-current-frame"
+  addCommand "debugger.stacktrace", "<C-y>", "open-file-for-current-frame"
 
   addCommandBlock "debugger", "<C-u>":
     for i in 0..10:

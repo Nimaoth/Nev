@@ -192,6 +192,11 @@ proc nextDebuggerView*(self: Debugger) {.expose("debugger").} =
   of Variables: ActiveView.Output
   of Output: ActiveView.Threads
 
+proc setDebuggerView*(self: Debugger, view: string) {.expose("debugger").} =
+  self.activeView = view.parseEnum[:ActiveView].catch:
+    log lvlError, &"Invalid view '{view}'"
+    return
+
 proc isSelected*(self: Debugger, r: VariablesReference, index: int): bool =
   return self.variablesCursor.path.len > 0 and
     self.variablesCursor.path[self.variablesCursor.path.high] == (index, r)
@@ -226,6 +231,24 @@ proc currentVariablesContext*(self: Debugger, varRef: VariablesReference):
     Option[tuple[thread: ThreadId, frame: FrameId, varRef: VariablesReference]] =
   if self.currentThread().getSome(t) and self.currentStackFrame().getSome(frame):
     return (t.id, frame[].id, varRef).some
+
+proc tryOpenFileInWorkspace(self: Debugger, path: string, location: Cursor) {.async.} =
+  if gWorkspace.isNil or not gWorkspace.fileExists(path).await:
+    # todo: maybe we can remap some files to local file system?
+    log lvlError, &"Failed to find file '{path}'"
+    return
+
+  let editor = self.app.openWorkspaceFile(path, nil)
+
+  if editor.getSome(editor) and editor of TextDocumentEditor:
+    let textEditor = editor.TextDocumentEditor
+    textEditor.targetSelection = location.toSelection
+    textEditor.scrollToCursor(location, scrollBehaviour = CenterOffscreen.some)
+
+    let lineSelection = ((location.line, 0), (location.line, textEditor.lineLength(location.line)))
+    textEditor.addCustomHighlight(debuggerCurrentLineId, lineSelection, "editorError.foreground",
+      color(1, 1, 1, 0.3))
+    self.lastEditor = textEditor.some
 
 proc reevaluateCursorRefs*(self: Debugger, cursor: VariableCursor): VariableCursor =
   let scopes = self.currentScopes().getOr:
@@ -401,6 +424,12 @@ proc nextStackFrame*(self: Debugger) {.expose("debugger").} =
 
   if self.currentThread().getSome(t):
     asyncCheck self.updateScopes(t.id, self.currentFrameIndex, force=false)
+
+proc openFileForCurrentFrame*(self: Debugger) {.expose("debugger").} =
+  if self.currentStackFrame().getSome(frame) and
+      frame[].source.isSome and
+      frame[].source.get.path.getSome(path):
+    asyncCheck self.tryOpenFileInWorkspace(path, (frame[].line - 1, frame[].column - 1))
 
 proc prevVariable*(self: Debugger) {.expose("debugger").} =
   let scopes = self.currentScopes().getOr:
@@ -731,24 +760,6 @@ proc updateScopes(self: Debugger, threadId: ThreadId, frameIndex: int, force: bo
     await futures.all
 
     self.reevaluateCurrentCursor()
-
-proc tryOpenFileInWorkspace(self: Debugger, path: string, location: Cursor) {.async.} =
-  if gWorkspace.isNil or not gWorkspace.fileExists(path).await:
-    # todo: maybe we can remap some files to local file system?
-    log lvlError, &"Failed to find file '{path}'"
-    return
-
-  let editor = self.app.openWorkspaceFile(path, nil)
-
-  if editor.getSome(editor) and editor of TextDocumentEditor:
-    let textEditor = editor.TextDocumentEditor
-    textEditor.targetSelection = location.toSelection
-    textEditor.scrollToCursor(location, scrollBehaviour = CenterOffscreen.some)
-
-    let lineSelection = ((location.line, 0), (location.line, textEditor.lineLength(location.line)))
-    textEditor.addCustomHighlight(debuggerCurrentLineId, lineSelection, "editorError.foreground",
-      color(1, 1, 1, 0.3))
-    self.lastEditor = textEditor.some
 
 proc handleStoppedAsync(self: Debugger, data: OnStoppedData) {.async.} =
   log(lvlInfo, &"onStopped {data}")
