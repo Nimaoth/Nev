@@ -133,6 +133,31 @@ More details in [Getting Started](docs/getting_started.md)
 
 ---
 
+### Git integration
+![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/git.gif)
+
+---
+
+### Debugging support (breakpoints aren't rendered correctly in the gif because of recording with asiinema and they use unicode symbols, see screenshot above)
+![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/debug.gif)
+
+---
+
+### Global and open file finders (and more)
+![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/finders.gif)
+
+---
+
+### Global search
+![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/search.gif)
+
+---
+
+### Themes
+![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/themes.gif)
+
+---
+
 ### LSP completions
 ![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/lsp_completions.png)
 
