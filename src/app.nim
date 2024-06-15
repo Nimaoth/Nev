@@ -47,6 +47,9 @@ method markDirty*(view: EditorView, notify: bool = true) =
 method getEventHandlers*(view: EditorView, inject: Table[string, EventHandler]): seq[EventHandler] =
   view.editor.getEventHandlers(inject)
 
+method getActiveEditor*(self: EditorView): Option[DocumentEditor] =
+  self.editor.some
+
 type
   Layout* = ref object of RootObj
     discard
@@ -2997,8 +3000,8 @@ proc getActiveEditor*(): EditorId {.expose("editor").} =
   if gEditor.popups.len > 0 and gEditor.popups[gEditor.popups.high].getActiveEditor().getSome(editor):
     return editor.id
 
-  if gEditor.tryGetCurrentEditorView().getSome(view):
-    return view.editor.id
+  if gEditor.tryGetCurrentView().getSome(view) and view.getActiveEditor().getSome(editor):
+    return editor.id
 
   return EditorId(-1)
 

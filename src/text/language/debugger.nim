@@ -1034,3 +1034,8 @@ proc handleAction(self: Debugger, action: string, arg: string): EventResponse =
 
 method getEventHandlers*(view: DebuggerView, inject: Table[string, EventHandler]): seq[EventHandler] =
   debugger.getEventHandlers(inject)
+
+method getActiveEditor*(self: DebuggerView): Option[DocumentEditor] =
+  if gDebugger.isNil or gDebugger.activeView != ActiveView.Output or gDebugger.outputEditor.isNil:
+    return DocumentEditor.none
+  return gDebugger.outputEditor.DocumentEditor.some
