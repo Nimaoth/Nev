@@ -22,6 +22,7 @@ type
   DebuggerConnectionKind = enum Tcp = "tcp", Stdio = "stdio", Websocket = "websocket"
 
   ActiveView* {.pure.} = enum Threads, StackTrace, Variables, Output
+  DebuggerState* {.pure.} = enum None, Paused, Running
 
   VariableCursor* = object
     scope: int
@@ -30,11 +31,12 @@ type
   Debugger* = ref object
     app: AppInterface
     client: Option[DapClient]
-    lastConfiguration: Option[string]
+    lastConfiguration*: Option[string]
     activeView*: ActiveView = Variables
     currentThreadIndex*: int
     currentFrameIndex*: int
     maxVariablesScrollOffset*: float
+    state*: DebuggerState = DebuggerState.None
     eventHandler: EventHandler
     threadsEventHandler: EventHandler
     stackTraceEventHandler: EventHandler
@@ -562,8 +564,6 @@ proc collapseVariable*(self: Debugger) {.expose("debugger").} =
           while self.variablesCursor.path.len >= currentLen:
             self.prevVariable()
 
-        # discard self.variablesCursor.path.pop
-
       elif va.variablesReference != 0.VariablesReference:
         self.collapsedVariables.incl ids & va.variablesReference
 
@@ -579,6 +579,11 @@ proc stopDebugSession*(self: Debugger) {.expose("debugger").} =
   asyncCheck self.client.get.disconnect(restart=false)
   self.client.get.deinit()
   self.client = DapClient.none
+
+  self.state = DebuggerState.None
+  self.threads.setLen 0
+  self.stackTraces.clear()
+  self.variables.clear()
 
 proc stopDebugSessionDelayedAsync*(self: Debugger) {.async.} =
   let oldClient = self.client.getOr:
@@ -672,6 +677,7 @@ proc updateStackTrace(self: Debugger, threadId: Option[ThreadId]): Future[Option
   if self.client.getSome(client):
     let stackTrace = await client.stackTrace(threadId)
     if stackTrace.isError:
+      log lvlError, &"Failed to get stacktrace for thread {threadId}: {stackTrace}"
       return ThreadId.none
     self.stackTraces[threadId] = stackTrace.result
 
@@ -740,6 +746,13 @@ proc handleStoppedAsync(self: Debugger, data: OnStoppedData) {.async.} =
 
     self.threads = threads.result.threads
 
+  if data.threadId.getSome(id):
+    let threadIndex = self.threads.findIt(it.id == id)
+    if threadIndex >= 0:
+      self.currentThreadIndex = threadIndex
+    else:
+      self.currentThreadIndex = 0
+
   if self.lastEditor.isSome:
     self.lastEditor.get.clearCustomHighlights(debuggerCurrentLineId)
     self.lastEditor = TextDocumentEditor.none
@@ -770,12 +783,16 @@ proc handleStoppedAsync(self: Debugger, data: OnStoppedData) {.async.} =
         self.lastEditor = textEditor.some
 
 proc handleStopped(self: Debugger, data: OnStoppedData) =
+  self.state = DebuggerState.Paused
   asyncCheck self.handleStoppedAsync(data)
 
 proc handleContinued(self: Debugger, data: OnContinuedData) =
   log(lvlInfo, &"onContinued {data}")
+  self.state = DebuggerState.Running
   self.scopes.clear()
   self.variables.clear()
+  if self.lastEditor.isSome:
+    self.lastEditor.get.clearCustomHighlights(debuggerCurrentLineId)
 
 proc handleTerminated(self: Debugger, data: Option[OnTerminatedData]) =
   log(lvlInfo, &"onTerminated {data}")

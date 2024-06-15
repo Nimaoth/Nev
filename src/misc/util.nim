@@ -120,6 +120,27 @@ template mapIt*[T](self: Option[T], op: untyped): untyped =
   else:
     OutType.none
 
+template findIt*(self: untyped, op: untyped): untyped =
+  block:
+    var index = -1
+    for i in 0..self.high:
+      let it {.cursor, inject.} = self[i]
+      if op:
+        index = i
+        break
+    index
+
+template findItOpt*(self: untyped, op: untyped): untyped =
+  block:
+    type OutType = typeof(self[0], typeOfProc)
+    var res = OutType.none
+    for i in 0..self.high:
+      let it {.cursor, inject.} = self[i]
+      if op:
+        res = it.some
+        break
+    res
+
 template maybeFlatten*[T](self: Option[T]): Option[T] = self
 template maybeFlatten*[T](self: Option[Option[T]]): Option[T] = self.flatten
 
