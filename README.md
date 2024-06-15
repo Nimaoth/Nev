@@ -138,7 +138,7 @@ More details in [Getting Started](docs/getting_started.md)
 
 ---
 
-### Debugging support (breakpoints aren't rendered correctly in the gif because of recording with asiinema and they use unicode symbols, see screenshot above)
+### Debugging support (breakpoints aren't rendered correctly in the gif because of recording with asciinema and they use unicode symbols, see screenshot above)
 ![alt](https://raw.githubusercontent.com/Nimaoth/AbsytreeScreenshots/main/debug.gif)
 
 ---
