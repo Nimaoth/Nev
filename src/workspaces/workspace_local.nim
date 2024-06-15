@@ -129,6 +129,10 @@ method isFileReadOnly*(self: WorkspaceFolderLocal, relativePath: string): Future
     log lvlError, fmt"Failed to get file permissions of '{path}'"
     return false
 
+method fileExists*(self: WorkspaceFolderLocal, path: string): Future[bool] {.async.} =
+  let path = self.getAbsolutePath(path)
+  return path.fileExists
+
 proc loadFileThread(args: tuple[path: string, data: ptr string]):
     tuple[ok: bool, time: float] {.gcsafe.} =
 

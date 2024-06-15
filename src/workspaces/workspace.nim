@@ -70,6 +70,8 @@ method setFileReadOnly*(self: WorkspaceFolder, relativePath: string, readOnly: b
 method isFileReadOnly*(self: WorkspaceFolder, relativePath: string): Future[bool] {.base.} =
   false.toFuture
 
+method fileExists*(self: WorkspaceFolder, path: string): Future[bool] {.base.} = false.toFuture
+
 method loadFile*(self: WorkspaceFolder, relativePath: string): Future[string] {.base.} = discard
 method loadFile*(self: WorkspaceFolder, relativePath: string, data: ptr string): Future[void] {.base.} = discard
 
@@ -189,6 +191,14 @@ proc iterateDirectoryRec*(folder: WorkspaceFolder, path: string, cancellationTok
     await fut
 
   return
+
+var gWorkspace*: WorkspaceFolder = nil
+var gWorkspaceFuture = newResolvableFuture[WorkspaceFolder]("gWorkspace")
+
+proc getGlobalWorkspace*(): Future[WorkspaceFolder] = gWorkspaceFuture.future
+proc setGlobalWorkspace*(w: WorkspaceFolder) =
+  gWorkspace = w
+  gWorkspaceFuture.complete(w)
 
 when not defined(js):
   import workspace_local
