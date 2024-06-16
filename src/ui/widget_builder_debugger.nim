@@ -335,6 +335,7 @@ method createUI*(self: DebuggerView, builder: UINodeBuilder, app: App): seq[proc
           if getDebugger().getSome(debugger):
             case debugger.state
             of DebuggerState.None: text.add " - Not started"
+            of DebuggerState.Starting: text.add " - Starting"
             of DebuggerState.Paused: text.add " - Paused"
             of DebuggerState.Running: text.add " - Running"
 
