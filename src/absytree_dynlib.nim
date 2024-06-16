@@ -58,6 +58,7 @@ when enableAst:
   import ast/model_document
 import text/text_editor
 import text/language/lsp_client
+import text/language/debugger
 import selector_popup
 import wasm3, wasm3/[wasm3c, wasmconversions]
 import ui/node
