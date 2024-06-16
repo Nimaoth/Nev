@@ -23,7 +23,7 @@ type
   DebuggerConnectionKind = enum Tcp = "tcp", Stdio = "stdio", Websocket = "websocket"
 
   ActiveView* {.pure.} = enum Threads, StackTrace, Variables, Output
-  DebuggerState* {.pure.} = enum None, Paused, Running
+  DebuggerState* {.pure.} = enum None, Starting, Paused, Running
 
   VariableCursor* = object
     scope: int
@@ -877,25 +877,31 @@ proc runConfigurationAsync(self: Debugger, name: string) {.async.} =
   if self.client.isSome:
     self.stopDebugSession()
 
+  self.state = DebuggerState.Starting
+
   assert self.client.isNone
   log lvlInfo, &"[runConfigurationAsync] Launch '{name}'"
 
   let config = self.app.configProvider.getValue[:JsonNode]("debugger.configuration." & name, newJNull())
   if config.isNil or config.kind != JObject:
     log lvlError, &"No/invalid configuration with name '{name}' found: {config}"
+    self.state = DebuggerState.None
     return
 
   let request = config.tryGet("request", string, "launch".newJString):
     log lvlError, &"No/invalid debugger request in {config.pretty}"
+    self.state = DebuggerState.None
     return
 
   let typ = config.tryGet("type", string, newJNull()):
     log lvlError, &"No/invalid debugger type in {config.pretty}"
+    self.state = DebuggerState.None
     return
 
   let connection = await self.createConnectionWithType(typ)
   if connection.isNone:
     log lvlError, &"Failed to create connection for typ '{typ}'"
+    self.state = DebuggerState.None
     return
 
   self.lastConfiguration = name.some
@@ -907,6 +913,7 @@ proc runConfigurationAsync(self: Debugger, name: string) {.async.} =
     log lvlError, &"Client failed to initialized"
     client.deinit()
     self.client = DAPClient.none
+    self.state = DebuggerState.None
     return
 
   case request
@@ -920,6 +927,7 @@ proc runConfigurationAsync(self: Debugger, name: string) {.async.} =
     log lvlError, &"Invalid request type '{request}', expected 'launch' or 'attach'"
     self.client = DAPClient.none
     client.deinit()
+    self.state = DebuggerState.None
     return
 
   let setBreakpointFutures = collect:
@@ -932,11 +940,13 @@ proc runConfigurationAsync(self: Debugger, name: string) {.async.} =
   let threads = await client.getThreads
   if threads.isError:
     log lvlError, &"Failed to get threads: {threads}"
+    self.state = DebuggerState.None
     return
 
   self.threads = threads.result.threads
 
   await client.configurationDone()
+  self.state = DebuggerState.Running
 
 proc runConfiguration*(self: Debugger, name: string) {.expose("debugger").} =
   asyncCheck self.runConfigurationAsync(name)
