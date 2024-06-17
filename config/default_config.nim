@@ -250,6 +250,12 @@ proc loadDefaultKeybindings*(clearExisting: bool = false) =
   addCommand "editor", "<LEADER>ar", "step-over"
   addCommand "editor", "<LEADER>at", "step-in"
   addCommand "editor", "<LEADER>an", "step-out"
+  addCommand "editor", "<LEADER>ae", "edit-breakpoints"
+  addCommand "editor", "<LEADER>am", "toggle-breakpoints-enabled"
+
+  addCommand "popup.selector.breakpoints", "<C-x>", "delete-breakpoint"
+  addCommand "popup.selector.breakpoints", "<C-e>", "toggle-breakpoint-enabled"
+  addCommand "popup.selector.breakpoints", "<C-o>", "toggle-all-breakpoints-enabled"
 
   addCommand "editor", "<LEADER>gb", "show-debugger-view"
 

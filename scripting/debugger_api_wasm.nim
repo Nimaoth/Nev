@@ -197,6 +197,71 @@ proc addBreakpoint*(editorId: EditorId; line: int) =
       argsJsonString.cstring)
 
 
+proc debugger_removeBreakpoint_void_Debugger_string_int_wasm(arg: cstring): cstring {.
+    importc.}
+proc removeBreakpoint*(path: string; line: int) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      path
+    else:
+      path.toJson()
+  argsJson.add block:
+    when int is JsonNode:
+      line
+    else:
+      line.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = debugger_removeBreakpoint_void_Debugger_string_int_wasm(
+      argsJsonString.cstring)
+
+
+proc debugger_toggleBreakpointEnabled_void_Debugger_string_int_wasm(arg: cstring): cstring {.
+    importc.}
+proc toggleBreakpointEnabled*(path: string; line: int) =
+  var argsJson = newJArray()
+  argsJson.add block:
+    when string is JsonNode:
+      path
+    else:
+      path.toJson()
+  argsJson.add block:
+    when int is JsonNode:
+      line
+    else:
+      line.toJson()
+  let argsJsonString = $argsJson
+  let res {.used.} = debugger_toggleBreakpointEnabled_void_Debugger_string_int_wasm(
+      argsJsonString.cstring)
+
+
+proc debugger_toggleAllBreakpointsEnabled_void_Debugger_wasm(arg: cstring): cstring {.
+    importc.}
+proc toggleAllBreakpointsEnabled*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = debugger_toggleAllBreakpointsEnabled_void_Debugger_wasm(
+      argsJsonString.cstring)
+
+
+proc debugger_toggleBreakpointsEnabled_void_Debugger_wasm(arg: cstring): cstring {.
+    importc.}
+proc toggleBreakpointsEnabled*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = debugger_toggleBreakpointsEnabled_void_Debugger_wasm(
+      argsJsonString.cstring)
+
+
+proc debugger_editBreakpoints_void_Debugger_wasm(arg: cstring): cstring {.
+    importc.}
+proc editBreakpoints*() =
+  var argsJson = newJArray()
+  let argsJsonString = $argsJson
+  let res {.used.} = debugger_editBreakpoints_void_Debugger_wasm(
+      argsJsonString.cstring)
+
+
 proc debugger_continueExecution_void_Debugger_wasm(arg: cstring): cstring {.
     importc.}
 proc continueExecution*() =
