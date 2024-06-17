@@ -241,6 +241,7 @@ proc unregisterEditor*(self: App, editor: DocumentEditor): void
 proc tryActivateEditor*(self: App, editor: DocumentEditor): void
 proc getActiveEditor*(self: App): Option[DocumentEditor]
 proc getEditorForId*(self: App, id: EditorId): Option[DocumentEditor]
+proc getEditorForPath*(self: App, path: string): Option[DocumentEditor]
 proc getPopupForId*(self: App, id: EditorId): Option[Popup]
 proc createSelectorPopup*(self: App): Popup
 proc pushSelectorPopup*(self: App, builder: SelectorPopupBuilder): ISelectorPopup
@@ -256,6 +257,7 @@ proc getOrOpenDocument*(self: App, path: string, workspace = WorkspaceFolder.non
     load = true): Option[Document]
 proc tryCloseDocument*(self: App, document: Document, force: bool): bool
 proc closeUnusedDocuments*(self: App)
+proc tryOpenExisting*(self: App, path: string, folder: Option[WorkspaceFolder]): Option[DocumentEditor]
 
 implTrait AppInterface, App:
   proc platform*(self: App): Platform = self.platform
@@ -282,6 +284,7 @@ implTrait AppInterface, App:
   getActiveEditor(Option[DocumentEditor], App)
   unregisterEditor(void, App, DocumentEditor)
   getEditorForId(Option[DocumentEditor], App, EditorId)
+  getEditorForPath(Option[DocumentEditor], App, string)
   getPopupForId(Option[Popup], App, EditorId)
   createSelectorPopup(Popup, App)
   pushSelectorPopup(ISelectorPopup, App, SelectorPopupBuilder)
@@ -656,6 +659,15 @@ proc getEditorForId*(self: App, id: EditorId): Option[DocumentEditor] =
     return self.commandLineTextEditor.some
 
   return DocumentEditor.none
+
+proc getEditorForPath*(self: App, path: string): Option[DocumentEditor] =
+  let folder = if self.workspace.folders.len > 0:
+    self.workspace.folders[0]
+  else:
+    return DocumentEditor.none
+
+  let path = folder.getAbsolutePath(path)
+  return self.tryOpenExisting(path, folder.some)
 
 proc getPopupForId*(self: App, id: EditorId): Option[Popup] =
   for popup in self.popups:
