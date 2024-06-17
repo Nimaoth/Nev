@@ -44,10 +44,12 @@ type
 
 proc getSearchString*(self: SelectorPopup): string
 proc closed*(self: SelectorPopup): bool
+proc getSelectedItem*(self: SelectorPopup): Option[FinderItem]
 
 implTrait ISelectorPopup, SelectorPopup:
   getSearchString(string, SelectorPopup)
   closed(bool, SelectorPopup)
+  getSelectedItem(Option[FinderItem], SelectorPopup)
 
 proc closed*(self: SelectorPopup): bool =
   return self.textEditor.isNil
