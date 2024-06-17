@@ -25,6 +25,7 @@ traitRef AppInterface:
   method tryActivateEditor*(self: AppInterface, editor: DocumentEditor)
   method getActiveEditor*(self: AppInterface): Option[DocumentEditor]
   method getEditorForId*(self: AppInterface, id: EditorId): Option[DocumentEditor]
+  method getEditorForPath*(self: AppInterface, path: string): Option[DocumentEditor]
   method getPopupForId*(self: AppInterface, id: EditorId): Option[Popup]
   method createSelectorPopup*(self: AppInterface): Popup
   method setLocationList*(self: AppInterface, list: seq[FinderItem],
