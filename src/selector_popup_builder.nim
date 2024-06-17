@@ -5,6 +5,7 @@ import finder/[finder, previewer]
 traitRef ISelectorPopup:
   method getSearchString*(self: ISelectorPopup): string
   method closed*(self: ISelectorPopup): bool
+  method getSelectedItem*(self: ISelectorPopup): Option[FinderItem]
 
 type
   SelectorPopupBuilder* = object
