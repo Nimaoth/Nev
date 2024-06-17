@@ -342,6 +342,11 @@ method createUI*(self: DebuggerView, builder: UINodeBuilder, app: App): seq[proc
             if debugger.lastConfiguration.getSome(config):
               text.add " - " & config
 
+            if debugger.breakpointsEnabled:
+              text.add " - Breakpoints: ✅"
+            else:
+              text.add " - Breakpoints: ❌"
+
           builder.panel(&{SizeToContentX, SizeToContentY, DrawText}, textColor = textColor, text = text)
 
         # Body

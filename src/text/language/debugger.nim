@@ -1,4 +1,4 @@
-import std/[strutils, options, json, tables, sugar, strtabs, streams, sets]
+import std/[strutils, options, json, tables, sugar, strtabs, streams, sets, sequtils]
 import misc/[id, custom_async, custom_logger, util, connection, myjsonutils, event, response]
 import scripting/expose
 import dap_client, dispatch_tables, app_interface, config_provider, selector_popup_builder, events, view
@@ -29,6 +29,11 @@ type
     scope: int
     path: seq[tuple[index: int, varRef: VariablesReference]]
 
+  BreakpointInfo* = object
+    path: string
+    enabled: bool = true
+    breakpoint: SourceBreakpoint
+
   Debugger* = ref object
     app: AppInterface
     client: Option[DapClient]
@@ -48,11 +53,13 @@ type
     variablesScrollOffset*: float
     collapsedVariables: HashSet[(ThreadId, FrameId, VariablesReference)]
 
+    breakpointsEnabled*: bool = true
+
     lastEditor: Option[TextDocumentEditor]
     outputEditor*: TextDocumentEditor
 
     # Data setup in the editor and sent to the server
-    breakpoints: Table[string, seq[SourceBreakpoint]]
+    breakpoints: Table[string, seq[BreakpointInfo]]
 
     # Cached data from server
     threads: seq[ThreadInfo]
@@ -94,6 +101,20 @@ proc getStateJson*(self: Debugger): JsonNode =
     "breakpoints": self.breakpoints,
   }
 
+proc updateBreakpointsForFile(self: Debugger, path: string) =
+  if self.app.getEditorForPath(path).getSome(editor) and editor of TextDocumentEditor:
+    self.applyBreakpointSignsToEditor(editor.TextDocumentEditor)
+
+  if self.client.getSome(client):
+    if self.breakpointsEnabled:
+      var bs: seq[SourceBreakpoint]
+      for b in self.breakpoints[path]:
+        if b.enabled:
+          bs.add b.breakpoint
+      asyncCheck client.setBreakpoints(Source(path: path.some), bs)
+    else:
+      asyncCheck client.setBreakpoints(Source(path: path.some), @[])
+
 proc handleEditorRegistered*(self: Debugger, editor: DocumentEditor) =
   if not (editor of TextDocumentEditor):
     return
@@ -125,7 +146,7 @@ proc createDebugger*(app: AppInterface, state: JsonNode) =
     gDebugger.handleEditorRegistered(e)
 
   try:
-    gDebugger.breakpoints = state["breakpoints"].jsonTo(Table[string, seq[SourceBreakpoint]])
+    gDebugger.breakpoints = state["breakpoints"].jsonTo(Table[string, seq[BreakpointInfo]])
   except:
     discard
 
@@ -932,7 +953,7 @@ proc runConfigurationAsync(self: Debugger, name: string) {.async.} =
 
   let setBreakpointFutures = collect:
     for file, breakpoints in self.breakpoints.pairs:
-      client.setBreakpoints(Source(path: file.some), breakpoints)
+      client.setBreakpoints(Source(path: file.some), breakpoints.mapIt(it.breakpoint))
 
   for fut in setBreakpointFutures:
     await fut
@@ -997,27 +1018,178 @@ proc applyBreakpointSignsToEditor(self: Debugger, editor: TextDocumentEditor) =
     return
 
   for breakpoint in self.breakpoints[editor.document.filename]:
-    discard editor.TextDocumentEditor.addSign(idNone(), breakpoint.line - 1, "🛑", group = "breakpoints")
+    let sign = if self.breakpointsEnabled and breakpoint.enabled:
+      "🛑"
+    else:
+      "B "
+    discard editor.TextDocumentEditor.addSign(idNone(), breakpoint.breakpoint.line - 1, sign,
+      group = "breakpoints")
 
 proc addBreakpoint*(self: Debugger, editorId: EditorId, line: int) {.expose("debugger").} =
+  ## Line is 0-based
   if self.app.getEditorForId(editorId).getSome(editor) and editor of TextDocumentEditor:
     let path = editor.TextDocumentEditor.document.filename
     if not self.breakpoints.contains(path):
       self.breakpoints[path] = @[]
 
     for i, breakpoint in self.breakpoints[path]:
-      if breakpoint.line == line + 1:
+      if breakpoint.breakpoint.line == line + 1:
         # Breakpoint already exists, remove
         self.breakpoints[path].removeSwap(i)
-        self.applyBreakpointSignsToEditor(editor.TextDocumentEditor)
-        if self.client.getSome(client):
-          asyncCheck client.setBreakpoints(Source(path: path.some), self.breakpoints[path])
+        self.updateBreakpointsForFile(path)
         return
 
-    self.breakpoints[path].add SourceBreakpoint(line: line + 1)
-    self.applyBreakpointSignsToEditor(editor.TextDocumentEditor)
-    if self.client.getSome(client):
-      asyncCheck client.setBreakpoints(Source(path: path.some), self.breakpoints[path])
+    self.breakpoints[path].add BreakpointInfo(
+      path: path,
+      breakpoint: SourceBreakpoint(line: line + 1),
+    )
+
+    self.updateBreakpointsForFile(path)
+
+proc removeBreakpoint*(self: Debugger, path: string, line: int) {.expose("debugger").} =
+  ## Line is 1-based
+  log lvlInfo, &"removeBreakpoint {path}:{line}"
+  if not self.breakpoints.contains(path):
+    return
+
+  for i, breakpoint in self.breakpoints[path]:
+    if breakpoint.breakpoint.line == line:
+      self.breakpoints[path].removeSwap(i)
+
+      self.updateBreakpointsForFile(path)
+      return
+
+proc toggleBreakpointEnabled*(self: Debugger, path: string, line: int) {.expose("debugger").} =
+  ## Line is 1-based
+  log lvlInfo, &"toggleBreakpointEnabled {path}:{line}"
+  if not self.breakpoints.contains(path):
+    return
+
+  for breakpoint in self.breakpoints[path].mitems:
+    if breakpoint.breakpoint.line == line:
+      breakpoint.enabled = not breakpoint.enabled
+
+      self.updateBreakpointsForFile(path)
+      return
+
+proc toggleAllBreakpointsEnabled*(self: Debugger) {.expose("debugger").} =
+  log lvlInfo, "toggleAllBreakpointsEnabled"
+
+  var anyEnabled = false
+  for file, breakpoints in self.breakpoints.pairs:
+    for b in breakpoints:
+      if b.enabled:
+        anyEnabled = true
+        break
+
+  for file, breakpoints in self.breakpoints.mpairs:
+    for b in breakpoints.mitems:
+      b.enabled = not anyEnabled
+
+  for path in self.breakpoints.keys:
+    self.updateBreakpointsForFile(path)
+
+proc toggleBreakpointsEnabled*(self: Debugger) {.expose("debugger").} =
+  log lvlInfo, "toggleBreakpointsEnabled"
+
+  self.breakpointsEnabled = not self.breakpointsEnabled
+
+  for path in self.breakpoints.keys:
+    self.updateBreakpointsForFile(path)
+
+type
+  BreakpointPreviewer* = ref object of Previewer
+    editor: TextDocumentEditor
+    tempDocument: TextDocument
+    getPreviewTextImpl: proc(item: FinderItem): string
+
+proc newBreakpointPreviewer*(configProvider: ConfigProvider, language = string.none,
+    getPreviewTextImpl: proc(item: FinderItem): string = nil): BreakpointPreviewer =
+
+  new result
+
+  result.tempDocument = newTextDocument(configProvider, language=language,
+    createLanguageServer=false)
+  result.tempDocument.readOnly = true
+  result.getPreviewTextImpl = getPreviewTextImpl
+
+method deinit*(self: BreakpointPreviewer) =
+  logScope lvlInfo, &"[deinit] Destroying data file previewer"
+  if self.tempDocument.isNotNil:
+    self.tempDocument.deinit()
+
+  self[] = default(typeof(self[]))
+
+method delayPreview*(self: BreakpointPreviewer) =
+  discard
+
+method previewItem*(self: BreakpointPreviewer, item: FinderItem, editor: DocumentEditor) =
+  if not (editor of TextDocumentEditor):
+    return
+
+  self.editor = editor.TextDocumentEditor
+  self.editor.setDocument(self.tempDocument)
+  self.editor.selection = (0, 0).toSelection
+  self.editor.scrollToTop()
+
+  if self.getPreviewTextImpl.isNotNil:
+    self.tempDocument.content = self.getPreviewTextImpl(item)
+  else:
+    self.tempDocument.content = item.data
+
+proc editBreakpoints(self: Debugger) {.expose("debugger").} =
+  var builder = SelectorPopupBuilder()
+  builder.scope = "breakpoints".some
+  builder.previewScale = 0.5
+  builder.scaleX = 0.6
+  builder.scaleY = 0.5
+
+  proc getBreakpointFinderItems(): seq[FinderItem] =
+    var res = newSeq[FinderItem]()
+    for (file, breakpoints) in self.breakpoints.pairs:
+
+      for b in breakpoints:
+        let enabledText = if b.enabled: "✅" else: "❌"
+        res.add FinderItem(
+          displayName: &"{enabledText} {file}:{b.breakpoint.line}",
+          data: b.toJson.pretty,
+        )
+    res
+
+  builder.previewer = newBreakpointPreviewer(self.app.configProvider, language="javascript".some).Previewer.some
+
+  let source = newSyncDataSource(getBreakpointFinderItems)
+  let finder = newFinder(source, filterAndSort=true)
+  builder.finder = finder.some
+
+  builder.customActions["delete-breakpoint"] = proc(popup: ISelectorPopup, args: JsonNode): bool =
+    if popup.getSelectedItem().getSome(item):
+      let b = item.data.parseJson.jsonTo(BreakpointInfo).catch:
+        log lvlError, &"Failed to parse BreakpointInfo: {getCurrentExceptionMsg()}"
+        return
+
+      self.removeBreakpoint(b.path, b.breakpoint.line)
+      source.retrigger()
+
+    true
+
+  builder.customActions["toggle-breakpoint-enabled"] = proc(popup: ISelectorPopup, args: JsonNode): bool =
+    if popup.getSelectedItem().getSome(item):
+      let b = item.data.parseJson.jsonTo(BreakpointInfo).catch:
+        log lvlError, &"Failed to parse BreakpointInfo: {getCurrentExceptionMsg()}"
+        return
+
+      self.toggleBreakpointEnabled(b.path, b.breakpoint.line)
+      source.retrigger()
+
+    true
+
+  builder.customActions["toggle-all-breakpoints-enabled"] = proc(popup: ISelectorPopup, args: JsonNode): bool =
+    self.toggleAllBreakpointsEnabled()
+    source.retrigger()
+    true
+
+  discard self.app.pushSelectorPopup(builder)
 
 proc continueExecution*(self: Debugger) {.expose("debugger").} =
   if self.currentThread.getSome(thread) and self.client.getSome(client):
